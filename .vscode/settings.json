@@ -1,0 +1,12 @@
+{
+        "files.exclude": {
+                "**/.git": true,
+                "**/.DS_Store": true,
+                "**/*.pdn": true,
+                "**/*.bmp": true,
+                "**/*.piskel": true,
+                "**/*.js.map": true,
+                "**/*.log": true,
+                "**/*.js": {"when": "$(basename).ts"}
+        }
+}

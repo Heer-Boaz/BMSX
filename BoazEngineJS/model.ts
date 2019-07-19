@@ -1,0 +1,61 @@
+﻿/// <reference path="interfaces.ts"/>
+
+export enum GameState { None = 0, }
+export enum GameSubstate {
+    Default = 0,
+}
+
+export abstract class Model {
+    public id2object: Map<string, IGameObject>;
+    public objects: IGameObject[];
+
+    public gameState: GameState;
+    public gameSubstate: GameSubstate;
+    public gameOldState: GameState;
+    public gameOldSubstate: GameSubstate;
+    public paused: boolean;
+    public startAfterLoad: boolean;
+
+    constructor() {
+        this.initModelForGameStart();
+    }
+
+    public initModelForGameStart(): void {
+        this.objects = [];
+        this.id2object = new Map<string, IGameObject>();
+        this.gameState = GameState.None;
+        this.gameSubstate = GameSubstate.Default;
+        this.paused = false;
+    }
+
+    public clearModel(): void {
+        this.objects.forEach(x => {
+            x.exile();
+        });
+        this.objects = [];
+        this.id2object.clear();
+        this.paused = false;
+    }
+
+    public spawn(o: IGameObject, pos?: Point): void {
+        if (o == null) throw new Error("Cannot spawn object of type null.");
+        this.objects.push(o);
+        if (o.id != null)
+            this.id2object[o.id] = o;
+        if (pos) o.spawn(pos);
+        else o.spawn(null);
+    }
+
+    public remove(o: IGameObject): void {
+        if (o == null) throw new Error("Cannot remove object of type null.");
+
+        let index = this.objects.indexOf(o);
+        if (index > -1) {
+            delete this.objects[index];
+            this.objects.splice(index, 1);
+        }
+        else throw new Error("Could not find object to remove.");
+
+        if (o.id != null && this.id2object.has(o.id)) this.id2object.delete(o.id);
+    }
+}

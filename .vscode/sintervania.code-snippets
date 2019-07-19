@@ -1,0 +1,261 @@
+{
+	// Place your global snippets here. Each snippet is defined under a snippet name and has a scope, prefix, body and
+	// description. Add comma separated ids of the languages where the snippet is applicable in the scope field. If scope
+	// is left empty or omitted, the snippet gets applied to all languages. The prefix is what is
+	// used to trigger the snippet and the body will be expanded and inserted. Possible variables are:
+	// $1, $2 for tab stops, $0 for the final cursor position, and ${1:label}, ${2:another} for placeholders.
+	// Placeholders with the same ids are connected.
+	// Example:
+	// "Print to console": {
+	// 	"scope": "javascript,typescript",
+	// 	"prefix": "log",
+	// 	"body": [
+	// 		"console.log('$1');",
+	// 		"$2"
+	// 	],
+	// 	"description": "Log output to console"
+	// }
+	"add_image_resource_to_game": {
+		"scope": "csharp",
+		"prefix": "@resimg",
+		"body": [
+			"GameResources.Add((int)BitmapId.${1:imageid}, new XBitmap(\"./Resources/Graphics/${2:filename}.png\"));",
+			"$0"
+		],
+		"description": "Add image resource to game"
+	},
+	"add_audio_effect_resource_to_game": {
+		"scope": "csharp",
+		"prefix": "@ressnd",
+		"body": [
+			"GameResources.Add((int)AudioId.${1:audioid}, AudioData.LoadAudioBufferFromFile(\"./Resources/Sound/${2:filename}.wav\"));",
+			"this.SoundEffectList.Add(AudioId.${1:audioid}, new Effect() { AudioId = (uint)AudioId.${1:audioid}, Priority = 0 });",
+			"$0"
+		],
+		"description": "Add audio effect resource to game"
+	},
+	"add_audio_music_resource_to_game": {
+		"scope": "csharp",
+		"prefix": "@resmus",
+		"body": [
+			"GameResources.Add((int)AudioId.${1:audioid}, AudioData.LoadAudioBufferFromFile(\"./Resources/Music/${2:filename}.wav\"));",
+			"this.MusicList.Add(AudioId.${1:audioid}, new Song() { Music = (uint)AudioId.${1:audioid}, Loop = ${3|true,false|}, NextSong = ${4|NextSong = this.MusicList[AudioId._]\\, Loop = true },null|} });",
+			"$0"
+		],
+		"description": "Add audio music resource to game"
+	},
+	"bla": {
+		"scope": "csharp",
+		"prefix": "@bla",
+		"body": [
+			"${1/(.*)/${1:/upcase}",
+		],
+		"description": "bla"
+	},
+	"add_foe_for_sinterklaas": {
+		"scope": "csharp",
+		"prefix": "@newfoe",
+		"body": [
+			"\r",
+			"namespace Sintervania.Model.Foes {\r",
+			"\t[Serializable]\r",
+			"\tpublic class ${1:name} : Foe {\r",
+			"\t\tpublic override int DamageToPlayer => ${3:damage};\r",
+			"\r",
+			"\t\tprotected override int moveBeforeFrameChange => 0;\r",
+			"\r",
+			"\t\tpublic override bool RespawnAtRoomEntry => true;\r",
+			"\r",
+			"\t\tprotected static readonly Area ${1:name}HitArea = new Area(0, 0, 10, 16);\r",
+			"\r",
+			"\t\tprotected static readonly Dictionary<Direction, BitmapId[]> ${2:smallname}Sprites = new Dictionary<Direction, BitmapId[]> {\r",
+			"\t\t\t{ Direction.None, new BitmapId[] { BitmapId.${1:name}_1 } },\r",
+			"\t\t};\r",
+			"\r",
+			"\t\tprotected static (ulong, (uint img, int dy))[] AnimationFrames = {\r",
+			"\t\t\t(100, ((uint)BitmapId.${1:name}_1, 0)),\r",
+			"\t\t};\r",
+			"\r",
+			"\t\tprotected Animation<(uint img, int dy)> animation;\r",
+			"\t\tprotected IBXStopwatch timer;\r",
+			"\r",
+			"\t\tprotected override Dictionary<Direction, BitmapId[]> movementSprites => ${2:smallname}Sprites;\r",
+			"\r",
+			"\t\tpublic ${1:name}(Point pos, Item.Type itemSpawned = Item.Type.HeartSmall) : base(pos) {\r",
+			"\t\t\tthis.CanHurtPlayer = true;\r",
+			"\t\t\tthis.animation = new Animation<(uint img, int dy)>(AnimationFrames) {\r",
+			"\t\t\t\tRepeat = true\r",
+			"\t\t\t};\r",
+			"\t\t\tthis.timer = BXStopwatch.CreateWatch();\r",
+			"\t\t\tthis.ImageId = (uint)this.animation.StepValue.img;\r",
+			"\t\t\tthis.timer.Restart();\r",
+			"\t\t\tthis.hitArea = ${1:name}.${1:name}HitArea;\r",
+			"\t\t\tthis.size = new Size(this.hitArea.ex, this.hitArea.ey);\r",
+			"\t\t\tthis.itemSpawnedAfterKill = itemSpawned;\r",
+			"\t\t\tthis.Health = ${4:hps};\r",
+			"\t\t}\r",
+			"\r",
+			"\t\tpublic override void TakeTurn() {\r",
+			"\t\t\t(uint img, int dy) stepValue = (this.ImageId, 0);\r",
+			"\t\t\tthis.animation.DoAnimation(this.timer, ref stepValue);\r",
+			"\t\t\tthis.ImageId = stepValue.img;\r",
+			"\t\t\tthis.pos.y += stepValue.dy;\r",
+			"\t\t\t$0\r",
+			"\t\t}\r",
+			"\r",
+			"\t\tpublic override void Dispose() {\r",
+			"\t\t\tBXStopwatch.RemoveWatch(this.timer);\r",
+			"\t\t}\r",
+			"\r",
+			"\t\tpublic override void HandleHit(PlayerProjectile source) {\r",
+			"\t\t\tbase.HandleHit(source);\r",
+			"\t\t\tthis.loseHealth(source);\r",
+			"\t\t}\r",
+			"\r",
+			"\t\tpublic override void Paint(IPoint offset = null) {\r",
+			"\t\t\tbase.Paint(offset);\r",
+			"\t\t}\r",
+			"\r",
+			"\t\tpublic override void Die() {\r",
+			"\t\t\tif (this.itemSpawnedAfterKill == Item.Type.HeartSmall) {\r",
+			"\t\t\t\tthis.DieWithItem(this.itemSpawnedAfterKill);\r",
+			"\t\t\t}\r",
+			"\t\t\telse base.Die();\r",
+			"\r",
+			"\t\t\t// TODO: Spawn item if it isn't a heart\r",
+			"\t\t}\r",
+			"\t}\r",
+			"}\r",
+			""
+		],
+		"description": "Add a new foe file for Sintervania project"
+	},
+	"sintervania_usings": {
+		"prefix": "@usings",
+		"scope": "csharp",
+		"body": [
+			"using System;\r",
+			"using System.Collections.Generic;\r",
+			"using System.Linq;\r",
+			"using BoazEngine;\r",
+			"using CommonLib;\r",
+			"using CSharpDX;\r",
+			"using Sintervania.Global;\r",
+			"using Sintervania.Model.Items;\r",
+			"using Sintervania.Model.Stage;\r",
+			"using Sintervania.Model.Base;\r",
+			"using Sintervania.Model.Projectiles.Base;\r",
+			"using Sintervania.Resources;\r",
+			"using static Sintervania.Toolbox;\r",
+			"using G = Sintervania.Game;\r",
+			"using C = Sintervania.Controllers.GameController;\r",
+			"using V = Sintervania.View.GameView;\r",
+			"using CS = Sintervania.Constants;\r",
+			"using M = Sintervania.Model.GameModel;\r",
+			"using RM = Sintervania.Resources.ResourceMaster;"
+		],
+		"description": "Add default Sintervania usings"
+	},
+	"add_foe_projectile_for_sintervania": {
+		"prefix": "@fprojectile",
+		"scope": "csharp",
+		"body": [
+			"namespace Sintervania.Model.Projectiles {\r",
+			"\t[Serializable]\r",
+			"\tpublic class ${1:name} : FProjectile {\r",
+			"\t\tprivate enum Rotation { Left, Right };\r",
+			"\t\tprivate Animation<Rotation> animation;\r",
+			"\t\tprivate const ulong turnsBeforeRotate = 5;\r",
+			"\r",
+			"\t\tpublic ${1:name}(FPoint fpos, FPoint speed) : base(fpos, speed) {\r",
+			"\t\t\tthis.ImageId = (uint)BitmapId.${1:name};\r",
+			"\t\t\tthis.size = new Size(6, 6);\r",
+			"\t\t\tthis.HitArea = new Area(1, 1, 5, 5);\r",
+			"\t\t\t//this.animation = new Animation<Rotation>(new Rotation[] { Rotation.Left, Rotation.Right }, constantStepTime: turnsBeforeRotate, repeat: true);\r",
+			"\t\t}\r",
+			"\r",
+			"\t\tpublic override int DamageDealt {\r",
+			"\t\t\tget { return 1; }\r",
+			"\t\t}\r",
+			"\r",
+			"\t\tpublic override void Dispose() {\r",
+			"\t\t}\r",
+			"\r",
+			"\t\tpublic override void TakeTurn() {\r",
+			"\t\t\tbase.TakeTurn();\r",
+			"\t\t\t//Rotation rot = default(Rotation);\r",
+			"\t\t\t//if (this.animation.DoAnimation(1, ref rot)) {\r",
+			"\t\t\t\t//switch (rot) {\r",
+			"\t\t\t\t\t//case Rotation.Left: this.FlippedH = false; break;\r",
+			"\t\t\t\t\t//case Rotation.Right: this.FlippedH = true; break;\r",
+			"\t\t\t\t//}\r",
+			"\t\t\t//}\r",
+			"\t\t}\r",
+			"\t}\r",
+			"}"
+		],
+		"description": "Add new foe projectile for Sintervania project"
+	},
+	"sintervania_check_collision": {
+		"prefix": "@collision",
+		"scope": "csharp",
+		"body": [
+			"if (M._.CurrentRoom.AnyCollisionsTiles(${1|true,false|}, (this.hitbox_sx, this.hitbox_sy), (this.hitbox_sx, this.hitbox_ey))) {\r\t$2\r}"
+		],
+		"description": "Sintervania check collision"
+	},
+	"sintervania_check_out_of_screen_bounds_right": {
+		"prefix": "@if_out_of_bounds_right",
+		"scope": "csharp",
+		"body": [
+			"if (this.pos.x >= CS.GameScreenWidth) {\r",
+			"\t$0\r",
+			"}\r",
+			""
+		],
+		"description": "Check if the sprite reached the edge of the game screen"
+	},
+	"sintervania_check_out_of_screen_bounds_left": {
+		"prefix": "@if_out_of_bounds_left",
+		"scope": "csharp",
+		"body": [
+			"if (0 > this.pos.x + this.size.x) {\r",
+			"\t$0\r",
+			"}\r",
+			""
+		],
+		"description": "Check if the sprite reached the edge of the game screen"
+	},
+	"sintervania_check_out_of_screen_bounds_down": {
+		"prefix": "@if_out_of_bounds_down",
+		"scope": "csharp",
+		"body": [
+			"if (this.pos.y >= CS.GameScreenHeight) {\r",
+			"\t$0\r",
+			"}\r",
+			""
+		],
+		"description": "Check if the sprite reached the edge of the game screen"
+	},
+	"sintervania_check_out_of_screen_bounds_up": {
+		"prefix": "@if_out_of_bounds_up",
+		"scope": "csharp",
+		"body": [
+			"if (0 > this.pos.y + this.size.y) {\r",
+			"\t$0\r",
+			"}\r",
+			""
+		],
+		"description": "Check if the sprite reached the edge of the game screen"
+	},
+	"sintervania_create_state": {
+		"prefix": "@states",
+		"scope": "csharp",
+		"body": [
+			"public enum ${TM_FILENAME_BASE}State { None, $0 };\r",
+			"protected ${TM_FILENAME_BASE}State ${1:state};\r",
+		],
+		"description": "Creates a new State enum for the current file (class)"
+	},
+
+}

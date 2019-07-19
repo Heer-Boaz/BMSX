@@ -1,0 +1,37 @@
+export interface IKeyStateContainer {
+    KC_BTN2?: boolean;
+    KC_BTN3?: boolean;
+    KC_BTN4?: boolean;
+    KC_BTN5?: boolean;
+    KC_BTN6?: boolean;
+    KC_DOWN?: boolean;
+    KC_F1?: boolean;
+    KC_F12?: boolean;
+    KC_F2?: boolean;
+    KC_F3?: boolean;
+    KC_F4?: boolean;
+    KC_F5?: boolean;
+    KC_LEFT?: boolean;
+    KC_M?: boolean;
+    KC_RIGHT?: boolean;
+    KC_SPACE?: boolean;
+    KC_UP?: boolean;
+    KD_BTN2?: boolean;
+    KD_BTN3?: boolean;
+    KD_BTN4?: boolean;
+    KD_BTN5?: boolean;
+    KD_BTN6?: boolean;
+    KD_DOWN?: boolean;
+    KD_F1?: boolean;
+    KD_F12?: boolean;
+    KD_F2?: boolean;
+    KD_F3?: boolean;
+    KD_F4?: boolean;
+    KD_F5?: boolean;
+    KD_LEFT?: boolean;
+    KD_M?: boolean;
+    KD_RIGHT?: boolean;
+    KD_SPACE?: boolean;
+    KD_UP?: boolean;
+    ResetState?(): void;
+}

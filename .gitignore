@@ -1,0 +1,14 @@
+BoazEngineJS/tsconfig.jsonmaarbugt
+**.cs
+**/node_modules
+**/output
+**.dll
+**.obj
+**.pdb
+**.wav
+**.jpg
+**.png
+**.bmp
+**.gif
+**.mp3
+src/sintervaniamodelold.ts

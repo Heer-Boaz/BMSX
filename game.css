@@ -1,0 +1,493 @@
+html, body {
+	position: fixed;
+	margin: 0;
+	padding: 0;
+	-webkit-user-select: none;
+	-moz-user-select: none;
+	-ms-user-select: none;
+	user-select: none;
+	-webkit-touch-callout: none;
+	touch-callout: none;
+	-webkit-tap-highlight-color: transparent;
+	tap-highlight-color: transparent;
+	-webkit-text-size-adjust: none;
+	-moz-text-size-adjust: none;
+	text-size-adjust: none;
+	overflow: hidden;
+	background-color:black;
+}
+
+html {
+    width: 100vw;
+	/* height: 100vh; */
+	height: 100%;
+	touch-action: manipulation;
+}
+
+body {
+	min-height: 100%;
+    width: 100vw;
+    height: 100%;
+	overflow: hidden;
+}
+
+img {
+	pointer-events: none;
+	touch-action: none;
+}
+
+#gamescreen {
+	position: absolute;
+    width: 100%;
+    height: auto;
+	top: 0px;
+	left: 0px;
+	overflow: hidden;
+}
+
+#gamescreen div.sprite {
+	position: absolute;
+	display: block;
+}
+
+#gamescreen div.sprite img {
+	width: 100%;
+	height: 100%;
+}
+
+.hall {
+	z-index: 1;
+	pointer-events: none;
+}
+
+.shadow {
+	z-index: 5;
+	filter: opacity(50%);
+	pointer-events: none;
+}
+
+.object {
+	z-index: 10;
+}
+
+.teacher {
+	z-index: 10;
+	pointer-events: none;
+}
+
+.siwan {
+	z-index: 100;
+	pointer-events: none;
+}
+
+#title {
+	z-index: 1001;
+	position: absolute;
+	width: 100%;
+	height: 100%;
+	left: 0px;
+	top: 0px;
+	overflow: hidden;
+}
+#title.appear {
+	animation: title-fadein 1.0s ease forwards;
+}
+#title.moveout {
+	animation: title-moveout 1.0s ease forwards;
+}
+
+#uitleg {
+	z-index: 1000;
+	position: absolute;
+	width: 100%;
+	height: 100%;
+	left: 0px;
+	top: 0px;
+	overflow: hidden;
+}
+#uitleg.appear {
+	animation: title-fadein 1.0s ease forwards;
+}
+#uitleg.moveout {
+	animation: title-moveout 1.0s ease forwards;
+}
+
+#title img {
+	position: absolute;
+	width: 100%;
+	height: 100%;
+}
+
+#uitleg img {
+	position: absolute;
+	width: 100%;
+	height: 100%;
+}
+
+#sint {
+	z-index: 100;
+	position: absolute;
+	width: 100%;
+	height: 100%;
+	left: 0px;
+	top: 0px;
+}
+
+#sint.fadein {
+	animation: sint-fadein 1s ease forwards;
+}
+
+#sint img {
+	position: absolute;
+	width: 100%;
+	height: 100%;
+}
+
+#sint_text {
+	z-index: 1000;
+	top: 75%;
+	background-color: black;
+	border-style: groove;
+	border-color: silver;
+	border-radius: 10px;
+	border-width: 4px;
+	font-size: 3vw;
+	font-weight: normal;
+	color: white;
+	font-family: fantasy;
+	text-align: center;
+	justify-content: center;
+}
+
+/* https://ninjacss.com/blog/2014/02/28/css-centering-a-div-block-without-the-width/ */
+#sint .outer-center {
+	top: 70%;
+}
+
+#gameover .outer-center {
+	top: 50%;
+}
+
+.outer-center {
+	position: relative;
+    float: right;
+    right: 50%;
+}
+
+.inner-center {
+    position: relative;
+	float: right;
+    right: -50%;
+}
+
+#gameover {
+	height: 100%;
+}
+
+#gameover_text {
+	z-index: 1000;
+	background-color: black;
+	border-style: groove;
+	border-color: silver;
+	border-radius: 10px;
+	border-width: 4px;
+	font-size: 3vw;
+	font-weight: normal;
+	color: white;
+	font-family: fantasy;
+	text-align: center;
+	justify-content: center;
+}
+#gameover_text.appear {
+	animation: fade-in-right 1.0s ease forwards;
+}
+
+#score {
+	position: absolute;
+	z-index: 200;
+	width: 250px;
+	height: 30px;
+	left: 650px;
+	top: 10px;
+	font-size: 30px;
+	font-weight: normal;
+	color: white;
+	font-family: fantasy;
+	text-align: right;
+	pointer-events: none;
+}
+
+#hpbar {
+	position: absolute;
+	z-index: 200;
+	left: 10px;
+	top: 10px;
+	width: 600px;
+	height: 30px;
+	background-color: black;
+	border-style: groove;
+	border-color: silver;
+	border-radius: 10px;
+	border-width: 4px;
+	pointer-events: none;
+}
+
+#hpfill {
+	position: relative;
+	z-index: 201;
+	margin-top: auto;
+	margin-bottom: auto;
+	vertical-align: middle;
+	width: 100%;
+	height: 90%;
+	background-color: red;
+	border-right-style: groove;
+	border-top-style: groove;
+	border-bottom-style: groove;
+	border-color: pink;
+	border-top-left-radius: 5px;
+	border-bottom-left-radius: 5px;
+	border-top-right-radius: 10px;
+	border-bottom-right-radius: 10px;
+	border-width: 2px;
+}
+
+.siwan.aanlopen {
+	animation: aanlopen 3s linear none;
+}
+
+.shadow.aanlopen {
+	animation: shadowaanlopen 3s linear none;
+}
+
+.victory {
+	animation: bounce .7s linear infinite;
+}
+
+.teacher.popup {
+	animation: teacherpopup 3s cubic-bezier(0.6, -0.28, 0.735, 0.045) none;
+}
+
+.dissolve {
+	animation: dissolve .5s linear forwards;
+	pointer-events: none;
+}
+
+.dissolve_note {
+	animation: dissolve_note 1s linear forwards;
+	pointer-events: none;
+}
+
+.shake {
+	animation: shake .5s linear none;
+}
+
+.lightup {
+	animation: lightup .5s linear none;
+}
+
+.scoreup {
+	animation: scoreup .25s linear none;
+}
+
+.note {
+	animation: note 2s linear infinite;
+}
+
+.badnote {
+	z-index: 102;
+}
+
+.goodnote {
+	z-index: 101;
+	pointer-events: none;
+}
+
+.happy {
+	animation: bounce .7s linear infinite;
+}
+
+@keyframes note {
+	0% {
+		transform: translateX(0px) translateY(0px);
+	}
+	12.5% {
+		transform: translateX(100px) translateY(20px);
+	}
+	25% {
+		transform: translateX(200px) translateY(0px);
+	}
+	37.5% {
+		transform: translateX(100px) translateY(-20px);
+	}
+	50% {
+		transform: translateX(0px) translateY(0px);
+	}
+	62.5% {
+		transform: translateX(-100px) translateY(20px);
+	}
+	75% {
+		transform: translateX(-200px) translateY(0px);
+	}
+	87.5% {
+		transform: translateX(-100px) translateY(-20px);
+	}
+	100% {
+		transform: translateX(0px) translateY(0px);
+	}
+}
+
+@keyframes scoreup {
+	from {
+		transform: scale(1.2);
+	}
+	to {
+		transform: scale(1);
+	}
+}
+
+@keyframes lightup {
+	from {
+		filter: brightness(200%)
+	}
+	to {
+		transform: translateY(1px);
+		filter: brightness(100%)
+	}
+}
+
+@keyframes shake {
+	0% {
+		transform: translateY(-4px);
+		filter: brightness(200%)
+	}
+	20% {
+		transform: translateY(4px);
+	}
+	40% {
+		transform: translateY(-2px);
+	}
+	60% {
+		transform: translateY(2px);
+	}
+	80% {
+		transform: translateY(-1px);
+	}
+	100% {
+		transform: translateY(1px);
+		filter: brightness(100%)
+	}
+}
+
+@keyframes dissolve {
+	from {
+		transform: rotate(0turn) scale(1);
+		filter: opacity(1) brightness(0%);
+	}
+	to {
+		transform: rotate(-2turn) scale(.25);
+		filter: opacity(0) brightness(0%);
+	}
+}
+
+@keyframes dissolve_note {
+	from {
+		transform: rotate(0turn) scale(1);
+		filter: opacity(1)
+	}
+	to {
+		transform: rotate(-4turn) scale(.25);
+		filter: opacity(0)
+	}
+}
+
+@keyframes teacherpopup {
+	0% {
+		transform:translateX(400px) translateY(600px);
+	}
+	50% {
+		transform:translateX(400px) translateY(150px);
+	}
+	100% {
+		transform:translateX(400px) translateY(600px);
+	}
+}
+
+@keyframes bounce {
+	0% {
+	  transform:translateY(0%);
+	}
+	10% {
+		transform:translateY(-10%);
+	}
+	20% {
+		transform:translateY(-20%);
+	}
+	50% {
+		transform:translateY(-30%);
+	}
+	60% {
+		transform:translateY(-30%);
+	}
+	100% {
+		transform:translateY(0%);
+	}
+}
+
+@keyframes aanlopen {
+	0% {
+		transform:translateX(-200px) translateY(360px);
+	}
+	100% {
+		transform:translateX(200px) translateY(360px);
+	}
+}
+
+@keyframes shadowaanlopen {
+	0% {
+		transform:translateX(-205px) translateY(540px);
+	}
+	100% {
+		transform:translateX(195px) translateY(540px);
+	}
+}
+
+@keyframes fade-in-right {
+	from {
+	  opacity: 0;
+	  transform: translateX(70%) translateY(110%)
+	}
+	to {
+	  opacity: 1;
+	  transform: translateX(70%) translateY(90%)
+	}
+}
+
+@keyframes sint-fadein {
+	from {
+	  opacity: 0;
+	  transform: translateY(20%);
+	}
+	to {
+	  opacity: 1;
+	  transform: translateY(0);
+	}
+}
+
+@keyframes title-fadein {
+	from {
+	  opacity: 0;
+	}
+	to {
+	  opacity: 1;
+	}
+}
+
+@keyframes title-moveout {
+	from {
+	  transform: translateY(0px);
+	}
+	to {
+	  transform: translateY(-100%);
+	}
+}
