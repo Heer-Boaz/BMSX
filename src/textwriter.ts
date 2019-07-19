@@ -1,4 +1,6 @@
 import { GameConstants as CS } from "./gameconstants"
+import { BitmapId } from "./resourceids";
+import { GameOptions } from "./gameoptions";
 
 export enum TextWriterType {
     Billboard,
@@ -12,7 +14,7 @@ export class TextWriter {
     public Pos: Point;
     public End: Point;
     public Text: string[];
-    public Visible: boolean;
+    public visible: boolean;
 
     constructor(pos: Point, end: Point, type: TextWriterType) {
         this.Type = type;
@@ -23,20 +25,12 @@ export class TextWriter {
     }
 
     public SetText(text: string): void {
-        this.Text.Clear();
-        this.Text.Add(text);
+        this.Text.length = 0;
+        this.Text.push(text);
     }
 
-    public AddText(text: string): void {
-        this.Text.Add(text);
-    }
-
-    public AddText(text: string[]): void {
-        this.Text.AddRange(text);
-    }
-
-    public AddText(text: string[]): void {
-        this.Text.AddRange(text);
+    public AddText(text: string | string[]): void {
+        this.Text.push(...text);
     }
 
     public TakeTurn(): void {
@@ -67,7 +61,7 @@ export class TextWriter {
                 letter = TextWriter.getBitmapForLetter(c);
                 if (!color.HasValue)
                     BDX._.DrawBitmap(<number>letter, pos.x, pos.y);
-                else BDX._.DrawColoredBitmap(<number>letter, pos.x, pos.y, color.Value.R / 255f, color.Value.G / 255f, color.Value.B / 255f);
+                else BDX._.DrawColoredBitmap(<number>letter, pos.x, pos.y, color.Value.R / 255.0, color.Value.G / 255.0, color.Value.B / 255.0);
                 pos.x += stepX;
             }
             pos.x = startPos.x;
@@ -80,7 +74,7 @@ export class TextWriter {
     public Paint(): void {
         if (!this.visible)
             return
-        if (this.Text.Count == 0)
+        if (this.Text.length == 0)
             return
         let startPos: Point = Point.Copy(this.Pos);
         let stepX: number = TextWriter.FontWidth;

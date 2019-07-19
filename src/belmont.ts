@@ -1,9 +1,10 @@
-import { Direction } from "./sintervaniamodel";
+import { Direction } from "../BoazEngineJS/direction";
 import { Creature } from "./creature";
 import { BStopwatch } from "../BoazEngineJS/btimer";
 import { GameConstants as CS } from "./gameconstants";
 import { copyPoint } from "../BoazEngineJS/common";
 import { Animation } from "../BoazEngineJS/animation";
+import { MSXConstants } from "../BoazEngineJS/msx";
 
 /*[Serializable]*/
 export class RoeState {
@@ -136,6 +137,7 @@ export class Belmont extends Creature {
 		this.size.Set(16, 32);
 		this.Health = CS.Belmont_MaxHealth_AtStart;
 		this.MaxHealth = CS.Belmont_MaxHealth_AtStart;
+		this.Crouching = false;
 		this.hitState = new HitState();
 		this.dyingState = new DyingState();
 		this.roeState = new RoeState();
@@ -468,15 +470,15 @@ export class Belmont extends Creature {
 	protected handleWallCollision(): void {
 		switch (this.Direction) {
 			case Direction.Right:
-				this.pos.x = (this.pos.x / CS.TileSize) * CS.TileSize;
+				this.pos.x = (this.pos.x / MSXConstants.TileSize) * MSXConstants.TileSize;
 				break;
 			case Direction.Down:
-				this.pos.y = (this.pos.y / CS.TileSize) * CS.TileSize;
+				this.pos.y = (this.pos.y / MSXConstants.TileSize) * MSXConstants.TileSize;
 				break;
 			case Direction.Left:
 				if (this.pos.x >= 0)
-					this.pos.x = (this.pos.x / CS.TileSize + 1) * CS.TileSize;
-				this.pos.x = this.pos.x / CS.TileSize * CS.TileSize;
+					this.pos.x = (this.pos.x / MSXConstants.TileSize + 1) * MSXConstants.TileSize;
+				this.pos.x = this.pos.x / MSXConstants.TileSize * MSXConstants.TileSize;
 				break;
 		}
 	}
@@ -487,7 +489,7 @@ export class Belmont extends Creature {
 		return M._.CurrentRoom.IsCollisionTile(this.pos.x + 1, this.pos.y + 32, true) || M._.CurrentRoom.IsCollisionTile(this.pos.x + 15, this.pos.y + 32, true);
 	}
 	protected handleFloorCollision(): void {
-		this.pos.y = (this.pos.y / CS.TileSize) * CS.TileSize;
+		this.pos.y = (this.pos.y / MSXConstants.TileSize) * MSXConstants.TileSize;
 		if (this.Jumping) {
 			this.jumpState.Stop();
 		}
@@ -498,8 +500,8 @@ export class Belmont extends Creature {
 	}
 	protected handleCeilingCollision(): void {
 		if (this.pos.y >= 0)
-			this.pos.y = (this.pos.y / CS.TileSize + 1) * CS.TileSize;
-		else this.pos.y = (this.pos.y / CS.TileSize) * CS.TileSize;
+			this.pos.y = (this.pos.y / MSXConstants.TileSize + 1) * MSXConstants.TileSize;
+		else this.pos.y = (this.pos.y / MSXConstants.TileSize) * MSXConstants.TileSize;
 		this.jumpState.GoingUp = false;
 	}
 	// private (int destRoom, Direction direction)? nearRoomExit() {
