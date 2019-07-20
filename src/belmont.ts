@@ -225,7 +225,7 @@ export class Belmont extends Creature {
 			}
 		}
 		if (!this.FloorCollision && (!this.Jumping || !this.jumpState.GoingUp) && this.hitState.CurrentStep != HitState.HitStateStep.Flying && this.hitState.CurrentStep != HitState.HitStateStep.Falling) {
-			let originalPos = Point.Copy(this.pos);
+			let originalPos = <Point>{ x: this.pos.x, y: this.pos.y };
 			this.checkAndHandleCollisions(originalPos);
 			if (!this.FloorCollision)
 				this.pos.y += 4;
@@ -350,7 +350,7 @@ export class Belmont extends Creature {
 	}
 	private doDeath(): void {
 		let stepValue: DyingState.BitmapAndDir = new DyingState.BitmapAndDir();
-		if (this.dyingState.DeathAni.doAnimation(this.dyingState.aniTimer, stepValue)) {
+		if (this.dyingState.DeathAni.doAnimation({ timer: this.dyingState.aniTimer, imageId: stepValue })) {
 			if (this.dyingState.DeathAni.finished()) {
 				C._.BelmontDeathAniFinished();
 				this.dyingState.Stop();

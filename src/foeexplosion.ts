@@ -24,11 +24,11 @@ export class FoeExplosion extends FX {
         this.itemSpawnedAfterKill = itemSpawned;
     }
     public TakeTurn(): void {
-        if (this.animation.doAnimation(this.timer, this._imageId)) {
+        if (this.animation.doAnimation({ timer: this.timer, imageId: this._imageId })) {
             if (this.animation.finished()) {
                 this.disposeFlag = true;
                 if (this.itemSpawnedAfterKill == Item.Type.HeartSmall) {
-                    M._.Spawn(new HeartSmall(Point.Copy(this.pos) + new Point(4, 8)));
+                    M._.Spawn(new HeartSmall(<Point>{ x: this.pos.x, y: this.pos.y } + new Point(4, 8)));
                 }
             }
         }

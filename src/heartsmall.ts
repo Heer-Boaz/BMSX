@@ -29,7 +29,7 @@ export class HeartSmall extends Sprite {
 	public TakeTurn(): void {
 		if (this.State == HeartSmallState.Flying) {
 			let delta: number = 0;
-			this.animation.doAnimation(1, delta);
+			this.animation.doAnimation({ timer: 1, imageId: delta });
 			this.pos.x += delta;
 			if (this.uglyBitThing)
 				++this.pos.y;

@@ -52,7 +52,7 @@ export class HagGenerator implements IGameObject, IDisposable {
     TakeTurn(): void {
         let stepValue = false;
         if (this.spawnanimation.doAnimation(this.timer, stepValue))
-            M._.Spawn(new Hag(Point.Copy(this.pos), this.directionOfHags));
+            M._.Spawn(new Hag(<Point>{ x: this.pos.x, y: this.pos.y }, this.directionOfHags));
     }
     Dispose(): void {
         BStopwatch.removeWatch(this.timer);

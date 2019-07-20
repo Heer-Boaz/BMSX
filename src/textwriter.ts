@@ -1,3 +1,4 @@
+import { view } from "../BoazEngineJS/engine"
 import { GameConstants as CS } from "./gameconstants"
 import { BitmapId } from "./resourceids";
 import { GameOptions } from "./gameoptions";
@@ -45,30 +46,26 @@ export class TextWriter {
         }
     }
 
-    public static DrawText(x: number, y: number, textToWrite: string, color: System.Drawing.Color = null): void {
-        TextWriter.DrawText(x, y, textToWrite,/*color:*/color);
-    }
-
-    public static DrawText(x: number, y: number, textToWrite: string[], verticalPixels: number = null, color: System.Drawing.Color = null): void {
-        let startPos: Point = new Point(x, y);
+    public static DrawText(x: number, y: number, textToWrite: string[], color: Color = null): void {
+        let startPos: Point = <Point>{ x: x, y: y }
         let stepX: number = TextWriter.FontWidth;
         let stepY: number = TextWriter.FontHeight;
-        let pos: Point = Point.Copy(startPos);
+        let pos: Point = <Point>{ x: startPos.x, y: startPos.y };
         let letter: BitmapId;
-        textToWrite.forEach(function (text) {
+        for (let text of textToWrite) {
             for (let i: number = 0; i < text.length; i++) {
                 let c: string = text[i];
                 letter = TextWriter.getBitmapForLetter(c);
-                if (!color.HasValue)
-                    BDX._.DrawBitmap(<number>letter, pos.x, pos.y);
-                else BDX._.DrawColoredBitmap(<number>letter, pos.x, pos.y, color.Value.R / 255.0, color.Value.G / 255.0, color.Value.B / 255.0);
+                if (!color)
+                    view.DrawBitmap(<number>letter, pos.x, pos.y);
+                else view.DrawColoredBitmap(<number>letter, pos.x, pos.y, color.r / 255.0, color.g / 255.0, color.b / 255.0);
                 pos.x += stepX;
             }
             pos.x = startPos.x;
             pos.y += stepY;
             if (pos.y >= GameOptions._.BufferHeight)
                 break;
-        });
+        };
     }
 
     public Paint(): void {
@@ -76,24 +73,24 @@ export class TextWriter {
             return
         if (this.Text.length == 0)
             return
-        let startPos: Point = Point.Copy(this.Pos);
+        let startPos: Point = <Point>{ x: this.Pos.x, y: this.Pos.y };
         let stepX: number = TextWriter.FontWidth;
         let stepY: number = TextWriter.FontHeight;
-        let pos: Point = Point.Copy(startPos);
+        let pos: Point = <Point>{ x: startPos.x, y: startPos.y };
         let letter: BitmapId;
-        this.Text.forEach(function (text) {
-            text.forEach(function (c) {
+        for (let text of this.Text) {
+            for (let c of text) {
                 if (pos.y < -TextWriter.FontHeight)
                     break;
                 letter = TextWriter.getBitmapForLetter(c);
-                BDX._.DrawBitmap(<number>letter, pos.x, pos.y);
+                view.DrawBitmap(<number>letter, pos.x, pos.y);
                 pos.x += stepX;
-            });
+            };
             pos.x = startPos.x;
             pos.y += stepY;
             if (pos.y >= GameOptions._.BufferHeight)
                 break;
-        });
+        };
     }
 
     private static getBitmapForLetter(c: string): BitmapId {

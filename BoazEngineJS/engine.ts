@@ -67,22 +67,3 @@ export class Game {
 $(function () {
     // Executes when HTML-Document is loaded and DOM is ready
 });
-
-window.addEventListener('load', function () {
-    // Executes when complete page is fully loaded, including all frames, objects and images
-    game = new Game();
-    model = new Model();
-    controller = new Controller();
-    view = new View();
-    view.drawLoading();
-    // Input.init();
-
-    GameLoader.loadgame();
-
-    // Input.mouseClicked.subscribe((source: any, x: number, y: number) => {
-    // if (audio['testsound'] == null) return;
-    // audio['testsound'].pause();
-    // audio['testsound'].currentTime = 0;
-    // audio['testsound'].play();
-    // });
-});

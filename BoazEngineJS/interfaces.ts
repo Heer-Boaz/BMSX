@@ -13,6 +13,12 @@ interface Area {
     end: Point;
 }
 
+interface Color {
+    r: number;
+    g: number;
+    b: number;
+}
+
 interface IGameObject {
     // Properties
     id: string | null;

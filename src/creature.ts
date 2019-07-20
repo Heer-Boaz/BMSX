@@ -25,7 +25,7 @@ export class Creature extends Sprite {
     public OldDirection: Direction;
     constructor(p: Point) {
         super(p);
-        this.originPos = Point.Copy(pos);
+        this.originPos = <Point>{ x: pos.x, y: pos.y };
     }
     public Paint(offset: Point = null): void {
         if (this.disposeFlag || !this.visible)

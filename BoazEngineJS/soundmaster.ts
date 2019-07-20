@@ -1,6 +1,6 @@
 import { ISong } from "./song";
 import { IEffect } from "./effect";
-import { Game as BDX } from "../BoazEngineJS/engine";
+import { audio } from "../BoazEngineJS/engine";
 
 export interface ISoundMaster {
 	MusicBeingPlayed?: ISong;
@@ -23,7 +23,7 @@ export class SoundMaster implements ISoundMaster {
 		if (this.MusicBeingPlayed != null && this.MusicBeingPlayed.PlayMusicToNext) {
 			let nextSong = this.MusicBeingPlayed.NextSong;
 			this.MusicBeingPlayed = nextSong;
-			BDX._.PlayMusic(nextSong.Music, nextSong.Loop);
+			this.PlayMusic(nextSong);
 		}
 		else this.MusicBeingPlayed = null;
 	}
@@ -33,16 +33,20 @@ export class SoundMaster implements ISoundMaster {
 	}
 
 	public StopEffect(): void {
-		BDX._.StopEffect();
+		if (!this.EffectBeingPlayed.AudioId) return;
+		audio[`${this.EffectBeingPlayed.AudioId}`].pause();
+		audio[`${this.EffectBeingPlayed.AudioId}`].currentTime = 0;
 		this.EffectBeingPlayed = null;
 	}
 
 	private playEffect(audioId: number): void {
-		BDX._.PlayEffect(audioId);
+		audio[`${audioId}`].pause();
+		audio[`${audioId}`].currentTime = 0;
+		audio[`${audioId}`].play();
 	}
 
 	public PlayEffect(effect: IEffect): void {
-		if (this.EffectBeingPlayed != null) {
+		if (this.EffectBeingPlayed) {
 			if (SoundMaster.LimitToOneEffect) {
 				if (effect.Priority >= this.EffectBeingPlayed.Priority) {
 					this.StopEffect();
@@ -59,7 +63,9 @@ export class SoundMaster implements ISoundMaster {
 	}
 
 	public StopMusic(): void {
-		BDX._.StopMusic();
+		if (!this.MusicBeingPlayed.Music) return;
+		audio[`${this.MusicBeingPlayed.Music}`].pause();
+		audio[`${this.MusicBeingPlayed.Music}`].currentTime = 0;
 		this.MusicBeingPlayed = null;
 	}
 
@@ -67,14 +73,17 @@ export class SoundMaster implements ISoundMaster {
 		if (stopCurrent)
 			this.StopMusic();
 		this.MusicBeingPlayed = song;
-		BDX._.PlayMusic(song.Music, song.Loop);
+		audio[`${song.Music}`].pause();
+		audio[`${song.Music}`].currentTime = 0;
+		audio[`${song.Music}`].Loop = song.Loop || false;
+		audio[`${song.Music}`].play();
 	}
 
 	public ResumeEffect(): void {
-		BDX._.ResumeEffect();
+		audio[`${this.EffectBeingPlayed.AudioId}`].play();
 	}
 
 	public ResumeMusic(): void {
-		BDX._.ResumeMusic();
+		audio[`${this.MusicBeingPlayed.Music}`].play();
 	}
 }

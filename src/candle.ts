@@ -46,7 +46,7 @@ export class Candle extends Foe {
 	}
 	public TakeTurn(): void {
 		let imageId: number = <number>this.imgid;
-		this.animation.doAnimation(this.timer, imageId);
+		this.animation.doAnimation({ timer: this.timer, imageId });
 		this.imgid = imageId;
 	}
 	public Dispose(): void {

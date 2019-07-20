@@ -52,6 +52,14 @@ export class View {
         // TODO: IMPLEMENTEER!
     }
 
+    public DrawBitmap(imgId: number, x: number, y: number): void {
+        this.drawImg(imgId, <Point>{ x: x, y: y });
+    }
+
+    public DrawColoredBitmap(imgId: number, x: number, y: number, r: number, g: number, b: number) {
+        // TODO: IMPLEMENTEER!!
+    }
+
     public drawImg(imgId: string | number, pos: Point): void {
         // TODO: IMPLEMENTEER!
     }

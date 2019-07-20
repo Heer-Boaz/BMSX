@@ -1,21 +1,42 @@
 ﻿<!DOCTYPE html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml">
 
-<head>
-    <title>Siwan redt de school!</title>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1.0,minimum-scale=1,maximum-scale=1,user-scalable=no" />
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="Sintervania" />
-    <link rel="stylesheet" type="text/css" href="./game.min.css" />
-    <script src="https://code.jquery.com/jquery-3.3.1.min.js" integrity="sha256-FgpCb/KJQlLNfOu91ta32o/NMZxltwRo8QtmkMRdAu8="
-        crossorigin="anonymous"></script>
-    <script type="text/Javascript" src="./thegame.min.js"></script>
-</head>
+    <head>
+        <title>Siwan redt de school!</title>
+        <meta charset="utf-8" />
+        <meta name="viewport"
+            content="width=device-width,initial-scale=1.0,minimum-scale=1,maximum-scale=1,user-scalable=no" />
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="Sintervania" />
+        <link rel="stylesheet" type="text/css" href="./game.min.css" />
+        <script src="https://code.jquery.com/jquery-3.4.1.min.js"
+            integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo=" crossorigin="anonymous"></script>
+        <script type="text/Javascript" src="./thegame.min.js"></script>
+        <script type="text/Javascript">
+            window.addEventListener('load', function () {
+                // Executes when complete page is fully loaded, including all frames, objects and images
+                game = new Game();
+                model = new GameModel();
+                controller = new Controller();
+                view = new View();
+                view.drawLoading();
+                // Input.init();
 
-<body id="body">
-    <canvas id="gamescreen"></canvas>
-</body>
+                GameLoader.loadgame();
+
+                // Input.mouseClicked.subscribe((source: any, x: number, y: number) => {
+                // if (audio['testsound'] == null) return;
+                // audio['testsound'].pause();
+                // audio['testsound'].currentTime = 0;
+                // audio['testsound'].play();
+                // });
+            });
+        </script>
+    </head>
+
+    <body id="body">
+        <canvas id="gamescreen"></canvas>
+    </body>
 
 </html>
