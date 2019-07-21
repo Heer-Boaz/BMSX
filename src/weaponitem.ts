@@ -1,6 +1,9 @@
 import { Sprite } from "../BoazEngineJS/sprite";
-import { SecWeaponType, BagWeapon } from "./sintervaniamodel";
+import { GameModel as M, SecWeaponType, BagWeapon } from "./sintervaniamodel";
 import { Item } from "./item";
+import { BitmapId } from "./resourceids";
+import { moveArea } from "../BoazEngineJS/common";
+import { GameController as C } from "./gamecontroller";
 
 /*[Serializable]*/
 export class WeaponItem extends Sprite {
@@ -9,6 +12,7 @@ export class WeaponItem extends Sprite {
     };
     public ItsType: Type;
     public static Descriptions: Map<Type, string[]> = new Map<Type, string[]>();
+
     public static WeaponItem2SecWeaponType(weaponItem: BagWeapon): SecWeaponType {
         if (weaponItem == null)
             return SecWeaponType.None;
@@ -20,6 +24,7 @@ export class WeaponItem extends Sprite {
                 return SecWeaponType.Cross;
         }
     }
+
     public static SecWeaponType2WeaponItemType(secWeapontype: SecWeaponType): Type {
         switch (secWeapontype) {
             case SecWeaponType.None:
@@ -29,6 +34,7 @@ export class WeaponItem extends Sprite {
                 return Type.Cross;
         }
     }
+
     constructor(type: Type, pos: Point) {
         super(pos);
         this.ItsType = type;
@@ -36,20 +42,22 @@ export class WeaponItem extends Sprite {
         this.size = Item.ItemHitArea.size;
         this.imgid = <number>WeaponItem.Type2Image(type);
     }
+
     public TakeTurn(): void {
-        if (this.objectCollide(M._.Belmont.RoomCollisionArea + <Point>M._.Belmont.pos)) {
+        if (this.areaCollide(moveArea(M._.Belmont.RoomCollisionArea, <Point>M._.Belmont.pos))) {
             C._.PickupWeaponItem(this);
             this.disposeFlag = true;
         }
     }
+
     public static Type2Image(type: Type): BitmapId {
         switch (type) {
             default:
                 return BitmapId.None;
         }
     }
-    public Dispose(): void {
 
+    public Dispose(): void {
     }
 }
 

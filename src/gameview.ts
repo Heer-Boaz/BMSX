@@ -1,3 +1,9 @@
+import { HUD } from "./hud";
+import { ItsCurtainsForYou } from "./itscurtainsforyou";
+import { GameOver } from "./gameover";
+import { MainMenu } from "./mainmenu";
+import { Title } from "./title";
+
 module Sintervania.View {
     export class GameView {
         private static pausePosX: number = 80;

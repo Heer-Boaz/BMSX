@@ -25,7 +25,7 @@ export abstract class Sprite implements IGameObject {
 	public z_plus_depth?: number;
 	public extendedProperties: Map<string, any>;
 
-	constructor(initialPos?: Point) {
+	constructor(initialPos?: Point, imageId?: number | string) {
 		this.id = null;
 		this.pos = initialPos || <Point>{ x: 0, y: 0 };
 		this.size = <Size>{ x: 0, y: 0 };
@@ -42,6 +42,7 @@ export abstract class Sprite implements IGameObject {
 		this.disposeFlag = false;
 		this.imgid = null;
 		this.extendedProperties = new Map<string, any>();
+		if (imageId) this.imgid = imageId;
 	}
 
 	spawn(spawningPos?: Point): void {
@@ -65,6 +66,11 @@ export abstract class Sprite implements IGameObject {
 
 	static objectCollide = (o1: IGameObject, o2: IGameObject): boolean => {
 		return o1.objectCollide(o2);
+	}
+
+	public collide(o: IGameObject | Area): boolean {
+		if ((o as IGameObject).id) return this.objectCollide(<IGameObject>o);
+		else return this.areaCollide(<Area>o);
 	}
 
 	objectCollide = (o: IGameObject): boolean => {

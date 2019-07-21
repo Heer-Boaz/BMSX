@@ -3,10 +3,12 @@ import { Model } from "./model"
 import { Controller } from "./controller"
 import { View } from "./view"
 import * as GameLoader from "./gameloader";
+import { SoundMaster } from "./soundmaster";
 
 export let game: Game;
 export let model: Model;
 export let controller: Controller;
+export let sound: SoundMaster;
 export let view: View;
 export let images: Map<string, HTMLImageElement> = new Map<string, HTMLImageElement>();
 export let audio: Map<string, HTMLAudioElement> = new Map<string, HTMLAudioElement>();
@@ -67,3 +69,11 @@ export class Game {
 $(function () {
     // Executes when HTML-Document is loaded and DOM is ready
 });
+
+// Only implement if no native implementation is available
+// https://stackoverflow.com/questions/4775722/how-to-check-if-an-object-is-an-array
+if (typeof Array.isArray === 'undefined') {
+    Array.isArray = function (obj) {
+        return Object.prototype.toString.call(obj) === '[object Array]';
+    }
+};

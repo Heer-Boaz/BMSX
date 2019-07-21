@@ -46,10 +46,12 @@ export class View {
 
     public draw(): void {
         // TODO: IMPLEMENTEER!
+        throw ("Niet geïmplementeerd :(");
     }
 
     public drawLoading(): void {
         // TODO: IMPLEMENTEER!
+        throw ("Niet geïmplementeerd :(");
     }
 
     public DrawBitmap(imgId: number, x: number, y: number): void {
@@ -58,9 +60,16 @@ export class View {
 
     public DrawColoredBitmap(imgId: number, x: number, y: number, r: number, g: number, b: number) {
         // TODO: IMPLEMENTEER!!
+        throw ("Niet geïmplementeerd :(");
     }
 
     public drawImg(imgId: string | number, pos: Point): void {
         // TODO: IMPLEMENTEER!
+        throw ("Niet geïmplementeerd :(");
+    }
+
+    public DrawRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
+        // TODO: IMPLEMENTEER!
+        throw ("Niet geïmplementeerd :(");
     }
 }

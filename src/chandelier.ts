@@ -1,51 +1,68 @@
 import { BStopwatch } from "../BoazEngineJS/btimer";
-import { Direction } from "./sintervaniamodel";
+import { Direction } from "../BoazEngineJS/direction";
+import { Animation, AniData } from "../BoazEngineJS/animation";
 import { Foe } from "./foe";
 import { PlayerProjectile } from "./pprojectile";
 import { Item } from "./item";
+import { BitmapId } from "./resourceids";
+import { newArea, newSize } from "../BoazEngineJS/common";
+import { GameModel as M } from "./sintervaniamodel";
 
 /*[Serializable]*/
 export class Chandelier extends Foe {
 	public get DamageToPlayer(): number {
 		return 3;
 	}
+
 	protected get moveBeforeFrameChange(): number {
 		return 0;
 	}
+
 	public get RespawnAtRoomEntry(): boolean {
 		return true;
 	}
-	protected static ChandelierHitArea: Area = new Area(14, 0, 35, 64);
-	// protected static chandelierSprites: Map<Direction, BitmapId[]> = __init(new Map<Direction, BitmapId[]>(), { { Direction.None, BitmapId.Chandelier_1 } });
-	//protected static (ulong, uint img)[] AnimationFrames = {
-	//	(125, (uint)BitmapId.Chandelier_2),
-	//	(125, (uint)BitmapId.Chandelier_3),
-	//	(125, (uint)BitmapId.Chandelier_4),
-	//	(125, (uint)BitmapId.Chandelier_5),
-	//}
-	protected animation: BAnimation<number>;
+
+	protected static ChandelierHitArea: Area = newArea(14, 0, 35, 64);
+	protected static chandelierSprites: Map<Direction, BitmapId[]> = new Map([
+		[Direction.None, [BitmapId.Chandelier_1]]
+	]);
+	protected static AnimationFrames: AniData<number>[] = [
+		{ time: 125, data: BitmapId.Chandelier_2 },
+		{ time: 125, data: BitmapId.Chandelier_3 },
+		{ time: 125, data: BitmapId.Chandelier_4 },
+		{ time: 125, data: BitmapId.Chandelier_5 },
+	];
+
+	protected animation: Animation<number>;
 	protected timer: BStopwatch;
+
 	protected get movementSprites(): Map<Direction, BitmapId[]> {
 		return Chandelier.chandelierSprites;
 	}
+
 	protected state: ChandelierState;
+
 	public get CanHurtPlayer(): boolean {
 		return this.state == ChandelierState.Crashing ? true : false;
 	}
+
 	public set CanHurtPlayer(value: boolean) {
 
 	}
+
 	constructor(pos: Point, itemSpawned: Item.Type = Item.Type.HeartSmall) {
 		super(pos);
-		this.animation = __init(new Animation<number>(AnimationFrames), { Repeat: true });
+		this.animation = new Animation<number>(Chandelier.AnimationFrames);
+		this.animation.repeat = true;
 		this.timer = BStopwatch.createWatch();
 		this.imgid = <number>BitmapId.Chandelier_1;
 		this.hitarea = Chandelier.ChandelierHitArea;
-		this.size = new Size(50, 64);
+		this.size = newSize(50, 64);
 		this.itemSpawnedAfterKill = Item.Type.None;
 		this.Health = 0;
 		this.state = ChandelierState.None;
 	}
+
 	public TakeTurn(): void {
 		switch (this.state) {
 			case ChandelierState.None:
@@ -71,13 +88,16 @@ export class Chandelier extends Foe {
 				break;
 		}
 	}
+
 	public Dispose(): void {
 		BStopwatch.removeWatch(this.timer);
 	}
+
 	public HandleHit(source: PlayerProjectile): void {
 		super.HandleHit(source);
 		this.loseHealth(source);
 	}
+
 	public Paint(offset: Point = null): void {
 		super.Paint(offset);
 	}

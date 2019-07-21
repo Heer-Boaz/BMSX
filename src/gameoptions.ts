@@ -1,4 +1,5 @@
 import { GameConstants as CS } from "./gameconstants"
+import { MSXConstants as MCS } from "../BoazEngineJS/msx"
 
 /*[Serializable]*/
 export class GameOptions {
@@ -14,15 +15,15 @@ export class GameOptions {
     public EffectsVolumePercentage: number = 100;
     public MusicVolumePercentage: number = 100;
     public get WindowWidth(): number {
-        return (CS.MSX2ScreenWidth * GameOptions._.Scale);
+        return (MCS.MSX2ScreenWidth * GameOptions._.Scale);
     }
     public get WindowHeight(): number {
-        return (CS.MSX2ScreenHeight * GameOptions._.Scale);
+        return (MCS.MSX2ScreenHeight * GameOptions._.Scale);
     }
     public get BufferWidth(): number {
-        return (CS.MSX2ScreenWidth * GameOptions._.Scale);
+        return (MCS.MSX2ScreenWidth * GameOptions._.Scale);
     }
     public get BufferHeight(): number {
-        return (CS.MSX2ScreenHeight * GameOptions._.Scale);
+        return (MCS.MSX2ScreenHeight * GameOptions._.Scale);
     }
 }

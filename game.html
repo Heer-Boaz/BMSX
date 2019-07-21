@@ -19,18 +19,12 @@
                 game = new Game();
                 model = new GameModel();
                 controller = new Controller();
+                sound = new SoundMaster();
                 view = new View();
                 view.drawLoading();
                 // Input.init();
 
                 GameLoader.loadgame();
-
-                // Input.mouseClicked.subscribe((source: any, x: number, y: number) => {
-                // if (audio['testsound'] == null) return;
-                // audio['testsound'].pause();
-                // audio['testsound'].currentTime = 0;
-                // audio['testsound'].play();
-                // });
             });
         </script>
     </head>

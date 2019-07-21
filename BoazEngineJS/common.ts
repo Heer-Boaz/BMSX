@@ -24,6 +24,14 @@ export function copyPoint(toCopy: Point): Point {
     return <Point>{ x: toCopy.x, y: toCopy.y };
 }
 
+export function newArea(sx: number, sy: number, ex: number, ey: number): Area {
+    return <Area>{ start: { x: sx, y: sy }, end: { x: ex, y: ey } };
+}
+
+export function newSize(x: number, y: number): Size {
+    return <Size>{ x: x, y: y };
+}
+
 /// <summary>
 /// Wait for a timeframe to elapse.
 /// This method increases the given elapsedMs by the gametime.

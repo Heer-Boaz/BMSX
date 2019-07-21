@@ -46,7 +46,7 @@ export class TextWriter {
         }
     }
 
-    public static DrawText(x: number, y: number, textToWrite: string[], color: Color = null): void {
+    public static DrawText(x: number, y: number, textToWrite: string | string[], color: Color = null): void {
         let startPos: Point = <Point>{ x: x, y: y }
         let stepX: number = TextWriter.FontWidth;
         let stepY: number = TextWriter.FontHeight;

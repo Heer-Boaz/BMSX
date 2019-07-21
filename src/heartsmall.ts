@@ -1,5 +1,9 @@
 import { Sprite } from "../BoazEngineJS/sprite";
 import { Animation } from "../BoazEngineJS/animation"
+import { BitmapId, AudioId } from "./resourceids";
+import { GameConstants } from "./gameconstants";
+import { ResourceMaster } from "./resourcemaster";
+import { sound, model } from "../BoazEngineJS/engine";
 
 export class HeartSmall extends Sprite {
 	public State: HeartSmallState;
@@ -12,9 +16,9 @@ export class HeartSmall extends Sprite {
 
 	}
 	protected animation: Animation<number>;
-	// protected animationData: number[] = 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1;
+	protected animationData: number[] = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
 	constructor(pos: Point) {
-		super(pos,/*imageId:*/<number>BitmapId.Heart_fly);
+		super(pos, BitmapId.Heart_fly);
 		this.State = HeartSmallState.Flying;
 		this.animation = new Animation<number>(this.animationData,/*constantStepTime:*/1,/*repeat:*/true);
 		this.uglyBitThing = false;
@@ -34,7 +38,7 @@ export class HeartSmall extends Sprite {
 			if (this.uglyBitThing)
 				++this.pos.y;
 			this.uglyBitThing = !this.uglyBitThing;
-			if (this.pos.y > CS.GameScreenHeight) {
+			if (this.pos.y > GameConstants.GameScreenHeight) {
 				this.disposeFlag = true;
 				return
 			}
@@ -45,13 +49,13 @@ export class HeartSmall extends Sprite {
 			}
 		}
 		if (this.objectCollide(M._.Belmont)) {
-			++M._.Hearts;
+			++model.Hearts;
 			this.disposeFlag = true;
-			S.PlayEffect(RM.Sound[AudioId.Heart]);
+			sound.PlayEffect(ResourceMaster.Sound[AudioId.Heart]);
 		}
 	}
 	public Paint(offset: Point = null): void {
-		super.Paint(offset);
+		super.paint(offset);
 	}
 }
 

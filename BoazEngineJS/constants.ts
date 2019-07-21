@@ -12,4 +12,9 @@ export namespace Constants {
     export const AUDIO_SOURCES: string[] | null = null;
     export const GAMESCREEN_WIDTH: number = 1000;
     export const GAMESCREEN_HEIGHT: number = 600;
+    export const SaveSlotCount: number = 6;
+    export const SaveSlotCheckpoint: number = -1;
+    export const SaveGamePath: string = "./Saves/sintervania.sa";
+    export const CheckpointGamePath: string = "./Saves/sintervania.chk";
+    export const OptionsPath: string = "./sintervania.ini";
 }

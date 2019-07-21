@@ -239,8 +239,8 @@ export class Belmont extends Creature {
 		this.DetermineFrame();
 	}
 	protected doHitFlying(): void {
-		let delta: Point = new Point();
-		this.hitState.HitAni.DoAnimation(1, delta);
+		let delta: Point = <Point>{ x: 0, y: 0 };
+		this.hitState.HitAni.doAnimation(1, delta);
 		let originalPos = copyPoint(this.pos);
 		this.pos.x += this.Direction == Direction.Right ? delta.x : -delta.x;
 		let dir = this.Direction;
@@ -279,7 +279,7 @@ export class Belmont extends Creature {
 		let originalPos = copyPoint(this.pos);
 		this.pos.y += this.jumpState.JumpAni.stepValue();
 		let dummy: number = 0;
-		this.jumpState.JumpAni.DoAnimation(1, dummy);
+		this.jumpState.JumpAni.doAnimation(1, dummy);
 		if (!this.jumpState.JumpAni.HasNext) {
 			this.jumpState.Stop();
 		}
@@ -527,7 +527,7 @@ export class Belmont extends Creature {
 		return u + r + d + l > 1;
 	}
 	public Paint(offset: Point = null): void {
-		let roeOffset = new Point();
+		let roeOffset = <Point>{ x: 0, y: 0 };
 		if (this.Roeing) {
 			if (!this.Crouching) {
 				roeOffset.x += RoeState.RoeSpritePosOffset[this.Direction][this.roeState.CurrentFrame].x;

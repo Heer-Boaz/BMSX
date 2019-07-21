@@ -29,8 +29,8 @@ export class Title {
 	private state: State;
 	constructor() {
 		this.titleAni = new Animation<State>(Title.titleStates, Title.titleMoves);
-		this.titleTopPos = new Point();
-		this.titleBottomPos = new Point();
+		this.titleTopPos = <Point>{ x: 0, y: 0 };
+		this.titleBottomPos = <Point>{ x: 0, y: 0 };
 	}
 	public Init(): void {
 		this.reset();
@@ -51,19 +51,19 @@ export class Title {
 		switch (this.state) {
 			case State.WaitForIt:
 			case State.WaitForItAgain:
-				if (this.titleAni.DoAnimation(1, newState)) {
+				if (this.titleAni.doAnimation(1, newState)) {
 					this.state = newState;
 				}
 				break;
 			case State.Konami:
-				if (this.titleAni.DoAnimation(1, newState)) {
+				if (this.titleAni.doAnimation(1, newState)) {
 					this.state = newState;
 				}
 				break;
 			case State.TitleTop:
 				if ((G._.bxlib.TurnCounter & 1) == 0) {
 					this.titleTopPos.x += Title.deltaX;
-					if (this.titleAni.DoAnimation(<number>Title.deltaX, newState)) {
+					if (this.titleAni.doAnimation(<number>Title.deltaX, newState)) {
 						this.state = newState;
 					}
 				}
@@ -71,7 +71,7 @@ export class Title {
 			case State.TitleBottom:
 				if ((G._.bxlib.TurnCounter & 1) == 0) {
 					this.titleBottomPos.x -= Title.deltaX;
-					if (this.titleAni.DoAnimation(<number>Title.deltaX, newState)) {
+					if (this.titleAni.doAnimation(<number>Title.deltaX, newState)) {
 						this.state = newState;
 					}
 				}

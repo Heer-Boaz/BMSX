@@ -1,11 +1,15 @@
 import { GameModel, Direction } from "./sintervaniamodel";
 import { TextWriter } from "./textwriter";
-import { GameConstants as CS } from "./gameconstants";
+import { MSXConstants as CS } from "../BoazEngineJS/msx";
+import { view } from "../BoazEngineJS/engine";
+import { BitmapId } from "./resourceids";
+import { KeyState } from "../BoazEngineJS/input";
 
 export enum State {
     SelectContOrLoad,
     SelectFile
 }
+
 export class GameOver {
     private selectedIndex: number;
     private state: State;
@@ -17,22 +21,28 @@ export class GameOver {
     private static boxY: number = 104;
     private static boxEndX: number = GameOver.boxX + 176 + 32;
     private static boxEndY: number = GameOver.boxY + 24 + 16;
+
     private get cursorX(): number {
         return GameOver.cursorPosX;
     }
+
     private get cursorY(): number {
         return GameOver.itemYs[this.selectedIndex];
     }
+
     constructor() {
 
     }
+
     public Init(): void {
         this.reset();
     }
+
     private reset(): void {
         this.selectedIndex = 0;
         this.state = State.SelectContOrLoad;
     }
+
     public HandleInput(): void {
         let selectionChanged: boolean = false;
         if (I.KeyState.KC_UP)
@@ -66,6 +76,7 @@ export class GameOver {
             S.PlayEffect(RM.Sound[AudioId.Selectie]);
         }
     }
+
     private changeSelection(dir: Direction, selectionChanged: boolean): void {
         if (this.state == State.SelectFile)
             return
@@ -84,17 +95,20 @@ export class GameOver {
                 break;
         }
     }
+
     public TakeTurn(): void {
 
     }
+
     public Paint(): void {
-        TextWriter.DrawText(60, 56, "Je bent vernederd!");
-        TextWriter.DrawText(32, 80, "Wat ga je doen,Belmont?");
-        BDX._.DrawRectangle(GameOver.boxX, GameOver.boxY, GameOver.boxEndX, GameOver.boxEndY, CS.Msx1Colors[15]);
+        TextWriter.DrawText(60, 56, ["Je bent vernederd!"]);
+        TextWriter.DrawText(32, 80, ["Wat ga je doen,Belmont?"]);
+        view.DrawRectangle(GameOver.boxX, GameOver.boxY, GameOver.boxEndX, GameOver.boxEndY, CS.Msx1Colors[15]);
         for (let i = 0; i < GameOver.items.length; i++)
-            TextWriter.DrawText(GameOver.itemsX, GameOver.itemYs[i], GameOver.items[i]);
-        BDX._.DrawBitmap(<number>BitmapId.MenuCursor, this.cursorX, this.cursorY);
+            TextWriter.DrawText(GameOver.itemsX, GameOver.itemYs[i], [GameOver.items[i]]);
+        view.DrawBitmap(BitmapId.MenuCursor, this.cursorX, this.cursorY);
     }
+
     public GameMenuClosed(): void {
         this.reset();
     }

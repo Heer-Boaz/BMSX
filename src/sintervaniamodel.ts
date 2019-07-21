@@ -4,6 +4,10 @@ import { Savegame } from "../BoazEngineJS/savegame";
 import { Model } from "../BoazEngineJS/model";
 import * as GameConstants from "./gameconstants"
 import { BStopwatch } from "../BoazEngineJS/btimer";
+import { BossFoe } from "./bossfoe";
+import { GameMenu } from "./gamemenu";
+import { WeaponItem } from "./weaponitem";
+import { Item } from "./item";
 
 /*[Serializable]*/
 export class GameModel extends Model {
@@ -11,13 +15,16 @@ export class GameModel extends Model {
     public SelectedChapterToPlay: Chapter;
     public static PROPERTY_KEEP_AT_ROOMSWITCH: string = "p_rs";
     public static PROPERTY_ACT_AS_WALL: string = "p_wall";
+
     private static _instance: GameModel;
     public static get _(): GameModel {
         return GameModel._instance;
     }
+
     public static set _(value: GameModel) {
         GameModel._instance = value;
     }
+
     public id2object: Map<string, IGameObject>;
     public objects: IGameObject[];
 
@@ -50,10 +57,12 @@ export class GameModel extends Model {
     public RoomExitsLocked: boolean;
     public MainWeaponCooldownTimer: BStopwatch;
     public SecWeaponCooldownTimer: BStopwatch;
+
     private _selectedMainWeapon: MainWeaponType;
     public get SelectedMainWeapon(): MainWeaponType {
         return MainWeaponType.TriRoe;
     }
+
     private _selectedSecondaryWeapon: SecWeaponType;
     public get SelectedSecondaryWeapon(): SecWeaponType {
         return this._selectedSecondaryWeapon;
@@ -61,6 +70,7 @@ export class GameModel extends Model {
     public set SelectedSecondaryWeapon(value: SecWeaponType) {
         this._selectedSecondaryWeapon = value;
     }
+
     public get SelectedSecBagWeapon(): BagWeapon {
         let weaponItemInBagType = WeaponItem.SecWeaponType2WeaponItemType(this.SelectedSecondaryWeapon);
         let index = this.WeaponsInInventory.FindIndex(bw => bw.Type == weaponItemInBagType);
@@ -68,24 +78,28 @@ export class GameModel extends Model {
             return null;
         return M._.WeaponsInInventory[index];
     }
+
     private _lastFoeThatWasHit: Foe;
     public get LastFoeThatWasHit(): Foe {
         if (this._lastFoeThatWasHit == null)
             return null;
-        if (this._lastFoeThatWasHit.DisposeFlag)
+        if (this._lastFoeThatWasHit.disposeFlag)
             return null;
         return this._lastFoeThatWasHit;
     }
+
     public set LastFoeThatWasHit(value: Foe) {
         this._lastFoeThatWasHit = value;
     }
     private _selectedItem: BagItem;
+
     public get SelectedItem(): BagItem {
         return this._selectedItem;
     }
     public set SelectedItem(value: BagItem) {
         this._selectedItem = value;
     }
+
     public Initialize(): void {
         this.GameObjects = new Array<IGameObject>();
         this.Foes = new Array<Foe>();

@@ -91,7 +91,7 @@ export abstract class DivSprite implements IGameObject {
 
     objectCollide = (o: IGameObject): boolean => {
         if (!o.hitarea) return false;
-        return this.areaCollide(moveArea(o.hitarea, o.getPos()));
+        return this.areaCollide(moveArea(o.hitarea, o.pos));
     }
 
     areaCollide = (a: Area): boolean => {

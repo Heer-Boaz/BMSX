@@ -1,11 +1,11 @@
 import { Foe } from "./foe";
 import { BStopwatch } from "../BoazEngineJS/btimer";
 import { Item } from "./item";
-import { Animation } from "../BoazEngineJS/animation"
+import { Animation, AniStepCompoundValue } from "../BoazEngineJS/animation"
 import { Direction } from "../BoazEngineJS/direction";
 import { PlayerProjectile } from "./pprojectile";
 import { BitmapId } from "./resourceids";
-import { Area } from "../BoazEngineJS/interfaces";
+import { newArea } from "../BoazEngineJS/common";
 
 /*[Serializable]*/
 export class Candle extends Foe {
@@ -21,7 +21,7 @@ export class Candle extends Foe {
 		return true;
 	}
 
-	protected static CandleHitArea: Area = new Area(0, 0, 10, 16);
+	protected static CandleHitArea: Area = newArea(0, 0, 10, 16);
 	static candleSprites: Map<Direction, any[]>;
 	// protected static candleSprites: Map<Direction, BitmapId[]> = __init(new Map<Direction, BitmapId[]>(), { { Direction.None, BitmapId.Candle_1 } });
 	protected static AnimationFrames: number[] = [<number>BitmapId.Candle_1, <number>BitmapId.Candle_2];
@@ -44,18 +44,22 @@ export class Candle extends Foe {
 		this.hitarea = Candle.CandleHitArea;
 		this.itemSpawnedAfterKill = itemSpawned;
 	}
+
 	public TakeTurn(): void {
-		let imageId: number = <number>this.imgid;
-		this.animation.doAnimation({ timer: this.timer, imageId });
-		this.imgid = imageId;
+		let imageId: AniStepCompoundValue<number> = { nextStepValue: <number>this.imgid };
+		this.animation.doAnimation(this.timer, imageId);
+		this.imgid = imageId.nextStepValue;
 	}
+
 	public Dispose(): void {
 		BStopwatch.removeWatch(this.timer);
 	}
+
 	public HandleHit(source: PlayerProjectile): void {
 		super.HandleHit(source);
 		this.loseHealth(source);
 	}
+
 	public Paint(offset: Point = null): void {
 		super.Paint(offset);
 	}

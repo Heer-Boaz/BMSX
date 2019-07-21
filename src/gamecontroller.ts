@@ -1,7 +1,7 @@
 import { GameState } from "./sintervaniamodel";
 import { BStopwatch } from "../BoazEngineJS/btimer";
 import { Item } from "./item";
-import { GameSaver } from "../BoazEngineJS/gamesaver";
+import { saveGame } from "../BoazEngineJS/gamesaver";
 import { AudioId, BitmapId } from "./resourceids";
 import { Direction } from "../BoazEngineJS/direction";
 import { Bootstrapper } from "./bootstrapper";
@@ -14,14 +14,17 @@ export class GameController {
     public static get _(): GameController {
         return GameController._instance != null ? GameController._instance : (GameController._instance = new GameController());
     }
+
     private timer: BStopwatch;
     private startAfterLoadTimer: BStopwatch;
     public ElapsedMsDelta: number;
+
     public Initialize(): void {
         M._.OldState = GameState.None;
         this.timer = BStopwatch.createWatch();
         this.startAfterLoadTimer = BStopwatch.createWatch();
     }
+
     public SwitchToState(newState: GameState): void {
         M._.OldState = M._.State;
         if (this.DisposeOldState(M._.State, newState)) {
@@ -29,6 +32,7 @@ export class GameController {
         }
         M._.State = newState;
     }
+
     public DisposeOldState(oldState: GameState, newState: GameState): boolean {
         switch (oldState) {
             case GameState.TitleScreen:
@@ -46,12 +50,15 @@ export class GameController {
         }
         return true;
     }
+
     public SwitchToOldState(): void {
         this.SwitchToState(M._.OldState);
     }
+
     public SwitchToOldSubstate(): void {
         this.switchToSubstate(M._.OldSubstate);
     }
+
     public InEventState: boolean;
     protected InitNewState(newState: GameState): void {
         switch (newState) {
@@ -77,6 +84,7 @@ export class GameController {
                 break;
         }
     }
+
     protected switchToSubstate(newSubstate: M.GameSubstate): void {
         M._.OldSubstate = M._.Substate;
         switch (newSubstate) {
@@ -109,6 +117,7 @@ export class GameController {
         }
         M._.Substate = newSubstate;
     }
+
     public TakeTurn(elapsedMs: number): void {
         if (M._.Paused) {
             this.handlePausedState();

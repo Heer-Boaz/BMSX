@@ -41,7 +41,7 @@ export class GameMenu {
     private CurrentScreen: Screen;
     constructor() {
         this.visible = false;
-        this.cursorPos = new Point();
+        this.cursorPos = <Point>{ x: 0, y: 0 };
         this.selectedItemIndex = 0;
         this.CurrentScreen = Screen.Main;
     }

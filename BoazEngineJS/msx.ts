@@ -1,11 +1,28 @@
 import { Constants } from "./constants";
 
+export const TileSize: number = 8;
+export class Tile {
+	public t: number;
+	public get toCoord(): number {
+		return this.t * TileSize;
+	}
+
+	public static conversionMethod(v: number): Tile {
+		return <Tile>{ t: v };
+	}
+
+	public static ToCoord(x: number, y?: number): number | Point {
+		if (!y) return x * TileSize;
+		return <Point>{ x: x * TileSize, y: y * TileSize };
+	}
+}
+
 export namespace MSXConstants {
 	export const MSX1ScreenWidth: number = 256;
 	export const MSX1ScreenHeight: number = 192;
 	export const MSX2ScreenWidth: number = 256;
 	export const MSX2ScreenHeight: number = 212;
-	export const Max1Colors: Color[] = [
+	export const Msx1Colors: Color[] = [
 		<Color>{ r: 0, g: 0, b: 0 },
 		<Color>{ r: 0, g: 241, b: 20 },
 		<Color>{ r: 68, g: 249, b: 86 },
@@ -40,19 +57,4 @@ export namespace MSXConstants {
 	// Color.FromArgb(208, 208, 208),
 	// Color.FromArgb(255, 255, 255)];
 	// public static Msx1ExtColors: Color[] = [Color.FromArgb(104, 104, 104)];
-	export const TileSize: number = 8;
-
-	export class Tile {
-		public t: number;
-		public get toCoord(): number {
-			return this.t * TileSize;
-		}
-		public static conversionMethod(v: number): Tile {
-			return <Tile>{ t: v };
-		}
-		public static ToCoord(x: number, y: number): number | Point {
-			if (!y) return x * TileSize;
-			return <Point>{ x: x * TileSize, y: y * TileSize };
-		}
-	}
 }

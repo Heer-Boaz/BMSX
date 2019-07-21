@@ -1,7 +1,10 @@
 import { Sprite } from "../BoazEngineJS/sprite";
 import { moveArea } from "../BoazEngineJS/common"
 import { GameConstants as CS } from "./gameconstants"
-import { Direction } from "./sintervaniamodel";
+import { Direction } from "../BoazEngineJS/direction";
+import { GameModel as M } from "./sintervaniamodel";
+import { TileSize } from "../BoazEngineJS/msx";
+import { BitmapId } from "./resourceids";
 
 /*[Serializable]*/
 export class Creature extends Sprite {
@@ -38,7 +41,7 @@ export class Creature extends Sprite {
     protected originPos: Point;
     public customId: string = null;
     public get id(): string {
-        return this.customId != null ? this.customId : string.Format("{0}:{1}:{2},{3}", this.GetType(), M._.CurrentRoom.Id, this.originPos.x, this.originPos.y);
+        return this.customId != null ? this.customId : `${this.constructor.name}:${M._.CurrentRoom.Id}:${this.originPos.x},${this.originPos.y}`;
     }
     public set id(value: string) {
         this.customId = value;
@@ -63,7 +66,7 @@ export class Creature extends Sprite {
         }
     }
     protected checkWallSpriteCollisions(): boolean {
-        return M._.GameObjects.Where(o => o != this && o.ExtendedProperty<boolean>(M.PROPERTY_ACT_AS_WALL) && (<Sprite>o).hittable).Any(o => o.areaCollide(moveArea(this.WallHitArea, this.pos)));
+        return M._.objects.filter(o => o != this && o.extendedProperty<boolean>(M.PROPERTY_ACT_AS_WALL) && (<Sprite>o).hittable).includes(o => (<IGameObject>o).areaCollide(moveArea(this.WallHitArea, this.pos)));
     }
     protected checkWallCollision(): boolean {
         let startx = this.pos.x + this.WallHitArea.start.x;
@@ -71,15 +74,15 @@ export class Creature extends Sprite {
         let endx = this.pos.x + this.WallHitArea.end.x;
         let endy = this.pos.y + this.WallHitArea.end.y;
         switch (this.Direction) {
-            case this.Direction.Up:
+            case Direction.Up:
                 return M._.CurrentRoom.IsCollisionTile(startx, starty, true) || M._.CurrentRoom.IsCollisionTile(endx, starty, true);
-            case this.Direction.Right:
+            case Direction.Right:
                 return M._.CurrentRoom.IsCollisionTile(endx, starty, true) || M._.CurrentRoom.IsCollisionTile(endx, endy, true);
-            case this.Direction.Down:
+            case Direction.Down:
                 return M._.CurrentRoom.IsCollisionTile(startx, endy, true) || M._.CurrentRoom.IsCollisionTile(endx, endy, true);
-            case this.Direction.Left:
+            case Direction.Left:
                 return M._.CurrentRoom.IsCollisionTile(startx, starty, true) || M._.CurrentRoom.IsCollisionTile(startx, endy, true);
-            case this.Direction.None:
+            case Direction.None:
                 return M._.CurrentRoom.IsCollisionTile(startx, starty, true) || M._.CurrentRoom.IsCollisionTile(endx, endy, true);
             default:
                 return false;
@@ -87,21 +90,21 @@ export class Creature extends Sprite {
     }
     protected handleWallCollision(): void {
         switch (this.Direction) {
-            case this.Direction.Up:
+            case Direction.Up:
                 if (this.pos.y >= 0)
-                    this.pos.y = (this.pos.y / CS.TileSize + 1) * CS.TileSize;
-                this.pos.y = this.pos.y / CS.TileSize * CS.TileSize;
+                    this.pos.y = (this.pos.y / TileSize + 1) * TileSize;
+                this.pos.y = this.pos.y / TileSize * TileSize;
                 break;
-            case this.Direction.Right:
-                this.pos.x = this.pos.x / CS.TileSize * CS.TileSize;
+            case Direction.Right:
+                this.pos.x = this.pos.x / TileSize * TileSize;
                 break;
-            case this.Direction.Down:
-                this.pos.y = this.pos.y / CS.TileSize * CS.TileSize;
+            case Direction.Down:
+                this.pos.y = this.pos.y / TileSize * TileSize;
                 break;
-            case this.Direction.Left:
+            case Direction.Left:
                 if (this.pos.x >= 0)
-                    this.pos.x = (this.pos.x / CS.TileSize + 1) * CS.TileSize;
-                this.pos.x = this.pos.x / CS.TileSize * CS.TileSize;
+                    this.pos.x = (this.pos.x / TileSize + 1) * TileSize;
+                this.pos.x = this.pos.x / TileSize * TileSize;
                 break;
         }
     }
