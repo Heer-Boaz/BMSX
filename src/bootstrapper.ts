@@ -1,7 +1,6 @@
-/// <reference path="../BoazEngineJS/model.ts" />
-/// <reference path="./sintervaniamodel.ts" />
-
 import { Chapter, GameModel as M } from "./sintervaniamodel";
+import { setPoint } from "../BoazEngineJS/common";
+import { Tile } from "../BoazEngineJS/msx";
 
 export class Bootstrapper {
     public static BootstrapGame(chapter: Chapter): void {
@@ -16,10 +15,10 @@ export class Bootstrapper {
     }
     private static bootstrapGameForGameStart(): void {
         M._.LoadRoom(1);
-        M._.Belmont.pos.Set(Tile.ToCoord(15), Tile.ToCoord(10));
+        setPoint(M._.Belmont.pos, <number>Tile.ToCoord(15), <number>Tile.ToCoord(10));
     }
     private static bootstrapGameForDebug(): void {
         M._.LoadRoom(100);
-        M._.Belmont.pos.Set(Tile.ToCoord(15), Tile.ToCoord(10));
+        setPoint(M._.Belmont.pos, <number>Tile.ToCoord(15), <number>Tile.ToCoord(10));
     }
 }

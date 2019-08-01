@@ -7,5 +7,8 @@ export class BossFoe extends Foe {
         super(pos);
         this.extendedProperties.set(GameModel.PROPERTY_KEEP_AT_ROOMSWITCH, true);
     }
-    public StartBossfight(): void { throw new Error('not implemented'); }
+
+    public StartBossfight(): void {
+        throw new Error('not implemented');
+    }
 }

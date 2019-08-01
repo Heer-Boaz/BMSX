@@ -3,10 +3,7 @@
     y: number;
 }
 
-interface Size {
-    x: number;
-    y: number;
-}
+type Size = Point;
 
 interface Area {
     start: Point;

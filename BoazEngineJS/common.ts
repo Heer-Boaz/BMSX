@@ -32,6 +32,12 @@ export function newSize(x: number, y: number): Size {
     return <Size>{ x: x, y: y };
 }
 
+/// Alternative implementation for Point.Set()
+export function setPoint(p: Point, new_x: number, new_y: number) {
+    p.x = new_x;
+    p.y = new_y;
+}
+
 /// <summary>
 /// Wait for a timeframe to elapse.
 /// This method increases the given elapsedMs by the gametime.
