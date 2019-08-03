@@ -1,4 +1,4 @@
-import { MSXConstants } from "../BoazEngineJS/msx";
+import { MSXConstants, TileSize } from "../BoazEngineJS/msx";
 
 export namespace GameConstants {
     export const SoundEnabled: boolean = false;
@@ -16,8 +16,8 @@ export namespace GameConstants {
     export const HUDHeight: number = 36;
     export const GameScreenWidth: number = MSXConstants.MSX2ScreenWidth;
     export const GameScreenHeight: number = MSXConstants.MSX2ScreenHeight - HUDHeight;
-    export const StageScreenWidthTiles: number = (GameScreenWidth / MSXConstants.TileSize);
-    export const StageScreenHeightTiles: number = (GameScreenHeight / MSXConstants.TileSize);
+    export const StageScreenWidthTiles: number = (GameScreenWidth / TileSize);
+    export const StageScreenHeightTiles: number = (GameScreenHeight / TileSize);
     export const GameScreenStartX: number = 0;
     export const GameScreenStartY: number = 36;
     export const ImageBasePath: string = "./Content/Images/";
