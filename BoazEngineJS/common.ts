@@ -38,6 +38,10 @@ export function setPoint(p: Point, new_x: number, new_y: number) {
     p.y = new_y;
 }
 
+export function area2size(a: Area) {
+    return <Size>{ x: a.end.x - a.start.x, y: a.end.y - a.start.y };
+}
+
 /// <summary>
 /// Wait for a timeframe to elapse.
 /// This method increases the given elapsedMs by the gametime.

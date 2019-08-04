@@ -6,17 +6,21 @@ import { Animation } from "../BoazEngineJS/animation";
 export class FX extends Sprite {
     protected animation: Animation<number>;
     protected timer: BStopwatch;
+
     constructor(pos: Point) {
         super(pos);
         this.timer = BStopwatch.createWatch();
     }
+
     protected init(): void {
         this.imgid = <number>this.animation.stepValue();
         this.timer.restart();
     }
+
     public TakeTurn(): void {
         this.doAnimation();
     }
+
     protected doAnimation(): void {
         let aniresult = this.animation.doAnimationTimer(this.timer);
         if (aniresult.next) {
@@ -26,6 +30,7 @@ export class FX extends Sprite {
         }
 
     }
+
     public Dispose(): void {
         BStopwatch.removeWatch(this.timer);
     }

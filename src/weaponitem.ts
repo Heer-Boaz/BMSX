@@ -10,17 +10,17 @@ export class WeaponItem extends Sprite {
     public static ItemHitArea: Area = <Area>{
         start: <Point>{ x: 0, y: 0 }, end: <Point>{ x: 16, y: 16 }
     };
-    public ItsType: Type;
-    public static Descriptions: Map<Type, string[]> = new Map<Type, string[]>();
+    public ItsType: WeaponType;
+    public static Descriptions: Map<WeaponType, string[]> = new Map<WeaponType, string[]>();
 
     public static WeaponItem2SecWeaponType(weaponItem: BagWeapon): SecWeaponType {
         if (weaponItem == null)
             return SecWeaponType.None;
         switch (weaponItem.Type) {
-            case Type.None:
+            case WeaponType.None:
             default:
                 return SecWeaponType.None;
-            case Type.Cross:
+            case WeaponType.Cross:
                 return SecWeaponType.Cross;
         }
     }
@@ -29,9 +29,9 @@ export class WeaponItem extends Sprite {
         switch (secWeapontype) {
             case SecWeaponType.None:
             default:
-                return Type.None;
+                return WeaponType.None;
             case SecWeaponType.Cross:
-                return Type.Cross;
+                return WeaponType.Cross;
         }
     }
 
@@ -50,7 +50,7 @@ export class WeaponItem extends Sprite {
         }
     }
 
-    public static Type2Image(type: Type): BitmapId {
+    public static Type2Image(type: WeaponType): BitmapId {
         switch (type) {
             default:
                 return BitmapId.None;
@@ -61,7 +61,7 @@ export class WeaponItem extends Sprite {
     }
 }
 
-export enum Type {
+export enum WeaponType {
     None = -1,
     Cross = 0
 }

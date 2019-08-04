@@ -1,6 +1,6 @@
 import { Foe } from "./foe";
 import { BStopwatch } from "../BoazEngineJS/btimer";
-import { Item } from "./item";
+import { Item, ItemType } from "./item";
 import { Animation, AniStepCompoundValue } from "../BoazEngineJS/animation"
 import { Direction } from "../BoazEngineJS/direction";
 import { PlayerProjectile } from "./pprojectile";
@@ -22,7 +22,7 @@ export class Candle extends Foe {
 	}
 
 	protected static CandleHitArea: Area = newArea(0, 0, 10, 16);
-	static candleSprites: Map<Direction, any[]>;
+	protected static candleSprites: Map<Direction, number[]>;
 	// protected static candleSprites: Map<Direction, BitmapId[]> = __init(new Map<Direction, BitmapId[]>(), { { Direction.None, BitmapId.Candle_1 } });
 	protected static AnimationFrames: number[] = [<number>BitmapId.Candle_1, <number>BitmapId.Candle_2];
 	protected static ElapsedMsPerFrame: number[] = [200, 200];
@@ -32,8 +32,8 @@ export class Candle extends Foe {
 		return Candle.candleSprites;
 	}
 
-	protected itemSpawnedAfterKill: Item.Type;
-	constructor(pos: Point, itemSpawned: Item.Type = Item.Type.HeartSmall) {
+	protected itemSpawnedAfterKill: ItemType;
+	constructor(pos: Point, itemSpawned: ItemType = ItemType.HeartSmall) {
 		super(pos);
 		this.CanHurtPlayer = false;
 		this.animation = new Animation<number>(Candle.AnimationFrames, Candle.ElapsedMsPerFrame);

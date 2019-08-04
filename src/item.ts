@@ -1,40 +1,46 @@
-export namespace Item {
-    export enum Type {
-        None,
-        HeartSmall,
-        HeartBig,
-        KeySmall,
-        KeyBig
-    }
-    export enum Usable {
-        No,
-        Yes,
-        Infinite
-    }
+import { Sprite } from "../BoazEngineJS/sprite";
+import { AudioId, BitmapId } from "./resourceids";
+import { newArea, area2size, moveArea } from "../BoazEngineJS/common";
+import { GameModel } from "./sintervaniamodel";
+import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
+import { ResourceMaster as RM } from "./resourcemaster";
+
+export enum ItemType {
+    None,
+    HeartSmall,
+    HeartBig,
+    KeySmall,
+    KeyBig
+}
+export enum Usable {
+    No,
+    Yes,
+    Infinite
 }
 
-/*[Serializable]*/
 export class Item extends Sprite {
-    public ItsType: Type;
-    public static ItemHitArea: IArea = new Area(0, 0, 16, 16);
-    public static Descriptions: Dictionary<Type, string[]> = __init(new Dictionary<Type, string[]>(), {});
-    constructor(type: Type, pos: Point) {
+    public ItsType: ItemType;
+    public static ItemHitArea: Area = newArea(0, 0, 16, 16);
+    // public static Descriptions: Map<ItemType, string[]> = new Map<ItemType, string[]>(), { };
+
+    constructor(type: ItemType, pos: Point) {
         super(pos);
         this.ItsType = type;
         this.hitarea = Item.ItemHitArea;
-        this.size = Item.ItemHitArea.size;
+        this.size = area2size(Item.ItemHitArea);
         this.imgid = <number>Item.Type2Image(type);
     }
+
     public TakeTurn(): void {
-        if (this.objectCollide(M._.Belmont.EventTouchHitArea + <Point>M._.Belmont.pos)) {
+        if (this.areaCollide(moveArea(GameModel._.Belmont.EventTouchHitArea, <Point>GameModel._.Belmont.pos))) {
             C._.PickupItem(this);
             switch (this.ItsType) {
-                case Item.Type.HeartSmall:
-                case Item.Type.HeartBig:
+                case ItemType.HeartSmall:
+                case ItemType.HeartBig:
                     S.PlayEffect(RM.Sound[AudioId.Heart]);
                     break;
-                case Item.Type.KeySmall:
-                case Item.Type.KeyBig:
+                case ItemType.KeySmall:
+                case ItemType.KeyBig:
                     S.PlayEffect(RM.Sound[AudioId.KeyGrab]);
                     break;
                 default:
@@ -44,22 +50,24 @@ export class Item extends Sprite {
             this.disposeFlag = true;
         }
     }
-    public static Type2Image(type: Type): BitmapId {
+
+    public static Type2Image(type: ItemType): BitmapId {
         switch (type) {
-            case Item.Type.KeyBig:
+            case ItemType.KeyBig:
                 return BitmapId.Key_big;
                 break;
             default:
                 return BitmapId.None;
         }
     }
-    public static ItemUsable(type: Type): Usable {
+
+    public static ItemUsable(type: ItemType): Usable {
         switch (type) {
             default:
                 return Usable.No;
         }
     }
-    public Dispose(): void {
 
+    public Dispose(): void {
     }
 }
