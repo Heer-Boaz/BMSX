@@ -1,4 +1,5 @@
 import { Animation } from "../BoazEngineJS/animation"
+import { setPoint } from "../BoazEngineJS/common";
 
 export enum State {
 	WaitForIt,
@@ -24,23 +25,27 @@ export class Title {
 	private titleTopPos: Point;
 	private titleBottomPos: Point;
 	private static titleStates: State[] = new Array(State.WaitForIt, State.Konami, State.TitleTop, State.TitleBottom, State.WaitForItAgain, State.Other);
-	// private static titleMoves: number[] = Title.waitFrames, Title.waitKonamiFrames,-Title.titleTopStartX + Title.titleTopEndX, Title.titleBottomStartX - Title.titleBottomEndX, Title.waitFrames, 0;
+	private static titleMoves: number[] = new Array(Title.waitFrames, Title.waitKonamiFrames, -Title.titleTopStartX + Title.titleTopEndX, Title.titleBottomStartX - Title.titleBottomEndX, Title.waitFrames, 0);
 	private titleAni: Animation<State>;
 	private state: State;
+
 	constructor() {
 		this.titleAni = new Animation<State>(Title.titleStates, Title.titleMoves);
 		this.titleTopPos = <Point>{ x: 0, y: 0 };
 		this.titleBottomPos = <Point>{ x: 0, y: 0 };
 	}
+
 	public Init(): void {
 		this.reset();
 	}
+
 	private reset(): void {
-		this.titleTopPos.Set(Title.titleTopStartX, Title.titleTopY);
-		this.titleBottomPos.Set(Title.titleBottomStartX, Title.titleBottomY);
+		setPoint(this.titleTopPos, Title.titleTopStartX, Title.titleTopY);
+		setPoint(this.titleBottomPos, Title.titleBottomStartX, Title.titleBottomY);
 		this.titleAni.restart();
 		this.state = this.titleAni.stepValue();
 	}
+
 	public TakeTurn(): void {
 		let newState = this.state;
 		if (I.KeyState.KC_SPACE) {
@@ -81,6 +86,7 @@ export class Title {
 				break;
 		}
 	}
+
 	public Paint(): void {
 		BDX._.DrawBitmap(<number>BitmapId.TitelBoven, this.titleTopPos.x, this.titleTopPos.y);
 		BDX._.DrawBitmap(<number>BitmapId.TitelOnder, this.titleBottomPos.x, this.titleBottomPos.y);

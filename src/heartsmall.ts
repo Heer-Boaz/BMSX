@@ -4,11 +4,12 @@ import { BitmapId, AudioId } from "./resourceids";
 import { GameConstants } from "./gameconstants";
 import { ResourceMaster } from "./resourcemaster";
 import { sound, model } from "../BoazEngineJS/engine";
+import { newArea } from "../BoazEngineJS/common";
 
 export class HeartSmall extends Sprite {
 	public State: HeartSmallState;
-	protected static HitAreaFly: Area = new Area(0, 0, 9, 8);
-	protected static HitAreaStand: Area = new Area(0, 0, 12, 11);
+	protected static HitAreaFly: Area = newArea(0, 0, 9, 8);
+	protected static HitAreaStand: Area = newArea(0, 0, 12, 11);
 	public get hitarea(): Area {
 		return this.State == HeartSmallState.Flying ? HeartSmall.HitAreaFly : HeartSmall.HitAreaStand;
 	}

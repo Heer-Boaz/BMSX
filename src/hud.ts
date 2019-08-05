@@ -1,6 +1,12 @@
 import { BStopwatch } from "../BoazEngineJS/btimer";
 import { Foe } from "./foe";
-import { Item } from "./item";
+import { Item, ItemType } from "./item";
+import { BitmapId } from "./resourceids";
+import { GameModel as M } from "./sintervaniamodel";
+import { GameConstants as CS } from "./gameconstants";
+import { View as V } from "../BoazEngineJS/view";
+import { waitDuration } from "../BoazEngineJS/common";
+import { TextWriter } from "./textwriter";
 
 export class HUD {
     public static Pos_X: number = 0;
@@ -27,6 +33,7 @@ export class HUD {
     protected shownWeaponLevel: number;
     protected shownFoeHealthLevel: number;
     protected foeForWhichHealthLevelIsShown: Foe;
+
     constructor() {
         this.barTimer = BStopwatch.createWatch();
         this.barTimer.pauseDuringMenu = false;
@@ -36,6 +43,7 @@ export class HUD {
         this.foebarTimer.restart();
         this.SetShownLevelsToProperValues();
     }
+
     public SetShownLevelsToProperValues(): void {
         if (M._ != null) {
             if (M._.Belmont != null)
@@ -44,19 +52,20 @@ export class HUD {
             this.foeForWhichHealthLevelIsShown = V._.FoeForWhichHealthPercentageIsGiven;
         }
     }
+
     public TakeTurn(): void {
         if (M._.Belmont.Dying)
             this.shownHealthLevel = M._.Belmont.HealthPercentage;
-        if (M._.LastFoeThatWasHit != null && M._.LastFoeThatWasHit.DisposeFlag)
+        if (M._.LastFoeThatWasHit != null && M._.LastFoeThatWasHit.disposeFlag)
             this.shownFoeHealthLevel = 0;
-        if (Helpers.WaitDuration(this.barTimer, HUD.MsDurationBarChange)) {
+        if (waitDuration(this.barTimer, HUD.MsDurationBarChange)) {
             if (this.shownHealthLevel > M._.Belmont.HealthPercentage)
                 this.shownHealthLevel--;
             else if (this.shownHealthLevel < M._.Belmont.HealthPercentage)
                 this.shownHealthLevel++;
         }
         if (CS.AnimateFoeHealthLevel) {
-            if (Helpers.WaitDuration(this.foebarTimer, HUD.MsDurationFoeBarChange)) {
+            if (waitDuration(this.foebarTimer, HUD.MsDurationFoeBarChange)) {
                 if (this.shownFoeHealthLevel > V._.FoeHealthPercentage)
                     this.shownFoeHealthLevel--;
                 else if (this.shownFoeHealthLevel < V._.FoeHealthPercentage)
@@ -65,11 +74,11 @@ export class HUD {
         }
         else this.shownFoeHealthLevel = V._.FoeHealthPercentage;
     }
+
     private percentageToBarLength(percentage: number): number {
-        if (percentage == 0)
-            return 0;
-        return <number>(HUD.HealthBarSizeX / <number>100 * percentage) + 1;
+        return percentage == 0 ? 0 : <number>(HUD.HealthBarSizeX / <number>100 * percentage) + 1;
     }
+
     public Paint(): void {
         BDX._.DrawBitmap(<number>BitmapId.HUD, HUD.Pos_X, HUD.Pos_Y);
         let pos: Point = new Point(HUD.HealthBarPosX, HUD.HealthBarPosY);
@@ -77,10 +86,12 @@ export class HUD {
             BDX._.DrawBitmap(<number>BitmapId.HUD_EnergyStripe_belmont, pos.x, pos.y);
             pos.x += 1;
         }
-        TextWriter.DrawText(HUD.HeartsPosX, HUD.HeartsPosY, $"{M._.Hearts.ToString("d2")}");
-        if (M._.ItemsInInventory.Any(x => x.Type == Item.Type.KeyBig)) {
-            BDX._.DrawBitmap(<number>Item.Type2Image(Item.Type.KeyBig), HUD.KeyPos.x, HUD.KeyPos.y);
+
+        TextWriter.DrawText(HUD.HeartsPosX, HUD.HeartsPosY, `${M._.Hearts.toPrecision(2)}`);
+        if (M._.ItemsInInventory.find(x => x.Type == ItemType.KeyBig)) {
+            BDX._.DrawBitmap(<number>Item.Type2Image(ItemType.KeyBig), HUD.KeyPos.x, HUD.KeyPos.y);
         }
+
         pos.Set(HUD.FoeBarStripePosX, HUD.FoeBarStripePosY);
         let lengthShown: number, lengthBefore;
         if (M._.BossBattle) {

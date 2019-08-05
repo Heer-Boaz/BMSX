@@ -4,6 +4,8 @@ import { newArea, area2size, moveArea } from "../BoazEngineJS/common";
 import { GameModel } from "./sintervaniamodel";
 import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
 import { ResourceMaster as RM } from "./resourcemaster";
+import { GameConstants } from "./gameconstants";
+import { GameController } from "./gamecontroller";
 
 export enum ItemType {
     None,
@@ -33,7 +35,7 @@ export class Item extends Sprite {
 
     public TakeTurn(): void {
         if (this.areaCollide(moveArea(GameModel._.Belmont.EventTouchHitArea, <Point>GameModel._.Belmont.pos))) {
-            C._.PickupItem(this);
+            GameController._.PickupItem(this);
             switch (this.ItsType) {
                 case ItemType.HeartSmall:
                 case ItemType.HeartBig:
@@ -55,7 +57,6 @@ export class Item extends Sprite {
         switch (type) {
             case ItemType.KeyBig:
                 return BitmapId.Key_big;
-                break;
             default:
                 return BitmapId.None;
         }

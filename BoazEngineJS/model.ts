@@ -32,13 +32,15 @@ export abstract class Model {
         this.objects.forEach(x => {
             x.exile();
         });
-        this.objects = [];
+        this.objects.length = 0;
         this.id2object.clear();
         this.paused = false;
     }
 
     public spawn(o: IGameObject, pos?: Point): void {
-        if (o == null) throw new Error("Cannot spawn object of type null.");
+        if (o == null) throw ("Cannot spawn object of type null.");
+        if (this.objects.indexOf(o) > -1) throw ("GameObject already exists in the game model!");
+
         this.objects.push(o);
         if (o.id != null)
             this.id2object[o.id] = o;

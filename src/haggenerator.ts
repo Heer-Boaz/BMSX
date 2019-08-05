@@ -4,7 +4,6 @@ import { Animation, AniStepCompoundValue } from "../BoazEngineJS/animation";
 import { Hag } from "./hag";
 import { Direction } from "../BoazEngineJS/direction";
 
-/*[Serializable]*/
 export class HagGenerator implements IGameObject {
     disposeFlag: boolean;
     visible: boolean;
@@ -70,7 +69,7 @@ export class HagGenerator implements IGameObject {
     takeTurn(): void {
         let stepValue = <AniStepCompoundValue<boolean>>{ nextStepValue: false };
         if (this.spawnAnimation.doAnimation(this.timer, stepValue))
-            GameModel._.Spawn(new Hag(<Point>{ x: this.pos.x, y: this.pos.y }, this.directionOfHags));
+            GameModel._.Spawn(new Hag({ pos: (<Point>{ x: this.pos.x, y: this.pos.y }), dir: this.directionOfHags }));
     }
 
     Dispose(): void {

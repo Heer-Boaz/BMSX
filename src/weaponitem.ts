@@ -2,7 +2,7 @@ import { Sprite } from "../BoazEngineJS/sprite";
 import { GameModel as M, SecWeaponType, BagWeapon } from "./sintervaniamodel";
 import { Item } from "./item";
 import { BitmapId } from "./resourceids";
-import { moveArea } from "../BoazEngineJS/common";
+import { moveArea, area2size } from "../BoazEngineJS/common";
 import { GameController as C } from "./gamecontroller";
 
 /*[Serializable]*/
@@ -25,7 +25,7 @@ export class WeaponItem extends Sprite {
         }
     }
 
-    public static SecWeaponType2WeaponItemType(secWeapontype: SecWeaponType): Type {
+    public static SecWeaponType2WeaponItemType(secWeapontype: SecWeaponType): WeaponType {
         switch (secWeapontype) {
             case SecWeaponType.None:
             default:
@@ -35,11 +35,11 @@ export class WeaponItem extends Sprite {
         }
     }
 
-    constructor(type: Type, pos: Point) {
+    constructor(type: WeaponType, pos: Point) {
         super(pos);
         this.ItsType = type;
         this.hitarea = Item.ItemHitArea;
-        this.size = Item.ItemHitArea.size;
+        this.size = area2size(Item.ItemHitArea);
         this.imgid = <number>WeaponItem.Type2Image(type);
     }
 

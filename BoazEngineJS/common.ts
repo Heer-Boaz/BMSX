@@ -82,7 +82,7 @@ export function createDivSprite(img?: HTMLImageElement, imgsrc?: string | null, 
     let rimg = document.createElement('img');
     if (imgsrc) rimg.src = imgsrc;
     else if (img) rimg.src = img.src;
-    else console.error('Cannot create sprite without an image or image source!');
+    else throw ('Cannot create sprite without an image or image source!');
 
     result.appendChild(rimg);
 
