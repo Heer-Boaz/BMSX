@@ -5,7 +5,7 @@ import { BitmapId } from "./resourceids";
 import { GameModel as M } from "./sintervaniamodel";
 import { GameConstants as CS } from "./gameconstants";
 import { View as V } from "../BoazEngineJS/view";
-import { waitDuration } from "../BoazEngineJS/common";
+import { waitDuration, setPoint } from "../BoazEngineJS/common";
 import { TextWriter } from "./textwriter";
 
 export class HUD {
@@ -56,14 +56,17 @@ export class HUD {
     public TakeTurn(): void {
         if (M._.Belmont.Dying)
             this.shownHealthLevel = M._.Belmont.HealthPercentage;
+
         if (M._.LastFoeThatWasHit != null && M._.LastFoeThatWasHit.disposeFlag)
             this.shownFoeHealthLevel = 0;
+
         if (waitDuration(this.barTimer, HUD.MsDurationBarChange)) {
             if (this.shownHealthLevel > M._.Belmont.HealthPercentage)
                 this.shownHealthLevel--;
             else if (this.shownHealthLevel < M._.Belmont.HealthPercentage)
                 this.shownHealthLevel++;
         }
+
         if (CS.AnimateFoeHealthLevel) {
             if (waitDuration(this.foebarTimer, HUD.MsDurationFoeBarChange)) {
                 if (this.shownFoeHealthLevel > V._.FoeHealthPercentage)
@@ -81,7 +84,7 @@ export class HUD {
 
     public Paint(): void {
         BDX._.DrawBitmap(<number>BitmapId.HUD, HUD.Pos_X, HUD.Pos_Y);
-        let pos: Point = new Point(HUD.HealthBarPosX, HUD.HealthBarPosY);
+        let pos: Point = { x: HUD.HealthBarPosX, y: HUD.HealthBarPosY };
         for (let i: number = 0; i < this.percentageToBarLength(this.shownHealthLevel); i++) {
             BDX._.DrawBitmap(<number>BitmapId.HUD_EnergyStripe_belmont, pos.x, pos.y);
             pos.x += 1;
@@ -92,8 +95,9 @@ export class HUD {
             BDX._.DrawBitmap(<number>Item.Type2Image(ItemType.KeyBig), HUD.KeyPos.x, HUD.KeyPos.y);
         }
 
-        pos.Set(HUD.FoeBarStripePosX, HUD.FoeBarStripePosY);
-        let lengthShown: number, lengthBefore;
+        setPoint(pos, HUD.FoeBarStripePosX, HUD.FoeBarStripePosY);
+        let lengthShown: number, lengthBefore: number;
+
         if (M._.BossBattle) {
             if (V._.FoeForWhichHealthPercentageIsGiven != this.foeForWhichHealthLevelIsShown) {
                 this.foeForWhichHealthLevelIsShown = V._.FoeForWhichHealthPercentageIsGiven;
@@ -106,6 +110,7 @@ export class HUD {
             lengthShown = this.percentageToBarLength(100);
             lengthBefore = this.percentageToBarLength(100);
         }
+
         if (lengthBefore != -1) {
             if (lengthBefore > 0) {
                 for (let i: number = 0; i <= lengthBefore; i++) {

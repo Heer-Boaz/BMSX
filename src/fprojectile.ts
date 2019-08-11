@@ -8,10 +8,12 @@ export class FProjectile extends Projectile {
     public get CanHurtPlayer(): boolean {
         return true;
     }
+
     constructor(pos: Point, speed: Point) {
         super(pos, speed);
         this.speed = speed;
     }
+
     public TakeTurn(): void {
         this.pos = addPoints(this.pos, this.speed);
         if (this.CanHurtPlayer && this.objectCollide(M._.Belmont))

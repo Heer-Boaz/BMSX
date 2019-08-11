@@ -1,5 +1,6 @@
 ﻿import { view } from "./engine";
 import { moveArea, addPoints } from "./common";
+import { BitmapId } from "../src/resourceids";
 
 export abstract class Sprite implements IGameObject {
 	public id: string | null;
@@ -13,7 +14,7 @@ export abstract class Sprite implements IGameObject {
 	public priority: number;
 	public rawAscii: boolean;
 	public disposeFlag: boolean;
-	public imgid: string | number;
+	public imgid: BitmapId;
 	public hitbox_sx?: number;
 	public hitbox_sy?: number;
 	public hitbox_sz?: number;
@@ -25,7 +26,7 @@ export abstract class Sprite implements IGameObject {
 	public z_plus_depth?: number;
 	public extendedProperties: Map<string, any>;
 
-	constructor(initialPos?: Point, imageId?: number | string) {
+	constructor(initialPos?: Point, imageId?: BitmapId) {
 		this.id = null;
 		this.pos = initialPos || <Point>{ x: 0, y: 0 };
 		this.size = <Size>{ x: 0, y: 0 };

@@ -1,5 +1,5 @@
 import { BStopwatch } from "../BoazEngineJS/btimer";
-import { Animation, AniStepCompoundValue } from "../BoazEngineJS/animation";
+import { Animation, AniStepCompoundValue, AniData } from "../BoazEngineJS/animation";
 import { Direction } from "../BoazEngineJS/direction";
 import { BitmapId } from "./resourceids";
 import { Item, ItemType } from "./item";
@@ -26,22 +26,17 @@ export class Hag extends Foe {
     protected animation: Animation<number>;
     protected timer: BStopwatch;
 
-    protected movementSprites(): Map<Direction, BitmapId[]> {
-        return hagSprites;
-    }
-    //         protected static readonly Dictionary<Direction, BitmapId[]> hagSprites = new Dictionary < Direction, BitmapId[] > {
-    // 			{ Direction.None, new BitmapId[] { BitmapId.Hag_1, BitmapId.Hag_2 } },
-    // };
-
-    //         protected static(ulong, uint img)[] AnimationFrames = {
-    // 			(250, (uint)BitmapId.Hag_1),
-    //     (250, (uint)BitmapId.Hag_2),
-    // };
+    protected static hagSprites: Map<Direction, BitmapId[]> = new Map([[Direction.None, [BitmapId.Hag_1, BitmapId.Hag_2]]]);
+    protected static movementSprites: Map<Direction, BitmapId[]> = Hag.hagSprites;
+    protected static AnimationFrames: AniData<BitmapId>[] = new Array(
+        { time: 250, data: BitmapId.Hag_1 },
+        { time: 250, data: BitmapId.Hag_2 },
+    );
 
     constructor({ pos, dir, itemSpawned = ItemType.HeartSmall }: { pos: Point; dir: Direction; itemSpawned?: ItemType; }) {
         super(pos);
         this.CanHurtPlayer = true;
-        this.animation = new Animation<number>(AnimationFrames, null, true);
+        this.animation = new Animation<BitmapId>(Hag.AnimationFrames, null, true);
         this.timer = BStopwatch.createWatch();
         this.imgid = <number>this.animation.stepValue();
         this.timer.restart();
