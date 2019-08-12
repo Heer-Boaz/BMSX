@@ -1,26 +1,34 @@
 import { Sprite } from "../BoazEngineJS/sprite";
-import { Direction } from "./sintervaniamodel";
+import { Direction } from "../BoazEngineJS/direction";
 import { moveArea } from "../BoazEngineJS/common";
+import { Constants } from "../BoazEngineJS/constants";
+import { GameModel as M } from "./sintervaniamodel";
+import { view } from "../BoazEngineJS/engine";
 
 /*[Serializable]*/
 export class Projectile extends Sprite {
     public Direction: Direction;
     protected speed: Point;
+
     constructor(pos: Point, speed: Point) {
         super(<Point>{ x: pos.x, y: pos.y });
         this.speed = speed;
     }
+
     public Paint(offset: Point = null): void {
         if (this.disposeFlag || !this.visible)
             return
-        let options: number = this.flippedH ? <number>DrawBitmap.HFLIP : 0;
-        options = options || this.flippedV ? <number>DrawBitmap.VFLIP : 0;
-        BDX._.DrawBitmap(this.imgid, this.pos.x, this.pos.y, options);
+        let options: number = this.flippedH ? Constants.DRAWBITMAP_HFLIP : 0;
+        options = options || this.flippedV ? Constants.DRAWBITMAP_VFLIP : 0;
+        view.DrawBitmap(this.imgid, this.pos.x, this.pos.y, options);
     }
+
     public DamageDealt: number;
+
     protected checkWallSpriteCollisions(): boolean {
-        return M._.GameObjects.Where(o => o.ExtendedProperty<boolean>(M.PROPERTY_ACT_AS_WALL)).Any(o => o.areaCollide(moveArea(this.hitarea, this.pos)));
+        return M._.objects.filter(o => o.extendedProperties[M.PROPERTY_ACT_AS_WALL]).some(o => o.areaCollide(moveArea(this.hitarea, this.pos)));
     }
+
     protected checkWallCollision(): boolean {
         let startx = this.pos.x + this.hitarea.start.x;
         let starty = this.pos.y + this.hitarea.start.y;

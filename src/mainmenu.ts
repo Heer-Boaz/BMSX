@@ -1,6 +1,15 @@
-import { Direction } from "./sintervaniamodel";
+import { Chapter, GameState } from "./sintervaniamodel";
 import { GameMenu } from "./gamemenu";
 import { GameConstants as CS } from "./gameconstants"
+import { AudioId, BitmapId } from "./resourceids";
+import { ResourceMaster } from "./resourcemaster";
+import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
+import { Direction } from "../BoazEngineJS/direction";
+import { GameModel as M } from "./sintervaniamodel";
+import { GameController as C } from "./gamecontroller";
+import { TextWriter } from "./textwriter";
+import { view } from "../BoazEngineJS/engine";
+import { MSXConstants as MCS } from "../BoazEngineJS/msx";
 
 export enum State {
     SelectMain,
@@ -102,20 +111,20 @@ export class MainMenu {
                     S.PlayEffect(ResourceMaster.Sound[AudioId.Selectie]);
                     switch (this.selectedItem) {
                         case MenuItem.Debug:
-                            M._.SelectedChapterToPlay = M.Chapter.Debug;
-                            C._.SwitchToState(M.GameState.Game);
+                            M._.SelectedChapterToPlay = Chapter.Debug;
+                            C._.SwitchToState(GameState.Game);
                             break;
                         case MenuItem.Prologue:
-                            M._.SelectedChapterToPlay = M.Chapter.Prologue;
-                            C._.SwitchToState(M.GameState.GameStart1);
+                            M._.SelectedChapterToPlay = Chapter.Prologue;
+                            C._.SwitchToState(GameState.GameStart1);
                             break;
                         case MenuItem.Chapter0:
-                            M._.SelectedChapterToPlay = M.Chapter.Chapter_0;
-                            C._.SwitchToState(M.GameState.GameStart1);
+                            M._.SelectedChapterToPlay = Chapter.Chapter_0;
+                            C._.SwitchToState(GameState.GameStart1);
                             break;
                         case MenuItem.Chapter1:
-                            M._.SelectedChapterToPlay = M.Chapter.GameStart;
-                            C._.SwitchToState(M.GameState.GameStart1);
+                            M._.SelectedChapterToPlay = Chapter.GameStart;
+                            C._.SwitchToState(GameState.GameStart1);
                             break;
                         case MenuItem.ToMainMenu:
                             this.state = State.SelectMain;
@@ -160,9 +169,9 @@ export class MainMenu {
 
     }
     public Paint(): void {
-        BDX._.DrawBitmap(<number>BitmapId.Titel, 0, 0);
-        BDX._.FillRectangle(MainMenu.boxX, MainMenu.boxY, MainMenu.boxEndX, MainMenu.boxEndY, CS.Msx1Colors[4]);
-        BDX._.DrawRectangle(MainMenu.boxX, MainMenu.boxY, MainMenu.boxEndX, MainMenu.boxEndY, CS.Msx1Colors[15]);
+        view.DrawBitmap(BitmapId.Titel, 0, 0);
+        view.FillRectangle(MainMenu.boxX, MainMenu.boxY, MainMenu.boxEndX, MainMenu.boxEndY, MCS.Msx1Colors[4]);
+        view.DrawRectangle(MainMenu.boxX, MainMenu.boxY, MainMenu.boxEndX, MainMenu.boxEndY, MCS.Msx1Colors[15]);
         switch (this.state) {
             case State.SubMenu:
             case State.SelectMain:
@@ -171,7 +180,7 @@ export class MainMenu {
                         case MenuItem.Continue:
                             if (LoadSave.GameLoader.SlotExists(CS.SaveSlotCheckpoint))
                                 TextWriter.DrawText(MainMenu.itemsX, MainMenu.itemYs[i], MainMenu.items[i]);
-                            else TextWriter.DrawText(MainMenu.itemsX, MainMenu.itemYs[i], MainMenu.items[i], CS.Msx1Colors[0]);
+                            else TextWriter.DrawText(MainMenu.itemsX, MainMenu.itemYs[i], MainMenu.items[i], MCS.Msx1Colors[0]);
                             break;
                         default:
                             TextWriter.DrawText(MainMenu.itemsX, MainMenu.itemYs[i], MainMenu.items[i]);
@@ -185,7 +194,8 @@ export class MainMenu {
                 }
                 break;
         }
-        BDX._.DrawBitmap(<number>BitmapId.MenuCursor, this.cursorX, this.cursorY);
+        view.DrawBitmap(<number>BitmapId.MenuCursor, this.cursorX, this.cursorY);
+
     }
     public GameMenuClosed(): void {
         this.reset();

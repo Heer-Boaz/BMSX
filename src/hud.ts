@@ -4,7 +4,8 @@ import { Item, ItemType } from "./item";
 import { BitmapId } from "./resourceids";
 import { GameModel as M } from "./sintervaniamodel";
 import { GameConstants as CS } from "./gameconstants";
-import { View as V } from "../BoazEngineJS/view";
+import { view } from "../BoazEngineJS/engine";
+import { GameView as V } from "./gameview"
 import { waitDuration, setPoint } from "../BoazEngineJS/common";
 import { TextWriter } from "./textwriter";
 
@@ -83,16 +84,16 @@ export class HUD {
     }
 
     public Paint(): void {
-        BDX._.DrawBitmap(<number>BitmapId.HUD, HUD.Pos_X, HUD.Pos_Y);
+        view.DrawBitmap(<number>BitmapId.HUD, HUD.Pos_X, HUD.Pos_Y);
         let pos: Point = { x: HUD.HealthBarPosX, y: HUD.HealthBarPosY };
         for (let i: number = 0; i < this.percentageToBarLength(this.shownHealthLevel); i++) {
-            BDX._.DrawBitmap(<number>BitmapId.HUD_EnergyStripe_belmont, pos.x, pos.y);
+            view.DrawBitmap(<number>BitmapId.HUD_EnergyStripe_belmont, pos.x, pos.y);
             pos.x += 1;
         }
 
         TextWriter.DrawText(HUD.HeartsPosX, HUD.HeartsPosY, `${M._.Hearts.toPrecision(2)}`);
         if (M._.ItemsInInventory.find(x => x.Type == ItemType.KeyBig)) {
-            BDX._.DrawBitmap(<number>Item.Type2Image(ItemType.KeyBig), HUD.KeyPos.x, HUD.KeyPos.y);
+            view.DrawBitmap(<number>Item.Type2Image(ItemType.KeyBig), HUD.KeyPos.x, HUD.KeyPos.y);
         }
 
         setPoint(pos, HUD.FoeBarStripePosX, HUD.FoeBarStripePosY);
@@ -114,13 +115,13 @@ export class HUD {
         if (lengthBefore != -1) {
             if (lengthBefore > 0) {
                 for (let i: number = 0; i <= lengthBefore; i++) {
-                    BDX._.DrawBitmap(<number>BitmapId.HUD_EnergyStripe_boss, pos.x, pos.y);
+                    view.DrawBitmap(<number>BitmapId.HUD_EnergyStripe_boss, pos.x, pos.y);
                     pos.x += 1;
                 }
             }
             if (lengthBefore != lengthShown) {
                 for (let i: number = lengthBefore; i <= lengthShown; i++) {
-                    BDX._.DrawBitmap(<number>BitmapId.HUD_EnergyStripe_boss, pos.x, pos.y);
+                    view.DrawBitmap(<number>BitmapId.HUD_EnergyStripe_boss, pos.x, pos.y);
                     pos.x += 1;
                 }
             }

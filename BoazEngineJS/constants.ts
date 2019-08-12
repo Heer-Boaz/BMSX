@@ -12,6 +12,10 @@ export namespace Constants {
     export const AUDIO_SOURCES: string[] | null = null;
     export const GAMESCREEN_WIDTH: number = 1000;
     export const GAMESCREEN_HEIGHT: number = 600;
+    export const DRAWBITMAP_NO_OPTION = 0;
+    export const DRAWBITMAP_HFLIP = 0x1;
+    export const DRAWBITMAP_VFLIP = 0x2;
+
     export const SaveSlotCount: number = 6;
     export const SaveSlotCheckpoint: number = -1;
     export const SaveGamePath: string = "./Saves/sintervania.sa";

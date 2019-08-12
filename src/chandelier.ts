@@ -3,7 +3,7 @@ import { Direction } from "../BoazEngineJS/direction";
 import { Animation, AniData } from "../BoazEngineJS/animation";
 import { Foe } from "./foe";
 import { PlayerProjectile } from "./pprojectile";
-import { Item } from "./item";
+import { Item, ItemType } from "./item";
 import { BitmapId } from "./resourceids";
 import { newArea, newSize } from "../BoazEngineJS/common";
 import { GameModel as M } from "./sintervaniamodel";
@@ -50,7 +50,7 @@ export class Chandelier extends Foe {
 
 	}
 
-	constructor(pos: Point, itemSpawned: Item.Type = Item.Type.HeartSmall) {
+	constructor(pos: Point, itemSpawned: ItemType = ItemType.HeartSmall) {
 		super(pos);
 		this.animation = new Animation<number>(Chandelier.AnimationFrames);
 		this.animation.repeat = true;
@@ -58,7 +58,7 @@ export class Chandelier extends Foe {
 		this.imgid = <number>BitmapId.Chandelier_1;
 		this.hitarea = Chandelier.ChandelierHitArea;
 		this.size = newSize(50, 64);
-		this.itemSpawnedAfterKill = Item.Type.None;
+		this.itemSpawnedAfterKill = ItemType.None;
 		this.Health = 0;
 		this.state = ChandelierState.None;
 	}

@@ -1,5 +1,3 @@
-module Sintervania.View {
-    export class Story {
+export class Story {
 
-    }
 }

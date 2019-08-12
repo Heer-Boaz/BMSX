@@ -1,27 +1,34 @@
 import { Foe } from "./foe";
 import { BStopwatch } from "../BoazEngineJS/btimer";
 import { Item } from "./item";
-import { Direction } from "./sintervaniamodel";
+import { Direction } from "../BoazEngineJS/direction";
 import { PlayerProjectile } from "./pprojectile";
+import { newArea } from "../BoazEngineJS/common";
+import { BitmapId } from "./resourceids";
 
 /*[Serializable]*/
 export class ZakFoe extends Foe {
 	public get DamageToPlayer(): number {
 		return 1;
 	}
+
 	protected get moveBeforeFrameChange(): number {
 		return 0;
 	}
+
 	public get RespawnAtRoomEntry(): boolean {
 		return true;
 	}
-	protected static ZakFoeHitArea: Area = new Area(2, 2, 14, 14);
+
+	protected static ZakFoeHitArea: Area = newArea(2, 2, 14, 14);
 	// // protected static zakFoeSprites: Map<Direction, BitmapId[]> = __init(new Map<Direction, BitmapId[]>(), { { Direction.Right, BitmapId.ZakFoe_1, BitmapId.ZakFoe_2, BitmapId.ZakFoe_3 },
 	//     { Direction.Left, BitmapId.ZakFoe_1, BitmapId.ZakFoe_2, BitmapId.ZakFoe_3 } });
 	protected timer: BStopwatch;
+
 	protected get movementSprites(): Map<Direction, BitmapId[]> {
 		return ZakFoe.zakFoeSprites;
 	}
+
 	protected Animation<(uint img, int dy)> animation;
 
 constructor(pos: Point, itemSpawned: Item.Type = Item.Type.HeartSmall) {

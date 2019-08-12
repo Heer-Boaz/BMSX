@@ -1,6 +1,6 @@
 import { Foe } from "./foe";
 import { BStopwatch } from "../BoazEngineJS/btimer";
-import { Item, ItemType } from "./item";
+import { ItemType } from "./item";
 import { Animation, AniStepCompoundValue } from "../BoazEngineJS/animation"
 import { Direction } from "../BoazEngineJS/direction";
 import { PlayerProjectile } from "./pprojectile";

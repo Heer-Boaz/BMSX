@@ -34,6 +34,7 @@ interface IGameObject {
     x_plus_width?: number;
     y_plus_height?: number;
     z_plus_depth?: number;
+    priority?: number;
 
     // Methods
     takeTurn(): void;

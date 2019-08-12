@@ -54,8 +54,8 @@ export class View {
         throw ("Niet geïmplementeerd :(");
     }
 
-    public DrawBitmap(imgId: number, x: number, y: number): void {
-        this.drawImg(imgId, <Point>{ x: x, y: y });
+    public DrawBitmap(imgId: number, x: number, y: number, options?: number): void {
+        this.drawImg(imgId, <Point>{ x: x, y: y }, options || undefined);
     }
 
     public DrawColoredBitmap(imgId: number, x: number, y: number, r: number, g: number, b: number) {
@@ -63,12 +63,17 @@ export class View {
         throw ("Niet geïmplementeerd :(");
     }
 
-    public drawImg(imgId: string | number, pos: Point): void {
+    public drawImg(imgId: string | number, pos: Point, options?: number): void {
         // TODO: IMPLEMENTEER!
         throw ("Niet geïmplementeerd :(");
     }
 
     public DrawRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
+        // TODO: IMPLEMENTEER!
+        throw ("Niet geïmplementeerd :(");
+    }
+
+    public FillRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
         // TODO: IMPLEMENTEER!
         throw ("Niet geïmplementeerd :(");
     }

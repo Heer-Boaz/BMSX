@@ -1,10 +1,11 @@
 import { Sprite } from "../BoazEngineJS/sprite";
 import { moveArea } from "../BoazEngineJS/common"
-import { GameConstants as CS } from "./gameconstants"
 import { Direction } from "../BoazEngineJS/direction";
 import { GameModel as M } from "./sintervaniamodel";
 import { TileSize } from "../BoazEngineJS/msx";
 import { BitmapId } from "./resourceids";
+import { view } from "../BoazEngineJS/engine";
+import { Constants } from "../BoazEngineJS/constants";
 
 /*[Serializable]*/
 export class Creature extends Sprite {
@@ -12,44 +13,58 @@ export class Creature extends Sprite {
     protected movementSprites: Map<Direction, BitmapId[]>;
     protected moveLeftBeforeFrameChange: number;
     protected currentWalkAnimationFrame: number = 0;
+
     public get WallHitArea(): Area {
         return <Area>this.hitarea;
     }
+
     public set WallHitArea(value: Area) {
     }
+
     private _direction: Direction;
+
     public get Direction(): Direction {
         return this._direction;
     }
+
     public set Direction(value: Direction) {
         this.OldDirection = this._direction;
         this._direction = value;
     }
+
     public OldDirection: Direction;
+
     constructor(p: Point) {
         super(p);
-        this.originPos = <Point>{ x: pos.x, y: pos.y };
+        this.originPos = <Point>{ x: this.pos.x, y: this.pos.y };
     }
+
     public Paint(offset: Point = null): void {
         if (this.disposeFlag || !this.visible)
             return
-        let options: number = this.flippedH ? <number>DrawBitmap.HFLIP : 0;
+        let options: number = this.flippedH ? Constants.DRAWBITMAP_HFLIP : 0;
         if (offset == null)
-            BDX._.DrawBitmap(this.imgid, this.pos.x, this.pos.y, options);
-        else BDX._.DrawBitmap(this.imgid, this.pos.x + offset.x, this.pos.y + offset.y, options);
+            view.DrawBitmap(this.imgid, this.pos.x, this.pos.y, options);
+        else view.DrawBitmap(this.imgid, this.pos.x + offset.x, this.pos.y + offset.y, options);
     }
+
     protected originPos: Point;
+
     public customId: string = null;
+
     public get id(): string {
         return this.customId != null ? this.customId : `${this.constructor.name}:${M._.CurrentRoom.Id}:${this.originPos.x},${this.originPos.y}`;
     }
+
     public set id(value: string) {
         this.customId = value;
     }
+
     public DetermineFrame(): void {
         this.imgid = <number>this.movementSprites[this.Direction][this.currentWalkAnimationFrame];
-        this.flippedH = this.Direction == this.Direction.Right;
+        this.flippedH = this.Direction == Direction.Right;
     }
+
     public AnimateMovement(movedDistance: number): void {
         if (movedDistance > 0) {
             this.moveLeftBeforeFrameChange -= movedDistance;
@@ -65,9 +80,11 @@ export class Creature extends Sprite {
             this.DetermineFrame();
         }
     }
+
     protected checkWallSpriteCollisions(): boolean {
-        return M._.objects.filter(o => o != this && o.extendedProperty<boolean>(M.PROPERTY_ACT_AS_WALL) && (<Sprite>o).hittable).includes(o => (<IGameObject>o).areaCollide(moveArea(this.WallHitArea, this.pos)));
+        return M._.objects.filter(o => o != this && o.extendedProperties[M.PROPERTY_ACT_AS_WALL] && (<Sprite>o).hittable).some(o => o.areaCollide(moveArea(this.WallHitArea, this.pos)));
     }
+
     protected checkWallCollision(): boolean {
         let startx = this.pos.x + this.WallHitArea.start.x;
         let starty = this.pos.y + this.WallHitArea.start.y;
@@ -88,6 +105,7 @@ export class Creature extends Sprite {
                 return false;
         }
     }
+
     protected handleWallCollision(): void {
         switch (this.Direction) {
             case Direction.Up:
