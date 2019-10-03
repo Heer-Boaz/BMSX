@@ -59,4 +59,9 @@ interface InputState {
     left: boolean;
     trigger1: boolean;
     trigger2: boolean;
+    f1: boolean;
+    f2: boolean;
+    f3: boolean;
+    f4: boolean;
+    f5: boolean;
 }

@@ -1,8 +1,9 @@
-import { GameModel, Direction } from "./sintervaniamodel";
+import { GameModel } from "./sintervaniamodel";
+import { Direction } from "../BoazEngineJS/direction";
 import { TextWriter } from "./textwriter";
 import { MSXConstants as CS } from "../BoazEngineJS/msx";
 import { view } from "../BoazEngineJS/engine";
-import { BitmapId } from "./resourceids";
+import { BitmapId, AudioId } from "./resourceids";
 import { KeyState } from "../BoazEngineJS/input";
 
 export enum State {
