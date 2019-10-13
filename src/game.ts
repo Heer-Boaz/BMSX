@@ -1,3 +1,6 @@
+import { BStopwatch } from "../BoazEngineJS/btimer";
+import { Toolbox } from "./toolbox";
+
 module Sintervania {
     export class Game {
         public bxlib: IBXLib;

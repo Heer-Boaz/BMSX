@@ -5,6 +5,7 @@ import { GameConstants as CS } from "./gameconstants";
 import { copyPoint } from "../BoazEngineJS/common";
 import { Animation } from "../BoazEngineJS/animation";
 import { MSXConstants } from "../BoazEngineJS/msx";
+import { BitmapId } from "./resourceids";
 
 /*[Serializable]*/
 export class RoeState {
@@ -44,29 +45,37 @@ export class Belmont extends Creature {
 	public get HealthPercentage(): number {
 		return Math.min(<number>(Math.round(this.Health / <number>this.MaxHealth * 100)), 100);
 	}
+
 	private static MoveBeforeFrameChange: number = 4;
 	public Crouching: boolean;
 	public CarryingShield: boolean;
+
 	public get RecoveringFromHit(): boolean {
 		return this.hitState.CurrentStep != HitState.HitStateStep.None;
 	}
+
 	private firstPressedButton: Direction;
 	private get movementSpeed(): number {
 		return 2;
 	}
+
 	private state: State;
 	public get Blink(): boolean {
 		return this.hitState.Blink;
 	}
+
 	public get Dying(): boolean {
 		return this.state == State.Dying || this.state == State.Dead;
 	}
+
 	public get Roeing(): boolean {
 		return this.roeState.Roeing;
 	}
+
 	public get Jumping(): boolean {
 		return this.jumpState.Jumping;
 	}
+
 	private hitState: HitState;
 	private dyingState: DyingState;
 	public roeState: RoeState;
@@ -83,22 +92,26 @@ export class Belmont extends Creature {
 	protected get moveBeforeFrameChange(): number {
 		return Belmont.MoveBeforeFrameChange;
 	}
+
 	protected get movementSprites(): Map<Direction, BitmapId[]> {
 		if (this.CarryingShield)
 			return Belmont.MovementSpritesWShield;
 		return Belmont.MovementSpritesNoShield;
 	}
+
 	public get WallHitArea(): Area {
 		return this.EventTouchHitArea;
 	}
-	public set WallHitArea(value: Area) {
 
+	public set WallHitArea(value: Area) {
 	}
+
 	public EventTouchHitArea: Area = new Area(0, 24, 16, 32);
 	private static buttonPressEventHitAreaUp: Area = new Area(0, 20, 16, 28);
 	private static buttonPressEventHitAreaRight: Area = new Area(4, 24, 20, 32);
 	private static buttonPressEventHitAreaDown: Area = new Area(0, 28, 16, 36);
 	private static buttonPressEventHitAreaLeft: Area = new Area(-4, 24, 12, 32);
+
 	public get EventButtonHitArea(): Area {
 		switch (this.Direction) {
 			case Direction.Up:
@@ -113,9 +126,11 @@ export class Belmont extends Creature {
 				return null;
 		}
 	}
+
 	public get RoomCollisionArea(): Area {
 		return this.EventTouchHitArea;
 	}
+
 	private static _hitarea: Area = new Area(2, 8, 14, 30);
 	public get hitarea(): Area {
 		return Belmont._hitarea;
@@ -123,6 +138,7 @@ export class Belmont extends Creature {
 	public set hitarea(value: Area) {
 
 	}
+
 	public get Vulnerable(): boolean {
 		return !this.hitState.BlinkingAndInvulnerable && !this.Dying;
 	}
@@ -149,6 +165,7 @@ export class Belmont extends Creature {
 		this.roeState.aniTimer = BStopwatch.createWatch();
 		this.SetExtendedProperty(M.PROPERTY_KEEP_AT_ROOMSWITCH, true);
 	}
+
 	public ResetToDefaultFrame(): void {
 		this.currentWalkAnimationFrame = 0;
 		this.moveLeftBeforeFrameChange = Belmont.MoveBeforeFrameChange;
@@ -156,6 +173,7 @@ export class Belmont extends Creature {
 		this.DetermineFrame();
 		this.state = State.Normal;
 	}
+
 	public GetProjectileOrigin(): Point {
 		let result: Point = copyPoint(this.pos);
 		switch (this.Direction) {
@@ -169,6 +187,7 @@ export class Belmont extends Creature {
 		}
 		return result;
 	}
+
 	public TakeTurn(): void {
 		if (this.state == State.Dying) {
 			this.doDeath();
@@ -238,6 +257,7 @@ export class Belmont extends Creature {
 		}
 		this.DetermineFrame();
 	}
+
 	protected doHitFlying(): void {
 		let delta: Point = <Point>{ x: 0, y: 0 };
 		this.hitState.HitAni.doAnimation(1, delta);
@@ -252,6 +272,7 @@ export class Belmont extends Creature {
 			this.hitState.CurrentStep = HitState.HitStateStep.Falling;
 		}
 	}
+
 	protected doHitFall(): void {
 		let originalPos = copyPoint(this.pos);
 		this.pos.x += this.Direction == Direction.Right ? -2 : 2;
@@ -266,6 +287,7 @@ export class Belmont extends Creature {
 			}
 		}
 	}
+
 	protected doHitCrouching(): void {
 		if (Helpers.WaitDuration(this.hitState.CrouchTimer, HitState.CrouchTime)) {
 			this.hitState.CurrentStep = HitState.HitStateStep.None;
@@ -275,6 +297,7 @@ export class Belmont extends Creature {
 			}
 		}
 	}
+
 	protected doJump(): void {
 		let originalPos = copyPoint(this.pos);
 		this.pos.y += this.jumpState.JumpAni.stepValue();
@@ -296,6 +319,7 @@ export class Belmont extends Creature {
 			this.checkAndHandleCollisions(originalPos);
 		}
 	}
+
 	public doWalk(): void {
 		if (this.currentWalkAnimationFrame == 0)
 			this.currentWalkAnimationFrame = 1;
@@ -303,6 +327,7 @@ export class Belmont extends Creature {
 		if (!this.multipleDirButtonsPressed())
 			this.firstPressedButton = this.Direction;
 	}
+
 	public DetermineFrame(): void {
 		switch (this.state) {
 			case State.Normal:
@@ -334,6 +359,7 @@ export class Belmont extends Creature {
 				break;
 		}
 	}
+
 	public TakeDamage(amount: number): void {
 		if (!this.hittable)
 			return
@@ -348,6 +374,7 @@ export class Belmont extends Creature {
 			S.PlayEffect(RM.Sound[AudioId.PlayerDamage]);
 		}
 	}
+
 	private doDeath(): void {
 		let stepValue: DyingState.BitmapAndDir = new DyingState.BitmapAndDir();
 		if (this.dyingState.DeathAni.doAnimation({ timer: this.dyingState.aniTimer, imageId: stepValue })) {
@@ -361,23 +388,28 @@ export class Belmont extends Creature {
 			}
 		}
 	}
+
 	public UseRoe(): void {
 		if (!this.Roeing && this.state != State.Dying) {
 			this.initRoeState();
 		}
 	}
+
 	private initHitRecoveryState(): void {
 		this.state = State.HitRecovery;
 		this.hitState.Start();
 	}
+
 	private initDyingState(): void {
 		this.dyingState.Start();
 		this.state = State.Dying;
 	}
+
 	private initRoeState(): void {
 		this.roeState.Start();
 		this.DetermineFrame();
 	}
+
 	private handleInput(moved: boolean): void {
 		if (I.KeyState.KD_DOWN && !this.ignoreDirButtonPress(Direction.Down)) {
 			this.Crouching = true;
@@ -412,6 +444,7 @@ export class Belmont extends Creature {
 			this.firstPressedButton = Direction.None;
 		}
 	}
+
 	private doMovement(dir: Direction, moved: boolean): void {
 		let speed = this.movementSpeed;
 		let originalPos = copyPoint(this.pos);
@@ -428,6 +461,7 @@ export class Belmont extends Creature {
 		this.checkAndHandleCollisions(originalPos);
 		moved = true;
 	}
+
 	private checkAndHandleWallAndCeilingCollisions(originalPos: Point): void {
 		if (this.checkWallSpriteCollisions())
 			this.pos.Set(originalPos);
@@ -441,22 +475,26 @@ export class Belmont extends Creature {
 			C._.HandleRoomExitViaMovement(possibleRoomExit.Value.destRoom, possibleRoomExit.Value.direction);
 		}
 	}
+
 	private checkAndHandleFloorCollisions(originalPos: Point): void {
 		if (this.FloorCollision) {
 			this.handleFloorCollision();
 		}
 		else this.checkAndHandleRoomExit();
 	}
+
 	private checkAndHandleCollisions(originalPos: Point): void {
 		this.checkAndHandleWallAndCeilingCollisions(originalPos);
 		this.checkAndHandleFloorCollisions(originalPos);
 	}
+
 	private checkAndHandleRoomExit(): void {
 		let possibleRoomExit = this.nearRoomExit();
 		if (possibleRoomExit != null && possibleRoomExit ?.destRoom != Room.NO_ROOM_EXIT) {
 			C._.HandleRoomExitViaMovement(possibleRoomExit.Value.destRoom, possibleRoomExit.Value.direction);
 		}
 	}
+
 	protected checkWallCollision(): boolean {
 		switch (this.Direction) {
 			case Direction.Right:
@@ -467,6 +505,7 @@ export class Belmont extends Creature {
 				return false;
 		}
 	}
+
 	protected handleWallCollision(): void {
 		switch (this.Direction) {
 			case Direction.Right:
@@ -482,12 +521,15 @@ export class Belmont extends Creature {
 				break;
 		}
 	}
+
 	protected get CeilingCollision(): boolean {
 		return M._.CurrentRoom.IsCollisionTile(this.pos.x + 1, this.pos.y + 8, true) || M._.CurrentRoom.IsCollisionTile(this.pos.x + 15, this.pos.y + 8, true);
 	}
+
 	protected get FloorCollision(): boolean {
 		return M._.CurrentRoom.IsCollisionTile(this.pos.x + 1, this.pos.y + 32, true) || M._.CurrentRoom.IsCollisionTile(this.pos.x + 15, this.pos.y + 32, true);
 	}
+
 	protected handleFloorCollision(): void {
 		this.pos.y = (this.pos.y / MSXConstants.TileSize) * MSXConstants.TileSize;
 		if (this.Jumping) {
@@ -498,6 +540,7 @@ export class Belmont extends Creature {
 			this.hitState.CrouchTimer.restart();
 		}
 	}
+
 	protected handleCeilingCollision(): void {
 		if (this.pos.y >= 0)
 			this.pos.y = (this.pos.y / MSXConstants.TileSize + 1) * MSXConstants.TileSize;
@@ -519,6 +562,7 @@ export class Belmont extends Creature {
 	private ignoreDirButtonPress(dir: Direction): boolean {
 		return this.multipleDirButtonsPressed() && dir == this.firstPressedButton;
 	}
+
 	private multipleDirButtonsPressed(): boolean {
 		let u: number = I.KeyState.KD_UP ? 1 : 0;
 		let r: number = I.KeyState.KD_RIGHT ? 1 : 0;
@@ -526,6 +570,7 @@ export class Belmont extends Creature {
 		let l: number = I.KeyState.KD_LEFT ? 1 : 0;
 		return u + r + d + l > 1;
 	}
+
 	public Paint(offset: Point = null): void {
 		let roeOffset = <Point>{ x: 0, y: 0 };
 		if (this.Roeing) {
@@ -553,6 +598,7 @@ export class Belmont extends Creature {
 			else BDX._.DrawColoredBitmap(this.imgid, pos.x + roeOffset.x + offset.x, pos.y + roeOffset.y + offset.y, options, 50.0f, .0f, .0f);
 		}
 	}
+
 	public Dispose(): void {
 		BStopwatch.removeWatch(this.hitState.BlinkTimer);
 		BStopwatch.removeWatch(this.hitState.RecoveryTimer);
@@ -560,12 +606,14 @@ export class Belmont extends Creature {
 		BStopwatch.removeWatch(this.roeState.aniTimer);
 	}
 }
+
 export enum State {
 	Normal,
 	HitRecovery,
 	Dying,
 	Dead
 }
+
 /*[Serializable]*/
 export class JumpState {
 	public JumpTimer: BStopwatch;
@@ -596,6 +644,7 @@ export class JumpState {
 		this.JumpAni.restart();
 	}
 }
+
 /*[Serializable]*/
 export class HitState {
 	public static TotalBlinkTime: number = 2000;
@@ -626,12 +675,14 @@ export class HitState {
 		new Point(-2, 1),
 		new Point(-2, 1));
 	public HitAni: Animation<Point>;
+
 	constructor() {
 		this.Blink = false;
 		this.BlinkingAndInvulnerable = false;
 		this.CurrentStep = HitState.HitStateStep.None;
 		this.HitAni = new Animation<Point>(HitState.hitDelta,/*constantStepTime:*/1);
 	}
+
 	public Stop(): void {
 		this.BlinkTimer.Stop();
 		this.RecoveryTimer.Stop();
@@ -640,6 +691,7 @@ export class HitState {
 		this.BlinkingAndInvulnerable = false;
 		this.CurrentStep = HitStateStep.None;
 	}
+
 	public Start(): void {
 		this.Blink = true;
 		this.BlinkingAndInvulnerable = true;
@@ -650,6 +702,7 @@ export class HitState {
 		this.HitAni.restart();
 	}
 }
+
 export enum HitStateStep {
 	None,
 	Flying,
@@ -665,13 +718,16 @@ export class DyingState {
 	protected static dyingFrameTimes: number[] = 100,
 	2000;
 	public aniTimer: BStopwatch;
+
 	public Start(): void {
 		this.aniTimer.restart();
 		this.DeathAni.restart();
 	}
+
 	public Stop(): void {
 		this.aniTimer.stop();
 	}
+
 	constructor() {
 		this.DeathAni = new Animation<BitmapAndDir>(DyingState.dyingFrames, DyingState.dyingFrameTimes);
 	}

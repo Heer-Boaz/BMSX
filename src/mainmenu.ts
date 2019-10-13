@@ -1,6 +1,6 @@
 import { Chapter, GameState } from "./sintervaniamodel";
 import { GameMenu } from "./gamemenu";
-import { GameConstants as CS } from "./gameconstants"
+import { GameConstants as GCS } from "./gameconstants"
 import { AudioId, BitmapId } from "./resourceids";
 import { ResourceMaster } from "./resourcemaster";
 import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
@@ -10,6 +10,7 @@ import { GameController as C } from "./gamecontroller";
 import { TextWriter } from "./textwriter";
 import { view } from "../BoazEngineJS/engine";
 import { MSXConstants as MCS } from "../BoazEngineJS/msx";
+import { Constants as CS } from "../BoazEngineJS/constants";
 
 export enum State {
     SelectMain,
@@ -43,12 +44,15 @@ export class MainMenu {
     private static boxY: number = 132;
     private static boxEndX: number = MainMenu.boxX + 176 + 32;
     private static boxEndY: number = MainMenu.boxY + 24 + 48;
+
     private get cursorX(): number {
         return MainMenu.cursorPosX;
     }
+
     private get cursorY(): number {
         return MainMenu.itemYs[this.selectedIndex];
     }
+
     private get selectedItem(): MenuItem {
         switch (this.state) {
             case State.SelectMain:
@@ -59,16 +63,19 @@ export class MainMenu {
                 return MenuItem.ToMainMenu;
         }
     }
-    constructor() {
 
+    constructor() {
     }
+
     public Init(): void {
         this.reset();
     }
+
     private reset(): void {
         this.selectedIndex = 0;
         this.state = State.SelectMain;
     }
+
     public HandleInput(): void {
         let selectionChanged: boolean = false;
         if (I.KeyState.KC_UP)
@@ -137,6 +144,7 @@ export class MainMenu {
             }
         }
     }
+
     private changeSelection(dir: Direction, selectionChanged: boolean): void {
         if (this.state == State.SubMenu)
             return
@@ -165,9 +173,10 @@ export class MainMenu {
                 break;
         }
     }
-    public TakeTurn(): void {
 
+    public TakeTurn(): void {
     }
+
     public Paint(): void {
         view.DrawBitmap(BitmapId.Titel, 0, 0);
         view.FillRectangle(MainMenu.boxX, MainMenu.boxY, MainMenu.boxEndX, MainMenu.boxEndY, MCS.Msx1Colors[4]);
@@ -197,6 +206,7 @@ export class MainMenu {
         view.DrawBitmap(<number>BitmapId.MenuCursor, this.cursorX, this.cursorY);
 
     }
+
     public GameMenuClosed(): void {
         this.reset();
     }

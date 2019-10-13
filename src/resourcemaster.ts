@@ -7,21 +7,27 @@ export class ResourceMaster {
 	public static get _(): ResourceMaster {
 		return ResourceMaster._instance != null ? ResourceMaster._instance : (ResourceMaster._instance = new ResourceMaster());
 	}
+
 	public static get Sound(): Map<AudioId, Effect> {
 		return ResourceMaster._.SoundEffectList;
 	}
+
 	public static get Music(): Map<AudioId, Song> {
 		return ResourceMaster._.MusicList;
 	}
+
 	public SoundEffectList: Map<AudioId, Effect> = new Map<AudioId, Effect>();
 	public MusicList: Map<AudioId, Song> = new Map<AudioId, Song>();
-	constructor() {
 
+	constructor() {
 	}
+
 	public LoadGameResources(): void {
 		this.loadViewResources();
 		this.loadAudioResources();
+
 	}
+
 	private loadViewResources(): void {
 		GameResources.Add(<number>BitmapId.Titel, new XBitmap("./Resources/Graphics/Belmont/Belmont_l1.png"));
 		this.loadBelmontResources();
@@ -33,10 +39,12 @@ export class ResourceMaster {
 		this.loadNPCResources();
 		this.loadDecorResources();
 	}
+
 	private loadFXResources(): void {
 		GameResources.Add(<number>BitmapId.FoeKill_1, new XBitmap("./Resources/Graphics/FX/Foekill_1.png"));
 		GameResources.Add(<number>BitmapId.FoeKill_2, new XBitmap("./Resources/Graphics/FX/Foekill_2.png"));
 	}
+
 	private loadDecorResources(): void {
 		GameResources.Add(<number>BitmapId.Candle_1, new XBitmap("./Resources/Graphics/Decor/Candle_1.png"));
 		GameResources.Add(<number>BitmapId.Candle_2, new XBitmap("./Resources/Graphics/Decor/Candle_2.png"));
@@ -44,6 +52,7 @@ export class ResourceMaster {
 		GameResources.Add(<number>BitmapId.GCandle_2, new XBitmap("./Resources/Graphics/Decor/GCandle_2.png"));
 		GameResources.Add(<number>BitmapId.Door, new XBitmap("./Resources/Graphics/Decor/Door.png"));
 	}
+
 	private loadBelmontResources(): void {
 		GameResources.Add(<number>BitmapId.Belmont_l1, new XBitmap("./Resources/Graphics/Belmont/Belmont_l1.png"));
 		GameResources.Add(<number>BitmapId.Belmont_l2, new XBitmap("./Resources/Graphics/Belmont/Belmont_l2.png"));
@@ -72,6 +81,7 @@ export class ResourceMaster {
 		GameResources.Add(<number>BitmapId.Belmont_rhitdown, new XBitmap("./Resources/Graphics/Belmont/Belmont_rhitdown.png"));
 		GameResources.Add(<number>BitmapId.Belmont_rhitfly, new XBitmap("./Resources/Graphics/Belmont/Belmont_rhitfly.png"));
 	}
+
 	private loadMiscResources(): void {
 		GameResources.Add(<number>BitmapId.HUD, new XBitmap("./Resources/Graphics/HUD/HUD.png"));
 		GameResources.Add(<number>BitmapId.HUD_EnergyStripe_belmont, new XBitmap("./Resources/Graphics/HUD/Energybarstripe_Belmont.png"));
@@ -79,6 +89,7 @@ export class ResourceMaster {
 		GameResources.Add(<number>BitmapId.CurtainPart, new XBitmap("./Resources/Graphics/Misc/CurtainPart.png"));
 		GameResources.Add(<number>BitmapId.MenuCursor, new XBitmap("./Resources/Graphics/Menu/MenuCursor.png"));
 	}
+
 	private loadFontResources(): void {
 		GameResources.Add(<number>BitmapId.Font_A, new XBitmap("./Resources/Graphics/Font/Letter_A.png"));
 		GameResources.Add(<number>BitmapId.Font_B, new XBitmap("./Resources/Graphics/Font/Letter_B.png"));
@@ -132,6 +143,7 @@ export class ResourceMaster {
 		GameResources.Add(<number>BitmapId.Font_SpeakStart, new XBitmap("./Resources/Graphics/Font/Letter_SpeakStart.png"));
 		GameResources.Add(<number>BitmapId.Font_SpeakEnd, new XBitmap("./Resources/Graphics/Font/Letter_SpeakEnd.png"));
 	}
+
 	private loadItemResources(): void {
 		GameResources.Add(<number>BitmapId.Chest, new XBitmap("./Resources/Graphics/Item/Chest.png"));
 		GameResources.Add(<number>BitmapId.Heart_big, new XBitmap("./Resources/Graphics/Item/Heart_big.png"));
@@ -140,6 +152,7 @@ export class ResourceMaster {
 		GameResources.Add(<number>BitmapId.Key_big, new XBitmap("./Resources/Graphics/Item/Key_big.png"));
 		GameResources.Add(<number>BitmapId.Key_small, new XBitmap("./Resources/Graphics/Item/Key_small.png"));
 	}
+
 	private loadFoeResources(): void {
 		GameResources.Add(<number>BitmapId.ZakFoe_1, new XBitmap("./Resources/Graphics/Foe/ZakFoe1.png"));
 		GameResources.Add(<number>BitmapId.ZakFoe_2, new XBitmap("./Resources/Graphics/Foe/ZakFoe2.png"));
@@ -148,9 +161,10 @@ export class ResourceMaster {
 		GameResources.Add(<number>BitmapId.Hag_1, new XBitmap("./Resources/Graphics/Foe/Hag_1.png"));
 		GameResources.Add(<number>BitmapId.Hag_2, new XBitmap("./Resources/Graphics/Foe/Hag_2.png"));
 	}
-	private loadNPCResources(): void {
 
+	private loadNPCResources(): void {
 	}
+
 	private loadAudioResources(): void {
 		GameResources.Add(<number>AudioId.Init, AudioData.LoadAudioBufferFromFile("./Resources/Sound/Init.wav"));
 		GameResources.Add(<number>AudioId.Fout, AudioData.LoadAudioBufferFromFile("./Resources/Sound/Fout.wav"));

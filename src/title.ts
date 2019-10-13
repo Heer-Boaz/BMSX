@@ -1,5 +1,7 @@
-import { Animation } from "../BoazEngineJS/animation"
+import { Animation, AniStepCompoundValue } from "../BoazEngineJS/animation"
 import { setPoint } from "../BoazEngineJS/common";
+import { BitmapId } from "./resourceids";
+import { GameController as C } from "./gamecontroller";
 
 export enum State {
 	WaitForIt,
@@ -47,40 +49,45 @@ export class Title {
 	}
 
 	public TakeTurn(): void {
-		let newState = this.state;
+		let newState: AniStepCompoundValue<State> = { nextStepValue: <State>this.state };
 		if (I.KeyState.KC_SPACE) {
 			C._.PreludeFinished();
 			I.KeyState.KC_SPACE = false;
 			return
 		}
+
 		switch (this.state) {
 			case State.WaitForIt:
 			case State.WaitForItAgain:
 				if (this.titleAni.doAnimation(1, newState)) {
-					this.state = newState;
+					this.state = newState.nextStepValue;
 				}
 				break;
+
 			case State.Konami:
 				if (this.titleAni.doAnimation(1, newState)) {
-					this.state = newState;
+					this.state = newState.nextStepValue;
 				}
 				break;
+
 			case State.TitleTop:
 				if ((G._.bxlib.TurnCounter & 1) == 0) {
 					this.titleTopPos.x += Title.deltaX;
 					if (this.titleAni.doAnimation(<number>Title.deltaX, newState)) {
-						this.state = newState;
+						this.state = newState.nextStepValue;
 					}
 				}
 				break;
+
 			case State.TitleBottom:
 				if ((G._.bxlib.TurnCounter & 1) == 0) {
 					this.titleBottomPos.x -= Title.deltaX;
 					if (this.titleAni.doAnimation(<number>Title.deltaX, newState)) {
-						this.state = newState;
+						this.state = newState.nextStepValue;
 					}
 				}
 				break;
+
 			case State.Other:
 				C._.PreludeFinished();
 				break;

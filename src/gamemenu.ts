@@ -1,3 +1,8 @@
+import { MenuItem } from "./mainmenu";
+import { View } from "../BoazEngineJS/view";
+import { AudioId, BitmapId } from "./resourceids";
+import { Direction } from "../BoazEngineJS/direction";
+
 export class GameMenu {
     private static menuPosX: number = 24;
     private static menuPosY: number = 24;
