@@ -2,6 +2,7 @@ import { MenuItem } from "./mainmenu";
 import { View } from "../BoazEngineJS/view";
 import { AudioId, BitmapId } from "./resourceids";
 import { Direction } from "../BoazEngineJS/direction";
+import { TextWriter } from "./textwriter";
 
 export class GameMenu {
     private static menuPosX: number = 24;
@@ -13,8 +14,6 @@ export class GameMenu {
     private static loadsaveItemOffsetX: number = 24;
     private static optionItemsOffsetX: number = 56;
     private static itemOffsetY: number = 16;
-    private static cursorOffsetX: number = -16;
-    private static cursorOffsetY: number = GameMenu.mainMenuTextY + GameMenu.itemOffsetY;
     private static itemVerticalSkipPerEntry: number = GameMenu.cursorVerticalSkipPerEntry;
     private static menuText: string = "- Game Menu -";
     private static loadMenuText: string = "- Load game -";
@@ -27,45 +26,47 @@ export class GameMenu {
     private static musicVolumeText: string = "Music: ";
     private static mainMenuTextX: number = GameMenu.menuPosX + 56;
     private static mainMenuTextY: number = GameMenu.menuPosY + 16;
-    private static mainItems: MenuOption[] = [__init(new MenuOption(), { type: MenuItem.ChangeOptions, label: "Options" }),
+    private static cursorOffsetX: number = -16;
+    private static cursorOffsetY: number = GameMenu.mainMenuTextY + GameMenu.itemOffsetY;
+    private static mainItems: MenuOption[] = [__init(new MenuOption(), { type: GameMenu.MenuItem.ChangeOptions, label: "Options" }),
     __init(new MenuOption(), { type: MenuItem.LoadGame, label: "Load game" }),
     __init(new MenuOption(), { type: MenuItem.SaveGame, label: "Save game" }),
     __init(new MenuOption(), { type: MenuItem.ExitGame, label: "Exit game" }),
     __init(new MenuOption(), { type: MenuItem.ReturnToGame, label: "Return to game" })];
-    private static optionsItems: MenuOption[] = [__init(new MenuOption(), { type: MenuItem.ReturnToMain, label: GameMenu.backText }),
+    private static optionsItems: MenuOption[] = [__init(new MenuOption(), { type: GameMenu.MenuItem.ReturnToMain, label: GameMenu.backText }),
     __init(new MenuOption(), { type: MenuItem.Scale, label: GameMenu.scaleText }),
     __init(new MenuOption(), { type: MenuItem.Fullscreen, label: "Fullscreen: y n" }),
     __init(new MenuOption(), { type: MenuItem.MusicVolume, label: GameMenu.musicVolumeText }),
     __init(new MenuOption(), { type: MenuItem.EffectVolume, label: GameMenu.effectVolumeText })];
-    private static fullscreenOptionsOffsets: number[] = [View.TextWriter.FontWidth * 12 - 1, View.TextWriter.FontWidth * 14 - 1];
+    private static fullscreenOptionsOffsets: number[] = [TextWriter.FontWidth * 12 - 1, TextWriter.FontWidth * 14 - 1];
     private static fullscreenOptionsOffsetY: number = -1;
-    private static fullscreenOptionsRectangleSize: Size = new Size(View.TextWriter.FontWidth + 2, View.TextWriter.FontHeight + 2);
-    public Visible: boolean;
+    private static fullscreenOptionsRectangleSize: Size = new Size(TextWriter.FontWidth + 2, TextWriter.FontHeight + 2);
+    public visible: boolean;
     private cursorPos: Point;
     private selectedItemIndex: number;
-    private CurrentScreen: Screen;
+    private CurrentScreen: GameMenu.MenuItem;
     constructor() {
         this.visible = false;
         this.cursorPos = <Point>{ x: 0, y: 0 };
         this.selectedItemIndex = 0;
-        this.CurrentScreen = Screen.Main;
+        this.CurrentScreen = GameMenu.MenuItem.Main;
     }
-    public Open(currentscreen: Screen = Screen.Main): void {
+    public Open(currentscreen: GameMenu.MenuItem = GameMenu.MenuItem.Main): void {
         this.selectedItemIndex = 0;
         this.visible = true;
         this.CurrentScreen = currentscreen;
-        if (this.CurrentScreen == Screen.Main)
+        if (this.CurrentScreen == GameMenu.MenuItem.Main)
             S.PlayEffect(RM.Sound[AudioId.Selectie]);
     }
     public Close(): void {
         this.visible = false;
         this.selectedItemIndex = 0;
         switch (this.CurrentScreen) {
-            case Screen.LoadFromGameOver:
-                V._.GameOverScreen.GameMenuClosed();
+            case GameMenu.MenuItem.LoadFromGameOver:
+                V._.GameOverGameMenu.MenuItem.GameMenuClosed();
                 break;
-            case Screen.LoadFromMainMenu:
-            case Screen.OptionsFromMainMenu:
+            case GameMenu.MenuItem.LoadFromMainMenu:
+            case GameMenu.MenuItem.OptionsFromMainMenu:
                 V._.MainMenu.GameMenuClosed();
                 break;
             default:
@@ -81,13 +82,13 @@ export class GameMenu {
     public HandleInput(): void {
         let selectionChanged: boolean = false;
         switch (this.CurrentScreen) {
-            case Screen.Main:
-            case Screen.Load:
-            case Screen.LoadFromMainMenu:
-            case Screen.Options:
-            case Screen.OptionsFromMainMenu:
-            case Screen.Save:
-            case Screen.LoadFromGameOver:
+            case GameMenu.MenuItem.Main:
+            case GameMenu.MenuItem.Load:
+            case GameMenu.MenuItem.LoadFromMainMenu:
+            case GameMenu.MenuItem.Options:
+            case GameMenu.MenuItem.OptionsFromMainMenu:
+            case GameMenu.MenuItem.Save:
+            case GameMenu.MenuItem.LoadFromGameOver:
                 if (I.KeyState.KC_UP)
                     this.changeSelection(Direction.Up, selectionChanged);
                 else if (I.KeyState.KC_RIGHT)
@@ -100,23 +101,23 @@ export class GameMenu {
         }
         if (I.KeyState.KC_SPACE) {
             switch (this.CurrentScreen) {
-                case Screen.Main:
+                case GameMenu.MenuItem.Main:
                     S.PlayEffect(RM.Sound[AudioId.Selectie]);
                     switch (this.selectedItem) {
-                        case MenuItem.ReturnToGame:
+                        case GameMenu.MenuItem.ReturnToGame:
                             C._.CloseGameMenu();
                             break;
-                        case MenuItem.ChangeOptions:
-                            this.CurrentScreen = Screen.Options;
+                        case GameMenu.MenuItem.ChangeOptions:
+                            this.CurrentScreen = GameMenu.MenuItem.Options;
                             this.selectedItemIndex = 0;
                             break;
                         case MenuItem.LoadGame:
-                            this.CurrentScreen = Screen.Load;
+                            this.CurrentScreen = GameMenu.MenuItem.Load;
                             this.selectedItemIndex = 0;
                             break;
                         case MenuItem.SaveGame:
                             if (M._.State != M.GameState.Event) {
-                                this.CurrentScreen = Screen.Save;
+                                this.CurrentScreen = GameMenu.MenuItem.Save;
                                 this.selectedItemIndex = 0;
                             }
                             else S.PlayEffect(RM.Sound[AudioId.Fout]);
@@ -126,19 +127,19 @@ export class GameMenu {
                             break;
                     }
                     break;
-                case Screen.Load:
-                case Screen.LoadFromGameOver:
-                case Screen.LoadFromMainMenu:
+                case GameMenu.MenuItem.Load:
+                case GameMenu.MenuItem.LoadFromGameOver:
+                case GameMenu.MenuItem.LoadFromMainMenu:
                     switch (this.selectedItem) {
                         case MenuItem.ReturnToMain:
                             S.PlayEffect(RM.Sound[AudioId.Selectie]);
                             switch (this.CurrentScreen) {
-                                case Screen.LoadFromGameOver:
-                                case Screen.LoadFromMainMenu:
+                                case GameMenu.MenuItem.LoadFromGameOver:
+                                case GameMenu.MenuItem.LoadFromMainMenu:
                                     this.Close();
                                     break;
                                 default:
-                                    this.CurrentScreen = Screen.Main;
+                                    this.CurrentScreen = GameMenu.MenuItem.Main;
                                     this.selectedItemIndex = 0;
                                     break;
                             }
@@ -155,11 +156,11 @@ export class GameMenu {
                             break;
                     }
                     break;
-                case Screen.Save:
+                case GameMenu.MenuItem.Save:
                     S.PlayEffect(RM.Sound[AudioId.Selectie]);
                     switch (this.selectedItem) {
                         case MenuItem.ReturnToMain:
-                            this.CurrentScreen = Screen.Main;
+                            this.CurrentScreen = GameMenu.MenuItem.Main;
                             this.selectedItemIndex = 0;
                             break;
                         case MenuItem.SaveSlot:
@@ -170,17 +171,17 @@ export class GameMenu {
                             break;
                     }
                     break;
-                case Screen.Options:
-                case Screen.OptionsFromMainMenu:
+                case GameMenu.MenuItem.Options:
+                case GameMenu.MenuItem.OptionsFromMainMenu:
                     switch (this.selectedItem) {
                         case GameMenu.MenuItem.ReturnToMain:
                             S.PlayEffect(RM.Sound[AudioId.Selectie]);
                             switch (this.CurrentScreen) {
-                                case Screen.OptionsFromMainMenu:
+                                case GameMenu.MenuItem.OptionsFromMainMenu:
                                     this.Close();
                                     break;
                                 default:
-                                    this.CurrentScreen = Screen.Main;
+                                    this.CurrentScreen = GameMenu.MenuItem.Main;
                                     this.selectedItemIndex = 0;
                                     break;
                             }
@@ -194,8 +195,8 @@ export class GameMenu {
         }
         if (I.KeyState.KC_RIGHT) {
             switch (this.CurrentScreen) {
-                case Screen.Options:
-                case Screen.OptionsFromMainMenu:
+                case GameMenu.MenuItem.Options:
+                case GameMenu.MenuItem.OptionsFromMainMenu:
                     switch (this.selectedItem) {
                         case MenuItem.Scale:
                             if (!GO._.Fullscreen) {
@@ -237,8 +238,8 @@ export class GameMenu {
         }
         if (I.KeyState.KC_LEFT) {
             switch (this.CurrentScreen) {
-                case Screen.Options:
-                case Screen.OptionsFromMainMenu:
+                case GameMenu.MenuItem.Options:
+                case GameMenu.MenuItem.OptionsFromMainMenu:
                     switch (this.selectedItem) {
                         case MenuItem.Scale:
                             if (!GO._.Fullscreen && GO._.Scale > 1) {
@@ -281,46 +282,49 @@ export class GameMenu {
             S.PlayEffect(RM.Sound[AudioId.Selectie]);
         }
     }
+
     private calculateCursorX(): number {
         switch (this.CurrentScreen) {
-            case Screen.Options:
-            case Screen.OptionsFromMainMenu:
-            case Screen.Main:
+            case GameMenu.MenuItem.Options:
+            case GameMenu.MenuItem.OptionsFromMainMenu:
+            case GameMenu.MenuItem.Main:
                 return GameMenu.menuPosX + GameMenu.mainItemsOffsetX + GameMenu.cursorOffsetX;
-            case Screen.Load:
-            case Screen.LoadFromGameOver:
-            case Screen.LoadFromMainMenu:
-            case Screen.Save:
+            case GameMenu.MenuItem.Load:
+            case GameMenu.MenuItem.LoadFromGameOver:
+            case GameMenu.MenuItem.LoadFromMainMenu:
+            case GameMenu.MenuItem.Save:
                 return GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX + GameMenu.cursorOffsetX;
         }
         return 0;
     }
+
     private calculateCursorY(): number {
         switch (this.CurrentScreen) {
             default:
                 return GameMenu.cursorOffsetY + GameMenu.cursorVerticalSkipPerEntry * this.selectedItemIndex;
         }
     }
+
     private changeSelection(direction: Direction, selectionChanged: boolean): void {
         let maxX: number, maxY, x, y;
         switch (this.CurrentScreen) {
-            case Screen.Main:
+            case GameMenu.MenuItem.Main:
                 x = 0;
                 y = this.selectedItemIndex;
                 maxX = 0;
                 maxY = GameMenu.mainItems.length - 1;
                 break;
-            case Screen.Options:
-            case Screen.OptionsFromMainMenu:
+            case GameMenu.MenuItem.Options:
+            case GameMenu.MenuItem.OptionsFromMainMenu:
                 x = 0;
                 y = this.selectedItemIndex;
                 maxX = 0;
                 maxY = GameMenu.optionsItems.length - 1;
                 break;
-            case Screen.Load:
-            case Screen.Save:
-            case Screen.LoadFromGameOver:
-            case Screen.LoadFromMainMenu:
+            case GameMenu.MenuItem.Load:
+            case GameMenu.MenuItem.Save:
+            case GameMenu.MenuItem.LoadFromGameOver:
+            case GameMenu.MenuItem.LoadFromMainMenu:
                 x = 0;
                 y = this.selectedItemIndex;
                 maxX = 0;
@@ -358,21 +362,23 @@ export class GameMenu {
         }
         this.selectedItemIndex = y;
     }
+
     private get selectedItem(): MenuItem {
         switch (this.CurrentScreen) {
-            case Screen.Main:
+            case GameMenu.MenuItem.Main:
             default:
                 return GameMenu.mainItems[this.selectedItemIndex].type;
-            case Screen.Load:
-            case Screen.Save:
-            case Screen.LoadFromGameOver:
-            case Screen.LoadFromMainMenu:
-                return this.selectedItemIndex > 0 ? MenuItem.SaveSlot : MenuItem.ReturnToMain;
-            case Screen.Options:
-            case Screen.OptionsFromMainMenu:
+            case GameMenu.MenuItem.Load:
+            case GameMenu.MenuItem.Save:
+            case GameMenu.MenuItem.LoadFromGameOver:
+            case GameMenu.MenuItem.LoadFromMainMenu:
+                return this.selectedItemIndex > 0 ? GameMenu.MenuItem.SaveSlot : GameMenu.MenuItem.ReturnToMain;
+            case GameMenu.MenuItem.Options:
+            case GameMenu.MenuItem.OptionsFromMainMenu:
                 return GameMenu.optionsItems[this.selectedItemIndex].type;
         }
     }
+
     public Paint(): void {
         if (!this.visible)
             return
@@ -381,25 +387,25 @@ export class GameMenu {
         let titleToDraw: string;
         let titleX: number, titleY;
         switch (this.CurrentScreen) {
-            case Screen.Main:
+            case GameMenu.MenuItem.Main:
                 titleToDraw = GameMenu.menuText;
                 titleX = GameMenu.mainMenuTextX;
                 titleY = GameMenu.mainMenuTextY;
                 break;
-            case Screen.Options:
-            case Screen.OptionsFromMainMenu:
+            case GameMenu.MenuItem.Options:
+            case GameMenu.MenuItem.OptionsFromMainMenu:
                 titleToDraw = GameMenu.optionMenuText;
                 titleX = GameMenu.mainMenuTextX;
                 titleY = GameMenu.mainMenuTextY;
                 break;
-            case Screen.Load:
-            case Screen.LoadFromGameOver:
-            case Screen.LoadFromMainMenu:
+            case GameMenu.MenuItem.Load:
+            case GameMenu.MenuItem.LoadFromGameOver:
+            case GameMenu.MenuItem.LoadFromMainMenu:
                 titleToDraw = GameMenu.loadMenuText;
                 titleX = GameMenu.mainMenuTextX;
                 titleY = GameMenu.mainMenuTextY;
                 break;
-            case Screen.Save:
+            case GameMenu.MenuItem.Save:
                 titleToDraw = GameMenu.saveMenuText;
                 titleX = GameMenu.mainMenuTextX;
                 titleY = GameMenu.mainMenuTextY;
@@ -410,81 +416,81 @@ export class GameMenu {
                 titleY = GameMenu.mainMenuTextY;
                 break;
         }
-        View.TextWriter.DrawText(titleX, titleY, titleToDraw);
+        TextWriter.DrawText(titleX, titleY, titleToDraw);
         let y = GameMenu.mainMenuTextY + GameMenu.itemOffsetY;
         switch (this.CurrentScreen) {
-            case Screen.Main:
+            case GameMenu.MenuItem.Main:
             default:
                 {
                     GameMenu.mainItems.forEach(function (item) {
                         switch (item.type) {
-                            case MenuItem.SaveGame:
+                            case GameMenu.MenuItem.SaveGame:
                                 if (M._.State != M.GameState.Event)
-                                    View.TextWriter.DrawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
-                                else View.TextWriter.DrawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, CS.Msx1ExtColors[0]);
+                                    TextWriter.DrawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
+                                else TextWriter.DrawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, CS.Msx1ExtColors[0]);
                                 break;
                             default:
-                                View.TextWriter.DrawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
+                                TextWriter.DrawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
                                 break;
                         }
                         y += GameMenu.itemOffsetY;
                     });
                     break;
                 }
-            case Screen.Options:
-            case Screen.OptionsFromMainMenu:
+            case GameMenu.MenuItem.Options:
+            case GameMenu.MenuItem.OptionsFromMainMenu:
                 {
                     GameMenu.optionsItems.forEach(function (item) {
                         let offsetX: number = GameMenu.menuPosX + GameMenu.mainItemsOffsetX;
                         switch (item.type) {
-                            case MenuItem.Scale:
+                            case GameMenu.MenuItem.Scale:
                                 let textToDisplay: string;
                                 if (!GO._.Fullscreen) {
-                                    View.TextWriter.DrawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
-                                    offsetX += GameMenu.scaleText.length * View.TextWriter.FontWidth;
+                                    TextWriter.DrawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
+                                    offsetX += GameMenu.scaleText.length * TextWriter.FontWidth;
                                     textToDisplay = GO._.Scale.ToString();
-                                    View.TextWriter.DrawText(offsetX, y, string.Format("{0}X", textToDisplay));
+                                    TextWriter.DrawText(offsetX, y, string.Format("{0}X", textToDisplay));
                                 }
                                 else {
-                                    View.TextWriter.DrawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, CS.Msx1ExtColors[0]);
-                                    offsetX += GameMenu.scaleText.length * View.TextWriter.FontWidth;
+                                    TextWriter.DrawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, CS.Msx1ExtColors[0]);
+                                    offsetX += GameMenu.scaleText.length * TextWriter.FontWidth;
                                     textToDisplay = BDX._.Zoom.ToString("n2");
-                                    View.TextWriter.DrawText(offsetX, y, string.Format("{0}X", textToDisplay), CS.Msx1ExtColors[0]);
+                                    TextWriter.DrawText(offsetX, y, string.Format("{0}X", textToDisplay), CS.Msx1ExtColors[0]);
                                 }
                                 break;
-                            case MenuItem.Fullscreen:
-                                View.TextWriter.DrawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
+                            case GameMenu.MenuItem.Fullscreen:
+                                TextWriter.DrawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
                                 this.printFullscreenOptionRectangle(y);
                                 break;
-                            case MenuItem.EffectVolume:
+                            case GameMenu.MenuItem.EffectVolume:
                                 {
-                                    View.TextWriter.DrawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
-                                    offsetX += GameMenu.effectVolumeText.length * View.TextWriter.FontWidth;
+                                    TextWriter.DrawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
+                                    offsetX += GameMenu.effectVolumeText.length * TextWriter.FontWidth;
                                     let text = GO._.EffectsVolumePercentage > 0 ? GO._.EffectsVolumePercentage + "%" : "Off";
-                                    View.TextWriter.DrawText(offsetX, y, text);
+                                    TextWriter.DrawText(offsetX, y, text);
                                 }
                                 break;
-                            case MenuItem.MusicVolume:
+                            case GameMenu.MenuItem.MusicVolume:
                                 {
-                                    View.TextWriter.DrawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
-                                    offsetX += GameMenu.musicVolumeText.length * View.TextWriter.FontWidth;
+                                    TextWriter.DrawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
+                                    offsetX += GameMenu.musicVolumeText.length * TextWriter.FontWidth;
                                     let text = GO._.MusicVolumePercentage > 0 ? GO._.MusicVolumePercentage + "%" : "Off";
-                                    View.TextWriter.DrawText(offsetX, y, text);
+                                    TextWriter.DrawText(offsetX, y, text);
                                 }
                                 break;
                             default:
-                                View.TextWriter.DrawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
+                                TextWriter.DrawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
                                 break;
                         }
                         y += GameMenu.itemOffsetY;
                     });
                     break;
                 }
-            case Screen.Load:
-            case Screen.LoadFromGameOver:
-            case Screen.LoadFromMainMenu:
+            case GameMenu.MenuItem.Load:
+            case GameMenu.MenuItem.LoadFromGameOver:
+            case GameMenu.MenuItem.LoadFromMainMenu:
                 {
-                    View.TextWriter.DrawText(GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX, y, GameMenu.backText);
+                    TextWriter.DrawText(GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX, y, GameMenu.backText);
                     y += GameMenu.itemOffsetY;
                     for (let i = 0; i < CS.SaveSlotCount; i++) {
                         this.printSaveSlot(GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX, y, i);
@@ -492,9 +498,9 @@ export class GameMenu {
                     }
                     break;
                 }
-            case Screen.Save:
+            case GameMenu.MenuItem.Save:
                 {
-                    View.TextWriter.DrawText(GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX, y, GameMenu.backText);
+                    TextWriter.DrawText(GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX, y, GameMenu.backText);
                     y += GameMenu.itemOffsetY;
                     for (let i = 0; i < CS.SaveSlotCount; i++) {
                         this.printSaveSlot(GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX, y, i);
@@ -505,22 +511,25 @@ export class GameMenu {
         }
         BDX._.DrawBitmap(<number>BitmapId.MenuCursor, this.cursorPos.x, this.cursorPos.y);
     }
+
     private printFullscreenOptionRectangle(y: number): void {
         let selectedIndex: number = GO._.Fullscreen ? 0 : 1;
         BDX._.DrawRectangle(GameMenu.fullscreenOptionsOffsets[selectedIndex] + GameMenu.menuPosX + GameMenu.optionItemsOffsetX, y + GameMenu.fullscreenOptionsOffsetY, GameMenu.fullscreenOptionsOffsets[selectedIndex] + GameMenu.fullscreenOptionsRectangleSize.x + GameMenu.menuPosX + GameMenu.optionItemsOffsetX, y + GameMenu.fullscreenOptionsOffsetY + GameMenu.fullscreenOptionsRectangleSize.y, CS.Msx1Colors[6]);
     }
+
     private printSaveSlot(x: number, y: number, slotIndex: number): void {
         let exists = GameLoader.SlotExists(slotIndex);
         if (!exists) {
-            View.TextWriter.DrawText(GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX, y, string.Format("{0}: {1}", slotIndex + 1, GameMenu.emptySlot));
+            TextWriter.DrawText(GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX, y, string.Format("{0}: {1}", slotIndex + 1, GameMenu.emptySlot));
             return
         }
         let savegame = GameLoader.LoadGame(slotIndex);
         let time = savegame.Timestamp;
-        View.TextWriter.DrawText(GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX, y, string.Format("{0}: {1}/{2}/{3} - {4}:{5}", slotIndex + 1, time.Day.ToString("d2"), time.Month.ToString("d2"), time.Year, time.Hour.ToString("d2"), time.Minute.ToString("d2")));
+        TextWriter.DrawText(GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX, y, string.Format("{0}: {1}/{2}/{3} - {4}:{5}", slotIndex + 1, time.Day.ToString("d2"), time.Month.ToString("d2"), time.Year, time.Hour.ToString("d2"), time.Minute.ToString("d2")));
     }
 }
-export module GameMenu {
+
+export namespace GameMenu {
     export enum MenuItem {
         Dummy,
         LoadGame,
@@ -533,17 +542,9 @@ export module GameMenu {
         Fullscreen,
         MusicVolume,
         EffectVolume,
-        ExitGame
-    }
-}
-export module GameMenu {
-    export class MenuOption {
-        public type: MenuItem;
-        public label: string;
-    }
-}
-export module GameMenu {
-    export enum Screen {
+        ExitGame,
+
+        // ScreenMenu
         Main,
         Load,
         Save,
@@ -551,5 +552,10 @@ export module GameMenu {
         LoadFromGameOver,
         LoadFromMainMenu,
         OptionsFromMainMenu
+    }
+
+    export class MenuOption {
+        public type: MenuItem;
+        public label: string;
     }
 }

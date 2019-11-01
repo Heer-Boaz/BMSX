@@ -1,5 +1,5 @@
 import { Chapter, GameState } from "./sintervaniamodel";
-import { GameMenu } from "./gamemenu";
+import { GameMenu } from "./GameMenu.1";
 import { GameConstants as GCS } from "./gameconstants"
 import { AudioId, BitmapId } from "./resourceids";
 import { ResourceMaster } from "./resourcemaster";

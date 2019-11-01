@@ -6,7 +6,6 @@ import { AudioId, BitmapId } from "./resourceids";
 import { Direction } from "../BoazEngineJS/direction";
 import { Bootstrapper } from "./bootstrapper";
 import { Savegame } from "../BoazEngineJS/savegame";
-import { GameMenu } from "./gamemenu";
 import { WeaponItem } from "./weaponitem";
 
 export class GameController {

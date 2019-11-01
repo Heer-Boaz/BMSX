@@ -4,7 +4,6 @@ import { Savegame } from "../BoazEngineJS/savegame";
 import { Model } from "../BoazEngineJS/model";
 import { BStopwatch } from "../BoazEngineJS/btimer";
 import { BossFoe } from "./bossfoe";
-import { GameMenu } from "./gamemenu";
 import { WeaponItem, WeaponType } from "./weaponitem";
 import { GameConstants as CS } from "./gameconstants";
 import { ItemType } from "./item";

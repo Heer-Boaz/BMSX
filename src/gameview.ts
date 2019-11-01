@@ -4,7 +4,7 @@ import { GameOver } from "./gameover";
 import { MainMenu } from "./mainmenu";
 import { Title } from "./title";
 import { Chapter, GameState, GameSubstate } from "./sintervaniamodel";
-import { GameMenu } from "./gamemenu";
+import { GameMenu } from "./GameMenu.1";
 import { GameConstants as CS } from "./gameconstants"
 import { AudioId, BitmapId } from "./resourceids";
 import { ResourceMaster } from "./resourcemaster";
