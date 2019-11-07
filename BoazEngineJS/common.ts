@@ -1,8 +1,6 @@
-﻿/// <reference path="interfaces.ts"/>
-/// <reference path="btimer.ts"/>
-
-import { BStopwatch } from "./btimer"
+﻿import { BStopwatch } from "./btimer"
 import { Direction } from "./direction";
+import { Area, Point, Size } from "./interfaces";
 
 export function moveArea(a: Area, p: Point): Area {
     return <Area>{

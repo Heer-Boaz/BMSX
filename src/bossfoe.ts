@@ -1,5 +1,6 @@
 import { Foe } from "./foe";
 import { GameModel } from "./sintervaniamodel";
+import { Point } from "../BoazEngineJS/interfaces";
 
 /*[Serializable]*/
 export class BossFoe extends Foe {

@@ -1,12 +1,17 @@
-import { GameState } from "./sintervaniamodel";
 import { BStopwatch } from "../BoazEngineJS/btimer";
-import { Item } from "./item";
+import { Item, ItemType } from "./item";
 import { saveGame } from "../BoazEngineJS/gamesaver";
 import { AudioId, BitmapId } from "./resourceids";
 import { Direction } from "../BoazEngineJS/direction";
 import { Bootstrapper } from "./bootstrapper";
 import { Savegame } from "../BoazEngineJS/savegame";
 import { WeaponItem } from "./weaponitem";
+import { GameModel as M } from "./sintervaniamodel"
+import { GameState, GameSubstate } from "../BoazEngineJS/model";
+import { KeyState } from "../BoazEngineJS/input";
+import { WeaponFireHandler } from "./weaponfirehandler";
+import { Room } from "./room";
+import { GameMenu } from "./gamemenu";
 
 export class GameController {
     private static _instance: GameController;
@@ -84,7 +89,7 @@ export class GameController {
         }
     }
 
-    protected switchToSubstate(newSubstate: M.GameSubstate): void {
+    protected switchToSubstate(newSubstate: GameSubstate): void {
         M._.OldSubstate = M._.Substate;
         switch (newSubstate) {
             case M.GameSubstate.Conversation:
@@ -209,7 +214,7 @@ export class GameController {
                         M._.GameObjects.FindAll(o => o.DisposeFlag).ForEach(o => M._.Remove(o));
                         M._.CurrentRoom.TakeTurn();
                         V._.Hud.TakeTurn();
-                        if (I.KeyState.KC_F5 && !M._.GameMenu.visible)
+                        if (KeyState.KC_F5 && !M._.GameMenu.visible)
                             this.OpenGameMenu();
                         break;
                 }
@@ -219,7 +224,7 @@ export class GameController {
         }
     }
     private handleInputDuringGame(): void {
-        if (I.KeyState.KC_F1)
+        if (KeyState.KC_F1)
             this.PauseGame();
         switch (M._.Substate) {
             case M.GameSubstate.BelmontDies:
@@ -236,24 +241,24 @@ export class GameController {
                 break;
             case M.GameSubstate.Default:
             default:
-                if (I.KeyState.KC_SPACE) {
+                if (KeyState.KC_SPACE) {
                     WeaponFireHandler.HandleFireMainWeapon();
                 }
-                if (I.KeyState.KC_M) {
+                if (KeyState.KC_M) {
                     WeaponFireHandler.HandleFireSecondaryWeapon();
                 }
-                else if (I.KeyState.KC_F5 && !M._.GameMenu.visible)
+                else if (KeyState.KC_F5 && !M._.GameMenu.visible)
                     this.OpenGameMenu();
                 break;
         }
     }
     private handleInputDuringPause(): void {
-        if (I.KeyState.KC_F1)
+        if (KeyState.KC_F1)
             this.UnpauseGame();
     }
     private handleInputDuringGameMenu(): void {
         M._.GameMenu.HandleInput();
-        if (I.KeyState.KC_F5) {
+        if (KeyState.KC_F5) {
             this.CloseGameMenu();
         }
     }
@@ -382,7 +387,7 @@ export class GameController {
             M._.ItemsPickedUp[source.id] = true;
         M._.AddItemToInventory(source.ItsType);
     }
-    public UseItem(itemType: Item.Type): void {
+    public UseItem(itemType: ItemType): void {
         let bagitem = M._.ItemsInInventory.First(i => i.Type == itemType);
         if (bagitem.Amount > 0) {
             if (Item.ItemUsable(itemType) != Item.Usable.Infinite)
@@ -390,7 +395,7 @@ export class GameController {
             this.HandleUseItem(itemType);
         }
     }
-    private HandleUseItem(itemType: Item.Type): void {
+    private HandleUseItem(itemType: ItemType): void {
         switch (itemType) {
             case Item.Type.None:
                 M._.Belmont.Health = M._.Belmont.MaxHealth;

@@ -1,6 +1,7 @@
 import { Foe } from "./foe";
 import { Projectile } from "./projectile";
 import { GameModel as model } from "./sintervaniamodel";
+import { Point } from "../BoazEngineJS/interfaces";
 
 /*[Serializable]*/
 export class PlayerProjectile extends Projectile {

@@ -7,6 +7,7 @@ import { sound } from "../BoazEngineJS/engine";
 import { newArea } from "../BoazEngineJS/common";
 import { GameModel } from "./sintervaniamodel";
 import { SoundMaster } from "../BoazEngineJS/soundmaster";
+import { Area, Point } from "../BoazEngineJS/interfaces";
 
 export enum HeartSmallState {
 	Flying,

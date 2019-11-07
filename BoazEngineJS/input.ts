@@ -1,6 +1,4 @@
-﻿/// <reference path="event.ts"/>
-/// <reference path="interfaces.ts"/>
-
+﻿import { InputState, Point } from "./interfaces"
 import * as Event from "./event"
 
 export let mouseMoved = new Event.MoveEvent();
@@ -11,7 +9,7 @@ export let blurred = new Event.BlurEvent();
 export let touchStarted = new Event.TouchStartEvent();
 export let touchMoved = new Event.TouchMoveEvent();
 export let touchEnded = new Event.TouchEndEvent();
-export let inputState: InputState;
+export var KeyState: InputState;
 
 export function mouseMove(source: HTMLElement, x: number, y: number) {
     mouseMoved.fire(source, x, y);
@@ -55,13 +53,25 @@ export function getMousePos(evt: MouseEvent): Point {
 }
 
 export function init(): void {
-    inputState = <InputState>{
-        up: false,
-        right: false,
-        down: false,
-        left: false,
-        trigger1: false,
-        trigger2: false
+    KeyState = <InputState>{
+        KC_UP: false,
+        KC_RIGHT: false,
+        KC_DOWN: false,
+        KC_LEFT: false,
+        KC_SPACE: false,
+        KC_M: false,
+        KU_UP: false,
+        KU_RIGHT: false,
+        KU_DOWN: false,
+        KU_LEFT: false,
+        KU_SPACE: false,
+        KU_M: false,
+        KD_UP: false,
+        KD_RIGHT: false,
+        KD_DOWN: false,
+        KD_LEFT: false,
+        KD_SPACE: false,
+        KD_M: false
     };
 
     // let touchable = 'createTouch' in document;

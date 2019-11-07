@@ -6,6 +6,7 @@ import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
 import { ResourceMaster as RM } from "./resourcemaster";
 import { GameConstants } from "./gameconstants";
 import { GameController } from "./gamecontroller";
+import { Area, Point } from "../BoazEngineJS/interfaces";
 
 export enum ItemType {
     None,
@@ -23,6 +24,8 @@ export enum Usable {
 export class Item extends Sprite {
     public ItsType: ItemType;
     public static ItemHitArea: Area = newArea(0, 0, 16, 16);
+    static Usable: any;
+    static Type: any;
     // public static Descriptions: Map<ItemType, string[]> = new Map<ItemType, string[]>(), { };
 
     constructor(type: ItemType, pos: Point) {

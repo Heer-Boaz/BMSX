@@ -5,6 +5,7 @@ import { Direction } from "../BoazEngineJS/direction";
 import { PlayerProjectile } from "./pprojectile";
 import { newArea } from "../BoazEngineJS/common";
 import { BitmapId } from "./resourceids";
+import { Area } from "../BoazEngineJS/interfaces";
 
 /*[Serializable]*/
 export class ZakFoe extends Foe {

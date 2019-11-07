@@ -1,13 +1,12 @@
-﻿/// <reference path="interfaces.ts"/>
+﻿import { IGameObject, Point } from "./interfaces";
 
-export enum GameState { None = 0, }
-export enum GameSubstate {
-    Default = 0,
-}
+export enum GameState { None = 0 }
+export enum GameSubstate { Default = 0 }
 
 export abstract class Model {
     public id2object: Map<string, IGameObject>;
     public objects: IGameObject[];
+
 
     public gameState: GameState;
     public gameSubstate: GameSubstate;
@@ -15,6 +14,38 @@ export abstract class Model {
     public gameOldSubstate: GameSubstate;
     public paused: boolean;
     public startAfterLoad: boolean;
+
+    public get OldState(): GameState {
+        return this.gameOldState;
+    }
+
+    public set OldState(value: GameState) {
+        this.gameOldState = value;
+    }
+
+    public get State(): GameState {
+        return this.gameState;
+    }
+
+    public set State(value: GameState) {
+        this.gameState = value;
+    }
+
+    public get OldSubstate(): GameSubstate {
+        return this.gameOldSubstate;
+    }
+
+    public set OldSubstate(value: GameSubstate) {
+        this.gameOldSubstate = value;
+    }
+
+    public get Substate(): GameSubstate {
+        return this.gameSubstate;
+    }
+
+    public set Substate(value: GameSubstate) {
+        this.gameSubstate = value;
+    }
 
     constructor() {
         this.initModelForGameStart();

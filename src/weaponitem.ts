@@ -4,6 +4,7 @@ import { Item } from "./item";
 import { BitmapId } from "./resourceids";
 import { moveArea, area2size } from "../BoazEngineJS/common";
 import { GameController as C } from "./gamecontroller";
+import { Area, Point } from "../BoazEngineJS/interfaces";
 
 /*[Serializable]*/
 export class WeaponItem extends Sprite {

@@ -5,6 +5,7 @@ import { waitDuration } from "../BoazEngineJS/common";
 import { view } from "../BoazEngineJS/engine";
 import { BitmapId } from "./resourceids";
 import { GameController as C } from "./gamecontroller";
+import { Point } from "../BoazEngineJS/interfaces";
 
 export class ItsCurtainsForYou {
     private curtainPartCount: number;

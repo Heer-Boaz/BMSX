@@ -1,10 +1,11 @@
-import { Item, ItemType } from "./item";
+import { ItemType } from "./item";
 import { Animation, AniData } from "../BoazEngineJS/animation"
 import { FX } from "./fx";
 import { HeartSmall } from "./heartsmall";
 import { BitmapId } from "./resourceids";
 import { GameModel } from "./sintervaniamodel";
 import { addPoints } from "../BoazEngineJS/common";
+import { Point } from "../BoazEngineJS/interfaces";
 
 /*[Serializable]*/
 export class FoeExplosion extends FX {

@@ -1,4 +1,4 @@
-import { Constants } from "./constants";
+import { Point, Color } from "./interfaces";
 
 export const TileSize: number = 8;
 export class Tile {

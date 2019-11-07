@@ -1,22 +1,24 @@
-﻿interface Point {
+﻿import { IKeyStateContainer } from "./keystatecontainer"
+
+export interface Point {
     x: number;
     y: number;
 }
 
-type Size = Point;
+export type Size = Point;
 
-interface Area {
+export interface Area {
     start: Point;
     end: Point;
 }
 
-interface Color {
+export interface Color {
     r: number;
     g: number;
     b: number;
 }
 
-interface IGameObject {
+export interface IGameObject {
     // Properties
     id: string | null;
     hitarea: Area | null;
@@ -47,21 +49,21 @@ interface IGameObject {
     exile(): void;
 }
 
-interface ImageId2Url {
+export interface ImageId2Url {
     id: number;
     url: string;
 }
 
-interface InputState {
-    up: boolean;
-    right: boolean;
-    down: boolean;
-    left: boolean;
-    trigger1: boolean;
-    trigger2: boolean;
-    f1: boolean;
-    f2: boolean;
-    f3: boolean;
-    f4: boolean;
-    f5: boolean;
+export interface InputState extends IKeyStateContainer {
+    // up: boolean;
+    // right: boolean;
+    // down: boolean;
+    // left: boolean;
+    // trigger1: boolean;
+    // trigger2: boolean;
+    // f1: boolean;
+    // f2: boolean;
+    // f3: boolean;
+    // f4: boolean;
+    // f5: boolean;
 }

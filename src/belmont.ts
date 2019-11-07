@@ -5,7 +5,10 @@ import { GameConstants as CS } from "./gameconstants";
 import { copyPoint } from "../BoazEngineJS/common";
 import { Animation } from "../BoazEngineJS/animation";
 import { MSXConstants } from "../BoazEngineJS/msx";
-import { BitmapId } from "./resourceids";
+import { BitmapId, AudioId } from "./resourceids";
+import { Area, Point } from "../BoazEngineJS/interfaces";
+import { KeyState } from "../BoazEngineJS/input";
+import { Room } from "./room";
 
 /*[Serializable]*/
 export class RoeState {
@@ -411,31 +414,31 @@ export class Belmont extends Creature {
 	}
 
 	private handleInput(moved: boolean): void {
-		if (I.KeyState.KD_DOWN && !this.ignoreDirButtonPress(Direction.Down)) {
+		if (KeyState.KD_DOWN && !this.ignoreDirButtonPress(Direction.Down)) {
 			this.Crouching = true;
-			if (I.KeyState.KD_RIGHT && !this.ignoreDirButtonPress(Direction.Right))
+			if (KeyState.KD_RIGHT && !this.ignoreDirButtonPress(Direction.Right))
 				this.Direction = Direction.Right;
-			if (I.KeyState.KD_LEFT && !this.ignoreDirButtonPress(Direction.Left))
+			if (KeyState.KD_LEFT && !this.ignoreDirButtonPress(Direction.Left))
 				this.Direction = Direction.Left;
 		}
-		else if (I.KeyState.KC_UP && !this.ignoreDirButtonPress(Direction.Up)) {
+		else if (KeyState.KC_UP && !this.ignoreDirButtonPress(Direction.Up)) {
 			this.Crouching = false;
 			let jumpDir: Direction = Direction.Up;
-			if (I.KeyState.KD_RIGHT) {
+			if (KeyState.KD_RIGHT) {
 				jumpDir = Direction.Right;
 				this.Direction = Direction.Right;
 			}
-			else if (I.KeyState.KD_LEFT) {
+			else if (KeyState.KD_LEFT) {
 				jumpDir = Direction.Left;
 				this.Direction = Direction.Left;
 			}
 			this.jumpState.Start(jumpDir);
 		}
-		else if (I.KeyState.KD_RIGHT && !this.ignoreDirButtonPress(Direction.Right)) {
+		else if (KeyState.KD_RIGHT && !this.ignoreDirButtonPress(Direction.Right)) {
 			this.Crouching = false;
 			this.doMovement(Direction.Right, moved);
 		}
-		else if (I.KeyState.KD_LEFT && !this.ignoreDirButtonPress(Direction.Left)) {
+		else if (KeyState.KD_LEFT && !this.ignoreDirButtonPress(Direction.Left)) {
 			this.Crouching = false;
 			this.doMovement(Direction.Left, moved);
 		}
@@ -564,10 +567,10 @@ export class Belmont extends Creature {
 	}
 
 	private multipleDirButtonsPressed(): boolean {
-		let u: number = I.KeyState.KD_UP ? 1 : 0;
-		let r: number = I.KeyState.KD_RIGHT ? 1 : 0;
-		let d: number = I.KeyState.KD_DOWN ? 1 : 0;
-		let l: number = I.KeyState.KD_LEFT ? 1 : 0;
+		let u: number = KeyState.KD_UP ? 1 : 0;
+		let r: number = KeyState.KD_RIGHT ? 1 : 0;
+		let d: number = KeyState.KD_DOWN ? 1 : 0;
+		let l: number = KeyState.KD_LEFT ? 1 : 0;
 		return u + r + d + l > 1;
 	}
 

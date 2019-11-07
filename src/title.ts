@@ -2,6 +2,8 @@ import { Animation, AniStepCompoundValue } from "../BoazEngineJS/animation"
 import { setPoint } from "../BoazEngineJS/common";
 import { BitmapId } from "./resourceids";
 import { GameController as C } from "./gamecontroller";
+import { KeyState } from "../BoazEngineJS/input";
+import { Point } from "../BoazEngineJS/interfaces";
 
 export enum State {
 	WaitForIt,
@@ -50,9 +52,9 @@ export class Title {
 
 	public TakeTurn(): void {
 		let newState: AniStepCompoundValue<State> = { nextStepValue: <State>this.state };
-		if (I.KeyState.KC_SPACE) {
+		if (KeyState.KC_SPACE) {
 			C._.PreludeFinished();
-			I.KeyState.KC_SPACE = false;
+			KeyState.KC_SPACE = false;
 			return
 		}
 

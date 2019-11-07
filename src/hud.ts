@@ -8,6 +8,7 @@ import { view } from "../BoazEngineJS/engine";
 import { GameView as V } from "./gameview"
 import { waitDuration, setPoint } from "../BoazEngineJS/common";
 import { TextWriter } from "./textwriter";
+import { Point } from "../BoazEngineJS/interfaces";
 
 export class HUD {
     public static Pos_X: number = 0;

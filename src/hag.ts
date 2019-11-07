@@ -2,10 +2,11 @@ import { BStopwatch } from "../BoazEngineJS/btimer";
 import { Animation, AniStepCompoundValue, AniData } from "../BoazEngineJS/animation";
 import { Direction } from "../BoazEngineJS/direction";
 import { BitmapId } from "./resourceids";
-import { Item, ItemType } from "./item";
+import { ItemType } from "./item";
 import { Foe } from "./foe";
 import { GameConstants } from "./gameconstants";
 import { PlayerProjectile } from "./pprojectile";
+import { Size, Area, Point } from "../BoazEngineJS/interfaces";
 
 /*[Serializable]*/
 export class Hag extends Foe {

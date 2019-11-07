@@ -3,6 +3,8 @@ import { View } from "../BoazEngineJS/view";
 import { AudioId, BitmapId } from "./resourceids";
 import { Direction } from "../BoazEngineJS/direction";
 import { TextWriter } from "./textwriter";
+import { KeyState } from "../BoazEngineJS/input";
+import { Size, Point } from "../BoazEngineJS/interfaces";
 
 export class GameMenu {
     private static menuPosX: number = 24;
@@ -89,17 +91,17 @@ export class GameMenu {
             case GameMenu.MenuItem.OptionsFromMainMenu:
             case GameMenu.MenuItem.Save:
             case GameMenu.MenuItem.LoadFromGameOver:
-                if (I.KeyState.KC_UP)
+                if (KeyState.KC_UP)
                     this.changeSelection(Direction.Up, selectionChanged);
-                else if (I.KeyState.KC_RIGHT)
+                else if (KeyState.KC_RIGHT)
                     this.changeSelection(Direction.Right, selectionChanged);
-                else if (I.KeyState.KC_DOWN)
+                else if (KeyState.KC_DOWN)
                     this.changeSelection(Direction.Down, selectionChanged);
-                else if (I.KeyState.KC_LEFT)
+                else if (KeyState.KC_LEFT)
                     this.changeSelection(Direction.Left, selectionChanged);
                 break;
         }
-        if (I.KeyState.KC_SPACE) {
+        if (KeyState.KC_SPACE) {
             switch (this.CurrentScreen) {
                 case GameMenu.MenuItem.Main:
                     S.PlayEffect(RM.Sound[AudioId.Selectie]);
@@ -193,7 +195,7 @@ export class GameMenu {
                     break;
             }
         }
-        if (I.KeyState.KC_RIGHT) {
+        if (KeyState.KC_RIGHT) {
             switch (this.CurrentScreen) {
                 case GameMenu.MenuItem.Options:
                 case GameMenu.MenuItem.OptionsFromMainMenu:
@@ -236,7 +238,7 @@ export class GameMenu {
                     break;
             }
         }
-        if (I.KeyState.KC_LEFT) {
+        if (KeyState.KC_LEFT) {
             switch (this.CurrentScreen) {
                 case GameMenu.MenuItem.Options:
                 case GameMenu.MenuItem.OptionsFromMainMenu:

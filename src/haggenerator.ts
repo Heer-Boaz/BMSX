@@ -3,6 +3,7 @@ import { GameModel } from "./sintervaniamodel";
 import { Animation, AniStepCompoundValue } from "../BoazEngineJS/animation";
 import { Hag } from "./hag";
 import { Direction } from "../BoazEngineJS/direction";
+import { IGameObject, Point, Size, Area } from "../BoazEngineJS/interfaces";
 
 export class HagGenerator implements IGameObject {
     disposeFlag: boolean;

@@ -1,9 +1,6 @@
-﻿/// <reference path="interfaces.ts"/>
-/// <reference path="divsprite.ts"/>
-/// <reference path="model.ts"/>
-
-import { Constants } from "./constants"
+﻿import { Constants } from "./constants"
 import { view } from "./engine";
+import { Size, Point, Color } from "./interfaces";
 
 export class View {
     public windowSize: Size;

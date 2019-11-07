@@ -2,6 +2,7 @@ import { GameConstants as CS } from "./gameconstants"
 import { Projectile } from "./projectile"
 import { addPoints } from "../BoazEngineJS/common"
 import { GameModel as M } from "./sintervaniamodel"
+import { Point } from "../BoazEngineJS/interfaces";
 
 /*[Serializable]*/
 export class FProjectile extends Projectile {

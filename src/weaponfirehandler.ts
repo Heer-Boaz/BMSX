@@ -1,4 +1,6 @@
-import { GameModel as M } from "./sintervaniamodel";
+import { GameModel as M, MainWeaponType, SecWeaponType } from "./sintervaniamodel";
+import { TriRoe } from "./triroe";
+import { AudioId } from "./resourceids";
 
 export class WeaponFireHandler {
     private static msCrossCooldown: number = 500;

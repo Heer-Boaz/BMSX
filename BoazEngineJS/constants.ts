@@ -1,5 +1,5 @@
 ﻿/// <reference path="model.ts" />
-import { Model, GameState, GameSubstate } from "./model"
+import { GameState, GameSubstate } from "./model"
 
 export namespace Constants {
     export const INITIAL_GAMESTATE: GameState = GameState.None;

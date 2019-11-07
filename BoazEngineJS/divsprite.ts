@@ -4,6 +4,7 @@
 /// <reference path="./interfaces.ts"/>
 import { moveArea, addToScreen, removeFromScreen } from "./common"
 import { images } from "./engine";
+import { IGameObject, Point, Size, Area } from "./interfaces";
 
 export abstract class DivSprite implements IGameObject {
     visible: boolean;

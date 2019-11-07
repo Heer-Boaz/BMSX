@@ -1,9 +1,4 @@
-﻿/// <reference path="interfaces.ts"/>
-/// <reference path="model.ts"/>
-/// <reference path="engine.ts"/>
-/// <reference path="./divsprite.ts"/>
-
-import { BStopwatch } from "./btimer";
+﻿import { BStopwatch } from "./btimer";
 import { model } from "./engine";
 import { GameState, GameSubstate } from "./model";
 

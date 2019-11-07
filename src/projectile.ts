@@ -4,6 +4,7 @@ import { moveArea } from "../BoazEngineJS/common";
 import { Constants } from "../BoazEngineJS/constants";
 import { GameModel as M } from "./sintervaniamodel";
 import { view } from "../BoazEngineJS/engine";
+import { Point } from "../BoazEngineJS/interfaces";
 
 /*[Serializable]*/
 export class Projectile extends Sprite {

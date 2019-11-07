@@ -1,11 +1,12 @@
 import { Creature } from "./creature";
 import { PlayerProjectile } from "./pprojectile";
-import { Item, ItemType } from "./item";
+import { ItemType } from "./item";
 import { GameModel as M } from "./sintervaniamodel";
 import { SoundMaster } from "../BoazEngineJS/soundmaster";
 import { FoeExplosion } from "./foeexplosion";
 import { AudioId } from "./resourceids";
 import { ResourceMaster as RM } from "./resourcemaster";
+import { Point } from "../BoazEngineJS/interfaces";
 
 /*[Serializable]*/
 export class Foe extends Creature {

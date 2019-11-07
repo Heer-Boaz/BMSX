@@ -3,6 +3,7 @@ import { BossFoe } from "./bossfoe";
 import { Direction } from "../BoazEngineJS/direction";
 import { BitmapId } from "./resourceids";
 import { PlayerProjectile } from "./pprojectile";
+import { Area, Point } from "../BoazEngineJS/interfaces";
 
 /*[Serializable]*/
 enum PietulaState {

@@ -2,6 +2,7 @@ import { PlayerProjectile } from "./pprojectile";
 import { Belmont } from "./belmont";
 import { Direction } from "../BoazEngineJS/direction";
 import { GameModel as M } from "./sintervaniamodel";
+import { Area, Point } from "../BoazEngineJS/interfaces";
 
 /*[Serializable]*/
 export class TriRoe extends PlayerProjectile {

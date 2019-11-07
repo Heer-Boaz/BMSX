@@ -1,40 +1,43 @@
 import { Foe } from "./foe";
 import { Belmont } from "./belmont";
 import { Savegame } from "../BoazEngineJS/savegame";
-import { Model } from "../BoazEngineJS/model";
+import { Model, GameState } from "../BoazEngineJS/model";
 import { BStopwatch } from "../BoazEngineJS/btimer";
 import { BossFoe } from "./bossfoe";
 import { WeaponItem, WeaponType } from "./weaponitem";
 import { GameConstants as CS } from "./gameconstants";
 import { ItemType } from "./item";
+import { GameMenu } from "./gamemenu";
+import { Point, IGameObject } from "../BoazEngineJS/interfaces";
+import { Room } from "./room";
 
-export enum GameState {
-    None,
-    Editor,
-    Prelude,
-    Story,
-    TitleScreen,
-    Tutorial,
-    GameStart1,
-    GameStart2,
-    GameStartFromGameOver,
-    Game,
-    Event,
-    F1,
-    EndDemo,
-    GameOver
-}
+declare module "../BoazEngineJS/model" {
+    export enum GameState {
+        Editor,
+        Prelude,
+        Story,
+        TitleScreen,
+        Tutorial,
+        GameStart1,
+        GameStart2,
+        GameStartFromGameOver,
+        Game,
+        Event,
+        F1,
+        EndDemo,
+        GameOver
+    }
 
-export enum GameSubstate {
-    Default,
-    Conversation,
-    BelmontDies,
-    ItsCurtainsForYou,
-    ToEndDemo,
-    GameOver,
-    IngameMenu,
-    GameMenu,
-    SwitchRoom
+    export enum GameSubstate {
+        Conversation,
+        BelmontDies,
+        ItsCurtainsForYou,
+        ToEndDemo,
+        GameOver,
+        IngameMenu,
+        GameMenu,
+        SwitchRoom
+    }
 }
 
 export enum Chapter {
@@ -98,12 +101,20 @@ export enum SecWeaponType {
 }
 
 export class GameModel extends Model {
+    Remove(o: any) {
+        throw new Error("Method not implemented.");
+    }
     public Checkpoint: Savegame;
     public SelectedChapterToPlay: Chapter;
     public static PROPERTY_KEEP_AT_ROOMSWITCH: string = "p_rs";
     public static PROPERTY_ACT_AS_WALL: string = "p_wall";
 
     private static _instance: GameModel;
+    static GameSubstate: any;
+    Paused: any;
+    StartAfterLoad: any;
+    GameObjects: any;
+    static M: Model;
     public static get _(): GameModel {
         return GameModel._instance;
     }

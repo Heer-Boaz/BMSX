@@ -6,6 +6,7 @@ import { Direction } from "../BoazEngineJS/direction";
 import { PlayerProjectile } from "./pprojectile";
 import { BitmapId } from "./resourceids";
 import { newArea } from "../BoazEngineJS/common";
+import { Area, Point } from "../BoazEngineJS/interfaces";
 
 /*[Serializable]*/
 export class Candle extends Foe {

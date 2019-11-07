@@ -46,15 +46,15 @@ export class GameOver {
 
     public HandleInput(): void {
         let selectionChanged: boolean = false;
-        if (I.KeyState.KC_UP)
+        if (KeyState.KC_UP)
             this.changeSelection(Direction.Up, selectionChanged);
-        else if (I.KeyState.KC_RIGHT)
+        else if (KeyState.KC_RIGHT)
             this.changeSelection(Direction.Right, selectionChanged);
-        else if (I.KeyState.KC_DOWN)
+        else if (KeyState.KC_DOWN)
             this.changeSelection(Direction.Down, selectionChanged);
-        else if (I.KeyState.KC_LEFT)
+        else if (KeyState.KC_LEFT)
             this.changeSelection(Direction.Left, selectionChanged);
-        if (I.KeyState.KC_SPACE) {
+        if (KeyState.KC_SPACE) {
             switch (this.state) {
                 case State.SelectContOrLoad:
                     switch (this.selectedIndex) {
@@ -63,7 +63,7 @@ export class GameOver {
                             break;
                         case 1:
                             S.PlayEffect(RM.Sound[AudioId.Selectie]);
-                            I.KeyState.KC_SPACE = false;
+                            KeyState.KC_SPACE = false;
                             M._.GameMenu.Open(GameModel.Menu.GameMenu.Screen.LoadFromGameOver);
                             this.state = State.SelectFile;
                             break;

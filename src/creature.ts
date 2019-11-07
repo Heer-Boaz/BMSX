@@ -6,6 +6,7 @@ import { TileSize } from "../BoazEngineJS/msx";
 import { BitmapId } from "./resourceids";
 import { view } from "../BoazEngineJS/engine";
 import { Constants } from "../BoazEngineJS/constants";
+import { Area, Point } from "../BoazEngineJS/interfaces";
 
 /*[Serializable]*/
 export class Creature extends Sprite {
