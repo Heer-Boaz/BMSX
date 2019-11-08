@@ -1,10 +1,14 @@
-import { GameModel } from "./sintervaniamodel";
+import { GameModel as M } from "./sintervaniamodel";
 import { Direction } from "../BoazEngineJS/direction";
 import { TextWriter } from "./textwriter";
 import { MSXConstants as CS } from "../BoazEngineJS/msx";
 import { view } from "../BoazEngineJS/engine";
 import { BitmapId, AudioId } from "./resourceids";
 import { KeyState } from "../BoazEngineJS/input";
+import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
+import { ResourceMaster as RM } from './resourcemaster';
+import { GameController as C } from './gamecontroller';
+import { GameMenu } from "./gamemenu";
 
 export enum State {
     SelectContOrLoad,
@@ -64,7 +68,7 @@ export class GameOver {
                         case 1:
                             S.PlayEffect(RM.Sound[AudioId.Selectie]);
                             KeyState.KC_SPACE = false;
-                            M._.GameMenu.Open(GameModel.Menu.GameMenu.Screen.LoadFromGameOver);
+                            M._.GameMenu.Open(GameMenu.MenuItem.LoadFromGameOver);
                             this.state = State.SelectFile;
                             break;
                     }

@@ -1,10 +1,15 @@
 import { MenuItem } from "./mainmenu";
-import { View } from "../BoazEngineJS/view";
+import { View as V } from "../BoazEngineJS/view";
 import { AudioId, BitmapId } from "./resourceids";
 import { Direction } from "../BoazEngineJS/direction";
 import { TextWriter } from "./textwriter";
 import { KeyState } from "../BoazEngineJS/input";
 import { Size, Point } from "../BoazEngineJS/interfaces";
+import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
+import { ResourceMaster as RM } from './resourcemaster';
+import { GameController as C } from './gamecontroller';
+import { GameModel as M } from "./sintervaniamodel";
+import { SlotExists, LoadGame } from "../BoazEngineJS/gamestateloader";
 
 export class GameMenu {
     private static menuPosX: number = 24;
@@ -520,12 +525,12 @@ export class GameMenu {
     }
 
     private printSaveSlot(x: number, y: number, slotIndex: number): void {
-        let exists = GameLoader.SlotExists(slotIndex);
+        let exists = SlotExists(slotIndex);
         if (!exists) {
             TextWriter.DrawText(GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX, y, string.Format("{0}: {1}", slotIndex + 1, GameMenu.emptySlot));
             return
         }
-        let savegame = GameLoader.LoadGame(slotIndex);
+        let savegame = LoadGame(slotIndex);
         let time = savegame.Timestamp;
         TextWriter.DrawText(GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX, y, string.Format("{0}: {1}/{2}/{3} - {4}:{5}", slotIndex + 1, time.Day.ToString("d2"), time.Month.ToString("d2"), time.Year, time.Hour.ToString("d2"), time.Minute.ToString("d2")));
     }

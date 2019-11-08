@@ -16,18 +16,22 @@ export class EndDemo {
     private ani: Animation<State>;
     private state: State;
     private timer: BStopwatch;
+
     constructor() {
         this.ani = new Animation<State>(EndDemo.states, EndDemo.waits);
         this.timer = BStopwatch.createWatch();
     }
+
     public Init(): void {
         this.reset();
     }
+
     private reset(): void {
         this.ani.restart();
         this.timer.restart();
         this.state = this.ani.stepValue();
     }
+
     public TakeTurn(): void {
         let newState: { nextStepValue: State.None };
         switch (this.state) {
@@ -41,6 +45,7 @@ export class EndDemo {
                 break;
         }
     }
+
     public Paint(): void {
         switch (this.state) {
             case State.Sint:

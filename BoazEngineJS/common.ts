@@ -18,6 +18,10 @@ export function randomInt(min: number, max: number) {
     return Math.floor(Math.random() * (max - min + 1) + min);
 }
 
+export function newPoint(x: number, y: number): Point {
+    return <Point>{ x: x, y: y };
+}
+
 export function copyPoint(toCopy: Point): Point {
     return <Point>{ x: toCopy.x, y: toCopy.y };
 }

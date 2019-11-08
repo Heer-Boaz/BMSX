@@ -12,6 +12,10 @@ import { KeyState } from "../BoazEngineJS/input";
 import { WeaponFireHandler } from "./weaponfirehandler";
 import { Room } from "./room";
 import { GameMenu } from "./gamemenu";
+import { newPoint } from "../BoazEngineJS/common";
+import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
+import { ResourceMaster as RM } from './resourcemaster';
+import { Constants as CS } from "../BoazEngineJS/constants";
 
 export class GameController {
     private static _instance: GameController;

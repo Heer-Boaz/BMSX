@@ -1,4 +1,4 @@
-import { Chapter, GameState } from "./sintervaniamodel";
+import { Chapter } from "./sintervaniamodel";
 import { GameConstants as GCS } from "./gameconstants"
 import { AudioId, BitmapId } from "./resourceids";
 import { ResourceMaster } from "./resourcemaster";
@@ -11,6 +11,9 @@ import { view } from "../BoazEngineJS/engine";
 import { MSXConstants as MCS } from "../BoazEngineJS/msx";
 import { Constants as CS } from "../BoazEngineJS/constants";
 import { KeyState } from "../BoazEngineJS/input";
+import { GameMenu } from "./gamemenu";
+import { SlotExists } from "../BoazEngineJS/gamestateloader";
+import { GameState } from "../BoazEngineJS/model";
 
 export enum State {
     SelectMain,
@@ -98,18 +101,18 @@ export class MainMenu {
                             this.selectedIndex = 0;
                             break;
                         case MenuItem.Continue:
-                            if (LoadSave.GameLoader.SlotExists(CS.SaveSlotCheckpoint))
+                            if (SlotExists(CS.SaveSlotCheckpoint))
                                 C._.LoadCheckpoint();
                             else S.PlayEffect(ResourceMaster.Sound[AudioId.Fout]);
                             break;
                         case MenuItem.LoadGame:
                             KeyState.KC_SPACE = false;
-                            M._.GameMenu.Open(GameMenu.Screen.LoadFromMainMenu);
+                            M._.GameMenu.Open(GameMenu.MenuItem.LoadFromMainMenu);
                             this.state = State.SubMenu;
                             break;
                         case MenuItem.Options:
                             KeyState.KC_SPACE = false;
-                            M._.GameMenu.Open(GameMenu.Screen.OptionsFromMainMenu);
+                            M._.GameMenu.Open(GameMenu.MenuItem.OptionsFromMainMenu);
                             this.state = State.SubMenu;
                             break;
                     }
@@ -187,7 +190,7 @@ export class MainMenu {
                 for (let i = 0; i < MainMenu.items.length; i++) {
                     switch (MainMenu.menuOptions[i]) {
                         case MenuItem.Continue:
-                            if (LoadSave.GameLoader.SlotExists(CS.SaveSlotCheckpoint))
+                            if (SlotExists(CS.SaveSlotCheckpoint))
                                 TextWriter.DrawText(MainMenu.itemsX, MainMenu.itemYs[i], MainMenu.items[i]);
                             else TextWriter.DrawText(MainMenu.itemsX, MainMenu.itemYs[i], MainMenu.items[i], MCS.Msx1Colors[0]);
                             break;

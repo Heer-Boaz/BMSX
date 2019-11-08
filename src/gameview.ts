@@ -17,6 +17,7 @@ import { view } from "../BoazEngineJS/engine";
 import { MSXConstants as MCS } from "../BoazEngineJS/msx";
 import { EndDemo } from "./enddemo";
 import { Foe } from "./foe";
+import { Point } from "../BoazEngineJS/interfaces";
 
 export class GameView {
     private static pausePosX: number = 80;

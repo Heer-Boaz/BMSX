@@ -23,8 +23,7 @@ export class Candle extends Foe {
 	}
 
 	protected static CandleHitArea: Area = newArea(0, 0, 10, 16);
-	protected static candleSprites: Map<Direction, number[]>;
-	// protected static candleSprites: Map<Direction, BitmapId[]> = __init(new Map<Direction, BitmapId[]>(), { { Direction.None, BitmapId.Candle_1 } });
+	protected static candleSprites: Map<Direction, number[]> = new Map([[Direction.None, [BitmapId.Candle_1]]]);
 	protected static AnimationFrames: number[] = [<number>BitmapId.Candle_1, <number>BitmapId.Candle_2];
 	protected static ElapsedMsPerFrame: number[] = [200, 200];
 	protected animation: Animation<number>;

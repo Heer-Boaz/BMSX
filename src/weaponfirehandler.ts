@@ -1,6 +1,9 @@
 import { GameModel as M, MainWeaponType, SecWeaponType } from "./sintervaniamodel";
 import { TriRoe } from "./triroe";
+import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
+import { ResourceMaster as RM } from './resourcemaster';
 import { AudioId } from "./resourceids";
+import { waitDuration } from '../BoazEngineJS/common';
 
 export class WeaponFireHandler {
     private static msCrossCooldown: number = 500;
@@ -11,14 +14,14 @@ export class WeaponFireHandler {
     }
 
     private static set mainWeaponCurrentCooldown(value: number) {
-        if (value > WeaponFireHandler._mainWeaponCurrentCooldown || !M._.MainWeaponCooldownTimer.IsRunning)
+        if (value > WeaponFireHandler._mainWeaponCurrentCooldown || !M._.MainWeaponCooldownTimer.running)
             WeaponFireHandler._mainWeaponCurrentCooldown = value;
     }
 
     public static get MainWeaponOnCooldown(): boolean {
-        if (M._.MainWeaponCooldownTimer.IsRunning) {
-            if (Helpers.WaitDuration(M._.MainWeaponCooldownTimer, WeaponFireHandler.mainWeaponCurrentCooldown)) {
-                M._.MainWeaponCooldownTimer.Stop();
+        if (M._.MainWeaponCooldownTimer.running) {
+            if (waitDuration(M._.MainWeaponCooldownTimer, WeaponFireHandler.mainWeaponCurrentCooldown)) {
+                M._.MainWeaponCooldownTimer.stop();
                 return false;
             }
             return true;
@@ -32,14 +35,14 @@ export class WeaponFireHandler {
     }
 
     private static set secWeaponCurrentCooldown(value: number) {
-        if (value > WeaponFireHandler._secWeaponCurrentCooldown || !M._.SecWeaponCooldownTimer.IsRunning)
+        if (value > WeaponFireHandler._secWeaponCurrentCooldown || !M._.SecWeaponCooldownTimer.running)
             WeaponFireHandler._secWeaponCurrentCooldown = value;
     }
 
     public static get SecWeaponOnCooldown(): boolean {
-        if (M._.SecWeaponCooldownTimer.IsRunning) {
-            if (Helpers.WaitDuration(M._.SecWeaponCooldownTimer, WeaponFireHandler.secWeaponCurrentCooldown)) {
-                M._.SecWeaponCooldownTimer.Stop();
+        if (M._.SecWeaponCooldownTimer.running) {
+            if (waitDuration(M._.SecWeaponCooldownTimer, WeaponFireHandler.secWeaponCurrentCooldown)) {
+                M._.SecWeaponCooldownTimer.stop();
                 return false;
             }
             return true;
@@ -72,7 +75,7 @@ export class WeaponFireHandler {
             return
         WeaponFireHandler.setMainWeaponCooldown(0);
         let roe = new TriRoe(M._.Belmont.pos, M._.Belmont.Direction);
-        M._.Spawn(roe);
+        M._.spawn(roe);
         M._.Belmont.UseRoe();
         S.PlayEffect(RM.Sound[AudioId.Whip]);
     }

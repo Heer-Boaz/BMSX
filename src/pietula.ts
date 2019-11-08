@@ -1,9 +1,11 @@
+import { Animation, AniStepCompoundValue, AniData } from '../BoazEngineJS/animation';
 import { BStopwatch } from "../BoazEngineJS/btimer";
 import { BossFoe } from "./bossfoe";
 import { Direction } from "../BoazEngineJS/direction";
 import { BitmapId } from "./resourceids";
 import { PlayerProjectile } from "./pprojectile";
-import { Area, Point } from "../BoazEngineJS/interfaces";
+import { Area, Point } from '../BoazEngineJS/interfaces';
+import { newArea, newSize } from '../BoazEngineJS/common';
 
 /*[Serializable]*/
 enum PietulaState {
@@ -11,6 +13,8 @@ enum PietulaState {
 	ThrowingZakFoes,
 	Bla
 }
+
+type AniType = { img: BitmapId, dy: number };
 
 export class Pietula extends BossFoe {
 	public get DamageToPlayer(): number {
@@ -25,24 +29,31 @@ export class Pietula extends BossFoe {
 		return true;
 	}
 
-	protected static PietulaHitArea: Area = new Area(0, 0, 10, 16);
-	// protected static pietulaSprites: Map<Direction, BitmapId[]> = __init(new Map<Direction, BitmapId[]>(), { { Direction.None, BitmapId.Pietula_1 } });
+	protected static PietulaHitArea: Area = newArea(0, 0, 10, 16);
+	protected static pietulaSprites: Map<Direction, BitmapId[]> = new Map([[Direction.None, [BitmapId.Pietula_1]]]);
+
 	protected timer: BStopwatch;
 	protected state: PietulaState;
+	protected animation: Animation<AniType>;
 
 	protected get movementSprites(): Map<Direction, BitmapId[]> {
 		return Pietula.pietulaSprites;
 	}
 
+	protected static AnimationFrames: AniData<AniType>[] = new Array(
+		{ time: 250, data: { img: BitmapId.Pietula_1, dy: -1 } },
+		{ time: 250, data: { img: BitmapId.Pietula_2, dy: 1 } },
+	);
+
 	constructor(pos: Point) {
 		super(pos);
 		this.CanHurtPlayer = true;
-		@"this.animation = new Animation<(uint img, int dy)>(AnimationFrames) {			Repeat = true	} ";
+		this.animation = new Animation<AniType>(Pietula.AnimationFrames, null, true);
 		this.timer = BStopwatch.createWatch();
-		this.imgid = <number>this.animation.stepValue().img;
+		this.imgid = this.animation.stepValue().img;
 		this.timer.restart();
 		this.hitarea = Pietula.PietulaHitArea;
-		this.size = new Size(this.hitarea.ex, this.hitarea.ey);
+		this.size = newSize(this.hitarea.ex, this.hitarea.ey);
 		this.Health = 20;
 	}
 
@@ -51,10 +62,10 @@ export class Pietula extends BossFoe {
 	}
 
 	public TakeTurn(): void {
-		@"(uint img, int dy) stepValue = (this.imgid, 0);"
-		this.animation.doAnimation(this.timer, ref stepValue);
-		this.imgid = stepValue.img;
-		this.pos.y += stepValue.dy;
+		let stepValue: AniStepCompoundValue<AniType> = { nextStepValue: { img: this.imgid, dy: 0 } };
+		this.animation.doAnimation(this.timer, stepValue);
+		this.imgid = stepValue.nextStepValue.img;
+		this.pos.y += stepValue.nextStepValue.dy;
 	}
 
 	public Dispose(): void {

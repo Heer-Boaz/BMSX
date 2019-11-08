@@ -2,14 +2,18 @@ import { Direction } from "../BoazEngineJS/direction";
 import { Creature } from "./creature";
 import { BStopwatch } from "../BoazEngineJS/btimer";
 import { GameConstants as CS } from "./gameconstants";
-import { copyPoint } from "../BoazEngineJS/common";
+import { copyPoint, waitDuration } from "../BoazEngineJS/common";
 import { Animation } from "../BoazEngineJS/animation";
-import { MSXConstants } from "../BoazEngineJS/msx";
+import { MSXConstants, Tile, TileSize } from '../BoazEngineJS/msx';
 import { BitmapId, AudioId } from "./resourceids";
-import { Area, Point } from "../BoazEngineJS/interfaces";
+import { Area, Point, Size } from '../BoazEngineJS/interfaces';
 import { KeyState } from "../BoazEngineJS/input";
 import { Room } from "./room";
-
+import { newPoint } from "../BoazEngineJS/common";
+import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
+import { ResourceMaster as RM } from './resourcemaster';
+import { GameController as C } from './gamecontroller';
+import { GameModel as M } from './sintervaniamodel';
 /*[Serializable]*/
 export class RoeState {
 	public static msPerFrame: number[] = [50, 25, 100];
@@ -292,7 +296,7 @@ export class Belmont extends Creature {
 	}
 
 	protected doHitCrouching(): void {
-		if (Helpers.WaitDuration(this.hitState.CrouchTimer, HitState.CrouchTime)) {
+		if (waitDuration(this.hitState.CrouchTimer, HitState.CrouchTime)) {
 			this.hitState.CurrentStep = HitState.HitStateStep.None;
 			if (this.Health <= 0) {
 				this.initDyingState();
@@ -512,15 +516,15 @@ export class Belmont extends Creature {
 	protected handleWallCollision(): void {
 		switch (this.Direction) {
 			case Direction.Right:
-				this.pos.x = (this.pos.x / MSXConstants.TileSize) * MSXConstants.TileSize;
+				this.pos.x = (this.pos.x / TileSize) * TileSize;
 				break;
 			case Direction.Down:
-				this.pos.y = (this.pos.y / MSXConstants.TileSize) * MSXConstants.TileSize;
+				this.pos.y = (this.pos.y / TileSize) * TileSize;
 				break;
 			case Direction.Left:
 				if (this.pos.x >= 0)
-					this.pos.x = (this.pos.x / MSXConstants.TileSize + 1) * MSXConstants.TileSize;
-				this.pos.x = this.pos.x / MSXConstants.TileSize * MSXConstants.TileSize;
+					this.pos.x = (this.pos.x / TileSize + 1) * TileSize;
+				this.pos.x = this.pos.x / TileSize * TileSize;
 				break;
 		}
 	}
@@ -534,7 +538,7 @@ export class Belmont extends Creature {
 	}
 
 	protected handleFloorCollision(): void {
-		this.pos.y = (this.pos.y / MSXConstants.TileSize) * MSXConstants.TileSize;
+		this.pos.y = (this.pos.y / TileSize) * TileSize;
 		if (this.Jumping) {
 			this.jumpState.Stop();
 		}
@@ -546,8 +550,8 @@ export class Belmont extends Creature {
 
 	protected handleCeilingCollision(): void {
 		if (this.pos.y >= 0)
-			this.pos.y = (this.pos.y / MSXConstants.TileSize + 1) * MSXConstants.TileSize;
-		else this.pos.y = (this.pos.y / MSXConstants.TileSize) * MSXConstants.TileSize;
+			this.pos.y = (this.pos.y / TileSize + 1) * TileSize;
+		else this.pos.y = (this.pos.y / TileSize) * TileSize;
 		this.jumpState.GoingUp = false;
 	}
 	// private (int destRoom, Direction direction)? nearRoomExit() {
@@ -659,24 +663,24 @@ export class HitState {
 	public Blink: boolean;
 	public BlinkingAndInvulnerable: boolean;
 	public CurrentStep: HitStateStep;
-	public static hitDelta: Point[] = new Array(new Point(-2, -2),
-		new Point(-2, -2),
-		new Point(-2, -2),
-		new Point(-2, -2),
-		new Point(-2, -2),
-		new Point(-2, -2),
-		new Point(-1, -1),
-		new Point(-1, -1),
-		new Point(-1, -1),
-		new Point(-1, -1),
-		new Point(-1, 0),
-		new Point(-1, 0),
-		new Point(-1, 0),
-		new Point(-1, 0),
-		new Point(-2, 1),
-		new Point(-2, 1),
-		new Point(-2, 1),
-		new Point(-2, 1));
+	public static hitDelta: Point[] = new Array(newPoint(-2, -2),
+		newPoint(-2, -2),
+		newPoint(-2, -2),
+		newPoint(-2, -2),
+		newPoint(-2, -2),
+		newPoint(-2, -2),
+		newPoint(-1, -1),
+		newPoint(-1, -1),
+		newPoint(-1, -1),
+		newPoint(-1, -1),
+		newPoint(-1, 0),
+		newPoint(-1, 0),
+		newPoint(-1, 0),
+		newPoint(-1, 0),
+		newPoint(-2, 1),
+		newPoint(-2, 1),
+		newPoint(-2, 1),
+		newPoint(-2, 1));
 	public HitAni: Animation<Point>;
 
 	constructor() {
