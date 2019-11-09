@@ -34,6 +34,10 @@ export class BStopwatch {
         BStopwatch.Watches.forEach(s => { s.updateTime(elapsedMs); });
     }
 
+    public static pauseAllRunningWatches(): void {
+        BStopwatch.Watches.filter(s => !s.running).forEach(s => { s.running = false });
+    }
+
     public start = (): void => {
         this.running = true;
     }

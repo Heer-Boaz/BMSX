@@ -16,6 +16,7 @@ import { newPoint } from "../BoazEngineJS/common";
 import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
 import { ResourceMaster as RM } from './resourcemaster';
 import { Constants as CS } from "../BoazEngineJS/constants";
+import { GameView as V } from './gameview';
 
 export class GameController {
     private static _instance: GameController;
@@ -110,7 +111,7 @@ export class GameController {
                 V._.GameOverScreen.Init();
                 break;
             case M.GameSubstate.IngameMenu:
-                T.PauseAllRunningWatches(true);
+                BStopwatch.pauseAllRunningWatches(true);
                 break;
             case M.GameSubstate.GameMenu:
                 T.PauseAllRunningWatches(true);
