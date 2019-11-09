@@ -9,6 +9,7 @@ import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
 import { ResourceMaster as RM } from './resourcemaster';
 import { GameController as C } from './gamecontroller';
 import { GameMenu } from "./gamemenu";
+import { MenuItem } from './mainmenu';
 
 export enum State {
     SelectContOrLoad,
@@ -68,7 +69,7 @@ export class GameOver {
                         case 1:
                             S.PlayEffect(RM.Sound[AudioId.Selectie]);
                             KeyState.KC_SPACE = false;
-                            M._.GameMenu.Open(GameMenu.MenuItem.LoadFromGameOver);
+                            M._.GameMenu.Open(MenuItem.LoadFromGameOver);
                             this.state = State.SelectFile;
                             break;
                     }

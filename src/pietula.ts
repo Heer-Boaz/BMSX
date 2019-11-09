@@ -53,7 +53,7 @@ export class Pietula extends BossFoe {
 		this.imgid = this.animation.stepValue().img;
 		this.timer.restart();
 		this.hitarea = Pietula.PietulaHitArea;
-		this.size = newSize(this.hitarea.ex, this.hitarea.ey);
+		this.size = newSize(this.hitarea.end.x, this.hitarea.end.y);
 		this.Health = 20;
 	}
 

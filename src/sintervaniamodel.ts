@@ -10,6 +10,7 @@ import { ItemType } from "./item";
 import { GameMenu } from "./gamemenu";
 import { Point, IGameObject } from "../BoazEngineJS/interfaces";
 import { Room } from "./room";
+import { RoomFactory } from "./RoomFactory";
 
 declare module "../BoazEngineJS/model" {
     export enum GameState {
@@ -108,9 +109,6 @@ export class GameModel extends Model {
 
     private static _instance: GameModel;
     static GameSubstate: any;
-    Paused: any;
-    StartAfterLoad: any;
-    GameObjects: any;
     public static get _(): GameModel {
         return GameModel._instance;
     }

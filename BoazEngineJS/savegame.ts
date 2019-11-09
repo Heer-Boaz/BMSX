@@ -4,7 +4,7 @@ import { Model } from "./model";
 
 /*[Serializable]*/
 export class Savegame {
-	public Model: Model;
+	public Model: any;
 	public Timestamp: Date;
 	public Slot: number;
 	public RegisteredWatches: BStopwatch[];

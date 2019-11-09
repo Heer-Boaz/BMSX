@@ -3,13 +3,15 @@ import { Constants as CS } from "./constants";
 import { Savegame } from "./savegame";
 import { LoadGame } from "./gamestateloader";
 
-export function saveGame(m: GameModel, slot: number): void {
-	throw "Not implemented yet :(";
-}
+export namespace GameSaver {
+	export function saveGame(m: GameModel, slot: number): void {
+		throw "Not implemented yet :(";
+	}
 
-export function getCheckpoint(m: GameModel): Savegame {
-	saveGame(m, CS.SaveSlotCheckpoint);
-	return LoadGame(CS.SaveSlotCheckpoint);
+	export function GetCheckpoint(m: GameModel): Savegame {
+		saveGame(m, CS.SaveSlotCheckpoint);
+		return LoadGame(CS.SaveSlotCheckpoint);
+	}
 }
 
 // export class GameSaver {

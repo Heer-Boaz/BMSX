@@ -2,13 +2,13 @@ import { Direction } from "../BoazEngineJS/direction";
 import { Creature } from "./creature";
 import { BStopwatch } from "../BoazEngineJS/btimer";
 import { GameConstants as CS } from "./gameconstants";
-import { copyPoint, waitDuration, setSize, newArea } from "../BoazEngineJS/common";
+import { copyPoint, waitDuration, setSize, newArea, setPoint } from '../BoazEngineJS/common';
 import { Animation, AniStepCompoundValue } from '../BoazEngineJS/animation';
-import { MSXConstants, Tile, TileSize } from '../BoazEngineJS/msx';
+import { TileSize } from '../BoazEngineJS/msx';
 import { BitmapId, AudioId } from "./resourceids";
-import { Area, Point, Size } from '../BoazEngineJS/interfaces';
+import { Area, Point } from '../BoazEngineJS/interfaces';
 import { KeyState } from "../BoazEngineJS/input";
-import { Room } from "./room";
+import { Room, NearingRoomExitResult } from './room';
 import { newPoint } from "../BoazEngineJS/common";
 import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
 import { ResourceMaster as RM } from './resourcemaster';
@@ -135,7 +135,7 @@ export class Belmont extends Creature {
 	public set WallHitArea(value: Area) {
 	}
 
-	public EventTouchHitArea: Area = new Area(0, 24, 16, 32);
+	public EventTouchHitArea: Area = newArea(0, 24, 16, 32);
 	private static buttonPressEventHitAreaUp: Area = newArea(0, 20, 16, 28);
 	private static buttonPressEventHitAreaRight: Area = newArea(4, 24, 20, 32);
 	private static buttonPressEventHitAreaDown: Area = newArea(0, 28, 16, 36);
@@ -160,7 +160,7 @@ export class Belmont extends Creature {
 		return this.EventTouchHitArea;
 	}
 
-	private static _hitarea: Area = new Area(2, 8, 14, 30);
+	private static _hitarea: Area = newArea(2, 8, 14, 30);
 	public get hitarea(): Area {
 		return Belmont._hitarea;
 	}
@@ -493,15 +493,15 @@ export class Belmont extends Creature {
 
 	private checkAndHandleWallAndCeilingCollisions(originalPos: Point): void {
 		if (this.checkWallSpriteCollisions())
-			this.pos.Set(originalPos);
+			setPoint(this.pos, originalPos.x, originalPos.y);
 		if (this.checkWallCollision())
 			this.handleWallCollision();
 		if (this.CeilingCollision) {
 			this.handleCeilingCollision();
 		}
 		let possibleRoomExit = this.nearRoomExit();
-		if (possibleRoomExit != null && possibleRoomExit ?.destRoom != Room.NO_ROOM_EXIT) {
-			C._.HandleRoomExitViaMovement(possibleRoomExit.Value.destRoom, possibleRoomExit.Value.direction);
+		if (possibleRoomExit && possibleRoomExit.destRoom != Room.NO_ROOM_EXIT) {
+			C._.HandleRoomExitViaMovement(possibleRoomExit.destRoom, possibleRoomExit.direction);
 		}
 	}
 
@@ -519,8 +519,8 @@ export class Belmont extends Creature {
 
 	private checkAndHandleRoomExit(): void {
 		let possibleRoomExit = this.nearRoomExit();
-		if (possibleRoomExit != null && possibleRoomExit ?.destRoom != Room.NO_ROOM_EXIT) {
-			C._.HandleRoomExitViaMovement(possibleRoomExit.Value.destRoom, possibleRoomExit.Value.direction);
+		if (possibleRoomExit && possibleRoomExit.destRoom != Room.NO_ROOM_EXIT) {
+			C._.HandleRoomExitViaMovement(possibleRoomExit.destRoom, possibleRoomExit.direction);
 		}
 	}
 
@@ -576,18 +576,20 @@ export class Belmont extends Creature {
 		else this.pos.y = (this.pos.y / TileSize) * TileSize;
 		this.jumpState.GoingUp = false;
 	}
-	// private (int destRoom, Direction direction)? nearRoomExit() {
-	// 	let exitUp = M._.CurrentRoom.NearingRoomExit(this.pos.x + 1, this.pos.y + 8); // 24
-	// 	if (exitUp != null) return exitUp;
-	// 	let exitRight = M._.CurrentRoom.NearingRoomExit(this.pos.x + 16, this.pos.y + 25);
-	// 	if (exitRight != null) return exitRight;
-	// 	let exitDown = M._.CurrentRoom.NearingRoomExit(this.pos.x + 1, this.pos.y + 32);
-	// 	if (exitDown != null) return exitDown;
-	// 	let exitLeft = M._.CurrentRoom.NearingRoomExit(this.pos.x, this.pos.y + 25);
-	// 	if (exitLeft != null) return exitLeft;
 
-	// 	return null;
-	// }
+	private nearRoomExit(): NearingRoomExitResult {
+		let exitUp = M._.CurrentRoom.NearingRoomExit(this.pos.x + 1, this.pos.y + 8); // 24
+		if (exitUp != null) return exitUp;
+		let exitRight = M._.CurrentRoom.NearingRoomExit(this.pos.x + 16, this.pos.y + 25);
+		if (exitRight != null) return exitRight;
+		let exitDown = M._.CurrentRoom.NearingRoomExit(this.pos.x + 1, this.pos.y + 32);
+		if (exitDown != null) return exitDown;
+		let exitLeft = M._.CurrentRoom.NearingRoomExit(this.pos.x, this.pos.y + 25);
+		if (exitLeft != null) return exitLeft;
+
+		return null;
+	}
+
 	private ignoreDirButtonPress(dir: Direction): boolean {
 		return this.multipleDirButtonsPressed() && dir == this.firstPressedButton;
 	}
@@ -740,8 +742,8 @@ export enum HitStateStep {
 }
 
 export interface BitmapAndDir {
-	public image: BitmapId;
-	public dir: Direction;
+	image: BitmapId;
+	dir: Direction;
 }
 
 export class DyingState {

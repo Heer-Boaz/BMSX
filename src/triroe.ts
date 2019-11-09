@@ -1,30 +1,34 @@
 import { PlayerProjectile } from "./pprojectile";
-import { Belmont } from "./belmont";
+import { RoeState } from "./belmont";
 import { Direction } from "../BoazEngineJS/direction";
 import { GameModel as M } from "./sintervaniamodel";
 import { Area, Point } from "../BoazEngineJS/interfaces";
+import { BitmapId } from "./resourceids";
+import { newArea } from "../BoazEngineJS/common";
 
 /*[Serializable]*/
 export class TriRoe extends PlayerProjectile {
-	// 		private static hitareas: Dictionary<number, Area> = __init(new Dictionary<number, Area>(), { { <number>BitmapId.Belmont_rw1, new Area(0, 9, 7, 26) },
-	// 	{ <number>BitmapId.Belmont_rw2, new Area(0, 6, 15, 16) },
-	// 	{ <number>BitmapId.Belmont_rw3, new Area(20, 8, 41, 16) },
-	// 	{ <number>BitmapId.Belmont_rwd1, new Area(0, 15, 7, 32) },
-	// 	{ <number>BitmapId.Belmont_rwd2, new Area(0, 12, 15, 22) },
-	// 	{ <number>BitmapId.Belmont_rwd3, new Area(20, 14, 41, 22) },
-	// 	{ <number>BitmapId.Belmont_lw1, new Area(24, 9, 31, 26) },
-	// 	{ <number>BitmapId.Belmont_lw2, new Area(17, 6, 31, 16) },
-	// 	{ <number>BitmapId.Belmont_lw3, new Area(0, 8, 19, 16) },
-	// 	{ <number>BitmapId.Belmont_lwd1, new Area(24, 15, 31, 32) },
-	// 	{ <number>BitmapId.Belmont_lwd2, new Area(17, 12, 31, 22) },
-	// 	{ <number>BitmapId.Belmont_lwd3, new Area(0, 14, 19, 22) }
-	// });
+	private static hitareas: Map<number, Area> = new Map<number, Area>([
+		[BitmapId.Belmont_rw1, newArea(0, 9, 7, 26)],
+		[BitmapId.Belmont_rw2, newArea(0, 6, 15, 16)],
+		[BitmapId.Belmont_rw3, newArea(20, 8, 41, 16)],
+		[BitmapId.Belmont_rwd1, newArea(0, 15, 7, 32)],
+		[BitmapId.Belmont_rwd2, newArea(0, 12, 15, 22)],
+		[BitmapId.Belmont_rwd3, newArea(20, 14, 41, 22)],
+		[BitmapId.Belmont_lw1, newArea(24, 9, 31, 26)],
+		[BitmapId.Belmont_lw2, newArea(17, 6, 31, 16)],
+		[BitmapId.Belmont_lw3, newArea(0, 8, 19, 16)],
+		[BitmapId.Belmont_lwd1, newArea(24, 15, 31, 32)],
+		[BitmapId.Belmont_lwd2, newArea(17, 12, 31, 22)],
+		[BitmapId.Belmont_lwd3, newArea(0, 14, 19, 22)],
+	]);
+
 	public get hitarea(): Area {
 		if (!M._.Belmont.roeState.Roeing || M._.Belmont.RecoveringFromHit)
 			return null;
 		if (!M._.Belmont.Crouching)
-			return TriRoe.hitareas[M._.Belmont.imgid] + Belmont.RoeState.RoeSpritePosOffset[M._.Belmont.Direction][M._.Belmont.roeState.CurrentFrame];
-		return TriRoe.hitareas[M._.Belmont.imgid] + Belmont.RoeState.RoeSpritePosOffsetCrouching[M._.Belmont.Direction][M._.Belmont.roeState.CurrentFrame];
+			return TriRoe.hitareas[M._.Belmont.imgid] + RoeState.RoeSpritePosOffset[M._.Belmont.Direction][M._.Belmont.roeState.CurrentFrame];
+		return TriRoe.hitareas[M._.Belmont.imgid] + RoeState.RoeSpritePosOffsetCrouching[M._.Belmont.Direction][M._.Belmont.roeState.CurrentFrame];
 	}
 	public set hitarea(value: Area) {
 	}

@@ -6,8 +6,6 @@ export enum GameSubstate { Default = 0 }
 export abstract class Model {
     public id2object: Map<string, IGameObject>;
     public objects: IGameObject[];
-
-
     public gameState: GameState;
     public gameSubstate: GameSubstate;
     public gameOldState: GameState;

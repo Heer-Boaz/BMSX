@@ -3,8 +3,10 @@ import { TileSize } from "../BoazEngineJS/msx";
 import { Direction } from "../BoazEngineJS/direction";
 import { GameConstants as CS } from "./gameconstants";
 import { view } from "../BoazEngineJS/engine";
+import { RoomDataContainer } from "./RoomFactory";
 
 export type NearingRoomExitResult = { destRoom: number, direction: Direction } | null;
+export type RoomInitDelegate = (room: Room) => void;
 
 export class Room {
 	public static RoomWidth: number = 0;
@@ -23,12 +25,20 @@ export class Room {
 	///  </summary>
 	// public bool DefaultRespawnLocation;
 	public Exits: number[];
-	private initFunction: (room: Room) => void;
+	public initFunction: RoomInitDelegate;
 	protected ImageID: number;
 	public BitmapPath: string;
 
-	public static LoadRoom(data: number): number {
-		let result = 1;
+	public static LoadRoom(data: RoomDataContainer): Room {
+		var result = new Room();
+		result.Id = data.Id;
+		result.CollisionData = data.CollisionMap;
+		result.Exits = data.Exits;
+		result.initFunction = data.InitFunction;
+		result.BitmapPath = data.BitmapPath;
+
+		GameResources.Replace(BitmapId.Room, new XBitmap(data.BitmapPath));
+
 		return result;
 	}
 

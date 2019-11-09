@@ -86,4 +86,12 @@ export class SoundMaster {
 	public static ResumeMusic(): void {
 		audio[`${this.MusicBeingPlayed.Music}`].play();
 	}
+
+	public static SetEffectsVolume(volume: number): void {
+		throw Error("Implementeer deze meuk!");
+	}
+
+	public static SetMusicVolume(volume: number): void {
+		throw Error("Implementeer deze meuk!");
+	}
 }

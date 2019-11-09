@@ -5,6 +5,8 @@ export class BStopwatch {
     public pauseAtFocusLoss: boolean = true;
     public running: boolean = false;
     public elapsedMilliseconds: number = 0;
+    private static watchesThatHaveBeenStopped: BStopwatch[] = [];
+    private static watchesThatHaveBeenStoppedAtFocusLoss: BStopwatch[] = [];
 
     /// <summary>
     /// This list is used to pause all running timers for when the game is paused, or the game loses focus, etc.
@@ -34,8 +36,33 @@ export class BStopwatch {
         BStopwatch.Watches.forEach(s => { s.updateTime(elapsedMs); });
     }
 
-    public static pauseAllRunningWatches(): void {
+    public static pauseAllRunningWatches(pauseCausedByMenu?: boolean): void {
         BStopwatch.Watches.filter(s => !s.running).forEach(s => { s.running = false });
+        //this.watchesThatHaveBeenStopped.Clear();
+        BStopwatch.Watches.forEach(w => {
+            if (w.running && (!pauseCausedByMenu || w.pauseDuringMenu)) {
+                w.stop();
+                BStopwatch.watchesThatHaveBeenStopped.push(w);
+            }
+        });
+    }
+
+    public static resumeAllPausedWatches(): void {
+        BStopwatch.watchesThatHaveBeenStopped.filter(s => !s.running).forEach(s => { s.running = false });
+    }
+
+    private static pauseWatchesOnFocusLoss(): void {
+        BStopwatch.Watches.forEach(w => {
+            if (w.running && w.pauseAtFocusLoss) {
+                w.stop();
+                this.watchesThatHaveBeenStoppedAtFocusLoss.push(w);
+            }
+        });
+    }
+
+    private static resumeAllPausedWatchesOnFocus(): void {
+        this.watchesThatHaveBeenStoppedAtFocusLoss.forEach(w => w.start());
+        this.watchesThatHaveBeenStoppedAtFocusLoss.length = 0;
     }
 
     public start = (): void => {

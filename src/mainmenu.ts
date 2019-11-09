@@ -107,12 +107,12 @@ export class MainMenu {
                             break;
                         case MenuItem.LoadGame:
                             KeyState.KC_SPACE = false;
-                            M._.GameMenu.Open(GameMenu.MenuItem.LoadFromMainMenu);
+                            M._.GameMenu.Open(MenuItem.LoadFromMainMenu);
                             this.state = State.SubMenu;
                             break;
                         case MenuItem.Options:
                             KeyState.KC_SPACE = false;
-                            M._.GameMenu.Open(GameMenu.MenuItem.OptionsFromMainMenu);
+                            M._.GameMenu.Open(MenuItem.OptionsFromMainMenu);
                             this.state = State.SubMenu;
                             break;
                     }
