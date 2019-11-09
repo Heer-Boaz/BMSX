@@ -1,3 +1,11 @@
+import { Point } from "../BoazEngineJS/interfaces";
+import { TileSize } from "../BoazEngineJS/msx";
+import { Direction } from "../BoazEngineJS/direction";
+import { GameConstants as CS } from "./gameconstants";
+import { view } from "../BoazEngineJS/engine";
+
+export type NearingRoomExitResult = { destRoom: number, direction: Direction } | null;
+
 export class Room {
 	public static RoomWidth: number = 0;
 	public static RoomHeight: number = 0;
@@ -15,7 +23,7 @@ export class Room {
 	///  </summary>
 	// public bool DefaultRespawnLocation;
 	public Exits: number[];
-	private initFunction: Action<Room>;
+	private initFunction: (room: Room) => void;
 	protected ImageID: number;
 	public BitmapPath: string;
 
@@ -25,59 +33,46 @@ export class Room {
 	}
 
 	public InitRoom() {
-		Invoke(this);
+		if (this.initFunction)
+			this.initFunction(this);
 	}
 
 	public TakeTurn() {
-		//  TODO: Ga dingen doen
+		// TODO: Ga dingen doen
 	}
 
 	///  <summary>Checks if there is a collision tile in any of the given coordinates</summary>
-	public AnyCollisionsTiles(takeWallFoesIntoAccount: boolean): boolean {
-		x: number;
-
-		int: number;
-
-		x.y: number;
-
-		takeWallFoesIntoAccount: number;
-	}
-	publicint;
-	destRoom;
-, let direction: number;
-UnknownQuestionNearingRoomExit(int, x, int, y);
-{, DirectionRight = 0;
-, DirectionUp = 0;
-, DirectionDown = 0;
-	int;
-, let Unknown: number;
-	Questionresult = null;
-	if ((x < 0)) {
-		//  Note: Check for x and not _x, as -1 / (...) will result in 0!
-		destRoom = this.RoomExit(DirectionLeft);
-		result = destRoom;
-		DirectionLeft;
-	}
-	else if ((_x >= CSStageScreenWidthTiles)) {
-		destRoom = this.RoomExit(DirectionRight);
-		result = destRoom;
-		DirectionRight;
-	}
-	else if ((_y < 2)) {
-		destRoom = this.RoomExit(DirectionUp);
-		result = destRoom;
-		DirectionUp;
-	}
-	else if ((_y >= CSStageScreenHeightTiles)) {
-		destRoom = this.RoomExit(DirectionDown);
-		result = destRoom;
-		DirectionDown;
+	public AnyCollisionsTiles(takeWallFoesIntoAccount: boolean, ...coordinatesToCheck: Point[]): boolean {
+		return coordinatesToCheck.some(x => this.IsCollisionTile(x.x, x.y, takeWallFoesIntoAccount));
 	}
 
-	return result;
-	UnknownUnknown
+	public NearingRoomExit(x: number, y: number): NearingRoomExitResult {
+		let _x = x / TileSize;
+		let _y = y / TileSize;
+		let result: NearingRoomExitResult = { destRoom: Room.NO_ROOM_EXIT, direction: Direction.None };
 
-    public IsCollisionTile(x: number, y: number, takeWallFoesIntoAccount: boolean): boolean {
+		if ((x < 0)) {
+			//  Note: Check for x and not _x, as -1 / (...) will result in 0!
+			let dest = this.RoomExit(Direction.Left);
+			result = { destRoom: dest, direction: Direction.Left };
+		}
+		else if ((_x >= CS.StageScreenWidthTiles)) {
+			let dest = this.RoomExit(Direction.Right);
+			result = { destRoom: dest, direction: Direction.Right };
+		}
+		else if ((_y < 2)) {
+			let dest = this.RoomExit(Direction.Up);
+			result = { destRoom: dest, direction: Direction.Up };
+		}
+		else if ((_y >= CS.StageScreenHeightTiles)) {
+			let dest = this.RoomExit(Direction.Down);
+			result = { destRoom: dest, direction: Direction.Down };
+		}
+
+		return result;
+	}
+
+	public IsCollisionTile(x: number, y: number, takeWallFoesIntoAccount: boolean): boolean {
 		let TileSize = 0;
 		let DirectionDown: number = 0;
 		let DirectionLeft: number = 0;
@@ -134,42 +129,28 @@ UnknownQuestionNearingRoomExit(int, x, int, y);
 		return false;
 	}
 
-	TileSize: var = 0;
-
-	CSStageScreenWidthTiles: var = 0;
-
-	CSStageScreenHeightTiles: var = 0;
-
-	_x: number = (x / TileSize);
-
-	_y: number = (y / TileSize);
-
-	DirectionLeft: number = 0;
-
-	destRoom: number = NO_ROOM_EXIT;
-
-    private RoomExit(dir: number): number {
+	private RoomExit(dir: number): number {
 		let RoomExitsLocked = true;
 		if (RoomExitsLocked) {
-			return NO_ROOM_EXIT;
+			return Room.NO_ROOM_EXIT;
 		}
 
 		return this.Exits[(<number>(dir))];
 	}
 
-    private CanLeaveRoom(dir: number): boolean {
+	private CanLeaveRoom(dir: number): boolean {
 		let RoomExitsLocked = true;
 		if (RoomExitsLocked) {
 			return false;
 		}
 
-		return (this.RoomExit(dir) != NO_ROOM_EXIT);
+		return (this.RoomExit(dir) != Room.NO_ROOM_EXIT);
 	}
 
-    public Paint() {
-		// BDX._.DrawBitmap((uint)this.ImageID, CS.GameScreenStartX, CS.GameScreenStartY);
+	public Paint() {
+		view.DrawBitmap(this.ImageID, CS.GameScreenStartX, CS.GameScreenStartY);
 	}
-
+}
 
 // public class Room {
 // 	public const int RoomWidth = 0;
@@ -289,5 +270,4 @@ UnknownQuestionNearingRoomExit(int, x, int, y);
 
 // 		public void Paint() {
 // 	//BDX._.DrawBitmap((uint)this.ImageID, CS.GameScreenStartX, CS.GameScreenStartY);
-// }
 // }

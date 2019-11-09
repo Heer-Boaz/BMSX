@@ -10,6 +10,10 @@ import { ResourceMaster as RM } from './resourcemaster';
 import { GameController as C } from './gamecontroller';
 import { GameModel as M } from "./sintervaniamodel";
 import { SlotExists, LoadGame } from "../BoazEngineJS/gamestateloader";
+import { GameOptions as GO } from "../BoazEngineJS/gameoptions";
+import { GameConstants as CS } from "./gameconstants";
+import { MSXConstants as MCS } from "../BoazEngineJS/msx";
+import { Constants } from "../BoazEngineJS/constants";
 
 export class GameMenu {
     private static menuPosX: number = 24;
@@ -206,36 +210,36 @@ export class GameMenu {
                 case GameMenu.MenuItem.OptionsFromMainMenu:
                     switch (this.selectedItem) {
                         case MenuItem.Scale:
-                            if (!GO._.Fullscreen) {
-                                let hresult = V._.ChangeScale(GO._.Scale + 1);
+                            if (!GO.Fullscreen) {
+                                let hresult = V._.ChangeScale(GO.Scale + 1);
                                 if (hresult.Succeeded)
                                     G._.GameOptionsChanged();
                             }
                             break;
                         case MenuItem.Fullscreen:
-                            if (GO._.Fullscreen) {
-                                GO._.Fullscreen = false;
+                            if (GO.Fullscreen) {
+                                GO.Fullscreen = false;
                                 let hresult = V._.ToWindowed();
                                 if (hresult.Succeeded)
                                     G._.GameOptionsChanged();
-                                else GO._.Fullscreen = true;
+                                else GO.Fullscreen = true;
                             }
                             break;
                         case MenuItem.EffectVolume:
-                            if (GO._.EffectsVolumePercentage < 100) {
-                                GO._.EffectsVolumePercentage += 10;
-                                if (GO._.EffectsVolumePercentage > 100)
-                                    GO._.EffectsVolumePercentage = 100;
-                                BDX._.SetEffectsVolume(GO._.EffectsVolumePercentage / 100f);
+                            if (GO.EffectsVolumePercentage < 100) {
+                                GO.EffectsVolumePercentage += 10;
+                                if (GO.EffectsVolumePercentage > 100)
+                                    GO.EffectsVolumePercentage = 100;
+                                BDX._.SetEffectsVolume(GO.EffectsVolumePercentage / 100f);
                                 G._.GameOptionsChanged();
                             }
                             break;
                         case MenuItem.MusicVolume:
-                            if (GO._.MusicVolumePercentage < 100) {
-                                GO._.MusicVolumePercentage += 10;
-                                if (GO._.MusicVolumePercentage > 100)
-                                    GO._.MusicVolumePercentage = 100;
-                                BDX._.SetMusicVolume(GO._.MusicVolumePercentage / 100f);
+                            if (GO.MusicVolumePercentage < 100) {
+                                GO.MusicVolumePercentage += 10;
+                                if (GO.MusicVolumePercentage > 100)
+                                    GO.MusicVolumePercentage = 100;
+                                BDX._.SetMusicVolume(GO.MusicVolumePercentage / 100f);
                                 G._.GameOptionsChanged();
                             }
                             break;
@@ -249,35 +253,35 @@ export class GameMenu {
                 case GameMenu.MenuItem.OptionsFromMainMenu:
                     switch (this.selectedItem) {
                         case MenuItem.Scale:
-                            if (!GO._.Fullscreen && GO._.Scale > 1) {
-                                let hresult: HResult = V._.ChangeScale(GO._.Scale - 1);
+                            if (!GO.Fullscreen && GO.Scale > 1) {
+                                let hresult: HResult = V._.ChangeScale(GO.Scale - 1);
                                 if (hresult.Succeeded)
                                     G._.GameOptionsChanged();
                             }
                             break;
                         case MenuItem.Fullscreen:
-                            if (!GO._.Fullscreen) {
-                                GO._.Fullscreen = true;
+                            if (!GO.Fullscreen) {
+                                GO.Fullscreen = true;
                                 let hresult = V._.ToFullscreen();
                                 if (hresult.Succeeded)
                                     G._.GameOptionsChanged();
                             }
                             break;
                         case MenuItem.EffectVolume:
-                            if (GO._.EffectsVolumePercentage > 0) {
-                                GO._.EffectsVolumePercentage -= 10;
-                                if (GO._.EffectsVolumePercentage < 0)
-                                    GO._.EffectsVolumePercentage = 0;
-                                BDX._.SetEffectsVolume(GO._.EffectsVolumePercentage / 100f);
+                            if (GO.EffectsVolumePercentage > 0) {
+                                GO.EffectsVolumePercentage -= 10;
+                                if (GO.EffectsVolumePercentage < 0)
+                                    GO.EffectsVolumePercentage = 0;
+                                BDX._.SetEffectsVolume(GO.EffectsVolumePercentage / 100f);
                                 G._.GameOptionsChanged();
                             }
                             break;
                         case MenuItem.MusicVolume:
-                            if (GO._.MusicVolumePercentage > 0) {
-                                GO._.MusicVolumePercentage -= 10;
-                                if (GO._.MusicVolumePercentage < 0)
-                                    GO._.MusicVolumePercentage = 0;
-                                BDX._.SetMusicVolume(GO._.MusicVolumePercentage / 100f);
+                            if (GO.MusicVolumePercentage > 0) {
+                                GO.MusicVolumePercentage -= 10;
+                                if (GO.MusicVolumePercentage < 0)
+                                    GO.MusicVolumePercentage = 0;
+                                BDX._.SetMusicVolume(GO.MusicVolumePercentage / 100f);
                                 G._.GameOptionsChanged();
                             }
                             break;
@@ -335,7 +339,7 @@ export class GameMenu {
                 x = 0;
                 y = this.selectedItemIndex;
                 maxX = 0;
-                maxY = CS.SaveSlotCount;
+                maxY = Constants.SaveSlotCount;
                 break;
             default:
                 maxX = maxY = x = y = 0;
@@ -452,10 +456,10 @@ export class GameMenu {
                         switch (item.type) {
                             case GameMenu.MenuItem.Scale:
                                 let textToDisplay: string;
-                                if (!GO._.Fullscreen) {
+                                if (!GO.Fullscreen) {
                                     TextWriter.DrawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
                                     offsetX += GameMenu.scaleText.length * TextWriter.FontWidth;
-                                    textToDisplay = GO._.Scale.ToString();
+                                    textToDisplay = GO.Scale.ToString();
                                     TextWriter.DrawText(offsetX, y, string.Format("{0}X", textToDisplay));
                                 }
                                 else {
@@ -473,7 +477,7 @@ export class GameMenu {
                                 {
                                     TextWriter.DrawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
                                     offsetX += GameMenu.effectVolumeText.length * TextWriter.FontWidth;
-                                    let text = GO._.EffectsVolumePercentage > 0 ? GO._.EffectsVolumePercentage + "%" : "Off";
+                                    let text = GO.EffectsVolumePercentage > 0 ? GO.EffectsVolumePercentage + "%" : "Off";
                                     TextWriter.DrawText(offsetX, y, text);
                                 }
                                 break;
@@ -481,7 +485,7 @@ export class GameMenu {
                                 {
                                     TextWriter.DrawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
                                     offsetX += GameMenu.musicVolumeText.length * TextWriter.FontWidth;
-                                    let text = GO._.MusicVolumePercentage > 0 ? GO._.MusicVolumePercentage + "%" : "Off";
+                                    let text = GO.MusicVolumePercentage > 0 ? GO.MusicVolumePercentage + "%" : "Off";
                                     TextWriter.DrawText(offsetX, y, text);
                                 }
                                 break;
@@ -499,7 +503,7 @@ export class GameMenu {
                 {
                     TextWriter.DrawText(GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX, y, GameMenu.backText);
                     y += GameMenu.itemOffsetY;
-                    for (let i = 0; i < CS.SaveSlotCount; i++) {
+                    for (let i = 0; i < Constants.SaveSlotCount; i++) {
                         this.printSaveSlot(GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX, y, i);
                         y += GameMenu.itemOffsetY;
                     }
@@ -509,7 +513,7 @@ export class GameMenu {
                 {
                     TextWriter.DrawText(GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX, y, GameMenu.backText);
                     y += GameMenu.itemOffsetY;
-                    for (let i = 0; i < CS.SaveSlotCount; i++) {
+                    for (let i = 0; i < Constants.SaveSlotCount; i++) {
                         this.printSaveSlot(GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX, y, i);
                         y += GameMenu.itemOffsetY;
                     }
@@ -520,7 +524,7 @@ export class GameMenu {
     }
 
     private printFullscreenOptionRectangle(y: number): void {
-        let selectedIndex: number = GO._.Fullscreen ? 0 : 1;
+        let selectedIndex: number = GO.Fullscreen ? 0 : 1;
         BDX._.DrawRectangle(GameMenu.fullscreenOptionsOffsets[selectedIndex] + GameMenu.menuPosX + GameMenu.optionItemsOffsetX, y + GameMenu.fullscreenOptionsOffsetY, GameMenu.fullscreenOptionsOffsets[selectedIndex] + GameMenu.fullscreenOptionsRectangleSize.x + GameMenu.menuPosX + GameMenu.optionItemsOffsetX, y + GameMenu.fullscreenOptionsOffsetY + GameMenu.fullscreenOptionsRectangleSize.y, CS.Msx1Colors[6]);
     }
 

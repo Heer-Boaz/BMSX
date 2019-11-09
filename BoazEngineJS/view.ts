@@ -55,7 +55,7 @@ export class View {
         this.drawImg(imgId, <Point>{ x: x, y: y }, options || undefined);
     }
 
-    public DrawColoredBitmap(imgId: number, x: number, y: number, r: number, g: number, b: number) {
+    public DrawColoredBitmap(imgId: number, x: number, y: number, r: number, g: number, b: number, a?: number) {
         // TODO: IMPLEMENTEER!!
         throw ("Niet geïmplementeerd :(");
     }

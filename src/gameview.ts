@@ -3,8 +3,7 @@ import { ItsCurtainsForYou } from "./itscurtainsforyou";
 import { GameOver } from "./gameover";
 import { MainMenu } from "./mainmenu";
 import { Title } from "./title";
-import { Chapter, GameState, GameSubstate } from "./sintervaniamodel";
-import { GameMenu } from "./GameMenu.1";
+import { GameState, GameSubstate } from "../BoazEngineJS/model";
 import { GameConstants as CS } from "./gameconstants"
 import { AudioId, BitmapId } from "./resourceids";
 import { ResourceMaster } from "./resourcemaster";
@@ -18,6 +17,7 @@ import { MSXConstants as MCS } from "../BoazEngineJS/msx";
 import { EndDemo } from "./enddemo";
 import { Foe } from "./foe";
 import { Point } from "../BoazEngineJS/interfaces";
+import { GameOptions as GO } from '../BoazEngineJS/gameoptions';
 
 export class GameView {
     private static pausePosX: number = 80;
@@ -67,63 +67,52 @@ export class GameView {
         }
     }
 
-    public ChangeScale(newScale: number): HResult {
-        let oldScale = GO._.Scale;
-        GO._.Scale = newScale;
-        let hresult: HResult = this.scaleChanged();
-        if (hresult.Failed) {
-            GO._.Scale = oldScale;
-            this.scaleChanged();
-        }
-        return hresult;
+    public ChangeScale(newScale: number): void {
+        GO.Scale = newScale;
+        this.scaleChanged();
     }
 
-    private scaleChanged(): HResult {
-        let hresult: HResult = BDX._.ChangeWindowSize(<number>(MCS.MSX2ScreenWidth * GO._.Scale), <number>(MCS.MSX2ScreenHeight * GO._.Scale));
-        if (hresult.Succeeded)
-            hresult = BDX._.ChangeBufferSize(<number>(MCS.MSX2ScreenWidth * GO._.Scale), <number>(MCS.MSX2ScreenHeight * GO._.Scale));
-        if (hresult.Succeeded)
-            BDX._.Zoom = GO._.Scale;
-        return hresult;
+    private scaleChanged(): void {
+        throw Error("Not implemented!");
+        // BDX._.ChangeWindowSize(<number>(MCS.MSX2ScreenWidth * GO.Scale), <number>(MCS.MSX2ScreenHeight * GO.Scale));
+        // BDX._.Zoom = GO.Scale;
     }
 
-    public ToFullscreen(): HResult {
-        let hresult: HResult = BDX._.SwitchToFullscreen();
-        if (hresult.Succeeded) {
-            let clientWidth: number = BDX._.GetClientWidth();
-            let clientHeight: number = BDX._.GetClientHeight();
-            let bufferWidth: number, bufferHeight;
-            if (clientWidth >= clientHeight) {
-                bufferHeight = clientHeight;
-                bufferWidth = <number>(clientHeight * (MCS.MSX2ScreenWidth / <number>MCS.MSX2ScreenHeight));
-            }
-            else {
-                bufferWidth = clientWidth;
-                bufferHeight = <number>(clientWidth * (MCS.MSX2ScreenHeight / <number>MCS.MSX2ScreenWidth));
-            }
-            hresult = BDX._.ChangeBufferSize(bufferWidth, bufferHeight);
-            if (hresult.Succeeded) {
-                BDX._.Zoom = GameView.DetermineMaxScaleForFullscreen(BDX._.GetWindowWidth(), BDX._.GetWindowHeight(), MCS.MSX2ScreenWidth, MCS.MSX2ScreenHeight);
-            }
-        }
-        return hresult;
+    public ToFullscreen(): void {
+        throw Error("Not implemented!");
+        // BDX._.SwitchToFullscreen();
+        // let clientWidth: number = BDX._.GetClientWidth();
+        // let clientHeight: number = BDX._.GetClientHeight();
+        // let bufferWidth: number, bufferHeight;
+        // if (clientWidth >= clientHeight) {
+        //     bufferHeight = clientHeight;
+        //     bufferWidth = <number>(clientHeight * (MCS.MSX2ScreenWidth / <number>MCS.MSX2ScreenHeight));
+        // }
+        // else {
+        //     bufferWidth = clientWidth;
+        //     bufferHeight = <number>(clientWidth * (MCS.MSX2ScreenHeight / <number>MCS.MSX2ScreenWidth));
+        // }
+        // BDX._.ChangeBufferSize(bufferWidth, bufferHeight);
+        // BDX._.Zoom = GameView.DetermineMaxScaleForFullscreen(BDX._.GetWindowWidth(), BDX._.GetWindowHeight(), MCS.MSX2ScreenWidth, MCS.MSX2ScreenHeight);
+        // }
     }
 
-    public ToWindowed(): HResult {
-        let oldScale = GO._.Scale;
-        let hresult: HResult = BDX._.SwitchToWindowed(<number>(MCS.MSX2ScreenWidth * GO._.Scale), <number>(MCS.MSX2ScreenHeight * GO._.Scale));
-        if (hresult.Succeeded) {
-            hresult = BDX._.ChangeBufferSize(<number>(MCS.MSX2ScreenWidth * GO._.Scale), <number>(MCS.MSX2ScreenHeight * GO._.Scale));
-        }
-        else {
-            GO._.Scale = 1;
-            hresult = BDX._.SwitchToWindowed(<number>(MCS.MSX2ScreenWidth * GO._.Scale), <number>(MCS.MSX2ScreenHeight * GO._.Scale));
-            hresult = BDX._.ChangeBufferSize(<number>(MCS.MSX2ScreenWidth * GO._.Scale), <number>(MCS.MSX2ScreenHeight * GO._.Scale));
-        }
-        if (hresult.Succeeded)
-            BDX._.Zoom = GO._.Scale;
-        else GO._.Scale = oldScale;
-        return hresult;
+    public ToWindowed(): void {
+        throw Error("Not implemented!");
+        // let oldScale = GO.Scale;
+        // let hresult: HResult = BDX._.SwitchToWindowed(<number>(MCS.MSX2ScreenWidth * GO.Scale), <number>(MCS.MSX2ScreenHeight * GO.Scale));
+        // if (hresult.Succeeded) {
+        //     hresult = BDX._.ChangeBufferSize(<number>(MCS.MSX2ScreenWidth * GO.Scale), <number>(MCS.MSX2ScreenHeight * GO.Scale));
+        // }
+        // else {
+        //     GO.Scale = 1;
+        //     hresult = BDX._.SwitchToWindowed(<number>(MCS.MSX2ScreenWidth * GO.Scale), <number>(MCS.MSX2ScreenHeight * GO.Scale));
+        //     hresult = BDX._.ChangeBufferSize(<number>(MCS.MSX2ScreenWidth * GO.Scale), <number>(MCS.MSX2ScreenHeight * GO.Scale));
+        // }
+        // if (hresult.Succeeded)
+        //     BDX._.Zoom = GO.Scale;
+        // else GO.Scale = oldScale;
+        // return hresult;
     }
 
     constructor() {

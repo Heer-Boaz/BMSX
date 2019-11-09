@@ -1,6 +1,7 @@
 ﻿import { view } from "./engine";
 import { moveArea, addPoints } from "./common";
 import { BitmapId } from "../src/resourceids";
+import { IGameObject, Point, Size, Area } from "./interfaces";
 
 export abstract class Sprite implements IGameObject {
 	public id: string | null;
@@ -100,5 +101,9 @@ export abstract class Sprite implements IGameObject {
 
 	handleResizeEvent(): void {
 		throw new Error("Method not implemented.");
+	}
+
+	setExtendedProperty(key: string, value: any) {
+		this.extendedProperties.set(key, value);
 	}
 }

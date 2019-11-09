@@ -101,9 +101,6 @@ export enum SecWeaponType {
 }
 
 export class GameModel extends Model {
-    Remove(o: any) {
-        throw new Error("Method not implemented.");
-    }
     public Checkpoint: Savegame;
     public SelectedChapterToPlay: Chapter;
     public static PROPERTY_KEEP_AT_ROOMSWITCH: string = "p_rs";
@@ -114,7 +111,6 @@ export class GameModel extends Model {
     Paused: any;
     StartAfterLoad: any;
     GameObjects: any;
-    static M: Model;
     public static get _(): GameModel {
         return GameModel._instance;
     }

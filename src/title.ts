@@ -4,6 +4,7 @@ import { BitmapId } from "./resourceids";
 import { GameController as C } from "./gamecontroller";
 import { KeyState } from "../BoazEngineJS/input";
 import { Point } from "../BoazEngineJS/interfaces";
+import { Game as G, view, game } from '../BoazEngineJS/engine';
 
 export enum State {
 	WaitForIt,
@@ -73,7 +74,7 @@ export class Title {
 				break;
 
 			case State.TitleTop:
-				if ((G._.bxlib.TurnCounter & 1) == 0) {
+				if ((game.TurnCounter & 1) == 0) {
 					this.titleTopPos.x += Title.deltaX;
 					if (this.titleAni.doAnimation(<number>Title.deltaX, newState)) {
 						this.state = newState.nextStepValue;
@@ -82,7 +83,7 @@ export class Title {
 				break;
 
 			case State.TitleBottom:
-				if ((G._.bxlib.TurnCounter & 1) == 0) {
+				if ((game.TurnCounter & 1) == 0) {
 					this.titleBottomPos.x -= Title.deltaX;
 					if (this.titleAni.doAnimation(<number>Title.deltaX, newState)) {
 						this.state = newState.nextStepValue;
@@ -97,9 +98,9 @@ export class Title {
 	}
 
 	public Paint(): void {
-		BDX._.DrawBitmap(<number>BitmapId.TitelBoven, this.titleTopPos.x, this.titleTopPos.y);
-		BDX._.DrawBitmap(<number>BitmapId.TitelOnder, this.titleBottomPos.x, this.titleBottomPos.y);
+		view.DrawBitmap(<number>BitmapId.TitelBoven, this.titleTopPos.x, this.titleTopPos.y);
+		view.DrawBitmap(<number>BitmapId.TitelOnder, this.titleBottomPos.x, this.titleBottomPos.y);
 		if (this.state != State.WaitForIt)
-			BDX._.DrawBitmap(<number>BitmapId.TitelKonami, Title.konamiX, Title.konamiY);
+			view.DrawBitmap(<number>BitmapId.TitelKonami, Title.konamiX, Title.konamiY);
 	}
 }

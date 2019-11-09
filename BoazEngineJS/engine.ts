@@ -2,7 +2,6 @@
 import { Model } from "./model"
 import { Controller } from "./controller"
 import { View } from "./view"
-import * as GameLoader from "./gameloader";
 import { SoundMaster } from "./soundmaster";
 
 export let game: Game;
@@ -14,8 +13,28 @@ export let images: Map<string, HTMLImageElement> = new Map<string, HTMLImageElem
 export let audio: Map<string, HTMLAudioElement> = new Map<string, HTMLAudioElement>();
 
 export class Game {
+    public static get _(): Game {
+        return game;
+    }
+
     fps: number;
     lastUpdate: number;
+
+    turnCounter: number;
+    public get TurnCounter(): number {
+        return this.turnCounter;
+    }
+
+    public GameOptionsChanged(): void {
+        throw Error("Not implemented yet :-(");
+        // GameOptionsPersistor.SaveOptions(GO._);
+    }
+    private loadGameOptions(): void {
+        throw Error("Not implemented yet :-(");
+        // let result = GameOptionsPersistor.LoadOptions();
+        // if (result != null)
+        //     GO._ = result;
+    }
 
     constructor() {
         this.fps = 50;
@@ -62,6 +81,7 @@ export class Game {
 
         requestAnimationFrame(function (timestamp) {
             game.run(timestamp);
+            ++this.turnCounter;
         });
     }
 }
@@ -73,7 +93,7 @@ $(function () {
 // Only implement if no native implementation is available
 // https://stackoverflow.com/questions/4775722/how-to-check-if-an-object-is-an-array
 if (typeof Array.isArray === 'undefined') {
-    Array.isArray = function (obj) {
+    Array.isArray = function (obj): obj is Array<any> {
         return Object.prototype.toString.call(obj) === '[object Array]';
     }
 };
