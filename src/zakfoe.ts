@@ -4,7 +4,7 @@ import { Item, ItemType } from "./item";
 import { Direction } from "../BoazEngineJS/direction";
 import { PlayerProjectile } from "./pprojectile";
 import { newArea, newSize } from "../BoazEngineJS/common";
-import { BitmapId } from "./resourceids";
+import { AudioId, BitmapId } from "resourceids";
 import { Area, Point } from "../BoazEngineJS/interfaces";
 import { Animation, AniStepCompoundValue } from "../BoazEngineJS/animation";
 import { GameModel as M } from "./sintervaniamodel";
@@ -43,7 +43,8 @@ export class ZakFoe extends Foe {
 	constructor(pos: Point, itemSpawned: ItemType = Item.Type.HeartSmall) {
 		super(pos);
 		this.CanHurtPlayer = true;
-		this.animation = new Animation<AniType>(AnimationFrames, null, true);
+		// this.animation = new Animation<AniType>(AnimationFrames, null, true);
+		throw new Error("ZakFoe compileert nog niet omdat er gewoon nog wat zaken missen.");
 		this.timer = BStopwatch.createWatch();
 		this.imgid = <number>this.animation.stepValue().img;
 		this.timer.restart();

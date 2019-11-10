@@ -1,6 +1,5 @@
 import { Chapter } from "./sintervaniamodel";
 import { GameConstants as GCS } from "./gameconstants"
-import { AudioId, BitmapId } from "./resourceids";
 import { ResourceMaster } from "./resourcemaster";
 import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
 import { Direction } from "../BoazEngineJS/direction";
@@ -14,6 +13,7 @@ import { KeyState } from "../BoazEngineJS/input";
 import { GameMenu } from "./gamemenu";
 import { SlotExists } from "../BoazEngineJS/gamestateloader";
 import { GameState } from "../BoazEngineJS/model";
+import { AudioId, BitmapId } from "resourceids";
 
 export enum State {
     SelectMain,

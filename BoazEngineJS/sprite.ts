@@ -1,6 +1,6 @@
 ﻿import { view } from "./engine";
 import { moveArea, addPoints } from "./common";
-import { BitmapId } from "../src/resourceids";
+import { BitmapId } from "resourceids";
 import { IGameObject, Point, Size, Area } from "./interfaces";
 
 export abstract class Sprite implements IGameObject {

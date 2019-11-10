@@ -1,12 +1,11 @@
 import { Sprite } from "../BoazEngineJS/sprite";
-import { AudioId, BitmapId } from "./resourceids";
 import { newArea, area2size, moveArea } from "../BoazEngineJS/common";
 import { GameModel } from "./sintervaniamodel";
 import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
 import { ResourceMaster as RM } from "./resourcemaster";
-import { GameConstants } from "./gameconstants";
 import { GameController } from "./gamecontroller";
 import { Area, Point } from "../BoazEngineJS/interfaces";
+import { AudioId, BitmapId } from "resourceids";
 
 export enum ItemType {
     None,

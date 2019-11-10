@@ -3,7 +3,7 @@ import { RoeState } from "./belmont";
 import { Direction } from "../BoazEngineJS/direction";
 import { GameModel as M } from "./sintervaniamodel";
 import { Area, Point } from "../BoazEngineJS/interfaces";
-import { BitmapId } from "./resourceids";
+import { AudioId, BitmapId } from "resourceids";
 import { newArea } from "../BoazEngineJS/common";
 
 /*[Serializable]*/

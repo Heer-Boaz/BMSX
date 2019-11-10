@@ -1,7 +1,7 @@
 import { GameModel } from "../src/sintervaniamodel";
 import { Constants as CS } from "./constants";
 import { Savegame } from "./savegame";
-import { saveGame } from "./gamesaver";
+import { GameSaver } from './gamesaver';
 
 export function LoadGame(slot: number): Savegame {
 	// 	IFormatter formatter = new BinaryFormatter();
@@ -34,7 +34,7 @@ export function SlotExists(slot: number): boolean {
 }
 
 export function GetCheckpoint(m: GameModel): Savegame {
-	saveGame(m, CS.SaveSlotCheckpoint);
+	GameSaver.saveGame(m, CS.SaveSlotCheckpoint);
 	return LoadGame(CS.SaveSlotCheckpoint);
 }
 

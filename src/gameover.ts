@@ -3,7 +3,7 @@ import { Direction } from "../BoazEngineJS/direction";
 import { TextWriter } from "./textwriter";
 import { MSXConstants as CS } from "../BoazEngineJS/msx";
 import { view } from "../BoazEngineJS/engine";
-import { BitmapId, AudioId } from "./resourceids";
+import { AudioId, BitmapId } from "resourceids";
 import { KeyState } from "../BoazEngineJS/input";
 import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
 import { ResourceMaster as RM } from './resourcemaster';

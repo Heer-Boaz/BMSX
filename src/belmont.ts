@@ -5,7 +5,7 @@ import { GameConstants as CS } from "./gameconstants";
 import { copyPoint, waitDuration, setSize, newArea, setPoint } from '../BoazEngineJS/common';
 import { Animation, AniStepCompoundValue } from '../BoazEngineJS/animation';
 import { TileSize } from '../BoazEngineJS/msx';
-import { BitmapId, AudioId } from "./resourceids";
+import { AudioId, BitmapId } from "resourceids";
 import { Area, Point } from '../BoazEngineJS/interfaces';
 import { KeyState } from "../BoazEngineJS/input";
 import { Room, NearingRoomExitResult } from './room';
@@ -15,6 +15,7 @@ import { ResourceMaster as RM } from './resourcemaster';
 import { GameController as C } from './gamecontroller';
 import { GameModel as M } from './sintervaniamodel';
 import { view } from "../BoazEngineJS/engine";
+import { DrawBitmap } from "../BoazEngineJS/view";
 /*[Serializable]*/
 export class RoeState {
 	public static msPerFrame: number[] = [50, 25, 100];

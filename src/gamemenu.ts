@@ -1,6 +1,6 @@
 import { MenuItem } from "./mainmenu";
 import { GameView as V } from "./gameview";
-import { AudioId, BitmapId } from "./resourceids";
+import { AudioId, BitmapId } from "resourceids";
 import { Direction } from "../BoazEngineJS/direction";
 import { TextWriter } from "./textwriter";
 import { KeyState } from "../BoazEngineJS/input";
@@ -25,7 +25,7 @@ interface MenuOption {
 
 declare module "./mainmenu" {
     export enum MenuItem {
-        Dummy,
+        Dummy = -1,
         SaveGame,
         SaveSlot,
         ChangeOptions,

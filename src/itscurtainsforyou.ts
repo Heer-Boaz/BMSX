@@ -3,9 +3,9 @@ import { MSXConstants as MCS, TileSize } from "../BoazEngineJS/msx"
 import { Constants as CS } from "../BoazEngineJS/constants"
 import { waitDuration } from "../BoazEngineJS/common";
 import { view } from "../BoazEngineJS/engine";
-import { BitmapId } from "./resourceids";
 import { GameController as C } from "./gamecontroller";
 import { Point } from "../BoazEngineJS/interfaces";
+import { BitmapId } from "resourceids";
 
 export class ItsCurtainsForYou {
     private curtainPartCount: number;

@@ -4,6 +4,8 @@ import { Direction } from "../BoazEngineJS/direction";
 import { GameConstants as CS } from "./gameconstants";
 import { view } from "../BoazEngineJS/engine";
 import { RoomDataContainer } from "./RoomFactory";
+import { BitmapId } from 'resourceids';
+import { ResourceMaster } from './resourcemaster';
 
 export type NearingRoomExitResult = { destRoom: number, direction: Direction } | null;
 export type RoomInitDelegate = (room: Room) => void;
@@ -37,7 +39,7 @@ export class Room {
 		result.initFunction = data.InitFunction;
 		result.BitmapPath = data.BitmapPath;
 
-		GameResources.Replace(BitmapId.Room, new XBitmap(data.BitmapPath));
+		ResourceMaster.reloadImg(BitmapId.Room, data.BitmapPath);
 
 		return result;
 	}

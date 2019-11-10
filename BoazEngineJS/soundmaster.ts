@@ -1,5 +1,5 @@
-import { ISong } from "./song";
-import { IEffect } from "./effect";
+import { Song } from "./song";
+import { Effect } from "./effect";
 import { audio } from "../BoazEngineJS/engine";
 
 // export interface ISoundMaster {
@@ -17,10 +17,10 @@ import { audio } from "../BoazEngineJS/engine";
 
 export class SoundMaster {
 	private static LimitToOneEffect: boolean = true;
-	public static MusicBeingPlayed: ISong;
-	public static EffectBeingPlayed: IEffect;
+	public static MusicBeingPlayed: Song;
+	public static EffectBeingPlayed: Effect;
 	public static OnMusicBufferEnd(): void {
-		if (this.MusicBeingPlayed != null && this.MusicBeingPlayed.PlayMusicToNext) {
+		if (this.MusicBeingPlayed && this.MusicBeingPlayed.NextSong) {
 			let nextSong = this.MusicBeingPlayed.NextSong;
 			this.MusicBeingPlayed = nextSong;
 			this.PlayMusic(nextSong);
@@ -45,7 +45,7 @@ export class SoundMaster {
 		audio[`${audioId}`].play();
 	}
 
-	public static PlayEffect(effect: IEffect): void {
+	public static PlayEffect(effect: Effect): void {
 		if (this.EffectBeingPlayed) {
 			if (SoundMaster.LimitToOneEffect) {
 				if (effect.Priority >= this.EffectBeingPlayed.Priority) {
@@ -69,7 +69,7 @@ export class SoundMaster {
 		this.MusicBeingPlayed = null;
 	}
 
-	public static PlayMusic(song: ISong, stopCurrent: boolean = true): void {
+	public static PlayMusic(song: Song, stopCurrent: boolean = true): void {
 		if (stopCurrent)
 			this.StopMusic();
 		this.MusicBeingPlayed = song;

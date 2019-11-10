@@ -2,6 +2,11 @@
 import { view } from "./engine";
 import { Size, Point, Color } from "./interfaces";
 
+export enum DrawBitmap {
+    HFLIP = 0x1,
+    VFLIP = 0x2,
+}
+
 export class View {
     public windowSize: Size;
     public dx: number;

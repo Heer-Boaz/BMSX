@@ -1,6 +1,6 @@
 import { BStopwatch } from "../BoazEngineJS/btimer";
 import { Item, ItemType } from "./item";
-import { AudioId, BitmapId } from "./resourceids";
+import { AudioId, BitmapId } from "resourceids";
 import { Direction } from "../BoazEngineJS/direction";
 import { Bootstrapper } from "./bootstrapper";
 import { Savegame } from "../BoazEngineJS/savegame";
@@ -13,7 +13,7 @@ import { Room } from "./room";
 import { GameMenu } from "./gamemenu";
 import { waitDuration, setPoint } from '../BoazEngineJS/common';
 import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
-import { ResourceMaster as RM } from './resourcemaster';
+import { ResourceMaster as RM, ResourceMaster } from './resourcemaster';
 import { Constants as CS } from "../BoazEngineJS/constants";
 import { GameView as V } from './gameview';
 import { GameConstants } from "./gameconstants";
@@ -389,7 +389,7 @@ export class GameController {
         BStopwatch.addWatch(this.startAfterLoadTimer);
         BStopwatch.addWatch(this.timer);
         S.MusicBeingPlayed = sg.MusicBeingPlayed;
-        GameResources.Replace(<number>BitmapId.Room, new XBitmap(M._.CurrentRoom.BitmapPath));
+        ResourceMaster.reloadImg(BitmapId.Room, M._.CurrentRoom.BitmapPath);
     }
 
     public SaveGame(slot: number): void {

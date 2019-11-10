@@ -1,4 +1,4 @@
-import { ISong } from "./song";
+import { Song } from "./song";
 import { BStopwatch } from "./btimer";
 import { Model } from "./model";
 
@@ -8,5 +8,5 @@ export class Savegame {
 	public Timestamp: Date;
 	public Slot: number;
 	public RegisteredWatches: BStopwatch[];
-	public MusicBeingPlayed: ISong;
+	public MusicBeingPlayed: Song;
 }
