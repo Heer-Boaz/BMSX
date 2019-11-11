@@ -106,6 +106,9 @@ define("BoazEngineJS/model", ["require", "exports"], function (require, exports)
         GameSubstate[GameSubstate["Default"] = 0] = "Default";
     })(GameSubstate = exports.GameSubstate || (exports.GameSubstate = {}));
     class Model {
+        constructor() {
+            this.initModelForGameStart();
+        }
         get OldState() {
             return this.gameOldState;
         }
@@ -129,9 +132,6 @@ define("BoazEngineJS/model", ["require", "exports"], function (require, exports)
         }
         set Substate(value) {
             this.gameSubstate = value;
-        }
-        constructor() {
-            this.initModelForGameStart();
         }
         initModelForGameStart() {
             this.objects = [];
@@ -270,10 +270,10 @@ define("BoazEngineJS/btimer", ["require", "exports"], function (require, exports
             this.watchesThatHaveBeenStoppedAtFocusLoss.length = 0;
         }
     }
+    exports.BStopwatch = BStopwatch;
     BStopwatch.watchesThatHaveBeenStopped = [];
     BStopwatch.watchesThatHaveBeenStoppedAtFocusLoss = [];
     BStopwatch.Watches = [];
-    exports.BStopwatch = BStopwatch;
 });
 define("BoazEngineJS/controller", ["require", "exports", "BoazEngineJS/btimer", "BoazEngineJS/engine"], function (require, exports, btimer_1, engine_1) {
     "use strict";
@@ -311,20 +311,12 @@ define("BoazEngineJS/controller", ["require", "exports", "BoazEngineJS/btimer", 
             engine_1.model.gameSubstate = newsubstate;
         }
         disposeOldState(newstate) {
-            switch (engine_1.model.gameState) {
-            }
         }
         disposeOldSubstate(newsubstate) {
-            switch (engine_1.model.gameSubstate) {
-            }
         }
         initNewSubstate(newsubstate) {
-            switch (newsubstate) {
-            }
         }
         initNewState(newstate) {
-            switch (newstate) {
-            }
         }
     }
     exports.Controller = Controller;
@@ -469,8 +461,8 @@ define("BoazEngineJS/soundmaster", ["require", "exports", "BoazEngineJS/engine"]
             throw Error("Implementeer deze meuk!");
         }
     }
-    SoundMaster.LimitToOneEffect = true;
     exports.SoundMaster = SoundMaster;
+    SoundMaster.LimitToOneEffect = true;
 });
 define("BoazEngineJS/engine", ["require", "exports", "BoazEngineJS/constants"], function (require, exports, constants_2) {
     "use strict";
@@ -852,10 +844,10 @@ define("src/room", ["require", "exports", "BoazEngineJS/msx", "BoazEngineJS/dire
             engine_4.view.DrawBitmap(this.ImageID, gameconstants_1.GameConstants.GameScreenStartX, gameconstants_1.GameConstants.GameScreenStartY);
         }
     }
+    exports.Room = Room;
     Room.RoomWidth = 0;
     Room.RoomHeight = 0;
     Room.NO_ROOM_EXIT = 0;
-    exports.Room = Room;
 });
 define("BoazEngineJS/common", ["require", "exports", "BoazEngineJS/direction"], function (require, exports, direction_2) {
     "use strict";
@@ -1093,10 +1085,10 @@ define("BoazEngineJS/sprite", ["require", "exports", "BoazEngineJS/engine", "Boa
             this.extendedProperties.set(key, value);
         }
     }
+    exports.Sprite = Sprite;
     Sprite.objectCollide = (o1, o2) => {
         return o1.objectCollide(o2);
     };
-    exports.Sprite = Sprite;
 });
 define("src/creature", ["require", "exports", "BoazEngineJS/sprite", "BoazEngineJS/common", "BoazEngineJS/direction", "src/sintervaniamodel", "BoazEngineJS/msx", "BoazEngineJS/engine", "BoazEngineJS/constants"], function (require, exports, sprite_1, common_2, direction_3, sintervaniamodel_1, msx_3, engine_6, constants_3) {
     "use strict";
@@ -1337,11 +1329,11 @@ define("src/weaponitem", ["require", "exports", "BoazEngineJS/sprite", "src/sint
         Dispose() {
         }
     }
+    exports.WeaponItem = WeaponItem;
     WeaponItem.ItemHitArea = {
         start: { x: 0, y: 0 }, end: { x: 16, y: 16 }
     };
     WeaponItem.Descriptions = new Map();
-    exports.WeaponItem = WeaponItem;
     var WeaponType;
     (function (WeaponType) {
         WeaponType[WeaponType["None"] = -1] = "None";
@@ -1654,6 +1646,7 @@ define("src/belmont", ["require", "exports", "BoazEngineJS/direction", "src/crea
             this.CurrentFrame = 0;
         }
     }
+    exports.RoeState = RoeState;
     RoeState.msPerFrame = [50, 25, 100];
     RoeState.RoeSprites = new Map([
         [direction_5.Direction.Right, [resourceids_4.BitmapId.Belmont_rw1, resourceids_4.BitmapId.Belmont_rw2, resourceids_4.BitmapId.Belmont_rw3]],
@@ -1670,7 +1663,6 @@ define("src/belmont", ["require", "exports", "BoazEngineJS/direction", "src/crea
     RoeState.RoeSpritePosOffsetCrouching = new Map([
         [direction_5.Direction.Right, [common_8.newPoint(-16, 0), common_8.newPoint(-16, 0), common_8.newPoint(0, 0)]],
     ]);
-    exports.RoeState = RoeState;
     class Belmont extends creature_1.Creature {
         constructor() {
             super(null);
@@ -2174,6 +2166,7 @@ define("src/belmont", ["require", "exports", "BoazEngineJS/direction", "src/crea
             btimer_3.BStopwatch.removeWatch(this.roeState.aniTimer);
         }
     }
+    exports.Belmont = Belmont;
     Belmont.MoveBeforeFrameChange = 4;
     Belmont.MovementSpritesNoShield = new Map([
         [direction_5.Direction.Right, [resourceids_4.BitmapId.Belmont_r1, resourceids_4.BitmapId.Belmont_r3, resourceids_4.BitmapId.Belmont_r2, resourceids_4.BitmapId.Belmont_r3, resourceids_4.BitmapId.Belmont_r1]],
@@ -2197,7 +2190,6 @@ define("src/belmont", ["require", "exports", "BoazEngineJS/direction", "src/crea
     Belmont.buttonPressEventHitAreaDown = common_7.newArea(0, 28, 16, 36);
     Belmont.buttonPressEventHitAreaLeft = common_7.newArea(-4, 24, 12, 32);
     Belmont._hitarea = common_7.newArea(2, 8, 14, 30);
-    exports.Belmont = Belmont;
     var State;
     (function (State) {
         State[State["Normal"] = 0] = "Normal";
@@ -2228,8 +2220,8 @@ define("src/belmont", ["require", "exports", "BoazEngineJS/direction", "src/crea
             this.JumpAni.restart();
         }
     }
-    JumpState.jumpYDelta = [0, -8, -4, -4, -4, -4, -4, -4, -4, -2, -2, -1, -1, 0, 0, 0, 0, 1, 1, 2, 2, 4, 4, 4, 4, 4, 4, 4, 8, 0];
     exports.JumpState = JumpState;
+    JumpState.jumpYDelta = [0, -8, -4, -4, -4, -4, -4, -4, -4, -2, -2, -1, -1, 0, 0, 0, 0, 1, 1, 2, 2, 4, 4, 4, 4, 4, 4, 4, 8, 0];
     class HitState {
         constructor() {
             this.Blink = false;
@@ -2255,11 +2247,11 @@ define("src/belmont", ["require", "exports", "BoazEngineJS/direction", "src/crea
             this.HitAni.restart();
         }
     }
+    exports.HitState = HitState;
     HitState.TotalBlinkTime = 2000;
     HitState.BlinkTimePerSwitch = 20;
     HitState.CrouchTime = 500;
     HitState.hitDelta = new Array(common_8.newPoint(-2, -2), common_8.newPoint(-2, -2), common_8.newPoint(-2, -2), common_8.newPoint(-2, -2), common_8.newPoint(-2, -2), common_8.newPoint(-2, -2), common_8.newPoint(-1, -1), common_8.newPoint(-1, -1), common_8.newPoint(-1, -1), common_8.newPoint(-1, -1), common_8.newPoint(-1, 0), common_8.newPoint(-1, 0), common_8.newPoint(-1, 0), common_8.newPoint(-1, 0), common_8.newPoint(-2, 1), common_8.newPoint(-2, 1), common_8.newPoint(-2, 1), common_8.newPoint(-2, 1));
-    exports.HitState = HitState;
     var HitStateStep;
     (function (HitStateStep) {
         HitStateStep[HitStateStep["None"] = 0] = "None";
@@ -2279,10 +2271,10 @@ define("src/belmont", ["require", "exports", "BoazEngineJS/direction", "src/crea
             this.aniTimer.stop();
         }
     }
+    exports.DyingState = DyingState;
     DyingState.MsPerFrame = 300;
     DyingState.dyingFrames = new Array({ image: resourceids_4.BitmapId.Belmont_rhitdown, dir: direction_5.Direction.Right }, { image: resourceids_4.BitmapId.Belmont_rdead, dir: direction_5.Direction.Right });
     DyingState.dyingFrameTimes = [100, 2000];
-    exports.DyingState = DyingState;
 });
 define("src/triroe", ["require", "exports", "src/pprojectile", "src/belmont", "src/sintervaniamodel", "resourceids", "BoazEngineJS/common"], function (require, exports, pprojectile_1, belmont_1, sintervaniamodel_7, resourceids_5, common_9) {
     "use strict";
@@ -2318,6 +2310,7 @@ define("src/triroe", ["require", "exports", "src/pprojectile", "src/belmont", "s
         Dispose() {
         }
     }
+    exports.TriRoe = TriRoe;
     TriRoe.hitareas = new Map([
         [resourceids_5.BitmapId.Belmont_rw1, common_9.newArea(0, 9, 7, 26)],
         [resourceids_5.BitmapId.Belmont_rw2, common_9.newArea(0, 6, 15, 16)],
@@ -2332,7 +2325,6 @@ define("src/triroe", ["require", "exports", "src/pprojectile", "src/belmont", "s
         [resourceids_5.BitmapId.Belmont_lwd2, common_9.newArea(17, 12, 31, 22)],
         [resourceids_5.BitmapId.Belmont_lwd3, common_9.newArea(0, 14, 19, 22)],
     ]);
-    exports.TriRoe = TriRoe;
 });
 define("src/weaponfirehandler", ["require", "exports", "src/sintervaniamodel", "src/triroe", "BoazEngineJS/soundmaster", "src/resourcemaster", "resourceids", "BoazEngineJS/common"], function (require, exports, sintervaniamodel_8, triroe_1, soundmaster_2, resourcemaster_3, resourceids_6, common_10) {
     "use strict";
@@ -2414,9 +2406,9 @@ define("src/weaponfirehandler", ["require", "exports", "src/sintervaniamodel", "
             }
         }
     }
+    exports.WeaponFireHandler = WeaponFireHandler;
     WeaponFireHandler.msCrossCooldown = 500;
     WeaponFireHandler.msTriRoeCooldown = 1000;
-    exports.WeaponFireHandler = WeaponFireHandler;
 });
 define("src/gameoptions", ["require", "exports", "src/gameconstants", "BoazEngineJS/msx"], function (require, exports, gameconstants_3, msx_6) {
     "use strict";
@@ -2766,9 +2758,9 @@ define("src/textwriter", ["require", "exports", "BoazEngineJS/engine", "resource
             return letter;
         }
     }
+    exports.TextWriter = TextWriter;
     TextWriter.FontWidth = 8;
     TextWriter.FontHeight = 8;
-    exports.TextWriter = TextWriter;
 });
 define("BoazEngineJS/gamesaver", ["require", "exports", "BoazEngineJS/constants", "BoazEngineJS/gamestateloader"], function (require, exports, constants_5, gamestateloader_1) {
     "use strict";
@@ -2989,6 +2981,7 @@ define("src/mainmenu", ["require", "exports", "src/sintervaniamodel", "src/resou
             this.reset();
         }
     }
+    exports.MainMenu = MainMenu;
     MainMenu.items = new Array("New game", "Continue game", "Load game", "Options");
     MainMenu.menuOptions = new Array(MenuItem.NewGame, MenuItem.Continue, MenuItem.LoadGame, MenuItem.Options);
     MainMenu.chapterItems = new Array("Debug", "Prologue", "Chapter 0", "Chapter 1", "Back");
@@ -3000,7 +2993,6 @@ define("src/mainmenu", ["require", "exports", "src/sintervaniamodel", "src/resou
     MainMenu.boxY = 132;
     MainMenu.boxEndX = MainMenu.boxX + 176 + 32;
     MainMenu.boxEndY = MainMenu.boxY + 24 + 48;
-    exports.MainMenu = MainMenu;
 });
 define("src/hud", ["require", "exports", "BoazEngineJS/btimer", "src/item", "resourceids", "src/sintervaniamodel", "src/gameconstants", "BoazEngineJS/engine", "src/gameview", "BoazEngineJS/common", "src/textwriter"], function (require, exports, btimer_4, item_2, resourceids_9, sintervaniamodel_11, gameconstants_4, engine_11, gameview_1, common_11, textwriter_2) {
     "use strict";
@@ -3089,6 +3081,7 @@ define("src/hud", ["require", "exports", "BoazEngineJS/btimer", "src/item", "res
             }
         }
     }
+    exports.HUD = HUD;
     HUD.Pos_X = 0;
     HUD.Pos_Y = 0;
     HUD.MsDurationBarChange = 100;
@@ -3107,7 +3100,6 @@ define("src/hud", ["require", "exports", "BoazEngineJS/btimer", "src/item", "res
     HUD.FoeBarStripePosX = HUD.Pos_X + 60;
     HUD.FoeBarStripePosY = HUD.Pos_Y + 27;
     HUD.HealthBarSizeX = 63;
-    exports.HUD = HUD;
 });
 define("src/itscurtainsforyou", ["require", "exports", "BoazEngineJS/btimer", "BoazEngineJS/msx", "BoazEngineJS/constants", "BoazEngineJS/common", "BoazEngineJS/engine", "src/gamecontroller", "resourceids"], function (require, exports, btimer_5, msx_8, constants_8, common_12, engine_12, gamecontroller_4, resourceids_10) {
     "use strict";
@@ -3234,6 +3226,7 @@ define("src/gameover", ["require", "exports", "src/sintervaniamodel", "BoazEngin
             this.reset();
         }
     }
+    exports.GameOver = GameOver;
     GameOver.items = new Array("Start bij controlepunt", "Laad spel");
     GameOver.itemYs = new Array(112, 128);
     GameOver.itemsX = 48;
@@ -3242,7 +3235,6 @@ define("src/gameover", ["require", "exports", "src/sintervaniamodel", "BoazEngin
     GameOver.boxY = 104;
     GameOver.boxEndX = GameOver.boxX + 176 + 32;
     GameOver.boxEndY = GameOver.boxY + 24 + 16;
-    exports.GameOver = GameOver;
 });
 define("src/title", ["require", "exports", "BoazEngineJS/animation", "BoazEngineJS/common", "resourceids", "src/gamecontroller", "BoazEngineJS/input", "BoazEngineJS/engine"], function (require, exports, animation_2, common_13, resourceids_12, gamecontroller_6, input_4, engine_14) {
     "use strict";
@@ -3318,6 +3310,7 @@ define("src/title", ["require", "exports", "BoazEngineJS/animation", "BoazEngine
                 engine_14.view.DrawBitmap(resourceids_12.BitmapId.TitelKonami, Title.konamiX, Title.konamiY);
         }
     }
+    exports.Title = Title;
     Title.titleTopY = 16;
     Title.titleBottomY = 41;
     Title.titleTopStartX = -216;
@@ -3331,7 +3324,6 @@ define("src/title", ["require", "exports", "BoazEngineJS/animation", "BoazEngine
     Title.konamiY = 103;
     Title.titleStates = new Array(State.WaitForIt, State.Konami, State.TitleTop, State.TitleBottom, State.WaitForItAgain, State.Other);
     Title.titleMoves = new Array(Title.waitFrames, Title.waitKonamiFrames, -Title.titleTopStartX + Title.titleTopEndX, Title.titleBottomStartX - Title.titleBottomEndX, Title.waitFrames, 0);
-    exports.Title = Title;
 });
 define("src/enddemo", ["require", "exports", "src/textwriter", "BoazEngineJS/btimer", "BoazEngineJS/animation", "BoazEngineJS/msx"], function (require, exports, textwriter_4, btimer_6, animation_3, msx_10) {
     "use strict";
@@ -3389,9 +3381,9 @@ define("src/enddemo", ["require", "exports", "src/textwriter", "BoazEngineJS/bti
             }
         }
     }
+    exports.EndDemo = EndDemo;
     EndDemo.states = [State.Sint, State.WaitForBoaz, State.Boaz];
     EndDemo.waits = [10000, 1000, 0];
-    exports.EndDemo = EndDemo;
 });
 define("BoazEngineJS/gameoptions", ["require", "exports", "BoazEngineJS/msx"], function (require, exports, msx_11) {
     "use strict";
@@ -3410,13 +3402,13 @@ define("BoazEngineJS/gameoptions", ["require", "exports", "BoazEngineJS/msx"], f
             return (msx_11.MSXConstants.MSX2ScreenHeight * GameOptions.Scale);
         }
     }
+    exports.GameOptions = GameOptions;
     GameOptions.INITIAL_SCALE = 1;
     GameOptions.INITIAL_FULLSCREEN = false;
     GameOptions.Scale = GameOptions.INITIAL_SCALE;
     GameOptions.Fullscreen = GameOptions.INITIAL_FULLSCREEN;
     GameOptions.EffectsVolumePercentage = 100;
     GameOptions.MusicVolumePercentage = 100;
-    exports.GameOptions = GameOptions;
 });
 define("src/gameview", ["require", "exports", "src/hud", "src/itscurtainsforyou", "src/gameover", "src/mainmenu", "src/title", "BoazEngineJS/model", "src/gameconstants", "src/sintervaniamodel", "src/textwriter", "BoazEngineJS/engine", "BoazEngineJS/msx", "src/enddemo", "BoazEngineJS/gameoptions"], function (require, exports, hud_1, itscurtainsforyou_1, gameover_1, mainmenu_2, title_1, model_3, gameconstants_5, sintervaniamodel_13, textwriter_5, engine_15, msx_12, enddemo_1, gameoptions_2) {
     "use strict";
@@ -3526,6 +3518,7 @@ define("src/gameview", ["require", "exports", "src/hud", "src/itscurtainsforyou"
             }
         }
     }
+    exports.GameView = GameView;
     GameView.pausePosX = 80;
     GameView.pausePosY = 80;
     GameView.pauseTextPosX = 104;
@@ -3533,7 +3526,6 @@ define("src/gameview", ["require", "exports", "src/hud", "src/itscurtainsforyou"
     GameView.pauseEndX = 176;
     GameView.pauseEndY = 120;
     GameView.pauseText = "Paused";
-    exports.GameView = GameView;
 });
 define("src/gamemenu", ["require", "exports", "src/mainmenu", "src/gameview", "resourceids", "BoazEngineJS/direction", "src/textwriter", "BoazEngineJS/input", "BoazEngineJS/soundmaster", "src/resourcemaster", "src/gamecontroller", "src/sintervaniamodel", "BoazEngineJS/gamestateloader", "BoazEngineJS/gameoptions", "BoazEngineJS/msx", "BoazEngineJS/constants", "BoazEngineJS/common", "BoazEngineJS/engine", "BoazEngineJS/model"], function (require, exports, mainmenu_3, gameview_2, resourceids_13, direction_8, textwriter_6, input_5, soundmaster_5, resourcemaster_6, gamecontroller_7, sintervaniamodel_14, gamestateloader_3, gameoptions_3, msx_13, constants_9, common_14, engine_16, model_4) {
     "use strict";
@@ -4013,6 +4005,7 @@ define("src/gamemenu", ["require", "exports", "src/mainmenu", "src/gameview", "r
             textwriter_6.TextWriter.DrawText(GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX, y, `${slotIndex + 1}: ${time.getDay().toFixed(2)}/${time.getMonth().toFixed(2)}/${time.getFullYear().toFixed(2)} - ${time.getHours().toFixed(2)}:${time.getMinutes().toFixed(2)}`);
         }
     }
+    exports.GameMenu = GameMenu;
     GameMenu.menuPosX = 24;
     GameMenu.menuPosY = 24;
     GameMenu.menuEndX = 240;
@@ -4053,7 +4046,6 @@ define("src/gamemenu", ["require", "exports", "src/mainmenu", "src/gameview", "r
     GameMenu.fullscreenOptionsOffsets = [textwriter_6.TextWriter.FontWidth * 12 - 1, textwriter_6.TextWriter.FontWidth * 14 - 1];
     GameMenu.fullscreenOptionsOffsetY = -1;
     GameMenu.fullscreenOptionsRectangleSize = common_14.newSize(textwriter_6.TextWriter.FontWidth + 2, textwriter_6.TextWriter.FontHeight + 2);
-    exports.GameMenu = GameMenu;
 });
 define("src/gamecontroller", ["require", "exports", "BoazEngineJS/btimer", "src/item", "resourceids", "BoazEngineJS/direction", "src/bootstrapper", "src/sintervaniamodel", "BoazEngineJS/model", "BoazEngineJS/input", "src/weaponfirehandler", "src/room", "src/gamemenu", "BoazEngineJS/common", "BoazEngineJS/soundmaster", "src/resourcemaster", "BoazEngineJS/constants", "src/gameview", "src/gameconstants", "BoazEngineJS/gamestateloader", "BoazEngineJS/gamesaver"], function (require, exports, btimer_7, item_3, resourceids_14, direction_9, bootstrapper_1, sintervaniamodel_15, model_5, input_6, weaponfirehandler_1, room_2, gamemenu_1, common_15, soundmaster_6, resourcemaster_7, constants_10, gameview_3, gameconstants_6, gamestateloader_4, gamesaver_2) {
     "use strict";
@@ -4502,8 +4494,8 @@ define("src/item", ["require", "exports", "BoazEngineJS/sprite", "BoazEngineJS/c
         Dispose() {
         }
     }
-    Item.ItemHitArea = common_16.newArea(0, 0, 16, 16);
     exports.Item = Item;
+    Item.ItemHitArea = common_16.newArea(0, 0, 16, 16);
 });
 define("src/fx", ["require", "exports", "BoazEngineJS/sprite", "BoazEngineJS/btimer"], function (require, exports, sprite_5, btimer_8) {
     "use strict";
@@ -4588,9 +4580,9 @@ define("src/heartsmall", ["require", "exports", "BoazEngineJS/sprite", "BoazEngi
             super.paint(offset);
         }
     }
+    exports.HeartSmall = HeartSmall;
     HeartSmall.HitAreaFly = common_17.newArea(0, 0, 9, 8);
     HeartSmall.HitAreaStand = common_17.newArea(0, 0, 12, 11);
-    exports.HeartSmall = HeartSmall;
 });
 define("src/foeexplosion", ["require", "exports", "src/item", "BoazEngineJS/animation", "src/fx", "src/heartsmall", "resourceids", "src/sintervaniamodel", "BoazEngineJS/common"], function (require, exports, item_4, animation_5, fx_1, heartsmall_1, resourceids_17, sintervaniamodel_18, common_18) {
     "use strict";
@@ -4615,21 +4607,21 @@ define("src/foeexplosion", ["require", "exports", "src/item", "BoazEngineJS/anim
             }
         }
     }
-    FoeExplosion.AnimationFrames = new Array({ time: 100, data: resourceids_17.BitmapId.FoeKill_1 }, { time: 100, data: resourceids_17.BitmapId.FoeKill_2 }, { time: 100, data: resourceids_17.BitmapId.FoeKill_1 }, { time: 100, data: resourceids_17.BitmapId.FoeKill_2 });
     exports.FoeExplosion = FoeExplosion;
+    FoeExplosion.AnimationFrames = new Array({ time: 100, data: resourceids_17.BitmapId.FoeKill_1 }, { time: 100, data: resourceids_17.BitmapId.FoeKill_2 }, { time: 100, data: resourceids_17.BitmapId.FoeKill_1 }, { time: 100, data: resourceids_17.BitmapId.FoeKill_2 });
 });
 define("src/foe", ["require", "exports", "src/creature", "src/item", "src/sintervaniamodel", "BoazEngineJS/soundmaster", "src/foeexplosion", "resourceids", "src/resourcemaster"], function (require, exports, creature_2, item_5, sintervaniamodel_19, soundmaster_9, foeexplosion_1, resourceids_18, resourcemaster_10) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     class Foe extends creature_2.Creature {
+        constructor(pos) {
+            super(pos);
+        }
         Paint(offset) {
             throw new Error("Method not implemented.");
         }
         get HealthPercentage() {
             return Math.min((Math.round(this.Health / this.MaxHealth * 100)), 100);
-        }
-        constructor(pos) {
-            super(pos);
         }
         get RespawnAtRoomEntry() {
             return false;
@@ -4917,9 +4909,9 @@ define("src/sintervaniamodel", ["require", "exports", "src/belmont", "BoazEngine
             this.CurrentRoom.InitRoom();
         }
     }
+    exports.GameModel = GameModel;
     GameModel.PROPERTY_KEEP_AT_ROOMSWITCH = "p_rs";
     GameModel.PROPERTY_ACT_AS_WALL = "p_wall";
-    exports.GameModel = GameModel;
 });
 define("src/candle", ["require", "exports", "src/foe", "BoazEngineJS/btimer", "src/item", "BoazEngineJS/animation", "BoazEngineJS/direction", "resourceids", "BoazEngineJS/common"], function (require, exports, foe_2, btimer_10, item_6, animation_6, direction_10, resourceids_19, common_19) {
     "use strict";
@@ -4964,11 +4956,11 @@ define("src/candle", ["require", "exports", "src/foe", "BoazEngineJS/btimer", "s
             super.Paint(offset);
         }
     }
+    exports.Candle = Candle;
     Candle.CandleHitArea = common_19.newArea(0, 0, 10, 16);
     Candle.candleSprites = new Map([[direction_10.Direction.None, [resourceids_19.BitmapId.Candle_1]]]);
     Candle.AnimationFrames = [resourceids_19.BitmapId.Candle_1, resourceids_19.BitmapId.Candle_2];
     Candle.ElapsedMsPerFrame = [200, 200];
-    exports.Candle = Candle;
 });
 define("src/gardencandle", ["require", "exports", "BoazEngineJS/animation", "src/candle", "BoazEngineJS/direction", "resourceids", "src/item", "BoazEngineJS/common"], function (require, exports, animation_7, candle_1, direction_11, resourceids_20, item_7, common_20) {
     "use strict";
@@ -4982,10 +4974,10 @@ define("src/gardencandle", ["require", "exports", "BoazEngineJS/animation", "src
             this.itemSpawnedAfterKill = itemSpawned;
         }
     }
+    exports.GardenCandle = GardenCandle;
     GardenCandle.candleSprites = new Map([[direction_11.Direction.None, [resourceids_20.BitmapId.GCandle_1]]]);
     GardenCandle.CandleHitArea = common_20.newArea(0, 0, 16, 16);
     GardenCandle.AnimationFrames = new Array(resourceids_20.BitmapId.GCandle_1, resourceids_20.BitmapId.GCandle_2);
-    exports.GardenCandle = GardenCandle;
 });
 define("src/RoomFactory", ["require", "exports", "src/room", "BoazEngineJS/common", "BoazEngineJS/msx", "src/sintervaniamodel", "src/gardencandle"], function (require, exports, room_3, common_21, msx_14, sintervaniamodel_21, gardencandle_1) {
     "use strict";
@@ -5131,6 +5123,7 @@ define("src/RoomFactory", ["require", "exports", "src/room", "BoazEngineJS/commo
             RoomFactory.rooms.set(id, new RoomDataContainer(id, collisionData, RoomFactory.roomExits(map, id), bitmapPath, map, initFunction));
         }
     }
+    exports.RoomFactory = RoomFactory;
     RoomFactory.dirOffsets = [
         { x: 0, y: -1 },
         { x: 1, y: 0 },
@@ -5149,7 +5142,6 @@ define("src/RoomFactory", ["require", "exports", "src/room", "BoazEngineJS/commo
         [0, 0, 0, 0, 0,],
         [0, 0, 0, 0, 0,],
     ];
-    exports.RoomFactory = RoomFactory;
 });
 define("src/chandelier", ["require", "exports", "BoazEngineJS/btimer", "BoazEngineJS/direction", "BoazEngineJS/animation", "src/foe", "src/item", "resourceids", "BoazEngineJS/common", "src/sintervaniamodel"], function (require, exports, btimer_11, direction_12, animation_8, foe_3, item_8, resourceids_21, common_22, sintervaniamodel_22) {
     "use strict";
@@ -5215,6 +5207,7 @@ define("src/chandelier", ["require", "exports", "BoazEngineJS/btimer", "BoazEngi
             super.Paint(offset);
         }
     }
+    exports.Chandelier = Chandelier;
     Chandelier.ChandelierHitArea = common_22.newArea(14, 0, 35, 64);
     Chandelier.chandelierSprites = new Map([
         [direction_12.Direction.None, [resourceids_21.BitmapId.Chandelier_1]]
@@ -5225,7 +5218,6 @@ define("src/chandelier", ["require", "exports", "BoazEngineJS/btimer", "BoazEngi
         { time: 125, data: resourceids_21.BitmapId.Chandelier_4 },
         { time: 125, data: resourceids_21.BitmapId.Chandelier_5 },
     ];
-    exports.Chandelier = Chandelier;
     var ChandelierState;
     (function (ChandelierState) {
         ChandelierState[ChandelierState["None"] = 0] = "None";
@@ -5304,17 +5296,23 @@ define("src/hag", ["require", "exports", "BoazEngineJS/btimer", "BoazEngineJS/an
             super.Paint(offset);
         }
     }
+    exports.Hag = Hag;
     Hag.HagSize = { x: 16, y: 32 };
     Hag.HagHitArea = { start: { x: 2, y: 2 }, end: { x: 14, y: 32 } };
     Hag.hagSprites = new Map([[direction_13.Direction.None, [resourceids_22.BitmapId.Hag_1, resourceids_22.BitmapId.Hag_2]]]);
     Hag.movementSprites = Hag.hagSprites;
     Hag.AnimationFrames = new Array({ time: 250, data: resourceids_22.BitmapId.Hag_1 }, { time: 250, data: resourceids_22.BitmapId.Hag_2 });
-    exports.Hag = Hag;
 });
 define("src/haggenerator", ["require", "exports", "BoazEngineJS/btimer", "src/sintervaniamodel", "BoazEngineJS/animation", "src/hag"], function (require, exports, btimer_13, sintervaniamodel_24, animation_10, hag_1) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
     class HagGenerator {
+        constructor(pos, directionOfHags) {
+            this.spawnAnimation = new animation_10.Animation([true], [2000], true);
+            this.timer = btimer_13.BStopwatch.createWatch();
+            this.timer.restart();
+            this.directionOfHags = directionOfHags;
+        }
         get hitbox_sx() {
             return this.pos.x + this.hitarea.start.x;
         }
@@ -5335,12 +5333,6 @@ define("src/haggenerator", ["require", "exports", "BoazEngineJS/btimer", "src/si
         }
         get z_plus_depth() {
             return 0;
-        }
-        constructor(pos, directionOfHags) {
-            this.spawnAnimation = new animation_10.Animation([true], [2000], true);
-            this.timer = btimer_13.BStopwatch.createWatch();
-            this.timer.restart();
-            this.directionOfHags = directionOfHags;
         }
         takeTurn() {
             let stepValue = { nextStepValue: false };
@@ -5424,10 +5416,10 @@ define("src/pietula", ["require", "exports", "BoazEngineJS/animation", "BoazEngi
             super.Die();
         }
     }
+    exports.Pietula = Pietula;
     Pietula.PietulaHitArea = common_24.newArea(0, 0, 10, 16);
     Pietula.pietulaSprites = new Map([[direction_14.Direction.None, [resourceids_23.BitmapId.Pietula_1]]]);
     Pietula.AnimationFrames = new Array({ time: 250, data: { img: resourceids_23.BitmapId.Pietula_1, dy: -1 } }, { time: 250, data: { img: resourceids_23.BitmapId.Pietula_2, dy: 1 } });
-    exports.Pietula = Pietula;
 });
 define("src/story", ["require", "exports"], function (require, exports) {
     "use strict";
@@ -5506,10 +5498,10 @@ define("src/zakfoe", ["require", "exports", "src/foe", "BoazEngineJS/btimer", "s
             super.Paint(offset);
         }
     }
+    exports.ZakFoe = ZakFoe;
     ZakFoe.ZakFoeHitArea = common_25.newArea(2, 2, 14, 14);
     ZakFoe.zakFoeSprites = new Map([
         [direction_15.Direction.Right, [resourceids_24.BitmapId.ZakFoe_1, resourceids_24.BitmapId.ZakFoe_2, resourceids_24.BitmapId.ZakFoe_3]],
         [direction_15.Direction.Left, [resourceids_24.BitmapId.ZakFoe_1, resourceids_24.BitmapId.ZakFoe_2, resourceids_24.BitmapId.ZakFoe_3]],
     ]);
-    exports.ZakFoe = ZakFoe;
 });
