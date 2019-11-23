@@ -3,7 +3,7 @@ import { model } from "./engine";
 import { GameState, GameSubstate } from "./model";
 
 export abstract class Controller {
-    private timer: BStopwatch;
+    protected timer: BStopwatch;
 
     constructor() {
         this.timer = BStopwatch.createWatch();
@@ -27,10 +27,10 @@ export abstract class Controller {
         let toRemove = model.objects.filter(o => o.disposeFlag).forEach(o => { model.remove(o); o.exile() });
     }
 
-    private doPausedState() {
+    protected doPausedState() {
     }
 
-    private doStartAfterLoadState() {
+    protected doStartAfterLoadState() {
     }
 
     public switchState(newstate: GameState): void {
@@ -49,15 +49,15 @@ export abstract class Controller {
         model.gameSubstate = newsubstate;
     }
 
-    private disposeOldState(newstate: GameState): void {
+    protected disposeOldState(newstate: GameState): void {
     }
 
-    private disposeOldSubstate(newsubstate: GameSubstate): void {
+    protected disposeOldSubstate(newsubstate: GameSubstate): void {
     }
 
-    private initNewSubstate(newsubstate: GameSubstate): void {
+    protected initNewSubstate(newsubstate: GameSubstate): void {
     }
 
-    private initNewState(newstate: GameState): void {
+    protected initNewState(newstate: GameState): void {
     }
 }

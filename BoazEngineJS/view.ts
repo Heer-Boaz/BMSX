@@ -1,5 +1,5 @@
 ﻿import { Constants } from "./constants"
-import { view } from "./engine";
+import { view, images } from "./engine";
 import { Size, Point, Color } from "./interfaces";
 
 export enum DrawBitmap {
@@ -8,12 +8,17 @@ export enum DrawBitmap {
 }
 
 export class View {
+    public canvas: HTMLCanvasElement;
+    public context: CanvasRenderingContext2D;
+
     public windowSize: Size;
     public dx: number;
     public dy: number;
     public dxy: number;
 
     constructor() {
+        this.canvas = <HTMLCanvasElement>$('#gamescreen')[0];
+        this.context = this.canvas.getContext('2d');
     }
 
     public init(): void {
@@ -46,38 +51,67 @@ export class View {
         // model.objects.forEach((x) => { x.handleResizeEvent(); });
     }
 
-    public draw(): void {
-        // TODO: IMPLEMENTEER!
-        throw ("Niet geïmplementeerd :(");
+    private clear(context?: CanvasRenderingContext2D): void {
+        // Clear the canvas
+        if (context == null) context = this.context;
+        context.clearRect(0, 0, context.canvas.width, context.canvas.height);
     }
 
-    public drawLoading(): void {
+    public draw(): void {
         // TODO: IMPLEMENTEER!
-        console.log("Ik ben stoer");
         // throw ("Niet geïmplementeerd :(");
     }
 
-    public DrawBitmap(imgId: number, x: number, y: number, options?: number): void {
-        this.drawImg(imgId, <Point>{ x: x, y: y }, options || undefined);
+    public drawLoading(): void {
+        this.clear();
+
+        this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+        this.context.font = '18pt Calibri';
+        this.context.fillStyle = 'white';
+        this.context.fillText('Loading...', 10, 25);
     }
 
-    public DrawColoredBitmap(imgId: number, x: number, y: number, r: number, g: number, b: number, a?: number) {
+    public DrawBitmap(imgid: number, x: number, y: number, options?: number): void {
+        this.drawImg(imgid, <Point>{ x: x, y: y }, options || undefined);
+    }
+
+    public DrawColoredBitmap(imgid: number, x: number, y: number, r: number, g: number, b: number, a?: number) {
         // TODO: IMPLEMENTEER!!
-        throw ("Niet geïmplementeerd :(");
+        this.DrawBitmap(imgid, x, y, 0);
     }
 
-    public drawImg(imgId: string | number, pos: Point, options?: number): void {
-        // TODO: IMPLEMENTEER!
-        throw ("Niet geïmplementeerd :(");
+    public drawImg(imgid: string | number, pos: Point, options?: number): void {
+        var img = images[imgid];
+        if (!img) throw new Error("Cannot find image with id '" + imgid + "'");
+
+        this.context.save();
+        this.context.translate(pos.x, pos.y);
+        this.context.drawImage(img, 0, 0);
+        this.context.restore();
     }
 
     public DrawRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
-        // TODO: IMPLEMENTEER!
-        throw ("Niet geïmplementeerd :(");
+        this.context.save();
+        this.context.beginPath();
+        this.context.strokeStyle = this.toRgb(c);
+        this.context.rect(x, y, ex - x, ey - y);
+        this.context.stroke();
+        this.context.restore();
     }
 
     public FillRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
-        // TODO: IMPLEMENTEER!
-        throw ("Niet geïmplementeerd :(");
+        this.context.save();
+        this.context.beginPath();
+        let colorRgb = this.toRgb(c);
+        this.context.fillStyle = colorRgb;
+        this.context.strokeStyle = colorRgb;
+        this.context.fillRect(x, y, ex - x, ey - y);
+        this.context.stroke();
+        this.context.restore();
+    }
+
+    private toRgb(c: Color): string {
+        return `rgb(${c.r},${c.g},${c.b})`;
     }
 }

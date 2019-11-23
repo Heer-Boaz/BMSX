@@ -194,6 +194,12 @@ export class GameModel extends Model {
         this._selectedItem = value;
     }
 
+    public constructor() {
+        super();
+        GameModel._instance = this;
+        this.Initialize();
+    }
+
     public Initialize(): void {
         this.objects = new Array<IGameObject>();
         this.Foes = new Array<Foe>();

@@ -1,6 +1,18 @@
 // import { BStopwatch } from "../BoazEngineJS/btimer";
 // import { GameOptions as GO } from "../BoazEngineJS/gameoptions";
-// import { GameController as C } from './gamecontroller';
+// import { GameController as C, GameController } from './gamecontroller';
+
+import * as engine from "../BoazEngineJS/engine";
+import { GameModel } from './sintervaniamodel';
+import { GameController } from "./gamecontroller";
+
+export function Annnndddd___Go(): engine.Game {
+	new engine.Game();
+	engine.game.setModel(new GameModel());
+	engine.game.setController(new GameController());
+
+	return engine.game;
+}
 
 // module Sintervania {
 //     export class Game {

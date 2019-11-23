@@ -16,22 +16,24 @@
         <script src="https://unpkg.com/systemjs@2.1.1/dist/extras/named-register.js"></script>
         <script src="./out/thegame.js"></script>
         <script type="module">
-            System.import('BoazEngineJS/engine').then(function (engine) {
+            System.import('src/game').then(function (entry) {
                 window.addEventListener('load', function () {
-                    engine.game = new engine.Game();
-                    System.import('src/sintervaniamodel').then(function (m) {
-                        engine.game.model = new m.GameModel();
-                    });
-                    System.import('src/gamecontroller').then(function (m) {
-                        engine.game.controller = new m.GameController();
-                    });
-                    System.import('BoazEngineJS/soundmaster').then(function (m) {
-                        engine.game.sound = new m.SoundMaster();
-                    });
-                    System.import('BoazEngineJS/view').then(function (m) {
-                        engine.game.view = new m.View();
-                        engine.game.view.drawLoading();
-                    });
+                    let game = entry.Annnndddd___Go();
+                    game.run();
+                    // engine.game = new engine.Game();
+                    // System.import('src/sintervaniamodel').then(function (m) {
+                    //     engine.game.model = new m.GameModel();
+                    // });
+                    // System.import('src/gamecontroller').then(function (m) {
+                    //     engine.game.controller = new m.GameController();
+                    // });
+                    // System.import('BoazEngineJS/soundmaster').then(function (m) {
+                    //     engine.game.sound = new m.SoundMaster();
+                    // });
+                    // System.import('BoazEngineJS/view').then(function (m) {
+                    //     engine.game.view = new m.View();
+                    //     engine.game.view.drawLoading();
+                    // });
                     // Input.init();
 
                     // System.import('BoazEngineJS/gameloader').then(function (m) {

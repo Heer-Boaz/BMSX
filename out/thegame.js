@@ -376,20 +376,12 @@ System.register("BoazEngineJS/controller", ["BoazEngineJS/btimer", "BoazEngineJS
                     engine_1.model.gameSubstate = newsubstate;
                 }
                 disposeOldState(newstate) {
-                    switch (engine_1.model.gameState) {
-                    }
                 }
                 disposeOldSubstate(newsubstate) {
-                    switch (engine_1.model.gameSubstate) {
-                    }
                 }
                 initNewSubstate(newsubstate) {
-                    switch (newsubstate) {
-                    }
                 }
                 initNewState(newstate) {
-                    switch (newstate) {
-                    }
                 }
             };
             exports_9("Controller", Controller);
@@ -417,6 +409,8 @@ System.register("BoazEngineJS/view", ["BoazEngineJS/constants", "BoazEngineJS/en
             exports_10("DrawBitmap", DrawBitmap);
             View = class View {
                 constructor() {
+                    this.canvas = $('#gamescreen')[0];
+                    this.context = this.canvas.getContext('2d');
                 }
                 init() {
                     this.handleResize();
@@ -442,26 +436,55 @@ System.register("BoazEngineJS/view", ["BoazEngineJS/constants", "BoazEngineJS/en
                     document.getElementById('gamescreen').style.width = (engine_2.view.windowSize.x * (1 + engine_2.view.dx)) + 'px';
                     document.getElementById('gamescreen').style.height = (engine_2.view.windowSize.y * (1 + engine_2.view.dy)) + 'px';
                 }
+                clear(context) {
+                    if (context == null)
+                        context = this.context;
+                    context.clearRect(0, 0, context.canvas.width, context.canvas.height);
+                }
                 draw() {
-                    throw ("Niet geïmplementeerd :(");
                 }
                 drawLoading() {
-                    console.log("Ik ben stoer");
+                    this.clear();
+                    this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                    this.context.font = '18pt Calibri';
+                    this.context.fillStyle = 'white';
+                    this.context.fillText('Loading...', 10, 25);
                 }
-                DrawBitmap(imgId, x, y, options) {
-                    this.drawImg(imgId, { x: x, y: y }, options || undefined);
+                DrawBitmap(imgid, x, y, options) {
+                    this.drawImg(imgid, { x: x, y: y }, options || undefined);
                 }
-                DrawColoredBitmap(imgId, x, y, r, g, b, a) {
-                    throw ("Niet geïmplementeerd :(");
+                DrawColoredBitmap(imgid, x, y, r, g, b, a) {
+                    this.DrawBitmap(imgid, x, y, 0);
                 }
-                drawImg(imgId, pos, options) {
-                    throw ("Niet geïmplementeerd :(");
+                drawImg(imgid, pos, options) {
+                    var img = engine_2.images[imgid];
+                    if (!img)
+                        throw new Error("Cannot find image with id '" + imgid + "'");
+                    this.context.save();
+                    this.context.translate(pos.x, pos.y);
+                    this.context.drawImage(img, 0, 0);
+                    this.context.restore();
                 }
                 DrawRectangle(x, y, ex, ey, c) {
-                    throw ("Niet geïmplementeerd :(");
+                    this.context.save();
+                    this.context.beginPath();
+                    this.context.strokeStyle = this.toRgb(c);
+                    this.context.rect(x, y, ex - x, ey - y);
+                    this.context.stroke();
+                    this.context.restore();
                 }
                 FillRectangle(x, y, ex, ey, c) {
-                    throw ("Niet geïmplementeerd :(");
+                    this.context.save();
+                    this.context.beginPath();
+                    let colorRgb = this.toRgb(c);
+                    this.context.fillStyle = colorRgb;
+                    this.context.strokeStyle = colorRgb;
+                    this.context.fillRect(x, y, ex - x, ey - y);
+                    this.context.stroke();
+                    this.context.restore();
+                }
+                toRgb(c) {
+                    return `rgb(${c.r},${c.g},${c.b})`;
                 }
             };
             exports_10("View", View);
@@ -572,14 +595,20 @@ System.register("BoazEngineJS/soundmaster", ["BoazEngineJS/engine"], function (e
         }
     };
 });
-System.register("BoazEngineJS/engine", ["BoazEngineJS/constants"], function (exports_14, context_14) {
+System.register("BoazEngineJS/engine", ["BoazEngineJS/constants", "BoazEngineJS/view", "BoazEngineJS/soundmaster"], function (exports_14, context_14) {
     "use strict";
-    var constants_2, game, model, controller, sound, view, images, audio, Game;
+    var constants_2, view_1, soundmaster_1, game, model, controller, sound, view, images, audio, Game;
     var __moduleName = context_14 && context_14.id;
     return {
         setters: [
             function (constants_2_1) {
                 constants_2 = constants_2_1;
+            },
+            function (view_1_1) {
+                view_1 = view_1_1;
+            },
+            function (soundmaster_1_1) {
+                soundmaster_1 = soundmaster_1_1;
             }
         ],
         execute: function () {
@@ -587,35 +616,16 @@ System.register("BoazEngineJS/engine", ["BoazEngineJS/constants"], function (exp
             exports_14("audio", audio = new Map());
             Game = class Game {
                 constructor() {
-                    this.startAfterLoad = () => {
-                        controller.switchState(constants_2.Constants.INITIAL_GAMESTATE);
-                        controller.switchSubstate(constants_2.Constants.INITIAL_GAMESUBSTATE);
-                        requestAnimationFrame(function (timestamp) {
-                            game.run(timestamp);
-                        });
-                        $(window).on('resize', function () {
-                            view.handleResize();
-                        });
-                        window.addEventListener('orientationchange', view.handleResize, false);
-                        view.handleResize();
-                    };
-                    this.update = (elapsedMs) => {
-                        controller.takeTurn(elapsedMs);
-                    };
-                    this.run = (timestamp) => {
-                        let elapsedMs = timestamp - this.lastUpdate;
-                        this.lastUpdate = timestamp;
-                        this.update(elapsedMs);
-                        view.draw();
-                        requestAnimationFrame(function (timestamp) {
-                            game.run(timestamp);
-                            ++this.turnCounter;
-                        });
-                    };
+                    exports_14("game", game = this);
+                    exports_14("sound", sound = new soundmaster_1.SoundMaster());
+                    exports_14("view", view = new view_1.View());
                     this.fps = 50;
                 }
-                static get _() {
-                    return game;
+                setModel(m) {
+                    exports_14("model", model = m);
+                }
+                setController(c) {
+                    exports_14("controller", controller = c);
                 }
                 get TurnCounter() {
                     return this.turnCounter;
@@ -625,6 +635,32 @@ System.register("BoazEngineJS/engine", ["BoazEngineJS/constants"], function (exp
                 }
                 loadGameOptions() {
                     throw Error("Not implemented yet :-(");
+                }
+                startAfterLoad() {
+                    controller.switchState(constants_2.Constants.INITIAL_GAMESTATE);
+                    controller.switchSubstate(constants_2.Constants.INITIAL_GAMESUBSTATE);
+                    requestAnimationFrame(function (timestamp) {
+                        game.run(timestamp);
+                    });
+                    $(window).on('resize', function () {
+                        view.handleResize();
+                    });
+                    window.addEventListener('orientationchange', view.handleResize, false);
+                    view.handleResize();
+                }
+                update(elapsedMs) {
+                    controller.takeTurn(elapsedMs);
+                }
+                run(timestamp) {
+                    let elapsedMs = timestamp - this.lastUpdate;
+                    this.lastUpdate = timestamp;
+                    this.update(elapsedMs);
+                    view.draw();
+                    let t = this;
+                    requestAnimationFrame(function (timestamp) {
+                        game.run(timestamp);
+                        ++t.turnCounter;
+                    });
                 }
             };
             exports_14("Game", Game);
@@ -2100,7 +2136,7 @@ System.register("BoazEngineJS/animation", ["BoazEngineJS/btimer", "BoazEngineJS/
 });
 System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazEngineJS/btimer", "src/gameconstants", "BoazEngineJS/common", "BoazEngineJS/animation", "BoazEngineJS/msx", "BoazEngineJS/resourceids", "BoazEngineJS/input", "src/room", "BoazEngineJS/soundmaster", "src/resourcemaster", "src/gamecontroller", "src/sintervaniamodel", "BoazEngineJS/engine", "BoazEngineJS/view"], function (exports_29, context_29) {
     "use strict";
-    var direction_5, creature_1, btimer_3, gameconstants_2, common_7, animation_1, msx_5, resourceids_4, input_1, room_1, common_8, soundmaster_1, resourcemaster_2, gamecontroller_2, sintervaniamodel_6, engine_8, view_1, RoeState, Belmont, State, JumpState, HitState, HitStateStep, DyingState;
+    var direction_5, creature_1, btimer_3, gameconstants_2, common_7, animation_1, msx_5, resourceids_4, input_1, room_1, common_8, soundmaster_2, resourcemaster_2, gamecontroller_2, sintervaniamodel_6, engine_8, view_2, RoeState, Belmont, State, JumpState, HitState, HitStateStep, DyingState;
     var __moduleName = context_29 && context_29.id;
     return {
         setters: [
@@ -2135,8 +2171,8 @@ System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazE
             function (room_1_1) {
                 room_1 = room_1_1;
             },
-            function (soundmaster_1_1) {
-                soundmaster_1 = soundmaster_1_1;
+            function (soundmaster_2_1) {
+                soundmaster_2 = soundmaster_2_1;
             },
             function (resourcemaster_2_1) {
                 resourcemaster_2 = resourcemaster_2_1;
@@ -2150,8 +2186,8 @@ System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazE
             function (engine_8_1) {
                 engine_8 = engine_8_1;
             },
-            function (view_1_1) {
-                view_1 = view_1_1;
+            function (view_2_1) {
+                view_2 = view_2_1;
             }
         ],
         execute: function () {
@@ -2355,7 +2391,7 @@ System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazE
                             this.pos.y += 4;
                         this.checkAndHandleCollisions(originalPos);
                         if (this.FloorCollision)
-                            soundmaster_1.SoundMaster.PlayEffect(resourcemaster_2.ResourceMaster.Sound[resourceids_4.AudioId.Land]);
+                            soundmaster_2.SoundMaster.PlayEffect(resourcemaster_2.ResourceMaster.Sound[resourceids_4.AudioId.Land]);
                     }
                     if (this.Jumping) {
                         this.doJump();
@@ -2470,7 +2506,7 @@ System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazE
                         if (this.Roeing) {
                             this.roeState.Stop();
                         }
-                        soundmaster_1.SoundMaster.PlayEffect(resourcemaster_2.ResourceMaster.Sound[resourceids_4.AudioId.PlayerDamage]);
+                        soundmaster_2.SoundMaster.PlayEffect(resourcemaster_2.ResourceMaster.Sound[resourceids_4.AudioId.PlayerDamage]);
                     }
                 }
                 doDeath() {
@@ -2669,7 +2705,7 @@ System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazE
                         }
                     }
                     if (!this.hitState.Blink || gamecontroller_2.GameController._.InEventState) {
-                        let options = this.flippedH ? view_1.DrawBitmap.HFLIP : 0;
+                        let options = this.flippedH ? view_2.DrawBitmap.HFLIP : 0;
                         if (offset == null)
                             engine_8.view.DrawBitmap(this.imgid, this.pos.x + roeOffset.x, this.pos.y + roeOffset.y, options);
                         else
@@ -2678,7 +2714,7 @@ System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazE
                     else {
                         if (this.disposeFlag || !this.visible)
                             return;
-                        let options = this.flippedH ? view_1.DrawBitmap.HFLIP : 0;
+                        let options = this.flippedH ? view_2.DrawBitmap.HFLIP : 0;
                         if (offset == null)
                             engine_8.view.DrawColoredBitmap(this.imgid, this.pos.x + roeOffset.x, this.pos.y + roeOffset.y, options, 50.0, .0, .0);
                         else
@@ -2878,7 +2914,7 @@ System.register("src/triroe", ["src/pprojectile", "src/belmont", "src/sintervani
 });
 System.register("src/weaponfirehandler", ["src/sintervaniamodel", "src/triroe", "BoazEngineJS/soundmaster", "src/resourcemaster", "BoazEngineJS/resourceids", "BoazEngineJS/common"], function (exports_31, context_31) {
     "use strict";
-    var sintervaniamodel_8, triroe_1, soundmaster_2, resourcemaster_3, resourceids_6, common_10, WeaponFireHandler;
+    var sintervaniamodel_8, triroe_1, soundmaster_3, resourcemaster_3, resourceids_6, common_10, WeaponFireHandler;
     var __moduleName = context_31 && context_31.id;
     return {
         setters: [
@@ -2888,8 +2924,8 @@ System.register("src/weaponfirehandler", ["src/sintervaniamodel", "src/triroe", 
             function (triroe_1_1) {
                 triroe_1 = triroe_1_1;
             },
-            function (soundmaster_2_1) {
-                soundmaster_2 = soundmaster_2_1;
+            function (soundmaster_3_1) {
+                soundmaster_3 = soundmaster_3_1;
             },
             function (resourcemaster_3_1) {
                 resourcemaster_3 = resourcemaster_3_1;
@@ -2961,7 +2997,7 @@ System.register("src/weaponfirehandler", ["src/sintervaniamodel", "src/triroe", 
                     let roe = new triroe_1.TriRoe(sintervaniamodel_8.GameModel._.Belmont.pos, sintervaniamodel_8.GameModel._.Belmont.Direction);
                     sintervaniamodel_8.GameModel._.spawn(roe);
                     sintervaniamodel_8.GameModel._.Belmont.UseRoe();
-                    soundmaster_2.SoundMaster.PlayEffect(resourcemaster_3.ResourceMaster.Sound[resourceids_6.AudioId.Whip]);
+                    soundmaster_3.SoundMaster.PlayEffect(resourcemaster_3.ResourceMaster.Sound[resourceids_6.AudioId.Whip]);
                 }
                 static handleFireCross() {
                     WeaponFireHandler.setSecWeaponCooldown(WeaponFireHandler.msCrossCooldown);
@@ -3432,7 +3468,7 @@ System.register("BoazEngineJS/gamestateloader", ["BoazEngineJS/constants", "Boaz
 });
 System.register("src/mainmenu", ["src/sintervaniamodel", "src/resourcemaster", "BoazEngineJS/soundmaster", "BoazEngineJS/direction", "src/gamecontroller", "src/textwriter", "BoazEngineJS/engine", "BoazEngineJS/msx", "BoazEngineJS/constants", "BoazEngineJS/input", "BoazEngineJS/gamestateloader", "BoazEngineJS/model", "BoazEngineJS/resourceids"], function (exports_36, context_36) {
     "use strict";
-    var sintervaniamodel_9, resourcemaster_4, soundmaster_3, direction_6, sintervaniamodel_10, gamecontroller_3, textwriter_1, engine_10, msx_7, constants_7, input_2, gamestateloader_2, model_2, resourceids_8, State, MenuItem, MainMenu;
+    var sintervaniamodel_9, resourcemaster_4, soundmaster_4, direction_6, sintervaniamodel_10, gamecontroller_3, textwriter_1, engine_10, msx_7, constants_7, input_2, gamestateloader_2, model_2, resourceids_8, State, MenuItem, MainMenu;
     var __moduleName = context_36 && context_36.id;
     return {
         setters: [
@@ -3443,8 +3479,8 @@ System.register("src/mainmenu", ["src/sintervaniamodel", "src/resourcemaster", "
             function (resourcemaster_4_1) {
                 resourcemaster_4 = resourcemaster_4_1;
             },
-            function (soundmaster_3_1) {
-                soundmaster_3 = soundmaster_3_1;
+            function (soundmaster_4_1) {
+                soundmaster_4 = soundmaster_4_1;
             },
             function (direction_6_1) {
                 direction_6 = direction_6_1;
@@ -3533,11 +3569,11 @@ System.register("src/mainmenu", ["src/sintervaniamodel", "src/resourcemaster", "
                     else if (input_2.KeyState.KC_LEFT)
                         this.changeSelection(direction_6.Direction.Left, selectionChanged);
                     if (selectionChanged)
-                        soundmaster_3.SoundMaster.PlayEffect(resourcemaster_4.ResourceMaster.Sound[resourceids_8.AudioId.Selectie]);
+                        soundmaster_4.SoundMaster.PlayEffect(resourcemaster_4.ResourceMaster.Sound[resourceids_8.AudioId.Selectie]);
                     if (input_2.KeyState.KC_SPACE) {
                         switch (this.state) {
                             case State.SelectMain:
-                                soundmaster_3.SoundMaster.PlayEffect(resourcemaster_4.ResourceMaster.Sound[resourceids_8.AudioId.Selectie]);
+                                soundmaster_4.SoundMaster.PlayEffect(resourcemaster_4.ResourceMaster.Sound[resourceids_8.AudioId.Selectie]);
                                 switch (this.selectedItem) {
                                     case MenuItem.NewGame:
                                         this.state = State.SelectChapter;
@@ -3547,7 +3583,7 @@ System.register("src/mainmenu", ["src/sintervaniamodel", "src/resourcemaster", "
                                         if (gamestateloader_2.SlotExists(constants_7.Constants.SaveSlotCheckpoint))
                                             gamecontroller_3.GameController._.LoadCheckpoint();
                                         else
-                                            soundmaster_3.SoundMaster.PlayEffect(resourcemaster_4.ResourceMaster.Sound[resourceids_8.AudioId.Fout]);
+                                            soundmaster_4.SoundMaster.PlayEffect(resourcemaster_4.ResourceMaster.Sound[resourceids_8.AudioId.Fout]);
                                         break;
                                     case MenuItem.LoadGame:
                                         input_2.KeyState.KC_SPACE = false;
@@ -3562,7 +3598,7 @@ System.register("src/mainmenu", ["src/sintervaniamodel", "src/resourcemaster", "
                                 }
                                 break;
                             case State.SelectChapter:
-                                soundmaster_3.SoundMaster.PlayEffect(resourcemaster_4.ResourceMaster.Sound[resourceids_8.AudioId.Selectie]);
+                                soundmaster_4.SoundMaster.PlayEffect(resourcemaster_4.ResourceMaster.Sound[resourceids_8.AudioId.Selectie]);
                                 switch (this.selectedItem) {
                                     case MenuItem.Debug:
                                         sintervaniamodel_10.GameModel._.SelectedChapterToPlay = sintervaniamodel_9.Chapter.Debug;
@@ -3878,7 +3914,7 @@ System.register("src/itscurtainsforyou", ["BoazEngineJS/btimer", "BoazEngineJS/m
 });
 System.register("src/gameover", ["src/sintervaniamodel", "BoazEngineJS/direction", "src/textwriter", "BoazEngineJS/msx", "BoazEngineJS/engine", "BoazEngineJS/resourceids", "BoazEngineJS/input", "BoazEngineJS/soundmaster", "src/resourcemaster", "src/gamecontroller", "src/mainmenu"], function (exports_39, context_39) {
     "use strict";
-    var sintervaniamodel_12, direction_7, textwriter_3, msx_9, engine_13, resourceids_11, input_3, soundmaster_4, resourcemaster_5, gamecontroller_5, mainmenu_1, State, GameOver;
+    var sintervaniamodel_12, direction_7, textwriter_3, msx_9, engine_13, resourceids_11, input_3, soundmaster_5, resourcemaster_5, gamecontroller_5, mainmenu_1, State, GameOver;
     var __moduleName = context_39 && context_39.id;
     return {
         setters: [
@@ -3903,8 +3939,8 @@ System.register("src/gameover", ["src/sintervaniamodel", "BoazEngineJS/direction
             function (input_3_1) {
                 input_3 = input_3_1;
             },
-            function (soundmaster_4_1) {
-                soundmaster_4 = soundmaster_4_1;
+            function (soundmaster_5_1) {
+                soundmaster_5 = soundmaster_5_1;
             },
             function (resourcemaster_5_1) {
                 resourcemaster_5 = resourcemaster_5_1;
@@ -3956,7 +3992,7 @@ System.register("src/gameover", ["src/sintervaniamodel", "BoazEngineJS/direction
                                         gamecontroller_5.GameController._.LoadCheckpoint();
                                         break;
                                     case 1:
-                                        soundmaster_4.SoundMaster.PlayEffect(resourcemaster_5.ResourceMaster.Sound[resourceids_11.AudioId.Selectie]);
+                                        soundmaster_5.SoundMaster.PlayEffect(resourcemaster_5.ResourceMaster.Sound[resourceids_11.AudioId.Selectie]);
                                         input_3.KeyState.KC_SPACE = false;
                                         sintervaniamodel_12.GameModel._.GameMenu.Open(mainmenu_1.MenuItem.LoadFromGameOver);
                                         this.state = State.SelectFile;
@@ -3968,7 +4004,7 @@ System.register("src/gameover", ["src/sintervaniamodel", "BoazEngineJS/direction
                         }
                     }
                     if (selectionChanged) {
-                        soundmaster_4.SoundMaster.PlayEffect(resourcemaster_5.ResourceMaster.Sound[resourceids_11.AudioId.Selectie]);
+                        soundmaster_5.SoundMaster.PlayEffect(resourcemaster_5.ResourceMaster.Sound[resourceids_11.AudioId.Selectie]);
                     }
                 }
                 changeSelection(dir, selectionChanged) {
@@ -4408,7 +4444,7 @@ System.register("src/gameview", ["src/hud", "src/itscurtainsforyou", "src/gameov
 });
 System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/resourceids", "BoazEngineJS/direction", "src/textwriter", "BoazEngineJS/input", "BoazEngineJS/soundmaster", "src/resourcemaster", "src/gamecontroller", "src/sintervaniamodel", "BoazEngineJS/gamestateloader", "BoazEngineJS/gameoptions", "BoazEngineJS/msx", "BoazEngineJS/constants", "BoazEngineJS/common", "BoazEngineJS/engine", "BoazEngineJS/model"], function (exports_44, context_44) {
     "use strict";
-    var mainmenu_3, gameview_2, resourceids_13, direction_8, textwriter_6, input_5, soundmaster_5, resourcemaster_6, gamecontroller_7, sintervaniamodel_14, gamestateloader_3, gameoptions_3, msx_13, constants_9, common_14, engine_16, model_4, GameMenu;
+    var mainmenu_3, gameview_2, resourceids_13, direction_8, textwriter_6, input_5, soundmaster_6, resourcemaster_6, gamecontroller_7, sintervaniamodel_14, gamestateloader_3, gameoptions_3, msx_13, constants_9, common_14, engine_16, model_4, GameMenu;
     var __moduleName = context_44 && context_44.id;
     return {
         setters: [
@@ -4430,8 +4466,8 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
             function (input_5_1) {
                 input_5 = input_5_1;
             },
-            function (soundmaster_5_1) {
-                soundmaster_5 = soundmaster_5_1;
+            function (soundmaster_6_1) {
+                soundmaster_6 = soundmaster_6_1;
             },
             function (resourcemaster_6_1) {
                 resourcemaster_6 = resourcemaster_6_1;
@@ -4477,7 +4513,7 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
                     this.visible = true;
                     this.CurrentScreen = currentscreen;
                     if (this.CurrentScreen == mainmenu_3.MenuItem.Main)
-                        soundmaster_5.SoundMaster.PlayEffect(resourcemaster_6.ResourceMaster.Sound[resourceids_13.AudioId.Selectie]);
+                        soundmaster_6.SoundMaster.PlayEffect(resourcemaster_6.ResourceMaster.Sound[resourceids_13.AudioId.Selectie]);
                 }
                 Close() {
                     this.visible = false;
@@ -4523,7 +4559,7 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
                     if (input_5.KeyState.KC_SPACE) {
                         switch (this.CurrentScreen) {
                             case mainmenu_3.MenuItem.Main:
-                                soundmaster_5.SoundMaster.PlayEffect(resourcemaster_6.ResourceMaster.Sound[resourceids_13.AudioId.Selectie]);
+                                soundmaster_6.SoundMaster.PlayEffect(resourcemaster_6.ResourceMaster.Sound[resourceids_13.AudioId.Selectie]);
                                 switch (this.selectedItem) {
                                     case mainmenu_3.MenuItem.ReturnToGame:
                                         gamecontroller_7.GameController._.CloseGameMenu();
@@ -4542,7 +4578,7 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
                                             this.selectedItemIndex = 0;
                                         }
                                         else
-                                            soundmaster_5.SoundMaster.PlayEffect(resourcemaster_6.ResourceMaster.Sound[resourceids_13.AudioId.Fout]);
+                                            soundmaster_6.SoundMaster.PlayEffect(resourcemaster_6.ResourceMaster.Sound[resourceids_13.AudioId.Fout]);
                                         break;
                                     case mainmenu_3.MenuItem.ExitGame:
                                         throw Error("Game afluiten is niet geimplementeerd :-o");
@@ -4554,7 +4590,7 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
                             case mainmenu_3.MenuItem.LoadFromMainMenu:
                                 switch (this.selectedItem) {
                                     case mainmenu_3.MenuItem.ReturnToMain:
-                                        soundmaster_5.SoundMaster.PlayEffect(resourcemaster_6.ResourceMaster.Sound[resourceids_13.AudioId.Selectie]);
+                                        soundmaster_6.SoundMaster.PlayEffect(resourcemaster_6.ResourceMaster.Sound[resourceids_13.AudioId.Selectie]);
                                         switch (this.CurrentScreen) {
                                             case mainmenu_3.MenuItem.LoadFromGameOver:
                                             case mainmenu_3.MenuItem.LoadFromMainMenu:
@@ -4574,13 +4610,13 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
                                                 gamecontroller_7.GameController._.LoadGame(sg);
                                             }
                                             else
-                                                soundmaster_5.SoundMaster.PlayEffect(resourcemaster_6.ResourceMaster.Sound[resourceids_13.AudioId.Fout]);
+                                                soundmaster_6.SoundMaster.PlayEffect(resourcemaster_6.ResourceMaster.Sound[resourceids_13.AudioId.Fout]);
                                         }
                                         break;
                                 }
                                 break;
                             case mainmenu_3.MenuItem.Save:
-                                soundmaster_5.SoundMaster.PlayEffect(resourcemaster_6.ResourceMaster.Sound[resourceids_13.AudioId.Selectie]);
+                                soundmaster_6.SoundMaster.PlayEffect(resourcemaster_6.ResourceMaster.Sound[resourceids_13.AudioId.Selectie]);
                                 switch (this.selectedItem) {
                                     case mainmenu_3.MenuItem.ReturnToMain:
                                         this.CurrentScreen = mainmenu_3.MenuItem.Main;
@@ -4598,7 +4634,7 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
                             case mainmenu_3.MenuItem.OptionsFromMainMenu:
                                 switch (this.selectedItem) {
                                     case mainmenu_3.MenuItem.ReturnToMain:
-                                        soundmaster_5.SoundMaster.PlayEffect(resourcemaster_6.ResourceMaster.Sound[resourceids_13.AudioId.Selectie]);
+                                        soundmaster_6.SoundMaster.PlayEffect(resourcemaster_6.ResourceMaster.Sound[resourceids_13.AudioId.Selectie]);
                                         switch (this.CurrentScreen) {
                                             case mainmenu_3.MenuItem.OptionsFromMainMenu:
                                                 this.Close();
@@ -4610,7 +4646,7 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
                                         }
                                         break;
                                     default:
-                                        soundmaster_5.SoundMaster.PlayEffect(resourcemaster_6.ResourceMaster.Sound[resourceids_13.AudioId.Fout]);
+                                        soundmaster_6.SoundMaster.PlayEffect(resourcemaster_6.ResourceMaster.Sound[resourceids_13.AudioId.Fout]);
                                         break;
                                 }
                                 break;
@@ -4639,7 +4675,7 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
                                             gameoptions_3.GameOptions.EffectsVolumePercentage += 10;
                                             if (gameoptions_3.GameOptions.EffectsVolumePercentage > 100)
                                                 gameoptions_3.GameOptions.EffectsVolumePercentage = 100;
-                                            soundmaster_5.SoundMaster.SetEffectsVolume(gameoptions_3.GameOptions.EffectsVolumePercentage / 100);
+                                            soundmaster_6.SoundMaster.SetEffectsVolume(gameoptions_3.GameOptions.EffectsVolumePercentage / 100);
                                             engine_16.game.GameOptionsChanged();
                                         }
                                         break;
@@ -4648,7 +4684,7 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
                                             gameoptions_3.GameOptions.MusicVolumePercentage += 10;
                                             if (gameoptions_3.GameOptions.MusicVolumePercentage > 100)
                                                 gameoptions_3.GameOptions.MusicVolumePercentage = 100;
-                                            soundmaster_5.SoundMaster.SetMusicVolume(gameoptions_3.GameOptions.MusicVolumePercentage / 100);
+                                            soundmaster_6.SoundMaster.SetMusicVolume(gameoptions_3.GameOptions.MusicVolumePercentage / 100);
                                             engine_16.game.GameOptionsChanged();
                                         }
                                         break;
@@ -4679,7 +4715,7 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
                                             gameoptions_3.GameOptions.EffectsVolumePercentage -= 10;
                                             if (gameoptions_3.GameOptions.EffectsVolumePercentage < 0)
                                                 gameoptions_3.GameOptions.EffectsVolumePercentage = 0;
-                                            soundmaster_5.SoundMaster.SetEffectsVolume(gameoptions_3.GameOptions.EffectsVolumePercentage / 100);
+                                            soundmaster_6.SoundMaster.SetEffectsVolume(gameoptions_3.GameOptions.EffectsVolumePercentage / 100);
                                             engine_16.game.GameOptionsChanged();
                                         }
                                         break;
@@ -4688,7 +4724,7 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
                                             gameoptions_3.GameOptions.MusicVolumePercentage -= 10;
                                             if (gameoptions_3.GameOptions.MusicVolumePercentage < 0)
                                                 gameoptions_3.GameOptions.MusicVolumePercentage = 0;
-                                            soundmaster_5.SoundMaster.SetMusicVolume(gameoptions_3.GameOptions.MusicVolumePercentage / 100);
+                                            soundmaster_6.SoundMaster.SetMusicVolume(gameoptions_3.GameOptions.MusicVolumePercentage / 100);
                                             engine_16.game.GameOptionsChanged();
                                         }
                                         break;
@@ -4697,7 +4733,7 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
                         }
                     }
                     if (selectionChanged) {
-                        soundmaster_5.SoundMaster.PlayEffect(resourcemaster_6.ResourceMaster.Sound[resourceids_13.AudioId.Selectie]);
+                        soundmaster_6.SoundMaster.PlayEffect(resourcemaster_6.ResourceMaster.Sound[resourceids_13.AudioId.Selectie]);
                     }
                 }
                 calculateCursorX() {
@@ -4984,9 +5020,9 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
         }
     };
 });
-System.register("src/gamecontroller", ["BoazEngineJS/btimer", "src/item", "BoazEngineJS/resourceids", "BoazEngineJS/direction", "src/bootstrapper", "src/sintervaniamodel", "BoazEngineJS/model", "BoazEngineJS/input", "src/weaponfirehandler", "src/room", "src/gamemenu", "BoazEngineJS/common", "BoazEngineJS/soundmaster", "src/resourcemaster", "BoazEngineJS/constants", "src/gameview", "src/gameconstants", "BoazEngineJS/gamestateloader", "BoazEngineJS/gamesaver"], function (exports_45, context_45) {
+System.register("src/gamecontroller", ["BoazEngineJS/btimer", "src/item", "BoazEngineJS/resourceids", "BoazEngineJS/direction", "src/bootstrapper", "src/sintervaniamodel", "BoazEngineJS/model", "BoazEngineJS/input", "src/weaponfirehandler", "src/room", "src/gamemenu", "BoazEngineJS/common", "BoazEngineJS/soundmaster", "src/resourcemaster", "BoazEngineJS/constants", "src/gameview", "src/gameconstants", "BoazEngineJS/gamestateloader", "BoazEngineJS/gamesaver", "BoazEngineJS/controller"], function (exports_45, context_45) {
     "use strict";
-    var btimer_7, item_3, resourceids_14, direction_9, bootstrapper_1, sintervaniamodel_15, model_5, input_6, weaponfirehandler_1, room_2, gamemenu_1, common_15, soundmaster_6, resourcemaster_7, constants_10, gameview_3, gameconstants_6, gamestateloader_4, gamesaver_2, GameController;
+    var btimer_7, item_3, resourceids_14, direction_9, bootstrapper_1, sintervaniamodel_15, model_5, input_6, weaponfirehandler_1, room_2, gamemenu_1, common_15, soundmaster_7, resourcemaster_7, constants_10, gameview_3, gameconstants_6, gamestateloader_4, gamesaver_2, controller_1, GameController;
     var __moduleName = context_45 && context_45.id;
     return {
         setters: [
@@ -5026,8 +5062,8 @@ System.register("src/gamecontroller", ["BoazEngineJS/btimer", "src/item", "BoazE
             function (common_15_1) {
                 common_15 = common_15_1;
             },
-            function (soundmaster_6_1) {
-                soundmaster_6 = soundmaster_6_1;
+            function (soundmaster_7_1) {
+                soundmaster_7 = soundmaster_7_1;
             },
             function (resourcemaster_7_1) {
                 resourcemaster_7 = resourcemaster_7_1;
@@ -5046,10 +5082,13 @@ System.register("src/gamecontroller", ["BoazEngineJS/btimer", "src/item", "BoazE
             },
             function (gamesaver_2_1) {
                 gamesaver_2 = gamesaver_2_1;
+            },
+            function (controller_1_1) {
+                controller_1 = controller_1_1;
             }
         ],
         execute: function () {
-            GameController = class GameController {
+            GameController = class GameController extends controller_1.Controller {
                 static get _() {
                     return GameController._instance != null ? GameController._instance : (GameController._instance = new GameController());
                 }
@@ -5068,7 +5107,7 @@ System.register("src/gamecontroller", ["BoazEngineJS/btimer", "src/item", "BoazE
                 DisposeOldState(oldState, newState) {
                     switch (oldState) {
                         case model_5.GameState.TitleScreen:
-                            soundmaster_6.SoundMaster.StopMusic();
+                            soundmaster_7.SoundMaster.StopMusic();
                             if (newState == model_5.GameState.Game)
                                 this.setupGameStart(newState);
                             break;
@@ -5104,7 +5143,7 @@ System.register("src/gamecontroller", ["BoazEngineJS/btimer", "src/item", "BoazE
                             break;
                         case model_5.GameState.GameStart2:
                             this.timer.restart();
-                            soundmaster_6.SoundMaster.PlayMusic(resourcemaster_7.ResourceMaster.Music[resourceids_14.AudioId.Stage]);
+                            soundmaster_7.SoundMaster.PlayMusic(resourcemaster_7.ResourceMaster.Music[resourceids_14.AudioId.Stage]);
                             break;
                         case model_5.GameState.Game:
                             break;
@@ -5118,14 +5157,14 @@ System.register("src/gamecontroller", ["BoazEngineJS/btimer", "src/item", "BoazE
                         case sintervaniamodel_15.GameModel.GameSubstate.Conversation:
                             break;
                         case sintervaniamodel_15.GameModel.GameSubstate.BelmontDies:
-                            soundmaster_6.SoundMaster.PlayMusic(resourcemaster_7.ResourceMaster.Music[resourceids_14.AudioId.Ohnoes]);
+                            soundmaster_7.SoundMaster.PlayMusic(resourcemaster_7.ResourceMaster.Music[resourceids_14.AudioId.Ohnoes]);
                             break;
                         case sintervaniamodel_15.GameModel.GameSubstate.ItsCurtainsForYou:
                         case sintervaniamodel_15.GameModel.GameSubstate.ToEndDemo:
                             gameview_3.GameView._.ItsCurtains.Init();
                             break;
                         case sintervaniamodel_15.GameModel.GameSubstate.GameOver:
-                            soundmaster_6.SoundMaster.PlayMusic(resourcemaster_7.ResourceMaster.Music[resourceids_14.AudioId.Humiliation]);
+                            soundmaster_7.SoundMaster.PlayMusic(resourcemaster_7.ResourceMaster.Music[resourceids_14.AudioId.Humiliation]);
                             gameview_3.GameView._.GameOverScreen.Init();
                             break;
                         case sintervaniamodel_15.GameModel.GameSubstate.IngameMenu:
@@ -5144,7 +5183,7 @@ System.register("src/gamecontroller", ["BoazEngineJS/btimer", "src/item", "BoazE
                     }
                     sintervaniamodel_15.GameModel._.Substate = newSubstate;
                 }
-                TakeTurn(elapsedMs) {
+                takeTurn(elapsedMs) {
                     if (sintervaniamodel_15.GameModel._.paused) {
                         this.handlePausedState();
                         return;
@@ -5297,8 +5336,8 @@ System.register("src/gamecontroller", ["BoazEngineJS/btimer", "src/item", "BoazE
                     if (common_15.waitDuration(this.startAfterLoadTimer, gameconstants_6.GameConstants.WaitAfterLoadGame)) {
                         sintervaniamodel_15.GameModel._.startAfterLoad = false;
                         btimer_7.BStopwatch.removeWatch(this.startAfterLoadTimer);
-                        if (soundmaster_6.SoundMaster.MusicBeingPlayed != null)
-                            soundmaster_6.SoundMaster.PlayMusic(soundmaster_6.SoundMaster.MusicBeingPlayed);
+                        if (soundmaster_7.SoundMaster.MusicBeingPlayed != null)
+                            soundmaster_7.SoundMaster.PlayMusic(soundmaster_7.SoundMaster.MusicBeingPlayed);
                     }
                 }
                 BelmontDied() {
@@ -5352,14 +5391,14 @@ System.register("src/gamecontroller", ["BoazEngineJS/btimer", "src/item", "BoazE
                 PauseGame() {
                     sintervaniamodel_15.GameModel._.paused = true;
                     btimer_7.BStopwatch.pauseAllRunningWatches();
-                    soundmaster_6.SoundMaster.StopEffect();
-                    soundmaster_6.SoundMaster.StopMusic();
+                    soundmaster_7.SoundMaster.StopEffect();
+                    soundmaster_7.SoundMaster.StopMusic();
                 }
                 UnpauseGame() {
                     sintervaniamodel_15.GameModel._.paused = false;
                     btimer_7.BStopwatch.resumeAllPausedWatches();
-                    soundmaster_6.SoundMaster.ResumeEffect();
-                    soundmaster_6.SoundMaster.ResumeMusic();
+                    soundmaster_7.SoundMaster.ResumeEffect();
+                    soundmaster_7.SoundMaster.ResumeMusic();
                 }
                 OpenGameMenu() {
                     sintervaniamodel_15.GameModel._.GameMenu.Open();
@@ -5370,8 +5409,8 @@ System.register("src/gamecontroller", ["BoazEngineJS/btimer", "src/item", "BoazE
                     this.SwitchToOldSubstate();
                 }
                 LoadGame(sg) {
-                    soundmaster_6.SoundMaster.StopEffect();
-                    soundmaster_6.SoundMaster.StopMusic();
+                    soundmaster_7.SoundMaster.StopEffect();
+                    soundmaster_7.SoundMaster.StopMusic();
                     let oldcheckpoint = sintervaniamodel_15.GameModel._.Checkpoint;
                     sintervaniamodel_15.GameModel._ = sg.Model;
                     sintervaniamodel_15.GameModel._.Checkpoint = gamestateloader_4.LoadGame(constants_10.Constants.SaveSlotCheckpoint);
@@ -5384,7 +5423,7 @@ System.register("src/gamecontroller", ["BoazEngineJS/btimer", "src/item", "BoazE
                     this.startAfterLoadTimer.restart();
                     btimer_7.BStopwatch.addWatch(this.startAfterLoadTimer);
                     btimer_7.BStopwatch.addWatch(this.timer);
-                    soundmaster_6.SoundMaster.MusicBeingPlayed = sg.MusicBeingPlayed;
+                    soundmaster_7.SoundMaster.MusicBeingPlayed = sg.MusicBeingPlayed;
                     resourcemaster_7.ResourceMaster.reloadImg(resourceids_14.BitmapId.Room, sintervaniamodel_15.GameModel._.CurrentRoom.BitmapPath);
                 }
                 SaveGame(slot) {
@@ -5436,7 +5475,7 @@ System.register("src/gamecontroller", ["BoazEngineJS/btimer", "src/item", "BoazE
 });
 System.register("src/item", ["BoazEngineJS/sprite", "BoazEngineJS/common", "src/sintervaniamodel", "BoazEngineJS/soundmaster", "src/resourcemaster", "src/gamecontroller", "BoazEngineJS/resourceids"], function (exports_46, context_46) {
     "use strict";
-    var sprite_4, common_16, sintervaniamodel_16, soundmaster_7, resourcemaster_8, gamecontroller_8, resourceids_15, ItemType, Usable, Item;
+    var sprite_4, common_16, sintervaniamodel_16, soundmaster_8, resourcemaster_8, gamecontroller_8, resourceids_15, ItemType, Usable, Item;
     var __moduleName = context_46 && context_46.id;
     return {
         setters: [
@@ -5449,8 +5488,8 @@ System.register("src/item", ["BoazEngineJS/sprite", "BoazEngineJS/common", "src/
             function (sintervaniamodel_16_1) {
                 sintervaniamodel_16 = sintervaniamodel_16_1;
             },
-            function (soundmaster_7_1) {
-                soundmaster_7 = soundmaster_7_1;
+            function (soundmaster_8_1) {
+                soundmaster_8 = soundmaster_8_1;
             },
             function (resourcemaster_8_1) {
                 resourcemaster_8 = resourcemaster_8_1;
@@ -5491,14 +5530,14 @@ System.register("src/item", ["BoazEngineJS/sprite", "BoazEngineJS/common", "src/
                         switch (this.ItsType) {
                             case ItemType.HeartSmall:
                             case ItemType.HeartBig:
-                                soundmaster_7.SoundMaster.PlayEffect(resourcemaster_8.ResourceMaster.Sound[resourceids_15.AudioId.Heart]);
+                                soundmaster_8.SoundMaster.PlayEffect(resourcemaster_8.ResourceMaster.Sound[resourceids_15.AudioId.Heart]);
                                 break;
                             case ItemType.KeySmall:
                             case ItemType.KeyBig:
-                                soundmaster_7.SoundMaster.PlayEffect(resourcemaster_8.ResourceMaster.Sound[resourceids_15.AudioId.KeyGrab]);
+                                soundmaster_8.SoundMaster.PlayEffect(resourcemaster_8.ResourceMaster.Sound[resourceids_15.AudioId.KeyGrab]);
                                 break;
                             default:
-                                soundmaster_7.SoundMaster.PlayEffect(resourcemaster_8.ResourceMaster.Sound[resourceids_15.AudioId.ItemPickup]);
+                                soundmaster_8.SoundMaster.PlayEffect(resourcemaster_8.ResourceMaster.Sound[resourceids_15.AudioId.ItemPickup]);
                                 break;
                         }
                         this.disposeFlag = true;
@@ -5570,7 +5609,7 @@ System.register("src/fx", ["BoazEngineJS/sprite", "BoazEngineJS/btimer"], functi
 });
 System.register("src/heartsmall", ["BoazEngineJS/sprite", "BoazEngineJS/animation", "BoazEngineJS/resourceids", "src/gameconstants", "src/resourcemaster", "BoazEngineJS/common", "src/sintervaniamodel", "BoazEngineJS/soundmaster"], function (exports_48, context_48) {
     "use strict";
-    var sprite_6, animation_4, resourceids_16, gameconstants_7, resourcemaster_9, common_17, sintervaniamodel_17, soundmaster_8, HeartSmallState, HeartSmall;
+    var sprite_6, animation_4, resourceids_16, gameconstants_7, resourcemaster_9, common_17, sintervaniamodel_17, soundmaster_9, HeartSmallState, HeartSmall;
     var __moduleName = context_48 && context_48.id;
     return {
         setters: [
@@ -5595,8 +5634,8 @@ System.register("src/heartsmall", ["BoazEngineJS/sprite", "BoazEngineJS/animatio
             function (sintervaniamodel_17_1) {
                 sintervaniamodel_17 = sintervaniamodel_17_1;
             },
-            function (soundmaster_8_1) {
-                soundmaster_8 = soundmaster_8_1;
+            function (soundmaster_9_1) {
+                soundmaster_9 = soundmaster_9_1;
             }
         ],
         execute: function () {
@@ -5644,7 +5683,7 @@ System.register("src/heartsmall", ["BoazEngineJS/sprite", "BoazEngineJS/animatio
                     if (this.objectCollide(sintervaniamodel_17.GameModel._.Belmont)) {
                         ++sintervaniamodel_17.GameModel._.Hearts;
                         this.disposeFlag = true;
-                        soundmaster_8.SoundMaster.PlayEffect(resourcemaster_9.ResourceMaster.Sound[resourceids_16.AudioId.Heart]);
+                        soundmaster_9.SoundMaster.PlayEffect(resourcemaster_9.ResourceMaster.Sound[resourceids_16.AudioId.Heart]);
                     }
                 }
                 Paint(offset = null) {
@@ -5713,7 +5752,7 @@ System.register("src/foeexplosion", ["src/item", "BoazEngineJS/animation", "src/
 });
 System.register("src/foe", ["src/creature", "src/item", "src/sintervaniamodel", "BoazEngineJS/soundmaster", "src/foeexplosion", "BoazEngineJS/resourceids", "src/resourcemaster"], function (exports_50, context_50) {
     "use strict";
-    var creature_2, item_5, sintervaniamodel_19, soundmaster_9, foeexplosion_1, resourceids_18, resourcemaster_10, Foe;
+    var creature_2, item_5, sintervaniamodel_19, soundmaster_10, foeexplosion_1, resourceids_18, resourcemaster_10, Foe;
     var __moduleName = context_50 && context_50.id;
     return {
         setters: [
@@ -5726,8 +5765,8 @@ System.register("src/foe", ["src/creature", "src/item", "src/sintervaniamodel", 
             function (sintervaniamodel_19_1) {
                 sintervaniamodel_19 = sintervaniamodel_19_1;
             },
-            function (soundmaster_9_1) {
-                soundmaster_9 = soundmaster_9_1;
+            function (soundmaster_10_1) {
+                soundmaster_10 = soundmaster_10_1;
             },
             function (foeexplosion_1_1) {
                 foeexplosion_1 = foeexplosion_1_1;
@@ -5763,7 +5802,7 @@ System.register("src/foe", ["src/creature", "src/item", "src/sintervaniamodel", 
                 }
                 HandleHit(source) {
                     sintervaniamodel_19.GameModel._.LastFoeThatWasHit = this;
-                    soundmaster_9.SoundMaster.PlayEffect(resourcemaster_10.ResourceMaster.Sound[resourceids_18.AudioId.Hit]);
+                    soundmaster_10.SoundMaster.PlayEffect(resourcemaster_10.ResourceMaster.Sound[resourceids_18.AudioId.Hit]);
                 }
                 loseHealth(source) {
                     this.Health -= source.DamageDealt;
@@ -5907,6 +5946,11 @@ System.register("src/sintervaniamodel", ["src/belmont", "BoazEngineJS/model", "B
             })(SecWeaponType || (SecWeaponType = {}));
             exports_52("SecWeaponType", SecWeaponType);
             GameModel = class GameModel extends model_6.Model {
+                constructor() {
+                    super();
+                    GameModel._instance = this;
+                    this.Initialize();
+                }
                 static get _() {
                     return GameModel._instance;
                 }
@@ -6544,10 +6588,37 @@ System.register("src/fprojectile", ["src/gameconstants", "src/projectile", "Boaz
         }
     };
 });
-System.register("src/hag", ["BoazEngineJS/btimer", "BoazEngineJS/animation", "BoazEngineJS/direction", "BoazEngineJS/resourceids", "src/item", "src/foe", "src/gameconstants"], function (exports_58, context_58) {
+System.register("src/game", ["BoazEngineJS/engine", "src/sintervaniamodel", "src/gamecontroller"], function (exports_58, context_58) {
+    "use strict";
+    var engine, sintervaniamodel_24, gamecontroller_9;
+    var __moduleName = context_58 && context_58.id;
+    function Annnndddd___Go() {
+        new engine.Game();
+        engine.game.setModel(new sintervaniamodel_24.GameModel());
+        engine.game.setController(new gamecontroller_9.GameController());
+        return engine.game;
+    }
+    exports_58("Annnndddd___Go", Annnndddd___Go);
+    return {
+        setters: [
+            function (engine_17) {
+                engine = engine_17;
+            },
+            function (sintervaniamodel_24_1) {
+                sintervaniamodel_24 = sintervaniamodel_24_1;
+            },
+            function (gamecontroller_9_1) {
+                gamecontroller_9 = gamecontroller_9_1;
+            }
+        ],
+        execute: function () {
+        }
+    };
+});
+System.register("src/hag", ["BoazEngineJS/btimer", "BoazEngineJS/animation", "BoazEngineJS/direction", "BoazEngineJS/resourceids", "src/item", "src/foe", "src/gameconstants"], function (exports_59, context_59) {
     "use strict";
     var btimer_12, animation_9, direction_13, resourceids_22, item_9, foe_4, gameconstants_10, Hag;
-    var __moduleName = context_58 && context_58.id;
+    var __moduleName = context_59 && context_59.id;
     return {
         setters: [
             function (btimer_12_1) {
@@ -6622,21 +6693,21 @@ System.register("src/hag", ["BoazEngineJS/btimer", "BoazEngineJS/animation", "Bo
             Hag.hagSprites = new Map([[direction_13.Direction.None, [resourceids_22.BitmapId.Hag_1, resourceids_22.BitmapId.Hag_2]]]);
             Hag.movementSprites = Hag.hagSprites;
             Hag.AnimationFrames = new Array({ time: 250, data: resourceids_22.BitmapId.Hag_1 }, { time: 250, data: resourceids_22.BitmapId.Hag_2 });
-            exports_58("Hag", Hag);
+            exports_59("Hag", Hag);
         }
     };
 });
-System.register("src/haggenerator", ["BoazEngineJS/btimer", "src/sintervaniamodel", "BoazEngineJS/animation", "src/hag"], function (exports_59, context_59) {
+System.register("src/haggenerator", ["BoazEngineJS/btimer", "src/sintervaniamodel", "BoazEngineJS/animation", "src/hag"], function (exports_60, context_60) {
     "use strict";
-    var btimer_13, sintervaniamodel_24, animation_10, hag_1, HagGenerator;
-    var __moduleName = context_59 && context_59.id;
+    var btimer_13, sintervaniamodel_25, animation_10, hag_1, HagGenerator;
+    var __moduleName = context_60 && context_60.id;
     return {
         setters: [
             function (btimer_13_1) {
                 btimer_13 = btimer_13_1;
             },
-            function (sintervaniamodel_24_1) {
-                sintervaniamodel_24 = sintervaniamodel_24_1;
+            function (sintervaniamodel_25_1) {
+                sintervaniamodel_25 = sintervaniamodel_25_1;
             },
             function (animation_10_1) {
                 animation_10 = animation_10_1;
@@ -6677,7 +6748,7 @@ System.register("src/haggenerator", ["BoazEngineJS/btimer", "src/sintervaniamode
                 takeTurn() {
                     let stepValue = { nextStepValue: false };
                     if (this.spawnAnimation.doAnimation(this.timer, stepValue))
-                        sintervaniamodel_24.GameModel._.spawn(new hag_1.Hag({ pos: { x: this.pos.x, y: this.pos.y }, dir: this.directionOfHags }));
+                        sintervaniamodel_25.GameModel._.spawn(new hag_1.Hag({ pos: { x: this.pos.x, y: this.pos.y }, dir: this.directionOfHags }));
                 }
                 Dispose() {
                     btimer_13.BStopwatch.removeWatch(this.timer);
@@ -6698,14 +6769,14 @@ System.register("src/haggenerator", ["BoazEngineJS/btimer", "src/sintervaniamode
                     btimer_13.BStopwatch.removeWatch(this.timer);
                 }
             };
-            exports_59("HagGenerator", HagGenerator);
+            exports_60("HagGenerator", HagGenerator);
         }
     };
 });
-System.register("src/pietula", ["BoazEngineJS/animation", "BoazEngineJS/btimer", "src/bossfoe", "BoazEngineJS/direction", "BoazEngineJS/resourceids", "BoazEngineJS/common"], function (exports_60, context_60) {
+System.register("src/pietula", ["BoazEngineJS/animation", "BoazEngineJS/btimer", "src/bossfoe", "BoazEngineJS/direction", "BoazEngineJS/resourceids", "BoazEngineJS/common"], function (exports_61, context_61) {
     "use strict";
     var animation_11, btimer_14, bossfoe_1, direction_14, resourceids_23, common_24, PietulaState, Pietula;
-    var __moduleName = context_60 && context_60.id;
+    var __moduleName = context_61 && context_61.id;
     return {
         setters: [
             function (animation_11_1) {
@@ -6783,27 +6854,27 @@ System.register("src/pietula", ["BoazEngineJS/animation", "BoazEngineJS/btimer",
             Pietula.PietulaHitArea = common_24.newArea(0, 0, 10, 16);
             Pietula.pietulaSprites = new Map([[direction_14.Direction.None, [resourceids_23.BitmapId.Pietula_1]]]);
             Pietula.AnimationFrames = new Array({ time: 250, data: { img: resourceids_23.BitmapId.Pietula_1, dy: -1 } }, { time: 250, data: { img: resourceids_23.BitmapId.Pietula_2, dy: 1 } });
-            exports_60("Pietula", Pietula);
+            exports_61("Pietula", Pietula);
         }
     };
 });
-System.register("src/story", [], function (exports_61, context_61) {
+System.register("src/story", [], function (exports_62, context_62) {
     "use strict";
     var Story;
-    var __moduleName = context_61 && context_61.id;
+    var __moduleName = context_62 && context_62.id;
     return {
         setters: [],
         execute: function () {
             Story = class Story {
             };
-            exports_61("Story", Story);
+            exports_62("Story", Story);
         }
     };
 });
-System.register("src/zakfoe", ["src/foe", "BoazEngineJS/btimer", "src/item", "BoazEngineJS/direction", "BoazEngineJS/common", "BoazEngineJS/resourceids", "src/sintervaniamodel", "src/gameconstants", "BoazEngineJS/msx"], function (exports_62, context_62) {
+System.register("src/zakfoe", ["src/foe", "BoazEngineJS/btimer", "src/item", "BoazEngineJS/direction", "BoazEngineJS/common", "BoazEngineJS/resourceids", "src/sintervaniamodel", "src/gameconstants", "BoazEngineJS/msx"], function (exports_63, context_63) {
     "use strict";
-    var foe_5, btimer_15, item_10, direction_15, common_25, resourceids_24, sintervaniamodel_25, gameconstants_11, msx_15, ZakFoe;
-    var __moduleName = context_62 && context_62.id;
+    var foe_5, btimer_15, item_10, direction_15, common_25, resourceids_24, sintervaniamodel_26, gameconstants_11, msx_15, ZakFoe;
+    var __moduleName = context_63 && context_63.id;
     return {
         setters: [
             function (foe_5_1) {
@@ -6824,8 +6895,8 @@ System.register("src/zakfoe", ["src/foe", "BoazEngineJS/btimer", "src/item", "Bo
             function (resourceids_24_1) {
                 resourceids_24 = resourceids_24_1;
             },
-            function (sintervaniamodel_25_1) {
-                sintervaniamodel_25 = sintervaniamodel_25_1;
+            function (sintervaniamodel_26_1) {
+                sintervaniamodel_26 = sintervaniamodel_26_1;
             },
             function (gameconstants_11_1) {
                 gameconstants_11 = gameconstants_11_1;
@@ -6872,18 +6943,18 @@ System.register("src/zakfoe", ["src/foe", "BoazEngineJS/btimer", "src/item", "Bo
                                 this.pos.x -= 1;
                                 if (this.pos.x <= 0)
                                     this.Direction = direction_15.Direction.Right;
-                                if (sintervaniamodel_25.GameModel._.CurrentRoom.AnyCollisionsTiles(true, { x: this.hitbox_sx, y: this.hitbox_sy }, { x: this.hitbox_sx, y: this.hitbox_ey }))
+                                if (sintervaniamodel_26.GameModel._.CurrentRoom.AnyCollisionsTiles(true, { x: this.hitbox_sx, y: this.hitbox_sy }, { x: this.hitbox_sx, y: this.hitbox_ey }))
                                     this.Direction = direction_15.Direction.Right;
-                                if (!sintervaniamodel_25.GameModel._.CurrentRoom.AnyCollisionsTiles(true, { x: this.hitbox_sx, y: this.hitbox_ey + msx_15.TileSize + 4 }))
+                                if (!sintervaniamodel_26.GameModel._.CurrentRoom.AnyCollisionsTiles(true, { x: this.hitbox_sx, y: this.hitbox_ey + msx_15.TileSize + 4 }))
                                     this.Direction = direction_15.Direction.Right;
                                 break;
                             case direction_15.Direction.Right:
                                 this.pos.x += 1;
                                 if (this.pos.x >= gameconstants_11.GameConstants.GameScreenWidth)
                                     this.Direction = direction_15.Direction.Left;
-                                if (sintervaniamodel_25.GameModel._.CurrentRoom.AnyCollisionsTiles(true, { x: this.hitbox_ex, y: this.hitbox_sy }, { x: this.hitbox_ex, y: this.hitbox_ey }))
+                                if (sintervaniamodel_26.GameModel._.CurrentRoom.AnyCollisionsTiles(true, { x: this.hitbox_ex, y: this.hitbox_sy }, { x: this.hitbox_ex, y: this.hitbox_ey }))
                                     this.Direction = direction_15.Direction.Left;
-                                if (!sintervaniamodel_25.GameModel._.CurrentRoom.AnyCollisionsTiles(true, { x: this.hitbox_ex, y: this.hitbox_ey + msx_15.TileSize + 4 }))
+                                if (!sintervaniamodel_26.GameModel._.CurrentRoom.AnyCollisionsTiles(true, { x: this.hitbox_ex, y: this.hitbox_ey + msx_15.TileSize + 4 }))
                                     this.Direction = direction_15.Direction.Left;
                                 break;
                         }
@@ -6907,7 +6978,7 @@ System.register("src/zakfoe", ["src/foe", "BoazEngineJS/btimer", "src/item", "Bo
                 [direction_15.Direction.Right, [resourceids_24.BitmapId.ZakFoe_1, resourceids_24.BitmapId.ZakFoe_2, resourceids_24.BitmapId.ZakFoe_3]],
                 [direction_15.Direction.Left, [resourceids_24.BitmapId.ZakFoe_1, resourceids_24.BitmapId.ZakFoe_2, resourceids_24.BitmapId.ZakFoe_3]],
             ]);
-            exports_62("ZakFoe", ZakFoe);
+            exports_63("ZakFoe", ZakFoe);
         }
     };
 });

@@ -13,14 +13,26 @@ export let images: Map<string, HTMLImageElement> = new Map<string, HTMLImageElem
 export let audio: Map<string, HTMLAudioElement> = new Map<string, HTMLAudioElement>();
 
 export class Game {
-    public static get _(): Game {
-        return game;
-    }
-
     fps: number;
     lastUpdate: number;
 
     turnCounter: number;
+
+    constructor() {
+        game = this;
+        sound = new SoundMaster();
+        view = new View();
+        this.fps = 50;
+    }
+
+    public setModel(m: Model): void {
+        model = m;
+    }
+
+    public setController(c: Controller): void {
+        controller = c;
+    }
+
     public get TurnCounter(): number {
         return this.turnCounter;
     }
@@ -35,12 +47,7 @@ export class Game {
         // if (result != null)
         //     GO._ = result;
     }
-
-    constructor() {
-        this.fps = 50;
-    }
-
-    public startAfterLoad = (): void => {
+    public startAfterLoad(): void {
         controller.switchState(Constants.INITIAL_GAMESTATE);
         controller.switchSubstate(Constants.INITIAL_GAMESUBSTATE);
         requestAnimationFrame(function (timestamp) {
@@ -69,19 +76,20 @@ export class Game {
         view.handleResize();
     }
 
-    update = (elapsedMs: number): void => {
+    public update(elapsedMs: number): void {
         controller.takeTurn(elapsedMs);
     }
 
-    public run = (timestamp: number): void => {
+    public run(timestamp: number): void {
         let elapsedMs = timestamp - this.lastUpdate;
         this.lastUpdate = timestamp; // || new Date().getTime(); //if browser doesn't support requestAnimationFrame, generate our own timestamp using Date
         this.update(elapsedMs);
         view.draw();
 
+        let t = this;
         requestAnimationFrame(function (timestamp) {
             game.run(timestamp);
-            ++this.turnCounter;
+            ++t.turnCounter;
         });
     }
 }

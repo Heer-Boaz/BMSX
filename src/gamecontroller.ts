@@ -19,14 +19,14 @@ import { GameView as V } from './gameview';
 import { GameConstants } from "./gameconstants";
 import { LoadGame } from '../BoazEngineJS/gamestateloader';
 import { GameSaver } from "../BoazEngineJS/gamesaver";
+import { Controller } from '../BoazEngineJS/controller';
 
-export class GameController {
+export class GameController extends Controller {
     private static _instance: GameController;
     public static get _(): GameController {
         return GameController._instance != null ? GameController._instance : (GameController._instance = new GameController());
     }
 
-    private timer: BStopwatch;
     private startAfterLoadTimer: BStopwatch;
     public ElapsedMsDelta: number;
 
@@ -129,7 +129,7 @@ export class GameController {
         M._.Substate = newSubstate;
     }
 
-    public TakeTurn(elapsedMs: number): void {
+    public takeTurn(elapsedMs: number): void {
         if (M._.paused) {
             this.handlePausedState();
             return
