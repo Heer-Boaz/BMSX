@@ -2,7 +2,7 @@
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml">
 
     <head>
-        <title>Siwan redt de school!</title>
+        <title>Sintervania</title>
         <meta charset="utf-8" />
         <meta name="viewport"
             content="width=device-width,initial-scale=1.0,minimum-scale=1,maximum-scale=1,user-scalable=no" />
@@ -12,37 +12,39 @@
         <link rel="stylesheet" type="text/css" href="./game.css" />
         <script src="https://code.jquery.com/jquery-3.4.1.min.js"
             integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo=" crossorigin="anonymous"></script>
-        <!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/systemjs/6.1.2/system.min.js" -->
-        <!-- integrity="sha256-wDdvIbXdwz7/66Z7hOYZ4oh0He5ZceD+TKRVmZslxdM=" crossorigin="anonymous"></script> -->
-        <script data-main="js/app" src="node_modules/requirejs/require.js"></script>
-        <!-- <script type="text/Javascript" src="./thegame.js"></script> -->
-        <script type="text/Javascript">
-            window.addEventListener('load', function () {
-                // Executes when complete page is fully loaded, including all frames, objects and images
-                // System.import('./thegame.js')
-                requirejs.config({
-                    baseUrl: './src',
-                    paths: {
-                        boazenginejs: './BoazEngineJS',
-                    }
+        <script src="https://unpkg.com/systemjs@2.1.1/dist/s.js"></script>
+        <script src="https://unpkg.com/systemjs@2.1.1/dist/extras/named-register.js"></script>
+        <script src="./out/thegame.js"></script>
+        <script type="module">
+            System.import('BoazEngineJS/engine').then(function (engine) {
+                window.addEventListener('load', function () {
+                    engine.game = new engine.Game();
+                    System.import('src/sintervaniamodel').then(function (m) {
+                        engine.game.model = new m.GameModel();
+                    });
+                    System.import('src/gamecontroller').then(function (m) {
+                        engine.game.controller = new m.GameController();
+                    });
+                    System.import('BoazEngineJS/soundmaster').then(function (m) {
+                        engine.game.sound = new m.SoundMaster();
+                    });
+                    System.import('BoazEngineJS/view').then(function (m) {
+                        engine.game.view = new m.View();
+                        engine.game.view.drawLoading();
+                    });
+                    // Input.init();
+
+                    // System.import('BoazEngineJS/gameloader').then(function (m) {
+                    // m.loadgame();
+                    // });
+
+                    // Input.mouseClicked.subscribe((source: any, x: number, y: number) => {
+                    // if (audio['testsound'] == null) return;
+                    // audio['testsound'].pause();
+                    // audio['testsound'].currentTime = 0;
+                    // audio['testsound'].play();
+                    // });
                 });
-
-                game = new Game();
-                model = new GameModel();
-                controller = new Controller();
-                sound = new SoundMaster();
-                view = new View();
-                view.drawLoading();
-                // Input.init();
-
-                GameLoader.loadgame();
-
-                // Input.mouseClicked.subscribe((source: any, x: number, y: number) => {
-                // if (audio['testsound'] == null) return;
-                // audio['testsound'].pause();
-                // audio['testsound'].currentTime = 0;
-                // audio['testsound'].play();
-                // });
             });
         </script>
     </head>

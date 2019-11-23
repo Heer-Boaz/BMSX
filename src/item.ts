@@ -5,7 +5,7 @@ import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
 import { ResourceMaster as RM } from "./resourcemaster";
 import { GameController } from "./gamecontroller";
 import { Area, Point } from "../BoazEngineJS/interfaces";
-import { AudioId, BitmapId } from "resourceids";
+import { AudioId, BitmapId } from "../BoazEngineJS/resourceids";
 
 export enum ItemType {
     None,

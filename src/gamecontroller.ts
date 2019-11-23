@@ -1,6 +1,6 @@
 import { BStopwatch } from "../BoazEngineJS/btimer";
 import { Item, ItemType } from "./item";
-import { AudioId, BitmapId } from "resourceids";
+import { AudioId, BitmapId } from "../BoazEngineJS/resourceids";
 import { Direction } from "../BoazEngineJS/direction";
 import { Bootstrapper } from "./bootstrapper";
 import { Savegame } from "../BoazEngineJS/savegame";

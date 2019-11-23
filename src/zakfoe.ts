@@ -4,7 +4,7 @@ import { Item, ItemType } from "./item";
 import { Direction } from "../BoazEngineJS/direction";
 import { PlayerProjectile } from "./pprojectile";
 import { newArea, newSize } from "../BoazEngineJS/common";
-import { AudioId, BitmapId } from "resourceids";
+import { AudioId, BitmapId } from "../BoazEngineJS/resourceids";
 import { Area, Point } from "../BoazEngineJS/interfaces";
 import { Animation, AniStepCompoundValue } from "../BoazEngineJS/animation";
 import { GameModel as M } from "./sintervaniamodel";

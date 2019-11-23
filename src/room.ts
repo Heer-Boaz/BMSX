@@ -4,7 +4,7 @@ import { Direction } from "../BoazEngineJS/direction";
 import { GameConstants as CS } from "./gameconstants";
 import { view } from "../BoazEngineJS/engine";
 import { RoomDataContainer } from "./RoomFactory";
-import { BitmapId } from 'resourceids';
+import { BitmapId } from "../BoazEngineJS/resourceids";
 import { ResourceMaster } from './resourcemaster';
 
 export type NearingRoomExitResult = { destRoom: number, direction: Direction } | null;

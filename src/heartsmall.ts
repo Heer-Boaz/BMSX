@@ -1,6 +1,6 @@
 import { Sprite } from "../BoazEngineJS/sprite";
 import { Animation } from "../BoazEngineJS/animation"
-import { AudioId, BitmapId } from "resourceids";
+import { AudioId, BitmapId } from "../BoazEngineJS/resourceids";
 import { GameConstants } from "./gameconstants";
 import { ResourceMaster } from "./resourcemaster";
 import { sound } from "../BoazEngineJS/engine";

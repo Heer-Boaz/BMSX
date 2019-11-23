@@ -13,7 +13,7 @@ import { KeyState } from "../BoazEngineJS/input";
 import { GameMenu } from "./gamemenu";
 import { SlotExists } from "../BoazEngineJS/gamestateloader";
 import { GameState } from "../BoazEngineJS/model";
-import { AudioId, BitmapId } from "resourceids";
+import { AudioId, BitmapId } from "../BoazEngineJS/resourceids";
 
 export enum State {
     SelectMain,

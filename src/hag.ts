@@ -1,7 +1,7 @@
 import { BStopwatch } from "../BoazEngineJS/btimer";
 import { Animation, AniStepCompoundValue, AniData } from "../BoazEngineJS/animation";
 import { Direction } from "../BoazEngineJS/direction";
-import { AudioId, BitmapId } from "resourceids";
+import { AudioId, BitmapId } from "../BoazEngineJS/resourceids";
 import { ItemType } from "./item";
 import { Foe } from "./foe";
 import { GameConstants } from "./gameconstants";

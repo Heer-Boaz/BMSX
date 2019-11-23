@@ -2,7 +2,7 @@ import { Animation, AniStepCompoundValue, AniData } from '../BoazEngineJS/animat
 import { BStopwatch } from "../BoazEngineJS/btimer";
 import { BossFoe } from "./bossfoe";
 import { Direction } from "../BoazEngineJS/direction";
-import { AudioId, BitmapId } from "resourceids";
+import { AudioId, BitmapId } from "../BoazEngineJS/resourceids";
 import { PlayerProjectile } from "./pprojectile";
 import { Area, Point } from '../BoazEngineJS/interfaces';
 import { newArea, newSize } from '../BoazEngineJS/common';

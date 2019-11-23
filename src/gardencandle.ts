@@ -1,7 +1,7 @@
 import { Animation } from "../BoazEngineJS/animation";
 import { Candle } from "./candle";
 import { Direction } from "../BoazEngineJS/direction";
-import { AudioId, BitmapId } from "resourceids";
+import { AudioId, BitmapId } from "../BoazEngineJS/resourceids";
 import { ItemType } from "./item";
 import { newArea } from "../BoazEngineJS/common";
 import { Area, Point } from "../BoazEngineJS/interfaces";

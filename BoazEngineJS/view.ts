@@ -53,7 +53,8 @@ export class View {
 
     public drawLoading(): void {
         // TODO: IMPLEMENTEER!
-        throw ("Niet geïmplementeerd :(");
+        console.log("Ik ben stoer");
+        // throw ("Niet geïmplementeerd :(");
     }
 
     public DrawBitmap(imgId: number, x: number, y: number, options?: number): void {

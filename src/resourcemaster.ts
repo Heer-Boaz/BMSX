@@ -1,4 +1,4 @@
-import { AudioId, BitmapId } from "resourceids";
+import { AudioId, BitmapId } from "../BoazEngineJS/resourceids";
 import { Effect } from "../BoazEngineJS/effect";
 import { Song } from "../BoazEngineJS/song";
 

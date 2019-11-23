@@ -1,6 +1,6 @@
 import { Animation, AniStepCompoundValue } from "../BoazEngineJS/animation"
 import { setPoint } from "../BoazEngineJS/common";
-import { AudioId, BitmapId } from "resourceids";
+import { AudioId, BitmapId } from "../BoazEngineJS/resourceids";
 import { GameController as C } from "./gamecontroller";
 import { KeyState } from "../BoazEngineJS/input";
 import { Point } from "../BoazEngineJS/interfaces";

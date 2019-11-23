@@ -5,7 +5,7 @@ import { GameConstants as CS } from "./gameconstants";
 import { copyPoint, waitDuration, setSize, newArea, setPoint } from '../BoazEngineJS/common';
 import { Animation, AniStepCompoundValue } from '../BoazEngineJS/animation';
 import { TileSize } from '../BoazEngineJS/msx';
-import { AudioId, BitmapId } from "resourceids";
+import { AudioId, BitmapId } from "../BoazEngineJS/resourceids";
 import { Area, Point } from '../BoazEngineJS/interfaces';
 import { KeyState } from "../BoazEngineJS/input";
 import { Room, NearingRoomExitResult } from './room';

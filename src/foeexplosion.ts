@@ -2,7 +2,7 @@ import { ItemType } from "./item";
 import { Animation, AniData } from "../BoazEngineJS/animation"
 import { FX } from "./fx";
 import { HeartSmall } from "./heartsmall";
-import { AudioId, BitmapId } from "resourceids";
+import { AudioId, BitmapId } from "../BoazEngineJS/resourceids";
 import { GameModel } from "./sintervaniamodel";
 import { addPoints } from "../BoazEngineJS/common";
 import { Point } from "../BoazEngineJS/interfaces";
