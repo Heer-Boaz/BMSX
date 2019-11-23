@@ -2,7 +2,7 @@
 import { model } from "./engine";
 import { GameState, GameSubstate } from "./model";
 
-export class Controller {
+export abstract class Controller {
     private timer: BStopwatch;
 
     constructor() {
@@ -28,11 +28,9 @@ export class Controller {
     }
 
     private doPausedState() {
-        // TODO: Do something
     }
 
     private doStartAfterLoadState() {
-        // TODO: Do something
     }
 
     public switchState(newstate: GameState): void {
@@ -52,22 +50,14 @@ export class Controller {
     }
 
     private disposeOldState(newstate: GameState): void {
-        switch (model.gameState) {
-        }
     }
 
     private disposeOldSubstate(newsubstate: GameSubstate): void {
-        switch (model.gameSubstate) {
-        }
     }
 
     private initNewSubstate(newsubstate: GameSubstate): void {
-        switch (newsubstate) {
-        }
     }
 
     private initNewState(newstate: GameState): void {
-        switch (newstate) {
-        }
     }
 }

@@ -1,0 +1,25 @@
+{
+  "name": "sintervania",
+  "version": "1.0.0",
+  "description": "",
+  "main": "gulpfile.js",
+  "dependencies": {
+    "@types/jquery": "^3.3.31",
+    "jquery": "^3.4.1",
+    "requirejs": "^2.3.6"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Heer-Boaz/Sintervania.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Heer-Boaz/Sintervania/issues"
+  },
+  "homepage": "https://github.com/Heer-Boaz/Sintervania#readme"
+}
