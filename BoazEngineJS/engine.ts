@@ -3,12 +3,14 @@ import { Model } from "./model"
 import { Controller } from "./controller"
 import { View } from "./view"
 import { SoundMaster } from "./soundmaster";
+import { IGameView } from './interfaces';
 
 export let game: Game;
 export let model: Model;
 export let controller: Controller;
 export let sound: SoundMaster;
 export let view: View;
+export let gameview: IGameView;
 export let images: Map<string, HTMLImageElement> = new Map<string, HTMLImageElement>();
 export let audio: Map<string, HTMLAudioElement> = new Map<string, HTMLAudioElement>();
 
@@ -31,6 +33,10 @@ export class Game {
 
     public setController(c: Controller): void {
         controller = c;
+    }
+
+    public setGameView(v: IGameView): void {
+        gameview = v;
     }
 
     public get TurnCounter(): number {
@@ -80,11 +86,15 @@ export class Game {
         controller.takeTurn(elapsedMs);
     }
 
+    public draw(elapsedMs: number): void {
+        gameview.drawGame(elapsedMs);
+    }
+
     public run(timestamp: number): void {
         let elapsedMs = timestamp - this.lastUpdate;
         this.lastUpdate = timestamp; // || new Date().getTime(); //if browser doesn't support requestAnimationFrame, generate our own timestamp using Date
         this.update(elapsedMs);
-        view.draw();
+        this.draw(elapsedMs);
 
         let t = this;
         requestAnimationFrame(function (timestamp) {

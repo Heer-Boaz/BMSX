@@ -5,11 +5,15 @@
 import * as engine from "../BoazEngineJS/engine";
 import { GameModel } from './sintervaniamodel';
 import { GameController } from "./gamecontroller";
+import { GameView } from './gameview';
 
 export function Annnndddd___Go(): engine.Game {
 	new engine.Game();
 	engine.game.setModel(new GameModel());
 	engine.game.setController(new GameController());
+	let gameview = new GameView();
+	engine.game.setGameView(gameview);
+	gameview.init();
 
 	return engine.game;
 }

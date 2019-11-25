@@ -597,7 +597,7 @@ System.register("BoazEngineJS/soundmaster", ["BoazEngineJS/engine"], function (e
 });
 System.register("BoazEngineJS/engine", ["BoazEngineJS/constants", "BoazEngineJS/view", "BoazEngineJS/soundmaster"], function (exports_14, context_14) {
     "use strict";
-    var constants_2, view_1, soundmaster_1, game, model, controller, sound, view, images, audio, Game;
+    var constants_2, view_1, soundmaster_1, game, model, controller, sound, view, gameview, images, audio, Game;
     var __moduleName = context_14 && context_14.id;
     return {
         setters: [
@@ -627,6 +627,9 @@ System.register("BoazEngineJS/engine", ["BoazEngineJS/constants", "BoazEngineJS/
                 setController(c) {
                     exports_14("controller", controller = c);
                 }
+                setGameView(v) {
+                    exports_14("gameview", gameview = v);
+                }
                 get TurnCounter() {
                     return this.turnCounter;
                 }
@@ -651,11 +654,14 @@ System.register("BoazEngineJS/engine", ["BoazEngineJS/constants", "BoazEngineJS/
                 update(elapsedMs) {
                     controller.takeTurn(elapsedMs);
                 }
+                draw(elapsedMs) {
+                    gameview.drawGame(elapsedMs);
+                }
                 run(timestamp) {
                     let elapsedMs = timestamp - this.lastUpdate;
                     this.lastUpdate = timestamp;
                     this.update(elapsedMs);
-                    view.draw();
+                    this.draw(elapsedMs);
                     let t = this;
                     requestAnimationFrame(function (timestamp) {
                         game.run(timestamp);
@@ -4328,10 +4334,10 @@ System.register("src/gameview", ["src/hud", "src/itscurtainsforyou", "src/gameov
         execute: function () {
             GameView = class GameView {
                 constructor() {
-                    this.Init();
+                    GameView._instance = this;
                 }
                 static get _() {
-                    return GameView._instance != null ? GameView._instance : (GameView._instance = new GameView());
+                    return GameView._instance;
                 }
                 get ShowFoeBar() {
                     return sintervaniamodel_13.GameModel._.BossBattle;
@@ -4372,7 +4378,7 @@ System.register("src/gameview", ["src/hud", "src/itscurtainsforyou", "src/gameov
                 ToWindowed() {
                     throw Error("Not implemented!");
                 }
-                Init() {
+                init() {
                     this.Hud = new hud_1.HUD();
                     this.ItsCurtains = new itscurtainsforyou_1.ItsCurtainsForYou();
                     this.GameOverScreen = new gameover_1.GameOver();
@@ -4380,7 +4386,8 @@ System.register("src/gameview", ["src/hud", "src/itscurtainsforyou", "src/gameov
                     this.Title = new title_1.Title();
                     this.EndDemo = new enddemo_1.EndDemo();
                 }
-                Paint() {
+                drawGame(elapsedMs) {
+                    console.info(`drawGame wordt nu uitgevoerd. ElapsedMs: ${elapsedMs}`);
                     if (sintervaniamodel_13.GameModel._.startAfterLoad)
                         return;
                     switch (sintervaniamodel_13.GameModel._.gameState) {
@@ -5184,6 +5191,7 @@ System.register("src/gamecontroller", ["BoazEngineJS/btimer", "src/item", "BoazE
                     sintervaniamodel_15.GameModel._.Substate = newSubstate;
                 }
                 takeTurn(elapsedMs) {
+                    console.info(`takeTurn wordt nu uitgevoerd. ElapsedMs: ${elapsedMs}`);
                     if (sintervaniamodel_15.GameModel._.paused) {
                         this.handlePausedState();
                         return;
@@ -5417,7 +5425,7 @@ System.register("src/gamecontroller", ["BoazEngineJS/btimer", "src/item", "BoazE
                     btimer_7.BStopwatch.Watches = sg.RegisteredWatches;
                     sintervaniamodel_15.GameModel._.InitAfterGameLoad();
                     sintervaniamodel_15.GameModel._.GameMenu = new gamemenu_1.GameMenu();
-                    gameview_3.GameView._.Init();
+                    gameview_3.GameView._.init();
                     sintervaniamodel_15.GameModel._.startAfterLoad = true;
                     this.startAfterLoadTimer.pauseDuringMenu = false;
                     this.startAfterLoadTimer.restart();
@@ -6588,14 +6596,17 @@ System.register("src/fprojectile", ["src/gameconstants", "src/projectile", "Boaz
         }
     };
 });
-System.register("src/game", ["BoazEngineJS/engine", "src/sintervaniamodel", "src/gamecontroller"], function (exports_58, context_58) {
+System.register("src/game", ["BoazEngineJS/engine", "src/sintervaniamodel", "src/gamecontroller", "src/gameview"], function (exports_58, context_58) {
     "use strict";
-    var engine, sintervaniamodel_24, gamecontroller_9;
+    var engine, sintervaniamodel_24, gamecontroller_9, gameview_4;
     var __moduleName = context_58 && context_58.id;
     function Annnndddd___Go() {
         new engine.Game();
         engine.game.setModel(new sintervaniamodel_24.GameModel());
         engine.game.setController(new gamecontroller_9.GameController());
+        let gameview = new gameview_4.GameView();
+        engine.game.setGameView(gameview);
+        gameview.init();
         return engine.game;
     }
     exports_58("Annnndddd___Go", Annnndddd___Go);
@@ -6609,6 +6620,9 @@ System.register("src/game", ["BoazEngineJS/engine", "src/sintervaniamodel", "src
             },
             function (gamecontroller_9_1) {
                 gamecontroller_9 = gamecontroller_9_1;
+            },
+            function (gameview_4_1) {
+                gameview_4 = gameview_4_1;
             }
         ],
         execute: function () {

@@ -16,10 +16,10 @@ import { view } from "../BoazEngineJS/engine";
 import { MSXConstants as MCS } from "../BoazEngineJS/msx";
 import { EndDemo } from "./enddemo";
 import { Foe } from "./foe";
-import { Point } from "../BoazEngineJS/interfaces";
+import { Point, IGameView } from '../BoazEngineJS/interfaces';
 import { GameOptions as GO } from '../BoazEngineJS/gameoptions';
 
-export class GameView {
+export class GameView implements IGameView {
     private static pausePosX: number = 80;
     private static pausePosY: number = 80;
     private static pauseTextPosX: number = 104;
@@ -30,7 +30,7 @@ export class GameView {
     private static _instance: GameView;
 
     public static get _(): GameView {
-        return GameView._instance != null ? GameView._instance : (GameView._instance = new GameView());
+        return GameView._instance;
     }
 
     public Hud: HUD;
@@ -116,10 +116,10 @@ export class GameView {
     }
 
     constructor() {
-        this.Init();
+        GameView._instance = this;
     }
 
-    public Init(): void {
+    public init(): void {
         this.Hud = new HUD();
         this.ItsCurtains = new ItsCurtainsForYou();
         this.GameOverScreen = new GameOver();
@@ -128,11 +128,13 @@ export class GameView {
         this.EndDemo = new EndDemo();
     }
 
-    public Paint(): void {
+    public drawGame(elapsedMs: number): void {
+        console.info(`drawGame wordt nu uitgevoerd. ElapsedMs: ${elapsedMs}`);
+
         if (M._.startAfterLoad)
             return
 
-        switch (<number>M._.gameState) {
+        switch (M._.gameState) {
             case GameState.Prelude:
                 this.Title.Paint();
                 break;
@@ -149,13 +151,13 @@ export class GameView {
             case GameState.Game:
             case GameState.Event:
                 let gamescreenOffset = <Point>{ x: CS.GameScreenStartX, y: CS.GameScreenStartY };
-                if (M._.gameSubstate != <number>GameSubstate.SwitchRoom) {
+                if (M._.gameSubstate != GameSubstate.SwitchRoom) {
                     M._.CurrentRoom.Paint();
                     M._.objects.sort(o => o.priority).sort(o => o.pos.y + o.size.y).forEach(o => o.paint(gamescreenOffset));
                 }
                 this.Hud.Paint();
 
-                switch (<number>M._.gameSubstate) {
+                switch (M._.gameSubstate) {
                     case GameSubstate.SwitchRoom:
                     case GameSubstate.BelmontDies:
                     case GameSubstate.ItsCurtainsForYou:
@@ -166,14 +168,14 @@ export class GameView {
                         break;
                 }
 
-                if (M._.gameSubstate != <number>GameSubstate.SwitchRoom) {
+                if (M._.gameSubstate != GameSubstate.SwitchRoom) {
 
                 }
 
-                if (M._.gameSubstate == <number>GameSubstate.ItsCurtainsForYou || M._.gameSubstate == <number>GameSubstate.ToEndDemo) {
+                if (M._.gameSubstate == GameSubstate.ItsCurtainsForYou || M._.gameSubstate == GameSubstate.ToEndDemo) {
                     this.ItsCurtains.Paint();
                 }
-                else if (M._.gameSubstate == <number>GameSubstate.GameOver) {
+                else if (M._.gameSubstate == GameSubstate.GameOver) {
                     this.ItsCurtains.Paint();
                     this.GameOverScreen.Paint();
                 }

@@ -130,6 +130,8 @@ export class GameController extends Controller {
     }
 
     public takeTurn(elapsedMs: number): void {
+        console.info(`takeTurn wordt nu uitgevoerd. ElapsedMs: ${elapsedMs}`);
+
         if (M._.paused) {
             this.handlePausedState();
             return
@@ -382,7 +384,7 @@ export class GameController extends Controller {
         BStopwatch.Watches = sg.RegisteredWatches;
         M._.InitAfterGameLoad();
         M._.GameMenu = new GameMenu();
-        V._.Init();
+        V._.init();
         M._.startAfterLoad = true;
         this.startAfterLoadTimer.pauseDuringMenu = false;
         this.startAfterLoadTimer.restart();

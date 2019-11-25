@@ -49,6 +49,10 @@ export interface IGameObject {
     exile(): void;
 }
 
+export interface IGameView {
+    drawGame(elapsedMs: number): void;
+}
+
 export interface ImageId2Url {
     id: number;
     url: string;
