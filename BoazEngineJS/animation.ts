@@ -107,17 +107,26 @@ export class Animation<T extends any | null | undefined | {}> {
     }
 
     // TODO: Lelijke versie van originele pass-by-ref method die zo mooi werkte, maar niet kan bestaan in JS :(
-    public doAnimation(timer: BStopwatch | number, nextStepRef?: AniStepCompoundValue<T>) {
+    public doAnimation(timerOrStepValue: BStopwatch | number, nextStepRef?: AniStepCompoundValue<T>) {
         if (!nextStepRef) {
-            if (timer instanceof BStopwatch) return this.doAnimationTimer(timer);
-            return this.doAnimationStep(timer);
+            if (timerOrStepValue instanceof BStopwatch) return this.doAnimationTimer(timerOrStepValue);
+            return this.doAnimationStep(timerOrStepValue);
         }
         else {
             let nextStepReturned: T | null = null;
-            if (this.waitForNextStep(<BStopwatch>timer)) {
-                nextStepReturned = this.nextStep();
-                nextStepRef.nextStepValue = nextStepReturned;
-                return { value: nextStepReturned, next: true };
+            if (timerOrStepValue instanceof BStopwatch) {
+                if (this.waitForNextStep(timerOrStepValue)) {
+                    nextStepReturned = this.nextStep();
+                    nextStepRef.nextStepValue = nextStepReturned;
+                    return { value: nextStepReturned, next: true };
+                }
+            }
+            else {
+                if (this.doAnimationStep(timerOrStepValue)) {
+                    nextStepReturned = this.nextStep();
+                    nextStepRef.nextStepValue = nextStepReturned;
+                    return { value: nextStepReturned, next: true };
+                }
             }
             return { value: null, next: false };
         }

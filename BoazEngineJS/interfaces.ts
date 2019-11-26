@@ -1,6 +1,4 @@
-﻿import { IKeyStateContainer } from "./keystatecontainer"
-
-export interface Point {
+﻿export interface Point {
     x: number;
     y: number;
 }
@@ -56,18 +54,4 @@ export interface IGameView {
 export interface ImageId2Url {
     id: number;
     url: string;
-}
-
-export interface InputState extends IKeyStateContainer {
-    // up: boolean;
-    // right: boolean;
-    // down: boolean;
-    // left: boolean;
-    // trigger1: boolean;
-    // trigger2: boolean;
-    // f1: boolean;
-    // f2: boolean;
-    // f3: boolean;
-    // f4: boolean;
-    // f5: boolean;
 }

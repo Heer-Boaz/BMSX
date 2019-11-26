@@ -7,6 +7,7 @@ import { IGameView, Size } from './interfaces';
 import { BStopwatch } from './btimer';
 import { ResourceMaster, img2src, snd2src } from '../src/resourcemaster';
 import { GameLoader } from "./gameloader";
+import { Input } from "./input";
 
 export let game: Game;
 export let model: Model;
@@ -27,6 +28,7 @@ export class Game {
         game = this;
         sound = new SoundMaster();
         view = new View(viewportsize);
+        Input.init();
         this.fps = 50;
         this.lastUpdate = 0;
     }

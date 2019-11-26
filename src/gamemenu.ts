@@ -3,7 +3,6 @@ import { GameView as V } from "./gameview";
 import { AudioId, BitmapId } from "../BoazEngineJS/resourceids";
 import { Direction } from "../BoazEngineJS/direction";
 import { TextWriter } from "./textwriter";
-import { KeyState } from "../BoazEngineJS/input";
 import { Size, Point } from "../BoazEngineJS/interfaces";
 import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
 import { ResourceMaster as RM } from './resourcemaster';
@@ -17,6 +16,7 @@ import { Constants } from "../BoazEngineJS/constants";
 import { newSize, setPoint } from "../BoazEngineJS/common";
 import { view, game } from "../BoazEngineJS/engine";
 import { GameState } from "../BoazEngineJS/model";
+import { Input } from "../BoazEngineJS/input";
 
 interface MenuOption {
     type: MenuItem;
@@ -141,17 +141,17 @@ export class GameMenu {
             case MenuItem.OptionsFromMainMenu:
             case MenuItem.Save:
             case MenuItem.LoadFromGameOver:
-                if (KeyState.KC_UP)
+                if (Input.KC_UP)
                     this.changeSelection(Direction.Up, selectionChanged);
-                else if (KeyState.KC_RIGHT)
+                else if (Input.KC_RIGHT)
                     this.changeSelection(Direction.Right, selectionChanged);
-                else if (KeyState.KC_DOWN)
+                else if (Input.KC_DOWN)
                     this.changeSelection(Direction.Down, selectionChanged);
-                else if (KeyState.KC_LEFT)
+                else if (Input.KC_LEFT)
                     this.changeSelection(Direction.Left, selectionChanged);
                 break;
         }
-        if (KeyState.KC_SPACE) {
+        if (Input.KC_SPACE) {
             switch (this.CurrentScreen) {
                 case MenuItem.Main:
                     S.PlayEffect(RM.Sound[AudioId.Selectie]);
@@ -246,7 +246,7 @@ export class GameMenu {
                     break;
             }
         }
-        if (KeyState.KC_RIGHT) {
+        if (Input.KC_RIGHT) {
             switch (this.CurrentScreen) {
                 case MenuItem.Options:
                 case MenuItem.OptionsFromMainMenu:
@@ -286,7 +286,7 @@ export class GameMenu {
                     break;
             }
         }
-        if (KeyState.KC_LEFT) {
+        if (Input.KC_LEFT) {
             switch (this.CurrentScreen) {
                 case MenuItem.Options:
                 case MenuItem.OptionsFromMainMenu:

@@ -13,6 +13,6 @@ BoazEngineJS/tsconfig.jsonmaarbugt
 **.mp3
 **.js
 src/sintervaniamodelold.ts
-out/thegame.js.map
-out/thegame.js
+**/thegame.js.map
+**/thegame.js
 **.tsbuildinfo

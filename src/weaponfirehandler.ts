@@ -77,7 +77,7 @@ export class WeaponFireHandler {
         let roe = new TriRoe(M._.Belmont.pos, M._.Belmont.Direction);
         M._.spawn(roe);
         M._.Belmont.UseRoe();
-        S.PlayEffect(RM.Sound[AudioId.Whip]);
+        // S.PlayEffect(RM.Sound[AudioId.Whip]);
     }
 
     private static handleFireCross(): void {

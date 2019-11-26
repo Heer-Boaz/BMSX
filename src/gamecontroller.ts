@@ -7,7 +7,6 @@ import { Savegame } from "../BoazEngineJS/savegame";
 import { WeaponItem } from "./weaponitem";
 import { GameModel as M, GameModel } from "./sintervaniamodel"
 import { GameState, GameSubstate } from "../BoazEngineJS/model";
-import { KeyState } from "../BoazEngineJS/input";
 import { WeaponFireHandler } from "./weaponfirehandler";
 import { Room } from "./room";
 import { GameMenu } from "./gamemenu";
@@ -20,6 +19,7 @@ import { GameConstants } from "./gameconstants";
 import { LoadGame } from '../BoazEngineJS/gamestateloader';
 import { GameSaver } from "../BoazEngineJS/gamesaver";
 import { Controller } from '../BoazEngineJS/controller';
+import { Input } from "../BoazEngineJS/input";
 
 export class GameController extends Controller {
     private static _instance: GameController;
@@ -224,7 +224,7 @@ export class GameController extends Controller {
                         M._.objects.filter(o => o.disposeFlag).forEach(o => M._.remove(o));
                         M._.CurrentRoom.TakeTurn();
                         V._.Hud.TakeTurn();
-                        if (KeyState.KC_F5 && !M._.GameMenu.visible)
+                        if (Input.KD_F5 && !M._.GameMenu.visible)
                             this.OpenGameMenu();
                         break;
                 }
@@ -237,7 +237,7 @@ export class GameController extends Controller {
     }
 
     private handleInputDuringGame(): void {
-        if (KeyState.KC_F1)
+        if (Input.KD_F1)
             this.PauseGame();
         switch (M._.Substate) {
             case GameSubstate.BelmontDies:
@@ -254,26 +254,26 @@ export class GameController extends Controller {
                 break;
             case GameSubstate.Default:
             default:
-                if (KeyState.KC_SPACE) {
+                if (Input.KC_SPACE) {
                     WeaponFireHandler.HandleFireMainWeapon();
                 }
-                if (KeyState.KC_M) {
+                if (Input.KC_M) {
                     WeaponFireHandler.HandleFireSecondaryWeapon();
                 }
-                else if (KeyState.KC_F5 && !M._.GameMenu.visible)
+                else if (Input.KC_F5 && !M._.GameMenu.visible)
                     this.OpenGameMenu();
                 break;
         }
     }
 
     private handleInputDuringPause(): void {
-        if (KeyState.KC_F1)
+        if (Input.KC_F1)
             this.UnpauseGame();
     }
 
     private handleInputDuringGameMenu(): void {
         M._.GameMenu.HandleInput();
-        if (KeyState.KC_F5) {
+        if (Input.KC_F5) {
             this.CloseGameMenu();
         }
     }

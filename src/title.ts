@@ -2,7 +2,7 @@ import { Animation, AniStepCompoundValue } from "../BoazEngineJS/animation"
 import { setPoint } from "../BoazEngineJS/common";
 import { AudioId, BitmapId } from "../BoazEngineJS/resourceids";
 import { GameController as C } from "./gamecontroller";
-import { KeyState } from "../BoazEngineJS/input";
+import { Input } from "../BoazEngineJS/input";
 import { Point } from "../BoazEngineJS/interfaces";
 import { Game as G, view, game } from '../BoazEngineJS/engine';
 
@@ -53,9 +53,9 @@ export class Title {
 
 	public TakeTurn(): void {
 		let newState: AniStepCompoundValue<State> = { nextStepValue: <State>this.state };
-		if (KeyState.KC_SPACE) {
+		if (Input.KC_SPACE) {
 			C._.PreludeFinished();
-			KeyState.KC_SPACE = false;
+			Input.KC_SPACE = false;
 			return
 		}
 

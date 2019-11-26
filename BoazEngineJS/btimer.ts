@@ -69,24 +69,24 @@ export class BStopwatch {
         this.elapsedMilliseconds = 0;
     }
 
-    public start = (): void => {
+    public start(): void {
         this.running = true;
     }
 
-    public stop = (): void => {
+    public stop(): void {
         this.running = false;
     }
 
-    public restart = (): void => {
+    public restart(): void {
         this.running = true;
         this.elapsedMilliseconds = 0;
     }
 
-    public reset = (): void => {
+    public reset(): void {
         this.elapsedMilliseconds = 0;
     }
 
-    public updateTime = (elapsedMs: number): void => {
+    public updateTime(elapsedMs: number): void {
         if (!this.running) return;
         this.elapsedMilliseconds += elapsedMs;
     }

@@ -4,7 +4,7 @@ import { TextWriter } from "./textwriter";
 import { MSXConstants as CS } from "../BoazEngineJS/msx";
 import { view } from "../BoazEngineJS/engine";
 import { AudioId, BitmapId } from "../BoazEngineJS/resourceids";
-import { KeyState } from "../BoazEngineJS/input";
+import { Input } from "../BoazEngineJS/input";
 import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
 import { ResourceMaster as RM } from './resourcemaster';
 import { GameController as C } from './gamecontroller';
@@ -51,15 +51,15 @@ export class GameOver {
 
     public HandleInput(): void {
         let selectionChanged: boolean = false;
-        if (KeyState.KC_UP)
+        if (Input.KC_UP)
             this.changeSelection(Direction.Up, selectionChanged);
-        else if (KeyState.KC_RIGHT)
+        else if (Input.KC_RIGHT)
             this.changeSelection(Direction.Right, selectionChanged);
-        else if (KeyState.KC_DOWN)
+        else if (Input.KC_DOWN)
             this.changeSelection(Direction.Down, selectionChanged);
-        else if (KeyState.KC_LEFT)
+        else if (Input.KC_LEFT)
             this.changeSelection(Direction.Left, selectionChanged);
-        if (KeyState.KC_SPACE) {
+        if (Input.KC_SPACE) {
             switch (this.state) {
                 case State.SelectContOrLoad:
                     switch (this.selectedIndex) {
@@ -68,7 +68,7 @@ export class GameOver {
                             break;
                         case 1:
                             S.PlayEffect(RM.Sound[AudioId.Selectie]);
-                            KeyState.KC_SPACE = false;
+                            Input.KC_SPACE = false;
                             M._.GameMenu.Open(MenuItem.LoadFromGameOver);
                             this.state = State.SelectFile;
                             break;

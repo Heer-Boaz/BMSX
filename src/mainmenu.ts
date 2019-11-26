@@ -9,7 +9,7 @@ import { TextWriter } from "./textwriter";
 import { view } from "../BoazEngineJS/engine";
 import { MSXConstants as MCS } from "../BoazEngineJS/msx";
 import { Constants as CS } from "../BoazEngineJS/constants";
-import { KeyState } from "../BoazEngineJS/input";
+import { Input } from "../BoazEngineJS/input";
 import { GameMenu } from "./gamemenu";
 import { SlotExists } from "../BoazEngineJS/gamestateloader";
 import { GameState } from "../BoazEngineJS/model";
@@ -81,17 +81,17 @@ export class MainMenu {
 
     public HandleInput(): void {
         let selectionChanged: boolean = false;
-        if (KeyState.KC_UP)
+        if (Input.KC_UP)
             this.changeSelection(Direction.Up, selectionChanged);
-        else if (KeyState.KC_RIGHT)
+        else if (Input.KC_RIGHT)
             this.changeSelection(Direction.Right, selectionChanged);
-        else if (KeyState.KC_DOWN)
+        else if (Input.KC_DOWN)
             this.changeSelection(Direction.Down, selectionChanged);
-        else if (KeyState.KC_LEFT)
+        else if (Input.KC_LEFT)
             this.changeSelection(Direction.Left, selectionChanged);
         if (selectionChanged)
             S.PlayEffect(ResourceMaster.Sound[AudioId.Selectie]);
-        if (KeyState.KC_SPACE) {
+        if (Input.KC_SPACE) {
             switch (this.state) {
                 case State.SelectMain:
                     S.PlayEffect(ResourceMaster.Sound[AudioId.Selectie]);
@@ -106,12 +106,12 @@ export class MainMenu {
                             else S.PlayEffect(ResourceMaster.Sound[AudioId.Fout]);
                             break;
                         case MenuItem.LoadGame:
-                            KeyState.KC_SPACE = false;
+                            Input.KC_SPACE = false;
                             M._.GameMenu.Open(MenuItem.LoadFromMainMenu);
                             this.state = State.SubMenu;
                             break;
                         case MenuItem.Options:
-                            KeyState.KC_SPACE = false;
+                            Input.KC_SPACE = false;
                             M._.GameMenu.Open(MenuItem.OptionsFromMainMenu);
                             this.state = State.SubMenu;
                             break;
