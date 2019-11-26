@@ -15,3 +15,4 @@ BoazEngineJS/tsconfig.jsonmaarbugt
 src/sintervaniamodelold.ts
 out/thegame.js.map
 out/thegame.js
+**.tsbuildinfo
