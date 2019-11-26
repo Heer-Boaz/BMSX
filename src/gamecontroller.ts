@@ -130,7 +130,7 @@ export class GameController extends Controller {
     }
 
     public takeTurn(elapsedMs: number): void {
-        console.info(`takeTurn wordt nu uitgevoerd. ElapsedMs: ${elapsedMs}`);
+        // console.info(`takeTurn wordt nu uitgevoerd. ElapsedMs: ${elapsedMs}`);
 
         if (M._.paused) {
             this.handlePausedState();
@@ -198,6 +198,7 @@ export class GameController extends Controller {
                         break;
                     case GameSubstate.Default:
                         this.handleInputDuringGame();
+                        let objects = M._.objects;
                         M._.objects.forEach(o => o.TakeTurn());
                         M._.objects.filter(o => o.disposeFlag).forEach(o => M._.remove(o));
                         M._.CurrentRoom.TakeTurn();
@@ -228,6 +229,8 @@ export class GameController extends Controller {
                         break;
                 }
                 break;
+            case GameState.LoadTheGame:
+                break; // Do nothing
             default:
                 break;
         }

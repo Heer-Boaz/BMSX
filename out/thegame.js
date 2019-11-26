@@ -84,7 +84,11 @@ System.register("BoazEngineJS/model", [], function (exports_5, context_5) {
         execute: function () {
             Model = class Model {
                 constructor() {
-                    this.initModelForGameStart();
+                    this.objects = [];
+                    this.id2object = new Map();
+                    this.gameState = 0;
+                    this.gameSubstate = 0;
+                    this.paused = false;
                 }
                 get OldState() {
                     return this.gameOldState;
@@ -110,13 +114,6 @@ System.register("BoazEngineJS/model", [], function (exports_5, context_5) {
                 set Substate(value) {
                     this.gameSubstate = value;
                 }
-                initModelForGameStart() {
-                    this.objects = [];
-                    this.id2object = new Map();
-                    this.gameState = 0;
-                    this.gameSubstate = 0;
-                    this.paused = false;
-                }
                 clearModel() {
                     this.objects.forEach(x => {
                         x.exile();
@@ -127,12 +124,12 @@ System.register("BoazEngineJS/model", [], function (exports_5, context_5) {
                 }
                 spawn(o, pos) {
                     if (o == null)
-                        throw ("Cannot spawn object of type null.");
+                        throw new Error("Cannot spawn object of type null.");
                     if (this.objects.indexOf(o) > -1)
-                        throw ("GameObject already exists in the game model!");
+                        throw new Error("GameObject already exists in the game model!");
                     this.objects.push(o);
                     if (o.id != null)
-                        this.id2object[o.id] = o;
+                        this.id2object.set(o.id, o);
                     if (pos)
                         o.spawn(pos);
                     else
@@ -179,10 +176,14 @@ System.register("src/gameconstants", ["BoazEngineJS/msx"], function (exports_6, 
                 GameConstants.Belmont_MaxHealth_AtStart = 48;
                 GameConstants.Belmont_MaxHealth_Increase = 2;
                 GameConstants.Belmont_MaxHearts = 99;
+                GameConstants.Belmont_InitPos_x = 100;
+                GameConstants.Belmont_initPos_y = 100;
                 GameConstants.CheckpointAtRoomEntry = false;
                 GameConstants.ManualCheckpoints = !GameConstants.CheckpointAtRoomEntry;
                 GameConstants.WindowTitle = "";
                 GameConstants.HUDHeight = 36;
+                GameConstants.ViewportWidth = msx_1.MSXConstants.MSX2ScreenWidth;
+                GameConstants.ViewportHeight = msx_1.MSXConstants.MSX2ScreenHeight;
                 GameConstants.GameScreenWidth = msx_1.MSXConstants.MSX2ScreenWidth;
                 GameConstants.GameScreenHeight = msx_1.MSXConstants.MSX2ScreenHeight - GameConstants.HUDHeight;
                 GameConstants.StageScreenWidthTiles = (GameConstants.GameScreenWidth / msx_1.TileSize);
@@ -382,10 +383,10 @@ System.register("BoazEngineJS/view", ["BoazEngineJS/engine"], function (exports_
             })(DrawBitmap || (DrawBitmap = {}));
             exports_10("DrawBitmap", DrawBitmap);
             View = class View {
-                constructor(gamescreensize) {
+                constructor(viewportsize) {
                     this.canvas = $('#gamescreen')[0];
                     this.context = this.canvas.getContext('2d');
-                    this.gamescreenSize = gamescreensize;
+                    this.viewportSize = viewportsize;
                 }
                 init() {
                     this.handleResize();
@@ -396,8 +397,8 @@ System.register("BoazEngineJS/view", ["BoazEngineJS/engine"], function (exports_
                     let w = Math.max(document.documentElement.clientWidth, window.innerWidth || 0);
                     let h = Math.max(document.documentElement.clientHeight, window.innerHeight || 0);
                     this.windowSize = { x: w, y: h };
-                    this.dx = this.windowSize.x / this.gamescreenSize.x;
-                    this.dy = this.windowSize.y / this.gamescreenSize.y;
+                    this.dx = this.windowSize.x / this.viewportSize.x;
+                    this.dy = this.windowSize.y / this.viewportSize.y;
                     this.dxy = Math.min(this.dx, this.dy);
                 }
                 handleResize() {
@@ -914,10 +915,10 @@ System.register("BoazEngineJS/engine", ["BoazEngineJS/view", "BoazEngineJS/sound
             exports_17("images", images = new Map());
             exports_17("audio", audio = new Map());
             Game = class Game {
-                constructor(gamescreenSize) {
+                constructor(viewportsize) {
                     exports_17("game", game = this);
                     exports_17("sound", sound = new soundmaster_1.SoundMaster());
-                    exports_17("view", view = new view_1.View(gamescreenSize));
+                    exports_17("view", view = new view_1.View(viewportsize));
                     this.fps = 50;
                     this.lastUpdate = 0;
                 }
@@ -968,8 +969,8 @@ System.register("BoazEngineJS/engine", ["BoazEngineJS/view", "BoazEngineJS/sound
                     let t = this;
                     requestAnimationFrame(function (timestamp) {
                         game.run(timestamp);
-                        ++t.turnCounter;
                     });
+                    ++t.turnCounter;
                 }
             };
             exports_17("Game", Game);
@@ -1025,71 +1026,63 @@ System.register("src/room", ["BoazEngineJS/msx", "src/gameconstants", "BoazEngin
                     return coordinatesToCheck.some(x => this.IsCollisionTile(x.x, x.y, takeWallFoesIntoAccount));
                 }
                 NearingRoomExit(x, y) {
-                    let _x = x / msx_2.TileSize;
-                    let _y = y / msx_2.TileSize;
+                    let _x = ~~(x / msx_2.TileSize);
+                    let _y = ~~(y / msx_2.TileSize);
                     let result = { destRoom: Room.NO_ROOM_EXIT, direction: 4 };
-                    if ((x < 0)) {
+                    if (x < 0) {
                         let dest = this.RoomExit(3);
                         result = { destRoom: dest, direction: 3 };
                     }
-                    else if ((_x >= gameconstants_1.GameConstants.StageScreenWidthTiles)) {
+                    else if (_x >= gameconstants_1.GameConstants.StageScreenWidthTiles) {
                         let dest = this.RoomExit(1);
                         result = { destRoom: dest, direction: 1 };
                     }
-                    else if ((_y < 2)) {
+                    else if (_y < 2) {
                         let dest = this.RoomExit(0);
                         result = { destRoom: dest, direction: 0 };
                     }
-                    else if ((_y >= gameconstants_1.GameConstants.StageScreenHeightTiles)) {
+                    else if (_y >= gameconstants_1.GameConstants.StageScreenHeightTiles) {
                         let dest = this.RoomExit(2);
                         result = { destRoom: dest, direction: 2 };
                     }
                     return result;
                 }
                 IsCollisionTile(x, y, takeWallFoesIntoAccount) {
-                    let TileSize = 0;
-                    let DirectionDown = 0;
-                    let DirectionLeft = 0;
-                    let DirectionRight = 0;
-                    let DirectionUp = 0;
-                    let CSStageScreenWidthTiles = 0;
-                    let CSStageScreenHeightTiles = 0;
-                    let _x = (x / TileSize);
-                    let _y = (y / TileSize);
+                    let _x = ~~(x / msx_2.TileSize);
+                    let _y = ~~(y / msx_2.TileSize);
                     if ((x < 0)) {
-                        if (this.CanLeaveRoom(DirectionLeft)) {
+                        if (this.CanLeaveRoom(3)) {
                             _x = 0;
                         }
                         else {
                             return true;
                         }
                     }
-                    else if ((_x >= CSStageScreenWidthTiles)) {
-                        if (this.CanLeaveRoom(DirectionRight)) {
-                            _x = (CSStageScreenWidthTiles - 1);
+                    else if (_x >= gameconstants_1.GameConstants.StageScreenWidthTiles) {
+                        if (this.CanLeaveRoom(1)) {
+                            _x = (gameconstants_1.GameConstants.StageScreenWidthTiles - 1);
                         }
                         else {
                             return true;
                         }
                     }
-                    if (((_y < 1)
-                        && (_y >= -1))) {
-                        if (this.CanLeaveRoom(DirectionUp)) {
+                    if (_y < 1 && _y >= -1) {
+                        if (this.CanLeaveRoom(0)) {
                             _y = 0;
                         }
                         else {
                             return true;
                         }
                     }
-                    else if ((_y >= CSStageScreenHeightTiles)) {
-                        if (this.CanLeaveRoom(DirectionDown)) {
-                            _y = (CSStageScreenHeightTiles - 1);
+                    else if (_y >= gameconstants_1.GameConstants.StageScreenHeightTiles) {
+                        if (this.CanLeaveRoom(2)) {
+                            _y = gameconstants_1.GameConstants.StageScreenHeightTiles - 1;
                         }
                         else {
                             return true;
                         }
                     }
-                    if ((this.CollisionData[_y][_x] != '.')) {
+                    if (this.CollisionData[_y][_x] !== '.') {
                         return true;
                     }
                     return false;
@@ -2084,7 +2077,7 @@ System.register("BoazEngineJS/animation", ["BoazEngineJS/btimer", "BoazEngineJS/
 });
 System.register("src/belmont", ["src/creature", "BoazEngineJS/btimer", "src/gameconstants", "BoazEngineJS/common", "BoazEngineJS/animation", "BoazEngineJS/msx", "BoazEngineJS/input", "src/room", "BoazEngineJS/soundmaster", "src/resourcemaster", "src/gamecontroller", "src/sintervaniamodel", "BoazEngineJS/engine", "BoazEngineJS/view"], function (exports_30, context_30) {
     "use strict";
-    var creature_1, btimer_4, gameconstants_2, common_7, animation_1, msx_5, input_1, room_1, common_8, soundmaster_2, resourcemaster_3, gamecontroller_2, sintervaniamodel_6, engine_10, view_2, RoeState, Belmont, State, JumpState, HitState, HitStateStep, DyingState;
+    var creature_1, btimer_4, gameconstants_2, common_7, animation_1, msx_5, input_1, room_1, common_8, soundmaster_2, resourcemaster_3, gamecontroller_2, sintervaniamodel_6, engine_10, view_2, RoeState, Belmont, JumpState, HitState, DyingState;
     var __moduleName = context_30 && context_30.id;
     return {
         setters: [
@@ -2168,15 +2161,15 @@ System.register("src/belmont", ["src/creature", "BoazEngineJS/btimer", "src/game
                 [1, [common_8.newPoint(-16, 0), common_8.newPoint(-16, 0), common_8.newPoint(0, 0)]],
             ]);
             Belmont = class Belmont extends creature_1.Creature {
-                constructor() {
-                    super(null);
+                constructor(initPos) {
+                    super(initPos);
                     this.EventTouchHitArea = common_7.newArea(0, 24, 16, 32);
                     this.imgid = 4;
                     this.flippedH = false;
                     this.CarryingShield = false;
                     this.Direction = 1;
                     this.id = "Belmont";
-                    this.state = State.Normal;
+                    this.state = 0;
                     common_7.setSize(this.size, 16, 32);
                     this.Health = gameconstants_2.GameConstants.Belmont_MaxHealth_AtStart;
                     this.MaxHealth = gameconstants_2.GameConstants.Belmont_MaxHealth_AtStart;
@@ -2196,7 +2189,7 @@ System.register("src/belmont", ["src/creature", "BoazEngineJS/btimer", "src/game
                     return Math.min((Math.round(this.Health / this.MaxHealth * 100)), 100);
                 }
                 get RecoveringFromHit() {
-                    return this.hitState.CurrentStep != HitStateStep.None;
+                    return this.hitState.CurrentStep != 0;
                 }
                 get movementSpeed() {
                     return 2;
@@ -2205,7 +2198,7 @@ System.register("src/belmont", ["src/creature", "BoazEngineJS/btimer", "src/game
                     return this.hitState.Blink;
                 }
                 get Dying() {
-                    return this.state == State.Dying || this.state == State.Dead;
+                    return this.state == 2 || this.state == 3;
                 }
                 get Roeing() {
                     return this.roeState.Roeing;
@@ -2256,7 +2249,7 @@ System.register("src/belmont", ["src/creature", "BoazEngineJS/btimer", "src/game
                     this.moveLeftBeforeFrameChange = Belmont.MoveBeforeFrameChange;
                     this.roeState.Stop();
                     this.DetermineFrame();
-                    this.state = State.Normal;
+                    this.state = 0;
                 }
                 GetProjectileOrigin() {
                     let result = common_7.copyPoint(this.pos);
@@ -2272,11 +2265,11 @@ System.register("src/belmont", ["src/creature", "BoazEngineJS/btimer", "src/game
                     return result;
                 }
                 TakeTurn() {
-                    if (this.state == State.Dying) {
+                    if (this.state == 2) {
                         this.doDeath();
                         return;
                     }
-                    if (this.state == State.Dead)
+                    if (this.state == 3)
                         return;
                     if (this.hitState.BlinkingAndInvulnerable) {
                         if (common_7.waitDuration(this.hitState.BlinkTimer, HitState.BlinkTimePerSwitch))
@@ -2286,16 +2279,16 @@ System.register("src/belmont", ["src/creature", "BoazEngineJS/btimer", "src/game
                             this.hitState.Blink = false;
                             this.hitState.BlinkTimer.stop();
                             this.hitState.RecoveryTimer.stop();
-                            this.state = State.Normal;
+                            this.state = 0;
                         }
                     }
-                    if (this.hitState.CurrentStep == HitStateStep.Flying) {
+                    if (this.hitState.CurrentStep == 1) {
                         this.doHitFlying();
                     }
-                    else if (this.hitState.CurrentStep == HitStateStep.Falling) {
+                    else if (this.hitState.CurrentStep == 2) {
                         this.doHitFall();
                     }
-                    else if (this.hitState.CurrentStep == HitStateStep.Crouching) {
+                    else if (this.hitState.CurrentStep == 3) {
                         this.doHitCrouching();
                     }
                     else if (this.roeState.Roeing) {
@@ -2310,7 +2303,7 @@ System.register("src/belmont", ["src/creature", "BoazEngineJS/btimer", "src/game
                     }
                     else {
                         let walked = false;
-                        if (!this.FloorCollision || this.Jumping || this.hitState.CurrentStep != HitStateStep.None) {
+                        if (!this.FloorCollision || this.Jumping || this.hitState.CurrentStep != 0) {
                             this.Crouching = false;
                             walked = false;
                             this.AnimateMovement(0);
@@ -2326,14 +2319,13 @@ System.register("src/belmont", ["src/creature", "BoazEngineJS/btimer", "src/game
                             }
                         }
                     }
-                    if (!this.FloorCollision && (!this.Jumping || !this.jumpState.GoingUp) && this.hitState.CurrentStep != HitStateStep.Flying && this.hitState.CurrentStep != HitStateStep.Falling) {
+                    if (!this.FloorCollision && (!this.Jumping || !this.jumpState.GoingUp) && this.hitState.CurrentStep != 1 && this.hitState.CurrentStep != 2) {
                         let originalPos = { x: this.pos.x, y: this.pos.y };
                         this.checkAndHandleCollisions(originalPos);
                         if (!this.FloorCollision)
                             this.pos.y += 4;
                         this.checkAndHandleCollisions(originalPos);
-                        if (this.FloorCollision)
-                            soundmaster_2.SoundMaster.PlayEffect(resourcemaster_3.ResourceMaster.Sound[10]);
+                        if (this.FloorCollision) { }
                     }
                     if (this.Jumping) {
                         this.doJump();
@@ -2351,7 +2343,7 @@ System.register("src/belmont", ["src/creature", "BoazEngineJS/btimer", "src/game
                     this.Direction = dir;
                     this.pos.y += delta.nextStepValue.y;
                     if (!this.hitState.HitAni.hasNext) {
-                        this.hitState.CurrentStep = HitStateStep.Falling;
+                        this.hitState.CurrentStep = 2;
                     }
                 }
                 doHitFall() {
@@ -2370,7 +2362,7 @@ System.register("src/belmont", ["src/creature", "BoazEngineJS/btimer", "src/game
                 }
                 doHitCrouching() {
                     if (common_7.waitDuration(this.hitState.CrouchTimer, HitState.CrouchTime)) {
-                        this.hitState.CurrentStep = HitStateStep.None;
+                        this.hitState.CurrentStep = 0;
                         if (this.Health <= 0) {
                             this.initDyingState();
                             gamecontroller_2.GameController._.BelmontDied();
@@ -2407,40 +2399,40 @@ System.register("src/belmont", ["src/creature", "BoazEngineJS/btimer", "src/game
                 }
                 DetermineFrame() {
                     switch (this.state) {
-                        case State.Normal:
-                        case State.HitRecovery:
-                            if (this.hitState.CurrentStep != HitStateStep.None) {
-                                if (this.hitState.CurrentStep == HitStateStep.Falling || this.hitState.CurrentStep == HitStateStep.Flying)
+                        case 0:
+                        case 1:
+                            if (this.hitState.CurrentStep != 0) {
+                                if (this.hitState.CurrentStep == 2 || this.hitState.CurrentStep == 1)
                                     this.imgid = this.Direction == 1 ? 26 : 25;
                                 else
                                     this.imgid = this.Direction == 1 ? 24 : 23;
                             }
                             else if (!this.roeState.Roeing) {
                                 if (!this.Crouching && !this.Jumping) {
-                                    this.imgid = this.CarryingShield ? Belmont.MovementSpritesWShield[this.Direction][this.currentWalkAnimationFrame] : Belmont.MovementSpritesNoShield[this.Direction][this.currentWalkAnimationFrame];
+                                    this.imgid = this.CarryingShield ? Belmont.MovementSpritesWShield.get(this.Direction)[this.currentWalkAnimationFrame] : Belmont.MovementSpritesNoShield.get(this.Direction)[this.currentWalkAnimationFrame];
                                 }
                                 else {
-                                    this.imgid = this.CarryingShield ? Belmont.MovementSpritesWShieldCrouching[this.Direction][this.currentWalkAnimationFrame] : Belmont.MovementSpritesNoShieldCrouching[this.Direction][this.currentWalkAnimationFrame];
+                                    this.imgid = this.CarryingShield ? Belmont.MovementSpritesWShieldCrouching.get(this.Direction)[this.currentWalkAnimationFrame] : Belmont.MovementSpritesNoShieldCrouching.get(this.Direction)[this.currentWalkAnimationFrame];
                                 }
                             }
                             else {
                                 if (!this.Crouching && !this.Jumping) {
-                                    this.imgid = RoeState.RoeSprites[this.Direction][this.roeState.CurrentFrame];
+                                    this.imgid = RoeState.RoeSprites.get(this.Direction)[this.roeState.CurrentFrame];
                                 }
                                 else {
-                                    this.imgid = RoeState.RoeSpritesCrouching[this.Direction][this.roeState.CurrentFrame];
+                                    this.imgid = RoeState.RoeSpritesCrouching.get(this.Direction)[this.roeState.CurrentFrame];
                                 }
                             }
                             break;
-                        case State.Dying:
-                        case State.Dead:
+                        case 2:
+                        case 3:
                             break;
                     }
                 }
                 TakeDamage(amount) {
                     if (!this.hittable)
                         return;
-                    if (this.state != State.HitRecovery && this.state != State.Dying) {
+                    if (this.state != 1 && this.state != 2) {
                         this.Health -= amount;
                         this.initHitRecoveryState();
                         if (this.jumpState.Jumping)
@@ -2457,7 +2449,7 @@ System.register("src/belmont", ["src/creature", "BoazEngineJS/btimer", "src/game
                         if (this.dyingState.DeathAni.finished()) {
                             gamecontroller_2.GameController._.BelmontDeathAniFinished();
                             this.dyingState.Stop();
-                            this.state = State.Dead;
+                            this.state = 3;
                         }
                         else {
                             this.imgid = stepValue.nextStepValue.image;
@@ -2465,17 +2457,17 @@ System.register("src/belmont", ["src/creature", "BoazEngineJS/btimer", "src/game
                     }
                 }
                 UseRoe() {
-                    if (!this.Roeing && this.state != State.Dying) {
+                    if (!this.Roeing && this.state != 2) {
                         this.initRoeState();
                     }
                 }
                 initHitRecoveryState() {
-                    this.state = State.HitRecovery;
+                    this.state = 1;
                     this.hitState.Start();
                 }
                 initDyingState() {
                     this.dyingState.Start();
-                    this.state = State.Dying;
+                    this.state = 2;
                 }
                 initRoeState() {
                     this.roeState.Start();
@@ -2597,8 +2589,8 @@ System.register("src/belmont", ["src/creature", "BoazEngineJS/btimer", "src/game
                     if (this.Jumping) {
                         this.jumpState.Stop();
                     }
-                    if (this.hitState.CurrentStep == HitStateStep.Falling) {
-                        this.hitState.CurrentStep = HitStateStep.Crouching;
+                    if (this.hitState.CurrentStep == 2) {
+                        this.hitState.CurrentStep = 3;
                         this.hitState.CrouchTimer.restart();
                     }
                 }
@@ -2638,12 +2630,12 @@ System.register("src/belmont", ["src/creature", "BoazEngineJS/btimer", "src/game
                     let roeOffset = { x: 0, y: 0 };
                     if (this.Roeing) {
                         if (!this.Crouching) {
-                            roeOffset.x += RoeState.RoeSpritePosOffset[this.Direction][this.roeState.CurrentFrame].x;
-                            roeOffset.y += RoeState.RoeSpritePosOffset[this.Direction][this.roeState.CurrentFrame].y;
+                            roeOffset.x += RoeState.RoeSpritePosOffset.get(this.Direction)[this.roeState.CurrentFrame].x;
+                            roeOffset.y += RoeState.RoeSpritePosOffset.get(this.Direction)[this.roeState.CurrentFrame].y;
                         }
                         else {
-                            roeOffset.x += RoeState.RoeSpritePosOffsetCrouching[this.Direction][this.roeState.CurrentFrame].x;
-                            roeOffset.y += RoeState.RoeSpritePosOffsetCrouching[this.Direction][this.roeState.CurrentFrame].y;
+                            roeOffset.x += RoeState.RoeSpritePosOffsetCrouching.get(this.Direction)[this.roeState.CurrentFrame].x;
+                            roeOffset.y += RoeState.RoeSpritePosOffsetCrouching.get(this.Direction)[this.roeState.CurrentFrame].y;
                         }
                     }
                     if (!this.hitState.Blink || gamecontroller_2.GameController._.InEventState) {
@@ -2694,13 +2686,6 @@ System.register("src/belmont", ["src/creature", "BoazEngineJS/btimer", "src/game
             Belmont.buttonPressEventHitAreaDown = common_7.newArea(0, 28, 16, 36);
             Belmont.buttonPressEventHitAreaLeft = common_7.newArea(-4, 24, 12, 32);
             Belmont._hitarea = common_7.newArea(2, 8, 14, 30);
-            (function (State) {
-                State[State["Normal"] = 0] = "Normal";
-                State[State["HitRecovery"] = 1] = "HitRecovery";
-                State[State["Dying"] = 2] = "Dying";
-                State[State["Dead"] = 3] = "Dead";
-            })(State || (State = {}));
-            exports_30("State", State);
             JumpState = class JumpState {
                 constructor() {
                     this.JumpTimer = new btimer_4.BStopwatch();
@@ -2730,7 +2715,7 @@ System.register("src/belmont", ["src/creature", "BoazEngineJS/btimer", "src/game
                 constructor() {
                     this.Blink = false;
                     this.BlinkingAndInvulnerable = false;
-                    this.CurrentStep = HitStateStep.None;
+                    this.CurrentStep = 0;
                     this.HitAni = new animation_1.Animation(HitState.hitDelta, 1);
                 }
                 Stop() {
@@ -2739,12 +2724,12 @@ System.register("src/belmont", ["src/creature", "BoazEngineJS/btimer", "src/game
                     this.CrouchTimer.stop();
                     this.Blink = false;
                     this.BlinkingAndInvulnerable = false;
-                    this.CurrentStep = HitStateStep.None;
+                    this.CurrentStep = 0;
                 }
                 Start() {
                     this.Blink = true;
                     this.BlinkingAndInvulnerable = true;
-                    this.CurrentStep = HitStateStep.Flying;
+                    this.CurrentStep = 1;
                     this.BlinkTimer.restart();
                     this.RecoveryTimer.restart();
                     this.CrouchTimer.reset();
@@ -2756,13 +2741,6 @@ System.register("src/belmont", ["src/creature", "BoazEngineJS/btimer", "src/game
             HitState.BlinkTimePerSwitch = 20;
             HitState.CrouchTime = 500;
             HitState.hitDelta = new Array(common_8.newPoint(-2, -2), common_8.newPoint(-2, -2), common_8.newPoint(-2, -2), common_8.newPoint(-2, -2), common_8.newPoint(-2, -2), common_8.newPoint(-2, -2), common_8.newPoint(-1, -1), common_8.newPoint(-1, -1), common_8.newPoint(-1, -1), common_8.newPoint(-1, -1), common_8.newPoint(-1, 0), common_8.newPoint(-1, 0), common_8.newPoint(-1, 0), common_8.newPoint(-1, 0), common_8.newPoint(-2, 1), common_8.newPoint(-2, 1), common_8.newPoint(-2, 1), common_8.newPoint(-2, 1));
-            (function (HitStateStep) {
-                HitStateStep[HitStateStep["None"] = 0] = "None";
-                HitStateStep[HitStateStep["Flying"] = 1] = "Flying";
-                HitStateStep[HitStateStep["Falling"] = 2] = "Falling";
-                HitStateStep[HitStateStep["Crouching"] = 3] = "Crouching";
-            })(HitStateStep || (HitStateStep = {}));
-            exports_30("HitStateStep", HitStateStep);
             DyingState = class DyingState {
                 constructor() {
                     this.DeathAni = new animation_1.Animation(DyingState.dyingFrames, DyingState.dyingFrameTimes);
@@ -2812,8 +2790,8 @@ System.register("src/triroe", ["src/pprojectile", "src/belmont", "src/sintervani
                     if (!sintervaniamodel_7.GameModel._.Belmont.roeState.Roeing || sintervaniamodel_7.GameModel._.Belmont.RecoveringFromHit)
                         return null;
                     if (!sintervaniamodel_7.GameModel._.Belmont.Crouching)
-                        return TriRoe.hitareas[sintervaniamodel_7.GameModel._.Belmont.imgid] + belmont_1.RoeState.RoeSpritePosOffset[sintervaniamodel_7.GameModel._.Belmont.Direction][sintervaniamodel_7.GameModel._.Belmont.roeState.CurrentFrame];
-                    return TriRoe.hitareas[sintervaniamodel_7.GameModel._.Belmont.imgid] + belmont_1.RoeState.RoeSpritePosOffsetCrouching[sintervaniamodel_7.GameModel._.Belmont.Direction][sintervaniamodel_7.GameModel._.Belmont.roeState.CurrentFrame];
+                        return common_9.moveArea(TriRoe.hitareas.get(sintervaniamodel_7.GameModel._.Belmont.imgid), belmont_1.RoeState.RoeSpritePosOffset.get(sintervaniamodel_7.GameModel._.Belmont.Direction)[sintervaniamodel_7.GameModel._.Belmont.roeState.CurrentFrame]);
+                    return common_9.moveArea(TriRoe.hitareas.get(sintervaniamodel_7.GameModel._.Belmont.imgid), belmont_1.RoeState.RoeSpritePosOffsetCrouching.get(sintervaniamodel_7.GameModel._.Belmont.Direction)[sintervaniamodel_7.GameModel._.Belmont.roeState.CurrentFrame]);
                 }
                 set hitarea(value) {
                 }
@@ -4267,7 +4245,6 @@ System.register("src/gameview", ["src/hud", "src/itscurtainsforyou", "src/gameov
                     this.EndDemo = new enddemo_1.EndDemo();
                 }
                 drawGame(elapsedMs) {
-                    console.info(`drawGame wordt nu uitgevoerd. ElapsedMs: ${elapsedMs}`);
                     if (sintervaniamodel_12.GameModel._.startAfterLoad)
                         return;
                     switch (sintervaniamodel_12.GameModel._.gameState) {
@@ -5047,7 +5024,6 @@ System.register("src/gamecontroller", ["BoazEngineJS/btimer", "src/item", "src/b
                     sintervaniamodel_14.GameModel._.Substate = newSubstate;
                 }
                 takeTurn(elapsedMs) {
-                    console.info(`takeTurn wordt nu uitgevoerd. ElapsedMs: ${elapsedMs}`);
                     if (sintervaniamodel_14.GameModel._.paused) {
                         this.handlePausedState();
                         return;
@@ -5114,6 +5090,7 @@ System.register("src/gamecontroller", ["BoazEngineJS/btimer", "src/item", "src/b
                                     break;
                                 case 0:
                                     this.handleInputDuringGame();
+                                    let objects = sintervaniamodel_14.GameModel._.objects;
                                     sintervaniamodel_14.GameModel._.objects.forEach(o => o.TakeTurn());
                                     sintervaniamodel_14.GameModel._.objects.filter(o => o.disposeFlag).forEach(o => sintervaniamodel_14.GameModel._.remove(o));
                                     sintervaniamodel_14.GameModel._.CurrentRoom.TakeTurn();
@@ -5143,6 +5120,8 @@ System.register("src/gamecontroller", ["BoazEngineJS/btimer", "src/item", "src/b
                                         this.OpenGameMenu();
                                     break;
                             }
+                            break;
+                        case 1:
                             break;
                         default:
                             break;
@@ -5711,12 +5690,15 @@ System.register("src/bossfoe", ["src/foe", "src/sintervaniamodel"], function (ex
         }
     };
 });
-System.register("src/sintervaniamodel", ["src/belmont", "BoazEngineJS/model", "BoazEngineJS/btimer", "src/weaponitem", "src/gameconstants", "src/gamemenu", "src/RoomFactory"], function (exports_53, context_53) {
+System.register("src/sintervaniamodel", ["src/foe", "src/belmont", "BoazEngineJS/model", "BoazEngineJS/btimer", "src/weaponitem", "src/gameconstants", "src/gamemenu", "src/RoomFactory"], function (exports_53, context_53) {
     "use strict";
-    var belmont_2, model_1, btimer_10, weaponitem_1, gameconstants_9, gamemenu_2, RoomFactory_1, BagItem, BagWeapon, Location, Switch, GameModel;
+    var foe_2, belmont_2, model_1, btimer_10, weaponitem_1, gameconstants_9, gamemenu_2, RoomFactory_1, BagItem, BagWeapon, Location, Switch, GameModel;
     var __moduleName = context_53 && context_53.id;
     return {
         setters: [
+            function (foe_2_1) {
+                foe_2 = foe_2_1;
+            },
             function (belmont_2_1) {
                 belmont_2 = belmont_2_1;
             },
@@ -5855,22 +5837,22 @@ System.register("src/sintervaniamodel", ["src/belmont", "BoazEngineJS/model", "B
                     GameModel._.ItemsPickedUp.clear();
                     GameModel._.WeaponItemsPickedUp.clear();
                     this._hearts = 0;
-                    GameModel._.spawn(new belmont_2.Belmont());
+                    GameModel._.spawn(new belmont_2.Belmont({ x: gameconstants_9.GameConstants.Belmont_InitPos_x, y: gameconstants_9.GameConstants.Belmont_initPos_y }));
                 }
                 InitAfterGameLoad() {
                 }
                 spawn(o) {
                     if (o instanceof belmont_2.Belmont) {
                         if (this.objects.findIndex(ob => ob instanceof belmont_2.Belmont) > -1)
-                            throw ("There is already a Belmont in the game! \"There can be only one!\"");
+                            throw Error("There is already a Belmont in the game! \"There can be only one!\"");
                         else
                             GameModel._.Belmont = o;
                     }
-                    let f = o;
-                    if (f) {
+                    if (o instanceof foe_2.Foe) {
+                        let f = o;
                         if (!f.RespawnAtRoomEntry) {
                             let wasDefeated;
-                            let exists = this.FoesDefeated.has(f.id) && this.FoesDefeated[f.id] == true;
+                            let exists = this.FoesDefeated.has(f.id) && this.FoesDefeated.get(f.id);
                             if (!exists) {
                                 this.FoesDefeated.set(f.id, false);
                                 wasDefeated = false;
@@ -5943,7 +5925,7 @@ System.register("src/sintervaniamodel", ["src/belmont", "BoazEngineJS/model", "B
                 }
                 LoadRoom(id) {
                     let objectsToRemove = this.objects.filter(o => {
-                        return !o.extendedProperties[GameModel.PROPERTY_KEEP_AT_ROOMSWITCH];
+                        return !o.extendedProperties.has(GameModel.PROPERTY_KEEP_AT_ROOMSWITCH);
                     });
                     objectsToRemove.forEach(o => this.remove(o));
                     this.CurrentRoom = RoomFactory_1.RoomFactory.LoadRoom(id);
@@ -5958,12 +5940,12 @@ System.register("src/sintervaniamodel", ["src/belmont", "BoazEngineJS/model", "B
 });
 System.register("src/candle", ["src/foe", "BoazEngineJS/btimer", "src/item", "BoazEngineJS/animation", "BoazEngineJS/common"], function (exports_54, context_54) {
     "use strict";
-    var foe_2, btimer_11, item_6, animation_6, common_19, Candle;
+    var foe_3, btimer_11, item_6, animation_6, common_19, Candle;
     var __moduleName = context_54 && context_54.id;
     return {
         setters: [
-            function (foe_2_1) {
-                foe_2 = foe_2_1;
+            function (foe_3_1) {
+                foe_3 = foe_3_1;
             },
             function (btimer_11_1) {
                 btimer_11 = btimer_11_1;
@@ -5979,7 +5961,7 @@ System.register("src/candle", ["src/foe", "BoazEngineJS/btimer", "src/item", "Bo
             }
         ],
         execute: function () {
-            Candle = class Candle extends foe_2.Foe {
+            Candle = class Candle extends foe_3.Foe {
                 constructor(pos, itemSpawned = item_6.ItemType.HeartSmall) {
                     super(pos);
                     this.CanHurtPlayer = false;
@@ -6194,7 +6176,7 @@ System.register("src/RoomFactory", ["src/room", "BoazEngineJS/common", "BoazEngi
                     let initFunction;
                     id = 1;
                     map = RoomFactory.RoomMap_stage0;
-                    bitmapPath = "Stage/Garden_entrance.png";
+                    bitmapPath = "Stage/Garden.png";
                     collisionData = [
                         "################################",
                         "#..............................#",
@@ -6252,7 +6234,7 @@ System.register("src/RoomFactory", ["src/room", "BoazEngineJS/common", "BoazEngi
 });
 System.register("src/chandelier", ["BoazEngineJS/btimer", "BoazEngineJS/animation", "src/foe", "src/item", "BoazEngineJS/common", "src/sintervaniamodel"], function (exports_57, context_57) {
     "use strict";
-    var btimer_12, animation_8, foe_3, item_8, common_22, sintervaniamodel_21, Chandelier, ChandelierState;
+    var btimer_12, animation_8, foe_4, item_8, common_22, sintervaniamodel_21, Chandelier, ChandelierState;
     var __moduleName = context_57 && context_57.id;
     return {
         setters: [
@@ -6262,8 +6244,8 @@ System.register("src/chandelier", ["BoazEngineJS/btimer", "BoazEngineJS/animatio
             function (animation_8_1) {
                 animation_8 = animation_8_1;
             },
-            function (foe_3_1) {
-                foe_3 = foe_3_1;
+            function (foe_4_1) {
+                foe_4 = foe_4_1;
             },
             function (item_8_1) {
                 item_8 = item_8_1;
@@ -6276,7 +6258,7 @@ System.register("src/chandelier", ["BoazEngineJS/btimer", "BoazEngineJS/animatio
             }
         ],
         execute: function () {
-            Chandelier = class Chandelier extends foe_3.Foe {
+            Chandelier = class Chandelier extends foe_4.Foe {
                 constructor(pos, itemSpawned = item_8.ItemType.HeartSmall) {
                     super(pos);
                     this.animation = new animation_8.Animation(Chandelier.AnimationFrames);
@@ -6405,16 +6387,17 @@ System.register("src/game", ["BoazEngineJS/engine", "src/sintervaniamodel", "src
     var engine, sintervaniamodel_23, gamecontroller_9, gameview_4, gameconstants_11;
     var __moduleName = context_59 && context_59.id;
     function Annnndddd___Go() {
-        new engine.Game({ x: gameconstants_11.GameConstants.GameScreenWidth, y: gameconstants_11.GameConstants.GameScreenHeight });
+        new engine.Game({ x: gameconstants_11.GameConstants.ViewportWidth, y: gameconstants_11.GameConstants.ViewportHeight });
         engine.game.setModel(new sintervaniamodel_23.GameModel());
         engine.game.setController(new gamecontroller_9.GameController());
         let gameview = new gameview_4.GameView();
         engine.game.setGameView(gameview);
         gameview.init();
+        gamecontroller_9.GameController._.switchState(1);
+        engine.game.start();
         sintervaniamodel_23.GameModel._.SelectedChapterToPlay = 3;
         gamecontroller_9.GameController._.switchState(gameconstants_11.GameConstants.INITIAL_GAMESTATE);
         gamecontroller_9.GameController._.switchSubstate(gameconstants_11.GameConstants.INITIAL_GAMESUBSTATE);
-        engine.game.start();
         return engine.game;
     }
     exports_59("Annnndddd___Go", Annnndddd___Go);
@@ -6442,7 +6425,7 @@ System.register("src/game", ["BoazEngineJS/engine", "src/sintervaniamodel", "src
 });
 System.register("src/hag", ["BoazEngineJS/btimer", "BoazEngineJS/animation", "src/item", "src/foe", "src/gameconstants"], function (exports_60, context_60) {
     "use strict";
-    var btimer_13, animation_9, item_9, foe_4, gameconstants_12, Hag;
+    var btimer_13, animation_9, item_9, foe_5, gameconstants_12, Hag;
     var __moduleName = context_60 && context_60.id;
     return {
         setters: [
@@ -6455,15 +6438,15 @@ System.register("src/hag", ["BoazEngineJS/btimer", "BoazEngineJS/animation", "sr
             function (item_9_1) {
                 item_9 = item_9_1;
             },
-            function (foe_4_1) {
-                foe_4 = foe_4_1;
+            function (foe_5_1) {
+                foe_5 = foe_5_1;
             },
             function (gameconstants_12_1) {
                 gameconstants_12 = gameconstants_12_1;
             }
         ],
         execute: function () {
-            Hag = class Hag extends foe_4.Foe {
+            Hag = class Hag extends foe_5.Foe {
                 constructor({ pos, dir, itemSpawned = item_9.ItemType.HeartSmall }) {
                     super(pos);
                     this.CanHurtPlayer = true;
@@ -6686,12 +6669,12 @@ System.register("src/story", [], function (exports_63, context_63) {
 });
 System.register("src/zakfoe", ["src/foe", "BoazEngineJS/btimer", "src/item", "BoazEngineJS/common", "src/sintervaniamodel", "src/gameconstants", "BoazEngineJS/msx"], function (exports_64, context_64) {
     "use strict";
-    var foe_5, btimer_16, item_10, common_25, sintervaniamodel_25, gameconstants_13, msx_15, ZakFoe;
+    var foe_6, btimer_16, item_10, common_25, sintervaniamodel_25, gameconstants_13, msx_15, ZakFoe;
     var __moduleName = context_64 && context_64.id;
     return {
         setters: [
-            function (foe_5_1) {
-                foe_5 = foe_5_1;
+            function (foe_6_1) {
+                foe_6 = foe_6_1;
             },
             function (btimer_16_1) {
                 btimer_16 = btimer_16_1;
@@ -6713,7 +6696,7 @@ System.register("src/zakfoe", ["src/foe", "BoazEngineJS/btimer", "src/item", "Bo
             }
         ],
         execute: function () {
-            ZakFoe = class ZakFoe extends foe_5.Foe {
+            ZakFoe = class ZakFoe extends foe_6.Foe {
                 constructor(pos, itemSpawned = item_10.Item.Type.HeartSmall) {
                     super(pos);
                     this.CanHurtPlayer = true;

@@ -23,10 +23,10 @@ export class Game {
 
     turnCounter: number;
 
-    constructor(gamescreenSize: Size) {
+    constructor(viewportsize: Size) {
         game = this;
         sound = new SoundMaster();
-        view = new View(gamescreenSize);
+        view = new View(viewportsize);
         this.fps = 50;
         this.lastUpdate = 0;
     }
@@ -103,15 +103,14 @@ export class Game {
     public run(timestamp: number): void {
         let elapsedMs = timestamp - this.lastUpdate;
         this.lastUpdate = timestamp; // || new Date().getTime(); //if browser doesn't support requestAnimationFrame, generate our own timestamp using Date
-        // if (elapsedMs !== NaN) debugger;
         this.update(elapsedMs);
         this.draw(elapsedMs);
 
         let t = this;
         requestAnimationFrame(function (timestamp) {
             game.run(timestamp);
-            ++t.turnCounter;
         });
+        ++t.turnCounter;
     }
 }
 

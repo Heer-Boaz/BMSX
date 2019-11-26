@@ -12,15 +12,15 @@ export class View {
     public context: CanvasRenderingContext2D;
 
     public windowSize: Size;
-    public gamescreenSize: Size;
+    public viewportSize: Size;
     public dx: number;
     public dy: number;
     public dxy: number;
 
-    constructor(gamescreensize: Size) {
+    constructor(viewportsize: Size) {
         this.canvas = <HTMLCanvasElement>$('#gamescreen')[0];
         this.context = this.canvas.getContext('2d');
-        this.gamescreenSize = gamescreensize;
+        this.viewportSize = viewportsize;
     }
 
     public init(): void {
@@ -37,8 +37,8 @@ export class View {
         let w = Math.max(document.documentElement.clientWidth, window.innerWidth || 0);
         let h = Math.max(document.documentElement.clientHeight, window.innerHeight || 0);
         this.windowSize = <Size>{ x: w, y: h };
-        this.dx = this.windowSize.x / this.gamescreenSize.x;
-        this.dy = this.windowSize.y / this.gamescreenSize.y;
+        this.dx = this.windowSize.x / this.viewportSize.x;
+        this.dy = this.windowSize.y / this.viewportSize.y;
         this.dxy = Math.min(this.dx, this.dy);
     }
 

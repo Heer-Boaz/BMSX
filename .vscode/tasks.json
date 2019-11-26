@@ -10,7 +10,10 @@
 			"problemMatcher": [
 				"$tsc"
 			],
-			"group": "build",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
 		},
 		{
 			"label": "build watch",
@@ -22,10 +25,7 @@
 				"--watch"
 			],
 			// "runOptions": { "runOn": "folderOpen" },
-			"group": {
-				"kind": "build",
-				"isDefault": true
-			},
+			"group": "build",
 			"problemMatcher": [
 				"$tsc-watch"
 			]

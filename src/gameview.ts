@@ -129,7 +129,7 @@ export class GameView implements IGameView {
     }
 
     public drawGame(elapsedMs: number): void {
-        console.info(`drawGame wordt nu uitgevoerd. ElapsedMs: ${elapsedMs}`);
+        // console.info(`drawGame wordt nu uitgevoerd. ElapsedMs: ${elapsedMs}`);
 
         if (M._.startAfterLoad)
             return

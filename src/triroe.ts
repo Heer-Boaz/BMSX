@@ -4,7 +4,7 @@ import { Direction } from "../BoazEngineJS/direction";
 import { GameModel as M } from "./sintervaniamodel";
 import { Area, Point } from "../BoazEngineJS/interfaces";
 import { AudioId, BitmapId } from "../BoazEngineJS/resourceids";
-import { newArea } from "../BoazEngineJS/common";
+import { newArea, moveArea } from '../BoazEngineJS/common';
 
 /*[Serializable]*/
 export class TriRoe extends PlayerProjectile {
@@ -27,9 +27,10 @@ export class TriRoe extends PlayerProjectile {
 		if (!M._.Belmont.roeState.Roeing || M._.Belmont.RecoveringFromHit)
 			return null;
 		if (!M._.Belmont.Crouching)
-			return TriRoe.hitareas[M._.Belmont.imgid] + RoeState.RoeSpritePosOffset[M._.Belmont.Direction][M._.Belmont.roeState.CurrentFrame];
-		return TriRoe.hitareas[M._.Belmont.imgid] + RoeState.RoeSpritePosOffsetCrouching[M._.Belmont.Direction][M._.Belmont.roeState.CurrentFrame];
+			return moveArea(TriRoe.hitareas.get(M._.Belmont.imgid), RoeState.RoeSpritePosOffset.get(M._.Belmont.Direction)[M._.Belmont.roeState.CurrentFrame]);
+		return moveArea(TriRoe.hitareas.get(M._.Belmont.imgid), RoeState.RoeSpritePosOffsetCrouching.get(M._.Belmont.Direction)[M._.Belmont.roeState.CurrentFrame]);
 	}
+
 	public set hitarea(value: Area) {
 	}
 

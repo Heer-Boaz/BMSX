@@ -1,7 +1,7 @@
 import { Point } from "../BoazEngineJS/interfaces";
 import { TileSize } from "../BoazEngineJS/msx";
 import { Direction } from "../BoazEngineJS/direction";
-import { GameConstants as CS } from "./gameconstants";
+import { GameConstants as CS, GameConstants } from "./gameconstants";
 import { view } from "../BoazEngineJS/engine";
 import { RoomDataContainer } from "./RoomFactory";
 import { BitmapId } from "../BoazEngineJS/resourceids";
@@ -58,24 +58,24 @@ export class Room {
 	}
 
 	public NearingRoomExit(x: number, y: number): NearingRoomExitResult {
-		let _x = x / TileSize;
-		let _y = y / TileSize;
+		let _x: number = ~~(x / TileSize);
+		let _y: number = ~~(y / TileSize);
 		let result: NearingRoomExitResult = { destRoom: Room.NO_ROOM_EXIT, direction: Direction.None };
 
-		if ((x < 0)) {
+		if (x < 0) {
 			//  Note: Check for x and not _x, as -1 / (...) will result in 0!
 			let dest = this.RoomExit(Direction.Left);
 			result = { destRoom: dest, direction: Direction.Left };
 		}
-		else if ((_x >= CS.StageScreenWidthTiles)) {
+		else if (_x >= CS.StageScreenWidthTiles) {
 			let dest = this.RoomExit(Direction.Right);
 			result = { destRoom: dest, direction: Direction.Right };
 		}
-		else if ((_y < 2)) {
+		else if (_y < 2) {
 			let dest = this.RoomExit(Direction.Up);
 			result = { destRoom: dest, direction: Direction.Up };
 		}
-		else if ((_y >= CS.StageScreenHeightTiles)) {
+		else if (_y >= CS.StageScreenHeightTiles) {
 			let dest = this.RoomExit(Direction.Down);
 			result = { destRoom: dest, direction: Direction.Down };
 		}
@@ -84,18 +84,11 @@ export class Room {
 	}
 
 	public IsCollisionTile(x: number, y: number, takeWallFoesIntoAccount: boolean): boolean {
-		let TileSize = 0;
-		let DirectionDown: number = 0;
-		let DirectionLeft: number = 0;
-		let DirectionRight: number = 0;
-		let DirectionUp: number = 0;
-		let CSStageScreenWidthTiles = 0;
-		let CSStageScreenHeightTiles = 0;
-		let _x: number = (x / TileSize);
-		let _y: number = (y / TileSize);
+		let _x: number = ~~(x / TileSize);
+		let _y: number = ~~(y / TileSize);
 		if ((x < 0)) {
 			//  Note: Check for x and not _x, as -1 / (...) will result in 0!
-			if (this.CanLeaveRoom(DirectionLeft)) {
+			if (this.CanLeaveRoom(Direction.Left)) {
 				_x = 0;
 			}
 			else {
@@ -103,9 +96,9 @@ export class Room {
 			}
 
 		}
-		else if ((_x >= CSStageScreenWidthTiles)) {
-			if (this.CanLeaveRoom(DirectionRight)) {
-				_x = (CSStageScreenWidthTiles - 1);
+		else if (_x >= GameConstants.StageScreenWidthTiles) {
+			if (this.CanLeaveRoom(Direction.Right)) {
+				_x = (GameConstants.StageScreenWidthTiles - 1);
 			}
 			else {
 				return true;
@@ -113,9 +106,8 @@ export class Room {
 
 		}
 
-		if (((_y < 1)
-			&& (_y >= -1))) {
-			if (this.CanLeaveRoom(DirectionUp)) {
+		if (_y < 1 && _y >= -1) {
+			if (this.CanLeaveRoom(Direction.Up)) {
 				_y = 0;
 			}
 			else {
@@ -123,9 +115,9 @@ export class Room {
 			}
 
 		}
-		else if ((_y >= CSStageScreenHeightTiles)) {
-			if (this.CanLeaveRoom(DirectionDown)) {
-				_y = (CSStageScreenHeightTiles - 1);
+		else if (_y >= GameConstants.StageScreenHeightTiles) {
+			if (this.CanLeaveRoom(Direction.Down)) {
+				_y = GameConstants.StageScreenHeightTiles - 1;
 			}
 			else {
 				return true;
@@ -133,7 +125,7 @@ export class Room {
 
 		}
 
-		if ((this.CollisionData[_y][_x] != '.')) {
+		if (this.CollisionData[_y][_x] !== '.') {
 			return true;
 		}
 

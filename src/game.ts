@@ -8,20 +8,23 @@ import { GameController } from "./gamecontroller";
 import { GameView } from './gameview';
 import { GameState } from "../BoazEngineJS/model";
 import { GameConstants } from "./gameconstants";
+import { LoadGame } from '../BoazEngineJS/gamestateloader';
 
 export function Annnndddd___Go(): engine.Game {
-	new engine.Game({ x: GameConstants.GameScreenWidth, y: GameConstants.GameScreenHeight });
+	new engine.Game({ x: GameConstants.ViewportWidth, y: GameConstants.ViewportHeight });
 	engine.game.setModel(new GameModel());
 	engine.game.setController(new GameController());
 	let gameview = new GameView();
 	engine.game.setGameView(gameview);
 	gameview.init();
 
+	GameController._.switchState(GameState.LoadTheGame);
+
+	engine.game.start();
+
 	GameModel._.SelectedChapterToPlay = Chapter.GameStart;
 	GameController._.switchState(GameConstants.INITIAL_GAMESTATE);
 	GameController._.switchSubstate(GameConstants.INITIAL_GAMESUBSTATE);
-
-	engine.game.start();
 
 	return engine.game;
 }

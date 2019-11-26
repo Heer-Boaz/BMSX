@@ -5,7 +5,7 @@ import { Model, GameState } from "../BoazEngineJS/model";
 import { BStopwatch } from "../BoazEngineJS/btimer";
 import { BossFoe } from "./bossfoe";
 import { WeaponItem, WeaponType } from "./weaponitem";
-import { GameConstants as CS } from "./gameconstants";
+import { GameConstants as CS, GameConstants } from "./gameconstants";
 import { ItemType } from "./item";
 import { GameMenu } from "./gamemenu";
 import { Point, IGameObject } from "../BoazEngineJS/interfaces";
@@ -226,7 +226,7 @@ export class GameModel extends Model {
         GameModel._.ItemsPickedUp.clear();
         GameModel._.WeaponItemsPickedUp.clear();
         this._hearts = 0;
-        GameModel._.spawn(new Belmont());
+        GameModel._.spawn(new Belmont({ x: GameConstants.Belmont_InitPos_x, y: GameConstants.Belmont_initPos_y }));
     }
 
     public InitAfterGameLoad(): void {
@@ -235,25 +235,26 @@ export class GameModel extends Model {
     public spawn(o: IGameObject): void {
         if (o instanceof Belmont) {
             if (this.objects.findIndex(ob => ob instanceof Belmont) > -1)
-                throw ("There is already a Belmont in the game! \"There can be only one!\"");
+                throw Error("There is already a Belmont in the game! \"There can be only one!\"");
             else GameModel._.Belmont = <Belmont>o;
         }
 
-        let f: Foe = o as Foe;
-        if (f) {
+        if (o instanceof Foe) {
+            let f: Foe = o as Foe;
             if (!f.RespawnAtRoomEntry) {
                 let wasDefeated: boolean;
-                let exists: boolean = this.FoesDefeated.has(f.id) && this.FoesDefeated[f.id] == true;
+                let exists: boolean = this.FoesDefeated.has(f.id) && this.FoesDefeated.get(f.id);
                 if (!exists) {
                     this.FoesDefeated.set(f.id, false);
                     wasDefeated = false;
                 }
                 if (!wasDefeated)
                     this.Foes.push(f);
-                else return
+                else return;
             }
             else this.Foes.push(f);
         }
+
         super.spawn(o);
     }
 
@@ -322,7 +323,7 @@ export class GameModel extends Model {
 
     public LoadRoom(id: number): void {
         let objectsToRemove = this.objects.filter(o => {
-            return <boolean>!o.extendedProperties[GameModel.PROPERTY_KEEP_AT_ROOMSWITCH];
+            return !o.extendedProperties.has(GameModel.PROPERTY_KEEP_AT_ROOMSWITCH);
         });
         objectsToRemove.forEach(o => this.remove(o));
         this.CurrentRoom = RoomFactory.LoadRoom(id);

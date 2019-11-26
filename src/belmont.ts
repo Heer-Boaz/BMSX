@@ -172,8 +172,8 @@ export class Belmont extends Creature {
 	public get Vulnerable(): boolean {
 		return !this.hitState.BlinkingAndInvulnerable && !this.Dying;
 	}
-	constructor() {
-		super(null);
+	constructor(initPos?: Point) {
+		super(initPos);
 		this.imgid = <number>BitmapId.Belmont_r1;
 		this.flippedH = false;
 		this.CarryingShield = false;
@@ -279,8 +279,8 @@ export class Belmont extends Creature {
 			if (!this.FloorCollision)
 				this.pos.y += 4;
 			this.checkAndHandleCollisions(originalPos);
-			if (this.FloorCollision)
-				S.PlayEffect(RM.Sound[AudioId.Land]);
+			if (this.FloorCollision) { }
+			// S.PlayEffect(RM.Sound[AudioId.Land]);
 		}
 		if (this.Jumping) {
 			this.doJump();
@@ -364,23 +364,23 @@ export class Belmont extends Creature {
 			case State.HitRecovery:
 				if (this.hitState.CurrentStep != HitStateStep.None) {
 					if (this.hitState.CurrentStep == HitStateStep.Falling || this.hitState.CurrentStep == HitStateStep.Flying)
-						this.imgid = this.Direction == Direction.Right ? <number>BitmapId.Belmont_rhitfly : <number>BitmapId.Belmont_lhitfly;
-					else this.imgid = this.Direction == Direction.Right ? <number>BitmapId.Belmont_rhitdown : <number>BitmapId.Belmont_lhitdown;
+						this.imgid = this.Direction == Direction.Right ? BitmapId.Belmont_rhitfly : BitmapId.Belmont_lhitfly;
+					else this.imgid = this.Direction == Direction.Right ? BitmapId.Belmont_rhitdown : BitmapId.Belmont_lhitdown;
 				}
 				else if (!this.roeState.Roeing) {
 					if (!this.Crouching && !this.Jumping) {
-						this.imgid = this.CarryingShield ? <number>Belmont.MovementSpritesWShield[this.Direction][this.currentWalkAnimationFrame] : <number>Belmont.MovementSpritesNoShield[this.Direction][this.currentWalkAnimationFrame];
+						this.imgid = this.CarryingShield ? Belmont.MovementSpritesWShield.get(this.Direction)[this.currentWalkAnimationFrame] : Belmont.MovementSpritesNoShield.get(this.Direction)[this.currentWalkAnimationFrame];
 					}
 					else {
-						this.imgid = this.CarryingShield ? <number>Belmont.MovementSpritesWShieldCrouching[this.Direction][this.currentWalkAnimationFrame] : <number>Belmont.MovementSpritesNoShieldCrouching[this.Direction][this.currentWalkAnimationFrame];
+						this.imgid = this.CarryingShield ? Belmont.MovementSpritesWShieldCrouching.get(this.Direction)[this.currentWalkAnimationFrame] : Belmont.MovementSpritesNoShieldCrouching.get(this.Direction)[this.currentWalkAnimationFrame];
 					}
 				}
 				else {
 					if (!this.Crouching && !this.Jumping) {
-						this.imgid = <number>RoeState.RoeSprites[this.Direction][this.roeState.CurrentFrame];
+						this.imgid = RoeState.RoeSprites.get(this.Direction)[this.roeState.CurrentFrame];
 					}
 					else {
-						this.imgid = <number>RoeState.RoeSpritesCrouching[this.Direction][this.roeState.CurrentFrame];
+						this.imgid = RoeState.RoeSpritesCrouching.get(this.Direction)[this.roeState.CurrentFrame];
 					}
 				}
 				break;
@@ -607,12 +607,12 @@ export class Belmont extends Creature {
 		let roeOffset = <Point>{ x: 0, y: 0 };
 		if (this.Roeing) {
 			if (!this.Crouching) {
-				roeOffset.x += RoeState.RoeSpritePosOffset[this.Direction][this.roeState.CurrentFrame].x;
-				roeOffset.y += RoeState.RoeSpritePosOffset[this.Direction][this.roeState.CurrentFrame].y;
+				roeOffset.x += RoeState.RoeSpritePosOffset.get(this.Direction)[this.roeState.CurrentFrame].x;
+				roeOffset.y += RoeState.RoeSpritePosOffset.get(this.Direction)[this.roeState.CurrentFrame].y;
 			}
 			else {
-				roeOffset.x += RoeState.RoeSpritePosOffsetCrouching[this.Direction][this.roeState.CurrentFrame].x;
-				roeOffset.y += RoeState.RoeSpritePosOffsetCrouching[this.Direction][this.roeState.CurrentFrame].y;
+				roeOffset.x += RoeState.RoeSpritePosOffsetCrouching.get(this.Direction)[this.roeState.CurrentFrame].x;
+				roeOffset.y += RoeState.RoeSpritePosOffsetCrouching.get(this.Direction)[this.roeState.CurrentFrame].y;
 			}
 		}
 		if (!this.hitState.Blink || C._.InEventState) {
@@ -639,7 +639,7 @@ export class Belmont extends Creature {
 	}
 }
 
-export enum State {
+export const enum State {
 	Normal,
 	HitRecovery,
 	Dying,
@@ -735,7 +735,7 @@ export class HitState {
 	}
 }
 
-export enum HitStateStep {
+export const enum HitStateStep {
 	None,
 	Flying,
 	Falling,

@@ -14,10 +14,14 @@ export namespace GameConstants {
     export const Belmont_MaxHealth_AtStart: number = 48;
     export const Belmont_MaxHealth_Increase: number = 2;
     export const Belmont_MaxHearts: number = 99;
+    export const Belmont_InitPos_x: number = 100;
+    export const Belmont_initPos_y: number = 100;
     export const CheckpointAtRoomEntry: boolean = false;
     export const ManualCheckpoints: boolean = !CheckpointAtRoomEntry;
     export const WindowTitle: string = "";
     export const HUDHeight: number = 36;
+    export const ViewportWidth: number = MSXConstants.MSX2ScreenWidth;
+    export const ViewportHeight: number = MSXConstants.MSX2ScreenHeight;
     export const GameScreenWidth: number = MSXConstants.MSX2ScreenWidth;
     export const GameScreenHeight: number = MSXConstants.MSX2ScreenHeight - HUDHeight;
     export const StageScreenWidthTiles: number = (GameScreenWidth / TileSize);

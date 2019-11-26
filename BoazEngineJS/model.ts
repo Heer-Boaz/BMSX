@@ -1,6 +1,9 @@
 ﻿import { IGameObject, Point } from "./interfaces";
 
-export const enum GameState { None = 0 }
+export const enum GameState {
+    None = 0,
+    LoadTheGame
+}
 export const enum GameSubstate { Default = 0 }
 
 export abstract class Model {
@@ -46,16 +49,14 @@ export abstract class Model {
     }
 
     constructor() {
-        this.initModelForGameStart();
-    }
-
-    public initModelForGameStart(): void {
         this.objects = [];
         this.id2object = new Map<string, IGameObject>();
         this.gameState = GameState.None;
         this.gameSubstate = GameSubstate.Default;
         this.paused = false;
     }
+
+    public abstract InitModelForGameStart(): void;
 
     public clearModel(): void {
         this.objects.forEach(x => {
@@ -67,12 +68,12 @@ export abstract class Model {
     }
 
     public spawn(o: IGameObject, pos?: Point): void {
-        if (o == null) throw ("Cannot spawn object of type null.");
-        if (this.objects.indexOf(o) > -1) throw ("GameObject already exists in the game model!");
+        if (o == null) throw new Error("Cannot spawn object of type null.");
+        if (this.objects.indexOf(o) > -1) throw new Error("GameObject already exists in the game model!");
 
         this.objects.push(o);
         if (o.id != null)
-            this.id2object[o.id] = o;
+            this.id2object.set(o.id, o);
         if (pos) o.spawn(pos);
         else o.spawn(null);
     }

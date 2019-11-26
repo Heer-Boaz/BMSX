@@ -155,7 +155,7 @@ export class RoomFactory {
 		let initFunction: RoomInitDelegate;
 		id = 1;
 		map = RoomFactory.RoomMap_stage0;
-		bitmapPath = "Stage/Garden_entrance.png";
+		bitmapPath = "Stage/Garden.png";
 		collisionData = [
 			"################################",
 			"#..............................#",
