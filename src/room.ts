@@ -86,7 +86,7 @@ export class Room {
 	public IsCollisionTile(x: number, y: number, takeWallFoesIntoAccount: boolean): boolean {
 		let _x: number = ~~(x / TileSize);
 		let _y: number = ~~(y / TileSize);
-		if ((x < 0)) {
+		if (x < 0) {
 			//  Note: Check for x and not _x, as -1 / (...) will result in 0!
 			if (this.CanLeaveRoom(Direction.Left)) {
 				_x = 0;

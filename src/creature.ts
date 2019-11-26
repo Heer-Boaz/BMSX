@@ -12,7 +12,7 @@ import { Area, Point } from "../BoazEngineJS/interfaces";
 export abstract class Creature extends Sprite {
     protected moveBeforeFrameChange: number;
     protected movementSprites: Map<Direction, BitmapId[]>;
-    protected moveLeftBeforeFrameChange: number;
+    protected moveLeftBeforeFrameChange: number = 0;
     protected currentWalkAnimationFrame: number = 0;
 
     public get WallHitArea(): Area {
@@ -62,7 +62,7 @@ export abstract class Creature extends Sprite {
     }
 
     public DetermineFrame(): void {
-        this.imgid = <number>this.movementSprites[this.Direction][this.currentWalkAnimationFrame];
+        this.imgid = <number>this.movementSprites.get(this.Direction)[this.currentWalkAnimationFrame];
         this.flippedH = this.Direction == Direction.Right;
     }
 
@@ -71,7 +71,7 @@ export abstract class Creature extends Sprite {
             this.moveLeftBeforeFrameChange -= movedDistance;
             if (this.moveLeftBeforeFrameChange < 0) {
                 this.moveLeftBeforeFrameChange = this.moveBeforeFrameChange;
-                if (++this.currentWalkAnimationFrame >= this.movementSprites[this.Direction].Length) {
+                if (++this.currentWalkAnimationFrame >= this.movementSprites.get(this.Direction).length) {
                     this.currentWalkAnimationFrame = 1;
                 }
             }
@@ -83,7 +83,7 @@ export abstract class Creature extends Sprite {
     }
 
     protected checkWallSpriteCollisions(): boolean {
-        return M._.objects.filter(o => o != this && o.extendedProperties[M.PROPERTY_ACT_AS_WALL] && (<Sprite>o).hittable).some(o => o.areaCollide(moveArea(this.WallHitArea, this.pos)));
+        return M._.objects.filter(o => o != this && o.extendedProperties.get(M.PROPERTY_ACT_AS_WALL) && (<Sprite>o).hittable).some(o => o.areaCollide(moveArea(this.WallHitArea, this.pos)));
     }
 
     protected checkWallCollision(): boolean {

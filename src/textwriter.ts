@@ -52,21 +52,35 @@ export class TextWriter {
         let stepX: number = TextWriter.FontWidth;
         let stepY: number = TextWriter.FontHeight;
         let pos: Point = <Point>{ x: startPos.x, y: startPos.y };
-        let letter: BitmapId;
-        for (let text of textToWrite) {
-            for (let i: number = 0; i < text.length; i++) {
-                let c: string = text[i];
-                letter = TextWriter.getBitmapForLetter(c);
-                if (!color)
-                    view.DrawBitmap(<number>letter, pos.x, pos.y);
-                else view.DrawColoredBitmap(<number>letter, pos.x, pos.y, color.r / 255.0, color.g / 255.0, color.b / 255.0);
+        if (Array.isArray(textToWrite)) {
+            for (let text of textToWrite) {
+                for (let i: number = 0; i < text.length; i++) {
+                    TextWriter.drawLetter(pos.x, pos.y, textToWrite[i], color);
+                    pos.x += stepX;
+                }
+                pos.x = startPos.x;
+                pos.y += stepY;
+                if (pos.y >= GameOptions._.BufferHeight)
+                    break;
+            }
+        }
+        else {
+            for (let i: number = 0; i < textToWrite.length; i++) {
+                TextWriter.drawLetter(pos.x, pos.y, textToWrite[i], color);
                 pos.x += stepX;
             }
             pos.x = startPos.x;
             pos.y += stepY;
             if (pos.y >= GameOptions._.BufferHeight)
-                break;
-        };
+                return;
+        }
+    }
+
+    private static drawLetter(x: number, y: number, c: string, color: Color = null): void {
+        let letter = TextWriter.getBitmapForLetter(c);
+        if (!color)
+            view.DrawBitmap(letter, x, y);
+        else view.DrawColoredBitmap(letter, x, y, color.r / 255.0, color.g / 255.0, color.b / 255.0);
     }
 
     public Paint(): void {

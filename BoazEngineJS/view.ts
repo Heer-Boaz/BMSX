@@ -20,6 +20,7 @@ export class View {
     constructor(viewportsize: Size) {
         this.canvas = <HTMLCanvasElement>$('#gamescreen')[0];
         this.context = this.canvas.getContext('2d');
+        this.context.imageSmoothingEnabled = false;
         this.viewportSize = viewportsize;
     }
 
@@ -91,8 +92,8 @@ export class View {
         if (!img) throw new Error("Cannot find image with id '" + imgid + "'");
 
         this.context.save();
-        this.context.scale(this.dx, this.dy);
-        // this.context.translate(pos.x, pos.y);
+        this.context.scale(this.dxy, this.dxy);
+        this.context.imageSmoothingEnabled = false;
         this.context.drawImage(img, pos.x, pos.y);
         this.context.restore();
     }

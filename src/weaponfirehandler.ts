@@ -52,7 +52,7 @@ export class WeaponFireHandler {
 
     public static HandleFireMainWeapon(): void {
         if (WeaponFireHandler.MainWeaponOnCooldown)
-            return
+            return;
         switch (M._.SelectedMainWeapon) {
             case MainWeaponType.TriRoe:
                 WeaponFireHandler.handleTriRoe();
@@ -61,18 +61,18 @@ export class WeaponFireHandler {
     }
 
     private static setMainWeaponCooldown(cooldown: number): void {
-        M._.MainWeaponCooldownTimer.restart();
         WeaponFireHandler.mainWeaponCurrentCooldown = cooldown;
+        M._.MainWeaponCooldownTimer.restart();
     }
 
     private static setSecWeaponCooldown(cooldown: number): void {
-        M._.SecWeaponCooldownTimer.restart();
         WeaponFireHandler.secWeaponCurrentCooldown = cooldown;
+        M._.SecWeaponCooldownTimer.restart();
     }
 
     private static handleTriRoe(): void {
         if (M._.Belmont.Roeing || M._.Belmont.RecoveringFromHit)
-            return
+            return;
         WeaponFireHandler.setMainWeaponCooldown(0);
         let roe = new TriRoe(M._.Belmont.pos, M._.Belmont.Direction);
         M._.spawn(roe);
@@ -86,9 +86,9 @@ export class WeaponFireHandler {
 
     public static HandleFireSecondaryWeapon(): void {
         if (WeaponFireHandler.SecWeaponOnCooldown)
-            return
+            return;
         if (M._.Hearts > 0) {
-            return
+            return;
         }
         switch (M._.SelectedSecondaryWeapon) {
             case SecWeaponType.Cross:

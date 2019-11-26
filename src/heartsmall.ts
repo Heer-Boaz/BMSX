@@ -70,7 +70,7 @@ export class HeartSmall extends Sprite {
 		if (this.objectCollide(GameModel._.Belmont)) {
 			++GameModel._.Hearts;
 			this.disposeFlag = true;
-			SoundMaster.PlayEffect(ResourceMaster.Sound[AudioId.Heart]);
+			// SoundMaster.PlayEffect(ResourceMaster.Sound[AudioId.Heart]);
 		}
 	}
 

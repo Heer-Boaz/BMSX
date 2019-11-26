@@ -263,7 +263,7 @@ export class Belmont extends Creature {
 				this.AnimateMovement(0);
 			}
 			else {
-				this.handleInput(walked);
+				walked = this.handleInput().moved;
 				if (walked) {
 					this.doWalk();
 				}
@@ -298,7 +298,7 @@ export class Belmont extends Creature {
 		this.checkAndHandleWallAndCeilingCollisions(originalPos);
 		this.Direction = dir;
 		this.pos.y += delta.nextStepValue.y;
-		if (!this.hitState.HitAni.hasNext) {
+		if (!this.hitState.HitAni.hasNext()) {
 			this.hitState.CurrentStep = HitStateStep.Falling;
 		}
 	}
@@ -333,7 +333,7 @@ export class Belmont extends Creature {
 		this.pos.y += this.jumpState.JumpAni.stepValue();
 		let dummy: AniStepCompoundValue<number> = { nextStepValue: 0 };
 		this.jumpState.JumpAni.doAnimation(1, dummy);
-		if (!this.jumpState.JumpAni.hasNext) {
+		if (!this.jumpState.JumpAni.hasNext()) {
 			this.jumpState.Stop();
 		}
 		this.checkAndHandleWallAndCeilingCollisions(originalPos);
@@ -440,7 +440,8 @@ export class Belmont extends Creature {
 		this.DetermineFrame();
 	}
 
-	private handleInput(moved: boolean): void {
+	private handleInput(): { moved: boolean } {
+		let moved = false;
 		if (Input.KD_DOWN && !this.ignoreDirButtonPress(Direction.Down)) {
 			this.Crouching = true;
 			if (Input.KD_RIGHT && !this.ignoreDirButtonPress(Direction.Right))
@@ -463,19 +464,21 @@ export class Belmont extends Creature {
 		}
 		else if (Input.KD_RIGHT && !this.ignoreDirButtonPress(Direction.Right)) {
 			this.Crouching = false;
-			this.doMovement(Direction.Right, moved);
+			moved = this.doMovement(Direction.Right).moved;
 		}
 		else if (Input.KD_LEFT && !this.ignoreDirButtonPress(Direction.Left)) {
 			this.Crouching = false;
-			this.doMovement(Direction.Left, moved);
+			moved = this.doMovement(Direction.Left).moved;
 		}
 		else {
 			this.Crouching = false;
 			this.firstPressedButton = Direction.None;
 		}
+
+		return { moved: moved };
 	}
 
-	private doMovement(dir: Direction, moved: boolean): void {
+	private doMovement(dir: Direction): { moved: boolean } {
 		let speed = this.movementSpeed;
 		let originalPos = copyPoint(this.pos);
 		switch (dir) {
@@ -489,7 +492,7 @@ export class Belmont extends Creature {
 				break;
 		}
 		this.checkAndHandleCollisions(originalPos);
-		moved = true;
+		return { moved: true };
 	}
 
 	private checkAndHandleWallAndCeilingCollisions(originalPos: Point): void {
@@ -539,15 +542,15 @@ export class Belmont extends Creature {
 	protected handleWallCollision(): void {
 		switch (this.Direction) {
 			case Direction.Right:
-				this.pos.x = (this.pos.x / TileSize) * TileSize;
+				this.pos.x = ~~(this.pos.x / TileSize) * TileSize;
 				break;
 			case Direction.Down:
-				this.pos.y = (this.pos.y / TileSize) * TileSize;
+				this.pos.y = ~~(this.pos.y / TileSize) * TileSize;
 				break;
 			case Direction.Left:
 				if (this.pos.x >= 0)
-					this.pos.x = (this.pos.x / TileSize + 1) * TileSize;
-				this.pos.x = this.pos.x / TileSize * TileSize;
+					this.pos.x = ~~(this.pos.x / TileSize + 1) * TileSize;
+				this.pos.x = ~~(this.pos.x / TileSize) * TileSize;
 				break;
 		}
 	}
@@ -561,7 +564,7 @@ export class Belmont extends Creature {
 	}
 
 	protected handleFloorCollision(): void {
-		this.pos.y = (this.pos.y / TileSize) * TileSize;
+		this.pos.y = ~~(this.pos.y / TileSize) * TileSize;
 		if (this.Jumping) {
 			this.jumpState.Stop();
 		}

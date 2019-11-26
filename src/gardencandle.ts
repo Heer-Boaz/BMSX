@@ -10,7 +10,7 @@ import { Area, Point } from "../BoazEngineJS/interfaces";
 export class GardenCandle extends Candle {
     protected static candleSprites: Map<Direction, BitmapId[]> = new Map([[Direction.None, [BitmapId.GCandle_1]]]);
     protected static CandleHitArea: Area = newArea(0, 0, 16, 16);
-    protected static AnimationFrames: BitmapId[] = new Array(<BitmapId>BitmapId.GCandle_1, <BitmapId>BitmapId.GCandle_2);
+    protected static AnimationFrames: BitmapId[] = new Array(BitmapId.GCandle_1, BitmapId.GCandle_2);
 
     constructor(pos: Point, itemSpawned: ItemType = ItemType.HeartSmall) {
         super(pos, itemSpawned);

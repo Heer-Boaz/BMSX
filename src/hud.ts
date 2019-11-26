@@ -92,7 +92,8 @@ export class HUD {
             pos.x += 1;
         }
 
-        TextWriter.DrawText(HUD.HeartsPosX, HUD.HeartsPosY, `${M._.Hearts.toPrecision(2)}`);
+        let heartstxt: string = M._.Hearts < 10 ? `0${M._.Hearts}` : M._.Hearts.toString();
+        TextWriter.DrawText(HUD.HeartsPosX, HUD.HeartsPosY, heartstxt);
         if (M._.ItemsInInventory.find(x => x.Type == ItemType.KeyBig)) {
             view.DrawBitmap(<number>Item.Type2Image(ItemType.KeyBig), HUD.KeyPos.x, HUD.KeyPos.y);
         }
