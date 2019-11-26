@@ -20,23 +20,23 @@ export class SoundMaster {
 	public static MusicBeingPlayed: Song;
 	public static EffectBeingPlayed: Effect;
 	public static OnMusicBufferEnd(): void {
-		if (this.MusicBeingPlayed && this.MusicBeingPlayed.NextSong) {
-			let nextSong = this.MusicBeingPlayed.NextSong;
-			this.MusicBeingPlayed = nextSong;
-			this.PlayMusic(nextSong);
+		if (SoundMaster.MusicBeingPlayed && SoundMaster.MusicBeingPlayed.NextSong) {
+			let nextSong = SoundMaster.MusicBeingPlayed.NextSong;
+			SoundMaster.MusicBeingPlayed = nextSong;
+			SoundMaster.PlayMusic(nextSong);
 		}
-		else this.MusicBeingPlayed = null;
+		else SoundMaster.MusicBeingPlayed = null;
 	}
 
 	public static OnEffectBufferEnd(): void {
-		this.EffectBeingPlayed = null;
+		SoundMaster.EffectBeingPlayed = null;
 	}
 
 	public static StopEffect(): void {
-		if (!this.EffectBeingPlayed.AudioId) return;
-		audio[`${this.EffectBeingPlayed.AudioId}`].pause();
-		audio[`${this.EffectBeingPlayed.AudioId}`].currentTime = 0;
-		this.EffectBeingPlayed = null;
+		if (!SoundMaster.EffectBeingPlayed.AudioId) return;
+		audio[`${SoundMaster.EffectBeingPlayed.AudioId}`].pause();
+		audio[`${SoundMaster.EffectBeingPlayed.AudioId}`].currentTime = 0;
+		SoundMaster.EffectBeingPlayed = null;
 	}
 
 	private static playEffect(audioId: number): void {
@@ -46,33 +46,34 @@ export class SoundMaster {
 	}
 
 	public static PlayEffect(effect: Effect): void {
-		if (this.EffectBeingPlayed) {
+		if (SoundMaster.EffectBeingPlayed) {
 			if (SoundMaster.LimitToOneEffect) {
-				if (effect.Priority >= this.EffectBeingPlayed.Priority) {
-					this.StopEffect();
-					this.playEffect(effect.AudioId);
-					this.EffectBeingPlayed = effect;
+				if (effect.Priority >= SoundMaster.EffectBeingPlayed.Priority) {
+					SoundMaster.StopEffect();
+					SoundMaster.playEffect(effect.AudioId);
+					SoundMaster.EffectBeingPlayed = effect;
 					return
 				}
 			}
 		}
 		else {
-			this.playEffect(effect.AudioId);
-			this.EffectBeingPlayed = effect;
+			SoundMaster.playEffect(effect.AudioId);
+			SoundMaster.EffectBeingPlayed = effect;
 		}
 	}
 
 	public static StopMusic(): void {
-		if (!this.MusicBeingPlayed.Music) return;
-		audio[`${this.MusicBeingPlayed.Music}`].pause();
-		audio[`${this.MusicBeingPlayed.Music}`].currentTime = 0;
-		this.MusicBeingPlayed = null;
+		if (!SoundMaster.MusicBeingPlayed) return;
+		if (!SoundMaster.MusicBeingPlayed.Music) return;
+		audio[`${SoundMaster.MusicBeingPlayed.Music}`].pause();
+		audio[`${SoundMaster.MusicBeingPlayed.Music}`].currentTime = 0;
+		SoundMaster.MusicBeingPlayed = null;
 	}
 
 	public static PlayMusic(song: Song, stopCurrent: boolean = true): void {
 		if (stopCurrent)
-			this.StopMusic();
-		this.MusicBeingPlayed = song;
+			SoundMaster.StopMusic();
+		SoundMaster.MusicBeingPlayed = song;
 		audio[`${song.Music}`].pause();
 		audio[`${song.Music}`].currentTime = 0;
 		audio[`${song.Music}`].Loop = song.Loop || false;
@@ -80,11 +81,11 @@ export class SoundMaster {
 	}
 
 	public static ResumeEffect(): void {
-		audio[`${this.EffectBeingPlayed.AudioId}`].play();
+		audio[`${SoundMaster.EffectBeingPlayed.AudioId}`].play();
 	}
 
 	public static ResumeMusic(): void {
-		audio[`${this.MusicBeingPlayed.Music}`].play();
+		audio[`${SoundMaster.MusicBeingPlayed.Music}`].play();
 	}
 
 	public static SetEffectsVolume(volume: number): void {

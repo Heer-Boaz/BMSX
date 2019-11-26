@@ -3,17 +3,25 @@
 // import { GameController as C, GameController } from './gamecontroller';
 
 import * as engine from "../BoazEngineJS/engine";
-import { GameModel } from './sintervaniamodel';
+import { GameModel, Chapter } from './sintervaniamodel';
 import { GameController } from "./gamecontroller";
 import { GameView } from './gameview';
+import { GameState } from "../BoazEngineJS/model";
+import { GameConstants } from "./gameconstants";
 
 export function Annnndddd___Go(): engine.Game {
-	new engine.Game();
+	new engine.Game({ x: GameConstants.GameScreenWidth, y: GameConstants.GameScreenHeight });
 	engine.game.setModel(new GameModel());
 	engine.game.setController(new GameController());
 	let gameview = new GameView();
 	engine.game.setGameView(gameview);
 	gameview.init();
+
+	GameModel._.SelectedChapterToPlay = Chapter.GameStart;
+	GameController._.switchState(GameConstants.INITIAL_GAMESTATE);
+	GameController._.switchSubstate(GameConstants.INITIAL_GAMESUBSTATE);
+
+	engine.game.start();
 
 	return engine.game;
 }

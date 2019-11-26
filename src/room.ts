@@ -28,7 +28,6 @@ export class Room {
 	// public bool DefaultRespawnLocation;
 	public Exits: number[];
 	public initFunction: RoomInitDelegate;
-	protected ImageID: number;
 	public BitmapPath: string;
 
 	public static LoadRoom(data: RoomDataContainer): Room {
@@ -160,7 +159,7 @@ export class Room {
 	}
 
 	public Paint() {
-		view.DrawBitmap(this.ImageID, CS.GameScreenStartX, CS.GameScreenStartY);
+		view.DrawBitmap(BitmapId.Room, CS.GameScreenStartX, CS.GameScreenStartY);
 	}
 }
 

@@ -39,8 +39,8 @@ export interface IGameObject {
     priority?: number;
 
     // Methods
-    takeTurn(): void;
-    paint?(offset?: Point): void;
+    TakeTurn(): void;
+    Paint?(offset?: Point): void;
     postpaint?(offset?: Point): void; // Post-processing such as lighting effects or the characters of an ASCII-buffer in case of an ASCII-sprite
     objectCollide(o: IGameObject): boolean;
     areaCollide(a: Area): boolean;

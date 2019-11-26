@@ -24,12 +24,17 @@ export function LoadGame(slot: number): Savegame {
 	// 		#endif
 	// 	}
 	// 	return result;
-	throw "Not implemented yet :(";
+	console.warn("Not implemented yet :(");
+	// throw "Not implemented yet :(";
+	return null;
 }
 
 export function SlotExists(slot: number): boolean {
 	let file = GetSavepath(slot);
-	throw "Not implemented yet :(";
+	console.warn("Not implemented yet :(");
+
+	return false;
+	// throw "Not implemented yet :(";
 	// 	return Directory.Exists("./Saves") && File.Exists(file);
 }
 

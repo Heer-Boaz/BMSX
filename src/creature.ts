@@ -9,7 +9,7 @@ import { Constants } from "../BoazEngineJS/constants";
 import { Area, Point } from "../BoazEngineJS/interfaces";
 
 /*[Serializable]*/
-export class Creature extends Sprite {
+export abstract class Creature extends Sprite {
     protected moveBeforeFrameChange: number;
     protected movementSprites: Map<Direction, BitmapId[]>;
     protected moveLeftBeforeFrameChange: number;

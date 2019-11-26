@@ -9,7 +9,37 @@ let audioLoadedCount: number;
 let totalAudio: number;
 let audioLoaded: boolean;
 
+export const enum ResourceType {
+    Image,
+    Audio
+}
+
 export namespace GameLoader {
+    export function loadresource(src: string, type: ResourceType): HTMLImageElement {
+        let url: string;
+        switch (type) {
+            case ResourceType.Image:
+                url = `${Constants.IMAGE_PATH}${src}`;
+                break;
+            case ResourceType.Audio:
+                url = `${Constants.AUDIO_PATH}${src}`;
+                break;
+        }
+
+        let result = new Image();
+        result.src = '';
+        result.onload = (evt: Event) => {
+            (<HTMLElement>(evt.srcElement)).onload = null;
+        };
+        result.onerror = () => {
+            throw Error(`Could not load resource: "${name}" at "${url}"`);
+        }
+        console.info('Loading resource: ' + url);
+        result.src = url;
+
+        return result;
+    }
+
     export function loadgame(img2src: Map<BitmapId, string> | null, snd2src: Map<AudioId, string> | null): void {
         imagesLoaded = false;
         audioLoaded = false;
@@ -34,16 +64,16 @@ export namespace GameLoader {
         imagesList.forEach((value, key) => {
             let url = `${Constants.IMAGE_PATH}${value}`;
             images[key] = new Image();
-            images[key].src = '';
-            images[key].onload = (evt) => {
+            // images[key].src = '';
+            images[key].onload = (evt: Event) => {
                 imagesLoadedCount++;
                 // console.info('Resource loaded: ' + name);
                 if (imagesLoadedCount >= totalImages)
                     handleImagesLoaded();
                 (<HTMLElement>(evt.srcElement)).onload = null;
             };
-            images[key].onerror = (evt) => {
-                throw Error(`Could not load resource: "${name}" at "${url}"`);
+            images[key].onerror = () => {
+                throw Error(`Could not load image: "${key}" at "${url}"`);
             }
             console.info('Loading resource: ' + url);
             images[key].src = url;
@@ -67,16 +97,16 @@ export namespace GameLoader {
             audio[key].preload = 'auto';
             audio[key].controls = false;
             audio[key].loop = false;
-            audio[key].src = url;
             audio[key].onloadeddata = () => {
                 audioLoadedCount++;
                 if (audioLoadedCount >= totalAudio)
                     handleAudioLoaded();
                 audio[key].onload = null;
             };
-            audio[key].onerror = (evt) => {
-                throw Error(`Could not load resource: "${name}" at "${url}"`);
+            audio[key].onerror = () => {
+                throw Error(`Could not load audio: "${key}" at "${url}"`);
             }
+            audio[key].src = url;
         });
     }
 
@@ -98,6 +128,6 @@ export namespace GameLoader {
     }
 
     export function handleLoadingComplete(): void {
-        game.startAfterLoad();
+        game.startAfterGameLoad();
     }
 }

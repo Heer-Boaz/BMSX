@@ -5,7 +5,7 @@ import { LoadGame } from "./gamestateloader";
 
 export namespace GameSaver {
 	export function saveGame(m: GameModel, slot: number): void {
-		throw "Not implemented yet :(";
+		console.warn("Not implemented yet :(");
 	}
 
 	export function GetCheckpoint(m: GameModel): Savegame {

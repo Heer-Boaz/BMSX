@@ -4,7 +4,7 @@ import { GameModel as model } from "./sintervaniamodel";
 import { Point } from "../BoazEngineJS/interfaces";
 
 /*[Serializable]*/
-export class PlayerProjectile extends Projectile {
+export abstract class PlayerProjectile extends Projectile {
     protected foesThatWereHit: Foe[];
     constructor(fpos: Point, speed: Point) {
         super(fpos, speed);

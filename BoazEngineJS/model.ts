@@ -1,7 +1,7 @@
 ﻿import { IGameObject, Point } from "./interfaces";
 
-export enum GameState { None = 0 }
-export enum GameSubstate { Default = 0 }
+export const enum GameState { None = 0 }
+export const enum GameSubstate { Default = 0 }
 
 export abstract class Model {
     public id2object: Map<string, IGameObject>;

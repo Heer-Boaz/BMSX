@@ -87,7 +87,7 @@ export class GameController extends Controller {
                 break;
             case GameState.GameStart2:
                 this.timer.restart();
-                S.PlayMusic(RM.Music[AudioId.Stage]);
+                // S.PlayMusic(RM.Music[AudioId.Stage]);
                 break;
             case GameState.Game:
                 break;
@@ -99,30 +99,30 @@ export class GameController extends Controller {
     protected switchToSubstate(newSubstate: GameSubstate): void {
         M._.OldSubstate = M._.Substate;
         switch (newSubstate) {
-            case M.GameSubstate.Conversation:
+            case GameSubstate.Conversation:
                 break;
-            case M.GameSubstate.BelmontDies:
-                S.PlayMusic(RM.Music[AudioId.Ohnoes]);
+            case GameSubstate.BelmontDies:
+                // S.PlayMusic(RM.Music[AudioId.Ohnoes]);
                 break;
-            case M.GameSubstate.ItsCurtainsForYou:
-            case M.GameSubstate.ToEndDemo:
+            case GameSubstate.ItsCurtainsForYou:
+            case GameSubstate.ToEndDemo:
                 V._.ItsCurtains.Init();
                 break;
-            case M.GameSubstate.GameOver:
-                S.PlayMusic(RM.Music[AudioId.Humiliation]);
+            case GameSubstate.GameOver:
+                // S.PlayMusic(RM.Music[AudioId.Humiliation]);
                 V._.GameOverScreen.Init();
                 break;
-            case M.GameSubstate.IngameMenu:
+            case GameSubstate.IngameMenu:
                 BStopwatch.pauseAllRunningWatches(true);
                 break;
-            case M.GameSubstate.GameMenu:
+            case GameSubstate.GameMenu:
                 BStopwatch.pauseAllRunningWatches(true);
                 break;
-            case M.GameSubstate.SwitchRoom:
+            case GameSubstate.SwitchRoom:
                 this.timer.restart();
                 break;
-            case M.GameSubstate.Default:
-                if (M._.OldSubstate == M.GameSubstate.IngameMenu || M._.OldSubstate == M.GameSubstate.GameMenu)
+            case GameSubstate.Default:
+                if (M._.OldSubstate == GameSubstate.IngameMenu || M._.OldSubstate == GameSubstate.GameMenu)
                     BStopwatch.resumeAllPausedWatches();
                 break;
         }
@@ -168,37 +168,37 @@ export class GameController extends Controller {
                 break;
             case GameState.Game:
                 switch (M._.Substate) {
-                    case M.GameSubstate.GameMenu:
+                    case GameSubstate.GameMenu:
                         this.handleInputDuringGame();
                         M._.GameMenu.TakeTurn();
                         break;
-                    case M.GameSubstate.BelmontDies:
+                    case GameSubstate.BelmontDies:
                         this.handleInputDuringGame();
                         M._.Belmont.TakeTurn();
                         V._.Hud.TakeTurn();
                         break;
-                    case M.GameSubstate.ItsCurtainsForYou:
-                    case M.GameSubstate.ToEndDemo:
+                    case GameSubstate.ItsCurtainsForYou:
+                    case GameSubstate.ToEndDemo:
                         this.handleInputDuringGame();
                         M._.Belmont.TakeTurn();
                         V._.Hud.TakeTurn();
                         V._.ItsCurtains.TakeTurn();
                         break;
-                    case M.GameSubstate.GameOver:
+                    case GameSubstate.GameOver:
                         this.handleInputDuringGame();
                         V._.GameOverScreen.TakeTurn();
                         M._.GameMenu.TakeTurn();
                         break;
-                    case M.GameSubstate.SwitchRoom:
+                    case GameSubstate.SwitchRoom:
                         if (waitDuration(this.timer, GameConstants.WaitAfterRoomSwitch)) {
                             this.SwitchToOldSubstate();
                             if (GameConstants.CheckpointAtRoomEntry)
                                 this.StoreCheckpoint();
                         }
                         break;
-                    case M.GameSubstate.Default:
+                    case GameSubstate.Default:
                         this.handleInputDuringGame();
-                        M._.objects.forEach(o => o.takeTurn());
+                        M._.objects.forEach(o => o.TakeTurn());
                         M._.objects.filter(o => o.disposeFlag).forEach(o => M._.remove(o));
                         M._.CurrentRoom.TakeTurn();
                         V._.Hud.TakeTurn();
@@ -209,17 +209,17 @@ export class GameController extends Controller {
                 if (M._.Belmont.Dying)
                     this.SwitchToOldState();
                 switch (M._.Substate) {
-                    case M.GameSubstate.SwitchRoom:
+                    case GameSubstate.SwitchRoom:
                         if (waitDuration(this.timer, GameConstants.WaitAfterRoomSwitch)) {
                             this.SwitchToOldSubstate();
                         }
                         break;
-                    case M.GameSubstate.GameMenu:
+                    case GameSubstate.GameMenu:
                         this.handleInputDuringGame();
                         M._.GameMenu.TakeTurn();
                         break;
                     default:
-                        M._.objects.forEach(o => o.takeTurn());
+                        M._.objects.forEach(o => o.TakeTurn());
                         M._.objects.filter(o => o.disposeFlag).forEach(o => M._.remove(o));
                         M._.CurrentRoom.TakeTurn();
                         V._.Hud.TakeTurn();
@@ -237,19 +237,19 @@ export class GameController extends Controller {
         if (KeyState.KC_F1)
             this.PauseGame();
         switch (M._.Substate) {
-            case M.GameSubstate.BelmontDies:
-            case M.GameSubstate.ItsCurtainsForYou:
-            case M.GameSubstate.ToEndDemo:
+            case GameSubstate.BelmontDies:
+            case GameSubstate.ItsCurtainsForYou:
+            case GameSubstate.ToEndDemo:
                 break;
-            case M.GameSubstate.GameOver:
+            case GameSubstate.GameOver:
                 V._.GameOverScreen.HandleInput();
                 if (M._.GameMenu.visible)
                     this.handleInputDuringGameMenu();
                 break;
-            case M.GameSubstate.GameMenu:
+            case GameSubstate.GameMenu:
                 this.handleInputDuringGameMenu();
                 break;
-            case M.GameSubstate.Default:
+            case GameSubstate.Default:
             default:
                 if (KeyState.KC_SPACE) {
                     WeaponFireHandler.HandleFireMainWeapon();
@@ -276,7 +276,7 @@ export class GameController extends Controller {
     }
 
     public KillFocus(): void {
-        if (!M._.paused && M._.State == GameState.Game && M._.Substate == M.GameSubstate.Default && GameConstants.PauseGameOnKillFocus)
+        if (!M._.paused && M._.State == GameState.Game && M._.Substate == GameSubstate.Default && GameConstants.PauseGameOnKillFocus)
             this.PauseGame();
     }
 
@@ -291,22 +291,22 @@ export class GameController extends Controller {
         if (waitDuration(this.startAfterLoadTimer, GameConstants.WaitAfterLoadGame)) {
             M._.startAfterLoad = false;
             BStopwatch.removeWatch(this.startAfterLoadTimer);
-            if (S.MusicBeingPlayed != null)
+            if (S.MusicBeingPlayed)
                 S.PlayMusic(S.MusicBeingPlayed);
         }
     }
 
     public BelmontDied(): void {
-        this.switchToSubstate(M.GameSubstate.BelmontDies);
+        this.switchToSubstate(GameSubstate.BelmontDies);
     }
 
     public BelmontDeathAniFinished(): void {
-        this.switchToSubstate(M.GameSubstate.ItsCurtainsForYou);
+        this.switchToSubstate(GameSubstate.ItsCurtainsForYou);
     }
 
     public ItsCurtainsAniFinished(): void {
-        if (M._.Substate == M.GameSubstate.ItsCurtainsForYou)
-            this.switchToSubstate(M.GameSubstate.GameOver);
+        if (M._.Substate == GameSubstate.ItsCurtainsForYou)
+            this.switchToSubstate(GameSubstate.GameOver);
         else this.SwitchToState(GameState.EndDemo);
     }
 
@@ -315,7 +315,7 @@ export class GameController extends Controller {
     }
 
     public BossDefeated(): void {
-        this.switchToSubstate(M.GameSubstate.ToEndDemo);
+        this.switchToSubstate(GameSubstate.ToEndDemo);
     }
 
     public HandleRoomExitViaMovement(targetRoom: number, dir: Direction): void {
@@ -340,7 +340,7 @@ export class GameController extends Controller {
     public DoRoomExit(targetRoom: number): void {
         M._.LastFoeThatWasHit = null;
         M._.LoadRoom(targetRoom);
-        this.switchToSubstate(M.GameSubstate.SwitchRoom);
+        this.switchToSubstate(GameSubstate.SwitchRoom);
     }
 
     private setupGameStart(newState: GameState): void {
@@ -367,7 +367,7 @@ export class GameController extends Controller {
 
     public OpenGameMenu(): void {
         M._.GameMenu.Open();
-        this.switchToSubstate(M.GameSubstate.GameMenu);
+        this.switchToSubstate(GameSubstate.GameMenu);
     }
 
     public CloseGameMenu(): void {
@@ -395,7 +395,7 @@ export class GameController extends Controller {
     }
 
     public SaveGame(slot: number): void {
-        if (M._.Substate == M.GameSubstate.GameMenu)
+        if (M._.Substate == GameSubstate.GameMenu)
             this.CloseGameMenu();
         BStopwatch.removeWatch(this.timer);
         GameSaver.saveGame(M._, slot);

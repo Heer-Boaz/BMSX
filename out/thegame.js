@@ -68,80 +68,24 @@ System.register("BoazEngineJS/msx", [], function (exports_3, context_3) {
 });
 System.register("BoazEngineJS/direction", [], function (exports_4, context_4) {
     "use strict";
-    var Direction;
     var __moduleName = context_4 && context_4.id;
     return {
         setters: [],
         execute: function () {
-            (function (Direction) {
-                Direction[Direction["Up"] = 0] = "Up";
-                Direction[Direction["Right"] = 1] = "Right";
-                Direction[Direction["Down"] = 2] = "Down";
-                Direction[Direction["Left"] = 3] = "Left";
-                Direction[Direction["None"] = 4] = "None";
-            })(Direction || (Direction = {}));
-            exports_4("Direction", Direction);
         }
     };
 });
-System.register("src/gameconstants", ["BoazEngineJS/msx"], function (exports_5, context_5) {
+System.register("BoazEngineJS/model", [], function (exports_5, context_5) {
     "use strict";
-    var msx_1, GameConstants;
+    var Model;
     var __moduleName = context_5 && context_5.id;
-    return {
-        setters: [
-            function (msx_1_1) {
-                msx_1 = msx_1_1;
-            }
-        ],
-        execute: function () {
-            (function (GameConstants) {
-                GameConstants.SoundEnabled = false;
-                GameConstants.InitialFullscreen = false;
-                GameConstants.InitialScale = 1;
-                GameConstants.PauseGameOnKillFocus = false;
-                GameConstants.AnimateFoeHealthLevel = false;
-                GameConstants.EnemiesAfootAsProperty = false;
-                GameConstants.Belmont_MaxHealth_AtStart = 48;
-                GameConstants.Belmont_MaxHealth_Increase = 2;
-                GameConstants.Belmont_MaxHearts = 99;
-                GameConstants.CheckpointAtRoomEntry = false;
-                GameConstants.ManualCheckpoints = !GameConstants.CheckpointAtRoomEntry;
-                GameConstants.WindowTitle = "";
-                GameConstants.HUDHeight = 36;
-                GameConstants.GameScreenWidth = msx_1.MSXConstants.MSX2ScreenWidth;
-                GameConstants.GameScreenHeight = msx_1.MSXConstants.MSX2ScreenHeight - GameConstants.HUDHeight;
-                GameConstants.StageScreenWidthTiles = (GameConstants.GameScreenWidth / msx_1.TileSize);
-                GameConstants.StageScreenHeightTiles = (GameConstants.GameScreenHeight / msx_1.TileSize);
-                GameConstants.GameScreenStartX = 0;
-                GameConstants.GameScreenStartY = 36;
-                GameConstants.ImageBasePath = "./Content/Images/";
-                GameConstants.Extension_PNG = ".png";
-                GameConstants.WaitAfterLoadGame = 1000;
-                GameConstants.WaitAfterRoomSwitch = 500;
-                GameConstants.WaitAfterGameStart1 = 2;
-                GameConstants.WaitAfterGameStart2 = 4;
-            })(GameConstants || (GameConstants = {}));
-            exports_5("GameConstants", GameConstants);
-        }
-    };
-});
-System.register("BoazEngineJS/model", [], function (exports_6, context_6) {
-    "use strict";
-    var GameState, GameSubstate, Model;
-    var __moduleName = context_6 && context_6.id;
     return {
         setters: [],
         execute: function () {
-            (function (GameState) {
-                GameState[GameState["None"] = 0] = "None";
-            })(GameState || (GameState = {}));
-            exports_6("GameState", GameState);
-            (function (GameSubstate) {
-                GameSubstate[GameSubstate["Default"] = 0] = "Default";
-            })(GameSubstate || (GameSubstate = {}));
-            exports_6("GameSubstate", GameSubstate);
             Model = class Model {
+                constructor() {
+                    this.initModelForGameStart();
+                }
                 get OldState() {
                     return this.gameOldState;
                 }
@@ -166,14 +110,11 @@ System.register("BoazEngineJS/model", [], function (exports_6, context_6) {
                 set Substate(value) {
                     this.gameSubstate = value;
                 }
-                constructor() {
-                    this.initModelForGameStart();
-                }
                 initModelForGameStart() {
                     this.objects = [];
                     this.id2object = new Map();
-                    this.gameState = GameState.None;
-                    this.gameSubstate = GameSubstate.Default;
+                    this.gameState = 0;
+                    this.gameSubstate = 0;
                     this.paused = false;
                 }
                 clearModel() {
@@ -211,28 +152,64 @@ System.register("BoazEngineJS/model", [], function (exports_6, context_6) {
                         this.id2object.delete(o.id);
                 }
             };
-            exports_6("Model", Model);
+            exports_5("Model", Model);
         }
     };
 });
-System.register("BoazEngineJS/constants", ["BoazEngineJS/model"], function (exports_7, context_7) {
+System.register("src/gameconstants", ["BoazEngineJS/msx"], function (exports_6, context_6) {
     "use strict";
-    var model_1, Constants;
-    var __moduleName = context_7 && context_7.id;
+    var msx_1, GameConstants;
+    var __moduleName = context_6 && context_6.id;
     return {
         setters: [
-            function (model_1_1) {
-                model_1 = model_1_1;
+            function (msx_1_1) {
+                msx_1 = msx_1_1;
             }
         ],
         execute: function () {
+            (function (GameConstants) {
+                GameConstants.INITIAL_GAMESTATE = 5;
+                GameConstants.INITIAL_GAMESUBSTATE = 0;
+                GameConstants.SoundEnabled = false;
+                GameConstants.InitialFullscreen = false;
+                GameConstants.InitialScale = 1;
+                GameConstants.PauseGameOnKillFocus = false;
+                GameConstants.AnimateFoeHealthLevel = false;
+                GameConstants.EnemiesAfootAsProperty = false;
+                GameConstants.Belmont_MaxHealth_AtStart = 48;
+                GameConstants.Belmont_MaxHealth_Increase = 2;
+                GameConstants.Belmont_MaxHearts = 99;
+                GameConstants.CheckpointAtRoomEntry = false;
+                GameConstants.ManualCheckpoints = !GameConstants.CheckpointAtRoomEntry;
+                GameConstants.WindowTitle = "";
+                GameConstants.HUDHeight = 36;
+                GameConstants.GameScreenWidth = msx_1.MSXConstants.MSX2ScreenWidth;
+                GameConstants.GameScreenHeight = msx_1.MSXConstants.MSX2ScreenHeight - GameConstants.HUDHeight;
+                GameConstants.StageScreenWidthTiles = (GameConstants.GameScreenWidth / msx_1.TileSize);
+                GameConstants.StageScreenHeightTiles = (GameConstants.GameScreenHeight / msx_1.TileSize);
+                GameConstants.GameScreenStartX = 0;
+                GameConstants.GameScreenStartY = 36;
+                GameConstants.ImageBasePath = "./Content/Images/";
+                GameConstants.Extension_PNG = ".png";
+                GameConstants.WaitAfterLoadGame = 1000;
+                GameConstants.WaitAfterRoomSwitch = 500;
+                GameConstants.WaitAfterGameStart1 = 2;
+                GameConstants.WaitAfterGameStart2 = 4;
+            })(GameConstants || (GameConstants = {}));
+            exports_6("GameConstants", GameConstants);
+        }
+    };
+});
+System.register("BoazEngineJS/constants", [], function (exports_7, context_7) {
+    "use strict";
+    var Constants;
+    var __moduleName = context_7 && context_7.id;
+    return {
+        setters: [],
+        execute: function () {
             (function (Constants) {
-                Constants.INITIAL_GAMESTATE = model_1.GameState.None;
-                Constants.INITIAL_GAMESUBSTATE = model_1.GameSubstate.Default;
-                Constants.IMAGE_PATH = 'img/';
-                Constants.AUDIO_PATH = 'snd/';
-                Constants.GAMESCREEN_WIDTH = 1000;
-                Constants.GAMESCREEN_HEIGHT = 600;
+                Constants.IMAGE_PATH = 'rom/Graphics/';
+                Constants.AUDIO_PATH = 'rom/';
                 Constants.DRAWBITMAP_NO_OPTION = 0;
                 Constants.DRAWBITMAP_HFLIP = 0x1;
                 Constants.DRAWBITMAP_VFLIP = 0x2;
@@ -258,7 +235,6 @@ System.register("BoazEngineJS/btimer", [], function (exports_8, context_8) {
                     this.pauseDuringMenu = true;
                     this.pauseAtFocusLoss = true;
                     this.running = false;
-                    this.elapsedMilliseconds = 0;
                     this.start = () => {
                         this.running = true;
                     };
@@ -277,6 +253,7 @@ System.register("BoazEngineJS/btimer", [], function (exports_8, context_8) {
                             return;
                         this.elapsedMilliseconds += elapsedMs;
                     };
+                    this.elapsedMilliseconds = 0;
                 }
                 static createWatch() {
                     let result = new BStopwatch();
@@ -322,10 +299,10 @@ System.register("BoazEngineJS/btimer", [], function (exports_8, context_8) {
                     this.watchesThatHaveBeenStoppedAtFocusLoss.length = 0;
                 }
             };
+            exports_8("BStopwatch", BStopwatch);
             BStopwatch.watchesThatHaveBeenStopped = [];
             BStopwatch.watchesThatHaveBeenStoppedAtFocusLoss = [];
             BStopwatch.Watches = [];
-            exports_8("BStopwatch", BStopwatch);
         }
     };
 });
@@ -388,15 +365,12 @@ System.register("BoazEngineJS/controller", ["BoazEngineJS/btimer", "BoazEngineJS
         }
     };
 });
-System.register("BoazEngineJS/view", ["BoazEngineJS/constants", "BoazEngineJS/engine"], function (exports_10, context_10) {
+System.register("BoazEngineJS/view", ["BoazEngineJS/engine"], function (exports_10, context_10) {
     "use strict";
-    var constants_1, engine_2, DrawBitmap, View;
+    var engine_2, DrawBitmap, View;
     var __moduleName = context_10 && context_10.id;
     return {
         setters: [
-            function (constants_1_1) {
-                constants_1 = constants_1_1;
-            },
             function (engine_2_1) {
                 engine_2 = engine_2_1;
             }
@@ -408,33 +382,30 @@ System.register("BoazEngineJS/view", ["BoazEngineJS/constants", "BoazEngineJS/en
             })(DrawBitmap || (DrawBitmap = {}));
             exports_10("DrawBitmap", DrawBitmap);
             View = class View {
-                constructor() {
+                constructor(gamescreensize) {
                     this.canvas = $('#gamescreen')[0];
                     this.context = this.canvas.getContext('2d');
+                    this.gamescreenSize = gamescreensize;
                 }
                 init() {
                     this.handleResize();
                 }
                 setRelativeToScreenSize(element, size) {
-                    element.style.width = [size.x * this.dx, 'px'].join('');
-                    element.style.height = [size.y * this.dy, 'px'].join('');
                 }
                 calculateSize() {
                     let w = Math.max(document.documentElement.clientWidth, window.innerWidth || 0);
                     let h = Math.max(document.documentElement.clientHeight, window.innerHeight || 0);
                     this.windowSize = { x: w, y: h };
-                    this.dx = this.windowSize.x / constants_1.Constants.GAMESCREEN_WIDTH;
-                    this.dy = this.windowSize.y / constants_1.Constants.GAMESCREEN_HEIGHT;
+                    this.dx = this.windowSize.x / this.gamescreenSize.x;
+                    this.dy = this.windowSize.y / this.gamescreenSize.y;
                     this.dxy = Math.min(this.dx, this.dy);
                 }
                 handleResize() {
                     if (document.getElementById('gamescreen').style.visibility == 'hidden')
                         return;
                     engine_2.view.calculateSize();
-                    document.getElementById('gamescreen').style.transform = ['scale(', engine_2.view.dx, ',', engine_2.view.dy, ')'].join('');
-                    document.getElementById('gamescreen').style.transformOrigin = '0 0';
-                    document.getElementById('gamescreen').style.width = (engine_2.view.windowSize.x * (1 + engine_2.view.dx)) + 'px';
-                    document.getElementById('gamescreen').style.height = (engine_2.view.windowSize.y * (1 + engine_2.view.dy)) + 'px';
+                    this.canvas.width = this.windowSize.x;
+                    this.canvas.height = this.windowSize.y;
                 }
                 clear(context) {
                     if (context == null)
@@ -461,12 +432,13 @@ System.register("BoazEngineJS/view", ["BoazEngineJS/constants", "BoazEngineJS/en
                     if (!img)
                         throw new Error("Cannot find image with id '" + imgid + "'");
                     this.context.save();
-                    this.context.translate(pos.x, pos.y);
-                    this.context.drawImage(img, 0, 0);
+                    this.context.scale(this.dx, this.dy);
+                    this.context.drawImage(img, pos.x, pos.y);
                     this.context.restore();
                 }
                 DrawRectangle(x, y, ex, ey, c) {
                     this.context.save();
+                    this.context.scale(this.dx, this.dy);
                     this.context.beginPath();
                     this.context.strokeStyle = this.toRgb(c);
                     this.context.rect(x, y, ex - x, ey - y);
@@ -475,6 +447,7 @@ System.register("BoazEngineJS/view", ["BoazEngineJS/constants", "BoazEngineJS/en
                 }
                 FillRectangle(x, y, ex, ey, c) {
                     this.context.save();
+                    this.context.scale(this.dx, this.dy);
                     this.context.beginPath();
                     let colorRgb = this.toRgb(c);
                     this.context.fillStyle = colorRgb;
@@ -522,23 +495,23 @@ System.register("BoazEngineJS/soundmaster", ["BoazEngineJS/engine"], function (e
         execute: function () {
             SoundMaster = class SoundMaster {
                 static OnMusicBufferEnd() {
-                    if (this.MusicBeingPlayed && this.MusicBeingPlayed.NextSong) {
-                        let nextSong = this.MusicBeingPlayed.NextSong;
-                        this.MusicBeingPlayed = nextSong;
-                        this.PlayMusic(nextSong);
+                    if (SoundMaster.MusicBeingPlayed && SoundMaster.MusicBeingPlayed.NextSong) {
+                        let nextSong = SoundMaster.MusicBeingPlayed.NextSong;
+                        SoundMaster.MusicBeingPlayed = nextSong;
+                        SoundMaster.PlayMusic(nextSong);
                     }
                     else
-                        this.MusicBeingPlayed = null;
+                        SoundMaster.MusicBeingPlayed = null;
                 }
                 static OnEffectBufferEnd() {
-                    this.EffectBeingPlayed = null;
+                    SoundMaster.EffectBeingPlayed = null;
                 }
                 static StopEffect() {
-                    if (!this.EffectBeingPlayed.AudioId)
+                    if (!SoundMaster.EffectBeingPlayed.AudioId)
                         return;
-                    engine_3.audio[`${this.EffectBeingPlayed.AudioId}`].pause();
-                    engine_3.audio[`${this.EffectBeingPlayed.AudioId}`].currentTime = 0;
-                    this.EffectBeingPlayed = null;
+                    engine_3.audio[`${SoundMaster.EffectBeingPlayed.AudioId}`].pause();
+                    engine_3.audio[`${SoundMaster.EffectBeingPlayed.AudioId}`].currentTime = 0;
+                    SoundMaster.EffectBeingPlayed = null;
                 }
                 static playEffect(audioId) {
                     engine_3.audio[`${audioId}`].pause();
@@ -546,42 +519,44 @@ System.register("BoazEngineJS/soundmaster", ["BoazEngineJS/engine"], function (e
                     engine_3.audio[`${audioId}`].play();
                 }
                 static PlayEffect(effect) {
-                    if (this.EffectBeingPlayed) {
+                    if (SoundMaster.EffectBeingPlayed) {
                         if (SoundMaster.LimitToOneEffect) {
-                            if (effect.Priority >= this.EffectBeingPlayed.Priority) {
-                                this.StopEffect();
-                                this.playEffect(effect.AudioId);
-                                this.EffectBeingPlayed = effect;
+                            if (effect.Priority >= SoundMaster.EffectBeingPlayed.Priority) {
+                                SoundMaster.StopEffect();
+                                SoundMaster.playEffect(effect.AudioId);
+                                SoundMaster.EffectBeingPlayed = effect;
                                 return;
                             }
                         }
                     }
                     else {
-                        this.playEffect(effect.AudioId);
-                        this.EffectBeingPlayed = effect;
+                        SoundMaster.playEffect(effect.AudioId);
+                        SoundMaster.EffectBeingPlayed = effect;
                     }
                 }
                 static StopMusic() {
-                    if (!this.MusicBeingPlayed.Music)
+                    if (!SoundMaster.MusicBeingPlayed)
                         return;
-                    engine_3.audio[`${this.MusicBeingPlayed.Music}`].pause();
-                    engine_3.audio[`${this.MusicBeingPlayed.Music}`].currentTime = 0;
-                    this.MusicBeingPlayed = null;
+                    if (!SoundMaster.MusicBeingPlayed.Music)
+                        return;
+                    engine_3.audio[`${SoundMaster.MusicBeingPlayed.Music}`].pause();
+                    engine_3.audio[`${SoundMaster.MusicBeingPlayed.Music}`].currentTime = 0;
+                    SoundMaster.MusicBeingPlayed = null;
                 }
                 static PlayMusic(song, stopCurrent = true) {
                     if (stopCurrent)
-                        this.StopMusic();
-                    this.MusicBeingPlayed = song;
+                        SoundMaster.StopMusic();
+                    SoundMaster.MusicBeingPlayed = song;
                     engine_3.audio[`${song.Music}`].pause();
                     engine_3.audio[`${song.Music}`].currentTime = 0;
                     engine_3.audio[`${song.Music}`].Loop = song.Loop || false;
                     engine_3.audio[`${song.Music}`].play();
                 }
                 static ResumeEffect() {
-                    engine_3.audio[`${this.EffectBeingPlayed.AudioId}`].play();
+                    engine_3.audio[`${SoundMaster.EffectBeingPlayed.AudioId}`].play();
                 }
                 static ResumeMusic() {
-                    engine_3.audio[`${this.MusicBeingPlayed.Music}`].play();
+                    engine_3.audio[`${SoundMaster.MusicBeingPlayed.Music}`].play();
                 }
                 static SetEffectsVolume(volume) {
                     throw Error("Implementeer deze meuk!");
@@ -590,260 +565,160 @@ System.register("BoazEngineJS/soundmaster", ["BoazEngineJS/engine"], function (e
                     throw Error("Implementeer deze meuk!");
                 }
             };
-            SoundMaster.LimitToOneEffect = true;
             exports_13("SoundMaster", SoundMaster);
+            SoundMaster.LimitToOneEffect = true;
         }
     };
 });
-System.register("BoazEngineJS/engine", ["BoazEngineJS/constants", "BoazEngineJS/view", "BoazEngineJS/soundmaster"], function (exports_14, context_14) {
+System.register("BoazEngineJS/resourceids", [], function (exports_14, context_14) {
     "use strict";
-    var constants_2, view_1, soundmaster_1, game, model, controller, sound, view, gameview, images, audio, Game;
     var __moduleName = context_14 && context_14.id;
-    return {
-        setters: [
-            function (constants_2_1) {
-                constants_2 = constants_2_1;
-            },
-            function (view_1_1) {
-                view_1 = view_1_1;
-            },
-            function (soundmaster_1_1) {
-                soundmaster_1 = soundmaster_1_1;
-            }
-        ],
-        execute: function () {
-            exports_14("images", images = new Map());
-            exports_14("audio", audio = new Map());
-            Game = class Game {
-                constructor() {
-                    exports_14("game", game = this);
-                    exports_14("sound", sound = new soundmaster_1.SoundMaster());
-                    exports_14("view", view = new view_1.View());
-                    this.fps = 50;
-                }
-                setModel(m) {
-                    exports_14("model", model = m);
-                }
-                setController(c) {
-                    exports_14("controller", controller = c);
-                }
-                setGameView(v) {
-                    exports_14("gameview", gameview = v);
-                }
-                get TurnCounter() {
-                    return this.turnCounter;
-                }
-                GameOptionsChanged() {
-                    throw Error("Not implemented yet :-(");
-                }
-                loadGameOptions() {
-                    throw Error("Not implemented yet :-(");
-                }
-                startAfterLoad() {
-                    controller.switchState(constants_2.Constants.INITIAL_GAMESTATE);
-                    controller.switchSubstate(constants_2.Constants.INITIAL_GAMESUBSTATE);
-                    requestAnimationFrame(function (timestamp) {
-                        game.run(timestamp);
-                    });
-                    $(window).on('resize', function () {
-                        view.handleResize();
-                    });
-                    window.addEventListener('orientationchange', view.handleResize, false);
-                    view.handleResize();
-                }
-                update(elapsedMs) {
-                    controller.takeTurn(elapsedMs);
-                }
-                draw(elapsedMs) {
-                    gameview.drawGame(elapsedMs);
-                }
-                run(timestamp) {
-                    let elapsedMs = timestamp - this.lastUpdate;
-                    this.lastUpdate = timestamp;
-                    this.update(elapsedMs);
-                    this.draw(elapsedMs);
-                    let t = this;
-                    requestAnimationFrame(function (timestamp) {
-                        game.run(timestamp);
-                        ++t.turnCounter;
-                    });
-                }
-            };
-            exports_14("Game", Game);
-            $(function () {
-            });
-            if (typeof Array.isArray === 'undefined') {
-                Array.isArray = function (obj) {
-                    return Object.prototype.toString.call(obj) === '[object Array]';
-                };
-            }
-            ;
-        }
-    };
-});
-System.register("BoazEngineJS/resourceids", [], function (exports_15, context_15) {
-    "use strict";
-    var BitmapId, AudioId;
-    var __moduleName = context_15 && context_15.id;
     return {
         setters: [],
         execute: function () {
-            (function (BitmapId) {
-                BitmapId[BitmapId["None"] = -1] = "None";
-                BitmapId[BitmapId["Room"] = 0] = "Room";
-                BitmapId[BitmapId["Belmont_l1"] = 1] = "Belmont_l1";
-                BitmapId[BitmapId["Belmont_l2"] = 2] = "Belmont_l2";
-                BitmapId[BitmapId["Belmont_l3"] = 3] = "Belmont_l3";
-                BitmapId[BitmapId["Belmont_r1"] = 4] = "Belmont_r1";
-                BitmapId[BitmapId["Belmont_r2"] = 5] = "Belmont_r2";
-                BitmapId[BitmapId["Belmont_r3"] = 6] = "Belmont_r3";
-                BitmapId[BitmapId["Belmont_ld"] = 7] = "Belmont_ld";
-                BitmapId[BitmapId["Belmont_rd"] = 8] = "Belmont_rd";
-                BitmapId[BitmapId["Belmont_lw1"] = 9] = "Belmont_lw1";
-                BitmapId[BitmapId["Belmont_lw2"] = 10] = "Belmont_lw2";
-                BitmapId[BitmapId["Belmont_lw3"] = 11] = "Belmont_lw3";
-                BitmapId[BitmapId["Belmont_rw1"] = 12] = "Belmont_rw1";
-                BitmapId[BitmapId["Belmont_rw2"] = 13] = "Belmont_rw2";
-                BitmapId[BitmapId["Belmont_rw3"] = 14] = "Belmont_rw3";
-                BitmapId[BitmapId["Belmont_lwd1"] = 15] = "Belmont_lwd1";
-                BitmapId[BitmapId["Belmont_lwd2"] = 16] = "Belmont_lwd2";
-                BitmapId[BitmapId["Belmont_lwd3"] = 17] = "Belmont_lwd3";
-                BitmapId[BitmapId["Belmont_rwd1"] = 18] = "Belmont_rwd1";
-                BitmapId[BitmapId["Belmont_rwd2"] = 19] = "Belmont_rwd2";
-                BitmapId[BitmapId["Belmont_rwd3"] = 20] = "Belmont_rwd3";
-                BitmapId[BitmapId["Belmont_ldead"] = 21] = "Belmont_ldead";
-                BitmapId[BitmapId["Belmont_rdead"] = 22] = "Belmont_rdead";
-                BitmapId[BitmapId["Belmont_lhitdown"] = 23] = "Belmont_lhitdown";
-                BitmapId[BitmapId["Belmont_rhitdown"] = 24] = "Belmont_rhitdown";
-                BitmapId[BitmapId["Belmont_lhitfly"] = 25] = "Belmont_lhitfly";
-                BitmapId[BitmapId["Belmont_rhitfly"] = 26] = "Belmont_rhitfly";
-                BitmapId[BitmapId["HUD"] = 27] = "HUD";
-                BitmapId[BitmapId["HUD_EnergyStripe_belmont"] = 28] = "HUD_EnergyStripe_belmont";
-                BitmapId[BitmapId["HUD_EnergyStripe_boss"] = 29] = "HUD_EnergyStripe_boss";
-                BitmapId[BitmapId["MenuCursor"] = 30] = "MenuCursor";
-                BitmapId[BitmapId["Font_A"] = 31] = "Font_A";
-                BitmapId[BitmapId["Font_B"] = 32] = "Font_B";
-                BitmapId[BitmapId["Font_C"] = 33] = "Font_C";
-                BitmapId[BitmapId["Font_D"] = 34] = "Font_D";
-                BitmapId[BitmapId["Font_E"] = 35] = "Font_E";
-                BitmapId[BitmapId["Font_F"] = 36] = "Font_F";
-                BitmapId[BitmapId["Font_G"] = 37] = "Font_G";
-                BitmapId[BitmapId["Font_H"] = 38] = "Font_H";
-                BitmapId[BitmapId["Font_I"] = 39] = "Font_I";
-                BitmapId[BitmapId["Font_J"] = 40] = "Font_J";
-                BitmapId[BitmapId["Font_K"] = 41] = "Font_K";
-                BitmapId[BitmapId["Font_L"] = 42] = "Font_L";
-                BitmapId[BitmapId["Font_M"] = 43] = "Font_M";
-                BitmapId[BitmapId["Font_N"] = 44] = "Font_N";
-                BitmapId[BitmapId["Font_O"] = 45] = "Font_O";
-                BitmapId[BitmapId["Font_P"] = 46] = "Font_P";
-                BitmapId[BitmapId["Font_Q"] = 47] = "Font_Q";
-                BitmapId[BitmapId["Font_R"] = 48] = "Font_R";
-                BitmapId[BitmapId["Font_S"] = 49] = "Font_S";
-                BitmapId[BitmapId["Font_T"] = 50] = "Font_T";
-                BitmapId[BitmapId["Font_U"] = 51] = "Font_U";
-                BitmapId[BitmapId["Font_V"] = 52] = "Font_V";
-                BitmapId[BitmapId["Font_W"] = 53] = "Font_W";
-                BitmapId[BitmapId["Font_X"] = 54] = "Font_X";
-                BitmapId[BitmapId["Font_IJ"] = 55] = "Font_IJ";
-                BitmapId[BitmapId["Font_Y"] = 56] = "Font_Y";
-                BitmapId[BitmapId["Font_Z"] = 57] = "Font_Z";
-                BitmapId[BitmapId["Font_0"] = 58] = "Font_0";
-                BitmapId[BitmapId["Font_1"] = 59] = "Font_1";
-                BitmapId[BitmapId["Font_2"] = 60] = "Font_2";
-                BitmapId[BitmapId["Font_3"] = 61] = "Font_3";
-                BitmapId[BitmapId["Font_4"] = 62] = "Font_4";
-                BitmapId[BitmapId["Font_5"] = 63] = "Font_5";
-                BitmapId[BitmapId["Font_6"] = 64] = "Font_6";
-                BitmapId[BitmapId["Font_7"] = 65] = "Font_7";
-                BitmapId[BitmapId["Font_8"] = 66] = "Font_8";
-                BitmapId[BitmapId["Font_9"] = 67] = "Font_9";
-                BitmapId[BitmapId["Font_Comma"] = 68] = "Font_Comma";
-                BitmapId[BitmapId["Font_Dot"] = 69] = "Font_Dot";
-                BitmapId[BitmapId["Font_Exclamation"] = 70] = "Font_Exclamation";
-                BitmapId[BitmapId["Font_QuestionMark"] = 71] = "Font_QuestionMark";
-                BitmapId[BitmapId["Font_Line"] = 72] = "Font_Line";
-                BitmapId[BitmapId["Font_Apostroph"] = 73] = "Font_Apostroph";
-                BitmapId[BitmapId["Font_Space"] = 74] = "Font_Space";
-                BitmapId[BitmapId["Font_Continue"] = 75] = "Font_Continue";
-                BitmapId[BitmapId["Font_Colon"] = 76] = "Font_Colon";
-                BitmapId[BitmapId["Font_SpeakStart"] = 77] = "Font_SpeakStart";
-                BitmapId[BitmapId["Font_SpeakEnd"] = 78] = "Font_SpeakEnd";
-                BitmapId[BitmapId["Font_Streep"] = 79] = "Font_Streep";
-                BitmapId[BitmapId["Font_Slash"] = 80] = "Font_Slash";
-                BitmapId[BitmapId["Font_Percent"] = 81] = "Font_Percent";
-                BitmapId[BitmapId["Titel"] = 82] = "Titel";
-                BitmapId[BitmapId["HUD_FoeHealthBar"] = 83] = "HUD_FoeHealthBar";
-                BitmapId[BitmapId["CurtainPart"] = 84] = "CurtainPart";
-                BitmapId[BitmapId["TitelKonami"] = 85] = "TitelKonami";
-                BitmapId[BitmapId["TitelBoven"] = 86] = "TitelBoven";
-                BitmapId[BitmapId["TitelOnder"] = 87] = "TitelOnder";
-                BitmapId[BitmapId["Chest"] = 88] = "Chest";
-                BitmapId[BitmapId["Heart_big"] = 89] = "Heart_big";
-                BitmapId[BitmapId["Heart_fly"] = 90] = "Heart_fly";
-                BitmapId[BitmapId["Heart_small"] = 91] = "Heart_small";
-                BitmapId[BitmapId["Key_big"] = 92] = "Key_big";
-                BitmapId[BitmapId["Key_small"] = 93] = "Key_small";
-                BitmapId[BitmapId["ZakFoe_1"] = 94] = "ZakFoe_1";
-                BitmapId[BitmapId["ZakFoe_2"] = 95] = "ZakFoe_2";
-                BitmapId[BitmapId["ZakFoe_3"] = 96] = "ZakFoe_3";
-                BitmapId[BitmapId["FoeKill_1"] = 97] = "FoeKill_1";
-                BitmapId[BitmapId["FoeKill_2"] = 98] = "FoeKill_2";
-                BitmapId[BitmapId["Candle_1"] = 99] = "Candle_1";
-                BitmapId[BitmapId["Candle_2"] = 100] = "Candle_2";
-                BitmapId[BitmapId["Door"] = 101] = "Door";
-                BitmapId[BitmapId["GCandle_1"] = 102] = "GCandle_1";
-                BitmapId[BitmapId["GCandle_2"] = 103] = "GCandle_2";
-                BitmapId[BitmapId["Chandelier_1"] = 104] = "Chandelier_1";
-                BitmapId[BitmapId["Chandelier_2"] = 105] = "Chandelier_2";
-                BitmapId[BitmapId["Chandelier_3"] = 106] = "Chandelier_3";
-                BitmapId[BitmapId["Chandelier_4"] = 107] = "Chandelier_4";
-                BitmapId[BitmapId["Chandelier_5"] = 108] = "Chandelier_5";
-                BitmapId[BitmapId["Hag_1"] = 109] = "Hag_1";
-                BitmapId[BitmapId["Hag_2"] = 110] = "Hag_2";
-                BitmapId[BitmapId["Pietula_1"] = 111] = "Pietula_1";
-                BitmapId[BitmapId["Pietula_2"] = 112] = "Pietula_2";
-                BitmapId[BitmapId["Pietula_3"] = 113] = "Pietula_3";
-            })(BitmapId || (BitmapId = {}));
-            exports_15("BitmapId", BitmapId);
-            (function (AudioId) {
-                AudioId[AudioId["None"] = -1] = "None";
-                AudioId[AudioId["Init"] = 0] = "Init";
-                AudioId[AudioId["Selectie"] = 1] = "Selectie";
-                AudioId[AudioId["Fout"] = 2] = "Fout";
-                AudioId[AudioId["Whip"] = 3] = "Whip";
-                AudioId[AudioId["Heart"] = 4] = "Heart";
-                AudioId[AudioId["Hit"] = 5] = "Hit";
-                AudioId[AudioId["ItemDrop"] = 6] = "ItemDrop";
-                AudioId[AudioId["ItemPickup"] = 7] = "ItemPickup";
-                AudioId[AudioId["KeyGrab"] = 8] = "KeyGrab";
-                AudioId[AudioId["Knife"] = 9] = "Knife";
-                AudioId[AudioId["Land"] = 10] = "Land";
-                AudioId[AudioId["Lightning"] = 11] = "Lightning";
-                AudioId[AudioId["Munnies"] = 12] = "Munnies";
-                AudioId[AudioId["Ohnoes"] = 13] = "Ohnoes";
-                AudioId[AudioId["PlayerDamage"] = 14] = "PlayerDamage";
-                AudioId[AudioId["Portal"] = 15] = "Portal";
-                AudioId[AudioId["Wall_break"] = 16] = "Wall_break";
-                AudioId[AudioId["Humiliation"] = 17] = "Humiliation";
-                AudioId[AudioId["Huray"] = 18] = "Huray";
-                AudioId[AudioId["Prologue"] = 19] = "Prologue";
-                AudioId[AudioId["Stage"] = 20] = "Stage";
-                AudioId[AudioId["Boss"] = 21] = "Boss";
-                AudioId[AudioId["Ending"] = 22] = "Ending";
-            })(AudioId || (AudioId = {}));
-            exports_15("AudioId", AudioId);
         }
     };
 });
-System.register("src/resourcemaster", ["BoazEngineJS/resourceids"], function (exports_16, context_16) {
+System.register("BoazEngineJS/gameloader", ["BoazEngineJS/constants", "BoazEngineJS/engine"], function (exports_15, context_15) {
     "use strict";
-    var resourceids_1, img2src, snd2src, ResourceMaster;
+    var constants_1, engine_4, imagesLoadedCount, totalImages, imagesLoaded, audioLoadedCount, totalAudio, audioLoaded, GameLoader;
+    var __moduleName = context_15 && context_15.id;
+    return {
+        setters: [
+            function (constants_1_1) {
+                constants_1 = constants_1_1;
+            },
+            function (engine_4_1) {
+                engine_4 = engine_4_1;
+            }
+        ],
+        execute: function () {
+            (function (GameLoader) {
+                function loadresource(src, type) {
+                    let url;
+                    switch (type) {
+                        case 0:
+                            url = `${constants_1.Constants.IMAGE_PATH}${src}`;
+                            break;
+                        case 1:
+                            url = `${constants_1.Constants.AUDIO_PATH}${src}`;
+                            break;
+                    }
+                    let result = new Image();
+                    result.src = '';
+                    result.onload = (evt) => {
+                        (evt.srcElement).onload = null;
+                    };
+                    result.onerror = () => {
+                        throw Error(`Could not load resource: "${name}" at "${url}"`);
+                    };
+                    console.info('Loading resource: ' + url);
+                    result.src = url;
+                    return result;
+                }
+                GameLoader.loadresource = loadresource;
+                function loadgame(img2src, snd2src) {
+                    imagesLoaded = false;
+                    audioLoaded = false;
+                    preloadImages(img2src);
+                    preloadAudio(snd2src);
+                    if (totalImages == 0)
+                        handleImagesLoaded();
+                    if (totalAudio == 0)
+                        handleAudioLoaded();
+                }
+                GameLoader.loadgame = loadgame;
+                function preloadImages(imagesList) {
+                    if (!document.images)
+                        return;
+                    if (!imagesList) {
+                        totalImages = 0;
+                        return;
+                    }
+                    totalImages = imagesList.size;
+                    imagesLoadedCount = 0;
+                    imagesList.forEach((value, key) => {
+                        let url = `${constants_1.Constants.IMAGE_PATH}${value}`;
+                        engine_4.images[key] = new Image();
+                        engine_4.images[key].onload = (evt) => {
+                            imagesLoadedCount++;
+                            if (imagesLoadedCount >= totalImages)
+                                handleImagesLoaded();
+                            (evt.srcElement).onload = null;
+                        };
+                        engine_4.images[key].onerror = () => {
+                            throw Error(`Could not load image: "${key}" at "${url}"`);
+                        };
+                        console.info('Loading resource: ' + url);
+                        engine_4.images[key].src = url;
+                    });
+                }
+                GameLoader.preloadImages = preloadImages;
+                function preloadAudio(audioList) {
+                    let i = 0;
+                    if (!audioList) {
+                        totalAudio = 0;
+                        return;
+                    }
+                    totalAudio = audioList.size;
+                    audioLoadedCount = 0;
+                    audioList.forEach((value, key) => {
+                        let url = `${constants_1.Constants.AUDIO_PATH}${value}`;
+                        engine_4.audio[key] = new Audio();
+                        engine_4.audio[key].preload = 'auto';
+                        engine_4.audio[key].controls = false;
+                        engine_4.audio[key].loop = false;
+                        engine_4.audio[key].onloadeddata = () => {
+                            audioLoadedCount++;
+                            if (audioLoadedCount >= totalAudio)
+                                handleAudioLoaded();
+                            engine_4.audio[key].onload = null;
+                        };
+                        engine_4.audio[key].onerror = () => {
+                            throw Error(`Could not load audio: "${key}" at "${url}"`);
+                        };
+                        engine_4.audio[key].src = url;
+                    });
+                }
+                GameLoader.preloadAudio = preloadAudio;
+                function handleImagesLoaded() {
+                    imagesLoaded = true;
+                    console.info("All images loaded.");
+                    if (checkLoadingComplete())
+                        handleLoadingComplete();
+                }
+                GameLoader.handleImagesLoaded = handleImagesLoaded;
+                function handleAudioLoaded() {
+                    audioLoaded = true;
+                    console.info("All audio loaded.");
+                    if (checkLoadingComplete())
+                        handleLoadingComplete();
+                }
+                GameLoader.handleAudioLoaded = handleAudioLoaded;
+                function checkLoadingComplete() {
+                    return imagesLoaded && audioLoaded;
+                }
+                GameLoader.checkLoadingComplete = checkLoadingComplete;
+                function handleLoadingComplete() {
+                    engine_4.game.startAfterGameLoad();
+                }
+                GameLoader.handleLoadingComplete = handleLoadingComplete;
+            })(GameLoader || (GameLoader = {}));
+            exports_15("GameLoader", GameLoader);
+        }
+    };
+});
+System.register("src/resourcemaster", ["BoazEngineJS/gameloader", "BoazEngineJS/engine"], function (exports_16, context_16) {
+    "use strict";
+    var gameloader_1, engine_5, img2src, snd2src, ResourceMaster;
     var __moduleName = context_16 && context_16.id;
     return {
         setters: [
-            function (resourceids_1_1) {
-                resourceids_1 = resourceids_1_1;
+            function (gameloader_1_1) {
+                gameloader_1 = gameloader_1_1;
+            },
+            function (engine_5_1) {
+                engine_5 = engine_5_1;
             }
         ],
         execute: function () {
@@ -870,15 +745,16 @@ System.register("src/resourcemaster", ["BoazEngineJS/resourceids"], function (ex
                     snd2src.set(key, src);
                 }
                 static reloadImg(key, src) {
+                    let replacement = gameloader_1.GameLoader.loadresource(src, 0);
                     img2src.set(key, src);
-                    throw new Error("Reloading nodig!");
+                    engine_5.images[key] = replacement;
                 }
-                LoadGameResources() {
+                PrepareGameResources() {
                     this.loadViewResources();
                     this.loadAudioResources();
                 }
                 loadViewResources() {
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Titel, "./Resources/Graphics/Belmont/Belmont_l1.png");
+                    ResourceMaster.AddImg(82, "Belmont/Belmont_l1.png");
                     this.loadBelmontResources();
                     this.loadFXResources();
                     this.loadMiscResources();
@@ -889,198 +765,242 @@ System.register("src/resourcemaster", ["BoazEngineJS/resourceids"], function (ex
                     this.loadDecorResources();
                 }
                 loadFXResources() {
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.FoeKill_1, "./Resources/Graphics/FX/Foekill_1.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.FoeKill_2, "./Resources/Graphics/FX/Foekill_2.png");
+                    ResourceMaster.AddImg(97, "FX/Foekill_1.png");
+                    ResourceMaster.AddImg(98, "FX/Foekill_2.png");
                 }
                 loadDecorResources() {
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Candle_1, "./Resources/Graphics/Decor/Candle_1.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Candle_2, "./Resources/Graphics/Decor/Candle_2.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.GCandle_1, "./Resources/Graphics/Decor/GCandle_1.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.GCandle_2, "./Resources/Graphics/Decor/GCandle_2.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Door, "./Resources/Graphics/Decor/Door.png");
+                    ResourceMaster.AddImg(99, "Decor/Candle_1.png");
+                    ResourceMaster.AddImg(100, "Decor/Candle_2.png");
+                    ResourceMaster.AddImg(102, "Decor/GCandle_1.png");
+                    ResourceMaster.AddImg(103, "Decor/GCandle_2.png");
+                    ResourceMaster.AddImg(101, "Decor/Door.png");
                 }
                 loadBelmontResources() {
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Belmont_l1, "./Resources/Graphics/Belmont/Belmont_l1.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Belmont_l2, "./Resources/Graphics/Belmont/Belmont_l2.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Belmont_l3, "./Resources/Graphics/Belmont/Belmont_l3.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Belmont_ld, "./Resources/Graphics/Belmont/Belmont_ld.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Belmont_lw1, "./Resources/Graphics/Belmont/Belmont_lw1.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Belmont_lw2, "./Resources/Graphics/Belmont/Belmont_lw2.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Belmont_lw3, "./Resources/Graphics/Belmont/Belmont_lw3.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Belmont_lwd1, "./Resources/Graphics/Belmont/Belmont_lwd1.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Belmont_lwd2, "./Resources/Graphics/Belmont/Belmont_lwd2.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Belmont_lwd3, "./Resources/Graphics/Belmont/Belmont_lwd3.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Belmont_ldead, "./Resources/Graphics/Belmont/Belmont_ldead.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Belmont_lhitdown, "./Resources/Graphics/Belmont/Belmont_lhitdown.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Belmont_lhitfly, "./Resources/Graphics/Belmont/Belmont_lhitfly.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Belmont_r1, "./Resources/Graphics/Belmont/Belmont_r1.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Belmont_r2, "./Resources/Graphics/Belmont/Belmont_r2.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Belmont_r3, "./Resources/Graphics/Belmont/Belmont_r3.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Belmont_rd, "./Resources/Graphics/Belmont/Belmont_rd.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Belmont_rw1, "./Resources/Graphics/Belmont/Belmont_rw1.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Belmont_rw2, "./Resources/Graphics/Belmont/Belmont_rw2.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Belmont_rw3, "./Resources/Graphics/Belmont/Belmont_rw3.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Belmont_rwd1, "./Resources/Graphics/Belmont/Belmont_rwd1.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Belmont_rwd2, "./Resources/Graphics/Belmont/Belmont_rwd2.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Belmont_rwd3, "./Resources/Graphics/Belmont/Belmont_rwd3.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Belmont_rdead, "./Resources/Graphics/Belmont/Belmont_rdead.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Belmont_rhitdown, "./Resources/Graphics/Belmont/Belmont_rhitdown.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Belmont_rhitfly, "./Resources/Graphics/Belmont/Belmont_rhitfly.png");
+                    ResourceMaster.AddImg(1, "Belmont/Belmont_l1.png");
+                    ResourceMaster.AddImg(2, "Belmont/Belmont_l2.png");
+                    ResourceMaster.AddImg(3, "Belmont/Belmont_l3.png");
+                    ResourceMaster.AddImg(7, "Belmont/Belmont_ld.png");
+                    ResourceMaster.AddImg(9, "Belmont/Belmont_lw1.png");
+                    ResourceMaster.AddImg(10, "Belmont/Belmont_lw2.png");
+                    ResourceMaster.AddImg(11, "Belmont/Belmont_lw3.png");
+                    ResourceMaster.AddImg(15, "Belmont/Belmont_lwd1.png");
+                    ResourceMaster.AddImg(16, "Belmont/Belmont_lwd2.png");
+                    ResourceMaster.AddImg(17, "Belmont/Belmont_lwd3.png");
+                    ResourceMaster.AddImg(21, "Belmont/Belmont_ldead.png");
+                    ResourceMaster.AddImg(23, "Belmont/Belmont_lhitdown.png");
+                    ResourceMaster.AddImg(25, "Belmont/Belmont_lhitfly.png");
+                    ResourceMaster.AddImg(4, "Belmont/Belmont_r1.png");
+                    ResourceMaster.AddImg(5, "Belmont/Belmont_r2.png");
+                    ResourceMaster.AddImg(6, "Belmont/Belmont_r3.png");
+                    ResourceMaster.AddImg(8, "Belmont/Belmont_rd.png");
+                    ResourceMaster.AddImg(12, "Belmont/Belmont_rw1.png");
+                    ResourceMaster.AddImg(13, "Belmont/Belmont_rw2.png");
+                    ResourceMaster.AddImg(14, "Belmont/Belmont_rw3.png");
+                    ResourceMaster.AddImg(18, "Belmont/Belmont_rwd1.png");
+                    ResourceMaster.AddImg(19, "Belmont/Belmont_rwd2.png");
+                    ResourceMaster.AddImg(20, "Belmont/Belmont_rwd3.png");
+                    ResourceMaster.AddImg(22, "Belmont/Belmont_rdead.png");
+                    ResourceMaster.AddImg(24, "Belmont/Belmont_rhitdown.png");
+                    ResourceMaster.AddImg(26, "Belmont/Belmont_rhitfly.png");
                 }
                 loadMiscResources() {
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.HUD, "./Resources/Graphics/HUD/HUD.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.HUD_EnergyStripe_belmont, "./Resources/Graphics/HUD/Energybarstripe_Belmont.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.HUD_EnergyStripe_boss, "./Resources/Graphics/HUD/EnergybarStripe_Boss.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.CurtainPart, "./Resources/Graphics/Misc/CurtainPart.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.MenuCursor, "./Resources/Graphics/Menu/MenuCursor.png");
+                    ResourceMaster.AddImg(27, "HUD/HUD.png");
+                    ResourceMaster.AddImg(28, "HUD/Energybarstripe_Belmont.png");
+                    ResourceMaster.AddImg(29, "HUD/EnergybarStripe_Boss.png");
+                    ResourceMaster.AddImg(84, "Misc/CurtainPart.png");
+                    ResourceMaster.AddImg(30, "Menu/MenuCursor.png");
                 }
                 loadFontResources() {
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_A, "./Resources/Graphics/Font/Letter_A.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_B, "./Resources/Graphics/Font/Letter_B.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_C, "./Resources/Graphics/Font/Letter_C.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_D, "./Resources/Graphics/Font/Letter_D.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_E, "./Resources/Graphics/Font/Letter_E.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_F, "./Resources/Graphics/Font/Letter_F.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_G, "./Resources/Graphics/Font/Letter_G.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_H, "./Resources/Graphics/Font/Letter_H.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_I, "./Resources/Graphics/Font/Letter_I.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_J, "./Resources/Graphics/Font/Letter_J.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_K, "./Resources/Graphics/Font/Letter_K.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_L, "./Resources/Graphics/Font/Letter_L.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_M, "./Resources/Graphics/Font/Letter_M.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_N, "./Resources/Graphics/Font/Letter_N.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_O, "./Resources/Graphics/Font/Letter_O.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_P, "./Resources/Graphics/Font/Letter_P.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_Q, "./Resources/Graphics/Font/Letter_Q.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_R, "./Resources/Graphics/Font/Letter_R.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_S, "./Resources/Graphics/Font/Letter_S.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_T, "./Resources/Graphics/Font/Letter_T.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_U, "./Resources/Graphics/Font/Letter_U.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_V, "./Resources/Graphics/Font/Letter_V.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_W, "./Resources/Graphics/Font/Letter_W.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_X, "./Resources/Graphics/Font/Letter_X.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_IJ, "./Resources/Graphics/Font/Letter_IJ.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_Y, "./Resources/Graphics/Font/Letter_Y.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_Z, "./Resources/Graphics/Font/Letter_Z.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_0, "./Resources/Graphics/Font/Letter_0.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_1, "./Resources/Graphics/Font/Letter_1.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_2, "./Resources/Graphics/Font/Letter_2.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_3, "./Resources/Graphics/Font/Letter_3.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_4, "./Resources/Graphics/Font/Letter_4.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_5, "./Resources/Graphics/Font/Letter_5.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_6, "./Resources/Graphics/Font/Letter_6.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_7, "./Resources/Graphics/Font/Letter_7.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_8, "./Resources/Graphics/Font/Letter_8.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_9, "./Resources/Graphics/Font/Letter_9.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_Comma, "./Resources/Graphics/Font/Letter_Comma.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_Dot, "./Resources/Graphics/Font/Letter_Dot.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_Exclamation, "./Resources/Graphics/Font/Letter_Exclamation.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_QuestionMark, "./Resources/Graphics/Font/Letter_Question.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_Line, "./Resources/Graphics/Font/Letter_Line.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_Apostroph, "./Resources/Graphics/Font/Letter_Apostroph.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_Space, "./Resources/Graphics/Font/Letter_Space.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_Continue, "./Resources/Graphics/Font/Letter_Continue.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_Colon, "./Resources/Graphics/Font/Letter_Colon.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_Streep, "./Resources/Graphics/Font/Letter_Streep.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_Slash, "./Resources/Graphics/Font/Letter_Slash.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_Percent, "./Resources/Graphics/Font/Letter_Percent.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_SpeakStart, "./Resources/Graphics/Font/Letter_SpeakStart.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Font_SpeakEnd, "./Resources/Graphics/Font/Letter_SpeakEnd.png");
+                    ResourceMaster.AddImg(31, "Font/Letter_A.png");
+                    ResourceMaster.AddImg(32, "Font/Letter_B.png");
+                    ResourceMaster.AddImg(33, "Font/Letter_C.png");
+                    ResourceMaster.AddImg(34, "Font/Letter_D.png");
+                    ResourceMaster.AddImg(35, "Font/Letter_E.png");
+                    ResourceMaster.AddImg(36, "Font/Letter_F.png");
+                    ResourceMaster.AddImg(37, "Font/Letter_G.png");
+                    ResourceMaster.AddImg(38, "Font/Letter_H.png");
+                    ResourceMaster.AddImg(39, "Font/Letter_I.png");
+                    ResourceMaster.AddImg(40, "Font/Letter_J.png");
+                    ResourceMaster.AddImg(41, "Font/Letter_K.png");
+                    ResourceMaster.AddImg(42, "Font/Letter_L.png");
+                    ResourceMaster.AddImg(43, "Font/Letter_M.png");
+                    ResourceMaster.AddImg(44, "Font/Letter_N.png");
+                    ResourceMaster.AddImg(45, "Font/Letter_O.png");
+                    ResourceMaster.AddImg(46, "Font/Letter_P.png");
+                    ResourceMaster.AddImg(47, "Font/Letter_Q.png");
+                    ResourceMaster.AddImg(48, "Font/Letter_R.png");
+                    ResourceMaster.AddImg(49, "Font/Letter_S.png");
+                    ResourceMaster.AddImg(50, "Font/Letter_T.png");
+                    ResourceMaster.AddImg(51, "Font/Letter_U.png");
+                    ResourceMaster.AddImg(52, "Font/Letter_V.png");
+                    ResourceMaster.AddImg(53, "Font/Letter_W.png");
+                    ResourceMaster.AddImg(54, "Font/Letter_X.png");
+                    ResourceMaster.AddImg(55, "Font/Letter_IJ.png");
+                    ResourceMaster.AddImg(56, "Font/Letter_Y.png");
+                    ResourceMaster.AddImg(57, "Font/Letter_Z.png");
+                    ResourceMaster.AddImg(58, "Font/Letter_0.png");
+                    ResourceMaster.AddImg(59, "Font/Letter_1.png");
+                    ResourceMaster.AddImg(60, "Font/Letter_2.png");
+                    ResourceMaster.AddImg(61, "Font/Letter_3.png");
+                    ResourceMaster.AddImg(62, "Font/Letter_4.png");
+                    ResourceMaster.AddImg(63, "Font/Letter_5.png");
+                    ResourceMaster.AddImg(64, "Font/Letter_6.png");
+                    ResourceMaster.AddImg(65, "Font/Letter_7.png");
+                    ResourceMaster.AddImg(66, "Font/Letter_8.png");
+                    ResourceMaster.AddImg(67, "Font/Letter_9.png");
+                    ResourceMaster.AddImg(68, "Font/Letter_Comma.png");
+                    ResourceMaster.AddImg(69, "Font/Letter_Dot.png");
+                    ResourceMaster.AddImg(70, "Font/Letter_Exclamation.png");
+                    ResourceMaster.AddImg(71, "Font/Letter_Question.png");
+                    ResourceMaster.AddImg(72, "Font/Letter_Line.png");
+                    ResourceMaster.AddImg(73, "Font/Letter_Apostroph.png");
+                    ResourceMaster.AddImg(74, "Font/Letter_Space.png");
+                    ResourceMaster.AddImg(75, "Font/Letter_Continue.png");
+                    ResourceMaster.AddImg(76, "Font/Letter_Colon.png");
+                    ResourceMaster.AddImg(79, "Font/Letter_Streep.png");
+                    ResourceMaster.AddImg(80, "Font/Letter_Slash.png");
+                    ResourceMaster.AddImg(81, "Font/Letter_Percent.png");
+                    ResourceMaster.AddImg(77, "Font/Letter_SpeakStart.png");
+                    ResourceMaster.AddImg(78, "Font/Letter_SpeakEnd.png");
                 }
                 loadItemResources() {
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Chest, "./Resources/Graphics/Item/Chest.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Heart_big, "./Resources/Graphics/Item/Heart_big.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Heart_small, "./Resources/Graphics/Item/Heart_small.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Heart_fly, "./Resources/Graphics/Item/Heart_fly.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Key_big, "./Resources/Graphics/Item/Key_big.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Key_small, "./Resources/Graphics/Item/Key_small.png");
+                    ResourceMaster.AddImg(88, "Item/Chest.png");
+                    ResourceMaster.AddImg(89, "Item/Heart_big.png");
+                    ResourceMaster.AddImg(91, "Item/Heart_small.png");
+                    ResourceMaster.AddImg(90, "Item/Heart_fly.png");
+                    ResourceMaster.AddImg(92, "Item/Key_big.png");
+                    ResourceMaster.AddImg(93, "Item/Key_small.png");
                 }
                 loadFoeResources() {
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.ZakFoe_1, "./Resources/Graphics/Foe/ZakFoe1.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.ZakFoe_2, "./Resources/Graphics/Foe/ZakFoe2.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.ZakFoe_3, "./Resources/Graphics/Foe/ZakFoe3.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Chandelier_1, "./Resources/Graphics/Foe/chandelier.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Hag_1, "./Resources/Graphics/Foe/Hag_1.png");
-                    ResourceMaster.AddImg(resourceids_1.BitmapId.Hag_2, "./Resources/Graphics/Foe/Hag_2.png");
                 }
                 loadNPCResources() {
                 }
                 loadAudioResources() {
-                    ResourceMaster.AddSnd(resourceids_1.AudioId.Init, "./Resources/Sound/Init.wav");
-                    ResourceMaster.AddSnd(resourceids_1.AudioId.Fout, "./Resources/Sound/Fout.wav");
-                    ResourceMaster.AddSnd(resourceids_1.AudioId.Selectie, "./Resources/Sound/Selectie.wav");
-                    this.SoundEffectList.set(resourceids_1.AudioId.Init, { AudioId: resourceids_1.AudioId.Init, Priority: -1 });
-                    this.SoundEffectList.set(resourceids_1.AudioId.Fout, { AudioId: resourceids_1.AudioId.Fout, Priority: 0 });
-                    this.SoundEffectList.set(resourceids_1.AudioId.Selectie, { AudioId: resourceids_1.AudioId.Selectie, Priority: 0 });
-                    ResourceMaster.AddSnd(resourceids_1.AudioId.Heart, "./Resources/Sound/Heart.wav");
-                    this.SoundEffectList.set(resourceids_1.AudioId.Heart, { AudioId: resourceids_1.AudioId.Heart, Priority: 0 });
-                    ResourceMaster.AddSnd(resourceids_1.AudioId.Hit, "./Resources/Sound/Hit.wav");
-                    this.SoundEffectList.set(resourceids_1.AudioId.Hit, { AudioId: resourceids_1.AudioId.Hit, Priority: 0 });
-                    ResourceMaster.AddSnd(resourceids_1.AudioId.ItemDrop, "./Resources/Sound/Item_drop.wav");
-                    this.SoundEffectList.set(resourceids_1.AudioId.ItemDrop, { AudioId: resourceids_1.AudioId.ItemDrop, Priority: 0 });
-                    ResourceMaster.AddSnd(resourceids_1.AudioId.ItemPickup, "./Resources/Sound/Item_pickup.wav");
-                    this.SoundEffectList.set(resourceids_1.AudioId.ItemPickup, { AudioId: resourceids_1.AudioId.ItemPickup, Priority: 0 });
-                    ResourceMaster.AddSnd(resourceids_1.AudioId.KeyGrab, "./Resources/Sound/Key_grab.wav");
-                    this.SoundEffectList.set(resourceids_1.AudioId.KeyGrab, { AudioId: resourceids_1.AudioId.KeyGrab, Priority: 0 });
-                    ResourceMaster.AddSnd(resourceids_1.AudioId.Knife, "./Resources/Sound/Knife.wav");
-                    this.SoundEffectList.set(resourceids_1.AudioId.Knife, { AudioId: resourceids_1.AudioId.Knife, Priority: 0 });
-                    ResourceMaster.AddSnd(resourceids_1.AudioId.Land, "./Resources/Sound/Land.wav");
-                    this.SoundEffectList.set(resourceids_1.AudioId.Land, { AudioId: resourceids_1.AudioId.Land, Priority: 0 });
-                    ResourceMaster.AddSnd(resourceids_1.AudioId.Lightning, "./Resources/Sound/Lightning.wav");
-                    this.SoundEffectList.set(resourceids_1.AudioId.Lightning, { AudioId: resourceids_1.AudioId.Lightning, Priority: 0 });
-                    ResourceMaster.AddSnd(resourceids_1.AudioId.Munnies, "./Resources/Sound/Munnies.wav");
-                    this.SoundEffectList.set(resourceids_1.AudioId.Munnies, { AudioId: resourceids_1.AudioId.Munnies, Priority: 0 });
-                    ResourceMaster.AddSnd(resourceids_1.AudioId.PlayerDamage, "./Resources/Sound/Player_damage.wav");
-                    this.SoundEffectList.set(resourceids_1.AudioId.PlayerDamage, { AudioId: resourceids_1.AudioId.PlayerDamage, Priority: 0 });
-                    ResourceMaster.AddSnd(resourceids_1.AudioId.Portal, "./Resources/Sound/Portal.wav");
-                    this.SoundEffectList.set(resourceids_1.AudioId.Portal, { AudioId: resourceids_1.AudioId.Portal, Priority: 0 });
-                    ResourceMaster.AddSnd(resourceids_1.AudioId.Wall_break, "./Resources/Sound/Wall_break.wav");
-                    this.SoundEffectList.set(resourceids_1.AudioId.Wall_break, { AudioId: resourceids_1.AudioId.Wall_break, Priority: 0 });
-                    ResourceMaster.AddSnd(resourceids_1.AudioId.Whip, "./Resources/Sound/Whip.wav");
-                    this.SoundEffectList.set(resourceids_1.AudioId.Whip, { AudioId: resourceids_1.AudioId.Whip, Priority: 0 });
-                    ResourceMaster.AddSnd(resourceids_1.AudioId.Boss, "./Resources/Music/Boss.wav");
-                    this.MusicList.set(resourceids_1.AudioId.Boss, { Music: resourceids_1.AudioId.Boss, Loop: true, NextSong: null });
-                    ResourceMaster.AddSnd(resourceids_1.AudioId.Ending, "./Resources/Music/Ending.wav");
-                    this.MusicList.set(resourceids_1.AudioId.Ending, { Music: resourceids_1.AudioId.Ending, Loop: true, NextSong: null });
-                    ResourceMaster.AddSnd(resourceids_1.AudioId.Humiliation, "./Resources/Music/Humiliation.wav");
-                    this.MusicList.set(resourceids_1.AudioId.Humiliation, { Music: resourceids_1.AudioId.Humiliation, Loop: false, NextSong: null });
-                    ResourceMaster.AddSnd(resourceids_1.AudioId.Huray, "./Resources/Music/Huray.wav");
-                    this.MusicList.set(resourceids_1.AudioId.Huray, { Music: resourceids_1.AudioId.Huray, Loop: false, NextSong: null });
-                    ResourceMaster.AddSnd(resourceids_1.AudioId.Ohnoes, "./Resources/Music/Ohnoes.wav");
-                    this.MusicList.set(resourceids_1.AudioId.Ohnoes, { Music: resourceids_1.AudioId.Ohnoes, Loop: false, NextSong: null });
-                    ResourceMaster.AddSnd(resourceids_1.AudioId.Prologue, "./Resources/Music/Prologue.wav");
-                    this.MusicList.set(resourceids_1.AudioId.Prologue, { Music: resourceids_1.AudioId.Prologue, Loop: false, NextSong: null });
-                    ResourceMaster.AddSnd(resourceids_1.AudioId.Stage, "./Resources/Music/Stage.wav");
-                    this.MusicList.set(resourceids_1.AudioId.Stage, { Music: resourceids_1.AudioId.Stage, Loop: true, NextSong: null });
+                    ResourceMaster.AddSnd(0, "Sound/Init.wav");
+                    ResourceMaster.AddSnd(2, "Sound/Fout.wav");
+                    ResourceMaster.AddSnd(1, "Sound/Selectie.wav");
+                    this.SoundEffectList.set(0, { AudioId: 0, Priority: -1 });
+                    this.SoundEffectList.set(2, { AudioId: 2, Priority: 0 });
+                    this.SoundEffectList.set(1, { AudioId: 1, Priority: 0 });
                 }
             };
             exports_16("ResourceMaster", ResourceMaster);
         }
     };
 });
-System.register("src/room", ["BoazEngineJS/msx", "BoazEngineJS/direction", "src/gameconstants", "BoazEngineJS/engine", "BoazEngineJS/resourceids", "src/resourcemaster"], function (exports_17, context_17) {
+System.register("BoazEngineJS/engine", ["BoazEngineJS/view", "BoazEngineJS/soundmaster", "BoazEngineJS/btimer", "src/resourcemaster", "BoazEngineJS/gameloader"], function (exports_17, context_17) {
     "use strict";
-    var msx_2, direction_1, gameconstants_1, engine_4, resourceids_2, resourcemaster_1, Room;
+    var view_1, soundmaster_1, btimer_2, resourcemaster_1, gameloader_2, game, model, controller, sound, view, gameview, images, audio, Game;
     var __moduleName = context_17 && context_17.id;
+    return {
+        setters: [
+            function (view_1_1) {
+                view_1 = view_1_1;
+            },
+            function (soundmaster_1_1) {
+                soundmaster_1 = soundmaster_1_1;
+            },
+            function (btimer_2_1) {
+                btimer_2 = btimer_2_1;
+            },
+            function (resourcemaster_1_1) {
+                resourcemaster_1 = resourcemaster_1_1;
+            },
+            function (gameloader_2_1) {
+                gameloader_2 = gameloader_2_1;
+            }
+        ],
+        execute: function () {
+            exports_17("images", images = new Map());
+            exports_17("audio", audio = new Map());
+            Game = class Game {
+                constructor(gamescreenSize) {
+                    exports_17("game", game = this);
+                    exports_17("sound", sound = new soundmaster_1.SoundMaster());
+                    exports_17("view", view = new view_1.View(gamescreenSize));
+                    this.fps = 50;
+                    this.lastUpdate = 0;
+                }
+                setModel(m) {
+                    exports_17("model", model = m);
+                }
+                setController(c) {
+                    exports_17("controller", controller = c);
+                }
+                setGameView(v) {
+                    exports_17("gameview", gameview = v);
+                }
+                get TurnCounter() {
+                    return this.turnCounter;
+                }
+                GameOptionsChanged() {
+                    throw Error("Not implemented yet :-(");
+                }
+                loadGameOptions() {
+                    throw Error("Not implemented yet :-(");
+                }
+                start() {
+                    resourcemaster_1.ResourceMaster._.PrepareGameResources();
+                    gameloader_2.GameLoader.loadgame(resourcemaster_1.img2src, resourcemaster_1.snd2src);
+                }
+                startAfterGameLoad() {
+                    requestAnimationFrame(function (timestamp) {
+                        game.run(timestamp);
+                    });
+                    $(window).on('resize', function () {
+                        view.handleResize();
+                    });
+                    window.addEventListener('orientationchange', view.handleResize, false);
+                    view.handleResize();
+                }
+                update(elapsedMs) {
+                    btimer_2.BStopwatch.updateTimers(elapsedMs);
+                    controller.takeTurn(elapsedMs);
+                }
+                draw(elapsedMs) {
+                    gameview.drawGame(elapsedMs);
+                }
+                run(timestamp) {
+                    let elapsedMs = timestamp - this.lastUpdate;
+                    this.lastUpdate = timestamp;
+                    this.update(elapsedMs);
+                    this.draw(elapsedMs);
+                    let t = this;
+                    requestAnimationFrame(function (timestamp) {
+                        game.run(timestamp);
+                        ++t.turnCounter;
+                    });
+                }
+            };
+            exports_17("Game", Game);
+            $(function () {
+            });
+            if (typeof Array.isArray === 'undefined') {
+                Array.isArray = function (obj) {
+                    return Object.prototype.toString.call(obj) === '[object Array]';
+                };
+            }
+            ;
+        }
+    };
+});
+System.register("src/room", ["BoazEngineJS/msx", "src/gameconstants", "BoazEngineJS/engine", "src/resourcemaster"], function (exports_18, context_18) {
+    "use strict";
+    var msx_2, gameconstants_1, engine_6, resourcemaster_2, Room;
+    var __moduleName = context_18 && context_18.id;
     return {
         setters: [
             function (msx_2_1) {
                 msx_2 = msx_2_1;
             },
-            function (direction_1_1) {
-                direction_1 = direction_1_1;
-            },
             function (gameconstants_1_1) {
                 gameconstants_1 = gameconstants_1_1;
             },
-            function (engine_4_1) {
-                engine_4 = engine_4_1;
+            function (engine_6_1) {
+                engine_6 = engine_6_1;
             },
-            function (resourceids_2_1) {
-                resourceids_2 = resourceids_2_1;
-            },
-            function (resourcemaster_1_1) {
-                resourcemaster_1 = resourcemaster_1_1;
+            function (resourcemaster_2_1) {
+                resourcemaster_2 = resourcemaster_2_1;
             }
         ],
         execute: function () {
@@ -1092,7 +1012,7 @@ System.register("src/room", ["BoazEngineJS/msx", "BoazEngineJS/direction", "src/
                     result.Exits = data.Exits;
                     result.initFunction = data.InitFunction;
                     result.BitmapPath = data.BitmapPath;
-                    resourcemaster_1.ResourceMaster.reloadImg(resourceids_2.BitmapId.Room, data.BitmapPath);
+                    resourcemaster_2.ResourceMaster.reloadImg(0, data.BitmapPath);
                     return result;
                 }
                 InitRoom() {
@@ -1107,22 +1027,22 @@ System.register("src/room", ["BoazEngineJS/msx", "BoazEngineJS/direction", "src/
                 NearingRoomExit(x, y) {
                     let _x = x / msx_2.TileSize;
                     let _y = y / msx_2.TileSize;
-                    let result = { destRoom: Room.NO_ROOM_EXIT, direction: direction_1.Direction.None };
+                    let result = { destRoom: Room.NO_ROOM_EXIT, direction: 4 };
                     if ((x < 0)) {
-                        let dest = this.RoomExit(direction_1.Direction.Left);
-                        result = { destRoom: dest, direction: direction_1.Direction.Left };
+                        let dest = this.RoomExit(3);
+                        result = { destRoom: dest, direction: 3 };
                     }
                     else if ((_x >= gameconstants_1.GameConstants.StageScreenWidthTiles)) {
-                        let dest = this.RoomExit(direction_1.Direction.Right);
-                        result = { destRoom: dest, direction: direction_1.Direction.Right };
+                        let dest = this.RoomExit(1);
+                        result = { destRoom: dest, direction: 1 };
                     }
                     else if ((_y < 2)) {
-                        let dest = this.RoomExit(direction_1.Direction.Up);
-                        result = { destRoom: dest, direction: direction_1.Direction.Up };
+                        let dest = this.RoomExit(0);
+                        result = { destRoom: dest, direction: 0 };
                     }
                     else if ((_y >= gameconstants_1.GameConstants.StageScreenHeightTiles)) {
-                        let dest = this.RoomExit(direction_1.Direction.Down);
-                        result = { destRoom: dest, direction: direction_1.Direction.Down };
+                        let dest = this.RoomExit(2);
+                        result = { destRoom: dest, direction: 2 };
                     }
                     return result;
                 }
@@ -1189,65 +1109,64 @@ System.register("src/room", ["BoazEngineJS/msx", "BoazEngineJS/direction", "src/
                     return (this.RoomExit(dir) != Room.NO_ROOM_EXIT);
                 }
                 Paint() {
-                    engine_4.view.DrawBitmap(this.ImageID, gameconstants_1.GameConstants.GameScreenStartX, gameconstants_1.GameConstants.GameScreenStartY);
+                    engine_6.view.DrawBitmap(0, gameconstants_1.GameConstants.GameScreenStartX, gameconstants_1.GameConstants.GameScreenStartY);
                 }
             };
+            exports_18("Room", Room);
             Room.RoomWidth = 0;
             Room.RoomHeight = 0;
             Room.NO_ROOM_EXIT = 0;
-            exports_17("Room", Room);
         }
     };
 });
-System.register("BoazEngineJS/common", ["BoazEngineJS/direction"], function (exports_18, context_18) {
+System.register("BoazEngineJS/common", [], function (exports_19, context_19) {
     "use strict";
-    var direction_2;
-    var __moduleName = context_18 && context_18.id;
+    var __moduleName = context_19 && context_19.id;
     function moveArea(a, p) {
         return {
             start: { x: a.start.x + p.x, y: a.start.y + p.y },
             end: { x: a.end.x + p.x, y: a.end.y + p.y },
         };
     }
-    exports_18("moveArea", moveArea);
+    exports_19("moveArea", moveArea);
     function addPoints(a, b) {
         return { x: a.x + b.x, y: a.y + b.y };
     }
-    exports_18("addPoints", addPoints);
+    exports_19("addPoints", addPoints);
     function randomInt(min, max) {
         return Math.floor(Math.random() * (max - min + 1) + min);
     }
-    exports_18("randomInt", randomInt);
+    exports_19("randomInt", randomInt);
     function newPoint(x, y) {
         return { x: x, y: y };
     }
-    exports_18("newPoint", newPoint);
+    exports_19("newPoint", newPoint);
     function copyPoint(toCopy) {
         return { x: toCopy.x, y: toCopy.y };
     }
-    exports_18("copyPoint", copyPoint);
+    exports_19("copyPoint", copyPoint);
     function newArea(sx, sy, ex, ey) {
         return { start: { x: sx, y: sy }, end: { x: ex, y: ey } };
     }
-    exports_18("newArea", newArea);
+    exports_19("newArea", newArea);
     function newSize(x, y) {
         return { x: x, y: y };
     }
-    exports_18("newSize", newSize);
+    exports_19("newSize", newSize);
     function setPoint(p, new_x, new_y) {
         p.x = new_x;
         p.y = new_y;
     }
-    exports_18("setPoint", setPoint);
+    exports_19("setPoint", setPoint);
     function setSize(s, new_x, new_y) {
         s.x = new_x;
         s.y = new_y;
     }
-    exports_18("setSize", setSize);
+    exports_19("setSize", setSize);
     function area2size(a) {
         return { x: a.end.x - a.start.x, y: a.end.y - a.start.y };
     }
-    exports_18("area2size", area2size);
+    exports_19("area2size", area2size);
     function waitDuration(timer, duration) {
         if (!timer.running)
             timer.restart();
@@ -1257,17 +1176,17 @@ System.register("BoazEngineJS/common", ["BoazEngineJS/direction"], function (exp
         }
         return false;
     }
-    exports_18("waitDuration", waitDuration);
+    exports_19("waitDuration", waitDuration);
     function addToScreen(element) {
         let gamescreen = document.getElementById('gamescreen');
         gamescreen.appendChild(element);
     }
-    exports_18("addToScreen", addToScreen);
+    exports_19("addToScreen", addToScreen);
     function removeFromScreen(element) {
         let gamescreen = document.getElementById('gamescreen');
         gamescreen.removeChild(element);
     }
-    exports_18("removeFromScreen", removeFromScreen);
+    exports_19("removeFromScreen", removeFromScreen);
     function createDivSprite(img, imgsrc, classnames) {
         let result = document.createElement('div');
         if (classnames) {
@@ -1285,7 +1204,7 @@ System.register("BoazEngineJS/common", ["BoazEngineJS/direction"], function (exp
         result.appendChild(rimg);
         return result;
     }
-    exports_18("createDivSprite", createDivSprite);
+    exports_19("createDivSprite", createDivSprite);
     function GetDeltaFromSourceToTarget(source, target) {
         let delta = { x: 0, y: 0 };
         if (Math.abs(target.x - source.x - 0) < 0.01) {
@@ -1306,11 +1225,11 @@ System.register("BoazEngineJS/common", ["BoazEngineJS/direction"], function (exp
         }
         return delta;
     }
-    exports_18("GetDeltaFromSourceToTarget", GetDeltaFromSourceToTarget);
+    exports_19("GetDeltaFromSourceToTarget", GetDeltaFromSourceToTarget);
     function LineLength(p1, p2) {
         return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2)) - 1;
     }
-    exports_18("LineLength", LineLength);
+    exports_19("LineLength", LineLength);
     function storageAvailable(type) {
         try {
             var storage = window[type], x = '__storage_test__';
@@ -1326,64 +1245,60 @@ System.register("BoazEngineJS/common", ["BoazEngineJS/direction"], function (exp
                 storage.length !== 0;
         }
     }
-    exports_18("storageAvailable", storageAvailable);
+    exports_19("storageAvailable", storageAvailable);
     function localStorageAvailable() {
         return storageAvailable('localStorage');
     }
-    exports_18("localStorageAvailable", localStorageAvailable);
+    exports_19("localStorageAvailable", localStorageAvailable);
     function sessionStorageAvailable() {
         return storageAvailable('sessionStorage');
     }
-    exports_18("sessionStorageAvailable", sessionStorageAvailable);
+    exports_19("sessionStorageAvailable", sessionStorageAvailable);
     function LookAt(subjectpos, targetpos) {
         let delta = { x: subjectpos.x - targetpos.x, y: subjectpos.x - targetpos.y };
         if (Math.abs(delta.x) >= Math.abs(delta.y)) {
             if (delta.x < 0)
-                return direction_2.Direction.Right;
+                return 1;
             else
-                return direction_2.Direction.Left;
+                return 3;
         }
         else {
             if (delta.y < 0)
-                return direction_2.Direction.Down;
+                return 2;
             else
-                return direction_2.Direction.Up;
+                return 0;
         }
     }
-    exports_18("LookAt", LookAt);
+    exports_19("LookAt", LookAt);
     function Opposite(dir) {
         switch (dir) {
-            case direction_2.Direction.Up:
-                return direction_2.Direction.Down;
-            case direction_2.Direction.Right:
-                return direction_2.Direction.Left;
-            case direction_2.Direction.Down:
-                return direction_2.Direction.Up;
-            case direction_2.Direction.Left:
-                return direction_2.Direction.Right;
+            case 0:
+                return 2;
+            case 1:
+                return 3;
+            case 2:
+                return 0;
+            case 3:
+                return 1;
             default:
-                return direction_2.Direction.None;
+                return 4;
         }
     }
-    exports_18("Opposite", Opposite);
+    exports_19("Opposite", Opposite);
     return {
-        setters: [
-            function (direction_2_1) {
-                direction_2 = direction_2_1;
-            }
-        ],
+        setters: [],
         execute: function () {
         }
     };
 });
-System.register("BoazEngineJS/sprite", ["BoazEngineJS/engine", "BoazEngineJS/common"], function (exports_19, context_19) {
+System.register("BoazEngineJS/sprite", ["BoazEngineJS/engine", "BoazEngineJS/common"], function (exports_20, context_20) {
     "use strict";
-    var engine_5, common_1, Sprite;
-    var __moduleName = context_19 && context_19.id;
+    var engine_7, common_1, Sprite;
+    var __moduleName = context_20 && context_20.id;
     return {
         setters: [
-            function (engine_5_1) {
-                engine_5 = engine_5_1;
+            function (engine_7_1) {
+                engine_7 = engine_7_1;
             },
             function (common_1_1) {
                 common_1 = common_1_1;
@@ -1431,10 +1346,8 @@ System.register("BoazEngineJS/sprite", ["BoazEngineJS/engine", "BoazEngineJS/com
                 exile() {
                     throw new Error("Method not implemented.");
                 }
-                takeTurn() {
-                }
-                paint(offset) {
-                    engine_5.view.drawImg(this.imgid, offset ? common_1.addPoints(this.pos, offset) : this.pos);
+                Paint(offset) {
+                    engine_7.view.drawImg(this.imgid, offset ? common_1.addPoints(this.pos, offset) : this.pos);
                 }
                 collide(o) {
                     if (o.id)
@@ -1456,17 +1369,17 @@ System.register("BoazEngineJS/sprite", ["BoazEngineJS/engine", "BoazEngineJS/com
                     this.extendedProperties.set(key, value);
                 }
             };
+            exports_20("Sprite", Sprite);
             Sprite.objectCollide = (o1, o2) => {
                 return o1.objectCollide(o2);
             };
-            exports_19("Sprite", Sprite);
         }
     };
 });
-System.register("src/creature", ["BoazEngineJS/sprite", "BoazEngineJS/common", "BoazEngineJS/direction", "src/sintervaniamodel", "BoazEngineJS/msx", "BoazEngineJS/engine", "BoazEngineJS/constants"], function (exports_20, context_20) {
+System.register("src/creature", ["BoazEngineJS/sprite", "BoazEngineJS/common", "src/sintervaniamodel", "BoazEngineJS/msx", "BoazEngineJS/engine", "BoazEngineJS/constants"], function (exports_21, context_21) {
     "use strict";
-    var sprite_1, common_2, direction_3, sintervaniamodel_1, msx_3, engine_6, constants_3, Creature;
-    var __moduleName = context_20 && context_20.id;
+    var sprite_1, common_2, sintervaniamodel_1, msx_3, engine_8, constants_2, Creature;
+    var __moduleName = context_21 && context_21.id;
     return {
         setters: [
             function (sprite_1_1) {
@@ -1475,20 +1388,17 @@ System.register("src/creature", ["BoazEngineJS/sprite", "BoazEngineJS/common", "
             function (common_2_1) {
                 common_2 = common_2_1;
             },
-            function (direction_3_1) {
-                direction_3 = direction_3_1;
-            },
             function (sintervaniamodel_1_1) {
                 sintervaniamodel_1 = sintervaniamodel_1_1;
             },
             function (msx_3_1) {
                 msx_3 = msx_3_1;
             },
-            function (engine_6_1) {
-                engine_6 = engine_6_1;
+            function (engine_8_1) {
+                engine_8 = engine_8_1;
             },
-            function (constants_3_1) {
-                constants_3 = constants_3_1;
+            function (constants_2_1) {
+                constants_2 = constants_2_1;
             }
         ],
         execute: function () {
@@ -1514,11 +1424,11 @@ System.register("src/creature", ["BoazEngineJS/sprite", "BoazEngineJS/common", "
                 Paint(offset = null) {
                     if (this.disposeFlag || !this.visible)
                         return;
-                    let options = this.flippedH ? constants_3.Constants.DRAWBITMAP_HFLIP : 0;
+                    let options = this.flippedH ? constants_2.Constants.DRAWBITMAP_HFLIP : 0;
                     if (offset == null)
-                        engine_6.view.DrawBitmap(this.imgid, this.pos.x, this.pos.y, options);
+                        engine_8.view.DrawBitmap(this.imgid, this.pos.x, this.pos.y, options);
                     else
-                        engine_6.view.DrawBitmap(this.imgid, this.pos.x + offset.x, this.pos.y + offset.y, options);
+                        engine_8.view.DrawBitmap(this.imgid, this.pos.x + offset.x, this.pos.y + offset.y, options);
                 }
                 get id() {
                     return this.customId != null ? this.customId : `${this.constructor.name}:${sintervaniamodel_1.GameModel._.CurrentRoom.Id}:${this.originPos.x},${this.originPos.y}`;
@@ -1528,7 +1438,7 @@ System.register("src/creature", ["BoazEngineJS/sprite", "BoazEngineJS/common", "
                 }
                 DetermineFrame() {
                     this.imgid = this.movementSprites[this.Direction][this.currentWalkAnimationFrame];
-                    this.flippedH = this.Direction == direction_3.Direction.Right;
+                    this.flippedH = this.Direction == 1;
                 }
                 AnimateMovement(movedDistance) {
                     if (movedDistance > 0) {
@@ -1554,15 +1464,15 @@ System.register("src/creature", ["BoazEngineJS/sprite", "BoazEngineJS/common", "
                     let endx = this.pos.x + this.WallHitArea.end.x;
                     let endy = this.pos.y + this.WallHitArea.end.y;
                     switch (this.Direction) {
-                        case direction_3.Direction.Up:
+                        case 0:
                             return sintervaniamodel_1.GameModel._.CurrentRoom.IsCollisionTile(startx, starty, true) || sintervaniamodel_1.GameModel._.CurrentRoom.IsCollisionTile(endx, starty, true);
-                        case direction_3.Direction.Right:
+                        case 1:
                             return sintervaniamodel_1.GameModel._.CurrentRoom.IsCollisionTile(endx, starty, true) || sintervaniamodel_1.GameModel._.CurrentRoom.IsCollisionTile(endx, endy, true);
-                        case direction_3.Direction.Down:
+                        case 2:
                             return sintervaniamodel_1.GameModel._.CurrentRoom.IsCollisionTile(startx, endy, true) || sintervaniamodel_1.GameModel._.CurrentRoom.IsCollisionTile(endx, endy, true);
-                        case direction_3.Direction.Left:
+                        case 3:
                             return sintervaniamodel_1.GameModel._.CurrentRoom.IsCollisionTile(startx, starty, true) || sintervaniamodel_1.GameModel._.CurrentRoom.IsCollisionTile(startx, endy, true);
-                        case direction_3.Direction.None:
+                        case 4:
                             return sintervaniamodel_1.GameModel._.CurrentRoom.IsCollisionTile(startx, starty, true) || sintervaniamodel_1.GameModel._.CurrentRoom.IsCollisionTile(endx, endy, true);
                         default:
                             return false;
@@ -1570,18 +1480,18 @@ System.register("src/creature", ["BoazEngineJS/sprite", "BoazEngineJS/common", "
                 }
                 handleWallCollision() {
                     switch (this.Direction) {
-                        case direction_3.Direction.Up:
+                        case 0:
                             if (this.pos.y >= 0)
                                 this.pos.y = (this.pos.y / msx_3.TileSize + 1) * msx_3.TileSize;
                             this.pos.y = this.pos.y / msx_3.TileSize * msx_3.TileSize;
                             break;
-                        case direction_3.Direction.Right:
+                        case 1:
                             this.pos.x = this.pos.x / msx_3.TileSize * msx_3.TileSize;
                             break;
-                        case direction_3.Direction.Down:
+                        case 2:
                             this.pos.y = this.pos.y / msx_3.TileSize * msx_3.TileSize;
                             break;
-                        case direction_3.Direction.Left:
+                        case 3:
                             if (this.pos.x >= 0)
                                 this.pos.x = (this.pos.x / msx_3.TileSize + 1) * msx_3.TileSize;
                             this.pos.x = this.pos.x / msx_3.TileSize * msx_3.TileSize;
@@ -1589,33 +1499,30 @@ System.register("src/creature", ["BoazEngineJS/sprite", "BoazEngineJS/common", "
                     }
                 }
             };
-            exports_20("Creature", Creature);
+            exports_21("Creature", Creature);
         }
     };
 });
-System.register("src/projectile", ["BoazEngineJS/sprite", "BoazEngineJS/direction", "BoazEngineJS/common", "BoazEngineJS/constants", "src/sintervaniamodel", "BoazEngineJS/engine"], function (exports_21, context_21) {
+System.register("src/projectile", ["BoazEngineJS/sprite", "BoazEngineJS/common", "BoazEngineJS/constants", "src/sintervaniamodel", "BoazEngineJS/engine"], function (exports_22, context_22) {
     "use strict";
-    var sprite_2, direction_4, common_3, constants_4, sintervaniamodel_2, engine_7, Projectile;
-    var __moduleName = context_21 && context_21.id;
+    var sprite_2, common_3, constants_3, sintervaniamodel_2, engine_9, Projectile;
+    var __moduleName = context_22 && context_22.id;
     return {
         setters: [
             function (sprite_2_1) {
                 sprite_2 = sprite_2_1;
             },
-            function (direction_4_1) {
-                direction_4 = direction_4_1;
-            },
             function (common_3_1) {
                 common_3 = common_3_1;
             },
-            function (constants_4_1) {
-                constants_4 = constants_4_1;
+            function (constants_3_1) {
+                constants_3 = constants_3_1;
             },
             function (sintervaniamodel_2_1) {
                 sintervaniamodel_2 = sintervaniamodel_2_1;
             },
-            function (engine_7_1) {
-                engine_7 = engine_7_1;
+            function (engine_9_1) {
+                engine_9 = engine_9_1;
             }
         ],
         execute: function () {
@@ -1627,9 +1534,9 @@ System.register("src/projectile", ["BoazEngineJS/sprite", "BoazEngineJS/directio
                 Paint(offset = null) {
                     if (this.disposeFlag || !this.visible)
                         return;
-                    let options = this.flippedH ? constants_4.Constants.DRAWBITMAP_HFLIP : 0;
-                    options = options || this.flippedV ? constants_4.Constants.DRAWBITMAP_VFLIP : 0;
-                    engine_7.view.DrawBitmap(this.imgid, this.pos.x, this.pos.y, options);
+                    let options = this.flippedH ? constants_3.Constants.DRAWBITMAP_HFLIP : 0;
+                    options = options || this.flippedV ? constants_3.Constants.DRAWBITMAP_VFLIP : 0;
+                    engine_9.view.DrawBitmap(this.imgid, this.pos.x, this.pos.y, options);
                 }
                 checkWallSpriteCollisions() {
                     return sintervaniamodel_2.GameModel._.objects.filter(o => o.extendedProperties[sintervaniamodel_2.GameModel.PROPERTY_ACT_AS_WALL]).some(o => o.areaCollide(common_3.moveArea(this.hitarea, this.pos)));
@@ -1640,27 +1547,27 @@ System.register("src/projectile", ["BoazEngineJS/sprite", "BoazEngineJS/directio
                     let endx = this.pos.x + this.hitarea.end.x;
                     let endy = this.pos.y + this.hitarea.end.y;
                     switch (this.Direction) {
-                        case direction_4.Direction.Up:
+                        case 0:
                             return sintervaniamodel_2.GameModel._.CurrentRoom.IsCollisionTile(startx, starty, true) || sintervaniamodel_2.GameModel._.CurrentRoom.IsCollisionTile(endx, starty, true);
-                        case direction_4.Direction.Right:
+                        case 1:
                             return sintervaniamodel_2.GameModel._.CurrentRoom.IsCollisionTile(endx, starty, true) || sintervaniamodel_2.GameModel._.CurrentRoom.IsCollisionTile(endx, endy, true);
-                        case direction_4.Direction.Down:
+                        case 2:
                             return sintervaniamodel_2.GameModel._.CurrentRoom.IsCollisionTile(startx, endy, true) || sintervaniamodel_2.GameModel._.CurrentRoom.IsCollisionTile(endx, endy, true);
-                        case direction_4.Direction.Left:
+                        case 3:
                             return sintervaniamodel_2.GameModel._.CurrentRoom.IsCollisionTile(startx, starty, true) || sintervaniamodel_2.GameModel._.CurrentRoom.IsCollisionTile(startx, endy, true);
                         default:
                             return false;
                     }
                 }
             };
-            exports_21("Projectile", Projectile);
+            exports_22("Projectile", Projectile);
         }
     };
 });
-System.register("src/pprojectile", ["src/projectile", "src/sintervaniamodel"], function (exports_22, context_22) {
+System.register("src/pprojectile", ["src/projectile", "src/sintervaniamodel"], function (exports_23, context_23) {
     "use strict";
     var projectile_1, sintervaniamodel_3, PlayerProjectile;
-    var __moduleName = context_22 && context_22.id;
+    var __moduleName = context_23 && context_23.id;
     return {
         setters: [
             function (projectile_1_1) {
@@ -1686,14 +1593,14 @@ System.register("src/pprojectile", ["src/projectile", "src/sintervaniamodel"], f
                     return enemyWasHit;
                 }
             };
-            exports_22("PlayerProjectile", PlayerProjectile);
+            exports_23("PlayerProjectile", PlayerProjectile);
         }
     };
 });
-System.register("src/bootstrapper", ["src/sintervaniamodel", "BoazEngineJS/common", "BoazEngineJS/msx"], function (exports_23, context_23) {
+System.register("src/bootstrapper", ["src/sintervaniamodel", "BoazEngineJS/common", "BoazEngineJS/msx"], function (exports_24, context_24) {
     "use strict";
     var sintervaniamodel_4, common_4, msx_4, Bootstrapper;
-    var __moduleName = context_23 && context_23.id;
+    var __moduleName = context_24 && context_24.id;
     return {
         setters: [
             function (sintervaniamodel_4_1) {
@@ -1710,12 +1617,14 @@ System.register("src/bootstrapper", ["src/sintervaniamodel", "BoazEngineJS/commo
             Bootstrapper = class Bootstrapper {
                 static BootstrapGame(chapter) {
                     switch (chapter) {
-                        case sintervaniamodel_4.Chapter.Debug:
+                        case 0:
                             Bootstrapper.bootstrapGameForDebug();
                             break;
-                        case sintervaniamodel_4.Chapter.GameStart:
+                        case 3:
                             Bootstrapper.bootstrapGameForGameStart();
                             break;
+                        default:
+                            throw Error(`Incorrect chapter for bootstrapping game! Chapter = ${chapter}`);
                     }
                 }
                 static bootstrapGameForGameStart() {
@@ -1727,27 +1636,27 @@ System.register("src/bootstrapper", ["src/sintervaniamodel", "BoazEngineJS/commo
                     common_4.setPoint(sintervaniamodel_4.GameModel._.Belmont.pos, msx_4.Tile.ToCoord(15), msx_4.Tile.ToCoord(10));
                 }
             };
-            exports_23("Bootstrapper", Bootstrapper);
+            exports_24("Bootstrapper", Bootstrapper);
         }
     };
 });
-System.register("BoazEngineJS/savegame", [], function (exports_24, context_24) {
+System.register("BoazEngineJS/savegame", [], function (exports_25, context_25) {
     "use strict";
     var Savegame;
-    var __moduleName = context_24 && context_24.id;
+    var __moduleName = context_25 && context_25.id;
     return {
         setters: [],
         execute: function () {
             Savegame = class Savegame {
             };
-            exports_24("Savegame", Savegame);
+            exports_25("Savegame", Savegame);
         }
     };
 });
-System.register("src/weaponitem", ["BoazEngineJS/sprite", "src/sintervaniamodel", "src/item", "BoazEngineJS/resourceids", "BoazEngineJS/common", "src/gamecontroller"], function (exports_25, context_25) {
+System.register("src/weaponitem", ["BoazEngineJS/sprite", "src/sintervaniamodel", "src/item", "BoazEngineJS/common", "src/gamecontroller"], function (exports_26, context_26) {
     "use strict";
-    var sprite_3, sintervaniamodel_5, item_1, resourceids_3, common_5, gamecontroller_1, WeaponItem, WeaponType;
-    var __moduleName = context_25 && context_25.id;
+    var sprite_3, sintervaniamodel_5, item_1, common_5, gamecontroller_1, WeaponItem, WeaponType;
+    var __moduleName = context_26 && context_26.id;
     return {
         setters: [
             function (sprite_3_1) {
@@ -1758,9 +1667,6 @@ System.register("src/weaponitem", ["BoazEngineJS/sprite", "src/sintervaniamodel"
             },
             function (item_1_1) {
                 item_1 = item_1_1;
-            },
-            function (resourceids_3_1) {
-                resourceids_3 = resourceids_3_1;
             },
             function (common_5_1) {
                 common_5 = common_5_1;
@@ -1780,21 +1686,21 @@ System.register("src/weaponitem", ["BoazEngineJS/sprite", "src/sintervaniamodel"
                 }
                 static WeaponItem2SecWeaponType(weaponItem) {
                     if (weaponItem == null)
-                        return sintervaniamodel_5.SecWeaponType.None;
+                        return 0;
                     switch (weaponItem.Type) {
                         case WeaponType.None:
                         default:
-                            return sintervaniamodel_5.SecWeaponType.None;
+                            return 0;
                         case WeaponType.Cross:
-                            return sintervaniamodel_5.SecWeaponType.Cross;
+                            return 1;
                     }
                 }
                 static SecWeaponType2WeaponItemType(secWeapontype) {
                     switch (secWeapontype) {
-                        case sintervaniamodel_5.SecWeaponType.None:
+                        case 0:
                         default:
                             return WeaponType.None;
-                        case sintervaniamodel_5.SecWeaponType.Cross:
+                        case 1:
                             return WeaponType.Cross;
                     }
                 }
@@ -1807,29 +1713,29 @@ System.register("src/weaponitem", ["BoazEngineJS/sprite", "src/sintervaniamodel"
                 static Type2Image(type) {
                     switch (type) {
                         default:
-                            return resourceids_3.BitmapId.None;
+                            return -1;
                     }
                 }
                 Dispose() {
                 }
             };
+            exports_26("WeaponItem", WeaponItem);
             WeaponItem.ItemHitArea = {
                 start: { x: 0, y: 0 }, end: { x: 16, y: 16 }
             };
             WeaponItem.Descriptions = new Map();
-            exports_25("WeaponItem", WeaponItem);
             (function (WeaponType) {
                 WeaponType[WeaponType["None"] = -1] = "None";
                 WeaponType[WeaponType["Cross"] = 0] = "Cross";
             })(WeaponType || (WeaponType = {}));
-            exports_25("WeaponType", WeaponType);
+            exports_26("WeaponType", WeaponType);
         }
     };
 });
-System.register("BoazEngineJS/event", [], function (exports_26, context_26) {
+System.register("BoazEngineJS/event", [], function (exports_27, context_27) {
     "use strict";
     var InputEvent, ClickEvent, MoveEvent, KeydownEvent, KeyupEvent, BlurEvent, TouchStartEvent, TouchMoveEvent, TouchEndEvent;
-    var __moduleName = context_26 && context_26.id;
+    var __moduleName = context_27 && context_27.id;
     return {
         setters: [],
         execute: function () {
@@ -1846,7 +1752,7 @@ System.register("BoazEngineJS/event", [], function (exports_26, context_26) {
                     this.subscribers = [];
                 }
             };
-            exports_26("InputEvent", InputEvent);
+            exports_27("InputEvent", InputEvent);
             ClickEvent = class ClickEvent extends InputEvent {
                 constructor() {
                     super();
@@ -1857,7 +1763,7 @@ System.register("BoazEngineJS/event", [], function (exports_26, context_26) {
                     };
                 }
             };
-            exports_26("ClickEvent", ClickEvent);
+            exports_27("ClickEvent", ClickEvent);
             MoveEvent = class MoveEvent extends InputEvent {
                 constructor() {
                     super();
@@ -1868,7 +1774,7 @@ System.register("BoazEngineJS/event", [], function (exports_26, context_26) {
                     };
                 }
             };
-            exports_26("MoveEvent", MoveEvent);
+            exports_27("MoveEvent", MoveEvent);
             KeydownEvent = class KeydownEvent extends InputEvent {
                 constructor() {
                     super();
@@ -1879,7 +1785,7 @@ System.register("BoazEngineJS/event", [], function (exports_26, context_26) {
                     };
                 }
             };
-            exports_26("KeydownEvent", KeydownEvent);
+            exports_27("KeydownEvent", KeydownEvent);
             KeyupEvent = class KeyupEvent extends InputEvent {
                 constructor() {
                     super();
@@ -1890,7 +1796,7 @@ System.register("BoazEngineJS/event", [], function (exports_26, context_26) {
                     };
                 }
             };
-            exports_26("KeyupEvent", KeyupEvent);
+            exports_27("KeyupEvent", KeyupEvent);
             BlurEvent = class BlurEvent extends InputEvent {
                 constructor() {
                     super();
@@ -1901,7 +1807,7 @@ System.register("BoazEngineJS/event", [], function (exports_26, context_26) {
                     };
                 }
             };
-            exports_26("BlurEvent", BlurEvent);
+            exports_27("BlurEvent", BlurEvent);
             TouchStartEvent = class TouchStartEvent extends InputEvent {
                 constructor() {
                     super();
@@ -1912,7 +1818,7 @@ System.register("BoazEngineJS/event", [], function (exports_26, context_26) {
                     };
                 }
             };
-            exports_26("TouchStartEvent", TouchStartEvent);
+            exports_27("TouchStartEvent", TouchStartEvent);
             TouchMoveEvent = class TouchMoveEvent extends InputEvent {
                 constructor() {
                     super();
@@ -1923,7 +1829,7 @@ System.register("BoazEngineJS/event", [], function (exports_26, context_26) {
                     };
                 }
             };
-            exports_26("TouchMoveEvent", TouchMoveEvent);
+            exports_27("TouchMoveEvent", TouchMoveEvent);
             TouchEndEvent = class TouchEndEvent extends InputEvent {
                 constructor() {
                     super();
@@ -1934,52 +1840,52 @@ System.register("BoazEngineJS/event", [], function (exports_26, context_26) {
                     };
                 }
             };
-            exports_26("TouchEndEvent", TouchEndEvent);
+            exports_27("TouchEndEvent", TouchEndEvent);
         }
     };
 });
-System.register("BoazEngineJS/input", ["BoazEngineJS/event"], function (exports_27, context_27) {
+System.register("BoazEngineJS/input", ["BoazEngineJS/event"], function (exports_28, context_28) {
     "use strict";
     var Event, mouseMoved, mouseClicked, keydowned, keyupped, blurred, touchStarted, touchMoved, touchEnded, KeyState;
-    var __moduleName = context_27 && context_27.id;
+    var __moduleName = context_28 && context_28.id;
     function mouseMove(source, x, y) {
         mouseMoved.fire(source, x, y);
     }
-    exports_27("mouseMove", mouseMove);
+    exports_28("mouseMove", mouseMove);
     function mouseClick(source, x, y) {
         mouseClicked.fire(source, x, y);
     }
-    exports_27("mouseClick", mouseClick);
+    exports_28("mouseClick", mouseClick);
     function keydown(source, keycode) {
         keydowned.fire(source, keycode);
     }
-    exports_27("keydown", keydown);
+    exports_28("keydown", keydown);
     function keyup(source, keycode) {
         keyupped.fire(source, keycode);
     }
-    exports_27("keyup", keyup);
+    exports_28("keyup", keyup);
     function blur(source) {
         blurred.fire(source);
     }
-    exports_27("blur", blur);
+    exports_28("blur", blur);
     function touchStart(source, evt) {
         touchStarted.fire(source, evt);
     }
-    exports_27("touchStart", touchStart);
+    exports_28("touchStart", touchStart);
     function touchMove(source, evt) {
         touchMoved.fire(source, evt);
     }
-    exports_27("touchMove", touchMove);
+    exports_28("touchMove", touchMove);
     function touchEnd(source, evt) {
         touchEnded.fire(source, evt);
     }
-    exports_27("touchEnd", touchEnd);
+    exports_28("touchEnd", touchEnd);
     function getMousePos(evt) {
         return { x: 0, y: 0 };
     }
-    exports_27("getMousePos", getMousePos);
+    exports_28("getMousePos", getMousePos);
     function init() {
-        exports_27("KeyState", KeyState = {
+        exports_28("KeyState", KeyState = {
             KC_UP: false,
             KC_RIGHT: false,
             KC_DOWN: false,
@@ -2000,7 +1906,7 @@ System.register("BoazEngineJS/input", ["BoazEngineJS/event"], function (exports_
             KD_M: false
         });
     }
-    exports_27("init", init);
+    exports_28("init", init);
     return {
         setters: [
             function (Event_1) {
@@ -2008,21 +1914,57 @@ System.register("BoazEngineJS/input", ["BoazEngineJS/event"], function (exports_
             }
         ],
         execute: function () {
-            exports_27("mouseMoved", mouseMoved = new Event.MoveEvent());
-            exports_27("mouseClicked", mouseClicked = new Event.ClickEvent());
-            exports_27("keydowned", keydowned = new Event.KeydownEvent());
-            exports_27("keyupped", keyupped = new Event.KeyupEvent());
-            exports_27("blurred", blurred = new Event.BlurEvent());
-            exports_27("touchStarted", touchStarted = new Event.TouchStartEvent());
-            exports_27("touchMoved", touchMoved = new Event.TouchMoveEvent());
-            exports_27("touchEnded", touchEnded = new Event.TouchEndEvent());
+            exports_28("mouseMoved", mouseMoved = new Event.MoveEvent());
+            exports_28("mouseClicked", mouseClicked = new Event.ClickEvent());
+            exports_28("keydowned", keydowned = new Event.KeydownEvent());
+            exports_28("keyupped", keyupped = new Event.KeyupEvent());
+            exports_28("blurred", blurred = new Event.BlurEvent());
+            exports_28("touchStarted", touchStarted = new Event.TouchStartEvent());
+            exports_28("touchMoved", touchMoved = new Event.TouchMoveEvent());
+            exports_28("touchEnded", touchEnded = new Event.TouchEndEvent());
+            exports_28("KeyState", KeyState = {
+                KC_F1: false,
+                KC_F2: false,
+                KC_F3: false,
+                KC_F4: false,
+                KC_F5: false,
+                KC_F12: false,
+                KC_BTN2: false,
+                KC_BTN3: false,
+                KC_BTN4: false,
+                KC_BTN5: false,
+                KC_BTN6: false,
+                KC_UP: false,
+                KC_RIGHT: false,
+                KC_DOWN: false,
+                KC_LEFT: false,
+                KC_SPACE: false,
+                KC_M: false,
+                KD_F1: false,
+                KD_F2: false,
+                KD_F3: false,
+                KD_F4: false,
+                KD_F5: false,
+                KD_F12: false,
+                KD_BTN2: false,
+                KD_BTN3: false,
+                KD_BTN4: false,
+                KD_BTN5: false,
+                KD_BTN6: false,
+                KD_UP: false,
+                KD_RIGHT: false,
+                KD_DOWN: false,
+                KD_LEFT: false,
+                KD_SPACE: false,
+                KD_M: false,
+            });
         }
     };
 });
-System.register("BoazEngineJS/animation", ["BoazEngineJS/btimer", "BoazEngineJS/common"], function (exports_28, context_28) {
+System.register("BoazEngineJS/animation", ["BoazEngineJS/btimer", "BoazEngineJS/common"], function (exports_29, context_29) {
     "use strict";
-    var btimer_2, common_6, Animation;
-    var __moduleName = context_28 && context_28.id;
+    var btimer_3, common_6, Animation;
+    var __moduleName = context_29 && context_29.id;
     function createAniData(data, times, constantStepTime) {
         if (!times && !constantStepTime)
             throw ("Either [times] or [constantStepTime] must be given when creating a new animation!");
@@ -2039,8 +1981,8 @@ System.register("BoazEngineJS/animation", ["BoazEngineJS/btimer", "BoazEngineJS/
     }
     return {
         setters: [
-            function (btimer_2_1) {
-                btimer_2 = btimer_2_1;
+            function (btimer_3_1) {
+                btimer_3 = btimer_3_1;
             },
             function (common_6_1) {
                 common_6 = common_6_1;
@@ -2096,7 +2038,7 @@ System.register("BoazEngineJS/animation", ["BoazEngineJS/btimer", "BoazEngineJS/
                 }
                 doAnimation(timer, nextStepRef) {
                     if (!nextStepRef) {
-                        if (timer instanceof btimer_2.BStopwatch)
+                        if (timer instanceof btimer_3.BStopwatch)
                             return this.doAnimationTimer(timer);
                         return this.doAnimationStep(timer);
                     }
@@ -2136,24 +2078,21 @@ System.register("BoazEngineJS/animation", ["BoazEngineJS/btimer", "BoazEngineJS/
                     this.stepCounter = 0;
                 }
             };
-            exports_28("Animation", Animation);
+            exports_29("Animation", Animation);
         }
     };
 });
-System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazEngineJS/btimer", "src/gameconstants", "BoazEngineJS/common", "BoazEngineJS/animation", "BoazEngineJS/msx", "BoazEngineJS/resourceids", "BoazEngineJS/input", "src/room", "BoazEngineJS/soundmaster", "src/resourcemaster", "src/gamecontroller", "src/sintervaniamodel", "BoazEngineJS/engine", "BoazEngineJS/view"], function (exports_29, context_29) {
+System.register("src/belmont", ["src/creature", "BoazEngineJS/btimer", "src/gameconstants", "BoazEngineJS/common", "BoazEngineJS/animation", "BoazEngineJS/msx", "BoazEngineJS/input", "src/room", "BoazEngineJS/soundmaster", "src/resourcemaster", "src/gamecontroller", "src/sintervaniamodel", "BoazEngineJS/engine", "BoazEngineJS/view"], function (exports_30, context_30) {
     "use strict";
-    var direction_5, creature_1, btimer_3, gameconstants_2, common_7, animation_1, msx_5, resourceids_4, input_1, room_1, common_8, soundmaster_2, resourcemaster_2, gamecontroller_2, sintervaniamodel_6, engine_8, view_2, RoeState, Belmont, State, JumpState, HitState, HitStateStep, DyingState;
-    var __moduleName = context_29 && context_29.id;
+    var creature_1, btimer_4, gameconstants_2, common_7, animation_1, msx_5, input_1, room_1, common_8, soundmaster_2, resourcemaster_3, gamecontroller_2, sintervaniamodel_6, engine_10, view_2, RoeState, Belmont, State, JumpState, HitState, HitStateStep, DyingState;
+    var __moduleName = context_30 && context_30.id;
     return {
         setters: [
-            function (direction_5_1) {
-                direction_5 = direction_5_1;
-            },
             function (creature_1_1) {
                 creature_1 = creature_1_1;
             },
-            function (btimer_3_1) {
-                btimer_3 = btimer_3_1;
+            function (btimer_4_1) {
+                btimer_4 = btimer_4_1;
             },
             function (gameconstants_2_1) {
                 gameconstants_2 = gameconstants_2_1;
@@ -2168,9 +2107,6 @@ System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazE
             function (msx_5_1) {
                 msx_5 = msx_5_1;
             },
-            function (resourceids_4_1) {
-                resourceids_4 = resourceids_4_1;
-            },
             function (input_1_1) {
                 input_1 = input_1_1;
             },
@@ -2180,8 +2116,8 @@ System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazE
             function (soundmaster_2_1) {
                 soundmaster_2 = soundmaster_2_1;
             },
-            function (resourcemaster_2_1) {
-                resourcemaster_2 = resourcemaster_2_1;
+            function (resourcemaster_3_1) {
+                resourcemaster_3 = resourcemaster_3_1;
             },
             function (gamecontroller_2_1) {
                 gamecontroller_2 = gamecontroller_2_1;
@@ -2189,8 +2125,8 @@ System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazE
             function (sintervaniamodel_6_1) {
                 sintervaniamodel_6 = sintervaniamodel_6_1;
             },
-            function (engine_8_1) {
-                engine_8 = engine_8_1;
+            function (engine_10_1) {
+                engine_10 = engine_10_1;
             },
             function (view_2_1) {
                 view_2 = view_2_1;
@@ -2199,7 +2135,7 @@ System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazE
         execute: function () {
             RoeState = class RoeState {
                 constructor() {
-                    this.aniTimer = new btimer_3.BStopwatch();
+                    this.aniTimer = new btimer_4.BStopwatch();
                     this.Roeing = false;
                     this.CurrentFrame = 0;
                 }
@@ -2214,31 +2150,31 @@ System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazE
                     this.CurrentFrame = 0;
                 }
             };
+            exports_30("RoeState", RoeState);
             RoeState.msPerFrame = [50, 25, 100];
             RoeState.RoeSprites = new Map([
-                [direction_5.Direction.Right, [resourceids_4.BitmapId.Belmont_rw1, resourceids_4.BitmapId.Belmont_rw2, resourceids_4.BitmapId.Belmont_rw3]],
-                [direction_5.Direction.Left, [resourceids_4.BitmapId.Belmont_lw1, resourceids_4.BitmapId.Belmont_lw2, resourceids_4.BitmapId.Belmont_lw3]],
+                [1, [12, 13, 14]],
+                [3, [9, 10, 11]],
             ]);
             RoeState.RoeSpritesCrouching = new Map([
-                [direction_5.Direction.Right, [resourceids_4.BitmapId.Belmont_rwd1, resourceids_4.BitmapId.Belmont_rwd2, resourceids_4.BitmapId.Belmont_rwd3]],
-                [direction_5.Direction.Left, [resourceids_4.BitmapId.Belmont_lwd1, resourceids_4.BitmapId.Belmont_lwd2, resourceids_4.BitmapId.Belmont_lwd3]],
+                [1, [18, 19, 20]],
+                [3, [15, 16, 17]],
             ]);
             RoeState.RoeSpritePosOffset = new Map([
-                [direction_5.Direction.Right, [common_8.newPoint(-16, 0), common_8.newPoint(-16, 0), common_8.newPoint(0, 0)]],
-                [direction_5.Direction.Left, [common_8.newPoint(0, 0), common_8.newPoint(0, 0), common_8.newPoint(-25, 0)]],
+                [1, [common_8.newPoint(-16, 0), common_8.newPoint(-16, 0), common_8.newPoint(0, 0)]],
+                [3, [common_8.newPoint(0, 0), common_8.newPoint(0, 0), common_8.newPoint(-25, 0)]],
             ]);
             RoeState.RoeSpritePosOffsetCrouching = new Map([
-                [direction_5.Direction.Right, [common_8.newPoint(-16, 0), common_8.newPoint(-16, 0), common_8.newPoint(0, 0)]],
+                [1, [common_8.newPoint(-16, 0), common_8.newPoint(-16, 0), common_8.newPoint(0, 0)]],
             ]);
-            exports_29("RoeState", RoeState);
             Belmont = class Belmont extends creature_1.Creature {
                 constructor() {
                     super(null);
                     this.EventTouchHitArea = common_7.newArea(0, 24, 16, 32);
-                    this.imgid = resourceids_4.BitmapId.Belmont_r1;
+                    this.imgid = 4;
                     this.flippedH = false;
                     this.CarryingShield = false;
-                    this.Direction = direction_5.Direction.Right;
+                    this.Direction = 1;
                     this.id = "Belmont";
                     this.state = State.Normal;
                     common_7.setSize(this.size, 16, 32);
@@ -2249,11 +2185,11 @@ System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazE
                     this.dyingState = new DyingState();
                     this.roeState = new RoeState();
                     this.jumpState = new JumpState();
-                    this.hitState.BlinkTimer = btimer_3.BStopwatch.createWatch();
-                    this.hitState.RecoveryTimer = btimer_3.BStopwatch.createWatch();
-                    this.hitState.CrouchTimer = btimer_3.BStopwatch.createWatch();
-                    this.dyingState.aniTimer = btimer_3.BStopwatch.createWatch();
-                    this.roeState.aniTimer = btimer_3.BStopwatch.createWatch();
+                    this.hitState.BlinkTimer = btimer_4.BStopwatch.createWatch();
+                    this.hitState.RecoveryTimer = btimer_4.BStopwatch.createWatch();
+                    this.hitState.CrouchTimer = btimer_4.BStopwatch.createWatch();
+                    this.dyingState.aniTimer = btimer_4.BStopwatch.createWatch();
+                    this.roeState.aniTimer = btimer_4.BStopwatch.createWatch();
                     this.setExtendedProperty(sintervaniamodel_6.GameModel.PROPERTY_KEEP_AT_ROOMSWITCH, true);
                 }
                 get HealthPercentage() {
@@ -2292,13 +2228,13 @@ System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazE
                 }
                 get EventButtonHitArea() {
                     switch (this.Direction) {
-                        case direction_5.Direction.Up:
+                        case 0:
                             return Belmont.buttonPressEventHitAreaUp;
-                        case direction_5.Direction.Right:
+                        case 1:
                             return Belmont.buttonPressEventHitAreaRight;
-                        case direction_5.Direction.Down:
+                        case 2:
                             return Belmont.buttonPressEventHitAreaDown;
-                        case direction_5.Direction.Left:
+                        case 3:
                             return Belmont.buttonPressEventHitAreaLeft;
                         default:
                             return null;
@@ -2325,11 +2261,11 @@ System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazE
                 GetProjectileOrigin() {
                     let result = common_7.copyPoint(this.pos);
                     switch (this.Direction) {
-                        case direction_5.Direction.Right:
+                        case 1:
                             result.x += 8;
                             result.y += 12;
                             break;
-                        case direction_5.Direction.Left:
+                        case 3:
                             result.y += 12;
                             break;
                     }
@@ -2386,7 +2322,7 @@ System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazE
                             }
                             else {
                                 this.AnimateMovement(0);
-                                this.firstPressedButton = direction_5.Direction.None;
+                                this.firstPressedButton = 4;
                             }
                         }
                     }
@@ -2397,7 +2333,7 @@ System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazE
                             this.pos.y += 4;
                         this.checkAndHandleCollisions(originalPos);
                         if (this.FloorCollision)
-                            soundmaster_2.SoundMaster.PlayEffect(resourcemaster_2.ResourceMaster.Sound[resourceids_4.AudioId.Land]);
+                            soundmaster_2.SoundMaster.PlayEffect(resourcemaster_3.ResourceMaster.Sound[10]);
                     }
                     if (this.Jumping) {
                         this.doJump();
@@ -2408,9 +2344,9 @@ System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazE
                     let delta = { nextStepValue: { x: 0, y: 0 } };
                     this.hitState.HitAni.doAnimation(1, delta);
                     let originalPos = common_7.copyPoint(this.pos);
-                    this.pos.x += this.Direction == direction_5.Direction.Right ? delta.nextStepValue.x : -delta.nextStepValue.x;
+                    this.pos.x += this.Direction == 1 ? delta.nextStepValue.x : -delta.nextStepValue.x;
                     let dir = this.Direction;
-                    this.Direction = this.Direction == direction_5.Direction.Left ? direction_5.Direction.Right : direction_5.Direction.Left;
+                    this.Direction = this.Direction == 3 ? 1 : 3;
                     this.checkAndHandleWallAndCeilingCollisions(originalPos);
                     this.Direction = dir;
                     this.pos.y += delta.nextStepValue.y;
@@ -2420,9 +2356,9 @@ System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazE
                 }
                 doHitFall() {
                     let originalPos = common_7.copyPoint(this.pos);
-                    this.pos.x += this.Direction == direction_5.Direction.Right ? -2 : 2;
+                    this.pos.x += this.Direction == 1 ? -2 : 2;
                     let dir = this.Direction;
-                    this.Direction = this.Direction == direction_5.Direction.Left ? direction_5.Direction.Right : direction_5.Direction.Left;
+                    this.Direction = this.Direction == 3 ? 1 : 3;
                     this.checkAndHandleWallAndCeilingCollisions(originalPos);
                     this.Direction = dir;
                     if (!this.FloorCollision) {
@@ -2451,9 +2387,9 @@ System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazE
                     }
                     this.checkAndHandleWallAndCeilingCollisions(originalPos);
                     originalPos = common_7.copyPoint(this.pos);
-                    if (this.jumpState.JumpDirection == direction_5.Direction.Right)
+                    if (this.jumpState.JumpDirection == 1)
                         this.pos.x += this.movementSpeed;
-                    if (this.jumpState.JumpDirection == direction_5.Direction.Left)
+                    if (this.jumpState.JumpDirection == 3)
                         this.pos.x -= this.movementSpeed;
                     if (this.jumpState.GoingUp) {
                         this.checkAndHandleWallAndCeilingCollisions(originalPos);
@@ -2475,9 +2411,9 @@ System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazE
                         case State.HitRecovery:
                             if (this.hitState.CurrentStep != HitStateStep.None) {
                                 if (this.hitState.CurrentStep == HitStateStep.Falling || this.hitState.CurrentStep == HitStateStep.Flying)
-                                    this.imgid = this.Direction == direction_5.Direction.Right ? resourceids_4.BitmapId.Belmont_rhitfly : resourceids_4.BitmapId.Belmont_lhitfly;
+                                    this.imgid = this.Direction == 1 ? 26 : 25;
                                 else
-                                    this.imgid = this.Direction == direction_5.Direction.Right ? resourceids_4.BitmapId.Belmont_rhitdown : resourceids_4.BitmapId.Belmont_lhitdown;
+                                    this.imgid = this.Direction == 1 ? 24 : 23;
                             }
                             else if (!this.roeState.Roeing) {
                                 if (!this.Crouching && !this.Jumping) {
@@ -2512,7 +2448,7 @@ System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazE
                         if (this.Roeing) {
                             this.roeState.Stop();
                         }
-                        soundmaster_2.SoundMaster.PlayEffect(resourcemaster_2.ResourceMaster.Sound[resourceids_4.AudioId.PlayerDamage]);
+                        soundmaster_2.SoundMaster.PlayEffect(resourcemaster_3.ResourceMaster.Sound[14]);
                     }
                 }
                 doDeath() {
@@ -2546,50 +2482,50 @@ System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazE
                     this.DetermineFrame();
                 }
                 handleInput(moved) {
-                    if (input_1.KeyState.KD_DOWN && !this.ignoreDirButtonPress(direction_5.Direction.Down)) {
+                    if (input_1.KeyState.KD_DOWN && !this.ignoreDirButtonPress(2)) {
                         this.Crouching = true;
-                        if (input_1.KeyState.KD_RIGHT && !this.ignoreDirButtonPress(direction_5.Direction.Right))
-                            this.Direction = direction_5.Direction.Right;
-                        if (input_1.KeyState.KD_LEFT && !this.ignoreDirButtonPress(direction_5.Direction.Left))
-                            this.Direction = direction_5.Direction.Left;
+                        if (input_1.KeyState.KD_RIGHT && !this.ignoreDirButtonPress(1))
+                            this.Direction = 1;
+                        if (input_1.KeyState.KD_LEFT && !this.ignoreDirButtonPress(3))
+                            this.Direction = 3;
                     }
-                    else if (input_1.KeyState.KC_UP && !this.ignoreDirButtonPress(direction_5.Direction.Up)) {
+                    else if (input_1.KeyState.KC_UP && !this.ignoreDirButtonPress(0)) {
                         this.Crouching = false;
-                        let jumpDir = direction_5.Direction.Up;
+                        let jumpDir = 0;
                         if (input_1.KeyState.KD_RIGHT) {
-                            jumpDir = direction_5.Direction.Right;
-                            this.Direction = direction_5.Direction.Right;
+                            jumpDir = 1;
+                            this.Direction = 1;
                         }
                         else if (input_1.KeyState.KD_LEFT) {
-                            jumpDir = direction_5.Direction.Left;
-                            this.Direction = direction_5.Direction.Left;
+                            jumpDir = 3;
+                            this.Direction = 3;
                         }
                         this.jumpState.Start(jumpDir);
                     }
-                    else if (input_1.KeyState.KD_RIGHT && !this.ignoreDirButtonPress(direction_5.Direction.Right)) {
+                    else if (input_1.KeyState.KD_RIGHT && !this.ignoreDirButtonPress(1)) {
                         this.Crouching = false;
-                        this.doMovement(direction_5.Direction.Right, moved);
+                        this.doMovement(1, moved);
                     }
-                    else if (input_1.KeyState.KD_LEFT && !this.ignoreDirButtonPress(direction_5.Direction.Left)) {
+                    else if (input_1.KeyState.KD_LEFT && !this.ignoreDirButtonPress(3)) {
                         this.Crouching = false;
-                        this.doMovement(direction_5.Direction.Left, moved);
+                        this.doMovement(3, moved);
                     }
                     else {
                         this.Crouching = false;
-                        this.firstPressedButton = direction_5.Direction.None;
+                        this.firstPressedButton = 4;
                     }
                 }
                 doMovement(dir, moved) {
                     let speed = this.movementSpeed;
                     let originalPos = common_7.copyPoint(this.pos);
                     switch (dir) {
-                        case direction_5.Direction.Right:
+                        case 1:
                             this.pos.x += speed;
-                            this.Direction = direction_5.Direction.Right;
+                            this.Direction = 1;
                             break;
-                        case direction_5.Direction.Left:
+                        case 3:
                             this.pos.x -= speed;
-                            this.Direction = direction_5.Direction.Left;
+                            this.Direction = 3;
                             break;
                     }
                     this.checkAndHandleCollisions(originalPos);
@@ -2627,9 +2563,9 @@ System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazE
                 }
                 checkWallCollision() {
                     switch (this.Direction) {
-                        case direction_5.Direction.Right:
+                        case 1:
                             return sintervaniamodel_6.GameModel._.CurrentRoom.IsCollisionTile(this.pos.x + 16, this.pos.y + 25, true) || sintervaniamodel_6.GameModel._.CurrentRoom.IsCollisionTile(this.pos.x + 16, this.pos.y + 31, true);
-                        case direction_5.Direction.Left:
+                        case 3:
                             return sintervaniamodel_6.GameModel._.CurrentRoom.IsCollisionTile(this.pos.x, this.pos.y + 25, true) || sintervaniamodel_6.GameModel._.CurrentRoom.IsCollisionTile(this.pos.x, this.pos.y + 31, true);
                         default:
                             return false;
@@ -2637,13 +2573,13 @@ System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazE
                 }
                 handleWallCollision() {
                     switch (this.Direction) {
-                        case direction_5.Direction.Right:
+                        case 1:
                             this.pos.x = (this.pos.x / msx_5.TileSize) * msx_5.TileSize;
                             break;
-                        case direction_5.Direction.Down:
+                        case 2:
                             this.pos.y = (this.pos.y / msx_5.TileSize) * msx_5.TileSize;
                             break;
-                        case direction_5.Direction.Left:
+                        case 3:
                             if (this.pos.x >= 0)
                                 this.pos.x = (this.pos.x / msx_5.TileSize + 1) * msx_5.TileSize;
                             this.pos.x = this.pos.x / msx_5.TileSize * msx_5.TileSize;
@@ -2713,43 +2649,44 @@ System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazE
                     if (!this.hitState.Blink || gamecontroller_2.GameController._.InEventState) {
                         let options = this.flippedH ? view_2.DrawBitmap.HFLIP : 0;
                         if (offset == null)
-                            engine_8.view.DrawBitmap(this.imgid, this.pos.x + roeOffset.x, this.pos.y + roeOffset.y, options);
+                            engine_10.view.DrawBitmap(this.imgid, this.pos.x + roeOffset.x, this.pos.y + roeOffset.y, options);
                         else
-                            engine_8.view.DrawBitmap(this.imgid, this.pos.x + roeOffset.x + offset.x, this.pos.y + roeOffset.y + offset.y, options);
+                            engine_10.view.DrawBitmap(this.imgid, this.pos.x + roeOffset.x + offset.x, this.pos.y + roeOffset.y + offset.y, options);
                     }
                     else {
                         if (this.disposeFlag || !this.visible)
                             return;
                         let options = this.flippedH ? view_2.DrawBitmap.HFLIP : 0;
                         if (offset == null)
-                            engine_8.view.DrawColoredBitmap(this.imgid, this.pos.x + roeOffset.x, this.pos.y + roeOffset.y, options, 50.0, .0, .0);
+                            engine_10.view.DrawColoredBitmap(this.imgid, this.pos.x + roeOffset.x, this.pos.y + roeOffset.y, options, 50.0, .0, .0);
                         else
-                            engine_8.view.DrawColoredBitmap(this.imgid, this.pos.x + roeOffset.x + offset.x, this.pos.y + roeOffset.y + offset.y, options, 50.0, .0, .0);
+                            engine_10.view.DrawColoredBitmap(this.imgid, this.pos.x + roeOffset.x + offset.x, this.pos.y + roeOffset.y + offset.y, options, 50.0, .0, .0);
                     }
                 }
                 Dispose() {
-                    btimer_3.BStopwatch.removeWatch(this.hitState.BlinkTimer);
-                    btimer_3.BStopwatch.removeWatch(this.hitState.RecoveryTimer);
-                    btimer_3.BStopwatch.removeWatch(this.dyingState.aniTimer);
-                    btimer_3.BStopwatch.removeWatch(this.roeState.aniTimer);
+                    btimer_4.BStopwatch.removeWatch(this.hitState.BlinkTimer);
+                    btimer_4.BStopwatch.removeWatch(this.hitState.RecoveryTimer);
+                    btimer_4.BStopwatch.removeWatch(this.dyingState.aniTimer);
+                    btimer_4.BStopwatch.removeWatch(this.roeState.aniTimer);
                 }
             };
+            exports_30("Belmont", Belmont);
             Belmont.MoveBeforeFrameChange = 4;
             Belmont.MovementSpritesNoShield = new Map([
-                [direction_5.Direction.Right, [resourceids_4.BitmapId.Belmont_r1, resourceids_4.BitmapId.Belmont_r3, resourceids_4.BitmapId.Belmont_r2, resourceids_4.BitmapId.Belmont_r3, resourceids_4.BitmapId.Belmont_r1]],
-                [direction_5.Direction.Left, [resourceids_4.BitmapId.Belmont_l1, resourceids_4.BitmapId.Belmont_l3, resourceids_4.BitmapId.Belmont_l2, resourceids_4.BitmapId.Belmont_l3, resourceids_4.BitmapId.Belmont_l1]],
+                [1, [4, 6, 5, 6, 4]],
+                [3, [1, 3, 2, 3, 1]],
             ]);
             Belmont.MovementSpritesNoShieldCrouching = new Map([
-                [direction_5.Direction.Right, [resourceids_4.BitmapId.Belmont_rd, resourceids_4.BitmapId.Belmont_rd, resourceids_4.BitmapId.Belmont_rd]],
-                [direction_5.Direction.Left, [resourceids_4.BitmapId.Belmont_ld, resourceids_4.BitmapId.Belmont_ld, resourceids_4.BitmapId.Belmont_ld]]
+                [1, [8, 8, 8]],
+                [3, [7, 7, 7]]
             ]);
             Belmont.MovementSpritesWShieldCrouching = new Map([
-                [direction_5.Direction.Right, [resourceids_4.BitmapId.Belmont_rd, resourceids_4.BitmapId.Belmont_rd, resourceids_4.BitmapId.Belmont_rd]],
-                [direction_5.Direction.Left, [resourceids_4.BitmapId.Belmont_ld, resourceids_4.BitmapId.Belmont_ld, resourceids_4.BitmapId.Belmont_ld]],
+                [1, [8, 8, 8]],
+                [3, [7, 7, 7]],
             ]);
             Belmont.MovementSpritesHit = new Map([
-                [direction_5.Direction.Right, [resourceids_4.BitmapId.Belmont_rhitfly, resourceids_4.BitmapId.Belmont_rhitdown]],
-                [direction_5.Direction.Left, [resourceids_4.BitmapId.Belmont_lhitfly, resourceids_4.BitmapId.Belmont_lhitdown]],
+                [1, [26, 24]],
+                [3, [25, 23]],
             ]);
             Belmont.MovementSpritesWShield = new Map([]);
             Belmont.buttonPressEventHitAreaUp = common_7.newArea(0, 20, 16, 28);
@@ -2757,17 +2694,16 @@ System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazE
             Belmont.buttonPressEventHitAreaDown = common_7.newArea(0, 28, 16, 36);
             Belmont.buttonPressEventHitAreaLeft = common_7.newArea(-4, 24, 12, 32);
             Belmont._hitarea = common_7.newArea(2, 8, 14, 30);
-            exports_29("Belmont", Belmont);
             (function (State) {
                 State[State["Normal"] = 0] = "Normal";
                 State[State["HitRecovery"] = 1] = "HitRecovery";
                 State[State["Dying"] = 2] = "Dying";
                 State[State["Dead"] = 3] = "Dead";
             })(State || (State = {}));
-            exports_29("State", State);
+            exports_30("State", State);
             JumpState = class JumpState {
                 constructor() {
-                    this.JumpTimer = new btimer_3.BStopwatch();
+                    this.JumpTimer = new btimer_4.BStopwatch();
                     this.Jumping = false;
                     this.GoingUp = false;
                     this.JumpAni = new animation_1.Animation(JumpState.jumpYDelta, 1, false);
@@ -2788,8 +2724,8 @@ System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazE
                     this.JumpAni.restart();
                 }
             };
+            exports_30("JumpState", JumpState);
             JumpState.jumpYDelta = [0, -8, -4, -4, -4, -4, -4, -4, -4, -2, -2, -1, -1, 0, 0, 0, 0, 1, 1, 2, 2, 4, 4, 4, 4, 4, 4, 4, 8, 0];
-            exports_29("JumpState", JumpState);
             HitState = class HitState {
                 constructor() {
                     this.Blink = false;
@@ -2815,18 +2751,18 @@ System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazE
                     this.HitAni.restart();
                 }
             };
+            exports_30("HitState", HitState);
             HitState.TotalBlinkTime = 2000;
             HitState.BlinkTimePerSwitch = 20;
             HitState.CrouchTime = 500;
             HitState.hitDelta = new Array(common_8.newPoint(-2, -2), common_8.newPoint(-2, -2), common_8.newPoint(-2, -2), common_8.newPoint(-2, -2), common_8.newPoint(-2, -2), common_8.newPoint(-2, -2), common_8.newPoint(-1, -1), common_8.newPoint(-1, -1), common_8.newPoint(-1, -1), common_8.newPoint(-1, -1), common_8.newPoint(-1, 0), common_8.newPoint(-1, 0), common_8.newPoint(-1, 0), common_8.newPoint(-1, 0), common_8.newPoint(-2, 1), common_8.newPoint(-2, 1), common_8.newPoint(-2, 1), common_8.newPoint(-2, 1));
-            exports_29("HitState", HitState);
             (function (HitStateStep) {
                 HitStateStep[HitStateStep["None"] = 0] = "None";
                 HitStateStep[HitStateStep["Flying"] = 1] = "Flying";
                 HitStateStep[HitStateStep["Falling"] = 2] = "Falling";
                 HitStateStep[HitStateStep["Crouching"] = 3] = "Crouching";
             })(HitStateStep || (HitStateStep = {}));
-            exports_29("HitStateStep", HitStateStep);
+            exports_30("HitStateStep", HitStateStep);
             DyingState = class DyingState {
                 constructor() {
                     this.DeathAni = new animation_1.Animation(DyingState.dyingFrames, DyingState.dyingFrameTimes);
@@ -2839,17 +2775,17 @@ System.register("src/belmont", ["BoazEngineJS/direction", "src/creature", "BoazE
                     this.aniTimer.stop();
                 }
             };
+            exports_30("DyingState", DyingState);
             DyingState.MsPerFrame = 300;
-            DyingState.dyingFrames = new Array({ image: resourceids_4.BitmapId.Belmont_rhitdown, dir: direction_5.Direction.Right }, { image: resourceids_4.BitmapId.Belmont_rdead, dir: direction_5.Direction.Right });
+            DyingState.dyingFrames = new Array({ image: 24, dir: 1 }, { image: 22, dir: 1 });
             DyingState.dyingFrameTimes = [100, 2000];
-            exports_29("DyingState", DyingState);
         }
     };
 });
-System.register("src/triroe", ["src/pprojectile", "src/belmont", "src/sintervaniamodel", "BoazEngineJS/resourceids", "BoazEngineJS/common"], function (exports_30, context_30) {
+System.register("src/triroe", ["src/pprojectile", "src/belmont", "src/sintervaniamodel", "BoazEngineJS/common"], function (exports_31, context_31) {
     "use strict";
-    var pprojectile_1, belmont_1, sintervaniamodel_7, resourceids_5, common_9, TriRoe;
-    var __moduleName = context_30 && context_30.id;
+    var pprojectile_1, belmont_1, sintervaniamodel_7, common_9, TriRoe;
+    var __moduleName = context_31 && context_31.id;
     return {
         setters: [
             function (pprojectile_1_1) {
@@ -2860,9 +2796,6 @@ System.register("src/triroe", ["src/pprojectile", "src/belmont", "src/sintervani
             },
             function (sintervaniamodel_7_1) {
                 sintervaniamodel_7 = sintervaniamodel_7_1;
-            },
-            function (resourceids_5_1) {
-                resourceids_5 = resourceids_5_1;
             },
             function (common_9_1) {
                 common_9 = common_9_1;
@@ -2900,28 +2833,28 @@ System.register("src/triroe", ["src/pprojectile", "src/belmont", "src/sintervani
                 Dispose() {
                 }
             };
+            exports_31("TriRoe", TriRoe);
             TriRoe.hitareas = new Map([
-                [resourceids_5.BitmapId.Belmont_rw1, common_9.newArea(0, 9, 7, 26)],
-                [resourceids_5.BitmapId.Belmont_rw2, common_9.newArea(0, 6, 15, 16)],
-                [resourceids_5.BitmapId.Belmont_rw3, common_9.newArea(20, 8, 41, 16)],
-                [resourceids_5.BitmapId.Belmont_rwd1, common_9.newArea(0, 15, 7, 32)],
-                [resourceids_5.BitmapId.Belmont_rwd2, common_9.newArea(0, 12, 15, 22)],
-                [resourceids_5.BitmapId.Belmont_rwd3, common_9.newArea(20, 14, 41, 22)],
-                [resourceids_5.BitmapId.Belmont_lw1, common_9.newArea(24, 9, 31, 26)],
-                [resourceids_5.BitmapId.Belmont_lw2, common_9.newArea(17, 6, 31, 16)],
-                [resourceids_5.BitmapId.Belmont_lw3, common_9.newArea(0, 8, 19, 16)],
-                [resourceids_5.BitmapId.Belmont_lwd1, common_9.newArea(24, 15, 31, 32)],
-                [resourceids_5.BitmapId.Belmont_lwd2, common_9.newArea(17, 12, 31, 22)],
-                [resourceids_5.BitmapId.Belmont_lwd3, common_9.newArea(0, 14, 19, 22)],
+                [12, common_9.newArea(0, 9, 7, 26)],
+                [13, common_9.newArea(0, 6, 15, 16)],
+                [14, common_9.newArea(20, 8, 41, 16)],
+                [18, common_9.newArea(0, 15, 7, 32)],
+                [19, common_9.newArea(0, 12, 15, 22)],
+                [20, common_9.newArea(20, 14, 41, 22)],
+                [9, common_9.newArea(24, 9, 31, 26)],
+                [10, common_9.newArea(17, 6, 31, 16)],
+                [11, common_9.newArea(0, 8, 19, 16)],
+                [15, common_9.newArea(24, 15, 31, 32)],
+                [16, common_9.newArea(17, 12, 31, 22)],
+                [17, common_9.newArea(0, 14, 19, 22)],
             ]);
-            exports_30("TriRoe", TriRoe);
         }
     };
 });
-System.register("src/weaponfirehandler", ["src/sintervaniamodel", "src/triroe", "BoazEngineJS/soundmaster", "src/resourcemaster", "BoazEngineJS/resourceids", "BoazEngineJS/common"], function (exports_31, context_31) {
+System.register("src/weaponfirehandler", ["src/sintervaniamodel", "src/triroe", "BoazEngineJS/soundmaster", "src/resourcemaster", "BoazEngineJS/common"], function (exports_32, context_32) {
     "use strict";
-    var sintervaniamodel_8, triroe_1, soundmaster_3, resourcemaster_3, resourceids_6, common_10, WeaponFireHandler;
-    var __moduleName = context_31 && context_31.id;
+    var sintervaniamodel_8, triroe_1, soundmaster_3, resourcemaster_4, common_10, WeaponFireHandler;
+    var __moduleName = context_32 && context_32.id;
     return {
         setters: [
             function (sintervaniamodel_8_1) {
@@ -2933,11 +2866,8 @@ System.register("src/weaponfirehandler", ["src/sintervaniamodel", "src/triroe", 
             function (soundmaster_3_1) {
                 soundmaster_3 = soundmaster_3_1;
             },
-            function (resourcemaster_3_1) {
-                resourcemaster_3 = resourcemaster_3_1;
-            },
-            function (resourceids_6_1) {
-                resourceids_6 = resourceids_6_1;
+            function (resourcemaster_4_1) {
+                resourcemaster_4 = resourcemaster_4_1;
             },
             function (common_10_1) {
                 common_10 = common_10_1;
@@ -2983,7 +2913,7 @@ System.register("src/weaponfirehandler", ["src/sintervaniamodel", "src/triroe", 
                     if (WeaponFireHandler.MainWeaponOnCooldown)
                         return;
                     switch (sintervaniamodel_8.GameModel._.SelectedMainWeapon) {
-                        case sintervaniamodel_8.MainWeaponType.TriRoe:
+                        case 1:
                             WeaponFireHandler.handleTriRoe();
                             break;
                     }
@@ -3003,7 +2933,7 @@ System.register("src/weaponfirehandler", ["src/sintervaniamodel", "src/triroe", 
                     let roe = new triroe_1.TriRoe(sintervaniamodel_8.GameModel._.Belmont.pos, sintervaniamodel_8.GameModel._.Belmont.Direction);
                     sintervaniamodel_8.GameModel._.spawn(roe);
                     sintervaniamodel_8.GameModel._.Belmont.UseRoe();
-                    soundmaster_3.SoundMaster.PlayEffect(resourcemaster_3.ResourceMaster.Sound[resourceids_6.AudioId.Whip]);
+                    soundmaster_3.SoundMaster.PlayEffect(resourcemaster_4.ResourceMaster.Sound[3]);
                 }
                 static handleFireCross() {
                     WeaponFireHandler.setSecWeaponCooldown(WeaponFireHandler.msCrossCooldown);
@@ -3015,22 +2945,22 @@ System.register("src/weaponfirehandler", ["src/sintervaniamodel", "src/triroe", 
                         return;
                     }
                     switch (sintervaniamodel_8.GameModel._.SelectedSecondaryWeapon) {
-                        case sintervaniamodel_8.SecWeaponType.Cross:
+                        case 1:
                             WeaponFireHandler.handleFireCross();
                             break;
                     }
                 }
             };
+            exports_32("WeaponFireHandler", WeaponFireHandler);
             WeaponFireHandler.msCrossCooldown = 500;
             WeaponFireHandler.msTriRoeCooldown = 1000;
-            exports_31("WeaponFireHandler", WeaponFireHandler);
         }
     };
 });
-System.register("src/gameoptions", ["src/gameconstants", "BoazEngineJS/msx"], function (exports_32, context_32) {
+System.register("src/gameoptions", ["src/gameconstants", "BoazEngineJS/msx"], function (exports_33, context_33) {
     "use strict";
     var gameconstants_3, msx_6, GameOptions;
-    var __moduleName = context_32 && context_32.id;
+    var __moduleName = context_33 && context_33.id;
     return {
         setters: [
             function (gameconstants_3_1) {
@@ -3067,21 +2997,18 @@ System.register("src/gameoptions", ["src/gameconstants", "BoazEngineJS/msx"], fu
                     return (msx_6.MSXConstants.MSX2ScreenHeight * GameOptions._.Scale);
                 }
             };
-            exports_32("GameOptions", GameOptions);
+            exports_33("GameOptions", GameOptions);
         }
     };
 });
-System.register("src/textwriter", ["BoazEngineJS/engine", "BoazEngineJS/resourceids", "src/gameoptions"], function (exports_33, context_33) {
+System.register("src/textwriter", ["BoazEngineJS/engine", "src/gameoptions"], function (exports_34, context_34) {
     "use strict";
-    var engine_9, resourceids_7, gameoptions_1, TextWriterType, TextWriter;
-    var __moduleName = context_33 && context_33.id;
+    var engine_11, gameoptions_1, TextWriterType, TextWriter;
+    var __moduleName = context_34 && context_34.id;
     return {
         setters: [
-            function (engine_9_1) {
-                engine_9 = engine_9_1;
-            },
-            function (resourceids_7_1) {
-                resourceids_7 = resourceids_7_1;
+            function (engine_11_1) {
+                engine_11 = engine_11_1;
             },
             function (gameoptions_1_1) {
                 gameoptions_1 = gameoptions_1_1;
@@ -3092,7 +3019,7 @@ System.register("src/textwriter", ["BoazEngineJS/engine", "BoazEngineJS/resource
                 TextWriterType[TextWriterType["Billboard"] = 0] = "Billboard";
                 TextWriterType[TextWriterType["Story"] = 1] = "Story";
             })(TextWriterType || (TextWriterType = {}));
-            exports_33("TextWriterType", TextWriterType);
+            exports_34("TextWriterType", TextWriterType);
             TextWriter = class TextWriter {
                 constructor(pos, end, type) {
                     this.Type = type;
@@ -3129,9 +3056,9 @@ System.register("src/textwriter", ["BoazEngineJS/engine", "BoazEngineJS/resource
                             let c = text[i];
                             letter = TextWriter.getBitmapForLetter(c);
                             if (!color)
-                                engine_9.view.DrawBitmap(letter, pos.x, pos.y);
+                                engine_11.view.DrawBitmap(letter, pos.x, pos.y);
                             else
-                                engine_9.view.DrawColoredBitmap(letter, pos.x, pos.y, color.r / 255.0, color.g / 255.0, color.b / 255.0);
+                                engine_11.view.DrawColoredBitmap(letter, pos.x, pos.y, color.r / 255.0, color.g / 255.0, color.b / 255.0);
                             pos.x += stepX;
                         }
                         pos.x = startPos.x;
@@ -3156,7 +3083,7 @@ System.register("src/textwriter", ["BoazEngineJS/engine", "BoazEngineJS/resource
                             if (pos.y < -TextWriter.FontHeight)
                                 break;
                             letter = TextWriter.getBitmapForLetter(c);
-                            engine_9.view.DrawBitmap(letter, pos.x, pos.y);
+                            engine_11.view.DrawBitmap(letter, pos.x, pos.y);
                             pos.x += stepX;
                         }
                         ;
@@ -3171,251 +3098,251 @@ System.register("src/textwriter", ["BoazEngineJS/engine", "BoazEngineJS/resource
                     let letter;
                     switch (c) {
                         case '0':
-                            letter = resourceids_7.BitmapId.Font_0;
+                            letter = 58;
                             break;
                         case '1':
-                            letter = resourceids_7.BitmapId.Font_1;
+                            letter = 59;
                             break;
                         case '2':
-                            letter = resourceids_7.BitmapId.Font_2;
+                            letter = 60;
                             break;
                         case '3':
-                            letter = resourceids_7.BitmapId.Font_3;
+                            letter = 61;
                             break;
                         case '4':
-                            letter = resourceids_7.BitmapId.Font_4;
+                            letter = 62;
                             break;
                         case '5':
-                            letter = resourceids_7.BitmapId.Font_5;
+                            letter = 63;
                             break;
                         case '6':
-                            letter = resourceids_7.BitmapId.Font_6;
+                            letter = 64;
                             break;
                         case '7':
-                            letter = resourceids_7.BitmapId.Font_7;
+                            letter = 65;
                             break;
                         case '8':
-                            letter = resourceids_7.BitmapId.Font_8;
+                            letter = 66;
                             break;
                         case '9':
-                            letter = resourceids_7.BitmapId.Font_9;
+                            letter = 67;
                             break;
                         case 'a':
-                            letter = resourceids_7.BitmapId.Font_A;
+                            letter = 31;
                             break;
                         case 'b':
-                            letter = resourceids_7.BitmapId.Font_B;
+                            letter = 32;
                             break;
                         case 'c':
-                            letter = resourceids_7.BitmapId.Font_C;
+                            letter = 33;
                             break;
                         case 'd':
-                            letter = resourceids_7.BitmapId.Font_D;
+                            letter = 34;
                             break;
                         case 'e':
-                            letter = resourceids_7.BitmapId.Font_E;
+                            letter = 35;
                             break;
                         case 'f':
-                            letter = resourceids_7.BitmapId.Font_F;
+                            letter = 36;
                             break;
                         case 'g':
-                            letter = resourceids_7.BitmapId.Font_G;
+                            letter = 37;
                             break;
                         case 'h':
-                            letter = resourceids_7.BitmapId.Font_H;
+                            letter = 38;
                             break;
                         case 'i':
-                            letter = resourceids_7.BitmapId.Font_I;
+                            letter = 39;
                             break;
                         case 'j':
-                            letter = resourceids_7.BitmapId.Font_J;
+                            letter = 40;
                             break;
                         case 'k':
-                            letter = resourceids_7.BitmapId.Font_K;
+                            letter = 41;
                             break;
                         case 'l':
-                            letter = resourceids_7.BitmapId.Font_L;
+                            letter = 42;
                             break;
                         case 'm':
-                            letter = resourceids_7.BitmapId.Font_M;
+                            letter = 43;
                             break;
                         case 'n':
-                            letter = resourceids_7.BitmapId.Font_N;
+                            letter = 44;
                             break;
                         case 'o':
-                            letter = resourceids_7.BitmapId.Font_O;
+                            letter = 45;
                             break;
                         case 'p':
-                            letter = resourceids_7.BitmapId.Font_P;
+                            letter = 46;
                             break;
                         case 'q':
-                            letter = resourceids_7.BitmapId.Font_Q;
+                            letter = 47;
                             break;
                         case 'r':
-                            letter = resourceids_7.BitmapId.Font_R;
+                            letter = 48;
                             break;
                         case 's':
-                            letter = resourceids_7.BitmapId.Font_S;
+                            letter = 49;
                             break;
                         case 't':
-                            letter = resourceids_7.BitmapId.Font_T;
+                            letter = 50;
                             break;
                         case 'u':
-                            letter = resourceids_7.BitmapId.Font_U;
+                            letter = 51;
                             break;
                         case 'v':
-                            letter = resourceids_7.BitmapId.Font_V;
+                            letter = 52;
                             break;
                         case 'w':
-                            letter = resourceids_7.BitmapId.Font_W;
+                            letter = 53;
                             break;
                         case 'x':
-                            letter = resourceids_7.BitmapId.Font_X;
+                            letter = 54;
                             break;
                         case 'y':
-                            letter = resourceids_7.BitmapId.Font_Y;
+                            letter = 56;
                             break;
                         case 'z':
-                            letter = resourceids_7.BitmapId.Font_Z;
+                            letter = 57;
                             break;
                         case 'A':
-                            letter = resourceids_7.BitmapId.Font_A;
+                            letter = 31;
                             break;
                         case 'B':
-                            letter = resourceids_7.BitmapId.Font_B;
+                            letter = 32;
                             break;
                         case 'C':
-                            letter = resourceids_7.BitmapId.Font_C;
+                            letter = 33;
                             break;
                         case 'D':
-                            letter = resourceids_7.BitmapId.Font_D;
+                            letter = 34;
                             break;
                         case 'E':
-                            letter = resourceids_7.BitmapId.Font_E;
+                            letter = 35;
                             break;
                         case 'F':
-                            letter = resourceids_7.BitmapId.Font_F;
+                            letter = 36;
                             break;
                         case 'G':
-                            letter = resourceids_7.BitmapId.Font_G;
+                            letter = 37;
                             break;
                         case 'H':
-                            letter = resourceids_7.BitmapId.Font_H;
+                            letter = 38;
                             break;
                         case 'I':
-                            letter = resourceids_7.BitmapId.Font_I;
+                            letter = 39;
                             break;
                         case 'J':
-                            letter = resourceids_7.BitmapId.Font_J;
+                            letter = 40;
                             break;
                         case 'K':
-                            letter = resourceids_7.BitmapId.Font_K;
+                            letter = 41;
                             break;
                         case 'L':
-                            letter = resourceids_7.BitmapId.Font_L;
+                            letter = 42;
                             break;
                         case 'M':
-                            letter = resourceids_7.BitmapId.Font_M;
+                            letter = 43;
                             break;
                         case 'N':
-                            letter = resourceids_7.BitmapId.Font_N;
+                            letter = 44;
                             break;
                         case 'O':
-                            letter = resourceids_7.BitmapId.Font_O;
+                            letter = 45;
                             break;
                         case 'P':
-                            letter = resourceids_7.BitmapId.Font_P;
+                            letter = 46;
                             break;
                         case 'Q':
-                            letter = resourceids_7.BitmapId.Font_Q;
+                            letter = 47;
                             break;
                         case 'R':
-                            letter = resourceids_7.BitmapId.Font_R;
+                            letter = 48;
                             break;
                         case 'S':
-                            letter = resourceids_7.BitmapId.Font_S;
+                            letter = 49;
                             break;
                         case 'T':
-                            letter = resourceids_7.BitmapId.Font_T;
+                            letter = 50;
                             break;
                         case 'U':
-                            letter = resourceids_7.BitmapId.Font_U;
+                            letter = 51;
                             break;
                         case 'V':
-                            letter = resourceids_7.BitmapId.Font_V;
+                            letter = 52;
                             break;
                         case 'W':
-                            letter = resourceids_7.BitmapId.Font_W;
+                            letter = 53;
                             break;
                         case 'X':
-                            letter = resourceids_7.BitmapId.Font_X;
+                            letter = 54;
                             break;
                         case '¡':
-                            letter = resourceids_7.BitmapId.Font_IJ;
+                            letter = 55;
                             break;
                         case 'Y':
-                            letter = resourceids_7.BitmapId.Font_Y;
+                            letter = 56;
                             break;
                         case 'Z':
-                            letter = resourceids_7.BitmapId.Font_Z;
+                            letter = 57;
                             break;
                         case ',':
-                            letter = resourceids_7.BitmapId.Font_Comma;
+                            letter = 68;
                             break;
                         case '.':
-                            letter = resourceids_7.BitmapId.Font_Dot;
+                            letter = 69;
                             break;
                         case '!':
-                            letter = resourceids_7.BitmapId.Font_Exclamation;
+                            letter = 70;
                             break;
                         case '?':
-                            letter = resourceids_7.BitmapId.Font_QuestionMark;
+                            letter = 71;
                             break;
                         case '\'':
-                            letter = resourceids_7.BitmapId.Font_Apostroph;
+                            letter = 73;
                             break;
                         case ' ':
-                            letter = resourceids_7.BitmapId.Font_Space;
+                            letter = 74;
                             break;
                         case ':':
-                            letter = resourceids_7.BitmapId.Font_Colon;
+                            letter = 76;
                             break;
                         case '-':
-                            letter = resourceids_7.BitmapId.Font_Streep;
+                            letter = 79;
                             break;
                         case '/':
-                            letter = resourceids_7.BitmapId.Font_Slash;
+                            letter = 80;
                             break;
                         case '%':
-                            letter = resourceids_7.BitmapId.Font_Percent;
+                            letter = 81;
                             break;
                         case '[':
-                            letter = resourceids_7.BitmapId.Font_SpeakStart;
+                            letter = 77;
                             break;
                         case ']':
-                            letter = resourceids_7.BitmapId.Font_SpeakEnd;
+                            letter = 78;
                             break;
                         default:
-                            letter = resourceids_7.BitmapId.Font_QuestionMark;
+                            letter = 71;
                             break;
                     }
                     return letter;
                 }
             };
+            exports_34("TextWriter", TextWriter);
             TextWriter.FontWidth = 8;
             TextWriter.FontHeight = 8;
-            exports_33("TextWriter", TextWriter);
         }
     };
 });
-System.register("BoazEngineJS/gamesaver", ["BoazEngineJS/constants", "BoazEngineJS/gamestateloader"], function (exports_34, context_34) {
+System.register("BoazEngineJS/gamesaver", ["BoazEngineJS/constants", "BoazEngineJS/gamestateloader"], function (exports_35, context_35) {
     "use strict";
-    var constants_5, gamestateloader_1, GameSaver;
-    var __moduleName = context_34 && context_34.id;
+    var constants_4, gamestateloader_1, GameSaver;
+    var __moduleName = context_35 && context_35.id;
     return {
         setters: [
-            function (constants_5_1) {
-                constants_5 = constants_5_1;
+            function (constants_4_1) {
+                constants_4 = constants_4_1;
             },
             function (gamestateloader_1_1) {
                 gamestateloader_1 = gamestateloader_1_1;
@@ -3424,45 +3351,47 @@ System.register("BoazEngineJS/gamesaver", ["BoazEngineJS/constants", "BoazEngine
         execute: function () {
             (function (GameSaver) {
                 function saveGame(m, slot) {
-                    throw "Not implemented yet :(";
+                    console.warn("Not implemented yet :(");
                 }
                 GameSaver.saveGame = saveGame;
                 function GetCheckpoint(m) {
-                    saveGame(m, constants_5.Constants.SaveSlotCheckpoint);
-                    return gamestateloader_1.LoadGame(constants_5.Constants.SaveSlotCheckpoint);
+                    saveGame(m, constants_4.Constants.SaveSlotCheckpoint);
+                    return gamestateloader_1.LoadGame(constants_4.Constants.SaveSlotCheckpoint);
                 }
                 GameSaver.GetCheckpoint = GetCheckpoint;
             })(GameSaver || (GameSaver = {}));
-            exports_34("GameSaver", GameSaver);
+            exports_35("GameSaver", GameSaver);
         }
     };
 });
-System.register("BoazEngineJS/gamestateloader", ["BoazEngineJS/constants", "BoazEngineJS/gamesaver"], function (exports_35, context_35) {
+System.register("BoazEngineJS/gamestateloader", ["BoazEngineJS/constants", "BoazEngineJS/gamesaver"], function (exports_36, context_36) {
     "use strict";
-    var constants_6, gamesaver_1;
-    var __moduleName = context_35 && context_35.id;
+    var constants_5, gamesaver_1;
+    var __moduleName = context_36 && context_36.id;
     function LoadGame(slot) {
-        throw "Not implemented yet :(";
+        console.warn("Not implemented yet :(");
+        return null;
     }
-    exports_35("LoadGame", LoadGame);
+    exports_36("LoadGame", LoadGame);
     function SlotExists(slot) {
         let file = GetSavepath(slot);
-        throw "Not implemented yet :(";
+        console.warn("Not implemented yet :(");
+        return false;
     }
-    exports_35("SlotExists", SlotExists);
+    exports_36("SlotExists", SlotExists);
     function GetCheckpoint(m) {
-        gamesaver_1.GameSaver.saveGame(m, constants_6.Constants.SaveSlotCheckpoint);
-        return LoadGame(constants_6.Constants.SaveSlotCheckpoint);
+        gamesaver_1.GameSaver.saveGame(m, constants_5.Constants.SaveSlotCheckpoint);
+        return LoadGame(constants_5.Constants.SaveSlotCheckpoint);
     }
-    exports_35("GetCheckpoint", GetCheckpoint);
+    exports_36("GetCheckpoint", GetCheckpoint);
     function GetSavepath(slot) {
-        return slot !== constants_6.Constants.SaveSlotCheckpoint ? `${constants_6.Constants.SaveGamePath}${slot}` : constants_6.Constants.CheckpointGamePath;
+        return slot !== constants_5.Constants.SaveSlotCheckpoint ? `${constants_5.Constants.SaveGamePath}${slot}` : constants_5.Constants.CheckpointGamePath;
     }
-    exports_35("GetSavepath", GetSavepath);
+    exports_36("GetSavepath", GetSavepath);
     return {
         setters: [
-            function (constants_6_1) {
-                constants_6 = constants_6_1;
+            function (constants_5_1) {
+                constants_5 = constants_5_1;
             },
             function (gamesaver_1_1) {
                 gamesaver_1 = gamesaver_1_1;
@@ -3472,24 +3401,20 @@ System.register("BoazEngineJS/gamestateloader", ["BoazEngineJS/constants", "Boaz
         }
     };
 });
-System.register("src/mainmenu", ["src/sintervaniamodel", "src/resourcemaster", "BoazEngineJS/soundmaster", "BoazEngineJS/direction", "src/gamecontroller", "src/textwriter", "BoazEngineJS/engine", "BoazEngineJS/msx", "BoazEngineJS/constants", "BoazEngineJS/input", "BoazEngineJS/gamestateloader", "BoazEngineJS/model", "BoazEngineJS/resourceids"], function (exports_36, context_36) {
+System.register("src/mainmenu", ["src/resourcemaster", "BoazEngineJS/soundmaster", "src/sintervaniamodel", "src/gamecontroller", "src/textwriter", "BoazEngineJS/engine", "BoazEngineJS/msx", "BoazEngineJS/constants", "BoazEngineJS/input", "BoazEngineJS/gamestateloader"], function (exports_37, context_37) {
     "use strict";
-    var sintervaniamodel_9, resourcemaster_4, soundmaster_4, direction_6, sintervaniamodel_10, gamecontroller_3, textwriter_1, engine_10, msx_7, constants_7, input_2, gamestateloader_2, model_2, resourceids_8, State, MenuItem, MainMenu;
-    var __moduleName = context_36 && context_36.id;
+    var resourcemaster_5, soundmaster_4, sintervaniamodel_9, gamecontroller_3, textwriter_1, engine_12, msx_7, constants_6, input_2, gamestateloader_2, MainMenu;
+    var __moduleName = context_37 && context_37.id;
     return {
         setters: [
-            function (sintervaniamodel_9_1) {
-                sintervaniamodel_9 = sintervaniamodel_9_1;
-                sintervaniamodel_10 = sintervaniamodel_9_1;
-            },
-            function (resourcemaster_4_1) {
-                resourcemaster_4 = resourcemaster_4_1;
+            function (resourcemaster_5_1) {
+                resourcemaster_5 = resourcemaster_5_1;
             },
             function (soundmaster_4_1) {
                 soundmaster_4 = soundmaster_4_1;
             },
-            function (direction_6_1) {
-                direction_6 = direction_6_1;
+            function (sintervaniamodel_9_1) {
+                sintervaniamodel_9 = sintervaniamodel_9_1;
             },
             function (gamecontroller_3_1) {
                 gamecontroller_3 = gamecontroller_3_1;
@@ -3497,47 +3422,23 @@ System.register("src/mainmenu", ["src/sintervaniamodel", "src/resourcemaster", "
             function (textwriter_1_1) {
                 textwriter_1 = textwriter_1_1;
             },
-            function (engine_10_1) {
-                engine_10 = engine_10_1;
+            function (engine_12_1) {
+                engine_12 = engine_12_1;
             },
             function (msx_7_1) {
                 msx_7 = msx_7_1;
             },
-            function (constants_7_1) {
-                constants_7 = constants_7_1;
+            function (constants_6_1) {
+                constants_6 = constants_6_1;
             },
             function (input_2_1) {
                 input_2 = input_2_1;
             },
             function (gamestateloader_2_1) {
                 gamestateloader_2 = gamestateloader_2_1;
-            },
-            function (model_2_1) {
-                model_2 = model_2_1;
-            },
-            function (resourceids_8_1) {
-                resourceids_8 = resourceids_8_1;
             }
         ],
         execute: function () {
-            (function (State) {
-                State[State["SelectMain"] = 0] = "SelectMain";
-                State[State["SubMenu"] = 1] = "SubMenu";
-                State[State["SelectChapter"] = 2] = "SelectChapter";
-            })(State || (State = {}));
-            exports_36("State", State);
-            (function (MenuItem) {
-                MenuItem[MenuItem["NewGame"] = 0] = "NewGame";
-                MenuItem[MenuItem["Continue"] = 1] = "Continue";
-                MenuItem[MenuItem["LoadGame"] = 2] = "LoadGame";
-                MenuItem[MenuItem["Options"] = 3] = "Options";
-                MenuItem[MenuItem["ToMainMenu"] = 4] = "ToMainMenu";
-                MenuItem[MenuItem["Prologue"] = 5] = "Prologue";
-                MenuItem[MenuItem["Chapter0"] = 6] = "Chapter0";
-                MenuItem[MenuItem["Chapter1"] = 7] = "Chapter1";
-                MenuItem[MenuItem["Debug"] = 8] = "Debug";
-            })(MenuItem || (MenuItem = {}));
-            exports_36("MenuItem", MenuItem);
             MainMenu = class MainMenu {
                 constructor() {
                 }
@@ -3549,12 +3450,12 @@ System.register("src/mainmenu", ["src/sintervaniamodel", "src/resourcemaster", "
                 }
                 get selectedItem() {
                     switch (this.state) {
-                        case State.SelectMain:
+                        case 0:
                             return MainMenu.menuOptions[this.selectedIndex];
-                        case State.SelectChapter:
+                        case 2:
                             return MainMenu.chapterOptions[this.selectedIndex];
                         default:
-                            return MenuItem.ToMainMenu;
+                            return 4;
                     }
                 }
                 Init() {
@@ -3562,99 +3463,99 @@ System.register("src/mainmenu", ["src/sintervaniamodel", "src/resourcemaster", "
                 }
                 reset() {
                     this.selectedIndex = 0;
-                    this.state = State.SelectMain;
+                    this.state = 0;
                 }
                 HandleInput() {
                     let selectionChanged = false;
                     if (input_2.KeyState.KC_UP)
-                        this.changeSelection(direction_6.Direction.Up, selectionChanged);
+                        this.changeSelection(0, selectionChanged);
                     else if (input_2.KeyState.KC_RIGHT)
-                        this.changeSelection(direction_6.Direction.Right, selectionChanged);
+                        this.changeSelection(1, selectionChanged);
                     else if (input_2.KeyState.KC_DOWN)
-                        this.changeSelection(direction_6.Direction.Down, selectionChanged);
+                        this.changeSelection(2, selectionChanged);
                     else if (input_2.KeyState.KC_LEFT)
-                        this.changeSelection(direction_6.Direction.Left, selectionChanged);
+                        this.changeSelection(3, selectionChanged);
                     if (selectionChanged)
-                        soundmaster_4.SoundMaster.PlayEffect(resourcemaster_4.ResourceMaster.Sound[resourceids_8.AudioId.Selectie]);
+                        soundmaster_4.SoundMaster.PlayEffect(resourcemaster_5.ResourceMaster.Sound[1]);
                     if (input_2.KeyState.KC_SPACE) {
                         switch (this.state) {
-                            case State.SelectMain:
-                                soundmaster_4.SoundMaster.PlayEffect(resourcemaster_4.ResourceMaster.Sound[resourceids_8.AudioId.Selectie]);
+                            case 0:
+                                soundmaster_4.SoundMaster.PlayEffect(resourcemaster_5.ResourceMaster.Sound[1]);
                                 switch (this.selectedItem) {
-                                    case MenuItem.NewGame:
-                                        this.state = State.SelectChapter;
+                                    case 0:
+                                        this.state = 2;
                                         this.selectedIndex = 0;
                                         break;
-                                    case MenuItem.Continue:
-                                        if (gamestateloader_2.SlotExists(constants_7.Constants.SaveSlotCheckpoint))
+                                    case 1:
+                                        if (gamestateloader_2.SlotExists(constants_6.Constants.SaveSlotCheckpoint))
                                             gamecontroller_3.GameController._.LoadCheckpoint();
                                         else
-                                            soundmaster_4.SoundMaster.PlayEffect(resourcemaster_4.ResourceMaster.Sound[resourceids_8.AudioId.Fout]);
+                                            soundmaster_4.SoundMaster.PlayEffect(resourcemaster_5.ResourceMaster.Sound[2]);
                                         break;
-                                    case MenuItem.LoadGame:
+                                    case 2:
                                         input_2.KeyState.KC_SPACE = false;
-                                        sintervaniamodel_10.GameModel._.GameMenu.Open(MenuItem.LoadFromMainMenu);
-                                        this.state = State.SubMenu;
+                                        sintervaniamodel_9.GameModel._.GameMenu.Open(14);
+                                        this.state = 1;
                                         break;
-                                    case MenuItem.Options:
+                                    case 3:
                                         input_2.KeyState.KC_SPACE = false;
-                                        sintervaniamodel_10.GameModel._.GameMenu.Open(MenuItem.OptionsFromMainMenu);
-                                        this.state = State.SubMenu;
+                                        sintervaniamodel_9.GameModel._.GameMenu.Open(15);
+                                        this.state = 1;
                                         break;
                                 }
                                 break;
-                            case State.SelectChapter:
-                                soundmaster_4.SoundMaster.PlayEffect(resourcemaster_4.ResourceMaster.Sound[resourceids_8.AudioId.Selectie]);
+                            case 2:
+                                soundmaster_4.SoundMaster.PlayEffect(resourcemaster_5.ResourceMaster.Sound[1]);
                                 switch (this.selectedItem) {
-                                    case MenuItem.Debug:
-                                        sintervaniamodel_10.GameModel._.SelectedChapterToPlay = sintervaniamodel_9.Chapter.Debug;
-                                        gamecontroller_3.GameController._.SwitchToState(model_2.GameState.Game);
+                                    case 8:
+                                        sintervaniamodel_9.GameModel._.SelectedChapterToPlay = 0;
+                                        gamecontroller_3.GameController._.SwitchToState(8);
                                         break;
-                                    case MenuItem.Prologue:
-                                        sintervaniamodel_10.GameModel._.SelectedChapterToPlay = sintervaniamodel_9.Chapter.Prologue;
-                                        gamecontroller_3.GameController._.SwitchToState(model_2.GameState.GameStart1);
+                                    case 5:
+                                        sintervaniamodel_9.GameModel._.SelectedChapterToPlay = 1;
+                                        gamecontroller_3.GameController._.SwitchToState(5);
                                         break;
-                                    case MenuItem.Chapter0:
-                                        sintervaniamodel_10.GameModel._.SelectedChapterToPlay = sintervaniamodel_9.Chapter.Chapter_0;
-                                        gamecontroller_3.GameController._.SwitchToState(model_2.GameState.GameStart1);
+                                    case 6:
+                                        sintervaniamodel_9.GameModel._.SelectedChapterToPlay = 2;
+                                        gamecontroller_3.GameController._.SwitchToState(5);
                                         break;
-                                    case MenuItem.Chapter1:
-                                        sintervaniamodel_10.GameModel._.SelectedChapterToPlay = sintervaniamodel_9.Chapter.GameStart;
-                                        gamecontroller_3.GameController._.SwitchToState(model_2.GameState.GameStart1);
+                                    case 7:
+                                        sintervaniamodel_9.GameModel._.SelectedChapterToPlay = 3;
+                                        gamecontroller_3.GameController._.SwitchToState(5);
                                         break;
-                                    case MenuItem.ToMainMenu:
-                                        this.state = State.SelectMain;
+                                    case 4:
+                                        this.state = 0;
                                         this.selectedIndex = 0;
                                         break;
                                 }
                                 break;
-                            case State.SubMenu:
+                            case 1:
                                 break;
                         }
                     }
                 }
                 changeSelection(dir, selectionChanged) {
-                    if (this.state == State.SubMenu)
+                    if (this.state == 1)
                         return;
                     let currentItems;
                     switch (this.state) {
-                        case State.SelectMain:
+                        case 0:
                         default:
                             currentItems = MainMenu.items;
                             break;
-                        case State.SelectChapter:
+                        case 2:
                             currentItems = MainMenu.chapterItems;
                             break;
                     }
                     switch (dir) {
-                        case direction_6.Direction.Up:
+                        case 0:
                             if (this.selectedIndex > 0)
                                 this.selectedIndex--;
                             else
                                 this.selectedIndex = currentItems.length - 1;
                             selectionChanged = true;
                             break;
-                        case direction_6.Direction.Down:
+                        case 2:
                             if (this.selectedIndex < currentItems.length - 1)
                                 this.selectedIndex++;
                             else
@@ -3666,16 +3567,16 @@ System.register("src/mainmenu", ["src/sintervaniamodel", "src/resourcemaster", "
                 TakeTurn() {
                 }
                 Paint() {
-                    engine_10.view.DrawBitmap(resourceids_8.BitmapId.Titel, 0, 0);
-                    engine_10.view.FillRectangle(MainMenu.boxX, MainMenu.boxY, MainMenu.boxEndX, MainMenu.boxEndY, msx_7.MSXConstants.Msx1Colors[4]);
-                    engine_10.view.DrawRectangle(MainMenu.boxX, MainMenu.boxY, MainMenu.boxEndX, MainMenu.boxEndY, msx_7.MSXConstants.Msx1Colors[15]);
+                    engine_12.view.DrawBitmap(82, 0, 0);
+                    engine_12.view.FillRectangle(MainMenu.boxX, MainMenu.boxY, MainMenu.boxEndX, MainMenu.boxEndY, msx_7.MSXConstants.Msx1Colors[4]);
+                    engine_12.view.DrawRectangle(MainMenu.boxX, MainMenu.boxY, MainMenu.boxEndX, MainMenu.boxEndY, msx_7.MSXConstants.Msx1Colors[15]);
                     switch (this.state) {
-                        case State.SubMenu:
-                        case State.SelectMain:
+                        case 1:
+                        case 0:
                             for (let i = 0; i < MainMenu.items.length; i++) {
                                 switch (MainMenu.menuOptions[i]) {
-                                    case MenuItem.Continue:
-                                        if (gamestateloader_2.SlotExists(constants_7.Constants.SaveSlotCheckpoint))
+                                    case 1:
+                                        if (gamestateloader_2.SlotExists(constants_6.Constants.SaveSlotCheckpoint))
                                             textwriter_1.TextWriter.DrawText(MainMenu.itemsX, MainMenu.itemYs[i], MainMenu.items[i]);
                                         else
                                             textwriter_1.TextWriter.DrawText(MainMenu.itemsX, MainMenu.itemYs[i], MainMenu.items[i], msx_7.MSXConstants.Msx1Colors[0]);
@@ -3686,22 +3587,23 @@ System.register("src/mainmenu", ["src/sintervaniamodel", "src/resourcemaster", "
                                 }
                             }
                             break;
-                        case State.SelectChapter:
+                        case 2:
                             for (let i = 0; i < MainMenu.chapterItems.length; i++) {
                                 textwriter_1.TextWriter.DrawText(MainMenu.itemsX, MainMenu.itemYs[i], MainMenu.chapterItems[i]);
                             }
                             break;
                     }
-                    engine_10.view.DrawBitmap(resourceids_8.BitmapId.MenuCursor, this.cursorX, this.cursorY);
+                    engine_12.view.DrawBitmap(30, this.cursorX, this.cursorY);
                 }
                 GameMenuClosed() {
                     this.reset();
                 }
             };
+            exports_37("MainMenu", MainMenu);
             MainMenu.items = new Array("New game", "Continue game", "Load game", "Options");
-            MainMenu.menuOptions = new Array(MenuItem.NewGame, MenuItem.Continue, MenuItem.LoadGame, MenuItem.Options);
+            MainMenu.menuOptions = new Array(0, 1, 2, 3);
             MainMenu.chapterItems = new Array("Debug", "Prologue", "Chapter 0", "Chapter 1", "Back");
-            MainMenu.chapterOptions = new Array(MenuItem.Debug, MenuItem.Prologue, MenuItem.Chapter0, MenuItem.Chapter1, MenuItem.ToMainMenu);
+            MainMenu.chapterOptions = new Array(8, 5, 6, 7, 4);
             MainMenu.itemYs = new Array(140, 156, 172, 188, 196, 204);
             MainMenu.itemsX = 48;
             MainMenu.cursorPosX = 36;
@@ -3709,33 +3611,29 @@ System.register("src/mainmenu", ["src/sintervaniamodel", "src/resourcemaster", "
             MainMenu.boxY = 132;
             MainMenu.boxEndX = MainMenu.boxX + 176 + 32;
             MainMenu.boxEndY = MainMenu.boxY + 24 + 48;
-            exports_36("MainMenu", MainMenu);
         }
     };
 });
-System.register("src/hud", ["BoazEngineJS/btimer", "src/item", "BoazEngineJS/resourceids", "src/sintervaniamodel", "src/gameconstants", "BoazEngineJS/engine", "src/gameview", "BoazEngineJS/common", "src/textwriter"], function (exports_37, context_37) {
+System.register("src/hud", ["BoazEngineJS/btimer", "src/item", "src/sintervaniamodel", "src/gameconstants", "BoazEngineJS/engine", "src/gameview", "BoazEngineJS/common", "src/textwriter"], function (exports_38, context_38) {
     "use strict";
-    var btimer_4, item_2, resourceids_9, sintervaniamodel_11, gameconstants_4, engine_11, gameview_1, common_11, textwriter_2, HUD;
-    var __moduleName = context_37 && context_37.id;
+    var btimer_5, item_2, sintervaniamodel_10, gameconstants_4, engine_13, gameview_1, common_11, textwriter_2, HUD;
+    var __moduleName = context_38 && context_38.id;
     return {
         setters: [
-            function (btimer_4_1) {
-                btimer_4 = btimer_4_1;
+            function (btimer_5_1) {
+                btimer_5 = btimer_5_1;
             },
             function (item_2_1) {
                 item_2 = item_2_1;
             },
-            function (resourceids_9_1) {
-                resourceids_9 = resourceids_9_1;
-            },
-            function (sintervaniamodel_11_1) {
-                sintervaniamodel_11 = sintervaniamodel_11_1;
+            function (sintervaniamodel_10_1) {
+                sintervaniamodel_10 = sintervaniamodel_10_1;
             },
             function (gameconstants_4_1) {
                 gameconstants_4 = gameconstants_4_1;
             },
-            function (engine_11_1) {
-                engine_11 = engine_11_1;
+            function (engine_13_1) {
+                engine_13 = engine_13_1;
             },
             function (gameview_1_1) {
                 gameview_1 = gameview_1_1;
@@ -3750,31 +3648,31 @@ System.register("src/hud", ["BoazEngineJS/btimer", "src/item", "BoazEngineJS/res
         execute: function () {
             HUD = class HUD {
                 constructor() {
-                    this.barTimer = btimer_4.BStopwatch.createWatch();
+                    this.barTimer = btimer_5.BStopwatch.createWatch();
                     this.barTimer.pauseDuringMenu = false;
                     this.barTimer.restart();
-                    this.foebarTimer = btimer_4.BStopwatch.createWatch();
+                    this.foebarTimer = btimer_5.BStopwatch.createWatch();
                     this.foebarTimer.pauseDuringMenu = false;
                     this.foebarTimer.restart();
                     this.SetShownLevelsToProperValues();
                 }
                 SetShownLevelsToProperValues() {
-                    if (sintervaniamodel_11.GameModel._ != null) {
-                        if (sintervaniamodel_11.GameModel._.Belmont != null)
-                            this.shownHealthLevel = sintervaniamodel_11.GameModel._.Belmont.HealthPercentage;
+                    if (sintervaniamodel_10.GameModel._ != null) {
+                        if (sintervaniamodel_10.GameModel._.Belmont != null)
+                            this.shownHealthLevel = sintervaniamodel_10.GameModel._.Belmont.HealthPercentage;
                         this.shownFoeHealthLevel = gameview_1.GameView._.FoeHealthPercentage;
                         this.foeForWhichHealthLevelIsShown = gameview_1.GameView._.FoeForWhichHealthPercentageIsGiven;
                     }
                 }
                 TakeTurn() {
-                    if (sintervaniamodel_11.GameModel._.Belmont.Dying)
-                        this.shownHealthLevel = sintervaniamodel_11.GameModel._.Belmont.HealthPercentage;
-                    if (sintervaniamodel_11.GameModel._.LastFoeThatWasHit != null && sintervaniamodel_11.GameModel._.LastFoeThatWasHit.disposeFlag)
+                    if (sintervaniamodel_10.GameModel._.Belmont.Dying)
+                        this.shownHealthLevel = sintervaniamodel_10.GameModel._.Belmont.HealthPercentage;
+                    if (sintervaniamodel_10.GameModel._.LastFoeThatWasHit != null && sintervaniamodel_10.GameModel._.LastFoeThatWasHit.disposeFlag)
                         this.shownFoeHealthLevel = 0;
                     if (common_11.waitDuration(this.barTimer, HUD.MsDurationBarChange)) {
-                        if (this.shownHealthLevel > sintervaniamodel_11.GameModel._.Belmont.HealthPercentage)
+                        if (this.shownHealthLevel > sintervaniamodel_10.GameModel._.Belmont.HealthPercentage)
                             this.shownHealthLevel--;
-                        else if (this.shownHealthLevel < sintervaniamodel_11.GameModel._.Belmont.HealthPercentage)
+                        else if (this.shownHealthLevel < sintervaniamodel_10.GameModel._.Belmont.HealthPercentage)
                             this.shownHealthLevel++;
                     }
                     if (gameconstants_4.GameConstants.AnimateFoeHealthLevel) {
@@ -3792,19 +3690,19 @@ System.register("src/hud", ["BoazEngineJS/btimer", "src/item", "BoazEngineJS/res
                     return percentage == 0 ? 0 : (HUD.HealthBarSizeX / 100 * percentage) + 1;
                 }
                 Paint() {
-                    engine_11.view.DrawBitmap(resourceids_9.BitmapId.HUD, HUD.Pos_X, HUD.Pos_Y);
+                    engine_13.view.DrawBitmap(27, HUD.Pos_X, HUD.Pos_Y);
                     let pos = { x: HUD.HealthBarPosX, y: HUD.HealthBarPosY };
                     for (let i = 0; i < this.percentageToBarLength(this.shownHealthLevel); i++) {
-                        engine_11.view.DrawBitmap(resourceids_9.BitmapId.HUD_EnergyStripe_belmont, pos.x, pos.y);
+                        engine_13.view.DrawBitmap(28, pos.x, pos.y);
                         pos.x += 1;
                     }
-                    textwriter_2.TextWriter.DrawText(HUD.HeartsPosX, HUD.HeartsPosY, `${sintervaniamodel_11.GameModel._.Hearts.toPrecision(2)}`);
-                    if (sintervaniamodel_11.GameModel._.ItemsInInventory.find(x => x.Type == item_2.ItemType.KeyBig)) {
-                        engine_11.view.DrawBitmap(item_2.Item.Type2Image(item_2.ItemType.KeyBig), HUD.KeyPos.x, HUD.KeyPos.y);
+                    textwriter_2.TextWriter.DrawText(HUD.HeartsPosX, HUD.HeartsPosY, `${sintervaniamodel_10.GameModel._.Hearts.toPrecision(2)}`);
+                    if (sintervaniamodel_10.GameModel._.ItemsInInventory.find(x => x.Type == item_2.ItemType.KeyBig)) {
+                        engine_13.view.DrawBitmap(item_2.Item.Type2Image(item_2.ItemType.KeyBig), HUD.KeyPos.x, HUD.KeyPos.y);
                     }
                     common_11.setPoint(pos, HUD.FoeBarStripePosX, HUD.FoeBarStripePosY);
                     let lengthShown, lengthBefore;
-                    if (sintervaniamodel_11.GameModel._.BossBattle) {
+                    if (sintervaniamodel_10.GameModel._.BossBattle) {
                         if (gameview_1.GameView._.FoeForWhichHealthPercentageIsGiven != this.foeForWhichHealthLevelIsShown) {
                             this.foeForWhichHealthLevelIsShown = gameview_1.GameView._.FoeForWhichHealthPercentageIsGiven;
                             this.shownFoeHealthLevel = gameview_1.GameView._.FoeHealthPercentage;
@@ -3819,19 +3717,20 @@ System.register("src/hud", ["BoazEngineJS/btimer", "src/item", "BoazEngineJS/res
                     if (lengthBefore != -1) {
                         if (lengthBefore > 0) {
                             for (let i = 0; i <= lengthBefore; i++) {
-                                engine_11.view.DrawBitmap(resourceids_9.BitmapId.HUD_EnergyStripe_boss, pos.x, pos.y);
+                                engine_13.view.DrawBitmap(29, pos.x, pos.y);
                                 pos.x += 1;
                             }
                         }
                         if (lengthBefore != lengthShown) {
                             for (let i = lengthBefore; i <= lengthShown; i++) {
-                                engine_11.view.DrawBitmap(resourceids_9.BitmapId.HUD_EnergyStripe_boss, pos.x, pos.y);
+                                engine_13.view.DrawBitmap(29, pos.x, pos.y);
                                 pos.x += 1;
                             }
                         }
                     }
                 }
             };
+            exports_38("HUD", HUD);
             HUD.Pos_X = 0;
             HUD.Pos_Y = 0;
             HUD.MsDurationBarChange = 100;
@@ -3850,54 +3749,50 @@ System.register("src/hud", ["BoazEngineJS/btimer", "src/item", "BoazEngineJS/res
             HUD.FoeBarStripePosX = HUD.Pos_X + 60;
             HUD.FoeBarStripePosY = HUD.Pos_Y + 27;
             HUD.HealthBarSizeX = 63;
-            exports_37("HUD", HUD);
         }
     };
 });
-System.register("src/itscurtainsforyou", ["BoazEngineJS/btimer", "BoazEngineJS/msx", "BoazEngineJS/constants", "BoazEngineJS/common", "BoazEngineJS/engine", "src/gamecontroller", "BoazEngineJS/resourceids"], function (exports_38, context_38) {
+System.register("src/itscurtainsforyou", ["BoazEngineJS/btimer", "BoazEngineJS/msx", "BoazEngineJS/common", "BoazEngineJS/engine", "src/gamecontroller", "src/gameconstants"], function (exports_39, context_39) {
     "use strict";
-    var btimer_5, msx_8, constants_8, common_12, engine_12, gamecontroller_4, resourceids_10, ItsCurtainsForYou;
-    var __moduleName = context_38 && context_38.id;
+    var btimer_6, msx_8, common_12, engine_14, gamecontroller_4, gameconstants_5, ItsCurtainsForYou;
+    var __moduleName = context_39 && context_39.id;
     return {
         setters: [
-            function (btimer_5_1) {
-                btimer_5 = btimer_5_1;
+            function (btimer_6_1) {
+                btimer_6 = btimer_6_1;
             },
             function (msx_8_1) {
                 msx_8 = msx_8_1;
             },
-            function (constants_8_1) {
-                constants_8 = constants_8_1;
-            },
             function (common_12_1) {
                 common_12 = common_12_1;
             },
-            function (engine_12_1) {
-                engine_12 = engine_12_1;
+            function (engine_14_1) {
+                engine_14 = engine_14_1;
             },
             function (gamecontroller_4_1) {
                 gamecontroller_4 = gamecontroller_4_1;
             },
-            function (resourceids_10_1) {
-                resourceids_10 = resourceids_10_1;
+            function (gameconstants_5_1) {
+                gameconstants_5 = gameconstants_5_1;
             }
         ],
         execute: function () {
             ItsCurtainsForYou = class ItsCurtainsForYou {
                 constructor() {
                     this.msCurtainPartWait = 18;
-                    this.maxCurtainParts = constants_8.Constants.GAMESCREEN_WIDTH / msx_8.TileSize;
+                    this.maxCurtainParts = gameconstants_5.GameConstants.GameScreenWidth / msx_8.TileSize;
                 }
                 Init() {
                     this.curtainPartCount = 0;
                     if (this.timer == null) {
-                        this.timer = btimer_5.BStopwatch.createWatch();
+                        this.timer = btimer_6.BStopwatch.createWatch();
                     }
                     this.timer.restart();
                 }
                 Stop() {
                     this.curtainPartCount = 0;
-                    btimer_5.BStopwatch.removeWatch(this.timer);
+                    btimer_6.BStopwatch.removeWatch(this.timer);
                 }
                 TakeTurn() {
                     if (common_12.waitDuration(this.timer, this.msCurtainPartWait)) {
@@ -3909,26 +3804,23 @@ System.register("src/itscurtainsforyou", ["BoazEngineJS/btimer", "BoazEngineJS/m
                 Paint() {
                     let pos = { x: 0, y: 0 };
                     for (let i = 0; i < this.curtainPartCount; i++) {
-                        engine_12.view.DrawBitmap(resourceids_10.BitmapId.CurtainPart, pos.x, pos.y);
+                        engine_14.view.DrawBitmap(84, pos.x, pos.y);
                         pos.x += msx_8.TileSize;
                     }
                 }
             };
-            exports_38("ItsCurtainsForYou", ItsCurtainsForYou);
+            exports_39("ItsCurtainsForYou", ItsCurtainsForYou);
         }
     };
 });
-System.register("src/gameover", ["src/sintervaniamodel", "BoazEngineJS/direction", "src/textwriter", "BoazEngineJS/msx", "BoazEngineJS/engine", "BoazEngineJS/resourceids", "BoazEngineJS/input", "BoazEngineJS/soundmaster", "src/resourcemaster", "src/gamecontroller", "src/mainmenu"], function (exports_39, context_39) {
+System.register("src/gameover", ["src/sintervaniamodel", "src/textwriter", "BoazEngineJS/msx", "BoazEngineJS/engine", "BoazEngineJS/input", "BoazEngineJS/soundmaster", "src/resourcemaster", "src/gamecontroller"], function (exports_40, context_40) {
     "use strict";
-    var sintervaniamodel_12, direction_7, textwriter_3, msx_9, engine_13, resourceids_11, input_3, soundmaster_5, resourcemaster_5, gamecontroller_5, mainmenu_1, State, GameOver;
-    var __moduleName = context_39 && context_39.id;
+    var sintervaniamodel_11, textwriter_3, msx_9, engine_15, input_3, soundmaster_5, resourcemaster_6, gamecontroller_5, State, GameOver;
+    var __moduleName = context_40 && context_40.id;
     return {
         setters: [
-            function (sintervaniamodel_12_1) {
-                sintervaniamodel_12 = sintervaniamodel_12_1;
-            },
-            function (direction_7_1) {
-                direction_7 = direction_7_1;
+            function (sintervaniamodel_11_1) {
+                sintervaniamodel_11 = sintervaniamodel_11_1;
             },
             function (textwriter_3_1) {
                 textwriter_3 = textwriter_3_1;
@@ -3936,11 +3828,8 @@ System.register("src/gameover", ["src/sintervaniamodel", "BoazEngineJS/direction
             function (msx_9_1) {
                 msx_9 = msx_9_1;
             },
-            function (engine_13_1) {
-                engine_13 = engine_13_1;
-            },
-            function (resourceids_11_1) {
-                resourceids_11 = resourceids_11_1;
+            function (engine_15_1) {
+                engine_15 = engine_15_1;
             },
             function (input_3_1) {
                 input_3 = input_3_1;
@@ -3948,14 +3837,11 @@ System.register("src/gameover", ["src/sintervaniamodel", "BoazEngineJS/direction
             function (soundmaster_5_1) {
                 soundmaster_5 = soundmaster_5_1;
             },
-            function (resourcemaster_5_1) {
-                resourcemaster_5 = resourcemaster_5_1;
+            function (resourcemaster_6_1) {
+                resourcemaster_6 = resourcemaster_6_1;
             },
             function (gamecontroller_5_1) {
                 gamecontroller_5 = gamecontroller_5_1;
-            },
-            function (mainmenu_1_1) {
-                mainmenu_1 = mainmenu_1_1;
             }
         ],
         execute: function () {
@@ -3963,7 +3849,7 @@ System.register("src/gameover", ["src/sintervaniamodel", "BoazEngineJS/direction
                 State[State["SelectContOrLoad"] = 0] = "SelectContOrLoad";
                 State[State["SelectFile"] = 1] = "SelectFile";
             })(State || (State = {}));
-            exports_39("State", State);
+            exports_40("State", State);
             GameOver = class GameOver {
                 constructor() {
                 }
@@ -3983,13 +3869,13 @@ System.register("src/gameover", ["src/sintervaniamodel", "BoazEngineJS/direction
                 HandleInput() {
                     let selectionChanged = false;
                     if (input_3.KeyState.KC_UP)
-                        this.changeSelection(direction_7.Direction.Up, selectionChanged);
+                        this.changeSelection(0, selectionChanged);
                     else if (input_3.KeyState.KC_RIGHT)
-                        this.changeSelection(direction_7.Direction.Right, selectionChanged);
+                        this.changeSelection(1, selectionChanged);
                     else if (input_3.KeyState.KC_DOWN)
-                        this.changeSelection(direction_7.Direction.Down, selectionChanged);
+                        this.changeSelection(2, selectionChanged);
                     else if (input_3.KeyState.KC_LEFT)
-                        this.changeSelection(direction_7.Direction.Left, selectionChanged);
+                        this.changeSelection(3, selectionChanged);
                     if (input_3.KeyState.KC_SPACE) {
                         switch (this.state) {
                             case State.SelectContOrLoad:
@@ -3998,9 +3884,9 @@ System.register("src/gameover", ["src/sintervaniamodel", "BoazEngineJS/direction
                                         gamecontroller_5.GameController._.LoadCheckpoint();
                                         break;
                                     case 1:
-                                        soundmaster_5.SoundMaster.PlayEffect(resourcemaster_5.ResourceMaster.Sound[resourceids_11.AudioId.Selectie]);
+                                        soundmaster_5.SoundMaster.PlayEffect(resourcemaster_6.ResourceMaster.Sound[1]);
                                         input_3.KeyState.KC_SPACE = false;
-                                        sintervaniamodel_12.GameModel._.GameMenu.Open(mainmenu_1.MenuItem.LoadFromGameOver);
+                                        sintervaniamodel_11.GameModel._.GameMenu.Open(13);
                                         this.state = State.SelectFile;
                                         break;
                                 }
@@ -4010,20 +3896,20 @@ System.register("src/gameover", ["src/sintervaniamodel", "BoazEngineJS/direction
                         }
                     }
                     if (selectionChanged) {
-                        soundmaster_5.SoundMaster.PlayEffect(resourcemaster_5.ResourceMaster.Sound[resourceids_11.AudioId.Selectie]);
+                        soundmaster_5.SoundMaster.PlayEffect(resourcemaster_6.ResourceMaster.Sound[1]);
                     }
                 }
                 changeSelection(dir, selectionChanged) {
                     if (this.state == State.SelectFile)
                         return;
                     switch (dir) {
-                        case direction_7.Direction.Up:
+                        case 0:
                             if (this.selectedIndex > 0) {
                                 this.selectedIndex = 0;
                                 selectionChanged = true;
                             }
                             break;
-                        case direction_7.Direction.Down:
+                        case 2:
                             if (this.selectedIndex < 1) {
                                 this.selectedIndex = 1;
                                 selectionChanged = true;
@@ -4036,15 +3922,16 @@ System.register("src/gameover", ["src/sintervaniamodel", "BoazEngineJS/direction
                 Paint() {
                     textwriter_3.TextWriter.DrawText(60, 56, ["Je bent vernederd!"]);
                     textwriter_3.TextWriter.DrawText(32, 80, ["Wat ga je doen,Belmont?"]);
-                    engine_13.view.DrawRectangle(GameOver.boxX, GameOver.boxY, GameOver.boxEndX, GameOver.boxEndY, msx_9.MSXConstants.Msx1Colors[15]);
+                    engine_15.view.DrawRectangle(GameOver.boxX, GameOver.boxY, GameOver.boxEndX, GameOver.boxEndY, msx_9.MSXConstants.Msx1Colors[15]);
                     for (let i = 0; i < GameOver.items.length; i++)
                         textwriter_3.TextWriter.DrawText(GameOver.itemsX, GameOver.itemYs[i], [GameOver.items[i]]);
-                    engine_13.view.DrawBitmap(resourceids_11.BitmapId.MenuCursor, this.cursorX, this.cursorY);
+                    engine_15.view.DrawBitmap(30, this.cursorX, this.cursorY);
                 }
                 GameMenuClosed() {
                     this.reset();
                 }
             };
+            exports_40("GameOver", GameOver);
             GameOver.items = new Array("Start bij controlepunt", "Laad spel");
             GameOver.itemYs = new Array(112, 128);
             GameOver.itemsX = 48;
@@ -4053,14 +3940,13 @@ System.register("src/gameover", ["src/sintervaniamodel", "BoazEngineJS/direction
             GameOver.boxY = 104;
             GameOver.boxEndX = GameOver.boxX + 176 + 32;
             GameOver.boxEndY = GameOver.boxY + 24 + 16;
-            exports_39("GameOver", GameOver);
         }
     };
 });
-System.register("src/title", ["BoazEngineJS/animation", "BoazEngineJS/common", "BoazEngineJS/resourceids", "src/gamecontroller", "BoazEngineJS/input", "BoazEngineJS/engine"], function (exports_40, context_40) {
+System.register("src/title", ["BoazEngineJS/animation", "BoazEngineJS/common", "src/gamecontroller", "BoazEngineJS/input", "BoazEngineJS/engine"], function (exports_41, context_41) {
     "use strict";
-    var animation_2, common_13, resourceids_12, gamecontroller_6, input_4, engine_14, State, Title;
-    var __moduleName = context_40 && context_40.id;
+    var animation_2, common_13, gamecontroller_6, input_4, engine_16, State, Title;
+    var __moduleName = context_41 && context_41.id;
     return {
         setters: [
             function (animation_2_1) {
@@ -4069,17 +3955,14 @@ System.register("src/title", ["BoazEngineJS/animation", "BoazEngineJS/common", "
             function (common_13_1) {
                 common_13 = common_13_1;
             },
-            function (resourceids_12_1) {
-                resourceids_12 = resourceids_12_1;
-            },
             function (gamecontroller_6_1) {
                 gamecontroller_6 = gamecontroller_6_1;
             },
             function (input_4_1) {
                 input_4 = input_4_1;
             },
-            function (engine_14_1) {
-                engine_14 = engine_14_1;
+            function (engine_16_1) {
+                engine_16 = engine_16_1;
             }
         ],
         execute: function () {
@@ -4091,7 +3974,7 @@ System.register("src/title", ["BoazEngineJS/animation", "BoazEngineJS/common", "
                 State[State["WaitForItAgain"] = 4] = "WaitForItAgain";
                 State[State["Other"] = 5] = "Other";
             })(State || (State = {}));
-            exports_40("State", State);
+            exports_41("State", State);
             Title = class Title {
                 constructor() {
                     this.titleAni = new animation_2.Animation(Title.titleStates, Title.titleMoves);
@@ -4127,7 +4010,7 @@ System.register("src/title", ["BoazEngineJS/animation", "BoazEngineJS/common", "
                             }
                             break;
                         case State.TitleTop:
-                            if ((engine_14.game.TurnCounter & 1) == 0) {
+                            if ((engine_16.game.TurnCounter & 1) == 0) {
                                 this.titleTopPos.x += Title.deltaX;
                                 if (this.titleAni.doAnimation(Title.deltaX, newState)) {
                                     this.state = newState.nextStepValue;
@@ -4135,7 +4018,7 @@ System.register("src/title", ["BoazEngineJS/animation", "BoazEngineJS/common", "
                             }
                             break;
                         case State.TitleBottom:
-                            if ((engine_14.game.TurnCounter & 1) == 0) {
+                            if ((engine_16.game.TurnCounter & 1) == 0) {
                                 this.titleBottomPos.x -= Title.deltaX;
                                 if (this.titleAni.doAnimation(Title.deltaX, newState)) {
                                     this.state = newState.nextStepValue;
@@ -4148,12 +4031,13 @@ System.register("src/title", ["BoazEngineJS/animation", "BoazEngineJS/common", "
                     }
                 }
                 Paint() {
-                    engine_14.view.DrawBitmap(resourceids_12.BitmapId.TitelBoven, this.titleTopPos.x, this.titleTopPos.y);
-                    engine_14.view.DrawBitmap(resourceids_12.BitmapId.TitelOnder, this.titleBottomPos.x, this.titleBottomPos.y);
+                    engine_16.view.DrawBitmap(86, this.titleTopPos.x, this.titleTopPos.y);
+                    engine_16.view.DrawBitmap(87, this.titleBottomPos.x, this.titleBottomPos.y);
                     if (this.state != State.WaitForIt)
-                        engine_14.view.DrawBitmap(resourceids_12.BitmapId.TitelKonami, Title.konamiX, Title.konamiY);
+                        engine_16.view.DrawBitmap(85, Title.konamiX, Title.konamiY);
                 }
             };
+            exports_41("Title", Title);
             Title.titleTopY = 16;
             Title.titleBottomY = 41;
             Title.titleTopStartX = -216;
@@ -4167,21 +4051,20 @@ System.register("src/title", ["BoazEngineJS/animation", "BoazEngineJS/common", "
             Title.konamiY = 103;
             Title.titleStates = new Array(State.WaitForIt, State.Konami, State.TitleTop, State.TitleBottom, State.WaitForItAgain, State.Other);
             Title.titleMoves = new Array(Title.waitFrames, Title.waitKonamiFrames, -Title.titleTopStartX + Title.titleTopEndX, Title.titleBottomStartX - Title.titleBottomEndX, Title.waitFrames, 0);
-            exports_40("Title", Title);
         }
     };
 });
-System.register("src/enddemo", ["src/textwriter", "BoazEngineJS/btimer", "BoazEngineJS/animation", "BoazEngineJS/msx"], function (exports_41, context_41) {
+System.register("src/enddemo", ["src/textwriter", "BoazEngineJS/btimer", "BoazEngineJS/animation", "BoazEngineJS/msx"], function (exports_42, context_42) {
     "use strict";
-    var textwriter_4, btimer_6, animation_3, msx_10, State, EndDemo;
-    var __moduleName = context_41 && context_41.id;
+    var textwriter_4, btimer_7, animation_3, msx_10, State, EndDemo;
+    var __moduleName = context_42 && context_42.id;
     return {
         setters: [
             function (textwriter_4_1) {
                 textwriter_4 = textwriter_4_1;
             },
-            function (btimer_6_1) {
-                btimer_6 = btimer_6_1;
+            function (btimer_7_1) {
+                btimer_7 = btimer_7_1;
             },
             function (animation_3_1) {
                 animation_3 = animation_3_1;
@@ -4197,11 +4080,11 @@ System.register("src/enddemo", ["src/textwriter", "BoazEngineJS/btimer", "BoazEn
                 State[State["Boaz"] = 2] = "Boaz";
                 State[State["None"] = 3] = "None";
             })(State || (State = {}));
-            exports_41("State", State);
+            exports_42("State", State);
             EndDemo = class EndDemo {
                 constructor() {
                     this.ani = new animation_3.Animation(EndDemo.states, EndDemo.waits);
-                    this.timer = btimer_6.BStopwatch.createWatch();
+                    this.timer = btimer_7.BStopwatch.createWatch();
                 }
                 Init() {
                     this.reset();
@@ -4244,16 +4127,16 @@ System.register("src/enddemo", ["src/textwriter", "BoazEngineJS/btimer", "BoazEn
                     }
                 }
             };
+            exports_42("EndDemo", EndDemo);
             EndDemo.states = [State.Sint, State.WaitForBoaz, State.Boaz];
             EndDemo.waits = [10000, 1000, 0];
-            exports_41("EndDemo", EndDemo);
         }
     };
 });
-System.register("BoazEngineJS/gameoptions", ["BoazEngineJS/msx"], function (exports_42, context_42) {
+System.register("BoazEngineJS/gameoptions", ["BoazEngineJS/msx"], function (exports_43, context_43) {
     "use strict";
     var msx_11, GameOptions;
-    var __moduleName = context_42 && context_42.id;
+    var __moduleName = context_43 && context_43.id;
     return {
         setters: [
             function (msx_11_1) {
@@ -4275,20 +4158,20 @@ System.register("BoazEngineJS/gameoptions", ["BoazEngineJS/msx"], function (expo
                     return (msx_11.MSXConstants.MSX2ScreenHeight * GameOptions.Scale);
                 }
             };
+            exports_43("GameOptions", GameOptions);
             GameOptions.INITIAL_SCALE = 1;
             GameOptions.INITIAL_FULLSCREEN = false;
             GameOptions.Scale = GameOptions.INITIAL_SCALE;
             GameOptions.Fullscreen = GameOptions.INITIAL_FULLSCREEN;
             GameOptions.EffectsVolumePercentage = 100;
             GameOptions.MusicVolumePercentage = 100;
-            exports_42("GameOptions", GameOptions);
         }
     };
 });
-System.register("src/gameview", ["src/hud", "src/itscurtainsforyou", "src/gameover", "src/mainmenu", "src/title", "BoazEngineJS/model", "src/gameconstants", "src/sintervaniamodel", "src/textwriter", "BoazEngineJS/engine", "BoazEngineJS/msx", "src/enddemo", "BoazEngineJS/gameoptions"], function (exports_43, context_43) {
+System.register("src/gameview", ["src/hud", "src/itscurtainsforyou", "src/gameover", "src/mainmenu", "src/title", "src/gameconstants", "src/sintervaniamodel", "src/textwriter", "BoazEngineJS/engine", "BoazEngineJS/msx", "src/enddemo", "BoazEngineJS/gameoptions"], function (exports_44, context_44) {
     "use strict";
-    var hud_1, itscurtainsforyou_1, gameover_1, mainmenu_2, title_1, model_3, gameconstants_5, sintervaniamodel_13, textwriter_5, engine_15, msx_12, enddemo_1, gameoptions_2, GameView;
-    var __moduleName = context_43 && context_43.id;
+    var hud_1, itscurtainsforyou_1, gameover_1, mainmenu_1, title_1, gameconstants_6, sintervaniamodel_12, textwriter_5, engine_17, msx_12, enddemo_1, gameoptions_2, GameView;
+    var __moduleName = context_44 && context_44.id;
     return {
         setters: [
             function (hud_1_1) {
@@ -4300,26 +4183,23 @@ System.register("src/gameview", ["src/hud", "src/itscurtainsforyou", "src/gameov
             function (gameover_1_1) {
                 gameover_1 = gameover_1_1;
             },
-            function (mainmenu_2_1) {
-                mainmenu_2 = mainmenu_2_1;
+            function (mainmenu_1_1) {
+                mainmenu_1 = mainmenu_1_1;
             },
             function (title_1_1) {
                 title_1 = title_1_1;
             },
-            function (model_3_1) {
-                model_3 = model_3_1;
+            function (gameconstants_6_1) {
+                gameconstants_6 = gameconstants_6_1;
             },
-            function (gameconstants_5_1) {
-                gameconstants_5 = gameconstants_5_1;
-            },
-            function (sintervaniamodel_13_1) {
-                sintervaniamodel_13 = sintervaniamodel_13_1;
+            function (sintervaniamodel_12_1) {
+                sintervaniamodel_12 = sintervaniamodel_12_1;
             },
             function (textwriter_5_1) {
                 textwriter_5 = textwriter_5_1;
             },
-            function (engine_15_1) {
-                engine_15 = engine_15_1;
+            function (engine_17_1) {
+                engine_17 = engine_17_1;
             },
             function (msx_12_1) {
                 msx_12 = msx_12_1;
@@ -4340,22 +4220,22 @@ System.register("src/gameview", ["src/hud", "src/itscurtainsforyou", "src/gameov
                     return GameView._instance;
                 }
                 get ShowFoeBar() {
-                    return sintervaniamodel_13.GameModel._.BossBattle;
+                    return sintervaniamodel_12.GameModel._.BossBattle;
                 }
                 get FoeHealthPercentage() {
-                    let foe = sintervaniamodel_13.GameModel._.LastFoeThatWasHit;
+                    let foe = sintervaniamodel_12.GameModel._.LastFoeThatWasHit;
                     if (foe == null) {
-                        if (!sintervaniamodel_13.GameModel._.BossBattle)
+                        if (!sintervaniamodel_12.GameModel._.BossBattle)
                             return -1;
                         else
-                            foe = sintervaniamodel_13.GameModel._.Boss;
+                            foe = sintervaniamodel_12.GameModel._.Boss;
                     }
                     if (foe.disposeFlag)
                         return 0;
                     return foe.HealthPercentage;
                 }
                 get FoeForWhichHealthPercentageIsGiven() {
-                    return sintervaniamodel_13.GameModel._.LastFoeThatWasHit != null ? sintervaniamodel_13.GameModel._.LastFoeThatWasHit : sintervaniamodel_13.GameModel._.Boss;
+                    return sintervaniamodel_12.GameModel._.LastFoeThatWasHit != null ? sintervaniamodel_12.GameModel._.LastFoeThatWasHit : sintervaniamodel_12.GameModel._.Boss;
                 }
                 static DetermineMaxScaleForFullscreen(clientWidth, clientHeight, originalBufferWidth, originalBufferHeight) {
                     if (clientWidth >= clientHeight) {
@@ -4382,62 +4262,63 @@ System.register("src/gameview", ["src/hud", "src/itscurtainsforyou", "src/gameov
                     this.Hud = new hud_1.HUD();
                     this.ItsCurtains = new itscurtainsforyou_1.ItsCurtainsForYou();
                     this.GameOverScreen = new gameover_1.GameOver();
-                    this.MainMenu = new mainmenu_2.MainMenu();
+                    this.MainMenu = new mainmenu_1.MainMenu();
                     this.Title = new title_1.Title();
                     this.EndDemo = new enddemo_1.EndDemo();
                 }
                 drawGame(elapsedMs) {
                     console.info(`drawGame wordt nu uitgevoerd. ElapsedMs: ${elapsedMs}`);
-                    if (sintervaniamodel_13.GameModel._.startAfterLoad)
+                    if (sintervaniamodel_12.GameModel._.startAfterLoad)
                         return;
-                    switch (sintervaniamodel_13.GameModel._.gameState) {
-                        case model_3.GameState.Prelude:
+                    switch (sintervaniamodel_12.GameModel._.gameState) {
+                        case 1:
                             this.Title.Paint();
                             break;
-                        case model_3.GameState.TitleScreen:
+                        case 3:
                             this.MainMenu.Paint();
-                            sintervaniamodel_13.GameModel._.GameMenu.Paint();
+                            sintervaniamodel_12.GameModel._.GameMenu.Paint();
                             break;
-                        case model_3.GameState.EndDemo:
+                        case 11:
                             this.EndDemo.Paint();
                             break;
-                        case model_3.GameState.Game:
-                        case model_3.GameState.Event:
-                            let gamescreenOffset = { x: gameconstants_5.GameConstants.GameScreenStartX, y: gameconstants_5.GameConstants.GameScreenStartY };
-                            if (sintervaniamodel_13.GameModel._.gameSubstate != model_3.GameSubstate.SwitchRoom) {
-                                sintervaniamodel_13.GameModel._.CurrentRoom.Paint();
-                                sintervaniamodel_13.GameModel._.objects.sort(o => o.priority).sort(o => o.pos.y + o.size.y).forEach(o => o.paint(gamescreenOffset));
+                        case 8:
+                        case 9:
+                            let gamescreenOffset = { x: gameconstants_6.GameConstants.GameScreenStartX, y: gameconstants_6.GameConstants.GameScreenStartY };
+                            if (sintervaniamodel_12.GameModel._.gameSubstate != 7) {
+                                sintervaniamodel_12.GameModel._.CurrentRoom.Paint();
+                                sintervaniamodel_12.GameModel._.objects.sort(o => o.priority).sort(o => o.pos.y + o.size.y).forEach(o => o.Paint(gamescreenOffset));
                             }
                             this.Hud.Paint();
-                            switch (sintervaniamodel_13.GameModel._.gameSubstate) {
-                                case model_3.GameSubstate.SwitchRoom:
-                                case model_3.GameSubstate.BelmontDies:
-                                case model_3.GameSubstate.ItsCurtainsForYou:
-                                case model_3.GameSubstate.ToEndDemo:
-                                case model_3.GameSubstate.GameOver:
+                            switch (sintervaniamodel_12.GameModel._.gameSubstate) {
+                                case 7:
+                                case 1:
+                                case 2:
+                                case 3:
+                                case 4:
                                     break;
                                 default:
                                     break;
                             }
-                            if (sintervaniamodel_13.GameModel._.gameSubstate != model_3.GameSubstate.SwitchRoom) {
+                            if (sintervaniamodel_12.GameModel._.gameSubstate != 7) {
                             }
-                            if (sintervaniamodel_13.GameModel._.gameSubstate == model_3.GameSubstate.ItsCurtainsForYou || sintervaniamodel_13.GameModel._.gameSubstate == model_3.GameSubstate.ToEndDemo) {
+                            if (sintervaniamodel_12.GameModel._.gameSubstate == 2 || sintervaniamodel_12.GameModel._.gameSubstate == 3) {
                                 this.ItsCurtains.Paint();
                             }
-                            else if (sintervaniamodel_13.GameModel._.gameSubstate == model_3.GameSubstate.GameOver) {
+                            else if (sintervaniamodel_12.GameModel._.gameSubstate == 4) {
                                 this.ItsCurtains.Paint();
                                 this.GameOverScreen.Paint();
                             }
-                            sintervaniamodel_13.GameModel._.GameMenu.Paint();
-                            if (sintervaniamodel_13.GameModel._.paused) {
-                                engine_15.view.FillRectangle(GameView.pausePosX, GameView.pausePosY, GameView.pauseEndX, GameView.pauseEndY, msx_12.MSXConstants.Msx1Colors[1]);
-                                engine_15.view.DrawRectangle(GameView.pausePosX, GameView.pausePosY, GameView.pauseEndX, GameView.pauseEndY, msx_12.MSXConstants.Msx1Colors[15]);
+                            sintervaniamodel_12.GameModel._.GameMenu.Paint();
+                            if (sintervaniamodel_12.GameModel._.paused) {
+                                engine_17.view.FillRectangle(GameView.pausePosX, GameView.pausePosY, GameView.pauseEndX, GameView.pauseEndY, msx_12.MSXConstants.Msx1Colors[1]);
+                                engine_17.view.DrawRectangle(GameView.pausePosX, GameView.pausePosY, GameView.pauseEndX, GameView.pauseEndY, msx_12.MSXConstants.Msx1Colors[15]);
                                 textwriter_5.TextWriter.DrawText(GameView.pauseTextPosX, GameView.pauseTextPosY, GameView.pauseText);
                             }
                             break;
                     }
                 }
             };
+            exports_44("GameView", GameView);
             GameView.pausePosX = 80;
             GameView.pausePosY = 80;
             GameView.pauseTextPosX = 104;
@@ -4445,27 +4326,17 @@ System.register("src/gameview", ["src/hud", "src/itscurtainsforyou", "src/gameov
             GameView.pauseEndX = 176;
             GameView.pauseEndY = 120;
             GameView.pauseText = "Paused";
-            exports_43("GameView", GameView);
         }
     };
 });
-System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/resourceids", "BoazEngineJS/direction", "src/textwriter", "BoazEngineJS/input", "BoazEngineJS/soundmaster", "src/resourcemaster", "src/gamecontroller", "src/sintervaniamodel", "BoazEngineJS/gamestateloader", "BoazEngineJS/gameoptions", "BoazEngineJS/msx", "BoazEngineJS/constants", "BoazEngineJS/common", "BoazEngineJS/engine", "BoazEngineJS/model"], function (exports_44, context_44) {
+System.register("src/gamemenu", ["src/gameview", "src/textwriter", "BoazEngineJS/input", "BoazEngineJS/soundmaster", "src/resourcemaster", "src/gamecontroller", "src/sintervaniamodel", "BoazEngineJS/gamestateloader", "BoazEngineJS/gameoptions", "BoazEngineJS/msx", "BoazEngineJS/constants", "BoazEngineJS/common", "BoazEngineJS/engine"], function (exports_45, context_45) {
     "use strict";
-    var mainmenu_3, gameview_2, resourceids_13, direction_8, textwriter_6, input_5, soundmaster_6, resourcemaster_6, gamecontroller_7, sintervaniamodel_14, gamestateloader_3, gameoptions_3, msx_13, constants_9, common_14, engine_16, model_4, GameMenu;
-    var __moduleName = context_44 && context_44.id;
+    var gameview_2, textwriter_6, input_5, soundmaster_6, resourcemaster_7, gamecontroller_7, sintervaniamodel_13, gamestateloader_3, gameoptions_3, msx_13, constants_7, common_14, engine_18, GameMenu;
+    var __moduleName = context_45 && context_45.id;
     return {
         setters: [
-            function (mainmenu_3_1) {
-                mainmenu_3 = mainmenu_3_1;
-            },
             function (gameview_2_1) {
                 gameview_2 = gameview_2_1;
-            },
-            function (resourceids_13_1) {
-                resourceids_13 = resourceids_13_1;
-            },
-            function (direction_8_1) {
-                direction_8 = direction_8_1;
             },
             function (textwriter_6_1) {
                 textwriter_6 = textwriter_6_1;
@@ -4476,14 +4347,14 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
             function (soundmaster_6_1) {
                 soundmaster_6 = soundmaster_6_1;
             },
-            function (resourcemaster_6_1) {
-                resourcemaster_6 = resourcemaster_6_1;
+            function (resourcemaster_7_1) {
+                resourcemaster_7 = resourcemaster_7_1;
             },
             function (gamecontroller_7_1) {
                 gamecontroller_7 = gamecontroller_7_1;
             },
-            function (sintervaniamodel_14_1) {
-                sintervaniamodel_14 = sintervaniamodel_14_1;
+            function (sintervaniamodel_13_1) {
+                sintervaniamodel_13 = sintervaniamodel_13_1;
             },
             function (gamestateloader_3_1) {
                 gamestateloader_3 = gamestateloader_3_1;
@@ -4494,17 +4365,14 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
             function (msx_13_1) {
                 msx_13 = msx_13_1;
             },
-            function (constants_9_1) {
-                constants_9 = constants_9_1;
+            function (constants_7_1) {
+                constants_7 = constants_7_1;
             },
             function (common_14_1) {
                 common_14 = common_14_1;
             },
-            function (engine_16_1) {
-                engine_16 = engine_16_1;
-            },
-            function (model_4_1) {
-                model_4 = model_4_1;
+            function (engine_18_1) {
+                engine_18 = engine_18_1;
             }
         ],
         execute: function () {
@@ -4513,28 +4381,28 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
                     this.visible = false;
                     this.cursorPos = { x: 0, y: 0 };
                     this.selectedItemIndex = 0;
-                    this.CurrentScreen = mainmenu_3.MenuItem.Main;
+                    this.CurrentScreen = 10;
                 }
-                Open(currentscreen = mainmenu_3.MenuItem.Main) {
+                Open(currentscreen = 10) {
                     this.selectedItemIndex = 0;
                     this.visible = true;
                     this.CurrentScreen = currentscreen;
-                    if (this.CurrentScreen == mainmenu_3.MenuItem.Main)
-                        soundmaster_6.SoundMaster.PlayEffect(resourcemaster_6.ResourceMaster.Sound[resourceids_13.AudioId.Selectie]);
+                    if (this.CurrentScreen == 10)
+                        soundmaster_6.SoundMaster.PlayEffect(resourcemaster_7.ResourceMaster.Sound[1]);
                 }
                 Close() {
                     this.visible = false;
                     this.selectedItemIndex = 0;
                     switch (this.CurrentScreen) {
-                        case mainmenu_3.MenuItem.LoadFromGameOver:
+                        case 13:
                             gameview_2.GameView._.MainMenu.GameMenuClosed();
                             break;
-                        case mainmenu_3.MenuItem.LoadFromMainMenu:
-                        case mainmenu_3.MenuItem.OptionsFromMainMenu:
+                        case 14:
+                        case 15:
                             gameview_2.GameView._.MainMenu.GameMenuClosed();
                             break;
                         default:
-                            sintervaniamodel_14.GameModel._.ItemsInInventory.filter(i => i.Amount != 0);
+                            sintervaniamodel_13.GameModel._.ItemsInInventory.filter(i => i.Amount != 0);
                             break;
                     }
                 }
@@ -4546,70 +4414,70 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
                 HandleInput() {
                     let selectionChanged = false;
                     switch (this.CurrentScreen) {
-                        case mainmenu_3.MenuItem.Main:
-                        case mainmenu_3.MenuItem.Load:
-                        case mainmenu_3.MenuItem.LoadFromMainMenu:
-                        case mainmenu_3.MenuItem.Options:
-                        case mainmenu_3.MenuItem.OptionsFromMainMenu:
-                        case mainmenu_3.MenuItem.Save:
-                        case mainmenu_3.MenuItem.LoadFromGameOver:
+                        case 10:
+                        case 11:
+                        case 14:
+                        case 3:
+                        case 15:
+                        case 12:
+                        case 13:
                             if (input_5.KeyState.KC_UP)
-                                this.changeSelection(direction_8.Direction.Up, selectionChanged);
+                                this.changeSelection(0, selectionChanged);
                             else if (input_5.KeyState.KC_RIGHT)
-                                this.changeSelection(direction_8.Direction.Right, selectionChanged);
+                                this.changeSelection(1, selectionChanged);
                             else if (input_5.KeyState.KC_DOWN)
-                                this.changeSelection(direction_8.Direction.Down, selectionChanged);
+                                this.changeSelection(2, selectionChanged);
                             else if (input_5.KeyState.KC_LEFT)
-                                this.changeSelection(direction_8.Direction.Left, selectionChanged);
+                                this.changeSelection(3, selectionChanged);
                             break;
                     }
                     if (input_5.KeyState.KC_SPACE) {
                         switch (this.CurrentScreen) {
-                            case mainmenu_3.MenuItem.Main:
-                                soundmaster_6.SoundMaster.PlayEffect(resourcemaster_6.ResourceMaster.Sound[resourceids_13.AudioId.Selectie]);
+                            case 10:
+                                soundmaster_6.SoundMaster.PlayEffect(resourcemaster_7.ResourceMaster.Sound[1]);
                                 switch (this.selectedItem) {
-                                    case mainmenu_3.MenuItem.ReturnToGame:
+                                    case 3:
                                         gamecontroller_7.GameController._.CloseGameMenu();
                                         break;
-                                    case mainmenu_3.MenuItem.ChangeOptions:
-                                        this.CurrentScreen = mainmenu_3.MenuItem.Options;
+                                    case 2:
+                                        this.CurrentScreen = 3;
                                         this.selectedItemIndex = 0;
                                         break;
-                                    case mainmenu_3.MenuItem.LoadGame:
-                                        this.CurrentScreen = mainmenu_3.MenuItem.Load;
+                                    case 2:
+                                        this.CurrentScreen = 11;
                                         this.selectedItemIndex = 0;
                                         break;
-                                    case mainmenu_3.MenuItem.SaveGame:
-                                        if (sintervaniamodel_14.GameModel._.State != model_4.GameState.Event) {
-                                            this.CurrentScreen = mainmenu_3.MenuItem.Save;
+                                    case 0:
+                                        if (sintervaniamodel_13.GameModel._.State != 9) {
+                                            this.CurrentScreen = 12;
                                             this.selectedItemIndex = 0;
                                         }
                                         else
-                                            soundmaster_6.SoundMaster.PlayEffect(resourcemaster_6.ResourceMaster.Sound[resourceids_13.AudioId.Fout]);
+                                            soundmaster_6.SoundMaster.PlayEffect(resourcemaster_7.ResourceMaster.Sound[2]);
                                         break;
-                                    case mainmenu_3.MenuItem.ExitGame:
+                                    case 9:
                                         throw Error("Game afluiten is niet geimplementeerd :-o");
                                         break;
                                 }
                                 break;
-                            case mainmenu_3.MenuItem.Load:
-                            case mainmenu_3.MenuItem.LoadFromGameOver:
-                            case mainmenu_3.MenuItem.LoadFromMainMenu:
+                            case 11:
+                            case 13:
+                            case 14:
                                 switch (this.selectedItem) {
-                                    case mainmenu_3.MenuItem.ReturnToMain:
-                                        soundmaster_6.SoundMaster.PlayEffect(resourcemaster_6.ResourceMaster.Sound[resourceids_13.AudioId.Selectie]);
+                                    case 4:
+                                        soundmaster_6.SoundMaster.PlayEffect(resourcemaster_7.ResourceMaster.Sound[1]);
                                         switch (this.CurrentScreen) {
-                                            case mainmenu_3.MenuItem.LoadFromGameOver:
-                                            case mainmenu_3.MenuItem.LoadFromMainMenu:
+                                            case 13:
+                                            case 14:
                                                 this.Close();
                                                 break;
                                             default:
-                                                this.CurrentScreen = mainmenu_3.MenuItem.Main;
+                                                this.CurrentScreen = 10;
                                                 this.selectedItemIndex = 0;
                                                 break;
                                         }
                                         break;
-                                    case mainmenu_3.MenuItem.SaveSlot:
+                                    case 1:
                                         {
                                             let slot = this.selectedItemIndex - 1;
                                             if (gamestateloader_3.SlotExists(slot)) {
@@ -4617,19 +4485,19 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
                                                 gamecontroller_7.GameController._.LoadGame(sg);
                                             }
                                             else
-                                                soundmaster_6.SoundMaster.PlayEffect(resourcemaster_6.ResourceMaster.Sound[resourceids_13.AudioId.Fout]);
+                                                soundmaster_6.SoundMaster.PlayEffect(resourcemaster_7.ResourceMaster.Sound[2]);
                                         }
                                         break;
                                 }
                                 break;
-                            case mainmenu_3.MenuItem.Save:
-                                soundmaster_6.SoundMaster.PlayEffect(resourcemaster_6.ResourceMaster.Sound[resourceids_13.AudioId.Selectie]);
+                            case 12:
+                                soundmaster_6.SoundMaster.PlayEffect(resourcemaster_7.ResourceMaster.Sound[1]);
                                 switch (this.selectedItem) {
-                                    case mainmenu_3.MenuItem.ReturnToMain:
-                                        this.CurrentScreen = mainmenu_3.MenuItem.Main;
+                                    case 4:
+                                        this.CurrentScreen = 10;
                                         this.selectedItemIndex = 0;
                                         break;
-                                    case mainmenu_3.MenuItem.SaveSlot:
+                                    case 1:
                                         {
                                             let slot = this.selectedItemIndex - 1;
                                             gamecontroller_7.GameController._.SaveGame(slot);
@@ -4637,23 +4505,23 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
                                         break;
                                 }
                                 break;
-                            case mainmenu_3.MenuItem.Options:
-                            case mainmenu_3.MenuItem.OptionsFromMainMenu:
+                            case 3:
+                            case 15:
                                 switch (this.selectedItem) {
-                                    case mainmenu_3.MenuItem.ReturnToMain:
-                                        soundmaster_6.SoundMaster.PlayEffect(resourcemaster_6.ResourceMaster.Sound[resourceids_13.AudioId.Selectie]);
+                                    case 4:
+                                        soundmaster_6.SoundMaster.PlayEffect(resourcemaster_7.ResourceMaster.Sound[1]);
                                         switch (this.CurrentScreen) {
-                                            case mainmenu_3.MenuItem.OptionsFromMainMenu:
+                                            case 15:
                                                 this.Close();
                                                 break;
                                             default:
-                                                this.CurrentScreen = mainmenu_3.MenuItem.Main;
+                                                this.CurrentScreen = 10;
                                                 this.selectedItemIndex = 0;
                                                 break;
                                         }
                                         break;
                                     default:
-                                        soundmaster_6.SoundMaster.PlayEffect(resourcemaster_6.ResourceMaster.Sound[resourceids_13.AudioId.Fout]);
+                                        soundmaster_6.SoundMaster.PlayEffect(resourcemaster_7.ResourceMaster.Sound[2]);
                                         break;
                                 }
                                 break;
@@ -4661,38 +4529,38 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
                     }
                     if (input_5.KeyState.KC_RIGHT) {
                         switch (this.CurrentScreen) {
-                            case mainmenu_3.MenuItem.Options:
-                            case mainmenu_3.MenuItem.OptionsFromMainMenu:
+                            case 3:
+                            case 15:
                                 switch (this.selectedItem) {
-                                    case mainmenu_3.MenuItem.Scale:
+                                    case 5:
                                         if (!gameoptions_3.GameOptions.Fullscreen) {
                                             gameview_2.GameView._.ChangeScale(gameoptions_3.GameOptions.Scale + 1);
-                                            engine_16.game.GameOptionsChanged();
+                                            engine_18.game.GameOptionsChanged();
                                         }
                                         break;
-                                    case mainmenu_3.MenuItem.Fullscreen:
+                                    case 6:
                                         if (gameoptions_3.GameOptions.Fullscreen) {
                                             gameoptions_3.GameOptions.Fullscreen = false;
                                             gameview_2.GameView._.ToWindowed();
-                                            engine_16.game.GameOptionsChanged();
+                                            engine_18.game.GameOptionsChanged();
                                         }
                                         break;
-                                    case mainmenu_3.MenuItem.EffectVolume:
+                                    case 8:
                                         if (gameoptions_3.GameOptions.EffectsVolumePercentage < 100) {
                                             gameoptions_3.GameOptions.EffectsVolumePercentage += 10;
                                             if (gameoptions_3.GameOptions.EffectsVolumePercentage > 100)
                                                 gameoptions_3.GameOptions.EffectsVolumePercentage = 100;
                                             soundmaster_6.SoundMaster.SetEffectsVolume(gameoptions_3.GameOptions.EffectsVolumePercentage / 100);
-                                            engine_16.game.GameOptionsChanged();
+                                            engine_18.game.GameOptionsChanged();
                                         }
                                         break;
-                                    case mainmenu_3.MenuItem.MusicVolume:
+                                    case 7:
                                         if (gameoptions_3.GameOptions.MusicVolumePercentage < 100) {
                                             gameoptions_3.GameOptions.MusicVolumePercentage += 10;
                                             if (gameoptions_3.GameOptions.MusicVolumePercentage > 100)
                                                 gameoptions_3.GameOptions.MusicVolumePercentage = 100;
                                             soundmaster_6.SoundMaster.SetMusicVolume(gameoptions_3.GameOptions.MusicVolumePercentage / 100);
-                                            engine_16.game.GameOptionsChanged();
+                                            engine_18.game.GameOptionsChanged();
                                         }
                                         break;
                                 }
@@ -4701,38 +4569,38 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
                     }
                     if (input_5.KeyState.KC_LEFT) {
                         switch (this.CurrentScreen) {
-                            case mainmenu_3.MenuItem.Options:
-                            case mainmenu_3.MenuItem.OptionsFromMainMenu:
+                            case 3:
+                            case 15:
                                 switch (this.selectedItem) {
-                                    case mainmenu_3.MenuItem.Scale:
+                                    case 5:
                                         if (!gameoptions_3.GameOptions.Fullscreen && gameoptions_3.GameOptions.Scale > 1) {
                                             gameview_2.GameView._.ChangeScale(gameoptions_3.GameOptions.Scale - 1);
-                                            engine_16.game.GameOptionsChanged();
+                                            engine_18.game.GameOptionsChanged();
                                         }
                                         break;
-                                    case mainmenu_3.MenuItem.Fullscreen:
+                                    case 6:
                                         if (!gameoptions_3.GameOptions.Fullscreen) {
                                             gameoptions_3.GameOptions.Fullscreen = true;
                                             gameview_2.GameView._.ToFullscreen();
-                                            engine_16.game.GameOptionsChanged();
+                                            engine_18.game.GameOptionsChanged();
                                         }
                                         break;
-                                    case mainmenu_3.MenuItem.EffectVolume:
+                                    case 8:
                                         if (gameoptions_3.GameOptions.EffectsVolumePercentage > 0) {
                                             gameoptions_3.GameOptions.EffectsVolumePercentage -= 10;
                                             if (gameoptions_3.GameOptions.EffectsVolumePercentage < 0)
                                                 gameoptions_3.GameOptions.EffectsVolumePercentage = 0;
                                             soundmaster_6.SoundMaster.SetEffectsVolume(gameoptions_3.GameOptions.EffectsVolumePercentage / 100);
-                                            engine_16.game.GameOptionsChanged();
+                                            engine_18.game.GameOptionsChanged();
                                         }
                                         break;
-                                    case mainmenu_3.MenuItem.MusicVolume:
+                                    case 7:
                                         if (gameoptions_3.GameOptions.MusicVolumePercentage > 0) {
                                             gameoptions_3.GameOptions.MusicVolumePercentage -= 10;
                                             if (gameoptions_3.GameOptions.MusicVolumePercentage < 0)
                                                 gameoptions_3.GameOptions.MusicVolumePercentage = 0;
                                             soundmaster_6.SoundMaster.SetMusicVolume(gameoptions_3.GameOptions.MusicVolumePercentage / 100);
-                                            engine_16.game.GameOptionsChanged();
+                                            engine_18.game.GameOptionsChanged();
                                         }
                                         break;
                                 }
@@ -4740,19 +4608,19 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
                         }
                     }
                     if (selectionChanged) {
-                        soundmaster_6.SoundMaster.PlayEffect(resourcemaster_6.ResourceMaster.Sound[resourceids_13.AudioId.Selectie]);
+                        soundmaster_6.SoundMaster.PlayEffect(resourcemaster_7.ResourceMaster.Sound[1]);
                     }
                 }
                 calculateCursorX() {
                     switch (this.CurrentScreen) {
-                        case mainmenu_3.MenuItem.Options:
-                        case mainmenu_3.MenuItem.OptionsFromMainMenu:
-                        case mainmenu_3.MenuItem.Main:
+                        case 3:
+                        case 15:
+                        case 10:
                             return GameMenu.menuPosX + GameMenu.mainItemsOffsetX + GameMenu.cursorOffsetX;
-                        case mainmenu_3.MenuItem.Load:
-                        case mainmenu_3.MenuItem.LoadFromGameOver:
-                        case mainmenu_3.MenuItem.LoadFromMainMenu:
-                        case mainmenu_3.MenuItem.Save:
+                        case 11:
+                        case 13:
+                        case 14:
+                        case 12:
                             return GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX + GameMenu.cursorOffsetX;
                     }
                     return 0;
@@ -4766,54 +4634,54 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
                 changeSelection(direction, selectionChanged) {
                     let maxX, maxY, x, y;
                     switch (this.CurrentScreen) {
-                        case mainmenu_3.MenuItem.Main:
+                        case 10:
                             x = 0;
                             y = this.selectedItemIndex;
                             maxX = 0;
                             maxY = GameMenu.mainItems.length - 1;
                             break;
-                        case mainmenu_3.MenuItem.Options:
-                        case mainmenu_3.MenuItem.OptionsFromMainMenu:
+                        case 3:
+                        case 15:
                             x = 0;
                             y = this.selectedItemIndex;
                             maxX = 0;
                             maxY = GameMenu.optionsItems.length - 1;
                             break;
-                        case mainmenu_3.MenuItem.Load:
-                        case mainmenu_3.MenuItem.Save:
-                        case mainmenu_3.MenuItem.LoadFromGameOver:
-                        case mainmenu_3.MenuItem.LoadFromMainMenu:
+                        case 11:
+                        case 12:
+                        case 13:
+                        case 14:
                             x = 0;
                             y = this.selectedItemIndex;
                             maxX = 0;
-                            maxY = constants_9.Constants.SaveSlotCount;
+                            maxY = constants_7.Constants.SaveSlotCount;
                             break;
                         default:
                             maxX = maxY = x = y = 0;
                             break;
                     }
                     switch (direction) {
-                        case direction_8.Direction.Up:
+                        case 0:
                             if (y > 0)
                                 y--;
                             else
                                 y = maxY;
                             selectionChanged = true;
                             break;
-                        case direction_8.Direction.Right:
+                        case 1:
                             if (x < maxX) {
                                 x++;
                                 selectionChanged = true;
                             }
                             break;
-                        case direction_8.Direction.Down:
+                        case 2:
                             if (y < maxY)
                                 y++;
                             else
                                 y = 0;
                             selectionChanged = true;
                             break;
-                        case direction_8.Direction.Left:
+                        case 3:
                             if (x > 0) {
                                 x--;
                                 selectionChanged = true;
@@ -4824,46 +4692,46 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
                 }
                 get selectedItem() {
                     switch (this.CurrentScreen) {
-                        case mainmenu_3.MenuItem.Main:
+                        case 10:
                         default:
                             return GameMenu.mainItems[this.selectedItemIndex].type;
-                        case mainmenu_3.MenuItem.Load:
-                        case mainmenu_3.MenuItem.Save:
-                        case mainmenu_3.MenuItem.LoadFromGameOver:
-                        case mainmenu_3.MenuItem.LoadFromMainMenu:
-                            return this.selectedItemIndex > 0 ? mainmenu_3.MenuItem.SaveSlot : mainmenu_3.MenuItem.ReturnToMain;
-                        case mainmenu_3.MenuItem.Options:
-                        case mainmenu_3.MenuItem.OptionsFromMainMenu:
+                        case 11:
+                        case 12:
+                        case 13:
+                        case 14:
+                            return this.selectedItemIndex > 0 ? 1 : 4;
+                        case 3:
+                        case 15:
                             return GameMenu.optionsItems[this.selectedItemIndex].type;
                     }
                 }
                 Paint() {
                     if (!this.visible)
                         return;
-                    engine_16.view.FillRectangle(GameMenu.menuPosX, GameMenu.menuPosY, GameMenu.menuEndX, GameMenu.menuEndY, msx_13.MSXConstants.Msx1Colors[1]);
-                    engine_16.view.DrawRectangle(GameMenu.menuPosX, GameMenu.menuPosY, GameMenu.menuEndX, GameMenu.menuEndY, msx_13.MSXConstants.Msx1Colors[15]);
+                    engine_18.view.FillRectangle(GameMenu.menuPosX, GameMenu.menuPosY, GameMenu.menuEndX, GameMenu.menuEndY, msx_13.MSXConstants.Msx1Colors[1]);
+                    engine_18.view.DrawRectangle(GameMenu.menuPosX, GameMenu.menuPosY, GameMenu.menuEndX, GameMenu.menuEndY, msx_13.MSXConstants.Msx1Colors[15]);
                     let titleToDraw;
                     let titleX, titleY;
                     switch (this.CurrentScreen) {
-                        case mainmenu_3.MenuItem.Main:
+                        case 10:
                             titleToDraw = GameMenu.menuText;
                             titleX = GameMenu.mainMenuTextX;
                             titleY = GameMenu.mainMenuTextY;
                             break;
-                        case mainmenu_3.MenuItem.Options:
-                        case mainmenu_3.MenuItem.OptionsFromMainMenu:
+                        case 3:
+                        case 15:
                             titleToDraw = GameMenu.optionMenuText;
                             titleX = GameMenu.mainMenuTextX;
                             titleY = GameMenu.mainMenuTextY;
                             break;
-                        case mainmenu_3.MenuItem.Load:
-                        case mainmenu_3.MenuItem.LoadFromGameOver:
-                        case mainmenu_3.MenuItem.LoadFromMainMenu:
+                        case 11:
+                        case 13:
+                        case 14:
                             titleToDraw = GameMenu.loadMenuText;
                             titleX = GameMenu.mainMenuTextX;
                             titleY = GameMenu.mainMenuTextY;
                             break;
-                        case mainmenu_3.MenuItem.Save:
+                        case 12:
                             titleToDraw = GameMenu.saveMenuText;
                             titleX = GameMenu.mainMenuTextX;
                             titleY = GameMenu.mainMenuTextY;
@@ -4877,13 +4745,13 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
                     textwriter_6.TextWriter.DrawText(titleX, titleY, titleToDraw);
                     let y = GameMenu.mainMenuTextY + GameMenu.itemOffsetY;
                     switch (this.CurrentScreen) {
-                        case mainmenu_3.MenuItem.Main:
+                        case 10:
                         default:
                             {
                                 GameMenu.mainItems.forEach(function (item) {
                                     switch (item.type) {
-                                        case mainmenu_3.MenuItem.SaveGame:
-                                            if (sintervaniamodel_14.GameModel._.State != model_4.GameState.Event)
+                                        case 0:
+                                            if (sintervaniamodel_13.GameModel._.State != 9)
                                                 textwriter_6.TextWriter.DrawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
                                             else
                                                 textwriter_6.TextWriter.DrawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, msx_13.MSXConstants.Msx1ExtColors[0]);
@@ -4896,13 +4764,13 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
                                 });
                                 break;
                             }
-                        case mainmenu_3.MenuItem.Options:
-                        case mainmenu_3.MenuItem.OptionsFromMainMenu:
+                        case 3:
+                        case 15:
                             {
                                 GameMenu.optionsItems.forEach(function (item) {
                                     let offsetX = GameMenu.menuPosX + GameMenu.mainItemsOffsetX;
                                     switch (item.type) {
-                                        case mainmenu_3.MenuItem.Scale:
+                                        case 5:
                                             let textToDisplay;
                                             if (!gameoptions_3.GameOptions.Fullscreen) {
                                                 textwriter_6.TextWriter.DrawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
@@ -4915,11 +4783,11 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
                                                 textwriter_6.TextWriter.DrawText(offsetX, y, `${gameoptions_3.GameOptions.Scale}X`);
                                             }
                                             break;
-                                        case mainmenu_3.MenuItem.Fullscreen:
+                                        case 6:
                                             textwriter_6.TextWriter.DrawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
                                             this.printFullscreenOptionRectangle(y);
                                             break;
-                                        case mainmenu_3.MenuItem.EffectVolume:
+                                        case 8:
                                             {
                                                 textwriter_6.TextWriter.DrawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
                                                 offsetX += GameMenu.effectVolumeText.length * textwriter_6.TextWriter.FontWidth;
@@ -4927,7 +4795,7 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
                                                 textwriter_6.TextWriter.DrawText(offsetX, y, text);
                                             }
                                             break;
-                                        case mainmenu_3.MenuItem.MusicVolume:
+                                        case 7:
                                             {
                                                 textwriter_6.TextWriter.DrawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
                                                 offsetX += GameMenu.musicVolumeText.length * textwriter_6.TextWriter.FontWidth;
@@ -4943,34 +4811,34 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
                                 });
                                 break;
                             }
-                        case mainmenu_3.MenuItem.Load:
-                        case mainmenu_3.MenuItem.LoadFromGameOver:
-                        case mainmenu_3.MenuItem.LoadFromMainMenu:
+                        case 11:
+                        case 13:
+                        case 14:
                             {
                                 textwriter_6.TextWriter.DrawText(GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX, y, GameMenu.backText);
                                 y += GameMenu.itemOffsetY;
-                                for (let i = 0; i < constants_9.Constants.SaveSlotCount; i++) {
+                                for (let i = 0; i < constants_7.Constants.SaveSlotCount; i++) {
                                     this.printSaveSlot(GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX, y, i);
                                     y += GameMenu.itemOffsetY;
                                 }
                                 break;
                             }
-                        case mainmenu_3.MenuItem.Save:
+                        case 12:
                             {
                                 textwriter_6.TextWriter.DrawText(GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX, y, GameMenu.backText);
                                 y += GameMenu.itemOffsetY;
-                                for (let i = 0; i < constants_9.Constants.SaveSlotCount; i++) {
+                                for (let i = 0; i < constants_7.Constants.SaveSlotCount; i++) {
                                     this.printSaveSlot(GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX, y, i);
                                     y += GameMenu.itemOffsetY;
                                 }
                                 break;
                             }
                     }
-                    engine_16.view.DrawBitmap(resourceids_13.BitmapId.MenuCursor, this.cursorPos.x, this.cursorPos.y);
+                    engine_18.view.DrawBitmap(30, this.cursorPos.x, this.cursorPos.y);
                 }
                 printFullscreenOptionRectangle(y) {
                     let selectedIndex = gameoptions_3.GameOptions.Fullscreen ? 0 : 1;
-                    engine_16.view.DrawRectangle(GameMenu.fullscreenOptionsOffsets[selectedIndex] + GameMenu.menuPosX + GameMenu.optionItemsOffsetX, y + GameMenu.fullscreenOptionsOffsetY, GameMenu.fullscreenOptionsOffsets[selectedIndex] + GameMenu.fullscreenOptionsRectangleSize.x + GameMenu.menuPosX + GameMenu.optionItemsOffsetX, y + GameMenu.fullscreenOptionsOffsetY + GameMenu.fullscreenOptionsRectangleSize.y, msx_13.MSXConstants.Msx1Colors[6]);
+                    engine_18.view.DrawRectangle(GameMenu.fullscreenOptionsOffsets[selectedIndex] + GameMenu.menuPosX + GameMenu.optionItemsOffsetX, y + GameMenu.fullscreenOptionsOffsetY, GameMenu.fullscreenOptionsOffsets[selectedIndex] + GameMenu.fullscreenOptionsRectangleSize.x + GameMenu.menuPosX + GameMenu.optionItemsOffsetX, y + GameMenu.fullscreenOptionsOffsetY + GameMenu.fullscreenOptionsRectangleSize.y, msx_13.MSXConstants.Msx1Colors[6]);
                 }
                 printSaveSlot(x, y, slotIndex) {
                     let exists = gamestateloader_3.SlotExists(slotIndex);
@@ -4983,6 +4851,7 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
                     textwriter_6.TextWriter.DrawText(GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX, y, `${slotIndex + 1}: ${time.getDay().toFixed(2)}/${time.getMonth().toFixed(2)}/${time.getFullYear().toFixed(2)} - ${time.getHours().toFixed(2)}:${time.getMinutes().toFixed(2)}`);
                 }
             };
+            exports_45("GameMenu", GameMenu);
             GameMenu.menuPosX = 24;
             GameMenu.menuPosY = 24;
             GameMenu.menuEndX = 240;
@@ -5007,52 +4876,42 @@ System.register("src/gamemenu", ["src/mainmenu", "src/gameview", "BoazEngineJS/r
             GameMenu.cursorOffsetX = -16;
             GameMenu.cursorOffsetY = GameMenu.mainMenuTextY + GameMenu.itemOffsetY;
             GameMenu.mainItems = [
-                { type: mainmenu_3.MenuItem.ChangeOptions, label: "Options" },
-                { type: mainmenu_3.MenuItem.LoadGame, label: "Load game" },
-                { type: mainmenu_3.MenuItem.SaveGame, label: "Save game" },
-                { type: mainmenu_3.MenuItem.ExitGame, label: "Exit game" },
-                { type: mainmenu_3.MenuItem.ReturnToGame, label: "Return to game" },
+                { type: 2, label: "Options" },
+                { type: 2, label: "Load game" },
+                { type: 0, label: "Save game" },
+                { type: 9, label: "Exit game" },
+                { type: 3, label: "Return to game" },
             ];
             GameMenu.optionsItems = [
-                { type: mainmenu_3.MenuItem.ReturnToMain, label: GameMenu.backText },
-                { type: mainmenu_3.MenuItem.Scale, label: GameMenu.scaleText },
-                { type: mainmenu_3.MenuItem.Fullscreen, label: "Fullscreen: y n" },
-                { type: mainmenu_3.MenuItem.MusicVolume, label: GameMenu.musicVolumeText },
-                { type: mainmenu_3.MenuItem.EffectVolume, label: GameMenu.effectVolumeText }
+                { type: 4, label: GameMenu.backText },
+                { type: 5, label: GameMenu.scaleText },
+                { type: 6, label: "Fullscreen: y n" },
+                { type: 7, label: GameMenu.musicVolumeText },
+                { type: 8, label: GameMenu.effectVolumeText }
             ];
             GameMenu.fullscreenOptionsOffsets = [textwriter_6.TextWriter.FontWidth * 12 - 1, textwriter_6.TextWriter.FontWidth * 14 - 1];
             GameMenu.fullscreenOptionsOffsetY = -1;
             GameMenu.fullscreenOptionsRectangleSize = common_14.newSize(textwriter_6.TextWriter.FontWidth + 2, textwriter_6.TextWriter.FontHeight + 2);
-            exports_44("GameMenu", GameMenu);
         }
     };
 });
-System.register("src/gamecontroller", ["BoazEngineJS/btimer", "src/item", "BoazEngineJS/resourceids", "BoazEngineJS/direction", "src/bootstrapper", "src/sintervaniamodel", "BoazEngineJS/model", "BoazEngineJS/input", "src/weaponfirehandler", "src/room", "src/gamemenu", "BoazEngineJS/common", "BoazEngineJS/soundmaster", "src/resourcemaster", "BoazEngineJS/constants", "src/gameview", "src/gameconstants", "BoazEngineJS/gamestateloader", "BoazEngineJS/gamesaver", "BoazEngineJS/controller"], function (exports_45, context_45) {
+System.register("src/gamecontroller", ["BoazEngineJS/btimer", "src/item", "src/bootstrapper", "src/sintervaniamodel", "BoazEngineJS/input", "src/weaponfirehandler", "src/room", "src/gamemenu", "BoazEngineJS/common", "BoazEngineJS/soundmaster", "src/resourcemaster", "BoazEngineJS/constants", "src/gameview", "src/gameconstants", "BoazEngineJS/gamestateloader", "BoazEngineJS/gamesaver", "BoazEngineJS/controller"], function (exports_46, context_46) {
     "use strict";
-    var btimer_7, item_3, resourceids_14, direction_9, bootstrapper_1, sintervaniamodel_15, model_5, input_6, weaponfirehandler_1, room_2, gamemenu_1, common_15, soundmaster_7, resourcemaster_7, constants_10, gameview_3, gameconstants_6, gamestateloader_4, gamesaver_2, controller_1, GameController;
-    var __moduleName = context_45 && context_45.id;
+    var btimer_8, item_3, bootstrapper_1, sintervaniamodel_14, input_6, weaponfirehandler_1, room_2, gamemenu_1, common_15, soundmaster_7, resourcemaster_8, constants_8, gameview_3, gameconstants_7, gamestateloader_4, gamesaver_2, controller_1, GameController;
+    var __moduleName = context_46 && context_46.id;
     return {
         setters: [
-            function (btimer_7_1) {
-                btimer_7 = btimer_7_1;
+            function (btimer_8_1) {
+                btimer_8 = btimer_8_1;
             },
             function (item_3_1) {
                 item_3 = item_3_1;
             },
-            function (resourceids_14_1) {
-                resourceids_14 = resourceids_14_1;
-            },
-            function (direction_9_1) {
-                direction_9 = direction_9_1;
-            },
             function (bootstrapper_1_1) {
                 bootstrapper_1 = bootstrapper_1_1;
             },
-            function (sintervaniamodel_15_1) {
-                sintervaniamodel_15 = sintervaniamodel_15_1;
-            },
-            function (model_5_1) {
-                model_5 = model_5_1;
+            function (sintervaniamodel_14_1) {
+                sintervaniamodel_14 = sintervaniamodel_14_1;
             },
             function (input_6_1) {
                 input_6 = input_6_1;
@@ -5072,17 +4931,17 @@ System.register("src/gamecontroller", ["BoazEngineJS/btimer", "src/item", "BoazE
             function (soundmaster_7_1) {
                 soundmaster_7 = soundmaster_7_1;
             },
-            function (resourcemaster_7_1) {
-                resourcemaster_7 = resourcemaster_7_1;
+            function (resourcemaster_8_1) {
+                resourcemaster_8 = resourcemaster_8_1;
             },
-            function (constants_10_1) {
-                constants_10 = constants_10_1;
+            function (constants_8_1) {
+                constants_8 = constants_8_1;
             },
             function (gameview_3_1) {
                 gameview_3 = gameview_3_1;
             },
-            function (gameconstants_6_1) {
-                gameconstants_6 = gameconstants_6_1;
+            function (gameconstants_7_1) {
+                gameconstants_7 = gameconstants_7_1;
             },
             function (gamestateloader_4_1) {
                 gamestateloader_4 = gamestateloader_4_1;
@@ -5100,28 +4959,28 @@ System.register("src/gamecontroller", ["BoazEngineJS/btimer", "src/item", "BoazE
                     return GameController._instance != null ? GameController._instance : (GameController._instance = new GameController());
                 }
                 Initialize() {
-                    sintervaniamodel_15.GameModel._.OldState = model_5.GameState.None;
-                    this.timer = btimer_7.BStopwatch.createWatch();
-                    this.startAfterLoadTimer = btimer_7.BStopwatch.createWatch();
+                    sintervaniamodel_14.GameModel._.OldState = 0;
+                    this.timer = btimer_8.BStopwatch.createWatch();
+                    this.startAfterLoadTimer = btimer_8.BStopwatch.createWatch();
                 }
                 SwitchToState(newState) {
-                    sintervaniamodel_15.GameModel._.OldState = sintervaniamodel_15.GameModel._.State;
-                    if (this.DisposeOldState(sintervaniamodel_15.GameModel._.State, newState)) {
+                    sintervaniamodel_14.GameModel._.OldState = sintervaniamodel_14.GameModel._.State;
+                    if (this.DisposeOldState(sintervaniamodel_14.GameModel._.State, newState)) {
                         this.InitNewState(newState);
                     }
-                    sintervaniamodel_15.GameModel._.State = newState;
+                    sintervaniamodel_14.GameModel._.State = newState;
                 }
                 DisposeOldState(oldState, newState) {
                     switch (oldState) {
-                        case model_5.GameState.TitleScreen:
+                        case 3:
                             soundmaster_7.SoundMaster.StopMusic();
-                            if (newState == model_5.GameState.Game)
+                            if (newState == 8)
                                 this.setupGameStart(newState);
                             break;
-                        case model_5.GameState.GameStart2:
+                        case 6:
                             this.setupGameStart(newState);
                             break;
-                        case model_5.GameState.Game:
+                        case 8:
                             break;
                         default:
                             break;
@@ -5129,161 +4988,158 @@ System.register("src/gamecontroller", ["BoazEngineJS/btimer", "src/item", "BoazE
                     return true;
                 }
                 SwitchToOldState() {
-                    this.SwitchToState(sintervaniamodel_15.GameModel._.OldState);
+                    this.SwitchToState(sintervaniamodel_14.GameModel._.OldState);
                 }
                 SwitchToOldSubstate() {
-                    this.switchToSubstate(sintervaniamodel_15.GameModel._.OldSubstate);
+                    this.switchToSubstate(sintervaniamodel_14.GameModel._.OldSubstate);
                 }
                 InitNewState(newState) {
                     switch (newState) {
-                        case model_5.GameState.Prelude:
+                        case 1:
                             gameview_3.GameView._.Title.Init();
                             break;
-                        case model_5.GameState.TitleScreen:
+                        case 3:
                             gameview_3.GameView._.MainMenu.Init();
                             break;
-                        case model_5.GameState.EndDemo:
+                        case 11:
                             gameview_3.GameView._.EndDemo.Init();
                             break;
-                        case model_5.GameState.GameStart1:
+                        case 5:
                             this.timer.restart();
                             break;
-                        case model_5.GameState.GameStart2:
+                        case 6:
                             this.timer.restart();
-                            soundmaster_7.SoundMaster.PlayMusic(resourcemaster_7.ResourceMaster.Music[resourceids_14.AudioId.Stage]);
                             break;
-                        case model_5.GameState.Game:
+                        case 8:
                             break;
                         default:
                             break;
                     }
                 }
                 switchToSubstate(newSubstate) {
-                    sintervaniamodel_15.GameModel._.OldSubstate = sintervaniamodel_15.GameModel._.Substate;
+                    sintervaniamodel_14.GameModel._.OldSubstate = sintervaniamodel_14.GameModel._.Substate;
                     switch (newSubstate) {
-                        case sintervaniamodel_15.GameModel.GameSubstate.Conversation:
+                        case 0:
                             break;
-                        case sintervaniamodel_15.GameModel.GameSubstate.BelmontDies:
-                            soundmaster_7.SoundMaster.PlayMusic(resourcemaster_7.ResourceMaster.Music[resourceids_14.AudioId.Ohnoes]);
+                        case 1:
                             break;
-                        case sintervaniamodel_15.GameModel.GameSubstate.ItsCurtainsForYou:
-                        case sintervaniamodel_15.GameModel.GameSubstate.ToEndDemo:
+                        case 2:
+                        case 3:
                             gameview_3.GameView._.ItsCurtains.Init();
                             break;
-                        case sintervaniamodel_15.GameModel.GameSubstate.GameOver:
-                            soundmaster_7.SoundMaster.PlayMusic(resourcemaster_7.ResourceMaster.Music[resourceids_14.AudioId.Humiliation]);
+                        case 4:
                             gameview_3.GameView._.GameOverScreen.Init();
                             break;
-                        case sintervaniamodel_15.GameModel.GameSubstate.IngameMenu:
-                            btimer_7.BStopwatch.pauseAllRunningWatches(true);
+                        case 5:
+                            btimer_8.BStopwatch.pauseAllRunningWatches(true);
                             break;
-                        case sintervaniamodel_15.GameModel.GameSubstate.GameMenu:
-                            btimer_7.BStopwatch.pauseAllRunningWatches(true);
+                        case 6:
+                            btimer_8.BStopwatch.pauseAllRunningWatches(true);
                             break;
-                        case sintervaniamodel_15.GameModel.GameSubstate.SwitchRoom:
+                        case 7:
                             this.timer.restart();
                             break;
-                        case sintervaniamodel_15.GameModel.GameSubstate.Default:
-                            if (sintervaniamodel_15.GameModel._.OldSubstate == sintervaniamodel_15.GameModel.GameSubstate.IngameMenu || sintervaniamodel_15.GameModel._.OldSubstate == sintervaniamodel_15.GameModel.GameSubstate.GameMenu)
-                                btimer_7.BStopwatch.resumeAllPausedWatches();
+                        case 0:
+                            if (sintervaniamodel_14.GameModel._.OldSubstate == 5 || sintervaniamodel_14.GameModel._.OldSubstate == 6)
+                                btimer_8.BStopwatch.resumeAllPausedWatches();
                             break;
                     }
-                    sintervaniamodel_15.GameModel._.Substate = newSubstate;
+                    sintervaniamodel_14.GameModel._.Substate = newSubstate;
                 }
                 takeTurn(elapsedMs) {
                     console.info(`takeTurn wordt nu uitgevoerd. ElapsedMs: ${elapsedMs}`);
-                    if (sintervaniamodel_15.GameModel._.paused) {
+                    if (sintervaniamodel_14.GameModel._.paused) {
                         this.handlePausedState();
                         return;
                     }
-                    if (sintervaniamodel_15.GameModel._.startAfterLoad) {
+                    if (sintervaniamodel_14.GameModel._.startAfterLoad) {
                         this.handleStartAfterLoadState();
                         return;
                     }
                     this.ElapsedMsDelta = elapsedMs;
-                    switch (sintervaniamodel_15.GameModel._.State) {
-                        case model_5.GameState.Prelude:
+                    switch (sintervaniamodel_14.GameModel._.State) {
+                        case 1:
                             gameview_3.GameView._.Title.TakeTurn();
                             break;
-                        case model_5.GameState.TitleScreen:
+                        case 3:
                             gameview_3.GameView._.MainMenu.HandleInput();
                             gameview_3.GameView._.MainMenu.TakeTurn();
-                            if (sintervaniamodel_15.GameModel._.GameMenu.visible) {
-                                sintervaniamodel_15.GameModel._.GameMenu.HandleInput();
-                                sintervaniamodel_15.GameModel._.GameMenu.TakeTurn();
+                            if (sintervaniamodel_14.GameModel._.GameMenu.visible) {
+                                sintervaniamodel_14.GameModel._.GameMenu.HandleInput();
+                                sintervaniamodel_14.GameModel._.GameMenu.TakeTurn();
                             }
                             break;
-                        case model_5.GameState.EndDemo:
+                        case 11:
                             gameview_3.GameView._.EndDemo.TakeTurn();
                             break;
-                        case model_5.GameState.GameStart1:
-                            if (common_15.waitDuration(this.timer, gameconstants_6.GameConstants.WaitAfterGameStart1)) {
-                                this.SwitchToState(model_5.GameState.GameStart2);
+                        case 5:
+                            if (common_15.waitDuration(this.timer, gameconstants_7.GameConstants.WaitAfterGameStart1)) {
+                                this.SwitchToState(6);
                             }
                             break;
-                        case model_5.GameState.GameStart2:
-                            if (common_15.waitDuration(this.timer, gameconstants_6.GameConstants.WaitAfterGameStart2)) {
-                                this.SwitchToState(model_5.GameState.Game);
+                        case 6:
+                            if (common_15.waitDuration(this.timer, gameconstants_7.GameConstants.WaitAfterGameStart2)) {
+                                this.SwitchToState(8);
                             }
                             break;
-                        case model_5.GameState.Game:
-                            switch (sintervaniamodel_15.GameModel._.Substate) {
-                                case sintervaniamodel_15.GameModel.GameSubstate.GameMenu:
+                        case 8:
+                            switch (sintervaniamodel_14.GameModel._.Substate) {
+                                case 6:
                                     this.handleInputDuringGame();
-                                    sintervaniamodel_15.GameModel._.GameMenu.TakeTurn();
+                                    sintervaniamodel_14.GameModel._.GameMenu.TakeTurn();
                                     break;
-                                case sintervaniamodel_15.GameModel.GameSubstate.BelmontDies:
+                                case 1:
                                     this.handleInputDuringGame();
-                                    sintervaniamodel_15.GameModel._.Belmont.TakeTurn();
+                                    sintervaniamodel_14.GameModel._.Belmont.TakeTurn();
                                     gameview_3.GameView._.Hud.TakeTurn();
                                     break;
-                                case sintervaniamodel_15.GameModel.GameSubstate.ItsCurtainsForYou:
-                                case sintervaniamodel_15.GameModel.GameSubstate.ToEndDemo:
+                                case 2:
+                                case 3:
                                     this.handleInputDuringGame();
-                                    sintervaniamodel_15.GameModel._.Belmont.TakeTurn();
+                                    sintervaniamodel_14.GameModel._.Belmont.TakeTurn();
                                     gameview_3.GameView._.Hud.TakeTurn();
                                     gameview_3.GameView._.ItsCurtains.TakeTurn();
                                     break;
-                                case sintervaniamodel_15.GameModel.GameSubstate.GameOver:
+                                case 4:
                                     this.handleInputDuringGame();
                                     gameview_3.GameView._.GameOverScreen.TakeTurn();
-                                    sintervaniamodel_15.GameModel._.GameMenu.TakeTurn();
+                                    sintervaniamodel_14.GameModel._.GameMenu.TakeTurn();
                                     break;
-                                case sintervaniamodel_15.GameModel.GameSubstate.SwitchRoom:
-                                    if (common_15.waitDuration(this.timer, gameconstants_6.GameConstants.WaitAfterRoomSwitch)) {
+                                case 7:
+                                    if (common_15.waitDuration(this.timer, gameconstants_7.GameConstants.WaitAfterRoomSwitch)) {
                                         this.SwitchToOldSubstate();
-                                        if (gameconstants_6.GameConstants.CheckpointAtRoomEntry)
+                                        if (gameconstants_7.GameConstants.CheckpointAtRoomEntry)
                                             this.StoreCheckpoint();
                                     }
                                     break;
-                                case sintervaniamodel_15.GameModel.GameSubstate.Default:
+                                case 0:
                                     this.handleInputDuringGame();
-                                    sintervaniamodel_15.GameModel._.objects.forEach(o => o.takeTurn());
-                                    sintervaniamodel_15.GameModel._.objects.filter(o => o.disposeFlag).forEach(o => sintervaniamodel_15.GameModel._.remove(o));
-                                    sintervaniamodel_15.GameModel._.CurrentRoom.TakeTurn();
+                                    sintervaniamodel_14.GameModel._.objects.forEach(o => o.TakeTurn());
+                                    sintervaniamodel_14.GameModel._.objects.filter(o => o.disposeFlag).forEach(o => sintervaniamodel_14.GameModel._.remove(o));
+                                    sintervaniamodel_14.GameModel._.CurrentRoom.TakeTurn();
                                     gameview_3.GameView._.Hud.TakeTurn();
                                     break;
                             }
                             break;
-                        case model_5.GameState.Event:
-                            if (sintervaniamodel_15.GameModel._.Belmont.Dying)
+                        case 9:
+                            if (sintervaniamodel_14.GameModel._.Belmont.Dying)
                                 this.SwitchToOldState();
-                            switch (sintervaniamodel_15.GameModel._.Substate) {
-                                case sintervaniamodel_15.GameModel.GameSubstate.SwitchRoom:
-                                    if (common_15.waitDuration(this.timer, gameconstants_6.GameConstants.WaitAfterRoomSwitch)) {
+                            switch (sintervaniamodel_14.GameModel._.Substate) {
+                                case 7:
+                                    if (common_15.waitDuration(this.timer, gameconstants_7.GameConstants.WaitAfterRoomSwitch)) {
                                         this.SwitchToOldSubstate();
                                     }
                                     break;
-                                case sintervaniamodel_15.GameModel.GameSubstate.GameMenu:
+                                case 6:
                                     this.handleInputDuringGame();
-                                    sintervaniamodel_15.GameModel._.GameMenu.TakeTurn();
+                                    sintervaniamodel_14.GameModel._.GameMenu.TakeTurn();
                                     break;
                                 default:
-                                    sintervaniamodel_15.GameModel._.objects.forEach(o => o.takeTurn());
-                                    sintervaniamodel_15.GameModel._.objects.filter(o => o.disposeFlag).forEach(o => sintervaniamodel_15.GameModel._.remove(o));
-                                    sintervaniamodel_15.GameModel._.CurrentRoom.TakeTurn();
+                                    sintervaniamodel_14.GameModel._.objects.forEach(o => o.TakeTurn());
+                                    sintervaniamodel_14.GameModel._.objects.filter(o => o.disposeFlag).forEach(o => sintervaniamodel_14.GameModel._.remove(o));
+                                    sintervaniamodel_14.GameModel._.CurrentRoom.TakeTurn();
                                     gameview_3.GameView._.Hud.TakeTurn();
-                                    if (input_6.KeyState.KC_F5 && !sintervaniamodel_15.GameModel._.GameMenu.visible)
+                                    if (input_6.KeyState.KC_F5 && !sintervaniamodel_14.GameModel._.GameMenu.visible)
                                         this.OpenGameMenu();
                                     break;
                             }
@@ -5295,20 +5151,20 @@ System.register("src/gamecontroller", ["BoazEngineJS/btimer", "src/item", "BoazE
                 handleInputDuringGame() {
                     if (input_6.KeyState.KC_F1)
                         this.PauseGame();
-                    switch (sintervaniamodel_15.GameModel._.Substate) {
-                        case sintervaniamodel_15.GameModel.GameSubstate.BelmontDies:
-                        case sintervaniamodel_15.GameModel.GameSubstate.ItsCurtainsForYou:
-                        case sintervaniamodel_15.GameModel.GameSubstate.ToEndDemo:
+                    switch (sintervaniamodel_14.GameModel._.Substate) {
+                        case 1:
+                        case 2:
+                        case 3:
                             break;
-                        case sintervaniamodel_15.GameModel.GameSubstate.GameOver:
+                        case 4:
                             gameview_3.GameView._.GameOverScreen.HandleInput();
-                            if (sintervaniamodel_15.GameModel._.GameMenu.visible)
+                            if (sintervaniamodel_14.GameModel._.GameMenu.visible)
                                 this.handleInputDuringGameMenu();
                             break;
-                        case sintervaniamodel_15.GameModel.GameSubstate.GameMenu:
+                        case 6:
                             this.handleInputDuringGameMenu();
                             break;
-                        case sintervaniamodel_15.GameModel.GameSubstate.Default:
+                        case 0:
                         default:
                             if (input_6.KeyState.KC_SPACE) {
                                 weaponfirehandler_1.WeaponFireHandler.HandleFireMainWeapon();
@@ -5316,7 +5172,7 @@ System.register("src/gamecontroller", ["BoazEngineJS/btimer", "src/item", "BoazE
                             if (input_6.KeyState.KC_M) {
                                 weaponfirehandler_1.WeaponFireHandler.HandleFireSecondaryWeapon();
                             }
-                            else if (input_6.KeyState.KC_F5 && !sintervaniamodel_15.GameModel._.GameMenu.visible)
+                            else if (input_6.KeyState.KC_F5 && !sintervaniamodel_14.GameModel._.GameMenu.visible)
                                 this.OpenGameMenu();
                             break;
                     }
@@ -5326,13 +5182,13 @@ System.register("src/gamecontroller", ["BoazEngineJS/btimer", "src/item", "BoazE
                         this.UnpauseGame();
                 }
                 handleInputDuringGameMenu() {
-                    sintervaniamodel_15.GameModel._.GameMenu.HandleInput();
+                    sintervaniamodel_14.GameModel._.GameMenu.HandleInput();
                     if (input_6.KeyState.KC_F5) {
                         this.CloseGameMenu();
                     }
                 }
                 KillFocus() {
-                    if (!sintervaniamodel_15.GameModel._.paused && sintervaniamodel_15.GameModel._.State == model_5.GameState.Game && sintervaniamodel_15.GameModel._.Substate == sintervaniamodel_15.GameModel.GameSubstate.Default && gameconstants_6.GameConstants.PauseGameOnKillFocus)
+                    if (!sintervaniamodel_14.GameModel._.paused && sintervaniamodel_14.GameModel._.State == 8 && sintervaniamodel_14.GameModel._.Substate == 0 && gameconstants_7.GameConstants.PauseGameOnKillFocus)
                         this.PauseGame();
                 }
                 SetFocus() {
@@ -5341,123 +5197,123 @@ System.register("src/gamecontroller", ["BoazEngineJS/btimer", "src/item", "BoazE
                     this.handleInputDuringPause();
                 }
                 handleStartAfterLoadState() {
-                    if (common_15.waitDuration(this.startAfterLoadTimer, gameconstants_6.GameConstants.WaitAfterLoadGame)) {
-                        sintervaniamodel_15.GameModel._.startAfterLoad = false;
-                        btimer_7.BStopwatch.removeWatch(this.startAfterLoadTimer);
-                        if (soundmaster_7.SoundMaster.MusicBeingPlayed != null)
+                    if (common_15.waitDuration(this.startAfterLoadTimer, gameconstants_7.GameConstants.WaitAfterLoadGame)) {
+                        sintervaniamodel_14.GameModel._.startAfterLoad = false;
+                        btimer_8.BStopwatch.removeWatch(this.startAfterLoadTimer);
+                        if (soundmaster_7.SoundMaster.MusicBeingPlayed)
                             soundmaster_7.SoundMaster.PlayMusic(soundmaster_7.SoundMaster.MusicBeingPlayed);
                     }
                 }
                 BelmontDied() {
-                    this.switchToSubstate(sintervaniamodel_15.GameModel.GameSubstate.BelmontDies);
+                    this.switchToSubstate(1);
                 }
                 BelmontDeathAniFinished() {
-                    this.switchToSubstate(sintervaniamodel_15.GameModel.GameSubstate.ItsCurtainsForYou);
+                    this.switchToSubstate(2);
                 }
                 ItsCurtainsAniFinished() {
-                    if (sintervaniamodel_15.GameModel._.Substate == sintervaniamodel_15.GameModel.GameSubstate.ItsCurtainsForYou)
-                        this.switchToSubstate(sintervaniamodel_15.GameModel.GameSubstate.GameOver);
+                    if (sintervaniamodel_14.GameModel._.Substate == 2)
+                        this.switchToSubstate(4);
                     else
-                        this.SwitchToState(model_5.GameState.EndDemo);
+                        this.SwitchToState(11);
                 }
                 PreludeFinished() {
-                    this.SwitchToState(model_5.GameState.TitleScreen);
+                    this.SwitchToState(3);
                 }
                 BossDefeated() {
-                    this.switchToSubstate(sintervaniamodel_15.GameModel.GameSubstate.ToEndDemo);
+                    this.switchToSubstate(3);
                 }
                 HandleRoomExitViaMovement(targetRoom, dir) {
-                    let Belmont = sintervaniamodel_15.GameModel._.Belmont;
+                    let Belmont = sintervaniamodel_14.GameModel._.Belmont;
                     switch (dir) {
-                        case direction_9.Direction.Up:
+                        case 0:
                             common_15.setPoint(Belmont.pos, Belmont.pos.x, room_2.Room.RoomHeight - (Belmont.size.y + 1));
                             break;
-                        case direction_9.Direction.Right:
+                        case 1:
                             common_15.setPoint(Belmont.pos, 0, Belmont.pos.y);
                             break;
-                        case direction_9.Direction.Down:
+                        case 2:
                             common_15.setPoint(Belmont.pos, Belmont.pos.x, 0);
                             break;
-                        case direction_9.Direction.Left:
+                        case 3:
                             common_15.setPoint(Belmont.pos, room_2.Room.RoomWidth - (Belmont.size.x + 1), Belmont.pos.y);
                             break;
                     }
                     this.DoRoomExit(targetRoom);
                 }
                 DoRoomExit(targetRoom) {
-                    sintervaniamodel_15.GameModel._.LastFoeThatWasHit = null;
-                    sintervaniamodel_15.GameModel._.LoadRoom(targetRoom);
-                    this.switchToSubstate(sintervaniamodel_15.GameModel.GameSubstate.SwitchRoom);
+                    sintervaniamodel_14.GameModel._.LastFoeThatWasHit = null;
+                    sintervaniamodel_14.GameModel._.LoadRoom(targetRoom);
+                    this.switchToSubstate(7);
                 }
                 setupGameStart(newState) {
-                    sintervaniamodel_15.GameModel._.InitModelForGameStart();
-                    bootstrapper_1.Bootstrapper.BootstrapGame(sintervaniamodel_15.GameModel._.SelectedChapterToPlay);
+                    sintervaniamodel_14.GameModel._.InitModelForGameStart();
+                    bootstrapper_1.Bootstrapper.BootstrapGame(sintervaniamodel_14.GameModel._.SelectedChapterToPlay);
                     gameview_3.GameView._.Hud.SetShownLevelsToProperValues();
-                    sintervaniamodel_15.GameModel._.State = newState;
+                    sintervaniamodel_14.GameModel._.State = newState;
                     this.StoreCheckpoint();
                 }
                 PauseGame() {
-                    sintervaniamodel_15.GameModel._.paused = true;
-                    btimer_7.BStopwatch.pauseAllRunningWatches();
+                    sintervaniamodel_14.GameModel._.paused = true;
+                    btimer_8.BStopwatch.pauseAllRunningWatches();
                     soundmaster_7.SoundMaster.StopEffect();
                     soundmaster_7.SoundMaster.StopMusic();
                 }
                 UnpauseGame() {
-                    sintervaniamodel_15.GameModel._.paused = false;
-                    btimer_7.BStopwatch.resumeAllPausedWatches();
+                    sintervaniamodel_14.GameModel._.paused = false;
+                    btimer_8.BStopwatch.resumeAllPausedWatches();
                     soundmaster_7.SoundMaster.ResumeEffect();
                     soundmaster_7.SoundMaster.ResumeMusic();
                 }
                 OpenGameMenu() {
-                    sintervaniamodel_15.GameModel._.GameMenu.Open();
-                    this.switchToSubstate(sintervaniamodel_15.GameModel.GameSubstate.GameMenu);
+                    sintervaniamodel_14.GameModel._.GameMenu.Open();
+                    this.switchToSubstate(6);
                 }
                 CloseGameMenu() {
-                    sintervaniamodel_15.GameModel._.GameMenu.Close();
+                    sintervaniamodel_14.GameModel._.GameMenu.Close();
                     this.SwitchToOldSubstate();
                 }
                 LoadGame(sg) {
                     soundmaster_7.SoundMaster.StopEffect();
                     soundmaster_7.SoundMaster.StopMusic();
-                    let oldcheckpoint = sintervaniamodel_15.GameModel._.Checkpoint;
-                    sintervaniamodel_15.GameModel._ = sg.Model;
-                    sintervaniamodel_15.GameModel._.Checkpoint = gamestateloader_4.LoadGame(constants_10.Constants.SaveSlotCheckpoint);
-                    btimer_7.BStopwatch.Watches = sg.RegisteredWatches;
-                    sintervaniamodel_15.GameModel._.InitAfterGameLoad();
-                    sintervaniamodel_15.GameModel._.GameMenu = new gamemenu_1.GameMenu();
+                    let oldcheckpoint = sintervaniamodel_14.GameModel._.Checkpoint;
+                    sintervaniamodel_14.GameModel._ = sg.Model;
+                    sintervaniamodel_14.GameModel._.Checkpoint = gamestateloader_4.LoadGame(constants_8.Constants.SaveSlotCheckpoint);
+                    btimer_8.BStopwatch.Watches = sg.RegisteredWatches;
+                    sintervaniamodel_14.GameModel._.InitAfterGameLoad();
+                    sintervaniamodel_14.GameModel._.GameMenu = new gamemenu_1.GameMenu();
                     gameview_3.GameView._.init();
-                    sintervaniamodel_15.GameModel._.startAfterLoad = true;
+                    sintervaniamodel_14.GameModel._.startAfterLoad = true;
                     this.startAfterLoadTimer.pauseDuringMenu = false;
                     this.startAfterLoadTimer.restart();
-                    btimer_7.BStopwatch.addWatch(this.startAfterLoadTimer);
-                    btimer_7.BStopwatch.addWatch(this.timer);
+                    btimer_8.BStopwatch.addWatch(this.startAfterLoadTimer);
+                    btimer_8.BStopwatch.addWatch(this.timer);
                     soundmaster_7.SoundMaster.MusicBeingPlayed = sg.MusicBeingPlayed;
-                    resourcemaster_7.ResourceMaster.reloadImg(resourceids_14.BitmapId.Room, sintervaniamodel_15.GameModel._.CurrentRoom.BitmapPath);
+                    resourcemaster_8.ResourceMaster.reloadImg(0, sintervaniamodel_14.GameModel._.CurrentRoom.BitmapPath);
                 }
                 SaveGame(slot) {
-                    if (sintervaniamodel_15.GameModel._.Substate == sintervaniamodel_15.GameModel.GameSubstate.GameMenu)
+                    if (sintervaniamodel_14.GameModel._.Substate == 6)
                         this.CloseGameMenu();
-                    btimer_7.BStopwatch.removeWatch(this.timer);
-                    gamesaver_2.GameSaver.saveGame(sintervaniamodel_15.GameModel._, slot);
-                    btimer_7.BStopwatch.addWatch(this.timer);
+                    btimer_8.BStopwatch.removeWatch(this.timer);
+                    gamesaver_2.GameSaver.saveGame(sintervaniamodel_14.GameModel._, slot);
+                    btimer_8.BStopwatch.addWatch(this.timer);
                 }
                 StoreCheckpoint() {
-                    btimer_7.BStopwatch.removeWatch(this.timer);
-                    sintervaniamodel_15.GameModel._.Checkpoint = gamesaver_2.GameSaver.GetCheckpoint(sintervaniamodel_15.GameModel._);
-                    btimer_7.BStopwatch.addWatch(this.timer);
+                    btimer_8.BStopwatch.removeWatch(this.timer);
+                    sintervaniamodel_14.GameModel._.Checkpoint = gamesaver_2.GameSaver.GetCheckpoint(sintervaniamodel_14.GameModel._);
+                    btimer_8.BStopwatch.addWatch(this.timer);
                 }
                 LoadCheckpoint() {
-                    if (sintervaniamodel_15.GameModel._.Checkpoint == null)
-                        sintervaniamodel_15.GameModel._.Checkpoint = gamestateloader_4.LoadGame(constants_10.Constants.SaveSlotCheckpoint);
-                    this.LoadGame(sintervaniamodel_15.GameModel._.Checkpoint);
+                    if (sintervaniamodel_14.GameModel._.Checkpoint == null)
+                        sintervaniamodel_14.GameModel._.Checkpoint = gamestateloader_4.LoadGame(constants_8.Constants.SaveSlotCheckpoint);
+                    this.LoadGame(sintervaniamodel_14.GameModel._.Checkpoint);
                 }
                 PickupItem(source) {
                     if (source.id != null)
-                        sintervaniamodel_15.GameModel._.ItemsPickedUp[source.id] = true;
-                    sintervaniamodel_15.GameModel._.AddItemToInventory(source.ItsType);
+                        sintervaniamodel_14.GameModel._.ItemsPickedUp[source.id] = true;
+                    sintervaniamodel_14.GameModel._.AddItemToInventory(source.ItsType);
                 }
                 UseItem(itemType) {
-                    let bagitem = sintervaniamodel_15.GameModel._.ItemsInInventory.find(i => i.Type == itemType);
+                    let bagitem = sintervaniamodel_14.GameModel._.ItemsInInventory.find(i => i.Type == itemType);
                     if (bagitem.Amount > 0) {
                         if (item_3.Item.ItemUsable(itemType) != item_3.Item.Usable.Infinite)
                             --bagitem.Amount;
@@ -5467,24 +5323,24 @@ System.register("src/gamecontroller", ["BoazEngineJS/btimer", "src/item", "BoazE
                 HandleUseItem(itemType) {
                     switch (itemType) {
                         case item_3.Item.Type.None:
-                            sintervaniamodel_15.GameModel._.Belmont.Health = sintervaniamodel_15.GameModel._.Belmont.MaxHealth;
+                            sintervaniamodel_14.GameModel._.Belmont.Health = sintervaniamodel_14.GameModel._.Belmont.MaxHealth;
                             break;
                     }
                 }
                 PickupWeaponItem(source) {
-                    sintervaniamodel_15.GameModel._.AddWeaponToInventory(source.ItsType);
+                    sintervaniamodel_14.GameModel._.AddWeaponToInventory(source.ItsType);
                     if (source.id != null)
-                        sintervaniamodel_15.GameModel._.ItemsPickedUp[source.id] = true;
+                        sintervaniamodel_14.GameModel._.ItemsPickedUp[source.id] = true;
                 }
             };
-            exports_45("GameController", GameController);
+            exports_46("GameController", GameController);
         }
     };
 });
-System.register("src/item", ["BoazEngineJS/sprite", "BoazEngineJS/common", "src/sintervaniamodel", "BoazEngineJS/soundmaster", "src/resourcemaster", "src/gamecontroller", "BoazEngineJS/resourceids"], function (exports_46, context_46) {
+System.register("src/item", ["BoazEngineJS/sprite", "BoazEngineJS/common", "src/sintervaniamodel", "BoazEngineJS/soundmaster", "src/resourcemaster", "src/gamecontroller"], function (exports_47, context_47) {
     "use strict";
-    var sprite_4, common_16, sintervaniamodel_16, soundmaster_8, resourcemaster_8, gamecontroller_8, resourceids_15, ItemType, Usable, Item;
-    var __moduleName = context_46 && context_46.id;
+    var sprite_4, common_16, sintervaniamodel_15, soundmaster_8, resourcemaster_9, gamecontroller_8, ItemType, Usable, Item;
+    var __moduleName = context_47 && context_47.id;
     return {
         setters: [
             function (sprite_4_1) {
@@ -5493,20 +5349,17 @@ System.register("src/item", ["BoazEngineJS/sprite", "BoazEngineJS/common", "src/
             function (common_16_1) {
                 common_16 = common_16_1;
             },
-            function (sintervaniamodel_16_1) {
-                sintervaniamodel_16 = sintervaniamodel_16_1;
+            function (sintervaniamodel_15_1) {
+                sintervaniamodel_15 = sintervaniamodel_15_1;
             },
             function (soundmaster_8_1) {
                 soundmaster_8 = soundmaster_8_1;
             },
-            function (resourcemaster_8_1) {
-                resourcemaster_8 = resourcemaster_8_1;
+            function (resourcemaster_9_1) {
+                resourcemaster_9 = resourcemaster_9_1;
             },
             function (gamecontroller_8_1) {
                 gamecontroller_8 = gamecontroller_8_1;
-            },
-            function (resourceids_15_1) {
-                resourceids_15 = resourceids_15_1;
             }
         ],
         execute: function () {
@@ -5517,13 +5370,13 @@ System.register("src/item", ["BoazEngineJS/sprite", "BoazEngineJS/common", "src/
                 ItemType[ItemType["KeySmall"] = 3] = "KeySmall";
                 ItemType[ItemType["KeyBig"] = 4] = "KeyBig";
             })(ItemType || (ItemType = {}));
-            exports_46("ItemType", ItemType);
+            exports_47("ItemType", ItemType);
             (function (Usable) {
                 Usable[Usable["No"] = 0] = "No";
                 Usable[Usable["Yes"] = 1] = "Yes";
                 Usable[Usable["Infinite"] = 2] = "Infinite";
             })(Usable || (Usable = {}));
-            exports_46("Usable", Usable);
+            exports_47("Usable", Usable);
             Item = class Item extends sprite_4.Sprite {
                 constructor(type, pos) {
                     super(pos);
@@ -5533,19 +5386,19 @@ System.register("src/item", ["BoazEngineJS/sprite", "BoazEngineJS/common", "src/
                     this.imgid = Item.Type2Image(type);
                 }
                 TakeTurn() {
-                    if (this.areaCollide(common_16.moveArea(sintervaniamodel_16.GameModel._.Belmont.EventTouchHitArea, sintervaniamodel_16.GameModel._.Belmont.pos))) {
+                    if (this.areaCollide(common_16.moveArea(sintervaniamodel_15.GameModel._.Belmont.EventTouchHitArea, sintervaniamodel_15.GameModel._.Belmont.pos))) {
                         gamecontroller_8.GameController._.PickupItem(this);
                         switch (this.ItsType) {
                             case ItemType.HeartSmall:
                             case ItemType.HeartBig:
-                                soundmaster_8.SoundMaster.PlayEffect(resourcemaster_8.ResourceMaster.Sound[resourceids_15.AudioId.Heart]);
+                                soundmaster_8.SoundMaster.PlayEffect(resourcemaster_9.ResourceMaster.Sound[4]);
                                 break;
                             case ItemType.KeySmall:
                             case ItemType.KeyBig:
-                                soundmaster_8.SoundMaster.PlayEffect(resourcemaster_8.ResourceMaster.Sound[resourceids_15.AudioId.KeyGrab]);
+                                soundmaster_8.SoundMaster.PlayEffect(resourcemaster_9.ResourceMaster.Sound[8]);
                                 break;
                             default:
-                                soundmaster_8.SoundMaster.PlayEffect(resourcemaster_8.ResourceMaster.Sound[resourceids_15.AudioId.ItemPickup]);
+                                soundmaster_8.SoundMaster.PlayEffect(resourcemaster_9.ResourceMaster.Sound[7]);
                                 break;
                         }
                         this.disposeFlag = true;
@@ -5554,9 +5407,9 @@ System.register("src/item", ["BoazEngineJS/sprite", "BoazEngineJS/common", "src/
                 static Type2Image(type) {
                     switch (type) {
                         case ItemType.KeyBig:
-                            return resourceids_15.BitmapId.Key_big;
+                            return 92;
                         default:
-                            return resourceids_15.BitmapId.None;
+                            return -1;
                     }
                 }
                 static ItemUsable(type) {
@@ -5568,29 +5421,29 @@ System.register("src/item", ["BoazEngineJS/sprite", "BoazEngineJS/common", "src/
                 Dispose() {
                 }
             };
+            exports_47("Item", Item);
             Item.ItemHitArea = common_16.newArea(0, 0, 16, 16);
-            exports_46("Item", Item);
         }
     };
 });
-System.register("src/fx", ["BoazEngineJS/sprite", "BoazEngineJS/btimer"], function (exports_47, context_47) {
+System.register("src/fx", ["BoazEngineJS/sprite", "BoazEngineJS/btimer"], function (exports_48, context_48) {
     "use strict";
-    var sprite_5, btimer_8, FX;
-    var __moduleName = context_47 && context_47.id;
+    var sprite_5, btimer_9, FX;
+    var __moduleName = context_48 && context_48.id;
     return {
         setters: [
             function (sprite_5_1) {
                 sprite_5 = sprite_5_1;
             },
-            function (btimer_8_1) {
-                btimer_8 = btimer_8_1;
+            function (btimer_9_1) {
+                btimer_9 = btimer_9_1;
             }
         ],
         execute: function () {
             FX = class FX extends sprite_5.Sprite {
                 constructor(pos) {
                     super(pos);
-                    this.timer = btimer_8.BStopwatch.createWatch();
+                    this.timer = btimer_9.BStopwatch.createWatch();
                 }
                 init() {
                     this.imgid = this.animation.stepValue();
@@ -5608,17 +5461,17 @@ System.register("src/fx", ["BoazEngineJS/sprite", "BoazEngineJS/btimer"], functi
                     }
                 }
                 Dispose() {
-                    btimer_8.BStopwatch.removeWatch(this.timer);
+                    btimer_9.BStopwatch.removeWatch(this.timer);
                 }
             };
-            exports_47("FX", FX);
+            exports_48("FX", FX);
         }
     };
 });
-System.register("src/heartsmall", ["BoazEngineJS/sprite", "BoazEngineJS/animation", "BoazEngineJS/resourceids", "src/gameconstants", "src/resourcemaster", "BoazEngineJS/common", "src/sintervaniamodel", "BoazEngineJS/soundmaster"], function (exports_48, context_48) {
+System.register("src/heartsmall", ["BoazEngineJS/sprite", "BoazEngineJS/animation", "src/gameconstants", "src/resourcemaster", "BoazEngineJS/common", "src/sintervaniamodel", "BoazEngineJS/soundmaster"], function (exports_49, context_49) {
     "use strict";
-    var sprite_6, animation_4, resourceids_16, gameconstants_7, resourcemaster_9, common_17, sintervaniamodel_17, soundmaster_9, HeartSmallState, HeartSmall;
-    var __moduleName = context_48 && context_48.id;
+    var sprite_6, animation_4, gameconstants_8, resourcemaster_10, common_17, sintervaniamodel_16, soundmaster_9, HeartSmallState, HeartSmall;
+    var __moduleName = context_49 && context_49.id;
     return {
         setters: [
             function (sprite_6_1) {
@@ -5627,20 +5480,17 @@ System.register("src/heartsmall", ["BoazEngineJS/sprite", "BoazEngineJS/animatio
             function (animation_4_1) {
                 animation_4 = animation_4_1;
             },
-            function (resourceids_16_1) {
-                resourceids_16 = resourceids_16_1;
+            function (gameconstants_8_1) {
+                gameconstants_8 = gameconstants_8_1;
             },
-            function (gameconstants_7_1) {
-                gameconstants_7 = gameconstants_7_1;
-            },
-            function (resourcemaster_9_1) {
-                resourcemaster_9 = resourcemaster_9_1;
+            function (resourcemaster_10_1) {
+                resourcemaster_10 = resourcemaster_10_1;
             },
             function (common_17_1) {
                 common_17 = common_17_1;
             },
-            function (sintervaniamodel_17_1) {
-                sintervaniamodel_17 = sintervaniamodel_17_1;
+            function (sintervaniamodel_16_1) {
+                sintervaniamodel_16 = sintervaniamodel_16_1;
             },
             function (soundmaster_9_1) {
                 soundmaster_9 = soundmaster_9_1;
@@ -5651,10 +5501,10 @@ System.register("src/heartsmall", ["BoazEngineJS/sprite", "BoazEngineJS/animatio
                 HeartSmallState[HeartSmallState["Flying"] = 0] = "Flying";
                 HeartSmallState[HeartSmallState["Standing"] = 1] = "Standing";
             })(HeartSmallState || (HeartSmallState = {}));
-            exports_48("HeartSmallState", HeartSmallState);
+            exports_49("HeartSmallState", HeartSmallState);
             HeartSmall = class HeartSmall extends sprite_6.Sprite {
                 constructor(pos) {
-                    super(pos, resourceids_16.BitmapId.Heart_fly);
+                    super(pos, 90);
                     this.animationData = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
                     this.State = HeartSmallState.Flying;
                     this.animation = new animation_4.Animation(this.animationData, 1, true);
@@ -5666,7 +5516,7 @@ System.register("src/heartsmall", ["BoazEngineJS/sprite", "BoazEngineJS/animatio
                 set hitarea(value) {
                 }
                 get floorCollision() {
-                    return sintervaniamodel_17.GameModel._.CurrentRoom.IsCollisionTile(this.pos.x + 5, this.pos.y + 8, false);
+                    return sintervaniamodel_16.GameModel._.CurrentRoom.IsCollisionTile(this.pos.x + 5, this.pos.y + 8, false);
                 }
                 Dispose() {
                 }
@@ -5678,36 +5528,36 @@ System.register("src/heartsmall", ["BoazEngineJS/sprite", "BoazEngineJS/animatio
                         if (this.uglyBitThing)
                             ++this.pos.y;
                         this.uglyBitThing = !this.uglyBitThing;
-                        if (this.pos.y > gameconstants_7.GameConstants.GameScreenHeight) {
+                        if (this.pos.y > gameconstants_8.GameConstants.GameScreenHeight) {
                             this.disposeFlag = true;
                             return;
                         }
                         if (this.floorCollision) {
                             this.State = HeartSmallState.Standing;
                             this.pos.y -= 3;
-                            this.imgid = resourceids_16.BitmapId.Heart_small;
+                            this.imgid = 91;
                         }
                     }
-                    if (this.objectCollide(sintervaniamodel_17.GameModel._.Belmont)) {
-                        ++sintervaniamodel_17.GameModel._.Hearts;
+                    if (this.objectCollide(sintervaniamodel_16.GameModel._.Belmont)) {
+                        ++sintervaniamodel_16.GameModel._.Hearts;
                         this.disposeFlag = true;
-                        soundmaster_9.SoundMaster.PlayEffect(resourcemaster_9.ResourceMaster.Sound[resourceids_16.AudioId.Heart]);
+                        soundmaster_9.SoundMaster.PlayEffect(resourcemaster_10.ResourceMaster.Sound[4]);
                     }
                 }
                 Paint(offset = null) {
-                    super.paint(offset);
+                    super.Paint(offset);
                 }
             };
+            exports_49("HeartSmall", HeartSmall);
             HeartSmall.HitAreaFly = common_17.newArea(0, 0, 9, 8);
             HeartSmall.HitAreaStand = common_17.newArea(0, 0, 12, 11);
-            exports_48("HeartSmall", HeartSmall);
         }
     };
 });
-System.register("src/foeexplosion", ["src/item", "BoazEngineJS/animation", "src/fx", "src/heartsmall", "BoazEngineJS/resourceids", "src/sintervaniamodel", "BoazEngineJS/common"], function (exports_49, context_49) {
+System.register("src/foeexplosion", ["src/item", "BoazEngineJS/animation", "src/fx", "src/heartsmall", "src/sintervaniamodel", "BoazEngineJS/common"], function (exports_50, context_50) {
     "use strict";
-    var item_4, animation_5, fx_1, heartsmall_1, resourceids_17, sintervaniamodel_18, common_18, FoeExplosion;
-    var __moduleName = context_49 && context_49.id;
+    var item_4, animation_5, fx_1, heartsmall_1, sintervaniamodel_17, common_18, FoeExplosion;
+    var __moduleName = context_50 && context_50.id;
     return {
         setters: [
             function (item_4_1) {
@@ -5722,11 +5572,8 @@ System.register("src/foeexplosion", ["src/item", "BoazEngineJS/animation", "src/
             function (heartsmall_1_1) {
                 heartsmall_1 = heartsmall_1_1;
             },
-            function (resourceids_17_1) {
-                resourceids_17 = resourceids_17_1;
-            },
-            function (sintervaniamodel_18_1) {
-                sintervaniamodel_18 = sintervaniamodel_18_1;
+            function (sintervaniamodel_17_1) {
+                sintervaniamodel_17 = sintervaniamodel_17_1;
             },
             function (common_18_1) {
                 common_18 = common_18_1;
@@ -5747,21 +5594,21 @@ System.register("src/foeexplosion", ["src/item", "BoazEngineJS/animation", "src/
                         if (this.animation.finished()) {
                             this.disposeFlag = true;
                             if (this.itemSpawnedAfterKill == item_4.ItemType.HeartSmall) {
-                                sintervaniamodel_18.GameModel._.spawn(new heartsmall_1.HeartSmall(common_18.addPoints({ x: this.pos.x, y: this.pos.y }, { x: 4, y: 8 })));
+                                sintervaniamodel_17.GameModel._.spawn(new heartsmall_1.HeartSmall(common_18.addPoints({ x: this.pos.x, y: this.pos.y }, { x: 4, y: 8 })));
                             }
                         }
                     }
                 }
             };
-            FoeExplosion.AnimationFrames = new Array({ time: 100, data: resourceids_17.BitmapId.FoeKill_1 }, { time: 100, data: resourceids_17.BitmapId.FoeKill_2 }, { time: 100, data: resourceids_17.BitmapId.FoeKill_1 }, { time: 100, data: resourceids_17.BitmapId.FoeKill_2 });
-            exports_49("FoeExplosion", FoeExplosion);
+            exports_50("FoeExplosion", FoeExplosion);
+            FoeExplosion.AnimationFrames = new Array({ time: 100, data: 97 }, { time: 100, data: 98 }, { time: 100, data: 97 }, { time: 100, data: 98 });
         }
     };
 });
-System.register("src/foe", ["src/creature", "src/item", "src/sintervaniamodel", "BoazEngineJS/soundmaster", "src/foeexplosion", "BoazEngineJS/resourceids", "src/resourcemaster"], function (exports_50, context_50) {
+System.register("src/foe", ["src/creature", "src/item", "src/sintervaniamodel", "BoazEngineJS/soundmaster", "src/foeexplosion", "src/resourcemaster"], function (exports_51, context_51) {
     "use strict";
-    var creature_2, item_5, sintervaniamodel_19, soundmaster_10, foeexplosion_1, resourceids_18, resourcemaster_10, Foe;
-    var __moduleName = context_50 && context_50.id;
+    var creature_2, item_5, sintervaniamodel_18, soundmaster_10, foeexplosion_1, resourcemaster_11, Foe;
+    var __moduleName = context_51 && context_51.id;
     return {
         setters: [
             function (creature_2_1) {
@@ -5770,8 +5617,8 @@ System.register("src/foe", ["src/creature", "src/item", "src/sintervaniamodel", 
             function (item_5_1) {
                 item_5 = item_5_1;
             },
-            function (sintervaniamodel_19_1) {
-                sintervaniamodel_19 = sintervaniamodel_19_1;
+            function (sintervaniamodel_18_1) {
+                sintervaniamodel_18 = sintervaniamodel_18_1;
             },
             function (soundmaster_10_1) {
                 soundmaster_10 = soundmaster_10_1;
@@ -5779,23 +5626,17 @@ System.register("src/foe", ["src/creature", "src/item", "src/sintervaniamodel", 
             function (foeexplosion_1_1) {
                 foeexplosion_1 = foeexplosion_1_1;
             },
-            function (resourceids_18_1) {
-                resourceids_18 = resourceids_18_1;
-            },
-            function (resourcemaster_10_1) {
-                resourcemaster_10 = resourcemaster_10_1;
+            function (resourcemaster_11_1) {
+                resourcemaster_11 = resourcemaster_11_1;
             }
         ],
         execute: function () {
             Foe = class Foe extends creature_2.Creature {
-                Paint(offset) {
-                    throw new Error("Method not implemented.");
+                constructor(pos) {
+                    super(pos);
                 }
                 get HealthPercentage() {
                     return Math.min((Math.round(this.Health / this.MaxHealth * 100)), 100);
-                }
-                constructor(pos) {
-                    super(pos);
                 }
                 get RespawnAtRoomEntry() {
                     return false;
@@ -5804,13 +5645,13 @@ System.register("src/foe", ["src/creature", "src/item", "src/sintervaniamodel", 
                     return this.CanHurtPlayer;
                 }
                 TakeTurn() {
-                    if (this.CanHurtPlayer && this.objectCollide(sintervaniamodel_19.GameModel._.Belmont)) {
-                        sintervaniamodel_19.GameModel._.Belmont.TakeDamage(this.DamageToPlayer);
+                    if (this.CanHurtPlayer && this.objectCollide(sintervaniamodel_18.GameModel._.Belmont)) {
+                        sintervaniamodel_18.GameModel._.Belmont.TakeDamage(this.DamageToPlayer);
                     }
                 }
                 HandleHit(source) {
-                    sintervaniamodel_19.GameModel._.LastFoeThatWasHit = this;
-                    soundmaster_10.SoundMaster.PlayEffect(resourcemaster_10.ResourceMaster.Sound[resourceids_18.AudioId.Hit]);
+                    sintervaniamodel_18.GameModel._.LastFoeThatWasHit = this;
+                    soundmaster_10.SoundMaster.PlayEffect(resourcemaster_11.ResourceMaster.Sound[5]);
                 }
                 loseHealth(source) {
                     this.Health -= source.DamageDealt;
@@ -5819,7 +5660,7 @@ System.register("src/foe", ["src/creature", "src/item", "src/sintervaniamodel", 
                 }
                 handleDie() {
                     this.disposeFlag = true;
-                    sintervaniamodel_19.GameModel._.FoeDefeated(this);
+                    sintervaniamodel_18.GameModel._.FoeDefeated(this);
                 }
                 Die() {
                     if (this.itemSpawnedAfterKill == item_5.ItemType.HeartSmall) {
@@ -5830,66 +5671,66 @@ System.register("src/foe", ["src/creature", "src/item", "src/sintervaniamodel", 
                 }
                 dieWithoutItem() {
                     this.handleDie();
-                    sintervaniamodel_19.GameModel._.spawn(new foeexplosion_1.FoeExplosion(this.pos));
+                    sintervaniamodel_18.GameModel._.spawn(new foeexplosion_1.FoeExplosion(this.pos));
                 }
                 dieWithItem(itemToSpawn = item_5.ItemType.None) {
                     this.handleDie();
                     if (itemToSpawn != item_5.ItemType.None) {
-                        sintervaniamodel_19.GameModel._.spawn(new foeexplosion_1.FoeExplosion(this.pos, itemToSpawn));
+                        sintervaniamodel_18.GameModel._.spawn(new foeexplosion_1.FoeExplosion(this.pos, itemToSpawn));
                     }
                 }
             };
-            exports_50("Foe", Foe);
+            exports_51("Foe", Foe);
         }
     };
 });
-System.register("src/bossfoe", ["src/foe", "src/sintervaniamodel"], function (exports_51, context_51) {
+System.register("src/bossfoe", ["src/foe", "src/sintervaniamodel"], function (exports_52, context_52) {
     "use strict";
-    var foe_1, sintervaniamodel_20, BossFoe;
-    var __moduleName = context_51 && context_51.id;
+    var foe_1, sintervaniamodel_19, BossFoe;
+    var __moduleName = context_52 && context_52.id;
     return {
         setters: [
             function (foe_1_1) {
                 foe_1 = foe_1_1;
             },
-            function (sintervaniamodel_20_1) {
-                sintervaniamodel_20 = sintervaniamodel_20_1;
+            function (sintervaniamodel_19_1) {
+                sintervaniamodel_19 = sintervaniamodel_19_1;
             }
         ],
         execute: function () {
             BossFoe = class BossFoe extends foe_1.Foe {
                 constructor(pos) {
                     super(pos);
-                    this.extendedProperties.set(sintervaniamodel_20.GameModel.PROPERTY_KEEP_AT_ROOMSWITCH, true);
+                    this.extendedProperties.set(sintervaniamodel_19.GameModel.PROPERTY_KEEP_AT_ROOMSWITCH, true);
                 }
                 StartBossfight() {
                     throw new Error('not implemented');
                 }
             };
-            exports_51("BossFoe", BossFoe);
+            exports_52("BossFoe", BossFoe);
         }
     };
 });
-System.register("src/sintervaniamodel", ["src/belmont", "BoazEngineJS/model", "BoazEngineJS/btimer", "src/weaponitem", "src/gameconstants", "src/gamemenu", "src/RoomFactory"], function (exports_52, context_52) {
+System.register("src/sintervaniamodel", ["src/belmont", "BoazEngineJS/model", "BoazEngineJS/btimer", "src/weaponitem", "src/gameconstants", "src/gamemenu", "src/RoomFactory"], function (exports_53, context_53) {
     "use strict";
-    var belmont_2, model_6, btimer_9, weaponitem_1, gameconstants_8, gamemenu_2, RoomFactory_1, Chapter, BagItem, BagWeapon, Location, Switch, CombatType, MainWeaponType, SecWeaponType, GameModel;
-    var __moduleName = context_52 && context_52.id;
+    var belmont_2, model_1, btimer_10, weaponitem_1, gameconstants_9, gamemenu_2, RoomFactory_1, BagItem, BagWeapon, Location, Switch, GameModel;
+    var __moduleName = context_53 && context_53.id;
     return {
         setters: [
             function (belmont_2_1) {
                 belmont_2 = belmont_2_1;
             },
-            function (model_6_1) {
-                model_6 = model_6_1;
+            function (model_1_1) {
+                model_1 = model_1_1;
             },
-            function (btimer_9_1) {
-                btimer_9 = btimer_9_1;
+            function (btimer_10_1) {
+                btimer_10 = btimer_10_1;
             },
             function (weaponitem_1_1) {
                 weaponitem_1 = weaponitem_1_1;
             },
-            function (gameconstants_8_1) {
-                gameconstants_8 = gameconstants_8_1;
+            function (gameconstants_9_1) {
+                gameconstants_9 = gameconstants_9_1;
             },
             function (gamemenu_2_1) {
                 gamemenu_2 = gamemenu_2_1;
@@ -5899,22 +5740,15 @@ System.register("src/sintervaniamodel", ["src/belmont", "BoazEngineJS/model", "B
             }
         ],
         execute: function () {
-            (function (Chapter) {
-                Chapter[Chapter["Debug"] = 0] = "Debug";
-                Chapter[Chapter["Prologue"] = 1] = "Prologue";
-                Chapter[Chapter["Chapter_0"] = 2] = "Chapter_0";
-                Chapter[Chapter["GameStart"] = 3] = "GameStart";
-            })(Chapter || (Chapter = {}));
-            exports_52("Chapter", Chapter);
             BagItem = class BagItem {
             };
-            exports_52("BagItem", BagItem);
+            exports_53("BagItem", BagItem);
             BagWeapon = class BagWeapon {
             };
-            exports_52("BagWeapon", BagWeapon);
+            exports_53("BagWeapon", BagWeapon);
             Location = class Location {
             };
-            exports_52("Location", Location);
+            exports_53("Location", Location);
             (function (Switch) {
                 Switch[Switch["None"] = 0] = "None";
                 Switch[Switch["Dummy"] = 1] = "Dummy";
@@ -5937,23 +5771,8 @@ System.register("src/sintervaniamodel", ["src/belmont", "BoazEngineJS/model", "B
                 Switch[Switch["Ch0_BossIntro"] = 18] = "Ch0_BossIntro";
                 Switch[Switch["Ch0_LangVerhaal"] = 19] = "Ch0_LangVerhaal";
             })(Switch || (Switch = {}));
-            exports_52("Switch", Switch);
-            (function (CombatType) {
-                CombatType[CombatType["Encounter"] = 0] = "Encounter";
-                CombatType[CombatType["Boss"] = 1] = "Boss";
-            })(CombatType || (CombatType = {}));
-            exports_52("CombatType", CombatType);
-            (function (MainWeaponType) {
-                MainWeaponType[MainWeaponType["None"] = 0] = "None";
-                MainWeaponType[MainWeaponType["TriRoe"] = 1] = "TriRoe";
-            })(MainWeaponType || (MainWeaponType = {}));
-            exports_52("MainWeaponType", MainWeaponType);
-            (function (SecWeaponType) {
-                SecWeaponType[SecWeaponType["None"] = 0] = "None";
-                SecWeaponType[SecWeaponType["Cross"] = 1] = "Cross";
-            })(SecWeaponType || (SecWeaponType = {}));
-            exports_52("SecWeaponType", SecWeaponType);
-            GameModel = class GameModel extends model_6.Model {
+            exports_53("Switch", Switch);
+            GameModel = class GameModel extends model_1.Model {
                 constructor() {
                     super();
                     GameModel._instance = this;
@@ -5969,15 +5788,15 @@ System.register("src/sintervaniamodel", ["src/belmont", "BoazEngineJS/model", "B
                     return this._hearts;
                 }
                 set Hearts(value) {
-                    if (value > gameconstants_8.GameConstants.Belmont_MaxHearts)
-                        this._hearts = gameconstants_8.GameConstants.Belmont_MaxHearts;
+                    if (value > gameconstants_9.GameConstants.Belmont_MaxHearts)
+                        this._hearts = gameconstants_9.GameConstants.Belmont_MaxHearts;
                     else if (value < 0)
                         this._hearts = 0;
                     else
                         this._hearts = value;
                 }
                 get SelectedMainWeapon() {
-                    return MainWeaponType.TriRoe;
+                    return 1;
                 }
                 get SelectedSecondaryWeapon() {
                     return this._selectedSecondaryWeapon;
@@ -5993,7 +5812,7 @@ System.register("src/sintervaniamodel", ["src/belmont", "BoazEngineJS/model", "B
                     return GameModel._.WeaponsInInventory[index];
                 }
                 get LastFoeThatWasHit() {
-                    if (this._lastFoeThatWasHit == null)
+                    if (!this._lastFoeThatWasHit)
                         return null;
                     if (this._lastFoeThatWasHit.disposeFlag)
                         return null;
@@ -6020,8 +5839,9 @@ System.register("src/sintervaniamodel", ["src/belmont", "BoazEngineJS/model", "B
                     this.ItemsPickedUp = new Map();
                     this.WeaponItemsPickedUp = new Map();
                     this.DoorsOpened = new Map();
-                    this.MainWeaponCooldownTimer = btimer_9.BStopwatch.createWatch();
-                    this.SecWeaponCooldownTimer = btimer_9.BStopwatch.createWatch();
+                    this.MainWeaponCooldownTimer = btimer_10.BStopwatch.createWatch();
+                    this.SecWeaponCooldownTimer = btimer_10.BStopwatch.createWatch();
+                    this._hearts = 0;
                     RoomFactory_1.RoomFactory.PrepareData();
                 }
                 InitModelForGameStart() {
@@ -6034,6 +5854,7 @@ System.register("src/sintervaniamodel", ["src/belmont", "BoazEngineJS/model", "B
                     GameModel._.FoesDefeated.clear();
                     GameModel._.ItemsPickedUp.clear();
                     GameModel._.WeaponItemsPickedUp.clear();
+                    this._hearts = 0;
                     GameModel._.spawn(new belmont_2.Belmont());
                 }
                 InitAfterGameLoad() {
@@ -6129,35 +5950,29 @@ System.register("src/sintervaniamodel", ["src/belmont", "BoazEngineJS/model", "B
                     this.CurrentRoom.InitRoom();
                 }
             };
+            exports_53("GameModel", GameModel);
             GameModel.PROPERTY_KEEP_AT_ROOMSWITCH = "p_rs";
             GameModel.PROPERTY_ACT_AS_WALL = "p_wall";
-            exports_52("GameModel", GameModel);
         }
     };
 });
-System.register("src/candle", ["src/foe", "BoazEngineJS/btimer", "src/item", "BoazEngineJS/animation", "BoazEngineJS/direction", "BoazEngineJS/resourceids", "BoazEngineJS/common"], function (exports_53, context_53) {
+System.register("src/candle", ["src/foe", "BoazEngineJS/btimer", "src/item", "BoazEngineJS/animation", "BoazEngineJS/common"], function (exports_54, context_54) {
     "use strict";
-    var foe_2, btimer_10, item_6, animation_6, direction_10, resourceids_19, common_19, Candle;
-    var __moduleName = context_53 && context_53.id;
+    var foe_2, btimer_11, item_6, animation_6, common_19, Candle;
+    var __moduleName = context_54 && context_54.id;
     return {
         setters: [
             function (foe_2_1) {
                 foe_2 = foe_2_1;
             },
-            function (btimer_10_1) {
-                btimer_10 = btimer_10_1;
+            function (btimer_11_1) {
+                btimer_11 = btimer_11_1;
             },
             function (item_6_1) {
                 item_6 = item_6_1;
             },
             function (animation_6_1) {
                 animation_6 = animation_6_1;
-            },
-            function (direction_10_1) {
-                direction_10 = direction_10_1;
-            },
-            function (resourceids_19_1) {
-                resourceids_19 = resourceids_19_1;
             },
             function (common_19_1) {
                 common_19 = common_19_1;
@@ -6170,7 +5985,7 @@ System.register("src/candle", ["src/foe", "BoazEngineJS/btimer", "src/item", "Bo
                     this.CanHurtPlayer = false;
                     this.animation = new animation_6.Animation(Candle.AnimationFrames, Candle.ElapsedMsPerFrame);
                     this.animation.repeat = true;
-                    this.timer = btimer_10.BStopwatch.createWatch();
+                    this.timer = btimer_11.BStopwatch.createWatch();
                     this.imgid = this.animation.stepValue();
                     this.timer.restart();
                     this.hitarea = Candle.CandleHitArea;
@@ -6194,7 +6009,7 @@ System.register("src/candle", ["src/foe", "BoazEngineJS/btimer", "src/item", "Bo
                     this.imgid = imageId.nextStepValue;
                 }
                 Dispose() {
-                    btimer_10.BStopwatch.removeWatch(this.timer);
+                    btimer_11.BStopwatch.removeWatch(this.timer);
                 }
                 HandleHit(source) {
                     super.HandleHit(source);
@@ -6204,18 +6019,18 @@ System.register("src/candle", ["src/foe", "BoazEngineJS/btimer", "src/item", "Bo
                     super.Paint(offset);
                 }
             };
+            exports_54("Candle", Candle);
             Candle.CandleHitArea = common_19.newArea(0, 0, 10, 16);
-            Candle.candleSprites = new Map([[direction_10.Direction.None, [resourceids_19.BitmapId.Candle_1]]]);
-            Candle.AnimationFrames = [resourceids_19.BitmapId.Candle_1, resourceids_19.BitmapId.Candle_2];
+            Candle.candleSprites = new Map([[4, [99]]]);
+            Candle.AnimationFrames = [99, 100];
             Candle.ElapsedMsPerFrame = [200, 200];
-            exports_53("Candle", Candle);
         }
     };
 });
-System.register("src/gardencandle", ["BoazEngineJS/animation", "src/candle", "BoazEngineJS/direction", "BoazEngineJS/resourceids", "src/item", "BoazEngineJS/common"], function (exports_54, context_54) {
+System.register("src/gardencandle", ["BoazEngineJS/animation", "src/candle", "src/item", "BoazEngineJS/common"], function (exports_55, context_55) {
     "use strict";
-    var animation_7, candle_1, direction_11, resourceids_20, item_7, common_20, GardenCandle;
-    var __moduleName = context_54 && context_54.id;
+    var animation_7, candle_1, item_7, common_20, GardenCandle;
+    var __moduleName = context_55 && context_55.id;
     return {
         setters: [
             function (animation_7_1) {
@@ -6223,12 +6038,6 @@ System.register("src/gardencandle", ["BoazEngineJS/animation", "src/candle", "Bo
             },
             function (candle_1_1) {
                 candle_1 = candle_1_1;
-            },
-            function (direction_11_1) {
-                direction_11 = direction_11_1;
-            },
-            function (resourceids_20_1) {
-                resourceids_20 = resourceids_20_1;
             },
             function (item_7_1) {
                 item_7 = item_7_1;
@@ -6247,17 +6056,17 @@ System.register("src/gardencandle", ["BoazEngineJS/animation", "src/candle", "Bo
                     this.itemSpawnedAfterKill = itemSpawned;
                 }
             };
-            GardenCandle.candleSprites = new Map([[direction_11.Direction.None, [resourceids_20.BitmapId.GCandle_1]]]);
+            exports_55("GardenCandle", GardenCandle);
+            GardenCandle.candleSprites = new Map([[4, [102]]]);
             GardenCandle.CandleHitArea = common_20.newArea(0, 0, 16, 16);
-            GardenCandle.AnimationFrames = new Array(resourceids_20.BitmapId.GCandle_1, resourceids_20.BitmapId.GCandle_2);
-            exports_54("GardenCandle", GardenCandle);
+            GardenCandle.AnimationFrames = new Array(102, 103);
         }
     };
 });
-System.register("src/RoomFactory", ["src/room", "BoazEngineJS/common", "BoazEngineJS/msx", "src/sintervaniamodel", "src/gardencandle"], function (exports_55, context_55) {
+System.register("src/RoomFactory", ["src/room", "BoazEngineJS/common", "BoazEngineJS/msx", "src/sintervaniamodel", "src/gardencandle"], function (exports_56, context_56) {
     "use strict";
-    var room_3, common_21, msx_14, sintervaniamodel_21, gardencandle_1, RoomDataContainer, RoomMap, RoomFactory;
-    var __moduleName = context_55 && context_55.id;
+    var room_3, common_21, msx_14, sintervaniamodel_20, gardencandle_1, RoomDataContainer, RoomMap, RoomFactory;
+    var __moduleName = context_56 && context_56.id;
     return {
         setters: [
             function (room_3_1) {
@@ -6269,8 +6078,8 @@ System.register("src/RoomFactory", ["src/room", "BoazEngineJS/common", "BoazEngi
             function (msx_14_1) {
                 msx_14 = msx_14_1;
             },
-            function (sintervaniamodel_21_1) {
-                sintervaniamodel_21 = sintervaniamodel_21_1;
+            function (sintervaniamodel_20_1) {
+                sintervaniamodel_20 = sintervaniamodel_20_1;
             },
             function (gardencandle_1_1) {
                 gardencandle_1 = gardencandle_1_1;
@@ -6287,28 +6096,28 @@ System.register("src/RoomFactory", ["src/room", "BoazEngineJS/common", "BoazEngi
                     this.InitFunction = initFunction;
                 }
             };
-            exports_55("RoomDataContainer", RoomDataContainer);
+            exports_56("RoomDataContainer", RoomDataContainer);
             (function (RoomMap) {
                 RoomMap[RoomMap["Debug"] = 0] = "Debug";
                 RoomMap[RoomMap["Dungeon1"] = 1] = "Dungeon1";
                 RoomMap[RoomMap["Dungeon2"] = 2] = "Dungeon2";
                 RoomMap[RoomMap["Town1"] = 3] = "Town1";
             })(RoomMap || (RoomMap = {}));
-            exports_55("RoomMap", RoomMap);
+            exports_56("RoomMap", RoomMap);
             RoomFactory = class RoomFactory {
                 static RoomExists(id) {
                     return RoomFactory.rooms.has(id);
                 }
                 static LoadRoom(id) {
-                    if (!RoomFactory.rooms.has(id)) {
+                    if (!RoomFactory.RoomExists(id)) {
                         throw Error("Room " + id + " could not be found in dictionary!");
                     }
-                    return room_3.Room.LoadRoom(RoomFactory.rooms[id]);
+                    return room_3.Room.LoadRoom(RoomFactory.rooms.get(id));
                 }
                 static posOnMap(map, id) {
                     for (let y = 0; (y < map.length); y++) {
                         for (let x = 0; (x < map[y].length); x++) {
-                            if ((map[y][x] == id)) {
+                            if (map[y][x] == id) {
                                 return common_21.newPoint(x, y);
                             }
                         }
@@ -6318,9 +6127,9 @@ System.register("src/RoomFactory", ["src/room", "BoazEngineJS/common", "BoazEngi
                 static roomExits(map, id) {
                     let result = new Array(4);
                     let pos = RoomFactory.posOnMap(map, id);
-                    for (let i = 0; (i < RoomFactory.dirOffsets.length); i++) {
-                        let x = (pos.x + RoomFactory.dirOffsets[i][0]);
-                        let y = (pos.y + RoomFactory.dirOffsets[i][1]);
+                    for (let i = 0; i < RoomFactory.dirOffsets.length; i++) {
+                        let x = pos.x + RoomFactory.dirOffsets[i].x;
+                        let y = pos.y + RoomFactory.dirOffsets[i].y;
                         if (((x < 0)
                             || ((x >= map[y].length)
                                 || ((y < 0)
@@ -6335,6 +6144,7 @@ System.register("src/RoomFactory", ["src/room", "BoazEngineJS/common", "BoazEngi
                 }
                 static PrepareData() {
                     RoomFactory.rooms = new Map();
+                    RoomFactory.PrepareStage0Data();
                 }
                 static PrepareDummyData() {
                     RoomFactory.rooms = new Map();
@@ -6382,9 +6192,9 @@ System.register("src/RoomFactory", ["src/room", "BoazEngineJS/common", "BoazEngi
                     let bitmapPath;
                     let map;
                     let initFunction;
-                    id = 100;
+                    id = 1;
                     map = RoomFactory.RoomMap_stage0;
-                    bitmapPath = "./Resources/Graphics/Stage/castle_entrance_3.png";
+                    bitmapPath = "Stage/Garden_entrance.png";
                     collisionData = [
                         "################################",
                         "#..............................#",
@@ -6411,13 +6221,14 @@ System.register("src/RoomFactory", ["src/room", "BoazEngineJS/common", "BoazEngi
                     ];
                     initFunction = (r) => {
                         let candle = new gardencandle_1.GardenCandle(msx_14.Tile.ToCoord(8, 14));
-                        sintervaniamodel_21.GameModel._.spawn(candle);
+                        sintervaniamodel_20.GameModel._.spawn(candle);
                         let candle2 = new gardencandle_1.GardenCandle(msx_14.Tile.ToCoord(24, 14));
-                        sintervaniamodel_21.GameModel._.spawn(candle2);
+                        sintervaniamodel_20.GameModel._.spawn(candle2);
                     };
                     RoomFactory.rooms.set(id, new RoomDataContainer(id, collisionData, RoomFactory.roomExits(map, id), bitmapPath, map, initFunction));
                 }
             };
+            exports_56("RoomFactory", RoomFactory);
             RoomFactory.dirOffsets = [
                 { x: 0, y: -1 },
                 { x: 1, y: 0 },
@@ -6432,25 +6243,21 @@ System.register("src/RoomFactory", ["src/room", "BoazEngineJS/common", "BoazEngi
             ];
             RoomFactory.RoomMap_stage0 = [
                 [0, 0, 0, 0, 0,],
-                [0, 0, 100, 0, 0,],
+                [0, 0, 1, 0, 0,],
                 [0, 0, 0, 0, 0,],
                 [0, 0, 0, 0, 0,],
             ];
-            exports_55("RoomFactory", RoomFactory);
         }
     };
 });
-System.register("src/chandelier", ["BoazEngineJS/btimer", "BoazEngineJS/direction", "BoazEngineJS/animation", "src/foe", "src/item", "BoazEngineJS/resourceids", "BoazEngineJS/common", "src/sintervaniamodel"], function (exports_56, context_56) {
+System.register("src/chandelier", ["BoazEngineJS/btimer", "BoazEngineJS/animation", "src/foe", "src/item", "BoazEngineJS/common", "src/sintervaniamodel"], function (exports_57, context_57) {
     "use strict";
-    var btimer_11, direction_12, animation_8, foe_3, item_8, resourceids_21, common_22, sintervaniamodel_22, Chandelier, ChandelierState;
-    var __moduleName = context_56 && context_56.id;
+    var btimer_12, animation_8, foe_3, item_8, common_22, sintervaniamodel_21, Chandelier, ChandelierState;
+    var __moduleName = context_57 && context_57.id;
     return {
         setters: [
-            function (btimer_11_1) {
-                btimer_11 = btimer_11_1;
-            },
-            function (direction_12_1) {
-                direction_12 = direction_12_1;
+            function (btimer_12_1) {
+                btimer_12 = btimer_12_1;
             },
             function (animation_8_1) {
                 animation_8 = animation_8_1;
@@ -6461,14 +6268,11 @@ System.register("src/chandelier", ["BoazEngineJS/btimer", "BoazEngineJS/directio
             function (item_8_1) {
                 item_8 = item_8_1;
             },
-            function (resourceids_21_1) {
-                resourceids_21 = resourceids_21_1;
-            },
             function (common_22_1) {
                 common_22 = common_22_1;
             },
-            function (sintervaniamodel_22_1) {
-                sintervaniamodel_22 = sintervaniamodel_22_1;
+            function (sintervaniamodel_21_1) {
+                sintervaniamodel_21 = sintervaniamodel_21_1;
             }
         ],
         execute: function () {
@@ -6477,8 +6281,8 @@ System.register("src/chandelier", ["BoazEngineJS/btimer", "BoazEngineJS/directio
                     super(pos);
                     this.animation = new animation_8.Animation(Chandelier.AnimationFrames);
                     this.animation.repeat = true;
-                    this.timer = btimer_11.BStopwatch.createWatch();
-                    this.imgid = resourceids_21.BitmapId.Chandelier_1;
+                    this.timer = btimer_12.BStopwatch.createWatch();
+                    this.imgid = 104;
                     this.hitarea = Chandelier.ChandelierHitArea;
                     this.size = common_22.newSize(50, 64);
                     this.itemSpawnedAfterKill = item_8.ItemType.None;
@@ -6505,7 +6309,7 @@ System.register("src/chandelier", ["BoazEngineJS/btimer", "BoazEngineJS/directio
                 TakeTurn() {
                     switch (this.state) {
                         case ChandelierState.None:
-                            if (sintervaniamodel_22.GameModel._.Belmont.x_plus_width >= this.pos.x && sintervaniamodel_22.GameModel._.Belmont.pos.x <= this.x_plus_width) {
+                            if (sintervaniamodel_21.GameModel._.Belmont.x_plus_width >= this.pos.x && sintervaniamodel_21.GameModel._.Belmont.pos.x <= this.x_plus_width) {
                                 this.state = ChandelierState.Falling;
                             }
                             break;
@@ -6523,7 +6327,7 @@ System.register("src/chandelier", ["BoazEngineJS/btimer", "BoazEngineJS/directio
                     }
                 }
                 Dispose() {
-                    btimer_11.BStopwatch.removeWatch(this.timer);
+                    btimer_12.BStopwatch.removeWatch(this.timer);
                 }
                 HandleHit(source) {
                     super.HandleHit(source);
@@ -6533,35 +6337,35 @@ System.register("src/chandelier", ["BoazEngineJS/btimer", "BoazEngineJS/directio
                     super.Paint(offset);
                 }
             };
+            exports_57("Chandelier", Chandelier);
             Chandelier.ChandelierHitArea = common_22.newArea(14, 0, 35, 64);
             Chandelier.chandelierSprites = new Map([
-                [direction_12.Direction.None, [resourceids_21.BitmapId.Chandelier_1]]
+                [4, [104]]
             ]);
             Chandelier.AnimationFrames = [
-                { time: 125, data: resourceids_21.BitmapId.Chandelier_2 },
-                { time: 125, data: resourceids_21.BitmapId.Chandelier_3 },
-                { time: 125, data: resourceids_21.BitmapId.Chandelier_4 },
-                { time: 125, data: resourceids_21.BitmapId.Chandelier_5 },
+                { time: 125, data: 105 },
+                { time: 125, data: 106 },
+                { time: 125, data: 107 },
+                { time: 125, data: 108 },
             ];
-            exports_56("Chandelier", Chandelier);
             (function (ChandelierState) {
                 ChandelierState[ChandelierState["None"] = 0] = "None";
                 ChandelierState[ChandelierState["Falling"] = 1] = "Falling";
                 ChandelierState[ChandelierState["Crashing"] = 2] = "Crashing";
                 ChandelierState[ChandelierState["Crashed"] = 3] = "Crashed";
             })(ChandelierState || (ChandelierState = {}));
-            exports_56("ChandelierState", ChandelierState);
+            exports_57("ChandelierState", ChandelierState);
         }
     };
 });
-System.register("src/fprojectile", ["src/gameconstants", "src/projectile", "BoazEngineJS/common", "src/sintervaniamodel"], function (exports_57, context_57) {
+System.register("src/fprojectile", ["src/gameconstants", "src/projectile", "BoazEngineJS/common", "src/sintervaniamodel"], function (exports_58, context_58) {
     "use strict";
-    var gameconstants_9, projectile_2, common_23, sintervaniamodel_23, FProjectile;
-    var __moduleName = context_57 && context_57.id;
+    var gameconstants_10, projectile_2, common_23, sintervaniamodel_22, FProjectile;
+    var __moduleName = context_58 && context_58.id;
     return {
         setters: [
-            function (gameconstants_9_1) {
-                gameconstants_9 = gameconstants_9_1;
+            function (gameconstants_10_1) {
+                gameconstants_10 = gameconstants_10_1;
             },
             function (projectile_2_1) {
                 projectile_2 = projectile_2_1;
@@ -6569,8 +6373,8 @@ System.register("src/fprojectile", ["src/gameconstants", "src/projectile", "Boaz
             function (common_23_1) {
                 common_23 = common_23_1;
             },
-            function (sintervaniamodel_23_1) {
-                sintervaniamodel_23 = sintervaniamodel_23_1;
+            function (sintervaniamodel_22_1) {
+                sintervaniamodel_22 = sintervaniamodel_22_1;
             }
         ],
         execute: function () {
@@ -6584,68 +6388,69 @@ System.register("src/fprojectile", ["src/gameconstants", "src/projectile", "Boaz
                 }
                 TakeTurn() {
                     this.pos = common_23.addPoints(this.pos, this.speed);
-                    if (this.CanHurtPlayer && this.objectCollide(sintervaniamodel_23.GameModel._.Belmont))
-                        sintervaniamodel_23.GameModel._.Belmont.TakeDamage(this.DamageDealt);
+                    if (this.CanHurtPlayer && this.objectCollide(sintervaniamodel_22.GameModel._.Belmont))
+                        sintervaniamodel_22.GameModel._.Belmont.TakeDamage(this.DamageDealt);
                     if (this.checkWallSpriteCollisions() || this.checkWallCollision())
                         this.disposeFlag = true;
-                    if (this.pos.x < 0 || this.pos.x + this.size.x >= gameconstants_9.GameConstants.GameScreenWidth || this.pos.y < 0 || this.pos.y + this.size.y >= gameconstants_9.GameConstants.GameScreenHeight)
+                    if (this.pos.x < 0 || this.pos.x + this.size.x >= gameconstants_10.GameConstants.GameScreenWidth || this.pos.y < 0 || this.pos.y + this.size.y >= gameconstants_10.GameConstants.GameScreenHeight)
                         this.disposeFlag = true;
                 }
             };
-            exports_57("FProjectile", FProjectile);
+            exports_58("FProjectile", FProjectile);
         }
     };
 });
-System.register("src/game", ["BoazEngineJS/engine", "src/sintervaniamodel", "src/gamecontroller", "src/gameview"], function (exports_58, context_58) {
+System.register("src/game", ["BoazEngineJS/engine", "src/sintervaniamodel", "src/gamecontroller", "src/gameview", "src/gameconstants"], function (exports_59, context_59) {
     "use strict";
-    var engine, sintervaniamodel_24, gamecontroller_9, gameview_4;
-    var __moduleName = context_58 && context_58.id;
+    var engine, sintervaniamodel_23, gamecontroller_9, gameview_4, gameconstants_11;
+    var __moduleName = context_59 && context_59.id;
     function Annnndddd___Go() {
-        new engine.Game();
-        engine.game.setModel(new sintervaniamodel_24.GameModel());
+        new engine.Game({ x: gameconstants_11.GameConstants.GameScreenWidth, y: gameconstants_11.GameConstants.GameScreenHeight });
+        engine.game.setModel(new sintervaniamodel_23.GameModel());
         engine.game.setController(new gamecontroller_9.GameController());
         let gameview = new gameview_4.GameView();
         engine.game.setGameView(gameview);
         gameview.init();
+        sintervaniamodel_23.GameModel._.SelectedChapterToPlay = 3;
+        gamecontroller_9.GameController._.switchState(gameconstants_11.GameConstants.INITIAL_GAMESTATE);
+        gamecontroller_9.GameController._.switchSubstate(gameconstants_11.GameConstants.INITIAL_GAMESUBSTATE);
+        engine.game.start();
         return engine.game;
     }
-    exports_58("Annnndddd___Go", Annnndddd___Go);
+    exports_59("Annnndddd___Go", Annnndddd___Go);
     return {
         setters: [
-            function (engine_17) {
-                engine = engine_17;
+            function (engine_19) {
+                engine = engine_19;
             },
-            function (sintervaniamodel_24_1) {
-                sintervaniamodel_24 = sintervaniamodel_24_1;
+            function (sintervaniamodel_23_1) {
+                sintervaniamodel_23 = sintervaniamodel_23_1;
             },
             function (gamecontroller_9_1) {
                 gamecontroller_9 = gamecontroller_9_1;
             },
             function (gameview_4_1) {
                 gameview_4 = gameview_4_1;
+            },
+            function (gameconstants_11_1) {
+                gameconstants_11 = gameconstants_11_1;
             }
         ],
         execute: function () {
         }
     };
 });
-System.register("src/hag", ["BoazEngineJS/btimer", "BoazEngineJS/animation", "BoazEngineJS/direction", "BoazEngineJS/resourceids", "src/item", "src/foe", "src/gameconstants"], function (exports_59, context_59) {
+System.register("src/hag", ["BoazEngineJS/btimer", "BoazEngineJS/animation", "src/item", "src/foe", "src/gameconstants"], function (exports_60, context_60) {
     "use strict";
-    var btimer_12, animation_9, direction_13, resourceids_22, item_9, foe_4, gameconstants_10, Hag;
-    var __moduleName = context_59 && context_59.id;
+    var btimer_13, animation_9, item_9, foe_4, gameconstants_12, Hag;
+    var __moduleName = context_60 && context_60.id;
     return {
         setters: [
-            function (btimer_12_1) {
-                btimer_12 = btimer_12_1;
+            function (btimer_13_1) {
+                btimer_13 = btimer_13_1;
             },
             function (animation_9_1) {
                 animation_9 = animation_9_1;
-            },
-            function (direction_13_1) {
-                direction_13 = direction_13_1;
-            },
-            function (resourceids_22_1) {
-                resourceids_22 = resourceids_22_1;
             },
             function (item_9_1) {
                 item_9 = item_9_1;
@@ -6653,8 +6458,8 @@ System.register("src/hag", ["BoazEngineJS/btimer", "BoazEngineJS/animation", "Bo
             function (foe_4_1) {
                 foe_4 = foe_4_1;
             },
-            function (gameconstants_10_1) {
-                gameconstants_10 = gameconstants_10_1;
+            function (gameconstants_12_1) {
+                gameconstants_12 = gameconstants_12_1;
             }
         ],
         execute: function () {
@@ -6663,7 +6468,7 @@ System.register("src/hag", ["BoazEngineJS/btimer", "BoazEngineJS/animation", "Bo
                     super(pos);
                     this.CanHurtPlayer = true;
                     this.animation = new animation_9.Animation(Hag.AnimationFrames, null, true);
-                    this.timer = btimer_12.BStopwatch.createWatch();
+                    this.timer = btimer_13.BStopwatch.createWatch();
                     this.imgid = this.animation.stepValue();
                     this.timer.restart();
                     this.size = Hag.HagSize;
@@ -6685,14 +6490,14 @@ System.register("src/hag", ["BoazEngineJS/btimer", "BoazEngineJS/animation", "Bo
                     let stepValue = { nextStepValue: this.imgid };
                     this.animation.doAnimation(this.timer, stepValue);
                     this.imgid = stepValue.nextStepValue;
-                    this.flippedH = this.Direction == direction_13.Direction.Left;
-                    this.pos.x += this.Direction == direction_13.Direction.Left ? -2 : 2;
-                    if (this.pos.x >= gameconstants_10.GameConstants.GameScreenWidth || (0 > this.pos.x + this.size.x)) {
+                    this.flippedH = this.Direction == 3;
+                    this.pos.x += this.Direction == 3 ? -2 : 2;
+                    if (this.pos.x >= gameconstants_12.GameConstants.GameScreenWidth || (0 > this.pos.x + this.size.x)) {
                         this.disposeFlag = true;
                     }
                 }
                 Dispose() {
-                    btimer_12.BStopwatch.removeWatch(this.timer);
+                    btimer_13.BStopwatch.removeWatch(this.timer);
                 }
                 HandleHit(source) {
                     super.HandleHit(source);
@@ -6702,26 +6507,26 @@ System.register("src/hag", ["BoazEngineJS/btimer", "BoazEngineJS/animation", "Bo
                     super.Paint(offset);
                 }
             };
+            exports_60("Hag", Hag);
             Hag.HagSize = { x: 16, y: 32 };
             Hag.HagHitArea = { start: { x: 2, y: 2 }, end: { x: 14, y: 32 } };
-            Hag.hagSprites = new Map([[direction_13.Direction.None, [resourceids_22.BitmapId.Hag_1, resourceids_22.BitmapId.Hag_2]]]);
+            Hag.hagSprites = new Map([[4, [109, 110]]]);
             Hag.movementSprites = Hag.hagSprites;
-            Hag.AnimationFrames = new Array({ time: 250, data: resourceids_22.BitmapId.Hag_1 }, { time: 250, data: resourceids_22.BitmapId.Hag_2 });
-            exports_59("Hag", Hag);
+            Hag.AnimationFrames = new Array({ time: 250, data: 109 }, { time: 250, data: 110 });
         }
     };
 });
-System.register("src/haggenerator", ["BoazEngineJS/btimer", "src/sintervaniamodel", "BoazEngineJS/animation", "src/hag"], function (exports_60, context_60) {
+System.register("src/haggenerator", ["BoazEngineJS/btimer", "src/sintervaniamodel", "BoazEngineJS/animation", "src/hag"], function (exports_61, context_61) {
     "use strict";
-    var btimer_13, sintervaniamodel_25, animation_10, hag_1, HagGenerator;
-    var __moduleName = context_60 && context_60.id;
+    var btimer_14, sintervaniamodel_24, animation_10, hag_1, HagGenerator;
+    var __moduleName = context_61 && context_61.id;
     return {
         setters: [
-            function (btimer_13_1) {
-                btimer_13 = btimer_13_1;
+            function (btimer_14_1) {
+                btimer_14 = btimer_14_1;
             },
-            function (sintervaniamodel_25_1) {
-                sintervaniamodel_25 = sintervaniamodel_25_1;
+            function (sintervaniamodel_24_1) {
+                sintervaniamodel_24 = sintervaniamodel_24_1;
             },
             function (animation_10_1) {
                 animation_10 = animation_10_1;
@@ -6732,6 +6537,12 @@ System.register("src/haggenerator", ["BoazEngineJS/btimer", "src/sintervaniamode
         ],
         execute: function () {
             HagGenerator = class HagGenerator {
+                constructor(pos, directionOfHags) {
+                    this.spawnAnimation = new animation_10.Animation([true], [2000], true);
+                    this.timer = btimer_14.BStopwatch.createWatch();
+                    this.timer.restart();
+                    this.directionOfHags = directionOfHags;
+                }
                 get hitbox_sx() {
                     return this.pos.x + this.hitarea.start.x;
                 }
@@ -6753,19 +6564,13 @@ System.register("src/haggenerator", ["BoazEngineJS/btimer", "src/sintervaniamode
                 get z_plus_depth() {
                     return 0;
                 }
-                constructor(pos, directionOfHags) {
-                    this.spawnAnimation = new animation_10.Animation([true], [2000], true);
-                    this.timer = btimer_13.BStopwatch.createWatch();
-                    this.timer.restart();
-                    this.directionOfHags = directionOfHags;
-                }
-                takeTurn() {
+                TakeTurn() {
                     let stepValue = { nextStepValue: false };
                     if (this.spawnAnimation.doAnimation(this.timer, stepValue))
-                        sintervaniamodel_25.GameModel._.spawn(new hag_1.Hag({ pos: { x: this.pos.x, y: this.pos.y }, dir: this.directionOfHags }));
+                        sintervaniamodel_24.GameModel._.spawn(new hag_1.Hag({ pos: { x: this.pos.x, y: this.pos.y }, dir: this.directionOfHags }));
                 }
                 Dispose() {
-                    btimer_13.BStopwatch.removeWatch(this.timer);
+                    btimer_14.BStopwatch.removeWatch(this.timer);
                 }
                 spawn(spawningPos) {
                     if (spawningPos != null)
@@ -6780,33 +6585,27 @@ System.register("src/haggenerator", ["BoazEngineJS/btimer", "src/sintervaniamode
                 handleResizeEvent() {
                 }
                 exile() {
-                    btimer_13.BStopwatch.removeWatch(this.timer);
+                    btimer_14.BStopwatch.removeWatch(this.timer);
                 }
             };
-            exports_60("HagGenerator", HagGenerator);
+            exports_61("HagGenerator", HagGenerator);
         }
     };
 });
-System.register("src/pietula", ["BoazEngineJS/animation", "BoazEngineJS/btimer", "src/bossfoe", "BoazEngineJS/direction", "BoazEngineJS/resourceids", "BoazEngineJS/common"], function (exports_61, context_61) {
+System.register("src/pietula", ["BoazEngineJS/animation", "BoazEngineJS/btimer", "src/bossfoe", "BoazEngineJS/common"], function (exports_62, context_62) {
     "use strict";
-    var animation_11, btimer_14, bossfoe_1, direction_14, resourceids_23, common_24, PietulaState, Pietula;
-    var __moduleName = context_61 && context_61.id;
+    var animation_11, btimer_15, bossfoe_1, common_24, PietulaState, Pietula;
+    var __moduleName = context_62 && context_62.id;
     return {
         setters: [
             function (animation_11_1) {
                 animation_11 = animation_11_1;
             },
-            function (btimer_14_1) {
-                btimer_14 = btimer_14_1;
+            function (btimer_15_1) {
+                btimer_15 = btimer_15_1;
             },
             function (bossfoe_1_1) {
                 bossfoe_1 = bossfoe_1_1;
-            },
-            function (direction_14_1) {
-                direction_14 = direction_14_1;
-            },
-            function (resourceids_23_1) {
-                resourceids_23 = resourceids_23_1;
             },
             function (common_24_1) {
                 common_24 = common_24_1;
@@ -6823,7 +6622,7 @@ System.register("src/pietula", ["BoazEngineJS/animation", "BoazEngineJS/btimer",
                     super(pos);
                     this.CanHurtPlayer = true;
                     this.animation = new animation_11.Animation(Pietula.AnimationFrames, null, true);
-                    this.timer = btimer_14.BStopwatch.createWatch();
+                    this.timer = btimer_15.BStopwatch.createWatch();
                     this.imgid = this.animation.stepValue().img;
                     this.timer.restart();
                     this.hitarea = Pietula.PietulaHitArea;
@@ -6852,7 +6651,7 @@ System.register("src/pietula", ["BoazEngineJS/animation", "BoazEngineJS/btimer",
                     this.pos.y += stepValue.nextStepValue.dy;
                 }
                 Dispose() {
-                    btimer_14.BStopwatch.removeWatch(this.timer);
+                    btimer_15.BStopwatch.removeWatch(this.timer);
                 }
                 HandleHit(source) {
                     super.HandleHit(source);
@@ -6865,55 +6664,49 @@ System.register("src/pietula", ["BoazEngineJS/animation", "BoazEngineJS/btimer",
                     super.Die();
                 }
             };
+            exports_62("Pietula", Pietula);
             Pietula.PietulaHitArea = common_24.newArea(0, 0, 10, 16);
-            Pietula.pietulaSprites = new Map([[direction_14.Direction.None, [resourceids_23.BitmapId.Pietula_1]]]);
-            Pietula.AnimationFrames = new Array({ time: 250, data: { img: resourceids_23.BitmapId.Pietula_1, dy: -1 } }, { time: 250, data: { img: resourceids_23.BitmapId.Pietula_2, dy: 1 } });
-            exports_61("Pietula", Pietula);
+            Pietula.pietulaSprites = new Map([[4, [111]]]);
+            Pietula.AnimationFrames = new Array({ time: 250, data: { img: 111, dy: -1 } }, { time: 250, data: { img: 112, dy: 1 } });
         }
     };
 });
-System.register("src/story", [], function (exports_62, context_62) {
+System.register("src/story", [], function (exports_63, context_63) {
     "use strict";
     var Story;
-    var __moduleName = context_62 && context_62.id;
+    var __moduleName = context_63 && context_63.id;
     return {
         setters: [],
         execute: function () {
             Story = class Story {
             };
-            exports_62("Story", Story);
+            exports_63("Story", Story);
         }
     };
 });
-System.register("src/zakfoe", ["src/foe", "BoazEngineJS/btimer", "src/item", "BoazEngineJS/direction", "BoazEngineJS/common", "BoazEngineJS/resourceids", "src/sintervaniamodel", "src/gameconstants", "BoazEngineJS/msx"], function (exports_63, context_63) {
+System.register("src/zakfoe", ["src/foe", "BoazEngineJS/btimer", "src/item", "BoazEngineJS/common", "src/sintervaniamodel", "src/gameconstants", "BoazEngineJS/msx"], function (exports_64, context_64) {
     "use strict";
-    var foe_5, btimer_15, item_10, direction_15, common_25, resourceids_24, sintervaniamodel_26, gameconstants_11, msx_15, ZakFoe;
-    var __moduleName = context_63 && context_63.id;
+    var foe_5, btimer_16, item_10, common_25, sintervaniamodel_25, gameconstants_13, msx_15, ZakFoe;
+    var __moduleName = context_64 && context_64.id;
     return {
         setters: [
             function (foe_5_1) {
                 foe_5 = foe_5_1;
             },
-            function (btimer_15_1) {
-                btimer_15 = btimer_15_1;
+            function (btimer_16_1) {
+                btimer_16 = btimer_16_1;
             },
             function (item_10_1) {
                 item_10 = item_10_1;
             },
-            function (direction_15_1) {
-                direction_15 = direction_15_1;
-            },
             function (common_25_1) {
                 common_25 = common_25_1;
             },
-            function (resourceids_24_1) {
-                resourceids_24 = resourceids_24_1;
+            function (sintervaniamodel_25_1) {
+                sintervaniamodel_25 = sintervaniamodel_25_1;
             },
-            function (sintervaniamodel_26_1) {
-                sintervaniamodel_26 = sintervaniamodel_26_1;
-            },
-            function (gameconstants_11_1) {
-                gameconstants_11 = gameconstants_11_1;
+            function (gameconstants_13_1) {
+                gameconstants_13 = gameconstants_13_1;
             },
             function (msx_15_1) {
                 msx_15 = msx_15_1;
@@ -6925,13 +6718,13 @@ System.register("src/zakfoe", ["src/foe", "BoazEngineJS/btimer", "src/item", "Bo
                     super(pos);
                     this.CanHurtPlayer = true;
                     throw new Error("ZakFoe compileert nog niet omdat er gewoon nog wat zaken missen.");
-                    this.timer = btimer_15.BStopwatch.createWatch();
+                    this.timer = btimer_16.BStopwatch.createWatch();
                     this.imgid = this.animation.stepValue().img;
                     this.timer.restart();
                     this.hitarea = ZakFoe.ZakFoeHitArea;
                     this.size = common_25.newSize(16, 16);
                     this.itemSpawnedAfterKill = itemSpawned;
-                    this.Direction = direction_15.Direction.Left;
+                    this.Direction = 3;
                     this.Health = 1;
                 }
                 get DamageToPlayer() {
@@ -6951,48 +6744,49 @@ System.register("src/zakfoe", ["src/foe", "BoazEngineJS/btimer", "src/item", "Bo
                     this.animation.doAnimation(this.timer, stepValue);
                     this.imgid = stepValue.nextStepValue.img;
                     this.pos.y += stepValue.nextStepValue.dy;
-                    if (this.imgid == resourceids_24.BitmapId.ZakFoe_2) {
+                    if (this.imgid == 95) {
                         switch (this.Direction) {
-                            case direction_15.Direction.Left:
+                            case 3:
                                 this.pos.x -= 1;
                                 if (this.pos.x <= 0)
-                                    this.Direction = direction_15.Direction.Right;
-                                if (sintervaniamodel_26.GameModel._.CurrentRoom.AnyCollisionsTiles(true, { x: this.hitbox_sx, y: this.hitbox_sy }, { x: this.hitbox_sx, y: this.hitbox_ey }))
-                                    this.Direction = direction_15.Direction.Right;
-                                if (!sintervaniamodel_26.GameModel._.CurrentRoom.AnyCollisionsTiles(true, { x: this.hitbox_sx, y: this.hitbox_ey + msx_15.TileSize + 4 }))
-                                    this.Direction = direction_15.Direction.Right;
+                                    this.Direction = 1;
+                                if (sintervaniamodel_25.GameModel._.CurrentRoom.AnyCollisionsTiles(true, { x: this.hitbox_sx, y: this.hitbox_sy }, { x: this.hitbox_sx, y: this.hitbox_ey }))
+                                    this.Direction = 1;
+                                if (!sintervaniamodel_25.GameModel._.CurrentRoom.AnyCollisionsTiles(true, { x: this.hitbox_sx, y: this.hitbox_ey + msx_15.TileSize + 4 }))
+                                    this.Direction = 1;
                                 break;
-                            case direction_15.Direction.Right:
+                            case 1:
                                 this.pos.x += 1;
-                                if (this.pos.x >= gameconstants_11.GameConstants.GameScreenWidth)
-                                    this.Direction = direction_15.Direction.Left;
-                                if (sintervaniamodel_26.GameModel._.CurrentRoom.AnyCollisionsTiles(true, { x: this.hitbox_ex, y: this.hitbox_sy }, { x: this.hitbox_ex, y: this.hitbox_ey }))
-                                    this.Direction = direction_15.Direction.Left;
-                                if (!sintervaniamodel_26.GameModel._.CurrentRoom.AnyCollisionsTiles(true, { x: this.hitbox_ex, y: this.hitbox_ey + msx_15.TileSize + 4 }))
-                                    this.Direction = direction_15.Direction.Left;
+                                if (this.pos.x >= gameconstants_13.GameConstants.GameScreenWidth)
+                                    this.Direction = 3;
+                                if (sintervaniamodel_25.GameModel._.CurrentRoom.AnyCollisionsTiles(true, { x: this.hitbox_ex, y: this.hitbox_sy }, { x: this.hitbox_ex, y: this.hitbox_ey }))
+                                    this.Direction = 3;
+                                if (!sintervaniamodel_25.GameModel._.CurrentRoom.AnyCollisionsTiles(true, { x: this.hitbox_ex, y: this.hitbox_ey + msx_15.TileSize + 4 }))
+                                    this.Direction = 3;
                                 break;
                         }
                     }
                     super.TakeTurn();
                 }
                 Dispose() {
-                    btimer_15.BStopwatch.removeWatch(this.timer);
+                    btimer_16.BStopwatch.removeWatch(this.timer);
                 }
                 HandleHit(source) {
                     super.HandleHit(source);
                     this.loseHealth(source);
                 }
                 Paint(offset = null) {
-                    this.flippedH = this.Direction == direction_15.Direction.Left ? true : false;
+                    this.flippedH = this.Direction == 3 ? true : false;
                     super.Paint(offset);
                 }
             };
+            exports_64("ZakFoe", ZakFoe);
             ZakFoe.ZakFoeHitArea = common_25.newArea(2, 2, 14, 14);
             ZakFoe.zakFoeSprites = new Map([
-                [direction_15.Direction.Right, [resourceids_24.BitmapId.ZakFoe_1, resourceids_24.BitmapId.ZakFoe_2, resourceids_24.BitmapId.ZakFoe_3]],
-                [direction_15.Direction.Left, [resourceids_24.BitmapId.ZakFoe_1, resourceids_24.BitmapId.ZakFoe_2, resourceids_24.BitmapId.ZakFoe_3]],
+                [1, [94, 95, 96]],
+                [3, [94, 95, 96]],
             ]);
-            exports_63("ZakFoe", ZakFoe);
         }
     };
 });
+//# sourceMappingURL=thegame.js.map

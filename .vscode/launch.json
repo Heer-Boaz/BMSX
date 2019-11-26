@@ -8,7 +8,7 @@
 			"type": "chrome",
 			"request": "launch",
 			"name": "Launch Chrome against localhost",
-			"url": "file:///{${workspaceFolder}/GameDebug.html",
+			"url": "file:///${workspaceFolder}/GameDebug.html",
 			"webRoot": "${workspaceFolder}",
 			"sourceMaps": true,
 		}

@@ -1,4 +1,4 @@
-export enum Key {
+export const enum Key {
     Up,
     Right,
     Down,

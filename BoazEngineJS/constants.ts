@@ -2,16 +2,10 @@
 import { GameState, GameSubstate } from "./model"
 
 export namespace Constants {
-    export const INITIAL_GAMESTATE: GameState = GameState.None;
-    export const INITIAL_GAMESUBSTATE: GameSubstate = GameSubstate.Default;
-    export const IMAGE_PATH: string = 'img/';
-    export const AUDIO_PATH: string = 'snd/';
-    // export const IMAGE_SOURCES: string[] | null = [
-    // 'id:<bestand>.png',
-    // ];
-    // export const AUDIO_SOURCES: string[] | null = null;
-    export const GAMESCREEN_WIDTH: number = 1000;
-    export const GAMESCREEN_HEIGHT: number = 600;
+    export const IMAGE_PATH: string = 'rom/Graphics/';
+    export const AUDIO_PATH: string = 'rom/';
+    // export const IMAGE_PATH: string = 'img/';
+    // export const AUDIO_PATH: string = 'snd/';
     export const DRAWBITMAP_NO_OPTION = 0;
     export const DRAWBITMAP_HFLIP = 0x1;
     export const DRAWBITMAP_VFLIP = 0x2;

@@ -4,7 +4,7 @@ export class BStopwatch {
     public pauseDuringMenu: boolean = true;
     public pauseAtFocusLoss: boolean = true;
     public running: boolean = false;
-    public elapsedMilliseconds: number = 0;
+    public elapsedMilliseconds: number;
     private static watchesThatHaveBeenStopped: BStopwatch[] = [];
     private static watchesThatHaveBeenStoppedAtFocusLoss: BStopwatch[] = [];
 
@@ -63,6 +63,10 @@ export class BStopwatch {
     private static resumeAllPausedWatchesOnFocus(): void {
         this.watchesThatHaveBeenStoppedAtFocusLoss.forEach(w => w.start());
         this.watchesThatHaveBeenStoppedAtFocusLoss.length = 0;
+    }
+
+    constructor() {
+        this.elapsedMilliseconds = 0;
     }
 
     public start = (): void => {

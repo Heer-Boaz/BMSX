@@ -15,13 +15,13 @@ import { SlotExists } from "../BoazEngineJS/gamestateloader";
 import { GameState } from "../BoazEngineJS/model";
 import { AudioId, BitmapId } from "../BoazEngineJS/resourceids";
 
-export enum State {
+export const enum State {
     SelectMain,
     SubMenu,
     SelectChapter
 }
 
-export enum MenuItem {
+export const enum MenuItem {
     NewGame,
     Continue,
     LoadGame,

@@ -1,6 +1,10 @@
 import { MSXConstants, TileSize } from "../BoazEngineJS/msx";
+import { GameState, GameSubstate } from "../BoazEngineJS/model";
 
 export namespace GameConstants {
+    export const INITIAL_GAMESTATE: GameState = GameState.GameStart1;
+    export const INITIAL_GAMESUBSTATE: GameSubstate = GameSubstate.Default;
+
     export const SoundEnabled: boolean = false;
     export const InitialFullscreen: boolean = false;
     export const InitialScale: number = 1;

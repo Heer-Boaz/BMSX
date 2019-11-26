@@ -24,7 +24,7 @@ interface MenuOption {
 }
 
 declare module "./mainmenu" {
-    export enum MenuItem {
+    export const enum MenuItem {
         Dummy = -1,
         SaveGame,
         SaveSlot,

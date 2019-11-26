@@ -5,10 +5,13 @@ BoazEngineJS/tsconfig.jsonmaarbugt
 **.dll
 **.obj
 **.pdb
-**.wav
+# **.wav
 **.jpg
-**.png
+# **.png
 **.bmp
 **.gif
 **.mp3
+**.js
 src/sintervaniamodelold.ts
+out/thegame.js.map
+out/thegame.js

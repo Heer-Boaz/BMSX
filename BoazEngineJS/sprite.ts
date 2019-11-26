@@ -55,11 +55,9 @@ export abstract class Sprite implements IGameObject {
 		throw new Error("Method not implemented.");
 	}
 
-	// Methods
-	takeTurn(): void {
-	}
+	abstract TakeTurn(): void;
 
-	paint(offset?: Point): void {
+	Paint(offset?: Point): void {
 		view.drawImg(this.imgid, offset ? addPoints(this.pos, offset) : this.pos);
 	}
 

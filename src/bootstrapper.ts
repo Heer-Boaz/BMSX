@@ -11,6 +11,8 @@ export class Bootstrapper {
             case Chapter.GameStart:
                 Bootstrapper.bootstrapGameForGameStart();
                 break;
+            default:
+                throw Error(`Incorrect chapter for bootstrapping game! Chapter = ${chapter}`);
         }
     }
     private static bootstrapGameForGameStart(): void {

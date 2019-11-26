@@ -3,7 +3,10 @@ import { Model } from "./model"
 import { Controller } from "./controller"
 import { View } from "./view"
 import { SoundMaster } from "./soundmaster";
-import { IGameView } from './interfaces';
+import { IGameView, Size } from './interfaces';
+import { BStopwatch } from './btimer';
+import { ResourceMaster, img2src, snd2src } from '../src/resourcemaster';
+import { GameLoader } from "./gameloader";
 
 export let game: Game;
 export let model: Model;
@@ -20,11 +23,12 @@ export class Game {
 
     turnCounter: number;
 
-    constructor() {
+    constructor(gamescreenSize: Size) {
         game = this;
         sound = new SoundMaster();
-        view = new View();
+        view = new View(gamescreenSize);
         this.fps = 50;
+        this.lastUpdate = 0;
     }
 
     public setModel(m: Model): void {
@@ -47,15 +51,20 @@ export class Game {
         throw Error("Not implemented yet :-(");
         // GameOptionsPersistor.SaveOptions(GO._);
     }
+
     private loadGameOptions(): void {
         throw Error("Not implemented yet :-(");
         // let result = GameOptionsPersistor.LoadOptions();
         // if (result != null)
         //     GO._ = result;
     }
-    public startAfterLoad(): void {
-        controller.switchState(Constants.INITIAL_GAMESTATE);
-        controller.switchSubstate(Constants.INITIAL_GAMESUBSTATE);
+
+    public start(): void {
+        ResourceMaster._.PrepareGameResources();
+        GameLoader.loadgame(img2src, snd2src);
+    }
+
+    public startAfterGameLoad(): void {
         requestAnimationFrame(function (timestamp) {
             game.run(timestamp);
         });
@@ -83,6 +92,7 @@ export class Game {
     }
 
     public update(elapsedMs: number): void {
+        BStopwatch.updateTimers(elapsedMs);
         controller.takeTurn(elapsedMs);
     }
 
@@ -93,6 +103,7 @@ export class Game {
     public run(timestamp: number): void {
         let elapsedMs = timestamp - this.lastUpdate;
         this.lastUpdate = timestamp; // || new Date().getTime(); //if browser doesn't support requestAnimationFrame, generate our own timestamp using Date
+        // if (elapsedMs !== NaN) debugger;
         this.update(elapsedMs);
         this.draw(elapsedMs);
 

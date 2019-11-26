@@ -13,7 +13,7 @@ import { Room } from "./room";
 import { RoomFactory } from "./RoomFactory";
 
 declare module "../BoazEngineJS/model" {
-    export enum GameState {
+    export const enum GameState {
         Editor,
         Prelude,
         Story,
@@ -29,7 +29,7 @@ declare module "../BoazEngineJS/model" {
         GameOver
     }
 
-    export enum GameSubstate {
+    export const enum GameSubstate {
         Conversation,
         BelmontDies,
         ItsCurtainsForYou,
@@ -41,7 +41,7 @@ declare module "../BoazEngineJS/model" {
     }
 }
 
-export enum Chapter {
+export const enum Chapter {
     Debug,
     Prologue,
     Chapter_0,
@@ -86,17 +86,17 @@ export enum Switch {
     Ch0_LangVerhaal
 }
 
-export enum CombatType {
+export const enum CombatType {
     Encounter,
     Boss
 }
 
-export enum MainWeaponType {
+export const enum MainWeaponType {
     None = 0,
     TriRoe
 }
 
-export enum SecWeaponType {
+export const enum SecWeaponType {
     None = 0,
     Cross
 }
@@ -116,9 +116,6 @@ export class GameModel extends Model {
     public static set _(value: GameModel) {
         GameModel._instance = value;
     }
-
-    public id2object: Map<string, IGameObject>;
-    public objects: IGameObject[];
 
     public Foes: Foe[];
     public ItemsInInventory: BagItem[];
@@ -175,7 +172,7 @@ export class GameModel extends Model {
 
     private _lastFoeThatWasHit: Foe;
     public get LastFoeThatWasHit(): Foe {
-        if (this._lastFoeThatWasHit == null)
+        if (!this._lastFoeThatWasHit)
             return null;
         if (this._lastFoeThatWasHit.disposeFlag)
             return null;
@@ -214,6 +211,7 @@ export class GameModel extends Model {
         this.DoorsOpened = new Map<string, boolean>();
         this.MainWeaponCooldownTimer = BStopwatch.createWatch();
         this.SecWeaponCooldownTimer = BStopwatch.createWatch();
+        this._hearts = 0;
         RoomFactory.PrepareData();
     }
 
@@ -227,6 +225,7 @@ export class GameModel extends Model {
         GameModel._.FoesDefeated.clear();
         GameModel._.ItemsPickedUp.clear();
         GameModel._.WeaponItemsPickedUp.clear();
+        this._hearts = 0;
         GameModel._.spawn(new Belmont());
     }
 

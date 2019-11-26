@@ -75,6 +75,6 @@ export class HeartSmall extends Sprite {
 	}
 
 	public Paint(offset: Point = null): void {
-		super.paint(offset);
+		super.Paint(offset);
 	}
 }

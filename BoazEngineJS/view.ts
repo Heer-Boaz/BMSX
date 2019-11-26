@@ -12,13 +12,15 @@ export class View {
     public context: CanvasRenderingContext2D;
 
     public windowSize: Size;
+    public gamescreenSize: Size;
     public dx: number;
     public dy: number;
     public dxy: number;
 
-    constructor() {
+    constructor(gamescreensize: Size) {
         this.canvas = <HTMLCanvasElement>$('#gamescreen')[0];
         this.context = this.canvas.getContext('2d');
+        this.gamescreenSize = gamescreensize;
     }
 
     public init(): void {
@@ -26,8 +28,8 @@ export class View {
     }
 
     public setRelativeToScreenSize(element: HTMLElement, size: Point): void {
-        element.style.width = [size.x * this.dx, 'px'].join('');
-        element.style.height = [size.y * this.dy, 'px'].join('');
+        // element.style.width = [size.x * this.dx, 'px'].join('');
+        // element.style.height = [size.y * this.dy, 'px'].join('');
         // element.style.transform = 'translate(' + ~~(pos.x * this.dx) + 'px,' + ~~(pos.y * this.dy) + 'px) scale(' + this.dx + ',' + this.dy + ')';
     }
 
@@ -35,19 +37,22 @@ export class View {
         let w = Math.max(document.documentElement.clientWidth, window.innerWidth || 0);
         let h = Math.max(document.documentElement.clientHeight, window.innerHeight || 0);
         this.windowSize = <Size>{ x: w, y: h };
-        this.dx = this.windowSize.x / Constants.GAMESCREEN_WIDTH;
-        this.dy = this.windowSize.y / Constants.GAMESCREEN_HEIGHT;
+        this.dx = this.windowSize.x / this.gamescreenSize.x;
+        this.dy = this.windowSize.y / this.gamescreenSize.y;
         this.dxy = Math.min(this.dx, this.dy);
     }
 
     public handleResize(): void {
         if (document.getElementById('gamescreen').style.visibility == 'hidden') return;
         view.calculateSize();
+        this.canvas.width = this.windowSize.x;
+        this.canvas.height = this.windowSize.y;
 
-        document.getElementById('gamescreen').style.transform = ['scale(', view.dx, ',', view.dy, ')'].join('');
-        document.getElementById('gamescreen').style.transformOrigin = '0 0';
-        document.getElementById('gamescreen').style.width = (view.windowSize.x * (1 + view.dx)) + 'px';
-        document.getElementById('gamescreen').style.height = (view.windowSize.y * (1 + view.dy)) + 'px';
+        // document.getElementById('gamescreen').style.transform = ['scale(', view.dx, ',', view.dy, ')'].join('');
+        // document.getElementById('gamescreen').style.transformOrigin = '0 0';
+        // document.getElementById('gamescreen').style.width = (view.windowSize.x * (1 + view.dx)) + 'px';
+        // document.getElementById('gamescreen').style.height = (view.windowSize.y * (1 + view.dy)) + 'px';
+
         // model.objects.forEach((x) => { x.handleResizeEvent(); });
     }
 
@@ -86,13 +91,15 @@ export class View {
         if (!img) throw new Error("Cannot find image with id '" + imgid + "'");
 
         this.context.save();
-        this.context.translate(pos.x, pos.y);
-        this.context.drawImage(img, 0, 0);
+        this.context.scale(this.dx, this.dy);
+        // this.context.translate(pos.x, pos.y);
+        this.context.drawImage(img, pos.x, pos.y);
         this.context.restore();
     }
 
     public DrawRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
         this.context.save();
+        this.context.scale(this.dx, this.dy);
         this.context.beginPath();
         this.context.strokeStyle = this.toRgb(c);
         this.context.rect(x, y, ex - x, ey - y);
@@ -102,6 +109,7 @@ export class View {
 
     public FillRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
         this.context.save();
+        this.context.scale(this.dx, this.dy);
         this.context.beginPath();
         let colorRgb = this.toRgb(c);
         this.context.fillStyle = colorRgb;

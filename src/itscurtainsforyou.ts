@@ -1,17 +1,17 @@
 import { BStopwatch } from "../BoazEngineJS/btimer";
-import { MSXConstants as MCS, TileSize } from "../BoazEngineJS/msx"
-import { Constants as CS } from "../BoazEngineJS/constants"
+import { TileSize } from "../BoazEngineJS/msx"
 import { waitDuration } from "../BoazEngineJS/common";
 import { view } from "../BoazEngineJS/engine";
 import { GameController as C } from "./gamecontroller";
 import { Point } from "../BoazEngineJS/interfaces";
 import { BitmapId } from "../BoazEngineJS/resourceids";
+import { GameConstants } from "./gameconstants";
 
 export class ItsCurtainsForYou {
     private curtainPartCount: number;
     private timer: BStopwatch;
     private msCurtainPartWait: number = 18;
-    private maxCurtainParts: number = CS.GAMESCREEN_WIDTH / TileSize;
+    private maxCurtainParts: number = GameConstants.GameScreenWidth / TileSize;
 
     public Init(): void {
         this.curtainPartCount = 0;

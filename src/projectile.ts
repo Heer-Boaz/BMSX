@@ -7,7 +7,7 @@ import { view } from "../BoazEngineJS/engine";
 import { Point } from "../BoazEngineJS/interfaces";
 
 /*[Serializable]*/
-export class Projectile extends Sprite {
+export abstract class Projectile extends Sprite {
     public Direction: Direction;
     protected speed: Point;
 

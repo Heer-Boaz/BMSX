@@ -52,17 +52,17 @@ export class RoomFactory {
 	}
 
 	public static LoadRoom(id: number): Room {
-		if (!RoomFactory.rooms.has(id)) {
+		if (!RoomFactory.RoomExists(id)) {
 			throw Error("Room " + id + " could not be found in dictionary!");
 		}
 
-		return Room.LoadRoom(RoomFactory.rooms[id]);
+		return Room.LoadRoom(RoomFactory.rooms.get(id));
 	}
 
 	private static posOnMap(map: number[][], id: number): Point {
 		for (let y = 0; (y < map.length); y++) {
 			for (let x = 0; (x < map[y].length); x++) {
-				if ((map[y][x] == id)) {
+				if (map[y][x] == id) {
 					return newPoint(x, y);
 				}
 			}
@@ -74,9 +74,9 @@ export class RoomFactory {
 	private static roomExits(map: number[][], id: number): number[] {
 		let result: number[] = new Array(4);
 		let pos = RoomFactory.posOnMap(map, id);
-		for (let i = 0; (i < RoomFactory.dirOffsets.length); i++) {
-			let x: number = (pos.x + RoomFactory.dirOffsets[i][0]);
-			let y: number = (pos.y + RoomFactory.dirOffsets[i][1]);
+		for (let i = 0; i < RoomFactory.dirOffsets.length; i++) {
+			let x: number = pos.x + RoomFactory.dirOffsets[i].x;
+			let y: number = pos.y + RoomFactory.dirOffsets[i].y;
 			if (((x < 0)
 				|| ((x >= map[y].length)
 					|| ((y < 0)
@@ -94,7 +94,7 @@ export class RoomFactory {
 
 	public static PrepareData() {
 		RoomFactory.rooms = new Map<number, RoomDataContainer>();
-		// PrepareStage0Data();
+		RoomFactory.PrepareStage0Data();
 		// PrepareStage1Data();
 		// PrepareStage2Data();
 	}
@@ -142,7 +142,7 @@ export class RoomFactory {
 
 	public static RoomMap_stage0: number[][] = [
 		[0, 0, 0, 0, 0,],
-		[0, 0, 100, 0, 0,],
+		[0, 0, 1, 0, 0,],
 		[0, 0, 0, 0, 0,],
 		[0, 0, 0, 0, 0,],
 	];
@@ -153,9 +153,9 @@ export class RoomFactory {
 		let bitmapPath: string;
 		let map: number[][];
 		let initFunction: RoomInitDelegate;
-		id = 100;
+		id = 1;
 		map = RoomFactory.RoomMap_stage0;
-		bitmapPath = "./Resources/Graphics/Stage/castle_entrance_3.png";
+		bitmapPath = "Stage/Garden_entrance.png";
 		collisionData = [
 			"################################",
 			"#..............................#",

@@ -9,11 +9,7 @@ import { ResourceMaster as RM } from "./resourcemaster";
 import { Point } from "../BoazEngineJS/interfaces";
 
 /*[Serializable]*/
-export class Foe extends Creature {
-    Paint(offset: Point): any {
-        throw new Error("Method not implemented.");
-    }
-
+export abstract class Foe extends Creature {
     public MaxHealth: number;
     public Health: number;
 
