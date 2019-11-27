@@ -5,11 +5,14 @@
   "main": "gulpfile.js",
   "dependencies": {
     "@types/jquery": "^3.3.31",
+    "blob": "0.0.5",
     "jquery": "^3.4.1",
+    "node-fetch": "^2.6.0",
     "requirejs": "^2.3.6"
   },
   "devDependencies": {
-    "@types/node": "^12.12.14"
+    "@types/node": "^12.12.14",
+    "@types/node-fetch": "^2.5.4"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

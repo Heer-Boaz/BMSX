@@ -7,10 +7,95 @@ import { GameModel, Chapter } from './sintervaniamodel';
 import { GameController } from "./gamecontroller";
 import { GameView } from './gameview';
 import { GameState } from "../BoazEngineJS/model";
-import { GameConstants } from "./gameconstants";
+import { GameConstants, Belmont_InitPos_x } from './gameconstants';
 import { LoadGame } from '../BoazEngineJS/gamestateloader';
+import { RomResource } from '../BoazEngineJS/rom';
+import { DrawBitmap } from '../BoazEngineJS/view';
+
+// function readStream(stream: ReadableStream): Uint8Array {
+// 	const reader = stream.getReader();
+// 	let result = new Uint8Array();
+// 	let charsReceived = 0;
+
+// 	// read() returns a promise that resolves
+// 	// when a value has been received
+// 	reader.read().then(function processText({ done, value }) {
+// 		// Result objects contain two properties:
+// 		// done  - true if the stream has already given you all its data.
+// 		// value - some data. Always undefined when done is true.
+// 		if (done) {
+// 			console.log("Stream complete");
+// 			return;
+// 		}
+
+// 		charsReceived += value.length;
+// 		const chunk = value;
+// 		console.log('Read ' + charsReceived + ' characters so far. Current chunk = ' + chunk);
+
+// 		result. += chunk;
+
+// 		// Read some more, and call this function again
+// 		return reader.read().then(processText);
+// 	});
+// }
+
+async function loadRom(): Promise<ArrayBuffer> {
+	return fetch("http://127.0.0.1:8887/rom/packed.rom")
+		.then(response => response.arrayBuffer)
+		.catch(e => { console.error(e); return null; });
+}
+
+async function loadResourceList(): Promise<RomResource[]> {
+	return fetch("http://127.0.0.1:8887/rom/romtable.json")
+		.then(response => response.json())
+		.catch(e => { console.error(e); return null; });
+}
+
+function loadResources(rom: ArrayBuffer) {
+	loadResourceList()
+		.then(list => list.forEach(x => load(rom, x)));
+}
+
+function load(rom: ArrayBuffer, res: RomResource) {
+	if (res.type !== 'image') return;
+	rom = new Uint8Array(rom);
+
+	let sliced = rom.slice(res.start, res.end);
+	let blub = new Blob([sliced], { type: 'application/octet-stream' });
+	let url = URL.createObjectURL(blub);
+	new engine.Game({ x: GameConstants.ViewportWidth, y: GameConstants.ViewportHeight });
+	let image = new HTMLImageElement();
+	image.src = url;
+	engine.images.set("bla", image);
+	view.DrawBitmap(
+
+		console.log(url);
+}
 
 export function Annnndddd___Go(): engine.Game {
+	// let d = Uint8Array.from(readFileSync("../rom/packed.rom")).buffer;
+	loadRom()
+		.then(rom => loadResources(rom.blob))
+		.catch(console.error);
+	// let b = fetch("../rom/romtable.json")
+	// 	// Retrieve its body as ReadableStream
+	// 	.then(response => response.blob)
+	// 	// Create an object URL for the response
+	// 	.then(blob => URL.createObjectURL(blob))
+	// 	// Update image
+	// 	.then(url => image.src = url)
+	// 	.catch(console.error);
+
+	// resourcesToRead.forEach(x => {
+	// 	if (x.type !== 'image') return;
+	// 	let sliced = d.slice(x.start, x.end);
+	// 	let blub = new Blob([sliced], { type: 'application/octet-stream' });
+	// 	let url = URL.createObjectURL(blub);
+	// 	console.log(url);
+	// });
+
+	return null;
+
 	new engine.Game({ x: GameConstants.ViewportWidth, y: GameConstants.ViewportHeight });
 	engine.game.setModel(new GameModel());
 	engine.game.setController(new GameController());

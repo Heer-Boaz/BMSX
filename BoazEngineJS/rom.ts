@@ -1,4 +1,3 @@
-
 // /**
 //  * Creates a new Uint8Array based on two different ArrayBuffers
 //  * https://gist.github.com/72lions/4528834
@@ -34,8 +33,17 @@
 // 	var blob = new Blob([new Uint8Array(0)], { type: 'application/octet-stream' });
 // }
 
+export interface RomResource {
+	resid: number;
+	resname: string;
+	type: string;
+	start: number;
+	end: number;
+}
+
 import { readdirSync, statSync, readFileSync, writeFileSync } from "fs";
 import { join, parse } from "path";
+import fetch from "node-fetch";
 
 function getAllFiles(dirPath: string, arrayOfFiles?: string[]): string[] {
 	let files = readdirSync(dirPath);
@@ -62,16 +70,16 @@ try {
 	arrayOfFiles.forEach(x => buffers.push(readFileSync(x)));
 
 	let tsout = new Array<string>();
-	let jsonout = new Array<{ resid: number, resname: string, start: number, end: number }>();
+	let jsonout = new Array<RomResource>();
 	let bufferPointer = 0;
 	for (let i = 0; i < arrayOfFiles.length; i++) {
-		jsonout.push({ resid: i, resname: parse(arrayOfFiles[i]).name, start: bufferPointer, end: bufferPointer + buffers[i].length });
+		let type = parse(arrayOfFiles[i]).ext === '.wav' ? 'audio' : 'image';
+		jsonout.push({ resid: i, resname: parse(arrayOfFiles[i]).name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length });
 		bufferPointer += buffers[i].length;
 	}
 
 	writeFileSync("../rom/packed.rom", Buffer.concat(buffers));
 	writeFileSync("../rom/romtable.json", JSON.stringify(jsonout));
-
 } catch (e) {
 	console.log(e);
 }
