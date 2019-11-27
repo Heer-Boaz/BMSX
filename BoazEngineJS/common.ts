@@ -157,10 +157,6 @@ export function sessionStorageAvailable(): boolean {
     return storageAvailable('sessionStorage');
 }
 
-// export class Extensions
-//                 {
-// public static Dir2dx:Dictionary<Direction,number>  =  __init(new Dictionary<Direction,number>  (),{ { Direction.Up,0 },{ Direction.Right,1 },{ Direction.Down,0 },{ Direction.Left,-1 } });
-// public static Dir2dy:Dictionary<Direction,number>  =  __init(new Dictionary<Direction,number>  (),{ { Direction.Up,-1 },{ Direction.Right,0 },{ Direction.Down,1 },{ Direction.Left,0 } });
 export function LookAt(subjectpos: Point, targetpos: Point): Direction {
     let delta: Point = <Point>{ x: subjectpos.x - targetpos.x, y: subjectpos.x - targetpos.y };
     if (Math.abs(delta.x) >= Math.abs(delta.y)) {

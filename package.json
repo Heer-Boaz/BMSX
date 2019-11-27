@@ -8,7 +8,9 @@
     "jquery": "^3.4.1",
     "requirejs": "^2.3.6"
   },
-  "devDependencies": {},
+  "devDependencies": {
+    "@types/node": "^12.12.14"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
