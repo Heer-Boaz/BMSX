@@ -195,6 +195,7 @@ export class Belmont extends Creature {
 		this.dyingState.aniTimer = BStopwatch.createWatch();
 		this.roeState.aniTimer = BStopwatch.createWatch();
 		this.setExtendedProperty(M.PROPERTY_KEEP_AT_ROOMSWITCH, true);
+		this.priority = 200;
 	}
 
 	public ResetToDefaultFrame(): void {

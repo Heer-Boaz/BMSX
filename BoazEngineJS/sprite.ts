@@ -44,6 +44,7 @@ export abstract class Sprite implements IGameObject {
 		this.disposeFlag = false;
 		this.imgid = null;
 		this.extendedProperties = new Map<string, any>();
+		this.priority = 100;
 		if (imageId) this.imgid = imageId;
 	}
 
