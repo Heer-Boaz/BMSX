@@ -12,7 +12,7 @@ export abstract class PlayerProjectile extends Projectile {
     }
     public CheckAndInvokeHit(): boolean {
         let enemyWasHit: boolean = false;
-        model._.Foes.filter(f => f.hittable && this.objectCollide(f)).filter((f: Foe) => !this.foesThatWereHit.includes(f)).forEach((f: Foe) => {
+        model._.Foes.filter(f => f.hittable && this.objectCollide(f)).filter(f => !this.foesThatWereHit.includes(f)).forEach(f => {
             this.foesThatWereHit.push(f);
             f.HandleHit(this);
             enemyWasHit = true;

@@ -47,9 +47,11 @@ export class View {
     public handleResize(): void {
         if (document.getElementById('gamescreen').style.visibility == 'hidden') return;
         view.calculateSize();
-        this.canvas.width = this.windowSize.x;
-        this.canvas.height = this.windowSize.y;
+        this.canvas.width = this.viewportSize.x * this.dxy; //this.windowSize.x;
+        this.canvas.height = this.viewportSize.y * this.dxy; //this.windowSize.y;
 
+        this.canvas.style.left = (this.windowSize.x - this.canvas.width) / 2 + "px";
+        this.canvas.style.top = (this.windowSize.y - this.canvas.height) / 2 + "px";
         // document.getElementById('gamescreen').style.transform = ['scale(', view.dx, ',', view.dy, ')'].join('');
         // document.getElementById('gamescreen').style.transformOrigin = '0 0';
         // document.getElementById('gamescreen').style.width = (view.windowSize.x * (1 + view.dx)) + 'px';

@@ -219,7 +219,7 @@ export class GameModel extends Model {
         GameModel._.BossBattle = false;
         GameModel._.RoomExitsLocked = false;
         GameModel._.Switches.clear();
-        Object.keys(Switch).forEach(t => GameModel._.Switches[t] = false);
+        Object.keys(Switch).forEach(t => GameModel._.Switches.set(Switch[t], false));
         GameModel._.ItemsInInventory.length = 0;
         GameModel._.WeaponsInInventory.length = 0;
         GameModel._.FoesDefeated.clear();
@@ -258,10 +258,26 @@ export class GameModel extends Model {
         super.spawn(o);
     }
 
+    public remove(o: IGameObject): void {
+        if (o instanceof Belmont) {
+            GameModel._.Belmont = null;
+        }
+
+        if (o instanceof Foe) {
+            let index = this.Foes.indexOf(o);
+            if (index > -1) {
+                delete this.Foes[index];
+                this.Foes.splice(index, 1);
+            }
+        }
+
+        super.remove(o);
+    }
+
     public FoeDefeated(f: Foe): void {
         if (f.RespawnAtRoomEntry) return;
-        if (this.FoesDefeated.has(f.id) && this.FoesDefeated[f.id].defeated)
-            this.FoesDefeated[f.id] = true;
+        if (this.FoesDefeated.has(f.id) && this.FoesDefeated.get(f.id) === true)
+            this.FoesDefeated.set(f.id, true);
         else this.FoesDefeated.set(f.id, true);
     }
 
@@ -274,7 +290,7 @@ export class GameModel extends Model {
     }
 
     public GetSwitchState(s: Switch): boolean {
-        return this.Switches.has(s) ? this.Switches[s] : false;
+        return this.Switches.has(s) ? this.Switches.get(s) : false;
     }
 
     public GetItemPickedUp(id: string): boolean {

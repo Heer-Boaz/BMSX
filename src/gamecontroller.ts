@@ -199,8 +199,9 @@ export class GameController extends Controller {
                     case GameSubstate.Default:
                         this.handleInputDuringGame();
                         let objects = M._.objects;
-                        M._.objects.forEach(o => o.TakeTurn());
-                        M._.objects.filter(o => o.disposeFlag).forEach(o => M._.remove(o));
+                        let foes = M._.Foes;
+                        objects.forEach(o => o.TakeTurn());
+                        objects.filter(o => o.disposeFlag === true).forEach(o => M._.remove(o));
                         M._.CurrentRoom.TakeTurn();
                         V._.Hud.TakeTurn();
                         break;
@@ -220,8 +221,9 @@ export class GameController extends Controller {
                         M._.GameMenu.TakeTurn();
                         break;
                     default:
-                        M._.objects.forEach(o => o.TakeTurn());
-                        M._.objects.filter(o => o.disposeFlag).forEach(o => M._.remove(o));
+                        let objects = M._.objects;
+                        objects.forEach(o => o.TakeTurn());
+                        objects.filter(o => o.disposeFlag === true).forEach(o => M._.remove(o));
                         M._.CurrentRoom.TakeTurn();
                         V._.Hud.TakeTurn();
                         if (Input.KD_F5 && !M._.GameMenu.visible)

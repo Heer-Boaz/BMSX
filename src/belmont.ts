@@ -35,6 +35,7 @@ export class RoeState {
 	]);
 	public static RoeSpritePosOffsetCrouching: Map<Direction, Point[]> = new Map<Direction, Point[]>([
 		[Direction.Right, [newPoint(-16, 0), newPoint(-16, 0), newPoint(0, 0)]],
+		[Direction.Left, [newPoint(0, 0), newPoint(0, 0), newPoint(-25, 0)]],
 	]);
 
 	public Roeing: boolean;

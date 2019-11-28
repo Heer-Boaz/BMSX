@@ -90,33 +90,33 @@ export class Input {
 function keydown(e: KeyboardEvent): void {
     switch (e.key) {
         case "ArrowLeft":
-            if (!Input.KD_LEFT)
-                Input.KC_LEFT = true;
-            else Input.KC_LEFT = false;
+            if (Input.KC_LEFT === true)
+                Input.KC_LEFT = false;
+            else Input.KC_LEFT = true;
             Input.KD_LEFT = true;
             break;
         case "ArrowRight":
-            if (!Input.KD_RIGHT)
-                Input.KC_RIGHT = true;
-            else Input.KC_RIGHT = false;
+            if (Input.KC_RIGHT === true)
+                Input.KC_RIGHT = false;
+            else Input.KC_RIGHT = true;
             Input.KD_RIGHT = true;
             break;
         case "ArrowDown":
-            if (!Input.KD_DOWN)
+            if (Input.KD_DOWN === true)
                 Input.KC_DOWN = true;
             else Input.KC_DOWN = false;
             Input.KD_DOWN = true;
             break;
         case "ArrowUp":
-            if (!Input.KD_UP)
-                Input.KC_UP = true;
-            else Input.KC_UP = false;
+            if (Input.KC_UP === true)
+                Input.KC_UP = false;
+            else Input.KC_UP = true;
             Input.KD_UP = true;
             break;
         case " ":
-            if (!Input.KD_SPACE)
-                Input.KC_SPACE = true;
-            else Input.KC_SPACE = false;
+            if (Input.KC_SPACE === true)
+                Input.KC_SPACE = false;
+            else Input.KC_SPACE = true;
             Input.KD_SPACE = true;
             break;
         case "M":

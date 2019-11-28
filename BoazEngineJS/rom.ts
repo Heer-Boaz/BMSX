@@ -17,7 +17,7 @@ export async function loadRom(): Promise<void> {
 }
 
 async function loadRompack(): Promise<ArrayBuffer> {
-	return fetch("http://127.0.0.1:8887/rom/packed.rom")
+	return fetch("http://192.168.0.117:8887/rom/packed.rom")
 		.then(response => response.arrayBuffer())
 		.then(buffer => buffer)
 		.catch(e => {
@@ -53,7 +53,7 @@ async function loadAudio(url: string): Promise<HTMLAudioElement> {
 }
 
 async function loadResourceList(): Promise<RomResource[]> {
-	return fetch("http://127.0.0.1:8887/rom/romtable.json")
+	return fetch("http://192.168.0.117:8887/rom/romtable.json")
 		.then(response => response.json())
 		.then(json => json)
 		.catch(e => {
