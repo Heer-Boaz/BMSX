@@ -87,8 +87,16 @@ export class View {
         this.DrawBitmap(imgid, x, y, 0);
     }
 
+    public drawDebug(img: HTMLImageElement, pos: Point): void {
+        this.context.save();
+        this.context.scale(this.dxy, this.dxy);
+        this.context.imageSmoothingEnabled = false;
+        this.context.drawImage(img, pos.x, pos.y);
+        this.context.restore();
+    }
+
     public drawImg(imgid: string | number, pos: Point, options?: number): void {
-        var img = images[imgid];
+        let img = images[imgid];
         if (!img) throw new Error("Cannot find image with id '" + imgid + "'");
 
         this.context.save();

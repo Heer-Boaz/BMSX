@@ -43,7 +43,7 @@ export interface RomResource {
 
 import { readdirSync, statSync, readFileSync, writeFileSync } from "fs";
 import { join, parse } from "path";
-import fetch from "node-fetch";
+// import fetch from "node-fetch";
 
 function getAllFiles(dirPath: string, arrayOfFiles?: string[]): string[] {
 	let files = readdirSync(dirPath);
