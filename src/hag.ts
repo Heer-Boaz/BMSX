@@ -10,7 +10,7 @@ import { Size, Area, Point } from "../BoazEngineJS/interfaces";
 
 /*[Serializable]*/
 export class Hag extends Foe {
-    public get DamageToPlayer(): number {
+    public get damageToPlayer(): number {
         return 1;
     }
 
@@ -18,7 +18,7 @@ export class Hag extends Foe {
         return 0;
     }
 
-    public get RespawnAtRoomEntry(): boolean {
+    public get respawnAtRoomEntry(): boolean {
         return true;
     }
 
@@ -38,7 +38,7 @@ export class Hag extends Foe {
 
     constructor({ pos, dir, itemSpawned = ItemType.HeartSmall }: { pos: Point; dir: Direction; itemSpawned?: ItemType; }) {
         super(pos);
-        this.CanHurtPlayer = true;
+        this.canHurtPlayer = true;
         this.animation = new Animation<BitmapId>(Hag.AnimationFrames, null, true);
         this.timer = BStopwatch.createWatch();
         this.imgid = <number>this.animation.stepValue();
@@ -46,16 +46,16 @@ export class Hag extends Foe {
         this.size = Hag.HagSize;
         this.hitarea = Hag.HagHitArea;
         this.itemSpawnedAfterKill = itemSpawned;
-        this.Health = 1;
-        this.Direction = dir;
+        this.health = 1;
+        this.direction = dir;
     }
 
-    public TakeTurn(): void {
+    public takeTurn(): void {
         let stepValue: AniStepCompoundValue<number> = { nextStepValue: <number>this.imgid };
         this.animation.doAnimation(this.timer, stepValue);
         this.imgid = stepValue.nextStepValue;
-        this.flippedH = this.Direction == Direction.Left;
-        this.pos.x += this.Direction == Direction.Left ? -2 : 2;
+        this.flippedH = this.direction == Direction.Left;
+        this.pos.x += this.direction == Direction.Left ? -2 : 2;
         if (this.pos.x >= GameConstants.GameScreenWidth || (0 > this.pos.x + this.size.x)) {
             this.disposeFlag = true;
         }
@@ -65,12 +65,12 @@ export class Hag extends Foe {
         BStopwatch.removeWatch(this.timer);
     }
 
-    public HandleHit(source: PlayerProjectile): void {
-        super.HandleHit(source);
+    public handleHit(source: PlayerProjectile): void {
+        super.handleHit(source);
         this.loseHealth(source);
     }
 
-    public Paint(offset: Point = null): void {
-        super.Paint(offset);
+    public paint(offset: Point = null): void {
+        super.paint(offset);
     }
 }

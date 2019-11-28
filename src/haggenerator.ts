@@ -67,7 +67,7 @@ export class HagGenerator implements IGameObject {
         this.directionOfHags = directionOfHags;
     }
 
-    TakeTurn(): void {
+    takeTurn(): void {
         let stepValue = <AniStepCompoundValue<boolean>>{ nextStepValue: false };
         if (this.spawnAnimation.doAnimation(this.timer, stepValue))
             GameModel._.spawn(new Hag({ pos: (<Point>{ x: this.pos.x, y: this.pos.y }), dir: this.directionOfHags }));

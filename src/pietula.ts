@@ -17,7 +17,7 @@ enum PietulaState {
 type AniType = { img: BitmapId, dy: number };
 
 export class Pietula extends BossFoe {
-	public get DamageToPlayer(): number {
+	public get damageToPlayer(): number {
 		return 5;
 	}
 
@@ -25,7 +25,7 @@ export class Pietula extends BossFoe {
 		return 0;
 	}
 
-	public get RespawnAtRoomEntry(): boolean {
+	public get respawnAtRoomEntry(): boolean {
 		return true;
 	}
 
@@ -49,21 +49,21 @@ export class Pietula extends BossFoe {
 
 	constructor(pos: Point) {
 		super(pos);
-		this.CanHurtPlayer = true;
+		this.canHurtPlayer = true;
 		this.animation = new Animation<AniType>(Pietula.AnimationFrames, null, true);
 		this.timer = BStopwatch.createWatch();
 		this.imgid = this.animation.stepValue().img;
 		this.timer.restart();
 		this.hitarea = Pietula.PietulaHitArea;
 		this.size = newSize(this.hitarea.end.x, this.hitarea.end.y);
-		this.Health = 20;
+		this.health = 20;
 	}
 
 	public StartBossfight(): void {
 		throw "Not implemented!";
 	}
 
-	public TakeTurn(): void {
+	public takeTurn(): void {
 		let stepValue: AniStepCompoundValue<AniType> = { nextStepValue: { img: this.imgid, dy: 0 } };
 		this.animation.doAnimation(this.timer, stepValue);
 		this.imgid = stepValue.nextStepValue.img;
@@ -74,16 +74,16 @@ export class Pietula extends BossFoe {
 		BStopwatch.removeWatch(this.timer);
 	}
 
-	public HandleHit(source: PlayerProjectile): void {
-		super.HandleHit(source);
+	public handleHit(source: PlayerProjectile): void {
+		super.handleHit(source);
 		this.loseHealth(source);
 	}
 
-	public Paint(offset: Point = null): void {
-		super.Paint(offset);
+	public paint(offset: Point = null): void {
+		super.paint(offset);
 	}
 
-	public Die(): void {
-		super.Die();
+	public die(): void {
+		super.die();
 	}
 }

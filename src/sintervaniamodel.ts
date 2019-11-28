@@ -241,7 +241,7 @@ export class GameModel extends Model {
 
         if (o instanceof Foe) {
             let f: Foe = o as Foe;
-            if (!f.RespawnAtRoomEntry) {
+            if (!f.respawnAtRoomEntry) {
                 let wasDefeated: boolean;
                 let exists: boolean = this.FoesDefeated.has(f.id) && this.FoesDefeated.get(f.id);
                 if (!exists) {
@@ -275,7 +275,7 @@ export class GameModel extends Model {
     }
 
     public FoeDefeated(f: Foe): void {
-        if (f.RespawnAtRoomEntry) return;
+        if (f.respawnAtRoomEntry) return;
         if (this.FoesDefeated.has(f.id) && this.FoesDefeated.get(f.id) === true)
             this.FoesDefeated.set(f.id, true);
         else this.FoesDefeated.set(f.id, true);

@@ -37,7 +37,7 @@ export class ItsCurtainsForYou {
     public Paint(): void {
         let pos: Point = { x: 0, y: 0 };
         for (let i = 0; i < this.curtainPartCount; i++) {
-            view.DrawBitmap(BitmapId.CurtainPart, pos.x, pos.y);
+            view.drawImg(BitmapId.CurtainPart, pos.x, pos.y);
             pos.x += TileSize;
         }
     }

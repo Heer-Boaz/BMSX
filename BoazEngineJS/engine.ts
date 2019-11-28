@@ -21,8 +21,8 @@ export let gameview: IGameView;
 export class Game {
     fps: number;
     lastUpdate: number;
-
     turnCounter: number;
+    public running: boolean;
 
     constructor(viewportsize: Size) {
         game = this;
@@ -31,6 +31,7 @@ export class Game {
         Input.init();
         this.fps = 50;
         this.lastUpdate = 0;
+        this.running = false;
     }
 
     public setModel(m: Model): void {
@@ -63,6 +64,7 @@ export class Game {
 
     public start(): void {
         ResourceMaster._.PrepareGameResources();
+        this.running = true;
         //     GameLoader.loadgame(img2src, snd2src);
         // }
 
@@ -109,10 +111,17 @@ export class Game {
         this.draw(elapsedMs);
 
         let t = this;
-        requestAnimationFrame(function (timestamp) {
-            game.run(timestamp);
-        });
-        ++t.turnCounter;
+        if (t.running) {
+            requestAnimationFrame(function (timestamp) {
+                game.run(timestamp);
+            });
+            ++t.turnCounter;
+        }
+    }
+
+    public stop(): void {
+        this.running = false;
+        requestAnimationFrame(() => view.clear());
     }
 }
 

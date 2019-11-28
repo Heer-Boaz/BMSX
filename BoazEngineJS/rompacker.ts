@@ -45,12 +45,19 @@ try {
 	let sndi = 0;
 	for (let i = 0; i < arrayOfFiles.length; i++) {
 		let type = parse(arrayOfFiles[i]).ext === '.wav' ? 'audio' : 'image';
-		jsonout.push({ resid: i, resname: parse(arrayOfFiles[i]).name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length });
-		bufferPointer += buffers[i].length;
 		switch (type) {
-			case 'image': tsimgout.push(`\t${parse(arrayOfFiles[i]).name} = ${imgi++},`); break;
-			case 'audio': tssndout.push(`\t${parse(arrayOfFiles[i]).name} = ${sndi++},`); break;
+			case 'image':
+				jsonout.push({ resid: imgi, resname: parse(arrayOfFiles[i]).name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length });
+				tsimgout.push(`\t${parse(arrayOfFiles[i]).name} = ${imgi},`);
+				++imgi;
+				break;
+			case 'audio':
+				jsonout.push({ resid: sndi, resname: parse(arrayOfFiles[i]).name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length });
+				tssndout.push(`\t${parse(arrayOfFiles[i]).name} = ${sndi},`);
+				++sndi;
+				break;
 		}
+		bufferPointer += buffers[i].length;
 	}
 
 	tsimgout.push("}\n");

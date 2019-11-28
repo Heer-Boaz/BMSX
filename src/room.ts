@@ -152,7 +152,7 @@ export class Room {
 	}
 
 	public Paint() {
-		view.DrawBitmap(this.imgid, CS.GameScreenStartX, CS.GameScreenStartY);
+		view.drawImg(this.imgid, CS.GameScreenStartX, CS.GameScreenStartY);
 	}
 }
 

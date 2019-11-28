@@ -27,33 +27,33 @@ export class TriRoe extends PlayerProjectile {
 		if (!M._.Belmont.roeState.Roeing || M._.Belmont.RecoveringFromHit)
 			return null;
 		if (!M._.Belmont.Crouching)
-			return moveArea(TriRoe.hitareas.get(M._.Belmont.imgid), RoeState.RoeSpritePosOffset.get(M._.Belmont.Direction)[M._.Belmont.roeState.CurrentFrame]);
-		return moveArea(TriRoe.hitareas.get(M._.Belmont.imgid), RoeState.RoeSpritePosOffsetCrouching.get(M._.Belmont.Direction)[M._.Belmont.roeState.CurrentFrame]);
+			return moveArea(TriRoe.hitareas.get(M._.Belmont.imgid), RoeState.RoeSpritePosOffset.get(M._.Belmont.direction)[M._.Belmont.roeState.CurrentFrame]);
+		return moveArea(TriRoe.hitareas.get(M._.Belmont.imgid), RoeState.RoeSpritePosOffsetCrouching.get(M._.Belmont.direction)[M._.Belmont.roeState.CurrentFrame]);
 	}
 
 	public set hitarea(value: Area) {
 	}
 
-	public get DamageDealt(): number {
+	public get damageDealt(): number {
 		return 1;
 	}
 
 	constructor(pos: Point, dir: Direction) {
 		super({ x: pos.x, y: pos.y }, { x: 0, y: 0 });
-		this.Direction = dir;
+		this.direction = dir;
 		this.pos = M._.Belmont.pos;
 	}
 
-	public TakeTurn(): void {
+	public takeTurn(): void {
 		if (M._.Belmont.Dying || !M._.Belmont.roeState.Roeing) {
 			this.disposeFlag = true;
 			return
 		}
 		this.pos = M._.Belmont.pos;
-		this.CheckAndInvokeHit();
+		this.checkAndInvokeHit();
 	}
 
-	public Paint(offset: Point = null): void {
+	public paint(offset: Point = null): void {
 		// The tri-roe is part of the Belmont-sprite and is not drawn
 	}
 

@@ -24,6 +24,7 @@ export namespace MSXConstants {
 	export const MSX2ScreenHeight: number = 212;
 	export const Msx1Colors: Color[] = [
 		<Color>{ r: 0, g: 0, b: 0 },
+		<Color>{ r: 0, g: 0, b: 0 },
 		<Color>{ r: 0, g: 241, b: 20 },
 		<Color>{ r: 68, g: 249, b: 86 },
 		<Color>{ r: 85, g: 79, b: 255 },

@@ -35,20 +35,20 @@ export class Item extends Sprite {
         this.imgid = <number>Item.Type2Image(type);
     }
 
-    public TakeTurn(): void {
+    public takeTurn(): void {
         if (this.areaCollide(moveArea(GameModel._.Belmont.EventTouchHitArea, <Point>GameModel._.Belmont.pos))) {
             GameController._.PickupItem(this);
             switch (this.ItsType) {
                 case ItemType.HeartSmall:
                 case ItemType.HeartBig:
-                    // S.PlayEffect(RM.Sound[AudioId.Heart]);
+                    // S.PlayEffect(RM.Sound.get(AudioId.Heart]);
                     break;
                 case ItemType.KeySmall:
                 case ItemType.KeyBig:
-                    // S.PlayEffect(RM.Sound[AudioId.KeyGrab]);
+                    // S.PlayEffect(RM.Sound.get(AudioId.KeyGrab]);
                     break;
                 default:
-                    // S.PlayEffect(RM.Sound[AudioId.ItemPickup]);
+                    // S.PlayEffect(RM.Sound.get(AudioId.ItemPickup]);
                     break;
             }
             this.disposeFlag = true;

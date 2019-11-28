@@ -10,11 +10,12 @@ export abstract class PlayerProjectile extends Projectile {
         super(fpos, speed);
         this.foesThatWereHit = new Array<Foe>();
     }
-    public CheckAndInvokeHit(): boolean {
+
+    public checkAndInvokeHit(): boolean {
         let enemyWasHit: boolean = false;
         model._.Foes.filter(f => f.hittable && this.objectCollide(f)).filter(f => !this.foesThatWereHit.includes(f)).forEach(f => {
             this.foesThatWereHit.push(f);
-            f.HandleHit(this);
+            f.handleHit(this);
             enemyWasHit = true;
         });
         return enemyWasHit;

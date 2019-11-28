@@ -8,7 +8,7 @@ import { Point } from "../BoazEngineJS/interfaces";
 
 /*[Serializable]*/
 export abstract class Projectile extends Sprite {
-    public Direction: Direction;
+    public direction: Direction;
     protected speed: Point;
 
     constructor(pos: Point, speed: Point) {
@@ -16,15 +16,15 @@ export abstract class Projectile extends Sprite {
         this.speed = speed;
     }
 
-    public Paint(offset: Point = null): void {
+    public paint(offset: Point = null): void {
         if (this.disposeFlag || !this.visible)
             return
         let options: number = this.flippedH ? Constants.DRAWBITMAP_HFLIP : 0;
         options = options || this.flippedV ? Constants.DRAWBITMAP_VFLIP : 0;
-        view.DrawBitmap(this.imgid, this.pos.x, this.pos.y, options);
+        view.drawImg(this.imgid, this.pos.x, this.pos.y, options);
     }
 
-    public DamageDealt: number;
+    public damageDealt: number;
 
     protected checkWallSpriteCollisions(): boolean {
         return M._.objects.filter(o => o.extendedProperties[M.PROPERTY_ACT_AS_WALL]).some(o => o.areaCollide(moveArea(this.hitarea, this.pos)));
@@ -35,7 +35,7 @@ export abstract class Projectile extends Sprite {
         let starty = this.pos.y + this.hitarea.start.y;
         let endx = this.pos.x + this.hitarea.end.x;
         let endy = this.pos.y + this.hitarea.end.y;
-        switch (this.Direction) {
+        switch (this.direction) {
             case Direction.Up:
                 return M._.CurrentRoom.IsCollisionTile(startx, starty, true) || M._.CurrentRoom.IsCollisionTile(endx, starty, true);
             case Direction.Right:

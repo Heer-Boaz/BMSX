@@ -67,7 +67,7 @@ export class GameOver {
                             C._.LoadCheckpoint();
                             break;
                         case 1:
-                            S.PlayEffect(RM.Sound[AudioId.Selectie]);
+                            S.PlayEffect(RM.Sound.get(AudioId.Selectie));
                             Input.KC_SPACE = false;
                             M._.GameMenu.Open(MenuItem.LoadFromGameOver);
                             this.state = State.SelectFile;
@@ -79,7 +79,7 @@ export class GameOver {
             }
         }
         if (selectionChanged) {
-            S.PlayEffect(RM.Sound[AudioId.Selectie]);
+            S.PlayEffect(RM.Sound.get(AudioId.Selectie));
         }
     }
 
@@ -107,12 +107,12 @@ export class GameOver {
     }
 
     public Paint(): void {
-        TextWriter.DrawText(60, 56, ["Je bent vernederd!"]);
-        TextWriter.DrawText(32, 80, ["Wat ga je doen,Belmont?"]);
-        view.DrawRectangle(GameOver.boxX, GameOver.boxY, GameOver.boxEndX, GameOver.boxEndY, CS.Msx1Colors[15]);
+        TextWriter.drawText(60, 56, ["Je bent vernederd!"]);
+        TextWriter.drawText(32, 80, ["Wat ga je doen,Belmont?"]);
+        view.drawRectangle(GameOver.boxX, GameOver.boxY, GameOver.boxEndX, GameOver.boxEndY, CS.Msx1Colors[15]);
         for (let i = 0; i < GameOver.items.length; i++)
-            TextWriter.DrawText(GameOver.itemsX, GameOver.itemYs[i], [GameOver.items[i]]);
-        view.DrawBitmap(BitmapId.MenuCursor, this.cursorX, this.cursorY);
+            TextWriter.drawText(GameOver.itemsX, GameOver.itemYs[i], [GameOver.items[i]]);
+        view.drawImg(BitmapId.MenuCursor, this.cursorX, this.cursorY);
     }
 
     public GameMenuClosed(): void {

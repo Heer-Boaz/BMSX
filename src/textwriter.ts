@@ -26,16 +26,16 @@ export class TextWriter {
         this.visible = false;
     }
 
-    public SetText(text: string): void {
+    public setText(text: string): void {
         this.Text.length = 0;
         this.Text.push(text);
     }
 
-    public AddText(text: string | string[]): void {
+    public addText(text: string | string[]): void {
         this.Text.push(...text);
     }
 
-    public TakeTurn(): void {
+    public takeTurn(): void {
         switch (this.Type) {
             case TextWriterType.Billboard:
                 break;
@@ -47,7 +47,7 @@ export class TextWriter {
         }
     }
 
-    public static DrawText(x: number, y: number, textToWrite: string | string[], color: Color = null): void {
+    public static drawText(x: number, y: number, textToWrite: string | string[], color: Color = null): void {
         let startPos: Point = <Point>{ x: x, y: y }
         let stepX: number = TextWriter.FontWidth;
         let stepY: number = TextWriter.FontHeight;
@@ -79,11 +79,11 @@ export class TextWriter {
     private static drawLetter(x: number, y: number, c: string, color: Color = null): void {
         let letter = TextWriter.getBitmapForLetter(c);
         if (!color)
-            view.DrawBitmap(letter, x, y);
-        else view.DrawColoredBitmap(letter, x, y, color.r / 255.0, color.g / 255.0, color.b / 255.0);
+            view.drawImg(letter, x, y);
+        else view.drawColoredBitmap(letter, x, y, color.r / 255.0, color.g / 255.0, color.b / 255.0);
     }
 
-    public Paint(): void {
+    public paint(): void {
         if (!this.visible)
             return
         if (this.Text.length == 0)
@@ -98,7 +98,7 @@ export class TextWriter {
                 if (pos.y < -TextWriter.FontHeight)
                     break;
                 letter = TextWriter.getBitmapForLetter(c);
-                view.DrawBitmap(<number>letter, pos.x, pos.y);
+                view.drawImg(<number>letter, pos.x, pos.y);
                 pos.x += stepX;
             };
             pos.x = startPos.x;

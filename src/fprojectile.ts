@@ -6,7 +6,7 @@ import { Point } from "../BoazEngineJS/interfaces";
 
 /*[Serializable]*/
 export class FProjectile extends Projectile {
-    public get CanHurtPlayer(): boolean {
+    public get canHurtPlayer(): boolean {
         return true;
     }
 
@@ -15,10 +15,10 @@ export class FProjectile extends Projectile {
         this.speed = speed;
     }
 
-    public TakeTurn(): void {
+    public takeTurn(): void {
         this.pos = addPoints(this.pos, this.speed);
-        if (this.CanHurtPlayer && this.objectCollide(M._.Belmont))
-            M._.Belmont.TakeDamage(this.DamageDealt);
+        if (this.canHurtPlayer && this.objectCollide(M._.Belmont))
+            M._.Belmont.TakeDamage(this.damageDealt);
         if (this.checkWallSpriteCollisions() || this.checkWallCollision())
             this.disposeFlag = true;
         if (this.pos.x < 0 || this.pos.x + this.size.x >= CS.GameScreenWidth || this.pos.y < 0 || this.pos.y + this.size.y >= CS.GameScreenHeight)

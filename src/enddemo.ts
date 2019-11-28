@@ -49,19 +49,19 @@ export class EndDemo {
     public Paint(): void {
         switch (this.state) {
             case State.Sint:
-                TextWriter.DrawText(20, 192, "Redelijk gedaan, Belmont!");
+                TextWriter.drawText(20, 192, "Redelijk gedaan, Belmont!");
                 break;
             case State.Boaz:
-                TextWriter.DrawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(9), "Zo, dat was het weer!");
-                TextWriter.DrawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(11), "ervan hebben genoten");
-                TextWriter.DrawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(12), "en dat is ook terecht.");
-                TextWriter.DrawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(14), "Dit verhaal is nog niet");
-                TextWriter.DrawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(15), "afgelopen,dus bij");
-                TextWriter.DrawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(16), "belangstelling komt er");
-                TextWriter.DrawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(17), "wellicht een nieuw");
-                TextWriter.DrawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(18), "hoofdstuk in dit");
-                TextWriter.DrawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(19), "spannende en meeslepende");
-                TextWriter.DrawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(20), "verhaal!");
+                TextWriter.drawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(9), "Zo, dat was het weer!");
+                TextWriter.drawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(11), "ervan hebben genoten");
+                TextWriter.drawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(12), "en dat is ook terecht.");
+                TextWriter.drawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(14), "Dit verhaal is nog niet");
+                TextWriter.drawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(15), "afgelopen,dus bij");
+                TextWriter.drawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(16), "belangstelling komt er");
+                TextWriter.drawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(17), "wellicht een nieuw");
+                TextWriter.drawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(18), "hoofdstuk in dit");
+                TextWriter.drawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(19), "spannende en meeslepende");
+                TextWriter.drawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(20), "verhaal!");
                 break;
         }
     }

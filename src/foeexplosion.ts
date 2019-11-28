@@ -26,7 +26,7 @@ export class FoeExplosion extends FX {
         this.itemSpawnedAfterKill = itemSpawned;
     }
 
-    public TakeTurn(): void {
+    public takeTurn(): void {
         let nextStep = this.animation.doAnimation(this.timer);
         if (nextStep.next) {
             this.imgid = nextStep.value;

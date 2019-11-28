@@ -74,10 +74,10 @@ export class WeaponFireHandler {
         if (M._.Belmont.Roeing || M._.Belmont.RecoveringFromHit)
             return;
         WeaponFireHandler.setMainWeaponCooldown(0);
-        let roe = new TriRoe(M._.Belmont.pos, M._.Belmont.Direction);
+        let roe = new TriRoe(M._.Belmont.pos, M._.Belmont.direction);
         M._.spawn(roe);
         M._.Belmont.UseRoe();
-        // S.PlayEffect(RM.Sound[AudioId.Whip]);
+        // S.PlayEffect(RM.Sound.get(AudioId.Whip]);
     }
 
     private static handleFireCross(): void {

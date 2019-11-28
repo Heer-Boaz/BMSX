@@ -15,38 +15,38 @@ export abstract class Creature extends Sprite {
     protected moveLeftBeforeFrameChange: number = 0;
     protected currentWalkAnimationFrame: number = 0;
 
-    public get WallHitArea(): Area {
+    public get wallHitArea(): Area {
         return <Area>this.hitarea;
     }
 
-    public set WallHitArea(value: Area) {
+    public set wallHitArea(value: Area) {
     }
 
     private _direction: Direction;
 
-    public get Direction(): Direction {
+    public get direction(): Direction {
         return this._direction;
     }
 
-    public set Direction(value: Direction) {
-        this.OldDirection = this._direction;
+    public set direction(value: Direction) {
+        this.oldDirection = this._direction;
         this._direction = value;
     }
 
-    public OldDirection: Direction;
+    public oldDirection: Direction;
 
     constructor(p: Point) {
         super(p);
         this.originPos = <Point>{ x: this.pos.x, y: this.pos.y };
     }
 
-    public Paint(offset: Point = null): void {
+    public paint(offset: Point = null): void {
         if (this.disposeFlag || !this.visible)
             return
         let options: number = this.flippedH ? Constants.DRAWBITMAP_HFLIP : 0;
         if (offset == null)
-            view.DrawBitmap(this.imgid, this.pos.x, this.pos.y, options);
-        else view.DrawBitmap(this.imgid, this.pos.x + offset.x, this.pos.y + offset.y, options);
+            view.drawImg(this.imgid, this.pos.x, this.pos.y, options);
+        else view.drawImg(this.imgid, this.pos.x + offset.x, this.pos.y + offset.y, options);
     }
 
     protected originPos: Point;
@@ -61,37 +61,37 @@ export abstract class Creature extends Sprite {
         this.customId = value;
     }
 
-    public DetermineFrame(): void {
-        this.imgid = <number>this.movementSprites.get(this.Direction)[this.currentWalkAnimationFrame];
-        this.flippedH = this.Direction == Direction.Right;
+    public determineFrame(): void {
+        this.imgid = <number>this.movementSprites.get(this.direction)[this.currentWalkAnimationFrame];
+        this.flippedH = this.direction == Direction.Right;
     }
 
-    public AnimateMovement(movedDistance: number): void {
+    public animateMovement(movedDistance: number): void {
         if (movedDistance > 0) {
             this.moveLeftBeforeFrameChange -= movedDistance;
             if (this.moveLeftBeforeFrameChange < 0) {
                 this.moveLeftBeforeFrameChange = this.moveBeforeFrameChange;
-                if (++this.currentWalkAnimationFrame >= this.movementSprites.get(this.Direction).length) {
+                if (++this.currentWalkAnimationFrame >= this.movementSprites.get(this.direction).length) {
                     this.currentWalkAnimationFrame = 1;
                 }
             }
         }
         else {
             this.currentWalkAnimationFrame = 0;
-            this.DetermineFrame();
+            this.determineFrame();
         }
     }
 
     protected checkWallSpriteCollisions(): boolean {
-        return M._.objects.filter(o => o != this && o.extendedProperties.get(M.PROPERTY_ACT_AS_WALL) && (<Sprite>o).hittable).some(o => o.areaCollide(moveArea(this.WallHitArea, this.pos)));
+        return M._.objects.filter(o => o != this && o.extendedProperties.get(M.PROPERTY_ACT_AS_WALL) && (<Sprite>o).hittable).some(o => o.areaCollide(moveArea(this.wallHitArea, this.pos)));
     }
 
     protected checkWallCollision(): boolean {
-        let startx = this.pos.x + this.WallHitArea.start.x;
-        let starty = this.pos.y + this.WallHitArea.start.y;
-        let endx = this.pos.x + this.WallHitArea.end.x;
-        let endy = this.pos.y + this.WallHitArea.end.y;
-        switch (this.Direction) {
+        let startx = this.pos.x + this.wallHitArea.start.x;
+        let starty = this.pos.y + this.wallHitArea.start.y;
+        let endx = this.pos.x + this.wallHitArea.end.x;
+        let endy = this.pos.y + this.wallHitArea.end.y;
+        switch (this.direction) {
             case Direction.Up:
                 return M._.CurrentRoom.IsCollisionTile(startx, starty, true) || M._.CurrentRoom.IsCollisionTile(endx, starty, true);
             case Direction.Right:
@@ -108,7 +108,7 @@ export abstract class Creature extends Sprite {
     }
 
     protected handleWallCollision(): void {
-        switch (this.Direction) {
+        switch (this.direction) {
             case Direction.Up:
                 if (this.pos.y >= 0)
                     this.pos.y = (this.pos.y / TileSize + 1) * TileSize;

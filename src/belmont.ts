@@ -130,11 +130,11 @@ export class Belmont extends Creature {
 		return Belmont.MovementSpritesNoShield;
 	}
 
-	public get WallHitArea(): Area {
+	public get wallHitArea(): Area {
 		return this.EventTouchHitArea;
 	}
 
-	public set WallHitArea(value: Area) {
+	public set wallHitArea(value: Area) {
 	}
 
 	public EventTouchHitArea: Area = newArea(0, 24, 16, 32);
@@ -144,7 +144,7 @@ export class Belmont extends Creature {
 	private static buttonPressEventHitAreaLeft: Area = newArea(-4, 24, 12, 32);
 
 	public get EventButtonHitArea(): Area {
-		switch (this.Direction) {
+		switch (this.direction) {
 			case Direction.Up:
 				return Belmont.buttonPressEventHitAreaUp;
 			case Direction.Right:
@@ -178,7 +178,7 @@ export class Belmont extends Creature {
 		this.imgid = <number>BitmapId.Belmont_r1;
 		this.flippedH = false;
 		this.CarryingShield = false;
-		this.Direction = Direction.Right;
+		this.direction = Direction.Right;
 		this.id = "Belmont";
 		this.state = State.Normal;
 		setSize(this.size, 16, 32);
@@ -201,13 +201,13 @@ export class Belmont extends Creature {
 		this.currentWalkAnimationFrame = 0;
 		this.moveLeftBeforeFrameChange = Belmont.MoveBeforeFrameChange;
 		this.roeState.Stop();
-		this.DetermineFrame();
+		this.determineFrame();
 		this.state = State.Normal;
 	}
 
 	public GetProjectileOrigin(): Point {
 		let result: Point = copyPoint(this.pos);
-		switch (this.Direction) {
+		switch (this.direction) {
 			case Direction.Right:
 				result.x += 8;
 				result.y += 12;
@@ -219,7 +219,7 @@ export class Belmont extends Creature {
 		return result;
 	}
 
-	public TakeTurn(): void {
+	public takeTurn(): void {
 		if (this.state == State.Dying) {
 			this.doDeath();
 			return
@@ -261,7 +261,7 @@ export class Belmont extends Creature {
 			if (!this.FloorCollision || this.Jumping || this.hitState.CurrentStep != HitStateStep.None) {
 				this.Crouching = false;
 				walked = false;
-				this.AnimateMovement(0);
+				this.animateMovement(0);
 			}
 			else {
 				walked = this.handleInput().moved;
@@ -269,7 +269,7 @@ export class Belmont extends Creature {
 					this.doWalk();
 				}
 				else {
-					this.AnimateMovement(0);
+					this.animateMovement(0);
 					this.firstPressedButton = Direction.None;
 				}
 			}
@@ -281,23 +281,23 @@ export class Belmont extends Creature {
 				this.pos.y += 4;
 			this.checkAndHandleCollisions(originalPos);
 			if (this.FloorCollision) { }
-			// S.PlayEffect(RM.Sound[AudioId.Land]);
+			// S.PlayEffect(RM.Sound.get(AudioId.Land]);
 		}
 		if (this.Jumping) {
 			this.doJump();
 		}
-		this.DetermineFrame();
+		this.determineFrame();
 	}
 
 	protected doHitFlying(): void {
 		let delta: AniStepCompoundValue<Point> = { nextStepValue: <Point>{ x: 0, y: 0 } };
 		this.hitState.HitAni.doAnimation(1, delta);
 		let originalPos = copyPoint(this.pos);
-		this.pos.x += this.Direction == Direction.Right ? delta.nextStepValue.x : -delta.nextStepValue.x;
-		let dir = this.Direction;
-		this.Direction = this.Direction == Direction.Left ? Direction.Right : Direction.Left;
+		this.pos.x += this.direction == Direction.Right ? delta.nextStepValue.x : -delta.nextStepValue.x;
+		let dir = this.direction;
+		this.direction = this.direction == Direction.Left ? Direction.Right : Direction.Left;
 		this.checkAndHandleWallAndCeilingCollisions(originalPos);
-		this.Direction = dir;
+		this.direction = dir;
 		this.pos.y += delta.nextStepValue.y;
 		if (!this.hitState.HitAni.hasNext()) {
 			this.hitState.CurrentStep = HitStateStep.Falling;
@@ -306,11 +306,11 @@ export class Belmont extends Creature {
 
 	protected doHitFall(): void {
 		let originalPos = copyPoint(this.pos);
-		this.pos.x += this.Direction == Direction.Right ? -2 : 2;
-		let dir = this.Direction;
-		this.Direction = this.Direction == Direction.Left ? Direction.Right : Direction.Left;
+		this.pos.x += this.direction == Direction.Right ? -2 : 2;
+		let dir = this.direction;
+		this.direction = this.direction == Direction.Left ? Direction.Right : Direction.Left;
 		this.checkAndHandleWallAndCeilingCollisions(originalPos);
-		this.Direction = dir;
+		this.direction = dir;
 		if (!this.FloorCollision) {
 			this.pos.y += 4;
 			if (this.FloorCollision) {
@@ -354,34 +354,34 @@ export class Belmont extends Creature {
 	public doWalk(): void {
 		if (this.currentWalkAnimationFrame == 0)
 			this.currentWalkAnimationFrame = 1;
-		this.AnimateMovement(1);
+		this.animateMovement(1);
 		if (!this.multipleDirButtonsPressed())
-			this.firstPressedButton = this.Direction;
+			this.firstPressedButton = this.direction;
 	}
 
-	public DetermineFrame(): void {
+	public determineFrame(): void {
 		switch (this.state) {
 			case State.Normal:
 			case State.HitRecovery:
 				if (this.hitState.CurrentStep != HitStateStep.None) {
 					if (this.hitState.CurrentStep == HitStateStep.Falling || this.hitState.CurrentStep == HitStateStep.Flying)
-						this.imgid = this.Direction == Direction.Right ? BitmapId.Belmont_rhitfly : BitmapId.Belmont_lhitfly;
-					else this.imgid = this.Direction == Direction.Right ? BitmapId.Belmont_rhitdown : BitmapId.Belmont_lhitdown;
+						this.imgid = this.direction == Direction.Right ? BitmapId.Belmont_rhitfly : BitmapId.Belmont_lhitfly;
+					else this.imgid = this.direction == Direction.Right ? BitmapId.Belmont_rhitdown : BitmapId.Belmont_lhitdown;
 				}
 				else if (!this.roeState.Roeing) {
 					if (!this.Crouching && !this.Jumping) {
-						this.imgid = this.CarryingShield ? Belmont.MovementSpritesWShield.get(this.Direction)[this.currentWalkAnimationFrame] : Belmont.MovementSpritesNoShield.get(this.Direction)[this.currentWalkAnimationFrame];
+						this.imgid = this.CarryingShield ? Belmont.MovementSpritesWShield.get(this.direction)[this.currentWalkAnimationFrame] : Belmont.MovementSpritesNoShield.get(this.direction)[this.currentWalkAnimationFrame];
 					}
 					else {
-						this.imgid = this.CarryingShield ? Belmont.MovementSpritesWShieldCrouching.get(this.Direction)[this.currentWalkAnimationFrame] : Belmont.MovementSpritesNoShieldCrouching.get(this.Direction)[this.currentWalkAnimationFrame];
+						this.imgid = this.CarryingShield ? Belmont.MovementSpritesWShieldCrouching.get(this.direction)[this.currentWalkAnimationFrame] : Belmont.MovementSpritesNoShieldCrouching.get(this.direction)[this.currentWalkAnimationFrame];
 					}
 				}
 				else {
 					if (!this.Crouching && !this.Jumping) {
-						this.imgid = RoeState.RoeSprites.get(this.Direction)[this.roeState.CurrentFrame];
+						this.imgid = RoeState.RoeSprites.get(this.direction)[this.roeState.CurrentFrame];
 					}
 					else {
-						this.imgid = RoeState.RoeSpritesCrouching.get(this.Direction)[this.roeState.CurrentFrame];
+						this.imgid = RoeState.RoeSpritesCrouching.get(this.direction)[this.roeState.CurrentFrame];
 					}
 				}
 				break;
@@ -402,7 +402,7 @@ export class Belmont extends Creature {
 			if (this.Roeing) {
 				this.roeState.Stop();
 			}
-			// S.PlayEffect(RM.Sound[AudioId.PlayerDamage]);
+			// S.PlayEffect(RM.Sound.get(AudioId.PlayerDamage]);
 		}
 	}
 
@@ -438,7 +438,7 @@ export class Belmont extends Creature {
 
 	private initRoeState(): void {
 		this.roeState.Start();
-		this.DetermineFrame();
+		this.determineFrame();
 	}
 
 	private handleInput(): { moved: boolean } {
@@ -446,20 +446,20 @@ export class Belmont extends Creature {
 		if (Input.KD_DOWN && !this.ignoreDirButtonPress(Direction.Down)) {
 			this.Crouching = true;
 			if (Input.KD_RIGHT && !this.ignoreDirButtonPress(Direction.Right))
-				this.Direction = Direction.Right;
+				this.direction = Direction.Right;
 			if (Input.KD_LEFT && !this.ignoreDirButtonPress(Direction.Left))
-				this.Direction = Direction.Left;
+				this.direction = Direction.Left;
 		}
 		else if (Input.KC_UP && !this.ignoreDirButtonPress(Direction.Up)) {
 			this.Crouching = false;
 			let jumpDir: Direction = Direction.Up;
 			if (Input.KD_RIGHT) {
 				jumpDir = Direction.Right;
-				this.Direction = Direction.Right;
+				this.direction = Direction.Right;
 			}
 			else if (Input.KD_LEFT) {
 				jumpDir = Direction.Left;
-				this.Direction = Direction.Left;
+				this.direction = Direction.Left;
 			}
 			this.jumpState.Start(jumpDir);
 		}
@@ -485,11 +485,11 @@ export class Belmont extends Creature {
 		switch (dir) {
 			case Direction.Right:
 				this.pos.x += speed;
-				this.Direction = Direction.Right;
+				this.direction = Direction.Right;
 				break;
 			case Direction.Left:
 				this.pos.x -= speed;
-				this.Direction = Direction.Left;
+				this.direction = Direction.Left;
 				break;
 		}
 		this.checkAndHandleCollisions(originalPos);
@@ -530,7 +530,7 @@ export class Belmont extends Creature {
 	}
 
 	protected checkWallCollision(): boolean {
-		switch (this.Direction) {
+		switch (this.direction) {
 			case Direction.Right:
 				return M._.CurrentRoom.IsCollisionTile(this.pos.x + 16, this.pos.y + 25, true) || M._.CurrentRoom.IsCollisionTile(this.pos.x + 16, this.pos.y + 31, true);
 			case Direction.Left:
@@ -541,7 +541,7 @@ export class Belmont extends Creature {
 	}
 
 	protected handleWallCollision(): void {
-		switch (this.Direction) {
+		switch (this.direction) {
 			case Direction.Right:
 				this.pos.x = ~~(this.pos.x / TileSize) * TileSize;
 				break;
@@ -607,31 +607,31 @@ export class Belmont extends Creature {
 		return u + r + d + l > 1;
 	}
 
-	public Paint(offset: Point = null): void {
+	public paint(offset: Point = null): void {
 		let roeOffset = <Point>{ x: 0, y: 0 };
 		if (this.Roeing) {
 			if (!this.Crouching) {
-				roeOffset.x += RoeState.RoeSpritePosOffset.get(this.Direction)[this.roeState.CurrentFrame].x;
-				roeOffset.y += RoeState.RoeSpritePosOffset.get(this.Direction)[this.roeState.CurrentFrame].y;
+				roeOffset.x += RoeState.RoeSpritePosOffset.get(this.direction)[this.roeState.CurrentFrame].x;
+				roeOffset.y += RoeState.RoeSpritePosOffset.get(this.direction)[this.roeState.CurrentFrame].y;
 			}
 			else {
-				roeOffset.x += RoeState.RoeSpritePosOffsetCrouching.get(this.Direction)[this.roeState.CurrentFrame].x;
-				roeOffset.y += RoeState.RoeSpritePosOffsetCrouching.get(this.Direction)[this.roeState.CurrentFrame].y;
+				roeOffset.x += RoeState.RoeSpritePosOffsetCrouching.get(this.direction)[this.roeState.CurrentFrame].x;
+				roeOffset.y += RoeState.RoeSpritePosOffsetCrouching.get(this.direction)[this.roeState.CurrentFrame].y;
 			}
 		}
 		if (!this.hitState.Blink || C._.InEventState) {
 			let options: number = this.flippedH ? DrawBitmap.HFLIP : 0;
 			if (offset == null)
-				view.DrawBitmap(this.imgid, this.pos.x + roeOffset.x, this.pos.y + roeOffset.y, options);
-			else view.DrawBitmap(this.imgid, this.pos.x + roeOffset.x + offset.x, this.pos.y + roeOffset.y + offset.y, options);
+				view.drawImg(this.imgid, this.pos.x + roeOffset.x, this.pos.y + roeOffset.y, options);
+			else view.drawImg(this.imgid, this.pos.x + roeOffset.x + offset.x, this.pos.y + roeOffset.y + offset.y, options);
 		}
 		else {
 			if (this.disposeFlag || !this.visible)
 				return
 			let options: number = this.flippedH ? DrawBitmap.HFLIP : 0;
 			if (offset == null)
-				view.DrawColoredBitmap(this.imgid, this.pos.x + roeOffset.x, this.pos.y + roeOffset.y, options, 50.0, .0, .0);
-			else view.DrawColoredBitmap(this.imgid, this.pos.x + roeOffset.x + offset.x, this.pos.y + roeOffset.y + offset.y, options, 50.0, .0, .0);
+				view.drawColoredBitmap(this.imgid, this.pos.x + roeOffset.x, this.pos.y + roeOffset.y, options, 50.0, .0, .0);
+			else view.drawColoredBitmap(this.imgid, this.pos.x + roeOffset.x + offset.x, this.pos.y + roeOffset.y + offset.y, options, 50.0, .0, .0);
 		}
 	}
 

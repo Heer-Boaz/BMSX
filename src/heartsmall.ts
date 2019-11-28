@@ -42,10 +42,7 @@ export class HeartSmall extends Sprite {
 
 	protected uglyBitThing: boolean;
 
-	public Dispose(): void {
-	}
-
-	public TakeTurn(): void {
+	public takeTurn(): void {
 		if (this.State == HeartSmallState.Flying) {
 			let delta: number = 0;
 			delta = this.animation.doAnimation(1).value;
@@ -74,7 +71,7 @@ export class HeartSmall extends Sprite {
 		}
 	}
 
-	public Paint(offset: Point = null): void {
-		super.Paint(offset);
+	public paint(offset: Point = null): void {
+		super.paint(offset);
 	}
 }

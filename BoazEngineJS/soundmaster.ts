@@ -20,16 +20,16 @@ export class SoundMaster {
 	}
 
 	public static StopEffect(): void {
-		if (!SoundMaster.EffectBeingPlayed.AudioId) return;
-		SoundMaster.audio[`${SoundMaster.EffectBeingPlayed.AudioId}`].pause();
-		SoundMaster.audio[`${SoundMaster.EffectBeingPlayed.AudioId}`].currentTime = 0;
+		if (!SoundMaster.EffectBeingPlayed || !SoundMaster.EffectBeingPlayed.AudioId) return;
+		SoundMaster.audio.get(SoundMaster.EffectBeingPlayed.AudioId).pause();
+		SoundMaster.audio.get(SoundMaster.EffectBeingPlayed.AudioId).currentTime = 0;
 		SoundMaster.EffectBeingPlayed = null;
 	}
 
 	private static playEffect(audioId: number): void {
-		SoundMaster.audio[`${audioId}`].pause();
-		SoundMaster.audio[`${audioId}`].currentTime = 0;
-		SoundMaster.audio[`${audioId}`].play();
+		SoundMaster.audio.get(audioId).pause();
+		SoundMaster.audio.get(audioId).currentTime = 0;
+		SoundMaster.audio.get(audioId).play();
 	}
 
 	public static PlayEffect(effect: Effect): void {
@@ -50,10 +50,9 @@ export class SoundMaster {
 	}
 
 	public static StopMusic(): void {
-		if (!SoundMaster.MusicBeingPlayed) return;
-		if (!SoundMaster.MusicBeingPlayed.Music) return;
-		SoundMaster.audio[`${SoundMaster.MusicBeingPlayed.Music}`].pause();
-		SoundMaster.audio[`${SoundMaster.MusicBeingPlayed.Music}`].currentTime = 0;
+		if (!SoundMaster.MusicBeingPlayed || !SoundMaster.MusicBeingPlayed.Music) return;
+		SoundMaster.audio.get(SoundMaster.MusicBeingPlayed.Music).pause();
+		SoundMaster.audio.get(SoundMaster.MusicBeingPlayed.Music).currentTime = 0;
 		SoundMaster.MusicBeingPlayed = null;
 	}
 
@@ -61,18 +60,20 @@ export class SoundMaster {
 		if (stopCurrent)
 			SoundMaster.StopMusic();
 		SoundMaster.MusicBeingPlayed = song;
-		SoundMaster.audio[`${song.Music}`].pause();
-		SoundMaster.audio[`${song.Music}`].currentTime = 0;
-		SoundMaster.audio[`${song.Music}`].Loop = song.Loop || false;
-		SoundMaster.audio[`${song.Music}`].play();
+		SoundMaster.audio.get(song.Music).pause();
+		SoundMaster.audio.get(song.Music).currentTime = 0;
+		SoundMaster.audio.get(song.Music).loop = song.Loop || false;
+		SoundMaster.audio.get(song.Music).play();
 	}
 
 	public static ResumeEffect(): void {
-		SoundMaster.audio[`${SoundMaster.EffectBeingPlayed.AudioId}`].play();
+		if (!SoundMaster.EffectBeingPlayed || !SoundMaster.EffectBeingPlayed.AudioId) return;
+		SoundMaster.audio.get(SoundMaster.EffectBeingPlayed.AudioId).play();
 	}
 
 	public static ResumeMusic(): void {
-		SoundMaster.audio[`${SoundMaster.MusicBeingPlayed.Music}`].play();
+		if (!SoundMaster.MusicBeingPlayed || !SoundMaster.MusicBeingPlayed.Music) return;
+		SoundMaster.audio.get(SoundMaster.MusicBeingPlayed.Music).play();
 	}
 
 	public static SetEffectsVolume(volume: number): void {

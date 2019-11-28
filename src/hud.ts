@@ -85,17 +85,17 @@ export class HUD {
     }
 
     public Paint(): void {
-        view.DrawBitmap(<number>BitmapId.HUD, HUD.Pos_X, HUD.Pos_Y);
+        view.drawImg(<number>BitmapId.HUD, HUD.Pos_X, HUD.Pos_Y);
         let pos: Point = { x: HUD.HealthBarPosX, y: HUD.HealthBarPosY };
         for (let i: number = 0; i < this.percentageToBarLength(this.shownHealthLevel); i++) {
-            view.DrawBitmap(<number>BitmapId.EnergybarStripe_Belmont, pos.x, pos.y);
+            view.drawImg(<number>BitmapId.EnergybarStripe_Belmont, pos.x, pos.y);
             pos.x += 1;
         }
 
         let heartstxt: string = M._.Hearts < 10 ? `0${M._.Hearts}` : M._.Hearts.toString();
-        TextWriter.DrawText(HUD.HeartsPosX, HUD.HeartsPosY, heartstxt);
+        TextWriter.drawText(HUD.HeartsPosX, HUD.HeartsPosY, heartstxt);
         if (M._.ItemsInInventory.find(x => x.Type == ItemType.KeyBig)) {
-            view.DrawBitmap(<number>Item.Type2Image(ItemType.KeyBig), HUD.KeyPos.x, HUD.KeyPos.y);
+            view.drawImg(<number>Item.Type2Image(ItemType.KeyBig), HUD.KeyPos.x, HUD.KeyPos.y);
         }
 
         setPoint(pos, HUD.FoeBarStripePosX, HUD.FoeBarStripePosY);
@@ -117,13 +117,13 @@ export class HUD {
         if (lengthBefore != -1) {
             if (lengthBefore > 0) {
                 for (let i: number = 0; i <= lengthBefore; i++) {
-                    view.DrawBitmap(<number>BitmapId.EnergybarStripe_Boss, pos.x, pos.y);
+                    view.drawImg(<number>BitmapId.EnergybarStripe_Boss, pos.x, pos.y);
                     pos.x += 1;
                 }
             }
             if (lengthBefore != lengthShown) {
                 for (let i: number = lengthBefore; i <= lengthShown; i++) {
-                    view.DrawBitmap(<number>BitmapId.EnergybarStripe_Boss, pos.x, pos.y);
+                    view.drawImg(<number>BitmapId.EnergybarStripe_Boss, pos.x, pos.y);
                     pos.x += 1;
                 }
             }

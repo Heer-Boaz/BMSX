@@ -15,7 +15,7 @@ import { TileSize } from "../BoazEngineJS/msx";
 type AniType = { img: BitmapId, dy: number };
 
 export class ZakFoe extends Foe {
-	public get DamageToPlayer(): number {
+	public get damageToPlayer(): number {
 		return 1;
 	}
 
@@ -23,7 +23,7 @@ export class ZakFoe extends Foe {
 		return 0;
 	}
 
-	public get RespawnAtRoomEntry(): boolean {
+	public get respawnAtRoomEntry(): boolean {
 		return true;
 	}
 
@@ -42,7 +42,7 @@ export class ZakFoe extends Foe {
 
 	constructor(pos: Point, itemSpawned: ItemType = Item.Type.HeartSmall) {
 		super(pos);
-		this.CanHurtPlayer = true;
+		this.canHurtPlayer = true;
 		// this.animation = new Animation<AniType>(AnimationFrames, null, true);
 		throw new Error("ZakFoe compileert nog niet omdat er gewoon nog wat zaken missen.");
 		this.timer = BStopwatch.createWatch();
@@ -51,56 +51,56 @@ export class ZakFoe extends Foe {
 		this.hitarea = ZakFoe.ZakFoeHitArea;
 		this.size = newSize(16, 16);
 		this.itemSpawnedAfterKill = itemSpawned;
-		this.Direction = Direction.Left;
-		this.Health = 1;
+		this.direction = Direction.Left;
+		this.health = 1;
 	}
 
-	public TakeTurn(): void {
+	public takeTurn(): void {
 		let stepValue: AniStepCompoundValue<AniType> = { nextStepValue: { img: this.imgid, dy: 0 } };
 		this.animation.doAnimation(this.timer, stepValue);
 		this.imgid = stepValue.nextStepValue.img;
 		this.pos.y += stepValue.nextStepValue.dy;
 		// if (this.imgid == BitmapId.ZakFoe_2) {
 		if (this.imgid == 0) {
-			switch (this.Direction) {
+			switch (this.direction) {
 				case Direction.Left:
 					this.pos.x -= 1;
 					// Handle game screen collision
 					if (this.pos.x <= 0)
-						this.Direction = Direction.Right;
+						this.direction = Direction.Right;
 					// Handle wall / missing floor collision
 					if (M._.CurrentRoom.AnyCollisionsTiles(true, { x: this.hitbox_sx, y: this.hitbox_sy }, { x: this.hitbox_sx, y: this.hitbox_ey }))
-						this.Direction = Direction.Right;
+						this.direction = Direction.Right;
 					if (!M._.CurrentRoom.AnyCollisionsTiles(true, { x: this.hitbox_sx, y: this.hitbox_ey + TileSize + 4 }))
-						this.Direction = Direction.Right;
+						this.direction = Direction.Right;
 					break;
 				case Direction.Right:
 					this.pos.x += 1;
 					// Handle game screen collision
 					if (this.pos.x >= CS.GameScreenWidth)
-						this.Direction = Direction.Left;
+						this.direction = Direction.Left;
 					// Handle wall / missing floor collision
 					if (M._.CurrentRoom.AnyCollisionsTiles(true, { x: this.hitbox_ex, y: this.hitbox_sy }, { x: this.hitbox_ex, y: this.hitbox_ey }))
-						this.Direction = Direction.Left;
+						this.direction = Direction.Left;
 					if (!M._.CurrentRoom.AnyCollisionsTiles(true, { x: this.hitbox_ex, y: this.hitbox_ey + TileSize + 4 }))
-						this.Direction = Direction.Left;
+						this.direction = Direction.Left;
 					break;
 			}
 		}
-		super.TakeTurn();
+		super.takeTurn();
 
 	}
 	public Dispose(): void {
 		BStopwatch.removeWatch(this.timer);
 	}
 
-	public HandleHit(source: PlayerProjectile): void {
-		super.HandleHit(source);
+	public handleHit(source: PlayerProjectile): void {
+		super.handleHit(source);
 		this.loseHealth(source);
 	}
 
-	public Paint(offset: Point = null): void {
-		this.flippedH = this.Direction == Direction.Left ? true : false;
-		super.Paint(offset);
+	public paint(offset: Point = null): void {
+		this.flippedH = this.direction == Direction.Left ? true : false;
+		super.paint(offset);
 	}
 }

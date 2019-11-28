@@ -51,7 +51,7 @@ export class GameView implements IGameView {
         }
         if (foe.disposeFlag)
             return 0;
-        return foe.HealthPercentage;
+        return foe.healthPercentage;
     }
 
     public get FoeForWhichHealthPercentageIsGiven(): Foe {
@@ -65,36 +65,6 @@ export class GameView implements IGameView {
         else {
             return clientWidth / <number>originalBufferWidth;
         }
-    }
-
-    public ChangeScale(newScale: number): void {
-        GO.Scale = newScale;
-        this.scaleChanged();
-    }
-
-    private scaleChanged(): void {
-        throw Error("Not implemented!");
-        // BDX._.ChangeWindowSize(<number>(MCS.MSX2ScreenWidth * GO.Scale), <number>(MCS.MSX2ScreenHeight * GO.Scale));
-        // BDX._.Zoom = GO.Scale;
-    }
-
-    public ToFullscreen(): void {
-        throw Error("Not implemented!");
-        // BDX._.SwitchToFullscreen();
-        // let clientWidth: number = BDX._.GetClientWidth();
-        // let clientHeight: number = BDX._.GetClientHeight();
-        // let bufferWidth: number, bufferHeight;
-        // if (clientWidth >= clientHeight) {
-        //     bufferHeight = clientHeight;
-        //     bufferWidth = <number>(clientHeight * (MCS.MSX2ScreenWidth / <number>MCS.MSX2ScreenHeight));
-        // }
-        // else {
-        //     bufferWidth = clientWidth;
-        //     bufferHeight = <number>(clientWidth * (MCS.MSX2ScreenHeight / <number>MCS.MSX2ScreenWidth));
-        // }
-        // BDX._.ChangeBufferSize(bufferWidth, bufferHeight);
-        // BDX._.Zoom = GameView.DetermineMaxScaleForFullscreen(BDX._.GetWindowWidth(), BDX._.GetWindowHeight(), MCS.MSX2ScreenWidth, MCS.MSX2ScreenHeight);
-        // }
     }
 
     public ToWindowed(): void {
@@ -153,7 +123,7 @@ export class GameView implements IGameView {
                 let gamescreenOffset = <Point>{ x: CS.GameScreenStartX, y: CS.GameScreenStartY };
                 if (M._.gameSubstate != GameSubstate.SwitchRoom) {
                     M._.CurrentRoom.Paint();
-                    M._.objects.sort(o => o.priority).sort(o => o.pos.y + o.size.y).forEach(o => o.Paint(gamescreenOffset));
+                    M._.objects.sort(o => o.priority).sort(o => o.pos.y + o.size.y).forEach(o => o.paint(gamescreenOffset));
                 }
                 this.Hud.Paint();
 
@@ -182,9 +152,9 @@ export class GameView implements IGameView {
 
                 M._.GameMenu.Paint();
                 if (M._.paused) {
-                    view.FillRectangle(GameView.pausePosX, GameView.pausePosY, GameView.pauseEndX, GameView.pauseEndY, MCS.Msx1Colors[1]);
-                    view.DrawRectangle(GameView.pausePosX, GameView.pausePosY, GameView.pauseEndX, GameView.pauseEndY, MCS.Msx1Colors[15]);
-                    TextWriter.DrawText(GameView.pauseTextPosX, GameView.pauseTextPosY, GameView.pauseText);
+                    view.fillRectangle(GameView.pausePosX, GameView.pausePosY, GameView.pauseEndX, GameView.pauseEndY, MCS.Msx1Colors[1]);
+                    view.drawRectangle(GameView.pausePosX, GameView.pausePosY, GameView.pauseEndX, GameView.pauseEndY, MCS.Msx1Colors[15]);
+                    TextWriter.drawText(GameView.pauseTextPosX, GameView.pauseTextPosY, GameView.pauseText);
                 }
                 break;
         }

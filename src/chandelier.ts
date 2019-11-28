@@ -11,7 +11,7 @@ import { Area, Point } from "../BoazEngineJS/interfaces";
 
 /*[Serializable]*/
 export class Chandelier extends Foe {
-	public get DamageToPlayer(): number {
+	public get damageToPlayer(): number {
 		return 3;
 	}
 
@@ -19,7 +19,7 @@ export class Chandelier extends Foe {
 		return 0;
 	}
 
-	public get RespawnAtRoomEntry(): boolean {
+	public get respawnAtRoomEntry(): boolean {
 		return true;
 	}
 
@@ -43,11 +43,11 @@ export class Chandelier extends Foe {
 
 	protected state: ChandelierState;
 
-	public get CanHurtPlayer(): boolean {
+	public get canHurtPlayer(): boolean {
 		return this.state == ChandelierState.Crashing ? true : false;
 	}
 
-	public set CanHurtPlayer(value: boolean) {
+	public set canHurtPlayer(value: boolean) {
 
 	}
 
@@ -60,11 +60,11 @@ export class Chandelier extends Foe {
 		this.hitarea = Chandelier.ChandelierHitArea;
 		this.size = newSize(50, 64);
 		this.itemSpawnedAfterKill = ItemType.None;
-		this.Health = 0;
+		this.health = 0;
 		this.state = ChandelierState.None;
 	}
 
-	public TakeTurn(): void {
+	public takeTurn(): void {
 		switch (this.state) {
 			case ChandelierState.None:
 				if (M._.Belmont.x_plus_width >= this.pos.x && M._.Belmont.pos.x <= this.x_plus_width) {
@@ -94,13 +94,13 @@ export class Chandelier extends Foe {
 		BStopwatch.removeWatch(this.timer);
 	}
 
-	public HandleHit(source: PlayerProjectile): void {
-		super.HandleHit(source);
+	public handleHit(source: PlayerProjectile): void {
+		super.handleHit(source);
 		this.loseHealth(source);
 	}
 
-	public Paint(offset: Point = null): void {
-		super.Paint(offset);
+	public paint(offset: Point = null): void {
+		super.paint(offset);
 	}
 }
 

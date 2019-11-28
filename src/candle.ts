@@ -10,7 +10,7 @@ import { Area, Point } from "../BoazEngineJS/interfaces";
 
 /*[Serializable]*/
 export class Candle extends Foe {
-	public get DamageToPlayer(): number {
+	public get damageToPlayer(): number {
 		return 0;
 	}
 
@@ -18,7 +18,7 @@ export class Candle extends Foe {
 		return 0;
 	}
 
-	public get RespawnAtRoomEntry(): boolean {
+	public get respawnAtRoomEntry(): boolean {
 		return true;
 	}
 
@@ -35,7 +35,7 @@ export class Candle extends Foe {
 	protected itemSpawnedAfterKill: ItemType;
 	constructor(pos: Point, itemSpawned: ItemType = ItemType.HeartSmall) {
 		super(pos);
-		this.CanHurtPlayer = false;
+		this.canHurtPlayer = false;
 		this.animation = new Animation<BitmapId>(Candle.AnimationFrames, Candle.ElapsedMsPerFrame);
 		this.animation.repeat = true;
 		this.timer = BStopwatch.createWatch();
@@ -43,26 +43,26 @@ export class Candle extends Foe {
 		this.timer.restart();
 		this.hitarea = Candle.CandleHitArea;
 		this.itemSpawnedAfterKill = itemSpawned;
-		this.MaxHealth = 1;
-		this.Health = 1;
+		this.maxHealth = 1;
+		this.health = 1;
 	}
 
-	public TakeTurn(): void {
+	public takeTurn(): void {
 		let imageId: AniStepCompoundValue<BitmapId> = { nextStepValue: this.imgid };
 		this.animation.doAnimation(this.timer, imageId);
 		this.imgid = imageId.nextStepValue;
 	}
 
-	public Dispose(): void {
+	public dispose(): void {
 		BStopwatch.removeWatch(this.timer);
 	}
 
-	public HandleHit(source: PlayerProjectile): void {
-		super.HandleHit(source);
+	public handleHit(source: PlayerProjectile): void {
+		super.handleHit(source);
 		this.loseHealth(source);
 	}
 
-	public Paint(offset: Point = null): void {
-		super.Paint(offset);
+	public paint(offset: Point = null): void {
+		super.paint(offset);
 	}
 }

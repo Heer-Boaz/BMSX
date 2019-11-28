@@ -16,7 +16,7 @@ export class View {
     public viewportSize: Size;
     public dx: number;
     public dy: number;
-    public dxy: number;
+    public scale: number;
 
     constructor(viewportsize: Size) {
         this.canvas = <HTMLCanvasElement>$('#gamescreen')[0];
@@ -41,14 +41,14 @@ export class View {
         this.windowSize = <Size>{ x: w, y: h };
         this.dx = this.windowSize.x / this.viewportSize.x;
         this.dy = this.windowSize.y / this.viewportSize.y;
-        this.dxy = Math.min(this.dx, this.dy);
+        this.scale = Math.min(this.dx, this.dy);
     }
 
     public handleResize(): void {
         if (document.getElementById('gamescreen').style.visibility == 'hidden') return;
         view.calculateSize();
-        this.canvas.width = this.viewportSize.x * this.dxy; //this.windowSize.x;
-        this.canvas.height = this.viewportSize.y * this.dxy; //this.windowSize.y;
+        this.canvas.width = this.viewportSize.x * this.scale; //this.windowSize.x;
+        this.canvas.height = this.viewportSize.y * this.scale; //this.windowSize.y;
 
         this.canvas.style.left = (this.windowSize.x - this.canvas.width) / 2 + "px";
         this.canvas.style.top = (this.windowSize.y - this.canvas.height) / 2 + "px";
@@ -60,58 +60,46 @@ export class View {
         // model.objects.forEach((x) => { x.handleResizeEvent(); });
     }
 
-    private clear(context?: CanvasRenderingContext2D): void {
+    public clear(): void {
         // Clear the canvas
-        if (context == null) context = this.context;
-        context.clearRect(0, 0, context.canvas.width, context.canvas.height);
-    }
-
-    public draw(): void {
-        // TODO: IMPLEMENTEER!
-        // throw ("Niet geïmplementeerd :(");
+        this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
     }
 
     public drawLoading(): void {
         this.clear();
-
-        this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
         this.context.font = '18pt Calibri';
         this.context.fillStyle = 'white';
         this.context.fillText('Loading...', 10, 25);
     }
 
-    public DrawBitmap(imgid: number, x: number, y: number, options?: number): void {
-        this.drawImg(imgid, <Point>{ x: x, y: y }, options || undefined);
-    }
-
-    public DrawColoredBitmap(imgid: number, x: number, y: number, r: number, g: number, b: number, a?: number) {
-        // TODO: IMPLEMENTEER!!
-        this.DrawBitmap(imgid, x, y, 0);
-    }
-
-    public drawDebug(img: HTMLImageElement, pos: Point): void {
-        this.context.save();
-        this.context.scale(this.dxy, this.dxy);
-        this.context.imageSmoothingEnabled = false;
-        this.context.drawImage(img, pos.x, pos.y);
-        this.context.restore();
-    }
-
-    public drawImg(imgid: number, pos: Point, options?: number): void {
+    public drawImg(imgid: number, x: number, y: number, options?: number): void {
         let img = View.images.get(imgid);
         if (!img) throw new Error("Cannot find image with id '" + imgid + "'");
 
         this.context.save();
-        this.context.scale(this.dxy, this.dxy);
+        this.context.scale(this.scale, this.scale);
+        this.context.imageSmoothingEnabled = false;
+        this.context.drawImage(img, x, y);
+        this.context.restore();
+    }
+
+    public drawColoredBitmap(imgid: number, x: number, y: number, r: number, g: number, b: number, a?: number) {
+        // TODO: IMPLEMENTEER!!
+        this.drawImg(imgid, x, y, 0);
+    }
+
+    public drawDebug(img: HTMLImageElement, pos: Point): void {
+        this.context.save();
+        this.context.scale(this.scale, this.scale);
         this.context.imageSmoothingEnabled = false;
         this.context.drawImage(img, pos.x, pos.y);
         this.context.restore();
     }
 
-    public DrawRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
+    public drawRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
         this.context.save();
-        this.context.scale(this.dx, this.dy);
+        this.context.scale(this.scale, this.scale);
         this.context.beginPath();
         this.context.strokeStyle = this.toRgb(c);
         this.context.rect(x, y, ex - x, ey - y);
@@ -119,9 +107,9 @@ export class View {
         this.context.restore();
     }
 
-    public FillRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
+    public fillRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
         this.context.save();
-        this.context.scale(this.dx, this.dy);
+        this.context.scale(this.scale, this.scale);
         this.context.beginPath();
         let colorRgb = this.toRgb(c);
         this.context.fillStyle = colorRgb;

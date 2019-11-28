@@ -181,9 +181,9 @@ export class MainMenu {
     }
 
     public Paint(): void {
-        view.DrawBitmap(BitmapId.Title, 0, 0);
-        view.FillRectangle(MainMenu.boxX, MainMenu.boxY, MainMenu.boxEndX, MainMenu.boxEndY, MCS.Msx1Colors[4]);
-        view.DrawRectangle(MainMenu.boxX, MainMenu.boxY, MainMenu.boxEndX, MainMenu.boxEndY, MCS.Msx1Colors[15]);
+        view.drawImg(BitmapId.Title, 0, 0);
+        view.fillRectangle(MainMenu.boxX, MainMenu.boxY, MainMenu.boxEndX, MainMenu.boxEndY, MCS.Msx1Colors[4]);
+        view.drawRectangle(MainMenu.boxX, MainMenu.boxY, MainMenu.boxEndX, MainMenu.boxEndY, MCS.Msx1Colors[15]);
         switch (this.state) {
             case State.SubMenu:
             case State.SelectMain:
@@ -191,22 +191,22 @@ export class MainMenu {
                     switch (MainMenu.menuOptions[i]) {
                         case MenuItem.Continue:
                             if (SlotExists(CS.SaveSlotCheckpoint))
-                                TextWriter.DrawText(MainMenu.itemsX, MainMenu.itemYs[i], MainMenu.items[i]);
-                            else TextWriter.DrawText(MainMenu.itemsX, MainMenu.itemYs[i], MainMenu.items[i], MCS.Msx1Colors[0]);
+                                TextWriter.drawText(MainMenu.itemsX, MainMenu.itemYs[i], MainMenu.items[i]);
+                            else TextWriter.drawText(MainMenu.itemsX, MainMenu.itemYs[i], MainMenu.items[i], MCS.Msx1Colors[0]);
                             break;
                         default:
-                            TextWriter.DrawText(MainMenu.itemsX, MainMenu.itemYs[i], MainMenu.items[i]);
+                            TextWriter.drawText(MainMenu.itemsX, MainMenu.itemYs[i], MainMenu.items[i]);
                             break;
                     }
                 }
                 break;
             case State.SelectChapter:
                 for (let i = 0; i < MainMenu.chapterItems.length; i++) {
-                    TextWriter.DrawText(MainMenu.itemsX, MainMenu.itemYs[i], MainMenu.chapterItems[i]);
+                    TextWriter.drawText(MainMenu.itemsX, MainMenu.itemYs[i], MainMenu.chapterItems[i]);
                 }
                 break;
         }
-        view.DrawBitmap(<number>BitmapId.MenuCursor, this.cursorX, this.cursorY);
+        view.drawImg(<number>BitmapId.MenuCursor, this.cursorX, this.cursorY);
 
     }
 

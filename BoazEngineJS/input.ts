@@ -1,4 +1,6 @@
 ﻿import { Point } from "./interfaces"
+import { game } from "./engine";
+import { Controller } from './controller';
 
 export class Input {
     public static KC_BTN1: boolean;
@@ -41,9 +43,9 @@ export class Input {
     public static init(): void {
         Input.reset();
 
-        document.addEventListener('keydown', keydown, false);
-        document.addEventListener('keyup', keyup, false);
-        document.addEventListener('blur', blur, false);
+        window.addEventListener('keydown', keydown, false);
+        window.addEventListener('keyup', keyup, false);
+        window.addEventListener('blur', blur, false);
     }
 
     public static reset(): void {
@@ -88,6 +90,9 @@ export class Input {
 }
 
 function keydown(e: KeyboardEvent): void {
+    if (game.running) e.preventDefault();
+    if (!document.hasFocus()) return;
+
     switch (e.key) {
         case "ArrowLeft":
             if (Input.KC_LEFT === true)
@@ -103,8 +108,8 @@ function keydown(e: KeyboardEvent): void {
             break;
         case "ArrowDown":
             if (Input.KD_DOWN === true)
-                Input.KC_DOWN = true;
-            else Input.KC_DOWN = false;
+                Input.KC_DOWN = false;
+            else Input.KC_DOWN = true;
             Input.KD_DOWN = true;
             break;
         case "ArrowUp":
@@ -165,6 +170,9 @@ function keydown(e: KeyboardEvent): void {
 }
 
 function keyup(e: KeyboardEvent): void {
+    if (game.running) e.preventDefault();
+    if (!document.hasFocus()) return;
+
     switch (e.key) {
         case "ArrowLeft":
             Input.KD_LEFT = false;

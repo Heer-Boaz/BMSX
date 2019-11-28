@@ -10,11 +10,11 @@ import { Point } from "../BoazEngineJS/interfaces";
 
 /*[Serializable]*/
 export abstract class Foe extends Creature {
-    public MaxHealth: number;
-    public Health: number;
+    public maxHealth: number;
+    public health: number;
 
-    public get HealthPercentage(): number {
-        return Math.min(<number>(Math.round(this.Health / <number>this.MaxHealth * 100)), 100);
+    public get healthPercentage(): number {
+        return Math.min(<number>(Math.round(this.health / <number>this.maxHealth * 100)), 100);
     }
 
     constructor(pos: Point) {
@@ -22,34 +22,34 @@ export abstract class Foe extends Creature {
 
     }
 
-    public get RespawnAtRoomEntry(): boolean {
+    public get respawnAtRoomEntry(): boolean {
         return false;
     }
 
-    public CanHurtPlayer: boolean;
-    public DamageToPlayer: number;
+    public canHurtPlayer: boolean;
+    public damageToPlayer: number;
 
-    public get IsAfoot(): boolean {
-        return this.CanHurtPlayer;
+    public get isAfoot(): boolean {
+        return this.canHurtPlayer;
     }
 
     protected itemSpawnedAfterKill: ItemType;
 
-    public TakeTurn(): void {
-        if (this.CanHurtPlayer && this.objectCollide(M._.Belmont)) {
-            M._.Belmont.TakeDamage(this.DamageToPlayer);
+    public takeTurn(): void {
+        if (this.canHurtPlayer && this.objectCollide(M._.Belmont)) {
+            M._.Belmont.TakeDamage(this.damageToPlayer);
         }
     }
 
-    public HandleHit(source: PlayerProjectile): void {
+    public handleHit(source: PlayerProjectile): void {
         M._.LastFoeThatWasHit = this;
-        // SoundMaster.PlayEffect(RM.Sound[AudioId.Hit]);
+        // SoundMaster.PlayEffect(RM.Sound.get(AudioId.Hit]);
     }
 
     protected loseHealth(source: PlayerProjectile): void {
-        this.Health -= source.DamageDealt;
-        if (this.Health <= 0)
-            this.Die();
+        this.health -= source.damageDealt;
+        if (this.health <= 0)
+            this.die();
     }
 
     protected handleDie(): void {
@@ -57,7 +57,7 @@ export abstract class Foe extends Creature {
         M._.FoeDefeated(this);
     }
 
-    public Die(): void {
+    public die(): void {
         if (this.itemSpawnedAfterKill == ItemType.HeartSmall) {
             this.dieWithItem(this.itemSpawnedAfterKill);
         }

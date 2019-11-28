@@ -174,13 +174,13 @@ export class GameController extends Controller {
                         break;
                     case GameSubstate.BelmontDies:
                         this.handleInputDuringGame();
-                        M._.Belmont.TakeTurn();
+                        M._.Belmont.takeTurn();
                         V._.Hud.TakeTurn();
                         break;
                     case GameSubstate.ItsCurtainsForYou:
                     case GameSubstate.ToEndDemo:
                         this.handleInputDuringGame();
-                        M._.Belmont.TakeTurn();
+                        M._.Belmont.takeTurn();
                         V._.Hud.TakeTurn();
                         V._.ItsCurtains.TakeTurn();
                         break;
@@ -200,7 +200,7 @@ export class GameController extends Controller {
                         this.handleInputDuringGame();
                         let objects = M._.objects;
                         let foes = M._.Foes;
-                        objects.forEach(o => o.TakeTurn());
+                        objects.forEach(o => o.takeTurn());
                         objects.filter(o => o.disposeFlag === true).forEach(o => M._.remove(o));
                         M._.CurrentRoom.TakeTurn();
                         V._.Hud.TakeTurn();
@@ -222,7 +222,7 @@ export class GameController extends Controller {
                         break;
                     default:
                         let objects = M._.objects;
-                        objects.forEach(o => o.TakeTurn());
+                        objects.forEach(o => o.takeTurn());
                         objects.filter(o => o.disposeFlag === true).forEach(o => M._.remove(o));
                         M._.CurrentRoom.TakeTurn();
                         V._.Hud.TakeTurn();
