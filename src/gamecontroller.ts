@@ -239,7 +239,7 @@ export class GameController extends Controller {
     }
 
     private handleInputDuringGame(): void {
-        if (Input.KD_F1)
+        if (Input.KC_F1)
             this.PauseGame();
         switch (M._.Substate) {
             case GameSubstate.BelmontDies:

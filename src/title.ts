@@ -55,7 +55,7 @@ export class Title {
 		let newState: AniStepCompoundValue<State> = { nextStepValue: <State>this.state };
 		if (Input.KC_SPACE) {
 			C._.PreludeFinished();
-			Input.KC_SPACE = false;
+			Input.reset();
 			return
 		}
 

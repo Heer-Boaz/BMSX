@@ -106,12 +106,12 @@ export class MainMenu {
                             else S.PlayEffect(ResourceMaster.Sound[AudioId.Fout]);
                             break;
                         case MenuItem.LoadGame:
-                            Input.KC_SPACE = false;
+                            Input.reset();
                             M._.GameMenu.Open(MenuItem.LoadFromMainMenu);
                             this.state = State.SubMenu;
                             break;
                         case MenuItem.Options:
-                            Input.KC_SPACE = false;
+                            Input.reset();
                             M._.GameMenu.Open(MenuItem.OptionsFromMainMenu);
                             this.state = State.SubMenu;
                             break;

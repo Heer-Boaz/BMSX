@@ -68,7 +68,7 @@ export class GameOver {
                             break;
                         case 1:
                             S.PlayEffect(RM.Sound.get(AudioId.Selectie));
-                            Input.KC_SPACE = false;
+                            Input.reset();
                             M._.GameMenu.Open(MenuItem.LoadFromGameOver);
                             this.state = State.SelectFile;
                             break;
