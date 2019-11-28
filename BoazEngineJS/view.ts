@@ -1,5 +1,5 @@
 ﻿import { Constants } from "./constants"
-import { view, images } from "./engine";
+import { view } from "./engine";
 import { Size, Point, Color } from "./interfaces";
 
 export enum DrawBitmap {
@@ -10,6 +10,7 @@ export enum DrawBitmap {
 export class View {
     public canvas: HTMLCanvasElement;
     public context: CanvasRenderingContext2D;
+    public static images: Map<number, HTMLImageElement>;
 
     public windowSize: Size;
     public viewportSize: Size;
@@ -95,8 +96,8 @@ export class View {
         this.context.restore();
     }
 
-    public drawImg(imgid: string | number, pos: Point, options?: number): void {
-        let img = images[imgid];
+    public drawImg(imgid: number, pos: Point, options?: number): void {
+        let img = View.images.get(imgid);
         if (!img) throw new Error("Cannot find image with id '" + imgid + "'");
 
         this.context.save();

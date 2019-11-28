@@ -2,7 +2,7 @@ import { Animation, AniStepCompoundValue, AniData } from '../BoazEngineJS/animat
 import { BStopwatch } from "../BoazEngineJS/btimer";
 import { BossFoe } from "./bossfoe";
 import { Direction } from "../BoazEngineJS/direction";
-import { AudioId, BitmapId } from "../BoazEngineJS/resourceids";
+import { AudioId, BitmapId } from "./resourceids";
 import { PlayerProjectile } from "./pprojectile";
 import { Area, Point } from '../BoazEngineJS/interfaces';
 import { newArea, newSize } from '../BoazEngineJS/common';
@@ -30,7 +30,9 @@ export class Pietula extends BossFoe {
 	}
 
 	protected static PietulaHitArea: Area = newArea(0, 0, 10, 16);
-	protected static pietulaSprites: Map<Direction, BitmapId[]> = new Map([[Direction.None, [BitmapId.Pietula_1]]]);
+	protected static pietulaSprites: Map<Direction, BitmapId[]> = new Map([
+		// [Direction.None, [BitmapId.Pietula_1]]
+	]);
 
 	protected timer: BStopwatch;
 	protected state: PietulaState;
@@ -41,8 +43,8 @@ export class Pietula extends BossFoe {
 	}
 
 	protected static AnimationFrames: AniData<AniType>[] = new Array(
-		{ time: 250, data: { img: BitmapId.Pietula_1, dy: -1 } },
-		{ time: 250, data: { img: BitmapId.Pietula_2, dy: 1 } },
+		// { time: 250, data: { img: BitmapId.Pietula_1, dy: -1 } },
+		// { time: 250, data: { img: BitmapId.Pietula_2, dy: 1 } },
 	);
 
 	constructor(pos: Point) {

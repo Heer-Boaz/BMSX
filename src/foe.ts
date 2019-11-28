@@ -4,7 +4,7 @@ import { ItemType } from "./item";
 import { GameModel as M } from "./sintervaniamodel";
 import { SoundMaster } from "../BoazEngineJS/soundmaster";
 import { FoeExplosion } from "./foeexplosion";
-import { AudioId } from "../BoazEngineJS/resourceids";
+import { AudioId } from "./resourceids";
 import { ResourceMaster as RM } from "./resourcemaster";
 import { Point } from "../BoazEngineJS/interfaces";
 

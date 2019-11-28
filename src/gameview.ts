@@ -5,7 +5,7 @@ import { MainMenu } from "./mainmenu";
 import { Title } from "./title";
 import { GameState, GameSubstate } from "../BoazEngineJS/model";
 import { GameConstants as CS } from "./gameconstants"
-import { AudioId, BitmapId } from "../BoazEngineJS/resourceids";
+import { AudioId, BitmapId } from "./resourceids";
 import { ResourceMaster } from "./resourcemaster";
 import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
 import { Direction } from "../BoazEngineJS/direction";

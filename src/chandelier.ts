@@ -4,7 +4,7 @@ import { Animation, AniData } from "../BoazEngineJS/animation";
 import { Foe } from "./foe";
 import { PlayerProjectile } from "./pprojectile";
 import { ItemType } from "./item";
-import { AudioId, BitmapId } from "../BoazEngineJS/resourceids";
+import { AudioId, BitmapId } from "./resourceids";
 import { newArea, newSize } from "../BoazEngineJS/common";
 import { GameModel as M } from "./sintervaniamodel";
 import { Area, Point } from "../BoazEngineJS/interfaces";
@@ -25,13 +25,13 @@ export class Chandelier extends Foe {
 
 	protected static ChandelierHitArea: Area = newArea(14, 0, 35, 64);
 	protected static chandelierSprites: Map<Direction, BitmapId[]> = new Map([
-		[Direction.None, [BitmapId.Chandelier_1]]
+		// [Direction.None, [BitmapId.Chandelier_1]]
 	]);
 	protected static AnimationFrames: AniData<number>[] = [
-		{ time: 125, data: BitmapId.Chandelier_2 },
-		{ time: 125, data: BitmapId.Chandelier_3 },
-		{ time: 125, data: BitmapId.Chandelier_4 },
-		{ time: 125, data: BitmapId.Chandelier_5 },
+		// { time: 125, data: BitmapId.Chandelier_2 },
+		// { time: 125, data: BitmapId.Chandelier_3 },
+		// { time: 125, data: BitmapId.Chandelier_4 },
+		// { time: 125, data: BitmapId.Chandelier_5 },
 	];
 
 	protected animation: Animation<number>;
@@ -56,7 +56,7 @@ export class Chandelier extends Foe {
 		this.animation = new Animation<number>(Chandelier.AnimationFrames);
 		this.animation.repeat = true;
 		this.timer = BStopwatch.createWatch();
-		this.imgid = <number>BitmapId.Chandelier_1;
+		// this.imgid = BitmapId.Chandelier_1;
 		this.hitarea = Chandelier.ChandelierHitArea;
 		this.size = newSize(50, 64);
 		this.itemSpawnedAfterKill = ItemType.None;

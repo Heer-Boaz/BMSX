@@ -4,7 +4,7 @@ import { ItemType } from "./item";
 import { Animation, AniStepCompoundValue } from "../BoazEngineJS/animation"
 import { Direction } from "../BoazEngineJS/direction";
 import { PlayerProjectile } from "./pprojectile";
-import { AudioId, BitmapId } from "../BoazEngineJS/resourceids";
+import { AudioId, BitmapId } from "./resourceids";
 import { newArea } from "../BoazEngineJS/common";
 import { Area, Point } from "../BoazEngineJS/interfaces";
 

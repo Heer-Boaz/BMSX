@@ -1,6 +1,6 @@
 import { Animation, AniStepCompoundValue } from "../BoazEngineJS/animation"
 import { setPoint } from "../BoazEngineJS/common";
-import { AudioId, BitmapId } from "../BoazEngineJS/resourceids";
+import { AudioId, BitmapId } from "./resourceids";
 import { GameController as C } from "./gamecontroller";
 import { Input } from "../BoazEngineJS/input";
 import { Point } from "../BoazEngineJS/interfaces";
@@ -98,9 +98,9 @@ export class Title {
 	}
 
 	public Paint(): void {
-		view.DrawBitmap(<number>BitmapId.TitelBoven, this.titleTopPos.x, this.titleTopPos.y);
-		view.DrawBitmap(<number>BitmapId.TitelOnder, this.titleBottomPos.x, this.titleBottomPos.y);
-		if (this.state != State.WaitForIt)
-			view.DrawBitmap(<number>BitmapId.TitelKonami, Title.konamiX, Title.konamiY);
+		// view.DrawBitmap(<number>BitmapId.TitelBoven, this.titleTopPos.x, this.titleTopPos.y);
+		// view.DrawBitmap(<number>BitmapId.TitelOnder, this.titleBottomPos.x, this.titleBottomPos.y);
+		// if (this.state != State.WaitForIt)
+		// 	view.DrawBitmap(<number>BitmapId.TitelKonami, Title.konamiX, Title.konamiY);
 	}
 }

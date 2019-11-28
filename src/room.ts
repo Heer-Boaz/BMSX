@@ -4,7 +4,7 @@ import { Direction } from "../BoazEngineJS/direction";
 import { GameConstants as CS, GameConstants } from "./gameconstants";
 import { view } from "../BoazEngineJS/engine";
 import { RoomDataContainer } from "./RoomFactory";
-import { BitmapId } from "../BoazEngineJS/resourceids";
+import { BitmapId } from "./resourceids";
 import { ResourceMaster } from './resourcemaster';
 
 export type NearingRoomExitResult = { destRoom: number, direction: Direction } | null;
@@ -28,7 +28,7 @@ export class Room {
 	// public bool DefaultRespawnLocation;
 	public Exits: number[];
 	public initFunction: RoomInitDelegate;
-	public BitmapPath: string;
+	public imgid: BitmapId;
 
 	public static LoadRoom(data: RoomDataContainer): Room {
 		var result = new Room();
@@ -36,9 +36,10 @@ export class Room {
 		result.CollisionData = data.CollisionMap;
 		result.Exits = data.Exits;
 		result.initFunction = data.InitFunction;
-		result.BitmapPath = data.BitmapPath;
+		result.imgid = data.imgid;
+		// result.BitmapPath = data.BitmapPath;
 
-		ResourceMaster.reloadImg(BitmapId.Room, data.BitmapPath);
+		// ResourceMaster.reloadImg(BitmapId.Room, data.BitmapPath);
 
 		return result;
 	}
@@ -151,7 +152,7 @@ export class Room {
 	}
 
 	public Paint() {
-		view.DrawBitmap(BitmapId.Room, CS.GameScreenStartX, CS.GameScreenStartY);
+		view.DrawBitmap(this.imgid, CS.GameScreenStartX, CS.GameScreenStartY);
 	}
 }
 

@@ -4,20 +4,23 @@ import { newPoint } from '../BoazEngineJS/common';
 import { Tile } from '../BoazEngineJS/msx';
 import { GameModel as M } from "./sintervaniamodel";
 import { GardenCandle } from './gardencandle';
+import { BitmapId } from './resourceids';
 
 export class RoomDataContainer {
 	public Id: number;
 	public CollisionMap: string[];
 	public Exits: number[];
-	public BitmapPath: string;
+	// public BitmapPath: string;
+	public imgid: BitmapId;
 	public Map: number[][];
 	public InitFunction: RoomInitDelegate;
 
-	public constructor(id: number, cmap: string[], exits: number[], bitmapPath: string, map: number[][], initFunction: RoomInitDelegate) {
+	public constructor(id: number, cmap: string[], exits: number[], imgid: BitmapId, map: number[][], initFunction: RoomInitDelegate) {
 		this.Id = id;
 		this.CollisionMap = cmap;
 		this.Exits = exits;
-		this.BitmapPath = bitmapPath;
+		// this.BitmapPath = bitmapPath;
+		this.imgid = imgid;
 		this.Map = map;
 		this.InitFunction = initFunction;
 	}
@@ -103,11 +106,11 @@ export class RoomFactory {
 		RoomFactory.rooms = new Map<number, RoomDataContainer>();
 		let collisionData: string[];
 		let id: number;
-		let bitmapPath: string;
+		let imgid: BitmapId;
 		let map: number[][];
 		id = 1;
 		map = RoomFactory.RoomMap_debug;
-		bitmapPath = "./Resources/Graphics/Stage/Dummy/DummyRoom.png";
+		imgid = BitmapId.Garden;
 		collisionData = [
 			"................................",
 			"................................",
@@ -134,10 +137,10 @@ export class RoomFactory {
 			"...########.....................",
 			"...########.....................", // 23
 		];
-		RoomFactory.rooms.set(id, new RoomDataContainer(id, collisionData, RoomFactory.roomExits(map, id), bitmapPath, map, null));
-		RoomFactory.rooms.set(2, new RoomDataContainer(2, collisionData, RoomFactory.roomExits(map, 2), bitmapPath, map, null));
-		RoomFactory.rooms.set(3, new RoomDataContainer(3, collisionData, RoomFactory.roomExits(map, 3), bitmapPath, map, null));
-		RoomFactory.rooms.set(4, new RoomDataContainer(4, collisionData, RoomFactory.roomExits(map, 4), bitmapPath, map, null));
+		RoomFactory.rooms.set(id, new RoomDataContainer(id, collisionData, RoomFactory.roomExits(map, id), imgid, map, null));
+		RoomFactory.rooms.set(2, new RoomDataContainer(2, collisionData, RoomFactory.roomExits(map, 2), imgid, map, null));
+		RoomFactory.rooms.set(3, new RoomDataContainer(3, collisionData, RoomFactory.roomExits(map, 3), imgid, map, null));
+		RoomFactory.rooms.set(4, new RoomDataContainer(4, collisionData, RoomFactory.roomExits(map, 4), imgid, map, null));
 	}
 
 	public static RoomMap_stage0: number[][] = [
@@ -150,12 +153,12 @@ export class RoomFactory {
 	public static PrepareStage0Data(): void {
 		let collisionData: string[];
 		let id: number;
-		let bitmapPath: string;
+		let imgid: BitmapId;
 		let map: number[][];
 		let initFunction: RoomInitDelegate;
 		id = 1;
 		map = RoomFactory.RoomMap_stage0;
-		bitmapPath = "Stage/Garden.png";
+		imgid = BitmapId.Garden;
 		collisionData = [
 			"################################",
 			"#..............................#",
@@ -192,6 +195,6 @@ export class RoomFactory {
 			//}
 		};
 
-		RoomFactory.rooms.set(id, new RoomDataContainer(id, collisionData, RoomFactory.roomExits(map, id), bitmapPath, map, initFunction));
+		RoomFactory.rooms.set(id, new RoomDataContainer(id, collisionData, RoomFactory.roomExits(map, id), imgid, map, initFunction));
 	}
 }

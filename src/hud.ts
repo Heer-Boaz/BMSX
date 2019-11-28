@@ -1,7 +1,7 @@
 import { BStopwatch } from "../BoazEngineJS/btimer";
 import { Foe } from "./foe";
 import { Item, ItemType } from "./item";
-import { AudioId, BitmapId } from "../BoazEngineJS/resourceids";
+import { AudioId, BitmapId } from "./resourceids";
 import { GameModel as M } from "./sintervaniamodel";
 import { GameConstants as CS } from "./gameconstants";
 import { view } from "../BoazEngineJS/engine";
@@ -88,7 +88,7 @@ export class HUD {
         view.DrawBitmap(<number>BitmapId.HUD, HUD.Pos_X, HUD.Pos_Y);
         let pos: Point = { x: HUD.HealthBarPosX, y: HUD.HealthBarPosY };
         for (let i: number = 0; i < this.percentageToBarLength(this.shownHealthLevel); i++) {
-            view.DrawBitmap(<number>BitmapId.HUD_EnergyStripe_belmont, pos.x, pos.y);
+            view.DrawBitmap(<number>BitmapId.EnergybarStripe_Belmont, pos.x, pos.y);
             pos.x += 1;
         }
 
@@ -117,13 +117,13 @@ export class HUD {
         if (lengthBefore != -1) {
             if (lengthBefore > 0) {
                 for (let i: number = 0; i <= lengthBefore; i++) {
-                    view.DrawBitmap(<number>BitmapId.HUD_EnergyStripe_boss, pos.x, pos.y);
+                    view.DrawBitmap(<number>BitmapId.EnergybarStripe_Boss, pos.x, pos.y);
                     pos.x += 1;
                 }
             }
             if (lengthBefore != lengthShown) {
                 for (let i: number = lengthBefore; i <= lengthShown; i++) {
-                    view.DrawBitmap(<number>BitmapId.HUD_EnergyStripe_boss, pos.x, pos.y);
+                    view.DrawBitmap(<number>BitmapId.EnergybarStripe_Boss, pos.x, pos.y);
                     pos.x += 1;
                 }
             }

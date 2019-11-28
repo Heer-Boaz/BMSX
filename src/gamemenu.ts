@@ -1,6 +1,6 @@
 import { MenuItem } from "./mainmenu";
 import { GameView as V } from "./gameview";
-import { AudioId, BitmapId } from "../BoazEngineJS/resourceids";
+import { AudioId, BitmapId } from "./resourceids";
 import { Direction } from "../BoazEngineJS/direction";
 import { TextWriter } from "./textwriter";
 import { Size, Point } from "../BoazEngineJS/interfaces";

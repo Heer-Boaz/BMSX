@@ -13,7 +13,7 @@ import { Input } from "../BoazEngineJS/input";
 import { GameMenu } from "./gamemenu";
 import { SlotExists } from "../BoazEngineJS/gamestateloader";
 import { GameState } from "../BoazEngineJS/model";
-import { AudioId, BitmapId } from "../BoazEngineJS/resourceids";
+import { AudioId, BitmapId } from "./resourceids";
 
 export const enum State {
     SelectMain,
@@ -181,7 +181,7 @@ export class MainMenu {
     }
 
     public Paint(): void {
-        view.DrawBitmap(BitmapId.Titel, 0, 0);
+        view.DrawBitmap(BitmapId.Title, 0, 0);
         view.FillRectangle(MainMenu.boxX, MainMenu.boxY, MainMenu.boxEndX, MainMenu.boxEndY, MCS.Msx1Colors[4]);
         view.DrawRectangle(MainMenu.boxX, MainMenu.boxY, MainMenu.boxEndX, MainMenu.boxEndY, MCS.Msx1Colors[15]);
         switch (this.state) {

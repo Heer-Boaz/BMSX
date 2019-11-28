@@ -6,7 +6,7 @@ import { SoundMaster } from "./soundmaster";
 import { IGameView, Size } from './interfaces';
 import { BStopwatch } from './btimer';
 import { ResourceMaster, img2src, snd2src } from '../src/resourcemaster';
-import { GameLoader } from "./gameloader";
+// import { GameLoader } from "./gameloader";
 import { Input } from "./input";
 
 export let game: Game;
@@ -15,8 +15,8 @@ export let controller: Controller;
 export let sound: SoundMaster;
 export let view: View;
 export let gameview: IGameView;
-export let images: Map<string, HTMLImageElement> = new Map<string, HTMLImageElement>();
-export let audio: Map<string, HTMLAudioElement> = new Map<string, HTMLAudioElement>();
+// declare var images: Map<number, HTMLImageElement>;
+// declare var audio: Map<number, HTMLAudioElement>;
 
 export class Game {
     fps: number;
@@ -63,10 +63,10 @@ export class Game {
 
     public start(): void {
         ResourceMaster._.PrepareGameResources();
-        GameLoader.loadgame(img2src, snd2src);
-    }
+        //     GameLoader.loadgame(img2src, snd2src);
+        // }
 
-    public startAfterGameLoad(): void {
+        // public startAfterGameLoad(): void {
         requestAnimationFrame(function (timestamp) {
             game.run(timestamp);
         });

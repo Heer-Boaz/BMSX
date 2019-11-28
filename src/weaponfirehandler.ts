@@ -2,7 +2,7 @@ import { GameModel as M, MainWeaponType, SecWeaponType } from "./sintervaniamode
 import { TriRoe } from "./triroe";
 import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
 import { ResourceMaster as RM } from './resourcemaster';
-import { AudioId } from "../BoazEngineJS/resourceids";
+import { AudioId } from "./resourceids";
 import { waitDuration } from '../BoazEngineJS/common';
 
 export class WeaponFireHandler {

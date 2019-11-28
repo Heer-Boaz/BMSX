@@ -4,7 +4,7 @@ import { waitDuration } from "../BoazEngineJS/common";
 import { view } from "../BoazEngineJS/engine";
 import { GameController as C } from "./gamecontroller";
 import { Point } from "../BoazEngineJS/interfaces";
-import { BitmapId } from "../BoazEngineJS/resourceids";
+import { BitmapId } from "./resourceids";
 import { GameConstants } from "./gameconstants";
 
 export class ItsCurtainsForYou {

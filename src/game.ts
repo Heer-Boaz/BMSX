@@ -1,7 +1,3 @@
-// import { BStopwatch } from "../BoazEngineJS/btimer";
-// import { GameOptions as GO } from "../BoazEngineJS/gameoptions";
-// import { GameController as C, GameController } from './gamecontroller';
-
 import * as engine from "../BoazEngineJS/engine";
 import { GameModel, Chapter } from './sintervaniamodel';
 import { GameController } from "./gamecontroller";
@@ -9,7 +5,7 @@ import { GameView } from './gameview';
 import { GameState } from "../BoazEngineJS/model";
 import { GameConstants } from './gameconstants';
 import { LoadGame } from '../BoazEngineJS/gamestateloader';
-import { RomResource } from '../BoazEngineJS/rom';
+import { loadRom } from '../BoazEngineJS/rom';
 import { DrawBitmap } from '../BoazEngineJS/view';
 import { resolve } from "dns";
 
@@ -40,70 +36,27 @@ import { resolve } from "dns";
 // 	});
 // }
 
-function loadImage(url: string): Promise<HTMLImageElement> {
-	return new Promise((resolve, reject) => {
-		let img = new Image();
-		img.onload = (e => resolve(img));
-		img.onerror = (e => {
-			reject(new Error(`Failed to load image's URL: ${url}`));
-		});
-		img.src = url;
-	});
-}
-
-async function loadRom(): Promise<ArrayBuffer> {
-	return fetch("http://127.0.0.1:8887/rom/packed.rom")
-		.then(response => response.arrayBuffer())
-		.catch(e => { console.error(e); return null; });
-}
-
-async function loadResourceList(): Promise<RomResource[]> {
-	return fetch("http://127.0.0.1:8887/rom/romtable.json")
-		.then(response => response.json())
-		.catch(e => { console.error(e); return null; });
-}
-
-function loadResources(rom: ArrayBuffer) {
-	loadResourceList()
-		.then(list => list.forEach(x => load(rom, x)));
-}
-
-function load(rom: ArrayBuffer, res: RomResource) {
-	if (res.type !== 'image') return;
-	let bytearray = new Uint8Array(rom);
-
-	let sliced = bytearray.slice(res.start, res.end);
-	let blub = new Blob([sliced], { type: 'image/png' });
-	let url = URL.createObjectURL(blub);
-	new engine.Game({ x: GameConstants.ViewportWidth, y: GameConstants.ViewportHeight });
-	loadImage(url).then(img => engine.view.drawDebug(img, { x: 0, y: res.start / 100 }));
-	console.log(url);
-}
-
-export function Annnndddd___Go(): engine.Game {
-	// let d = Uint8Array.from(readFileSync("../rom/packed.rom")).buffer;
+export function Annnndddd___Go(): void {
 	loadRom()
-		.then(rom => loadResources(rom))
+		.then(() => {
+			new engine.Game({ x: GameConstants.ViewportWidth, y: GameConstants.ViewportHeight });
+			engine.game.setModel(new GameModel());
+			engine.game.setController(new GameController());
+			let gameview = new GameView();
+			engine.game.setGameView(gameview);
+			gameview.init();
+
+			GameController._.switchState(GameState.LoadTheGame);
+
+			engine.game.start();
+
+			GameModel._.SelectedChapterToPlay = Chapter.GameStart;
+			GameController._.switchState(GameConstants.INITIAL_GAMESTATE);
+			GameController._.switchSubstate(GameConstants.INITIAL_GAMESUBSTATE);
+
+			return engine.game;
+		})
 		.catch(console.error);
-
-	return null;
-
-	new engine.Game({ x: GameConstants.ViewportWidth, y: GameConstants.ViewportHeight });
-	engine.game.setModel(new GameModel());
-	engine.game.setController(new GameController());
-	let gameview = new GameView();
-	engine.game.setGameView(gameview);
-	gameview.init();
-
-	GameController._.switchState(GameState.LoadTheGame);
-
-	engine.game.start();
-
-	GameModel._.SelectedChapterToPlay = Chapter.GameStart;
-	GameController._.switchState(GameConstants.INITIAL_GAMESTATE);
-	GameController._.switchSubstate(GameConstants.INITIAL_GAMESUBSTATE);
-
-	return engine.game;
 }
 
 // module Sintervania {

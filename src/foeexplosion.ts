@@ -2,7 +2,7 @@ import { ItemType } from "./item";
 import { Animation, AniData } from "../BoazEngineJS/animation"
 import { FX } from "./fx";
 import { HeartSmall } from "./heartsmall";
-import { AudioId, BitmapId } from "../BoazEngineJS/resourceids";
+import { AudioId, BitmapId } from "./resourceids";
 import { GameModel } from "./sintervaniamodel";
 import { addPoints } from "../BoazEngineJS/common";
 import { Point } from "../BoazEngineJS/interfaces";
@@ -10,10 +10,10 @@ import { Point } from "../BoazEngineJS/interfaces";
 /*[Serializable]*/
 export class FoeExplosion extends FX {
     protected static AnimationFrames: AniData<BitmapId>[] = new Array(
-        { time: 100, data: BitmapId.FoeKill_1 },
-        { time: 100, data: BitmapId.FoeKill_2 },
-        { time: 100, data: BitmapId.FoeKill_1 },
-        { time: 100, data: BitmapId.FoeKill_2 },
+        { time: 100, data: BitmapId.Foekill_1 },
+        { time: 100, data: BitmapId.Foekill_2 },
+        { time: 100, data: BitmapId.Foekill_1 },
+        { time: 100, data: BitmapId.Foekill_2 },
     );
 
     protected frameIndex: number;

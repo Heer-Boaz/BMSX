@@ -4,7 +4,7 @@ import { Item, ItemType } from "./item";
 import { Direction } from "../BoazEngineJS/direction";
 import { PlayerProjectile } from "./pprojectile";
 import { newArea, newSize } from "../BoazEngineJS/common";
-import { AudioId, BitmapId } from "../BoazEngineJS/resourceids";
+import { AudioId, BitmapId } from "./resourceids";
 import { Area, Point } from "../BoazEngineJS/interfaces";
 import { Animation, AniStepCompoundValue } from "../BoazEngineJS/animation";
 import { GameModel as M } from "./sintervaniamodel";
@@ -29,8 +29,8 @@ export class ZakFoe extends Foe {
 
 	protected static ZakFoeHitArea: Area = newArea(2, 2, 14, 14);
 	protected static zakFoeSprites: Map<Direction, BitmapId[]> = new Map<Direction, BitmapId[]>([
-		[Direction.Right, [BitmapId.ZakFoe_1, BitmapId.ZakFoe_2, BitmapId.ZakFoe_3]],
-		[Direction.Left, [BitmapId.ZakFoe_1, BitmapId.ZakFoe_2, BitmapId.ZakFoe_3]],
+		// [Direction.Right, [BitmapId.ZakFoe_1, BitmapId.ZakFoe_2, BitmapId.ZakFoe_3]],
+		// [Direction.Left, [BitmapId.ZakFoe_1, BitmapId.ZakFoe_2, BitmapId.ZakFoe_3]],
 	]);
 	protected timer: BStopwatch;
 
@@ -60,7 +60,8 @@ export class ZakFoe extends Foe {
 		this.animation.doAnimation(this.timer, stepValue);
 		this.imgid = stepValue.nextStepValue.img;
 		this.pos.y += stepValue.nextStepValue.dy;
-		if (this.imgid == BitmapId.ZakFoe_2) {
+		// if (this.imgid == BitmapId.ZakFoe_2) {
+		if (this.imgid == 0) {
 			switch (this.Direction) {
 				case Direction.Left:
 					this.pos.x -= 1;

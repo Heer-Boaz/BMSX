@@ -5,7 +5,7 @@ import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
 import { ResourceMaster as RM } from "./resourcemaster";
 import { GameController } from "./gamecontroller";
 import { Area, Point } from "../BoazEngineJS/interfaces";
-import { AudioId, BitmapId } from "../BoazEngineJS/resourceids";
+import { AudioId, BitmapId } from "./resourceids";
 
 export enum ItemType {
     None,
@@ -41,14 +41,14 @@ export class Item extends Sprite {
             switch (this.ItsType) {
                 case ItemType.HeartSmall:
                 case ItemType.HeartBig:
-                    S.PlayEffect(RM.Sound[AudioId.Heart]);
+                    // S.PlayEffect(RM.Sound[AudioId.Heart]);
                     break;
                 case ItemType.KeySmall:
                 case ItemType.KeyBig:
-                    S.PlayEffect(RM.Sound[AudioId.KeyGrab]);
+                    // S.PlayEffect(RM.Sound[AudioId.KeyGrab]);
                     break;
                 default:
-                    S.PlayEffect(RM.Sound[AudioId.ItemPickup]);
+                    // S.PlayEffect(RM.Sound[AudioId.ItemPickup]);
                     break;
             }
             this.disposeFlag = true;

@@ -1,6 +1,6 @@
 import { view } from "../BoazEngineJS/engine"
 import { GameConstants as CS } from "./gameconstants"
-import { AudioId, BitmapId } from "../BoazEngineJS/resourceids";
+import { AudioId, BitmapId } from "./resourceids";
 import { GameOptions } from "./gameoptions";
 import { Point, Color } from "../BoazEngineJS/interfaces";
 
@@ -112,232 +112,232 @@ export class TextWriter {
         let letter: BitmapId;
         switch (c) {
             case '0':
-                letter = BitmapId.Font_0;
+                letter = BitmapId.Letter_0;
                 break;
             case '1':
-                letter = BitmapId.Font_1;
+                letter = BitmapId.Letter_1;
                 break;
             case '2':
-                letter = BitmapId.Font_2;
+                letter = BitmapId.Letter_2;
                 break;
             case '3':
-                letter = BitmapId.Font_3;
+                letter = BitmapId.Letter_3;
                 break;
             case '4':
-                letter = BitmapId.Font_4;
+                letter = BitmapId.Letter_4;
                 break;
             case '5':
-                letter = BitmapId.Font_5;
+                letter = BitmapId.Letter_5;
                 break;
             case '6':
-                letter = BitmapId.Font_6;
+                letter = BitmapId.Letter_6;
                 break;
             case '7':
-                letter = BitmapId.Font_7;
+                letter = BitmapId.Letter_7;
                 break;
             case '8':
-                letter = BitmapId.Font_8;
+                letter = BitmapId.Letter_8;
                 break;
             case '9':
-                letter = BitmapId.Font_9;
+                letter = BitmapId.Letter_9;
                 break;
             case 'a':
-                letter = BitmapId.Font_A;
+                letter = BitmapId.Letter_A;
                 break;
             case 'b':
-                letter = BitmapId.Font_B;
+                letter = BitmapId.Letter_B;
                 break;
             case 'c':
-                letter = BitmapId.Font_C;
+                letter = BitmapId.Letter_C;
                 break;
             case 'd':
-                letter = BitmapId.Font_D;
+                letter = BitmapId.Letter_D;
                 break;
             case 'e':
-                letter = BitmapId.Font_E;
+                letter = BitmapId.Letter_E;
                 break;
             case 'f':
-                letter = BitmapId.Font_F;
+                letter = BitmapId.Letter_F;
                 break;
             case 'g':
-                letter = BitmapId.Font_G;
+                letter = BitmapId.Letter_G;
                 break;
             case 'h':
-                letter = BitmapId.Font_H;
+                letter = BitmapId.Letter_H;
                 break;
             case 'i':
-                letter = BitmapId.Font_I;
+                letter = BitmapId.Letter_I;
                 break;
             case 'j':
-                letter = BitmapId.Font_J;
+                letter = BitmapId.Letter_J;
                 break;
             case 'k':
-                letter = BitmapId.Font_K;
+                letter = BitmapId.Letter_K;
                 break;
             case 'l':
-                letter = BitmapId.Font_L;
+                letter = BitmapId.Letter_L;
                 break;
             case 'm':
-                letter = BitmapId.Font_M;
+                letter = BitmapId.Letter_M;
                 break;
             case 'n':
-                letter = BitmapId.Font_N;
+                letter = BitmapId.Letter_N;
                 break;
             case 'o':
-                letter = BitmapId.Font_O;
+                letter = BitmapId.Letter_O;
                 break;
             case 'p':
-                letter = BitmapId.Font_P;
+                letter = BitmapId.Letter_P;
                 break;
             case 'q':
-                letter = BitmapId.Font_Q;
+                letter = BitmapId.Letter_Q;
                 break;
             case 'r':
-                letter = BitmapId.Font_R;
+                letter = BitmapId.Letter_R;
                 break;
             case 's':
-                letter = BitmapId.Font_S;
+                letter = BitmapId.Letter_S;
                 break;
             case 't':
-                letter = BitmapId.Font_T;
+                letter = BitmapId.Letter_T;
                 break;
             case 'u':
-                letter = BitmapId.Font_U;
+                letter = BitmapId.Letter_U;
                 break;
             case 'v':
-                letter = BitmapId.Font_V;
+                letter = BitmapId.Letter_V;
                 break;
             case 'w':
-                letter = BitmapId.Font_W;
+                letter = BitmapId.Letter_W;
                 break;
             case 'x':
-                letter = BitmapId.Font_X;
+                letter = BitmapId.Letter_X;
                 break;
             case 'y':
-                letter = BitmapId.Font_Y;
+                letter = BitmapId.Letter_Y;
                 break;
             case 'z':
-                letter = BitmapId.Font_Z;
+                letter = BitmapId.Letter_Z;
                 break;
             case 'A':
-                letter = BitmapId.Font_A;
+                letter = BitmapId.Letter_A;
                 break;
             case 'B':
-                letter = BitmapId.Font_B;
+                letter = BitmapId.Letter_B;
                 break;
             case 'C':
-                letter = BitmapId.Font_C;
+                letter = BitmapId.Letter_C;
                 break;
             case 'D':
-                letter = BitmapId.Font_D;
+                letter = BitmapId.Letter_D;
                 break;
             case 'E':
-                letter = BitmapId.Font_E;
+                letter = BitmapId.Letter_E;
                 break;
             case 'F':
-                letter = BitmapId.Font_F;
+                letter = BitmapId.Letter_F;
                 break;
             case 'G':
-                letter = BitmapId.Font_G;
+                letter = BitmapId.Letter_G;
                 break;
             case 'H':
-                letter = BitmapId.Font_H;
+                letter = BitmapId.Letter_H;
                 break;
             case 'I':
-                letter = BitmapId.Font_I;
+                letter = BitmapId.Letter_I;
                 break;
             case 'J':
-                letter = BitmapId.Font_J;
+                letter = BitmapId.Letter_J;
                 break;
             case 'K':
-                letter = BitmapId.Font_K;
+                letter = BitmapId.Letter_K;
                 break;
             case 'L':
-                letter = BitmapId.Font_L;
+                letter = BitmapId.Letter_L;
                 break;
             case 'M':
-                letter = BitmapId.Font_M;
+                letter = BitmapId.Letter_M;
                 break;
             case 'N':
-                letter = BitmapId.Font_N;
+                letter = BitmapId.Letter_N;
                 break;
             case 'O':
-                letter = BitmapId.Font_O;
+                letter = BitmapId.Letter_O;
                 break;
             case 'P':
-                letter = BitmapId.Font_P;
+                letter = BitmapId.Letter_P;
                 break;
             case 'Q':
-                letter = BitmapId.Font_Q;
+                letter = BitmapId.Letter_Q;
                 break;
             case 'R':
-                letter = BitmapId.Font_R;
+                letter = BitmapId.Letter_R;
                 break;
             case 'S':
-                letter = BitmapId.Font_S;
+                letter = BitmapId.Letter_S;
                 break;
             case 'T':
-                letter = BitmapId.Font_T;
+                letter = BitmapId.Letter_T;
                 break;
             case 'U':
-                letter = BitmapId.Font_U;
+                letter = BitmapId.Letter_U;
                 break;
             case 'V':
-                letter = BitmapId.Font_V;
+                letter = BitmapId.Letter_V;
                 break;
             case 'W':
-                letter = BitmapId.Font_W;
+                letter = BitmapId.Letter_W;
                 break;
             case 'X':
-                letter = BitmapId.Font_X;
+                letter = BitmapId.Letter_X;
                 break;
             case '¡':
-                letter = BitmapId.Font_IJ;
+                letter = BitmapId.Letter_IJ;
                 break;
             case 'Y':
-                letter = BitmapId.Font_Y;
+                letter = BitmapId.Letter_Y;
                 break;
             case 'Z':
-                letter = BitmapId.Font_Z;
+                letter = BitmapId.Letter_Z;
                 break;
             case ',':
-                letter = BitmapId.Font_Comma;
+                letter = BitmapId.Letter_Comma;
                 break;
             case '.':
-                letter = BitmapId.Font_Dot;
+                letter = BitmapId.Letter_Dot;
                 break;
             case '!':
-                letter = BitmapId.Font_Exclamation;
+                letter = BitmapId.Letter_Exclamation;
                 break;
             case '?':
-                letter = BitmapId.Font_QuestionMark;
+                letter = BitmapId.Letter_Question;
                 break;
             case '\'':
-                letter = BitmapId.Font_Apostroph;
+                letter = BitmapId.Letter_Apostroph;
                 break;
             case ' ':
-                letter = BitmapId.Font_Space;
+                letter = BitmapId.Letter_Space;
                 break;
             case ':':
-                letter = BitmapId.Font_Colon;
+                letter = BitmapId.Letter_Colon;
                 break;
             case '-':
-                letter = BitmapId.Font_Streep;
+                letter = BitmapId.Letter_Streep;
                 break;
             case '/':
-                letter = BitmapId.Font_Slash;
+                letter = BitmapId.Letter_Slash;
                 break;
             case '%':
-                letter = BitmapId.Font_Percent;
+                letter = BitmapId.Letter_Percent;
                 break;
             case '[':
-                letter = BitmapId.Font_SpeakStart;
+                letter = BitmapId.Letter_SpeakStart;
                 break;
             case ']':
-                letter = BitmapId.Font_SpeakEnd;
+                letter = BitmapId.Letter_SpeakEnd;
                 break;
             default:
-                letter = BitmapId.Font_QuestionMark;
+                letter = BitmapId.Letter_Question;
                 break;
         }
         return letter;
