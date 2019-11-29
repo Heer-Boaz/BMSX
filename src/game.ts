@@ -6,7 +6,7 @@ import { GameState } from "../BoazEngineJS/model";
 import { GameConstants } from './gameconstants';
 import { LoadGame } from '../BoazEngineJS/gamestateloader';
 import { loadRom } from '../BoazEngineJS/rom';
-import { DrawBitmap } from '../BoazEngineJS/view';
+import { DrawBitmap, View } from '../BoazEngineJS/view';
 import { resolve } from "dns";
 
 // function readStream(stream: ReadableStream): Uint8Array {
@@ -48,7 +48,8 @@ export function Annnndddd___Go(): void {
 
 			GameController._.switchState(GameState.LoadTheGame);
 
-			engine.game.waitForUserToStart();
+			// engine.game.waitForUserToStart();
+			let imgs = View.images;
 
 			GameModel._.SelectedChapterToPlay = Chapter.GameStart;
 			GameController._.switchState(GameConstants.INITIAL_GAMESTATE);

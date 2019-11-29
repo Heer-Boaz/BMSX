@@ -1,12 +1,35 @@
 import { readdirSync, statSync, readFileSync, writeFileSync } from "fs";
 import { join, parse } from "path";
 
-export interface RomResource {
+interface RomResource {
 	resid: number;
 	resname: string;
 	type: string;
 	start: number;
 	end: number;
+}
+
+interface RomMeta {
+	start: number;
+	end: number;
+}
+
+/**
+ * Convert an Uint8Array into a string.
+ * https://ourcodeworld.com/articles/read/164/how-to-convert-an-uint8array-to-string-in-javascript
+ * @returns {String}
+ */
+function decodeuint8arr(uint8array: Uint8Array): string {
+	return new TextDecoder("utf-8").decode(uint8array);
+}
+
+/**
+ * Convert a string into a Uint8Array.
+ * https://ourcodeworld.com/articles/read/164/how-to-convert-an-uint8array-to-string-in-javascript
+ * @returns {Uint8Array}
+ */
+function encodeuint8arr(myString: string): Uint8Array {
+	return new TextEncoder().encode(myString);
 }
 
 function getAllFiles(dirPath: string, arrayOfFiles?: string[]): string[] {
@@ -63,8 +86,18 @@ try {
 	tsimgout.push("}\n");
 	tssndout.push("}\n");
 
+	let jsonbuffer = Buffer.from(encodeuint8arr(JSON.stringify(jsonout)));
+	buffers.push(jsonbuffer);
+
+	let rommeta = <RomMeta>{
+		start: bufferPointer,
+		end: bufferPointer + jsonbuffer.length
+	};
+	let rommetastr = JSON.stringify(rommeta).padStart(100, ' ');
+	buffers.push(Buffer.from(encodeuint8arr(rommetastr)));
+
 	writeFileSync("../rom/packed.rom", Buffer.concat(buffers));
-	writeFileSync("../rom/romtable.json", JSON.stringify(jsonout));
+	// writeFileSync("../rom/romtable.json", JSON.stringify(jsonout));
 	writeFileSync("../src/resourceids.ts", tsimgout.concat(tssndout).join('\n'));
 } catch (e) {
 	console.error(e);
