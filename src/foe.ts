@@ -43,7 +43,7 @@ export abstract class Foe extends Creature {
 
     public handleHit(source: PlayerProjectile): void {
         M._.LastFoeThatWasHit = this;
-        // SoundMaster.PlayEffect(RM.Sound.get(AudioId.Hit]);
+        SoundMaster.PlayEffect(RM.Sound.get(AudioId.Hit));
     }
 
     protected loseHealth(source: PlayerProjectile): void {
@@ -58,7 +58,7 @@ export abstract class Foe extends Creature {
     }
 
     public die(): void {
-        if (this.itemSpawnedAfterKill == ItemType.HeartSmall) {
+        if (this.itemSpawnedAfterKill === ItemType.HeartSmall) {
             this.dieWithItem(this.itemSpawnedAfterKill);
         }
         else this.dieWithoutItem();
@@ -71,8 +71,12 @@ export abstract class Foe extends Creature {
 
     protected dieWithItem(itemToSpawn: ItemType = ItemType.None): void {
         this.handleDie();
-        if (itemToSpawn != ItemType.None) {
+        if (itemToSpawn !== ItemType.None) {
             M._.spawn(new FoeExplosion(this.pos, itemToSpawn));
         }
+    }
+
+    public dispose(): void {
+        // Do nothing
     }
 }

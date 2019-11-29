@@ -12,7 +12,8 @@
   },
   "devDependencies": {
     "@types/node": "^12.12.14",
-    "@types/node-fetch": "^2.5.4"
+    "@types/node-fetch": "^2.5.4",
+    "libkss-js": "^0.12.0"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

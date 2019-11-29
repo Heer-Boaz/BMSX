@@ -281,8 +281,9 @@ export class Belmont extends Creature {
 			if (!this.FloorCollision)
 				this.pos.y += 4;
 			this.checkAndHandleCollisions(originalPos);
-			if (this.FloorCollision) { }
-			// S.PlayEffect(RM.Sound.get(AudioId.Land]);
+			if (this.FloorCollision) {
+				S.PlayEffect(RM.Sound.get(AudioId.Land));
+			}
 		}
 		if (this.Jumping) {
 			this.doJump();
@@ -403,7 +404,7 @@ export class Belmont extends Creature {
 			if (this.Roeing) {
 				this.roeState.Stop();
 			}
-			// S.PlayEffect(RM.Sound.get(AudioId.PlayerDamage]);
+			S.PlayEffect(RM.Sound.get(AudioId.Au));
 		}
 	}
 
@@ -636,7 +637,7 @@ export class Belmont extends Creature {
 		}
 	}
 
-	public Dispose(): void {
+	public dispose(): void {
 		BStopwatch.removeWatch(this.hitState.BlinkTimer);
 		BStopwatch.removeWatch(this.hitState.RecoveryTimer);
 		BStopwatch.removeWatch(this.dyingState.aniTimer);

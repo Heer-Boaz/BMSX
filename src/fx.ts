@@ -32,7 +32,7 @@ export class FX extends Sprite {
 
     }
 
-    public Dispose(): void {
+    public dispose(): void {
         BStopwatch.removeWatch(this.timer);
     }
 }

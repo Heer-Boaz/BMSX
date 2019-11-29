@@ -94,7 +94,7 @@ export class HagGenerator implements IGameObject {
 
     }
 
-    exile(): void {
+    dispose(): void {
         BStopwatch.removeWatch(this.timer);
     }
 }

@@ -48,4 +48,8 @@ export abstract class Projectile extends Sprite {
                 return false;
         }
     }
+
+    public dispose(): void {
+        // Do nothing
+    }
 }

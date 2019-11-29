@@ -79,17 +79,14 @@ async function load(rom: ArrayBuffer, res: RomResource): Promise<void> {
 		case 'image':
 			let img = await loadImage(url);
 			View.images.set(res.resid, img);
-			console.log(`Ik doe dit ${res.resid}, ${img}`);
+			// console.log(`Ik doe dit ${res.resid}, ${img}`);
 			break;
 		case 'audio':
 			let snd = await loadAudio(url);
 			SoundMaster.audio.set(res.resid, snd);
-			console.log(`Ik doe dit ${res.resid}, ${snd}`);
+			// console.log(`Ik doe dit ${res.resid}, ${snd}`);
 			break;
 		default:
 			throw Error(`Unrecognised resource type in rom: ${res.type}, while processing rompack`);
 	}
-	// new engine.Game({ x: GameConstants.ViewportWidth, y: GameConstants.ViewportHeight });
-	// loadImage(url).then(img => engine.view.drawDebug(img, { x: 0, y: res.start / 100 }));
-	// console.log(url);
 }

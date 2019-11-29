@@ -7,14 +7,14 @@ import { GameController } from "./gamecontroller";
 import { Area, Point } from "../BoazEngineJS/interfaces";
 import { AudioId, BitmapId } from "./resourceids";
 
-export enum ItemType {
+export const enum ItemType {
     None,
     HeartSmall,
     HeartBig,
     KeySmall,
     KeyBig
 }
-export enum Usable {
+export const enum Usable {
     No,
     Yes,
     Infinite
@@ -32,7 +32,7 @@ export class Item extends Sprite {
         this.ItsType = type;
         this.hitarea = Item.ItemHitArea;
         this.size = area2size(Item.ItemHitArea);
-        this.imgid = <number>Item.Type2Image(type);
+        this.imgid = Item.Type2Image(type);
     }
 
     public takeTurn(): void {
@@ -41,14 +41,14 @@ export class Item extends Sprite {
             switch (this.ItsType) {
                 case ItemType.HeartSmall:
                 case ItemType.HeartBig:
-                    // S.PlayEffect(RM.Sound.get(AudioId.Heart]);
+                    S.PlayEffect(RM.Sound.get(AudioId.Heart));
                     break;
                 case ItemType.KeySmall:
                 case ItemType.KeyBig:
-                    // S.PlayEffect(RM.Sound.get(AudioId.KeyGrab]);
+                    S.PlayEffect(RM.Sound.get(AudioId.Key));
                     break;
                 default:
-                    // S.PlayEffect(RM.Sound.get(AudioId.ItemPickup]);
+                    S.PlayEffect(RM.Sound.get(AudioId.Item));
                     break;
             }
             this.disposeFlag = true;
@@ -71,6 +71,6 @@ export class Item extends Sprite {
         }
     }
 
-    public Dispose(): void {
+    public dispose(): void {
     }
 }

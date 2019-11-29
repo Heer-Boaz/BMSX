@@ -24,7 +24,7 @@ export abstract class Controller {
         BStopwatch.updateTimers(elapsedMs);
 
         // Remove all objects that are to be disposed
-        let toRemove = model.objects.filter(o => o.disposeFlag).forEach(o => { model.remove(o); o.exile() });
+        let toRemove = model.objects.filter(o => o.disposeFlag).forEach(o => { model.remove(o); o.dispose() });
     }
 
     protected doPausedState() {

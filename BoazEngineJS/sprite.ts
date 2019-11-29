@@ -52,9 +52,7 @@ export abstract class Sprite implements IGameObject {
 		if (spawningPos) this.pos = spawningPos;
 	}
 
-	exile(): void {
-		throw new Error("Method not implemented.");
-	}
+	abstract dispose(): void;
 
 	abstract takeTurn(): void;
 
@@ -98,10 +96,6 @@ export abstract class Sprite implements IGameObject {
 
 		return o1p.x + o1a.end.x >= p.x && o1p.x + o1a.start.x <= p.x &&
 			o1p.y + o1a.end.y >= p.y && o1p.y + o1a.start.y <= p.y;
-	}
-
-	handleResizeEvent(): void {
-		throw new Error("Method not implemented.");
 	}
 
 	setExtendedProperty(key: string, value: any) {

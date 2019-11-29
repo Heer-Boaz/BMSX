@@ -62,6 +62,16 @@ export class Game {
         //     GO._ = result;
     }
 
+    public waitForUserToStart(): void {
+        // Nodig want anders gaat Chrome zeuren over geluid dat afgespeeld wordt zonder user input
+        window.addEventListener('keydown', game.handleKeypressAfterWaitForUserStart, false);
+    }
+
+    public handleKeypressAfterWaitForUserStart(e: KeyboardEvent): void {
+        window.removeEventListener('keydown', game.handleKeypressAfterWaitForUserStart, false);
+        game.start();
+    }
+
     public start(): void {
         ResourceMaster._.PrepareGameResources();
         this.running = true;

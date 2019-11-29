@@ -9,7 +9,7 @@ import { GameModel } from "./sintervaniamodel";
 import { SoundMaster } from "../BoazEngineJS/soundmaster";
 import { Area, Point } from "../BoazEngineJS/interfaces";
 
-export enum HeartSmallState {
+export const enum HeartSmallState {
 	Flying,
 	Standing
 }
@@ -32,7 +32,7 @@ export class HeartSmall extends Sprite {
 	constructor(pos: Point) {
 		super(pos, BitmapId.Heart_fly);
 		this.State = HeartSmallState.Flying;
-		this.animation = new Animation<number>(this.animationData,/*constantStepTime:*/1,/*repeat:*/true);
+		this.animation = new Animation(this.animationData,/*constantStepTime:*/1,/*repeat:*/true);
 		this.uglyBitThing = false;
 	}
 
@@ -43,7 +43,7 @@ export class HeartSmall extends Sprite {
 	protected uglyBitThing: boolean;
 
 	public takeTurn(): void {
-		if (this.State == HeartSmallState.Flying) {
+		if (this.State === HeartSmallState.Flying) {
 			let delta: number = 0;
 			delta = this.animation.doAnimation(1).value;
 
@@ -55,7 +55,7 @@ export class HeartSmall extends Sprite {
 
 			if (this.pos.y > GameConstants.GameScreenHeight) {
 				this.disposeFlag = true;
-				return
+				return;
 			}
 
 			if (this.floorCollision) {
@@ -67,11 +67,15 @@ export class HeartSmall extends Sprite {
 		if (this.objectCollide(GameModel._.Belmont)) {
 			++GameModel._.Hearts;
 			this.disposeFlag = true;
-			// SoundMaster.PlayEffect(ResourceMaster.Sound[AudioId.Heart]);
+			SoundMaster.PlayEffect(ResourceMaster.Sound.get(AudioId.Heart));
 		}
 	}
 
 	public paint(offset: Point = null): void {
 		super.paint(offset);
+	}
+
+	public dispose(): void {
+		// Do nothing
 	}
 }

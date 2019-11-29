@@ -14,6 +14,7 @@ export interface Color {
     r: number;
     g: number;
     b: number;
+    a?: number;
 }
 
 export interface IGameObject {
@@ -43,8 +44,7 @@ export interface IGameObject {
     objectCollide(o: IGameObject): boolean;
     areaCollide(a: Area): boolean;
     spawn(spawningPos?: Point | null): void;
-    handleResizeEvent(): void;
-    exile(): void;
+    dispose(): void;
 }
 
 export interface IGameView {

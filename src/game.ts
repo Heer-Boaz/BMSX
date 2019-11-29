@@ -48,12 +48,11 @@ export function Annnndddd___Go(): void {
 
 			GameController._.switchState(GameState.LoadTheGame);
 
-			engine.game.start();
+			engine.game.waitForUserToStart();
 
 			GameModel._.SelectedChapterToPlay = Chapter.GameStart;
 			GameController._.switchState(GameConstants.INITIAL_GAMESTATE);
 			GameController._.switchSubstate(GameConstants.INITIAL_GAMESUBSTATE);
-
 			return engine.game;
 		})
 		.catch(console.error);

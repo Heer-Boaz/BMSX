@@ -60,7 +60,7 @@ export abstract class Model {
 
     public clearModel(): void {
         this.objects.forEach(x => {
-            x.exile();
+            x.dispose();
         });
         this.objects.length = 0;
         this.id2object.clear();

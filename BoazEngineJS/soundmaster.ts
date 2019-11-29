@@ -21,13 +21,14 @@ export class SoundMaster {
 
 	public static StopEffect(): void {
 		if (!SoundMaster.EffectBeingPlayed || !SoundMaster.EffectBeingPlayed.AudioId) return;
-		SoundMaster.audio.get(SoundMaster.EffectBeingPlayed.AudioId).pause();
+		// SoundMaster.audio.get(SoundMaster.EffectBeingPlayed.AudioId).pause();
 		SoundMaster.audio.get(SoundMaster.EffectBeingPlayed.AudioId).currentTime = 0;
 		SoundMaster.EffectBeingPlayed = null;
 	}
 
 	private static playEffect(audioId: number): void {
-		SoundMaster.audio.get(audioId).pause();
+		// if (SoundMaster.audio.get(audioId).paused)
+		// SoundMaster.audio.get(audioId).pause();
 		SoundMaster.audio.get(audioId).currentTime = 0;
 		SoundMaster.audio.get(audioId).play();
 	}
@@ -39,7 +40,7 @@ export class SoundMaster {
 					SoundMaster.StopEffect();
 					SoundMaster.playEffect(effect.AudioId);
 					SoundMaster.EffectBeingPlayed = effect;
-					return
+					return;
 				}
 			}
 		}

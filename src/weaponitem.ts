@@ -58,11 +58,11 @@ export class WeaponItem extends Sprite {
         }
     }
 
-    public Dispose(): void {
+    public dispose(): void {
     }
 }
 
-export enum WeaponType {
+export const enum WeaponType {
     None = -1,
     Cross = 0
 }
