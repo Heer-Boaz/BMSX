@@ -1,5 +1,5 @@
-import { View } from "./view";
-import { SoundMaster } from "./soundmaster";
+// import { View } from "./view";
+// import { SoundMaster } from "./soundmaster";
 
 interface RomResource {
 	resid: number;
@@ -14,16 +14,23 @@ interface RomMeta {
 	end: number;
 }
 
-export async function loadRom(): Promise<void> {
-	View.images = new Map<number, HTMLImageElement>();
-	SoundMaster.audio = new Map<number, HTMLAudioElement>();
-	let rom = await loadRompack();
-	await loadResources(rom);
+interface RomLoadResult {
+	images: Map<number, HTMLImageElement>;
+	audio: Map<number, HTMLAudioElement>;
+	source: any
 }
 
-async function loadRompack(): Promise<ArrayBuffer> {
+async function loadRom(url: string): Promise<RomLoadResult> {
+	// View.images = new Map<number, HTMLImageElement>();
+	// SoundMaster.audio = new Map<number, HTMLAudioElement>();
+	let rom = await loadRompack(url);
+	let result = await loadResources(rom)
+	return result;
+}
+
+async function loadRompack(url: string): Promise<ArrayBuffer> {
 	// return fetch("http://192.168.0.117:8887/rom/packed.rom")
-	return fetch("http://127.0.0.1:8887/rom/packed.rom")
+	return fetch(url)
 		.then(response => response.arrayBuffer())
 		.then(buffer => buffer)
 		.catch(e => {
@@ -78,30 +85,53 @@ async function loadResourceList(rom: ArrayBuffer): Promise<RomResource[]> {
 	// 	});
 }
 
-async function loadResources(rom: ArrayBuffer): Promise<void> {
+async function loadResources(rom: ArrayBuffer): Promise<RomLoadResult> {
+	let result: RomLoadResult = {
+		images: new Map<number, HTMLImageElement>(),
+		audio: new Map<number, HTMLAudioElement>(),
+		source: null
+	};
+
 	let list = await loadResourceList(rom);
 	for (let i = 0; i < list.length; i++)
-		await load(rom, list[i]);
+		await load(rom, list[i], result);
+	return result;
 }
 
-async function load(rom: ArrayBuffer, res: RomResource): Promise<void> {
+async function load(rom: ArrayBuffer, res: RomResource, romResult: RomLoadResult): Promise<void> {
 	let bytearray = new Uint8Array(rom);
 	let sliced = bytearray.slice(res.start, res.end);
 
-	let mime: string = res.type === 'image' ? 'image/png' : 'audio/wav';
-
-	let blub = new Blob([sliced], { type: mime });
-	let url = URL.createObjectURL(blub);
+	let mime: string;
+	let blub: Blob;
+	let url: string;
 	switch (res.type) {
 		case 'image':
+			mime = 'image/png';
+			blub = new Blob([sliced], { type: mime });
+			url = URL.createObjectURL(blub);
+
 			let img = await loadImage(url);
-			View.images.set(res.resid, img);
+			// View.images.set(res.resid, img);
+			romResult.images.set(res.resid, img);
 			// console.log(`Ik doe dit ${res.resid}, ${img}`);
 			break;
 		case 'audio':
+			mime = 'audio/wav';
+			blub = new Blob([sliced], { type: mime });
+			url = URL.createObjectURL(blub);
+
 			let snd = await loadAudio(url);
-			SoundMaster.audio.set(res.resid, snd);
+			// SoundMaster.audio.set(res.resid, snd);
+			romResult.audio.set(res.resid, snd);
 			// console.log(`Ik doe dit ${res.resid}, ${snd}`);
+			break;
+		case 'source':
+			try {
+				romResult.source = decodeuint8arr(sliced);
+			} catch (e) {
+				throw e;
+			}
 			break;
 		default:
 			throw Error(`Unrecognised resource type in rom: ${res.type}, while processing rompack`);

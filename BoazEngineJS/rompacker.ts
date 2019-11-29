@@ -32,6 +32,10 @@ function encodeuint8arr(myString: string): Uint8Array {
 	return new TextEncoder().encode(myString);
 }
 
+function addFile(dirPath: string, filePath: string, arrayOfFiles: string[]): void {
+	arrayOfFiles.push(join(__dirname, dirPath, "/", filePath));
+}
+
 function getAllFiles(dirPath: string, arrayOfFiles?: string[]): string[] {
 	let files = readdirSync(dirPath);
 
@@ -51,6 +55,7 @@ function getAllFiles(dirPath: string, arrayOfFiles?: string[]): string[] {
 
 try {
 	const arrayOfFiles = getAllFiles("../rom");
+	addFile("../rom", "thegame.js", arrayOfFiles); // Add source at the end
 	console.info(`Filecount: ${arrayOfFiles.length}`);
 
 	let buffers = new Array<Buffer>();
@@ -67,7 +72,19 @@ try {
 	let imgi = 0;
 	let sndi = 0;
 	for (let i = 0; i < arrayOfFiles.length; i++) {
-		let type = parse(arrayOfFiles[i]).ext === '.wav' ? 'audio' : 'image';
+		let type: string;
+		switch (parse(arrayOfFiles[i]).ext) {
+			case '.wav':
+				type = 'audio';
+				break;
+			case '.js':
+				type = 'source';
+				break;
+			case '.png':
+			default:
+				type = 'image';
+				break;
+		}
 		switch (type) {
 			case 'image':
 				jsonout.push({ resid: imgi, resname: parse(arrayOfFiles[i]).name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length });
@@ -78,6 +95,9 @@ try {
 				jsonout.push({ resid: sndi, resname: parse(arrayOfFiles[i]).name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length });
 				tssndout.push(`\t${parse(arrayOfFiles[i]).name} = ${sndi},`);
 				++sndi;
+				break;
+			case 'source':
+				jsonout.push({ resid: sndi, resname: parse(arrayOfFiles[i]).name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length });
 				break;
 		}
 		bufferPointer += buffers[i].length;
