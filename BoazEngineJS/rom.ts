@@ -1,6 +1,3 @@
-// import { View } from "./view";
-// import { SoundMaster } from "./soundmaster";
-
 interface RomResource {
 	resid: number;
 	resname: string;
@@ -27,7 +24,7 @@ var basic = {
 	set defusr(_rom: RomLoadResult) {
 		this.rom = _rom;
 		if (this.debug !== true) {
-			let romcode = document.createElement('script')
+			let romcode = document.createElement('script');
 			romcode.async = false;
 			romcode.innerText = _rom.source;
 			document.head.appendChild(romcode);
@@ -43,20 +40,17 @@ var basic = {
 			loading.className = "fadeout";
 
 			bin.Bootstrapper.init(self.rom);
+			self.rom = null;
 		});
 		return 255;
 	},
 
 	async bload(url: string): Promise<RomLoadResult> {
-		// View.images = new Map<number, HTMLImageElement>();
-		// SoundMaster.audio = new Map<number, HTMLAudioElement>();
 		let rom = await loadRompack(url);
 		let result = await loadResources(rom);
 		return result;
 	}
 };
-
-
 
 async function loadRompack(url: string): Promise<ArrayBuffer> {
 	return fetch(url)
@@ -105,13 +99,6 @@ async function loadResourceList(rom: ArrayBuffer): Promise<RomResource[]> {
 	let resJson: RomResource[] = JSON.parse(resJsonStr);
 
 	return resJson;
-
-	// return fetch("http://192.168.0.117:8887/rom/romtable.json")
-	// 	.then(response => response.json())
-	// 	.then(json => json)
-	// 	.catch(e => {
-	// 		throw new Error(`Failed to load romtable.`);
-	// 	});
 }
 
 async function loadResources(rom: ArrayBuffer): Promise<RomLoadResult> {
@@ -141,9 +128,7 @@ async function load(rom: ArrayBuffer, res: RomResource, romResult: RomLoadResult
 			url = URL.createObjectURL(blub);
 
 			let img = await loadImage(url);
-			// View.images.set(res.resid, img);
 			romResult.images.set(res.resid, img);
-			// console.log(`Ik doe dit ${res.resid}, ${img}`);
 			break;
 		case 'audio':
 			mime = 'audio/wav';
@@ -151,9 +136,7 @@ async function load(rom: ArrayBuffer, res: RomResource, romResult: RomLoadResult
 			url = URL.createObjectURL(blub);
 
 			let snd = await loadAudio(url);
-			// SoundMaster.audio.set(res.resid, snd);
 			romResult.audio.set(res.resid, snd);
-			// console.log(`Ik doe dit ${res.resid}, ${snd}`);
 			break;
 		case 'source':
 			try {
