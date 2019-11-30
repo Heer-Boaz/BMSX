@@ -19,6 +19,7 @@
 				"build rom",
 				"build rompacker",
 				"build game",
+				// "minify",
 			],
 			"presentation": {
 				"echo": true,
@@ -29,6 +30,47 @@
 				"clear": true
 			},
 		},
+		// {
+		// 	"label": "minify",
+		// 	"type": "shell",
+		// 	"command": "terser",
+		// 	"args": [
+		// 		"--compress",
+		// 		"--mangle",
+		// 		"--source-map",
+		// 		"filename=\"thegame.js\"",
+		// 		"--source-map",
+		// 		"root='${workspaceFolder}\\src\\'",
+		// 		"--source-map",
+		// 		"content=\"inline\"",
+		// 		"--source-map",
+		// 		"url=\"inline\"",
+		// 		// "--source-map",
+		// 		// "includeSources",
+		// 		// "--wrap",
+		// 		// "thegame",
+		// 		// "--verbose",
+		// 		// "--warn",
+		// 		"--output",
+		// 		"${workspaceFolder}\\rom\\thegame.js",
+		// 		"${workspaceFolder}\\rom\\thegame.js",
+		// 	],
+		// 	"problemMatcher": [
+		// 		"$node-sass"
+		// 	],
+		// 	"presentation": {
+		// 		"echo": true,
+		// 		"reveal": "silent",
+		// 		"focus": false,
+		// 		"panel": "shared",
+		// 		"showReuseMessage": false,
+		// 		"clear": true
+		// 	},
+		// 	"group": "build",
+		// 	"dependsOn": [
+		// 		"build game",
+		// 	],
+		// },
 		{
 			"label": "build game",
 			"type": "typescript",
