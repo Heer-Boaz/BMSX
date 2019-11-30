@@ -105,6 +105,8 @@ export class GameView implements IGameView {
             return
 
         switch (M._.gameState) {
+            case GameState.LoadTheGame:
+                break;
             case GameState.Prelude:
                 this.Title.Paint();
                 break;

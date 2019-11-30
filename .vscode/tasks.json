@@ -1,34 +1,117 @@
 {
-	// See https://go.microsoft.com/fwlink/?LinkId=733558
-	// for the documentation about the tasks.json format
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"label": "build",
-			"type": "typescript",
-			"tsconfig": "tsconfig.json",
+			"label": "build & pack",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"${workspaceFolder}\\rom\\rompacker.js",
+			],
 			"problemMatcher": [
-				"$tsc"
+				"$node-sass"
 			],
 			"group": {
 				"kind": "build",
 				"isDefault": true
 			},
+			"dependsOn": [
+				"build rom",
+				"build rompacker",
+				"build game",
+			],
+			"presentation": {
+				"echo": true,
+				"reveal": "silent",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true
+			},
 		},
 		{
-			"label": "build watch",
+			"label": "build game",
+			"type": "typescript",
+			"tsconfig": "tsconfig.json",
+			"problemMatcher": [
+				"$tsc"
+			],
+			"presentation": {
+				"echo": true,
+				"reveal": "silent",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true
+			},
+			"group": "build",
+		},
+		{
+			"label": "build rom",
 			"type": "shell",
 			"command": "tsc",
 			"args": [
-				"--build",
-				"${workspaceFolder}\\tsconfig.json",
-				"--watch"
+				"${workspaceFolder}\\BoazEngineJS\\rom.ts",
+				"--removeComments",
+				// "--noEmitHelpers",
+				"-m",
+				"\"none\"",
+				"-t",
+				"ES2019",
+				"--outDir",
+				"\"${workspaceFolder}\\rom\"",
 			],
-			// "runOptions": { "runOn": "folderOpen" },
-			"group": "build",
 			"problemMatcher": [
-				"$tsc-watch"
-			]
-		}
+				"$tsc"
+			],
+			"presentation": {
+				"echo": true,
+				"reveal": "silent",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true
+			},
+			"group": "build"
+		},
+		{
+			"label": "build rompacker",
+			"type": "shell",
+			"command": "tsc",
+			"args": [
+				"${workspaceFolder}\\BoazEngineJS\\rompacker.ts",
+				"--removeComments",
+				"--noEmitHelpers",
+				"--outDir",
+				"\"${workspaceFolder}\\rom\"",
+			],
+			"problemMatcher": [
+				"$tsc"
+			],
+			"group": "build",
+			"presentation": {
+				"echo": true,
+				"reveal": "silent",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true
+			},
+		},
+		// {
+		// 	"label": "build watch",
+		// 	"type": "shell",
+		// 	"command": "tsc",
+		// 	"args": [
+		// 		"--build",
+		// 		"${workspaceFolder}\\tsconfig.json",
+		// 		"--watch"
+		// 	],
+		// 	// "runOptions": { "runOn": "folderOpen" },
+		// 	"group": "build",
+		// 	"problemMatcher": [
+		// 		"$tsc-watch"
+		// 	]
+		// }
 	]
 }

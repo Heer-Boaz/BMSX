@@ -33,7 +33,7 @@ function encodeuint8arr(myString: string): Uint8Array {
 }
 
 function addFile(dirPath: string, filePath: string, arrayOfFiles: string[]): void {
-	arrayOfFiles.push(join(__dirname, dirPath, "/", filePath));
+	arrayOfFiles.push(join(dirPath, "/", filePath));
 }
 
 function getAllFiles(dirPath: string, arrayOfFiles?: string[]): string[] {
@@ -46,7 +46,7 @@ function getAllFiles(dirPath: string, arrayOfFiles?: string[]): string[] {
 			arrayOfFiles = getAllFiles(dirPath + "/" + file, arrayOfFiles);
 		} else {
 			if (!file.endsWith('.rom') && !file.endsWith('.json') && !file.endsWith('.js') && !file.endsWith('.map') && !file.endsWith('.tsbuildinfo'))
-				arrayOfFiles.push(join(__dirname, dirPath, "/", file));
+				arrayOfFiles.push(join(dirPath, "/", file));
 		}
 	})
 
@@ -54,8 +54,8 @@ function getAllFiles(dirPath: string, arrayOfFiles?: string[]): string[] {
 }
 
 try {
-	const arrayOfFiles = getAllFiles("../rom");
-	addFile("../rom", "thegame.js", arrayOfFiles); // Add source at the end
+	const arrayOfFiles = getAllFiles("./rom");
+	addFile("./rom", "thegame.js", arrayOfFiles); // Add source at the end
 	console.info(`Filecount: ${arrayOfFiles.length}`);
 
 	let buffers = new Array<Buffer>();
@@ -116,9 +116,9 @@ try {
 	let rommetastr = JSON.stringify(rommeta).padStart(100, ' ');
 	buffers.push(Buffer.from(encodeuint8arr(rommetastr)));
 
-	writeFileSync("../rom/packed.rom", Buffer.concat(buffers));
+	writeFileSync("./rom/packed.rom", Buffer.concat(buffers));
+	writeFileSync("./src/resourceids.ts", tsimgout.concat(tssndout).join('\n'));
 	// writeFileSync("../rom/romtable.json", JSON.stringify(jsonout));
-	writeFileSync("../src/resourceids.ts", tsimgout.concat(tssndout).join('\n'));
 } catch (e) {
 	console.error(e);
 }

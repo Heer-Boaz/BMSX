@@ -114,6 +114,7 @@ export const enum BitmapId {
 	Garden = 111,
 	Garden_entrance = 112,
 	Room1_d = 113,
+	loading = 114,
 }
 
 export const enum AudioId {

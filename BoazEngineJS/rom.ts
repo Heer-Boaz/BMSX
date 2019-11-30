@@ -20,16 +20,45 @@ interface RomLoadResult {
 	source: any
 }
 
-async function loadRom(url: string): Promise<RomLoadResult> {
-	// View.images = new Map<number, HTMLImageElement>();
-	// SoundMaster.audio = new Map<number, HTMLAudioElement>();
-	let rom = await loadRompack(url);
-	let result = await loadResources(rom)
-	return result;
-}
+var basic = {
+	rom: null as RomLoadResult,
+	debug: false,
+
+	set defusr(_rom: RomLoadResult) {
+		this.rom = _rom;
+		if (this.debug !== true) {
+			let romcode = document.createElement('script')
+			romcode.async = false;
+			romcode.innerText = _rom.source;
+			document.head.appendChild(romcode);
+		}
+	},
+
+	usr(x: number): number {
+		let self = this;
+
+		System.import('src/bootstrapper').then(function (bin) {
+			let loading = <HTMLElement>document.querySelector('#loading');
+			loading.onanimationend = () => loading.parentNode.removeChild(loading);
+			loading.className = "fadeout";
+
+			bin.Bootstrapper.init(self.rom);
+		});
+		return 255;
+	},
+
+	async bload(url: string): Promise<RomLoadResult> {
+		// View.images = new Map<number, HTMLImageElement>();
+		// SoundMaster.audio = new Map<number, HTMLAudioElement>();
+		let rom = await loadRompack(url);
+		let result = await loadResources(rom);
+		return result;
+	}
+};
+
+
 
 async function loadRompack(url: string): Promise<ArrayBuffer> {
-	// return fetch("http://192.168.0.117:8887/rom/packed.rom")
 	return fetch(url)
 		.then(response => response.arrayBuffer())
 		.then(buffer => buffer)

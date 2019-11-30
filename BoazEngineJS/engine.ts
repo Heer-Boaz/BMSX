@@ -62,9 +62,18 @@ export class Game {
         //     GO._ = result;
     }
 
-    public waitForUserToStart(): void {
+    public async waitForUserToStart(): Promise<void> {
         // Nodig want anders gaat Chrome zeuren over geluid dat afgespeeld wordt zonder user input
         window.addEventListener('keydown', game.handleKeypressAfterWaitForUserStart, false);
+        $(window).on('resize', function () {
+            view.handleResize();
+            Promise.resolve();
+        });
+        window.addEventListener('orientationchange', view.handleResize, false);
+        view.handleResize();
+
+        ResourceMaster._.PrepareGameResources();
+        requestAnimationFrame(() => game.drawPressKey());
     }
 
     public handleKeypressAfterWaitForUserStart(e: KeyboardEvent): void {
@@ -73,18 +82,11 @@ export class Game {
     }
 
     public start(): void {
-        ResourceMaster._.PrepareGameResources();
         this.running = true;
-        //     GameLoader.loadgame(img2src, snd2src);
-        // }
-
-        // public startAfterGameLoad(): void {
         requestAnimationFrame(function (timestamp) {
             game.run(timestamp);
         });
-        $(window).on('resize', function () {
-            view.handleResize();
-        });
+
         // Make sure that iOS doesn't scroll, even if overflow = hidden!
         // Maar ontouchend eruit halen zorgt ervoor dat niets meer reageert :(
         // Touch move vind ik te eng om erin te zetten
@@ -101,8 +103,6 @@ export class Game {
         // document.body.ontouchend = (e) => {
         //     e.preventDefault();
         // };
-        window.addEventListener('orientationchange', view.handleResize, false);
-        view.handleResize();
     }
 
     public update(elapsedMs: number): void {
@@ -132,6 +132,13 @@ export class Game {
     public stop(): void {
         this.running = false;
         requestAnimationFrame(() => view.clear());
+    }
+
+    public drawPressKey(): void {
+        view.drawPressKey();
+        if (!game.running) {
+            requestAnimationFrame(() => game.drawPressKey());
+        }
     }
 }
 

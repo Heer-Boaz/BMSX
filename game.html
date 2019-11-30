@@ -2,36 +2,33 @@
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml">
 
     <head>
-        <title>Siwan redt de school!</title>
+        <title>Sintervania</title>
         <meta charset="utf-8" />
         <meta name="viewport"
             content="width=device-width,initial-scale=1.0,minimum-scale=1,maximum-scale=1,user-scalable=no" />
         <meta name="apple-mobile-web-app-capable" content="yes">
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Sintervania" />
-        <link rel="stylesheet" type="text/css" href="./game.min.css" />
+        <link rel="stylesheet" type="text/css" href="./game.css" />
         <script src="https://code.jquery.com/jquery-3.4.1.min.js"
             integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo=" crossorigin="anonymous"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/systemjs/6.1.2/system.min.js"
-            integrity="sha256-wDdvIbXdwz7/66Z7hOYZ4oh0He5ZceD+TKRVmZslxdM=" crossorigin="anonymous"></script>
-        <script type="text/Javascript" src="./thegame.min.js"></script>
-        <script type="text/Javascript">
-            window.addEventListener('load', function () {
-                // Executes when complete page is fully loaded, including all frames, objects and images
-                game = new Game();
-                model = new GameModel();
-                controller = new Controller();
-                sound = new SoundMaster();
-                view = new View();
-                view.drawLoading();
-                // Input.init();
-
-                GameLoader.loadgame();
-            });
-        </script>
+        <script src="https://unpkg.com/systemjs@2.1.1/dist/s.js"></script>
+        <script src="https://unpkg.com/systemjs@2.1.1/dist/extras/named-register.js"></script>
+        <script src="./rom/rom.js"></script>
+        <script src="./rom/thegame.js"></script>
     </head>
 
     <body id="body">
+        <script type="module">
+            // basic.bload("http://127.0.0.1:8887/rom/packed.rom")
+            basic.bload("./rom/packed.rom").then(h406A => {
+                basic.debug = true;
+                basic.defusr = h406A;
+                basic.usr(0);
+            }).catch(console.error);
+        </script>
+        <div><img id="loading" class="appear" src="rom/loading.png" />
+        </div>
         <canvas id="gamescreen"></canvas>
     </body>
 

@@ -1,17 +1,26 @@
 {
-	// Use IntelliSense to learn about possible attributes.
-	// Hover to view descriptions of existing attributes.
-	// For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
 	"version": "0.2.0",
 	"configurations": [
 		{
 			"type": "chrome",
 			"request": "launch",
-			"name": "Launch Chrome against localhost",
-			// "url": "file:///${workspaceFolder}/GameDebug.html",
-			"url": "http://127.0.0.1:8887/GameDebug.html",
+			"name": "Debug the game!",
+			// "url": "file:///${workspaceFolder}/game.html",
+			"url": "http://127.0.0.1:8887/game.html",
 			"webRoot": "${workspaceFolder}",
+			"sourceMapPathOverrides": {
+				"../src/*": "${workspaceFolder}/src/*",
+				"../BoazEngineJS/*": "${workspaceFolder}/BoazEngineJS/*",
+			},
+			"runtimeArgs": [
+				"--disable-web-security"
+			],
 			"sourceMaps": true,
+			"showAsyncStacks": true,
+			"smartStep": true,
+			"pathMapping": {
+				"http://127.0.0.1:8887/": "${workspaceFolder}",
+			}
 		}
 	]
 }

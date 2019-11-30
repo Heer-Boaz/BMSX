@@ -16,7 +16,7 @@ interface RomLoadResult {
 }
 
 export class Bootstrapper {
-    public static bootTheGame(rom: RomLoadResult): void {
+    public static init(rom: RomLoadResult): void {
         new Game({ x: GameConstants.ViewportWidth, y: GameConstants.ViewportHeight });
         game.setModel(new GameModel());
         game.setController(new GameController());
@@ -28,11 +28,11 @@ export class Bootstrapper {
 
         View.images = rom.images;
         SoundMaster.audio = rom.audio;
-        game.waitForUserToStart();
-
-        GameModel._.SelectedChapterToPlay = Chapter.GameStart;
-        GameController._.switchState(GameConstants.INITIAL_GAMESTATE);
-        GameController._.switchSubstate(GameConstants.INITIAL_GAMESUBSTATE);
+        game.waitForUserToStart().then(() => {
+            GameModel._.SelectedChapterToPlay = Chapter.GameStart;
+            GameController._.switchState(GameConstants.INITIAL_GAMESTATE);
+            GameController._.switchSubstate(GameConstants.INITIAL_GAMESUBSTATE);
+        });
     }
 
     public static BootstrapGame(chapter: Chapter): void {

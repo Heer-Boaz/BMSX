@@ -130,8 +130,6 @@ export class GameController extends Controller {
     }
 
     public takeTurn(elapsedMs: number): void {
-        // console.info(`takeTurn wordt nu uitgevoerd. ElapsedMs: ${elapsedMs}`);
-
         if (M._.paused) {
             this.handlePausedState();
             return
