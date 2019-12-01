@@ -7,6 +7,7 @@
 			"command": "node",
 			"args": [
 				"${workspaceFolder}\\rom\\rompacker.js",
+				"sintervania.rom",
 			],
 			"problemMatcher": [
 				"$node-sass"
@@ -19,7 +20,38 @@
 				"build rom",
 				"build rompacker",
 				"build game",
-				// "minify",
+				// "minify"
+			],
+			"presentation": {
+				"echo": true,
+				"reveal": "silent",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true
+			}
+		},
+		{
+			"label": "minify",
+			"type": "shell",
+			"command": "terser",
+			"args": [
+				"--compress",
+				"--mangle",
+				"--source-map",
+				"filename=\"thegame.js\"",
+				"--source-map",
+				"root='${workspaceFolder}\\src\\'",
+				"--source-map",
+				"content=\"inline\"",
+				"--source-map",
+				"url=\"inline\"",
+				"--output",
+				"${workspaceFolder}\\rom\\thegame.js",
+				"${workspaceFolder}\\rom\\thegame.js"
+			],
+			"problemMatcher": [
+				"$node-sass"
 			],
 			"presentation": {
 				"echo": true,
@@ -29,48 +61,11 @@
 				"showReuseMessage": false,
 				"clear": true
 			},
+			"group": "build",
+			"dependsOn": [
+				"build game"
+			]
 		},
-		// {
-		// 	"label": "minify",
-		// 	"type": "shell",
-		// 	"command": "terser",
-		// 	"args": [
-		// 		"--compress",
-		// 		"--mangle",
-		// 		"--source-map",
-		// 		"filename=\"thegame.js\"",
-		// 		"--source-map",
-		// 		"root='${workspaceFolder}\\src\\'",
-		// 		"--source-map",
-		// 		"content=\"inline\"",
-		// 		"--source-map",
-		// 		"url=\"inline\"",
-		// 		// "--source-map",
-		// 		// "includeSources",
-		// 		// "--wrap",
-		// 		// "thegame",
-		// 		// "--verbose",
-		// 		// "--warn",
-		// 		"--output",
-		// 		"${workspaceFolder}\\rom\\thegame.js",
-		// 		"${workspaceFolder}\\rom\\thegame.js",
-		// 	],
-		// 	"problemMatcher": [
-		// 		"$node-sass"
-		// 	],
-		// 	"presentation": {
-		// 		"echo": true,
-		// 		"reveal": "silent",
-		// 		"focus": false,
-		// 		"panel": "shared",
-		// 		"showReuseMessage": false,
-		// 		"clear": true
-		// 	},
-		// 	"group": "build",
-		// 	"dependsOn": [
-		// 		"build game",
-		// 	],
-		// },
 		{
 			"label": "build game",
 			"type": "typescript",
@@ -86,7 +81,7 @@
 				"showReuseMessage": false,
 				"clear": true
 			},
-			"group": "build",
+			"group": "build"
 		},
 		{
 			"label": "build rom",
@@ -95,13 +90,12 @@
 			"args": [
 				"${workspaceFolder}\\BoazEngineJS\\rom.ts",
 				"--removeComments",
-				// "--noEmitHelpers",
 				"-m",
 				"\"none\"",
 				"-t",
 				"ES2019",
 				"--outDir",
-				"\"${workspaceFolder}\\rom\"",
+				"\"${workspaceFolder}\\rom\""
 			],
 			"problemMatcher": [
 				"$tsc"
@@ -125,7 +119,7 @@
 				"--removeComments",
 				"--noEmitHelpers",
 				"--outDir",
-				"\"${workspaceFolder}\\rom\"",
+				"\"${workspaceFolder}\\rom\""
 			],
 			"problemMatcher": [
 				"$tsc"
@@ -138,22 +132,12 @@
 				"panel": "shared",
 				"showReuseMessage": false,
 				"clear": true
-			},
+			}
 		},
-		// {
-		// 	"label": "build watch",
-		// 	"type": "shell",
-		// 	"command": "tsc",
-		// 	"args": [
-		// 		"--build",
-		// 		"${workspaceFolder}\\tsconfig.json",
-		// 		"--watch"
-		// 	],
-		// 	// "runOptions": { "runOn": "folderOpen" },
-		// 	"group": "build",
-		// 	"problemMatcher": [
-		// 		"$tsc-watch"
-		// 	]
-		// }
+		{
+			"type": "gulp",
+			"task": "my-task",
+			"problemMatcher": []
+		}
 	]
 }

@@ -1,0 +1,37 @@
+﻿<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+
+    <head>
+        <title>Sintervania</title>
+        <meta charset="utf-8" />
+        <meta name="viewport"
+            content="width=device-width,initial-scale=1.0,minimum-scale=1,maximum-scale=1,user-scalable=no" />
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="Sintervania" />
+        <script src="https://code.jquery.com/jquery-3.4.1.min.js"
+            integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo=" crossorigin="anonymous"></script>
+        <script src="https://unpkg.com/systemjs@2.1.1/dist/s.js"></script>
+        <script src="https://unpkg.com/systemjs@2.1.1/dist/extras/named-register.js"></script>
+        <script>var basic={rom:null,debug:!1,set defusr(e){if(this.rom=e,!0!==this.debug){let r=document.createElement("script");r.async=!1,r.innerText=e.source,document.head.appendChild(r)}},usr(e){let r=this;return System.import("src/bootstrapper").then((function(e){let o=document.querySelector("#loading");o.onanimationend=()=>o.parentNode.removeChild(o),o.className="fadeout",e.Bootstrapper.init(r.rom),r.rom=null})),255},async bload(e){let r=await loadRompack(e);return await loadResources(r)}};async function loadRompack(e){return fetch(e).then(e=>e.arrayBuffer()).then(e=>e).catch(e=>(new Error("Failed to load rompack."),null))}async function loadImage(e){return new Promise((r,o)=>{let t=new Image;t.onload=e=>r(t),t.onerror=r=>{throw new Error(`Failed to load image's URL: ${e}`)},t.src=e})}async function loadAudio(e){return new Promise((r,o)=>{let t=new Audio;t.onloadeddata=e=>r(t),t.preload="auto",t.loop=!1,t.controls=!1,t.onerror=r=>{throw new Error(`Failed to load audio's URL: ${e}`)},t.src=e,t.load()})}async function loadResourceList(e){let r=new Uint8Array(e),o=r.slice(r.length-100),t=decodeuint8arr(o),a=JSON.parse(t),n=decodeuint8arr(o=r.slice(a.start,a.end));return JSON.parse(n)}async function loadResources(e){let r={images:new Map,audio:new Map,source:null},o=await loadResourceList(e);for(let t=0;t<o.length;t++)await load(e,o[t],r);return r}async function load(e,r,o){let t,a,n,c=new Uint8Array(e).slice(r.start,r.end);switch(r.type){case"image":t="image/png",a=new Blob([c],{type:t}),n=URL.createObjectURL(a);let e=await loadImage(n);o.images.set(r.resid,e);break;case"audio":t="audio/wav",a=new Blob([c],{type:t}),n=URL.createObjectURL(a);let d=await loadAudio(n);o.audio.set(r.resid,d);break;case"source":try{o.source=decodeuint8arr(c)}catch(e){throw e}break;default:throw Error(`Unrecognised resource type in rom: ${r.type}, while processing rompack`)}}function decodeuint8arr(e){return new TextDecoder("utf-8").decode(e)}function encodeuint8arr(e){return(new TextEncoder).encode(e)}</script>
+        <script src="../rom/thegame.js"></script>
+    </head>
+
+    <body id="body">
+        <script type="module">
+            basic.bload("./sintervania.rom").then(h406A => {
+                basic.debug = true;
+                basic.defusr = h406A;
+                basic.usr(0);
+            }).catch(console.error);
+        </script>
+        <div><img id="loading" class="appear" src="./loading.png" />
+        </div>
+        <canvas id="gamescreen"></canvas>
+    </body>
+
+    <style>
+        body,html{position:fixed;margin:0;padding:0;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;-webkit-text-size-adjust:none;-moz-text-size-adjust:none;text-size-adjust:none;overflow:hidden;background-color:#000}html{width:100vw;height:100%;touch-action:manipulation}body{min-height:100%;width:100vw;height:100%;overflow:hidden}img{pointer-events:none;touch-action:none}#gamescreen{position:absolute;top:0;left:0;overflow:hidden}#loading{z-index:1001;display:block;margin-left:auto;margin-right:auto;width:40%;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}#loading.appear{animation:fadein 1s infinite linear alternate}#loading.fadeout{animation:fadeout 1s linear forwards}@keyframes fadein{from{opacity:.3}to{opacity:1}}@keyframes fadeout{from{opacity:1}to{opacity:0}}
+    </style>
+
+</html>

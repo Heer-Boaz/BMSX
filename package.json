@@ -12,9 +12,14 @@
     "requirejs": "^2.3.6"
   },
   "devDependencies": {
+    "@node-minify/clean-css": "^5.2.0",
+    "@node-minify/core": "^5.2.1",
     "@types/node": "^12.12.14",
     "@types/node-fetch": "^2.5.4",
-    "libkss-js": "^0.12.0"
+    "@types/terser": "^3.12.0",
+    "gulp": "^4.0.2",
+    "libkss-js": "^0.12.0",
+    "terser": "^4.4.0"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
