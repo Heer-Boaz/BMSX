@@ -25,7 +25,7 @@ export class Candle extends Foe {
 	protected static CandleHitArea: Area = newArea(0, 0, 10, 16);
 	protected static candleSprites: Map<Direction, BitmapId[]> = new Map([[Direction.None, [BitmapId.Candle_1]]]);
 	protected static AnimationFrames: BitmapId[] = [BitmapId.Candle_1, BitmapId.Candle_2];
-	protected static ElapsedMsPerFrame: number[] = [200, 200];
+	protected static framesPerDrawing: number[] = [10, 10];
 	protected animation: Animation<BitmapId>;
 	protected timer: BStopwatch;
 	protected get movementSprites(): Map<Direction, BitmapId[]> {
@@ -36,7 +36,7 @@ export class Candle extends Foe {
 	constructor(pos: Point, itemSpawned: ItemType = ItemType.HeartSmall) {
 		super(pos);
 		this.canHurtPlayer = false;
-		this.animation = new Animation<BitmapId>(Candle.AnimationFrames, Candle.ElapsedMsPerFrame);
+		this.animation = new Animation<BitmapId>(Candle.AnimationFrames, Candle.framesPerDrawing);
 		this.animation.repeat = true;
 		this.timer = BStopwatch.createWatch();
 		this.imgid = this.animation.stepValue();

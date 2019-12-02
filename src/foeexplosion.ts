@@ -10,10 +10,10 @@ import { Point } from "../BoazEngineJS/interfaces";
 /*[Serializable]*/
 export class FoeExplosion extends FX {
     protected static AnimationFrames: AniData<BitmapId>[] = new Array(
-        { time: 100, data: BitmapId.Foekill_1 },
-        { time: 100, data: BitmapId.Foekill_2 },
-        { time: 100, data: BitmapId.Foekill_1 },
-        { time: 100, data: BitmapId.Foekill_2 },
+        { time: 8, data: BitmapId.Foekill_1 },
+        { time: 8, data: BitmapId.Foekill_2 },
+        { time: 8, data: BitmapId.Foekill_1 },
+        { time: 8, data: BitmapId.Foekill_2 },
     );
 
     protected frameIndex: number;

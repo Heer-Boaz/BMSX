@@ -62,7 +62,8 @@ export function area2size(a: Area) {
 export function waitDuration(timer: BStopwatch, duration: number): boolean {
     if (!timer.running) timer.restart(); // FIXME: Dirty fix for bugs!
 
-    if (timer.elapsedMilliseconds >= duration) {
+    // if (timer.elapsedMilliseconds >= duration) {
+    if (timer.elapsedFrames >= duration) {
         timer.restart();
         return true;
     }

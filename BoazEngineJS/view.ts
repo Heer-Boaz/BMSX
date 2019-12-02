@@ -19,7 +19,7 @@ export class View {
     public scale: number;
 
     constructor(viewportsize: Size) {
-        this.canvas = <HTMLCanvasElement>$('#gamescreen')[0];
+        this.canvas = <HTMLCanvasElement>document.getElementById('gamescreen');
         this.context = this.canvas.getContext('2d');
         this.context.imageSmoothingEnabled = false;
         this.viewportSize = viewportsize;
@@ -30,31 +30,32 @@ export class View {
     }
 
     public calculateSize(): void {
+        let self = view || this;
         let w = Math.max(document.documentElement.clientWidth, window.innerWidth || 0);
         let h = Math.max(document.documentElement.clientHeight, window.innerHeight || 0);
-        this.windowSize = <Size>{ x: w, y: h };
-        this.dx = this.windowSize.x / this.viewportSize.x;
-        this.dy = this.windowSize.y / this.viewportSize.y;
-        this.scale = Math.min(this.dx, this.dy);
+        self.windowSize = <Size>{ x: w, y: h };
+        self.dx = self.windowSize.x / self.viewportSize.x;
+        self.dy = self.windowSize.y / self.viewportSize.y;
+        self.scale = Math.min(self.dx, self.dy);
     }
 
     public handleResize(): void {
-        if (document.getElementById('gamescreen').style.visibility == 'hidden') return;
-        view.calculateSize();
-        this.canvas.width = this.viewportSize.x * this.scale;
-        this.canvas.height = this.viewportSize.y * this.scale;
+        if (document.getElementById('gamescreen').style.visibility === 'hidden') return;
+        let self = view || this;
+        self.calculateSize();
+        self.canvas.width = self.viewportSize.x * self.scale;
+        self.canvas.height = self.viewportSize.y * self.scale;
 
-        this.canvas.style.left = (this.windowSize.x - this.canvas.width) / 2 + "px";
-        this.canvas.style.top = (this.windowSize.y - this.canvas.height) / 2 + "px";
+        self.canvas.style.left = (self.windowSize.x - self.canvas.width) / 2 + "px";
+        self.canvas.style.top = (self.windowSize.y - self.canvas.height) / 2 + "px";
     }
 
     public clear(): void {
-        // Clear the canvas
-        this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        view.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
     }
 
     public drawPressKey(): void {
-        this.clear();
+        this.context.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
         this.context.font = '12pt Monaco';
         this.context.fillStyle = 'white';
@@ -66,7 +67,7 @@ export class View {
 
     public drawImg(imgid: number, x: number, y: number, options?: number): void {
         let img = View.images.get(imgid);
-        if (!img) throw new Error("Cannot find image with id '" + imgid + "'");
+        if (!img) throw new Error(`Cannot find image with id '${imgid}'`);
 
         this.context.save();
         this.context.scale(this.scale, this.scale);

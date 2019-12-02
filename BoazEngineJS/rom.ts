@@ -17,6 +17,31 @@ interface RomLoadResult {
 	source: any
 }
 
+// Only implement if no native implementation is available
+// https://stackoverflow.com/questions/4775722/how-to-check-if-an-object-is-an-array
+if (typeof Array.isArray === 'undefined') {
+	Array.isArray = function (obj): obj is Array<any> {
+		return Object.prototype.toString.call(obj) === '[object Array]';
+	}
+};
+
+// Make sure that iOS doesn't scroll, even if overflow = hidden!
+// Maar ontouchend eruit halen zorgt ervoor dat niets meer reageert :(
+// Touch move vind ik te eng om erin te zetten
+// https://medium.com/jsdownunder/locking-body-scroll-for-all-devices-22def9615177
+document.addEventListener('touchmove', e => {
+	e.preventDefault();
+});
+document.addEventListener('touchend', e => {
+	e.preventDefault();
+});
+document.addEventListener('touchmove', e => {
+	e.preventDefault();
+});
+document.addEventListener('touchend', e => {
+	e.preventDefault();
+});
+
 var basic = {
 	rom: null as RomLoadResult,
 	debug: false,
@@ -35,9 +60,7 @@ var basic = {
 		let self = this;
 
 		System.import('src/bootstrapper').then(function (bin) {
-			let loading = <HTMLElement>document.querySelector('#loading');
-			loading.onanimationend = () => loading.parentNode.removeChild(loading);
-			loading.className = "fadeout";
+			document.body.style.backgroundColor = "#000000";
 
 			bin.Bootstrapper.init(self.rom);
 			self.rom = null;
@@ -46,17 +69,24 @@ var basic = {
 	},
 
 	async bload(url: string): Promise<RomLoadResult> {
+		let bootCompletePromise = awaitBootComplete();
+		let pressedAnyKey = awaitPressedAnyKey();
 		let rom = await loadRompack(url);
 		let result = await loadResources(rom);
+		setLoaderText("Press any key to start...");
+
+		await bootCompletePromise;
+		await pressedAnyKey;
 		return result;
-	}
-};
+	},
+}
 
 async function loadRompack(url: string): Promise<ArrayBuffer> {
 	return fetch(url)
 		.then(response => response.arrayBuffer())
 		.then(buffer => buffer)
 		.catch(e => {
+			setLoaderText("Failed to load rompack");
 			new Error(`Failed to load rompack.`);
 			return null;
 		});
@@ -65,10 +95,10 @@ async function loadRompack(url: string): Promise<ArrayBuffer> {
 async function loadImage(url: string): Promise<HTMLImageElement> {
 	return new Promise((resolve, reject) => {
 		let img = new Image();
-		img.onload = (e => resolve(img));
-		img.onerror = (e => {
+		img.onload = e => resolve(img);
+		img.onerror = e => {
 			throw new Error(`Failed to load image's URL: ${url}`);
-		});
+		};
 		img.src = url;
 	});
 }
@@ -76,7 +106,7 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
 async function loadAudio(url: string): Promise<HTMLAudioElement> {
 	return new Promise((resolve, reject) => {
 		let snd = new Audio();
-		snd.onloadeddata = (e => resolve(snd));
+		snd.onloadeddata = e => resolve(snd);
 		snd.preload = 'auto';
 		snd.loop = false;
 		snd.controls = false;
@@ -148,6 +178,42 @@ async function load(rom: ArrayBuffer, res: RomResource, romResult: RomLoadResult
 		default:
 			throw Error(`Unrecognised resource type in rom: ${res.type}, while processing rompack`);
 	}
+}
+
+async function awaitBootComplete(): Promise<void> {
+	let result: Promise<void> = new Promise((resolve, reject) => {
+		let msx = <HTMLElement>document.querySelector('#msx');
+		msx.addEventListener('animationend', ev => {
+			let loading = <HTMLElement>document.querySelector('#loading');
+			loading.style.visibility = 'visible';
+			resolve();
+		});
+		msx.className = "enter";
+	});
+	return result;
+}
+
+async function awaitPressedAnyKey(): Promise<void> {
+	let remove = (id: string) => {
+		let element = document.querySelector(id);
+		if (element) element.parentElement.removeChild(element);
+	};
+
+	let result: Promise<void> = new Promise((resolve, reject) => {
+		document.body.addEventListener('keydown', ev => {
+			remove('#loading');
+			remove('#msx');
+			remove('#hidor');
+			remove('#romjs');
+			resolve();
+		});
+	});
+	return result;
+}
+
+function setLoaderText(txt: string) {
+	let loading = <HTMLElement>document.querySelector('#loading');
+	loading.innerText = txt;
 }
 
 /**

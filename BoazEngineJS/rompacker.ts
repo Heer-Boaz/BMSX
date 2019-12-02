@@ -65,7 +65,8 @@ function buildGameHtml(outfile: string): void {
 	let romjs = readFileSync("./rom/rom.js", 'utf8');
 	var options = {
 		mangle: {
-			// toplevel: true,
+			toplevel: true,
+			reserved: ["basic"],
 		},
 	};
 	let romjsMinified = terser.minify(romjs, options).code;

@@ -30,8 +30,8 @@ export namespace GameConstants {
     export const GameScreenStartY: number = 36;
     export const ImageBasePath: string = "./Content/Images/";
     export const Extension_PNG: string = ".png";
-    export const WaitAfterLoadGame: number = 1000;
-    export const WaitAfterRoomSwitch: number = 500;
+    export const WaitAfterLoadGame: number = 50;
+    export const WaitAfterRoomSwitch: number = 25;
     export const WaitAfterGameStart1: number = 2;
     export const WaitAfterGameStart2: number = 4;
 }

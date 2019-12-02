@@ -14,7 +14,7 @@ export class GardenCandle extends Candle {
 
     constructor(pos: Point, itemSpawned: ItemType = ItemType.HeartSmall) {
         super(pos, itemSpawned);
-        this.animation = new Animation<BitmapId>(GardenCandle.AnimationFrames, Candle.ElapsedMsPerFrame, true);
+        this.animation = new Animation<BitmapId>(GardenCandle.AnimationFrames, Candle.framesPerDrawing, true);
         this.imgid = this.animation.stepValue();
         this.hitarea = GardenCandle.CandleHitArea;
         this.itemSpawnedAfterKill = itemSpawned;

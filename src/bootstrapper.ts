@@ -24,15 +24,16 @@ export class Bootstrapper {
         game.setGameView(gameview);
         gameview.init();
 
-        GameController._.switchState(GameState.LoadTheGame);
+        // GameController._.switchState(GameState.LoadTheGame);
 
         View.images = rom.images;
         SoundMaster.audio = rom.audio;
-        game.waitForUserToStart().then(() => {
-            GameModel._.SelectedChapterToPlay = Chapter.GameStart;
-            GameController._.switchState(GameConstants.INITIAL_GAMESTATE);
-            GameController._.switchSubstate(GameConstants.INITIAL_GAMESUBSTATE);
-        });
+        // game.waitForUserToStart().then(() => {
+        game.start();
+        GameModel._.SelectedChapterToPlay = Chapter.GameStart;
+        GameController._.switchState(GameConstants.INITIAL_GAMESTATE);
+        GameController._.switchSubstate(GameConstants.INITIAL_GAMESUBSTATE);
+        // });
     }
 
     public static BootstrapGame(chapter: Chapter): void {

@@ -9,15 +9,13 @@
         <meta name="apple-mobile-web-app-capable" content="yes">
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Sintervania" />
-        <script src="https://code.jquery.com/jquery-3.4.1.min.js"
-            integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo=" crossorigin="anonymous"></script>
         <script src="https://unpkg.com/systemjs@2.1.1/dist/s.js"></script>
         <script src="https://unpkg.com/systemjs@2.1.1/dist/extras/named-register.js"></script>
-        <script>//#romjs</script>
+        <script id="romjs">//#romjs</script>
         <script src="../rom/thegame.js"></script>
     </head>
 
-    <body id="body">
+    <body>
         <script type="module">
             basic.bload("./#outfile").then(h406A => {
                 basic.debug = true;
@@ -25,11 +23,11 @@
                 basic.usr(0);
             }).catch(console.error);
         </script>
-        <div><img id="loading" class="appear" src="./loading.png" />
-        </div>
+        <img id="msx" src="./bmsx.png" />
+        <div id="hidor"></div>
+        <span id="loading">Loading...</span>
         <canvas id="gamescreen"></canvas>
     </body>
-
     <style>
         /*css*/
     </style>
