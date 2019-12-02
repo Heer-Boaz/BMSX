@@ -70,6 +70,8 @@ function buildGameHtml(outfile: string): void {
 		},
 	};
 	let romjsMinified = terser.minify(romjs, options).code;
+	let bmsx = readFileSync("./rom/bmsx.png");
+	let bmsx_base64ed = bmsx.toString('base64');
 
 	minify({
 		compressor: cleanCSS,
@@ -81,6 +83,7 @@ function buildGameHtml(outfile: string): void {
 			html = html.replace('//#romjs', romjsMinified);
 			html = html.replace('/*css*/', cssMinified);
 			html = html.replace('#outfile', outfile);
+			html = html.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed);
 
 			writeFileSync("./dist/game.html", html);
 		}
@@ -161,7 +164,7 @@ try {
 	let outfile = args[0];
 	buildRompackAndResourceList(outfile);
 	buildGameHtml(outfile);
-	copyResources();
+	// copyResources();
 } catch (e) {
 	console.error(e);
 }
