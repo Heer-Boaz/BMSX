@@ -47,8 +47,8 @@ var basic = {
 	debug: false,
 
 	set defusr(_rom: RomLoadResult) {
-		this.rom = _rom;
-		if (this.debug !== true) {
+		basic.rom = _rom;
+		if (basic.debug !== true) {
 			let romcode = document.createElement('script');
 			romcode.async = false;
 			romcode.innerText = _rom.source;
@@ -70,12 +70,13 @@ var basic = {
 
 	async bload(url: string): Promise<RomLoadResult> {
 		let bootCompletePromise = awaitBootComplete();
-		let pressedAnyKey = awaitPressedAnyKey();
 		let rom = await loadRompack(url);
 		let result = await loadResources(rom);
 		setLoaderText("Press any key to start...");
+		setClassForLoader("");
 
 		await bootCompletePromise;
+		let pressedAnyKey = awaitPressedAnyKey();
 		await pressedAnyKey;
 		return result;
 	},
@@ -87,6 +88,7 @@ async function loadRompack(url: string): Promise<ArrayBuffer> {
 		.then(buffer => buffer)
 		.catch(e => {
 			setLoaderText("Failed to load rompack");
+			setClassForLoader("");
 			new Error(`Failed to load rompack.`);
 			return null;
 		});
@@ -189,6 +191,7 @@ async function awaitBootComplete(): Promise<void> {
 			resolve();
 		});
 		msx.className = "enter";
+		if (basic.debug) resolve(); // Resolve immediately in debug-mode
 	});
 	return result;
 }
@@ -214,6 +217,11 @@ async function awaitPressedAnyKey(): Promise<void> {
 function setLoaderText(txt: string) {
 	let loading = <HTMLElement>document.querySelector('#loading');
 	loading.innerText = txt;
+}
+
+function setClassForLoader(cls: string) {
+	let loading = <HTMLElement>document.querySelector('#loading');
+	loading.className = "";
 }
 
 /**

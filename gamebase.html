@@ -17,15 +17,15 @@
 
     <body>
         <script type="module">
+            basic.debug = true;
             basic.bload("./#outfile").then(h406A => {
-                basic.debug = true;
                 basic.defusr = h406A;
                 basic.usr(0);
             }).catch(console.error);
         </script>
         <img id="msx" src="#bmsxurl" />
         <div id="hidor"></div>
-        <span id="loading">Loading...</span>
+        <span id="loading" class="coloring">Loading...</span>
         <canvas id="gamescreen"></canvas>
     </body>
     <style>

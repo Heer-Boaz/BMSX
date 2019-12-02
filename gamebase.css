@@ -102,6 +102,16 @@ img {
 	animation: fadeout 1.0s linear forwards;
 }
 
+#loading.coloring {
+	animation: coloring 2s infinite;
+}
+
+@keyframes coloring {
+	0% { color: #ffffff; }
+	50% { color: #2020ff; }
+	100% { color: #ffffff; }
+}
+
 @keyframes fadein {
 	from {
 		opacity: .3;
