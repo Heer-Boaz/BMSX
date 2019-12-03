@@ -1,5 +1,4 @@
-﻿import { IGameObject } from './interfaces';
-export interface Point {
+﻿export interface Point {
     x: number;
     y: number;
 }
