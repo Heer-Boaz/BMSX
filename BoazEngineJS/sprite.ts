@@ -1,9 +1,9 @@
 ﻿import { view } from "./engine";
 import { moveArea, addPoints } from "./common";
 // import { BitmapId } from "../BoazEngineJS/resourceids";
-import { IGameObject, Point, Size, Area } from "./interfaces";
+import { IRenderObject, Point, Size, Area, IGameObject } from './interfaces';
 
-export abstract class Sprite implements IGameObject {
+export abstract class Sprite implements IRenderObject {
 	public id: string | null;
 	public pos: Point;
 	public size: Size;
@@ -13,7 +13,6 @@ export abstract class Sprite implements IGameObject {
 	public flippedH: boolean;
 	public flippedV: boolean;
 	public priority: number;
-	public rawAscii: boolean;
 	public disposeFlag: boolean;
 	public imgid: number;
 	public hitbox_sx?: number;
@@ -26,7 +25,11 @@ export abstract class Sprite implements IGameObject {
 	public y_plus_height?: number;
 	public z_plus_depth?: number;
 	public extendedProperties: Map<string, any>;
-	public oncollide: (src: IGameObject) => void;
+	public oncollide: (src: IRenderObject) => void;
+
+	public static [Symbol.hasInstance](o: any): boolean {
+		return o && o.imgid;
+	}
 
 	constructor(initialPos?: Point, imageId?: number) {
 		this.id = null;
@@ -41,7 +44,6 @@ export abstract class Sprite implements IGameObject {
 		this.flippedH = false;
 		this.flippedV = false;
 		this.priority = 0;
-		this.rawAscii = false;
 		this.disposeFlag = false;
 		this.imgid = null;
 		this.extendedProperties = new Map<string, any>();
@@ -65,22 +67,23 @@ export abstract class Sprite implements IGameObject {
 		else view.drawImg(this.imgid, this.pos.x, this.pos.y);
 	}
 
-	// abstract postpaint(offset?: Point): void;
+	postpaint(offset?: Point): void {
+	}
 
-	static objectCollide = (o1: IGameObject, o2: IGameObject): boolean => {
+	static objectCollide = (o1: IRenderObject, o2: IRenderObject): boolean => {
 		return o1.objectCollide(o2);
 	}
 
-	public collides(o: IGameObject | Area): boolean {
-		if ((o as IGameObject).id) return this.objectCollide(<IGameObject>o);
+	public collides(o: IRenderObject | Area): boolean {
+		if ((o as IRenderObject).id) return this.objectCollide(<IRenderObject>o);
 		else return this.areaCollide(<Area>o);
 	}
 
-	public collide(src: IGameObject): void {
+	public collide(src: IRenderObject): void {
 		this.oncollide && this.oncollide(src);
 	}
 
-	objectCollide = (o: IGameObject): boolean => {
+	objectCollide = (o: IRenderObject): boolean => {
 		return this.areaCollide(moveArea(o.hitarea, o.pos));
 	}
 

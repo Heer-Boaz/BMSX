@@ -27,7 +27,7 @@ export abstract class Projectile extends Sprite {
     public damageDealt: number;
 
     protected checkWallSpriteCollisions(): boolean {
-        return M._.objects.filter(o => o.extendedProperties[M.PROPERTY_ACT_AS_WALL]).some(o => o.areaCollide(moveArea(this.hitarea, this.pos)));
+        return M._.objects.filter(o => o.extendedProperties[M.PROPERTY_ACT_AS_WALL] && o.areaCollide).some(o => o.areaCollide(moveArea(this.hitarea, this.pos)));
     }
 
     protected checkWallCollision(): boolean {

@@ -18,6 +18,7 @@ import { EndDemo } from "./enddemo";
 import { Foe } from "./foe";
 import { Point, IGameView } from '../BoazEngineJS/interfaces';
 import { GameOptions as GO } from '../BoazEngineJS/gameoptions';
+import { Sprite } from "../BoazEngineJS/sprite";
 
 export class GameView implements IGameView {
     private static pausePosX: number = 80;
@@ -125,8 +126,8 @@ export class GameView implements IGameView {
                 let gamescreenOffset = <Point>{ x: CS.GameScreenStartX, y: CS.GameScreenStartY };
                 if (M._.gameSubstate != GameSubstate.SwitchRoom) {
                     M._.CurrentRoom.Paint();
-                    let sorted = M._.objects.sort((o1, o2) => o1.priority - o2.priority);
-                    sorted.forEach(o => o.paint(gamescreenOffset));
+                    let sorted = M._.objects.sort((o1, o2) => (<Sprite>o1).priority - (<Sprite>o2).priority);
+                    sorted.forEach(o => o.paint && o.paint(gamescreenOffset));
                 }
                 this.Hud.Paint();
 

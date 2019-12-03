@@ -20,12 +20,29 @@ export interface Color {
 export interface IGameObject {
     // Properties
     id: string | null;
-    hitarea: Area | null;
     disposeFlag: boolean;
-    visible: boolean;
     extendedProperties: Map<string, any>;
+    priority?: number;
+
+    // Methods
+    takeTurn(): void;
+    spawn: ((spawningPos?: Point | null) => void) | (() => void);
+    dispose(): void;
+
+    paint?(offset?: Point): void;
+    postpaint?(offset?: Point): void; // Post-processing such as lighting effects or the characters of an ASCII-buffer in case of an ASCII-sprite
+    objectCollide?(o: IRenderObject): boolean;
+    areaCollide?(a: Area): boolean;
+    collides?(o: IRenderObject | Area): boolean;
+    collide?(src: IRenderObject): void;
+    oncollide?: (src: IRenderObject) => void;
+}
+
+export interface IRenderObject extends IGameObject {
     pos: Point;
     size: Size;
+    hitarea: Area | null;
+    visible: boolean;
     hitbox_sx?: number;
     hitbox_sy?: number;
     hitbox_sz?: number;
@@ -37,17 +54,13 @@ export interface IGameObject {
     z_plus_depth?: number;
     priority?: number;
 
-    // Methods
-    takeTurn(): void;
-    paint?(offset?: Point): void;
-    postpaint?(offset?: Point): void; // Post-processing such as lighting effects or the characters of an ASCII-buffer in case of an ASCII-sprite
-    objectCollide(o: IGameObject): boolean;
+    paint(offset?: Point): void;
+    postpaint(offset?: Point): void; // Post-processing such as lighting effects or the characters of an ASCII-buffer in case of an ASCII-sprite
+    objectCollide(o: IRenderObject): boolean;
     areaCollide(a: Area): boolean;
-    collides(o: IGameObject | Area): boolean;
-    collide(src: IGameObject): void;
-    oncollide: (src: IGameObject) => void;
-    spawn(spawningPos?: Point | null): void;
-    dispose(): void;
+    collides(o: IRenderObject | Area): boolean;
+    collide(src: IRenderObject): void;
+    oncollide: (src: IRenderObject) => void;
 }
 
 export interface IGameView {

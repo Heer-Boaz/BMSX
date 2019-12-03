@@ -1,5 +1,5 @@
 import { anidata } from './statemachine';
-import { Point, IGameObject } from './interfaces';
+import { Point, IGameObject, IRenderObject } from './interfaces';
 
 export interface anidata<A extends any | null | {}> {
 	delta: number;
@@ -11,7 +11,7 @@ export type runhandle<T extends object, A extends any | null> = (_state: bst<T, 
 export type bsfthandle<T extends object, A extends any | null> = (_state: bst<T, A>) => void;
 export type numstring = number | string;
 
-export function animatepos(st: bst<IGameObject, anidata<Point>>, delta: number): void {
+export function animatepos(st: bst<IRenderObject, anidata<Point>>, delta: number): void {
 	let tapedata = () => st.statedata[st.tapehead];
 
 	st.delta2tapehead += delta;

@@ -83,7 +83,7 @@ export abstract class Creature extends Sprite {
     }
 
     protected checkWallSpriteCollisions(): boolean {
-        return M._.objects.filter(o => o != this && o.extendedProperties.get(M.PROPERTY_ACT_AS_WALL) && (<Sprite>o).hittable).some(o => o.areaCollide(moveArea(this.wallHitArea, this.pos)));
+        return M._.objects.filter(o => o !== this && o.extendedProperties.get(M.PROPERTY_ACT_AS_WALL) && o instanceof Sprite && (<Sprite>o).hittable).some(o => (<Sprite>o).areaCollide(moveArea(this.wallHitArea, this.pos)));
     }
 
     protected checkWallCollision(): boolean {
