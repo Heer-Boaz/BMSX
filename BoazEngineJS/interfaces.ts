@@ -1,4 +1,5 @@
-﻿export interface Point {
+﻿import { IGameObject } from './interfaces';
+export interface Point {
     x: number;
     y: number;
 }
@@ -43,6 +44,9 @@ export interface IGameObject {
     postpaint?(offset?: Point): void; // Post-processing such as lighting effects or the characters of an ASCII-buffer in case of an ASCII-sprite
     objectCollide(o: IGameObject): boolean;
     areaCollide(a: Area): boolean;
+    collides(o: IGameObject | Area): boolean;
+    collide(src: IGameObject): void;
+    oncollide: (src: IGameObject) => void;
     spawn(spawningPos?: Point | null): void;
     dispose(): void;
 }

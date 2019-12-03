@@ -42,7 +42,8 @@ export class bst<T extends object, A extends any | null>{
 	public static readonly initstateid = 0;
 
 	public states: str2bst<T, A>; // Note that numbers will be automatically converted to strings!
-	public stateid: numstring; // Identifier of current state
+	public id: numstring;
+	public currentid: numstring; // Identifier of current state
 	public isfinal: boolean;
 	public onrun: runhandle<T, A>;
 	public onfinalstate: bsfthandle<T, A>;
@@ -51,35 +52,45 @@ export class bst<T extends object, A extends any | null>{
 	public onexitstate: bsfthandle<T, A>;
 	public get endoftape(): boolean { return !this.statedata || this.tapehead === this.statedata.length - 1; }
 	public get startoftape(): boolean { return this.tapehead === 0; }
-
-	constructor(_target: T, _composite = false, _final = false) {
-		if (_composite) this.states = {};
-		this.target = _target;
-		this.isfinal = _final;
-		this.reset();
-	}
-
+	public get hasstates(): boolean { return this.states !== undefined; }
+	public get iscomposite(): boolean { return this.states !== undefined; }
+	public get internalstate() { return { statedata: this.statedata, tapehead: this.tapehead }; }
+	public get current(): bst<T, A> { return this.states[this.currentid]; };
 	public invoke(_state: bst<T, A>, f: runhandle<T, A> | bsfthandle<T, A>, ...args: any[]): any {
 		return (!_state || !f) ? undefined : (args ? f(_state, args) : f(_state));
 	}
 
-	public get state(): bst<T, A> { return this.states[this.stateid]; };
+	constructor(_target: T, _id: numstring, _composite = false, _final = false) {
+		if (_composite) this.states = {};
+		this.target = _target;
+		this.id = _id;
+		this.isfinal = _final;
+		this.reset();
+	}
 
 	public run(...input: any[]) {
-		let result = this.invoke(this.state, this.state.onrun, input);
-		if (this.state.isfinal) this.invoke(this.state, this.state.onfinalstate);
+		let result = this.invoke(this.current, this.current.onrun, input);
+		if (this.current.isfinal) this.invoke(this.current, this.current.onfinalstate);
 		return result;
 	}
 
 	public switch(newstate: numstring): void {
-		this.invoke(this.state, this.state.onexitstate);
-		this.stateid = newstate;
-		this.invoke(this.state, this.state.oninitstate);
+		this.invoke(this.current, this.current.onexitstate);
+		this.currentid = newstate;
+		this.invoke(this.current, this.current.oninitstate);
 	}
 
 	public reset(): void {
-		this.stateid = bst.initstateid;
+		this.currentid = bst.initstateid;
 		this.tapehead = 0;
 		this.delta2tapehead = 0;
+	}
+
+	public append(_state: bst<T, A>, _id: numstring): void {
+		this.states[_id] = _state;
+	}
+
+	public remove(_id: numstring): void {
+		delete this.states[_id];
 	}
 }
