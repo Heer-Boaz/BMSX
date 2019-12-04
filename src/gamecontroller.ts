@@ -87,7 +87,7 @@ export class GameController extends Controller {
                 break;
             case GameState.GameStart2:
                 this.timer.restart();
-                // S.PlayMusic(RM.Music[AudioId.Stage]);
+                S.PlayMusic(RM.Music.get(AudioId.VampireKiller));
                 break;
             case GameState.Game:
                 break;
@@ -102,14 +102,14 @@ export class GameController extends Controller {
             case GameSubstate.Conversation:
                 break;
             case GameSubstate.BelmontDies:
-                // S.PlayMusic(RM.Music[AudioId.Ohnoes]);
+                S.PlayMusic(RM.Music.get(AudioId.OHNOES));
                 break;
             case GameSubstate.ItsCurtainsForYou:
             case GameSubstate.ToEndDemo:
                 V._.ItsCurtains.Init();
                 break;
             case GameSubstate.GameOver:
-                // S.PlayMusic(RM.Music[AudioId.Humiliation]);
+                S.PlayMusic(RM.Music.get(AudioId.Humiliation));
                 V._.GameOverScreen.Init();
                 break;
             case GameSubstate.IngameMenu:

@@ -46,7 +46,8 @@ function getAllFiles(dirPath: string, arrayOfFiles?: string[]): string[] {
 
 	files.forEach(function (file) {
 		if (statSync(dirPath + "/" + file).isDirectory()) {
-			arrayOfFiles = getAllFiles(dirPath + "/" + file, arrayOfFiles);
+			if (file.indexOf("ignore") === -1)
+				arrayOfFiles = getAllFiles(dirPath + "/" + file, arrayOfFiles);
 		} else {
 			if (!file.endsWith("loading.png") && !file.endsWith("bmsx.png") && !file.endsWith('.rom') && !file.endsWith('.json') && !file.endsWith('.js') && !file.endsWith('.map') && !file.endsWith('.tsbuildinfo'))
 				arrayOfFiles.push(join(dirPath, "/", file));
@@ -110,6 +111,7 @@ function buildRompackAndResourceList(outfile: string): void {
 	let sndi = 0;
 	for (let i = 0; i < arrayOfFiles.length; i++) {
 		let type: string;
+		let name = parse(arrayOfFiles[i]).name.replace(' ', '');
 		switch (parse(arrayOfFiles[i]).ext) {
 			case '.wav':
 				type = 'audio';
@@ -124,17 +126,17 @@ function buildRompackAndResourceList(outfile: string): void {
 		}
 		switch (type) {
 			case 'image':
-				jsonout.push({ resid: imgi, resname: parse(arrayOfFiles[i]).name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length });
-				tsimgout.push(`\t${parse(arrayOfFiles[i]).name} = ${imgi},`);
+				jsonout.push({ resid: imgi, resname: name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length });
+				tsimgout.push(`\t${name} = ${imgi},`);
 				++imgi;
 				break;
 			case 'audio':
-				jsonout.push({ resid: sndi, resname: parse(arrayOfFiles[i]).name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length });
-				tssndout.push(`\t${parse(arrayOfFiles[i]).name} = ${sndi},`);
+				jsonout.push({ resid: sndi, resname: name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length });
+				tssndout.push(`\t${name} = ${sndi},`);
 				++sndi;
 				break;
 			case 'source':
-				jsonout.push({ resid: sndi, resname: parse(arrayOfFiles[i]).name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length });
+				jsonout.push({ resid: sndi, resname: name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length });
 				break;
 		}
 		bufferPointer += buffers[i].length;

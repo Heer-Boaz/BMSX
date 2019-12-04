@@ -47,7 +47,7 @@ export class TriRoe extends PlayerProjectile {
 	public takeTurn(): void {
 		if (M._.Belmont.Dying || !M._.Belmont.roeState.Roeing) {
 			this.disposeFlag = true;
-			return
+			return;
 		}
 		this.pos = M._.Belmont.pos;
 		this.checkAndInvokeHit();

@@ -74,7 +74,7 @@ export abstract class Sprite implements IRenderObject {
 	postpaint(offset?: Point): void {
 	}
 
-	static objectCollide = (o1: IRenderObject, o2: IRenderObject): boolean => {
+	static objectCollide(o1: IRenderObject, o2: IRenderObject): boolean {
 		return o1.objectCollide(o2);
 	}
 
@@ -87,11 +87,11 @@ export abstract class Sprite implements IRenderObject {
 		this.oncollide && this.oncollide(src);
 	}
 
-	objectCollide = (o: IRenderObject): boolean => {
+	objectCollide(o: IRenderObject): boolean {
 		return this.areaCollide(moveArea(o.hitarea, o.pos));
 	}
 
-	areaCollide = (a: Area): boolean => {
+	areaCollide(a: Area): boolean {
 		let o1 = this;
 		let o1p = o1.pos;
 		let o1a = o1.hitarea;

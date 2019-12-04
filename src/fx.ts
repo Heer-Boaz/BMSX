@@ -11,6 +11,7 @@ export class FX extends Sprite {
     constructor(pos: Point) {
         super(pos);
         this.timer = BStopwatch.createWatch();
+        this.hittable = false;
     }
 
     protected init(): void {

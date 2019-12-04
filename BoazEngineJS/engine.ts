@@ -49,12 +49,12 @@ export class Game {
     }
 
     public GameOptionsChanged(): void {
-        throw Error("Not implemented yet :-(");
+        console.warn("Not implemented yet :-(");
         // GameOptionsPersistor.SaveOptions(GO._);
     }
 
     private loadGameOptions(): void {
-        throw Error("Not implemented yet :-(");
+        console.warn("Not implemented yet :-(");
         // let result = GameOptionsPersistor.LoadOptions();
         // if (result != null)
         //     GO._ = result;
@@ -99,7 +99,7 @@ export class Game {
 
     public draw(elapsedMs: number): void {
         gameview.drawGame(elapsedMs);
-        requestAnimationFrame(timestamp => game.draw(timestamp));
+        if (game.running) requestAnimationFrame(timestamp => game.draw(timestamp));
     }
 
     public run(): void {
@@ -139,7 +139,12 @@ export class Game {
         game.running = false;
         clearInterval(game.intervalid);
 
-        requestAnimationFrame(view.clear);
+        requestAnimationFrame(() => {
+            view.clear();
+            view.handleResize();
+            SoundMaster.StopEffect();
+            SoundMaster.StopMusic();
+        });
     }
 
     // public drawPressKey(): void {

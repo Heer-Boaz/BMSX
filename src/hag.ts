@@ -23,7 +23,7 @@ export class Hag extends Foe {
         return true;
     }
 
-    protected static HagSize: Size = <Size>{ x: 16, y: 32 };
+    public static HagSize: Size = <Size>{ x: 16, y: 32 };
     protected static HagHitArea: Area = <Area>{ start: <Point>{ x: 2, y: 2 }, end: <Point>{ x: 14, y: 32 } };
     protected animation: Animation<number>;
     protected timer: BStopwatch;

@@ -62,7 +62,6 @@ export class View {
         this.context.font = '12pt Monaco';
         this.context.fillStyle = 'white';
         this.context.save();
-        // this.context.scale(this.scale, this.scale);
         this.context.fillText('Press any key to start', 56, 80);
         this.context.restore();
     }

@@ -1,6 +1,6 @@
 import { view } from "../BoazEngineJS/engine"
 import { BitmapId } from "./resourceids";
-import { GameOptions } from "./gameoptions";
+import { GameOptions as GO } from "../BoazEngineJS/gameoptions";
 import { Point, Color } from "../BoazEngineJS/interfaces";
 
 export enum TextWriterType {
@@ -59,7 +59,7 @@ export class TextWriter {
                 }
                 pos.x = startPos.x;
                 pos.y += stepY;
-                if (pos.y >= GameOptions._.BufferHeight)
+                if (pos.y >= GO.BufferHeight)
                     break;
             }
         }
@@ -70,7 +70,7 @@ export class TextWriter {
             }
             pos.x = startPos.x;
             pos.y += stepY;
-            if (pos.y >= GameOptions._.BufferHeight)
+            if (pos.y >= GO.BufferHeight)
                 return;
         }
     }
@@ -97,12 +97,12 @@ export class TextWriter {
                 if (pos.y < -TextWriter.FontHeight)
                     break;
                 letter = TextWriter.getBitmapForLetter(c);
-                view.drawImg(<number>letter, pos.x, pos.y);
+                view.drawImg(letter, pos.x, pos.y);
                 pos.x += stepX;
             };
             pos.x = startPos.x;
             pos.y += stepY;
-            if (pos.y >= GameOptions._.BufferHeight)
+            if (pos.y >= GO.BufferHeight)
                 break;
         };
     }

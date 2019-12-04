@@ -68,22 +68,13 @@ export class GameView implements IGameView {
         }
     }
 
+    public ToFullscreen(): void {
+        // https://zinoui.com/blog/javascript-fullscreen-api
+        if (document.fullscreenEnabled) document.documentElement.requestFullscreen();
+    }
+
     public ToWindowed(): void {
-        throw Error("Not implemented!");
-        // let oldScale = GO.Scale;
-        // let hresult: HResult = BDX._.SwitchToWindowed(<number>(MCS.MSX2ScreenWidth * GO.Scale), <number>(MCS.MSX2ScreenHeight * GO.Scale));
-        // if (hresult.Succeeded) {
-        //     hresult = BDX._.ChangeBufferSize(<number>(MCS.MSX2ScreenWidth * GO.Scale), <number>(MCS.MSX2ScreenHeight * GO.Scale));
-        // }
-        // else {
-        //     GO.Scale = 1;
-        //     hresult = BDX._.SwitchToWindowed(<number>(MCS.MSX2ScreenWidth * GO.Scale), <number>(MCS.MSX2ScreenHeight * GO.Scale));
-        //     hresult = BDX._.ChangeBufferSize(<number>(MCS.MSX2ScreenWidth * GO.Scale), <number>(MCS.MSX2ScreenHeight * GO.Scale));
-        // }
-        // if (hresult.Succeeded)
-        //     BDX._.Zoom = GO.Scale;
-        // else GO.Scale = oldScale;
-        // return hresult;
+        document.exitFullscreen();
     }
 
     constructor() {
@@ -100,8 +91,6 @@ export class GameView implements IGameView {
     }
 
     public drawGame(elapsedMs: number): void {
-        // console.info(`drawGame wordt nu uitgevoerd. ElapsedMs: ${elapsedMs}`);
-
         if (M._.startAfterLoad)
             return
 

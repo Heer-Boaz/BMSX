@@ -30,7 +30,7 @@ export abstract class Foe extends Creature {
     public damageToPlayer: number;
 
     public get isAfoot(): boolean {
-        return this.canHurtPlayer;
+        return this.canHurtPlayer && !this.disposeFlag;
     }
 
     protected itemSpawnedAfterKill: ItemType;
@@ -42,22 +42,26 @@ export abstract class Foe extends Creature {
     }
 
     public handleHit(source: PlayerProjectile): void {
+        if (this.disposeFlag) return;
         M._.LastFoeThatWasHit = this;
         SoundMaster.PlayEffect(RM.Sound.get(AudioId.Hit));
     }
 
     protected loseHealth(source: PlayerProjectile): void {
+        if (this.disposeFlag) return;
         this.health -= source.damageDealt;
         if (this.health <= 0)
             this.die();
     }
 
     protected handleDie(): void {
+        if (this.disposeFlag) return;
         this.disposeFlag = true;
         M._.FoeDefeated(this);
     }
 
     public die(): void {
+        if (this.disposeFlag) return;
         if (this.itemSpawnedAfterKill === ItemType.HeartSmall) {
             this.dieWithItem(this.itemSpawnedAfterKill);
         }

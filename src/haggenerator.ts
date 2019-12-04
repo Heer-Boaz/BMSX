@@ -4,20 +4,20 @@ import { IGameObject, Point } from "../BoazEngineJS/interfaces";
 import { bst } from '../BoazEngineJS/statemachine';
 import { GameModel } from "./sintervaniamodel";
 import { copyPoint } from '../BoazEngineJS/common';
+import { GameConstants } from "./gameconstants";
+import { Constants } from "../BoazEngineJS/constants";
 
 type stuff = { ticks: number };
 
 export class HagGenerator implements IGameObject {
     public disposeFlag: boolean;
-    protected directionOfHags: Direction;
     public id: string;
     public pos: Point;
     public disposeOnSwitchRoom?: boolean;
     protected statestuff: bst<HagGenerator, stuff>;
 
-    constructor(pos: Point, directionOfHags: Direction) {
+    constructor(pos: Point) {
         this.pos = pos;
-        this.directionOfHags = directionOfHags;
         this.disposeOnSwitchRoom = true;
         this.statestuff = new bst<HagGenerator, stuff>(this, 0, true);
         let state0 = new bst<HagGenerator, stuff>(this);
@@ -34,7 +34,16 @@ export class HagGenerator implements IGameObject {
         state0.ontapeend = () => {
             let st = state0;
             st.tapehead = 0;
-            GameModel._.spawn(new Hag(copyPoint(this.pos), this.directionOfHags));
+            // Poop hags based on where Belmont is
+            let spawnPoint = <Point>{ x: 0, y: this.pos.y };
+            if (GameModel._.Belmont.pos.x <= GameConstants.ViewportWidth / 2) {
+                spawnPoint.x = GameConstants.ViewportWidth - Hag.HagSize.y;
+                GameModel._.spawn(new Hag(spawnPoint, Direction.Left));
+            }
+            else {
+                spawnPoint.x = 0;
+                GameModel._.spawn(new Hag(spawnPoint, Direction.Right));
+            }
         };
     }
 

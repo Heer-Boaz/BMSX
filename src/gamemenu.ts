@@ -133,6 +133,11 @@ export class GameMenu {
 
     public HandleInput(): void {
         let selectionChanged: boolean = false;
+        let clickUp = Input.KC_UP;
+        let clickRight = Input.KC_RIGHT;
+        let clickDown = Input.KC_DOWN;
+        let clickLeft = Input.KC_LEFT;
+
         switch (this.CurrentScreen) {
             case MenuItem.Main:
             case MenuItem.Load:
@@ -141,13 +146,13 @@ export class GameMenu {
             case MenuItem.OptionsFromMainMenu:
             case MenuItem.Save:
             case MenuItem.LoadFromGameOver:
-                if (Input.KC_UP)
+                if (clickUp)
                     this.changeSelection(Direction.Up, selectionChanged);
-                else if (Input.KC_RIGHT)
+                else if (clickRight)
                     this.changeSelection(Direction.Right, selectionChanged);
-                else if (Input.KC_DOWN)
+                else if (clickDown)
                     this.changeSelection(Direction.Down, selectionChanged);
-                else if (Input.KC_LEFT)
+                else if (clickLeft)
                     this.changeSelection(Direction.Left, selectionChanged);
                 break;
         }
@@ -245,7 +250,7 @@ export class GameMenu {
                     break;
             }
         }
-        if (Input.KC_RIGHT) {
+        if (clickRight) {
             switch (this.CurrentScreen) {
                 case MenuItem.Options:
                 case MenuItem.OptionsFromMainMenu:
@@ -285,7 +290,7 @@ export class GameMenu {
                     break;
             }
         }
-        if (Input.KC_LEFT) {
+        if (clickLeft) {
             switch (this.CurrentScreen) {
                 case MenuItem.Options:
                 case MenuItem.OptionsFromMainMenu:
@@ -299,7 +304,7 @@ export class GameMenu {
                         case MenuItem.Fullscreen:
                             if (!GO.Fullscreen) {
                                 GO.Fullscreen = true;
-                                // V._.ToFullscreen();
+                                V._.ToFullscreen();
                                 game.GameOptionsChanged();
                             }
                             break;

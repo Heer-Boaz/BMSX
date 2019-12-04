@@ -1,8 +1,10 @@
 import { Song } from "./song";
 import { Effect } from "./effect";
+import { GameOptions as GO } from "../BoazEngineJS/gameoptions";
 
 export class SoundMaster {
 	public static audio: Map<number, HTMLAudioElement>;
+
 	private static LimitToOneEffect: boolean = true;
 	public static MusicBeingPlayed: Song;
 	public static EffectBeingPlayed: Effect;
@@ -21,16 +23,17 @@ export class SoundMaster {
 
 	public static StopEffect(): void {
 		if (!SoundMaster.EffectBeingPlayed || !SoundMaster.EffectBeingPlayed.AudioId) return;
-		// SoundMaster.audio.get(SoundMaster.EffectBeingPlayed.AudioId).pause();
-		SoundMaster.audio.get(SoundMaster.EffectBeingPlayed.AudioId).currentTime = 0;
+		let audio = SoundMaster.audio.get(SoundMaster.EffectBeingPlayed.AudioId);
+		audio.pause();
+		audio.currentTime = 0;
 		SoundMaster.EffectBeingPlayed = null;
 	}
 
 	private static playEffect(audioId: number): void {
-		// if (SoundMaster.audio.get(audioId).paused)
-		// SoundMaster.audio.get(audioId).pause();
-		SoundMaster.audio.get(audioId).currentTime = 0;
-		SoundMaster.audio.get(audioId).play();
+		let audio = SoundMaster.audio.get(audioId);
+		audio.currentTime = 0;
+		audio.volume = GO.EffectsVolumePercentage / 100;
+		audio.play();
 	}
 
 	public static PlayEffect(effect: Effect): void {
@@ -52,8 +55,9 @@ export class SoundMaster {
 
 	public static StopMusic(): void {
 		if (!SoundMaster.MusicBeingPlayed || !SoundMaster.MusicBeingPlayed.Music) return;
-		SoundMaster.audio.get(SoundMaster.MusicBeingPlayed.Music).pause();
-		SoundMaster.audio.get(SoundMaster.MusicBeingPlayed.Music).currentTime = 0;
+		let mus = SoundMaster.audio.get(SoundMaster.MusicBeingPlayed.Music);
+		mus.pause();
+		mus.currentTime = 0;
 		SoundMaster.MusicBeingPlayed = null;
 	}
 
@@ -61,10 +65,12 @@ export class SoundMaster {
 		if (stopCurrent)
 			SoundMaster.StopMusic();
 		SoundMaster.MusicBeingPlayed = song;
-		SoundMaster.audio.get(song.Music).pause();
-		SoundMaster.audio.get(song.Music).currentTime = 0;
-		SoundMaster.audio.get(song.Music).loop = song.Loop || false;
-		SoundMaster.audio.get(song.Music).play();
+		let mus = SoundMaster.audio.get(song.Music);
+		mus.pause();
+		mus.currentTime = 0;
+		mus.loop = song.Loop || false;
+		mus.volume = GO.MusicVolumePercentage / 100;
+		mus.play();
 	}
 
 	public static ResumeEffect(): void {
@@ -78,10 +84,20 @@ export class SoundMaster {
 	}
 
 	public static SetEffectsVolume(volume: number): void {
-		throw Error("Implementeer deze meuk!");
+		if (!SoundMaster.EffectBeingPlayed || !SoundMaster.EffectBeingPlayed.AudioId) return;
+		let audio = SoundMaster.audio.get(SoundMaster.EffectBeingPlayed.AudioId);
+		SoundMaster.setPlayingAudioVolume(audio, volume);
 	}
 
 	public static SetMusicVolume(volume: number): void {
-		throw Error("Implementeer deze meuk!");
+		if (!SoundMaster.MusicBeingPlayed || !SoundMaster.MusicBeingPlayed.Music) return;
+		let audio = SoundMaster.audio.get(SoundMaster.MusicBeingPlayed.Music);
+		SoundMaster.setPlayingAudioVolume(audio, volume);
+	}
+
+	private static setPlayingAudioVolume(audio: HTMLAudioElement, volume: number): void {
+		if (!audio.paused) audio.pause();
+		audio.volume = volume;
+		audio.play();
 	}
 }

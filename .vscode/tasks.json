@@ -26,9 +26,10 @@
 				"echo": true,
 				"reveal": "silent",
 				"focus": false,
-				"panel": "shared",
+				"panel": "dedicated",
 				"showReuseMessage": false,
-				"clear": true
+				"clear": true,
+				"revealProblems": "onProblem"
 			}
 		},
 		{
@@ -57,9 +58,10 @@
 				"echo": true,
 				"reveal": "silent",
 				"focus": false,
-				"panel": "shared",
+				"panel": "dedicated",
 				"showReuseMessage": false,
-				"clear": true
+				"clear": true,
+				"revealProblems": "onProblem"
 			},
 			"group": "build",
 			"dependsOn": [
@@ -77,9 +79,10 @@
 				"echo": true,
 				"reveal": "silent",
 				"focus": false,
-				"panel": "shared",
+				"panel": "dedicated",
 				"showReuseMessage": false,
-				"clear": true
+				"clear": true,
+				"revealProblems": "onProblem"
 			},
 			"group": "build"
 		},
