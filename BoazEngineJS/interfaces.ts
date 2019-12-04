@@ -21,10 +21,12 @@ export interface IGameObject {
     // Properties
     id: string | null;
     disposeFlag: boolean;
-    extendedProperties: Map<string, any>;
     priority?: number;
+    pos: Point;
 
-    // Methods
+    isWall?: boolean;
+    disposeOnSwitchRoom?: boolean;
+
     takeTurn(): void;
     spawn: ((spawningPos?: Point | null) => void) | (() => void);
     dispose(): void;
@@ -39,7 +41,6 @@ export interface IGameObject {
 }
 
 export interface IRenderObject extends IGameObject {
-    pos: Point;
     size: Size;
     hitarea: Area | null;
     visible: boolean;

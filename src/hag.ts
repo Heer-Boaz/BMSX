@@ -1,5 +1,5 @@
 import { BStopwatch } from "../BoazEngineJS/btimer";
-import { Animation, AniStepCompoundValue, AniData } from "../BoazEngineJS/animation";
+import { Animation, AniStepReturnValue, AniData } from "../BoazEngineJS/animation";
 import { Direction } from "../BoazEngineJS/direction";
 import { AudioId, BitmapId } from "./resourceids";
 import { ItemType } from "./item";
@@ -7,6 +7,8 @@ import { Foe } from "./foe";
 import { GameConstants } from "./gameconstants";
 import { PlayerProjectile } from "./pprojectile";
 import { Size, Area, Point } from "../BoazEngineJS/interfaces";
+import { Belmont } from './belmont';
+import { GameModel } from "./sintervaniamodel";
 
 /*[Serializable]*/
 export class Hag extends Foe {
@@ -18,7 +20,7 @@ export class Hag extends Foe {
         return 0;
     }
 
-    public get respawnAtRoomEntry(): boolean {
+    public get respawnOnRoomEntry(): boolean {
         return true;
     }
 
@@ -28,20 +30,20 @@ export class Hag extends Foe {
     protected timer: BStopwatch;
 
     protected static hagSprites: Map<Direction, BitmapId[]> = new Map([
-        // [Direction.None, [BitmapId.Hag_1, BitmapId.Hag_2]]
+        [Direction.None, [BitmapId.Hag1, BitmapId.Hag2]]
     ]);
     protected static movementSprites: Map<Direction, BitmapId[]> = Hag.hagSprites;
     protected static AnimationFrames: AniData<BitmapId>[] = new Array(
-        // { time: 250, data: BitmapId.Hag_1 },
-        // { time: 250, data: BitmapId.Hag_2 },
+        { time: 250, data: BitmapId.Hag1 },
+        { time: 250, data: BitmapId.Hag2 },
     );
 
-    constructor({ pos, dir, itemSpawned = ItemType.HeartSmall }: { pos: Point; dir: Direction; itemSpawned?: ItemType; }) {
+    constructor(pos: Point, dir: Direction, itemSpawned = ItemType.HeartSmall) {
         super(pos);
         this.canHurtPlayer = true;
         this.animation = new Animation<BitmapId>(Hag.AnimationFrames, null, true);
         this.timer = BStopwatch.createWatch();
-        this.imgid = <number>this.animation.stepValue();
+        this.imgid = this.animation.stepValue;
         this.timer.restart();
         this.size = Hag.HagSize;
         this.hitarea = Hag.HagHitArea;
@@ -51,9 +53,10 @@ export class Hag extends Foe {
     }
 
     public takeTurn(): void {
-        let stepValue: AniStepCompoundValue<number> = { nextStepValue: <number>this.imgid };
-        this.animation.doAnimation(this.timer, stepValue);
-        this.imgid = stepValue.nextStepValue;
+        if (this.collides(GameModel._.Belmont)) GameModel._.Belmont.TakeDamage(1);
+
+        let stepValue = this.animation.doAnimation(this.timer, this.imgid).stepValue;
+        this.imgid = stepValue;
         this.flippedH = this.direction == Direction.Left;
         this.pos.x += this.direction == Direction.Left ? -2 : 2;
         if (this.pos.x >= GameConstants.GameScreenWidth || (0 > this.pos.x + this.size.x)) {
@@ -61,7 +64,7 @@ export class Hag extends Foe {
         }
     }
 
-    public Dispose(): void {
+    public dispose(): void {
         BStopwatch.removeWatch(this.timer);
     }
 

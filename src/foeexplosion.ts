@@ -29,8 +29,8 @@ export class FoeExplosion extends FX {
     public takeTurn(): void {
         let nextStep = this.animation.doAnimation(this.timer);
         if (nextStep.next) {
-            this.imgid = nextStep.value;
-            if (this.animation.finished()) {
+            this.imgid = nextStep.stepValue;
+            if (this.animation.finished === true) {
                 this.disposeFlag = true;
                 if (this.itemSpawnedAfterKill === ItemType.HeartSmall) {
                     GameModel._.spawn(new HeartSmall(addPoints(<Point>{ x: this.pos.x, y: this.pos.y }, <Point>{ x: 4, y: 8 })));

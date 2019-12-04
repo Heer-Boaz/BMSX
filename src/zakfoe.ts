@@ -6,7 +6,7 @@ import { PlayerProjectile } from "./pprojectile";
 import { newArea, newSize } from "../BoazEngineJS/common";
 import { AudioId, BitmapId } from "./resourceids";
 import { Area, Point } from "../BoazEngineJS/interfaces";
-import { Animation, AniStepCompoundValue } from "../BoazEngineJS/animation";
+import { Animation, AniStepReturnValue } from "../BoazEngineJS/animation";
 import { GameModel as M } from "./sintervaniamodel";
 import { GameConstants as CS } from "./gameconstants";
 import { TileSize } from "../BoazEngineJS/msx";
@@ -23,7 +23,7 @@ export class ZakFoe extends Foe {
 		return 0;
 	}
 
-	public get respawnAtRoomEntry(): boolean {
+	public get respawnOnRoomEntry(): boolean {
 		return true;
 	}
 
@@ -46,7 +46,7 @@ export class ZakFoe extends Foe {
 		// this.animation = new Animation<AniType>(AnimationFrames, null, true);
 		throw new Error("ZakFoe compileert nog niet omdat er gewoon nog wat zaken missen.");
 		this.timer = BStopwatch.createWatch();
-		this.imgid = <number>this.animation.stepValue().img;
+		this.imgid = <number>this.animation.stepValue.img;
 		this.timer.restart();
 		this.hitarea = ZakFoe.ZakFoeHitArea;
 		this.size = newSize(16, 16);
@@ -56,10 +56,9 @@ export class ZakFoe extends Foe {
 	}
 
 	public takeTurn(): void {
-		let stepValue: AniStepCompoundValue<AniType> = { nextStepValue: { img: this.imgid, dy: 0 } };
-		this.animation.doAnimation(this.timer, stepValue);
-		this.imgid = stepValue.nextStepValue.img;
-		this.pos.y += stepValue.nextStepValue.dy;
+		let stepValue = this.animation.doAnimation(this.timer, { img: this.imgid, dy: 0 });
+		this.imgid = stepValue.stepValue.img;
+		this.pos.y += stepValue.stepValue.dy;
 		// if (this.imgid == BitmapId.ZakFoe_2) {
 		if (this.imgid == 0) {
 			switch (this.direction) {
@@ -69,9 +68,9 @@ export class ZakFoe extends Foe {
 					if (this.pos.x <= 0)
 						this.direction = Direction.Right;
 					// Handle wall / missing floor collision
-					if (M._.CurrentRoom.AnyCollisionsTiles(true, { x: this.hitbox_sx, y: this.hitbox_sy }, { x: this.hitbox_sx, y: this.hitbox_ey }))
+					if (M._.currentRoom.AnyCollisionsTiles(true, { x: this.hitbox_sx, y: this.hitbox_sy }, { x: this.hitbox_sx, y: this.hitbox_ey }))
 						this.direction = Direction.Right;
-					if (!M._.CurrentRoom.AnyCollisionsTiles(true, { x: this.hitbox_sx, y: this.hitbox_ey + TileSize + 4 }))
+					if (!M._.currentRoom.AnyCollisionsTiles(true, { x: this.hitbox_sx, y: this.hitbox_ey + TileSize + 4 }))
 						this.direction = Direction.Right;
 					break;
 				case Direction.Right:
@@ -80,9 +79,9 @@ export class ZakFoe extends Foe {
 					if (this.pos.x >= CS.GameScreenWidth)
 						this.direction = Direction.Left;
 					// Handle wall / missing floor collision
-					if (M._.CurrentRoom.AnyCollisionsTiles(true, { x: this.hitbox_ex, y: this.hitbox_sy }, { x: this.hitbox_ex, y: this.hitbox_ey }))
+					if (M._.currentRoom.AnyCollisionsTiles(true, { x: this.hitbox_ex, y: this.hitbox_sy }, { x: this.hitbox_ex, y: this.hitbox_ey }))
 						this.direction = Direction.Left;
-					if (!M._.CurrentRoom.AnyCollisionsTiles(true, { x: this.hitbox_ex, y: this.hitbox_ey + TileSize + 4 }))
+					if (!M._.currentRoom.AnyCollisionsTiles(true, { x: this.hitbox_ex, y: this.hitbox_ey + TileSize + 4 }))
 						this.direction = Direction.Left;
 					break;
 			}

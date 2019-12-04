@@ -29,7 +29,7 @@ export class EndDemo {
     private reset(): void {
         this.ani.restart();
         this.timer.restart();
-        this.state = this.ani.stepValue();
+        this.state = this.ani.stepValue;
     }
 
     public TakeTurn(): void {
@@ -37,8 +37,9 @@ export class EndDemo {
         switch (this.state) {
             case State.Sint:
             case State.WaitForBoaz:
-                if (this.ani.doAnimation(this.timer, newState)) {
-                    this.state = newState.nextStepValue;
+                let step = this.ani.doAnimation(this.timer);
+                if (step.next) {
+                    this.state = step.stepValue;
                 }
                 break;
             default:

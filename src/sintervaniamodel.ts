@@ -135,7 +135,7 @@ export class GameModel extends Model {
 
     public Belmont: Belmont;
     public Boss: BossFoe;
-    public CurrentRoom: Room;
+    public currentRoom: Room;
     public GameMenu: GameMenu;
     public Switches: Map<Switch, boolean>;
     public EventTriggered: Map<number, boolean>;
@@ -241,7 +241,7 @@ export class GameModel extends Model {
 
         if (o instanceof Foe) {
             let f: Foe = o as Foe;
-            if (!f.respawnAtRoomEntry) {
+            if (!f.respawnOnRoomEntry) {
                 let wasDefeated: boolean;
                 let exists: boolean = this.FoesDefeated.has(f.id) && this.FoesDefeated.get(f.id);
                 if (!exists) {
@@ -275,7 +275,7 @@ export class GameModel extends Model {
     }
 
     public FoeDefeated(f: Foe): void {
-        if (f.respawnAtRoomEntry) return;
+        if (f.respawnOnRoomEntry) return;
         if (this.FoesDefeated.has(f.id) && this.FoesDefeated.get(f.id) === true)
             this.FoesDefeated.set(f.id, true);
         else this.FoesDefeated.set(f.id, true);
@@ -338,11 +338,9 @@ export class GameModel extends Model {
     }
 
     public LoadRoom(id: number): void {
-        let objectsToRemove = this.objects.filter(o => {
-            return !o.extendedProperties.has(GameModel.PROPERTY_KEEP_AT_ROOMSWITCH);
-        });
+        let objectsToRemove = this.objects.filter(o => o.disposeOnSwitchRoom);
         objectsToRemove.forEach(o => this.remove(o));
-        this.CurrentRoom = RoomFactory.LoadRoom(id);
-        this.CurrentRoom.InitRoom();
+        this.currentRoom = RoomFactory.load(id);
+        this.currentRoom.init();
     }
 }

@@ -200,7 +200,7 @@ export class GameController extends Controller {
                         let foes = M._.Foes;
                         objects.forEach(o => o.takeTurn());
                         objects.filter(o => o.disposeFlag === true).forEach(o => M._.remove(o));
-                        M._.CurrentRoom.TakeTurn();
+                        M._.currentRoom.TakeTurn();
                         V._.Hud.TakeTurn();
                         break;
                 }
@@ -222,7 +222,7 @@ export class GameController extends Controller {
                         let objects = M._.objects;
                         objects.forEach(o => o.takeTurn());
                         objects.filter(o => o.disposeFlag === true).forEach(o => M._.remove(o));
-                        M._.CurrentRoom.TakeTurn();
+                        M._.currentRoom.TakeTurn();
                         V._.Hud.TakeTurn();
                         if (Input.KD_F5 && !M._.GameMenu.visible)
                             this.OpenGameMenu();

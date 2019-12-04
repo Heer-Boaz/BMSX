@@ -1,7 +1,6 @@
 ﻿import { view } from "./engine";
-import { moveArea, addPoints } from "./common";
-// import { BitmapId } from "../BoazEngineJS/resourceids";
-import { IRenderObject, Point, Size, Area, IGameObject } from './interfaces';
+import { moveArea } from "./common";
+import { IRenderObject, Point, Size, Area } from './interfaces';
 
 export abstract class Sprite implements IRenderObject {
 	public id: string | null;
@@ -24,12 +23,12 @@ export abstract class Sprite implements IRenderObject {
 	public x_plus_width?: number;
 	public y_plus_height?: number;
 	public z_plus_depth?: number;
-	public extendedProperties: Map<string, any>;
+	public disposeOnSwitchRoom?: boolean;
 	public oncollide: (src: IRenderObject) => void;
 
-	public static [Symbol.hasInstance](o: any): boolean {
-		return o && o.imgid;
-	}
+	// public static [Symbol.hasInstance](o: any): boolean {
+	// 	return o && o.imgid;
+	// }
 
 	constructor(initialPos?: Point, imageId?: number) {
 		this.id = null;
@@ -46,10 +45,10 @@ export abstract class Sprite implements IRenderObject {
 		this.priority = 0;
 		this.disposeFlag = false;
 		this.imgid = null;
-		this.extendedProperties = new Map<string, any>();
 		this.priority = 100;
-		if (imageId) this.imgid = imageId;
+		this.imgid = imageId || undefined;
 
+		this.disposeOnSwitchRoom = true;
 		this.oncollide = undefined;
 	}
 
@@ -105,9 +104,5 @@ export abstract class Sprite implements IRenderObject {
 
 		return o1p.x + o1a.end.x >= p.x && o1p.x + o1a.start.x <= p.x &&
 			o1p.y + o1a.end.y >= p.y && o1p.y + o1a.start.y <= p.y;
-	}
-
-	setExtendedProperty(key: string, value: any) {
-		this.extendedProperties.set(key, value);
 	}
 }

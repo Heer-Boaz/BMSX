@@ -10,6 +10,7 @@ import { Point } from "../BoazEngineJS/interfaces";
 export abstract class Projectile extends Sprite {
     public direction: Direction;
     protected speed: Point;
+    public disposeOnSwitchRoom
 
     constructor(pos: Point, speed: Point) {
         super(<Point>{ x: pos.x, y: pos.y });
@@ -27,7 +28,7 @@ export abstract class Projectile extends Sprite {
     public damageDealt: number;
 
     protected checkWallSpriteCollisions(): boolean {
-        return M._.objects.filter(o => o.extendedProperties[M.PROPERTY_ACT_AS_WALL] && o.areaCollide).some(o => o.areaCollide(moveArea(this.hitarea, this.pos)));
+        return M._.objects.filter(o => o.isWall && o.areaCollide).some(o => o.areaCollide(moveArea(this.hitarea, this.pos)));
     }
 
     protected checkWallCollision(): boolean {
@@ -37,13 +38,13 @@ export abstract class Projectile extends Sprite {
         let endy = this.pos.y + this.hitarea.end.y;
         switch (this.direction) {
             case Direction.Up:
-                return M._.CurrentRoom.IsCollisionTile(startx, starty, true) || M._.CurrentRoom.IsCollisionTile(endx, starty, true);
+                return M._.currentRoom.IsCollisionTile(startx, starty, true) || M._.currentRoom.IsCollisionTile(endx, starty, true);
             case Direction.Right:
-                return M._.CurrentRoom.IsCollisionTile(endx, starty, true) || M._.CurrentRoom.IsCollisionTile(endx, endy, true);
+                return M._.currentRoom.IsCollisionTile(endx, starty, true) || M._.currentRoom.IsCollisionTile(endx, endy, true);
             case Direction.Down:
-                return M._.CurrentRoom.IsCollisionTile(startx, endy, true) || M._.CurrentRoom.IsCollisionTile(endx, endy, true);
+                return M._.currentRoom.IsCollisionTile(startx, endy, true) || M._.currentRoom.IsCollisionTile(endx, endy, true);
             case Direction.Left:
-                return M._.CurrentRoom.IsCollisionTile(startx, starty, true) || M._.CurrentRoom.IsCollisionTile(startx, endy, true);
+                return M._.currentRoom.IsCollisionTile(startx, starty, true) || M._.currentRoom.IsCollisionTile(startx, endy, true);
             default:
                 return false;
         }

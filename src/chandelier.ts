@@ -19,7 +19,7 @@ export class Chandelier extends Foe {
 		return 0;
 	}
 
-	public get respawnAtRoomEntry(): boolean {
+	public get respawnOnRoomEntry(): boolean {
 		return true;
 	}
 
@@ -80,9 +80,9 @@ export class Chandelier extends Foe {
 				//}
 				break;
 			case ChandelierState.Crashing:
-				if (this.animation.doAnimation(this.timer))
-					this.imgid = this.animation.stepValue();
-				if (this.animation.finished()) {
+				if (this.animation.doAnimation(this.timer).next)
+					this.imgid = this.animation.stepValue;
+				if (this.animation.finished === true) {
 					this.timer.stop();
 					this.state = ChandelierState.Crashed;
 				}

@@ -125,7 +125,7 @@ export class GameView implements IGameView {
             case GameState.Event:
                 let gamescreenOffset = <Point>{ x: CS.GameScreenStartX, y: CS.GameScreenStartY };
                 if (M._.gameSubstate != GameSubstate.SwitchRoom) {
-                    M._.CurrentRoom.Paint();
+                    M._.currentRoom.Paint();
                     let sorted = M._.objects.sort((o1, o2) => (<Sprite>o1).priority - (<Sprite>o2).priority);
                     sorted.forEach(o => o.paint && o.paint(gamescreenOffset));
                 }

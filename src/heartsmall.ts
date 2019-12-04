@@ -37,15 +37,14 @@ export class HeartSmall extends Sprite {
 	}
 
 	protected get floorCollision(): boolean {
-		return GameModel._.CurrentRoom.IsCollisionTile(this.pos.x + 5, this.pos.y + 8, false);
+		return GameModel._.currentRoom.IsCollisionTile(this.pos.x + 5, this.pos.y + 8, false);
 	}
 
 	protected uglyBitThing: boolean;
 
 	public takeTurn(): void {
 		if (this.State === HeartSmallState.Flying) {
-			let delta: number = 0;
-			delta = this.animation.doAnimation(1).value;
+			let delta = this.animation.doAnimation(1, 0).stepValue;
 
 			this.pos.x += delta;
 			if (this.uglyBitThing)

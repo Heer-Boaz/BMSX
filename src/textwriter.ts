@@ -1,6 +1,5 @@
 import { view } from "../BoazEngineJS/engine"
-import { GameConstants as CS } from "./gameconstants"
-import { AudioId, BitmapId } from "./resourceids";
+import { BitmapId } from "./resourceids";
 import { GameOptions } from "./gameoptions";
 import { Point, Color } from "../BoazEngineJS/interfaces";
 

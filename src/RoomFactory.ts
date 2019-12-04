@@ -5,6 +5,8 @@ import { Tile } from '../BoazEngineJS/msx';
 import { GameModel as M } from "./sintervaniamodel";
 import { GardenCandle } from './gardencandle';
 import { BitmapId } from './resourceids';
+import { HagGenerator } from './haggenerator';
+import { Direction } from '../BoazEngineJS/direction';
 
 export class RoomDataContainer {
 	public Id: number;
@@ -54,7 +56,7 @@ export class RoomFactory {
 		return RoomFactory.rooms.has(id);
 	}
 
-	public static LoadRoom(id: number): Room {
+	public static load(id: number): Room {
 		if (!RoomFactory.RoomExists(id)) {
 			throw Error("Room " + id + " could not be found in dictionary!");
 		}
@@ -189,6 +191,7 @@ export class RoomFactory {
 			let candle2 = new GardenCandle(<Point>Tile.ToCoord(24, 14));
 			M._.spawn(candle2);
 
+			M._.spawn(new HagGenerator(<Point>Tile.ToCoord(30, 15), Direction.Left));
 			//if (!M._.GetItemPickedUp("rationroom100")) {
 			//	var item = new Item(Item.Type.Ration, new Point(Tile.ToCoord(3), Tile.ToCoord(18))) { id = "rationroom100" };
 			//	M._.Spawn(item);

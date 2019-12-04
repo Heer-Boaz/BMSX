@@ -1,4 +1,4 @@
-import { Animation, AniStepCompoundValue, AniData } from '../BoazEngineJS/animation';
+import { Animation, AniStepReturnValue, AniData } from '../BoazEngineJS/animation';
 import { BStopwatch } from "../BoazEngineJS/btimer";
 import { BossFoe } from "./bossfoe";
 import { Direction } from "../BoazEngineJS/direction";
@@ -25,7 +25,7 @@ export class Pietula extends BossFoe {
 		return 0;
 	}
 
-	public get respawnAtRoomEntry(): boolean {
+	public get respawnOnRoomEntry(): boolean {
 		return true;
 	}
 
@@ -52,7 +52,7 @@ export class Pietula extends BossFoe {
 		this.canHurtPlayer = true;
 		this.animation = new Animation<AniType>(Pietula.AnimationFrames, null, true);
 		this.timer = BStopwatch.createWatch();
-		this.imgid = this.animation.stepValue().img;
+		this.imgid = this.animation.stepValue.img;
 		this.timer.restart();
 		this.hitarea = Pietula.PietulaHitArea;
 		this.size = newSize(this.hitarea.end.x, this.hitarea.end.y);
@@ -64,10 +64,9 @@ export class Pietula extends BossFoe {
 	}
 
 	public takeTurn(): void {
-		let stepValue: AniStepCompoundValue<AniType> = { nextStepValue: { img: this.imgid, dy: 0 } };
-		this.animation.doAnimation(this.timer, stepValue);
-		this.imgid = stepValue.nextStepValue.img;
-		this.pos.y += stepValue.nextStepValue.dy;
+		let stepValue = this.animation.doAnimation(this.timer, { img: this.imgid, dy: 0 }).stepValue;
+		this.imgid = stepValue.img;
+		this.pos.y += stepValue.dy;
 	}
 
 	public Dispose(): void {

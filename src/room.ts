@@ -44,7 +44,7 @@ export class Room {
 		return result;
 	}
 
-	public InitRoom() {
+	public init() {
 		if (this.initFunction)
 			this.initFunction(this);
 	}

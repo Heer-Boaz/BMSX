@@ -7,8 +7,9 @@ export interface AniData<T extends any | null | {}> {
 }
 
 // This construction is part of a pass-by-reference emulation, mimicking the original C#-code
-export interface AniStepCompoundValue<T> {
-    nextStepValue: T;
+export interface AniStepReturnValue<T> {
+    stepValue: T;
+    next: boolean
 }
 
 // This function is used to replicate constructor overloading, as it is not supported by JS
@@ -25,15 +26,15 @@ function createAniData<T extends any | null | {}>(data: T[], times?: number[], c
     return result;
 }
 
-function wrapInAniCompound<T>(scalarStepValue: T): AniStepCompoundValue<T> {
-    return <AniStepCompoundValue<T>>{ nextStepValue: scalarStepValue };
+function wrapInAniCompound<T>(scalarStepValue: T): AniStepReturnValue<T> {
+    return <AniStepReturnValue<T>>{ stepValue: scalarStepValue };
 
 }
 
 export class Animation<T extends any | null | undefined | {}> {
     public animationDataAndTime: Array<AniData<T>>;
     public stepCounter: number;
-    public constantStepTime!: number;
+    public constantStepTime?: number;
     protected currentStepTime: number;
     public repeat!: boolean;
 
@@ -74,87 +75,70 @@ export class Animation<T extends any | null | undefined | {}> {
     //     this.stepCounter = 0;
     // }
 
-    public stepValue(): T {
+    public get stepValue(): T {
         return this.animationDataAndTime[this.stepCounter].data;
     }
 
-    public stepTime(): number {
-        if (this.constantStepTime != null)
-            return this.constantStepTime;
-
-        return this.animationDataAndTime[this.stepCounter].time;
+    public get stepTime(): number {
+        return this.constantStepTime || this.animationDataAndTime[this.stepCounter].time;
     }
 
-    public hasNext(): boolean {
-        return this.stepCounter < this.animationDataAndTime.length - 1;
+    public get hasNext(): boolean {
+        return this.stepCounter < (this.animationDataAndTime.length - 2);
     }
 
-    public finished(): boolean {
+    public get finished(): boolean {
         return this.stepCounter >= this.animationDataAndTime.length;
     }
 
-    public nextStep(): T | null {
+    public doNextStep(): T | null {
         ++this.stepCounter;
-        if (!this.finished())
-            return this.stepValue();
+        if (this.finished === false)
+            return this.stepValue;
         else {
-            if (this.repeat) {
+            if (this.repeat === true) {
                 this.stepCounter = 0;
-                return this.stepValue();
+                return this.stepValue;
             }
-            else return null; // default(T)
         }
+        return undefined; // default(T)
     }
 
     // TODO: Lelijke versie van originele pass-by-ref method die zo mooi werkte, maar niet kan bestaan in JS :(
-    public doAnimation(timerOrStepValue: BStopwatch | number, nextStepRef?: AniStepCompoundValue<T>) {
-        if (!nextStepRef) {
-            if (timerOrStepValue instanceof BStopwatch) return this.doAnimationTimer(timerOrStepValue);
-            return this.doAnimationStep(timerOrStepValue);
-        }
-        else {
-            let nextStepReturned: T | null = null;
-            if (timerOrStepValue instanceof BStopwatch) {
-                if (this.waitForNextStep(timerOrStepValue)) {
-                    nextStepReturned = this.nextStep();
-                    nextStepRef.nextStepValue = nextStepReturned;
-                    return { value: nextStepReturned, next: true };
-                }
+    public doAnimation(timerOrStepValue: BStopwatch | number, nextStepRef?: T): AniStepReturnValue<T> {
+        let nextStepReturned: T = nextStepRef;
+        if (timerOrStepValue instanceof BStopwatch) {
+            if (this.waitForNextStep(timerOrStepValue)) {
+                nextStepReturned = this.doNextStep();
+                return { stepValue: nextStepReturned, next: true };
             }
-            else {
-                if (this.doAnimationStep(timerOrStepValue)) {
-                    nextStepReturned = this.nextStep();
-                    nextStepRef.nextStepValue = nextStepReturned;
-                    return { value: nextStepReturned, next: true };
-                }
-            }
-            return { value: null, next: false };
         }
+        else return this.doAnimationStep(timerOrStepValue, nextStepRef);
     }
 
-    public doAnimationTimer(timer: BStopwatch) {
-        let nextStep: T | null = null;
+    public doAnimationTimer(timer: BStopwatch, nextStepRef?: T): AniStepReturnValue<T> {
+        let nextStep: T | null = nextStepRef;
         if (this.waitForNextStep(timer)) {
-            nextStep = this.nextStep();
-            return { value: nextStep, next: true };
+            nextStep = this.doNextStep() || nextStepRef;
+            return { stepValue: nextStep, next: true };
         }
-        return { value: null, next: false };
+        return { stepValue: nextStep, next: false };
     }
 
-    public doAnimationStep(step: number) {
-        let nextStep: T | null = null;
+    public doAnimationStep(step: number, nextStepRef?: T): AniStepReturnValue<T> {
+        let nextStep: T | null;
         this.currentStepTime += step;
-        if (this.currentStepTime >= this.stepTime()) {
+        if (this.currentStepTime >= this.stepTime) {
             this.currentStepTime = 0;
-            nextStep = this.nextStep();
-            return { value: nextStep, next: true };
+            nextStep = this.doNextStep() || nextStepRef || null;
+            return { stepValue: nextStep, next: true };
         }
-        nextStep = this.stepValue();
-        return { value: nextStep, next: false };
+        nextStep = nextStepRef || this.stepValue || null;
+        return { stepValue: nextStep, next: false };
     }
 
     public waitForNextStep(timer: BStopwatch): boolean {
-        return waitDuration(timer, this.stepTime());
+        return waitDuration(timer, this.stepTime);
     }
 
     public restart(): void {

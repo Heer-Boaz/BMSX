@@ -1,7 +1,7 @@
 import { Foe } from "./foe";
 import { BStopwatch } from "../BoazEngineJS/btimer";
 import { ItemType } from "./item";
-import { Animation, AniStepCompoundValue } from "../BoazEngineJS/animation"
+import { Animation, AniStepReturnValue } from "../BoazEngineJS/animation"
 import { Direction } from "../BoazEngineJS/direction";
 import { PlayerProjectile } from "./pprojectile";
 import { AudioId, BitmapId } from "./resourceids";
@@ -18,14 +18,14 @@ export class Candle extends Foe {
 		return 0;
 	}
 
-	public get respawnAtRoomEntry(): boolean {
+	public get respawnOnRoomEntry(): boolean {
 		return true;
 	}
 
 	protected static CandleHitArea: Area = newArea(0, 0, 10, 16);
 	protected static candleSprites: Map<Direction, BitmapId[]> = new Map([[Direction.None, [BitmapId.Candle_1]]]);
 	protected static AnimationFrames: BitmapId[] = [BitmapId.Candle_1, BitmapId.Candle_2];
-	protected static framesPerDrawing: number[] = [10, 10];
+	protected static framesPerDrawing: number[] = [25, 25];
 	protected animation: Animation<BitmapId>;
 	protected timer: BStopwatch;
 	protected get movementSprites(): Map<Direction, BitmapId[]> {
@@ -38,9 +38,7 @@ export class Candle extends Foe {
 		this.canHurtPlayer = false;
 		this.animation = new Animation<BitmapId>(Candle.AnimationFrames, Candle.framesPerDrawing);
 		this.animation.repeat = true;
-		this.timer = BStopwatch.createWatch();
-		this.imgid = this.animation.stepValue();
-		this.timer.restart();
+		this.imgid = this.animation.stepValue;
 		this.hitarea = Candle.CandleHitArea;
 		this.itemSpawnedAfterKill = itemSpawned;
 		this.maxHealth = 1;
@@ -48,13 +46,11 @@ export class Candle extends Foe {
 	}
 
 	public takeTurn(): void {
-		let imageId: AniStepCompoundValue<BitmapId> = { nextStepValue: this.imgid };
-		this.animation.doAnimation(this.timer, imageId);
-		this.imgid = imageId.nextStepValue;
+		let bla = this.animation.doAnimation(1, this.imgid);
+		this.imgid = bla.stepValue;
 	}
 
 	public dispose(): void {
-		BStopwatch.removeWatch(this.timer);
 	}
 
 	public handleHit(source: PlayerProjectile): void {

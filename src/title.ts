@@ -1,4 +1,4 @@
-import { Animation, AniStepCompoundValue } from "../BoazEngineJS/animation"
+import { Animation, AniStepReturnValue } from "../BoazEngineJS/animation"
 import { setPoint } from "../BoazEngineJS/common";
 import { AudioId, BitmapId } from "./resourceids";
 import { GameController as C } from "./gamecontroller";
@@ -48,53 +48,11 @@ export class Title {
 		setPoint(this.titleTopPos, Title.titleTopStartX, Title.titleTopY);
 		setPoint(this.titleBottomPos, Title.titleBottomStartX, Title.titleBottomY);
 		this.titleAni.restart();
-		this.state = this.titleAni.stepValue();
+		this.state = this.titleAni.stepValue;
 	}
 
 	public TakeTurn(): void {
-		let newState: AniStepCompoundValue<State> = { nextStepValue: <State>this.state };
-		if (Input.KC_SPACE) {
-			C._.PreludeFinished();
-			Input.reset();
-			return
-		}
-
-		switch (this.state) {
-			case State.WaitForIt:
-			case State.WaitForItAgain:
-				if (this.titleAni.doAnimation(1, newState)) {
-					this.state = newState.nextStepValue;
-				}
-				break;
-
-			case State.Konami:
-				if (this.titleAni.doAnimation(1, newState)) {
-					this.state = newState.nextStepValue;
-				}
-				break;
-
-			case State.TitleTop:
-				if ((game.TurnCounter & 1) == 0) {
-					this.titleTopPos.x += Title.deltaX;
-					if (this.titleAni.doAnimation(<number>Title.deltaX, newState)) {
-						this.state = newState.nextStepValue;
-					}
-				}
-				break;
-
-			case State.TitleBottom:
-				if ((game.TurnCounter & 1) == 0) {
-					this.titleBottomPos.x -= Title.deltaX;
-					if (this.titleAni.doAnimation(<number>Title.deltaX, newState)) {
-						this.state = newState.nextStepValue;
-					}
-				}
-				break;
-
-			case State.Other:
-				C._.PreludeFinished();
-				break;
-		}
+		C._.PreludeFinished();
 	}
 
 	public Paint(): void {

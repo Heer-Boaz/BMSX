@@ -3,7 +3,7 @@ import { Creature } from "./creature";
 import { BStopwatch } from "../BoazEngineJS/btimer";
 import { GameConstants as CS } from "./gameconstants";
 import { copyPoint, waitDuration, setSize, newArea, setPoint } from '../BoazEngineJS/common';
-import { Animation, AniStepCompoundValue } from '../BoazEngineJS/animation';
+import { Animation, AniStepReturnValue } from '../BoazEngineJS/animation';
 import { TileSize } from '../BoazEngineJS/msx';
 import { AudioId, BitmapId } from "./resourceids";
 import { Area, Point } from '../BoazEngineJS/interfaces';
@@ -194,7 +194,7 @@ export class Belmont extends Creature {
 		this.hitState.CrouchTimer = BStopwatch.createWatch();
 		this.dyingState.aniTimer = BStopwatch.createWatch();
 		this.roeState.aniTimer = BStopwatch.createWatch();
-		this.setExtendedProperty(M.PROPERTY_KEEP_AT_ROOMSWITCH, true);
+		this.disposeOnSwitchRoom = false;
 		this.priority = 200;
 	}
 
@@ -223,10 +223,10 @@ export class Belmont extends Creature {
 	public takeTurn(): void {
 		if (this.state == State.Dying) {
 			this.doDeath();
-			return
+			return;
 		}
 		if (this.state == State.Dead)
-			return
+			return;
 		if (this.hitState.BlinkingAndInvulnerable) {
 			if (waitDuration(this.hitState.BlinkTimer, HitState.BlinkTimePerSwitch))
 				this.hitState.Blink = !this.hitState.Blink;
@@ -292,16 +292,15 @@ export class Belmont extends Creature {
 	}
 
 	protected doHitFlying(): void {
-		let delta: AniStepCompoundValue<Point> = { nextStepValue: <Point>{ x: 0, y: 0 } };
-		this.hitState.HitAni.doAnimation(1, delta);
+		let delta = this.hitState.HitAni.doAnimation(1, <Point>{ x: 0, y: 0 });
 		let originalPos = copyPoint(this.pos);
-		this.pos.x += this.direction == Direction.Right ? delta.nextStepValue.x : -delta.nextStepValue.x;
+		this.pos.x += this.direction == Direction.Right ? delta.stepValue.x : -delta.stepValue.x;
 		let dir = this.direction;
 		this.direction = this.direction == Direction.Left ? Direction.Right : Direction.Left;
 		this.checkAndHandleWallAndCeilingCollisions(originalPos);
 		this.direction = dir;
-		this.pos.y += delta.nextStepValue.y;
-		if (!this.hitState.HitAni.hasNext()) {
+		this.pos.y += delta.stepValue.y;
+		if (this.hitState.HitAni.hasNext === false) {
 			this.hitState.CurrentStep = HitStateStep.Falling;
 		}
 	}
@@ -333,10 +332,9 @@ export class Belmont extends Creature {
 
 	protected doJump(): void {
 		let originalPos = copyPoint(this.pos);
-		this.pos.y = ~~(this.pos.y + this.jumpState.JumpAni.stepValue());
-		let dummy: AniStepCompoundValue<number> = { nextStepValue: 0 };
-		this.jumpState.JumpAni.doAnimation(1, dummy);
-		if (!this.jumpState.JumpAni.hasNext()) {
+		this.pos.y = ~~(this.pos.y + this.jumpState.JumpAni.stepValue);
+		this.jumpState.JumpAni.doAnimation(1);
+		if (this.jumpState.JumpAni.hasNext === false) {
 			this.jumpState.Stop();
 		}
 		this.jumpState.GoingUp ? this.checkAndHandleWallAndCeilingCollisions(originalPos) : this.checkAndHandleCollisions(originalPos);
@@ -390,7 +388,7 @@ export class Belmont extends Creature {
 
 	public TakeDamage(amount: number): void {
 		if (!this.hittable)
-			return
+			return;
 		if (this.state != State.HitRecovery && this.state != State.Dying) {
 			this.Health -= amount;
 			this.initHitRecoveryState();
@@ -404,15 +402,15 @@ export class Belmont extends Creature {
 	}
 
 	private doDeath(): void {
-		let stepValue: AniStepCompoundValue<BitmapAndDir>;
-		if (this.dyingState.DeathAni.doAnimation(this.dyingState.aniTimer, stepValue)) {
-			if (this.dyingState.DeathAni.finished()) {
+		let step = this.dyingState.DeathAni.doAnimation(this.dyingState.aniTimer);
+		if (step.next) {
+			if (this.dyingState.DeathAni.finished === true) {
 				C._.BelmontDeathAniFinished();
 				this.dyingState.Stop();
 				this.state = State.Dead;
 			}
 			else {
-				this.imgid = <number>stepValue.nextStepValue.image;
+				this.imgid = step.stepValue.image;
 			}
 		}
 	}
@@ -529,9 +527,9 @@ export class Belmont extends Creature {
 	protected checkWallCollision(): boolean {
 		switch (this.direction) {
 			case Direction.Right:
-				return M._.CurrentRoom.IsCollisionTile(this.pos.x + 16, this.pos.y + 25, true) || M._.CurrentRoom.IsCollisionTile(this.pos.x + 16, this.pos.y + 31, true);
+				return M._.currentRoom.IsCollisionTile(this.pos.x + 16, this.pos.y + 25, true) || M._.currentRoom.IsCollisionTile(this.pos.x + 16, this.pos.y + 31, true);
 			case Direction.Left:
-				return M._.CurrentRoom.IsCollisionTile(this.pos.x, this.pos.y + 25, true) || M._.CurrentRoom.IsCollisionTile(this.pos.x, this.pos.y + 31, true);
+				return M._.currentRoom.IsCollisionTile(this.pos.x, this.pos.y + 25, true) || M._.currentRoom.IsCollisionTile(this.pos.x, this.pos.y + 31, true);
 			default:
 				return false;
 		}
@@ -554,11 +552,11 @@ export class Belmont extends Creature {
 	}
 
 	protected get CeilingCollision(): boolean {
-		return M._.CurrentRoom.IsCollisionTile(this.pos.x + 1, this.pos.y + 8, true) || M._.CurrentRoom.IsCollisionTile(this.pos.x + 15, this.pos.y + 8, true);
+		return M._.currentRoom.IsCollisionTile(this.pos.x + 1, this.pos.y + 8, true) || M._.currentRoom.IsCollisionTile(this.pos.x + 15, this.pos.y + 8, true);
 	}
 
 	protected get FloorCollision(): boolean {
-		return M._.CurrentRoom.IsCollisionTile(this.pos.x + 1, this.pos.y + 32, true) || M._.CurrentRoom.IsCollisionTile(this.pos.x + 15, this.pos.y + 32, true);
+		return M._.currentRoom.IsCollisionTile(this.pos.x + 1, this.pos.y + 32, true) || M._.currentRoom.IsCollisionTile(this.pos.x + 15, this.pos.y + 32, true);
 	}
 
 	protected handleFloorCollision(): void {
@@ -580,13 +578,13 @@ export class Belmont extends Creature {
 	}
 
 	private nearRoomExit(): NearingRoomExitResult {
-		let exitUp = M._.CurrentRoom.NearingRoomExit(this.pos.x + 1, this.pos.y + 8); // 24
+		let exitUp = M._.currentRoom.NearingRoomExit(this.pos.x + 1, this.pos.y + 8); // 24
 		if (exitUp != null) return exitUp;
-		let exitRight = M._.CurrentRoom.NearingRoomExit(this.pos.x + 16, this.pos.y + 25);
+		let exitRight = M._.currentRoom.NearingRoomExit(this.pos.x + 16, this.pos.y + 25);
 		if (exitRight != null) return exitRight;
-		let exitDown = M._.CurrentRoom.NearingRoomExit(this.pos.x + 1, this.pos.y + 32);
+		let exitDown = M._.currentRoom.NearingRoomExit(this.pos.x + 1, this.pos.y + 32);
 		if (exitDown != null) return exitDown;
-		let exitLeft = M._.CurrentRoom.NearingRoomExit(this.pos.x, this.pos.y + 25);
+		let exitLeft = M._.currentRoom.NearingRoomExit(this.pos.x, this.pos.y + 25);
 		if (exitLeft != null) return exitLeft;
 
 		return null;
@@ -656,7 +654,7 @@ export class JumpState {
 	public static jumpYDelta: number[] = [0, -8, -4, -4, -4, -4, -4, -4, -4, -4, -2, -2, -1, -1, 0, 0, 0, 0, 1, 1, 2, 2, 4, 4, 4, 4, 4, 4, 4, 8, 0];
 	public JumpAni: Animation<number>;
 	public get JumpHeightReached(): boolean {
-		return this.JumpAni.stepValue() >= 0;
+		return this.JumpAni.stepValue >= 0;
 	}
 	constructor() {
 		this.JumpTimer = new BStopwatch();

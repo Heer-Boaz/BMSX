@@ -14,7 +14,7 @@ export class FX extends Sprite {
     }
 
     protected init(): void {
-        this.imgid = <number>this.animation.stepValue();
+        this.imgid = <number>this.animation.stepValue;
         this.timer.restart();
     }
 
@@ -25,9 +25,9 @@ export class FX extends Sprite {
     protected doAnimation(): void {
         let aniresult = this.animation.doAnimationTimer(this.timer);
         if (aniresult.next) {
-            if (this.animation.finished())
+            if (this.animation.finished === true)
                 this.disposeFlag = true;
-            this.imgid = aniresult.value;
+            else this.imgid = aniresult.stepValue;
         }
 
     }

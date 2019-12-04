@@ -22,7 +22,7 @@ export abstract class Foe extends Creature {
 
     }
 
-    public get respawnAtRoomEntry(): boolean {
+    public get respawnOnRoomEntry(): boolean {
         return false;
     }
 

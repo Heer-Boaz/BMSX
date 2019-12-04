@@ -1,4 +1,3 @@
-import { anidata } from './statemachine';
 import { Point, IGameObject, IRenderObject } from './interfaces';
 
 export interface anidata<A extends any | null | {}> {
@@ -12,31 +11,29 @@ export type bsfthandle<T extends object, A extends any | null> = (_state: bst<T,
 export type numstring = number | string;
 
 export function animatepos(st: bst<IRenderObject, anidata<Point>>, delta: number): void {
-	let tapedata = () => st.statedata[st.tapehead];
-
 	st.delta2tapehead += delta;
-	if (st.delta2tapehead >= tapedata().delta) {
+	if (st.delta2tapehead >= st.currentdata.delta) {
 		st.delta2tapehead = 0;
 		++st.tapehead;
 		if (st.endoftape) {
-			st.ontapeend && st.ontapeend(st);
+			st.ontapeend && st.tapeend();
 		}
 		else {
-			st.target.pos.x += tapedata().data.x;
-			st.target.pos.y += tapedata().data.y;
+			st.target.pos.x += st.currentdata.data.x;
+			st.target.pos.y += st.currentdata.data.y;
 		}
 	}
 }
 
 export function resetAnimationOnTapeEnd(st: bst<IGameObject, anidata<Point>>): void {
 	st.tapehead = 0;
-	st.delta2tapehead = 0;
 }
 
 export class bst<T extends object, A extends any | null>{
 	public target: T;
-	public statedata: A[];
+	public tapedata: A[];
 	public tapehead: number;
+	public get currentdata() { return this.tapedata[this.tapehead]; };
 	public delta2tapehead: number; // Number of runs before tapehead moves to next statedata
 
 	public static readonly initstateid = 0;
@@ -50,17 +47,17 @@ export class bst<T extends object, A extends any | null>{
 	public ontapeend: bsfthandle<T, A>;
 	public oninitstate: bsfthandle<T, A>;
 	public onexitstate: bsfthandle<T, A>;
-	public get endoftape(): boolean { return !this.statedata || this.tapehead === this.statedata.length - 1; }
+	public get endoftape(): boolean { return !this.tapedata || this.tapehead === this.tapedata.length - 1; }
 	public get startoftape(): boolean { return this.tapehead === 0; }
 	public get hasstates(): boolean { return this.states !== undefined; }
 	public get iscomposite(): boolean { return this.states !== undefined; }
-	public get internalstate() { return { statedata: this.statedata, tapehead: this.tapehead }; }
+	public get internalstate() { return { statedata: this.tapedata, tapehead: this.tapehead }; }
 	public get current(): bst<T, A> { return this.states[this.currentid]; };
 	public invoke(_state: bst<T, A>, f: runhandle<T, A> | bsfthandle<T, A>, ...args: any[]): any {
 		return (!_state || !f) ? undefined : (args ? f(_state, args) : f(_state));
 	}
 
-	constructor(_target: T, _id: numstring, _composite = false, _final = false) {
+	constructor(_target: T, _id: numstring = 0, _composite = false, _final = false) {
 		if (_composite) this.states = {};
 		this.target = _target;
 		this.id = _id;
@@ -74,7 +71,11 @@ export class bst<T extends object, A extends any | null>{
 		return result;
 	}
 
-	public switch(newstate: numstring): void {
+	public tapeend() {
+		this.invoke(this, this.ontapeend);
+	}
+
+	public transition(newstate: numstring): void {
 		this.invoke(this.current, this.current.onexitstate);
 		this.currentid = newstate;
 		this.invoke(this.current, this.current.oninitstate);
