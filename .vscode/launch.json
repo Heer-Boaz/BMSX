@@ -13,7 +13,7 @@
 				"../BoazEngineJS/*": "${workspaceFolder}/BoazEngineJS/*",
 			},
 			"runtimeArgs": [
-				"--disable-web-security"
+				// "--disable-web-security"
 			],
 			"sourceMaps": true,
 			"showAsyncStacks": true,

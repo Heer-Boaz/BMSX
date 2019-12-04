@@ -2,9 +2,10 @@
 import { view } from "./engine";
 import { Size, Point, Color } from "./interfaces";
 
-export enum DrawBitmap {
-    HFLIP = 0x1,
-    VFLIP = 0x2,
+export const enum DrawImgFlags {
+    None = 0,
+    HFLIP = 1 << 0,
+    VFLIP = 1 << 1,
 }
 
 export class View {
@@ -23,6 +24,9 @@ export class View {
         this.context = this.canvas.getContext('2d');
         this.context.imageSmoothingEnabled = false;
         this.viewportSize = viewportsize;
+        this.calculateSize();
+        this.canvas.width = this.viewportSize.x;
+        this.canvas.height = this.viewportSize.y;
     }
 
     public init(): void {
@@ -43,11 +47,9 @@ export class View {
         if (document.getElementById('gamescreen').style.visibility === 'hidden') return;
         let self = view || this;
         self.calculateSize();
-        self.canvas.width = self.viewportSize.x * self.scale;
-        self.canvas.height = self.viewportSize.y * self.scale;
-
-        self.canvas.style.left = (self.windowSize.x - self.canvas.width) / 2 + "px";
-        self.canvas.style.top = (self.windowSize.y - self.canvas.height) / 2 + "px";
+        self.canvas.style.transform = `scale(${self.scale})`;
+        self.canvas.style.left = (self.windowSize.x - self.canvas.width * self.scale) / 2 + "px";
+        self.canvas.style.top = (self.windowSize.y - self.canvas.height * self.scale) / 2 + "px";
     }
 
     public clear(): void {
@@ -60,7 +62,7 @@ export class View {
         this.context.font = '12pt Monaco';
         this.context.fillStyle = 'white';
         this.context.save();
-        this.context.scale(this.scale, this.scale);
+        // this.context.scale(this.scale, this.scale);
         this.context.fillText('Press any key to start', 56, 80);
         this.context.restore();
     }
@@ -70,9 +72,16 @@ export class View {
         if (!img) throw new Error(`Cannot find image with id '${imgid}'`);
 
         this.context.save();
-        this.context.scale(this.scale, this.scale);
-        this.context.imageSmoothingEnabled = false;
-        this.context.drawImage(img, x, y);
+        this.context.translate(x, y);
+        if (options & DrawImgFlags.HFLIP) {
+            this.context.scale(-1, 1);
+            this.context.translate(-img.width, 0);
+        }
+        if (options & DrawImgFlags.VFLIP) {
+            this.context.scale(1, -1);
+            this.context.translate(0, -img.height);
+        }
+        this.context.drawImage(img, 0, 0);
         this.context.restore();
     }
 
@@ -81,17 +90,8 @@ export class View {
         this.drawImg(imgid, x, y, 0);
     }
 
-    public drawDebug(img: HTMLImageElement, pos: Point): void {
-        this.context.save();
-        this.context.scale(this.scale, this.scale);
-        this.context.imageSmoothingEnabled = false;
-        this.context.drawImage(img, pos.x, pos.y);
-        this.context.restore();
-    }
-
     public drawRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
         this.context.save();
-        this.context.scale(this.scale, this.scale);
         this.context.beginPath();
         this.context.strokeStyle = this.toRgb(c);
         this.context.rect(x, y, ex - x, ey - y);
@@ -101,7 +101,6 @@ export class View {
 
     public fillRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
         this.context.save();
-        this.context.scale(this.scale, this.scale);
         this.context.beginPath();
         let colorRgb = this.toRgb(c);
         this.context.fillStyle = colorRgb;

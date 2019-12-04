@@ -5,6 +5,7 @@ import { Constants } from "../BoazEngineJS/constants";
 import { GameModel as M } from "./sintervaniamodel";
 import { view } from "../BoazEngineJS/engine";
 import { Point } from "../BoazEngineJS/interfaces";
+import { DrawImgFlags } from "../BoazEngineJS/view";
 
 /*[Serializable]*/
 export abstract class Projectile extends Sprite {
@@ -18,11 +19,7 @@ export abstract class Projectile extends Sprite {
     }
 
     public paint(offset: Point = null): void {
-        if (this.disposeFlag || !this.visible)
-            return
-        let options: number = this.flippedH ? Constants.DRAWBITMAP_HFLIP : 0;
-        options = options || this.flippedV ? Constants.DRAWBITMAP_VFLIP : 0;
-        view.drawImg(this.imgid, this.pos.x, this.pos.y, options);
+        super.paint(offset);
     }
 
     public damageDealt: number;

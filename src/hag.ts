@@ -7,7 +7,6 @@ import { Foe } from "./foe";
 import { GameConstants } from "./gameconstants";
 import { PlayerProjectile } from "./pprojectile";
 import { Size, Area, Point } from "../BoazEngineJS/interfaces";
-import { Belmont } from './belmont';
 import { GameModel } from "./sintervaniamodel";
 
 /*[Serializable]*/
@@ -34,8 +33,8 @@ export class Hag extends Foe {
     ]);
     protected static movementSprites: Map<Direction, BitmapId[]> = Hag.hagSprites;
     protected static AnimationFrames: AniData<BitmapId>[] = new Array(
-        { time: 250, data: BitmapId.Hag1 },
-        { time: 250, data: BitmapId.Hag2 },
+        { time: 12, data: BitmapId.Hag1 },
+        { time: 12, data: BitmapId.Hag2 },
     );
 
     constructor(pos: Point, dir: Direction, itemSpawned = ItemType.HeartSmall) {
@@ -50,14 +49,14 @@ export class Hag extends Foe {
         this.itemSpawnedAfterKill = itemSpawned;
         this.health = 1;
         this.direction = dir;
+        this.flippedH = this.direction == Direction.Left;
     }
 
     public takeTurn(): void {
-        if (this.collides(GameModel._.Belmont)) GameModel._.Belmont.TakeDamage(1);
+        if (this.collides(GameModel._.Belmont)) GameModel._.Belmont.TakeDamage(this.damageToPlayer);
 
         let stepValue = this.animation.doAnimation(this.timer, this.imgid).stepValue;
         this.imgid = stepValue;
-        this.flippedH = this.direction == Direction.Left;
         this.pos.x += this.direction == Direction.Left ? -2 : 2;
         if (this.pos.x >= GameConstants.GameScreenWidth || (0 > this.pos.x + this.size.x)) {
             this.disposeFlag = true;

@@ -1,6 +1,7 @@
-import { IGameObject } from "./interfaces";
+import { IGameObject, Point } from "./interfaces";
 
 export abstract class HiddenObject implements IGameObject {
+	pos: Point;
 	id: string;
 	disposeFlag: boolean;
 	extendedProperties: Map<string, any>;

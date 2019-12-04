@@ -84,7 +84,7 @@ export class Animation<T extends any | null | undefined | {}> {
     }
 
     public get hasNext(): boolean {
-        return this.stepCounter < (this.animationDataAndTime.length - 2);
+        return this.stepCounter <= (this.animationDataAndTime.length - 2);
     }
 
     public get finished(): boolean {
@@ -112,6 +112,7 @@ export class Animation<T extends any | null | undefined | {}> {
                 nextStepReturned = this.doNextStep();
                 return { stepValue: nextStepReturned, next: true };
             }
+            return { stepValue: nextStepReturned, next: false };
         }
         else return this.doAnimationStep(timerOrStepValue, nextStepRef);
     }

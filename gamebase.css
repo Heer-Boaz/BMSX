@@ -41,6 +41,8 @@ img {
 	position: absolute;
 	top: 0px;
 	left: 0px;
+	transform-origin: 0 0;
+	image-rendering: pixelated;
 	overflow: hidden;
 }
 

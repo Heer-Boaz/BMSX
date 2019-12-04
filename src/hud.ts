@@ -15,8 +15,8 @@ export class HUD {
     public static Pos_Y: number = 0;
     private barTimer: BStopwatch;
     private foebarTimer: BStopwatch;
-    protected static MsDurationBarChange: number = 100;
-    protected static MsDurationFoeBarChange: number = 10;
+    protected static MsDurationBarChange: number = 5;
+    protected static MsDurationFoeBarChange: number = 1;
     protected static HealthBarPosX: number = HUD.Pos_X + 60;
     protected static HealthBarPosY: number = HUD.Pos_Y + 18;
     protected static HeartsPosX: number = HUD.Pos_X + 193;
@@ -81,28 +81,28 @@ export class HUD {
     }
 
     private percentageToBarLength(percentage: number): number {
-        return percentage == 0 ? 0 : <number>(HUD.HealthBarSizeX / <number>100 * percentage) + 1;
+        return percentage == 0 ? 0 : ~~(HUD.HealthBarSizeX / 100 * percentage) + 1;
     }
 
     public Paint(): void {
-        view.drawImg(<number>BitmapId.HUD, HUD.Pos_X, HUD.Pos_Y);
+        view.drawImg(BitmapId.HUD, HUD.Pos_X, HUD.Pos_Y);
         let pos: Point = { x: HUD.HealthBarPosX, y: HUD.HealthBarPosY };
         for (let i: number = 0; i < this.percentageToBarLength(this.shownHealthLevel); i++) {
-            view.drawImg(<number>BitmapId.EnergybarStripe_Belmont, pos.x, pos.y);
+            view.drawImg(BitmapId.EnergybarStripe_Belmont, ~~pos.x, ~~pos.y);
             pos.x += 1;
         }
 
         let heartstxt: string = M._.Hearts < 10 ? `0${M._.Hearts}` : M._.Hearts.toString();
         TextWriter.drawText(HUD.HeartsPosX, HUD.HeartsPosY, heartstxt);
-        if (M._.ItemsInInventory.find(x => x.Type == ItemType.KeyBig)) {
-            view.drawImg(<number>Item.Type2Image(ItemType.KeyBig), HUD.KeyPos.x, HUD.KeyPos.y);
+        if (M._.ItemsInInventory.find(x => x.Type === ItemType.KeyBig)) {
+            view.drawImg(Item.Type2Image(ItemType.KeyBig), HUD.KeyPos.x, HUD.KeyPos.y);
         }
 
         setPoint(pos, HUD.FoeBarStripePosX, HUD.FoeBarStripePosY);
         let lengthShown: number, lengthBefore: number;
 
         if (M._.BossBattle) {
-            if (V._.FoeForWhichHealthPercentageIsGiven != this.foeForWhichHealthLevelIsShown) {
+            if (V._.FoeForWhichHealthPercentageIsGiven !== this.foeForWhichHealthLevelIsShown) {
                 this.foeForWhichHealthLevelIsShown = V._.FoeForWhichHealthPercentageIsGiven;
                 this.shownFoeHealthLevel = V._.FoeHealthPercentage;
             }
@@ -117,13 +117,13 @@ export class HUD {
         if (lengthBefore != -1) {
             if (lengthBefore > 0) {
                 for (let i: number = 0; i <= lengthBefore; i++) {
-                    view.drawImg(<number>BitmapId.EnergybarStripe_Boss, pos.x, pos.y);
+                    view.drawImg(BitmapId.EnergybarStripe_Boss, pos.x, pos.y);
                     pos.x += 1;
                 }
             }
             if (lengthBefore != lengthShown) {
                 for (let i: number = lengthBefore; i <= lengthShown; i++) {
-                    view.drawImg(<number>BitmapId.EnergybarStripe_Boss, pos.x, pos.y);
+                    view.drawImg(BitmapId.EnergybarStripe_Boss, pos.x, pos.y);
                     pos.x += 1;
                 }
             }

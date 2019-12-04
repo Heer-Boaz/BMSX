@@ -191,7 +191,7 @@ export class RoomFactory {
 			let candle2 = new GardenCandle(<Point>Tile.ToCoord(24, 14));
 			M._.spawn(candle2);
 
-			M._.spawn(new HagGenerator(<Point>Tile.ToCoord(30, 15), Direction.Left));
+			M._.spawn(new HagGenerator(<Point>Tile.ToCoord(30, 14), Direction.Left));
 			//if (!M._.GetItemPickedUp("rationroom100")) {
 			//	var item = new Item(Item.Type.Ration, new Point(Tile.ToCoord(3), Tile.ToCoord(18))) { id = "rationroom100" };
 			//	M._.Spawn(item);

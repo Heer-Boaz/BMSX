@@ -1,6 +1,7 @@
 ﻿import { view } from "./engine";
 import { moveArea } from "./common";
 import { IRenderObject, Point, Size, Area } from './interfaces';
+import { DrawImgFlags } from "./view";
 
 export abstract class Sprite implements IRenderObject {
 	public id: string | null;
@@ -61,9 +62,13 @@ export abstract class Sprite implements IRenderObject {
 	abstract takeTurn(): void;
 
 	paint(offset?: Point): void {
+		if (this.disposeFlag || !this.visible) return;
+		let options: number = this.flippedH ? DrawImgFlags.HFLIP : 0;
+		options |= (this.flippedV ? DrawImgFlags.VFLIP : 0);
+
 		if (offset)
-			view.drawImg(this.imgid, this.pos.x + offset.x, this.pos.y + offset.y);
-		else view.drawImg(this.imgid, this.pos.x, this.pos.y);
+			view.drawImg(this.imgid, this.pos.x + offset.x, this.pos.y + offset.y, options);
+		else view.drawImg(this.imgid, this.pos.x, this.pos.y, options);
 	}
 
 	postpaint(offset?: Point): void {

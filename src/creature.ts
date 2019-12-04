@@ -7,6 +7,7 @@ import { AudioId, BitmapId } from "./resourceids";
 import { view } from "../BoazEngineJS/engine";
 import { Constants } from "../BoazEngineJS/constants";
 import { Area, Point } from "../BoazEngineJS/interfaces";
+import { DrawImgFlags } from "../BoazEngineJS/view";
 
 /*[Serializable]*/
 export abstract class Creature extends Sprite {
@@ -41,12 +42,7 @@ export abstract class Creature extends Sprite {
     }
 
     public paint(offset: Point = null): void {
-        if (this.disposeFlag || !this.visible)
-            return
-        let options: number = this.flippedH ? Constants.DRAWBITMAP_HFLIP : 0;
-        if (offset == null)
-            view.drawImg(this.imgid, this.pos.x, this.pos.y, options);
-        else view.drawImg(this.imgid, this.pos.x + offset.x, this.pos.y + offset.y, options);
+        super.paint(offset);
     }
 
     protected originPos: Point;
@@ -111,19 +107,19 @@ export abstract class Creature extends Sprite {
         switch (this.direction) {
             case Direction.Up:
                 if (this.pos.y >= 0)
-                    this.pos.y = (this.pos.y / TileSize + 1) * TileSize;
-                this.pos.y = this.pos.y / TileSize * TileSize;
+                    this.pos.y = ~~(this.pos.y / TileSize + 1) * TileSize;
+                this.pos.y = ~~(this.pos.y / TileSize) * TileSize;
                 break;
             case Direction.Right:
-                this.pos.x = this.pos.x / TileSize * TileSize;
+                this.pos.x = ~~(this.pos.x / TileSize) * TileSize;
                 break;
             case Direction.Down:
-                this.pos.y = this.pos.y / TileSize * TileSize;
+                this.pos.y = ~~(this.pos.y / TileSize) * TileSize;
                 break;
             case Direction.Left:
                 if (this.pos.x >= 0)
-                    this.pos.x = (this.pos.x / TileSize + 1) * TileSize;
-                this.pos.x = this.pos.x / TileSize * TileSize;
+                    this.pos.x = ~~(this.pos.x / (TileSize + 1)) * TileSize;
+                this.pos.x = ~~(this.pos.x / TileSize) * TileSize;
                 break;
         }
     }

@@ -25,7 +25,7 @@ export class Candle extends Foe {
 	protected static CandleHitArea: Area = newArea(0, 0, 10, 16);
 	protected static candleSprites: Map<Direction, BitmapId[]> = new Map([[Direction.None, [BitmapId.Candle_1]]]);
 	protected static AnimationFrames: BitmapId[] = [BitmapId.Candle_1, BitmapId.Candle_2];
-	protected static framesPerDrawing: number[] = [25, 25];
+	protected static framesPerDrawing: number[] = [10, 10];
 	protected animation: Animation<BitmapId>;
 	protected timer: BStopwatch;
 	protected get movementSprites(): Map<Direction, BitmapId[]> {

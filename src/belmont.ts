@@ -2,7 +2,7 @@ import { Direction } from "../BoazEngineJS/direction";
 import { Creature } from "./creature";
 import { BStopwatch } from "../BoazEngineJS/btimer";
 import { GameConstants as CS } from "./gameconstants";
-import { copyPoint, waitDuration, setSize, newArea, setPoint } from '../BoazEngineJS/common';
+import { copyPoint, waitDuration, setSize, newArea, setPoint, addPoints } from '../BoazEngineJS/common';
 import { Animation, AniStepReturnValue } from '../BoazEngineJS/animation';
 import { TileSize } from '../BoazEngineJS/msx';
 import { AudioId, BitmapId } from "./resourceids";
@@ -14,7 +14,7 @@ import { ResourceMaster as RM } from './resourcemaster';
 import { GameController as C } from './gamecontroller';
 import { GameModel as M } from './sintervaniamodel';
 import { view } from "../BoazEngineJS/engine";
-import { DrawBitmap } from "../BoazEngineJS/view";
+import { DrawImgFlags } from "../BoazEngineJS/view";
 import { Input } from "../BoazEngineJS/input";
 /*[Serializable]*/
 export class RoeState {
@@ -173,6 +173,7 @@ export class Belmont extends Creature {
 	public get Vulnerable(): boolean {
 		return !this.hitState.BlinkingAndInvulnerable && !this.Dying;
 	}
+
 	constructor(initPos?: Point) {
 		super(initPos);
 		this.imgid = <number>BitmapId.Belmont_r1;
@@ -334,7 +335,7 @@ export class Belmont extends Creature {
 		let originalPos = copyPoint(this.pos);
 		this.pos.y = ~~(this.pos.y + this.jumpState.JumpAni.stepValue);
 		this.jumpState.JumpAni.doAnimation(1);
-		if (this.jumpState.JumpAni.hasNext === false) {
+		if (this.jumpState.JumpAni.finished) {
 			this.jumpState.Stop();
 		}
 		this.jumpState.GoingUp ? this.checkAndHandleWallAndCeilingCollisions(originalPos) : this.checkAndHandleCollisions(originalPos);
@@ -603,6 +604,9 @@ export class Belmont extends Creature {
 	}
 
 	public paint(offset: Point = null): void {
+		if (this.disposeFlag || !this.visible)
+			return;
+
 		let roeOffset = <Point>{ x: 0, y: 0 };
 		if (this.Roeing) {
 			if (!this.Crouching) {
@@ -615,18 +619,9 @@ export class Belmont extends Creature {
 			}
 		}
 		if (!this.hitState.Blink || C._.InEventState) {
-			let options: number = this.flippedH ? DrawBitmap.HFLIP : 0;
-			if (offset == null)
-				view.drawImg(this.imgid, this.pos.x + roeOffset.x, this.pos.y + roeOffset.y, options);
-			else view.drawImg(this.imgid, this.pos.x + roeOffset.x + offset.x, this.pos.y + roeOffset.y + offset.y, options);
+			super.paint(addPoints(roeOffset, offset));
 		}
 		else {
-			if (this.disposeFlag || !this.visible)
-				return
-			let options: number = this.flippedH ? DrawBitmap.HFLIP : 0;
-			if (offset == null)
-				view.drawColoredBitmap(this.imgid, this.pos.x + roeOffset.x, this.pos.y + roeOffset.y, options, 50.0, .0, .0);
-			else view.drawColoredBitmap(this.imgid, this.pos.x + roeOffset.x + offset.x, this.pos.y + roeOffset.y + offset.y, options, 50.0, .0, .0);
 		}
 	}
 
@@ -651,7 +646,7 @@ export class JumpState {
 	public Jumping: boolean;
 	public GoingUp: boolean;
 	public JumpDirection: Direction;
-	public static jumpYDelta: number[] = [0, -8, -4, -4, -4, -4, -4, -4, -4, -4, -2, -2, -1, -1, 0, 0, 0, 0, 1, 1, 2, 2, 4, 4, 4, 4, 4, 4, 4, 8, 0];
+	public static jumpYDelta: number[] = [0, -8, -4, -4, -4, -4, -4, -4, -4, -4, -2, -2, -1, -1, 0, 0, 0, 0, 1, 1, 2, 2, 4, 4, 4, 4, 4, 4, 4, 4, 8];
 	public JumpAni: Animation<number>;
 	public get JumpHeightReached(): boolean {
 		return this.JumpAni.stepValue >= 0;
