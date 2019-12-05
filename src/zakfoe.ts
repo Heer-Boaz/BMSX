@@ -44,7 +44,6 @@ export class ZakFoe extends Foe {
 		super(pos);
 		this.canHurtPlayer = true;
 		// this.animation = new Animation<AniType>(AnimationFrames, null, true);
-		throw new Error("ZakFoe compileert nog niet omdat er gewoon nog wat zaken missen.");
 		this.timer = BStopwatch.createWatch();
 		this.imgid = <number>this.animation.stepValue.img;
 		this.timer.restart();

@@ -9,7 +9,6 @@ import { PlayerProjectile } from "./pprojectile";
 import { Size, Area, Point } from "../BoazEngineJS/interfaces";
 import { GameModel } from "./sintervaniamodel";
 
-/*[Serializable]*/
 export class Hag extends Foe {
     public get damageToPlayer(): number {
         return 1;
@@ -31,6 +30,7 @@ export class Hag extends Foe {
     protected static hagSprites: Map<Direction, BitmapId[]> = new Map([
         [Direction.None, [BitmapId.Hag1, BitmapId.Hag2]]
     ]);
+
     protected static movementSprites: Map<Direction, BitmapId[]> = Hag.hagSprites;
     protected static AnimationFrames: AniData<BitmapId>[] = new Array(
         { time: 12, data: BitmapId.Hag1 },

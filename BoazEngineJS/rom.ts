@@ -1,4 +1,3 @@
-// for legacy browsers
 interface RomResource {
 	resid: number;
 	resname: string;
@@ -15,7 +14,7 @@ interface RomMeta {
 interface RomLoadResult {
 	images: Map<number, HTMLImageElement>;
 	audio: Map<number, HTMLAudioElement>;
-	audiobuffers: {},
+	audioTracks: { [key: number]: ArrayBuffer; },
 	source: any
 }
 
@@ -139,6 +138,7 @@ async function loadResources(rom: ArrayBuffer): Promise<RomLoadResult> {
 	let result: RomLoadResult = {
 		images: new Map<number, HTMLImageElement>(),
 		audio: new Map<number, HTMLAudioElement>(),
+		audioTracks: {},
 		source: null
 	};
 
@@ -171,7 +171,7 @@ async function load(rom: ArrayBuffer, res: RomResource, romResult: RomLoadResult
 
 			let snd = await loadAudio(url);
 			romResult.audio.set(res.resid, snd);
-			romResult.audiobuffers[res.resid, new AudioContext().createBuffer(];
+			romResult.audioTracks[res.resid] = rom.slice(res.start, res.end);
 			break;
 		case 'source':
 			try {

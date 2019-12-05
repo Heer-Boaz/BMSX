@@ -13,6 +13,7 @@ import { ResourceMaster } from "./resourcemaster";
 interface RomLoadResult {
     images: Map<number, HTMLImageElement>;
     audio: Map<number, HTMLAudioElement>;
+    audioTracks: { [key: number]: ArrayBuffer; },
     source: any
 }
 
@@ -28,12 +29,11 @@ export class Bootstrapper {
         View.images = rom.images;
         ResourceMaster._.PrepareGameResources();
 
-        SM.init(rom.audio, ResourceMaster._.SoundEffectList, ResourceMaster._.MusicList);
+        SM.init(rom.audio, rom.audioTracks, ResourceMaster._.SoundEffectList, ResourceMaster._.MusicList);
         game.start();
         GameModel._.SelectedChapterToPlay = Chapter.GameStart;
         GameController._.switchState(GameConstants.INITIAL_GAMESTATE);
         GameController._.switchSubstate(GameConstants.INITIAL_GAMESUBSTATE);
-        // });
     }
 
     public static BootstrapGame(chapter: Chapter): void {

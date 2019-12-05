@@ -1,15 +1,15 @@
 import { Song } from "./song";
 import { Effect } from "./effect";
 import { GameOptions as GO } from "../BoazEngineJS/gameoptions";
-import { ImageId2Url } from './interfaces';
 import { AudioId } from "../src/resourceids";
 
-type id2source = { [key: number]: MediaElementAudioSourceNode; };
+type id2track = { [key: number]: ArrayBuffer; };
 export class SM {
 	private static musicContext: AudioContext;
 	private static effectContext: AudioContext;
-	private static musicSources: id2source;
-	private static effectSources: id2source;
+	private static audioTracks: id2track;
+	private static currentEffectNode: AudioBufferSourceNode;
+	private static currentMusicNode: AudioBufferSourceNode;
 	private static audio: Map<number, HTMLAudioElement>;
 
 	private static LimitToOneEffect: boolean = true;
@@ -28,87 +28,98 @@ export class SM {
 	// 	SM.EffectBeingPlayed = null;
 	// }
 
-	public static init(audio: Map<number, HTMLAudioElement>, effectList: Map<AudioId, Effect>, musicList: Map<AudioId, Song>) {
-		SM.musicContext = new AudioContext({
-			latencyHint: 'interactive',
-			sampleRate: 44100,
-		});
+	public static init(_audio: Map<number, HTMLAudioElement>, _audiobuffers: { [key: number]: ArrayBuffer; }, _effectList: Map<AudioId, Effect>, _musicList: Map<AudioId, Song>) {
 		SM.effectContext = new AudioContext({
 			latencyHint: 'interactive',
 			sampleRate: 44100,
 		});
+		SM.musicContext = new AudioContext({
+			latencyHint: 'interactive',
+			sampleRate: 44100,
+		});
 
-		SM.audio = audio;
-		SM.effectSources = {};
-		SM.musicSources = {};
-		effectList.forEach((effect, id) => SM.effectSources[id] = SM.effectContext.createMediaElementSource(audio.get(id)));
-		musicList.forEach((song, id) => SM.musicSources[id] = SM.musicContext.createMediaElementSource(audio.get(id)));
+		SM.audio = _audio;
+		SM.audioTracks = {};
+		_effectList.forEach((_, id) => {
+			let srcnode = SM.effectContext.createBufferSource();
+			SM.effectContext.decodeAudioData(_audiobuffers[id]).then(buffer => srcnode.buffer = buffer).then(() => {
+				SM.audioTracks[id].connect(SM.effectContext.destination);
+			});
+		});
+		_musicList.forEach((_, id) => {
+			let srcnode = SM.musicContext.createBufferSource();
+			SM.musicContext.decodeAudioData(_audiobuffers[id]).then(buffer => srcnode.buffer = buffer).then(() => {
+				SM.audioTracks[id].connect(SM.musicContext.destination);
+			});
+		});
 	}
 
-
-	public static StopEffect(): void {
-		if (!SM.EffectBeingPlayed || !SM.EffectBeingPlayed.AudioId) return;
-		let audio = SM.audio.get(SM.EffectBeingPlayed.AudioId);
-		audio.pause();
-		audio.currentTime = 0;
-		SM.EffectBeingPlayed = null;
+	private static createNode(id: number, ctx: AudioContext): Promise<AudioBufferSourceNode> {
+		let srcnode = ctx.createBufferSource();
+		return new Promise<AudioBufferSourceNode>(() => {
+			ctx.decodeAudioData(SM[id]).then(buffer => srcnode.buffer = buffer).then(() => Promise.resolve(srcnode));
+		});
 	}
 
-	private static playEffect(audioId: number): void {
-		let audio = SM.audio.get(audioId);
-		audio.currentTime = 0;
-		audio.volume = GO.EffectsVolumePercentage / 100;
-		audio.play();
-	}
+	public static play(_track: Effect | Song): void {
+		let trackid: number;
+		let loop = false;
+		if ((_track as Song).Music) {
+			SM.StopMusic();
 
-	public static PlayEffect(effect: Effect): void {
-		if (SM.EffectBeingPlayed) {
-			if (SM.LimitToOneEffect) {
-				if (effect.Priority >= SM.EffectBeingPlayed.Priority) {
-					SM.StopEffect();
-					SM.playEffect(effect.AudioId);
-					SM.EffectBeingPlayed = effect;
-					return;
-				}
+			SM.MusicBeingPlayed = <Song>_track;
+			trackid = (<Song>_track).Music;
+
+			SM.createNode(trackid, SM.musicContext).then(node => {
+				node.connect(SM.musicContext.destination);
+				node.loop = (<Song>_track).Loop || false;
+				node.start(0);
 			}
 		}
 		else {
-			SM.playEffect(effect.AudioId);
-			SM.EffectBeingPlayed = effect;
+			SM.StopEffect();
+			SM.EffectBeingPlayed = <Effect>_track;
+			trackid = (<Effect>_track).AudioId;
+		}
+
+
+		SM.audioTracks[trackid].loop = loop;
+		SM.audioTracks[trackid].start(0);
+	}
+
+	public static StopEffect(): void {
+		if (SM.EffectBeingPlayed && SM.EffectBeingPlayed.AudioId) {
+			SM.audioTracks[SM.EffectBeingPlayed.AudioId].stop();
+		}
+
+		SM.EffectBeingPlayed = null;
+	}
+
+	public static PlayEffect(effect: Effect): void {
+		if (!SM.LimitToOneEffect || !SM.EffectBeingPlayed || (effect.Priority >= SM.EffectBeingPlayed.Priority)) {
+			this.play(effect);
 		}
 	}
 
 	public static StopMusic(): void {
-		if (!SM.MusicBeingPlayed || !SM.MusicBeingPlayed.Music) return;
-		let mus = SM.audio.get(SM.MusicBeingPlayed.Music);
-		mus.pause();
-		mus.currentTime = 0;
+		if (SM.MusicBeingPlayed && SM.MusicBeingPlayed.Music) {
+			SM.audioTracks[SM.MusicBeingPlayed.Music].stop();
+		}
 		SM.MusicBeingPlayed = null;
 	}
 
 	public static PlayMusic(song: Song, stopCurrent: boolean = true): void {
-		if (stopCurrent)
-			SM.StopMusic();
-		SM.MusicBeingPlayed = song;
-		let mus = SM.audio.get(song.Music);
-		mus.pause();
-		mus.currentTime = 0;
-		mus.loop = song.Loop || false;
-		mus.volume = GO.MusicVolumePercentage / 100;
-		// mus.play();
-
-		SM.musicSources[song.Music].connect(SM.musicContext.destination);
-		SM.musicSources[song.Music].mediaElement.;
+		this.play(song);
 	}
 
 	public static ResumeEffect(): void {
 		if (!SM.EffectBeingPlayed || !SM.EffectBeingPlayed.AudioId) return;
-		SM.audio.get(SM.EffectBeingPlayed.AudioId).play();
+		SM.audioTracks[SM.EffectBeingPlayed.AudioId].start();
 	}
 
 	public static ResumeMusic(): void {
 		if (!SM.MusicBeingPlayed || !SM.MusicBeingPlayed.Music) return;
-		SM.audio.get(SM.MusicBeingPlayed.Music).play();
+		SM.audioTracks[SM.MusicBeingPlayed.Music].start();
 	}
 
 	public static SetEffectsVolume(volume: number): void {
