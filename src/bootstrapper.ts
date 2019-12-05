@@ -7,7 +7,8 @@ import { GameView } from "./gameview";
 import { GameState } from "../BoazEngineJS/model";
 import { View } from "../BoazEngineJS/view";
 import { Game, game } from "../BoazEngineJS/engine";
-import { SoundMaster } from "../BoazEngineJS/soundmaster";
+import { SM } from "../BoazEngineJS/soundmaster";
+import { ResourceMaster } from "./resourcemaster";
 
 interface RomLoadResult {
     images: Map<number, HTMLImageElement>;
@@ -24,11 +25,10 @@ export class Bootstrapper {
         game.setGameView(gameview);
         gameview.init();
 
-        // GameController._.switchState(GameState.LoadTheGame);
-
         View.images = rom.images;
-        SoundMaster.audio = rom.audio;
-        // game.waitForUserToStart().then(() => {
+        ResourceMaster._.PrepareGameResources();
+
+        SM.init(rom.audio, ResourceMaster._.SoundEffectList, ResourceMaster._.MusicList);
         game.start();
         GameModel._.SelectedChapterToPlay = Chapter.GameStart;
         GameController._.switchState(GameConstants.INITIAL_GAMESTATE);

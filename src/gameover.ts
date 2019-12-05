@@ -5,7 +5,7 @@ import { MSXConstants as CS } from "../BoazEngineJS/msx";
 import { view } from "../BoazEngineJS/engine";
 import { AudioId, BitmapId } from "./resourceids";
 import { Input } from "../BoazEngineJS/input";
-import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
+import { SM as S } from "../BoazEngineJS/soundmaster";
 import { ResourceMaster as RM } from './resourcemaster';
 import { GameController as C } from './gamecontroller';
 import { GameMenu } from "./gamemenu";

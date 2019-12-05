@@ -1,6 +1,6 @@
 import { GameModel as M, MainWeaponType, SecWeaponType } from "./sintervaniamodel";
 import { TriRoe } from "./triroe";
-import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
+import { SM as S } from "../BoazEngineJS/soundmaster";
 import { ResourceMaster as RM } from './resourcemaster';
 import { AudioId } from "./resourceids";
 import { waitDuration } from '../BoazEngineJS/common';

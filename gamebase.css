@@ -42,6 +42,9 @@ img {
 	top: 0px;
 	left: 0px;
 	transform-origin: 0 0;
+	image-rendering: -webkit-optimize-contrast;
+	image-rendering: crisp-edges;
+	-ms-interpolation-mode: nearest-neighbor;
 	image-rendering: pixelated;
 	overflow: hidden;
 }

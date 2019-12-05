@@ -9,7 +9,7 @@ import { AudioId, BitmapId } from "./resourceids";
 import { Area, Point } from '../BoazEngineJS/interfaces';
 import { Room, NearingRoomExitResult } from './room';
 import { newPoint } from "../BoazEngineJS/common";
-import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
+import { SM as S } from "../BoazEngineJS/soundmaster";
 import { ResourceMaster as RM } from './resourcemaster';
 import { GameController as C } from './gamecontroller';
 import { GameModel as M } from './sintervaniamodel';

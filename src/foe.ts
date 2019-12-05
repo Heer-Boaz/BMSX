@@ -2,7 +2,7 @@ import { Creature } from "./creature";
 import { PlayerProjectile } from "./pprojectile";
 import { ItemType } from "./item";
 import { GameModel as M } from "./sintervaniamodel";
-import { SoundMaster } from "../BoazEngineJS/soundmaster";
+import { SM } from "../BoazEngineJS/soundmaster";
 import { FoeExplosion } from "./foeexplosion";
 import { AudioId } from "./resourceids";
 import { ResourceMaster as RM } from "./resourcemaster";
@@ -44,7 +44,7 @@ export abstract class Foe extends Creature {
     public handleHit(source: PlayerProjectile): void {
         if (this.disposeFlag) return;
         M._.LastFoeThatWasHit = this;
-        SoundMaster.PlayEffect(RM.Sound.get(AudioId.Hit));
+        SM.PlayEffect(RM.Sound.get(AudioId.Hit));
     }
 
     protected loseHealth(source: PlayerProjectile): void {

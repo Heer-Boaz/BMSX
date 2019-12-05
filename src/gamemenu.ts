@@ -4,7 +4,7 @@ import { AudioId, BitmapId } from "./resourceids";
 import { Direction } from "../BoazEngineJS/direction";
 import { TextWriter } from "./textwriter";
 import { Size, Point } from "../BoazEngineJS/interfaces";
-import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
+import { SM as S } from "../BoazEngineJS/soundmaster";
 import { ResourceMaster as RM } from './resourcemaster';
 import { GameController as C } from './gamecontroller';
 import { GameModel as M } from "./sintervaniamodel";

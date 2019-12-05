@@ -7,7 +7,7 @@ import { GameState, GameSubstate } from "../BoazEngineJS/model";
 import { GameConstants as CS } from "./gameconstants"
 import { AudioId, BitmapId } from "./resourceids";
 import { ResourceMaster } from "./resourcemaster";
-import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
+import { SM as S } from "../BoazEngineJS/soundmaster";
 import { Direction } from "../BoazEngineJS/direction";
 import { GameModel as M } from "./sintervaniamodel";
 import { GameController as C } from "./gamecontroller";
@@ -70,11 +70,21 @@ export class GameView implements IGameView {
 
     public ToFullscreen(): void {
         // https://zinoui.com/blog/javascript-fullscreen-api
+        window.addEventListener('keyup', GameView.triggerFullScreenOnFakeUserEvent);
+    }
+
+    public static triggerFullScreenOnFakeUserEvent(): void {
         if (document.fullscreenEnabled) document.documentElement.requestFullscreen();
+        window.removeEventListener('keyup', GameView.triggerFullScreenOnFakeUserEvent);
     }
 
     public ToWindowed(): void {
+        window.addEventListener('keyup', GameView.triggerWindowedOnFakeUserEvent);
+    }
+
+    public static triggerWindowedOnFakeUserEvent(): void {
         document.exitFullscreen();
+        window.removeEventListener('keyup', GameView.triggerWindowedOnFakeUserEvent);
     }
 
     constructor() {

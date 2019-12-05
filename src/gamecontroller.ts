@@ -11,7 +11,7 @@ import { WeaponFireHandler } from "./weaponfirehandler";
 import { Room } from "./room";
 import { GameMenu } from "./gamemenu";
 import { waitDuration, setPoint } from '../BoazEngineJS/common';
-import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
+import { SM as S } from "../BoazEngineJS/soundmaster";
 import { ResourceMaster as RM, ResourceMaster } from './resourcemaster';
 import { Constants as CS } from "../BoazEngineJS/constants";
 import { GameView as V } from './gameview';

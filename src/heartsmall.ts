@@ -6,7 +6,7 @@ import { ResourceMaster } from "./resourcemaster";
 import { sound } from "../BoazEngineJS/engine";
 import { newArea } from "../BoazEngineJS/common";
 import { GameModel } from "./sintervaniamodel";
-import { SoundMaster } from "../BoazEngineJS/soundmaster";
+import { SM } from "../BoazEngineJS/soundmaster";
 import { Area, Point } from "../BoazEngineJS/interfaces";
 
 export const enum HeartSmallState {
@@ -66,7 +66,7 @@ export class HeartSmall extends Sprite {
 		if (this.objectCollide(GameModel._.Belmont)) {
 			++GameModel._.Hearts;
 			this.disposeFlag = true;
-			SoundMaster.PlayEffect(ResourceMaster.Sound.get(AudioId.Heart));
+			SM.PlayEffect(ResourceMaster.Sound.get(AudioId.Heart));
 		}
 	}
 

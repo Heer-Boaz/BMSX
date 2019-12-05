@@ -1,7 +1,7 @@
 ﻿import { Model } from "./model"
 import { Controller } from "./controller"
 import { View } from "./view"
-import { SoundMaster } from "./soundmaster";
+import { SM } from "./soundmaster";
 import { IGameView, Size } from './interfaces';
 import { BStopwatch } from './btimer';
 import { ResourceMaster } from '../src/resourcemaster';
@@ -10,7 +10,7 @@ import { Input } from "./input";
 export let game: Game;
 export let model: Model;
 export let controller: Controller;
-export let sound: SoundMaster;
+export let sound: SM;
 export let view: View;
 export let gameview: IGameView;
 
@@ -22,14 +22,16 @@ export class Game {
     turnCounter: number;
     intervalid: number;
     public running: boolean;
+    wasupdated: boolean;
 
     constructor(viewportsize: Size) {
         game = this;
-        sound = new SoundMaster();
+        sound = new SM();
         view = new View(viewportsize);
         Input.init();
         this.lastUpdate = 0;
         this.running = false;
+        this.wasupdated = true;
     }
 
     public setModel(m: Model): void {
@@ -84,8 +86,6 @@ export class Game {
         window.addEventListener('orientationchange', view.handleResize, false);
         view.handleResize();
 
-        ResourceMaster._.PrepareGameResources();
-
         this.running = true;
         this.lastUpdate = performance.now();
         this.draw(0);
@@ -98,6 +98,7 @@ export class Game {
     }
 
     public draw(elapsedMs: number): void {
+        if (!game.wasupdated) return;
         gameview.drawGame(elapsedMs);
         if (game.running) requestAnimationFrame(timestamp => game.draw(timestamp));
     }
@@ -118,6 +119,7 @@ export class Game {
         // game.lastUpdate = now - (elapsed % fpstime);
 
         game.update(fpstime);
+        game.wasupdated = true;
         // game.draw(elapsed);
 
         ++game.turnCounter;
@@ -142,8 +144,8 @@ export class Game {
         requestAnimationFrame(() => {
             view.clear();
             view.handleResize();
-            SoundMaster.StopEffect();
-            SoundMaster.StopMusic();
+            SM.StopEffect();
+            SM.StopMusic();
         });
     }
 

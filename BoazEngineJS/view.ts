@@ -71,7 +71,7 @@ export class View {
         if (!img) throw new Error(`Cannot find image with id '${imgid}'`);
 
         this.context.save();
-        this.context.translate(x, y);
+        this.context.translate(~~x, ~~y);
         if (options & DrawImgFlags.HFLIP) {
             this.context.scale(-1, 1);
             this.context.translate(-img.width, 0);
@@ -93,7 +93,7 @@ export class View {
         this.context.save();
         this.context.beginPath();
         this.context.strokeStyle = this.toRgb(c);
-        this.context.rect(x, y, ex - x, ey - y);
+        this.context.rect(~~x, ~~y, ~~ex - ~~x, ~~ey - ~~y);
         this.context.stroke();
         this.context.restore();
     }
@@ -104,7 +104,7 @@ export class View {
         let colorRgb = this.toRgb(c);
         this.context.fillStyle = colorRgb;
         this.context.strokeStyle = colorRgb;
-        this.context.fillRect(x, y, ex - x, ey - y);
+        this.context.fillRect(~~x, ~~y, ~~ex - ~~x, ~~ey - ~~y);
         this.context.stroke();
         this.context.restore();
     }

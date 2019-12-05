@@ -1,7 +1,7 @@
 import { Chapter } from "./sintervaniamodel";
 import { GameConstants as GCS } from "./gameconstants"
 import { ResourceMaster } from "./resourcemaster";
-import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
+import { SM as S } from "../BoazEngineJS/soundmaster";
 import { Direction } from "../BoazEngineJS/direction";
 import { GameModel as M } from "./sintervaniamodel";
 import { GameController as C } from "./gamecontroller";

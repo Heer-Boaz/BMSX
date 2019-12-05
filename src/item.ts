@@ -1,7 +1,7 @@
 import { Sprite } from "../BoazEngineJS/sprite";
 import { newArea, area2size, moveArea } from "../BoazEngineJS/common";
 import { GameModel } from "./sintervaniamodel";
-import { SoundMaster as S } from "../BoazEngineJS/soundmaster";
+import { SM as S } from "../BoazEngineJS/soundmaster";
 import { ResourceMaster as RM } from "./resourcemaster";
 import { GameController } from "./gamecontroller";
 import { Area, Point } from "../BoazEngineJS/interfaces";
