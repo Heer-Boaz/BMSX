@@ -53,7 +53,9 @@ export class View {
     }
 
     public clear(): void {
+        view.context.translate(0.5, 0.5);
         view.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        view.context.translate(-0.5, -0.5);
     }
 
     public drawPressKey(): void {
@@ -91,6 +93,7 @@ export class View {
 
     public drawRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
         this.context.save();
+        this.context.translate(0.5, 0.5);
         this.context.beginPath();
         this.context.strokeStyle = this.toRgb(c);
         this.context.rect(~~x, ~~y, ~~ex - ~~x, ~~ey - ~~y);
@@ -100,6 +103,7 @@ export class View {
 
     public fillRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
         this.context.save();
+        this.context.translate(0.5, 0.5);
         this.context.beginPath();
         let colorRgb = this.toRgb(c);
         this.context.fillStyle = colorRgb;

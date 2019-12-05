@@ -11,7 +11,7 @@ export namespace GameConstants {
     export const PauseGameOnKillFocus: boolean = false;
     export const AnimateFoeHealthLevel: boolean = false;
     export const EnemiesAfootAsProperty: boolean = false;
-    export const Belmont_MaxHealth_AtStart: number = 48;
+    export const Belmont_MaxHealth_AtStart: number = 1;//48;
     export const Belmont_MaxHealth_Increase: number = 2;
     export const Belmont_MaxHearts: number = 99;
     export const Belmont_InitPos_x: number = 100;

@@ -10,7 +10,7 @@ import { GameConstants } from "./gameconstants";
 export class ItsCurtainsForYou {
     private curtainPartCount: number;
     private timer: BStopwatch;
-    private msCurtainPartWait: number = 18;
+    private msCurtainPartWait: number = 1;
     private maxCurtainParts: number = GameConstants.GameScreenWidth / TileSize;
 
     public Init(): void {

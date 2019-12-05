@@ -49,7 +49,7 @@ export class SM {
 
 	public static play(_track: Effect | Song): void {
 		let trackid: number;
-		if ((_track as Song).Music) {
+		if ((_track as Song).Music !== undefined) {
 			SM.StopMusic();
 
 			SM.MusicBeingPlayed = <Song>_track;

@@ -108,7 +108,7 @@ export class GameOver {
 
     public Paint(): void {
         TextWriter.drawText(60, 56, ["Je bent vernederd!"]);
-        TextWriter.drawText(32, 80, ["Wat ga je doen,Belmont?"]);
+        TextWriter.drawText(32, 80, ["Wat ga je doen, Ronan?"]);
         view.drawRectangle(GameOver.boxX, GameOver.boxY, GameOver.boxEndX, GameOver.boxEndY, CS.Msx1Colors[15]);
         for (let i = 0; i < GameOver.items.length; i++)
             TextWriter.drawText(GameOver.itemsX, GameOver.itemYs[i], [GameOver.items[i]]);

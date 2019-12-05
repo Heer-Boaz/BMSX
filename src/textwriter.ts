@@ -54,7 +54,7 @@ export class TextWriter {
         if (Array.isArray(textToWrite)) {
             for (let text of textToWrite) {
                 for (let i: number = 0; i < text.length; i++) {
-                    TextWriter.drawLetter(pos.x, pos.y, textToWrite[i], color);
+                    TextWriter.drawLetter(pos.x, pos.y, text[i], color);
                     pos.x += stepX;
                 }
                 pos.x = startPos.x;
