@@ -64,13 +64,14 @@ function copyResources(): void {
 function buildGameHtml(outfile: string): void {
 	let html = readFileSync("./gamebase.html", 'utf8');
 	let romjs = readFileSync("./rom/rom.js", 'utf8');
-	var options = {
-		mangle: {
-			toplevel: true,
-			reserved: ["basic"],
-		},
-	};
-	let romjsMinified = terser.minify(romjs, options).code;
+	// var options = {
+	// 	mangle: {
+	// 		toplevel: true,
+	// 		reserved: ["basic"],
+	// 	},
+	// };
+	// let romjsMinified = terser.minify(romjs, options).code;
+	let romjsMinified = romjs;
 	let bmsx = readFileSync("./rom/bmsx.png");
 	let bmsx_base64ed = bmsx.toString('base64');
 

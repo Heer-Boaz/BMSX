@@ -7,6 +7,22 @@ import { BStopwatch } from './btimer';
 import { ResourceMaster } from '../src/resourcemaster';
 import { Input } from "./input";
 
+export type id2res = { [key: number]: RomResource; };
+export interface RomLoadResult {
+    rom: ArrayBuffer,
+    images: Map<number, HTMLImageElement>;
+    resources: id2res
+    source: any
+}
+
+export interface RomResource {
+    resid: number;
+    resname: string;
+    type: string;
+    start: number;
+    end: number;
+}
+
 export let game: Game;
 export let model: Model;
 export let controller: Controller;
@@ -23,11 +39,13 @@ export class Game {
     intervalid: number;
     public running: boolean;
     wasupdated: boolean;
+    public rom: RomLoadResult;
 
-    constructor(viewportsize: Size) {
+    constructor(_rom: RomLoadResult, viewportsize: Size) {
         game = this;
         sound = new SM();
         view = new View(viewportsize);
+        this.rom = _rom;
         Input.init();
         this.lastUpdate = 0;
         this.running = false;

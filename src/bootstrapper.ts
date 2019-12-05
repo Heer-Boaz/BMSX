@@ -4,22 +4,14 @@ import { Tile } from "../BoazEngineJS/msx";
 import { GameConstants } from "./gameconstants";
 import { GameController } from "./gamecontroller";
 import { GameView } from "./gameview";
-import { GameState } from "../BoazEngineJS/model";
 import { View } from "../BoazEngineJS/view";
-import { Game, game } from "../BoazEngineJS/engine";
+import { Game, game, RomLoadResult } from "../BoazEngineJS/engine";
 import { SM } from "../BoazEngineJS/soundmaster";
 import { ResourceMaster } from "./resourcemaster";
 
-interface RomLoadResult {
-    images: Map<number, HTMLImageElement>;
-    audio: Map<number, HTMLAudioElement>;
-    audioTracks: { [key: number]: ArrayBuffer; },
-    source: any
-}
-
 export class Bootstrapper {
     public static init(rom: RomLoadResult): void {
-        new Game({ x: GameConstants.ViewportWidth, y: GameConstants.ViewportHeight });
+        new Game(rom, { x: GameConstants.ViewportWidth, y: GameConstants.ViewportHeight });
         game.setModel(new GameModel());
         game.setController(new GameController());
         let gameview = new GameView();
@@ -29,7 +21,7 @@ export class Bootstrapper {
         View.images = rom.images;
         ResourceMaster._.PrepareGameResources();
 
-        SM.init(rom.audio, rom.audioTracks, ResourceMaster._.SoundEffectList, ResourceMaster._.MusicList);
+        SM.init(rom.resources, ResourceMaster._.SoundEffectList, ResourceMaster._.MusicList);
         game.start();
         GameModel._.SelectedChapterToPlay = Chapter.GameStart;
         GameController._.switchState(GameConstants.INITIAL_GAMESTATE);

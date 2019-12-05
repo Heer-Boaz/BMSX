@@ -11,10 +11,11 @@ interface RomMeta {
 	end: number;
 }
 
+type id2res = { [key: number]: RomResource; };
 interface RomLoadResult {
+	rom: ArrayBuffer,
 	images: Map<number, HTMLImageElement>;
-	audio: Map<number, HTMLAudioElement>;
-	audioTracks: { [key: number]: ArrayBuffer; },
+	resources: id2res
 	source: any
 }
 
@@ -137,26 +138,29 @@ async function loadResourceList(rom: ArrayBuffer): Promise<RomResource[]> {
 async function loadResources(rom: ArrayBuffer): Promise<RomLoadResult> {
 	let result: RomLoadResult = {
 		images: new Map<number, HTMLImageElement>(),
-		audio: new Map<number, HTMLAudioElement>(),
-		audioTracks: {},
+		rom: rom,
+		resources: {},
 		source: null
 	};
 
 	let list = await loadResourceList(rom);
-	for (let i = 0; i < list.length; i++)
+	for (let i = 0; i < list.length; i++) {
 		await load(rom, list[i], result);
+		result.resources[list[i].resid] = list[i];
+	}
 	return result;
 }
 
 async function load(rom: ArrayBuffer, res: RomResource, romResult: RomLoadResult): Promise<void> {
-	let bytearray = new Uint8Array(rom);
-	let sliced = bytearray.slice(res.start, res.end);
 
-	let mime: string;
-	let blub: Blob;
-	let url: string;
 	switch (res.type) {
 		case 'image':
+			let mime: string;
+			let blub: Blob;
+			let url: string;
+			let bytearray = new Uint8Array(rom);
+			let sliced = bytearray.slice(res.start, res.end);
+
 			mime = 'image/png';
 			blub = new Blob([sliced], { type: mime });
 			url = URL.createObjectURL(blub);
@@ -165,16 +169,18 @@ async function load(rom: ArrayBuffer, res: RomResource, romResult: RomLoadResult
 			romResult.images.set(res.resid, img);
 			break;
 		case 'audio':
-			mime = 'audio/wav';
-			blub = new Blob([sliced], { type: mime });
-			url = URL.createObjectURL(blub);
+			// mime = 'audio/wav';
+			// blub = new Blob([sliced], { type: mime });
+			// url = URL.createObjectURL(blub);
 
-			let snd = await loadAudio(url);
-			romResult.audio.set(res.resid, snd);
-			romResult.audioTracks[res.resid] = rom.slice(res.start, res.end);
+			// let snd = await loadAudio(url);
+			// romResult.audio.set(res.resid, snd);
+			// romResult.audioTracks[res.resid] = rom.slice(res.start, res.end);
 			break;
 		case 'source':
 			try {
+				let bytearray = new Uint8Array(rom);
+				let sliced = bytearray.slice(res.start, res.end);
 				romResult.source = decodeuint8arr(sliced);
 			} catch (e) {
 				throw e;
