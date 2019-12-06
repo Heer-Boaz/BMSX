@@ -1,4 +1,4 @@
-import { Chapter } from "./sintervaniamodel";
+import { Chapter, GameState } from "./sintervaniamodel";
 import { GameConstants as GCS } from "./gameconstants"
 import { SM as S } from "../BoazEngineJS/soundmaster";
 import { Direction } from "../BoazEngineJS/direction";
@@ -10,7 +10,6 @@ import { Constants as CS } from "../BoazEngineJS/constants";
 import { Input } from "../BoazEngineJS/input";
 import { GameMenu } from "./gamemenu";
 import { SlotExists } from "../BoazEngineJS/gamestateloader";
-import { GameState } from "../BoazEngineJS/model";
 import { AudioId, BitmapId } from "./resourceids";
 import { Msx1Colors } from "../BoazEngineJS/msx";
 
@@ -121,19 +120,19 @@ export class MainMenu {
                     switch (this.selectedItem) {
                         case MenuItem.Debug:
                             M._.SelectedChapterToPlay = Chapter.Debug;
-                            C._.SwitchToState(GameState.Game);
+                            C._.switchState(GameState.Game);
                             break;
                         case MenuItem.Prologue:
                             M._.SelectedChapterToPlay = Chapter.Prologue;
-                            C._.SwitchToState(GameState.GameStart1);
+                            C._.switchState(GameState.GameStart1);
                             break;
                         case MenuItem.Chapter0:
                             M._.SelectedChapterToPlay = Chapter.Chapter_0;
-                            C._.SwitchToState(GameState.GameStart1);
+                            C._.switchState(GameState.GameStart1);
                             break;
                         case MenuItem.Chapter1:
                             M._.SelectedChapterToPlay = Chapter.GameStart;
-                            C._.SwitchToState(GameState.GameStart1);
+                            C._.switchState(GameState.GameStart1);
                             break;
                         case MenuItem.ToMainMenu:
                             this.state = State.SelectMain;

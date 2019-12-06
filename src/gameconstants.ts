@@ -1,5 +1,5 @@
 import { TileSize, MSX2ScreenWidth, MSX2ScreenHeight } from "../BoazEngineJS/msx";
-import { GameState, GameSubstate } from "../BoazEngineJS/model";
+import { GameState, GameSubstate } from "./sintervaniamodel";
 
 export namespace GameConstants {
     export const INITIAL_GAMESTATE: GameState = GameState.GameStart1;
@@ -14,8 +14,6 @@ export namespace GameConstants {
     export const Belmont_MaxHealth_AtStart: number = 48;
     export const Belmont_MaxHealth_Increase: number = 2;
     export const Belmont_MaxHearts: number = 99;
-    export const Belmont_InitPos_x: number = 100;
-    export const Belmont_initPos_y: number = 100;
     export const CheckpointAtRoomEntry: boolean = false;
     export const ManualCheckpoints: boolean = !CheckpointAtRoomEntry;
     export const WindowTitle: string = "";

@@ -21,37 +21,38 @@ import { view } from "../BoazEngineJS/engine";
 import { TextWriter } from "./textwriter";
 import { Msx1Colors } from "../BoazEngineJS/msx";
 
-declare module "../BoazEngineJS/model" {
-    export const enum GameState {
-        Editor,
-        Prelude,
-        Story,
-        TitleScreen,
-        Tutorial,
-        GameStart1,
-        GameStart2,
-        GameStartFromGameOver,
-        Game,
-        Event,
-        F1,
-        EndDemo,
-        GameOver
-    }
+export const enum GameState {
+    None = 0,
+    Editor,
+    Prelude,
+    Story,
+    TitleScreen,
+    Tutorial,
+    GameStart1,
+    GameStart2,
+    GameStartFromGameOver,
+    Game,
+    Event,
+    F1,
+    EndDemo,
+    GameOver,
+    LoadTheGame,
+}
 
-    export const enum GameSubstate {
-        Conversation,
-        BelmontDies,
-        ItsCurtainsForYou,
-        ToEndDemo,
-        GameOver,
-        IngameMenu,
-        GameMenu,
-        SwitchRoom
-    }
+export const enum GameSubstate {
+    Default = 0,
+    Conversation,
+    BelmontDies,
+    ItsCurtainsForYou,
+    ToEndDemo,
+    GameOver,
+    IngameMenu,
+    GameMenu,
+    SwitchRoom
 }
 
 export const enum Chapter {
-    Debug,
+    Debug = 0,
     Prologue,
     Chapter_0,
     GameStart
@@ -117,7 +118,6 @@ export class GameModel extends Model {
     public static PROPERTY_ACT_AS_WALL: string = "p_wall";
 
     private static _instance: GameModel;
-    static GameSubstate: any;
     public static get _(): GameModel {
         return GameModel._instance;
     }
@@ -285,7 +285,7 @@ export class GameModel extends Model {
         // this.spawn(this.PauseObject, null, true);
 
         this._hearts = 0;
-        GameModel._.spawn(new Belmont({ x: GameConstants.Belmont_InitPos_x, y: GameConstants.Belmont_initPos_y }));
+        GameModel._.spawn(new Belmont());
     }
 
     public InitAfterGameLoad(): void {

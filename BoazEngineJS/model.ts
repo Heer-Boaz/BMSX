@@ -1,58 +1,52 @@
 ﻿import { IGameObject, Point } from "./interfaces";
 
-export const enum GameState {
-    None = 0,
-    LoadTheGame
-}
-export const enum GameSubstate { Default = 0 }
-
 export abstract class Model {
     public id2object: Map<string, IGameObject>;
     public objects: IGameObject[];
-    public gameState: GameState;
-    public gameSubstate: GameSubstate;
-    public gameOldState: GameState;
-    public gameOldSubstate: GameSubstate;
+    public gameState: number;
+    public gameSubstate: number;
+    public gameOldState: number;
+    public gameOldSubstate: number;
     public paused: boolean;
     public startAfterLoad: boolean;
 
-    public get OldState(): GameState {
+    public get OldState(): number {
         return this.gameOldState;
     }
 
-    public set OldState(value: GameState) {
+    public set OldState(value: number) {
         this.gameOldState = value;
     }
 
-    public get State(): GameState {
+    public get State(): number {
         return this.gameState;
     }
 
-    public set State(value: GameState) {
+    public set State(value: number) {
         this.gameState = value;
     }
 
-    public get OldSubstate(): GameSubstate {
+    public get OldSubstate(): number {
         return this.gameOldSubstate;
     }
 
-    public set OldSubstate(value: GameSubstate) {
+    public set OldSubstate(value: number) {
         this.gameOldSubstate = value;
     }
 
-    public get Substate(): GameSubstate {
+    public get Substate(): number {
         return this.gameSubstate;
     }
 
-    public set Substate(value: GameSubstate) {
+    public set Substate(value: number) {
         this.gameSubstate = value;
     }
 
     constructor() {
         this.objects = [];
         this.id2object = new Map<string, IGameObject>();
-        this.gameState = GameState.None;
-        this.gameSubstate = GameSubstate.Default;
+        this.gameState = 0;
+        this.gameSubstate = 0;
         this.paused = false;
     }
 

@@ -6,14 +6,13 @@ import { TextWriter } from "./textwriter";
 import { Size, Point } from "../BoazEngineJS/interfaces";
 import { SM } from "../BoazEngineJS/soundmaster";
 import { GameController as C } from './gamecontroller';
-import { GameModel as M } from "./sintervaniamodel";
+import { GameModel as M, GameState } from "./sintervaniamodel";
 import { SlotExists, LoadGame } from "../BoazEngineJS/gamestateloader";
 import { GameOptions as GO } from "../BoazEngineJS/gameoptions";
 import { GameConstants as CS } from "./gameconstants";
 import { Constants } from "../BoazEngineJS/constants";
 import { newSize, setPoint } from "../BoazEngineJS/common";
 import { view, game } from "../BoazEngineJS/engine";
-import { GameState } from "../BoazEngineJS/model";
 import { Input } from "../BoazEngineJS/input";
 import { Msx1Colors, Msx1ExtColors } from "../BoazEngineJS/msx";
 

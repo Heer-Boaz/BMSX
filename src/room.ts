@@ -5,6 +5,7 @@ import { GameConstants as CS, GameConstants } from './gameconstants';
 import { view } from "../BoazEngineJS/engine";
 import { RoomDataContainer } from "./RoomFactory";
 import { BitmapId } from "./resourceids";
+import { GameModel } from "./sintervaniamodel";
 
 export type NearingRoomExitResult = { destRoom: number, direction: Direction } | null;
 export type RoomInitDelegate = (room: Room) => void;
@@ -12,33 +13,30 @@ export type RoomInitDelegate = (room: Room) => void;
 export class Room {
 	public static RoomWidth: number = 0;
 	public static RoomHeight: number = 0;
-	public static NO_ROOM_EXIT: number = 0;
+	public static NO_ROOM_EXIT: number = -1;
 
 	///  <summary>
 	///  Collision tiles
 	///  </summary>
-	public CollisionData: string[];
-	public Id: number;
+	public tiles: string[];
+	public id: number;
 
 	// public M.Location RespawnLocation;
 	///  <summary>
 	///  Used at room init to easily determine whether to auto set the respawn location
 	///  </summary>
 	// public bool DefaultRespawnLocation;
-	public Exits: number[];
+	public exits: number[];
 	public initFunction: RoomInitDelegate;
 	public imgid: BitmapId;
 
 	public static LoadRoom(data: RoomDataContainer): Room {
 		var result = new Room();
-		result.Id = data.Id;
-		result.CollisionData = data.CollisionMap;
-		result.Exits = data.Exits;
-		result.initFunction = data.InitFunction;
+		result.id = data.id;
+		result.tiles = data.tiles;
+		result.exits = data.exits;
+		result.initFunction = data.initFunction;
 		result.imgid = data.imgid;
-		// result.BitmapPath = data.BitmapPath;
-
-		// ResourceMaster.reloadImg(BitmapId.Room, data.BitmapPath);
 
 		return result;
 	}
@@ -57,26 +55,26 @@ export class Room {
 		return coordinatesToCheck.some(x => this.IsCollisionTile(x.x, x.y));
 	}
 
-	public NearingRoomExit(x: number, y: number): NearingRoomExitResult {
+	public nearingRoomExit(x: number, y: number): NearingRoomExitResult {
 		let _x: number = ~~(x / TileSize);
 		let _y: number = ~~(y / TileSize);
 		let result: NearingRoomExitResult = { destRoom: Room.NO_ROOM_EXIT, direction: Direction.None };
 
-		if (x < 0) {
+		if (x <= 0) {
 			//  Note: Check for x and not _x, as -1 / (...) will result in 0!
-			let dest = this.RoomExit(Direction.Left);
+			let dest = this.roomExit(Direction.Left);
 			result = { destRoom: dest, direction: Direction.Left };
 		}
 		else if (_x >= CS.StageScreenWidthTiles) {
-			let dest = this.RoomExit(Direction.Right);
+			let dest = this.roomExit(Direction.Right);
 			result = { destRoom: dest, direction: Direction.Right };
 		}
 		else if (_y < 2) {
-			let dest = this.RoomExit(Direction.Up);
+			let dest = this.roomExit(Direction.Up);
 			result = { destRoom: dest, direction: Direction.Up };
 		}
 		else if (_y >= CS.StageScreenHeightTiles) {
-			let dest = this.RoomExit(Direction.Down);
+			let dest = this.roomExit(Direction.Down);
 			result = { destRoom: dest, direction: Direction.Down };
 		}
 
@@ -112,7 +110,7 @@ export class Room {
 				break;
 		}
 		while (_x >= 0 && _x <= GameConstants.StageScreenWidthTiles - 1 && _y >= 0 && _y <= GameConstants.StageScreenStartHeightTiles + GameConstants.StageScreenHeightTiles - 1) {
-			if (this.CollisionData[_y][_x] === '.') {
+			if (this.tiles[_y][_x] === '.') {
 				switch (dir) {
 					case Direction.Up:
 						return (_y) * TileSize;
@@ -174,20 +172,15 @@ export class Room {
 
 		}
 
-		if (this.CollisionData[_y][_x] !== '.') {
+		if (this.tiles[_y][_x] !== '.') {
 			return true;
 		}
 
 		return false;
 	}
 
-	private RoomExit(dir: number): number {
-		let RoomExitsLocked = true;
-		if (RoomExitsLocked) {
-			return Room.NO_ROOM_EXIT;
-		}
-
-		return this.Exits[dir];
+	private roomExit(dir: number): number {
+		return GameModel._.RoomExitsLocked ? Room.NO_ROOM_EXIT : this.exits[dir];
 	}
 
 	private CanLeaveRoom(dir: number): boolean {
@@ -196,17 +189,51 @@ export class Room {
 			return false;
 		}
 
-		return (this.RoomExit(dir) != Room.NO_ROOM_EXIT);
+		return (this.roomExit(dir) != Room.NO_ROOM_EXIT);
 	}
 
 	public Paint() {
-		view.drawImg(this.imgid, CS.GameScreenStartX, CS.GameScreenStartY);
-		for (let y = 0; y < this.CollisionData.length; y++) {
-			for (let x = 0; x < this.CollisionData[y].length; x++) {
-				if (this.CollisionData[y][x] !== '.') {
-					view.fillRectangle(CS.GameScreenStartX + x * TileSize, CS.GameScreenStartY + y * TileSize, CS.GameScreenStartX + (x + 1) * TileSize, CS.GameScreenStartY + (y + 1) * TileSize, { r: 255, g: 255, b: 255, a: 0.5 });
+		if (this.imgid) {
+			view.drawImg(this.imgid, CS.GameScreenStartX, CS.GameScreenStartY);
+		}
+		else {
+			for (let y = 0; y < this.tiles.length; y++) {
+				for (let x = 0; x < this.tiles[y].length; x++) {
+					let img = this.tileImgid(x, y);
+					if (img !== BitmapId.None)
+						view.drawImg(img, CS.GameScreenStartX + x * TileSize, CS.GameScreenStartY + y * TileSize);
 				}
 			}
+		}
+
+		// for (let y = 0; y < this.tiles.length; y++) {
+		// 	for (let x = 0; x < this.tiles[y].length; x++) {
+		// 		if (this.tiles[y][x] !== '.') {
+		// 			view.fillRectangle(CS.GameScreenStartX + x * TileSize, CS.GameScreenStartY + y * TileSize, CS.GameScreenStartX + (x + 1) * TileSize, CS.GameScreenStartY + (y + 1) * TileSize, { r: 255, g: 255, b: 255, a: 0.5 });
+		// 		}
+		// 	}
+		// }
+	}
+
+	protected tileImgid(x: number, y: number): BitmapId {
+		switch (this.tiles[y][x]) {
+			case '#':
+				let eenzaam = true;
+				if (x % 2 == 0) {
+					if (x + 1 < this.tiles[y].length && this.tiles[y][x + 1] === '#') {
+						eenzaam = false;
+					}
+				}
+				else if (this.tiles[y][x - 1] === '#') {
+					eenzaam = false;
+				}
+				if (!eenzaam) return x % 2 == 0 ? BitmapId.tiles1 : BitmapId.tiles2;
+				return BitmapId.tiles3;
+			case '-':
+				return BitmapId.None;
+			case '.':
+			default:
+				return BitmapId.behang;
 		}
 	}
 }

@@ -1,6 +1,6 @@
 import { Point, Color } from "./interfaces";
 
-export const TileSize: number = 8;
+export const TileSize: number = 16;
 export class Tile {
 	public x: number;
 	public y: number;
@@ -14,20 +14,30 @@ export class Tile {
 
 	public [Symbol.toPrimitive](hint: any): any {
 		if (hint == 'number') {
-			return this.x * TileSize;
+			return Tile.toStageCoord(this.x);
 		}
 		else if (hint.x && hint.y)
-			return <Point>{ x: this.x * TileSize, y: this.y * TileSize };
+			return Tile.toStagePoint(this.x, this.y);
 
 		return true;
 	}
 
-	public static stageCoord(v: number): number {
-		return v * TileSize;
+	public static [Symbol.toPrimitive](hint: any): any {
+		if (hint == 'number') {
+			return Tile.toStageCoord(hint);
+		}
+		else if (hint.x && hint.x == 'number' && hint.y && hint.y == 'number')
+			return Tile.toStagePoint(hint.x, hint.y);
+
+		return true;
 	}
 
-	public static toStageCoord(x: number): number {
-		return x * TileSize;
+	public get stagePoint() {
+		return { x: this.x * TileSize, y: this.y * TileSize };
+	}
+
+	public static toStageCoord(v: number): number {
+		return v * TileSize;
 	}
 
 	public static toStagePoint(x: number | Point, y: number): Point {

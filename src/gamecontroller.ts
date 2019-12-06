@@ -5,8 +5,7 @@ import { Direction } from "../BoazEngineJS/direction";
 import { Bootstrapper } from "./bootstrapper";
 import { Savegame } from "../BoazEngineJS/savegame";
 import { WeaponItem } from "./weaponitem";
-import { GameModel as M, GameModel } from "./sintervaniamodel"
-import { GameState, GameSubstate } from "../BoazEngineJS/model";
+import { GameModel as M, GameModel, GameState, GameSubstate } from "./sintervaniamodel"
 import { WeaponFireHandler } from "./weaponfirehandler";
 import { Room } from "./room";
 import { GameMenu } from "./gamemenu";
@@ -19,6 +18,7 @@ import { LoadGame } from '../BoazEngineJS/gamestateloader';
 import { GameSaver } from "../BoazEngineJS/gamesaver";
 import { Controller } from '../BoazEngineJS/controller';
 import { Input } from "../BoazEngineJS/input";
+import { TileSize, Tile } from "../BoazEngineJS/msx";
 
 export class GameController extends Controller {
     private static _instance: GameController;
@@ -26,24 +26,17 @@ export class GameController extends Controller {
         return GameController._instance != null ? GameController._instance : (GameController._instance = new GameController());
     }
 
+    public InEventState: boolean;
     private startAfterLoadTimer: BStopwatch;
     public ElapsedMsDelta: number;
 
-    public Initialize(): void {
-        M._.OldState = GameState.None;
-        this.timer = BStopwatch.createWatch();
+    constructor() {
+        super();
         this.startAfterLoadTimer = BStopwatch.createWatch();
     }
 
-    public SwitchToState(newState: GameState): void {
-        M._.OldState = M._.State;
-        if (this.DisposeOldState(M._.State, newState)) {
-            this.InitNewState(newState);
-        }
-        M._.State = newState;
-    }
-
-    public DisposeOldState(oldState: GameState, newState: GameState): boolean {
+    public disposeOldState(newState: GameState): void {
+        let oldState = M._.State;
         switch (oldState) {
             case GameState.TitleScreen:
                 SM.stopMusic();
@@ -58,19 +51,20 @@ export class GameController extends Controller {
             default:
                 break;
         }
-        return true;
+    }
+
+    protected disposeOldSubstate(newsubstate: GameSubstate): void {
     }
 
     public SwitchToOldState(): void {
-        this.SwitchToState(M._.OldState);
+        this.switchState(M._.OldState);
     }
 
     public SwitchToOldSubstate(): void {
-        this.switchToSubstate(M._.OldSubstate);
+        this.switchSubstate(M._.OldSubstate);
     }
 
-    public InEventState: boolean;
-    protected InitNewState(newState: GameState): void {
+    protected initNewState(newState: GameState): void {
         switch (newState) {
             case GameState.Prelude:
                 M._.Title.Init();
@@ -86,7 +80,7 @@ export class GameController extends Controller {
                 break;
             case GameState.GameStart2:
                 this.timer.restart();
-                SM.playMusic(AudioId.VampireKiller);
+                // SM.playMusic(AudioId.VampireKiller);
                 break;
             case GameState.Game:
                 break;
@@ -95,8 +89,11 @@ export class GameController extends Controller {
         }
     }
 
-    protected switchToSubstate(newSubstate: GameSubstate): void {
-        M._.OldSubstate = M._.Substate;
+    protected initNewSubstate(newsubstate: GameSubstate): void {
+    }
+
+    public switchSubstate(newSubstate: GameSubstate): void {
+        super.switchSubstate(newSubstate);
         switch (newSubstate) {
             case GameSubstate.Conversation:
                 break;
@@ -155,12 +152,12 @@ export class GameController extends Controller {
                 break;
             case GameState.GameStart1:
                 if (waitDuration(this.timer, GameConstants.WaitAfterGameStart1)) {
-                    this.SwitchToState(GameState.GameStart2);
+                    this.switchState(GameState.GameStart2);
                 }
                 break;
             case GameState.GameStart2:
                 if (waitDuration(this.timer, GameConstants.WaitAfterGameStart2)) {
-                    this.SwitchToState(GameState.Game);
+                    this.switchState(GameState.Game);
                 }
                 break;
             case GameState.Game:
@@ -299,41 +296,41 @@ export class GameController extends Controller {
     }
 
     public BelmontDied(): void {
-        this.switchToSubstate(GameSubstate.BelmontDies);
+        this.switchSubstate(GameSubstate.BelmontDies);
     }
 
     public BelmontDeathAniFinished(): void {
-        this.switchToSubstate(GameSubstate.ItsCurtainsForYou);
+        this.switchSubstate(GameSubstate.ItsCurtainsForYou);
     }
 
     public ItsCurtainsAniFinished(): void {
         if (M._.Substate == GameSubstate.ItsCurtainsForYou)
-            this.switchToSubstate(GameSubstate.GameOver);
-        else this.SwitchToState(GameState.EndDemo);
+            this.switchSubstate(GameSubstate.GameOver);
+        else this.switchState(GameState.EndDemo);
     }
 
     public PreludeFinished(): void {
-        this.SwitchToState(GameState.TitleScreen);
+        this.switchState(GameState.TitleScreen);
     }
 
     public BossDefeated(): void {
-        this.switchToSubstate(GameSubstate.ToEndDemo);
+        this.switchSubstate(GameSubstate.ToEndDemo);
     }
 
     public HandleRoomExitViaMovement(targetRoom: number, dir: Direction): void {
         let Belmont = M._.Belmont;
         switch (dir) {
             case Direction.Up:
-                setPoint(Belmont.pos, Belmont.pos.x, Room.RoomHeight - (Belmont.size.y + 1));
+                setPoint(Belmont.pos, Belmont.pos.x, Tile.toStageCoord(GameConstants.StageScreenHeightTiles) - (Belmont.size.y + 4));
                 break;
             case Direction.Right:
-                setPoint(Belmont.pos, 0, Belmont.pos.y);
+                setPoint(Belmont.pos, 4, Belmont.pos.y);
                 break;
             case Direction.Down:
-                setPoint(Belmont.pos, Belmont.pos.x, 0);
+                setPoint(Belmont.pos, Belmont.pos.x, 4);
                 break;
             case Direction.Left:
-                setPoint(Belmont.pos, Room.RoomWidth - (Belmont.size.x + 1), Belmont.pos.y);
+                setPoint(Belmont.pos, Tile.toStageCoord(GameConstants.StageScreenWidthTiles) - (Belmont.size.x + 4), Belmont.pos.y);
                 break;
         }
         this.DoRoomExit(targetRoom);
@@ -342,7 +339,7 @@ export class GameController extends Controller {
     public DoRoomExit(targetRoom: number): void {
         M._.LastFoeThatWasHit = null;
         M._.LoadRoom(targetRoom);
-        this.switchToSubstate(GameSubstate.SwitchRoom);
+        this.switchSubstate(GameSubstate.SwitchRoom);
     }
 
     private setupGameStart(newState: GameState): void {
@@ -369,7 +366,7 @@ export class GameController extends Controller {
 
     public OpenGameMenu(): void {
         M._.GameMenu.Open();
-        this.switchToSubstate(GameSubstate.GameMenu);
+        this.switchSubstate(GameSubstate.GameMenu);
     }
 
     public CloseGameMenu(): void {
@@ -378,41 +375,40 @@ export class GameController extends Controller {
     }
 
     public LoadGame(sg: Savegame): void {
-        SM.StopEffect();
-        SM.stopMusic();
-        let oldcheckpoint = M._.Checkpoint;
-        M._ = sg.Model as GameModel;
-        M._.Checkpoint = LoadGame(CS.SaveSlotCheckpoint);
-        BStopwatch.Watches = sg.RegisteredWatches;
-        M._.InitAfterGameLoad();
-        M._.GameMenu = new GameMenu();
-        M._.startAfterLoad = true;
-        this.startAfterLoadTimer.pauseDuringMenu = false;
-        this.startAfterLoadTimer.restart();
-        BStopwatch.addWatch(this.startAfterLoadTimer);
-        BStopwatch.addWatch(this.timer);
-        SM.MusicBeingPlayed = sg.MusicBeingPlayed;
-        // ResourceMaster.reloadImg(BitmapId.Room, M._.CurrentRoom.BitmapPath);
+        // SM.StopEffect();
+        // SM.stopMusic();
+        // let oldcheckpoint = M._.Checkpoint;
+        // M._ = sg.Model as GameModel;
+        // M._.Checkpoint = LoadGame(CS.SaveSlotCheckpoint);
+        // BStopwatch.Watches = sg.RegisteredWatches;
+        // M._.InitAfterGameLoad();
+        // M._.GameMenu = new GameMenu();
+        // M._.startAfterLoad = true;
+        // this.startAfterLoadTimer.pauseDuringMenu = false;
+        // this.startAfterLoadTimer.restart();
+        // BStopwatch.addWatch(this.startAfterLoadTimer);
+        // BStopwatch.addWatch(this.timer);
+        // SM.MusicBeingPlayed = sg.MusicBeingPlayed;
     }
 
     public SaveGame(slot: number): void {
         if (M._.Substate == GameSubstate.GameMenu)
             this.CloseGameMenu();
-        BStopwatch.removeWatch(this.timer);
-        GameSaver.saveGame(M._, slot);
-        BStopwatch.addWatch(this.timer);
+        // BStopwatch.removeWatch(this.timer);
+        // GameSaver.saveGame(M._, slot);
+        // BStopwatch.addWatch(this.timer);
     }
 
     public StoreCheckpoint(): void {
-        BStopwatch.removeWatch(this.timer);
-        M._.Checkpoint = GameSaver.GetCheckpoint(M._);
-        BStopwatch.addWatch(this.timer);
+        // BStopwatch.removeWatch(this.timer);
+        // M._.Checkpoint = GameSaver.GetCheckpoint(M._);
+        // BStopwatch.addWatch(this.timer);
     }
 
     public LoadCheckpoint(): void {
-        if (M._.Checkpoint == null)
-            M._.Checkpoint = LoadGame(CS.SaveSlotCheckpoint);
-        this.LoadGame(M._.Checkpoint);
+        // if (M._.Checkpoint == null)
+        //     M._.Checkpoint = LoadGame(CS.SaveSlotCheckpoint);
+        // this.LoadGame(M._.Checkpoint);
     }
 
     public PickupItem(source: Item): void {

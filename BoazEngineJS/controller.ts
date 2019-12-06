@@ -1,13 +1,13 @@
 ﻿import { BStopwatch } from "./btimer";
 import { model } from "./engine";
-import { GameState, GameSubstate } from "./model";
 
 export abstract class Controller {
     protected timer: BStopwatch;
 
     constructor() {
         this.timer = BStopwatch.createWatch();
-        this.timer.restart;
+        this.timer.restart();
+        model.OldState = 0;
     }
 
     // Methods
@@ -33,7 +33,7 @@ export abstract class Controller {
     protected doStartAfterLoadState() {
     }
 
-    public switchState(newstate: GameState): void {
+    public switchState(newstate: number): void {
         this.disposeOldState(newstate);
         this.initNewState(newstate);
 
@@ -41,7 +41,7 @@ export abstract class Controller {
         model.gameState = newstate;
     }
 
-    public switchSubstate(newsubstate: GameSubstate): void {
+    public switchSubstate(newsubstate: number): void {
         this.disposeOldSubstate(newsubstate);
         this.initNewSubstate(newsubstate);
 
@@ -49,15 +49,11 @@ export abstract class Controller {
         model.gameSubstate = newsubstate;
     }
 
-    protected disposeOldState(newstate: GameState): void {
-    }
+    protected abstract disposeOldState(newState: number): void;
 
-    protected disposeOldSubstate(newsubstate: GameSubstate): void {
-    }
+    protected abstract disposeOldSubstate(newsubstate: number): void;
 
-    protected initNewSubstate(newsubstate: GameSubstate): void {
-    }
+    protected abstract initNewSubstate(newsubstate: number): void;
 
-    protected initNewState(newstate: GameState): void {
-    }
+    protected abstract initNewState(newstate: number): void;
 }

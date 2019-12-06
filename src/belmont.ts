@@ -194,6 +194,7 @@ export class Belmont extends Creature {
 			}
 		}
 		this.pos.x = ~~newx;
+		this.checkAndHandleRoomExit();
 	}
 
 	public sety(newy: number) {
@@ -214,6 +215,7 @@ export class Belmont extends Creature {
 			}
 		}
 		this.pos.y = ~~newy;
+		this.checkAndHandleRoomExit();
 	}
 
 	constructor(initPos?: Point) {
@@ -563,10 +565,10 @@ export class Belmont extends Creature {
 		if (this.CeilingCollision) {
 			this.handleCeilingCollision();
 		}
-		let possibleRoomExit = this.nearRoomExit();
-		if (possibleRoomExit && possibleRoomExit.destRoom !== Room.NO_ROOM_EXIT) {
-			C._.HandleRoomExitViaMovement(possibleRoomExit.destRoom, possibleRoomExit.direction);
-		}
+		// let possibleRoomExit = this.nearRoomExit();
+		// if (possibleRoomExit && possibleRoomExit.destRoom !== Room.NO_ROOM_EXIT) {
+		// 	C._.HandleRoomExitViaMovement(possibleRoomExit.destRoom, possibleRoomExit.direction);
+		// }
 	}
 
 	private checkAndHandleFloorCollisions(originalPos: Point): void {
@@ -641,14 +643,14 @@ export class Belmont extends Creature {
 	}
 
 	private nearRoomExit(): NearingRoomExitResult {
-		let exitUp = M._.currentRoom.NearingRoomExit(this.pos.x + 1, this.pos.y + 8); // 24
-		if (exitUp != null) return exitUp;
-		let exitRight = M._.currentRoom.NearingRoomExit(this.pos.x + 16, this.pos.y + 25);
-		if (exitRight != null) return exitRight;
-		let exitDown = M._.currentRoom.NearingRoomExit(this.pos.x + 1, this.pos.y + 32);
-		if (exitDown != null) return exitDown;
-		let exitLeft = M._.currentRoom.NearingRoomExit(this.pos.x, this.pos.y + 25);
-		if (exitLeft != null) return exitLeft;
+		let exitUp = M._.currentRoom.nearingRoomExit(this.wallhitbox_sx, this.pos.y + 4); // 24
+		if (exitUp.destRoom !== Room.NO_ROOM_EXIT) return exitUp;
+		let exitRight = M._.currentRoom.nearingRoomExit(this.wallhitbox_ex + 1, this.pos.y + 25);
+		if (exitRight.destRoom !== Room.NO_ROOM_EXIT) return exitRight;
+		let exitDown = M._.currentRoom.nearingRoomExit(this.wallhitbox_sx, this.pos.y + 36);
+		if (exitDown.destRoom !== Room.NO_ROOM_EXIT) return exitDown;
+		let exitLeft = M._.currentRoom.nearingRoomExit(this.wallhitbox_sx - 1, this.pos.y + 25);
+		if (exitLeft.destRoom !== Room.NO_ROOM_EXIT) return exitLeft;
 
 		return null;
 	}
@@ -683,9 +685,7 @@ export class Belmont extends Creature {
 		if (!this.hitState.Blink || C._.InEventState) {
 			super.paint(addPoints(roeOffset, offset));
 		}
-		else {
-		}
-		view.drawRectangle(this.wallhitbox_sx, CS.GameScreenStartY + this.wallhitbox_sy, this.wallhitbox_ex, CS.GameScreenStartY + this.wallhitbox_ey, Msx1Colors[15]);
+		// view.drawRectangle(this.wallhitbox_sx, CS.GameScreenStartY + this.wallhitbox_sy, this.wallhitbox_ex, CS.GameScreenStartY + this.wallhitbox_ey, Msx1Colors[15]);
 	}
 
 	public dispose(): void {

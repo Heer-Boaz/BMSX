@@ -1,7 +1,7 @@
-import { GameState, GameSubstate } from "../BoazEngineJS/model";
 import { GameConstants as CS } from "./gameconstants"
-import { GameModel as M } from "./sintervaniamodel";
+import { GameModel as M, GameState, GameSubstate } from "./sintervaniamodel";
 import { Point, IGameView } from '../BoazEngineJS/interfaces';
+import { view } from "../BoazEngineJS/engine";
 
 export class GameView implements IGameView {
     private static _instance: GameView;
@@ -15,8 +15,9 @@ export class GameView implements IGameView {
     }
 
     public drawGame(elapsedMs: number): void {
+        view.clear();
         if (M._.startAfterLoad)
-            return
+            return;
 
         switch (M._.gameState) {
             case GameState.LoadTheGame:
@@ -53,10 +54,6 @@ export class GameView implements IGameView {
                         break;
                     default:
                         break;
-                }
-
-                if (M._.gameSubstate != GameSubstate.SwitchRoom) {
-
                 }
 
                 if (M._.gameSubstate == GameSubstate.ItsCurtainsForYou || M._.gameSubstate == GameSubstate.ToEndDemo) {
