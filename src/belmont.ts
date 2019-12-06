@@ -326,6 +326,7 @@ export class Belmont extends Creature {
 			// this.checkAndHandleCollisions(originalPos);
 			if (this.FloorCollision) {
 				SM.playEffect(AudioId.Land);
+				if (this.Jumping) this.jumpState.Stop();
 			}
 		}
 		if (this.Jumping) {
@@ -373,10 +374,16 @@ export class Belmont extends Creature {
 
 	protected doJump(): void {
 		// let originalPos = copyPoint(this.pos);
-		this.sety(this.pos.y + this.jumpState.JumpAni.stepValue);
-		this.jumpState.JumpAni.doAnimation(1);
-		if (this.jumpState.JumpAni.finished) {
+		if (!this.jumpState.JumpAni.finished) {
+			this.sety(this.pos.y + this.jumpState.JumpAni.stepValue);
+			this.jumpState.JumpAni.doAnimation(1);
+			if (this.jumpState.JumpAni.finished) {
+				this.jumpState.GoingDownAfterAnimation();
+			}
+		}
+		else if (this.FloorCollision) {
 			this.jumpState.Stop();
+			// SM.playEffect(AudioId.Land);
 		}
 		// this.jumpState.GoingUp ? this.checkAndHandleWallAndCeilingCollisions(originalPos) : this.checkAndHandleCollisions(originalPos);
 		// originalPos.y = this.pos.y;
@@ -707,17 +714,25 @@ export class JumpState {
 	public get JumpHeightReached(): boolean {
 		return this.JumpAni.stepValue >= 0;
 	}
+
 	constructor() {
 		this.JumpTimer = new BStopwatch();
 		this.Jumping = false;
 		this.GoingUp = false;
 		this.JumpAni = new Animation<number>(JumpState.jumpYDelta, 1, false);
 	}
+
 	public Stop(): void {
 		this.JumpTimer.stop();
 		this.Jumping = false;
 		this.GoingUp = false;
 	}
+
+	public GoingDownAfterAnimation(): void {
+		this.JumpTimer.stop();
+		this.GoingUp = false;
+	}
+
 	public Start(jumpDir: Direction): void {
 		this.JumpTimer.restart();
 		this.Jumping = true;
