@@ -5,7 +5,6 @@ import { Direction } from "../BoazEngineJS/direction";
 import { TextWriter } from "./textwriter";
 import { Size, Point } from "../BoazEngineJS/interfaces";
 import { SM as S } from "../BoazEngineJS/soundmaster";
-import { ResourceMaster as RM } from './resourcemaster';
 import { GameController as C } from './gamecontroller';
 import { GameModel as M } from "./sintervaniamodel";
 import { SlotExists, LoadGame } from "../BoazEngineJS/gamestateloader";
@@ -105,7 +104,7 @@ export class GameMenu {
         this.visible = true;
         this.CurrentScreen = currentscreen;
         if (this.CurrentScreen == MenuItem.Main)
-            S.PlayEffect(RM.Sound.get(AudioId.Selectie));
+            S.PlayEffect(AudioId.Selectie);
     }
 
     public Close(): void {
@@ -159,7 +158,7 @@ export class GameMenu {
         if (Input.KC_SPACE) {
             switch (this.CurrentScreen) {
                 case MenuItem.Main:
-                    S.PlayEffect(RM.Sound.get(AudioId.Selectie));
+                    S.PlayEffect(AudioId.Selectie);
                     switch (this.selectedItem) {
                         case MenuItem.ReturnToGame:
                             C._.CloseGameMenu();
@@ -177,7 +176,7 @@ export class GameMenu {
                                 this.CurrentScreen = MenuItem.Save;
                                 this.selectedItemIndex = 0;
                             }
-                            else S.PlayEffect(RM.Sound.get(AudioId.Fout));
+                            else S.PlayEffect(AudioId.Fout);
                             break;
                         case MenuItem.ExitGame:
                             game.stop();
@@ -189,7 +188,7 @@ export class GameMenu {
                 case MenuItem.LoadFromMainMenu:
                     switch (this.selectedItem) {
                         case MenuItem.ReturnToMain:
-                            S.PlayEffect(RM.Sound.get(AudioId.Selectie));
+                            S.PlayEffect(AudioId.Selectie);
                             switch (this.CurrentScreen) {
                                 case MenuItem.LoadFromGameOver:
                                 case MenuItem.LoadFromMainMenu:
@@ -208,13 +207,13 @@ export class GameMenu {
                                     let sg = LoadGame(slot);
                                     C._.LoadGame(sg);
                                 }
-                                else S.PlayEffect(RM.Sound.get(AudioId.Fout));
+                                else S.PlayEffect(AudioId.Fout);
                             }
                             break;
                     }
                     break;
                 case MenuItem.Save:
-                    S.PlayEffect(RM.Sound.get(AudioId.Selectie));
+                    S.PlayEffect(AudioId.Selectie);
                     switch (this.selectedItem) {
                         case MenuItem.ReturnToMain:
                             this.CurrentScreen = MenuItem.Main;
@@ -232,7 +231,7 @@ export class GameMenu {
                 case MenuItem.OptionsFromMainMenu:
                     switch (this.selectedItem) {
                         case MenuItem.ReturnToMain:
-                            S.PlayEffect(RM.Sound.get(AudioId.Selectie));
+                            S.PlayEffect(AudioId.Selectie);
                             switch (this.CurrentScreen) {
                                 case MenuItem.OptionsFromMainMenu:
                                     this.Close();
@@ -244,7 +243,7 @@ export class GameMenu {
                             }
                             break;
                         default:
-                            S.PlayEffect(RM.Sound.get(AudioId.Fout));
+                            S.PlayEffect(AudioId.Fout);
                             break;
                     }
                     break;
@@ -331,7 +330,7 @@ export class GameMenu {
             }
         }
         if (selectionChanged) {
-            S.PlayEffect(RM.Sound.get(AudioId.Selectie));
+            S.PlayEffect(AudioId.Selectie);
         }
     }
 

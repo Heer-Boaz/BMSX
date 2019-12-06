@@ -6,7 +6,6 @@ import { view } from "../BoazEngineJS/engine";
 import { AudioId, BitmapId } from "./resourceids";
 import { Input } from "../BoazEngineJS/input";
 import { SM as S } from "../BoazEngineJS/soundmaster";
-import { ResourceMaster as RM } from './resourcemaster';
 import { GameController as C } from './gamecontroller';
 import { GameMenu } from "./gamemenu";
 import { MenuItem } from './mainmenu';
@@ -67,7 +66,7 @@ export class GameOver {
                             C._.LoadCheckpoint();
                             break;
                         case 1:
-                            S.PlayEffect(RM.Sound.get(AudioId.Selectie));
+                            S.PlayEffect(AudioId.Selectie);
                             Input.reset();
                             M._.GameMenu.Open(MenuItem.LoadFromGameOver);
                             this.state = State.SelectFile;
@@ -79,7 +78,7 @@ export class GameOver {
             }
         }
         if (selectionChanged) {
-            S.PlayEffect(RM.Sound.get(AudioId.Selectie));
+            S.PlayEffect(AudioId.Selectie);
         }
     }
 

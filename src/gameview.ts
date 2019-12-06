@@ -6,7 +6,6 @@ import { Title } from "./title";
 import { GameState, GameSubstate } from "../BoazEngineJS/model";
 import { GameConstants as CS } from "./gameconstants"
 import { AudioId, BitmapId } from "./resourceids";
-import { ResourceMaster } from "./resourcemaster";
 import { SM as S } from "../BoazEngineJS/soundmaster";
 import { Direction } from "../BoazEngineJS/direction";
 import { GameModel as M } from "./sintervaniamodel";

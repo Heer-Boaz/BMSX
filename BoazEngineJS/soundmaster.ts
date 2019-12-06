@@ -24,6 +24,9 @@ export class SM {
 	private static LimitToOneEffect: boolean = true;
 	public static MusicBeingPlayed: Song;
 	public static EffectBeingPlayed: Effect;
+	public static SoundEffectList: Map<AudioId, Effect> = new Map<AudioId, Effect>();
+	public static MusicList: Map<AudioId, Song> = new Map<AudioId, Song>();
+
 	// public static OnMusicBufferEnd(): void {
 	// 	if (SM.MusicBeingPlayed && SM.MusicBeingPlayed.NextSong) {
 	// 		let nextSong = SM.MusicBeingPlayed.NextSong;
@@ -37,7 +40,7 @@ export class SM {
 	// 	SM.EffectBeingPlayed = null;
 	// }
 
-	public static init(_audioResources: { [key: number]: RomResource; }, _effectList: Map<AudioId, Effect>, _musicList: Map<AudioId, Song>) {
+	public static init(_audioResources: { [key: number]: RomResource; }) {
 		SM.effectContext = new AudioContext({
 			latencyHint: 'interactive',
 			sampleRate: 44100,
@@ -104,7 +107,8 @@ export class SM {
 		SM.EffectBeingPlayed = null;
 	}
 
-	public static PlayEffect(effect: Effect): void {
+	public static PlayEffect(id: AudioId): void {
+		let effect = SM.SoundEffectList.get(id);
 		if (!SM.LimitToOneEffect || !SM.EffectBeingPlayed || (effect.Priority >= SM.EffectBeingPlayed.Priority)) {
 			this.playEffect(effect);
 		}
@@ -122,8 +126,8 @@ export class SM {
 		SM.MusicBeingPlayed = null;
 	}
 
-	public static PlayMusic(song: Song, stopCurrent: boolean = true): void {
-		this.playSong(song);
+	public static PlayMusic(id: AudioId, stopCurrent: boolean = true): void {
+		this.playSong(SM.MusicList.get(id));
 	}
 
 	public static ResumeEffect(): void {

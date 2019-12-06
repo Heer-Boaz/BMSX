@@ -1,6 +1,5 @@
 import { Chapter } from "./sintervaniamodel";
 import { GameConstants as GCS } from "./gameconstants"
-import { ResourceMaster } from "./resourcemaster";
 import { SM as S } from "../BoazEngineJS/soundmaster";
 import { Direction } from "../BoazEngineJS/direction";
 import { GameModel as M } from "./sintervaniamodel";
@@ -90,11 +89,11 @@ export class MainMenu {
         else if (Input.KC_LEFT)
             this.changeSelection(Direction.Left, selectionChanged);
         if (selectionChanged)
-            S.PlayEffect(ResourceMaster.Sound[AudioId.Selectie]);
+            S.PlayEffect(AudioId.Selectie);
         if (Input.KC_SPACE) {
             switch (this.state) {
                 case State.SelectMain:
-                    S.PlayEffect(ResourceMaster.Sound[AudioId.Selectie]);
+                    S.PlayEffect(AudioId.Selectie);
                     switch (this.selectedItem) {
                         case MenuItem.NewGame:
                             this.state = State.SelectChapter;
@@ -103,7 +102,7 @@ export class MainMenu {
                         case MenuItem.Continue:
                             if (SlotExists(CS.SaveSlotCheckpoint))
                                 C._.LoadCheckpoint();
-                            else S.PlayEffect(ResourceMaster.Sound[AudioId.Fout]);
+                            else S.PlayEffect(AudioId.Fout);
                             break;
                         case MenuItem.LoadGame:
                             Input.reset();
@@ -118,7 +117,7 @@ export class MainMenu {
                     }
                     break;
                 case State.SelectChapter:
-                    S.PlayEffect(ResourceMaster.Sound[AudioId.Selectie]);
+                    S.PlayEffect(AudioId.Selectie);
                     switch (this.selectedItem) {
                         case MenuItem.Debug:
                             M._.SelectedChapterToPlay = Chapter.Debug;

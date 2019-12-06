@@ -1,7 +1,6 @@
 import { GameModel as M, MainWeaponType, SecWeaponType } from "./sintervaniamodel";
 import { TriRoe } from "./triroe";
 import { SM as S } from "../BoazEngineJS/soundmaster";
-import { ResourceMaster as RM } from './resourcemaster';
 import { AudioId } from "./resourceids";
 import { waitDuration } from '../BoazEngineJS/common';
 
@@ -77,7 +76,7 @@ export class WeaponFireHandler {
         let roe = new TriRoe(M._.Belmont.pos, M._.Belmont.direction);
         M._.spawn(roe);
         M._.Belmont.UseRoe();
-        S.PlayEffect(RM.Sound.get(AudioId.Whip));
+        S.PlayEffect(AudioId.Whip);
     }
 
     private static handleFireCross(): void {

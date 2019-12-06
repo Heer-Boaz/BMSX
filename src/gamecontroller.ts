@@ -12,7 +12,6 @@ import { Room } from "./room";
 import { GameMenu } from "./gamemenu";
 import { waitDuration, setPoint } from '../BoazEngineJS/common';
 import { SM as S } from "../BoazEngineJS/soundmaster";
-import { ResourceMaster as RM, ResourceMaster } from './resourcemaster';
 import { Constants as CS } from "../BoazEngineJS/constants";
 import { GameView as V } from './gameview';
 import { GameConstants } from "./gameconstants";
@@ -87,7 +86,7 @@ export class GameController extends Controller {
                 break;
             case GameState.GameStart2:
                 this.timer.restart();
-                S.PlayMusic(RM.Music.get(AudioId.VampireKiller));
+                S.PlayMusic(AudioId.VampireKiller);
                 break;
             case GameState.Game:
                 break;
@@ -102,14 +101,14 @@ export class GameController extends Controller {
             case GameSubstate.Conversation:
                 break;
             case GameSubstate.BelmontDies:
-                S.PlayMusic(RM.Music.get(AudioId.OHNOES));
+                S.PlayMusic(AudioId.OHNOES);
                 break;
             case GameSubstate.ItsCurtainsForYou:
             case GameSubstate.ToEndDemo:
                 V._.ItsCurtains.Init();
                 break;
             case GameSubstate.GameOver:
-                S.PlayMusic(RM.Music.get(AudioId.Humiliation));
+                S.PlayMusic(AudioId.Humiliation);
                 V._.GameOverScreen.Init();
                 break;
             case GameSubstate.IngameMenu:
@@ -295,7 +294,7 @@ export class GameController extends Controller {
             M._.startAfterLoad = false;
             BStopwatch.removeWatch(this.startAfterLoadTimer);
             if (S.MusicBeingPlayed)
-                S.PlayMusic(S.MusicBeingPlayed);
+                S.PlayMusic(S.MusicBeingPlayed.AudioId);
         }
     }
 

@@ -4,7 +4,6 @@ import { View } from "./view"
 import { SM } from "./soundmaster";
 import { IGameView, Size } from './interfaces';
 import { BStopwatch } from './btimer';
-import { ResourceMaster } from '../src/resourcemaster';
 import { Input } from "./input";
 
 export type id2res = { [key: number]: RomResource; };

@@ -5,7 +5,6 @@ import { GameConstants as CS, GameConstants } from "./gameconstants";
 import { view } from "../BoazEngineJS/engine";
 import { RoomDataContainer } from "./RoomFactory";
 import { BitmapId } from "./resourceids";
-import { ResourceMaster } from './resourcemaster';
 
 export type NearingRoomExitResult = { destRoom: number, direction: Direction } | null;
 export type RoomInitDelegate = (room: Room) => void;
