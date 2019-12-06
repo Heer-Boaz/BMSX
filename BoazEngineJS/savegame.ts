@@ -1,6 +1,6 @@
-import { Song } from "./song";
 import { BStopwatch } from "./btimer";
 import { Model } from "./model";
+import { Song } from "./soundmaster";
 
 /*[Serializable]*/
 export class Savegame {

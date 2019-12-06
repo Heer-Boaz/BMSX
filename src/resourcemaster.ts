@@ -1,6 +1,6 @@
 import { AudioId, BitmapId } from "./resourceids";
-import { Effect } from "../BoazEngineJS/effect";
-import { Song } from "../BoazEngineJS/song";
+import { Effect } from "../BoazEngineJS/soundmaster";
+import { Song } from "../BoazEngineJS/soundmaster";
 // import { ResourceType, GameLoader } from '../BoazEngineJS/gameloader';
 // import { images } from "../BoazEngineJS/engine";
 
@@ -62,12 +62,12 @@ export class ResourceMaster {
 		// this.SoundEffectList.set(AudioId.Portal, { AudioId: AudioId.Portal, Priority: 0 });
 		this.SoundEffectList.set(AudioId.WallBreak, { AudioId: AudioId.WallBreak, Priority: 0 });
 		this.SoundEffectList.set(AudioId.Whip, { AudioId: AudioId.Whip, Priority: 0 });
-		this.MusicList.set(AudioId.Pietula, { Music: AudioId.Pietula, Loop: true, NextSong: null });
-		// this.MusicList.set(AudioId.Ending, { Music: AudioId.Ending, Loop: true, NextSong: null });
-		this.MusicList.set(AudioId.Humiliation, { Music: AudioId.Humiliation, Loop: false, NextSong: null });
-		// this.MusicList.set(AudioId.Huray, { Music: AudioId.Huray, Loop: false, NextSong: null });
-		this.MusicList.set(AudioId.OHNOES, { Music: AudioId.OHNOES, Loop: false, NextSong: null });
-		this.MusicList.set(AudioId.Prologue, { Music: AudioId.Prologue, Loop: false, NextSong: null });
-		this.MusicList.set(AudioId.VampireKiller, { Music: AudioId.VampireKiller, Loop: true, NextSong: null });
+		this.MusicList.set(AudioId.Pietula, { AudioId: AudioId.Pietula, loop: true, NextSong: null });
+		// this.MusicList.set(AudioId.Ending, { Music: AudioId.Ending, loop: true, NextSong: null });
+		this.MusicList.set(AudioId.Humiliation, { AudioId: AudioId.Humiliation, loop: false, NextSong: null });
+		// this.MusicList.set(AudioId.Huray, { Music: AudioId.Huray, loop: false, NextSong: null });
+		this.MusicList.set(AudioId.OHNOES, { AudioId: AudioId.OHNOES, loop: false, NextSong: null });
+		this.MusicList.set(AudioId.Prologue, { AudioId: AudioId.Prologue, loop: false, NextSong: null });
+		this.MusicList.set(AudioId.VampireKiller, { AudioId: AudioId.VampireKiller, loop: true, NextSong: null });
 	}
 }

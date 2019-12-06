@@ -1,8 +1,18 @@
-import { Song } from "./song";
-import { Effect } from "./effect";
 import { GameOptions as GO } from "../BoazEngineJS/gameoptions";
 import { AudioId } from "../src/resourceids";
 import { game, RomResource, id2res } from "./engine";
+
+export interface Effect {
+	AudioId: number;
+	Priority: number;
+	loop?: boolean;
+}
+
+export interface Song {
+	AudioId: number;
+	NextSong: Song;
+	loop?: boolean;
+}
 
 export class SM {
 	private static musicContext: AudioContext;
@@ -47,32 +57,37 @@ export class SM {
 		});
 	}
 
-	public static play(_track: Effect | Song): void {
-		let trackid: number;
-		if ((_track as Song).Music !== undefined) {
+	private static playNode(_track: Effect | Song, node: AudioBufferSourceNode, ctx: AudioContext): void {
+		SM.currentMusicNode = node;
+		node.connect(ctx.destination);
+		node.loop = _track.loop || false;
+		node.start(0);
+	}
+
+	private static playSong(_track: Song): void {
+		if (_track.AudioId !== undefined) {
 			SM.StopMusic();
 
-			SM.MusicBeingPlayed = <Song>_track;
-			trackid = (<Song>_track).Music;
+			SM.MusicBeingPlayed = _track as Song;
+			let trackid = _track.AudioId;
 
 			SM.createNode(trackid, SM.musicContext).then(node => {
 				SM.currentMusicNode = node;
-				node.connect(SM.musicContext.destination);
-				node.loop = (<Song>_track).Loop || false;
-				node.start(0);
+				SM.playNode(_track, node, SM.musicContext);
 			});
 		}
-		else {
+	}
+
+	public static playEffect(_track: Effect): void {
+		if (_track.AudioId !== undefined) {
 			SM.StopEffect();
 
-			SM.EffectBeingPlayed = <Effect>_track;
-			trackid = (<Effect>_track).AudioId;
+			SM.EffectBeingPlayed = _track;
+			let trackid = _track.AudioId;
 
 			SM.createNode(trackid, SM.effectContext).then(node => {
 				SM.currentEffectNode = node;
-				node.connect(SM.effectContext.destination);
-				node.loop = false;
-				node.start(0);
+				SM.playNode(_track, node, SM.effectContext);
 			});
 		}
 	}
@@ -91,12 +106,12 @@ export class SM {
 
 	public static PlayEffect(effect: Effect): void {
 		if (!SM.LimitToOneEffect || !SM.EffectBeingPlayed || (effect.Priority >= SM.EffectBeingPlayed.Priority)) {
-			this.play(effect);
+			this.playEffect(effect);
 		}
 	}
 
 	public static StopMusic(): void {
-		if (SM.MusicBeingPlayed && SM.MusicBeingPlayed.Music) {
+		if (SM.MusicBeingPlayed && SM.MusicBeingPlayed.AudioId) {
 			if (SM.currentMusicNode) {
 				SM.currentMusicNode.stop();
 				SM.currentMusicNode.disconnect();
@@ -108,7 +123,7 @@ export class SM {
 	}
 
 	public static PlayMusic(song: Song, stopCurrent: boolean = true): void {
-		this.play(song);
+		this.playSong(song);
 	}
 
 	public static ResumeEffect(): void {
@@ -117,13 +132,15 @@ export class SM {
 	}
 
 	public static ResumeMusic(): void {
-		if (!SM.MusicBeingPlayed || !SM.MusicBeingPlayed.Music) return;
+		if (!SM.MusicBeingPlayed || !SM.MusicBeingPlayed.AudioId) return;
 		console.warn("ResumeMusic not implemented :-(");
 	}
 
 	public static SetEffectsVolume(volume: number): void {
+		console.warn("Volume not implemented :-(");
 	}
 
 	public static SetMusicVolume(volume: number): void {
+		console.warn("Volume not implemented :-(");
 	}
 }
