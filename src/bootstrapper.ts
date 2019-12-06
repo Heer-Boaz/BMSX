@@ -17,7 +17,6 @@ export class Bootstrapper {
         game.setController(new GameController());
         let gameview = new GameView();
         game.setGameView(gameview);
-        gameview.init();
 
         View.images = rom.images;
         SM.SoundEffectList.set(AudioId.Init, { AudioId: AudioId.Init, Priority: -1 });

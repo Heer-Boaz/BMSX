@@ -34,4 +34,13 @@ export namespace GameConstants {
     export const WaitAfterRoomSwitch: number = 25;
     export const WaitAfterGameStart1: number = 2;
     export const WaitAfterGameStart2: number = 4;
+
+    export const pausePosX: number = 80;
+    export const pausePosY: number = 80;
+    export const pauseTextPosX: number = 104;
+    export const pauseTextPosY: number = 96;
+    export const pauseEndX: number = 176;
+    export const pauseEndY: number = 120;
+    export const pauseText: string = "Paused";
+
 }

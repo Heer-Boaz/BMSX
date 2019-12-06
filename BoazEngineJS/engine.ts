@@ -162,7 +162,7 @@ export class Game {
             view.clear();
             view.handleResize();
             SM.StopEffect();
-            SM.StopMusic();
+            SM.stopMusic();
         });
     }
 

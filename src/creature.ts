@@ -3,13 +3,8 @@ import { moveArea } from "../BoazEngineJS/common"
 import { Direction } from "../BoazEngineJS/direction";
 import { GameModel as M } from "./sintervaniamodel";
 import { TileSize } from "../BoazEngineJS/msx";
-import { AudioId, BitmapId } from "./resourceids";
-import { view } from "../BoazEngineJS/engine";
-import { Constants } from "../BoazEngineJS/constants";
 import { Area, Point } from "../BoazEngineJS/interfaces";
-import { DrawImgFlags } from "../BoazEngineJS/view";
 
-/*[Serializable]*/
 export abstract class Creature extends Sprite {
     public get wallHitArea(): Area {
         return this.hitarea;

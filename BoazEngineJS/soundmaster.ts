@@ -67,9 +67,9 @@ export class SM {
 		node.start(0);
 	}
 
-	private static playSong(_track: Song): void {
+	private static _playSong(_track: Song): void {
 		if (_track.AudioId !== undefined) {
-			SM.StopMusic();
+			SM.stopMusic();
 
 			SM.MusicBeingPlayed = _track as Song;
 			let trackid = _track.AudioId;
@@ -81,7 +81,7 @@ export class SM {
 		}
 	}
 
-	public static playEffect(_track: Effect): void {
+	public static _playEffect(_track: Effect): void {
 		if (_track.AudioId !== undefined) {
 			SM.StopEffect();
 
@@ -107,14 +107,14 @@ export class SM {
 		SM.EffectBeingPlayed = null;
 	}
 
-	public static PlayEffect(id: AudioId): void {
+	public static playEffect(id: AudioId): void {
 		let effect = SM.SoundEffectList.get(id);
 		if (!SM.LimitToOneEffect || !SM.EffectBeingPlayed || (effect.Priority >= SM.EffectBeingPlayed.Priority)) {
-			this.playEffect(effect);
+			this._playEffect(effect);
 		}
 	}
 
-	public static StopMusic(): void {
+	public static stopMusic(): void {
 		if (SM.MusicBeingPlayed && SM.MusicBeingPlayed.AudioId) {
 			if (SM.currentMusicNode) {
 				SM.currentMusicNode.stop();
@@ -126,25 +126,25 @@ export class SM {
 		SM.MusicBeingPlayed = null;
 	}
 
-	public static PlayMusic(id: AudioId, stopCurrent: boolean = true): void {
-		this.playSong(SM.MusicList.get(id));
+	public static playMusic(id: AudioId, stopCurrent: boolean = true): void {
+		this._playSong(SM.MusicList.get(id));
 	}
 
-	public static ResumeEffect(): void {
+	public static resumeEffect(): void {
 		if (!SM.EffectBeingPlayed || !SM.EffectBeingPlayed.AudioId) return;
 		console.warn("ResumeEffect not implemented :-(");
 	}
 
-	public static ResumeMusic(): void {
+	public static resumeMusic(): void {
 		if (!SM.MusicBeingPlayed || !SM.MusicBeingPlayed.AudioId) return;
 		console.warn("ResumeMusic not implemented :-(");
 	}
 
-	public static SetEffectsVolume(volume: number): void {
+	public static setEffectsVolume(volume: number): void {
 		console.warn("Volume not implemented :-(");
 	}
 
-	public static SetMusicVolume(volume: number): void {
+	public static setMusicVolume(volume: number): void {
 		console.warn("Volume not implemented :-(");
 	}
 }

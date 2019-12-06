@@ -1,7 +1,7 @@
 import { Foe } from "./foe";
 import { Belmont } from "./belmont";
 import { Savegame } from "../BoazEngineJS/savegame";
-import { Model, GameState } from "../BoazEngineJS/model";
+import { Model } from "../BoazEngineJS/model";
 import { BStopwatch } from "../BoazEngineJS/btimer";
 import { BossFoe } from "./bossfoe";
 import { WeaponItem, WeaponType } from "./weaponitem";
@@ -11,6 +11,15 @@ import { GameMenu } from "./gamemenu";
 import { Point, IGameObject } from "../BoazEngineJS/interfaces";
 import { Room } from "./room";
 import { RoomFactory } from "./RoomFactory";
+import { HUD } from "./hud";
+import { ItsCurtainsForYou } from "./itscurtainsforyou";
+import { GameOver } from "./gameover";
+import { MainMenu } from "./mainmenu";
+import { Title } from "./title";
+import { EndDemo } from "./enddemo";
+import { view } from "../BoazEngineJS/engine";
+import { TextWriter } from "./textwriter";
+import { MSXConstants } from "../BoazEngineJS/msx";
 
 declare module "../BoazEngineJS/model" {
     export const enum GameState {
@@ -148,6 +157,32 @@ export class GameModel extends Model {
     public RoomExitsLocked: boolean;
     public MainWeaponCooldownTimer: BStopwatch;
     public SecWeaponCooldownTimer: BStopwatch;
+    public Hud: HUD;
+    public ItsCurtains: ItsCurtainsForYou;
+    public GameOverScreen: GameOver;
+    public MainMenu: MainMenu;
+    public Title: Title;
+    public EndDemo: EndDemo;
+    public PauseObject: IGameObject;
+
+    public get ShowFoeBar(): boolean {
+        return GameModel._.BossBattle;
+    }
+    public get FoeHealthPercentage(): number {
+        let foe = GameModel._.LastFoeThatWasHit;
+        if (foe == null) {
+            if (!GameModel._.BossBattle)
+                return -1;
+            else foe = GameModel._.Boss;
+        }
+        if (foe.disposeFlag)
+            return 0;
+        return foe.healthPercentage;
+    }
+
+    public get FoeForWhichHealthPercentageIsGiven(): Foe {
+        return GameModel._.LastFoeThatWasHit != null ? GameModel._.LastFoeThatWasHit : GameModel._.Boss;
+    }
 
     private _selectedMainWeapon: MainWeaponType;
     public get SelectedMainWeapon(): MainWeaponType {
@@ -212,6 +247,7 @@ export class GameModel extends Model {
         this.MainWeaponCooldownTimer = BStopwatch.createWatch();
         this.SecWeaponCooldownTimer = BStopwatch.createWatch();
         this._hearts = 0;
+
         RoomFactory.PrepareData();
     }
 
@@ -225,6 +261,29 @@ export class GameModel extends Model {
         GameModel._.FoesDefeated.clear();
         GameModel._.ItemsPickedUp.clear();
         GameModel._.WeaponItemsPickedUp.clear();
+        this.Hud = new HUD();
+        this.ItsCurtains = new ItsCurtainsForYou();
+        this.GameOverScreen = new GameOver();
+        this.MainMenu = new MainMenu();
+        this.Title = new Title();
+        this.EndDemo = new EndDemo();
+        if (!this.PauseObject)
+            this.PauseObject = {
+                priority: 5000,
+                dispose() { },
+                disposeFlag: false,
+                id: 'pause',
+                pos: { x: GameConstants.pausePosX, y: GameConstants.pausePosY },
+                spawn() { },
+                paint() {
+                    view.fillRectangle(GameConstants.pausePosX, GameConstants.pausePosY, GameConstants.pauseEndX, GameConstants.pauseEndY, MSXConstants.Msx1Colors[1]);
+                    view.drawRectangle(GameConstants.pausePosX, GameConstants.pausePosY, GameConstants.pauseEndX, GameConstants.pauseEndY, MSXConstants.Msx1Colors[15]);
+                    TextWriter.drawText(GameConstants.pauseTextPosX, GameConstants.pauseTextPosY, GameConstants.pauseText);
+                },
+                takeTurn() { }
+            };
+        // this.spawn(this.PauseObject, null, true);
+
         this._hearts = 0;
         GameModel._.spawn(new Belmont({ x: GameConstants.Belmont_InitPos_x, y: GameConstants.Belmont_initPos_y }));
     }
@@ -232,7 +291,9 @@ export class GameModel extends Model {
     public InitAfterGameLoad(): void {
     }
 
-    public spawn(o: IGameObject): void {
+    public spawn(o: IGameObject, spawnpos?: Point, ifnotexists: boolean = false): void {
+        if (ifnotexists && this.id2object.has(o.id)) return; // Don't add objects that already exist
+
         if (o instanceof Belmont) {
             if (this.objects.findIndex(ob => ob instanceof Belmont) > -1)
                 throw Error("There is already a Belmont in the game! \"There can be only one!\"");
@@ -255,7 +316,7 @@ export class GameModel extends Model {
             else this.Foes.push(f);
         }
 
-        super.spawn(o);
+        super.spawn(o, spawnpos, ifnotexists);
     }
 
     public remove(o: IGameObject): void {

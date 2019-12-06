@@ -10,7 +10,7 @@ import { GameController as C } from './gamecontroller';
 import { GameMenu } from "./gamemenu";
 import { MenuItem } from './mainmenu';
 
-export enum State {
+export const enum State {
     SelectContOrLoad,
     SelectFile
 }
@@ -66,7 +66,7 @@ export class GameOver {
                             C._.LoadCheckpoint();
                             break;
                         case 1:
-                            S.PlayEffect(AudioId.Selectie);
+                            S.playEffect(AudioId.Selectie);
                             Input.reset();
                             M._.GameMenu.Open(MenuItem.LoadFromGameOver);
                             this.state = State.SelectFile;
@@ -78,7 +78,7 @@ export class GameOver {
             }
         }
         if (selectionChanged) {
-            S.PlayEffect(AudioId.Selectie);
+            S.playEffect(AudioId.Selectie);
         }
     }
 

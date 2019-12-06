@@ -41,7 +41,7 @@ export abstract class Foe extends Creature {
     public handleHit(source: PlayerProjectile): void {
         if (this.disposeFlag) return;
         M._.LastFoeThatWasHit = this;
-        SM.PlayEffect(AudioId.Hit);
+        SM.playEffect(AudioId.Hit);
     }
 
     protected loseHealth(source: PlayerProjectile): void {

@@ -11,7 +11,7 @@ import { WeaponFireHandler } from "./weaponfirehandler";
 import { Room } from "./room";
 import { GameMenu } from "./gamemenu";
 import { waitDuration, setPoint } from '../BoazEngineJS/common';
-import { SM as S } from "../BoazEngineJS/soundmaster";
+import { SM } from "../BoazEngineJS/soundmaster";
 import { Constants as CS } from "../BoazEngineJS/constants";
 import { GameView as V } from './gameview';
 import { GameConstants } from "./gameconstants";
@@ -46,7 +46,7 @@ export class GameController extends Controller {
     public DisposeOldState(oldState: GameState, newState: GameState): boolean {
         switch (oldState) {
             case GameState.TitleScreen:
-                S.StopMusic();
+                SM.stopMusic();
                 if (newState == GameState.Game)
                     this.setupGameStart(newState);
                 break;
@@ -73,20 +73,20 @@ export class GameController extends Controller {
     protected InitNewState(newState: GameState): void {
         switch (newState) {
             case GameState.Prelude:
-                V._.Title.Init();
+                M._.Title.Init();
                 break;
             case GameState.TitleScreen:
-                V._.MainMenu.Init();
+                M._.MainMenu.Init();
                 break;
             case GameState.EndDemo:
-                V._.EndDemo.Init();
+                M._.EndDemo.Init();
                 break;
             case GameState.GameStart1:
                 this.timer.restart();
                 break;
             case GameState.GameStart2:
                 this.timer.restart();
-                S.PlayMusic(AudioId.VampireKiller);
+                SM.playMusic(AudioId.VampireKiller);
                 break;
             case GameState.Game:
                 break;
@@ -101,15 +101,15 @@ export class GameController extends Controller {
             case GameSubstate.Conversation:
                 break;
             case GameSubstate.BelmontDies:
-                S.PlayMusic(AudioId.OHNOES);
+                SM.playMusic(AudioId.OHNOES);
                 break;
             case GameSubstate.ItsCurtainsForYou:
             case GameSubstate.ToEndDemo:
-                V._.ItsCurtains.Init();
+                M._.ItsCurtains.Init();
                 break;
             case GameSubstate.GameOver:
-                S.PlayMusic(AudioId.Humiliation);
-                V._.GameOverScreen.Init();
+                SM.playMusic(AudioId.Humiliation);
+                M._.GameOverScreen.Init();
                 break;
             case GameSubstate.IngameMenu:
                 BStopwatch.pauseAllRunningWatches(true);
@@ -140,18 +140,18 @@ export class GameController extends Controller {
         this.ElapsedMsDelta = elapsedMs;
         switch (M._.State) {
             case GameState.Prelude:
-                V._.Title.TakeTurn();
+                M._.Title.TakeTurn();
                 break;
             case GameState.TitleScreen:
-                V._.MainMenu.HandleInput();
-                V._.MainMenu.TakeTurn();
+                M._.MainMenu.HandleInput();
+                M._.MainMenu.TakeTurn();
                 if (M._.GameMenu.visible) {
                     M._.GameMenu.HandleInput();
                     M._.GameMenu.TakeTurn();
                 }
                 break;
             case GameState.EndDemo:
-                V._.EndDemo.TakeTurn();
+                M._.EndDemo.TakeTurn();
                 break;
             case GameState.GameStart1:
                 if (waitDuration(this.timer, GameConstants.WaitAfterGameStart1)) {
@@ -172,18 +172,18 @@ export class GameController extends Controller {
                     case GameSubstate.BelmontDies:
                         this.handleInputDuringGame();
                         M._.Belmont.takeTurn();
-                        V._.Hud.TakeTurn();
+                        M._.Hud.TakeTurn();
                         break;
                     case GameSubstate.ItsCurtainsForYou:
                     case GameSubstate.ToEndDemo:
                         this.handleInputDuringGame();
                         M._.Belmont.takeTurn();
-                        V._.Hud.TakeTurn();
-                        V._.ItsCurtains.TakeTurn();
+                        M._.Hud.TakeTurn();
+                        M._.ItsCurtains.TakeTurn();
                         break;
                     case GameSubstate.GameOver:
                         this.handleInputDuringGame();
-                        V._.GameOverScreen.TakeTurn();
+                        M._.GameOverScreen.TakeTurn();
                         M._.GameMenu.TakeTurn();
                         break;
                     case GameSubstate.SwitchRoom:
@@ -200,7 +200,7 @@ export class GameController extends Controller {
                         objects.forEach(o => o.takeTurn());
                         objects.filter(o => o.disposeFlag === true).forEach(o => M._.remove(o));
                         M._.currentRoom.TakeTurn();
-                        V._.Hud.TakeTurn();
+                        M._.Hud.TakeTurn();
                         break;
                 }
                 break;
@@ -222,7 +222,7 @@ export class GameController extends Controller {
                         objects.forEach(o => o.takeTurn());
                         objects.filter(o => o.disposeFlag === true).forEach(o => M._.remove(o));
                         M._.currentRoom.TakeTurn();
-                        V._.Hud.TakeTurn();
+                        M._.Hud.TakeTurn();
                         if (Input.KD_F5 && !M._.GameMenu.visible)
                             this.OpenGameMenu();
                         break;
@@ -244,7 +244,7 @@ export class GameController extends Controller {
             case GameSubstate.ToEndDemo:
                 break;
             case GameSubstate.GameOver:
-                V._.GameOverScreen.HandleInput();
+                M._.GameOverScreen.HandleInput();
                 if (M._.GameMenu.visible)
                     this.handleInputDuringGameMenu();
                 break;
@@ -293,8 +293,8 @@ export class GameController extends Controller {
         if (waitDuration(this.startAfterLoadTimer, GameConstants.WaitAfterLoadGame)) {
             M._.startAfterLoad = false;
             BStopwatch.removeWatch(this.startAfterLoadTimer);
-            if (S.MusicBeingPlayed)
-                S.PlayMusic(S.MusicBeingPlayed.AudioId);
+            if (SM.MusicBeingPlayed)
+                SM.playMusic(SM.MusicBeingPlayed.AudioId);
         }
     }
 
@@ -348,7 +348,7 @@ export class GameController extends Controller {
     private setupGameStart(newState: GameState): void {
         M._.InitModelForGameStart();
         Bootstrapper.BootstrapGame(M._.SelectedChapterToPlay);
-        V._.Hud.SetShownLevelsToProperValues();
+        M._.Hud.SetShownLevelsToProperValues();
         M._.State = newState;
         this.StoreCheckpoint();
     }
@@ -356,15 +356,15 @@ export class GameController extends Controller {
     public PauseGame(): void {
         M._.paused = true;
         BStopwatch.pauseAllRunningWatches();
-        S.StopEffect();
-        S.StopMusic();
+        // SM.StopEffect();
+        // SM.stopMusic();
     }
 
     public UnpauseGame(): void {
         M._.paused = false;
         BStopwatch.resumeAllPausedWatches();
-        S.ResumeEffect();
-        S.ResumeMusic();
+        // SM.resumeEffect();
+        // SM.resumeMusic();
     }
 
     public OpenGameMenu(): void {
@@ -378,21 +378,20 @@ export class GameController extends Controller {
     }
 
     public LoadGame(sg: Savegame): void {
-        S.StopEffect();
-        S.StopMusic();
+        SM.StopEffect();
+        SM.stopMusic();
         let oldcheckpoint = M._.Checkpoint;
         M._ = sg.Model as GameModel;
         M._.Checkpoint = LoadGame(CS.SaveSlotCheckpoint);
         BStopwatch.Watches = sg.RegisteredWatches;
         M._.InitAfterGameLoad();
         M._.GameMenu = new GameMenu();
-        V._.init();
         M._.startAfterLoad = true;
         this.startAfterLoadTimer.pauseDuringMenu = false;
         this.startAfterLoadTimer.restart();
         BStopwatch.addWatch(this.startAfterLoadTimer);
         BStopwatch.addWatch(this.timer);
-        S.MusicBeingPlayed = sg.MusicBeingPlayed;
+        SM.MusicBeingPlayed = sg.MusicBeingPlayed;
         // ResourceMaster.reloadImg(BitmapId.Room, M._.CurrentRoom.BitmapPath);
     }
 

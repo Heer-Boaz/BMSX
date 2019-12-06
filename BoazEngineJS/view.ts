@@ -52,6 +52,35 @@ export class View {
         self.canvas.style.top = (self.windowSize.y - self.canvas.height * self.scale) / 2 + "px";
     }
 
+    public DetermineMaxScaleForFullscreen(clientWidth: number, clientHeight: number, originalBufferWidth: number, originalBufferHeight: number): number {
+        if (clientWidth >= clientHeight) {
+            return clientHeight / <number>originalBufferHeight;
+        }
+        else {
+            return clientWidth / <number>originalBufferWidth;
+        }
+    }
+
+    public ToFullscreen(): void {
+        // https://zinoui.com/blog/javascript-fullscreen-api
+        window.addEventListener('keyup', View.triggerFullScreenOnFakeUserEvent);
+    }
+
+    public static triggerFullScreenOnFakeUserEvent(): void {
+        if (document.fullscreenEnabled) document.documentElement.requestFullscreen();
+        window.removeEventListener('keyup', View.triggerFullScreenOnFakeUserEvent);
+    }
+
+    public ToWindowed(): void {
+        window.addEventListener('keyup', View.triggerWindowedOnFakeUserEvent);
+    }
+
+    public static triggerWindowedOnFakeUserEvent(): void {
+        document.exitFullscreen();
+        window.removeEventListener('keyup', View.triggerWindowedOnFakeUserEvent);
+    }
+
+
     public clear(): void {
         view.context.translate(0.5, 0.5);
         view.context.clearRect(0, 0, this.canvas.width, this.canvas.height);

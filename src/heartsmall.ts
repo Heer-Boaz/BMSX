@@ -2,7 +2,6 @@ import { Sprite } from "../BoazEngineJS/sprite";
 import { Animation } from "../BoazEngineJS/animation"
 import { AudioId, BitmapId } from "./resourceids";
 import { GameConstants } from "./gameconstants";
-import { sound } from "../BoazEngineJS/engine";
 import { newArea } from "../BoazEngineJS/common";
 import { GameModel } from "./sintervaniamodel";
 import { SM } from "../BoazEngineJS/soundmaster";
@@ -65,7 +64,7 @@ export class HeartSmall extends Sprite {
 		if (this.objectCollide(GameModel._.Belmont)) {
 			++GameModel._.Hearts;
 			this.disposeFlag = true;
-			SM.PlayEffect(AudioId.Heart);
+			SM.playEffect(AudioId.Heart);
 		}
 	}
 

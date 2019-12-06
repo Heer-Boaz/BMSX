@@ -4,7 +4,7 @@ import { AudioId, BitmapId } from "./resourceids";
 import { Direction } from "../BoazEngineJS/direction";
 import { TextWriter } from "./textwriter";
 import { Size, Point } from "../BoazEngineJS/interfaces";
-import { SM as S } from "../BoazEngineJS/soundmaster";
+import { SM } from "../BoazEngineJS/soundmaster";
 import { GameController as C } from './gamecontroller';
 import { GameModel as M } from "./sintervaniamodel";
 import { SlotExists, LoadGame } from "../BoazEngineJS/gamestateloader";
@@ -104,7 +104,7 @@ export class GameMenu {
         this.visible = true;
         this.CurrentScreen = currentscreen;
         if (this.CurrentScreen == MenuItem.Main)
-            S.PlayEffect(AudioId.Selectie);
+            SM.playEffect(AudioId.Selectie);
     }
 
     public Close(): void {
@@ -112,11 +112,11 @@ export class GameMenu {
         this.selectedItemIndex = 0;
         switch (this.CurrentScreen) {
             case MenuItem.LoadFromGameOver:
-                V._.MainMenu.GameMenuClosed();
+                M._.MainMenu.GameMenuClosed();
                 break;
             case MenuItem.LoadFromMainMenu:
             case MenuItem.OptionsFromMainMenu:
-                V._.MainMenu.GameMenuClosed();
+                M._.MainMenu.GameMenuClosed();
                 break;
             default:
                 M._.ItemsInInventory.filter(i => i.Amount != 0);
@@ -158,7 +158,7 @@ export class GameMenu {
         if (Input.KC_SPACE) {
             switch (this.CurrentScreen) {
                 case MenuItem.Main:
-                    S.PlayEffect(AudioId.Selectie);
+                    SM.playEffect(AudioId.Selectie);
                     switch (this.selectedItem) {
                         case MenuItem.ReturnToGame:
                             C._.CloseGameMenu();
@@ -176,7 +176,7 @@ export class GameMenu {
                                 this.CurrentScreen = MenuItem.Save;
                                 this.selectedItemIndex = 0;
                             }
-                            else S.PlayEffect(AudioId.Fout);
+                            else SM.playEffect(AudioId.Fout);
                             break;
                         case MenuItem.ExitGame:
                             game.stop();
@@ -188,7 +188,7 @@ export class GameMenu {
                 case MenuItem.LoadFromMainMenu:
                     switch (this.selectedItem) {
                         case MenuItem.ReturnToMain:
-                            S.PlayEffect(AudioId.Selectie);
+                            SM.playEffect(AudioId.Selectie);
                             switch (this.CurrentScreen) {
                                 case MenuItem.LoadFromGameOver:
                                 case MenuItem.LoadFromMainMenu:
@@ -207,13 +207,13 @@ export class GameMenu {
                                     let sg = LoadGame(slot);
                                     C._.LoadGame(sg);
                                 }
-                                else S.PlayEffect(AudioId.Fout);
+                                else SM.playEffect(AudioId.Fout);
                             }
                             break;
                     }
                     break;
                 case MenuItem.Save:
-                    S.PlayEffect(AudioId.Selectie);
+                    SM.playEffect(AudioId.Selectie);
                     switch (this.selectedItem) {
                         case MenuItem.ReturnToMain:
                             this.CurrentScreen = MenuItem.Main;
@@ -231,7 +231,7 @@ export class GameMenu {
                 case MenuItem.OptionsFromMainMenu:
                     switch (this.selectedItem) {
                         case MenuItem.ReturnToMain:
-                            S.PlayEffect(AudioId.Selectie);
+                            SM.playEffect(AudioId.Selectie);
                             switch (this.CurrentScreen) {
                                 case MenuItem.OptionsFromMainMenu:
                                     this.Close();
@@ -243,7 +243,7 @@ export class GameMenu {
                             }
                             break;
                         default:
-                            S.PlayEffect(AudioId.Fout);
+                            SM.playEffect(AudioId.Fout);
                             break;
                     }
                     break;
@@ -263,7 +263,7 @@ export class GameMenu {
                         case MenuItem.Fullscreen:
                             if (GO.Fullscreen) {
                                 GO.Fullscreen = false;
-                                V._.ToWindowed();
+                                view.ToWindowed();
                                 game.GameOptionsChanged();
                             }
                             break;
@@ -272,7 +272,7 @@ export class GameMenu {
                                 GO.EffectsVolumePercentage += 10;
                                 if (GO.EffectsVolumePercentage > 100)
                                     GO.EffectsVolumePercentage = 100;
-                                S.SetEffectsVolume(GO.EffectsVolumePercentage / 100);
+                                SM.setEffectsVolume(GO.EffectsVolumePercentage / 100);
                                 game.GameOptionsChanged();
                             }
                             break;
@@ -281,7 +281,7 @@ export class GameMenu {
                                 GO.MusicVolumePercentage += 10;
                                 if (GO.MusicVolumePercentage > 100)
                                     GO.MusicVolumePercentage = 100;
-                                S.SetMusicVolume(GO.MusicVolumePercentage / 100);
+                                SM.setMusicVolume(GO.MusicVolumePercentage / 100);
                                 game.GameOptionsChanged();
                             }
                             break;
@@ -303,7 +303,7 @@ export class GameMenu {
                         case MenuItem.Fullscreen:
                             if (!GO.Fullscreen) {
                                 GO.Fullscreen = true;
-                                V._.ToFullscreen();
+                                view.ToFullscreen();
                                 game.GameOptionsChanged();
                             }
                             break;
@@ -312,7 +312,7 @@ export class GameMenu {
                                 GO.EffectsVolumePercentage -= 10;
                                 if (GO.EffectsVolumePercentage < 0)
                                     GO.EffectsVolumePercentage = 0;
-                                S.SetEffectsVolume(GO.EffectsVolumePercentage / 100);
+                                SM.setEffectsVolume(GO.EffectsVolumePercentage / 100);
                                 game.GameOptionsChanged();
                             }
                             break;
@@ -321,7 +321,7 @@ export class GameMenu {
                                 GO.MusicVolumePercentage -= 10;
                                 if (GO.MusicVolumePercentage < 0)
                                     GO.MusicVolumePercentage = 0;
-                                S.SetMusicVolume(GO.MusicVolumePercentage / 100);
+                                SM.setMusicVolume(GO.MusicVolumePercentage / 100);
                                 game.GameOptionsChanged();
                             }
                             break;
@@ -330,7 +330,7 @@ export class GameMenu {
             }
         }
         if (selectionChanged) {
-            S.PlayEffect(AudioId.Selectie);
+            SM.playEffect(AudioId.Selectie);
         }
     }
 

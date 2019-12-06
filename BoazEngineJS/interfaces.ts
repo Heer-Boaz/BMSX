@@ -17,6 +17,12 @@ export interface Color {
     a?: number;
 }
 
+export class PixelData {
+    public B: number;
+    public G: number;
+    public R: number;
+}
+
 export interface IGameObject {
     // Properties
     id: string | null;
@@ -42,7 +48,7 @@ export interface IGameObject {
 
 export interface IRenderObject extends IGameObject {
     size: Size;
-    hitarea: Area | null;
+    hitarea?: Area;
     visible: boolean;
     hitbox_sx?: number;
     hitbox_sy?: number;

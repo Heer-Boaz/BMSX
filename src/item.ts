@@ -1,7 +1,7 @@
 import { Sprite } from "../BoazEngineJS/sprite";
 import { newArea, area2size, moveArea } from "../BoazEngineJS/common";
 import { GameModel } from "./sintervaniamodel";
-import { SM as S } from "../BoazEngineJS/soundmaster";
+import { SM } from "../BoazEngineJS/soundmaster";
 import { GameController } from "./gamecontroller";
 import { Area, Point } from "../BoazEngineJS/interfaces";
 import { AudioId, BitmapId } from "./resourceids";
@@ -41,14 +41,14 @@ export class Item extends Sprite {
             switch (this.ItsType) {
                 case ItemType.HeartSmall:
                 case ItemType.HeartBig:
-                    S.PlayEffect(AudioId.Heart);
+                    SM.playEffect(AudioId.Heart);
                     break;
                 case ItemType.KeySmall:
                 case ItemType.KeyBig:
-                    S.PlayEffect(AudioId.Key);
+                    SM.playEffect(AudioId.Key);
                     break;
                 default:
-                    S.PlayEffect(AudioId.Item);
+                    SM.playEffect(AudioId.Item);
                     break;
             }
             this.disposeFlag = true;

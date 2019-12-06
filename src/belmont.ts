@@ -9,7 +9,7 @@ import { AudioId, BitmapId } from "./resourceids";
 import { Area, Point } from '../BoazEngineJS/interfaces';
 import { Room, NearingRoomExitResult } from './room';
 import { newPoint } from "../BoazEngineJS/common";
-import { SM as S } from "../BoazEngineJS/soundmaster";
+import { SM } from "../BoazEngineJS/soundmaster";
 import { GameController as C } from './gamecontroller';
 import { GameModel as M } from './sintervaniamodel';
 import { view } from "../BoazEngineJS/engine";
@@ -285,7 +285,7 @@ export class Belmont extends Creature {
 				this.pos.y += 4;
 			this.checkAndHandleCollisions(originalPos);
 			if (this.FloorCollision) {
-				S.PlayEffect(AudioId.Land);
+				SM.playEffect(AudioId.Land);
 			}
 		}
 		if (this.Jumping) {
@@ -416,7 +416,7 @@ export class Belmont extends Creature {
 			if (this.Roeing) {
 				this.roeState.Stop();
 			}
-			S.PlayEffect(AudioId.Au);
+			SM.playEffect(AudioId.Au);
 		}
 	}
 

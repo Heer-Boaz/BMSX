@@ -11,7 +11,7 @@ export class ItsCurtainsForYou {
     private curtainPartCount: number;
     private timer: BStopwatch;
     private msCurtainPartWait: number = 1;
-    private maxCurtainParts: number = GameConstants.GameScreenWidth / TileSize;
+    private maxCurtainParts: number = ~~(GameConstants.GameScreenWidth / TileSize) + 1;
 
     public Init(): void {
         this.curtainPartCount = 0;

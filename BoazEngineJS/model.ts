@@ -59,20 +59,22 @@ export abstract class Model {
     public abstract InitModelForGameStart(): void;
 
     public clearModel(): void {
-        this.objects.forEach(x => {
-            x.dispose();
+        this.objects.forEach(o => {
+            o.dispose();
         });
         this.objects.length = 0;
         this.id2object.clear();
         this.paused = false;
     }
 
-    public spawn(o: IGameObject, pos?: Point): void {
+    public spawn(o: IGameObject, pos?: Point, ifnotexists = false): void {
+        if (ifnotexists && this.id2object.has(o.id)) return; // Don't add objects that already exist
+
         if (o == null) throw new Error("Cannot spawn object of type null.");
-        if (this.objects.indexOf(o) > -1) throw new Error("GameObject already exists in the game model!");
+        // if (this.objects.indexOf(o) > -1) throw new Error("GameObject already exists in the game model!");
 
         this.objects.push(o);
-        if (o.id != null)
+        if (o.id)
             this.id2object.set(o.id, o);
         if (pos) o.spawn(pos);
         else o.spawn(null);
@@ -89,5 +91,6 @@ export abstract class Model {
         else throw new Error("Could not find object to remove.");
 
         if (o.id != null && this.id2object.has(o.id)) this.id2object.delete(o.id);
+        o.dispose();
     }
 }

@@ -50,8 +50,8 @@ export class HUD {
         if (M._ != null) {
             if (M._.Belmont != null)
                 this.shownHealthLevel = M._.Belmont.HealthPercentage;
-            this.shownFoeHealthLevel = V._.FoeHealthPercentage;
-            this.foeForWhichHealthLevelIsShown = V._.FoeForWhichHealthPercentageIsGiven;
+            this.shownFoeHealthLevel = M._.FoeHealthPercentage;
+            this.foeForWhichHealthLevelIsShown = M._.FoeForWhichHealthPercentageIsGiven;
         }
     }
 
@@ -71,13 +71,13 @@ export class HUD {
 
         if (CS.AnimateFoeHealthLevel) {
             if (waitDuration(this.foebarTimer, HUD.MsDurationFoeBarChange)) {
-                if (this.shownFoeHealthLevel > V._.FoeHealthPercentage)
+                if (this.shownFoeHealthLevel > M._.FoeHealthPercentage)
                     this.shownFoeHealthLevel--;
-                else if (this.shownFoeHealthLevel < V._.FoeHealthPercentage)
+                else if (this.shownFoeHealthLevel < M._.FoeHealthPercentage)
                     this.shownFoeHealthLevel++;
             }
         }
-        else this.shownFoeHealthLevel = V._.FoeHealthPercentage;
+        else this.shownFoeHealthLevel = M._.FoeHealthPercentage;
     }
 
     private percentageToBarLength(percentage: number): number {
@@ -102,12 +102,12 @@ export class HUD {
         let lengthShown: number, lengthBefore: number;
 
         if (M._.BossBattle) {
-            if (V._.FoeForWhichHealthPercentageIsGiven !== this.foeForWhichHealthLevelIsShown) {
-                this.foeForWhichHealthLevelIsShown = V._.FoeForWhichHealthPercentageIsGiven;
-                this.shownFoeHealthLevel = V._.FoeHealthPercentage;
+            if (M._.FoeForWhichHealthPercentageIsGiven !== this.foeForWhichHealthLevelIsShown) {
+                this.foeForWhichHealthLevelIsShown = M._.FoeForWhichHealthPercentageIsGiven;
+                this.shownFoeHealthLevel = M._.FoeHealthPercentage;
             }
             lengthShown = this.percentageToBarLength(this.shownFoeHealthLevel);
-            lengthBefore = this.percentageToBarLength(V._.FoeHealthPercentage);
+            lengthBefore = this.percentageToBarLength(M._.FoeHealthPercentage);
         }
         else {
             lengthShown = this.percentageToBarLength(100);
