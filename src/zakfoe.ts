@@ -10,8 +10,8 @@ import { Animation, AniStepReturnValue } from "../BoazEngineJS/animation";
 import { GameModel as M } from "./sintervaniamodel";
 import { GameConstants as CS } from "./gameconstants";
 import { TileSize } from "../BoazEngineJS/msx";
+import { bst } from "../BoazEngineJS/statemachine";
 
-/*[Serializable]*/
 type AniType = { img: BitmapId, dy: number };
 
 export class ZakFoe extends Foe {
@@ -19,77 +19,128 @@ export class ZakFoe extends Foe {
 		return 1;
 	}
 
-	protected get moveBeforeFrameChange(): number {
-		return 0;
-	}
-
 	public get respawnOnRoomEntry(): boolean {
 		return true;
 	}
 
 	protected static ZakFoeHitArea: Area = newArea(2, 2, 14, 14);
-	protected static zakFoeSprites: Map<Direction, BitmapId[]> = new Map<Direction, BitmapId[]>([
-		// [Direction.Right, [BitmapId.ZakFoe_1, BitmapId.ZakFoe_2, BitmapId.ZakFoe_3]],
-		// [Direction.Left, [BitmapId.ZakFoe_1, BitmapId.ZakFoe_2, BitmapId.ZakFoe_3]],
-	]);
-	protected timer: BStopwatch;
+	protected fst: bst<ZakFoe, { i: BitmapId, dy: number }>;
 
-	protected get movementSprites(): Map<Direction, BitmapId[]> {
-		return ZakFoe.zakFoeSprites;
-	}
-
-	protected animation: Animation<AniType>;
-
-	constructor(pos: Point, itemSpawned: ItemType = Item.Type.HeartSmall) {
+	constructor(pos: Point, dir: Direction, itemSpawned: ItemType = ItemType.HeartSmall) {
 		super(pos);
 		this.canHurtPlayer = true;
-		// this.animation = new Animation<AniType>(AnimationFrames, null, true);
-		this.timer = BStopwatch.createWatch();
-		this.imgid = <number>this.animation.stepValue.img;
-		this.timer.restart();
+		this.imgid = BitmapId.ZakFoe1;
 		this.hitarea = ZakFoe.ZakFoeHitArea;
 		this.size = newSize(16, 16);
 		this.itemSpawnedAfterKill = itemSpawned;
-		this.direction = Direction.Left;
+		this.direction = dir;
 		this.health = 1;
+
+		this.fst = new bst<ZakFoe, { i: BitmapId, dy: number }>(this, 0, true);
+		let state0 = this.fst.addNewState(0);
+		state0.tapedata = [
+			null,
+			{ i: BitmapId.ZakFoe1, dy: -4 },
+			{ i: BitmapId.ZakFoe1, dy: -2 },
+			{ i: BitmapId.ZakFoe2, dy: -1 },
+			{ i: BitmapId.ZakFoe2, dy: -1 },
+			{ i: BitmapId.ZakFoe2, dy: 0 },
+			{ i: BitmapId.ZakFoe2, dy: 1 },
+			{ i: BitmapId.ZakFoe2, dy: 1 },
+			{ i: BitmapId.ZakFoe2, dy: 2 },
+			{ i: BitmapId.ZakFoe2, dy: 5 },
+			{ i: BitmapId.ZakFoe3, dy: 0 },
+			{ i: BitmapId.ZakFoe3, dy: 0 },
+			{ i: BitmapId.ZakFoe1, dy: -1 },
+		];
+		state0.delta2tapehead = 2;
+		state0.onrun = (s) => {
+			++s.tapeheadnudges;
+
+			switch (s.target.direction) {
+				case Direction.Left:
+					s.target.pos.x -= 1;
+					// Handle game screen collision
+					if (s.target.pos.x <= 0)
+						s.target.direction = Direction.Right;
+					// Handle wall / missing floor collision
+					if (M._.currentRoom.AnyCollisionsTiles(true, { x: s.target.hitbox_sx, y: s.target.hitbox_sy }, { x: s.target.hitbox_sx, y: s.target.hitbox_ey }))
+						s.target.direction = Direction.Right;
+					// if (!M._.currentRoom.AnyCollisionsTiles(true, { x: s.target.hitbox_sx, y: s.target.hitbox_ey + TileSize + 4 }))
+					// 	s.target.direction = Direction.Right;
+					break;
+				case Direction.Right: s.target.pos.x += 1;
+					// Handle game screen collision
+					if (s.target.pos.x >= CS.GameScreenWidth)
+						s.target.direction = Direction.Left;
+					// Handle wall / missing floor collision
+					if (M._.currentRoom.AnyCollisionsTiles(true, { x: s.target.hitbox_ex, y: s.target.hitbox_sy }, { x: s.target.hitbox_ex, y: s.target.hitbox_ey }))
+						s.target.direction = Direction.Left;
+					// if (!M._.currentRoom.AnyCollisionsTiles(true, { x: s.target.hitbox_ex, y: s.target.hitbox_ey + TileSize + 4 }))
+					// 	s.target.direction = Direction.Left;
+					break;
+			}
+		};
+		state0.ontapeend = (s) => {
+			s.parent.transition(1);
+		};
+		state0.oninitstate = (s) => {
+			s.setTapeheadNoEvent(0);
+			// s.target.imgid = s.currentdata.i;
+		};
+		state0.ontapeheadmove = (s) => {
+			s.target.imgid = s.currentdata.i;
+			s.target.pos.y += s.currentdata.dy;
+		};
+
+		let state1 = this.fst.addNewState(1);
+		state1.delta2tapehead = 8;
+		state1.onrun = (s) => {
+			++s.tapeheadnudges;
+		};
+		state1.ontapeheadmove = (s) => {
+			s.parent.transition(0);
+		};
+		state1.oninitstate = (s) => {
+			s.setTapeheadNoEvent(0);
+		};
 	}
 
 	public takeTurn(): void {
-		let stepValue = this.animation.doAnimation(this.timer, { img: this.imgid, dy: 0 });
-		this.imgid = stepValue.stepValue.img;
-		this.pos.y += stepValue.stepValue.dy;
-		// if (this.imgid == BitmapId.ZakFoe_2) {
-		if (this.imgid == 0) {
-			switch (this.direction) {
-				case Direction.Left:
-					this.pos.x -= 1;
-					// Handle game screen collision
-					if (this.pos.x <= 0)
-						this.direction = Direction.Right;
-					// Handle wall / missing floor collision
-					if (M._.currentRoom.AnyCollisionsTiles(true, { x: this.hitbox_sx, y: this.hitbox_sy }, { x: this.hitbox_sx, y: this.hitbox_ey }))
-						this.direction = Direction.Right;
-					if (!M._.currentRoom.AnyCollisionsTiles(true, { x: this.hitbox_sx, y: this.hitbox_ey + TileSize + 4 }))
-						this.direction = Direction.Right;
-					break;
-				case Direction.Right:
-					this.pos.x += 1;
-					// Handle game screen collision
-					if (this.pos.x >= CS.GameScreenWidth)
-						this.direction = Direction.Left;
-					// Handle wall / missing floor collision
-					if (M._.currentRoom.AnyCollisionsTiles(true, { x: this.hitbox_ex, y: this.hitbox_sy }, { x: this.hitbox_ex, y: this.hitbox_ey }))
-						this.direction = Direction.Left;
-					if (!M._.currentRoom.AnyCollisionsTiles(true, { x: this.hitbox_ex, y: this.hitbox_ey + TileSize + 4 }))
-						this.direction = Direction.Left;
-					break;
-			}
-		}
+		if (this.disposeFlag) return;
+		this.fst.run();
 		super.takeTurn();
-
+		// this.imgid = stepValue.stepValue.img;
+		// this.pos.y += stepValue.stepValue.dy;
+		// if (this.imgid == 0) {
+		// 	switch (this.direction) {
+		// 		case Direction.Left:
+		// 			this.pos.x -= 1;
+		// 			// Handle game screen collision
+		// 			if (this.pos.x <= 0)
+		// 				this.direction = Direction.Right;
+		// 			// Handle wall / missing floor collision
+		// 			if (M._.currentRoom.AnyCollisionsTiles(true, { x: this.hitbox_sx, y: this.hitbox_sy }, { x: this.hitbox_sx, y: this.hitbox_ey }))
+		// 				this.direction = Direction.Right;
+		// 			if (!M._.currentRoom.AnyCollisionsTiles(true, { x: this.hitbox_sx, y: this.hitbox_ey + TileSize + 4 }))
+		// 				this.direction = Direction.Right;
+		// 			break;
+		// 		case Direction.Right:
+		// 			this.pos.x += 1;
+		// 			// Handle game screen collision
+		// 			if (this.pos.x >= CS.GameScreenWidth)
+		// 				this.direction = Direction.Left;
+		// 			// Handle wall / missing floor collision
+		// 			if (M._.currentRoom.AnyCollisionsTiles(true, { x: this.hitbox_ex, y: this.hitbox_sy }, { x: this.hitbox_ex, y: this.hitbox_ey }))
+		// 				this.direction = Direction.Left;
+		// 			if (!M._.currentRoom.AnyCollisionsTiles(true, { x: this.hitbox_ex, y: this.hitbox_ey + TileSize + 4 }))
+		// 				this.direction = Direction.Left;
+		// 			break;
+		// 	}
+		// }
 	}
-	public Dispose(): void {
-		BStopwatch.removeWatch(this.timer);
+
+	public dispose(): void {
 	}
 
 	public handleHit(source: PlayerProjectile): void {

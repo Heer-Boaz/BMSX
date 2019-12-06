@@ -42,10 +42,10 @@ export class Bootstrapper {
     }
     private static bootstrapGameForGameStart(): void {
         M._.LoadRoom(1);
-        setPoint(M._.Belmont.pos, <number>Tile.ToCoord(15), <number>Tile.ToCoord(10));
+        setPoint(M._.Belmont.pos, Tile.toStageCoord(15), Tile.toStageCoord(10));
     }
     private static bootstrapGameForDebug(): void {
         M._.LoadRoom(100);
-        setPoint(M._.Belmont.pos, <number>Tile.ToCoord(15), <number>Tile.ToCoord(10));
+        setPoint(M._.Belmont.pos, Tile.toStageCoord(15), Tile.toStageCoord(10));
     }
 }

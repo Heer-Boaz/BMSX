@@ -53,16 +53,16 @@ export class EndDemo {
                 TextWriter.drawText(20, 192, "Redelijk gedaan, Belmont!");
                 break;
             case State.Boaz:
-                TextWriter.drawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(9), "Zo, dat was het weer!");
-                TextWriter.drawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(11), "ervan hebben genoten");
-                TextWriter.drawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(12), "en dat is ook terecht.");
-                TextWriter.drawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(14), "Dit verhaal is nog niet");
-                TextWriter.drawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(15), "afgelopen,dus bij");
-                TextWriter.drawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(16), "belangstelling komt er");
-                TextWriter.drawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(17), "wellicht een nieuw");
-                TextWriter.drawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(18), "hoofdstuk in dit");
-                TextWriter.drawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(19), "spannende en meeslepende");
-                TextWriter.drawText(<number>Tile.ToCoord(1), <number>Tile.ToCoord(20), "verhaal!");
+                TextWriter.drawText(Tile.toStageCoord(1), Tile.toStageCoord(9), "Zo, dat was het weer!");
+                TextWriter.drawText(Tile.toStageCoord(1), Tile.toStageCoord(11), "ervan hebben genoten");
+                TextWriter.drawText(Tile.toStageCoord(1), Tile.toStageCoord(12), "en dat is ook terecht.");
+                TextWriter.drawText(Tile.toStageCoord(1), Tile.toStageCoord(14), "Dit verhaal is nog niet");
+                TextWriter.drawText(Tile.toStageCoord(1), Tile.toStageCoord(15), "afgelopen,dus bij");
+                TextWriter.drawText(Tile.toStageCoord(1), Tile.toStageCoord(16), "belangstelling komt er");
+                TextWriter.drawText(Tile.toStageCoord(1), Tile.toStageCoord(17), "wellicht een nieuw");
+                TextWriter.drawText(Tile.toStageCoord(1), Tile.toStageCoord(18), "hoofdstuk in dit");
+                TextWriter.drawText(Tile.toStageCoord(1), Tile.toStageCoord(19), "spannende en meeslepende");
+                TextWriter.drawText(Tile.toStageCoord(1), Tile.toStageCoord(20), "verhaal!");
                 break;
         }
     }

@@ -57,6 +57,6 @@ export class TriRoe extends PlayerProjectile {
 		// The tri-roe is part of the Belmont-sprite and is not drawn
 	}
 
-	public Dispose(): void {
+	public dispose(): void {
 	}
 }

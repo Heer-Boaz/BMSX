@@ -78,6 +78,9 @@ export class Belmont extends Creature {
 		return 2;
 	}
 
+	protected moveLeftBeforeFrameChange: number = 0;
+	protected currentWalkAnimationFrame: number = 0;
+
 	private state: State;
 	public get Blink(): boolean {
 		return this.hitState.Blink;
@@ -353,6 +356,22 @@ export class Belmont extends Creature {
 		this.animateMovement(1);
 		if (!this.multipleDirButtonsPressed())
 			this.firstPressedButton = this.direction;
+	}
+
+	protected animateMovement(movedDistance: number): void {
+		if (movedDistance > 0) {
+			this.moveLeftBeforeFrameChange -= movedDistance;
+			if (this.moveLeftBeforeFrameChange < 0) {
+				this.moveLeftBeforeFrameChange = this.moveBeforeFrameChange;
+				if (++this.currentWalkAnimationFrame >= this.movementSprites.get(this.direction).length) {
+					this.currentWalkAnimationFrame = 1;
+				}
+			}
+		}
+		else {
+			this.currentWalkAnimationFrame = 0;
+			this.determineFrame();
+		}
 	}
 
 	public determineFrame(): void {

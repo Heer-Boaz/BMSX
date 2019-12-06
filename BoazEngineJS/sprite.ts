@@ -15,15 +15,31 @@ export abstract class Sprite implements IRenderObject {
 	public priority: number;
 	public disposeFlag: boolean;
 	public imgid: number;
-	public hitbox_sx?: number;
-	public hitbox_sy?: number;
-	public hitbox_sz?: number;
-	public hitbox_ex?: number;
-	public hitbox_ey?: number;
-	public hitbox_ez?: number;
-	public x_plus_width?: number;
-	public y_plus_height?: number;
-	public z_plus_depth?: number;
+
+	public get hitbox_sx(): number {
+		return this.pos.x + this.hitarea.start.x;
+	}
+
+	public get hitbox_sy(): number {
+		return this.pos.y + this.hitarea.start.y;
+	}
+
+	public get hitbox_ex(): number {
+		return this.pos.x + this.hitarea.end.x;
+	}
+
+	public get hitbox_ey(): number {
+		return this.pos.x + this.hitarea.end.x;
+	}
+
+	public get x_plus_width(): number {
+		return this.pos.x + this.size.x;
+	}
+
+	public get y_plus_height(): number {
+		return this.pos.y + this.size.y;
+	}
+
 	public disposeOnSwitchRoom?: boolean;
 	public oncollide: (src: IRenderObject) => void;
 

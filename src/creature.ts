@@ -11,16 +11,12 @@ import { DrawImgFlags } from "../BoazEngineJS/view";
 
 /*[Serializable]*/
 export abstract class Creature extends Sprite {
-    protected moveBeforeFrameChange: number;
-    protected movementSprites: Map<Direction, BitmapId[]>;
-    protected moveLeftBeforeFrameChange: number = 0;
-    protected currentWalkAnimationFrame: number = 0;
-
     public get wallHitArea(): Area {
-        return <Area>this.hitarea;
+        return this.hitarea;
     }
 
     public set wallHitArea(value: Area) {
+        this.wallHitArea = value;
     }
 
     private _direction: Direction;
@@ -55,27 +51,6 @@ export abstract class Creature extends Sprite {
 
     public set id(value: string) {
         this.customId = value;
-    }
-
-    public determineFrame(): void {
-        this.imgid = <number>this.movementSprites.get(this.direction)[this.currentWalkAnimationFrame];
-        this.flippedH = this.direction == Direction.Right;
-    }
-
-    public animateMovement(movedDistance: number): void {
-        if (movedDistance > 0) {
-            this.moveLeftBeforeFrameChange -= movedDistance;
-            if (this.moveLeftBeforeFrameChange < 0) {
-                this.moveLeftBeforeFrameChange = this.moveBeforeFrameChange;
-                if (++this.currentWalkAnimationFrame >= this.movementSprites.get(this.direction).length) {
-                    this.currentWalkAnimationFrame = 1;
-                }
-            }
-        }
-        else {
-            this.currentWalkAnimationFrame = 0;
-            this.determineFrame();
-        }
     }
 
     protected checkWallSpriteCollisions(): boolean {

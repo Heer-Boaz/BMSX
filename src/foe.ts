@@ -8,18 +8,16 @@ import { AudioId } from "./resourceids";
 import { ResourceMaster as RM } from "./resourcemaster";
 import { Point } from "../BoazEngineJS/interfaces";
 
-/*[Serializable]*/
 export abstract class Foe extends Creature {
     public maxHealth: number;
     public health: number;
 
     public get healthPercentage(): number {
-        return Math.min(<number>(Math.round(this.health / <number>this.maxHealth * 100)), 100);
+        return ~~Math.min((Math.round(this.health / this.maxHealth * 100)), 100);
     }
 
     constructor(pos: Point) {
         super(pos);
-
     }
 
     public get respawnOnRoomEntry(): boolean {

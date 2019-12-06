@@ -2,18 +2,38 @@ import { Point, Color } from "./interfaces";
 
 export const TileSize: number = 8;
 export class Tile {
-	public t: number;
-	public get toCoord(): number {
-		return this.t * TileSize;
+	public x: number;
+	public y: number;
+
+	public static create(x: number, y: number): Tile {
+		let result = new Tile();
+		result.x = x * TileSize;
+		result.y = y * TileSize;
+		return result;
 	}
 
-	public static conversionMethod(v: number): Tile {
-		return <Tile>{ t: v };
+	public [Symbol.toPrimitive](hint: any): any {
+		if (hint == 'number') {
+			return this.x * TileSize;
+		}
+		else if (hint.x && hint.y)
+			return <Point>{ x: this.x * TileSize, y: this.y * TileSize };
+
+		return true;
 	}
 
-	public static ToCoord(x: number, y?: number): number | Point {
-		if (!y) return x * TileSize;
-		return <Point>{ x: x * TileSize, y: y * TileSize };
+	public static stageCoord(v: number): number {
+		return v * TileSize;
+	}
+
+	public static toStageCoord(x: number): number {
+		return x * TileSize;
+	}
+
+	public static toStagePoint(x: number | Point, y: number): Point {
+		if ((<Point>x).y)
+			return { x: (<Point>x).x * TileSize, y: (<Point>x).y * TileSize };
+		return { x: <number>x * TileSize, y: y * TileSize };
 	}
 }
 

@@ -46,13 +46,10 @@ export interface IRenderObject extends IGameObject {
     visible: boolean;
     hitbox_sx?: number;
     hitbox_sy?: number;
-    hitbox_sz?: number;
     hitbox_ex?: number;
     hitbox_ey?: number;
-    hitbox_ez?: number;
     x_plus_width?: number;
     y_plus_height?: number;
-    z_plus_depth?: number;
     priority?: number;
 
     paint(offset?: Point): void;

@@ -69,7 +69,7 @@ export class Pietula extends BossFoe {
 		this.pos.y += stepValue.dy;
 	}
 
-	public Dispose(): void {
+	public dispose(): void {
 		BStopwatch.removeWatch(this.timer);
 	}
 

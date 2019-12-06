@@ -7,6 +7,7 @@ import { GardenCandle } from './gardencandle';
 import { BitmapId } from './resourceids';
 import { HagGenerator } from './haggenerator';
 import { Direction } from '../BoazEngineJS/direction';
+import { ZakFoe } from './zakfoe';
 
 export class RoomDataContainer {
 	public Id: number;
@@ -186,12 +187,13 @@ export class RoomFactory {
 			"################################"];
 
 		initFunction = (r: Room) => {
-			let candle = new GardenCandle(<Point>Tile.ToCoord(8, 14));
+			let candle = new GardenCandle(Tile.toStagePoint(8, 14));
 			M._.spawn(candle);
-			let candle2 = new GardenCandle(<Point>Tile.ToCoord(24, 14));
+			let candle2 = new GardenCandle(Tile.toStagePoint(24, 14));
 			M._.spawn(candle2);
 
-			M._.spawn(new HagGenerator(<Point>Tile.ToCoord(0, 14)));
+			// M._.spawn(new HagGenerator(<Point>Tile.ToCoord(0, 14)));
+			M._.spawn(new ZakFoe(<Point>Tile.create(1, 16), Direction.Right));
 			//if (!M._.GetItemPickedUp("rationroom100")) {
 			//	var item = new Item(Item.Type.Ration, new Point(Tile.ToCoord(3), Tile.ToCoord(18))) { id = "rationroom100" };
 			//	M._.Spawn(item);

@@ -14,6 +14,7 @@ export const enum ItemType {
     KeySmall,
     KeyBig
 }
+
 export const enum Usable {
     No,
     Yes,

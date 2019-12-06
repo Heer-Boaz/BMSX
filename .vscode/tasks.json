@@ -33,6 +33,31 @@
 			}
 		},
 		{
+			"label": "pack (losse taak)",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"${workspaceFolder}\\rom\\rompacker.js",
+				"sintervania.rom",
+			],
+			"problemMatcher": [
+				"$node-sass"
+			],
+			"group": "none",
+			"dependsOn": [
+				"build rompacker",
+			],
+			"presentation": {
+				"echo": true,
+				"reveal": "silent",
+				"focus": false,
+				"panel": "dedicated",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem"
+			}
+		},
+		{
 			"label": "minify",
 			"type": "shell",
 			"command": "terser",
