@@ -1,7 +1,7 @@
 import { Point } from "../BoazEngineJS/interfaces";
 import { TileSize } from "../BoazEngineJS/msx";
 import { Direction } from "../BoazEngineJS/direction";
-import { GameConstants as CS, GameConstants } from "./gameconstants";
+import { GameConstants as CS, GameConstants } from './gameconstants';
 import { view } from "../BoazEngineJS/engine";
 import { RoomDataContainer } from "./RoomFactory";
 import { BitmapId } from "./resourceids";
@@ -53,8 +53,8 @@ export class Room {
 	}
 
 	///  <summary>Checks if there is a collision tile in any of the given coordinates</summary>
-	public AnyCollisionsTiles(takeWallFoesIntoAccount: boolean, ...coordinatesToCheck: Point[]): boolean {
-		return coordinatesToCheck.some(x => this.IsCollisionTile(x.x, x.y, takeWallFoesIntoAccount));
+	public AnyCollisionsTiles(...coordinatesToCheck: Point[]): boolean {
+		return coordinatesToCheck.some(x => this.IsCollisionTile(x.x, x.y));
 	}
 
 	public NearingRoomExit(x: number, y: number): NearingRoomExitResult {
@@ -83,7 +83,56 @@ export class Room {
 		return result;
 	}
 
-	public IsCollisionTile(x: number, y: number, takeWallFoesIntoAccount: boolean): boolean {
+	public nearestNonCollisionPoint(x: number, y: number, dir: Direction): number {
+		let _x: number = ~~(x / TileSize);
+		let _y: number = ~~(y / TileSize);
+		// _x = Math.max(_x, 0);
+		// _x = Math.min(_x, GameConstants.StageScreenWidthTiles - 1);
+		// _y = Math.max(_y, 0);
+		// _y = Math.min(_y, GameConstants.StageScreenHeightTiles - 1);
+
+		let dx: number, dy: number;
+		switch (dir) {
+			case Direction.Up:
+				dx = 0;
+				dy = -1;
+				break;
+			case Direction.Right:
+				dx = 1;
+				dy = 0;
+				break;
+			case Direction.Down:
+				dx = 0;
+				dy = 1;
+				break;
+			case Direction.Left:
+			default:
+				dx = -1;
+				dy = 0;
+				break;
+		}
+		while (_x >= 0 && _x <= GameConstants.StageScreenWidthTiles - 1 && _y >= 0 && _y <= GameConstants.StageScreenStartHeightTiles + GameConstants.StageScreenHeightTiles - 1) {
+			if (this.CollisionData[_y][_x] === '.') {
+				switch (dir) {
+					case Direction.Up:
+						return (_y) * TileSize;
+					case Direction.Down:
+						return (_y) * TileSize;
+					case Direction.Left:
+						return (_x) * TileSize;
+					case Direction.Right:
+						return (_x) * TileSize;
+					default:
+						return 0;
+				}
+			}
+			_x += dx;
+			_y += dy;
+		}
+		return 0;
+	}
+
+	public IsCollisionTile(x: number, y: number): boolean {
 		let _x: number = ~~(x / TileSize);
 		let _y: number = ~~(y / TileSize);
 		if (x < 0) {
@@ -138,7 +187,7 @@ export class Room {
 			return Room.NO_ROOM_EXIT;
 		}
 
-		return this.Exits[(<number>(dir))];
+		return this.Exits[dir];
 	}
 
 	private CanLeaveRoom(dir: number): boolean {
@@ -152,6 +201,13 @@ export class Room {
 
 	public Paint() {
 		view.drawImg(this.imgid, CS.GameScreenStartX, CS.GameScreenStartY);
+		for (let y = 0; y < this.CollisionData.length; y++) {
+			for (let x = 0; x < this.CollisionData[y].length; x++) {
+				if (this.CollisionData[y][x] !== '.') {
+					view.fillRectangle(CS.GameScreenStartX + x * TileSize, CS.GameScreenStartY + y * TileSize, CS.GameScreenStartX + (x + 1) * TileSize, CS.GameScreenStartY + (y + 1) * TileSize, { r: 255, g: 255, b: 255, a: 0.5 });
+				}
+			}
+		}
 	}
 }
 

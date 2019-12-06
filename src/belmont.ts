@@ -4,7 +4,7 @@ import { BStopwatch } from "../BoazEngineJS/btimer";
 import { GameConstants as CS } from "./gameconstants";
 import { copyPoint, waitDuration, setSize, newArea, setPoint, addPoints } from '../BoazEngineJS/common';
 import { Animation, AniStepReturnValue } from '../BoazEngineJS/animation';
-import { TileSize } from '../BoazEngineJS/msx';
+import { Msx1Colors, TileSize } from '../BoazEngineJS/msx';
 import { AudioId, BitmapId } from "./resourceids";
 import { Area, Point } from '../BoazEngineJS/interfaces';
 import { Room, NearingRoomExitResult } from './room';
@@ -139,7 +139,7 @@ export class Belmont extends Creature {
 	public set wallHitArea(value: Area) {
 	}
 
-	public EventTouchHitArea: Area = newArea(0, 24, 16, 32);
+	public EventTouchHitArea: Area = newArea(0, 0, 15, 31);
 	private static buttonPressEventHitAreaUp: Area = newArea(0, 20, 16, 28);
 	private static buttonPressEventHitAreaRight: Area = newArea(4, 24, 20, 32);
 	private static buttonPressEventHitAreaDown: Area = newArea(0, 28, 16, 36);
@@ -176,9 +176,49 @@ export class Belmont extends Creature {
 		return !this.hitState.BlinkingAndInvulnerable && !this.Dying;
 	}
 
+	public setx(newx: number) {
+		let oldx = this.pos.x;
+		this.pos.x = ~~newx;
+		if (newx < oldx) {
+			if (M._.currentRoom.IsCollisionTile(this.wallhitbox_sx, this.wallhitbox_sy) ||
+				M._.currentRoom.IsCollisionTile(this.wallhitbox_sx, this.wallhitbox_ey)) {
+				this.handleWallCollision();
+				newx += TileSize - (newx % TileSize);
+			}
+		}
+		else if (newx > oldx) {
+			if (M._.currentRoom.IsCollisionTile(this.wallhitbox_ex, this.wallhitbox_sy) ||
+				M._.currentRoom.IsCollisionTile(this.wallhitbox_ex, this.wallhitbox_ey)) {
+				this.handleWallCollision();
+				newx -= newx % TileSize;
+			}
+		}
+		this.pos.x = ~~newx;
+	}
+
+	public sety(newy: number) {
+		let oldy = this.pos.y;
+		this.pos.y = ~~newy;
+		if (newy < oldy) {
+			if (M._.currentRoom.IsCollisionTile(this.wallhitbox_sx, this.wallhitbox_sy) ||
+				M._.currentRoom.IsCollisionTile(this.wallhitbox_ex, this.wallhitbox_sy)) {
+				this.handleCeilingCollision();
+				newy += TileSize - (newy % TileSize);
+			}
+		}
+		else if (newy > oldy) {
+			if (M._.currentRoom.IsCollisionTile(this.wallhitbox_sx, this.wallhitbox_ey) ||
+				M._.currentRoom.IsCollisionTile(this.wallhitbox_ex, this.wallhitbox_ey)) {
+				this.handleFloorCollision();
+				newy -= newy % TileSize;
+			}
+		}
+		this.pos.y = ~~newy;
+	}
+
 	constructor(initPos?: Point) {
 		super(initPos);
-		this.imgid = <number>BitmapId.Belmont_r1;
+		this.imgid = BitmapId.Belmont_r1;
 		this.flippedH = false;
 		this.CarryingShield = false;
 		this.direction = Direction.Right;
@@ -279,11 +319,11 @@ export class Belmont extends Creature {
 			}
 		}
 		if (!this.FloorCollision && (!this.Jumping || !this.jumpState.GoingUp) && this.hitState.CurrentStep != HitStateStep.Flying && this.hitState.CurrentStep != HitStateStep.Falling) {
-			let originalPos = <Point>{ x: this.pos.x, y: this.pos.y };
-			this.checkAndHandleCollisions(originalPos);
+			// let originalPos = <Point>{ x: this.pos.x, y: this.pos.y };
+			// this.checkAndHandleCollisions(originalPos);
 			if (!this.FloorCollision)
-				this.pos.y += 4;
-			this.checkAndHandleCollisions(originalPos);
+				this.sety(this.pos.y + 4);
+			// this.checkAndHandleCollisions(originalPos);
 			if (this.FloorCollision) {
 				SM.playEffect(AudioId.Land);
 			}
@@ -297,12 +337,12 @@ export class Belmont extends Creature {
 	protected doHitFlying(): void {
 		let delta = this.hitState.HitAni.doAnimation(1, <Point>{ x: 0, y: 0 });
 		let originalPos = copyPoint(this.pos);
-		this.pos.x += this.direction == Direction.Right ? delta.stepValue.x : -delta.stepValue.x;
+		this.setx(this.pos.x + (this.direction == Direction.Right ? delta.stepValue.x : -delta.stepValue.x));
 		let dir = this.direction;
 		this.direction = this.direction == Direction.Left ? Direction.Right : Direction.Left;
-		this.checkAndHandleWallAndCeilingCollisions(originalPos);
+		// this.checkAndHandleWallAndCeilingCollisions(originalPos);
 		this.direction = dir;
-		this.pos.y += delta.stepValue.y;
+		this.sety(this.pos.y + delta.stepValue.y);
 		if (this.hitState.HitAni.hasNext === false) {
 			this.hitState.CurrentStep = HitStateStep.Falling;
 		}
@@ -310,16 +350,14 @@ export class Belmont extends Creature {
 
 	protected doHitFall(): void {
 		let originalPos = copyPoint(this.pos);
-		this.pos.x += this.direction == Direction.Right ? -2 : 2;
+		this.setx(this.pos.x + (this.direction == Direction.Right ? -2 : 2));
 		let dir = this.direction;
 		this.direction = this.direction == Direction.Left ? Direction.Right : Direction.Left;
-		this.checkAndHandleWallAndCeilingCollisions(originalPos);
+		// this.checkAndHandleWallAndCeilingCollisions(originalPos);
 		this.direction = dir;
 		if (!this.FloorCollision) {
-			this.pos.y += 4;
-			if (this.FloorCollision) {
-				this.handleFloorCollision();
-			}
+			this.sety(this.pos.y + 4);
+			if (this.FloorCollision) this.handleFloorCollision();
 		}
 	}
 
@@ -334,19 +372,19 @@ export class Belmont extends Creature {
 	}
 
 	protected doJump(): void {
-		let originalPos = copyPoint(this.pos);
-		this.pos.y = ~~(this.pos.y + this.jumpState.JumpAni.stepValue);
+		// let originalPos = copyPoint(this.pos);
+		this.sety(this.pos.y + this.jumpState.JumpAni.stepValue);
 		this.jumpState.JumpAni.doAnimation(1);
 		if (this.jumpState.JumpAni.finished) {
 			this.jumpState.Stop();
 		}
-		this.jumpState.GoingUp ? this.checkAndHandleWallAndCeilingCollisions(originalPos) : this.checkAndHandleCollisions(originalPos);
-		originalPos.y = this.pos.y;
+		// this.jumpState.GoingUp ? this.checkAndHandleWallAndCeilingCollisions(originalPos) : this.checkAndHandleCollisions(originalPos);
+		// originalPos.y = this.pos.y;
 		if (this.jumpState.JumpDirection == Direction.Right)
-			this.pos.x = ~~(this.pos.x + this.movementSpeed);
+			this.setx(this.pos.x + this.movementSpeed);
 		if (this.jumpState.JumpDirection == Direction.Left)
-			this.pos.x = ~~(this.pos.x - this.movementSpeed);
-		this.jumpState.GoingUp ? this.checkAndHandleWallAndCeilingCollisions(originalPos) : this.checkAndHandleCollisions(originalPos);
+			this.setx(this.pos.x - this.movementSpeed);
+		// this.jumpState.GoingUp ? this.checkAndHandleWallAndCeilingCollisions(originalPos) : this.checkAndHandleCollisions(originalPos);
 	}
 
 	public doWalk(): void {
@@ -498,15 +536,15 @@ export class Belmont extends Creature {
 		let originalPos = copyPoint(this.pos);
 		switch (dir) {
 			case Direction.Right:
-				this.pos.x += speed;
+				this.setx(this.pos.x + speed);
 				this.direction = Direction.Right;
 				break;
 			case Direction.Left:
-				this.pos.x -= speed;
+				this.setx(this.pos.x - speed);
 				this.direction = Direction.Left;
 				break;
 		}
-		this.checkAndHandleCollisions(originalPos);
+		// this.checkAndHandleCollisions(originalPos);
 		return { moved: true };
 	}
 
@@ -525,15 +563,13 @@ export class Belmont extends Creature {
 	}
 
 	private checkAndHandleFloorCollisions(originalPos: Point): void {
-		if (this.FloorCollision) {
-			this.handleFloorCollision();
-		}
+		if (this.FloorCollision) this.handleFloorCollision();
 		else this.checkAndHandleRoomExit();
 	}
 
 	private checkAndHandleCollisions(originalPos: Point): void {
-		this.checkAndHandleWallAndCeilingCollisions(originalPos);
-		this.checkAndHandleFloorCollisions(originalPos);
+		// this.checkAndHandleWallAndCeilingCollisions(originalPos);
+		// this.checkAndHandleFloorCollisions(originalPos);
 	}
 
 	private checkAndHandleRoomExit(): void {
@@ -546,40 +582,41 @@ export class Belmont extends Creature {
 	protected checkWallCollision(): boolean {
 		switch (this.direction) {
 			case Direction.Right:
-				return M._.currentRoom.IsCollisionTile(this.pos.x + 16, this.pos.y + 25, true) || M._.currentRoom.IsCollisionTile(this.pos.x + 16, this.pos.y + 31, true);
+				return M._.currentRoom.IsCollisionTile(this.pos.x + 16, this.pos.y + 25) || M._.currentRoom.IsCollisionTile(this.pos.x + 16, this.pos.y + 31);
 			case Direction.Left:
-				return M._.currentRoom.IsCollisionTile(this.pos.x, this.pos.y + 25, true) || M._.currentRoom.IsCollisionTile(this.pos.x, this.pos.y + 31, true);
+				return M._.currentRoom.IsCollisionTile(this.pos.x, this.pos.y + 25) || M._.currentRoom.IsCollisionTile(this.pos.x, this.pos.y + 31);
 			default:
 				return false;
 		}
 	}
 
 	protected handleWallCollision(): void {
-		switch (this.direction) {
-			case Direction.Right:
-				this.pos.x = ~~(this.pos.x / TileSize) * TileSize;
-				break;
-			case Direction.Down:
-				this.pos.y = ~~(this.pos.y / TileSize) * TileSize;
-				break;
-			case Direction.Left:
-				if (this.pos.x >= 0)
-					this.pos.x = ~~(this.pos.x / TileSize + 1) * TileSize;
-				else this.pos.x = ~~(this.pos.x / TileSize) * TileSize;
-				break;
-		}
+		// switch (this.direction) {
+		// 	case Direction.Right:
+		// 		this.pos.x = ~~(this.pos.x / TileSize) * TileSize;
+		// 		break;
+		// 	case Direction.Down:
+		// 		this.pos.y = ~~(this.pos.y / TileSize) * TileSize;
+		// 		break;
+		// 	case Direction.Left:
+		// 		if (this.pos.x >= 0)
+		// 			this.pos.x = ~~(this.pos.x / TileSize + 1) * TileSize;
+		// 		else this.pos.x = ~~(this.pos.x / TileSize) * TileSize;
+		// 		break;
+		// }
 	}
 
 	protected get CeilingCollision(): boolean {
-		return M._.currentRoom.IsCollisionTile(this.pos.x + 1, this.pos.y + 8, true) || M._.currentRoom.IsCollisionTile(this.pos.x + 15, this.pos.y + 8, true);
+		return M._.currentRoom.IsCollisionTile(this.wallhitbox_sx, this.pos.y + 8) || M._.currentRoom.IsCollisionTile(this.wallhitbox_ex, this.pos.y + 8);
 	}
 
 	protected get FloorCollision(): boolean {
-		return M._.currentRoom.IsCollisionTile(this.pos.x + 1, this.pos.y + 32, true) || M._.currentRoom.IsCollisionTile(this.pos.x + 15, this.pos.y + 32, true);
+		return M._.currentRoom.IsCollisionTile(this.wallhitbox_sx, this.pos.y + 32) || M._.currentRoom.IsCollisionTile(this.wallhitbox_ex, this.pos.y + 32);
 	}
 
 	protected handleFloorCollision(): void {
-		this.pos.y = ~~(~~(this.pos.y / TileSize) * TileSize);
+		// let compensate = this.pos.y % TileSize;
+		// this.pos.y -= compensate; //~~((this.pos.y / TileSize) * TileSize);
 		if (this.Jumping) {
 			this.jumpState.Stop();
 		}
@@ -590,9 +627,9 @@ export class Belmont extends Creature {
 	}
 
 	protected handleCeilingCollision(): void {
-		if (this.pos.y >= 0)
-			this.pos.y = ~~(~~(this.pos.y / TileSize + 1) * TileSize);
-		else this.pos.y = ~~(~~(this.pos.y / TileSize) * TileSize);
+		// if (this.pos.y >= 0)
+		// 	this.pos.y = ~~(~~(this.pos.y / TileSize + 1) * TileSize);
+		// else this.pos.y = ~~(~~(this.pos.y / TileSize) * TileSize);
 		this.jumpState.GoingUp = false;
 	}
 
@@ -641,6 +678,7 @@ export class Belmont extends Creature {
 		}
 		else {
 		}
+		view.drawRectangle(this.wallhitbox_sx, CS.GameScreenStartY + this.wallhitbox_sy, this.wallhitbox_ex, CS.GameScreenStartY + this.wallhitbox_ey, Msx1Colors[15]);
 	}
 
 	public dispose(): void {

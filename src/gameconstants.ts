@@ -1,4 +1,4 @@
-import { MSXConstants, TileSize } from "../BoazEngineJS/msx";
+import { TileSize, MSX2ScreenWidth, MSX2ScreenHeight } from "../BoazEngineJS/msx";
 import { GameState, GameSubstate } from "../BoazEngineJS/model";
 
 export namespace GameConstants {
@@ -20,14 +20,15 @@ export namespace GameConstants {
     export const ManualCheckpoints: boolean = !CheckpointAtRoomEntry;
     export const WindowTitle: string = "";
     export const HUDHeight: number = 36;
-    export const ViewportWidth: number = MSXConstants.MSX2ScreenWidth;
-    export const ViewportHeight: number = MSXConstants.MSX2ScreenHeight;
-    export const GameScreenWidth: number = MSXConstants.MSX2ScreenWidth;
-    export const GameScreenHeight: number = MSXConstants.MSX2ScreenHeight - HUDHeight;
+    export const ViewportWidth: number = MSX2ScreenWidth;
+    export const ViewportHeight: number = MSX2ScreenHeight;
+    export const GameScreenWidth: number = MSX2ScreenWidth;
+    export const GameScreenHeight: number = MSX2ScreenHeight - HUDHeight;
     export const StageScreenWidthTiles: number = (GameScreenWidth / TileSize);
     export const StageScreenHeightTiles: number = (GameScreenHeight / TileSize);
+    export const StageScreenStartHeightTiles: number = (HUDHeight / TileSize);
     export const GameScreenStartX: number = 0;
-    export const GameScreenStartY: number = 36;
+    export const GameScreenStartY: number = HUDHeight;
     export const ImageBasePath: string = "./Content/Images/";
     export const Extension_PNG: string = ".png";
     export const WaitAfterLoadGame: number = 50;

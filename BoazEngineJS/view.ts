@@ -125,7 +125,7 @@ export class View {
         this.context.translate(0.5, 0.5);
         this.context.beginPath();
         this.context.strokeStyle = this.toRgb(c);
-        this.context.rect(~~x, ~~y, ~~ex - ~~x, ~~ey - ~~y);
+        this.context.rect(~~x, ~~y, ~~(ex - x), ~~(ey - y));
         this.context.stroke();
         this.context.restore();
     }
@@ -137,12 +137,12 @@ export class View {
         let colorRgb = this.toRgb(c);
         this.context.fillStyle = colorRgb;
         this.context.strokeStyle = colorRgb;
-        this.context.fillRect(~~x, ~~y, ~~ex - ~~x, ~~ey - ~~y);
+        this.context.fillRect(~~x, ~~y, ~~(ex - x), ~~(ey - y));
         this.context.stroke();
         this.context.restore();
     }
 
     private toRgb(c: Color): string {
-        return `rgb(${c.r},${c.g},${c.b})`;
+        return `rgb(${c.r},${c.g},${c.b},${c.a || 1})`;
     }
 }

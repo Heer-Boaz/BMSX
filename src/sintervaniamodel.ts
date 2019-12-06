@@ -19,7 +19,7 @@ import { Title } from "./title";
 import { EndDemo } from "./enddemo";
 import { view } from "../BoazEngineJS/engine";
 import { TextWriter } from "./textwriter";
-import { MSXConstants } from "../BoazEngineJS/msx";
+import { Msx1Colors } from "../BoazEngineJS/msx";
 
 declare module "../BoazEngineJS/model" {
     export const enum GameState {
@@ -276,8 +276,8 @@ export class GameModel extends Model {
                 pos: { x: GameConstants.pausePosX, y: GameConstants.pausePosY },
                 spawn() { },
                 paint() {
-                    view.fillRectangle(GameConstants.pausePosX, GameConstants.pausePosY, GameConstants.pauseEndX, GameConstants.pauseEndY, MSXConstants.Msx1Colors[1]);
-                    view.drawRectangle(GameConstants.pausePosX, GameConstants.pausePosY, GameConstants.pauseEndX, GameConstants.pauseEndY, MSXConstants.Msx1Colors[15]);
+                    view.fillRectangle(GameConstants.pausePosX, GameConstants.pausePosY, GameConstants.pauseEndX, GameConstants.pauseEndY, Msx1Colors[1]);
+                    view.drawRectangle(GameConstants.pausePosX, GameConstants.pausePosY, GameConstants.pauseEndX, GameConstants.pauseEndY, Msx1Colors[15]);
                     TextWriter.drawText(GameConstants.pauseTextPosX, GameConstants.pauseTextPosY, GameConstants.pauseText);
                 },
                 takeTurn() { }

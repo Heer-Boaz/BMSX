@@ -1,4 +1,4 @@
-import { MSXConstants as MCS } from "./msx"
+import { MSX2ScreenWidth, MSX2ScreenHeight } from "./msx";
 
 export class GameOptions {
 	public static readonly INITIAL_SCALE: number = 1;
@@ -10,18 +10,18 @@ export class GameOptions {
 	public static MusicVolumePercentage: number = 100;
 
 	public static get WindowWidth(): number {
-		return (MCS.MSX2ScreenWidth * GameOptions.Scale);
+		return (MSX2ScreenWidth * GameOptions.Scale);
 	}
 
 	public static get WindowHeight(): number {
-		return (MCS.MSX2ScreenHeight * GameOptions.Scale);
+		return (MSX2ScreenHeight * GameOptions.Scale);
 	}
 
 	public static get BufferWidth(): number {
-		return (MCS.MSX2ScreenWidth * GameOptions.Scale);
+		return (MSX2ScreenWidth * GameOptions.Scale);
 	}
 
 	public static get BufferHeight(): number {
-		return (MCS.MSX2ScreenHeight * GameOptions.Scale);
+		return (MSX2ScreenHeight * GameOptions.Scale);
 	}
 }

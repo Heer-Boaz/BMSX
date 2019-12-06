@@ -65,7 +65,7 @@ export class ZakFoe extends Foe {
 					if (s.target.pos.x <= 0)
 						s.target.direction = Direction.Right;
 					// Handle wall / missing floor collision
-					if (M._.currentRoom.AnyCollisionsTiles(true, { x: s.target.hitbox_sx, y: s.target.hitbox_sy }, { x: s.target.hitbox_sx, y: s.target.hitbox_ey }))
+					if (M._.currentRoom.AnyCollisionsTiles({ x: s.target.hitbox_sx, y: s.target.hitbox_sy }, { x: s.target.hitbox_sx, y: s.target.hitbox_ey }))
 						s.target.direction = Direction.Right;
 					// if (!M._.currentRoom.AnyCollisionsTiles(true, { x: s.target.hitbox_sx, y: s.target.hitbox_ey + TileSize + 4 }))
 					// 	s.target.direction = Direction.Right;
@@ -75,7 +75,7 @@ export class ZakFoe extends Foe {
 					if (s.target.pos.x >= CS.GameScreenWidth)
 						s.target.direction = Direction.Left;
 					// Handle wall / missing floor collision
-					if (M._.currentRoom.AnyCollisionsTiles(true, { x: s.target.hitbox_ex, y: s.target.hitbox_sy }, { x: s.target.hitbox_ex, y: s.target.hitbox_ey }))
+					if (M._.currentRoom.AnyCollisionsTiles({ x: s.target.hitbox_ex, y: s.target.hitbox_sy }, { x: s.target.hitbox_ex, y: s.target.hitbox_ey }))
 						s.target.direction = Direction.Left;
 					// if (!M._.currentRoom.AnyCollisionsTiles(true, { x: s.target.hitbox_ex, y: s.target.hitbox_ey + TileSize + 4 }))
 					// 	s.target.direction = Direction.Left;

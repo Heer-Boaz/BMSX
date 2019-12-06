@@ -6,13 +6,13 @@ import { GameModel as M } from "./sintervaniamodel";
 import { GameController as C } from "./gamecontroller";
 import { TextWriter } from "./textwriter";
 import { view } from "../BoazEngineJS/engine";
-import { MSXConstants as MCS } from "../BoazEngineJS/msx";
 import { Constants as CS } from "../BoazEngineJS/constants";
 import { Input } from "../BoazEngineJS/input";
 import { GameMenu } from "./gamemenu";
 import { SlotExists } from "../BoazEngineJS/gamestateloader";
 import { GameState } from "../BoazEngineJS/model";
 import { AudioId, BitmapId } from "./resourceids";
+import { Msx1Colors } from "../BoazEngineJS/msx";
 
 export const enum State {
     SelectMain,
@@ -181,8 +181,8 @@ export class MainMenu {
 
     public Paint(): void {
         view.drawImg(BitmapId.Title, 0, 0);
-        view.fillRectangle(MainMenu.boxX, MainMenu.boxY, MainMenu.boxEndX, MainMenu.boxEndY, MCS.Msx1Colors[4]);
-        view.drawRectangle(MainMenu.boxX, MainMenu.boxY, MainMenu.boxEndX, MainMenu.boxEndY, MCS.Msx1Colors[15]);
+        view.fillRectangle(MainMenu.boxX, MainMenu.boxY, MainMenu.boxEndX, MainMenu.boxEndY, Msx1Colors[4]);
+        view.drawRectangle(MainMenu.boxX, MainMenu.boxY, MainMenu.boxEndX, MainMenu.boxEndY, Msx1Colors[15]);
         switch (this.state) {
             case State.SubMenu:
             case State.SelectMain:
@@ -191,7 +191,7 @@ export class MainMenu {
                         case MenuItem.Continue:
                             if (SlotExists(CS.SaveSlotCheckpoint))
                                 TextWriter.drawText(MainMenu.itemsX, MainMenu.itemYs[i], MainMenu.items[i]);
-                            else TextWriter.drawText(MainMenu.itemsX, MainMenu.itemYs[i], MainMenu.items[i], MCS.Msx1Colors[0]);
+                            else TextWriter.drawText(MainMenu.itemsX, MainMenu.itemYs[i], MainMenu.items[i], Msx1Colors[0]);
                             break;
                         default:
                             TextWriter.drawText(MainMenu.itemsX, MainMenu.itemYs[i], MainMenu.items[i]);

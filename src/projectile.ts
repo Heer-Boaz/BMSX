@@ -35,13 +35,13 @@ export abstract class Projectile extends Sprite {
         let endy = this.pos.y + this.hitarea.end.y;
         switch (this.direction) {
             case Direction.Up:
-                return M._.currentRoom.IsCollisionTile(startx, starty, true) || M._.currentRoom.IsCollisionTile(endx, starty, true);
+                return M._.currentRoom.IsCollisionTile(startx, starty) || M._.currentRoom.IsCollisionTile(endx, starty);
             case Direction.Right:
-                return M._.currentRoom.IsCollisionTile(endx, starty, true) || M._.currentRoom.IsCollisionTile(endx, endy, true);
+                return M._.currentRoom.IsCollisionTile(endx, starty) || M._.currentRoom.IsCollisionTile(endx, endy);
             case Direction.Down:
-                return M._.currentRoom.IsCollisionTile(startx, endy, true) || M._.currentRoom.IsCollisionTile(endx, endy, true);
+                return M._.currentRoom.IsCollisionTile(startx, endy) || M._.currentRoom.IsCollisionTile(endx, endy);
             case Direction.Left:
-                return M._.currentRoom.IsCollisionTile(startx, starty, true) || M._.currentRoom.IsCollisionTile(startx, endy, true);
+                return M._.currentRoom.IsCollisionTile(startx, starty) || M._.currentRoom.IsCollisionTile(startx, endy);
             default:
                 return false;
         }

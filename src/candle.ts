@@ -5,8 +5,9 @@ import { Animation, AniStepReturnValue } from "../BoazEngineJS/animation"
 import { Direction } from "../BoazEngineJS/direction";
 import { PlayerProjectile } from "./pprojectile";
 import { AudioId, BitmapId } from "./resourceids";
-import { newArea } from "../BoazEngineJS/common";
+import { newArea, addPoints } from "../BoazEngineJS/common";
 import { Area, Point } from "../BoazEngineJS/interfaces";
+import { GameConstants } from "./gameconstants";
 
 /*[Serializable]*/
 export class Candle extends Foe {

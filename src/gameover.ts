@@ -1,7 +1,6 @@
 import { GameModel as M } from "./sintervaniamodel";
 import { Direction } from "../BoazEngineJS/direction";
 import { TextWriter } from "./textwriter";
-import { MSXConstants as CS } from "../BoazEngineJS/msx";
 import { view } from "../BoazEngineJS/engine";
 import { AudioId, BitmapId } from "./resourceids";
 import { Input } from "../BoazEngineJS/input";
@@ -9,6 +8,7 @@ import { SM as S } from "../BoazEngineJS/soundmaster";
 import { GameController as C } from './gamecontroller';
 import { GameMenu } from "./gamemenu";
 import { MenuItem } from './mainmenu';
+import { Msx1Colors } from "../BoazEngineJS/msx";
 
 export const enum State {
     SelectContOrLoad,
@@ -108,7 +108,7 @@ export class GameOver {
     public Paint(): void {
         TextWriter.drawText(60, 56, ["Je bent vernederd!"]);
         TextWriter.drawText(32, 80, ["Wat ga je doen, Ronan?"]);
-        view.drawRectangle(GameOver.boxX, GameOver.boxY, GameOver.boxEndX, GameOver.boxEndY, CS.Msx1Colors[15]);
+        view.drawRectangle(GameOver.boxX, GameOver.boxY, GameOver.boxEndX, GameOver.boxEndY, Msx1Colors[15]);
         for (let i = 0; i < GameOver.items.length; i++)
             TextWriter.drawText(GameOver.itemsX, GameOver.itemYs[i], [GameOver.items[i]]);
         view.drawImg(BitmapId.MenuCursor, this.cursorX, this.cursorY);

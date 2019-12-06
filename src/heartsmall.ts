@@ -35,7 +35,7 @@ export class HeartSmall extends Sprite {
 	}
 
 	protected get floorCollision(): boolean {
-		return GameModel._.currentRoom.IsCollisionTile(this.pos.x + 5, this.pos.y + 8, false);
+		return GameModel._.currentRoom.IsCollisionTile(this.pos.x + 5, this.pos.y + 8);
 	}
 
 	protected uglyBitThing: boolean;

@@ -10,12 +10,12 @@ import { GameModel as M } from "./sintervaniamodel";
 import { SlotExists, LoadGame } from "../BoazEngineJS/gamestateloader";
 import { GameOptions as GO } from "../BoazEngineJS/gameoptions";
 import { GameConstants as CS } from "./gameconstants";
-import { MSXConstants as MCS } from "../BoazEngineJS/msx";
 import { Constants } from "../BoazEngineJS/constants";
 import { newSize, setPoint } from "../BoazEngineJS/common";
 import { view, game } from "../BoazEngineJS/engine";
 import { GameState } from "../BoazEngineJS/model";
 import { Input } from "../BoazEngineJS/input";
+import { Msx1Colors, Msx1ExtColors } from "../BoazEngineJS/msx";
 
 interface MenuOption {
     type: MenuItem;
@@ -433,8 +433,8 @@ export class GameMenu {
     public Paint(): void {
         if (!this.visible)
             return
-        view.fillRectangle(GameMenu.menuPosX, GameMenu.menuPosY, GameMenu.menuEndX, GameMenu.menuEndY, MCS.Msx1Colors[1]);
-        view.drawRectangle(GameMenu.menuPosX, GameMenu.menuPosY, GameMenu.menuEndX, GameMenu.menuEndY, MCS.Msx1Colors[15]);
+        view.fillRectangle(GameMenu.menuPosX, GameMenu.menuPosY, GameMenu.menuEndX, GameMenu.menuEndY, Msx1Colors[1]);
+        view.drawRectangle(GameMenu.menuPosX, GameMenu.menuPosY, GameMenu.menuEndX, GameMenu.menuEndY, Msx1Colors[15]);
         let titleToDraw: string;
         let titleX: number, titleY;
         switch (this.CurrentScreen) {
@@ -478,7 +478,7 @@ export class GameMenu {
                             case MenuItem.SaveGame:
                                 if (M._.State != GameState.Event)
                                     TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
-                                else TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, MCS.Msx1ExtColors[0]);
+                                else TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, Msx1ExtColors[0]);
                                 break;
                             default:
                                 TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
@@ -503,7 +503,7 @@ export class GameMenu {
                                     TextWriter.drawText(offsetX, y, `${view.scale.toPrecision(2)}X`);
                                 }
                                 else {
-                                    TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, MCS.Msx1ExtColors[0]);
+                                    TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, Msx1ExtColors[0]);
                                     offsetX += GameMenu.scaleText.length * TextWriter.FontWidth;
                                     // textToDisplay = BDX._.Zoom.ToString("n2");
                                     TextWriter.drawText(offsetX, y, `${view.scale.toPrecision(2)}X`);
@@ -565,7 +565,7 @@ export class GameMenu {
 
     private printFullscreenOptionRectangle(y: number): void {
         let selectedIndex: number = GO.Fullscreen ? 0 : 1;
-        view.drawRectangle(GameMenu.fullscreenOptionsOffsets[selectedIndex] + GameMenu.menuPosX + GameMenu.optionItemsOffsetX, y + GameMenu.fullscreenOptionsOffsetY, GameMenu.fullscreenOptionsOffsets[selectedIndex] + GameMenu.fullscreenOptionsRectangleSize.x + GameMenu.menuPosX + GameMenu.optionItemsOffsetX, y + GameMenu.fullscreenOptionsOffsetY + GameMenu.fullscreenOptionsRectangleSize.y, MCS.Msx1Colors[6]);
+        view.drawRectangle(GameMenu.fullscreenOptionsOffsets[selectedIndex] + GameMenu.menuPosX + GameMenu.optionItemsOffsetX, y + GameMenu.fullscreenOptionsOffsetY, GameMenu.fullscreenOptionsOffsets[selectedIndex] + GameMenu.fullscreenOptionsRectangleSize.x + GameMenu.menuPosX + GameMenu.optionItemsOffsetX, y + GameMenu.fullscreenOptionsOffsetY + GameMenu.fullscreenOptionsRectangleSize.y, Msx1Colors[6]);
     }
 
     private printSaveSlot(x: number, y: number, slotIndex: number): void {

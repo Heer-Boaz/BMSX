@@ -16,6 +16,14 @@ export abstract class Sprite implements IRenderObject {
 	public disposeFlag: boolean;
 	public imgid: number;
 
+	// public get x(): number {
+	// 	return this.pos.x;
+	// }
+
+	// public get y(): number {
+	// 	return this.pos.y;
+	// }
+
 	public get hitbox_sx(): number {
 		return this.pos.x + this.hitarea.start.x;
 	}
@@ -42,10 +50,6 @@ export abstract class Sprite implements IRenderObject {
 
 	public disposeOnSwitchRoom?: boolean;
 	public oncollide: (src: IRenderObject) => void;
-
-	// public static [Symbol.hasInstance](o: any): boolean {
-	// 	return o && o.imgid;
-	// }
 
 	constructor(initialPos?: Point, imageId?: number) {
 		this.id = null;
