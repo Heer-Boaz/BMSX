@@ -40,6 +40,7 @@ export class ZakFoe extends Foe {
 		let state0 = this.fst.addNewState(0);
 		state0.tapedata = [
 			null,
+			{ i: BitmapId.ZakFoe3, dy: 0 },
 			{ i: BitmapId.ZakFoe1, dy: -4 },
 			{ i: BitmapId.ZakFoe1, dy: -2 },
 			{ i: BitmapId.ZakFoe2, dy: -1 },
