@@ -78,8 +78,17 @@ var basic = {
 		setClassForLoader("");
 
 		await bootCompletePromise;
-		let pressedAnyKey = awaitPressedAnyKey();
-		await pressedAnyKey;
+		// let pressedAnyKey = awaitPressedAnyKey();
+		// await pressedAnyKey;
+		let remove = (id: string) => {
+			let element = document.querySelector(id);
+			if (element) element.parentElement.removeChild(element);
+		};
+
+		remove('#loading');
+		remove('#msx');
+		remove('#hidor');
+		remove('#romjs');
 		return result;
 	},
 }

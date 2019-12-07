@@ -22,13 +22,8 @@ export class GameView implements IGameView {
         switch (M._.gameState) {
             case GameState.LoadTheGame:
                 break;
-            case GameState.Prelude:
-                M._.Title.Paint();
-                break;
-
             case GameState.TitleScreen:
-                M._.MainMenu.Paint();
-                M._.GameMenu.Paint();
+                M._.Title.Paint();
                 break;
 
             case GameState.EndDemo:

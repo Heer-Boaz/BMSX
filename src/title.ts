@@ -35,30 +35,26 @@ export class Title {
 	private state: State;
 
 	constructor() {
-		this.titleAni = new Animation<State>(Title.titleStates, Title.titleMoves);
-		this.titleTopPos = <Point>{ x: 0, y: 0 };
-		this.titleBottomPos = <Point>{ x: 0, y: 0 };
+		// this.titleAni = new Animation<State>(Title.titleStates, Title.titleMoves);
+		// this.titleTopPos = <Point>{ x: 0, y: 0 };
+		// this.titleBottomPos = <Point>{ x: 0, y: 0 };
 	}
 
 	public Init(): void {
-		this.reset();
+		// this.reset();
 	}
 
 	private reset(): void {
-		setPoint(this.titleTopPos, Title.titleTopStartX, Title.titleTopY);
-		setPoint(this.titleBottomPos, Title.titleBottomStartX, Title.titleBottomY);
-		this.titleAni.restart();
-		this.state = this.titleAni.stepValue;
+		// setPoint(this.titleTopPos, Title.titleTopStartX, Title.titleTopY);
+		// setPoint(this.titleBottomPos, Title.titleBottomStartX, Title.titleBottomY);
+		// this.titleAni.restart();
+		// this.state = this.titleAni.stepValue;
 	}
 
 	public TakeTurn(): void {
-		C._.PreludeFinished();
 	}
 
 	public Paint(): void {
-		// view.DrawBitmap(<number>BitmapId.TitelBoven, this.titleTopPos.x, this.titleTopPos.y);
-		// view.DrawBitmap(<number>BitmapId.TitelOnder, this.titleBottomPos.x, this.titleBottomPos.y);
-		// if (this.state != State.WaitForIt)
-		// 	view.DrawBitmap(<number>BitmapId.TitelKonami, Title.konamiX, Title.konamiY);
+		view.drawImg(BitmapId.Title, 0, 0);
 	}
 }

@@ -10,25 +10,6 @@ export type runhandle<T extends object> = (_state: bst<T>, ...input: any[]) => a
 export type bsfthandle<T extends object> = (_state: bst<T>) => void;
 export type numstring = number | string;
 
-// export function animatepos(st: bst<IRenderObject, anidata<Point>>, delta: number): void {
-// 	st.delta2tapehead += delta;
-// 	if (st.delta2tapehead >= st.currentdata.delta) {
-// 		st.delta2tapehead = 0;
-// 		++st.tapehead;
-// 		if (st.endoftape) {
-// 			st.ontapeend && st.tapeend();
-// 		}
-// 		else {
-// 			st.target.pos.x += st.currentdata.data.x;
-// 			st.target.pos.y += st.currentdata.data.y;
-// 		}
-// 	}
-// }
-
-// export function resetAnimationOnTapeEnd(st: bst<IGameObject, anidata<Point>>): void {
-// 	st.tapehead = 0;
-// }
-
 export class bst<T extends object>{
 	public bsm: bst<T>;
 	public target: T;

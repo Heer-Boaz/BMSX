@@ -360,7 +360,8 @@ export class Belmont extends Creature {
 		this.direction = this.direction == Direction.Left ? Direction.Right : Direction.Left;
 		// this.checkAndHandleWallAndCeilingCollisions(originalPos);
 		this.direction = dir;
-		if (!this.FloorCollision) {
+		if (this.FloorCollision) this.handleFloorCollision();
+		else {
 			this.sety(this.pos.y + 4);
 			if (this.FloorCollision) this.handleFloorCollision();
 		}
@@ -687,7 +688,7 @@ export class Belmont extends Creature {
 		if (!this.hitState.Blink || C._.InEventState) {
 			super.paint(addPoints(roeOffset, offset));
 		}
-		view.drawRectangle(this.wallhitbox_sx, CS.GameScreenStartY + this.wallhitbox_sy, this.wallhitbox_ex, CS.GameScreenStartY + this.wallhitbox_ey, Msx1Colors[15]);
+		// view.drawRectangle(this.wallhitbox_sx, CS.GameScreenStartY + this.wallhitbox_sy, this.wallhitbox_ex, CS.GameScreenStartY + this.wallhitbox_ey, Msx1Colors[15]);
 	}
 
 	public dispose(): void {
@@ -711,7 +712,7 @@ export class JumpState {
 	public Jumping: boolean;
 	public GoingUp: boolean;
 	public JumpDirection: Direction;
-	public static jumpYDelta: number[] = [0, -8, -4, -4, -4, -4, -4, -4, -4, -4, -2, -2, -1, -1, 0, 0, 0, 0, 1, 1, 2, 2, 4, 4, 4, 4, 4, 4, 4, 4, 8];
+	public static jumpYDelta: number[] = [0, -8, -8, -4, -4, -4, -4, -4, -4, -4, -2, -2, -1, -1, 0, 0, 0, 0, 1, 1, 2, 2, 4, 4, 4, 4, 4, 4, 4, 8, 8];
 	public JumpAni: Animation<number>;
 	public get JumpHeightReached(): boolean {
 		return this.JumpAni.stepValue >= 0;

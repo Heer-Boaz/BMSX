@@ -2,7 +2,7 @@ import { TileSize, MSX2ScreenWidth, MSX2ScreenHeight } from "../BoazEngineJS/msx
 import { GameState, GameSubstate } from "./gamemodel";
 
 export namespace GameConstants {
-    export const INITIAL_GAMESTATE: GameState = GameState.GameStart1;
+    export const INITIAL_GAMESTATE: GameState = GameState.TitleScreen;
     export const INITIAL_GAMESUBSTATE: GameSubstate = GameSubstate.Default;
 
     export const SoundEnabled: boolean = false;
@@ -31,8 +31,8 @@ export namespace GameConstants {
     export const Extension_PNG: string = ".png";
     export const WaitAfterLoadGame: number = 50;
     export const WaitAfterRoomSwitch: number = 25;
-    export const WaitAfterGameStart1: number = 2;
-    export const WaitAfterGameStart2: number = 4;
+    export const WaitAfterGameStart1: number = 100;
+    export const WaitAfterGameStart2: number = 1;
 
     export const pausePosX: number = 80;
     export const pausePosY: number = 80;

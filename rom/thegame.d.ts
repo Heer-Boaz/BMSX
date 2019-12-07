@@ -421,23 +421,24 @@ declare module "src/resourceids" {
         Prologue = 5,
         VampireKiller = 6,
         Au = 7,
-        Chestopen = 8,
-        Cross = 9,
-        Door = 10,
-        Fout = 11,
-        Heart = 12,
-        Hit = 13,
-        Init = 14,
-        Item = 15,
-        Kaboem = 16,
-        Key = 17,
-        Knife = 18,
-        Land = 19,
-        Portal = 20,
-        Rotate = 21,
-        Selectie = 22,
-        WallBreak = 23,
-        Whip = 24
+        Bliksem = 8,
+        Chestopen = 9,
+        Cross = 10,
+        Door = 11,
+        Fout = 12,
+        Heart = 13,
+        Hit = 14,
+        Init = 15,
+        Item = 16,
+        Kaboem = 17,
+        Key = 18,
+        Knife = 19,
+        Land = 20,
+        Portal = 21,
+        Rotate = 22,
+        Selectie = 23,
+        WallBreak = 24,
+        Whip = 25
     }
 }
 declare module "BoazEngineJS/soundmaster" {
@@ -1103,84 +1104,20 @@ declare module "src/gamemenu" {
         private printSaveSlot;
     }
 }
-declare module "src/gamecontroller" {
-    import { Item, ItemType } from "src/item";
-    import { Direction } from "BoazEngineJS/direction";
-    import { Savegame } from "BoazEngineJS/savegame";
-    import { WeaponItem } from "src/weaponitem";
-    import { GameState, GameSubstate } from "src/gamemodel";
-    import { BaseController } from "BoazEngineJS/controller";
-    export class Controller extends BaseController {
-        private static _instance;
-        static get _(): Controller;
-        InEventState: boolean;
-        private startAfterLoadTimer;
-        ElapsedMsDelta: number;
-        constructor();
-        disposeOldState(newState: GameState): void;
-        protected disposeOldSubstate(newsubstate: GameSubstate): void;
-        SwitchToOldState(): void;
-        SwitchToOldSubstate(): void;
-        protected initNewState(newState: GameState): void;
-        protected initNewSubstate(newsubstate: GameSubstate): void;
-        switchSubstate(newSubstate: GameSubstate): void;
-        takeTurn(elapsedMs: number): void;
-        private handleInputDuringGame;
-        private handleInputDuringPause;
-        private handleInputDuringGameMenu;
-        KillFocus(): void;
-        SetFocus(): void;
-        private handlePausedState;
-        private handleStartAfterLoadState;
-        BelmontDied(): void;
-        BelmontDeathAniFinished(): void;
-        ItsCurtainsAniFinished(): void;
-        PreludeFinished(): void;
-        BossDefeated(): void;
-        HandleRoomExitViaMovement(targetRoom: number, dir: Direction): void;
-        DoRoomExit(targetRoom: number): void;
-        private setupGameStart;
-        PauseGame(): void;
-        UnpauseGame(): void;
-        OpenGameMenu(): void;
-        CloseGameMenu(): void;
-        LoadGame(sg: Savegame): void;
-        SaveGame(slot: number): void;
-        StoreCheckpoint(): void;
-        LoadCheckpoint(): void;
-        PickupItem(source: Item): void;
-        UseItem(itemType: ItemType): void;
-        private HandleUseItem;
-        PickupWeaponItem(source: WeaponItem): void;
-        startBossFight(): void;
+declare module "src/bossfoe" {
+    import { Foe } from "src/foe";
+    import { Point } from "BoazEngineJS/interfaces";
+    export class BossFoe extends Foe {
+        constructor(pos: Point);
     }
 }
-declare module "src/item" {
-    import { Sprite } from "BoazEngineJS/sprite";
-    import { Area, Point } from "BoazEngineJS/interfaces";
-    import { BitmapId } from "src/resourceids";
-    export const enum ItemType {
-        None = 0,
-        HeartSmall = 1,
-        HeartBig = 2,
-        KeySmall = 3,
-        KeyBig = 4
-    }
-    export const enum Usable {
-        No = 0,
-        Yes = 1,
-        Infinite = 2
-    }
-    export class Item extends Sprite {
-        ItsType: ItemType;
-        static ItemHitArea: Area;
-        static Usable: any;
-        static Type: any;
-        constructor(type: ItemType, pos: Point);
+declare module "src/fprojectile" {
+    import { Projectile } from "src/projectile";
+    import { Point } from "BoazEngineJS/interfaces";
+    export class FProjectile extends Projectile {
+        get canHurtPlayer(): boolean;
+        constructor(pos: Point, speed: Point);
         takeTurn(): void;
-        static Type2Image(type: ItemType): BitmapId;
-        static ItemUsable(type: ItemType): Usable;
-        dispose(): void;
     }
 }
 declare module "src/fx" {
@@ -1236,6 +1173,113 @@ declare module "src/foeexplosion" {
         takeTurn(): void;
     }
 }
+declare module "src/pietula" {
+    import { BossFoe } from "src/bossfoe";
+    import { PlayerProjectile } from "src/pprojectile";
+    import { Area, Point } from "BoazEngineJS/interfaces";
+    import { bst } from "BoazEngineJS/statemachine";
+    export class Pietula extends BossFoe {
+        get damageToPlayer(): number;
+        get respawnOnRoomEntry(): boolean;
+        protected static HitArea: Area;
+        fst: bst<Pietula>;
+        hover: bst<Pietula>;
+        blink: bst<Pietula>;
+        loops: number;
+        bliksem: {
+            imgid: number;
+            paint(offset: Point): void;
+            pos: Point;
+            flipped: boolean;
+        };
+        constructor(pos?: Point);
+        takeTurn(): void;
+        dispose(): void;
+        handleHit(source: PlayerProjectile): void;
+        paint(offset?: Point): void;
+        die(): void;
+    }
+}
+declare module "src/gamecontroller" {
+    import { Item, ItemType } from "src/item";
+    import { Direction } from "BoazEngineJS/direction";
+    import { Savegame } from "BoazEngineJS/savegame";
+    import { WeaponItem } from "src/weaponitem";
+    import { GameState, GameSubstate } from "src/gamemodel";
+    import { BaseController } from "BoazEngineJS/controller";
+    import { Pietula } from "src/pietula";
+    export class Controller extends BaseController {
+        private static _instance;
+        static get _(): Controller;
+        InEventState: boolean;
+        private startAfterLoadTimer;
+        ElapsedMsDelta: number;
+        constructor();
+        disposeOldState(newState: GameState): void;
+        protected disposeOldSubstate(newsubstate: GameSubstate): void;
+        SwitchToOldState(): void;
+        SwitchToOldSubstate(): void;
+        protected initNewState(newState: GameState): void;
+        protected initNewSubstate(newsubstate: GameSubstate): void;
+        switchSubstate(newSubstate: GameSubstate): void;
+        takeTurn(elapsedMs: number): void;
+        private handleInputDuringGame;
+        private handleInputDuringPause;
+        private handleInputDuringGameMenu;
+        KillFocus(): void;
+        SetFocus(): void;
+        private handlePausedState;
+        private handleStartAfterLoadState;
+        BelmontDied(): void;
+        BelmontDeathAniFinished(): void;
+        ItsCurtainsAniFinished(): void;
+        BossDefeated(): void;
+        HandleRoomExitViaMovement(targetRoom: number, dir: Direction): void;
+        DoRoomExit(targetRoom: number): void;
+        private setupGameStart;
+        PauseGame(): void;
+        UnpauseGame(): void;
+        OpenGameMenu(): void;
+        CloseGameMenu(): void;
+        LoadGame(sg: Savegame): void;
+        SaveGame(slot: number): void;
+        StoreCheckpoint(): void;
+        LoadCheckpoint(): void;
+        PickupItem(source: Item): void;
+        UseItem(itemType: ItemType): void;
+        private HandleUseItem;
+        PickupWeaponItem(source: WeaponItem): void;
+        startBossFight(baas: Pietula): void;
+    }
+}
+declare module "src/item" {
+    import { Sprite } from "BoazEngineJS/sprite";
+    import { Area, Point } from "BoazEngineJS/interfaces";
+    import { BitmapId } from "src/resourceids";
+    export const enum ItemType {
+        None = 0,
+        HeartSmall = 1,
+        HeartBig = 2,
+        KeySmall = 3,
+        KeyBig = 4
+    }
+    export const enum Usable {
+        No = 0,
+        Yes = 1,
+        Infinite = 2
+    }
+    export class Item extends Sprite {
+        ItsType: ItemType;
+        static ItemHitArea: Area;
+        static Usable: any;
+        static Type: any;
+        constructor(type: ItemType, pos: Point);
+        takeTurn(): void;
+        static Type2Image(type: ItemType): BitmapId;
+        static ItemUsable(type: ItemType): Usable;
+        dispose(): void;
+    }
+}
 declare module "src/foe" {
     import { Creature } from "src/creature";
     import { PlayerProjectile } from "src/pprojectile";
@@ -1259,13 +1303,6 @@ declare module "src/foe" {
         protected dieWithoutItem(): void;
         protected dieWithItem(itemToSpawn?: ItemType): void;
         dispose(): void;
-    }
-}
-declare module "src/bossfoe" {
-    import { Foe } from "src/foe";
-    import { Point } from "BoazEngineJS/interfaces";
-    export class BossFoe extends Foe {
-        constructor(pos: Point);
     }
 }
 declare module "src/hud" {
@@ -1407,19 +1444,17 @@ declare module "src/gamemodel" {
     export const enum GameState {
         None = 0,
         Editor = 1,
-        Prelude = 2,
-        Story = 3,
-        TitleScreen = 4,
-        Tutorial = 5,
-        GameStart1 = 6,
-        GameStart2 = 7,
-        GameStartFromGameOver = 8,
-        Game = 9,
-        Event = 10,
-        F1 = 11,
-        EndDemo = 12,
-        GameOver = 13,
-        LoadTheGame = 14
+        TitleScreen = 2,
+        Tutorial = 3,
+        GameStart1 = 4,
+        GameStart2 = 5,
+        GameStartFromGameOver = 6,
+        Game = 7,
+        Event = 8,
+        F1 = 9,
+        EndDemo = 10,
+        GameOver = 11,
+        LoadTheGame = 12
     }
     export const enum GameSubstate {
         Default = 0,
@@ -1726,42 +1761,6 @@ declare module "src/zakfoe" {
         dispose(): void;
         handleHit(source: PlayerProjectile): void;
         paint(offset?: Point): void;
-    }
-}
-declare module "src/fprojectile" {
-    import { Projectile } from "src/projectile";
-    import { Point } from "BoazEngineJS/interfaces";
-    export class FProjectile extends Projectile {
-        get canHurtPlayer(): boolean;
-        constructor(pos: Point, speed: Point);
-        takeTurn(): void;
-    }
-}
-declare module "src/pietula" {
-    import { BossFoe } from "src/bossfoe";
-    import { PlayerProjectile } from "src/pprojectile";
-    import { Area, Point } from "BoazEngineJS/interfaces";
-    import { bst } from "BoazEngineJS/statemachine";
-    export class Pietula extends BossFoe {
-        get damageToPlayer(): number;
-        get respawnOnRoomEntry(): boolean;
-        protected static HitArea: Area;
-        fst: bst<Pietula>;
-        hover: bst<Pietula>;
-        blink: bst<Pietula>;
-        loops: number;
-        bliksem: {
-            imgid: number;
-            paint(offset: Point): void;
-            pos: Point;
-            flipped: boolean;
-        };
-        constructor(pos?: Point);
-        takeTurn(): void;
-        dispose(): void;
-        handleHit(source: PlayerProjectile): void;
-        paint(offset?: Point): void;
-        die(): void;
     }
 }
 declare module "src/RoomFactory" {

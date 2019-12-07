@@ -37,7 +37,7 @@ export abstract class Sprite implements IRenderObject {
 	}
 
 	public get hitbox_ey(): number {
-		return this.pos.x + this.hitarea.end.x;
+		return this.pos.y + this.hitarea.end.y;
 	}
 
 	public get x_plus_width(): number {

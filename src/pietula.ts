@@ -19,7 +19,7 @@ import { SM } from "../BoazEngineJS/soundmaster";
 const floatspeed = 2;
 const vanlinks_naarrechts = TileSize / 2;
 const vanrechts_naarlinks = GameConstants.GameScreenWidth - (TileSize * 2);
-const loops_tot_boos = 1;
+const loops_tot_boos = 3;
 export class Pietula extends BossFoe {
 	public get damageToPlayer(): number {
 		return 2;
@@ -43,7 +43,8 @@ export class Pietula extends BossFoe {
 		this.imgid = BitmapId.Pietula1;
 		this.hitarea = Pietula.HitArea;
 		this.size = newSize(this.hitarea.end.x, this.hitarea.end.y);
-		this.health = 1;
+		this.health = 20;
+		this.maxHealth = this.health;
 		this.loops = 0;
 		this.visible = false;
 
@@ -56,7 +57,7 @@ export class Pietula extends BossFoe {
 
 		let intro_wacht = fst.addNewState('intro_wacht');
 		intro_wacht.oninitstate = (s) => {
-			s.target.pos = Tile.toStagePoint(6, 6);
+			s.target.pos = Tile.toStagePoint(7, 3);
 			s.target.flippedH = false;
 			s.target.blink.transition('in');
 			s.target.hover.reset();
@@ -107,9 +108,6 @@ export class Pietula extends BossFoe {
 		waitforbliksem.delta2tapehead = 3000 / 20;
 		waitforbliksem.onrun = (s) => {
 			++s.tapeheadnudges;
-			// if (s.target.blink.current.id === 'visible') {
-			// 	s.transitionSM('bliksem');
-			// }
 		};
 		waitforbliksem.ontapeheadmove = (s) => {
 			s.transitionSM('bliksem');
@@ -131,7 +129,7 @@ export class Pietula extends BossFoe {
 			switch (plek) {
 				case 0:
 					s.target.pos.x = vanlinks_naarrechts;
-					s.target.pos.y = Tile.toStageCoord(3);
+					s.target.pos.y = Tile.toStageCoord(4);
 					s.target.flippedH = true;
 					s.target.bliksem.flipped = false;
 					s.target.bliksem.pos.x = s.target.pos.x + 41;
@@ -147,7 +145,7 @@ export class Pietula extends BossFoe {
 					break;
 				case 2:
 					s.target.pos.x = vanrechts_naarlinks;
-					s.target.pos.y = Tile.toStageCoord(3);
+					s.target.pos.y = Tile.toStageCoord(4);
 					s.target.bliksem.pos.x = s.target.pos.x - 256;
 					s.target.bliksem.pos.y = s.target.pos.y - 28;
 					s.target.bliksem.flipped = true;
@@ -166,6 +164,7 @@ export class Pietula extends BossFoe {
 		let bliksemstate = fst.addNewState('bliksem');
 		bliksemstate.oninitstate = (s) => {
 			bliksemstate.reset();
+			SM.playEffect(AudioId.Bliksem);
 		};
 		bliksemstate.tapedata = [
 			BitmapId.Lightning1,
@@ -221,44 +220,44 @@ export class Pietula extends BossFoe {
 		this.hover = hover;
 		hover.tapedata = [
 			0,
-			-2,
-			-2,
-			-4,
-			-4,
-			-4,
-			-4,
-			-8,
-			-8,
-			-8,
-			-8,
-			-8,
-			-8,
-			-4,
-			-4,
-			-4,
-			-4,
-			-2,
-			-2,
+			2,
+			2,
+			4,
+			4,
+			4,
+			4,
+			8,
+			8,
+			8,
+			8,
+			8,
+			8,
+			4,
+			4,
+			4,
+			4,
+			2,
+			2,
 			0,
 			0,
-			2,
-			2,
-			4,
-			4,
-			4,
-			4,
-			8,
-			8,
-			8,
-			8,
-			8,
-			8,
-			4,
-			4,
-			4,
-			4,
-			2,
-			2,
+			-2,
+			-2,
+			-4,
+			-4,
+			-4,
+			-4,
+			-8,
+			-8,
+			-8,
+			-8,
+			-8,
+			-8,
+			-4,
+			-4,
+			-4,
+			-4,
+			-2,
+			-2,
 			0,
 		];
 		hover.delta2tapehead = 2;
@@ -384,6 +383,8 @@ export class Pietula extends BossFoe {
 		this.visible = false;
 		this.canHurtPlayer = false;
 		this.hittable = false;
+		this.blink.halted = true;
+		this.hover.halted = true;
 
 		SM.playMusic(AudioId.Hoera);
 		this.fst.transition('wachten_op_elmo');

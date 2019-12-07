@@ -97,7 +97,7 @@ export class RoomFactory {
 
 	public static RoomMap_stage0: number[][] = [
 		[0, 0, 0, 0, 0,],
-		[0, 0, 1, 2, 100,],
+		[1, 2, 3, 100,],
 		[0, 0, 0, 0, 0,],
 		[0, 0, 0, 0, 0,],
 	];
@@ -114,10 +114,10 @@ export class RoomFactory {
 		imgid = BitmapId.Garden;
 		tiles = [
 			"################",
-			"#..............#",
-			"#..............#",
-			"#..............#",
-			"#..............#",
+			"#...............",
+			"#...............",
+			"#...............",
+			"#...............",
 			"#...............",
 			"#...............",
 			"#...............",
@@ -131,34 +131,59 @@ export class RoomFactory {
 			M._.spawn(candle);
 			let candle2 = new GardenCandle(Tile.toStagePoint(12, 7));
 			M._.spawn(candle2);
-			M._.spawn(new Pietula());
 		};
 
 		RoomFactory.rooms.set(id, new RoomDataContainer(id, tiles, imgid, map, initFunction));
 
 		id = 2;
 		map = RoomFactory.RoomMap_stage0;
-		imgid = undefined;
+		imgid = BitmapId.Garden;
 		tiles = [
 			"################",
-			"#..............#",
-			"#..............#",
-			"#..............#",
-			"#..............#",
 			"................",
 			"................",
-			"...........###..",
-			"...........###..",
+			"................",
+			"................",
+			"................",
+			"................",
+			"................",
+			"................",
 			"################",
 			"----------------",
 		];
 
 		initFunction = (r: Room) => {
-			let candle = new Candle(Tile.toStagePoint(4, 7));
+			let candle = new GardenCandle(Tile.toStagePoint(4, 7));
 			M._.spawn(candle);
-			let candle2 = new Candle(Tile.toStagePoint(12, 7));
+			let candle2 = new GardenCandle(Tile.toStagePoint(12, 7));
 			M._.spawn(candle2);
-			M._.spawn(new ZakFoe(<Point>Tile.create(8, 8), Direction.Left));
+			M._.spawn(new ZakFoe(Tile.toStagePoint(14, 8), Direction.Left));
+			M._.spawn(new ZakFoe(Tile.toStagePoint(7, 8), Direction.Left));
+		};
+
+		RoomFactory.rooms.set(id, new RoomDataContainer(id, tiles, imgid, map, initFunction));
+
+		id = 3;
+		map = RoomFactory.RoomMap_stage0;
+		imgid = BitmapId.Garden_entrance;
+		tiles = [
+			"################",
+			"................",
+			"................",
+			"................",
+			"................",
+			"................",
+			"................",
+			"................",
+			"................",
+			"################",
+			"----------------",
+		];
+
+		initFunction = (r: Room) => {
+			let candle = new GardenCandle(Tile.toStagePoint(4, 7));
+			M._.spawn(candle);
+			M._.spawn(new ZakFoe(Tile.toStagePoint(14, 8), Direction.Left));
 		};
 
 		RoomFactory.rooms.set(id, new RoomDataContainer(id, tiles, imgid, map, initFunction));
@@ -173,8 +198,8 @@ export class RoomFactory {
 			"#--------------#",
 			"#--------------#",
 			"#--------------#",
-			"####--------####",
 			"#--------------#",
+			"####--------####",
 			"#--------------#",
 			"#--------------#",
 			"################",
@@ -187,8 +212,9 @@ export class RoomFactory {
 			M._.spawn(new Candle(Tile.toStagePoint(10, 5)));
 			M._.spawn(new Candle(Tile.toStagePoint(5, 7)));
 			M._.spawn(new Candle(Tile.toStagePoint(10, 7)));
-			M._.spawn(new Pietula());
-			Controller._.startBossFight();
+			let deBaas = new Pietula();
+			M._.spawn(deBaas);
+			Controller._.startBossFight(deBaas);
 			M._.Belmont.setx(Tile.toStageCoord(2));
 			M._.Belmont.sety(Tile.toStageCoord(8));
 		};

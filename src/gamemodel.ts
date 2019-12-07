@@ -24,8 +24,6 @@ import { Msx1Colors } from "../BoazEngineJS/msx";
 export const enum GameState {
     None = 0,
     Editor,
-    Prelude,
-    Story,
     TitleScreen,
     Tutorial,
     GameStart1,
@@ -168,16 +166,18 @@ export class Model extends BaseModel {
     public get ShowFoeBar(): boolean {
         return Model._.BossBattle;
     }
+
     public get FoeHealthPercentage(): number {
-        let foe = Model._.LastFoeThatWasHit;
-        if (foe == null) {
-            if (!Model._.BossBattle)
-                return -1;
-            else foe = Model._.Boss;
-        }
-        if (foe.disposeFlag)
-            return 0;
-        return foe.healthPercentage;
+        return Model._.Boss?.healthPercentage ?? 100;
+        // let foe = Model._.LastFoeThatWasHit;
+        // if (foe == null) {
+        //     if (!Model._.BossBattle)
+        //         return -1;
+        //     else foe = Model._.Boss;
+        // }
+        // if (foe.disposeFlag)
+        //     return 0;
+        // return foe.healthPercentage;
     }
 
     public get FoeForWhichHealthPercentageIsGiven(): Foe {
@@ -248,6 +248,13 @@ export class Model extends BaseModel {
         this.SecWeaponCooldownTimer = BStopwatch.createWatch();
         this._hearts = 0;
 
+        this.Hud = new HUD();
+        this.ItsCurtains = new ItsCurtainsForYou();
+        this.GameOverScreen = new GameOver();
+        this.MainMenu = new MainMenu();
+        this.Title = new Title();
+        this.EndDemo = new EndDemo();
+
         RoomFactory.PrepareData();
     }
 
@@ -261,12 +268,6 @@ export class Model extends BaseModel {
         Model._.FoesDefeated.clear();
         Model._.ItemsPickedUp.clear();
         Model._.WeaponItemsPickedUp.clear();
-        this.Hud = new HUD();
-        this.ItsCurtains = new ItsCurtainsForYou();
-        this.GameOverScreen = new GameOver();
-        this.MainMenu = new MainMenu();
-        this.Title = new Title();
-        this.EndDemo = new EndDemo();
         if (!this.PauseObject)
             this.PauseObject = {
                 priority: 5000,

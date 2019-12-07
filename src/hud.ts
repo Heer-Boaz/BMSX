@@ -105,10 +105,10 @@ export class HUD {
         let lengthShown: number, lengthBefore: number;
 
         if (M._.BossBattle) {
-            if (M._.FoeForWhichHealthPercentageIsGiven !== this.foeForWhichHealthLevelIsShown) {
-                this.foeForWhichHealthLevelIsShown = M._.FoeForWhichHealthPercentageIsGiven;
-                this.shownFoeHealthLevel = M._.FoeHealthPercentage;
-            }
+            // if (M._.FoeForWhichHealthPercentageIsGiven !== this.foeForWhichHealthLevelIsShown) {
+            //     this.foeForWhichHealthLevelIsShown = M._.FoeForWhichHealthPercentageIsGiven;
+            //     this.shownFoeHealthLevel = M._.FoeHealthPercentage;
+            // }
             lengthShown = this.percentageToBarLength(this.shownFoeHealthLevel);
             lengthBefore = this.percentageToBarLength(M._.FoeHealthPercentage);
         }

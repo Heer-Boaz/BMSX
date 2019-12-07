@@ -28,7 +28,7 @@ export class Bootstrapper {
         SM.SoundEffectList.set(AudioId.Key, { AudioId: AudioId.Key, Priority: 5 });
         SM.SoundEffectList.set(AudioId.Knife, { AudioId: AudioId.Knife, Priority: 0 });
         SM.SoundEffectList.set(AudioId.Land, { AudioId: AudioId.Land, Priority: 0 });
-        // this.SoundEffectList.set(AudioId.Lightning, { AudioId: AudioId.Lightning, Priority: 0 });
+        SM.SoundEffectList.set(AudioId.Bliksem, { AudioId: AudioId.Bliksem, Priority: 10 });
         // this.SoundEffectList.set(AudioId.Munnies, { AudioId: AudioId.Munnies, Priority: 0 });
         SM.SoundEffectList.set(AudioId.Au, { AudioId: AudioId.Au, Priority: 2 });
         // this.SoundEffectList.set(AudioId.Portal, { AudioId: AudioId.Portal, Priority: 0 });
@@ -63,10 +63,12 @@ export class Bootstrapper {
                 throw Error(`Incorrect chapter for bootstrapping game! Chapter = ${chapter}`);
         }
     }
+
     private static bootstrapGameForGameStart(): void {
         setPoint(M._.Belmont.pos, Tile.toStageCoord(2), Tile.toStageCoord(5));
-        M._.LoadRoom(100);
+        M._.LoadRoom(1);
     }
+
     private static bootstrapGameForDebug(): void {
         M._.LoadRoom(100);
         setPoint(M._.Belmont.pos, Tile.toStageCoord(2), Tile.toStageCoord(5));

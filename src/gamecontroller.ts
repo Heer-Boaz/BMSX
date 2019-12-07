@@ -19,6 +19,7 @@ import { GameSaver } from "../BoazEngineJS/gamesaver";
 import { BaseController } from '../BoazEngineJS/controller';
 import { Input } from "../BoazEngineJS/input";
 import { TileSize, Tile } from "../BoazEngineJS/msx";
+import { Pietula } from "./pietula";
 
 export class Controller extends BaseController {
     private static _instance: Controller;
@@ -39,9 +40,9 @@ export class Controller extends BaseController {
         let oldState = M._.State;
         switch (oldState) {
             case GameState.TitleScreen:
-                SM.stopMusic();
-                if (newState == GameState.Game)
-                    this.setupGameStart(newState);
+                // SM.stopMusic();
+                // if (newState == GameState.Game)
+                //     this.setupGameStart(newState);
                 break;
             case GameState.GameStart2:
                 this.setupGameStart(newState);
@@ -66,11 +67,7 @@ export class Controller extends BaseController {
 
     protected initNewState(newState: GameState): void {
         switch (newState) {
-            case GameState.Prelude:
-                M._.Title.Init();
-                break;
             case GameState.TitleScreen:
-                M._.MainMenu.Init();
                 break;
             case GameState.EndDemo:
                 M._.EndDemo.Init();
@@ -80,7 +77,7 @@ export class Controller extends BaseController {
                 break;
             case GameState.GameStart2:
                 this.timer.restart();
-                // SM.playMusic(AudioId.VampireKiller);
+                SM.playMusic(AudioId.VampireKiller);
                 break;
             case GameState.Game:
                 break;
@@ -136,15 +133,9 @@ export class Controller extends BaseController {
         }
         this.ElapsedMsDelta = elapsedMs;
         switch (M._.State) {
-            case GameState.Prelude:
-                M._.Title.TakeTurn();
-                break;
             case GameState.TitleScreen:
-                M._.MainMenu.HandleInput();
-                M._.MainMenu.TakeTurn();
-                if (M._.GameMenu.visible) {
-                    M._.GameMenu.HandleInput();
-                    M._.GameMenu.TakeTurn();
+                if (Input.KC_SPACE) {
+                    this.switchState(GameState.GameStart1);
                 }
                 break;
             case GameState.EndDemo:
@@ -309,10 +300,6 @@ export class Controller extends BaseController {
         else this.switchState(GameState.EndDemo);
     }
 
-    public PreludeFinished(): void {
-        this.switchState(GameState.TitleScreen);
-    }
-
     public BossDefeated(): void {
         this.switchSubstate(GameSubstate.ToEndDemo);
     }
@@ -440,8 +427,10 @@ export class Controller extends BaseController {
             M._.ItemsPickedUp[source.id] = true;
     }
 
-    public startBossFight(): void {
+    public startBossFight(baas: Pietula): void {
         SM.playMusic(AudioId.Baas);
         M._.RoomExitsLocked = true;
+        M._.BossBattle = true;
+        M._.Boss = baas;
     }
 }
