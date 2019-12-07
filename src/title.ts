@@ -1,7 +1,7 @@
 import { Animation, AniStepReturnValue } from "../BoazEngineJS/animation"
 import { setPoint } from "../BoazEngineJS/common";
 import { AudioId, BitmapId } from "./resourceids";
-import { GameController as C } from "./gamecontroller";
+import { Controller as C } from "./gamecontroller";
 import { Input } from "../BoazEngineJS/input";
 import { Point } from "../BoazEngineJS/interfaces";
 import { Game as G, view, game } from '../BoazEngineJS/engine';

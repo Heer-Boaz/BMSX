@@ -1,6 +1,6 @@
 ﻿import { IGameObject, Point } from "./interfaces";
 
-export abstract class Model {
+export abstract class BaseModel {
     public id2object: Map<string, IGameObject>;
     public objects: IGameObject[];
     public gameState: number;

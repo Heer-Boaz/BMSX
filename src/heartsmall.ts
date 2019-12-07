@@ -3,7 +3,7 @@ import { Animation } from "../BoazEngineJS/animation"
 import { AudioId, BitmapId } from "./resourceids";
 import { GameConstants } from "./gameconstants";
 import { newArea } from "../BoazEngineJS/common";
-import { GameModel } from "./sintervaniamodel";
+import { Model } from "./gamemodel";
 import { SM } from "../BoazEngineJS/soundmaster";
 import { Area, Point } from "../BoazEngineJS/interfaces";
 
@@ -35,7 +35,7 @@ export class HeartSmall extends Sprite {
 	}
 
 	protected get floorCollision(): boolean {
-		return GameModel._.currentRoom.IsCollisionTile(this.pos.x + 5, this.pos.y + 8);
+		return Model._.currentRoom.IsCollisionTile(this.pos.x + 5, this.pos.y + 8);
 	}
 
 	protected uglyBitThing: boolean;
@@ -61,8 +61,8 @@ export class HeartSmall extends Sprite {
 				this.imgid = BitmapId.Heart_small;
 			}
 		}
-		if (this.objectCollide(GameModel._.Belmont)) {
-			++GameModel._.Hearts;
+		if (this.objectCollide(Model._.Belmont)) {
+			++Model._.Hearts;
 			this.disposeFlag = true;
 			SM.playEffect(AudioId.Heart);
 		}

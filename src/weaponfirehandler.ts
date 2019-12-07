@@ -1,4 +1,4 @@
-import { GameModel as M, MainWeaponType, SecWeaponType } from "./sintervaniamodel";
+import { Model as M, MainWeaponType, SecWeaponType } from "./gamemodel";
 import { TriRoe } from "./triroe";
 import { SM } from "../BoazEngineJS/soundmaster";
 import { AudioId } from "./resourceids";

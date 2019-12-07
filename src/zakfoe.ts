@@ -1,18 +1,15 @@
 import { Foe } from "./foe";
-import { BStopwatch } from "../BoazEngineJS/btimer";
-import { Item, ItemType } from "./item";
+import { ItemType } from "./item";
 import { Direction } from "../BoazEngineJS/direction";
 import { PlayerProjectile } from "./pprojectile";
 import { newArea, newSize } from "../BoazEngineJS/common";
-import { AudioId, BitmapId } from "./resourceids";
+import { BitmapId } from "./resourceids";
 import { Area, Point } from "../BoazEngineJS/interfaces";
-import { Animation, AniStepReturnValue } from "../BoazEngineJS/animation";
-import { GameModel as M } from "./sintervaniamodel";
+import { Model as M } from "./gamemodel";
 import { GameConstants as CS } from "./gameconstants";
-import { TileSize } from "../BoazEngineJS/msx";
 import { bst } from "../BoazEngineJS/statemachine";
 
-type AniType = { img: BitmapId, dy: number };
+type AniType = { i: BitmapId, dy: number };
 
 export class ZakFoe extends Foe {
 	public get damageToPlayer(): number {
@@ -24,7 +21,7 @@ export class ZakFoe extends Foe {
 	}
 
 	protected static ZakFoeHitArea: Area = newArea(2, 2, 14, 14);
-	protected fst: bst<ZakFoe, { i: BitmapId, dy: number }>;
+	protected fst: bst<ZakFoe>;
 
 	constructor(pos: Point, dir: Direction, itemSpawned: ItemType = ItemType.HeartSmall) {
 		super(pos);
@@ -36,9 +33,9 @@ export class ZakFoe extends Foe {
 		this.direction = dir;
 		this.health = 1;
 
-		this.fst = new bst<ZakFoe, { i: BitmapId, dy: number }>(this, 0, true);
+		this.fst = new bst<ZakFoe>(this, 0, true);
 		let state0 = this.fst.addNewState(0);
-		state0.tapedata = [
+		state0.tapedata = <Array<AniType>>[
 			null,
 			{ i: BitmapId.ZakFoe3, dy: 0 },
 			{ i: BitmapId.ZakFoe1, dy: -4 },
@@ -83,15 +80,14 @@ export class ZakFoe extends Foe {
 			}
 		};
 		state0.ontapeend = (s) => {
-			s.parent.transition(1);
+			s.bsm.transition(1);
 		};
 		state0.oninitstate = (s) => {
 			s.setTapeheadNoEvent(0);
-			// s.target.imgid = s.currentdata.i;
 		};
 		state0.ontapeheadmove = (s) => {
-			s.target.imgid = s.currentdata.i;
-			s.target.pos.y += s.currentdata.dy;
+			s.target.imgid = (<AniType>s.currentdata).i;
+			s.target.pos.y += (<AniType>s.currentdata).dy;
 		};
 
 		let state1 = this.fst.addNewState(1);
@@ -100,45 +96,19 @@ export class ZakFoe extends Foe {
 			++s.tapeheadnudges;
 		};
 		state1.ontapeheadmove = (s) => {
-			s.parent.transition(0);
+			s.bsm.transition(0);
 		};
 		state1.oninitstate = (s) => {
 			s.setTapeheadNoEvent(0);
 		};
+
+		this.fst.setStartState(0, false);
 	}
 
 	public takeTurn(): void {
 		if (this.disposeFlag) return;
 		this.fst.run();
 		super.takeTurn();
-		// this.imgid = stepValue.stepValue.img;
-		// this.pos.y += stepValue.stepValue.dy;
-		// if (this.imgid == 0) {
-		// 	switch (this.direction) {
-		// 		case Direction.Left:
-		// 			this.pos.x -= 1;
-		// 			// Handle game screen collision
-		// 			if (this.pos.x <= 0)
-		// 				this.direction = Direction.Right;
-		// 			// Handle wall / missing floor collision
-		// 			if (M._.currentRoom.AnyCollisionsTiles(true, { x: this.hitbox_sx, y: this.hitbox_sy }, { x: this.hitbox_sx, y: this.hitbox_ey }))
-		// 				this.direction = Direction.Right;
-		// 			if (!M._.currentRoom.AnyCollisionsTiles(true, { x: this.hitbox_sx, y: this.hitbox_ey + TileSize + 4 }))
-		// 				this.direction = Direction.Right;
-		// 			break;
-		// 		case Direction.Right:
-		// 			this.pos.x += 1;
-		// 			// Handle game screen collision
-		// 			if (this.pos.x >= CS.GameScreenWidth)
-		// 				this.direction = Direction.Left;
-		// 			// Handle wall / missing floor collision
-		// 			if (M._.currentRoom.AnyCollisionsTiles(true, { x: this.hitbox_ex, y: this.hitbox_sy }, { x: this.hitbox_ex, y: this.hitbox_ey }))
-		// 				this.direction = Direction.Left;
-		// 			if (!M._.currentRoom.AnyCollisionsTiles(true, { x: this.hitbox_ex, y: this.hitbox_ey + TileSize + 4 }))
-		// 				this.direction = Direction.Left;
-		// 			break;
-		// 	}
-		// }
 	}
 
 	public dispose(): void {

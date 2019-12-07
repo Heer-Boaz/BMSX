@@ -1,14 +1,14 @@
-import { GameModel } from "../src/sintervaniamodel";
+import { Model } from "../src/gamemodel";
 import { Constants as CS } from "./constants";
 import { Savegame } from "./savegame";
 import { LoadGame } from "./gamestateloader";
 
 export namespace GameSaver {
-	export function saveGame(m: GameModel, slot: number): void {
+	export function saveGame(m: Model, slot: number): void {
 		console.warn("Not implemented yet :(");
 	}
 
-	export function GetCheckpoint(m: GameModel): Savegame {
+	export function GetCheckpoint(m: Model): Savegame {
 		saveGame(m, CS.SaveSlotCheckpoint);
 		return LoadGame(CS.SaveSlotCheckpoint);
 	}

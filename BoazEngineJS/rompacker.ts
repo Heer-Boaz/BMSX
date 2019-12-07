@@ -1,4 +1,4 @@
-import { readdirSync, statSync, readFileSync, writeFileSync, copyFile, copyFileSync } from "fs";
+import { readdirSync, statSync, readFileSync, writeFileSync, copyFile, copyFileSync, existsSync, exists } from "fs";
 import { join, parse } from "path";
 var terser = require('terser');
 const minify = require('@node-minify/core');
@@ -49,7 +49,7 @@ function getAllFiles(dirPath: string, arrayOfFiles?: string[]): string[] {
 			if (file.indexOf("ignore") === -1)
 				arrayOfFiles = getAllFiles(dirPath + "/" + file, arrayOfFiles);
 		} else {
-			if (!file.endsWith("loading.png") && !file.endsWith("bmsx.png") && !file.endsWith('.rom') && !file.endsWith('.json') && !file.endsWith('.js') && !file.endsWith('.map') && !file.endsWith('.tsbuildinfo'))
+			if (!file.endsWith("loading.png") && !file.endsWith("bmsx.png") && !file.endsWith('.rom') && !file.endsWith('.json') && !file.endsWith('.js') && !file.endsWith('.ts') && !file.endsWith('.map') && !file.endsWith('.tsbuildinfo'))
 				arrayOfFiles.push(join(dirPath, "/", file));
 		}
 	})
@@ -64,14 +64,14 @@ function copyResources(): void {
 function buildGameHtml(outfile: string): void {
 	let html = readFileSync("./gamebase.html", 'utf8');
 	let romjs = readFileSync("./rom/rom.js", 'utf8');
-	// var options = {
-	// 	mangle: {
-	// 		toplevel: true,
-	// 		reserved: ["basic"],
-	// 	},
-	// };
-	// let romjsMinified = terser.minify(romjs, options).code;
-	let romjsMinified = romjs;
+	var options = {
+		mangle: {
+			toplevel: true,
+			reserved: ["basic"],
+		},
+	};
+	let romjsMinified = terser.minify(romjs, options).code;
+	// let romjsMinified = romjs;
 	let bmsx = readFileSync("./rom/bmsx.png");
 	let bmsx_base64ed = bmsx.toString('base64');
 
@@ -95,7 +95,6 @@ function buildGameHtml(outfile: string): void {
 function buildRompackAndResourceList(outfile: string): void {
 	const arrayOfFiles = getAllFiles("./rom");
 	addFile("./rom", "thegame.js", arrayOfFiles); // Add source at the end
-	console.info(`Filecount: ${arrayOfFiles.length}`);
 
 	let buffers = new Array<Buffer>();
 	arrayOfFiles.forEach(x => buffers.push(readFileSync(x)));
@@ -158,16 +157,31 @@ function buildRompackAndResourceList(outfile: string): void {
 
 	writeFileSync(`./dist/${outfile}`, Buffer.concat(buffers));
 	writeFileSync("./src/resourceids.ts", tsimgout.concat(tssndout).join('\n'));
-	// writeFileSync("../rom/romtable.json", JSON.stringify(jsonout));
+	console.info("Rom successfully packed!");
+	console.info(`\tFiles: ${arrayOfFiles.length}`);
+	console.info(`\tSize: ${(Buffer.concat(buffers).length / (1024 * 1024)).toFixed(2)} mB`);
 }
 
 try {
 	let args = process.argv.slice(2);
 	if (args.length <= 0) throw new Error("Missing parameter for output file (rom name, e.g. \"sintervania.rom\"");
 	let outfile = args[0];
+	let force = args.length > 1 ? args[1] : undefined;
+
+	if (!force && existsSync(`./dist/${outfile}`) && existsSync(`"./rom/thegame.js"`)) {
+		let romstats = statSync(`./dist/${outfile}`);
+		let rommtime = romstats.mtime;
+		let jsstats = statSync(`"./rom/thegame.js"`);
+		let jsmtime = jsstats.mtime;
+		if (jsmtime < rommtime) {
+			console.info("No action performed: game rom was newer than code.\nUse --force option to ignore this check.");
+			process.exit(0);
+		}
+	}
+
 	buildRompackAndResourceList(outfile);
 	buildGameHtml(outfile);
-	// copyResources();
 } catch (e) {
 	console.error(e);
+	process.exit(-1);
 }

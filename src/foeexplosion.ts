@@ -3,7 +3,7 @@ import { Animation, AniData } from "../BoazEngineJS/animation"
 import { FX } from "./fx";
 import { HeartSmall } from "./heartsmall";
 import { AudioId, BitmapId } from "./resourceids";
-import { GameModel } from "./sintervaniamodel";
+import { Model } from "./gamemodel";
 import { addPoints } from "../BoazEngineJS/common";
 import { Point } from "../BoazEngineJS/interfaces";
 
@@ -33,7 +33,7 @@ export class FoeExplosion extends FX {
             if (this.animation.finished === true) {
                 this.disposeFlag = true;
                 if (this.itemSpawnedAfterKill === ItemType.HeartSmall) {
-                    GameModel._.spawn(new HeartSmall(addPoints(<Point>{ x: this.pos.x, y: this.pos.y }, <Point>{ x: 4, y: 8 })));
+                    Model._.spawn(new HeartSmall(addPoints(<Point>{ x: this.pos.x, y: this.pos.y }, <Point>{ x: 4, y: 8 })));
                 }
             }
         }

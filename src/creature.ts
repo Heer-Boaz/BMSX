@@ -1,7 +1,7 @@
 import { Sprite } from "../BoazEngineJS/sprite";
 import { moveArea } from "../BoazEngineJS/common"
 import { Direction } from "../BoazEngineJS/direction";
-import { GameModel as M } from "./sintervaniamodel";
+import { Model as M } from "./gamemodel";
 import { TileSize } from "../BoazEngineJS/msx";
 import { Area, Point } from "../BoazEngineJS/interfaces";
 

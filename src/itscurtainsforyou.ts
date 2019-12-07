@@ -2,7 +2,7 @@ import { BStopwatch } from "../BoazEngineJS/btimer";
 import { TileSize } from "../BoazEngineJS/msx"
 import { waitDuration } from "../BoazEngineJS/common";
 import { view } from "../BoazEngineJS/engine";
-import { GameController as C } from "./gamecontroller";
+import { Controller as C } from "./gamecontroller";
 import { Point } from "../BoazEngineJS/interfaces";
 import { BitmapId } from "./resourceids";
 import { GameConstants } from "./gameconstants";

@@ -1,7 +1,7 @@
 import { Creature } from "./creature";
 import { PlayerProjectile } from "./pprojectile";
 import { ItemType } from "./item";
-import { GameModel as M } from "./sintervaniamodel";
+import { Model as M } from "./gamemodel";
 import { SM } from "../BoazEngineJS/soundmaster";
 import { FoeExplosion } from "./foeexplosion";
 import { AudioId } from "./resourceids";

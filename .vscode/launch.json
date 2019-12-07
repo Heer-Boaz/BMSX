@@ -15,6 +15,7 @@
 			"runtimeArgs": [
 				// "--disable-web-security"
 			],
+			"preLaunchTask": "build",
 			"sourceMaps": true,
 			"showAsyncStacks": true,
 			"smartStep": true,

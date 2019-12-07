@@ -1,9 +1,9 @@
-import { Chapter, GameState } from "./sintervaniamodel";
+import { Chapter, GameState } from "./gamemodel";
 import { GameConstants as GCS } from "./gameconstants"
 import { SM as S } from "../BoazEngineJS/soundmaster";
 import { Direction } from "../BoazEngineJS/direction";
-import { GameModel as M } from "./sintervaniamodel";
-import { GameController as C } from "./gamecontroller";
+import { Model as M } from "./gamemodel";
+import { Controller as C } from "./gamecontroller";
 import { TextWriter } from "./textwriter";
 import { view } from "../BoazEngineJS/engine";
 import { Constants as CS } from "../BoazEngineJS/constants";

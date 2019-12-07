@@ -8,5 +8,6 @@
                 "**/*.js.map": true,
                 "**/*.log": true,
                 "**/*.js": {"when": "$(basename).ts"}
-        }
+        },
+        "typescript.tsdk": "node_modules\\typescript\\lib"
 }

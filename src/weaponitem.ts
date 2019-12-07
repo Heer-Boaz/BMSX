@@ -1,9 +1,9 @@
 import { Sprite } from "../BoazEngineJS/sprite";
-import { GameModel as M, SecWeaponType, BagWeapon } from "./sintervaniamodel";
+import { Model as M, SecWeaponType, BagWeapon } from "./gamemodel";
 import { Item } from "./item";
 import { AudioId, BitmapId } from "./resourceids";
 import { moveArea, area2size } from "../BoazEngineJS/common";
-import { GameController as C } from "./gamecontroller";
+import { Controller as C } from "./gamecontroller";
 import { Area, Point } from "../BoazEngineJS/interfaces";
 
 /*[Serializable]*/

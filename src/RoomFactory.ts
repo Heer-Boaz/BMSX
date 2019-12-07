@@ -2,13 +2,14 @@ import { Room, RoomInitDelegate } from './room';
 import { Point } from '../BoazEngineJS/interfaces';
 import { newPoint } from '../BoazEngineJS/common';
 import { Tile } from '../BoazEngineJS/msx';
-import { GameModel as M } from "./sintervaniamodel";
+import { Model as M } from "./gamemodel";
 import { GardenCandle } from './gardencandle';
 import { BitmapId } from './resourceids';
 import { HagGenerator } from './haggenerator';
 import { Direction } from '../BoazEngineJS/direction';
 import { ZakFoe } from './zakfoe';
 import { Candle } from './candle';
+import { Pietula } from './pietula';
 
 export class RoomDataContainer {
 	public id: number;
@@ -130,6 +131,7 @@ export class RoomFactory {
 			M._.spawn(candle);
 			let candle2 = new GardenCandle(Tile.toStagePoint(12, 7));
 			M._.spawn(candle2);
+			M._.spawn(new Pietula());
 		};
 
 		RoomFactory.rooms.set(id, new RoomDataContainer(id, tiles, imgid, map, initFunction));

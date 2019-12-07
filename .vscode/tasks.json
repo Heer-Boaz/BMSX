@@ -2,7 +2,15 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"label": "build & pack",
+			"label": "build",
+			"dependsOn": [ "pack" ],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+		},
+		{
+			"label": "pack",
 			"type": "shell",
 			"command": "node",
 			"args": [
@@ -12,24 +20,22 @@
 			"problemMatcher": [
 				"$node-sass"
 			],
-			"group": {
-				"kind": "build",
-				"isDefault": true
-			},
+			"group": "build",
+			"dependsOrder": "parallel",
 			"dependsOn": [
 				"build rom",
 				"build rompacker",
 				"build game",
-				// "minify"
 			],
 			"presentation": {
-				"echo": true,
-				"reveal": "silent",
+				"echo": false,
+				"reveal": "always",
 				"focus": false,
-				"panel": "dedicated",
+				"panel": "shared",
 				"showReuseMessage": false,
 				"clear": true,
-				"revealProblems": "onProblem"
+				"revealProblems": "onProblem",
+				"group": "boaz",
 			}
 		},
 		{
@@ -48,13 +54,14 @@
 				"build rompacker",
 			],
 			"presentation": {
-				"echo": true,
-				"reveal": "silent",
+				"echo": false,
+				"reveal": "always",
 				"focus": false,
 				"panel": "dedicated",
 				"showReuseMessage": false,
 				"clear": true,
-				"revealProblems": "onProblem"
+				"revealProblems": "onProblem",
+				"group": "pack rom without build",
 			}
 		},
 		{
@@ -80,13 +87,14 @@
 				"$node-sass"
 			],
 			"presentation": {
-				"echo": true,
-				"reveal": "silent",
+				"echo": false,
+				"reveal": "always",
 				"focus": false,
-				"panel": "dedicated",
+				"panel": "shared",
 				"showReuseMessage": false,
 				"clear": true,
-				"revealProblems": "onProblem"
+				"revealProblems": "onProblem",
+				"group": "boaz",
 			},
 			"group": "build",
 			"dependsOn": [
@@ -101,15 +109,16 @@
 				"$tsc"
 			],
 			"presentation": {
-				"echo": true,
-				"reveal": "silent",
+				"echo": false,
+				"reveal": "always",
 				"focus": false,
-				"panel": "dedicated",
+				"panel": "shared",
 				"showReuseMessage": false,
 				"clear": true,
-				"revealProblems": "onProblem"
+				"revealProblems": "onProblem",
+				"group": "boaz",
 			},
-			"group": "build"
+			"group": "build",
 		},
 		{
 			"label": "build rom",
@@ -129,12 +138,13 @@
 				"$tsc"
 			],
 			"presentation": {
-				"echo": true,
-				"reveal": "silent",
+				"echo": false,
+				"reveal": "always",
 				"focus": false,
 				"panel": "shared",
 				"showReuseMessage": false,
-				"clear": true
+				"clear": true,
+				"group": "boaz",
 			},
 			"group": "build"
 		},
@@ -154,12 +164,13 @@
 			],
 			"group": "build",
 			"presentation": {
-				"echo": true,
-				"reveal": "silent",
+				"echo": false,
+				"reveal": "always",
 				"focus": false,
 				"panel": "shared",
 				"showReuseMessage": false,
-				"clear": true
+				"clear": true,
+				"group": "boaz",
 			}
 		},
 		{

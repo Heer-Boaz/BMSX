@@ -5,7 +5,7 @@ import { GameConstants as CS, GameConstants } from './gameconstants';
 import { view } from "../BoazEngineJS/engine";
 import { RoomDataContainer } from "./RoomFactory";
 import { BitmapId } from "./resourceids";
-import { GameModel } from "./sintervaniamodel";
+import { Model } from "./gamemodel";
 
 export type NearingRoomExitResult = { destRoom: number, direction: Direction } | null;
 export type RoomInitDelegate = (room: Room) => void;
@@ -180,7 +180,7 @@ export class Room {
 	}
 
 	private roomExit(dir: number): number {
-		return GameModel._.RoomExitsLocked ? Room.NO_ROOM_EXIT : this.exits[dir];
+		return Model._.RoomExitsLocked ? Room.NO_ROOM_EXIT : this.exits[dir];
 	}
 
 	private CanLeaveRoom(dir: number): boolean {

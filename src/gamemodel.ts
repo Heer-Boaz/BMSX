@@ -1,7 +1,7 @@
 import { Foe } from "./foe";
 import { Belmont } from "./belmont";
 import { Savegame } from "../BoazEngineJS/savegame";
-import { Model } from "../BoazEngineJS/model";
+import { BaseModel } from "../BoazEngineJS/model";
 import { BStopwatch } from "../BoazEngineJS/btimer";
 import { BossFoe } from "./bossfoe";
 import { WeaponItem, WeaponType } from "./weaponitem";
@@ -111,19 +111,19 @@ export const enum SecWeaponType {
     Cross
 }
 
-export class GameModel extends Model {
+export class Model extends BaseModel {
     public Checkpoint: Savegame;
     public SelectedChapterToPlay: Chapter;
     public static PROPERTY_KEEP_AT_ROOMSWITCH: string = "p_rs";
     public static PROPERTY_ACT_AS_WALL: string = "p_wall";
 
-    private static _instance: GameModel;
-    public static get _(): GameModel {
-        return GameModel._instance;
+    private static _instance: Model;
+    public static get _(): Model {
+        return Model._instance;
     }
 
-    public static set _(value: GameModel) {
-        GameModel._instance = value;
+    public static set _(value: Model) {
+        Model._instance = value;
     }
 
     public Foes: Foe[];
@@ -166,14 +166,14 @@ export class GameModel extends Model {
     public PauseObject: IGameObject;
 
     public get ShowFoeBar(): boolean {
-        return GameModel._.BossBattle;
+        return Model._.BossBattle;
     }
     public get FoeHealthPercentage(): number {
-        let foe = GameModel._.LastFoeThatWasHit;
+        let foe = Model._.LastFoeThatWasHit;
         if (foe == null) {
-            if (!GameModel._.BossBattle)
+            if (!Model._.BossBattle)
                 return -1;
-            else foe = GameModel._.Boss;
+            else foe = Model._.Boss;
         }
         if (foe.disposeFlag)
             return 0;
@@ -181,7 +181,7 @@ export class GameModel extends Model {
     }
 
     public get FoeForWhichHealthPercentageIsGiven(): Foe {
-        return GameModel._.LastFoeThatWasHit != null ? GameModel._.LastFoeThatWasHit : GameModel._.Boss;
+        return Model._.LastFoeThatWasHit != null ? Model._.LastFoeThatWasHit : Model._.Boss;
     }
 
     private _selectedMainWeapon: MainWeaponType;
@@ -202,7 +202,7 @@ export class GameModel extends Model {
         let index = this.WeaponsInInventory.findIndex(bw => bw.Type == weaponItemInBagType);
         if (index == -1)
             return null;
-        return GameModel._.WeaponsInInventory[index];
+        return Model._.WeaponsInInventory[index];
     }
 
     private _lastFoeThatWasHit: Foe;
@@ -228,7 +228,7 @@ export class GameModel extends Model {
 
     public constructor() {
         super();
-        GameModel._instance = this;
+        Model._instance = this;
         this.Initialize();
     }
 
@@ -252,15 +252,15 @@ export class GameModel extends Model {
     }
 
     public InitModelForGameStart(): void {
-        GameModel._.BossBattle = false;
-        GameModel._.RoomExitsLocked = false;
-        GameModel._.Switches.clear();
-        Object.keys(Switch).forEach(t => GameModel._.Switches.set(Switch[t], false));
-        GameModel._.ItemsInInventory.length = 0;
-        GameModel._.WeaponsInInventory.length = 0;
-        GameModel._.FoesDefeated.clear();
-        GameModel._.ItemsPickedUp.clear();
-        GameModel._.WeaponItemsPickedUp.clear();
+        Model._.BossBattle = false;
+        Model._.RoomExitsLocked = false;
+        Model._.Switches.clear();
+        Object.keys(Switch).forEach(t => Model._.Switches.set(Switch[t], false));
+        Model._.ItemsInInventory.length = 0;
+        Model._.WeaponsInInventory.length = 0;
+        Model._.FoesDefeated.clear();
+        Model._.ItemsPickedUp.clear();
+        Model._.WeaponItemsPickedUp.clear();
         this.Hud = new HUD();
         this.ItsCurtains = new ItsCurtainsForYou();
         this.GameOverScreen = new GameOver();
@@ -285,7 +285,7 @@ export class GameModel extends Model {
         // this.spawn(this.PauseObject, null, true);
 
         this._hearts = 0;
-        GameModel._.spawn(new Belmont());
+        Model._.spawn(new Belmont());
     }
 
     public InitAfterGameLoad(): void {
@@ -297,7 +297,7 @@ export class GameModel extends Model {
         if (o instanceof Belmont) {
             if (this.objects.findIndex(ob => ob instanceof Belmont) > -1)
                 throw Error("There is already a Belmont in the game! \"There can be only one!\"");
-            else GameModel._.Belmont = <Belmont>o;
+            else Model._.Belmont = <Belmont>o;
         }
 
         if (o instanceof Foe) {
@@ -321,7 +321,7 @@ export class GameModel extends Model {
 
     public remove(o: IGameObject): void {
         if (o instanceof Belmont) {
-            GameModel._.Belmont = null;
+            Model._.Belmont = null;
         }
 
         if (o instanceof Foe) {

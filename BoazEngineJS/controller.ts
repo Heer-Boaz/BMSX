@@ -1,7 +1,7 @@
 ﻿import { BStopwatch } from "./btimer";
 import { model } from "./engine";
 
-export abstract class Controller {
+export abstract class BaseController {
     protected timer: BStopwatch;
 
     constructor() {

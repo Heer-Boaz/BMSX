@@ -1,5 +1,5 @@
 import { GameConstants as CS } from "./gameconstants"
-import { GameModel as M, GameState, GameSubstate } from "./sintervaniamodel";
+import { Model as M, GameState, GameSubstate } from "./gamemodel";
 import { Point, IGameView } from '../BoazEngineJS/interfaces';
 import { view } from "../BoazEngineJS/engine";
 

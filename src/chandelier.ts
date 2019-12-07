@@ -6,7 +6,7 @@ import { PlayerProjectile } from "./pprojectile";
 import { ItemType } from "./item";
 import { AudioId, BitmapId } from "./resourceids";
 import { newArea, newSize } from "../BoazEngineJS/common";
-import { GameModel as M } from "./sintervaniamodel";
+import { Model as M } from "./gamemodel";
 import { Area, Point } from "../BoazEngineJS/interfaces";
 
 /*[Serializable]*/

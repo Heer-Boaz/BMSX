@@ -1,11 +1,11 @@
-import { GameModel as M } from "./sintervaniamodel";
+import { Model as M } from "./gamemodel";
 import { Direction } from "../BoazEngineJS/direction";
 import { TextWriter } from "./textwriter";
 import { view } from "../BoazEngineJS/engine";
 import { AudioId, BitmapId } from "./resourceids";
 import { Input } from "../BoazEngineJS/input";
 import { SM as S } from "../BoazEngineJS/soundmaster";
-import { GameController as C } from './gamecontroller';
+import { Controller as C } from './gamecontroller';
 import { GameMenu } from "./gamemenu";
 import { MenuItem } from './mainmenu';
 import { Msx1Colors } from "../BoazEngineJS/msx";

@@ -1,8 +1,8 @@
-import { Chapter, GameModel as M, GameModel } from "./sintervaniamodel";
+import { Chapter, Model as M, Model } from "./gamemodel";
 import { setPoint } from "../BoazEngineJS/common";
 import { Tile } from "../BoazEngineJS/msx";
 import { GameConstants } from "./gameconstants";
-import { GameController } from "./gamecontroller";
+import { Controller } from "./gamecontroller";
 import { GameView } from "./gameview";
 import { View } from "../BoazEngineJS/view";
 import { Game, game, RomLoadResult } from "../BoazEngineJS/engine";
@@ -13,8 +13,8 @@ import { AudioId } from "./resourceids";
 export class Bootstrapper {
     public static init(rom: RomLoadResult): void {
         new Game(rom, { x: GameConstants.ViewportWidth, y: GameConstants.ViewportHeight });
-        game.setModel(new GameModel());
-        game.setController(new GameController());
+        game.setModel(new Model());
+        game.setController(new Controller());
         let gameview = new GameView();
         game.setGameView(gameview);
 
@@ -36,7 +36,7 @@ export class Bootstrapper {
         SM.SoundEffectList.set(AudioId.WallBreak, { AudioId: AudioId.WallBreak, Priority: 0 });
         SM.SoundEffectList.set(AudioId.Whip, { AudioId: AudioId.Whip, Priority: 0 });
         SM.MusicList.set(AudioId.Pietula, { AudioId: AudioId.Pietula, loop: true, NextSong: null });
-        // this.MusicList.set(AudioId.Ending, { Music: AudioId.Ending, loop: true, NextSong: null });
+        SM.MusicList.set(AudioId.FeestVieren, { AudioId: AudioId.FeestVieren, loop: true, NextSong: null });
         SM.MusicList.set(AudioId.Humiliation, { AudioId: AudioId.Humiliation, loop: false, NextSong: null });
         // this.MusicList.set(AudioId.Huray, { Music: AudioId.Huray, loop: false, NextSong: null });
         SM.MusicList.set(AudioId.OHNOES, { AudioId: AudioId.OHNOES, loop: false, NextSong: null });
@@ -46,9 +46,9 @@ export class Bootstrapper {
 
         SM.init(rom.resources);
         game.start();
-        GameModel._.SelectedChapterToPlay = Chapter.GameStart;
-        GameController._.switchState(GameConstants.INITIAL_GAMESTATE);
-        GameController._.switchSubstate(GameConstants.INITIAL_GAMESUBSTATE);
+        Model._.SelectedChapterToPlay = Chapter.GameStart;
+        Controller._.switchState(GameConstants.INITIAL_GAMESTATE);
+        Controller._.switchSubstate(GameConstants.INITIAL_GAMESUBSTATE);
     }
 
     public static BootstrapGame(chapter: Chapter): void {

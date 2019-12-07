@@ -1,5 +1,5 @@
 import { BStopwatch } from "./btimer";
-import { Model } from "./model";
+import { BaseModel } from "./model";
 import { Song } from "./soundmaster";
 
 /*[Serializable]*/

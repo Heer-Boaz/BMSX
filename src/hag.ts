@@ -7,7 +7,7 @@ import { Foe } from "./foe";
 import { GameConstants } from "./gameconstants";
 import { PlayerProjectile } from "./pprojectile";
 import { Size, Area, Point } from "../BoazEngineJS/interfaces";
-import { GameModel } from "./sintervaniamodel";
+import { Model } from "./gamemodel";
 
 export class Hag extends Foe {
     public get damageToPlayer(): number {
@@ -53,7 +53,7 @@ export class Hag extends Foe {
     }
 
     public takeTurn(): void {
-        if (this.collides(GameModel._.Belmont)) GameModel._.Belmont.TakeDamage(this.damageToPlayer);
+        if (this.collides(Model._.Belmont)) Model._.Belmont.TakeDamage(this.damageToPlayer);
 
         let stepValue = this.animation.doAnimation(this.timer, this.imgid).stepValue;
         this.imgid = stepValue;

@@ -1,6 +1,6 @@
 import { Foe } from "./foe";
 import { Projectile } from "./projectile";
-import { GameModel as model } from "./sintervaniamodel";
+import { Model as model } from "./gamemodel";
 import { Point } from "../BoazEngineJS/interfaces";
 
 /*[Serializable]*/

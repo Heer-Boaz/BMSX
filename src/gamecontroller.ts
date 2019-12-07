@@ -5,7 +5,7 @@ import { Direction } from "../BoazEngineJS/direction";
 import { Bootstrapper } from "./bootstrapper";
 import { Savegame } from "../BoazEngineJS/savegame";
 import { WeaponItem } from "./weaponitem";
-import { GameModel as M, GameModel, GameState, GameSubstate } from "./sintervaniamodel"
+import { Model as M, Model, GameState, GameSubstate } from "./gamemodel"
 import { WeaponFireHandler } from "./weaponfirehandler";
 import { Room } from "./room";
 import { GameMenu } from "./gamemenu";
@@ -16,14 +16,14 @@ import { GameView as V } from './gameview';
 import { GameConstants } from "./gameconstants";
 import { LoadGame } from '../BoazEngineJS/gamestateloader';
 import { GameSaver } from "../BoazEngineJS/gamesaver";
-import { Controller } from '../BoazEngineJS/controller';
+import { BaseController } from '../BoazEngineJS/controller';
 import { Input } from "../BoazEngineJS/input";
 import { TileSize, Tile } from "../BoazEngineJS/msx";
 
-export class GameController extends Controller {
-    private static _instance: GameController;
-    public static get _(): GameController {
-        return GameController._instance != null ? GameController._instance : (GameController._instance = new GameController());
+export class Controller extends BaseController {
+    private static _instance: Controller;
+    public static get _(): Controller {
+        return Controller._instance != null ? Controller._instance : (Controller._instance = new Controller());
     }
 
     public InEventState: boolean;

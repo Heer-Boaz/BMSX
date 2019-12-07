@@ -1,4 +1,4 @@
-import { GameModel } from "../src/sintervaniamodel";
+import { Model } from "../src/gamemodel";
 import { Constants as CS } from "./constants";
 import { Savegame } from "./savegame";
 import { GameSaver } from './gamesaver';
@@ -38,7 +38,7 @@ export function SlotExists(slot: number): boolean {
 	// 	return Directory.Exists("./Saves") && File.Exists(file);
 }
 
-export function GetCheckpoint(m: GameModel): Savegame {
+export function GetCheckpoint(m: Model): Savegame {
 	GameSaver.saveGame(m, CS.SaveSlotCheckpoint);
 	return LoadGame(CS.SaveSlotCheckpoint);
 }

@@ -1,5 +1,5 @@
 import { TileSize, MSX2ScreenWidth, MSX2ScreenHeight } from "../BoazEngineJS/msx";
-import { GameState, GameSubstate } from "./sintervaniamodel";
+import { GameState, GameSubstate } from "./gamemodel";
 
 export namespace GameConstants {
     export const INITIAL_GAMESTATE: GameState = GameState.GameStart1;

@@ -1,4 +1,6 @@
-﻿export interface Point {
+﻿import { bst } from "./statemachine";
+
+export interface Point {
     x: number;
     y: number;
 }
@@ -29,6 +31,7 @@ export interface IGameObject {
     disposeFlag: boolean;
     priority?: number;
     pos: Point;
+    smachines?: bst<any>[];
 
     isWall?: boolean;
     disposeOnSwitchRoom?: boolean;

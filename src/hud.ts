@@ -2,7 +2,7 @@ import { BStopwatch } from "../BoazEngineJS/btimer";
 import { Foe } from "./foe";
 import { Item, ItemType } from "./item";
 import { AudioId, BitmapId } from "./resourceids";
-import { GameModel as M } from "./sintervaniamodel";
+import { Model as M } from "./gamemodel";
 import { GameConstants as CS } from "./gameconstants";
 import { view } from "../BoazEngineJS/engine";
 import { GameView as V } from "./gameview"

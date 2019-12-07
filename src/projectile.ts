@@ -2,7 +2,7 @@ import { Sprite } from "../BoazEngineJS/sprite";
 import { Direction } from "../BoazEngineJS/direction";
 import { moveArea } from "../BoazEngineJS/common";
 import { Constants } from "../BoazEngineJS/constants";
-import { GameModel as M } from "./sintervaniamodel";
+import { Model as M } from "./gamemodel";
 import { view } from "../BoazEngineJS/engine";
 import { Point } from "../BoazEngineJS/interfaces";
 import { DrawImgFlags } from "../BoazEngineJS/view";

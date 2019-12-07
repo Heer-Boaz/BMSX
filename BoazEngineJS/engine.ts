@@ -1,5 +1,5 @@
-﻿import { Model } from "./model"
-import { Controller } from "./controller"
+﻿import { BaseModel } from "./model"
+import { BaseController } from "./controller"
 import { View } from "./view"
 import { SM } from "./soundmaster";
 import { IGameView, Size } from './interfaces';
@@ -23,8 +23,8 @@ export interface RomResource {
 }
 
 export let game: Game;
-export let model: Model;
-export let controller: Controller;
+export let model: BaseModel;
+export let controller: BaseController;
 export let sound: SM;
 export let view: View;
 export let gameview: IGameView;
@@ -51,11 +51,11 @@ export class Game {
         this.wasupdated = true;
     }
 
-    public setModel(m: Model): void {
+    public setModel(m: BaseModel): void {
         model = m;
     }
 
-    public setController(c: Controller): void {
+    public setController(c: BaseController): void {
         controller = c;
     }
 
