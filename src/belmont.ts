@@ -61,7 +61,7 @@ export class Belmont extends Creature {
 	public Health: number;
 	public MaxHealth: number;
 	public get HealthPercentage(): number {
-		return Math.min(<number>(Math.round(this.Health / <number>this.MaxHealth * 100)), 100);
+		return ~~Math.round((this.Health / this.MaxHealth) * 100);
 	}
 
 	private static MoveBeforeFrameChange: number = 4;

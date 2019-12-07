@@ -81,13 +81,16 @@ export class HUD {
     }
 
     private percentageToBarLength(percentage: number): number {
-        return percentage == 0 ? 0 : ~~(HUD.HealthBarSizeX / 100 * percentage) + 1;
+        if (percentage === 0) return 0;
+        if (percentage === 100) return HUD.HealthBarSizeX;
+        return ~~(HUD.HealthBarSizeX / 100 * percentage);
     }
 
     public Paint(): void {
         view.drawImg(BitmapId.HUD, HUD.Pos_X, HUD.Pos_Y);
         let pos: Point = { x: HUD.HealthBarPosX, y: HUD.HealthBarPosY };
-        for (let i: number = 0; i < this.percentageToBarLength(this.shownHealthLevel); i++) {
+        let length = this.percentageToBarLength(this.shownHealthLevel);
+        for (let i: number = 0; i <= length; i++) {
             view.drawImg(BitmapId.EnergybarStripe_Belmont, ~~pos.x, ~~pos.y);
             pos.x += 1;
         }
