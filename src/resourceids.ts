@@ -126,11 +126,11 @@ export const enum BitmapId {
 
 export const enum AudioId {
 	None = -1,
-	FeestVieren = 0,
-	Hoera = 1,
-	Humiliation = 2,
-	OHNOES = 3,
-	Pietula = 4,
+	Baas = 0,
+	FeestVieren = 1,
+	Hoera = 2,
+	Humiliation = 3,
+	OHNOES = 4,
 	Prologue = 5,
 	VampireKiller = 6,
 	Au = 7,

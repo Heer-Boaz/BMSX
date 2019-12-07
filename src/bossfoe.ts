@@ -7,8 +7,4 @@ export class BossFoe extends Foe {
         super(pos);
         this.disposeOnSwitchRoom = false;
     }
-
-    public StartBossfight(): void {
-        throw new Error('not implemented');
-    }
 }

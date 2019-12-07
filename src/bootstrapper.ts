@@ -35,13 +35,13 @@ export class Bootstrapper {
         SM.SoundEffectList.set(AudioId.WallBreak, { AudioId: AudioId.WallBreak, Priority: 4 });
         SM.SoundEffectList.set(AudioId.Whip, { AudioId: AudioId.Whip, Priority: 0 });
         SM.SoundEffectList.set(AudioId.Kaboem, { AudioId: AudioId.Kaboem, Priority: 100 });
-        SM.MusicList.set(AudioId.Pietula, { AudioId: AudioId.Pietula, loop: true, NextSong: null });
-        SM.MusicList.set(AudioId.FeestVieren, { AudioId: AudioId.FeestVieren, loop: true, NextSong: null });
-        SM.MusicList.set(AudioId.Humiliation, { AudioId: AudioId.Humiliation, loop: false, NextSong: null });
-        SM.MusicList.set(AudioId.Hoera, { AudioId: AudioId.Hoera, loop: false, NextSong: null });
-        SM.MusicList.set(AudioId.OHNOES, { AudioId: AudioId.OHNOES, loop: false, NextSong: null });
-        SM.MusicList.set(AudioId.Prologue, { AudioId: AudioId.Prologue, loop: false, NextSong: null });
-        SM.MusicList.set(AudioId.VampireKiller, { AudioId: AudioId.VampireKiller, loop: true, NextSong: null });
+        SM.MusicList.set(AudioId.Baas, { AudioId: AudioId.Baas, loop: true, NextSong: undefined });
+        SM.MusicList.set(AudioId.FeestVieren, { AudioId: AudioId.FeestVieren, loop: true, NextSong: undefined });
+        SM.MusicList.set(AudioId.Humiliation, { AudioId: AudioId.Humiliation, loop: false, NextSong: undefined });
+        SM.MusicList.set(AudioId.Hoera, { AudioId: AudioId.Hoera, loop: false, NextSong: undefined });
+        SM.MusicList.set(AudioId.OHNOES, { AudioId: AudioId.OHNOES, loop: false, NextSong: undefined });
+        SM.MusicList.set(AudioId.Prologue, { AudioId: AudioId.Prologue, loop: false, NextSong: undefined });
+        SM.MusicList.set(AudioId.VampireKiller, { AudioId: AudioId.VampireKiller, loop: true, NextSong: undefined });
 
 
         SM.init(rom.resources);
@@ -64,8 +64,8 @@ export class Bootstrapper {
         }
     }
     private static bootstrapGameForGameStart(): void {
-        M._.LoadRoom(1);
         setPoint(M._.Belmont.pos, Tile.toStageCoord(2), Tile.toStageCoord(5));
+        M._.LoadRoom(100);
     }
     private static bootstrapGameForDebug(): void {
         M._.LoadRoom(100);

@@ -413,11 +413,11 @@ declare module "src/resourceids" {
     }
     export const enum AudioId {
         None = -1,
-        FeestVieren = 0,
-        Hoera = 1,
-        Humiliation = 2,
-        OHNOES = 3,
-        Pietula = 4,
+        Baas = 0,
+        FeestVieren = 1,
+        Hoera = 2,
+        Humiliation = 3,
+        OHNOES = 4,
         Prologue = 5,
         VampireKiller = 6,
         Au = 7,
@@ -471,9 +471,9 @@ declare module "BoazEngineJS/soundmaster" {
         private static playNode;
         private static _playSong;
         static _playEffect(_track: Effect): void;
-        static StopEffect(): void;
+        static stopEffect(): Promise<void>;
         static playEffect(id: AudioId): void;
-        static stopMusic(): void;
+        static stopMusic(): Promise<void>;
         static playMusic(id: AudioId, stopCurrent?: boolean): void;
         static resumeEffect(): void;
         static resumeMusic(): void;
@@ -817,7 +817,7 @@ declare module "src/belmont" {
         private static buttonPressEventHitAreaLeft;
         get EventButtonHitArea(): Area;
         get RoomCollisionArea(): Area;
-        private static _hitarea;
+        private _hitarea;
         get hitarea(): Area;
         set hitarea(value: Area);
         get Vulnerable(): boolean;
@@ -1152,6 +1152,7 @@ declare module "src/gamecontroller" {
         UseItem(itemType: ItemType): void;
         private HandleUseItem;
         PickupWeaponItem(source: WeaponItem): void;
+        startBossFight(): void;
     }
 }
 declare module "src/item" {
@@ -1265,7 +1266,6 @@ declare module "src/bossfoe" {
     import { Point } from "BoazEngineJS/interfaces";
     export class BossFoe extends Foe {
         constructor(pos: Point);
-        StartBossfight(): void;
     }
 }
 declare module "src/hud" {

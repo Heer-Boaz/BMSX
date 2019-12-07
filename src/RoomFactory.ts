@@ -10,6 +10,7 @@ import { Direction } from '../BoazEngineJS/direction';
 import { ZakFoe } from './zakfoe';
 import { Candle } from './candle';
 import { Pietula } from './pietula';
+import { Controller } from './gamecontroller';
 
 export class RoomDataContainer {
 	public id: number;
@@ -96,7 +97,7 @@ export class RoomFactory {
 
 	public static RoomMap_stage0: number[][] = [
 		[0, 0, 0, 0, 0,],
-		[0, 0, 1, 2, 0,],
+		[0, 0, 1, 2, 100,],
 		[0, 0, 0, 0, 0,],
 		[0, 0, 0, 0, 0,],
 	];
@@ -124,7 +125,6 @@ export class RoomFactory {
 			"################",
 			"----------------",
 		];
-
 
 		initFunction = (r: Room) => {
 			let candle = new GardenCandle(Tile.toStagePoint(4, 7));
@@ -159,6 +159,38 @@ export class RoomFactory {
 			let candle2 = new Candle(Tile.toStagePoint(12, 7));
 			M._.spawn(candle2);
 			M._.spawn(new ZakFoe(<Point>Tile.create(8, 8), Direction.Left));
+		};
+
+		RoomFactory.rooms.set(id, new RoomDataContainer(id, tiles, imgid, map, initFunction));
+
+		id = 100;
+		map = RoomFactory.RoomMap_stage0;
+		imgid = undefined;
+		tiles = [
+			"################",
+			"################",
+			"#--------------#",
+			"#--------------#",
+			"#--------------#",
+			"#--------------#",
+			"####--------####",
+			"#--------------#",
+			"#--------------#",
+			"#--------------#",
+			"################",
+		];
+
+		initFunction = (r: Room) => {
+			M._.spawn(new Candle(Tile.toStagePoint(5, 3)));
+			M._.spawn(new Candle(Tile.toStagePoint(10, 3)));
+			M._.spawn(new Candle(Tile.toStagePoint(5, 5)));
+			M._.spawn(new Candle(Tile.toStagePoint(10, 5)));
+			M._.spawn(new Candle(Tile.toStagePoint(5, 7)));
+			M._.spawn(new Candle(Tile.toStagePoint(10, 7)));
+			M._.spawn(new Pietula());
+			Controller._.startBossFight();
+			M._.Belmont.setx(Tile.toStageCoord(2));
+			M._.Belmont.sety(Tile.toStageCoord(8));
 		};
 
 		RoomFactory.rooms.set(id, new RoomDataContainer(id, tiles, imgid, map, initFunction));

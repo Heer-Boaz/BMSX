@@ -139,7 +139,7 @@ export class Belmont extends Creature {
 	public set wallHitArea(value: Area) {
 	}
 
-	public EventTouchHitArea: Area = newArea(0, 0, 15, 31);
+	public EventTouchHitArea: Area = newArea(0, 2, 15, 31);
 	private static buttonPressEventHitAreaUp: Area = newArea(0, 20, 16, 28);
 	private static buttonPressEventHitAreaRight: Area = newArea(4, 24, 20, 32);
 	private static buttonPressEventHitAreaDown: Area = newArea(0, 28, 16, 36);
@@ -164,12 +164,14 @@ export class Belmont extends Creature {
 		return this.EventTouchHitArea;
 	}
 
-	private static _hitarea: Area = newArea(2, 8, 14, 30);
-	public get hitarea(): Area {
-		return Belmont._hitarea;
-	}
-	public set hitarea(value: Area) {
+	private _hitarea: Area = newArea(0, 2, 15, 31);
 
+	public get hitarea(): Area {
+		return this._hitarea;
+	}
+
+	public set hitarea(value: Area) {
+		this._hitarea = value;
 	}
 
 	public get Vulnerable(): boolean {
@@ -685,7 +687,7 @@ export class Belmont extends Creature {
 		if (!this.hitState.Blink || C._.InEventState) {
 			super.paint(addPoints(roeOffset, offset));
 		}
-		// view.drawRectangle(this.wallhitbox_sx, CS.GameScreenStartY + this.wallhitbox_sy, this.wallhitbox_ex, CS.GameScreenStartY + this.wallhitbox_ey, Msx1Colors[15]);
+		view.drawRectangle(this.wallhitbox_sx, CS.GameScreenStartY + this.wallhitbox_sy, this.wallhitbox_ex, CS.GameScreenStartY + this.wallhitbox_ey, Msx1Colors[15]);
 	}
 
 	public dispose(): void {

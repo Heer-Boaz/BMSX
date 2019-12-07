@@ -110,7 +110,7 @@ export class Room {
 				break;
 		}
 		while (_x >= 0 && _x <= GameConstants.StageScreenWidthTiles - 1 && _y >= 0 && _y <= GameConstants.StageScreenStartHeightTiles + GameConstants.StageScreenHeightTiles - 1) {
-			if (this.tiles[_y][_x] === '.') {
+			if (this.tiles[_y][_x] === '.' || this.tiles[_y][_x] === '-') {
 				switch (dir) {
 					case Direction.Up:
 						return (_y) * TileSize;
@@ -172,7 +172,7 @@ export class Room {
 
 		}
 
-		if (this.tiles[_y][_x] !== '.') {
+		if (this.tiles[_y][_x] !== '.' && this.tiles[_y][_x] !== '-') {
 			return true;
 		}
 
@@ -206,13 +206,13 @@ export class Room {
 			}
 		}
 
-		// for (let y = 0; y < this.tiles.length; y++) {
-		// 	for (let x = 0; x < this.tiles[y].length; x++) {
-		// 		if (this.tiles[y][x] !== '.') {
-		// 			view.fillRectangle(CS.GameScreenStartX + x * TileSize, CS.GameScreenStartY + y * TileSize, CS.GameScreenStartX + (x + 1) * TileSize, CS.GameScreenStartY + (y + 1) * TileSize, { r: 255, g: 255, b: 255, a: 0.5 });
-		// 		}
-		// 	}
-		// }
+		for (let y = 0; y < this.tiles.length; y++) {
+			for (let x = 0; x < this.tiles[y].length; x++) {
+				if (this.tiles[y][x] !== '.' && this.tiles[y][x] !== '-') {
+					view.fillRectangle(CS.GameScreenStartX + x * TileSize, CS.GameScreenStartY + y * TileSize, CS.GameScreenStartX + (x + 1) * TileSize, CS.GameScreenStartY + (y + 1) * TileSize, { r: 255, g: 255, b: 255, a: 0.5 });
+				}
+			}
+		}
 	}
 
 	protected tileImgid(x: number, y: number): BitmapId {

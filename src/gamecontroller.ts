@@ -439,4 +439,9 @@ export class Controller extends BaseController {
         if (source.id != null)
             M._.ItemsPickedUp[source.id] = true;
     }
+
+    public startBossFight(): void {
+        SM.playMusic(AudioId.Baas);
+        M._.RoomExitsLocked = true;
+    }
 }

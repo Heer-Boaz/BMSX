@@ -56,74 +56,94 @@ export class SM {
 
 	private static _playSong(_track: Song): void {
 		if (_track.AudioId !== undefined) {
-			SM.stopMusic();
+			SM.stopMusic().then(() => {
+				SM.MusicBeingPlayed = _track as Song;
+				let trackid = _track.AudioId;
 
-			SM.MusicBeingPlayed = _track as Song;
-			let trackid = _track.AudioId;
-
-			SM.createNode(trackid, SM.musicContext).then(node => {
-				SM.currentMusicNode = node;
-				node.onended = (ev) => {
-					if (!_track.loop && _track.NextSong) {
-						SM._playSong(_track.NextSong);
-					}
-					else {
-						SM.MusicBeingPlayed = null;
-					}
-				};
-				SM.playNode(_track, node, SM.musicContext);
+				SM.createNode(trackid, SM.musicContext).then(node => {
+					SM.currentMusicNode = node;
+					node.onended = (ev) => {
+						if (!_track.loop && _track.NextSong !== undefined) {
+							SM._playSong(_track.NextSong);
+						}
+						else {
+							SM.MusicBeingPlayed = null;
+						}
+					};
+					SM.playNode(_track, node, SM.musicContext);
+				});
 			});
 		}
 	}
 
 	public static _playEffect(_track: Effect): void {
 		if (_track.AudioId !== undefined) {
-			SM.StopEffect();
+			SM.stopEffect().then(() => {
 
-			SM.EffectBeingPlayed = _track;
-			let trackid = _track.AudioId;
+				SM.EffectBeingPlayed = _track;
+				let trackid = _track.AudioId;
 
-			SM.createNode(trackid, SM.effectContext).then(node => {
-				SM.currentEffectNode = node;
-				node.onended = (ev) => SM.EffectBeingPlayed = null;
-				SM.playNode(_track, node, SM.effectContext);
+				SM.createNode(trackid, SM.effectContext).then(node => {
+					SM.currentEffectNode = node;
+					node.onended = (ev) => SM.EffectBeingPlayed = null;
+					SM.playNode(_track, node, SM.effectContext);
+				});
 			});
 		}
 	}
 
-	public static StopEffect(): void {
-		if (SM.EffectBeingPlayed && SM.EffectBeingPlayed.AudioId) {
-			if (SM.currentEffectNode) {
-				SM.currentEffectNode.stop();
-				SM.currentEffectNode.disconnect();
-				SM.currentEffectNode = null;
-			}
+	public static async stopEffect(): Promise<void> {
+		// if (SM.EffectBeingPlayed && SM.EffectBeingPlayed.AudioId !== undefined) {
+		if (SM.effectContext.state !== 'running') {
+			Promise.resolve();
+			return;
 		}
 
-		SM.EffectBeingPlayed = null;
+		return SM.effectContext.close().then(() => {
+			SM.effectContext = new AudioContext({
+				latencyHint: 'interactive',
+				sampleRate: 44100,
+			});
+
+			SM.currentEffectNode?.stop();
+			SM.currentEffectNode?.disconnect();
+			SM.currentEffectNode = null;
+
+			SM.EffectBeingPlayed = null;
+		});
+		// }
 	}
 
 	public static playEffect(id: AudioId): void {
 		let effect = SM.SoundEffectList.get(id);
 		if (!SM.LimitToOneEffect || !SM.EffectBeingPlayed || (effect.Priority >= SM.EffectBeingPlayed.Priority)) {
-			this._playEffect(effect);
+			SM._playEffect(effect);
 		}
 	}
 
-	public static stopMusic(): void {
-		if (SM.MusicBeingPlayed && SM.MusicBeingPlayed.AudioId) {
-			if (SM.currentMusicNode) {
-				SM.currentMusicNode.stop();
-				SM.currentMusicNode.disconnect();
-				SM.currentMusicNode = null;
-			}
+	public static async stopMusic(): Promise<void> {
+		// if (SM.MusicBeingPlayed && SM.MusicBeingPlayed.AudioId !== undefined) {
+		if (SM.musicContext.state !== 'running') {
+			Promise.resolve();
+			return;
 		}
 
-		SM.MusicBeingPlayed = null;
+		return SM.musicContext.close().then(() => {
+			SM.musicContext = new AudioContext({
+				latencyHint: 'interactive',
+				sampleRate: 44100,
+			});
+			SM.currentMusicNode?.stop();
+			SM.currentMusicNode?.disconnect();
+			SM.currentMusicNode = null;
+
+			SM.MusicBeingPlayed = null;
+		});
+		// }
 	}
 
 	public static playMusic(id: AudioId, stopCurrent: boolean = true): void {
-		this._playSong(SM.MusicList.get(id));
+		SM._playSong(SM.MusicList.get(id));
 	}
 
 	public static resumeEffect(): void {

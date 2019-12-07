@@ -161,7 +161,7 @@ export class Game {
         requestAnimationFrame(() => {
             view.clear();
             view.handleResize();
-            SM.StopEffect();
+            SM.stopEffect();
             SM.stopMusic();
         });
     }
