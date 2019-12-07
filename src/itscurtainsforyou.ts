@@ -11,7 +11,7 @@ export class ItsCurtainsForYou {
     private curtainPartCount: number;
     private timer: BStopwatch;
     private msCurtainPartWait: number = 1;
-    private maxCurtainParts: number = ~~(GameConstants.GameScreenWidth / TileSize) + 1;
+    private maxCurtainParts: number = ~~(GameConstants.GameScreenWidth / (TileSize / 2) ) + 1;
 
     public Init(): void {
         this.curtainPartCount = 0;
@@ -38,7 +38,7 @@ export class ItsCurtainsForYou {
         let pos: Point = { x: 0, y: 0 };
         for (let i = 0; i < this.curtainPartCount; i++) {
             view.drawImg(BitmapId.CurtainPart, pos.x, pos.y);
-            pos.x += TileSize;
+            pos.x += TileSize / 2;
         }
     }
 }

@@ -27,19 +27,6 @@ export class SM {
 	public static SoundEffectList: Map<AudioId, Effect> = new Map<AudioId, Effect>();
 	public static MusicList: Map<AudioId, Song> = new Map<AudioId, Song>();
 
-	// public static OnMusicBufferEnd(): void {
-	// 	if (SM.MusicBeingPlayed && SM.MusicBeingPlayed.NextSong) {
-	// 		let nextSong = SM.MusicBeingPlayed.NextSong;
-	// 		SM.MusicBeingPlayed = nextSong;
-	// 		SM.PlayMusic(nextSong);
-	// 	}
-	// 	else SM.MusicBeingPlayed = null;
-	// }
-
-	// public static OnEffectBufferEnd(): void {
-	// 	SM.EffectBeingPlayed = null;
-	// }
-
 	public static init(_audioResources: { [key: number]: RomResource; }) {
 		SM.effectContext = new AudioContext({
 			latencyHint: 'interactive',
@@ -76,6 +63,14 @@ export class SM {
 
 			SM.createNode(trackid, SM.musicContext).then(node => {
 				SM.currentMusicNode = node;
+				node.onended = (ev) => {
+					if (!_track.loop && _track.NextSong) {
+						SM._playSong(_track.NextSong);
+					}
+					else {
+						SM.MusicBeingPlayed = null;
+					}
+				};
 				SM.playNode(_track, node, SM.musicContext);
 			});
 		}
@@ -90,6 +85,7 @@ export class SM {
 
 			SM.createNode(trackid, SM.effectContext).then(node => {
 				SM.currentEffectNode = node;
+				node.onended = (ev) => SM.EffectBeingPlayed = null;
 				SM.playNode(_track, node, SM.effectContext);
 			});
 		}

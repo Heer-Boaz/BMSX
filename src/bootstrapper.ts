@@ -9,7 +9,6 @@ import { Game, game, RomLoadResult } from "../BoazEngineJS/engine";
 import { SM } from "../BoazEngineJS/soundmaster";
 import { AudioId } from "./resourceids";
 
-
 export class Bootstrapper {
     public static init(rom: RomLoadResult): void {
         new Game(rom, { x: GameConstants.ViewportWidth, y: GameConstants.ViewportHeight });
@@ -22,23 +21,24 @@ export class Bootstrapper {
         SM.SoundEffectList.set(AudioId.Init, { AudioId: AudioId.Init, Priority: -1 });
         SM.SoundEffectList.set(AudioId.Fout, { AudioId: AudioId.Fout, Priority: 0 });
         SM.SoundEffectList.set(AudioId.Selectie, { AudioId: AudioId.Selectie, Priority: 0 });
-        SM.SoundEffectList.set(AudioId.Heart, { AudioId: AudioId.Heart, Priority: 0 });
+        SM.SoundEffectList.set(AudioId.Heart, { AudioId: AudioId.Heart, Priority: 1 });
         SM.SoundEffectList.set(AudioId.Hit, { AudioId: AudioId.Hit, Priority: 0 });
-        SM.SoundEffectList.set(AudioId.Chestopen, { AudioId: AudioId.Chestopen, Priority: 0 });
-        SM.SoundEffectList.set(AudioId.Item, { AudioId: AudioId.Item, Priority: 0 });
-        SM.SoundEffectList.set(AudioId.Key, { AudioId: AudioId.Key, Priority: 0 });
+        SM.SoundEffectList.set(AudioId.Chestopen, { AudioId: AudioId.Chestopen, Priority: 4 });
+        SM.SoundEffectList.set(AudioId.Item, { AudioId: AudioId.Item, Priority: 5 });
+        SM.SoundEffectList.set(AudioId.Key, { AudioId: AudioId.Key, Priority: 5 });
         SM.SoundEffectList.set(AudioId.Knife, { AudioId: AudioId.Knife, Priority: 0 });
         SM.SoundEffectList.set(AudioId.Land, { AudioId: AudioId.Land, Priority: 0 });
         // this.SoundEffectList.set(AudioId.Lightning, { AudioId: AudioId.Lightning, Priority: 0 });
         // this.SoundEffectList.set(AudioId.Munnies, { AudioId: AudioId.Munnies, Priority: 0 });
-        SM.SoundEffectList.set(AudioId.Au, { AudioId: AudioId.Au, Priority: 0 });
+        SM.SoundEffectList.set(AudioId.Au, { AudioId: AudioId.Au, Priority: 2 });
         // this.SoundEffectList.set(AudioId.Portal, { AudioId: AudioId.Portal, Priority: 0 });
-        SM.SoundEffectList.set(AudioId.WallBreak, { AudioId: AudioId.WallBreak, Priority: 0 });
+        SM.SoundEffectList.set(AudioId.WallBreak, { AudioId: AudioId.WallBreak, Priority: 4 });
         SM.SoundEffectList.set(AudioId.Whip, { AudioId: AudioId.Whip, Priority: 0 });
+        SM.SoundEffectList.set(AudioId.Kaboem, { AudioId: AudioId.Kaboem, Priority: 100 });
         SM.MusicList.set(AudioId.Pietula, { AudioId: AudioId.Pietula, loop: true, NextSong: null });
         SM.MusicList.set(AudioId.FeestVieren, { AudioId: AudioId.FeestVieren, loop: true, NextSong: null });
         SM.MusicList.set(AudioId.Humiliation, { AudioId: AudioId.Humiliation, loop: false, NextSong: null });
-        // this.MusicList.set(AudioId.Huray, { Music: AudioId.Huray, loop: false, NextSong: null });
+        SM.MusicList.set(AudioId.Hoera, { AudioId: AudioId.Hoera, loop: false, NextSong: null });
         SM.MusicList.set(AudioId.OHNOES, { AudioId: AudioId.OHNOES, loop: false, NextSong: null });
         SM.MusicList.set(AudioId.Prologue, { AudioId: AudioId.Prologue, loop: false, NextSong: null });
         SM.MusicList.set(AudioId.VampireKiller, { AudioId: AudioId.VampireKiller, loop: true, NextSong: null });

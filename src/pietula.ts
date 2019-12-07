@@ -3,7 +3,7 @@ import { Direction } from "../BoazEngineJS/direction";
 import { AudioId, BitmapId } from "./resourceids";
 import { PlayerProjectile } from "./pprojectile";
 import { Area, Point, IGameObject } from '../BoazEngineJS/interfaces';
-import { newArea, newSize, copyPoint } from '../BoazEngineJS/common';
+import { newArea, newSize, copyPoint, addPoints } from '../BoazEngineJS/common';
 import { bst } from '../BoazEngineJS/statemachine';
 import { GameConstants } from "./gameconstants";
 import { TileSize, Tile } from "../BoazEngineJS/msx";
@@ -12,6 +12,9 @@ import { view } from "../BoazEngineJS/engine";
 import { DrawImgFlags } from "../BoazEngineJS/view";
 import { Model, GameState } from "./gamemodel";
 import { Controller } from "./gamecontroller";
+import { GameSubstate } from 'src/gamemodel';
+import { FoeExplosion } from "./foeexplosion";
+import { SM } from "../BoazEngineJS/soundmaster";
 
 const floatspeed = 2;
 const vanlinks_naarrechts = TileSize / 2;
@@ -46,6 +49,11 @@ export class Pietula extends BossFoe {
 
 		let fst = new bst<Pietula>(this, 0, true);
 		this.fst = fst;
+		let waitAfterDeath = fst.addNewState('wachten_op_elmo');
+		waitAfterDeath.delta2tapehead = 6000 / 20;
+		waitAfterDeath.onrun = (s) => ++s.tapeheadnudges;
+		waitAfterDeath.ontapeheadmove = (s) => Controller._.switchSubstate(GameSubstate.ToEndDemo);
+
 		let intro_wacht = fst.addNewState('intro_wacht');
 		intro_wacht.oninitstate = (s) => {
 			s.target.pos = Tile.toStagePoint(6, 6);
@@ -367,7 +375,17 @@ export class Pietula extends BossFoe {
 	}
 
 	public die(): void {
-		super.die();
-		Controller._.switchState(GameState.EndDemo);
+		// super.die();
+        Model._.spawn(new FoeExplosion(copyPoint(this.pos)));
+        Model._.spawn(new FoeExplosion(addPoints(this.pos, { x: 16, y: 0} )));
+        Model._.spawn(new FoeExplosion(addPoints(this.pos, { x: 0, y: 16} )));
+		Model._.spawn(new FoeExplosion(addPoints(this.pos, { x: 16, y: 16} )));
+		SM.playEffect(AudioId.Kaboem);
+		this.visible = false;
+		this.canHurtPlayer = false;
+		this.hittable = false;
+
+		SM.playMusic(AudioId.Hoera);
+		this.fst.transition('wachten_op_elmo');
 	}
 }
