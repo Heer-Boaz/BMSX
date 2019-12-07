@@ -13,6 +13,7 @@ export namespace GameConstants {
     export const EnemiesAfootAsProperty: boolean = false;
     export const Belmont_MaxHealth_AtStart: number = 48;
     export const Belmont_MaxHealth_Increase: number = 2;
+    export const Belmont_InitHearts: number = 50;
     export const Belmont_MaxHearts: number = 99;
     export const CheckpointAtRoomEntry: boolean = false;
     export const ManualCheckpoints: boolean = !CheckpointAtRoomEntry;

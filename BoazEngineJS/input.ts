@@ -43,7 +43,7 @@ export class Input {
         return Input.getClickState('ArrowLeft');
     }
     public static get KC_M(): boolean {
-        return Input.getClickState('M');
+        return Input.getClickState('m');
     }
     public static get KC_RIGHT(): boolean {
         return Input.getClickState('ArrowRight');

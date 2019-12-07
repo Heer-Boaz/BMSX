@@ -2,10 +2,14 @@ import { Model as M, MainWeaponType, SecWeaponType } from "./gamemodel";
 import { TriRoe } from "./triroe";
 import { SM } from "../BoazEngineJS/soundmaster";
 import { AudioId } from "./resourceids";
-import { waitDuration } from '../BoazEngineJS/common';
+import { waitDuration, copyPoint } from '../BoazEngineJS/common';
+import { Cross } from "./cross";
+import { Direction } from "../BoazEngineJS/direction";
+import { Belmont } from "./belmont";
+import { Point } from "../BoazEngineJS/interfaces";
 
 export class WeaponFireHandler {
-    private static msCrossCooldown: number = 500;
+    private static msCrossCooldown: number = 20;
     private static msTriRoeCooldown: number = 1000;
     private static _mainWeaponCurrentCooldown: number;
     private static get mainWeaponCurrentCooldown(): number {
@@ -81,18 +85,34 @@ export class WeaponFireHandler {
 
     private static handleFireCross(): void {
         WeaponFireHandler.setSecWeaponCooldown(WeaponFireHandler.msCrossCooldown);
+        let cross: Cross;
+        let p: Point;
+        switch (M._.Belmont.direction) {
+            case Direction.Left:
+                p = copyPoint(M._.Belmont.pos);
+                p.x -= 26;
+                cross = new Cross(p, Direction.Left);
+                break;
+            case Direction.Right:
+                p = copyPoint(M._.Belmont.pos);
+                p.x += M._.Belmont.size.x;
+                cross = new Cross(p, Direction.Right);
+                break;
+        }
+        M._.spawn(cross);
+        SM.playEffect(AudioId.Cross);
+        --M._.Hearts;
     }
 
     public static HandleFireSecondaryWeapon(): void {
         if (WeaponFireHandler.SecWeaponOnCooldown)
             return;
-        if (M._.Hearts > 0) {
+        if (M._.Hearts <= 0)
             return;
-        }
-        switch (M._.SelectedSecondaryWeapon) {
-            case SecWeaponType.Cross:
+        // switch (M._.SelectedSecondaryWeapon) {
+            // case SecWeaponType.Cross:
                 WeaponFireHandler.handleFireCross();
-                break;
-        }
+                // break;
+        // }
     }
 }

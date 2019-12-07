@@ -930,6 +930,20 @@ declare module "src/triroe" {
         dispose(): void;
     }
 }
+declare module "src/cross" {
+    import { PlayerProjectile } from "src/pprojectile";
+    import { Direction } from "BoazEngineJS/direction";
+    import { Area, Point } from "BoazEngineJS/interfaces";
+    export class Cross extends PlayerProjectile {
+        direction: Direction;
+        hitarea: Area;
+        get damageDealt(): number;
+        constructor(pos: Point, dir: Direction);
+        takeTurn(): void;
+        paint(offset?: Point): void;
+        dispose(): void;
+    }
+}
 declare module "src/weaponfirehandler" {
     export class WeaponFireHandler {
         private static msCrossCooldown;
@@ -1600,6 +1614,7 @@ declare module "src/gameconstants" {
         const EnemiesAfootAsProperty: boolean;
         const Belmont_MaxHealth_AtStart: number;
         const Belmont_MaxHealth_Increase: number;
+        const Belmont_InitHearts: number;
         const Belmont_MaxHearts: number;
         const CheckpointAtRoomEntry: boolean;
         const ManualCheckpoints: boolean;

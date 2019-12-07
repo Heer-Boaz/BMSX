@@ -27,6 +27,7 @@ export class Bootstrapper {
         SM.SoundEffectList.set(AudioId.Item, { AudioId: AudioId.Item, Priority: 5 });
         SM.SoundEffectList.set(AudioId.Key, { AudioId: AudioId.Key, Priority: 5 });
         SM.SoundEffectList.set(AudioId.Knife, { AudioId: AudioId.Knife, Priority: 0 });
+        SM.SoundEffectList.set(AudioId.Cross, { AudioId: AudioId.Cross, Priority: 0 });
         SM.SoundEffectList.set(AudioId.Land, { AudioId: AudioId.Land, Priority: 0 });
         SM.SoundEffectList.set(AudioId.Bliksem, { AudioId: AudioId.Bliksem, Priority: 10 });
         // this.SoundEffectList.set(AudioId.Munnies, { AudioId: AudioId.Munnies, Priority: 0 });

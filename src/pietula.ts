@@ -43,7 +43,7 @@ export class Pietula extends BossFoe {
 		this.imgid = BitmapId.Pietula1;
 		this.hitarea = Pietula.HitArea;
 		this.size = newSize(this.hitarea.end.x, this.hitarea.end.y);
-		this.health = 20;
+		this.health = 30;
 		this.maxHealth = this.health;
 		this.loops = 0;
 		this.visible = false;
@@ -374,7 +374,6 @@ export class Pietula extends BossFoe {
 	}
 
 	public die(): void {
-		// super.die();
         Model._.spawn(new FoeExplosion(copyPoint(this.pos)));
         Model._.spawn(new FoeExplosion(addPoints(this.pos, { x: 16, y: 0} )));
         Model._.spawn(new FoeExplosion(addPoints(this.pos, { x: 0, y: 16} )));

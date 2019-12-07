@@ -246,7 +246,7 @@ export class Model extends BaseModel {
         this.DoorsOpened = new Map<string, boolean>();
         this.MainWeaponCooldownTimer = BStopwatch.createWatch();
         this.SecWeaponCooldownTimer = BStopwatch.createWatch();
-        this._hearts = 0;
+        this._hearts = GameConstants.Belmont_InitHearts;
 
         this.Hud = new HUD();
         this.ItsCurtains = new ItsCurtainsForYou();
@@ -285,7 +285,7 @@ export class Model extends BaseModel {
             };
         // this.spawn(this.PauseObject, null, true);
 
-        this._hearts = 0;
+        this._hearts = GameConstants.Belmont_InitHearts;;
         Model._.spawn(new Belmont());
     }
 
