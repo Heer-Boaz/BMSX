@@ -96,10 +96,10 @@ export class RoomFactory {
 	}
 
 	public static RoomMap_stage0: number[][] = [
-		[0, 0, 0, 0, 0,],
-		[1, 2, 3, 100,],
-		[0, 0, 0, 0, 0,],
-		[0, 0, 0, 0, 0,],
+		[0, 0, 0, 0, 0, 0, 0, 0, 0,],
+		[0, 1, 2, 3, 4, 5, 6, 100, 0,],
+		[0, 0, 0, 0, 0, 0, 0, 0, 0,],
+		[0, 0, 0, 0, 0, 0, 0, 0, 0,],
 	];
 
 	public static PrepareStage0Data(): void {
@@ -184,6 +184,98 @@ export class RoomFactory {
 			let candle = new GardenCandle(Tile.toStagePoint(4, 7));
 			M._.spawn(candle);
 			M._.spawn(new ZakFoe(Tile.toStagePoint(14, 8), Direction.Left));
+		};
+
+		RoomFactory.rooms.set(id, new RoomDataContainer(id, tiles, imgid, map, initFunction));
+
+		id = 4;
+		map = RoomFactory.RoomMap_stage0;
+		imgid = undefined;
+		tiles = [
+			"################",
+			"#...............",
+			"#...............",
+			"####.....#######",
+			"#...............",
+			"#...............",
+			"#......####.....",
+			"#...............",
+			"#...............",
+			"################",
+			"################",
+		];
+
+		initFunction = (r: Room) => {
+			M._.spawn(new HagGenerator(Tile.toStagePoint(15, 1)));
+			M._.spawn(new HagGenerator(Tile.toStagePoint(15, 7)));
+			M._.spawn(new Candle(Tile.toStagePoint(2, 2)));
+			M._.spawn(new Candle(Tile.toStagePoint(12, 2)));
+			M._.spawn(new Candle(Tile.toStagePoint(2, 7)));
+			M._.spawn(new Candle(Tile.toStagePoint(12, 7)));
+			M._.spawn(new ZakFoe(Tile.toStagePoint(10, 2), Direction.Left));
+			M._.spawn(new ZakFoe(Tile.toStagePoint(8, 8), Direction.Left));
+		};
+
+		RoomFactory.rooms.set(id, new RoomDataContainer(id, tiles, imgid, map, initFunction));
+
+		id = 5;
+		map = RoomFactory.RoomMap_stage0;
+		imgid = undefined;
+		tiles = [
+			"################",
+			"................",
+			"................",
+			"#######....#####",
+			"................",
+			"................",
+			"....############",
+			"................",
+			"................",
+			"################",
+			"################",
+		];
+
+		initFunction = (r: Room) => {
+			M._.spawn(new HagGenerator(Tile.toStagePoint(15, 1)));
+			M._.spawn(new HagGenerator(Tile.toStagePoint(15, 7)));
+			M._.spawn(new Candle(Tile.toStagePoint(2, 2)));
+			M._.spawn(new Candle(Tile.toStagePoint(12, 2)));
+			M._.spawn(new Candle(Tile.toStagePoint(2, 7)));
+			M._.spawn(new Candle(Tile.toStagePoint(12, 7)));
+			M._.spawn(new ZakFoe(Tile.toStagePoint(10, 2), Direction.Left));
+			M._.spawn(new ZakFoe(Tile.toStagePoint(8, 8), Direction.Left));
+			M._.spawn(new ZakFoe(Tile.toStagePoint(8, 5), Direction.Left));
+		};
+
+		RoomFactory.rooms.set(id, new RoomDataContainer(id, tiles, imgid, map, initFunction));
+
+		id = 6;
+		map = RoomFactory.RoomMap_stage0;
+		imgid = undefined;
+		tiles = [
+			"################",
+			"...............#",
+			"...............#",
+			"#######....#####",
+			".....##.........",
+			".....##.........",
+			".....###########",
+			"...............#",
+			"...............#",
+			"################",
+			"################",
+		];
+
+		initFunction = (r: Room) => {
+			M._.spawn(new HagGenerator(Tile.toStagePoint(15, 1)));
+			M._.spawn(new HagGenerator(Tile.toStagePoint(15, 7)));
+			M._.spawn(new Candle(Tile.toStagePoint(2, 2)));
+			M._.spawn(new Candle(Tile.toStagePoint(12, 2)));
+			M._.spawn(new Candle(Tile.toStagePoint(2, 7)));
+			M._.spawn(new Candle(Tile.toStagePoint(12, 7)));
+			M._.spawn(new ZakFoe(Tile.toStagePoint(10, 8), Direction.Left));
+			M._.spawn(new ZakFoe(Tile.toStagePoint(5, 2), Direction.Left));
+			M._.spawn(new ZakFoe(Tile.toStagePoint(11, 5), Direction.Left));
 		};
 
 		RoomFactory.rooms.set(id, new RoomDataContainer(id, tiles, imgid, map, initFunction));

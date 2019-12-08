@@ -20,20 +20,10 @@ export class HagGenerator implements IGameObject {
         this.pos = pos;
         this.disposeOnSwitchRoom = true;
         this.statestuff = new bst<HagGenerator>(this, 0, true);
-        let state0 = new bst<HagGenerator>(this);
-        this.statestuff.append(state0, 0);
-        state0.tapedata = [{ ticks: 100 }];
-        state0.onrun = () => {
-            let st = state0;
-            ++st.delta2tapehead;
-            if (st.delta2tapehead >= (<stuff>st.currentdata).ticks) {
-                st.delta2tapehead = 0;
-                st.tapeend();
-            }
-        };
-        state0.ontapeend = () => {
-            let st = state0;
-            st.tapehead = 0;
+        let state0 = this.statestuff.addNewState(0);
+        state0.delta2tapehead = 100;
+        state0.onrun = (s) => ++s.tapeheadnudges;
+        state0.ontapeheadmove = (s) => {
             // Poop hags based on where Belmont is
             let spawnPoint = <Point>{ x: 0, y: this.pos.y };
             if (Model._.Belmont.pos.x <= GameConstants.ViewportWidth / 2) {

@@ -78,6 +78,9 @@ export class ZakFoe extends Foe {
 					// 	s.target.direction = Direction.Left;
 					break;
 			}
+			if (!M._.currentRoom.IsCollisionTile(s.target.hitbox_sx + 4, s.target.hitbox_ey + 12)) {
+				s.target.pos.y += 4;
+			}
 		};
 		state0.ontapeend = (s) => {
 			s.bsm.transition(1);

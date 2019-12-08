@@ -49,9 +49,12 @@ export class SM {
 
 	private static playNode(_track: Effect | Song, node: AudioBufferSourceNode, ctx: AudioContext): void {
 		SM.currentMusicNode = node;
-		node.connect(ctx.destination);
-		node.loop = _track.loop || false;
-		node.start(0);
+		try {
+			node.connect(ctx.destination);
+			node.loop = _track.loop || false;
+			node.start(0);
+		} catch {
+		}
 	}
 
 	private static _playSong(_track: Song): void {
@@ -105,8 +108,8 @@ export class SM {
 				sampleRate: 44100,
 			});
 
-			SM.currentEffectNode?.stop();
-			SM.currentEffectNode?.disconnect();
+			SM.currentEffectNode ?.stop();
+			SM.currentEffectNode ?.disconnect();
 			SM.currentEffectNode = null;
 
 			SM.EffectBeingPlayed = null;
@@ -133,8 +136,8 @@ export class SM {
 				latencyHint: 'interactive',
 				sampleRate: 44100,
 			});
-			SM.currentMusicNode?.stop();
-			SM.currentMusicNode?.disconnect();
+			SM.currentMusicNode ?.stop();
+			SM.currentMusicNode ?.disconnect();
 			SM.currentMusicNode = null;
 
 			SM.MusicBeingPlayed = null;
