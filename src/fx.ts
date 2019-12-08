@@ -1,7 +1,7 @@
 import { Sprite } from "../BoazEngineJS/sprite";
 import { BStopwatch } from "../BoazEngineJS/btimer";
 import { Animation } from "../BoazEngineJS/animation";
-import { Point } from "../BoazEngineJS/interfaces";
+import { Point } from "../lib/interfaces";
 
 /*[Serializable]*/
 export class FX extends Sprite {

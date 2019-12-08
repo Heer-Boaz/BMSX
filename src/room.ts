@@ -1,4 +1,3 @@
-import { Point } from "../BoazEngineJS/interfaces";
 import { TileSize } from "../BoazEngineJS/msx";
 import { Direction } from "../BoazEngineJS/direction";
 import { GameConstants as CS, GameConstants } from './gameconstants';
@@ -6,6 +5,7 @@ import { view } from "../BoazEngineJS/engine";
 import { RoomDataContainer } from "./RoomFactory";
 import { BitmapId } from "./resourceids";
 import { Model } from "./gamemodel";
+import { Point } from "../lib/interfaces";
 
 export type NearingRoomExitResult = { destRoom: number, direction: Direction } | null;
 export type RoomInitDelegate = (room: Room) => void;

@@ -1,5 +1,5 @@
 import { Room, RoomInitDelegate } from './room';
-import { Point } from '../BoazEngineJS/interfaces';
+import { Point } from "../lib/interfaces";
 import { newPoint } from '../BoazEngineJS/common';
 import { Tile } from '../BoazEngineJS/msx';
 import { Model as M } from "./gamemodel";

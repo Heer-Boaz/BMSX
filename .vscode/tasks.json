@@ -128,9 +128,11 @@
 				"${workspaceFolder}\\BoazEngineJS\\rom.ts",
 				"--removeComments",
 				"-m",
-				"\"none\"",
+				"\"commonjs\"",
 				"-t",
-				"ES2019",
+				"ES2016",
+				// "--types",
+				// "${workspaceFolder}\\BoazEngineJS\\rompack",
 				"--outDir",
 				"\"${workspaceFolder}\\rom\""
 			],
@@ -156,6 +158,8 @@
 				"${workspaceFolder}\\BoazEngineJS\\rompacker.ts",
 				"--removeComments",
 				"--noEmitHelpers",
+				// "--types",
+				// "${workspaceFolder}\\BoazEngineJS\\rompack",
 				"--outDir",
 				"\"${workspaceFolder}\\rom\""
 			],

@@ -88,11 +88,11 @@ export class MainMenu {
         else if (Input.KC_LEFT)
             this.changeSelection(Direction.Left, selectionChanged);
         if (selectionChanged)
-            S.playEffect(AudioId.Selectie);
+            S.play(AudioId.Selectie);
         if (Input.KC_SPACE) {
             switch (this.state) {
                 case State.SelectMain:
-                    S.playEffect(AudioId.Selectie);
+                    S.play(AudioId.Selectie);
                     switch (this.selectedItem) {
                         case MenuItem.NewGame:
                             this.state = State.SelectChapter;
@@ -101,7 +101,7 @@ export class MainMenu {
                         case MenuItem.Continue:
                             if (SlotExists(CS.SaveSlotCheckpoint))
                                 C._.LoadCheckpoint();
-                            else S.playEffect(AudioId.Fout);
+                            else S.play(AudioId.Fout);
                             break;
                         case MenuItem.LoadGame:
                             Input.reset();
@@ -116,7 +116,7 @@ export class MainMenu {
                     }
                     break;
                 case State.SelectChapter:
-                    S.playEffect(AudioId.Selectie);
+                    S.play(AudioId.Selectie);
                     switch (this.selectedItem) {
                         case MenuItem.Debug:
                             M._.SelectedChapterToPlay = Chapter.Debug;

@@ -77,7 +77,7 @@ export class Controller extends BaseController {
                 break;
             case GameState.GameStart2:
                 this.timer.restart();
-                SM.playMusic(AudioId.VampireKiller);
+                SM.play(AudioId.VampireKiller);
                 break;
             case GameState.Game:
                 break;
@@ -95,14 +95,14 @@ export class Controller extends BaseController {
             case GameSubstate.Conversation:
                 break;
             case GameSubstate.BelmontDies:
-                SM.playMusic(AudioId.OHNOES);
+                SM.play(AudioId.OHNOES);
                 break;
             case GameSubstate.ItsCurtainsForYou:
             case GameSubstate.ToEndDemo:
                 M._.ItsCurtains.Init();
                 break;
             case GameSubstate.GameOver:
-                SM.playMusic(AudioId.Humiliation);
+                SM.play(AudioId.Humiliation);
                 M._.GameOverScreen.Init();
                 break;
             case GameSubstate.IngameMenu:
@@ -281,8 +281,8 @@ export class Controller extends BaseController {
         if (waitDuration(this.startAfterLoadTimer, GameConstants.WaitAfterLoadGame)) {
             M._.startAfterLoad = false;
             BStopwatch.removeWatch(this.startAfterLoadTimer);
-            if (SM.MusicBeingPlayed)
-                SM.playMusic(SM.MusicBeingPlayed.AudioId);
+            // if (SM.currentMusicNode)
+            //     SM.play(SM.currentMusicNode.AudioId);
         }
     }
 
@@ -428,7 +428,7 @@ export class Controller extends BaseController {
     }
 
     public startBossFight(baas: Pietula): void {
-        SM.playMusic(AudioId.Baas);
+        SM.play(AudioId.Baas);
         M._.RoomExitsLocked = true;
         M._.BossBattle = true;
         M._.Boss = baas;

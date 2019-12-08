@@ -5,7 +5,7 @@ import { GameConstants } from "./gameconstants";
 import { newArea } from "../BoazEngineJS/common";
 import { Model } from "./gamemodel";
 import { SM } from "../BoazEngineJS/soundmaster";
-import { Area, Point } from "../BoazEngineJS/interfaces";
+import { Area, Point } from "../lib/interfaces";
 
 export const enum HeartSmallState {
 	Flying,
@@ -64,7 +64,7 @@ export class HeartSmall extends Sprite {
 		if (this.objectCollide(Model._.Belmont)) {
 			++Model._.Hearts;
 			this.disposeFlag = true;
-			SM.playEffect(AudioId.Heart);
+			SM.play(AudioId.Heart);
 		}
 	}
 

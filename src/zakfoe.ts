@@ -4,10 +4,10 @@ import { Direction } from "../BoazEngineJS/direction";
 import { PlayerProjectile } from "./pprojectile";
 import { newArea, newSize } from "../BoazEngineJS/common";
 import { BitmapId } from "./resourceids";
-import { Area, Point } from "../BoazEngineJS/interfaces";
 import { Model as M } from "./gamemodel";
 import { GameConstants as CS } from "./gameconstants";
 import { bst } from "../BoazEngineJS/statemachine";
+import { Area, Point } from "../lib/interfaces";
 
 type AniType = { i: BitmapId, dy: number };
 

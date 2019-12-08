@@ -4,7 +4,7 @@ import { Direction } from "../BoazEngineJS/direction";
 import { AudioId, BitmapId } from "./resourceids";
 import { ItemType } from "./item";
 import { newArea } from "../BoazEngineJS/common";
-import { Area, Point } from "../BoazEngineJS/interfaces";
+import { Area, Point } from "../lib/interfaces";
 
 /*[Serializable]*/
 export class GardenCandle extends Candle {

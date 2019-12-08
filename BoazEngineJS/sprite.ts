@@ -1,6 +1,6 @@
 ﻿import { view } from "./engine";
 import { moveArea } from "./common";
-import { IRenderObject, Point, Size, Area } from './interfaces';
+import { IRenderObject, Point, Size, Area } from "../lib/interfaces";
 import { DrawImgFlags } from "./view";
 
 export abstract class Sprite implements IRenderObject {

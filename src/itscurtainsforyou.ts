@@ -3,7 +3,7 @@ import { TileSize } from "../BoazEngineJS/msx"
 import { waitDuration } from "../BoazEngineJS/common";
 import { view } from "../BoazEngineJS/engine";
 import { Controller as C } from "./gamecontroller";
-import { Point } from "../BoazEngineJS/interfaces";
+import { Point } from "../lib/interfaces";
 import { BitmapId } from "./resourceids";
 import { GameConstants } from "./gameconstants";
 

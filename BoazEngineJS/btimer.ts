@@ -1,6 +1,4 @@
-﻿/// <reference path="./interfaces.ts"/>
-
-export class BStopwatch {
+﻿export class BStopwatch {
     public pauseDuringMenu: boolean = true;
     public pauseAtFocusLoss: boolean = true;
     public running: boolean = false;

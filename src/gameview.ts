@@ -1,6 +1,6 @@
 import { GameConstants as CS } from "./gameconstants"
 import { Model as M, GameState, GameSubstate } from "./gamemodel";
-import { Point, IGameView } from '../BoazEngineJS/interfaces';
+import { Point, IGameView } from "../lib/interfaces";
 import { view } from "../BoazEngineJS/engine";
 
 export class GameView implements IGameView {

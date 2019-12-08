@@ -3,7 +3,7 @@ import { moveArea } from "../BoazEngineJS/common"
 import { Direction } from "../BoazEngineJS/direction";
 import { Model as M } from "./gamemodel";
 import { TileSize } from "../BoazEngineJS/msx";
-import { Area, Point } from "../BoazEngineJS/interfaces";
+import { Area, Point } from "../lib/interfaces";
 
 export abstract class Creature extends Sprite {
     public get wallhitbox_sx(): number {

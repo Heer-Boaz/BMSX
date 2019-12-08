@@ -5,7 +5,7 @@ import { Model as M } from "./gamemodel";
 import { SM } from "../BoazEngineJS/soundmaster";
 import { FoeExplosion } from "./foeexplosion";
 import { AudioId } from "./resourceids";
-import { Point } from "../BoazEngineJS/interfaces";
+import { Point } from "../lib/interfaces";
 
 export abstract class Foe extends Creature {
     public maxHealth: number;
@@ -41,7 +41,7 @@ export abstract class Foe extends Creature {
     public handleHit(source: PlayerProjectile): void {
         if (this.disposeFlag) return;
         M._.LastFoeThatWasHit = this;
-        SM.playEffect(AudioId.Hit);
+        SM.play(AudioId.Hit);
     }
 
     protected loseHealth(source: PlayerProjectile): void {

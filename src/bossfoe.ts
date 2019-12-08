@@ -1,5 +1,5 @@
 import { Foe } from "./foe";
-import { Point } from "../BoazEngineJS/interfaces";
+import { Point } from "../lib/interfaces";
 
 /*[Serializable]*/
 export class BossFoe extends Foe {

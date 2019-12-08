@@ -4,7 +4,7 @@ import { Item } from "./item";
 import { AudioId, BitmapId } from "./resourceids";
 import { moveArea, area2size } from "../BoazEngineJS/common";
 import { Controller as C } from "./gamecontroller";
-import { Area, Point } from "../BoazEngineJS/interfaces";
+import { Area, Point } from "../lib/interfaces";
 
 /*[Serializable]*/
 export class WeaponItem extends Sprite {

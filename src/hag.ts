@@ -6,7 +6,7 @@ import { ItemType } from "./item";
 import { Foe } from "./foe";
 import { GameConstants } from "./gameconstants";
 import { PlayerProjectile } from "./pprojectile";
-import { Size, Area, Point } from "../BoazEngineJS/interfaces";
+import { Size, Area, Point } from "../lib/interfaces";
 import { Model } from "./gamemodel";
 
 export class Hag extends Foe {

@@ -1,7 +1,7 @@
 import { view } from "../BoazEngineJS/engine"
 import { BitmapId } from "./resourceids";
 import { GameOptions as GO } from "../BoazEngineJS/gameoptions";
-import { Point, Color } from "../BoazEngineJS/interfaces";
+import { Point, Color } from "../lib/interfaces";
 
 export enum TextWriterType {
     Billboard,

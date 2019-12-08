@@ -1,7 +1,7 @@
 import { PlayerProjectile } from "./pprojectile";
 import { Direction } from "../BoazEngineJS/direction";
 import { Model as M } from "./gamemodel";
-import { Area, Point } from "../BoazEngineJS/interfaces";
+import { Area, Point } from "../lib/interfaces";
 import { BitmapId } from "./resourceids";
 import { GameConstants } from "./gameconstants";
 

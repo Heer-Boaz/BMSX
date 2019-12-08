@@ -5,7 +5,7 @@ import { HeartSmall } from "./heartsmall";
 import { AudioId, BitmapId } from "./resourceids";
 import { Model } from "./gamemodel";
 import { addPoints } from "../BoazEngineJS/common";
-import { Point } from "../BoazEngineJS/interfaces";
+import { Point } from "../lib/interfaces";
 
 /*[Serializable]*/
 export class FoeExplosion extends FX {

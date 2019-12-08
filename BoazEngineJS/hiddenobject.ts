@@ -1,4 +1,4 @@
-import { IGameObject, Point } from "./interfaces";
+import { IGameObject, Point } from "../lib/interfaces";
 
 export abstract class HiddenObject implements IGameObject {
 	pos: Point;
@@ -7,7 +7,7 @@ export abstract class HiddenObject implements IGameObject {
 	extendedProperties: Map<string, any>;
 
 	abstract takeTurn(): void;
-	abstract spawn: ((spawningPos?: import("./interfaces").Point) => void) | (() => void);
+	abstract spawn: ((spawningPos?: Point) => void) | (() => void);
 	abstract dispose(): void;
 
 	public static [Symbol.hasInstance](o: any): boolean {

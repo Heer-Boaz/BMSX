@@ -1,4 +1,4 @@
-﻿import { IGameObject, Point } from "./interfaces";
+﻿import { IGameObject, Point } from "../lib/interfaces";
 
 export abstract class BaseModel {
     public id2object: Map<string, IGameObject>;

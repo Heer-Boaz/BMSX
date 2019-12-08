@@ -1,6 +1,6 @@
 ﻿import { BStopwatch } from "./btimer"
 import { Direction } from "./direction";
-import { Area, Point, Size } from "./interfaces";
+import { Point, Area, Size } from "../lib/interfaces";
 
 export function moveArea(a: Area, p: Point): Area {
     return <Area>{

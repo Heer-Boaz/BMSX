@@ -1,4 +1,4 @@
-import { Point, Color } from "./interfaces";
+import { Point, Color } from "../lib/interfaces";
 
 export const TileSize: number = 16;
 export class Tile {

@@ -2,7 +2,7 @@ import { PlayerProjectile } from "./pprojectile";
 import { RoeState } from "./belmont";
 import { Direction } from "../BoazEngineJS/direction";
 import { Model as M } from "./gamemodel";
-import { Area, Point } from "../BoazEngineJS/interfaces";
+import { Area, Point } from "../lib/interfaces";
 import { AudioId, BitmapId } from "./resourceids";
 import { newArea, moveArea } from '../BoazEngineJS/common';
 

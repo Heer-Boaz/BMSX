@@ -1,31 +1,31 @@
-﻿import { bst } from "./statemachine";
+﻿import { bst } from "../BoazEngineJS/statemachine";
 
-export interface Point {
+declare interface Point {
     x: number;
     y: number;
 }
 
-export type Size = Point;
+declare type Size = Point;
 
-export interface Area {
+declare interface Area {
     start: Point;
     end: Point;
 }
 
-export interface Color {
+declare interface Color {
     r: number;
     g: number;
     b: number;
     a?: number;
 }
 
-export class PixelData {
+declare class PixelData {
     public B: number;
     public G: number;
     public R: number;
 }
 
-export interface IGameObject {
+declare interface IGameObject {
     // Properties
     id: string | null;
     disposeFlag: boolean;
@@ -49,7 +49,7 @@ export interface IGameObject {
     oncollide?: (src: IRenderObject) => void;
 }
 
-export interface IRenderObject extends IGameObject {
+declare interface IRenderObject extends IGameObject {
     size: Size;
     hitarea?: Area;
     visible: boolean;
@@ -70,11 +70,11 @@ export interface IRenderObject extends IGameObject {
     oncollide: (src: IRenderObject) => void;
 }
 
-export interface IGameView {
+declare interface IGameView {
     drawGame(elapsedMs: number): void;
 }
 
-export interface ImageId2Url {
+declare interface ImageId2Url {
     id: number;
     url: string;
 }

@@ -1,6 +1,6 @@
 ﻿import { Constants } from "./constants"
 import { view } from "./engine";
-import { Size, Point, Color } from "./interfaces";
+import { Size, Point, Color } from "../lib/interfaces";
 
 export const enum DrawImgFlags {
     None = 0,

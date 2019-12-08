@@ -58,76 +58,8 @@ declare module "BoazEngineJS/statemachine" {
         remove(_id: numstring): void;
     }
 }
-declare module "BoazEngineJS/interfaces" {
-    import { bst } from "BoazEngineJS/statemachine";
-    export interface Point {
-        x: number;
-        y: number;
-    }
-    export type Size = Point;
-    export interface Area {
-        start: Point;
-        end: Point;
-    }
-    export interface Color {
-        r: number;
-        g: number;
-        b: number;
-        a?: number;
-    }
-    export class PixelData {
-        B: number;
-        G: number;
-        R: number;
-    }
-    export interface IGameObject {
-        id: string | null;
-        disposeFlag: boolean;
-        priority?: number;
-        pos: Point;
-        smachines?: bst<any>[];
-        isWall?: boolean;
-        disposeOnSwitchRoom?: boolean;
-        takeTurn(): void;
-        spawn: ((spawningPos?: Point | null) => void) | (() => void);
-        dispose(): void;
-        paint?(offset?: Point): void;
-        postpaint?(offset?: Point): void;
-        objectCollide?(o: IRenderObject): boolean;
-        areaCollide?(a: Area): boolean;
-        collides?(o: IRenderObject | Area): boolean;
-        collide?(src: IRenderObject): void;
-        oncollide?: (src: IRenderObject) => void;
-    }
-    export interface IRenderObject extends IGameObject {
-        size: Size;
-        hitarea?: Area;
-        visible: boolean;
-        hitbox_sx?: number;
-        hitbox_sy?: number;
-        hitbox_ex?: number;
-        hitbox_ey?: number;
-        x_plus_width?: number;
-        y_plus_height?: number;
-        priority?: number;
-        paint(offset?: Point): void;
-        postpaint(offset?: Point): void;
-        objectCollide(o: IRenderObject): boolean;
-        areaCollide(a: Area): boolean;
-        collides(o: IRenderObject | Area): boolean;
-        collide(src: IRenderObject): void;
-        oncollide: (src: IRenderObject) => void;
-    }
-    export interface IGameView {
-        drawGame(elapsedMs: number): void;
-    }
-    export interface ImageId2Url {
-        id: number;
-        url: string;
-    }
-}
 declare module "BoazEngineJS/msx" {
-    import { Point, Color } from "BoazEngineJS/interfaces";
+    import { Point, Color } from "../lib/interfaces";
     export const TileSize: number;
     export class Tile {
         x: number;
@@ -159,7 +91,7 @@ declare module "BoazEngineJS/direction" {
     }
 }
 declare module "BoazEngineJS/model" {
-    import { IGameObject, Point } from "BoazEngineJS/interfaces";
+    import { IGameObject, Point } from "../lib/interfaces";
     export abstract class BaseModel {
         id2object: Map<string, IGameObject>;
         objects: IGameObject[];
@@ -238,7 +170,7 @@ declare module "BoazEngineJS/constants" {
     }
 }
 declare module "BoazEngineJS/view" {
-    import { Size, Color } from "BoazEngineJS/interfaces";
+    import { Size, Color } from "../lib/interfaces";
     export const enum DrawImgFlags {
         None = 0,
         HFLIP = 1,
@@ -287,195 +219,179 @@ declare module "BoazEngineJS/gameoptions" {
 }
 declare module "src/resourceids" {
     export const enum BitmapId {
-        None = -1,
-        Belmont_l1 = 0,
-        Belmont_l2 = 1,
-        Belmont_l3 = 2,
-        Belmont_ld = 3,
-        Belmont_ldead = 4,
-        Belmont_lhitdown = 5,
-        Belmont_lhitfly = 6,
-        Belmont_lw1 = 7,
-        Belmont_lw2 = 8,
-        Belmont_lw3 = 9,
-        Belmont_lwd1 = 10,
-        Belmont_lwd2 = 11,
-        Belmont_lwd3 = 12,
-        Belmont_r1 = 13,
-        Belmont_r2 = 14,
-        Belmont_r3 = 15,
-        Belmont_rd = 16,
-        Belmont_rdead = 17,
-        Belmont_rhitdown = 18,
-        Belmont_rhitfly = 19,
-        Belmont_rw1 = 20,
-        Belmont_rw2 = 21,
-        Belmont_rw3 = 22,
-        Belmont_rwd1 = 23,
-        Belmont_rwd2 = 24,
-        Belmont_rwd3 = 25,
-        Candle_1 = 26,
-        Candle_2 = 27,
-        Door = 28,
-        GCandle_1 = 29,
-        GCandle_2 = 30,
-        Hag1 = 31,
-        Hag2 = 32,
-        Lightning1 = 33,
-        Lightning2 = 34,
-        Lightning3 = 35,
-        Lightning4 = 36,
-        Lightning5 = 37,
-        Pietula1 = 38,
-        Pietula2 = 39,
-        Pietula3 = 40,
-        Pietula4 = 41,
-        ZakFoe1 = 42,
-        ZakFoe2 = 43,
-        ZakFoe3 = 44,
-        Letter_0 = 45,
-        Letter_1 = 46,
-        Letter_2 = 47,
-        Letter_3 = 48,
-        Letter_4 = 49,
-        Letter_5 = 50,
-        Letter_6 = 51,
-        Letter_7 = 52,
-        Letter_8 = 53,
-        Letter_9 = 54,
-        Letter_A = 55,
-        Letter_Apostroph = 56,
-        Letter_B = 57,
-        Letter_C = 58,
-        Letter_Colon = 59,
-        Letter_Comma = 60,
-        Letter_Continue = 61,
-        Letter_D = 62,
-        Letter_Dot = 63,
-        Letter_E = 64,
-        Letter_Exclamation = 65,
-        Letter_F = 66,
-        Letter_G = 67,
-        Letter_H = 68,
-        Letter_I = 69,
-        Letter_IJ = 70,
-        Letter_J = 71,
-        Letter_K = 72,
-        Letter_L = 73,
-        Letter_Line = 74,
-        Letter_M = 75,
-        Letter_N = 76,
-        Letter_O = 77,
-        Letter_P = 78,
-        Letter_Percent = 79,
-        Letter_Q = 80,
-        Letter_Question = 81,
-        Letter_R = 82,
-        Letter_S = 83,
-        Letter_Slash = 84,
-        Letter_Space = 85,
-        Letter_SpeakEnd = 86,
-        Letter_SpeakStart = 87,
-        Letter_Streep = 88,
-        Letter_T = 89,
-        Letter_U = 90,
-        Letter_V = 91,
-        Letter_W = 92,
-        Letter_X = 93,
-        Letter_Y = 94,
-        Letter_Z = 95,
-        deviation = 96,
-        Foekill_1 = 97,
-        Foekill_2 = 98,
-        EnergybarStripe_Belmont = 99,
-        EnergybarStripe_Boss = 100,
-        HUD = 101,
-        Chest = 102,
-        Heart_big = 103,
-        Heart_fly = 104,
-        Heart_small = 105,
-        Key_big = 106,
-        Key_small = 107,
-        MenuCursor = 108,
-        Boaz = 109,
-        CurtainPart = 110,
-        IntroAnimation_1 = 111,
-        PlayStart = 112,
-        Sint = 113,
-        Title = 114,
-        behang = 115,
-        Garden = 116,
-        Garden_entrance = 117,
-        Room1_d = 118,
-        tiles1 = 119,
-        tiles2 = 120,
-        tiles3 = 121
+        None = 0,
+        Belmont_l1 = 1,
+        Belmont_l2 = 2,
+        Belmont_l3 = 3,
+        Belmont_ld = 4,
+        Belmont_ldead = 5,
+        Belmont_lhitdown = 6,
+        Belmont_lhitfly = 7,
+        Belmont_lw1 = 8,
+        Belmont_lw2 = 9,
+        Belmont_lw3 = 10,
+        Belmont_lwd1 = 11,
+        Belmont_lwd2 = 12,
+        Belmont_lwd3 = 13,
+        Belmont_r1 = 14,
+        Belmont_r2 = 15,
+        Belmont_r3 = 16,
+        Belmont_rd = 17,
+        Belmont_rdead = 18,
+        Belmont_rhitdown = 19,
+        Belmont_rhitfly = 20,
+        Belmont_rw1 = 21,
+        Belmont_rw2 = 22,
+        Belmont_rw3 = 23,
+        Belmont_rwd1 = 24,
+        Belmont_rwd2 = 25,
+        Belmont_rwd3 = 26,
+        Candle_1 = 27,
+        Candle_2 = 28,
+        Door = 29,
+        GCandle_1 = 30,
+        GCandle_2 = 31,
+        Hag1 = 32,
+        Hag2 = 33,
+        Lightning1 = 34,
+        Lightning2 = 35,
+        Lightning3 = 36,
+        Lightning4 = 37,
+        Lightning5 = 38,
+        Pietula1 = 39,
+        Pietula2 = 40,
+        Pietula3 = 41,
+        Pietula4 = 42,
+        ZakFoe1 = 43,
+        ZakFoe2 = 44,
+        ZakFoe3 = 45,
+        Letter_0 = 46,
+        Letter_1 = 47,
+        Letter_2 = 48,
+        Letter_3 = 49,
+        Letter_4 = 50,
+        Letter_5 = 51,
+        Letter_6 = 52,
+        Letter_7 = 53,
+        Letter_8 = 54,
+        Letter_9 = 55,
+        Letter_A = 56,
+        Letter_Apostroph = 57,
+        Letter_B = 58,
+        Letter_C = 59,
+        Letter_Colon = 60,
+        Letter_Comma = 61,
+        Letter_Continue = 62,
+        Letter_D = 63,
+        Letter_Dot = 64,
+        Letter_E = 65,
+        Letter_Exclamation = 66,
+        Letter_F = 67,
+        Letter_G = 68,
+        Letter_H = 69,
+        Letter_I = 70,
+        Letter_IJ = 71,
+        Letter_J = 72,
+        Letter_K = 73,
+        Letter_L = 74,
+        Letter_Line = 75,
+        Letter_M = 76,
+        Letter_N = 77,
+        Letter_O = 78,
+        Letter_P = 79,
+        Letter_Percent = 80,
+        Letter_Q = 81,
+        Letter_Question = 82,
+        Letter_R = 83,
+        Letter_S = 84,
+        Letter_Slash = 85,
+        Letter_Space = 86,
+        Letter_SpeakEnd = 87,
+        Letter_SpeakStart = 88,
+        Letter_Streep = 89,
+        Letter_T = 90,
+        Letter_U = 91,
+        Letter_V = 92,
+        Letter_W = 93,
+        Letter_X = 94,
+        Letter_Y = 95,
+        Letter_Z = 96,
+        deviation = 97,
+        Foekill_1 = 98,
+        Foekill_2 = 99,
+        EnergybarStripe_Belmont = 100,
+        EnergybarStripe_Boss = 101,
+        HUD = 102,
+        Chest = 103,
+        Heart_big = 104,
+        Heart_fly = 105,
+        Heart_small = 106,
+        Key_big = 107,
+        Key_small = 108,
+        MenuCursor = 109,
+        Boaz = 110,
+        CurtainPart = 111,
+        IntroAnimation_1 = 112,
+        PlayStart = 113,
+        Sint = 114,
+        Title = 115,
+        behang = 116,
+        Garden = 117,
+        Garden_entrance = 118,
+        Room1_d = 119,
+        tiles1 = 120,
+        tiles2 = 121,
+        tiles3 = 122
     }
     export const enum AudioId {
-        None = -1,
-        Baas = 0,
-        FeestVieren = 1,
-        Hoera = 2,
-        Humiliation = 3,
-        OHNOES = 4,
-        Prologue = 5,
-        VampireKiller = 6,
-        Au = 7,
-        Bliksem = 8,
-        Chestopen = 9,
-        Cross = 10,
-        Door = 11,
-        Fout = 12,
-        Heart = 13,
-        Hit = 14,
-        Init = 15,
-        Item = 16,
-        Kaboem = 17,
-        Key = 18,
-        Knife = 19,
-        Land = 20,
-        Portal = 21,
-        Rotate = 22,
-        Selectie = 23,
-        WallBreak = 24,
-        Whip = 25
+        None = 0,
+        Baas = 1,
+        FeestVieren = 2,
+        Hoera = 3,
+        Humiliation = 4,
+        OHNOES = 5,
+        Prologue = 6,
+        VampireKiller = 7,
+        Au = 8,
+        Bliksem = 9,
+        Chestopen = 10,
+        Cross = 11,
+        Door = 12,
+        Fout = 13,
+        Heart = 14,
+        Hit = 15,
+        Init = 16,
+        Item = 17,
+        Kaboem = 18,
+        Key = 19,
+        Knife = 20,
+        Land = 21,
+        Portal = 22,
+        Rotate = 23,
+        Selectie = 24,
+        WallBreak = 25,
+        Whip = 26
     }
 }
 declare module "BoazEngineJS/soundmaster" {
     import { AudioId } from "src/resourceids";
-    import { RomResource } from "BoazEngineJS/engine";
-    export interface Effect {
-        AudioId: number;
-        Priority: number;
-        loop?: boolean;
-    }
-    export interface Song {
-        AudioId: number;
-        NextSong: Song;
-        loop?: boolean;
-    }
+    import { id2res, AudioMeta } from "../lib/rompack";
     export class SM {
-        private static musicContext;
-        private static effectContext;
-        private static audioResources;
-        private static currentEffectNode;
+        private static limitToOneEffect;
+        private static tracks;
+        private static sndContext;
         private static currentMusicNode;
-        private static LimitToOneEffect;
-        static MusicBeingPlayed: Song;
-        static EffectBeingPlayed: Effect;
-        static SoundEffectList: Map<AudioId, Effect>;
-        static MusicList: Map<AudioId, Song>;
-        static init(_audioResources: {
-            [key: number]: RomResource;
-        }): void;
+        private static currentEffectNode;
+        static currentEffectAudio: AudioMeta;
+        static currentMusicAudio: AudioMeta;
+        private static gainNode;
+        static init(_audioResources: id2res): void;
         private static createNode;
         private static playNode;
-        private static _playSong;
-        static _playEffect(_track: Effect): void;
-        static stopEffect(): Promise<void>;
-        static playEffect(id: AudioId): void;
-        static stopMusic(): Promise<void>;
-        static playMusic(id: AudioId, stopCurrent?: boolean): void;
+        static play(id: AudioId): void;
+        private static stop;
+        static stopEffect(): void;
+        static stopMusic(): void;
         static resumeEffect(): void;
         static resumeMusic(): void;
         static setEffectsVolume(volume: number): void;
@@ -485,7 +401,7 @@ declare module "BoazEngineJS/soundmaster" {
 declare module "BoazEngineJS/common" {
     import { BStopwatch } from "BoazEngineJS/btimer";
     import { Direction } from "BoazEngineJS/direction";
-    import { Area, Point, Size } from "BoazEngineJS/interfaces";
+    import { Point, Area, Size } from "../lib/interfaces";
     export function moveArea(a: Area, p: Point): Area;
     export function addPoints(a: Point, b: Point): Point;
     export function randomInt(min: number, max: number): number;
@@ -509,7 +425,7 @@ declare module "BoazEngineJS/common" {
     export function Opposite(dir: Direction): Direction;
 }
 declare module "BoazEngineJS/input" {
-    import { Point } from "BoazEngineJS/interfaces";
+    import { Point } from "../lib/interfaces";
     export class Input {
         static KeyState: {};
         static KeyClickRequestedState: {};
@@ -549,23 +465,8 @@ declare module "BoazEngineJS/engine" {
     import { BaseController } from "BoazEngineJS/controller";
     import { View } from "BoazEngineJS/view";
     import { SM } from "BoazEngineJS/soundmaster";
-    import { IGameView, Size } from "BoazEngineJS/interfaces";
-    export type id2res = {
-        [key: number]: RomResource;
-    };
-    export interface RomLoadResult {
-        rom: ArrayBuffer;
-        images: Map<number, HTMLImageElement>;
-        resources: id2res;
-        source: any;
-    }
-    export interface RomResource {
-        resid: number;
-        resname: string;
-        type: string;
-        start: number;
-        end: number;
-    }
+    import { IGameView, Size } from "../lib/interfaces";
+    import { RomLoadResult } from '../lib/rompack';
     export let game: Game;
     export let model: BaseModel;
     export let controller: BaseController;
@@ -594,7 +495,7 @@ declare module "BoazEngineJS/engine" {
     }
 }
 declare module "BoazEngineJS/sprite" {
-    import { IRenderObject, Point, Size, Area } from "BoazEngineJS/interfaces";
+    import { IRenderObject, Point, Size, Area } from "../lib/interfaces";
     export abstract class Sprite implements IRenderObject {
         id: string | null;
         pos: Point;
@@ -632,7 +533,7 @@ declare module "BoazEngineJS/sprite" {
 declare module "src/creature" {
     import { Sprite } from "BoazEngineJS/sprite";
     import { Direction } from "BoazEngineJS/direction";
-    import { Area, Point } from "BoazEngineJS/interfaces";
+    import { Area, Point } from "../lib/interfaces";
     export abstract class Creature extends Sprite {
         get wallhitbox_sx(): number;
         get wallhitbox_sy(): number;
@@ -658,7 +559,7 @@ declare module "src/creature" {
 declare module "src/projectile" {
     import { Sprite } from "BoazEngineJS/sprite";
     import { Direction } from "BoazEngineJS/direction";
-    import { Point } from "BoazEngineJS/interfaces";
+    import { Point } from "../lib/interfaces";
     export abstract class Projectile extends Sprite {
         direction: Direction;
         protected speed: Point;
@@ -674,7 +575,7 @@ declare module "src/projectile" {
 declare module "src/pprojectile" {
     import { Foe } from "src/foe";
     import { Projectile } from "src/projectile";
-    import { Point } from "BoazEngineJS/interfaces";
+    import { Point } from "../lib/interfaces";
     export abstract class PlayerProjectile extends Projectile {
         protected foesThatWereHit: Foe[];
         constructor(fpos: Point, speed: Point);
@@ -682,7 +583,7 @@ declare module "src/pprojectile" {
     }
 }
 declare module "src/gameview" {
-    import { IGameView } from "BoazEngineJS/interfaces";
+    import { IGameView } from "../lib/interfaces";
     export class GameView implements IGameView {
         private static _instance;
         static get _(): GameView;
@@ -692,7 +593,7 @@ declare module "src/gameview" {
 }
 declare module "src/bootstrapper" {
     import { Chapter } from "src/gamemodel";
-    import { RomLoadResult } from "BoazEngineJS/engine";
+    import { RomLoadResult } from "../lib/rompack";
     export class Bootstrapper {
         static init(rom: RomLoadResult): void;
         static BootstrapGame(chapter: Chapter): void;
@@ -701,21 +602,21 @@ declare module "src/bootstrapper" {
     }
 }
 declare module "BoazEngineJS/savegame" {
+    import { AudioId } from "src/resourceids";
     import { BStopwatch } from "BoazEngineJS/btimer";
-    import { Song } from "BoazEngineJS/soundmaster";
     export class Savegame {
         Model: any;
         Timestamp: Date;
         Slot: number;
         RegisteredWatches: BStopwatch[];
-        MusicBeingPlayed: Song;
+        MusicBeingPlayed: AudioId;
     }
 }
 declare module "src/weaponitem" {
     import { Sprite } from "BoazEngineJS/sprite";
     import { SecWeaponType, BagWeapon } from "src/gamemodel";
     import { BitmapId } from "src/resourceids";
-    import { Area, Point } from "BoazEngineJS/interfaces";
+    import { Area, Point } from "../lib/interfaces";
     export class WeaponItem extends Sprite {
         static ItemHitArea: Area;
         ItsType: WeaponType;
@@ -767,7 +668,7 @@ declare module "src/belmont" {
     import { BStopwatch } from "BoazEngineJS/btimer";
     import { Animation } from "BoazEngineJS/animation";
     import { BitmapId } from "src/resourceids";
-    import { Area, Point } from "BoazEngineJS/interfaces";
+    import { Area, Point } from "../lib/interfaces";
     export class RoeState {
         static framesPerDrawing: number[];
         aniTimer: BStopwatch;
@@ -918,7 +819,7 @@ declare module "src/belmont" {
 declare module "src/triroe" {
     import { PlayerProjectile } from "src/pprojectile";
     import { Direction } from "BoazEngineJS/direction";
-    import { Area, Point } from "BoazEngineJS/interfaces";
+    import { Area, Point } from "../lib/interfaces";
     export class TriRoe extends PlayerProjectile {
         private static hitareas;
         get hitarea(): Area;
@@ -933,7 +834,7 @@ declare module "src/triroe" {
 declare module "src/cross" {
     import { PlayerProjectile } from "src/pprojectile";
     import { Direction } from "BoazEngineJS/direction";
-    import { Area, Point } from "BoazEngineJS/interfaces";
+    import { Area, Point } from "../lib/interfaces";
     export class Cross extends PlayerProjectile {
         direction: Direction;
         hitarea: Area;
@@ -965,7 +866,7 @@ declare module "src/weaponfirehandler" {
     }
 }
 declare module "src/textwriter" {
-    import { Point, Color } from "BoazEngineJS/interfaces";
+    import { Point, Color } from "../lib/interfaces";
     export enum TextWriterType {
         Billboard = 0,
         Story = 1
@@ -1120,14 +1021,14 @@ declare module "src/gamemenu" {
 }
 declare module "src/bossfoe" {
     import { Foe } from "src/foe";
-    import { Point } from "BoazEngineJS/interfaces";
+    import { Point } from "../lib/interfaces";
     export class BossFoe extends Foe {
         constructor(pos: Point);
     }
 }
 declare module "src/fprojectile" {
     import { Projectile } from "src/projectile";
-    import { Point } from "BoazEngineJS/interfaces";
+    import { Point } from "../lib/interfaces";
     export class FProjectile extends Projectile {
         get canHurtPlayer(): boolean;
         constructor(pos: Point, speed: Point);
@@ -1138,7 +1039,7 @@ declare module "src/fx" {
     import { Sprite } from "BoazEngineJS/sprite";
     import { BStopwatch } from "BoazEngineJS/btimer";
     import { Animation } from "BoazEngineJS/animation";
-    import { Point } from "BoazEngineJS/interfaces";
+    import { Point } from "../lib/interfaces";
     export class FX extends Sprite {
         protected animation: Animation<number>;
         protected timer: BStopwatch;
@@ -1152,7 +1053,7 @@ declare module "src/fx" {
 declare module "src/heartsmall" {
     import { Sprite } from "BoazEngineJS/sprite";
     import { Animation } from "BoazEngineJS/animation";
-    import { Area, Point } from "BoazEngineJS/interfaces";
+    import { Area, Point } from "../lib/interfaces";
     export const enum HeartSmallState {
         Flying = 0,
         Standing = 1
@@ -1178,7 +1079,7 @@ declare module "src/foeexplosion" {
     import { AniData } from "BoazEngineJS/animation";
     import { FX } from "src/fx";
     import { BitmapId } from "src/resourceids";
-    import { Point } from "BoazEngineJS/interfaces";
+    import { Point } from "../lib/interfaces";
     export class FoeExplosion extends FX {
         protected static AnimationFrames: AniData<BitmapId>[];
         protected frameIndex: number;
@@ -1190,7 +1091,7 @@ declare module "src/foeexplosion" {
 declare module "src/pietula" {
     import { BossFoe } from "src/bossfoe";
     import { PlayerProjectile } from "src/pprojectile";
-    import { Area, Point } from "BoazEngineJS/interfaces";
+    import { Area, Point } from "../lib/interfaces";
     import { bst } from "BoazEngineJS/statemachine";
     export class Pietula extends BossFoe {
         get damageToPlayer(): number;
@@ -1268,8 +1169,8 @@ declare module "src/gamecontroller" {
 }
 declare module "src/item" {
     import { Sprite } from "BoazEngineJS/sprite";
-    import { Area, Point } from "BoazEngineJS/interfaces";
     import { BitmapId } from "src/resourceids";
+    import { Area, Point } from "../lib/interfaces";
     export const enum ItemType {
         None = 0,
         HeartSmall = 1,
@@ -1298,7 +1199,7 @@ declare module "src/foe" {
     import { Creature } from "src/creature";
     import { PlayerProjectile } from "src/pprojectile";
     import { ItemType } from "src/item";
-    import { Point } from "BoazEngineJS/interfaces";
+    import { Point } from "../lib/interfaces";
     export abstract class Foe extends Creature {
         maxHealth: number;
         health: number;
@@ -1321,7 +1222,7 @@ declare module "src/foe" {
 }
 declare module "src/hud" {
     import { Foe } from "src/foe";
-    import { Point } from "BoazEngineJS/interfaces";
+    import { Point } from "../lib/interfaces";
     export class HUD {
         static Pos_X: number;
         static Pos_Y: number;
@@ -1447,7 +1348,7 @@ declare module "src/gamemodel" {
     import { WeaponType } from "src/weaponitem";
     import { ItemType } from "src/item";
     import { GameMenu } from "src/gamemenu";
-    import { Point, IGameObject } from "BoazEngineJS/interfaces";
+    import { Point, IGameObject } from "../lib/interfaces";
     import { Room } from "src/room";
     import { HUD } from "src/hud";
     import { ItsCurtainsForYou } from "src/itscurtainsforyou";
@@ -1645,10 +1546,10 @@ declare module "src/gameconstants" {
     }
 }
 declare module "src/room" {
-    import { Point } from "BoazEngineJS/interfaces";
     import { Direction } from "BoazEngineJS/direction";
     import { RoomDataContainer } from "src/RoomFactory";
     import { BitmapId } from "src/resourceids";
+    import { Point } from "../lib/interfaces";
     export type NearingRoomExitResult = {
         destRoom: number;
         direction: Direction;
@@ -1684,7 +1585,7 @@ declare module "src/candle" {
     import { Direction } from "BoazEngineJS/direction";
     import { PlayerProjectile } from "src/pprojectile";
     import { BitmapId } from "src/resourceids";
-    import { Area, Point } from "BoazEngineJS/interfaces";
+    import { Area, Point } from "../lib/interfaces";
     export class Candle extends Foe {
         get damageToPlayer(): number;
         protected get moveBeforeFrameChange(): number;
@@ -1709,7 +1610,7 @@ declare module "src/gardencandle" {
     import { Direction } from "BoazEngineJS/direction";
     import { BitmapId } from "src/resourceids";
     import { ItemType } from "src/item";
-    import { Area, Point } from "BoazEngineJS/interfaces";
+    import { Area, Point } from "../lib/interfaces";
     export class GardenCandle extends Candle {
         protected static candleSprites: Map<Direction, BitmapId[]>;
         protected static CandleHitArea: Area;
@@ -1725,7 +1626,7 @@ declare module "src/hag" {
     import { ItemType } from "src/item";
     import { Foe } from "src/foe";
     import { PlayerProjectile } from "src/pprojectile";
-    import { Size, Area, Point } from "BoazEngineJS/interfaces";
+    import { Size, Area, Point } from "../lib/interfaces";
     export class Hag extends Foe {
         get damageToPlayer(): number;
         protected get moveBeforeFrameChange(): number;
@@ -1745,7 +1646,7 @@ declare module "src/hag" {
     }
 }
 declare module "src/haggenerator" {
-    import { IGameObject, Point } from "BoazEngineJS/interfaces";
+    import { IGameObject, Point } from "../lib/interfaces";
     import { bst } from "BoazEngineJS/statemachine";
     export class HagGenerator implements IGameObject {
         disposeFlag: boolean;
@@ -1764,8 +1665,8 @@ declare module "src/zakfoe" {
     import { ItemType } from "src/item";
     import { Direction } from "BoazEngineJS/direction";
     import { PlayerProjectile } from "src/pprojectile";
-    import { Area, Point } from "BoazEngineJS/interfaces";
     import { bst } from "BoazEngineJS/statemachine";
+    import { Area, Point } from "../lib/interfaces";
     export class ZakFoe extends Foe {
         get damageToPlayer(): number;
         get respawnOnRoomEntry(): boolean;
@@ -1816,7 +1717,7 @@ declare module "src/chandelier" {
     import { PlayerProjectile } from "src/pprojectile";
     import { ItemType } from "src/item";
     import { BitmapId } from "src/resourceids";
-    import { Area, Point } from "BoazEngineJS/interfaces";
+    import { Area, Point } from "../lib/interfaces";
     export class Chandelier extends Foe {
         get damageToPlayer(): number;
         protected get moveBeforeFrameChange(): number;
@@ -1851,55 +1752,19 @@ declare module "BoazEngineJS/gameloader" {
     export function bla(): void;
 }
 declare module "BoazEngineJS/hiddenobject" {
-    import { IGameObject, Point } from "BoazEngineJS/interfaces";
+    import { IGameObject, Point } from "../lib/interfaces";
     export abstract class HiddenObject implements IGameObject {
         pos: Point;
         id: string;
         disposeFlag: boolean;
         extendedProperties: Map<string, any>;
         abstract takeTurn(): void;
-        abstract spawn: ((spawningPos?: import("BoazEngineJS/interfaces").Point) => void) | (() => void);
+        abstract spawn: ((spawningPos?: Point) => void) | (() => void);
         abstract dispose(): void;
         static [Symbol.hasInstance](o: any): boolean;
     }
 }
-interface RomResource {
-    resid: number;
-    resname: string;
-    type: string;
-    start: number;
-    end: number;
+declare module "BoazEngineJS/rom" {
+    export {};
 }
-interface RomMeta {
-    start: number;
-    end: number;
-}
-declare type id2res = {
-    [key: number]: RomResource;
-};
-interface RomLoadResult {
-    rom: ArrayBuffer;
-    images: Map<number, HTMLImageElement>;
-    resources: id2res;
-    source: any;
-}
-declare var basic: {
-    rom: RomLoadResult;
-    debug: boolean;
-    defusr: RomLoadResult;
-    usr(x: number): number;
-    bload(url: string): Promise<RomLoadResult>;
-};
-declare function loadRompack(url: string): Promise<ArrayBuffer>;
-declare function loadImage(url: string): Promise<HTMLImageElement>;
-declare function loadAudio(url: string): Promise<HTMLAudioElement>;
-declare function loadResourceList(rom: ArrayBuffer): Promise<RomResource[]>;
-declare function loadResources(rom: ArrayBuffer): Promise<RomLoadResult>;
-declare function load(rom: ArrayBuffer, res: RomResource, romResult: RomLoadResult): Promise<void>;
-declare function awaitBootComplete(): Promise<void>;
-declare function awaitPressedAnyKey(): Promise<void>;
-declare function setLoaderText(txt: string): void;
-declare function setClassForLoader(cls: string): void;
-declare function decodeuint8arr(to_decode: Uint8Array): string;
-declare function encodeuint8arr(to_encode: string): Uint8Array;
 declare module "BoazEngineJS/rompacker" { }

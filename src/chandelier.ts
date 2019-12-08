@@ -7,7 +7,7 @@ import { ItemType } from "./item";
 import { AudioId, BitmapId } from "./resourceids";
 import { newArea, newSize } from "../BoazEngineJS/common";
 import { Model as M } from "./gamemodel";
-import { Area, Point } from "../BoazEngineJS/interfaces";
+import { Area, Point } from "../lib/interfaces";
 
 /*[Serializable]*/
 export class Chandelier extends Foe {

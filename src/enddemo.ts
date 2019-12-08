@@ -27,7 +27,7 @@ export class EndDemo {
 
     public Init(): void {
         this.reset();
-        SM.playMusic(AudioId.FeestVieren);
+        SM.play(AudioId.FeestVieren);
     }
 
     private reset(): void {

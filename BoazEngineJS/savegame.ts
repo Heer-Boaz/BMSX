@@ -1,6 +1,5 @@
+import { AudioId } from 'src/resourceids';
 import { BStopwatch } from "./btimer";
-import { BaseModel } from "./model";
-import { Song } from "./soundmaster";
 
 /*[Serializable]*/
 export class Savegame {
@@ -8,5 +7,5 @@ export class Savegame {
 	public Timestamp: Date;
 	public Slot: number;
 	public RegisteredWatches: BStopwatch[];
-	public MusicBeingPlayed: Song;
+	public MusicBeingPlayed: AudioId;
 }

@@ -6,7 +6,7 @@ import { Direction } from "../BoazEngineJS/direction";
 import { PlayerProjectile } from "./pprojectile";
 import { AudioId, BitmapId } from "./resourceids";
 import { newArea, addPoints } from "../BoazEngineJS/common";
-import { Area, Point } from "../BoazEngineJS/interfaces";
+import { Area, Point } from "../lib/interfaces";
 import { GameConstants } from "./gameconstants";
 
 /*[Serializable]*/

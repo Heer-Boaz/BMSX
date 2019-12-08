@@ -8,7 +8,7 @@ import { WeaponItem, WeaponType } from "./weaponitem";
 import { GameConstants as CS, GameConstants } from "./gameconstants";
 import { ItemType } from "./item";
 import { GameMenu } from "./gamemenu";
-import { Point, IGameObject } from "../BoazEngineJS/interfaces";
+import { Point, IGameObject } from "../lib/interfaces";
 import { Room } from "./room";
 import { RoomFactory } from "./RoomFactory";
 import { HUD } from "./hud";

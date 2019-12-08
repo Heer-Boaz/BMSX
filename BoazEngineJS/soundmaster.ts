@@ -1,161 +1,111 @@
 import { GameOptions as GO } from "../BoazEngineJS/gameoptions";
 import { AudioId } from "../src/resourceids";
-import { game, RomResource, id2res } from "./engine";
-
-export interface Effect {
-	AudioId: number;
-	Priority: number;
-	loop?: boolean;
-}
-
-export interface Song {
-	AudioId: number;
-	NextSong: Song;
-	loop?: boolean;
-}
+import { game } from "./engine";
+import { id2res, AudioMeta, AudioType } from "../lib/rompack";
 
 export class SM {
-	private static musicContext: AudioContext;
-	private static effectContext: AudioContext;
-	private static audioResources: id2res;
-	private static currentEffectNode: AudioBufferSourceNode;
+	private static limitToOneEffect: boolean = true;
+
+	private static tracks: id2res;
+	private static sndContext: AudioContext;
+
 	private static currentMusicNode: AudioBufferSourceNode;
+	private static currentEffectNode: AudioBufferSourceNode;
+	public static currentEffectAudio: AudioMeta;
+	public static currentMusicAudio: AudioMeta;
+	private static gainNode: GainNode;
 
-	private static LimitToOneEffect: boolean = true;
-	public static MusicBeingPlayed: Song;
-	public static EffectBeingPlayed: Effect;
-	public static SoundEffectList: Map<AudioId, Effect> = new Map<AudioId, Effect>();
-	public static MusicList: Map<AudioId, Song> = new Map<AudioId, Song>();
-
-	public static init(_audioResources: { [key: number]: RomResource; }) {
-		SM.effectContext = new AudioContext({
-			latencyHint: 'interactive',
-			sampleRate: 44100,
-		});
-		SM.musicContext = new AudioContext({
+	public static init(_audioResources: id2res) {
+		SM.sndContext = new AudioContext({
 			latencyHint: 'interactive',
 			sampleRate: 44100,
 		});
 
-		SM.audioResources = _audioResources;
+		SM.tracks = _audioResources;
+		// SM.gainNode = new GainNode(this.sndContext);
 	}
 
-	private static async createNode(id: number, ctx: AudioContext): Promise<AudioBufferSourceNode> {
-		let srcnode = ctx.createBufferSource();
+	private static async createNode(id: number): Promise<AudioBufferSourceNode> {
+		let srcnode = SM.sndContext.createBufferSource();
 		return new Promise<AudioBufferSourceNode>((resolve, reject) => {
-			ctx.decodeAudioData(game.rom.rom.slice(SM.audioResources[id].start, SM.audioResources[id].end)).then(buffer => srcnode.buffer = buffer).then(() => resolve(srcnode));
+			SM.sndContext.decodeAudioData(game.rom.rom.slice(SM.tracks[id].start, SM.tracks[id].end)).then(buffer => srcnode.buffer = buffer).then(() => resolve(srcnode));
 		});
 	}
 
-	private static playNode(_track: Effect | Song, node: AudioBufferSourceNode, ctx: AudioContext): void {
-		SM.currentMusicNode = node;
+	private static playNode(_track: AudioMeta, node: AudioBufferSourceNode): void {
 		try {
-			node.connect(ctx.destination);
-			node.loop = _track.loop || false;
+			node.connect(SM.sndContext.destination);
+			if (_track.loop !== null) {
+				node.loop = true;
+				node.loopStart = _track.loop;
+			}
+			else node.loop = false;
 			node.start(0);
 		} catch {
 		}
 	}
 
-	private static _playSong(_track: Song): void {
-		if (_track.AudioId !== undefined) {
-			SM.stopMusic().then(() => {
-				SM.MusicBeingPlayed = _track as Song;
-				let trackid = _track.AudioId;
+	public static play(id: AudioId): void {
+		let track = SM.tracks[id]?.audiometa;
+		if (!track) return;
 
-				SM.createNode(trackid, SM.musicContext).then(node => {
-					SM.currentMusicNode = node;
-					node.onended = (ev) => {
-						if (!_track.loop && _track.NextSong !== undefined) {
-							SM._playSong(_track.NextSong);
-						}
-						else {
-							SM.MusicBeingPlayed = null;
-						}
-					};
-					SM.playNode(_track, node, SM.musicContext);
-				});
-			});
-		}
-	}
-
-	public static _playEffect(_track: Effect): void {
-		if (_track.AudioId !== undefined) {
-			SM.stopEffect().then(() => {
-
-				SM.EffectBeingPlayed = _track;
-				let trackid = _track.AudioId;
-
-				SM.createNode(trackid, SM.effectContext).then(node => {
+		switch (track.audiotype) {
+			case AudioType.effect:
+				if (SM.limitToOneEffect && SM.currentEffectAudio && track.priority < SM.currentEffectAudio.priority) return;
+				SM.stopEffect();
+				SM.createNode(id).then(node => {
 					SM.currentEffectNode = node;
-					node.onended = (ev) => SM.EffectBeingPlayed = null;
-					SM.playNode(_track, node, SM.effectContext);
+					node.onended = (ev) => SM.currentEffectAudio = null;
+					SM.playNode(track, node);
 				});
-			});
+				break;
+			case AudioType.music:
+				SM.stopMusic();
+				SM.createNode(id).then(node => {
+					SM.currentMusicNode = node;
+					node.onended = (ev) => SM.currentMusicAudio = null;
+					SM.playNode(track, node);
+				});
+				break;
 		}
 	}
 
-	public static async stopEffect(): Promise<void> {
-		// if (SM.EffectBeingPlayed && SM.EffectBeingPlayed.AudioId !== undefined) {
-		if (SM.effectContext.state !== 'running') {
-			Promise.resolve();
-			return;
-		}
-
-		return SM.effectContext.close().then(() => {
-			SM.effectContext = new AudioContext({
-				latencyHint: 'interactive',
-				sampleRate: 44100,
-			});
-
-			SM.currentEffectNode ?.stop();
-			SM.currentEffectNode ?.disconnect();
-			SM.currentEffectNode = null;
-
-			SM.EffectBeingPlayed = null;
-		});
-		// }
-	}
-
-	public static playEffect(id: AudioId): void {
-		let effect = SM.SoundEffectList.get(id);
-		if (!SM.LimitToOneEffect || !SM.EffectBeingPlayed || (effect.Priority >= SM.EffectBeingPlayed.Priority)) {
-			SM._playEffect(effect);
+	private static stop(id: AudioId): void {
+		switch (SM.tracks[id].audiometa.audiotype) {
+			case AudioType.effect: SM.stopEffect(); break;
+			case AudioType.music: SM.stopMusic(); break;
 		}
 	}
 
-	public static async stopMusic(): Promise<void> {
-		// if (SM.MusicBeingPlayed && SM.MusicBeingPlayed.AudioId !== undefined) {
-		if (SM.musicContext.state !== 'running') {
-			Promise.resolve();
-			return;
-		}
+	public static stopEffect(): void {
+		SM.currentEffectNode?.disconnect();
+		SM.currentEffectNode?.stop();
+		SM.currentEffectNode = null;
+		// return SM.sndContext.close().then(() => {
+		// 	SM.sndContext = new AudioContext({
+		// 		latencyHint: 'interactive',
+		// 		sampleRate: 44100,
+		// 	});
 
-		return SM.musicContext.close().then(() => {
-			SM.musicContext = new AudioContext({
-				latencyHint: 'interactive',
-				sampleRate: 44100,
-			});
-			SM.currentMusicNode ?.stop();
-			SM.currentMusicNode ?.disconnect();
-			SM.currentMusicNode = null;
+		// 	SM.currentNode?.stop();
+		// 	SM.currentNode?.disconnect();
+		// 	SM.currentNode = null;
 
-			SM.MusicBeingPlayed = null;
-		});
-		// }
+		// 	SM.currentEffectNode = null;
+		// });
 	}
 
-	public static playMusic(id: AudioId, stopCurrent: boolean = true): void {
-		SM._playSong(SM.MusicList.get(id));
+	public static stopMusic(): void {
+		SM.currentMusicNode?.stop();
+		SM.currentMusicNode?.disconnect();
+		SM.currentMusicNode = null;
 	}
 
 	public static resumeEffect(): void {
-		if (!SM.EffectBeingPlayed || !SM.EffectBeingPlayed.AudioId) return;
 		console.warn("ResumeEffect not implemented :-(");
 	}
 
 	public static resumeMusic(): void {
-		if (!SM.MusicBeingPlayed || !SM.MusicBeingPlayed.AudioId) return;
 		console.warn("ResumeMusic not implemented :-(");
 	}
 

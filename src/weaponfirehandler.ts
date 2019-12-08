@@ -6,7 +6,7 @@ import { waitDuration, copyPoint } from '../BoazEngineJS/common';
 import { Cross } from "./cross";
 import { Direction } from "../BoazEngineJS/direction";
 import { Belmont } from "./belmont";
-import { Point } from "../BoazEngineJS/interfaces";
+import { Point } from "../lib/interfaces";
 
 export class WeaponFireHandler {
     private static msCrossCooldown: number = 20;
@@ -80,7 +80,7 @@ export class WeaponFireHandler {
         let roe = new TriRoe(M._.Belmont.pos, M._.Belmont.direction);
         M._.spawn(roe);
         M._.Belmont.UseRoe();
-        SM.playEffect(AudioId.Whip);
+        SM.play(AudioId.Whip);
     }
 
     private static handleFireCross(): void {
@@ -100,7 +100,7 @@ export class WeaponFireHandler {
                 break;
         }
         M._.spawn(cross);
-        SM.playEffect(AudioId.Cross);
+        SM.play(AudioId.Cross);
         --M._.Hearts;
     }
 

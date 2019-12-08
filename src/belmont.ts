@@ -6,7 +6,7 @@ import { copyPoint, waitDuration, setSize, newArea, setPoint, addPoints } from '
 import { Animation, AniStepReturnValue } from '../BoazEngineJS/animation';
 import { Msx1Colors, TileSize } from '../BoazEngineJS/msx';
 import { AudioId, BitmapId } from "./resourceids";
-import { Area, Point } from '../BoazEngineJS/interfaces';
+import { Area, Point } from "../lib/interfaces";
 import { Room, NearingRoomExitResult } from './room';
 import { newPoint } from "../BoazEngineJS/common";
 import { SM } from "../BoazEngineJS/soundmaster";
@@ -329,7 +329,7 @@ export class Belmont extends Creature {
 				this.sety(this.pos.y + 4);
 			// this.checkAndHandleCollisions(originalPos);
 			if (this.FloorCollision) {
-				SM.playEffect(AudioId.Land);
+				SM.play(AudioId.Land);
 				if (this.Jumping) this.jumpState.Stop();
 			}
 		}
@@ -388,7 +388,7 @@ export class Belmont extends Creature {
 		}
 		else if (this.FloorCollision) {
 			this.jumpState.Stop();
-			// SM.playEffect(AudioId.Land);
+			// SM.play(AudioId.Land);
 		}
 		// this.jumpState.GoingUp ? this.checkAndHandleWallAndCeilingCollisions(originalPos) : this.checkAndHandleCollisions(originalPos);
 		// originalPos.y = this.pos.y;
@@ -466,7 +466,7 @@ export class Belmont extends Creature {
 			if (this.Roeing) {
 				this.roeState.Stop();
 			}
-			SM.playEffect(AudioId.Au);
+			SM.play(AudioId.Au);
 		}
 	}
 

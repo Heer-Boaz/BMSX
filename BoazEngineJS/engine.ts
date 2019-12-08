@@ -2,25 +2,10 @@
 import { BaseController } from "./controller"
 import { View } from "./view"
 import { SM } from "./soundmaster";
-import { IGameView, Size } from './interfaces';
+import { IGameView, Size } from "../lib/interfaces";
 import { BStopwatch } from './btimer';
 import { Input } from "./input";
-
-export type id2res = { [key: number]: RomResource; };
-export interface RomLoadResult {
-    rom: ArrayBuffer,
-    images: Map<number, HTMLImageElement>;
-    resources: id2res
-    source: any
-}
-
-export interface RomResource {
-    resid: number;
-    resname: string;
-    type: string;
-    start: number;
-    end: number;
-}
+import { RomLoadResult } from '../lib/rompack';
 
 export let game: Game;
 export let model: BaseModel;

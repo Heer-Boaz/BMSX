@@ -1,4 +1,4 @@
-﻿import { Point } from "./interfaces"
+﻿import { Point } from "../lib/interfaces"
 import { game } from "./engine";
 import { LineLength } from './common';
 

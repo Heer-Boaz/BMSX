@@ -2,7 +2,7 @@ import { BossFoe } from "./bossfoe";
 import { Direction } from "../BoazEngineJS/direction";
 import { AudioId, BitmapId } from "./resourceids";
 import { PlayerProjectile } from "./pprojectile";
-import { Area, Point, IGameObject } from '../BoazEngineJS/interfaces';
+import { Area, Point, IGameObject } from "../lib/interfaces";
 import { newArea, newSize, copyPoint, addPoints } from '../BoazEngineJS/common';
 import { bst } from '../BoazEngineJS/statemachine';
 import { GameConstants } from "./gameconstants";
@@ -164,7 +164,7 @@ export class Pietula extends BossFoe {
 		let bliksemstate = fst.addNewState('bliksem');
 		bliksemstate.oninitstate = (s) => {
 			bliksemstate.reset();
-			SM.playEffect(AudioId.Bliksem);
+			SM.play(AudioId.Bliksem);
 		};
 		bliksemstate.tapedata = [
 			BitmapId.Lightning1,
@@ -378,14 +378,14 @@ export class Pietula extends BossFoe {
         Model._.spawn(new FoeExplosion(addPoints(this.pos, { x: 16, y: 0} )));
         Model._.spawn(new FoeExplosion(addPoints(this.pos, { x: 0, y: 16} )));
 		Model._.spawn(new FoeExplosion(addPoints(this.pos, { x: 16, y: 16} )));
-		SM.playEffect(AudioId.Kaboem);
+		SM.play(AudioId.Kaboem);
 		this.visible = false;
 		this.canHurtPlayer = false;
 		this.hittable = false;
 		this.blink.halted = true;
 		this.hover.halted = true;
 
-		SM.playMusic(AudioId.Hoera);
+		SM.play(AudioId.Hoera);
 		this.fst.transition('wachten_op_elmo');
 	}
 }

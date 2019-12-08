@@ -66,7 +66,7 @@ export class GameOver {
                             C._.LoadCheckpoint();
                             break;
                         case 1:
-                            S.playEffect(AudioId.Selectie);
+                            S.play(AudioId.Selectie);
                             Input.reset();
                             M._.GameMenu.Open(MenuItem.LoadFromGameOver);
                             this.state = State.SelectFile;
@@ -78,7 +78,7 @@ export class GameOver {
             }
         }
         if (selectionChanged) {
-            S.playEffect(AudioId.Selectie);
+            S.play(AudioId.Selectie);
         }
     }
 

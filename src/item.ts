@@ -3,8 +3,8 @@ import { newArea, area2size, moveArea } from "../BoazEngineJS/common";
 import { Model } from "./gamemodel";
 import { SM } from "../BoazEngineJS/soundmaster";
 import { Controller } from "./gamecontroller";
-import { Area, Point } from "../BoazEngineJS/interfaces";
 import { AudioId, BitmapId } from "./resourceids";
+import { Area, Point } from "../lib/interfaces";
 
 export const enum ItemType {
     None,
@@ -41,14 +41,14 @@ export class Item extends Sprite {
             switch (this.ItsType) {
                 case ItemType.HeartSmall:
                 case ItemType.HeartBig:
-                    SM.playEffect(AudioId.Heart);
+                    SM.play(AudioId.Heart);
                     break;
                 case ItemType.KeySmall:
                 case ItemType.KeyBig:
-                    SM.playEffect(AudioId.Key);
+                    SM.play(AudioId.Key);
                     break;
                 default:
-                    SM.playEffect(AudioId.Item);
+                    SM.play(AudioId.Item);
                     break;
             }
             this.disposeFlag = true;

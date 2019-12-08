@@ -1,4 +1,4 @@
-import { Point, IGameObject, IRenderObject } from './interfaces';
+import { Point, IGameObject, IRenderObject } from "../lib/interfaces";
 
 export interface anidata<A extends any | null | {}> {
 	delta: number;

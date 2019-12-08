@@ -4,7 +4,7 @@ import { moveArea } from "../BoazEngineJS/common";
 import { Constants } from "../BoazEngineJS/constants";
 import { Model as M } from "./gamemodel";
 import { view } from "../BoazEngineJS/engine";
-import { Point } from "../BoazEngineJS/interfaces";
+import { Point } from "../lib/interfaces";
 import { DrawImgFlags } from "../BoazEngineJS/view";
 
 /*[Serializable]*/

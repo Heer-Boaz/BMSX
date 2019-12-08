@@ -1,23 +1,6 @@
-interface RomResource {
-	resid: number;
-	resname: string;
-	type: string;
-	start: number;
-	end: number;
-}
+import { RomLoadResult, RomResource, RomMeta } from "../lib/rompack";
 
-interface RomMeta {
-	start: number;
-	end: number;
-}
-
-type id2res = { [key: number]: RomResource; };
-interface RomLoadResult {
-	rom: ArrayBuffer,
-	images: Map<number, HTMLImageElement>;
-	resources: id2res
-	source: any
-}
+export {};
 
 // Only implement if no native implementation is available
 // https://stackoverflow.com/questions/4775722/how-to-check-if-an-object-is-an-array

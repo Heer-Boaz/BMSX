@@ -2,7 +2,7 @@ import { GameConstants as CS } from "./gameconstants"
 import { Projectile } from "./projectile"
 import { addPoints } from "../BoazEngineJS/common"
 import { Model as M } from "./gamemodel"
-import { Point } from "../BoazEngineJS/interfaces";
+import { Point } from "../lib/interfaces";
 
 /*[Serializable]*/
 export class FProjectile extends Projectile {
