@@ -47,7 +47,9 @@ export class View {
         if (document.getElementById('gamescreen').style.visibility === 'hidden') return;
         let self = view || this;
         self.calculateSize();
-        self.canvas.style.transform = `scale(${self.scale})`;
+        self.canvas.style.width = `${self.viewportSize.x * this.scale}px`;
+        self.canvas.style.height = `${self.viewportSize.y * this.scale}px`;
+        // self.canvas.style.transform = `scale(${self.scale})`;
         self.canvas.style.left = (self.windowSize.x - self.canvas.width * self.scale) / 2 + "px";
         self.canvas.style.top = (self.windowSize.y - self.canvas.height * self.scale) / 2 + "px";
     }

@@ -26,6 +26,7 @@
 				"build rom",
 				"build rompacker",
 				"build game",
+				"minify",
 			],
 			"presentation": {
 				"echo": false,
@@ -130,7 +131,7 @@
 				"-m",
 				"\"commonjs\"",
 				"-t",
-				"ES2016",
+				"ES5",
 				// "--types",
 				// "${workspaceFolder}\\BoazEngineJS\\rompack",
 				"--outDir",

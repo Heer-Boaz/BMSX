@@ -81,11 +81,8 @@ function buildGameHtml(outfile: string): void {
 function parseAudioMeta(filename: string): { sanitizedName: string, meta: AudioMeta; } {
 	let priorityregex = /@p\=\d+/;
 	let priorityresult = priorityregex.exec(filename);
-	// console.log(priorityresult);
 	let prioritystr = priorityresult ? priorityresult[0] : undefined;
-	// console.log(prioritystr);
 	let priority = prioritystr ? parseInt(prioritystr.slice(3)) : 0;
-	// console.log(priority);
 
 	let loopregex = /@l\=\d+(,\d+)?/;
 	let loopresult = loopregex.exec(filename);

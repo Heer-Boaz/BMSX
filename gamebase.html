@@ -12,16 +12,22 @@
         <script src="https://unpkg.com/systemjs@2.1.1/dist/s.js"></script>
         <script src="https://unpkg.com/systemjs@2.1.1/dist/extras/named-register.js"></script>
         <script id="romjs">//#romjs</script>
-        <script src="../rom/thegame.js"></script>
+        <!-- <script src="../rom/thegame.js"></script> -->
     </head>
 
     <body>
         <script type="module">
-            basic.debug = true;
-            basic.bload("./#outfile").then(h406A => {
-                basic.defusr = h406A;
-                basic.usr(0);
-            }).catch(console.error);
+            try {
+                basic.debug = false;
+                basic.bload("./#outfile").then(function (h406A) {
+                    basic.defusr = h406A;
+                    basic.usr(0);
+                    // document.body.innerText = 'Klaar!!';
+                });
+            }
+            catch (e) {
+                document.innerText = e;
+            }
         </script>
         <img id="msx" src="#bmsxurl" />
         <div id="hidor"></div>

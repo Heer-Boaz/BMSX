@@ -6,7 +6,7 @@
 			"request": "launch",
 			"name": "Debug the game!",
 			// "url": "file:///${workspaceFolder}/game.html",
-			"url": "http://127.0.0.1:8887/dist/game.html",
+			"url": "http://127.0.0.1:80/dist/game.html",
 			"webRoot": "${workspaceFolder}",
 			"sourceMapPathOverrides": {
 				"../src/*": "${workspaceFolder}/src/*",
@@ -20,7 +20,7 @@
 			"showAsyncStacks": true,
 			"smartStep": true,
 			"pathMapping": {
-				"http://127.0.0.1:8887/": "${workspaceFolder}",
+				"http://127.0.0.1:80/": "${workspaceFolder}",
 			}
 		}
 	]
