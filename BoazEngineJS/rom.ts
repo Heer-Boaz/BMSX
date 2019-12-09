@@ -8,7 +8,7 @@ declare var pako: any;
 if (typeof Array.isArray === 'undefined') {
 	Array.isArray = function (obj): obj is Array<any> {
 		return Object.prototype.toString.call(obj) === '[object Array]';
-	}
+	};
 };
 
 // Make sure that iOS doesn't scroll, even if overflow = hidden!
@@ -75,21 +75,19 @@ var basic = {
 		remove('#romjs');
 		return result;
 	},
-}
+};
 
 async function loadRompack(url: string): Promise<ArrayBuffer> {
 	return fetch(url)
 		.then(response => response.arrayBuffer())
 		.then(buffer => {
-			console.log("UITPAKKEN");
-			let result = pako.inflate(new Uint8Array(buffer));
-			console.log("KLAAR");
+			let result = pako.inflate(buffer).buffer;
 			return result;
 		})
 		.catch(e => {
 			setLoaderText("Failed to load rompack");
 			setClassForLoader("");
-			new Error(`Failed to load rompack.`);
+			new Error(`Failed to load rompack`);
 			return null;
 		});
 }
@@ -105,20 +103,7 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
 	});
 }
 
-async function loadAudio(url: string): Promise<HTMLAudioElement> {
-	return new Promise((resolve, reject) => {
-		let snd = new Audio();
-		snd.onloadeddata = e => resolve(snd);
-		snd.preload = 'auto';
-		snd.loop = false;
-		snd.controls = false;
-		snd.onerror = (e => {
-			throw new Error(`Failed to load audio's URL: ${url}`);
-		});
-		snd.src = url;
-		snd.load();
-	});
-}
+//
 
 async function loadResourceList(rom: ArrayBuffer): Promise<RomResource[]> {
 	let bytearray = new Uint8Array(rom);
@@ -155,8 +140,8 @@ async function load(rom: ArrayBuffer, res: RomResource, romResult: RomLoadResult
 			let mime: string;
 			let blub: Blob;
 			let url: string;
-			let bytearray = new Uint8Array(rom);
-			let sliced = bytearray.slice(res.start, res.end);
+			let sliced = new Uint8Array(rom.slice(res.start, res.end));
+			// let sliced = bytearray.slice(res.start, res.end);
 
 			mime = 'image/png';
 			blub = new Blob([sliced], { type: mime });
@@ -164,15 +149,6 @@ async function load(rom: ArrayBuffer, res: RomResource, romResult: RomLoadResult
 
 			let img = await loadImage(url);
 			romResult.images.set(res.resid, img);
-			break;
-		case 'audio':
-			// mime = 'audio/wav';
-			// blub = new Blob([sliced], { type: mime });
-			// url = URL.createObjectURL(blub);
-
-			// let snd = await loadAudio(url);
-			// romResult.audio.set(res.resid, snd);
-			// romResult.audioTracks[res.resid] = rom.slice(res.start, res.end);
 			break;
 		case 'source':
 			try {
@@ -183,7 +159,16 @@ async function load(rom: ArrayBuffer, res: RomResource, romResult: RomLoadResult
 				throw e;
 			}
 			break;
+		case 'audio':
+			break;
 		default:
+			// mime = 'audio/wav';
+			// blub = new Blob([sliced], { type: mime });
+			// url = URL.createObjectURL(blub);
+
+			// let snd = await loadAudio(url);
+			// romResult.audio.set(res.resid, snd);
+			// romResult.audioTracks[res.resid] = rom.slice(res.start, res.end);
 			throw Error(`Unrecognised resource type in rom: ${res.type}, while processing rompack`);
 	}
 }
@@ -209,7 +194,7 @@ async function awaitPressedAnyKey(): Promise<void> {
 	};
 
 	let result: Promise<void> = new Promise((resolve, reject) => {
-		document.body.addEventListener('keydown', ev => {
+		document.body.addEventListener('keyup', ev => {
 			remove('#loading');
 			remove('#msx');
 			remove('#hidor');
@@ -244,6 +229,21 @@ function decodeuint8arr(to_decode: Uint8Array): string {
  * https://ourcodeworld.com/articles/read/164/how-to-convert-an-uint8array-to-string-in-javascript
  * @returns {Uint8Array}
  */
-function encodeuint8arr(to_encode: string): Uint8Array {
-	return new TextEncoder().encode(to_encode);
-}
+// function encodeuint8arr(to_encode: string): Uint8Array {
+// 	return new TextEncoder().encode(to_encode);
+// }
+
+// async function loadAudio(url: string): Promise<HTMLAudioElement> {
+// 	return new Promise((resolve, reject) => {
+// 		let snd = new Audio();
+// 		snd.onloadeddata = e => resolve(snd);
+// 		snd.preload = 'auto';
+// 		snd.loop = false;
+// 		snd.controls = false;
+// 		snd.onerror = (e => {
+// 			throw new Error(`Failed to load audio's URL: ${url}`);
+// 		});
+// 		snd.src = url;
+// 		snd.load();
+// 	});
+// }

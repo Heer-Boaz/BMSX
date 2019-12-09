@@ -57,8 +57,6 @@ export abstract class Sprite implements IRenderObject {
 		this.flippedV = false;
 		this.priority = 0;
 		this.disposeFlag = false;
-		this.imgid = null;
-		this.priority = 100;
 		this.imgid = imageId || undefined;
 
 		this.disposeOnSwitchRoom = true;

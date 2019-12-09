@@ -15,7 +15,7 @@
 			"runtimeArgs": [
 				// "--disable-web-security"
 			],
-			"preLaunchTask": "pack (losse taak)",
+			// "preLaunchTask": "pack (losse taak)",
 			"sourceMaps": true,
 			"showAsyncStacks": true,
 			"smartStep": true,

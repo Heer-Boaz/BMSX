@@ -15,4 +15,5 @@ src/sintervaniamodelold.ts
 **/thegame.js
 **.tsbuildinfo
 **.rom
+rom/_ignore
 rom/ignore

@@ -104,7 +104,7 @@ function minifyGamecode(infile): void {
 function buildGameHtml(outfile: string): void {
 	let html = readFileSync("./gamebase.html", 'utf8');
 	let romjs = readFileSync("./rom/rom.js", 'utf8');
-	let zipjs = readFileSync("./rom/pako_inflate.min.js", 'utf8');
+	let zipjs = readFileSync("./lib/pako_inflate.min.js", 'utf8');
 	romjs = romjs.replace('Object.defineProperty(exports, "__esModule", { value: true });', '');
 	let options = {
 		compress: true,
