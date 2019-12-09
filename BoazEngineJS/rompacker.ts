@@ -35,9 +35,7 @@ function getFiles(dirPath: string, arrayOfFiles?: string[]): string[] {
 
 function getAllNonRootDirs(dirPath: string, arrayOfFiles?: string[]): string[] {
 	let entries = readdirSync(dirPath);
-	entries.filter(entry => statSync(`${dirPath}/${entry}`).isDirectory() && `${dirPath}/${entry}`.indexOf("_ignore") === -1).forEach(entry => console.log(entry));
 	entries.filter(entry => statSync(`${dirPath}/${entry}`).isDirectory() && `${dirPath}/${entry}`.indexOf("_ignore") === -1).forEach(entry => arrayOfFiles = getAllFiles(`${dirPath}/${entry}`, arrayOfFiles));
-	console.log(`Array of files: ${arrayOfFiles}`);
 	return arrayOfFiles;
 }
 
@@ -63,7 +61,7 @@ function copyResources(): void {
 	copyFileSync("./rom/loading.png", "./dist/loading.png");
 }
 
-function minifyGamecode(infile): void {
+function minifyGamecode(infile: string): void {
 	let options = {
 		compress: {
 			module: true,
@@ -82,16 +80,6 @@ function minifyGamecode(infile): void {
 		output: {
 			safari10: true,
 			webkit: true,
-
-			// source_map: {
-			// 	includeSources: true,
-			// 	content: {
-			// 		url: "inline",
-			// 		content: "inline",
-			// 		includeSources: true,
-			// 	},
-			// 	url: "inline",
-			// }
 		}
 	};
 
@@ -241,7 +229,7 @@ function buildRompackAndResourceList(outfile: string): void {
 	writeFileSync("./src/resourceids.ts", tsimgout.concat(tssndout).join('\n'));
 	writeFileSync("./rom/_ignore/romresources.json", jsonbuffer);
 	console.info("Rom successfully packed!");
-	console.info(`\tFiles: ${arrayOfFiles.length}`);
+	console.info(`\tFiles: ${arrayOfFiles.length}\n\t\timages: ${imgi}\n\t\taudio: ${sndi}`);
 	console.info(`\tSize: ${(Buffer.concat(buffers).length / (1024 * 1024)).toFixed(2)} mB\n\tDeflated size: ${(zipped.length / (1024 * 1024)).toFixed(2)} mB.`);
 }
 

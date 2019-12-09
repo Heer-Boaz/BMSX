@@ -63,19 +63,19 @@ export abstract class BaseModel {
 
     public spawn(o: IGameObject, pos?: Point, ifnotexists = false): void {
         if (ifnotexists && this.id2object.has(o.id)) return; // Don't add objects that already exist
-
-        if (o == null) throw new Error("Cannot spawn object of type null.");
-        // if (this.objects.indexOf(o) > -1) throw new Error("GameObject already exists in the game model!");
+        if (!o) throw new Error("Cannot spawn object of type null.");
 
         this.objects.push(o);
-        if (o.id)
-            this.id2object.set(o.id, o);
+
+        this.objects.sort((o1, o2) => (o1.priority || 0) - (o2.priority || 0));
+
+        if (o.id) this.id2object.set(o.id, o);
         if (pos) o.spawn(pos);
         else o.spawn(null);
     }
 
     public remove(o: IGameObject): void {
-        if (o == null) throw new Error("Cannot remove object of type null.");
+        if (!o) throw new Error("Cannot remove object of type null.");
 
         let index = this.objects.indexOf(o);
         if (index > -1) {
@@ -84,7 +84,7 @@ export abstract class BaseModel {
         }
         else throw new Error("Could not find object to remove.");
 
-        if (o.id != null && this.id2object.has(o.id)) this.id2object.delete(o.id);
+        if (o.id !== null && this.id2object.has(o.id)) this.id2object.delete(o.id);
         o.dispose();
     }
 }

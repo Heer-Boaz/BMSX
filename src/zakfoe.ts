@@ -31,6 +31,7 @@ export class ZakFoe extends Foe {
 		this.size = newSize(16, 16);
 		this.itemSpawnedAfterKill = itemSpawned;
 		this.direction = dir;
+		this.priority = 10;
 		this.health = 1;
 
 		this.fst = new bst<ZakFoe>(this, 0, true);

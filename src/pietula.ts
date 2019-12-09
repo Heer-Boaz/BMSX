@@ -47,6 +47,7 @@ export class Pietula extends BossFoe {
 		this.maxHealth = this.health;
 		this.loops = 0;
 		this.visible = false;
+		this.priority = 20;
 
 		let fst = new bst<Pietula>(this, 0, true);
 		this.fst = fst;

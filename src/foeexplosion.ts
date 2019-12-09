@@ -20,10 +20,11 @@ export class FoeExplosion extends FX {
     protected itemSpawnedAfterKill: ItemType;
 
     constructor(pos: Point, itemSpawned: ItemType = ItemType.None) {
-        super(<Point>pos);
+        super(pos);
         this.animation = new Animation(FoeExplosion.AnimationFrames, null, false);
         this.init();
         this.itemSpawnedAfterKill = itemSpawned;
+        this.priority = 50;
     }
 
     public takeTurn(): void {

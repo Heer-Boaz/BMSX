@@ -44,7 +44,6 @@ export class Candle extends Foe {
 		this.itemSpawnedAfterKill = itemSpawned;
 		this.maxHealth = 1;
 		this.health = 1;
-		this.priority = 90;
 	}
 
 	public takeTurn(): void {
