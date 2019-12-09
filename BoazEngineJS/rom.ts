@@ -1,6 +1,7 @@
 import { RomLoadResult, RomResource, RomMeta } from "../lib/rompack";
+export { };
 
-export {};
+declare var pako: any;
 
 // Only implement if no native implementation is available
 // https://stackoverflow.com/questions/4775722/how-to-check-if-an-object-is-an-array
@@ -61,8 +62,8 @@ var basic = {
 		setClassForLoader("");
 
 		await bootCompletePromise;
-		// let pressedAnyKey = awaitPressedAnyKey();
-		// await pressedAnyKey;
+		let pressedAnyKey = awaitPressedAnyKey();
+		await pressedAnyKey;
 		let remove = (id: string) => {
 			let element = document.querySelector(id);
 			if (element) element.parentElement.removeChild(element);
@@ -79,7 +80,12 @@ var basic = {
 async function loadRompack(url: string): Promise<ArrayBuffer> {
 	return fetch(url)
 		.then(response => response.arrayBuffer())
-		.then(buffer => buffer)
+		.then(buffer => {
+			console.log("UITPAKKEN");
+			let result = pako.inflate(new Uint8Array(buffer));
+			console.log("KLAAR");
+			return result;
+		})
 		.catch(e => {
 			setLoaderText("Failed to load rompack");
 			setClassForLoader("");
@@ -144,7 +150,6 @@ async function loadResources(rom: ArrayBuffer): Promise<RomLoadResult> {
 }
 
 async function load(rom: ArrayBuffer, res: RomResource, romResult: RomLoadResult): Promise<void> {
-
 	switch (res.type) {
 		case 'image':
 			let mime: string;

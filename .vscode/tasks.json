@@ -3,7 +3,9 @@
 	"tasks": [
 		{
 			"label": "build",
-			"dependsOn": [ "pack" ],
+			"dependsOn": [
+				"pack"
+			],
 			"group": {
 				"kind": "build",
 				"isDefault": true
@@ -26,7 +28,7 @@
 				"build rom",
 				"build rompacker",
 				"build game",
-				"minify",
+				// "minify",
 			],
 			"presentation": {
 				"echo": false,
@@ -65,43 +67,43 @@
 				"group": "pack rom without build",
 			}
 		},
-		{
-			"label": "minify",
-			"type": "shell",
-			"command": "terser",
-			"args": [
-				"--compress",
-				"--mangle",
-				"--source-map",
-				"filename=\"thegame.js\"",
-				"--source-map",
-				"root='${workspaceFolder}\\src\\'",
-				"--source-map",
-				"content=\"inline\"",
-				"--source-map",
-				"url=\"inline\"",
-				"--output",
-				"${workspaceFolder}\\rom\\thegame.js",
-				"${workspaceFolder}\\rom\\thegame.js"
-			],
-			"problemMatcher": [
-				"$node-sass"
-			],
-			"presentation": {
-				"echo": false,
-				"reveal": "always",
-				"focus": false,
-				"panel": "shared",
-				"showReuseMessage": false,
-				"clear": true,
-				"revealProblems": "onProblem",
-				"group": "boaz",
-			},
-			"group": "build",
-			"dependsOn": [
-				"build game"
-			]
-		},
+		// {
+		// 	"label": "minify",
+		// 	"type": "shell",
+		// 	"command": "terser",
+		// 	"args": [
+		// 		"--compress",
+		// 		"--mangle",
+		// 		"--source-map",
+		// 		"filename=\"thegame.js\"",
+		// 		"--source-map",
+		// 		"root='${workspaceFolder}\\src\\'",
+		// 		"--source-map",
+		// 		"content=\"inline\"",
+		// 		"--source-map",
+		// 		"url=\"inline\"",
+		// 		"--output",
+		// 		"${workspaceFolder}\\rom\\thegame.js",
+		// 		"${workspaceFolder}\\rom\\thegame.js"
+		// 	],
+		// 	"problemMatcher": [
+		// 		"$node-sass"
+		// 	],
+		// 	"presentation": {
+		// 		"echo": false,
+		// 		"reveal": "always",
+		// 		"focus": false,
+		// 		"panel": "shared",
+		// 		"showReuseMessage": false,
+		// 		"clear": true,
+		// 		"revealProblems": "onProblem",
+		// 		"group": "boaz",
+		// 	},
+		// 	"group": "build",
+		// 	"dependsOn": [
+		// 		"build game"
+		// 	]
+		// },
 		{
 			"label": "build game",
 			"type": "typescript",
