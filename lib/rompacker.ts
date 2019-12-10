@@ -1,6 +1,6 @@
 import { readdirSync, statSync, readFileSync, writeFileSync, copyFile, copyFileSync, existsSync, exists } from "fs";
 import { join, parse } from "path";
-import { AudioMeta, AudioType, RomResource, RomMeta } from "../lib/rompack";
+import { AudioMeta, AudioType, RomResource, RomMeta } from "./rompack";
 // import { MinifyOptions } from "../node_modules/terser/tools/terser";
 const terser = require('terser');
 const pako = require('../node_modules/pako');
@@ -65,17 +65,21 @@ function minifyGamecode(infile: string): void {
 	let options = {
 		compress: {
 			module: true,
+			arrows: false,
 			warnings: true,
+			reduce_funcs: false,
+			reduce_vars: false
 		},
 		mangle: {
-			// properties: true,
+			properties: true,
 			module: true,
 			safari10: true,
+			reserved: ["_rom", "h406A"],
 		},
 		sourceMap: {
 			url: "inline",
 			content: "inline",
-			includeSources: true,
+			includeSources: false,
 		},
 		output: {
 			safari10: true,
@@ -95,11 +99,13 @@ function buildGameHtml(outfile: string): void {
 	let zipjs = readFileSync("./lib/pako_inflate.min.js", 'utf8');
 	romjs = romjs.replace('Object.defineProperty(exports, "__esModule", { value: true });', '');
 	let options = {
-		compress: true,
+		compress: {
+			arrows: false
+		},
 		mangle: {
 			// properties: true,
-			toplevel: true,
-			reserved: ["basic"],
+			toplevel: false,
+			reserved: ["basic", "_rom", "h406A"],
 			safari10: true,
 		},
 		output: {

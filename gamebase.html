@@ -13,13 +13,13 @@
         <script src="https://unpkg.com/systemjs@2.1.1/dist/extras/named-register.js"></script>
         <script id="romloader">//#romjs</script>
         <script id="pacojs" distributedby="http://nodeca.github.io/pako/">//#zipjs</script>
-        <!-- <script src="../rom/thegame.js"></script> -->
+        <script src="../rom/thegame.js"></script>
     </head>
 
     <body>
         <script type="module">
             try {
-                basic.debug = false;
+                basic.debug = true;
                 basic.bload("./#outfile").then(function (h406A) {
                     basic.defusr = h406A;
                     basic.usr(0);

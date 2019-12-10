@@ -111,6 +111,17 @@
 			"problemMatcher": [
 				"$tsc"
 			],
+			// "command": "tsc-bundle",
+			// "args": [
+			// 	"${workspaceFolder}/tsconfig.json",
+			// 	"--outFile",
+			// 	"${workspaceFolder}/rom/thegame.js",
+			// 	"--entryPoint",
+			// 	"BoazEngineJS/engine",
+			// 	"--exportAs",
+			// 	"_rom",
+
+			// ],
 			"presentation": {
 				"echo": false,
 				"reveal": "always",
@@ -128,7 +139,7 @@
 			"type": "shell",
 			"command": "tsc",
 			"args": [
-				"${workspaceFolder}\\BoazEngineJS\\rom.ts",
+				"${workspaceFolder}/lib/rom.ts",
 				"--removeComments",
 				"-m",
 				"\"commonjs\"",
@@ -137,7 +148,7 @@
 				// "--types",
 				// "${workspaceFolder}\\BoazEngineJS\\rompack",
 				"--outDir",
-				"\"${workspaceFolder}\\rom\""
+				"\"${workspaceFolder}/rom\""
 			],
 			"problemMatcher": [
 				"$tsc"
@@ -158,13 +169,13 @@
 			"type": "shell",
 			"command": "tsc",
 			"args": [
-				"${workspaceFolder}\\BoazEngineJS\\rompacker.ts",
+				"${workspaceFolder}/lib/rompacker.ts",
 				"--removeComments",
 				"--noEmitHelpers",
 				// "--types",
 				// "${workspaceFolder}\\BoazEngineJS\\rompack",
 				"--outDir",
-				"\"${workspaceFolder}\\rom\""
+				"\"${workspaceFolder}/rom\""
 			],
 			"problemMatcher": [
 				"$tsc"
