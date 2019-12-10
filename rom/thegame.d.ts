@@ -595,7 +595,7 @@ declare module "src/bootstrapper" {
     import { Chapter } from "src/gamemodel";
     import { RomLoadResult } from "../lib/rompack";
     export class Bootstrapper {
-        static init(rom: RomLoadResult): void;
+        static h406A(rom: RomLoadResult): void;
         static BootstrapGame(chapter: Chapter): void;
         private static bootstrapGameForGameStart;
         private static bootstrapGameForDebug;
@@ -1764,7 +1764,3 @@ declare module "BoazEngineJS/hiddenobject" {
         static [Symbol.hasInstance](o: any): boolean;
     }
 }
-declare module "BoazEngineJS/rom" {
-    export {};
-}
-declare module "BoazEngineJS/rompacker" { }

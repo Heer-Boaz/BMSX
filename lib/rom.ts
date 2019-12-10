@@ -2,8 +2,6 @@ import { RomLoadResult, RomResource, RomMeta } from "./rompack";
 export { };
 
 declare var pako: any;
-declare var _rom: any;
-declare var startrom: any;
 
 // Only implement if no native implementation is available
 // https://stackoverflow.com/questions/4775722/how-to-check-if-an-object-is-an-array
@@ -39,20 +37,18 @@ var basic = {
 		if (basic.debug !== true) {
 			let romcode = document.createElement('script');
 			romcode.async = false;
-			romcode.innerText = _rom.source;
+			romcode.innerText = rom.source;
 			document.head.appendChild(romcode);
 		}
 	},
 
 	usr(x: number): number {
-		document.body.style.backgroundColor = "#000000";
-		startrom(this.rom);
-		// System.import('src/bootstrapper').then(function (bin: { h406a(rom: RomLoadResult): void }) {
-		// 	document.body.style.backgroundColor = "#000000";
+		System.import('src/bootstrapper').then(function (bin: { Bootstrapper: { h406A(rom: RomLoadResult): void } }) {
+			document.body.style.backgroundColor = "#000000";
+			bin.Bootstrapper.h406A(basic.rom);
+			basic.rom = null;
 
-		// 	bin.h406a(self.rom);
-		// 	self.rom = null;
-		// });
+		});
 		return 255;
 	},
 

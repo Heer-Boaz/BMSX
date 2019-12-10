@@ -64,22 +64,22 @@ function copyResources(): void {
 function minifyGamecode(infile: string): void {
 	let options = {
 		compress: {
-			module: true,
+			// module: true,
 			arrows: false,
 			warnings: true,
-			reduce_funcs: false,
-			reduce_vars: false
+			// reduce_funcs: false,
+			// reduce_vars: false
 		},
 		mangle: {
-			properties: true,
-			module: true,
+			// properties: true,
+			// module: true,
 			safari10: true,
-			reserved: ["_rom", "h406A"],
+			reserved: ["Bootstrapper", "Bootstrapper.h406A"],
 		},
 		sourceMap: {
 			url: "inline",
 			content: "inline",
-			includeSources: false,
+			includeSources: true,
 		},
 		output: {
 			safari10: true,
@@ -105,7 +105,7 @@ function buildGameHtml(outfile: string): void {
 		mangle: {
 			// properties: true,
 			toplevel: false,
-			reserved: ["basic", "_rom", "h406A"],
+			reserved: ["basic", "h406A", "rom"],
 			safari10: true,
 		},
 		output: {

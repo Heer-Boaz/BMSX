@@ -76,11 +76,11 @@ export class Animation<T extends any | null | undefined | {}> {
     // }
 
     public get stepValue(): T {
-        return this.animationDataAndTime[this.stepCounter].data;
+        return this.animationDataAndTime[this.stepCounter]?.data || null;
     }
 
     public get stepTime(): number {
-        return this.constantStepTime || this.animationDataAndTime[this.stepCounter].time;
+        return this.constantStepTime || this.animationDataAndTime[this.stepCounter]?.time || 0;
     }
 
     public get hasNext(): boolean {

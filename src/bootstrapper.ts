@@ -10,7 +10,7 @@ import { SM } from "../BoazEngineJS/soundmaster";
 import { RomLoadResult } from "../lib/rompack";
 
 export class Bootstrapper {
-    public static init(rom: RomLoadResult): void {
+    public static h406A(rom: RomLoadResult): void {
         new Game(rom, { x: GameConstants.ViewportWidth, y: GameConstants.ViewportHeight });
         game.setModel(new Model());
         game.setController(new Controller());
