@@ -1,4 +1,4 @@
-import { AudioId } from 'src/resourceids';
+import { AudioId } from "../src/resourceids";
 import { BStopwatch } from "./btimer";
 
 /*[Serializable]*/

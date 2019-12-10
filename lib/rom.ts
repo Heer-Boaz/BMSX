@@ -2,6 +2,9 @@ import { RomLoadResult, RomResource, RomMeta } from "./rompack";
 export { };
 
 declare var pako: any;
+declare var Bootstrapper: {
+	h406A: (rom: RomLoadResult) => void;
+};
 
 // Only implement if no native implementation is available
 // https://stackoverflow.com/questions/4775722/how-to-check-if-an-object-is-an-array
@@ -43,12 +46,13 @@ var basic = {
 	},
 
 	usr(x: number): number {
-		System.import('src/bootstrapper').then(function (bin: { Bootstrapper: { h406A(rom: RomLoadResult): void } }) {
-			document.body.style.backgroundColor = "#000000";
-			bin.Bootstrapper.h406A(basic.rom);
-			basic.rom = null;
+		// System.import('src/bootstrapper').then(function (bin: { Bootstrapper: { h406A(rom: RomLoadResult): void } }) {
+		document.body.style.backgroundColor = "#000000";
+		Bootstrapper.h406A(basic.rom);
+		// bin.Bootstrapper.h406A(basic.rom);
+		basic.rom = null;
 
-		});
+		// });
 		return 255;
 	},
 

@@ -1,7 +1,10 @@
-import { readdirSync, statSync, readFileSync, writeFileSync, copyFile, copyFileSync, existsSync, exists } from "fs";
+import { readdirSync, statSync, readFileSync, writeFileSync, copyFile, copyFileSync, existsSync, exists, createWriteStream } from "fs";
 import { join, parse } from "path";
 import { AudioMeta, AudioType, RomResource, RomMeta } from "./rompack";
-// import { MinifyOptions } from "../node_modules/terser/tools/terser";
+const browserify = require("browserify");
+const tsify = require("tsify");
+// const babelify = require("babelify");
+
 const terser = require('terser');
 const pako = require('../node_modules/pako');
 const minify = require('@node-minify/core');
@@ -29,17 +32,17 @@ function addFile(dirPath: string, filePath: string, arrayOfFiles: string[]): voi
 	arrayOfFiles.push(join(dirPath, "/", filePath));
 }
 
-function getFiles(dirPath: string, arrayOfFiles?: string[]): string[] {
-	return getAllNonRootDirs(dirPath, arrayOfFiles);
+function getFiles(dirPath: string, arrayOfFiles?: string[], filterExtension?: string): string[] {
+	return getAllNonRootDirs(dirPath, arrayOfFiles, filterExtension);
 }
 
-function getAllNonRootDirs(dirPath: string, arrayOfFiles?: string[]): string[] {
+function getAllNonRootDirs(dirPath: string, arrayOfFiles?: string[], filterExtension?: string): string[] {
 	let entries = readdirSync(dirPath);
-	entries.filter(entry => statSync(`${dirPath}/${entry}`).isDirectory() && `${dirPath}/${entry}`.indexOf("_ignore") === -1).forEach(entry => arrayOfFiles = getAllFiles(`${dirPath}/${entry}`, arrayOfFiles));
+	entries.filter(entry => statSync(`${dirPath}/${entry}`).isDirectory() && `${dirPath}/${entry}`.indexOf("_ignore") === -1).forEach(entry => arrayOfFiles = getAllFiles(`${dirPath}/${entry}`, arrayOfFiles, filterExtension));
 	return arrayOfFiles;
 }
 
-function getAllFiles(dirPath: string, arrayOfFiles?: string[]): string[] {
+function getAllFiles(dirPath: string, arrayOfFiles?: string[], filterExtension?: string): string[] {
 	let files = readdirSync(dirPath);
 
 	arrayOfFiles = arrayOfFiles || [];
@@ -47,10 +50,15 @@ function getAllFiles(dirPath: string, arrayOfFiles?: string[]): string[] {
 	files.filter(f => f.indexOf("_ignore") === -1).forEach(function (file) {
 		let fullpath = `${dirPath}/${file}`;
 		if (statSync(fullpath).isDirectory()) {
-			arrayOfFiles = getAllFiles(fullpath, arrayOfFiles);
+			arrayOfFiles = getAllFiles(fullpath, arrayOfFiles, filterExtension);
 		} else {
-			if (!file.endsWith("loading.png") && !file.endsWith("bmsx.png") && !file.endsWith('.rom') && !file.endsWith('.json') && !file.endsWith('.js') && !file.endsWith('.ts') && !file.endsWith('.map') && !file.endsWith('.tsbuildinfo'))
+			let ext = parse(file).ext;
+			if (filterExtension && ext == filterExtension) {
 				arrayOfFiles.push(fullpath);
+			}
+			else if (ext != ".rom" && ext != ".js" && ext != ".ts" && ext != ".map" && ext != ".tsbuildinfo") {
+				arrayOfFiles.push(fullpath);
+			}
 		}
 	});
 
@@ -61,21 +69,61 @@ function copyResources(): void {
 	copyFileSync("./rom/loading.png", "./dist/loading.png");
 }
 
+async function bundleGamecode(outfile: string): Promise<any> {
+	let arrayOfFiles = getAllFiles("./src", [], ".ts");
+	arrayOfFiles = getAllFiles("./BoazEngineJS", arrayOfFiles, ".ts");
+	// console.log(arrayOfFiles);
+
+	let writeOutput = createWriteStream('./rom/thegame.js');
+
+	browserify({
+		// basedir: '.',
+		debug: false,
+		project: ['./tsconfig.json'],
+		cache: {},
+		packageCache: {}
+	})
+		.add(arrayOfFiles)
+		.plugin(tsify)
+		// .transform(babelify, {
+		// 	extensions: ['.tsx', '.ts'],
+		// 	presets: ['es2015']
+		// })
+		.bundle()
+		.on("error", function (e) {
+			console.error(e.message);
+			// throw e;
+		})
+		.pipe(writeOutput);
+
+	return new Promise(function (resolve, reject) {
+		writeOutput.on('finish', function () {
+			console.info("finish!");
+			resolve();
+		});
+		writeOutput.on('error', function (e) {
+			console.error(e.message);
+			reject(e);
+		});
+	});
+}
+
 function minifyGamecode(infile: string): void {
 	let options = {
-		compress: {
-			// module: true,
-			arrows: false,
-			warnings: true,
-			// reduce_funcs: false,
-			// reduce_vars: false
-		},
-		mangle: {
-			// properties: true,
-			// module: true,
-			safari10: true,
-			reserved: ["Bootstrapper", "Bootstrapper.h406A"],
-		},
+		compress: false,
+		mangle: false,
+		// compress: {
+		// 	// module: true,
+		// 	arrows: false,
+		// 	warnings: true,
+		// },
+		// mangle: {
+		// 	// properties: true,
+		// 	// module: true,
+		// 	safari10: true,
+		// 	reserved: ["Bootstrapper", "Bootstrapper.h406A", "exports" ],
+
+		// },
 		sourceMap: {
 			url: "inline",
 			content: "inline",
@@ -84,10 +132,11 @@ function minifyGamecode(infile: string): void {
 		output: {
 			safari10: true,
 			webkit: true,
-		}
+		},
+		// wrap: "__rom__",
 	};
 
-	let gamejs = readFileSync("./rom/thegame.js", 'utf8');
+	let gamejs = readFileSync(infile, 'utf8');
 	let gamejsMinified = terser.minify(gamejs, options).code;
 
 	writeFileSync("./rom/thegame.min.js", gamejsMinified);
@@ -161,82 +210,85 @@ function zip(content: Buffer): string {
 	return pako.deflate(toCompress);
 }
 
-function buildRompackAndResourceList(outfile: string): void {
-	minifyGamecode("./rom/thegame.js");
-	const arrayOfFiles = getFiles("./rom");
-	addFile("./rom", "thegame.min.js", arrayOfFiles); // Add source at the end
+async function buildRompackAndResourceList(outfile: string): Promise<void> {
+	bundleGamecode("./rom/thegame.js")
+		.then(() => {
+			minifyGamecode("./rom/thegame.js");
+			const arrayOfFiles = getFiles("./rom");
+			addFile("./rom", "thegame.min.js", arrayOfFiles); // Add source at the end
 
-	let buffers = new Array<Buffer>();
-	arrayOfFiles.forEach(x => buffers.push(readFileSync(x)));
+			let buffers = new Array<Buffer>();
+			arrayOfFiles.forEach(x => buffers.push(readFileSync(x)));
 
-	let tsimgout = new Array<string>();
-	let tssndout = new Array<string>();
+			let tsimgout = new Array<string>();
+			let tssndout = new Array<string>();
 
-	tsimgout.push("export const enum BitmapId {\n\tNone = 0,");
-	tssndout.push("export const enum AudioId {\n\tNone = 0,");
+			tsimgout.push("export const enum BitmapId {\n\tNone = 0,");
+			tssndout.push("export const enum AudioId {\n\tNone = 0,");
 
-	let jsonout = new Array<RomResource>();
-	let bufferPointer = 0;
-	let imgi = 1;
-	let sndi = 1;
-	for (let i = 0; i < arrayOfFiles.length; i++) {
-		let type: string;
-		let name = parse(arrayOfFiles[i]).name.replace(' ', '');
-		switch (parse(arrayOfFiles[i]).ext) {
-			case '.wav':
-				type = 'audio';
-				break;
-			case '.js':
-				type = 'source';
-				break;
-			case '.png':
-			default:
-				type = 'image';
-				break;
-		}
-		switch (type) {
-			case 'image':
-				jsonout.push({ resid: imgi, resname: name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length, audiometa: null });
-				tsimgout.push(`\t${name} = ${imgi},`);
-				++imgi;
-				break;
-			case 'audio':
-				{
-					let parsedMeta = parseAudioMeta(name);
-					name = parsedMeta.sanitizedName;
-					jsonout.push({ resid: sndi, resname: name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length, audiometa: parsedMeta.meta });
+			let jsonout = new Array<RomResource>();
+			let bufferPointer = 0;
+			let imgi = 1;
+			let sndi = 1;
+			for (let i = 0; i < arrayOfFiles.length; i++) {
+				let type: string;
+				let name = parse(arrayOfFiles[i]).name.replace(' ', '');
+				switch (parse(arrayOfFiles[i]).ext) {
+					case '.wav':
+						type = 'audio';
+						break;
+					case '.js':
+						type = 'source';
+						break;
+					case '.png':
+					default:
+						type = 'image';
+						break;
 				}
-				tssndout.push(`\t${name} = ${sndi},`);
-				++sndi;
-				break;
-			case 'source':
-				name = name.replace('.min', '');
-				jsonout.push({ resid: sndi, resname: name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length, audiometa: null });
-				break;
-		}
-		bufferPointer += buffers[i].length;
-	}
+				switch (type) {
+					case 'image':
+						jsonout.push({ resid: imgi, resname: name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length, audiometa: null });
+						tsimgout.push(`\t${name} = ${imgi},`);
+						++imgi;
+						break;
+					case 'audio':
+						{
+							let parsedMeta = parseAudioMeta(name);
+							name = parsedMeta.sanitizedName;
+							jsonout.push({ resid: sndi, resname: name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length, audiometa: parsedMeta.meta });
+						}
+						tssndout.push(`\t${name} = ${sndi},`);
+						++sndi;
+						break;
+					case 'source':
+						name = name.replace('.min', '');
+						jsonout.push({ resid: sndi, resname: name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length, audiometa: null });
+						break;
+				}
+				bufferPointer += buffers[i].length;
+			}
 
-	tsimgout.push("}\n");
-	tssndout.push("}\n");
+			tsimgout.push("}\n");
+			tssndout.push("}\n");
 
-	let jsonbuffer = Buffer.from(encodeuint8arr(JSON.stringify(jsonout)));
-	buffers.push(jsonbuffer);
+			let jsonbuffer = Buffer.from(encodeuint8arr(JSON.stringify(jsonout)));
+			buffers.push(jsonbuffer);
 
-	let rommeta = <RomMeta>{
-		start: bufferPointer,
-		end: bufferPointer + jsonbuffer.length
-	};
-	let rommetastr = JSON.stringify(rommeta).padStart(100, ' ');
-	buffers.push(Buffer.from(encodeuint8arr(rommetastr)));
+			let rommeta = <RomMeta>{
+				start: bufferPointer,
+				end: bufferPointer + jsonbuffer.length
+			};
+			let rommetastr = JSON.stringify(rommeta).padStart(100, ' ');
+			buffers.push(Buffer.from(encodeuint8arr(rommetastr)));
 
-	let zipped = zip(Buffer.concat(buffers));
-	writeFileSync(`./dist/${outfile}`, zipped);
-	writeFileSync("./src/resourceids.ts", tsimgout.concat(tssndout).join('\n'));
-	writeFileSync("./rom/_ignore/romresources.json", jsonbuffer);
-	console.info("Rom successfully packed!");
-	console.info(`\tFiles: ${arrayOfFiles.length}\n\t\timages: ${imgi}\n\t\taudio: ${sndi}`);
-	console.info(`\tSize: ${(Buffer.concat(buffers).length / (1024 * 1024)).toFixed(2)} mB\n\tDeflated size: ${(zipped.length / (1024 * 1024)).toFixed(2)} mB.`);
+			let zipped = zip(Buffer.concat(buffers));
+			writeFileSync(`./dist/${outfile}`, zipped);
+			writeFileSync("./src/resourceids.ts", tsimgout.concat(tssndout).join('\n'));
+			writeFileSync("./rom/_ignore/romresources.json", jsonbuffer);
+			console.info("Rom successfully packed!");
+			console.info(`\tFiles: ${arrayOfFiles.length}\n\t\timages: ${imgi}\n\t\taudio: ${sndi}`);
+			console.info(`\tSize: ${(Buffer.concat(buffers).length / (1024 * 1024)).toFixed(2)} mB\n\tDeflated size: ${(zipped.length / (1024 * 1024)).toFixed(2)} mB.`);
+		}).catch(e => console.error(e));
 }
 
 try {
@@ -256,8 +308,10 @@ try {
 		}
 	}
 
-	buildRompackAndResourceList(outfile);
-	buildGameHtml(outfile);
+	buildRompackAndResourceList(outfile).then(() => {
+		buildGameHtml(outfile);
+		console.info("klaar");
+	}).catch(e => console.error(e));
 } catch (e) {
 	console.error(e);
 	process.exit(-1);

@@ -27,7 +27,7 @@
 			"dependsOn": [
 				"build rom",
 				"build rompacker",
-				"build game",
+				// "build game",
 				// "minify",
 			],
 			"presentation": {
@@ -120,7 +120,6 @@
 			// 	"BoazEngineJS/engine",
 			// 	"--exportAs",
 			// 	"_rom",
-
 			// ],
 			"presentation": {
 				"echo": false,
@@ -171,7 +170,7 @@
 			"args": [
 				"${workspaceFolder}/lib/rompacker.ts",
 				"--removeComments",
-				"--noEmitHelpers",
+				// "--noEmitHelpers",
 				// "--types",
 				// "${workspaceFolder}\\BoazEngineJS\\rompack",
 				"--outDir",

@@ -12,7 +12,7 @@ import { view } from "../BoazEngineJS/engine";
 import { DrawImgFlags } from "../BoazEngineJS/view";
 import { Model, GameState } from "./gamemodel";
 import { Controller } from "./gamecontroller";
-import { GameSubstate } from 'src/gamemodel';
+import { GameSubstate } from "./gamemodel";
 import { FoeExplosion } from "./foeexplosion";
 import { SM } from "../BoazEngineJS/soundmaster";
 
@@ -180,7 +180,7 @@ export class Pietula extends BossFoe {
 		bliksemstate.delta2tapehead = 4;
 		bliksemstate.onrun = (s) => {
 			if (Model._.Belmont.areaCollide(
-				<Area> {
+				<Area>{
 					start: {
 						x: s.target.bliksem.pos.x,
 						y: s.target.bliksem.pos.y + 6
@@ -375,10 +375,10 @@ export class Pietula extends BossFoe {
 	}
 
 	public die(): void {
-        Model._.spawn(new FoeExplosion(copyPoint(this.pos)));
-        Model._.spawn(new FoeExplosion(addPoints(this.pos, { x: 16, y: 0} )));
-        Model._.spawn(new FoeExplosion(addPoints(this.pos, { x: 0, y: 16} )));
-		Model._.spawn(new FoeExplosion(addPoints(this.pos, { x: 16, y: 16} )));
+		Model._.spawn(new FoeExplosion(copyPoint(this.pos)));
+		Model._.spawn(new FoeExplosion(addPoints(this.pos, { x: 16, y: 0 })));
+		Model._.spawn(new FoeExplosion(addPoints(this.pos, { x: 0, y: 16 })));
+		Model._.spawn(new FoeExplosion(addPoints(this.pos, { x: 16, y: 16 })));
 		SM.play(AudioId.Kaboem);
 		this.visible = false;
 		this.canHurtPlayer = false;

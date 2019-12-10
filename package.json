@@ -10,16 +10,20 @@
     "typescript": "^3.8.0-dev.20191207"
   },
   "devDependencies": {
+    "@babel/core": "^7.7.5",
     "@node-minify/clean-css": "^5.2.0",
     "@node-minify/core": "^5.2.1",
     "@types/node": "^12.12.14",
     "@types/node-fetch": "^2.5.4",
     "@types/pako": "^1.0.1",
     "@types/systemjs": "^6.1.0",
+    "babelify": "^8.0.0",
+    "browserify": "^16.5.0",
     "gulp": "^4.0.2",
     "libkss-js": "^0.12.0",
     "pako": "^1.0.10",
     "terser": "^4.4.2",
+    "tsify": "^4.0.1",
     "typescript-bundle": "^1.0.16"
   },
   "scripts": {

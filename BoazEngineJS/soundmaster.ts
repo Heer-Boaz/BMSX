@@ -46,7 +46,7 @@ export class SM {
 	}
 
 	public static play(id: AudioId): void {
-		let track = SM.tracks[id] ?.audiometa;
+		let track = SM.tracks[id]?.audiometa;
 		if (!track) return;
 
 		switch (track.audiotype) {
@@ -78,26 +78,14 @@ export class SM {
 	}
 
 	public static stopEffect(): void {
-		SM.currentEffectNode ?.disconnect();
-		SM.currentEffectNode ?.stop();
+		SM.currentEffectNode?.disconnect();
+		SM.currentEffectNode?.stop();
 		SM.currentEffectNode = null;
-		// return SM.sndContext.close().then(() => {
-		// 	SM.sndContext = new AudioContext({
-		// 		latencyHint: 'interactive',
-		// 		sampleRate: 44100,
-		// 	});
-
-		// 	SM.currentNode?.stop();
-		// 	SM.currentNode?.disconnect();
-		// 	SM.currentNode = null;
-
-		// 	SM.currentEffectNode = null;
-		// });
 	}
 
 	public static stopMusic(): void {
-		SM.currentMusicNode ?.stop();
-		SM.currentMusicNode ?.disconnect();
+		SM.currentMusicNode?.stop();
+		SM.currentMusicNode?.disconnect();
 		SM.currentMusicNode = null;
 	}
 

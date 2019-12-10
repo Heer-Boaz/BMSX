@@ -128,10 +128,10 @@ export function LineLength(p1: Point, p2: Point): number {
 // https://developer.mozilla.org/en-US/docs/Web/API/Web_Storage_API/Using_the_Web_Storage_API
 export function storageAvailable(type: string): boolean {
     try {
-        var storage = window[type],
-            x = '__storage_test__';
-        storage.setItem(x, x);
-        storage.removeItem(x);
+        // var storage: any = window[type],
+        //     x = '__storage_test__';
+        // storage.setItem(x, x);
+        // storage.removeItem(x);
         return true;
     }
     catch (e) {
@@ -146,7 +146,7 @@ export function storageAvailable(type: string): boolean {
             // Firefox
             e.name === 'NS_ERROR_DOM_QUOTA_REACHED') &&
             // acknowledge QuotaExceededError only if there's something already stored
-            storage.length !== 0;
+            true;// storage.length !== 0;
     }
 }
 
