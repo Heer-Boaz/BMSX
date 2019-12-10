@@ -2,8 +2,9 @@
   "compilerOptions": {
     /* Basic Options */
     "incremental": true, /* Enable incremental compilation */
-    "target": "ES6", /* Specify ECMAScript target version: 'ES3' (default), 'ES5', 'ES2015', 'ES2016', 'ES2017', 'ES2018', 'ES2019' or 'ESNEXT'. */
-    "module": "UMD", /* Specify module code generation: 'none', 'commonjs', 'amd', 'system', 'umd', 'es2015', or 'ESNext'. */
+    "target": "ES5", /* Specify ECMAScript target version: 'ES3' (default), 'ES5', 'ES2015', 'ES2016', 'ES2017', 'ES2018', 'ES2019' or 'ESNEXT'. */
+    "module": "commonjs", /* Specify module code generation: 'none', 'commonjs', 'amd', 'system', 'umd', 'es2015', or 'ESNext'. */
+    "moduleResolution": "Node",
     "lib": [
       "ESNEXT",
       "dom",
@@ -17,15 +18,15 @@
     // "jsx": "preserve",                     /* Specify JSX code generation: 'preserve', 'react-native', or 'react'. */
     // "declaration": false,                   /* Generates corresponding '.d.ts' file. */
     // "declarationMap": true,                /* Generates a sourcemap for each corresponding '.d.ts' file. */
-    // "sourceMap": true, /* Generates corresponding '.map' file. */
+    "sourceMap": true, /* Generates corresponding '.map' file. */
     // "outFile": "./rom/thegame.js", /* Concatenate and emit output to single file. */
-    // "outDir": "./out",                     /* Redirect output structure to the directory. */
+    "outDir": "build",                     /* Redirect output structure to the directory. */
     // "rootDir": "./", /* Specify the root directory of input files. Use to control the output directory structure with --outDir. */
-    "composite": false, /* Enable project compilation */
+    "composite": true, /* Enable project compilation */
     // "tsBuildInfoFile": "./",               /* Specify file to store incremental compilation information */
     "removeComments": true, /* Do not emit comments to output. */
     // "noEmit": true,                        /* Do not emit outputs. */
-    "importHelpers": false, /* Import emit helpers from 'tslib'. */
+    "importHelpers": true, /* Import emit helpers from 'tslib'. */
     "downlevelIteration": true, /* Provide full support for iterables in 'for-of', spread, and destructuring when targeting 'ES5' or 'ES3'. */
     // "isolatedModules": true,               /* Transpile each file as a separate module (similar to 'ts.transpileModule'). */
     /* Strict Type-Checking Options */
@@ -57,8 +58,8 @@
     // "sourceRoot": "A:/src/Sintervania/", /* Specify the location where debugger should locate TypeScript files instead of source locations. */
     // "sourceRoot": "http://127.0.0.1:8887/", /* Specify the location where debugger should locate TypeScript files instead of source locations. */
     // "mapRoot": "rom/", /* Specify the location where debugger should locate map files instead of generated locations. */
-    "inlineSourceMap": true, /* Emit a single file with source maps instead of having a separate file. */
-    "inlineSources": false /* Emit the source alongside the sourcemaps within a single file; requires '--inlineSourceMap' or '--sourceMap' to be set. */
+    "inlineSourceMap": false, /* Emit a single file with source maps instead of having a separate file. */
+    "inlineSources": true /* Emit the source alongside the sourcemaps within a single file; requires '--inlineSourceMap' or '--sourceMap' to be set. */
     /* Experimental Options */
     // "experimentalDecorators": true,        /* Enables experimental support for ES7 decorators. */
     // "emitDecoratorMetadata": true,         /* Enables experimental support for emitting type metadata for decorators. */
@@ -67,9 +68,9 @@
   //   "src/bootstrapper.ts"
   // ]
   // "include": [
-  //   "./src",
+  //   "/src",
   //   "/BoazEngineJS"
-  // ],
+  // ]
   // "exclude": [
   //   "./node_modules",
   //   "./BoazEngineJSBoaz/rompacker.ts",

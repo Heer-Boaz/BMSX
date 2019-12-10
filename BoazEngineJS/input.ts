@@ -1,6 +1,6 @@
 ﻿import { Point } from "../lib/interfaces"
 import { game } from "./engine";
-import { LineLength } from './common';
+import { LineLength } from "./common";
 
 export class Input {
     public static KeyState: {};

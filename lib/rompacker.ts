@@ -3,7 +3,7 @@ import { join, parse } from "path";
 import { AudioMeta, AudioType, RomResource, RomMeta } from "./rompack";
 const browserify = require("browserify");
 const tsify = require("tsify");
-// const babelify = require("babelify");
+const babelify = require("babelify");
 
 const terser = require('terser');
 const pako = require('../node_modules/pako');
@@ -78,21 +78,27 @@ async function bundleGamecode(outfile: string): Promise<any> {
 
 	browserify({
 		// basedir: '.',
-		debug: false,
+		debug: true,
 		project: ['./tsconfig.json'],
 		cache: {},
-		packageCache: {}
+		packageCache: {},
+		exclude: ['./lib/**'],
+		// standalone: 'moduleName',
 	})
-		.add(arrayOfFiles)
+	.add('./src/bootstrapper.ts')
+		// .add(arrayOfFiles)
 		.plugin(tsify)
-		// .transform(babelify, {
-		// 	extensions: ['.tsx', '.ts'],
-		// 	presets: ['es2015']
-		// })
+		.transform(babelify, {
+			extensions: ['.tsx', '.ts'],
+			// presets: ['es2015', "@babel/preset-env"],
+			plugins: ['@babel/plugin-transform-modules-commonjs'],
+			sourceMaps: true,
+			global: true,
+ 		})
 		.bundle()
 		.on("error", function (e) {
 			console.error(e.message);
-			// throw e;
+			Promise.reject(e);
 		})
 		.pipe(writeOutput);
 
@@ -110,20 +116,23 @@ async function bundleGamecode(outfile: string): Promise<any> {
 
 function minifyGamecode(infile: string): void {
 	let options = {
-		compress: false,
-		mangle: false,
-		// compress: {
-		// 	// module: true,
-		// 	arrows: false,
-		// 	warnings: true,
-		// },
-		// mangle: {
-		// 	// properties: true,
-		// 	// module: true,
-		// 	safari10: true,
-		// 	reserved: ["Bootstrapper", "Bootstrapper.h406A", "exports" ],
+		// compress: false,
+		// mangle: false,
+		compress: {
+			// module: true,
+			arrows: false,
+			// reduce_funcs: false,
+			// reduce_vars: false,
+			// unused: false,
+			warnings: true,
+		},
+		mangle: {
+			properties: false,
+			module: false,
+			safari10: true,
+			reserved: ["h406A", "exports" ],
 
-		// },
+		},
 		sourceMap: {
 			url: "inline",
 			content: "inline",

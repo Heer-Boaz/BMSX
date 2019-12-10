@@ -3,9 +3,9 @@ import { BaseController } from "./controller"
 import { View } from "./view"
 import { SM } from "./soundmaster";
 import { IGameView, Size } from "../lib/interfaces";
-import { BStopwatch } from './btimer';
+import { BStopwatch } from "./btimer";
 import { Input } from "./input";
-import { RomLoadResult } from '../lib/rompack';
+import { RomLoadResult } from "../lib/rompack";
 
 export let game: Game;
 export let model: BaseModel;

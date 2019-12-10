@@ -5,9 +5,9 @@ import { view } from "../BoazEngineJS/engine";
 import { AudioId, BitmapId } from "./resourceids";
 import { Input } from "../BoazEngineJS/input";
 import { SM as S } from "../BoazEngineJS/soundmaster";
-import { Controller as C } from './gamecontroller';
+import { Controller as C } from "./gamecontroller";
 import { GameMenu } from "./gamemenu";
-import { MenuItem } from './mainmenu';
+import { MenuItem } from "./mainmenu";
 import { Msx1Colors } from "../BoazEngineJS/msx";
 
 export const enum State {

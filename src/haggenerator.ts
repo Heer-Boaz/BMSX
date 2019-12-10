@@ -1,9 +1,9 @@
 import { Hag } from "./hag";
 import { Direction } from "../BoazEngineJS/direction";
 import { IGameObject, Point } from "../lib/interfaces";
-import { bst } from '../BoazEngineJS/statemachine';
+import { bst } from "../BoazEngineJS/statemachine";
 import { Model } from "./gamemodel";
-import { copyPoint } from '../BoazEngineJS/common';
+import { copyPoint } from "../BoazEngineJS/common";
 import { GameConstants } from "./gameconstants";
 import { Constants } from "../BoazEngineJS/constants";
 

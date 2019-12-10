@@ -1,7 +1,7 @@
 import { Model } from "../src/gamemodel";
 import { Constants as CS } from "./constants";
 import { Savegame } from "./savegame";
-import { GameSaver } from './gamesaver';
+import { GameSaver } from "./gamesaver";
 
 export function LoadGame(slot: number): Savegame {
 	// 	IFormatter formatter = new BinaryFormatter();

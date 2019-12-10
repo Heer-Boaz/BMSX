@@ -9,14 +9,14 @@ import { Model as M, Model, GameState, GameSubstate } from "./gamemodel"
 import { WeaponFireHandler } from "./weaponfirehandler";
 import { Room } from "./room";
 import { GameMenu } from "./gamemenu";
-import { waitDuration, setPoint } from '../BoazEngineJS/common';
+import { waitDuration, setPoint } from "../BoazEngineJS/common";
 import { SM } from "../BoazEngineJS/soundmaster";
 import { Constants as CS } from "../BoazEngineJS/constants";
-import { GameView as V } from './gameview';
+import { GameView as V } from "./gameview";
 import { GameConstants } from "./gameconstants";
-import { LoadGame } from '../BoazEngineJS/gamestateloader';
+import { LoadGame } from "../BoazEngineJS/gamestateloader";
 import { GameSaver } from "../BoazEngineJS/gamesaver";
-import { BaseController } from '../BoazEngineJS/controller';
+import { BaseController } from "../BoazEngineJS/controller";
 import { Input } from "../BoazEngineJS/input";
 import { TileSize, Tile } from "../BoazEngineJS/msx";
 import { Pietula } from "./pietula";

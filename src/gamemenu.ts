@@ -5,7 +5,7 @@ import { Direction } from "../BoazEngineJS/direction";
 import { TextWriter } from "./textwriter";
 import { Size, Point } from "../lib/interfaces";
 import { SM } from "../BoazEngineJS/soundmaster";
-import { Controller as C } from './gamecontroller';
+import { Controller as C } from "./gamecontroller";
 import { Model as M, GameState } from "./gamemodel";
 import { SlotExists, LoadGame } from "../BoazEngineJS/gamestateloader";
 import { GameOptions as GO } from "../BoazEngineJS/gameoptions";

@@ -9,22 +9,39 @@ import { Game, game } from "../BoazEngineJS/engine";
 import { SM } from "../BoazEngineJS/soundmaster";
 import { RomLoadResult } from "../lib/rompack";
 
+var _global = window || global;
+_global['h406A'] = (rom: RomLoadResult): void => {
+    new Game(rom, { x: GameConstants.ViewportWidth, y: GameConstants.ViewportHeight });
+    game.setModel(new Model());
+    game.setController(new Controller());
+    let gameview = new GameView();
+    game.setGameView(gameview);
+
+    View.images = rom.images;
+
+    SM.init(rom.resources);
+    game.start();
+    Model._.SelectedChapterToPlay = Chapter.GameStart;
+    Controller._.switchState(GameConstants.INITIAL_GAMESTATE);
+    Controller._.switchSubstate(GameConstants.INITIAL_GAMESUBSTATE);
+};
+
 export class Bootstrapper {
-    public static h406A(rom: RomLoadResult): void {
-        new Game(rom, { x: GameConstants.ViewportWidth, y: GameConstants.ViewportHeight });
-        game.setModel(new Model());
-        game.setController(new Controller());
-        let gameview = new GameView();
-        game.setGameView(gameview);
+    // public static h406A(rom: RomLoadResult): void {
+    //     new Game(rom, { x: GameConstants.ViewportWidth, y: GameConstants.ViewportHeight });
+    //     game.setModel(new Model());
+    //     game.setController(new Controller());
+    //     let gameview = new GameView();
+    //     game.setGameView(gameview);
 
-        View.images = rom.images;
+    //     View.images = rom.images;
 
-        SM.init(rom.resources);
-        game.start();
-        Model._.SelectedChapterToPlay = Chapter.GameStart;
-        Controller._.switchState(GameConstants.INITIAL_GAMESTATE);
-        Controller._.switchSubstate(GameConstants.INITIAL_GAMESUBSTATE);
-    }
+    //     SM.init(rom.resources);
+    //     game.start();
+    //     Model._.SelectedChapterToPlay = Chapter.GameStart;
+    //     Controller._.switchState(GameConstants.INITIAL_GAMESTATE);
+    //     Controller._.switchSubstate(GameConstants.INITIAL_GAMESUBSTATE);
+    // }
 
     public static BootstrapGame(chapter: Chapter): void {
         switch (chapter) {

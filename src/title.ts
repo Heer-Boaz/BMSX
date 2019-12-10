@@ -4,7 +4,7 @@ import { AudioId, BitmapId } from "./resourceids";
 import { Controller as C } from "./gamecontroller";
 import { Input } from "../BoazEngineJS/input";
 import { Point } from "../lib/interfaces";
-import { Game as G, view, game } from '../BoazEngineJS/engine';
+import { Game as G, view, game } from "../BoazEngineJS/engine";
 
 export enum State {
 	WaitForIt,

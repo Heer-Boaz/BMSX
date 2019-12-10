@@ -1,16 +1,16 @@
-import { Room, RoomInitDelegate } from './room';
+import { Room, RoomInitDelegate } from "./room";
 import { Point } from "../lib/interfaces";
-import { newPoint } from '../BoazEngineJS/common';
-import { Tile } from '../BoazEngineJS/msx';
+import { newPoint } from "../BoazEngineJS/common";
+import { Tile } from "../BoazEngineJS/msx";
 import { Model as M } from "./gamemodel";
-import { GardenCandle } from './gardencandle';
-import { BitmapId } from './resourceids';
-import { HagGenerator } from './haggenerator';
-import { Direction } from '../BoazEngineJS/direction';
-import { ZakFoe } from './zakfoe';
-import { Candle } from './candle';
-import { Pietula } from './pietula';
-import { Controller } from './gamecontroller';
+import { GardenCandle } from "./gardencandle";
+import { BitmapId } from "./resourceids";
+import { HagGenerator } from "./haggenerator";
+import { Direction } from "../BoazEngineJS/direction";
+import { ZakFoe } from "./zakfoe";
+import { Candle } from "./candle";
+import { Pietula } from "./pietula";
+import { Controller } from "./gamecontroller";
 
 export class RoomDataContainer {
 	public id: number;

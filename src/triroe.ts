@@ -4,7 +4,7 @@ import { Direction } from "../BoazEngineJS/direction";
 import { Model as M } from "./gamemodel";
 import { Area, Point } from "../lib/interfaces";
 import { AudioId, BitmapId } from "./resourceids";
-import { newArea, moveArea } from '../BoazEngineJS/common';
+import { newArea, moveArea } from "../BoazEngineJS/common";
 
 /*[Serializable]*/
 export class TriRoe extends PlayerProjectile {

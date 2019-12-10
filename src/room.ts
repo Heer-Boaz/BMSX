@@ -1,6 +1,6 @@
 import { TileSize } from "../BoazEngineJS/msx";
 import { Direction } from "../BoazEngineJS/direction";
-import { GameConstants as CS, GameConstants } from './gameconstants';
+import { GameConstants as CS, GameConstants } from "./gameconstants";
 import { view } from "../BoazEngineJS/engine";
 import { RoomDataContainer } from "./RoomFactory";
 import { BitmapId } from "./resourceids";

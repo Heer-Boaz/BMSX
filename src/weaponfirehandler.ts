@@ -2,7 +2,7 @@ import { Model as M, MainWeaponType, SecWeaponType } from "./gamemodel";
 import { TriRoe } from "./triroe";
 import { SM } from "../BoazEngineJS/soundmaster";
 import { AudioId } from "./resourceids";
-import { waitDuration, copyPoint } from '../BoazEngineJS/common';
+import { waitDuration, copyPoint } from "../BoazEngineJS/common";
 import { Cross } from "./cross";
 import { Direction } from "../BoazEngineJS/direction";
 import { Belmont } from "./belmont";
