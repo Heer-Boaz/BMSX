@@ -1,0 +1,18 @@
+{
+	"compilerOptions": {
+		"target": "ESNext",
+		"lib": [
+			"ESNEXT",
+			"dom",
+			"es2015.collection",
+			"es2015.iterable"
+		],
+		"declaration": true, /* Generates corresponding '.d.ts' file. */
+		"declarationMap": true,
+		// "declarationDir": "../src/bmsx",
+		"composite": true,
+	},
+	"include": [
+		"**.ts"
+	]
+}

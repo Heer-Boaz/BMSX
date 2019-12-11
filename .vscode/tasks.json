@@ -138,7 +138,7 @@
 			"type": "shell",
 			"command": "tsc",
 			"args": [
-				"${workspaceFolder}/src/lib/rom.ts",
+				"${workspaceFolder}/scripts/rom.ts",
 				"--removeComments",
 				"-m",
 				"\"commonjs\"",
@@ -168,7 +168,7 @@
 			"type": "shell",
 			"command": "tsc",
 			"args": [
-				"${workspaceFolder}/src/lib/rompacker.ts",
+				"${workspaceFolder}/scripts/rompacker.ts",
 				"--removeComments",
 				// "--noEmitHelpers",
 				"--outDir",

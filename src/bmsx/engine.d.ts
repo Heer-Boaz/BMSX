@@ -37,6 +37,7 @@ export declare class Game {
     constructor(_rom: RomLoadResult, viewportsize: Size);
     setModel(m: BaseModel): void;
     setController(c: BaseController): void;
+    setGameView(v: any): void;
     get TurnCounter(): number;
     GameOptionsChanged(): void;
     private loadGameOptions;

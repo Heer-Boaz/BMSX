@@ -1,4 +1,4 @@
-import { RomLoadResult, RomResource, RomMeta } from '../../bmsx/rompack';
+import { RomLoadResult, RomResource, RomMeta } from '../src/bmsx/rompack';
 // import { RomLoadResult, RomResource, RomMeta } from "..bmsx/rompack";
 
 export { };

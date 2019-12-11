@@ -79,6 +79,10 @@ export class Game {
         controller = c;
     }
 
+    public setGameView(v: any): void {
+        view = v;
+    }
+
     public get TurnCounter(): number {
         return this.turnCounter;
     }

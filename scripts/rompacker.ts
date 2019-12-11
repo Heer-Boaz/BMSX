@@ -1,6 +1,6 @@
 import { readdirSync, statSync, readFileSync, writeFileSync, copyFile, copyFileSync, existsSync, exists, createWriteStream } from "fs";
 import { join, parse } from "path";
-import { AudioMeta, AudioType, RomResource, RomMeta } from "../../bmsx/rompack";
+import { AudioMeta, AudioType, RomResource, RomMeta } from "../src/bmsx/rompack";
 const browserify = require("browserify");
 const tsify = require("tsify");
 const babelify = require("babelify");
@@ -70,30 +70,32 @@ function copyResources(): void {
 }
 
 async function bundleGamecode(outfile: string): Promise<any> {
-	let arrayOfFiles = getAllFiles("./src", [], ".ts");
-	arrayOfFiles = getAllFiles("./bmsx", arrayOfFiles, ".ts");
+	// let arrayOfFiles = getAllFiles("./src", [], ".js");
+	// arrayOfFiles = getAllFiles("./bmsx", arrayOfFiles, ".js");
 	// console.log(arrayOfFiles);
 
 	let writeOutput = createWriteStream('./rom/megarom.js');
 
 	browserify({
 		debug: true,
-		basedir: './rom',
-		// project: 'tsconfig.json',
+		// basedir: './rom',
+		project: 'tsconfig.json',
 		cache: {},
 		packageCache: {},
-		// exclude: ['./lib/rom.ts', './lib/rompack.ts'],
+		exclude: ['./src/lib/rom.ts', './src/lib/rompacker.ts'],
 		// standalone: 'moduleName',
 		ignore: ['./node_modules', './src', './bmsx', './dist', './rom']
 	})
-		.add('./tsout.tjs')
+		// .add('./tsout.tjs')
 		// .add(arrayOfFiles)
-		// .plugin(tsify)
+		.add("./src/bootstrapper.ts")
+		.plugin(tsify)
 		.transform(babelify, {
-			extensions: ['.tjs'],
+			extensions: ['.ts'],
 			// presets: ['es2015', "@babel/preset-env"],
-			// plugins: ['@babel/plugin-transform-modules-commonjs'],
-			plugins: ['@babel/plugin-transform-modules-systemjs'],
+			plugins: ['@babel/plugin-transform-modules-commonjs'],
+			// '@babel/plugin-proposal-optional-chaining', '@babel/plugin-proposal-nullish-coalescing-operator' ],
+			// plugins: ['@babel/plugin-transform-modules-systemjs'],
 			sourceMaps: true,
 			global: true,
 		})
@@ -151,7 +153,7 @@ function minifyGamecode(infile: string): void {
 function buildGameHtml(outfile: string): void {
 	let html = readFileSync("./gamebase.html", 'utf8');
 	let romjs = readFileSync("./rom/rom.js", 'utf8');
-	let zipjs = readFileSync("./src/lib/pako_inflate.min.js", 'utf8');
+	let zipjs = readFileSync("./scripts/pako_inflate.min.js", 'utf8');
 	romjs = romjs.replace('Object.defineProperty(exports, "__esModule", { value: true });', '');
 	let options = {
 		compress: {
