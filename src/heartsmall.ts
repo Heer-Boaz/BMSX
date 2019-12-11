@@ -1,11 +1,11 @@
-import { Sprite } from "../BoazEngineJS/sprite";
-import { Animation } from "../BoazEngineJS/animation"
-import { AudioId, BitmapId } from "./resourceids";
+import { Sprite } from "./bmsx/engine";
+import { Animation } from "./bmsx/animation"
+import { AudioId, BitmapId } from "./bmsx/resourceids";
 import { GameConstants } from "./gameconstants";
-import { newArea } from "../BoazEngineJS/common";
+import { newArea } from "./bmsx/common";
 import { Model } from "./gamemodel";
-import { SM } from "../BoazEngineJS/soundmaster";
-import { Area, Point } from "../lib/interfaces";
+import { SM } from "./bmsx/soundmaster";
+import { Area, Point } from "./bmsx/common";
 
 export const enum HeartSmallState {
 	Flying,

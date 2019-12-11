@@ -1,12 +1,9 @@
-import { Animation, AniStepReturnValue } from "../BoazEngineJS/animation"
-import { setPoint } from "../BoazEngineJS/common";
-import { AudioId, BitmapId } from "./resourceids";
-import { Controller as C } from "./gamecontroller";
-import { Input } from "../BoazEngineJS/input";
-import { Point } from "../lib/interfaces";
-import { Game as G, view, game } from "../BoazEngineJS/engine";
+import { Animation } from "./bmsx/animation"
+import { Point } from "./bmsx/common";
+import { BitmapId } from "./bmsx/resourceids";
+import { view } from "./bmsx/engine";
 
-export enum State {
+export const enum State {
 	WaitForIt,
 	Konami,
 	TitleTop,

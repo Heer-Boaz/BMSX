@@ -1,9 +1,9 @@
 import { GameConstants as CS } from "./gameconstants"
-import { Model as M, GameState, GameSubstate } from "./gamemodel";
-import { Point, IGameView } from "../lib/interfaces";
-import { view } from "../BoazEngineJS/engine";
+import { Model as M, GameState, GameSubstate, Model } from "./gamemodel";
+import { Point } from "./bmsx/common";
+import { view } from "./bmsx/engine";
 
-export class GameView implements IGameView {
+export class GameView {
     private static _instance: GameView;
 
     public static get _(): GameView {
@@ -16,30 +16,30 @@ export class GameView implements IGameView {
 
     public drawGame(elapsedMs: number): void {
         view.clear();
-        if (M._.startAfterLoad)
+        if (Model._.startAfterLoad)
             return;
 
-        switch (M._.gameState) {
+        switch (Model._.gameState) {
             case GameState.LoadTheGame:
                 break;
             case GameState.TitleScreen:
-                M._.Title.Paint();
+                Model._.Title.Paint();
                 break;
 
             case GameState.EndDemo:
-                M._.EndDemo.Paint();
+                Model._.EndDemo.Paint();
                 break;
 
             case GameState.Game:
             case GameState.Event:
                 let gamescreenOffset = <Point>{ x: CS.GameScreenStartX, y: CS.GameScreenStartY };
-                if (M._.gameSubstate != GameSubstate.SwitchRoom) {
-                    M._.currentRoom.Paint();
-                    M._.objects.forEach(o => o.paint && o.paint(gamescreenOffset));
+                if (Model._.gameSubstate != GameSubstate.SwitchRoom) {
+                    Model._.currentRoom.Paint();
+                    Model._.objects.forEach(o => o.paint && o.paint(gamescreenOffset));
                 }
-                M._.Hud.Paint();
+                Model._.Hud.Paint();
 
-                switch (M._.gameSubstate) {
+                switch (Model._.gameSubstate) {
                     case GameSubstate.SwitchRoom:
                     case GameSubstate.BelmontDies:
                     case GameSubstate.ItsCurtainsForYou:
@@ -50,17 +50,17 @@ export class GameView implements IGameView {
                         break;
                 }
 
-                if (M._.gameSubstate == GameSubstate.ItsCurtainsForYou || M._.gameSubstate == GameSubstate.ToEndDemo) {
-                    M._.ItsCurtains.Paint();
+                if (Model._.gameSubstate == GameSubstate.ItsCurtainsForYou || Model._.gameSubstate == GameSubstate.ToEndDemo) {
+                    Model._.ItsCurtains.Paint();
                 }
-                else if (M._.gameSubstate == GameSubstate.GameOver) {
-                    M._.ItsCurtains.Paint();
-                    M._.GameOverScreen.Paint();
+                else if (Model._.gameSubstate == GameSubstate.GameOver) {
+                    Model._.ItsCurtains.Paint();
+                    Model._.GameOverScreen.Paint();
                 }
 
-                M._.GameMenu.Paint();
-                if (M._.paused) {
-                    M._.PauseObject.paint();
+                Model._.GameMenu.Paint();
+                if (Model._.paused) {
+                    Model._.PauseObject.paint();
                 }
                 break;
         }

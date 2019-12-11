@@ -1,5 +1,5 @@
 import { Foe } from "./foe";
-import { Point } from "../lib/interfaces";
+import { Point } from "./bmsx/common";
 
 /*[Serializable]*/
 export class BossFoe extends Foe {

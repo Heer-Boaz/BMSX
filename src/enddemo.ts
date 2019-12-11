@@ -1,10 +1,10 @@
 import { TextWriter } from "./textwriter";
-import { BStopwatch } from "../BoazEngineJS/btimer";
-import { Animation } from "../BoazEngineJS/animation";
-import { Tile } from "../BoazEngineJS/msx";
-import { SM } from "../BoazEngineJS/soundmaster";
-import { AudioId, BitmapId } from "./resourceids";
-import { view } from "../BoazEngineJS/engine";
+import { BStopwatch } from "./bmsx/engine";
+import { Animation } from "./bmsx/animation";
+import { Tile } from "./bmsx/msx";
+import { SM } from "./bmsx/soundmaster";
+import { AudioId, BitmapId } from "./bmsx/resourceids";
+import { view } from "./bmsx/engine";
 
 // export const enum State {
 //     Sint,

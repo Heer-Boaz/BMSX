@@ -1,10 +1,10 @@
-import { Sprite } from "../BoazEngineJS/sprite";
-import { Model as M, SecWeaponType, BagWeapon } from "./gamemodel";
+import { Sprite } from "./bmsx/engine";
+import { Model, SecWeaponType, BagWeapon } from "./gamemodel";
 import { Item } from "./item";
-import { AudioId, BitmapId } from "./resourceids";
-import { moveArea, area2size } from "../BoazEngineJS/common";
+import { AudioId, BitmapId } from "./bmsx/resourceids";
+import { moveArea, area2size } from "./bmsx/common";
 import { Controller as C } from "./gamecontroller";
-import { Area, Point } from "../lib/interfaces";
+import { Area, Point } from "./bmsx/common";
 
 /*[Serializable]*/
 export class WeaponItem extends Sprite {
@@ -45,7 +45,7 @@ export class WeaponItem extends Sprite {
     }
 
     public takeTurn(): void {
-        if (this.areaCollide(moveArea(M._.Belmont.RoomCollisionArea, <Point>M._.Belmont.pos))) {
+        if (this.areaCollide(moveArea(Model._.Belmont.RoomCollisionArea, <Point>Model._.Belmont.pos))) {
             C._.PickupWeaponItem(this);
             this.disposeFlag = true;
         }

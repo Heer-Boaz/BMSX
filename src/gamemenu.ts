@@ -1,20 +1,20 @@
 import { MenuItem } from "./mainmenu";
 import { GameView as V } from "./gameview";
-import { AudioId, BitmapId } from "./resourceids";
-import { Direction } from "../BoazEngineJS/direction";
+import { AudioId, BitmapId } from "./bmsx/resourceids";
+import { Direction } from "./bmsx/common";
 import { TextWriter } from "./textwriter";
-import { Size, Point } from "../lib/interfaces";
-import { SM } from "../BoazEngineJS/soundmaster";
+import { Size, Point } from "./bmsx/common";
+import { SM } from "./bmsx/soundmaster";
 import { Controller as C } from "./gamecontroller";
-import { Model as M, GameState } from "./gamemodel";
-import { SlotExists, LoadGame } from "../BoazEngineJS/gamestateloader";
-import { GameOptions as GO } from "../BoazEngineJS/gameoptions";
+import { Model as M, GameState, Model } from "./gamemodel";
+import { SlotExists, LoadGame } from "./bmsx/gamepersistor";
+import { GameOptions as GO } from "./bmsx/engine";
 import { GameConstants as CS } from "./gameconstants";
-import { Constants } from "../BoazEngineJS/constants";
-import { newSize, setPoint } from "../BoazEngineJS/common";
-import { view, game } from "../BoazEngineJS/engine";
-import { Input } from "../BoazEngineJS/input";
-import { Msx1Colors, Msx1ExtColors } from "../BoazEngineJS/msx";
+import { Constants } from "./bmsx/engine";
+import { newSize, setPoint } from "./bmsx/common";
+import { view, game } from "./bmsx/engine";
+import { Input } from "./bmsx/input";
+import { Msx1Colors, Msx1ExtColors } from "./bmsx/msx";
 
 interface MenuOption {
     type: MenuItem;
@@ -111,14 +111,14 @@ export class GameMenu {
         this.selectedItemIndex = 0;
         switch (this.CurrentScreen) {
             case MenuItem.LoadFromGameOver:
-                M._.MainMenu.GameMenuClosed();
+                Model._.MainMenu.GameMenuClosed();
                 break;
             case MenuItem.LoadFromMainMenu:
             case MenuItem.OptionsFromMainMenu:
-                M._.MainMenu.GameMenuClosed();
+                Model._.MainMenu.GameMenuClosed();
                 break;
             default:
-                M._.ItemsInInventory.filter(i => i.Amount != 0);
+                Model._.ItemsInInventory.filter(i => i.Amount != 0);
                 break;
         }
     }
@@ -171,7 +171,7 @@ export class GameMenu {
                             this.selectedItemIndex = 0;
                             break;
                         case MenuItem.SaveGame:
-                            if (M._.State != GameState.Event) {
+                            if (Model._.State != GameState.Event) {
                                 this.CurrentScreen = MenuItem.Save;
                                 this.selectedItemIndex = 0;
                             }
@@ -475,7 +475,7 @@ export class GameMenu {
                     GameMenu.mainItems.forEach(function (item) {
                         switch (item.type) {
                             case MenuItem.SaveGame:
-                                if (M._.State != GameState.Event)
+                                if (Model._.State != GameState.Event)
                                     TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
                                 else TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, Msx1ExtColors[0]);
                                 break;

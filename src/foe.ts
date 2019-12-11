@@ -1,11 +1,17 @@
-import { Creature } from "./creature";
-import { PlayerProjectile } from "./pprojectile";
-import { ItemType } from "./item";
-import { Model as M } from "./gamemodel";
-import { SM } from "../BoazEngineJS/soundmaster";
-import { FoeExplosion } from "./foeexplosion";
-import { AudioId } from "./resourceids";
-import { Point } from "../lib/interfaces";
+import { Creature } from './creature';
+
+import { Point } from './bmsx/common';
+
+import { ItemType } from './item';
+
+import { PlayerProjectile } from './pprojectile';
+
+import { SM } from './bmsx/soundmaster';
+
+import { AudioId } from './bmsx/resourceids';
+
+import { FoeExplosion } from './foeexplosion';
+import { Model } from './gamemodel';
 
 export abstract class Foe extends Creature {
     public maxHealth: number;
@@ -33,14 +39,14 @@ export abstract class Foe extends Creature {
     protected itemSpawnedAfterKill: ItemType;
 
     public takeTurn(): void {
-        if (this.canHurtPlayer && this.objectCollide(M._.Belmont)) {
-            M._.Belmont.TakeDamage(this.damageToPlayer);
+        if (this.canHurtPlayer && this.objectCollide(Model._.Belmont)) {
+            Model._.Belmont.TakeDamage(this.damageToPlayer);
         }
     }
 
     public handleHit(source: PlayerProjectile): void {
         if (this.disposeFlag) return;
-        M._.LastFoeThatWasHit = this;
+        Model._.LastFoeThatWasHit = this;
         SM.play(AudioId.Hit);
     }
 
@@ -54,7 +60,7 @@ export abstract class Foe extends Creature {
     protected handleDie(): void {
         if (this.disposeFlag) return;
         this.disposeFlag = true;
-        M._.FoeDefeated(this);
+        Model._.FoeDefeated(this);
     }
 
     public die(): void {
@@ -67,13 +73,13 @@ export abstract class Foe extends Creature {
 
     protected dieWithoutItem(): void {
         this.handleDie();
-        M._.spawn(new FoeExplosion(this.pos));
+        Model._.spawn(new FoeExplosion(this.pos));
     }
 
     protected dieWithItem(itemToSpawn: ItemType = ItemType.None): void {
         this.handleDie();
         if (itemToSpawn !== ItemType.None) {
-            M._.spawn(new FoeExplosion(this.pos, itemToSpawn));
+            Model._.spawn(new FoeExplosion(this.pos, itemToSpawn));
         }
     }
 

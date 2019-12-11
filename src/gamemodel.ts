@@ -1,25 +1,42 @@
-import { Foe } from "./foe";
-import { Belmont } from "./belmont";
-import { Savegame } from "../BoazEngineJS/savegame";
-import { BaseModel } from "../BoazEngineJS/model";
-import { BStopwatch } from "../BoazEngineJS/btimer";
-import { BossFoe } from "./bossfoe";
-import { WeaponItem, WeaponType } from "./weaponitem";
-import { GameConstants as CS, GameConstants } from "./gameconstants";
-import { ItemType } from "./item";
-import { GameMenu } from "./gamemenu";
-import { Point, IGameObject } from "../lib/interfaces";
-import { Room } from "./room";
-import { RoomFactory } from "./RoomFactory";
-import { HUD } from "./hud";
-import { ItsCurtainsForYou } from "./itscurtainsforyou";
-import { GameOver } from "./gameover";
-import { MainMenu } from "./mainmenu";
-import { Title } from "./title";
-import { EndDemo } from "./enddemo";
-import { view } from "../BoazEngineJS/engine";
-import { TextWriter } from "./textwriter";
-import { Msx1Colors } from "../BoazEngineJS/msx";
+import { ItemType } from './item';
+
+import { WeaponType, WeaponItem } from './weaponitem';
+
+import { Point } from './bmsx/common';
+
+import { BaseModel, BStopwatch, IGameObject, view } from './bmsx/engine';
+
+import { Savegame } from './bmsx/gamepersistor';
+
+import { Foe } from './foe';
+
+import { Belmont } from './belmont';
+
+import { BossFoe } from './bossfoe';
+
+import { Room } from './room';
+
+import { GameMenu } from './gamemenu';
+
+import { HUD } from './hud';
+
+import { ItsCurtainsForYou } from './itscurtainsforyou';
+
+import { GameOver } from './gameover';
+
+import { MainMenu } from './mainmenu';
+
+import { Title } from './title';
+
+import { EndDemo } from './enddemo';
+
+import { GameConstants } from './gameconstants';
+
+import { RoomFactory } from './RoomFactory';
+
+import { Msx1Colors } from './bmsx/msx';
+
+import { TextWriter } from './textwriter';
 
 export const enum GameState {
     None = 0,
@@ -133,8 +150,8 @@ export class Model extends BaseModel {
         return this._hearts;
     }
     public set Hearts(value: number) {
-        if (value > CS.Belmont_MaxHearts)
-            this._hearts = CS.Belmont_MaxHearts;
+        if (value > GameConstants.Belmont_MaxHearts)
+            this._hearts = GameConstants.Belmont_MaxHearts;
         else if (value < 0)
             this._hearts = 0;
         else this._hearts = value;

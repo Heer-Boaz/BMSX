@@ -1,17 +1,17 @@
-import { Chapter, GameState } from "./gamemodel";
+import { Chapter, GameState, Model } from "./gamemodel";
 import { GameConstants as GCS } from "./gameconstants"
-import { SM as S } from "../BoazEngineJS/soundmaster";
-import { Direction } from "../BoazEngineJS/direction";
+import { SM as S } from "./bmsx/soundmaster";
+import { Direction } from "./bmsx/common";
 import { Model as M } from "./gamemodel";
 import { Controller as C } from "./gamecontroller";
 import { TextWriter } from "./textwriter";
-import { view } from "../BoazEngineJS/engine";
-import { Constants as CS } from "../BoazEngineJS/constants";
-import { Input } from "../BoazEngineJS/input";
+import { view } from "./bmsx/engine";
+import { Constants as CS } from "./bmsx/engine";
+import { Input } from "./bmsx/input";
 import { GameMenu } from "./gamemenu";
-import { SlotExists } from "../BoazEngineJS/gamestateloader";
-import { AudioId, BitmapId } from "./resourceids";
-import { Msx1Colors } from "../BoazEngineJS/msx";
+import { SlotExists } from "./bmsx/gamepersistor";
+import { AudioId, BitmapId } from "./bmsx/resourceids";
+import { Msx1Colors } from "./bmsx/msx";
 
 export const enum State {
     SelectMain,
@@ -105,12 +105,12 @@ export class MainMenu {
                             break;
                         case MenuItem.LoadGame:
                             Input.reset();
-                            M._.GameMenu.Open(MenuItem.LoadFromMainMenu);
+                            Model._.GameMenu.Open(MenuItem.LoadFromMainMenu);
                             this.state = State.SubMenu;
                             break;
                         case MenuItem.Options:
                             Input.reset();
-                            M._.GameMenu.Open(MenuItem.OptionsFromMainMenu);
+                            Model._.GameMenu.Open(MenuItem.OptionsFromMainMenu);
                             this.state = State.SubMenu;
                             break;
                     }
@@ -119,19 +119,19 @@ export class MainMenu {
                     S.play(AudioId.Selectie);
                     switch (this.selectedItem) {
                         case MenuItem.Debug:
-                            M._.SelectedChapterToPlay = Chapter.Debug;
+                            Model._.SelectedChapterToPlay = Chapter.Debug;
                             C._.switchState(GameState.Game);
                             break;
                         case MenuItem.Prologue:
-                            M._.SelectedChapterToPlay = Chapter.Prologue;
+                            Model._.SelectedChapterToPlay = Chapter.Prologue;
                             C._.switchState(GameState.GameStart1);
                             break;
                         case MenuItem.Chapter0:
-                            M._.SelectedChapterToPlay = Chapter.Chapter_0;
+                            Model._.SelectedChapterToPlay = Chapter.Chapter_0;
                             C._.switchState(GameState.GameStart1);
                             break;
                         case MenuItem.Chapter1:
-                            M._.SelectedChapterToPlay = Chapter.GameStart;
+                            Model._.SelectedChapterToPlay = Chapter.GameStart;
                             C._.switchState(GameState.GameStart1);
                             break;
                         case MenuItem.ToMainMenu:

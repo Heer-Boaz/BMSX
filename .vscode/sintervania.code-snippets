@@ -200,7 +200,7 @@
 		"prefix": "@collision",
 		"scope": "csharp",
 		"body": [
-			"if (M._.CurrentRoom.AnyCollisionsTiles(${1|true,false|}, (this.hitbox_sx, this.hitbox_sy), (this.hitbox_sx, this.hitbox_ey))) {\r\t$2\r}"
+			"if (Model._.CurrentRoom.AnyCollisionsTiles(${1|true,false|}, (this.hitbox_sx, this.hitbox_sy), (this.hitbox_sx, this.hitbox_ey))) {\r\t$2\r}"
 		],
 		"description": "Sintervania check collision"
 	},
@@ -257,5 +257,4 @@
 		],
 		"description": "Creates a new State enum for the current file (class)"
 	},
-
 }

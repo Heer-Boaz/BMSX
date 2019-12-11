@@ -1,11 +1,11 @@
 import { Hag } from "./hag";
-import { Direction } from "../BoazEngineJS/direction";
-import { IGameObject, Point } from "../lib/interfaces";
-import { bst } from "../BoazEngineJS/statemachine";
+import { IGameObject } from "./bmsx/engine";
+import { Direction, Point } from "./bmsx/common";
+import { bst } from "./bmsx/engine";
 import { Model } from "./gamemodel";
-import { copyPoint } from "../BoazEngineJS/common";
+import { copyPoint } from "./bmsx/common";
 import { GameConstants } from "./gameconstants";
-import { Constants } from "../BoazEngineJS/constants";
+import { Constants } from "./bmsx/engine";
 
 type stuff = { ticks: number };
 

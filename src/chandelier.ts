@@ -1,13 +1,13 @@
-import { BStopwatch } from "../BoazEngineJS/btimer";
-import { Direction } from "../BoazEngineJS/direction";
-import { Animation, AniData } from "../BoazEngineJS/animation";
+import { BStopwatch } from "./bmsx/engine";
+import { Direction } from "./bmsx/common";
+import { Animation, AniData } from "./bmsx/animation";
 import { Foe } from "./foe";
 import { PlayerProjectile } from "./pprojectile";
 import { ItemType } from "./item";
-import { AudioId, BitmapId } from "./resourceids";
-import { newArea, newSize } from "../BoazEngineJS/common";
-import { Model as M } from "./gamemodel";
-import { Area, Point } from "../lib/interfaces";
+import { AudioId, BitmapId } from "./bmsx/resourceids";
+import { newArea, newSize } from "./bmsx/common";
+import { Model as M, Model } from "./gamemodel";
+import { Area, Point } from "./bmsx/common";
 
 /*[Serializable]*/
 export class Chandelier extends Foe {
@@ -67,13 +67,13 @@ export class Chandelier extends Foe {
 	public takeTurn(): void {
 		switch (this.state) {
 			case ChandelierState.None:
-				if (M._.Belmont.x_plus_width >= this.pos.x && M._.Belmont.pos.x <= this.x_plus_width) {
+				if (Model._.Belmont.x_plus_width >= this.pos.x && Model._.Belmont.pos.x <= this.x_plus_width) {
 					this.state = ChandelierState.Falling;
 				}
 				break;
 			case ChandelierState.Falling:
 				this.pos.y += 8;
-				//if (M._.CurrentRoom.AnyCollisionsTiles(true, (this.pos.x, this.y_plus_height), (this.x_plus_width, this.y_plus_height))) {
+				//if (Model._.CurrentRoom.AnyCollisionsTiles(true, (this.pos.x, this.y_plus_height), (this.x_plus_width, this.y_plus_height))) {
 				//	this.state = ChandelierState.Crashing;
 				//	this.timer.Start();
 				//	this.imgid = this.animation.stepValue();

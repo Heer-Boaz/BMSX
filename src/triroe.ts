@@ -1,12 +1,9 @@
 import { PlayerProjectile } from "./pprojectile";
 import { RoeState } from "./belmont";
-import { Direction } from "../BoazEngineJS/direction";
-import { Model as M } from "./gamemodel";
-import { Area, Point } from "../lib/interfaces";
-import { AudioId, BitmapId } from "./resourceids";
-import { newArea, moveArea } from "../BoazEngineJS/common";
+import { Model } from "./gamemodel";
+import { BitmapId } from "./bmsx/resourceids";
+import { Area, Point, Direction, newArea, moveArea } from "./bmsx/common";
 
-/*[Serializable]*/
 export class TriRoe extends PlayerProjectile {
 	private static hitareas: Map<number, Area> = new Map<number, Area>([
 		[BitmapId.Belmont_rw1, newArea(0, 9, 7, 26)],
@@ -24,11 +21,11 @@ export class TriRoe extends PlayerProjectile {
 	]);
 
 	public get hitarea(): Area {
-		if (!M._.Belmont.roeState.Roeing || M._.Belmont.RecoveringFromHit)
+		if (!Model._.Belmont.roeState.Roeing || Model._.Belmont.RecoveringFromHit)
 			return null;
-		if (!M._.Belmont.Crouching)
-			return moveArea(TriRoe.hitareas.get(M._.Belmont.imgid), RoeState.RoeSpritePosOffset.get(M._.Belmont.direction)[M._.Belmont.roeState.CurrentFrame]);
-		return moveArea(TriRoe.hitareas.get(M._.Belmont.imgid), RoeState.RoeSpritePosOffsetCrouching.get(M._.Belmont.direction)[M._.Belmont.roeState.CurrentFrame]);
+		if (!Model._.Belmont.Crouching)
+			return moveArea(TriRoe.hitareas.get(Model._.Belmont.imgid), RoeState.RoeSpritePosOffset.get(Model._.Belmont.direction)[Model._.Belmont.roeState.CurrentFrame]);
+		return moveArea(TriRoe.hitareas.get(Model._.Belmont.imgid), RoeState.RoeSpritePosOffsetCrouching.get(Model._.Belmont.direction)[Model._.Belmont.roeState.CurrentFrame]);
 	}
 
 	public set hitarea(value: Area) {
@@ -41,15 +38,15 @@ export class TriRoe extends PlayerProjectile {
 	constructor(pos: Point, dir: Direction) {
 		super({ x: pos.x, y: pos.y }, { x: 0, y: 0 });
 		this.direction = dir;
-		this.pos = M._.Belmont.pos;
+		this.pos = Model._.Belmont.pos;
 	}
 
 	public takeTurn(): void {
-		if (M._.Belmont.Dying || !M._.Belmont.roeState.Roeing) {
+		if (Model._.Belmont.Dying || !Model._.Belmont.roeState.Roeing) {
 			this.disposeFlag = true;
 			return;
 		}
-		this.pos = M._.Belmont.pos;
+		this.pos = Model._.Belmont.pos;
 		this.checkAndInvokeHit();
 	}
 

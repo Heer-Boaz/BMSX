@@ -10,7 +10,7 @@
 			"webRoot": "${workspaceFolder}",
 			"sourceMapPathOverrides": {
 				"../src/*": "${workspaceFolder}/src/*",
-				"../BoazEngineJS/*": "${workspaceFolder}/BoazEngineJS/*",
+				"./bmsx/*": "${workspaceFolder}/BoazEngineJS/*",
 			},
 			"runtimeArgs": [
 				// "--disable-web-security"

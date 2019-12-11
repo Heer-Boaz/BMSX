@@ -1,13 +1,11 @@
 import { Foe } from "./foe";
 import { ItemType } from "./item";
-import { Direction } from "../BoazEngineJS/direction";
 import { PlayerProjectile } from "./pprojectile";
-import { newArea, newSize } from "../BoazEngineJS/common";
-import { BitmapId } from "./resourceids";
-import { Model as M } from "./gamemodel";
+import { Area, Point, Direction, newArea, newSize } from "./bmsx/common";
+import { BitmapId } from "./bmsx/resourceids";
+import { Model } from "./gamemodel";
 import { GameConstants as CS } from "./gameconstants";
-import { bst } from "../BoazEngineJS/statemachine";
-import { Area, Point } from "../lib/interfaces";
+import { bst } from "./bmsx/engine";
 
 type AniType = { i: BitmapId, dy: number };
 
@@ -63,9 +61,9 @@ export class ZakFoe extends Foe {
 					if (s.target.pos.x <= 0)
 						s.target.direction = Direction.Right;
 					// Handle wall / missing floor collision
-					if (M._.currentRoom.AnyCollisionsTiles({ x: s.target.hitbox_sx, y: s.target.hitbox_sy }, { x: s.target.hitbox_sx, y: s.target.hitbox_ey }))
+					if (Model._.currentRoom.AnyCollisionsTiles({ x: s.target.hitbox_sx, y: s.target.hitbox_sy }, { x: s.target.hitbox_sx, y: s.target.hitbox_ey }))
 						s.target.direction = Direction.Right;
-					// if (!M._.currentRoom.AnyCollisionsTiles(true, { x: s.target.hitbox_sx, y: s.target.hitbox_ey + TileSize + 4 }))
+					// if (!Model._.currentRoom.AnyCollisionsTiles(true, { x: s.target.hitbox_sx, y: s.target.hitbox_ey + TileSize + 4 }))
 					// 	s.target.direction = Direction.Right;
 					break;
 				case Direction.Right: s.target.pos.x += 1;
@@ -73,13 +71,13 @@ export class ZakFoe extends Foe {
 					if (s.target.pos.x >= CS.GameScreenWidth)
 						s.target.direction = Direction.Left;
 					// Handle wall / missing floor collision
-					if (M._.currentRoom.AnyCollisionsTiles({ x: s.target.hitbox_ex, y: s.target.hitbox_sy }, { x: s.target.hitbox_ex, y: s.target.hitbox_ey }))
+					if (Model._.currentRoom.AnyCollisionsTiles({ x: s.target.hitbox_ex, y: s.target.hitbox_sy }, { x: s.target.hitbox_ex, y: s.target.hitbox_ey }))
 						s.target.direction = Direction.Left;
-					// if (!M._.currentRoom.AnyCollisionsTiles(true, { x: s.target.hitbox_ex, y: s.target.hitbox_ey + TileSize + 4 }))
+					// if (!Model._.currentRoom.AnyCollisionsTiles(true, { x: s.target.hitbox_ex, y: s.target.hitbox_ey + TileSize + 4 }))
 					// 	s.target.direction = Direction.Left;
 					break;
 			}
-			if (!M._.currentRoom.IsCollisionTile(s.target.hitbox_sx + 4, s.target.hitbox_ey + 12)) {
+			if (!Model._.currentRoom.IsCollisionTile(s.target.hitbox_sx + 4, s.target.hitbox_ey + 12)) {
 				s.target.pos.y += 4;
 			}
 		};

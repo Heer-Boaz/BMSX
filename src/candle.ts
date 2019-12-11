@@ -1,12 +1,12 @@
 import { Foe } from "./foe";
-import { BStopwatch } from "../BoazEngineJS/btimer";
+import { BStopwatch } from "./bmsx/engine";
 import { ItemType } from "./item";
-import { Animation, AniStepReturnValue } from "../BoazEngineJS/animation"
-import { Direction } from "../BoazEngineJS/direction";
+import { Animation, AniStepReturnValue } from "./bmsx/animation"
+import { Direction } from "./bmsx/common";
 import { PlayerProjectile } from "./pprojectile";
-import { AudioId, BitmapId } from "./resourceids";
-import { newArea, addPoints } from "../BoazEngineJS/common";
-import { Area, Point } from "../lib/interfaces";
+import { AudioId, BitmapId } from "./bmsx/resourceids";
+import { newArea, addPoints } from "./bmsx/common";
+import { Area, Point } from "./bmsx/common";
 import { GameConstants } from "./gameconstants";
 
 /*[Serializable]*/

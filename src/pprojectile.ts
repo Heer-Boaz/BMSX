@@ -1,9 +1,11 @@
-import { Foe } from "./foe";
-import { Projectile } from "./projectile";
-import { Model as model } from "./gamemodel";
-import { Point } from "../lib/interfaces";
+import { Projectile } from './projectile';
 
-/*[Serializable]*/
+import { Foe } from './foe';
+
+import { Point } from './bmsx/common';
+
+import { Model } from './gamemodel';
+
 export abstract class PlayerProjectile extends Projectile {
     protected foesThatWereHit: Foe[];
     constructor(fpos: Point, speed: Point) {
@@ -13,7 +15,7 @@ export abstract class PlayerProjectile extends Projectile {
 
     public checkAndInvokeHit(): boolean {
         let enemyWasHit: boolean = false;
-        model._.Foes.filter(f => !f.disposeFlag && f.hittable && !this.foesThatWereHit.includes(f) && this.objectCollide(f)).forEach(f => {
+        Model._.Foes.filter(f => !f.disposeFlag && f.hittable && !this.foesThatWereHit.includes(f) && this.objectCollide(f)).forEach(f => {
             this.foesThatWereHit.push(f);
             f.handleHit(this);
             enemyWasHit = true;

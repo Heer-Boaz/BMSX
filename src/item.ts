@@ -1,10 +1,10 @@
-import { Sprite } from "../BoazEngineJS/sprite";
-import { newArea, area2size, moveArea } from "../BoazEngineJS/common";
+import { Sprite } from "./bmsx/engine";
+import { newArea, area2size, moveArea } from "./bmsx/common";
 import { Model } from "./gamemodel";
-import { SM } from "../BoazEngineJS/soundmaster";
+import { SM } from "./bmsx/soundmaster";
 import { Controller } from "./gamecontroller";
-import { AudioId, BitmapId } from "./resourceids";
-import { Area, Point } from "../lib/interfaces";
+import { AudioId, BitmapId } from "./bmsx/resourceids";
+import { Area, Point } from "./bmsx/common";
 
 export const enum ItemType {
     None,

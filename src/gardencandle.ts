@@ -1,10 +1,10 @@
-import { Animation } from "../BoazEngineJS/animation";
+import { Animation } from "./bmsx/animation";
 import { Candle } from "./candle";
-import { Direction } from "../BoazEngineJS/direction";
-import { AudioId, BitmapId } from "./resourceids";
+import { Direction } from "./bmsx/common";
+import { AudioId, BitmapId } from "./bmsx/resourceids";
 import { ItemType } from "./item";
-import { newArea } from "../BoazEngineJS/common";
-import { Area, Point } from "../lib/interfaces";
+import { newArea } from "./bmsx/common";
+import { Area, Point } from "./bmsx/common";
 
 /*[Serializable]*/
 export class GardenCandle extends Candle {

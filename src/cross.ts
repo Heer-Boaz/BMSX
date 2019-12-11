@@ -1,9 +1,10 @@
-import { PlayerProjectile } from "./pprojectile";
-import { Direction } from "../BoazEngineJS/direction";
-import { Model as M } from "./gamemodel";
-import { Area, Point } from "../lib/interfaces";
-import { BitmapId } from "./resourceids";
-import { GameConstants } from "./gameconstants";
+import { PlayerProjectile } from './pprojectile';
+
+import { Area, Point, Direction } from './bmsx/common';
+
+import { BitmapId } from './bmsx/resourceids';
+
+import { GameConstants } from './gameconstants';
 
 export class Cross extends PlayerProjectile {
 	public direction: Direction;

@@ -126,7 +126,7 @@
 				"reveal": "always",
 				"focus": false,
 				"panel": "shared",
-				"showReuseMessage": false,
+				"showReuseMessage": true,
 				"clear": true,
 				"revealProblems": "onProblem",
 				"group": "boaz",
@@ -138,7 +138,7 @@
 			"type": "shell",
 			"command": "tsc",
 			"args": [
-				"${workspaceFolder}/lib/rom.ts",
+				"${workspaceFolder}/src/lib/rom.ts",
 				"--removeComments",
 				"-m",
 				"\"commonjs\"",
@@ -168,11 +168,9 @@
 			"type": "shell",
 			"command": "tsc",
 			"args": [
-				"${workspaceFolder}/lib/rompacker.ts",
+				"${workspaceFolder}/src/lib/rompacker.ts",
 				"--removeComments",
 				// "--noEmitHelpers",
-				// "--types",
-				// "${workspaceFolder}\\BoazEngineJS\\rompack",
 				"--outDir",
 				"\"${workspaceFolder}/rom\""
 			],

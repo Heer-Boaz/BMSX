@@ -1,12 +1,10 @@
 import { Room, RoomInitDelegate } from "./room";
-import { Point } from "../lib/interfaces";
-import { newPoint } from "../BoazEngineJS/common";
-import { Tile } from "../BoazEngineJS/msx";
-import { Model as M } from "./gamemodel";
+import { newPoint, Point, Direction } from "./bmsx/common";
+import { Tile } from "./bmsx/msx";
+import { Model as M, Model } from "./gamemodel";
 import { GardenCandle } from "./gardencandle";
-import { BitmapId } from "./resourceids";
+import { BitmapId } from "./bmsx/resourceids";
 import { HagGenerator } from "./haggenerator";
-import { Direction } from "../BoazEngineJS/direction";
 import { ZakFoe } from "./zakfoe";
 import { Candle } from "./candle";
 import { Pietula } from "./pietula";
@@ -128,9 +126,9 @@ export class RoomFactory {
 
 		initFunction = (r: Room) => {
 			let candle = new GardenCandle(Tile.toStagePoint(4, 7));
-			M._.spawn(candle);
+			Model._.spawn(candle);
 			let candle2 = new GardenCandle(Tile.toStagePoint(12, 7));
-			M._.spawn(candle2);
+			Model._.spawn(candle2);
 		};
 
 		RoomFactory.rooms.set(id, new RoomDataContainer(id, tiles, imgid, map, initFunction));
@@ -154,11 +152,11 @@ export class RoomFactory {
 
 		initFunction = (r: Room) => {
 			let candle = new GardenCandle(Tile.toStagePoint(4, 7));
-			M._.spawn(candle);
+			Model._.spawn(candle);
 			let candle2 = new GardenCandle(Tile.toStagePoint(12, 7));
-			M._.spawn(candle2);
-			M._.spawn(new ZakFoe(Tile.toStagePoint(14, 8), Direction.Left));
-			M._.spawn(new ZakFoe(Tile.toStagePoint(7, 8), Direction.Left));
+			Model._.spawn(candle2);
+			Model._.spawn(new ZakFoe(Tile.toStagePoint(14, 8), Direction.Left));
+			Model._.spawn(new ZakFoe(Tile.toStagePoint(7, 8), Direction.Left));
 		};
 
 		RoomFactory.rooms.set(id, new RoomDataContainer(id, tiles, imgid, map, initFunction));
@@ -182,8 +180,8 @@ export class RoomFactory {
 
 		initFunction = (r: Room) => {
 			let candle = new GardenCandle(Tile.toStagePoint(4, 7));
-			M._.spawn(candle);
-			M._.spawn(new ZakFoe(Tile.toStagePoint(14, 8), Direction.Left));
+			Model._.spawn(candle);
+			Model._.spawn(new ZakFoe(Tile.toStagePoint(14, 8), Direction.Left));
 		};
 
 		RoomFactory.rooms.set(id, new RoomDataContainer(id, tiles, imgid, map, initFunction));
@@ -206,14 +204,14 @@ export class RoomFactory {
 		];
 
 		initFunction = (r: Room) => {
-			M._.spawn(new HagGenerator(Tile.toStagePoint(15, 1)));
-			M._.spawn(new HagGenerator(Tile.toStagePoint(15, 7)));
-			M._.spawn(new Candle(Tile.toStagePoint(2, 2)));
-			M._.spawn(new Candle(Tile.toStagePoint(12, 2)));
-			M._.spawn(new Candle(Tile.toStagePoint(2, 7)));
-			M._.spawn(new Candle(Tile.toStagePoint(12, 7)));
-			M._.spawn(new ZakFoe(Tile.toStagePoint(10, 2), Direction.Left));
-			M._.spawn(new ZakFoe(Tile.toStagePoint(8, 8), Direction.Left));
+			Model._.spawn(new HagGenerator(Tile.toStagePoint(15, 1)));
+			Model._.spawn(new HagGenerator(Tile.toStagePoint(15, 7)));
+			Model._.spawn(new Candle(Tile.toStagePoint(2, 2)));
+			Model._.spawn(new Candle(Tile.toStagePoint(12, 2)));
+			Model._.spawn(new Candle(Tile.toStagePoint(2, 7)));
+			Model._.spawn(new Candle(Tile.toStagePoint(12, 7)));
+			Model._.spawn(new ZakFoe(Tile.toStagePoint(10, 2), Direction.Left));
+			Model._.spawn(new ZakFoe(Tile.toStagePoint(8, 8), Direction.Left));
 		};
 
 		RoomFactory.rooms.set(id, new RoomDataContainer(id, tiles, imgid, map, initFunction));
@@ -236,15 +234,15 @@ export class RoomFactory {
 		];
 
 		initFunction = (r: Room) => {
-			M._.spawn(new HagGenerator(Tile.toStagePoint(15, 1)));
-			M._.spawn(new HagGenerator(Tile.toStagePoint(15, 7)));
-			M._.spawn(new Candle(Tile.toStagePoint(2, 2)));
-			M._.spawn(new Candle(Tile.toStagePoint(12, 2)));
-			M._.spawn(new Candle(Tile.toStagePoint(2, 7)));
-			M._.spawn(new Candle(Tile.toStagePoint(12, 7)));
-			M._.spawn(new ZakFoe(Tile.toStagePoint(10, 2), Direction.Left));
-			M._.spawn(new ZakFoe(Tile.toStagePoint(8, 8), Direction.Left));
-			M._.spawn(new ZakFoe(Tile.toStagePoint(8, 5), Direction.Left));
+			Model._.spawn(new HagGenerator(Tile.toStagePoint(15, 1)));
+			Model._.spawn(new HagGenerator(Tile.toStagePoint(15, 7)));
+			Model._.spawn(new Candle(Tile.toStagePoint(2, 2)));
+			Model._.spawn(new Candle(Tile.toStagePoint(12, 2)));
+			Model._.spawn(new Candle(Tile.toStagePoint(2, 7)));
+			Model._.spawn(new Candle(Tile.toStagePoint(12, 7)));
+			Model._.spawn(new ZakFoe(Tile.toStagePoint(10, 2), Direction.Left));
+			Model._.spawn(new ZakFoe(Tile.toStagePoint(8, 8), Direction.Left));
+			Model._.spawn(new ZakFoe(Tile.toStagePoint(8, 5), Direction.Left));
 		};
 
 		RoomFactory.rooms.set(id, new RoomDataContainer(id, tiles, imgid, map, initFunction));
@@ -267,15 +265,15 @@ export class RoomFactory {
 		];
 
 		initFunction = (r: Room) => {
-			M._.spawn(new HagGenerator(Tile.toStagePoint(15, 1)));
-			M._.spawn(new HagGenerator(Tile.toStagePoint(15, 7)));
-			M._.spawn(new Candle(Tile.toStagePoint(2, 2)));
-			M._.spawn(new Candle(Tile.toStagePoint(12, 2)));
-			M._.spawn(new Candle(Tile.toStagePoint(2, 7)));
-			M._.spawn(new Candle(Tile.toStagePoint(12, 7)));
-			M._.spawn(new ZakFoe(Tile.toStagePoint(10, 8), Direction.Left));
-			M._.spawn(new ZakFoe(Tile.toStagePoint(5, 2), Direction.Left));
-			M._.spawn(new ZakFoe(Tile.toStagePoint(11, 5), Direction.Left));
+			Model._.spawn(new HagGenerator(Tile.toStagePoint(15, 1)));
+			Model._.spawn(new HagGenerator(Tile.toStagePoint(15, 7)));
+			Model._.spawn(new Candle(Tile.toStagePoint(2, 2)));
+			Model._.spawn(new Candle(Tile.toStagePoint(12, 2)));
+			Model._.spawn(new Candle(Tile.toStagePoint(2, 7)));
+			Model._.spawn(new Candle(Tile.toStagePoint(12, 7)));
+			Model._.spawn(new ZakFoe(Tile.toStagePoint(10, 8), Direction.Left));
+			Model._.spawn(new ZakFoe(Tile.toStagePoint(5, 2), Direction.Left));
+			Model._.spawn(new ZakFoe(Tile.toStagePoint(11, 5), Direction.Left));
 		};
 
 		RoomFactory.rooms.set(id, new RoomDataContainer(id, tiles, imgid, map, initFunction));
@@ -298,26 +296,26 @@ export class RoomFactory {
 		];
 
 		initFunction = (r: Room) => {
-			M._.spawn(new Candle(Tile.toStagePoint(5, 3)));
-			M._.spawn(new Candle(Tile.toStagePoint(10, 3)));
-			M._.spawn(new Candle(Tile.toStagePoint(5, 5)));
-			M._.spawn(new Candle(Tile.toStagePoint(10, 5)));
-			M._.spawn(new Candle(Tile.toStagePoint(5, 7)));
-			M._.spawn(new Candle(Tile.toStagePoint(10, 7)));
+			Model._.spawn(new Candle(Tile.toStagePoint(5, 3)));
+			Model._.spawn(new Candle(Tile.toStagePoint(10, 3)));
+			Model._.spawn(new Candle(Tile.toStagePoint(5, 5)));
+			Model._.spawn(new Candle(Tile.toStagePoint(10, 5)));
+			Model._.spawn(new Candle(Tile.toStagePoint(5, 7)));
+			Model._.spawn(new Candle(Tile.toStagePoint(10, 7)));
 			let deBaas = new Pietula();
-			M._.spawn(deBaas);
+			Model._.spawn(deBaas);
 			Controller._.startBossFight(deBaas);
-			M._.Belmont.setx(Tile.toStageCoord(2));
-			M._.Belmont.sety(Tile.toStageCoord(8));
+			Model._.Belmont.setx(Tile.toStageCoord(2));
+			Model._.Belmont.sety(Tile.toStageCoord(8));
 		};
 
 		RoomFactory.rooms.set(id, new RoomDataContainer(id, tiles, imgid, map, initFunction));
 	}
 }
 
-// M._.spawn(new HagGenerator(<Point>Tile.ToCoord(0, 14)));
-// M._.spawn(new ZakFoe(<Point>Tile.create(1, 8), Direction.Right));
-//if (!M._.GetItemPickedUp("rationroom100")) {
+// Model._.spawn(new HagGenerator(<Point>Tile.ToCoord(0, 14)));
+// Model._.spawn(new ZakFoe(<Point>Tile.create(1, 8), Direction.Right));
+//if (!Model._.GetItemPickedUp("rationroom100")) {
 //	var item = new Item(Item.Type.Ration, new Point(Tile.ToCoord(3), Tile.ToCoord(18))) { id = "rationroom100" };
-//	M._.Spawn(item);
+//	Model._.Spawn(item);
 //}

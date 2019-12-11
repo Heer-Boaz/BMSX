@@ -1,14 +1,14 @@
-import { Model as M } from "./gamemodel";
-import { Direction } from "../BoazEngineJS/direction";
+import { Model as M, Model } from "./gamemodel";
+import { Direction } from "./bmsx/common";
 import { TextWriter } from "./textwriter";
-import { view } from "../BoazEngineJS/engine";
-import { AudioId, BitmapId } from "./resourceids";
-import { Input } from "../BoazEngineJS/input";
-import { SM as S } from "../BoazEngineJS/soundmaster";
-import { Controller as C } from "./gamecontroller";
+import { view } from "./bmsx/engine";
+import { AudioId, BitmapId } from "./bmsx/resourceids";
+import { Input } from "./bmsx/input";
+import { SM as S, SM } from "./bmsx/soundmaster";
+import { Controller as C, Controller } from "./gamecontroller";
 import { GameMenu } from "./gamemenu";
 import { MenuItem } from "./mainmenu";
-import { Msx1Colors } from "../BoazEngineJS/msx";
+import { Msx1Colors } from "./bmsx/msx";
 
 export const enum State {
     SelectContOrLoad,
@@ -63,12 +63,12 @@ export class GameOver {
                 case State.SelectContOrLoad:
                     switch (this.selectedIndex) {
                         case 0:
-                            C._.LoadCheckpoint();
+                            Controller._.LoadCheckpoint();
                             break;
                         case 1:
-                            S.play(AudioId.Selectie);
+                            SM.play(AudioId.Selectie);
                             Input.reset();
-                            M._.GameMenu.Open(MenuItem.LoadFromGameOver);
+                            Model._.GameMenu.Open(MenuItem.LoadFromGameOver);
                             this.state = State.SelectFile;
                             break;
                     }

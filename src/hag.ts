@@ -1,12 +1,11 @@
-import { BStopwatch } from "../BoazEngineJS/btimer";
-import { Animation, AniStepReturnValue, AniData } from "../BoazEngineJS/animation";
-import { Direction } from "../BoazEngineJS/direction";
-import { AudioId, BitmapId } from "./resourceids";
+import { BStopwatch } from "./bmsx/engine";
+import { Animation, AniStepReturnValue, AniData } from "./bmsx/animation";
+import { AudioId, BitmapId } from "./bmsx/resourceids";
 import { ItemType } from "./item";
 import { Foe } from "./foe";
 import { GameConstants } from "./gameconstants";
 import { PlayerProjectile } from "./pprojectile";
-import { Size, Area, Point } from "../lib/interfaces";
+import { Direction, Size, Area, Point } from "./bmsx/common";
 import { Model } from "./gamemodel";
 
 export class Hag extends Foe {

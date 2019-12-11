@@ -1,21 +1,16 @@
-import { Direction } from "../BoazEngineJS/direction";
-import { Creature } from "./creature";
-import { BStopwatch } from "../BoazEngineJS/btimer";
-import { GameConstants as CS } from "./gameconstants";
-import { copyPoint, waitDuration, setSize, newArea, setPoint, addPoints } from "../BoazEngineJS/common";
-import { Animation, AniStepReturnValue } from "../BoazEngineJS/animation";
-import { Msx1Colors, TileSize } from "../BoazEngineJS/msx";
-import { AudioId, BitmapId } from "./resourceids";
-import { Area, Point } from "../lib/interfaces";
-import { Room, NearingRoomExitResult } from "./room";
-import { newPoint } from "../BoazEngineJS/common";
-import { SM } from "../BoazEngineJS/soundmaster";
-import { Controller as C } from "./gamecontroller";
-import { Model as M } from "./gamemodel";
-import { view } from "../BoazEngineJS/engine";
-import { DrawImgFlags } from "../BoazEngineJS/view";
-import { Input } from "../BoazEngineJS/input";
-/*[Serializable]*/
+import { BStopwatch } from "./bmsx/engine";
+import { Animation } from "./bmsx/animation";
+import { BitmapId, AudioId } from './bmsx/resourceids';
+import { Direction, Point, newPoint, Area, newArea, setSize, copyPoint, waitDuration, setPoint, addPoints } from './bmsx/common';
+import { Creature } from './creature';
+import { TileSize } from './bmsx/msx';
+import { SM } from './bmsx/soundmaster';
+import { Input } from './bmsx/input';
+import { Room, NearingRoomExitResult } from './room';
+import { Model } from './gamemodel';
+import { GameConstants as CS } from './gameconstants';
+import { Controller as C } from './gamecontroller';
+
 export class RoeState {
 	public static framesPerDrawing: number[] = [4, 2, 8];
 	public aniTimer: BStopwatch;
@@ -182,15 +177,15 @@ export class Belmont extends Creature {
 		let oldx = this.pos.x;
 		this.pos.x = ~~newx;
 		if (newx < oldx) {
-			if (M._.currentRoom.IsCollisionTile(this.wallhitbox_sx, this.wallhitbox_sy) ||
-				M._.currentRoom.IsCollisionTile(this.wallhitbox_sx, this.wallhitbox_ey)) {
+			if (Model._.currentRoom.IsCollisionTile(this.wallhitbox_sx, this.wallhitbox_sy) ||
+				Model._.currentRoom.IsCollisionTile(this.wallhitbox_sx, this.wallhitbox_ey)) {
 				this.handleWallCollision();
 				newx += TileSize - (newx % TileSize);
 			}
 		}
 		else if (newx > oldx) {
-			if (M._.currentRoom.IsCollisionTile(this.wallhitbox_ex, this.wallhitbox_sy) ||
-				M._.currentRoom.IsCollisionTile(this.wallhitbox_ex, this.wallhitbox_ey)) {
+			if (Model._.currentRoom.IsCollisionTile(this.wallhitbox_ex, this.wallhitbox_sy) ||
+				Model._.currentRoom.IsCollisionTile(this.wallhitbox_ex, this.wallhitbox_ey)) {
 				this.handleWallCollision();
 				newx -= newx % TileSize;
 			}
@@ -203,15 +198,15 @@ export class Belmont extends Creature {
 		let oldy = this.pos.y;
 		this.pos.y = ~~newy;
 		if (newy < oldy) {
-			if (M._.currentRoom.IsCollisionTile(this.wallhitbox_sx, this.wallhitbox_sy) ||
-				M._.currentRoom.IsCollisionTile(this.wallhitbox_ex, this.wallhitbox_sy)) {
+			if (Model._.currentRoom.IsCollisionTile(this.wallhitbox_sx, this.wallhitbox_sy) ||
+				Model._.currentRoom.IsCollisionTile(this.wallhitbox_ex, this.wallhitbox_sy)) {
 				this.handleCeilingCollision();
 				newy += TileSize - (newy % TileSize);
 			}
 		}
 		else if (newy > oldy) {
-			if (M._.currentRoom.IsCollisionTile(this.wallhitbox_sx, this.wallhitbox_ey) ||
-				M._.currentRoom.IsCollisionTile(this.wallhitbox_ex, this.wallhitbox_ey)) {
+			if (Model._.currentRoom.IsCollisionTile(this.wallhitbox_sx, this.wallhitbox_ey) ||
+				Model._.currentRoom.IsCollisionTile(this.wallhitbox_ex, this.wallhitbox_ey)) {
 				this.handleFloorCollision();
 				newy -= newy % TileSize;
 			}
@@ -594,9 +589,9 @@ export class Belmont extends Creature {
 	protected checkWallCollision(): boolean {
 		switch (this.direction) {
 			case Direction.Right:
-				return M._.currentRoom.IsCollisionTile(this.pos.x + 16, this.pos.y + 25) || M._.currentRoom.IsCollisionTile(this.pos.x + 16, this.pos.y + 31);
+				return Model._.currentRoom.IsCollisionTile(this.pos.x + 16, this.pos.y + 25) || Model._.currentRoom.IsCollisionTile(this.pos.x + 16, this.pos.y + 31);
 			case Direction.Left:
-				return M._.currentRoom.IsCollisionTile(this.pos.x, this.pos.y + 25) || M._.currentRoom.IsCollisionTile(this.pos.x, this.pos.y + 31);
+				return Model._.currentRoom.IsCollisionTile(this.pos.x, this.pos.y + 25) || Model._.currentRoom.IsCollisionTile(this.pos.x, this.pos.y + 31);
 			default:
 				return false;
 		}
@@ -619,11 +614,11 @@ export class Belmont extends Creature {
 	}
 
 	protected get CeilingCollision(): boolean {
-		return M._.currentRoom.IsCollisionTile(this.wallhitbox_sx, this.pos.y + 8) || M._.currentRoom.IsCollisionTile(this.wallhitbox_ex, this.pos.y + 8);
+		return Model._.currentRoom.IsCollisionTile(this.wallhitbox_sx, this.pos.y + 8) || Model._.currentRoom.IsCollisionTile(this.wallhitbox_ex, this.pos.y + 8);
 	}
 
 	protected get FloorCollision(): boolean {
-		return M._.currentRoom.IsCollisionTile(this.wallhitbox_sx, this.pos.y + 32) || M._.currentRoom.IsCollisionTile(this.wallhitbox_ex, this.pos.y + 32);
+		return Model._.currentRoom.IsCollisionTile(this.wallhitbox_sx, this.pos.y + 32) || Model._.currentRoom.IsCollisionTile(this.wallhitbox_ex, this.pos.y + 32);
 	}
 
 	protected handleFloorCollision(): void {
@@ -646,13 +641,13 @@ export class Belmont extends Creature {
 	}
 
 	private nearRoomExit(): NearingRoomExitResult {
-		let exitUp = M._.currentRoom.nearingRoomExit(this.wallhitbox_sx, this.pos.y + 4); // 24
+		let exitUp = Model._.currentRoom.nearingRoomExit(this.wallhitbox_sx, this.pos.y + 4); // 24
 		if (exitUp.destRoom !== Room.NO_ROOM_EXIT) return exitUp;
-		let exitRight = M._.currentRoom.nearingRoomExit(this.wallhitbox_ex + 1, this.pos.y + 25);
+		let exitRight = Model._.currentRoom.nearingRoomExit(this.wallhitbox_ex + 1, this.pos.y + 25);
 		if (exitRight.destRoom !== Room.NO_ROOM_EXIT) return exitRight;
-		let exitDown = M._.currentRoom.nearingRoomExit(this.wallhitbox_sx, this.pos.y + 36);
+		let exitDown = Model._.currentRoom.nearingRoomExit(this.wallhitbox_sx, this.pos.y + 36);
 		if (exitDown.destRoom !== Room.NO_ROOM_EXIT) return exitDown;
-		let exitLeft = M._.currentRoom.nearingRoomExit(this.wallhitbox_sx - 1, this.pos.y + 25);
+		let exitLeft = Model._.currentRoom.nearingRoomExit(this.wallhitbox_sx - 1, this.pos.y + 25);
 		if (exitLeft.destRoom !== Room.NO_ROOM_EXIT) return exitLeft;
 
 		return null;

@@ -1,9 +1,9 @@
-import { Sprite } from "../BoazEngineJS/sprite";
-import { moveArea } from "../BoazEngineJS/common"
-import { Direction } from "../BoazEngineJS/direction";
-import { Model as M } from "./gamemodel";
-import { TileSize } from "../BoazEngineJS/msx";
-import { Area, Point } from "../lib/interfaces";
+import { Model } from './gamemodel';
+import { Sprite } from './bmsx/engine';
+
+import { Area, Point, moveArea, Direction } from './bmsx/common';
+
+import { TileSize } from './bmsx/msx';
 
 export abstract class Creature extends Sprite {
     public get wallhitbox_sx(): number {
@@ -57,7 +57,7 @@ export abstract class Creature extends Sprite {
     public customId: string = null;
 
     public get id(): string {
-        return this.customId != null ? this.customId : `${this.constructor.name}:${M._.currentRoom.id}:${this.originPos.x},${this.originPos.y}`;
+        return this.customId != null ? this.customId : `${this.constructor.name}:${Model._.currentRoom.id}:${this.originPos.x},${this.originPos.y}`;
     }
 
     public set id(value: string) {
@@ -65,7 +65,7 @@ export abstract class Creature extends Sprite {
     }
 
     protected checkWallSpriteCollisions(): boolean {
-        return M._.objects.filter(o => o !== this && o.isWall && o instanceof Sprite && (<Sprite>o).hittable).some(o => (<Sprite>o).areaCollide(moveArea(this.wallHitArea, this.pos)));
+        return Model._.objects.filter(o => o !== this && o.isWall && o instanceof Sprite && (<Sprite>o).hittable).some(o => (<Sprite>o).areaCollide(moveArea(this.wallHitArea, this.pos)));
     }
 
     protected checkWallCollision(): boolean {
@@ -75,15 +75,15 @@ export abstract class Creature extends Sprite {
         let endy = this.wallhitbox_ey;
         switch (this.direction) {
             case Direction.Up:
-                return M._.currentRoom.IsCollisionTile(startx, starty) || M._.currentRoom.IsCollisionTile(endx, starty);
+                return Model._.currentRoom.IsCollisionTile(startx, starty) || Model._.currentRoom.IsCollisionTile(endx, starty);
             case Direction.Right:
-                return M._.currentRoom.IsCollisionTile(endx, starty) || M._.currentRoom.IsCollisionTile(endx, endy);
+                return Model._.currentRoom.IsCollisionTile(endx, starty) || Model._.currentRoom.IsCollisionTile(endx, endy);
             case Direction.Down:
-                return M._.currentRoom.IsCollisionTile(startx, endy) || M._.currentRoom.IsCollisionTile(endx, endy);
+                return Model._.currentRoom.IsCollisionTile(startx, endy) || Model._.currentRoom.IsCollisionTile(endx, endy);
             case Direction.Left:
-                return M._.currentRoom.IsCollisionTile(startx, starty) || M._.currentRoom.IsCollisionTile(startx, endy);
+                return Model._.currentRoom.IsCollisionTile(startx, starty) || Model._.currentRoom.IsCollisionTile(startx, endy);
             case Direction.None:
-                return M._.currentRoom.IsCollisionTile(startx, starty) || M._.currentRoom.IsCollisionTile(endx, endy);
+                return Model._.currentRoom.IsCollisionTile(startx, starty) || Model._.currentRoom.IsCollisionTile(endx, endy);
             default:
                 return false;
         }
