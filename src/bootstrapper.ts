@@ -4,22 +4,16 @@ import { GameConstants } from './gameconstants';
 import { Model, Chapter } from './gamemodel';
 import { Controller } from './gamecontroller';
 import { GameView } from './gameview';
-import { View } from './bmsx/view';
-import { SM } from './bmsx/soundmaster';
 import { setPoint } from './bmsx/common';
 import { Tile } from './bmsx/msx';
 
 var _global = window || global;
 _global['h406A'] = (rom: RomLoadResult): void => {
-    new Game(rom, { x: GameConstants.ViewportWidth, y: GameConstants.ViewportHeight });
-    game.setModel(new Model());
-    game.setController(new Controller());
-    let gameview = new GameView();
-    game.setGameView(gameview);
+    let _model = new Model();
+    let _view = new GameView({ x: GameConstants.ViewportWidth, y: GameConstants.ViewportHeight });
+    let _controller = new Controller();
+    new Game(rom, _model, _view, _controller);
 
-    View.images = rom.images;
-
-    SM.init(rom.resources);
     game.start();
     Model._.SelectedChapterToPlay = Chapter.GameStart;
     Controller._.switchState(GameConstants.INITIAL_GAMESTATE);
@@ -27,21 +21,8 @@ _global['h406A'] = (rom: RomLoadResult): void => {
 };
 
 export class Bootstrapper {
-    public static h406A(rom: RomLoadResult): void {
-        // new Game(rom, { x: GameConstants.ViewportWidth, y: GameConstants.ViewportHeight });
-        // game.setModel(new Model());
-        // game.setController(new Controller());
-        // let gameview = new GameView();
-        // game.setGameView(gameview);
-
-        // View.images = rom.images;
-
-        // SM.init(rom.resources);
-        // game.start();
-        // Model._.SelectedChapterToPlay = Chapter.GameStart;
-        // Controller._.switchState(GameConstants.INITIAL_GAMESTATE);
-        // Controller._.switchSubstate(GameConstants.INITIAL_GAMESUBSTATE);
-    }
+    // public static h406A(rom: RomLoadResult): void {
+    // }
 
     public static BootstrapGame(chapter: Chapter): void {
         switch (chapter) {

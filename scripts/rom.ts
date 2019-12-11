@@ -37,18 +37,15 @@ var basic = {
 
 	set defusr(rom: RomLoadResult) {
 		basic.rom = rom;
-		if (basic.debug !== true) {
-			let romcode = document.createElement('script');
-			romcode.async = false;
-			romcode.innerText = rom.source;
-			document.head.appendChild(romcode);
-		}
 	},
 
-	usr(x: number): number {
+	async usr(x: number): Promise<number> {
 		document.body.style.backgroundColor = "#000000";
-		h406A(basic.rom);
-		basic.rom = null;
+		loadScript(basic.rom).then(() => {
+			h406A(basic.rom);
+			basic.rom = null;
+			return x;
+		});
 		return 255;
 	},
 
@@ -181,6 +178,24 @@ async function awaitBootComplete(): Promise<void> {
 		});
 		msx.className = "enter";
 		if (basic.debug) resolve(); // Resolve immediately in debug-mode
+	});
+	return result;
+}
+
+async function loadScript(rom: RomLoadResult): Promise<void> {
+	let result: Promise<void> = new Promise((resolve, reject) => {
+		let romcode = document.createElement('script');
+		romcode.async = false;
+		document.body.appendChild(romcode);
+		romcode.onerror = () => reject();
+		if (basic.debug !== true) {
+			romcode.innerText = rom.source;
+			resolve();
+		}
+		else {
+			romcode.src = "../rom/megarom.js";
+			romcode.onload = () => resolve();
+		}
 	});
 	return result;
 }

@@ -1,15 +1,13 @@
 import { MenuItem } from "./mainmenu";
-import { GameView as V } from "./gameview";
 import { AudioId, BitmapId } from "./bmsx/resourceids";
 import { Direction } from "./bmsx/common";
 import { TextWriter } from "./textwriter";
 import { Size, Point } from "./bmsx/common";
 import { SM } from "./bmsx/soundmaster";
 import { Controller as C } from "./gamecontroller";
-import { Model as M, GameState, Model } from "./gamemodel";
+import { GameState, Model } from "./gamemodel";
 import { SlotExists, LoadGame } from "./bmsx/gamepersistor";
 import { GameOptions as GO } from "./bmsx/engine";
-import { GameConstants as CS } from "./gameconstants";
 import { Constants } from "./bmsx/engine";
 import { newSize, setPoint } from "./bmsx/common";
 import { view, game } from "./bmsx/engine";
@@ -171,7 +169,7 @@ export class GameMenu {
                             this.selectedItemIndex = 0;
                             break;
                         case MenuItem.SaveGame:
-                            if (Model._.State != GameState.Event) {
+                            if (Model._.state != GameState.Event) {
                                 this.CurrentScreen = MenuItem.Save;
                                 this.selectedItemIndex = 0;
                             }
@@ -475,7 +473,7 @@ export class GameMenu {
                     GameMenu.mainItems.forEach(function (item) {
                         switch (item.type) {
                             case MenuItem.SaveGame:
-                                if (Model._.State != GameState.Event)
+                                if (Model._.state != GameState.Event)
                                     TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
                                 else TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, Msx1ExtColors[0]);
                                 break;

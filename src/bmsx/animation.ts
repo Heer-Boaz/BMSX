@@ -18,17 +18,16 @@ function createAniData<T extends any | null | {}>(data: T[], times?: number[], c
 
     let result = new Array<AniData<T>>();
     let i = 0;
-    // for (let d of data) {
-    //     result.push(<AniData<T>>{ time: times ? times[i] : constantStepTime, data: d });
-    //     ++i;
-    // }
+    for (let d of data) {
+        result.push(<AniData<T>>{ time: times ? times[i] : constantStepTime, data: d });
+        ++i;
+    }
 
     return result;
 }
 
 function wrapInAniCompound<T>(scalarStepValue: T): AniStepReturnValue<T> {
     return <AniStepReturnValue<T>>{ stepValue: scalarStepValue };
-
 }
 
 export class Animation<T extends any | null | undefined | {}> {

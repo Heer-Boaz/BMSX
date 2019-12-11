@@ -1,41 +1,22 @@
 import { ItemType } from './item';
-
 import { WeaponType, WeaponItem } from './weaponitem';
-
 import { Point } from './bmsx/common';
-
 import { BaseModel, BStopwatch, IGameObject, view } from './bmsx/engine';
-
 import { Savegame } from './bmsx/gamepersistor';
-
 import { Foe } from './foe';
-
 import { Belmont } from './belmont';
-
 import { BossFoe } from './bossfoe';
-
 import { Room } from './room';
-
 import { GameMenu } from './gamemenu';
-
 import { HUD } from './hud';
-
 import { ItsCurtainsForYou } from './itscurtainsforyou';
-
 import { GameOver } from './gameover';
-
 import { MainMenu } from './mainmenu';
-
 import { Title } from './title';
-
 import { EndDemo } from './enddemo';
-
 import { GameConstants } from './gameconstants';
-
 import { RoomFactory } from './RoomFactory';
-
 import { Msx1Colors } from './bmsx/msx';
-
 import { TextWriter } from './textwriter';
 
 export const enum GameState {
@@ -275,7 +256,7 @@ export class Model extends BaseModel {
         RoomFactory.PrepareData();
     }
 
-    public InitModelForGameStart(): void {
+    public initModelForGameStart(): void {
         Model._.BossBattle = false;
         Model._.RoomExitsLocked = false;
         Model._.Switches.clear();

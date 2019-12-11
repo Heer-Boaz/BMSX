@@ -1,4 +1,4 @@
-﻿import { DrawImgFlags } from "./view"
+﻿import { DrawImgFlags, BaseView } from "./view"
 import { SM } from "./soundmaster";
 import { Input } from "./input";
 import { RomLoadResult } from "./rompack";
@@ -8,8 +8,7 @@ import { Point, Area, moveArea, Size } from "./common";
 export let game: Game;
 export let model: BaseModel;
 export let controller: BaseController;
-export let sound: SM;
-export let view: any;
+export let view: BaseView;
 
 const fps: number = 50;
 const fpstime: number = 1000 / fps;
@@ -53,38 +52,31 @@ export module Constants {
 
 export class Game {
     lastUpdate: number;
-    turnCounter: number;
+    _turnCounter: number;
     intervalid: number;
     public running: boolean;
     wasupdated: boolean;
     public rom: RomLoadResult;
 
-    constructor(_rom: RomLoadResult, viewportsize: Size) {
-        let View: any;
+    constructor(_rom: RomLoadResult, _model: BaseModel, _view: BaseView, _controller: BaseController) {
         game = this;
-        sound = new SM();
-        view = new View(viewportsize);
         this.rom = _rom;
+
+        model = _model;
+        view = _view;
+        controller = _controller;
+
+        BaseView.images = _rom.images;
+        SM.init(_rom.resources);
         Input.init();
+
         this.lastUpdate = 0;
         this.running = false;
         this.wasupdated = true;
     }
 
-    public setModel(m: BaseModel): void {
-        model = m;
-    }
-
-    public setController(c: BaseController): void {
-        controller = c;
-    }
-
-    public setGameView(v: any): void {
-        view = v;
-    }
-
-    public get TurnCounter(): number {
-        return this.turnCounter;
+    public get turnCounter(): number {
+        return this._turnCounter;
     }
 
     public GameOptionsChanged(): void {
@@ -106,7 +98,7 @@ export class Game {
 
         this.running = true;
         this.lastUpdate = performance.now();
-        this.draw(0);
+        this.draw();
         this.intervalid = <number><unknown>setInterval(this.run, fpstime);
     }
 
@@ -115,20 +107,17 @@ export class Game {
         controller.takeTurn(elapsedMs);
     }
 
-    public draw(elapsedMs: number): void {
+    public draw(): void {
         if (!game.wasupdated) return;
-        game.drawgame();
-        if (game.running) requestAnimationFrame(timestamp => game.draw(timestamp));
-    }
-
-    private drawgame(): void {
+        view.drawgame();
+        if (game.running) requestAnimationFrame(game.draw);
     }
 
     public run(): void {
         game.update(fpstime);
         game.wasupdated = true;
 
-        ++game.turnCounter;
+        ++game._turnCounter;
     }
 
     public stop(): void {
@@ -150,7 +139,6 @@ export abstract class BaseController {
     constructor() {
         this.timer = BStopwatch.createWatch();
         this.timer.restart();
-        model.OldState = 0;
     }
 
     // Methods
@@ -212,35 +200,35 @@ export abstract class BaseModel {
     public paused: boolean;
     public startAfterLoad: boolean;
 
-    public get OldState(): number {
+    public get oldGameState(): number {
         return this.gameOldState;
     }
 
-    public set OldState(value: number) {
+    public set oldGameState(value: number) {
         this.gameOldState = value;
     }
 
-    public get State(): number {
+    public get state(): number {
         return this.gameState;
     }
 
-    public set State(value: number) {
+    public set state(value: number) {
         this.gameState = value;
     }
 
-    public get OldSubstate(): number {
+    public get oldGameSubstate(): number {
         return this.gameOldSubstate;
     }
 
-    public set OldSubstate(value: number) {
+    public set oldGameSubstate(value: number) {
         this.gameOldSubstate = value;
     }
 
-    public get Substate(): number {
+    public get substate(): number {
         return this.gameSubstate;
     }
 
-    public set Substate(value: number) {
+    public set substate(value: number) {
         this.gameSubstate = value;
     }
 
@@ -249,10 +237,13 @@ export abstract class BaseModel {
         this.id2object = new Map<string, IGameObject>();
         this.gameState = 0;
         this.gameSubstate = 0;
+        this.oldGameState = 0;
+        this.oldGameSubstate = 0;
+
         this.paused = false;
     }
 
-    public abstract InitModelForGameStart(): void;
+    public abstract initModelForGameStart(): void;
 
     public clearModel(): void {
         this.objects.forEach(o => {
@@ -318,15 +309,14 @@ export abstract class HiddenObject implements IGameObject {
     pos: Point;
     id: string;
     disposeFlag: boolean;
-    extendedProperties: Map<string, any>;
 
     abstract takeTurn(): void;
     abstract spawn: ((spawningPos?: Point) => void) | (() => void);
     abstract dispose(): void;
 
-    public static [Symbol.hasInstance](o: any): boolean {
-        return o && !o.paint;
-    }
+    // public static [Symbol.hasInstance](o: any): boolean {
+    //     return o && !o.paint;
+    // }
 }
 
 export interface IRenderObject extends IGameObject {

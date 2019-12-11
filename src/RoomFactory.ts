@@ -29,7 +29,7 @@ export class RoomDataContainer {
 	}
 }
 
-export enum RoomMap {
+export const enum RoomMap {
 	Debug,
 	Dungeon1,
 	Dungeon2,
@@ -312,7 +312,6 @@ export class RoomFactory {
 		RoomFactory.rooms.set(id, new RoomDataContainer(id, tiles, imgid, map, initFunction));
 	}
 }
-
 // Model._.spawn(new HagGenerator(<Point>Tile.ToCoord(0, 14)));
 // Model._.spawn(new ZakFoe(<Point>Tile.create(1, 8), Direction.Right));
 //if (!Model._.GetItemPickedUp("rationroom100")) {

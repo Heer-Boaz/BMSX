@@ -1,5 +1,5 @@
-﻿import { view } from "./engine";
-import { Size } from "./common";
+﻿import { view, model } from "./engine";
+import { Size, Point } from "./common";
 
 export interface Color {
     r: number;
@@ -20,7 +20,7 @@ export const enum DrawImgFlags {
     VFLIP = 1 << 1,
 }
 
-export class View {
+export abstract class BaseView {
     public canvas: HTMLCanvasElement;
     public context: CanvasRenderingContext2D;
     public static images: Map<number, HTMLImageElement>;
@@ -45,11 +45,16 @@ export class View {
         this.handleResize();
     }
 
+    public drawgame(gamescreenOffset?: Point, clearCanvas: boolean = true): void {
+        if (clearCanvas) view.clear();
+        model.objects.forEach(o => !o.disposeFlag && o.paint && o.paint(gamescreenOffset));
+    }
+
     public calculateSize(): void {
         let self = view || this;
         let w = Math.max(document.documentElement.clientWidth, window.innerWidth || 0);
         let h = Math.max(document.documentElement.clientHeight, window.innerHeight || 0);
-        self.windowSize = <Size>{ x: w, y: h };
+        self.windowSize = { x: w, y: h };
         self.dx = self.windowSize.x / self.viewportSize.x;
         self.dy = self.windowSize.y / self.viewportSize.y;
         self.scale = Math.min(self.dx, self.dy);
@@ -77,21 +82,21 @@ export class View {
 
     public ToFullscreen(): void {
         // https://zinoui.com/blog/javascript-fullscreen-api
-        window.addEventListener('keyup', View.triggerFullScreenOnFakeUserEvent);
+        window.addEventListener('keyup', BaseView.triggerFullScreenOnFakeUserEvent);
     }
 
     public static triggerFullScreenOnFakeUserEvent(): void {
         if (document.fullscreenEnabled) document.documentElement.requestFullscreen();
-        window.removeEventListener('keyup', View.triggerFullScreenOnFakeUserEvent);
+        window.removeEventListener('keyup', BaseView.triggerFullScreenOnFakeUserEvent);
     }
 
     public ToWindowed(): void {
-        window.addEventListener('keyup', View.triggerWindowedOnFakeUserEvent);
+        window.addEventListener('keyup', BaseView.triggerWindowedOnFakeUserEvent);
     }
 
     public static triggerWindowedOnFakeUserEvent(): void {
         document.exitFullscreen();
-        window.removeEventListener('keyup', View.triggerWindowedOnFakeUserEvent);
+        window.removeEventListener('keyup', BaseView.triggerWindowedOnFakeUserEvent);
     }
 
 
@@ -112,8 +117,11 @@ export class View {
     }
 
     public drawImg(imgid: number, x: number, y: number, options?: number): void {
-        let img = View.images.get(imgid);
-        if (!img) throw new Error(`Cannot find image with id '${imgid}'`);
+        let img = BaseView.images.get(imgid);
+        if (!img) {
+            console.error(`Cannot find image with id '${imgid}'`);
+            return;
+        }
 
         this.context.save();
         this.context.translate(~~x, ~~y);

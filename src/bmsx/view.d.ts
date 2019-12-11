@@ -1,4 +1,4 @@
-import { Size } from "./common";
+import { Size, Point } from "./common";
 export interface Color {
     r: number;
     g: number;
@@ -15,7 +15,7 @@ export declare const enum DrawImgFlags {
     HFLIP = 1,
     VFLIP = 2
 }
-export declare class View {
+export declare abstract class BaseView {
     canvas: HTMLCanvasElement;
     context: CanvasRenderingContext2D;
     static images: Map<number, HTMLImageElement>;
@@ -26,6 +26,7 @@ export declare class View {
     scale: number;
     constructor(viewportsize: Size);
     init(): void;
+    drawgame(gamescreenOffset?: Point, clearCanvas?: boolean): void;
     calculateSize(): void;
     handleResize(): void;
     DetermineMaxScaleForFullscreen(clientWidth: number, clientHeight: number, originalBufferWidth: number, originalBufferHeight: number): number;

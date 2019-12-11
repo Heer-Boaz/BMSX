@@ -1,11 +1,10 @@
-import { SM } from "./soundmaster";
+import { BaseView } from "./view";
 import { RomLoadResult } from "./rompack";
 import { Point, Area, Size } from "./common";
 export declare let game: Game;
 export declare let model: BaseModel;
 export declare let controller: BaseController;
-export declare let sound: SM;
-export declare let view: any;
+export declare let view: BaseView;
 export declare class GameOptions {
     static readonly INITIAL_SCALE: number;
     static readonly INITIAL_FULLSCREEN: boolean;
@@ -29,22 +28,18 @@ export declare module Constants {
 }
 export declare class Game {
     lastUpdate: number;
-    turnCounter: number;
+    _turnCounter: number;
     intervalid: number;
     running: boolean;
     wasupdated: boolean;
     rom: RomLoadResult;
-    constructor(_rom: RomLoadResult, viewportsize: Size);
-    setModel(m: BaseModel): void;
-    setController(c: BaseController): void;
-    setGameView(v: any): void;
-    get TurnCounter(): number;
+    constructor(_rom: RomLoadResult, _model: BaseModel, _view: BaseView, _controller: BaseController);
+    get turnCounter(): number;
     GameOptionsChanged(): void;
     private loadGameOptions;
     start(): void;
     update(elapsedMs: number): void;
-    draw(elapsedMs: number): void;
-    private drawgame;
+    draw(): void;
     run(): void;
     stop(): void;
 }
@@ -70,16 +65,16 @@ export declare abstract class BaseModel {
     gameOldSubstate: number;
     paused: boolean;
     startAfterLoad: boolean;
-    get OldState(): number;
-    set OldState(value: number);
-    get State(): number;
-    set State(value: number);
-    get OldSubstate(): number;
-    set OldSubstate(value: number);
-    get Substate(): number;
-    set Substate(value: number);
+    get oldGameState(): number;
+    set oldGameState(value: number);
+    get state(): number;
+    set state(value: number);
+    get oldGameSubstate(): number;
+    set oldGameSubstate(value: number);
+    get substate(): number;
+    set substate(value: number);
     constructor();
-    abstract InitModelForGameStart(): void;
+    abstract initModelForGameStart(): void;
     clearModel(): void;
     spawn(o: IGameObject, pos?: Point, ifnotexists?: boolean): void;
     remove(o: IGameObject): void;
@@ -107,11 +102,9 @@ export declare abstract class HiddenObject implements IGameObject {
     pos: Point;
     id: string;
     disposeFlag: boolean;
-    extendedProperties: Map<string, any>;
     abstract takeTurn(): void;
     abstract spawn: ((spawningPos?: Point) => void) | (() => void);
     abstract dispose(): void;
-    static [Symbol.hasInstance](o: any): boolean;
 }
 export interface IRenderObject extends IGameObject {
     size: Size;

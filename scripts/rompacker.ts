@@ -132,11 +132,12 @@ function minifyGamecode(infile: string): void {
 			reserved: ["h406A", "exports"],
 
 		},
-		sourceMap: {
-			url: "inline",
-			content: "inline",
-			includeSources: true,
-		},
+		sourceMap: false,
+		// sourceMap: {
+		// 	url: "inline",
+		// 	content: "inline",
+		// 	includeSources: true,
+		// },
 		output: {
 			safari10: true,
 			webkit: true,
@@ -152,6 +153,8 @@ function minifyGamecode(infile: string): void {
 
 function buildGameHtml(outfile: string): void {
 	let html = readFileSync("./gamebase.html", 'utf8');
+	let release_html: string;
+	let debug_html: string;
 	let romjs = readFileSync("./rom/rom.js", 'utf8');
 	let zipjs = readFileSync("./scripts/pako_inflate.min.js", 'utf8');
 	romjs = romjs.replace('Object.defineProperty(exports, "__esModule", { value: true });', '');
@@ -179,13 +182,22 @@ function buildGameHtml(outfile: string): void {
 		input: "./gamebase.css",
 		output: "./gamebase.min.css",
 		callback: function (err, cssMinified: string) {
-			html = html.replace('//#romjs', romjsMinified);
-			html = html.replace('//#zipjs', zipjs);
-			html = html.replace('/*css*/', cssMinified);
-			html = html.replace('#outfile', outfile);
-			html = html.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed);
+			release_html = html.replace('//#romjs', romjsMinified);
+			release_html = release_html.replace('//#zipjs', zipjs);
+			release_html = release_html.replace('/*css*/', cssMinified);
+			release_html = release_html.replace('#outfile', outfile);
+			release_html = release_html.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed);
+			release_html = release_html.replace('//#debug', '');
 
-			writeFileSync("./dist/game.html", html);
+			writeFileSync("./dist/game.html", release_html);
+
+			debug_html = html.replace('//#romjs', romjs);
+			debug_html = debug_html.replace('//#zipjs', zipjs);
+			debug_html = debug_html.replace('/*css*/', cssMinified);
+			debug_html = debug_html.replace('#outfile', outfile);
+			debug_html = debug_html.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed);
+			debug_html = debug_html.replace('//#debug', 'basic.debug = true;\n');
+			writeFileSync("./dist/game_debug.html", debug_html);
 		}
 	});
 }

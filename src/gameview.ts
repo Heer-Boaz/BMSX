@@ -1,20 +1,22 @@
 import { GameConstants as CS } from "./gameconstants"
-import { Model as M, GameState, GameSubstate, Model } from "./gamemodel";
+import { GameState, GameSubstate, Model } from "./gamemodel";
 import { Point } from "./bmsx/common";
 import { view } from "./bmsx/engine";
+import { BaseView } from './bmsx/view';
 
-export class GameView {
+export class GameView extends BaseView {
     private static _instance: GameView;
 
     public static get _(): GameView {
         return GameView._instance;
     }
 
-    constructor() {
+    constructor(viewportSize: Point) {
+        super(viewportSize);
         GameView._instance = this;
     }
 
-    public drawGame(elapsedMs: number): void {
+    public drawgame(): void {
         view.clear();
         if (Model._.startAfterLoad)
             return;
@@ -35,7 +37,7 @@ export class GameView {
                 let gamescreenOffset = <Point>{ x: CS.GameScreenStartX, y: CS.GameScreenStartY };
                 if (Model._.gameSubstate != GameSubstate.SwitchRoom) {
                     Model._.currentRoom.Paint();
-                    Model._.objects.forEach(o => o.paint && o.paint(gamescreenOffset));
+                    super.drawgame(gamescreenOffset, false);
                 }
                 Model._.Hud.Paint();
 
