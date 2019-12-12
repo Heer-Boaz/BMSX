@@ -2,7 +2,7 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"label": "build",
+			"label": "build debug",
 			"dependsOn": [
 				"pack"
 			],
@@ -27,8 +27,7 @@
 			"dependsOn": [
 				"build rom",
 				"build rompacker",
-				// "build game",
-				// "minify",
+				"build game",
 			],
 			"presentation": {
 				"echo": false,
@@ -67,43 +66,6 @@
 				"group": "pack rom without build",
 			}
 		},
-		// {
-		// 	"label": "minify",
-		// 	"type": "shell",
-		// 	"command": "terser",
-		// 	"args": [
-		// 		"--compress",
-		// 		"--mangle",
-		// 		"--source-map",
-		// 		"filename=\"thegame.js\"",
-		// 		"--source-map",
-		// 		"root='${workspaceFolder}\\src\\'",
-		// 		"--source-map",
-		// 		"content=\"inline\"",
-		// 		"--source-map",
-		// 		"url=\"inline\"",
-		// 		"--output",
-		// 		"${workspaceFolder}\\rom\\thegame.js",
-		// 		"${workspaceFolder}\\rom\\thegame.js"
-		// 	],
-		// 	"problemMatcher": [
-		// 		"$node-sass"
-		// 	],
-		// 	"presentation": {
-		// 		"echo": false,
-		// 		"reveal": "always",
-		// 		"focus": false,
-		// 		"panel": "shared",
-		// 		"showReuseMessage": false,
-		// 		"clear": true,
-		// 		"revealProblems": "onProblem",
-		// 		"group": "boaz",
-		// 	},
-		// 	"group": "build",
-		// 	"dependsOn": [
-		// 		"build game"
-		// 	]
-		// },
 		{
 			"label": "build game",
 			"type": "typescript",
@@ -111,16 +73,6 @@
 			"problemMatcher": [
 				"$tsc"
 			],
-			// "command": "tsc-bundle",
-			// "args": [
-			// 	"${workspaceFolder}/tsconfig.json",
-			// 	"--outFile",
-			// 	"${workspaceFolder}/rom/thegame.js",
-			// 	"--entryPoint",
-			// 	"BoazEngineJS/engine",
-			// 	"--exportAs",
-			// 	"_rom",
-			// ],
 			"presentation": {
 				"echo": false,
 				"reveal": "always",
@@ -144,8 +96,6 @@
 				"\"commonjs\"",
 				"-t",
 				"ES5",
-				// "--types",
-				// "${workspaceFolder}\\BoazEngineJS\\rompack",
 				"--outDir",
 				"\"${workspaceFolder}/rom\""
 			],

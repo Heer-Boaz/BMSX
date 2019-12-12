@@ -282,12 +282,12 @@ export abstract class BaseModel {
     }
 }
 
-export interface IGameObject {
+export interface IGameObject extends bst<typeof(this)> {
     id: string | null;
     disposeFlag: boolean;
     priority?: number;
     pos: Point;
-    smachines?: bst<any>[];
+    smachines?: bst < any > [];
 
     isWall?: boolean;
     disposeOnSwitchRoom?: boolean;
