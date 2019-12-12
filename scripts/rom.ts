@@ -1,7 +1,4 @@
 import { RomLoadResult, RomResource, RomMeta } from '../src/bmsx/rompack';
-// import { RomLoadResult, RomResource, RomMeta } from "..bmsx/rompack";
-
-export { };
 
 declare var pako: any;
 declare var h406A: (rom: RomLoadResult) => void;
@@ -73,18 +70,34 @@ var basic = {
 };
 
 async function loadRompack(url: string): Promise<ArrayBuffer> {
-	return fetch(url)
-		.then(response => response.arrayBuffer())
-		.then(buffer => {
-			let result = pako.inflate(buffer).buffer;
-			return result;
-		})
-		.catch(e => {
-			setLoaderText("Failed to load rompack");
-			setClassForLoader("");
-			new Error(`Failed to load rompack`);
-			return null;
-		});
+	let fetcher = basic.debug ? fetchLocal : fetch;
+	if (basic.debug) {
+		return fetchLocal(url)
+			.then(response_array => {
+				let result = pako.inflate(response_array).buffer;
+				return result;
+			})
+			.catch(e => {
+				setLoaderText(`Failed to load rompack local storage: ${e.message}`);
+				setClassForLoader("");
+				console.error(`Failed to load rompack from local storage: ${e.message}`);
+				Promise.reject(e);
+			});
+	}
+	else {
+		return fetch(url)
+			.then(response => response.arrayBuffer())
+			.then(buffer => {
+				let result = pako.inflate(buffer).buffer;
+				return result;
+			})
+			.catch(e => {
+				setLoaderText(`Failed to load rompack: ${e.message}`);
+				setClassForLoader("");
+				console.error(`Failed to load rompack: ${e.message}`);
+				Promise.reject(e);
+			});
+	}
 }
 
 async function loadImage(url: string): Promise<HTMLImageElement> {
@@ -92,7 +105,9 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
 		let img = new Image();
 		img.onload = e => resolve(img);
 		img.onerror = e => {
-			throw new Error(`Failed to load image's URL: ${url}`);
+			let msg = `Failed to load image's URL: ${url}`;
+			console.error(msg);
+			reject(msg);
 		};
 		img.src = url;
 	});
@@ -101,32 +116,44 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
 //
 
 async function loadResourceList(rom: ArrayBuffer): Promise<RomResource[]> {
-	let bytearray = new Uint8Array(rom);
-	let sliced = bytearray.slice(bytearray.length - 100);
-	let metaJsonStr = decodeuint8arr(sliced);
-	let metaJson: RomMeta = JSON.parse(metaJsonStr);
+	try {
+		let bytearray = new Uint8Array(rom);
+		let sliced = bytearray.slice(bytearray.length - 100);
+		let metaJsonStr = decodeuint8arr(sliced);
+		let metaJson: RomMeta = JSON.parse(metaJsonStr);
 
-	sliced = bytearray.slice(metaJson.start, metaJson.end);
-	let resJsonStr = decodeuint8arr(sliced);
-	let resJson: RomResource[] = JSON.parse(resJsonStr);
+		sliced = bytearray.slice(metaJson.start, metaJson.end);
+		let resJsonStr = decodeuint8arr(sliced);
+		let resJson: RomResource[] = JSON.parse(resJsonStr);
 
-	return resJson;
+		return resJson;
+	}
+	catch (e) {
+		console.error(e.message);
+		return Promise.reject(e.message);
+	}
 }
 
 async function loadResources(rom: ArrayBuffer): Promise<RomLoadResult> {
-	let result: RomLoadResult = {
-		images: new Map<number, HTMLImageElement>(),
-		rom: rom,
-		resources: {},
-		source: null
-	};
+	try {
+		let result: RomLoadResult = {
+			images: new Map<number, HTMLImageElement>(),
+			rom: rom,
+			resources: {},
+			source: null
+		};
 
-	let list = await loadResourceList(rom);
-	for (let i = 0; i < list.length; i++) {
-		await load(rom, list[i], result);
-		result.resources[list[i].resid] = list[i];
+		let list = await loadResourceList(rom);
+		for (let i = 0; i < list.length; i++) {
+			await load(rom, list[i], result);
+			result.resources[list[i].resid] = list[i];
+		}
+		return result;
 	}
-	return result;
+	catch (e) {
+		console.error(e.message);
+		return Promise.reject(e.message);
+	}
 }
 
 async function load(rom: ArrayBuffer, res: RomResource, romResult: RomLoadResult): Promise<void> {
@@ -151,20 +178,17 @@ async function load(rom: ArrayBuffer, res: RomResource, romResult: RomLoadResult
 				let sliced = bytearray.slice(res.start, res.end);
 				romResult.source = decodeuint8arr(sliced);
 			} catch (e) {
-				throw e;
+				let msg = `Unrecognised resource type in rom: ${res.type}, while processing rompack!`;
+				console.error(msg);
+				return Promise.reject(msg);
 			}
 			break;
 		case 'audio':
 			break;
 		default:
-			// mime = 'audio/wav';
-			// blub = new Blob([sliced], { type: mime });
-			// url = URL.createObjectURL(blub);
-
-			// let snd = await loadAudio(url);
-			// romResult.audio.set(res.resid, snd);
-			// romResult.audioTracks[res.resid] = rom.slice(res.start, res.end);
-			throw Error(`Unrecognised resource type in rom: ${res.type}, while processing rompack`);
+			let msg = `Unrecognised resource type in rom: ${res.type}, while processing rompack!`;
+			console.error(msg);
+			return Promise.reject(msg);
 	}
 }
 
@@ -187,7 +211,7 @@ async function loadScript(rom: RomLoadResult): Promise<void> {
 		let romcode = document.createElement('script');
 		romcode.async = false;
 		document.body.appendChild(romcode);
-		romcode.onerror = () => reject();
+		romcode.onerror = (e) => reject(e);
 		if (basic.debug !== true) {
 			romcode.innerText = rom.source;
 			resolve();
@@ -237,26 +261,17 @@ function decodeuint8arr(to_decode: Uint8Array): string {
 	return new TextDecoder("utf-8").decode(to_decode);
 }
 
-/**
- * Convert a string into a Uint8Array.
- * https://ourcodeworld.com/articles/read/164/how-to-convert-an-uint8array-to-string-in-javascript
- * @returns {Uint8Array}
- */
-// function encodeuint8arr(to_encode: string): Uint8Array {
-// 	return new TextEncoder().encode(to_encode);
-// }
-
-// async function loadAudio(url: string): Promise<HTMLAudioElement> {
-// 	return new Promise((resolve, reject) => {
-// 		let snd = new Audio();
-// 		snd.onloadeddata = e => resolve(snd);
-// 		snd.preload = 'auto';
-// 		snd.loop = false;
-// 		snd.controls = false;
-// 		snd.onerror = (e => {
-// 			throw new Error(`Failed to load audio's URL: ${url}`);
-// 		});
-// 		snd.src = url;
-// 		snd.load();
-// 	});
-// }
+async function fetchLocal(url: string): Promise<ArrayBuffer> {
+	return new Promise(function (resolve, reject) {
+		var xhr = new XMLHttpRequest;
+		xhr.responseType = "arraybuffer";
+		xhr.onload = function () {
+			return resolve(xhr.response);
+		};
+		xhr.onerror = function () {
+			return reject(new TypeError('Local request failed'));
+		};
+		xhr.open('GET', url);
+		xhr.send(null);
+	});
+}

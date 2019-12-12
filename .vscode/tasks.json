@@ -27,7 +27,7 @@
 			"dependsOn": [
 				"build rom",
 				"build rompacker",
-				"build game",
+				// "build game",
 			],
 			"presentation": {
 				"echo": false,

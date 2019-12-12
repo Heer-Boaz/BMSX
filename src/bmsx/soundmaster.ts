@@ -19,8 +19,11 @@ export class SM {
 			sampleRate: 44100,
 		});
 
+		SM.gainNode = SM.sndContext.createGain();
+		SM.gainNode.connect(SM.sndContext.destination);
+		SM.setVolume(.5);
+
 		SM.tracks = _audioResources;
-		// SM.gainNode = new GainNode(this.sndContext);
 	}
 
 	private static async createNode(id: number): Promise<AudioBufferSourceNode> {
@@ -32,7 +35,7 @@ export class SM {
 
 	private static playNode(_track: AudioMeta, node: AudioBufferSourceNode): void {
 		try {
-			node.connect(SM.sndContext.destination);
+			node.connect(SM.gainNode);
 			if (_track.loop !== null) {
 				node.loop = true;
 				node.loopStart = _track.loop;
@@ -95,11 +98,11 @@ export class SM {
 		console.warn("ResumeMusic not implemented :-(");
 	}
 
-	public static setEffectsVolume(volume: number): void {
-		console.warn("Volume not implemented :-(");
+	public static setVolume(volume: number): void {
+		SM.gainNode.gain.setValueAtTime(SM.gainNode.gain.defaultValue * volume, SM.sndContext.currentTime + .1);
 	}
 
-	public static setMusicVolume(volume: number): void {
-		console.warn("Volume not implemented :-(");
-	}
+	// public static setMusicVolume(volume: number): void {
+	// 	SM.gainNode.gain.setValueAtTime(volume / 10, SM.sndContext.currentTime + .1);
+	// }
 }

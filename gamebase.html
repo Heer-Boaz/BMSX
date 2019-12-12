@@ -23,7 +23,8 @@
                 });
             }
             catch (e) {
-                document.getElementById("loading").innerText = "Failed to load rom: " + e;
+                document.getElementById("loading").innerText = "Failed to load rom: " + e.message;
+                console.error(e.message);
             }
         </script>
         <img id="msx" src="#bmsxurl" />

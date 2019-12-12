@@ -64,8 +64,8 @@ export abstract class BaseView {
         if (document.getElementById('gamescreen').style.visibility === 'hidden') return;
         let self = view || this;
         self.calculateSize();
-        self.canvas.style.width = `${self.viewportSize.x * this.scale}px`;
-        self.canvas.style.height = `${self.viewportSize.y * this.scale}px`;
+        self.canvas.style.width = `${self.viewportSize.x * self.scale}px`;
+        self.canvas.style.height = `${self.viewportSize.y * self.scale}px`;
         // self.canvas.style.transform = `scale(${self.scale})`;
         self.canvas.style.left = (self.windowSize.x - self.canvas.width * self.scale) / 2 + "px";
         self.canvas.style.top = (self.windowSize.y - self.canvas.height * self.scale) / 2 + "px";
@@ -107,13 +107,13 @@ export abstract class BaseView {
     }
 
     public drawPressKey(): void {
-        this.context.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        view.context.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-        this.context.font = '12pt Monaco';
-        this.context.fillStyle = 'white';
-        this.context.save();
-        this.context.fillText('Press any key to start', 56, 80);
-        this.context.restore();
+        view.context.font = '12pt Monaco';
+        view.context.fillStyle = 'white';
+        view.context.save();
+        view.context.fillText('Press any key to start', 56, 80);
+        view.context.restore();
     }
 
     public drawImg(imgid: number, x: number, y: number, options?: number): void {
@@ -123,45 +123,45 @@ export abstract class BaseView {
             return;
         }
 
-        this.context.save();
-        this.context.translate(~~x, ~~y);
+        view.context.save();
+        view.context.translate(~~x, ~~y);
         if (options & DrawImgFlags.HFLIP) {
-            this.context.scale(-1, 1);
-            this.context.translate(-img.width, 0);
+            view.context.scale(-1, 1);
+            view.context.translate(-img.width, 0);
         }
         if (options & DrawImgFlags.VFLIP) {
-            this.context.scale(1, -1);
-            this.context.translate(0, -img.height);
+            view.context.scale(1, -1);
+            view.context.translate(0, -img.height);
         }
-        this.context.drawImage(img, 0, 0);
-        this.context.restore();
+        view.context.drawImage(img, 0, 0);
+        view.context.restore();
     }
 
     public drawColoredBitmap(imgid: number, x: number, y: number, r: number, g: number, b: number, a?: number) {
         // TODO: IMPLEMENTEER!!
-        this.drawImg(imgid, x, y, 0);
+        view.drawImg(imgid, x, y, 0);
     }
 
     public drawRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
-        this.context.save();
-        this.context.translate(0.5, 0.5);
-        this.context.beginPath();
-        this.context.strokeStyle = this.toRgb(c);
-        this.context.rect(~~x, ~~y, ~~(ex - x), ~~(ey - y));
-        this.context.stroke();
-        this.context.restore();
+        view.context.save();
+        view.context.translate(0.5, 0.5);
+        view.context.beginPath();
+        view.context.strokeStyle = this.toRgb(c);
+        view.context.rect(~~x, ~~y, ~~(ex - x), ~~(ey - y));
+        view.context.stroke();
+        view.context.restore();
     }
 
     public fillRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
-        this.context.save();
-        this.context.translate(0.5, 0.5);
-        this.context.beginPath();
-        let colorRgb = this.toRgb(c);
-        this.context.fillStyle = colorRgb;
-        this.context.strokeStyle = colorRgb;
-        this.context.fillRect(~~x, ~~y, ~~(ex - x), ~~(ey - y));
-        this.context.stroke();
-        this.context.restore();
+        view.context.save();
+        view.context.translate(0.5, 0.5);
+        view.context.beginPath();
+        let colorRgb = view.toRgb(c);
+        view.context.fillStyle = colorRgb;
+        view.context.strokeStyle = colorRgb;
+        view.context.fillRect(~~x, ~~y, ~~(ex - x), ~~(ey - y));
+        view.context.stroke();
+        view.context.restore();
     }
 
     private toRgb(c: Color): string {

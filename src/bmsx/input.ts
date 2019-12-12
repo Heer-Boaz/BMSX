@@ -113,15 +113,39 @@ export class Input {
 }
 
 function keydown(e: KeyboardEvent): void {
-    if (game.running) e.preventDefault();
     if (!document.hasFocus()) return;
+    if (game.running) {
+        switch (e.key) {
+            case 'Escape':
+            case 'Esc':
+            case 'F11':
+            case 'F12':
+                break;
+            default:
+                e.preventDefault();
+                break;
+        }
+    }
 
     Input.KeyState[e.key] = true;
 }
 
 function keyup(e: KeyboardEvent): void {
-    if (game.running) e.preventDefault();
-    if (!document.hasFocus()) return;
+    // if (!document.hasFocus()) return;
+
+    if (game.running) {
+        switch (e.key) {
+            case 'Escape':
+            case 'Esc':
+            case 'F11':
+            case 'F12':
+                break;
+            default:
+                e.preventDefault();
+                break;
+
+        }
+    }
 
     delete Input.KeyState[e.key];
     delete Input.KeyClickRequestedState[e.key];

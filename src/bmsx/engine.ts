@@ -19,8 +19,8 @@ export class GameOptions {
 
     public static Scale: number = GameOptions.INITIAL_SCALE;
     public static Fullscreen: boolean = GameOptions.INITIAL_FULLSCREEN;
-    public static EffectsVolumePercentage: number = 100;
-    public static MusicVolumePercentage: number = 100;
+    public static VolumePercentage: number = 50;
+    public static MusicVolumePercentage: number = 50;
 
     public static get WindowWidth(): number {
         return (MSX2ScreenWidth * GameOptions.Scale);
@@ -282,7 +282,7 @@ export abstract class BaseModel {
     }
 }
 
-export interface IGameObject extends bst<typeof(this)> {
+export interface IGameObject {
     id: string | null;
     disposeFlag: boolean;
     priority?: number;

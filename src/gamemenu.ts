@@ -29,8 +29,8 @@ declare module "./mainmenu" {
         ReturnToMain,
         Scale,
         Fullscreen,
-        MusicVolume,
-        EffectVolume,
+        // MusicVolume,
+        SoundVolume,
         ExitGame,
 
         // ScreenMenu
@@ -61,8 +61,8 @@ export class GameMenu {
     private static backText: string = "Back";
     private static emptySlot: string = "----";
     private static scaleText: string = "Scale: ";
-    private static effectVolumeText: string = "Effects: ";
-    private static musicVolumeText: string = "Music: ";
+    private static soundVolumeText: string = "Volume: ";
+    // private static musicVolumeText: string = "Music: ";
     private static mainMenuTextX: number = GameMenu.menuPosX + 56;
     private static mainMenuTextY: number = GameMenu.menuPosY + 16;
     private static cursorOffsetX: number = -16;
@@ -76,10 +76,10 @@ export class GameMenu {
     ];
     private static optionsItems: MenuOption[] = [
         { type: MenuItem.ReturnToMain, label: GameMenu.backText },
-        { type: MenuItem.Scale, label: GameMenu.scaleText },
+        { type: MenuItem.SoundVolume, label: GameMenu.soundVolumeText },
         { type: MenuItem.Fullscreen, label: "Fullscreen: y n" },
-        { type: MenuItem.MusicVolume, label: GameMenu.musicVolumeText },
-        { type: MenuItem.EffectVolume, label: GameMenu.effectVolumeText }
+        { type: MenuItem.Scale, label: GameMenu.scaleText },
+        // { type: MenuItem.MusicVolume, label: GameMenu.musicVolumeText },
     ];
     private static fullscreenOptionsOffsets: number[] = [TextWriter.FontWidth * 12 - 1, TextWriter.FontWidth * 14 - 1];
     private static fullscreenOptionsOffsetY: number = -1;
@@ -264,24 +264,24 @@ export class GameMenu {
                                 game.GameOptionsChanged();
                             }
                             break;
-                        case MenuItem.EffectVolume:
-                            if (GO.EffectsVolumePercentage < 100) {
-                                GO.EffectsVolumePercentage += 10;
-                                if (GO.EffectsVolumePercentage > 100)
-                                    GO.EffectsVolumePercentage = 100;
-                                SM.setEffectsVolume(GO.EffectsVolumePercentage / 100);
+                        case MenuItem.SoundVolume:
+                            if (GO.VolumePercentage < 100) {
+                                GO.VolumePercentage += 10;
+                                if (GO.VolumePercentage > 100)
+                                    GO.VolumePercentage = 100;
+                                SM.setVolume(GO.VolumePercentage / 100);
                                 game.GameOptionsChanged();
                             }
                             break;
-                        case MenuItem.MusicVolume:
-                            if (GO.MusicVolumePercentage < 100) {
-                                GO.MusicVolumePercentage += 10;
-                                if (GO.MusicVolumePercentage > 100)
-                                    GO.MusicVolumePercentage = 100;
-                                SM.setMusicVolume(GO.MusicVolumePercentage / 100);
-                                game.GameOptionsChanged();
-                            }
-                            break;
+                        // case MenuItem.MusicVolume:
+                        //     if (GO.MusicVolumePercentage < 100) {
+                        //         GO.MusicVolumePercentage += 10;
+                        //         if (GO.MusicVolumePercentage > 100)
+                        //             GO.MusicVolumePercentage = 100;
+                        //         SM.setMusicVolume(GO.MusicVolumePercentage / 100);
+                        //         game.GameOptionsChanged();
+                        //     }
+                        //     break;
                     }
                     break;
             }
@@ -304,24 +304,24 @@ export class GameMenu {
                                 game.GameOptionsChanged();
                             }
                             break;
-                        case MenuItem.EffectVolume:
-                            if (GO.EffectsVolumePercentage > 0) {
-                                GO.EffectsVolumePercentage -= 10;
-                                if (GO.EffectsVolumePercentage < 0)
-                                    GO.EffectsVolumePercentage = 0;
-                                SM.setEffectsVolume(GO.EffectsVolumePercentage / 100);
+                        case MenuItem.SoundVolume:
+                            if (GO.VolumePercentage > 0) {
+                                GO.VolumePercentage -= 10;
+                                if (GO.VolumePercentage < 0)
+                                    GO.VolumePercentage = 0;
+                                SM.setVolume(GO.VolumePercentage / 100);
                                 game.GameOptionsChanged();
                             }
                             break;
-                        case MenuItem.MusicVolume:
-                            if (GO.MusicVolumePercentage > 0) {
-                                GO.MusicVolumePercentage -= 10;
-                                if (GO.MusicVolumePercentage < 0)
-                                    GO.MusicVolumePercentage = 0;
-                                SM.setMusicVolume(GO.MusicVolumePercentage / 100);
-                                game.GameOptionsChanged();
-                            }
-                            break;
+                        // case MenuItem.MusicVolume:
+                        //     if (GO.MusicVolumePercentage > 0) {
+                        //         GO.MusicVolumePercentage -= 10;
+                        //         if (GO.MusicVolumePercentage < 0)
+                        //             GO.MusicVolumePercentage = 0;
+                        //         SM.setMusicVolume(GO.MusicVolumePercentage / 100);
+                        //         game.GameOptionsChanged();
+                        //     }
+                        //     break;
                     }
                     break;
             }
@@ -510,22 +510,22 @@ export class GameMenu {
                                 TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
                                 t.printFullscreenOptionRectangle(y);
                                 break;
-                            case MenuItem.EffectVolume:
+                            case MenuItem.SoundVolume:
                                 {
                                     TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
-                                    offsetX += GameMenu.effectVolumeText.length * TextWriter.FontWidth;
-                                    let text = GO.EffectsVolumePercentage > 0 ? GO.EffectsVolumePercentage + "%" : "Off";
+                                    offsetX += GameMenu.soundVolumeText.length * TextWriter.FontWidth;
+                                    let text = GO.VolumePercentage > 0 ? GO.VolumePercentage + "%" : "Off";
                                     TextWriter.drawText(offsetX, y, text);
                                 }
                                 break;
-                            case MenuItem.MusicVolume:
-                                {
-                                    TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
-                                    offsetX += GameMenu.musicVolumeText.length * TextWriter.FontWidth;
-                                    let text = GO.MusicVolumePercentage > 0 ? GO.MusicVolumePercentage + "%" : "Off";
-                                    TextWriter.drawText(offsetX, y, text);
-                                }
-                                break;
+                            // case MenuItem.MusicVolume:
+                            //     {
+                            //         TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
+                            //         offsetX += GameMenu.musicVolumeText.length * TextWriter.FontWidth;
+                            //         let text = GO.MusicVolumePercentage > 0 ? GO.MusicVolumePercentage + "%" : "Off";
+                            //         TextWriter.drawText(offsetX, y, text);
+                            //     }
+                            //     break;
                             default:
                                 TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
                                 break;

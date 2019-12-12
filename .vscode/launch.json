@@ -5,7 +5,7 @@
 			"type": "chrome",
 			"request": "launch",
 			"name": "Debug the game!",
-			"url": "file:///${workspaceFolder}/game_debug.html",
+			"url": "file:///${workspaceFolder}/dist/game_debug.html",
 			// "url": "http://127.0.0.1:8887/dist/game_debug.html",
 			"webRoot": "${workspaceFolder}",
 			"sourceMapPathOverrides": {
@@ -22,28 +22,28 @@
 			// "pathMapping": {
 			// "http://127.0.0.1:80/": "${workspaceFolder}",
 			// }
-		},
-		{
-			"type": "chrome",
-			"request": "launch",
-			"name": "Play the game!",
-			// "url": "file:///${workspaceFolder}/game.html",
-			"url": "http://127.0.0.1:8887/dist/game_debug.html",
-			"webRoot": "${workspaceFolder}",
-			"sourceMapPathOverrides": {
-				"../src/*": "${workspaceFolder}/src/*",
-				"./bmsx/*": "${workspaceFolder}/BoazEngineJS/*",
-			},
-			"runtimeArgs": [
-				// "--disable-web-security"
-			],
-			// "preLaunchTask": "pack (losse taak)",
-			"sourceMaps": true,
-			"showAsyncStacks": true,
-			"smartStep": true,
-			"pathMapping": {
-				"http://127.0.0.1:80/": "${workspaceFolder}",
-			}
-		},
+		}
+		// {
+		// 	"type": "chrome",
+		// 	"request": "launch",
+		// 	"name": "Play the game!",
+		// 	// "url": "file:///${workspaceFolder}/game.html",
+		// 	"url": "http://127.0.0.1:8887/dist/game_debug.html",
+		// 	"webRoot": "${workspaceFolder}",
+		// 	"sourceMapPathOverrides": {
+		// 		"../src/*": "${workspaceFolder}/src/*",
+		// 		"./bmsx/*": "${workspaceFolder}/BoazEngineJS/*",
+		// 	},
+		// 	"runtimeArgs": [
+		// 		// "--disable-web-security"
+		// 	],
+		// 	// "preLaunchTask": "pack (losse taak)",
+		// 	"sourceMaps": true,
+		// 	"showAsyncStacks": true,
+		// 	"smartStep": true,
+		// 	"pathMapping": {
+		// 		"http://127.0.0.1:80/": "${workspaceFolder}",
+		// 	}
+		// },
 	]
 }
