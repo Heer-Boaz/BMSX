@@ -38,6 +38,7 @@ export const enum RoomMap {
 
 export class RoomFactory {
 	private static dirOffsets: { x: number, y: number }[] = [
+		{ x: 0, y: 0 },
 		{ x: 0, y: -1 },
 		{ x: 1, y: 0 },
 		{ x: 0, y: 1 },
@@ -71,9 +72,9 @@ export class RoomFactory {
 	}
 
 	public static roomExits(map: number[][], id: number): number[] {
-		let result: number[] = new Array(4);
+		let result: number[] = new Array(5);
 		let pos = RoomFactory.posOnMap(map, id);
-		for (let i = 0; i < RoomFactory.dirOffsets.length; i++) {
+		for (let i = 1; i < RoomFactory.dirOffsets.length; i++) {
 			let x: number = pos.x + RoomFactory.dirOffsets[i].x;
 			let y: number = pos.y + RoomFactory.dirOffsets[i].y;
 			if (x < 0 || x >= map[y].length || y < 0 || y >= map.length) {

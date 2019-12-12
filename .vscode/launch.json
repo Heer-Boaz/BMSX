@@ -9,8 +9,8 @@
 			// "url": "http://127.0.0.1:8887/dist/game_debug.html",
 			"webRoot": "${workspaceFolder}",
 			"sourceMapPathOverrides": {
-				"../src/*": "${workspaceFolder}/src/*",
-				"./bmsx/*": "${workspaceFolder}/BoazEngineJS/*",
+				"**/src/*": "${workspaceFolder}/src/*",
+				// "./bmsx/*": "${workspaceFolder}/BoazEngineJS/*",
 			},
 			"runtimeArgs": [
 				"--disable-web-security"
@@ -19,9 +19,9 @@
 			"sourceMaps": true,
 			"showAsyncStacks": true,
 			"smartStep": true,
-			// "pathMapping": {
-			// "http://127.0.0.1:80/": "${workspaceFolder}",
-			// }
+			"pathMapping": {
+				"file:///": "",
+			}
 		}
 		// {
 		// 	"type": "chrome",
