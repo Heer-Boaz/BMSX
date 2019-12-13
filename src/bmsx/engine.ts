@@ -67,7 +67,7 @@ export class Game {
         controller = _controller;
 
         BaseView.images = _rom.images;
-        SM.init(_rom.resources);
+        SM.init(_rom['resources']);
         Input.init();
 
         this.lastUpdate = 0;
@@ -287,7 +287,7 @@ export interface IGameObject {
     disposeFlag: boolean;
     priority?: number;
     pos: Point;
-    smachines?: bst < any > [];
+    smachines?: bst<any>[];
 
     isWall?: boolean;
     disposeOnSwitchRoom?: boolean;

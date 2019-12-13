@@ -6,7 +6,7 @@ const tsify = require("tsify");
 const babelify = require("babelify");
 
 const terser = require('terser');
-const pako = require('../node_modules/pako');
+const pako = require('pako');
 const minify = require('@node-minify/core');
 const cleanCSS = require('@node-minify/clean-css');
 
@@ -70,32 +70,23 @@ function copyResources(): void {
 }
 
 async function bundleGamecode(outfile: string): Promise<any> {
-	// let arrayOfFiles = getAllFiles("./src", [], ".js");
-	// arrayOfFiles = getAllFiles("./bmsx", arrayOfFiles, ".js");
-	// console.log(arrayOfFiles);
-
 	let writeOutput = createWriteStream('./rom/megarom.js');
 
 	browserify({
 		debug: true,
-		// basedir: './rom',
-		project: 'tsconfig.json',
+		basedir: '.',
+		project: true,
 		cache: {},
 		packageCache: {},
-		exclude: ['./src/lib/rom.ts', './src/lib/rompacker.ts'],
+		exclude: ['src/lib/rom.ts', 'src/lib/rompacker.ts'],
 		// standalone: 'moduleName',
-		ignore: ['./node_modules', './src', './bmsx', './dist', './rom']
+		ignore: ['node_modules', 'dist', 'rom']
 	})
-		// .add('./tsout.tjs')
-		// .add(arrayOfFiles)
-		.add("./src/bootstrapper.ts")
+		.add("src/bootstrapper.ts")
 		.plugin(tsify)
 		.transform(babelify, {
 			extensions: ['.ts'],
-			// presets: ['es2015', "@babel/preset-env"],
 			plugins: ['@babel/plugin-transform-modules-commonjs'],
-			// '@babel/plugin-proposal-optional-chaining', '@babel/plugin-proposal-nullish-coalescing-operator' ],
-			// plugins: ['@babel/plugin-transform-modules-systemjs'],
 			sourceMaps: true,
 			global: true,
 		})
@@ -115,22 +106,74 @@ async function bundleGamecode(outfile: string): Promise<any> {
 
 function minifyGamecode(infile: string): void {
 	let options = {
-		// compress: false,
-		// mangle: false,
-		compress: {
-			// module: true,
-			arrows: false,
-			// reduce_funcs: false,
-			// reduce_vars: false,
-			// unused: false,
-			warnings: true,
-		},
+		compress: false,
+		// compress: {
+		// 	// unused: false,
+		// 	// collapse_vars: false,
+		// 	// top_retain: true,
+		// 	pure_getters: false,
+		// 	// reduce_vars: false,
+		// 	// warnings: true,
+		// 	evaluate: false,
+		// 	expression: true
+		// },
 		mangle: {
-			properties: false,
-			module: false,
+			reserved:
+				[
+					"exports",
+					"global",
+					"factory",
+					"__extends",
+					"__assign",
+					"__rest",
+					"__decorate",
+					"__param",
+					"__metadata",
+					"__awaiter",
+					"__generator",
+					"__exportStar",
+					"__values",
+					"__read",
+					"__spread",
+					"__spreadArrays",
+					"__await",
+					"__asyncGenerator",
+					"__asyncDelegator",
+					"__asyncValues",
+					"__makeTemplateObject",
+					"__importStar",
+					"__importDefault"
+				],
+			properties: {
+				keep_quoted: true,
+				reserved:
+					[
+						"exports",
+						"global",
+						"factory",
+						"__extends",
+						"__assign",
+						"__rest",
+						"__decorate",
+						"__param",
+						"__metadata",
+						"__awaiter",
+						"__generator",
+						"__exportStar",
+						"__values",
+						"__read",
+						"__spread",
+						"__spreadArrays",
+						"__await",
+						"__asyncGenerator",
+						"__asyncDelegator",
+						"__asyncValues",
+						"__makeTemplateObject",
+						"__importStar",
+						"__importDefault"
+					],
+			},
 			safari10: true,
-			reserved: ["h406A", "exports"],
-
 		},
 		sourceMap: false,
 		// sourceMap: {
@@ -141,14 +184,22 @@ function minifyGamecode(infile: string): void {
 		output: {
 			safari10: true,
 			webkit: true,
+			max_line_len: 80,
+			keep_quoted_props: true
 		},
 		// wrap: "__rom__",
 	};
 
-	let gamejs = readFileSync(infile, 'utf8');
-	let gamejsMinified = terser.minify(gamejs, options).code;
 
-	writeFileSync("./rom/megarom.min.js", gamejsMinified);
+
+	let gamejs = readFileSync(infile, 'utf8');
+	let gamejsMinifiedResult = terser.minify(gamejs, options);
+	if (gamejsMinifiedResult.code) {
+		writeFileSync("./rom/megarom.min.js", gamejsMinifiedResult.code);
+	}
+	else {
+		console.error("Minifying failed :-(");
+	}
 }
 
 function buildGameHtml(outfile: string): void {

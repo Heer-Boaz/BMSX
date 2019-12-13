@@ -16,7 +16,7 @@
 			"type": "shell",
 			"command": "node",
 			"args": [
-				"${workspaceFolder}\\rom\\rompacker.js",
+				"${workspaceFolder}/rompacker.js",
 				"sintervania.rom",
 			],
 			"problemMatcher": [
@@ -93,11 +93,11 @@
 				"${workspaceFolder}/scripts/rom.ts",
 				"--removeComments",
 				"-m",
-				"\"commonjs\"",
+				"commonjs",
 				"-t",
 				"ES5",
 				"--outDir",
-				"\"${workspaceFolder}/rom\""
+				"${workspaceFolder}/rom"
 			],
 			"problemMatcher": [
 				"$tsc"
@@ -122,7 +122,7 @@
 				"--removeComments",
 				// "--noEmitHelpers",
 				"--outDir",
-				"\"${workspaceFolder}/rom\""
+				"${workspaceFolder}/"
 			],
 			"problemMatcher": [
 				"$tsc"
