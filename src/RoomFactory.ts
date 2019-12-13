@@ -207,8 +207,8 @@ export class RoomFactory {
 		initFunction = (r: Room) => {
 			Model._.spawn(new HagGenerator(Tile.toStagePoint(15, 1)));
 			Model._.spawn(new HagGenerator(Tile.toStagePoint(15, 7)));
-			Model._.spawn(new Candle(Tile.toStagePoint(2, 2)));
-			Model._.spawn(new Candle(Tile.toStagePoint(12, 2)));
+			Model._.spawn(new Candle(Tile.toStagePoint(2, 1.5)));
+			Model._.spawn(new Candle(Tile.toStagePoint(12, 1.5)));
 			Model._.spawn(new Candle(Tile.toStagePoint(2, 7)));
 			Model._.spawn(new Candle(Tile.toStagePoint(12, 7)));
 			Model._.spawn(new ZakFoe(Tile.toStagePoint(10, 2), Direction.Left));
@@ -237,8 +237,8 @@ export class RoomFactory {
 		initFunction = (r: Room) => {
 			Model._.spawn(new HagGenerator(Tile.toStagePoint(15, 1)));
 			Model._.spawn(new HagGenerator(Tile.toStagePoint(15, 7)));
-			Model._.spawn(new Candle(Tile.toStagePoint(2, 2)));
-			Model._.spawn(new Candle(Tile.toStagePoint(12, 2)));
+			Model._.spawn(new Candle(Tile.toStagePoint(2, 1.5)));
+			Model._.spawn(new Candle(Tile.toStagePoint(12, 1.5)));
 			Model._.spawn(new Candle(Tile.toStagePoint(2, 7)));
 			Model._.spawn(new Candle(Tile.toStagePoint(12, 7)));
 			Model._.spawn(new ZakFoe(Tile.toStagePoint(10, 2), Direction.Left));
@@ -268,8 +268,8 @@ export class RoomFactory {
 		initFunction = (r: Room) => {
 			Model._.spawn(new HagGenerator(Tile.toStagePoint(15, 1)));
 			Model._.spawn(new HagGenerator(Tile.toStagePoint(15, 7)));
-			Model._.spawn(new Candle(Tile.toStagePoint(2, 2)));
-			Model._.spawn(new Candle(Tile.toStagePoint(12, 2)));
+			Model._.spawn(new Candle(Tile.toStagePoint(2, 1.5)));
+			Model._.spawn(new Candle(Tile.toStagePoint(12, 1.5)));
 			Model._.spawn(new Candle(Tile.toStagePoint(2, 7)));
 			Model._.spawn(new Candle(Tile.toStagePoint(12, 7)));
 			Model._.spawn(new ZakFoe(Tile.toStagePoint(10, 8), Direction.Left));

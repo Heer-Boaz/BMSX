@@ -44,6 +44,9 @@ export class SM {
 			}
 			else node.loop = false;
 			node.start(0);
+			_track['audiotype'] === AudioType.effect ?
+				node.addEventListener('ended', (ev) => SM.currentEffectAudio = null) :
+				node.addEventListener('ended', (ev) => SM.currentMusicAudio = null);
 		} catch {
 		}
 	}
@@ -55,10 +58,12 @@ export class SM {
 		switch (track['audiotype']) {
 			case AudioType.effect:
 				if (SM.limitToOneEffect && SM.currentEffectAudio && track['priority'] < SM.currentEffectAudio['priority']) return;
+				SM.currentEffectAudio && console.log(track['priority'] + " >= " + SM.currentEffectAudio['priority']);
+				!SM.currentEffectAudio && console.log('Er is geen geluid volgens deze code');
 				SM.stopEffect();
 				SM.createNode(id).then(node => {
 					SM.currentEffectNode = node;
-					node.onended = (ev) => SM.currentEffectAudio = null;
+					SM.currentEffectAudio = track;
 					SM.playNode(track, node);
 				});
 				break;
@@ -66,7 +71,7 @@ export class SM {
 				SM.stopMusic();
 				SM.createNode(id).then(node => {
 					SM.currentMusicNode = node;
-					node.onended = (ev) => SM.currentMusicAudio = null;
+					SM.currentMusicAudio = track;
 					SM.playNode(track, node);
 				});
 				break;

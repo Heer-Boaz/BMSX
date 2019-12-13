@@ -26,6 +26,28 @@ function log(tolog: string): void {
 	process.stdout.write(`${_colors.cyan(d.toTimeString().split(' ')[0])}:${_colors.cyan(d.getMilliseconds().toString().substring(0, 3))} ${tolog}`);
 }
 
+function timer(ms: number) {
+	return new Promise(res => setTimeout(res, ms));
+}
+
+const rotatorchars = ['-', '\\', '|', '/'];
+var runrotator = false;
+async function startRotator() {
+	runrotator = true;
+	process.stdout.write(`/`);
+	let i = 0;
+	while (runrotator) {
+		await timer(100);
+		runrotator && process.stdout.write(`\b${rotatorchars[i]}`);
+		if (++i >= rotatorchars.length) i = 0;
+	}
+}
+
+function stopRotator(): void {
+	runrotator = false;
+	process.stdout.write(`\b\b  \n`);
+}
+
 /**
  * Convert a string into a Uint8Array.
  * https://ourcodeworld.com/articles/read/164/how-to-convert-an-uint8array-to-string-in-javascript
@@ -77,7 +99,8 @@ function copyResources(): void {
 }
 
 async function bundleGamecode(outfile: string): Promise<any> {
-	log("Game compileren en bundleren...\n");
+	log("Game compileren en bundleren...  ");
+	startRotator();
 
 	return new Promise(function (resolve, reject) {
 		let writeOutput = createWriteStream('./rom/megarom.js');
@@ -87,6 +110,7 @@ async function bundleGamecode(outfile: string): Promise<any> {
 			project: true,
 			cache: {},
 			packageCache: {},
+			exposeAll: true,
 			exclude: ['src/lib/rom.ts', 'src/lib/rompacker.ts'],
 			// standalone: 'moduleName',
 			ignore: ['node_modules', 'dist', 'rom']
@@ -100,16 +124,19 @@ async function bundleGamecode(outfile: string): Promise<any> {
 				global: true,
 			})
 			.bundle()
+			.on('deps', dep => console.log(dep.file))
 			.on("error", e => { console.error(e.message); Promise.resolve(e); })
 			.pipe(writeOutput);
 		// .catch(e => console.error(e.message));
 
 		writeOutput.on('finish', () => {
+			stopRotator();
 			log("\tKlaar!\n");
 			return resolve();
 		});
 		writeOutput.on("error", e => {
-			log(`Game bouwen faalde: ${e.message}\n`);
+			stopRotator();
+			log(`\nGame bouwen faalde: ${e.message}\n`);
 			return reject(e);
 		});
 	});
@@ -323,13 +350,17 @@ function zip(content: Buffer): string {
 }
 
 async function buildRompackAndResourceList(outfile: string): Promise<void> {
-	log("Minifyen...\n");
+	log("Minifyen... ");
+	startRotator();
 	minifyGamecode("./rom/megarom.js");
+	stopRotator();
 	log("\tKlaar!\n");
 
-	log("Alle files ophalen...\n");
+	log("Alle files ophalen... ");
+	startRotator();
 	const arrayOfFiles = getFiles("./rom");
 	addFile("./rom", "megarom.min.js", arrayOfFiles); // Add source at the end
+	stopRotator();
 	log("\tKlaar!\n");
 
 	let buffers = new Array<Buffer>();
@@ -414,16 +445,22 @@ async function buildRompackAndResourceList(outfile: string): Promise<void> {
 	bar.increment(1);
 	bar.stop();
 
-	log("Alles nu zippen...\n");
+	log("Alles nu zippen... ");
+	startRotator();
 	let zipped = zip(Buffer.concat(buffers));
+	stopRotator();
 	log("\tKlaar!\n");
-	log(`"${_colors.green(outfile)}" wegschrijven naar ${_colors.green(outfile + "\"./dist/\"")}"...\n`);
+	log(`"${_colors.green(outfile)}" wegschrijven naar ${_colors.green(outfile + "\"./dist/\"")}"...`);
+	startRotator();
 	writeFileSync(`./dist/${outfile}`, zipped);
+	stopRotator();
 	log("\tKlaar!\n");
-	log(`resourceids.ts maken...\n`);
+	log(`resourceids.ts maken...`);
+	startRotator();
 	writeFileSync("./src/resourceids.ts", tsimgout.concat(tssndout).join('\n'));
-	log("\tKlaar!\n");
 	writeFileSync("./rom/_ignore/romresources.json", jsonbuffer);
+	stopRotator();
+	log("\tKlaar!\n");
 	log("Rom is gepackt!!\n");
 	log(`\tFiles: ${arrayOfFiles.length}\n\t\timages: ${imgi}\n\t\taudio: ${sndi}\n`);
 	log(`\tSize: ${(Buffer.concat(buffers).length / (1024 * 1024)).toFixed(2)} mB\n\tDeflated size: ${(zipped.length / (1024 * 1024)).toFixed(2)} mB.\n`);

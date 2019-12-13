@@ -37,7 +37,7 @@
 				"showReuseMessage": false,
 				"clear": true,
 				"revealProblems": "onProblem",
-				"group": "boaz",
+				"group": "ROMPACKER",
 			}
 		},
 		{
@@ -104,12 +104,12 @@
 			],
 			"presentation": {
 				"echo": false,
-				"reveal": "always",
+				"reveal": "silent",
 				"focus": false,
 				"panel": "shared",
 				"showReuseMessage": false,
 				"clear": true,
-				"group": "boaz",
+				"group": "TSC",
 			},
 			"group": "build"
 		},
@@ -130,12 +130,12 @@
 			"group": "build",
 			"presentation": {
 				"echo": false,
-				"reveal": "always",
+				"reveal": "silent",
 				"focus": false,
 				"panel": "shared",
 				"showReuseMessage": false,
 				"clear": true,
-				"group": "boaz",
+				"group": "TSC",
 			}
 		},
 		{
