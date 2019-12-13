@@ -17,5 +17,8 @@ src/sintervaniamodelold.ts
 **/thegame.js
 **.tsbuildinfo
 **.rom
+**.d.ts
+!resourceids.d.ts
+!rompack.d.ts
 rom/_ignore
 rom/ignore
