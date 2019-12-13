@@ -5,7 +5,7 @@
 			"type": "chrome",
 			"request": "launch",
 			"name": "Debug the game!",
-			"url": "file:///${workspaceFolder}/dist/game_debug.html",
+			"url": "file:///${workspaceFolder}/dist/game.html",
 			// "url": "http://127.0.0.1:8887/dist/game_debug.html",
 			"webRoot": "${workspaceFolder}",
 			"sourceMapPathOverrides": {

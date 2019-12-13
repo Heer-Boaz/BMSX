@@ -19,9 +19,11 @@ export class SM {
 			sampleRate: 44100,
 		});
 
-		SM.gainNode = SM.sndContext.createGain();
-		SM.gainNode.connect(SM.sndContext.destination);
-		SM.setVolume(.5);
+		SM.sndContext.resume().then(() => {
+			SM.gainNode = SM.sndContext.createGain();
+			SM.gainNode.connect(SM.sndContext.destination);
+			SM.setVolume(.5);
+		});
 
 		SM.tracks = _audioResources;
 	}
@@ -29,16 +31,16 @@ export class SM {
 	private static async createNode(id: number): Promise<AudioBufferSourceNode> {
 		let srcnode = SM.sndContext.createBufferSource();
 		return new Promise<AudioBufferSourceNode>((resolve, reject) => {
-			SM.sndContext.decodeAudioData(game.rom.rom.slice(SM.tracks[id].start, SM.tracks[id].end)).then(buffer => srcnode.buffer = buffer).then(() => resolve(srcnode));
+			SM.sndContext.decodeAudioData(game.rom['rom'].slice(SM.tracks[id]['start'], SM.tracks[id]['end'])).then(buffer => srcnode.buffer = buffer).then(() => resolve(srcnode));
 		});
 	}
 
 	private static playNode(_track: AudioMeta, node: AudioBufferSourceNode): void {
 		try {
 			node.connect(SM.gainNode);
-			if (_track.loop !== null) {
+			if (_track['loop'] !== null) {
 				node.loop = true;
-				node.loopStart = _track.loop;
+				node.loopStart = _track['loop'];
 			}
 			else node.loop = false;
 			node.start(0);
@@ -47,12 +49,12 @@ export class SM {
 	}
 
 	public static play(id: number): void {
-		let track = SM.tracks[id]?.audiometa;
+		let track = SM.tracks[id]?.['audiometa'];
 		if (!track) return;
 
-		switch (track.audiotype) {
+		switch (track['audiotype']) {
 			case AudioType.effect:
-				if (SM.limitToOneEffect && SM.currentEffectAudio && track.priority < SM.currentEffectAudio.priority) return;
+				if (SM.limitToOneEffect && SM.currentEffectAudio && track['priority'] < SM.currentEffectAudio['priority']) return;
 				SM.stopEffect();
 				SM.createNode(id).then(node => {
 					SM.currentEffectNode = node;
@@ -72,7 +74,7 @@ export class SM {
 	}
 
 	private static stop(id: number): void {
-		switch (SM.tracks[id].audiometa.audiotype) {
+		switch (SM.tracks[id]?.['audiometa']['audiotype']) {
 			case AudioType.effect: SM.stopEffect(); break;
 			case AudioType.music: SM.stopMusic(); break;
 		}

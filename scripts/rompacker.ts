@@ -9,6 +9,8 @@ const terser = require('terser');
 const pako = require('pako');
 const minify = require('@node-minify/core');
 const cleanCSS = require('@node-minify/clean-css');
+const cliProgress = require('cli-progress');
+const _colors = require('colors');
 
 /**
  * Convert an Uint8Array into a string.
@@ -17,6 +19,11 @@ const cleanCSS = require('@node-minify/clean-css');
  */
 function decodeuint8arr(uint8array: Uint8Array): string {
 	return new TextDecoder("utf-8").decode(uint8array);
+}
+
+function log(tolog: string): void {
+	let d = new Date();
+	process.stdout.write(`${_colors.cyan(d.toTimeString().split(' ')[0])}:${_colors.cyan(d.getMilliseconds().toString().substring(0, 3))} ${tolog}`);
 }
 
 /**
@@ -70,37 +77,41 @@ function copyResources(): void {
 }
 
 async function bundleGamecode(outfile: string): Promise<any> {
-	let writeOutput = createWriteStream('./rom/megarom.js');
-
-	browserify({
-		debug: true,
-		basedir: '.',
-		project: true,
-		cache: {},
-		packageCache: {},
-		exclude: ['src/lib/rom.ts', 'src/lib/rompacker.ts'],
-		// standalone: 'moduleName',
-		ignore: ['node_modules', 'dist', 'rom']
-	})
-		.add("src/bootstrapper.ts")
-		.plugin(tsify)
-		.transform(babelify, {
-			extensions: ['.ts'],
-			plugins: ['@babel/plugin-transform-modules-commonjs'],
-			sourceMaps: true,
-			global: true,
-		})
-		.bundle()
-		.on("error", e => { console.error(e.message); Promise.resolve(e) })
-		.pipe(writeOutput)
-	// .catch(e => console.error(e.message));
+	log("Game compileren en bundleren...\n");
 
 	return new Promise(function (resolve, reject) {
-		writeOutput.on('finish', function () {
-			console.info("finish!");
-			resolve();
+		let writeOutput = createWriteStream('./rom/megarom.js');
+		browserify({
+			debug: true,
+			basedir: '.',
+			project: true,
+			cache: {},
+			packageCache: {},
+			exclude: ['src/lib/rom.ts', 'src/lib/rompacker.ts'],
+			// standalone: 'moduleName',
+			ignore: ['node_modules', 'dist', 'rom']
+		})
+			.add("src/bootstrapper.ts")
+			.plugin(tsify)
+			.transform(babelify, {
+				extensions: ['.ts'],
+				plugins: ['@babel/plugin-transform-modules-commonjs'],
+				sourceMaps: true,
+				global: true,
+			})
+			.bundle()
+			.on("error", e => { console.error(e.message); Promise.resolve(e); })
+			.pipe(writeOutput);
+		// .catch(e => console.error(e.message));
+
+		writeOutput.on('finish', () => {
+			log("\tKlaar!\n");
+			return resolve();
 		});
-		writeOutput.on("error", e => { console.error(e.message); resolve(e) })
+		writeOutput.on("error", e => {
+			log(`Game bouwen faalde: ${e.message}\n`);
+			return reject(e);
+		});
 	});
 }
 
@@ -190,25 +201,37 @@ function minifyGamecode(infile: string): void {
 		// wrap: "__rom__",
 	};
 
-
-
 	let gamejs = readFileSync(infile, 'utf8');
 	let gamejsMinifiedResult = terser.minify(gamejs, options);
 	if (gamejsMinifiedResult.code) {
 		writeFileSync("./rom/megarom.min.js", gamejsMinifiedResult.code);
 	}
 	else {
-		console.error("Minifying failed :-(");
+		log("Minifying van gamecode faalde :-(");
 	}
 }
 
-function buildGameHtml(outfile: string): void {
+async function buildGameHtml(outfile: string): Promise<void> {
+	log("game.html en game_debug.html bouwen...\n");
+	const bar = new cliProgress.SingleBar({
+		format: 'Beunen: |' + _colors.brightBlue('{bar}') + '| {percentage}% |',
+		barCompleteChar: '\u2588',
+		barIncompleteChar: '\u2591',
+		hideCursor: true
+	});
+
+	bar.start(12, 0);
+
 	let html = readFileSync("./gamebase.html", 'utf8');
+	bar.increment(1);
 	let release_html: string;
 	let debug_html: string;
 	let romjs = readFileSync("./rom/rom.js", 'utf8');
+	bar.increment(1);
 	let zipjs = readFileSync("./scripts/pako_inflate.min.js", 'utf8');
+	bar.increment(1);
 	romjs = romjs.replace('Object.defineProperty(exports, "__esModule", { value: true });', '');
+	bar.increment(1);
 	let options = {
 		compress: {
 			arrows: false
@@ -225,31 +248,49 @@ function buildGameHtml(outfile: string): void {
 		}
 	};
 	let romjsMinified = terser.minify(romjs, options).code;
+	bar.increment(1);
 	let bmsx = readFileSync("./rom/bmsx.png");
+	bar.increment(1);
 	let bmsx_base64ed = bmsx.toString('base64');
+	bar.increment(1);
 
-	minify({
-		compressor: cleanCSS,
-		input: "./gamebase.css",
-		output: "./gamebase.min.css",
-		callback: function (err, cssMinified: string) {
-			release_html = html.replace('//#romjs', romjsMinified);
-			release_html = release_html.replace('//#zipjs', zipjs);
-			release_html = release_html.replace('/*css*/', cssMinified);
-			release_html = release_html.replace('#outfile', outfile);
-			release_html = release_html.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed);
-			release_html = release_html.replace('//#debug', '');
+	return new Promise<void>((resolve, reject) => {
+		minify({
+			compressor: cleanCSS,
+			input: "./gamebase.css",
+			output: "./gamebase.min.css",
+			callback: function (err, cssMinified: string) {
+				if (!cssMinified) {
+					log(`Minifyen van CSS faalde: ${err.message}`);
+					return reject();
+				}
+				bar.increment(1);
+				release_html = html.replace('//#romjs', romjsMinified);
+				release_html = release_html.replace('//#zipjs', zipjs);
+				release_html = release_html.replace('/*css*/', cssMinified);
+				release_html = release_html.replace('#outfile', outfile);
+				release_html = release_html.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed);
+				release_html = release_html.replace('//#debug', '');
+				// release_html = release_html.replace('//#localfetch', 'basic.localfetch = true;\n');
+				bar.increment(1);
 
-			writeFileSync("./dist/game.html", release_html);
+				writeFileSync("./dist/game.html", release_html);
+				bar.increment(1);
 
-			debug_html = html.replace('//#romjs', romjs);
-			debug_html = debug_html.replace('//#zipjs', zipjs);
-			debug_html = debug_html.replace('/*css*/', cssMinified);
-			debug_html = debug_html.replace('#outfile', outfile);
-			debug_html = debug_html.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed);
-			debug_html = debug_html.replace('//#debug', 'basic.debug = true;\n');
-			writeFileSync("./dist/game_debug.html", debug_html);
-		}
+				debug_html = html.replace('//#romjs', romjs);
+				debug_html = debug_html.replace('//#zipjs', zipjs);
+				debug_html = debug_html.replace('/*css*/', cssMinified);
+				debug_html = debug_html.replace('#outfile', outfile);
+				debug_html = debug_html.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed);
+				debug_html = debug_html.replace('//#debug', 'basic.debug = true;\n');
+				debug_html = debug_html.replace('//#localfetch', 'basic.localfetch = true;\n');
+				bar.increment(1);
+				writeFileSync("./dist/game_debug.html", debug_html);
+				bar.increment(1);
+				bar.stop();
+				return resolve();
+			}
+		});
 	});
 }
 
@@ -282,87 +323,116 @@ function zip(content: Buffer): string {
 }
 
 async function buildRompackAndResourceList(outfile: string): Promise<void> {
-	bundleGamecode("./rom/tsout.js")
-		.then(() => {
-			minifyGamecode("./rom/megarom.js");
-			const arrayOfFiles = getFiles("./rom");
-			addFile("./rom", "megarom.min.js", arrayOfFiles); // Add source at the end
+	log("Minifyen...\n");
+	minifyGamecode("./rom/megarom.js");
+	log("\tKlaar!\n");
 
-			let buffers = new Array<Buffer>();
-			arrayOfFiles.forEach(x => buffers.push(readFileSync(x)));
+	log("Alle files ophalen...\n");
+	const arrayOfFiles = getFiles("./rom");
+	addFile("./rom", "megarom.min.js", arrayOfFiles); // Add source at the end
+	log("\tKlaar!\n");
 
-			let tsimgout = new Array<string>();
-			let tssndout = new Array<string>();
+	let buffers = new Array<Buffer>();
+	log("Resource bestanden inladen en bufferen...\n");
+	const bar = new cliProgress.SingleBar({
+		format: 'Beunen: |' + _colors.brightBlue('{bar}') + '| {percentage}% |',
+		barCompleteChar: '\u2588',
+		barIncompleteChar: '\u2591',
+		hideCursor: true
+	});
 
-			tsimgout.push("export const enum BitmapId {\n\tNone = 0,");
-			tssndout.push("export const enum AudioId {\n\tNone = 0,");
+	bar.start(arrayOfFiles.length, 0);
 
-			let jsonout = new Array<RomResource>();
-			let bufferPointer = 0;
-			let imgi = 1;
-			let sndi = 1;
-			for (let i = 0; i < arrayOfFiles.length; i++) {
-				let type: string;
-				let name = parse(arrayOfFiles[i]).name.replace(' ', '');
-				switch (parse(arrayOfFiles[i]).ext) {
-					case '.wav':
-						type = 'audio';
-						break;
-					case '.js':
-						type = 'source';
-						break;
-					case '.png':
-					default:
-						type = 'image';
-						break;
+	arrayOfFiles.forEach(x => { buffers.push(readFileSync(x)); bar.increment(1); });
+	bar.stop();
+
+	log("romresources.json knutselen...\n");
+	let tsimgout = new Array<string>();
+	let tssndout = new Array<string>();
+
+	bar.start(arrayOfFiles.length + 2, 0);
+
+	tsimgout.push("export const enum BitmapId {\n\tNone = 0,");
+	tssndout.push("export const enum AudioId {\n\tNone = 0,");
+
+	let jsonout = new Array<RomResource>();
+	let bufferPointer = 0;
+	let imgi = 1;
+	let sndi = 1;
+	for (let i = 0; i < arrayOfFiles.length; i++) {
+		let type: string;
+		let name = parse(arrayOfFiles[i]).name.replace(' ', '');
+		switch (parse(arrayOfFiles[i]).ext) {
+			case '.wav':
+				type = 'audio';
+				break;
+			case '.js':
+				type = 'source';
+				break;
+			case '.png':
+			default:
+				type = 'image';
+				break;
+		}
+		switch (type) {
+			case 'image':
+				jsonout.push({ resid: imgi, resname: name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length, audiometa: null });
+				tsimgout.push(`\t${name} = ${imgi},`);
+				++imgi;
+				break;
+			case 'audio':
+				{
+					let parsedMeta = parseAudioMeta(name);
+					name = parsedMeta.sanitizedName;
+					jsonout.push({ resid: sndi, resname: name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length, audiometa: parsedMeta.meta });
 				}
-				switch (type) {
-					case 'image':
-						jsonout.push({ resid: imgi, resname: name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length, audiometa: null });
-						tsimgout.push(`\t${name} = ${imgi},`);
-						++imgi;
-						break;
-					case 'audio':
-						{
-							let parsedMeta = parseAudioMeta(name);
-							name = parsedMeta.sanitizedName;
-							jsonout.push({ resid: sndi, resname: name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length, audiometa: parsedMeta.meta });
-						}
-						tssndout.push(`\t${name} = ${sndi},`);
-						++sndi;
-						break;
-					case 'source':
-						name = name.replace('.min', '');
-						jsonout.push({ resid: sndi, resname: name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length, audiometa: null });
-						break;
-				}
-				bufferPointer += buffers[i].length;
-			}
+				tssndout.push(`\t${name} = ${sndi},`);
+				++sndi;
+				break;
+			case 'source':
+				name = name.replace('.min', '');
+				jsonout.push({ resid: sndi, resname: name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length, audiometa: null });
+				break;
+		}
+		bufferPointer += buffers[i].length;
+		bar.increment(1);
+	}
 
-			tsimgout.push("}\n");
-			tssndout.push("}\n");
+	tsimgout.push("}\n");
+	tssndout.push("}\n");
 
-			let jsonbuffer = Buffer.from(encodeuint8arr(JSON.stringify(jsonout)));
-			buffers.push(jsonbuffer);
+	let jsonbuffer = Buffer.from(encodeuint8arr(JSON.stringify(jsonout)));
+	buffers.push(jsonbuffer);
+	bar.increment(1);
 
-			let rommeta = <RomMeta>{
-				start: bufferPointer,
-				end: bufferPointer + jsonbuffer.length
-			};
-			let rommetastr = JSON.stringify(rommeta).padStart(100, ' ');
-			buffers.push(Buffer.from(encodeuint8arr(rommetastr)));
+	let rommeta = <RomMeta>{
+		start: bufferPointer,
+		end: bufferPointer + jsonbuffer.length
+	};
+	let rommetastr = JSON.stringify(rommeta).padStart(100, ' ');
+	buffers.push(Buffer.from(encodeuint8arr(rommetastr)));
+	bar.increment(1);
+	bar.stop();
 
-			let zipped = zip(Buffer.concat(buffers));
-			writeFileSync(`./dist/${outfile}`, zipped);
-			writeFileSync("./src/resourceids.ts", tsimgout.concat(tssndout).join('\n'));
-			writeFileSync("./rom/_ignore/romresources.json", jsonbuffer);
-			console.info("Rom successfully packed!");
-			console.info(`\tFiles: ${arrayOfFiles.length}\n\t\timages: ${imgi}\n\t\taudio: ${sndi}`);
-			console.info(`\tSize: ${(Buffer.concat(buffers).length / (1024 * 1024)).toFixed(2)} mB\n\tDeflated size: ${(zipped.length / (1024 * 1024)).toFixed(2)} mB.`);
-		}).catch(e => console.error(e))
+	log("Alles nu zippen...\n");
+	let zipped = zip(Buffer.concat(buffers));
+	log("\tKlaar!\n");
+	log(`"${_colors.green(outfile)}" wegschrijven naar ${_colors.green(outfile + "\"./dist/\"")}"...\n`);
+	writeFileSync(`./dist/${outfile}`, zipped);
+	log("\tKlaar!\n");
+	log(`resourceids.ts maken...\n`);
+	writeFileSync("./src/resourceids.ts", tsimgout.concat(tssndout).join('\n'));
+	log("\tKlaar!\n");
+	writeFileSync("./rom/_ignore/romresources.json", jsonbuffer);
+	log("Rom is gepackt!!\n");
+	log(`\tFiles: ${arrayOfFiles.length}\n\t\timages: ${imgi}\n\t\taudio: ${sndi}\n`);
+	log(`\tSize: ${(Buffer.concat(buffers).length / (1024 * 1024)).toFixed(2)} mB\n\tDeflated size: ${(zipped.length / (1024 * 1024)).toFixed(2)} mB.\n`);
+
 }
 
 try {
+	log(_colors.brightGreen("=== BMSX ROMPACKER ===\n"));
+	log(_colors.brightGreen("===  DOOR BOAZ©®™  ===\n"));
 	let args = process.argv.slice(2);
 	if (args.length <= 0) throw new Error("Missing parameter for output file (rom name, e.g. \"sintervania.rom\"");
 	let outfile = args[0];
@@ -379,11 +449,12 @@ try {
 		}
 	}
 
-	buildRompackAndResourceList(outfile).then(() => {
-		buildGameHtml(outfile);
-		console.info("klaar");
-	}).catch(e => console.error(e))
+	bundleGamecode("./rom/tsout.js")
+		.then(() => buildRompackAndResourceList(outfile))
+		.then(() => buildGameHtml(outfile))
+		.then(() => log(_colors.brightGreen("===  ALLES DONUT!  ===\n")))
+		.catch(e => { log(`Er ging iets niet goed: ${e.message}\n`); process.exit(-1); });
 } catch (e) {
-	console.error(e);
+	log(`Er ging iets niet goed: ${e.message}\n`);
 	process.exit(-1);
 }

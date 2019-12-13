@@ -27,6 +27,7 @@
     "babel-preset-es2015": "^6.24.1",
     "babelify": "^10.0.0",
     "browserify": "^16.5.0",
+    "cli-progress": "^3.4.0",
     "gulp": "^4.0.2",
     "libkss-js": "^0.12.0",
     "pako": "^1.0.10",

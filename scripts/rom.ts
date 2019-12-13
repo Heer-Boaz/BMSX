@@ -31,6 +31,7 @@ document.addEventListener('touchend', e => {
 var basic = {
 	rom: null as RomLoadResult,
 	debug: false,
+	localfetch: false,
 
 	set defusr(rom: RomLoadResult) {
 		basic.rom = rom;
@@ -70,8 +71,8 @@ var basic = {
 };
 
 async function loadRompack(url: string): Promise<ArrayBuffer> {
-	let fetcher = basic.debug ? fetchLocal : fetch;
-	if (basic.debug) {
+	let fetcher = basic.localfetch ? fetchLocal : fetch;
+	if (basic.localfetch) {
 		return fetchLocal(url)
 			.then(response_array => {
 				let result = pako.inflate(response_array).buffer;

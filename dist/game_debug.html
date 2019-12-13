@@ -68,6 +68,7 @@ document.addEventListener('touchend', function (e) {
 var basic = {
     rom: null,
     debug: false,
+    localfetch: false,
     set defusr(rom) {
         basic.rom = rom;
     },
@@ -125,8 +126,8 @@ function loadRompack(url) {
     return __awaiter(this, void 0, void 0, function () {
         var fetcher;
         return __generator(this, function (_a) {
-            fetcher = basic.debug ? fetchLocal : fetch;
-            if (basic.debug) {
+            fetcher = basic.localfetch ? fetchLocal : fetch;
+            if (basic.localfetch) {
                 return [2, fetchLocal(url)
                         .then(function (response_array) {
                         var result = pako.inflate(response_array).buffer;
@@ -382,6 +383,8 @@ function fetchLocal(url) {
         <script type="module">
             try {
                 basic.debug = true;
+
+                basic.localfetch = true;
 
                 basic.bload("./sintervania.rom").then(function (h406A) {
                     basic.defusr = h406A;
