@@ -35,10 +35,21 @@ export class SM {
 		SM.tracks = _audioResources;
 	}
 
+	private static async decode(audioData: ArrayBuffer): Promise<AudioBuffer> {
+		if (SM.sndContext.decodeAudioData.length === 2) { // Safari
+			return new Promise(resolve => {
+				SM.sndContext.decodeAudioData(audioData, buffer => {
+					resolve(buffer);
+				});
+			});
+		} else { return SM.sndContext.decodeAudioData(audioData); }
+	}
+
 	private static async createNode(id: number): Promise<AudioBufferSourceNode> {
 		let srcnode = SM.sndContext.createBufferSource();
 		return new Promise<AudioBufferSourceNode>((resolve, reject) => {
-			SM.sndContext.decodeAudioData(game.rom['rom'].slice(SM.tracks[id]['start'], SM.tracks[id]['end'])).then(buffer => srcnode.buffer = buffer).then(() => resolve(srcnode));
+			SM.decode(game.rom['rom'].slice(SM.tracks[id]['start'], SM.tracks[id]['end'])).then(buffer => srcnode.buffer = buffer).then(() => resolve(srcnode))
+				.catch(e => reject(e));
 		});
 	}
 
@@ -59,14 +70,6 @@ export class SM {
 	}
 
 	public static play(id: number): void {
-		var oscillator = SM.sndContext.createOscillator();
-		oscillator.frequency.value = 400;
-		oscillator.connect(SM.sndContext.destination);
-		oscillator.start(0);
-		oscillator.stop(.1);
-		oscillator.onended = e => oscillator.disconnect();
-		return;
-
 		let track = SM.tracks[id]?.['audiometa'];
 		if (!track) return;
 
@@ -78,7 +81,8 @@ export class SM {
 					SM.currentEffectNode = node;
 					SM.currentEffectAudio = track;
 					SM.playNode(track, node);
-				});
+				})
+					.catch(e => console.error(e.message));
 				break;
 			case AudioType.music:
 				SM.stopMusic();
@@ -86,7 +90,8 @@ export class SM {
 					SM.currentMusicNode = node;
 					SM.currentMusicAudio = track;
 					SM.playNode(track, node);
-				});
+				})
+					.catch(e => console.error(e.message));
 				break;
 		}
 	}

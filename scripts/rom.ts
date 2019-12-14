@@ -33,6 +33,7 @@ var basic = {
 	debug: false,
 	localfetch: false,
 	sndcontext: <AudioContext>null,
+	snd_unlocked: false,
 	gainnode: <GainNode>null,
 
 	set defusr(rom: RomLoadResult) {
@@ -56,6 +57,7 @@ var basic = {
 	},
 
 	async bload(url: string): Promise<RomLoadResult> {
+		createAudioContext();
 		let bootCompletePromise = awaitBootComplete();
 		let rom = await loadRompack(url);
 		let result = await loadResources(rom);
@@ -64,13 +66,12 @@ var basic = {
 
 		await bootCompletePromise;
 		let pressedAnyKey = awaitPressedAnyKey();
-		// await pressedAnyKey;
+		await pressedAnyKey;
 		return result;
 	},
 };
 
 async function loadRompack(url: string): Promise<ArrayBuffer> {
-	let fetcher = basic.localfetch ? fetchLocal : fetch;
 	if (basic.localfetch) {
 		return fetchLocal(url)
 			.then(response_array => {
@@ -230,16 +231,38 @@ async function loadScript(rom: RomLoadResult): Promise<void> {
 }
 
 async function awaitPressedAnyKey(): Promise<void> {
+	let remove = (id: string) => {
+		let element = document.querySelector(id);
+		if (element) element.parentElement.removeChild(element);
+	};
+	let wrapup = () => {
+		// remove('#loading');
+		setClassForLoader("invisible");
+		remove('#msx');
+		remove('#hidor');
+		remove('#romjs');
+	};
+
 	let result: Promise<void> = new Promise((resolve, reject) => {
 		let onuserinteraction = () => {
+			if (!basic.snd_unlocked) { return; }
 			document.body.removeEventListener('keyup', onuserinteraction);
 			document.body.removeEventListener('click', onuserinteraction);
-			fixAudioContext();
+			wrapup();
 			resolve();
 		};
 
+		// if ("ontouchstart" in window && basic.sndcontext.state != "running") {
+		document.addEventListener('click', startAudioOnIos, true);
+		document.addEventListener('keyup', startAudioOnIos, true);
+		document.addEventListener('mousedown', startAudioOnIos, true);
+		document.addEventListener('touchstart', startAudioOnIos, true);
+		document.addEventListener('touchend', startAudioOnIos, true);
+		// }
 		document.body.addEventListener('keyup', onuserinteraction);
 		document.body.addEventListener('click', onuserinteraction); // Touchend want anders geen geluid: https://html.spec.whatwg.org/multipage/interaction.html#triggered-by-user-activation
+		// document.body.addEventListener('keyup', bla);
+		// document.body.addEventListener('click', bla); // Touchend want anders geen geluid: https://html.spec.whatwg.org/multipage/interaction.html#triggered-by-user-activation
 	});
 	return result;
 }
@@ -250,7 +273,7 @@ function setLoaderText(txt: string) {
 }
 
 function setClassForLoader(cls: string) {
-	let loading = <HTMLElement>document.querySelector( '#loading');
+	let loading = <HTMLElement>document.querySelector('#loading');
 	loading.className = cls;
 }
 
@@ -278,50 +301,52 @@ async function fetchLocal(url: string): Promise<ArrayBuffer> {
 	});
 }
 
-function fixAudioContext(): void {
-	if (basic.sndcontext) return;
+function startAudioOnIos(): void {
+	if (!basic.sndcontext) { return; }
+	if (basic.snd_unlocked) { return; }
+	var source = basic.sndcontext.createBufferSource();
+	source.buffer = basic.sndcontext.createBuffer(1, 1, 44100);
+	source.connect(basic.sndcontext.destination);
+	source.start(0, 0, 0);
 
-	let remove = (id: string) => {
-		let element = document.querySelector(id);
-		if (element) element.parentElement.removeChild(element);
-	};
-	let wrapup = () => {
-		// remove('#loading');
-		setClassForLoader("invisible");
-		remove('#msx');
-		remove('#hidor');
-		remove('#romjs');
-		basic.usr(0);
-	};
+	if (basic.sndcontext.state == "running") {
+		document.removeEventListener('keyup', startAudioOnIos);
+		document.removeEventListener('click', startAudioOnIos);
+		document.removeEventListener('mousedown', startAudioOnIos, true);
+		document.removeEventListener('touchend', startAudioOnIos, true);
+		document.removeEventListener('touchstart', startAudioOnIos, true);
+		basic.snd_unlocked = true;
+	}
+}
+
+function createAudioContext(): void {
+	if (basic.sndcontext) return;
 
 	// Fix iOS Audio Context by Blake Kus https://gist.github.com/kus/3f01d60569eeadefe3a1
 	// MIT license
-	const AudioContext = 					// https://github.com/amaneureka/T-Rex/issues/5
+	const AContext: any = 					// https://github.com/amaneureka/T-Rex/issues/5
 		window.AudioContext ||				// Default
 		(<any>window).webkitAudioContext;	// Safari and old versions of Chrome
 
-	let sndContext: AudioContext = new AudioContext({
+	let context: AudioContext = new AContext({
 		latencyHint: 'interactive',
 		sampleRate: 44100,
 	});
-	if (sndContext) {
-		basic.sndcontext = sndContext;
+	// https://createjs.com/docs/soundjs/files/soundjs_webaudio_WebAudioPlugin.js.html#l355
+	// Check if hack is necessary. Only occurs in iOS6+ devices
+	// and only when you first boot the iPhone, or play a audio/video
+	// with a different sample rate
+	if (/(iPhone|iPad)/i.test(navigator.userAgent) && context.sampleRate !== 44100) {
+		var buffer = context.createBuffer(1, 1, 44100),
+			dummy = context.createBufferSource();
+		dummy.buffer = buffer;
+		dummy.connect(context.destination);
+		dummy.start(0);
+		dummy.disconnect();
+		context.close(); // dispose old context
 
-		let oscillator = sndContext.createOscillator();
-		oscillator.frequency.value = 400;
-		oscillator.connect(basic.sndcontext.destination);
-		oscillator.start(0);
-		oscillator.stop(.1);
-		oscillator.onended = e => {
-			oscillator.disconnect();
-			// let gainnode = basic.sndcontext.createGain();
-			// gainnode = basic.sndcontext.createGain();
-			// gainnode.connect(basic.sndcontext.destination);
-			// gainnode.gain.value = .5;
-			// basic.gainnode = gainnode;
-
-			wrapup();
-		};
+		context = new AContext();
 	}
-	else wrapup();
+
+	basic.sndcontext = context;
 }

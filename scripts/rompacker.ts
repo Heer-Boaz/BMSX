@@ -383,14 +383,14 @@ async function deploy(): Promise<void> {
 async function buildRompackAndResourceList(outfile: string): Promise<void> {
 	log("Minifyen... ");
 	startRotator();
-	// minifyGamecode("./rom/megarom.js");
+	minifyGamecode("./rom/megarom.js");
 	stopRotator();
 	log("\tKlaar!\n");
 
 	log("Alle files ophalen... ");
 	startRotator();
 	const arrayOfFiles = getFiles("./rom");
-	addFile("./rom", "megarom.js", arrayOfFiles); // Add source at the end
+	addFile("./rom", "megarom.min.js", arrayOfFiles); // Add source at the end
 	stopRotator();
 	log("\tKlaar!\n");
 
