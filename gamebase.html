@@ -14,10 +14,51 @@
     </head>
 
     <body>
-        <div onclick="void(0);"> <!-- https://stackoverflow.com/questions/24077725/mobile-safari-sometimes-does-not-trigger-the-click-event -->
+        <div onclick="void(0);">
+            <!-- https://stackoverflow.com/questions/24077725/mobile-safari-sometimes-does-not-trigger-the-click-event -->
             <img id="msx" src="#bmsxurl" />
             <div id="hidor"></div>
             <span id="loading" class="coloring">Loading...</span>
+            <svg class="buttons" style="top: 80vh; left: 80vw;">
+                <circle id="btn1_knop" class="knop" cx="5vmax" cy="5vmax" r="5vmax" fill="red" />
+            </svg>
+            <svg class="buttons" style="top: 75vh; left: 90vw;">
+                <circle id="btn2_knop" class="knop" cx="5vmax" cy="5vmax" r="5vmax" fill="blue" />
+            </svg>
+            <svg class="d-pad">
+                <path id="d-pad-ru" class="dknop" d="M 50 50
+                                    L 50 0
+                                    A 50 50, 0, 0, 1, 85 15
+                                    Z" fill="red" />
+                <path id="d-pad-r" class="dknop" d="M 50 50
+                                    L 85 15
+                                    A 50 50, 0, 0, 1, 100 50
+                                    Z" fill="green" />
+                <path id="d-pad-rd" class="dknop" d="M 50 50
+                                    L 100 50
+                                    A 50 50, 0, 0, 1, 85 85
+                                    Z" fill="blue" />
+                <path id="d-pad-d" class="dknop" d="M 50 50
+                                    L 85 85
+                                    A 50 50, 0, 0, 1, 50 100
+                                    Z" fill="yellow" />
+                <path id="d-pad-ld" class="dknop" d="M 50 50
+                                    L 50 100
+                                    A 50 50, 0, 0, 1, 15 85
+                                    Z" fill="purple" />
+                <path id="d-pad-l" class="dknop" d="M 50 50
+                                    L 15 85
+                                    A 50 50, 0, 0, 1, 0 50
+                                    Z" fill="cyan" />
+                <path id="d-pad-lu" class="dknop" d="M 50 50
+                                    L 0 50
+                                    A 50 50, 0, 0, 1, 15 15
+                                    Z" fill="black" />
+                <path id="d-pad-u" class="dknop" d="M 50 50
+                                    L 15 15
+                                    A 50 50, 0, 0, 1, 50 0
+                                    Z" fill="brown" />
+            </svg>
             <canvas id="gamescreen"></canvas>
         </div>
     </body>

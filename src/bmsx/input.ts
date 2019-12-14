@@ -95,10 +95,28 @@ export class Input {
         Input.KeyClickRequestedState = {};
         Input.reset();
 
-        window.addEventListener('keydown', keydown, false);
-        window.addEventListener('keyup', keyup, false);
+        window.addEventListener('keydown', e => { preventDefaultEventAction(e); keydown(e.key); }, false);
+        window.addEventListener('keyup', e => { preventDefaultEventAction(e); keyup(e.key); }, false);
         window.addEventListener('blur', blur, false);
-        window.addEventListener('touchstart', () => Input.KeyState[' '] = true, false);
+
+        document.getElementById('d-pad-u').addEventListener('touchstart', e => keydown('ArrowUp'), false);
+        document.getElementById('d-pad-u').addEventListener('touchend', e => keyup('ArrowUp'), false);
+        document.getElementById('d-pad-ru').addEventListener('touchstart', e => { keydown('ArrowUp'); keydown('ArrowRight'); }, false);
+        document.getElementById('d-pad-ru').addEventListener('touchend', e => { keyup('ArrowUp'); keyup('ArrowRight'); }, false);
+        document.getElementById('d-pad-r').addEventListener('touchstart', e => keydown('ArrowRight'), false);
+        document.getElementById('d-pad-r').addEventListener('touchend', e => keyup('ArrowRight'), false);
+        document.getElementById('d-pad-d').addEventListener('touchstart', e => keydown('ArrowDown'), false);
+        document.getElementById('d-pad-d').addEventListener('touchend', e => keyup('ArrowDown'), false);
+        document.getElementById('d-pad-ld').addEventListener('touchstart', e => { keydown('ArrowLeft'); keydown('ArrowDown'); }, false);
+        document.getElementById('d-pad-ld').addEventListener('touchend', e => { keyup('ArrowLeft'); keyup('ArrowDown'); }, false);
+        document.getElementById('d-pad-l').addEventListener('touchstart', e => keydown('ArrowLeft'), false);
+        document.getElementById('d-pad-l').addEventListener('touchend', e => keyup('ArrowLeft'), false);
+        document.getElementById('d-pad-lu').addEventListener('touchstart', e => { keydown('ArrowLeft'); keydown('ArrowUp'); }, false);
+        document.getElementById('d-pad-lu').addEventListener('touchend', e => { keyup('ArrowLeft'); keyup('ArrowUp'); }, false);
+        document.getElementById('btn1_knop').addEventListener('touchstart', e => keydown(' '), false);
+        document.getElementById('btn1_knop').addEventListener('touchend', e => keyup(' '), false);
+        document.getElementById('btn2_knop').addEventListener('touchstart', e => keydown('m'), false);
+        document.getElementById('btn2_knop').addEventListener('touchend', e => keyup('m'), false);
     }
 
     public static reset(): void {
@@ -113,8 +131,7 @@ export class Input {
     }
 }
 
-function keydown(e: KeyboardEvent): void {
-    if (!document.hasFocus()) return;
+function preventDefaultEventAction(e: KeyboardEvent) {
     if (game.running) {
         switch (e.key) {
             case 'Escape':
@@ -127,29 +144,17 @@ function keydown(e: KeyboardEvent): void {
                 break;
         }
     }
-
-    Input.KeyState[e.key] = true;
 }
 
-function keyup(e: KeyboardEvent): void {
+function keydown(key: string): void {
     // if (!document.hasFocus()) return;
+    Input.KeyState[key] = true;
+}
 
-    if (game.running) {
-        switch (e.key) {
-            case 'Escape':
-            case 'Esc':
-            case 'F11':
-            case 'F12':
-                break;
-            default:
-                e.preventDefault();
-                break;
-
-        }
-    }
-
-    delete Input.KeyState[e.key];
-    delete Input.KeyClickRequestedState[e.key];
+function keyup(key: string): void {
+    // if (!document.hasFocus()) return;
+    delete Input.KeyState[key];
+    delete Input.KeyClickRequestedState[key];
 }
 
 function blur(e: FocusEvent): void {

@@ -1,3 +1,83 @@
+#up_knop {
+	width: 0;
+	height: 0;
+	top: 60vh;
+	left: 10vw;
+	border-left: 10vw solid transparent;
+	border-right: 10vw solid transparent;
+	border-bottom: 10vh solid #fff
+}
+
+#down_knop {
+	width: 0;
+	height: 0;
+	top: 90vh;
+	left: 10vw;
+	border-left: 10vw solid transparent;
+	border-right: 10vw solid transparent;
+	border-top: 10vh solid #fff
+}
+
+#right_knop {
+	width: 0;
+	height: 0;
+	top: 70vh;
+	left: 30vw;
+	border-top: 10vh solid transparent;
+	border-bottom: 10vh solid transparent;
+	border-left: 10vw solid #fff
+}
+
+#left_knop {
+	width: 0;
+	height: 0;
+	top: 70vh;
+	left: 0;
+	border-top: 10vh solid transparent;
+	border-bottom: 10vh solid transparent;
+	border-right: 10vw solid #fff
+}
+
+svg.buttons {
+	position: fixed;
+	z-index: 2000;
+}
+
+.knop {
+	opacity: .5;
+	z-index: 2000;
+}
+
+.dknop {
+	opacity: .5;
+	z-index: 2000;
+}
+
+.knop:active {
+	opacity: .8;
+	display: block;
+	border-radius: 1px;
+	transition: all .5s cubic-bezier(.25, 1.7, .35, 1.5);
+	/* transform: scale(.8) */
+}
+
+svg.d-pad {
+	top: 70vh;
+	left: 50px;
+	width: 100px;
+	height: 100px;
+	position: fixed;
+	transform-origin: 50% 50%;
+	transform: rotate(22.5deg) scale(1.5);
+	z-index: 2000;
+}
+
+.dknop:active {
+	opacity: .8;
+	display: block;
+	transition: all .5s cubic-bezier(.25, 1.7, .35, 1.5);
+}
+
 body {
 	position: fixed;
 	margin: 0;
@@ -18,7 +98,6 @@ body {
 
 html {
 	width: 100vw;
-	/* height: 100vh; */
 	height: 100%;
 	touch-action: manipulation;
 }
@@ -28,11 +107,6 @@ body {
 	width: 100vw;
 	height: 100%;
 	overflow: hidden;
-}
-
-img {
-	/* pointer-events: none;
-	touch-action: none; */
 }
 
 #gamescreen {
@@ -45,6 +119,7 @@ img {
 	-ms-interpolation-mode: nearest-neighbor;
 	image-rendering: pixelated;
 	overflow: hidden;
+  	z-index: 999;
 }
 
 #hidor {
