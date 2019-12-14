@@ -98,6 +98,7 @@ export class Input {
         window.addEventListener('keydown', keydown, false);
         window.addEventListener('keyup', keyup, false);
         window.addEventListener('blur', blur, false);
+        window.addEventListener('touchstart', () => Input.KeyState[' '] = true, false);
     }
 
     public static reset(): void {

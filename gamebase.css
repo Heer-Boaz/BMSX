@@ -16,6 +16,7 @@ body {
 	overflow: hidden;
 	/* background-color: black; */
 	background-color: #2020ff;
+	cursor: pointer;
 }
 
 html {
@@ -109,6 +110,10 @@ img {
 
 #loading.coloring {
 	animation: coloring 2s infinite;
+}
+
+#loading.invisible {
+	display: none;
 }
 
 @keyframes coloring {

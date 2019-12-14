@@ -8,11 +8,11 @@ import { setPoint } from './bmsx/common';
 import { Tile } from './bmsx/msx';
 
 var _global = window || global;
-_global['h406A'] = (rom: RomLoadResult): void => {
+_global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: GainNode): void => {
     let _model = new Model();
     let _view = new GameView({ x: GameConstants.ViewportWidth, y: GameConstants.ViewportHeight });
     let _controller = new Controller();
-    new Game(rom, _model, _view, _controller);
+    new Game(rom, _model, _view, _controller, sndcontext, gainnode);
 
     game.start();
     Model._.SelectedChapterToPlay = Chapter.GameStart;

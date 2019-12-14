@@ -52,8 +52,8 @@ export abstract class BaseView {
 
     public calculateSize(): void {
         let self = view || this;
-        let w = Math.max(document.documentElement.clientWidth, window.innerWidth || 0);
-        let h = Math.max(document.documentElement.clientHeight, window.innerHeight || 0);
+        let w = Math.max(document.documentElement.clientWidth, window.innerWidth || screen.width);
+        let h = Math.max(document.documentElement.clientHeight, window.innerHeight || screen.height);
         self.windowSize = { x: w, y: h };
         self.dx = self.windowSize.x / self.viewportSize.x;
         self.dy = self.windowSize.y / self.viewportSize.y;
@@ -73,10 +73,10 @@ export abstract class BaseView {
 
     public DetermineMaxScaleForFullscreen(clientWidth: number, clientHeight: number, originalBufferWidth: number, originalBufferHeight: number): number {
         if (clientWidth >= clientHeight) {
-            return clientHeight / <number>originalBufferHeight;
+            return clientHeight / originalBufferHeight;
         }
         else {
-            return clientWidth / <number>originalBufferWidth;
+            return clientWidth / originalBufferWidth;
         }
     }
 

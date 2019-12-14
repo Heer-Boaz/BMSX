@@ -11,6 +11,7 @@ const minify = require('@node-minify/core');
 const cleanCSS = require('@node-minify/clean-css');
 const cliProgress = require('cli-progress');
 const _colors = require('colors');
+const FtpDeploy = require("ftp-deploy");
 
 /**
  * Convert an Uint8Array into a string.
@@ -349,17 +350,47 @@ function zip(content: Buffer): string {
 	return pako.deflate(toCompress);
 }
 
+async function deploy(): Promise<void> {
+	return new Promise<void>((resolve, reject) => {
+		log("Deployeren... ");
+		startRotator();
+		let ftpDeploy = new FtpDeploy();
+
+		let config = {
+			user: "boazpat_el@ziggo.nl",
+			password: "lars18th",
+			host: "homedrive.ziggo.nl",
+			port: 21,
+			localRoot: "./dist",
+			remoteRoot: "/sintervania/",
+			// include: ["*", "**/*"],      // this would upload everything except dot files
+			include: ["*.rom", "*.html",],
+			// e.g. exclude sourcemaps, and ALL files in node_modules (including dot files)
+			exclude: [],//"dist/**/*.map", "node_modules/**", "node_modules/**/.*", ".git/**"],
+			// delete ALL existing files at destination before uploading, if true
+			deleteRemote: false,
+			// Passive mode is forced (EPSV command is not sent)
+			forcePasv: true
+		};
+
+		ftpDeploy
+			.deploy(config)
+			.then(res => { stopRotator(); log(`\tKlaar!: ${res}\n`); return resolve(); })
+			.catch(err => { stopRotator(); log(`\tFTP upload mislukt :-( ${err}\n`); return reject(); });
+	});
+}
+
 async function buildRompackAndResourceList(outfile: string): Promise<void> {
 	log("Minifyen... ");
 	startRotator();
-	minifyGamecode("./rom/megarom.js");
+	// minifyGamecode("./rom/megarom.js");
 	stopRotator();
 	log("\tKlaar!\n");
 
 	log("Alle files ophalen... ");
 	startRotator();
 	const arrayOfFiles = getFiles("./rom");
-	addFile("./rom", "megarom.min.js", arrayOfFiles); // Add source at the end
+	addFile("./rom", "megarom.js", arrayOfFiles); // Add source at the end
 	stopRotator();
 	log("\tKlaar!\n");
 
@@ -489,6 +520,7 @@ try {
 	bundleGamecode("./rom/tsout.js")
 		.then(() => buildRompackAndResourceList(outfile))
 		.then(() => buildGameHtml(outfile))
+		.then(() => deploy())
 		.then(() => log(_colors.brightGreen("===  ALLES DONUT!  ===\n")))
 		.catch(e => { log(`Er ging iets niet goed: ${e.message}\n`); process.exit(-1); });
 } catch (e) {

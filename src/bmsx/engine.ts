@@ -4,6 +4,7 @@ import { Input } from "./input";
 import { RomLoadResult } from "./rompack";
 import { MSX2ScreenWidth, MSX2ScreenHeight } from "./msx";
 import { Point, Area, moveArea, Size } from "./common";
+import { AudioId } from './resourceids';
 
 export let game: Game;
 export let model: BaseModel;
@@ -58,7 +59,7 @@ export class Game {
     wasupdated: boolean;
     public rom: RomLoadResult;
 
-    constructor(_rom: RomLoadResult, _model: BaseModel, _view: BaseView, _controller: BaseController) {
+    constructor(_rom: RomLoadResult, _model: BaseModel, _view: BaseView, _controller: BaseController, sndcontext: AudioContext, gainnode: GainNode) {
         game = this;
         this.rom = _rom;
 
@@ -67,7 +68,7 @@ export class Game {
         controller = _controller;
 
         BaseView.images = _rom.images;
-        SM.init(_rom['resources']);
+        SM.init(_rom['resources'], sndcontext, gainnode);
         Input.init();
 
         this.lastUpdate = 0;

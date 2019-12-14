@@ -13,16 +13,23 @@ export class SM {
 	public static currentMusicAudio: AudioMeta;
 	private static gainNode: GainNode;
 
-	public static init(_audioResources: id2res) {
-		SM.sndContext = new AudioContext({
-			latencyHint: 'interactive',
-			sampleRate: 44100,
-		});
+	public static init(_audioResources: id2res, sndcontext?: AudioContext, gainnode?: GainNode) {
+		const AudioContext = 					// https://github.com/amaneureka/T-Rex/issues/5
+			window.AudioContext ||				// Default
+			(<any>window).webkitAudioContext;	// Safari and old versions of Chrome
+		SM.sndContext = sndcontext;// || new AudioContext({
+		// 	latencyHint: 'interactive',
+		// 	sampleRate: 44100,
+		// });
+		SM.currentEffectAudio = null;
+		SM.currentMusicAudio = null;
 
 		SM.sndContext.resume().then(() => {
-			SM.gainNode = SM.sndContext.createGain();
-			SM.gainNode.connect(SM.sndContext.destination);
-			SM.setVolume(.5);
+			if (!gainnode) {
+				SM.gainNode = SM.sndContext.createGain();
+				SM.gainNode.connect(SM.sndContext.destination);
+				SM.setVolume(.5);
+			}
 		});
 
 		SM.tracks = _audioResources;
@@ -52,14 +59,20 @@ export class SM {
 	}
 
 	public static play(id: number): void {
+		var oscillator = SM.sndContext.createOscillator();
+		oscillator.frequency.value = 400;
+		oscillator.connect(SM.sndContext.destination);
+		oscillator.start(0);
+		oscillator.stop(.1);
+		oscillator.onended = e => oscillator.disconnect();
+		return;
+
 		let track = SM.tracks[id]?.['audiometa'];
 		if (!track) return;
 
 		switch (track['audiotype']) {
 			case AudioType.effect:
 				if (SM.limitToOneEffect && SM.currentEffectAudio && track['priority'] < SM.currentEffectAudio['priority']) return;
-				SM.currentEffectAudio && console.log(track['priority'] + " >= " + SM.currentEffectAudio['priority']);
-				!SM.currentEffectAudio && console.log('Er is geen geluid volgens deze code');
 				SM.stopEffect();
 				SM.createNode(id).then(node => {
 					SM.currentEffectNode = node;
@@ -86,13 +99,17 @@ export class SM {
 	}
 
 	public static stopEffect(): void {
+		try {
+			if (SM.currentEffectAudio) SM.currentEffectNode?.stop();
+		} catch { }
 		SM.currentEffectNode?.disconnect();
-		SM.currentEffectNode?.stop();
 		SM.currentEffectNode = null;
 	}
 
 	public static stopMusic(): void {
-		SM.currentMusicNode?.stop();
+		try {
+			if (SM.currentMusicAudio) SM.currentMusicNode?.stop();
+		} catch { }
 		SM.currentMusicNode?.disconnect();
 		SM.currentMusicNode = null;
 	}

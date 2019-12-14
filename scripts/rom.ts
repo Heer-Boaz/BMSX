@@ -1,7 +1,7 @@
 import { RomLoadResult, RomResource, RomMeta } from '../src/bmsx/rompack';
 
 declare var pako: any;
-declare var h406A: (rom: RomLoadResult) => void;
+declare var h406A: (rom: RomLoadResult, sndcontext: AudioContext, gainnode: GainNode) => void;
 
 // Only implement if no native implementation is available
 // https://stackoverflow.com/questions/4775722/how-to-check-if-an-object-is-an-array
@@ -15,33 +15,41 @@ if (typeof Array.isArray === 'undefined') {
 // Maar ontouchend eruit halen zorgt ervoor dat niets meer reageert :(
 // Touch move vind ik te eng om erin te zetten
 // https://medium.com/jsdownunder/locking-body-scroll-for-all-devices-22def9615177
-document.addEventListener('touchmove', e => {
-	e.preventDefault();
-});
-document.addEventListener('touchend', e => {
-	e.preventDefault();
-});
-document.addEventListener('touchmove', e => {
-	e.preventDefault();
-});
-document.addEventListener('touchend', e => {
-	e.preventDefault();
-});
+// document.addEventListener('touchmove', e => {
+// 	e.preventDefault();
+// });
+// document.addEventListener('touchend', e => {
+// 	e.preventDefault();
+// });
+// document.addEventListener('touchmove', e => {
+// 	e.preventDefault();
+// });
+// document.addEventListener('touchend', e => {
+// 	e.preventDefault();
+// });
 
 var basic = {
 	rom: null as RomLoadResult,
 	debug: false,
 	localfetch: false,
+	sndcontext: <AudioContext>null,
+	gainnode: <GainNode>null,
 
 	set defusr(rom: RomLoadResult) {
 		basic.rom = rom;
 	},
 
-	async usr(x: number): Promise<number> {
+	usr(x: number): number {
 		document.body.style.backgroundColor = "#000000";
 		loadScript(basic.rom).then(() => {
-			h406A(basic.rom);
-			basic.rom = null;
+			try {
+				h406A(basic.rom, basic.sndcontext, basic.gainnode);
+				basic.rom = null;
+			}
+			catch (e) {
+				setClassForLoader("");
+				setLoaderText(e.message);
+			}
 			return x;
 		});
 		return 255;
@@ -56,16 +64,7 @@ var basic = {
 
 		await bootCompletePromise;
 		let pressedAnyKey = awaitPressedAnyKey();
-		await pressedAnyKey;
-		let remove = (id: string) => {
-			let element = document.querySelector(id);
-			if (element) element.parentElement.removeChild(element);
-		};
-
-		remove('#loading');
-		remove('#msx');
-		remove('#hidor');
-		remove('#romjs');
+		// await pressedAnyKey;
 		return result;
 	},
 };
@@ -113,8 +112,6 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
 		img.src = url;
 	});
 }
-
-//
 
 async function loadResourceList(rom: ArrayBuffer): Promise<RomResource[]> {
 	try {
@@ -164,7 +161,6 @@ async function load(rom: ArrayBuffer, res: RomResource, romResult: RomLoadResult
 			let blub: Blob;
 			let url: string;
 			let sliced = new Uint8Array(rom.slice(res.start, res.end));
-			// let sliced = bytearray.slice(res.start, res.end);
 
 			mime = 'image/png';
 			blub = new Blob([sliced], { type: mime });
@@ -211,34 +207,39 @@ async function loadScript(rom: RomLoadResult): Promise<void> {
 	let result: Promise<void> = new Promise((resolve, reject) => {
 		let romcode = document.createElement('script');
 		romcode.async = false;
-		document.body.appendChild(romcode);
-		romcode.onerror = (e) => reject(e);
-		if (basic.debug !== true) {
+		romcode.onerror = (event: Event | string, source?: string, lineno?: number, colno?: number, error?: Error) => {
+			setLoaderText(`SError: ${(<Event>event)?.type ?? ""} ${source ?? ""} ${lineno ?? ""} ${colno ?? ""} ${error?.message ?? ""}`);
+			reject(error);
+		};
+		window.onerror = (event: Event | string, source?: string, lineno?: number, colno?: number, error?: Error) => {
+			setLoaderText(`WError: ${event} ${source ?? ""} ${lineno ?? ""} ${colno ?? ""} ${error?.message ?? ""}`);
+			reject(error);
+		};
+		if (!basic.debug) {
 			romcode.innerText = rom.source;
+			document.head.appendChild(romcode);
 			resolve();
 		}
 		else {
 			romcode.src = "../rom/megarom.js";
 			romcode.onload = () => resolve();
+			document.head.appendChild(romcode);
 		}
 	});
 	return result;
 }
 
 async function awaitPressedAnyKey(): Promise<void> {
-	let remove = (id: string) => {
-		let element = document.querySelector(id);
-		if (element) element.parentElement.removeChild(element);
-	};
-
 	let result: Promise<void> = new Promise((resolve, reject) => {
-		document.body.addEventListener('keyup', ev => {
-			remove('#loading');
-			remove('#msx');
-			remove('#hidor');
-			remove('#romjs');
+		let onuserinteraction = () => {
+			document.body.removeEventListener('keyup', onuserinteraction);
+			document.body.removeEventListener('click', onuserinteraction);
+			fixAudioContext();
 			resolve();
-		});
+		};
+
+		document.body.addEventListener('keyup', onuserinteraction);
+		document.body.addEventListener('click', onuserinteraction); // Touchend want anders geen geluid: https://html.spec.whatwg.org/multipage/interaction.html#triggered-by-user-activation
 	});
 	return result;
 }
@@ -249,8 +250,8 @@ function setLoaderText(txt: string) {
 }
 
 function setClassForLoader(cls: string) {
-	let loading = <HTMLElement>document.querySelector('#loading');
-	loading.className = "";
+	let loading = <HTMLElement>document.querySelector( '#loading');
+	loading.className = cls;
 }
 
 /**
@@ -275,4 +276,52 @@ async function fetchLocal(url: string): Promise<ArrayBuffer> {
 		xhr.open('GET', url);
 		xhr.send(null);
 	});
+}
+
+function fixAudioContext(): void {
+	if (basic.sndcontext) return;
+
+	let remove = (id: string) => {
+		let element = document.querySelector(id);
+		if (element) element.parentElement.removeChild(element);
+	};
+	let wrapup = () => {
+		// remove('#loading');
+		setClassForLoader("invisible");
+		remove('#msx');
+		remove('#hidor');
+		remove('#romjs');
+		basic.usr(0);
+	};
+
+	// Fix iOS Audio Context by Blake Kus https://gist.github.com/kus/3f01d60569eeadefe3a1
+	// MIT license
+	const AudioContext = 					// https://github.com/amaneureka/T-Rex/issues/5
+		window.AudioContext ||				// Default
+		(<any>window).webkitAudioContext;	// Safari and old versions of Chrome
+
+	let sndContext: AudioContext = new AudioContext({
+		latencyHint: 'interactive',
+		sampleRate: 44100,
+	});
+	if (sndContext) {
+		basic.sndcontext = sndContext;
+
+		let oscillator = sndContext.createOscillator();
+		oscillator.frequency.value = 400;
+		oscillator.connect(basic.sndcontext.destination);
+		oscillator.start(0);
+		oscillator.stop(.1);
+		oscillator.onended = e => {
+			oscillator.disconnect();
+			// let gainnode = basic.sndcontext.createGain();
+			// gainnode = basic.sndcontext.createGain();
+			// gainnode.connect(basic.sndcontext.destination);
+			// gainnode.gain.value = .5;
+			// basic.gainnode = gainnode;
+
+			wrapup();
+		};
+	}
+	else wrapup();
 }

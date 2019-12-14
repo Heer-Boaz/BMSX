@@ -14,25 +14,27 @@
     </head>
 
     <body>
-        <script type="module">
-            try {
-                //#debug
-                //#localfetch
-                basic.bload("./#outfile").then(function (h406A) {
-                    basic.defusr = h406A;
-                    basic.usr(0);
-                });
-            }
-            catch (e) {
-                document.getElementById("loading").innerText = "Failed to load rom: " + e.message;
-                console.error(e.message);
-            }
-        </script>
-        <img id="msx" src="#bmsxurl" />
-        <div id="hidor"></div>
-        <span id="loading" class="coloring">Loading...</span>
-        <canvas id="gamescreen"></canvas>
+        <div onclick="void(0);"> <!-- https://stackoverflow.com/questions/24077725/mobile-safari-sometimes-does-not-trigger-the-click-event -->
+            <img id="msx" src="#bmsxurl" />
+            <div id="hidor"></div>
+            <span id="loading" class="coloring">Loading...</span>
+            <canvas id="gamescreen"></canvas>
+        </div>
     </body>
+    <script>
+        try {
+            //#debug
+            //#localfetch
+            basic.bload("./#outfile").then(function (h406A) {
+                basic.defusr = h406A;
+                // basic.usr(0);
+            });
+        }
+        catch (e) {
+            document.getElementById("loading").innerText = "Failed to load rom: " + e.message;
+            console.error(e.message);
+        }
+    </script>
     <style>
         /*css*/
     </style>
