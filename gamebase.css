@@ -41,29 +41,37 @@
 svg.buttons {
 	position: fixed;
 	z-index: 2000;
+	pointer-events: none;
+	touch-action: none;
 }
 
 .knop {
-	opacity: .5;
+	pointer-events: visibleFill;
+	touch-action: auto;
+	opacity: .2;
 	z-index: 2000;
 }
 
 .dknop {
-	opacity: .5;
+	pointer-events: visibleFill;
+	touch-action: auto;
+	opacity: .2;
 	z-index: 2000;
 }
 
-.knop:active {
-	opacity: .8;
+.knop.druk {
+	opacity: .5;
 	display: block;
-	border-radius: 1px;
-	transition: all .5s cubic-bezier(.25, 1.7, .35, 1.5);
+	/* border-radius: 1px; */
+	/* transition: all .5s cubic-bezier(.25, 1.7, .35, 1.5); */
 	/* transform: scale(.8) */
 }
 
 svg.d-pad {
-	top: 70vh;
-	left: 50px;
+	pointer-events: none;
+	touch-action: none;
+	top: 65vh;
+	left: 20px;
 	width: 100px;
 	height: 100px;
 	position: fixed;
@@ -72,10 +80,10 @@ svg.d-pad {
 	z-index: 2000;
 }
 
-.dknop:active {
-	opacity: .8;
+.dknop.druk {
+	opacity: .5;
 	display: block;
-	transition: all .5s cubic-bezier(.25, 1.7, .35, 1.5);
+	/* transition: all .5s cubic-bezier(.25, 1.7, .35, 1.5); */
 }
 
 body {
