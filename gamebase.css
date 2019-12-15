@@ -88,9 +88,9 @@ svg.d-pad {
 }
 
 .dstick {
-	pointer-events: none;
-	touch-action: none;
-	opacity: .2;
+	pointer-events: all;
+	/* touch-action: none; */
+	opacity: 1;
 	z-index: 2001;
 }
 

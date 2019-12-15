@@ -133,6 +133,8 @@ export class Input {
         document.getElementById('d-pad-lu').classList.remove('druk');
         document.getElementById('btn1_knop').classList.remove('druk');
         document.getElementById('btn2_knop').classList.remove('druk');
+        document.getElementById('btn3_knop').classList.remove('druk');
+        document.getElementById('btn4_knop').classList.remove('druk');
     }
 }
 
@@ -196,18 +198,15 @@ function handleElementUnderTouch(e: Element): string[] {
             keydown('ArrowRight');
             document.getElementById('d-pad-ru').classList.add('druk');
             return ['ArrowUp', 'ArrowRight'];
-        break;
         case 'd-pad-r':
             keydown('ArrowRight');
             document.getElementById('d-pad-r').classList.add('druk');
             return ['ArrowRight'];
-        break;
         case 'd-pad-rd':
             keydown('ArrowRight');
             keydown('ArrowDown');
             document.getElementById('d-pad-rd').classList.add('druk');
             return ['ArrowDown', 'ArrowRight'];
-        break;
         case 'd-pad-d':
             keydown('ArrowDown');
             document.getElementById('d-pad-d').classList.add('druk');
@@ -218,28 +217,31 @@ function handleElementUnderTouch(e: Element): string[] {
             keydown('ArrowDown');
             document.getElementById('d-pad-ld').classList.add('druk');
             return ['ArrowLeft', 'ArrowDown'];
-        break;
         case 'd-pad-l':
             keydown('ArrowLeft');
             document.getElementById('d-pad-l').classList.add('druk');
             return ['ArrowLeft'];
-        break;
         case 'd-pad-lu':
             keydown('ArrowLeft');
             keydown('ArrowUp');
             document.getElementById('d-pad-lu').classList.add('druk');
             return ['ArrowUp', 'ArrowLeft'];
-        break;
         case 'btn1_knop':
             keydown(' ');
             document.getElementById('btn1_knop').classList.add('druk');
             return [' '];
-        break;
         case 'btn2_knop':
             keydown('m');
             document.getElementById('btn2_knop').classList.add('druk');
             return ['m'];
-        break;
+        case 'btn3_knop':
+            keydown('F1');
+            document.getElementById('btn3_knop').classList.add('druk');
+            return ['F1'];
+        case 'btn4_knop':
+            keydown('F5');
+            document.getElementById('btn4_knop').classList.add('druk');
+            return ['F5'];
     }
     return [];
 }
@@ -255,50 +257,49 @@ function handleElementUnderTouchEnd(e: Element): string[] {
             keyup('ArrowRight');
             document.getElementById('d-pad-ru').classList.remove('druk');
             return ['ArrowUp', 'ArrowRight'];
-            break;
         case 'd-pad-r':
             keyup('ArrowRight');
             document.getElementById('d-pad-r').classList.remove('druk');
             return ['ArrowRight'];
-            break;
         case 'd-pad-rd':
             keyup('ArrowRight');
             keyup('ArrowDown');
             document.getElementById('d-pad-rd').classList.remove('druk');
             return ['ArrowDown', 'ArrowRight'];
-            break;
         case 'd-pad-d':
             keyup('ArrowDown');
             document.getElementById('d-pad-d').classList.remove('druk');
             return ['ArrowDown'];
-            break;
         case 'd-pad-ld':
             keyup('ArrowLeft');
             keyup('ArrowDown');
             document.getElementById('d-pad-ld').classList.remove('druk');
             return ['ArrowLeft', 'ArrowDown'];
-            break;
         case 'd-pad-l':
             keyup('ArrowLeft');
             document.getElementById('d-pad-l').classList.remove('druk');
             return ['ArrowLeft'];
-            break;
         case 'd-pad-lu':
             keyup('ArrowLeft');
             keyup('ArrowUp');
             document.getElementById('d-pad-lu').classList.remove('druk');
             return ['ArrowUp', 'ArrowLeft'];
-            break;
         case 'btn1_knop':
             keyup(' ');
             document.getElementById('btn1_knop').classList.remove('druk');
             return [' '];
-            break;
         case 'btn2_knop':
             keyup('m');
             document.getElementById('btn2_knop').classList.remove('druk');
             return ['m'];
-            break;
+        case 'btn3_knop':
+            keyup('F1');
+            document.getElementById('btn3_knop').classList.remove('druk');
+            return ['F1'];
+        case 'btn4_knop':
+            keyup('F5');
+            document.getElementById('btn4_knop').classList.remove('druk');
+            return ['F5'];
     }
     return [];
 }
