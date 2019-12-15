@@ -62,28 +62,36 @@ svg.buttons {
 .knop.druk {
 	opacity: .5;
 	display: block;
+	z-index: 2001;
 	/* border-radius: 1px; */
 	/* transition: all .5s cubic-bezier(.25, 1.7, .35, 1.5); */
 	/* transform: scale(.8) */
 }
 
 svg.d-pad {
+	position: fixed;
+	z-index: 2000;
 	pointer-events: none;
 	touch-action: none;
 	top: 65vh;
 	left: 20px;
 	width: 100px;
 	height: 100px;
-	position: fixed;
 	transform-origin: 50% 50%;
 	transform: rotate(22.5deg) scale(1.5);
-	z-index: 2000;
 }
 
 .dknop.druk {
 	opacity: .5;
 	display: block;
 	/* transition: all .5s cubic-bezier(.25, 1.7, .35, 1.5); */
+}
+
+.dstick {
+	pointer-events: none;
+	touch-action: none;
+	opacity: .2;
+	z-index: 2001;
 }
 
 body {
@@ -101,20 +109,20 @@ body {
 	text-size-adjust: none;
 	overflow: hidden;
 	background-color: #2020ff;
+
 	cursor: pointer;
+	pointer-events: none;
+	touch-action: none;
+	min-height: 100%;
+	width: 100vw;
+	height: 100%;
 }
 
 html {
 	width: 100vw;
 	height: 100%;
-	touch-action: manipulation;
-}
-
-body {
-	min-height: 100%;
-	width: 100vw;
-	height: 100%;
-	overflow: hidden;
+	pointer-events: none;
+	touch-action: none;
 }
 
 #gamescreen {

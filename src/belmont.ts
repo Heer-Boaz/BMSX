@@ -509,7 +509,7 @@ export class Belmont extends Creature {
 			if (Input.KD_LEFT && !this.ignoreDirButtonPress(Direction.Left))
 				this.direction = Direction.Left;
 		}
-		else if (Input.KC_UP && !this.ignoreDirButtonPress(Direction.Up)) {
+		else if (Input.KC_BTN2 && !this.ignoreDirButtonPress(Direction.Up)) {
 			this.Crouching = false;
 			let jumpDir: Direction = Direction.Up;
 			if (Input.KD_RIGHT) {

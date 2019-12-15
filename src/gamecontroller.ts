@@ -233,10 +233,7 @@ export class Controller extends BaseController {
             case GameSubstate.Default:
             default:
                 if (Input.KC_SPACE) {
-                    WeaponFireHandler.HandleFireMainWeapon();
-                }
-                if (Input.KC_M) {
-                    WeaponFireHandler.HandleFireSecondaryWeapon();
+                    Input.KD_UP ? WeaponFireHandler.HandleFireSecondaryWeapon() : WeaponFireHandler.HandleFireMainWeapon();
                 }
                 else if (Input.KC_F5 && !Model._.GameMenu.visible)
                     this.OpenGameMenu();
