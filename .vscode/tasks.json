@@ -1,5 +1,6 @@
 {
 	"version": "2.0.0",
+	"_runner": "terminal",
 	"tasks": [
 		{
 			"label": "build debug",
@@ -13,14 +14,14 @@
 		},
 		{
 			"label": "pack",
-			"type": "shell",
+			"type": "process",
 			"command": "node",
 			"args": [
 				"${workspaceFolder}/rompacker.js",
 				"sintervania.rom",
 			],
 			"problemMatcher": [
-				"$node-sass"
+				"$func-watch"
 			],
 			"group": "build",
 			"dependsOrder": "parallel",

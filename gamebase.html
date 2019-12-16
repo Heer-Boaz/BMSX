@@ -1,6 +1,5 @@
 ﻿<!DOCTYPE html>
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml">
-
     <head>
         <title>Sintervania</title>
         <meta charset="utf-8" />
@@ -12,10 +11,9 @@
         <script id="romloader">//#romjs</script>
         <script id="pacojs" distributedby="http://nodeca.github.io/pako/">//#zipjs</script>
     </head>
-
     <body>
+        <!-- https://stackoverflow.com/questions/24077725/mobile-safari-sometimes-does-not-trigger-the-click-event -->
         <div onclick="void(0);">
-            <!-- https://stackoverflow.com/questions/24077725/mobile-safari-sometimes-does-not-trigger-the-click-event -->
             <img id="msx" src="#bmsxurl" />
             <div id="hidor"></div>
             <span id="loading" class="coloring">Loading...</span>
@@ -33,19 +31,20 @@
             </svg>
             <svg class="d-pad">
                 <g>
-                    <path id="d-pad-u" class="dknop" d="M 50 50 L 50 0 A 50 50, 0, 0, 1, 90 21 Z"  transform="rotate(-27 50 50)" />
-                    <path id="d-pad-ru" class="dknop" d="M 50 50 L 50 0 A 50 50, 0, 0, 1, 79 9 Z"  transform="rotate(27 50 50)" />
-                    <path id="d-pad-r" class="dknop" d="M 50 50 L 50 0 A 50 50, 0, 0, 1, 90 21 Z"  transform="rotate(62.5 50 50)" />
-                    <path id="d-pad-rd" class="dknop" d="M 50 50 L 50 0 A 50 50, 0, 0, 1, 79 10 Z" transform="rotate(117 50 50)" />
-                    <path id="d-pad-d" class="dknop" d="M 50 50 L 50 0 A 50 50, 0, 0, 1, 90 21 Z"  transform="rotate(153 50 50)" />
-                    <path id="d-pad-ld" class="dknop" d="M 50 50 L 50 0 A 50 50, 0, 0, 1, 79 10 Z" transform="rotate(207 50 50)" />
-                    <path id="d-pad-l" class="dknop" d="M 50 50 L 50 0 A 50 50, 0, 0, 1, 90 21 Z"  transform="rotate(243 50 50)" />
-                    <path id="d-pad-lu" class="dknop" d="M 50 50 L 50 0 A 50 50, 0, 0, 1, 79 10 Z" transform="rotate(297 50 50)" />
+                    <path id="d-pad-u" class="dknop" d="M 50 50 L 50 40 A 10 10, 0, 0, 1, 57.99 44.212 L 50 50 L 50 0 A 50 50, 0, 0, 1, 90 21 Z" fill-rule="evenodd" transform="rotate(-27 50 50)" />
+                    <path id="d-pad-ru" class="dknop" d="M 50 50 L 50 40 A 10 10, 0, 0, 1, 55.72 41.91 L 50 50 L 50 0 A 50 50, 0, 0, 1, 79 9" fill-rule="evenodd" transform="rotate(27 50 50)" />
+                    <path id="d-pad-r" class="dknop" d="M 50 50 L 50 40 A 10 10, 0, 0, 1, 57.99 44.212 L 50 50 L 50 0 A 50 50, 0, 0, 1, 90 21 Z" fill-rule="evenodd" transform="rotate(62.5 50 50)" />
+                    <path id="d-pad-rd" class="dknop" d="M 50 50 L 50 40 A 10 10, 0, 0, 1, 55.72 41.91 L 50 50 L 50 0 A 50 50, 0, 0, 1, 79 9" fill-rule="evenodd" transform="rotate(117 50 50)" />
+                    <path id="d-pad-d" class="dknop" d="M 50 50 L 50 40 A 10 10, 0, 0, 1, 57.99 44.212 L 50 50 L 50 0 A 50 50, 0, 0, 1, 90 21 Z" fill-rule="evenodd"  transform="rotate(153 50 50)" />
+                    <path id="d-pad-ld" class="dknop" d="M 50 50 L 50 40 A 10 10, 0, 0, 1, 55.72 41.91 L 50 50 L 50 0 A 50 50, 0, 0, 1, 79 9" fill-rule="evenodd" transform="rotate(207 50 50)" />
+                    <path id="d-pad-l" class="dknop" d="M 50 50 L 50 40 A 10 10, 0, 0, 1, 57.99 44.212 L 50 50 L 50 0 A 50 50, 0, 0, 1, 90 21 Z" fill-rule="evenodd"  transform="rotate(243 50 50)" />
+                    <path id="d-pad-lu" class="dknop" d="M 50 50 L 50 40 A 10 10, 0, 0, 1, 55.72 41.91 L 50 50 L 50 0 A 50 50, 0, 0, 1, 79 9" fill-rule="evenodd" transform="rotate(297 50 50)" />
                 </g>
                 <g>
-                    <circle id="dmid" class="dstick" cx="50" cy="50" r="5"/>
+                    <circle class="d-pad-omheining" cx="50" cy="50" r="10"/>
+                    <circle class="d-pad-omheining" cx="50" cy="50" r="49"/>
+                    <circle id="dmid" class="dstick" cx="50" cy="50" r="10"/>
                 </g>
-            </svg>
             </svg>
             <canvas id="gamescreen"></canvas>
         </div>

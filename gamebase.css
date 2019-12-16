@@ -1,43 +1,3 @@
-#up_knop {
-	width: 0;
-	height: 0;
-	top: 60vh;
-	left: 10vw;
-	border-left: 10vw solid transparent;
-	border-right: 10vw solid transparent;
-	border-bottom: 10vh solid #fff
-}
-
-#down_knop {
-	width: 0;
-	height: 0;
-	top: 90vh;
-	left: 10vw;
-	border-left: 10vw solid transparent;
-	border-right: 10vw solid transparent;
-	border-top: 10vh solid #fff
-}
-
-#right_knop {
-	width: 0;
-	height: 0;
-	top: 70vh;
-	left: 30vw;
-	border-top: 10vh solid transparent;
-	border-bottom: 10vh solid transparent;
-	border-left: 10vw solid #fff
-}
-
-#left_knop {
-	width: 0;
-	height: 0;
-	top: 70vh;
-	left: 0;
-	border-top: 10vh solid transparent;
-	border-bottom: 10vh solid transparent;
-	border-right: 10vw solid #fff
-}
-
 svg.buttons {
 	position: fixed;
 	z-index: 2000;
@@ -53,21 +13,11 @@ svg.buttons {
 	z-index: 2000;
 }
 
-.dknop {
-	pointer-events: fill;
-	touch-action: auto;
-	opacity: .3;
-	stroke-width: 1px;
-	stroke: dimgray;
-	stroke-dasharray: 4,4;
-	fill: transparent;
-}
-
 .knop.druk {
 	opacity: .5;
 	display: block;
 	z-index: 2001;
-	stroke-dasharray: 0;
+	/* stroke-dasharray: 0; */
 	/* border-radius: 1px; */
 	/* transition: all .5s cubic-bezier(.25, 1.7, .35, 1.5); */
 	/* transform: scale(.8) */
@@ -88,19 +38,40 @@ svg.d-pad {
 	transform: scale(1.75);
 }
 
+.dknop {
+	pointer-events: fill;
+	touch-action: auto;
+	opacity: 1;
+	/* stroke-dasharray: 4,4; */
+	fill: transparent;
+}
+
 .dknop.druk {
-	opacity: .5;
+	opacity: .3;
 	display: block;
-	stroke-dashoffset: 0px;
-	stroke-width: 2px;
+	/* stroke-dashoffset: 0px;
+	stroke-width: 2px; */
+	fill: gainsboro;
+	/* stroke-width: 1px;
+	stroke: dimgray; */
 	/* transition: all .5s cubic-bezier(.25, 1.7, .35, 1.5); */
+}
+
+.d-pad-omheining {
+	pointer-events: none;
+	/* touch-action: none; */
+	fill: none;
+	opacity: .3;
+	stroke-width: 1px;
+	stroke: gainsboro;
+	z-index: 2001;
 }
 
 .dstick {
 	pointer-events: all;
-	fill: black;
+	fill: transparent;
 	/* touch-action: none; */
-	opacity: .3;
+	opacity: 1;
 	z-index: 2001;
 }
 
@@ -163,10 +134,9 @@ html {
 	display: block;
 	margin-left: auto;
 	margin-right: auto;
-	width: 40%;
-	left: 50%;
-	transform: translateX(-50%);
-	/* transform: translate(-50%, -50%); */
+	width: 40vw;
+	left: 50vw;
+	transform: translateX(-50%) translateY(65vh);
 }
 
 #msx.enter {
@@ -175,11 +145,11 @@ html {
 
 @keyframes enter {
 	from {
-		top: 60vh;
+		transform: translateX(-50%) translateY(65vh);
 	}
 
 	to {
-		top: 30vh;
+		transform: translateX(-50%) translateY(calc(60vh - 100%));
 	}
 }
 
@@ -188,7 +158,7 @@ html {
 	display: block;
 	margin-left: auto;
 	margin-right: auto;
-	width: 100%;
+	width: 100vw;
 	position: absolute;
 	top: 60vh;
 	color: #ffffff;

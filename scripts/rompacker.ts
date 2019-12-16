@@ -22,8 +22,13 @@ function decodeuint8arr(uint8array: Uint8Array): string {
 	return new TextDecoder("utf-8").decode(uint8array);
 }
 
-function log(tolog: string): void {
+function log(_tolog: string, type?: string): void {
 	let d = new Date();
+	let tolog: string;
+	switch (type) {
+		case 'error': tolog = _colors.red(_tolog); break;
+		default: tolog = _tolog; break;
+	}
 	process.stdout.write(`${_colors.cyan(d.toTimeString().split(' ')[0])}:${_colors.cyan(d.getMilliseconds().toString().substring(0, 3))} ${tolog}`);
 }
 
@@ -113,7 +118,6 @@ async function bundleGamecode(outfile: string): Promise<any> {
 			packageCache: {},
 			exposeAll: true,
 			exclude: ['src/lib/rom.ts', 'src/lib/rompacker.ts'],
-			// standalone: 'moduleName',
 			ignore: ['node_modules', 'dist', 'rom']
 		})
 			.add("src/bootstrapper.ts")
@@ -125,10 +129,10 @@ async function bundleGamecode(outfile: string): Promise<any> {
 				global: true,
 			})
 			.bundle()
-			.on('deps', dep => console.log(dep.file))
-			.on("error", e => { console.error(e.message); Promise.resolve(e); })
-			.pipe(writeOutput);
-		// .catch(e => console.error(e.message));
+			// .on('deps', dep => console.log(dep.file))
+			.on("error", e => { log(`\nGame bouwen faalde :-(\n`, 'error'); Promise.reject(e); })
+			.pipe(writeOutput)
+			// .catch(e => { log(`\nGame bouwen faalde :-(\n`, 'error'); Promise.reject(e); });
 
 		writeOutput.on('finish', () => {
 			stopRotator();
@@ -137,7 +141,7 @@ async function bundleGamecode(outfile: string): Promise<any> {
 		});
 		writeOutput.on("error", e => {
 			stopRotator();
-			log(`\nGame bouwen faalde: ${e.message}\n`);
+			log(`\nGame bouwen faalde: ${e.message}\n`, 'error');
 			return reject(e);
 		});
 	});
@@ -235,7 +239,7 @@ function minifyGamecode(infile: string): void {
 		writeFileSync("./rom/megarom.min.js", gamejsMinifiedResult.code);
 	}
 	else {
-		log("Minifying van gamecode faalde :-(");
+		log("Minifying van gamecode faalde :-( ", 'error');
 	}
 }
 
@@ -289,8 +293,8 @@ async function buildGameHtml(outfile: string): Promise<void> {
 			output: "./gamebase.min.css",
 			callback: function (err, cssMinified: string) {
 				if (!cssMinified) {
-					log(`Minifyen van CSS faalde: ${err.message}`);
-					return reject();
+					log(`Minifyen van CSS faalde :-(\n`);
+					return reject(err);
 				}
 				bar.increment(1);
 				release_html = html.replace('//#romjs', romjsMinified);
@@ -376,7 +380,7 @@ async function deploy(): Promise<void> {
 		ftpDeploy
 			.deploy(config)
 			.then(res => { stopRotator(); log(`\tKlaar!: ${res}\n`); return resolve(); })
-			.catch(err => { stopRotator(); log(`\tFTP upload mislukt :-( ${err}\n`); return reject(); });
+			.catch(err => { stopRotator(); log(`\tFTP upload mislukt :-(\n`, 'error'); return reject(err); });
 	});
 }
 
@@ -499,8 +503,10 @@ async function buildRompackAndResourceList(outfile: string): Promise<void> {
 }
 
 try {
-	log(_colors.brightGreen("=== BMSX ROMPACKER ===\n"));
-	log(_colors.brightGreen("===  DOOR BOAZ©®™  ===\n"));
+	log(_colors.brightGreen("┏————————————————————————————————————————┓\n"));
+	log(_colors.brightGreen("|              BMSX ROMPACKER            |\n"));
+	log(_colors.brightGreen("|                DOOR BOAZ©®             |\n"));
+	log(_colors.brightGreen("┗————————————————————————————————————————┛\n"));
 	let args = process.argv.slice(2);
 	if (args.length <= 0) throw new Error("Missing parameter for output file (rom name, e.g. \"sintervania.rom\"");
 	let outfile = args[0];
@@ -522,8 +528,11 @@ try {
 		.then(() => buildGameHtml(outfile))
 		.then(() => deploy())
 		.then(() => log(_colors.brightGreen("===  ALLES DONUT!  ===\n")))
-		.catch(e => { log(`Er ging iets niet goed: ${e.message}\n`); process.exit(-1); });
+		.catch(e => { log(`Er ging iets niet goed: ${e?.message ?? 'en ook geen foutmelding beschikbaar :-('}\n`, 'error'); process.exit(-1); });
 } catch (e) {
-	log(`Er ging iets niet goed: ${e.message}\n`);
+	log(`Er ging iets niet goed: ${e.message}\n`, 'error');
 	process.exit(-1);
 }
+// ??????????????????????????????????????????????????????????????????
+// ?                                                                ?
+// ??????????????????????????????????????????????????????????????????
