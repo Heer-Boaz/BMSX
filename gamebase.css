@@ -8,19 +8,61 @@ svg.buttons {
 .knop {
 	pointer-events: fill;
 	touch-action: auto;
-	opacity: .2;
 	stroke-width: 2px;
 	z-index: 2000;
+	opacity: .3;
+	transform: scale(1);
+}
+
+.knop.red:not(.los) {
+	fill: red;
+}
+.knop.red.los {
+	stroke: red;
+}
+
+.knop.blue:not(.los) {
+	fill: blue;
+}
+.knop.blue.los {
+	stroke: blue;
+}
+
+.knop.green:not(.los) {
+	fill: green;
+}
+.knop.green.los {
+	stroke: green;
+}
+
+.knop.yellow:not(.los) {
+	fill: yellow;
+}
+.knop.yellow.los {
+	stroke: yellow;
+}
+
+.knop.los {
+	animation: button-los .5s forwards linear;
 }
 
 .knop.druk {
-	opacity: .5;
-	display: block;
+	/* opacity: .5; */
 	z-index: 2001;
-	/* stroke-dasharray: 0; */
-	/* border-radius: 1px; */
+	transform: scale(.75 50% 50%);
 	/* transition: all .5s cubic-bezier(.25, 1.7, .35, 1.5); */
 	/* transform: scale(.8) */
+}
+
+@keyframes button-los {
+	from {
+		opacity: .6;
+	}
+
+	to {
+		fill: transparent;
+		opacity: .3;
+	}
 }
 
 svg.d-pad {
@@ -35,26 +77,37 @@ svg.d-pad {
 	/* transform-origin: 50% 50%; */
 	/* fill: gainsboro; */
 	transform-box: fill-box;
-	transform: scale(1.75);
+	transform: scale(1.5);
 }
 
 .dknop {
 	pointer-events: fill;
 	touch-action: auto;
-	opacity: 1;
+	/* opacity: 1; */
 	/* stroke-dasharray: 4,4; */
-	fill: transparent;
+	/* fill: transparent; */
+}
+
+@keyframes dknop-los {
+	from {
+		fill: gainsboro;
+		opacity: .3;
+	}
+
+	to {
+		fill: transparent;
+		opacity: 1;
+	}
+}
+
+.dknop.los {
+	animation: dknop-los .5s forwards linear;
 }
 
 .dknop.druk {
 	opacity: .3;
 	display: block;
-	/* stroke-dashoffset: 0px;
-	stroke-width: 2px; */
 	fill: gainsboro;
-	/* stroke-width: 1px;
-	stroke: dimgray; */
-	/* transition: all .5s cubic-bezier(.25, 1.7, .35, 1.5); */
 }
 
 .d-pad-omheining {
@@ -92,8 +145,6 @@ body {
 	background-color: #2020ff;
 
 	cursor: pointer;
-	pointer-events: none;
-	touch-action: none;
 	min-height: 100%;
 	width: 100vw;
 	height: 100%;
@@ -102,8 +153,6 @@ body {
 html {
 	width: 100vw;
 	height: 100%;
-	pointer-events: none;
-	touch-action: none;
 }
 
 #gamescreen {
@@ -136,11 +185,16 @@ html {
 	margin-right: auto;
 	width: 40vw;
 	left: 50vw;
+	transform: translateX(-50%) translateY(calc(60vh - 100%));
+}
+
+#msx.hidden {
 	transform: translateX(-50%) translateY(65vh);
 }
 
 #msx.enter {
 	animation: enter 1.0s forwards linear;
+	transform: translateX(-50%) translateY(65vh);
 }
 
 @keyframes enter {

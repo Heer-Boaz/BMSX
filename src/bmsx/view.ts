@@ -23,7 +23,7 @@ export const enum DrawImgFlags {
 export abstract class BaseView {
     public canvas: HTMLCanvasElement;
     public context: CanvasRenderingContext2D;
-    public static images: Map<number, HTMLImageElement>;
+    public static images: Array<HTMLImageElement>;
 
     public windowSize: Size;
     public viewportSize: Size;
@@ -117,11 +117,11 @@ export abstract class BaseView {
     }
 
     public drawImg(imgid: number, x: number, y: number, options?: number): void {
-        let img = BaseView.images.get(imgid);
-        if (!img) {
-            console.error(`Cannot find image with id '${imgid}'`);
-            return;
-        }
+        let img = BaseView.images[imgid];
+        // if (!img) {
+        //     console.error(`Cannot find image with id '${imgid}'`);
+        //     return;
+        // }
 
         view.context.save();
         view.context.translate(~~x, ~~y);

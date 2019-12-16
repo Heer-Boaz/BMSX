@@ -11,23 +11,6 @@ if (typeof Array.isArray === 'undefined') {
 	};
 };
 
-// Make sure that iOS doesn't scroll, even if overflow = hidden!
-// Maar ontouchend eruit halen zorgt ervoor dat niets meer reageert :(
-// Touch move vind ik te eng om erin te zetten
-// https://medium.com/jsdownunder/locking-body-scroll-for-all-devices-22def9615177
-// document.addEventListener('touchmove', e => {
-// 	e.preventDefault();
-// });
-// document.addEventListener('touchend', e => {
-// 	e.preventDefault();
-// });
-// document.addEventListener('touchmove', e => {
-// 	e.preventDefault();
-// });
-// document.addEventListener('touchend', e => {
-// 	e.preventDefault();
-// });
-
 var basic = {
 	rom: null as RomLoadResult,
 	debug: false,
@@ -42,6 +25,7 @@ var basic = {
 
 	usr(x: number): number {
 		document.body.style.backgroundColor = "#000000";
+		document.getElementById('gamescreen').hidden = false;
 		loadScript(basic.rom).then(() => {
 			try {
 				h406A(basic.rom, basic.sndcontext, basic.gainnode);
@@ -61,8 +45,8 @@ var basic = {
 		let bootCompletePromise = awaitBootComplete();
 		let rom = await loadRompack(url);
 		let result = await loadResources(rom);
-		setLoaderText("Press any key to start...");
-		setClassForLoader("");
+		setLoaderText('Press any key to start...');
+		setClassForLoader('');
 
 		await bootCompletePromise;
 		let pressedAnyKey = awaitPressedAnyKey();
@@ -80,7 +64,7 @@ async function loadRompack(url: string): Promise<ArrayBuffer> {
 			})
 			.catch(e => {
 				setLoaderText(`Failed to load rompack local storage: ${e.message}`);
-				setClassForLoader("");
+				setClassForLoader('');
 				console.error(`Failed to load rompack from local storage: ${e.message}`);
 				Promise.reject(e);
 			});
@@ -94,7 +78,7 @@ async function loadRompack(url: string): Promise<ArrayBuffer> {
 			})
 			.catch(e => {
 				setLoaderText(`Failed to load rompack: ${e.message}`);
-				setClassForLoader("");
+				setClassForLoader('');
 				console.error(`Failed to load rompack: ${e.message}`);
 				Promise.reject(e);
 			});
@@ -136,7 +120,7 @@ async function loadResourceList(rom: ArrayBuffer): Promise<RomResource[]> {
 async function loadResources(rom: ArrayBuffer): Promise<RomLoadResult> {
 	try {
 		let result: RomLoadResult = {
-			images: new Map<number, HTMLImageElement>(),
+			images: new Array <HTMLImageElement>(),
 			rom: rom,
 			resources: {},
 			source: null
@@ -168,7 +152,7 @@ async function load(rom: ArrayBuffer, res: RomResource, romResult: RomLoadResult
 			url = URL.createObjectURL(blub);
 
 			let img = await loadImage(url);
-			romResult.images.set(res.resid, img);
+			romResult.images[res.resid] = img;
 			break;
 		case 'source':
 			try {
@@ -222,7 +206,7 @@ async function loadScript(rom: RomLoadResult): Promise<void> {
 			resolve();
 		}
 		else {
-			romcode.src = "../rom/megarom.js";
+			romcode.src = '../rom/megarom.js';
 			romcode.onload = () => resolve();
 			document.head.appendChild(romcode);
 		}
@@ -237,30 +221,36 @@ async function awaitPressedAnyKey(): Promise<void> {
 	};
 	let wrapup = () => {
 		// remove('#loading');
-		setClassForLoader("invisible");
+		setClassForLoader('invisible');
 		remove('#msx');
 		remove('#hidor');
 		remove('#romjs');
 	};
 
 	let result: Promise<void> = new Promise((resolve, reject) => {
-		let onuserinteraction = () => {
+		let onuserinteraction = (e: UIEvent) => {
 			if (!basic.snd_unlocked) { return; }
+			if (e.type == 'touchend') {
+				let controls = document.getElementById("controls");
+				controls.hidden = false;
+				document.documentElement.setAttribute("style", "touch-action: none;");
+				document.documentElement.setAttribute("style", "pointer-events: none;");
+			}
 			document.body.removeEventListener('keyup', onuserinteraction);
-			document.body.removeEventListener('click', onuserinteraction);
+			document.body.removeEventListener('touchend', onuserinteraction);
 			wrapup();
 			resolve();
 		};
 
 		// if ("ontouchstart" in window && basic.sndcontext.state != "running") {
-		document.addEventListener('click', startAudioOnIos, true);
+		// document.addEventListener('click', startAudioOnIos, true);
 		document.addEventListener('keyup', startAudioOnIos, true);
-		document.addEventListener('mousedown', startAudioOnIos, true);
-		document.addEventListener('touchstart', startAudioOnIos, true);
+		// document.addEventListener('mousedown', startAudioOnIos, true);
+		// document.addEventListener('touchstart', startAudioOnIos, true);
 		document.addEventListener('touchend', startAudioOnIos, true);
 		// }
 		document.body.addEventListener('keyup', onuserinteraction);
-		document.body.addEventListener('click', onuserinteraction); // Touchend want anders geen geluid: https://html.spec.whatwg.org/multipage/interaction.html#triggered-by-user-activation
+		document.body.addEventListener('touchend', onuserinteraction); // Touchend want anders geen geluid: https://html.spec.whatwg.org/multipage/interaction.html#triggered-by-user-activation
 		// document.body.addEventListener('keyup', bla);
 		// document.body.addEventListener('click', bla); // Touchend want anders geen geluid: https://html.spec.whatwg.org/multipage/interaction.html#triggered-by-user-activation
 	});
@@ -309,12 +299,12 @@ function startAudioOnIos(): void {
 	source.connect(basic.sndcontext.destination);
 	source.start(0, 0, 0);
 
-	if (basic.sndcontext.state == "running") {
+	if (basic.sndcontext.state == 'running') {
 		document.removeEventListener('keyup', startAudioOnIos);
-		document.removeEventListener('click', startAudioOnIos);
-		document.removeEventListener('mousedown', startAudioOnIos, true);
+		// document.removeEventListener('click', startAudioOnIos);
+		// document.removeEventListener('mousedown', startAudioOnIos, true);
 		document.removeEventListener('touchend', startAudioOnIos, true);
-		document.removeEventListener('touchstart', startAudioOnIos, true);
+		// document.removeEventListener('touchstart', startAudioOnIos, true);
 		basic.snd_unlocked = true;
 	}
 }

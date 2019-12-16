@@ -130,7 +130,7 @@ async function bundleGamecode(outfile: string): Promise<any> {
 			})
 			.bundle()
 			// .on('deps', dep => console.log(dep.file))
-			.on("error", e => { log(`\nGame bouwen faalde :-(\n`, 'error'); Promise.reject(e); })
+			.on("error", e => { stopRotator(); log(`\tGame bouwen faalde :-(\n`, 'error'); return reject(e); })
 			.pipe(writeOutput)
 			// .catch(e => { log(`\nGame bouwen faalde :-(\n`, 'error'); Promise.reject(e); });
 
@@ -141,7 +141,7 @@ async function bundleGamecode(outfile: string): Promise<any> {
 		});
 		writeOutput.on("error", e => {
 			stopRotator();
-			log(`\nGame bouwen faalde: ${e.message}\n`, 'error');
+			log(`\tWegschrijven gamecode faalde: ${e.message}\n`, 'error');
 			return reject(e);
 		});
 	});
