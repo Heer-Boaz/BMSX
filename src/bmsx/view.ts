@@ -137,9 +137,9 @@ export abstract class BaseView {
         view.context.restore();
     }
 
-    public drawColoredBitmap(imgid: number, x: number, y: number, r: number, g: number, b: number, a?: number) {
+    public drawColoredBitmap(imgid: number, x: number, y: number, options: number, r: boolean = true, g: boolean = true, b: boolean = true, a: boolean = true) {
         // TODO: IMPLEMENTEER!!
-        view.drawImg(imgid, x, y, 0);
+        view.drawImg(imgid, x, y, options);
     }
 
     public drawRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {

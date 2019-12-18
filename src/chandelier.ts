@@ -98,10 +98,6 @@ export class Chandelier extends Foe {
 		super.handleHit(source);
 		this.loseHealth(source);
 	}
-
-	public paint(offset: Point = null): void {
-		super.paint(offset);
-	}
 }
 
 export enum ChandelierState {

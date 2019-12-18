@@ -683,6 +683,9 @@ export class Belmont extends Creature {
 		if (!this.hitState.Blink || C._.InEventState) {
 			super.paint(addPoints(roeOffset, offset));
 		}
+		else {
+			super.paint(addPoints(roeOffset, offset), { r: false, g: false, b: true, a: true });
+		}
 		// view.drawRectangle(this.wallhitbox_sx, CS.GameScreenStartY + this.wallhitbox_sy, this.wallhitbox_ex, CS.GameScreenStartY + this.wallhitbox_ey, Msx1Colors[15]);
 	}
 

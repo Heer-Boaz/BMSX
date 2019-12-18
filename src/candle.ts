@@ -58,8 +58,4 @@ export class Candle extends Foe {
 		super.handleHit(source);
 		this.loseHealth(source);
 	}
-
-	public paint(offset: Point = null): void {
-		super.paint(offset);
-	}
 }

@@ -48,8 +48,8 @@ export abstract class Creature extends Sprite {
         this.originPos = <Point>{ x: this.pos.x, y: this.pos.y };
     }
 
-    public paint(offset: Point = null): void {
-        super.paint(offset);
+    public paint(offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean }): void {
+        super.paint(offset, colorize);
     }
 
     protected originPos: Point;

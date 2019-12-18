@@ -1,4 +1,4 @@
-﻿import { DrawImgFlags, BaseView } from "./view"
+﻿import { DrawImgFlags, BaseView } from "./view";
 import { SM } from "./soundmaster";
 import { Input } from "./input";
 import { RomLoadResult } from "./rompack";
@@ -410,14 +410,19 @@ export abstract class Sprite implements IRenderObject {
 
     abstract takeTurn(): void;
 
-    paint(offset?: Point): void {
+    paint(offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }): void {
         if (this.disposeFlag || !this.visible) return;
         let options: number = this.flippedH ? DrawImgFlags.HFLIP : 0;
         options |= (this.flippedV ? DrawImgFlags.VFLIP : 0);
+        let dx = offset?.x || 0;
+        let dy = offset?.y || 0;
 
-        if (offset)
-            view.drawImg(this.imgid, this.pos.x + offset.x, this.pos.y + offset.y, options);
-        else view.drawImg(this.imgid, this.pos.x, this.pos.y, options);
+        if (colorize) {
+            view.drawColoredBitmap(this.imgid, this.pos.x + dx, this.pos.y + dy, options, colorize.r, colorize.g, colorize.b, colorize.a);
+        }
+        else {
+            view.drawImg(this.imgid, this.pos.x + dx, this.pos.y + dy, options);
+        }
     }
 
     postpaint(offset?: Point): void {
@@ -499,7 +504,7 @@ export class BStopwatch {
     }
 
     public static pauseAllRunningWatches(pauseCausedByMenu?: boolean): void {
-        BStopwatch.Watches.filter(s => !s.running).forEach(s => { s.running = false });
+        BStopwatch.Watches.filter(s => !s.running).forEach(s => { s.running = false; });
         //this.watchesThatHaveBeenStopped.Clear();
         BStopwatch.Watches.forEach(w => {
             if (w.running && (!pauseCausedByMenu || w.pauseDuringMenu)) {
@@ -510,7 +515,7 @@ export class BStopwatch {
     }
 
     public static resumeAllPausedWatches(): void {
-        BStopwatch.watchesThatHaveBeenStopped.filter(s => !s.running).forEach(s => { s.running = false });
+        BStopwatch.watchesThatHaveBeenStopped.filter(s => !s.running).forEach(s => { s.running = false; });
     }
 
     private static pauseWatchesOnFocusLoss(): void {

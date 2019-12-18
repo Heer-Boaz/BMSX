@@ -419,36 +419,38 @@ export abstract class GLView extends BaseView {
 		gl.drawArrays(gl.TRIANGLES, 0, 6);
 	}
 
-	public drawColoredBitmap(imgid: number, x: number, y: number, r: number, g: number, b: number, a?: number) {
-		// TODO: IMPLEMENTEER!!
-		view.drawImg(imgid, x, y, 0);
+	public drawColoredBitmap(imgid: number, x: number, y: number, options: number, r: boolean = true, g: boolean = true, b: boolean = true, a: boolean = true) {
+		let _this = view as GLView;
+		_this.glctx.colorMask(r, g, b, a);
+		view.drawImg(imgid, x, y, options);
+		_this.glctx.colorMask(true, true, true, true);
 	}
 
 	public drawRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
 	}
 
 	public fillRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
-		let _this = view as GLView;
-		let gl = _this.glctx;
+		// let _this = view as GLView;
+		// let gl = _this.glctx;
 
-		// Tell WebGL to use our shader program pair
-		gl.useProgram(_this.program);
+		// // Tell WebGL to use our shader program pair
+		// gl.useProgram(_this.program);
 
-		// Setup the attributes to pull data from our buffers
-		gl.bindBuffer(gl.ARRAY_BUFFER, _this.positionBuffer);
-		gl.enableVertexAttribArray(_this.positionLocation);
-		gl.vertexAttribPointer(_this.positionLocation, 2, gl.FLOAT, false, 0, 0);
+		// // Setup the attributes to pull data from our buffers
+		// gl.bindBuffer(gl.ARRAY_BUFFER, _this.positionBuffer);
+		// gl.enableVertexAttribArray(_this.positionLocation);
+		// gl.vertexAttribPointer(_this.positionLocation, 2, gl.FLOAT, false, 0, 0);
 
-		var positions = [
-			0, 0,
-			0, 0.5,
-			0.7, 0,
-		];
-		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+		// var positions = [
+		// 	0, 0,
+		// 	0, 0.5,
+		// 	0.7, 0,
+		// ];
+		// gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
 
 
-		// gl.drawElements(gl.LINES, given_animal.vertex_indices_buffer.numItems, gl.UNSIGNED_SHORT, 0);
-		gl.lineWidth(1);
+		// // gl.drawElements(gl.LINES, given_animal.vertex_indices_buffer.numItems, gl.UNSIGNED_SHORT, 0);
+		// gl.lineWidth(1);
 	}
 
 
