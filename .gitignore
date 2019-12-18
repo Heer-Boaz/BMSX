@@ -12,6 +12,7 @@ BoazEngineJS/tsconfig.jsonmaarbugt
 **.js
 **.map
 !pako_inflate.min.js
+!gl-matrix-min.js
 src/sintervaniamodelold.ts
 **/thegame.js.map
 **/thegame.js

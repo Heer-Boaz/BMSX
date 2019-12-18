@@ -23,7 +23,7 @@ export const enum DrawImgFlags {
 export abstract class BaseView {
     public canvas: HTMLCanvasElement;
     public context: CanvasRenderingContext2D;
-    public static images: Array<HTMLImageElement>;
+    public static images: { [key: number]: HTMLImageElement; };
 
     public windowSize: Size;
     public viewportSize: Size;
@@ -33,8 +33,8 @@ export abstract class BaseView {
 
     constructor(viewportsize: Size) {
         this.canvas = <HTMLCanvasElement>document.getElementById('gamescreen');
-        this.context = this.canvas.getContext('2d');
-        this.context.imageSmoothingEnabled = false;
+        // this.context = this.canvas.getContext('2d');
+        // this.context.imageSmoothingEnabled = false;
         this.viewportSize = viewportsize;
         this.calculateSize();
         this.canvas.width = this.viewportSize.x;

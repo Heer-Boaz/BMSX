@@ -252,7 +252,7 @@ async function buildGameHtml(outfile: string): Promise<void> {
 		hideCursor: true
 	});
 
-	bar.start(12, 0);
+	bar.start(13, 0);
 
 	let html = readFileSync("./gamebase.html", 'utf8');
 	bar.increment(1);
@@ -261,6 +261,8 @@ async function buildGameHtml(outfile: string): Promise<void> {
 	let romjs = readFileSync("./rom/rom.js", 'utf8');
 	bar.increment(1);
 	let zipjs = readFileSync("./scripts/pako_inflate.min.js", 'utf8');
+	bar.increment(1);
+	let glmatrixjs = readFileSync("./scripts/gl-matrix-min.js", 'utf8');
 	bar.increment(1);
 	romjs = romjs.replace('Object.defineProperty(exports, "__esModule", { value: true });', '');
 	bar.increment(1);
@@ -299,6 +301,7 @@ async function buildGameHtml(outfile: string): Promise<void> {
 				bar.increment(1);
 				release_html = html.replace('//#romjs', romjsMinified);
 				release_html = release_html.replace('//#zipjs', zipjs);
+				release_html = release_html.replace('//#gl-matrix', glmatrixjs);
 				release_html = release_html.replace('/*css*/', cssMinified);
 				release_html = release_html.replace('#outfile', outfile);
 				release_html = release_html.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed);
@@ -311,6 +314,7 @@ async function buildGameHtml(outfile: string): Promise<void> {
 
 				debug_html = html.replace('//#romjs', romjs);
 				debug_html = debug_html.replace('//#zipjs', zipjs);
+				release_html = release_html.replace('//#gl-matrix', glmatrixjs);
 				debug_html = debug_html.replace('/*css*/', cssMinified);
 				debug_html = debug_html.replace('#outfile', outfile);
 				debug_html = debug_html.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed);
@@ -485,7 +489,7 @@ async function buildRompackAndResourceList(outfile: string): Promise<void> {
 	let zipped = zip(Buffer.concat(buffers));
 	stopRotator();
 	log("\tKlaar!\n");
-	log(`"${_colors.green(outfile)}" wegschrijven naar ${_colors.green(outfile + "\"./dist/\"")}"...`);
+	log(`"${_colors.green(outfile)}" wegschrijven naar ${_colors.green(`\"./dist/${outfile}\"`)}"...`);
 	startRotator();
 	writeFileSync(`./dist/${outfile}`, zipped);
 	stopRotator();

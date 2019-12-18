@@ -27,14 +27,14 @@ var basic = {
 		document.body.style.backgroundColor = "#000000";
 		document.getElementById('gamescreen').hidden = false;
 		loadScript(basic.rom).then(() => {
-			try {
+			// try {
 				h406A(basic.rom, basic.sndcontext, basic.gainnode);
 				basic.rom = null;
-			}
-			catch (e) {
-				setClassForLoader("");
-				setLoaderText(e.message);
-			}
+			// }
+			// catch (e) {
+				// setClassForLoader("");
+				// setLoaderText(e.message);
+			// }
 			return x;
 		});
 		return 255;
@@ -120,7 +120,7 @@ async function loadResourceList(rom: ArrayBuffer): Promise<RomResource[]> {
 async function loadResources(rom: ArrayBuffer): Promise<RomLoadResult> {
 	try {
 		let result: RomLoadResult = {
-			images: new Array <HTMLImageElement>(),
+			images: {},
 			rom: rom,
 			resources: {},
 			source: null

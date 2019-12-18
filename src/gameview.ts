@@ -3,8 +3,9 @@ import { GameState, GameSubstate, Model } from "./gamemodel";
 import { Point } from "./bmsx/common";
 import { view } from "./bmsx/engine";
 import { BaseView } from './bmsx/view';
+import { GLView } from './bmsx/glview';
 
-export class GameView extends BaseView {
+export class GameView extends GLView {
     private static _instance: GameView;
 
     public static get _(): GameView {

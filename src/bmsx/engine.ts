@@ -68,6 +68,7 @@ export class Game {
         controller = _controller;
 
         BaseView.images = _rom.images;
+        view.init();
         SM.init(_rom['resources'], sndcontext, gainnode);
         Input.init();
 

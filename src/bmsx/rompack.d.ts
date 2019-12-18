@@ -26,7 +26,7 @@ export interface RomMeta {
 export type id2res = { [key: number]: RomResource; };
 export interface RomLoadResult {
 	rom: ArrayBuffer,
-	images: Array<HTMLImageElement>;
+	images: { [key: number]: HTMLImageElement; };
 	resources: id2res;
 	source: any;
 }
