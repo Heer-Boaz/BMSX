@@ -327,6 +327,7 @@ export abstract class GLView extends BaseView {
 		super.init();
 		let gl = this.glctx;
 		gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+		gl.disable(gl.DEPTH_TEST);
 		gl.enable(gl.BLEND);
 		// setup GLSL program
 		this.program = gl.createProgram();
