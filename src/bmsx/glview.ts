@@ -171,8 +171,13 @@ var m4 = {
 		];
 	},
 
-	translate: function (m, tx, ty, tz) {
+	translate: function (m: number[], tx: number, ty: number, tz: number): number[] {
 		return m4.multiply(m, m4.translation(tx, ty, tz));
+	// translate: function (m: number[], x: number, y: number): void {
+		// m[12] = m[0] * x + m[4] * y + m[8];
+		// m[13] = m[1] * x + m[5] * y + m[9];
+		// m[14] = m[2] * x + m[6] * y + m[10];
+		// m[15] = m[3] * x + m[7] * y + m[11];
 	},
 
 	xRotate: function (m, angleInRadians) {
@@ -189,6 +194,15 @@ var m4 = {
 
 	scale: function (m, sx, sy, sz) {
 		return m4.multiply(m, m4.scaling(sx, sy, sz));
+	// scale2d: function (m: number[], x: number, y: number): void {
+		// m[0] = m[0] * x;
+		// m[1] = m[1] * x;
+		// m[2] = m[2] * x;
+		// m[3] = m[3] * x;
+		// m[4] = m[4] * y;
+		// m[5] = m[5] * y;
+		// m[6] = m[6] * y;
+		// m[7] = m[7] * y;
 	},
 
 	projection: function (width, height, depth) {
@@ -201,18 +215,55 @@ var m4 = {
 		];
 	},
 
-	orthographic: function (left, right, bottom, top, near, far) {
-		return [
-			2 / (right - left), 0, 0, 0,
-			0, 2 / (top - bottom), 0, 0,
-			0, 0, 2 / (near - far), 0,
+	orthographic: function (m: Float32Array, left, right, bottom, top, near, far): void {
+		m[0] = 2 / (right - left);
+		m[1] = 0;
+		m[2] = 0;
+		m[3] = 0;
+		m[4] = 0;
+		m[5] = 2 / (top - bottom);
+		m[6] = 0;
+		m[7] = 0;
+		m[8] = 0;
+		m[9] = 0;
+		m[10] = 2 / (near - far);
+		m[11] = 0;
+		m[12] = (left + right) / (left - right);
+		m[13] = (bottom + top) / (bottom - top);
+		m[14] = (near + far) / (near - far);
+		m[15] = 1;
 
-			(left + right) / (left - right),
-			(bottom + top) / (bottom - top),
-			(near + far) / (near - far),
-			1,
-		];
+		// return [
+		// 	2 / (right - left), 0, 0, 0,
+		// 	0, 2 / (top - bottom), 0, 0,
+		// 	0, 0, 2 / (near - far), 0,
+
+		// 	(left + right) / (left - right),
+		// 	(bottom + top) / (bottom - top),
+		// 	(near + far) / (near - far),
+		// 	1,
+		// ];
 	},
+
+	set: function(outm: Float32Array, inm: Float32Array) {
+		for (let i = 0; i < outm.length; i++) outm[i] = inm[i];
+	},
+
+	translate_scale2d: function (m: Float32Array, tx: number, ty: number, sx: number, sy: number) {
+		m[12] = m[0] * tx + m[4] * ty + m[8] + m[12];
+		m[13] = m[1] * tx + m[5] * ty + m[9] + m[13];
+		m[14] = m[2] * tx + m[6] * ty + m[10] + m[14];
+		m[15] = m[3] * tx + m[7] * ty + m[11] + m[15];
+
+		m[0] = m[0] * sx;
+		m[1] = m[1] * sx;
+		m[2] = m[2] * sx;
+		m[3] = m[3] * sx;
+		m[4] = m[4] * sy;
+		m[5] = m[5] * sy;
+		m[6] = m[6] * sy;
+		m[7] = m[7] * sy;
+	}
 
 };
 
@@ -229,9 +280,13 @@ export abstract class GLView extends BaseView {
 	private textureLocation: WebGLUniformLocation;
 	private positionBuffer: WebGLBuffer;
 	private texcoordBuffer: WebGLBuffer;
+	private basematrix: Float32Array = new Float32Array(16);
+	private gonutsmatrix: Float32Array = new Float32Array(16);
 
 	private readonly vertexShaderCode =
-		`	attribute vec4 a_position;
+		`
+		precision lowp float;
+		attribute vec4 a_position;
 		attribute vec2 a_texcoord;
 
 		uniform mat4 u_matrix;
@@ -244,9 +299,8 @@ export abstract class GLView extends BaseView {
 		}`;
 
 	private readonly fragmentShaderFillRectangleCode =
-		`	#ifdef GL_ES
-			precision highp float;
-			#endif
+		`
+			precision lowp float;
 
 			uniform vec4 uColor;
 
@@ -255,7 +309,8 @@ export abstract class GLView extends BaseView {
 			}`;
 
 	private readonly fragmentShaderTextureCode =
-		`	precision mediump float;
+		`
+		precision lowp float;
  		varying vec2 v_texcoord;
  		uniform sampler2D u_texture;
 
@@ -321,6 +376,24 @@ export abstract class GLView extends BaseView {
 		];
 		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texcoords), gl.STATIC_DRAW);
 
+		// Tell WebGL to use our shader program pair
+		gl.useProgram(this.program);
+
+		// Setup the attributes to pull data from our buffers
+		gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
+		gl.enableVertexAttribArray(this.positionLocation);
+		gl.vertexAttribPointer(this.positionLocation, 2, gl.FLOAT, false, 0, 0);
+		gl.bindBuffer(gl.ARRAY_BUFFER, this.texcoordBuffer);
+		gl.enableVertexAttribArray(this.texcoordLocation);
+		gl.vertexAttribPointer(this.texcoordLocation, 2, gl.FLOAT, false, 0, 0);
+
+		// this matrix will convert from pixels to clip space
+		m4.orthographic(this.basematrix, 0, gl.canvas.width, gl.canvas.height, 0, -1, 1);
+		m4.orthographic(this.gonutsmatrix, 0, gl.canvas.width, gl.canvas.height, 0, -1, 1);
+
+		// Tell the shader to get the texture from texture unit 0
+		gl.uniform1i(this.textureLocation, 0);
+
 		this.textures = {};
 		for (const [id, img] of Object.entries(BaseView.images)) {
 			if (!img) continue;
@@ -333,11 +406,9 @@ export abstract class GLView extends BaseView {
 		const shader = gl.createShader(type);
 
 		// Send the source to the shader object
-
 		gl.shaderSource(shader, source);
 
 		// Compile the shader program
-
 		gl.compileShader(shader);
 
 		// See if it compiled successfully
@@ -359,6 +430,7 @@ export abstract class GLView extends BaseView {
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 
 		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
 
@@ -367,6 +439,12 @@ export abstract class GLView extends BaseView {
 			height: img.height,
 			texture: tex,
 		};
+	}
+
+	public handleResize(): void {
+		super.handleResize();
+		let _this = view as GLView;
+		m4.orthographic(_this.basematrix, 0, _this.canvas.width, _this.canvas.height, 0, -1, 1);
 	}
 
 	public drawgame(gamescreenOffset?: Point, clearCanvas: boolean = true): void {
@@ -385,20 +463,6 @@ export abstract class GLView extends BaseView {
 		let tex = _this.textures[imgid];
 		gl.bindTexture(gl.TEXTURE_2D, tex.texture);
 
-		// Tell WebGL to use our shader program pair
-		gl.useProgram(_this.program);
-
-		// Setup the attributes to pull data from our buffers
-		gl.bindBuffer(gl.ARRAY_BUFFER, _this.positionBuffer);
-		gl.enableVertexAttribArray(_this.positionLocation);
-		gl.vertexAttribPointer(_this.positionLocation, 2, gl.FLOAT, false, 0, 0);
-		gl.bindBuffer(gl.ARRAY_BUFFER, _this.texcoordBuffer);
-		gl.enableVertexAttribArray(_this.texcoordLocation);
-		gl.vertexAttribPointer(_this.texcoordLocation, 2, gl.FLOAT, false, 0, 0);
-
-		// this matrix will convert from pixels to clip space
-		var matrix = m4.orthographic(0, gl.canvas.width, gl.canvas.height, 0, -1, 1);
-
 		// this matrix will scale our 1 unit quad
 		// from 1 unit to texWidth, texHeight units
 		let flipx = (options & DrawImgFlags.HFLIP) ? -1 : 1;
@@ -406,14 +470,15 @@ export abstract class GLView extends BaseView {
 		let dx = (options & DrawImgFlags.HFLIP) ? tex.width : 0;
 		let dy = (options & DrawImgFlags.VFLIP) ? tex.height : 0;
 		// this matrix will translate our quad to dstX, dstY
-		matrix = m4.translate(matrix, x + dx, y + dy, 0);
-		matrix = m4.scale(matrix, tex.width * flipx, tex.height * flipy, 1);
+		// Do the Boaz matrix translate and scale based
+		m4.set(_this.gonutsmatrix, _this.basematrix);
+		m4.translate_scale2d(_this.gonutsmatrix, x + dx, y + dy, tex.width * flipx, tex.height * flipy);
+
+		// let matrix = m4.translate(_this.basematrix, x + dx, y + dy, 0);
+		// matrix = m4.scale(matrix, tex.width * flipx, tex.height * flipy, 1);
 
 		// Set the matrix.
-		gl.uniformMatrix4fv(_this.matrixLocation, false, matrix);
-
-		// Tell the shader to get the texture from texture unit 0
-		gl.uniform1i(_this.textureLocation, 0);
+		gl.uniformMatrix4fv(_this.matrixLocation, false, _this.gonutsmatrix);
 
 		// draw the quad (2 triangles, 6 vertices)
 		gl.drawArrays(gl.TRIANGLES, 0, 6);
