@@ -21,5 +21,4 @@ src/sintervaniamodelold.ts
 **.d.ts
 !resourceids.d.ts
 !rompack.d.ts
-rom/_ignore
 rom/ignore
