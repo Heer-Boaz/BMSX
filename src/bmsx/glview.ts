@@ -276,13 +276,37 @@ var bvec = {
 		let y2 = fv ? y : (y + h);
 
 		v[0] = x1, v[1] = y1,
-		v[2] = x2, v[3] = y1,
-		v[4] = x1, v[5] = y2,
-		v[6] = x1, v[7] = y2,
-		v[8] = x2, v[9] = y1,
-		v[10] = x2, v[11] = y2;
-	}
+			v[2] = x2, v[3] = y1,
+			v[4] = x1, v[5] = y2,
+			v[6] = x1, v[7] = y2,
+			v[8] = x2, v[9] = y1,
+			v[10] = x2, v[11] = y2;
+	},
+	uvcoords: function (v: Float32Array, i: number, x: number, y: number, width: number, height: number, imageWidth: number, imageHeight: number) {
+		const left = x / imageWidth;
+		const bottom = y / imageHeight;
+		const right = (x + width) / imageWidth;
+		const top = (y + height) / imageHeight;
+
+		v[i] = left,
+			v[i + 1] = top,
+			v[i + 2] = right,
+			v[i + 3] = top,
+			v[i + 4] = right,
+			v[i + 5] = bottom,
+			v[i + 6] = left,
+			v[i + 7] = bottom;
+
+		// return [
+		// 	left, top,
+		// 	right, top,
+		// 	right, bottom,
+		// 	left, bottom,
+		// ];
+	},
 };
+
+
 
 interface TextureInfo { width: number, height: number, texture: WebGLTexture; };
 
@@ -364,7 +388,12 @@ export abstract class GLView extends BaseView {
 
 	constructor(viewportsize: Size) {
 		super(viewportsize);
-		this.glctx = this.canvas.getContext('webgl', { alpha: false });
+		this.glctx = this.canvas.getContext('webgl', {
+			alpha: false,
+			desynchronized: true,
+			preserveDrawingBuffer: true,
+			antialias: false,
+		});
 	}
 
 	public init(): void {
@@ -373,6 +402,10 @@ export abstract class GLView extends BaseView {
 		gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 		gl.disable(gl.DEPTH_TEST);
 		gl.enable(gl.BLEND);
+		gl.enable(gl.CULL_FACE);
+		gl.cullFace(gl.FRONT);
+		gl.viewport(0, 0, gl.canvas.width, gl.canvas.height); // TODO: Nodig gezien de resize in buffer?
+
 		// setup GLSL program
 		this.program = gl.createProgram();
 		let vertShader = this.loadShader(gl.VERTEX_SHADER, this.vertexShaderCode);
@@ -432,7 +465,7 @@ export abstract class GLView extends BaseView {
 		// this matrix will convert from pixels to clip space
 		// m4.orthographic(this.basematrix, 0, gl.canvas.width, gl.canvas.height, 0, -1, 1);
 		// m4.orthographic(this.gonutsmatrix, 0, gl.canvas.width, gl.canvas.height, 0, -1, 1);
-		this.resVec2.set([ gl.canvas.width, gl.canvas.height ]);
+		this.resVec2.set([gl.canvas.width, gl.canvas.height]);
 		gl.uniform2fv(this.resolutionLocation, this.resVec2);
 
 		// Tell the shader to get the texture from texture unit 0
@@ -492,6 +525,7 @@ export abstract class GLView extends BaseView {
 		// m4.orthographic(_this.basematrix, 0, _this.canvas.width, _this.canvas.height, 0, -1, 1);
 		_this.resVec2.set([_this.canvas.width, _this.canvas.height]);
 		_this.glctx.uniform2fv(_this.resolutionLocation, _this.resVec2);
+		_this.glctx.viewport(0, 0, _this.glctx.canvas.width, _this.glctx.canvas.height);
 	}
 
 	public drawgame(gamescreenOffset?: Point, clearCanvas: boolean = true): void {
@@ -518,7 +552,7 @@ export abstract class GLView extends BaseView {
 
 	public clear(): void {
 		let gl = this.glctx;
-		gl.clear(gl.COLOR_BUFFER_BIT);
+		gl.clear(gl.COLOR_BUFFER_BIT);// | gl.DEPTH_BUFFER_BIT);
 	}
 
 	public drawImg(imgid: number, x: number, y: number, options?: number): void {
@@ -588,7 +622,6 @@ export abstract class GLView extends BaseView {
 		// // gl.drawElements(gl.LINES, given_animal.vertex_indices_buffer.numItems, gl.UNSIGNED_SHORT, 0);
 		// gl.lineWidth(1);
 	}
-
 
 	// private bla() {
 	// 	// Get A WebGL context

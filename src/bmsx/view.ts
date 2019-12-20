@@ -52,8 +52,19 @@ export abstract class BaseView {
 
     public calculateSize(): void {
         let self = view || this;
+
+        // var width = gl.canvas.clientWidth;
+        // var height = gl.canvas.clientHeight;
+        // if (gl.canvas.width != width ||
+        //     gl.canvas.height != height) {
+        //     gl.canvas.width = width;
+        //     gl.canvas.height = height;
+        // }
+
         let w = Math.max(document.documentElement.clientWidth, window.innerWidth || screen.width);
         let h = Math.max(document.documentElement.clientHeight, window.innerHeight || screen.height);
+        // let w = self.canvas.clientWidth;
+        // let h = self.canvas.clientHeight;
         self.windowSize = { x: w, y: h };
         self.dx = self.windowSize.x / self.viewportSize.x;
         self.dy = self.windowSize.y / self.viewportSize.y;
