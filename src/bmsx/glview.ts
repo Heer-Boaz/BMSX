@@ -173,7 +173,7 @@ var m4 = {
 
 	translate: function (m: number[], tx: number, ty: number, tz: number): number[] {
 		return m4.multiply(m, m4.translation(tx, ty, tz));
-	// translate: function (m: number[], x: number, y: number): void {
+		// translate: function (m: number[], x: number, y: number): void {
 		// m[12] = m[0] * x + m[4] * y + m[8];
 		// m[13] = m[1] * x + m[5] * y + m[9];
 		// m[14] = m[2] * x + m[6] * y + m[10];
@@ -194,7 +194,7 @@ var m4 = {
 
 	scale: function (m, sx, sy, sz) {
 		return m4.multiply(m, m4.scaling(sx, sy, sz));
-	// scale2d: function (m: number[], x: number, y: number): void {
+		// scale2d: function (m: number[], x: number, y: number): void {
 		// m[0] = m[0] * x;
 		// m[1] = m[1] * x;
 		// m[2] = m[2] * x;
@@ -245,9 +245,9 @@ var m4 = {
 		// ];
 	},
 
-	set: function(outm: Float32Array, inm: Float32Array) {
-		for (let i = 0; i < outm.length; i++) outm[i] = inm[i];
-	},
+	// set: function(outm: Float32Array, inm: Float32Array) {
+	// 	for (let i = 0; i < outm.length; i++) outm[i] = inm[i];
+	// },
 
 	translate_scale2d: function (m: Float32Array, tx: number, ty: number, sx: number, sy: number) {
 		m[12] = m[0] * tx + m[4] * ty + m[8] + m[12];
@@ -267,6 +267,23 @@ var m4 = {
 
 };
 
+var bvec = {
+	set: function (v: Float32Array, x: number, y: number, w: number, h: number, fh: number, fv: number): void {
+		// Do the Boaz matrix translate and scale based
+		let x1 = fh ? (x + w) : x;
+		let x2 = fh ? x : (x + w);
+		let y1 = fv ? (y + h) : y;
+		let y2 = fv ? y : (y + h);
+
+		v[0] = x1, v[1] = y1,
+		v[2] = x2, v[3] = y1,
+		v[4] = x1, v[5] = y2,
+		v[6] = x1, v[7] = y2,
+		v[8] = x2, v[9] = y1,
+		v[10] = x2, v[11] = y2;
+	}
+};
+
 interface TextureInfo { width: number, height: number, texture: WebGLTexture; };
 
 export abstract class GLView extends BaseView {
@@ -276,25 +293,52 @@ export abstract class GLView extends BaseView {
 	private program: WebGLProgram;
 	private positionLocation: number;
 	private texcoordLocation: number;
-	private matrixLocation: WebGLUniformLocation;
+	// private matrixLocation: WebGLUniformLocation;
+	private resolutionLocation: WebGLUniformLocation;
 	private textureLocation: WebGLUniformLocation;
 	private positionBuffer: WebGLBuffer;
 	private texcoordBuffer: WebGLBuffer;
-	private basematrix: Float32Array = new Float32Array(16);
-	private gonutsmatrix: Float32Array = new Float32Array(16);
+	// private basematrix: Float32Array = new Float32Array(16);
+	// private gonutsmatrix: Float32Array = new Float32Array(16);
+	private resVec2: Float32Array = new Float32Array(2);
+	private vertexcoords: Float32Array = new Float32Array(12);
 
 	private readonly vertexShaderCode =
+		// `
+		// precision lowp float;
+		// attribute vec4 a_position;
+		// attribute vec2 a_texcoord;
+
+		// uniform mat4 u_matrix;
+
+		// varying vec2 v_texcoord;
+
+		// void main() {
+		// 	gl_Position = u_matrix * a_position;
+		// 	v_texcoord = a_texcoord;
+		// }`;
 		`
-		precision lowp float;
-		attribute vec4 a_position;
-		attribute vec2 a_texcoord;
+			attribute vec2 a_position;
+			attribute vec2 a_texcoord;
 
-		uniform mat4 u_matrix;
+			uniform vec2 u_resolution;
 
-		varying vec2 v_texcoord;
+			varying vec2 v_texcoord;
 
 		void main() {
-			gl_Position = u_matrix * a_position;
+			// convert the rectangle from pixels to 0.0 to 1.0
+			vec2 zeroToOne = a_position / u_resolution;
+
+			// convert from 0->1 to 0->2
+			vec2 zeroToTwo = zeroToOne * 2.0;
+
+			// convert from 0->2 to -1->+1 (clipspace)
+			vec2 clipSpace = zeroToTwo - 1.0;
+
+			gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
+
+			// pass the texCoord to the fragment shader
+			// The GPU will interpolate this value between points.
 			v_texcoord = a_texcoord;
 		}`;
 
@@ -310,7 +354,7 @@ export abstract class GLView extends BaseView {
 
 	private readonly fragmentShaderTextureCode =
 		`
-		precision lowp float;
+		precision mediump float;
  		varying vec2 v_texcoord;
  		uniform sampler2D u_texture;
 
@@ -344,39 +388,36 @@ export abstract class GLView extends BaseView {
 		this.texcoordLocation = gl.getAttribLocation(this.program, "a_texcoord");
 
 		// lookup uniforms
-		this.matrixLocation = gl.getUniformLocation(this.program, "u_matrix");
+		// this.matrixLocation = gl.getUniformLocation(this.program, "u_matrix");
+		this.resolutionLocation = gl.getUniformLocation(this.program, "u_resolution");
 		this.textureLocation = gl.getUniformLocation(this.program, "u_texture");
 
 		// Create a buffer.
 		this.positionBuffer = gl.createBuffer();
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-
-		// Put a unit quad in the buffer
-		let positions = [
-			0, 0,
-			0, 1,
-			1, 0,
-			1, 0,
-			0, 1,
-			1, 1,
-		];
-		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
-
+		gl.bufferData(gl.ARRAY_BUFFER, this.vertexcoords, gl.DYNAMIC_DRAW);
 		// Create a buffer for texture coords
 		this.texcoordBuffer = gl.createBuffer();
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.texcoordBuffer);
 
 		// Put texcoords in the buffer
-		let texcoords = [
-			0, 0,
-			0, 1,
-			1, 0,
-			1, 0,
-			0, 1,
-			1, 1,
-		];
-		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texcoords), gl.STATIC_DRAW);
-
+		// let texcoords = [
+		// 	0, 0,
+		// 	0, 1,
+		// 	1, 0,
+		// 	1, 0,
+		// 	0, 1,
+		// 	1, 1,
+		// ];
+		// gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texcoords), gl.STATIC_DRAW);
+		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+			0.0, 0.0,
+			1.0, 0.0,
+			0.0, 1.0,
+			0.0, 1.0,
+			1.0, 0.0,
+			1.0, 1.0,
+		]), gl.STATIC_DRAW);
 		// Tell WebGL to use our shader program pair
 		gl.useProgram(this.program);
 
@@ -389,11 +430,14 @@ export abstract class GLView extends BaseView {
 		gl.vertexAttribPointer(this.texcoordLocation, 2, gl.FLOAT, false, 0, 0);
 
 		// this matrix will convert from pixels to clip space
-		m4.orthographic(this.basematrix, 0, gl.canvas.width, gl.canvas.height, 0, -1, 1);
-		m4.orthographic(this.gonutsmatrix, 0, gl.canvas.width, gl.canvas.height, 0, -1, 1);
+		// m4.orthographic(this.basematrix, 0, gl.canvas.width, gl.canvas.height, 0, -1, 1);
+		// m4.orthographic(this.gonutsmatrix, 0, gl.canvas.width, gl.canvas.height, 0, -1, 1);
+		this.resVec2.set([ gl.canvas.width, gl.canvas.height ]);
+		gl.uniform2fv(this.resolutionLocation, this.resVec2);
 
 		// Tell the shader to get the texture from texture unit 0
 		gl.uniform1i(this.textureLocation, 0);
+		gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
 
 		this.textures = {};
 		for (const [id, img] of Object.entries(BaseView.images)) {
@@ -445,10 +489,30 @@ export abstract class GLView extends BaseView {
 	public handleResize(): void {
 		super.handleResize();
 		let _this = view as GLView;
-		m4.orthographic(_this.basematrix, 0, _this.canvas.width, _this.canvas.height, 0, -1, 1);
+		// m4.orthographic(_this.basematrix, 0, _this.canvas.width, _this.canvas.height, 0, -1, 1);
+		_this.resVec2.set([_this.canvas.width, _this.canvas.height]);
+		_this.glctx.uniform2fv(_this.resolutionLocation, _this.resVec2);
 	}
 
 	public drawgame(gamescreenOffset?: Point, clearCanvas: boolean = true): void {
+		// if (clearCanvas) view.clear();
+		// let _this = view as GLView;
+		// let gl = _this.glctx;
+
+		// model.objects.forEach(o => {
+		// 	if (!o.disposeFlag && o.paint) {
+		// 		if (!o.buffer) {
+		// 			o.buffer = gl.createBuffer();
+		// 			gl.bindBuffer(gl.ARRAY_BUFFER, o.buffer);
+		// 			gl.bufferData(gl.ARRAY_BUFFER, _this.vertexcoords, gl.DYNAMIC_DRAW);
+		// 			gl.enableVertexAttribArray(this.positionLocation);
+		// 			gl.vertexAttribPointer(this.positionLocation, 2, gl.FLOAT, false, 0, 0);
+		// 		}
+		// 		else gl.bindBuffer(gl.ARRAY_BUFFER, o.buffer);
+
+		// 		o.paint(gamescreenOffset);
+		// 	}
+		// });
 		super.drawgame(gamescreenOffset, clearCanvas);
 	}
 
@@ -466,23 +530,29 @@ export abstract class GLView extends BaseView {
 
 		// this matrix will scale our 1 unit quad
 		// from 1 unit to texWidth, texHeight units
-		let flipx = (options & DrawImgFlags.HFLIP) ? -1 : 1;
-		let flipy = (options & DrawImgFlags.VFLIP) ? -1 : 1;
-		let dx = (options & DrawImgFlags.HFLIP) ? tex.width : 0;
-		let dy = (options & DrawImgFlags.VFLIP) ? tex.height : 0;
+		let flipx = (options & DrawImgFlags.HFLIP);
+		let flipy = (options & DrawImgFlags.VFLIP);
+		// let dx = (options & DrawImgFlags.HFLIP) ? tex.width : 0;
+		// let dy = (options & DrawImgFlags.VFLIP) ? tex.height : 0;
+
 		// this matrix will translate our quad to dstX, dstY
 		// Do the Boaz matrix translate and scale based
-		m4.set(_this.gonutsmatrix, _this.basematrix);
-		m4.translate_scale2d(_this.gonutsmatrix, x + dx, y + dy, tex.width * flipx, tex.height * flipy);
+		bvec.set(_this.vertexcoords, x, y, tex.width, tex.height, flipx, flipy);
+		gl.bufferData(gl.ARRAY_BUFFER, _this.vertexcoords, gl.DYNAMIC_DRAW);
+		// gl.bufferSubData(gl.ARRAY_BUFFER, 0, _this.vertexcoords);
+
+		// _this.gonutsmatrix.set(_this.basematrix);
+		// m4.translate_scale2d(_this.gonutsmatrix, x + dx, y + dy, tex.width * flipx, tex.height * flipy);
 
 		// let matrix = m4.translate(_this.basematrix, x + dx, y + dy, 0);
 		// matrix = m4.scale(matrix, tex.width * flipx, tex.height * flipy, 1);
 
 		// Set the matrix.
-		gl.uniformMatrix4fv(_this.matrixLocation, false, _this.gonutsmatrix);
+		// gl.uniformMatrix4fv(_this.matrixLocation, false, _this.gonutsmatrix);
 
 		// draw the quad (2 triangles, 6 vertices)
 		gl.drawArrays(gl.TRIANGLES, 0, 6);
+		gl.flush();
 	}
 
 	public drawColoredBitmap(imgid: number, x: number, y: number, options: number, r: boolean = true, g: boolean = true, b: boolean = true, a: boolean = true) {

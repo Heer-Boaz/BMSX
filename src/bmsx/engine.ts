@@ -290,6 +290,7 @@ export interface IGameObject {
     priority?: number;
     pos: Point;
     smachines?: bst<any>[];
+    buffer?: WebGLBuffer;
 
     isWall?: boolean;
     disposeOnSwitchRoom?: boolean;
