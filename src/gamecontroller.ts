@@ -147,7 +147,7 @@ export class Controller extends BaseController {
                 switch (Model._.substate) {
                     case GameSubstate.GameMenu:
                         this.handleInputDuringGame();
-                        Model._.GameMenu.TakeTurn();
+                        Model._.GameMenu.takeTurn();
                         break;
                     case GameSubstate.BelmontDies:
                         this.handleInputDuringGame();
@@ -164,7 +164,7 @@ export class Controller extends BaseController {
                     case GameSubstate.GameOver:
                         this.handleInputDuringGame();
                         Model._.GameOverScreen.TakeTurn();
-                        Model._.GameMenu.TakeTurn();
+                        Model._.GameMenu.takeTurn();
                         break;
                     case GameSubstate.SwitchRoom:
                         if (waitDuration(this.timer, GameConstants.WaitAfterRoomSwitch)) {
@@ -194,7 +194,7 @@ export class Controller extends BaseController {
                         break;
                     case GameSubstate.GameMenu:
                         this.handleInputDuringGame();
-                        Model._.GameMenu.TakeTurn();
+                        Model._.GameMenu.takeTurn();
                         break;
                     default:
                         let objects = Model._.objects;

@@ -122,14 +122,14 @@ async function loadResources(rom: ArrayBuffer): Promise<RomLoadResult> {
 		let result: RomLoadResult = {
 			images: {},
 			rom: rom,
-			resources: {},
+			imgresources: {},
+			sndresources: {},
 			source: null
 		};
 
 		let list = await loadResourceList(rom);
 		for (let i = 0; i < list.length; i++) {
 			await load(rom, list[i], result);
-			result.resources[list[i].resid] = list[i];
 		}
 		return result;
 	}
@@ -154,6 +154,8 @@ async function load(rom: ArrayBuffer, res: RomResource, romResult: RomLoadResult
 			let img = await loadImage(url);
 			romResult.images[res.resid] = img;
 			romResult.images[res.resname] = img;
+			romResult.imgresources[res.resid] = res;
+			romResult.imgresources[res.resname] = res;
 			break;
 		case 'source':
 			try {
@@ -167,6 +169,8 @@ async function load(rom: ArrayBuffer, res: RomResource, romResult: RomLoadResult
 			}
 			break;
 		case 'audio':
+			romResult.sndresources[res.resid] = res;
+			romResult.sndresources[res.resname] = res;
 			break;
 		default:
 			let msg = `Unrecognised resource type in rom: ${res.type}, while processing rompack!`;

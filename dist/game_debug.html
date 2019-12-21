@@ -184,7 +184,8 @@ function loadResources(rom) {
                     result = {
                         images: {},
                         rom: rom,
-                        resources: {},
+                        imgresources: {},
+                        sndresources: {},
                         source: null
                     };
                     return [4, loadResourceList(rom)];
@@ -197,7 +198,6 @@ function loadResources(rom) {
                     return [4, load(rom, list[i], result)];
                 case 3:
                     _a.sent();
-                    result.resources[list[i].resid] = list[i];
                     _a.label = 4;
                 case 4:
                     i++;
@@ -237,6 +237,9 @@ function load(rom, res, romResult) {
                 case 2:
                     img = _b.sent();
                     romResult.images[res.resid] = img;
+                    romResult.images[res.resname] = img;
+                    romResult.imgresources[res.resid] = res;
+                    romResult.imgresources[res.resname] = res;
                     return [3, 6];
                 case 3:
                     try {
@@ -250,7 +253,10 @@ function load(rom, res, romResult) {
                         return [2, Promise.reject(msg_1)];
                     }
                     return [3, 6];
-                case 4: return [3, 6];
+                case 4:
+                    romResult.sndresources[res.resid] = res;
+                    romResult.sndresources[res.resname] = res;
+                    return [3, 6];
                 case 5:
                     msg = "Unrecognised resource type in rom: " + res.type + ", while processing rompack!";
                     console.error(msg);

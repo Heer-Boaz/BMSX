@@ -7,7 +7,7 @@ import { SM } from "./bmsx/soundmaster";
 import { Controller as C } from "./gamecontroller";
 import { GameState, Model } from "./gamemodel";
 import { SlotExists, LoadGame } from "./bmsx/gamepersistor";
-import { GameOptions as GO } from "./bmsx/engine";
+import { GameOptions as GO, IGameObject } from './bmsx/engine';
 import { Constants } from "./bmsx/engine";
 import { newSize, setPoint } from "./bmsx/common";
 import { view, game } from "./bmsx/engine";
@@ -43,7 +43,7 @@ declare module "./mainmenu" {
     }
 }
 
-export class GameMenu {
+export class GameMenu implements IGameObject {
     private static menuPosX: number = 24;
     private static menuPosY: number = 24;
     private static menuEndX: number = 240;
@@ -88,6 +88,10 @@ export class GameMenu {
     private cursorPos: Point;
     private selectedItemIndex: number;
     private CurrentScreen: MenuItem;
+    id: string = 'gamemenu';
+    disposeFlag: boolean = false;
+    pos: Point = null;
+    priority: number = 5000;
 
     constructor() {
         this.visible = false;
@@ -121,7 +125,7 @@ export class GameMenu {
         }
     }
 
-    public TakeTurn(): void {
+    public takeTurn(): void {
         if (!this.visible)
             return;
         setPoint(this.cursorPos, this.calculateCursorX(), this.calculateCursorY());
@@ -427,7 +431,7 @@ export class GameMenu {
         }
     }
 
-    public Paint(): void {
+    public paint(): void {
         if (!this.visible)
             return
         view.fillRectangle(GameMenu.menuPosX, GameMenu.menuPosY, GameMenu.menuEndX, GameMenu.menuEndY, Msx1Colors[1]);
@@ -557,7 +561,7 @@ export class GameMenu {
                     break;
                 }
         }
-        view.drawImg(<number>BitmapId.MenuCursor, this.cursorPos.x, this.cursorPos.y);
+        view.drawImg(BitmapId.MenuCursor, this.cursorPos.x, this.cursorPos.y);
     }
 
     private printFullscreenOptionRectangle(y: number): void {

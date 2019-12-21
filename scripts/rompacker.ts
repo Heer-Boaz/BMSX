@@ -16,7 +16,7 @@ const { createCanvas, loadImage } = require('canvas');
 
 const canvas = createCanvas(1024, 1024);
 const ctx = canvas.getContext('2d');
-const atlasPos = { x: 0, y: 0};
+const atlasPos = { x: 0, y: 0 };
 let atlasUnsafeY = 0;
 
 /**
@@ -133,8 +133,8 @@ async function bundleGamecode(outfile: string): Promise<any> {
 			.bundle()
 			// .on('deps', dep => console.log(dep.file))
 			.on("error", e => { stopRotator(); log(`\tGame bouwen faalde :-(\n`, 'error'); return reject(e); })
-			.pipe(writeOutput)
-			// .catch(e => { log(`\nGame bouwen faalde :-(\n`, 'error'); Promise.reject(e); });
+			.pipe(writeOutput);
+		// .catch(e => { log(`\nGame bouwen faalde :-(\n`, 'error'); Promise.reject(e); });
 
 		writeOutput.on('finish', () => {
 			stopRotator();
@@ -454,9 +454,9 @@ async function buildRompackAndResourceList(outfile: string): Promise<void> {
 				const base64Encoded = readFileSync(arrayOfFiles[i], 'base64');
 				const dataURL = `data:image/png;base64,${base64Encoded}`;
 				let img = await loadImage(dataURL);
-				let atlaspos = addToAtlas(img);
+				let texcoords = addToAtlas(img);
 
-				jsonout.push({ resid: imgi, resname: name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length, imgmeta: { texstart: { x: atlaspos.x, y: atlaspos.y } }, audiometa: null, });
+				jsonout.push({ resid: imgi, resname: name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length, imgmeta: { texcoords: texcoords }, audiometa: null, });
 				tsimgout.push(`\t${name} = ${imgi},`);
 				++imgi;
 				break;
@@ -516,6 +516,7 @@ async function buildRompackAndResourceList(outfile: string): Promise<void> {
 	startRotator();
 	writeFileSync("./src/resourceids.ts", tsimgout.concat(tssndout).join('\n'));
 	writeFileSync("./rom/_ignore/romresources.json", jsonbuffer);
+	writeFileSync("./rom/_ignore/atlas.png", atlasbuffer);
 	stopRotator();
 	log("\tKlaar!\n");
 	log("Rom is gepackt!!\n");
@@ -523,7 +524,26 @@ async function buildRompackAndResourceList(outfile: string): Promise<void> {
 	log(`\tSize: ${(Buffer.concat(buffers).length / (1024 * 1024)).toFixed(2)} mB\n\tDeflated size: ${(zipped.length / (1024 * 1024)).toFixed(2)} mB.\n`);
 }
 
-function addToAtlas(img: any): { x: number, y: number } {
+function addToAtlas(img: any): number[] {
+	function uvcoords(x: number, y: number, width: number, height: number, imageWidth: number, imageHeight: number) {
+		let result: number[] = [];
+		const left = x / width;
+		const top = y / height;
+		const right = (x + imageWidth) / width;
+		const bottom = (y + imageHeight) / height;
+
+		// 0.0, 0.0,
+		// 1.0, 0.0,
+		// 0.0, 1.0,
+		// 0.0, 1.0,
+		// 1.0, 0.0,
+		// 1.0, 1.0,
+
+		// result.push(left, top, right, top, right, bottom, left, bottom);
+		result.push(left, top, right, top, left, bottom, left, bottom, right, top, right, bottom);
+		return result;
+	}
+
 	if (atlasPos.x + img.width >= 1024) {
 		atlasPos.x = 0;
 		atlasPos.y = atlasUnsafeY;
@@ -537,7 +557,7 @@ function addToAtlas(img: any): { x: number, y: number } {
 		}
 	}
 
-	let result = { x: atlasPos.x, y: atlasPos.y };
+	let result = uvcoords(atlasPos.x, atlasPos.y, 1024, 1024, img.width, img.height);
 	atlasPos.x += img.width;
 
 	return result;

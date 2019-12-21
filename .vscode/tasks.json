@@ -17,7 +17,7 @@
 			"type": "process",
 			"command": "node",
 			"args": [
-				"${workspaceFolder}/rompacker.js",
+				"${workspaceFolder}/rom/rompacker.js",
 				"sintervania.rom",
 			],
 			"problemMatcher": [
@@ -121,9 +121,11 @@
 			"args": [
 				"${workspaceFolder}/scripts/rompacker.ts",
 				"--removeComments",
+				"--target",
+				"ES5",
 				// "--noEmitHelpers",
 				"--outDir",
-				"${workspaceFolder}/"
+				"${workspaceFolder}/rom"
 			],
 			"problemMatcher": [
 				"$tsc"

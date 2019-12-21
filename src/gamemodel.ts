@@ -236,7 +236,6 @@ export class Model extends BaseModel {
         this.ItemsInInventory = new Array<BagItem>();
         this.WeaponsInInventory = new Array<BagWeapon>();
         this.Switches = new Map<Switch, boolean>();
-        this.GameMenu = new GameMenu();
         this.id2object = new Map<string, IGameObject>();
         this.FoesDefeated = new Map<string, boolean>();
         this.ItemsPickedUp = new Map<string, boolean>();
@@ -249,6 +248,8 @@ export class Model extends BaseModel {
         this.Hud = new HUD();
         this.ItsCurtains = new ItsCurtainsForYou();
         this.GameOverScreen = new GameOver();
+        this.GameMenu = new GameMenu();
+        this.spawn(this.GameMenu);
         this.MainMenu = new MainMenu();
         this.Title = new Title();
         this.EndDemo = new EndDemo();

@@ -61,7 +61,7 @@ export class GameView extends GLView {
                     Model._.GameOverScreen.Paint();
                 }
 
-                Model._.GameMenu.Paint();
+                Model._.GameMenu.paint();
                 if (Model._.paused) {
                     Model._.PauseObject.paint();
                 }

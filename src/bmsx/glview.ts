@@ -1,4 +1,4 @@
-import { view, model } from "./engine";
+import { view, model, game } from "./engine";
 import { Size, Point } from "./common";
 import { BaseView, Color, DrawImgFlags } from './view';
 
@@ -320,13 +320,11 @@ var bvec = {
 	},
 };
 
-
-
-interface TextureInfo { width: number, height: number, texture: WebGLTexture; };
+// interface TextureInfo { width: number, height: number, texture: WebGLTexture; };
 
 export abstract class GLView extends BaseView {
 	public glctx: WebGLRenderingContext;
-	private textures: { [key: number]: TextureInfo; };
+	private textures: { [key: number]: WebGLTexture; };
 
 	private program: WebGLProgram;
 	private positionLocation: number;
@@ -340,6 +338,7 @@ export abstract class GLView extends BaseView {
 	// private gonutsmatrix: Float32Array = new Float32Array(16);
 	private resVec2: Float32Array = new Float32Array(2);
 	private vertexcoords: Float32Array = new Float32Array(12);
+	private texcoords: Float32Array = new Float32Array(12);
 	private drawImgReqIndex: number = 0;
 
 	private readonly vertexShaderCode =
@@ -393,7 +392,7 @@ export abstract class GLView extends BaseView {
 
 	private readonly fragmentShaderTextureCode =
 		`
-		precision mediump float;
+		precision highp float;
  		varying vec2 v_texcoord;
  		uniform sampler2D u_texture;
 
@@ -448,7 +447,7 @@ export abstract class GLView extends BaseView {
 		this.positionBuffer = gl.createBuffer();
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
 		// gl.bufferData(gl.ARRAY_BUFFER, this.vertexcoords, gl.STATIC_DRAW);
-		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(12 * 1000), gl.STATIC_DRAW);
+		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(12 * 1000), gl.DYNAMIC_DRAW);
 		// Create a buffer for texture coords
 		this.texcoordBuffer = gl.createBuffer();
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.texcoordBuffer);
@@ -474,7 +473,7 @@ export abstract class GLView extends BaseView {
 				1.0, 1.0,
 			], i);
 		}
-		gl.bufferData(gl.ARRAY_BUFFER, uglyTexCoordStuff, gl.STATIC_DRAW);
+		gl.bufferData(gl.ARRAY_BUFFER, uglyTexCoordStuff, gl.DYNAMIC_DRAW);
 		// gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
 		// 	0.0, 0.0,
 		// 	1.0, 0.0,
@@ -502,7 +501,6 @@ export abstract class GLView extends BaseView {
 
 		// Tell the shader to get the texture from texture unit 0
 		gl.uniform1i(this.textureLocation, 0);
-		gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
 
 		this.textures = {};
 		// for (const [id, img] of Object.entries(BaseView.images)) {
@@ -510,7 +508,7 @@ export abstract class GLView extends BaseView {
 		// 	this.textures[id] = this.createTexture(img);
 		// }
 		this.textures['_atlas'] = this.createTexture(BaseView.images['_atlas']);
-		gl.bindTexture(gl.TEXTURE_2D, this.textures['_atlas'].texture);
+		// gl.bindTexture(gl.TEXTURE_2D, this.textures['_atlas']);
 	}
 
 	private loadShader(type: number, source: string): WebGLShader {
@@ -533,11 +531,11 @@ export abstract class GLView extends BaseView {
 		return shader;
 	}
 
-	private createTexture(img: HTMLImageElement): TextureInfo {
+	private createTexture(img: HTMLImageElement): WebGLTexture {
 		let gl = this.glctx;
 
-		let tex = gl.createTexture();
-		gl.bindTexture(gl.TEXTURE_2D, tex);
+		let result = gl.createTexture();
+		gl.bindTexture(gl.TEXTURE_2D, result);
 		// let's assume all images are not a power of 2
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
@@ -546,11 +544,7 @@ export abstract class GLView extends BaseView {
 
 		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
 
-		return {
-			width: img.width,
-			height: img.height,
-			texture: tex,
-		};
+		return result;
 	}
 
 	public handleResize(): void {
@@ -563,24 +557,7 @@ export abstract class GLView extends BaseView {
 	}
 
 	public drawgame(gamescreenOffset?: Point, clearCanvas: boolean = true): void {
-		// if (clearCanvas) view.clear();
 		let _this = view as GLView;
-		// let gl = _this.glctx;
-
-		// model.objects.forEach(o => {
-		// 	if (!o.disposeFlag && o.paint) {
-		// 		if (!o.buffer) {
-		// 			o.buffer = gl.createBuffer();
-		// 			gl.bindBuffer(gl.ARRAY_BUFFER, o.buffer);
-		// 			gl.bufferData(gl.ARRAY_BUFFER, _this.vertexcoords, gl.DYNAMIC_DRAW);
-		// 			gl.enableVertexAttribArray(this.positionLocation);
-		// 			gl.vertexAttribPointer(this.positionLocation, 2, gl.FLOAT, false, 0, 0);
-		// 		}
-		// 		else gl.bindBuffer(gl.ARRAY_BUFFER, o.buffer);
-
-		// 		o.paint(gamescreenOffset);
-		// 	}
-		// });
 		super.drawgame(gamescreenOffset, clearCanvas);
 		_this.drawSprites();
 		_this.drawImgReqIndex = 0;
@@ -594,27 +571,31 @@ export abstract class GLView extends BaseView {
 	public drawSprites(): void {
 		let _this = view as GLView;
 		let gl = _this.glctx;
-		let tex = _this.textures['1'];
+		// let tex = _this.textures['_atlas'];
 		// gl.bufferData(gl.ARRAY_BUFFER, _this.vertexcoords, gl.STATIC_DRAW);
 
 		gl.drawArrays(gl.TRIANGLES, 0, 6 * _this.drawImgReqIndex);
-		gl.flush();
+		// gl.flush();
 	}
 
 	public drawImg(imgid: number, x: number, y: number, options?: number): void {
 		let _this = view as GLView;
 		let gl = _this.glctx;
-		// let tex = _this.textures[imgid];
-		let tex = _this.textures['1'];
+		let img = BaseView.images[imgid];
+		// let tex = _this.textures['1'];
 
 		let flipx = (options & DrawImgFlags.HFLIP);
 		let flipy = (options & DrawImgFlags.VFLIP);
 
-		bvec.set(_this.vertexcoords, x, y, tex.width, tex.height, flipx, flipy);
+		bvec.set(_this.vertexcoords, x, y, img.width, img.height, flipx, flipy);
+		_this.texcoords.set(game.rom['imgresources'][imgid]['imgmeta']['texcoords']);
 		// bvec.seti(_this.vertexcoords, _this.drawImgReqIndex * 12, x, y, tex.width, tex.height, flipx, flipy);
 		// gl.bufferData(gl.ARRAY_BUFFER, _this.vertexcoords, gl.STATIC_DRAW);
 		// gl.bindBuffer(gl.ARRAY_BUFFER, _this.positionBuffer);
+		gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
 		gl.bufferSubData(gl.ARRAY_BUFFER, 48 * _this.drawImgReqIndex, _this.vertexcoords); // _this.drawImgReqIndex * 12 * 4
+		gl.bindBuffer(gl.ARRAY_BUFFER, this.texcoordBuffer);
+		gl.bufferSubData(gl.ARRAY_BUFFER, 48 * _this.drawImgReqIndex, _this.texcoords); // _this.drawImgReqIndex * 12 * 4
 		++_this.drawImgReqIndex;
 		// _this.gonutsmatrix.set(_this.basematrix);
 		// m4.translate_scale2d(_this.gonutsmatrix, x + dx, y + dy, tex.width * flipx, tex.height * flipy);
@@ -632,9 +613,9 @@ export abstract class GLView extends BaseView {
 
 	public drawColoredBitmap(imgid: number, x: number, y: number, options: number, r: boolean = true, g: boolean = true, b: boolean = true, a: boolean = true) {
 		let _this = view as GLView;
-		_this.glctx.colorMask(r, g, b, a);
-		view.drawImg(imgid, x, y, options);
-		_this.glctx.colorMask(true, true, true, true);
+		// _this.glctx.colorMask(r, g, b, a);
+		_this.drawImg(imgid, x, y, options);
+		// _this.glctx.colorMask(true, true, true, true);
 	}
 
 	public drawRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {

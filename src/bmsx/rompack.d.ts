@@ -10,10 +10,7 @@ export interface AudioMeta {
 }
 
 export interface ImgMeta {
-	texstart: {
-		x: number;
-		y: number;
-	};
+	texcoords: number[];
 }
 
 export interface RomResource {
@@ -35,6 +32,7 @@ export type id2res = { [key: number]: RomResource; };
 export interface RomLoadResult {
 	rom: ArrayBuffer,
 	images: { [key: number]: HTMLImageElement; };
-	resources: id2res;
+	imgresources: id2res;
+	sndresources: id2res;
 	source: any;
 }

@@ -69,7 +69,7 @@ export class Game {
 
         BaseView.images = _rom.images;
         view.init();
-        SM.init(_rom['resources'], sndcontext, gainnode);
+        SM.init(_rom['sndresources'], sndcontext, gainnode);
         Input.init();
 
         this.lastUpdate = 0;
@@ -265,8 +265,7 @@ export abstract class BaseModel {
         this.objects.sort((o1, o2) => (o1.priority || 0) - (o2.priority || 0));
 
         if (o.id) this.id2object.set(o.id, o);
-        if (pos) o.spawn(pos);
-        else o.spawn(null);
+        o.spawn && o.spawn(pos || null);
     }
 
     public remove(o: IGameObject): void {
@@ -280,7 +279,7 @@ export abstract class BaseModel {
         else throw new Error("Could not find object to remove.");
 
         if (o.id !== null && this.id2object.has(o.id)) this.id2object.delete(o.id);
-        o.dispose();
+        o.dispose && o.dispose();
     }
 }
 
@@ -290,14 +289,13 @@ export interface IGameObject {
     priority?: number;
     pos: Point;
     smachines?: bst<any>[];
-    buffer?: WebGLBuffer;
 
     isWall?: boolean;
     disposeOnSwitchRoom?: boolean;
 
     takeTurn(): void;
-    spawn: ((spawningPos?: Point | null) => void) | (() => void);
-    dispose(): void;
+    spawn?: ((spawningPos?: Point | null) => void) | (() => void);
+    dispose?(): void;
 
     paint?(offset?: Point): void;
     postpaint?(offset?: Point): void; // Post-processing such as lighting effects or the characters of an ASCII-buffer in case of an ASCII-sprite
