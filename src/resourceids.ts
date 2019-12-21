@@ -122,6 +122,7 @@ export const enum BitmapId {
 	tiles1 = 120,
 	tiles2 = 121,
 	tiles3 = 122,
+	_atlas = 123,
 }
 
 export const enum AudioId {

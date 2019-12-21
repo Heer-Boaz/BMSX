@@ -28,7 +28,7 @@ export class SM {
 			if (!gainnode) {
 				SM.gainNode = SM.sndContext.createGain();
 				SM.gainNode.connect(SM.sndContext.destination);
-				SM.setVolume(.5);
+				SM.setVolume(0);
 			}
 		});
 

@@ -9,12 +9,20 @@ export interface AudioMeta {
 	loop?: number;
 }
 
+export interface ImgMeta {
+	texstart: {
+		x: number;
+		y: number;
+	};
+}
+
 export interface RomResource {
 	resid: number;
 	resname: string;
 	type: string;
 	start: number;
 	end: number;
+	imgmeta: ImgMeta;
 	audiometa: AudioMeta;
 }
 

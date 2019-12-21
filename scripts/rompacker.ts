@@ -1,6 +1,6 @@
 import { readdirSync, statSync, readFileSync, writeFileSync, copyFile, copyFileSync, existsSync, exists, createWriteStream } from "fs";
 import { join, parse } from "path";
-import { AudioMeta, AudioType, RomResource, RomMeta } from "../src/bmsx/rompack";
+import { AudioMeta, AudioType, RomResource, RomMeta, ImgMeta } from '../src/bmsx/rompack';
 const browserify = require("browserify");
 const tsify = require("tsify");
 const babelify = require("babelify");
@@ -11,7 +11,13 @@ const minify = require('@node-minify/core');
 const cleanCSS = require('@node-minify/clean-css');
 const cliProgress = require('cli-progress');
 const _colors = require('colors');
-const FtpDeploy = require("ftp-deploy");
+const FtpDeploy = require('ftp-deploy');
+const { createCanvas, loadImage } = require('canvas');
+
+const canvas = createCanvas(1024, 1024);
+const ctx = canvas.getContext('2d');
+const atlasPos = { x: 0, y: 0};
+let atlasUnsafeY = 0;
 
 /**
  * Convert an Uint8Array into a string.
@@ -98,10 +104,6 @@ function getAllFiles(dirPath: string, arrayOfFiles?: string[], filterExtension?:
 	});
 
 	return arrayOfFiles;
-}
-
-function copyResources(): void {
-	copyFileSync("./rom/loading.png", "./dist/loading.png");
 }
 
 async function bundleGamecode(outfile: string): Promise<any> {
@@ -413,7 +415,10 @@ async function buildRompackAndResourceList(outfile: string): Promise<void> {
 
 	bar.start(arrayOfFiles.length, 0);
 
-	arrayOfFiles.forEach(x => { buffers.push(readFileSync(x)); bar.increment(1); });
+	arrayOfFiles.forEach(x => {
+		buffers.push(readFileSync(x));
+		bar.increment(1);
+	});
 	bar.stop();
 
 	log("romresources.json knutselen...\n");
@@ -446,27 +451,40 @@ async function buildRompackAndResourceList(outfile: string): Promise<void> {
 		}
 		switch (type) {
 			case 'image':
-				jsonout.push({ resid: imgi, resname: name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length, audiometa: null });
+				const base64Encoded = readFileSync(arrayOfFiles[i], 'base64');
+				const dataURL = `data:image/png;base64,${base64Encoded}`;
+				let img = await loadImage(dataURL);
+				let atlaspos = addToAtlas(img);
+
+				jsonout.push({ resid: imgi, resname: name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length, imgmeta: { texstart: { x: atlaspos.x, y: atlaspos.y } }, audiometa: null, });
 				tsimgout.push(`\t${name} = ${imgi},`);
 				++imgi;
 				break;
 			case 'audio':
 				{
 					let parsedMeta = parseAudioMeta(name);
+
 					name = parsedMeta.sanitizedName;
-					jsonout.push({ resid: sndi, resname: name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length, audiometa: parsedMeta.meta });
+					jsonout.push({ resid: sndi, resname: name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length, imgmeta: null, audiometa: parsedMeta.meta });
 				}
 				tssndout.push(`\t${name} = ${sndi},`);
 				++sndi;
 				break;
 			case 'source':
 				name = name.replace('.min', '');
-				jsonout.push({ resid: sndi, resname: name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length, audiometa: null });
+				jsonout.push({ resid: sndi, resname: name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length, imgmeta: null, audiometa: null });
 				break;
 		}
 		bufferPointer += buffers[i].length;
 		bar.increment(1);
 	}
+
+	let atlasbuffer = canvas.toBuffer('image/png');
+	buffers.push(atlasbuffer);
+
+	jsonout.push({ resid: imgi, resname: '_atlas', type: 'image', start: bufferPointer, end: bufferPointer + atlasbuffer.length, imgmeta: null, audiometa: null });
+	tsimgout.push(`\t_atlas = ${imgi},`);
+	bufferPointer += atlasbuffer.length;
 
 	tsimgout.push("}\n");
 	tssndout.push("}\n");
@@ -503,7 +521,26 @@ async function buildRompackAndResourceList(outfile: string): Promise<void> {
 	log("Rom is gepackt!!\n");
 	log(`\tFiles: ${arrayOfFiles.length}\n\t\timages: ${imgi}\n\t\taudio: ${sndi}\n`);
 	log(`\tSize: ${(Buffer.concat(buffers).length / (1024 * 1024)).toFixed(2)} mB\n\tDeflated size: ${(zipped.length / (1024 * 1024)).toFixed(2)} mB.\n`);
+}
 
+function addToAtlas(img: any): { x: number, y: number } {
+	if (atlasPos.x + img.width >= 1024) {
+		atlasPos.x = 0;
+		atlasPos.y = atlasUnsafeY;
+	}
+
+	ctx.drawImage(img, atlasPos.x, atlasPos.y);
+	if (atlasPos.y + img.height > atlasUnsafeY) {
+		atlasUnsafeY = atlasPos.y + img.height;
+		if (atlasUnsafeY >= 1024) {
+			log('Oh nee!! We krijgen de plaatjes niet meer in de atlas!', 'error');
+		}
+	}
+
+	let result = { x: atlasPos.x, y: atlasPos.y };
+	atlasPos.x += img.width;
+
+	return result;
 }
 
 try {

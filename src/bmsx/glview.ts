@@ -282,6 +282,20 @@ var bvec = {
 			v[8] = x2, v[9] = y1,
 			v[10] = x2, v[11] = y2;
 	},
+	seti: function (v: Float32Array, i: number, x: number, y: number, w: number, h: number, fh: number, fv: number): void {
+		// Do the Boaz matrix translate and scale based
+		let x1 = fh ? (x + w) : x;
+		let x2 = fh ? x : (x + w);
+		let y1 = fv ? (y + h) : y;
+		let y2 = fv ? y : (y + h);
+
+		v[0 + i] = x1, v[1 + i] = y1,
+			v[2 + i] = x2, v[3 + i] = y1,
+			v[4 + i] = x1, v[5 + i] = y2,
+			v[6 + i] = x1, v[7 + i] = y2,
+			v[8 + i] = x2, v[9 + i] = y1,
+			v[10 + i] = x2, v[11 + i] = y2;
+	},
 	uvcoords: function (v: Float32Array, i: number, x: number, y: number, width: number, height: number, imageWidth: number, imageHeight: number) {
 		const left = x / imageWidth;
 		const bottom = y / imageHeight;
@@ -326,6 +340,7 @@ export abstract class GLView extends BaseView {
 	// private gonutsmatrix: Float32Array = new Float32Array(16);
 	private resVec2: Float32Array = new Float32Array(2);
 	private vertexcoords: Float32Array = new Float32Array(12);
+	private drawImgReqIndex: number = 0;
 
 	private readonly vertexShaderCode =
 		// `
@@ -383,6 +398,7 @@ export abstract class GLView extends BaseView {
  		uniform sampler2D u_texture;
 
 		void main() {
+			// gl_FragColor = vec4(1, 0, 0, 1);
 			gl_FragColor = texture2D(u_texture, v_texcoord);
 		}`;
 
@@ -390,8 +406,8 @@ export abstract class GLView extends BaseView {
 		super(viewportsize);
 		this.glctx = this.canvas.getContext('webgl', {
 			alpha: false,
-			desynchronized: true,
-			preserveDrawingBuffer: true,
+			desynchronized: false,
+			preserveDrawingBuffer: false,
 			antialias: false,
 		});
 	}
@@ -404,7 +420,10 @@ export abstract class GLView extends BaseView {
 		gl.enable(gl.BLEND);
 		gl.enable(gl.CULL_FACE);
 		gl.cullFace(gl.FRONT);
-		gl.viewport(0, 0, gl.canvas.width, gl.canvas.height); // TODO: Nodig gezien de resize in buffer?
+		// gl.viewport(0, 0, gl.canvas.width, gl.canvas.height); // TOD0: Nodig gezien de resize in buffer?
+		this.resVec2.set([this.viewportSize.x, this.viewportSize.y]);
+		this.glctx.uniform2fv(this.resolutionLocation, this.resVec2);
+		// gl.viewport(0, 0, this.viewportSize.x, this.viewportSize.y);
 
 		// setup GLSL program
 		this.program = gl.createProgram();
@@ -428,7 +447,8 @@ export abstract class GLView extends BaseView {
 		// Create a buffer.
 		this.positionBuffer = gl.createBuffer();
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-		gl.bufferData(gl.ARRAY_BUFFER, this.vertexcoords, gl.DYNAMIC_DRAW);
+		// gl.bufferData(gl.ARRAY_BUFFER, this.vertexcoords, gl.STATIC_DRAW);
+		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(12 * 1000), gl.STATIC_DRAW);
 		// Create a buffer for texture coords
 		this.texcoordBuffer = gl.createBuffer();
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.texcoordBuffer);
@@ -443,14 +463,26 @@ export abstract class GLView extends BaseView {
 		// 	1, 1,
 		// ];
 		// gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texcoords), gl.STATIC_DRAW);
-		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-			0.0, 0.0,
-			1.0, 0.0,
-			0.0, 1.0,
-			0.0, 1.0,
-			1.0, 0.0,
-			1.0, 1.0,
-		]), gl.STATIC_DRAW);
+		let uglyTexCoordStuff = new Float32Array(12 * 1000);
+		for (let i = 0; i < 12 * 1000 - 12; i += 12) {
+			uglyTexCoordStuff.set([
+				0.0, 0.0,
+				1.0, 0.0,
+				0.0, 1.0,
+				0.0, 1.0,
+				1.0, 0.0,
+				1.0, 1.0,
+			], i);
+		}
+		gl.bufferData(gl.ARRAY_BUFFER, uglyTexCoordStuff, gl.STATIC_DRAW);
+		// gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+		// 	0.0, 0.0,
+		// 	1.0, 0.0,
+		// 	0.0, 1.0,
+		// 	0.0, 1.0,
+		// 	1.0, 0.0,
+		// 	1.0, 1.0,
+		// ]), gl.STATIC_DRAW);
 		// Tell WebGL to use our shader program pair
 		gl.useProgram(this.program);
 
@@ -473,10 +505,12 @@ export abstract class GLView extends BaseView {
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
 
 		this.textures = {};
-		for (const [id, img] of Object.entries(BaseView.images)) {
-			if (!img) continue;
-			this.textures[id] = this.createTexture(img);
-		}
+		// for (const [id, img] of Object.entries(BaseView.images)) {
+		// 	if (!img) continue;
+		// 	this.textures[id] = this.createTexture(img);
+		// }
+		this.textures['_atlas'] = this.createTexture(BaseView.images['_atlas']);
+		gl.bindTexture(gl.TEXTURE_2D, this.textures['_atlas'].texture);
 	}
 
 	private loadShader(type: number, source: string): WebGLShader {
@@ -523,14 +557,14 @@ export abstract class GLView extends BaseView {
 		super.handleResize();
 		let _this = view as GLView;
 		// m4.orthographic(_this.basematrix, 0, _this.canvas.width, _this.canvas.height, 0, -1, 1);
-		_this.resVec2.set([_this.canvas.width, _this.canvas.height]);
-		_this.glctx.uniform2fv(_this.resolutionLocation, _this.resVec2);
+		// _this.resVec2.set([_this.canvas.width, _this.canvas.height]);
+		// _this.glctx.uniform2fv(_this.resolutionLocation, _this.resVec2);
 		_this.glctx.viewport(0, 0, _this.glctx.canvas.width, _this.glctx.canvas.height);
 	}
 
 	public drawgame(gamescreenOffset?: Point, clearCanvas: boolean = true): void {
 		// if (clearCanvas) view.clear();
-		// let _this = view as GLView;
+		let _this = view as GLView;
 		// let gl = _this.glctx;
 
 		// model.objects.forEach(o => {
@@ -548,6 +582,8 @@ export abstract class GLView extends BaseView {
 		// 	}
 		// });
 		super.drawgame(gamescreenOffset, clearCanvas);
+		_this.drawSprites();
+		_this.drawImgReqIndex = 0;
 	}
 
 	public clear(): void {
@@ -555,26 +591,31 @@ export abstract class GLView extends BaseView {
 		gl.clear(gl.COLOR_BUFFER_BIT);// | gl.DEPTH_BUFFER_BIT);
 	}
 
-	public drawImg(imgid: number, x: number, y: number, options?: number): void {
-		// let img = BaseView.images[imgid];
+	public drawSprites(): void {
 		let _this = view as GLView;
 		let gl = _this.glctx;
-		let tex = _this.textures[imgid];
-		gl.bindTexture(gl.TEXTURE_2D, tex.texture);
+		let tex = _this.textures['1'];
+		// gl.bufferData(gl.ARRAY_BUFFER, _this.vertexcoords, gl.STATIC_DRAW);
 
-		// this matrix will scale our 1 unit quad
-		// from 1 unit to texWidth, texHeight units
+		gl.drawArrays(gl.TRIANGLES, 0, 6 * _this.drawImgReqIndex);
+		gl.flush();
+	}
+
+	public drawImg(imgid: number, x: number, y: number, options?: number): void {
+		let _this = view as GLView;
+		let gl = _this.glctx;
+		// let tex = _this.textures[imgid];
+		let tex = _this.textures['1'];
+
 		let flipx = (options & DrawImgFlags.HFLIP);
 		let flipy = (options & DrawImgFlags.VFLIP);
-		// let dx = (options & DrawImgFlags.HFLIP) ? tex.width : 0;
-		// let dy = (options & DrawImgFlags.VFLIP) ? tex.height : 0;
 
-		// this matrix will translate our quad to dstX, dstY
-		// Do the Boaz matrix translate and scale based
 		bvec.set(_this.vertexcoords, x, y, tex.width, tex.height, flipx, flipy);
-		gl.bufferData(gl.ARRAY_BUFFER, _this.vertexcoords, gl.DYNAMIC_DRAW);
-		// gl.bufferSubData(gl.ARRAY_BUFFER, 0, _this.vertexcoords);
-
+		// bvec.seti(_this.vertexcoords, _this.drawImgReqIndex * 12, x, y, tex.width, tex.height, flipx, flipy);
+		// gl.bufferData(gl.ARRAY_BUFFER, _this.vertexcoords, gl.STATIC_DRAW);
+		// gl.bindBuffer(gl.ARRAY_BUFFER, _this.positionBuffer);
+		gl.bufferSubData(gl.ARRAY_BUFFER, 48 * _this.drawImgReqIndex, _this.vertexcoords); // _this.drawImgReqIndex * 12 * 4
+		++_this.drawImgReqIndex;
 		// _this.gonutsmatrix.set(_this.basematrix);
 		// m4.translate_scale2d(_this.gonutsmatrix, x + dx, y + dy, tex.width * flipx, tex.height * flipy);
 
@@ -585,8 +626,8 @@ export abstract class GLView extends BaseView {
 		// gl.uniformMatrix4fv(_this.matrixLocation, false, _this.gonutsmatrix);
 
 		// draw the quad (2 triangles, 6 vertices)
-		gl.drawArrays(gl.TRIANGLES, 0, 6);
-		gl.flush();
+		// gl.drawArrays(gl.TRIANGLES, 0, 6);
+		// gl.flush();
 	}
 
 	public drawColoredBitmap(imgid: number, x: number, y: number, options: number, r: boolean = true, g: boolean = true, b: boolean = true, a: boolean = true) {

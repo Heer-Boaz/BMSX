@@ -45,7 +45,7 @@ var basic = {
 		let bootCompletePromise = awaitBootComplete();
 		let rom = await loadRompack(url);
 		let result = await loadResources(rom);
-		setLoaderText('!!Press any key to start...');
+		setLoaderText('5Press any key to start...');
 		setClassForLoader('');
 
 		await bootCompletePromise;
@@ -153,6 +153,7 @@ async function load(rom: ArrayBuffer, res: RomResource, romResult: RomLoadResult
 
 			let img = await loadImage(url);
 			romResult.images[res.resid] = img;
+			romResult.images[res.resname] = img;
 			break;
 		case 'source':
 			try {
