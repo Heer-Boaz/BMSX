@@ -7,6 +7,7 @@ import { view, BStopwatch } from "./bmsx/engine";
 import { GameView as V } from "./gameview"
 import { waitDuration, setPoint, Point } from "./bmsx/common";
 import { TextWriter } from "./textwriter";
+import { DrawImgFlags } from './bmsx/view';
 
 export class HUD {
     public static Pos_X: number = 0;
@@ -80,17 +81,15 @@ export class HUD {
 
     private percentageToBarLength(percentage: number): number {
         if (percentage === 0) return 0;
-        if (percentage === 100) return HUD.HealthBarSizeX;
-        return ~~(HUD.HealthBarSizeX / 100 * percentage);
+        // Let op: +1 wegens scaling i.p.v. render-loop!
+        if (percentage === 100) return HUD.HealthBarSizeX + 1;
+        return ~~(HUD.HealthBarSizeX / 100 * percentage) + 1;
     }
 
     public Paint(): void {
         let pos: Point = { x: HUD.HealthBarPosX, y: HUD.HealthBarPosY };
         let length = this.percentageToBarLength(this.shownHealthLevel);
-        for (let i: number = 0; i <= length; i++) {
-            view.drawImg(BitmapId.EnergybarStripe_Belmont, ~~pos.x, ~~pos.y);
-            pos.x += 1;
-        }
+        if (length > 0) { view.drawImg(BitmapId.EnergybarStripe_Belmont, pos.x, pos.y, DrawImgFlags.None, length); }
 
         let heartstxt: string = Model._.Hearts < 10 ? `0${Model._.Hearts}` : Model._.Hearts.toString();
         TextWriter.drawText(HUD.HeartsPosX, HUD.HeartsPosY, heartstxt);
@@ -116,16 +115,10 @@ export class HUD {
 
         if (lengthBefore != -1) {
             if (lengthBefore > 0) {
-                for (let i: number = 0; i <= lengthBefore; i++) {
-                    view.drawImg(BitmapId.EnergybarStripe_Boss, pos.x, pos.y);
-                    pos.x += 1;
-                }
+                view.drawImg(BitmapId.EnergybarStripe_Boss, HUD.FoeBarStripePosX, HUD.FoeBarStripePosY, DrawImgFlags.None, lengthBefore);
             }
             if (lengthBefore != lengthShown) {
-                for (let i: number = lengthBefore; i <= lengthShown; i++) {
-                    view.drawImg(BitmapId.EnergybarStripe_Boss, pos.x, pos.y);
-                    pos.x += 1;
-                }
+                if (lengthShown > 0) { view.drawImg(BitmapId.EnergybarStripe_Boss, HUD.FoeBarStripePosX + lengthBefore, HUD.FoeBarStripePosY, DrawImgFlags.None, lengthShown - lengthBefore); }
             }
         }
         view.drawImg(BitmapId.HUD, HUD.Pos_X, HUD.Pos_Y);
