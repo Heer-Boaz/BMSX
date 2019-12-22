@@ -27,17 +27,31 @@ export class GameView extends GLView {
                 break;
             case GameState.TitleScreen:
                 Model._.Title.Paint();
+                super.drawSprites();
                 break;
 
             case GameState.EndDemo:
                 Model._.EndDemo.Paint();
+                super.drawSprites();
                 break;
 
             case GameState.Game:
             case GameState.Event:
                 let gamescreenOffset = <Point>{ x: CS.GameScreenStartX, y: CS.GameScreenStartY };
+                // if (Model._.paused) {
+                //     Model._.PauseObject.paint();
+                // }
+                // Model._.GameMenu.paint();
+
+                if (Model._.gameSubstate == GameSubstate.ItsCurtainsForYou || Model._.gameSubstate == GameSubstate.ToEndDemo) {
+                    Model._.ItsCurtains.Paint();
+                }
+                else if (Model._.gameSubstate == GameSubstate.GameOver) {
+                    Model._.ItsCurtains.Paint();
+                    Model._.GameOverScreen.Paint();
+                }
+
                 if (Model._.gameSubstate != GameSubstate.SwitchRoom) {
-                    Model._.currentRoom.Paint();
                     super.drawgame(gamescreenOffset, false);
                 }
                 Model._.Hud.Paint();
@@ -53,18 +67,7 @@ export class GameView extends GLView {
                         break;
                 }
 
-                if (Model._.gameSubstate == GameSubstate.ItsCurtainsForYou || Model._.gameSubstate == GameSubstate.ToEndDemo) {
-                    Model._.ItsCurtains.Paint();
-                }
-                else if (Model._.gameSubstate == GameSubstate.GameOver) {
-                    Model._.ItsCurtains.Paint();
-                    Model._.GameOverScreen.Paint();
-                }
-
-                Model._.GameMenu.paint();
-                if (Model._.paused) {
-                    Model._.PauseObject.paint();
-                }
+                super.drawSprites();
                 break;
         }
     }

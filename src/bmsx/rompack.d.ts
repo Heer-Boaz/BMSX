@@ -10,7 +10,13 @@ export interface AudioMeta {
 }
 
 export interface ImgMeta {
-	texcoords: number[];
+	atlassed: boolean;
+	width: number;
+	height: number;
+	texcoords?: number[];
+	texcoords_fliph?: number[];
+	texcoords_flipv?: number[];
+	texcoords_fliphv?: number[];
 }
 
 export interface RomResource {

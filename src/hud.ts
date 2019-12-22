@@ -85,7 +85,6 @@ export class HUD {
     }
 
     public Paint(): void {
-        view.drawImg(BitmapId.HUD, HUD.Pos_X, HUD.Pos_Y);
         let pos: Point = { x: HUD.HealthBarPosX, y: HUD.HealthBarPosY };
         let length = this.percentageToBarLength(this.shownHealthLevel);
         for (let i: number = 0; i <= length; i++) {
@@ -129,5 +128,6 @@ export class HUD {
                 }
             }
         }
+        view.drawImg(BitmapId.HUD, HUD.Pos_X, HUD.Pos_Y);
     }
 }

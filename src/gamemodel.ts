@@ -16,8 +16,9 @@ import { Title } from './title';
 import { EndDemo } from './enddemo';
 import { GameConstants } from './gameconstants';
 import { RoomFactory } from './RoomFactory';
-import { Msx1Colors } from './bmsx/msx';
 import { TextWriter } from './textwriter';
+import { DrawImgFlags } from './bmsx/view';
+import { BitmapId } from './bmsx/resourceids';
 
 export const enum GameState {
     None = 0,
@@ -68,7 +69,7 @@ export class Location {
     public Pos: Point;
 }
 
-export enum Switch {
+export const enum Switch {
     None = 0,
     Dummy,
     GameStart,
@@ -142,9 +143,9 @@ export class Model extends BaseModel {
     public Boss: BossFoe;
     public currentRoom: Room;
     public GameMenu: GameMenu;
-    public Switches: Map<Switch, boolean>;
-    public EventTriggered: Map<number, boolean>;
-    public EventFinished: Map<number, boolean>;
+    public Switches: { [key: number]: boolean; };
+    public EventTriggered: { [key: string]: boolean; };
+    public EventFinished: { [key: string]: boolean; };
     public FoesDefeated: Map<string, boolean>;
     public ItemsPickedUp: Map<string, boolean>;
     public WeaponItemsPickedUp: Map<string, boolean>;
@@ -235,8 +236,7 @@ export class Model extends BaseModel {
         this.Foes = new Array<Foe>();
         this.ItemsInInventory = new Array<BagItem>();
         this.WeaponsInInventory = new Array<BagWeapon>();
-        this.Switches = new Map<Switch, boolean>();
-        this.id2object = new Map<string, IGameObject>();
+        this.Switches = {};
         this.FoesDefeated = new Map<string, boolean>();
         this.ItemsPickedUp = new Map<string, boolean>();
         this.WeaponItemsPickedUp = new Map<string, boolean>();
@@ -260,31 +260,36 @@ export class Model extends BaseModel {
     public initModelForGameStart(): void {
         Model._.BossBattle = false;
         Model._.RoomExitsLocked = false;
-        Model._.Switches.clear();
-        Object.keys(Switch).forEach(t => Model._.Switches.set(Switch[t], false));
+        delete Model._.Switches;
+        Model._.Switches = {};
+        // Model._.Switches.clear();
+        // Object.keys(Switch).forEach(t => Model._.Switches.set(Switch[t], false));
         Model._.ItemsInInventory.length = 0;
         Model._.WeaponsInInventory.length = 0;
         Model._.FoesDefeated.clear();
         Model._.ItemsPickedUp.clear();
         Model._.WeaponItemsPickedUp.clear();
-        if (!this.PauseObject)
+        if (!this.PauseObject) {
             this.PauseObject = {
                 priority: 5000,
-                dispose() { },
                 disposeFlag: false,
                 id: 'pause',
                 pos: { x: GameConstants.pausePosX, y: GameConstants.pausePosY },
-                spawn() { },
+                visible: false,
                 paint() {
-                    view.fillRectangle(GameConstants.pausePosX, GameConstants.pausePosY, GameConstants.pauseEndX, GameConstants.pauseEndY, Msx1Colors[1]);
-                    view.drawRectangle(GameConstants.pausePosX, GameConstants.pausePosY, GameConstants.pauseEndX, GameConstants.pauseEndY, Msx1Colors[15]);
+                    // view.fillRectangle(GameConstants.pausePosX, GameConstants.pausePosY, GameConstants.pauseEndX, GameConstants.pauseEndY, Msx1Colors[1]);
+                    // view.drawRectangle(GameConstants.pausePosX, GameConstants.pausePosY, GameConstants.pauseEndX, GameConstants.pauseEndY, Msx1Colors[15]);
                     TextWriter.drawText(GameConstants.pauseTextPosX, GameConstants.pauseTextPosY, GameConstants.pauseText);
+                    let scalex = GameConstants.pauseEndX - GameConstants.pausePosX;
+                    let scaley = GameConstants.pauseEndY - GameConstants.pausePosY;
+                    view.drawImg(BitmapId.blackpixel, GameConstants.pausePosX, GameConstants.pausePosY, DrawImgFlags.None, scalex, scaley);
                 },
                 takeTurn() { }
             };
-        // this.spawn(this.PauseObject, null, true);
+            this.spawn(this.PauseObject, null, true);
+        }
 
-        this._hearts = GameConstants.Belmont_InitHearts;;
+        this._hearts = GameConstants.Belmont_InitHearts;
         Model._.spawn(new Belmont());
     }
 
@@ -292,7 +297,7 @@ export class Model extends BaseModel {
     }
 
     public spawn(o: IGameObject, spawnpos?: Point, ifnotexists: boolean = false): void {
-        if (ifnotexists && this.id2object.has(o.id)) return; // Don't add objects that already exist
+        if (ifnotexists && this.id2object[o.id]) return; // Don't add objects that already exist
 
         if (o instanceof Belmont) {
             if (this.objects.findIndex(ob => ob instanceof Belmont) > -1)
@@ -351,7 +356,7 @@ export class Model extends BaseModel {
     }
 
     public GetSwitchState(s: Switch): boolean {
-        return this.Switches.has(s) ? this.Switches.get(s) : false;
+        return this.Switches[s] === true;
     }
 
     public GetItemPickedUp(id: string): boolean {
@@ -402,6 +407,6 @@ export class Model extends BaseModel {
         let objectsToRemove = this.objects.filter(o => o.disposeOnSwitchRoom);
         objectsToRemove.forEach(o => this.remove(o));
         this.currentRoom = RoomFactory.load(id);
-        this.currentRoom.init();
+        this.spawn(this.currentRoom);
     }
 }

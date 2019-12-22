@@ -193,7 +193,7 @@ export abstract class BaseController {
 
 
 export abstract class BaseModel {
-    public id2object: Map<string, IGameObject>;
+    public id2object: { [key: string]: IGameObject; };
     public objects: IGameObject[];
     public gameState: number;
     public gameSubstate: number;
@@ -236,7 +236,7 @@ export abstract class BaseModel {
 
     constructor() {
         this.objects = [];
-        this.id2object = new Map<string, IGameObject>();
+        this.id2object = {};
         this.gameState = 0;
         this.gameSubstate = 0;
         this.oldGameState = 0;
@@ -248,38 +248,34 @@ export abstract class BaseModel {
     public abstract initModelForGameStart(): void;
 
     public clearModel(): void {
-        this.objects.forEach(o => {
-            o.dispose();
-        });
+        this.objects.forEach(o => o.dispose?.());
         this.objects.length = 0;
-        this.id2object.clear();
+        delete this.id2object;
+        this.id2object = {};
         this.paused = false;
     }
 
     public spawn(o: IGameObject, pos?: Point, ifnotexists = false): void {
-        if (ifnotexists && this.id2object.has(o.id)) return; // Don't add objects that already exist
-        if (!o) throw new Error("Cannot spawn object of type null.");
+        if (ifnotexists && this.id2object[o.id]) return; // Don't add objects that already exist
 
         this.objects.push(o);
 
-        this.objects.sort((o1, o2) => (o1.priority || 0) - (o2.priority || 0));
+        // this.objects.sort((o1, o2) => (o1.priority || 0) - (o2.priority || 0));
+        this.objects.sort((o1, o2) => (o2.priority || 0) - (o1.priority || 0));
 
-        if (o.id) this.id2object.set(o.id, o);
-        o.spawn && o.spawn(pos || null);
+        this.id2object[o.id] = o;
+        o.spawn?.(pos);
     }
 
     public remove(o: IGameObject): void {
-        if (!o) throw new Error("Cannot remove object of type null.");
-
         let index = this.objects.indexOf(o);
         if (index > -1) {
             delete this.objects[index];
             this.objects.splice(index, 1);
         }
-        else throw new Error("Could not find object to remove.");
 
-        if (o.id !== null && this.id2object.has(o.id)) this.id2object.delete(o.id);
-        o.dispose && o.dispose();
+        if (this.id2object[o.id]) this.id2object[o.id] = undefined;
+        o.dispose?.();
     }
 }
 
@@ -288,6 +284,7 @@ export interface IGameObject {
     disposeFlag: boolean;
     priority?: number;
     pos: Point;
+    visible?: boolean;
     smachines?: bst<any>[];
 
     isWall?: boolean;
@@ -410,7 +407,6 @@ export abstract class Sprite implements IRenderObject {
     abstract takeTurn(): void;
 
     paint(offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }): void {
-        if (this.disposeFlag || !this.visible) return;
         let options: number = this.flippedH ? DrawImgFlags.HFLIP : 0;
         options |= (this.flippedV ? DrawImgFlags.VFLIP : 0);
         let dx = offset?.x || 0;

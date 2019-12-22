@@ -31,7 +31,7 @@
 				// "build game",
 			],
 			"presentation": {
-				"echo": false,
+				"echo": true,
 				"reveal": "always",
 				"focus": false,
 				"panel": "shared",
@@ -57,7 +57,7 @@
 				"build rompacker",
 			],
 			"presentation": {
-				"echo": false,
+				"echo": true,
 				"reveal": "always",
 				"focus": false,
 				"panel": "dedicated",
@@ -75,7 +75,7 @@
 				"$tsc"
 			],
 			"presentation": {
-				"echo": false,
+				"echo": true,
 				"reveal": "always",
 				"focus": false,
 				"panel": "shared",
@@ -104,7 +104,7 @@
 				"$tsc"
 			],
 			"presentation": {
-				"echo": false,
+				"echo": true,
 				"reveal": "silent",
 				"focus": false,
 				"panel": "shared",
@@ -132,7 +132,7 @@
 			],
 			"group": "build",
 			"presentation": {
-				"echo": false,
+				"echo": true,
 				"reveal": "silent",
 				"focus": false,
 				"panel": "shared",

@@ -57,7 +57,7 @@ export abstract class Creature extends Sprite {
     public customId: string = null;
 
     public get id(): string {
-        return this.customId != null ? this.customId : `${this.constructor.name}:${Model._.currentRoom.id}:${this.originPos.x},${this.originPos.y}`;
+        return this.customId != null ? this.customId : `${this.constructor.name}:${Model._.currentRoom.roomid}:${this.originPos.x},${this.originPos.y}`;
     }
 
     public set id(value: string) {

@@ -28,12 +28,12 @@ var basic = {
 		document.getElementById('gamescreen').hidden = false;
 		loadScript(basic.rom).then(() => {
 			// try {
-				h406A(basic.rom, basic.sndcontext, basic.gainnode);
-				basic.rom = null;
+			h406A(basic.rom, basic.sndcontext, basic.gainnode);
+			basic.rom = null;
 			// }
 			// catch (e) {
-				// setClassForLoader("");
-				// setLoaderText(e.message);
+			// setClassForLoader("");
+			// setLoaderText(e.message);
 			// }
 			return x;
 		});
@@ -45,7 +45,7 @@ var basic = {
 		let bootCompletePromise = awaitBootComplete();
 		let rom = await loadRompack(url);
 		let result = await loadResources(rom);
-		setLoaderText('5Press any key to start...');
+		setLoaderText('Press any key or touch screen to start...');
 		setClassForLoader('');
 
 		await bootCompletePromise;
@@ -142,18 +142,20 @@ async function loadResources(rom: ArrayBuffer): Promise<RomLoadResult> {
 async function load(rom: ArrayBuffer, res: RomResource, romResult: RomLoadResult): Promise<void> {
 	switch (res.type) {
 		case 'image':
-			let mime: string;
-			let blub: Blob;
-			let url: string;
-			let sliced = new Uint8Array(rom.slice(res.start, res.end));
+			if (!res.imgmeta.atlassed) {
+				let mime: string;
+				let blub: Blob;
+				let url: string;
+				let sliced = new Uint8Array(rom.slice(res.start, res.end));
 
-			mime = 'image/png';
-			blub = new Blob([sliced], { type: mime });
-			url = URL.createObjectURL(blub);
+				mime = 'image/png';
+				blub = new Blob([sliced], { type: mime });
+				url = URL.createObjectURL(blub);
 
-			let img = await loadImage(url);
-			romResult.images[res.resid] = img;
-			romResult.images[res.resname] = img;
+				let img = await loadImage(url);
+				romResult.images[res.resid] = img;
+				romResult.images[res.resname] = img;
+			}
 			romResult.imgresources[res.resid] = res;
 			romResult.imgresources[res.resname] = res;
 			break;
@@ -225,7 +227,6 @@ async function awaitPressedAnyKey(): Promise<void> {
 		if (element) element.parentElement.removeChild(element);
 	};
 	let wrapup = () => {
-		// remove('#loading');
 		setClassForLoader('invisible');
 		remove('#msx');
 		remove('#hidor');
@@ -247,17 +248,10 @@ async function awaitPressedAnyKey(): Promise<void> {
 			resolve();
 		};
 
-		// if ("ontouchstart" in window && basic.sndcontext.state != "running") {
-		// document.addEventListener('click', startAudioOnIos, true);
 		document.addEventListener('keyup', startAudioOnIos, true);
-		// document.addEventListener('mousedown', startAudioOnIos, true);
-		// document.addEventListener('touchstart', startAudioOnIos, true);
 		document.addEventListener('touchend', startAudioOnIos, true);
-		// }
 		document.body.addEventListener('keyup', onuserinteraction);
-		document.body.addEventListener('touchend', onuserinteraction); // Touchend want anders geen geluid: https://html.spec.whatwg.org/multipage/interaction.html#triggered-by-user-activation
-		// document.body.addEventListener('keyup', bla);
-		// document.body.addEventListener('click', bla); // Touchend want anders geen geluid: https://html.spec.whatwg.org/multipage/interaction.html#triggered-by-user-activation
+		document.body.addEventListener('touchend', onuserinteraction, true);
 	});
 	return result;
 }
@@ -306,10 +300,7 @@ function startAudioOnIos(): void {
 
 	if (basic.sndcontext.state == 'running') {
 		document.removeEventListener('keyup', startAudioOnIos);
-		// document.removeEventListener('click', startAudioOnIos);
-		// document.removeEventListener('mousedown', startAudioOnIos, true);
 		document.removeEventListener('touchend', startAudioOnIos, true);
-		// document.removeEventListener('touchstart', startAudioOnIos, true);
 		basic.snd_unlocked = true;
 	}
 }

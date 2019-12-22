@@ -47,7 +47,7 @@ export abstract class BaseView {
 
     public drawgame(gamescreenOffset?: Point, clearCanvas: boolean = true): void {
         if (clearCanvas) view.clear();
-        model.objects.forEach(o => !o.disposeFlag && o.paint && o.paint(gamescreenOffset));
+        model.objects.forEach(o => !o.disposeFlag && o.visible && o.paint?.(gamescreenOffset));
     }
 
     public calculateSize(): void {
@@ -127,21 +127,18 @@ export abstract class BaseView {
         view.context.restore();
     }
 
-    public drawImg(imgid: number, x: number, y: number, options?: number): void {
+    public drawImg(imgid: number, x: number, y: number, options?: number, sx?: number, sy?: number): void {
         let img = BaseView.images[imgid];
-        // if (!img) {
-        //     console.error(`Cannot find image with id '${imgid}'`);
-        //     return;
-        // }
-
+        let scalex = sx ?? 1;
+        let scaley = sy ?? 1;
         view.context.save();
         view.context.translate(~~x, ~~y);
         if (options & DrawImgFlags.HFLIP) {
-            view.context.scale(-1, 1);
+            view.context.scale(-1 * scalex, 1 * scaley);
             view.context.translate(-img.width, 0);
         }
         if (options & DrawImgFlags.VFLIP) {
-            view.context.scale(1, -1);
+            view.context.scale(1 * scalex, -1 * scaley);
             view.context.translate(0, -img.height);
         }
         view.context.drawImage(img, 0, 0);

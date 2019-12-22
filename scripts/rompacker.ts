@@ -14,10 +14,25 @@ const _colors = require('colors');
 const FtpDeploy = require('ftp-deploy');
 const { createCanvas, loadImage } = require('canvas');
 
-const canvas = createCanvas(1024, 1024);
-const ctx = canvas.getContext('2d');
+const ATLAS_PX_SIZE = 4096;
+const CROP_ATLAS = true;
+const GENERATE_AND_USE_TEXTURE_ATLAS = true;
+const DONT_PACK_IMAGES_WHEN_USING_ATLAS = true;
+
+const atlasCanvas: HTMLCanvasElement = createCanvas(ATLAS_PX_SIZE, ATLAS_PX_SIZE);
+const ctx: CanvasRenderingContext2D = atlasCanvas.getContext('2d');
 const atlasPos = { x: 0, y: 0 };
-let atlasUnsafeY = 0;
+let atlasExploitedX = 0; // For cropping atlas later, because we are not sure that full width is exploited
+let atlasUnsafeY = 0; // Also used for cropping atlas later, but primarily used to create atlas
+
+interface LoadedResource {
+	buffer: Buffer;
+	img?: any;
+	filepath: string;
+	name: string;
+	ext: string;
+	type: string;
+}
 
 /**
  * Convert an Uint8Array into a string.
@@ -152,16 +167,6 @@ async function bundleGamecode(outfile: string): Promise<any> {
 function minifyGamecode(infile: string): void {
 	let options = {
 		compress: false,
-		// compress: {
-		// 	// unused: false,
-		// 	// collapse_vars: false,
-		// 	// top_retain: true,
-		// 	pure_getters: false,
-		// 	// reduce_vars: false,
-		// 	// warnings: true,
-		// 	evaluate: false,
-		// 	expression: true
-		// },
 		mangle: {
 			reserved:
 				[
@@ -221,18 +226,12 @@ function minifyGamecode(infile: string): void {
 			safari10: true,
 		},
 		sourceMap: false,
-		// sourceMap: {
-		// 	url: "inline",
-		// 	content: "inline",
-		// 	includeSources: true,
-		// },
 		output: {
 			safari10: true,
 			webkit: true,
 			max_line_len: 80,
 			keep_quoted_props: true
 		},
-		// wrap: "__rom__",
 	};
 
 	let gamejs = readFileSync(infile, 'utf8');
@@ -390,6 +389,61 @@ async function deploy(): Promise<void> {
 	});
 }
 
+async function getLoadedResourcesList(arrayOfFiles: string[], buffers: Array<Buffer>): Promise<LoadedResource[]> {
+	const bar = new cliProgress.SingleBar({
+		format: 'Beunen: |' + _colors.brightBlue('{bar}') + '| {percentage}% |',
+		barCompleteChar: '\u2588',
+		barIncompleteChar: '\u2591',
+		hideCursor: true
+	});
+
+	bar.start(arrayOfFiles.length, 0);
+	let loadedResources: Array<LoadedResource> = [];
+	for (let i = 0; i < arrayOfFiles.length; i++) {
+		let filepath = arrayOfFiles[i];
+
+		let buffer = readFileSync(filepath);
+		let name = parse(filepath).name.replace(' ', '');
+		let ext = parse(filepath).ext;
+		let type: string;
+		let img: any = undefined;
+
+		switch (ext) {
+			case '.wav':
+				type = 'audio';
+				break;
+			case '.js':
+				type = 'source';
+				break;
+			case '.png':
+			default:
+				type = 'image';
+				if (GENERATE_AND_USE_TEXTURE_ATLAS) {
+					const base64Encoded = readFileSync(filepath, 'base64');
+					const dataURL = `data:image/png;base64,${base64Encoded}`;
+					img = await loadImage(dataURL);
+				}
+				break;
+		}
+
+		loadedResources.push({ buffer: buffer, filepath: filepath, name: name, ext: ext, type: type, img: img });
+		bar.increment(1);
+	}
+	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
+		// Sort the files on buffer size for atlassing
+		loadedResources = loadedResources.sort((b1, b2) => ((b1.img?.height || 0) - (b2.img?.height || 0)));
+	}
+	if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
+		loadedResources.filter(x => x.type !== 'image').forEach(x => buffers.push(x.buffer));
+	}
+	else {
+		loadedResources.forEach(x => buffers.push(x.buffer));
+	}
+	bar.stop();
+
+	return loadedResources;
+}
+
 async function buildRompackAndResourceList(outfile: string): Promise<void> {
 	log("Minifyen... ");
 	startRotator();
@@ -413,19 +467,13 @@ async function buildRompackAndResourceList(outfile: string): Promise<void> {
 		hideCursor: true
 	});
 
-	bar.start(arrayOfFiles.length, 0);
-
-	arrayOfFiles.forEach(x => {
-		buffers.push(readFileSync(x));
-		bar.increment(1);
-	});
-	bar.stop();
+	let loadedResources = await getLoadedResourcesList(arrayOfFiles, buffers);
 
 	log("romresources.json knutselen...\n");
 	let tsimgout = new Array<string>();
 	let tssndout = new Array<string>();
 
-	bar.start(arrayOfFiles.length + 2, 0);
+	bar.start(arrayOfFiles.length + 2 + (GENERATE_AND_USE_TEXTURE_ATLAS ? 5 : 0), 0);
 
 	tsimgout.push("export const enum BitmapId {\n\tNone = 0,");
 	tssndout.push("export const enum AudioId {\n\tNone = 0,");
@@ -434,29 +482,28 @@ async function buildRompackAndResourceList(outfile: string): Promise<void> {
 	let bufferPointer = 0;
 	let imgi = 1;
 	let sndi = 1;
-	for (let i = 0; i < arrayOfFiles.length; i++) {
-		let type: string;
-		let name = parse(arrayOfFiles[i]).name.replace(' ', '');
-		switch (parse(arrayOfFiles[i]).ext) {
-			case '.wav':
-				type = 'audio';
-				break;
-			case '.js':
-				type = 'source';
-				break;
-			case '.png':
-			default:
-				type = 'image';
-				break;
-		}
+	for (let i = 0; i < loadedResources.length; i++) {
+		let res = loadedResources[i];
+		let type = res.type;
+		let name = res.name;
 		switch (type) {
 			case 'image':
-				const base64Encoded = readFileSync(arrayOfFiles[i], 'base64');
-				const dataURL = `data:image/png;base64,${base64Encoded}`;
-				let img = await loadImage(dataURL);
-				let texcoords = addToAtlas(img);
-
-				jsonout.push({ resid: imgi, resname: name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length, imgmeta: { texcoords: texcoords }, audiometa: null, });
+				let img = res.img;
+				let imgmeta: ImgMeta = null;
+				if (GENERATE_AND_USE_TEXTURE_ATLAS) {
+					imgmeta = addToAtlas(img);
+					if (DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
+						jsonout.push({ resid: imgi, resname: name, type: type, start: 0, end: 0, imgmeta: { atlassed: imgmeta.atlassed, width: imgmeta.width, height: imgmeta.height, texcoords: imgmeta.texcoords, texcoords_fliph: imgmeta.texcoords_fliph, texcoords_flipv: imgmeta.texcoords_flipv, texcoords_fliphv: imgmeta.texcoords_fliphv }, audiometa: null, });
+					}
+					else {
+						jsonout.push({ resid: imgi, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: { atlassed: imgmeta.atlassed, width: imgmeta.width, height: imgmeta.height, texcoords: imgmeta.texcoords, texcoords_fliph: imgmeta.texcoords_fliph, texcoords_flipv: imgmeta.texcoords_flipv, texcoords_fliphv: imgmeta.texcoords_fliphv }, audiometa: null, });
+						bufferPointer += res.buffer.length;
+					}
+				}
+				else {
+					jsonout.push({ resid: imgi, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: { atlassed: false, width: img.width, height: img.height, }, audiometa: null, });
+					bufferPointer += res.buffer.length;
+				}
 				tsimgout.push(`\t${name} = ${imgi},`);
 				++imgi;
 				break;
@@ -465,26 +512,41 @@ async function buildRompackAndResourceList(outfile: string): Promise<void> {
 					let parsedMeta = parseAudioMeta(name);
 
 					name = parsedMeta.sanitizedName;
-					jsonout.push({ resid: sndi, resname: name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length, imgmeta: null, audiometa: parsedMeta.meta });
+					jsonout.push({ resid: sndi, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: null, audiometa: parsedMeta.meta });
 				}
 				tssndout.push(`\t${name} = ${sndi},`);
 				++sndi;
+				bufferPointer += res.buffer.length;
 				break;
 			case 'source':
 				name = name.replace('.min', '');
-				jsonout.push({ resid: sndi, resname: name, type: type, start: bufferPointer, end: bufferPointer + buffers[i].length, imgmeta: null, audiometa: null });
+				jsonout.push({ resid: sndi, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: null, audiometa: null });
+				bufferPointer += res.buffer.length;
 				break;
 		}
-		bufferPointer += buffers[i].length;
 		bar.increment(1);
 	}
 
-	let atlasbuffer = canvas.toBuffer('image/png');
-	buffers.push(atlasbuffer);
+	let atlasbuffer: Buffer;
 
-	jsonout.push({ resid: imgi, resname: '_atlas', type: 'image', start: bufferPointer, end: bufferPointer + atlasbuffer.length, imgmeta: null, audiometa: null });
-	tsimgout.push(`\t_atlas = ${imgi},`);
-	bufferPointer += atlasbuffer.length;
+	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
+		let atlasSize = { x: atlasCanvas.width, y: atlasCanvas.height };
+		if (CROP_ATLAS) {
+			let croppedCanvas = cropAtlas(jsonout);
+			atlasSize.x = croppedCanvas.width;
+			atlasSize.y = croppedCanvas.height;
+			atlasbuffer = (<any>croppedCanvas).toBuffer('image/png');
+		}
+		else {
+			atlasbuffer = (<any>atlasCanvas).toBuffer('image/png');
+		}
+		buffers.push(atlasbuffer);
+
+		jsonout.push({ resid: imgi, resname: '_atlas', type: 'image', start: bufferPointer, end: bufferPointer + atlasbuffer.length, imgmeta: { atlassed: false, width: atlasSize.x, height: atlasSize.y }, audiometa: null });
+		tsimgout.push(`\t_atlas = ${imgi},`);
+		bufferPointer += atlasbuffer.length;
+		bar.increment(5);
+	}
 
 	tsimgout.push("}\n");
 	tssndout.push("}\n");
@@ -514,9 +576,11 @@ async function buildRompackAndResourceList(outfile: string): Promise<void> {
 	log("\tKlaar!\n");
 	log(`resourceids.ts maken...`);
 	startRotator();
-	writeFileSync("./src/resourceids.ts", tsimgout.concat(tssndout).join('\n'));
+	writeFileSync("./src/bmsx/resourceids.ts", tsimgout.concat(tssndout).join('\n'));
 	writeFileSync("./rom/_ignore/romresources.json", jsonbuffer);
-	writeFileSync("./rom/_ignore/atlas.png", atlasbuffer);
+	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
+		writeFileSync("./rom/_ignore/atlas.png", atlasbuffer);
+	}
 	stopRotator();
 	log("\tKlaar!\n");
 	log("Rom is gepackt!!\n");
@@ -524,27 +588,36 @@ async function buildRompackAndResourceList(outfile: string): Promise<void> {
 	log(`\tSize: ${(Buffer.concat(buffers).length / (1024 * 1024)).toFixed(2)} mB\n\tDeflated size: ${(zipped.length / (1024 * 1024)).toFixed(2)} mB.\n`);
 }
 
-function addToAtlas(img: any): number[] {
+function addToAtlas(img: any): ImgMeta {
 	function uvcoords(x: number, y: number, width: number, height: number, imageWidth: number, imageHeight: number) {
-		let result: number[] = [];
-		const left = x / width;
-		const top = y / height;
-		const right = (x + imageWidth) / width;
-		const bottom = (y + imageHeight) / height;
+		let result: ImgMeta = {
+			width: imageWidth, height: imageHeight, atlassed: true, texcoords: [], texcoords_fliph: [], texcoords_flipv: [], texcoords_fliphv: []
+		};
+		let left: number;
+		let top: number;
+		let right: number;
+		let bottom: number;
+		if (!CROP_ATLAS) {
+			left = x / width;
+			top = y / height;
+			right = (x + imageWidth) / width;
+			bottom = (y + imageHeight) / height;
+		}
+		else {
+			left = x;
+			top = y;
+			right = (x + imageWidth);
+			bottom = (y + imageHeight);
+		}
 
-		// 0.0, 0.0,
-		// 1.0, 0.0,
-		// 0.0, 1.0,
-		// 0.0, 1.0,
-		// 1.0, 0.0,
-		// 1.0, 1.0,
-
-		// result.push(left, top, right, top, right, bottom, left, bottom);
-		result.push(left, top, right, top, left, bottom, left, bottom, right, top, right, bottom);
+		result.texcoords.push(left, top, right, top, left, bottom, left, bottom, right, top, right, bottom);
+		result.texcoords_fliph.push(right, top, left, top, right, bottom, right, bottom, left, top, left, bottom);
+		result.texcoords_flipv.push(left, bottom, right, bottom, left, top, left, top, right, bottom, right, top);
+		result.texcoords_fliphv.push(right, bottom, left, bottom, right, top, right, top, left, bottom, left, top);
 		return result;
 	}
 
-	if (atlasPos.x + img.width >= 1024) {
+	if (atlasPos.x + img.width > ATLAS_PX_SIZE) {
 		atlasPos.x = 0;
 		atlasPos.y = atlasUnsafeY;
 	}
@@ -552,13 +625,47 @@ function addToAtlas(img: any): number[] {
 	ctx.drawImage(img, atlasPos.x, atlasPos.y);
 	if (atlasPos.y + img.height > atlasUnsafeY) {
 		atlasUnsafeY = atlasPos.y + img.height;
-		if (atlasUnsafeY >= 1024) {
+		if (atlasUnsafeY > ATLAS_PX_SIZE) {
 			log('Oh nee!! We krijgen de plaatjes niet meer in de atlas!', 'error');
 		}
 	}
+	if (atlasPos.x + img.width > atlasExploitedX) {
+		atlasExploitedX = atlasPos.x + img.width;
+	}
 
-	let result = uvcoords(atlasPos.x, atlasPos.y, 1024, 1024, img.width, img.height);
+	let result = uvcoords(atlasPos.x, atlasPos.y, ATLAS_PX_SIZE, ATLAS_PX_SIZE, img.width, img.height);
 	atlasPos.x += img.width;
+
+	return result;
+}
+
+function cropAtlas(romResources: Array<RomResource>): HTMLCanvasElement {
+	// log("Texture atlas cropperen... ");
+	// startRotator();
+
+	let cropw = atlasExploitedX;
+	let croph = atlasUnsafeY;
+	const result: HTMLCanvasElement = createCanvas(cropw, croph);
+	const croppedctx: CanvasRenderingContext2D = result.getContext('2d');
+	croppedctx.drawImage(atlasCanvas, 0, 0);
+
+	let recalc = (coords: number[]) => {
+		for (let i = 0; i < coords.length; i += 2) {
+			coords[i] = coords[i] / cropw;
+			coords[i + 1] = coords[i + 1] / croph;
+		}
+	};
+
+	// Must also recalculate image texcoords, because while canvas size is taken into account
+	romResources.filter(x => x.type === 'image').forEach(x => {
+		recalc(x.imgmeta.texcoords);
+		recalc(x.imgmeta.texcoords_fliph);
+		recalc(x.imgmeta.texcoords_flipv);
+		recalc(x.imgmeta.texcoords_fliphv);
+	});
+
+	// stopRotator();
+	// log("\tKlaar!\n");
 
 	return result;
 }

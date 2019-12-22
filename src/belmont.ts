@@ -666,9 +666,6 @@ export class Belmont extends Creature {
 	}
 
 	public paint(offset: Point = null): void {
-		if (this.disposeFlag || !this.visible)
-			return;
-
 		let roeOffset = <Point>{ x: 0, y: 0 };
 		if (this.Roeing) {
 			if (!this.Crouching) {

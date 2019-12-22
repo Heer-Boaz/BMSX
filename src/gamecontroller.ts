@@ -32,9 +32,9 @@ export class Controller extends BaseController {
         let oldState = Model._.state;
         switch (oldState) {
             case GameState.TitleScreen:
-                // SM.stopMusic();
-                // if (newState == GameState.Game)
-                //     this.setupGameStart(newState);
+                SM.stopMusic();
+                if (newState == GameState.Game)
+                    this.setupGameStart(newState);
                 break;
             case GameState.GameStart2:
                 this.setupGameStart(newState);
@@ -178,7 +178,7 @@ export class Controller extends BaseController {
                         let objects = Model._.objects;
                         objects.forEach(o => !o.disposeFlag && o.takeTurn());
                         objects.forEach(o => o.disposeFlag && Model._.remove(o));
-                        Model._.currentRoom.TakeTurn();
+                        Model._.currentRoom.takeTurn();
                         Model._.Hud.TakeTurn();
                         break;
                 }
@@ -200,7 +200,7 @@ export class Controller extends BaseController {
                         let objects = Model._.objects;
                         objects.forEach(o => !o.disposeFlag && o.takeTurn());
                         objects.forEach(o => o.disposeFlag && Model._.remove(o));
-                        Model._.currentRoom.TakeTurn();
+                        Model._.currentRoom.takeTurn();
                         Model._.Hud.TakeTurn();
                         if (Input.KD_F5 && !Model._.GameMenu.visible)
                             this.OpenGameMenu();
@@ -327,16 +327,16 @@ export class Controller extends BaseController {
 
     public PauseGame(): void {
         Model._.paused = true;
+        Model._.id2object['pause'].visible = true;
         BStopwatch.pauseAllRunningWatches();
-        // SM.StopEffect();
-        // SM.stopMusic();
+        SM.pause();
     }
 
     public UnpauseGame(): void {
         Model._.paused = false;
         BStopwatch.resumeAllPausedWatches();
-        // SM.resumeEffect();
-        // SM.resumeMusic();
+        Model._.id2object['pause'].visible = false;
+        SM.resume();
     }
 
     public OpenGameMenu(): void {

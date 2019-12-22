@@ -17,10 +17,7 @@ export class SM {
 		const AudioContext = 					// https://github.com/amaneureka/T-Rex/issues/5
 			window.AudioContext ||				// Default
 			(<any>window).webkitAudioContext;	// Safari and old versions of Chrome
-		SM.sndContext = sndcontext;// || new AudioContext({
-		// 	latencyHint: 'interactive',
-		// 	sampleRate: 44100,
-		// });
+		SM.sndContext = sndcontext;
 		SM.currentEffectAudio = null;
 		SM.currentMusicAudio = null;
 
@@ -119,19 +116,19 @@ export class SM {
 		SM.currentMusicNode = null;
 	}
 
-	public static resumeEffect(): void {
-		console.warn("ResumeEffect not implemented :-(");
+	public static pause(): void {
+		if (SM.sndContext.state === 'running') {
+			SM.sndContext.suspend(); // Let op, async!!
+		}
 	}
 
-	public static resumeMusic(): void {
-		console.warn("ResumeMusic not implemented :-(");
+	public static resume(): void {
+		if (SM.sndContext.state === 'suspended') {
+			SM.sndContext.resume(); // Let op, async!!
+		}
 	}
 
 	public static setVolume(volume: number): void {
 		SM.gainNode.gain.setValueAtTime(SM.gainNode.gain.defaultValue * volume, SM.sndContext.currentTime + .1);
 	}
-
-	// public static setMusicVolume(volume: number): void {
-	// 	SM.gainNode.gain.setValueAtTime(volume / 10, SM.sndContext.currentTime + .1);
-	// }
 }

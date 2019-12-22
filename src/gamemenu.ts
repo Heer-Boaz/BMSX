@@ -13,6 +13,7 @@ import { newSize, setPoint } from "./bmsx/common";
 import { view, game } from "./bmsx/engine";
 import { Input } from "./bmsx/input";
 import { Msx1Colors, Msx1ExtColors } from "./bmsx/msx";
+import { DrawImgFlags } from './bmsx/view';
 
 interface MenuOption {
     type: MenuItem;
@@ -95,7 +96,7 @@ export class GameMenu implements IGameObject {
 
     constructor() {
         this.visible = false;
-        this.cursorPos = <Point>{ x: 0, y: 0 };
+        this.cursorPos = { x: 0, y: 0 };
         this.selectedItemIndex = 0;
         this.CurrentScreen = MenuItem.Main;
     }
@@ -155,6 +156,18 @@ export class GameMenu implements IGameObject {
                 else if (clickLeft)
                     this.changeSelection(Direction.Left, selectionChanged);
                 break;
+        }
+        if (Input.KC_BTN2) {
+            switch (this.CurrentScreen) {
+                case MenuItem.Main:
+                    C._.CloseGameMenu();
+                    break;
+                default:
+                    this.CurrentScreen = MenuItem.Main;
+                    this.selectedItemIndex = 0;
+                    SM.play(AudioId.Selectie);
+                    break;
+            }
         }
         if (Input.KC_SPACE) {
             switch (this.CurrentScreen) {
@@ -432,10 +445,8 @@ export class GameMenu implements IGameObject {
     }
 
     public paint(): void {
-        if (!this.visible)
-            return
-        view.fillRectangle(GameMenu.menuPosX, GameMenu.menuPosY, GameMenu.menuEndX, GameMenu.menuEndY, Msx1Colors[1]);
-        view.drawRectangle(GameMenu.menuPosX, GameMenu.menuPosY, GameMenu.menuEndX, GameMenu.menuEndY, Msx1Colors[15]);
+        // view.fillRectangle(GameMenu.menuPosX, GameMenu.menuPosY, GameMenu.menuEndX, GameMenu.menuEndY, Msx1Colors[1]);
+        // view.drawRectangle(GameMenu.menuPosX, GameMenu.menuPosY, GameMenu.menuEndX, GameMenu.menuEndY, Msx1Colors[15]);
         let titleToDraw: string;
         let titleX: number, titleY;
         switch (this.CurrentScreen) {
@@ -562,6 +573,10 @@ export class GameMenu implements IGameObject {
                 }
         }
         view.drawImg(BitmapId.MenuCursor, this.cursorPos.x, this.cursorPos.y);
+
+        let scalex = GameMenu.menuEndX - GameMenu.menuPosX;
+        let scaley = GameMenu.menuEndY - GameMenu.menuPosY;
+        view.drawImg(BitmapId.blackpixel, GameMenu.menuPosX, GameMenu.menuPosY, DrawImgFlags.None, scalex, scaley);
     }
 
     private printFullscreenOptionRectangle(y: number): void {

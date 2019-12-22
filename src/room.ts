@@ -1,7 +1,7 @@
 import { TileSize } from "./bmsx/msx";
 import { Direction, Point } from "./bmsx/common";
 import { GameConstants as CS, GameConstants } from "./gameconstants";
-import { view } from "./bmsx/engine";
+import { view, IGameObject } from "./bmsx/engine";
 import { RoomDataContainer } from "./RoomFactory";
 import { BitmapId } from "./bmsx/resourceids";
 import { Model } from "./gamemodel";
@@ -9,16 +9,20 @@ import { Model } from "./gamemodel";
 export type NearingRoomExitResult = { destRoom: number, direction: Direction } | null;
 export type RoomInitDelegate = (room: Room) => void;
 
-export class Room {
+export class Room implements IGameObject {
+	id: string;
+	disposeFlag: boolean = false;
+	priority: number = -1;
+	pos: Point = null;
+	disposeOnSwitchRoom: boolean = true;
+	visible: boolean = true;
+
 	public static RoomWidth: number = 0;
 	public static RoomHeight: number = 0;
 	public static NO_ROOM_EXIT: number = -1;
 
-	///  <summary>
-	///  Collision tiles
-	///  </summary>
 	public tiles: string[];
-	public id: number;
+	public roomid: number;
 
 	// public M.Location RespawnLocation;
 	///  <summary>
@@ -31,7 +35,7 @@ export class Room {
 
 	public static LoadRoom(data: RoomDataContainer): Room {
 		var result = new Room();
-		result.id = data.id;
+		result.roomid = data.id;
 		result.tiles = data.tiles;
 		result.exits = data.exits;
 		result.initFunction = data.initFunction;
@@ -40,12 +44,11 @@ export class Room {
 		return result;
 	}
 
-	public init() {
-		if (this.initFunction)
-			this.initFunction(this);
+	public spawn() {
+		this.initFunction?.(this);
 	}
 
-	public TakeTurn() {
+	public takeTurn() {
 		// TODO: Ga dingen doen
 	}
 
@@ -83,10 +86,6 @@ export class Room {
 	public nearestNonCollisionPoint(x: number, y: number, dir: Direction): number {
 		let _x: number = ~~(x / TileSize);
 		let _y: number = ~~(y / TileSize);
-		// _x = Math.max(_x, 0);
-		// _x = Math.min(_x, GameConstants.StageScreenWidthTiles - 1);
-		// _y = Math.max(_y, 0);
-		// _y = Math.min(_y, GameConstants.StageScreenHeightTiles - 1);
 
 		let dx: number, dy: number;
 		switch (dir) {
@@ -191,7 +190,7 @@ export class Room {
 		return (this.roomExit(dir) != Room.NO_ROOM_EXIT);
 	}
 
-	public Paint() {
+	public paint() {
 		if (this.imgid) {
 			view.drawImg(this.imgid, CS.GameScreenStartX, CS.GameScreenStartY);
 		}
@@ -236,123 +235,3 @@ export class Room {
 		}
 	}
 }
-
-// public class Room {
-// 	public const int RoomWidth = 0;
-// 	public const int RoomHeight = 0;
-// 	public const int NO_ROOM_EXIT = 0;
-
-// 	/// <summary>
-// 	/// Collision tiles
-// 	/// </summary>
-// 	public string[] CollisionData;
-
-// 	public int Id;
-// 	//public M.Location RespawnLocation;
-// 	/// <summary>
-// 	/// Used at room init to easily determine whether to auto set the respawn location
-// 	/// </summary>
-// 	//public bool DefaultRespawnLocation;
-// 	public int[] Exits;
-// 	private Action<Room> initFunction;
-
-// 	protected int ImageID;
-// 	public string BitmapPath;
-
-// 	public static int LoadRoom(int data) {
-// 		var result = 1;
-
-// 		return result;
-// 	}
-
-// 	public void InitRoom() {
-// 		this.initFunction ?.Invoke(this);
-// 	}
-
-// 	public void TakeTurn() {
-// 		// TODO: Ga dingen doen
-// 	}
-
-// 	/// <summary>Checks if there is a collision tile in any of the given coordinates</summary>
-// 	public bool AnyCollisionsTiles(bool takeWallFoesIntoAccount, params (int x, int y)[] coordinatesToCheck) {
-// 	return coordinatesToCheck.Any(x => this.IsCollisionTile(x.x, x.y, takeWallFoesIntoAccount));
-// }
-
-// 		public bool IsCollisionTile(int x, int y, bool takeWallFoesIntoAccount) {
-// 	var TileSize = 0;
-// 	int DirectionLeft = 0, DirectionRight = 0, DirectionUp = 0, DirectionDown = 0;
-// 	var CSStageScreenWidthTiles = 0;
-// 	var CSStageScreenHeightTiles = 0;
-// 	int _x = x / TileSize;
-// 	int _y = y / TileSize;
-// 	if (x < 0) { // Note: Check for x and not _x, as -1 / (...) will result in 0!
-// 		if (this.CanLeaveRoom(DirectionLeft))
-// 			_x = 0;
-// 		else return true;
-// 	}
-// 	else if (_x >= CSStageScreenWidthTiles) {
-// 		if (this.CanLeaveRoom(DirectionRight))
-// 			_x = CSStageScreenWidthTiles - 1;
-// 		else return true;
-// 	}
-// 	if (_y < 1 && _y >= -1) {
-// 		if (this.CanLeaveRoom(DirectionUp))
-// 			_y = 0;
-// 		else return true;
-// 	}
-// 	else if (_y >= CSStageScreenHeightTiles) {
-// 		if (this.CanLeaveRoom(DirectionDown))
-// 			_y = CSStageScreenHeightTiles - 1;
-// 		else return true;
-// 	}
-
-// 	if (this.CollisionData[_y][_x] != '.') return true;
-
-// 	return false;
-// }
-
-// public(int destRoom, int direction) ? NearingRoomExit(int x, int y) {
-// 	var TileSize = 0;
-// 	var CSStageScreenWidthTiles = 0;
-// 	var CSStageScreenHeightTiles = 0;
-// 	int _x = x / TileSize;
-// 	int _y = y / TileSize;
-// 	int DirectionLeft = 0, DirectionRight = 0, DirectionUp = 0, DirectionDown = 0;
-// 	(int, int) ? result = null;
-// 	int destRoom = NO_ROOM_EXIT;
-
-// 	if (x < 0) { // Note: Check for x and not _x, as -1 / (...) will result in 0!
-// 		destRoom = this.RoomExit(DirectionLeft);
-// 		result = (destRoom, DirectionLeft);
-// 	}
-// 	else if (_x >= CSStageScreenWidthTiles) {
-// 		destRoom = this.RoomExit(DirectionRight);
-// 		result = (destRoom, DirectionRight);
-// 	}
-// 	else if (_y < 2) {
-// 		destRoom = this.RoomExit(DirectionUp);
-// 		result = (destRoom, DirectionUp);
-// 	}
-// 	else if (_y >= CSStageScreenHeightTiles) {
-// 		destRoom = this.RoomExit(DirectionDown);
-// 		result = (destRoom, DirectionDown);
-// 	}
-
-// 	return result;
-// }
-
-// 		private int RoomExit(int dir) {
-// 	var RoomExitsLocked = true;
-// 	if (RoomExitsLocked) return NO_ROOM_EXIT;
-// 	return this.Exits[(int)dir];
-// }
-
-// 		private bool CanLeaveRoom(int dir) {
-// 	var RoomExitsLocked = true;
-// 	if (RoomExitsLocked) return false;
-// 	return this.RoomExit(dir) != NO_ROOM_EXIT;
-// }
-
-// 		public void Paint() {
-// 	//BDX._.DrawBitmap((uint)this.ImageID, CS.GameScreenStartX, CS.GameScreenStartY);
-// }
