@@ -7,7 +7,7 @@ import { SM } from "./bmsx/soundmaster";
 import { Controller as C } from "./gamecontroller";
 import { GameState, Model } from "./gamemodel";
 import { SlotExists, LoadGame } from "./bmsx/gamepersistor";
-import { GameOptions as GO, IGameObject } from './bmsx/engine';
+import { GameOptions as GO, IGameObject, bst } from './bmsx/engine';
 import { Constants } from "./bmsx/engine";
 import { newSize, setPoint } from "./bmsx/common";
 import { view, game } from "./bmsx/engine";
@@ -44,7 +44,7 @@ declare module "./mainmenu" {
     }
 }
 
-export class GameMenu implements IGameObject {
+export class GameMenu extends bst implements IGameObject {
     private static menuPosX: number = 24;
     private static menuPosY: number = 24;
     private static menuEndX: number = 240;
@@ -95,6 +95,7 @@ export class GameMenu implements IGameObject {
     priority: number = 5000;
 
     constructor() {
+        super();
         this.visible = false;
         this.cursorPos = { x: 0, y: 0 };
         this.selectedItemIndex = 0;

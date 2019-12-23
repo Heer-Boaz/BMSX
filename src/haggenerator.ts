@@ -3,29 +3,24 @@ import { IGameObject } from "./bmsx/engine";
 import { Direction, Point } from "./bmsx/common";
 import { bst } from "./bmsx/engine";
 import { Model } from "./gamemodel";
-import { copyPoint } from "./bmsx/common";
 import { GameConstants } from "./gameconstants";
-import { Constants } from "./bmsx/engine";
 
-type stuff = { ticks: number };
-
-export class HagGenerator implements IGameObject {
+export class HagGenerator extends bst implements IGameObject {
     public disposeFlag: boolean;
     public id: string;
     public pos: Point;
     public disposeOnSwitchRoom?: boolean;
-    protected statestuff: bst<HagGenerator>;
 
     constructor(pos: Point) {
+        super();
         this.pos = pos;
         this.disposeOnSwitchRoom = true;
-        this.statestuff = new bst<HagGenerator>(this, 0, true);
-        let state0 = this.statestuff.addNewState(0);
-        state0.delta2tapehead = 100;
-        state0.onrun = (s) => ++s.tapeheadnudges;
-        state0.ontapeheadmove = (s) => {
+        let state0 = this.add(0);
+        state0.nudges2move = 100;
+        state0.onrun = (s) => ++s.nudges;
+        state0.ontapemove = (s) => {
             // Poop hags based on where Belmont is
-            let spawnPoint = <Point>{ x: 0, y: this.pos.y };
+            let spawnPoint = { x: 0, y: this.pos.y };
             if (Model._.Belmont.pos.x <= GameConstants.ViewportWidth / 2) {
                 spawnPoint.x = GameConstants.ViewportWidth - Hag.HagSize.y;
                 Model._.spawn(new Hag(spawnPoint, Direction.Left));
@@ -38,13 +33,10 @@ export class HagGenerator implements IGameObject {
     }
 
     takeTurn(): void {
-        this.statestuff.run();
+        this.run();
     }
 
     spawn(spawningPos?: Point): void {
         if (spawningPos) this.pos = spawningPos;
-    }
-
-    dispose(): void {
     }
 }

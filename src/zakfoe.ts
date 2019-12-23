@@ -5,9 +5,9 @@ import { Area, Point, Direction, newArea, newSize } from "./bmsx/common";
 import { BitmapId } from "./bmsx/resourceids";
 import { Model } from "./gamemodel";
 import { GameConstants as CS } from "./gameconstants";
-import { bst } from "./bmsx/engine";
+import { bst, BSTEventType, bss } from "./bmsx/engine";
 
-type AniType = { i: BitmapId, dy: number };
+type AniType = { i: BitmapId, dy: number; };
 
 export class ZakFoe extends Foe {
 	public get damageToPlayer(): number {
@@ -19,7 +19,6 @@ export class ZakFoe extends Foe {
 	}
 
 	protected static ZakFoeHitArea: Area = newArea(2, 2, 14, 14);
-	protected fst: bst<ZakFoe>;
 
 	constructor(pos: Point, dir: Direction, itemSpawned: ItemType = ItemType.HeartSmall) {
 		super(pos);
@@ -32,8 +31,7 @@ export class ZakFoe extends Foe {
 		this.priority = 10;
 		this.health = 1;
 
-		this.fst = new bst<ZakFoe>(this, 0, true);
-		let state0 = this.fst.addNewState(0);
+		let state0 = this.add(0);
 		state0.tapedata = <Array<AniType>>[
 			null,
 			{ i: BitmapId.ZakFoe3, dy: 0 },
@@ -50,66 +48,70 @@ export class ZakFoe extends Foe {
 			{ i: BitmapId.ZakFoe3, dy: 0 },
 			{ i: BitmapId.ZakFoe1, dy: -1 },
 		];
-		state0.delta2tapehead = 2;
-		state0.onrun = (s) => {
-			++s.tapeheadnudges;
+		state0.nudges2move = 2;
+		let state0handler = (s: bss, type: BSTEventType) => {
+			switch (type) {
+				case BSTEventType.Run:
+					++s.nudges;
 
-			switch (s.target.direction) {
-				case Direction.Left:
-					s.target.pos.x -= 1;
-					// Handle game screen collision
-					if (s.target.pos.x <= 0)
-						s.target.direction = Direction.Right;
-					// Handle wall / missing floor collision
-					if (Model._.currentRoom.AnyCollisionsTiles({ x: s.target.hitbox_sx, y: s.target.hitbox_sy }, { x: s.target.hitbox_sx, y: s.target.hitbox_ey }))
-						s.target.direction = Direction.Right;
-					// if (!Model._.currentRoom.AnyCollisionsTiles(true, { x: s.target.hitbox_sx, y: s.target.hitbox_ey + TileSize + 4 }))
-					// 	s.target.direction = Direction.Right;
+					switch (this.direction) {
+						case Direction.Left:
+							this.pos.x -= 1;
+							// Handle game screen collision
+							if (this.pos.x <= 0)
+								this.direction = Direction.Right;
+							// Handle wall / missing floor collision
+							if (Model._.currentRoom.AnyCollisionsTiles({ x: this.hitbox_sx, y: this.hitbox_sy }, { x: this.hitbox_sx, y: this.hitbox_ey }))
+								this.direction = Direction.Right;
+							break;
+						case Direction.Right: this.pos.x += 1;
+							// Handle game screen collision
+							if (this.pos.x >= CS.GameScreenWidth)
+								this.direction = Direction.Left;
+							// Handle wall / missing floor collision
+							if (Model._.currentRoom.AnyCollisionsTiles({ x: this.hitbox_ex, y: this.hitbox_sy }, { x: this.hitbox_ex, y: this.hitbox_ey }))
+								this.direction = Direction.Left;
+							break;
+					}
+					if (!Model._.currentRoom.IsCollisionTile(this.hitbox_sx + 4, this.hitbox_ey + 12)) {
+						this.pos.y += 4;
+					}
 					break;
-				case Direction.Right: s.target.pos.x += 1;
-					// Handle game screen collision
-					if (s.target.pos.x >= CS.GameScreenWidth)
-						s.target.direction = Direction.Left;
-					// Handle wall / missing floor collision
-					if (Model._.currentRoom.AnyCollisionsTiles({ x: s.target.hitbox_ex, y: s.target.hitbox_sy }, { x: s.target.hitbox_ex, y: s.target.hitbox_ey }))
-						s.target.direction = Direction.Left;
-					// if (!Model._.currentRoom.AnyCollisionsTiles(true, { x: s.target.hitbox_ex, y: s.target.hitbox_ey + TileSize + 4 }))
-					// 	s.target.direction = Direction.Left;
+				case BSTEventType.TapeEnd:
+					this.to(1);
+					break;
+				case BSTEventType.TapeMove:
+					this.imgid = (<AniType>s.currentdata).i;
+					this.pos.y += (<AniType>s.currentdata).dy;
 					break;
 			}
-			if (!Model._.currentRoom.IsCollisionTile(s.target.hitbox_sx + 4, s.target.hitbox_ey + 12)) {
-				s.target.pos.y += 4;
+		};
+		state0.onrun = state0handler;
+		state0.ontapeend = state0handler;
+		state0.ontapemove = state0handler;
+
+		let state1 = this.add(1);
+		state1.nudges2move = 8;
+		let state1handler = (s: bss, type: BSTEventType) => {
+			switch (type) {
+				case BSTEventType.Run:
+					++s.nudges;
+					break;
+				case BSTEventType.TapeMove:
+					this.to(0);
+					break;
+
 			}
 		};
-		state0.ontapeend = (s) => {
-			s.bsm.transition(1);
-		};
-		state0.oninitstate = (s) => {
-			s.setTapeheadNoEvent(0);
-		};
-		state0.ontapeheadmove = (s) => {
-			s.target.imgid = (<AniType>s.currentdata).i;
-			s.target.pos.y += (<AniType>s.currentdata).dy;
-		};
+		state1.onrun = state1handler;
+		state1.ontapemove = state1handler;
 
-		let state1 = this.fst.addNewState(1);
-		state1.delta2tapehead = 8;
-		state1.onrun = (s) => {
-			++s.tapeheadnudges;
-		};
-		state1.ontapeheadmove = (s) => {
-			s.bsm.transition(0);
-		};
-		state1.oninitstate = (s) => {
-			s.setTapeheadNoEvent(0);
-		};
-
-		this.fst.setStartState(0, false);
+		this.setStart(0, false);
 	}
 
 	public takeTurn(): void {
 		if (this.disposeFlag) return;
-		this.fst.run();
+		this.run();
 		super.takeTurn();
 	}
 
