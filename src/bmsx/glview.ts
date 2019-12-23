@@ -66,6 +66,8 @@ export abstract class GLView extends BaseView {
 
 	private readonly vertexShaderCode =
 		`
+			precision highp float;
+
 			attribute vec2 a_position;
 			attribute vec2 a_texcoord;
 
@@ -92,7 +94,7 @@ export abstract class GLView extends BaseView {
 
 	private readonly fragmentShaderFillRectangleCode =
 		`
-			precision lowp float;
+			precision highp float;
 
 			uniform vec4 uColor;
 
@@ -102,7 +104,7 @@ export abstract class GLView extends BaseView {
 
 	private readonly fragmentShaderTextureCode =
 		`
-		precision lowp float;
+		precision highp float;
  		varying vec2 v_texcoord;
  		uniform sampler2D u_texture;
 

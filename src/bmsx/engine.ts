@@ -52,9 +52,9 @@ export module Constants {
 }
 
 export class Game {
-    lastUpdate: number;
+    lastTick: number;
     _turnCounter: number;
-    intervalid: number;
+    animationFrameRequestid: number;
     public running: boolean;
     wasupdated: boolean;
     public rom: RomLoadResult;
@@ -72,7 +72,7 @@ export class Game {
         SM.init(_rom['sndresources'], sndcontext, gainnode);
         Input.init();
 
-        this.lastUpdate = 0;
+        this.lastTick = performance.now();
         this.running = false;
         this.wasupdated = true;
     }
@@ -99,9 +99,9 @@ export class Game {
         view.handleResize();
 
         this.running = true;
-        this.lastUpdate = performance.now();
-        this.draw();
-        this.intervalid = <number><unknown>setInterval(this.run, fpstime);
+        this.lastTick = performance.now();
+        this.run(performance.now());
+        // this.intervalid = <number><unknown>setInterval(this.run, fpstime);
     }
 
     public update(elapsedMs: number): void {
@@ -109,24 +109,41 @@ export class Game {
         controller.takeTurn(elapsedMs);
     }
 
-    public draw(): void {
-        if (!game.wasupdated) return;
+    // public draw(): void {
+    //     if (!game.wasupdated) return;
+    //     view.drawgame();
+    //     if (game.running) requestAnimationFrame(game.draw);
+    // }
+
+    public run(tFrame: number): void {
+        if (!game.running) return;
+
+        game.animationFrameRequestid = window.requestAnimationFrame(game.run);
+        let nextTick = game.lastTick + fpstime;
+        let numTicks = 0;
+
+        // If tFrame < nextTick then 0 ticks need to be updated (0 is default for numTicks).
+        // If tFrame = nextTick then 1 tick needs to be updated (and so forth).
+        // Note: As we mention in summary, you should keep track of how large numTicks is.
+        // If it is large, then either your game was asleep, or the machine cannot keep up.
+        if (tFrame > nextTick) {
+            let timeSinceTick = tFrame - game.lastTick;
+            numTicks = Math.floor(timeSinceTick / fpstime);
+        }
+
+        for (let i = 0; i < numTicks; i++) {
+            ++game._turnCounter;
+            game.lastTick = game.lastTick + fpstime; // Now lastTick is this tick.
+            game.update(game.lastTick);
+        }
         view.drawgame();
-        if (game.running) requestAnimationFrame(game.draw);
-    }
-
-    public run(): void {
-        game.update(fpstime);
-        game.wasupdated = true;
-
-        ++game._turnCounter;
     }
 
     public stop(): void {
         game.running = false;
-        clearInterval(game.intervalid);
-
-        requestAnimationFrame(() => {
+        // clearInterval(game.intervalid);
+        window.cancelAnimationFrame(this.animationFrameRequestid);
+        window.requestAnimationFrame(() => {
             view.clear();
             view.handleResize();
             SM.stopEffect();
