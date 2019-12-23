@@ -105,9 +105,9 @@ export class Input {
         window.addEventListener('keyup', e => { preventDefaultEventAction(e, e.key); keyup(e.key); }, false);
         window.addEventListener('blur', blur, false);
 
-        document.addEventListener('touchmove', e => handleTouchStuff(e));
-        document.addEventListener('touchstart', e => handleTouchStuff(e));
-        document.addEventListener('touchend', e => handleTouchStuff(e));
+        document.addEventListener('touchmove', e => { e.preventDefault(); e.stopPropagation(); handleTouchStuff(e) });
+        document.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); handleTouchStuff(e) });
+        document.addEventListener('touchend', e => { e.preventDefault(); e.stopPropagation(); handleTouchStuff(e); });
     }
 
     public static reset(except?: string[]): void {
@@ -135,7 +135,7 @@ export class Input {
     }
 }
 
-function preventDefaultEventAction(event: UIEvent, key: string) {
+function preventDefaultEventAction(e: UIEvent, key: string) {
     if (game.running) {
         switch (key) {
             case 'Escape':
@@ -144,7 +144,8 @@ function preventDefaultEventAction(event: UIEvent, key: string) {
             case 'F12':
                 break;
             default:
-                event.preventDefault();
+                e.preventDefault();
+                e.stopPropagation();
                 break;
         }
     }
@@ -163,6 +164,12 @@ function blur(e: FocusEvent): void {
     Input.reset();
 }
 
+function click(e: MouseEvent): void {
+    e.preventDefault();
+    e.stopPropagation();
+    // if (e.tar
+}
+
 function handleTouchStuff(e: TouchEvent): void {
     Input.resetUI();
     if (e.touches.length == 0) {
@@ -177,7 +184,7 @@ function handleTouchStuff(e: TouchEvent): void {
         if (elementTouched) {
             let buttonsTouched = handleElementUnderTouch(elementTouched);
             if (buttonsTouched.length > 0) {
-                e.preventDefault();
+                // e.preventDefault();
                 elementTouched.classList.add('druk');
                 elementTouched.classList.remove('los');
 

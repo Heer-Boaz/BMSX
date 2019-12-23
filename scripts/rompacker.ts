@@ -302,7 +302,7 @@ async function buildGameHtml(outfile: string): Promise<void> {
 				bar.increment(1);
 				release_html = html.replace('//#romjs', romjsMinified);
 				release_html = release_html.replace('//#zipjs', zipjs);
-				release_html = release_html.replace('//#gl-matrix', glmatrixjs);
+				// release_html = release_html.replace('//#gl-matrix', glmatrixjs);
 				release_html = release_html.replace('/*css*/', cssMinified);
 				release_html = release_html.replace('#outfile', outfile);
 				release_html = release_html.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed);
@@ -315,7 +315,7 @@ async function buildGameHtml(outfile: string): Promise<void> {
 
 				debug_html = html.replace('//#romjs', romjs);
 				debug_html = debug_html.replace('//#zipjs', zipjs);
-				release_html = release_html.replace('//#gl-matrix', glmatrixjs);
+				// release_html = release_html.replace('//#gl-matrix', glmatrixjs);
 				debug_html = debug_html.replace('/*css*/', cssMinified);
 				debug_html = debug_html.replace('#outfile', outfile);
 				debug_html = debug_html.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed);
