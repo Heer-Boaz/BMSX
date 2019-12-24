@@ -1,10 +1,13 @@
 import { TileSize } from "./bmsx/msx";
-import { Direction, Point } from "./bmsx/common";
+import { Direction, Point, newPoint } from "./bmsx/common";
 import { GameConstants as CS, GameConstants } from "./gameconstants";
 import { view, IGameObject, model } from "./bmsx/engine";
-import { RoomDataContainer } from "./RoomFactory";
+import { RoomDataContainer, thestuff } from "./RoomFactory";
 import { BitmapId } from "./bmsx/resourceids";
 import { Model } from "./gamemodel";
+import { GardenCandle } from './gardencandle';
+import { ZakFoe } from './zakfoe';
+import { HagGenerator } from './haggenerator';
 
 export type NearingRoomExitResult = { destRoom: number, direction: Direction } | null;
 export type RoomInitDelegate = (room: Room) => void;
@@ -32,12 +35,14 @@ export class Room implements IGameObject {
 	public exits: number[];
 	public initFunction: RoomInitDelegate;
 	public imgid: BitmapId;
+	protected stuff: thestuff;
 
 	public static LoadRoom(data: RoomDataContainer): Room {
 		var result = new Room();
 		result.roomid = data.id;
 		result.tiles = data.tiles;
 		result.exits = data.exits;
+		result.stuff = data.stuff;
 		result.initFunction = data.initFunction;
 		result.imgid = data.imgid;
 
@@ -45,7 +50,27 @@ export class Room implements IGameObject {
 	}
 
 	public onspawn() {
+		this.handleTheStuff();
 		this.initFunction?.(this);
+	}
+
+	protected handleTheStuff(): void {
+		for (let ding of this.stuff) {
+			let pos = newPoint(ding.waar.x ?? (ding.waar.tx * TileSize), ding.waar.y ?? (ding.waar.ty * TileSize));
+			switch (ding.wat) {
+				case 'gardencandle':
+					new GardenCandle().spawn(pos);
+					break;
+				case 'haggenerator':
+					new HagGenerator().spawn(pos);
+					break;
+				case 'zakfoe': {
+					let dir = Direction[ding.betoog as string];
+					new ZakFoe(dir).spawn(pos);
+					break;
+				}
+			}
+		}
 	}
 
 	public takeTurn() {

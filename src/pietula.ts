@@ -24,8 +24,8 @@ export class Pietula extends Foe {
 	public loops: number;
 	public bliksem: { imgid: number, paint(offset: Point): void, pos: Point, flipped: boolean; };
 
-	constructor(pos: Point = null) {
-		super(pos);
+	constructor() {
+		super();
 		this.canHurtPlayer = false;
 		this.imgid = BitmapId.Pietula1;
 		this.hitarea = newArea(8, 0, 32, 40);
@@ -44,7 +44,7 @@ export class Pietula extends Foe {
 		waitAfterDeath.ontapemove = (s) => Controller._.switchSubstate(GameSubstate.ToEndDemo);
 
 		let intro_wacht = fst.add('intro_wacht');
-		intro_wacht.oninitstate = (s, type, self: Pietula) => {
+		intro_wacht.oninitstate = (s, type) => {
 			this.pos = Tile.toStagePoint(7, 3);
 			this.flippedH = false;
 			this.blink.to('in');
@@ -356,10 +356,10 @@ export class Pietula extends Foe {
 	}
 
 	public die(): void {
-		(model as Model).spawn(new FoeExplosion(copyPoint(this.pos)));
-		(model as Model).spawn(new FoeExplosion(addPoints(this.pos, { x: 16, y: 0 })));
-		(model as Model).spawn(new FoeExplosion(addPoints(this.pos, { x: 0, y: 16 })));
-		(model as Model).spawn(new FoeExplosion(addPoints(this.pos, { x: 16, y: 16 })));
+		new FoeExplosion().spawn(copyPoint(this.pos));
+		new FoeExplosion().spawn(addPoints(this.pos, { x: 16, y: 0 }));
+		new FoeExplosion().spawn(addPoints(this.pos, { x: 0, y: 16 }));
+		new FoeExplosion().spawn(addPoints(this.pos, { x: 16, y: 16 }));
 		SM.play(AudioId.Kaboem);
 		this.visible = false;
 		this.canHurtPlayer = false;

@@ -137,7 +137,7 @@ async function bundleGamecode(outfile: string): Promise<any> {
 			exclude: ['src/lib/rom.ts', 'src/lib/rompacker.ts'],
 			ignore: ['node_modules', 'dist', 'rom']
 		})
-			.add("src/bootstrapper.ts")
+			.add("src/bootloader.ts")
 			.plugin(tsify)
 			.transform(babelify, {
 				extensions: ['.ts'],
@@ -274,7 +274,7 @@ async function buildGameHtml(outfile: string): Promise<void> {
 		mangle: {
 			// properties: true,
 			toplevel: false,
-			reserved: ["basic", "h406A", "rom"],
+			reserved: ["bootrom", "h406A", "rom"],
 			safari10: true,
 		},
 		output: {
@@ -307,7 +307,7 @@ async function buildGameHtml(outfile: string): Promise<void> {
 				release_html = release_html.replace('#outfile', outfile);
 				release_html = release_html.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed);
 				release_html = release_html.replace('//#debug', '');
-				// release_html = release_html.replace('//#localfetch', 'basic.localfetch = true;\n');
+				// release_html = release_html.replace('//#localfetch', 'bootrom.localfetch = true;\n');
 				bar.increment(1);
 
 				writeFileSync("./dist/game.html", release_html);
@@ -319,8 +319,8 @@ async function buildGameHtml(outfile: string): Promise<void> {
 				debug_html = debug_html.replace('/*css*/', cssMinified);
 				debug_html = debug_html.replace('#outfile', outfile);
 				debug_html = debug_html.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed);
-				debug_html = debug_html.replace('//#debug', 'basic.debug = true;\n');
-				debug_html = debug_html.replace('//#localfetch', 'basic.localfetch = true;\n');
+				debug_html = debug_html.replace('//#debug', 'bootrom.debug = true;\n');
+				debug_html = debug_html.replace('//#localfetch', 'bootrom.localfetch = true;\n');
 				bar.increment(1);
 				writeFileSync("./dist/game_debug.html", debug_html);
 				bar.increment(1);
@@ -475,8 +475,8 @@ async function buildRompackAndResourceList(outfile: string): Promise<void> {
 
 	bar.start(arrayOfFiles.length + 2 + (GENERATE_AND_USE_TEXTURE_ATLAS ? 5 : 0), 0);
 
-	tsimgout.push("export const enum BitmapId {\n\tNone = 0,");
-	tssndout.push("export const enum AudioId {\n\tNone = 0,");
+	tsimgout.push("export enum BitmapId {\n\tNone = 0,");
+	tssndout.push("export enum AudioId {\n\tNone = 0,");
 
 	let jsonout = new Array<RomResource>();
 	let bufferPointer = 0;

@@ -6,7 +6,6 @@ import { newArea } from "./bmsx/common";
 import { Model } from "./gamemodel";
 import { SM } from "./bmsx/soundmaster";
 import { Area } from "./bmsx/common";
-const gmodel = model as Model;
 
 export const enum HeartSmallState {
 	Flying,
@@ -35,7 +34,7 @@ export class HeartSmall extends Sprite {
 	}
 
 	protected get floorCollision(): boolean {
-		return gmodel.currentRoom.isCollisionTile(this.pos.x + 5, this.pos.y + 8);
+		return (model as Model).currentRoom.isCollisionTile(this.pos.x + 5, this.pos.y + 8);
 	}
 
 	protected uglyBitThing: boolean;
@@ -61,8 +60,8 @@ export class HeartSmall extends Sprite {
 				this.imgid = BitmapId.Heart_small;
 			}
 		}
-		if (this.objectCollide(gmodel.Belmont)) {
-			++gmodel.hearts;
+		if (this.objectCollide((model as Model).Belmont)) {
+			++(model as Model).hearts;
 			this.disposeFlag = true;
 			SM.play(AudioId.Heart);
 		}

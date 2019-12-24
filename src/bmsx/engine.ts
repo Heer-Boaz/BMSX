@@ -66,30 +66,21 @@ export class Game {
         view = _view;
         controller = _controller;
 
+        global['model'] = model;
+        global['view'] = view;
+        global['controller'] = controller;
+
         BaseView.images = _rom.images;
         view.init();
         SM.init(_rom['sndresources'], sndcontext, gainnode);
         Input.init();
 
-        this.lastTick = performance.now();
         this.running = false;
         this.wasupdated = true;
     }
 
     public get turnCounter(): number {
         return this._turnCounter;
-    }
-
-    public GameOptionsChanged(): void {
-        console.warn("Not implemented yet :-(");
-        // GameOptionsPersistor.SaveOptions(GO._);
-    }
-
-    private loadGameOptions(): void {
-        console.warn("Not implemented yet :-(");
-        // let result = GameOptionsPersistor.LoadOptions();
-        // if (result != null)
-        //     GO._ = result;
     }
 
     public start(): void {
@@ -100,19 +91,12 @@ export class Game {
         this.running = true;
         this.lastTick = performance.now();
         this.run(performance.now());
-        // this.intervalid = <number><unknown>setInterval(this.run, fpstime);
     }
 
     public update(elapsedMs: number): void {
         BStopwatch.updateTimers(elapsedMs);
         controller.takeTurn(elapsedMs);
     }
-
-    // public draw(): void {
-    //     if (!game.wasupdated) return;
-    //     view.drawgame();
-    //     if (game.running) requestAnimationFrame(game.draw);
-    // }
 
     public run(tFrame: number): void {
         if (!game.running) return;
@@ -140,7 +124,6 @@ export class Game {
 
     public stop(): void {
         game.running = false;
-        // clearInterval(game.intervalid);
         window.cancelAnimationFrame(this.animationFrameRequestid);
         window.requestAnimationFrame(() => {
             view.clear();

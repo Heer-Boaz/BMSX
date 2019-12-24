@@ -1,6 +1,6 @@
 ﻿import { BStopwatch } from "./engine"
 
-export const enum Direction {
+export enum Direction {
     None = 0,
     Up = 1,
     Right = 2,

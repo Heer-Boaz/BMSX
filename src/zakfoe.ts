@@ -36,7 +36,7 @@ export class ZakFoe extends Foe {
 			}
 		};
 		this.onWallcollide = collissionHandler;
-		this.onLeaveScreen = (collissionHandler);
+		this.onLeaveScreen = collissionHandler;
 
 		let state0 = this.add(0);
 		state0.tapedata = <Array<AniType>>[

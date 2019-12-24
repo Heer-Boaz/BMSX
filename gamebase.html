@@ -9,7 +9,7 @@
         <meta name="apple-mobile-web-app-capable" content="yes">
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="Sintervania" />
-        <script id="romloader">//#romjs</script>
+        <script id="bootrom">//#romjs</script>
         <script id="pacojs" distributedby="http://nodeca.github.io/pako/">//#zipjs</script>
     </head>
 
@@ -73,9 +73,9 @@
         try {
             //#debug
             //#localfetch
-            basic.bload("./#outfile").then(function (h406A) {
-                basic.defusr = h406A;
-                basic.usr(0);
+            bootrom.bload("./#outfile").then(function (h406A) {
+                bootrom.defusr = h406A;
+                bootrom.usr(0);
             });
         }
         catch (e) {

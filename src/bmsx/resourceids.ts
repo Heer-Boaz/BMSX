@@ -1,4 +1,4 @@
-export const enum BitmapId {
+export enum BitmapId {
 	None = 0,
 	blackpixel = 1,
 	EnergybarStripe_Belmont = 2,
@@ -124,7 +124,7 @@ export const enum BitmapId {
 	_atlas = 122,
 }
 
-export const enum AudioId {
+export enum AudioId {
 	None = 0,
 	Baas = 1,
 	FeestVieren = 2,

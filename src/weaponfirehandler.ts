@@ -75,8 +75,8 @@ export class WeaponFireHandler {
         if ((model as Model).Belmont.Roeing || (model as Model).Belmont.RecoveringFromHit)
             return;
         WeaponFireHandler.setMainWeaponCooldown(0);
-        let roe = new TriRoe((model as Model).Belmont.pos, (model as Model).Belmont.direction);
-        (model as Model).spawn(roe);
+        let roe = new TriRoe((model as Model).Belmont.direction);
+        roe.spawn((model as Model).Belmont.pos);
         (model as Model).Belmont.UseRoe();
         SM.play(AudioId.Whip);
     }

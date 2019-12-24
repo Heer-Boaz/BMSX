@@ -7,7 +7,7 @@ import { waitDuration, Direction, setPoint } from './bmsx/common';
 import { GameConstants } from './gameconstants';
 import { WeaponFireHandler } from './weaponfirehandler';
 import { Tile } from './bmsx/msx';
-import { Bootstrapper } from './bootstrapper';
+import { Bootloader } from './bootloader';
 import { Savegame } from './bmsx/gamepersistor';
 import { Item, ItemType } from './item';
 import { WeaponItem } from './weaponitem';
@@ -319,7 +319,7 @@ export class Controller extends BaseController {
 
     private setupGameStart(newState: GameState): void {
         (model as Model).initModelForGameStart();
-        Bootstrapper.BootstrapGame((model as Model).SelectedChapterToPlay);
+        Bootloader.Boot((model as Model).SelectedChapterToPlay);
         (model as Model).Hud.SetShownLevelsToProperValues();
         (model as Model).state = newState;
         this.StoreCheckpoint();

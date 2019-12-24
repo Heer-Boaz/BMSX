@@ -68,13 +68,13 @@ export abstract class Foe extends Sprite {
 
     protected dieWithoutItem(): void {
         this.handleDie();
-        model.spawn(new FoeExplosion(this.pos));
+        new FoeExplosion().spawn(this.pos);
     }
 
     protected dieWithItem(itemToSpawn: ItemType = ItemType.None): void {
         this.handleDie();
         if (itemToSpawn !== ItemType.None) {
-            model.spawn(new FoeExplosion(this.pos, itemToSpawn));
+            new FoeExplosion(itemToSpawn).spawn(this.pos);
         }
     }
 }

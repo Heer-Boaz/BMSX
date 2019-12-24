@@ -11,7 +11,7 @@ if (typeof Array.isArray === 'undefined') {
 	};
 };
 
-var basic = {
+var bootrom = {
 	rom: null as RomLoadResult,
 	debug: false,
 	localfetch: false,
@@ -20,16 +20,16 @@ var basic = {
 	gainnode: <GainNode>null,
 
 	set defusr(rom: RomLoadResult) {
-		basic.rom = rom;
+		bootrom.rom = rom;
 	},
 
 	usr(x: number): number {
 		document.body.style.backgroundColor = "#000000";
 		document.getElementById('gamescreen').hidden = false;
-		loadScript(basic.rom).then(() => {
+		loadScript(bootrom.rom).then(() => {
 			// try {
-			h406A(basic.rom, basic.sndcontext, basic.gainnode);
-			basic.rom = null;
+			h406A(bootrom.rom, bootrom.sndcontext, bootrom.gainnode);
+			bootrom.rom = null;
 			// }
 			// catch (e) {
 			// setClassForLoader("");
@@ -56,7 +56,7 @@ var basic = {
 };
 
 async function loadRompack(url: string): Promise<ArrayBuffer> {
-	if (basic.localfetch) {
+	if (bootrom.localfetch) {
 		return fetchLocal(url)
 			.then(response_array => {
 				let result = pako.inflate(response_array).buffer;
@@ -190,7 +190,7 @@ async function awaitBootComplete(): Promise<void> {
 			resolve();
 		});
 		msx.className = "enter";
-		if (basic.debug) resolve(); // Resolve immediately in debug-mode
+		if (bootrom.debug) resolve(); // Resolve immediately in debug-mode
 	});
 	return result;
 }
@@ -207,7 +207,7 @@ async function loadScript(rom: RomLoadResult): Promise<void> {
 			setLoaderText(`WError: ${event} ${source ?? ""} ${lineno ?? ""} ${colno ?? ""} ${error?.message ?? ""}`);
 			reject(error);
 		};
-		if (!basic.debug) {
+		if (!bootrom.debug) {
 			romcode.innerText = rom.source;
 			document.head.appendChild(romcode);
 			resolve();
@@ -235,7 +235,7 @@ async function awaitPressedAnyKey(): Promise<void> {
 
 	let result: Promise<void> = new Promise((resolve, reject) => {
 		let onuserinteraction = (e: UIEvent) => {
-			if (!basic.snd_unlocked) { return; }
+			if (!bootrom.snd_unlocked) { return; }
 			if (e.type == 'touchend') {
 				let controls = document.getElementById("controls");
 				controls.hidden = false;
@@ -291,22 +291,22 @@ async function fetchLocal(url: string): Promise<ArrayBuffer> {
 }
 
 function startAudioOnIos(): void {
-	if (!basic.sndcontext) { return; }
-	if (basic.snd_unlocked) { return; }
-	var source = basic.sndcontext.createBufferSource();
-	source.buffer = basic.sndcontext.createBuffer(1, 1, 44100);
-	source.connect(basic.sndcontext.destination);
+	if (!bootrom.sndcontext) { return; }
+	if (bootrom.snd_unlocked) { return; }
+	var source = bootrom.sndcontext.createBufferSource();
+	source.buffer = bootrom.sndcontext.createBuffer(1, 1, 44100);
+	source.connect(bootrom.sndcontext.destination);
 	source.start(0, 0, 0);
 
-	if (basic.sndcontext.state == 'running') {
+	if (bootrom.sndcontext.state == 'running') {
 		document.removeEventListener('keyup', startAudioOnIos);
 		document.removeEventListener('touchend', startAudioOnIos, true);
-		basic.snd_unlocked = true;
+		bootrom.snd_unlocked = true;
 	}
 }
 
 function createAudioContext(): void {
-	if (basic.sndcontext) return;
+	if (bootrom.sndcontext) return;
 
 	// Fix iOS Audio Context by Blake Kus https://gist.github.com/kus/3f01d60569eeadefe3a1
 	// MIT license
@@ -334,5 +334,5 @@ function createAudioContext(): void {
 		context = new AContext();
 	}
 
-	basic.sndcontext = context;
+	bootrom.sndcontext = context;
 }

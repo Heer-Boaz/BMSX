@@ -1,16 +1,13 @@
 import { Sprite, model } from "./bmsx/engine";
 import { Model, SecWeaponType, BagWeapon } from "./gamemodel";
 import { Item } from "./item";
-import { AudioId, BitmapId } from "./bmsx/resourceids";
-import { moveArea, area2size } from "./bmsx/common";
+import { BitmapId } from "./bmsx/resourceids";
+import { moveArea, area2size, newArea } from "./bmsx/common";
 import { Controller as C } from "./gamecontroller";
 import { Area, Point } from "./bmsx/common";
 
-/*[Serializable]*/
 export class WeaponItem extends Sprite {
-    public static ItemHitArea: Area = <Area>{
-        start: <Point>{ x: 0, y: 0 }, end: <Point>{ x: 16, y: 16 }
-    };
+    public static ItemHitArea: Area = newArea(0, 0, 16, 16);
     public ItsType: WeaponType;
     public static Descriptions: Map<WeaponType, string[]> = new Map<WeaponType, string[]>();
 
@@ -36,12 +33,12 @@ export class WeaponItem extends Sprite {
         }
     }
 
-    constructor(type: WeaponType, pos: Point) {
-        super(pos);
+    constructor(type: WeaponType) {
+        super();
         this.ItsType = type;
         this.hitarea = Item.ItemHitArea;
         this.size = area2size(Item.ItemHitArea);
-        this.imgid = <number>WeaponItem.Type2Image(type);
+        this.imgid = WeaponItem.Type2Image(type);
     }
 
     public takeTurn(): void {
@@ -56,9 +53,6 @@ export class WeaponItem extends Sprite {
             default:
                 return BitmapId.None;
         }
-    }
-
-    public dispose(): void {
     }
 }
 

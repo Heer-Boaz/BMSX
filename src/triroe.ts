@@ -36,8 +36,8 @@ export class TriRoe extends PlayerProjectile {
 		return 1;
 	}
 
-	constructor(pos: Point, dir: Direction) {
-		super({ x: pos.x, y: pos.y });
+	constructor(dir: Direction) {
+		super();
 		this.direction = dir;
 		this.pos = (model as Model).Belmont.pos;
 	}

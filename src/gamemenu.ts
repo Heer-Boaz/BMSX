@@ -272,14 +272,14 @@ export class GameMenu extends bst implements IGameObject {
                         case MenuItem.Scale:
                             if (!GO.Fullscreen) {
                                 // V._.ChangeScale(GO.Scale + 1);
-                                game.GameOptionsChanged();
+                                // game.GameOptionsChanged();
                             }
                             break;
                         case MenuItem.Fullscreen:
                             if (GO.Fullscreen) {
                                 GO.Fullscreen = false;
                                 view.ToWindowed();
-                                game.GameOptionsChanged();
+                                // game.GameOptionsChanged();
                             }
                             break;
                         case MenuItem.SoundVolume:
@@ -288,7 +288,7 @@ export class GameMenu extends bst implements IGameObject {
                                 if (GO.VolumePercentage > 100)
                                     GO.VolumePercentage = 100;
                                 SM.setVolume(GO.VolumePercentage / 100);
-                                game.GameOptionsChanged();
+                                // game.GameOptionsChanged();
                             }
                             break;
                         // case MenuItem.MusicVolume:
@@ -312,14 +312,14 @@ export class GameMenu extends bst implements IGameObject {
                         case MenuItem.Scale:
                             if (!GO.Fullscreen && GO.Scale > 1) {
                                 // V._.ChangeScale(GO.Scale - 1);
-                                game.GameOptionsChanged();
+                                // game.GameOptionsChanged();
                             }
                             break;
                         case MenuItem.Fullscreen:
                             if (!GO.Fullscreen) {
                                 GO.Fullscreen = true;
                                 view.ToFullscreen();
-                                game.GameOptionsChanged();
+                                // game.GameOptionsChanged();
                             }
                             break;
                         case MenuItem.SoundVolume:
@@ -328,7 +328,7 @@ export class GameMenu extends bst implements IGameObject {
                                 if (GO.VolumePercentage < 0)
                                     GO.VolumePercentage = 0;
                                 SM.setVolume(GO.VolumePercentage / 100);
-                                game.GameOptionsChanged();
+                                // game.GameOptionsChanged();
                             }
                             break;
                         // case MenuItem.MusicVolume:
