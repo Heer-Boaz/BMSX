@@ -18,8 +18,8 @@ export class FoeExplosion extends FX {
     protected frameIndex: number;
     protected itemSpawnedAfterKill: ItemType;
 
-    constructor(pos: Point, itemSpawned: ItemType = ItemType.None) {
-        super(pos);
+    constructor(itemSpawned: ItemType = ItemType.None) {
+        super();
         this.animation = new Animation(FoeExplosion.AnimationFrames, null, false);
         this.init();
         this.itemSpawnedAfterKill = itemSpawned;
@@ -33,7 +33,7 @@ export class FoeExplosion extends FX {
             if (this.animation.finished === true) {
                 this.disposeFlag = true;
                 if (this.itemSpawnedAfterKill === ItemType.HeartSmall) {
-                    model.spawn(new HeartSmall(addPoints({ x: this.pos.x, y: this.pos.y }, { x: 4, y: 8 })));
+                    model.spawn(new HeartSmall(), addPoints({ x: this.pos.x, y: this.pos.y }, { x: 4, y: 8 }));
                 }
             }
         }

@@ -12,8 +12,8 @@ export class ZakFoe extends Foe {
 
 	protected static ZakFoeHitArea: Area = newArea(2, 2, 14, 14);
 
-	constructor(pos: Point, dir: Direction, itemSpawned: ItemType = ItemType.HeartSmall) {
-		super(pos);
+	constructor(dir: Direction, itemSpawned: ItemType = ItemType.HeartSmall) {
+		super();
 		this.canHurtPlayer = true;
 		this.imgid = BitmapId.ZakFoe1;
 		this.hitarea = ZakFoe.ZakFoeHitArea;
@@ -32,12 +32,11 @@ export class ZakFoe extends Foe {
 					this.direction = Direction.Left;
 					break;
 				case Direction.Down:
-					this.disposeFlag = true;
 					break;
 			}
 		};
 		this.onWallcollide = collissionHandler;
-		this.onLeaveScreen = collissionHandler;
+		this.onLeaveScreen = (collissionHandler);
 
 		let state0 = this.add(0);
 		state0.tapedata = <Array<AniType>>[

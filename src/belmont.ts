@@ -207,8 +207,8 @@ export class Belmont extends Sprite {
 		this.checkAndHandleRoomExit();
 	}
 
-	constructor(initPos?: Point) {
-		super(initPos);
+	constructor() {
+		super();
 		this.imgid = BitmapId.Belmont_r1;
 		this.flippedH = false;
 		this.CarryingShield = false;

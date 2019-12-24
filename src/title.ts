@@ -42,7 +42,7 @@ export class Title implements IGameObject {
 		// this.titleBottomPos = <Point>{ x: 0, y: 0 };
 	}
 
-	public spawn(): void {
+	public onspawn(): void {
 		// this.reset();
 	}
 

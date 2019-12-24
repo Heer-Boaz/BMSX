@@ -1,12 +1,11 @@
 import { Foe } from './foe';
-import { Point } from './bmsx/common';
 import { Model } from './gamemodel';
 import { Sprite, model } from './bmsx/engine';
 
 export abstract class PlayerProjectile extends Sprite {
     protected foesThatWereHit: Foe[];
-    constructor(pos: Point) {
-        super(pos);
+    constructor() {
+        super();
         this.foesThatWereHit = new Array<Foe>();
     }
 

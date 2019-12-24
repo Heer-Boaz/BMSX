@@ -1,31 +1,23 @@
 import { Foe } from "./foe";
 import { BStopwatch } from "./bmsx/engine";
 import { ItemType } from "./item";
-import { Animation, AniStepReturnValue } from "./bmsx/animation"
-import { Direction } from "./bmsx/common";
-import { PlayerProjectile } from "./pprojectile";
-import { AudioId, BitmapId } from "./bmsx/resourceids";
-import { newArea, addPoints } from "./bmsx/common";
-import { Area, Point } from "./bmsx/common";
-import { GameConstants } from "./gameconstants";
+import { Animation } from "./bmsx/animation"
+import { BitmapId } from "./bmsx/resourceids";
+import { newArea } from "./bmsx/common";
+import { Area } from "./bmsx/common";
 
-/*[Serializable]*/
 export class Candle extends Foe {
 	public get respawnOnRoomEntry(): boolean { return true; }
 
 	protected static CandleHitArea: Area = newArea(0, 0, 10, 16);
-	protected static candleSprites: Map<Direction, BitmapId[]> = new Map([[Direction.None, [BitmapId.Candle_1]]]);
 	protected static AnimationFrames: BitmapId[] = [BitmapId.Candle_1, BitmapId.Candle_2];
 	protected static framesPerDrawing: number[] = [10, 10];
 	protected animation: Animation<BitmapId>;
 	protected timer: BStopwatch;
-	protected get movementSprites(): Map<Direction, BitmapId[]> {
-		return Candle.candleSprites;
-	}
 
 	protected itemSpawnedAfterKill: ItemType;
-	constructor(pos: Point, itemSpawned: ItemType = ItemType.HeartSmall) {
-		super(pos);
+	constructor(itemSpawned: ItemType = ItemType.HeartSmall) {
+		super();
 		this.canHurtPlayer = false;
 		this.animation = new Animation<BitmapId>(Candle.AnimationFrames, Candle.framesPerDrawing);
 		this.animation.repeat = true;

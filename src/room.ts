@@ -44,7 +44,7 @@ export class Room implements IGameObject {
 		return result;
 	}
 
-	public spawn() {
+	public onspawn() {
 		this.initFunction?.(this);
 	}
 

@@ -15,8 +15,8 @@ export abstract class Foe extends Sprite {
         return ~~Math.min((Math.round(this.health / this.maxHealth * 100)), 100);
     }
 
-    constructor(pos: Point) {
-        super(pos);
+    constructor() {
+        super();
     }
 
     public get respawnOnRoomEntry(): boolean {

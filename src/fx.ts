@@ -8,8 +8,8 @@ export class FX extends Sprite {
     protected animation: Animation<number>;
     protected timer: BStopwatch;
 
-    constructor(pos: Point) {
-        super(pos);
+    constructor() {
+        super();
         this.timer = BStopwatch.createWatch();
         this.hittable = false;
     }

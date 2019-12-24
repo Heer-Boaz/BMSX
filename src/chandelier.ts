@@ -3,7 +3,7 @@ import { Direction } from "./bmsx/common";
 import { Animation, AniData } from "./bmsx/animation";
 import { Foe } from "./foe";
 import { ItemType } from "./item";
-import { AudioId, BitmapId } from "./bmsx/resourceids";
+import { BitmapId } from "./bmsx/resourceids";
 import { newArea, newSize } from "./bmsx/common";
 import { Model } from "./gamemodel";
 import { Area, Point } from "./bmsx/common";
@@ -31,26 +31,21 @@ export class Chandelier extends Foe {
 
 	protected animation: Animation<number>;
 	protected timer: BStopwatch;
-
-	protected get movementSprites(): Map<Direction, BitmapId[]> {
-		return Chandelier.chandelierSprites;
-	}
-
 	protected state: ChandelierState;
 
 	public get canHurtPlayer(): boolean {
 		return this.state == ChandelierState.Crashing ? true : false;
 	}
 
-	constructor(pos: Point, itemSpawned: ItemType = ItemType.HeartSmall) {
-		super(pos);
+	constructor(itemSpawned: ItemType = ItemType.None) {
+		super();
 		this.animation = new Animation<number>(Chandelier.AnimationFrames);
 		this.animation.repeat = true;
 		this.timer = BStopwatch.createWatch();
 		// this.imgid = BitmapId.Chandelier_1;
 		this.hitarea = Chandelier.ChandelierHitArea;
 		this.size = newSize(50, 64);
-		this.itemSpawnedAfterKill = ItemType.None;
+		this.itemSpawnedAfterKill = itemSpawned;
 		this.health = 0;
 		this.state = ChandelierState.None;
 	}

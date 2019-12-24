@@ -21,7 +21,7 @@ export class ItsCurtainsForYou implements IGameObject {
     private msCurtainPartWait: number = 1;
     private maxCurtainParts: number = ~~(GameConstants.GameScreenWidth / (TileSize / 2)) + 1;
 
-    public spawn(): void {
+    public onspawn(): void {
         this.curtainPartCount = 0;
         this.timer = this.timer ?? BStopwatch.createWatch();
         this.timer.restart();

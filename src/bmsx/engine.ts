@@ -207,7 +207,6 @@ export abstract class BaseController {
     protected abstract initNewState(newstate: number): void;
 }
 
-
 export abstract class BaseModel {
     public id2object: { [key: string]: IGameObject; };
     public objects: IGameObject[];
@@ -267,23 +266,21 @@ export abstract class BaseModel {
     public abstract initModelForGameStart(): void;
 
     public clearModel(): void {
-        this.objects.forEach(o => o.dispose?.());
+        this.objects.forEach(o => o.ondispose?.());
         this.objects.length = 0;
         delete this.id2object;
         this.id2object = {};
         this.paused = false;
     }
 
-    public spawn(o: IGameObject, pos?: Point, ifnotexists = false): void {
-        if (ifnotexists && this.id2object[o.id]) return; // Don't add objects that already exist
-
+    public spawn(o: IGameObject, pos?: Point): void {
         this.objects.push(o);
 
         // this.objects.sort((o1, o2) => (o1.priority || 0) - (o2.priority || 0));
         this.objects.sort((o1, o2) => (o2.priority || 0) - (o1.priority || 0));
 
         this.id2object[o.id] = o;
-        o.spawn?.(pos);
+        o.onspawn?.(pos);
     }
 
     public remove(o: IGameObject): void {
@@ -294,7 +291,11 @@ export abstract class BaseModel {
         }
 
         if (this.id2object[o.id]) this.id2object[o.id] = undefined;
-        o.dispose?.();
+        o.ondispose?.();
+    }
+
+    public exists(id: string): boolean {
+        return this.id2object[id] !== undefined;
     }
 
     public abstract collidesWithTile(o: IGameObject, dir: Direction): boolean;
@@ -468,8 +469,9 @@ export interface IGameObject {
     disposeOnSwitchRoom?: boolean;
 
     takeTurn(): void;
-    spawn?: ((spawningPos?: Point | null) => void) | (() => void);
-    dispose?(): void;
+    spawn?(spawningPos?: Point): void;
+    onspawn?: ((spawningPos?: Point) => void) | (() => void);
+    ondispose?: () => void;
 
     paint?(offset?: Point): void;
     postpaint?(offset?: Point): void; // Post-processing such as lighting effects or the characters of an ASCII-buffer in case of an ASCII-sprite
@@ -551,23 +553,31 @@ export abstract class Sprite extends bst {
         this._direction = value;
     }
 
-
-    constructor(initialPos?: Point, imageId?: number) {
+    constructor() {
         super();
-        this.id = null;
-        this.pos = initialPos || { x: 0, y: 0 };
+        this.pos = { x: 0, y: 0 };
         this.visible = true;
         this.hittable = true;
         this.flippedH = false;
         this.flippedV = false;
         this.priority = 0;
         this.disposeFlag = false;
-        this.imgid = imageId || undefined;
-
         this.disposeOnSwitchRoom = true;
     }
 
-    spawn(spawningPos?: Point): void {
+    /**
+    * Gebruik ik als event handler voor e.g. onLeaveScreen
+    */
+    markForDisposure(): void {
+        this.disposeFlag = true;
+    }
+
+    spawn(spawningPos: Point = null): Sprite {
+        model.spawn(this, spawningPos);
+        return this; // Voor chaining
+    }
+
+    onspawn(spawningPos?: Point): void {
         if (spawningPos) {
             [this.pos.x, this.pos.y] = [spawningPos.x, spawningPos.y];
         }
@@ -602,7 +612,7 @@ export abstract class Sprite extends bst {
     }
 
     public collide(src: IGameObject): void {
-        this.oncollide && this.oncollide(src);
+        this.oncollide?.(src);
     }
 
     objectCollide(o: IGameObject): boolean {
@@ -679,9 +689,9 @@ export class BStopwatch {
     private static watchesThatHaveBeenStopped: BStopwatch[] = [];
     private static watchesThatHaveBeenStoppedAtFocusLoss: BStopwatch[] = [];
 
-    /// <summary>
-    /// This list is used to pause all running timers for when the game is paused, or the game loses focus, etc.
-    /// </summary>
+    /**
+     * This list is used to pause all running timers for when the game is paused, or the game loses focus, etc.
+     */
     public static Watches: Array<BStopwatch> = [];
 
     public static createWatch(): BStopwatch {

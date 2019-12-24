@@ -5,8 +5,8 @@ import { BitmapId } from './bmsx/resourceids';
 export class Cross extends PlayerProjectile {
 	public hitarea: Area = newArea(0, 0, 26, 18);
 
-	constructor(pos: Point, dir: Direction) {
-		super({ x: pos.x, y: pos.y });
+	constructor(dir: Direction) {
+		super();
 		this.direction = dir;
 		this.size = this.hitarea.end;
 		this.imgid = BitmapId.deviation;

@@ -91,7 +91,7 @@ export class Controller extends BaseController {
                 break;
             case GameSubstate.ItsCurtainsForYou:
             case GameSubstate.ToEndDemo:
-                (model as Model).ItsCurtains.spawn();
+                (model as Model).ItsCurtains.onspawn();
                 break;
             case GameSubstate.GameOver:
                 SM.play(AudioId.Humiliation);

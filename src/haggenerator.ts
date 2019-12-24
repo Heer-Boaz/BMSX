@@ -11,9 +11,8 @@ export class HagGenerator extends bst implements IGameObject {
     public pos: Point;
     public disposeOnSwitchRoom?: boolean;
 
-    constructor(pos: Point) {
+    constructor() {
         super();
-        this.pos = pos;
         this.disposeOnSwitchRoom = true;
         let state0 = this.add(0);
         state0.nudges2move = 100;
@@ -23,20 +22,25 @@ export class HagGenerator extends bst implements IGameObject {
             let spawnPoint = { x: 0, y: this.pos.y };
             if ((model as Model).Belmont.pos.x <= GameConstants.ViewportWidth / 2) {
                 spawnPoint.x = GameConstants.ViewportWidth - Hag.HagSize.y;
-                (model as Model).spawn(new Hag(spawnPoint, Direction.Left));
+                new Hag(Direction.Left).spawn(spawnPoint);
             }
             else {
                 spawnPoint.x = 0;
-                (model as Model).spawn(new Hag(spawnPoint, Direction.Right));
+                new Hag(Direction.Right).spawn(spawnPoint);
             }
         };
+    }
+
+    spawn(pos?: Point): HagGenerator {
+        model.spawn(this, pos);
+        return this;
     }
 
     takeTurn(): void {
         this.run();
     }
 
-    spawn(spawningPos?: Point): void {
+    onspawn(spawningPos?: Point): void {
         if (spawningPos) this.pos = spawningPos;
     }
 }

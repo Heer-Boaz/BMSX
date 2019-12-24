@@ -118,10 +118,10 @@ export class Model extends BaseModel {
     public WeaponsInInventory: BagWeapon[];
 
     protected _hearts: number;
-    public get Hearts(): number {
+    public get hearts(): number {
         return this._hearts;
     }
-    public set Hearts(value: number) {
+    public set hearts(value: number) {
         if (value > GameConstants.Belmont_MaxHearts)
             this._hearts = GameConstants.Belmont_MaxHearts;
         else if (value < 0)
@@ -275,7 +275,7 @@ export class Model extends BaseModel {
                 },
                 takeTurn() { }
             };
-            this.spawn(this.PauseObject, null, true);
+            if (!this.exists(this.PauseObject.id)) { this.spawn(this.PauseObject, null); }
         }
 
         this._hearts = GameConstants.Belmont_InitHearts;
@@ -285,9 +285,7 @@ export class Model extends BaseModel {
     public InitAfterGameLoad(): void {
     }
 
-    public spawn(o: IGameObject, spawnpos?: Point, ifnotexists: boolean = false): void {
-        if (ifnotexists && this.id2object[o.id]) return; // Don't add objects that already exist
-
+    public spawn(o: IGameObject, spawnpos?: Point): void {
         if (o instanceof Belmont) {
             if (this.objects.findIndex(ob => ob instanceof Belmont) > -1)
                 throw Error("There is already a Belmont in the game! \"There can be only one!\"");
@@ -310,7 +308,7 @@ export class Model extends BaseModel {
             else this.foes.push(f);
         }
 
-        super.spawn(o, spawnpos, ifnotexists);
+        super.spawn(o, spawnpos);
     }
 
     public remove(o: IGameObject): void {

@@ -5,7 +5,8 @@ import { GameConstants } from "./gameconstants";
 import { newArea } from "./bmsx/common";
 import { Model } from "./gamemodel";
 import { SM } from "./bmsx/soundmaster";
-import { Area, Point } from "./bmsx/common";
+import { Area } from "./bmsx/common";
+const gmodel = model as Model;
 
 export const enum HeartSmallState {
 	Flying,
@@ -24,16 +25,17 @@ export class HeartSmall extends Sprite {
 	protected animation: Animation<number>;
 	protected animationData: number[] = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
 
-	constructor(pos: Point) {
-		super(pos, BitmapId.Heart_fly);
+	constructor() {
+		super();
 		this.State = HeartSmallState.Flying;
+		this.imgid = BitmapId.Heart_fly;
 		this.animation = new Animation(this.animationData,/*constantStepTime:*/1,/*repeat:*/true);
 		this.uglyBitThing = false;
 		this.priority = 30;
 	}
 
 	protected get floorCollision(): boolean {
-		return (model as Model).currentRoom.isCollisionTile(this.pos.x + 5, this.pos.y + 8);
+		return gmodel.currentRoom.isCollisionTile(this.pos.x + 5, this.pos.y + 8);
 	}
 
 	protected uglyBitThing: boolean;
@@ -59,8 +61,8 @@ export class HeartSmall extends Sprite {
 				this.imgid = BitmapId.Heart_small;
 			}
 		}
-		if (this.objectCollide((model as Model).Belmont)) {
-			++(model as Model).Hearts;
+		if (this.objectCollide(gmodel.Belmont)) {
+			++gmodel.hearts;
 			this.disposeFlag = true;
 			SM.play(AudioId.Heart);
 		}

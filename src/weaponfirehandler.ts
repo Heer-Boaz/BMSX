@@ -89,23 +89,23 @@ export class WeaponFireHandler {
             case Direction.Left:
                 p = copyPoint((model as Model).Belmont.pos);
                 p.x -= 26;
-                cross = new Cross(p, Direction.Left);
+                cross = new Cross(Direction.Left).spawn(p) as Cross;
                 break;
             case Direction.Right:
                 p = copyPoint((model as Model).Belmont.pos);
                 p.x += (model as Model).Belmont.size.x;
-                cross = new Cross(p, Direction.Right);
+                cross = new Cross(Direction.Right).spawn(p) as Cross;
                 break;
         }
         (model as Model).spawn(cross);
         SM.play(AudioId.Cross);
-        --(model as Model).Hearts;
+        --(model as Model).hearts;
     }
 
     public static HandleFireSecondaryWeapon(): void {
         if (WeaponFireHandler.SecWeaponOnCooldown)
             return;
-        if ((model as Model).Hearts <= 0)
+        if ((model as Model).hearts <= 0)
             return;
         // switch ((model as Model).SelectedSecondaryWeapon) {
         // case SecWeaponType.Cross:

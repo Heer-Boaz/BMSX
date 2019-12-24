@@ -28,7 +28,7 @@ export class Item extends Sprite {
     // public static Descriptions: Map<ItemType, string[]> = new Map<ItemType, string[]>(), { };
 
     constructor(type: ItemType, pos: Point) {
-        super(pos);
+        super();
         this.ItsType = type;
         this.hitarea = Item.ItemHitArea;
         this.size = area2size(Item.ItemHitArea);
@@ -69,8 +69,5 @@ export class Item extends Sprite {
             default:
                 return Usable.No;
         }
-    }
-
-    public dispose(): void {
     }
 }

@@ -90,7 +90,7 @@ export class HUD {
         let length = this.percentageToBarLength(this.shownHealthLevel);
         if (length > 0) { view.drawImg(BitmapId.EnergybarStripe_Belmont, pos.x, pos.y, DrawImgFlags.None, length); }
 
-        let heartstxt: string = (model as Model).Hearts < 10 ? `0${(model as Model).Hearts}` : (model as Model).Hearts.toString();
+        let heartstxt: string = (model as Model).hearts < 10 ? `0${(model as Model).hearts}` : (model as Model).hearts.toString();
         TextWriter.drawText(HUD.HeartsPosX, HUD.HeartsPosY, heartstxt);
         if ((model as Model).ItemsInInventory.find(x => x.Type === ItemType.KeyBig)) {
             view.drawImg(Item.Type2Image(ItemType.KeyBig), HUD.KeyPos.x, HUD.KeyPos.y);
