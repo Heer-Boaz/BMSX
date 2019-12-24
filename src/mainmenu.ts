@@ -5,7 +5,7 @@ import { Direction } from "./bmsx/common";
 import { Model as M } from "./gamemodel";
 import { Controller as C } from "./gamecontroller";
 import { TextWriter } from "./textwriter";
-import { view } from "./bmsx/engine";
+import { view, model } from "./bmsx/engine";
 import { Constants as CS } from "./bmsx/engine";
 import { Input } from "./bmsx/input";
 import { GameMenu } from "./gamemenu";
@@ -105,12 +105,12 @@ export class MainMenu {
                             break;
                         case MenuItem.LoadGame:
                             Input.reset();
-                            Model._.GameMenu.Open(MenuItem.LoadFromMainMenu);
+                            (model as Model).GameMenu.Open(MenuItem.LoadFromMainMenu);
                             this.state = State.SubMenu;
                             break;
                         case MenuItem.Options:
                             Input.reset();
-                            Model._.GameMenu.Open(MenuItem.OptionsFromMainMenu);
+                            (model as Model).GameMenu.Open(MenuItem.OptionsFromMainMenu);
                             this.state = State.SubMenu;
                             break;
                     }
@@ -119,19 +119,19 @@ export class MainMenu {
                     S.play(AudioId.Selectie);
                     switch (this.selectedItem) {
                         case MenuItem.Debug:
-                            Model._.SelectedChapterToPlay = Chapter.Debug;
+                            (model as Model).SelectedChapterToPlay = Chapter.Debug;
                             C._.switchState(GameState.Game);
                             break;
                         case MenuItem.Prologue:
-                            Model._.SelectedChapterToPlay = Chapter.Prologue;
+                            (model as Model).SelectedChapterToPlay = Chapter.Prologue;
                             C._.switchState(GameState.GameStart1);
                             break;
                         case MenuItem.Chapter0:
-                            Model._.SelectedChapterToPlay = Chapter.Chapter_0;
+                            (model as Model).SelectedChapterToPlay = Chapter.Chapter_0;
                             C._.switchState(GameState.GameStart1);
                             break;
                         case MenuItem.Chapter1:
-                            Model._.SelectedChapterToPlay = Chapter.GameStart;
+                            (model as Model).SelectedChapterToPlay = Chapter.GameStart;
                             C._.switchState(GameState.GameStart1);
                             break;
                         case MenuItem.ToMainMenu:

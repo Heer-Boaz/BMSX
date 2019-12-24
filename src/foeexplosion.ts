@@ -3,8 +3,8 @@ import { Animation, AniData } from "./bmsx/animation"
 import { FX } from "./fx";
 import { HeartSmall } from "./heartsmall";
 import { BitmapId } from "./bmsx/resourceids";
-import { Model } from "./gamemodel";
 import { Point, addPoints } from "./bmsx/common";
+import { model } from './bmsx/engine';
 
 /*[Serializable]*/
 export class FoeExplosion extends FX {
@@ -33,7 +33,7 @@ export class FoeExplosion extends FX {
             if (this.animation.finished === true) {
                 this.disposeFlag = true;
                 if (this.itemSpawnedAfterKill === ItemType.HeartSmall) {
-                    Model._.spawn(new HeartSmall(addPoints(<Point>{ x: this.pos.x, y: this.pos.y }, <Point>{ x: 4, y: 8 })));
+                    model.spawn(new HeartSmall(addPoints({ x: this.pos.x, y: this.pos.y }, { x: 4, y: 8 })));
                 }
             }
         }

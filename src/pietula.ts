@@ -1,8 +1,7 @@
 import { TileSize, Tile } from './bmsx/msx';
 import { GameConstants } from './gameconstants';
-import { BossFoe } from './bossfoe';
 import { Area, newArea, Point, newSize, copyPoint, addPoints } from './bmsx/common';
-import { bst, view } from './bmsx/engine';
+import { bst, view, model } from './bmsx/engine';
 import { BitmapId, AudioId } from './bmsx/resourceids';
 import { Controller } from './gamecontroller';
 import { GameSubstate, Model } from './gamemodel';
@@ -10,21 +9,14 @@ import { DrawImgFlags } from './bmsx/view';
 import { SM } from './bmsx/soundmaster';
 import { PlayerProjectile } from './pprojectile';
 import { FoeExplosion } from './foeexplosion';
+import { Foe } from './foe';
 
 const floatspeed = 2;
 const vanlinks_naarrechts = TileSize / 2;
 const vanrechts_naarlinks = GameConstants.GameScreenWidth - (TileSize * 2);
 const loops_tot_boos = 3;
-export class Pietula extends BossFoe {
-	public get damageToPlayer(): number {
-		return 2;
-	}
-
-	public get respawnOnRoomEntry(): boolean {
-		return false;
-	}
-
-	protected static HitArea: Area = newArea(8, 0, 32, 40);
+export class Pietula extends Foe {
+	public get respawnOnRoomEntry(): boolean { return false; }
 
 	public fst: bst;
 	public hover: bst;
@@ -36,7 +28,7 @@ export class Pietula extends BossFoe {
 		super(pos);
 		this.canHurtPlayer = false;
 		this.imgid = BitmapId.Pietula1;
-		this.hitarea = Pietula.HitArea;
+		this.hitarea = newArea(8, 0, 32, 40);
 		this.size = newSize(this.hitarea.end.x, this.hitarea.end.y);
 		this.health = 30;
 		this.maxHealth = this.health;
@@ -174,7 +166,7 @@ export class Pietula extends BossFoe {
 		];
 		bliksemstate.nudges2move = 4;
 		bliksemstate.onrun = (s) => {
-			if (Model._.Belmont.areaCollide(
+			if ((model as Model).Belmont.areaCollide(
 				<Area>{
 					start: {
 						x: this.bliksem.pos.x,
@@ -186,7 +178,7 @@ export class Pietula extends BossFoe {
 					}
 				}
 			)) {
-				Model._.Belmont.TakeDamage(4);
+				(model as Model).Belmont.takeDamage(4);
 			}
 			++s.nudges;
 		};
@@ -355,11 +347,6 @@ export class Pietula extends BossFoe {
 		super.takeTurn();
 	}
 
-	public handleHit(source: PlayerProjectile): void {
-		super.handleHit(source);
-		this.loseHealth(source);
-	}
-
 	public paint(offset: Point = null): void {
 		super.paint(offset);
 		if (this.fst.current.id === 'bliksem') {
@@ -369,10 +356,10 @@ export class Pietula extends BossFoe {
 	}
 
 	public die(): void {
-		Model._.spawn(new FoeExplosion(copyPoint(this.pos)));
-		Model._.spawn(new FoeExplosion(addPoints(this.pos, { x: 16, y: 0 })));
-		Model._.spawn(new FoeExplosion(addPoints(this.pos, { x: 0, y: 16 })));
-		Model._.spawn(new FoeExplosion(addPoints(this.pos, { x: 16, y: 16 })));
+		(model as Model).spawn(new FoeExplosion(copyPoint(this.pos)));
+		(model as Model).spawn(new FoeExplosion(addPoints(this.pos, { x: 16, y: 0 })));
+		(model as Model).spawn(new FoeExplosion(addPoints(this.pos, { x: 0, y: 16 })));
+		(model as Model).spawn(new FoeExplosion(addPoints(this.pos, { x: 16, y: 16 })));
 		SM.play(AudioId.Kaboem);
 		this.visible = false;
 		this.canHurtPlayer = false;

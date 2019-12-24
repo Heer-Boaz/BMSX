@@ -1,7 +1,7 @@
 import { Animation } from "./bmsx/animation";
 import { Candle } from "./candle";
 import { Direction } from "./bmsx/common";
-import { AudioId, BitmapId } from "./bmsx/resourceids";
+import { BitmapId } from "./bmsx/resourceids";
 import { ItemType } from "./item";
 import { newArea } from "./bmsx/common";
 import { Area, Point } from "./bmsx/common";

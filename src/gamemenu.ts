@@ -7,7 +7,7 @@ import { SM } from "./bmsx/soundmaster";
 import { Controller as C } from "./gamecontroller";
 import { GameState, Model } from "./gamemodel";
 import { SlotExists, LoadGame } from "./bmsx/gamepersistor";
-import { GameOptions as GO, IGameObject, bst } from './bmsx/engine';
+import { GameOptions as GO, IGameObject, bst, model } from './bmsx/engine';
 import { Constants } from "./bmsx/engine";
 import { newSize, setPoint } from "./bmsx/common";
 import { view, game } from "./bmsx/engine";
@@ -115,14 +115,14 @@ export class GameMenu extends bst implements IGameObject {
         this.selectedItemIndex = 0;
         switch (this.CurrentScreen) {
             case MenuItem.LoadFromGameOver:
-                Model._.MainMenu.GameMenuClosed();
+                (model as Model).MainMenu.GameMenuClosed();
                 break;
             case MenuItem.LoadFromMainMenu:
             case MenuItem.OptionsFromMainMenu:
-                Model._.MainMenu.GameMenuClosed();
+                (model as Model).MainMenu.GameMenuClosed();
                 break;
             default:
-                Model._.ItemsInInventory.filter(i => i.Amount != 0);
+                (model as Model).ItemsInInventory.filter(i => i.Amount != 0);
                 break;
         }
     }
@@ -187,7 +187,7 @@ export class GameMenu extends bst implements IGameObject {
                             this.selectedItemIndex = 0;
                             break;
                         case MenuItem.SaveGame:
-                            if (Model._.state != GameState.Event) {
+                            if ((model as Model).state != GameState.Event) {
                                 this.CurrentScreen = MenuItem.Save;
                                 this.selectedItemIndex = 0;
                             }
@@ -489,7 +489,7 @@ export class GameMenu extends bst implements IGameObject {
                     GameMenu.mainItems.forEach(function (item) {
                         switch (item.type) {
                             case MenuItem.SaveGame:
-                                if (Model._.state != GameState.Event)
+                                if ((model as Model).state != GameState.Event)
                                     TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
                                 else TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, Msx1ExtColors[0]);
                                 break;

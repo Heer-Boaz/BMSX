@@ -1,19 +1,13 @@
-import { Creature } from './creature';
-
 import { Point } from './bmsx/common';
-
 import { ItemType } from './item';
-
 import { PlayerProjectile } from './pprojectile';
-
 import { SM } from './bmsx/soundmaster';
-
 import { AudioId } from './bmsx/resourceids';
-
 import { FoeExplosion } from './foeexplosion';
 import { Model } from './gamemodel';
+import { Sprite, model, IGameObject } from './bmsx/engine';
 
-export abstract class Foe extends Creature {
+export abstract class Foe extends Sprite {
     public maxHealth: number;
     public health: number;
 
@@ -39,20 +33,21 @@ export abstract class Foe extends Creature {
     protected itemSpawnedAfterKill: ItemType;
 
     public takeTurn(): void {
-        if (this.canHurtPlayer && this.objectCollide(Model._.Belmont)) {
-            Model._.Belmont.TakeDamage(this.damageToPlayer);
+        if (this.canHurtPlayer && this.objectCollide((model as Model).Belmont)) {
+            (model as Model).Belmont.takeDamage(this.damageToPlayer);
         }
     }
 
-    public handleHit(source: PlayerProjectile): void {
+    public handleHit(source: IGameObject, dmg: number): void {
         if (this.disposeFlag) return;
-        Model._.LastFoeThatWasHit = this;
+        this.loseHealth(source, dmg);
+        (model as Model).LastFoeThatWasHit = this;
         SM.play(AudioId.Hit);
     }
 
-    protected loseHealth(source: PlayerProjectile): void {
+    protected loseHealth(source: IGameObject, dmg: number): void {
         if (this.disposeFlag) return;
-        this.health -= source.damageDealt;
+        this.health -= dmg;
         if (this.health <= 0)
             this.die();
     }
@@ -60,7 +55,7 @@ export abstract class Foe extends Creature {
     protected handleDie(): void {
         if (this.disposeFlag) return;
         this.disposeFlag = true;
-        Model._.FoeDefeated(this);
+        (model as Model).foeDefeated(this);
     }
 
     public die(): void {
@@ -73,17 +68,13 @@ export abstract class Foe extends Creature {
 
     protected dieWithoutItem(): void {
         this.handleDie();
-        Model._.spawn(new FoeExplosion(this.pos));
+        model.spawn(new FoeExplosion(this.pos));
     }
 
     protected dieWithItem(itemToSpawn: ItemType = ItemType.None): void {
         this.handleDie();
         if (itemToSpawn !== ItemType.None) {
-            Model._.spawn(new FoeExplosion(this.pos, itemToSpawn));
+            model.spawn(new FoeExplosion(this.pos, itemToSpawn));
         }
-    }
-
-    public dispose(): void {
-        // Do nothing
     }
 }

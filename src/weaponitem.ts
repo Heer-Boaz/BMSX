@@ -1,4 +1,4 @@
-import { Sprite } from "./bmsx/engine";
+import { Sprite, model } from "./bmsx/engine";
 import { Model, SecWeaponType, BagWeapon } from "./gamemodel";
 import { Item } from "./item";
 import { AudioId, BitmapId } from "./bmsx/resourceids";
@@ -45,7 +45,7 @@ export class WeaponItem extends Sprite {
     }
 
     public takeTurn(): void {
-        if (this.areaCollide(moveArea(Model._.Belmont.RoomCollisionArea, <Point>Model._.Belmont.pos))) {
+        if (this.areaCollide(moveArea((model as Model).Belmont.RoomCollisionArea, <Point>(model as Model).Belmont.pos))) {
             C._.PickupWeaponItem(this);
             this.disposeFlag = true;
         }

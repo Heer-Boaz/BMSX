@@ -1,4 +1,4 @@
-import { BStopwatch } from "./bmsx/engine";
+import { BStopwatch, model } from "./bmsx/engine";
 import { Animation, AniStepReturnValue, AniData } from "./bmsx/animation";
 import { AudioId, BitmapId } from "./bmsx/resourceids";
 import { ItemType } from "./item";
@@ -9,20 +9,10 @@ import { Direction, Size, Area, Point } from "./bmsx/common";
 import { Model } from "./gamemodel";
 
 export class Hag extends Foe {
-    public get damageToPlayer(): number {
-        return 1;
-    }
+    public get respawnOnRoomEntry(): boolean { return true; }
 
-    protected get moveBeforeFrameChange(): number {
-        return 0;
-    }
-
-    public get respawnOnRoomEntry(): boolean {
-        return true;
-    }
-
-    public static HagSize: Size = <Size>{ x: 16, y: 32 };
-    protected static HagHitArea: Area = <Area>{ start: <Point>{ x: 2, y: 2 }, end: <Point>{ x: 14, y: 32 } };
+    public static HagSize: Size = { x: 16, y: 32 };
+    protected static HagHitArea: Area = { start: <Point>{ x: 2, y: 2 }, end: <Point>{ x: 14, y: 32 } };
     protected animation: Animation<number>;
     protected timer: BStopwatch;
 
@@ -53,7 +43,7 @@ export class Hag extends Foe {
     }
 
     public takeTurn(): void {
-        if (this.collides(Model._.Belmont)) Model._.Belmont.TakeDamage(this.damageToPlayer);
+        if (this.collides((model as Model).Belmont)) (model as Model).Belmont.takeDamage(this.damageToPlayer);
 
         let stepValue = this.animation.doAnimation(this.timer, this.imgid).stepValue;
         this.imgid = stepValue;
@@ -65,10 +55,5 @@ export class Hag extends Foe {
 
     public dispose(): void {
         BStopwatch.removeWatch(this.timer);
-    }
-
-    public handleHit(source: PlayerProjectile): void {
-        super.handleHit(source);
-        this.loseHealth(source);
     }
 }

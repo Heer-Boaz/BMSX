@@ -1,5 +1,5 @@
 import { RomLoadResult } from './bmsx/rompack';
-import { Game, game } from './bmsx/engine';
+import { Game, game, model } from './bmsx/engine';
 import { GameConstants } from './gameconstants';
 import { Model, Chapter } from './gamemodel';
 import { Controller } from './gamecontroller';
@@ -15,7 +15,7 @@ _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: Gain
     new Game(rom, _model, _view, _controller, sndcontext, gainnode);
 
     game.start();
-    Model._.SelectedChapterToPlay = Chapter.GameStart;
+    (model as Model).SelectedChapterToPlay = Chapter.GameStart;
     Controller._.switchState(GameConstants.INITIAL_GAMESTATE);
     Controller._.switchSubstate(GameConstants.INITIAL_GAMESUBSTATE);
 };
@@ -38,12 +38,12 @@ export class Bootstrapper {
     }
 
     private static bootstrapGameForGameStart(): void {
-        setPoint(Model._.Belmont.pos, Tile.toStageCoord(2), Tile.toStageCoord(5));
-        Model._.LoadRoom(1);
+        setPoint((model as Model).Belmont.pos, Tile.toStageCoord(2), Tile.toStageCoord(5));
+        (model as Model).LoadRoom(1);
     }
 
     private static bootstrapGameForDebug(): void {
-        Model._.LoadRoom(100);
-        setPoint(Model._.Belmont.pos, Tile.toStageCoord(2), Tile.toStageCoord(5));
+        (model as Model).LoadRoom(100);
+        setPoint((model as Model).Belmont.pos, Tile.toStageCoord(2), Tile.toStageCoord(5));
     }
 }

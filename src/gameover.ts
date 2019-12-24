@@ -1,12 +1,11 @@
-import { Model as M, Model } from "./gamemodel";
+import { Model } from "./gamemodel";
 import { Direction } from "./bmsx/common";
 import { TextWriter } from "./textwriter";
-import { view } from "./bmsx/engine";
+import { view, model } from "./bmsx/engine";
 import { AudioId, BitmapId } from "./bmsx/resourceids";
 import { Input } from "./bmsx/input";
 import { SM as S, SM } from "./bmsx/soundmaster";
 import { Controller as C, Controller } from "./gamecontroller";
-import { GameMenu } from "./gamemenu";
 import { MenuItem } from "./mainmenu";
 import { Msx1Colors } from "./bmsx/msx";
 
@@ -68,7 +67,7 @@ export class GameOver {
                         case 1:
                             SM.play(AudioId.Selectie);
                             Input.reset();
-                            Model._.GameMenu.Open(MenuItem.LoadFromGameOver);
+                            (model as Model).GameMenu.Open(MenuItem.LoadFromGameOver);
                             this.state = State.SelectFile;
                             break;
                     }

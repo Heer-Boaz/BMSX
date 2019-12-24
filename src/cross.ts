@@ -1,42 +1,30 @@
 import { PlayerProjectile } from './pprojectile';
-
-import { Area, Point, Direction } from './bmsx/common';
-
+import { Area, Point, Direction, newArea } from './bmsx/common';
 import { BitmapId } from './bmsx/resourceids';
 
-import { GameConstants } from './gameconstants';
-
 export class Cross extends PlayerProjectile {
-	public direction: Direction;
-	public hitarea: Area = { start: { x: 0, y: 0 }, end: { x: 26, y: 18 } };
-
-	public get damageDealt(): number {
-		return 1;
-	}
+	public hitarea: Area = newArea(0, 0, 26, 18);
 
 	constructor(pos: Point, dir: Direction) {
-		super({ x: pos.x, y: pos.y }, { x: 0, y: 0 });
+		super({ x: pos.x, y: pos.y });
 		this.direction = dir;
+		this.size = this.hitarea.end;
 		this.imgid = BitmapId.deviation;
+		this.onLeaveScreen = this.removeFromTheGame;
+		this.onWallcollide = this.removeFromTheGame;
 	}
 
 	public takeTurn(): void {
 		switch (this.direction) {
-			case Direction.Left: this.pos.x -= 4; break;
-			case Direction.Right: this.pos.x += 4; break;
+			case Direction.Left: this.setx(this.pos.x - 4); break;
+			case Direction.Right: this.setx(this.pos.x + 4); break;
 		}
 		if (this.checkAndInvokeHit()) {
 			this.disposeFlag = true;
-			this.visible = false;
 		}
-		if (this.pos.x < 0 || this.pos.y < 0 || this.pos.x >= GameConstants.GameScreenWidth || this.pos.y >= GameConstants.GameScreenHeight)
-			this.disposeFlag = true;
 	}
 
-	public paint(offset: Point = null): void {
-		super.paint(offset);
-	}
-
-	public dispose(): void {
+	public removeFromTheGame(dir: Direction): void {
+		this.disposeFlag = true;
 	}
 }

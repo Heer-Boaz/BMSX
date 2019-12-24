@@ -1,5 +1,5 @@
 import { Hag } from "./hag";
-import { IGameObject } from "./bmsx/engine";
+import { IGameObject, model } from "./bmsx/engine";
 import { Direction, Point } from "./bmsx/common";
 import { bst } from "./bmsx/engine";
 import { Model } from "./gamemodel";
@@ -21,13 +21,13 @@ export class HagGenerator extends bst implements IGameObject {
         state0.ontapemove = (s) => {
             // Poop hags based on where Belmont is
             let spawnPoint = { x: 0, y: this.pos.y };
-            if (Model._.Belmont.pos.x <= GameConstants.ViewportWidth / 2) {
+            if ((model as Model).Belmont.pos.x <= GameConstants.ViewportWidth / 2) {
                 spawnPoint.x = GameConstants.ViewportWidth - Hag.HagSize.y;
-                Model._.spawn(new Hag(spawnPoint, Direction.Left));
+                (model as Model).spawn(new Hag(spawnPoint, Direction.Left));
             }
             else {
                 spawnPoint.x = 0;
-                Model._.spawn(new Hag(spawnPoint, Direction.Right));
+                (model as Model).spawn(new Hag(spawnPoint, Direction.Right));
             }
         };
     }

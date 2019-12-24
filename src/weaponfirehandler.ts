@@ -4,6 +4,7 @@ import { SM } from "./bmsx/soundmaster";
 import { AudioId } from "./bmsx/resourceids";
 import { waitDuration, copyPoint, Direction, Point } from "./bmsx/common";
 import { Cross } from "./cross";
+import { model } from './bmsx/engine';
 
 export class WeaponFireHandler {
     private static msCrossCooldown: number = 20;
@@ -14,14 +15,14 @@ export class WeaponFireHandler {
     }
 
     private static set mainWeaponCurrentCooldown(value: number) {
-        if (value > WeaponFireHandler._mainWeaponCurrentCooldown || !Model._.MainWeaponCooldownTimer.running)
+        if (value > WeaponFireHandler._mainWeaponCurrentCooldown || !(model as Model).MainWeaponCooldownTimer.running)
             WeaponFireHandler._mainWeaponCurrentCooldown = value;
     }
 
     public static get MainWeaponOnCooldown(): boolean {
-        if (Model._.MainWeaponCooldownTimer.running) {
-            if (waitDuration(Model._.MainWeaponCooldownTimer, WeaponFireHandler.mainWeaponCurrentCooldown)) {
-                Model._.MainWeaponCooldownTimer.stop();
+        if ((model as Model).MainWeaponCooldownTimer.running) {
+            if (waitDuration((model as Model).MainWeaponCooldownTimer, WeaponFireHandler.mainWeaponCurrentCooldown)) {
+                (model as Model).MainWeaponCooldownTimer.stop();
                 return false;
             }
             return true;
@@ -35,14 +36,14 @@ export class WeaponFireHandler {
     }
 
     private static set secWeaponCurrentCooldown(value: number) {
-        if (value > WeaponFireHandler._secWeaponCurrentCooldown || !Model._.SecWeaponCooldownTimer.running)
+        if (value > WeaponFireHandler._secWeaponCurrentCooldown || !(model as Model).SecWeaponCooldownTimer.running)
             WeaponFireHandler._secWeaponCurrentCooldown = value;
     }
 
     public static get SecWeaponOnCooldown(): boolean {
-        if (Model._.SecWeaponCooldownTimer.running) {
-            if (waitDuration(Model._.SecWeaponCooldownTimer, WeaponFireHandler.secWeaponCurrentCooldown)) {
-                Model._.SecWeaponCooldownTimer.stop();
+        if ((model as Model).SecWeaponCooldownTimer.running) {
+            if (waitDuration((model as Model).SecWeaponCooldownTimer, WeaponFireHandler.secWeaponCurrentCooldown)) {
+                (model as Model).SecWeaponCooldownTimer.stop();
                 return false;
             }
             return true;
@@ -53,7 +54,7 @@ export class WeaponFireHandler {
     public static HandleFireMainWeapon(): void {
         if (WeaponFireHandler.MainWeaponOnCooldown)
             return;
-        switch (Model._.SelectedMainWeapon) {
+        switch ((model as Model).SelectedMainWeapon) {
             case MainWeaponType.TriRoe:
                 WeaponFireHandler.handleTriRoe();
                 break;
@@ -62,21 +63,21 @@ export class WeaponFireHandler {
 
     private static setMainWeaponCooldown(cooldown: number): void {
         WeaponFireHandler.mainWeaponCurrentCooldown = cooldown;
-        Model._.MainWeaponCooldownTimer.restart();
+        (model as Model).MainWeaponCooldownTimer.restart();
     }
 
     private static setSecWeaponCooldown(cooldown: number): void {
         WeaponFireHandler.secWeaponCurrentCooldown = cooldown;
-        Model._.SecWeaponCooldownTimer.restart();
+        (model as Model).SecWeaponCooldownTimer.restart();
     }
 
     private static handleTriRoe(): void {
-        if (Model._.Belmont.Roeing || Model._.Belmont.RecoveringFromHit)
+        if ((model as Model).Belmont.Roeing || (model as Model).Belmont.RecoveringFromHit)
             return;
         WeaponFireHandler.setMainWeaponCooldown(0);
-        let roe = new TriRoe(Model._.Belmont.pos, Model._.Belmont.direction);
-        Model._.spawn(roe);
-        Model._.Belmont.UseRoe();
+        let roe = new TriRoe((model as Model).Belmont.pos, (model as Model).Belmont.direction);
+        (model as Model).spawn(roe);
+        (model as Model).Belmont.UseRoe();
         SM.play(AudioId.Whip);
     }
 
@@ -84,29 +85,29 @@ export class WeaponFireHandler {
         WeaponFireHandler.setSecWeaponCooldown(WeaponFireHandler.msCrossCooldown);
         let cross: Cross;
         let p: Point;
-        switch (Model._.Belmont.direction) {
+        switch ((model as Model).Belmont.direction) {
             case Direction.Left:
-                p = copyPoint(Model._.Belmont.pos);
+                p = copyPoint((model as Model).Belmont.pos);
                 p.x -= 26;
                 cross = new Cross(p, Direction.Left);
                 break;
             case Direction.Right:
-                p = copyPoint(Model._.Belmont.pos);
-                p.x += Model._.Belmont.size.x;
+                p = copyPoint((model as Model).Belmont.pos);
+                p.x += (model as Model).Belmont.size.x;
                 cross = new Cross(p, Direction.Right);
                 break;
         }
-        Model._.spawn(cross);
+        (model as Model).spawn(cross);
         SM.play(AudioId.Cross);
-        --Model._.Hearts;
+        --(model as Model).Hearts;
     }
 
     public static HandleFireSecondaryWeapon(): void {
         if (WeaponFireHandler.SecWeaponOnCooldown)
             return;
-        if (Model._.Hearts <= 0)
+        if ((model as Model).Hearts <= 0)
             return;
-        // switch (Model._.SelectedSecondaryWeapon) {
+        // switch ((model as Model).SelectedSecondaryWeapon) {
         // case SecWeaponType.Cross:
         WeaponFireHandler.handleFireCross();
         // break;

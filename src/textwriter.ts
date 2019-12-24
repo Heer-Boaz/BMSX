@@ -4,48 +4,9 @@ import { GameOptions as GO } from "./bmsx/engine";
 import { Point } from "./bmsx/common";
 import { Color } from './bmsx/view';
 
-export enum TextWriterType {
-    Billboard,
-    Story
-}
-
 export class TextWriter {
     public static FontWidth: number = 8;
     public static FontHeight: number = 8;
-    public Type: TextWriterType;
-    public Pos: Point;
-    public End: Point;
-    public Text: string[];
-    public visible: boolean;
-
-    constructor(pos: Point, end: Point, type: TextWriterType) {
-        this.Type = type;
-        this.Pos = pos;
-        this.End = end;
-        this.Text = new Array<string>();
-        this.visible = false;
-    }
-
-    public setText(text: string): void {
-        this.Text.length = 0;
-        this.Text.push(text);
-    }
-
-    public addText(text: string | string[]): void {
-        this.Text.push(...text);
-    }
-
-    public takeTurn(): void {
-        switch (this.Type) {
-            case TextWriterType.Billboard:
-                break;
-            case TextWriterType.Story:
-                {
-
-                }
-                break;
-        }
-    }
 
     public static drawText(x: number, y: number, textToWrite: string | string[], color: Color = null): void {
         let startPos: Point = <Point>{ x: x, y: y }
@@ -81,31 +42,6 @@ export class TextWriter {
         // if (!color)
             view.drawImg(letter, x, y);
         // else view.drawColoredBitmap(letter, x, y, color.r / 255.0, color.g / 255.0, color.b / 255.0);
-    }
-
-    public paint(): void {
-        if (!this.visible)
-            return
-        if (this.Text.length == 0)
-            return
-        let startPos: Point = <Point>{ x: this.Pos.x, y: this.Pos.y };
-        let stepX: number = TextWriter.FontWidth;
-        let stepY: number = TextWriter.FontHeight;
-        let pos: Point = <Point>{ x: startPos.x, y: startPos.y };
-        let letter: BitmapId;
-        for (let text of this.Text) {
-            for (let c of text) {
-                if (pos.y < -TextWriter.FontHeight)
-                    break;
-                letter = TextWriter.getBitmapForLetter(c);
-                view.drawImg(letter, pos.x, pos.y);
-                pos.x += stepX;
-            };
-            pos.x = startPos.x;
-            pos.y += stepY;
-            if (pos.y >= GO.BufferHeight)
-                break;
-        };
     }
 
     private static getBitmapForLetter(c: string): BitmapId {

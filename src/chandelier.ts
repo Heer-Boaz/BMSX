@@ -1,27 +1,22 @@
-import { BStopwatch } from "./bmsx/engine";
+import { BStopwatch, model } from "./bmsx/engine";
 import { Direction } from "./bmsx/common";
 import { Animation, AniData } from "./bmsx/animation";
 import { Foe } from "./foe";
-import { PlayerProjectile } from "./pprojectile";
 import { ItemType } from "./item";
 import { AudioId, BitmapId } from "./bmsx/resourceids";
 import { newArea, newSize } from "./bmsx/common";
-import { Model as M, Model } from "./gamemodel";
+import { Model } from "./gamemodel";
 import { Area, Point } from "./bmsx/common";
 
-/*[Serializable]*/
+const enum ChandelierState {
+	None,
+	Falling,
+	Crashing,
+	Crashed
+}
+
 export class Chandelier extends Foe {
-	public get damageToPlayer(): number {
-		return 3;
-	}
-
-	protected get moveBeforeFrameChange(): number {
-		return 0;
-	}
-
-	public get respawnOnRoomEntry(): boolean {
-		return true;
-	}
+	public get respawnOnRoomEntry(): boolean { return true; }
 
 	protected static ChandelierHitArea: Area = newArea(14, 0, 35, 64);
 	protected static chandelierSprites: Map<Direction, BitmapId[]> = new Map([
@@ -47,10 +42,6 @@ export class Chandelier extends Foe {
 		return this.state == ChandelierState.Crashing ? true : false;
 	}
 
-	public set canHurtPlayer(value: boolean) {
-
-	}
-
 	constructor(pos: Point, itemSpawned: ItemType = ItemType.HeartSmall) {
 		super(pos);
 		this.animation = new Animation<number>(Chandelier.AnimationFrames);
@@ -67,13 +58,13 @@ export class Chandelier extends Foe {
 	public takeTurn(): void {
 		switch (this.state) {
 			case ChandelierState.None:
-				if (Model._.Belmont.x_plus_width >= this.pos.x && Model._.Belmont.pos.x <= this.x_plus_width) {
+				if ((model as Model).Belmont.x_plus_width >= this.pos.x && (model as Model).Belmont.pos.x <= this.x_plus_width) {
 					this.state = ChandelierState.Falling;
 				}
 				break;
 			case ChandelierState.Falling:
 				this.pos.y += 8;
-				//if (Model._.CurrentRoom.AnyCollisionsTiles(true, (this.pos.x, this.y_plus_height), (this.x_plus_width, this.y_plus_height))) {
+				//if ((model as Model).CurrentRoom.AnyCollisionsTiles(true, (this.pos.x, this.y_plus_height), (this.x_plus_width, this.y_plus_height))) {
 				//	this.state = ChandelierState.Crashing;
 				//	this.timer.Start();
 				//	this.imgid = this.animation.stepValue();
@@ -89,20 +80,4 @@ export class Chandelier extends Foe {
 				break;
 		}
 	}
-
-	public Dispose(): void {
-		BStopwatch.removeWatch(this.timer);
-	}
-
-	public handleHit(source: PlayerProjectile): void {
-		super.handleHit(source);
-		this.loseHealth(source);
-	}
-}
-
-export enum ChandelierState {
-	None,
-	Falling,
-	Crashing,
-	Crashed
 }

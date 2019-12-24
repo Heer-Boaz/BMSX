@@ -3,6 +3,7 @@ import { RoeState } from "./belmont";
 import { Model } from "./gamemodel";
 import { BitmapId } from "./bmsx/resourceids";
 import { Area, Point, Direction, newArea, moveArea } from "./bmsx/common";
+import { model } from './bmsx/engine';
 
 export class TriRoe extends PlayerProjectile {
 	private static hitareas: Map<number, Area> = new Map<number, Area>([
@@ -21,11 +22,11 @@ export class TriRoe extends PlayerProjectile {
 	]);
 
 	public get hitarea(): Area {
-		if (!Model._.Belmont.roeState.Roeing || Model._.Belmont.RecoveringFromHit)
+		if (!(model as Model).Belmont.roeState.Roeing || (model as Model).Belmont.RecoveringFromHit)
 			return null;
-		if (!Model._.Belmont.Crouching)
-			return moveArea(TriRoe.hitareas.get(Model._.Belmont.imgid), RoeState.RoeSpritePosOffset.get(Model._.Belmont.direction)[Model._.Belmont.roeState.CurrentFrame]);
-		return moveArea(TriRoe.hitareas.get(Model._.Belmont.imgid), RoeState.RoeSpritePosOffsetCrouching.get(Model._.Belmont.direction)[Model._.Belmont.roeState.CurrentFrame]);
+		if (!(model as Model).Belmont.Crouching)
+			return moveArea(TriRoe.hitareas.get((model as Model).Belmont.imgid), RoeState.RoeSpritePosOffset.get((model as Model).Belmont.direction)[(model as Model).Belmont.roeState.CurrentFrame]);
+		return moveArea(TriRoe.hitareas.get((model as Model).Belmont.imgid), RoeState.RoeSpritePosOffsetCrouching.get((model as Model).Belmont.direction)[(model as Model).Belmont.roeState.CurrentFrame]);
 	}
 
 	public set hitarea(value: Area) {
@@ -36,17 +37,17 @@ export class TriRoe extends PlayerProjectile {
 	}
 
 	constructor(pos: Point, dir: Direction) {
-		super({ x: pos.x, y: pos.y }, { x: 0, y: 0 });
+		super({ x: pos.x, y: pos.y });
 		this.direction = dir;
-		this.pos = Model._.Belmont.pos;
+		this.pos = (model as Model).Belmont.pos;
 	}
 
 	public takeTurn(): void {
-		if (Model._.Belmont.Dying || !Model._.Belmont.roeState.Roeing) {
+		if ((model as Model).Belmont.Dying || !(model as Model).Belmont.roeState.Roeing) {
 			this.disposeFlag = true;
 			return;
 		}
-		this.pos = Model._.Belmont.pos;
+		this.pos = (model as Model).Belmont.pos;
 		this.checkAndInvokeHit();
 	}
 

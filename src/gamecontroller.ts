@@ -1,4 +1,4 @@
-import { BaseController, BStopwatch } from './bmsx/engine';
+import { BaseController, BStopwatch, model } from './bmsx/engine';
 import { GameState, GameSubstate, Model } from './gamemodel';
 import { SM } from './bmsx/soundmaster';
 import { AudioId } from './bmsx/resourceids';
@@ -29,7 +29,7 @@ export class Controller extends BaseController {
     }
 
     public disposeOldState(newState: GameState): void {
-        let oldState = Model._.state;
+        let oldState = (model as Model).state;
         switch (oldState) {
             case GameState.TitleScreen:
                 SM.stopMusic();
@@ -50,11 +50,11 @@ export class Controller extends BaseController {
     }
 
     public switchToOldState(): void {
-        this.switchState(Model._.oldGameState);
+        this.switchState((model as Model).oldGameState);
     }
 
     public switchToOldSubstate(): void {
-        this.switchSubstate(Model._.oldGameSubstate);
+        this.switchSubstate((model as Model).oldGameSubstate);
     }
 
     protected initNewState(newState: GameState): void {
@@ -62,7 +62,7 @@ export class Controller extends BaseController {
             case GameState.TitleScreen:
                 break;
             case GameState.EndDemo:
-                Model._.EndDemo.Init();
+                (model as Model).EndDemo.Init();
                 break;
             case GameState.GameStart1:
                 this.timer.restart();
@@ -91,11 +91,11 @@ export class Controller extends BaseController {
                 break;
             case GameSubstate.ItsCurtainsForYou:
             case GameSubstate.ToEndDemo:
-                Model._.ItsCurtains.Init();
+                (model as Model).ItsCurtains.spawn();
                 break;
             case GameSubstate.GameOver:
                 SM.play(AudioId.Humiliation);
-                Model._.GameOverScreen.Init();
+                (model as Model).GameOverScreen.Init();
                 break;
             case GameSubstate.IngameMenu:
                 BStopwatch.pauseAllRunningWatches(true);
@@ -107,31 +107,31 @@ export class Controller extends BaseController {
                 this.timer.restart();
                 break;
             case GameSubstate.Default:
-                if (Model._.oldGameSubstate == GameSubstate.IngameMenu || Model._.oldGameSubstate == GameSubstate.GameMenu)
+                if ((model as Model).oldGameSubstate == GameSubstate.IngameMenu || (model as Model).oldGameSubstate == GameSubstate.GameMenu)
                     BStopwatch.resumeAllPausedWatches();
                 break;
         }
-        Model._.substate = newSubstate;
+        (model as Model).substate = newSubstate;
     }
 
     public takeTurn(elapsedMs: number): void {
-        if (Model._.paused) {
+        if ((model as Model).paused) {
             this.handlePausedState();
             return
         }
-        if (Model._.startAfterLoad) {
+        if ((model as Model).startAfterLoad) {
             this.handleStartAfterLoadState();
             return
         }
         this.ElapsedMsDelta = elapsedMs;
-        switch (Model._.state) {
+        switch ((model as Model).state) {
             case GameState.TitleScreen:
                 if (Input.KC_SPACE) {
                     this.switchState(GameState.GameStart1);
                 }
                 break;
             case GameState.EndDemo:
-                Model._.EndDemo.TakeTurn();
+                (model as Model).EndDemo.TakeTurn();
                 break;
             case GameState.GameStart1:
                 if (waitDuration(this.timer, GameConstants.WaitAfterGameStart1)) {
@@ -144,27 +144,27 @@ export class Controller extends BaseController {
                 }
                 break;
             case GameState.Game:
-                switch (Model._.substate) {
+                switch ((model as Model).substate) {
                     case GameSubstate.GameMenu:
                         this.handleInputDuringGame();
-                        Model._.GameMenu.takeTurn();
+                        (model as Model).GameMenu.takeTurn();
                         break;
                     case GameSubstate.BelmontDies:
                         this.handleInputDuringGame();
-                        Model._.Belmont.takeTurn();
-                        Model._.Hud.TakeTurn();
+                        (model as Model).Belmont.takeTurn();
+                        (model as Model).Hud.TakeTurn();
                         break;
                     case GameSubstate.ItsCurtainsForYou:
                     case GameSubstate.ToEndDemo:
                         this.handleInputDuringGame();
-                        Model._.Belmont.takeTurn();
-                        Model._.Hud.TakeTurn();
-                        Model._.ItsCurtains.TakeTurn();
+                        (model as Model).Belmont.takeTurn();
+                        (model as Model).Hud.TakeTurn();
+                        (model as Model).ItsCurtains.takeTurn();
                         break;
                     case GameSubstate.GameOver:
                         this.handleInputDuringGame();
-                        Model._.GameOverScreen.TakeTurn();
-                        Model._.GameMenu.takeTurn();
+                        (model as Model).GameOverScreen.TakeTurn();
+                        (model as Model).GameMenu.takeTurn();
                         break;
                     case GameSubstate.SwitchRoom:
                         if (waitDuration(this.timer, GameConstants.WaitAfterRoomSwitch)) {
@@ -175,18 +175,18 @@ export class Controller extends BaseController {
                         break;
                     case GameSubstate.Default:
                         this.handleInputDuringGame();
-                        let objects = Model._.objects;
+                        let objects = (model as Model).objects;
                         objects.forEach(o => !o.disposeFlag && o.takeTurn());
-                        objects.forEach(o => o.disposeFlag && Model._.remove(o));
-                        Model._.currentRoom.takeTurn();
-                        Model._.Hud.TakeTurn();
+                        objects.forEach(o => o.disposeFlag && (model as Model).remove(o));
+                        (model as Model).currentRoom.takeTurn();
+                        (model as Model).Hud.TakeTurn();
                         break;
                 }
                 break;
             case GameState.Event:
-                if (Model._.Belmont.Dying)
+                if ((model as Model).Belmont.Dying)
                     this.switchToOldState();
-                switch (Model._.substate) {
+                switch ((model as Model).substate) {
                     case GameSubstate.SwitchRoom:
                         if (waitDuration(this.timer, GameConstants.WaitAfterRoomSwitch)) {
                             this.switchToOldSubstate();
@@ -194,15 +194,15 @@ export class Controller extends BaseController {
                         break;
                     case GameSubstate.GameMenu:
                         this.handleInputDuringGame();
-                        Model._.GameMenu.takeTurn();
+                        (model as Model).GameMenu.takeTurn();
                         break;
                     default:
-                        let objects = Model._.objects;
+                        let objects = (model as Model).objects;
                         objects.forEach(o => !o.disposeFlag && o.takeTurn());
-                        objects.forEach(o => o.disposeFlag && Model._.remove(o));
-                        Model._.currentRoom.takeTurn();
-                        Model._.Hud.TakeTurn();
-                        if (Input.KD_F5 && !Model._.GameMenu.visible)
+                        objects.forEach(o => o.disposeFlag && (model as Model).remove(o));
+                        (model as Model).currentRoom.takeTurn();
+                        (model as Model).Hud.TakeTurn();
+                        if (Input.KD_F5 && !(model as Model).GameMenu.visible)
                             this.OpenGameMenu();
                         break;
                 }
@@ -217,14 +217,14 @@ export class Controller extends BaseController {
     private handleInputDuringGame(): void {
         if (Input.KC_F1)
             this.PauseGame();
-        switch (Model._.substate) {
+        switch ((model as Model).substate) {
             case GameSubstate.BelmontDies:
             case GameSubstate.ItsCurtainsForYou:
             case GameSubstate.ToEndDemo:
                 break;
             case GameSubstate.GameOver:
-                Model._.GameOverScreen.HandleInput();
-                if (Model._.GameMenu.visible)
+                (model as Model).GameOverScreen.HandleInput();
+                if ((model as Model).GameMenu.visible)
                     this.handleInputDuringGameMenu();
                 break;
             case GameSubstate.GameMenu:
@@ -235,7 +235,7 @@ export class Controller extends BaseController {
                 if (Input.KC_SPACE) {
                     Input.KD_UP ? WeaponFireHandler.HandleFireSecondaryWeapon() : WeaponFireHandler.HandleFireMainWeapon();
                 }
-                else if (Input.KC_F5 && !Model._.GameMenu.visible)
+                else if (Input.KC_F5 && !(model as Model).GameMenu.visible)
                     this.OpenGameMenu();
                 break;
         }
@@ -247,14 +247,14 @@ export class Controller extends BaseController {
     }
 
     private handleInputDuringGameMenu(): void {
-        Model._.GameMenu.HandleInput();
+        (model as Model).GameMenu.HandleInput();
         if (Input.KC_F5) {
             this.CloseGameMenu();
         }
     }
 
     public KillFocus(): void {
-        if (!Model._.paused && Model._.state == GameState.Game && Model._.substate == GameSubstate.Default && GameConstants.PauseGameOnKillFocus)
+        if (!(model as Model).paused && (model as Model).state == GameState.Game && (model as Model).substate == GameSubstate.Default && GameConstants.PauseGameOnKillFocus)
             this.PauseGame();
     }
 
@@ -267,7 +267,7 @@ export class Controller extends BaseController {
 
     private handleStartAfterLoadState(): void {
         if (waitDuration(this.startAfterLoadTimer, GameConstants.WaitAfterLoadGame)) {
-            Model._.startAfterLoad = false;
+            (model as Model).startAfterLoad = false;
             BStopwatch.removeWatch(this.startAfterLoadTimer);
             // if (SM.currentMusicNode)
             //     SM.play(SM.currentMusicNode.AudioId);
@@ -283,7 +283,7 @@ export class Controller extends BaseController {
     }
 
     public ItsCurtainsAniFinished(): void {
-        if (Model._.substate == GameSubstate.ItsCurtainsForYou)
+        if ((model as Model).substate == GameSubstate.ItsCurtainsForYou)
             this.switchSubstate(GameSubstate.GameOver);
         else this.switchState(GameState.EndDemo);
     }
@@ -293,7 +293,7 @@ export class Controller extends BaseController {
     }
 
     public HandleRoomExitViaMovement(targetRoom: number, dir: Direction): void {
-        let Belmont = Model._.Belmont;
+        let Belmont = (model as Model).Belmont;
         switch (dir) {
             case Direction.Up:
                 setPoint(Belmont.pos, Belmont.pos.x, Tile.toStageCoord(GameConstants.StageScreenHeightTiles) - (Belmont.size.y + 4));
@@ -312,53 +312,53 @@ export class Controller extends BaseController {
     }
 
     public DoRoomExit(targetRoom: number): void {
-        Model._.LastFoeThatWasHit = null;
-        Model._.LoadRoom(targetRoom);
+        (model as Model).LastFoeThatWasHit = null;
+        (model as Model).LoadRoom(targetRoom);
         this.switchSubstate(GameSubstate.SwitchRoom);
     }
 
     private setupGameStart(newState: GameState): void {
-        Model._.initModelForGameStart();
-        Bootstrapper.BootstrapGame(Model._.SelectedChapterToPlay);
-        Model._.Hud.SetShownLevelsToProperValues();
-        Model._.state = newState;
+        (model as Model).initModelForGameStart();
+        Bootstrapper.BootstrapGame((model as Model).SelectedChapterToPlay);
+        (model as Model).Hud.SetShownLevelsToProperValues();
+        (model as Model).state = newState;
         this.StoreCheckpoint();
     }
 
     public PauseGame(): void {
-        Model._.paused = true;
-        Model._.id2object['pause'].visible = true;
+        (model as Model).paused = true;
+        (model as Model).id2object['pause'].visible = true;
         BStopwatch.pauseAllRunningWatches();
         SM.pause();
     }
 
     public UnpauseGame(): void {
-        Model._.paused = false;
+        (model as Model).paused = false;
         BStopwatch.resumeAllPausedWatches();
-        Model._.id2object['pause'].visible = false;
+        (model as Model).id2object['pause'].visible = false;
         SM.resume();
     }
 
     public OpenGameMenu(): void {
-        Model._.GameMenu.Open();
+        (model as Model).GameMenu.Open();
         this.switchSubstate(GameSubstate.GameMenu);
     }
 
     public CloseGameMenu(): void {
-        Model._.GameMenu.Close();
+        (model as Model).GameMenu.Close();
         this.switchToOldSubstate();
     }
 
     public LoadGame(sg: Savegame): void {
         // SM.StopEffect();
         // SM.stopMusic();
-        // let oldcheckpoint = Model._.Checkpoint;
+        // let oldcheckpoint = (model as Model).Checkpoint;
         // M._ = sg.Model as GameModel;
-        // Model._.Checkpoint = LoadGame(CS.SaveSlotCheckpoint);
+        // (model as Model).Checkpoint = LoadGame(CS.SaveSlotCheckpoint);
         // BStopwatch.Watches = sg.RegisteredWatches;
-        // Model._.InitAfterGameLoad();
-        // Model._.GameMenu = new GameMenu();
-        // Model._.startAfterLoad = true;
+        // (model as Model).InitAfterGameLoad();
+        // (model as Model).GameMenu = new GameMenu();
+        // (model as Model).startAfterLoad = true;
         // this.startAfterLoadTimer.pauseDuringMenu = false;
         // this.startAfterLoadTimer.restart();
         // BStopwatch.addWatch(this.startAfterLoadTimer);
@@ -367,7 +367,7 @@ export class Controller extends BaseController {
     }
 
     public SaveGame(slot: number): void {
-        if (Model._.substate == GameSubstate.GameMenu)
+        if ((model as Model).substate == GameSubstate.GameMenu)
             this.CloseGameMenu();
         // BStopwatch.removeWatch(this.timer);
         // GameSaver.saveGame(M._, slot);
@@ -376,24 +376,24 @@ export class Controller extends BaseController {
 
     public StoreCheckpoint(): void {
         // BStopwatch.removeWatch(this.timer);
-        // Model._.Checkpoint = GameSaver.GetCheckpoint(M._);
+        // (model as Model).Checkpoint = GameSaver.GetCheckpoint(M._);
         // BStopwatch.addWatch(this.timer);
     }
 
     public LoadCheckpoint(): void {
-        // if (Model._.Checkpoint == null)
-        //     Model._.Checkpoint = LoadGame(CS.SaveSlotCheckpoint);
-        // this.LoadGame(Model._.Checkpoint);
+        // if ((model as Model).Checkpoint == null)
+        //     (model as Model).Checkpoint = LoadGame(CS.SaveSlotCheckpoint);
+        // this.LoadGame((model as Model).Checkpoint);
     }
 
     public PickupItem(source: Item): void {
         if (source.id != null)
-            Model._.ItemsPickedUp[source.id] = true;
-        Model._.AddItemToInventory(source.ItsType);
+            (model as Model).ItemsPickedUp[source.id] = true;
+        (model as Model).AddItemToInventory(source.ItsType);
     }
 
     public UseItem(itemType: ItemType): void {
-        let bagitem = Model._.ItemsInInventory.find(i => i.Type == itemType);
+        let bagitem = (model as Model).ItemsInInventory.find(i => i.Type == itemType);
         if (bagitem.Amount > 0) {
             if (Item.ItemUsable(itemType) != Item.Usable.Infinite)
                 --bagitem.Amount;
@@ -404,21 +404,21 @@ export class Controller extends BaseController {
     private HandleUseItem(itemType: ItemType): void {
         switch (itemType) {
             case Item.Type.None:
-                Model._.Belmont.Health = Model._.Belmont.MaxHealth;
+                (model as Model).Belmont.Health = (model as Model).Belmont.MaxHealth;
                 break;
         }
     }
 
     public PickupWeaponItem(source: WeaponItem): void {
-        Model._.AddWeaponToInventory(source.ItsType);
+        (model as Model).AddWeaponToInventory(source.ItsType);
         if (source.id != null)
-            Model._.ItemsPickedUp[source.id] = true;
+            (model as Model).ItemsPickedUp[source.id] = true;
     }
 
     public startBossFight(baas: Pietula): void {
         SM.play(AudioId.Baas);
-        Model._.RoomExitsLocked = true;
-        Model._.BossBattle = true;
-        Model._.Boss = baas;
+        (model as Model).RoomExitsLocked = true;
+        (model as Model).BossBattle = true;
+        (model as Model).Boss = baas;
     }
 }

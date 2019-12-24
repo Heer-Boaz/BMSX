@@ -1,11 +1,10 @@
 import { ItemType } from './item';
 import { WeaponType, WeaponItem } from './weaponitem';
-import { Point } from './bmsx/common';
+import { Point, Direction } from './bmsx/common';
 import { BaseModel, BStopwatch, IGameObject, view } from './bmsx/engine';
 import { Savegame } from './bmsx/gamepersistor';
 import { Foe } from './foe';
 import { Belmont } from './belmont';
-import { BossFoe } from './bossfoe';
 import { Room } from './room';
 import { GameMenu } from './gamemenu';
 import { HUD } from './hud';
@@ -114,16 +113,7 @@ export class Model extends BaseModel {
     public static PROPERTY_KEEP_AT_ROOMSWITCH: string = "p_rs";
     public static PROPERTY_ACT_AS_WALL: string = "p_wall";
 
-    private static _instance: Model;
-    public static get _(): Model {
-        return Model._instance;
-    }
-
-    public static set _(value: Model) {
-        Model._instance = value;
-    }
-
-    public Foes: Foe[];
+    public foes: Foe[];
     public ItemsInInventory: BagItem[];
     public WeaponsInInventory: BagWeapon[];
 
@@ -140,7 +130,7 @@ export class Model extends BaseModel {
     }
 
     public Belmont: Belmont;
-    public Boss: BossFoe;
+    public Boss: Foe;
     public currentRoom: Room;
     public GameMenu: GameMenu;
     public Switches: { [key: number]: boolean; };
@@ -163,16 +153,16 @@ export class Model extends BaseModel {
     public PauseObject: IGameObject;
 
     public get ShowFoeBar(): boolean {
-        return Model._.BossBattle;
+        return this.BossBattle;
     }
 
     public get FoeHealthPercentage(): number {
-        return Model._.Boss?.healthPercentage ?? 100;
-        // let foe = Model._.LastFoeThatWasHit;
+        return this.Boss?.healthPercentage ?? 100;
+        // let foe = this.LastFoeThatWasHit;
         // if (foe == null) {
-        //     if (!Model._.BossBattle)
+        //     if (!this.BossBattle)
         //         return -1;
-        //     else foe = Model._.Boss;
+        //     else foe = this.Boss;
         // }
         // if (foe.disposeFlag)
         //     return 0;
@@ -180,7 +170,7 @@ export class Model extends BaseModel {
     }
 
     public get FoeForWhichHealthPercentageIsGiven(): Foe {
-        return Model._.LastFoeThatWasHit != null ? Model._.LastFoeThatWasHit : Model._.Boss;
+        return this.LastFoeThatWasHit != null ? this.LastFoeThatWasHit : this.Boss;
     }
 
     private _selectedMainWeapon: MainWeaponType;
@@ -201,7 +191,7 @@ export class Model extends BaseModel {
         let index = this.WeaponsInInventory.findIndex(bw => bw.Type == weaponItemInBagType);
         if (index == -1)
             return null;
-        return Model._.WeaponsInInventory[index];
+        return this.WeaponsInInventory[index];
     }
 
     private _lastFoeThatWasHit: Foe;
@@ -227,13 +217,12 @@ export class Model extends BaseModel {
 
     public constructor() {
         super();
-        Model._instance = this;
         this.Initialize();
     }
 
     public Initialize(): void {
         this.objects = new Array<IGameObject>();
-        this.Foes = new Array<Foe>();
+        this.foes = new Array<Foe>();
         this.ItemsInInventory = new Array<BagItem>();
         this.WeaponsInInventory = new Array<BagWeapon>();
         this.Switches = {};
@@ -258,17 +247,17 @@ export class Model extends BaseModel {
     }
 
     public initModelForGameStart(): void {
-        Model._.BossBattle = false;
-        Model._.RoomExitsLocked = false;
-        delete Model._.Switches;
-        Model._.Switches = {};
-        // Model._.Switches.clear();
-        // Object.keys(Switch).forEach(t => Model._.Switches.set(Switch[t], false));
-        Model._.ItemsInInventory.length = 0;
-        Model._.WeaponsInInventory.length = 0;
-        Model._.FoesDefeated.clear();
-        Model._.ItemsPickedUp.clear();
-        Model._.WeaponItemsPickedUp.clear();
+        this.BossBattle = false;
+        this.RoomExitsLocked = false;
+        delete this.Switches;
+        this.Switches = {};
+        // this.Switches.clear();
+        // Object.keys(Switch).forEach(t => this.Switches.set(Switch[t], false));
+        this.ItemsInInventory.length = 0;
+        this.WeaponsInInventory.length = 0;
+        this.FoesDefeated.clear();
+        this.ItemsPickedUp.clear();
+        this.WeaponItemsPickedUp.clear();
         if (!this.PauseObject) {
             this.PauseObject = {
                 priority: 5000,
@@ -290,7 +279,7 @@ export class Model extends BaseModel {
         }
 
         this._hearts = GameConstants.Belmont_InitHearts;
-        Model._.spawn(new Belmont());
+        this.spawn(new Belmont());
     }
 
     public InitAfterGameLoad(): void {
@@ -302,7 +291,7 @@ export class Model extends BaseModel {
         if (o instanceof Belmont) {
             if (this.objects.findIndex(ob => ob instanceof Belmont) > -1)
                 throw Error("There is already a Belmont in the game! \"There can be only one!\"");
-            else Model._.Belmont = <Belmont>o;
+            else this.Belmont = <Belmont>o;
         }
 
         if (o instanceof Foe) {
@@ -315,10 +304,10 @@ export class Model extends BaseModel {
                     wasDefeated = false;
                 }
                 if (!wasDefeated)
-                    this.Foes.push(f);
+                    this.foes.push(f);
                 else return;
             }
-            else this.Foes.push(f);
+            else this.foes.push(f);
         }
 
         super.spawn(o, spawnpos, ifnotexists);
@@ -326,21 +315,32 @@ export class Model extends BaseModel {
 
     public remove(o: IGameObject): void {
         if (o instanceof Belmont) {
-            Model._.Belmont = null;
+            this.Belmont = null;
         }
 
         if (o instanceof Foe) {
-            let index = this.Foes.indexOf(o);
+            let index = this.foes.indexOf(o);
             if (index > -1) {
-                delete this.Foes[index];
-                this.Foes.splice(index, 1);
+                delete this.foes[index];
+                this.foes.splice(index, 1);
             }
         }
 
         super.remove(o);
     }
 
-    public FoeDefeated(f: Foe): void {
+    public get gamewidth(): number {
+        return GameConstants.GameScreenWidth;
+    }
+    public get gameheight(): number {
+        return GameConstants.GameScreenHeight;
+    }
+
+    public collidesWithTile = (o: IGameObject, dir: Direction): boolean => this.currentRoom.collidesWithTile(o, dir);
+
+    public isCollisionTile = (x: number, y: number): boolean => this.currentRoom.isCollisionTile(x, y);
+
+    public foeDefeated(f: Foe): void {
         if (f.respawnOnRoomEntry) return;
         if (this.FoesDefeated.has(f.id) && this.FoesDefeated.get(f.id) === true)
             this.FoesDefeated.set(f.id, true);
@@ -352,7 +352,7 @@ export class Model extends BaseModel {
     }
 
     public get FoesPresentInCurrentRoom(): boolean {
-        return this.Foes.length > 0;
+        return this.foes.length > 0;
     }
 
     public GetSwitchState(s: Switch): boolean {

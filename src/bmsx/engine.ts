@@ -2,9 +2,8 @@
 import { SM } from "./soundmaster";
 import { Input } from "./input";
 import { RomLoadResult } from "./rompack";
-import { MSX2ScreenWidth, MSX2ScreenHeight } from "./msx";
-import { Point, Area, moveArea, Size } from "./common";
-import { AudioId } from './resourceids';
+import { MSX2ScreenWidth, MSX2ScreenHeight, TileSize } from "./msx";
+import { Point, Area, moveArea, Size, Direction } from "./common";
 
 export let game: Game;
 export let model: BaseModel;
@@ -251,6 +250,9 @@ export abstract class BaseModel {
         this.gameSubstate = value;
     }
 
+    public abstract get gamewidth(): number;
+    public abstract get gameheight(): number;
+
     constructor() {
         this.objects = [];
         this.id2object = {};
@@ -294,6 +296,9 @@ export abstract class BaseModel {
         if (this.id2object[o.id]) this.id2object[o.id] = undefined;
         o.dispose?.();
     }
+
+    public abstract collidesWithTile(o: IGameObject, dir: Direction): boolean;
+    public abstract isCollisionTile(x: number, y: number): boolean;
 }
 
 export const enum BSTEventType {
@@ -446,8 +451,19 @@ export interface IGameObject {
     disposeFlag: boolean;
     priority?: number;
     pos: Point;
+    size?: Size;
+    hitarea?: Area;
+    hittable?: boolean;
     visible?: boolean;
 
+    hitbox_sx?: number;
+    hitbox_sy?: number;
+    hitbox_ex?: number;
+    hitbox_ey?: number;
+    wallhitbox_sx?: number;
+    wallhitbox_sy?: number;
+    wallhitbox_ex?: number;
+    wallhitbox_ey?: number;
     isWall?: boolean;
     disposeOnSwitchRoom?: boolean;
 
@@ -457,39 +473,19 @@ export interface IGameObject {
 
     paint?(offset?: Point): void;
     postpaint?(offset?: Point): void; // Post-processing such as lighting effects or the characters of an ASCII-buffer in case of an ASCII-sprite
-    objectCollide?(o: IRenderObject): boolean;
+    objectCollide?(o: IGameObject): boolean;
     areaCollide?(a: Area): boolean;
-    collides?(o: IRenderObject | Area): boolean;
-    collide?(src: IRenderObject): void;
-    oncollide?: (src: IRenderObject) => void;
+    collides?(o: IGameObject | Area): boolean;
+    collide?(src: IGameObject): void;
+    oncollide?: (src: IGameObject) => void;
 }
 
-export interface IRenderObject extends IGameObject {
-    size: Size;
-    hitarea?: Area;
-    visible: boolean;
-    hitbox_sx?: number;
-    hitbox_sy?: number;
-    hitbox_ex?: number;
-    hitbox_ey?: number;
-    x_plus_width?: number;
-    y_plus_height?: number;
-    priority?: number;
-
-    paint(offset?: Point): void;
-    postpaint(offset?: Point): void; // Post-processing such as lighting effects or the characters of an ASCII-buffer in case of an ASCII-sprite
-    objectCollide(o: IRenderObject): boolean;
-    areaCollide(a: Area): boolean;
-    collides(o: IRenderObject | Area): boolean;
-    collide(src: IRenderObject): void;
-    oncollide: (src: IRenderObject) => void;
-}
-
-export abstract class Sprite extends bst implements IRenderObject {
+export abstract class Sprite extends bst {
     public id: string | null;
     public pos: Point;
     public size: Size;
     public hitarea: Area;
+    public get wallHitarea(): Area { return this.hitarea; }
     public visible: boolean;
     public hittable: boolean;
     public flippedH: boolean;
@@ -522,18 +518,44 @@ export abstract class Sprite extends bst implements IRenderObject {
         return this.pos.y + this.size.y;
     }
 
+    public get wallhitbox_sx(): number {
+        return this.pos.x + this.wallHitarea.start.x;
+    }
+
+    public get wallhitbox_sy(): number {
+        return this.pos.y + this.wallHitarea.start.y;
+    }
+
+    public get wallhitbox_ex(): number {
+        return this.pos.x + this.wallHitarea.end.x;
+    }
+
+    public get wallhitbox_ey(): number {
+        return this.pos.y + this.wallHitarea.end.y;
+    }
+
     public disposeOnSwitchRoom?: boolean;
-    public oncollide: (src: IRenderObject) => void;
+    public oncollide?: (src: IGameObject) => void;
+    public onWallcollide?: (dir: Direction) => void;
+    public onLeaveScreen?: (dir: Direction) => void;
+
+    private _direction: Direction;
+    public oldDirection: Direction;
+
+    public get direction(): Direction {
+        return this._direction;
+    }
+
+    public set direction(value: Direction) {
+        this.oldDirection = this._direction;
+        this._direction = value;
+    }
+
 
     constructor(initialPos?: Point, imageId?: number) {
         super();
         this.id = null;
-        this.pos = initialPos || <Point>{ x: 0, y: 0 };
-        this.size = <Size>{ x: 0, y: 0 };
-        this.hitarea = <Area>{
-            start: { x: 0, y: 0 },
-            end: { x: 0, y: 0 }
-        };
+        this.pos = initialPos || { x: 0, y: 0 };
         this.visible = true;
         this.hittable = true;
         this.flippedH = false;
@@ -543,14 +565,13 @@ export abstract class Sprite extends bst implements IRenderObject {
         this.imgid = imageId || undefined;
 
         this.disposeOnSwitchRoom = true;
-        this.oncollide = undefined;
     }
 
     spawn(spawningPos?: Point): void {
-        if (spawningPos) this.pos = spawningPos;
+        if (spawningPos) {
+            [this.pos.x, this.pos.y] = [spawningPos.x, spawningPos.y];
+        }
     }
-
-    abstract dispose(): void;
 
     abstract takeTurn(): void;
 
@@ -571,20 +592,20 @@ export abstract class Sprite extends bst implements IRenderObject {
     postpaint(offset?: Point): void {
     }
 
-    static objectCollide(o1: IRenderObject, o2: IRenderObject): boolean {
+    static objectCollide(o1: IGameObject, o2: IGameObject): boolean {
         return o1.objectCollide(o2);
     }
 
-    public collides(o: IRenderObject | Area): boolean {
-        if ((o as IRenderObject).id) return this.objectCollide(<IRenderObject>o);
+    public collides(o: IGameObject | Area): boolean {
+        if ((o as IGameObject).id) return this.objectCollide(<IGameObject>o);
         else return this.areaCollide(<Area>o);
     }
 
-    public collide(src: IRenderObject): void {
+    public collide(src: IGameObject): void {
         this.oncollide && this.oncollide(src);
     }
 
-    objectCollide(o: IRenderObject): boolean {
+    objectCollide(o: IGameObject): boolean {
         return this.areaCollide(moveArea(o.hitarea, o.pos));
     }
 
@@ -606,6 +627,46 @@ export abstract class Sprite extends bst implements IRenderObject {
 
         return o1p.x + o1a.end.x >= p.x && o1p.x + o1a.start.x <= p.x &&
             o1p.y + o1a.end.y >= p.y && o1p.y + o1a.start.y <= p.y;
+    }
+
+    public setx(newx: number) {
+        let oldx = this.pos.x;
+        this.pos.x = ~~newx;
+        if (newx < oldx) {
+            if (model.collidesWithTile(this, Direction.Left)) {
+                this.onWallcollide?.(Direction.Up);
+                newx += TileSize - (newx % TileSize);
+            }
+            if (newx + this.size.x < 0) { this.onLeaveScreen?.(Direction.Left); }
+        }
+        else if (newx > oldx) {
+            if (model.collidesWithTile(this, Direction.Right)) {
+                this.onWallcollide?.(Direction.Right);
+                newx -= newx % TileSize;
+            }
+            if (newx >= model.gamewidth) { this.onLeaveScreen?.(Direction.Right); }
+        }
+        this.pos.x = ~~newx;
+    }
+
+    public sety(newy: number) {
+        let oldy = this.pos.y;
+        this.pos.y = ~~newy;
+        if (newy < oldy) {
+            if (model.collidesWithTile(this, Direction.Up)) {
+                this.onWallcollide?.(Direction.Up);
+                newy += TileSize - (newy % TileSize);
+            }
+            if (newy + this.size.y < 0) { this.onLeaveScreen?.(Direction.Up); }
+        }
+        else if (newy > oldy) {
+            if (model.collidesWithTile(this, Direction.Down)) {
+                this.onWallcollide?.(Direction.Down);
+                newy -= newy % TileSize;
+            }
+            if (newy >= model.gameheight) { this.onLeaveScreen?.(Direction.Down); }
+        }
+        this.pos.y = ~~newy;
     }
 }
 

@@ -1,22 +1,14 @@
 import { Foe } from "./foe";
 import { ItemType } from "./item";
-import { PlayerProjectile } from "./pprojectile";
 import { Area, Point, Direction, newArea, newSize } from "./bmsx/common";
 import { BitmapId } from "./bmsx/resourceids";
 import { Model } from "./gamemodel";
-import { GameConstants as CS } from "./gameconstants";
-import { bst, BSTEventType, bss } from "./bmsx/engine";
+import { BSTEventType, bss, model } from "./bmsx/engine";
 
 type AniType = { i: BitmapId, dy: number; };
 
 export class ZakFoe extends Foe {
-	public get damageToPlayer(): number {
-		return 1;
-	}
-
-	public get respawnOnRoomEntry(): boolean {
-		return true;
-	}
+	public get respawnOnRoomEntry(): boolean { return true; }
 
 	protected static ZakFoeHitArea: Area = newArea(2, 2, 14, 14);
 
@@ -30,6 +22,22 @@ export class ZakFoe extends Foe {
 		this.direction = dir;
 		this.priority = 10;
 		this.health = 1;
+
+		let collissionHandler = (d: Direction) => {
+			switch (d) {
+				case Direction.Left:
+					this.direction = Direction.Right;
+					break;
+				case Direction.Right:
+					this.direction = Direction.Left;
+					break;
+				case Direction.Down:
+					this.disposeFlag = true;
+					break;
+			}
+		};
+		this.onWallcollide = collissionHandler;
+		this.onLeaveScreen = collissionHandler;
 
 		let state0 = this.add(0);
 		state0.tapedata = <Array<AniType>>[
@@ -56,24 +64,16 @@ export class ZakFoe extends Foe {
 
 					switch (this.direction) {
 						case Direction.Left:
-							this.pos.x -= 1;
-							// Handle game screen collision
-							if (this.pos.x <= 0)
-								this.direction = Direction.Right;
-							// Handle wall / missing floor collision
-							if (Model._.currentRoom.AnyCollisionsTiles({ x: this.hitbox_sx, y: this.hitbox_sy }, { x: this.hitbox_sx, y: this.hitbox_ey }))
-								this.direction = Direction.Right;
+							this.setx(this.pos.x - 1);
 							break;
-						case Direction.Right: this.pos.x += 1;
-							// Handle game screen collision
-							if (this.pos.x >= CS.GameScreenWidth)
-								this.direction = Direction.Left;
-							// Handle wall / missing floor collision
-							if (Model._.currentRoom.AnyCollisionsTiles({ x: this.hitbox_ex, y: this.hitbox_sy }, { x: this.hitbox_ex, y: this.hitbox_ey }))
-								this.direction = Direction.Left;
+						case Direction.Right:
+							this.setx(this.pos.x + 1);
 							break;
 					}
-					if (!Model._.currentRoom.IsCollisionTile(this.hitbox_sx + 4, this.hitbox_ey + 12)) {
+					// if (!model.collidesWithTile(
+					this.flippedH = this.direction == Direction.Left ? true : false;
+
+					if (!(model as Model).currentRoom.isCollisionTile(this.hitbox_sx + 4, this.hitbox_ey + 12)) {
 						this.pos.y += 4;
 					}
 					break;
@@ -110,21 +110,7 @@ export class ZakFoe extends Foe {
 	}
 
 	public takeTurn(): void {
-		if (this.disposeFlag) return;
 		this.run();
 		super.takeTurn();
-	}
-
-	public dispose(): void {
-	}
-
-	public handleHit(source: PlayerProjectile): void {
-		super.handleHit(source);
-		this.loseHealth(source);
-	}
-
-	public paint(offset: Point = null): void {
-		this.flippedH = this.direction == Direction.Left ? true : false;
-		super.paint(offset);
 	}
 }

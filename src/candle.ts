@@ -11,17 +11,7 @@ import { GameConstants } from "./gameconstants";
 
 /*[Serializable]*/
 export class Candle extends Foe {
-	public get damageToPlayer(): number {
-		return 0;
-	}
-
-	protected get moveBeforeFrameChange(): number {
-		return 0;
-	}
-
-	public get respawnOnRoomEntry(): boolean {
-		return true;
-	}
+	public get respawnOnRoomEntry(): boolean { return true; }
 
 	protected static CandleHitArea: Area = newArea(0, 0, 10, 16);
 	protected static candleSprites: Map<Direction, BitmapId[]> = new Map([[Direction.None, [BitmapId.Candle_1]]]);
@@ -49,13 +39,5 @@ export class Candle extends Foe {
 	public takeTurn(): void {
 		let bla = this.animation.doAnimation(1, this.imgid);
 		this.imgid = bla.stepValue;
-	}
-
-	public dispose(): void {
-	}
-
-	public handleHit(source: PlayerProjectile): void {
-		super.handleHit(source);
-		this.loseHealth(source);
 	}
 }

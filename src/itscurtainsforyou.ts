@@ -1,4 +1,4 @@
-import { BStopwatch } from "./bmsx/engine";
+import { BStopwatch, IGameObject } from "./bmsx/engine";
 import { TileSize } from "./bmsx/msx"
 import { waitDuration } from "./bmsx/common";
 import { view } from "./bmsx/engine";
@@ -7,26 +7,32 @@ import { Point } from "./bmsx/common";
 import { BitmapId } from "./bmsx/resourceids";
 import { GameConstants } from "./gameconstants";
 
-export class ItsCurtainsForYou {
+export class ItsCurtainsForYou implements IGameObject {
+    id: string = 'itscurtains';
+    disposeFlag: boolean = false;
+    priority: number = 4000;
+    pos: Point = null;
+
+    public constructor() {
+    }
+
     private curtainPartCount: number;
     private timer: BStopwatch;
     private msCurtainPartWait: number = 1;
     private maxCurtainParts: number = ~~(GameConstants.GameScreenWidth / (TileSize / 2)) + 1;
 
-    public Init(): void {
+    public spawn(): void {
         this.curtainPartCount = 0;
-        if (this.timer == null) {
-            this.timer = BStopwatch.createWatch();
-        }
+        this.timer = this.timer ?? BStopwatch.createWatch();
         this.timer.restart();
     }
 
-    public Stop(): void {
+    public stop(): void {
         this.curtainPartCount = 0;
         BStopwatch.removeWatch(this.timer);
     }
 
-    public TakeTurn(): void {
+    public takeTurn(): void {
         if (waitDuration(this.timer, this.msCurtainPartWait)) {
             this.curtainPartCount++;
             if (this.curtainPartCount >= this.maxCurtainParts)
@@ -34,11 +40,7 @@ export class ItsCurtainsForYou {
         }
     }
 
-    public Paint(): void {
-        let pos: Point = { x: 0, y: 0 };
-        for (let i = 0; i < this.curtainPartCount; i++) {
-            view.drawImg(BitmapId.CurtainPart, pos.x, pos.y);
-            pos.x += TileSize / 2;
-        }
+    public paint(): void {
+        for (let i = 0; i < this.curtainPartCount; i++) { view.drawImg(BitmapId.CurtainPart, i * TileSize / 2, 0); }
     }
 }

@@ -3,8 +3,8 @@ import { Item, ItemType } from "./item";
 import { AudioId, BitmapId } from "./bmsx/resourceids";
 import { Model as M, Model } from "./gamemodel";
 import { GameConstants as CS } from "./gameconstants";
-import { view, BStopwatch } from "./bmsx/engine";
-import { GameView as V } from "./gameview"
+import { view, BStopwatch, model } from "./bmsx/engine";
+import { GameView as V } from "./gameview";
 import { waitDuration, setPoint, Point } from "./bmsx/common";
 import { TextWriter } from "./textwriter";
 import { DrawImgFlags } from './bmsx/view';
@@ -46,37 +46,36 @@ export class HUD {
     }
 
     public SetShownLevelsToProperValues(): void {
-        if (M._ != null) {
-            if (Model._.Belmont != null)
-                this.shownHealthLevel = Model._.Belmont.HealthPercentage;
-            this.shownFoeHealthLevel = Model._.FoeHealthPercentage;
-            this.foeForWhichHealthLevelIsShown = Model._.FoeForWhichHealthPercentageIsGiven;
-        }
+        if (!model) return;
+        if ((model as Model).Belmont != null)
+            this.shownHealthLevel = (model as Model).Belmont.HealthPercentage;
+        this.shownFoeHealthLevel = (model as Model).FoeHealthPercentage;
+        this.foeForWhichHealthLevelIsShown = (model as Model).FoeForWhichHealthPercentageIsGiven;
     }
 
     public TakeTurn(): void {
-        if (Model._.Belmont.Dying)
-            this.shownHealthLevel = Model._.Belmont.HealthPercentage;
+        if ((model as Model).Belmont.Dying)
+            this.shownHealthLevel = (model as Model).Belmont.HealthPercentage;
 
-        if (Model._.LastFoeThatWasHit != null && Model._.LastFoeThatWasHit.disposeFlag)
+        if ((model as Model).LastFoeThatWasHit != null && (model as Model).LastFoeThatWasHit.disposeFlag)
             this.shownFoeHealthLevel = 0;
 
         if (waitDuration(this.barTimer, HUD.MsDurationBarChange)) {
-            if (this.shownHealthLevel > Model._.Belmont.HealthPercentage)
+            if (this.shownHealthLevel > (model as Model).Belmont.HealthPercentage)
                 this.shownHealthLevel--;
-            else if (this.shownHealthLevel < Model._.Belmont.HealthPercentage)
+            else if (this.shownHealthLevel < (model as Model).Belmont.HealthPercentage)
                 this.shownHealthLevel++;
         }
 
         if (CS.AnimateFoeHealthLevel) {
             if (waitDuration(this.foebarTimer, HUD.MsDurationFoeBarChange)) {
-                if (this.shownFoeHealthLevel > Model._.FoeHealthPercentage)
+                if (this.shownFoeHealthLevel > (model as Model).FoeHealthPercentage)
                     this.shownFoeHealthLevel--;
-                else if (this.shownFoeHealthLevel < Model._.FoeHealthPercentage)
+                else if (this.shownFoeHealthLevel < (model as Model).FoeHealthPercentage)
                     this.shownFoeHealthLevel++;
             }
         }
-        else this.shownFoeHealthLevel = Model._.FoeHealthPercentage;
+        else this.shownFoeHealthLevel = (model as Model).FoeHealthPercentage;
     }
 
     private percentageToBarLength(percentage: number): number {
@@ -91,22 +90,22 @@ export class HUD {
         let length = this.percentageToBarLength(this.shownHealthLevel);
         if (length > 0) { view.drawImg(BitmapId.EnergybarStripe_Belmont, pos.x, pos.y, DrawImgFlags.None, length); }
 
-        let heartstxt: string = Model._.Hearts < 10 ? `0${Model._.Hearts}` : Model._.Hearts.toString();
+        let heartstxt: string = (model as Model).Hearts < 10 ? `0${(model as Model).Hearts}` : (model as Model).Hearts.toString();
         TextWriter.drawText(HUD.HeartsPosX, HUD.HeartsPosY, heartstxt);
-        if (Model._.ItemsInInventory.find(x => x.Type === ItemType.KeyBig)) {
+        if ((model as Model).ItemsInInventory.find(x => x.Type === ItemType.KeyBig)) {
             view.drawImg(Item.Type2Image(ItemType.KeyBig), HUD.KeyPos.x, HUD.KeyPos.y);
         }
 
         setPoint(pos, HUD.FoeBarStripePosX, HUD.FoeBarStripePosY);
         let lengthShown: number, lengthBefore: number;
 
-        if (Model._.BossBattle) {
-            // if (Model._.FoeForWhichHealthPercentageIsGiven !== this.foeForWhichHealthLevelIsShown) {
-            //     this.foeForWhichHealthLevelIsShown = Model._.FoeForWhichHealthPercentageIsGiven;
-            //     this.shownFoeHealthLevel = Model._.FoeHealthPercentage;
+        if ((model as Model).BossBattle) {
+            // if ((model as Model).FoeForWhichHealthPercentageIsGiven !== this.foeForWhichHealthLevelIsShown) {
+            //     this.foeForWhichHealthLevelIsShown = (model as Model).FoeForWhichHealthPercentageIsGiven;
+            //     this.shownFoeHealthLevel = (model as Model).FoeHealthPercentage;
             // }
             lengthShown = this.percentageToBarLength(this.shownFoeHealthLevel);
-            lengthBefore = this.percentageToBarLength(Model._.FoeHealthPercentage);
+            lengthBefore = this.percentageToBarLength((model as Model).FoeHealthPercentage);
         }
         else {
             lengthShown = this.percentageToBarLength(100);

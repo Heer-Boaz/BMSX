@@ -1,4 +1,4 @@
-import { Sprite } from "./bmsx/engine";
+import { Sprite, model } from "./bmsx/engine";
 import { Animation } from "./bmsx/animation"
 import { AudioId, BitmapId } from "./bmsx/resourceids";
 import { GameConstants } from "./gameconstants";
@@ -21,9 +21,6 @@ export class HeartSmall extends Sprite {
 		return this.State == HeartSmallState.Flying ? HeartSmall.HitAreaFly : HeartSmall.HitAreaStand;
 	}
 
-	public set hitarea(value: Area) {
-	}
-
 	protected animation: Animation<number>;
 	protected animationData: number[] = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
 
@@ -36,7 +33,7 @@ export class HeartSmall extends Sprite {
 	}
 
 	protected get floorCollision(): boolean {
-		return Model._.currentRoom.IsCollisionTile(this.pos.x + 5, this.pos.y + 8);
+		return (model as Model).currentRoom.isCollisionTile(this.pos.x + 5, this.pos.y + 8);
 	}
 
 	protected uglyBitThing: boolean;
@@ -62,18 +59,10 @@ export class HeartSmall extends Sprite {
 				this.imgid = BitmapId.Heart_small;
 			}
 		}
-		if (this.objectCollide(Model._.Belmont)) {
-			++Model._.Hearts;
+		if (this.objectCollide((model as Model).Belmont)) {
+			++(model as Model).Hearts;
 			this.disposeFlag = true;
 			SM.play(AudioId.Heart);
 		}
-	}
-
-	public paint(offset: Point = null): void {
-		super.paint(offset);
-	}
-
-	public dispose(): void {
-		// Do nothing
 	}
 }

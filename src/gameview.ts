@@ -1,7 +1,7 @@
 import { GameConstants as CS } from "./gameconstants"
 import { GameState, GameSubstate, Model } from "./gamemodel";
 import { Point } from "./bmsx/common";
-import { view } from "./bmsx/engine";
+import { view, model } from "./bmsx/engine";
 import { BaseView } from './bmsx/view';
 import { GLView } from './bmsx/glview';
 
@@ -19,44 +19,40 @@ export class GameView extends GLView {
 
     public drawgame(): void {
         view.clear();
-        if (Model._.startAfterLoad)
+        if ((model as Model).startAfterLoad)
             return;
 
-        switch (Model._.gameState) {
+        switch ((model as Model).gameState) {
             case GameState.LoadTheGame:
                 break;
             case GameState.TitleScreen:
-                Model._.Title.Paint();
+                (model as Model).Title.paint();
                 super.drawSprites();
                 break;
 
             case GameState.EndDemo:
-                Model._.EndDemo.Paint();
+                (model as Model).EndDemo.Paint();
                 super.drawSprites();
                 break;
 
             case GameState.Game:
             case GameState.Event:
                 let gamescreenOffset = <Point>{ x: CS.GameScreenStartX, y: CS.GameScreenStartY };
-                // if (Model._.paused) {
-                //     Model._.PauseObject.paint();
-                // }
-                // Model._.GameMenu.paint();
 
-                if (Model._.gameSubstate == GameSubstate.ItsCurtainsForYou || Model._.gameSubstate == GameSubstate.ToEndDemo) {
-                    Model._.ItsCurtains.Paint();
+                if ((model as Model).gameSubstate == GameSubstate.ItsCurtainsForYou || (model as Model).gameSubstate == GameSubstate.ToEndDemo) {
+                    (model as Model).ItsCurtains.paint();
                 }
-                else if (Model._.gameSubstate == GameSubstate.GameOver) {
-                    Model._.ItsCurtains.Paint();
-                    Model._.GameOverScreen.Paint();
+                else if ((model as Model).gameSubstate == GameSubstate.GameOver) {
+                    (model as Model).ItsCurtains.paint();
+                    (model as Model).GameOverScreen.Paint();
                 }
 
-                if (Model._.gameSubstate != GameSubstate.SwitchRoom) {
+                if ((model as Model).gameSubstate != GameSubstate.SwitchRoom) {
                     super.drawgame(gamescreenOffset, false);
                 }
-                Model._.Hud.Paint();
+                (model as Model).Hud.Paint();
 
-                switch (Model._.gameSubstate) {
+                switch ((model as Model).gameSubstate) {
                     case GameSubstate.SwitchRoom:
                     case GameSubstate.BelmontDies:
                     case GameSubstate.ItsCurtainsForYou:

@@ -1,7 +1,7 @@
 import { Animation } from "./bmsx/animation"
 import { Point } from "./bmsx/common";
 import { BitmapId } from "./bmsx/resourceids";
-import { view } from "./bmsx/engine";
+import { view, IGameObject } from "./bmsx/engine";
 
 export const enum State {
 	WaitForIt,
@@ -12,7 +12,12 @@ export const enum State {
 	Other
 }
 
-export class Title {
+export class Title implements IGameObject {
+	id: string = 'title';
+	disposeFlag: boolean = false;
+	priority?: number = 1000;
+	pos: Point = null;
+
 	private static titleTopY: number = 16;
 	private static titleBottomY: number = 41;
 	private static titleTopStartX: number = -216;
@@ -31,13 +36,13 @@ export class Title {
 	private titleAni: Animation<State>;
 	private state: State;
 
-	constructor() {
+	public constructor() {
 		// this.titleAni = new Animation<State>(Title.titleStates, Title.titleMoves);
 		// this.titleTopPos = <Point>{ x: 0, y: 0 };
 		// this.titleBottomPos = <Point>{ x: 0, y: 0 };
 	}
 
-	public Init(): void {
+	public spawn(): void {
 		// this.reset();
 	}
 
@@ -48,10 +53,10 @@ export class Title {
 		// this.state = this.titleAni.stepValue;
 	}
 
-	public TakeTurn(): void {
+	public takeTurn(): void {
 	}
 
-	public Paint(): void {
+	public paint(): void {
 		view.drawImg(BitmapId.Title, 0, 0);
 	}
 }

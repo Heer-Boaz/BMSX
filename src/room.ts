@@ -1,7 +1,7 @@
 import { TileSize } from "./bmsx/msx";
 import { Direction, Point } from "./bmsx/common";
 import { GameConstants as CS, GameConstants } from "./gameconstants";
-import { view, IGameObject } from "./bmsx/engine";
+import { view, IGameObject, model } from "./bmsx/engine";
 import { RoomDataContainer } from "./RoomFactory";
 import { BitmapId } from "./bmsx/resourceids";
 import { Model } from "./gamemodel";
@@ -54,7 +54,7 @@ export class Room implements IGameObject {
 
 	///  <summary>Checks if there is a collision tile in any of the given coordinates</summary>
 	public AnyCollisionsTiles(...coordinatesToCheck: Point[]): boolean {
-		return coordinatesToCheck.some(x => this.IsCollisionTile(x.x, x.y));
+		return coordinatesToCheck.some(x => this.isCollisionTile(x.x, x.y));
 	}
 
 	public nearingRoomExit(x: number, y: number): NearingRoomExitResult {
@@ -128,12 +128,12 @@ export class Room implements IGameObject {
 		return 0;
 	}
 
-	public IsCollisionTile(x: number, y: number): boolean {
+	public isCollisionTile(x: number, y: number): boolean {
 		let _x: number = ~~(x / TileSize);
 		let _y: number = ~~(y / TileSize);
 		if (x < 0) {
 			//  Note: Check for x and not _x, as -1 / (...) will result in 0!
-			if (this.CanLeaveRoom(Direction.Left)) {
+			if (this.canLeaveRoom(Direction.Left)) {
 				_x = 0;
 			}
 			else {
@@ -142,7 +142,7 @@ export class Room implements IGameObject {
 
 		}
 		else if (_x >= GameConstants.StageScreenWidthTiles) {
-			if (this.CanLeaveRoom(Direction.Right)) {
+			if (this.canLeaveRoom(Direction.Right)) {
 				_x = (GameConstants.StageScreenWidthTiles - 1);
 			}
 			else {
@@ -152,7 +152,7 @@ export class Room implements IGameObject {
 		}
 
 		if (_y < 1 && _y >= -1) {
-			if (this.CanLeaveRoom(Direction.Up)) {
+			if (this.canLeaveRoom(Direction.Up)) {
 				_y = 0;
 			}
 			else {
@@ -161,7 +161,7 @@ export class Room implements IGameObject {
 
 		}
 		else if (_y >= GameConstants.StageScreenHeightTiles) {
-			if (this.CanLeaveRoom(Direction.Down)) {
+			if (this.canLeaveRoom(Direction.Down)) {
 				_y = GameConstants.StageScreenHeightTiles - 1;
 			}
 			else {
@@ -177,23 +177,39 @@ export class Room implements IGameObject {
 		return false;
 	}
 
-	private roomExit(dir: number): number {
-		return Model._.RoomExitsLocked ? Room.NO_ROOM_EXIT : this.exits[dir];
+	public collidesWithTile(o: IGameObject, dir: Direction): boolean {
+		let startx = o.wallhitbox_sx;
+		let starty = o.wallhitbox_sy;
+		let endx = o.wallhitbox_ex;
+		let endy = o.wallhitbox_ey;
+		switch (dir) {
+			case Direction.Up:
+				return this.isCollisionTile(startx, starty) || this.isCollisionTile(endx, starty);
+			case Direction.Right:
+				return this.isCollisionTile(endx, starty) || this.isCollisionTile(endx, endy);
+			case Direction.Down:
+				return this.isCollisionTile(startx, endy) || this.isCollisionTile(endx, endy);
+			case Direction.Left:
+				return this.isCollisionTile(startx, starty) || this.isCollisionTile(startx, endy);
+			case Direction.None:
+				return this.isCollisionTile(startx, starty) || this.isCollisionTile(endx, endy);
+			default:
+				return false;
+		}
 	}
 
-	private CanLeaveRoom(dir: number): boolean {
-		let RoomExitsLocked = true;
-		if (RoomExitsLocked) {
-			return false;
-		}
+	private roomExit(dir: number): number {
+		return (<Model>model).RoomExitsLocked ? Room.NO_ROOM_EXIT : this.exits[dir];
+	}
 
-		return (this.roomExit(dir) != Room.NO_ROOM_EXIT);
+	private canLeaveRoom(dir: number): boolean {
+		if ((<Model>model).RoomExitsLocked) { return false; }
+
+		return (this.roomExit(dir) !== Room.NO_ROOM_EXIT);
 	}
 
 	public paint() {
-		if (this.imgid) {
-			view.drawImg(this.imgid, CS.GameScreenStartX, CS.GameScreenStartY);
-		}
+		if (this.imgid) { view.drawImg(this.imgid, CS.GameScreenStartX, CS.GameScreenStartY); }
 		else {
 			for (let y = 0; y < this.tiles.length; y++) {
 				for (let x = 0; x < this.tiles[y].length; x++) {
