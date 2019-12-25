@@ -284,6 +284,7 @@ export abstract class GLView extends BaseView {
 
 	public drawRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
 		// console.warn('GLView.drawRectangle nog niet gecodeerd :-(');
+
 	}
 
 	public fillRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {

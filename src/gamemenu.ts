@@ -577,12 +577,13 @@ export class GameMenu extends bst implements IGameObject {
 
         let scalex = GameMenu.menuEndX - GameMenu.menuPosX;
         let scaley = GameMenu.menuEndY - GameMenu.menuPosY;
-        view.drawImg(BitmapId.blackpixel, GameMenu.menuPosX, GameMenu.menuPosY, DrawImgFlags.None, scalex, scaley);
+        view.drawImg(BitmapId.blackpixel, GameMenu.menuPosX + 1, GameMenu.menuPosY + 1, DrawImgFlags.None, scalex - 2, scaley - 2);
+        view.drawImg(BitmapId.whitepixel, GameMenu.menuPosX, GameMenu.menuPosY, DrawImgFlags.None, scalex, scaley);
     }
 
     private printFullscreenOptionRectangle(y: number): void {
         let selectedIndex: number = GO.Fullscreen ? 0 : 1;
-        view.drawRectangle(GameMenu.fullscreenOptionsOffsets[selectedIndex] + GameMenu.menuPosX + GameMenu.optionItemsOffsetX, y + GameMenu.fullscreenOptionsOffsetY, GameMenu.fullscreenOptionsOffsets[selectedIndex] + GameMenu.fullscreenOptionsRectangleSize.x + GameMenu.menuPosX + GameMenu.optionItemsOffsetX, y + GameMenu.fullscreenOptionsOffsetY + GameMenu.fullscreenOptionsRectangleSize.y, Msx1Colors[6]);
+        view.drawImg(BitmapId.redpixel, GameMenu.fullscreenOptionsOffsets[selectedIndex] + GameMenu.menuPosX + GameMenu.optionItemsOffsetX - 1, y + GameMenu.fullscreenOptionsOffsetY - 1, DrawImgFlags.None, GameMenu.fullscreenOptionsRectangleSize.x + 2, GameMenu.fullscreenOptionsRectangleSize.y + 2);
     }
 
     private printSaveSlot(x: number, y: number, slotIndex: number): void {

@@ -271,7 +271,8 @@ export class Model extends BaseModel {
                     TextWriter.drawText(GameConstants.pauseTextPosX, GameConstants.pauseTextPosY, GameConstants.pauseText);
                     let scalex = GameConstants.pauseEndX - GameConstants.pausePosX;
                     let scaley = GameConstants.pauseEndY - GameConstants.pausePosY;
-                    view.drawImg(BitmapId.blackpixel, GameConstants.pausePosX, GameConstants.pausePosY, DrawImgFlags.None, scalex, scaley);
+                    view.drawImg(BitmapId.blackpixel, GameConstants.pausePosX + 1, GameConstants.pausePosY + 1, DrawImgFlags.None, scalex - 2, scaley - 2);
+                    view.drawImg(BitmapId.whitepixel, GameConstants.pausePosX, GameConstants.pausePosY, DrawImgFlags.None, scalex, scaley);
                 },
                 takeTurn() { }
             };

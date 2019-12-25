@@ -296,13 +296,13 @@ function loadScript(rom) {
                 var romcode = document.createElement('script');
                 romcode.async = false;
                 romcode.onerror = function (event, source, lineno, colno, error) {
-                    var _a, _b, _c;
-                    setLoaderText("SError: " + ((_b = (_a = event) === null || _a === void 0 ? void 0 : _a.type) !== null && _b !== void 0 ? _b : "") + " " + (source !== null && source !== void 0 ? source : "") + " " + (lineno !== null && lineno !== void 0 ? lineno : "") + " " + (colno !== null && colno !== void 0 ? colno : "") + " " + ((_c = error === null || error === void 0 ? void 0 : error.message) !== null && _c !== void 0 ? _c : ""));
+                    var _a, _b, _c, _d;
+                    setLoaderText("SError: " + (_b = (_a = event) === null || _a === void 0 ? void 0 : _a.type, (_b !== null && _b !== void 0 ? _b : "")) + " " + (source !== null && source !== void 0 ? source : "") + " " + (lineno !== null && lineno !== void 0 ? lineno : "") + " " + (colno !== null && colno !== void 0 ? colno : "") + " " + (_d = (_c = error) === null || _c === void 0 ? void 0 : _c.message, (_d !== null && _d !== void 0 ? _d : "")));
                     reject(error);
                 };
                 window.onerror = function (event, source, lineno, colno, error) {
-                    var _a;
-                    setLoaderText("WError: " + event + " " + (source !== null && source !== void 0 ? source : "") + " " + (lineno !== null && lineno !== void 0 ? lineno : "") + " " + (colno !== null && colno !== void 0 ? colno : "") + " " + ((_a = error === null || error === void 0 ? void 0 : error.message) !== null && _a !== void 0 ? _a : ""));
+                    var _a, _b;
+                    setLoaderText("WError: " + event + " " + (source !== null && source !== void 0 ? source : "") + " " + (lineno !== null && lineno !== void 0 ? lineno : "") + " " + (colno !== null && colno !== void 0 ? colno : "") + " " + (_b = (_a = error) === null || _a === void 0 ? void 0 : _a.message, (_b !== null && _b !== void 0 ? _b : "")));
                     reject(error);
                 };
                 if (!bootrom.debug) {
