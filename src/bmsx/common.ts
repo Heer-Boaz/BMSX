@@ -20,6 +20,11 @@ export interface Area {
     end: Point;
 }
 
+export function mod(n: number, p: number): number {
+    let r = n % p;
+    return r < 0 ? r + p : r;
+}
+
 export function moveArea(a: Area, p: Point): Area {
     return <Area>{
         start: <Point>{ x: a.start.x + p.x, y: a.start.y + p.y },

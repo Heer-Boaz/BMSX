@@ -3,7 +3,7 @@ import { SM } from "./soundmaster";
 import { Input } from "./input";
 import { RomLoadResult } from "./rompack";
 import { MSX2ScreenWidth, MSX2ScreenHeight, TileSize } from "./msx";
-import { Point, Area, moveArea, Size, Direction } from "./common";
+import { Point, Area, moveArea, Size, Direction, mod } from "./common";
 
 export let game: Game;
 export let model: BaseModel;
@@ -628,7 +628,7 @@ export abstract class Sprite extends bst {
         if (newx < oldx) {
             if (model.collidesWithTile(this, Direction.Left)) {
                 this.onWallcollide?.(Direction.Up);
-                newx += TileSize - (newx % TileSize);
+                newx += TileSize - mod(newx, TileSize);
             }
             if (newx + this.size.x < 0) { this.onLeaveScreen?.(Direction.Left); }
         }
@@ -648,7 +648,7 @@ export abstract class Sprite extends bst {
         if (newy < oldy) {
             if (model.collidesWithTile(this, Direction.Up)) {
                 this.onWallcollide?.(Direction.Up);
-                newy += TileSize - (newy % TileSize);
+                newy += TileSize - mod(newy, TileSize);
             }
             if (newy + this.size.y < 0) { this.onLeaveScreen?.(Direction.Up); }
         }

@@ -24,7 +24,7 @@ export class ZakFoe extends Foe {
 		this.health = 1;
 
 		let collissionHandler = (d: Direction) => {
-			switch (d) {
+			switch (this.direction) {
 				case Direction.Left:
 					this.direction = Direction.Right;
 					break;
@@ -32,6 +32,7 @@ export class ZakFoe extends Foe {
 					this.direction = Direction.Left;
 					break;
 				case Direction.Down:
+					this.markForDisposure();
 					break;
 			}
 		};

@@ -1,7 +1,7 @@
 import { BStopwatch, Sprite, model } from "./bmsx/engine";
 import { Animation } from "./bmsx/animation";
 import { BitmapId, AudioId } from './bmsx/resourceids';
-import { Direction, Point, newPoint, Area, newArea, copyPoint, waitDuration, addPoints, newSize } from './bmsx/common';
+import { Direction, Point, newPoint, Area, newArea, copyPoint, waitDuration, addPoints, newSize, mod } from './bmsx/common';
 import { TileSize } from './bmsx/msx';
 import { SM } from './bmsx/soundmaster';
 import { Input } from './bmsx/input';
@@ -173,7 +173,7 @@ export class Belmont extends Sprite {
 		if (newx < oldx) {
 			if ((model as Model).currentRoom.isCollisionTile(this.wallhitbox_sx, this.wallhitbox_sy) ||
 				(model as Model).currentRoom.isCollisionTile(this.wallhitbox_sx, this.wallhitbox_ey)) {
-				newx += TileSize - (newx % TileSize);
+				newx += TileSize - mod(newx, TileSize);
 			}
 		}
 		else if (newx > oldx) {
@@ -193,7 +193,7 @@ export class Belmont extends Sprite {
 			if ((model as Model).currentRoom.isCollisionTile(this.wallhitbox_sx, this.wallhitbox_sy) ||
 				(model as Model).currentRoom.isCollisionTile(this.wallhitbox_ex, this.wallhitbox_sy)) {
 				this.handleCeilingCollision();
-				newy += TileSize - (newy % TileSize);
+				newy += TileSize - mod(newy, TileSize);
 			}
 		}
 		else if (newy > oldy) {

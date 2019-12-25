@@ -30,9 +30,9 @@ export class HUD {
     protected static FoeBarStripePosX: number = HUD.Pos_X + 60;
     protected static FoeBarStripePosY: number = HUD.Pos_Y + 27;
     protected static HealthBarSizeX: number = 63;
-    protected shownHealthLevel: number;
-    protected shownWeaponLevel: number;
-    protected shownFoeHealthLevel: number;
+    protected shownHealthLevel: number = 100;
+    protected shownWeaponLevel: number = 100;
+    protected shownFoeHealthLevel: number = 100;
     protected foeForWhichHealthLevelIsShown: Foe;
 
     constructor() {
