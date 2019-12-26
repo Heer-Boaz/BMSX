@@ -112,7 +112,6 @@ svg.d-pad {
 
 .d-pad-omheining {
 	pointer-events: none;
-	/* touch-action: none; */
 	fill: none;
 	opacity: .3;
 	stroke-width: 1px;
@@ -123,7 +122,6 @@ svg.d-pad {
 .dstick {
 	pointer-events: all;
 	fill: transparent;
-	/* touch-action: none; */
 	opacity: 1;
 	z-index: 2001;
 }
@@ -185,12 +183,10 @@ html {
 
 #msx {
 	position: absolute;
-	display: block;
 	margin-left: auto;
 	margin-right: auto;
-	width: 40vw;
-	left: 50vw;
-	transform: translateX(-50%) translateY(calc(60vh - 100%));
+	width: 40%;
+	left: 50%;
 }
 
 #msx.hidden {
@@ -200,6 +196,7 @@ html {
 #msx.enter {
 	animation: enter 1.0s forwards linear;
 	transform: translateX(-50%) translateY(65vh);
+	display: block;
 }
 
 @keyframes enter {
@@ -214,7 +211,6 @@ html {
 
 #loading {
 	z-index: 1001;
-	display: block;
 	margin-left: auto;
 	margin-right: auto;
 	width: 100vw;
@@ -224,7 +220,6 @@ html {
 	font-family: monospace;
 	font-size: x-large;
 	text-align: center;
-	visibility: hidden;
 }
 
 #loading.appear {
@@ -237,10 +232,6 @@ html {
 
 #loading.coloring {
 	animation: coloring 2s infinite;
-}
-
-#loading.invisible {
-	display: none;
 }
 
 @keyframes coloring {

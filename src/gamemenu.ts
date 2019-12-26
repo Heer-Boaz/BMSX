@@ -583,7 +583,7 @@ export class GameMenu extends bst implements IGameObject {
 
     private printFullscreenOptionRectangle(y: number): void {
         let selectedIndex: number = GO.Fullscreen ? 0 : 1;
-        view.drawImg(BitmapId.redpixel, GameMenu.fullscreenOptionsOffsets[selectedIndex] + GameMenu.menuPosX + GameMenu.optionItemsOffsetX - 1, y + GameMenu.fullscreenOptionsOffsetY - 1, DrawImgFlags.None, GameMenu.fullscreenOptionsRectangleSize.x + 2, GameMenu.fullscreenOptionsRectangleSize.y + 2);
+        view.drawImg(BitmapId.redpixel, GameMenu.fullscreenOptionsOffsets[selectedIndex] + GameMenu.menuPosX + GameMenu.optionItemsOffsetX, y + GameMenu.fullscreenOptionsOffsetY, DrawImgFlags.None, GameMenu.fullscreenOptionsRectangleSize.x, GameMenu.fullscreenOptionsRectangleSize.y);
     }
 
     private printSaveSlot(x: number, y: number, slotIndex: number): void {

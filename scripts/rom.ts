@@ -33,6 +33,7 @@ var bootrom = {
 			// }
 			// catch (e) {
 			// setClassForLoader("");
+			// (document.querySelector('#loading') as HTMLElement).hidden = false;
 			// setLoaderText(e.message);
 			// }
 			return x;
@@ -45,10 +46,10 @@ var bootrom = {
 		let bootCompletePromise = awaitBootComplete();
 		let rom = await loadRompack(url);
 		let result = await loadResources(rom);
-		setLoaderText('Press any key or touch screen to start...');
-		setClassForLoader('');
 
 		await bootCompletePromise;
+		setLoaderText('Press any key or touch screen to start...');
+		setClassForLoader('');
 		let pressedAnyKey = awaitPressedAnyKey();
 		await pressedAnyKey;
 		return result;
@@ -186,10 +187,11 @@ async function awaitBootComplete(): Promise<void> {
 		let msx = <HTMLElement>document.querySelector('#msx');
 		msx.addEventListener('animationend', ev => {
 			let loading = <HTMLElement>document.querySelector('#loading');
-			loading.style.visibility = 'visible';
+			loading.hidden = false;
 			resolve();
 		});
 		msx.className = "enter";
+		msx.hidden = false;
 		if (bootrom.debug) resolve(); // Resolve immediately in debug-mode
 	});
 	return result;
@@ -227,7 +229,7 @@ async function awaitPressedAnyKey(): Promise<void> {
 		if (element) element.parentElement.removeChild(element);
 	};
 	let wrapup = () => {
-		setClassForLoader('invisible');
+		(document.querySelector('#loading') as HTMLElement).hidden = true;
 		remove('#msx');
 		remove('#hidor');
 		remove('#romjs');
