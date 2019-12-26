@@ -170,7 +170,7 @@ export class GameMenu extends bst implements IGameObject {
                     break;
             }
         }
-        if (Input.KC_SPACE) {
+        if (Input.KC_SPACE || Input.KC_BTN1) {
             switch (this.CurrentScreen) {
                 case MenuItem.Main:
                     SM.play(AudioId.Selectie);

@@ -314,13 +314,13 @@ function handleElementUnderTouch(e: Element): string[] {
             document.getElementById('d-pad-lu').classList.add('druk');
             return ['ArrowUp', 'ArrowLeft'];
         case 'btn1_knop':
-            keydown(' ');
+            keydown('ShiftLeft');
             document.getElementById('btn1_knop').classList.add('druk');
-            return [' '];
+            return ['ShiftLeft'];
         case 'btn2_knop':
-            keydown('m');
+            keydown('KeyZ');
             document.getElementById('btn2_knop').classList.add('druk');
-            return ['m'];
+            return ['KeyZ'];
         case 'btn3_knop':
             keydown('F1');
             document.getElementById('btn3_knop').classList.add('druk');
