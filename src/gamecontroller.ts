@@ -126,7 +126,7 @@ export class Controller extends BaseController {
         this.ElapsedMsDelta = elapsedMs;
         switch ((model as Model).state) {
             case GameState.TitleScreen:
-                if (Input.KC_SPACE) {
+                if (Input.KC_SPACE || Input.KC_BTN1) {
                     this.switchState(GameState.GameStart1);
                 }
                 break;
@@ -232,7 +232,7 @@ export class Controller extends BaseController {
                 break;
             case GameSubstate.Default:
             default:
-                if (Input.KC_SPACE) {
+                if (Input.KC_SPACE || Input.KC_BTN1) {
                     Input.KD_UP ? WeaponFireHandler.HandleFireSecondaryWeapon() : WeaponFireHandler.HandleFireMainWeapon();
                 }
                 else if (Input.KC_F5 && !(model as Model).GameMenu.visible)

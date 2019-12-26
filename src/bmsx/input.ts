@@ -1,64 +1,82 @@
 ﻿import { game } from "./engine";
 
+const GAMEPAD_LEFT: number = 1000;
+const GAMEPAD_RIGHT: number = 1001;
+const GAMEPAD_UP: number = 1002;
+const GAMEPAD_DOWN: number = 1003;
+
 export class Input {
     public static KeyState: {};
     public static KeyClickRequestedState: {};
+    public static GamepadButtonState: {};
+    public static GamepadClickRequestedState: {};
 
-    private static getClickState(key: string): boolean {
-        if (Input.getKeyState(key) && !Input.KeyClickRequestedState[key]) {
-            Input.KeyClickRequestedState[key] = true;
-            return true;
+
+    private static getKeyState(key: string, checkClick: boolean = false): boolean {
+        if (checkClick) {
+            if (Input.KeyState[key] === true && !Input.KeyClickRequestedState[key]) {
+                Input.KeyClickRequestedState[key] = true;
+                return true;
+            }
+            else return Input.KeyState[key] === true;
         }
         return false;
     }
 
-    private static getKeyState(key: string): boolean {
-        return Input.KeyState[key] === true;
+    private static getGamepadButtonState(btn: number, checkClick: boolean = false): boolean {
+        if (checkClick) {
+            if (Input.GamepadButtonState[btn] === true && !Input.GamepadClickRequestedState[btn]) {
+                Input.GamepadClickRequestedState[btn] = true;
+                return true;
+            }
+        }
+        else return Input.GamepadButtonState[btn] === true;
+        return false;
     }
 
-    public static get KC_DOWN(): boolean {
-        return Input.getClickState('ArrowDown');
-    }
     public static get KC_F1(): boolean {
-        return Input.getClickState('F1');
+        return Input.getKeyState('F1', true);
     }
     public static get KC_F12(): boolean {
-        return Input.getClickState('F12');
+        return Input.getKeyState('F12', true);
     }
     public static get KC_F2(): boolean {
-        return Input.getClickState('F2');
+        return Input.getKeyState('F2', true);
     }
     public static get KC_F3(): boolean {
-        return Input.getClickState('F3');
+        return Input.getKeyState('F3', true);
     }
     public static get KC_F4(): boolean {
-        return Input.getClickState('F4');
+        return Input.getKeyState('F4', true);
     }
     public static get KC_F5(): boolean {
-        return Input.getClickState('F5');
-    }
-    public static get KC_LEFT(): boolean {
-        return Input.getClickState('ArrowLeft');
+        return Input.getKeyState('F5', true);
     }
     public static get KC_M(): boolean {
-        return Input.getClickState('m');
-    }
-    public static get KC_RIGHT(): boolean {
-        return Input.getClickState('ArrowRight');
+        return Input.getKeyState('KeyM', true);
     }
     public static get KC_SPACE(): boolean {
-        return Input.getClickState(' ');
+        return Input.getKeyState('Space', true);
     }
     public static get KC_UP(): boolean {
-        return Input.getClickState('ArrowUp');
+        return Input.getKeyState('ArrowUp', true) || Input.getGamepadButtonState(GAMEPAD_UP, true);
+    }
+    public static get KC_RIGHT(): boolean {
+        return Input.getKeyState('ArrowRight', true) || Input.getGamepadButtonState(GAMEPAD_RIGHT, true);
+    }
+    public static get KC_DOWN(): boolean {
+        return Input.getKeyState('ArrowDown', true) || Input.getGamepadButtonState(GAMEPAD_DOWN, true);
+    }
+    public static get KC_LEFT(): boolean {
+        return Input.getKeyState('ArrowLeft', true) || Input.getGamepadButtonState(GAMEPAD_LEFT, true);
+    }
+    public static get KC_BTN1(): boolean {
+        return Input.getKeyState('ShiftLeft', true) || Input.getGamepadButtonState(0, true);
     }
     public static get KC_BTN2(): boolean {
-        return Input.getClickState('m');
+        return Input.getKeyState('KeyZ', true) || Input.getGamepadButtonState(1, true);
     }
 
-    public static get KD_DOWN(): boolean {
-        return Input.getKeyState('ArrowDown');
-    }
     public static get KD_F1(): boolean {
         return Input.getKeyState('F1');
     }
@@ -77,37 +95,89 @@ export class Input {
     public static get KD_F5(): boolean {
         return Input.getKeyState('F5');
     }
-    public static get KD_LEFT(): boolean {
-        return Input.getKeyState('ArrowLeft');
-    }
     public static get KD_M(): boolean {
-        return Input.getKeyState('m');
-    }
-    public static get KD_RIGHT(): boolean {
-        return Input.getKeyState('ArrowRight');
+        return Input.getKeyState('KeyM');
     }
     public static get KD_SPACE(): boolean {
-        return Input.getKeyState(' ');
+        return Input.getKeyState('Space');
     }
     public static get KD_UP(): boolean {
-        return Input.getKeyState('ArrowUp');
+        return Input.getKeyState('ArrowUp') || Input.getGamepadButtonState(GAMEPAD_UP, false);
+    }
+    public static get KD_RIGHT(): boolean {
+        return Input.getKeyState('ArrowRight') || Input.getGamepadButtonState(GAMEPAD_RIGHT, false);
+    }
+    public static get KD_DOWN(): boolean {
+        return Input.getKeyState('ArrowDown') || Input.getGamepadButtonState(GAMEPAD_DOWN, false);
+    }
+    public static get KD_LEFT(): boolean {
+        return Input.getKeyState('ArrowLeft') || Input.getGamepadButtonState(GAMEPAD_LEFT, false);
+    }
+    public static get KD_BTN1(): boolean {
+        return Input.getKeyState('ShiftLeft') || Input.getGamepadButtonState(0, false);
     }
     public static get KD_BTN2(): boolean {
-        return Input.getKeyState('m');
+        return Input.getKeyState('KeyZ') || Input.getGamepadButtonState(1, false);
     }
 
     public static init(): void {
         Input.KeyState = {};
         Input.KeyClickRequestedState = {};
+        Input.GamepadButtonState = {};
+        Input.GamepadClickRequestedState = {};
         Input.reset();
 
-        window.addEventListener('keydown', e => { preventDefaultEventAction(e, e.key); keydown(e.key); }, false);
-        window.addEventListener('keyup', e => { preventDefaultEventAction(e, e.key); keyup(e.key); }, false);
+        window.addEventListener("gamepadconnected", function (e: Event) {
+            let gp = navigator.getGamepads()[(e as any).gamepad.index];
+            console.info("Gamepad connected at index " + gp.index + ": " + gp.id + ". It has " + gp.buttons.length + " buttons and " + gp.axes.length + " axes.");
+        });
+
+        window.addEventListener('keydown', e => { preventDefaultEventAction(e, e.code); keydown(e.code); }, false);
+        window.addEventListener('keyup', e => { preventDefaultEventAction(e, e.code); keyup(e.code); }, false);
         window.addEventListener('blur', blur, false);
 
-        document.addEventListener('touchmove', e => { e.preventDefault(); e.stopPropagation(); handleTouchStuff(e) });
-        document.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); handleTouchStuff(e) });
+        document.addEventListener('touchmove', e => { e.preventDefault(); e.stopPropagation(); handleTouchStuff(e); });
+        document.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); handleTouchStuff(e); });
         document.addEventListener('touchend', e => { e.preventDefault(); e.stopPropagation(); handleTouchStuff(e); });
+    }
+
+    public static pollGamepadInput(): void {
+        let buttonPressed = (button: GamepadButton) => {
+            if (typeof (button) == "object") {
+                return button.pressed;
+            }
+            return button == 1.0;
+        };
+        Input.GamepadButtonState[GAMEPAD_LEFT] = false;
+        Input.GamepadButtonState[GAMEPAD_RIGHT] = false;
+        Input.GamepadButtonState[GAMEPAD_UP] = false;
+        Input.GamepadButtonState[GAMEPAD_DOWN] = false;
+
+        let gamepads = navigator.getGamepads ? navigator.getGamepads() : ((navigator as any).webkitGetGamepads ? (navigator as any).webkitGetGamepads : undefined);
+        let gp: Gamepad = gamepads?.[0];
+        if (!gp) { return; }
+        for (let i = 0; i < gp.buttons.length; i++) {
+            if (buttonPressed(gp.buttons[i])) {
+                Input.GamepadButtonState[i] = true;
+            }
+            else {
+                Input.GamepadButtonState[i] = false;
+                Input.GamepadClickRequestedState[i] = false;
+            }
+        }
+        for (let i = 0; i < gp.axes.length && i < 2; i++) {
+            let axis = gp.axes[i];
+            switch (i) {
+                case 0:
+                    if (axis < -.5) { Input.GamepadButtonState[GAMEPAD_LEFT] = true; }
+                    else if (axis > .5) { Input.GamepadButtonState[GAMEPAD_RIGHT] = true; }
+                    break;
+                case 1:
+                    if (axis < -.5) { Input.GamepadButtonState[GAMEPAD_UP] = true; }
+                    else if (axis > .5) { Input.GamepadButtonState[GAMEPAD_DOWN] = true; }
+                    break;
+            }
+        }
     }
 
     public static reset(except?: string[]): void {
@@ -119,6 +189,16 @@ export class Input {
         props = Object.keys(Input.KeyClickRequestedState);
         for (let i = 0; i < props.length; i++) {
             if (!except || except.indexOf(props[i]) === -1) { delete Input.KeyClickRequestedState[props[i]]; }
+        }
+
+        props = Object.keys(Input.GamepadButtonState);
+        for (let i = 0; i < props.length; i++) {
+            if (!except || except.indexOf(props[i]) === -1) { delete Input.GamepadButtonState[props[i]]; }
+        }
+
+        props = Object.keys(Input.GamepadClickRequestedState);
+        for (let i = 0; i < props.length; i++) {
+            if (!except || except.indexOf(props[i]) === -1) { delete Input.GamepadClickRequestedState[props[i]]; }
         }
     }
 

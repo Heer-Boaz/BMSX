@@ -117,6 +117,7 @@ export class Game {
         for (let i = 0; i < numTicks; i++) {
             ++game._turnCounter;
             game.lastTick = game.lastTick + fpstime; // Now lastTick is this tick.
+            Input.pollGamepadInput();
             game.update(game.lastTick);
         }
         view.drawgame();
