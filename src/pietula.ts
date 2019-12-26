@@ -7,7 +7,6 @@ import { Controller } from './gamecontroller';
 import { GameSubstate, Model } from './gamemodel';
 import { DrawImgFlags } from './bmsx/view';
 import { SM } from './bmsx/soundmaster';
-import { PlayerProjectile } from './pprojectile';
 import { FoeExplosion } from './foeexplosion';
 import { Foe } from './foe';
 

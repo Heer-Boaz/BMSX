@@ -18,9 +18,9 @@ export class Input {
                 Input.KeyClickRequestedState[key] = true;
                 return true;
             }
-            else return Input.KeyState[key] === true;
+            else return false;
         }
-        return false;
+        else return Input.KeyState[key] === true;
     }
 
     private static getGamepadButtonState(btn: number, checkClick: boolean = false): boolean {
@@ -29,9 +29,9 @@ export class Input {
                 Input.GamepadClickRequestedState[btn] = true;
                 return true;
             }
+            else return false;
         }
         else return Input.GamepadButtonState[btn] === true;
-        return false;
     }
 
     public static get KC_F1(): boolean {
