@@ -53,7 +53,7 @@ export class HUD {
         this.foeForWhichHealthLevelIsShown = (model as Model).FoeForWhichHealthPercentageIsGiven;
     }
 
-    public TakeTurn(): void {
+    public takeTurn(): void {
         if ((model as Model).Belmont.Dying)
             this.shownHealthLevel = (model as Model).Belmont.HealthPercentage;
 
@@ -85,7 +85,7 @@ export class HUD {
         return ~~(HUD.HealthBarSizeX / 100 * percentage) + 1;
     }
 
-    public Paint(): void {
+    public paint(): void {
         let pos: Point = { x: HUD.HealthBarPosX, y: HUD.HealthBarPosY };
         let length = this.percentageToBarLength(this.shownHealthLevel);
         if (length > 0) { view.drawImg(BitmapId.EnergybarStripe_Belmont, pos.x, pos.y, DrawImgFlags.None, length); }

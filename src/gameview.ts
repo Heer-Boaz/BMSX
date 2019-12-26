@@ -50,7 +50,7 @@ export class GameView extends GLView {
                 if ((model as Model).gameSubstate != GameSubstate.SwitchRoom) {
                     super.drawgame(gamescreenOffset, false);
                 }
-                (model as Model).Hud.Paint();
+                (model as Model).Hud.paint();
 
                 switch ((model as Model).gameSubstate) {
                     case GameSubstate.SwitchRoom:

@@ -17,6 +17,8 @@ export abstract class Foe extends Sprite {
 
     constructor() {
         super();
+        this.canHurtPlayer = true;
+        this.damageToPlayer = 1;
     }
 
     public get respawnOnRoomEntry(): boolean {

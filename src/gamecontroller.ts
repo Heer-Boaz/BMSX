@@ -152,13 +152,13 @@ export class Controller extends BaseController {
                     case GameSubstate.BelmontDies:
                         this.handleInputDuringGame();
                         (model as Model).Belmont.takeTurn();
-                        (model as Model).Hud.TakeTurn();
+                        (model as Model).Hud.takeTurn();
                         break;
                     case GameSubstate.ItsCurtainsForYou:
                     case GameSubstate.ToEndDemo:
                         this.handleInputDuringGame();
                         (model as Model).Belmont.takeTurn();
-                        (model as Model).Hud.TakeTurn();
+                        (model as Model).Hud.takeTurn();
                         (model as Model).ItsCurtains.takeTurn();
                         break;
                     case GameSubstate.GameOver:
@@ -179,7 +179,7 @@ export class Controller extends BaseController {
                         objects.forEach(o => !o.disposeFlag && o.takeTurn());
                         objects.forEach(o => o.disposeFlag && (model as Model).remove(o));
                         (model as Model).currentRoom.takeTurn();
-                        (model as Model).Hud.TakeTurn();
+                        (model as Model).Hud.takeTurn();
                         break;
                 }
                 break;
@@ -201,7 +201,7 @@ export class Controller extends BaseController {
                         objects.forEach(o => !o.disposeFlag && o.takeTurn());
                         objects.forEach(o => o.disposeFlag && (model as Model).remove(o));
                         (model as Model).currentRoom.takeTurn();
-                        (model as Model).Hud.TakeTurn();
+                        (model as Model).Hud.takeTurn();
                         if (Input.KD_F5 && !(model as Model).GameMenu.visible)
                             this.OpenGameMenu();
                         break;

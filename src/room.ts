@@ -1,4 +1,5 @@
-import { TileSize } from "./bmsx/msx";
+import { Candle } from './candle';
+import { TileSize, Tile } from "./bmsx/msx";
 import { Direction, Point, newPoint } from "./bmsx/common";
 import { GameConstants as CS, GameConstants } from "./gameconstants";
 import { view, IGameObject, model } from "./bmsx/engine";
@@ -8,6 +9,8 @@ import { Model } from "./gamemodel";
 import { GardenCandle } from './gardencandle';
 import { ZakFoe } from './zakfoe';
 import { HagGenerator } from './haggenerator';
+import { Pietula } from './pietula';
+import { Controller } from './gamecontroller';
 
 export type NearingRoomExitResult = { destRoom: number, direction: Direction } | null;
 export type RoomInitDelegate = (room: Room) => void;
@@ -61,12 +64,23 @@ export class Room implements IGameObject {
 				case 'gardencandle':
 					new GardenCandle().spawn(pos);
 					break;
+				case 'candle':
+					new Candle().spawn(pos);
+					break;
 				case 'haggenerator':
 					new HagGenerator().spawn(pos);
 					break;
 				case 'zakfoe': {
 					let dir = Direction[ding.betoog as string];
 					new ZakFoe(dir).spawn(pos);
+					break;
+				}
+				case 'pietula': {
+					let deBaas = new Pietula();
+					(model as Model).spawn(deBaas);
+					Controller._.startBossFight(deBaas);
+					(model as Model).Belmont.setx(Tile.toStageCoord(2));
+					(model as Model).Belmont.sety(Tile.toStageCoord(8));
 					break;
 				}
 			}
