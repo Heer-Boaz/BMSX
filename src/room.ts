@@ -3,7 +3,7 @@ import { TileSize, Tile } from "./bmsx/msx";
 import { Direction, Point, newPoint } from "./bmsx/common";
 import { GameConstants as CS, GameConstants } from "./gameconstants";
 import { view, IGameObject, model } from "./bmsx/engine";
-import { RoomDataContainer, thestuff } from "./RoomFactory";
+import { RoomDataContainer } from "./RoomFactory";
 import { BitmapId } from "./bmsx/resourceids";
 import { Model } from "./gamemodel";
 import { GardenCandle } from './gardencandle';
@@ -38,7 +38,7 @@ export class Room implements IGameObject {
 	public exits: number[];
 	public initFunction: RoomInitDelegate;
 	public imgid: BitmapId;
-	protected stuff: thestuff;
+	protected stuff: any;
 
 	public static LoadRoom(data: RoomDataContainer): Room {
 		var result = new Room();
@@ -59,7 +59,19 @@ export class Room implements IGameObject {
 
 	protected handleTheStuff(): void {
 		for (let ding of this.stuff) {
-			let pos = newPoint(ding.waar.x ?? (ding.waar.tx * TileSize), ding.waar.y ?? (ding.waar.ty * TileSize));
+			let pos: Point;
+			if (ding.tpos) {
+				pos = {
+					x: ding.tpos[0] * TileSize,
+					y: ding.tpos[1] * TileSize
+				};
+			}
+			else if (ding.pos) {
+				pos = {
+					x: ding.tpos[0],
+					y: ding.tpos[1]
+				};
+			}
 			switch (ding.wat) {
 				case 'gardencandle':
 					new GardenCandle().spawn(pos);
@@ -71,7 +83,7 @@ export class Room implements IGameObject {
 					new HagGenerator().spawn(pos);
 					break;
 				case 'zakfoe': {
-					let dir = Direction[ding.betoog as string];
+					let dir = Direction[ding.dir as string];
 					new ZakFoe(dir).spawn(pos);
 					break;
 				}

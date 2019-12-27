@@ -13,6 +13,7 @@ const cliProgress = require('cli-progress');
 const _colors = require('colors');
 const FtpDeploy = require('ftp-deploy');
 const { createCanvas, loadImage } = require('canvas');
+const yaml = require('js-yaml');
 
 const ATLAS_PX_SIZE = 4096;
 const CROP_ATLAS = true;
@@ -121,6 +122,15 @@ function getAllFiles(dirPath: string, arrayOfFiles?: string[], filterExtension?:
 	return arrayOfFiles;
 }
 
+function yaml2Json(): void {
+	let yamlfiles = getAllFiles('./src/data', [], '.yaml');
+	for (let file of yamlfiles) {
+		let doc = yaml.safeLoad(readFileSync(file, 'utf8'));
+		let outfilename = file.replace('.yaml', '.json');
+		writeFileSync(outfilename, Buffer.from(encodeuint8arr(JSON.stringify(doc))));
+	}
+}
+
 async function bundleGamecode(outfile: string): Promise<any> {
 	log("Game compileren en bundleren...  ");
 	startRotator();
@@ -134,7 +144,7 @@ async function bundleGamecode(outfile: string): Promise<any> {
 			cache: {},
 			packageCache: {},
 			exposeAll: true,
-			exclude: ['src/lib/rom.ts', 'src/lib/rompacker.ts'],
+			exclude: [],
 			ignore: ['node_modules', 'dist', 'rom']
 		})
 			.add("src/bootloader.ts")
@@ -253,7 +263,7 @@ async function buildGameHtml(outfile: string): Promise<void> {
 		hideCursor: true
 	});
 
-	bar.start(13, 0);
+	bar.start(12, 0);
 
 	let html = readFileSync("./gamebase.html", 'utf8');
 	bar.increment(1);
@@ -262,8 +272,6 @@ async function buildGameHtml(outfile: string): Promise<void> {
 	let romjs = readFileSync("./rom/rom.js", 'utf8');
 	bar.increment(1);
 	let zipjs = readFileSync("./scripts/pako_inflate.min.js", 'utf8');
-	bar.increment(1);
-	let glmatrixjs = readFileSync("./scripts/gl-matrix-min.js", 'utf8');
 	bar.increment(1);
 	romjs = romjs.replace('Object.defineProperty(exports, "__esModule", { value: true });', '');
 	bar.increment(1);
@@ -691,7 +699,9 @@ try {
 		}
 	}
 
+	yaml2Json();
 	bundleGamecode("./rom/tsout.js")
+		.then(() => yaml2Json())
 		.then(() => buildRompackAndResourceList(outfile))
 		.then(() => buildGameHtml(outfile))
 		.then(() => deploy())
