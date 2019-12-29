@@ -74,7 +74,7 @@ maps:
           tpos: [7, 8]
           dir: Left
     - id: 4
-      imgid: null
+      imgid: castle_entrance
       tiles:
         - '################'
         - '#...............'

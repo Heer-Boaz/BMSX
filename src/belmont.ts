@@ -1,4 +1,4 @@
-import { BStopwatch, Sprite, model } from "./bmsx/engine";
+import { BStopwatch, Sprite, model, controller } from "./bmsx/engine";
 import { Animation } from "./bmsx/animation";
 import { BitmapId, AudioId } from './bmsx/resourceids';
 import { Direction, Point, newPoint, Area, newArea, copyPoint, waitDuration, addPoints, newSize, mod } from './bmsx/common';
@@ -8,7 +8,7 @@ import { Input } from './bmsx/input';
 import { Room, NearingRoomExitResult } from './room';
 import { Model } from './gamemodel';
 import { GameConstants as CS } from './gameconstants';
-import { Controller as C } from './gamecontroller';
+import { Controller } from './gamecontroller';
 
 export class RoeState {
 	public static framesPerDrawing: number[] = [4, 2, 8];
@@ -337,7 +337,6 @@ export class Belmont extends Sprite {
 	}
 
 	protected doHitFall(): void {
-		let originalPos = copyPoint(this.pos);
 		this.setx(this.pos.x + (this.direction == Direction.Right ? -2 : 2));
 		let dir = this.direction;
 		this.direction = this.direction == Direction.Left ? Direction.Right : Direction.Left;
@@ -354,7 +353,7 @@ export class Belmont extends Sprite {
 			this.hitState.CurrentStep = HitStateStep.None;
 			if (this.Health <= 0) {
 				this.initDyingState();
-				C._.BelmontDied();
+				(controller as Controller).BelmontDied();
 			}
 		}
 	}
@@ -451,7 +450,7 @@ export class Belmont extends Sprite {
 		let step = this.dyingState.DeathAni.doAnimation(this.dyingState.aniTimer);
 		if (step.next) {
 			if (this.dyingState.DeathAni.finished === true) {
-				C._.BelmontDeathAniFinished();
+				(controller as Controller).BelmontDeathAniFinished();
 				this.dyingState.Stop();
 				this.state = State.Dead;
 			}
@@ -539,7 +538,7 @@ export class Belmont extends Sprite {
 	private checkAndHandleRoomExit(): void {
 		let possibleRoomExit = this.nearRoomExit();
 		if (possibleRoomExit && possibleRoomExit.destRoom !== Room.NO_ROOM_EXIT) {
-			C._.HandleRoomExitViaMovement(possibleRoomExit.destRoom, possibleRoomExit.direction);
+			(controller as Controller).HandleRoomExitViaMovement(possibleRoomExit.destRoom, possibleRoomExit.direction);
 		}
 	}
 
@@ -613,7 +612,7 @@ export class Belmont extends Sprite {
 				roeOffset.y += RoeState.RoeSpritePosOffsetCrouching.get(this.direction)[this.roeState.CurrentFrame].y;
 			}
 		}
-		if (!this.hitState.Blink || C._.InEventState) {
+		if (!this.hitState.Blink || (controller as Controller).InEventState) {
 			super.paint(addPoints(roeOffset, offset));
 		}
 		else {

@@ -1,10 +1,9 @@
 import { BStopwatch, model } from "./bmsx/engine";
-import { Animation, AniStepReturnValue, AniData } from "./bmsx/animation";
-import { AudioId, BitmapId } from "./bmsx/resourceids";
+import { Animation, AniData } from "./bmsx/animation";
+import { BitmapId } from "./bmsx/resourceids";
 import { ItemType } from "./item";
 import { Foe } from "./foe";
 import { GameConstants } from "./gameconstants";
-import { PlayerProjectile } from "./pprojectile";
 import { Direction, Size, Area, Point } from "./bmsx/common";
 import { Model } from "./gamemodel";
 

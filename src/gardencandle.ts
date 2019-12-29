@@ -5,7 +5,6 @@ import { ItemType } from "./item";
 import { newArea } from "./bmsx/common";
 import { Area } from "./bmsx/common";
 
-/*[Serializable]*/
 export class GardenCandle extends Candle {
     protected static CandleHitArea: Area = newArea(0, 0, 16, 16);
     protected static AnimationFrames: BitmapId[] = new Array(BitmapId.GCandle_1, BitmapId.GCandle_2);

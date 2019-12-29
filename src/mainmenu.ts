@@ -1,14 +1,11 @@
 import { Chapter, GameState, Model } from "./gamemodel";
-import { GameConstants as GCS } from "./gameconstants"
 import { SM as S } from "./bmsx/soundmaster";
 import { Direction } from "./bmsx/common";
-import { Model as M } from "./gamemodel";
-import { Controller as C } from "./gamecontroller";
+import { Controller } from "./gamecontroller";
 import { TextWriter } from "./textwriter";
-import { view, model } from "./bmsx/engine";
+import { view, model, controller } from "./bmsx/engine";
 import { Constants as CS } from "./bmsx/engine";
 import { Input } from "./bmsx/input";
-import { GameMenu } from "./gamemenu";
 import { SlotExists } from "./bmsx/gamepersistor";
 import { AudioId, BitmapId } from "./bmsx/resourceids";
 import { Msx1Colors } from "./bmsx/msx";
@@ -100,7 +97,7 @@ export class MainMenu {
                             break;
                         case MenuItem.Continue:
                             if (SlotExists(CS.SaveSlotCheckpoint))
-                                C._.LoadCheckpoint();
+                                (controller as Controller).LoadCheckpoint();
                             else S.play(AudioId.Fout);
                             break;
                         case MenuItem.LoadGame:
@@ -120,19 +117,19 @@ export class MainMenu {
                     switch (this.selectedItem) {
                         case MenuItem.Debug:
                             (model as Model).SelectedChapterToPlay = Chapter.Debug;
-                            C._.switchState(GameState.Game);
+                            (controller as Controller).switchState(GameState.Game);
                             break;
                         case MenuItem.Prologue:
                             (model as Model).SelectedChapterToPlay = Chapter.Prologue;
-                            C._.switchState(GameState.GameStart1);
+                            (controller as Controller).switchState(GameState.GameStart1);
                             break;
                         case MenuItem.Chapter0:
                             (model as Model).SelectedChapterToPlay = Chapter.Chapter_0;
-                            C._.switchState(GameState.GameStart1);
+                            (controller as Controller).switchState(GameState.GameStart1);
                             break;
                         case MenuItem.Chapter1:
                             (model as Model).SelectedChapterToPlay = Chapter.GameStart;
-                            C._.switchState(GameState.GameStart1);
+                            (controller as Controller).switchState(GameState.GameStart1);
                             break;
                         case MenuItem.ToMainMenu:
                             this.state = State.SelectMain;

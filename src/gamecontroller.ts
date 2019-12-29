@@ -14,11 +14,6 @@ import { WeaponItem } from './weaponitem';
 import { Pietula } from './pietula';
 
 export class Controller extends BaseController {
-    private static _instance: Controller;
-    public static get _(): Controller {
-        return Controller._instance != null ? Controller._instance : (Controller._instance = new Controller());
-    }
-
     public InEventState: boolean;
     private startAfterLoadTimer: BStopwatch;
     public ElapsedMsDelta: number;
@@ -95,7 +90,7 @@ export class Controller extends BaseController {
                 break;
             case GameSubstate.GameOver:
                 SM.play(AudioId.Humiliation);
-                (model as Model).GameOverScreen.Init();
+                (model as Model).GameOverScreen.reset();
                 break;
             case GameSubstate.IngameMenu:
                 BStopwatch.pauseAllRunningWatches(true);
@@ -163,7 +158,7 @@ export class Controller extends BaseController {
                         break;
                     case GameSubstate.GameOver:
                         this.handleInputDuringGame();
-                        (model as Model).GameOverScreen.TakeTurn();
+                        (model as Model).GameOverScreen.takeTurn();
                         (model as Model).GameMenu.takeTurn();
                         break;
                     case GameSubstate.SwitchRoom:

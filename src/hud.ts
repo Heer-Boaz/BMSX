@@ -1,10 +1,9 @@
 import { Foe } from "./foe";
 import { Item, ItemType } from "./item";
-import { AudioId, BitmapId } from "./bmsx/resourceids";
-import { Model as M, Model } from "./gamemodel";
+import { BitmapId } from "./bmsx/resourceids";
+import { Model } from "./gamemodel";
 import { GameConstants as CS } from "./gameconstants";
 import { view, BStopwatch, model } from "./bmsx/engine";
-import { GameView as V } from "./gameview";
 import { waitDuration, setPoint, Point } from "./bmsx/common";
 import { TextWriter } from "./textwriter";
 import { DrawImgFlags } from './bmsx/view';

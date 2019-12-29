@@ -3,7 +3,6 @@ import { Animation } from "./bmsx/animation";
 import { Point } from "./bmsx/common";
 import { BStopwatch } from './bmsx/engine';
 
-/*[Serializable]*/
 export class FX extends Sprite {
     protected animation: Animation<number>;
     protected timer: BStopwatch;

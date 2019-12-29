@@ -1,5 +1,5 @@
 import { RomLoadResult } from './bmsx/rompack';
-import { Game, game, model } from './bmsx/engine';
+import { Game, game, model, controller } from './bmsx/engine';
 import { GameConstants } from './gameconstants';
 import { Model, Chapter } from './gamemodel';
 import { Controller } from './gamecontroller';
@@ -16,8 +16,8 @@ _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: Gain
 
     game.start();
     (model as Model).SelectedChapterToPlay = Chapter.GameStart;
-    Controller._.switchState(GameConstants.INITIAL_GAMESTATE);
-    Controller._.switchSubstate(GameConstants.INITIAL_GAMESUBSTATE);
+    (controller as Controller).switchState(GameConstants.INITIAL_GAMESTATE);
+    (controller as Controller).switchSubstate(GameConstants.INITIAL_GAMESUBSTATE);
 };
 
 export class Bootloader {

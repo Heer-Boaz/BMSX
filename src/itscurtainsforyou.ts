@@ -1,8 +1,8 @@
-import { BStopwatch, IGameObject } from "./bmsx/engine";
+import { BStopwatch, IGameObject, controller } from "./bmsx/engine";
 import { TileSize } from "./bmsx/msx"
 import { waitDuration } from "./bmsx/common";
 import { view } from "./bmsx/engine";
-import { Controller as C } from "./gamecontroller";
+import { Controller } from "./gamecontroller";
 import { Point } from "./bmsx/common";
 import { BitmapId } from "./bmsx/resourceids";
 import { GameConstants } from "./gameconstants";
@@ -36,7 +36,7 @@ export class ItsCurtainsForYou implements IGameObject {
         if (waitDuration(this.timer, this.msCurtainPartWait)) {
             this.curtainPartCount++;
             if (this.curtainPartCount >= this.maxCurtainParts)
-                C._.ItsCurtainsAniFinished();
+                (controller as Controller).ItsCurtainsAniFinished();
         }
     }
 

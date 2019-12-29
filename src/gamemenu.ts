@@ -4,15 +4,15 @@ import { Direction } from "./bmsx/common";
 import { TextWriter } from "./textwriter";
 import { Size, Point } from "./bmsx/common";
 import { SM } from "./bmsx/soundmaster";
-import { Controller as C } from "./gamecontroller";
+import { Controller } from "./gamecontroller";
 import { GameState, Model } from "./gamemodel";
 import { SlotExists, LoadGame } from "./bmsx/gamepersistor";
-import { GameOptions as GO, IGameObject, bst, model } from './bmsx/engine';
+import { GameOptions as GO, IGameObject, bst, model, controller } from './bmsx/engine';
 import { Constants } from "./bmsx/engine";
 import { newSize, setPoint } from "./bmsx/common";
 import { view, game } from "./bmsx/engine";
 import { Input } from "./bmsx/input";
-import { Msx1Colors, Msx1ExtColors } from "./bmsx/msx";
+import { Msx1ExtColors } from "./bmsx/msx";
 import { DrawImgFlags } from './bmsx/view';
 
 interface MenuOption {
@@ -161,7 +161,7 @@ export class GameMenu extends bst implements IGameObject {
         if (Input.KC_BTN2) {
             switch (this.CurrentScreen) {
                 case MenuItem.Main:
-                    C._.CloseGameMenu();
+                    (controller as Controller).CloseGameMenu();
                     break;
                 default:
                     this.CurrentScreen = MenuItem.Main;
@@ -176,7 +176,7 @@ export class GameMenu extends bst implements IGameObject {
                     SM.play(AudioId.Selectie);
                     switch (this.selectedItem) {
                         case MenuItem.ReturnToGame:
-                            C._.CloseGameMenu();
+                            (controller as Controller).CloseGameMenu();
                             break;
                         case MenuItem.ChangeOptions:
                             this.CurrentScreen = MenuItem.Options;
@@ -220,7 +220,7 @@ export class GameMenu extends bst implements IGameObject {
                                 let slot = this.selectedItemIndex - 1;
                                 if (SlotExists(slot)) {
                                     let sg = LoadGame(slot);
-                                    C._.LoadGame(sg);
+                                    (controller as Controller).LoadGame(sg);
                                 }
                                 else SM.play(AudioId.Fout);
                             }
@@ -237,7 +237,7 @@ export class GameMenu extends bst implements IGameObject {
                         case MenuItem.SaveSlot:
                             {
                                 let slot = this.selectedItemIndex - 1;
-                                C._.SaveGame(slot);
+                                (controller as Controller).SaveGame(slot);
                             }
                             break;
                     }

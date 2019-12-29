@@ -1,9 +1,9 @@
-import { Sprite, model } from "./bmsx/engine";
+import { Sprite, model, controller } from "./bmsx/engine";
 import { Model, SecWeaponType, BagWeapon } from "./gamemodel";
 import { Item } from "./item";
 import { BitmapId } from "./bmsx/resourceids";
 import { moveArea, area2size, newArea } from "./bmsx/common";
-import { Controller as C } from "./gamecontroller";
+import { Controller as C, Controller } from "./gamecontroller";
 import { Area, Point } from "./bmsx/common";
 
 export class WeaponItem extends Sprite {
@@ -43,7 +43,7 @@ export class WeaponItem extends Sprite {
 
     public takeTurn(): void {
         if (this.areaCollide(moveArea((model as Model).Belmont.RoomCollisionArea, <Point>(model as Model).Belmont.pos))) {
-            C._.PickupWeaponItem(this);
+            (controller as Controller).PickupWeaponItem(this);
             this.disposeFlag = true;
         }
     }

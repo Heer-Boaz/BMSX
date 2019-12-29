@@ -1,6 +1,6 @@
 import { Foe } from "./foe";
 import { ItemType } from "./item";
-import { Area, Point, Direction, newArea, newSize } from "./bmsx/common";
+import { Area, Direction, newArea, newSize } from "./bmsx/common";
 import { BitmapId } from "./bmsx/resourceids";
 import { Model } from "./gamemodel";
 import { BSTEventType, bss, model } from "./bmsx/engine";
@@ -70,7 +70,6 @@ export class ZakFoe extends Foe {
 							this.setx(this.pos.x + 1);
 							break;
 					}
-					// if (!model.collidesWithTile(
 					this.flippedH = this.direction == Direction.Left ? true : false;
 
 					if (!(model as Model).currentRoom.isCollisionTile(this.hitbox_sx + 4, this.hitbox_ey + 12)) {

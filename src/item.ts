@@ -1,4 +1,4 @@
-import { Sprite, model } from "./bmsx/engine";
+import { Sprite, model, controller } from "./bmsx/engine";
 import { newArea, area2size, moveArea } from "./bmsx/common";
 import { Model } from "./gamemodel";
 import { SM } from "./bmsx/soundmaster";
@@ -37,7 +37,7 @@ export class Item extends Sprite {
 
     public takeTurn(): void {
         if (this.areaCollide(moveArea((model as Model).Belmont.EventTouchHitArea, <Point>(model as Model).Belmont.pos))) {
-            Controller._.PickupItem(this);
+            (controller as Controller).PickupItem(this);
             switch (this.ItsType) {
                 case ItemType.HeartSmall:
                 case ItemType.HeartBig:

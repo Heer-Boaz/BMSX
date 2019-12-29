@@ -2,7 +2,6 @@ import { GameConstants as CS } from "./gameconstants"
 import { GameState, GameSubstate, Model } from "./gamemodel";
 import { Point } from "./bmsx/common";
 import { view, model } from "./bmsx/engine";
-import { BaseView } from './bmsx/view';
 import { GLView } from './bmsx/glview';
 
 export class GameView extends GLView {
@@ -44,7 +43,7 @@ export class GameView extends GLView {
                 }
                 else if ((model as Model).gameSubstate == GameSubstate.GameOver) {
                     (model as Model).ItsCurtains.paint();
-                    (model as Model).GameOverScreen.Paint();
+                    (model as Model).GameOverScreen.paint();
                 }
 
                 if ((model as Model).gameSubstate != GameSubstate.SwitchRoom) {

@@ -117,13 +117,14 @@ export enum BitmapId {
 	Lightning3 = 115,
 	Lightning4 = 116,
 	Lightning5 = 117,
-	Garden = 118,
-	Garden_entrance = 119,
-	IntroAnimation_1 = 120,
-	Sint = 121,
-	CurtainPart = 122,
-	Title = 123,
-	_atlas = 124,
+	castle_entrance = 118,
+	Garden = 119,
+	Garden_entrance = 120,
+	IntroAnimation_1 = 121,
+	Sint = 122,
+	CurtainPart = 123,
+	Title = 124,
+	_atlas = 125,
 }
 
 export enum AudioId {

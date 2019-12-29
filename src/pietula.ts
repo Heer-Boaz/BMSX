@@ -1,7 +1,7 @@
 import { TileSize, Tile } from './bmsx/msx';
 import { GameConstants } from './gameconstants';
 import { Area, newArea, Point, newSize, copyPoint, addPoints } from './bmsx/common';
-import { bst, view, model } from './bmsx/engine';
+import { bst, view, model, controller } from './bmsx/engine';
 import { BitmapId, AudioId } from './bmsx/resourceids';
 import { Controller } from './gamecontroller';
 import { GameSubstate, Model } from './gamemodel';
@@ -40,7 +40,7 @@ export class Pietula extends Foe {
 		let waitAfterDeath = fst.add('wachten_op_elmo');
 		waitAfterDeath.nudges2move = 6000 / 20;
 		waitAfterDeath.onrun = (s) => ++s.nudges;
-		waitAfterDeath.ontapemove = (s) => Controller._.switchSubstate(GameSubstate.ToEndDemo);
+		waitAfterDeath.ontapemove = (s) => (controller as Controller).switchSubstate(GameSubstate.ToEndDemo);
 
 		let intro_wacht = fst.add('intro_wacht');
 		intro_wacht.oninitstate = (s, type) => {

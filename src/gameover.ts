@@ -1,7 +1,7 @@
 import { Model } from "./gamemodel";
-import { Direction } from "./bmsx/common";
+import { Direction, Point } from "./bmsx/common";
 import { TextWriter } from "./textwriter";
-import { view, model } from "./bmsx/engine";
+import { view, model, IGameObject, controller } from "./bmsx/engine";
 import { AudioId, BitmapId } from "./bmsx/resourceids";
 import { Input } from "./bmsx/input";
 import { SM as S, SM } from "./bmsx/soundmaster";
@@ -14,7 +14,13 @@ export const enum State {
     SelectFile
 }
 
-export class GameOver {
+export class GameOver implements IGameObject {
+    id: string = 'gameover';
+    disposeFlag: boolean;
+    priority: number = 500;
+    pos: Point;
+    visible: boolean = true;
+
     private selectedIndex: number;
     private state: State;
     private static items: string[] = new Array("Start bij controlepunt", "Laad spel");
@@ -35,14 +41,10 @@ export class GameOver {
     }
 
     constructor() {
-
-    }
-
-    public Init(): void {
         this.reset();
     }
 
-    private reset(): void {
+    public reset(): void {
         this.selectedIndex = 0;
         this.state = State.SelectContOrLoad;
     }
@@ -62,7 +64,7 @@ export class GameOver {
                 case State.SelectContOrLoad:
                     switch (this.selectedIndex) {
                         case 0:
-                            Controller._.LoadCheckpoint();
+                            (controller as Controller).LoadCheckpoint();
                             break;
                         case 1:
                             SM.play(AudioId.Selectie);
@@ -100,11 +102,11 @@ export class GameOver {
         }
     }
 
-    public TakeTurn(): void {
+    public takeTurn(): void {
 
     }
 
-    public Paint(): void {
+    public paint(): void {
         TextWriter.drawText(60, 56, ["Je bent vernederd!"]);
         TextWriter.drawText(32, 80, ["Wat ga je doen, Ronan?"]);
         view.drawRectangle(GameOver.boxX, GameOver.boxY, GameOver.boxEndX, GameOver.boxEndY, Msx1Colors[15]);

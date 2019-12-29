@@ -2,7 +2,7 @@ import { Candle } from './candle';
 import { TileSize, Tile } from "./bmsx/msx";
 import { Direction, Point, newPoint } from "./bmsx/common";
 import { GameConstants as CS, GameConstants } from "./gameconstants";
-import { view, IGameObject, model } from "./bmsx/engine";
+import { view, IGameObject, model, controller } from "./bmsx/engine";
 import { RoomDataContainer } from "./RoomFactory";
 import { BitmapId } from "./bmsx/resourceids";
 import { Model } from "./gamemodel";
@@ -90,7 +90,7 @@ export class Room implements IGameObject {
 				case 'pietula': {
 					let deBaas = new Pietula();
 					(model as Model).spawn(deBaas);
-					Controller._.startBossFight(deBaas);
+					(controller as Controller).startBossFight(deBaas);
 					(model as Model).Belmont.setx(Tile.toStageCoord(2));
 					(model as Model).Belmont.sety(Tile.toStageCoord(8));
 					break;
