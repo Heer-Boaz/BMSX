@@ -7,8 +7,8 @@ import { Cross } from "./cross";
 import { model } from './bmsx/engine';
 
 export class WeaponFireHandler {
-    private static msCrossCooldown: number = 20;
-    private static msTriRoeCooldown: number = 1000;
+    private static readonly msCrossCooldown: number = 20;
+    private static readonly msTriRoeCooldown: number = 1000;
     private static _mainWeaponCurrentCooldown: number;
     private static get mainWeaponCurrentCooldown(): number {
         return WeaponFireHandler._mainWeaponCurrentCooldown;
