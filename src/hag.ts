@@ -5,7 +5,7 @@ import { ItemType } from "./item";
 import { Foe } from "./foe";
 import { GameConstants } from "./gameconstants";
 import { Direction, Size, Area, Point } from "./bmsx/common";
-import { Model } from "./gamemodel";
+import { Model, belmont } from "./gamemodel";
 
 export class Hag extends Foe {
     public get respawnOnRoomEntry(): boolean { return true; }
@@ -42,7 +42,7 @@ export class Hag extends Foe {
     }
 
     public takeTurn(): void {
-        if (this.collides((model as Model).Belmont)) (model as Model).Belmont.takeDamage(this.damageToPlayer);
+        if (this.collides(belmont)) belmont.takeDamage(this.damageToPlayer);
 
         let stepValue = this.animation.doAnimation(this.timer, this.imgid).stepValue;
         this.imgid = stepValue;

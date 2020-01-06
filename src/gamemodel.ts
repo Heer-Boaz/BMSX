@@ -107,6 +107,8 @@ export const enum SecWeaponType {
     Cross
 }
 
+export var belmont: Belmont;
+
 export class Model extends BaseModel {
     public Checkpoint: Savegame;
     public SelectedChapterToPlay: Chapter;
@@ -290,7 +292,10 @@ export class Model extends BaseModel {
         if (o instanceof Belmont) {
             if (this.objects.findIndex(ob => ob instanceof Belmont) > -1)
                 throw Error("There is already a Belmont in the game! \"There can be only one!\"");
-            else this.Belmont = <Belmont>o;
+            else {
+                this.Belmont = <Belmont>o;
+                belmont = this.Belmont;
+            }
         }
 
         if (o instanceof Foe) {
@@ -315,6 +320,7 @@ export class Model extends BaseModel {
     public remove(o: IGameObject): void {
         if (o instanceof Belmont) {
             this.Belmont = null;
+            belmont = null;
         }
 
         if (o instanceof Foe) {

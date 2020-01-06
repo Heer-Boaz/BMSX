@@ -3,7 +3,7 @@ import { Animation } from "./bmsx/animation"
 import { AudioId, BitmapId } from "./bmsx/resourceids";
 import { GameConstants } from "./gameconstants";
 import { newArea } from "./bmsx/common";
-import { Model } from "./gamemodel";
+import { Model, belmont } from "./gamemodel";
 import { SM } from "./bmsx/soundmaster";
 import { Area } from "./bmsx/common";
 
@@ -60,7 +60,7 @@ export class HeartSmall extends Sprite {
 				this.imgid = BitmapId.Heart_small;
 			}
 		}
-		if (this.objectCollide((model as Model).Belmont)) {
+		if (this.objectCollide(belmont)) {
 			++(model as Model).hearts;
 			this.disposeFlag = true;
 			SM.play(AudioId.Heart);
