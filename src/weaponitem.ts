@@ -3,7 +3,7 @@ import { Model, SecWeaponType, BagWeapon } from "./gamemodel";
 import { Item } from "./item";
 import { BitmapId } from "./bmsx/resourceids";
 import { moveArea, area2size, newArea } from "./bmsx/common";
-import { Controller as C, Controller } from "./gamecontroller";
+import { Controller } from "./gamecontroller";
 import { Area, Point } from "./bmsx/common";
 
 export class WeaponItem extends Sprite {

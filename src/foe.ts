@@ -1,6 +1,4 @@
-import { Point } from './bmsx/common';
 import { ItemType } from './item';
-import { PlayerProjectile } from './pprojectile';
 import { SM } from './bmsx/soundmaster';
 import { AudioId } from './bmsx/resourceids';
 import { FoeExplosion } from './foeexplosion';

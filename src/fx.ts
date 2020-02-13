@@ -1,6 +1,5 @@
 import { Sprite } from "./bmsx/engine";
 import { Animation } from "./bmsx/animation";
-import { Point } from "./bmsx/common";
 import { BStopwatch } from './bmsx/engine';
 
 export class FX extends Sprite {

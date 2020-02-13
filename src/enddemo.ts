@@ -1,7 +1,4 @@
 import { TextWriter } from "./textwriter";
-import { BStopwatch } from "./bmsx/engine";
-import { Animation } from "./bmsx/animation";
-import { Tile } from "./bmsx/msx";
 import { SM } from "./bmsx/soundmaster";
 import { AudioId, BitmapId } from "./bmsx/resourceids";
 import { view } from "./bmsx/engine";

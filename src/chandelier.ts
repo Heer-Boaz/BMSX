@@ -6,7 +6,7 @@ import { ItemType } from "./item";
 import { BitmapId } from "./bmsx/resourceids";
 import { newArea, newSize } from "./bmsx/common";
 import { Model } from "./gamemodel";
-import { Area, Point } from "./bmsx/common";
+import { Area } from "./bmsx/common";
 
 const enum ChandelierState {
 	None,

@@ -1,15 +1,6 @@
 import { Room, RoomInitDelegate } from "./room";
-import { newPoint, Point, Direction } from "./bmsx/common";
-import { Tile } from "./bmsx/msx";
-import { Model as M, Model } from "./gamemodel";
-import { GardenCandle } from "./gardencandle";
+import { newPoint, Point } from "./bmsx/common";
 import { BitmapId } from "./bmsx/resourceids";
-import { HagGenerator } from "./haggenerator";
-import { ZakFoe } from "./zakfoe";
-import { Candle } from "./candle";
-import { Pietula } from "./pietula";
-import { Controller } from "./gamecontroller";
-import { model } from './bmsx/engine';
 import * as stagedata from "./data/maps.json";
 
 export class RoomDataContainer {

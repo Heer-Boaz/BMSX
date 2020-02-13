@@ -1,5 +1,5 @@
 import { PlayerProjectile } from './pprojectile';
-import { Area, Point, Direction, newArea } from './bmsx/common';
+import { Area, Direction, newArea } from './bmsx/common';
 import { BitmapId } from './bmsx/resourceids';
 
 export class Cross extends PlayerProjectile {

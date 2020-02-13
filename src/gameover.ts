@@ -5,7 +5,7 @@ import { view, model, IGameObject, controller } from "./bmsx/engine";
 import { AudioId, BitmapId } from "./bmsx/resourceids";
 import { Input } from "./bmsx/input";
 import { SM as S, SM } from "./bmsx/soundmaster";
-import { Controller as C, Controller } from "./gamecontroller";
+import { Controller } from "./gamecontroller";
 import { MenuItem } from "./mainmenu";
 import { Msx1Colors } from "./bmsx/msx";
 

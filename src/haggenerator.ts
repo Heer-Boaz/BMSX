@@ -2,7 +2,7 @@ import { Hag } from "./hag";
 import { IGameObject, model } from "./bmsx/engine";
 import { Direction, Point } from "./bmsx/common";
 import { bst } from "./bmsx/engine";
-import { Model, belmont } from "./gamemodel";
+import { belmont } from "./gamemodel";
 import { GameConstants } from "./gameconstants";
 
 export class HagGenerator extends bst implements IGameObject {

@@ -3,7 +3,7 @@ import { Animation, AniData } from "./bmsx/animation"
 import { FX } from "./fx";
 import { HeartSmall } from "./heartsmall";
 import { BitmapId } from "./bmsx/resourceids";
-import { Point, addPoints } from "./bmsx/common";
+import { addPoints } from "./bmsx/common";
 import { model } from './bmsx/engine';
 
 /*[Serializable]*/

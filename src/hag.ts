@@ -1,4 +1,4 @@
-import { BStopwatch, model } from "./bmsx/engine";
+import { BStopwatch } from "./bmsx/engine";
 import { Animation, AniData } from "./bmsx/animation";
 import { BitmapId } from "./bmsx/resourceids";
 import { ItemType } from "./item";
