@@ -14,9 +14,6 @@ export class SM {
 	private static gainNode: GainNode;
 
 	public static init(_audioResources: id2res, sndcontext?: AudioContext, gainnode?: GainNode) {
-		const AudioContext = 					// https://github.com/amaneureka/T-Rex/issues/5
-			window.AudioContext ||				// Default
-			(<any>window).webkitAudioContext;	// Safari and old versions of Chrome
 		SM.sndContext = sndcontext;
 		SM.currentEffectAudio = null;
 		SM.currentMusicAudio = null;

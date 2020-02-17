@@ -244,12 +244,6 @@ function blur(e: FocusEvent): void {
     Input.reset();
 }
 
-function click(e: MouseEvent): void {
-    e.preventDefault();
-    e.stopPropagation();
-    // if (e.tar
-}
-
 function handleTouchStuff(e: TouchEvent): void {
     Input.resetUI();
     if (e.touches.length == 0) {
@@ -264,7 +258,6 @@ function handleTouchStuff(e: TouchEvent): void {
         if (elementTouched) {
             let buttonsTouched = handleElementUnderTouch(elementTouched);
             if (buttonsTouched.length > 0) {
-                // e.preventDefault();
                 elementTouched.classList.add('druk');
                 elementTouched.classList.remove('los');
 
@@ -332,70 +325,3 @@ function handleElementUnderTouch(e: Element): string[] {
     }
     return [];
 }
-
-// function handleElementUnderTouchEnd(e: Element): string[] {
-//     switch (e.id) {
-//         case 'd-pad-u':
-//             keyup('ArrowUp');
-//             document.getElementById('d-pad-u').classList.remove('druk');
-//             return ['ArrowUp'];
-//         case 'd-pad-ru':
-//             keyup('ArrowUp');
-//             keyup('ArrowRight');
-//             document.getElementById('d-pad-ru').classList.remove('druk');
-//             return ['ArrowUp', 'ArrowRight'];
-//         case 'd-pad-r':
-//             keyup('ArrowRight');
-//             document.getElementById('d-pad-r').classList.remove('druk');
-//             return ['ArrowRight'];
-//         case 'd-pad-rd':
-//             keyup('ArrowRight');
-//             keyup('ArrowDown');
-//             document.getElementById('d-pad-rd').classList.remove('druk');
-//             return ['ArrowDown', 'ArrowRight'];
-//         case 'd-pad-d':
-//             keyup('ArrowDown');
-//             document.getElementById('d-pad-d').classList.remove('druk');
-//             return ['ArrowDown'];
-//         case 'd-pad-ld':
-//             keyup('ArrowLeft');
-//             keyup('ArrowDown');
-//             document.getElementById('d-pad-ld').classList.remove('druk');
-//             return ['ArrowLeft', 'ArrowDown'];
-//         case 'd-pad-l':
-//             keyup('ArrowLeft');
-//             document.getElementById('d-pad-l').classList.remove('druk');
-//             return ['ArrowLeft'];
-//         case 'd-pad-lu':
-//             keyup('ArrowLeft');
-//             keyup('ArrowUp');
-//             document.getElementById('d-pad-lu').classList.remove('druk');
-//             return ['ArrowUp', 'ArrowLeft'];
-//         case 'btn1_knop':
-//             keyup(' ');
-//             document.getElementById('btn1_knop').classList.remove('druk');
-//             return [' '];
-//         case 'btn2_knop':
-//             keyup('m');
-//             document.getElementById('btn2_knop').classList.remove('druk');
-//             return ['m'];
-//         case 'btn3_knop':
-//             keyup('F1');
-//             document.getElementById('btn3_knop').classList.remove('druk');
-//             return ['F1'];
-//         case 'btn4_knop':
-//             keyup('F5');
-//             document.getElementById('btn4_knop').classList.remove('druk');
-//             return ['F5'];
-//     }
-//     return [];
-// }
-
-// export function getMousePos(evt: MouseEvent): Point {
-    // let rect = view.outcanvas.getBoundingClientRect();
-    // return <Point>{
-    //     x: evt.clientX - rect.left,
-    //     y: evt.clientY - rect.top
-    // };
-    // return <Point>{ x: 0, y: 0 };
-// }
