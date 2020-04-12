@@ -22,3 +22,5 @@ src/sintervaniamodelold.ts
 !resourceids.d.ts
 !rompack.d.ts
 rom/ignore
+dist/game_debug.html
+dist/game.html

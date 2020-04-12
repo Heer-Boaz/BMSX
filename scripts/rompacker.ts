@@ -254,7 +254,7 @@ function minifyGamecode(infile: string): void {
 	}
 }
 
-async function buildGameHtml(outfile: string): Promise<void> {
+async function buildGameHtml(outfile: string, title: string): Promise<void> {
 	log("game.html en game_debug.html bouwen...\n");
 	const bar = new cliProgress.SingleBar({
 		format: 'Beunen: |' + _colors.brightBlue('{bar}') + '| {percentage}% |',
@@ -312,6 +312,7 @@ async function buildGameHtml(outfile: string): Promise<void> {
 				release_html = release_html.replace('//#zipjs', zipjs);
 				// release_html = release_html.replace('//#gl-matrix', glmatrixjs);
 				release_html = release_html.replace('/*css*/', cssMinified);
+				release_html = release_html.replace('#title', title);
 				release_html = release_html.replace('#outfile', outfile);
 				release_html = release_html.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed);
 				release_html = release_html.replace('//#debug', '');
@@ -325,6 +326,7 @@ async function buildGameHtml(outfile: string): Promise<void> {
 				debug_html = debug_html.replace('//#zipjs', zipjs);
 				// release_html = release_html.replace('//#gl-matrix', glmatrixjs);
 				debug_html = debug_html.replace('/*css*/', cssMinified);
+				debug_html = debug_html.replace('#title', title);
 				debug_html = debug_html.replace('#outfile', outfile);
 				debug_html = debug_html.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed);
 				debug_html = debug_html.replace('//#debug', 'bootrom.debug = true;\n');
@@ -684,9 +686,19 @@ try {
 	log(_colors.brightGreen("|                DOOR BOAZ©®             |\n"));
 	log(_colors.brightGreen("┗————————————————————————————————————————┛\n"));
 	let args = process.argv.slice(2);
-	if (args.length <= 0) throw new Error("Missing parameter for output file (rom name, e.g. \"sintervania.rom\"");
-	let outfile = args[0];
-	let force = args.length > 1 ? args[1] : undefined;
+	let outfile: string = undefined;
+	let title: string = undefined;
+	let force: boolean = undefined;
+
+	for(let i = 0; i < args.length; i++)) {
+		if (args
+	}
+
+	if (!title) throw new Error("Missing parameter for title ('title', e.g. 'Sintervania'.");
+	if (!outfile) throw new Error("Missing parameter for output file ('outfile', e.g. 'sintervania.rom'.");
+
+	outfile = args[0];
+	force = args.length > 1 ? args[1] : undefined;
 
 	if (!force && existsSync(`./dist/${outfile}`) && existsSync(`"./rom/tsout.js"`)) {
 		let romstats = statSync(`./dist/${outfile}`);
@@ -703,7 +715,7 @@ try {
 	bundleGamecode("./rom/tsout.js")
 		.then(() => yaml2Json())
 		.then(() => buildRompackAndResourceList(outfile))
-		.then(() => buildGameHtml(outfile))
+		.then(() => buildGameHtml(outfile, title))
 		.then(() => deploy())
 		.then(() => log(_colors.brightGreen("===  ALLES DONUT!  ===\n")))
 		.catch(e => { log(`Er ging iets niet goed: ${e?.message ?? 'en ook geen foutmelding beschikbaar :-('}\n`, 'error'); process.exit(-1); });
