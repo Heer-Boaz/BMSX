@@ -690,8 +690,20 @@ try {
 	let title: string = undefined;
 	let force: boolean = undefined;
 
-	for(let i = 0; i < args.length; i++)) {
-		if (args
+	let i = 0;
+	while (i < args.length) {
+		switch (args[i]) {
+			case '-title':
+				++i;
+				title = args[i];
+				break;
+			case '-outfile':
+				++i;
+				outfile = args[i];
+				break;
+			case '-
+		}
+
 	}
 
 	if (!title) throw new Error("Missing parameter for title ('title', e.g. 'Sintervania'.");
