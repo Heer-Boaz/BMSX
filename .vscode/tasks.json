@@ -18,7 +18,11 @@
 			"command": "node",
 			"args": [
 				"${workspaceFolder}/rom/rompacker.js",
+				"-outfile",
 				"sintervania.rom",
+				"-title",
+				"Sintervania",
+				"--force",
 			],
 			"problemMatcher": [
 				"$func-watch"

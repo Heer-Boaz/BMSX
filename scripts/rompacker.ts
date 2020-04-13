@@ -254,7 +254,7 @@ function minifyGamecode(infile: string): void {
 	}
 }
 
-async function buildGameHtml(outfile: string, title: string): Promise<void> {
+async function buildGameHtmlAndManifest(outfile: string, title: string): Promise<void> {
 	log("game.html en game_debug.html bouwen...\n");
 	const bar = new cliProgress.SingleBar({
 		format: 'Beunen: |' + _colors.brightBlue('{bar}') + '| {percentage}% |',
@@ -263,7 +263,7 @@ async function buildGameHtml(outfile: string, title: string): Promise<void> {
 		hideCursor: true
 	});
 
-	bar.start(12, 0);
+	bar.start(13, 0);
 
 	let html = readFileSync("./gamebase.html", 'utf8');
 	bar.increment(1);
@@ -334,6 +334,15 @@ async function buildGameHtml(outfile: string, title: string): Promise<void> {
 				bar.increment(1);
 				writeFileSync("./dist/game_debug.html", debug_html);
 				bar.increment(1);
+
+				// Update the manifest.json-file that is used for app-versions of the webpage
+				let manifest = readFileSync("./rom/manifest.json", 'utf8');
+				manifest = manifest.replace('#title', title);
+				// Write updated manifest to dist-folder
+				writeFileSync("./dist/manifest.json", manifest);
+
+				bar.increment(1);
+
 				bar.stop();
 				return resolve();
 			}
@@ -689,6 +698,7 @@ try {
 	let outfile: string = undefined;
 	let title: string = undefined;
 	let force: boolean = undefined;
+	let unrecognizedParam: boolean = false;
 
 	let i = 0;
 	while (i < args.length) {
@@ -701,16 +711,19 @@ try {
 				++i;
 				outfile = args[i];
 				break;
-			case '-
+			case '--force':
+				force = true;
+				break;
+			default:
+				log(_colors.red(`Unrecognized argument: ${args[i]}.\n`));
+				unrecognizedParam = true;
 		}
-
+		++i;
 	}
+	if (unrecognizedParam) throw new Error("Unrecognized parameter(s) passed. Exiting rompacker...");
 
 	if (!title) throw new Error("Missing parameter for title ('title', e.g. 'Sintervania'.");
 	if (!outfile) throw new Error("Missing parameter for output file ('outfile', e.g. 'sintervania.rom'.");
-
-	outfile = args[0];
-	force = args.length > 1 ? args[1] : undefined;
 
 	if (!force && existsSync(`./dist/${outfile}`) && existsSync(`"./rom/tsout.js"`)) {
 		let romstats = statSync(`./dist/${outfile}`);
@@ -718,7 +731,7 @@ try {
 		let jsstats = statSync(`"./rom/tsout.js"`);
 		let jsmtime = jsstats.mtime;
 		if (jsmtime < rommtime) {
-			console.info("No action performed: game rom was newer than code.\nUse --force option to ignore this check.");
+			log("No action performed: game rom was newer than code.\nUse --force option to ignore this check.");
 			process.exit(0);
 		}
 	}
@@ -727,7 +740,7 @@ try {
 	bundleGamecode("./rom/tsout.js")
 		.then(() => yaml2Json())
 		.then(() => buildRompackAndResourceList(outfile))
-		.then(() => buildGameHtml(outfile, title))
+		.then(() => buildGameHtmlAndManifest(outfile, title))
 		.then(() => deploy())
 		.then(() => log(_colors.brightGreen("===  ALLES DONUT!  ===\n")))
 		.catch(e => { log(`Er ging iets niet goed: ${e?.message ?? 'en ook geen foutmelding beschikbaar :-('}\n`, 'error'); process.exit(-1); });
