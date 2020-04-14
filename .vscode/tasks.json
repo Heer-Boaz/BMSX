@@ -19,13 +19,13 @@
 			"args": [
 				"${workspaceFolder}/rom/rompacker.js",
 				"-outfile",
-				"sintervania.rom",
+				"${input:romtobuild}.rom",
 				"-bootloaderpath",
-				"src/sintervania/bootloader.ts",
+				"src/${input:romtobuild}/bootloader.ts",
 				"-respath",
-				"./src/sintervania/res",
+				"./src/${input:romtobuild}/res",
 				"-title",
-				"Sintervania",
+				"${input:romtobuild}",
 				"--force",
 			],
 			"problemMatcher": [
@@ -35,6 +35,7 @@
 			"dependsOrder": "parallel",
 			"dependsOn": [
 				"build rom",
+				"build resourceids.ts",
 				"build rompacker",
 				// "build game",
 			],
@@ -47,32 +48,6 @@
 				"clear": true,
 				"revealProblems": "onProblem",
 				"group": "ROMPACKER",
-			}
-		},
-		{
-			"label": "pack (losse taak)",
-			"type": "shell",
-			"command": "node",
-			"args": [
-				"${workspaceFolder}\\rom\\rompacker.js",
-				"sintervania.rom",
-			],
-			"problemMatcher": [
-				"$node-sass"
-			],
-			"group": "none",
-			"dependsOn": [
-				"build rompacker",
-			],
-			"presentation": {
-				"echo": true,
-				"reveal": "always",
-				"focus": false,
-				"panel": "dedicated",
-				"showReuseMessage": false,
-				"clear": true,
-				"revealProblems": "onProblem",
-				"group": "pack rom without build",
 			}
 		},
 		{
@@ -123,6 +98,35 @@
 			"group": "build"
 		},
 		{
+			"label": "build resourceids.ts",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"${workspaceFolder}/rom/rompacker.js",
+				"-respath",
+				"./src/${input:romtobuild}/res",
+				"--buildreslist",
+			],
+			"problemMatcher": [
+				"$node-sass"
+			],
+			"group": "build",
+			"dependsOrder": "parallel",
+			"dependsOn": [
+				"build rompacker",
+			],
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "dedicated",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem",
+				"group": "ResourceIDs",
+			}
+		},
+		{
 			"label": "build rompacker",
 			"type": "shell",
 			"command": "tsc",
@@ -153,6 +157,18 @@
 			"type": "gulp",
 			"task": "my-task",
 			"problemMatcher": []
+		}
+	],
+	"inputs": [
+		{
+			"type": "pickString",
+			"id": "romtobuild",
+			"description": "Choose ROM to build",
+			"options": [
+				"Sintervania",
+				"Testrom",
+			],
+			"default": "Sintervania"
 		}
 	]
 }

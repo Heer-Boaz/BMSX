@@ -26,13 +26,17 @@ const atlasPos = { x: 0, y: 0 };
 let atlasExploitedX = 0; // For cropping atlas later, because we are not sure that full width is exploited
 let atlasUnsafeY = 0; // Also used for cropping atlas later, but primarily used to create atlas
 
-interface LoadedResource {
+interface LoadedResource extends ResourceMeta {
 	buffer: Buffer;
 	img?: any;
+}
+
+interface ResourceMeta {
 	filepath: string;
 	name: string;
 	ext: string;
 	type: string;
+	id: number;
 }
 
 /**
@@ -392,7 +396,7 @@ function zip(content: Buffer): string {
 	return pako.deflate(toCompress);
 }
 
-async function deploy(title: string): Promise<void> {
+async function deploy(outfile: string, title: string): Promise<void> {
 	return new Promise<void>((resolve, reject) => {
 		log("Deployeren... ");
 		startRotator();
@@ -406,7 +410,7 @@ async function deploy(title: string): Promise<void> {
 			localRoot: "./dist",
 			remoteRoot: `/${title.toLowerCase()}/`,
 			// include: ["*", "**/*"],      // this would upload everything except dot files
-			include: ["*.rom", "*.html", "manifest.json"],
+			include: [outfile, "*.html", "manifest.json"],
 			// e.g. exclude sourcemaps, and ALL files in node_modules (including dot files)
 			exclude: [],//"dist/**/*.map", "node_modules/**", "node_modules/**/.*", ".git/**"],
 			// delete ALL existing files at destination before uploading, if true
@@ -422,7 +426,74 @@ async function deploy(title: string): Promise<void> {
 	});
 }
 
-async function getLoadedResourcesList(arrayOfFiles: string[], buffers: Array<Buffer>): Promise<LoadedResource[]> {
+function getResMetaByFilename(filepath: string): { name: string, ext: string, type: string } {
+	let name = parse(filepath).name.replace(' ', '');
+	let ext = parse(filepath).ext;
+	let type: string;
+
+	switch (ext) {
+		case '.wav':
+			type = 'audio';
+			break;
+		case '.js':
+			type = 'source';
+			break;
+		case '.png':
+		default:
+			type = 'image';
+			break;
+	}
+	return { name: name, ext: ext, type: type };
+}
+
+function getResMetaList(respath: string): ResourceMeta[] {
+	log(`Fetch all files in the resource path ${respath}... `);
+	startRotator();
+	const arrayOfFiles = getFiles(respath) ?? []; // Also handle corner case where we don't have any resources by adding "?? []"
+	addFile("./rom", "megarom.min.js", arrayOfFiles); // Add source at the end
+	stopRotator();
+
+	let result: Array<ResourceMeta> = [];
+
+	let imgid = 1;
+	let sndid = 1;
+	for (let i = 0; i < arrayOfFiles.length; i++) {
+		let filepath = arrayOfFiles[i];
+		let meta = getResMetaByFilename(filepath);
+
+		let type = meta.type;
+		let name = meta.name;
+		let ext = meta.ext;
+		switch (type) {
+			case 'image':
+				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: imgid });
+				++imgid;
+				break;
+			case 'audio':
+				let parsedMeta = parseAudioMeta(name);
+				name = parsedMeta.sanitizedName;
+				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: sndid });
+				++sndid;
+				break;
+			// case 'source':
+			// 	name = name.replace('.min', '');
+			// 	break;
+		}
+	}
+	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
+		result.push({ filepath: null, name: '_atlas', ext: null, type: 'atlas', id: imgid }); // Note that 'atlas' is an internal type, used only for this script
+	}
+
+	log(`\t#images: ${imgid - 1}\n`);
+	log(`\t#audio: ${sndid - 1}\n`);
+	log("\tKlaar!\n");
+
+	return result;
+}
+
+async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>): Promise<LoadedResource[]> {
+	let resMetaList = getResMetaList(respath);
+
 	const bar = new cliProgress.SingleBar({
 		format: 'Beunen: |' + _colors.brightBlue('{bar}') + '| {percentage}% |',
 		barCompleteChar: '\u2588',
@@ -430,54 +501,112 @@ async function getLoadedResourcesList(arrayOfFiles: string[], buffers: Array<Buf
 		hideCursor: true
 	});
 
-	bar.start(arrayOfFiles.length, 0);
+	bar.start(resMetaList.length + 1, 0);
 	let loadedResources: Array<LoadedResource> = [];
-	for (let i = 0; i < arrayOfFiles.length; i++) {
-		let filepath = arrayOfFiles[i];
+	for (let i = 0; i < resMetaList.length; i++) {
+		let meta = resMetaList[i];
 
-		let buffer = readFileSync(filepath);
-		let name = parse(filepath).name.replace(' ', '');
-		let ext = parse(filepath).ext;
-		let type: string;
+		let name = meta.name;
+		let ext = meta.ext;
+		let type = meta.type;
+		let id = meta.id;
+		let buffer = meta.filepath ? readFileSync(meta.filepath) : null;
+
 		let img: any = undefined;
-
-		switch (ext) {
-			case '.wav':
-				type = 'audio';
-				break;
-			case '.js':
-				type = 'source';
-				break;
-			case '.png':
-			default:
-				type = 'image';
-				if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-					const base64Encoded = readFileSync(filepath, 'base64');
-					const dataURL = `data:image/png;base64,${base64Encoded}`;
-					img = await loadImage(dataURL);
-				}
-				break;
+		if (type === 'image') {
+			if (GENERATE_AND_USE_TEXTURE_ATLAS) {
+				const base64Encoded = readFileSync(meta.filepath, 'base64');
+				const dataURL = `data:image/png;base64,${base64Encoded}`;
+				img = await loadImage(dataURL);
+			}
 		}
 
-		loadedResources.push({ buffer: buffer, filepath: filepath, name: name, ext: ext, type: type, img: img });
+		loadedResources.push({ buffer: buffer, filepath: meta.filepath, name: name, ext: ext, type: type, img: img, id: id });
 		bar.increment(1);
 	}
+
+	// Manually add the ROM source code to the list
+	loadedResources.push({
+		buffer: readFileSync('./rom/megarom.min.js'),
+		filepath: './rom/megarom.min.js',
+		name: 'megarom.min.js',
+		ext: '.js',
+		type: 'source',
+		id: 1
+	});
+
 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
 		// Sort the files on buffer size for atlassing
 		loadedResources = loadedResources.sort((b1, b2) => ((b1.img?.height || 0) - (b2.img?.height || 0)));
+		// Also: place the atlas in the back, so that we can correctly use the bufferpointer to point to the atlas
+		loadedResources = loadedResources.sort((b1, b2) => ((b1.type === 'atlas' ? 1 : 0) - (b2.type === 'atlas' ? 1 : 0)));
 	}
 	if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
-		loadedResources.filter(x => x.type !== 'image').forEach(x => buffers.push(x.buffer));
+		loadedResources.filter(x => x.type !== 'image' && x.type !== 'atlas').forEach(x => buffers.push(x.buffer));
 	}
 	else {
 		loadedResources.forEach(x => buffers.push(x.buffer));
 	}
+	bar.increment(1);
+
 	bar.stop();
 
 	return loadedResources;
 }
 
-async function buildRompackAndResourceList(outfile: string, respath: string): Promise<void> {
+function buildResourceList(respath: string): void {
+	log("resourceids.ts knutselen...\n");
+	let tsimgout = new Array<string>();
+	let tssndout = new Array<string>();
+
+	const bar = new cliProgress.SingleBar({
+		format: 'Beunen: |' + _colors.brightBlue('{bar}') + '| {percentage}% |',
+		barCompleteChar: '\u2588',
+		barIncompleteChar: '\u2591',
+		hideCursor: true
+	});
+
+	let metalist = getResMetaList(respath);
+
+	bar.start(metalist.length + (GENERATE_AND_USE_TEXTURE_ATLAS ? 1 : 0), 0);
+
+	tsimgout.push("export enum BitmapId {\n\tNone = 0,");
+	tssndout.push("export enum AudioId {\n\tNone = 0,");
+
+	for (let i = 0; i < metalist.length; i++) {
+		let current = metalist[i];
+
+		let type = current.type;
+		let name = current.name;
+		let id = current.id;
+		switch (type) {
+			case 'image':
+			case 'atlas':
+				tsimgout.push(`\t${name} = ${id},`);
+				break;
+			case 'audio':
+				tssndout.push(`\t${name} = ${id},`);
+				break;
+			// case 'source':
+			// 	name = name.replace('.min', '');
+			// 	break;
+		}
+		bar.increment(1);
+	}
+
+	tsimgout.push("}\n");
+	tssndout.push("}\n");
+
+	bar.stop();
+
+	log(`resourceids.ts wegschrijven... `);
+	startRotator();
+	writeFileSync("./src/bmsx/resourceids.ts", tsimgout.concat(tssndout).join('\n'));
+	stopRotator();
+	log("\tKlaar!\n");
+}
+
+async function buildRompack(outfile: string, respath: string): Promise<void> {
 	log("Minifyen... ");
 	startRotator();
 	minifyGamecode("./rom/megarom.js");
@@ -486,8 +615,6 @@ async function buildRompackAndResourceList(outfile: string, respath: string): Pr
 
 	log("Alle files ophalen... ");
 	startRotator();
-	const arrayOfFiles = getFiles(respath) ?? []; // Also handle corner case where we don't have any resources by adding "?? []"
-	addFile("./rom", "megarom.min.js", arrayOfFiles); // Add source at the end
 	stopRotator();
 	log("\tKlaar!\n");
 
@@ -500,25 +627,18 @@ async function buildRompackAndResourceList(outfile: string, respath: string): Pr
 		hideCursor: true
 	});
 
-	let loadedResources = await getLoadedResourcesList(arrayOfFiles, buffers);
+	let loadedResources = await getLoadedResourcesList(respath, buffers);
 
 	log("romresources.json knutselen...\n");
-	let tsimgout = new Array<string>();
-	let tssndout = new Array<string>();
-
-	bar.start(arrayOfFiles.length + 2 + (GENERATE_AND_USE_TEXTURE_ATLAS ? 5 : 0), 0);
-
-	tsimgout.push("export enum BitmapId {\n\tNone = 0,");
-	tssndout.push("export enum AudioId {\n\tNone = 0,");
+	bar.start(loadedResources.length, 0);
 
 	let jsonout = new Array<RomResource>();
 	let bufferPointer = 0;
-	let imgi = 1;
-	let sndi = 1;
 	for (let i = 0; i < loadedResources.length; i++) {
 		let res = loadedResources[i];
 		let type = res.type;
 		let name = res.name;
+		let resid = res.id;
 		switch (type) {
 			case 'image':
 				let img = res.img;
@@ -526,43 +646,41 @@ async function buildRompackAndResourceList(outfile: string, respath: string): Pr
 				if (GENERATE_AND_USE_TEXTURE_ATLAS) {
 					imgmeta = addToAtlas(img);
 					if (DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
-						jsonout.push({ resid: imgi, resname: name, type: type, start: 0, end: 0, imgmeta: { atlassed: imgmeta.atlassed, width: imgmeta.width, height: imgmeta.height, texcoords: imgmeta.texcoords, texcoords_fliph: imgmeta.texcoords_fliph, texcoords_flipv: imgmeta.texcoords_flipv, texcoords_fliphv: imgmeta.texcoords_fliphv }, audiometa: null, });
+						jsonout.push({ resid: resid, resname: name, type: type, start: 0, end: 0, imgmeta: { atlassed: imgmeta.atlassed, width: imgmeta.width, height: imgmeta.height, texcoords: imgmeta.texcoords, texcoords_fliph: imgmeta.texcoords_fliph, texcoords_flipv: imgmeta.texcoords_flipv, texcoords_fliphv: imgmeta.texcoords_fliphv }, audiometa: null, });
 					}
 					else {
-						jsonout.push({ resid: imgi, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: { atlassed: imgmeta.atlassed, width: imgmeta.width, height: imgmeta.height, texcoords: imgmeta.texcoords, texcoords_fliph: imgmeta.texcoords_fliph, texcoords_flipv: imgmeta.texcoords_flipv, texcoords_fliphv: imgmeta.texcoords_fliphv }, audiometa: null, });
+						jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: { atlassed: imgmeta.atlassed, width: imgmeta.width, height: imgmeta.height, texcoords: imgmeta.texcoords, texcoords_fliph: imgmeta.texcoords_fliph, texcoords_flipv: imgmeta.texcoords_flipv, texcoords_fliphv: imgmeta.texcoords_fliphv }, audiometa: null, });
 						bufferPointer += res.buffer.length;
 					}
 				}
 				else {
-					jsonout.push({ resid: imgi, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: { atlassed: false, width: img.width, height: img.height, }, audiometa: null, });
+					jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: { atlassed: false, width: img.width, height: img.height, }, audiometa: null, });
 					bufferPointer += res.buffer.length;
 				}
-				tsimgout.push(`\t${name} = ${imgi},`);
-				++imgi;
 				break;
 			case 'audio':
 				{
-					let parsedMeta = parseAudioMeta(name);
+					let parsedMeta = parseAudioMeta(res.filepath);
 
 					name = parsedMeta.sanitizedName;
-					jsonout.push({ resid: sndi, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: null, audiometa: parsedMeta.meta });
+					jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: null, audiometa: parsedMeta.meta });
 				}
-				tssndout.push(`\t${name} = ${sndi},`);
-				++sndi;
 				bufferPointer += res.buffer.length;
 				break;
 			case 'source':
 				name = name.replace('.min', '');
-				jsonout.push({ resid: sndi, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: null, audiometa: null });
+				jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: null, audiometa: null });
 				bufferPointer += res.buffer.length;
+				break;
+			case 'atlas':
 				break;
 		}
 		bar.increment(1);
 	}
 
-	let atlasbuffer: Buffer;
-
 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
+		let atlasbuffer: Buffer;
+		let i = loadedResources.findIndex(x => x.type === 'atlas');
 		let atlasSize = { x: atlasCanvas.width, y: atlasCanvas.height };
 		if (CROP_ATLAS) {
 			let croppedCanvas = cropAtlas(jsonout);
@@ -576,14 +694,10 @@ async function buildRompackAndResourceList(outfile: string, respath: string): Pr
 		}
 		buffers.push(atlasbuffer);
 
-		jsonout.push({ resid: imgi, resname: '_atlas', type: 'image', start: bufferPointer, end: bufferPointer + atlasbuffer.length, imgmeta: { atlassed: false, width: atlasSize.x, height: atlasSize.y }, audiometa: null });
-		tsimgout.push(`\t_atlas = ${imgi},`);
+		jsonout.push({ resid: loadedResources[i].id, resname: loadedResources[i].name, type: 'image', start: bufferPointer, end: bufferPointer + atlasbuffer.length, imgmeta: { atlassed: false, width: atlasSize.x, height: atlasSize.y }, audiometa: null });
 		bufferPointer += atlasbuffer.length;
-		bar.increment(5);
+		writeFileSync("./rom/_ignore/atlas.png", atlasbuffer);
 	}
-
-	tsimgout.push("}\n");
-	tssndout.push("}\n");
 
 	let jsonbuffer = Buffer.from(encodeuint8arr(JSON.stringify(jsonout)));
 	buffers.push(jsonbuffer);
@@ -600,6 +714,7 @@ async function buildRompackAndResourceList(outfile: string, respath: string): Pr
 
 	log("Alles nu zippen... ");
 	startRotator();
+	// let zipped = Buffer.concat(buffers)//zip(Buffer.concat(buffers));
 	let zipped = zip(Buffer.concat(buffers));
 	stopRotator();
 	log("\tKlaar!\n");
@@ -608,17 +723,11 @@ async function buildRompackAndResourceList(outfile: string, respath: string): Pr
 	writeFileSync(`./dist/${outfile}`, zipped);
 	stopRotator();
 	log("\tKlaar!\n");
-	log(`resourceids.ts maken...`);
-	startRotator();
-	writeFileSync("./src/bmsx/resourceids.ts", tsimgout.concat(tssndout).join('\n'));
 	writeFileSync("./rom/_ignore/romresources.json", jsonbuffer);
-	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-		writeFileSync("./rom/_ignore/atlas.png", atlasbuffer);
-	}
 	stopRotator();
 	log("\tKlaar!\n");
 	log("Rom is gepackt!!\n");
-	log(`\tFiles: ${arrayOfFiles.length}\n\t\timages: ${imgi}\n\t\taudio: ${sndi}\n`);
+	// log(`\tFiles: ${arrayOfFiles.length}\n\t\timages: ${imgi}\n\t\taudio: ${sndi}\n`);
 	log(`\tSize: ${(Buffer.concat(buffers).length / (1024 * 1024)).toFixed(2)} mB\n\tDeflated size: ${(zipped.length / (1024 * 1024)).toFixed(2)} mB.\n`);
 }
 
@@ -674,9 +783,6 @@ function addToAtlas(img: any): ImgMeta {
 }
 
 function cropAtlas(romResources: Array<RomResource>): HTMLCanvasElement {
-	// log("Texture atlas cropperen... ");
-	// startRotator();
-
 	let cropw = atlasExploitedX;
 	let croph = atlasUnsafeY;
 	// Handle corner case where there are no textures in the ROM
@@ -702,9 +808,6 @@ function cropAtlas(romResources: Array<RomResource>): HTMLCanvasElement {
 		recalc(x.imgmeta.texcoords_fliphv);
 	});
 
-	// stopRotator();
-	// log("\tKlaar!\n");
-
 	return result;
 }
 
@@ -720,6 +823,7 @@ try {
 	let respath: string = undefined;
 	let force: boolean = undefined;
 	let unrecognizedParam: boolean = false;
+	let buildreslist: boolean = false;
 
 	let i = 0;
 	while (i < args.length) {
@@ -730,7 +834,7 @@ try {
 				break;
 			case '-outfile':
 				++i;
-				outfile = args[i];
+				outfile = args[i].toLowerCase();
 				break;
 			case '-bootloaderpath':
 				++i;
@@ -743,6 +847,9 @@ try {
 			case '--force':
 				force = true;
 				break;
+			case '--buildreslist':
+				buildreslist = true;
+				break;
 			default:
 				log(_colors.red(`Unrecognized argument: ${args[i]}.\n`));
 				unrecognizedParam = true;
@@ -751,30 +858,39 @@ try {
 	}
 	if (unrecognizedParam) throw new Error("Unrecognized parameter(s) passed. Exiting rompacker...");
 
-	if (!title) throw new Error("Missing parameter for title ('title', e.g. 'Sintervania'.");
-	if (!outfile) throw new Error("Missing parameter for output file ('outfile', e.g. 'sintervania.rom'.");
-	if (!bootloader_path) throw new Error("Missing parameter for location of the bootloader.ts-file ('bootloader_path', e.g. 'src/bootloader.ts'.");
-	if (!respath) throw new Error("Missing parameter for location of the resource folder ('respath', e.g. './src/sintervania/res'.");
-
-	if (!force && existsSync(`./dist/${outfile}`) && existsSync(`"./rom/tsout.js"`)) {
-		let romstats = statSync(`./dist/${outfile}`);
-		let rommtime = romstats.mtime;
-		let jsstats = statSync(`"./rom/tsout.js"`);
-		let jsmtime = jsstats.mtime;
-		if (jsmtime < rommtime) {
-			log("No action performed: game rom was newer than code.\nUse --force option to ignore this check.");
-			process.exit(0);
-		}
+	if (buildreslist) {
+		log('Building resource list and writing output to "./src/bmsx/resourceids.ts"...\n');
+		log('\tNote: ROM packing and deployemnt are skipped this option (--buildreslist) is enabled!\n');
+		buildResourceList(respath);
 	}
+	else {
+		if (!title) throw new Error("Missing parameter for title ('title', e.g. 'Sintervania'.");
+		if (!outfile) throw new Error("Missing parameter for output file ('outfile', e.g. 'sintervania.rom'.");
+		if (!bootloader_path) throw new Error("Missing parameter for location of the bootloader.ts-file ('bootloader_path', e.g. 'src/bootloader.ts'.");
+		if (!respath) throw new Error("Missing parameter for location of the resource folder ('respath', e.g. './src/sintervania/res'.");
 
-	yaml2Json();
-	bundleGamecode('./rom/tsout.js', bootloader_path)
-		.then(() => yaml2Json())
-		.then(() => buildRompackAndResourceList(outfile, respath))
-		.then(() => buildGameHtmlAndManifest(outfile, title))
-		.then(() => deploy(title))
-		.then(() => log(_colors.brightGreen("===  ALLES DONUT!  ===\n")))
-		.catch(e => { log(`Er ging iets niet goed: ${e?.message ?? 'en ook geen foutmelding beschikbaar :-('}\n${e?.stack ?? 'en geen stacktrace'}`, 'error'); process.exit(-1); });
+		if (!force && existsSync(`./dist/${outfile}`) && existsSync(`"./rom/tsout.js"`)) {
+			let romstats = statSync(`./dist/${outfile}`);
+			let rommtime = romstats.mtime;
+			let jsstats = statSync(`"./rom/tsout.js"`);
+			let jsmtime = jsstats.mtime;
+			if (jsmtime < rommtime) {
+				log("No action performed: game rom was newer than code.\nUse --force option to ignore this check.");
+				process.exit(0);
+			}
+		}
+
+		log('Starting ROM packing and deployment process...\n');
+		log('\tNote: build resource list instead by passing option "--buildreslist".\n');
+		yaml2Json();
+		bundleGamecode('./rom/tsout.js', bootloader_path)
+			.then(() => yaml2Json())
+			.then(() => buildRompack(outfile, respath))
+			.then(() => buildGameHtmlAndManifest(outfile, title))
+			.then(() => deploy(outfile, title))
+			.then(() => log(_colors.brightGreen("===  ALLES DONUT!  ===\n")))
+			.catch(e => { log(`Er ging iets niet goed: ${e?.message ?? 'en ook geen foutmelding beschikbaar :-('}\n${e?.stack ?? 'en geen stacktrace'}`, 'error'); process.exit(-1); });
+	}
 } catch (e) {
 	log(`Er ging iets niet goed: ${e.message}\n${e?.stack ?? 'en geen stacktrace'}\n`, 'error');
 	process.exit(-1);
