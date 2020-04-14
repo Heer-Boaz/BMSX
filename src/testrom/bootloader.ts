@@ -16,16 +16,16 @@ _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: Gain
 
         takeTurn(): void {
             if (Input.KD_UP) {
-                this.pos.y -= 1;
+                this.pos.y -= 2;
             }
             if (Input.KD_RIGHT) {
-                this.pos.x += 1;
+                this.pos.x += 2;
             }
             if (Input.KD_DOWN) {
-                this.pos.y += 1;
+                this.pos.y += 2;
             }
             if (Input.KD_LEFT) {
-                this.pos.x -= 1;
+                this.pos.x -= 2;
             }
         }
 
@@ -50,7 +50,6 @@ _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: Gain
 
         public isCollisionTile(x: number, y: number): boolean {
             return false;
-
         }
     }();
 
@@ -61,7 +60,6 @@ _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: Gain
         }
     }(newPoint(MSX1ScreenWidth, MSX1ScreenHeight));
 
-    //  = new GLView({ x: MSX1ScreenWidth, y: MSX1ScreenHeight });
     let _controller = new class extends BaseController {
         protected disposeOldState(newState: number): void {
         }
