@@ -3,7 +3,7 @@
 	"_runner": "terminal",
 	"tasks": [
 		{
-			"label": "build debug",
+			"label": "build Sintervania",
 			"dependsOn": [
 				"pack"
 			],
@@ -20,12 +20,16 @@
 				"${workspaceFolder}/rom/rompacker.js",
 				"-outfile",
 				"sintervania.rom",
+				"-bootloaderpath",
+				"src/sintervania/bootloader.ts",
+				"-respath",
+				"./src/sintervania/res",
 				"-title",
 				"Sintervania",
 				"--force",
 			],
 			"problemMatcher": [
-				"$func-watch"
+				"$node-sass"
 			],
 			"group": "build",
 			"dependsOrder": "parallel",

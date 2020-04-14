@@ -110,8 +110,10 @@ function getAllFiles(dirPath: string, arrayOfFiles?: string[], filterExtension?:
 			arrayOfFiles = getAllFiles(fullpath, arrayOfFiles, filterExtension);
 		} else {
 			let ext = parse(file).ext;
-			if (filterExtension && ext == filterExtension) {
-				arrayOfFiles.push(fullpath);
+			if (filterExtension) {
+				if (ext === filterExtension) {
+					arrayOfFiles.push(fullpath);
+				}
 			}
 			else if (ext != ".rom" && ext != ".js" && ext != ".ts" && ext != ".map" && ext != ".tsbuildinfo") {
 				arrayOfFiles.push(fullpath);
@@ -123,15 +125,27 @@ function getAllFiles(dirPath: string, arrayOfFiles?: string[], filterExtension?:
 }
 
 function yaml2Json(): void {
-	let yamlfiles = getAllFiles('./src/data', [], '.yaml');
+	log("YAML bestanden omzetten in JSON voor importatie...\n");
+	const bar = new cliProgress.SingleBar({
+		format: 'Beunen: |' + _colors.brightBlue('{bar}') + '| {percentage}% |',
+		barCompleteChar: '\u2588',
+		barIncompleteChar: '\u2591',
+		hideCursor: true
+	});
+
+	let yamlfiles = getAllFiles('./src', [], '.yaml');
+	log(yamlfiles.join(', '));
+	bar.start(yamlfiles.length, 0);
 	for (let file of yamlfiles) {
 		let doc = yaml.safeLoad(readFileSync(file, 'utf8'));
 		let outfilename = file.replace('.yaml', '.json');
 		writeFileSync(outfilename, Buffer.from(encodeuint8arr(JSON.stringify(doc))));
+		bar.increment(1);
 	}
+	bar.stop();
 }
 
-async function bundleGamecode(outfile: string): Promise<any> {
+async function bundleGamecode(outfile: string, bootloader_path: string): Promise<any> {
 	log("Game compileren en bundleren...  ");
 	startRotator();
 
@@ -147,7 +161,7 @@ async function bundleGamecode(outfile: string): Promise<any> {
 			exclude: [],
 			ignore: ['node_modules', 'dist', 'rom']
 		})
-			.add("src/bootloader.ts")
+			.add(bootloader_path)
 			.plugin(tsify)
 			.transform(babelify, {
 				extensions: ['.ts'],
@@ -312,7 +326,7 @@ async function buildGameHtmlAndManifest(outfile: string, title: string): Promise
 				release_html = release_html.replace('//#zipjs', zipjs);
 				// release_html = release_html.replace('//#gl-matrix', glmatrixjs);
 				release_html = release_html.replace('/*css*/', cssMinified);
-				release_html = release_html.replace('#title', title);
+				release_html = release_html.replace(/#title/g, title); // https://stackoverflow.com/questions/44324892/how-can-i-replace-multiple-characters-in-a-string
 				release_html = release_html.replace('#outfile', outfile);
 				release_html = release_html.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed);
 				release_html = release_html.replace('//#debug', '');
@@ -326,7 +340,7 @@ async function buildGameHtmlAndManifest(outfile: string, title: string): Promise
 				debug_html = debug_html.replace('//#zipjs', zipjs);
 				// release_html = release_html.replace('//#gl-matrix', glmatrixjs);
 				debug_html = debug_html.replace('/*css*/', cssMinified);
-				debug_html = debug_html.replace('#title', title);
+				debug_html = debug_html.replace(/#title/g, title); // https://stackoverflow.com/questions/44324892/how-can-i-replace-multiple-characters-in-a-string
 				debug_html = debug_html.replace('#outfile', outfile);
 				debug_html = debug_html.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed);
 				debug_html = debug_html.replace('//#debug', 'bootrom.debug = true;\n');
@@ -378,7 +392,7 @@ function zip(content: Buffer): string {
 	return pako.deflate(toCompress);
 }
 
-async function deploy(): Promise<void> {
+async function deploy(title: string): Promise<void> {
 	return new Promise<void>((resolve, reject) => {
 		log("Deployeren... ");
 		startRotator();
@@ -390,9 +404,9 @@ async function deploy(): Promise<void> {
 			host: "homedrive.ziggo.nl",
 			port: 21,
 			localRoot: "./dist",
-			remoteRoot: "/sintervania/",
+			remoteRoot: `/${title.toLowerCase()}/`,
 			// include: ["*", "**/*"],      // this would upload everything except dot files
-			include: ["*.rom", "*.html",],
+			include: ["*.rom", "*.html", "manifest.json"],
 			// e.g. exclude sourcemaps, and ALL files in node_modules (including dot files)
 			exclude: [],//"dist/**/*.map", "node_modules/**", "node_modules/**/.*", ".git/**"],
 			// delete ALL existing files at destination before uploading, if true
@@ -463,7 +477,7 @@ async function getLoadedResourcesList(arrayOfFiles: string[], buffers: Array<Buf
 	return loadedResources;
 }
 
-async function buildRompackAndResourceList(outfile: string): Promise<void> {
+async function buildRompackAndResourceList(outfile: string, respath: string): Promise<void> {
 	log("Minifyen... ");
 	startRotator();
 	minifyGamecode("./rom/megarom.js");
@@ -472,7 +486,7 @@ async function buildRompackAndResourceList(outfile: string): Promise<void> {
 
 	log("Alle files ophalen... ");
 	startRotator();
-	const arrayOfFiles = getFiles("./rom");
+	const arrayOfFiles = getFiles(respath) ?? []; // Also handle corner case where we don't have any resources by adding "?? []"
 	addFile("./rom", "megarom.min.js", arrayOfFiles); // Add source at the end
 	stopRotator();
 	log("\tKlaar!\n");
@@ -554,6 +568,7 @@ async function buildRompackAndResourceList(outfile: string): Promise<void> {
 			let croppedCanvas = cropAtlas(jsonout);
 			atlasSize.x = croppedCanvas.width;
 			atlasSize.y = croppedCanvas.height;
+
 			atlasbuffer = (<any>croppedCanvas).toBuffer('image/png');
 		}
 		else {
@@ -664,6 +679,10 @@ function cropAtlas(romResources: Array<RomResource>): HTMLCanvasElement {
 
 	let cropw = atlasExploitedX;
 	let croph = atlasUnsafeY;
+	// Handle corner case where there are no textures in the ROM
+	if (cropw === 0) cropw = 1;
+	if (croph === 0) croph = 1;
+
 	const result: HTMLCanvasElement = createCanvas(cropw, croph);
 	const croppedctx: CanvasRenderingContext2D = result.getContext('2d');
 	croppedctx.drawImage(atlasCanvas, 0, 0);
@@ -697,6 +716,8 @@ try {
 	let args = process.argv.slice(2);
 	let outfile: string = undefined;
 	let title: string = undefined;
+	let bootloader_path: string = undefined;
+	let respath: string = undefined;
 	let force: boolean = undefined;
 	let unrecognizedParam: boolean = false;
 
@@ -711,6 +732,14 @@ try {
 				++i;
 				outfile = args[i];
 				break;
+			case '-bootloaderpath':
+				++i;
+				bootloader_path = args[i];
+				break;
+			case '-respath':
+				++i;
+				respath = args[i];
+				break;
 			case '--force':
 				force = true;
 				break;
@@ -724,6 +753,8 @@ try {
 
 	if (!title) throw new Error("Missing parameter for title ('title', e.g. 'Sintervania'.");
 	if (!outfile) throw new Error("Missing parameter for output file ('outfile', e.g. 'sintervania.rom'.");
+	if (!bootloader_path) throw new Error("Missing parameter for location of the bootloader.ts-file ('bootloader_path', e.g. 'src/bootloader.ts'.");
+	if (!respath) throw new Error("Missing parameter for location of the resource folder ('respath', e.g. './src/sintervania/res'.");
 
 	if (!force && existsSync(`./dist/${outfile}`) && existsSync(`"./rom/tsout.js"`)) {
 		let romstats = statSync(`./dist/${outfile}`);
@@ -737,14 +768,14 @@ try {
 	}
 
 	yaml2Json();
-	bundleGamecode("./rom/tsout.js")
+	bundleGamecode('./rom/tsout.js', bootloader_path)
 		.then(() => yaml2Json())
-		.then(() => buildRompackAndResourceList(outfile))
+		.then(() => buildRompackAndResourceList(outfile, respath))
 		.then(() => buildGameHtmlAndManifest(outfile, title))
-		.then(() => deploy())
+		.then(() => deploy(title))
 		.then(() => log(_colors.brightGreen("===  ALLES DONUT!  ===\n")))
-		.catch(e => { log(`Er ging iets niet goed: ${e?.message ?? 'en ook geen foutmelding beschikbaar :-('}\n`, 'error'); process.exit(-1); });
+		.catch(e => { log(`Er ging iets niet goed: ${e?.message ?? 'en ook geen foutmelding beschikbaar :-('}\n${e?.stack ?? 'en geen stacktrace'}`, 'error'); process.exit(-1); });
 } catch (e) {
-	log(`Er ging iets niet goed: ${e.message}\n`, 'error');
+	log(`Er ging iets niet goed: ${e.message}\n${e?.stack ?? 'en geen stacktrace'}\n`, 'error');
 	process.exit(-1);
 }
