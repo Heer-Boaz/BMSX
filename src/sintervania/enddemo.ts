@@ -1,6 +1,6 @@
 import { TextWriter } from "./textwriter";
 import { SM } from "../bmsx/soundmaster";
-import { AudioId, BitmapId } from "../bmsx/resourceids";
+import { AudioId, BitmapId } from "./resourceids";
 import { view } from "../bmsx/engine";
 
 // export const enum State {

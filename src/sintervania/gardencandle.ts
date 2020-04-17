@@ -1,6 +1,6 @@
 import { Animation } from "../bmsx/animation";
 import { Candle } from "./candle";
-import { BitmapId } from "../bmsx/resourceids";
+import { BitmapId } from "./resourceids";
 import { ItemType } from "./item";
 import { newArea } from "../bmsx/common";
 import { Area } from "../bmsx/common";

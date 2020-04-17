@@ -4,7 +4,7 @@ import { waitDuration } from "../bmsx/common";
 import { view } from "../bmsx/engine";
 import { Controller } from "./gamecontroller";
 import { Point } from "../bmsx/common";
-import { BitmapId } from "../bmsx/resourceids";
+import { BitmapId } from "./resourceids";
 import { GameConstants } from "./gameconstants";
 
 export class ItsCurtainsForYou implements IGameObject {

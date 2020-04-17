@@ -2,7 +2,7 @@ import { TileSize, Tile } from '../bmsx/msx';
 import { GameConstants } from './gameconstants';
 import { Area, newArea, Point, newSize, copyPoint, addPoints } from '../bmsx/common';
 import { bst, view, model, controller } from '../bmsx/engine';
-import { BitmapId, AudioId } from '../bmsx/resourceids';
+import { BitmapId, AudioId } from './resourceids';
 import { Controller } from './gamecontroller';
 import { GameSubstate, Model } from './gamemodel';
 import { DrawImgFlags } from '../bmsx/view';

@@ -1,5 +1,6 @@
 // import { Model } from "../src/gamemodel";
-import { Constants as CS, BaseModel, BStopwatch } from "./engine";
+import { Constants as CS, BStopwatch } from "./engine";
+import { BaseModelOld } from "./basemodel_old";
 
 export class Savegame {
 	public Model: any;
@@ -10,11 +11,11 @@ export class Savegame {
 }
 
 export namespace GameSaver {
-	export function saveGame(m: BaseModel, slot: number): void {
+	export function saveGame(m: BaseModelOld, slot: number): void {
 		console.warn("Not implemented yet :(");
 	}
 
-	export function GetCheckpoint(m: BaseModel): Savegame {
+	export function GetCheckpoint(m: BaseModelOld): Savegame {
 		saveGame(m, CS.SaveSlotCheckpoint);
 		return LoadGame(CS.SaveSlotCheckpoint);
 	}
@@ -55,7 +56,7 @@ export function SlotExists(slot: number): boolean {
 	// 	return Directory.Exists("./Saves") && File.Exists(file);
 }
 
-export function GetCheckpoint(m: BaseModel): Savegame {
+export function GetCheckpoint(m: BaseModelOld): Savegame {
 	GameSaver.saveGame(m, CS.SaveSlotCheckpoint);
 	return LoadGame(CS.SaveSlotCheckpoint);
 }

@@ -568,7 +568,7 @@ function buildResourceList(respath: string): void {
 
 	let metalist = getResMetaList(respath);
 
-	bar.start(metalist.length + (GENERATE_AND_USE_TEXTURE_ATLAS ? 1 : 0), 0);
+	bar.start(metalist.length, 0);
 
 	tsimgout.push("export enum BitmapId {\n\tNone = 0,");
 	tssndout.push("export enum AudioId {\n\tNone = 0,");
@@ -599,9 +599,10 @@ function buildResourceList(respath: string): void {
 
 	bar.stop();
 
-	log(`resourceids.ts wegschrijven... `);
+	let targetPath = respath.replace('/res', '/resourceids.ts');
+	log(`resourceids.ts wegschrijven naar "${targetPath}"... `);
 	startRotator();
-	writeFileSync("./src/bmsx/resourceids.ts", tsimgout.concat(tssndout).join('\n'));
+	writeFileSync(targetPath, tsimgout.concat(tssndout).join('\n'));
 	stopRotator();
 	log("\tKlaar!\n");
 }

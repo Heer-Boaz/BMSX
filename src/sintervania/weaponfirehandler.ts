@@ -1,7 +1,7 @@
 import { Model, MainWeaponType } from "./gamemodel";
 import { TriRoe } from "./triroe";
 import { SM } from "../bmsx/soundmaster";
-import { AudioId } from "../bmsx/resourceids";
+import { AudioId } from "./resourceids";
 import { waitDuration, copyPoint, Direction, Point } from "../bmsx/common";
 import { Cross } from "./cross";
 import { model } from '../bmsx/engine';

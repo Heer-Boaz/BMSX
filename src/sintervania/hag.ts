@@ -1,6 +1,6 @@
 import { BStopwatch } from "../bmsx/engine";
 import { Animation, AniData } from "../bmsx/animation";
-import { BitmapId } from "../bmsx/resourceids";
+import { BitmapId } from "./resourceids";
 import { ItemType } from "./item";
 import { Foe } from "./foe";
 import { GameConstants } from "./gameconstants";

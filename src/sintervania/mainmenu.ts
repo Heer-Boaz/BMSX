@@ -7,7 +7,7 @@ import { view, model, controller } from "../bmsx/engine";
 import { Constants as CS } from "../bmsx/engine";
 import { Input } from "../bmsx/input";
 import { SlotExists } from "../bmsx/gamepersistor";
-import { AudioId, BitmapId } from "../bmsx/resourceids";
+import { AudioId, BitmapId } from "./resourceids";
 import { Msx1Colors } from "../bmsx/msx";
 
 export const enum State {

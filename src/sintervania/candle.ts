@@ -2,7 +2,7 @@ import { Foe } from "./foe";
 import { BStopwatch } from "../bmsx/engine";
 import { ItemType } from "./item";
 import { Animation } from "../bmsx/animation"
-import { BitmapId } from "../bmsx/resourceids";
+import { BitmapId } from "./resourceids";
 import { newArea } from "../bmsx/common";
 import { Area } from "../bmsx/common";
 

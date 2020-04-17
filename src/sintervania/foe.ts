@@ -1,6 +1,6 @@
 import { ItemType } from './item';
 import { SM } from '../bmsx/soundmaster';
-import { AudioId } from '../bmsx/resourceids';
+import { AudioId } from './resourceids';
 import { FoeExplosion } from './foeexplosion';
 import { Model } from './gamemodel';
 import { Sprite, model, IGameObject } from '../bmsx/engine';

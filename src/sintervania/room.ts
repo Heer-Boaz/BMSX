@@ -4,7 +4,7 @@ import { Direction, Point } from "../bmsx/common";
 import { GameConstants as CS, GameConstants } from "./gameconstants";
 import { view, IGameObject, model, controller } from "../bmsx/engine";
 import { RoomDataContainer } from "./RoomFactory";
-import { BitmapId } from "../bmsx/resourceids";
+import { BitmapId } from "./resourceids";
 import { Model } from "./gamemodel";
 import { GardenCandle } from './gardencandle';
 import { ZakFoe } from './zakfoe';

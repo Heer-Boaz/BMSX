@@ -1,6 +1,6 @@
 import { PlayerProjectile } from './pprojectile';
 import { Area, Direction, newArea } from '../bmsx/common';
-import { BitmapId } from '../bmsx/resourceids';
+import { BitmapId } from './resourceids';
 
 export class Cross extends PlayerProjectile {
 	public hitarea: Area = newArea(0, 0, 26, 18);

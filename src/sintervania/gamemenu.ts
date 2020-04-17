@@ -1,5 +1,5 @@
 import { MenuItem } from "./mainmenu";
-import { AudioId, BitmapId } from "../bmsx/resourceids";
+import { AudioId, BitmapId } from "./resourceids";
 import { Direction } from "../bmsx/common";
 import { TextWriter } from "./textwriter";
 import { Size, Point } from "../bmsx/common";

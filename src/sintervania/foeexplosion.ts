@@ -2,7 +2,7 @@ import { ItemType } from "./item";
 import { Animation, AniData } from "../bmsx/animation"
 import { FX } from "./fx";
 import { HeartSmall } from "./heartsmall";
-import { BitmapId } from "../bmsx/resourceids";
+import { BitmapId } from "./resourceids";
 import { addPoints } from "../bmsx/common";
 import { model } from '../bmsx/engine';
 

@@ -1,7 +1,7 @@
 import { PlayerProjectile } from "./pprojectile";
 import { RoeState } from "./belmont";
 import { Model } from "./gamemodel";
-import { BitmapId } from "../bmsx/resourceids";
+import { BitmapId } from "./resourceids";
 import { Area, Point, Direction, newArea, moveArea } from "../bmsx/common";
 import { model } from '../bmsx/engine';
 

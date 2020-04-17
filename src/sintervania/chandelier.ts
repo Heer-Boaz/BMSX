@@ -3,7 +3,7 @@ import { Direction } from "../bmsx/common";
 import { Animation, AniData } from "../bmsx/animation";
 import { Foe } from "./foe";
 import { ItemType } from "./item";
-import { BitmapId } from "../bmsx/resourceids";
+import { BitmapId } from "./resourceids";
 import { newArea, newSize } from "../bmsx/common";
 import { Model } from "./gamemodel";
 import { Area } from "../bmsx/common";

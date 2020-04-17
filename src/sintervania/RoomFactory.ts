@@ -1,6 +1,6 @@
 import { Room, RoomInitDelegate } from "./room";
 import { newPoint, Point } from "../bmsx/common";
-import { BitmapId } from "../bmsx/resourceids";
+import { BitmapId } from "./resourceids";
 import * as stagedata from './data/maps.json';
 
 export class RoomDataContainer {

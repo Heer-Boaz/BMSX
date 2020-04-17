@@ -1,7 +1,7 @@
 import { Sprite, model, controller } from "../bmsx/engine";
 import { Model, SecWeaponType, BagWeapon } from "./gamemodel";
 import { Item } from "./item";
-import { BitmapId } from "../bmsx/resourceids";
+import { BitmapId } from "./resourceids";
 import { moveArea, area2size, newArea } from "../bmsx/common";
 import { Controller } from "./gamecontroller";
 import { Area, Point } from "../bmsx/common";

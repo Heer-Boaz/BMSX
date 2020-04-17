@@ -1,6 +1,6 @@
 import { Sprite, model } from "../bmsx/engine";
 import { Animation } from "../bmsx/animation"
-import { AudioId, BitmapId } from "../bmsx/resourceids";
+import { AudioId, BitmapId } from "./resourceids";
 import { GameConstants } from "./gameconstants";
 import { newArea } from "../bmsx/common";
 import { Model, belmont } from "./gamemodel";

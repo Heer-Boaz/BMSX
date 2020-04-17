@@ -1,6 +1,6 @@
 import { BStopwatch, Sprite, model, controller } from "../bmsx/engine";
 import { Animation } from "../bmsx/animation";
-import { BitmapId, AudioId } from '../bmsx/resourceids';
+import { BitmapId, AudioId } from './resourceids';
 import { Direction, Point, newPoint, Area, newArea, copyPoint, waitDuration, addPoints, newSize, mod } from '../bmsx/common';
 import { TileSize } from '../bmsx/msx';
 import { SM } from '../bmsx/soundmaster';

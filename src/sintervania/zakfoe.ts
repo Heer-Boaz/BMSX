@@ -1,7 +1,7 @@
 import { Foe } from "./foe";
 import { ItemType } from "./item";
 import { Area, Direction, newArea, newSize } from "../bmsx/common";
-import { BitmapId } from "../bmsx/resourceids";
+import { BitmapId } from "./resourceids";
 import { Model } from "./gamemodel";
 import { BSTEventType, bss, model } from "../bmsx/engine";
 

@@ -1,7 +1,8 @@
 import { ItemType } from './item';
 import { WeaponType, WeaponItem } from './weaponitem';
 import { Point, Direction } from '../bmsx/common';
-import { BaseModel, BStopwatch, IGameObject, view } from '../bmsx/engine';
+import { BStopwatch, IGameObject, view } from '../bmsx/engine';
+import { BaseModelOld } from "../bmsx/basemodel_old";
 import { Savegame } from '../bmsx/gamepersistor';
 import { Foe } from './foe';
 import { Belmont } from './belmont';
@@ -17,7 +18,7 @@ import { GameConstants } from './gameconstants';
 import { RoomFactory } from './RoomFactory';
 import { TextWriter } from './textwriter';
 import { DrawImgFlags } from '../bmsx/view';
-import { BitmapId } from '../bmsx/resourceids';
+import { BitmapId } from './resourceids';
 
 export const enum GameState {
     None = 0,
@@ -109,7 +110,7 @@ export const enum SecWeaponType {
 
 export var belmont: Belmont;
 
-export class Model extends BaseModel {
+export class Model extends BaseModelOld {
     public Checkpoint: Savegame;
     public SelectedChapterToPlay: Chapter;
     public static PROPERTY_KEEP_AT_ROOMSWITCH: string = "p_rs";
@@ -317,7 +318,7 @@ export class Model extends BaseModel {
         super.spawn(o, spawnpos);
     }
 
-    public remove(o: IGameObject): void {
+    public exile(o: IGameObject): void {
         if (o instanceof Belmont) {
             this.Belmont = null;
             belmont = null;
@@ -331,7 +332,7 @@ export class Model extends BaseModel {
             }
         }
 
-        super.remove(o);
+        super.exile(o);
     }
 
     public get gamewidth(): number {
@@ -410,7 +411,7 @@ export class Model extends BaseModel {
 
     public LoadRoom(id: number): void {
         let objectsToRemove = this.objects.filter(o => o.disposeOnSwitchRoom);
-        objectsToRemove.forEach(o => this.remove(o));
+        objectsToRemove.forEach(o => this.exile(o));
         this.currentRoom = RoomFactory.load(id);
         this.spawn(this.currentRoom);
     }

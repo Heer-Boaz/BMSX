@@ -1,6 +1,6 @@
 import { Foe } from "./foe";
 import { Item, ItemType } from "./item";
-import { BitmapId } from "../bmsx/resourceids";
+import { BitmapId } from "./resourceids";
 import { Model } from "./gamemodel";
 import { GameConstants as CS } from "./gameconstants";
 import { view, BStopwatch, model } from "../bmsx/engine";

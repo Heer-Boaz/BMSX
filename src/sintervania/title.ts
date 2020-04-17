@@ -1,6 +1,6 @@
 import { Animation } from "../bmsx/animation"
 import { Point } from "../bmsx/common";
-import { BitmapId } from "../bmsx/resourceids";
+import { BitmapId } from "./resourceids";
 import { view, IGameObject } from "../bmsx/engine";
 
 export const enum State {

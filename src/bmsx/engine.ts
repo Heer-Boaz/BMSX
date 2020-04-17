@@ -4,10 +4,12 @@ import { Input } from "./input";
 import { RomLoadResult } from "./rompack";
 import { MSX2ScreenWidth, MSX2ScreenHeight, TileSize } from "./msx";
 import { Point, Area, moveArea, Size, Direction, mod } from "./common";
+import { BaseModelOld } from './basemodel_old';
+import { BaseControllerOld } from './basecontroller_old';
 
 export let game: Game;
-export let model: BaseModel;
-export let controller: BaseController;
+export let model: BaseModel | BaseModelOld;
+export let controller: BaseControllerOld;
 export let view: BaseView;
 
 const fps: number = 50;
@@ -48,242 +50,6 @@ export module Constants {
     export const SaveGamePath: string = "./Saves/sintervania.sa";
     export const CheckpointGamePath: string = "./Saves/sintervania.chk";
     export const OptionsPath: string = "./sintervania.ini";
-}
-
-export class Game {
-    lastTick: number;
-    _turnCounter: number;
-    animationFrameRequestid: number;
-    public running: boolean;
-    wasupdated: boolean;
-    public rom: RomLoadResult;
-
-    constructor(_rom: RomLoadResult, _model: BaseModel, _view: BaseView, _controller: BaseController, sndcontext: AudioContext, gainnode: GainNode) {
-        game = this;
-        this.rom = _rom;
-
-        model = _model;
-        view = _view;
-        controller = _controller;
-
-        global['model'] = model;
-        global['view'] = view;
-        global['controller'] = controller;
-
-        BaseView.images = _rom.images;
-        view.init();
-        SM.init(_rom['sndresources'], sndcontext, gainnode);
-        Input.init();
-
-        this.running = false;
-        this.wasupdated = true;
-    }
-
-    public get turnCounter(): number {
-        return this._turnCounter;
-    }
-
-    public start(): void {
-        window.addEventListener('resize', view.handleResize, false);
-        window.addEventListener('orientationchange', view.handleResize, false);
-        view.handleResize();
-
-        this.running = true;
-        this.lastTick = performance.now();
-        this.run(performance.now());
-    }
-
-    public update(elapsedMs: number): void {
-        BStopwatch.updateTimers(elapsedMs);
-        controller.takeTurn(elapsedMs);
-    }
-
-    public run(tFrame: number): void {
-        if (!game.running) return;
-
-        game.animationFrameRequestid = window.requestAnimationFrame(game.run);
-        let nextTick = game.lastTick + fpstime;
-        let numTicks = 0;
-
-        // If tFrame < nextTick then 0 ticks need to be updated (0 is default for numTicks).
-        // If tFrame = nextTick then 1 tick needs to be updated (and so forth).
-        // Note: As we mention in summary, you should keep track of how large numTicks is.
-        // If it is large, then either your game was asleep, or the machine cannot keep up.
-        if (tFrame > nextTick) {
-            let timeSinceTick = tFrame - game.lastTick;
-            numTicks = Math.floor(timeSinceTick / fpstime);
-        }
-
-        for (let i = 0; i < numTicks; i++) {
-            ++game._turnCounter;
-            game.lastTick = game.lastTick + fpstime; // Now lastTick is this tick.
-            Input.pollGamepadInput();
-            game.update(game.lastTick);
-        }
-        view.drawgame();
-    }
-
-    public stop(): void {
-        game.running = false;
-        window.cancelAnimationFrame(this.animationFrameRequestid);
-        window.requestAnimationFrame(() => {
-            view.clear();
-            view.handleResize();
-            SM.stopEffect();
-            SM.stopMusic();
-        });
-    }
-}
-
-export abstract class BaseController {
-    protected timer: BStopwatch;
-
-    constructor() {
-        this.timer = BStopwatch.createWatch();
-        this.timer.restart();
-    }
-
-    // Methods
-    public takeTurn(elapsedMs: number): void {
-        if (model.paused) {
-            this.doPausedState();
-            return;
-        }
-        if (model.startAfterLoad) {
-            this.doStartAfterLoadState();
-        }
-
-        // Update all timers
-        BStopwatch.updateTimers(elapsedMs);
-
-        // Remove all objects that are to be disposed
-        model.objects.filter(o => o.disposeFlag).forEach(o => model.remove(o));
-    }
-
-    protected doPausedState() {
-    }
-
-    protected doStartAfterLoadState() {
-    }
-
-    public switchState(newstate: number): void {
-        this.disposeOldState(newstate);
-        this.initNewState(newstate);
-
-        model.gameOldState = model.gameState;
-        model.gameState = newstate;
-    }
-
-    public switchSubstate(newsubstate: number): void {
-        this.disposeOldSubstate(newsubstate);
-        this.initNewSubstate(newsubstate);
-
-        model.gameOldSubstate = model.gameSubstate;
-        model.gameSubstate = newsubstate;
-    }
-
-    protected abstract disposeOldState(newState: number): void;
-
-    protected abstract disposeOldSubstate(newsubstate: number): void;
-
-    protected abstract initNewSubstate(newsubstate: number): void;
-
-    protected abstract initNewState(newstate: number): void;
-}
-
-export abstract class BaseModel {
-    public id2object: { [key: string]: IGameObject; };
-    public objects: IGameObject[];
-    public gameState: number;
-    public gameSubstate: number;
-    public gameOldState: number;
-    public gameOldSubstate: number;
-    public paused: boolean;
-    public startAfterLoad: boolean;
-
-    public get oldGameState(): number {
-        return this.gameOldState;
-    }
-
-    public set oldGameState(value: number) {
-        this.gameOldState = value;
-    }
-
-    public get state(): number {
-        return this.gameState;
-    }
-
-    public set state(value: number) {
-        this.gameState = value;
-    }
-
-    public get oldGameSubstate(): number {
-        return this.gameOldSubstate;
-    }
-
-    public set oldGameSubstate(value: number) {
-        this.gameOldSubstate = value;
-    }
-
-    public get substate(): number {
-        return this.gameSubstate;
-    }
-
-    public set substate(value: number) {
-        this.gameSubstate = value;
-    }
-
-    public abstract get gamewidth(): number;
-    public abstract get gameheight(): number;
-
-    constructor() {
-        this.objects = [];
-        this.id2object = {};
-        this.gameState = 0;
-        this.gameSubstate = 0;
-        this.oldGameState = 0;
-        this.oldGameSubstate = 0;
-
-        this.paused = false;
-    }
-
-    public abstract initModelForGameStart(): void;
-
-    public clearModel(): void {
-        this.objects.forEach(o => o.ondispose?.());
-        this.objects.length = 0;
-        delete this.id2object;
-        this.id2object = {};
-        this.paused = false;
-    }
-
-    public spawn(o: IGameObject, pos?: Point): void {
-        this.objects.push(o);
-
-        // this.objects.sort((o1, o2) => (o1.priority || 0) - (o2.priority || 0));
-        this.objects.sort((o1, o2) => (o2.priority || 0) - (o1.priority || 0));
-
-        this.id2object[o.id] = o;
-        o.onspawn?.(pos);
-    }
-
-    public remove(o: IGameObject): void {
-        let index = this.objects.indexOf(o);
-        if (index > -1) {
-            delete this.objects[index];
-            this.objects.splice(index, 1);
-        }
-
-        if (this.id2object[o.id]) this.id2object[o.id] = undefined;
-        o.ondispose?.();
-    }
-
-    public exists(id: string): boolean {
-        return this.id2object[id] !== undefined;
-    }
-
-    public abstract collidesWithTile(o: IGameObject, dir: Direction): boolean;
-    public abstract isCollisionTile(x: number, y: number): boolean;
 }
 
 export const enum BSTEventType {
@@ -428,6 +194,164 @@ export class bst {
 
     public remove(_id: numstring): void {
         delete this.states[_id];
+    }
+}
+
+export abstract class BaseModel extends bst {
+    public id2object: { [key: string]: IGameObject; };
+    public objects: IGameObject[];
+    public paused: boolean;
+    public startAfterLoad: boolean;
+    public abstract get gamewidth(): number;
+    public abstract get gameheight(): number;
+
+    constructor() {
+        super();
+        this.objects = [];
+        this.id2object = {};
+
+        this.paused = false;
+
+        // Create default state for running the game
+        let defaultState = this.add(0);
+        defaultState.onrun = (s: bss, t: BSTEventType, o: bst) => {
+            if (model.paused) {
+                return;
+            }
+            if (model.startAfterLoad) {
+                return;
+            }
+
+            let objects = model.objects;
+            // Let all game objects take a turn
+            objects.forEach(o => !o.disposeFlag && o.takeTurn());
+
+            // Remove all objects that are to be disposed
+            model.objects.filter(o => o.disposeFlag).forEach(o => model.exile(o));
+        };
+    }
+
+    public abstract initModelForGameStart(): void;
+
+    public clearModel(): void {
+        this.objects.forEach(o => o.ondispose?.());
+        this.objects.length = 0;
+        delete this.id2object;
+        this.id2object = {};
+        this.paused = false;
+    }
+
+    public spawn(o: IGameObject, pos?: Point): void {
+        this.objects.push(o);
+
+        this.objects.sort((o1, o2) => (o2.priority || 0) - (o1.priority || 0));
+
+        this.id2object[o.id] = o;
+        o.onspawn?.(pos);
+    }
+
+    public exile(o: IGameObject): void {
+        let index = this.objects.indexOf(o);
+        if (index > -1) {
+            delete this.objects[index];
+            this.objects.splice(index, 1);
+        }
+
+        if (this.id2object[o.id])
+            this.id2object[o.id] = undefined;
+        o.ondispose?.();
+    }
+
+    public exists(id: string): boolean {
+        return this.id2object[id] !== undefined;
+    }
+
+    public abstract collidesWithTile(o: IGameObject, dir: Direction): boolean;
+    public abstract isCollisionTile(x: number, y: number): boolean;
+}
+
+export class Game {
+    lastTick: number;
+    _turnCounter: number;
+    animationFrameRequestid: number;
+    public running: boolean;
+    wasupdated: boolean;
+    public rom: RomLoadResult;
+
+    constructor(_rom: RomLoadResult, _model: BaseModel | BaseModelOld, _view: BaseView, _controller: BaseControllerOld | null, sndcontext: AudioContext, gainnode: GainNode) {
+        game = this;
+        this.rom = _rom;
+
+        model = _model;
+        view = _view;
+        controller = _controller;
+
+        global['model'] = model;
+        global['view'] = view;
+        global['controller'] = controller;
+
+        BaseView.images = _rom.images;
+        view.init();
+        SM.init(_rom['sndresources'], sndcontext, gainnode);
+        Input.init();
+
+        this.running = false;
+        this.wasupdated = true;
+    }
+
+    public get turnCounter(): number {
+        return this._turnCounter;
+    }
+
+    public start(): void {
+        window.addEventListener('resize', view.handleResize, false);
+        window.addEventListener('orientationchange', view.handleResize, false);
+        view.handleResize();
+
+        this.running = true;
+        this.lastTick = performance.now();
+        this.run(performance.now());
+    }
+
+    public update(elapsedMs: number): void {
+        BStopwatch.updateTimers(elapsedMs);
+        model.run(elapsedMs);
+    }
+
+    public run(tFrame?: number): void {
+        if (!game.running) return;
+
+        game.animationFrameRequestid = window.requestAnimationFrame(game.run);
+        let nextTick = game.lastTick + fpstime;
+        let numTicks = 0;
+
+        // If tFrame < nextTick then 0 ticks need to be updated (0 is default for numTicks).
+        // If tFrame = nextTick then 1 tick needs to be updated (and so forth).
+        // Note: As we mention in summary, you should keep track of how large numTicks is.
+        // If it is large, then either your game was asleep, or the machine cannot keep up.
+        if (tFrame > nextTick) {
+            let timeSinceTick = tFrame - game.lastTick;
+            numTicks = Math.floor(timeSinceTick / fpstime);
+        }
+
+        for (let i = 0; i < numTicks; i++) {
+            ++game._turnCounter;
+            game.lastTick = game.lastTick + fpstime; // Now lastTick is this tick.
+            Input.pollGamepadInput();
+            game.update(game.lastTick);
+        }
+        view.drawgame();
+    }
+
+    public stop(): void {
+        game.running = false;
+        window.cancelAnimationFrame(this.animationFrameRequestid);
+        window.requestAnimationFrame(() => {
+            view.clear();
+            view.handleResize();
+            SM.stopEffect();
+            SM.stopMusic();
+        });
     }
 }
 

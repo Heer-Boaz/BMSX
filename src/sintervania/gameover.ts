@@ -2,7 +2,7 @@ import { Model } from "./gamemodel";
 import { Direction, Point } from "../bmsx/common";
 import { TextWriter } from "./textwriter";
 import { view, model, IGameObject, controller } from "../bmsx/engine";
-import { AudioId, BitmapId } from "../bmsx/resourceids";
+import { AudioId, BitmapId } from "./resourceids";
 import { Input } from "../bmsx/input";
 import { SM as S, SM } from "../bmsx/soundmaster";
 import { Controller } from "./gamecontroller";

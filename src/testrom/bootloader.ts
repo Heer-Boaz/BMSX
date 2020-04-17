@@ -1,9 +1,9 @@
 import { RomLoadResult } from '../bmsx/rompack';
-import { Game, game, model, controller, BaseModel, IGameObject, BaseController, Sprite } from '../bmsx/engine';
-import { setPoint, newPoint, Direction } from '../bmsx/common';
+import { Game, game, model, BaseModel, IGameObject, Sprite } from '../bmsx/engine';
+import { setPoint, newPoint, Direction, newSize } from '../bmsx/common';
 import { Tile, MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
-import { BitmapId } from '../bmsx/resourceids';
+import { BitmapId } from './resourceids';
 import { Input } from '../bmsx/input';
 
 var _global = window || global;
@@ -58,33 +58,10 @@ _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: Gain
             super.drawgame();
             super.drawSprites();
         }
-    }(newPoint(MSX1ScreenWidth, MSX1ScreenHeight));
+    }(newSize(MSX1ScreenWidth, MSX1ScreenHeight));
 
-    let _controller = new class extends BaseController {
-        protected disposeOldState(newState: number): void {
-        }
-
-        protected disposeOldSubstate(newsubstate: number): void {
-        }
-
-        protected initNewSubstate(newsubstate: number): void {
-        }
-
-        protected initNewState(newstate: number): void {
-        }
-
-        public takeTurn(elapsedMs: number): void {
-            super.takeTurn(elapsedMs);
-
-            let objects = _model.objects;
-            objects.forEach(o => !o.disposeFlag && o.takeTurn());
-        }
-    }();
-
-    new Game(rom, _model, _view, _controller, sndcontext, gainnode);
+    new Game(rom, _model, _view, null, sndcontext, gainnode);
 
     game.start();
     model.initModelForGameStart();
-    (controller as BaseController).switchState(0);
-    (controller as BaseController).switchSubstate(0);
 };

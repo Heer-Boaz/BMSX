@@ -1,7 +1,8 @@
-import { BaseController, BStopwatch, model } from '../bmsx/engine';
+import { BStopwatch, model } from '../bmsx/engine';
+import { BaseControllerOld } from "../bmsx/basecontroller_old";
 import { GameState, GameSubstate, Model } from './gamemodel';
 import { SM } from '../bmsx/soundmaster';
-import { AudioId } from '../bmsx/resourceids';
+import { AudioId } from './resourceids';
 import { Input } from '../bmsx/input';
 import { waitDuration, Direction, setPoint } from '../bmsx/common';
 import { GameConstants } from './gameconstants';
@@ -13,7 +14,7 @@ import { Item, ItemType } from './item';
 import { WeaponItem } from './weaponitem';
 import { Pietula } from './pietula';
 
-export class Controller extends BaseController {
+export class Controller extends BaseControllerOld {
     public InEventState: boolean;
     private startAfterLoadTimer: BStopwatch;
     public ElapsedMsDelta: number;
@@ -172,7 +173,7 @@ export class Controller extends BaseController {
                         this.handleInputDuringGame();
                         let objects = (model as Model).objects;
                         objects.forEach(o => !o.disposeFlag && o.takeTurn());
-                        objects.forEach(o => o.disposeFlag && (model as Model).remove(o));
+                        objects.forEach(o => o.disposeFlag && (model as Model).exile(o));
                         (model as Model).currentRoom.takeTurn();
                         (model as Model).Hud.takeTurn();
                         break;
@@ -194,7 +195,7 @@ export class Controller extends BaseController {
                     default:
                         let objects = (model as Model).objects;
                         objects.forEach(o => !o.disposeFlag && o.takeTurn());
-                        objects.forEach(o => o.disposeFlag && (model as Model).remove(o));
+                        objects.forEach(o => o.disposeFlag && (model as Model).exile(o));
                         (model as Model).currentRoom.takeTurn();
                         (model as Model).Hud.takeTurn();
                         if (Input.KD_F5 && !(model as Model).GameMenu.visible)

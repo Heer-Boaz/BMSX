@@ -1,5 +1,5 @@
 import { view } from "../bmsx/engine"
-import { BitmapId } from "../bmsx/resourceids";
+import { BitmapId } from "./resourceids";
 import { GameOptions as GO } from "../bmsx/engine";
 import { Point } from "../bmsx/common";
 import { Color } from '../bmsx/view';

@@ -3,7 +3,7 @@ import { newArea, area2size, moveArea } from "../bmsx/common";
 import { Model } from "./gamemodel";
 import { SM } from "../bmsx/soundmaster";
 import { Controller } from "./gamecontroller";
-import { AudioId, BitmapId } from "../bmsx/resourceids";
+import { AudioId, BitmapId } from "./resourceids";
 import { Area, Point } from "../bmsx/common";
 
 export const enum ItemType {
