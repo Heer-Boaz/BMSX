@@ -231,8 +231,6 @@ export abstract class BaseModel extends bst {
         };
     }
 
-    public abstract initModelForGameStart(): void;
-
     public clearModel(): void {
         this.objects.forEach(o => o.ondispose?.());
         this.objects.length = 0;

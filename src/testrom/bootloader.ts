@@ -6,62 +6,61 @@ import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
 import { Input } from '../bmsx/input';
 
+let bclass = class extends Sprite {
+    constructor() {
+        super();
+        this.imgid = BitmapId.b;
+    }
+
+    takeTurn(): void {
+        if (Input.KD_UP) {
+            this.pos.y -= 2;
+        }
+        if (Input.KD_RIGHT) {
+            this.pos.x += 2;
+        }
+        if (Input.KD_DOWN) {
+            this.pos.y += 2;
+        }
+        if (Input.KD_LEFT) {
+            this.pos.x -= 2;
+        }
+    }
+
+};
+
+let _modelclass = class extends BaseModel {
+    public get gamewidth(): number {
+        return MSX1ScreenWidth;
+    }
+
+    public get gameheight(): number {
+        return MSX1ScreenHeight;
+    }
+
+    public collidesWithTile(o: IGameObject, dir: Direction): boolean {
+        return false;
+    }
+
+    public isCollisionTile(x: number, y: number): boolean {
+        return false;
+    }
+};
+
+
+let _viewclass = class extends GLView {
+    public drawgame() {
+        super.drawgame();
+        super.drawSprites();
+    }
+};
+
 var _global = window || global;
 _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: GainNode): void => {
-    let b = new class extends Sprite {
-        constructor() {
-            super();
-            this.imgid = BitmapId.b;
-        }
-
-        takeTurn(): void {
-            if (Input.KD_UP) {
-                this.pos.y -= 2;
-            }
-            if (Input.KD_RIGHT) {
-                this.pos.x += 2;
-            }
-            if (Input.KD_DOWN) {
-                this.pos.y += 2;
-            }
-            if (Input.KD_LEFT) {
-                this.pos.x -= 2;
-            }
-        }
-
-    }();
-
-    let _model = new class extends BaseModel {
-        public get gamewidth(): number {
-            return MSX1ScreenWidth;
-        }
-
-        public get gameheight(): number {
-            return MSX1ScreenHeight;
-        }
-
-        public initModelForGameStart(): void {
-            this.spawn(b, newPoint(100, 100));
-        }
-
-        public collidesWithTile(o: IGameObject, dir: Direction): boolean {
-            return false;
-        }
-
-        public isCollisionTile(x: number, y: number): boolean {
-            return false;
-        }
-    }();
-
-    let _view = new class extends GLView {
-        public drawgame() {
-            super.drawgame();
-            super.drawSprites();
-        }
-    }(newSize(MSX1ScreenWidth, MSX1ScreenHeight));
-
+    let _model = new _modelclass();
+    let _view = new _viewclass(newSize(MSX1ScreenWidth, MSX1ScreenHeight));
     new Game(rom, _model, _view, null, sndcontext, gainnode);
 
     game.start();
-    model.initModelForGameStart();
+    model.spawn(new bclass(), newPoint(100, 100));
 };

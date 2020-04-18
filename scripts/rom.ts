@@ -215,7 +215,7 @@ async function loadScript(rom: RomLoadResult): Promise<void> {
 			resolve();
 		}
 		else {
-			romcode.src = '../rom/megarom.js';
+			romcode.src = '../megarom.js';
 			romcode.onload = () => resolve();
 			document.head.appendChild(romcode);
 		}

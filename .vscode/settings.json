@@ -9,5 +9,6 @@
                 "**/*.log": true,
                 "**/*.js": {"when": "$(basename).ts"}
         },
-        "typescript.tsdk": "node_modules\\typescript\\lib"
+        "typescript.tsdk": "node_modules\\typescript\\lib",
+        "debug.javascript.suggestPrettyPrinting": false
 }

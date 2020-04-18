@@ -154,7 +154,7 @@ async function bundleGamecode(outfile: string, bootloader_path: string): Promise
 	startRotator();
 
 	return new Promise(function (resolve, reject) {
-		let writeOutput = createWriteStream('./rom/megarom.js');
+		let writeOutput = createWriteStream('./megarom.js');
 		browserify({
 			debug: true,
 			basedir: '.',
@@ -163,7 +163,7 @@ async function bundleGamecode(outfile: string, bootloader_path: string): Promise
 			packageCache: {},
 			exposeAll: true,
 			exclude: [],
-			ignore: ['node_modules', 'dist', 'rom']
+			ignore: ['node_modules', 'dist', 'rom'],
 		})
 			.add(bootloader_path)
 			.plugin(tsify)
@@ -171,14 +171,14 @@ async function bundleGamecode(outfile: string, bootloader_path: string): Promise
 				extensions: ['.ts'],
 				plugins: ['@babel/plugin-transform-modules-commonjs'],
 				sourceMaps: true,
+				sourceMapsAbsolute: false,
 				global: true,
+				retainLines: true,
+				compact: true,
 			})
 			.bundle()
-			// .on('deps', dep => console.log(dep.file))
-			.on("error", e => { stopRotator(); log(`\tGame bouwen faalde :-(\n`, 'error'); return reject(e); })
-			.pipe(writeOutput);
-		// .catch(e => { log(`\nGame bouwen faalde :-(\n`, 'error'); Promise.reject(e); });
-
+			.pipe(writeOutput)
+			.on("error", e => { stopRotator(); log(`\tGame bouwen faalde :-(\n`, 'error'); return reject(e); });
 		writeOutput.on('finish', () => {
 			stopRotator();
 			log("\tKlaar!\n");
@@ -186,7 +186,7 @@ async function bundleGamecode(outfile: string, bootloader_path: string): Promise
 		});
 		writeOutput.on("error", e => {
 			stopRotator();
-			log(`\tWegschrijven gamecode faalde: ${e.message}\n`, 'error');
+			log(`\tWegschrijven gamecode faalde! :-(\n`, 'error');
 			return reject(e);
 		});
 	});
@@ -610,7 +610,7 @@ function buildResourceList(respath: string): void {
 async function buildRompack(outfile: string, respath: string): Promise<void> {
 	log("Minifyen... ");
 	startRotator();
-	minifyGamecode("./rom/megarom.js");
+	minifyGamecode("./megarom.js");
 	stopRotator();
 	log("\tKlaar!\n");
 
@@ -890,7 +890,7 @@ try {
 			.then(() => buildGameHtmlAndManifest(outfile, title))
 			.then(() => deploy(outfile, title))
 			.then(() => log(_colors.brightGreen("===  ALLES DONUT!  ===\n")))
-			.catch(e => { log(`Er ging iets niet goed: ${e?.message ?? 'en ook geen foutmelding beschikbaar :-('}\n${e?.stack ?? 'en geen stacktrace'}`, 'error'); process.exit(-1); });
+			.catch(e => { log(`Er ging iets niet goed:\n${e?.stack ?? '\ben geen stacktrace beschikbaar :-(!'}`, 'error'); process.exit(-1); });
 	}
 } catch (e) {
 	log(`Er ging iets niet goed: ${e.message}\n${e?.stack ?? 'en geen stacktrace'}\n`, 'error');
