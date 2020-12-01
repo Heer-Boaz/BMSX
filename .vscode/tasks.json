@@ -3,7 +3,7 @@
 	"_runner": "terminal",
 	"tasks": [
 		{
-			"label": "build Sintervania",
+			"label": "build the game",
 			"dependsOn": [
 				"pack"
 			],
@@ -165,10 +165,11 @@
 			"id": "romtobuild",
 			"description": "Choose ROM to build",
 			"options": [
+				"Marlies2020",
 				"Sintervania",
 				"Testrom",
 			],
-			"default": "Sintervania"
+			"default": "Marlies2020"
 		}
 	]
 }
