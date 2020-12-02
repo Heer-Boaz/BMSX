@@ -13,18 +13,21 @@ export abstract class Foe extends Sprite {
         return ~~Math.min((Math.round(this.health / this.maxHealth * 100)), 100);
     }
 
+    public get canHurtPlayer(): boolean {
+        return true;
+    }
+
+    public get damageToPlayer(): number {
+        return 1;
+    }
+
     constructor() {
         super();
-        this.canHurtPlayer = true;
-        this.damageToPlayer = 1;
     }
 
     public get respawnOnRoomEntry(): boolean {
         return false;
     }
-
-    public canHurtPlayer: boolean;
-    public damageToPlayer: number;
 
     public get isAfoot(): boolean {
         return this.canHurtPlayer && !this.disposeFlag;

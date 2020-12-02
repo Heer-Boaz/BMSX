@@ -14,7 +14,6 @@ export class ZakFoe extends Foe {
 
 	constructor(dir: Direction, itemSpawned: ItemType = ItemType.HeartSmall) {
 		super();
-		this.canHurtPlayer = true;
 		this.imgid = BitmapId.ZakFoe1;
 		this.hitarea = ZakFoe.ZakFoeHitArea;
 		this.size = newSize(16, 16);

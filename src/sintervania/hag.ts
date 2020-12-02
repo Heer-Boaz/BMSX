@@ -27,7 +27,6 @@ export class Hag extends Foe {
 
     constructor(dir: Direction, itemSpawned = ItemType.HeartSmall) {
         super();
-        this.canHurtPlayer = true;
         this.animation = new Animation<BitmapId>(Hag.AnimationFrames, null, true);
         this.timer = BStopwatch.createWatch();
         this.imgid = this.animation.stepValue;

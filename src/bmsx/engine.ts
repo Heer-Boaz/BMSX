@@ -88,7 +88,7 @@ export class bss {
     public oninitstate: bsfthandle;
     public onexitstate: bsfthandle;
     public get internalstate() { return { statedata: this.tapedata, tapehead: this.tapehead }; }
-
+    
     public tapedata: any[];
 
     public nudges2move: number; // Number of runs before tapehead moves to next statedata
@@ -392,7 +392,9 @@ export abstract class Sprite extends bst {
     public id: string | null;
     public pos: Point;
     public size: Size;
-    public hitarea: Area;
+    protected _hitarea: Area;
+    public get hitarea() { return this._hitarea; }
+    public set hitarea(value: Area) { this._hitarea = value; }
     public get wallHitarea(): Area { return this.hitarea; }
     public visible: boolean;
     public hittable: boolean;
