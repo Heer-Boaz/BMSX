@@ -6,13 +6,16 @@ import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
 import { Input } from '../bmsx/input';
 
-let bclass = class extends Sprite {
+let speler = class extends Sprite {
     constructor() {
         super();
-        this.imgid = BitmapId.b;
+        this.imgid = BitmapId.p1;
+        this.priority = 1000;
     }
 
     takeTurn(): void {
+        // Do cute animation
+
         if (Input.KD_UP) {
             this.pos.y -= 2;
         }
@@ -28,6 +31,17 @@ let bclass = class extends Sprite {
     }
 
 };
+
+let keuken = class extends Sprite {
+    constructor() {
+        super();
+        this.imgid = BitmapId.Keuken;
+        this.priority = 0;
+    }
+
+    takeTurn(): void {
+    }
+}
 
 let _modelclass = class extends BaseModel {
     public get gamewidth(): number {
@@ -47,9 +61,8 @@ let _modelclass = class extends BaseModel {
     }
 };
 
-
 let _viewclass = class extends GLView {
-    public drawgame() {
+    public drawgame(): void {
         super.drawgame();
         super.drawSprites();
     }
@@ -62,5 +75,6 @@ _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: Gain
     new Game(rom, _model, _view, null, sndcontext, gainnode);
 
     game.start();
-    model.spawn(new bclass(), newPoint(100, 100));
+    model.spawn(new keuken(), newPoint(0, 0));
+    model.spawn(new speler(), newPoint(100, 100));
 };
