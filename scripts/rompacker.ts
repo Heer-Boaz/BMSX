@@ -182,7 +182,7 @@ async function bundleGamecode(outfile: string, bootloader_path: string): Promise
 		writeOutput.on('finish', () => {
 			stopRotator();
 			log("\tKlaar!\n");
-			return resolve();
+			return resolve(null);
 		});
 		writeOutput.on("error", e => {
 			stopRotator();

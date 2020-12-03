@@ -153,8 +153,6 @@ export class Belmont extends Sprite {
 		return this.EventTouchHitArea;
 	}
 
-	private _hitarea: Area = newArea(0, 2, 15, 31);
-
 	public get hitarea(): Area {
 		return this._hitarea;
 	}
@@ -210,6 +208,7 @@ export class Belmont extends Sprite {
 	constructor() {
 		super();
 		this.imgid = BitmapId.Belmont_r1;
+		this._hitarea = newArea(0, 2, 15, 31)
 		this.flippedH = false;
 		this.CarryingShield = false;
 		this.direction = Direction.Right;

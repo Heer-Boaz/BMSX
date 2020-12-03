@@ -5,11 +5,11 @@ declare var h406A: (rom: RomLoadResult, sndcontext: AudioContext, gainnode: Gain
 
 // Only implement if no native implementation is available
 // https://stackoverflow.com/questions/4775722/how-to-check-if-an-object-is-an-array
-if (typeof Array.isArray === 'undefined') {
-	Array.isArray = function (obj): obj is Array<any> {
-		return Object.prototype.toString.call(obj) === '[object Array]';
-	};
-};
+// if (typeof Array.isArray === 'undefined') {
+// 	Array.isArray = function (obj): obj is Array<any> {
+// 		return Object.prototype.toString.call(obj) === '[object Array]';
+// 	};
+// };
 
 var bootrom = {
 	rom: null as RomLoadResult,
