@@ -88,7 +88,7 @@ export class bss {
     public oninitstate: bsfthandle;
     public onexitstate: bsfthandle;
     public get internalstate() { return { statedata: this.tapedata, tapehead: this.tapehead }; }
-    
+
     public tapedata: any[];
 
     public nudges2move: number; // Number of runs before tapehead moves to next statedata
@@ -140,8 +140,10 @@ export class bst {
 
     public states: str2bss; // Note that numbers will be automatically converted to strings!
     public currentid: numstring; // Identifier of current state
+    protected previousid: numstring; // Identifier of the previous state
     public halted: boolean;
     public get current(): bss { return this.states[this.currentid]; };
+    public get previous(): bss { return this.states[this.previousid]; };
 
     constructor() {
         this.states = {};
@@ -149,7 +151,7 @@ export class bst {
         this.reset();
     }
 
-    public setStart(_id: numstring, init = true) {
+    public setStart(_id: numstring, init = true): void {
         this.initstateid = _id;
         this.currentid = _id;
         if (init) this.current.oninitstate?.(this.current, BSTEventType.Init, this);
@@ -172,19 +174,26 @@ export class bst {
         }
     }
 
-    public run() {
+    public run(): void {
         if (this.halted) return;
         this.current.onrun?.(this.current, BSTEventType.Run, this);
     }
 
     public to(newstate: numstring): void {
         this.current.onexitstate?.(this.current, BSTEventType.Exit, this);
-        this.currentid = newstate;
+        this.previousid = this.currentid; // Set the previous state id to the current state
+        this.currentid = newstate; // Switch the current state to the new state
         this.current.oninitstate?.(this.current, BSTEventType.Final, this);
+    }
+
+    public toPrevious(): void {
+        if (!this.previousid) return;
+        this.to(this.previousid);
     }
 
     public reset(): void {
         this.currentid = this.initstateid;
+        this.previousid = null;
         this.halted = false;
     }
 
@@ -214,21 +223,23 @@ export abstract class BaseModel extends bst {
 
         // Create default state for running the game
         let defaultState = this.add(0);
-        defaultState.onrun = (s: bss, t: BSTEventType, o: bst) => {
-            if (model.paused) {
-                return;
-            }
-            if (model.startAfterLoad) {
-                return;
-            }
+        defaultState.onrun = this.defaultrun;
+    }
 
-            let objects = model.objects;
-            // Let all game objects take a turn
-            objects.forEach(o => !o.disposeFlag && o.takeTurn());
+    public defaultrun(s: bss, t: BSTEventType, o: bst): void {
+        if (model.paused) {
+            return;
+        }
+        if (model.startAfterLoad) {
+            return;
+        }
 
-            // Remove all objects that are to be disposed
-            model.objects.filter(o => o.disposeFlag).forEach(o => model.exile(o));
-        };
+        let objects = model.objects;
+        // Let all game objects take a turn
+        objects.forEach(o => !o.disposeFlag && o.takeTurn());
+
+        // Remove all objects that are to be disposed
+        model.objects.filter(o => o.disposeFlag).forEach(o => model.exile(o));
     }
 
     public clearModel(): void {

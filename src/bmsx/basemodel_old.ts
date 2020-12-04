@@ -1,7 +1,7 @@
 import { Point, Direction } from "./common";
-import { IGameObject, controller } from './engine';
+import { IGameObject, controller, bst } from './engine';
 
-export abstract class BaseModelOld {
+export abstract class BaseModelOld extends bst {
     public id2object: { [key: string]: IGameObject; };
     public objects: IGameObject[];
     public gameState: number;
@@ -11,7 +11,7 @@ export abstract class BaseModelOld {
     public paused: boolean;
     public startAfterLoad: boolean;
 
-    public run(elapsedMs: number): void {
+    public run(elapsedMs?: number): void {
         controller.takeTurn(elapsedMs);
     }
 
@@ -58,6 +58,7 @@ export abstract class BaseModelOld {
     public abstract get gameheight(): number;
 
     constructor() {
+        super();
         this.objects = [];
         this.id2object = {};
         this.gameState = 0;
