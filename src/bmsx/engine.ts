@@ -57,7 +57,7 @@ export const enum BSTEventType {
     Run = 1,
     Init = 2,
     Exit = 3,
-    Final = 4,
+    // Final = 4,
     TapeMove = 5,
     TapeEnd = 6,
 }
@@ -118,6 +118,16 @@ export class bss {
     public set nudges(v: number) {
         this._nudges = v;
         if (v >= this.nudges2move) { ++this.tapehead; }
+    }
+
+    // Helper function to set all handlers
+    public setAllHandlers(handler: bsfthandle): void {
+        this.onrun = handler;
+        this.onfinalstate = handler;
+        this.ontapeend = handler;
+        this.ontapemove = handler;
+        this.oninitstate = handler;
+        this.onexitstate = handler;
     }
 
     protected tapemove() {
@@ -183,7 +193,8 @@ export class bst {
         this.current.onexitstate?.(this.current, BSTEventType.Exit, this);
         this.previousid = this.currentid; // Set the previous state id to the current state
         this.currentid = newstate; // Switch the current state to the new state
-        this.current.oninitstate?.(this.current, BSTEventType.Final, this);
+        if (!this.current) throw new Error(`State ${newstate} doesn't exist for this state machine!`);
+        this.current.oninitstate?.(this.current, BSTEventType.Init, this);
     }
 
     public toPrevious(): void {

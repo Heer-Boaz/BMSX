@@ -3,8 +3,8 @@
 	"configurations": [
 		{
 			// "type": "pwa-msedge",
-			"type": "chrome",
-			// "runtimeExecutable": "dev",
+			"type": "edge",
+			"version": "dev",
 			"request": "launch",
 			"name": "Debug the game!",
 			"url": "${workspaceFolder}/dist/game_debug.html",
@@ -13,8 +13,8 @@
 				"--nolazy"
 			],
 			"sourceMaps": true,
-			"showAsyncStacks": false,
-			"smartStep": false,
+			"showAsyncStacks": true,
+			"smartStep": true,
 		}
 	]
 }
