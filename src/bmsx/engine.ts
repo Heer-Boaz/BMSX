@@ -193,7 +193,7 @@ export class bst {
         this.current.onexitstate?.(this.current, BSTEventType.Exit, this);
         this.previousid = this.currentid; // Set the previous state id to the current state
         this.currentid = newstate; // Switch the current state to the new state
-        if (!this.current) throw new Error(`State ${newstate} doesn't exist for this state machine!`);
+        if (!this.current) throw new Error(`State "${newstate}" doesn't exist for this state machine!`);
         this.current.oninitstate?.(this.current, BSTEventType.Init, this);
     }
 
@@ -261,10 +261,14 @@ export abstract class BaseModel extends bst {
         this.paused = false;
     }
 
+    public sortObjectsByPriority(): void {
+        this.objects.sort((o1, o2) => (o2.priority || 0) - (o1.priority || 0));
+    }
+
     public spawn(o: IGameObject, pos?: Point): void {
         this.objects.push(o);
 
-        this.objects.sort((o1, o2) => (o2.priority || 0) - (o1.priority || 0));
+        this.sortObjectsByPriority();
 
         this.id2object[o.id] = o;
         o.onspawn?.(pos);
