@@ -5,24 +5,41 @@ import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
 import { Input } from '../bmsx/input';
+import { TextWriter } from './textwriter';
 
-const COLUMN_X = <Array<number>>[36, 48, 80, 160];
+const COLUMN_X = <Array<number>>[36, 48, 80, 160, 200];
 const START_COLUMN = 1;
 const MAX_CORONA = 3;
-const TIME_CORONA_SPAWN = 100;
+const TIME_CORONA_SPAWN = 200;
 const MIN_CORONA_MOVE = 16;
 const MAX_CORONA_MOVE = 72;
 const CORONA_SPAWN_LOCS = <Array<Point>>[
-    // { x: 150, y: 100 },
     { x: MSX1ScreenWidth, y: 0 },
     { x: MSX1ScreenWidth, y: MSX1ScreenHeight },
 ];
+const PITAS_OP_BORD_VOOR_WINST = 2;
+const INGREDIENTEN_IN_PITA = 3;
 
 let _modelclass = class extends BaseModel {
     public marlies: Sprite;
+    public ingredientEquipped: Ingredient;
+    public pitasOpBord: number;
 
     constructor() {
         super();
+        this.pitasOpBord = 0;
+        this.ingredientEquipped = null;
+
+        let hoerastate = this.add('hoera!');
+        let hoeraHandler = (s: bss, type: BSTEventType) => {
+            switch (type) {
+                case BSTEventType.Init:
+                    this.clearModel();
+                    this.spawn(new hoeraStuff());
+                break;
+            }
+        };
+        hoerastate.setAllHandlers(hoeraHandler);
     }
 
     public get gamewidth(): number {
@@ -39,6 +56,53 @@ let _modelclass = class extends BaseModel {
 
     public isCollisionTile(x: number, y: number): boolean {
         return false;
+    }
+
+    public doePotentieelOprapen(o: Ingredient | Pita): void {
+        if (this.ingredientEquipped) return; // Kan alleen oprapen als niks omhanden
+        if (o.ingredientType) {
+            let type: string = o.ingredientType;
+            if (type != 'pita') { // Kan alleen gevulde pita of ingredienten oppakken
+                this.ingredientEquipped = o as Ingredient | Pita;
+                this.ingredientEquipped.pos.x = 0;
+                this.ingredientEquipped.pos.y = 0;
+            }
+        }
+    }
+
+    public ProbeerEquippedInPitaTeProppen(pita: Pita): void {
+        if (!this.ingredientEquipped) return; // Als je niets hebt, kan je ook niets vullen
+        let type: string = this.ingredientEquipped.ingredientType;
+        if (type == 'gesneden_komkommer' || type == 'tomaatjes' || type == 'falafel') { // Kan alleen ingredienten in pita stoppen
+            // Check of dit ingredient als was gestopt in deze pita
+            if (!pita.ingredientenInPita.some(i => i == type)) {
+                pita.ingredientenInPita.push(type);
+                this.ingredientEquipped.disposeFlag = true; // Exile ingredient
+                this.ingredientEquipped = null; // Haal inventory leeg
+                // Check of pita nu gevuld is met alle ingredienten
+                if (pita.ingredientenInPita.length == INGREDIENTEN_IN_PITA) {
+                    pita.nuGevuld(); // Zo ja, verander type en plaatje van de pita
+                }
+            }
+        }
+    }
+
+    public checkOfIetsMetBordMogelijk(bord: Bord): void {
+        if (!this.ingredientEquipped || this.ingredientEquipped.ingredientType != 'gevulde_pita') return;
+        this.plaatsPitaOpBord(bord);
+    }
+
+    public plaatsPitaOpBord(bord: Bord): void {
+        if (!(<Pita>this.ingredientEquipped)?.gevuld) return;
+
+        // Plaats pita op bord
+        this.ingredientEquipped.pos.x = bord.pos.x;
+        this.ingredientEquipped.pos.y = bord.pos.y; // Plaats pita op bord
+
+        this.ingredientEquipped = null; // Haal inventory leeg
+        if (++this.pitasOpBord >= PITAS_OP_BORD_VOOR_WINST) {
+            this.to('hoera!');
+        }
     }
 };
 
@@ -78,31 +142,118 @@ let brandblusser = class extends Sprite {
     }
 };
 
-let ingredient = class extends Sprite {
+interface Ingredient extends Sprite {
+    ingredientType: string;
+}
+
+interface Pita extends Ingredient {
+    ingredientenInPita: Array<string>;
+    gevuld: boolean;
+    nuGevuld(): void;
+}
+
+interface Bord extends Sprite {
+    gevuld: boolean;
+}
+
+let hoeraStuff = class extends Sprite {
+    constructor() {
+        super();
+        this.priority = 5000;
+        this.imgid = BitmapId.Sint;
+    }
+
+    takeTurn(): void {
+    }
+
+    paint(offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }): void {
+        TextWriter.drawText(24, 192, "Redelijk gedaan, Marlies!");
+        // super.paint(offset, colorize);
+    }
+}
+
+let ingredient = class extends Sprite implements Ingredient {
+    constructor() {
+        super();
+        this.priority = 850;
+        this.hitarea = newArea(-4, -4, 20, 20);
+    }
+
+    ingredientType: string = 'niet_bepaald!'
+
     takeTurn(): void {
     }
 };
 
-let komkommer = class extends ingredient {
+let komkommer = class extends ingredient implements Ingredient {
     constructor() {
         super();
         this.imgid = BitmapId.Komkommer;
     }
+
+    ingredientType = 'komkommer'
 };
 
-let tomaatjes = class extends ingredient {
+let gesneden_komkommer = class extends ingredient implements Ingredient {
+    constructor() {
+        super();
+        this.imgid = BitmapId.Komkommer_gesneden;
+    }
+
+    ingredientType = 'gesneden_komkommer'
+};
+
+let tomaatjes = class extends ingredient implements Ingredient {
     constructor() {
         super();
         this.imgid = BitmapId.Tomaatjes;
     }
+
+    ingredientType = 'tomaatjes'
 };
 
-let falafel = class extends ingredient {
+let falafel = class extends ingredient implements Ingredient {
     constructor() {
         super();
         this.imgid = BitmapId.Falafel;
     }
+
+    ingredientType = 'falafel'
 };
+
+let pita = class extends ingredient implements Pita {
+    constructor() {
+        super();
+        this.imgid = BitmapId.Pita;
+        this.gevuld = false;
+    }
+
+    nuGevuld() {
+        this.gevuld = true;
+        this.imgid = BitmapId.PitaGevuld;
+        this.ingredientType = 'gevulde_pita'
+    }
+
+    ingredientenInPita: string[] = new Array<string>();
+    ingredientType = 'pita'
+    gevuld = false;
+}
+
+let bord = class extends Sprite implements Bord {
+    constructor() {
+        super();
+        this.imgid = BitmapId.Bord;
+        this.priority = 800;
+        this.hitarea = newArea(-4, -4, 20, 20);
+        this.gevuld = false;
+    }
+    gevuld: boolean;
+
+    takeTurn(): void {
+    }
+
+    isBord = true
+}
 
 let vuur = class extends Sprite {
     constructor(dir: Direction) {
@@ -130,7 +281,7 @@ let vuur = class extends Sprite {
             BitmapId.Vuur10,
         ];
 
-        brandstate.nudges2move = 1;
+        brandstate.nudges2move = 2;
         let brandHandler = (s: bss, type: BSTEventType): void => {
             switch (type) {
                 case BSTEventType.Init:
@@ -140,10 +291,10 @@ let vuur = class extends Sprite {
                 case BSTEventType.Run:
                     ++s.nudges;
                     switch (self.direction) {
-                        case Direction.Up: self.pos.y -= 6; break;
-                        case Direction.Right: self.pos.x += 6; break;
-                        case Direction.Down: self.pos.y += 6; break;
-                        case Direction.Left: self.pos.x -= 6; break;
+                        case Direction.Up: self.pos.y -= 3; break;
+                        case Direction.Right: self.pos.x += 3; break;
+                        case Direction.Down: self.pos.y += 3; break;
+                        case Direction.Left: self.pos.x -= 3; break;
                     }
                     break;
                 case BSTEventType.TapeEnd:
@@ -392,7 +543,7 @@ let speler = class extends Sprite {
             }
             else if (Input.KD_UP) {
                 if (self.pos.y >= 4 && self.column !== 0) {
-                    if (self.column !== 3 ||
+                    if ((self.column !== 3 && self.column !== 4) ||
                         (self.pos.y > 104 || self.pos.y <= 80)) {
                         self.pos.y -= 2;
                     }
@@ -404,7 +555,7 @@ let speler = class extends Sprite {
             }
             else if (Input.KD_DOWN) {
                 if (self.pos.y <= model.gameheight - 32 && self.column !== 0) {
-                    if (self.column !== 3 ||
+                    if ((self.column !== 3 && self.column !== 4) ||
                         (self.pos.y < 44 || self.pos.y >= 80)) {
                         self.pos.y += 2;
                     }
@@ -416,6 +567,9 @@ let speler = class extends Sprite {
             }
             if (Input.KC_BTN1 || Input.KC_SPACE) {
                 self.zetBoelInDeHens();
+            }
+            if (Input.KC_BTN2) {
+                self.checkNaastIngredientOfPitaOfBord();
             }
             self.doeCoronaTest();
         };
@@ -473,7 +627,7 @@ let speler = class extends Sprite {
                     s.reset();
                     // model.to('gameover');
                     self.toPrevious();
-                    s.parentbst.toPrevious();
+                    // s.parentbst.toPrevious();
                     break;
                 case BSTEventType.TapeMove:
                     self.imgid = s.currentdata;
@@ -535,12 +689,34 @@ let speler = class extends Sprite {
         }
     }
 
+    checkNaastIngredientOfPitaOfBord(): void {
+        if (this.currentid == 'urgh') return;
+        _model.objects.filter(o => (<any>o)?.ingredientType && this.objectCollide(o)).forEach(o => {
+            let i = o as any;
+            switch (i.ingredientType) {
+                case 'pita':
+                    _model.ProbeerEquippedInPitaTeProppen(i);
+                break;
+                case 'gevulde_pita':
+                default:
+                    _model.doePotentieelOprapen(i);
+                break;
+            }
+        });
+
+        _model.objects.filter(o => (<any>o)?.isBord && this.objectCollide(o)).forEach(b => {
+            _model.checkOfIetsMetBordMogelijk(<Bord>b);
+        });
+
+    }
+
     private get canSwitchLeft(): boolean {
         switch (this.column) {
             case 0: return false;
             case 1: return this.pos.y >= 144;
             case 2: return true;
             case 3: return (this.pos.y <= 12 || this.pos.y >= 144);
+            case 4: return true;
             default: return false;
         }
     }
@@ -549,7 +725,8 @@ let speler = class extends Sprite {
         switch (this.column) {
             case 0: case 1: return true;
             case 2: return (this.pos.y <= 12 || this.pos.y >= 144);
-            case 3: return false;
+            case 3: return true;
+            case 4: return false;
             default: return false;
         }
     }
@@ -571,7 +748,7 @@ let keuken = class extends Sprite {
                     s.reset();
                     break;
                 case BSTEventType.Run:
-                    ++s.nudges;
+                    // ++s.nudges;
                     break;
                 case BSTEventType.TapeMove:
                     if (_model.objects.filter(o => (<any>o)?.isEng).length < MAX_CORONA) {
@@ -610,4 +787,19 @@ _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: Gain
     let marlies = new speler(START_COLUMN);
     _model.marlies = marlies;
     model.spawn(marlies, newPoint(COLUMN_X[START_COLUMN], 16));
+
+    model.spawn(new bord(), newPoint(160, 74));
+    model.spawn(new bord(), newPoint(160, 100));
+    model.spawn(new bord(), newPoint(200, 74));
+    model.spawn(new bord(), newPoint(200, 100));
+
+    model.spawn(new gesneden_komkommer(), newPoint(26, 40));
+    model.spawn(new gesneden_komkommer(), newPoint(26, 64));
+    model.spawn(new tomaatjes(), newPoint(26, 88));
+    model.spawn(new tomaatjes(), newPoint(26, 112));
+    model.spawn(new falafel(),   newPoint(100, 40));
+    model.spawn(new falafel(),   newPoint(100, 64));
+    model.spawn(new pita(),      newPoint(100, 88));
+    model.spawn(new pita(),      newPoint(100, 112));
+    model.to('hoera!');
 };
