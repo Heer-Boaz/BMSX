@@ -167,8 +167,8 @@ let hoeraStuff = class extends Sprite {
     }
 
     paint(offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }): void {
+        super.paint(offset, colorize);
         TextWriter.drawText(24, 192, "Redelijk gedaan, Marlies!");
-        // super.paint(offset, colorize);
     }
 }
 
@@ -176,7 +176,7 @@ let ingredient = class extends Sprite implements Ingredient {
     constructor() {
         super();
         this.priority = 850;
-        this.hitarea = newArea(-4, -4, 20, 20);
+        this.hitarea = newArea(-8, 0, 24, 16);
     }
 
     ingredientType: string = 'niet_bepaald!'
@@ -244,7 +244,7 @@ let bord = class extends Sprite implements Bord {
         super();
         this.imgid = BitmapId.Bord;
         this.priority = 800;
-        this.hitarea = newArea(-4, -4, 20, 20);
+        this.hitarea = newArea(0, -4, 16, 20);
         this.gevuld = false;
     }
     gevuld: boolean;
@@ -801,5 +801,5 @@ _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: Gain
     model.spawn(new falafel(),   newPoint(100, 64));
     model.spawn(new pita(),      newPoint(100, 88));
     model.spawn(new pita(),      newPoint(100, 112));
-    model.to('hoera!');
+    // model.to('hoera!');
 };
