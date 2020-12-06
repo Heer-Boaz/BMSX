@@ -19,6 +19,9 @@ const CORONA_SPAWN_LOCS = <Array<Point>>[
 ];
 const PITAS_OP_BORD_VOOR_WINST = 2;
 const INGREDIENTEN_IN_PITA = 3;
+const INVENTORY_POS = { x: 12, y: 12 };
+
+// https://drive.google.com/file/d/1vyCxVBeMr89pQdUBCUcDjW6W2ImA6q2j/view?usp=sharing
 
 let _modelclass = class extends BaseModel {
     public marlies: Sprite;
@@ -59,13 +62,24 @@ let _modelclass = class extends BaseModel {
     }
 
     public doePotentieelOprapen(o: Ingredient | Pita): void {
-        if (this.ingredientEquipped) return; // Kan alleen oprapen als niks omhanden
         if (o.ingredientType) {
             let type: string = o.ingredientType;
-            if (type != 'pita') { // Kan alleen gevulde pita of ingredienten oppakken
+            if (this.ingredientEquipped?.ingredientType == 'mes') {
+                if (type == 'komkommer') {
+                    o.ingredientType = 'gesneden_komkommer';
+                    o.imgid = BitmapId.Komkommer_gesneden;
+
+                    this.ingredientEquipped.disposeFlag = true;
+                    this.ingredientEquipped = null; // Haal inventory leeg
+                }
+            }
+            else if (type != 'pita' && type != 'komkommer') { // Kan alleen gevulde pita of ingredienten oppakken en ook geen ongesneden komkommer
+                if (this.ingredientEquipped) return;
                 this.ingredientEquipped = o as Ingredient | Pita;
-                this.ingredientEquipped.pos.x = 0;
-                this.ingredientEquipped.pos.y = 0;
+                this.ingredientEquipped.pos.x = INVENTORY_POS.x;
+                this.ingredientEquipped.pos.y = INVENTORY_POS.y;
+                this.ingredientEquipped.priority = 2100;
+                _model.sortObjectsByPriority();
             }
         }
     }
@@ -98,10 +112,13 @@ let _modelclass = class extends BaseModel {
         // Plaats pita op bord
         this.ingredientEquipped.pos.x = bord.pos.x;
         this.ingredientEquipped.pos.y = bord.pos.y; // Plaats pita op bord
+        this.ingredientEquipped.priority = 850;
+        _model.sortObjectsByPriority();
 
         this.ingredientEquipped = null; // Haal inventory leeg
         if (++this.pitasOpBord >= PITAS_OP_BORD_VOOR_WINST) {
-            this.to('hoera!');
+            this.marlies.to('win');
+            this.objects.filter(o => (<any>o).isEng).forEach(o => o.disposeFlag = true);
         }
     }
 };
@@ -156,6 +173,17 @@ interface Bord extends Sprite {
     gevuld: boolean;
 }
 
+let invFrame = class extends Sprite {
+    constructor() {
+        super();
+        this.priority = 2000;
+        this.imgid = BitmapId.InvFrame;
+    }
+
+    takeTurn(): void {
+    }
+}
+
 let hoeraStuff = class extends Sprite {
     constructor() {
         super();
@@ -192,6 +220,15 @@ let komkommer = class extends ingredient implements Ingredient {
     }
 
     ingredientType = 'komkommer'
+};
+
+let mes = class extends ingredient implements Ingredient {
+    constructor() {
+        super();
+        this.imgid = BitmapId.Mes;
+    }
+
+    ingredientType = 'mes'
 };
 
 let gesneden_komkommer = class extends ingredient implements Ingredient {
@@ -244,7 +281,7 @@ let bord = class extends Sprite implements Bord {
         super();
         this.imgid = BitmapId.Bord;
         this.priority = 800;
-        this.hitarea = newArea(0, -4, 16, 20);
+        this.hitarea = newArea(0, -16, 16, 20);
         this.gevuld = false;
     }
     gevuld: boolean;
@@ -649,6 +686,38 @@ let speler = class extends Sprite {
         urghSpelerState.setAllHandlers(urghSpelerHandler);
 
         urghAniState.setAllHandlers(urghAniHandler);
+
+        let winAniState = this.anistate.add('win');
+        let winAniStateHandler = (s: bss, type: BSTEventType): void => {
+            switch (type) {
+                case BSTEventType.Init:
+                    self.imgid = BitmapId.p10;
+                    break;
+                case BSTEventType.Run:
+                    break;
+            }
+        };
+        winAniState.setAllHandlers(winAniStateHandler);
+
+        let winSpelerState = this.add('win');
+        winSpelerState.nudges2move = 300;
+        let winSpelerHandler = (s: bss, type: BSTEventType): void => {
+            switch (type) {
+                case BSTEventType.Init:
+                    self.anistate.to('win');
+                    break;
+                case BSTEventType.Run:
+                    ++s.nudges;
+                    _model.objects.filter(o => (<any>o).isEng).forEach(o => o.disposeFlag = true);
+                    break;
+                case BSTEventType.TapeMove:
+                    _model.to('hoera!');
+                    break;
+            }
+        };
+
+        winSpelerState.setAllHandlers(winSpelerHandler);
+
         this.anistate.setStart('down');
         this.setStart('walk');
     }
@@ -748,7 +817,7 @@ let keuken = class extends Sprite {
                     s.reset();
                     break;
                 case BSTEventType.Run:
-                    // ++s.nudges;
+                    ++s.nudges;
                     break;
                 case BSTEventType.TapeMove:
                     if (_model.objects.filter(o => (<any>o)?.isEng).length < MAX_CORONA) {
@@ -778,12 +847,12 @@ let _viewclass = class extends GLView {
 
 var _global = window || global;
 _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: GainNode): void => {
-    // _model = new _modelclass();
     let _view = new _viewclass(newSize(MSX1ScreenWidth, MSX1ScreenHeight));
     new Game(rom, _model, _view, null, sndcontext, gainnode);
 
     game.start();
     model.spawn(new keuken(), newPoint(0, 0));
+    model.spawn(new invFrame(), newPoint(4, 4));
     let marlies = new speler(START_COLUMN);
     _model.marlies = marlies;
     model.spawn(marlies, newPoint(COLUMN_X[START_COLUMN], 16));
@@ -793,13 +862,14 @@ _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: Gain
     model.spawn(new bord(), newPoint(200, 74));
     model.spawn(new bord(), newPoint(200, 100));
 
-    model.spawn(new gesneden_komkommer(), newPoint(26, 40));
-    model.spawn(new gesneden_komkommer(), newPoint(26, 64));
+    model.spawn(new komkommer(), newPoint(26, 40));
+    model.spawn(new komkommer(), newPoint(26, 64));
     model.spawn(new tomaatjes(), newPoint(26, 88));
     model.spawn(new tomaatjes(), newPoint(26, 112));
-    model.spawn(new falafel(),   newPoint(100, 40));
+    model.spawn(new mes(),       newPoint(26, 136));
     model.spawn(new falafel(),   newPoint(100, 64));
+    model.spawn(new falafel(),   newPoint(100, 40));
     model.spawn(new pita(),      newPoint(100, 88));
     model.spawn(new pita(),      newPoint(100, 112));
-    // model.to('hoera!');
+    model.spawn(new mes(),       newPoint(100, 136));
 };
