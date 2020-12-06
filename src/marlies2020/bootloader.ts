@@ -39,7 +39,7 @@ let _modelclass = class extends BaseModel {
                 case BSTEventType.Init:
                     this.clearModel();
                     this.spawn(new hoeraStuff());
-                break;
+                    break;
             }
         };
         hoerastate.setAllHandlers(hoeraHandler);
@@ -182,7 +182,7 @@ let invFrame = class extends Sprite {
 
     takeTurn(): void {
     }
-}
+};
 
 let hoeraStuff = class extends Sprite {
     constructor() {
@@ -198,7 +198,7 @@ let hoeraStuff = class extends Sprite {
         super.paint(offset, colorize);
         TextWriter.drawText(24, 192, "Redelijk gedaan, Marlies!");
     }
-}
+};
 
 let ingredient = class extends Sprite implements Ingredient {
     constructor() {
@@ -207,7 +207,7 @@ let ingredient = class extends Sprite implements Ingredient {
         this.hitarea = newArea(-8, 0, 24, 16);
     }
 
-    ingredientType: string = 'niet_bepaald!'
+    ingredientType: string = 'niet_bepaald!';
 
     takeTurn(): void {
     }
@@ -219,7 +219,7 @@ let komkommer = class extends ingredient implements Ingredient {
         this.imgid = BitmapId.Komkommer;
     }
 
-    ingredientType = 'komkommer'
+    ingredientType = 'komkommer';
 };
 
 let mes = class extends ingredient implements Ingredient {
@@ -228,7 +228,7 @@ let mes = class extends ingredient implements Ingredient {
         this.imgid = BitmapId.Mes;
     }
 
-    ingredientType = 'mes'
+    ingredientType = 'mes';
 };
 
 let gesneden_komkommer = class extends ingredient implements Ingredient {
@@ -237,7 +237,7 @@ let gesneden_komkommer = class extends ingredient implements Ingredient {
         this.imgid = BitmapId.Komkommer_gesneden;
     }
 
-    ingredientType = 'gesneden_komkommer'
+    ingredientType = 'gesneden_komkommer';
 };
 
 let tomaatjes = class extends ingredient implements Ingredient {
@@ -246,7 +246,7 @@ let tomaatjes = class extends ingredient implements Ingredient {
         this.imgid = BitmapId.Tomaatjes;
     }
 
-    ingredientType = 'tomaatjes'
+    ingredientType = 'tomaatjes';
 };
 
 let falafel = class extends ingredient implements Ingredient {
@@ -255,7 +255,7 @@ let falafel = class extends ingredient implements Ingredient {
         this.imgid = BitmapId.Falafel;
     }
 
-    ingredientType = 'falafel'
+    ingredientType = 'falafel';
 };
 
 let pita = class extends ingredient implements Pita {
@@ -268,13 +268,13 @@ let pita = class extends ingredient implements Pita {
     nuGevuld() {
         this.gevuld = true;
         this.imgid = BitmapId.PitaGevuld;
-        this.ingredientType = 'gevulde_pita'
+        this.ingredientType = 'gevulde_pita';
     }
 
     ingredientenInPita: string[] = new Array<string>();
-    ingredientType = 'pita'
+    ingredientType = 'pita';
     gevuld = false;
-}
+};
 
 let bord = class extends Sprite implements Bord {
     constructor() {
@@ -289,8 +289,8 @@ let bord = class extends Sprite implements Bord {
     takeTurn(): void {
     }
 
-    isBord = true
-}
+    isBord = true;
+};
 
 let vuur = class extends Sprite {
     constructor(dir: Direction) {
@@ -537,23 +537,32 @@ let speler = class extends Sprite {
                 self.zetBoelInDeHens();
             }
 
+            let switchToOld = (): void => {
+                self.direction = self.oldDirection;
+                self.to('walk');
+                switch (self.direction) {
+                    case Direction.Down:
+                        self.anistate.to('down');
+                    break;
+                    case Direction.Up:
+                        self.anistate.to('up');
+                    break;
+                }
+            };
+
             switch (self.currentid) {
                 case 'switchleft':
                     self.pos.x -= 2;
                     if (self.pos.x <= COLUMN_X[self.column - 1]) {
                         self.column -= 1;
-                        self.anistate.toPrevious();
-                        self.toPrevious();
-                        self.direction = self.oldDirection;
+                        switchToOld();
                     }
                     break;
                 case 'switchright':
                     self.pos.x += 2;
                     if (self.pos.x >= COLUMN_X[self.column + 1]) {
                         self.column += 1;
-                        self.anistate.toPrevious();
-                        self.toPrevious();
-                        self.direction = self.oldDirection;
+                        switchToOld();
                     }
                     break;
             }
@@ -765,11 +774,11 @@ let speler = class extends Sprite {
             switch (i.ingredientType) {
                 case 'pita':
                     _model.ProbeerEquippedInPitaTeProppen(i);
-                break;
+                    break;
                 case 'gevulde_pita':
                 default:
                     _model.doePotentieelOprapen(i);
-                break;
+                    break;
             }
         });
 
@@ -866,10 +875,10 @@ _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: Gain
     model.spawn(new komkommer(), newPoint(26, 64));
     model.spawn(new tomaatjes(), newPoint(26, 88));
     model.spawn(new tomaatjes(), newPoint(26, 112));
-    model.spawn(new mes(),       newPoint(26, 136));
-    model.spawn(new falafel(),   newPoint(100, 64));
-    model.spawn(new falafel(),   newPoint(100, 40));
-    model.spawn(new pita(),      newPoint(100, 88));
-    model.spawn(new pita(),      newPoint(100, 112));
-    model.spawn(new mes(),       newPoint(100, 136));
+    model.spawn(new mes(), newPoint(26, 136));
+    model.spawn(new falafel(), newPoint(100, 64));
+    model.spawn(new falafel(), newPoint(100, 40));
+    model.spawn(new pita(), newPoint(100, 88));
+    model.spawn(new pita(), newPoint(100, 112));
+    model.spawn(new mes(), newPoint(100, 136));
 };
