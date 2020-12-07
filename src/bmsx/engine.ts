@@ -55,11 +55,10 @@ export module Constants {
 export const enum BSTEventType {
     None = 0,
     Run = 1,
-    Init = 2,
+    Enter = 2,
     Exit = 3,
-    // Final = 4,
-    TapeMove = 5,
-    TapeEnd = 6,
+    TapeMove = 4,
+    TapeEnd = 5,
 }
 
 export type str2bss = { [key: string]: bss; };
@@ -68,13 +67,12 @@ export type numstring = number | string;
 
 export class bss {
     public id: numstring;
-    public isfinal: boolean;
     public parentbst: bst;
 
-    public constructor(_id: numstring = 0, _composite = false, _final = false) {
+    public constructor(_id: numstring = 0, _partialdef?: Partial<bss>) {
         this.id = _id;
-        this.isfinal = _final;
         this.nudges2move = 1;
+        if (_partialdef) Object.assign(this, _partialdef);
         this.reset();
     }
 
@@ -82,11 +80,11 @@ export class bss {
     public get endoftape(): boolean { return !this.tapedata || this.tapehead === this.tapedata.length - 1; }
     public get startoftape(): boolean { return this.tapehead === 0; }
     public onrun: bsfthandle;
-    public onfinalstate: bsfthandle;
+    public onfinal: bsfthandle;
     public ontapeend: bsfthandle;
     public ontapemove: bsfthandle;
-    public oninitstate: bsfthandle;
-    public onexitstate: bsfthandle;
+    public onenter: bsfthandle;
+    public onexit: bsfthandle;
     public get internalstate() { return { statedata: this.tapedata, tapehead: this.tapehead }; }
 
     public tapedata: any[];
@@ -123,11 +121,11 @@ export class bss {
     // Helper function to set all handlers
     public setAllHandlers(handler: bsfthandle): void {
         this.onrun = handler;
-        this.onfinalstate = handler;
+        this.onfinal = handler;
         this.ontapeend = handler;
         this.ontapemove = handler;
-        this.oninitstate = handler;
-        this.onexitstate = handler;
+        this.onenter = handler;
+        this.onexit = handler;
     }
 
     protected tapemove() {
@@ -145,34 +143,41 @@ export class bss {
     }
 }
 
+const BST_MAX_HISTORY = 10;
+const DEFAULT_BST_ID = 'master';
 export class bst {
-    protected initstateid: numstring = 0;
+    public id: numstring;
+    protected initstateid: numstring;
 
     public states: str2bss; // Note that numbers will be automatically converted to strings!
     public currentid: numstring; // Identifier of current state
-    protected previousid: numstring; // Identifier of the previous state
-    public halted: boolean;
+    // protected previousid: numstring; // Identifier of the previous state
+    protected history: Array<numstring>; // History of previous states
+    public paused: boolean;
     public get current(): bss { return this.states[this.currentid]; };
-    public get previous(): bss { return this.states[this.previousid]; };
+    // public get previous(): bss { return this.states[this.previousid]; };
 
-    constructor() {
+    constructor(id: string) {
+        this.id = id ?? DEFAULT_BST_ID;
         this.states = {};
-        this.halted = false;
+        this.paused = false;
+        this.initstateid = null;
         this.reset();
     }
 
     public setStart(_id: numstring, init = true): void {
         this.initstateid = _id;
         this.currentid = _id;
-        if (init) this.current.oninitstate?.(this.current, BSTEventType.Init, this);
+        if (init) this.current.onenter?.(this.current, BSTEventType.Enter, this);
     }
 
-    public add(id_or_state: numstring | bss, final = false): bss {
+    public add(id_or_state: numstring | bss): bss {
         if (typeof (id_or_state) !== 'object') {
             if (this.states[id_or_state]) throw new Error(`State ${id_or_state} already exists for state machine!`);
-            let result = new bss(id_or_state, final);
+            let result = new bss(id_or_state);
             this.states[id_or_state] = result;
             result.parentbst = this;
+            if (!this.initstateid) this.setStart(id_or_state); // If no start-state was defined, we assign this as a default start state
             return result;
         }
         else {
@@ -180,32 +185,40 @@ export class bst {
             if (this.states[s.id]) throw new Error(`State ${s.id} already exists for state machine!`);
             this.states[s.id] = s;
             s.parentbst = this;
+            if (!this.initstateid) this.setStart(s.id); // If no start-state was defined, we assign this as a default start state
             return s;
         }
     }
 
     public run(): void {
-        if (this.halted) return;
+        if (this.paused) return;
         this.current.onrun?.(this.current, BSTEventType.Run, this);
     }
 
     public to(newstate: numstring): void {
-        this.current.onexitstate?.(this.current, BSTEventType.Exit, this);
-        this.previousid = this.currentid; // Set the previous state id to the current state
+        this.current.onexit?.(this.current, BSTEventType.Exit, this);
+        this.pushHistory(this.currentid); // Store the previous state on the history stack
         this.currentid = newstate; // Switch the current state to the new state
         if (!this.current) throw new Error(`State "${newstate}" doesn't exist for this state machine!`);
-        this.current.oninitstate?.(this.current, BSTEventType.Init, this);
+        this.current.onenter?.(this.current, BSTEventType.Enter, this);
     }
 
-    public toPrevious(): void {
-        if (!this.previousid) return;
-        this.to(this.previousid);
+    protected pushHistory(toPush: numstring): void {
+        this.history.push(toPush);
+        if (this.history.length > BST_MAX_HISTORY)
+            this.history.splice(0, 1); // Remove the first element in the history-array
+    }
+
+    public pop(): void {
+        if (this.history.length <= 0) return;
+        let poppedStateId = this.history.pop();
+        this.to(poppedStateId);
     }
 
     public reset(): void {
         this.currentid = this.initstateid;
-        this.previousid = null;
-        this.halted = false;
+        this.history = new Array();
+        this.paused = false;
     }
 
     public append(_state: bss, _id: numstring): void {
@@ -217,7 +230,76 @@ export class bst {
     }
 }
 
-export abstract class BaseModel extends bst {
+export type numstr2bst = { [key: string]: bst; };
+export class cbst {
+    public machines: numstr2bst;
+    public paused: boolean;
+
+    constructor() {
+        this.machines = {};
+        this.machines['master'] = new bst(DEFAULT_BST_ID);
+        this.paused = false;
+    }
+
+    public getBst(machine_id: string): bst {
+        return this.machines[machine_id];
+    }
+
+    public getCurrentId(machine_id: string = DEFAULT_BST_ID): numstring {
+        return this.machines[machine_id].currentid;
+    }
+
+    public addBst(machine_id: string): bst {
+        let result = new bst(machine_id);
+        this.machines[machine_id] = result;
+
+        return result;
+    }
+
+    public removeBst(machine_id: string): bst {
+        let result = this.machines[machine_id];
+        delete this.machines[machine_id];
+        this.machines[machine_id] = undefined;
+        return result;
+    }
+
+    public add(state: numstring | bss, machine_id: string = DEFAULT_BST_ID): bss {
+        return this.machines[machine_id].add(state);
+    }
+
+    public run(): void {
+        if (this.paused) return;
+        for (const key of Object.keys(this.machines)) {
+            this.machines[key].run();
+        }
+    }
+
+    public setStart(_id: numstring, init = true, machine_id: string = DEFAULT_BST_ID): void {
+        this.machines[machine_id].setStart(_id, init);
+    }
+
+    public to(newstate: numstring, machine_id: string = DEFAULT_BST_ID): void {
+        this.machines[machine_id].to(newstate);
+    }
+
+    public pop(machine_id: string = DEFAULT_BST_ID): void {
+        this.machines[machine_id].pop();
+    }
+
+    public reset(machine_id: string = DEFAULT_BST_ID): void {
+        this.machines[machine_id].reset();
+    }
+
+    public append(_state: bss, _id: numstring, machine_id: string = DEFAULT_BST_ID): void {
+        this.machines[machine_id].append(_state, _id);
+    }
+
+    public remove(_id: numstring, machine_id: string = DEFAULT_BST_ID): void {
+        this.machines[machine_id].remove(_id);
+    }
+}
+
+export abstract class BaseModel extends cbst {
     public id2object: { [key: string]: IGameObject; };
     public objects: IGameObject[];
     public paused: boolean;
@@ -233,7 +315,7 @@ export abstract class BaseModel extends bst {
         this.paused = false;
 
         // Create default state for running the game
-        let defaultState = this.add(0);
+        let defaultState = this.add('default');
         defaultState.onrun = this.defaultrun;
     }
 
@@ -414,7 +496,7 @@ export interface IGameObject {
     oncollide?: (src: IGameObject) => void;
 }
 
-export abstract class Sprite extends bst {
+export abstract class Sprite extends cbst {
     public id: string | null;
     public pos: Point;
     public size: Size;

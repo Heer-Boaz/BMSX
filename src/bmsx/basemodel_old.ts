@@ -1,7 +1,7 @@
 import { Point, Direction } from "./common";
-import { IGameObject, controller, bst } from './engine';
+import { IGameObject, controller, cbst } from './engine';
 
-export abstract class BaseModelOld extends bst {
+export abstract class BaseModelOld extends cbst {
     public id2object: { [key: string]: IGameObject; };
     public objects: IGameObject[];
     public gameState: number;

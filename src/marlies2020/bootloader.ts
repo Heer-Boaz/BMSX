@@ -33,16 +33,12 @@ let _modelclass = class extends BaseModel {
         this.pitasOpBord = 0;
         this.ingredientEquipped = null;
 
-        let hoerastate = this.add('hoera!');
-        let hoeraHandler = (s: bss, type: BSTEventType) => {
-            switch (type) {
-                case BSTEventType.Init:
-                    this.clearModel();
-                    this.spawn(new hoeraStuff());
-                    break;
+        this.add(new bss('hoera!', {
+            onenter: () => {
+                this.clearModel();
+                this.spawn(new hoeraStuff());
             }
-        };
-        hoerastate.setAllHandlers(hoeraHandler);
+        }));
     }
 
     public get gamewidth(): number {
@@ -132,26 +128,20 @@ let brandblusser = class extends Sprite {
         this.priority = _model.marlies.direction == Direction.Up ? 950 : 1050;
         let self = this;
 
-        let bla = this.add('bla');
-        this.setStart('bla');
-        bla.nudges2move = 20;
-
-        let blaer = (s: bss, type: BSTEventType): void => {
-            switch (type) {
-                case BSTEventType.Run:
-                    setPoint(self.pos, _model.marlies.pos.x, _model.marlies.pos.y + 12);
-                    let oldPrio = self.priority;
-                    if (_model.marlies.direction == Direction.Up) self.priority = 950;
-                    else self.priority = 1050;
-                    if (self.priority != oldPrio) _model.sortObjectsByPriority();
-                    ++s.nudges;
-                    break;
-                case BSTEventType.TapeMove:
-                    self.disposeFlag = true;
-                    break;
+        this.add(new bss('bla', {
+            nudges2move: 20,
+            onrun: (s: bss): void => {
+                setPoint(self.pos, _model.marlies.pos.x, _model.marlies.pos.y + 12);
+                let oldPrio = self.priority;
+                if (_model.marlies.direction == Direction.Up) self.priority = 950;
+                else self.priority = 1050;
+                if (self.priority != oldPrio) _model.sortObjectsByPriority();
+                ++s.nudges;
+            },
+            ontapemove: (): void => {
+                self.disposeFlag = true;
             }
-        };
-        bla.setAllHandlers(blaer);
+        }));
     }
 
     takeTurn(): void {
@@ -300,50 +290,42 @@ let vuur = class extends Sprite {
         this.priority = dir != Direction.Up ? 1100 : 900;
 
         let self = this;
-        this.imgid = BitmapId.Vuur1;
 
-        let brandstate = this.add('brand');
-        this.setStart('brand');
-
-        brandstate.tapedata = <Array<BitmapId>>[
-            BitmapId.Vuur1,
-            BitmapId.Vuur2,
-            BitmapId.Vuur3,
-            BitmapId.Vuur4,
-            BitmapId.Vuur5,
-            BitmapId.Vuur6,
-            BitmapId.Vuur7,
-            BitmapId.Vuur8,
-            BitmapId.Vuur9,
-            BitmapId.Vuur10,
-        ];
-
-        brandstate.nudges2move = 2;
-        let brandHandler = (s: bss, type: BSTEventType): void => {
-            switch (type) {
-                case BSTEventType.Init:
-                    s.reset();
-                    self.imgid = s.currentdata;
-                    break;
-                case BSTEventType.Run:
-                    ++s.nudges;
-                    switch (self.direction) {
-                        case Direction.Up: self.pos.y -= 3; break;
-                        case Direction.Right: self.pos.x += 3; break;
-                        case Direction.Down: self.pos.y += 3; break;
-                        case Direction.Left: self.pos.x -= 3; break;
-                    }
-                    break;
-                case BSTEventType.TapeEnd:
-                    s.reset();
-                    self.disposeFlag = true;
-                    break;
-                case BSTEventType.TapeMove:
-                    self.imgid = s.currentdata;
-                    break;
+        this.add(new bss('brand', {
+            tapedata: <Array<BitmapId>>[
+                BitmapId.Vuur1,
+                BitmapId.Vuur2,
+                BitmapId.Vuur3,
+                BitmapId.Vuur4,
+                BitmapId.Vuur5,
+                BitmapId.Vuur6,
+                BitmapId.Vuur7,
+                BitmapId.Vuur8,
+                BitmapId.Vuur9,
+                BitmapId.Vuur10,
+            ],
+            nudges2move: 2,
+            onenter: (s: bss): void => {
+                s.reset();
+                self.imgid = s.currentdata;
+            },
+            onrun: (s: bss): void => {
+                ++s.nudges;
+                switch (self.direction) {
+                    case Direction.Up: self.pos.y -= 3; break;
+                    case Direction.Right: self.pos.x += 3; break;
+                    case Direction.Down: self.pos.y += 3; break;
+                    case Direction.Left: self.pos.x -= 3; break;
+                }
+            },
+            ontapemove: (s: bss): void => {
+                self.imgid = s.currentdata;
+            },
+            ontapeend: (s: bss): void => {
+                s.reset();
+                self.disposeFlag = true;
             }
-        };
-        brandstate.setAllHandlers(brandHandler);
+        }));
     }
 
     isVuur = true;
@@ -390,7 +372,7 @@ let corona = class extends Sprite {
 
         let skulkHandler = (s: bss, type: BSTEventType): void => {
             switch (type) {
-                case BSTEventType.Init:
+                case BSTEventType.Enter:
                     s.reset();
                     self.imgid = s.currentdata;
                     self.setRandomMove();
@@ -427,7 +409,7 @@ let corona = class extends Sprite {
 
         let sterfHandler = (s: bss, type: BSTEventType): void => {
             switch (type) {
-                case BSTEventType.Init:
+                case BSTEventType.Enter:
                     self.isEng = false;
                     s.reset();
                     self.imgid = s.currentdata;
@@ -463,7 +445,6 @@ let corona = class extends Sprite {
 };
 
 let speler = class extends Sprite {
-    anistate: bst;
     column: number;
 
     constructor(startcolumn: number) {
@@ -472,11 +453,11 @@ let speler = class extends Sprite {
         this.imgid = BitmapId.p1;
         this.direction = Direction.Down;
         this.priority = 1000;
-        this.anistate = new bst();
+        this.addBst('anistate');
         this.column = startcolumn;
         this.hitarea = newArea(0, 8, 16, 16);
 
-        let downstate = this.anistate.add('down');
+        let downstate = this.add('down', 'anistate');
         downstate.tapedata = <Array<BitmapId>>[
             BitmapId.p1,
             BitmapId.p2,
@@ -484,7 +465,7 @@ let speler = class extends Sprite {
             BitmapId.p3,
             BitmapId.p1,
         ];
-        let upstate = this.anistate.add('up');
+        let upstate = this.add('up', 'anistate');
         upstate.tapedata = <Array<BitmapId>>[
             BitmapId.p4,
             BitmapId.p5,
@@ -492,7 +473,7 @@ let speler = class extends Sprite {
             BitmapId.p6,
             BitmapId.p4,
         ];
-        let urghAniState = this.anistate.add('urgh');
+        let urghAniState = this.add('urgh', 'anistate');
         urghAniState.tapedata = <Array<BitmapId>>[
             BitmapId.p8,
             BitmapId.p9,
@@ -524,8 +505,8 @@ let speler = class extends Sprite {
         let switch_right = this.add('switchright');
         let switch_init_exit = (s: bss, type: BSTEventType): void => {
             switch (type) {
-                case BSTEventType.Init:
-                    self.anistate.to('columnswitch');
+                case BSTEventType.Enter:
+                    self.to('columnswitch', 'anistate');
                     break;
                 case BSTEventType.Exit:
                     break;
@@ -542,15 +523,15 @@ let speler = class extends Sprite {
                 self.to('walk');
                 switch (self.direction) {
                     case Direction.Down:
-                        self.anistate.to('down');
-                    break;
+                        self.to('down', 'anistate');
+                        break;
                     case Direction.Up:
-                        self.anistate.to('up');
-                    break;
+                        self.to('up', 'anistate');
+                        break;
                 }
             };
 
-            switch (self.currentid) {
+            switch (self.getCurrentId()) {
                 case 'switchleft':
                     self.pos.x -= 2;
                     if (self.pos.x <= COLUMN_X[self.column - 1]) {
@@ -569,12 +550,10 @@ let speler = class extends Sprite {
             self.doeCoronaTest();
         };
 
-        switch_left.oninitstate = switch_right.oninitstate = switch_init_exit;
+        switch_left.onenter = switch_right.onenter = switch_init_exit;
         switch_left.onrun = switch_right.onrun = switch_run;
 
-        let walkstaterunhandler = (s: bss, type: BSTEventType): void => {
-            self.anistate.run();
-
+        let walkstaterunhandler = (): void => {
             if (Input.KC_LEFT) {
                 if (self.canSwitchLeft) {
                     self.to('switchleft');
@@ -594,8 +573,8 @@ let speler = class extends Sprite {
                         self.pos.y -= 2;
                     }
                 }
-                if (self.anistate.currentid !== 'up') {
-                    self.anistate.to('up');
+                if (self.getCurrentId('anistate') !== 'up') {
+                    self.to('up', 'anistate');
                     self.direction = Direction.Up;
                 }
             }
@@ -606,8 +585,8 @@ let speler = class extends Sprite {
                         self.pos.y += 2;
                     }
                 }
-                if (self.anistate.currentid !== 'down') {
-                    self.anistate.to('down');
+                if (self.getCurrentId('anistate') !== 'down') {
+                    self.to('down', 'anistate');
                     self.direction = Direction.Down;
                 }
             }
@@ -622,12 +601,12 @@ let speler = class extends Sprite {
         let walkstate = this.add('walk');
         walkstate.onrun = walkstaterunhandler;
 
-        let columnswitchAnistate = this.anistate.add('columnswitch');
+        let columnswitchAnistate = this.add('columnswitch', 'anistate');
         let columnswitchAnistatehandler = (s: bss, type: BSTEventType): void => {
             switch (type) {
-                case BSTEventType.Init:
+                case BSTEventType.Enter:
                     self.imgid = BitmapId.p7;
-                    if (self.current.id === 'switchright')
+                    if (self.getCurrentId() === 'switchright')
                         self.flippedH = true;
                     break;
                 case BSTEventType.Exit:
@@ -640,7 +619,7 @@ let speler = class extends Sprite {
         downstate.nudges2move = upstate.nudges2move = 8;
         let walkhandler = (s: bss, type: BSTEventType): void => {
             switch (type) {
-                case BSTEventType.Init:
+                case BSTEventType.Enter:
                     s.reset();
                     self.imgid = s.currentdata;
                     break;
@@ -661,7 +640,7 @@ let speler = class extends Sprite {
         urghAniState.nudges2move = 4;
         let urghAniHandler = (s: bss, type: BSTEventType): void => {
             switch (type) {
-                case BSTEventType.Init:
+                case BSTEventType.Enter:
                     s.reset();
                     self.imgid = s.currentdata;
                     self.flippedH = false;
@@ -671,9 +650,7 @@ let speler = class extends Sprite {
                     break;
                 case BSTEventType.TapeEnd:
                     s.reset();
-                    // model.to('gameover');
-                    self.toPrevious();
-                    // s.parentbst.toPrevious();
+                    self.pop();
                     break;
                 case BSTEventType.TapeMove:
                     self.imgid = s.currentdata;
@@ -681,53 +658,24 @@ let speler = class extends Sprite {
             }
         };
 
-        let urghSpelerState = this.add('urgh');
-        let urghSpelerHandler = (s: bss, type: BSTEventType): void => {
-            switch (type) {
-                case BSTEventType.Init:
-                    self.anistate.to('urgh');
-                    break;
-                case BSTEventType.Run:
-                    self.anistate.run(); // Lelijk, maar animatie-state zorgt voor terugkeer naar previous state
-                    break;
-            }
-        };
-        urghSpelerState.setAllHandlers(urghSpelerHandler);
-
+        this.add(new bss('urgh', { // urghSpelerState
+            onenter: () => self.to('urgh', 'anistate')
+            // Lelijk, maar animatie-state zorgt voor terugkeer naar previous state
+        }));
         urghAniState.setAllHandlers(urghAniHandler);
 
-        let winAniState = this.anistate.add('win');
-        let winAniStateHandler = (s: bss, type: BSTEventType): void => {
-            switch (type) {
-                case BSTEventType.Init:
-                    self.imgid = BitmapId.p10;
-                    break;
-                case BSTEventType.Run:
-                    break;
-            }
-        };
-        winAniState.setAllHandlers(winAniStateHandler);
+        this.add(new bss('win', { // winAniState
+            onenter: () => self.imgid = BitmapId.p10
+        }), 'anistate');
 
-        let winSpelerState = this.add('win');
-        winSpelerState.nudges2move = 300;
-        let winSpelerHandler = (s: bss, type: BSTEventType): void => {
-            switch (type) {
-                case BSTEventType.Init:
-                    self.anistate.to('win');
-                    break;
-                case BSTEventType.Run:
-                    ++s.nudges;
-                    _model.objects.filter(o => (<any>o).isEng).forEach(o => o.disposeFlag = true);
-                    break;
-                case BSTEventType.TapeMove:
-                    _model.to('hoera!');
-                    break;
-            }
-        };
+        this.add(new bss('win', { // winSpelerState
+            nudges2move: 300,
+            onenter: () => self.to('win', 'anistate'),
+            onrun: (s: bss) => (++s.nudges, _model.objects.filter(o => (<any>o).isEng).forEach(o => o.disposeFlag = true)),
+            ontapemove: () => _model.to('hoera!')
+        }));
 
-        winSpelerState.setAllHandlers(winSpelerHandler);
-
-        this.anistate.setStart('down');
+        this.setStart('down', true, 'anistate');
         this.setStart('walk');
     }
 
@@ -761,14 +709,14 @@ let speler = class extends Sprite {
     }
 
     doeCoronaTest(): void {
-        if (this.currentid == 'urgh') return;
+        if (this.getCurrentId() == 'urgh') return;
         if (_model.objects.filter(o => (<any>o)?.isEng).some(c => this.objectCollide(c))) {
             this.to('urgh');
         }
     }
 
     checkNaastIngredientOfPitaOfBord(): void {
-        if (this.currentid == 'urgh') return;
+        if (this.getCurrentId() == 'urgh') return;
         _model.objects.filter(o => (<any>o)?.ingredientType && this.objectCollide(o)).forEach(o => {
             let i = o as any;
             switch (i.ingredientType) {
@@ -822,7 +770,7 @@ let keuken = class extends Sprite {
 
         let defaultHandler = (s: bss, type: BSTEventType): void => {
             switch (type) {
-                case BSTEventType.Init:
+                case BSTEventType.Enter:
                     s.reset();
                     break;
                 case BSTEventType.Run:
