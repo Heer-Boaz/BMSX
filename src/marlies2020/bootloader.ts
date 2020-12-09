@@ -115,7 +115,8 @@ let _modelclass = class extends BaseModel {
         this.ingredientEquipped = null; // Haal inventory leeg
         if (++this.pitasOpBord >= PITAS_OP_BORD_VOOR_WINST) {
             this.marlies.to('win');
-            this.objects.filter(o => (<any>o).isEng).forEach(o => o.markForDisposure());
+            this.where_do(o => (<any>o).isEng, o => o.markForDisposure());
+            // this.objects.filter(o => (<any>o).isEng).forEach(o => o.markForDisposure());
         }
     }
 };

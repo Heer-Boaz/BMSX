@@ -221,7 +221,7 @@ export class bst {
     protected pushHistory(toPush: numstring): void {
         this.history.push(toPush);
         if (this.history.length > BST_MAX_HISTORY)
-            this.history.splice(0, 1); // Remove the first element in the history-array
+            this.history.shift(); // Remove the first element in the history-array
     }
 
     public pop(): void {
@@ -348,6 +348,14 @@ export abstract class BaseModel extends cbst {
 
         // Remove all objects that are to be disposed
         model.objects.filter(o => o.disposeFlag).forEach(o => model.exile(o));
+    }
+
+    // https://hackernoon.com/3-javascript-performance-mistakes-you-should-stop-doing-ebf84b9de951
+    public where_do(predicate: (value: IGameObject, index: number, array: IGameObject[], thisArg?: any) => unknown, callbackfn: (value: IGameObject, index: number, array: IGameObject[], thisArg?: any) => void): void {
+        let filteredList = this.objects.filter(predicate);
+        for (let i = 0; i < filteredList.length; i++) {
+            callbackfn(filteredList[i], i, filteredList, this);
+        }
     }
 
     public clearModel(): void {
