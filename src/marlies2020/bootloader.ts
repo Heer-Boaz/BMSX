@@ -303,6 +303,7 @@ let vuur = class extends Sprite {
                 BitmapId.Vuur8,
                 BitmapId.Vuur9,
                 BitmapId.Vuur10,
+                BitmapId.None,
             ],
             nudges2move: 2,
             onenter: (s: bss): void => {
