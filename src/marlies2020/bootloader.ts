@@ -103,9 +103,10 @@ let _modelclass = class extends BaseModel {
     }
 
     public plaatsPitaOpBord(bord: Bord): void {
-        if (!(<Pita>this.ingredientEquipped)?.gevuld) return;
+        if (!(<Pita>this.ingredientEquipped)?.gevuld || bord.gevuld) return;
 
         // Plaats pita op bord
+        bord.nuGevuld();
         this.ingredientEquipped.pos.x = bord.pos.x;
         this.ingredientEquipped.pos.y = bord.pos.y; // Plaats pita op bord
         this.ingredientEquipped.priority = 850;
@@ -114,7 +115,7 @@ let _modelclass = class extends BaseModel {
         this.ingredientEquipped = null; // Haal inventory leeg
         if (++this.pitasOpBord >= PITAS_OP_BORD_VOOR_WINST) {
             this.marlies.to('win');
-            this.objects.filter(o => (<any>o).isEng).forEach(o => o.disposeFlag = true);
+            this.objects.filter(o => (<any>o).isEng).forEach(o => o.markForDisposure());
         }
     }
 };
@@ -161,6 +162,7 @@ interface Pita extends Ingredient {
 
 interface Bord extends Sprite {
     gevuld: boolean;
+    nuGevuld(): void;
 }
 
 let invFrame = class extends Sprite {
@@ -277,6 +279,10 @@ let bord = class extends Sprite implements Bord {
     gevuld: boolean;
 
     takeTurn(): void {
+    }
+
+    nuGevuld() {
+        this.gevuld = true;
     }
 
     isBord = true;

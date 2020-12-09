@@ -509,6 +509,7 @@ export interface IGameObject {
     collides?(o: IGameObject | Area): boolean;
     collide?(src: IGameObject): void;
     oncollide?: (src: IGameObject) => void;
+    markForDisposure?: () => void;
 }
 
 export abstract class Sprite extends cbst {
