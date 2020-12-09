@@ -457,7 +457,14 @@ let speler = class extends Sprite {
         this.column = startcolumn;
         this.hitarea = newArea(0, 8, 16, 16);
 
-        let downstate = this.add('down', 'anistate');
+        let down_up_state_def: Partial<bss> = {
+            nudges2move: 8,
+            onenter: (s: bss): void => (s.reset(), self.imgid = s.currentdata),
+            onrun: (s: bss): void => { ++s.nudges; },
+            ontapeend: (s: bss): void => s.reset(),
+            ontapemove: (s: bss): void => self.imgid = s.currentdata,
+        };
+        let downstate = this.add(new bss('down', down_up_state_def), 'anistate');
         downstate.tapedata = <Array<BitmapId>>[
             BitmapId.p1,
             BitmapId.p2,
@@ -465,7 +472,8 @@ let speler = class extends Sprite {
             BitmapId.p3,
             BitmapId.p1,
         ];
-        let upstate = this.add('up', 'anistate');
+
+        let upstate = this.add(new bss('up', down_up_state_def), 'anistate');
         upstate.tapedata = <Array<BitmapId>>[
             BitmapId.p4,
             BitmapId.p5,
@@ -473,6 +481,7 @@ let speler = class extends Sprite {
             BitmapId.p6,
             BitmapId.p4,
         ];
+
         let urghAniState = this.add('urgh', 'anistate');
         urghAniState.tapedata = <Array<BitmapId>>[
             BitmapId.p8,
@@ -501,23 +510,8 @@ let speler = class extends Sprite {
             BitmapId.p9,
         ];
 
-        let switch_left = this.add('switchleft');
-        let switch_right = this.add('switchright');
-        let switch_init_exit = (s: bss, type: BSTEventType): void => {
-            switch (type) {
-                case BSTEventType.Enter:
-                    self.to('columnswitch', 'anistate');
-                    break;
-                case BSTEventType.Exit:
-                    break;
-            }
-        };
-
-        let switch_run = (s: bss, type: BSTEventType): void => {
-            if (Input.KC_BTN1 || Input.KC_SPACE) {
-                self.zetBoelInDeHens();
-            }
-
+        let shared_switch_run = () => {
+            if (Input.KC_BTN1 || Input.KC_SPACE) self.zetBoelInDeHens();
             let switchToOld = (): void => {
                 self.direction = self.oldDirection;
                 self.to('walk');
@@ -550,56 +544,62 @@ let speler = class extends Sprite {
             self.doeCoronaTest();
         };
 
-        switch_left.onenter = switch_right.onenter = switch_init_exit;
-        switch_left.onrun = switch_right.onrun = switch_run;
+        this.add(new bss('walk', {
+            onrun: (): void => {
+                if (Input.KC_LEFT) {
+                    if (self.canSwitchLeft) {
+                        self.to('switchleft');
+                        self.direction = Direction.Left;
+                    }
+                }
+                else if (Input.KC_RIGHT) {
+                    if (self.canSwitchRight) {
+                        self.to('switchright');
+                        self.direction = Direction.Right;
+                    }
+                }
+                else if (Input.KD_UP) {
+                    if (self.pos.y >= 4 && self.column !== 0) {
+                        if ((self.column !== 3 && self.column !== 4) ||
+                            (self.pos.y > 104 || self.pos.y <= 80)) {
+                            self.pos.y -= 2;
+                        }
+                    }
+                    if (self.getCurrentId('anistate') !== 'up') {
+                        self.to('up', 'anistate');
+                        self.direction = Direction.Up;
+                    }
+                }
+                else if (Input.KD_DOWN) {
+                    if (self.pos.y <= model.gameheight - 32 && self.column !== 0) {
+                        if ((self.column !== 3 && self.column !== 4) ||
+                            (self.pos.y < 44 || self.pos.y >= 80)) {
+                            self.pos.y += 2;
+                        }
+                    }
+                    if (self.getCurrentId('anistate') !== 'down') {
+                        self.to('down', 'anistate');
+                        self.direction = Direction.Down;
+                    }
+                }
+                if (Input.KC_BTN1 || Input.KC_SPACE) {
+                    self.zetBoelInDeHens();
+                }
+                if (Input.KC_BTN2) {
+                    self.checkNaastIngredientOfPitaOfBord();
+                }
+                self.doeCoronaTest();
+            },
+        }));
 
-        let walkstaterunhandler = (): void => {
-            if (Input.KC_LEFT) {
-                if (self.canSwitchLeft) {
-                    self.to('switchleft');
-                    self.direction = Direction.Left;
-                }
-            }
-            else if (Input.KC_RIGHT) {
-                if (self.canSwitchRight) {
-                    self.to('switchright');
-                    self.direction = Direction.Right;
-                }
-            }
-            else if (Input.KD_UP) {
-                if (self.pos.y >= 4 && self.column !== 0) {
-                    if ((self.column !== 3 && self.column !== 4) ||
-                        (self.pos.y > 104 || self.pos.y <= 80)) {
-                        self.pos.y -= 2;
-                    }
-                }
-                if (self.getCurrentId('anistate') !== 'up') {
-                    self.to('up', 'anistate');
-                    self.direction = Direction.Up;
-                }
-            }
-            else if (Input.KD_DOWN) {
-                if (self.pos.y <= model.gameheight - 32 && self.column !== 0) {
-                    if ((self.column !== 3 && self.column !== 4) ||
-                        (self.pos.y < 44 || self.pos.y >= 80)) {
-                        self.pos.y += 2;
-                    }
-                }
-                if (self.getCurrentId('anistate') !== 'down') {
-                    self.to('down', 'anistate');
-                    self.direction = Direction.Down;
-                }
-            }
-            if (Input.KC_BTN1 || Input.KC_SPACE) {
-                self.zetBoelInDeHens();
-            }
-            if (Input.KC_BTN2) {
-                self.checkNaastIngredientOfPitaOfBord();
-            }
-            self.doeCoronaTest();
-        };
-        let walkstate = this.add('walk');
-        walkstate.onrun = walkstaterunhandler;
+        this.add(new bss('switchleft', {
+            onenter: () => self.to('columnswitch', 'anistate'),
+            onrun: shared_switch_run,
+        }));
+        this.add(new bss('switchright', {
+            onenter: () => self.to('columnswitch', 'anistate'),
+            onrun: shared_switch_run,
+        }));
 
         let columnswitchAnistate = this.add('columnswitch', 'anistate');
         let columnswitchAnistatehandler = (s: bss, type: BSTEventType): void => {
@@ -616,27 +616,6 @@ let speler = class extends Sprite {
         };
         columnswitchAnistate.setAllHandlers(columnswitchAnistatehandler);
 
-        downstate.nudges2move = upstate.nudges2move = 8;
-        let walkhandler = (s: bss, type: BSTEventType): void => {
-            switch (type) {
-                case BSTEventType.Enter:
-                    s.reset();
-                    self.imgid = s.currentdata;
-                    break;
-                case BSTEventType.Run:
-                    ++s.nudges;
-                    break;
-                case BSTEventType.TapeEnd:
-                    s.reset();
-                    break;
-                case BSTEventType.TapeMove:
-                    self.imgid = s.currentdata;
-                    break;
-            }
-        };
-
-        downstate.setAllHandlers(walkhandler);
-        upstate.setAllHandlers(walkhandler);
         urghAniState.nudges2move = 4;
         let urghAniHandler = (s: bss, type: BSTEventType): void => {
             switch (type) {
@@ -657,12 +636,12 @@ let speler = class extends Sprite {
                     break;
             }
         };
+        urghAniState.setAllHandlers(urghAniHandler);
 
         this.add(new bss('urgh', { // urghSpelerState
             onenter: () => self.to('urgh', 'anistate')
             // Lelijk, maar animatie-state zorgt voor terugkeer naar previous state
         }));
-        urghAniState.setAllHandlers(urghAniHandler);
 
         this.add(new bss('win', { // winAniState
             onenter: () => self.imgid = BitmapId.p10
@@ -681,7 +660,7 @@ let speler = class extends Sprite {
 
     takeTurn(): void {
         this.run();
-    }
+    };
 
     zetBoelInDeHens(): void {
         let brand = new vuur(this.direction);
