@@ -65,7 +65,7 @@ let _modelclass = class extends BaseModel {
                     o.ingredientType = 'gesneden_komkommer';
                     o.imgid = BitmapId.Komkommer_gesneden;
 
-                    this.ingredientEquipped.disposeFlag = true;
+                    this.ingredientEquipped.markForDisposure();
                     this.ingredientEquipped = null; // Haal inventory leeg
                 }
             }
@@ -87,7 +87,7 @@ let _modelclass = class extends BaseModel {
             // Check of dit ingredient als was gestopt in deze pita
             if (!pita.ingredientenInPita.some(i => i == type)) {
                 pita.ingredientenInPita.push(type);
-                this.ingredientEquipped.disposeFlag = true; // Exile ingredient
+                this.ingredientEquipped.markForDisposure(); // Exile ingredient
                 this.ingredientEquipped = null; // Haal inventory leeg
                 // Check of pita nu gevuld is met alle ingredienten
                 if (pita.ingredientenInPita.length == INGREDIENTEN_IN_PITA) {
@@ -138,8 +138,8 @@ let brandblusser = class extends Sprite {
                 if (self.priority != oldPrio) _model.sortObjectsByPriority();
                 ++s.nudges;
             },
-            ontapemove: (): void => {
-                self.disposeFlag = true;
+            onnext: (): void => {
+                self.markForDisposure();
             }
         }));
     }
@@ -292,7 +292,7 @@ let vuur = class extends Sprite {
         let self = this;
 
         this.add(new bss('brand', {
-            tapedata: <Array<BitmapId>>[
+            tape: <Array<BitmapId>>[
                 BitmapId.Vuur1,
                 BitmapId.Vuur2,
                 BitmapId.Vuur3,
@@ -307,7 +307,7 @@ let vuur = class extends Sprite {
             nudges2move: 2,
             onenter: (s: bss): void => {
                 s.reset();
-                self.imgid = s.currentdata;
+                self.imgid = s.current;
             },
             onrun: (s: bss): void => {
                 ++s.nudges;
@@ -318,12 +318,11 @@ let vuur = class extends Sprite {
                     case Direction.Left: self.pos.x -= 3; break;
                 }
             },
-            ontapemove: (s: bss): void => {
-                self.imgid = s.currentdata;
+            onnext: (s: bss): void => {
+                self.imgid = s.current;
             },
-            ontapeend: (s: bss): void => {
-                s.reset();
-                self.disposeFlag = true;
+            onend: (s: bss): void => {
+                self.markForDisposure();
             }
         }));
     }
@@ -344,91 +343,71 @@ let corona = class extends Sprite {
         this.hitarea = newArea(4, 4, 28, 28);
         this.priority = 1200;
 
-        let skulkstate = this.add('skulk');
+        this.add(new bss('skulk', {
+            nudges2move: 4,
+            tape: <Array<BitmapId>>[
+                BitmapId.Corona1,
+                BitmapId.Corona2,
+                BitmapId.Corona3,
+                BitmapId.Corona2,
+            ],
+            onenter: (s: bss): void => {
+                s.reset();
+                self.imgid = s.current;
+                self.setRandomMove();
+            },
+            onrun: (s: bss): void => {
+                if (_model.objects.filter(o => (<any>o)?.isVuur).some(v => self.objectCollide(v))) {
+                    self.to('sterf');
+                }
+                switch (self.direction) {
+                    case Direction.Up: self.pos.y -= 1; break;
+                    case Direction.Right: self.pos.x += 1; break;
+                    case Direction.Down: self.pos.y += 1; break;
+                    case Direction.Left: self.pos.x -= 1; break;
+                }
+                if (self.pos.x < 0) self.pos.x = 0;
+                if (self.pos.x > _model.gamewidth - 32) self.pos.x = _model.gamewidth - 32;
+                if (self.pos.y < 0) self.pos.y = 0;
+                if (self.pos.y > _model.gameheight - 32) self.pos.y = _model.gameheight - 32;
+
+                if (--self.moveLeft <= 0) {
+                    self.setRandomMove();
+                }
+                ++s.nudges;
+            },
+            onnext: (s: bss): void => self.imgid = s.current
+        }));
         this.setStart('skulk');
 
-        skulkstate.tapedata = <Array<BitmapId>>[
-            BitmapId.Corona1,
-            BitmapId.Corona2,
-            BitmapId.Corona3,
-            BitmapId.Corona2,
-        ];
-
-        let sterfstate = this.add('sterf');
-        sterfstate.tapedata = <Array<BitmapId>>[
-            BitmapId.Corona4,
-            BitmapId.Corona5,
-            BitmapId.Corona6,
-            BitmapId.Corona7,
-            BitmapId.Corona8,
-            BitmapId.Corona9,
-            BitmapId.Corona10,
-            BitmapId.Corona11,
-            BitmapId.None,
-        ];
-
-        skulkstate.nudges2move = 4;
-        sterfstate.nudges2move = 4;
-
-        let skulkHandler = (s: bss, type: BSTEventType): void => {
-            switch (type) {
-                case BSTEventType.Enter:
-                    s.reset();
-                    self.imgid = s.currentdata;
-                    self.setRandomMove();
-                    break;
-                case BSTEventType.Run:
-                    ++s.nudges;
-                    if (_model.objects.filter(o => (<any>o)?.isVuur).some(v => self.objectCollide(v))) {
-                        self.to('sterf');
-                    }
-                    switch (self.direction) {
-                        case Direction.Up: self.pos.y -= 1; break;
-                        case Direction.Right: self.pos.x += 1; break;
-                        case Direction.Down: self.pos.y += 1; break;
-                        case Direction.Left: self.pos.x -= 1; break;
-                    }
-                    if (self.pos.x < 0) self.pos.x = 0;
-                    if (self.pos.x > _model.gamewidth - 32) self.pos.x = _model.gamewidth - 32;
-                    if (self.pos.y < 0) self.pos.y = 0;
-                    if (self.pos.y > _model.gameheight - 32) self.pos.y = _model.gameheight - 32;
-
-                    if (--self.moveLeft <= 0) {
-                        self.setRandomMove();
-                    }
-                    break;
-                case BSTEventType.TapeEnd:
-                    s.reset();
-                    self.imgid = s.currentdata;
-                    break;
-                case BSTEventType.TapeMove:
-                    self.imgid = s.currentdata;
-                    break;
-            }
-        };
-
-        let sterfHandler = (s: bss, type: BSTEventType): void => {
-            switch (type) {
-                case BSTEventType.Enter:
+        this.add(new bss('sterf', {
+            nudges2move: 4,
+            tape: <Array<BitmapId>>[
+                BitmapId.Corona4,
+                BitmapId.Corona5,
+                BitmapId.Corona6,
+                BitmapId.Corona7,
+                BitmapId.Corona8,
+                BitmapId.Corona9,
+                BitmapId.Corona10,
+                BitmapId.Corona11,
+                BitmapId.None,
+            ],
+            onenter: (s: bss): void => {
                     self.isEng = false;
                     s.reset();
-                    self.imgid = s.currentdata;
-                    break;
-                case BSTEventType.Run:
-                    ++s.nudges;
-                    break;
-                case BSTEventType.TapeEnd:
-                    s.reset();
-                    self.disposeFlag = true;
-                    break;
-                case BSTEventType.TapeMove:
-                    self.imgid = s.currentdata;
-                    break;
-            }
-        };
-
-        skulkstate.setAllHandlers(skulkHandler);
-        sterfstate.setAllHandlers(sterfHandler);
+                    self.imgid = s.current;
+            },
+            onrun: (s: bss): void => {
+                ++s.nudges;
+            },
+            onend: (): void => {
+                self.markForDisposure();
+            },
+            onnext: (s: bss): void => {
+                self.imgid = s.current;
+            },
+        }));
     }
 
     isEng = true;
@@ -459,13 +438,13 @@ let speler = class extends Sprite {
 
         let down_up_state_def: Partial<bss> = {
             nudges2move: 8,
-            onenter: (s: bss): void => (s.reset(), self.imgid = s.currentdata),
+            onenter: (s: bss): void => (s.reset(), self.imgid = s.current),
             onrun: (s: bss): void => { ++s.nudges; },
-            ontapeend: (s: bss): void => s.reset(),
-            ontapemove: (s: bss): void => self.imgid = s.currentdata,
+            onend: (s: bss): void => s.reset(),
+            onnext: (s: bss): void => self.imgid = s.current,
         };
         let downstate = this.add(new bss('down', down_up_state_def), 'anistate');
-        downstate.tapedata = <Array<BitmapId>>[
+        downstate.tape = <Array<BitmapId>>[
             BitmapId.p1,
             BitmapId.p2,
             BitmapId.p1,
@@ -474,7 +453,7 @@ let speler = class extends Sprite {
         ];
 
         let upstate = this.add(new bss('up', down_up_state_def), 'anistate');
-        upstate.tapedata = <Array<BitmapId>>[
+        upstate.tape = <Array<BitmapId>>[
             BitmapId.p4,
             BitmapId.p5,
             BitmapId.p4,
@@ -483,7 +462,7 @@ let speler = class extends Sprite {
         ];
 
         let urghAniState = this.add('urgh', 'anistate');
-        urghAniState.tapedata = <Array<BitmapId>>[
+        urghAniState.tape = <Array<BitmapId>>[
             BitmapId.p8,
             BitmapId.p9,
             BitmapId.p8,
@@ -621,7 +600,7 @@ let speler = class extends Sprite {
             switch (type) {
                 case BSTEventType.Enter:
                     s.reset();
-                    self.imgid = s.currentdata;
+                    self.imgid = s.current;
                     self.flippedH = false;
                     break;
                 case BSTEventType.Run:
@@ -632,7 +611,7 @@ let speler = class extends Sprite {
                     self.pop();
                     break;
                 case BSTEventType.TapeMove:
-                    self.imgid = s.currentdata;
+                    self.imgid = s.current;
                     break;
             }
         };
@@ -651,7 +630,7 @@ let speler = class extends Sprite {
             nudges2move: 300,
             onenter: () => self.to('win', 'anistate'),
             onrun: (s: bss) => (++s.nudges, _model.objects.filter(o => (<any>o).isEng).forEach(o => o.disposeFlag = true)),
-            ontapemove: () => _model.to('hoera!')
+            onnext: () => _model.to('hoera!')
         }));
 
         this.setStart('down', true, 'anistate');

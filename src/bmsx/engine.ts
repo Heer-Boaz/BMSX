@@ -76,36 +76,52 @@ export class bss {
         this.reset();
     }
 
-    public get currentdata(): any { return (this.tapedata && this.tapehead < this.tapedata.length) ? this.tapedata[this.tapehead] : undefined; };
-    public get endoftape(): boolean { return !this.tapedata || this.tapehead === this.tapedata.length - 1; }
-    public get startoftape(): boolean { return this.tapehead === 0; }
+    public get current(): any { return (this.tape && this.head < this.tape.length) ? this.tape[this.head] : undefined; };
+    public get atEnd(): boolean { return !this.tape || this.head === this.tape.length - 1; }
+    public get atStart(): boolean { return this.head === 0; }
     public onrun: bsfthandle;
     public onfinal: bsfthandle;
-    public ontapeend: bsfthandle;
-    public ontapemove: bsfthandle;
+    public onend: bsfthandle;
+    public onnext: bsfthandle;
     public onenter: bsfthandle;
     public onexit: bsfthandle;
-    public get internalstate() { return { statedata: this.tapedata, tapehead: this.tapehead }; }
+    public get internalstate() { return { statedata: this.tape, tapehead: this.head }; }
 
-    public tapedata: any[];
+    public tape: any[];
 
     public nudges2move: number; // Number of runs before tapehead moves to next statedata
     protected _tapehead: number;
-    public get tapehead(): number {
+    public get head(): number {
         return this._tapehead;
     }
-    public set tapehead(v: number) {
+    public set head(v: number) {
         this._nudges = 0; // Always reset tapehead nudges after moving tapehead
-        this._tapehead = v;
-        this.tapemove();
-        if (this.tapedata && (this._tapehead >= this.tapedata.length - 1)) { this.tapeend(); }
+        // Check if the tape already was at the end
+        if (this.tape && (this._tapehead >= this.tape.length - 1)) {
+            // If so, rewind and move to the first element of the tapehead
+            // But why? (Yes... Why?) Because we then can loop an animation,
+            // including the first and last element of the tape, without having
+            // to resort to any workarounds like duplicating the first entry
+            // of the tape or similar.
+            this._tapehead = 0;
+        }
+        else {
+            // Else, move the tape ahead
+            this._tapehead = v;
+        }
+        this.tapemove(); // Move the tape and trigger an event
+        // Check if the tape now is at the end
+        if (this.tape && (this._tapehead >= this.tape.length - 1)) {
+            // If so, trigger the event for reaching the end of the tape
+            this.tapeend();
+        }
     }
 
-    public setTapeheadNoEvent(v: number) {
+    public setHeadNoEvent(v: number) {
         this._tapehead = v;
     }
 
-    public setTapeheadNudgesNoEvent(v: number) {
+    public setHeadNudgesNoEvent(v: number) {
         this._nudges = v;
     }
 
@@ -115,26 +131,25 @@ export class bss {
     }
     public set nudges(v: number) {
         this._nudges = v;
-        if (v >= this.nudges2move) { ++this.tapehead; }
+        if (v >= this.nudges2move) { ++this.head; }
     }
 
     // Helper function to set all handlers
     public setAllHandlers(handler: bsfthandle): void {
         this.onrun = handler;
         this.onfinal = handler;
-        this.ontapeend = handler;
-        this.ontapemove = handler;
+        this.onend = handler;
+        this.onnext = handler;
         this.onenter = handler;
         this.onexit = handler;
     }
 
     protected tapemove() {
-        this.ontapemove?.(this, BSTEventType.TapeMove, this.parentbst);
+        this.onnext?.(this, BSTEventType.TapeMove, this.parentbst);
     }
 
     protected tapeend() {
-        this.ontapeend?.(this, BSTEventType.TapeEnd, this.parentbst);
-        this._tapehead = 0; // Reset tapehead at reaching end (but only after event has been handled)
+        this.onend?.(this, BSTEventType.TapeEnd, this.parentbst);
     }
 
     public reset(): void {
