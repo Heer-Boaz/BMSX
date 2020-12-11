@@ -1,7 +1,7 @@
 import { readdirSync, statSync, readFileSync, writeFileSync, copyFile, copyFileSync, existsSync, exists, createWriteStream } from "fs";
 import { join, parse } from "path";
 import { AudioMeta, AudioType, RomResource, RomMeta, ImgMeta } from '../src/bmsx/rompack';
-const browserify = require("browserify");
+import * as browserify from 'browserify';
 const tsify = require("tsify");
 const babelify = require("babelify");
 
@@ -20,7 +20,7 @@ const CROP_ATLAS = true;
 const GENERATE_AND_USE_TEXTURE_ATLAS = true;
 const DONT_PACK_IMAGES_WHEN_USING_ATLAS = true;
 
-const atlasCanvas: HTMLCanvasElement = createCanvas(ATLAS_PX_SIZE, ATLAS_PX_SIZE);
+const atlasCanvas: HTMLCanvasElement = <any>createCanvas(ATLAS_PX_SIZE, ATLAS_PX_SIZE);
 const ctx: CanvasRenderingContext2D = atlasCanvas.getContext('2d');
 const atlasPos = { x: 0, y: 0 };
 let atlasExploitedX = 0; // For cropping atlas later, because we are not sure that full width is exploited
@@ -58,6 +58,15 @@ function log(_tolog: string, type?: string): void {
 	process.stdout.write(`${_colors.cyan(d.toTimeString().split(' ')[0])}:${_colors.cyan(d.getMilliseconds().toString().substring(0, 3))} ${tolog}`);
 }
 
+function appendLogEntry(_toappend: string, type?: string): void {
+	let toappend: string;
+	switch (type) {
+		case 'error': toappend = _colors.red(_toappend); break;
+		default: toappend = _toappend; break;
+	}
+	process.stdout.write(toappend);
+}
+
 function timer(ms: number) {
 	return new Promise(res => setTimeout(res, ms));
 }
@@ -77,7 +86,7 @@ async function startRotator() {
 
 function stopRotator(): void {
 	runrotator = false;
-	process.stdout.write(`\b\b  \n`);
+	process.stdout.write(`\b\b  `);
 }
 
 /**
@@ -131,9 +140,9 @@ function getAllFiles(dirPath: string, arrayOfFiles?: string[], filterExtension?:
 function yaml2Json(): void {
 	log("YAML bestanden omzetten in JSON voor importatie...\n");
 	const bar = new cliProgress.SingleBar({
-		format: 'Beunen: |' + _colors.brightBlue('{bar}') + '| {percentage}% |',
-		barCompleteChar: '\u2588',
-		barIncompleteChar: '\u2591',
+		format: 'Beunen: [' + _colors.brightBlue('{bar}') + '] {percentage}% |',
+		barCompleteChar: '=',
+		barIncompleteChar: '-',
 		hideCursor: true
 	});
 
@@ -146,7 +155,7 @@ function yaml2Json(): void {
 		writeFileSync(outfilename, Buffer.from(encodeuint8arr(JSON.stringify(doc))));
 		bar.increment(1);
 	}
-	bar.stop();
+	bar.stop(true);
 }
 
 async function bundleGamecode(outfile: string, bootloader_path: string): Promise<any> {
@@ -181,7 +190,7 @@ async function bundleGamecode(outfile: string, bootloader_path: string): Promise
 			.on("error", e => { stopRotator(); log(`\tGame bouwen faalde :-(\n`, 'error'); return reject(e); });
 		writeOutput.on('finish', () => {
 			stopRotator();
-			log("\tKlaar!\n");
+			appendLogEntry("[Donut]\n");
 			return resolve(null);
 		});
 		writeOutput.on("error", e => {
@@ -275,9 +284,9 @@ function minifyGamecode(infile: string): void {
 async function buildGameHtmlAndManifest(outfile: string, title: string): Promise<void> {
 	log("game.html en game_debug.html bouwen...\n");
 	const bar = new cliProgress.SingleBar({
-		format: 'Beunen: |' + _colors.brightBlue('{bar}') + '| {percentage}% |',
-		barCompleteChar: '\u2588',
-		barIncompleteChar: '\u2591',
+		format: 'Beunen: [' + _colors.brightBlue('{bar}') + '] {percentage}% |',
+		barCompleteChar: '=',
+		barIncompleteChar: '-',
 		hideCursor: true
 	});
 
@@ -361,7 +370,7 @@ async function buildGameHtmlAndManifest(outfile: string, title: string): Promise
 
 				bar.increment(1);
 
-				bar.stop();
+				bar.stop(true);
 				return resolve();
 			}
 		});
@@ -391,7 +400,7 @@ function parseAudioMeta(filename: string): { sanitizedName: string, meta: AudioM
 	};
 }
 
-function zip(content: Buffer): string {
+function zip(content: Buffer): Uint8Array {
 	let toCompress = new Uint8Array(content);
 	return pako.deflate(toCompress);
 }
@@ -421,7 +430,7 @@ async function deploy(outfile: string, title: string): Promise<void> {
 
 		ftpDeploy
 			.deploy(config)
-			.then(res => { stopRotator(); log(`\tKlaar!: ${res}\n`); return resolve(); })
+			.then(res => { stopRotator(); appendLogEntry(`[Donut]: ${res}\n`); return resolve(); })
 			.catch(err => { stopRotator(); log(`\tFTP upload mislukt :-(\n`, 'error'); return reject(err); });
 	});
 }
@@ -447,7 +456,7 @@ function getResMetaByFilename(filepath: string): { name: string, ext: string, ty
 }
 
 function getResMetaList(respath: string): ResourceMeta[] {
-	log(`Fetch all files in the resource path ${respath}... `);
+	log(`Lees all bestanden in de resource pad ${_colors.brightGreen(`"${respath}"`)}... `);
 	startRotator();
 	const arrayOfFiles = getFiles(respath) ?? []; // Also handle corner case where we don't have any resources by adding "?? []"
 	addFile("./rom", "megarom.min.js", arrayOfFiles); // Add source at the end
@@ -484,9 +493,9 @@ function getResMetaList(respath: string): ResourceMeta[] {
 		result.push({ filepath: null, name: '_atlas', ext: null, type: 'atlas', id: imgid }); // Note that 'atlas' is an internal type, used only for this script
 	}
 
+	appendLogEntry(`[Donut]\n`);
 	log(`\t#images: ${imgid - 1}\n`);
 	log(`\t#audio: ${sndid - 1}\n`);
-	log("\tKlaar!\n");
 
 	return result;
 }
@@ -495,9 +504,9 @@ async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>): 
 	let resMetaList = getResMetaList(respath);
 
 	const bar = new cliProgress.SingleBar({
-		format: 'Beunen: |' + _colors.brightBlue('{bar}') + '| {percentage}% |',
-		barCompleteChar: '\u2588',
-		barIncompleteChar: '\u2591',
+		format: 'Beunen: [' + _colors.brightBlue('{bar}') + '] {percentage}% |',
+		barCompleteChar: '=',
+		barIncompleteChar: '-',
 		hideCursor: true
 	});
 
@@ -549,7 +558,7 @@ async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>): 
 	}
 	bar.increment(1);
 
-	bar.stop();
+	bar.stop(true);
 
 	return loadedResources;
 }
@@ -560,9 +569,9 @@ function buildResourceList(respath: string): void {
 	let tssndout = new Array<string>();
 
 	const bar = new cliProgress.SingleBar({
-		format: 'Beunen: |' + _colors.brightBlue('{bar}') + '| {percentage}% |',
-		barCompleteChar: '\u2588',
-		barIncompleteChar: '\u2591',
+		format: 'Beunen: [' + _colors.brightBlue('{bar}') + '] {percentage}% |',
+		barCompleteChar: '=',
+		barIncompleteChar: '-',
 		hideCursor: true
 	});
 
@@ -597,14 +606,14 @@ function buildResourceList(respath: string): void {
 	tsimgout.push("}\n");
 	tssndout.push("}\n");
 
-	bar.stop();
+	bar.stop(true);
 
 	let targetPath = respath.replace('/res', '/resourceids.ts');
 	log(`resourceids.ts wegschrijven naar "${targetPath}"... `);
 	startRotator();
 	writeFileSync(targetPath, tsimgout.concat(tssndout).join('\n'));
 	stopRotator();
-	log("\tKlaar!\n");
+	appendLogEntry(`[Donut]\n`);
 }
 
 async function buildRompack(outfile: string, respath: string): Promise<void> {
@@ -612,19 +621,19 @@ async function buildRompack(outfile: string, respath: string): Promise<void> {
 	startRotator();
 	minifyGamecode("./megarom.js");
 	stopRotator();
-	log("\tKlaar!\n");
+	appendLogEntry(`[Donut]\n`);
 
 	log("Alle files ophalen... ");
 	startRotator();
 	stopRotator();
-	log("\tKlaar!\n");
+	appendLogEntry(`[Donut]\n`);
 
 	let buffers = new Array<Buffer>();
 	log("Resource bestanden inladen en bufferen...\n");
 	const bar = new cliProgress.SingleBar({
-		format: 'Beunen: |' + _colors.brightBlue('{bar}') + '| {percentage}% |',
-		barCompleteChar: '\u2588',
-		barIncompleteChar: '\u2591',
+		format: 'Beunen: [' + _colors.brightBlue('{bar}') + '] {percentage}% |',
+		barCompleteChar: '=',
+		barIncompleteChar: '-',
 		hideCursor: true
 	});
 
@@ -711,25 +720,23 @@ async function buildRompack(outfile: string, respath: string): Promise<void> {
 	let rommetastr = JSON.stringify(rommeta).padStart(100, ' ');
 	buffers.push(Buffer.from(encodeuint8arr(rommetastr)));
 	bar.increment(1);
-	bar.stop();
+	bar.stop(true);
 
 	log("Alles nu zippen... ");
 	startRotator();
 	// let zipped = Buffer.concat(buffers)//zip(Buffer.concat(buffers));
 	let zipped = zip(Buffer.concat(buffers));
 	stopRotator();
-	log("\tKlaar!\n");
+	appendLogEntry(`[Donut]\n`);
 	log(`"${_colors.green(outfile)}" wegschrijven naar ${_colors.green(`\"./dist/${outfile}\"`)}...`);
 	startRotator();
 	writeFileSync(`./dist/${outfile}`, zipped);
-	stopRotator();
-	log("\tKlaar!\n");
 	writeFileSync("./rom/_ignore/romresources.json", jsonbuffer);
 	stopRotator();
-	log("\tKlaar!\n");
+	appendLogEntry(`[Donut]\n`);
 	log("Rom is gepackt!!\n");
 	// log(`\tFiles: ${arrayOfFiles.length}\n\t\timages: ${imgi}\n\t\taudio: ${sndi}\n`);
-	log(`\tSize: ${(Buffer.concat(buffers).length / (1024 * 1024)).toFixed(2)} mB\n\tDeflated size: ${(zipped.length / (1024 * 1024)).toFixed(2)} mB.\n`);
+	log(`\tSize: ${_colors.red(`${(Buffer.concat(buffers).length / (1024 * 1024)).toFixed(2)} mB`)} ⇒  Deflated: ${_colors.blue(`${(zipped.length / (1024 * 1024)).toFixed(2)} mB (${((zipped.length / Buffer.concat(buffers).length) * 100).toFixed(0)}%)`)}\n`);
 }
 
 function addToAtlas(img: any): ImgMeta {
@@ -790,7 +797,7 @@ function cropAtlas(romResources: Array<RomResource>): HTMLCanvasElement {
 	if (cropw === 0) cropw = 1;
 	if (croph === 0) croph = 1;
 
-	const result: HTMLCanvasElement = createCanvas(cropw, croph);
+	const result: HTMLCanvasElement = <any>createCanvas(cropw, croph);
 	const croppedctx: CanvasRenderingContext2D = result.getContext('2d');
 	croppedctx.drawImage(atlasCanvas, 0, 0);
 
@@ -883,7 +890,6 @@ try {
 
 		log('Starting ROM packing and deployment process...\n');
 		log('\tNote: build resource list instead by passing option "--buildreslist".\n');
-		yaml2Json();
 		bundleGamecode('./rom/tsout.js', bootloader_path)
 			.then(() => yaml2Json())
 			.then(() => buildRompack(outfile, respath))
