@@ -31,7 +31,7 @@
 				"output romtobuild"
 			],
 			"presentation": {
-				"echo": true,
+				"echo": false,
 				"reveal": "always",
 				"focus": false,
 				"panel": "shared",
@@ -59,7 +59,7 @@
 			"dependsOrder": "parallel",
 			"dependsOn": [],
 			"presentation": {
-				"echo": true,
+				"echo": false,
 				"reveal": "always",
 				"focus": false,
 				"panel": "shared",
@@ -89,10 +89,10 @@
 			],
 			"presentation": {
 				"echo": true,
-				"reveal": "silent",
+				"reveal": "always",
 				"focus": false,
 				"panel": "shared",
-				"showReuseMessage": false,
+				"showReuseMessage": true,
 				"clear": true,
 				"group": "ROMPACKER"
 			},
@@ -117,10 +117,10 @@
 			"group": "build",
 			"presentation": {
 				"echo": true,
-				"reveal": "silent",
+				"reveal": "always",
 				"focus": false,
 				"panel": "shared",
-				"showReuseMessage": false,
+				"showReuseMessage": true,
 				"clear": false,
 				"group": "ROMPACKER"
 			}
@@ -134,12 +134,12 @@
 			],
 			"group": "build",
 			"presentation": {
-				"echo": true,
-				"reveal": "silent",
+				"echo": false,
+				"reveal": "always",
 				"focus": false,
 				"panel": "shared",
 				"showReuseMessage": false,
-				"clear": false,
+				"clear": true,
 				"group": "ROMPACKER"
 			}
 		}

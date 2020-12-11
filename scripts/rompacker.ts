@@ -138,24 +138,16 @@ function getAllFiles(dirPath: string, arrayOfFiles?: string[], filterExtension?:
 }
 
 function yaml2Json(): void {
-	log("YAML bestanden omzetten in JSON voor importatie...\n");
-	const bar = new cliProgress.SingleBar({
-		format: 'Beunen: [' + _colors.brightBlue('{bar}') + '] {percentage}% |',
-		barCompleteChar: '=',
-		barIncompleteChar: '-',
-		hideCursor: true
-	});
-
+	log("YAML bestanden omzetten in JSON voor importatie...  ");
 	let yamlfiles = getAllFiles('./src', [], '.yaml');
-	log(yamlfiles.join(', '));
-	bar.start(yamlfiles.length, 0);
+	startRotator();
 	for (let file of yamlfiles) {
 		let doc = yaml.safeLoad(readFileSync(file, 'utf8'));
 		let outfilename = file.replace('.yaml', '.json');
 		writeFileSync(outfilename, Buffer.from(encodeuint8arr(JSON.stringify(doc))));
-		bar.increment(1);
 	}
-	bar.stop(true);
+	stopRotator();
+	appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 }
 
 async function bundleGamecode(outfile: string, bootloader_path: string): Promise<any> {
@@ -187,16 +179,16 @@ async function bundleGamecode(outfile: string, bootloader_path: string): Promise
 			})
 			.bundle()
 			.pipe(writeOutput)
-			.on("error", e => { stopRotator(); log(`\tGame bouwen faalde :-(\n`, 'error'); return reject(e); });
+			.on("error", e => { stopRotator(); log(`\tGame bouwen faalde :-(\n`, 'error'); reject(e); });
 		writeOutput.on('finish', () => {
 			stopRotator();
-			appendLogEntry("[Donut]\n");
-			return resolve(null);
+			appendLogEntry(`${_colors.grey('[Donut]')}\n`);
+			resolve(null);
 		});
 		writeOutput.on("error", e => {
 			stopRotator();
 			log(`\tWegschrijven gamecode faalde! :-(\n`, 'error');
-			return reject(e);
+			reject(e);
 		});
 	});
 }
@@ -281,27 +273,14 @@ function minifyGamecode(infile: string): void {
 	}
 }
 
-async function buildGameHtmlAndManifest(outfile: string, title: string): Promise<void> {
+async function buildGameHtmlAndManifest(outfile: string, title: string): Promise<any> {
 	log("game.html en game_debug.html bouwen...\n");
-	const bar = new cliProgress.SingleBar({
-		format: 'Beunen: [' + _colors.brightBlue('{bar}') + '] {percentage}% |',
-		barCompleteChar: '=',
-		barIncompleteChar: '-',
-		hideCursor: true
-	});
-
-	bar.start(13, 0);
-
 	let html = readFileSync("./gamebase.html", 'utf8');
-	bar.increment(1);
 	let release_html: string;
 	let debug_html: string;
 	let romjs = readFileSync("./rom/rom.js", 'utf8');
-	bar.increment(1);
 	let zipjs = readFileSync("./scripts/pako_inflate.min.js", 'utf8');
-	bar.increment(1);
 	romjs = romjs.replace('Object.defineProperty(exports, "__esModule", { value: true });', '');
-	bar.increment(1);
 	let options = {
 		compress: {
 			arrows: false
@@ -318,13 +297,10 @@ async function buildGameHtmlAndManifest(outfile: string, title: string): Promise
 		}
 	};
 	let romjsMinified = terser.minify(romjs, options).code;
-	bar.increment(1);
 	let bmsx = readFileSync("./rom/bmsx.png");
-	bar.increment(1);
 	let bmsx_base64ed = bmsx.toString('base64');
-	bar.increment(1);
 
-	return new Promise<void>((resolve, reject) => {
+	return new Promise<any>((resolve, reject) => {
 		minify({
 			compressor: cleanCSS,
 			input: "./gamebase.css",
@@ -332,35 +308,27 @@ async function buildGameHtmlAndManifest(outfile: string, title: string): Promise
 			callback: function (err, cssMinified: string) {
 				if (!cssMinified) {
 					log(`Minifyen van CSS faalde :-(\n`);
-					return reject(err);
+					reject(err);
 				}
-				bar.increment(1);
 				release_html = html.replace('//#romjs', romjsMinified);
 				release_html = release_html.replace('//#zipjs', zipjs);
-				// release_html = release_html.replace('//#gl-matrix', glmatrixjs);
 				release_html = release_html.replace('/*css*/', cssMinified);
 				release_html = release_html.replace(/#title/g, title); // https://stackoverflow.com/questions/44324892/how-can-i-replace-multiple-characters-in-a-string
 				release_html = release_html.replace('#outfile', outfile);
 				release_html = release_html.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed);
 				release_html = release_html.replace('//#debug', '');
-				// release_html = release_html.replace('//#localfetch', 'bootrom.localfetch = true;\n');
-				bar.increment(1);
 
 				writeFileSync("./dist/game.html", release_html);
-				bar.increment(1);
 
 				debug_html = html.replace('//#romjs', romjs);
 				debug_html = debug_html.replace('//#zipjs', zipjs);
-				// release_html = release_html.replace('//#gl-matrix', glmatrixjs);
 				debug_html = debug_html.replace('/*css*/', cssMinified);
 				debug_html = debug_html.replace(/#title/g, title); // https://stackoverflow.com/questions/44324892/how-can-i-replace-multiple-characters-in-a-string
 				debug_html = debug_html.replace('#outfile', outfile);
 				debug_html = debug_html.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed);
 				debug_html = debug_html.replace('//#debug', 'bootrom.debug = true;\n');
 				debug_html = debug_html.replace('//#localfetch', 'bootrom.localfetch = true;\n');
-				bar.increment(1);
 				writeFileSync("./dist/game_debug.html", debug_html);
-				bar.increment(1);
 
 				// Update the manifest.json-file that is used for app-versions of the webpage
 				let manifest = readFileSync("./rom/manifest.json", 'utf8');
@@ -368,10 +336,7 @@ async function buildGameHtmlAndManifest(outfile: string, title: string): Promise
 				// Write updated manifest to dist-folder
 				writeFileSync("./dist/manifest.json", manifest);
 
-				bar.increment(1);
-
-				bar.stop(true);
-				return resolve();
+				resolve(null);
 			}
 		});
 	});
@@ -405,8 +370,8 @@ function zip(content: Buffer): Uint8Array {
 	return pako.deflate(toCompress);
 }
 
-async function deploy(outfile: string, title: string): Promise<void> {
-	return new Promise<void>((resolve, reject) => {
+async function deploy(outfile: string, title: string): Promise<any> {
+	return new Promise<any>((resolve, reject) => {
 		log("Deployeren... ");
 		startRotator();
 		let ftpDeploy = new FtpDeploy();
@@ -430,12 +395,12 @@ async function deploy(outfile: string, title: string): Promise<void> {
 
 		ftpDeploy
 			.deploy(config)
-			.then(res => { stopRotator(); appendLogEntry(`[Donut]: ${res}\n`); return resolve(); })
-			.catch(err => { stopRotator(); log(`\tFTP upload mislukt :-(\n`, 'error'); return reject(err); });
+			.then(res => { stopRotator(); appendLogEntry(`${res}. ${_colors.grey('[Donut]')}\n`); resolve(null); })
+			.catch(err => { stopRotator(); log(`\tFTP upload mislukt :-(\n`, 'error'); reject(err); });
 	});
 }
 
-function getResMetaByFilename(filepath: string): { name: string, ext: string, type: string } {
+function getResMetaByFilename(filepath: string): { name: string, ext: string, type: string; } {
 	let name = parse(filepath).name.replace(' ', '');
 	let ext = parse(filepath).ext;
 	let type: string;
@@ -456,11 +421,11 @@ function getResMetaByFilename(filepath: string): { name: string, ext: string, ty
 }
 
 function getResMetaList(respath: string): ResourceMeta[] {
-	log(`Lees all bestanden in de resource pad ${_colors.brightGreen(`"${respath}"`)}... `);
-	startRotator();
+	// log(`Lees all bestanden in de resource pad ${_colors.brightGreen(`"${respath}"`)}... `);
+	// startRotator();
 	const arrayOfFiles = getFiles(respath) ?? []; // Also handle corner case where we don't have any resources by adding "?? []"
 	addFile("./rom", "megarom.min.js", arrayOfFiles); // Add source at the end
-	stopRotator();
+	// stopRotator();
 
 	let result: Array<ResourceMeta> = [];
 
@@ -493,24 +458,13 @@ function getResMetaList(respath: string): ResourceMeta[] {
 		result.push({ filepath: null, name: '_atlas', ext: null, type: 'atlas', id: imgid }); // Note that 'atlas' is an internal type, used only for this script
 	}
 
-	appendLogEntry(`[Donut]\n`);
-	log(`\t#images: ${imgid - 1}\n`);
-	log(`\t#audio: ${sndid - 1}\n`);
+	// appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 
 	return result;
 }
 
 async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>): Promise<LoadedResource[]> {
 	let resMetaList = getResMetaList(respath);
-
-	const bar = new cliProgress.SingleBar({
-		format: 'Beunen: [' + _colors.brightBlue('{bar}') + '] {percentage}% |',
-		barCompleteChar: '=',
-		barIncompleteChar: '-',
-		hideCursor: true
-	});
-
-	bar.start(resMetaList.length + 1, 0);
 	let loadedResources: Array<LoadedResource> = [];
 	for (let i = 0; i < resMetaList.length; i++) {
 		let meta = resMetaList[i];
@@ -531,7 +485,6 @@ async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>): 
 		}
 
 		loadedResources.push({ buffer: buffer, filepath: meta.filepath, name: name, ext: ext, type: type, img: img, id: id });
-		bar.increment(1);
 	}
 
 	// Manually add the ROM source code to the list
@@ -556,28 +509,15 @@ async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>): 
 	else {
 		loadedResources.forEach(x => buffers.push(x.buffer));
 	}
-	bar.increment(1);
-
-	bar.stop(true);
-
 	return loadedResources;
 }
 
 function buildResourceList(respath: string): void {
-	log("resourceids.ts knutselen...\n");
+	log("resourceids.ts knutselen...  ");
 	let tsimgout = new Array<string>();
 	let tssndout = new Array<string>();
 
-	const bar = new cliProgress.SingleBar({
-		format: 'Beunen: [' + _colors.brightBlue('{bar}') + '] {percentage}% |',
-		barCompleteChar: '=',
-		barIncompleteChar: '-',
-		hideCursor: true
-	});
-
 	let metalist = getResMetaList(respath);
-
-	bar.start(metalist.length, 0);
 
 	tsimgout.push("export enum BitmapId {\n\tNone = 0,");
 	tssndout.push("export enum AudioId {\n\tNone = 0,");
@@ -596,51 +536,36 @@ function buildResourceList(respath: string): void {
 			case 'audio':
 				tssndout.push(`\t${name} = ${id},`);
 				break;
-			// case 'source':
-			// 	name = name.replace('.min', '');
-			// 	break;
 		}
-		bar.increment(1);
 	}
 
 	tsimgout.push("}\n");
 	tssndout.push("}\n");
-
-	bar.stop(true);
 
 	let targetPath = respath.replace('/res', '/resourceids.ts');
 	log(`resourceids.ts wegschrijven naar "${targetPath}"... `);
 	startRotator();
 	writeFileSync(targetPath, tsimgout.concat(tssndout).join('\n'));
 	stopRotator();
-	appendLogEntry(`[Donut]\n`);
+	appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 }
 
-async function buildRompack(outfile: string, respath: string): Promise<void> {
+async function buildRompack(outfile: string, respath: string): Promise<any> {
 	log("Minifyen... ");
 	startRotator();
 	minifyGamecode("./megarom.js");
 	stopRotator();
-	appendLogEntry(`[Donut]\n`);
-
-	log("Alle files ophalen... ");
-	startRotator();
-	stopRotator();
-	appendLogEntry(`[Donut]\n`);
+	appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 
 	let buffers = new Array<Buffer>();
-	log("Resource bestanden inladen en bufferen...\n");
-	const bar = new cliProgress.SingleBar({
-		format: 'Beunen: [' + _colors.brightBlue('{bar}') + '] {percentage}% |',
-		barCompleteChar: '=',
-		barIncompleteChar: '-',
-		hideCursor: true
-	});
-
+	log("Resource bestanden inladen en bufferen...  ");
+	startRotator();
 	let loadedResources = await getLoadedResourcesList(respath, buffers);
+	stopRotator();
+	appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 
-	log("romresources.json knutselen...\n");
-	bar.start(loadedResources.length, 0);
+	log("romresources.json knutselen...  ");
+	startRotator();
 
 	let jsonout = new Array<RomResource>();
 	let bufferPointer = 0;
@@ -685,7 +610,6 @@ async function buildRompack(outfile: string, respath: string): Promise<void> {
 			case 'atlas':
 				break;
 		}
-		bar.increment(1);
 	}
 
 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
@@ -711,7 +635,6 @@ async function buildRompack(outfile: string, respath: string): Promise<void> {
 
 	let jsonbuffer = Buffer.from(encodeuint8arr(JSON.stringify(jsonout)));
 	buffers.push(jsonbuffer);
-	bar.increment(1);
 
 	let rommeta = <RomMeta>{
 		start: bufferPointer,
@@ -719,24 +642,27 @@ async function buildRompack(outfile: string, respath: string): Promise<void> {
 	};
 	let rommetastr = JSON.stringify(rommeta).padStart(100, ' ');
 	buffers.push(Buffer.from(encodeuint8arr(rommetastr)));
-	bar.increment(1);
-	bar.stop(true);
+	stopRotator();
+	appendLogEntry(`${_colors.grey('[Donut]')}\n`);
+	log(`\t#images: ${loadedResources.filter(r => r.type == 'image').length}\n`);
+	log(`\t#audio: ${loadedResources.filter(r => r.type == 'audio').length}\n`);
 
 	log("Alles nu zippen... ");
 	startRotator();
 	// let zipped = Buffer.concat(buffers)//zip(Buffer.concat(buffers));
 	let zipped = zip(Buffer.concat(buffers));
 	stopRotator();
-	appendLogEntry(`[Donut]\n`);
+	appendLogEntry(`${_colors.grey('[Donut]')}\n`);
+	log(`\tSize: ${_colors.red(`${(Buffer.concat(buffers).length / (1024 * 1024)).toFixed(2)} mB`)} ⇒  Deflated: ${_colors.blue(`${(zipped.length / (1024 * 1024)).toFixed(2)} mB (${((zipped.length / Buffer.concat(buffers).length) * 100).toFixed(0)}%)`)}\n`);
+
 	log(`"${_colors.green(outfile)}" wegschrijven naar ${_colors.green(`\"./dist/${outfile}\"`)}...`);
 	startRotator();
 	writeFileSync(`./dist/${outfile}`, zipped);
 	writeFileSync("./rom/_ignore/romresources.json", jsonbuffer);
 	stopRotator();
-	appendLogEntry(`[Donut]\n`);
-	log("Rom is gepackt!!\n");
+	appendLogEntry(`${_colors.grey('[Donut]')}\n`);
+	// log("Rom is gepackt!!\n");
 	// log(`\tFiles: ${arrayOfFiles.length}\n\t\timages: ${imgi}\n\t\taudio: ${sndi}\n`);
-	log(`\tSize: ${_colors.red(`${(Buffer.concat(buffers).length / (1024 * 1024)).toFixed(2)} mB`)} ⇒  Deflated: ${_colors.blue(`${(zipped.length / (1024 * 1024)).toFixed(2)} mB (${((zipped.length / Buffer.concat(buffers).length) * 100).toFixed(0)}%)`)}\n`);
 }
 
 function addToAtlas(img: any): ImgMeta {
@@ -890,12 +816,22 @@ try {
 
 		log('Starting ROM packing and deployment process...\n');
 		log('\tNote: build resource list instead by passing option "--buildreslist".\n');
+		// const bar = new cliProgress.SingleBar({
+		// 	format: 'Beunen: [' + _colors.brightBlue('{bar}') + '] {percentage}% |',
+		// 	barCompleteChar: '=',
+		// 	barIncompleteChar: '-',
+		// 	hideCursor: true,
+		// 	clearOnComplete: true,
+		// 	forceRedraw: true
+		// });
+		// bar.start(5, 0);
+
 		bundleGamecode('./rom/tsout.js', bootloader_path)
-			.then(() => yaml2Json())
-			.then(() => buildRompack(outfile, respath))
-			.then(() => buildGameHtmlAndManifest(outfile, title))
-			.then(() => deploy(outfile, title))
-			.then(() => log(_colors.brightGreen("===  ALLES DONUT!  ===\n")))
+			.then((result) => (yaml2Json()))
+			.then((result) => (buildRompack(outfile, respath)))
+			.then((result) => (buildGameHtmlAndManifest(outfile, title)))
+			.then((result) => (deploy(outfile, title)))
+			.then((result) => (log(`${_colors.brightWhite.bold('[ALLES DONUT]')}\n`)))
 			.catch(e => { log(`Er ging iets niet goed:\n${e?.stack ?? '\ben geen stacktrace beschikbaar :-(!'}`, 'error'); process.exit(-1); });
 	}
 } catch (e) {
