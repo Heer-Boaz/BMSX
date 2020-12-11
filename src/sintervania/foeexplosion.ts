@@ -23,7 +23,7 @@ export class FoeExplosion extends FX {
         this.animation = new Animation(FoeExplosion.AnimationFrames, null, false);
         this.init();
         this.itemSpawnedAfterKill = itemSpawned;
-        this.priority = 50;
+        this.z = 50;
     }
 
     public takeTurn(): void {

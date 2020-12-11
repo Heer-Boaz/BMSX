@@ -1,7 +1,7 @@
 import { TileSize, Tile } from '../bmsx/msx';
 import { GameConstants } from './gameconstants';
 import { Area, newArea, Point, newSize, copyPoint, addPoints } from '../bmsx/common';
-import { bst, view, model, controller } from '../bmsx/engine';
+import { bst, view, model, controller, bss } from '../bmsx/engine';
 import { BitmapId, AudioId } from './resourceids';
 import { Controller } from './gamecontroller';
 import { GameSubstate, Model } from './gamemodel';
@@ -33,28 +33,28 @@ export class Pietula extends Foe {
 		this.maxHealth = this.health;
 		this.loops = 0;
 		this.visible = false;
-		this.priority = 20;
+		this.z = 20;
 
 		let fst = new bst();
 		this.fst = fst;
 		let waitAfterDeath = fst.add('wachten_op_elmo');
 		waitAfterDeath.nudges2move = 6000 / 20;
 		waitAfterDeath.onrun = (s) => ++s.nudges;
-		waitAfterDeath.ontapemove = (s) => (controller as Controller).switchSubstate(GameSubstate.ToEndDemo);
+		waitAfterDeath.onnext = (s) => (controller as Controller).switchSubstate(GameSubstate.ToEndDemo);
 
 		let intro_wacht = fst.add('intro_wacht');
-		intro_wacht.oninitstate = (s, type) => {
+		intro_wacht.onenter = (s, type) => {
 			this.pos = Tile.toStagePoint(7, 3);
 			this.flippedH = false;
 			this.blink.to('in');
 			this.hover.reset();
 			this.imgid = BitmapId.Pietula1;
-			this.hover.halted = true;
+			this.hover.paused = true;
 		};
 		intro_wacht.nudges2move = 2000 / 20;
 		intro_wacht.onrun = (s) => ++s.nudges;
-		intro_wacht.ontapemove = (s) => s.parentbst.to('naarlinks');
-		intro_wacht.onexitstate = (s) => this.hover.halted = false;
+		intro_wacht.onnext = (s) => s.parentbst.to('naarlinks');
+		intro_wacht.onexit = (s) => this.hover.paused = false;
 		let naarlinks = fst.add('naarlinks');
 		naarlinks.onrun = (s) => {
 			this.pos.x -= floatspeed;
@@ -89,20 +89,20 @@ export class Pietula extends Foe {
 		let waitforteleport = fst.add('wait_for_teleport');
 		waitforteleport.nudges2move = 1000 / 20;
 		waitforteleport.onrun = (s) => ++s.nudges;
-		waitforteleport.ontapemove = (s) => s.parentbst.to('wait_for_bliksem');
+		waitforteleport.onnext = (s) => s.parentbst.to('wait_for_bliksem');
 
 		let waitforbliksem = fst.add('wait_for_bliksem');
 		waitforbliksem.nudges2move = 3000 / 20;
 		waitforbliksem.onrun = (s) => {
 			++s.nudges;
 		};
-		waitforbliksem.ontapemove = (s) => {
+		waitforbliksem.onnext = (s) => {
 			s.parentbst.to('bliksem');
 		};
 
-		waitforbliksem.oninitstate = (s) => {
+		waitforbliksem.onenter = (s) => {
 			this.blink.to('in');
-			this.hover.halted = true;
+			this.hover.paused = true;
 			let plek = Math.floor(Math.random() * 4);
 			this.bliksem = {
 				imgid: BitmapId.Lightning1,
@@ -149,11 +149,11 @@ export class Pietula extends Foe {
 		};
 
 		let bliksemstate = fst.add('bliksem');
-		bliksemstate.oninitstate = (s) => {
+		bliksemstate.onenter = (s) => {
 			bliksemstate.reset();
 			SM.play(AudioId.Bliksem);
 		};
-		bliksemstate.tapedata = [
+		bliksemstate.tape = [
 			BitmapId.Lightning1,
 			BitmapId.Lightning2,
 			BitmapId.None,
@@ -181,19 +181,19 @@ export class Pietula extends Foe {
 			}
 			++s.nudges;
 		};
-		bliksemstate.ontapemove = (s) => {
-			let data = s.currentdata as BitmapId;
+		bliksemstate.onnext = (s) => {
+			let data = s.current as BitmapId;
 			this.bliksem.imgid = data;
 			if (data === BitmapId.None)
 				this.imgid = BitmapId.Pietula2;
 			else this.imgid = BitmapId.Pietula3;
 		};
-		bliksemstate.ontapeend = (s) => s.parentbst.to('wait_after_bliksem1');
+		bliksemstate.onend = (s) => s.parentbst.to('wait_after_bliksem1');
 
 		let waitafterbliksem1 = fst.add('wait_after_bliksem1');
 		waitafterbliksem1.nudges2move = 2000 / 20;
 		waitafterbliksem1.onrun = (s) => ++s.nudges;
-		waitafterbliksem1.ontapemove = (s) => {
+		waitafterbliksem1.onnext = (s) => {
 			s.parentbst.to('wait_after_bliksem2');
 			this.blink.to('out');
 		};
@@ -201,13 +201,13 @@ export class Pietula extends Foe {
 		let waitafterbliksem2 = fst.add('wait_after_bliksem2');
 		waitafterbliksem2.nudges2move = 2000 / 20;
 		waitafterbliksem2.onrun = (s) => ++s.nudges;
-		waitafterbliksem2.ontapemove = (s) => s.parentbst.to('intro_wacht');
+		waitafterbliksem2.onnext = (s) => s.parentbst.to('intro_wacht');
 
 		let hover = new bst();
 		let hovers0 = hover.add(0);
 
 		this.hover = hover;
-		hovers0.tapedata = [
+		hovers0.tape = [
 			0,
 			2,
 			2,
@@ -250,27 +250,27 @@ export class Pietula extends Foe {
 			0,
 		];
 		hovers0.nudges2move = 2;
-		hovers0.onrun = (s) => ++s.nudges;
-		hovers0.ontapemove = (s) => this.pos.y += s.currentdata;
-		hovers0.ontapeend = (s) => s.setTapeheadNoEvent(0);
+		hovers0.onrun = (s: bss) => ++s.nudges;
+		hovers0.onnext = (s: bss) => this.pos.y += s.current;
+		hovers0.onend = (s: bss) => s.setHeadNoSideEffect(0);
 
 		let blink = new bst();
 		this.blink = blink;
 
 		let visible = blink.add('visible');
-		visible.oninitstate = (s) => {
+		visible.onenter = (s) => {
 			this.hittable = true;
 			this.canHurtPlayer = true;
 		};
 		let invisible = blink.add('invisible');
-		invisible.oninitstate = (s) => {
+		invisible.onenter = (s) => {
 			this.hittable = false;
 			this.canHurtPlayer = false;
 		};
 
 		let blinkout = blink.add('out');
 		blinkout.nudges2move = 2;
-		blinkout.tapedata = [
+		blinkout.tape = [
 			true,
 			true,
 			true,
@@ -296,14 +296,14 @@ export class Pietula extends Foe {
 			true,
 			false,
 		];
-		blinkout.oninitstate = (s) => s.reset();
+		blinkout.onenter = (s) => s.reset();
 		blinkout.onrun = (s) => ++s.nudges;
-		blinkout.ontapemove = (s) => this.visible = s.currentdata;
-		blinkout.ontapeend = (s) => s.parentbst.to('invisible');
+		blinkout.onnext = (s: bss) => this.visible = s.current;
+		blinkout.onend = (s) => s.parentbst.to('invisible');
 
 		let blinkin = blink.add('in');
 		blinkin.nudges2move = 2;
-		blinkin.tapedata = [
+		blinkin.tape = [
 			true,
 			true,
 			true,
@@ -330,10 +330,10 @@ export class Pietula extends Foe {
 			false,
 			true
 		];
-		blinkin.oninitstate = (s) => s.reset();
+		blinkin.onenter = (s) => s.reset();
 		blinkin.onrun = (s) => ++s.nudges;
-		blinkin.ontapemove = (s) => this.visible = s.currentdata;
-		blinkin.ontapeend = (s) => s.parentbst.to('visible');
+		blinkin.onnext = (s) => this.visible = s.current;
+		blinkin.onend = (s) => s.parentbst.to('visible');
 		blink.setStart('visible');
 		fst.setStart('intro_wacht');
 	}
@@ -363,8 +363,8 @@ export class Pietula extends Foe {
 		this.visible = false;
 		this.canHurtPlayer = false;
 		this.hittable = false;
-		this.blink.halted = true;
-		this.hover.halted = true;
+		this.blink.paused = true;
+		this.hover.paused = true;
 
 		SM.play(AudioId.Hoera);
 		this.fst.to('wachten_op_elmo');

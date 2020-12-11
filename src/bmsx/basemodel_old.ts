@@ -82,7 +82,7 @@ export abstract class BaseModelOld extends cbst {
     public spawn(o: IGameObject, pos?: Point): void {
         this.objects.push(o);
 
-        this.objects.sort((o1, o2) => (o2.priority || 0) - (o1.priority || 0));
+        this.objects.sort((o1, o2) => (o2.z || 0) - (o1.z || 0));
 
         this.id2object[o.id] = o;
         o.onspawn?.(pos);

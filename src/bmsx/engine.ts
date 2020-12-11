@@ -55,10 +55,10 @@ export module Constants {
 export const enum BSTEventType {
     None = 0,
     Run = 1,
-    Enter = 2,
+    Init = 2,
     Exit = 3,
-    TapeMove = 4,
-    TapeEnd = 5,
+    Next = 4,
+    End = 5,
 }
 
 export type str2bss = { [key: string]: bss; };
@@ -117,11 +117,11 @@ export class bss {
         }
     }
 
-    public setHeadNoEvent(v: number) {
+    public setHeadNoSideEffect(v: number) {
         this._tapehead = v;
     }
 
-    public setHeadNudgesNoEvent(v: number) {
+    public setHeadNudgesNoSideEffect(v: number) {
         this._nudges = v;
     }
 
@@ -145,11 +145,11 @@ export class bss {
     }
 
     protected tapemove() {
-        this.onnext?.(this, BSTEventType.TapeMove, this.parentbst);
+        this.onnext?.(this, BSTEventType.Next, this.parentbst);
     }
 
     protected tapeend() {
-        this.onend?.(this, BSTEventType.TapeEnd, this.parentbst);
+        this.onend?.(this, BSTEventType.End, this.parentbst);
     }
 
     public reset(): void {
@@ -172,7 +172,7 @@ export class bst {
     public get current(): bss { return this.states[this.currentid]; };
     // public get previous(): bss { return this.states[this.previousid]; };
 
-    constructor(id: string) {
+    constructor(id?: string) {
         this.id = id ?? DEFAULT_BST_ID;
         this.states = {};
         this.paused = false;
@@ -183,7 +183,7 @@ export class bst {
     public setStart(_id: numstring, init = true): void {
         this.initstateid = _id;
         this.currentid = _id;
-        if (init) this.current.onenter?.(this.current, BSTEventType.Enter, this);
+        if (init) this.current.onenter?.(this.current, BSTEventType.Init, this);
     }
 
     public add(id_or_state: numstring | bss): bss {
@@ -215,7 +215,7 @@ export class bst {
         this.pushHistory(this.currentid); // Store the previous state on the history stack
         this.currentid = newstate; // Switch the current state to the new state
         if (!this.current) throw new Error(`State "${newstate}" doesn't exist for this state machine!`);
-        this.current.onenter?.(this.current, BSTEventType.Enter, this);
+        this.current.onenter?.(this.current, BSTEventType.Init, this);
     }
 
     protected pushHistory(toPush: numstring): void {
@@ -367,7 +367,7 @@ export abstract class BaseModel extends cbst {
     }
 
     public sortObjectsByPriority(): void {
-        this.objects.sort((o1, o2) => (o2.priority || 0) - (o1.priority || 0));
+        this.objects.sort((o1, o2) => (o2.z || 0) - (o1.z || 0));
     }
 
     public spawn(o: IGameObject, pos?: Point): void {
@@ -487,7 +487,7 @@ export class Game {
 export interface IGameObject {
     id: string | null;
     disposeFlag: boolean;
-    priority?: number;
+    z?: number;
     pos: Point;
     size?: Size;
     hitarea?: Area;
@@ -532,7 +532,7 @@ export abstract class Sprite extends cbst {
     public hittable: boolean;
     public flippedH: boolean;
     public flippedV: boolean;
-    public priority: number;
+    public z: number;
     public disposeFlag: boolean;
     public imgid: number;
 
@@ -600,7 +600,7 @@ export abstract class Sprite extends cbst {
         this.hittable = true;
         this.flippedH = false;
         this.flippedV = false;
-        this.priority = 0;
+        this.z = 0;
         this.disposeFlag = false;
         this.disposeOnSwitchRoom = true;
     }

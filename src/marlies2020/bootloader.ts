@@ -74,7 +74,7 @@ let _modelclass = class extends BaseModel {
                 this.ingredientEquipped = o as Ingredient | Pita;
                 this.ingredientEquipped.pos.x = INVENTORY_POS.x;
                 this.ingredientEquipped.pos.y = INVENTORY_POS.y;
-                this.ingredientEquipped.priority = 2100;
+                this.ingredientEquipped.z = 2100;
                 _model.sortObjectsByPriority();
             }
         }
@@ -109,7 +109,7 @@ let _modelclass = class extends BaseModel {
         bord.nuGevuld();
         this.ingredientEquipped.pos.x = bord.pos.x;
         this.ingredientEquipped.pos.y = bord.pos.y; // Plaats pita op bord
-        this.ingredientEquipped.priority = 850;
+        this.ingredientEquipped.z = 850;
         _model.sortObjectsByPriority();
 
         this.ingredientEquipped = null; // Haal inventory leeg
@@ -127,17 +127,17 @@ let brandblusser = class extends Sprite {
     constructor() {
         super();
         this.imgid = BitmapId.Brandblusser;
-        this.priority = _model.marlies.direction == Direction.Up ? 950 : 1050;
+        this.z = _model.marlies.direction == Direction.Up ? 950 : 1050;
         let self = this;
 
         this.add(new bss('bla', {
             nudges2move: 20,
             onrun: (s: bss): void => {
                 setPoint(self.pos, _model.marlies.pos.x, _model.marlies.pos.y + 12);
-                let oldPrio = self.priority;
-                if (_model.marlies.direction == Direction.Up) self.priority = 950;
-                else self.priority = 1050;
-                if (self.priority != oldPrio) _model.sortObjectsByPriority();
+                let oldPrio = self.z;
+                if (_model.marlies.direction == Direction.Up) self.z = 950;
+                else self.z = 1050;
+                if (self.z != oldPrio) _model.sortObjectsByPriority();
                 ++s.nudges;
             },
             onnext: (): void => {
@@ -169,7 +169,7 @@ interface Bord extends Sprite {
 let invFrame = class extends Sprite {
     constructor() {
         super();
-        this.priority = 2000;
+        this.z = 2000;
         this.imgid = BitmapId.InvFrame;
     }
 
@@ -180,7 +180,7 @@ let invFrame = class extends Sprite {
 let hoeraStuff = class extends Sprite {
     constructor() {
         super();
-        this.priority = 5000;
+        this.z = 5000;
         this.imgid = BitmapId.Sint;
     }
 
@@ -196,7 +196,7 @@ let hoeraStuff = class extends Sprite {
 let ingredient = class extends Sprite implements Ingredient {
     constructor() {
         super();
-        this.priority = 850;
+        this.z = 850;
         this.hitarea = newArea(-8, 0, 24, 16);
     }
 
@@ -273,7 +273,7 @@ let bord = class extends Sprite implements Bord {
     constructor() {
         super();
         this.imgid = BitmapId.Bord;
-        this.priority = 800;
+        this.z = 800;
         this.hitarea = newArea(0, -16, 16, 20);
         this.gevuld = false;
     }
@@ -294,7 +294,7 @@ let vuur = class extends Sprite {
         super();
         this.direction = dir;
         this.hitarea = newArea(4, 4, 12, 12);
-        this.priority = dir != Direction.Up ? 1100 : 900;
+        this.z = dir != Direction.Up ? 1100 : 900;
 
         let self = this;
 
@@ -349,7 +349,7 @@ let corona = class extends Sprite {
         let self = this;
         this.imgid = BitmapId.Corona1;
         this.hitarea = newArea(4, 4, 28, 28);
-        this.priority = 1200;
+        this.z = 1200;
 
         this.add(new bss('skulk', {
             nudges2move: 4,
@@ -439,7 +439,7 @@ let speler = class extends Sprite {
         let self = this;
         this.imgid = BitmapId.p1;
         this.direction = Direction.Down;
-        this.priority = 1000;
+        this.z = 1000;
         this.addBst('anistate');
         this.column = startcolumn;
         this.hitarea = newArea(0, 8, 16, 16);
@@ -591,7 +591,7 @@ let speler = class extends Sprite {
         let columnswitchAnistate = this.add('columnswitch', 'anistate');
         let columnswitchAnistatehandler = (s: bss, type: BSTEventType): void => {
             switch (type) {
-                case BSTEventType.Enter:
+                case BSTEventType.Init:
                     self.imgid = BitmapId.p7;
                     if (self.getCurrentId() === 'switchright')
                         self.flippedH = true;
@@ -606,7 +606,7 @@ let speler = class extends Sprite {
         urghAniState.nudges2move = 4;
         let urghAniHandler = (s: bss, type: BSTEventType): void => {
             switch (type) {
-                case BSTEventType.Enter:
+                case BSTEventType.Init:
                     s.reset();
                     self.imgid = s.current;
                     self.flippedH = false;
@@ -614,11 +614,11 @@ let speler = class extends Sprite {
                 case BSTEventType.Run:
                     ++s.nudges;
                     break;
-                case BSTEventType.TapeEnd:
+                case BSTEventType.End:
                     s.reset();
                     self.pop();
                     break;
-                case BSTEventType.TapeMove:
+                case BSTEventType.Next:
                     self.imgid = s.current;
                     break;
             }
@@ -728,7 +728,7 @@ let keuken = class extends Sprite {
     constructor() {
         super();
         this.imgid = BitmapId.Keuken;
-        this.priority = 0;
+        this.z = 0;
 
         let defaultState = this.add('wees_een_keuken');
         this.setStart('wees_een_keuken');
@@ -736,13 +736,13 @@ let keuken = class extends Sprite {
 
         let defaultHandler = (s: bss, type: BSTEventType): void => {
             switch (type) {
-                case BSTEventType.Enter:
+                case BSTEventType.Init:
                     s.reset();
                     break;
                 case BSTEventType.Run:
                     ++s.nudges;
                     break;
-                case BSTEventType.TapeMove:
+                case BSTEventType.Next:
                     if (_model.objects.filter(o => (<any>o)?.isEng).length < MAX_CORONA) {
                         let rloc = randomInt(0, CORONA_SPAWN_LOCS.length - 1);
                         let sloc = CORONA_SPAWN_LOCS[rloc];

@@ -19,7 +19,7 @@ export class ZakFoe extends Foe {
 		this.size = newSize(16, 16);
 		this.itemSpawnedAfterKill = itemSpawned;
 		this.direction = dir;
-		this.priority = 10;
+		this.z = 10;
 		this.health = 1;
 
 		let collissionHandler = (d: Direction) => {
@@ -39,8 +39,8 @@ export class ZakFoe extends Foe {
 		this.onLeaveScreen = collissionHandler;
 
 		let state0 = this.add(0);
-		state0.tapedata = <Array<AniType>>[
-			null,
+		state0.tape = <Array<AniType>>[
+			// null,
 			{ i: BitmapId.ZakFoe3, dy: 0 },
 			{ i: BitmapId.ZakFoe1, dy: -4 },
 			{ i: BitmapId.ZakFoe1, dy: -2 },
@@ -75,18 +75,22 @@ export class ZakFoe extends Foe {
 						this.pos.y += 4;
 					}
 					break;
-				case BSTEventType.TapeEnd:
+				case BSTEventType.Init:
+					this.imgid = (<AniType>s.current).i;
+					this.pos.y += (<AniType>s.current).dy;
+				break;
+				case BSTEventType.End:
 					this.to(1);
 					break;
-				case BSTEventType.TapeMove:
-					this.imgid = (<AniType>s.currentdata).i;
-					this.pos.y += (<AniType>s.currentdata).dy;
+				case BSTEventType.Next:
+					this.imgid = (<AniType>s.current).i;
+					this.pos.y += (<AniType>s.current).dy;
 					break;
 			}
 		};
 		state0.onrun = state0handler;
-		state0.ontapeend = state0handler;
-		state0.ontapemove = state0handler;
+		state0.onend = state0handler;
+		state0.onnext = state0handler;
 
 		let state1 = this.add(1);
 		state1.nudges2move = 8;
@@ -95,14 +99,14 @@ export class ZakFoe extends Foe {
 				case BSTEventType.Run:
 					++s.nudges;
 					break;
-				case BSTEventType.TapeMove:
+				case BSTEventType.Next:
 					this.to(0);
 					break;
 
 			}
 		};
 		state1.onrun = state1handler;
-		state1.ontapemove = state1handler;
+		state1.onnext = state1handler;
 
 		this.setStart(0, false);
 	}

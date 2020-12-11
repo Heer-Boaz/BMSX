@@ -18,7 +18,7 @@ export type RoomInitDelegate = (room: Room) => void;
 export class Room implements IGameObject {
 	id: string;
 	disposeFlag: boolean = false;
-	priority: number = -1;
+	z: number = -1;
 	pos: Point = null;
 	disposeOnSwitchRoom: boolean = true;
 	visible: boolean = true;

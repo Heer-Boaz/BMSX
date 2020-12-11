@@ -13,9 +13,7 @@ export abstract class Foe extends Sprite {
         return ~~Math.min((Math.round(this.health / this.maxHealth * 100)), 100);
     }
 
-    public get canHurtPlayer(): boolean {
-        return true;
-    }
+    public canHurtPlayer: boolean = true;
 
     public get damageToPlayer(): number {
         return 1;

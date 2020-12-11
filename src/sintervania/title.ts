@@ -15,7 +15,7 @@ export const enum State {
 export class Title implements IGameObject {
 	id: string = 'title';
 	disposeFlag: boolean = false;
-	priority?: number = 1000;
+	z?: number = 1000;
 	pos: Point = null;
 
 	private static titleTopY: number = 16;

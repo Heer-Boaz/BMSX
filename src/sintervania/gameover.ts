@@ -17,7 +17,7 @@ export const enum State {
 export class GameOver implements IGameObject {
     id: string = 'gameover';
     disposeFlag: boolean;
-    priority: number = 500;
+    z: number = 500;
     pos: Point;
     visible: boolean = true;
 

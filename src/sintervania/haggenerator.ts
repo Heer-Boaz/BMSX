@@ -17,7 +17,7 @@ export class HagGenerator extends bst implements IGameObject {
         let state0 = this.add(0);
         state0.nudges2move = 100;
         state0.onrun = (s) => ++s.nudges;
-        state0.ontapemove = (s) => {
+        state0.onnext = (s) => {
             // Poop hags based on where Belmont is
             let spawnPoint = { x: 0, y: this.pos.y };
             if (belmont.pos.x <= GameConstants.ViewportWidth / 2) {

@@ -10,7 +10,7 @@ import { GameConstants } from "./gameconstants";
 export class ItsCurtainsForYou implements IGameObject {
     id: string = 'itscurtains';
     disposeFlag: boolean = false;
-    priority: number = 4000;
+    z: number = 4000;
     pos: Point = null;
 
     public constructor() {

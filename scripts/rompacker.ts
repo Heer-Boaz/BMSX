@@ -5,7 +5,7 @@ import * as browserify from 'browserify';
 const tsify = require("tsify");
 const babelify = require("babelify");
 
-const terser = require('terser');
+import * as terser from 'terser';
 const pako = require('pako');
 const minify = require('@node-minify/core');
 const cleanCSS = require('@node-minify/clean-css');
@@ -154,7 +154,7 @@ async function bundleGamecode(outfile: string, bootloader_path: string): Promise
 	log("Game compileren en bundleren...  ");
 	startRotator();
 
-	return new Promise(function (resolve, reject) {
+	return new Promise((resolve, reject) => {
 		let writeOutput = createWriteStream('./megarom.js');
 		browserify({
 			debug: true,
@@ -194,9 +194,15 @@ async function bundleGamecode(outfile: string, bootloader_path: string): Promise
 }
 
 function minifyGamecode(infile: string): void {
-	let options = {
-		compress: false,
-		mangle: {
+	let options = <terser.MinifyOptions>{
+		ecma: 2020,
+		sourceMap: false,
+		compress: <terser.CompressOptions>{
+			keep_fargs: false, // Prevents the compressor from discarding unused function arguments. You need this for code which relies on Function.length
+			passes: 1, // The maximum number of times to run compress. In some cases more than one pass leads to further compressed code. Keep in mind more passes will take more time
+			ecma: 2020,
+		},
+		mangle: <terser.MangleOptions>{
 			reserved:
 				[
 					"exports",
@@ -223,7 +229,7 @@ function minifyGamecode(infile: string): void {
 					"__importStar",
 					"__importDefault"
 				],
-			properties: {
+			properties: <terser.ManglePropertiesOptions>{
 				keep_quoted: true,
 				reserved:
 					[
@@ -252,13 +258,13 @@ function minifyGamecode(infile: string): void {
 						"__importDefault"
 					],
 			},
-			safari10: true,
 		},
-		sourceMap: false,
-		output: {
-			safari10: true,
-			webkit: true,
-			max_line_len: 80,
+		output: <terser.OutputOptions>{
+			ecma: 2020,
+			safari10: false,
+			webkit: false,
+			// max_line_len: 80,
+			semicolons: false,
 			keep_quoted_props: true
 		},
 	};
@@ -305,7 +311,7 @@ async function buildGameHtmlAndManifest(outfile: string, title: string): Promise
 			compressor: cleanCSS,
 			input: "./gamebase.css",
 			output: "./gamebase.min.css",
-			callback: function (err, cssMinified: string) {
+			callback: (err, cssMinified: string) => {
 				if (!cssMinified) {
 					log(`Minifyen van CSS faalde :-(\n`);
 					reject(err);

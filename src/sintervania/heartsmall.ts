@@ -30,7 +30,7 @@ export class HeartSmall extends Sprite {
 		this.imgid = BitmapId.Heart_fly;
 		this.animation = new Animation(this.animationData,/*constantStepTime:*/1,/*repeat:*/true);
 		this.uglyBitThing = false;
-		this.priority = 30;
+		this.z = 30;
 	}
 
 	protected get floorCollision(): boolean {

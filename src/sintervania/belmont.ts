@@ -228,7 +228,7 @@ export class Belmont extends Sprite {
 		this.dyingState.aniTimer = BStopwatch.createWatch();
 		this.roeState.aniTimer = BStopwatch.createWatch();
 		this.disposeOnSwitchRoom = false;
-		this.priority = 200;
+		this.z = 200;
 	}
 
 	public ResetToDefaultFrame(): void {

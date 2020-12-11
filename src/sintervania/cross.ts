@@ -3,7 +3,7 @@ import { Area, Direction, newArea } from '../bmsx/common';
 import { BitmapId } from './resourceids';
 
 export class Cross extends PlayerProjectile {
-	public hitarea: Area = newArea(0, 0, 26, 18);
+	public get hitarea(): Area { return newArea(0, 0, 26, 18); }
 
 	constructor(dir: Direction) {
 		super();

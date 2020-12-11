@@ -263,7 +263,7 @@ export class Model extends BaseModelOld {
         this.WeaponItemsPickedUp.clear();
         if (!this.PauseObject) {
             this.PauseObject = {
-                priority: 5000,
+                z: 5000,
                 disposeFlag: false,
                 id: 'pause',
                 pos: { x: GameConstants.pausePosX, y: GameConstants.pausePosY },

@@ -89,10 +89,10 @@ export class GameMenu extends bst implements IGameObject {
     id: string = 'gamemenu';
     disposeFlag: boolean = false;
     pos: Point = null;
-    priority: number = 5000;
+    z: number = 5000;
 
     constructor() {
-        super();
+        super('game_menu');
         this.visible = false;
         this.cursorPos = { x: 0, y: 0 };
         this.selectedItemIndex = 0;

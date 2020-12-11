@@ -37,7 +37,7 @@ export class Hag extends Foe {
         this.health = 1;
         this.direction = dir;
         this.flippedH = this.direction == Direction.Left;
-        this.priority = 10;
+        this.z = 10;
     }
 
     public takeTurn(): void {
