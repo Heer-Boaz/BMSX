@@ -4,16 +4,7 @@
 	"tasks": [
 		{
 			"label": "build the game",
-			"dependsOn": [
-				"pack"
-			],
-			"group": {
-				"kind": "build",
-				"isDefault": true
-			}
-		},
-		{
-			"label": "pack",
+			"detail": "Runs rompacker.js to create the ROM + resources. Doesn't run dependent tasks for building rom.js & rompacker.js!",
 			"type": "shell",
 			"command": "node",
 			"args": [
@@ -31,12 +22,13 @@
 			"problemMatcher": [
 				"$node-sass"
 			],
-			"group": "build",
-			"dependsOrder": "parallel",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"dependsOrder": "sequence",
 			"dependsOn": [
-				"output romtobuild",
-				"build rom",
-				"build resourceids.ts"
+				"output romtobuild"
 			],
 			"presentation": {
 				"echo": true,
@@ -44,32 +36,42 @@
 				"focus": false,
 				"panel": "shared",
 				"showReuseMessage": false,
-				"clear": true,
+				"clear": false,
 				"revealProblems": "onProblem",
 				"group": "ROMPACKER"
 			}
 		},
-		// {
-		// 	"label": "build game",
-		// 	"type": "typescript",
-		// 	"tsconfig": "tsconfig.json",
-		// 	"problemMatcher": [
-		// 		"$tsc"
-		// 	],
-		// 	"presentation": {
-		// 		"echo": true,
-		// 		"reveal": "always",
-		// 		"focus": false,
-		// 		"panel": "dedicated",
-		// 		"showReuseMessage": true,
-		// 		"clear": true,
-		// 		"revealProblems": "onProblem",
-		// 		"group": "boaz"
-		// 	},
-		// 	"group": "build"
-		// },
 		{
-			"label": "build rom",
+			"label": "pack rom resources (resourceids.ts)",
+			"detail": "Runs rompacker.js to create resourceids.ts + texture atlas",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"${workspaceFolder}/rom/rompacker.js",
+				"-respath",
+				"./src/${input:romtobuild}/res",
+				"--buildreslist"
+			],
+			"problemMatcher": [
+				"$node-sass"
+			],
+			"group": "build",
+			"dependsOrder": "parallel",
+			"dependsOn": [],
+			"presentation": {
+				"echo": true,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": false,
+				"revealProblems": "onProblem",
+				"group": "ROMPACKER"
+			}
+		},
+		{
+			"label": "build rom.js",
+			"detail": "Generate shared script for boot and load/start ROM",
 			"type": "shell",
 			"command": "tsc",
 			"args": [
@@ -92,41 +94,13 @@
 				"panel": "shared",
 				"showReuseMessage": false,
 				"clear": true,
-				"group": "TSC"
+				"group": "ROMPACKER"
 			},
 			"group": "build"
 		},
 		{
-			"label": "build resourceids.ts",
-			"type": "shell",
-			"command": "node",
-			"args": [
-				"${workspaceFolder}/rom/rompacker.js",
-				"-respath",
-				"./src/${input:romtobuild}/res",
-				"--buildreslist"
-			],
-			"problemMatcher": [
-				"$node-sass"
-			],
-			"group": "build",
-			"dependsOrder": "parallel",
-			"dependsOn": [
-				"build rompacker"
-			],
-			"presentation": {
-				"echo": true,
-				"reveal": "always",
-				"focus": false,
-				"panel": "shared",
-				"showReuseMessage": false,
-				"clear": true,
-				"revealProblems": "onProblem",
-				"group": "ROMPACKER"
-			}
-		},
-		{
-			"label": "build rompacker",
+			"label": "build rompacker.js",
+			"detail": "Generates script used for creating & deploying the ROM image",
 			"type": "shell",
 			"command": "tsc",
 			"args": [
@@ -147,8 +121,8 @@
 				"focus": false,
 				"panel": "shared",
 				"showReuseMessage": false,
-				"clear": true,
-				"group": "TSC"
+				"clear": false,
+				"group": "ROMPACKER"
 			}
 		},
 		{
@@ -156,7 +130,7 @@
 			"type": "shell",
 			"command": "echo",
 			"args": [
-				"${input:romtobuild}",
+				"${input:romtobuild}"
 			],
 			"group": "build",
 			"presentation": {
@@ -165,10 +139,10 @@
 				"focus": false,
 				"panel": "shared",
 				"showReuseMessage": false,
-				"clear": true,
-				"group": "TSC"
+				"clear": false,
+				"group": "ROMPACKER"
 			}
-		},
+		}
 	],
 	"inputs": [
 		{

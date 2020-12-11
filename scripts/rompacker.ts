@@ -861,7 +861,7 @@ try {
 
 	if (buildreslist) {
 		log('Building resource list and writing output to "./src/bmsx/resourceids.ts"...\n');
-		log('\tNote: ROM packing and deployemnt are skipped this option (--buildreslist) is enabled!\n');
+		log('\tNote: ROM packing and deployemexdent are skipped this option (--buildreslist) is enabled!\n');
 		buildResourceList(respath);
 	}
 	else {
