@@ -264,7 +264,7 @@ function minifyGamecode(infile: string): Error {
 			safari10: false,
 			webkit: false,
 			// max_line_len: 80,
-			semicolons: false,
+			semicolons: true, // Must be true for Safari support (on iOS)! Otherwise, only black screen shows
 			keep_quoted_props: true
 		},
 	};
