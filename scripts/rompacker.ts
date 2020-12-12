@@ -155,7 +155,7 @@ async function bundleGamecode(outfile: string, bootloader_path: string): Promise
 	startRotator();
 
 	return new Promise((resolve, reject) => {
-		let writeOutput = createWriteStream('./megarom.js');
+		let writeOutput = createWriteStream(`./${outfile}`);
 		browserify({
 			debug: true,
 			basedir: '.',
@@ -193,7 +193,7 @@ async function bundleGamecode(outfile: string, bootloader_path: string): Promise
 	});
 }
 
-function minifyGamecode(infile: string): void {
+function minifyGamecode(infile: string): Error {
 	let options = <terser.MinifyOptions>{
 		ecma: 2020,
 		sourceMap: false,
@@ -273,9 +273,11 @@ function minifyGamecode(infile: string): void {
 	let gamejsMinifiedResult = terser.minify(gamejs, options);
 	if (gamejsMinifiedResult.code) {
 		writeFileSync("./rom/megarom.min.js", gamejsMinifiedResult.code);
+		return null;
 	}
 	else {
-		log("Minifying van gamecode faalde :-( ", 'error');
+		// appendLogEntry("Minifying van gamecode faalde :-(   ", 'error');
+		return gamejsMinifiedResult.error;
 	}
 }
 
@@ -557,116 +559,120 @@ function buildResourceList(respath: string): void {
 }
 
 async function buildRompack(outfile: string, respath: string): Promise<any> {
-	log("Minifyen... ");
-	startRotator();
-	minifyGamecode("./megarom.js");
-	stopRotator();
-	appendLogEntry(`${_colors.grey('[Donut]')}\n`);
+	return new Promise<any>(async (resolve, reject) => {
+		log("Minifyen... ");
+		startRotator();
+		let minifyGamecodeResult = minifyGamecode("./megarom.js");
+		stopRotator();
+		(!minifyGamecodeResult) ? appendLogEntry(`${_colors.grey('[Donut]')}\n`) : (appendLogEntry(`[Failed]\n`, 'error'), reject(new Error(`Minifying game code failed: ${minifyGamecodeResult.message}`)));
 
-	let buffers = new Array<Buffer>();
-	log("Resource bestanden inladen en bufferen...  ");
-	startRotator();
-	let loadedResources = await getLoadedResourcesList(respath, buffers);
-	stopRotator();
-	appendLogEntry(`${_colors.grey('[Donut]')}\n`);
+		let buffers = new Array<Buffer>();
+		log("Resource bestanden inladen en bufferen...  ");
+		startRotator();
+		let loadedResources = await getLoadedResourcesList(respath, buffers);
+		stopRotator();
+		appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 
-	log("romresources.json knutselen...  ");
-	startRotator();
+		log("romresources.json knutselen...  ");
+		startRotator();
 
-	let jsonout = new Array<RomResource>();
-	let bufferPointer = 0;
-	for (let i = 0; i < loadedResources.length; i++) {
-		let res = loadedResources[i];
-		let type = res.type;
-		let name = res.name;
-		let resid = res.id;
-		switch (type) {
-			case 'image':
-				let img = res.img;
-				let imgmeta: ImgMeta = null;
-				if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-					imgmeta = addToAtlas(img);
-					if (DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
-						jsonout.push({ resid: resid, resname: name, type: type, start: 0, end: 0, imgmeta: { atlassed: imgmeta.atlassed, width: imgmeta.width, height: imgmeta.height, texcoords: imgmeta.texcoords, texcoords_fliph: imgmeta.texcoords_fliph, texcoords_flipv: imgmeta.texcoords_flipv, texcoords_fliphv: imgmeta.texcoords_fliphv }, audiometa: null, });
+		let jsonout = new Array<RomResource>();
+		let bufferPointer = 0;
+		for (let i = 0; i < loadedResources.length; i++) {
+			let res = loadedResources[i];
+			let type = res.type;
+			let name = res.name;
+			let resid = res.id;
+			switch (type) {
+				case 'image':
+					let img = res.img;
+					let imgmeta: ImgMeta = null;
+					if (GENERATE_AND_USE_TEXTURE_ATLAS) {
+						imgmeta = addToAtlas(img);
+						if (DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
+							jsonout.push({ resid: resid, resname: name, type: type, start: 0, end: 0, imgmeta: { atlassed: imgmeta.atlassed, width: imgmeta.width, height: imgmeta.height, texcoords: imgmeta.texcoords, texcoords_fliph: imgmeta.texcoords_fliph, texcoords_flipv: imgmeta.texcoords_flipv, texcoords_fliphv: imgmeta.texcoords_fliphv }, audiometa: null, });
+						}
+						else {
+							jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: { atlassed: imgmeta.atlassed, width: imgmeta.width, height: imgmeta.height, texcoords: imgmeta.texcoords, texcoords_fliph: imgmeta.texcoords_fliph, texcoords_flipv: imgmeta.texcoords_flipv, texcoords_fliphv: imgmeta.texcoords_fliphv }, audiometa: null, });
+							bufferPointer += res.buffer.length;
+						}
 					}
 					else {
-						jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: { atlassed: imgmeta.atlassed, width: imgmeta.width, height: imgmeta.height, texcoords: imgmeta.texcoords, texcoords_fliph: imgmeta.texcoords_fliph, texcoords_flipv: imgmeta.texcoords_flipv, texcoords_fliphv: imgmeta.texcoords_fliphv }, audiometa: null, });
+						jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: { atlassed: false, width: img.width, height: img.height, }, audiometa: null, });
 						bufferPointer += res.buffer.length;
 					}
-				}
-				else {
-					jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: { atlassed: false, width: img.width, height: img.height, }, audiometa: null, });
+					break;
+				case 'audio':
+					{
+						let parsedMeta = parseAudioMeta(res.filepath);
+
+						name = parsedMeta.sanitizedName;
+						jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: null, audiometa: parsedMeta.meta });
+					}
 					bufferPointer += res.buffer.length;
-				}
-				break;
-			case 'audio':
-				{
-					let parsedMeta = parseAudioMeta(res.filepath);
-
-					name = parsedMeta.sanitizedName;
-					jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: null, audiometa: parsedMeta.meta });
-				}
-				bufferPointer += res.buffer.length;
-				break;
-			case 'source':
-				name = name.replace('.min', '');
-				jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: null, audiometa: null });
-				bufferPointer += res.buffer.length;
-				break;
-			case 'atlas':
-				break;
+					break;
+				case 'source':
+					name = name.replace('.min', '');
+					jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: null, audiometa: null });
+					bufferPointer += res.buffer.length;
+					break;
+				case 'atlas':
+					break;
+			}
 		}
-	}
 
-	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-		let atlasbuffer: Buffer;
-		let i = loadedResources.findIndex(x => x.type === 'atlas');
-		let atlasSize = { x: atlasCanvas.width, y: atlasCanvas.height };
-		if (CROP_ATLAS) {
-			let croppedCanvas = cropAtlas(jsonout);
-			atlasSize.x = croppedCanvas.width;
-			atlasSize.y = croppedCanvas.height;
+		if (GENERATE_AND_USE_TEXTURE_ATLAS) {
+			let atlasbuffer: Buffer;
+			let i = loadedResources.findIndex(x => x.type === 'atlas');
+			let atlasSize = { x: atlasCanvas.width, y: atlasCanvas.height };
+			if (CROP_ATLAS) {
+				let croppedCanvas = cropAtlas(jsonout);
+				atlasSize.x = croppedCanvas.width;
+				atlasSize.y = croppedCanvas.height;
 
-			atlasbuffer = (<any>croppedCanvas).toBuffer('image/png');
+				atlasbuffer = (<any>croppedCanvas).toBuffer('image/png');
+			}
+			else {
+				atlasbuffer = (<any>atlasCanvas).toBuffer('image/png');
+			}
+			buffers.push(atlasbuffer);
+
+			jsonout.push({ resid: loadedResources[i].id, resname: loadedResources[i].name, type: 'image', start: bufferPointer, end: bufferPointer + atlasbuffer.length, imgmeta: { atlassed: false, width: atlasSize.x, height: atlasSize.y }, audiometa: null });
+			bufferPointer += atlasbuffer.length;
+			writeFileSync("./rom/_ignore/atlas.png", atlasbuffer);
 		}
-		else {
-			atlasbuffer = (<any>atlasCanvas).toBuffer('image/png');
-		}
-		buffers.push(atlasbuffer);
 
-		jsonout.push({ resid: loadedResources[i].id, resname: loadedResources[i].name, type: 'image', start: bufferPointer, end: bufferPointer + atlasbuffer.length, imgmeta: { atlassed: false, width: atlasSize.x, height: atlasSize.y }, audiometa: null });
-		bufferPointer += atlasbuffer.length;
-		writeFileSync("./rom/_ignore/atlas.png", atlasbuffer);
-	}
+		let jsonbuffer = Buffer.from(encodeuint8arr(JSON.stringify(jsonout)));
+		buffers.push(jsonbuffer);
 
-	let jsonbuffer = Buffer.from(encodeuint8arr(JSON.stringify(jsonout)));
-	buffers.push(jsonbuffer);
+		let rommeta = <RomMeta>{
+			start: bufferPointer,
+			end: bufferPointer + jsonbuffer.length
+		};
+		let rommetastr = JSON.stringify(rommeta).padStart(100, ' ');
+		buffers.push(Buffer.from(encodeuint8arr(rommetastr)));
+		stopRotator();
+		appendLogEntry(`${_colors.grey('[Donut]')}\n`);
+		log(`\t#images: ${loadedResources.filter(r => r.type == 'image').length}\n`);
+		log(`\t#audio: ${loadedResources.filter(r => r.type == 'audio').length}\n`);
 
-	let rommeta = <RomMeta>{
-		start: bufferPointer,
-		end: bufferPointer + jsonbuffer.length
-	};
-	let rommetastr = JSON.stringify(rommeta).padStart(100, ' ');
-	buffers.push(Buffer.from(encodeuint8arr(rommetastr)));
-	stopRotator();
-	appendLogEntry(`${_colors.grey('[Donut]')}\n`);
-	log(`\t#images: ${loadedResources.filter(r => r.type == 'image').length}\n`);
-	log(`\t#audio: ${loadedResources.filter(r => r.type == 'audio').length}\n`);
+		log("Alles nu zippen... ");
+		startRotator();
+		// let zipped = Buffer.concat(buffers)//zip(Buffer.concat(buffers));
+		let zipped = zip(Buffer.concat(buffers));
+		stopRotator();
+		appendLogEntry(`${_colors.grey('[Donut]')}\n`);
+		log(`\tSize: ${_colors.red(`${(Buffer.concat(buffers).length / (1024 * 1024)).toFixed(2)} mB`)} ⇒  Deflated: ${_colors.blue(`${(zipped.length / (1024 * 1024)).toFixed(2)} mB (${((zipped.length / Buffer.concat(buffers).length) * 100).toFixed(0)}%)`)}\n`);
 
-	log("Alles nu zippen... ");
-	startRotator();
-	// let zipped = Buffer.concat(buffers)//zip(Buffer.concat(buffers));
-	let zipped = zip(Buffer.concat(buffers));
-	stopRotator();
-	appendLogEntry(`${_colors.grey('[Donut]')}\n`);
-	log(`\tSize: ${_colors.red(`${(Buffer.concat(buffers).length / (1024 * 1024)).toFixed(2)} mB`)} ⇒  Deflated: ${_colors.blue(`${(zipped.length / (1024 * 1024)).toFixed(2)} mB (${((zipped.length / Buffer.concat(buffers).length) * 100).toFixed(0)}%)`)}\n`);
+		log(`"${_colors.green(outfile)}" wegschrijven naar ${_colors.green(`\"./dist/${outfile}\"`)}...`);
+		startRotator();
+		writeFileSync(`./dist/${outfile}`, zipped);
+		writeFileSync("./rom/_ignore/romresources.json", jsonbuffer);
+		stopRotator();
+		appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 
-	log(`"${_colors.green(outfile)}" wegschrijven naar ${_colors.green(`\"./dist/${outfile}\"`)}...`);
-	startRotator();
-	writeFileSync(`./dist/${outfile}`, zipped);
-	writeFileSync("./rom/_ignore/romresources.json", jsonbuffer);
-	stopRotator();
-	appendLogEntry(`${_colors.grey('[Donut]')}\n`);
+		resolve(null);
+	});
 	// log("Rom is gepackt!!\n");
 	// log(`\tFiles: ${arrayOfFiles.length}\n\t\timages: ${imgi}\n\t\taudio: ${sndi}\n`);
 }
@@ -832,15 +838,16 @@ try {
 		// });
 		// bar.start(5, 0);
 
-		bundleGamecode('./rom/tsout.js', bootloader_path)
+		bundleGamecode('megarom.js', bootloader_path)
 			.then((result) => (yaml2Json()))
 			.then((result) => (buildRompack(outfile, respath)))
 			.then((result) => (buildGameHtmlAndManifest(outfile, title)))
 			.then((result) => (deploy(outfile, title)))
 			.then((result) => (log(`${_colors.brightWhite.bold('[ALLES DONUT]')}\n`)))
-			.catch(e => { log(`Er ging iets niet goed:\n${e?.stack ?? '\ben geen stacktrace beschikbaar :-(!'}`, 'error'); process.exit(-1); });
+			.catch(e => { appendLogEntry('\n'); log(`Er ging iets niet goed: "${e?.message ?? e ?? 'Geen error message'}; ${e?.stack ?? '\ben geen stacktrace beschikbaar :-(!'}\n`, 'error'); process.exit(-1); });
 	}
 } catch (e) {
-	log(`Er ging iets niet goed: ${e.message}\n${e?.stack ?? 'en geen stacktrace'}\n`, 'error');
+	appendLogEntry('\n'); log(`Er ging iets niet goed: ${e?.message ?? e ?? 'Geen error message'}; ${e?.stack ?? '\ben geen stacktrace'}\n`, 'error');
+	appendLogEntry('\n');
 	process.exit(-1);
 }
