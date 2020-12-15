@@ -62,12 +62,13 @@ export const enum BSTEventType {
 }
 
 export type str2bss = { [key: string]: bss; };
-export type bsfthandle = (state: bss, type: BSTEventType, gameobject: bst) => void;
+export type bsfthandle = (state: bss, ik: any, type: BSTEventType) => void;
 export type numstring = number | string;
 
 export class bss {
     public id: numstring;
-    public parentbst: bst;
+    public parent: bst;
+    public ik: any;
 
     public constructor(_id: numstring = 0, _partialdef?: Partial<bss>) {
         this.id = _id;
@@ -86,6 +87,7 @@ export class bss {
     public onenter: bsfthandle;
     public onexit: bsfthandle;
     public get internalstate() { return { statedata: this.tape, tapehead: this.head }; }
+    public getTarget<T>(): T { return this.ik; }
 
     public tape: any[];
 
@@ -135,7 +137,7 @@ export class bss {
     }
 
     // Helper function to set all handlers
-    public setAllHandlers(handler: bsfthandle): void {
+    public setAllHandlers<T>(handler: bsfthandle): void {
         this.onrun = handler;
         this.onfinal = handler;
         this.onend = handler;
@@ -145,11 +147,11 @@ export class bss {
     }
 
     protected tapemove() {
-        this.onnext?.(this, BSTEventType.Next, this.parentbst);
+        this.onnext?.(this, this.ik, BSTEventType.Next);
     }
 
     protected tapeend() {
-        this.onend?.(this, BSTEventType.End, this.parentbst);
+        this.onend?.(this, this.ik, BSTEventType.End);
     }
 
     public reset(): void {
@@ -162,6 +164,7 @@ const BST_MAX_HISTORY = 10;
 const DEFAULT_BST_ID = 'master';
 export class bst {
     public id: numstring;
+    public ik: any;
     protected initstateid: numstring;
 
     public states: str2bss; // Note that numbers will be automatically converted to strings!
@@ -172,8 +175,9 @@ export class bst {
     public get current(): bss { return this.states[this.currentid]; };
     // public get previous(): bss { return this.states[this.previousid]; };
 
-    constructor(id?: string) {
+    constructor(ik: object, id?: string) {
         this.id = id ?? DEFAULT_BST_ID;
+        this.ik = ik;
         this.states = {};
         this.paused = false;
         this.initstateid = null;
@@ -183,15 +187,16 @@ export class bst {
     public setStart(_id: numstring, init = true): void {
         this.initstateid = _id;
         this.currentid = _id;
-        if (init) this.current.onenter?.(this.current, BSTEventType.Init, this);
+        if (init) this.current.onenter?.(this.current, this.ik, BSTEventType.Init);
     }
 
-    public add(id_or_state: numstring | bss): bss {
+    public add(id_or_state: numstring | bss, ik: any): bss {
         if (typeof (id_or_state) !== 'object') {
             if (this.states[id_or_state]) throw new Error(`State ${id_or_state} already exists for state machine!`);
             let result = new bss(id_or_state);
             this.states[id_or_state] = result;
-            result.parentbst = this;
+            result.parent = this;
+            result.ik ??= ik;
             if (!this.initstateid) this.setStart(id_or_state); // If no start-state was defined, we assign this as a default start state
             return result;
         }
@@ -199,7 +204,9 @@ export class bst {
             let s = id_or_state as bss;
             if (this.states[s.id]) throw new Error(`State ${s.id} already exists for state machine!`);
             this.states[s.id] = s;
-            s.parentbst = this;
+            s.parent = this;
+            s.ik ??= ik;
+
             if (!this.initstateid) this.setStart(s.id); // If no start-state was defined, we assign this as a default start state
             return s;
         }
@@ -207,15 +214,15 @@ export class bst {
 
     public run(): void {
         if (this.paused) return;
-        this.current.onrun?.(this.current, BSTEventType.Run, this);
+        this.current.onrun?.(this.current, this.ik, BSTEventType.Run);
     }
 
     public to(newstate: numstring): void {
-        this.current.onexit?.(this.current, BSTEventType.Exit, this);
+        this.current.onexit?.(this.current, this.ik, BSTEventType.Exit);
         this.pushHistory(this.currentid); // Store the previous state on the history stack
         this.currentid = newstate; // Switch the current state to the new state
         if (!this.current) throw new Error(`State "${newstate}" doesn't exist for this state machine!`);
-        this.current.onenter?.(this.current, BSTEventType.Init, this);
+        this.current.onenter?.(this.current, this.ik, BSTEventType.Init);
     }
 
     protected pushHistory(toPush: numstring): void {
@@ -246,14 +253,14 @@ export class bst {
 }
 
 export type numstr2bst = { [key: string]: bst; };
-export class cbst {
+export abstract class cbst {
     public machines: numstr2bst;
     public paused: boolean;
 
     constructor() {
         this.machines = {};
-        this.machines['master'] = new bst(DEFAULT_BST_ID);
         this.paused = false;
+        this.addBst(DEFAULT_BST_ID);
     }
 
     public getBst(machine_id: string): bst {
@@ -265,7 +272,7 @@ export class cbst {
     }
 
     public addBst(machine_id: string): bst {
-        let result = new bst(machine_id);
+        let result = new bst(this, machine_id);
         this.machines[machine_id] = result;
 
         return result;
@@ -279,7 +286,7 @@ export class cbst {
     }
 
     public add(state: numstring | bss, machine_id: string = DEFAULT_BST_ID): bss {
-        return this.machines[machine_id].add(state);
+        return this.machines[machine_id].add(state, this);
     }
 
     public run(): void {
@@ -334,20 +341,20 @@ export abstract class BaseModel extends cbst {
         defaultState.onrun = this.defaultrun;
     }
 
-    public defaultrun(s: bss, t: BSTEventType, o: bst): void {
-        if (model.paused) {
+    public defaultrun(_, ik: BaseModel): void {
+        if (ik.paused) {
             return;
         }
-        if (model.startAfterLoad) {
+        if (ik.startAfterLoad) {
             return;
         }
 
-        let objects = model.objects;
+        let objects = ik.objects;
         // Let all game objects take a turn
         objects.forEach(o => !o.disposeFlag && o.takeTurn());
 
         // Remove all objects that are to be disposed
-        model.objects.filter(o => o.disposeFlag).forEach(o => model.exile(o));
+        objects.filter(o => o.disposeFlag).forEach(o => ik.exile(o));
     }
 
     // https://hackernoon.com/3-javascript-performance-mistakes-you-should-stop-doing-ebf84b9de951

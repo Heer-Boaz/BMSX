@@ -123,7 +123,7 @@ let _modelclass = class extends BaseModel {
 
 var _model = new _modelclass();
 
-let brandblusser = class extends Sprite {
+class brandblusser extends Sprite {
     constructor() {
         super();
         this.imgid = BitmapId.Brandblusser;
@@ -132,12 +132,12 @@ let brandblusser = class extends Sprite {
 
         this.add(new bss('bla', {
             nudges2move: 20,
-            onrun: (s: bss): void => {
+            onrun: (s: bss, ik: brandblusser): void => {
                 setPoint(self.pos, _model.marlies.pos.x, _model.marlies.pos.y + 12);
-                let oldPrio = self.z;
-                if (_model.marlies.direction == Direction.Up) self.z = 950;
-                else self.z = 1050;
-                if (self.z != oldPrio) _model.sortObjectsByPriority();
+                let oldPrio = ik.z;
+                if (_model.marlies.direction == Direction.Up) ik.z = 950;
+                else ik.z = 1050;
+                if (ik.z != oldPrio) _model.sortObjectsByPriority();
                 ++s.nudges;
             },
             onnext: (): void => {
