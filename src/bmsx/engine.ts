@@ -215,7 +215,7 @@ export class bst {
 
     public run(): void {
         if (this.paused) return;
-        this.current.onrun?.(this.current, this.ik, BSTEventType.Run);
+        this.current?.onrun?.(this.current, this.ik, BSTEventType.Run);
     }
 
     public to(newstate: numstring): void {
@@ -650,10 +650,10 @@ export abstract class Sprite extends cbst {
         let dy = offset?.y || 0;
 
         if (colorize) {
-            view.drawColoredBitmap(this.imgid, this.pos.x + dx, this.pos.y + dy, options, colorize.r, colorize.g, colorize.b, colorize.a);
+            this.imgid && view.drawColoredBitmap(this.imgid, this.pos.x + dx, this.pos.y + dy, options, colorize.r, colorize.g, colorize.b, colorize.a);
         }
         else {
-            view.drawImg(this.imgid, this.pos.x + dx, this.pos.y + dy, options);
+            this.imgid && view.drawImg(this.imgid, this.pos.x + dx, this.pos.y + dy, options);
         }
     }
 

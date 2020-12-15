@@ -142,7 +142,8 @@ class brandblusser extends Sprite {
             },
             onnext: (): void => {
                 self.markForDisposure();
-            }
+            },
+            start: true,
         }),
         );
     }
