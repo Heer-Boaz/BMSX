@@ -538,7 +538,19 @@ export interface IGameObject {
     markForDisposure?: () => void;
 }
 
-export abstract class Sprite extends cbst {
+// Shared function used for using as event handler for IGameObject/Sprite.OnLeavingScreen
+export function ProhibitLeavingScreenHandler(ik: IGameObject, d: Direction, old_x_or_y: number): void {
+    switch (d) {
+        case Direction.Left: case Direction.Right:
+            ik.pos.x = old_x_or_y;
+            break;
+        case Direction.Up: case Direction.Down:
+            ik.pos.y = old_x_or_y;
+            break;
+    }
+}
+
+export abstract class Sprite extends cbst implements IGameObject {
     public id: string | null;
     public pos: Point;
     public size: Size;
@@ -597,7 +609,8 @@ export abstract class Sprite extends cbst {
     public disposeOnSwitchRoom?: boolean;
     public oncollide?: (src: IGameObject) => void;
     public onWallcollide?: (dir: Direction) => void;
-    public onLeaveScreen?: (dir: Direction) => void;
+    public onLeaveScreen?: (ik: IGameObject, dir: Direction, old_x_or_y: number) => void;
+    public onLeavingScreen?: (ik: IGameObject, dir: Direction, old_x_or_y: number) => void;
 
     private _direction: Direction;
     public oldDirection: Direction;
@@ -707,16 +720,19 @@ export abstract class Sprite extends cbst {
                 this.onWallcollide?.(Direction.Up);
                 newx += TileSize - mod(newx, TileSize);
             }
-            if (newx + this.size.x < 0) { this.onLeaveScreen?.(Direction.Left); }
+            this.pos.x = ~~newx;
+            if (newx + this.size.x < 0) { this.onLeaveScreen?.(this, Direction.Left, oldx); }
+            else if (newx < 0) { this.onLeavingScreen?.(this, Direction.Left, oldx); }
         }
         else if (newx > oldx) {
             if (model.collidesWithTile(this, Direction.Right)) {
                 this.onWallcollide?.(Direction.Right);
                 newx -= newx % TileSize;
             }
-            if (newx >= model.gamewidth) { this.onLeaveScreen?.(Direction.Right); }
+            this.pos.x = ~~newx;
+            if (newx >= model.gamewidth) { this.onLeaveScreen?.(this, Direction.Right, oldx); }
+            else if (newx + this.size.x >= model.gamewidth) { this.onLeavingScreen?.(this, Direction.Right, oldx); }
         }
-        this.pos.x = ~~newx;
     }
 
     public sety(newy: number) {
@@ -727,16 +743,19 @@ export abstract class Sprite extends cbst {
                 this.onWallcollide?.(Direction.Up);
                 newy += TileSize - mod(newy, TileSize);
             }
-            if (newy + this.size.y < 0) { this.onLeaveScreen?.(Direction.Up); }
+            this.pos.y = ~~newy;
+            if (newy + this.size.y < 0) { this.onLeaveScreen?.(this, Direction.Up, oldy); }
+            else if (newy < 0) { this.onLeavingScreen?.(this, Direction.Up, oldy); }
         }
         else if (newy > oldy) {
             if (model.collidesWithTile(this, Direction.Down)) {
                 this.onWallcollide?.(Direction.Down);
                 newy -= newy % TileSize;
             }
-            if (newy >= model.gameheight) { this.onLeaveScreen?.(Direction.Down); }
+            this.pos.y = ~~newy;
+            if (newy >= model.gameheight) { this.onLeaveScreen?.(this, Direction.Down, oldy); }
+            else if (newy + this.size.y >= model.gameheight) { this.onLeavingScreen?.(this, Direction.Down, oldy); }
         }
-        this.pos.y = ~~newy;
     }
 }
 

@@ -7,7 +7,6 @@ export enum Direction {
     Down = 3,
     Left = 4,
 }
-
 export interface Point {
     x: number;
     y: number;

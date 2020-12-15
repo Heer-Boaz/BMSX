@@ -1,6 +1,6 @@
 import { RomLoadResult } from '../bmsx/rompack';
-import { Game, game, model, BaseModel, IGameObject, Sprite, BSTEventType, bss, bst } from '../bmsx/engine';
-import { setPoint, newPoint, Direction, newSize, newArea, Point, randomInt, copyPoint } from '../bmsx/common';
+import { Game, game, model, BaseModel, IGameObject, Sprite, BSTEventType, bss, bst, ProhibitLeavingScreenHandler as prohibitLeavingScreenHandler } from '../bmsx/engine';
+import { setPoint, newPoint, Direction, newSize, newArea, Point, randomInt, copyPoint, Opposite } from '../bmsx/common';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
@@ -315,14 +315,32 @@ class vuur extends Sprite {
 };
 
 class corona extends Sprite {
+    public isEng = true;
+    private moveLeft: number = 0;
+
+    private onLeavingScreenHandler(ik: IGameObject, dir: Direction, old_x_or_y: number) {
+        prohibitLeavingScreenHandler(ik, dir, old_x_or_y);
+        (ik as corona).moveLeft = randomInt(MIN_CORONA_MOVE, MAX_CORONA_MOVE);
+        (ik as corona).direction = Opposite(dir);
+    }
+
+    private setRandomMove(): void {
+        this.moveLeft = randomInt(MIN_CORONA_MOVE, MAX_CORONA_MOVE);
+        this.direction = randomInt(1, 4);
+    }
+
     constructor() {
         super();
 
         this.imgid = BitmapId.Corona1;
+        this.size = { x: 32, y: 32 };
         this.hitarea = newArea(4, 4, 28, 28);
         this.z = 1200;
 
+        this.onLeavingScreen = this.onLeavingScreenHandler;
+
         this.add(new bss('skulk', {
+            start: true,
             nudges2move: 4,
             tape: <Array<BitmapId>>[
                 BitmapId.Corona1,
@@ -340,15 +358,11 @@ class corona extends Sprite {
                     ik.to('sterf');
                 }
                 switch (ik.direction) {
-                    case Direction.Up: ik.pos.y -= 1; break;
-                    case Direction.Right: ik.pos.x += 1; break;
-                    case Direction.Down: ik.pos.y += 1; break;
-                    case Direction.Left: ik.pos.x -= 1; break;
+                    case Direction.Up: ik.sety(ik.pos.y - 1); break;
+                    case Direction.Right: ik.setx(ik.pos.x + 1); break;
+                    case Direction.Down: ik.sety(ik.pos.y + 1); break;
+                    case Direction.Left: ik.setx(ik.pos.x - 1); break;
                 }
-                if (ik.pos.x < 0) ik.pos.x = 0;
-                if (ik.pos.x > _model.gamewidth - 32) ik.pos.x = _model.gamewidth - 32;
-                if (ik.pos.y < 0) ik.pos.y = 0;
-                if (ik.pos.y > _model.gameheight - 32) ik.pos.y = _model.gameheight - 32;
 
                 if (--ik.moveLeft <= 0) {
                     ik.setRandomMove();
@@ -356,47 +370,38 @@ class corona extends Sprite {
                 ++s.nudges;
             },
             onnext(s: bss, ik: corona) { ik.imgid = s.current; },
-        }));
-        this.setStart('skulk');
-
-        this.add(new bss('sterf', {
-            nudges2move: 4,
-            tape: <Array<BitmapId>>[
-                BitmapId.Corona4,
-                BitmapId.Corona5,
-                BitmapId.Corona6,
-                BitmapId.Corona7,
-                BitmapId.Corona8,
-                BitmapId.Corona9,
-                BitmapId.Corona10,
-                BitmapId.Corona11,
-                BitmapId.None,
-            ],
-            onenter(s: bss, ik: corona) {
-                ik.isEng = false;
-                s.reset();
-                ik.imgid = s.current;
-            },
-            onrun(s: bss) {
-                ++s.nudges;
-            },
-            onend(_, ik: corona) {
-                ik.markForDisposure();
-            },
-            onnext(s: bss, ik: corona) {
-                ik.imgid = s.current;
-            },
-        }));
+        }),
+            new bss('sterf', {
+                nudges2move: 4,
+                tape: <Array<BitmapId>>[
+                    BitmapId.Corona4,
+                    BitmapId.Corona5,
+                    BitmapId.Corona6,
+                    BitmapId.Corona7,
+                    BitmapId.Corona8,
+                    BitmapId.Corona9,
+                    BitmapId.Corona10,
+                    BitmapId.Corona11,
+                    BitmapId.None,
+                ],
+                onenter(s: bss, ik: corona) {
+                    ik.isEng = false;
+                    s.reset();
+                    ik.imgid = s.current;
+                },
+                onrun(s: bss) {
+                    ++s.nudges;
+                },
+                onend(_, ik: corona) {
+                    ik.markForDisposure();
+                },
+                onnext(s: bss, ik: corona) {
+                    ik.imgid = s.current;
+                },
+            })
+        );
     }
-
-    isEng = true;
-    moveLeft: number = 0;
-
-    setRandomMove(): void {
-        this.moveLeft = randomInt(MIN_CORONA_MOVE, MAX_CORONA_MOVE);
-        this.direction = randomInt(1, 4);
-    }
-};
+}
 
 class speler extends Sprite {
     column: number;
@@ -603,7 +608,7 @@ class speler extends Sprite {
                 onenter: () => self.imgid = BitmapId.p10
             }),
         );
-     }
+    }
 
     zetBoelInDeHens(): void {
         let brand = new vuur(this.direction);
