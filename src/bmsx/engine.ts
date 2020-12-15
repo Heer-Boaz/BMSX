@@ -641,7 +641,9 @@ export abstract class Sprite extends cbst {
         }
     }
 
-    abstract takeTurn(): void;
+    takeTurn(): void {
+        this.run();
+    }
 
     paint(offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }): void {
         let options: number = this.flippedH ? DrawImgFlags.HFLIP : 0;
@@ -650,10 +652,10 @@ export abstract class Sprite extends cbst {
         let dy = offset?.y || 0;
 
         if (colorize) {
-            this.imgid && view.drawColoredBitmap(this.imgid, this.pos.x + dx, this.pos.y + dy, options, colorize.r, colorize.g, colorize.b, colorize.a);
+            view.drawColoredBitmap(this.imgid, this.pos.x + dx, this.pos.y + dy, options, colorize.r, colorize.g, colorize.b, colorize.a);
         }
         else {
-            this.imgid && view.drawImg(this.imgid, this.pos.x + dx, this.pos.y + dy, options);
+            view.drawImg(this.imgid, this.pos.x + dx, this.pos.y + dy, options);
         }
     }
 

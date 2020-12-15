@@ -147,10 +147,6 @@ class brandblusser extends Sprite {
         }),
         );
     }
-
-    takeTurn(): void {
-        this.run();
-    }
 };
 
 interface Ingredient extends Sprite {
@@ -174,9 +170,6 @@ class invFrame extends Sprite {
         this.z = 2000;
         this.imgid = BitmapId.InvFrame;
     }
-
-    takeTurn(): void {
-    }
 };
 
 class hoeraStuff extends Sprite {
@@ -184,9 +177,6 @@ class hoeraStuff extends Sprite {
         super();
         this.z = 5000;
         this.imgid = BitmapId.Sint;
-    }
-
-    takeTurn(): void {
     }
 
     paint(offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }): void {
@@ -203,9 +193,6 @@ class ingredient extends Sprite implements Ingredient {
     }
 
     ingredientType: string = 'niet_bepaald!';
-
-    takeTurn(): void {
-    }
 };
 
 class komkommer extends ingredient implements Ingredient {
@@ -272,9 +259,6 @@ class bord extends Sprite implements Bord {
     }
     gevuld: boolean;
 
-    takeTurn(): void {
-    }
-
     nuGevuld() {
         this.gevuld = true;
     }
@@ -324,15 +308,12 @@ class vuur extends Sprite {
             },
             onend: (s: bss): void => {
                 self.markForDisposure();
-            }
+            },
+            start: true,
         }));
     }
 
     isVuur = true;
-
-    takeTurn(): void {
-        this.run();
-    }
 };
 
 class corona extends Sprite {
@@ -417,10 +398,6 @@ class corona extends Sprite {
     setRandomMove(): void {
         this.moveLeft = randomInt(MIN_CORONA_MOVE, MAX_CORONA_MOVE);
         this.direction = randomInt(1, 4);
-    }
-
-    takeTurn(): void {
-        this.run();
     }
 };
 
@@ -634,10 +611,6 @@ class speler extends Sprite {
         this.setStart('walk');
     }
 
-    takeTurn(): void {
-        this.run();
-    };
-
     zetBoelInDeHens(): void {
         let brand = new vuur(this.direction);
         let brandpos = copyPoint(this.pos);
@@ -736,10 +709,6 @@ class keuken extends Sprite {
             },
             start: true,
         }));
-    }
-
-    takeTurn(): void {
-        this.run();
     }
 };
 
