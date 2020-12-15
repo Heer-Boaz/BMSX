@@ -34,9 +34,9 @@ class modelclass extends BaseModel {
         this.ingredientEquipped = null;
 
         this.add(new bss('hoera!', {
-            onenter: () => {
-                this.clearModel();
-                this.spawn(new hoeraStuff());
+            onenter(_, ik: modelclass) {
+                ik.clearModel();
+                ik.spawn(new hoeraStuff());
             }
         }));
     }
@@ -273,8 +273,6 @@ class vuur extends Sprite {
         this.hitarea = newArea(4, 4, 12, 12);
         this.z = dir != Direction.Up ? 1100 : 900;
 
-        let self = this;
-
         this.add(new bss('brand', {
             tape: <Array<BitmapId>>[
                 BitmapId.Vuur1,
@@ -290,24 +288,24 @@ class vuur extends Sprite {
                 BitmapId.None,
             ],
             nudges2move: 2,
-            onenter: (s: bss): void => {
+            onenter: (s: bss, ik: vuur): void => {
                 s.reset();
-                self.imgid = s.current;
+                ik.imgid = s.current;
             },
-            onrun: (s: bss): void => {
+            onrun: (s: bss, ik: vuur): void => {
                 ++s.nudges;
-                switch (self.direction) {
-                    case Direction.Up: self.pos.y -= 3; break;
-                    case Direction.Right: self.pos.x += 3; break;
-                    case Direction.Down: self.pos.y += 3; break;
-                    case Direction.Left: self.pos.x -= 3; break;
+                switch (ik.direction) {
+                    case Direction.Up: ik.pos.y -= 3; break;
+                    case Direction.Right: ik.pos.x += 3; break;
+                    case Direction.Down: ik.pos.y += 3; break;
+                    case Direction.Left: ik.pos.x -= 3; break;
                 }
             },
-            onnext: (s: bss): void => {
-                self.imgid = s.current;
+            onnext: (s: bss, ik: vuur): void => {
+                ik.imgid = s.current;
             },
-            onend: (s: bss): void => {
-                self.markForDisposure();
+            onend: (_, ik: vuur): void => {
+                ik.markForDisposure();
             },
             start: true,
         }));
@@ -320,7 +318,6 @@ class corona extends Sprite {
     constructor() {
         super();
 
-        let self = this;
         this.imgid = BitmapId.Corona1;
         this.hitarea = newArea(4, 4, 28, 28);
         this.z = 1200;
@@ -333,32 +330,32 @@ class corona extends Sprite {
                 BitmapId.Corona3,
                 BitmapId.Corona2,
             ],
-            onenter: (s: bss): void => {
+            onenter: (s: bss, ik: corona): void => {
                 s.reset();
-                self.imgid = s.current;
-                self.setRandomMove();
+                ik.imgid = s.current;
+                ik.setRandomMove();
             },
-            onrun: (s: bss): void => {
-                if (_model.objects.filter(o => (<any>o)?.isVuur).some(v => self.objectCollide(v))) {
-                    self.to('sterf');
+            onrun(s: bss, ik: corona) {
+                if (_model.objects.filter(o => (<any>o)?.isVuur).some(v => ik.objectCollide(v))) {
+                    ik.to('sterf');
                 }
-                switch (self.direction) {
-                    case Direction.Up: self.pos.y -= 1; break;
-                    case Direction.Right: self.pos.x += 1; break;
-                    case Direction.Down: self.pos.y += 1; break;
-                    case Direction.Left: self.pos.x -= 1; break;
+                switch (ik.direction) {
+                    case Direction.Up: ik.pos.y -= 1; break;
+                    case Direction.Right: ik.pos.x += 1; break;
+                    case Direction.Down: ik.pos.y += 1; break;
+                    case Direction.Left: ik.pos.x -= 1; break;
                 }
-                if (self.pos.x < 0) self.pos.x = 0;
-                if (self.pos.x > _model.gamewidth - 32) self.pos.x = _model.gamewidth - 32;
-                if (self.pos.y < 0) self.pos.y = 0;
-                if (self.pos.y > _model.gameheight - 32) self.pos.y = _model.gameheight - 32;
+                if (ik.pos.x < 0) ik.pos.x = 0;
+                if (ik.pos.x > _model.gamewidth - 32) ik.pos.x = _model.gamewidth - 32;
+                if (ik.pos.y < 0) ik.pos.y = 0;
+                if (ik.pos.y > _model.gameheight - 32) ik.pos.y = _model.gameheight - 32;
 
-                if (--self.moveLeft <= 0) {
-                    self.setRandomMove();
+                if (--ik.moveLeft <= 0) {
+                    ik.setRandomMove();
                 }
                 ++s.nudges;
             },
-            onnext: (s: bss): void => self.imgid = s.current
+            onnext(s: bss, ik: corona) { ik.imgid = s.current; },
         }));
         this.setStart('skulk');
 
@@ -375,19 +372,19 @@ class corona extends Sprite {
                 BitmapId.Corona11,
                 BitmapId.None,
             ],
-            onenter: (s: bss): void => {
-                self.isEng = false;
+            onenter(s: bss, ik: corona) {
+                ik.isEng = false;
                 s.reset();
-                self.imgid = s.current;
+                ik.imgid = s.current;
             },
-            onrun: (s: bss): void => {
+            onrun(s: bss) {
                 ++s.nudges;
             },
-            onend: (): void => {
-                self.markForDisposure();
+            onend(_, ik: corona) {
+                ik.markForDisposure();
             },
-            onnext: (s: bss): void => {
-                self.imgid = s.current;
+            onnext(s: bss, ik: corona) {
+                ik.imgid = s.current;
             },
         }));
     }
@@ -413,6 +410,109 @@ class speler extends Sprite {
         this.addBst('anistate');
         this.column = startcolumn;
         this.hitarea = newArea(0, 8, 16, 16);
+
+        let shared_switch_run = () => {
+            if (Input.KC_BTN1 || Input.KC_SPACE) self.zetBoelInDeHens();
+            let switchToOld = (): void => {
+                self.direction = self.oldDirection;
+                self.to('walk');
+                switch (self.direction) {
+                    case Direction.Down:
+                        self.to('down', 'anistate');
+                        break;
+                    case Direction.Up:
+                        self.to('up', 'anistate');
+                        break;
+                }
+            };
+
+            switch (self.getCurrentId()) {
+                case 'switchleft':
+                    self.pos.x -= 2;
+                    if (self.pos.x <= COLUMN_X[self.column - 1]) {
+                        self.column -= 1;
+                        switchToOld();
+                    }
+                    break;
+                case 'switchright':
+                    self.pos.x += 2;
+                    if (self.pos.x >= COLUMN_X[self.column + 1]) {
+                        self.column += 1;
+                        switchToOld();
+                    }
+                    break;
+            }
+            self.doeCoronaTest();
+        };
+
+        this.add(
+            new bss('walk', {
+                start: true,
+                onrun: (): void => {
+                    if (Input.KC_LEFT) {
+                        if (self.canSwitchLeft) {
+                            self.to('switchleft');
+                            self.direction = Direction.Left;
+                        }
+                    }
+                    else if (Input.KC_RIGHT) {
+                        if (self.canSwitchRight) {
+                            self.to('switchright');
+                            self.direction = Direction.Right;
+                        }
+                    }
+                    else if (Input.KD_UP) {
+                        if (self.pos.y >= 4 && self.column !== 0) {
+                            if ((self.column !== 3 && self.column !== 4) ||
+                                (self.pos.y > 104 || self.pos.y <= 80)) {
+                                self.pos.y -= 2;
+                            }
+                        }
+                        if (self.getCurrentId('anistate') !== 'up') {
+                            self.to('up', 'anistate');
+                            self.direction = Direction.Up;
+                        }
+                    }
+                    else if (Input.KD_DOWN) {
+                        if (self.pos.y <= model.gameheight - 32 && self.column !== 0) {
+                            if ((self.column !== 3 && self.column !== 4) ||
+                                (self.pos.y < 44 || self.pos.y >= 80)) {
+                                self.pos.y += 2;
+                            }
+                        }
+                        if (self.getCurrentId('anistate') !== 'down') {
+                            self.to('down', 'anistate');
+                            self.direction = Direction.Down;
+                        }
+                    }
+                    if (Input.KC_BTN1 || Input.KC_SPACE) {
+                        self.zetBoelInDeHens();
+                    }
+                    if (Input.KC_BTN2) {
+                        self.checkNaastIngredientOfPitaOfBord();
+                    }
+                    self.doeCoronaTest();
+                }
+            }),
+            new bss('switchleft', {
+                onenter: () => self.to('columnswitch', 'anistate'),
+                onrun: shared_switch_run,
+            }),
+            new bss('switchright', {
+                onenter: () => self.to('columnswitch', 'anistate'),
+                onrun: shared_switch_run,
+            }),
+            new bss('urgh', { // urghSpelerState
+                onenter: () => self.to('urgh', 'anistate')
+                // Lelijk, maar animatie-state zorgt voor terugkeer naar previous state
+            }),
+            new bss('win', { // winSpelerState
+                nudges2move: 300,
+                onenter: () => self.to('win', 'anistate'),
+                onrun: (s: bss) => (++s.nudges, _model.objects.filter(o => (<any>o).isEng).forEach(o => o.disposeFlag = true)),
+                onnext: () => _model.to('hoera!')
+            }),
+        );
 
         let down_up_state_def: Partial<bss> = {
             nudges2move: 8,
@@ -503,113 +603,7 @@ class speler extends Sprite {
                 onenter: () => self.imgid = BitmapId.p10
             }),
         );
-
-
-        let shared_switch_run = () => {
-            if (Input.KC_BTN1 || Input.KC_SPACE) self.zetBoelInDeHens();
-            let switchToOld = (): void => {
-                self.direction = self.oldDirection;
-                self.to('walk');
-                switch (self.direction) {
-                    case Direction.Down:
-                        self.to('down', 'anistate');
-                        break;
-                    case Direction.Up:
-                        self.to('up', 'anistate');
-                        break;
-                }
-            };
-
-            switch (self.getCurrentId()) {
-                case 'switchleft':
-                    self.pos.x -= 2;
-                    if (self.pos.x <= COLUMN_X[self.column - 1]) {
-                        self.column -= 1;
-                        switchToOld();
-                    }
-                    break;
-                case 'switchright':
-                    self.pos.x += 2;
-                    if (self.pos.x >= COLUMN_X[self.column + 1]) {
-                        self.column += 1;
-                        switchToOld();
-                    }
-                    break;
-            }
-            self.doeCoronaTest();
-        };
-
-        this.add(new bss('walk', {
-            onrun: (): void => {
-                if (Input.KC_LEFT) {
-                    if (self.canSwitchLeft) {
-                        self.to('switchleft');
-                        self.direction = Direction.Left;
-                    }
-                }
-                else if (Input.KC_RIGHT) {
-                    if (self.canSwitchRight) {
-                        self.to('switchright');
-                        self.direction = Direction.Right;
-                    }
-                }
-                else if (Input.KD_UP) {
-                    if (self.pos.y >= 4 && self.column !== 0) {
-                        if ((self.column !== 3 && self.column !== 4) ||
-                            (self.pos.y > 104 || self.pos.y <= 80)) {
-                            self.pos.y -= 2;
-                        }
-                    }
-                    if (self.getCurrentId('anistate') !== 'up') {
-                        self.to('up', 'anistate');
-                        self.direction = Direction.Up;
-                    }
-                }
-                else if (Input.KD_DOWN) {
-                    if (self.pos.y <= model.gameheight - 32 && self.column !== 0) {
-                        if ((self.column !== 3 && self.column !== 4) ||
-                            (self.pos.y < 44 || self.pos.y >= 80)) {
-                            self.pos.y += 2;
-                        }
-                    }
-                    if (self.getCurrentId('anistate') !== 'down') {
-                        self.to('down', 'anistate');
-                        self.direction = Direction.Down;
-                    }
-                }
-                if (Input.KC_BTN1 || Input.KC_SPACE) {
-                    self.zetBoelInDeHens();
-                }
-                if (Input.KC_BTN2) {
-                    self.checkNaastIngredientOfPitaOfBord();
-                }
-                self.doeCoronaTest();
-            },
-        }));
-
-        this.add(new bss('switchleft', {
-            onenter: () => self.to('columnswitch', 'anistate'),
-            onrun: shared_switch_run,
-        }));
-        this.add(new bss('switchright', {
-            onenter: () => self.to('columnswitch', 'anistate'),
-            onrun: shared_switch_run,
-        }));
-
-        this.add(new bss('urgh', { // urghSpelerState
-            onenter: () => self.to('urgh', 'anistate')
-            // Lelijk, maar animatie-state zorgt voor terugkeer naar previous state
-        }));
-
-        this.add(new bss('win', { // winSpelerState
-            nudges2move: 300,
-            onenter: () => self.to('win', 'anistate'),
-            onrun: (s: bss) => (++s.nudges, _model.objects.filter(o => (<any>o).isEng).forEach(o => o.disposeFlag = true)),
-            onnext: () => _model.to('hoera!')
-        }));
-
-        this.setStart('walk');
-    }
+     }
 
     zetBoelInDeHens(): void {
         let brand = new vuur(this.direction);
