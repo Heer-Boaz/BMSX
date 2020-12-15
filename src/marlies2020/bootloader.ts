@@ -23,7 +23,7 @@ const INVENTORY_POS = { x: 12, y: 12 };
 
 // https://drive.google.com/file/d/1vyCxVBeMr89pQdUBCUcDjW6W2ImA6q2j/view?usp=sharing
 
-let _modelclass = class extends BaseModel {
+class modelclass extends BaseModel {
     public marlies: Sprite;
     public ingredientEquipped: Ingredient;
     public pitasOpBord: number;
@@ -121,7 +121,7 @@ let _modelclass = class extends BaseModel {
     }
 };
 
-var _model = new _modelclass();
+var _model = new modelclass();
 
 class brandblusser extends Sprite {
     constructor() {
@@ -130,7 +130,7 @@ class brandblusser extends Sprite {
         this.z = _model.marlies.direction == Direction.Up ? 950 : 1050;
         let self = this;
 
-        this.add(new bss('bla', {
+        this.addTo('bla', new bss('bla', {
             nudges2move: 20,
             onrun: (s: bss, ik: brandblusser): void => {
                 setPoint(self.pos, _model.marlies.pos.x, _model.marlies.pos.y + 12);
@@ -143,7 +143,8 @@ class brandblusser extends Sprite {
             onnext: (): void => {
                 self.markForDisposure();
             }
-        }));
+        }),
+        );
     }
 
     takeTurn(): void {
@@ -166,7 +167,7 @@ interface Bord extends Sprite {
     nuGevuld(): void;
 }
 
-let invFrame = class extends Sprite {
+class invFrame extends Sprite {
     constructor() {
         super();
         this.z = 2000;
@@ -177,7 +178,7 @@ let invFrame = class extends Sprite {
     }
 };
 
-let hoeraStuff = class extends Sprite {
+class hoeraStuff extends Sprite {
     constructor() {
         super();
         this.z = 5000;
@@ -193,7 +194,7 @@ let hoeraStuff = class extends Sprite {
     }
 };
 
-let ingredient = class extends Sprite implements Ingredient {
+class ingredient extends Sprite implements Ingredient {
     constructor() {
         super();
         this.z = 850;
@@ -206,7 +207,7 @@ let ingredient = class extends Sprite implements Ingredient {
     }
 };
 
-let komkommer = class extends ingredient implements Ingredient {
+class komkommer extends ingredient implements Ingredient {
     constructor() {
         super();
         this.imgid = BitmapId.Komkommer;
@@ -215,7 +216,7 @@ let komkommer = class extends ingredient implements Ingredient {
     ingredientType = 'komkommer';
 };
 
-let mes = class extends ingredient implements Ingredient {
+class mes extends ingredient implements Ingredient {
     constructor() {
         super();
         this.imgid = BitmapId.Mes;
@@ -224,16 +225,7 @@ let mes = class extends ingredient implements Ingredient {
     ingredientType = 'mes';
 };
 
-let gesneden_komkommer = class extends ingredient implements Ingredient {
-    constructor() {
-        super();
-        this.imgid = BitmapId.Komkommer_gesneden;
-    }
-
-    ingredientType = 'gesneden_komkommer';
-};
-
-let tomaatjes = class extends ingredient implements Ingredient {
+class tomaatjes extends ingredient implements Ingredient {
     constructor() {
         super();
         this.imgid = BitmapId.Tomaatjes;
@@ -242,7 +234,7 @@ let tomaatjes = class extends ingredient implements Ingredient {
     ingredientType = 'tomaatjes';
 };
 
-let falafel = class extends ingredient implements Ingredient {
+class falafel extends ingredient implements Ingredient {
     constructor() {
         super();
         this.imgid = BitmapId.Falafel;
@@ -251,7 +243,7 @@ let falafel = class extends ingredient implements Ingredient {
     ingredientType = 'falafel';
 };
 
-let pita = class extends ingredient implements Pita {
+class pita extends ingredient implements Pita {
     constructor() {
         super();
         this.imgid = BitmapId.Pita;
@@ -269,7 +261,7 @@ let pita = class extends ingredient implements Pita {
     gevuld = false;
 };
 
-let bord = class extends Sprite implements Bord {
+class bord extends Sprite implements Bord {
     constructor() {
         super();
         this.imgid = BitmapId.Bord;
@@ -289,7 +281,7 @@ let bord = class extends Sprite implements Bord {
     isBord = true;
 };
 
-let vuur = class extends Sprite {
+class vuur extends Sprite {
     constructor(dir: Direction) {
         super();
         this.direction = dir;
@@ -342,7 +334,7 @@ let vuur = class extends Sprite {
     }
 };
 
-let corona = class extends Sprite {
+class corona extends Sprite {
     constructor() {
         super();
 
@@ -402,9 +394,9 @@ let corona = class extends Sprite {
                 BitmapId.None,
             ],
             onenter: (s: bss): void => {
-                    self.isEng = false;
-                    s.reset();
-                    self.imgid = s.current;
+                self.isEng = false;
+                s.reset();
+                self.imgid = s.current;
             },
             onrun: (s: bss): void => {
                 ++s.nudges;
@@ -431,7 +423,7 @@ let corona = class extends Sprite {
     }
 };
 
-let speler = class extends Sprite {
+class speler extends Sprite {
     column: number;
 
     constructor(startcolumn: number) {
@@ -451,51 +443,89 @@ let speler = class extends Sprite {
             onend: (s: bss): void => s.reset(),
             onnext: (s: bss): void => self.imgid = s.current,
         };
-        let downstate = this.add(new bss('down', down_up_state_def), 'anistate');
-        downstate.tape = <Array<BitmapId>>[
-            BitmapId.p1,
-            BitmapId.p2,
-            BitmapId.p1,
-            BitmapId.p3,
-            BitmapId.p1,
-        ];
+        this.addTo('anistate',
+            new bss('down', {
+                ...down_up_state_def, ...{
+                    start: true,
+                    tape: <Array<BitmapId>>[
+                        BitmapId.p1,
+                        BitmapId.p2,
+                        BitmapId.p1,
+                        BitmapId.p3,
+                        BitmapId.p1,
+                    ]
+                }
+            }),
+            new bss('up', {
+                ...down_up_state_def, ...{
+                    tape: <Array<BitmapId>>[
+                        BitmapId.p4,
+                        BitmapId.p5,
+                        BitmapId.p4,
+                        BitmapId.p6,
+                        BitmapId.p4,
+                    ]
+                }
+            }),
+            new bss('urgh', {
+                tape: <Array<BitmapId>>[
+                    BitmapId.p8,
+                    BitmapId.p9,
+                    BitmapId.p8,
+                    BitmapId.p9,
+                    BitmapId.p8,
+                    BitmapId.p9,
+                    BitmapId.p8,
+                    BitmapId.p9,
+                    BitmapId.p8,
+                    BitmapId.p9,
+                    BitmapId.p8,
+                    BitmapId.p9,
+                    BitmapId.p8,
+                    BitmapId.p9,
+                    BitmapId.p8,
+                    BitmapId.p9,
+                    BitmapId.p8,
+                    BitmapId.p9,
+                    BitmapId.p8,
+                    BitmapId.p9,
+                    BitmapId.p8,
+                    BitmapId.p9,
+                    BitmapId.p8,
+                    BitmapId.p9,
+                ],
+                nudges2move: 4,
+                onenter(s: bss, ik: speler): void {
+                    s.reset();
+                    ik.imgid = s.current;
+                    ik.flippedH = false;
+                },
+                onrun(s: bss): void {
+                    ++s.nudges;
+                },
+                onend(s: bss, ik: speler): void {
+                    s.reset();
+                    ik.pop();
+                },
+                onnext(s: bss, ik: speler): void {
+                    ik.imgid = s.current;
+                },
+            }),
+            new bss('columnswitch', {
+                onenter(_, ik: speler): void {
+                    ik.imgid = BitmapId.p7;
+                    if (ik.getCurrentId() === 'switchright')
+                        ik.flippedH = true;
+                },
+                onexit(_, ik: speler): void {
+                    ik.flippedH = false;
+                },
+            }),
+            new bss('win', { // winAniState
+                onenter: () => self.imgid = BitmapId.p10
+            }),
+        );
 
-        let upstate = this.add(new bss('up', down_up_state_def), 'anistate');
-        upstate.tape = <Array<BitmapId>>[
-            BitmapId.p4,
-            BitmapId.p5,
-            BitmapId.p4,
-            BitmapId.p6,
-            BitmapId.p4,
-        ];
-
-        let urghAniState = this.add('urgh', 'anistate');
-        urghAniState.tape = <Array<BitmapId>>[
-            BitmapId.p8,
-            BitmapId.p9,
-            BitmapId.p8,
-            BitmapId.p9,
-            BitmapId.p8,
-            BitmapId.p9,
-            BitmapId.p8,
-            BitmapId.p9,
-            BitmapId.p8,
-            BitmapId.p9,
-            BitmapId.p8,
-            BitmapId.p9,
-            BitmapId.p8,
-            BitmapId.p9,
-            BitmapId.p8,
-            BitmapId.p9,
-            BitmapId.p8,
-            BitmapId.p9,
-            BitmapId.p8,
-            BitmapId.p9,
-            BitmapId.p8,
-            BitmapId.p9,
-            BitmapId.p8,
-            BitmapId.p9,
-        ];
 
         let shared_switch_run = () => {
             if (Input.KC_BTN1 || Input.KC_SPACE) self.zetBoelInDeHens();
@@ -588,51 +618,10 @@ let speler = class extends Sprite {
             onrun: shared_switch_run,
         }));
 
-        let columnswitchAnistate = this.add('columnswitch', 'anistate');
-        let columnswitchAnistatehandler = (s: bss, type: BSTEventType): void => {
-            switch (type) {
-                case BSTEventType.Init:
-                    self.imgid = BitmapId.p7;
-                    if (self.getCurrentId() === 'switchright')
-                        self.flippedH = true;
-                    break;
-                case BSTEventType.Exit:
-                    self.flippedH = false;
-                    break;
-            }
-        };
-        columnswitchAnistate.setAllHandlers(columnswitchAnistatehandler);
-
-        urghAniState.nudges2move = 4;
-        let urghAniHandler = (s: bss, type: BSTEventType): void => {
-            switch (type) {
-                case BSTEventType.Init:
-                    s.reset();
-                    self.imgid = s.current;
-                    self.flippedH = false;
-                    break;
-                case BSTEventType.Run:
-                    ++s.nudges;
-                    break;
-                case BSTEventType.End:
-                    s.reset();
-                    self.pop();
-                    break;
-                case BSTEventType.Next:
-                    self.imgid = s.current;
-                    break;
-            }
-        };
-        urghAniState.setAllHandlers(urghAniHandler);
-
         this.add(new bss('urgh', { // urghSpelerState
             onenter: () => self.to('urgh', 'anistate')
             // Lelijk, maar animatie-state zorgt voor terugkeer naar previous state
         }));
-
-        this.add(new bss('win', { // winAniState
-            onenter: () => self.imgid = BitmapId.p10
-        }), 'anistate');
 
         this.add(new bss('win', { // winSpelerState
             nudges2move: 300,
@@ -641,7 +630,6 @@ let speler = class extends Sprite {
             onnext: () => _model.to('hoera!')
         }));
 
-        this.setStart('down', true, 'anistate');
         this.setStart('walk');
     }
 
@@ -724,35 +712,29 @@ let speler = class extends Sprite {
     }
 };
 
-let keuken = class extends Sprite {
+class keuken extends Sprite {
     constructor() {
         super();
         this.imgid = BitmapId.Keuken;
         this.z = 0;
 
-        let defaultState = this.add('wees_een_keuken');
-        this.setStart('wees_een_keuken');
-        defaultState.nudges2move = TIME_CORONA_SPAWN;
-
-        let defaultHandler = (s: bss, type: BSTEventType): void => {
-            switch (type) {
-                case BSTEventType.Init:
-                    s.reset();
-                    break;
-                case BSTEventType.Run:
-                    ++s.nudges;
-                    break;
-                case BSTEventType.Next:
-                    if (_model.objects.filter(o => (<any>o)?.isEng).length < MAX_CORONA) {
-                        let rloc = randomInt(0, CORONA_SPAWN_LOCS.length - 1);
-                        let sloc = CORONA_SPAWN_LOCS[rloc];
-                        model.spawn(new corona(), sloc);
-                    }
-                    break;
-            }
-        };
-
-        defaultState.setAllHandlers(defaultHandler);
+        this.add(new bss('wees_een_keuken', {
+            nudges2move: TIME_CORONA_SPAWN,
+            onenter(s: bss) {
+                s.reset();
+            },
+            onrun(s: bss) {
+                ++s.nudges;
+            },
+            onnext() {
+                if (_model.objects.filter(o => (<any>o)?.isEng).length < MAX_CORONA) {
+                    let rloc = randomInt(0, CORONA_SPAWN_LOCS.length - 1);
+                    let sloc = CORONA_SPAWN_LOCS[rloc];
+                    model.spawn(new corona(), sloc);
+                }
+            },
+            start: true,
+        }));
     }
 
     takeTurn(): void {
@@ -761,7 +743,7 @@ let keuken = class extends Sprite {
 };
 
 
-let _viewclass = class extends GLView {
+class viewclass extends GLView {
     public drawgame(): void {
         super.drawgame();
         super.drawSprites();
@@ -770,7 +752,7 @@ let _viewclass = class extends GLView {
 
 var _global = window || global;
 _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: GainNode): void => {
-    let _view = new _viewclass(newSize(MSX1ScreenWidth, MSX1ScreenHeight));
+    let _view = new viewclass(newSize(MSX1ScreenWidth, MSX1ScreenHeight));
     new Game(rom, _model, _view, null, sndcontext, gainnode);
 
     game.start();

@@ -55,7 +55,7 @@ export module Constants {
 export const enum BSTEventType {
     None = 0,
     Run = 1,
-    Init = 2,
+    Enter = 2,
     Exit = 3,
     Next = 4,
     End = 5,
@@ -69,6 +69,8 @@ export class bss {
     public id: numstring;
     public parent: bst;
     public ik: any;
+    public start?: boolean; // Is this a start state?
+    public init?: boolean; // Should this state be initiated when this is a start state?
 
     public constructor(_id: numstring = 0, _partialdef?: Partial<bss>) {
         this.id = _id;
@@ -137,7 +139,7 @@ export class bss {
     }
 
     // Helper function to set all handlers
-    public setAllHandlers<T>(handler: bsfthandle): void {
+    public setAllHandlers(handler: bsfthandle): void {
         this.onrun = handler;
         this.onfinal = handler;
         this.onend = handler;
@@ -187,28 +189,27 @@ export class bst {
     public setStart(_id: numstring, init = true): void {
         this.initstateid = _id;
         this.currentid = _id;
-        if (init) this.current.onenter?.(this.current, this.ik, BSTEventType.Init);
+        if (init) this.current.onenter?.(this.current, this.ik, BSTEventType.Enter);
     }
 
-    public add(id_or_state: numstring | bss, ik: any): bss {
-        if (typeof (id_or_state) !== 'object') {
-            if (this.states[id_or_state]) throw new Error(`State ${id_or_state} already exists for state machine!`);
-            let result = new bss(id_or_state);
-            this.states[id_or_state] = result;
-            result.parent = this;
-            result.ik ??= ik;
-            if (!this.initstateid) this.setStart(id_or_state); // If no start-state was defined, we assign this as a default start state
-            return result;
-        }
-        else {
-            let s = id_or_state as bss;
-            if (this.states[s.id]) throw new Error(`State ${s.id} already exists for state machine!`);
-            this.states[s.id] = s;
-            s.parent = this;
-            s.ik ??= ik;
+    public create(id: numstring, ik: any): bss {
+        if (this.states[id]) throw new Error(`State ${id} already exists for state machine!`);
+        let result = new bss(id);
+        this.states[id] = result;
+        result.parent = this;
+        result.ik ??= ik;
+        // if (!this.initstateid) this.setStart(id_or_state); // If no start-state was defined, we assign this as a default start state
+        return result;
+    }
 
-            if (!this.initstateid) this.setStart(s.id); // If no start-state was defined, we assign this as a default start state
-            return s;
+    public add(ik: any, ...states: bss[]): void {
+        for (let state of states) {
+            if (!state.id) throw new Error(`State is missing an id, while attempting to add it to this bst!`);
+            if (this.states[state.id]) throw new Error(`State ${state.id} already exists for state machine!`);
+            this.states[state.id] = state;
+            state.parent = this;
+            state.ik ??= ik;
+            if (state.start) this.setStart(state.id, state.init ?? true); // If designated as a start state, assign it as the start state
         }
     }
 
@@ -222,7 +223,7 @@ export class bst {
         this.pushHistory(this.currentid); // Store the previous state on the history stack
         this.currentid = newstate; // Switch the current state to the new state
         if (!this.current) throw new Error(`State "${newstate}" doesn't exist for this state machine!`);
-        this.current.onenter?.(this.current, this.ik, BSTEventType.Init);
+        this.current.onenter?.(this.current, this.ik, BSTEventType.Enter);
     }
 
     protected pushHistory(toPush: numstring): void {
@@ -285,8 +286,16 @@ export abstract class cbst {
         return result;
     }
 
-    public add(state: numstring | bss, machine_id: string = DEFAULT_BST_ID): bss {
-        return this.machines[machine_id].add(state, this);
+    public createState(state_id: numstring, machine_id: string = DEFAULT_BST_ID): bss {
+        return this.machines[machine_id].create(state_id, this);
+    }
+
+    public add(...states: bss[]): void {
+        this.addTo(DEFAULT_BST_ID, ...states);
+    }
+
+    public addTo(machine_id: string = DEFAULT_BST_ID, ...states: bss[]): void {
+        this.machines[machine_id].add(this, ...states);
     }
 
     public run(): void {
@@ -337,8 +346,9 @@ export abstract class BaseModel extends cbst {
         this.paused = false;
 
         // Create default state for running the game
-        let defaultState = this.add('default');
-        defaultState.onrun = this.defaultrun;
+        this.add(new bss('default', {
+            onrun: this.defaultrun,
+        }));
     }
 
     public defaultrun(_, ik: BaseModel): void {
