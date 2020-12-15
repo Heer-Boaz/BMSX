@@ -348,6 +348,7 @@ export abstract class BaseModel extends cbst {
         // Create default state for running the game
         this.add(new bss('default', {
             onrun: this.defaultrun,
+            start: true,
         }));
     }
 

@@ -130,7 +130,7 @@ class brandblusser extends Sprite {
         this.z = _model.marlies.direction == Direction.Up ? 950 : 1050;
         let self = this;
 
-        this.addTo('bla', new bss('bla', {
+        this.add(new bss('bla', {
             nudges2move: 20,
             onrun: (s: bss, ik: brandblusser): void => {
                 setPoint(self.pos, _model.marlies.pos.x, _model.marlies.pos.y + 12);
