@@ -80,7 +80,7 @@
 				"-m",
 				"commonjs",
 				"-t",
-				"ES5",
+				"ES6",
 				"--outDir",
 				"${workspaceFolder}/rom"
 			],

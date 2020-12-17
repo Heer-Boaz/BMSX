@@ -150,7 +150,7 @@ function yaml2Json(): void {
 	appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 }
 
-async function bundleGamecode(outfile: string, bootloader_path: string): Promise<any> {
+async function buildAndBundleRomSource(outfile: string, bootloader_path: string): Promise<any> {
 	log("Game compileren en bundleren...  ");
 	startRotator();
 
@@ -288,6 +288,7 @@ async function buildGameHtmlAndManifest(outfile: string, title: string): Promise
 	let debug_html: string;
 	let romjs = readFileSync("./rom/rom.js", 'utf8');
 	let zipjs = readFileSync("./scripts/pako_inflate.min.js", 'utf8');
+	let flattedjs = readFileSync("./scripts/flatted.min.js", 'utf8');
 	romjs = romjs.replace('Object.defineProperty(exports, "__esModule", { value: true });', '');
 	let options = {
 		compress: {
@@ -320,6 +321,7 @@ async function buildGameHtmlAndManifest(outfile: string, title: string): Promise
 				}
 				release_html = html.replace('//#romjs', romjsMinified);
 				release_html = release_html.replace('//#zipjs', zipjs);
+				release_html = release_html.replace('//#flattedjs', flattedjs);
 				release_html = release_html.replace('/*css*/', cssMinified);
 				release_html = release_html.replace(/#title/g, title); // https://stackoverflow.com/questions/44324892/how-can-i-replace-multiple-characters-in-a-string
 				release_html = release_html.replace('#outfile', outfile);
@@ -330,6 +332,7 @@ async function buildGameHtmlAndManifest(outfile: string, title: string): Promise
 
 				debug_html = html.replace('//#romjs', romjs);
 				debug_html = debug_html.replace('//#zipjs', zipjs);
+				debug_html = debug_html.replace('//#flattedjs', flattedjs);
 				debug_html = debug_html.replace('/*css*/', cssMinified);
 				debug_html = debug_html.replace(/#title/g, title); // https://stackoverflow.com/questions/44324892/how-can-i-replace-multiple-characters-in-a-string
 				debug_html = debug_html.replace('#outfile', outfile);
@@ -838,7 +841,7 @@ try {
 		// });
 		// bar.start(5, 0);
 
-		bundleGamecode('megarom.js', bootloader_path)
+		buildAndBundleRomSource('megarom.js', bootloader_path)
 			.then((result) => (yaml2Json()))
 			.then((result) => (buildRompack(outfile, respath)))
 			.then((result) => (buildGameHtmlAndManifest(outfile, title)))

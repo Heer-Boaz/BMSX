@@ -6,6 +6,7 @@ import { MSX2ScreenWidth, MSX2ScreenHeight, TileSize } from "./msx";
 import { Point, Area, moveArea, Size, Direction, mod } from "./common";
 import { BaseModelOld } from './basemodel_old';
 import { BaseControllerOld } from './basecontroller_old';
+import { parse, stringify } from 'Flatted';
 
 export let game: Game;
 export let model: BaseModel | BaseModelOld;
@@ -15,6 +16,7 @@ export let view: BaseView;
 const fps: number = 50;
 const fpstime: number = 1000 / fps;
 
+@insavegame
 export class GameOptions {
     public static readonly INITIAL_SCALE: number = 1;
     public static readonly INITIAL_FULLSCREEN: boolean = false;
@@ -65,6 +67,7 @@ export type str2bss = { [key: string]: bss; };
 export type bsfthandle = (state: bss, ik: any, type: BSTEventType) => void;
 export type numstring = number | string;
 
+// @insavegame
 export class bss {
     public id: numstring;
     public parent: bst;
@@ -88,7 +91,7 @@ export class bss {
     public onnext: bsfthandle;
     public onenter: bsfthandle;
     public onexit: bsfthandle;
-    public get internalstate() { return { statedata: this.tape, tapehead: this.head }; }
+    public get internalstate() { return { statedata: this.tape, tapehead: this.head, nudges: this.nudges, nudges2move: this.nudges2move }; }
     public getTarget<T>(): T { return this.ik; }
 
     public tape: any[];
@@ -164,6 +167,7 @@ export class bss {
 
 const BST_MAX_HISTORY = 10;
 const DEFAULT_BST_ID = 'master';
+@insavegame
 export class bst {
     public id: numstring;
     public ik: any;
@@ -254,6 +258,7 @@ export class bst {
 }
 
 export type numstr2bst = { [key: string]: bst; };
+@insavegame
 export abstract class cbst {
     public machines: numstr2bst;
     public paused: boolean;
@@ -330,6 +335,7 @@ export abstract class cbst {
     }
 }
 
+@insavegame
 export abstract class BaseModel extends cbst {
     public id2object: { [key: string]: IGameObject; };
     public objects: IGameObject[];
@@ -446,6 +452,12 @@ export class Game {
         this.wasupdated = true;
     }
 
+    public loadFromString(save: string): void {
+        model = JSON.parse(save, Reviver);
+    }
+
+    public saveToString = (): string => JSON.stringify(model);
+
     public get turnCounter(): number {
         return this._turnCounter;
     }
@@ -550,6 +562,7 @@ export function ProhibitLeavingScreenHandler(ik: IGameObject, d: Direction, old_
     }
 }
 
+@insavegame
 export abstract class Sprite extends cbst implements IGameObject {
     public id: string | null;
     public pos: Point;
@@ -759,6 +772,125 @@ export abstract class Sprite extends cbst implements IGameObject {
     }
 }
 
+// https://stackoverflow.com/questions/8111446/turning-json-strings-into-objects-with-methods
+// A generic "smart reviver" function.
+// Looks for object values with a `ctor` property and
+// a `data` property. If it finds them, and finds a matching
+// constructor that has a `fromJSON` property on it, it hands
+// off to that `fromJSON` fuunction, passing in the value.
+export function Reviver(key: any, value: any) {
+    // console.info(`reviver with key = '${key ?? '(null)'}'`);
+    if (value === null || value === undefined) return value;
+
+    if (Array.isArray(value)) {
+        return value;
+    }
+
+    if (typeof value === "object" &&
+        typeof value.ctor === "string" &&
+        typeof value.data !== "undefined") {
+        let ctor: any;
+        ctor = Reviver.constructors[value.ctor] || window[value.ctor];
+        if (typeof ctor === "function" && typeof ctor.prototype.fromJSON === "function") {
+            return ctor.prototype.fromJSON(value);
+        }
+        return undefined;
+    }
+    return value;
+}
+Reviver.constructors = Reviver.constructors ?? {}; // A list of constructors the smart reviver should know about
+
+// A generic "toJSON" function that creates the data expected
+// by Reviver.
+// `ctorName`  The name of the constructor to use to revive it
+// `obj`       The object being serialized
+// `keys`      (Optional) Array of the properties to serialize,
+//             if not given then all of the objects "own" properties
+//             that don't have function values will be serialized.
+//             (Note: If you list a property in `keys`, it will be serialized
+//             regardless of whether it's an "own" property.)
+// Returns:    The structure (which will then be turned into a string
+//             as part of the JSON.stringify algorithm)
+function Generic_toJSON(ctorName: any, obj: any, keys?: string[]) {
+    let data: any, index: any, key: any;
+
+    if (!keys) {
+        keys = [];
+        // let currentObj = obj;
+        // do {
+        //     for (const key of Object.keys(currentObj)) {
+        //         keys.push(key);
+        //     }
+        // } while ((currentObj = Object.getPrototypeOf(currentObj)) && currentObj !== Object.prototype);
+
+        keys = Object.keys(obj); // Only "own" properties are included
+    }
+
+    data = {};
+    for (index = 0; index < keys.length; ++index) {
+        key = keys[index];
+        if (obj[key] !== null && obj[key] !== undefined) {
+            data[key] = obj[key];
+        }
+    }
+    return { ctor: ctorName, data: data };
+}
+
+// A generic "fromJSON" function for use with Reviver: Just calls the
+// constructor function with no arguments, then applies all of the
+// key/value pairs from the raw data to the instance. Only useful for
+// constructors that can be reasonably called without arguments!
+// `ctor`      The constructor to call
+// `data`      The data to apply
+// Returns:    The object
+function Generic_fromJSON(ctor: any, data: any) {
+    console.debug(`fromJSON ctor = '${ctor.name ?? '(undefined)'}'`);
+    let obj: any, name: any;
+
+    obj = new ctor();
+    for (name in data) {
+        obj[name] = data[name];
+    }
+    return obj;
+}
+
+export function insavegame(target: any) {
+    Reviver.constructors ??= {};
+    Reviver.constructors[target.name] = target;
+
+    target.prototype.toJSON = function () {
+        return Generic_toJSON(target.name, this);
+    };
+    target.prototype.fromJSON = function (value: any) {
+        return Generic_fromJSON(target, value.data);
+    };
+}
+
+// let inSavestate = {};
+// // let inSavestate = new WeakMap();
+
+// export function insavegame(target: any, key: string) {
+//     if (!key) {
+//         let t = target as object;
+//         Object.keys
+//     }
+//     else {
+//         console.log("Target = " + target + " / Key = " + key);
+
+//         let map = inSavestate.get(target);
+
+//         if (!map) {
+//             map = [];
+//             inSavestate.set(target, map);
+//         }
+
+//         map.push(key);
+
+//         console.log(inSavestate);
+//     }
+// }
+
+@insavegame
 export class BStopwatch {
     public pauseDuringMenu: boolean = true;
     public pauseAtFocusLoss: boolean = true;
