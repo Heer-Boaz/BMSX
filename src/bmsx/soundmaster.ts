@@ -1,4 +1,3 @@
-import { game } from "./engine";
 import { id2res, AudioMeta, AudioType } from "./rompack";
 
 export class SM {
@@ -42,7 +41,7 @@ export class SM {
 	private static async createNode(id: number): Promise<AudioBufferSourceNode> {
 		let srcnode = SM.sndContext.createBufferSource();
 		return new Promise<AudioBufferSourceNode>((resolve, reject) => {
-			SM.decode(game.rom['rom'].slice(SM.tracks[id]['start'], SM.tracks[id]['end'])).then(buffer => srcnode.buffer = buffer).then(() => resolve(srcnode))
+			SM.decode(global.game.rom['rom'].slice(SM.tracks[id]['start'], SM.tracks[id]['end'])).then(buffer => srcnode.buffer = buffer).then(() => resolve(srcnode))
 				.catch(e => reject(e));
 		});
 	}

@@ -1,6 +1,4 @@
-﻿import { game } from "./engine";
-
-const GAMEPAD_LEFT: number = 1000;
+﻿const GAMEPAD_LEFT: number = 1000;
 const GAMEPAD_RIGHT: number = 1001;
 const GAMEPAD_UP: number = 1002;
 const GAMEPAD_DOWN: number = 1003;
@@ -216,7 +214,7 @@ export class Input {
 }
 
 function preventDefaultEventAction(e: UIEvent, key: string) {
-    if (game.running) {
+    if (global.game.running) {
         switch (key) {
             case 'Escape':
             case 'Esc':

@@ -1,7 +1,7 @@
 import { Point, Direction } from "./common";
-import { IGameObject, controller, cbst } from './engine';
+import { IGameObject, cbst, BaseModel, Savegame } from './engine';
 
-export abstract class BaseModelOld extends cbst {
+export abstract class BaseModelOld extends cbst implements BaseModel {
     public id2object: { [key: string]: IGameObject; };
     public objects: IGameObject[];
     public gameState: number;
@@ -12,7 +12,7 @@ export abstract class BaseModelOld extends cbst {
     public startAfterLoad: boolean;
 
     public run(elapsedMs?: number): void {
-        controller.takeTurn(elapsedMs);
+        global.controller.takeTurn(elapsedMs);
     }
 
     public get oldGameState(): number {
@@ -67,6 +67,25 @@ export abstract class BaseModelOld extends cbst {
         this.oldGameSubstate = 0;
 
         this.paused = false;
+    }
+    public load(serialized: string): void {
+        throw new Error("Method not implemented.");
+    }
+    public save(): string {
+        throw new Error("Method not implemented.");
+    }
+
+    public defaultrun(_: any, ik: BaseModel): void {
+        throw new Error("Method not implemented.");
+    }
+    public where_do(predicate: (value: IGameObject, index: number, array: IGameObject[], thisArg?: any) => unknown, callbackfn: (value: IGameObject, index: number, array: IGameObject[], thisArg?: any) => void): void {
+        throw new Error("Method not implemented.");
+    }
+    public clear(): void {
+        throw new Error("Method not implemented.");
+    }
+    public sortObjectsByPriority(): void {
+        throw new Error("Method not implemented.");
     }
 
     public abstract initModelForGameStart(): void;

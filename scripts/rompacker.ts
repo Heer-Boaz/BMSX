@@ -167,16 +167,30 @@ async function buildAndBundleRomSource(outfile: string, bootloader_path: string)
 			ignore: ['node_modules', 'dist', 'rom'],
 		})
 			.add(bootloader_path)
-			.plugin(tsify)
-			.transform(babelify, {
-				extensions: ['.ts'],
-				plugins: ['@babel/plugin-transform-modules-commonjs'],
-				sourceMaps: true,
-				sourceMapsAbsolute: false,
-				global: true,
-				retainLines: true,
-				compact: true,
+			.plugin(tsify, {
+				// project: "tsconfig.json",
+				noImplicitAny: false,
+				files: [ bootloader_path ],
+				// target: 'esnext',
+				// lib: [
+				// 	"ESNEXT",
+				// 	"dom",
+				// 	"es2015.collection",
+				// 	"es2015.iterable",
+				// 	"ES2017.object"
+				// ],
 			})
+			// .transform(babelify, {
+			// 	extensions: ['.ts'],
+			// 	plugins: ['@babel/plugin-transform-modules-commonjs', '@babel/plugin-transform-classes'],
+			// 	sourceMaps: true,
+			// 	sourceMapsAbsolute: false,
+			// 	global: true,
+			// 	retainLines: true,
+			// 	compact: true
+			// 	// presets: ["es2017"],
+			// 	// stage: [1],
+			// })
 			.bundle()
 			.pipe(writeOutput)
 			.on("error", e => { stopRotator(); log(`\tGame bouwen faalde :-(\n`, 'error'); reject(e); });

@@ -80,7 +80,7 @@
 				"-m",
 				"commonjs",
 				"-t",
-				"ES6",
+				"ES2017",
 				"--outDir",
 				"${workspaceFolder}/rom"
 			],
@@ -154,7 +154,7 @@
 				"Sintervania",
 				"Testrom",
 			],
-			"default": "Marlies2020"
+			"default": "Testrom"
 		}
 	]
 }

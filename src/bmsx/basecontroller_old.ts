@@ -1,4 +1,4 @@
-import { BStopwatch, model } from './engine';
+import { BStopwatch } from './engine';
 import { BaseModelOld } from './basemodel_old';
 
 export abstract class BaseControllerOld {
@@ -12,11 +12,11 @@ export abstract class BaseControllerOld {
     // Methods
 
     public takeTurn(elapsedMs: number): void {
-        if (model.paused) {
+        if (global.model.paused) {
             this.doPausedState();
             return;
         }
-        if (model.startAfterLoad) {
+        if (global.model.startAfterLoad) {
             this.doStartAfterLoadState();
         }
 
@@ -24,7 +24,7 @@ export abstract class BaseControllerOld {
         BStopwatch.updateTimers(elapsedMs);
 
         // Remove all objects that are to be disposed
-        model.objects.filter(o => o.disposeFlag).forEach(o => model.exile(o));
+        global.model.objects.filter(o => o.disposeFlag).forEach(o => global.model.exile(o));
     }
 
 
@@ -40,8 +40,8 @@ export abstract class BaseControllerOld {
         this.disposeOldState(newstate);
         this.initNewState(newstate);
 
-        (model as BaseModelOld).gameOldState = (model as BaseModelOld).gameState;
-        (model as BaseModelOld).gameState = newstate;
+        (global.model as BaseModelOld).gameOldState = (global.model as BaseModelOld).gameState;
+        (global.model as BaseModelOld).gameState = newstate;
     }
 
 
@@ -49,8 +49,8 @@ export abstract class BaseControllerOld {
         this.disposeOldSubstate(newsubstate);
         this.initNewSubstate(newsubstate);
 
-        (model as BaseModelOld).gameOldSubstate = (model as BaseModelOld).gameSubstate;
-        (model as BaseModelOld).gameSubstate = newsubstate;
+        (global.model as BaseModelOld).gameOldSubstate = (global.model as BaseModelOld).gameSubstate;
+        (global.model as BaseModelOld).gameSubstate = newsubstate;
     }
 
 

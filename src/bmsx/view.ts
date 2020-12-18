@@ -1,4 +1,4 @@
-﻿import { view, model } from "./engine";
+﻿// import { global.view, model } from "./engine";
 import { Size, Point } from "./common";
 
 export interface Color {
@@ -46,12 +46,12 @@ export abstract class BaseView {
     }
 
     public drawgame(gamescreenOffset?: Point, clearCanvas: boolean = true): void {
-        if (clearCanvas) view.clear();
-        model.objects.forEach(o => !o.disposeFlag && o.visible && o.paint?.(gamescreenOffset));
+        if (clearCanvas) global.view.clear();
+        global.model.objects.forEach(o => !o.disposeFlag && o.visible && o.paint?.(gamescreenOffset));
     }
 
     public calculateSize(): void {
-        let self = view || this;
+        let self = global.view || this;
 
         // var width = gl.canvas.clientWidth;
         // var height = gl.canvas.clientHeight;
@@ -73,7 +73,7 @@ export abstract class BaseView {
 
     public handleResize(): void {
         if (document.getElementById('gamescreen').style.visibility === 'hidden') return;
-        let self = view || this;
+        let self = global.view || this;
         self.calculateSize();
         self.canvas.style.width = `${self.viewportSize.x * self.scale}px`;
         self.canvas.style.height = `${self.viewportSize.y * self.scale}px`;
@@ -112,64 +112,64 @@ export abstract class BaseView {
 
 
     public clear(): void {
-        view.context.translate(0.5, 0.5);
-        view.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        view.context.translate(-0.5, -0.5);
+        global.view.context.translate(0.5, 0.5);
+        global.view.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        global.view.context.translate(-0.5, -0.5);
     }
 
     public drawPressKey(): void {
-        view.context.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        global.view.context.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-        view.context.font = '12pt Monaco';
-        view.context.fillStyle = 'white';
-        view.context.save();
-        view.context.fillText('Press any key to start', 56, 80);
-        view.context.restore();
+        global.view.context.font = '12pt Monaco';
+        global.view.context.fillStyle = 'white';
+        global.view.context.save();
+        global.view.context.fillText('Press any key to start', 56, 80);
+        global.view.context.restore();
     }
 
     public drawImg(imgid: number, x: number, y: number, options?: number, sx?: number, sy?: number): void {
         let img = BaseView.images[imgid];
         let scalex = sx ?? 1;
         let scaley = sy ?? 1;
-        view.context.save();
-        view.context.translate(~~x, ~~y);
+        global.view.context.save();
+        global.view.context.translate(~~x, ~~y);
         if (options & DrawImgFlags.HFLIP) {
-            view.context.scale(-1 * scalex, 1 * scaley);
-            view.context.translate(-img.width, 0);
+            global.view.context.scale(-1 * scalex, 1 * scaley);
+            global.view.context.translate(-img.width, 0);
         }
         if (options & DrawImgFlags.VFLIP) {
-            view.context.scale(1 * scalex, -1 * scaley);
-            view.context.translate(0, -img.height);
+            global.view.context.scale(1 * scalex, -1 * scaley);
+            global.view.context.translate(0, -img.height);
         }
-        view.context.drawImage(img, 0, 0);
-        view.context.restore();
+        global.view.context.drawImage(img, 0, 0);
+        global.view.context.restore();
     }
 
     public drawColoredBitmap(imgid: number, x: number, y: number, options: number, r: boolean = true, g: boolean = true, b: boolean = true, a: boolean = true) {
         // TODO: IMPLEMENTEER!!
-        view.drawImg(imgid, x, y, options);
+        global.view.drawImg(imgid, x, y, options);
     }
 
     public drawRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
-        view.context.save();
-        view.context.translate(0.5, 0.5);
-        view.context.beginPath();
-        view.context.strokeStyle = this.toRgb(c);
-        view.context.rect(~~x, ~~y, ~~(ex - x), ~~(ey - y));
-        view.context.stroke();
-        view.context.restore();
+        global.view.context.save();
+        global.view.context.translate(0.5, 0.5);
+        global.view.context.beginPath();
+        global.view.context.strokeStyle = this.toRgb(c);
+        global.view.context.rect(~~x, ~~y, ~~(ex - x), ~~(ey - y));
+        global.view.context.stroke();
+        global.view.context.restore();
     }
 
     public fillRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
-        view.context.save();
-        view.context.translate(0.5, 0.5);
-        view.context.beginPath();
-        let colorRgb = view.toRgb(c);
-        view.context.fillStyle = colorRgb;
-        view.context.strokeStyle = colorRgb;
-        view.context.fillRect(~~x, ~~y, ~~(ex - x), ~~(ey - y));
-        view.context.stroke();
-        view.context.restore();
+        global.view.context.save();
+        global.view.context.translate(0.5, 0.5);
+        global.view.context.beginPath();
+        let colorRgb = global.view.toRgb(c);
+        global.view.context.fillStyle = colorRgb;
+        global.view.context.strokeStyle = colorRgb;
+        global.view.context.fillRect(~~x, ~~y, ~~(ex - x), ~~(ey - y));
+        global.view.context.stroke();
+        global.view.context.restore();
     }
 
     private toRgb(c: Color): string {

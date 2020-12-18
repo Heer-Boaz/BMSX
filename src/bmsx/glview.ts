@@ -1,4 +1,3 @@
-import { view, game } from "./engine";
 import { Size, Point } from "./common";
 import { BaseView, Color, DrawImgFlags } from './view';
 
@@ -235,7 +234,7 @@ export abstract class GLView extends BaseView {
 
 	public handleResize(): void {
 		super.handleResize();
-		let _this = view as GLView;
+		let _this = global.view as GLView;
 		_this.glctx.viewport(0, 0, _this.glctx.canvas.width, _this.glctx.canvas.height);
 	}
 
@@ -249,26 +248,26 @@ export abstract class GLView extends BaseView {
 	}
 
 	public drawSprites(): void {
-		let _this = view as GLView;
+		let _this = global.view as GLView;
 		let gl = _this.glctx;
 		gl.drawArrays(gl.TRIANGLES, 0, 6 * _this.drawImgReqIndex);
 		_this.drawImgReqIndex = 0;
 	}
 
 	public drawImg(imgid: number, x: number, y: number, options?: number, sx?: number, sy?: number): void {
-		let _this = view as GLView;
+		let _this = global.view as GLView;
 		let gl = _this.glctx;
-		let width = game.rom['imgresources'][imgid]['imgmeta']['width'];
-		let height = game.rom['imgresources'][imgid]['imgmeta']['height'];
+		let width = global.game.rom['imgresources'][imgid]['imgmeta']['width'];
+		let height = global.game.rom['imgresources'][imgid]['imgmeta']['height'];
 
 		let flipx = (options & DrawImgFlags.HFLIP);
 		let flipy = (options & DrawImgFlags.VFLIP);
 
 		bvec.set(_this.vertexcoords, x, y, width, height, sx ?? 1, sy ?? 1);
-		if (flipx && flipy) _this.texcoords.set(game.rom['imgresources'][imgid]['imgmeta']['texcoords_fliphv']);
-		else if (flipx) _this.texcoords.set(game.rom['imgresources'][imgid]['imgmeta']['texcoords_fliph']);
-		else if (flipy) _this.texcoords.set(game.rom['imgresources'][imgid]['imgmeta']['texcoords_flipv']);
-		else _this.texcoords.set(game.rom['imgresources'][imgid]['imgmeta']['texcoords']);
+		if (flipx && flipy) _this.texcoords.set(global.game.rom['imgresources'][imgid]['imgmeta']['texcoords_fliphv']);
+		else if (flipx) _this.texcoords.set(global.game.rom['imgresources'][imgid]['imgmeta']['texcoords_fliph']);
+		else if (flipy) _this.texcoords.set(global.game.rom['imgresources'][imgid]['imgmeta']['texcoords_flipv']);
+		else _this.texcoords.set(global.game.rom['imgresources'][imgid]['imgmeta']['texcoords']);
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
 		gl.bufferSubData(gl.ARRAY_BUFFER, 48 * _this.drawImgReqIndex, _this.vertexcoords);
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.texcoordBuffer);
@@ -277,7 +276,7 @@ export abstract class GLView extends BaseView {
 	}
 
 	public drawColoredBitmap(imgid: number, x: number, y: number, options: number, r: boolean = true, g: boolean = true, b: boolean = true, a: boolean = true) {
-		let _this = view as GLView;
+		let _this = global.view as GLView;
 		_this.drawImg(imgid, x, y, options);
 		// console.warn('GLView.drawColoredBitmap nog niet gecodeerd :-(');
 	}

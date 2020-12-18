@@ -8,15 +8,26 @@ import { BaseModelOld } from './basemodel_old';
 import { BaseControllerOld } from './basecontroller_old';
 import { parse, stringify } from 'Flatted';
 
-export let game: Game;
-export let model: BaseModel | BaseModelOld;
-export let controller: BaseControllerOld;
-export let view: BaseView;
+declare global {
+    namespace NodeJS {
+        interface Global {
+            game: Game;
+            model: BaseModel | BaseModelOld;
+            controller: BaseControllerOld;
+            view: BaseView;
+        }
+    }
+}
+
+// export let game: Game;
+// export let model: BaseModel | BaseModelOld;
+// export let controller: BaseControllerOld;
+// export let view: BaseView;
 
 const fps: number = 50;
 const fpstime: number = 1000 / fps;
 
-@insavegame
+//@insavegame
 export class GameOptions {
     public static readonly INITIAL_SCALE: number = 1;
     public static readonly INITIAL_FULLSCREEN: boolean = false;
@@ -67,13 +78,14 @@ export type str2bss = { [key: string]: bss; };
 export type bsfthandle = (state: bss, ik: any, type: BSTEventType) => void;
 export type numstring = number | string;
 
-// @insavegame
+@insavegame
 export class bss {
     public id: numstring;
     public parent: bst;
     public ik: any;
     public start?: boolean; // Is this a start state?
     public init?: boolean; // Should this state be initiated when this is a start state?
+    // toJSON: () => { ctor: any; data: any; };
 
     public constructor(_id: numstring = 0, _partialdef?: Partial<bss>) {
         this.id = _id;
@@ -164,11 +176,26 @@ export class bss {
         this._nudges = 0;
     }
 }
+// bss.prototype.toJSON = function () {
+//     let self = <bss><unknown>this;
+//     self.parent = undefined;
+//     self.ik = undefined;
+
+//     return Generic_toJSON(bss.name, self);
+// }
 
 const BST_MAX_HISTORY = 10;
 const DEFAULT_BST_ID = 'master';
+// //@insavegame
 @insavegame
 export class bst {
+    // public static toJSON() {
+    //     let self = <bst><unknown>this;
+    //     self.ik = undefined;
+
+    //     return Generic_toJSON(bst.name, self);
+    // }
+
     public id: numstring;
     public ik: any;
     protected initstateid: numstring;
@@ -258,7 +285,7 @@ export class bst {
 }
 
 export type numstr2bst = { [key: string]: bst; };
-@insavegame
+// //@insavegame
 export abstract class cbst {
     public machines: numstr2bst;
     public paused: boolean;
@@ -335,7 +362,13 @@ export abstract class cbst {
     }
 }
 
-@insavegame
+// @insavegame
+export class Savegame {
+    objects: IGameObject[];
+    modelprops: {};
+}
+
+// @insavegame
 export abstract class BaseModel extends cbst {
     public id2object: { [key: string]: IGameObject; };
     public objects: IGameObject[];
@@ -343,6 +376,24 @@ export abstract class BaseModel extends cbst {
     public startAfterLoad: boolean;
     public abstract get gamewidth(): number;
     public abstract get gameheight(): number;
+
+    public static serializeObj(obj: any) {
+        let cache = [];
+        return JSON.stringify(obj, function (key, value) {
+            if (Array.isArray(value)) return value;
+            let type = typeof value;
+            switch (type) {
+                case 'object':
+                    if (cache.includes(value)) return undefined;
+                    cache.push(value);
+                    return value;
+                case 'function':
+                    return undefined;
+                default:
+                    return value;
+            }
+        });
+    }
 
     constructor() {
         super();
@@ -356,6 +407,36 @@ export abstract class BaseModel extends cbst {
             onrun: this.defaultrun,
             start: true,
         }));
+        console.info('Ik ben gerevived!!');
+    }
+
+    public load(serialized: string): void {
+        this.clear();
+        let savegame = JSON.parse(serialized, Reviver) as Savegame;
+        savegame.objects.forEach(o => this.spawn(o));
+        Object.assign(this, savegame.modelprops);
+    }
+
+    public save(): string {
+        let createSavegame = () => {
+            let keys = Object.keys(this);
+            let data = {};
+            for (let index = 0; index < keys.length; ++index) {
+                let key = keys[index];
+                if (key === 'objects' || key === 'id2object') continue;
+                if (this[key] !== null && this[key] !== undefined) {
+                    data[key] = this[key];
+                }
+            }
+            let result = new Savegame();
+            result.objects = this.objects;
+            result.modelprops = data;
+
+            return result;
+        };
+
+        let savegame = createSavegame();
+        return BaseModel.serializeObj(savegame);
     }
 
     public defaultrun(_, ik: BaseModel): void {
@@ -382,7 +463,7 @@ export abstract class BaseModel extends cbst {
         }
     }
 
-    public clearModel(): void {
+    public clear(): void {
         this.objects.forEach(o => o.ondispose?.());
         this.objects.length = 0;
         delete this.id2object;
@@ -394,13 +475,13 @@ export abstract class BaseModel extends cbst {
         this.objects.sort((o1, o2) => (o2.z || 0) - (o1.z || 0));
     }
 
-    public spawn(o: IGameObject, pos?: Point): void {
+    public spawn(o: IGameObject, pos?: Point, ignoreSpawnhandler?: boolean): void {
         this.objects.push(o);
 
         this.sortObjectsByPriority();
 
         this.id2object[o.id] = o;
-        o.onspawn?.(pos);
+        !ignoreSpawnhandler && o.onspawn?.(pos);
     }
 
     public exile(o: IGameObject): void {
@@ -432,19 +513,19 @@ export class Game {
     public rom: RomLoadResult;
 
     constructor(_rom: RomLoadResult, _model: BaseModel | BaseModelOld, _view: BaseView, _controller: BaseControllerOld | null, sndcontext: AudioContext, gainnode: GainNode) {
-        game = this;
+        global['game'] = this;
         this.rom = _rom;
 
-        model = _model;
-        view = _view;
-        controller = _controller;
+        // model = _model;
+        // view = _view;
+        // controller = _controller;
 
-        global['model'] = model;
-        global['view'] = view;
-        global['controller'] = controller;
+        global['model'] = _model;
+        global['view'] = _view;
+        global['controller'] = _controller;
 
         BaseView.images = _rom.images;
-        view.init();
+        global.view.init();
         SM.init(_rom['sndresources'], sndcontext, gainnode);
         Input.init();
 
@@ -452,20 +533,14 @@ export class Game {
         this.wasupdated = true;
     }
 
-    public loadFromString(save: string): void {
-        model = JSON.parse(save, Reviver);
-    }
-
-    public saveToString = (): string => JSON.stringify(model);
-
     public get turnCounter(): number {
         return this._turnCounter;
     }
 
     public start(): void {
-        window.addEventListener('resize', view.handleResize, false);
-        window.addEventListener('orientationchange', view.handleResize, false);
-        view.handleResize();
+        window.addEventListener('resize', global.view.handleResize, false);
+        window.addEventListener('orientationchange', global.view.handleResize, false);
+        global.view.handleResize();
 
         this.running = true;
         this.lastTick = performance.now();
@@ -474,10 +549,11 @@ export class Game {
 
     public update(elapsedMs: number): void {
         BStopwatch.updateTimers(elapsedMs);
-        model.run(elapsedMs);
+        global.model.run(elapsedMs);
     }
 
     public run(tFrame?: number): void {
+        let game = global.game;
         if (!game.running) return;
 
         game.animationFrameRequestid = window.requestAnimationFrame(game.run);
@@ -499,15 +575,15 @@ export class Game {
             Input.pollGamepadInput();
             game.update(game.lastTick);
         }
-        view.drawgame();
+        global.view.drawgame();
     }
 
     public stop(): void {
-        game.running = false;
+        global.game.running = false;
         window.cancelAnimationFrame(this.animationFrameRequestid);
         window.requestAnimationFrame(() => {
-            view.clear();
-            view.handleResize();
+            global.view.clear();
+            global.view.handleResize();
             SM.stopEffect();
             SM.stopMusic();
         });
@@ -562,7 +638,7 @@ export function ProhibitLeavingScreenHandler(ik: IGameObject, d: Direction, old_
     }
 }
 
-@insavegame
+//@insavegame
 export abstract class Sprite extends cbst implements IGameObject {
     public id: string | null;
     public pos: Point;
@@ -657,7 +733,7 @@ export abstract class Sprite extends cbst implements IGameObject {
     }
 
     spawn(spawningPos: Point = null): Sprite {
-        model.spawn(this, spawningPos);
+        global.model.spawn(this, spawningPos);
         return this; // Voor chaining
     }
 
@@ -678,10 +754,10 @@ export abstract class Sprite extends cbst implements IGameObject {
         let dy = offset?.y || 0;
 
         if (colorize) {
-            view.drawColoredBitmap(this.imgid, this.pos.x + dx, this.pos.y + dy, options, colorize.r, colorize.g, colorize.b, colorize.a);
+            global.view.drawColoredBitmap(this.imgid, this.pos.x + dx, this.pos.y + dy, options, colorize.r, colorize.g, colorize.b, colorize.a);
         }
         else {
-            view.drawImg(this.imgid, this.pos.x + dx, this.pos.y + dy, options);
+            global.view.drawImg(this.imgid, this.pos.x + dx, this.pos.y + dy, options);
         }
     }
 
@@ -729,7 +805,7 @@ export abstract class Sprite extends cbst implements IGameObject {
         let oldx = this.pos.x;
         this.pos.x = ~~newx;
         if (newx < oldx) {
-            if (model.collidesWithTile(this, Direction.Left)) {
+            if (global.model.collidesWithTile(this, Direction.Left)) {
                 this.onWallcollide?.(Direction.Up);
                 newx += TileSize - mod(newx, TileSize);
             }
@@ -738,13 +814,13 @@ export abstract class Sprite extends cbst implements IGameObject {
             else if (newx < 0) { this.onLeavingScreen?.(this, Direction.Left, oldx); }
         }
         else if (newx > oldx) {
-            if (model.collidesWithTile(this, Direction.Right)) {
+            if (global.model.collidesWithTile(this, Direction.Right)) {
                 this.onWallcollide?.(Direction.Right);
                 newx -= newx % TileSize;
             }
             this.pos.x = ~~newx;
-            if (newx >= model.gamewidth) { this.onLeaveScreen?.(this, Direction.Right, oldx); }
-            else if (newx + this.size.x >= model.gamewidth) { this.onLeavingScreen?.(this, Direction.Right, oldx); }
+            if (newx >= global.model.gamewidth) { this.onLeaveScreen?.(this, Direction.Right, oldx); }
+            else if (newx + this.size.x >= global.model.gamewidth) { this.onLeavingScreen?.(this, Direction.Right, oldx); }
         }
     }
 
@@ -752,7 +828,7 @@ export abstract class Sprite extends cbst implements IGameObject {
         let oldy = this.pos.y;
         this.pos.y = ~~newy;
         if (newy < oldy) {
-            if (model.collidesWithTile(this, Direction.Up)) {
+            if (global.model.collidesWithTile(this, Direction.Up)) {
                 this.onWallcollide?.(Direction.Up);
                 newy += TileSize - mod(newy, TileSize);
             }
@@ -761,13 +837,13 @@ export abstract class Sprite extends cbst implements IGameObject {
             else if (newy < 0) { this.onLeavingScreen?.(this, Direction.Up, oldy); }
         }
         else if (newy > oldy) {
-            if (model.collidesWithTile(this, Direction.Down)) {
+            if (global.model.collidesWithTile(this, Direction.Down)) {
                 this.onWallcollide?.(Direction.Down);
                 newy -= newy % TileSize;
             }
             this.pos.y = ~~newy;
-            if (newy >= model.gameheight) { this.onLeaveScreen?.(this, Direction.Down, oldy); }
-            else if (newy + this.size.y >= model.gameheight) { this.onLeavingScreen?.(this, Direction.Down, oldy); }
+            if (newy >= global.model.gameheight) { this.onLeaveScreen?.(this, Direction.Down, oldy); }
+            else if (newy + this.size.y >= global.model.gameheight) { this.onLeavingScreen?.(this, Direction.Down, oldy); }
         }
     }
 }
@@ -787,17 +863,30 @@ export function Reviver(key: any, value: any) {
     }
 
     if (typeof value === "object" &&
-        typeof value.ctor === "string" &&
-        typeof value.data !== "undefined") {
-        let ctor: any;
-        ctor = Reviver.constructors[value.ctor] || window[value.ctor];
-        if (typeof ctor === "function" && typeof ctor.prototype.fromJSON === "function") {
-            return ctor.prototype.fromJSON(value);
-        }
-        return undefined;
+        typeof value.typename === "string") {
+        let theConstructor = Reviver.constructors[value.typename];
+        console.info(`Reviving ${value.typename}`);
+        return Object.assign(new theConstructor(), value);
     }
+    // ctor = Reviver.constructors[value.ctor] || ;
+    // if (typeof ctor === "function" && typeof ctor.prototype.fromJSON === "function") {
+    //     return ctor.prototype.fromJSON(value);
+    // }
     return value;
 }
+// return value;
+// if (typeof value === "object" &&
+//     typeof value.ctor === "string" &&
+//     typeof value.data !== "undefined") {
+//     let ctor: any;
+//     ctor = Reviver.constructors[value.ctor] || window[value.ctor];
+//     if (typeof ctor === "function" && typeof ctor.prototype.fromJSON === "function") {
+//         return ctor.prototype.fromJSON(value);
+//     }
+//     return undefined;
+// }
+// return value;
+// }
 Reviver.constructors = Reviver.constructors ?? {}; // A list of constructors the smart reviver should know about
 
 // A generic "toJSON" function that creates the data expected
@@ -812,28 +901,30 @@ Reviver.constructors = Reviver.constructors ?? {}; // A list of constructors the
 // Returns:    The structure (which will then be turned into a string
 //             as part of the JSON.stringify algorithm)
 function Generic_toJSON(ctorName: any, obj: any, keys?: string[]) {
-    let data: any, index: any, key: any;
+    obj.typename = ctorName;
+    return obj;
+    // let data: any, index: any, key: any;
 
-    if (!keys) {
-        keys = [];
-        // let currentObj = obj;
-        // do {
-        //     for (const key of Object.keys(currentObj)) {
-        //         keys.push(key);
-        //     }
-        // } while ((currentObj = Object.getPrototypeOf(currentObj)) && currentObj !== Object.prototype);
+    // if (!keys) {
+    //     keys = [];
+    //     // let currentObj = obj;
+    //     // do {
+    //     //     for (const key of Object.keys(currentObj)) {
+    //     //         keys.push(key);
+    //     //     }
+    //     // } while ((currentObj = Object.getPrototypeOf(currentObj)) && currentObj !== Object.prototype);
 
-        keys = Object.keys(obj); // Only "own" properties are included
-    }
+    //     keys = Object.keys(obj); // Only "own" properties are included
+    // }
 
-    data = {};
-    for (index = 0; index < keys.length; ++index) {
-        key = keys[index];
-        if (obj[key] !== null && obj[key] !== undefined) {
-            data[key] = obj[key];
-        }
-    }
-    return { ctor: ctorName, data: data };
+    // data = {};
+    // for (index = 0; index < keys.length; ++index) {
+    //     key = keys[index];
+    //     if (obj[key] !== null && obj[key] !== undefined) {
+    //         data[key] = obj[key];
+    //     }
+    // }
+    // return { ctor: ctorName, data: data };
 }
 
 // A generic "fromJSON" function for use with Reviver: Just calls the
@@ -847,23 +938,41 @@ function Generic_fromJSON(ctor: any, data: any) {
     console.debug(`fromJSON ctor = '${ctor.name ?? '(undefined)'}'`);
     let obj: any, name: any;
 
-    obj = new ctor();
-    for (name in data) {
-        obj[name] = data[name];
-    }
-    return obj;
+    // obj = new ctor();
+    return Object.assign(new ctor(), data);
+    // for (name in data) {
+    //     obj[name] = data[name];
+    // }
+    // return obj;
 }
 
-export function insavegame(target: any) {
+export function insavegame<TFunction extends Function>(target: any, toJSON?: () => any, fromJSON?: (value: any, value_data: any) => any): any {
     Reviver.constructors ??= {};
     Reviver.constructors[target.name] = target;
 
+    // if (!target.prototype.toJSON) {
+    //     if (toJSON) {
+    //         target.prototype.toJSON = toJSON;
+    //     }
+    //     else {
     target.prototype.toJSON = function () {
         return Generic_toJSON(target.name, this);
     };
+    //     }
+    // }
+    // if (!target.prototype.fromJSON) {
+    //     if (fromJSON) {
+    //         target.prototype.fromJSON = fromJSON;
+    //     }
+    //     else {
     target.prototype.fromJSON = function (value: any) {
-        return Generic_fromJSON(target, value.data);
+        return Object.assign(new target(), value);
+        // return Generic_fromJSON(target, value);
     };
+    //     }
+    // }
+
+    return target;
 }
 
 // let inSavestate = {};
@@ -890,7 +999,7 @@ export function insavegame(target: any) {
 //     }
 // }
 
-@insavegame
+//@insavegame
 export class BStopwatch {
     public pauseDuringMenu: boolean = true;
     public pauseAtFocusLoss: boolean = true;

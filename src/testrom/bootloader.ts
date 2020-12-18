@@ -1,5 +1,5 @@
 import { RomLoadResult } from '../bmsx/rompack';
-import { Game, game, model, BaseModel, IGameObject, Sprite, insavegame, Reviver } from '../bmsx/engine';
+import { Game, BaseModel, IGameObject, Sprite, insavegame, Reviver } from '../bmsx/engine';
 import { setPoint, newPoint, Direction, newSize } from '../bmsx/common';
 import { Tile, MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
@@ -28,10 +28,10 @@ class bclass extends Sprite {
             this.pos.x -= 2;
         }
         if (Input.KC_F1) {
-            _model.savestring = game.saveToString();
+            _model.savestring = global.model.save();
         }
         if (Input.KC_F2) {
-            if (_model.savestring) game.loadFromString(_model.savestring);
+            if (_model.savestring) global.model.load(_model.savestring);
         }
     }
 
@@ -58,7 +58,6 @@ class _modelclass extends BaseModel {
     }
 };
 
-@insavegame
 class _viewclass extends GLView {
     public drawgame() {
         super.drawgame();
@@ -74,6 +73,6 @@ _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: Gain
     let _view = new _viewclass(newSize(MSX1ScreenWidth, MSX1ScreenHeight));
     new Game(rom, _model, _view, null, sndcontext, gainnode);
 
-    game.start();
+    global.game.start();
     _model.spawn(new bclass(), newPoint(100, 100));
 };

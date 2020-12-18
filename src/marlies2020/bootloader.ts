@@ -1,5 +1,5 @@
 import { RomLoadResult } from '../bmsx/rompack';
-import { Game, game, model, BaseModel, IGameObject, Sprite, BSTEventType, bss, bst, ProhibitLeavingScreenHandler as prohibitLeavingScreenHandler } from '../bmsx/engine';
+import { Game, BaseModel, IGameObject, Sprite, BSTEventType, bss, bst, ProhibitLeavingScreenHandler as prohibitLeavingScreenHandler } from '../bmsx/engine';
 import { setPoint, newPoint, Direction, newSize, newArea, Point, randomInt, copyPoint, Opposite } from '../bmsx/common';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
@@ -35,7 +35,7 @@ class modelclass extends BaseModel {
 
         this.add(new bss('hoera!', {
             onenter(_, ik: modelclass) {
-                ik.clearModel();
+                ik.clear();
                 ik.spawn(new hoeraStuff());
             }
         }));
@@ -479,7 +479,7 @@ class speler extends Sprite {
                         }
                     }
                     else if (Input.KD_DOWN) {
-                        if (self.pos.y <= model.gameheight - 32 && self.column !== 0) {
+                        if (self.pos.y <= _model.gameheight - 32 && self.column !== 0) {
                             if ((self.column !== 3 && self.column !== 4) ||
                                 (self.pos.y < 44 || self.pos.y >= 80)) {
                                 self.pos.y += 2;
@@ -703,7 +703,7 @@ class keuken extends Sprite {
                 if (_model.objects.filter(o => (<any>o)?.isEng).length < MAX_CORONA) {
                     let rloc = randomInt(0, CORONA_SPAWN_LOCS.length - 1);
                     let sloc = CORONA_SPAWN_LOCS[rloc];
-                    model.spawn(new corona(), sloc);
+                    _model.spawn(new corona(), sloc);
                 }
             },
             start: true,
@@ -724,7 +724,8 @@ _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: Gain
     let _view = new viewclass(newSize(MSX1ScreenWidth, MSX1ScreenHeight));
     new Game(rom, _model, _view, null, sndcontext, gainnode);
 
-    game.start();
+    global.game.start();
+    let model = global.model;
     model.spawn(new keuken(), newPoint(0, 0));
     model.spawn(new invFrame(), newPoint(4, 4));
     let marlies = new speler(START_COLUMN);

@@ -1,4 +1,4 @@
-import { view } from "../bmsx/engine"
+// import { view } from "../bmsx/engine"
 import { BitmapId } from "./resourceids";
 import { GameOptions as GO } from "../bmsx/engine";
 import { Point } from "../bmsx/common";
@@ -40,7 +40,7 @@ export class TextWriter {
     private static drawLetter(x: number, y: number, c: string, color: Color = null): void {
         let letter = TextWriter.getBitmapForLetter(c);
         // if (!color)
-            view.drawImg(letter, x, y);
+            global.view.drawImg(letter, x, y);
         // else view.drawColoredBitmap(letter, x, y, color.r / 255.0, color.g / 255.0, color.b / 255.0);
     }
 
