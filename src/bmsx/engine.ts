@@ -85,7 +85,22 @@ export class bss {
     public ik: any;
     public start?: boolean; // Is this a start state?
     public init?: boolean; // Should this state be initiated when this is a start state?
-    // toJSON: () => { ctor: any; data: any; };
+
+    @onsave
+    public static onSave(me: bss) {
+        let result = Object.assign(new bss(undefined), me);
+
+        result.ik = undefined;
+        result.parent = undefined;
+
+        return result;
+    }
+
+    @onload
+    public static onLoad(loaded: bss, parent: bst): bss {
+        // Object.assign(parent.states[loaded.id], loaded);
+        return undefined;
+    }
 
     public constructor(_id: numstring = 0, _partialdef?: Partial<bss>) {
         this.id = _id;
@@ -186,21 +201,40 @@ export class bss {
 
 const BST_MAX_HISTORY = 10;
 const DEFAULT_BST_ID = 'master';
-// //@insavegame
 @insavegame
 export class bst {
-    // public static toJSON() {
-    //     let self = <bst><unknown>this;
-    //     self.ik = undefined;
+    @onsave
+    public static onSave(me: bst) {
+        let result = Object.assign(new bst(undefined), me);
 
-    //     return Generic_toJSON(bst.name, self);
-    // }
+        result.ik = undefined;
+        result.states = { ...me.states };
+        result.savedStates = { ...me.states };
+        let keys = Object.keys(result.states);
+        for (let key of keys) {
+            result.states[key] = undefined;
+            delete result.states[key];
+        }
+
+        return result;
+    }
+
+    @onload
+    public static onLoad(loaded: bst, parent: cbst): bst {
+        let keys = Object.keys(loaded.savedStates);
+        for (let key in keys) {
+            Object.assign(loaded.states[key], loaded.savedStates[key]);
+        }
+        return undefined;
+        // return obj_toJSON(loaded, this);
+    }
 
     public id: numstring;
     public ik: any;
     protected initstateid: numstring;
 
     public states: str2bss; // Note that numbers will be automatically converted to strings!
+    public savedStates: str2bss; // When serialized, place states here, so that they can be revived without overwriting function-properties
     public currentid: numstring; // Identifier of current state
     // protected previousid: numstring; // Identifier of the previous state
     protected history: Array<numstring>; // History of previous states
@@ -215,6 +249,7 @@ export class bst {
         this.paused = false;
         this.initstateid = null;
         this.reset();
+        console.info(`Ik (${id}) als BST ben geconstruct!`);
     }
 
     public setStart(_id: numstring, init = true): void {
@@ -418,6 +453,7 @@ export abstract class BaseModel extends cbst {
     }
 
     public save(): string {
+        global.game.paused = true;
         let createSavegame = () => {
             let keys = Object.keys(this);
             let data = {};
@@ -436,6 +472,7 @@ export abstract class BaseModel extends cbst {
         };
 
         let savegame = createSavegame();
+        global.game.paused = false;
         return BaseModel.serializeObj(savegame);
     }
 
@@ -509,6 +546,7 @@ export class Game {
     _turnCounter: number;
     animationFrameRequestid: number;
     public running: boolean;
+    public paused: boolean;
     wasupdated: boolean;
     public rom: RomLoadResult;
 
@@ -530,6 +568,7 @@ export class Game {
         Input.init();
 
         this.running = false;
+        this.paused = false;
         this.wasupdated = true;
     }
 
@@ -573,7 +612,7 @@ export class Game {
             ++game._turnCounter;
             game.lastTick = game.lastTick + fpstime; // Now lastTick is this tick.
             Input.pollGamepadInput();
-            game.update(game.lastTick);
+            game.paused || game.update(game.lastTick);
         }
         global.view.drawgame();
     }
@@ -866,7 +905,9 @@ export function Reviver(key: any, value: any) {
         typeof value.typename === "string") {
         let theConstructor = Reviver.constructors[value.typename];
         console.info(`Reviving ${value.typename}`);
-        return Object.assign(new theConstructor(), value);
+        let result = Object.assign(new theConstructor(), value);
+        let onRevive = Reviver.onRevives[value.typename];
+        return onRevive ? onRevive(result, this) : result;
     }
     // ctor = Reviver.constructors[value.ctor] || ;
     // if (typeof ctor === "function" && typeof ctor.prototype.fromJSON === "function") {
@@ -874,6 +915,7 @@ export function Reviver(key: any, value: any) {
     // }
     return value;
 }
+
 // return value;
 // if (typeof value === "object" &&
 //     typeof value.ctor === "string" &&
@@ -888,43 +930,11 @@ export function Reviver(key: any, value: any) {
 // return value;
 // }
 Reviver.constructors = Reviver.constructors ?? {}; // A list of constructors the smart reviver should know about
+Reviver.onRevives = Reviver.onRevives ?? {}; // A list of constructors the smart reviver should know about
 
-// A generic "toJSON" function that creates the data expected
-// by Reviver.
-// `ctorName`  The name of the constructor to use to revive it
-// `obj`       The object being serialized
-// `keys`      (Optional) Array of the properties to serialize,
-//             if not given then all of the objects "own" properties
-//             that don't have function values will be serialized.
-//             (Note: If you list a property in `keys`, it will be serialized
-//             regardless of whether it's an "own" property.)
-// Returns:    The structure (which will then be turned into a string
-//             as part of the JSON.stringify algorithm)
-function Generic_toJSON(ctorName: any, obj: any, keys?: string[]) {
+function obj_toJSON(ctorName: any, obj: any) {
     obj.typename = ctorName;
     return obj;
-    // let data: any, index: any, key: any;
-
-    // if (!keys) {
-    //     keys = [];
-    //     // let currentObj = obj;
-    //     // do {
-    //     //     for (const key of Object.keys(currentObj)) {
-    //     //         keys.push(key);
-    //     //     }
-    //     // } while ((currentObj = Object.getPrototypeOf(currentObj)) && currentObj !== Object.prototype);
-
-    //     keys = Object.keys(obj); // Only "own" properties are included
-    // }
-
-    // data = {};
-    // for (index = 0; index < keys.length; ++index) {
-    //     key = keys[index];
-    //     if (obj[key] !== null && obj[key] !== undefined) {
-    //         data[key] = obj[key];
-    //     }
-    // }
-    // return { ctor: ctorName, data: data };
 }
 
 // A generic "fromJSON" function for use with Reviver: Just calls the
@@ -946,31 +956,39 @@ function Generic_fromJSON(ctor: any, data: any) {
     // return obj;
 }
 
+// target: the class that the member is on.
+// name: the name of the member in the class.
+// descriptor: the member descriptor.This is essentially the object that would have been passed to Object.defineProperty.
+export function onsave(target: any, name: any, descriptor: any): any {
+    target.prototype.toJSON = descriptor.value;
+}
+
+// target: the class that the member is on.
+// name: the name of the member in the class.
+// descriptor: the member descriptor.This is essentially the object that would have been passed to Object.defineProperty.
+export function onload(target: any, name: any, descriptor: any): any {
+    Reviver.onRevives ??= {};
+    Reviver.onRevives[target.name] = descriptor.value;
+}
+
 export function insavegame<TFunction extends Function>(target: any, toJSON?: () => any, fromJSON?: (value: any, value_data: any) => any): any {
     Reviver.constructors ??= {};
     Reviver.constructors[target.name] = target;
 
-    // if (!target.prototype.toJSON) {
-    //     if (toJSON) {
-    //         target.prototype.toJSON = toJSON;
-    //     }
-    //     else {
-    target.prototype.toJSON = function () {
-        return Generic_toJSON(target.name, this);
-    };
-    //     }
-    // }
-    // if (!target.prototype.fromJSON) {
-    //     if (fromJSON) {
-    //         target.prototype.fromJSON = fromJSON;
-    //     }
-    //     else {
-    target.prototype.fromJSON = function (value: any) {
-        return Object.assign(new target(), value);
-        // return Generic_fromJSON(target, value);
-    };
-    //     }
-    // }
+    if (target.prototype.toJSON) {
+        let wrapper = target.prototype.toJSON;
+        target.prototype.toJSON = function () {
+            return obj_toJSON(target.name, wrapper(this));
+        };
+    }
+    else {
+        target.prototype.toJSON = function () {
+            return obj_toJSON(target.name, this);
+        };
+        // target.prototype.fromJSON = function (value: any) {
+        //     return Object.assign(new target(), value);
+        // };
+    }
 
     return target;
 }
