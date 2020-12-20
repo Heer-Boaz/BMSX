@@ -96,11 +96,15 @@ export class bss {
         return result;
     }
 
-    @onload
-    public static onLoad(loaded: bss, parent: bst): bss {
+    // @onrevive
+    // public static onLoad(loaded: bss, parent: bst): bss {
+        // let keys = Object.keys(loaded.savedStates);
+        // for (let key in keys) {
+        //     Object.assign(loaded.states[key], loaded.savedStates[key]);
+        // }
         // Object.assign(parent.states[loaded.id], loaded);
-        return undefined;
-    }
+        // return undefined;
+    // }
 
     public constructor(_id: numstring = 0, _partialdef?: Partial<bss>) {
         this.id = _id;
@@ -219,15 +223,15 @@ export class bst {
         return result;
     }
 
-    @onload
-    public static onLoad(loaded: bst, parent: cbst): bst {
-        let keys = Object.keys(loaded.savedStates);
-        for (let key in keys) {
-            Object.assign(loaded.states[key], loaded.savedStates[key]);
-        }
-        return undefined;
-        // return obj_toJSON(loaded, this);
-    }
+    // @onrevive
+    // public static onLoad(loaded: bst, parent: cbst): bst {
+    //     let keys = Object.keys(loaded.savedStates);
+    //     for (let key in keys) {
+    //         Object.assign(loaded.states[key], loaded.savedStates[key]);
+    //     }
+    //     return undefined;
+    //     // return obj_toJSON(loaded, this);
+    // }
 
     public id: numstring;
     public ik: any;
@@ -320,15 +324,59 @@ export class bst {
 }
 
 export type numstr2bst = { [key: string]: bst; };
-// //@insavegame
-export abstract class cbst {
+@insavegame
+export class cbst {
     public machines: numstr2bst;
+    public savedMachines: numstr2bst;
     public paused: boolean;
+
+    @onsave
+    public static onSave(me: cbst): any {
+        let result = Object.assign(new cbst(), me);
+
+        result.machines = { ...me.machines };
+        result.savedMachines = { ...me.machines };
+        let keys = Object.keys(result.machines);
+        for (let key of keys) {
+            result.machines[key] = undefined;
+            delete result.machines[key];
+        }
+
+        return result;
+    }
 
     constructor() {
         this.machines = {};
+        this.savedMachines = undefined;
         this.paused = false;
         this.addBst(DEFAULT_BST_ID);
+    }
+
+    public onload(): void {
+        let machineIds = Object.keys(this.savedMachines);
+        for (let machineId of machineIds) {
+            let currentMachine = this.machines[machineId];
+            let currentSavedMachine = this.savedMachines[machineId];
+
+            let bstKeys = Object.keys(currentMachine);
+            for (let bstKey of bstKeys) {
+                switch (bstKey) {
+                    case 'ik': break
+                    case 'states': break;
+                    case 'savedStates': break;
+                    default:
+                        currentMachine[bstKey] = currentSavedMachine[bstKey];
+                }
+            }
+            let stateIds = Object.keys(currentMachine.states);
+            for (let stateId of stateIds) {
+                let state = currentMachine.states[stateId];
+                let savedState = currentSavedMachine.savedStates[stateId];
+
+                Object.assign(state, savedState);
+                delete this.savedMachines[machineId];
+            }
+        }
     }
 
     public getBst(machine_id: string): bst {
@@ -448,8 +496,9 @@ export abstract class BaseModel extends cbst {
     public load(serialized: string): void {
         this.clear();
         let savegame = JSON.parse(serialized, Reviver) as Savegame;
-        savegame.objects.forEach(o => this.spawn(o));
         Object.assign(this, savegame.modelprops);
+        savegame.objects.forEach(o => (o.onload?.(), this.spawn(o)));
+
     }
 
     public save(): string {
@@ -662,6 +711,7 @@ export interface IGameObject {
     collides?(o: IGameObject | Area): boolean;
     collide?(src: IGameObject): void;
     oncollide?: (src: IGameObject) => void;
+    onload?: () => void;
     markForDisposure?: () => void;
 }
 
@@ -739,6 +789,11 @@ export abstract class Sprite extends cbst implements IGameObject {
     public onWallcollide?: (dir: Direction) => void;
     public onLeaveScreen?: (ik: IGameObject, dir: Direction, old_x_or_y: number) => void;
     public onLeavingScreen?: (ik: IGameObject, dir: Direction, old_x_or_y: number) => void;
+
+    @onsave
+    public static onSave(me: Sprite) {
+        return super.onSave(me);
+    }
 
     private _direction: Direction;
     public oldDirection: Direction;
@@ -929,8 +984,10 @@ export function Reviver(key: any, value: any) {
 // }
 // return value;
 // }
-Reviver.constructors = Reviver.constructors ?? {}; // A list of constructors the smart reviver should know about
-Reviver.onRevives = Reviver.onRevives ?? {}; // A list of constructors the smart reviver should know about
+Reviver.constructors = Reviver.constructors ?? {};
+Reviver.onRevives = Reviver.onRevives ?? {};
+Reviver.onSave = Reviver.onSave ?? {};
+// Reviver.onPostLoad = Reviver.onPostLoad ?? {};
 
 function obj_toJSON(ctorName: any, obj: any) {
     obj.typename = ctorName;
@@ -960,23 +1017,33 @@ function Generic_fromJSON(ctor: any, data: any) {
 // name: the name of the member in the class.
 // descriptor: the member descriptor.This is essentially the object that would have been passed to Object.defineProperty.
 export function onsave(target: any, name: any, descriptor: any): any {
-    target.prototype.toJSON = descriptor.value;
+    // target.prototype.toJSON = descriptor.value;
+    Reviver.onSave ??= {};
+    Reviver.onSave[target.name] = descriptor.value;
 }
 
 // target: the class that the member is on.
 // name: the name of the member in the class.
 // descriptor: the member descriptor.This is essentially the object that would have been passed to Object.defineProperty.
-export function onload(target: any, name: any, descriptor: any): any {
+export function onrevive(target: any, name: any, descriptor: any): any {
     Reviver.onRevives ??= {};
     Reviver.onRevives[target.name] = descriptor.value;
 }
+
+// target: the class that the member is on.
+// name: the name of the member in the class.
+// descriptor: the member descriptor.This is essentially the object that would have been passed to Object.defineProperty.
+// export function onpostload(target: any, name: any, descriptor: any): any {
+//     Reviver.onPostLoad ??= {};
+//     Reviver.onPostLoad[target.name] = descriptor.value;
+// }
 
 export function insavegame<TFunction extends Function>(target: any, toJSON?: () => any, fromJSON?: (value: any, value_data: any) => any): any {
     Reviver.constructors ??= {};
     Reviver.constructors[target.name] = target;
 
-    if (target.prototype.toJSON) {
-        let wrapper = target.prototype.toJSON;
+    let wrapper = Reviver.onSave[target.name];
+    if (wrapper) {
         target.prototype.toJSON = function () {
             return obj_toJSON(target.name, wrapper(this));
         };

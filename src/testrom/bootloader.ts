@@ -1,5 +1,5 @@
 import { RomLoadResult } from '../bmsx/rompack';
-import { Game, BaseModel, IGameObject, Sprite, insavegame, Reviver } from '../bmsx/engine';
+import { Game, BaseModel, IGameObject, Sprite, insavegame, Reviver, onsave } from '../bmsx/engine';
 import { setPoint, newPoint, Direction, newSize } from '../bmsx/common';
 import { Tile, MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
@@ -8,6 +8,11 @@ import { Input } from '../bmsx/input';
 
 @insavegame
 class bclass extends Sprite {
+    @onsave
+    public static onSave(me: Sprite) {
+        return super.onSave(me);
+    }
+
     constructor() {
         super();
         this.id = 'The B';
