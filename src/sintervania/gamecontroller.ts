@@ -143,24 +143,24 @@ export class Controller extends BaseControllerOld {
                 switch ((model as Model).substate) {
                     case GameSubstate.GameMenu:
                         this.handleInputDuringGame();
-                        (model as Model).GameMenu.takeTurn();
+                        (model as Model).GameMenu.run();
                         break;
                     case GameSubstate.BelmontDies:
                         this.handleInputDuringGame();
-                        (model as Model).Belmont.takeTurn();
+                        (model as Model).Belmont.run();
                         (model as Model).Hud.takeTurn();
                         break;
                     case GameSubstate.ItsCurtainsForYou:
                     case GameSubstate.ToEndDemo:
                         this.handleInputDuringGame();
-                        (model as Model).Belmont.takeTurn();
+                        (model as Model).Belmont.run();
                         (model as Model).Hud.takeTurn();
-                        (model as Model).ItsCurtains.takeTurn();
+                        (model as Model).ItsCurtains.run();
                         break;
                     case GameSubstate.GameOver:
                         this.handleInputDuringGame();
-                        (model as Model).GameOverScreen.takeTurn();
-                        (model as Model).GameMenu.takeTurn();
+                        (model as Model).GameOverScreen.run();
+                        (model as Model).GameMenu.run();
                         break;
                     case GameSubstate.SwitchRoom:
                         if (waitDuration(this.timer, GameConstants.WaitAfterRoomSwitch)) {
@@ -172,9 +172,9 @@ export class Controller extends BaseControllerOld {
                     case GameSubstate.Default:
                         this.handleInputDuringGame();
                         let objects = (model as Model).objects;
-                        objects.forEach(o => !o.disposeFlag && o.takeTurn());
+                        objects.forEach(o => !o.disposeFlag && o.run());
                         objects.forEach(o => o.disposeFlag && (model as Model).exile(o));
-                        (model as Model).currentRoom.takeTurn();
+                        (model as Model).currentRoom.run();
                         (model as Model).Hud.takeTurn();
                         break;
                 }
@@ -190,13 +190,13 @@ export class Controller extends BaseControllerOld {
                         break;
                     case GameSubstate.GameMenu:
                         this.handleInputDuringGame();
-                        (model as Model).GameMenu.takeTurn();
+                        (model as Model).GameMenu.run();
                         break;
                     default:
                         let objects = (model as Model).objects;
-                        objects.forEach(o => !o.disposeFlag && o.takeTurn());
+                        objects.forEach(o => !o.disposeFlag && o.run());
                         objects.forEach(o => o.disposeFlag && (model as Model).exile(o));
-                        (model as Model).currentRoom.takeTurn();
+                        (model as Model).currentRoom.run();
                         (model as Model).Hud.takeTurn();
                         if (Input.KD_F5 && !(model as Model).GameMenu.visible)
                             this.OpenGameMenu();

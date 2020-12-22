@@ -36,7 +36,7 @@ export class HagGenerator extends bst implements IGameObject {
         return this;
     }
 
-    takeTurn(): void {
+    run(): void {
         this.run();
     }
 

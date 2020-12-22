@@ -42,7 +42,7 @@ export class TriRoe extends PlayerProjectile {
 		this.pos = (model as Model).Belmont.pos;
 	}
 
-	public takeTurn(): void {
+	public run(): void {
 		if ((model as Model).Belmont.Dying || !(model as Model).Belmont.roeState.Roeing) {
 			this.disposeFlag = true;
 			return;

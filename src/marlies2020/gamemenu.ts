@@ -123,7 +123,7 @@ export class GameMenu extends cbst implements IGameObject {
         }
     }
 
-    public takeTurn(): void {
+    public run(): void {
         if (!this.visible)
             return;
         setPoint(this.cursorPos, this.calculateCursorX(), this.calculateCursorY());

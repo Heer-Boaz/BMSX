@@ -28,7 +28,7 @@ export class Candle extends Foe {
 		this.health = 1;
 	}
 
-	public takeTurn(): void {
+	public run(): void {
 		let bla = this.animation.doAnimation(1, this.imgid);
 		this.imgid = bla.stepValue;
 	}

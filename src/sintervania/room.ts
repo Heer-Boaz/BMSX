@@ -99,7 +99,7 @@ export class Room implements IGameObject {
 		}
 	}
 
-	public takeTurn() {
+	public run() {
 		// TODO: Ga dingen doen
 	}
 

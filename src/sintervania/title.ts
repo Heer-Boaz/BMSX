@@ -53,7 +53,7 @@ export class Title implements IGameObject {
 		// this.state = this.titleAni.stepValue;
 	}
 
-	public takeTurn(): void {
+	public run(): void {
 	}
 
 	public paint(): void {

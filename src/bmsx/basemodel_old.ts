@@ -1,7 +1,7 @@
 import { Point, Direction } from "./common";
 import { IGameObject, cbst, BaseModel, Savegame } from './engine';
 
-export abstract class BaseModelOld extends cbst implements BaseModel {
+export abstract class BaseModelOld extends BaseModel {
     public id2object: { [key: string]: IGameObject; };
     public objects: IGameObject[];
     public gameState: number;
@@ -19,36 +19,29 @@ export abstract class BaseModelOld extends cbst implements BaseModel {
         return this.gameOldState;
     }
 
-
     public set oldGameState(value: number) {
         this.gameOldState = value;
     }
-
 
     public get state(): number {
         return this.gameState;
     }
 
-
     public set state(value: number) {
         this.gameState = value;
     }
-
 
     public get oldGameSubstate(): number {
         return this.gameOldSubstate;
     }
 
-
     public set oldGameSubstate(value: number) {
         this.gameOldSubstate = value;
     }
 
-
     public get substate(): number {
         return this.gameSubstate;
     }
-
 
     public set substate(value: number) {
         this.gameSubstate = value;
@@ -68,6 +61,10 @@ export abstract class BaseModelOld extends cbst implements BaseModel {
 
         this.paused = false;
     }
+    protected buildStates(): void {
+        throw new Error("Method not implemented.");
+    }
+
     public load(serialized: string): void {
         throw new Error("Method not implemented.");
     }
@@ -75,7 +72,7 @@ export abstract class BaseModelOld extends cbst implements BaseModel {
         throw new Error("Method not implemented.");
     }
 
-    public defaultrun(_: any, ik: BaseModel): void {
+    public defaultrun(): void {
         throw new Error("Method not implemented.");
     }
     public where_do(predicate: (value: IGameObject, index: number, array: IGameObject[], thisArg?: any) => unknown, callbackfn: (value: IGameObject, index: number, array: IGameObject[], thisArg?: any) => void): void {
@@ -85,6 +82,10 @@ export abstract class BaseModelOld extends cbst implements BaseModel {
         throw new Error("Method not implemented.");
     }
     public sortObjectsByPriority(): void {
+        throw new Error("Method not implemented.");
+    }
+
+    public onloaded(): void {
         throw new Error("Method not implemented.");
     }
 

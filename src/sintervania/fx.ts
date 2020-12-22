@@ -17,7 +17,7 @@ export class FX extends Sprite {
         this.timer.restart();
     }
 
-    public takeTurn(): void {
+    public run(): void {
         this.doAnimation();
     }
 

@@ -40,7 +40,7 @@ export class Hag extends Foe {
         this.z = 10;
     }
 
-    public takeTurn(): void {
+    public run(): void {
         if (this.collides(belmont)) belmont.takeDamage(this.damageToPlayer);
 
         let stepValue = this.animation.doAnimation(this.timer, this.imgid).stepValue;

@@ -14,7 +14,7 @@ export class Cross extends PlayerProjectile {
 		this.onWallcollide = this.removeFromTheGame;
 	}
 
-	public takeTurn(): void {
+	public run(): void {
 		switch (this.direction) {
 			case Direction.Left: this.setx(this.pos.x - 2); break;
 			case Direction.Right: this.setx(this.pos.x + 2); break;

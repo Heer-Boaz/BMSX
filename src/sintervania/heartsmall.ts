@@ -39,7 +39,7 @@ export class HeartSmall extends Sprite {
 
 	protected uglyBitThing: boolean;
 
-	public takeTurn(): void {
+	public run(): void {
 		if (this.State === HeartSmallState.Flying) {
 			let delta = this.animation.doAnimation(1, 0).stepValue;
 

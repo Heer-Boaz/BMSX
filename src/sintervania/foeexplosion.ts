@@ -26,7 +26,7 @@ export class FoeExplosion extends FX {
         this.z = 50;
     }
 
-    public takeTurn(): void {
+    public run(): void {
         let nextStep = this.animation.doAnimation(this.timer);
         if (nextStep.next) {
             this.imgid = nextStep.stepValue;

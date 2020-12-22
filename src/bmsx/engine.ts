@@ -7,6 +7,7 @@ import { Point, Area, moveArea, Size, Direction, mod } from "./common";
 import { BaseModelOld } from './basemodel_old';
 import { BaseControllerOld } from './basecontroller_old';
 import { parse, stringify } from 'Flatted';
+import assert = require("assert");
 
 declare global {
     namespace NodeJS {
@@ -75,14 +76,13 @@ export const enum BSTEventType {
 }
 
 export type str2bss = { [key: string]: bss; };
-export type bsfthandle = (state: bss, ik: any, type: BSTEventType) => void;
+export type bsfthandle = (state: bss, type: BSTEventType) => void;
 export type numstring = number | string;
 
 @insavegame
 export class bss {
     public id: numstring;
     public parent: bst;
-    public ik: any;
     public start?: boolean; // Is this a start state?
     public init?: boolean; // Should this state be initiated when this is a start state?
 
@@ -90,7 +90,6 @@ export class bss {
     public static onSave(me: bss) {
         let result = Object.assign(new bss(undefined), me);
 
-        result.ik = undefined;
         result.parent = undefined;
 
         return result;
@@ -98,17 +97,17 @@ export class bss {
 
     // @onrevive
     // public static onLoad(loaded: bss, parent: bst): bss {
-        // let keys = Object.keys(loaded.savedStates);
-        // for (let key in keys) {
-        //     Object.assign(loaded.states[key], loaded.savedStates[key]);
-        // }
-        // Object.assign(parent.states[loaded.id], loaded);
-        // return undefined;
+    // let keys = Object.keys(loaded.savedStates);
+    // for (let key in keys) {
+    //     Object.assign(loaded.states[key], loaded.savedStates[key]);
+    // }
+    // Object.assign(parent.states[loaded.id], loaded);
+    // return undefined;
     // }
 
     public constructor(_id: numstring = 0, _partialdef?: Partial<bss>) {
         this.id = _id;
-        this.nudges2move = 1;
+        this.nudges2move ??= 1;
         if (_partialdef) Object.assign(this, _partialdef);
         this.reset();
     }
@@ -123,7 +122,6 @@ export class bss {
     public onenter: bsfthandle;
     public onexit: bsfthandle;
     public get internalstate() { return { statedata: this.tape, tapehead: this.head, nudges: this.nudges, nudges2move: this.nudges2move }; }
-    public getTarget<T>(): T { return this.ik; }
 
     public tape: any[];
 
@@ -183,11 +181,11 @@ export class bss {
     }
 
     protected tapemove() {
-        this.onnext?.(this, this.ik, BSTEventType.Next);
+        this.onnext?.(this, BSTEventType.Next);
     }
 
     protected tapeend() {
-        this.onend?.(this, this.ik, BSTEventType.End);
+        this.onend?.(this, BSTEventType.End);
     }
 
     public reset(): void {
@@ -211,7 +209,6 @@ export class bst {
     public static onSave(me: bst) {
         let result = Object.assign(new bst(undefined), me);
 
-        result.ik = undefined;
         result.states = { ...me.states };
         result.savedStates = { ...me.states };
         let keys = Object.keys(result.states);
@@ -234,7 +231,6 @@ export class bst {
     // }
 
     public id: numstring;
-    public ik: any;
     protected initstateid: numstring;
 
     public states: str2bss; // Note that numbers will be automatically converted to strings!
@@ -246,54 +242,51 @@ export class bst {
     public get current(): bss { return this.states[this.currentid]; };
     // public get previous(): bss { return this.states[this.previousid]; };
 
-    constructor(ik: object, id?: string) {
+    constructor(id?: string) {
         this.id = id ?? DEFAULT_BST_ID;
-        this.ik = ik;
-        this.states = {};
-        this.paused = false;
-        this.initstateid = null;
+        this.states ??= {};
+        this.paused ??= false;
+        this.initstateid ??= null;
         this.reset();
-        console.info(`Ik (${id}) als BST ben geconstruct!`);
+        // console.info(`Ik (${id}) als BST ben geconstruct!`);
     }
 
-    public setStart(_id: numstring, init = true): void {
+    public setStart(_id: numstring, init: boolean): void {
         this.initstateid = _id;
         this.currentid = _id;
-        if (init) this.current.onenter?.(this.current, this.ik, BSTEventType.Enter);
+        if (init) this.current.onenter?.(this.current, BSTEventType.Enter);
     }
 
-    public create(id: numstring, ik: any): bss {
+    public create(id: numstring): bss {
         if (this.states[id]) throw new Error(`State ${id} already exists for state machine!`);
         let result = new bss(id);
         this.states[id] = result;
         result.parent = this;
-        result.ik ??= ik;
         // if (!this.initstateid) this.setStart(id_or_state); // If no start-state was defined, we assign this as a default start state
         return result;
     }
 
-    public add(ik: any, ...states: bss[]): void {
+    public add(...states: bss[]): void {
         for (let state of states) {
             if (!state.id) throw new Error(`State is missing an id, while attempting to add it to this bst!`);
             if (this.states[state.id]) throw new Error(`State ${state.id} already exists for state machine!`);
             this.states[state.id] = state;
             state.parent = this;
-            state.ik ??= ik;
             if (state.start) this.setStart(state.id, state.init ?? true); // If designated as a start state, assign it as the start state
         }
     }
 
     public run(): void {
         if (this.paused) return;
-        this.current?.onrun?.(this.current, this.ik, BSTEventType.Run);
+        this.current.onrun?.(this.current, BSTEventType.Run);
     }
 
     public to(newstate: numstring): void {
-        this.current.onexit?.(this.current, this.ik, BSTEventType.Exit);
+        this.current.onexit?.(this.current, BSTEventType.Exit);
         this.pushHistory(this.currentid); // Store the previous state on the history stack
         this.currentid = newstate; // Switch the current state to the new state
         if (!this.current) throw new Error(`State "${newstate}" doesn't exist for this state machine!`);
-        this.current.onenter?.(this.current, this.ik, BSTEventType.Enter);
+        this.current.onenter?.(this.current, BSTEventType.Enter);
     }
 
     protected pushHistory(toPush: numstring): void {
@@ -347,12 +340,11 @@ export class cbst {
 
     constructor() {
         this.machines = {};
-        this.savedMachines = undefined;
-        this.paused = false;
-        this.addBst(DEFAULT_BST_ID);
+        this.paused ??= false;
     }
 
-    public onload(): void {
+    public onloaded(): void {
+        if (!this.savedMachines) return;
         let machineIds = Object.keys(this.savedMachines);
         for (let machineId of machineIds) {
             let currentMachine = this.machines[machineId];
@@ -361,11 +353,11 @@ export class cbst {
             let bstKeys = Object.keys(currentMachine);
             for (let bstKey of bstKeys) {
                 switch (bstKey) {
-                    case 'ik': break
                     case 'states': break;
                     case 'savedStates': break;
                     default:
                         currentMachine[bstKey] = currentSavedMachine[bstKey];
+                        break;
                 }
             }
             let stateIds = Object.keys(currentMachine.states);
@@ -388,7 +380,7 @@ export class cbst {
     }
 
     public addBst(machine_id: string): bst {
-        let result = new bst(this, machine_id);
+        let result = new bst(machine_id);
         this.machines[machine_id] = result;
 
         return result;
@@ -402,7 +394,7 @@ export class cbst {
     }
 
     public createState(state_id: numstring, machine_id: string = DEFAULT_BST_ID): bss {
-        return this.machines[machine_id].create(state_id, this);
+        return this.machines[machine_id].create(state_id);
     }
 
     public add(...states: bss[]): void {
@@ -410,7 +402,8 @@ export class cbst {
     }
 
     public addTo(machine_id: string = DEFAULT_BST_ID, ...states: bss[]): void {
-        this.machines[machine_id].add(this, ...states);
+        !this.machines[machine_id] && this.addBst(machine_id);
+        this.machines[machine_id].add(...states);
     }
 
     public run(): void {
@@ -445,14 +438,14 @@ export class cbst {
     }
 }
 
-// @insavegame
+@insavegame
 export class Savegame {
-    objects: IGameObject[];
     modelprops: {};
+    objects: IGameObject[];
 }
 
-// @insavegame
-export abstract class BaseModel extends cbst {
+export abstract class BaseModel {
+    public sm: cbst;
     public id2object: { [key: string]: IGameObject; };
     public objects: IGameObject[];
     public paused: boolean;
@@ -469,6 +462,12 @@ export abstract class BaseModel extends cbst {
                 case 'object':
                     if (cache.includes(value)) return undefined;
                     cache.push(value);
+                    let typename = value.constructor?.name ?? value.prototype?.name;
+                    if (typename !== 'Object' && typename !== 'object') {
+                        value.typename = typename;
+                        if (value.prototype?.onsave) return value.prototype.onsave(value);
+                        if (value.constructor?.onsave) return value.constructor.onsave(value);
+                    }
                     return value;
                 case 'function':
                     return undefined;
@@ -479,26 +478,39 @@ export abstract class BaseModel extends cbst {
     }
 
     constructor() {
-        super();
+        this.sm = new cbst();
         this.objects = [];
         this.id2object = {};
 
         this.paused = false;
 
+        this.buildStates();
+    }
+
+    public run() {
+        this.sm.run();
+    }
+
+    protected buildStates() {
         // Create default state for running the game
-        this.add(new bss('default', {
+        this.sm.add(new bss('default', {
             onrun: this.defaultrun,
             start: true,
         }));
-        console.info('Ik ben gerevived!!');
     }
 
     public load(serialized: string): void {
         this.clear();
         let savegame = JSON.parse(serialized, Reviver) as Savegame;
         Object.assign(this, savegame.modelprops);
-        savegame.objects.forEach(o => (o.onload?.(), this.spawn(o)));
+        this.onloaded();
+        savegame.objects.forEach(o => (o.onloaded?.(), this.spawn(o)));
 
+    }
+
+    public onloaded(): void {
+        this.buildStates();
+        this.sm.onloaded();
     }
 
     public save(): string {
@@ -514,8 +526,8 @@ export abstract class BaseModel extends cbst {
                 }
             }
             let result = new Savegame();
-            result.objects = this.objects;
             result.modelprops = data;
+            result.objects = this.objects;
 
             return result;
         };
@@ -525,20 +537,20 @@ export abstract class BaseModel extends cbst {
         return BaseModel.serializeObj(savegame);
     }
 
-    public defaultrun(_, ik: BaseModel): void {
-        if (ik.paused) {
+    public defaultrun(): void {
+        if (global.model.paused) {
             return;
         }
-        if (ik.startAfterLoad) {
+        if (global.model.startAfterLoad) {
             return;
         }
 
-        let objects = ik.objects;
+        let objects = global.model.objects;
         // Let all game objects take a turn
-        objects.forEach(o => !o.disposeFlag && o.takeTurn());
+        objects.forEach(o => !o.disposeFlag && o.run());
 
         // Remove all objects that are to be disposed
-        objects.filter(o => o.disposeFlag).forEach(o => ik.exile(o));
+        objects.filter(o => o.disposeFlag).forEach(o => global.model.exile(o));
     }
 
     // https://hackernoon.com/3-javascript-performance-mistakes-you-should-stop-doing-ebf84b9de951
@@ -681,6 +693,7 @@ export class Game {
 export interface IGameObject {
     id: string | null;
     disposeFlag: boolean;
+    sm: cbst;
     z?: number;
     pos: Point;
     size?: Size;
@@ -699,7 +712,7 @@ export interface IGameObject {
     isWall?: boolean;
     disposeOnSwitchRoom?: boolean;
 
-    takeTurn(): void;
+    run(): void;
     spawn?(spawningPos?: Point): void;
     onspawn?: ((spawningPos?: Point) => void) | (() => void);
     ondispose?: () => void;
@@ -711,7 +724,7 @@ export interface IGameObject {
     collides?(o: IGameObject | Area): boolean;
     collide?(src: IGameObject): void;
     oncollide?: (src: IGameObject) => void;
-    onload?: () => void;
+    onloaded?: () => void;
     markForDisposure?: () => void;
 }
 
@@ -727,8 +740,8 @@ export function ProhibitLeavingScreenHandler(ik: IGameObject, d: Direction, old_
     }
 }
 
-//@insavegame
-export abstract class Sprite extends cbst implements IGameObject {
+@insavegame
+export abstract class Sprite implements IGameObject {
     public id: string | null;
     public pos: Point;
     public size: Size;
@@ -790,11 +803,6 @@ export abstract class Sprite extends cbst implements IGameObject {
     public onLeaveScreen?: (ik: IGameObject, dir: Direction, old_x_or_y: number) => void;
     public onLeavingScreen?: (ik: IGameObject, dir: Direction, old_x_or_y: number) => void;
 
-    @onsave
-    public static onSave(me: Sprite) {
-        return super.onSave(me);
-    }
-
     private _direction: Direction;
     public oldDirection: Direction;
 
@@ -808,7 +816,6 @@ export abstract class Sprite extends cbst implements IGameObject {
     }
 
     constructor() {
-        super();
         this.pos = { x: 0, y: 0 };
         this.visible = true;
         this.hittable = true;
@@ -818,6 +825,9 @@ export abstract class Sprite extends cbst implements IGameObject {
         this.disposeFlag = false;
         this.disposeOnSwitchRoom = true;
     }
+    sm: cbst;
+    isWall?: boolean;
+    ondispose?: () => void;
 
     /**
     * Gebruik ik als event handler voor e.g. onLeaveScreen
@@ -837,8 +847,12 @@ export abstract class Sprite extends cbst implements IGameObject {
         }
     }
 
-    takeTurn(): void {
-        this.run();
+    onloaded(): void {
+        this.sm.onloaded();
+    }
+
+    run(): void {
+        this.sm.run();
     }
 
     paint(offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }): void {
@@ -959,7 +973,8 @@ export function Reviver(key: any, value: any) {
     if (typeof value === "object" &&
         typeof value.typename === "string") {
         let theConstructor = Reviver.constructors[value.typename];
-        console.info(`Reviving ${value.typename}`);
+        assert(theConstructor, `No constructor known for object of type '${value.typename}'. Did you forget to add '@insavegame' to the class definition?`);
+        // console.info(`Reviving ${value.typename}`);
         let result = Object.assign(new theConstructor(), value);
         let onRevive = Reviver.onRevives[value.typename];
         return onRevive ? onRevive(result, this) : result;
@@ -1018,8 +1033,10 @@ function Generic_fromJSON(ctor: any, data: any) {
 // descriptor: the member descriptor.This is essentially the object that would have been passed to Object.defineProperty.
 export function onsave(target: any, name: any, descriptor: any): any {
     // target.prototype.toJSON = descriptor.value;
-    Reviver.onSave ??= {};
-    Reviver.onSave[target.name] = descriptor.value;
+    // Reviver.onSave ??= {};
+    // Reviver.onSave[target.name] = descriptor.value;
+    // target.prototype.toJSON = descriptor.value; // Set the toJSON for the case where @insavegame is not used
+    target.onsave = descriptor.value;
 }
 
 // target: the class that the member is on.
@@ -1042,20 +1059,20 @@ export function insavegame<TFunction extends Function>(target: any, toJSON?: () 
     Reviver.constructors ??= {};
     Reviver.constructors[target.name] = target;
 
-    let wrapper = Reviver.onSave[target.name];
-    if (wrapper) {
-        target.prototype.toJSON = function () {
-            return obj_toJSON(target.name, wrapper(this));
-        };
-    }
-    else {
-        target.prototype.toJSON = function () {
-            return obj_toJSON(target.name, this);
-        };
-        // target.prototype.fromJSON = function (value: any) {
-        //     return Object.assign(new target(), value);
-        // };
-    }
+    // let wrapper = Reviver.onSave[target.name];
+    // if (wrapper) {
+    //     target.prototype.toJSON = function () {
+    //         return obj_toJSON(target.name, wrapper(this));
+    //     };
+    // }
+    // else {
+    //     target.prototype.toJSON = function () {
+    //         return obj_toJSON(target.name, this);
+    //     };
+    //     // target.prototype.fromJSON = function (value: any) {
+    //     //     return Object.assign(new target(), value);
+    //     // };
+    // }
 
     return target;
 }

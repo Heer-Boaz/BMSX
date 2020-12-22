@@ -102,7 +102,7 @@ export class GameOver implements IGameObject {
         }
     }
 
-    public takeTurn(): void {
+    public run(): void {
 
     }
 

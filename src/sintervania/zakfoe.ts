@@ -111,8 +111,8 @@ export class ZakFoe extends Foe {
 		this.setStart(0, false);
 	}
 
-	public takeTurn(): void {
+	public run(): void {
 		this.run();
-		super.takeTurn();
+		super.run();
 	}
 }

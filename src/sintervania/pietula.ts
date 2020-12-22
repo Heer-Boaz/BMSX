@@ -338,12 +338,12 @@ export class Pietula extends Foe {
 		fst.setStart('intro_wacht');
 	}
 
-	public takeTurn(): void {
+	public run(): void {
 		this.fst.run();
 		this.hover.run();
 		this.blink.run();
 
-		super.takeTurn();
+		super.run();
 	}
 
 	public paint(offset: Point = null): void {

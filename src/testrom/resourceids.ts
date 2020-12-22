@@ -1,7 +1,8 @@
 export enum BitmapId {
 	None = 0,
 	b = 1,
-	_atlas = 2,
+	b2 = 2,
+	_atlas = 3,
 }
 
 export enum AudioId {

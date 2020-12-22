@@ -1,5 +1,5 @@
 import { RomLoadResult } from '../bmsx/rompack';
-import { Game, BaseModel, IGameObject, Sprite, insavegame, Reviver, onsave } from '../bmsx/engine';
+import { Game, BaseModel, IGameObject, Sprite, insavegame, Reviver, onsave, cbst, bss } from '../bmsx/engine';
 import { setPoint, newPoint, Direction, newSize } from '../bmsx/common';
 import { Tile, MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
@@ -8,38 +8,69 @@ import { Input } from '../bmsx/input';
 
 @insavegame
 class bclass extends Sprite {
-    @onsave
-    public static onSave(me: Sprite) {
-        return super.onSave(me);
-    }
-
     constructor() {
         super();
         this.id = 'The B';
         this.imgid = BitmapId.b;
+        this.sm = new cbst();
+        this.init(false);
+        this.disposeOnSwitchRoom
     }
 
-    takeTurn(): void {
-        if (Input.KD_UP) {
-            this.pos.y -= 2;
-        }
-        if (Input.KD_RIGHT) {
-            this.pos.x += 2;
-        }
-        if (Input.KD_DOWN) {
-            this.pos.y += 2;
-        }
-        if (Input.KD_LEFT) {
-            this.pos.x -= 2;
-        }
-        if (Input.KC_F1) {
-            _model.savestring = global.model.save();
-        }
-        if (Input.KC_F2) {
-            if (_model.savestring) global.model.load(_model.savestring);
-        }
+    onloaded() {
+        this.init(true);
+        super.onloaded();
     }
 
+    init(wasloaded: boolean) {
+        let ik = this;
+        let blarun = () => {
+            if (Input.KD_UP) {
+                this.pos.y -= 2;
+            }
+            if (Input.KD_RIGHT) {
+                this.pos.x += 2;
+            }
+            if (Input.KD_DOWN) {
+                this.pos.y += 2;
+            }
+            if (Input.KD_LEFT) {
+                this.pos.x -= 2;
+            }
+            if (Input.KC_BTN1) {
+                _model.savestring = _model.save();
+                console.info(`${new Date().toTimeString()} Game saved!`);
+                console.info(`${_model.savestring}`);
+            }
+            if (Input.KC_BTN2) {
+                if (_model.savestring) {
+                    _model.load(_model.savestring);
+                    _model.savestring = undefined;
+                    delete _model.savestring;
+                    console.info(`${new Date().toTimeString()} Game loaded!`);
+                }
+            }
+            Input.KC_M && this.sm.to('blap');
+            Input.KC_SPACE && this.sm.to('bla');
+        };
+
+        this.sm.add(
+            new bss('bla', {
+                onrun: blarun,
+                onenter: () => { ik.imgid = BitmapId.b; },
+                start: true,
+                init: !wasloaded,
+            }),
+            new bss('blap', {
+                onrun: blarun,
+                onenter: () => { ik.imgid = BitmapId.b2; },
+            }),
+        );
+    }
+
+    run(): void {
+        super.run();
+    }
 };
 
 @insavegame

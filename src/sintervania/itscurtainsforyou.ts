@@ -32,7 +32,7 @@ export class ItsCurtainsForYou implements IGameObject {
         BStopwatch.removeWatch(this.timer);
     }
 
-    public takeTurn(): void {
+    public run(): void {
         if (waitDuration(this.timer, this.msCurtainPartWait)) {
             this.curtainPartCount++;
             if (this.curtainPartCount >= this.maxCurtainParts)

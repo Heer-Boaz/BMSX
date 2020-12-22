@@ -50,7 +50,7 @@ export class Chandelier extends Foe {
 		this.state = ChandelierState.None;
 	}
 
-	public takeTurn(): void {
+	public run(): void {
 		switch (this.state) {
 			case ChandelierState.None:
 				if ((model as Model).Belmont.x_plus_width >= this.pos.x && (model as Model).Belmont.pos.x <= this.x_plus_width) {

@@ -127,7 +127,7 @@ export class GameMenu extends bst implements IGameObject {
         }
     }
 
-    public takeTurn(): void {
+    public run(): void {
         if (!this.visible)
             return;
         setPoint(this.cursorPos, this.calculateCursorX(), this.calculateCursorY());

@@ -33,7 +33,7 @@ export abstract class Foe extends Sprite {
 
     protected itemSpawnedAfterKill: ItemType;
 
-    public takeTurn(): void {
+    public run(): void {
         if (this.canHurtPlayer && this.objectCollide((model as Model).Belmont)) {
             (model as Model).Belmont.takeDamage(this.damageToPlayer);
         }

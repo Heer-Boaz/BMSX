@@ -35,7 +35,7 @@ export class Item extends Sprite {
         this.imgid = Item.Type2Image(type);
     }
 
-    public takeTurn(): void {
+    public run(): void {
         if (this.areaCollide(moveArea((model as Model).Belmont.EventTouchHitArea, <Point>(model as Model).Belmont.pos))) {
             (controller as Controller).PickupItem(this);
             switch (this.ItsType) {

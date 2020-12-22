@@ -253,7 +253,7 @@ export class Belmont extends Sprite {
 		return result;
 	}
 
-	public takeTurn(): void {
+	public run(): void {
 		if (this.state == State.Dying) {
 			this.doDeath();
 			return;

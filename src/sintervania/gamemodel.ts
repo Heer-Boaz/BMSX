@@ -277,7 +277,7 @@ export class Model extends BaseModelOld {
                     view.drawImg(BitmapId.blackpixel, GameConstants.pausePosX + 1, GameConstants.pausePosY + 1, DrawImgFlags.None, scalex - 2, scaley - 2);
                     view.drawImg(BitmapId.whitepixel, GameConstants.pausePosX, GameConstants.pausePosY, DrawImgFlags.None, scalex, scaley);
                 },
-                takeTurn() { }
+                run() { }
             };
             if (!this.exists(this.PauseObject.id)) { this.spawn(this.PauseObject, null); }
         }

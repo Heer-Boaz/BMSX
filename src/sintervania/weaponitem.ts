@@ -41,7 +41,7 @@ export class WeaponItem extends Sprite {
         this.imgid = WeaponItem.Type2Image(type);
     }
 
-    public takeTurn(): void {
+    public run(): void {
         if (this.areaCollide(moveArea((model as Model).Belmont.RoomCollisionArea, <Point>(model as Model).Belmont.pos))) {
             (controller as Controller).PickupWeaponItem(this);
             this.disposeFlag = true;
