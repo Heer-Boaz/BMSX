@@ -1,7 +1,7 @@
 import { TileSize, Tile } from '../bmsx/msx';
 import { GameConstants } from './gameconstants';
 import { Area, newArea, Point, newSize, copyPoint, addPoints } from '../bmsx/common';
-import { bst, view, model, controller, bss } from '../bmsx/engine';
+import { bstd, view, model, controller, bssd } from '../bmsx/engine';
 import { BitmapId, AudioId } from './resourceids';
 import { Controller } from './gamecontroller';
 import { GameSubstate, Model } from './gamemodel';
@@ -17,9 +17,9 @@ const loops_tot_boos = 3;
 export class Pietula extends Foe {
 	public get respawnOnRoomEntry(): boolean { return false; }
 
-	public fst: bst;
-	public hover: bst;
-	public blink: bst;
+	public fst: bstd;
+	public hover: bstd;
+	public blink: bstd;
 	public loops: number;
 	public bliksem: { imgid: number, paint(offset: Point): void, pos: Point, flipped: boolean; };
 
@@ -35,7 +35,7 @@ export class Pietula extends Foe {
 		this.visible = false;
 		this.z = 20;
 
-		let fst = new bst();
+		let fst = new bstd();
 		this.fst = fst;
 		let waitAfterDeath = fst.add('wachten_op_elmo');
 		waitAfterDeath.nudges2move = 6000 / 20;
@@ -203,7 +203,7 @@ export class Pietula extends Foe {
 		waitafterbliksem2.onrun = (s) => ++s.nudges;
 		waitafterbliksem2.onnext = (s) => s.parentbst.to('intro_wacht');
 
-		let hover = new bst();
+		let hover = new bstd();
 		let hovers0 = hover.add(0);
 
 		this.hover = hover;
@@ -250,11 +250,11 @@ export class Pietula extends Foe {
 			0,
 		];
 		hovers0.nudges2move = 2;
-		hovers0.onrun = (s: bss) => ++s.nudges;
-		hovers0.onnext = (s: bss) => this.pos.y += s.current;
-		hovers0.onend = (s: bss) => s.setHeadNoSideEffect(0);
+		hovers0.onrun = (s: bssd) => ++s.nudges;
+		hovers0.onnext = (s: bssd) => this.pos.y += s.current;
+		hovers0.onend = (s: bssd) => s.setHeadNoSideEffect(0);
 
-		let blink = new bst();
+		let blink = new bstd();
 		this.blink = blink;
 
 		let visible = blink.add('visible');
@@ -298,7 +298,7 @@ export class Pietula extends Foe {
 		];
 		blinkout.onenter = (s) => s.reset();
 		blinkout.onrun = (s) => ++s.nudges;
-		blinkout.onnext = (s: bss) => this.visible = s.current;
+		blinkout.onnext = (s: bssd) => this.visible = s.current;
 		blinkout.onend = (s) => s.parentbst.to('invisible');
 
 		let blinkin = blink.add('in');

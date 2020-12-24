@@ -1,4 +1,4 @@
-import { BStopwatch, IGameObject, controller } from "../bmsx/engine";
+import { BStopwatch, GameObject, controller } from "../bmsx/engine";
 import { TileSize } from "../bmsx/msx"
 import { waitDuration } from "../bmsx/common";
 import { view } from "../bmsx/engine";
@@ -7,7 +7,7 @@ import { Point } from "../bmsx/common";
 import { BitmapId } from "./resourceids";
 import { GameConstants } from "./gameconstants";
 
-export class ItsCurtainsForYou implements IGameObject {
+export class ItsCurtainsForYou implements GameObject {
     id: string = 'itscurtains';
     disposeFlag: boolean = false;
     z: number = 4000;

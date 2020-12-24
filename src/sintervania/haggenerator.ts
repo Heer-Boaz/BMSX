@@ -1,11 +1,11 @@
 import { Hag } from "./hag";
-import { IGameObject, model } from "../bmsx/engine";
+import { GameObject, model } from "../bmsx/engine";
 import { Direction, Point } from "../bmsx/common";
-import { bst } from "../bmsx/engine";
+import { bstd } from "../bmsx/engine";
 import { belmont } from "./gamemodel";
 import { GameConstants } from "./gameconstants";
 
-export class HagGenerator extends bst implements IGameObject {
+export class HagGenerator extends bstd implements GameObject {
     public disposeFlag: boolean;
     public id: string;
     public pos: Point;

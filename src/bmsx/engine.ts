@@ -75,57 +75,190 @@ export const enum BSTEventType {
     End = 5,
 }
 
-export type str2bss = { [key: string]: bss; };
-export type bsfthandle = (state: bss, type: BSTEventType) => void;
-export type numstring = number | string;
+export type str2bssd = { [key: string]: bssd; };
+export type str2bstd = { [key: string]: bstd; };
+export type str2cmstate = { [key: string]: cmstate; };
+export type str2mstate = { [key: string]: mstate; };
+export type str2sstate = { [key: string]: sstate; };
+export type bsfthandle = (state: sstate, me: any, type: BSTEventType) => void;
+export type Tape = any[];
+
+const BST_MAX_HISTORY = 10;
+export const DEFAULT_BST_ID = 'master';
 
 @insavegame
-export class bss {
-    public id: numstring;
-    public parent: bst;
-    public start?: boolean; // Is this a start state?
-    public init?: boolean; // Should this state be initiated when this is a start state?
+export class cmstate {
+    id: string;
+    machines: str2mstate;
+    savedMachines: str2bstd;
+    paused: boolean;
+    targetid: string; // This concurrent state machine reflects the (partial) state of the game object with id [targetid]
 
-    @onsave
-    public static onSave(me: bss) {
-        let result = Object.assign(new bss(undefined), me);
-
-        result.parent = undefined;
-
-        return result;
+    public get cmachinedef(): cbstd {
+        return MachineDefinitions[this.id];
     }
 
-    // @onrevive
-    // public static onLoad(loaded: bss, parent: bst): bss {
-    // let keys = Object.keys(loaded.savedStates);
-    // for (let key in keys) {
-    //     Object.assign(loaded.states[key], loaded.savedStates[key]);
-    // }
-    // Object.assign(parent.states[loaded.id], loaded);
-    // return undefined;
-    // }
-
-    public constructor(_id: numstring = 0, _partialdef?: Partial<bss>) {
-        this.id = _id;
-        this.nudges2move ??= 1;
-        if (_partialdef) Object.assign(this, _partialdef);
-        this.reset();
+    public getMachinedef(machineid: string): bstd {
+        return MachineDefinitions[this.id].machines[machineid];
     }
 
+    constructor(cm_id: string, target_id: string) {
+        this.id = cm_id;
+        this.targetid = target_id;
+        this.machines = {};
+        this.paused ??= false;
+    }
+
+    public getCurrentId(machine_id: string = DEFAULT_BST_ID): string {
+        return this.machines[machine_id].currentid;
+    }
+
+    public run(): void {
+        if (this.paused) return;
+        for (const key of Object.keys(this.machines)) {
+            this.machines[key].run();
+        }
+    }
+
+    public to(newstate: string, machine_id: string = DEFAULT_BST_ID): void {
+        this.machines[machine_id].to(newstate);
+    }
+
+    public pop(machine_id: string = DEFAULT_BST_ID): void {
+        this.machines[machine_id].pop();
+    }
+
+    public reset(machine_id: string = DEFAULT_BST_ID): void {
+        this.machines[machine_id].reset();
+    }
+
+    public populateMachines(): void {
+        let cdef = this.cmachinedef;
+
+        for (let mdef_id in cdef.machines) {
+            this.machines[mdef_id] = new mstate(mdef_id, this.id, this.targetid);
+            this.machines[mdef_id].populateStates();
+        }
+    }
+}
+
+@insavegame
+export class mstate {
+    id: string;
+    cmachineid: string;
+    states: str2sstate;
+    currentid: string; // Identifier of current state
+    history: Array<string>; // History of previous states
+    paused: boolean; // Iff paused, skip 'onrun'
+    targetid: string; // This state machine reflects the (partial) state of the game object with id [targetid]
+
+    public get target(): GameObject { return global.model.get(this.targetid); }
+    public get current(): sstate { return this.states[this.currentid]; };
+
+    public get machinedef(): bstd {
+        return MachineDefinitions[this.cmachineid].machines[this.id];
+    }
+
+    public get currentStatedef(): bssd {
+        return MachineDefinitions[this.cmachineid].machines[this.id].states[this.currentid];
+    }
+
+    constructor(_id: string, _cmachineid: string, _targetid: string) {
+        this.id = _id ?? DEFAULT_BST_ID;
+        this.cmachineid = _cmachineid;
+        this.targetid =_targetid;
+        this.states ??= {};
+        this.paused ??= false;
+
+        // Note: when parameters are undefined, this constructor was invoked without parameters. This happens when it is revived. In that situation, don't init this object
+        _id && _cmachineid && this.reset();
+    }
+
+    public run(): void {
+        if (this.paused) return;
+        // this.currentStatedef can be undefined if we are in the 'none' state
+        this.currentStatedef?.onrun?.(this.current, this.target, BSTEventType.Run);
+    }
+
+    public to(newstate: string): void {
+        let stateDef = this.currentStatedef;
+        // stateDef can be undefined if we are in the 'none' state
+        stateDef?.onexit?.(this.current, this.target, BSTEventType.Exit);
+        stateDef && this.pushHistory(this.currentid); // Store the previous state on the history stack, if it is other than 'none'
+
+        this.currentid = newstate; // Switch the current state to the new state
+        if (!this.current) throw new Error(`State "${newstate}" doesn't exist for this state machine!`);
+
+        stateDef = this.currentStatedef;
+        // stateDef can be undefined if we are in the 'none' state
+        stateDef?.onenter?.(this.current, this.target, BSTEventType.Enter);
+    }
+
+    protected pushHistory(toPush: string): void {
+        this.history.push(toPush);
+        if (this.history.length > BST_MAX_HISTORY)
+            this.history.shift(); // Remove the first element in the history-array
+    }
+
+    public reset(): void {
+        this.currentid = 'none';
+        this.history = new Array();
+        this.paused = false;
+    }
+
+    public pop(): void {
+        if (this.history.length <= 0) return;
+        let poppedStateId = this.history.pop();
+        this.to(poppedStateId);
+    }
+
+    public populateStates(): void {
+        let mdef = this.machinedef;
+
+        for (let sdef_id in mdef.states) {
+            this.add(new sstate(sdef_id, this.id, this.cmachineid, this.targetid));
+        }
+    }
+
+    private add(...states: sstate[]): void {
+        for (let state of states) {
+            if (!state.id) throw new Error(`State is missing an id, while attempting to add it to this mstate!`);
+            if (this.states[state.id]) throw new Error(`State ${state.id} already exists for state machine!`);
+            this.states[state.id] = state;
+            state.cmachineid = this.cmachineid;
+            state.machineid = this.id;
+        }
+    }
+}
+
+@insavegame
+export class sstate {
+    id: string;
+    machineid: string;
+    cmachineid: string;
+    targetid: string; // This state reflects the (partial) state of the game object with id [targetid]
+    nudges2move: number; // Number of runs before tapehead moves to next statedata
+
+    public get statedef(): bssd { return MachineDefinitions[this.cmachineid].machines[this.machineid].states[this.id]; }
+    public get tape(): Tape { return this.statedef.tape; }
     public get current(): any { return (this.tape && this.head < this.tape.length) ? this.tape[this.head] : undefined; };
-    public get atEnd(): boolean { return !this.tape || this.head === this.tape.length - 1; }
+    public get atEnd(): boolean { return !this.tape || this.head >= this.tape.length - 1; }
     public get atStart(): boolean { return this.head === 0; }
-    public onrun: bsfthandle;
-    public onfinal: bsfthandle;
-    public onend: bsfthandle;
-    public onnext: bsfthandle;
-    public onenter: bsfthandle;
-    public onexit: bsfthandle;
     public get internalstate() { return { statedata: this.tape, tapehead: this.head, nudges: this.nudges, nudges2move: this.nudges2move }; }
+    public get target(): GameObject { return global.model.get(this.targetid); }
+    // https://github.com/microsoft/TypeScript/issues/35986
+    public targetAs<T extends GameObject>(): T { return <T>global.model.get(this.targetid); }
 
-    public tape: any[];
+    public constructor(_id: string, _machineid: string, _cmachineid: string, _targetid: string) {
+        this.id = _id;
+        this.machineid = _machineid;
+        this.cmachineid = _cmachineid;
+        this.targetid = _targetid;
 
-    public nudges2move: number; // Number of runs before tapehead moves to next statedata
+        // Note: when parameters are undefined, this constructor was invoked without parameters. This happens when it is revived. In that situation, don't init this object
+        _id && _machineid && _cmachineid && this.reset();
+    }
+
     protected _tapehead: number;
     public get head(): number {
         return this._tapehead;
@@ -133,7 +266,7 @@ export class bss {
     public set head(v: number) {
         this._nudges = 0; // Always reset tapehead nudges after moving tapehead
         // Check if the tape already was at the end
-        if (this.tape && (this._tapehead >= this.tape.length - 1)) {
+        if (this.atEnd) {
             // If so, rewind and move to the first element of the tapehead
             // But why? (Yes... Why?) Because we then can loop an animation,
             // including the first and last element of the tape, without having
@@ -170,6 +303,61 @@ export class bss {
         if (v >= this.nudges2move) { ++this.head; }
     }
 
+    protected tapemove() {
+        this.statedef.onnext?.(this, this.target, BSTEventType.Next);
+    }
+
+    protected tapeend() {
+        this.statedef.onend?.(this, this.target, BSTEventType.End);
+    }
+
+    public reset(): void {
+        this._tapehead = 0;
+        this._nudges = 0;
+        this.nudges2move = this.statedef.nudges2move;
+    }
+
+}
+
+@insavegame
+export class bssd {
+    public id: string;
+    public parent: bstd;
+    public tape: Tape;
+    public nudges2move: number; // Number of runs before tapehead moves to next statedata
+
+    // @onsave
+    // public static onSave(me: bssd) {
+    //     let result = Object.assign(new bssd(undefined), me);
+
+    //     result.parent = undefined;
+
+    //     return result;
+    // }
+
+    // @onrevive
+    // public static onLoad(loaded: bss, parent: bst): bss {
+    // let keys = Object.keys(loaded.savedStates);
+    // for (let key in keys) {
+    //     Object.assign(loaded.states[key], loaded.savedStates[key]);
+    // }
+    // Object.assign(parent.states[loaded.id], loaded);
+    // return undefined;
+    // }
+
+    public constructor(_id: string = '_', _partialdef?: Partial<bssd>) {
+        this.id = _id;
+        this.nudges2move ??= 1;
+        if (_partialdef) Object.assign(this, _partialdef);
+    }
+
+    public onrun: bsfthandle;
+    public onfinal: bsfthandle;
+    public onend: bsfthandle;
+    public onnext: bsfthandle;
+    public onenter: bsfthandle;
+    public onexit: bsfthandle;
+
     // Helper function to set all handlers
     public setAllHandlers(handler: bsfthandle): void {
         this.onrun = handler;
@@ -179,35 +367,13 @@ export class bss {
         this.onenter = handler;
         this.onexit = handler;
     }
-
-    protected tapemove() {
-        this.onnext?.(this, BSTEventType.Next);
-    }
-
-    protected tapeend() {
-        this.onend?.(this, BSTEventType.End);
-    }
-
-    public reset(): void {
-        this._tapehead = 0;
-        this._nudges = 0;
-    }
 }
-// bss.prototype.toJSON = function () {
-//     let self = <bss><unknown>this;
-//     self.parent = undefined;
-//     self.ik = undefined;
 
-//     return Generic_toJSON(bss.name, self);
-// }
-
-const BST_MAX_HISTORY = 10;
-const DEFAULT_BST_ID = 'master';
 @insavegame
-export class bst {
+export class bstd {
     @onsave
-    public static onSave(me: bst) {
-        let result = Object.assign(new bst(undefined), me);
+    public static onSave(me: bstd) {
+        let result = Object.assign(new bstd(undefined), me);
 
         result.states = { ...me.states };
         result.savedStates = { ...me.states };
@@ -230,117 +396,72 @@ export class bst {
     //     // return obj_toJSON(loaded, this);
     // }
 
-    public id: numstring;
-    protected initstateid: numstring;
+    public id: string;
 
-    public states: str2bss; // Note that numbers will be automatically converted to strings!
-    public savedStates: str2bss; // When serialized, place states here, so that they can be revived without overwriting function-properties
-    public currentid: numstring; // Identifier of current state
+    public states: str2bssd; // Note that numbers will be automatically converted to strings!
+    public savedStates: str2bssd; // When serialized, place states here, so that they can be revived without overwriting function-properties
     // protected previousid: numstring; // Identifier of the previous state
-    protected history: Array<numstring>; // History of previous states
-    public paused: boolean;
-    public get current(): bss { return this.states[this.currentid]; };
     // public get previous(): bss { return this.states[this.previousid]; };
+
+    public getStateDef(s_id: string): bssd { return this.states[s_id]; }
 
     constructor(id?: string) {
         this.id = id ?? DEFAULT_BST_ID;
         this.states ??= {};
-        this.paused ??= false;
-        this.initstateid ??= null;
-        this.reset();
         // console.info(`Ik (${id}) als BST ben geconstruct!`);
     }
 
-    public setStart(_id: numstring, init: boolean): void {
-        this.initstateid = _id;
-        this.currentid = _id;
-        if (init) this.current.onenter?.(this.current, BSTEventType.Enter);
-    }
-
-    public create(id: numstring): bss {
+    public create(id: string): bssd {
         if (this.states[id]) throw new Error(`State ${id} already exists for state machine!`);
-        let result = new bss(id);
+        let result = new bssd(id);
         this.states[id] = result;
         result.parent = this;
         // if (!this.initstateid) this.setStart(id_or_state); // If no start-state was defined, we assign this as a default start state
         return result;
     }
 
-    public add(...states: bss[]): void {
+    public add(...states: bssd[]): void {
         for (let state of states) {
             if (!state.id) throw new Error(`State is missing an id, while attempting to add it to this bst!`);
             if (this.states[state.id]) throw new Error(`State ${state.id} already exists for state machine!`);
             this.states[state.id] = state;
             state.parent = this;
-            if (state.start) this.setStart(state.id, state.init ?? true); // If designated as a start state, assign it as the start state
         }
     }
 
-    public run(): void {
-        if (this.paused) return;
-        this.current.onrun?.(this.current, BSTEventType.Run);
-    }
-
-    public to(newstate: numstring): void {
-        this.current.onexit?.(this.current, BSTEventType.Exit);
-        this.pushHistory(this.currentid); // Store the previous state on the history stack
-        this.currentid = newstate; // Switch the current state to the new state
-        if (!this.current) throw new Error(`State "${newstate}" doesn't exist for this state machine!`);
-        this.current.onenter?.(this.current, BSTEventType.Enter);
-    }
-
-    protected pushHistory(toPush: numstring): void {
-        this.history.push(toPush);
-        if (this.history.length > BST_MAX_HISTORY)
-            this.history.shift(); // Remove the first element in the history-array
-    }
-
-    public pop(): void {
-        if (this.history.length <= 0) return;
-        let poppedStateId = this.history.pop();
-        this.to(poppedStateId);
-    }
-
-    public reset(): void {
-        this.currentid = this.initstateid;
-        this.history = new Array();
-        this.paused = false;
-    }
-
-    public append(_state: bss, _id: numstring): void {
+    public append(_state: bssd, _id: string): void {
         this.states[_id] = _state;
     }
 
-    public remove(_id: numstring): void {
+    public remove(_id: string): void {
         delete this.states[_id];
     }
 }
 
-export type numstr2bst = { [key: string]: bst; };
 @insavegame
-export class cbst {
-    public machines: numstr2bst;
-    public savedMachines: numstr2bst;
-    public paused: boolean;
+export class cbstd {
+    public id: string;
+    public machines: str2bstd;
+    public savedMachines: str2bstd;
 
-    @onsave
-    public static onSave(me: cbst): any {
-        let result = Object.assign(new cbst(), me);
+    // @onsave
+    // public static onSave(me: cbstd): any {
+    //     let result = Object.assign(new cbstd(), me);
 
-        result.machines = { ...me.machines };
-        result.savedMachines = { ...me.machines };
-        let keys = Object.keys(result.machines);
-        for (let key of keys) {
-            result.machines[key] = undefined;
-            delete result.machines[key];
-        }
+    //     result.machines = { ...me.machines };
+    //     result.savedMachines = { ...me.machines };
+    //     let keys = Object.keys(result.machines);
+    //     for (let key of keys) {
+    //         result.machines[key] = undefined;
+    //         delete result.machines[key];
+    //     }
 
-        return result;
-    }
+    //     return result;
+    // }
 
-    constructor() {
+    constructor(id: string) {
+        this.id = id;
         this.machines = {};
-        this.paused ??= false;
     }
 
     public onloaded(): void {
@@ -371,69 +492,43 @@ export class cbst {
         }
     }
 
-    public getBst(machine_id: string): bst {
+    public getBst(machine_id: string): bstd {
         return this.machines[machine_id];
     }
 
-    public getCurrentId(machine_id: string = DEFAULT_BST_ID): numstring {
-        return this.machines[machine_id].currentid;
-    }
-
-    public addBst(machine_id: string): bst {
-        let result = new bst(machine_id);
-        this.machines[machine_id] = result;
+    public addBst(machine_id?: string): bstd {
+        let m_id = machine_id ?? DEFAULT_BST_ID;
+        let result = new bstd(m_id);
+        this.machines[m_id] = result;
 
         return result;
     }
 
-    public removeBst(machine_id: string): bst {
+    public removeBst(machine_id: string): bstd {
         let result = this.machines[machine_id];
         delete this.machines[machine_id];
         this.machines[machine_id] = undefined;
         return result;
     }
 
-    public createState(state_id: numstring, machine_id: string = DEFAULT_BST_ID): bss {
+    public createState(state_id: string, machine_id: string = DEFAULT_BST_ID): bssd {
         return this.machines[machine_id].create(state_id);
     }
 
-    public add(...states: bss[]): void {
+    public add(...states: bssd[]): void {
         this.addTo(DEFAULT_BST_ID, ...states);
     }
 
-    public addTo(machine_id: string = DEFAULT_BST_ID, ...states: bss[]): void {
+    public addTo(machine_id: string = DEFAULT_BST_ID, ...states: bssd[]): void {
         !this.machines[machine_id] && this.addBst(machine_id);
         this.machines[machine_id].add(...states);
     }
 
-    public run(): void {
-        if (this.paused) return;
-        for (const key of Object.keys(this.machines)) {
-            this.machines[key].run();
-        }
-    }
-
-    public setStart(_id: numstring, init = true, machine_id: string = DEFAULT_BST_ID): void {
-        this.machines[machine_id].setStart(_id, init);
-    }
-
-    public to(newstate: numstring, machine_id: string = DEFAULT_BST_ID): void {
-        this.machines[machine_id].to(newstate);
-    }
-
-    public pop(machine_id: string = DEFAULT_BST_ID): void {
-        this.machines[machine_id].pop();
-    }
-
-    public reset(machine_id: string = DEFAULT_BST_ID): void {
-        this.machines[machine_id].reset();
-    }
-
-    public append(_state: bss, _id: numstring, machine_id: string = DEFAULT_BST_ID): void {
+    public append(_state: bssd, _id: string, machine_id: string = DEFAULT_BST_ID): void {
         this.machines[machine_id].append(_state, _id);
     }
 
-    public remove(_id: numstring, machine_id: string = DEFAULT_BST_ID): void {
+    public remove(_id: string, machine_id: string = DEFAULT_BST_ID): void {
         this.machines[machine_id].remove(_id);
     }
 }
@@ -441,15 +536,25 @@ export class cbst {
 @insavegame
 export class Savegame {
     modelprops: {};
-    objects: IGameObject[];
+    objects: GameObject[];
 }
 
+var MachineDefinitions: { [key: string]: cbstd; };
+var MachineDefinitionBuilders: { [key: string]: () => cbstd; };
+export type id2objectType = { [key: string]: GameObject; };
+const id2obj = Symbol('id2object');
 export abstract class BaseModel {
-    public sm: cbst;
-    public id2object: { [key: string]: IGameObject; };
-    public objects: IGameObject[];
+    public state: cmstate;
+    protected [id2obj]: id2objectType;
+    public get<T extends GameObject>(id: string) { return <T>this[id2obj][id]; }
+    public exists(id: string): boolean {
+        return this[id2obj][id] !== undefined;
+    }
+
+    public objects: GameObject[];
     public paused: boolean;
     public startAfterLoad: boolean;
+
     public abstract get gamewidth(): number;
     public abstract get gameheight(): number;
 
@@ -478,39 +583,68 @@ export abstract class BaseModel {
     }
 
     constructor() {
-        this.sm = new cbst();
         this.objects = [];
-        this.id2object = {};
+        this[id2obj] = {};
 
         this.paused = false;
 
-        this.buildStates();
+        BaseModel.buildStates();
+        this.state = new cmstate('BaseModel', '_');
+        this.state.populateMachines();
+        this.state.to('default');
+    }
+
+    private static buildStates() {
+        MachineDefinitions = {};
+        for (let classname in MachineDefinitionBuilders) {
+            MachineDefinitions[classname] = MachineDefinitionBuilders[classname]();
+        }
     }
 
     public run() {
-        this.sm.run();
+        this.state.run();
     }
 
-    protected buildStates() {
+    @statedef_builder
+    public static buildBaseStates(): cbstd {
+        let result = new cbstd(this.name);
+
         // Create default state for running the game
-        this.sm.add(new bss('default', {
-            onrun: this.defaultrun,
-            start: true,
+        result.add(new bssd('default', {
+            onrun: BaseModel.defaultrun,
         }));
+
+        return result;
     }
+
+    public static defaultrun = (): void => {
+        if (global.model.paused) {
+            return;
+        }
+        if (global.model.startAfterLoad) {
+            return;
+        }
+
+        let objects = global.model.objects;
+        // Let all game objects take a turn
+        objects.forEach(o => !o.disposeFlag && o.run());
+
+        // Remove all objects that are to be disposed
+        objects.filter(o => o.disposeFlag).forEach(o => global.model.exile(o));
+    };
 
     public load(serialized: string): void {
         this.clear();
         let savegame = JSON.parse(serialized, Reviver) as Savegame;
         Object.assign(this, savegame.modelprops);
         this.onloaded();
-        savegame.objects.forEach(o => (o.onloaded?.(), this.spawn(o)));
+        savegame.objects.forEach(o => (o.onloaded?.(), this.spawn(o, undefined, true)));
 
     }
 
     public onloaded(): void {
-        this.buildStates();
-        this.sm.onloaded();
+        // this.buildStates();
+        // this.state.onloaded();
     }
 
     public save(): string {
@@ -537,24 +671,8 @@ export abstract class BaseModel {
         return BaseModel.serializeObj(savegame);
     }
 
-    public defaultrun(): void {
-        if (global.model.paused) {
-            return;
-        }
-        if (global.model.startAfterLoad) {
-            return;
-        }
-
-        let objects = global.model.objects;
-        // Let all game objects take a turn
-        objects.forEach(o => !o.disposeFlag && o.run());
-
-        // Remove all objects that are to be disposed
-        objects.filter(o => o.disposeFlag).forEach(o => global.model.exile(o));
-    }
-
     // https://hackernoon.com/3-javascript-performance-mistakes-you-should-stop-doing-ebf84b9de951
-    public where_do(predicate: (value: IGameObject, index: number, array: IGameObject[], thisArg?: any) => unknown, callbackfn: (value: IGameObject, index: number, array: IGameObject[], thisArg?: any) => void): void {
+    public where_do(predicate: (value: GameObject, index: number, array: GameObject[], thisArg?: any) => unknown, callbackfn: (value: GameObject, index: number, array: GameObject[], thisArg?: any) => void): void {
         let filteredList = this.objects.filter(predicate);
         for (let i = 0; i < filteredList.length; i++) {
             callbackfn(filteredList[i], i, filteredList, this);
@@ -564,8 +682,8 @@ export abstract class BaseModel {
     public clear(): void {
         this.objects.forEach(o => o.ondispose?.());
         this.objects.length = 0;
-        delete this.id2object;
-        this.id2object = {};
+        delete this[id2obj];
+        this[id2obj] = {};
         this.paused = false;
     }
 
@@ -573,32 +691,28 @@ export abstract class BaseModel {
         this.objects.sort((o1, o2) => (o2.z || 0) - (o1.z || 0));
     }
 
-    public spawn(o: IGameObject, pos?: Point, ignoreSpawnhandler?: boolean): void {
+    public spawn(o: GameObject, pos?: Point, ignoreSpawnhandler?: boolean): void {
         this.objects.push(o);
 
         this.sortObjectsByPriority();
 
-        this.id2object[o.id] = o;
+        this[id2obj][o.id] = o;
         !ignoreSpawnhandler && o.onspawn?.(pos);
     }
 
-    public exile(o: IGameObject): void {
+    public exile(o: GameObject): void {
         let index = this.objects.indexOf(o);
         if (index > -1) {
             delete this.objects[index];
             this.objects.splice(index, 1);
         }
 
-        if (this.id2object[o.id])
-            this.id2object[o.id] = undefined;
+        if (this[id2obj][o.id])
+            this[id2obj][o.id] = undefined;
         o.ondispose?.();
     }
 
-    public exists(id: string): boolean {
-        return this.id2object[id] !== undefined;
-    }
-
-    public abstract collidesWithTile(o: IGameObject, dir: Direction): boolean;
+    public abstract collidesWithTile(o: GameObject, dir: Direction): boolean;
     public abstract isCollisionTile(x: number, y: number): boolean;
 }
 
@@ -614,10 +728,6 @@ export class Game {
     constructor(_rom: RomLoadResult, _model: BaseModel | BaseModelOld, _view: BaseView, _controller: BaseControllerOld | null, sndcontext: AudioContext, gainnode: GainNode) {
         global['game'] = this;
         this.rom = _rom;
-
-        // model = _model;
-        // view = _view;
-        // controller = _controller;
 
         global['model'] = _model;
         global['view'] = _view;
@@ -690,72 +800,28 @@ export class Game {
     }
 }
 
-export interface IGameObject {
-    id: string | null;
-    disposeFlag: boolean;
-    sm: cbst;
-    z?: number;
-    pos: Point;
-    size?: Size;
-    hitarea?: Area;
-    hittable?: boolean;
-    visible?: boolean;
-
-    hitbox_sx?: number;
-    hitbox_sy?: number;
-    hitbox_ex?: number;
-    hitbox_ey?: number;
-    wallhitbox_sx?: number;
-    wallhitbox_sy?: number;
-    wallhitbox_ex?: number;
-    wallhitbox_ey?: number;
-    isWall?: boolean;
-    disposeOnSwitchRoom?: boolean;
-
-    run(): void;
-    spawn?(spawningPos?: Point): void;
-    onspawn?: ((spawningPos?: Point) => void) | (() => void);
-    ondispose?: () => void;
-
-    paint?(offset?: Point): void;
-    postpaint?(offset?: Point): void; // Post-processing such as lighting effects or the characters of an ASCII-buffer in case of an ASCII-sprite
-    objectCollide?(o: IGameObject): boolean;
-    areaCollide?(a: Area): boolean;
-    collides?(o: IGameObject | Area): boolean;
-    collide?(src: IGameObject): void;
-    oncollide?: (src: IGameObject) => void;
-    onloaded?: () => void;
-    markForDisposure?: () => void;
-}
-
-// Shared function used for using as event handler for IGameObject/Sprite.OnLeavingScreen
-export function ProhibitLeavingScreenHandler(ik: IGameObject, d: Direction, old_x_or_y: number): void {
-    switch (d) {
-        case Direction.Left: case Direction.Right:
-            ik.pos.x = old_x_or_y;
-            break;
-        case Direction.Up: case Direction.Down:
-            ik.pos.y = old_x_or_y;
-            break;
+export class GameObject {
+    // For converting this GameObject to a string ('id')
+    public [Symbol.toPrimitive]() {
+        return this.id;
     }
-}
 
-@insavegame
-export abstract class Sprite implements IGameObject {
-    public id: string | null;
-    public pos: Point;
-    public size: Size;
-    protected _hitarea: Area;
+    public id: string;
+    public disposeFlag: boolean;
+    public z?: number;
+    public pos?: Point;
+    public size?: Size;
+
+    public get wallHitarea(): Area { return this.hitarea; }
+    public state: cmstate;
+    public isWall?: boolean;
+
+    protected _hitarea?: Area;
     public get hitarea() { return this._hitarea; }
     public set hitarea(value: Area) { this._hitarea = value; }
-    public get wallHitarea(): Area { return this.hitarea; }
-    public visible: boolean;
-    public hittable: boolean;
-    public flippedH: boolean;
-    public flippedV: boolean;
-    public z: number;
-    public disposeFlag: boolean;
-    public imgid: number;
+
+    public hittable?: boolean;
+    public visible?: boolean;
 
     public get hitbox_sx(): number {
         return this.pos.x + this.hitarea.start.x;
@@ -798,10 +864,26 @@ export abstract class Sprite implements IGameObject {
     }
 
     public disposeOnSwitchRoom?: boolean;
-    public oncollide?: (src: IGameObject) => void;
+
+    public spawn?(spawningPos?: Point): void;
+    public onspawn?: ((spawningPos?: Point) => void) | (() => void);
+    public ondispose?: () => void;
+
+    public paint?(offset?: Point): void;
+    public postpaint?(offset?: Point): void; // Post-processing such as lighting effects or the characters of an ASCII-buffer in case of an ASCII-sprite
+    public onloaded?: () => void;
+
+    /**
+    * Gebruik ik als event handler voor e.g. onLeaveScreen
+    */
+    public markForDisposure(): void {
+        this.disposeFlag = true;
+    }
+
+    public oncollide?: (src: GameObject) => void;
     public onWallcollide?: (dir: Direction) => void;
-    public onLeaveScreen?: (ik: IGameObject, dir: Direction, old_x_or_y: number) => void;
-    public onLeavingScreen?: (ik: IGameObject, dir: Direction, old_x_or_y: number) => void;
+    public onLeaveScreen?: (ik: GameObject, dir: Direction, old_x_or_y: number) => void;
+    public onLeavingScreen?: (ik: GameObject, dir: Direction, old_x_or_y: number) => void;
 
     private _direction: Direction;
     public oldDirection: Direction;
@@ -815,81 +897,41 @@ export abstract class Sprite implements IGameObject {
         this._direction = value;
     }
 
-    constructor() {
-        this.pos = { x: 0, y: 0 };
-        this.visible = true;
-        this.hittable = true;
-        this.flippedH = false;
-        this.flippedV = false;
-        this.z = 0;
-        this.disposeFlag = false;
-        this.disposeOnSwitchRoom = true;
-    }
-    sm: cbst;
-    isWall?: boolean;
-    ondispose?: () => void;
-
-    /**
-    * Gebruik ik als event handler voor e.g. onLeaveScreen
-    */
-    markForDisposure(): void {
-        this.disposeFlag = true;
+    // https://gist.github.com/6174/6062387
+    private static readonly GENERATED_ID_LENGTH = 10;
+    private static generateId(): string {
+        const chars = [..."abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"];
+        let result = undefined;
+        do {
+            result = [...Array(GameObject.GENERATED_ID_LENGTH)].map(() => chars[Math.random() * chars.length | 0]).join('');
+        } while (global.model.exists(result)); // Make sure that the randomly generated string is unique!
+        return result;
     }
 
-    spawn(spawningPos: Point = null): Sprite {
-        global.model.spawn(this, spawningPos);
-        return this; // Voor chaining
+    constructor(_id?: string) {
+        this.id = _id ?? GameObject.generateId();
+        this.state = new cmstate(this.constructor.name, this.id);
+        this.state.populateMachines();
     }
 
-    onspawn(spawningPos?: Point): void {
-        if (spawningPos) {
-            [this.pos.x, this.pos.y] = [spawningPos.x, spawningPos.y];
-        }
-    }
-
-    onloaded(): void {
-        this.sm.onloaded();
-    }
-
-    run(): void {
-        this.sm.run();
-    }
-
-    paint(offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }): void {
-        let options: number = this.flippedH ? DrawImgFlags.HFLIP : 0;
-        options |= (this.flippedV ? DrawImgFlags.VFLIP : 0);
-        let dx = offset?.x || 0;
-        let dy = offset?.y || 0;
-
-        if (colorize) {
-            global.view.drawColoredBitmap(this.imgid, this.pos.x + dx, this.pos.y + dy, options, colorize.r, colorize.g, colorize.b, colorize.a);
-        }
-        else {
-            global.view.drawImg(this.imgid, this.pos.x + dx, this.pos.y + dy, options);
-        }
-    }
-
-    postpaint(offset?: Point): void {
-    }
-
-    static objectCollide(o1: IGameObject, o2: IGameObject): boolean {
+    static objectCollide(o1: GameObject, o2: GameObject): boolean {
         return o1.objectCollide(o2);
     }
 
-    public collides(o: IGameObject | Area): boolean {
-        if ((o as IGameObject).id) return this.objectCollide(<IGameObject>o);
+    public collides(o: GameObject | Area): boolean {
+        if ((o as GameObject).id) return this.objectCollide(<GameObject>o);
         else return this.areaCollide(<Area>o);
     }
 
-    public collide(src: IGameObject): void {
+    public collide(src: GameObject): void {
         this.oncollide?.(src);
     }
 
-    objectCollide(o: IGameObject): boolean {
+    public objectCollide(o: GameObject): boolean {
         return this.areaCollide(moveArea(o.hitarea, o.pos));
     }
 
-    areaCollide(a: Area): boolean {
+    public areaCollide(a: Area): boolean {
         let o1 = this;
         let o1p = o1.pos;
         let o1a = o1.hitarea;
@@ -900,7 +942,7 @@ export abstract class Sprite implements IGameObject {
             o1p.y + o1a.end.y >= o2a.start.y && o1p.y + o1a.start.y <= o2a.end.y;
     }
 
-    inside(p: Point): boolean {
+    public inside(p: Point): boolean {
         let o1 = this;
         let o1p = o1.pos;
         let o1a = o1.hitarea;
@@ -954,6 +996,83 @@ export abstract class Sprite implements IGameObject {
             else if (newy + this.size.y >= global.model.gameheight) { this.onLeavingScreen?.(this, Direction.Down, oldy); }
         }
     }
+
+    public run(): void {
+        this.state.run();
+    }
+}
+
+// Shared function used for using as event handler for IGameObject/Sprite.OnLeavingScreen
+export function ProhibitLeavingScreenHandler(ik: GameObject, d: Direction, old_x_or_y: number): void {
+    switch (d) {
+        case Direction.Left: case Direction.Right:
+            ik.pos.x = old_x_or_y;
+            break;
+        case Direction.Up: case Direction.Down:
+            ik.pos.y = old_x_or_y;
+            break;
+    }
+}
+
+Reviver.constructors = Reviver.constructors ?? {};
+Reviver.onRevives = Reviver.onRevives ?? {};
+Reviver.onSave = Reviver.onSave ?? {};
+
+@insavegame
+export abstract class Sprite extends GameObject {
+    public flippedH: boolean;
+    public flippedV: boolean;
+    public z: number;
+    public imgid: number;
+
+    constructor(id?: string) {
+        super(id);
+        // this.state = <cmstate>{
+        //     machines: {},
+        //     paused: false,
+        // };
+        this.pos = { x: 0, y: 0 };
+        this.visible = true;
+        this.hittable = true;
+        this.flippedH = false;
+        this.flippedV = false;
+        this.z = 0;
+        this.disposeFlag = false;
+        this.disposeOnSwitchRoom = true;
+    }
+
+    onspawn = (spawningPos?: Point): void => {
+        if (spawningPos) {
+            [this.pos.x, this.pos.y] = [spawningPos.x, spawningPos.y];
+        }
+    };
+
+    spawn(spawningPos: Point = null): this {
+        global.model.spawn(this, spawningPos);
+        return this; // Voor chaining
+    }
+
+    // onloaded(): void {
+    //     this.state.onloaded();
+    // }
+
+    paint(offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }): void {
+        let options: number = this.flippedH ? DrawImgFlags.HFLIP : 0;
+        options |= (this.flippedV ? DrawImgFlags.VFLIP : 0);
+        let dx = offset?.x || 0;
+        let dy = offset?.y || 0;
+
+        if (colorize) {
+            global.view.drawColoredBitmap(this.imgid, this.pos.x + dx, this.pos.y + dy, options, colorize.r, colorize.g, colorize.b, colorize.a);
+        }
+        else {
+            global.view.drawImg(this.imgid, this.pos.x + dx, this.pos.y + dy, options);
+        }
+    }
+
+    postpaint(offset?: Point): void {
+    }
+
 }
 
 // https://stackoverflow.com/questions/8111446/turning-json-strings-into-objects-with-methods
@@ -999,15 +1118,7 @@ export function Reviver(key: any, value: any) {
 // }
 // return value;
 // }
-Reviver.constructors = Reviver.constructors ?? {};
-Reviver.onRevives = Reviver.onRevives ?? {};
-Reviver.onSave = Reviver.onSave ?? {};
 // Reviver.onPostLoad = Reviver.onPostLoad ?? {};
-
-function obj_toJSON(ctorName: any, obj: any) {
-    obj.typename = ctorName;
-    return obj;
-}
 
 // A generic "fromJSON" function for use with Reviver: Just calls the
 // constructor function with no arguments, then applies all of the
@@ -1037,6 +1148,14 @@ export function onsave(target: any, name: any, descriptor: any): any {
     // Reviver.onSave[target.name] = descriptor.value;
     // target.prototype.toJSON = descriptor.value; // Set the toJSON for the case where @insavegame is not used
     target.onsave = descriptor.value;
+}
+
+// target: the class that the member is on.
+// name: the name of the member in the class.
+// descriptor: the member descriptor.This is essentially the object that would have been passed to Object.defineProperty.
+export function statedef_builder(target: any, name: any, descriptor: any): any {
+    MachineDefinitionBuilders ??= {};
+    MachineDefinitionBuilders[target.name] = descriptor.value;
 }
 
 // target: the class that the member is on.

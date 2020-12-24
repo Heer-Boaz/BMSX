@@ -1,6 +1,6 @@
 import { RomLoadResult } from '../bmsx/rompack';
-import { Game, BaseModel, IGameObject, Sprite, insavegame, Reviver, onsave, cbst, bss } from '../bmsx/engine';
-import { setPoint, newPoint, Direction, newSize } from '../bmsx/common';
+import { Game, BaseModel, GameObject, Sprite, insavegame, Reviver, onsave, cbstd, bssd, statedef_builder, bstd, sstate } from '../bmsx/engine';
+import { setPoint, newPoint, Direction, newSize, Point } from '../bmsx/common';
 import { Tile, MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
@@ -8,74 +8,80 @@ import { Input } from '../bmsx/input';
 
 @insavegame
 class bclass extends Sprite {
-    constructor() {
-        super();
-        this.id = 'The B';
-        this.imgid = BitmapId.b;
-        this.sm = new cbst();
-        this.init(false);
-        this.disposeOnSwitchRoom
-    }
-
-    onloaded() {
-        this.init(true);
-        super.onloaded();
-    }
-
-    init(wasloaded: boolean) {
-        let ik = this;
-        let blarun = () => {
+    @statedef_builder
+    public static states(): cbstd {
+        let blarun = (s: sstate, me: bclass) => {
             if (Input.KD_UP) {
-                this.pos.y -= 2;
+                me.pos.y -= 2;
             }
             if (Input.KD_RIGHT) {
-                this.pos.x += 2;
+                me.pos.x += 2;
             }
             if (Input.KD_DOWN) {
-                this.pos.y += 2;
+                me.pos.y += 2;
             }
             if (Input.KD_LEFT) {
-                this.pos.x -= 2;
+                me.pos.x -= 2;
             }
             if (Input.KC_BTN1) {
-                _model.savestring = _model.save();
+                _model[savestring] = _model.save();
                 console.info(`${new Date().toTimeString()} Game saved!`);
-                console.info(`${_model.savestring}`);
+                console.info(`${_model[savestring]}`);
             }
             if (Input.KC_BTN2) {
-                if (_model.savestring) {
-                    _model.load(_model.savestring);
-                    _model.savestring = undefined;
-                    delete _model.savestring;
+                if (_model[savestring]) {
+                    _model.load(_model[savestring]);
+                    _model[savestring] = undefined;
+                    delete _model[savestring];
                     console.info(`${new Date().toTimeString()} Game loaded!`);
                 }
             }
-            Input.KC_M && this.sm.to('blap');
-            Input.KC_SPACE && this.sm.to('bla');
+            Input.KC_M && me.state.to('blap');
+            Input.KC_SPACE && me.state.to('bla');
         };
 
-        this.sm.add(
-            new bss('bla', {
+        let result = new cbstd(this.name);
+        result.addBst(); // Add default BST (defined by default name)
+
+        result.add( // Add states to default BST
+            new bssd('bla', {
                 onrun: blarun,
-                onenter: () => { ik.imgid = BitmapId.b; },
-                start: true,
-                init: !wasloaded,
+                onenter: (_, me: bclass) => { me.imgid = BitmapId.b; },
             }),
-            new bss('blap', {
+            new bssd('blap', {
                 onrun: blarun,
-                onenter: () => { ik.imgid = BitmapId.b2; },
+                onenter: (_, me: bclass) => { me.imgid = BitmapId.b2; },
             }),
         );
+
+        return result;
     }
 
-    run(): void {
-        super.run();
+    constructor() {
+        super('The B');
+        this.imgid = BitmapId.b;
+        this.init(false);
+    }
+
+    public onspawn = (spawningPos?: Point): void => {
+        super.onspawn?.(spawningPos);
+        this.state.to('blap');
+    }
+
+    // onloaded() {
+    //     this.init(true);
+    //     super.onloaded();
+    // }
+
+    init(wasloaded: boolean) {
+
     }
 };
 
+const savestring = Symbol('savestring');
 @insavegame
 class _modelclass extends BaseModel {
-    public savestring: string = undefined;
+    public [savestring]: string;
 
     public get gamewidth(): number {
         return MSX1ScreenWidth;
@@ -85,7 +91,7 @@ class _modelclass extends BaseModel {
         return MSX1ScreenHeight;
     }
 
-    public collidesWithTile(o: IGameObject, dir: Direction): boolean {
+    public collidesWithTile(o: GameObject, dir: Direction): boolean {
         return false;
     }
 

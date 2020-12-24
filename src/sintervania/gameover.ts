@@ -1,7 +1,7 @@
 import { Model } from "./gamemodel";
 import { Direction, Point } from "../bmsx/common";
 import { TextWriter } from "./textwriter";
-import { view, model, IGameObject, controller } from "../bmsx/engine";
+import { view, model, GameObject, controller } from "../bmsx/engine";
 import { AudioId, BitmapId } from "./resourceids";
 import { Input } from "../bmsx/input";
 import { SM as S, SM } from "../bmsx/soundmaster";
@@ -14,7 +14,7 @@ export const enum State {
     SelectFile
 }
 
-export class GameOver implements IGameObject {
+export class GameOver implements GameObject {
     id: string = 'gameover';
     disposeFlag: boolean;
     z: number = 500;

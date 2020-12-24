@@ -1,9 +1,9 @@
 import { Point, Direction } from "./common";
-import { IGameObject, cbst, BaseModel, Savegame } from './engine';
+import { GameObject, cbstd, BaseModel, Savegame } from './engine';
 
 export abstract class BaseModelOld extends BaseModel {
-    public id2object: { [key: string]: IGameObject; };
-    public objects: IGameObject[];
+    public id2obj: { [key: string]: GameObject; };
+    public objects: GameObject[];
     public gameState: number;
     public gameSubstate: number;
     public gameOldState: number;
@@ -23,13 +23,13 @@ export abstract class BaseModelOld extends BaseModel {
         this.gameOldState = value;
     }
 
-    public get state(): number {
-        return this.gameState;
-    }
+    // public get state(): number {
+    //     return this.gameState;
+    // }
 
-    public set state(value: number) {
-        this.gameState = value;
-    }
+    // public set state(value: number) {
+    //     this.gameState = value;
+    // }
 
     public get oldGameSubstate(): number {
         return this.gameOldSubstate;
@@ -53,16 +53,13 @@ export abstract class BaseModelOld extends BaseModel {
     constructor() {
         super();
         this.objects = [];
-        this.id2object = {};
+        this.id2obj = {};
         this.gameState = 0;
         this.gameSubstate = 0;
         this.oldGameState = 0;
         this.oldGameSubstate = 0;
 
         this.paused = false;
-    }
-    protected buildStates(): void {
-        throw new Error("Method not implemented.");
     }
 
     public load(serialized: string): void {
@@ -75,7 +72,7 @@ export abstract class BaseModelOld extends BaseModel {
     public defaultrun(): void {
         throw new Error("Method not implemented.");
     }
-    public where_do(predicate: (value: IGameObject, index: number, array: IGameObject[], thisArg?: any) => unknown, callbackfn: (value: IGameObject, index: number, array: IGameObject[], thisArg?: any) => void): void {
+    public where_do(predicate: (value: GameObject, index: number, array: GameObject[], thisArg?: any) => unknown, callbackfn: (value: GameObject, index: number, array: GameObject[], thisArg?: any) => void): void {
         throw new Error("Method not implemented.");
     }
     public clear(): void {
@@ -94,36 +91,36 @@ export abstract class BaseModelOld extends BaseModel {
     public clearModel(): void {
         this.objects.forEach(o => o.ondispose?.());
         this.objects.length = 0;
-        delete this.id2object;
-        this.id2object = {};
+        delete this.id2obj;
+        this.id2obj = {};
         this.paused = false;
     }
 
-    public spawn(o: IGameObject, pos?: Point): void {
+    public spawn(o: GameObject, pos?: Point): void {
         this.objects.push(o);
 
         this.objects.sort((o1, o2) => (o2.z || 0) - (o1.z || 0));
 
-        this.id2object[o.id] = o;
+        this.id2obj[o.id] = o;
         o.onspawn?.(pos);
     }
 
-    public exile(o: IGameObject): void {
+    public exile(o: GameObject): void {
         let index = this.objects.indexOf(o);
         if (index > -1) {
             delete this.objects[index];
             this.objects.splice(index, 1);
         }
 
-        if (this.id2object[o.id])
-            this.id2object[o.id] = undefined;
+        if (this.id2obj[o.id])
+            this.id2obj[o.id] = undefined;
         o.ondispose?.();
     }
 
     public exists(id: string): boolean {
-        return this.id2object[id] !== undefined;
+        return this.id2obj[id] !== undefined;
     }
 
-    public abstract collidesWithTile(o: IGameObject, dir: Direction): boolean;
+    public abstract collidesWithTile(o: GameObject, dir: Direction): boolean;
     public abstract isCollisionTile(x: number, y: number): boolean;
 }

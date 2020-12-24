@@ -7,7 +7,7 @@ import { SM } from "../bmsx/soundmaster";
 import { Controller } from "./gamecontroller";
 import { GameState, Model } from "./gamemodel";
 import { SlotExists, LoadGame } from "../bmsx/gamepersistor";
-import { GameOptions as GO, IGameObject, bst, model, controller } from '../bmsx/engine';
+import { GameOptions as GO, GameObject, bstd, model, controller } from '../bmsx/engine';
 import { Constants } from "../bmsx/engine";
 import { newSize, setPoint } from "../bmsx/common";
 import { view, game } from "../bmsx/engine";
@@ -44,7 +44,7 @@ declare module "./mainmenu" {
     }
 }
 
-export class GameMenu extends bst implements IGameObject {
+export class GameMenu extends bstd implements GameObject {
     private static menuPosX: number = 24;
     private static menuPosY: number = 24;
     private static menuEndX: number = 240;

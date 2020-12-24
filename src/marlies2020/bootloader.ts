@@ -1,5 +1,5 @@
 import { RomLoadResult } from '../bmsx/rompack';
-import { Game, BaseModel, IGameObject, Sprite, BSTEventType, bss, bst, ProhibitLeavingScreenHandler as prohibitLeavingScreenHandler } from '../bmsx/engine';
+import { Game, BaseModel, GameObject, Sprite, BSTEventType, bssd, bstd, ProhibitLeavingScreenHandler as prohibitLeavingScreenHandler } from '../bmsx/engine';
 import { setPoint, newPoint, Direction, newSize, newArea, Point, randomInt, copyPoint, Opposite } from '../bmsx/common';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
@@ -33,7 +33,7 @@ class modelclass extends BaseModel {
         this.pitasOpBord = 0;
         this.ingredientEquipped = null;
 
-        this.add(new bss('hoera!', {
+        this.add(new bssd('hoera!', {
             onenter(_, ik: modelclass) {
                 ik.clear();
                 ik.spawn(new hoeraStuff());
@@ -49,7 +49,7 @@ class modelclass extends BaseModel {
         return MSX1ScreenHeight;
     }
 
-    public collidesWithTile(o: IGameObject, dir: Direction): boolean {
+    public collidesWithTile(o: GameObject, dir: Direction): boolean {
         return false;
     }
 
@@ -130,9 +130,9 @@ class brandblusser extends Sprite {
         this.z = _model.marlies.direction == Direction.Up ? 950 : 1050;
         let self = this;
 
-        this.add(new bss('bla', {
+        this.add(new bssd('bla', {
             nudges2move: 20,
-            onrun: (s: bss, ik: brandblusser): void => {
+            onrun: (s: bssd, ik: brandblusser): void => {
                 setPoint(self.pos, _model.marlies.pos.x, _model.marlies.pos.y + 12);
                 let oldPrio = ik.z;
                 if (_model.marlies.direction == Direction.Up) ik.z = 950;
@@ -273,7 +273,7 @@ class vuur extends Sprite {
         this.hitarea = newArea(4, 4, 12, 12);
         this.z = dir != Direction.Up ? 1100 : 900;
 
-        this.add(new bss('brand', {
+        this.add(new bssd('brand', {
             tape: <Array<BitmapId>>[
                 BitmapId.Vuur1,
                 BitmapId.Vuur2,
@@ -288,11 +288,11 @@ class vuur extends Sprite {
                 BitmapId.None,
             ],
             nudges2move: 2,
-            onenter: (s: bss, ik: vuur): void => {
+            onenter: (s: bssd, ik: vuur): void => {
                 s.reset();
                 ik.imgid = s.current;
             },
-            onrun: (s: bss, ik: vuur): void => {
+            onrun: (s: bssd, ik: vuur): void => {
                 ++s.nudges;
                 switch (ik.direction) {
                     case Direction.Up: ik.pos.y -= 3; break;
@@ -301,7 +301,7 @@ class vuur extends Sprite {
                     case Direction.Left: ik.pos.x -= 3; break;
                 }
             },
-            onnext: (s: bss, ik: vuur): void => {
+            onnext: (s: bssd, ik: vuur): void => {
                 ik.imgid = s.current;
             },
             onend: (_, ik: vuur): void => {
@@ -318,7 +318,7 @@ class corona extends Sprite {
     public isEng = true;
     private moveLeft: number = 0;
 
-    private onLeavingScreenHandler(ik: IGameObject, dir: Direction, old_x_or_y: number) {
+    private onLeavingScreenHandler(ik: GameObject, dir: Direction, old_x_or_y: number) {
         prohibitLeavingScreenHandler(ik, dir, old_x_or_y);
         (ik as corona).moveLeft = randomInt(MIN_CORONA_MOVE, MAX_CORONA_MOVE);
         (ik as corona).direction = Opposite(dir);
@@ -339,7 +339,7 @@ class corona extends Sprite {
 
         this.onLeavingScreen = this.onLeavingScreenHandler;
 
-        this.add(new bss('skulk', {
+        this.add(new bssd('skulk', {
             start: true,
             nudges2move: 4,
             tape: <Array<BitmapId>>[
@@ -348,12 +348,12 @@ class corona extends Sprite {
                 BitmapId.Corona3,
                 BitmapId.Corona2,
             ],
-            onenter: (s: bss, ik: corona): void => {
+            onenter: (s: bssd, ik: corona): void => {
                 s.reset();
                 ik.imgid = s.current;
                 ik.setRandomMove();
             },
-            onrun(s: bss, ik: corona) {
+            onrun(s: bssd, ik: corona) {
                 if (_model.objects.filter(o => (<any>o)?.isVuur).some(v => ik.objectCollide(v))) {
                     ik.to('sterf');
                 }
@@ -369,9 +369,9 @@ class corona extends Sprite {
                 }
                 ++s.nudges;
             },
-            onnext(s: bss, ik: corona) { ik.imgid = s.current; },
+            onnext(s: bssd, ik: corona) { ik.imgid = s.current; },
         }),
-            new bss('sterf', {
+            new bssd('sterf', {
                 nudges2move: 4,
                 tape: <Array<BitmapId>>[
                     BitmapId.Corona4,
@@ -384,18 +384,18 @@ class corona extends Sprite {
                     BitmapId.Corona11,
                     BitmapId.None,
                 ],
-                onenter(s: bss, ik: corona) {
+                onenter(s: bssd, ik: corona) {
                     ik.isEng = false;
                     s.reset();
                     ik.imgid = s.current;
                 },
-                onrun(s: bss) {
+                onrun(s: bssd) {
                     ++s.nudges;
                 },
                 onend(_, ik: corona) {
                     ik.markForDisposure();
                 },
-                onnext(s: bss, ik: corona) {
+                onnext(s: bssd, ik: corona) {
                     ik.imgid = s.current;
                 },
             })
@@ -451,7 +451,7 @@ class speler extends Sprite {
         };
 
         this.add(
-            new bss('walk', {
+            new bssd('walk', {
                 start: true,
                 onrun: (): void => {
                     if (Input.KC_LEFT) {
@@ -499,35 +499,35 @@ class speler extends Sprite {
                     self.doeCoronaTest();
                 }
             }),
-            new bss('switchleft', {
+            new bssd('switchleft', {
                 onenter: () => self.to('columnswitch', 'anistate'),
                 onrun: shared_switch_run,
             }),
-            new bss('switchright', {
+            new bssd('switchright', {
                 onenter: () => self.to('columnswitch', 'anistate'),
                 onrun: shared_switch_run,
             }),
-            new bss('urgh', { // urghSpelerState
+            new bssd('urgh', { // urghSpelerState
                 onenter: () => self.to('urgh', 'anistate')
                 // Lelijk, maar animatie-state zorgt voor terugkeer naar previous state
             }),
-            new bss('win', { // winSpelerState
+            new bssd('win', { // winSpelerState
                 nudges2move: 300,
                 onenter: () => self.to('win', 'anistate'),
-                onrun: (s: bss) => (++s.nudges, _model.objects.filter(o => (<any>o).isEng).forEach(o => o.disposeFlag = true)),
+                onrun: (s: bssd) => (++s.nudges, _model.objects.filter(o => (<any>o).isEng).forEach(o => o.disposeFlag = true)),
                 onnext: () => _model.to('hoera!')
             }),
         );
 
-        let down_up_state_def: Partial<bss> = {
+        let down_up_state_def: Partial<bssd> = {
             nudges2move: 8,
-            onenter: (s: bss): void => (s.reset(), self.imgid = s.current),
-            onrun: (s: bss): void => { ++s.nudges; },
-            onend: (s: bss): void => s.reset(),
-            onnext: (s: bss): void => self.imgid = s.current,
+            onenter: (s: bssd): void => (s.reset(), self.imgid = s.current),
+            onrun: (s: bssd): void => { ++s.nudges; },
+            onend: (s: bssd): void => s.reset(),
+            onnext: (s: bssd): void => self.imgid = s.current,
         };
         this.addTo('anistate',
-            new bss('down', {
+            new bssd('down', {
                 ...down_up_state_def, ...{
                     start: true,
                     tape: <Array<BitmapId>>[
@@ -539,7 +539,7 @@ class speler extends Sprite {
                     ]
                 }
             }),
-            new bss('up', {
+            new bssd('up', {
                 ...down_up_state_def, ...{
                     tape: <Array<BitmapId>>[
                         BitmapId.p4,
@@ -550,7 +550,7 @@ class speler extends Sprite {
                     ]
                 }
             }),
-            new bss('urgh', {
+            new bssd('urgh', {
                 tape: <Array<BitmapId>>[
                     BitmapId.p8,
                     BitmapId.p9,
@@ -578,23 +578,23 @@ class speler extends Sprite {
                     BitmapId.p9,
                 ],
                 nudges2move: 4,
-                onenter(s: bss, ik: speler): void {
+                onenter(s: bssd, ik: speler): void {
                     s.reset();
                     ik.imgid = s.current;
                     ik.flippedH = false;
                 },
-                onrun(s: bss): void {
+                onrun(s: bssd): void {
                     ++s.nudges;
                 },
-                onend(s: bss, ik: speler): void {
+                onend(s: bssd, ik: speler): void {
                     s.reset();
                     ik.pop();
                 },
-                onnext(s: bss, ik: speler): void {
+                onnext(s: bssd, ik: speler): void {
                     ik.imgid = s.current;
                 },
             }),
-            new bss('columnswitch', {
+            new bssd('columnswitch', {
                 onenter(_, ik: speler): void {
                     ik.imgid = BitmapId.p7;
                     if (ik.getCurrentId() === 'switchright')
@@ -604,7 +604,7 @@ class speler extends Sprite {
                     ik.flippedH = false;
                 },
             }),
-            new bss('win', { // winAniState
+            new bssd('win', { // winAniState
                 onenter: () => self.imgid = BitmapId.p10
             }),
         );
@@ -691,12 +691,12 @@ class keuken extends Sprite {
         this.imgid = BitmapId.Keuken;
         this.z = 0;
 
-        this.add(new bss('wees_een_keuken', {
+        this.add(new bssd('wees_een_keuken', {
             nudges2move: TIME_CORONA_SPAWN,
-            onenter(s: bss) {
+            onenter(s: bssd) {
                 s.reset();
             },
-            onrun(s: bss) {
+            onrun(s: bssd) {
                 ++s.nudges;
             },
             onnext() {

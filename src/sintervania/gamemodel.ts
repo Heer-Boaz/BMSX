@@ -1,7 +1,7 @@
 import { ItemType } from './item';
 import { WeaponType, WeaponItem } from './weaponitem';
 import { Point, Direction } from '../bmsx/common';
-import { BStopwatch, IGameObject, view } from '../bmsx/engine';
+import { BStopwatch, GameObject, view } from '../bmsx/engine';
 import { BaseModelOld } from "../bmsx/basemodel_old";
 import { Savegame } from '../bmsx/gamepersistor';
 import { Foe } from './foe';
@@ -153,7 +153,7 @@ export class Model extends BaseModelOld {
     public MainMenu: MainMenu;
     public Title: Title;
     public EndDemo: EndDemo;
-    public PauseObject: IGameObject;
+    public PauseObject: GameObject;
 
     public get ShowFoeBar(): boolean {
         return this.BossBattle;
@@ -224,7 +224,7 @@ export class Model extends BaseModelOld {
     }
 
     public Initialize(): void {
-        this.objects = new Array<IGameObject>();
+        this.objects = new Array<GameObject>();
         this.foes = new Array<Foe>();
         this.ItemsInInventory = new Array<BagItem>();
         this.WeaponsInInventory = new Array<BagWeapon>();
@@ -289,7 +289,7 @@ export class Model extends BaseModelOld {
     public InitAfterGameLoad(): void {
     }
 
-    public spawn(o: IGameObject, spawnpos?: Point): void {
+    public spawn(o: GameObject, spawnpos?: Point): void {
         if (o instanceof Belmont) {
             if (this.objects.findIndex(ob => ob instanceof Belmont) > -1)
                 throw Error("There is already a Belmont in the game! \"There can be only one!\"");
@@ -318,7 +318,7 @@ export class Model extends BaseModelOld {
         super.spawn(o, spawnpos);
     }
 
-    public exile(o: IGameObject): void {
+    public exile(o: GameObject): void {
         if (o instanceof Belmont) {
             this.Belmont = null;
             belmont = null;
@@ -342,7 +342,7 @@ export class Model extends BaseModelOld {
         return GameConstants.GameScreenHeight;
     }
 
-    public collidesWithTile = (o: IGameObject, dir: Direction): boolean => this.currentRoom.collidesWithTile(o, dir);
+    public collidesWithTile = (o: GameObject, dir: Direction): boolean => this.currentRoom.collidesWithTile(o, dir);
 
     public isCollisionTile = (x: number, y: number): boolean => this.currentRoom.isCollisionTile(x, y);
 

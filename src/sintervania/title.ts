@@ -1,7 +1,7 @@
 import { Animation } from "../bmsx/animation"
 import { Point } from "../bmsx/common";
 import { BitmapId } from "./resourceids";
-import { view, IGameObject } from "../bmsx/engine";
+import { view, GameObject } from "../bmsx/engine";
 
 export const enum State {
 	WaitForIt,
@@ -12,7 +12,7 @@ export const enum State {
 	Other
 }
 
-export class Title implements IGameObject {
+export class Title implements GameObject {
 	id: string = 'title';
 	disposeFlag: boolean = false;
 	z?: number = 1000;

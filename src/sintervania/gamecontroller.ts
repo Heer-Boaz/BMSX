@@ -323,7 +323,7 @@ export class Controller extends BaseControllerOld {
 
     public PauseGame(): void {
         (model as Model).paused = true;
-        (model as Model).id2object['pause'].visible = true;
+        (model as Model).id2obj['pause'].visible = true;
         BStopwatch.pauseAllRunningWatches();
         SM.pause();
     }
@@ -331,7 +331,7 @@ export class Controller extends BaseControllerOld {
     public UnpauseGame(): void {
         (model as Model).paused = false;
         BStopwatch.resumeAllPausedWatches();
-        (model as Model).id2object['pause'].visible = false;
+        (model as Model).id2obj['pause'].visible = false;
         SM.resume();
     }
 

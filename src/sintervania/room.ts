@@ -2,7 +2,7 @@ import { Candle } from './candle';
 import { TileSize, Tile } from "../bmsx/msx";
 import { Direction, Point } from "../bmsx/common";
 import { GameConstants as CS, GameConstants } from "./gameconstants";
-import { view, IGameObject, model, controller } from "../bmsx/engine";
+import { view, GameObject, model, controller } from "../bmsx/engine";
 import { RoomDataContainer } from "./RoomFactory";
 import { BitmapId } from "./resourceids";
 import { Model } from "./gamemodel";
@@ -15,7 +15,7 @@ import { Controller } from './gamecontroller';
 export type NearingRoomExitResult = { destRoom: number, direction: Direction } | null;
 export type RoomInitDelegate = (room: Room) => void;
 
-export class Room implements IGameObject {
+export class Room implements GameObject {
 	id: string;
 	disposeFlag: boolean = false;
 	z: number = -1;
@@ -228,7 +228,7 @@ export class Room implements IGameObject {
 		return false;
 	}
 
-	public collidesWithTile(o: IGameObject, dir: Direction): boolean {
+	public collidesWithTile(o: GameObject, dir: Direction): boolean {
 		let startx = o.wallhitbox_sx;
 		let starty = o.wallhitbox_sy;
 		let endx = o.wallhitbox_ex;
