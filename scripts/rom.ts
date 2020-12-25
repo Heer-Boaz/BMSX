@@ -37,6 +37,9 @@ var bootrom = {
 			// setLoaderText(e.message);
 			// }
 			return x;
+		})
+		.catch(err => {
+			console.error(err ?? 'usr(x) failed with unknown error!');
 		});
 		return 255;
 	},
@@ -88,14 +91,19 @@ async function loadRompack(url: string): Promise<ArrayBuffer> {
 
 async function loadImage(url: string): Promise<HTMLImageElement> {
 	return new Promise((resolve, reject) => {
-		let img = new Image();
-		img.onload = e => resolve(img);
-		img.onerror = e => {
-			let msg = `Failed to load image's URL: ${url}`;
-			console.error(msg);
-			reject(msg);
-		};
-		img.src = url;
+		try {
+			let img = new Image();
+			img.onload = e => resolve(img);
+			img.onerror = e => {
+				let msg = `Failed to load image's URL: ${url}`;
+				console.error(msg);
+				reject(msg);
+			};
+			img.src = url;
+		}
+		catch (err) {
+			reject(err);
+		}
 	});
 }
 
@@ -134,9 +142,9 @@ async function loadResources(rom: ArrayBuffer): Promise<RomLoadResult> {
 		}
 		return result;
 	}
-	catch (e) {
-		console.error(e.message);
-		return Promise.reject(e.message);
+	catch (err) {
+		console.error(err.message);
+		return Promise.reject(err);
 	}
 }
 
@@ -184,40 +192,53 @@ async function load(rom: ArrayBuffer, res: RomResource, romResult: RomLoadResult
 
 async function awaitBootComplete(): Promise<void> {
 	let result: Promise<void> = new Promise((resolve, reject) => {
-		let msx = <HTMLElement>document.querySelector('#msx');
-		msx.addEventListener('animationend', ev => {
-			let loading = <HTMLElement>document.querySelector('#loading');
-			loading.hidden = false;
-			resolve();
-		});
-		msx.className = "enter";
-		msx.hidden = false;
-		if (bootrom.debug) resolve(); // Resolve immediately in debug-mode
+		try {
+			let msx = <HTMLElement>document.querySelector('#msx');
+			msx.addEventListener('animationend', ev => {
+				let loading = <HTMLElement>document.querySelector('#loading');
+				loading.hidden = false;
+				resolve();
+			});
+			msx.className = "enter";
+			msx.hidden = false;
+			if (bootrom.debug) resolve(); // Resolve immediately in debug-mode
+		}
+		catch (err) {
+			reject(err);
+		}
 	});
 	return result;
 }
 
 async function loadScript(rom: RomLoadResult): Promise<void> {
 	let result: Promise<void> = new Promise((resolve, reject) => {
-		let romcode = document.createElement('script');
-		romcode.async = false;
-		romcode.onerror = (event: Event | string, source?: string, lineno?: number, colno?: number, error?: Error) => {
-			setLoaderText(`SError: ${(<Event>event)?.type ?? ""} ${source ?? ""} ${lineno ?? ""} ${colno ?? ""} ${error?.message ?? ""}`);
-			reject(error);
-		};
-		window.onerror = (event: Event | string, source?: string, lineno?: number, colno?: number, error?: Error) => {
-			setLoaderText(`WError: ${event} ${source ?? ""} ${lineno ?? ""} ${colno ?? ""} ${error?.message ?? ""}`);
-			reject(error);
-		};
-		if (!bootrom.debug) {
-			romcode.innerText = rom.source;
-			document.head.appendChild(romcode);
-			resolve();
+		try {
+			let romcode = document.createElement('script');
+			romcode.async = false;
+			romcode.onerror = (event: Event | string, source?: string, lineno?: number, colno?: number, error?: Error) => {
+				reject('urgh');
+				// setLoaderText(`SError: ${(<Event>event)?.type ?? ""} ${source ?? ""} ${lineno ?? ""} ${colno ?? ""} ${error?.message ?? ""}`);
+				// reject(error);
+			};
+			romcode.onload = () => resolve();;
+			window.onerror = (event: Event | string, source?: string, lineno?: number, colno?: number, error?: Error) => {
+				reject('urgh');
+				// setLoaderText(`WError: ${event} ${source ?? ""} ${lineno ?? ""} ${colno ?? ""} ${error?.message ?? ""}`);
+				// reject(error);
+			};
+			if (!bootrom.debug) {
+				romcode.innerText = rom.source;
+				document.head.appendChild(romcode);
+			}
+			else {
+				romcode.src = '../megarom.min.js';
+				romcode.onload = () => resolve();
+				document.head.appendChild(romcode);
+				// resolve();
+			}
 		}
-		else {
-			romcode.src = '../megarom.js';
-			romcode.onload = () => resolve();
-			document.head.appendChild(romcode);
+		catch (err) {
+			reject(err);
 		}
 	});
 	return result;
@@ -237,17 +258,22 @@ async function awaitPressedAnyKey(): Promise<void> {
 
 	let result: Promise<void> = new Promise((resolve, reject) => {
 		let onuserinteraction = (e: UIEvent) => {
-			if (!bootrom.snd_unlocked) { return; }
-			if (e.type == 'touchend') {
-				let controls = document.getElementById("controls");
-				controls.hidden = false;
-				document.documentElement.setAttribute("style", "touch-action: none;");
-				document.documentElement.setAttribute("style", "pointer-events: none;");
+			try {
+				if (!bootrom.snd_unlocked) { return; }
+				if (e.type == 'touchend') {
+					let controls = document.getElementById("controls");
+					controls.hidden = false;
+					document.documentElement.setAttribute("style", "touch-action: none;");
+					document.documentElement.setAttribute("style", "pointer-events: none;");
+				}
+				document.body.removeEventListener('keyup', onuserinteraction);
+				document.body.removeEventListener('touchend', onuserinteraction);
+				wrapup();
+				resolve();
 			}
-			document.body.removeEventListener('keyup', onuserinteraction);
-			document.body.removeEventListener('touchend', onuserinteraction);
-			wrapup();
-			resolve();
+			catch (err) {
+				reject(err);
+			}
 		};
 
 		document.addEventListener('keyup', startAudioOnIos, true);

@@ -39,6 +39,8 @@ interface ResourceMeta {
 	id: number;
 }
 
+type logentryType = undefined | 'error' | 'warning';
+
 /**
  * Convert an Uint8Array into a string.
  * https://ourcodeworld.com/articles/read/164/how-to-convert-an-uint8array-to-string-in-javascript
@@ -48,20 +50,22 @@ function decodeuint8arr(uint8array: Uint8Array): string {
 	return new TextDecoder("utf-8").decode(uint8array);
 }
 
-function log(_tolog: string, type?: string): void {
+function log(_tolog: string, type?: logentryType): void {
 	let d = new Date();
 	let tolog: string;
 	switch (type) {
 		case 'error': tolog = _colors.red(_tolog); break;
+		case 'warning': tolog = _colors.yellow(_tolog); break;
 		default: tolog = _tolog; break;
 	}
 	process.stdout.write(`${_colors.cyan(d.toTimeString().split(' ')[0])}:${_colors.cyan(d.getMilliseconds().toString().substring(0, 3))} ${tolog}`);
 }
 
-function appendLogEntry(_toappend: string, type?: string): void {
+function appendLogEntry(_toappend: string, type?: logentryType): void {
 	let toappend: string;
 	switch (type) {
 		case 'error': toappend = _colors.red(_toappend); break;
+		case 'warning': toappend = _colors.yellow(_toappend); break;
 		default: toappend = _toappend; break;
 	}
 	process.stdout.write(toappend);
@@ -170,7 +174,7 @@ async function buildAndBundleRomSource(outfile: string, bootloader_path: string)
 			.plugin(tsify, {
 				// project: "tsconfig.json",
 				noImplicitAny: false,
-				files: [ bootloader_path ],
+				files: [bootloader_path],
 				// target: 'esnext',
 				// lib: [
 				// 	"ESNEXT",
@@ -210,76 +214,90 @@ async function buildAndBundleRomSource(outfile: string, bootloader_path: string)
 function minifyGamecode(infile: string): Error {
 	let options = <terser.MinifyOptions>{
 		ecma: 2020,
-		sourceMap: false,
-		compress: <terser.CompressOptions>{
-			keep_fargs: false, // Prevents the compressor from discarding unused function arguments. You need this for code which relies on Function.length
-			passes: 1, // The maximum number of times to run compress. In some cases more than one pass leads to further compressed code. Keep in mind more passes will take more time
-			ecma: 2020,
+		sourceMap: {
+			content: 'inline',
+			// 	// includeSources: true,
+			url: 'inline',
 		},
-		mangle: <terser.MangleOptions>{
-			reserved:
-				[
-					"exports",
-					"global",
-					"factory",
-					"__extends",
-					"__assign",
-					"__rest",
-					"__decorate",
-					"__param",
-					"__metadata",
-					"__awaiter",
-					"__generator",
-					"__exportStar",
-					"__values",
-					"__read",
-					"__spread",
-					"__spreadArrays",
-					"__await",
-					"__asyncGenerator",
-					"__asyncDelegator",
-					"__asyncValues",
-					"__makeTemplateObject",
-					"__importStar",
-					"__importDefault"
-				],
-			properties: <terser.ManglePropertiesOptions>{
-				keep_quoted: true,
-				reserved:
-					[
-						"exports",
-						"global",
-						"factory",
-						"__extends",
-						"__assign",
-						"__rest",
-						"__decorate",
-						"__param",
-						"__metadata",
-						"__awaiter",
-						"__generator",
-						"__exportStar",
-						"__values",
-						"__read",
-						"__spread",
-						"__spreadArrays",
-						"__await",
-						"__asyncGenerator",
-						"__asyncDelegator",
-						"__asyncValues",
-						"__makeTemplateObject",
-						"__importStar",
-						"__importDefault"
-					],
-			},
-		},
+		compress: false,
+		//<terser.CompressOptions>{
+		// 	keep_fargs: true, // Prevents the compressor from discarding unused function arguments. You need this for code which relies on Function.length
+		// 	passes: 1, // The maximum number of times to run compress. In some cases more than one pass leads to further compressed code. Keep in mind more passes will take more time
+		// 	ecma: 2020,
+		// 	keep_classnames: true,
+		// 	keep_fnames: true,
+		// },
+		mangle: false,
+		// <terser.MangleOptions>{
+		// 	reserved:
+		// 		[
+		// 			"exports",
+		// 			"global",
+		// 			"factory",
+		// 			"__extends",
+		// 			"__assign",
+		// 			"__rest",
+		// 			"__decorate",
+		// 			"__param",
+		// 			"__metadata",
+		// 			"__awaiter",
+		// 			"__generator",
+		// 			"__exportStar",
+		// 			"__values",
+		// 			"__read",
+		// 			"__spread",
+		// 			"__spreadArrays",
+		// 			"__await",
+		// 			"__asyncGenerator",
+		// 			"__asyncDelegator",
+		// 			"__asyncValues",
+		// 			"__makeTemplateObject",
+		// 			"__importStar",
+		// 			"__importDefault"
+		// 		],
+		// 	module: true,
+		// 	properties: <terser.ManglePropertiesOptions>{
+		// 		keep_quoted: true,
+		// 		reserved:
+		// 			[
+		// 				"exports",
+		// 				"global",
+		// 				"factory",
+		// 				"__extends",
+		// 				"__assign",
+		// 				"__rest",
+		// 				"__decorate",
+		// 				"__param",
+		// 				"__metadata",
+		// 				"__awaiter",
+		// 				"__generator",
+		// 				"__exportStar",
+		// 				"__values",
+		// 				"__read",
+		// 				"__spread",
+		// 				"__spreadArrays",
+		// 				"__await",
+		// 				"__asyncGenerator",
+		// 				"__asyncDelegator",
+		// 				"__asyncValues",
+		// 				"__makeTemplateObject",
+		// 				"__importStar",
+		// 				"__importDefault"
+		// 			],
+		// 	},
+		// },
 		output: <terser.OutputOptions>{
 			ecma: 2020,
 			safari10: false,
 			webkit: false,
 			// max_line_len: 80,
 			semicolons: true, // Must be true for Safari support (on iOS)! Otherwise, only black screen shows
-			keep_quoted_props: true
+			keep_quoted_props: true,
+			source_map: {
+				content: 'inline',
+				// url: 'inline',
+				// includeSources: true,
+			}
 		},
 	};
 
@@ -287,6 +305,13 @@ function minifyGamecode(infile: string): Error {
 	let gamejsMinifiedResult = terser.minify(gamejs, options);
 	if (gamejsMinifiedResult.code) {
 		writeFileSync("./rom/megarom.min.js", gamejsMinifiedResult.code);
+		writeFileSync("./megarom.min.js", gamejsMinifiedResult.code); // For debugging
+		if (gamejsMinifiedResult.map) {
+			writeFileSync("./megarom.min.map", gamejsMinifiedResult.map);
+		}
+		if (gamejsMinifiedResult.warnings) {
+			log(gamejsMinifiedResult.warnings.join('\n'), 'warning');
+		}
 		return null;
 	}
 	else {
@@ -359,7 +384,8 @@ async function buildGameHtmlAndManifest(outfile: string, title: string): Promise
 				let manifest = readFileSync("./rom/manifest.json", 'utf8');
 				manifest = manifest.replace('#title', title);
 				// Write updated manifest to dist-folder
-				writeFileSync("./dist/manifest.json", manifest);
+				// writeFileSync("./dist/manifest.json", manifest);
+				writeFileSync("./dist/manifest.webmanifest", manifest);
 
 				resolve(null);
 			}
@@ -409,7 +435,7 @@ async function deploy(outfile: string, title: string): Promise<any> {
 			localRoot: "./dist",
 			remoteRoot: `/${title.toLowerCase()}/`,
 			// include: ["*", "**/*"],      // this would upload everything except dot files
-			include: [outfile, "*.html", "manifest.json"],
+			include: [outfile, "*.html", "manifest.*"],
 			// e.g. exclude sourcemaps, and ALL files in node_modules (including dot files)
 			exclude: [],//"dist/**/*.map", "node_modules/**", "node_modules/**/.*", ".git/**"],
 			// delete ALL existing files at destination before uploading, if true

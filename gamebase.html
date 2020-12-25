@@ -9,7 +9,7 @@
         <meta name="apple-mobile-web-app-capable" content="yes">
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="#title" />
-        <link rel="manifest" href="manifest.json">
+        <link rel="manifest" href="manifest.webmanifest">
         <script id="bootrom">//#romjs</script>
         <script id="pacojs" distributedby="http://nodeca.github.io/pako/">//#zipjs</script>
         <script id="flattedjs" distributedby="https://github.com/WebReflection/flatted#flatted">//#flattedjs</script>
@@ -18,21 +18,21 @@
     <body>
         <!-- https://stackoverflow.com/questions/24077725/mobile-safari-sometimes-does-not-trigger-the-click-event -->
         <div onclick="void(0);">
-            <img id="msx" class="hidden" src="#bmsxurl" hidden/>
+            <img id="msx" class="hidden" src="#bmsxurl" hidden />
             <div id="hidor"></div>
             <span id="loading" class="coloring" hidden>Loading...</span>
             <span id="controls" hidden>
                 <svg class="buttons" style="top: 75vh; left: 80vw;">
-                    <circle id="btn1_knop" class="knop red los" cx="5vmax" cy="5vmax" r="5vmax" fill="transparent"/>
+                    <circle id="btn1_knop" class="knop red los" cx="5vmax" cy="5vmax" r="5vmax" fill="transparent" />
                 </svg>
                 <svg class="buttons" style="top: 75vh; left: 90vw;">
-                    <circle id="btn2_knop" class="knop blue los" cx="5vmax" cy="5vmax" r="5vmax" fill="transparent"/>
+                    <circle id="btn2_knop" class="knop blue los" cx="5vmax" cy="5vmax" r="5vmax" fill="transparent" />
                 </svg>
                 <svg class="buttons" style="top: 55vh; left: 80vw;">
-                    <circle id="btn3_knop" class="knop green los" cx="5vmax" cy="5vmax" r="5vmax" fill="transparent"/>
+                    <circle id="btn3_knop" class="knop green los" cx="5vmax" cy="5vmax" r="5vmax" fill="transparent" />
                 </svg>
                 <svg class="buttons" style="top: 55vh; left: 90vw;">
-                    <circle id="btn4_knop" class="knop yellow los" cx="5vmax" cy="5vmax" r="5vmax" fill="transparent"/>
+                    <circle id="btn4_knop" class="knop yellow los" cx="5vmax" cy="5vmax" r="5vmax" fill="transparent" />
                 </svg>
                 <svg class="d-pad">
                     <g>

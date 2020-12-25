@@ -371,20 +371,20 @@ export class bssd {
 
 @insavegame
 export class bstd {
-    @onsave
-    public static onSave(me: bstd) {
-        let result = Object.assign(new bstd(undefined), me);
+    // @onsave
+    // public static onSave(me: bstd) {
+    //     let result = Object.assign(new bstd(undefined), me);
 
-        result.states = { ...me.states };
-        result.savedStates = { ...me.states };
-        let keys = Object.keys(result.states);
-        for (let key of keys) {
-            result.states[key] = undefined;
-            delete result.states[key];
-        }
+    //     result.states = { ...me.states };
+    //     result.savedStates = { ...me.states };
+    //     let keys = Object.keys(result.states);
+    //     for (let key of keys) {
+    //         result.states[key] = undefined;
+    //         delete result.states[key];
+    //     }
 
-        return result;
-    }
+    //     return result;
+    // }
 
     // @onrevive
     // public static onLoad(loaded: bst, parent: cbst): bst {
