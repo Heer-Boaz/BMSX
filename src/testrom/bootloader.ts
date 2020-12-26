@@ -1,7 +1,7 @@
 import { RomLoadResult } from '../bmsx/rompack';
-import { Game, BaseModel, GameObject, Sprite, insavegame, Reviver, onsave, cbstd, bssd, statedef_builder, bstd, sstate } from '../bmsx/engine';
-import { setPoint, newPoint, Direction, newSize, Point } from '../bmsx/common';
-import { Tile, MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
+import { Game, BaseModel, GameObject, Sprite, insavegame, cbstd, bssd, statedef_builder, sstate } from '../bmsx/engine';
+import { newPoint, Direction, newSize, Point } from '../bmsx/common';
+import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
 import { Input } from '../bmsx/input';

@@ -6,7 +6,6 @@ import { MSX2ScreenWidth, MSX2ScreenHeight, TileSize } from "./msx";
 import { Point, Area, moveArea, Size, Direction, mod } from "./common";
 import { BaseModelOld } from './basemodel_old';
 import { BaseControllerOld } from './basecontroller_old';
-import { parse, stringify } from 'Flatted';
 import assert = require("assert");
 
 declare global {
