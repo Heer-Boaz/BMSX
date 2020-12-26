@@ -213,83 +213,91 @@ async function buildAndBundleRomSource(outfile: string, bootloader_path: string)
 
 function minifyGamecode(infile: string): Error {
 	let options = <terser.MinifyOptions>{
-		ecma: 2020,
+		ecma: 2017,
 		sourceMap: {
 			content: 'inline',
 			// 	// includeSources: true,
 			url: 'inline',
 		},
 		compress: false,
-		//<terser.CompressOptions>{
+		// compress: <terser.CompressOptions>{
 		// 	keep_fargs: true, // Prevents the compressor from discarding unused function arguments. You need this for code which relies on Function.length
 		// 	passes: 1, // The maximum number of times to run compress. In some cases more than one pass leads to further compressed code. Keep in mind more passes will take more time
 		// 	ecma: 2020,
 		// 	keep_classnames: true,
 		// 	keep_fnames: true,
+		// 	arguments: false,
+		// 	collapse_vars: false,
+		// 	dead_code: false,
+		// 	join_vars: false,
+		// 	module: true,
 		// },
 		mangle: false,
-		// <terser.MangleOptions>{
-		// 	reserved:
-		// 		[
-		// 			"exports",
-		// 			"global",
-		// 			"factory",
-		// 			"__extends",
-		// 			"__assign",
-		// 			"__rest",
-		// 			"__decorate",
-		// 			"__param",
-		// 			"__metadata",
-		// 			"__awaiter",
-		// 			"__generator",
-		// 			"__exportStar",
-		// 			"__values",
-		// 			"__read",
-		// 			"__spread",
-		// 			"__spreadArrays",
-		// 			"__await",
-		// 			"__asyncGenerator",
-		// 			"__asyncDelegator",
-		// 			"__asyncValues",
-		// 			"__makeTemplateObject",
-		// 			"__importStar",
-		// 			"__importDefault"
-		// 		],
-		// 	module: true,
-		// 	properties: <terser.ManglePropertiesOptions>{
-		// 		keep_quoted: true,
-		// 		reserved:
-		// 			[
-		// 				"exports",
-		// 				"global",
-		// 				"factory",
-		// 				"__extends",
-		// 				"__assign",
-		// 				"__rest",
-		// 				"__decorate",
-		// 				"__param",
-		// 				"__metadata",
-		// 				"__awaiter",
-		// 				"__generator",
-		// 				"__exportStar",
-		// 				"__values",
-		// 				"__read",
-		// 				"__spread",
-		// 				"__spreadArrays",
-		// 				"__await",
-		// 				"__asyncGenerator",
-		// 				"__asyncDelegator",
-		// 				"__asyncValues",
-		// 				"__makeTemplateObject",
-		// 				"__importStar",
-		// 				"__importDefault"
-		// 			],
-		// 	},
+		// mangle: <terser.MangleOptions>{
+			// reserved:
+			// 	[
+			// 		"exports",
+			// 		"global",
+			// 		"factory",
+			// 		"__extends",
+			// 		"__assign",
+			// 		"__rest",
+			// 		"__decorate",
+			// 		"__param",
+			// 		"__metadata",
+			// 		"__awaiter",
+			// 		"__generator",
+			// 		"__exportStar",
+			// 		"__values",
+			// 		"__read",
+			// 		"__spread",
+			// 		"__spreadArrays",
+			// 		"__await",
+			// 		"__asyncGenerator",
+			// 		"__asyncDelegator",
+			// 		"__asyncValues",
+			// 		"__makeTemplateObject",
+			// 		"__importStar",
+			// 		"__importDefault"
+			// 	],
+			// module: true,
+			// keep_classnames: true,
+			// keep_fnames: true,
+			// properties: <terser.ManglePropertiesOptions>{
+			// 	keep_quoted: true,
+			// 	builtins: true,
+			// 	reserved:
+			// 		[
+			// 			"exports",
+			// 			"global",
+			// 			"factory",
+			// 			"__extends",
+			// 			"__assign",
+			// 			"__rest",
+			// 			"__decorate",
+			// 			"__param",
+			// 			"__metadata",
+			// 			"__awaiter",
+			// 			"__generator",
+			// 			"__exportStar",
+			// 			"__values",
+			// 			"__read",
+			// 			"__spread",
+			// 			"__spreadArrays",
+			// 			"__await",
+			// 			"__asyncGenerator",
+			// 			"__asyncDelegator",
+			// 			"__asyncValues",
+			// 			"__makeTemplateObject",
+			// 			"__importStar",
+			// 			"__importDefault"
+			// 		],
+			// },
 		// },
 		output: <terser.OutputOptions>{
 			ecma: 2020,
 			safari10: false,
-			webkit: false,
+			webkit: true,
 			// max_line_len: 80,
 			semicolons: true, // Must be true for Safari support (on iOS)! Otherwise, only black screen shows
 			keep_quoted_props: true,
@@ -323,12 +331,8 @@ function minifyGamecode(infile: string): Error {
 async function buildGameHtmlAndManifest(outfile: string, title: string): Promise<any> {
 	log("game.html en game_debug.html bouwen...\n");
 	let html = readFileSync("./gamebase.html", 'utf8');
-	let release_html: string;
-	let debug_html: string;
-	let romjs = readFileSync("./rom/rom.js", 'utf8');
+	let romjs = readFileSync("./rom/rom.js", 'utf8').replace('Object.defineProperty(exports, "__esModule", { value: true });', '');
 	let zipjs = readFileSync("./scripts/pako_inflate.min.js", 'utf8');
-	let flattedjs = readFileSync("./scripts/flatted.min.js", 'utf8');
-	romjs = romjs.replace('Object.defineProperty(exports, "__esModule", { value: true });', '');
 	let options = {
 		compress: {
 			arrows: false
@@ -358,33 +362,24 @@ async function buildGameHtmlAndManifest(outfile: string, title: string): Promise
 					log(`Minifyen van CSS faalde :-(\n`);
 					reject(err);
 				}
-				release_html = html.replace('//#romjs', romjsMinified);
-				release_html = release_html.replace('//#zipjs', zipjs);
-				release_html = release_html.replace('//#flattedjs', flattedjs);
-				release_html = release_html.replace('/*css*/', cssMinified);
-				release_html = release_html.replace(/#title/g, title); // https://stackoverflow.com/questions/44324892/how-can-i-replace-multiple-characters-in-a-string
-				release_html = release_html.replace('#outfile', outfile);
-				release_html = release_html.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed);
-				release_html = release_html.replace('//#debug', '');
 
-				writeFileSync("./dist/game.html", release_html);
-
-				debug_html = html.replace('//#romjs', romjs);
-				debug_html = debug_html.replace('//#zipjs', zipjs);
-				debug_html = debug_html.replace('//#flattedjs', flattedjs);
-				debug_html = debug_html.replace('/*css*/', cssMinified);
-				debug_html = debug_html.replace(/#title/g, title); // https://stackoverflow.com/questions/44324892/how-can-i-replace-multiple-characters-in-a-string
-				debug_html = debug_html.replace('#outfile', outfile);
-				debug_html = debug_html.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed);
-				debug_html = debug_html.replace('//#debug', 'bootrom.debug = true;\n');
-				debug_html = debug_html.replace('//#localfetch', 'bootrom.localfetch = true;\n');
-				writeFileSync("./dist/game_debug.html", debug_html);
+				let transformHtml = (htmlToTransform: string, debug: boolean): string => {
+					return htmlToTransform.replace('//#romjs', debug ? romjs : romjsMinified)
+					.replace('//#zipjs', zipjs)
+					.replace('/*css*/', cssMinified)
+					.replace(/#title/g, title) // https://stackoverflow.com/questions/44324892/how-can-i-replace-multiple-characters-in-a-string
+					.replace('#outfile', outfile)
+					.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed)
+					.replace('//#debug', `bootrom.debug = ${debug};\n`)
+					.replace('//#localfetch', `bootrom.localfetch = ${debug};\n`);
+				}
+				writeFileSync("./dist/game.html", transformHtml(html, false));
+				writeFileSync("./dist/game_debug.html", transformHtml(html, true));
 
 				// Update the manifest.json-file that is used for app-versions of the webpage
-				let manifest = readFileSync("./rom/manifest.json", 'utf8');
-				manifest = manifest.replace('#title', title);
+				let manifest = readFileSync("./rom/manifest.json", 'utf8').replace('#title', title);
+
 				// Write updated manifest to dist-folder
-				// writeFileSync("./dist/manifest.json", manifest);
 				writeFileSync("./dist/manifest.webmanifest", manifest);
 
 				resolve(null);

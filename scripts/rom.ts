@@ -215,12 +215,12 @@ async function loadScript(rom: RomLoadResult): Promise<void> {
 		try {
 			let romcode = document.createElement('script');
 			romcode.async = false;
+			romcode.onload = () => resolve();
 			romcode.onerror = (event: Event | string, source?: string, lineno?: number, colno?: number, error?: Error) => {
 				reject('urgh');
 				// setLoaderText(`SError: ${(<Event>event)?.type ?? ""} ${source ?? ""} ${lineno ?? ""} ${colno ?? ""} ${error?.message ?? ""}`);
 				// reject(error);
 			};
-			romcode.onload = () => resolve();;
 			window.onerror = (event: Event | string, source?: string, lineno?: number, colno?: number, error?: Error) => {
 				reject('urgh');
 				// setLoaderText(`WError: ${event} ${source ?? ""} ${lineno ?? ""} ${colno ?? ""} ${error?.message ?? ""}`);
@@ -232,8 +232,7 @@ async function loadScript(rom: RomLoadResult): Promise<void> {
 			}
 			else {
 				romcode.src = '../megarom.min.js';
-				romcode.onload = () => resolve();
-				document.head.appendChild(romcode);
+				// romcode.onload = () => resolve();
 				// resolve();
 			}
 		}
