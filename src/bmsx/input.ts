@@ -1,14 +1,17 @@
-﻿const GAMEPAD_LEFT: number = 1000;
+﻿import { Key } from 'ts-key-enum';
+
+const GAMEPAD_LEFT: number = 1000;
 const GAMEPAD_RIGHT: number = 1001;
 const GAMEPAD_UP: number = 1002;
 const GAMEPAD_DOWN: number = 1003;
+
+type ButtonId = 'BTN1' | 'BTN2' | 'BTN3' | 'BTN4' | Key;
 
 export class Input {
     public static KeyState: {};
     public static KeyClickRequestedState: {};
     public static GamepadButtonState: {};
     public static GamepadClickRequestedState: {};
-
 
     private static getKeyState(key: string, checkClick: boolean = false): boolean {
         if (checkClick) {
@@ -33,7 +36,7 @@ export class Input {
     }
 
     public static get KC_F1(): boolean {
-        return Input.getKeyState('F1', true);
+        return Input.getKeyState(Key.F1, true);
     }
     public static get KC_F12(): boolean {
         return Input.getKeyState('F12', true);
@@ -73,6 +76,12 @@ export class Input {
     }
     public static get KC_BTN2(): boolean {
         return Input.getKeyState('KeyZ', true) || Input.getGamepadButtonState(1, true);
+    }
+    public static get KC_BTN3(): boolean {
+        return Input.getKeyState('F1', true) || Input.getGamepadButtonState(2, true);
+    }
+    public static get KC_BTN4(): boolean {
+        return Input.getKeyState('F5', true) || Input.getGamepadButtonState(3, true);
     }
 
     public static get KD_F1(): boolean {
@@ -116,6 +125,12 @@ export class Input {
     }
     public static get KD_BTN2(): boolean {
         return Input.getKeyState('KeyZ') || Input.getGamepadButtonState(1, false);
+    }
+    public static get KD_BTN3(): boolean {
+        return Input.getKeyState('F1') || Input.getGamepadButtonState(2, true);
+    }
+    public static get KD_BTN4(): boolean {
+        return Input.getKeyState('F5') || Input.getGamepadButtonState(3, true);
     }
 
     public static init(): void {
@@ -229,11 +244,11 @@ function preventDefaultEventAction(e: UIEvent, key: string) {
     }
 }
 
-function keydown(key: string): void {
+function keydown(key: ButtonId | string): void {
     Input.KeyState[key] = true;
 }
 
-function keyup(key: string): void {
+function keyup(key: ButtonId | string): void {
     delete Input.KeyState[key];
     delete Input.KeyClickRequestedState[key];
 }
@@ -266,60 +281,64 @@ function handleTouchStuff(e: TouchEvent): void {
     Input.reset(filterFromReset);
 }
 
-function handleElementUnderTouch(e: Element): string[] {
+function handleElementUnderTouch(e: Element): (ButtonId | string)[] {
     switch (e.id) {
         case 'd-pad-u':
             keydown('ArrowUp');
-            return ['ArrowUp'];
+            return [Key.ArrowUp];
         case 'd-pad-ru':
             keydown('ArrowUp');
             keydown('ArrowRight');
             document.getElementById('d-pad-ru').classList.add('druk');
-            return ['ArrowUp', 'ArrowRight'];
+            return [Key.ArrowUp, Key.ArrowRight];
         case 'd-pad-r':
             keydown('ArrowRight');
             document.getElementById('d-pad-r').classList.add('druk');
-            return ['ArrowRight'];
+            return [Key.ArrowRight];
         case 'd-pad-rd':
             keydown('ArrowRight');
             keydown('ArrowDown');
             document.getElementById('d-pad-rd').classList.add('druk');
-            return ['ArrowDown', 'ArrowRight'];
+            return [Key.ArrowDown, Key.ArrowRight];
         case 'd-pad-d':
             keydown('ArrowDown');
             document.getElementById('d-pad-d').classList.add('druk');
-            return ['ArrowDown'];
+            return [Key.ArrowDown];
             break;
         case 'd-pad-ld':
             keydown('ArrowLeft');
             keydown('ArrowDown');
             document.getElementById('d-pad-ld').classList.add('druk');
-            return ['ArrowLeft', 'ArrowDown'];
+            return [Key.ArrowLeft, Key.ArrowDown];
         case 'd-pad-l':
             keydown('ArrowLeft');
             document.getElementById('d-pad-l').classList.add('druk');
-            return ['ArrowLeft'];
+            return [Key.ArrowLeft];
         case 'd-pad-lu':
             keydown('ArrowLeft');
             keydown('ArrowUp');
             document.getElementById('d-pad-lu').classList.add('druk');
-            return ['ArrowUp', 'ArrowLeft'];
+            return [Key.ArrowUp, Key.ArrowLeft];
         case 'btn1_knop':
             keydown('ShiftLeft');
+            keydown('BTN1');
             document.getElementById('btn1_knop').classList.add('druk');
-            return ['ShiftLeft'];
+            return ['BTN1', 'ShiftLeft'];
         case 'btn2_knop':
             keydown('KeyZ');
+            keydown('BTN2');
             document.getElementById('btn2_knop').classList.add('druk');
-            return ['KeyZ'];
+            return ['BTN2', 'KeyZ'];
         case 'btn3_knop':
             keydown('F1');
+            keydown('BTN3');
             document.getElementById('btn3_knop').classList.add('druk');
-            return ['F1'];
+            return ['BTN3', 'F1'];
         case 'btn4_knop':
             keydown('F5');
+            keydown('BTN4');
             document.getElementById('btn4_knop').classList.add('druk');
-            return ['F5'];
+            return ['BTN4', 'F5'];
     }
     return [];
 }

@@ -36,8 +36,8 @@ class bclass extends Sprite {
                     console.info(`${new Date().toTimeString()} Game loaded!`);
                 }
             }
-            Input.KC_M && me.state.to('blap');
-            Input.KC_SPACE && me.state.to('bla');
+            Input.KC_BTN3 && me.state.to('blap');
+            Input.KC_BTN4 && me.state.to('bla');
         };
 
         let result = new cbstd(this.name);
