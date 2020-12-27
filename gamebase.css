@@ -70,8 +70,8 @@ svg.d-pad {
 	z-index: 2000;
 	pointer-events: none;
 	touch-action: none;
-	top: 60vh;
-	left: 30px;
+	top: 25vh;
+	left: 24px;
 	width: 100px;
 	height: 100px;
 	/* transform-origin: 50% 50%; */
@@ -90,7 +90,8 @@ svg.d-pad {
 
 @keyframes dknop-los {
 	from {
-		fill: gainsboro;
+		fill: rgb(252, 172, 0);
+		/* fill: gainsboro; */
 		opacity: .3;
 	}
 
