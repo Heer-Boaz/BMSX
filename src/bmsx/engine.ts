@@ -6,7 +6,6 @@ import { MSX2ScreenWidth, MSX2ScreenHeight, TileSize } from "./msx";
 import { Point, Area, moveArea, Size, Direction, mod } from "./common";
 import { BaseModelOld } from './basemodel_old';
 import { BaseControllerOld } from './basecontroller_old';
-import { parse, stringify } from 'Flatted';
 import assert = require("assert");
 
 declare global {
@@ -316,34 +315,13 @@ export class sstate {
         this._nudges = 0;
         this.nudges2move = this.statedef.nudges2move;
     }
-
 }
 
-@insavegame
 export class bssd {
     public id: string;
     public parent: bstd;
     public tape: Tape;
     public nudges2move: number; // Number of runs before tapehead moves to next statedata
-
-    // @onsave
-    // public static onSave(me: bssd) {
-    //     let result = Object.assign(new bssd(undefined), me);
-
-    //     result.parent = undefined;
-
-    //     return result;
-    // }
-
-    // @onrevive
-    // public static onLoad(loaded: bss, parent: bst): bss {
-    // let keys = Object.keys(loaded.savedStates);
-    // for (let key in keys) {
-    //     Object.assign(loaded.states[key], loaded.savedStates[key]);
-    // }
-    // Object.assign(parent.states[loaded.id], loaded);
-    // return undefined;
-    // }
 
     public constructor(_id: string = '_', _partialdef?: Partial<bssd>) {
         this.id = _id;
@@ -369,46 +347,14 @@ export class bssd {
     }
 }
 
-@insavegame
 export class bstd {
-    // @onsave
-    // public static onSave(me: bstd) {
-    //     let result = Object.assign(new bstd(undefined), me);
-
-    //     result.states = { ...me.states };
-    //     result.savedStates = { ...me.states };
-    //     let keys = Object.keys(result.states);
-    //     for (let key of keys) {
-    //         result.states[key] = undefined;
-    //         delete result.states[key];
-    //     }
-
-    //     return result;
-    // }
-
-    // @onrevive
-    // public static onLoad(loaded: bst, parent: cbst): bst {
-    //     let keys = Object.keys(loaded.savedStates);
-    //     for (let key in keys) {
-    //         Object.assign(loaded.states[key], loaded.savedStates[key]);
-    //     }
-    //     return undefined;
-    //     // return obj_toJSON(loaded, this);
-    // }
-
     public id: string;
-
     public states: str2bssd; // Note that numbers will be automatically converted to strings!
-    public savedStates: str2bssd; // When serialized, place states here, so that they can be revived without overwriting function-properties
-    // protected previousid: numstring; // Identifier of the previous state
-    // public get previous(): bss { return this.states[this.previousid]; };
-
     public getStateDef(s_id: string): bssd { return this.states[s_id]; }
 
     constructor(id?: string) {
         this.id = id ?? DEFAULT_BST_ID;
         this.states ??= {};
-        // console.info(`Ik (${id}) als BST ben geconstruct!`);
     }
 
     public create(id: string): bssd {
@@ -416,7 +362,6 @@ export class bstd {
         let result = new bssd(id);
         this.states[id] = result;
         result.parent = this;
-        // if (!this.initstateid) this.setStart(id_or_state); // If no start-state was defined, we assign this as a default start state
         return result;
     }
 
@@ -438,58 +383,14 @@ export class bstd {
     }
 }
 
-@insavegame
 export class cbstd {
     public id: string;
     public machines: str2bstd;
     public savedMachines: str2bstd;
 
-    // @onsave
-    // public static onSave(me: cbstd): any {
-    //     let result = Object.assign(new cbstd(), me);
-
-    //     result.machines = { ...me.machines };
-    //     result.savedMachines = { ...me.machines };
-    //     let keys = Object.keys(result.machines);
-    //     for (let key of keys) {
-    //         result.machines[key] = undefined;
-    //         delete result.machines[key];
-    //     }
-
-    //     return result;
-    // }
-
     constructor(id: string) {
         this.id = id;
         this.machines = {};
-    }
-
-    public onloaded(): void {
-        if (!this.savedMachines) return;
-        let machineIds = Object.keys(this.savedMachines);
-        for (let machineId of machineIds) {
-            let currentMachine = this.machines[machineId];
-            let currentSavedMachine = this.savedMachines[machineId];
-
-            let bstKeys = Object.keys(currentMachine);
-            for (let bstKey of bstKeys) {
-                switch (bstKey) {
-                    case 'states': break;
-                    case 'savedStates': break;
-                    default:
-                        currentMachine[bstKey] = currentSavedMachine[bstKey];
-                        break;
-                }
-            }
-            let stateIds = Object.keys(currentMachine.states);
-            for (let stateId of stateIds) {
-                let state = currentMachine.states[stateId];
-                let savedState = currentSavedMachine.savedStates[stateId];
-
-                Object.assign(state, savedState);
-                delete this.savedMachines[machineId];
-            }
-        }
     }
 
     public getBst(machine_id: string): bstd {
@@ -643,8 +544,6 @@ export abstract class BaseModel {
     }
 
     public onloaded(): void {
-        // this.buildStates();
-        // this.state.onloaded();
     }
 
     public save(): string {
@@ -1027,10 +926,6 @@ export abstract class Sprite extends GameObject {
 
     constructor(id?: string) {
         super(id);
-        // this.state = <cmstate>{
-        //     machines: {},
-        //     paused: false,
-        // };
         this.pos = { x: 0, y: 0 };
         this.visible = true;
         this.hittable = true;
@@ -1051,10 +946,6 @@ export abstract class Sprite extends GameObject {
         global.model.spawn(this, spawningPos);
         return this; // Voor chaining
     }
-
-    // onloaded(): void {
-    //     this.state.onloaded();
-    // }
 
     paint(offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }): void {
         let options: number = this.flippedH ? DrawImgFlags.HFLIP : 0;
@@ -1082,7 +973,6 @@ export abstract class Sprite extends GameObject {
 // constructor that has a `fromJSON` property on it, it hands
 // off to that `fromJSON` fuunction, passing in the value.
 export function Reviver(key: any, value: any) {
-    // console.info(`reviver with key = '${key ?? '(null)'}'`);
     if (value === null || value === undefined) return value;
 
     if (Array.isArray(value)) {
@@ -1093,60 +983,17 @@ export function Reviver(key: any, value: any) {
         typeof value.typename === "string") {
         let theConstructor = Reviver.constructors[value.typename];
         assert(theConstructor, `No constructor known for object of type '${value.typename}'. Did you forget to add '@insavegame' to the class definition?`);
-        // console.info(`Reviving ${value.typename}`);
         let result = Object.assign(new theConstructor(), value);
         let onRevive = Reviver.onRevives[value.typename];
         return onRevive ? onRevive(result, this) : result;
     }
-    // ctor = Reviver.constructors[value.ctor] || ;
-    // if (typeof ctor === "function" && typeof ctor.prototype.fromJSON === "function") {
-    //     return ctor.prototype.fromJSON(value);
-    // }
     return value;
-}
-
-// return value;
-// if (typeof value === "object" &&
-//     typeof value.ctor === "string" &&
-//     typeof value.data !== "undefined") {
-//     let ctor: any;
-//     ctor = Reviver.constructors[value.ctor] || window[value.ctor];
-//     if (typeof ctor === "function" && typeof ctor.prototype.fromJSON === "function") {
-//         return ctor.prototype.fromJSON(value);
-//     }
-//     return undefined;
-// }
-// return value;
-// }
-// Reviver.onPostLoad = Reviver.onPostLoad ?? {};
-
-// A generic "fromJSON" function for use with Reviver: Just calls the
-// constructor function with no arguments, then applies all of the
-// key/value pairs from the raw data to the instance. Only useful for
-// constructors that can be reasonably called without arguments!
-// `ctor`      The constructor to call
-// `data`      The data to apply
-// Returns:    The object
-function Generic_fromJSON(ctor: any, data: any) {
-    console.debug(`fromJSON ctor = '${ctor.name ?? '(undefined)'}'`);
-    let obj: any, name: any;
-
-    // obj = new ctor();
-    return Object.assign(new ctor(), data);
-    // for (name in data) {
-    //     obj[name] = data[name];
-    // }
-    // return obj;
 }
 
 // target: the class that the member is on.
 // name: the name of the member in the class.
 // descriptor: the member descriptor.This is essentially the object that would have been passed to Object.defineProperty.
 export function onsave(target: any, name: any, descriptor: any): any {
-    // target.prototype.toJSON = descriptor.value;
-    // Reviver.onSave ??= {};
-    // Reviver.onSave[target.name] = descriptor.value;
-    // target.prototype.toJSON = descriptor.value; // Set the toJSON for the case where @insavegame is not used
     target.onsave = descriptor.value;
 }
 
@@ -1166,61 +1013,12 @@ export function onrevive(target: any, name: any, descriptor: any): any {
     Reviver.onRevives[target.name] = descriptor.value;
 }
 
-// target: the class that the member is on.
-// name: the name of the member in the class.
-// descriptor: the member descriptor.This is essentially the object that would have been passed to Object.defineProperty.
-// export function onpostload(target: any, name: any, descriptor: any): any {
-//     Reviver.onPostLoad ??= {};
-//     Reviver.onPostLoad[target.name] = descriptor.value;
-// }
-
 export function insavegame<TFunction extends Function>(target: any, toJSON?: () => any, fromJSON?: (value: any, value_data: any) => any): any {
     Reviver.constructors ??= {};
     Reviver.constructors[target.name] = target;
-
-    // let wrapper = Reviver.onSave[target.name];
-    // if (wrapper) {
-    //     target.prototype.toJSON = function () {
-    //         return obj_toJSON(target.name, wrapper(this));
-    //     };
-    // }
-    // else {
-    //     target.prototype.toJSON = function () {
-    //         return obj_toJSON(target.name, this);
-    //     };
-    //     // target.prototype.fromJSON = function (value: any) {
-    //     //     return Object.assign(new target(), value);
-    //     // };
-    // }
-
     return target;
 }
 
-// let inSavestate = {};
-// // let inSavestate = new WeakMap();
-
-// export function insavegame(target: any, key: string) {
-//     if (!key) {
-//         let t = target as object;
-//         Object.keys
-//     }
-//     else {
-//         console.log("Target = " + target + " / Key = " + key);
-
-//         let map = inSavestate.get(target);
-
-//         if (!map) {
-//             map = [];
-//             inSavestate.set(target, map);
-//         }
-
-//         map.push(key);
-
-//         console.log(inSavestate);
-//     }
-// }
-
-//@insavegame
 export class BStopwatch {
     public pauseDuringMenu: boolean = true;
     public pauseAtFocusLoss: boolean = true;

@@ -60,21 +60,11 @@ class bclass extends Sprite {
     constructor() {
         super('The B');
         this.imgid = BitmapId.b;
-        this.init(false);
     }
 
     public onspawn = (spawningPos?: Point): void => {
         super.onspawn?.(spawningPos);
         this.state.to('blap');
-    }
-
-    // onloaded() {
-    //     this.init(true);
-    //     super.onloaded();
-    // }
-
-    init(wasloaded: boolean) {
-
     }
 };
 
