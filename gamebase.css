@@ -12,6 +12,14 @@ svg.buttons {
 	z-index: 2000;
 	opacity: .3;
 	transform: scale(1);
+	-webkit-user-select: none;
+	-moz-user-select: none;
+	-ms-user-select: none;
+	user-select: none;
+	-webkit-touch-callout: none;
+	-webkit-tap-highlight-color: transparent;
+	-webkit-text-size-adjust: none;
+	-moz-text-size-adjust: none;
 }
 
 .knop.red:not(.los) {
@@ -50,8 +58,6 @@ svg.buttons {
 	/* opacity: .5; */
 	z-index: 2001;
 	transform: scale(.75 50% 50%);
-	/* transition: all .5s cubic-bezier(.25, 1.7, .35, 1.5); */
-	/* transform: scale(.8) */
 }
 
 @keyframes button-los {
@@ -74,8 +80,6 @@ svg.d-pad {
 	left: 24px;
 	width: 100px;
 	height: 100px;
-	/* transform-origin: 50% 50%; */
-	/* fill: gainsboro; */
 	transform-box: fill-box;
 	transform: scale(1.5);
 }
@@ -83,15 +87,19 @@ svg.d-pad {
 .dknop {
 	pointer-events: fill;
 	touch-action: auto;
-	/* opacity: 1; */
-	/* stroke-dasharray: 4,4; */
-	/* fill: transparent; */
+	-webkit-user-select: none;
+	-moz-user-select: none;
+	-ms-user-select: none;
+	user-select: none;
+	-webkit-touch-callout: none;
+	-webkit-tap-highlight-color: transparent;
+	-webkit-text-size-adjust: none;
+	-moz-text-size-adjust: none;
 }
 
 @keyframes dknop-los {
 	from {
 		fill: rgb(252, 172, 0);
-		/* fill: gainsboro; */
 		opacity: .3;
 	}
 
@@ -156,19 +164,11 @@ html {
 
 #gamescreen {
 	position: absolute;
-	/* top: 0px; */
-	/* left: 0px; */
 	transform-origin: 0 0;
-	image-rendering: -webkit-optimize-contrast;
-	/* image-rendering: crisp-edges; */
 	-ms-interpolation-mode: nearest-neighbor;
 	image-rendering: pixelated;
 	overflow: hidden;
-
-	/* width: 100%; */
-  	/* height: 100%; */
   	display: block;
-
 	z-index: 999;
 }
 
@@ -180,6 +180,10 @@ html {
 	width: 100%;
   	height: 100%;
 	background-color: #2020ff;
+}
+
+.showsover {
+	animation: colorto_showsover 1.0s forwards linear;
 }
 
 #msx {
@@ -207,6 +211,16 @@ html {
 
 	to {
 		transform: translateX(-50%) translateY(calc(60vh - 100%));
+	}
+}
+
+@keyframes colorto_showsover {
+	from {
+		background-color: #2020ff;
+	}
+
+	to {
+		background-color: #ff0000;
 	}
 }
 

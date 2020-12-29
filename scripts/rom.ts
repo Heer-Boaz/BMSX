@@ -1,3 +1,4 @@
+import { rejects } from 'assert';
 import { RomLoadResult, RomResource, RomMeta } from '../src/bmsx/rompack';
 
 declare var pako: any;
@@ -18,134 +19,114 @@ var bootrom = {
 	sndcontext: <AudioContext>null,
 	snd_unlocked: false,
 	gainnode: <GainNode>null,
+	theshowsover: false,
 
 	set defusr(rom: RomLoadResult) {
 		bootrom.rom = rom;
 	},
 
 	usr(x: number): number {
+		if (bootrom.theshowsover) return -x; // :-(
+
 		document.body.style.backgroundColor = "#000000";
 		document.getElementById('gamescreen').hidden = false;
 		loadScript(bootrom.rom).then(() => {
-			// try {
 			h406A(bootrom.rom, bootrom.sndcontext, bootrom.gainnode);
 			bootrom.rom = null;
-			// }
-			// catch (e) {
-			// setClassForLoader("");
-			// (document.querySelector('#loading') as HTMLElement).hidden = false;
-			// setLoaderText(e.message);
-			// }
 			return x;
 		})
-		.catch(err => {
-			console.error(err ?? 'usr(x) failed with unknown error!');
-		});
+			.catch(err => {
+				throw err ?? 'usr(x) failed with unknown error!';
+			});
 		return 255;
 	},
 
 	async bload(url: string): Promise<RomLoadResult> {
+		window.onunhandledrejection = event => {
+			console.log(event.cancelable, event.reason, "unhandled rejection??");
+			event.preventDefault();
+			event.stopPropagation();
+			event.stopImmediatePropagation();
+
+			return false;
+		};
+
 		createAudioContext();
-		let bootCompletePromise = awaitBootComplete();
-		let rom = await loadRompack(url);
-		let result = await loadResources(rom);
 
-		await bootCompletePromise;
-		setLoaderText('Press any key or touch screen to start...');
-		setClassForLoader('');
-		let pressedAnyKey = awaitPressedAnyKey();
-		await pressedAnyKey;
-		return result;
+		let fetchRom = () => new Promise<ArrayBuffer>(async (resolve, reject) => {
+			if (bootrom.localfetch) {
+				fetchLocal(url).then(response_array => resolve(response_array)).catch(err => reject(err));
+			}
+			else {
+				fetch(url).then(response => response.arrayBuffer()).then(response_array => resolve(response_array)).catch(err => reject(err));
+			}
+		});
+
+
+		return new Promise(async (resolve, reject) => {
+			let bootCompletePromise = awaitBootComplete();
+			let result: RomLoadResult = null;
+			fetchRom()
+				.then(response_array => pako.inflate(response_array).buffer)
+				.then(rom => loadResources(rom))
+				.then((loadResult: any) => result = loadResult)
+				.catch(err => reject(err));
+
+			await bootCompletePromise;
+			setLoaderText('Press any key or touch screen to start...');
+			setClassForLoader('');
+			let pressedAnyKey = awaitPressedAnyKey();
+			await pressedAnyKey;
+
+			resolve(result);
+		});
 	},
-};
 
-async function loadRompack(url: string): Promise<ArrayBuffer> {
-	if (bootrom.localfetch) {
-		return fetchLocal(url)
-			.then(response_array => {
-				let result = pako.inflate(response_array).buffer;
-				return result;
-			})
-			.catch(e => {
-				setLoaderText(`Failed to load rompack local storage: ${e.message}`);
-				setClassForLoader('');
-				console.error(`Failed to load rompack from local storage: ${e.message}`);
-				Promise.reject(e);
-			});
+	outputError(errormsg: string) {
+		setClassForLoader('');
+		setLoaderText(errormsg);
+		console.error(errormsg);
 	}
-	else {
-		return fetch(url)
-			.then(response => response.arrayBuffer())
-			.then(buffer => {
-				let result = pako.inflate(buffer).buffer;
-				return result;
-			})
-			.catch(e => {
-				setLoaderText(`Failed to load rompack: ${e.message}`);
-				setClassForLoader('');
-				console.error(`Failed to load rompack: ${e.message}`);
-				Promise.reject(e);
-			});
-	}
-}
+};
 
 async function loadImage(url: string): Promise<HTMLImageElement> {
 	return new Promise((resolve, reject) => {
-		try {
-			let img = new Image();
-			img.onload = e => resolve(img);
-			img.onerror = e => {
-				let msg = `Failed to load image's URL: ${url}`;
-				console.error(msg);
-				reject(msg);
-			};
-			img.src = url;
-		}
-		catch (err) {
-			reject(err);
-		}
+		let img = new Image();
+		img.onload = e => resolve(img);
+		img.onerror = e => {
+			reject(`Failed to load image's URL: ${url}`);
+		};
+		img.src = url;
 	});
 }
 
 async function loadResourceList(rom: ArrayBuffer): Promise<RomResource[]> {
-	try {
-		let bytearray = new Uint8Array(rom);
-		let sliced = bytearray.slice(bytearray.length - 100);
-		let metaJsonStr = decodeuint8arr(sliced);
-		let metaJson: RomMeta = JSON.parse(metaJsonStr);
+	let bytearray = new Uint8Array(rom);
+	let sliced = bytearray.slice(bytearray.length - 100);
+	let metaJsonStr = decodeuint8arr(sliced);
+	let metaJson: RomMeta = JSON.parse(metaJsonStr);
 
-		sliced = bytearray.slice(metaJson.start, metaJson.end);
-		let resJsonStr = decodeuint8arr(sliced);
-		let resJson: RomResource[] = JSON.parse(resJsonStr);
+	sliced = bytearray.slice(metaJson.start, metaJson.end);
+	let resJsonStr = decodeuint8arr(sliced);
+	let resJson: RomResource[] = JSON.parse(resJsonStr);
 
-		return resJson;
-	}
-	catch (e) {
-		console.error(e.message);
-		return Promise.reject(e.message);
-	}
+	return resJson;
 }
 
 async function loadResources(rom: ArrayBuffer): Promise<RomLoadResult> {
-	try {
-		let result: RomLoadResult = {
-			images: {},
-			rom: rom,
-			imgresources: {},
-			sndresources: {},
-			source: null
-		};
+	let result: RomLoadResult = {
+		images: {},
+		rom: rom,
+		imgresources: {},
+		sndresources: {},
+		source: null
+	};
 
-		let list = await loadResourceList(rom);
-		for (let i = 0; i < list.length; i++) {
-			await load(rom, list[i], result);
-		}
-		return result;
+	let list = await loadResourceList(rom);
+	for (let i = 0; i < list.length; i++) {
+		await load(rom, list[i], result);
 	}
-	catch (err) {
-		console.error(err.message);
-		return Promise.reject(err);
-	}
+	return Promise.resolve<RomLoadResult>(result);
 }
 
 async function load(rom: ArrayBuffer, res: RomResource, romResult: RomLoadResult): Promise<void> {
@@ -173,10 +154,8 @@ async function load(rom: ArrayBuffer, res: RomResource, romResult: RomLoadResult
 				let bytearray = new Uint8Array(rom);
 				let sliced = bytearray.slice(res.start, res.end);
 				romResult.source = decodeuint8arr(sliced);
-			} catch (e) {
-				let msg = `Unrecognised resource type in rom: ${res.type}, while processing rompack!`;
-				console.error(msg);
-				return Promise.reject(msg);
+			} catch (err) {
+				return Promise.reject(err);
 			}
 			break;
 		case 'audio':
@@ -185,69 +164,48 @@ async function load(rom: ArrayBuffer, res: RomResource, romResult: RomLoadResult
 			break;
 		default:
 			let msg = `Unrecognised resource type in rom: ${res.type}, while processing rompack!`;
-			console.error(msg);
+			// outputError(msg);
 			return Promise.reject(msg);
 	}
 }
 
 async function awaitBootComplete(): Promise<void> {
 	let result: Promise<void> = new Promise((resolve, reject) => {
-		try {
-			let msx = <HTMLElement>document.querySelector('#msx');
-			msx.addEventListener('animationend', ev => {
-				let loading = <HTMLElement>document.querySelector('#loading');
-				loading.hidden = false;
-				resolve();
-			});
-			msx.className = "enter";
-			msx.hidden = false;
-			if (bootrom.debug) resolve(); // Resolve immediately in debug-mode
-		}
-		catch (err) {
-			reject(err);
-		}
+		let msx = <HTMLElement>document.querySelector('#msx');
+		msx.onanimationend = ev => {
+			let loading = <HTMLElement>document.querySelector('#loading');
+			loading.hidden = false;
+			resolve();
+		};
+		msx.className = "enter";
+		msx.hidden = false;
+		if (bootrom.debug) resolve(); // Resolve immediately in debug-mode
 	});
 	return result;
 }
 
 async function loadScript(rom: RomLoadResult): Promise<void> {
 	let result: Promise<void> = new Promise((resolve, reject) => {
-		try {
-			let romcode = document.createElement('script');
-			romcode.async = false;
-			// romcode.onload = () => resolve();
-			romcode.onerror = (event: Event | string, source?: string, lineno?: number, colno?: number, error?: Error) => {
-				reject('urgh');
-				// setLoaderText(`SError: ${(<Event>event)?.type ?? ""} ${source ?? ""} ${lineno ?? ""} ${colno ?? ""} ${error?.message ?? ""}`);
-				// reject(error);
-			};
-			window.onerror = (event: Event | string, source?: string, lineno?: number, colno?: number, error?: Error) => {
-				reject('urgh');
-				// setLoaderText(`WError: ${event} ${source ?? ""} ${lineno ?? ""} ${colno ?? ""} ${error?.message ?? ""}`);
-				// reject(error);
-			};
-			if (!bootrom.debug) {
-				romcode.innerText = rom.source;
-				document.head.appendChild(romcode);
-				resolve();
-			}
-			else {
-				romcode.src = '../megarom.js';
-				romcode.onload = () => resolve();
-				document.head.appendChild(romcode);
-			}
-			// if (!bootrom.debug) {
-			// 	romcode.innerText = rom.source;
-			// 	document.head.appendChild(romcode);
-			// }
-			// else {
-			// 	romcode.src = '../megarom.min.js';
-			// 	// romcode.onload = () => resolve();
-			// 	// resolve();
-			// }
+		// try {
+		let romcode = document.createElement('script');
+		romcode.async = false;
+		// romcode.onload = () => resolve();
+		romcode.onerror = (event: Event | string, source?: string, lineno?: number, colno?: number, error?: Error) => {
+			reject('urgh');
+		};
+		window.onerror = (event: Event | string, source?: string, lineno?: number, colno?: number, error?: Error) => {
+			reject('urgh');
+		};
+		if (!bootrom.debug) {
+			romcode.innerText = rom.source;
+			document.head.appendChild(romcode);
+			resolve();
 		}
-		catch (err) {
-			reject(err);
+		else {
+			romcode.src = '../rom/megarom.min.js';
+			// romcode.src = '../megarom.js';
+			romcode.onload = () => resolve();
+			document.head.appendChild(romcode);
 		}
 	});
 	return result;
@@ -268,7 +226,7 @@ async function awaitPressedAnyKey(): Promise<void> {
 	let result: Promise<void> = new Promise((resolve, reject) => {
 		let onuserinteraction = (e: UIEvent) => {
 			try {
-				if (!bootrom.snd_unlocked) { return; }
+				if (!bootrom.snd_unlocked || bootrom.theshowsover) { return; }
 				if (e.type == 'touchend') {
 					let controls = document.getElementById("controls");
 					controls.hidden = false;
@@ -317,10 +275,10 @@ async function fetchLocal(url: string): Promise<ArrayBuffer> {
 		var xhr = new XMLHttpRequest;
 		xhr.responseType = "arraybuffer";
 		xhr.onload = function () {
-			return resolve(xhr.response);
+			resolve(xhr.response);
 		};
-		xhr.onerror = function () {
-			return reject(new TypeError('Local request failed'));
+		xhr.onabort = xhr.ontimeout = xhr.onerror = function (ev: ProgressEvent) {
+			reject(new TypeError('Local request failed for ROM image'));
 		};
 		xhr.open('GET', url);
 		xhr.send(null);

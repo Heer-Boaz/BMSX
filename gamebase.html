@@ -71,18 +71,19 @@
         </div>
     </body>
     <script>
-        try {
-            //#debug
-            //#localfetch
-            bootrom.bload("./#outfile").then(function (h406A) {
-                bootrom.defusr = h406A;
-                bootrom.usr(0);
-            });
-        }
-        catch (e) {
-            document.getElementById("loading").innerText = "Failed to load rom: " + e.message;
-            console.error(e.message);
-        }
+        //#debug
+        //#localfetch
+        bootrom.bload("./#outfile").then(function (h406A) {
+            bootrom.defusr = h406A;
+            bootrom.usr(0);
+        }).catch(function(err) {
+            bootrom.theshowsover = true;
+            document.querySelector('#loading').hidden = false;
+            document.querySelector('#msx').onanimationend = undefined;
+            document.querySelector('#hidor').className = 'showsover';
+            document.body.className = "showsover";
+            bootrom.outputError(err?.message ?? err);
+        });
     </script>
     <style>
         /*css*/

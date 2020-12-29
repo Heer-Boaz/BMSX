@@ -9,7 +9,7 @@ import { Input } from '../bmsx/input';
 @insavegame
 class bclass extends Sprite {
     @statedef_builder
-    public static states(): cbstd {
+    public static _states(): cbstd {
         let blarun = (s: sstate, me: bclass) => {
             if (Input.KD_UP) {
                 me.pos.y -= 2;

@@ -152,6 +152,13 @@ export class Input {
         document.addEventListener('touchmove', e => { e.preventDefault(); e.stopPropagation(); handleTouchStuff(e); });
         document.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); handleTouchStuff(e); });
         document.addEventListener('touchend', e => { e.preventDefault(); e.stopPropagation(); handleTouchStuff(e); });
+        // iOS -- https://stackoverflow.com/questions/58159526/draggable-element-in-iframe-on-mobile-is-buggy
+        document.addEventListener('touchforcechange', e => {
+            e.preventDefault();
+        });
+        window.addEventListener('touchforcechange', e => {
+            e.preventDefault();
+        });
     }
 
     public static pollGamepadInput(): void {

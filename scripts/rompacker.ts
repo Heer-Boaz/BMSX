@@ -3,14 +3,14 @@ import { join, parse } from "path";
 import { AudioMeta, AudioType, RomResource, RomMeta, ImgMeta } from '../src/bmsx/rompack';
 import * as browserify from 'browserify';
 const tsify = require("tsify");
-const babelify = require("babelify");
 
 import * as terser from 'terser';
+import * as term from 'terminal-kit';
+import { ProgressBarController } from "terminal-kit/Terminal";
+const _colors = require('colors');
 const pako = require('pako');
 const minify = require('@node-minify/core');
 const cleanCSS = require('@node-minify/clean-css');
-const cliProgress = require('cli-progress');
-const _colors = require('colors');
 const FtpDeploy = require('ftp-deploy');
 const { createCanvas, loadImage } = require('canvas');
 const yaml = require('js-yaml');
@@ -41,16 +41,7 @@ interface ResourceMeta {
 
 type logentryType = undefined | 'error' | 'warning';
 
-/**
- * Convert an Uint8Array into a string.
- * https://ourcodeworld.com/articles/read/164/how-to-convert-an-uint8array-to-string-in-javascript
- * @returns {String}
- */
-function decodeuint8arr(uint8array: Uint8Array): string {
-	return new TextDecoder("utf-8").decode(uint8array);
-}
-
-function log(_tolog: string, type?: logentryType): void {
+function writeOut(_tolog: string, type?: logentryType): void {
 	let d = new Date();
 	let tolog: string;
 	switch (type) {
@@ -58,17 +49,37 @@ function log(_tolog: string, type?: logentryType): void {
 		case 'warning': tolog = _colors.yellow(_tolog); break;
 		default: tolog = _tolog; break;
 	}
-	process.stdout.write(`${_colors.cyan(d.toTimeString().split(' ')[0])}:${_colors.cyan(d.getMilliseconds().toString().substring(0, 3))} ${tolog}`);
+	process.stdout.write(`${tolog}`);
+}
+
+function log(_tolog: string, type?: logentryType): void {
+	let d = new Date();
+	let tolog: string;
+	switch (type) {
+		case 'error':
+			tolog = _colors.red(_tolog);
+			process.stdout.write(`${_colors.cyan(d.toTimeString().split(' ')[0])}:${_colors.cyan(d.getMilliseconds().toString().substring(0, 3))} ${tolog}`);
+			break;
+		case 'warning': tolog = _colors.yellow(_tolog);
+			process.stdout.write(`${_colors.cyan(d.toTimeString().split(' ')[0])}:${_colors.cyan(d.getMilliseconds().toString().substring(0, 3))} ${tolog}`);
+			break;
+		default: tolog = _tolog; break;
+	}
 }
 
 function appendLogEntry(_toappend: string, type?: logentryType): void {
 	let toappend: string;
 	switch (type) {
-		case 'error': toappend = _colors.red(_toappend); break;
-		case 'warning': toappend = _colors.yellow(_toappend); break;
+		case 'error':
+			toappend = _colors.red(_toappend);
+			process.stdout.write(toappend);
+			break;
+		case 'warning':
+			toappend = _colors.yellow(_toappend);
+			process.stdout.write(toappend);
+			break;
 		default: toappend = _toappend; break;
 	}
-	process.stdout.write(toappend);
 }
 
 function timer(ms: number) {
@@ -78,19 +89,19 @@ function timer(ms: number) {
 const rotatorchars = ['-', '\\', '|', '/'];
 var runrotator = false;
 async function startRotator() {
-	runrotator = true;
-	process.stdout.write(`/`);
-	let i = 0;
-	while (runrotator) {
-		await timer(100);
-		runrotator && process.stdout.write(`\b${rotatorchars[i]}`);
-		if (++i >= rotatorchars.length) i = 0;
-	}
+	// runrotator = true;
+	// process.stdout.write(`/`);
+	// let i = 0;
+	// while (runrotator) {
+	// 	await timer(100);
+	// 	runrotator && process.stdout.write(`\b${rotatorchars[i]}`);
+	// 	if (++i >= rotatorchars.length) i = 0;
+	// }
 }
 
 function stopRotator(): void {
-	runrotator = false;
-	process.stdout.write(`\b\b  `);
+	// runrotator = false;
+	// process.stdout.write(`\b\b  `);
 }
 
 /**
@@ -157,174 +168,114 @@ function yaml2Json(): void {
 async function buildAndBundleRomSource(outfile: string, bootloader_path: string): Promise<any> {
 	log("Game compileren en bundleren...  ");
 	startRotator();
-
 	return new Promise((resolve, reject) => {
-		let writeOutput = createWriteStream(`./${outfile}`);
-		browserify({
-			debug: true,
-			basedir: '.',
-			project: true,
-			cache: {},
-			packageCache: {},
-			exposeAll: true,
-			exclude: [],
-			ignore: ['node_modules', 'dist', 'rom'],
-		})
-			.add(bootloader_path)
-			.plugin(tsify, {
-				// project: "tsconfig.json",
-				noImplicitAny: false,
-				files: [bootloader_path],
-				// target: 'esnext',
-				// lib: [
-				// 	"ESNEXT",
-				// 	"dom",
-				// 	"es2015.collection",
-				// 	"es2015.iterable",
-				// 	"ES2017.object"
-				// ],
+		try {
+			let writeOutput = createWriteStream(`./rom/${outfile}.js`);
+			browserify({
+				debug: true,
+				basedir: '.',
+				project: true,
+				cache: {},
+				packageCache: {},
+				exposeAll: true,
+				exclude: [],
+				ignore: ['node_modules', 'dist', 'rom'],
 			})
-			// .transform(babelify, {
-			// 	extensions: ['.ts'],
-			// 	plugins: ['@babel/plugin-transform-modules-commonjs', '@babel/plugin-transform-classes'],
-			// 	sourceMaps: true,
-			// 	sourceMapsAbsolute: false,
-			// 	global: true,
-			// 	retainLines: true,
-			// 	compact: true
-			// 	// presets: ["es2017"],
-			// 	// stage: [1],
-			// })
-			.bundle()
-			.pipe(writeOutput)
-			.on("error", e => { stopRotator(); log(`\tGame bouwen faalde :-(\n`, 'error'); reject(e); });
-		writeOutput.on('finish', () => {
-			stopRotator();
-			appendLogEntry(`${_colors.grey('[Donut]')}\n`);
-			resolve(null);
-		});
-		writeOutput.on("error", e => {
-			stopRotator();
-			log(`\tWegschrijven gamecode faalde! :-(\n`, 'error');
-			reject(e);
-		});
+				.add(bootloader_path)
+				.plugin(tsify, {
+					noImplicitAny: false,
+					files: [bootloader_path],
+				})
+				.bundle()
+				.pipe(writeOutput)
+				.on('error', e => { stopRotator(); reject(e); });
+			writeOutput.on('finish', () => {
+				stopRotator();
+				appendLogEntry(`${_colors.grey('[Donut]')}\n`);
+				resolve(null);
+			});
+			writeOutput.on('error', e => {
+				stopRotator();
+				reject(e);
+			});
+		} catch (err) {
+			reject(err);
+		}
 	});
 }
 
 function minifyGamecode(infile: string): Error {
-	let options = <terser.MinifyOptions>{
-		ecma: 2017,
-		sourceMap: {
-			content: 'inline',
-			// 	// includeSources: true,
-			url: 'inline',
-		},
-		compress: false,
-		// compress: <terser.CompressOptions>{
-		// 	keep_fargs: true, // Prevents the compressor from discarding unused function arguments. You need this for code which relies on Function.length
-		// 	passes: 1, // The maximum number of times to run compress. In some cases more than one pass leads to further compressed code. Keep in mind more passes will take more time
-		// 	ecma: 2020,
-		// 	keep_classnames: true,
-		// 	keep_fnames: true,
-		// 	arguments: false,
-		// 	collapse_vars: false,
-		// 	dead_code: false,
-		// 	join_vars: false,
-		// 	module: true,
-		// },
-		mangle: false,
-		// mangle: <terser.MangleOptions>{
-			// reserved:
-			// 	[
-			// 		"exports",
-			// 		"global",
-			// 		"factory",
-			// 		"__extends",
-			// 		"__assign",
-			// 		"__rest",
-			// 		"__decorate",
-			// 		"__param",
-			// 		"__metadata",
-			// 		"__awaiter",
-			// 		"__generator",
-			// 		"__exportStar",
-			// 		"__values",
-			// 		"__read",
-			// 		"__spread",
-			// 		"__spreadArrays",
-			// 		"__await",
-			// 		"__asyncGenerator",
-			// 		"__asyncDelegator",
-			// 		"__asyncValues",
-			// 		"__makeTemplateObject",
-			// 		"__importStar",
-			// 		"__importDefault"
-			// 	],
-			// module: true,
-			// keep_classnames: true,
-			// keep_fnames: true,
-			// properties: <terser.ManglePropertiesOptions>{
-			// 	keep_quoted: true,
-			// 	builtins: true,
-			// 	reserved:
-			// 		[
-			// 			"exports",
-			// 			"global",
-			// 			"factory",
-			// 			"__extends",
-			// 			"__assign",
-			// 			"__rest",
-			// 			"__decorate",
-			// 			"__param",
-			// 			"__metadata",
-			// 			"__awaiter",
-			// 			"__generator",
-			// 			"__exportStar",
-			// 			"__values",
-			// 			"__read",
-			// 			"__spread",
-			// 			"__spreadArrays",
-			// 			"__await",
-			// 			"__asyncGenerator",
-			// 			"__asyncDelegator",
-			// 			"__asyncValues",
-			// 			"__makeTemplateObject",
-			// 			"__importStar",
-			// 			"__importDefault"
-			// 		],
-			// },
-		// },
-		output: <terser.OutputOptions>{
-			ecma: 2020,
-			safari10: false,
-			webkit: true,
-			// max_line_len: 80,
-			semicolons: true, // Must be true for Safari support (on iOS)! Otherwise, only black screen shows
-			keep_quoted_props: true,
-			source_map: {
+	try {
+		let options = <terser.MinifyOptions>{
+			ecma: 2017,
+			sourceMap: {
 				content: 'inline',
-				// url: 'inline',
-				// includeSources: true,
-			}
-		},
-	};
+				url: 'inline',
+			},
+			keep_fnames: /^_/,
+			keep_classnames: true,
+			compress: <terser.CompressOptions>{
+				passes: 3, // The maximum number of times to run compress. In some cases more than one pass leads to further compressed code. Keep in mind more passes will take more time
+				ecma: 2017,
+			},
+			mangle: <terser.MangleOptions>{
+				reserved:
+					[
+						"exports",
+						"global",
+						"factory",
+						"__extends",
+						"__assign",
+						"__rest",
+						"__decorate",
+						"__param",
+						"__metadata",
+						"__awaiter",
+						"__generator",
+						"__exportStar",
+						"__values",
+						"__read",
+						"__spread",
+						"__spreadArrays",
+						"__await",
+						"__asyncGenerator",
+						"__asyncDelegator",
+						"__asyncValues",
+						"__makeTemplateObject",
+						"__importStar",
+						"__importDefault",
+					],
+				properties: false,
+			},
+			output: <terser.OutputOptions>{
+				ecma: 2017,
+				safari10: false,
+				webkit: true,
+				max_line_len: 80,
+				semicolons: true, // Must be true for Safari support (on iOS)! Otherwise, only black screen shows
+				keep_quoted_props: true,
+				beautify: true,
+				source_map: {
+					content: 'inline',
+				}
+			},
+		};
 
-	let gamejs = readFileSync(infile, 'utf8');
-	let gamejsMinifiedResult = terser.minify(gamejs, options);
-	if (gamejsMinifiedResult.code) {
+		let gamejs = readFileSync(infile, 'utf8');
+		let gamejsMinifiedResult = terser.minify(gamejs, options);
+		if (!gamejsMinifiedResult.code) return gamejsMinifiedResult.error;
+
 		writeFileSync("./rom/megarom.min.js", gamejsMinifiedResult.code);
-		writeFileSync("./megarom.min.js", gamejsMinifiedResult.code); // For debugging
 		if (gamejsMinifiedResult.map) {
-			writeFileSync("./megarom.min.map", gamejsMinifiedResult.map);
+			writeFileSync("./rom/megarom.min.map", gamejsMinifiedResult.map);
 		}
 		if (gamejsMinifiedResult.warnings) {
 			log(gamejsMinifiedResult.warnings.join('\n'), 'warning');
 		}
 		return null;
 	}
-	else {
-		// appendLogEntry("Minifying van gamecode faalde :-(   ", 'error');
-		return gamejsMinifiedResult.error;
+	catch (err) {
+		return err;
 	}
 }
 
@@ -338,7 +289,6 @@ async function buildGameHtmlAndManifest(outfile: string, title: string): Promise
 			arrows: false
 		},
 		mangle: {
-			// properties: true,
 			toplevel: false,
 			reserved: ["bootrom", "h406A", "rom"],
 			safari10: true,
@@ -365,14 +315,14 @@ async function buildGameHtmlAndManifest(outfile: string, title: string): Promise
 
 				let transformHtml = (htmlToTransform: string, debug: boolean): string => {
 					return htmlToTransform.replace('//#romjs', debug ? romjs : romjsMinified)
-					.replace('//#zipjs', zipjs)
-					.replace('/*css*/', cssMinified)
-					.replace(/#title/g, title) // https://stackoverflow.com/questions/44324892/how-can-i-replace-multiple-characters-in-a-string
-					.replace('#outfile', outfile)
-					.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed)
-					.replace('//#debug', `bootrom.debug = ${debug};\n`)
-					.replace('//#localfetch', `bootrom.localfetch = ${debug};\n`);
-				}
+						.replace('//#zipjs', zipjs)
+						.replace('/*css*/', cssMinified)
+						.replace(/#title/g, title) // https://stackoverflow.com/questions/44324892/how-can-i-replace-multiple-characters-in-a-string
+						.replace('#outfile', outfile)
+						.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed)
+						.replace('//#debug', `bootrom.debug = ${debug};\n`)
+						.replace('//#localfetch', `bootrom.localfetch = ${debug};\n`);
+				};
 				writeFileSync("./dist/game.html", transformHtml(html, false));
 				writeFileSync("./dist/game_debug.html", transformHtml(html, true));
 
@@ -600,14 +550,14 @@ async function buildRompack(outfile: string, respath: string): Promise<any> {
 	return new Promise<any>(async (resolve, reject) => {
 		log("Minifyen... ");
 		startRotator();
-		let minifyGamecodeResult = minifyGamecode("./megarom.js");
+		let minifyGamecodeResult = minifyGamecode("./rom/megarom.js");
 		stopRotator();
-		(!minifyGamecodeResult) ? appendLogEntry(`${_colors.grey('[Donut]')}\n`) : (appendLogEntry(`[Failed]\n`, 'error'), reject(new Error(`Minifying game code failed: ${minifyGamecodeResult.message}`)));
+		(!minifyGamecodeResult) ? appendLogEntry(`${_colors.grey('[Donut]')}\n`) : (reject(new Error(`Minifying game code failed: ${minifyGamecodeResult.message}`)));
 
 		let buffers = new Array<Buffer>();
 		log("Resource bestanden inladen en bufferen...  ");
 		startRotator();
-		let loadedResources = await getLoadedResourcesList(respath, buffers);
+		let loadedResources = await getLoadedResourcesList(respath, buffers).catch(err => reject(err)) as LoadedResource[];
 		stopRotator();
 		appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 
@@ -796,10 +746,10 @@ function cropAtlas(romResources: Array<RomResource>): HTMLCanvasElement {
 }
 
 try {
-	log(_colors.brightGreen("┏————————————————————————————————————————┓\n"));
-	log(_colors.brightGreen("|              BMSX ROMPACKER            |\n"));
-	log(_colors.brightGreen("|                DOOR BOAZ©®             |\n"));
-	log(_colors.brightGreen("┗————————————————————————————————————————┛\n"));
+	writeOut(_colors.brightGreen("┏————————————————————————————————————————┓\n"));
+	writeOut(_colors.brightGreen("|              BMSX ROMPACKER            |\n"));
+	writeOut(_colors.brightGreen("|                DOOR BOAZ©®             |\n"));
+	writeOut(_colors.brightGreen("┗————————————————————————————————————————┛\n"));
 	let args = process.argv.slice(2);
 	let outfile: string = undefined;
 	let title: string = undefined;
@@ -866,26 +816,39 @@ try {
 
 		log('Starting ROM packing and deployment process...\n');
 		log('\tNote: build resource list instead by passing option "--buildreslist".\n');
-		// const bar = new cliProgress.SingleBar({
-		// 	format: 'Beunen: [' + _colors.brightBlue('{bar}') + '] {percentage}% |',
-		// 	barCompleteChar: '=',
-		// 	barIncompleteChar: '-',
-		// 	hideCursor: true,
-		// 	clearOnComplete: true,
-		// 	forceRedraw: true
-		// });
-		// bar.start(5, 0);
 
-		buildAndBundleRomSource('megarom.js', bootloader_path)
-			.then((result) => (yaml2Json()))
-			.then((result) => (buildRompack(outfile, respath)))
-			.then((result) => (buildGameHtmlAndManifest(outfile, title)))
-			.then((result) => (deploy(outfile, title)))
-			.then((result) => (log(`${_colors.brightWhite.bold('[ALLES DONUT]')}\n`)))
-			.catch(e => { appendLogEntry('\n'); log(`Er ging iets niet goed: "${e?.message ?? e ?? 'Geen error message'}; ${e?.stack ?? '\ben geen stacktrace beschikbaar :-(!'}\n`, 'error'); process.exit(-1); });
+		const takenlijst = ['Game compileren en bundleren', 'YAML bestanden omzetten in JSON voor importatie', 'Minifying + Resource bestanden inladen en bufferen', 'game.html en game_debug.html bouwen', 'Deployeren'];
+
+		let progress = term.terminal.progressBar({
+			title: 'Beunen:',
+			barChar: '█',
+			barHeadChar: '▒',
+			eta: true,
+			percent: true,
+			items: takenlijst.length,
+			syncMode: true
+		});
+
+		let huidigeTaak = takenlijst[0];
+
+		let taakAfgevinkt = () => {
+			progress.itemDone(huidigeTaak);
+			huidigeTaak = takenlijst.shift();
+			progress.startItem(huidigeTaak);
+		};
+
+		progress.startItem(huidigeTaak);
+
+		buildAndBundleRomSource('megarom', bootloader_path)
+			.then((result) => { taakAfgevinkt(); return yaml2Json(); })
+			.then((result) => { taakAfgevinkt(); return buildRompack(outfile, respath); })
+			.then((result) => { taakAfgevinkt(); return buildGameHtmlAndManifest(outfile, title); })
+			.then((result) => { taakAfgevinkt(); deploy(outfile, title); })
+			.then((result) => { taakAfgevinkt(); writeOut('\n'); writeOut(`${_colors.brightWhite.bold('[ALLES DONUT]')}\n`); })
+			.catch(e => { appendLogEntry('\b\b[GEFAALD]\n', 'error'); log(`Er ging iets niet goed: "${e?.message ?? e ?? 'Geen error message'}; ${e?.stack ?? '\ben geen stacktrace beschikbaar :-(!'}\n`, 'error'); process.exit(-1); });
 	}
 } catch (e) {
-	appendLogEntry('\n'); log(`Er ging iets niet goed: ${e?.message ?? e ?? 'Geen error message'}; ${e?.stack ?? '\ben geen stacktrace'}\n`, 'error');
+	appendLogEntry('\b\b[GEFAALD]\n', 'error'); log(`Er ging iets niet goed: ${e?.message ?? e ?? 'Geen error message'}; ${e?.stack ?? '\ben geen stacktrace'}\n`, 'error');
 	appendLogEntry('\n');
 	process.exit(-1);
 }

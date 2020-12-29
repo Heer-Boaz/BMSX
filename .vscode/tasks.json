@@ -3,6 +3,31 @@
 	"_runner": "terminal",
 	"tasks": [
 		{
+			"label": "build game + all deps",
+			"detail": "Build/run all deps for creating ROM + resources",
+			"group": "build",
+			"dependsOrder": "sequence",
+			"dependsOn": [
+				"output romtobuild",
+				"build rom.js",
+				"build rompacker.js",
+				"build the game",
+			],
+			"problemMatcher": [
+				"$node-sass"
+			],
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": false,
+				"revealProblems": "onProblem",
+				"group": "ROMPACKER"
+			}
+		},
+		{
 			"label": "build the game",
 			"detail": "Runs rompacker.js to create the ROM + resources. Doesn't run dependent tasks for building rom.js & rompacker.js!",
 			"type": "shell",
@@ -56,8 +81,10 @@
 				"$node-sass"
 			],
 			"group": "build",
-			"dependsOrder": "parallel",
-			"dependsOn": [],
+			"dependsOrder": "sequence",
+			"dependsOn": [
+				"output romtobuild"
+			],
 			"presentation": {
 				"echo": false,
 				"reveal": "always",

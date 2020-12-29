@@ -6,6 +6,7 @@ import { MSX2ScreenWidth, MSX2ScreenHeight, TileSize } from "./msx";
 import { Point, Area, moveArea, Size, Direction, mod } from "./common";
 import { BaseModelOld } from './basemodel_old';
 import { BaseControllerOld } from './basecontroller_old';
+import { parse, stringify } from 'Flatted';
 import assert = require("assert");
 
 declare global {
@@ -605,7 +606,7 @@ export abstract class BaseModel {
     }
 
     @statedef_builder
-    public static buildBaseStates(): cbstd {
+    public static _buildBaseStates(): cbstd {
         let result = new cbstd(this.name);
 
         // Create default state for running the game
