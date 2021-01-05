@@ -646,7 +646,6 @@ async function buildRompack(outfile: string, respath: string): Promise<any> {
 
 		log("Alles nu zippen... ");
 		startRotator();
-		// let zipped = Buffer.concat(buffers)//zip(Buffer.concat(buffers));
 		let zipped = zip(Buffer.concat(buffers));
 		stopRotator();
 		appendLogEntry(`${_colors.grey('[Donut]')}\n`);
@@ -840,11 +839,11 @@ try {
 		progress.startItem(huidigeTaak);
 
 		buildAndBundleRomSource('megarom', bootloader_path)
-			.then((result) => { taakAfgevinkt(); return yaml2Json(); })
-			.then((result) => { taakAfgevinkt(); return buildRompack(outfile, respath); })
-			.then((result) => { taakAfgevinkt(); return buildGameHtmlAndManifest(outfile, title); })
-			.then((result) => { taakAfgevinkt(); deploy(outfile, title); })
-			.then((result) => { taakAfgevinkt(); writeOut('\n'); writeOut(`${_colors.brightWhite.bold('[ALLES DONUT]')}\n`); })
+			.then(result => { taakAfgevinkt(); return yaml2Json(); })
+			.then(result => { taakAfgevinkt(); return buildRompack(outfile, respath); })
+			.then(result => { taakAfgevinkt(); return buildGameHtmlAndManifest(outfile, title); })
+			.then(result => { taakAfgevinkt(); deploy(outfile, title); })
+			.then(result => { taakAfgevinkt(); writeOut('\n'); writeOut(`${_colors.brightWhite.bold('[ALLES DONUT]')}\n`); })
 			.catch(e => { appendLogEntry('\b\b[GEFAALD]\n', 'error'); log(`Er ging iets niet goed: "${e?.message ?? e ?? 'Geen error message'}; ${e?.stack ?? '\ben geen stacktrace beschikbaar :-(!'}\n`, 'error'); process.exit(-1); });
 	}
 } catch (e) {

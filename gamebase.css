@@ -55,7 +55,6 @@ svg.buttons {
 }
 
 .knop.druk {
-	/* opacity: .5; */
 	z-index: 2001;
 	transform: scale(.75 50% 50%);
 }
