@@ -11,7 +11,7 @@
 				"output romtobuild",
 				"build rom.js",
 				"build rompacker.js",
-				"build the game",
+				"build the game"
 			],
 			"problemMatcher": [
 				"$node-sass"
@@ -42,7 +42,8 @@
 				"./src/${input:romtobuild}/res",
 				"-title",
 				"${input:romtobuild}",
-				"--force"
+				"--nodeploy",
+				"--force",
 			],
 			"problemMatcher": [
 				"$node-sass"

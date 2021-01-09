@@ -1,5 +1,5 @@
 import { RomLoadResult } from '../bmsx/rompack';
-import { Game, BaseModel, GameObject, Sprite, insavegame, cbstd, bssd, statedef_builder, sstate } from '../bmsx/engine';
+import { Game, BaseModel, GameObject, Sprite, insavegame, cbstd, bssd, statedef_builder, sstate, bstd, cmstate } from '../bmsx/engine';
 import { newPoint, Direction, newSize, Point } from '../bmsx/common';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
@@ -9,7 +9,7 @@ import { Input } from '../bmsx/input';
 @insavegame
 class bclass extends Sprite {
     @statedef_builder
-    public static _states(): cbstd {
+    public static _states(classname: string): cbstd {
         let blarun = (s: sstate, me: bclass) => {
             if (Input.KD_UP) {
                 me.pos.y -= 2;
@@ -40,21 +40,22 @@ class bclass extends Sprite {
             Input.KC_BTN4 && me.state.to('bla');
         };
 
-        let result = new cbstd(this.name);
-        result.addBst(); // Add default BST (defined by default name)
-
-        result.add( // Add states to default BST
-            new bssd('bla', {
-                onrun: blarun,
-                onenter: (_, me: bclass) => { me.imgid = BitmapId.b; },
-            }),
-            new bssd('blap', {
-                onrun: blarun,
-                onenter: (_, me: bclass) => { me.imgid = BitmapId.b2; },
-            }),
-        );
-
-        return result;
+        return new cbstd(classname, {
+            machines: {
+                master: new bstd('master', {
+                    states: {
+                        bla: new bssd('bla', {
+                            onrun: blarun,
+                            onenter: (_, me: bclass) => { me.imgid = BitmapId.b; },
+                        }),
+                        blap: new bssd('blap', {
+                            onrun: blarun,
+                            onenter: (_, me: bclass) => { me.imgid = BitmapId.b2; },
+                        }),
+                    }
+                })
+            }
+        });
     }
 
     constructor() {
@@ -65,13 +66,21 @@ class bclass extends Sprite {
     public onspawn = (spawningPos?: Point): void => {
         super.onspawn?.(spawningPos);
         this.state.to('blap');
-    }
+    };
 };
 
 const savestring = Symbol('savestring');
-@insavegame
+// @insavegame
 class _modelclass extends BaseModel {
     public [savestring]: string;
+
+    public init(): this {
+        this.state = new cmstate(this.constructor.name, '_');
+        this.state.populateMachines();
+        this.state.to('default');
+
+        return this;
+    }
 
     public get gamewidth(): number {
         return MSX1ScreenWidth;

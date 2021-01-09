@@ -152,17 +152,25 @@ function getAllFiles(dirPath: string, arrayOfFiles?: string[], filterExtension?:
 	return arrayOfFiles;
 }
 
-function yaml2Json(): void {
-	log("YAML bestanden omzetten in JSON voor importatie...  ");
-	let yamlfiles = getAllFiles('./src', [], '.yaml');
-	startRotator();
-	for (let file of yamlfiles) {
-		let doc = yaml.safeLoad(readFileSync(file, 'utf8'));
-		let outfilename = file.replace('.yaml', '.json');
-		writeFileSync(outfilename, Buffer.from(encodeuint8arr(JSON.stringify(doc))));
-	}
-	stopRotator();
-	appendLogEntry(`${_colors.grey('[Donut]')}\n`);
+function yaml2Json(): Promise<void> {
+	return new Promise((resolve, reject) => {
+		try {
+			log("YAML bestanden omzetten in JSON voor importatie...  ");
+			let yamlfiles = getAllFiles('./src', [], '.yaml');
+			startRotator();
+			for (let file of yamlfiles) {
+				let doc = yaml.safeLoad(readFileSync(file, 'utf8'));
+				let outfilename = file.replace('.yaml', '.json');
+				writeFileSync(outfilename, Buffer.from(encodeuint8arr(JSON.stringify(doc))));
+			}
+			stopRotator();
+			appendLogEntry(`${_colors.grey('[Donut]')}\n`);
+		}
+		catch (err) {
+			reject(err);
+		}
+		resolve(null);
+	});
 }
 
 async function buildAndBundleRomSource(outfile: string, bootloader_path: string): Promise<any> {
@@ -372,6 +380,12 @@ async function deploy(outfile: string, title: string): Promise<any> {
 		startRotator();
 		let ftpDeploy = new FtpDeploy();
 
+		ftpDeploy.on("upload-error", function (data) {
+			// Error already handled through catch.
+			// This handler will remove default handler that outputs error message
+			// reject(data.err); // data will also include filename, relativePath, and other goodies
+		});
+
 		let config = {
 			user: "boazpat_el@ziggo.nl",
 			password: "lars18th",
@@ -392,7 +406,11 @@ async function deploy(outfile: string, title: string): Promise<any> {
 		ftpDeploy
 			.deploy(config)
 			.then(res => { stopRotator(); appendLogEntry(`${res}. ${_colors.grey('[Donut]')}\n`); resolve(null); })
-			.catch(err => { stopRotator(); log(`\tFTP upload mislukt :-(\n`, 'error'); reject(err); });
+			.catch(err => {
+				// stopRotator();
+				// log(`\tFTP upload mislukt :-(\n`, 'error');
+				reject(err);
+			});
 	});
 }
 
@@ -745,10 +763,10 @@ function cropAtlas(romResources: Array<RomResource>): HTMLCanvasElement {
 }
 
 try {
-	writeOut(_colors.brightGreen("┏————————————————————————————————————————┓\n"));
-	writeOut(_colors.brightGreen("|              BMSX ROMPACKER            |\n"));
-	writeOut(_colors.brightGreen("|                DOOR BOAZ©®             |\n"));
-	writeOut(_colors.brightGreen("┗————————————————————————————————————————┛\n"));
+	term.terminal.clear();
+	writeOut(_colors.brightGreen("┏————————————————————————————————————————————————————————————————————————————————┓\n"));
+	writeOut(_colors.brightGreen("|                          BMSX ROMPACKER DOOR BOAZ©®™                           |\n"));
+	writeOut(_colors.brightGreen("┗————————————————————————————————————————————————————————————————————————————————┛\n"));
 	let args = process.argv.slice(2);
 	let outfile: string = undefined;
 	let title: string = undefined;
@@ -757,6 +775,7 @@ try {
 	let force: boolean = undefined;
 	let unrecognizedParam: boolean = false;
 	let buildreslist: boolean = false;
+	let deployToFtp: boolean = true;
 
 	let i = 0;
 	while (i < args.length) {
@@ -783,8 +802,11 @@ try {
 			case '--buildreslist':
 				buildreslist = true;
 				break;
+			case '--nodeploy':
+				deployToFtp = false;
+				break;
 			default:
-				log(_colors.red(`Unrecognized argument: ${args[i]}.\n`));
+				writeOut(_colors.red(`Unrecognized argument: ${args[i]}.\n`));
 				unrecognizedParam = true;
 		}
 		++i;
@@ -792,8 +814,8 @@ try {
 	if (unrecognizedParam) throw new Error("Unrecognized parameter(s) passed. Exiting rompacker...");
 
 	if (buildreslist) {
-		log('Building resource list and writing output to "./src/bmsx/resourceids.ts"...\n');
-		log('\tNote: ROM packing and deployemexdent are skipped this option (--buildreslist) is enabled!\n');
+		writeOut('Building resource list and writing output to "./src/bmsx/resourceids.ts"...\n');
+		writeOut('  Note: ROM packing and deployemexdent are skipped this option (--buildreslist) is enabled!\n');
 		buildResourceList(respath);
 	}
 	else {
@@ -802,36 +824,51 @@ try {
 		if (!bootloader_path) throw new Error("Missing parameter for location of the bootloader.ts-file ('bootloader_path', e.g. 'src/bootloader.ts'.");
 		if (!respath) throw new Error("Missing parameter for location of the resource folder ('respath', e.g. './src/sintervania/res'.");
 
-		if (!force && existsSync(`./dist/${outfile}`) && existsSync(`"./rom/tsout.js"`)) {
-			let romstats = statSync(`./dist/${outfile}`);
-			let rommtime = romstats.mtime;
-			let jsstats = statSync(`"./rom/tsout.js"`);
-			let jsmtime = jsstats.mtime;
-			if (jsmtime < rommtime) {
-				log("No action performed: game rom was newer than code.\nUse --force option to ignore this check.");
-				process.exit(0);
+		if (!force) {
+			// TODO: DIT WERKT NIET!!! MOET NIET KIJKEN NAAR [megarom.js], MAAR NAAR SOURCE FOLDERS!!
+			if (existsSync(`./dist/${outfile}`) && existsSync(`./rom/megarom.js`)) {
+				let romstats = statSync(`./dist/${outfile}`);
+				let rommtime = romstats.mtime;
+				let jsstats = statSync('./rom/megarom.js');
+				let jsmtime = jsstats.mtime;
+				if (jsmtime < rommtime) {
+					writeOut('No action performed: game rom was newer than code (use --force option to ignore this check).');
+					process.exit(0);
+				}
+				// else {
+				// 	writeOut(`Ga toch bouwen, want [jsmtime] = ${jsmtime} en [rommtime] = ${rommtime}`);
+				// }
 			}
+			// else {
+			// 	writeOut(`Ga toch bouwen, want [./dist/${outfile}] bestond niet, of [./rom/megarom.js] bestond niet.`);
+			// }
 		}
 
-		log('Starting ROM packing and deployment process...\n');
-		log('\tNote: build resource list instead by passing option "--buildreslist".\n');
+		writeOut(`Starting ROM packing and deployment process for ROM ${_colors.brightBlue.bold(`${outfile}`)}...\n`);
+		if (force) writeOut('  Note: Recompilation and Building forced via --force\n');
+		if (!deployToFtp) writeOut('  Note: Deploy to FTP server disabled via --nodeploy\n');
 
 		const takenlijst = ['Game compileren en bundleren', 'YAML bestanden omzetten in JSON voor importatie', 'Minifying + Resource bestanden inladen en bufferen', 'game.html en game_debug.html bouwen', 'Deployeren'];
+		if (!deployToFtp) takenlijst.pop();
 
 		let progress = term.terminal.progressBar({
 			title: 'Beunen:',
 			barChar: '█',
 			barHeadChar: '▒',
-			eta: true,
+			eta: false,
 			percent: true,
 			items: takenlijst.length,
-			syncMode: true
+			syncMode: false,
+			maxRefreshTime: 200,
+			minRefreshTime: 100,
 		});
 
-		let huidigeTaak = takenlijst[0];
+		let huidigeTaak = takenlijst.shift();
 
 		let taakAfgevinkt = () => {
 			progress.itemDone(huidigeTaak);
+
+			if (!takenlijst.length) return;
 			huidigeTaak = takenlijst.shift();
 			progress.startItem(huidigeTaak);
 		};
@@ -842,12 +879,23 @@ try {
 			.then(result => { taakAfgevinkt(); return yaml2Json(); })
 			.then(result => { taakAfgevinkt(); return buildRompack(outfile, respath); })
 			.then(result => { taakAfgevinkt(); return buildGameHtmlAndManifest(outfile, title); })
-			.then(result => { taakAfgevinkt(); deploy(outfile, title); })
-			.then(result => { taakAfgevinkt(); writeOut('\n'); writeOut(`${_colors.brightWhite.bold('[ALLES DONUT]')}\n`); })
-			.catch(e => { appendLogEntry('\b\b[GEFAALD]\n', 'error'); log(`Er ging iets niet goed: "${e?.message ?? e ?? 'Geen error message'}; ${e?.stack ?? '\ben geen stacktrace beschikbaar :-(!'}\n`, 'error'); process.exit(-1); });
+			.then(result => {
+				taakAfgevinkt();
+				if (deployToFtp) return deploy(outfile, title);
+				else return new Promise((resolve) => { resolve(null); });
+			})
+			.then(result => {
+				if (deployToFtp) taakAfgevinkt();
+				progress.stop();
+				writeOut(`\n${_colors.brightWhite.bold('[ALLES DONUT]')}\n`);
+			})
+			.catch(e => {
+				progress.stop();
+				writeOut(`\n[GEFAALD]\nEr ging iets niet goed: "${e?.message ?? e ?? 'Geen error message'}; ${e?.stack ?? '\ben geen stacktrace beschikbaar :-(!'}\n`, 'error');
+				process.exit(-1);
+			});
 	}
 } catch (e) {
-	appendLogEntry('\b\b[GEFAALD]\n', 'error'); log(`Er ging iets niet goed: ${e?.message ?? e ?? 'Geen error message'}; ${e?.stack ?? '\ben geen stacktrace'}\n`, 'error');
-	appendLogEntry('\n');
+	writeOut(`\n[GEFAALD]\nEr ging iets niet goed: ${e?.message ?? e ?? 'Geen error message'}; ${e?.stack ?? '\ben geen stacktrace'}\n`, 'error');
 	process.exit(-1);
 }

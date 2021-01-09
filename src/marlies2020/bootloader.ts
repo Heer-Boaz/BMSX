@@ -1,5 +1,5 @@
 import { RomLoadResult } from '../bmsx/rompack';
-import { Game, BaseModel, GameObject, Sprite, BSTEventType, bssd, bstd, ProhibitLeavingScreenHandler as prohibitLeavingScreenHandler } from '../bmsx/engine';
+import { Game, BaseModel, GameObject, Sprite, BSTEventType, bssd, bstd, leavingScreenHandler_prohibit as prohibitLeavingScreenHandler, statedef_builder, cbstd, sstate, cmstate } from '../bmsx/engine';
 import { setPoint, newPoint, Direction, newSize, newArea, Point, randomInt, copyPoint, Opposite } from '../bmsx/common';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
@@ -28,17 +28,39 @@ class modelclass extends BaseModel {
     public ingredientEquipped: Ingredient;
     public pitasOpBord: number;
 
+    @statedef_builder
+    public static buildModelStates(classname: string): cbstd {
+        return new cbstd(classname, {
+            machines: {
+                master: new bstd('default', {
+                    states: {
+                       default: new bssd('default', {
+                           onrun: BaseModel.defaultrun,
+                       }),
+                       'hoera!': new bssd('hoera!', {
+                           onenter() {
+                               global.model.clear();
+                               global.model.spawn(new hoeraStuff());
+                           }
+                       }),
+                    }
+                }),
+            }
+        });
+    }
+
     constructor() {
         super();
         this.pitasOpBord = 0;
         this.ingredientEquipped = null;
+    }
 
-        this.add(new bssd('hoera!', {
-            onenter(_, ik: modelclass) {
-                ik.clear();
-                ik.spawn(new hoeraStuff());
-            }
-        }));
+    public init() {
+        this.state = new cmstate(this.constructor.name, '_');
+        this.state.populateMachines();
+        this.state.to('default');
+
+        return this;
     }
 
     public get gamewidth(): number {
@@ -114,38 +136,45 @@ class modelclass extends BaseModel {
 
         this.ingredientEquipped = null; // Haal inventory leeg
         if (++this.pitasOpBord >= PITAS_OP_BORD_VOOR_WINST) {
-            this.marlies.to('win');
+            this.marlies.state.to('win');
             this.where_do(o => (<any>o).isEng, o => o.markForDisposure());
             // this.objects.filter(o => (<any>o).isEng).forEach(o => o.markForDisposure());
         }
     }
 };
 
-var _model = new modelclass();
-
 class brandblusser extends Sprite {
+    @statedef_builder
+    public static bouw(classname: string): cbstd {
+        return new cbstd(classname, {
+            machines: {
+                master: new bstd('master', {
+                    states: {
+                        bla: new bssd('bla', {
+                            nudges2move: 20,
+                            onrun: (s: sstate, ik: brandblusser): void => {
+                                setPoint(ik.pos, _model.marlies.pos.x, _model.marlies.pos.y + 12);
+                                let oldPrio = ik.z;
+                                if (_model.marlies.direction == Direction.Up) ik.z = 950;
+                                else ik.z = 1050;
+                                if (ik.z != oldPrio) _model.sortObjectsByPriority();
+                                ++s.nudges;
+                            },
+                            onnext: (_, ik: brandblusser): void => {
+                                ik.markForDisposure();
+                            },
+                        }),
+                    }
+                })
+            }
+        });
+    }
+
     constructor() {
         super();
         this.imgid = BitmapId.Brandblusser;
         this.z = _model.marlies.direction == Direction.Up ? 950 : 1050;
-        let self = this;
-
-        this.add(new bssd('bla', {
-            nudges2move: 20,
-            onrun: (s: bssd, ik: brandblusser): void => {
-                setPoint(self.pos, _model.marlies.pos.x, _model.marlies.pos.y + 12);
-                let oldPrio = ik.z;
-                if (_model.marlies.direction == Direction.Up) ik.z = 950;
-                else ik.z = 1050;
-                if (ik.z != oldPrio) _model.sortObjectsByPriority();
-                ++s.nudges;
-            },
-            onnext: (): void => {
-                self.markForDisposure();
-            },
-            start: true,
-        }),
-        );
+        this.state.to('bla');
     }
 };
 
@@ -267,54 +296,140 @@ class bord extends Sprite implements Bord {
 };
 
 class vuur extends Sprite {
+    @statedef_builder
+    public static bouw(classname: string) {
+        return new cbstd(classname, {
+            machines: {
+                master: new bstd('master', {
+                    states: {
+                        brand: new bssd('brand', {
+                            tape: <Array<BitmapId>>[
+                                BitmapId.Vuur1,
+                                BitmapId.Vuur2,
+                                BitmapId.Vuur3,
+                                BitmapId.Vuur4,
+                                BitmapId.Vuur5,
+                                BitmapId.Vuur6,
+                                BitmapId.Vuur7,
+                                BitmapId.Vuur8,
+                                BitmapId.Vuur9,
+                                BitmapId.Vuur10,
+                                BitmapId.None,
+                            ],
+                            nudges2move: 2,
+                            onenter: (s: sstate, ik: vuur): void => {
+                                s.reset();
+                                ik.imgid = s.current;
+                            },
+                            onrun: (s: sstate, ik: vuur): void => {
+                                ++s.nudges;
+                                switch (ik.direction) {
+                                    case Direction.Up: ik.pos.y -= 3; break;
+                                    case Direction.Right: ik.pos.x += 3; break;
+                                    case Direction.Down: ik.pos.y += 3; break;
+                                    case Direction.Left: ik.pos.x -= 3; break;
+                                }
+                            },
+                            onnext: (s: sstate, ik: vuur): void => {
+                                ik.imgid = s.current;
+                            },
+                            onend: (_, ik: vuur): void => {
+                                ik.markForDisposure();
+                            }
+                        }),
+                    }
+                })
+            }
+        });
+    }
+
     constructor(dir: Direction) {
         super();
         this.direction = dir;
         this.hitarea = newArea(4, 4, 12, 12);
         this.z = dir != Direction.Up ? 1100 : 900;
+    }
 
-        this.add(new bssd('brand', {
-            tape: <Array<BitmapId>>[
-                BitmapId.Vuur1,
-                BitmapId.Vuur2,
-                BitmapId.Vuur3,
-                BitmapId.Vuur4,
-                BitmapId.Vuur5,
-                BitmapId.Vuur6,
-                BitmapId.Vuur7,
-                BitmapId.Vuur8,
-                BitmapId.Vuur9,
-                BitmapId.Vuur10,
-                BitmapId.None,
-            ],
-            nudges2move: 2,
-            onenter: (s: bssd, ik: vuur): void => {
-                s.reset();
-                ik.imgid = s.current;
-            },
-            onrun: (s: bssd, ik: vuur): void => {
-                ++s.nudges;
-                switch (ik.direction) {
-                    case Direction.Up: ik.pos.y -= 3; break;
-                    case Direction.Right: ik.pos.x += 3; break;
-                    case Direction.Down: ik.pos.y += 3; break;
-                    case Direction.Left: ik.pos.x -= 3; break;
-                }
-            },
-            onnext: (s: bssd, ik: vuur): void => {
-                ik.imgid = s.current;
-            },
-            onend: (_, ik: vuur): void => {
-                ik.markForDisposure();
-            },
-            start: true,
-        }));
+    onspawn(spawningPos?: Point): void {
+        super.onspawn(spawningPos);
+        this.state.to('brand');
     }
 
     isVuur = true;
 };
 
 class corona extends Sprite {
+    @statedef_builder
+    public static bouw(classname: string): cbstd {
+        return new cbstd(classname, {
+            machines: {
+                master: new bstd('master', {
+                    states: {
+                        skulk: new bssd('skulk', {
+                            nudges2move: 4,
+                            tape: <Array<BitmapId>>[
+                                BitmapId.Corona1,
+                                BitmapId.Corona2,
+                                BitmapId.Corona3,
+                                BitmapId.Corona2,
+                            ],
+                            onenter: (s: sstate, ik: corona): void => {
+                                s.reset();
+                                ik.imgid = s.current;
+                                ik.setRandomMove();
+                            },
+                            onrun(s: sstate, ik: corona) {
+                                if (_model.objects.filter(o => (<any>o)?.isVuur).some(v => ik.objectCollide(v))) {
+                                    ik.state.to('sterf');
+                                }
+                                switch (ik.direction) {
+                                    case Direction.Up: ik.sety(ik.pos.y - 1); break;
+                                    case Direction.Right: ik.setx(ik.pos.x + 1); break;
+                                    case Direction.Down: ik.sety(ik.pos.y + 1); break;
+                                    case Direction.Left: ik.setx(ik.pos.x - 1); break;
+                                }
+
+                                if (--ik.moveLeft <= 0) {
+                                    ik.setRandomMove();
+                                }
+                                ++s.nudges;
+                            },
+                            onnext(s: sstate, ik: corona) { ik.imgid = s.current; },
+                        }),
+                        sterf: new bssd('sterf', {
+                            nudges2move: 4,
+                            tape: <Array<BitmapId>>[
+                                BitmapId.Corona4,
+                                BitmapId.Corona5,
+                                BitmapId.Corona6,
+                                BitmapId.Corona7,
+                                BitmapId.Corona8,
+                                BitmapId.Corona9,
+                                BitmapId.Corona10,
+                                BitmapId.Corona11,
+                                BitmapId.None,
+                            ],
+                            onenter(s: sstate, ik: corona) {
+                                ik.isEng = false;
+                                s.reset();
+                                ik.imgid = s.current;
+                            },
+                            onrun(s: sstate) {
+                                ++s.nudges;
+                            },
+                            onend(_, ik: corona) {
+                                ik.markForDisposure();
+                            },
+                            onnext(s: sstate, ik: corona) {
+                                ik.imgid = s.current;
+                            },
+                        })
+                    }
+                })
+            }
+        });
+    }
+
     public isEng = true;
     private moveLeft: number = 0;
 
@@ -338,276 +453,232 @@ class corona extends Sprite {
         this.z = 1200;
 
         this.onLeavingScreen = this.onLeavingScreenHandler;
+    }
 
-        this.add(new bssd('skulk', {
-            start: true,
-            nudges2move: 4,
-            tape: <Array<BitmapId>>[
-                BitmapId.Corona1,
-                BitmapId.Corona2,
-                BitmapId.Corona3,
-                BitmapId.Corona2,
-            ],
-            onenter: (s: bssd, ik: corona): void => {
-                s.reset();
-                ik.imgid = s.current;
-                ik.setRandomMove();
-            },
-            onrun(s: bssd, ik: corona) {
-                if (_model.objects.filter(o => (<any>o)?.isVuur).some(v => ik.objectCollide(v))) {
-                    ik.to('sterf');
-                }
-                switch (ik.direction) {
-                    case Direction.Up: ik.sety(ik.pos.y - 1); break;
-                    case Direction.Right: ik.setx(ik.pos.x + 1); break;
-                    case Direction.Down: ik.sety(ik.pos.y + 1); break;
-                    case Direction.Left: ik.setx(ik.pos.x - 1); break;
-                }
-
-                if (--ik.moveLeft <= 0) {
-                    ik.setRandomMove();
-                }
-                ++s.nudges;
-            },
-            onnext(s: bssd, ik: corona) { ik.imgid = s.current; },
-        }),
-            new bssd('sterf', {
-                nudges2move: 4,
-                tape: <Array<BitmapId>>[
-                    BitmapId.Corona4,
-                    BitmapId.Corona5,
-                    BitmapId.Corona6,
-                    BitmapId.Corona7,
-                    BitmapId.Corona8,
-                    BitmapId.Corona9,
-                    BitmapId.Corona10,
-                    BitmapId.Corona11,
-                    BitmapId.None,
-                ],
-                onenter(s: bssd, ik: corona) {
-                    ik.isEng = false;
-                    s.reset();
-                    ik.imgid = s.current;
-                },
-                onrun(s: bssd) {
-                    ++s.nudges;
-                },
-                onend(_, ik: corona) {
-                    ik.markForDisposure();
-                },
-                onnext(s: bssd, ik: corona) {
-                    ik.imgid = s.current;
-                },
-            })
-        );
+    onspawn(spawningPos?: Point): void {
+        super.onspawn(spawningPos);
+        this.state.to('skulk');
     }
 }
 
 class speler extends Sprite {
-    column: number;
-
-    constructor(startcolumn: number) {
-        super();
-        let self = this;
-        this.imgid = BitmapId.p1;
-        this.direction = Direction.Down;
-        this.z = 1000;
-        this.addBst('anistate');
-        this.column = startcolumn;
-        this.hitarea = newArea(0, 8, 16, 16);
-
-        let shared_switch_run = () => {
-            if (Input.KC_BTN1 || Input.KC_SPACE) self.zetBoelInDeHens();
+    @statedef_builder
+    public static bouw(classname: string): cbstd {
+        let shared_switch_run = (_: sstate, ik: speler) => {
+            if (Input.KC_BTN1 || Input.KC_SPACE) ik.zetBoelInDeHens();
             let switchToOld = (): void => {
-                self.direction = self.oldDirection;
-                self.to('walk');
-                switch (self.direction) {
+                ik.direction = ik.oldDirection;
+                ik.state.to('walk');
+                switch (ik.direction) {
                     case Direction.Down:
-                        self.to('down', 'anistate');
+                        ik.state.to('down', 'anistate');
                         break;
                     case Direction.Up:
-                        self.to('up', 'anistate');
+                        ik.state.to('up', 'anistate');
                         break;
                 }
             };
 
-            switch (self.getCurrentId()) {
+            switch (ik.state.getCurrentId()) {
                 case 'switchleft':
-                    self.pos.x -= 2;
-                    if (self.pos.x <= COLUMN_X[self.column - 1]) {
-                        self.column -= 1;
+                    ik.pos.x -= 2;
+                    if (ik.pos.x <= COLUMN_X[ik.column - 1]) {
+                        ik.column -= 1;
                         switchToOld();
                     }
                     break;
                 case 'switchright':
-                    self.pos.x += 2;
-                    if (self.pos.x >= COLUMN_X[self.column + 1]) {
-                        self.column += 1;
+                    ik.pos.x += 2;
+                    if (ik.pos.x >= COLUMN_X[ik.column + 1]) {
+                        ik.column += 1;
                         switchToOld();
                     }
                     break;
             }
-            self.doeCoronaTest();
+            ik.doeCoronaTest();
         };
-
-        this.add(
-            new bssd('walk', {
-                start: true,
-                onrun: (): void => {
-                    if (Input.KC_LEFT) {
-                        if (self.canSwitchLeft) {
-                            self.to('switchleft');
-                            self.direction = Direction.Left;
-                        }
-                    }
-                    else if (Input.KC_RIGHT) {
-                        if (self.canSwitchRight) {
-                            self.to('switchright');
-                            self.direction = Direction.Right;
-                        }
-                    }
-                    else if (Input.KD_UP) {
-                        if (self.pos.y >= 4 && self.column !== 0) {
-                            if ((self.column !== 3 && self.column !== 4) ||
-                                (self.pos.y > 104 || self.pos.y <= 80)) {
-                                self.pos.y -= 2;
-                            }
-                        }
-                        if (self.getCurrentId('anistate') !== 'up') {
-                            self.to('up', 'anistate');
-                            self.direction = Direction.Up;
-                        }
-                    }
-                    else if (Input.KD_DOWN) {
-                        if (self.pos.y <= _model.gameheight - 32 && self.column !== 0) {
-                            if ((self.column !== 3 && self.column !== 4) ||
-                                (self.pos.y < 44 || self.pos.y >= 80)) {
-                                self.pos.y += 2;
-                            }
-                        }
-                        if (self.getCurrentId('anistate') !== 'down') {
-                            self.to('down', 'anistate');
-                            self.direction = Direction.Down;
-                        }
-                    }
-                    if (Input.KC_BTN1 || Input.KC_SPACE) {
-                        self.zetBoelInDeHens();
-                    }
-                    if (Input.KC_BTN2) {
-                        self.checkNaastIngredientOfPitaOfBord();
-                    }
-                    self.doeCoronaTest();
-                }
-            }),
-            new bssd('switchleft', {
-                onenter: () => self.to('columnswitch', 'anistate'),
-                onrun: shared_switch_run,
-            }),
-            new bssd('switchright', {
-                onenter: () => self.to('columnswitch', 'anistate'),
-                onrun: shared_switch_run,
-            }),
-            new bssd('urgh', { // urghSpelerState
-                onenter: () => self.to('urgh', 'anistate')
-                // Lelijk, maar animatie-state zorgt voor terugkeer naar previous state
-            }),
-            new bssd('win', { // winSpelerState
-                nudges2move: 300,
-                onenter: () => self.to('win', 'anistate'),
-                onrun: (s: bssd) => (++s.nudges, _model.objects.filter(o => (<any>o).isEng).forEach(o => o.disposeFlag = true)),
-                onnext: () => _model.to('hoera!')
-            }),
-        );
 
         let down_up_state_def: Partial<bssd> = {
             nudges2move: 8,
-            onenter: (s: bssd): void => (s.reset(), self.imgid = s.current),
-            onrun: (s: bssd): void => { ++s.nudges; },
-            onend: (s: bssd): void => s.reset(),
-            onnext: (s: bssd): void => self.imgid = s.current,
+            onenter: (s: sstate, ik: speler): void => (s.reset(), ik.imgid = s.current),
+            onrun: (s: sstate, ik: speler): void => { ++s.nudges; },
+            onend: (s: sstate, ik: speler): void => s.reset(),
+            onnext: (s: sstate, ik: speler): void => ik.imgid = s.current,
         };
-        this.addTo('anistate',
-            new bssd('down', {
-                ...down_up_state_def, ...{
-                    start: true,
-                    tape: <Array<BitmapId>>[
-                        BitmapId.p1,
-                        BitmapId.p2,
-                        BitmapId.p1,
-                        BitmapId.p3,
-                        BitmapId.p1,
-                    ]
-                }
-            }),
-            new bssd('up', {
-                ...down_up_state_def, ...{
-                    tape: <Array<BitmapId>>[
-                        BitmapId.p4,
-                        BitmapId.p5,
-                        BitmapId.p4,
-                        BitmapId.p6,
-                        BitmapId.p4,
-                    ]
-                }
-            }),
-            new bssd('urgh', {
-                tape: <Array<BitmapId>>[
-                    BitmapId.p8,
-                    BitmapId.p9,
-                    BitmapId.p8,
-                    BitmapId.p9,
-                    BitmapId.p8,
-                    BitmapId.p9,
-                    BitmapId.p8,
-                    BitmapId.p9,
-                    BitmapId.p8,
-                    BitmapId.p9,
-                    BitmapId.p8,
-                    BitmapId.p9,
-                    BitmapId.p8,
-                    BitmapId.p9,
-                    BitmapId.p8,
-                    BitmapId.p9,
-                    BitmapId.p8,
-                    BitmapId.p9,
-                    BitmapId.p8,
-                    BitmapId.p9,
-                    BitmapId.p8,
-                    BitmapId.p9,
-                    BitmapId.p8,
-                    BitmapId.p9,
-                ],
-                nudges2move: 4,
-                onenter(s: bssd, ik: speler): void {
-                    s.reset();
-                    ik.imgid = s.current;
-                    ik.flippedH = false;
-                },
-                onrun(s: bssd): void {
-                    ++s.nudges;
-                },
-                onend(s: bssd, ik: speler): void {
-                    s.reset();
-                    ik.pop();
-                },
-                onnext(s: bssd, ik: speler): void {
-                    ik.imgid = s.current;
-                },
-            }),
-            new bssd('columnswitch', {
-                onenter(_, ik: speler): void {
-                    ik.imgid = BitmapId.p7;
-                    if (ik.getCurrentId() === 'switchright')
-                        ik.flippedH = true;
-                },
-                onexit(_, ik: speler): void {
-                    ik.flippedH = false;
-                },
-            }),
-            new bssd('win', { // winAniState
-                onenter: () => self.imgid = BitmapId.p10
-            }),
-        );
+
+        return new cbstd(classname, {
+            machines: {
+                master: new bstd('master', {
+                    states: {
+                        walk: new bssd('walk', {
+                            onrun: (_, ik: speler): void => {
+                                if (Input.KC_LEFT) {
+                                    if (ik.canSwitchLeft) {
+                                        ik.state.to('switchleft');
+                                        ik.direction = Direction.Left;
+                                    }
+                                }
+                                else if (Input.KC_RIGHT) {
+                                    if (ik.canSwitchRight) {
+                                        ik.state.to('switchright');
+                                        ik.direction = Direction.Right;
+                                    }
+                                }
+                                else if (Input.KD_UP) {
+                                    if (ik.pos.y >= 4 && ik.column !== 0) {
+                                        if ((ik.column !== 3 && ik.column !== 4) ||
+                                            (ik.pos.y > 104 || ik.pos.y <= 80)) {
+                                            ik.pos.y -= 2;
+                                        }
+                                    }
+                                    if (ik.state.getCurrentId('anistate') !== 'up') {
+                                        ik.state.to('up', 'anistate');
+                                        ik.direction = Direction.Up;
+                                    }
+                                }
+                                else if (Input.KD_DOWN) {
+                                    if (ik.pos.y <= _model.gameheight - 32 && ik.column !== 0) {
+                                        if ((ik.column !== 3 && ik.column !== 4) ||
+                                            (ik.pos.y < 44 || ik.pos.y >= 80)) {
+                                            ik.pos.y += 2;
+                                        }
+                                    }
+                                    if (ik.state.getCurrentId('anistate') !== 'down') {
+                                        ik.state.to('down', 'anistate');
+                                        ik.direction = Direction.Down;
+                                    }
+                                }
+                                if (Input.KC_BTN1 || Input.KC_SPACE) {
+                                    ik.zetBoelInDeHens();
+                                }
+                                if (Input.KC_BTN2) {
+                                    ik.checkNaastIngredientOfPitaOfBord();
+                                }
+                                ik.doeCoronaTest();
+                            }
+                        }),
+                        switchleft: new bssd('switchleft', {
+                            onenter: (_, ik: speler) => ik.state.to('columnswitch', 'anistate'),
+                            onrun: shared_switch_run,
+                        }),
+                        switchright: new bssd('switchright', {
+                            onenter: (_, ik: speler) => ik.state.to('columnswitch', 'anistate'),
+                            onrun: shared_switch_run,
+                        }),
+                        urgh: new bssd('urgh', {
+                            onenter: (_, ik: speler) => ik.state.to('urgh', 'anistate')
+                            // Lelijk, maar animatie-state zorgt voor terugkeer naar previous state
+                        }),
+                        win: new bssd('win', {
+                            nudges2move: 300,
+                            onenter: (_, ik: speler) => ik.state.to('win', 'anistate'),
+                            onrun: (s: sstate) => (++s.nudges, _model.objects.filter(o => (<any>o).isEng).forEach(o => o.disposeFlag = true)),
+                            onnext: () => _model.state.to('hoera!')
+                        }),
+                    }
+                }),
+                anistate: new bstd('anistate', {
+                    states: {
+                        down: new bssd('down', {
+                            ...down_up_state_def, ...{
+                                tape: <Array<BitmapId>>[
+                                    BitmapId.p1,
+                                    BitmapId.p2,
+                                    BitmapId.p1,
+                                    BitmapId.p3,
+                                    BitmapId.p1,
+                                ]
+                            }
+                        }),
+                        up: new bssd('up', {
+                            ...down_up_state_def, ...{
+                                tape: <Array<BitmapId>>[
+                                    BitmapId.p4,
+                                    BitmapId.p5,
+                                    BitmapId.p4,
+                                    BitmapId.p6,
+                                    BitmapId.p4,
+                                ]
+                            }
+                        }),
+                        urgh: new bssd('urgh', {
+                            tape: <Array<BitmapId>>[
+                                BitmapId.p8,
+                                BitmapId.p9,
+                                BitmapId.p8,
+                                BitmapId.p9,
+                                BitmapId.p8,
+                                BitmapId.p9,
+                                BitmapId.p8,
+                                BitmapId.p9,
+                                BitmapId.p8,
+                                BitmapId.p9,
+                                BitmapId.p8,
+                                BitmapId.p9,
+                                BitmapId.p8,
+                                BitmapId.p9,
+                                BitmapId.p8,
+                                BitmapId.p9,
+                                BitmapId.p8,
+                                BitmapId.p9,
+                                BitmapId.p8,
+                                BitmapId.p9,
+                                BitmapId.p8,
+                                BitmapId.p9,
+                                BitmapId.p8,
+                                BitmapId.p9,
+                            ],
+                            nudges2move: 4,
+                            onenter(s: sstate, ik: speler): void {
+                                s.reset();
+                                ik.imgid = s.current;
+                                ik.flippedH = false;
+                            },
+                            onrun(s: sstate): void {
+                                ++s.nudges;
+                            },
+                            onend(s: sstate, ik: speler): void {
+                                s.reset();
+                                ik.state.pop();
+                            },
+                            onnext(s: sstate, ik: speler): void {
+                                ik.imgid = s.current;
+                            },
+                        }),
+                        columnswitch: new bssd('columnswitch', {
+                            onenter(_, ik: speler): void {
+                                ik.imgid = BitmapId.p7;
+                                if (ik.state.getCurrentId() === 'switchright')
+                                    ik.flippedH = true;
+                            },
+                            onexit(_, ik: speler): void {
+                                ik.flippedH = false;
+                            },
+                        }),
+                        win: new bssd('win', {
+                            onenter: (_, ik: speler) => ik.imgid = BitmapId.p10
+                        }),
+                    }
+                }),
+            }
+        });
+    }
+
+    column: number;
+
+    constructor(startcolumn: number) {
+        super();
+        this.imgid = BitmapId.p1;
+        this.direction = Direction.Down;
+        this.z = 1000;
+        this.column = startcolumn;
+        this.hitarea = newArea(0, 8, 16, 16);
+    }
+
+    onspawn(spawningPos?: Point): void {
+        super.onspawn(spawningPos);
+        this.state.to('walk');
+        this.state.to('down', 'anistate');
     }
 
     zetBoelInDeHens(): void {
@@ -636,14 +707,14 @@ class speler extends Sprite {
     }
 
     doeCoronaTest(): void {
-        if (this.getCurrentId() == 'urgh') return;
+        if (this.state.getCurrentId() == 'urgh') return;
         if (_model.objects.filter(o => (<any>o)?.isEng).some(c => this.objectCollide(c))) {
-            this.to('urgh');
+            this.state.to('urgh');
         }
     }
 
     checkNaastIngredientOfPitaOfBord(): void {
-        if (this.getCurrentId() == 'urgh') return;
+        if (this.state.getCurrentId() == 'urgh') return;
         _model.objects.filter(o => (<any>o)?.ingredientType && this.objectCollide(o)).forEach(o => {
             let i = o as any;
             switch (i.ingredientType) {
@@ -686,31 +757,45 @@ class speler extends Sprite {
 };
 
 class keuken extends Sprite {
+    @statedef_builder
+    public static bouw(classname: string): cbstd {
+        return new cbstd(classname, {
+            machines: {
+                master: new bstd('master', {
+                    states: {
+                        wees_een_keuken: new bssd('wees_een_keuken', {
+                            nudges2move: TIME_CORONA_SPAWN,
+                            onenter(s: sstate) {
+                                s.reset();
+                            },
+                            onrun(s: sstate) {
+                                ++s.nudges;
+                            },
+                            onnext() {
+                                if (_model.objects.filter(o => (<any>o)?.isEng).length < MAX_CORONA) {
+                                    let rloc = randomInt(0, CORONA_SPAWN_LOCS.length - 1);
+                                    let sloc = CORONA_SPAWN_LOCS[rloc];
+                                    _model.spawn(new corona(), sloc);
+                                }
+                            },
+                        }),
+                    }
+                })
+            }
+        });
+    }
+
     constructor() {
         super();
         this.imgid = BitmapId.Keuken;
         this.z = 0;
+    }
 
-        this.add(new bssd('wees_een_keuken', {
-            nudges2move: TIME_CORONA_SPAWN,
-            onenter(s: bssd) {
-                s.reset();
-            },
-            onrun(s: bssd) {
-                ++s.nudges;
-            },
-            onnext() {
-                if (_model.objects.filter(o => (<any>o)?.isEng).length < MAX_CORONA) {
-                    let rloc = randomInt(0, CORONA_SPAWN_LOCS.length - 1);
-                    let sloc = CORONA_SPAWN_LOCS[rloc];
-                    _model.spawn(new corona(), sloc);
-                }
-            },
-            start: true,
-        }));
+    onspawn(spawningPos?: Point): void {
+        super.onspawn(spawningPos);
+        this.state.to('wees_een_keuken');
     }
 };
-
 
 class viewclass extends GLView {
     public drawgame(): void {
@@ -719,9 +804,12 @@ class viewclass extends GLView {
     }
 };
 
+let _model: modelclass;
+
 var _global = window || global;
 _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: GainNode): void => {
     let _view = new viewclass(newSize(MSX1ScreenWidth, MSX1ScreenHeight));
+    _model = new modelclass();
     new Game(rom, _model, _view, null, sndcontext, gainnode);
 
     global.game.start();

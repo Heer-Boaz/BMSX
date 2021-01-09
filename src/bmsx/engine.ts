@@ -84,6 +84,7 @@ export type Tape = any[];
 
 const BST_MAX_HISTORY = 10;
 export const DEFAULT_BST_ID = 'master';
+export const NONE_STATE_ID = 'none';
 
 @insavegame
 export class cmstate {
@@ -133,6 +134,13 @@ export class cmstate {
 
     public populateMachines(): void {
         let cdef = this.cmachinedef;
+        if (!cdef) {
+            // A class is not required to have a defined cmachine.
+            // Thus, we create a default machine that automatically has a generated
+            // 'none'-state associated with it
+            this.machines[DEFAULT_BST_ID] = new mstate(DEFAULT_BST_ID, this.id, this.targetid);
+            return;
+        }
 
         for (let mdef_id in cdef.machines) {
             this.machines[mdef_id] = new mstate(mdef_id, this.id, this.targetid);
@@ -155,11 +163,11 @@ export class mstate {
     public get current(): sstate { return this.states[this.currentid]; };
 
     public get machinedef(): bstd {
-        return MachineDefinitions[this.cmachineid].machines[this.id];
+        return MachineDefinitions[this.cmachineid]?.machines[this.id];
     }
 
     public get currentStatedef(): bssd {
-        return MachineDefinitions[this.cmachineid].machines[this.id].states[this.currentid];
+        return MachineDefinitions[this.cmachineid]?.machines[this.id].states[this.currentid];
     }
 
     constructor(_id: string, _cmachineid: string, _targetid: string) {
@@ -175,7 +183,7 @@ export class mstate {
 
     public run(): void {
         if (this.paused) return;
-        // this.currentStatedef can be undefined if we are in the 'none' state
+        // [this.currentStatedef] can be undefined if we are in the 'none' state
         this.currentStatedef?.onrun?.(this.current, this.target, BSTEventType.Run);
     }
 
@@ -200,7 +208,7 @@ export class mstate {
     }
 
     public reset(): void {
-        this.currentid = 'none';
+        this.currentid = NONE_STATE_ID;
         this.history = new Array();
         this.paused = false;
     }
@@ -238,7 +246,7 @@ export class sstate {
     targetid: string; // This state reflects the (partial) state of the game object with id [targetid]
     nudges2move: number; // Number of runs before tapehead moves to next statedata
 
-    public get statedef(): bssd { return MachineDefinitions[this.cmachineid].machines[this.machineid].states[this.id]; }
+    public get statedef(): bssd { return MachineDefinitions[this.cmachineid]?.machines[this.machineid].states[this.id]; }
     public get tape(): Tape { return this.statedef.tape; }
     public get current(): any { return (this.tape && this.head < this.tape.length) ? this.tape[this.head] : undefined; };
     public get atEnd(): boolean { return !this.tape || this.head >= this.tape.length - 1; }
@@ -326,7 +334,7 @@ export class bssd {
     public constructor(_id: string = '_', _partialdef?: Partial<bssd>) {
         this.id = _id;
         this.nudges2move ??= 1;
-        if (_partialdef) Object.assign(this, _partialdef);
+        _partialdef && Object.assign(this, _partialdef);
     }
 
     public onrun: bsfthandle;
@@ -349,12 +357,13 @@ export class bssd {
 
 export class bstd {
     public id: string;
-    public states: str2bssd; // Note that numbers will be automatically converted to strings!
+    public states: str2bssd;
     public getStateDef(s_id: string): bssd { return this.states[s_id]; }
 
-    constructor(id?: string) {
+    constructor(id?: string, _partialdef?: Partial<bstd>) {
         this.id = id ?? DEFAULT_BST_ID;
         this.states ??= {};
+        _partialdef && Object.assign(this, _partialdef);
     }
 
     public create(id: string): bssd {
@@ -388,9 +397,11 @@ export class cbstd {
     public machines: str2bstd;
     public savedMachines: str2bstd;
 
-    constructor(id: string) {
+    constructor(id: string, _partialdef?: Partial<cbstd>) {
         this.id = id;
         this.machines = {};
+        _partialdef && Object.assign(this, _partialdef);
+        assert(this.id, `${this.constructor.name}.id should be defined!`);
     }
 
     public getBst(machine_id: string): bstd {
@@ -425,12 +436,16 @@ export class cbstd {
         this.machines[machine_id].add(...states);
     }
 
-    public append(_state: bssd, _id: string, machine_id: string = DEFAULT_BST_ID): void {
+    public appendBst(machine_def: bstd): void {
+        this.machines[machine_def.id] = machine_def;
+    }
+
+    public appendState(_state: bssd, _id: string, machine_id: string = DEFAULT_BST_ID): void {
         this.machines[machine_id].append(_state, _id);
     }
 
-    public remove(_id: string, machine_id: string = DEFAULT_BST_ID): void {
-        this.machines[machine_id].remove(_id);
+    public removeState(state_id: string, machine_id: string = DEFAULT_BST_ID): void {
+        this.machines[machine_id].remove(state_id);
     }
 }
 
@@ -441,7 +456,7 @@ export class Savegame {
 }
 
 var MachineDefinitions: { [key: string]: cbstd; };
-var MachineDefinitionBuilders: { [key: string]: () => cbstd; };
+var MachineDefinitionBuilders: { [key: string]: (classname: string) => cbstd; };
 export type id2objectType = { [key: string]: GameObject; };
 const id2obj = Symbol('id2object');
 export abstract class BaseModel {
@@ -450,6 +465,18 @@ export abstract class BaseModel {
     public get<T extends GameObject>(id: string) { return <T>this[id2obj][id]; }
     public exists(id: string): boolean {
         return this[id2obj][id] !== undefined;
+    }
+
+    public static getCMachinedef(cmachineid: string): cbstd {
+        return MachineDefinitions[cmachineid];
+    }
+
+    public static getMachinedef(cmachineid: string, machineid: string): bstd {
+        return MachineDefinitions[cmachineid]?.machines[machineid];
+    }
+
+    public static getMachineStatedef(cmachineid: string, machineid: string, stateid: string): bssd {
+        return MachineDefinitions[cmachineid]?.machines[machineid].states[stateid];
     }
 
     public objects: GameObject[];
@@ -490,33 +517,36 @@ export abstract class BaseModel {
         this.paused = false;
 
         BaseModel.buildStates();
-        this.state = new cmstate('BaseModel', '_');
-        this.state.populateMachines();
-        this.state.to('default');
     }
 
     private static buildStates() {
         MachineDefinitions = {};
         for (let classname in MachineDefinitionBuilders) {
-            MachineDefinitions[classname] = MachineDefinitionBuilders[classname]();
+            let machineBuilded = MachineDefinitionBuilders[classname](classname);
+            machineBuilded && (MachineDefinitions[classname] = MachineDefinitionBuilders[classname](classname)); // A clas might choose not to create a new machine
         }
     }
+
+    // Init model after construction. Needed as the states have not been build at
+    // the constructor's scope yet. So, this is a kind of onspawn(...) for the model
+    // Returns [this] for chaining
+    public abstract init(): this;
 
     public run() {
         this.state.run();
     }
 
-    @statedef_builder
-    public static _buildBaseStates(): cbstd {
-        let result = new cbstd(this.name);
+    // @statedef_builder
+    // public static buildBaseStates(classname: string): cbstd {
+    //     let result = new cbstd(classname);
 
-        // Create default state for running the game
-        result.add(new bssd('default', {
-            onrun: BaseModel.defaultrun,
-        }));
+    //     // Create default state for running the game
+    //     result.add(new bssd('default', {
+    //         onrun: BaseModel.defaultrun,
+    //     }));
 
-        return result;
-    }
+    //     return result;
+    // }
 
     public static defaultrun = (): void => {
         if (global.model.paused) {
@@ -650,6 +680,7 @@ export class Game {
         window.addEventListener('resize', global.view.handleResize, false);
         window.addEventListener('orientationchange', global.view.handleResize, false);
         global.view.handleResize();
+        global.model.init(); // Init the model to populate states (and do other init stuff)
 
         this.running = true;
         this.lastTick = performance.now();
@@ -765,7 +796,7 @@ export class GameObject {
     public disposeOnSwitchRoom?: boolean;
 
     public spawn?(spawningPos?: Point): void;
-    public onspawn?: ((spawningPos?: Point) => void) | (() => void);
+    public onspawn?(spawningPos?: Point): void;
     public ondispose?: () => void;
 
     public paint?(offset?: Point): void;
@@ -902,7 +933,7 @@ export class GameObject {
 }
 
 // Shared function used for using as event handler for IGameObject/Sprite.OnLeavingScreen
-export function ProhibitLeavingScreenHandler(ik: GameObject, d: Direction, old_x_or_y: number): void {
+export function leavingScreenHandler_prohibit(ik: GameObject, d: Direction, old_x_or_y: number): void {
     switch (d) {
         case Direction.Left: case Direction.Right:
             ik.pos.x = old_x_or_y;
@@ -936,7 +967,7 @@ export abstract class Sprite extends GameObject {
         this.disposeOnSwitchRoom = true;
     }
 
-    onspawn = (spawningPos?: Point): void => {
+    onspawn(spawningPos?: Point): void {
         if (spawningPos) {
             [this.pos.x, this.pos.y] = [spawningPos.x, spawningPos.y];
         }

@@ -202,7 +202,7 @@ async function loadScript(rom: RomLoadResult): Promise<void> {
 			resolve();
 		}
 		else {
-			romcode.src = '../rom/megarom.min.js';
+			romcode.src = '../rom/megarom.js';
 			// romcode.src = '../megarom.js';
 			romcode.onload = () => resolve();
 			document.head.appendChild(romcode);
@@ -287,7 +287,12 @@ async function fetchLocal(url: string): Promise<ArrayBuffer> {
 
 function startAudioOnIos(): void {
 	if (!bootrom.sndcontext) { return; }
-	if (bootrom.snd_unlocked) { return; }
+	if (bootrom.snd_unlocked) {
+		// Remove event listener if it wasn't removed already
+		document.removeEventListener('keyup', startAudioOnIos);
+		document.removeEventListener('touchend', startAudioOnIos, true);
+		return;
+	}
 	var source = bootrom.sndcontext.createBufferSource();
 	source.buffer = bootrom.sndcontext.createBuffer(1, 1, 44100);
 	source.connect(bootrom.sndcontext.destination);
