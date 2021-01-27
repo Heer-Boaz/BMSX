@@ -1,5 +1,5 @@
 import { RomLoadResult } from '../bmsx/rompack';
-import { Game, BaseModel, GameObject, Sprite, insavegame, cbstd, bssd, statedef_builder, sstate, bstd, cmstate } from '../bmsx/engine';
+import { Game, BaseModel, GameObject, Sprite, insavegame, cmdef, sdef, statedef_builder, sstate, mdef, cmstate } from '../bmsx/engine';
 import { newPoint, Direction, newSize, Point } from '../bmsx/common';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
@@ -9,7 +9,7 @@ import { Input } from '../bmsx/input';
 @insavegame
 class bclass extends Sprite {
     @statedef_builder
-    public static _states(classname: string): cbstd {
+    public static _states(classname: string): cmdef {
         let blarun = (s: sstate, me: bclass) => {
             if (Input.KD_UP) {
                 me.pos.y -= 2;
@@ -40,15 +40,15 @@ class bclass extends Sprite {
             Input.KC_BTN4 && me.state.to('bla');
         };
 
-        return new cbstd(classname, {
+        return new cmdef(classname, {
             machines: {
-                master: new bstd('master', {
+                master: new mdef('master', {
                     states: {
-                        bla: new bssd('bla', {
+                        bla: new sdef('bla', {
                             onrun: blarun,
                             onenter: (_, me: bclass) => { me.imgid = BitmapId.b; },
                         }),
-                        blap: new bssd('blap', {
+                        blap: new sdef('blap', {
                             onrun: blarun,
                             onenter: (_, me: bclass) => { me.imgid = BitmapId.b2; },
                         }),
@@ -112,7 +112,7 @@ var _global = window || global;
 _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: GainNode): void => {
     _model = new _modelclass();
     let _view = new _viewclass(newSize(MSX1ScreenWidth, MSX1ScreenHeight));
-    new Game(rom, _model, _view, null, sndcontext, gainnode);
+    new Game(rom, _model, _view, sndcontext, gainnode);
 
     global.game.start();
     _model.spawn(new bclass(), newPoint(100, 100));

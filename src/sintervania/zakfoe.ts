@@ -3,7 +3,7 @@ import { ItemType } from "./item";
 import { Area, Direction, newArea, newSize } from "../bmsx/common";
 import { BitmapId } from "./resourceids";
 import { Model } from "./gamemodel";
-import { BSTEventType, bssd, model } from "../bmsx/engine";
+import { BSTEventType, sdef, model } from "../bmsx/engine";
 
 type AniType = { i: BitmapId, dy: number; };
 
@@ -56,7 +56,7 @@ export class ZakFoe extends Foe {
 			{ i: BitmapId.ZakFoe1, dy: -1 },
 		];
 		state0.nudges2move = 2;
-		let state0handler = (s: bssd, type: BSTEventType) => {
+		let state0handler = (s: sdef, type: BSTEventType) => {
 			switch (type) {
 				case BSTEventType.Run:
 					++s.nudges;
@@ -94,7 +94,7 @@ export class ZakFoe extends Foe {
 
 		let state1 = this.add(1);
 		state1.nudges2move = 8;
-		let state1handler = (s: bssd, type: BSTEventType) => {
+		let state1handler = (s: sdef, type: BSTEventType) => {
 			switch (type) {
 				case BSTEventType.Run:
 					++s.nudges;

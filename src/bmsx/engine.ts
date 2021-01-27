@@ -1,28 +1,20 @@
-﻿import { DrawImgFlags, BaseView } from "./view";
+﻿import { DrawImgFlags, BaseView, paintSprite } from "./view";
 import { SM } from "./soundmaster";
 import { Input } from "./input";
 import { RomLoadResult } from "./rompack";
 import { MSX2ScreenWidth, MSX2ScreenHeight, TileSize } from "./msx";
 import { Point, Area, moveArea, Size, Direction, mod } from "./common";
-import { BaseModelOld } from './basemodel_old';
-import { BaseControllerOld } from './basecontroller_old';
 import assert = require("assert");
 
 declare global {
     namespace NodeJS {
         interface Global {
             game: Game;
-            model: BaseModel | BaseModelOld;
-            controller: BaseControllerOld;
+            model: BaseModel;
             view: BaseView;
         }
     }
 }
-
-// export let game: Game;
-// export let model: BaseModel | BaseModelOld;
-// export let controller: BaseControllerOld;
-// export let view: BaseView;
 
 const fps: number = 50;
 const fpstime: number = 1000 / fps;
@@ -74,8 +66,8 @@ export const enum BSTEventType {
     End = 5,
 }
 
-export type str2bssd = { [key: string]: bssd; };
-export type str2bstd = { [key: string]: bstd; };
+export type str2bssd = { [key: string]: sdef; };
+export type str2bstd = { [key: string]: mdef; };
 export type str2cmstate = { [key: string]: cmstate; };
 export type str2mstate = { [key: string]: mstate; };
 export type str2sstate = { [key: string]: sstate; };
@@ -94,11 +86,11 @@ export class cmstate {
     paused: boolean;
     targetid: string; // This concurrent state machine reflects the (partial) state of the game object with id [targetid]
 
-    public get cmachinedef(): cbstd {
+    public get cmachinedef(): cmdef {
         return MachineDefinitions[this.id];
     }
 
-    public getMachinedef(machineid: string): bstd {
+    public getMachinedef(machineid: string): mdef {
         return MachineDefinitions[this.id].machines[machineid];
     }
 
@@ -162,11 +154,11 @@ export class mstate {
     public get target(): GameObject { return global.model.get(this.targetid); }
     public get current(): sstate { return this.states[this.currentid]; };
 
-    public get machinedef(): bstd {
+    public get machinedef(): mdef {
         return MachineDefinitions[this.cmachineid]?.machines[this.id];
     }
 
-    public get currentStatedef(): bssd {
+    public get currentStatedef(): sdef {
         return MachineDefinitions[this.cmachineid]?.machines[this.id].states[this.currentid];
     }
 
@@ -246,7 +238,7 @@ export class sstate {
     targetid: string; // This state reflects the (partial) state of the game object with id [targetid]
     nudges2move: number; // Number of runs before tapehead moves to next statedata
 
-    public get statedef(): bssd { return MachineDefinitions[this.cmachineid]?.machines[this.machineid].states[this.id]; }
+    public get statedef(): sdef { return MachineDefinitions[this.cmachineid]?.machines[this.machineid].states[this.id]; }
     public get tape(): Tape { return this.statedef.tape; }
     public get current(): any { return (this.tape && this.head < this.tape.length) ? this.tape[this.head] : undefined; };
     public get atEnd(): boolean { return !this.tape || this.head >= this.tape.length - 1; }
@@ -325,13 +317,13 @@ export class sstate {
     }
 }
 
-export class bssd {
+export class sdef {
     public id: string;
-    public parent: bstd;
+    public parent: mdef;
     public tape: Tape;
     public nudges2move: number; // Number of runs before tapehead moves to next statedata
 
-    public constructor(_id: string = '_', _partialdef?: Partial<bssd>) {
+    public constructor(_id: string = '_', _partialdef?: Partial<sdef>) {
         this.id = _id;
         this.nudges2move ??= 1;
         _partialdef && Object.assign(this, _partialdef);
@@ -355,26 +347,26 @@ export class bssd {
     }
 }
 
-export class bstd {
+export class mdef {
     public id: string;
     public states: str2bssd;
-    public getStateDef(s_id: string): bssd { return this.states[s_id]; }
+    public getStateDef(s_id: string): sdef { return this.states[s_id]; }
 
-    constructor(id?: string, _partialdef?: Partial<bstd>) {
+    constructor(id?: string, _partialdef?: Partial<mdef>) {
         this.id = id ?? DEFAULT_BST_ID;
         this.states ??= {};
         _partialdef && Object.assign(this, _partialdef);
     }
 
-    public create(id: string): bssd {
+    public create(id: string): sdef {
         if (this.states[id]) throw new Error(`State ${id} already exists for state machine!`);
-        let result = new bssd(id);
+        let result = new sdef(id);
         this.states[id] = result;
         result.parent = this;
         return result;
     }
 
-    public add(...states: bssd[]): void {
+    public add(...states: sdef[]): void {
         for (let state of states) {
             if (!state.id) throw new Error(`State is missing an id, while attempting to add it to this bst!`);
             if (this.states[state.id]) throw new Error(`State ${state.id} already exists for state machine!`);
@@ -383,7 +375,7 @@ export class bstd {
         }
     }
 
-    public append(_state: bssd, _id: string): void {
+    public append(_state: sdef, _id: string): void {
         this.states[_id] = _state;
     }
 
@@ -392,55 +384,55 @@ export class bstd {
     }
 }
 
-export class cbstd {
+export class cmdef {
     public id: string;
     public machines: str2bstd;
     public savedMachines: str2bstd;
 
-    constructor(id: string, _partialdef?: Partial<cbstd>) {
+    constructor(id: string, _partialdef?: Partial<cmdef>) {
         this.id = id;
         this.machines = {};
         _partialdef && Object.assign(this, _partialdef);
         assert(this.id, `${this.constructor.name}.id should be defined!`);
     }
 
-    public getBst(machine_id: string): bstd {
+    public getBst(machine_id: string): mdef {
         return this.machines[machine_id];
     }
 
-    public addBst(machine_id?: string): bstd {
+    public addBst(machine_id?: string): mdef {
         let m_id = machine_id ?? DEFAULT_BST_ID;
-        let result = new bstd(m_id);
+        let result = new mdef(m_id);
         this.machines[m_id] = result;
 
         return result;
     }
 
-    public removeBst(machine_id: string): bstd {
+    public removeBst(machine_id: string): mdef {
         let result = this.machines[machine_id];
         delete this.machines[machine_id];
         this.machines[machine_id] = undefined;
         return result;
     }
 
-    public createState(state_id: string, machine_id: string = DEFAULT_BST_ID): bssd {
+    public createState(state_id: string, machine_id: string = DEFAULT_BST_ID): sdef {
         return this.machines[machine_id].create(state_id);
     }
 
-    public add(...states: bssd[]): void {
+    public add(...states: sdef[]): void {
         this.addTo(DEFAULT_BST_ID, ...states);
     }
 
-    public addTo(machine_id: string = DEFAULT_BST_ID, ...states: bssd[]): void {
+    public addTo(machine_id: string = DEFAULT_BST_ID, ...states: sdef[]): void {
         !this.machines[machine_id] && this.addBst(machine_id);
         this.machines[machine_id].add(...states);
     }
 
-    public appendBst(machine_def: bstd): void {
+    public appendBst(machine_def: mdef): void {
         this.machines[machine_def.id] = machine_def;
     }
 
-    public appendState(_state: bssd, _id: string, machine_id: string = DEFAULT_BST_ID): void {
+    public appendState(_state: sdef, _id: string, machine_id: string = DEFAULT_BST_ID): void {
         this.machines[machine_id].append(_state, _id);
     }
 
@@ -455,8 +447,8 @@ export class Savegame {
     objects: GameObject[];
 }
 
-var MachineDefinitions: { [key: string]: cbstd; };
-var MachineDefinitionBuilders: { [key: string]: (classname: string) => cbstd; };
+var MachineDefinitions: { [key: string]: cmdef; };
+var MachineDefinitionBuilders: { [key: string]: (classname: string) => cmdef; };
 export type id2objectType = { [key: string]: GameObject; };
 const id2obj = Symbol('id2object');
 export abstract class BaseModel {
@@ -467,15 +459,15 @@ export abstract class BaseModel {
         return this[id2obj][id] !== undefined;
     }
 
-    public static getCMachinedef(cmachineid: string): cbstd {
+    public static getCMachinedef(cmachineid: string): cmdef {
         return MachineDefinitions[cmachineid];
     }
 
-    public static getMachinedef(cmachineid: string, machineid: string): bstd {
+    public static getMachinedef(cmachineid: string, machineid: string): mdef {
         return MachineDefinitions[cmachineid]?.machines[machineid];
     }
 
-    public static getMachineStatedef(cmachineid: string, machineid: string, stateid: string): bssd {
+    public static getMachineStatedef(cmachineid: string, machineid: string, stateid: string): sdef {
         return MachineDefinitions[cmachineid]?.machines[machineid].states[stateid];
     }
 
@@ -654,13 +646,12 @@ export class Game {
     wasupdated: boolean;
     public rom: RomLoadResult;
 
-    constructor(_rom: RomLoadResult, _model: BaseModel | BaseModelOld, _view: BaseView, _controller: BaseControllerOld | null, sndcontext: AudioContext, gainnode: GainNode) {
+    constructor(_rom: RomLoadResult, _model: BaseModel, _view: BaseView, sndcontext: AudioContext, gainnode: GainNode) {
         global['game'] = this;
         this.rom = _rom;
 
         global['model'] = _model;
         global['view'] = _view;
-        global['controller'] = _controller;
 
         BaseView.images = _rom.images;
         global.view.init();
@@ -688,8 +679,7 @@ export class Game {
     }
 
     public update(elapsedMs: number): void {
-        BStopwatch.updateTimers(elapsedMs);
-        global.model.run(elapsedMs);
+        global.model.run();
     }
 
     public run(tFrame?: number): void {
@@ -799,7 +789,7 @@ export class GameObject {
     public onspawn?(spawningPos?: Point): void;
     public ondispose?: () => void;
 
-    public paint?(offset?: Point): void;
+    public paint?: (offset?: Point) => void;
     public postpaint?(offset?: Point): void; // Post-processing such as lighting effects or the characters of an ASCII-buffer in case of an ASCII-sprite
     public onloaded?: () => void;
 
@@ -971,30 +961,14 @@ export abstract class Sprite extends GameObject {
         if (spawningPos) {
             [this.pos.x, this.pos.y] = [spawningPos.x, spawningPos.y];
         }
-    };
+    }
 
     spawn(spawningPos: Point = null): this {
         global.model.spawn(this, spawningPos);
         return this; // Voor chaining
     }
 
-    paint(offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }): void {
-        let options: number = this.flippedH ? DrawImgFlags.HFLIP : 0;
-        options |= (this.flippedV ? DrawImgFlags.VFLIP : 0);
-        let dx = offset?.x || 0;
-        let dy = offset?.y || 0;
-
-        if (colorize) {
-            global.view.drawColoredBitmap(this.imgid, this.pos.x + dx, this.pos.y + dy, options, colorize.r, colorize.g, colorize.b, colorize.a);
-        }
-        else {
-            global.view.drawImg(this.imgid, this.pos.x + dx, this.pos.y + dy, options);
-        }
-    }
-
-    postpaint(offset?: Point): void {
-    }
-
+    paint = paintSprite;
 }
 
 // https://stackoverflow.com/questions/8111446/turning-json-strings-into-objects-with-methods
@@ -1048,105 +1022,4 @@ export function insavegame<TFunction extends Function>(target: any, toJSON?: () 
     Reviver.constructors ??= {};
     Reviver.constructors[target.name] = target;
     return target;
-}
-
-export class BStopwatch {
-    public pauseDuringMenu: boolean = true;
-    public pauseAtFocusLoss: boolean = true;
-    public running: boolean = false;
-    public elapsedMilliseconds: number;
-    public elapsedFrames: number;
-    private static watchesThatHaveBeenStopped: BStopwatch[] = [];
-    private static watchesThatHaveBeenStoppedAtFocusLoss: BStopwatch[] = [];
-
-    /**
-     * This list is used to pause all running timers for when the game is paused, or the game loses focus, etc.
-     */
-    public static Watches: Array<BStopwatch> = [];
-
-    public static createWatch(): BStopwatch {
-        let result = new BStopwatch();
-        BStopwatch.Watches.push(result);
-        return result;
-    }
-
-    public static addWatch(watch: BStopwatch): void {
-        if (BStopwatch.Watches.indexOf(watch) > -1)
-            BStopwatch.Watches.push(watch);
-    }
-
-    public static removeWatch(watch: BStopwatch): void {
-        let index = BStopwatch.Watches.indexOf(watch);
-        if (index > -1) {
-            delete BStopwatch.Watches[index];
-            BStopwatch.Watches.splice(index, 1);
-        }
-    }
-
-    public static updateTimers(elapsedMs: number): void {
-        BStopwatch.Watches.forEach(s => { s.updateTime(elapsedMs); });
-    }
-
-    public static pauseAllRunningWatches(pauseCausedByMenu?: boolean): void {
-        BStopwatch.Watches.filter(s => !s.running).forEach(s => { s.running = false; });
-        //this.watchesThatHaveBeenStopped.Clear();
-        BStopwatch.Watches.forEach(w => {
-            if (w.running && (!pauseCausedByMenu || w.pauseDuringMenu)) {
-                w.stop();
-                BStopwatch.watchesThatHaveBeenStopped.push(w);
-            }
-        });
-    }
-
-    public static resumeAllPausedWatches(): void {
-        BStopwatch.watchesThatHaveBeenStopped.filter(s => !s.running).forEach(s => { s.running = false; });
-    }
-
-    private static pauseWatchesOnFocusLoss(): void {
-        BStopwatch.Watches.forEach(w => {
-            if (w.running && w.pauseAtFocusLoss) {
-                w.stop();
-                this.watchesThatHaveBeenStoppedAtFocusLoss.push(w);
-            }
-        });
-    }
-
-    private static resumeAllPausedWatchesOnFocus(): void {
-        this.watchesThatHaveBeenStoppedAtFocusLoss.forEach(w => w.start());
-        this.watchesThatHaveBeenStoppedAtFocusLoss.length = 0;
-    }
-
-    constructor() {
-        this.elapsedMilliseconds = 0;
-        this.elapsedFrames = 0;
-    }
-
-    public start(): void {
-        this.running = true;
-    }
-
-    public stop(): void {
-        this.running = false;
-    }
-
-    public restart(): void {
-        this.reset();
-        this.running = true;
-    }
-
-    public reset(): void {
-        this.elapsedMilliseconds = 0;
-        this.elapsedFrames = 0;
-    }
-
-    public updateTime(elapsedMs: number): void {
-        if (!this.running) return;
-        this.elapsedMilliseconds += elapsedMs;
-        ++this.elapsedFrames;
-    }
-}
-
-export interface anidata<A extends any | null | {}> {
-    delta: number;
-    data: A;
 }

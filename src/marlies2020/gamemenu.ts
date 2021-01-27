@@ -4,7 +4,7 @@ import { TextWriter } from "./textwriter";
 import { Size, Point } from "../bmsx/common";
 import { SM } from "../bmsx/soundmaster";
 import { SlotExists, LoadGame } from "../bmsx/gamepersistor";
-import { GameOptions as GO, GameObject, bstd, model, controller, cbstd } from '../bmsx/engine';
+import { GameOptions as GO, GameObject, mdef, model, controller, cmdef } from '../bmsx/engine';
 import { Constants } from "../bmsx/engine";
 import { newSize, setPoint } from "../bmsx/common";
 import { view, game } from "../bmsx/engine";
@@ -41,7 +41,7 @@ export const enum MenuItem {
     OptionsFromMainMenu
 }
 
-export class GameMenu extends cbstd implements GameObject {
+export class GameMenu extends cmdef implements GameObject {
     private static menuPosX: number = 24;
     private static menuPosY: number = 24;
     private static menuEndX: number = 240;

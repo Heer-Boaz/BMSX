@@ -145,20 +145,37 @@ export class Input {
             console.info("Gamepad connected at index " + gp.index + ": " + gp.id + ". It has " + gp.buttons.length + " buttons and " + gp.axes.length + " axes.");
         });
 
+        let preventActionAndPropagation = (e: Event): boolean => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.returnValue = false; // https://javascriptio.com/view/5386822/prevent-text-selection-on-tap-and-hold-on-ios-13-mobile-safari
+            return false
+        }
+
         window.addEventListener('keydown', e => { preventDefaultEventAction(e, e.code); keydown(e.code); }, false);
         window.addEventListener('keyup', e => { preventDefaultEventAction(e, e.code); keyup(e.code); }, false);
         window.addEventListener('blur', blur, false);
 
-        document.addEventListener('touchmove', e => { e.preventDefault(); e.stopPropagation(); handleTouchStuff(e); });
-        document.addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); handleTouchStuff(e); });
-        document.addEventListener('touchend', e => { e.preventDefault(); e.stopPropagation(); handleTouchStuff(e); });
-        // iOS -- https://stackoverflow.com/questions/58159526/draggable-element-in-iframe-on-mobile-is-buggy
-        document.addEventListener('touchforcechange', e => {
-            e.preventDefault();
-        });
-        window.addEventListener('touchforcechange', e => {
-            e.preventDefault();
-        });
+        document.addEventListener('touchmove', e => { preventActionAndPropagation(e); handleTouchStuff(e); return false; }, false);
+        document.addEventListener('touchstart', e => { preventActionAndPropagation(e); handleTouchStuff(e); return false; }, false);
+        document.addEventListener('touchend', e => { preventActionAndPropagation(e); handleTouchStuff(e); return false; }, false);
+
+        document.addEventListener('webkitmouseforcewillbegin', e => preventActionAndPropagation(e), false);
+        window.addEventListener('webkitmouseforcewillbegin', e => preventActionAndPropagation(e), false);
+        document.addEventListener('webkitmouseforcedown', e => preventActionAndPropagation(e), false);
+        window.addEventListener('webkitmouseforcedown', e => preventActionAndPropagation(e), false);
+        document.addEventListener('contextmenu', e => preventActionAndPropagation(e), false);
+        window.addEventListener('contextmenu', e => preventActionAndPropagation(e), false);
+        document.addEventListener('touchforcechange', e => preventActionAndPropagation(e), false);// iOS -- https://stackoverflow.com/questions/58159526/draggable-element-in-iframe-on-mobile-is-buggy && iOS -- https://stackoverflow.com/questions/50980876/can-you-prevent-3d-touch-on-an-img-but-not-tap-and-hold-to-save
+        window.addEventListener('touchforcechange', e => preventActionAndPropagation(e), false);
+        document.addEventListener('dragstart', e => preventActionAndPropagation(e), false);
+        window.addEventListener('dragstart', e => preventActionAndPropagation(e), false);
+        document.addEventListener('dragover', e => preventActionAndPropagation(e), false);
+        window.addEventListener('dragover', e => preventActionAndPropagation(e), false);
+        document.addEventListener('pointerdown', e => preventActionAndPropagation(e), false);
+        window.addEventListener('pointerdown', e => preventActionAndPropagation(e), false);
+        document.addEventListener('pointermove', e => preventActionAndPropagation(e), false);
+        window.addEventListener('pointermove', e => preventActionAndPropagation(e), false);
     }
 
     public static pollGamepadInput(): void {

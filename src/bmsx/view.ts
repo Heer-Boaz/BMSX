@@ -176,3 +176,17 @@ export abstract class BaseView {
         return `rgb(${c.r},${c.g},${c.b},${c.a || 1})`;
     }
 }
+
+export function paintSprite(offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }): void {
+    let options: number = this.flippedH ? DrawImgFlags.HFLIP : 0;
+    options |= (this.flippedV ? DrawImgFlags.VFLIP : 0);
+    let dx = offset?.x || 0;
+    let dy = offset?.y || 0;
+
+    if (colorize) {
+        global.view.drawColoredBitmap(this.imgid, this.pos.x + dx, this.pos.y + dy, options, colorize.r, colorize.g, colorize.b, colorize.a);
+    }
+    else {
+        global.view.drawImg(this.imgid, this.pos.x + dx, this.pos.y + dy, options);
+    }
+}

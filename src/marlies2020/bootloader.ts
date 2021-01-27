@@ -1,11 +1,12 @@
 import { RomLoadResult } from '../bmsx/rompack';
-import { Game, BaseModel, GameObject, Sprite, BSTEventType, bssd, bstd, leavingScreenHandler_prohibit as prohibitLeavingScreenHandler, statedef_builder, cbstd, sstate, cmstate } from '../bmsx/engine';
+import { Game, BaseModel, GameObject, Sprite, BSTEventType, sdef, mdef, leavingScreenHandler_prohibit as prohibitLeavingScreenHandler, statedef_builder, cmdef, sstate, cmstate } from '../bmsx/engine';
 import { setPoint, newPoint, Direction, newSize, newArea, Point, randomInt, copyPoint, Opposite } from '../bmsx/common';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
 import { Input } from '../bmsx/input';
 import { TextWriter } from './textwriter';
+import { paintSprite } from '../bmsx/view';
 
 const COLUMN_X = <Array<number>>[36, 48, 80, 160, 200];
 const START_COLUMN = 1;
@@ -29,15 +30,15 @@ class modelclass extends BaseModel {
     public pitasOpBord: number;
 
     @statedef_builder
-    public static buildModelStates(classname: string): cbstd {
-        return new cbstd(classname, {
+    public static buildModelStates(classname: string): cmdef {
+        return new cmdef(classname, {
             machines: {
-                master: new bstd('default', {
+                master: new mdef('default', {
                     states: {
-                       default: new bssd('default', {
+                       default: new sdef('default', {
                            onrun: BaseModel.defaultrun,
                        }),
-                       'hoera!': new bssd('hoera!', {
+                       'hoera!': new sdef('hoera!', {
                            onenter() {
                                global.model.clear();
                                global.model.spawn(new hoeraStuff());
@@ -145,12 +146,12 @@ class modelclass extends BaseModel {
 
 class brandblusser extends Sprite {
     @statedef_builder
-    public static bouw(classname: string): cbstd {
-        return new cbstd(classname, {
+    public static bouw(classname: string): cmdef {
+        return new cmdef(classname, {
             machines: {
-                master: new bstd('master', {
+                master: new mdef('master', {
                     states: {
-                        bla: new bssd('bla', {
+                        bla: new sdef('bla', {
                             nudges2move: 20,
                             onrun: (s: sstate, ik: brandblusser): void => {
                                 setPoint(ik.pos, _model.marlies.pos.x, _model.marlies.pos.y + 12);
@@ -208,8 +209,8 @@ class hoeraStuff extends Sprite {
         this.imgid = BitmapId.Sint;
     }
 
-    paint(offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }): void {
-        super.paint(offset, colorize);
+    paint = (offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }): void => {
+        paintSprite(offset, colorize);
         TextWriter.drawText(24, 192, "Redelijk gedaan, Marlies!");
     }
 };
@@ -298,11 +299,11 @@ class bord extends Sprite implements Bord {
 class vuur extends Sprite {
     @statedef_builder
     public static bouw(classname: string) {
-        return new cbstd(classname, {
+        return new cmdef(classname, {
             machines: {
-                master: new bstd('master', {
+                master: new mdef('master', {
                     states: {
-                        brand: new bssd('brand', {
+                        brand: new sdef('brand', {
                             tape: <Array<BitmapId>>[
                                 BitmapId.Vuur1,
                                 BitmapId.Vuur2,
@@ -360,12 +361,12 @@ class vuur extends Sprite {
 
 class corona extends Sprite {
     @statedef_builder
-    public static bouw(classname: string): cbstd {
-        return new cbstd(classname, {
+    public static bouw(classname: string): cmdef {
+        return new cmdef(classname, {
             machines: {
-                master: new bstd('master', {
+                master: new mdef('master', {
                     states: {
-                        skulk: new bssd('skulk', {
+                        skulk: new sdef('skulk', {
                             nudges2move: 4,
                             tape: <Array<BitmapId>>[
                                 BitmapId.Corona1,
@@ -396,7 +397,7 @@ class corona extends Sprite {
                             },
                             onnext(s: sstate, ik: corona) { ik.imgid = s.current; },
                         }),
-                        sterf: new bssd('sterf', {
+                        sterf: new sdef('sterf', {
                             nudges2move: 4,
                             tape: <Array<BitmapId>>[
                                 BitmapId.Corona4,
@@ -460,10 +461,10 @@ class corona extends Sprite {
         this.state.to('skulk');
     }
 }
-
+// http://livetv.sx/enx/eventinfo/1017596_ajax_psv_eindhoven/#_&h=AT3-qpCc0X_J3DgIWX3xpJ-9OVzV4caLwSUuTtTWvRBn84rp63llZo-kOgMY2P8mxbe65OLcencMjq39IwqJxzrsxLI3VpXOIBg1W4_ujbB827fjeYTHKsnPxBp_CJ_QqKL7_Ku6a9XW-372RIE
 class speler extends Sprite {
     @statedef_builder
-    public static bouw(classname: string): cbstd {
+    public static bouw(classname: string): cmdef {
         let shared_switch_run = (_: sstate, ik: speler) => {
             if (Input.KC_BTN1 || Input.KC_SPACE) ik.zetBoelInDeHens();
             let switchToOld = (): void => {
@@ -498,7 +499,7 @@ class speler extends Sprite {
             ik.doeCoronaTest();
         };
 
-        let down_up_state_def: Partial<bssd> = {
+        let down_up_state_def: Partial<sdef> = {
             nudges2move: 8,
             onenter: (s: sstate, ik: speler): void => (s.reset(), ik.imgid = s.current),
             onrun: (s: sstate, ik: speler): void => { ++s.nudges; },
@@ -506,11 +507,11 @@ class speler extends Sprite {
             onnext: (s: sstate, ik: speler): void => ik.imgid = s.current,
         };
 
-        return new cbstd(classname, {
+        return new cmdef(classname, {
             machines: {
-                master: new bstd('master', {
+                master: new mdef('master', {
                     states: {
-                        walk: new bssd('walk', {
+                        walk: new sdef('walk', {
                             onrun: (_, ik: speler): void => {
                                 if (Input.KC_LEFT) {
                                     if (ik.canSwitchLeft) {
@@ -557,19 +558,19 @@ class speler extends Sprite {
                                 ik.doeCoronaTest();
                             }
                         }),
-                        switchleft: new bssd('switchleft', {
+                        switchleft: new sdef('switchleft', {
                             onenter: (_, ik: speler) => ik.state.to('columnswitch', 'anistate'),
                             onrun: shared_switch_run,
                         }),
-                        switchright: new bssd('switchright', {
+                        switchright: new sdef('switchright', {
                             onenter: (_, ik: speler) => ik.state.to('columnswitch', 'anistate'),
                             onrun: shared_switch_run,
                         }),
-                        urgh: new bssd('urgh', {
+                        urgh: new sdef('urgh', {
                             onenter: (_, ik: speler) => ik.state.to('urgh', 'anistate')
                             // Lelijk, maar animatie-state zorgt voor terugkeer naar previous state
                         }),
-                        win: new bssd('win', {
+                        win: new sdef('win', {
                             nudges2move: 300,
                             onenter: (_, ik: speler) => ik.state.to('win', 'anistate'),
                             onrun: (s: sstate) => (++s.nudges, _model.objects.filter(o => (<any>o).isEng).forEach(o => o.disposeFlag = true)),
@@ -577,9 +578,9 @@ class speler extends Sprite {
                         }),
                     }
                 }),
-                anistate: new bstd('anistate', {
+                anistate: new mdef('anistate', {
                     states: {
-                        down: new bssd('down', {
+                        down: new sdef('down', {
                             ...down_up_state_def, ...{
                                 tape: <Array<BitmapId>>[
                                     BitmapId.p1,
@@ -590,7 +591,7 @@ class speler extends Sprite {
                                 ]
                             }
                         }),
-                        up: new bssd('up', {
+                        up: new sdef('up', {
                             ...down_up_state_def, ...{
                                 tape: <Array<BitmapId>>[
                                     BitmapId.p4,
@@ -601,7 +602,7 @@ class speler extends Sprite {
                                 ]
                             }
                         }),
-                        urgh: new bssd('urgh', {
+                        urgh: new sdef('urgh', {
                             tape: <Array<BitmapId>>[
                                 BitmapId.p8,
                                 BitmapId.p9,
@@ -645,7 +646,7 @@ class speler extends Sprite {
                                 ik.imgid = s.current;
                             },
                         }),
-                        columnswitch: new bssd('columnswitch', {
+                        columnswitch: new sdef('columnswitch', {
                             onenter(_, ik: speler): void {
                                 ik.imgid = BitmapId.p7;
                                 if (ik.state.getCurrentId() === 'switchright')
@@ -655,7 +656,7 @@ class speler extends Sprite {
                                 ik.flippedH = false;
                             },
                         }),
-                        win: new bssd('win', {
+                        win: new sdef('win', {
                             onenter: (_, ik: speler) => ik.imgid = BitmapId.p10
                         }),
                     }
@@ -758,12 +759,12 @@ class speler extends Sprite {
 
 class keuken extends Sprite {
     @statedef_builder
-    public static bouw(classname: string): cbstd {
-        return new cbstd(classname, {
+    public static bouw(classname: string): cmdef {
+        return new cmdef(classname, {
             machines: {
-                master: new bstd('master', {
+                master: new mdef('master', {
                     states: {
-                        wees_een_keuken: new bssd('wees_een_keuken', {
+                        wees_een_keuken: new sdef('wees_een_keuken', {
                             nudges2move: TIME_CORONA_SPAWN,
                             onenter(s: sstate) {
                                 s.reset();
@@ -810,7 +811,7 @@ var _global = window || global;
 _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: GainNode): void => {
     let _view = new viewclass(newSize(MSX1ScreenWidth, MSX1ScreenHeight));
     _model = new modelclass();
-    new Game(rom, _model, _view, null, sndcontext, gainnode);
+    new Game(rom, _model, _view, sndcontext, gainnode);
 
     global.game.start();
     let model = global.model;
