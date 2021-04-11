@@ -1,4 +1,4 @@
-import { Size, Point } from "./common";
+import { Size, Point } from "./engine";
 import { BaseView, Color, DrawImgFlags } from './view';
 
 var bvec = {

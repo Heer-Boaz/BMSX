@@ -1,6 +1,5 @@
 import { RomLoadResult } from '../bmsx/rompack';
-import { Game, BaseModel, GameObject, Sprite, BSTEventType, sdef, mdef, leavingScreenHandler_prohibit as prohibitLeavingScreenHandler, statedef_builder, cmdef, sstate, cmstate } from '../bmsx/engine';
-import { setPoint, newPoint, Direction, newSize, newArea, Point, randomInt, copyPoint, Opposite } from '../bmsx/common';
+import { Game, BaseModel, GameObject, Sprite, BSTEventType, sdef, mdef, leavingScreenHandler_prohibit as prohibitLeavingScreenHandler, statedef_builder, cmdef, sstate, cmstate, setPoint, newPoint, Direction, newSize, newArea, Point, randomInt, copyPoint, getOppositeDirection } from '../bmsx/engine';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
@@ -437,7 +436,7 @@ class corona extends Sprite {
     private onLeavingScreenHandler(ik: GameObject, dir: Direction, old_x_or_y: number) {
         prohibitLeavingScreenHandler(ik, dir, old_x_or_y);
         (ik as corona).moveLeft = randomInt(MIN_CORONA_MOVE, MAX_CORONA_MOVE);
-        (ik as corona).direction = Opposite(dir);
+        (ik as corona).direction = getOppositeDirection(dir);
     }
 
     private setRandomMove(): void {

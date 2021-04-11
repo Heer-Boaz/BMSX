@@ -1,5 +1,4 @@
-﻿// import { global.view, model } from "./engine";
-import { Size, Point } from "./common";
+﻿import { Size, Point } from "./engine";
 
 export interface Color {
     r: number;

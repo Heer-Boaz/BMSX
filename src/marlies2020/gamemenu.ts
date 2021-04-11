@@ -1,12 +1,9 @@
 import { AudioId, BitmapId } from "./resourceids";
-import { Direction } from "../bmsx/common";
 import { TextWriter } from "./textwriter";
-import { Size, Point } from "../bmsx/common";
 import { SM } from "../bmsx/soundmaster";
 import { SlotExists, LoadGame } from "../bmsx/gamepersistor";
-import { GameOptions as GO, GameObject, mdef, model, controller, cmdef } from '../bmsx/engine';
+import { GameOptions as GO, GameObject, mdef, model, controller, cmdef, Direction, Size, Point, newSize, setPoint } from '../bmsx/engine';
 import { Constants } from "../bmsx/engine";
-import { newSize, setPoint } from "../bmsx/common";
 import { view, game } from "../bmsx/engine";
 import { Input } from "../bmsx/input";
 import { Msx1ExtColors } from "../bmsx/msx";

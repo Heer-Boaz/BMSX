@@ -1,4 +1,4 @@
-import { Point } from "./common";
+import { Point } from "./engine";
 import { Color } from "./view";
 
 export const TileSize: number = 16;
