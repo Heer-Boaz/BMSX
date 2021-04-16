@@ -195,8 +195,11 @@ async function buildAndBundleRomSource(outfile: string, bootloader_path: string)
 					files: [bootloader_path],
 				})
 				.bundle()
+				.on('error', e => {
+					stopRotator();
+					reject(e);
+				})
 				.pipe(writeOutput)
-				.on('error', e => { stopRotator(); reject(e); });
 			writeOutput.on('finish', () => {
 				stopRotator();
 				appendLogEntry(`${_colors.grey('[Donut]')}\n`);
@@ -204,6 +207,7 @@ async function buildAndBundleRomSource(outfile: string, bootloader_path: string)
 			});
 			writeOutput.on('error', e => {
 				stopRotator();
+				appendLogEntry(`${_colors.red('[Urgh]')}\n`);
 				reject(e);
 			});
 		} catch (err) {
@@ -762,6 +766,8 @@ function cropAtlas(romResources: Array<RomResource>): HTMLCanvasElement {
 	return result;
 }
 
+let outputError = (e: any) => writeOut(`\n[GEFAALD]\nEr ging iets niet goed:\n${e?.message ?? e ?? 'Geen error message'};\n${e?.stack ?? 'Geen stacktrace.'}\n`, 'error');
+
 try {
 	term.terminal.clear();
 	writeOut(_colors.brightGreen("┏————————————————————————————————————————————————————————————————————————————————┓\n"));
@@ -890,12 +896,12 @@ try {
 				writeOut(`\n${_colors.brightWhite.bold('[ALLES DONUT]')}\n`);
 			})
 			.catch(e => {
+				outputError(e);
 				progress.stop();
-				writeOut(`\n[GEFAALD]\nEr ging iets niet goed: "${e?.message ?? e ?? 'Geen error message'}; ${e?.stack ?? '\ben geen stacktrace beschikbaar :-(!'}\n`, 'error');
 				process.exit(-1);
 			});
 	}
 } catch (e) {
-	writeOut(`\n[GEFAALD]\nEr ging iets niet goed: ${e?.message ?? e ?? 'Geen error message'}; ${e?.stack ?? '\ben geen stacktrace'}\n`, 'error');
+	outputError(e);
 	process.exit(-1);
 }

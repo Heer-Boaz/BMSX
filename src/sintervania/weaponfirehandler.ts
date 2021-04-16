@@ -4,7 +4,7 @@ import { SM } from "../bmsx/soundmaster";
 import { AudioId } from "./resourceids";
 import { waitDuration, copyPoint, Direction, Point } from "../bmsx/common";
 import { Cross } from "./cross";
-import { model } from '../bmsx/engine';
+import { model } from '../bmsx/bmsx';
 
 export class WeaponFireHandler {
     private static readonly msCrossCooldown: number = 20;

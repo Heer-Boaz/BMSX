@@ -1,4 +1,4 @@
-import { Sprite, model } from "../bmsx/engine";
+import { Sprite, model } from "../bmsx/bmsx";
 import { Animation } from "../bmsx/animation"
 import { AudioId, BitmapId } from "./resourceids";
 import { GameConstants } from "./gameconstants";

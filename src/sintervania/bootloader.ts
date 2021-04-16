@@ -1,5 +1,5 @@
 import { RomLoadResult } from '../bmsx/rompack';
-import { Game, game, model, controller } from '../bmsx/engine';
+import { Game, game, model, controller } from '../bmsx/bmsx';
 import { GameConstants } from './gameconstants';
 import { Model, Chapter } from './gamemodel';
 import { Controller } from './gamecontroller';

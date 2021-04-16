@@ -1,4 +1,4 @@
-import { Sprite, model, controller } from "../bmsx/engine";
+import { Sprite, model, controller } from "../bmsx/bmsx";
 import { Model, SecWeaponType, BagWeapon } from "./gamemodel";
 import { Item } from "./item";
 import { BitmapId } from "./resourceids";

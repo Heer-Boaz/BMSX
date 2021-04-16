@@ -1,4 +1,4 @@
-import { BStopwatch, model } from "../bmsx/engine";
+import { BStopwatch, model } from "../bmsx/bmsx";
 import { Direction } from "../bmsx/common";
 import { Animation, AniData } from "../bmsx/animation";
 import { Foe } from "./foe";

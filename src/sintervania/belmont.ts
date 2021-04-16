@@ -1,4 +1,4 @@
-import { BStopwatch, Sprite, model, controller } from "../bmsx/engine";
+import { BStopwatch, Sprite, model, controller } from "../bmsx/bmsx";
 import { Animation } from "../bmsx/animation";
 import { BitmapId, AudioId } from './resourceids';
 import { Direction, Point, newPoint, Area, newArea, copyPoint, waitDuration, addPoints, newSize, mod } from '../bmsx/common';

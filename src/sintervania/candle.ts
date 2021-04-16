@@ -1,5 +1,5 @@
 import { Foe } from "./foe";
-import { BStopwatch } from "../bmsx/engine";
+import { BStopwatch } from "../bmsx/bmsx";
 import { ItemType } from "./item";
 import { Animation } from "../bmsx/animation"
 import { BitmapId } from "./resourceids";

@@ -3,7 +3,7 @@ import { RoeState } from "./belmont";
 import { Model } from "./gamemodel";
 import { BitmapId } from "./resourceids";
 import { Area, Point, Direction, newArea, moveArea } from "../bmsx/common";
-import { model } from '../bmsx/engine';
+import { model } from '../bmsx/bmsx';
 
 export class TriRoe extends PlayerProjectile {
 	private static hitareas: Map<number, Area> = new Map<number, Area>([

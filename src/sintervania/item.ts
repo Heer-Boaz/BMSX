@@ -1,4 +1,4 @@
-import { Sprite, model, controller } from "../bmsx/engine";
+import { Sprite, model, controller } from "../bmsx/bmsx";
 import { newArea, area2size, moveArea } from "../bmsx/common";
 import { Model } from "./gamemodel";
 import { SM } from "../bmsx/soundmaster";

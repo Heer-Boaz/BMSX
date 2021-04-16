@@ -1,7 +1,7 @@
 import { Animation } from "../bmsx/animation"
 import { Point } from "../bmsx/common";
 import { BitmapId } from "./resourceids";
-import { view, GameObject } from "../bmsx/engine";
+import { view, GameObject } from "../bmsx/bmsx";
 
 export const enum State {
 	WaitForIt,

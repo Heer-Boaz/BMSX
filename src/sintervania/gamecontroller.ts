@@ -1,4 +1,4 @@
-import { BStopwatch, model } from '../bmsx/engine';
+import { BStopwatch, model } from '../bmsx/bmsx';
 import { BaseControllerOld } from "../bmsx/basecontroller_old";
 import { GameState, GameSubstate, Model } from './gamemodel';
 import { SM } from '../bmsx/soundmaster';

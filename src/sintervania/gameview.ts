@@ -1,7 +1,7 @@
 import { GameConstants as CS } from "./gameconstants"
 import { GameState, GameSubstate, Model } from "./gamemodel";
 import { Point } from "../bmsx/common";
-import { view, model } from "../bmsx/engine";
+import { view, model } from "../bmsx/bmsx";
 import { GLView } from '../bmsx/glview';
 
 export class GameView extends GLView {

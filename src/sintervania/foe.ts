@@ -3,7 +3,7 @@ import { SM } from '../bmsx/soundmaster';
 import { AudioId } from './resourceids';
 import { FoeExplosion } from './foeexplosion';
 import { Model } from './gamemodel';
-import { Sprite, model, GameObject } from '../bmsx/engine';
+import { Sprite, model, GameObject } from '../bmsx/bmsx';
 
 export abstract class Foe extends Sprite {
     public maxHealth: number;

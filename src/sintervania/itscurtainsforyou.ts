@@ -1,7 +1,7 @@
-import { BStopwatch, GameObject, controller } from "../bmsx/engine";
+import { BStopwatch, GameObject, controller } from "../bmsx/bmsx";
 import { TileSize } from "../bmsx/msx"
 import { waitDuration } from "../bmsx/common";
-import { view } from "../bmsx/engine";
+import { view } from "../bmsx/bmsx";
 import { Controller } from "./gamecontroller";
 import { Point } from "../bmsx/common";
 import { BitmapId } from "./resourceids";

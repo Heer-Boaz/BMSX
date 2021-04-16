@@ -1,4 +1,4 @@
-﻿import { Size, Point } from "./engine";
+﻿import { Size, Point } from "./bmsx";
 
 export interface Color {
     r: number;

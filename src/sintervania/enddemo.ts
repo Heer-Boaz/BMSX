@@ -1,7 +1,7 @@
 import { TextWriter } from "./textwriter";
 import { SM } from "../bmsx/soundmaster";
 import { AudioId, BitmapId } from "./resourceids";
-import { view } from "../bmsx/engine";
+import { view } from "../bmsx/bmsx";
 
 // export const enum State {
 //     Sint,

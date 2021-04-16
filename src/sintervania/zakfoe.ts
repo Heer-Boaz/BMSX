@@ -3,7 +3,7 @@ import { ItemType } from "./item";
 import { Area, Direction, newArea, newSize } from "../bmsx/common";
 import { BitmapId } from "./resourceids";
 import { Model } from "./gamemodel";
-import { BSTEventType, sdef, model } from "../bmsx/engine";
+import { BSTEventType, sdef, model } from "../bmsx/bmsx";
 
 type AniType = { i: BitmapId, dy: number; };
 

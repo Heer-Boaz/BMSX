@@ -4,7 +4,7 @@ import { FX } from "./fx";
 import { HeartSmall } from "./heartsmall";
 import { BitmapId } from "./resourceids";
 import { addPoints } from "../bmsx/common";
-import { model } from '../bmsx/engine';
+import { model } from '../bmsx/bmsx';
 
 /*[Serializable]*/
 export class FoeExplosion extends FX {

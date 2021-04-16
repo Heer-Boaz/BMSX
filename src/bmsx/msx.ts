@@ -1,4 +1,4 @@
-import { Point } from "./engine";
+import { Point } from "./bmsx";
 import { Color } from "./view";
 
 export const TileSize: number = 16;

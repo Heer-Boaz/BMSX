@@ -1,7 +1,7 @@
 import { ItemType } from './item';
 import { WeaponType, WeaponItem } from './weaponitem';
 import { Point, Direction } from '../bmsx/common';
-import { BStopwatch, GameObject, view } from '../bmsx/engine';
+import { BStopwatch, GameObject, view } from '../bmsx/bmsx';
 import { BaseModelOld } from "../bmsx/basemodel_old";
 import { Savegame } from '../bmsx/gamepersistor';
 import { Foe } from './foe';

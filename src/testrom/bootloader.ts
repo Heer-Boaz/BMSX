@@ -1,5 +1,5 @@
 import { RomLoadResult } from '../bmsx/rompack';
-import { Game, BaseModel, GameObject, Sprite, insavegame, cmdef, sdef, statedef_builder, sstate, mdef, cmstate, newPoint, Direction, newSize, Point } from '../bmsx/engine';
+import { Game, BaseModel, GameObject, Sprite, insavegame, cmdef, sdef, statedef_builder, sstate, mdef, cmstate, newPoint, Direction, newSize, Point } from '../bmsx/bmsx';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
@@ -72,6 +72,21 @@ const savestring = Symbol('savestring');
 // @insavegame
 class _modelclass extends BaseModel {
     public [savestring]: string;
+
+    @statedef_builder
+    public static buildModelStates(classname: string): cmdef {
+        return new cmdef(classname, {
+            machines: {
+                master: new mdef('default', {
+                    states: {
+                        default: new sdef('default', {
+                            onrun: BaseModel.defaultrun,
+                        }),
+                    }
+                }),
+            }
+        });
+    }
 
     public init(): this {
         this.state = new cmstate(this.constructor.name, '_');

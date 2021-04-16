@@ -3,7 +3,7 @@ import { Item, ItemType } from "./item";
 import { BitmapId } from "./resourceids";
 import { Model } from "./gamemodel";
 import { GameConstants as CS } from "./gameconstants";
-import { view, BStopwatch, model } from "../bmsx/engine";
+import { view, BStopwatch, model } from "../bmsx/bmsx";
 import { waitDuration, setPoint, Point } from "../bmsx/common";
 import { TextWriter } from "./textwriter";
 import { DrawImgFlags } from '../bmsx/view';

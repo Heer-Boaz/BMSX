@@ -1,6 +1,6 @@
 // import { view } from "../bmsx/engine"
 import { BitmapId } from "./resourceids";
-import { GameOptions as GO, Point } from "../bmsx/engine";
+import { GameOptions as GO, Point } from "../bmsx/bmsx";
 import { Color } from '../bmsx/view';
 
 export class TextWriter {

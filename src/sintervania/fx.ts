@@ -1,6 +1,6 @@
-import { Sprite } from "../bmsx/engine";
+import { Sprite } from "../bmsx/bmsx";
 import { Animation } from "../bmsx/animation";
-import { BStopwatch } from '../bmsx/engine';
+import { BStopwatch } from '../bmsx/bmsx';
 
 export class FX extends Sprite {
     protected animation: Animation<number>;
