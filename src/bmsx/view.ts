@@ -1,4 +1,4 @@
-﻿import { Size, Point } from "./bmsx";
+﻿import { Size, Point, Sprite } from "./bmsx";
 
 export interface Color {
     r: number;
@@ -176,7 +176,7 @@ export abstract class BaseView {
     }
 }
 
-export function paintSprite(offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }): void {
+export function paintSprite(this: Sprite, offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }): void {
     let options: number = this.flippedH ? DrawImgFlags.HFLIP : 0;
     options |= (this.flippedV ? DrawImgFlags.VFLIP : 0);
     let dx = offset?.x || 0;

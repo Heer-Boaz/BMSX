@@ -137,7 +137,7 @@ class modelclass extends BaseModel {
         this.ingredientEquipped = null; // Haal inventory leeg
         if (++this.pitasOpBord >= PITAS_OP_BORD_VOOR_WINST) {
             this.marlies.state.to('win');
-            this.where_do(o => (<any>o).isEng, o => o.markForDisposure());
+            this.filter_and_foreach(o => (<any>o).isEng, o => o.markForDisposure());
             // this.objects.filter(o => (<any>o).isEng).forEach(o => o.markForDisposure());
         }
     }
@@ -208,8 +208,8 @@ class hoeraStuff extends Sprite {
         this.imgid = BitmapId.Sint;
     }
 
-    paint = (offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }): void => {
-        paintSprite(offset, colorize);
+    paint = (offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }) => {
+        paintSprite.call(this, offset, colorize); // .call() nodig, anders "this" undefined
         TextWriter.drawText(24, 192, "Redelijk gedaan, Marlies!");
     }
 };

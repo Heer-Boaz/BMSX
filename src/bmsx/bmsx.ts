@@ -780,11 +780,17 @@ export abstract class BaseModel {
         return BaseModel.serializeObj(savegame);
     }
 
+    public filter(predicate: (value: GameObject, index: number, array: GameObject[], thisArg?: any) => unknown): GameObject[] {
+        return this.objects.filter(predicate);
+    }
+
     // https://hackernoon.com/3-javascript-performance-mistakes-you-should-stop-doing-ebf84b9de951
-    public where_do(predicate: (value: GameObject, index: number, array: GameObject[], thisArg?: any) => unknown, callbackfn: (value: GameObject, index: number, array: GameObject[], thisArg?: any) => void): void {
-        let filteredList = this.objects.filter(predicate);
-        for (let i = 0; i < filteredList.length; i++) {
-            callbackfn(filteredList[i], i, filteredList, this);
+    public filter_and_foreach(predicate: (value: GameObject, index: number, array: GameObject[], thisArg?: any) => unknown, callbackfn: (value: GameObject, index: number, array: GameObject[], thisArg?: any) => void): void {
+        for (let i = 0; i < this.objects.length; i++) {
+            let obj = this.objects[i];
+            if (predicate(obj, i, this.objects, this)) {
+                callbackfn(obj, i, this.objects, this);
+            }
         }
     }
 

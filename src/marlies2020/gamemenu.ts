@@ -1,10 +1,10 @@
 import { AudioId, BitmapId } from "./resourceids";
 import { TextWriter } from "./textwriter";
 import { SM } from "../bmsx/soundmaster";
-import { SlotExists, LoadGame } from "../bmsx/gamepersistor";
-import { GameOptions as GO, GameObject, mdef, model, controller, cmdef, Direction, Size, Point, newSize, setPoint } from '../bmsx/bmsx';
+// import { SlotExists, LoadGame } from "../bmsx/gamepersistor";
+import { GameOptions as GO, GameObject, mdef, cmdef, Direction, Size, Point, newSize, setPoint } from '../bmsx/bmsx';
 import { Constants } from "../bmsx/bmsx";
-import { view, game } from "../bmsx/bmsx";
+// import { view, game } from "../bmsx/bmsx";
 import { Input } from "../bmsx/input";
 import { Msx1ExtColors } from "../bmsx/msx";
 import { DrawImgFlags } from '../bmsx/view';
@@ -38,7 +38,7 @@ export const enum MenuItem {
     OptionsFromMainMenu
 }
 
-export class GameMenu extends cmdef implements GameObject {
+export class GameMenu extends GameObject {
     private static menuPosX: number = 24;
     private static menuPosY: number = 24;
     private static menuEndX: number = 240;
@@ -187,7 +187,7 @@ export class GameMenu extends cmdef implements GameObject {
                             // else SM.play(AudioId.Fout);
                             break;
                         case MenuItem.ExitGame:
-                            game.stop();
+                            global.game.stop();
                             break;
                     }
                     break;
@@ -210,12 +210,12 @@ export class GameMenu extends cmdef implements GameObject {
                             break;
                         case MenuItem.SaveSlot:
                             {
-                                let slot = this.selectedItemIndex - 1;
-                                if (SlotExists(slot)) {
-                                    let sg = LoadGame(slot);
-                                    // (controller as Controller).LoadGame(sg);
-                                }
-                                else SM.play(AudioId.Fout);
+                                // let slot = this.selectedItemIndex - 1;
+                                // if (SlotExists(slot)) {
+                                //     let sg = LoadGame(slot);
+                                //     // (controller as Controller).LoadGame(sg);
+                                // }
+                                // else SM.play(AudioId.Fout);
                             }
                             break;
                     }
@@ -271,7 +271,7 @@ export class GameMenu extends cmdef implements GameObject {
                         case MenuItem.Fullscreen:
                             if (GO.Fullscreen) {
                                 GO.Fullscreen = false;
-                                view.ToWindowed();
+                                global.view.ToWindowed();
                                 // game.GameOptionsChanged();
                             }
                             break;
@@ -311,7 +311,7 @@ export class GameMenu extends cmdef implements GameObject {
                         case MenuItem.Fullscreen:
                             if (!GO.Fullscreen) {
                                 GO.Fullscreen = true;
-                                view.ToFullscreen();
+                                global.view.ToFullscreen();
                                 // game.GameOptionsChanged();
                             }
                             break;
@@ -438,7 +438,7 @@ export class GameMenu extends cmdef implements GameObject {
         }
     }
 
-    public paint(): void {
+    public paint = (offset?: Point):void => {
         // view.fillRectangle(GameMenu.menuPosX, GameMenu.menuPosY, GameMenu.menuEndX, GameMenu.menuEndY, Msx1Colors[1]);
         // view.drawRectangle(GameMenu.menuPosX, GameMenu.menuPosY, GameMenu.menuEndX, GameMenu.menuEndY, Msx1Colors[15]);
         let titleToDraw: string;
@@ -507,13 +507,13 @@ export class GameMenu extends cmdef implements GameObject {
                                 if (!GO.Fullscreen) {
                                     TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
                                     offsetX += GameMenu.scaleText.length * TextWriter.FontWidth;
-                                    TextWriter.drawText(offsetX, y, `${view.scale.toPrecision(2)}X`);
+                                    TextWriter.drawText(offsetX, y, `${global.view.scale.toPrecision(2)}X`);
                                 }
                                 else {
                                     TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, Msx1ExtColors[0]);
                                     offsetX += GameMenu.scaleText.length * TextWriter.FontWidth;
                                     // textToDisplay = BDX._.Zoom.ToString("n2");
-                                    TextWriter.drawText(offsetX, y, `${view.scale.toPrecision(2)}X`);
+                                    TextWriter.drawText(offsetX, y, `${global.view.scale.toPrecision(2)}X`);
                                 }
                                 break;
                             case MenuItem.Fullscreen:
@@ -567,27 +567,27 @@ export class GameMenu extends cmdef implements GameObject {
                     break;
                 }
         }
-        view.drawImg(BitmapId.MenuCursor, this.cursorPos.x, this.cursorPos.y);
+        global.view.drawImg(BitmapId.MenuCursor, this.cursorPos.x, this.cursorPos.y);
 
         let scalex = GameMenu.menuEndX - GameMenu.menuPosX;
         let scaley = GameMenu.menuEndY - GameMenu.menuPosY;
-        view.drawImg(BitmapId.blackpixel, GameMenu.menuPosX + 1, GameMenu.menuPosY + 1, DrawImgFlags.None, scalex - 2, scaley - 2);
-        view.drawImg(BitmapId.whitepixel, GameMenu.menuPosX, GameMenu.menuPosY, DrawImgFlags.None, scalex, scaley);
+        global.view.drawImg(BitmapId.blackpixel, GameMenu.menuPosX + 1, GameMenu.menuPosY + 1, DrawImgFlags.None, scalex - 2, scaley - 2);
+        global.view.drawImg(BitmapId.whitepixel, GameMenu.menuPosX, GameMenu.menuPosY, DrawImgFlags.None, scalex, scaley);
     }
 
     private printFullscreenOptionRectangle(y: number): void {
         let selectedIndex: number = GO.Fullscreen ? 0 : 1;
-        view.drawImg(BitmapId.redpixel, GameMenu.fullscreenOptionsOffsets[selectedIndex] + GameMenu.menuPosX + GameMenu.optionItemsOffsetX, y + GameMenu.fullscreenOptionsOffsetY, DrawImgFlags.None, GameMenu.fullscreenOptionsRectangleSize.x, GameMenu.fullscreenOptionsRectangleSize.y);
+        global.view.drawImg(BitmapId.redpixel, GameMenu.fullscreenOptionsOffsets[selectedIndex] + GameMenu.menuPosX + GameMenu.optionItemsOffsetX, y + GameMenu.fullscreenOptionsOffsetY, DrawImgFlags.None, GameMenu.fullscreenOptionsRectangleSize.x, GameMenu.fullscreenOptionsRectangleSize.y);
     }
 
     private printSaveSlot(x: number, y: number, slotIndex: number): void {
-        let exists = SlotExists(slotIndex);
-        if (!exists) {
-            TextWriter.drawText(GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX, y, `${slotIndex} + 1: ${GameMenu.emptySlot}`);
-            return;
-        }
-        let savegame = LoadGame(slotIndex);
-        let time = savegame.Timestamp;
-        TextWriter.drawText(GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX, y, `${slotIndex + 1}: ${time.getDay().toFixed(2)}/${time.getMonth().toFixed(2)}/${time.getFullYear().toFixed(2)} - ${time.getHours().toFixed(2)}:${time.getMinutes().toFixed(2)}`);
+        // let exists = SlotExists(slotIndex);
+        // if (!exists) {
+        //     TextWriter.drawText(GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX, y, `${slotIndex} + 1: ${GameMenu.emptySlot}`);
+        //     return;
+        // }
+        // let savegame = LoadGame(slotIndex);
+        // let time = savegame.Timestamp;
+        // TextWriter.drawText(GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX, y, `${slotIndex + 1}: ${time.getDay().toFixed(2)}/${time.getMonth().toFixed(2)}/${time.getFullYear().toFixed(2)} - ${time.getHours().toFixed(2)}:${time.getMinutes().toFixed(2)}`);
     }
 }

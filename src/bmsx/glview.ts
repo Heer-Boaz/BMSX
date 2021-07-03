@@ -186,7 +186,7 @@ export abstract class GLView extends BaseView {
 		gl.vertexAttribPointer(this.texcoordLocation, 2, gl.FLOAT, false, 0, 0);
 
 		// this matrix will convert from pixels to clip space
-		this.resVec2.set([gl.canvas.width, gl.canvas.height]);
+		this.resVec2.set([this.canvas.width, this.canvas.height]);
 		gl.uniform2fv(this.resolutionLocation, this.resVec2);
 
 		// Tell the shader to get the texture from texture unit 0
@@ -235,7 +235,7 @@ export abstract class GLView extends BaseView {
 	public handleResize(): void {
 		super.handleResize();
 		let _this = global.view as GLView;
-		_this.glctx.viewport(0, 0, _this.glctx.canvas.width, _this.glctx.canvas.height);
+		_this.glctx.viewport(0, 0, _this.canvas.width, _this.canvas.height);
 	}
 
 	public drawgame(gamescreenOffset?: Point, clearCanvas: boolean = true): void {
