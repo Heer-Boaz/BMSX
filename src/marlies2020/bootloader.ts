@@ -176,6 +176,10 @@ class brandblusser extends Sprite {
         this.z = _model.marlies.direction == Direction.Up ? 950 : 1050;
         this.state.to('bla');
     }
+
+    paint = (offset?: Point): void => {
+        TextWriter.drawText(24, 192, "Redelijk gedaan, Marlies!");
+    }
 };
 
 interface Ingredient extends Sprite {
