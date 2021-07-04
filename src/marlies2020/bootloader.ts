@@ -17,7 +17,7 @@ const CORONA_SPAWN_LOCS = <Array<Point>>[
     { x: MSX1ScreenWidth, y: 0 },
     { x: MSX1ScreenWidth, y: MSX1ScreenHeight },
 ];
-const PITAS_OP_BORD_VOOR_WINST = 2;
+const PITAS_OP_BORD_VOOR_WINST = 1;
 const INGREDIENTEN_IN_PITA = 3;
 const INVENTORY_POS = { x: 12, y: 12 };
 
@@ -176,10 +176,6 @@ class brandblusser extends Sprite {
         this.z = _model.marlies.direction == Direction.Up ? 950 : 1050;
         this.state.to('bla');
     }
-
-    paint = (offset?: Point): void => {
-        TextWriter.drawText(24, 192, "Redelijk gedaan, Marlies!");
-    }
 };
 
 interface Ingredient extends Sprite {
@@ -213,8 +209,8 @@ class hoeraStuff extends Sprite {
     }
 
     paint = (offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }) => {
+        TextWriter.drawText(24, 100, "Redelijk gedaan,Marlies!");
         paintSprite.call(this, offset, colorize); // .call() nodig, anders "this" undefined
-        TextWriter.drawText(24, 192, "Redelijk gedaan, Marlies!");
     }
 };
 
@@ -830,13 +826,13 @@ _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: Gain
     model.spawn(new bord(), newPoint(200, 100));
 
     model.spawn(new komkommer(), newPoint(26, 40));
-    model.spawn(new komkommer(), newPoint(26, 64));
+    // model.spawn(new komkommer(), newPoint(26, 64));
     model.spawn(new tomaatjes(), newPoint(26, 88));
-    model.spawn(new tomaatjes(), newPoint(26, 112));
+    // model.spawn(new tomaatjes(), newPoint(26, 112));
     model.spawn(new mes(), newPoint(26, 136));
     model.spawn(new falafel(), newPoint(100, 64));
-    model.spawn(new falafel(), newPoint(100, 40));
+    // model.spawn(new falafel(), newPoint(100, 40));
     model.spawn(new pita(), newPoint(100, 88));
-    model.spawn(new pita(), newPoint(100, 112));
-    model.spawn(new mes(), newPoint(100, 136));
+    // model.spawn(new pita(), newPoint(100, 112));
+    // model.spawn(new mes(), newPoint(100, 136));
 };

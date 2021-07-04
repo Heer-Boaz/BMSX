@@ -1,4 +1,3 @@
-// import { view } from "../bmsx/engine"
 import { BitmapId } from "./resourceids";
 import { GameOptions as GO, Point } from "../bmsx/bmsx";
 import { Color } from '../bmsx/view';
@@ -15,7 +14,7 @@ export class TextWriter {
         if (Array.isArray(textToWrite)) {
             for (let text of textToWrite) {
                 for (let i: number = 0; i < text.length; i++) {
-                    TextWriter.drawLetter(pos.x, pos.y, text[i], color);
+                    global.view.drawImg(TextWriter.getBitmapForLetter(text[i]), pos.x, pos.y);
                     pos.x += stepX;
                 }
                 pos.x = startPos.x;
@@ -26,7 +25,7 @@ export class TextWriter {
         }
         else {
             for (let i: number = 0; i < textToWrite.length; i++) {
-                TextWriter.drawLetter(pos.x, pos.y, textToWrite[i], color);
+                global.view.drawImg(TextWriter.getBitmapForLetter(textToWrite[i]), pos.x, pos.y);
                 pos.x += stepX;
             }
             pos.x = startPos.x;
@@ -34,13 +33,6 @@ export class TextWriter {
             if (pos.y >= GO.BufferHeight)
                 return;
         }
-    }
-
-    private static drawLetter(x: number, y: number, c: string, color: Color = null): void {
-        let letter = TextWriter.getBitmapForLetter(c);
-        // if (!color)
-            global.view.drawImg(letter, x, y);
-        // else view.drawColoredBitmap(letter, x, y, color.r / 255.0, color.g / 255.0, color.b / 255.0);
     }
 
     private static getBitmapForLetter(c: string): BitmapId {

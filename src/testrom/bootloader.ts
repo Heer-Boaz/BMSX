@@ -1,9 +1,10 @@
 import { RomLoadResult } from '../bmsx/rompack';
-import { Game, BaseModel, GameObject, Sprite, insavegame, cmdef, sdef, statedef_builder, sstate, mdef, cmstate, newPoint, Direction, newSize, Point } from '../bmsx/bmsx';
+import { Game, BaseModel, GameObject, Sprite, insavegame, cmdef, sdef, statedef_builder, sstate, mdef, cmstate, newPoint, Direction, newSize, Point, newArea } from '../bmsx/bmsx';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
 import { Input } from '../bmsx/input';
+import { debugtest1, debugtest2 } from '../bmsx/bmsxdebugger';
 
 @insavegame
 class bclass extends Sprite {
@@ -35,8 +36,12 @@ class bclass extends Sprite {
                     console.info(`${new Date().toTimeString()} Game loaded!`);
                 }
             }
-            Input.KC_BTN3 && me.state.to('blap');
-            Input.KC_BTN4 && me.state.to('bla');
+            // Input.KC_BTN3 && me.state.to('blap');
+            // Input.KC_BTN3 && debugtest1();
+            // Input.KC_BTN4 && me.state.to('bla');
+            Input.KC_BTN4 && debugtest2();
+
+
         };
 
         return new cmdef(classname, {
@@ -60,6 +65,7 @@ class bclass extends Sprite {
     constructor() {
         super('The B');
         this.imgid = BitmapId.b;
+        this.hitarea = newArea(0, 0, 16, 16);
     }
 
     public onspawn = (spawningPos?: Point): void => {

@@ -1,4 +1,5 @@
 ﻿import { Key } from 'ts-key-enum';
+import { debugtest1 } from './bmsxdebugger';
 
 const GAMEPAD_LEFT: number = 1000;
 const GAMEPAD_RIGHT: number = 1001;
@@ -172,10 +173,13 @@ export class Input {
         window.addEventListener('dragstart', e => preventActionAndPropagation(e), false);
         document.addEventListener('dragover', e => preventActionAndPropagation(e), false);
         window.addEventListener('dragover', e => preventActionAndPropagation(e), false);
-        document.addEventListener('pointerdown', e => preventActionAndPropagation(e), false);
-        window.addEventListener('pointerdown', e => preventActionAndPropagation(e), false);
+        // document.addEventListener('pointerdown', e => preventActionAndPropagation(e), false);
+        // window.addEventListener('pointerdown', e => preventActionAndPropagation(e), false);
         document.addEventListener('pointermove', e => preventActionAndPropagation(e), false);
         window.addEventListener('pointermove', e => preventActionAndPropagation(e), false);
+
+        document.getElementById('gamescreen').addEventListener('click', e => debugtest1(e), false);
+        // window.addEventListener('click', e => debugtest1(e), false);
     }
 
     public static pollGamepadInput(): void {

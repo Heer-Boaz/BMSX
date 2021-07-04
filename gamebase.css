@@ -1,3 +1,17 @@
+.debugdialog {
+	position: fixed;
+	background-color: aliceblue;
+	color: black;
+	left: 100px;
+	top: 100px;
+	width: 200px;
+	height: 200px;
+	overflow: scroll;
+	resize: both;
+	font-family: monospace;
+	z-index: 5000;
+}
+
 svg.buttons {
 	position: fixed;
 	z-index: 2000;

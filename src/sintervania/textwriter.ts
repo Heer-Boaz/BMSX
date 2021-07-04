@@ -1,7 +1,5 @@
-import { view } from "../bmsx/bmsx"
 import { BitmapId } from "./resourceids";
-import { GameOptions as GO } from "../bmsx/bmsx";
-import { Point } from "../bmsx/common";
+import { GameOptions as GO, Point } from "../bmsx/bmsx";
 import { Color } from '../bmsx/view';
 
 export class TextWriter {
@@ -9,14 +7,14 @@ export class TextWriter {
     public static FontHeight: number = 8;
 
     public static drawText(x: number, y: number, textToWrite: string | string[], color: Color = null): void {
-        let startPos: Point = <Point>{ x: x, y: y }
+        let startPos: Point = <Point>{ x: x, y: y };
         let stepX: number = TextWriter.FontWidth;
         let stepY: number = TextWriter.FontHeight;
         let pos: Point = <Point>{ x: startPos.x, y: startPos.y };
         if (Array.isArray(textToWrite)) {
             for (let text of textToWrite) {
                 for (let i: number = 0; i < text.length; i++) {
-                    TextWriter.drawLetter(pos.x, pos.y, text[i], color);
+                    global.view.drawImg(TextWriter.getBitmapForLetter(text[i]), pos.x, pos.y);
                     pos.x += stepX;
                 }
                 pos.x = startPos.x;
@@ -27,7 +25,7 @@ export class TextWriter {
         }
         else {
             for (let i: number = 0; i < textToWrite.length; i++) {
-                TextWriter.drawLetter(pos.x, pos.y, textToWrite[i], color);
+                global.view.drawImg(TextWriter.getBitmapForLetter(textToWrite[i]), pos.x, pos.y);
                 pos.x += stepX;
             }
             pos.x = startPos.x;
@@ -35,13 +33,6 @@ export class TextWriter {
             if (pos.y >= GO.BufferHeight)
                 return;
         }
-    }
-
-    private static drawLetter(x: number, y: number, c: string, color: Color = null): void {
-        let letter = TextWriter.getBitmapForLetter(c);
-        // if (!color)
-            view.drawImg(letter, x, y);
-        // else view.drawColoredBitmap(letter, x, y, color.r / 255.0, color.g / 255.0, color.b / 255.0);
     }
 
     private static getBitmapForLetter(c: string): BitmapId {
