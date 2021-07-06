@@ -51,7 +51,7 @@ export function debugtest1(e: MouseEvent): void {
 
 	if (gameobject_at_cursor) {
 		const newDiv = document.createElement('div');
-		newDiv.className = 'debugdialog';
+		newDiv.className = 'modal-dialog';
 		newDiv.id = DEBUG_ELEMENT_ID;
 		newDiv.draggable = true;
 		newDiv.onmousedown = handleMouseDown;
@@ -63,11 +63,21 @@ export function debugtest1(e: MouseEvent): void {
 			// newDiv.style.left = e.offsetX;
 		};
 
+		const closeSpan = document.createElement('span');
+		closeSpan.className = 'modal-close';
+		closeSpan.innerHTML = '&times;';
+
+		const contentDiv = document.createElement('div');
+		contentDiv.className = 'modal-content';
+
+		newDiv.insertBefore(closeSpan, null);
+		newDiv.insertBefore(contentDiv, null);
+
 		// and give it some content
 		let keys = Object.keys(gameobject_at_cursor);
 		let values = Object.values(gameobject_at_cursor);
 		for (let i = 0; i < keys.length; i++) {
-			newDiv.innerHTML += `[${i}] ${keys[i]}: ${String(values[i])}<br>`;
+			contentDiv.innerHTML += `[${i}] ${keys[i]}: ${String(values[i])}<br>`;
 		}
 
 		// add the newly created element and its content into the DOM
