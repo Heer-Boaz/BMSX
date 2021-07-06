@@ -66,6 +66,10 @@ export function debugtest1(e: MouseEvent): void {
 		const closeSpan = document.createElement('span');
 		closeSpan.className = 'modal-close';
 		closeSpan.innerHTML = '&times;';
+		closeSpan.onclick = (e) => {
+			e.preventDefault();
+			document.body.removeChild(newDiv);
+		}
 
 		const contentDiv = document.createElement('div');
 		contentDiv.className = 'modal-content';
