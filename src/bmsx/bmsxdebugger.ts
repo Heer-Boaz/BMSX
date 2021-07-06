@@ -1,6 +1,44 @@
 import { newArea } from './bmsx';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
 
+let dragSrcEl: HTMLElement;
+let shiftX: number;
+let shiftY: number;
+
+function handleMouseDown(e: MouseEvent) {
+	shiftX = e.clientX - this.getBoundingClientRect().left;
+	shiftY = e.clientY - this.getBoundingClientRect().top;
+}
+
+function handleDragStart(e: DragEvent) {
+	// this.style.opacity = '0.4';
+
+	dragSrcEl = this;
+
+	e.dataTransfer.effectAllowed = 'move';
+	e.dataTransfer.setData('text/html', this.innerHTML);
+}
+
+function handleDragEnd(e: DragEvent) {
+	let me = this as HTMLElement;
+	// this.style.opacity = '1';
+	// me.style.transform = `translate3d(${e.clientX - e.offsetX}px, ${e.clientY - e.offsetY}px, 0)`;
+
+	this.style.left = e.pageX - shiftX + 'px';
+	this.style.top = e.pageY - shiftY + 'px';
+}
+
+function handleDrop(e: DragEvent) {
+	e.stopPropagation();
+
+	if (dragSrcEl !== this) {
+		dragSrcEl.innerHTML = this.innerHTML;
+		this.innerHTML = e.dataTransfer.getData('text/html');
+	}
+
+	return false;
+}
+
 export function debugtest1(e: MouseEvent): void {
 	// let target = e.target as HTMLElement;
 	// var rect = target.getBoundingClientRect();
@@ -16,10 +54,13 @@ export function debugtest1(e: MouseEvent): void {
 		newDiv.className = 'debugdialog';
 		newDiv.id = DEBUG_ELEMENT_ID;
 		newDiv.draggable = true;
+		newDiv.onmousedown = handleMouseDown;
+		newDiv.ondragstart = handleDragStart;
+		newDiv.ondragend = handleDragEnd;
+		newDiv.ondrop = handleDrop;
 		newDiv.ondrop = (e) => {
 			e.preventDefault();
 			// newDiv.style.left = e.offsetX;
-
 		};
 
 		// and give it some content

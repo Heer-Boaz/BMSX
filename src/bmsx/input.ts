@@ -169,14 +169,14 @@ export class Input {
         window.addEventListener('contextmenu', e => preventActionAndPropagation(e), false);
         document.addEventListener('touchforcechange', e => preventActionAndPropagation(e), false);// iOS -- https://stackoverflow.com/questions/58159526/draggable-element-in-iframe-on-mobile-is-buggy && iOS -- https://stackoverflow.com/questions/50980876/can-you-prevent-3d-touch-on-an-img-but-not-tap-and-hold-to-save
         window.addEventListener('touchforcechange', e => preventActionAndPropagation(e), false);
-        document.addEventListener('dragstart', e => preventActionAndPropagation(e), false);
-        window.addEventListener('dragstart', e => preventActionAndPropagation(e), false);
-        document.addEventListener('dragover', e => preventActionAndPropagation(e), false);
-        window.addEventListener('dragover', e => preventActionAndPropagation(e), false);
+        // document.addEventListener('dragstart', e => preventActionAndPropagation(e), false);
+        // window.addEventListener('dragstart', e => preventActionAndPropagation(e), false);
+        // document.addEventListener('dragover', e => preventActionAndPropagation(e), false);
+        // window.addEventListener('dragover', e => preventActionAndPropagation(e), false);
         // document.addEventListener('pointerdown', e => preventActionAndPropagation(e), false);
         // window.addEventListener('pointerdown', e => preventActionAndPropagation(e), false);
-        document.addEventListener('pointermove', e => preventActionAndPropagation(e), false);
-        window.addEventListener('pointermove', e => preventActionAndPropagation(e), false);
+        // document.addEventListener('pointermove', e => preventActionAndPropagation(e), false);
+        // window.addEventListener('pointermove', e => preventActionAndPropagation(e), false);
 
         document.getElementById('gamescreen').addEventListener('click', e => debugtest1(e), false);
         // window.addEventListener('click', e => debugtest1(e), false);
