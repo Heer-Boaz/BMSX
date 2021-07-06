@@ -12,6 +12,27 @@
 	overflow: hidden;
 }
 
+.modal-content table tr td {
+	border-bottom-style: solid;
+	border-bottom-width: thin;
+	border-bottom-color: gainsboro;
+}
+
+.modal-content table tr td:first-of-type {
+	font-weight: bold;
+	border-right-style: solid;
+	border-right-width: thin;
+	border-right-color: gainsboro;
+}
+
+.modal-content table tr th {
+	/* border-bottom-style: solid;
+	border-bottom-color: black; */
+	text-align: left;
+	color: white;
+	background-color: black;
+}
+
 .modal-content {
   background-color: #fefefe;
   margin: 20px;

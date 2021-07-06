@@ -11,8 +11,6 @@ function handleMouseDown(e: MouseEvent) {
 }
 
 function handleDragStart(e: DragEvent) {
-	// this.style.opacity = '0.4';
-
 	dragSrcEl = this;
 
 	e.dataTransfer.effectAllowed = 'move';
@@ -20,10 +18,6 @@ function handleDragStart(e: DragEvent) {
 }
 
 function handleDragEnd(e: DragEvent) {
-	let me = this as HTMLElement;
-	// this.style.opacity = '1';
-	// me.style.transform = `translate3d(${e.clientX - e.offsetX}px, ${e.clientY - e.offsetY}px, 0)`;
-
 	this.style.left = e.pageX - shiftX + 'px';
 	this.style.top = e.pageY - shiftY + 'px';
 }
@@ -40,10 +34,6 @@ function handleDrop(e: DragEvent) {
 }
 
 export function debugtest1(e: MouseEvent): void {
-	// let target = e.target as HTMLElement;
-	// var rect = target.getBoundingClientRect();
-	// var x = e.clientX - rect.left; //x position within the element.
-	// var y = e.clientY - rect.top;  //y position within the element.
 	let x = e.offsetX / global.view.scale;
 	let y = e.offsetY / global.view.scale;
 
@@ -58,10 +48,6 @@ export function debugtest1(e: MouseEvent): void {
 		newDiv.ondragstart = handleDragStart;
 		newDiv.ondragend = handleDragEnd;
 		newDiv.ondrop = handleDrop;
-		newDiv.ondrop = (e) => {
-			e.preventDefault();
-			// newDiv.style.left = e.offsetX;
-		};
 
 		const closeSpan = document.createElement('span');
 		closeSpan.className = 'modal-close';
@@ -69,7 +55,7 @@ export function debugtest1(e: MouseEvent): void {
 		closeSpan.onclick = (e) => {
 			e.preventDefault();
 			document.body.removeChild(newDiv);
-		}
+		};
 
 		const contentDiv = document.createElement('div');
 		contentDiv.className = 'modal-content';
@@ -77,16 +63,47 @@ export function debugtest1(e: MouseEvent): void {
 		newDiv.insertBefore(closeSpan, null);
 		newDiv.insertBefore(contentDiv, null);
 
-		// and give it some content
-		let keys = Object.keys(gameobject_at_cursor);
-		let values = Object.values(gameobject_at_cursor);
-		for (let i = 0; i < keys.length; i++) {
-			contentDiv.innerHTML += `[${i}] ${keys[i]}: ${String(values[i])}<br>`;
+		// function checkNested(obj, level, ...rest) {
+		// 	if (obj === undefined) return false;
+		// 	if (rest.length == 0 && obj.hasOwnProperty(level)) return true;
+		// 	return checkNested(obj[level], ...rest);
+		// }
+
+		function addContent(addContentTo: HTMLElement, elementType: keyof HTMLElementTagNameMap, content: string): HTMLElement {
+			let newElement = document.createElement(elementType);
+			content && (newElement.innerHTML = content);
+			addContentTo.insertBefore(newElement, null);
+
+			return newElement;
 		}
 
-		// add the newly created element and its content into the DOM
-		const currentDiv = document.getElementById('div1');
-		document.body.insertBefore(newDiv, currentDiv);
+		function addElement(addElementTo: HTMLElement, contentAsElement: HTMLElement) {
+			addElementTo.insertBefore(contentAsElement, null);
+		}
+
+		function addTableForObject(addContentTo: HTMLElement, obj: Object): HTMLElement {
+			let table = addContent(contentDiv, 'table', null);
+			let headerRow = addContent(table, 'tr', null);
+			addContent(headerRow, 'th', 'Prop');
+			addContent(headerRow, 'th', 'Value');
+			for (const [key, value] of Object.entries(obj)) {
+				let row = addContent(table, 'tr', null);
+				addContent(row, 'td', `${key}`);
+				let type = typeof value;
+				if (type === 'object') {
+					addElement(row, addTableForObject(row, value));
+				}
+				else {
+					addContent(row, 'td', `${String(value)}`);
+				}
+			}
+
+			return table;
+		}
+
+		addTableForObject(contentDiv, gameobject_at_cursor);
+
+		document.body.insertBefore(newDiv, null);
 	}
 	else {
 		console.log(`Debugger - No object @${x}, ${y}.`);
