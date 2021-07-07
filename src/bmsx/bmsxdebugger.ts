@@ -94,7 +94,49 @@ export function debugtest1(e: MouseEvent): void {
 					addElement(row, addTableForObject(row, value));
 				}
 				else {
-					addContent(row, 'td', `${String(value)}`);
+					let currentValueAsString = String(value);
+					let valueCell = addContent(row, 'td', `${currentValueAsString}`);
+					switch (type) {
+						case 'string':
+						case 'boolean':
+						case 'bigint':
+						case 'number':
+							valueCell.classList.add('propvalue');
+							valueCell.onclick = (e) => {
+								let currentValueAsStringInHandlerScope = String(obj[key]);
+								let newValue = prompt(`Edit value for "${key}":`, currentValueAsStringInHandlerScope);
+								if (newValue && newValue != currentValueAsStringInHandlerScope) {
+									try {
+										let convertedNewValue: any = undefined;
+										switch (type) {
+											case 'string': convertedNewValue = newValue; break;
+											case 'boolean': convertedNewValue = (newValue.toLowerCase() === 'true'); break;
+											case 'bigint': convertedNewValue = BigInt(newValue); break;
+											case 'number': convertedNewValue = Number(newValue); break;
+											// case 'function':
+											// 	let stringToEval = `() => { eval('${newValue}').call(obj); }`;
+											// 	convertedNewValue = eval(stringToEval);
+											// 	break;
+											default: console.warn(`Property ${key} cannot be updated, because Boaz still needs to develop an update solution for type '${type}'.`);
+										}
+										if (convertedNewValue) {
+											obj[key] = convertedNewValue;
+											valueCell.classList.remove('propvalue');
+											valueCell.classList.add('mutated-propvalue');
+											valueCell.innerHTML = newValue;
+										}
+									} catch (e) {
+										console.warn(`Updating property ${key} to value '${newValue}' (type '${type}') failed.`);
+									}
+								}
+							};
+							break;
+						default:
+							valueCell.classList.add('immutable-propvalue');
+							break;
+					}
+
+					// valueCell.contentEditable = 'true';
 				}
 			}
 
