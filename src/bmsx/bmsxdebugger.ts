@@ -1,53 +1,106 @@
-import { newArea } from './bmsx';
+import { GameObject, newArea, newPoint } from './bmsx';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
 
+let draggedObj: GameObject;
 let dragSrcEl: HTMLElement;
 let shiftX: number;
 let shiftY: number;
 
-function handleMouseDown(e: MouseEvent) {
-	shiftX = e.clientX - this.getBoundingClientRect().left;
-	shiftY = e.clientY - this.getBoundingClientRect().top;
-}
+export function handleDebugMouseDown(e: MouseEvent): void {
+	if (!e.shiftKey) return; // Only start dragging when shift is pressed
 
-function handleDragStart(e: DragEvent) {
-	dragSrcEl = this;
-
-	e.dataTransfer.effectAllowed = 'move';
-	e.dataTransfer.setData('text/html', this.innerHTML);
-}
-
-function handleDragEnd(e: DragEvent) {
-	this.style.left = e.pageX - shiftX + 'px';
-	this.style.top = e.pageY - shiftY + 'px';
-}
-
-function handleDrop(e: DragEvent) {
-	e.stopPropagation();
-
-	if (dragSrcEl !== this) {
-		dragSrcEl.innerHTML = this.innerHTML;
-		this.innerHTML = e.dataTransfer.getData('text/html');
+	if (!draggedObj) {
+		let gameobject_at_cursor = getGameObjectAtCursor(e);
+		if (gameobject_at_cursor) {
+			startDragGameObject(gameobject_at_cursor);
+		}
 	}
-
-	return false;
+	else {
+		handleDebugMouseMove(e);
+	}
 }
 
-export function debugtest1(e: MouseEvent): void {
-	let x = e.offsetX / global.view.scale;
-	let y = e.offsetY / global.view.scale;
+export function handleDebugMouseMove(e: MouseEvent): void {
+	if (draggedObj) {
+		let x = e.offsetX / global.view.scale;
+		let y = e.offsetY / global.view.scale;
 
-	let gameobject_at_cursor = global.model.objects.find(o => o.hitarea && o.collides(newArea(x, y, x, y)));
+		if (draggedObj.pos) {
+			draggedObj.pos.x = Math.trunc(x);
+			draggedObj.pos.y = Math.trunc(y);
+		}
+	}
+}
+
+export function handleDebugMouseDragEnd(e: MouseEvent): void {
+	if (e.button !== 0) return; // Only stop dragging when primary button is released
+
+	if (draggedObj) {
+		// let x = e.offsetX / global.view.scale;
+		// let y = e.offsetY / global.view.scale;
+
+		// if (draggedObj.pos) {
+		// 	draggedObj.pos.x = x;
+		// 	draggedObj.pos.y = y;
+		// }
+
+		draggedObj = null;
+	}
+}
+
+export function handleDebugMouseOut(e: MouseEvent): void {
+	if (draggedObj) {
+		draggedObj = null;
+	}
+}
+
+function startDragGameObject(gameobject_at_cursor: GameObject): void {
+	draggedObj = gameobject_at_cursor;
+}
+
+export function handleDebugClick(e: MouseEvent): void {
+	if (e.button !== 0 || e.shiftKey) return; // Only open when main button is clicked and shift was not pressed
+
+	let gameobject_at_cursor = getGameObjectAtCursor(e);
 
 	if (gameobject_at_cursor) {
 		const newDiv = document.createElement('div');
 		newDiv.className = 'modal-dialog';
 		newDiv.id = DEBUG_ELEMENT_ID;
 		newDiv.draggable = true;
-		newDiv.onmousedown = handleMouseDown;
-		newDiv.ondragstart = handleDragStart;
-		newDiv.ondragend = handleDragEnd;
-		newDiv.ondrop = handleDrop;
+
+		function dialogMouseDownHandler(e: MouseEvent) {
+			shiftX = e.clientX - this.getBoundingClientRect().left;
+			shiftY = e.clientY - this.getBoundingClientRect().top;
+		};
+
+		function dialogDragStartHandler(e: DragEvent) {
+			dragSrcEl = this;
+
+			e.dataTransfer.effectAllowed = 'move';
+			e.dataTransfer.setData('text/html', this.innerHTML);
+		};
+
+		function dialogDragEndHandler(e: DragEvent) {
+			this.style.left = e.pageX - shiftX + 'px';
+			this.style.top = e.pageY - shiftY + 'px';
+		};
+
+		function dialogDropHandler(e: DragEvent) {
+			e.stopPropagation();
+
+			if (dragSrcEl !== this) {
+				dragSrcEl.innerHTML = this.innerHTML;
+				this.innerHTML = e.dataTransfer.getData('text/html');
+			}
+
+			return false;
+		};
+
+		newDiv.onmousedown = dialogMouseDownHandler;
+		newDiv.ondragstart = dialogDragStartHandler;
+		newDiv.ondragend = dialogDragEndHandler;
+		newDiv.ondrop = dialogDropHandler;
 
 		const closeSpan = document.createElement('span');
 		closeSpan.className = 'modal-close';
@@ -107,7 +160,7 @@ export function debugtest1(e: MouseEvent): void {
 								let newValue = prompt(`Edit value for "${key}":`, currentValueAsStringInHandlerScope);
 								if (newValue && newValue != currentValueAsStringInHandlerScope) {
 									try {
-										let convertedNewValue: any = undefined;
+										let convertedNewValue: any = null;
 										switch (type) {
 											case 'string': convertedNewValue = newValue; break;
 											case 'boolean': convertedNewValue = (newValue.toLowerCase() === 'true'); break;
@@ -119,7 +172,7 @@ export function debugtest1(e: MouseEvent): void {
 											// 	break;
 											default: console.warn(`Property ${key} cannot be updated, because Boaz still needs to develop an update solution for type '${type}'.`);
 										}
-										if (convertedNewValue) {
+										if (convertedNewValue !== null) {
 											obj[key] = convertedNewValue;
 											valueCell.classList.remove('propvalue');
 											valueCell.classList.add('mutated-propvalue');
@@ -147,12 +200,15 @@ export function debugtest1(e: MouseEvent): void {
 
 		document.body.insertBefore(newDiv, null);
 	}
-	else {
-		console.log(`Debugger - No object @${x}, ${y}.`);
-	}
+	// else {
+	// 	console.log(`Debugger - No object @${x}, ${y}.`);
+	// }
 }
 
-export function debugtest2(): void {
-	let debugdiv = document.getElementById(DEBUG_ELEMENT_ID);
-	debugdiv && document.body.removeChild(debugdiv);
+function getGameObjectAtCursor(e: MouseEvent) {
+	let x = e.offsetX;// / global.view.scale;
+	let y = e.offsetY;// / global.view.scale;
+	let p = newPoint(x, y);
+
+	return global.model.objects.find(o => o.hitarea && o.insideScaled(p));
 }

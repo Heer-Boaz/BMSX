@@ -555,18 +555,28 @@ class speler extends Sprite {
                                     ik.checkNaastIngredientOfPitaOfBord();
                                 }
                                 ik.doeCoronaTest();
-                            }
+                            },
+                            onenter: (_, ik: speler) => ik.hittable = true
                         }),
                         switchleft: new sdef('switchleft', {
-                            onenter: (_, ik: speler) => ik.state.to('columnswitch', 'anistate'),
+                            onenter: (_, ik: speler) => {
+                                ik.state.to('columnswitch', 'anistate');
+                                ik.hittable = false;
+                            },
                             onrun: shared_switch_run,
                         }),
                         switchright: new sdef('switchright', {
-                            onenter: (_, ik: speler) => ik.state.to('columnswitch', 'anistate'),
+                            onenter: (_, ik: speler) => {
+                                ik.state.to('columnswitch', 'anistate');
+                                ik.hittable = false;
+                            },
                             onrun: shared_switch_run,
                         }),
                         urgh: new sdef('urgh', {
-                            onenter: (_, ik: speler) => ik.state.to('urgh', 'anistate')
+                            onenter: (_, ik: speler) => {
+                                ik.hittable = false; // Kan niet opnieuw geraakt worden als eenmaal in pain
+                                ik.state.to('urgh', 'anistate');
+                            }
                             // Lelijk, maar animatie-state zorgt voor terugkeer naar previous state
                         }),
                         win: new sdef('win', {
@@ -639,6 +649,8 @@ class speler extends Sprite {
                             },
                             onend(s: sstate, ik: speler): void {
                                 s.reset();
+                                ik.hittable = true; // Zorg dat ik weer geraakt kan worden!
+                                ik.state.machines['anistate'].pop();
                                 ik.state.pop();
                             },
                             onnext(s: sstate, ik: speler): void {

@@ -2,8 +2,8 @@
 	position: fixed;
 	background-color: aliceblue;
 	color: black;
-	width: 400px;
-	height: 300px;
+	width: 800px;
+	height: 600px;
 	resize: both;
 	font-family: monospace;
 	z-index: 5000;

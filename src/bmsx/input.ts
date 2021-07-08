@@ -1,5 +1,5 @@
 ﻿import { Key } from 'ts-key-enum';
-import { debugtest1 } from './bmsxdebugger';
+import { handleDebugClick, handleDebugMouseDown, handleDebugMouseDragEnd, handleDebugMouseMove, handleDebugMouseOut } from './bmsxdebugger';
 
 const GAMEPAD_LEFT: number = 1000;
 const GAMEPAD_RIGHT: number = 1001;
@@ -178,7 +178,11 @@ export class Input {
         // document.addEventListener('pointermove', e => preventActionAndPropagation(e), false);
         // window.addEventListener('pointermove', e => preventActionAndPropagation(e), false);
 
-        document.getElementById('gamescreen').addEventListener('click', e => debugtest1(e), false);
+        document.getElementById('gamescreen').addEventListener('click', e => handleDebugClick(e), false);
+        document.getElementById('gamescreen').addEventListener('mousedown', e => handleDebugMouseDown(e), false);
+        document.getElementById('gamescreen').addEventListener('mousemove', e => handleDebugMouseMove(e), false);
+        document.getElementById('gamescreen').addEventListener('mouseup', e => handleDebugMouseDragEnd(e), false);
+        document.getElementById('gamescreen').addEventListener('mouseout', e => handleDebugMouseOut(e), false);
         // window.addEventListener('click', e => debugtest1(e), false);
     }
 

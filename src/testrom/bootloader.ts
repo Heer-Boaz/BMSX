@@ -4,7 +4,6 @@ import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
 import { Input } from '../bmsx/input';
-import { debugtest1, debugtest2 } from '../bmsx/bmsxdebugger';
 
 @insavegame
 class bclass extends Sprite {
@@ -39,7 +38,7 @@ class bclass extends Sprite {
             // Input.KC_BTN3 && me.state.to('blap');
             // Input.KC_BTN3 && debugtest1();
             // Input.KC_BTN4 && me.state.to('bla');
-            Input.KC_BTN4 && debugtest2();
+            // Input.KC_BTN4 && debugtest2();
 
 
         };
@@ -65,7 +64,7 @@ class bclass extends Sprite {
     constructor() {
         super('The B');
         this.imgid = BitmapId.b;
-        this.hitarea = newArea(0, 0, 16, 16);
+        this.hitarea = newArea(0, 0, 14, 18);
     }
 
     public onspawn = (spawningPos?: Point): void => {

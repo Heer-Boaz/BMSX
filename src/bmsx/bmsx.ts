@@ -104,6 +104,10 @@ export function copyPoint(toCopy: Point): Point {
     return <Point>{ x: toCopy.x, y: toCopy.y };
 }
 
+export function multiplyPoint(toMult: Point, factor: number): Point {
+    return <Point>{ x: toMult.x * factor, y: toMult.y * factor };
+}
+
 export function newArea(sx: number, sy: number, ex: number, ey: number): Area {
     return <Area>{ start: { x: sx, y: sy }, end: { x: ex, y: ey } };
 }
@@ -934,7 +938,7 @@ export class GameObject {
     public get hitarea() { return this._hitarea; }
     public set hitarea(value: Area) { this._hitarea = value; }
 
-    public hittable?: boolean;
+    public hittable: boolean;
     public visible?: boolean;
 
     public get hitbox_sx(): number {
@@ -1024,6 +1028,7 @@ export class GameObject {
 
     constructor(_id?: string) {
         this.id = _id ?? GameObject.generateId();
+        this.hittable = true;
         this.state = new cmstate(this.constructor.name, this.id);
         this.state.populateMachines();
     }
@@ -1046,6 +1051,8 @@ export class GameObject {
     }
 
     public areaCollide(a: Area): boolean {
+        if (!this.hittable) return false;
+
         let o1 = this;
         let o1p = o1.pos;
         let o1a = o1.hitarea;
@@ -1058,8 +1065,38 @@ export class GameObject {
 
     public inside(p: Point): boolean {
         let o1 = this;
+
         let o1p = o1.pos;
-        let o1a = o1.hitarea;
+        if (o1.hitarea) {
+            let o1a = o1.hitarea;
+            return o1p.x + o1a.end.x >= p.x && o1p.x + o1a.start.x <= p.x &&
+            o1p.y + o1a.end.y >= p.y && o1p.y + o1a.start.y <= p.y;
+        }
+        if (o1.size) {
+            let o1a = o1.size;
+            return o1p.x + o1a.x >= p.x && o1p.x  <= p.x &&
+            o1p.y + o1a.y >= p.y && o1p.y <= p.y;
+        }
+        return false;
+    }
+
+    /*
+    *  This method is used for debugging. Handling mouse events on game objects requires
+    *  transforming the game coordinates to canvas coordinates and that requires scaling
+    *  to be taken into account.
+    */
+    public insideScaled(p: Point): boolean {
+        let o1 = this;
+
+        let o1p = multiplyPoint(o1.pos, global.view.scale);
+        let o1a: Area = null;
+        if (o1.hitarea) {
+            o1a = <Area>{ start: multiplyPoint(o1.hitarea.start, global.view.scale), end: multiplyPoint(o1.hitarea.end, global.view.scale) };
+        }
+        else if (o1.size) {
+            o1a = <Area>{ start: newPoint(0, 0), end: multiplyPoint(o1.size, global.view.scale) };
+        }
+        else return false;
 
         return o1p.x + o1a.end.x >= p.x && o1p.x + o1a.start.x <= p.x &&
             o1p.y + o1a.end.y >= p.y && o1p.y + o1a.start.y <= p.y;
