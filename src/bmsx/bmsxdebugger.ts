@@ -59,146 +59,153 @@ function startDragGameObject(gameobject_at_cursor: GameObject): void {
 }
 
 export function handleDebugClick(e: MouseEvent): void {
-	if (e.button !== 0 || e.shiftKey) return; // Only open when main button is clicked and shift was not pressed
+	if (e.button === 0 && e.ctrlKey) {
+		// Pause or unpause game for debugging
+		global.game.paused = !global.game.paused;
+		return;
+	}
+	if (e.button === 0 && e.altKey) {
+		// Only open when main button is clicked and shift was not pressed
 
-	let gameobject_at_cursor = getGameObjectAtCursor(e);
+		let gameobject_at_cursor = getGameObjectAtCursor(e);
 
-	if (gameobject_at_cursor) {
-		const newDiv = document.createElement('div');
-		newDiv.className = 'modal-dialog';
-		newDiv.id = DEBUG_ELEMENT_ID;
-		newDiv.draggable = true;
+		if (gameobject_at_cursor) {
+			const newDiv = document.createElement('div');
+			newDiv.className = 'modal-dialog';
+			newDiv.id = DEBUG_ELEMENT_ID;
+			newDiv.draggable = true;
 
-		function dialogMouseDownHandler(e: MouseEvent) {
-			shiftX = e.clientX - this.getBoundingClientRect().left;
-			shiftY = e.clientY - this.getBoundingClientRect().top;
-		};
+			function dialogMouseDownHandler(e: MouseEvent) {
+				shiftX = e.clientX - this.getBoundingClientRect().left;
+				shiftY = e.clientY - this.getBoundingClientRect().top;
+			};
 
-		function dialogDragStartHandler(e: DragEvent) {
-			dragSrcEl = this;
+			function dialogDragStartHandler(e: DragEvent) {
+				dragSrcEl = this;
 
-			e.dataTransfer.effectAllowed = 'move';
-			e.dataTransfer.setData('text/html', this.innerHTML);
-		};
+				e.dataTransfer.effectAllowed = 'move';
+				e.dataTransfer.setData('text/html', this.innerHTML);
+			};
 
-		function dialogDragEndHandler(e: DragEvent) {
-			this.style.left = e.pageX - shiftX + 'px';
-			this.style.top = e.pageY - shiftY + 'px';
-		};
+			function dialogDragEndHandler(e: DragEvent) {
+				this.style.left = e.pageX - shiftX + 'px';
+				this.style.top = e.pageY - shiftY + 'px';
+			};
 
-		function dialogDropHandler(e: DragEvent) {
-			e.stopPropagation();
+			function dialogDropHandler(e: DragEvent) {
+				e.stopPropagation();
 
-			if (dragSrcEl !== this) {
-				dragSrcEl.innerHTML = this.innerHTML;
-				this.innerHTML = e.dataTransfer.getData('text/html');
+				if (dragSrcEl !== this) {
+					dragSrcEl.innerHTML = this.innerHTML;
+					this.innerHTML = e.dataTransfer.getData('text/html');
+				}
+
+				return false;
+			};
+
+			newDiv.onmousedown = dialogMouseDownHandler;
+			newDiv.ondragstart = dialogDragStartHandler;
+			newDiv.ondragend = dialogDragEndHandler;
+			newDiv.ondrop = dialogDropHandler;
+
+			const closeSpan = document.createElement('span');
+			closeSpan.className = 'modal-close';
+			closeSpan.innerHTML = '&times;';
+			closeSpan.onclick = (e) => {
+				e.preventDefault();
+				document.body.removeChild(newDiv);
+			};
+
+			const contentDiv = document.createElement('div');
+			contentDiv.className = 'modal-content';
+
+			newDiv.insertBefore(closeSpan, null);
+			newDiv.insertBefore(contentDiv, null);
+
+			// function checkNested(obj, level, ...rest) {
+			// 	if (obj === undefined) return false;
+			// 	if (rest.length == 0 && obj.hasOwnProperty(level)) return true;
+			// 	return checkNested(obj[level], ...rest);
+			// }
+
+			function addContent(addContentTo: HTMLElement, elementType: keyof HTMLElementTagNameMap, content: string): HTMLElement {
+				let newElement = document.createElement(elementType);
+				content && (newElement.innerHTML = content);
+				addContentTo.insertBefore(newElement, null);
+
+				return newElement;
 			}
 
-			return false;
-		};
+			function addElement(addElementTo: HTMLElement, contentAsElement: HTMLElement) {
+				addElementTo.insertBefore(contentAsElement, null);
+			}
 
-		newDiv.onmousedown = dialogMouseDownHandler;
-		newDiv.ondragstart = dialogDragStartHandler;
-		newDiv.ondragend = dialogDragEndHandler;
-		newDiv.ondrop = dialogDropHandler;
-
-		const closeSpan = document.createElement('span');
-		closeSpan.className = 'modal-close';
-		closeSpan.innerHTML = '&times;';
-		closeSpan.onclick = (e) => {
-			e.preventDefault();
-			document.body.removeChild(newDiv);
-		};
-
-		const contentDiv = document.createElement('div');
-		contentDiv.className = 'modal-content';
-
-		newDiv.insertBefore(closeSpan, null);
-		newDiv.insertBefore(contentDiv, null);
-
-		// function checkNested(obj, level, ...rest) {
-		// 	if (obj === undefined) return false;
-		// 	if (rest.length == 0 && obj.hasOwnProperty(level)) return true;
-		// 	return checkNested(obj[level], ...rest);
-		// }
-
-		function addContent(addContentTo: HTMLElement, elementType: keyof HTMLElementTagNameMap, content: string): HTMLElement {
-			let newElement = document.createElement(elementType);
-			content && (newElement.innerHTML = content);
-			addContentTo.insertBefore(newElement, null);
-
-			return newElement;
-		}
-
-		function addElement(addElementTo: HTMLElement, contentAsElement: HTMLElement) {
-			addElementTo.insertBefore(contentAsElement, null);
-		}
-
-		function addTableForObject(addContentTo: HTMLElement, obj: Object): HTMLElement {
-			let table = addContent(contentDiv, 'table', null);
-			let headerRow = addContent(table, 'tr', null);
-			addContent(headerRow, 'th', 'Prop');
-			addContent(headerRow, 'th', 'Value');
-			for (const [key, value] of Object.entries(obj)) {
-				let row = addContent(table, 'tr', null);
-				addContent(row, 'td', `${key}`);
-				let type = typeof value;
-				if (type === 'object') {
-					addElement(row, addTableForObject(row, value));
-				}
-				else {
-					let currentValueAsString = String(value);
-					let valueCell = addContent(row, 'td', `${currentValueAsString}`);
-					switch (type) {
-						case 'string':
-						case 'boolean':
-						case 'bigint':
-						case 'number':
-							valueCell.classList.add('propvalue');
-							valueCell.onclick = (e) => {
-								let currentValueAsStringInHandlerScope = String(obj[key]);
-								let newValue = prompt(`Edit value for "${key}":`, currentValueAsStringInHandlerScope);
-								if (newValue && newValue != currentValueAsStringInHandlerScope) {
-									try {
-										let convertedNewValue: any = null;
-										switch (type) {
-											case 'string': convertedNewValue = newValue; break;
-											case 'boolean': convertedNewValue = (newValue.toLowerCase() === 'true'); break;
-											case 'bigint': convertedNewValue = BigInt(newValue); break;
-											case 'number': convertedNewValue = Number(newValue); break;
-											// case 'function':
-											// 	let stringToEval = `() => { eval('${newValue}').call(obj); }`;
-											// 	convertedNewValue = eval(stringToEval);
-											// 	break;
-											default: console.warn(`Property ${key} cannot be updated, because Boaz still needs to develop an update solution for type '${type}'.`);
-										}
-										if (convertedNewValue !== null) {
-											obj[key] = convertedNewValue;
-											valueCell.classList.remove('propvalue');
-											valueCell.classList.add('mutated-propvalue');
-											valueCell.innerHTML = newValue;
-										}
-									} catch (e) {
-										console.warn(`Updating property ${key} to value '${newValue}' (type '${type}') failed.`);
-									}
-								}
-							};
-							break;
-						default:
-							valueCell.classList.add('immutable-propvalue');
-							break;
+			function addTableForObject(addContentTo: HTMLElement, obj: Object): HTMLElement {
+				let table = addContent(contentDiv, 'table', null);
+				let headerRow = addContent(table, 'tr', null);
+				addContent(headerRow, 'th', 'Prop');
+				addContent(headerRow, 'th', 'Value');
+				for (const [key, value] of Object.entries(obj)) {
+					let row = addContent(table, 'tr', null);
+					addContent(row, 'td', `${key}`);
+					let type = typeof value;
+					if (type === 'object') {
+						addElement(row, addTableForObject(row, value));
 					}
+					else {
+						let currentValueAsString = String(value);
+						let valueCell = addContent(row, 'td', `${currentValueAsString}`);
+						switch (type) {
+							case 'string':
+							case 'boolean':
+							case 'bigint':
+							case 'number':
+								valueCell.classList.add('propvalue');
+								valueCell.onclick = (e) => {
+									let currentValueAsStringInHandlerScope = String(obj[key]);
+									let newValue = prompt(`Edit value for "${key}":`, currentValueAsStringInHandlerScope);
+									if (newValue && newValue != currentValueAsStringInHandlerScope) {
+										try {
+											let convertedNewValue: any = null;
+											switch (type) {
+												case 'string': convertedNewValue = newValue; break;
+												case 'boolean': convertedNewValue = (newValue.toLowerCase() === 'true'); break;
+												case 'bigint': convertedNewValue = BigInt(newValue); break;
+												case 'number': convertedNewValue = Number(newValue); break;
+												// case 'function':
+												// 	let stringToEval = `() => { eval('${newValue}').call(obj); }`;
+												// 	convertedNewValue = eval(stringToEval);
+												// 	break;
+												default: console.warn(`Property ${key} cannot be updated, because Boaz still needs to develop an update solution for type '${type}'.`);
+											}
+											if (convertedNewValue !== null) {
+												obj[key] = convertedNewValue;
+												valueCell.classList.remove('propvalue');
+												valueCell.classList.add('mutated-propvalue');
+												valueCell.innerHTML = newValue;
+											}
+										} catch (e) {
+											console.warn(`Updating property ${key} to value '${newValue}' (type '${type}') failed.`);
+										}
+									}
+								};
+								break;
+							default:
+								valueCell.classList.add('immutable-propvalue');
+								break;
+						}
 
-					// valueCell.contentEditable = 'true';
+						// valueCell.contentEditable = 'true';
+					}
 				}
+
+				return table;
 			}
 
-			return table;
+			addTableForObject(contentDiv, gameobject_at_cursor);
+
+			document.body.insertBefore(newDiv, null);
 		}
-
-		addTableForObject(contentDiv, gameobject_at_cursor);
-
-		document.body.insertBefore(newDiv, null);
 	}
 	// else {
 	// 	console.log(`Debugger - No object @${x}, ${y}.`);

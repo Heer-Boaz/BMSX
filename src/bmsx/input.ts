@@ -178,11 +178,12 @@ export class Input {
         // document.addEventListener('pointermove', e => preventActionAndPropagation(e), false);
         // window.addEventListener('pointermove', e => preventActionAndPropagation(e), false);
 
-        document.getElementById('gamescreen').addEventListener('click', e => handleDebugClick(e), false);
-        document.getElementById('gamescreen').addEventListener('mousedown', e => handleDebugMouseDown(e), false);
-        document.getElementById('gamescreen').addEventListener('mousemove', e => handleDebugMouseMove(e), false);
-        document.getElementById('gamescreen').addEventListener('mouseup', e => handleDebugMouseDragEnd(e), false);
-        document.getElementById('gamescreen').addEventListener('mouseout', e => handleDebugMouseOut(e), false);
+        let gamescreen = document.getElementById('gamescreen');
+        gamescreen.addEventListener('click', e => handleDebugClick(e), false);
+        gamescreen.addEventListener('mousedown', e => handleDebugMouseDown(e), false);
+        gamescreen.addEventListener('mousemove', e => handleDebugMouseMove(e), false);
+        gamescreen.addEventListener('mouseup', e => handleDebugMouseDragEnd(e), false);
+        gamescreen.addEventListener('mouseout', e => handleDebugMouseOut(e), false);
         // window.addEventListener('click', e => debugtest1(e), false);
     }
 
