@@ -537,7 +537,7 @@ function buildResourceList(respath: string): void {
 
 	let metalist = getResMetaList(respath);
 
-	tsimgout.push("export enum BitmapId {\n\tNone = 0,");
+	tsimgout.push("export var BitmapId = {\n\tNone: 0,");
 	tssndout.push("export enum AudioId {\n\tNone = 0,");
 
 	for (let i = 0; i < metalist.length; i++) {
@@ -549,7 +549,7 @@ function buildResourceList(respath: string): void {
 		switch (type) {
 			case 'image':
 			case 'atlas':
-				tsimgout.push(`\t${name} = ${id},`);
+				tsimgout.push(`\t${name}: ${id},`);
 				break;
 			case 'audio':
 				tssndout.push(`\t${name} = ${id},`);
@@ -821,7 +821,7 @@ try {
 
 	if (buildreslist) {
 		writeOut('Building resource list and writing output to "./src/bmsx/resourceids.ts"...\n');
-		writeOut('  Note: ROM packing and deployemexdent are skipped this option (--buildreslist) is enabled!\n');
+		writeOut('  Note: ROM packing and deployement are skipped.\n');
 		buildResourceList(respath);
 	}
 	else {

@@ -1,4 +1,5 @@
 ﻿import { Size, Point, Sprite } from "./bmsx";
+import { BFont } from "./rompack";
 
 export interface Color {
     r: number;
@@ -23,6 +24,7 @@ export abstract class BaseView {
     public canvas: HTMLCanvasElement;
     public context: CanvasRenderingContext2D;
     public static images: { [key: number]: HTMLImageElement; };
+    public default_font: BFont;
 
     public windowSize: Size;
     public viewportSize: Size;

@@ -1,5 +1,5 @@
 import { AudioId, BitmapId } from "./resourceids";
-import { TextWriter } from "./textwriter";
+import { TextWriter } from "../bmsx/textwriter";
 import { SM } from "../bmsx/soundmaster";
 // import { SlotExists, LoadGame } from "../bmsx/gamepersistor";
 import { GameOptions as GO, GameObject, mdef, cmdef, Direction, Size, Point, newSize, setPoint } from '../bmsx/bmsx';
@@ -485,7 +485,7 @@ export class GameMenu extends GameObject {
                                 // if ((model as Model).state != GameState.Event)
                                     // TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
                                 // else
-                                TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, Msx1ExtColors[0]);
+                                TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, null, Msx1ExtColors[0]);
                                 break;
                             default:
                                 TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
@@ -510,7 +510,7 @@ export class GameMenu extends GameObject {
                                     TextWriter.drawText(offsetX, y, `${global.view.scale.toPrecision(2)}X`);
                                 }
                                 else {
-                                    TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, Msx1ExtColors[0]);
+                                    TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, null, Msx1ExtColors[0]);
                                     offsetX += GameMenu.scaleText.length * TextWriter.FontWidth;
                                     // textToDisplay = BDX._.Zoom.ToString("n2");
                                     TextWriter.drawText(offsetX, y, `${global.view.scale.toPrecision(2)}X`);

@@ -4,7 +4,7 @@ import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
 import { Input } from '../bmsx/input';
-import { TextWriter } from './textwriter';
+import { TextWriter } from '../bmsx/textwriter';
 import { paintSprite } from '../bmsx/view';
 
 const COLUMN_X = <Array<number>>[36, 48, 80, 160, 200];
@@ -303,7 +303,7 @@ class vuur extends Sprite {
                 master: new mdef('master', {
                     states: {
                         brand: new sdef('brand', {
-                            tape: <Array<BitmapId>>[
+                            tape: <Array<number>>[
                                 BitmapId.Vuur1,
                                 BitmapId.Vuur2,
                                 BitmapId.Vuur3,
@@ -367,7 +367,7 @@ class corona extends Sprite {
                     states: {
                         skulk: new sdef('skulk', {
                             nudges2move: 4,
-                            tape: <Array<BitmapId>>[
+                            tape: <Array<number>>[
                                 BitmapId.Corona1,
                                 BitmapId.Corona2,
                                 BitmapId.Corona3,
@@ -398,7 +398,7 @@ class corona extends Sprite {
                         }),
                         sterf: new sdef('sterf', {
                             nudges2move: 4,
-                            tape: <Array<BitmapId>>[
+                            tape: <Array<number>>[
                                 BitmapId.Corona4,
                                 BitmapId.Corona5,
                                 BitmapId.Corona6,
@@ -591,7 +591,7 @@ class speler extends Sprite {
                     states: {
                         down: new sdef('down', {
                             ...down_up_state_def, ...{
-                                tape: <Array<BitmapId>>[
+                                tape: <Array<number>>[
                                     BitmapId.p1,
                                     BitmapId.p2,
                                     BitmapId.p1,
@@ -602,7 +602,7 @@ class speler extends Sprite {
                         }),
                         up: new sdef('up', {
                             ...down_up_state_def, ...{
-                                tape: <Array<BitmapId>>[
+                                tape: <Array<number>>[
                                     BitmapId.p4,
                                     BitmapId.p5,
                                     BitmapId.p4,
@@ -612,7 +612,7 @@ class speler extends Sprite {
                             }
                         }),
                         urgh: new sdef('urgh', {
-                            tape: <Array<BitmapId>>[
+                            tape: <Array<number>>[
                                 BitmapId.p8,
                                 BitmapId.p9,
                                 BitmapId.p8,

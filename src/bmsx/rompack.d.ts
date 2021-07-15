@@ -42,3 +42,7 @@ export interface RomLoadResult {
 	sndresources: id2res;
 	source: any;
 }
+
+export interface BFont {
+	char_to_img(c: string): number;
+}
