@@ -45,4 +45,6 @@ export interface RomLoadResult {
 
 export interface BFont {
 	char_to_img(c: string): number;
+	char_width: number;
+	char_height: number;
 }

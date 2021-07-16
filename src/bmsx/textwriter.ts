@@ -3,14 +3,11 @@ import { Color } from './view';
 import { BFont } from "./rompack";
 
 export class TextWriter {
-    public static FontWidth: number = 8;
-    public static FontHeight: number = 8;
-
     public static drawText(x: number, y: number, textToWrite: string | string[], _font: BFont = null, color: Color = null): void {
         let font = _font ?? global.view.default_font;
         let startPos: Point = <Point>{ x: x, y: y }
-        let stepX: number = TextWriter.FontWidth;
-        let stepY: number = TextWriter.FontHeight;
+        let stepX: number = font.char_width;
+        let stepY: number = font.char_height;
         let pos: Point = <Point>{ x: startPos.x, y: startPos.y };
         if (Array.isArray(textToWrite)) {
             for (let text of textToWrite) {

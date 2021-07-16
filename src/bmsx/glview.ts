@@ -64,15 +64,15 @@ export abstract class GLView extends BaseView {
 	private drawImgReqIndex: number = 0;
 
 	private readonly vertexShaderCode =
-		`
+		`#version 300 es
 			precision highp float;
 
-			attribute vec2 a_position;
-			attribute vec2 a_texcoord;
+			in vec2 a_position;
+			in vec2 a_texcoord;
 
 			uniform vec2 u_resolution;
 
-			varying vec2 v_texcoord;
+			out vec2 v_texcoord;
 
 		void main() {
 			// convert the rectangle from pixels to 0.0 to 1.0
@@ -92,32 +92,34 @@ export abstract class GLView extends BaseView {
 		}`;
 
 	private readonly fragmentShaderFillRectangleCode =
-		`
+		`#version 300 es
 			precision highp float;
-
 			uniform vec4 uColor;
 
+			out vec4 outputColor;
+
 			void main() {
-				gl_FragColor = uColor;
+				outputColor = uColor;
 			}`;
 
 	private readonly fragmentShaderTextureCode =
-		`
+		`#version 300 es
 		precision highp float;
- 		varying vec2 v_texcoord;
  		uniform sampler2D u_texture;
+ 		in vec2 v_texcoord;
+		out vec4 outputColor;
 
 		void main() {
 			// gl_FragColor = vec4(1, 0, 0, 1);
-			lowp vec4 color = texture2D(u_texture, v_texcoord);
+			lowp vec4 color = texture(u_texture, v_texcoord);
 			if (color.a < 0.1)
     			discard;
-			gl_FragColor = color;
+			outputColor = color;
 		}`;
 
 	constructor(viewportsize: Size) {
 		super(viewportsize);
-		this.glctx = this.canvas.getContext('webgl', {
+		this.glctx = this.canvas.getContext('webgl2', {
 			alpha: false,
 			desynchronized: false,
 			preserveDrawingBuffer: false,
@@ -227,7 +229,6 @@ export abstract class GLView extends BaseView {
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-
 
 		return result;
 	}

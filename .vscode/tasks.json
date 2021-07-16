@@ -11,6 +11,7 @@
 				"output romtobuild",
 				"build rom.js",
 				"build rompacker.js",
+				"pack rom resources (resourceids.ts)",
 				"build the game"
 			],
 			"problemMatcher": [
