@@ -633,22 +633,108 @@ export class cmdef {
     }
 }
 
+interface ISpaceObject {
+    spaceid: string;
+    objects: GameObject[];
+}
 @insavegame
 export class Savegame {
     modelprops: {};
-    objects: GameObject[];
+    allSpacesObjects: ISpaceObject[];
+    spaces: Space[];
+}
+
+export type id2objectType = { [key: string]: GameObject; };
+export type id2spaceType = { [key: string]: Space; };
+const id2obj = Symbol('id2object');
+const id2space = Symbol('id2space');
+
+@insavegame
+export class Space {
+    protected [id2obj]: id2objectType;
+    public get<T extends GameObject>(id: string) { return <T>this[id2obj][id]; }
+    public id: string;
+    public objects: GameObject[];
+    public ondispose?: () => void;
+
+    @onsave
+    public static tosaved(o: Space) {
+        let result = new Space(o.id);
+        Object.assign(result, o);
+        result.objects = undefined;
+
+        console.log(`Ik ga dit nu opslaan als Space: ${result.id}, ${result.objects}`);
+        return result;
+    }
+
+    public constructor(_id: string) {
+        this.id = _id;
+        this.objects = [];
+        this[id2obj] = {};
+    }
+
+    public sortObjectsByPriority(): void {
+        this.objects.sort((o1, o2) => (o2.z || 0) - (o1.z || 0));
+    }
+
+    public spawn(o: GameObject, pos?: Point, afterload?: boolean): void {
+        this.objects.push(o);
+
+        this.sortObjectsByPriority();
+
+        this[id2obj][o.id] = o;
+        this[id2obj][o.id] = o;
+        !afterload && o.onspawn?.(pos);
+    }
+
+    public exile(o: GameObject): void {
+        let index = this.objects.indexOf(o);
+        if (index > -1) {
+            delete this.objects[index];
+            this.objects.splice(index, 1);
+        }
+
+        if (this[id2obj][o.id])
+            this[id2obj][o.id] = undefined;
+
+        o.ondispose?.();
+    }
+
+    public clear(): void {
+        this.objects.forEach(o => global.model.exile);
+        this.objects.length = 0;
+        delete this[id2obj];
+        this[id2obj] = {};
+    }
 }
 
 var MachineDefinitions: { [key: string]: cmdef; };
 var MachineDefinitionBuilders: { [key: string]: (classname: string) => cmdef; };
-export type id2objectType = { [key: string]: GameObject; };
-const id2obj = Symbol('id2object');
 export abstract class BaseModel {
     public state: cmstate;
-    protected [id2obj]: id2objectType;
-    public get<T extends GameObject>(id: string) { return <T>this[id2obj][id]; }
+    // protected [id2obj]: id2objectType;
+    protected [id2space]: id2spaceType;
+
+    // public objects: GameObject[]; // All objects in the model
+    public get objects(): GameObject[] {
+        return this.getSpace(this.currentSpaceid).objects;
+    }
+    // protected allSpacesObjects: GameObject[];
+
+    public spaces: Space[]; // All spaces in the model
+    protected currentSpaceid: string; // Current space. On model creation, a default space is created with id 'default'
+    public get currentSpace(): Space { return this.getSpace(this.currentSpaceid); } // Current space. On model creation, a default space is created with id 'default'
+    public setSpace(newSpaceId: string) { this.currentSpaceid = newSpaceId; }
+    public paused: boolean;
+    public startAfterLoad: boolean;
+
+    // public get<T extends GameObject>(id: string) { return <T>this[id2obj][id]; }
+    public get<T extends GameObject>(id: string) { return <T>this[id2space][this.currentSpaceid][id2obj][id]; }
+    public getSpace<T extends Space>(id: string) { return <T>this[id2space][id]; }
     public exists(id: string): boolean {
-        return this[id2obj][id] !== undefined;
+        let foundObj = this.get(id);
+        return foundObj ? true : false;
+        // return this[id2obj][id] !== undefined;
     }
 
     public static getCMachinedef(cmachineid: string): cmdef {
@@ -662,11 +748,6 @@ export abstract class BaseModel {
     public static getMachineStatedef(cmachineid: string, machineid: string, stateid: string): sdef {
         return MachineDefinitions[cmachineid]?.machines[machineid].states[stateid];
     }
-
-    public objects: GameObject[];
-    public paused: boolean;
-    public startAfterLoad: boolean;
-
     public abstract get gamewidth(): number;
     public abstract get gameheight(): number;
 
@@ -695,12 +776,15 @@ export abstract class BaseModel {
     }
 
     constructor() {
-        this.objects = [];
-        this[id2obj] = {};
+        // this.allSpacesObjects = [];
+        // this[id2obj] = {};
+        this.spaces = [];
+        this[id2space] = {};
 
         this.paused = false;
 
         BaseModel.buildStates();
+        this.addDefaultSpace();
     }
 
     private static buildStates() {
@@ -711,6 +795,12 @@ export abstract class BaseModel {
         }
     }
 
+    private addDefaultSpace() {
+        let defaultSpace: Space = new Space('default');
+        this.addSpace(defaultSpace);
+        this.currentSpaceid = defaultSpace.id;
+    }
+
     // Init model after construction. Needed as the states have not been build at
     // the constructor's scope yet. So, this is a kind of onspawn(...) for the model
     // Returns [this] for chaining
@@ -719,18 +809,6 @@ export abstract class BaseModel {
     public run() {
         this.state.run();
     }
-
-    // @statedef_builder
-    // public static buildBaseStates(classname: string): cbstd {
-    //     let result = new cbstd(classname);
-
-    //     // Create default state for running the game
-    //     result.add(new bssd('default', {
-    //         onrun: BaseModel.defaultrun,
-    //     }));
-
-    //     return result;
-    // }
 
     public static defaultrun = (): void => {
         if (global.model.paused) {
@@ -753,8 +831,12 @@ export abstract class BaseModel {
         let savegame = JSON.parse(serialized, Reviver) as Savegame;
         Object.assign(this, savegame.modelprops);
         this.onloaded();
-        savegame.objects.forEach(o => (o.onloaded?.(), this.spawn(o, undefined, true)));
-
+        // savegame.spaces.forEach(space => this.addSpace(space));
+        savegame.allSpacesObjects.forEach(space_and_objects => {
+            let space = this[id2space][space_and_objects.spaceid];
+            let objects = space_and_objects.objects;
+            objects.forEach(o => (o.onloaded?.(), space.spawn(o, undefined, true)));
+        });
     }
 
     public onloaded(): void {
@@ -767,14 +849,21 @@ export abstract class BaseModel {
             let data = {};
             for (let index = 0; index < keys.length; ++index) {
                 let key = keys[index];
-                if (key === 'objects' || key === 'id2object') continue;
+                if (key === 'objects' || key === 'id2object' || key === 'spaces' || key === 'id2space') continue;
                 if (this[key] !== null && this[key] !== undefined) {
                     data[key] = this[key];
                 }
             }
             let result = new Savegame();
             result.modelprops = data;
-            result.objects = this.objects;
+            result.spaces = this.spaces;
+            result.allSpacesObjects = [];
+            for (let space of this.spaces) {
+                result.allSpacesObjects.push({
+                    spaceid: space.id,
+                    objects: [ ...(space.objects) ]
+                });
+            }
 
             return result;
         };
@@ -799,36 +888,44 @@ export abstract class BaseModel {
     }
 
     public clear(): void {
-        this.objects.forEach(o => o.ondispose?.());
-        this.objects.length = 0;
+        this.getSpace(this.currentSpaceid).clear();
+    }
+
+    public clearAllSpaces(): void {
+        this.spaces.forEach(s => s.clear());
+
+        // this.allSpacesObjects.forEach(o => o.ondispose?.());
+        // this.allSpacesObjects.length = 0;
         delete this[id2obj];
         this[id2obj] = {};
         this.paused = false;
-    }
 
-    public sortObjectsByPriority(): void {
-        this.objects.sort((o1, o2) => (o2.z || 0) - (o1.z || 0));
     }
 
     public spawn(o: GameObject, pos?: Point, ignoreSpawnhandler?: boolean): void {
-        this.objects.push(o);
-
-        this.sortObjectsByPriority();
-
-        this[id2obj][o.id] = o;
-        !ignoreSpawnhandler && o.onspawn?.(pos);
+        this.getSpace(this.currentSpaceid).spawn(o, pos, ignoreSpawnhandler);
     }
 
     public exile(o: GameObject): void {
-        let index = this.objects.indexOf(o);
+        this.getSpace(this.currentSpaceid).exile(o);
+    }
+
+    public addSpace(s: Space): void {
+        this.spaces.push(s);
+        this[id2space][s.id] = s;
+    }
+
+    public removeSpace(s: Space): void {
+        let index = this.spaces.indexOf(s);
         if (index > -1) {
-            delete this.objects[index];
-            this.objects.splice(index, 1);
+            s.clear(); // Remove all objects from the space
+            delete this.spaces[index];
+            this.spaces.splice(index, 1);
         }
 
-        if (this[id2obj][o.id])
-            this[id2obj][o.id] = undefined;
-        o.ondispose?.();
+        if (this[id2space][s.id])
+            this[id2space][s.id] = undefined;
+        s.ondispose?.();
     }
 
     public abstract collidesWithTile(o: GameObject, dir: Direction): boolean;
@@ -1022,7 +1119,8 @@ export class GameObject {
         let result = undefined;
         do {
             result = [...Array(GameObject.GENERATED_ID_LENGTH)].map(() => chars[Math.random() * chars.length | 0]).join('');
-        } while (global.model.exists(result)); // Make sure that the randomly generated string is unique!
+        } while (global.model?.exists(result)); // Make sure that the randomly generated string is unique!
+        // (Note that the model can be undefined. This can happen when an id is genereated for an object that is spawned as part of the model constructor)
         return result;
     }
 
@@ -1173,7 +1271,6 @@ Reviver.onSave = Reviver.onSave ?? {};
 export abstract class Sprite extends GameObject {
     public flippedH: boolean;
     public flippedV: boolean;
-    override z: number;
     public imgid: number;
 
     constructor(id?: string) {

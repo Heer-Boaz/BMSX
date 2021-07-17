@@ -39,8 +39,6 @@ class bclass extends Sprite {
             // Input.KC_BTN3 && debugtest1();
             // Input.KC_BTN4 && me.state.to('bla');
             // Input.KC_BTN4 && debugtest2();
-
-
         };
 
         return new cmdef(classname, {

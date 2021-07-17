@@ -48,7 +48,8 @@ export abstract class BaseView {
 
     public drawgame(gamescreenOffset?: Point, clearCanvas: boolean = true): void {
         if (clearCanvas) global.view.clear();
-        global.model.objects.forEach(o => !o.disposeFlag && o.visible && o.paint?.(gamescreenOffset));
+        global.model.currentSpace.sortObjectsByPriority();
+        global.model.currentSpace.objects.forEach(o => !o.disposeFlag && o.visible && o.paint?.(gamescreenOffset));
     }
 
     public calculateSize(): void {

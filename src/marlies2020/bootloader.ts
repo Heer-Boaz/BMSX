@@ -1,5 +1,5 @@
 import { RomLoadResult } from '../bmsx/rompack';
-import { Game, BaseModel, GameObject, Sprite, BSTEventType, sdef, mdef, leavingScreenHandler_prohibit as prohibitLeavingScreenHandler, statedef_builder, cmdef, sstate, cmstate, setPoint, newPoint, Direction, newSize, newArea, Point, randomInt, copyPoint, getOppositeDirection } from '../bmsx/bmsx';
+import { Game, BaseModel, GameObject, Sprite, BSTEventType, sdef, mdef, leavingScreenHandler_prohibit as prohibitLeavingScreenHandler, statedef_builder, cmdef, sstate, cmstate, setPoint, newPoint, Direction, newSize, newArea, Point, randomInt, copyPoint, getOppositeDirection, Space } from '../bmsx/bmsx';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
@@ -65,8 +65,7 @@ class modelclass extends BaseModel {
                        }),
                        'hoera!': new sdef('hoera!', {
                            onenter() {
-                               global.model.clear();
-                               global.model.spawn(new hoeraStuff());
+                               global.model.setSpace('hoera!');
                            }
                        }),
                     }
@@ -79,6 +78,9 @@ class modelclass extends BaseModel {
         super();
         this.pitasOpBord = 0;
         this.ingredientEquipped = null;
+        let winSpace = new Space('hoera!');
+        winSpace.spawn(new hoeraStuff());
+        this.addSpace(winSpace);
     }
 
     public init() {
@@ -123,7 +125,7 @@ class modelclass extends BaseModel {
                 this.ingredientEquipped.pos.x = INVENTORY_POS.x;
                 this.ingredientEquipped.pos.y = INVENTORY_POS.y;
                 this.ingredientEquipped.z = 2100;
-                _model.sortObjectsByPriority();
+                // _model.currentSpace.sortObjectsByPriority();
             }
         }
     }
@@ -158,7 +160,7 @@ class modelclass extends BaseModel {
         this.ingredientEquipped.pos.x = bord.pos.x;
         this.ingredientEquipped.pos.y = bord.pos.y; // Plaats pita op bord
         this.ingredientEquipped.z = 850;
-        _model.sortObjectsByPriority();
+        // _model.currentSpace.sortObjectsByPriority();
 
         this.ingredientEquipped = null; // Haal inventory leeg
         if (++this.pitasOpBord >= PITAS_OP_BORD_VOOR_WINST) {
@@ -180,10 +182,10 @@ class brandblusser extends Sprite {
                             nudges2move: 20,
                             onrun: (s: sstate, ik: brandblusser): void => {
                                 setPoint(ik.pos, _model.marlies.pos.x, _model.marlies.pos.y + 12);
-                                let oldPrio = ik.z;
+                                // let oldPrio = ik.z;
                                 if (_model.marlies.direction == Direction.Up) ik.z = 950;
                                 else ik.z = 1050;
-                                if (ik.z != oldPrio) _model.sortObjectsByPriority();
+                                // if (ik.z != oldPrio) _model.currentSpace.sortObjectsByPriority();
                                 ++s.nudges;
                             },
                             onnext: (_, ik: brandblusser): void => {
