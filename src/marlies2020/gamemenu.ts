@@ -2,9 +2,8 @@ import { AudioId, BitmapId } from "./resourceids";
 import { TextWriter } from "../bmsx/textwriter";
 import { SM } from "../bmsx/soundmaster";
 // import { SlotExists, LoadGame } from "../bmsx/gamepersistor";
-import { GameOptions as GO, GameObject, mdef, cmdef, Direction, Size, Point, newSize, setPoint } from '../bmsx/bmsx';
+import { GameOptions as GO, GameObject, Direction, Size, Point, newSize, setPoint } from '../bmsx/bmsx';
 import { Constants } from "../bmsx/bmsx";
-// import { view, game } from "../bmsx/bmsx";
 import { Input } from "../bmsx/input";
 import { Msx1ExtColors } from "../bmsx/msx";
 import { DrawImgFlags } from '../bmsx/view';
@@ -76,24 +75,24 @@ export class GameMenu extends GameObject {
         { type: MenuItem.Scale, label: GameMenu.scaleText },
         // { type: MenuItem.MusicVolume, label: GameMenu.musicVolumeText },
     ];
-    private static fullscreenOptionsOffsets: number[] = [TextWriter.FontWidth * 12 - 1, TextWriter.FontWidth * 14 - 1];
-    private static fullscreenOptionsOffsetY: number = -1;
-    private static fullscreenOptionsRectangleSize: Size = newSize(TextWriter.FontWidth + 2, TextWriter.FontHeight + 2);
-    public visible: boolean;
+    private static fullscreenOptionsOffsets: number[];
+    private static fullscreenOptionsOffsetY: number;
+    private static fullscreenOptionsRectangleSize: Size;
     private cursorPos: Point;
     private selectedItemIndex: number;
     private CurrentScreen: MenuItem;
-    id: string = 'gamemenu';
-    disposeFlag: boolean = false;
-    pos: Point = null;
-    z: number = 5000;
 
     constructor() {
         super();
+        this.id = 'gamemenu';
+        this.z = 5000;
         this.visible = false;
         this.cursorPos = { x: 0, y: 0 };
         this.selectedItemIndex = 0;
         this.CurrentScreen = MenuItem.Main;
+        GameMenu.fullscreenOptionsOffsets = [global.view.default_font.char_width * 12 - 1, global.view.default_font.char_height * 14 - 1];
+        GameMenu.fullscreenOptionsOffsetY  = -1;
+        GameMenu.fullscreenOptionsRectangleSize = newSize(global.view.default_font.char_width + 2, global.view.default_font.char_height + 2);
     }
 
     public Open(currentscreen: MenuItem = MenuItem.Main): void {
@@ -120,9 +119,10 @@ export class GameMenu extends GameObject {
         }
     }
 
-    public run(): void {
+    override run(): void {
         if (!this.visible)
             return;
+        this.HandleInput();
         setPoint(this.cursorPos, this.calculateCursorX(), this.calculateCursorY());
     }
 
@@ -169,6 +169,7 @@ export class GameMenu extends GameObject {
                     SM.play(AudioId.Selectie);
                     switch (this.selectedItem) {
                         case MenuItem.ReturnToGame:
+                            global.model.state.pop();
                             // (controller as Controller).CloseGameMenu();
                             break;
                         case MenuItem.ChangeOptions:
@@ -438,7 +439,7 @@ export class GameMenu extends GameObject {
         }
     }
 
-    public paint = (offset?: Point):void => {
+    override paint = (offset?: Point):void => {
         // view.fillRectangle(GameMenu.menuPosX, GameMenu.menuPosY, GameMenu.menuEndX, GameMenu.menuEndY, Msx1Colors[1]);
         // view.drawRectangle(GameMenu.menuPosX, GameMenu.menuPosY, GameMenu.menuEndX, GameMenu.menuEndY, Msx1Colors[15]);
         let titleToDraw: string;
@@ -506,12 +507,12 @@ export class GameMenu extends GameObject {
                                 let textToDisplay: string;
                                 if (!GO.Fullscreen) {
                                     TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
-                                    offsetX += GameMenu.scaleText.length * TextWriter.FontWidth;
+                                    offsetX += GameMenu.scaleText.length * global.view.default_font.char_width;
                                     TextWriter.drawText(offsetX, y, `${global.view.scale.toPrecision(2)}X`);
                                 }
                                 else {
                                     TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, null, Msx1ExtColors[0]);
-                                    offsetX += GameMenu.scaleText.length * TextWriter.FontWidth;
+                                    offsetX += GameMenu.scaleText.length * global.view.default_font.char_height;
                                     // textToDisplay = BDX._.Zoom.ToString("n2");
                                     TextWriter.drawText(offsetX, y, `${global.view.scale.toPrecision(2)}X`);
                                 }
@@ -523,7 +524,7 @@ export class GameMenu extends GameObject {
                             case MenuItem.SoundVolume:
                                 {
                                     TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
-                                    offsetX += GameMenu.soundVolumeText.length * TextWriter.FontWidth;
+                                    offsetX += GameMenu.soundVolumeText.length * global.view.default_font.char_width;
                                     let text = GO.VolumePercentage > 0 ? GO.VolumePercentage + "%" : "Off";
                                     TextWriter.drawText(offsetX, y, text);
                                 }

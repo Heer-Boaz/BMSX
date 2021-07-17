@@ -1173,7 +1173,7 @@ Reviver.onSave = Reviver.onSave ?? {};
 export abstract class Sprite extends GameObject {
     public flippedH: boolean;
     public flippedV: boolean;
-    public z: number;
+    override z: number;
     public imgid: number;
 
     constructor(id?: string) {
@@ -1188,18 +1188,18 @@ export abstract class Sprite extends GameObject {
         this.disposeOnSwitchRoom = true;
     }
 
-    onspawn(spawningPos?: Point): void {
+    override onspawn(spawningPos?: Point): void {
         if (spawningPos) {
             [this.pos.x, this.pos.y] = [spawningPos.x, spawningPos.y];
         }
     }
 
-    spawn(spawningPos: Point = null): this {
+    override spawn(spawningPos: Point = null): this {
         global.model.spawn(this, spawningPos);
         return this; // Voor chaining
     }
 
-    paint = paintSprite;
+    override paint = paintSprite;
 }
 
 // https://stackoverflow.com/questions/8111446/turning-json-strings-into-objects-with-methods

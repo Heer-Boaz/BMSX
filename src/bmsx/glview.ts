@@ -127,7 +127,7 @@ export abstract class GLView extends BaseView {
 		});
 	}
 
-	public init(): void {
+	override init(): void {
 		super.init();
 		let gl = this.glctx;
 		gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -233,17 +233,17 @@ export abstract class GLView extends BaseView {
 		return result;
 	}
 
-	public handleResize(): void {
+	override handleResize(): void {
 		super.handleResize();
 		let _this = global.view as GLView;
 		_this.glctx.viewport(0, 0, _this.canvas.width, _this.canvas.height);
 	}
 
-	public drawgame(gamescreenOffset?: Point, clearCanvas: boolean = true): void {
+	override drawgame(gamescreenOffset?: Point, clearCanvas: boolean = true): void {
 		super.drawgame(gamescreenOffset, clearCanvas);
 	}
 
-	public clear(): void {
+	override clear(): void {
 		let gl = this.glctx;
 		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 	}
@@ -255,7 +255,7 @@ export abstract class GLView extends BaseView {
 		_this.drawImgReqIndex = 0;
 	}
 
-	public drawImg(imgid: number, x: number, y: number, options?: number, sx?: number, sy?: number): void {
+	override drawImg(imgid: number, x: number, y: number, options?: number, sx?: number, sy?: number): void {
 		let _this = global.view as GLView;
 		let gl = _this.glctx;
 		let width = global.game.rom['imgresources'][imgid]['imgmeta']['width'];
@@ -276,18 +276,18 @@ export abstract class GLView extends BaseView {
 		++_this.drawImgReqIndex;
 	}
 
-	public drawColoredBitmap(imgid: number, x: number, y: number, options: number, r: boolean = true, g: boolean = true, b: boolean = true, a: boolean = true) {
+	override drawColoredBitmap(imgid: number, x: number, y: number, options: number, r: boolean = true, g: boolean = true, b: boolean = true, a: boolean = true) {
 		let _this = global.view as GLView;
 		_this.drawImg(imgid, x, y, options);
 		// console.warn('GLView.drawColoredBitmap nog niet gecodeerd :-(');
 	}
 
-	public drawRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
+	override drawRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
 		// console.warn('GLView.drawRectangle nog niet gecodeerd :-(');
 
 	}
 
-	public fillRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
+	override fillRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
 		// console.warn('GLView.fillRectangle nog niet gecodeerd :-(');
 	}
 }

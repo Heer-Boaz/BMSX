@@ -1,4 +1,5 @@
-export var BitmapId = {
+import { IResourceId } from '../bmsx/rompack';
+export var BitmapId: IResourceId = {
 	None: 0,
 	b: 1,
 	blackpixel: 2,

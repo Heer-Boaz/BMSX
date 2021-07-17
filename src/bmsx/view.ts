@@ -107,7 +107,16 @@ export abstract class BaseView {
     }
 
     public static triggerWindowedOnFakeUserEvent(): void {
-        document.exitFullscreen();
+        if (document.fullscreenEnabled) {
+            try {
+                document.exitFullscreen();
+            }
+            catch (error) {
+                // !BUG: Heb een bug gezien waarbij dit voorkomt.
+                // Lijkt overeen te komen met het gebruik van de debugger-mogelijkheden van Boaz
+                console.error(error);
+            }
+        }
         window.removeEventListener('keyup', BaseView.triggerWindowedOnFakeUserEvent);
     }
 

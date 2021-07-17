@@ -48,3 +48,8 @@ export interface BFont {
 	char_width: number;
 	char_height: number;
 }
+
+export interface IResourceId {
+	None: number,
+	[propName: string]: number;
+}

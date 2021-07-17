@@ -6,6 +6,8 @@ import { BitmapId } from './resourceids';
 import { Input } from '../bmsx/input';
 import { TextWriter } from '../bmsx/textwriter';
 import { paintSprite } from '../bmsx/view';
+import { GameMenu } from './gamemenu';
+import { KonamiFont } from './konamifont';
 
 const COLUMN_X = <Array<number>>[36, 48, 80, 160, 200];
 const START_COLUMN = 1;
@@ -35,7 +37,31 @@ class modelclass extends BaseModel {
                 master: new mdef('default', {
                     states: {
                        default: new sdef('default', {
-                           onrun: BaseModel.defaultrun,
+                           onrun() {
+                               BaseModel.defaultrun();
+                               if (Input.KC_F5) {
+                                   global.model.state.to('gamemenu');
+                               }
+                           },
+                       }),
+                       'gamemenu': new sdef('gamemenu', {
+                           onenter() {
+                               let menu = new GameMenu();
+                               global.model.spawn(menu);
+                               menu.Open();
+                           },
+                           onrun() {
+                               let menu = global.model.get('gamemenu') as GameMenu;
+                               menu.run();
+                               if (Input.KC_F5) {
+                                   global.model.state.to('default');
+                               }
+                           },
+                           onexit() {
+                               let menu = global.model.get('gamemenu') as GameMenu;
+                               menu.Close();
+                               global.model.exile(menu);
+                           },
                        }),
                        'hoera!': new sdef('hoera!', {
                            onenter() {
@@ -208,7 +234,7 @@ class hoeraStuff extends Sprite {
         this.imgid = BitmapId.Sint;
     }
 
-    paint = (offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }) => {
+    override paint = (offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }) => {
         TextWriter.drawText(24, 100, "Redelijk gedaan,Marlies!");
         paintSprite.call(this, offset, colorize); // .call() nodig, anders "this" undefined
     }
@@ -230,7 +256,7 @@ class komkommer extends ingredient implements Ingredient {
         this.imgid = BitmapId.Komkommer;
     }
 
-    ingredientType = 'komkommer';
+    override ingredientType = 'komkommer';
 };
 
 class mes extends ingredient implements Ingredient {
@@ -239,7 +265,7 @@ class mes extends ingredient implements Ingredient {
         this.imgid = BitmapId.Mes;
     }
 
-    ingredientType = 'mes';
+    override ingredientType = 'mes';
 };
 
 class tomaatjes extends ingredient implements Ingredient {
@@ -248,7 +274,7 @@ class tomaatjes extends ingredient implements Ingredient {
         this.imgid = BitmapId.Tomaatjes;
     }
 
-    ingredientType = 'tomaatjes';
+    override ingredientType = 'tomaatjes';
 };
 
 class falafel extends ingredient implements Ingredient {
@@ -257,7 +283,7 @@ class falafel extends ingredient implements Ingredient {
         this.imgid = BitmapId.Falafel;
     }
 
-    ingredientType = 'falafel';
+    override ingredientType = 'falafel';
 };
 
 class pita extends ingredient implements Pita {
@@ -274,7 +300,7 @@ class pita extends ingredient implements Pita {
     }
 
     ingredientenInPita: string[] = new Array<string>();
-    ingredientType = 'pita';
+    override ingredientType = 'pita';
     gevuld = false;
 };
 
@@ -350,7 +376,7 @@ class vuur extends Sprite {
         this.z = dir != Direction.Up ? 1100 : 900;
     }
 
-    onspawn(spawningPos?: Point): void {
+    override onspawn(spawningPos?: Point): void {
         super.onspawn(spawningPos);
         this.state.to('brand');
     }
@@ -455,7 +481,7 @@ class corona extends Sprite {
         this.onLeavingScreen = this.onLeavingScreenHandler;
     }
 
-    onspawn(spawningPos?: Point): void {
+    override onspawn(spawningPos?: Point): void {
         super.onspawn(spawningPos);
         this.state.to('skulk');
     }
@@ -687,7 +713,7 @@ class speler extends Sprite {
         this.hitarea = newArea(0, 8, 16, 16);
     }
 
-    onspawn(spawningPos?: Point): void {
+    override onspawn(spawningPos?: Point): void {
         super.onspawn(spawningPos);
         this.state.to('walk');
         this.state.to('down', 'anistate');
@@ -803,14 +829,14 @@ class keuken extends Sprite {
         this.z = 0;
     }
 
-    onspawn(spawningPos?: Point): void {
+    override onspawn(spawningPos?: Point): void {
         super.onspawn(spawningPos);
         this.state.to('wees_een_keuken');
     }
 };
 
 class viewclass extends GLView {
-    public drawgame(): void {
+    override drawgame(): void {
         super.drawgame();
         super.drawSprites();
     }
@@ -823,6 +849,7 @@ _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: Gain
     let _view = new viewclass(newSize(MSX1ScreenWidth, MSX1ScreenHeight));
     _model = new modelclass();
     new Game(rom, _model, _view, sndcontext, gainnode);
+    global.view.default_font = new KonamiFont();
 
     global.game.start();
     let model = global.model;

@@ -67,7 +67,7 @@ class bclass extends Sprite {
         this.hitarea = newArea(0, 0, 14, 18);
     }
 
-    public onspawn = (spawningPos?: Point): void => {
+    override onspawn = (spawningPos?: Point): void => {
         super.onspawn?.(spawningPos);
         this.state.to('blap');
     };
@@ -119,7 +119,7 @@ class _modelclass extends BaseModel {
 };
 
 class _viewclass extends GLView {
-    public drawgame() {
+    override drawgame() {
         super.drawgame();
         super.drawSprites();
     }
