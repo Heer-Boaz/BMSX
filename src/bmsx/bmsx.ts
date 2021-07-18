@@ -940,6 +940,7 @@ export class Game {
     public paused: boolean;
     wasupdated: boolean;
     public rom: RomLoadResult;
+	public debug_runSingleFrameAndPause: boolean;
 
     constructor(_rom: RomLoadResult, _model: BaseModel, _view: BaseView, sndcontext: AudioContext, gainnode: GainNode) {
         global['game'] = this;
@@ -973,8 +974,12 @@ export class Game {
         this.run(performance.now());
     }
 
-    public update(elapsedMs: number): void {
+    public update(): void {
         global.model.run();
+        if (global.game.debug_runSingleFrameAndPause) {
+            global.game.debug_runSingleFrameAndPause = false;
+            global.game.paused = true;
+        }
     }
 
     public run(tFrame?: number): void {
@@ -997,8 +1002,10 @@ export class Game {
         for (let i = 0; i < numTicks; i++) {
             ++game._turnCounter;
             game.lastTick = game.lastTick + fpstime; // Now lastTick is this tick.
+            if (game.paused) continue;
             Input.pollGamepadInput();
-            game.paused || game.update(game.lastTick);
+            game.update();
+            // game.update(game.lastTick);
         }
         global.view.drawgame();
     }

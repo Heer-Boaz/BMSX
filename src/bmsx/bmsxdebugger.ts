@@ -58,18 +58,35 @@ function startDragGameObject(gameobject_at_cursor: GameObject): void {
 	draggedObj = gameobject_at_cursor;
 }
 
-export function handleDebugClick(e: MouseEvent): void {
-	if (e.button === 0 && e.ctrlKey) {
-		// Pause or unpause game for debugging
-		global.game.paused = !global.game.paused;
-		return;
-	}
-	if (e.button === 0 && e.altKey) {
-		// Only open when main button is clicked and shift was not pressed
+export function handleContextMenu(e: MouseEvent): void {
+	e.preventDefault();
+	e.stopPropagation();
 
+	if (e.shiftKey) {
+		// Unpause game
+		global.game.debug_runSingleFrameAndPause = false;
+		global.game.paused = false;
+	}
+	else {
+		// Pause game for debugging, and only compute a single frame
+		if (global.game.paused) {
+			global.game.debug_runSingleFrameAndPause = true;
+			global.game.paused = false;
+		}
+		else {
+			global.game.paused = true;
+			global.game.debug_runSingleFrameAndPause = false;
+		}
+	}
+}
+
+export function handleDebugClick(e: MouseEvent): void {
+	if (e.button === 0 && !e.shiftKey) { // Only open when main button is clicked
 		let gameobject_at_cursor = getGameObjectAtCursor(e);
 
 		if (gameobject_at_cursor) {
+			global.game.paused = true; // Pause the game automatically if an object was found at this location
+
 			const newDiv = document.createElement('div');
 			newDiv.className = 'modal-dialog';
 			newDiv.id = DEBUG_ELEMENT_ID;

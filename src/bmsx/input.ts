@@ -1,5 +1,5 @@
 ﻿import { Key } from 'ts-key-enum';
-import { handleDebugClick, handleDebugMouseDown, handleDebugMouseDragEnd, handleDebugMouseMove, handleDebugMouseOut } from './bmsxdebugger';
+import { handleDebugClick, handleDebugMouseDown, handleDebugMouseDragEnd, handleDebugMouseMove, handleDebugMouseOut, handleContextMenu as handleDebugContextMenu } from './bmsxdebugger';
 
 const GAMEPAD_LEFT: number = 1000;
 const GAMEPAD_RIGHT: number = 1001;
@@ -165,8 +165,8 @@ export class Input {
         window.addEventListener('webkitmouseforcewillbegin', e => preventActionAndPropagation(e), false);
         document.addEventListener('webkitmouseforcedown', e => preventActionAndPropagation(e), false);
         window.addEventListener('webkitmouseforcedown', e => preventActionAndPropagation(e), false);
-        document.addEventListener('contextmenu', e => preventActionAndPropagation(e), false);
-        window.addEventListener('contextmenu', e => preventActionAndPropagation(e), false);
+        // document.addEventListener('contextmenu', e => preventActionAndPropagation(e), false);
+        // window.addEventListener('contextmenu', e => preventActionAndPropagation(e), false);
         document.addEventListener('touchforcechange', e => preventActionAndPropagation(e), false);// iOS -- https://stackoverflow.com/questions/58159526/draggable-element-in-iframe-on-mobile-is-buggy && iOS -- https://stackoverflow.com/questions/50980876/can-you-prevent-3d-touch-on-an-img-but-not-tap-and-hold-to-save
         window.addEventListener('touchforcechange', e => preventActionAndPropagation(e), false);
         // document.addEventListener('dragstart', e => preventActionAndPropagation(e), false);
@@ -184,7 +184,7 @@ export class Input {
         gamescreen.addEventListener('mousemove', e => handleDebugMouseMove(e), false);
         gamescreen.addEventListener('mouseup', e => handleDebugMouseDragEnd(e), false);
         gamescreen.addEventListener('mouseout', e => handleDebugMouseOut(e), false);
-        // window.addEventListener('click', e => debugtest1(e), false);
+        gamescreen.addEventListener('contextmenu', e => handleDebugContextMenu(e), false);
     }
 
     public static pollGamepadInput(): void {
@@ -262,7 +262,7 @@ export class Input {
 }
 
 function preventDefaultEventAction(e: UIEvent, key: string) {
-    if (global.game.running) {
+    if (global.game.running || global.game.paused) {
         switch (key) {
             case 'Escape':
             case 'Esc':
