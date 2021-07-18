@@ -18,6 +18,14 @@
 	border-bottom-color: gainsboro;
 }
 
+.modal-content table tr.selectablerow:hover,
+.modal-content table tr.selectablerow:focus {
+	color: white;
+	background-color: darkblue;
+	text-decoration: none;
+	cursor: pointer;
+}
+
 .modal-content table tr td.propvalue:hover,
 .modal-content table tr td.propvalue:focus {
 	color: white;
@@ -237,7 +245,7 @@ body {
 	overflow: hidden;
 	background-color: #2020ff;
 
-	cursor: pointer;
+	cursor: auto;
 	min-height: 100%;
 	width: 100vw;
 	height: 100%;

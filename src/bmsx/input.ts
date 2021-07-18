@@ -1,5 +1,5 @@
 ﻿import { Key } from 'ts-key-enum';
-import { handleDebugClick, handleDebugMouseDown, handleDebugMouseDragEnd, handleDebugMouseMove, handleDebugMouseOut, handleContextMenu as handleDebugContextMenu } from './bmsxdebugger';
+import { handleDebugClick, handleDebugMouseDown, handleDebugMouseDragEnd, handleDebugMouseMove, handleDebugMouseOut, handleContextMenu as handleDebugContextMenu, handleOpenObjectMenu } from './bmsxdebugger';
 
 const GAMEPAD_LEFT: number = 1000;
 const GAMEPAD_RIGHT: number = 1001;
@@ -262,13 +262,15 @@ export class Input {
 }
 
 function preventDefaultEventAction(e: UIEvent, key: string) {
-    if (global.game.running || global.game.paused) {
+    if (global.game.running || !global.game.paused) {
         switch (key) {
             case 'Escape':
             case 'Esc':
             case 'F11':
             case 'F12':
                 break;
+            case 'F6':
+                handleOpenObjectMenu(e);
             default:
                 e.preventDefault();
                 e.stopPropagation();
