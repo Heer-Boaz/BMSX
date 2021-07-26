@@ -1,10 +1,13 @@
-export enum BitmapId {
-	None = 0,
-	b = 1,
-	b2 = 2,
-	_atlas = 3,
+import { IResourceId } from '../bmsx/rompack';
+export var BitmapId: IResourceId = {
+	None: 0,
+
+	b: 1,
+	b2: 2,
+	_atlas: 3,
 }
 
 export enum AudioId {
 	None = 0,
+
 }

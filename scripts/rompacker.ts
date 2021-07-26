@@ -19,6 +19,14 @@ const ATLAS_PX_SIZE = 4096;
 const CROP_ATLAS = true;
 const GENERATE_AND_USE_TEXTURE_ATLAS = true;
 const DONT_PACK_IMAGES_WHEN_USING_ATLAS = true;
+const BOILERPLATE_RESOURCE_ID = `import { IResourceId } from '../bmsx/rompack';`;
+const BOILERPLATE_RESOURCE_ID_BITMAP = `export var BitmapId: IResourceId = {
+	None: 0,
+`;
+
+const BOILERPLATE_RESOURCE_ID_AUDIO = `export enum AudioId {
+	None = 0,
+`;
 
 const atlasCanvas: HTMLCanvasElement = <any>createCanvas(ATLAS_PX_SIZE, ATLAS_PX_SIZE);
 const ctx: CanvasRenderingContext2D = atlasCanvas.getContext('2d');
@@ -159,7 +167,7 @@ function yaml2Json(): Promise<void> {
 			let yamlfiles = getAllFiles('./src', [], '.yaml');
 			startRotator();
 			for (let file of yamlfiles) {
-				let doc = yaml.safeLoad(readFileSync(file, 'utf8'));
+				let doc = yaml.load(readFileSync(file, 'utf8'));
 				let outfilename = file.replace('.yaml', '.json');
 				writeFileSync(outfilename, Buffer.from(encodeuint8arr(JSON.stringify(doc))));
 			}
@@ -199,7 +207,7 @@ async function buildAndBundleRomSource(outfile: string, bootloader_path: string)
 					stopRotator();
 					reject(e);
 				})
-				.pipe(writeOutput)
+				.pipe(writeOutput);
 			writeOutput.on('finish', () => {
 				stopRotator();
 				appendLogEntry(`${_colors.grey('[Donut]')}\n`);
@@ -216,7 +224,7 @@ async function buildAndBundleRomSource(outfile: string, bootloader_path: string)
 	});
 }
 
-function minifyGamecode(infile: string): Error {
+async function minifyGamecode(infile: string): Promise<terser.MinifyOutput> {
 	try {
 		let options = <terser.MinifyOptions>{
 			ecma: 2017,
@@ -259,7 +267,7 @@ function minifyGamecode(infile: string): Error {
 					],
 				properties: false,
 			},
-			output: <terser.OutputOptions>{
+			output: <terser.FormatOptions>{
 				ecma: 2017,
 				safari10: false,
 				webkit: true,
@@ -275,16 +283,7 @@ function minifyGamecode(infile: string): Error {
 
 		let gamejs = readFileSync(infile, 'utf8');
 		let gamejsMinifiedResult = terser.minify(gamejs, options);
-		if (!gamejsMinifiedResult.code) return gamejsMinifiedResult.error;
-
-		writeFileSync("./rom/megarom.min.js", gamejsMinifiedResult.code);
-		if (gamejsMinifiedResult.map) {
-			writeFileSync("./rom/megarom.min.map", gamejsMinifiedResult.map);
-		}
-		if (gamejsMinifiedResult.warnings) {
-			log(gamejsMinifiedResult.warnings.join('\n'), 'warning');
-		}
-		return null;
+		return gamejsMinifiedResult;
 	}
 	catch (err) {
 		return err;
@@ -310,7 +309,7 @@ async function buildGameHtmlAndManifest(outfile: string, title: string): Promise
 			webkit: true,
 		}
 	};
-	let romjsMinified = terser.minify(romjs, options).code;
+	let romjsMinified = (await terser.minify(romjs, options)).code;
 	let bmsx = readFileSync("./rom/bmsx.png");
 	let bmsx_base64ed = bmsx.toString('base64');
 
@@ -537,8 +536,9 @@ function buildResourceList(respath: string): void {
 
 	let metalist = getResMetaList(respath);
 
-	tsimgout.push("export var BitmapId = {\n\tNone: 0,");
-	tssndout.push("export enum AudioId {\n\tNone = 0,");
+	tsimgout.push(BOILERPLATE_RESOURCE_ID);
+	tsimgout.push(BOILERPLATE_RESOURCE_ID_BITMAP);
+	tssndout.push(BOILERPLATE_RESOURCE_ID_AUDIO);
 
 	for (let i = 0; i < metalist.length; i++) {
 		let current = metalist[i];
@@ -572,9 +572,13 @@ async function buildRompack(outfile: string, respath: string): Promise<any> {
 	return new Promise<any>(async (resolve, reject) => {
 		log("Minifyen... ");
 		startRotator();
-		let minifyGamecodeResult = minifyGamecode("./rom/megarom.js");
+		let minifyGamecodeResult = await minifyGamecode("./rom/megarom.js");
+		writeFileSync("./rom/megarom.min.js", minifyGamecodeResult.code);
+		if (minifyGamecodeResult.map) {
+			writeFileSync("./rom/megarom.min.map", minifyGamecodeResult.map as string);
+		}
+
 		stopRotator();
-		(!minifyGamecodeResult) ? appendLogEntry(`${_colors.grey('[Donut]')}\n`) : (reject(new Error(`Minifying game code failed: ${minifyGamecodeResult.message}`)));
 
 		let buffers = new Array<Buffer>();
 		log("Resource bestanden inladen en bufferen...  ");

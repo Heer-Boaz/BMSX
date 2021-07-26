@@ -1,4 +1,4 @@
-import { GameObject, newArea, newPoint } from './bmsx';
+import { GameObject, newPoint } from './bmsx';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
 
 let draggedObj: GameObject;
