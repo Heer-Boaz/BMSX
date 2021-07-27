@@ -1,7 +1,7 @@
 {
-	"short_name": "BMSX",
 	"name": "#title",
-	"display": "standalone",
+	"short_name": "BMSX",
+	"display": "fullscreen",
 	"orientation": "landscape",
 	"background_color": "#000000"
 }

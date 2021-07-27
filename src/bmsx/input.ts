@@ -1,5 +1,5 @@
 ﻿import { Key } from 'ts-key-enum';
-import { handleDebugClick, handleDebugMouseDown, handleDebugMouseDragEnd, handleDebugMouseMove, handleDebugMouseOut, handleContextMenu as handleDebugContextMenu, handleOpenObjectMenu } from './bmsxdebugger';
+import { handleDebugClick, handleDebugMouseDown, handleDebugMouseDragEnd, handleDebugMouseMove, handleDebugMouseOut, handleContextMenu as handleDebugContextMenu, handleOpenObjectMenu, handleOpenDebugMenu as handleOpenDebugMenu } from './bmsxdebugger';
 
 const GAMEPAD_LEFT: number = 1000;
 const GAMEPAD_RIGHT: number = 1001;
@@ -147,10 +147,10 @@ export class Input {
         });
 
         let preventActionAndPropagation = (e: Event): boolean => {
+            e.returnValue = false; // https://javascriptio.com/view/5386822/prevent-text-selection-on-tap-and-hold-on-ios-13-mobile-safari
             e.preventDefault();
             e.stopPropagation();
-            e.returnValue = false; // https://javascriptio.com/view/5386822/prevent-text-selection-on-tap-and-hold-on-ios-13-mobile-safari
-            return false
+            return false;
         }
 
         window.addEventListener('keydown', e => { preventDefaultEventAction(e, e.code); keydown(e.code); }, false);
@@ -160,6 +160,10 @@ export class Input {
         document.addEventListener('touchmove', e => { preventActionAndPropagation(e); handleTouchStuff(e); return false; }, false);
         document.addEventListener('touchstart', e => { preventActionAndPropagation(e); handleTouchStuff(e); return false; }, false);
         document.addEventListener('touchend', e => { preventActionAndPropagation(e); handleTouchStuff(e); return false; }, false);
+        document.addEventListener('touchcancel', e => { preventActionAndPropagation(e); handleTouchStuff(e); return false; }, false);
+        // document.addEventListener('dragenter', e => { preventActionAndPropagation(e); return false; }, false);
+        // document.addEventListener('dragover', e => { preventActionAndPropagation(e); return false; }, false);
+        // document.addEventListener('dragstart', e => { preventActionAndPropagation(e); return false; }, false);
 
         document.addEventListener('webkitmouseforcewillbegin', e => preventActionAndPropagation(e), false);
         window.addEventListener('webkitmouseforcewillbegin', e => preventActionAndPropagation(e), false);
@@ -270,7 +274,11 @@ function preventDefaultEventAction(e: UIEvent, key: string) {
             case 'F12':
                 break;
             case 'F6':
+                handleOpenDebugMenu(e);
+                break;
+            case 'F7':
                 handleOpenObjectMenu(e);
+                break;
             default:
                 e.preventDefault();
                 e.stopPropagation();
