@@ -96,7 +96,7 @@ function addElement(addElementTo: HTMLElement, contentAsElement: HTMLElement) {
 // 	return table;
 // }
 
-function createObjectTableElement(addContentTo: HTMLElement, obj: Object, objName: string, ignoreProps?: string[]): HTMLElement {
+function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement, obj: Object, objName: string, ignoreProps?: string[]): HTMLElement {
 	let table = addContent(addContentTo, 'table', null);
 	let headerRow = addContent(table, 'tr', null);
 	addContent(headerRow, 'th', 'Prop');
@@ -116,13 +116,13 @@ function createObjectTableElement(addContentTo: HTMLElement, obj: Object, objNam
 				let valueCell = addContent(row, 'td', `< ... >`);
 				valueCell.classList.add('propvalue');
 				valueCell.onclick = (e) => {
-					const [objDialogDiv, objDialogContentDiv] = createDebugDialog(newObjName);
-					createObjectTableElement(objDialogContentDiv, value, newObjName, ignoreProps);
+					const [objDialogDiv, objDialogContentDiv] = createDebugDialog(newObjName, dialog);
+					createObjectTableElement(objDialogDiv, objDialogContentDiv, value, newObjName, ignoreProps);
 					document.body.insertBefore(objDialogDiv, null);
 				};
 			}
 			else {
-				addElement(row, createObjectTableElement(row, value, newObjName, ignoreProps));
+				addElement(row, createObjectTableElement(dialog, row, value, newObjName, ignoreProps));
 			}
 		}
 		else {
@@ -175,11 +175,15 @@ function createObjectTableElement(addContentTo: HTMLElement, obj: Object, objNam
 	return table;
 }
 
-function createDebugDialog(title?: string): [dialogDiv: HTMLDivElement, contentDiv: HTMLDivElement] {
+function createDebugDialog(title?: string, previousDialog: HTMLElement = null): [dialogDiv: HTMLDivElement, contentDiv: HTMLDivElement] {
 	const newDiv = document.createElement('div');
 	newDiv.className = 'modal-dialog';
 	newDiv.id = DEBUG_ELEMENT_ID;
 	newDiv.draggable = true;
+	if (previousDialog) {
+		previousDialog.style.display = 'none';
+		(newDiv as any).previous = previousDialog;
+	}
 
 	function dialogMouseDownHandler(e: MouseEvent) {
 		shiftX = e.clientX - this.getBoundingClientRect().left;
@@ -214,9 +218,28 @@ function createDebugDialog(title?: string): [dialogDiv: HTMLDivElement, contentD
 	newDiv.ondragend = dialogDragEndHandler;
 	newDiv.ondrop = dialogDropHandler;
 
+	const wrapperDiv = document.createElement('div');
+	wrapperDiv.className = 'model-title-wrapper';
+
 	const titleSpan = document.createElement('span');
 	titleSpan.className = 'modal-title';
 	title && (titleSpan.innerHTML = title);
+
+	let backSpan: HTMLSpanElement = null;
+	if (previousDialog) {
+		backSpan = document.createElement('span');
+		backSpan.className = 'modal-back';
+		backSpan.innerHTML = '&larr;';
+		backSpan.onclick = (e) => {
+			e.preventDefault();
+			document.body.removeChild(newDiv);
+			previousDialog.style.left = newDiv.style.left;
+			previousDialog.style.top = newDiv.style.top;
+			previousDialog.style.width = newDiv.style.width;
+			previousDialog.style.height = newDiv.style.height;
+			previousDialog.style.display = 'flex';
+		};
+	}
 
 	const closeSpan = document.createElement('span');
 	closeSpan.className = 'modal-close';
@@ -224,23 +247,38 @@ function createDebugDialog(title?: string): [dialogDiv: HTMLDivElement, contentD
 	closeSpan.onclick = (e) => {
 		e.preventDefault();
 		document.body.removeChild(newDiv);
+
+		let previous = previousDialog;
+		while (previous) {
+			document.body.removeChild(previous);
+			previous = (previous as any).previous;
+		}
 	};
 
 	const contentDiv = document.createElement('div');
 	contentDiv.className = 'modal-content';
 
-	newDiv.insertBefore(closeSpan, null);
-	newDiv.insertBefore(titleSpan, null);
+	if (previousDialog) {
+		newDiv.style.left 	= previousDialog.style.left;
+		newDiv.style.top 	= previousDialog.style.top;
+		newDiv.style.width 	= previousDialog.style.width;
+		newDiv.style.height	= previousDialog.style.height;
+	}
+
+	backSpan && wrapperDiv.insertBefore(backSpan, null);
+	wrapperDiv.insertBefore(titleSpan, null);
+	wrapperDiv.insertBefore(closeSpan, null);
+	newDiv.insertBefore(wrapperDiv, null);
 	newDiv.insertBefore(contentDiv, null);
 
 	return [newDiv, contentDiv];
 }
 
-export function handleOpenObjectMenu(e: UIEvent): void {
+export function handleOpenObjectMenu(e: UIEvent, previous: HTMLElement = null): void {
 	if (e && e.type !== 'keydown') return;
 	global.game.paused = true;
 
-	const [dialogDiv, contentDiv] = createDebugDialog();
+	const [dialogDiv, contentDiv] = createDebugDialog('Objects', previous);
 
 	let table = addContent(contentDiv, 'table', null);
 	let headerRow = addContent(table, 'tr', null);
@@ -254,8 +292,8 @@ export function handleOpenObjectMenu(e: UIEvent): void {
 		addContent(row, 'td', `${o.id}`);
 
 		row.onclick = (_) => {
-			const [objDialogDiv, objDialogContentDiv] = createDebugDialog(o.id);
-			createObjectTableElement(objDialogContentDiv, o, o.id, ['objects']);
+			const [objDialogDiv, objDialogContentDiv] = createDebugDialog(o.id, dialogDiv);
+			createObjectTableElement(objDialogDiv, objDialogContentDiv, o, o.id, ['objects']);
 			document.body.insertBefore(objDialogDiv, null);
 		};
 	});
@@ -277,22 +315,22 @@ export function handleOpenDebugMenu(e: UIEvent): void {
 	let row = addContent(table, 'tr', null);
 	row.classList.add('selectablerow');
 	addContent(row, 'td', `List model properties`);
-	row.onclick = (_) => handleOpenModelMenu(null);
+	row.onclick = (_) => handleOpenModelMenu(null, dialogDiv);
 
 	row = addContent(table, 'tr', null);
 	row.classList.add('selectablerow');
 	addContent(row, 'td', `List all objects in current scene`);
-	row.onclick = (_) => handleOpenObjectMenu(null);
+	row.onclick = (_) => handleOpenObjectMenu(null, dialogDiv);
 
 	document.body.insertBefore(dialogDiv, null);
 }
 
-export function handleOpenModelMenu(e: UIEvent): void {
+export function handleOpenModelMenu(e: UIEvent, previous: HTMLElement): void {
 	if (e && e.type !== 'keydown') return;
 	global.game.paused = true;
 
-	const [objDialogDiv, objDialogContentDiv] = createDebugDialog();
-	createObjectTableElement(objDialogContentDiv, global.model, 'The Model', ['objects']);
+	const [objDialogDiv, objDialogContentDiv] = createDebugDialog('Model Menu', previous);
+	createObjectTableElement(objDialogDiv, objDialogContentDiv, global.model, 'The Model', ['objects']);
 	document.body.insertBefore(objDialogDiv, null);
 }
 
@@ -304,7 +342,7 @@ export function handleDebugClick(e: MouseEvent): void {
 			global.game.paused = true; // Pause the game automatically if an object was found at this location
 			const [dialogDiv, contentDiv] = createDebugDialog(gameobject_at_cursor.id);
 
-			createObjectTableElement(contentDiv, gameobject_at_cursor, gameobject_at_cursor.id, ['objects']);
+			createObjectTableElement(dialogDiv, contentDiv, gameobject_at_cursor, gameobject_at_cursor.id, ['objects']);
 			document.body.insertBefore(dialogDiv, null);
 		}
 	}
