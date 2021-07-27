@@ -80,6 +80,7 @@
 .model-title-wrapper {
 	text-align: center;
 	background: lightslategray;
+	white-space: nowrap;
 }
 
 .modal-close {
