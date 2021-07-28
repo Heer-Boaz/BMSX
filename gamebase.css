@@ -1,6 +1,6 @@
 .modal-dialog {
 	position: fixed;
-	background-color: aliceblue;
+	background-color: rgba(240, 248, 255, 0.66);
 	color: black;
 	width: 800px;
 	height: 600px;
@@ -30,7 +30,7 @@
 .modal-content table tr.selectableoption:hover,
 .modal-content table tr.selectableoption:focus {
 	color: white;
-	background-color: darkgreen;
+	background-color: rgba(0, 140, 0, 0.66);
 	text-decoration: none;
 	cursor: pointer;
 }
@@ -38,7 +38,7 @@
 .modal-content table tr.selectablerow:hover,
 .modal-content table tr.selectablerow:focus {
 	color: white;
-	background-color: darkblue;
+	background-color: rgba(0, 0, 140, 0.66);
 	text-decoration: none;
 	cursor: pointer;
 }
@@ -46,26 +46,26 @@
 .modal-content table tr td.propvalue:hover,
 .modal-content table tr td.propvalue:focus {
 	color: white;
-	background-color: blue;
+	background-color: rgba(0, 0, 255, 0.66);
 	text-decoration: none;
 	cursor: text;
 }
 
 .modal-content table tr td.mutated-propvalue {
 	color: white;
-	background-color: darkred;
+	background-color: rgba(140, 0, 0, 0.66);
 }
 
 .modal-content table tr td.mutated-propvalue:hover,
 .modal-content table tr td.mutated-propvalue:focus {
 	color: white;
-	background-color: red;
+	background-color: rgba(255, 0, 0, 0.66);
 }
 
 .modal-content table tr td.immutable-propvalue:hover,
 .modal-content table tr td.immutable-propvalue:focus {
 	color: white;
-	background-color: gray;
+	background-color: rgba(128, 128, 128, 0.66);
 	text-decoration: none;
 	cursor: not-allowed;
 }
@@ -82,11 +82,11 @@
 	border-bottom-color: black; */
 	text-align: left;
 	color: white;
-	background-color: black;
+	background-color: rgba(0, 0, 0, 0.66);
 }
 
 .modal-content {
-	background-color: #fefefe;
+	background-color: #fafafaaa;
 	margin: 20px;
 	/* padding: 0px; */
 	border: 1px solid #888;
@@ -96,7 +96,7 @@
 
 .modal-title-wrapper {
 	text-align: center;
-	background: lightslategray;
+	background: rgba(120, 136, 154, 0.66);
 	white-space: nowrap;
 }
 
@@ -134,7 +134,7 @@
 .modal-back:hover,
 .modal-back:focus {
 	color: white;
-	background: red;
+	background: rgba(10, 7, 7, 0.66);
 	text-decoration: none;
 	cursor: pointer;
 }
