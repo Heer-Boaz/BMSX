@@ -12,10 +12,27 @@
 	overflow: hidden;
 }
 
+.modal-content table {
+	width: 100%;
+	height: 100%;
+}
+
 .modal-content table tr td {
 	border-bottom-style: solid;
 	border-bottom-width: thin;
 	border-bottom-color: gainsboro;
+}
+
+.centered-text {
+	text-align: center;
+}
+
+.modal-content table tr.selectableoption:hover,
+.modal-content table tr.selectableoption:focus {
+	color: white;
+	background-color: darkgreen;
+	text-decoration: none;
+	cursor: pointer;
 }
 
 .modal-content table tr.selectablerow:hover,
@@ -74,10 +91,10 @@
 	/* padding: 0px; */
 	border: 1px solid #888;
 	overflow: auto;
-	height: 100%;
+	/* height: 100%; */
 }
 
-.model-title-wrapper {
+.modal-title-wrapper {
 	text-align: center;
 	background: lightslategray;
 	white-space: nowrap;

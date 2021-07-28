@@ -96,6 +96,19 @@ function addElement(addElementTo: HTMLElement, contentAsElement: HTMLElement) {
 // 	return table;
 // }
 
+const OBJECT_TABLE_PROPS_TO_REDIRECT_NAMES = ['state', 'objects', 'spaces'];
+const OBJECT_TABLE_REDIRECT_BY_INNER_OBJECT = false;
+
+function shouldPropertyValueBeRedirectedToSubDialog(propName: string, propValue: any): boolean {
+	if (OBJECT_TABLE_REDIRECT_BY_INNER_OBJECT) {
+		let valuesInSubobject = Object.values(propValue);
+		return valuesInSubobject.some((v: any) => typeof v === 'object');
+	}
+	else {
+		return OBJECT_TABLE_PROPS_TO_REDIRECT_NAMES.some(p => p == propName);
+	}
+}
+
 function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement, obj: Object, objName: string, ignoreProps?: string[]): HTMLElement {
 	let table = addContent(addContentTo, 'table', null);
 	let headerRow = addContent(table, 'tr', null);
@@ -111,8 +124,11 @@ function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement
 		let type = typeof value;
 		if (type === 'object') {
 			let newObjName = `${objName}.${key}`;
-			let valuesInSubobject = Object.values(value);
-			if (valuesInSubobject.some((v: any) => typeof v === 'object')) {
+			if (!value) {
+				let valueCell = addContent(row, 'td', value === undefined ? 'undefined' : 'null');
+				valueCell.classList.add('immutable-propvalue');
+			}
+			else if (shouldPropertyValueBeRedirectedToSubDialog(key, value)) {
 				let valueCell = addContent(row, 'td', `< ... >`);
 				valueCell.classList.add('propvalue');
 				valueCell.onclick = (e) => {
@@ -219,7 +235,7 @@ function createDebugDialog(title?: string, previousDialog: HTMLElement = null): 
 	newDiv.ondrop = dialogDropHandler;
 
 	const wrapperDiv = document.createElement('div');
-	wrapperDiv.className = 'model-title-wrapper';
+	wrapperDiv.className = 'modal-title-wrapper';
 
 	const titleSpan = document.createElement('span');
 	titleSpan.className = 'modal-title';
@@ -259,10 +275,10 @@ function createDebugDialog(title?: string, previousDialog: HTMLElement = null): 
 	contentDiv.className = 'modal-content';
 
 	if (previousDialog) {
-		newDiv.style.left 	= previousDialog.style.left;
-		newDiv.style.top 	= previousDialog.style.top;
-		newDiv.style.width 	= previousDialog.style.width;
-		newDiv.style.height	= previousDialog.style.height;
+		newDiv.style.left = previousDialog.style.left;
+		newDiv.style.top = previousDialog.style.top;
+		newDiv.style.width = previousDialog.style.width;
+		newDiv.style.height = previousDialog.style.height;
 	}
 
 	backSpan && wrapperDiv.insertBefore(backSpan, null);
@@ -287,7 +303,7 @@ export function handleOpenObjectMenu(e: UIEvent, previous: HTMLElement = null): 
 
 	global.model.objects.forEach(o => {
 		let row = addContent(table, 'tr', null);
-		row.classList.add('selectablerow');
+		row.classList.add('selectableoption');
 		addContent(row, 'td', `${o.constructor.name}`);
 		addContent(row, 'td', `${o.id}`);
 
@@ -313,12 +329,12 @@ export function handleOpenDebugMenu(e: UIEvent): void {
 	headerElement.style.textAlign = 'center';
 
 	let row = addContent(table, 'tr', null);
-	row.classList.add('selectablerow');
+	row.classList.add('selectableoption', 'centered-text');
 	addContent(row, 'td', `List model properties`);
 	row.onclick = (_) => handleOpenModelMenu(null, dialogDiv);
 
 	row = addContent(table, 'tr', null);
-	row.classList.add('selectablerow');
+	row.classList.add('selectableoption', 'centered-text');
 	addContent(row, 'td', `List all objects in current scene`);
 	row.onclick = (_) => handleOpenObjectMenu(null, dialogDiv);
 
