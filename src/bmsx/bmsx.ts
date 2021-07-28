@@ -708,7 +708,7 @@ export class Space {
     }
 }
 
-var MachineDefinitions: { [key: string]: cmdef; };
+export var MachineDefinitions: { [key: string]: cmdef; };
 var MachineDefinitionBuilders: { [key: string]: (classname: string) => cmdef; };
 export abstract class BaseModel {
     public state: cmstate;

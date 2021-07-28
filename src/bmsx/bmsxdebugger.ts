@@ -1,4 +1,5 @@
-import { cmstate, GameObject, newPoint, sstate } from './bmsx';
+import { cmstate, GameObject, newPoint, sstate, mstate, MachineDefinitions } from './bmsx';
+import { SM } from './soundmaster';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
 
 let draggedObj: GameObject;
@@ -114,11 +115,8 @@ function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement
 	let headerRow = addContent(table, 'tr', null);
 	addContent(headerRow, 'th', 'Prop');
 	addContent(headerRow, 'th', 'Value');
-	for (const [key, value] of Object.entries(obj)) {
-		if (ignoreProps && ignoreProps.length > 0) {
-			if (ignoreProps.includes(key)) continue;
-		}
 
+	function addTableRowForProperty(key: string, value: any): void {
 		let row = addContent(table, 'tr', null);
 		addContent(row, 'td', `${key}`);
 		let type = typeof value;
@@ -185,6 +183,22 @@ function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement
 			}
 
 			// valueCell.contentEditable = 'true';
+		}
+	}
+
+	if (!Array.isArray(obj)) {
+		for (const [key, value] of Object.entries(obj)) {
+			if (ignoreProps && ignoreProps.length > 0) {
+				if (ignoreProps.includes(key)) continue;
+			}
+
+			addTableRowForProperty(key, value);
+		}
+	}
+	else {
+		let arr = obj as [];
+		for (let i = 0; i < arr.length; i++) {
+			addTableRowForProperty(`${i}`,arr[i]);
 		}
 	}
 
@@ -308,9 +322,10 @@ export function handleOpenObjectMenu(e: UIEvent, previous: HTMLElement = null): 
 		addContent(row, 'td', `${o.id}`);
 
 		row.onclick = (_) => {
-			const [objDialogDiv, objDialogContentDiv] = createDebugDialog(o.id, dialogDiv);
-			createObjectTableElement(objDialogDiv, objDialogContentDiv, o, o.id, ['objects']);
-			document.body.insertBefore(objDialogDiv, null);
+			openObjectDetailMenu(o, o.id, dialogDiv);
+			// const [objDialogDiv, objDialogContentDiv] = createDebugDialog(o.id, dialogDiv);
+			// createObjectTableElement(objDialogDiv, objDialogContentDiv, o, o.id, ['objects']);
+			// document.body.insertBefore(objDialogDiv, null);
 		};
 	});
 
@@ -338,6 +353,11 @@ export function handleOpenDebugMenu(e: UIEvent): void {
 	addContent(row, 'td', `List all objects in current scene`);
 	row.onclick = (_) => handleOpenObjectMenu(null, dialogDiv);
 
+	row = addContent(table, 'tr', null);
+	row.classList.add('selectableoption', 'centered-text');
+	addContent(row, 'td', `List all statemachine definitions`);
+	row.onclick = (_) => openObjectDetailMenu(MachineDefinitions, 'Statemachine definitions', dialogDiv);
+
 	document.body.insertBefore(dialogDiv, null);
 }
 
@@ -345,9 +365,18 @@ export function handleOpenModelMenu(e: UIEvent, previous: HTMLElement): void {
 	if (e && e.type !== 'keydown') return;
 	global.game.paused = true;
 
-	const [objDialogDiv, objDialogContentDiv] = createDebugDialog('Model Menu', previous);
-	createObjectTableElement(objDialogDiv, objDialogContentDiv, global.model, 'The Model', ['objects']);
-	document.body.insertBefore(objDialogDiv, null);
+	openObjectDetailMenu(global.model, 'The Model', previous);
+	// const [objDialogDiv, objDialogContentDiv] = createDebugDialog('Model Menu', previous);
+	// createObjectTableElement(objDialogDiv, objDialogContentDiv, global.model, 'The Model', ['objects']);
+	// document.body.insertBefore(objDialogDiv, null);
+}
+
+function openObjectDetailMenu(obj: any, title: string, previous: HTMLElement): void {
+	const [dialogDiv, contentDiv] = createDebugDialog(title, previous);
+
+	createObjectTableElement(dialogDiv, contentDiv, obj, title, ['objects']);
+	document.body.insertBefore(dialogDiv, null);
+
 }
 
 export function handleDebugClick(e: MouseEvent): void {
@@ -356,10 +385,7 @@ export function handleDebugClick(e: MouseEvent): void {
 
 		if (gameobject_at_cursor) {
 			global.game.paused = true; // Pause the game automatically if an object was found at this location
-			const [dialogDiv, contentDiv] = createDebugDialog(gameobject_at_cursor.id);
-
-			createObjectTableElement(dialogDiv, contentDiv, gameobject_at_cursor, gameobject_at_cursor.id, ['objects']);
-			document.body.insertBefore(dialogDiv, null);
+			openObjectDetailMenu(gameobject_at_cursor, gameobject_at_cursor.id, null);
 		}
 	}
 	// else {
