@@ -205,14 +205,30 @@ function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement
 	return table;
 }
 
+function toggleFullscreenOnElement(el: HTMLElement) {
+	if (!el.classList.contains('fullscreen')) {
+		el.dataset.left = el.style.left;
+		el.dataset.top = el.style.top;
+		el.style.removeProperty('left');
+		el.style.removeProperty('top');
+		el.draggable = false;
+	}
+	else {
+		el.dataset.left && (el.style.left = el.dataset.left);
+		el.dataset.top && (el.style.top = el.dataset.top);
+		el.draggable = true;
+	}
+	el.classList.toggle('fullscreen');
+}
+
 function createDebugDialog(title?: string, previousDialog: HTMLElement = null): [dialogDiv: HTMLDivElement, contentDiv: HTMLDivElement] {
-	const newDiv = document.createElement('div');
-	newDiv.className = 'modal-dialog';
-	newDiv.id = DEBUG_ELEMENT_ID;
-	newDiv.draggable = true;
+	const theDialogDiv = document.createElement('div');
+	theDialogDiv.className = 'modal-dialog';
+	theDialogDiv.id = DEBUG_ELEMENT_ID;
+	theDialogDiv.draggable = true;
 	if (previousDialog) {
 		previousDialog.style.display = 'none';
-		(newDiv as any).previous = previousDialog;
+		(theDialogDiv as any).previous = previousDialog;
 	}
 
 	function dialogMouseDownHandler(e: MouseEvent) {
@@ -243,13 +259,16 @@ function createDebugDialog(title?: string, previousDialog: HTMLElement = null): 
 		return false;
 	};
 
-	newDiv.onmousedown = dialogMouseDownHandler;
-	newDiv.ondragstart = dialogDragStartHandler;
-	newDiv.ondragend = dialogDragEndHandler;
-	newDiv.ondrop = dialogDropHandler;
+	theDialogDiv.onmousedown = dialogMouseDownHandler;
+	theDialogDiv.ondragstart = dialogDragStartHandler;
+	theDialogDiv.ondragend = dialogDragEndHandler;
+	theDialogDiv.ondrop = dialogDropHandler;
 
 	const wrapperDiv = document.createElement('div');
 	wrapperDiv.className = 'modal-title-wrapper';
+	wrapperDiv.ondblclick = (e) => {
+		toggleFullscreenOnElement(theDialogDiv);
+	};
 
 	const titleSpan = document.createElement('span');
 	titleSpan.className = 'modal-title';
@@ -262,12 +281,17 @@ function createDebugDialog(title?: string, previousDialog: HTMLElement = null): 
 		backSpan.innerHTML = '&larr;';
 		backSpan.onclick = (e) => {
 			e.preventDefault();
-			document.body.removeChild(newDiv);
-			previousDialog.style.left = newDiv.style.left;
-			previousDialog.style.top = newDiv.style.top;
-			previousDialog.style.width = newDiv.style.width;
-			previousDialog.style.height = newDiv.style.height;
+			document.body.removeChild(theDialogDiv);
+			previousDialog.style.left = theDialogDiv.style.left;
+			previousDialog.style.top = theDialogDiv.style.top;
+			previousDialog.style.width = theDialogDiv.style.width;
+			previousDialog.style.height = theDialogDiv.style.height;
 			previousDialog.style.display = 'flex';
+			let newDivFullscreen = theDialogDiv.classList.contains('fullscreen');
+			let previousDialogFullscreen = previousDialog.classList.contains('fullscreen');
+			if (newDivFullscreen != previousDialogFullscreen) {
+				toggleFullscreenOnElement(previousDialog);
+			}
 		};
 	}
 
@@ -276,7 +300,7 @@ function createDebugDialog(title?: string, previousDialog: HTMLElement = null): 
 	closeSpan.innerHTML = '&times;';
 	closeSpan.onclick = (e) => {
 		e.preventDefault();
-		document.body.removeChild(newDiv);
+		document.body.removeChild(theDialogDiv);
 
 		let previous = previousDialog;
 		while (previous) {
@@ -289,19 +313,25 @@ function createDebugDialog(title?: string, previousDialog: HTMLElement = null): 
 	contentDiv.className = 'modal-content';
 
 	if (previousDialog) {
-		newDiv.style.left = previousDialog.style.left;
-		newDiv.style.top = previousDialog.style.top;
-		newDiv.style.width = previousDialog.style.width;
-		newDiv.style.height = previousDialog.style.height;
+		theDialogDiv.style.left = previousDialog.style.left;
+		theDialogDiv.style.top = previousDialog.style.top;
+		theDialogDiv.style.width = previousDialog.style.width;
+		theDialogDiv.style.height = previousDialog.style.height;
+
+		let newDivFullscreen = theDialogDiv.classList.contains('fullscreen');
+		let previousDialogFullscreen = previousDialog.classList.contains('fullscreen');
+		if (newDivFullscreen != previousDialogFullscreen) {
+			toggleFullscreenOnElement(theDialogDiv);
+		}
 	}
 
 	backSpan && wrapperDiv.insertBefore(backSpan, null);
 	wrapperDiv.insertBefore(titleSpan, null);
 	wrapperDiv.insertBefore(closeSpan, null);
-	newDiv.insertBefore(wrapperDiv, null);
-	newDiv.insertBefore(contentDiv, null);
+	theDialogDiv.insertBefore(wrapperDiv, null);
+	theDialogDiv.insertBefore(contentDiv, null);
 
-	return [newDiv, contentDiv];
+	return [theDialogDiv, contentDiv];
 }
 
 export function handleOpenObjectMenu(e: UIEvent, previous: HTMLElement = null): void {

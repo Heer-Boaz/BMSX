@@ -88,10 +88,8 @@
 .modal-content {
 	background-color: #fafafaaa;
 	margin: 20px;
-	/* padding: 0px; */
 	border: 1px solid #888;
 	overflow: auto;
-	/* height: 100%; */
 }
 
 .modal-title-wrapper {
@@ -127,6 +125,13 @@
 	font-size: 28px;
 	font-weight: bold;
 	display: inline-block;
+}
+
+.fullscreen {
+	top: 0px;
+	left: 0px;
+	width: 100%;
+	min-height: 100%;
 }
 
 .modal-close:hover,
