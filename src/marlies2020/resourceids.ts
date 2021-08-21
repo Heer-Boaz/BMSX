@@ -1,6 +1,7 @@
 import { IResourceId } from '../bmsx/rompack';
 export var BitmapId: IResourceId = {
 	None: 0,
+
 	b: 1,
 	blackpixel: 2,
 	Bord: 3,
@@ -105,6 +106,7 @@ export var BitmapId: IResourceId = {
 
 export enum AudioId {
 	None = 0,
+
 	Fout = 1,
 	Init = 2,
 	Selectie = 3,

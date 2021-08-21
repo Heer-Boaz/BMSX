@@ -25,3 +25,4 @@ rom/ignore
 dist/game_debug.html
 dist/game.html
 dist/manifest.json
+tempCodeRunnerFile.ts
