@@ -1,3 +1,4 @@
+
 import { RomLoadResult } from '../bmsx/rompack';
 import { Game, BaseModel, GameObject, Sprite, insavegame, cmdef, sdef, statedef_builder, sstate, mdef, cmstate, newPoint, Direction, newSize, Point, newArea } from '../bmsx/bmsx';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
