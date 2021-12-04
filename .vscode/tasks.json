@@ -179,9 +179,10 @@
 			"id": "romtobuild",
 			"description": "Choose ROM to build",
 			"options": [
+				"Marlies2021",
+				"Testrom",
 				"Marlies2020",
 				"Sintervania",
-				"Testrom",
 			],
 			"default": "Testrom"
 		}
