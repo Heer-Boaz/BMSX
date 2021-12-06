@@ -22,7 +22,7 @@ export class Tile {
 
 		return true;
 	}
-
+// https://1drv.ms/w/s!AhGwIeMtrb9HjOMW8H6tazCAqkySlg
 	public static [Symbol.toPrimitive](hint: any): any {
 		if (hint == 'number') {
 			return Tile.toStageCoord(hint);

@@ -1,18 +1,21 @@
 import { RomLoadResult } from '../bmsx/rompack';
-import { Game, BaseModel, GameObject, Sprite,  sdef, mdef, leavingScreenHandler_prohibit as prohibitLeavingScreenHandler, statedef_builder, cmdef, sstate, cmstate, setPoint, newPoint, Direction, newSize, newArea, Point, randomInt, copyPoint, getOppositeDirection, Space } from '../bmsx/bmsx';
+import { Game, BaseModel, GameObject, Sprite, sdef, mdef, leavingScreenHandler_prohibit as prohibitLeavingScreenHandler, statedef_builder, cmdef, sstate, cmstate, setPoint, newPoint, Direction, newSize, newArea, Point, randomInt, copyPoint, getOppositeDirection, Space } from '../bmsx/bmsx';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
 import { Input } from '../bmsx/input';
 import { TextWriter } from '../bmsx/textwriter';
-import { paintSprite } from '../bmsx/view';
+import { DrawImgFlags, paintSprite } from '../bmsx/view';
 import { GameMenu } from './gamemenu';
 import { KonamiFont } from './konamifont';
 
 // https://drive.google.com/file/d/1vyCxVBeMr89pQdUBCUcDjW6W2ImA6q2j/view?usp=sharing
 
 class modelclass extends BaseModel {
-    public marlies: Sprite;
+    public marlies: speler;
+    public stressLevel: number;
+    public enemyHp: number;
+    public monster: monster;
 
     @statedef_builder
     public static buildModelStates(classname: string): cmdef {
@@ -20,38 +23,38 @@ class modelclass extends BaseModel {
             machines: {
                 master: new mdef('default', {
                     states: {
-                       default: new sdef('default', {
-                           onrun() {
-                               BaseModel.defaultrun();
-                               if (Input.KC_F5) {
-                                   global.model.state.to('gamemenu');
-                               }
-                           },
-                       }),
-                       'gamemenu': new sdef('gamemenu', {
-                           onenter() {
-                               let menu = new GameMenu();
-                               global.model.spawn(menu);
-                               menu.Open();
-                           },
-                           onrun() {
-                               let menu = global.model.get('gamemenu') as GameMenu;
-                               menu.run();
-                               if (Input.KC_F5) {
-                                   global.model.state.to('default');
-                               }
-                           },
-                           onexit() {
-                               let menu = global.model.get('gamemenu') as GameMenu;
-                               menu.Close();
-                               global.model.exile(menu);
-                           },
-                       }),
-                       'hoera!': new sdef('hoera!', {
-                           onenter() {
-                               global.model.setSpace('hoera!');
-                           }
-                       }),
+                        default: new sdef('default', {
+                            onrun() {
+                                BaseModel.defaultrun();
+                                if (Input.KC_F5) {
+                                    global.model.state.to('gamemenu');
+                                }
+                            },
+                        }),
+                        'gamemenu': new sdef('gamemenu', {
+                            onenter() {
+                                let menu = new GameMenu();
+                                global.model.spawn(menu);
+                                menu.Open();
+                            },
+                            onrun() {
+                                let menu = global.model.get('gamemenu') as GameMenu;
+                                menu.run();
+                                if (Input.KC_F5) {
+                                    global.model.state.to('default');
+                                }
+                            },
+                            onexit() {
+                                let menu = global.model.get('gamemenu') as GameMenu;
+                                menu.Close();
+                                global.model.exile(menu);
+                            },
+                        }),
+                        'hoera!': new sdef('hoera!', {
+                            onenter() {
+                                global.model.setSpace('hoera!');
+                            }
+                        }),
                     }
                 }),
             }
@@ -63,6 +66,8 @@ class modelclass extends BaseModel {
         let winSpace = new Space('hoera!');
         winSpace.spawn(new hoeraStuff());
         this.addSpace(winSpace);
+        this.stressLevel = 100;
+        this.enemyHp = 100;
     }
 
     public init() {
@@ -96,20 +101,159 @@ class hoeraStuff extends Sprite {
         this.z = 5000;
         this.imgid = BitmapId.Sint;
     }
-
-    override paint = (offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }) => {
-        TextWriter.drawText(24, 100, "Redelijk gedaan,Marlies!");
-        paintSprite.call(this, offset, colorize); // .call() nodig, anders "this" undefined
-    }
 };
 
+class fles extends Sprite {
+    @statedef_builder
+    public static bouw(classname: string) {
+        return new cmdef(classname, {
+            machines: {
+                master: new mdef('master', {
+                    states: {
+                        vlieg: new sdef('vlieg', {
+                            tape: <Array<number>>[
+                                BitmapId.fles2,
+                                BitmapId.fles3,
+                                BitmapId.fles4,
+                                BitmapId.fles1,
+                            ],
+                            nudges2move: 4,
+                            onenter: (s: sstate, ik: fles): void => {
+                                s.reset();
+                                ik.imgid = s.current;
+                            },
+                            onrun: (s: sstate, ik: fles): void => {
+                                ++s.nudges;
+                                ik.setx(ik.pos.x + 4);
+                                if (_model.monster) {
+                                    if (ik.pos.x >= _model.monster.pos.x - 12) {
+                                        _model.monster.collide(ik);
+                                        ik.markForDisposure();
+                                    }
+                                }
+                                // if (ik.objectCollide(_model.monster)) {
+                                //     _model.monster.collide(ik);
+                                // }
+                            },
+                            onnext: (s: sstate, ik: fles): void => {
+                                ik.imgid = s.current;
+                            },
+                            onend: (s: sstate, ik: fles): void => {
+                                s.reset();
+                            }
+                        }),
+                    }
+                })
+            }
+        });
+    }
+
+    constructor() {
+        super();
+        this.z = 1020;
+        this.imgid = BitmapId.fles2;
+        this.onLeaveScreen = (ik: fles, _) => ik.markForDisposure();
+        let me = this;
+
+        this.hitarea = newArea(4, 4, 12, 12);
+        this.size = newSize(16, 16);
+        this.hittable = true;
+    }
+
+    override onspawn(spawningPos?: Point): void {
+        super.onspawn(spawningPos);
+        this.state.to('vlieg');
+    }
+}
+
+class stoom extends Sprite {
+    @statedef_builder
+    public static bouw(classname: string): cmdef {
+        return new cmdef(classname, {
+            machines: {
+                master: new mdef('master', {
+                    states: {
+                        doepluim: new sdef('doepluim', {
+                            tape: <Array<number>>[
+                                BitmapId.pluim1,
+                                BitmapId.pluim2,
+                                BitmapId.pluim3,
+                                BitmapId.pluim4,
+                                BitmapId.pluim5,
+                                BitmapId.pluim6,
+                                BitmapId.pluim7,
+                                BitmapId.pluim8,
+                                BitmapId.pluim9,
+                                BitmapId.pluimx,
+                                BitmapId.pluimx,
+                            ],
+                            nudges2move: 4,
+                            onenter: (s: sstate, ik: stoom): void => {
+                                s.reset();
+                                ik.imgid = s.current;
+                            },
+                            onrun: (s: sstate, ik: stoom): void => {
+                                ++s.nudges;
+                            },
+                            onnext: (s: sstate, ik: stoom): void => {
+                                ik.imgid = s.current;
+                            },
+                            onend: (_, ik: stoom): void => {
+                                ik.markForDisposure();
+                            }
+                        }),
+                    }
+                })
+            }
+        });
+    }
+
+    constructor() {
+        super();
+        this.z = 1010;
+        this.imgid = BitmapId.None;
+    }
+
+    override onspawn(spawningPos?: Point): void {
+        super.onspawn(spawningPos);
+        this.state.to('doepluim');
+    }
+}
+
+class monster extends Sprite {
+    constructor() {
+        super();
+        this.imgid = BitmapId.monster;
+        this.z = 1100;
+        this.hitarea = newArea(0, 80, 0, 50);
+        this.size = newSize(80, 50);
+        this.hittable = true;
+        let me = this;
+
+        this.oncollide = (src: GameObject) => {
+            _model.enemyHp -= 10;
+            if (_model.enemyHp <= 0) {
+                me.markForDisposure();
+                // _model.monster = null;
+                _model.marlies.state.to('naarrelax');
+            }
+        };
+    }
+
+    override onspawn(spawningPos?: Point): void {
+        super.onspawn(spawningPos);
+        _model.monster = this;
+    }
+}
+
 class speler extends Sprite {
+    public floatbit: boolean;
+
     @statedef_builder
     public static bouw(classname: string): cmdef {
         let shared_switch_run = (_: sstate, ik: speler) => {
             // if (Input.KC_BTN1 || Input.KC_SPACE) ik.zetBoelInDeHens();
             let switchToOld = (): void => {
-                ik.direction = ik.oldDirection;
                 ik.state.to('walk');
                 switch (ik.direction) {
                     case Direction.Down:
@@ -134,22 +278,132 @@ class speler extends Sprite {
             machines: {
                 master: new mdef('master', {
                     states: {
-                        walk: new sdef('walk', {
+                        relax: new sdef('relax', {
+                            nudges2move: 4,
+                            onrun: (s: sstate, ik: speler): void => {
+                                ++s.nudges;
+                            },
+                            onenter: (_, ik: speler) => {
+                                ik.hittable = false;
+                                ik.imgid = BitmapId.p1;
+                            },
+                            onnext: (s: sstate, ik: speler): void => {
+                                s.reset();
+                                --_model.stressLevel;
+                                if (_model.stressLevel <= 0) {
+                                    _model.stressLevel = 0;
+                                    ik.state.to('spot');
+                                    _model.enemyHp = 100;
+                                    _model.spawn(new monster(), newPoint(256 - 80, 192 - 60));
+                                }
+                            }
+                        }),
+                        spot: new sdef('spot', {
+                            nudges2move: 500,
+                            onrun: (s: sstate, ik: speler): void => {
+                                ++s.nudges;
+                            },
+                            onenter: (_, ik: speler) => ik.imgid = BitmapId.p2,
+                            onnext: (s: sstate, ik: speler): void => {
+                                s.reset();
+                                ik.state.to('spot2');
+                            }
+                        }),
+                        spot2: new sdef('spot2', {
+                            nudges2move: 500,
+                            onrun: (s: sstate, ik: speler): void => {
+                                ++s.nudges;
+                            },
+                            onenter: (_, ik: speler) => ik.imgid = BitmapId.p2,
+                            onnext: (s: sstate, ik: speler): void => {
+                                s.reset();
+                                ik.state.to('boos');
+                            }
+                        }),
+                        naarrelax: new sdef('naarrelax', {
+                            nudges2move: 100,
+                            onrun: (s: sstate, ik: speler): void => {
+                                ++s.nudges;
+                            },
+                            onenter: (_, ik: speler) => ik.imgid = BitmapId.p2,
+                            onnext: (s: sstate, ik: speler): void => {
+                                s.reset();
+                                ik.state.to('relax2');
+                            }
+                        }),
+                        relax2: new sdef('relax2', {
+                            nudges2move: 4,
+                            onrun: (s: sstate, ik: speler): void => {
+                                ++s.nudges;
+                            },
+                            onenter: (_, ik: speler) => {
+                                ik.hittable = false;
+                                ik.imgid = BitmapId.p1;
+                            },
+                            onnext: (s: sstate, ik: speler): void => {
+                                s.reset();
+                                --_model.stressLevel;
+                                if (_model.stressLevel <= 0) {
+                                    _model.stressLevel = 0;
+                                    ik.state.to('waitforit');
+                                }
+                            }
+                        }),
+                        waitforit: new sdef('waitforit', {
+                            nudges2move: 100,
+                            onrun: (s: sstate, ik: speler): void => {
+                                ++s.nudges;
+                            },
+                            onenter: (_, ik: speler) => {
+                            },
+                            onnext: (s: sstate, ik: speler): void => {
+                                s.reset();
+                                _model.state.to('hoera!');
+                            }
+                        }),
+                        boos: new sdef('boos', {
+                            nudges2move: 40,
+                            onrun: (s: sstate, ik: speler): void => {
+                                ++s.nudges;
+                            },
+                            onenter: (_, ik: speler) => ik.imgid = BitmapId.p3,
+                            onnext: (s: sstate, ik: speler): void => {
+                                s.reset();
+                                ik.state.to('fight');
+                            }
+                        }),
+                        fight: new sdef('fight', {
                             onrun: (_, ik: speler): void => {
-                                if (Input.KC_LEFT) {
+                                if (++_model.stressLevel >= 100) {
+                                    _model.stressLevel = 100;
                                 }
-                                else if (Input.KC_RIGHT) {
+                                if (Input.KC_BTN1) {
+                                    ik.state.to('gooi');
                                 }
-                                else if (Input.KD_UP) {
+                                if (Input.KD_RIGHT) {
+                                    if (ik.pos.x <= 148)
+                                        ik.setx(ik.pos.x + 1);
                                 }
-                                else if (Input.KD_DOWN) {
-                                }
-                                if (Input.KC_BTN1 || Input.KC_SPACE) {
-                                }
-                                if (Input.KC_BTN2) {
+                                if (Input.KD_LEFT) {
+                                    if (ik.pos.x >= 30)
+                                        ik.setx(ik.pos.x - 1);
                                 }
                             },
-                            onenter: (_, ik: speler) => ik.hittable = true
+                            onenter: (_, ik: speler) => {
+                                ik.hittable = true;
+                                ik.imgid = BitmapId.p3;
+                            }
+                        }),
+                        gooi: new sdef('gooi', {
+                            onrun: (_, ik: speler): void => {
+                                if (++_model.stressLevel >= 100) {
+                                    _model.stressLevel = 100;
+                                }
+                            },
+                            onenter: (_, ik: speler) => {
+                                ik.state.to('gooi', 'anistate');
+                                ik.imgid = BitmapId.p4;
+                            }
                         }),
                         urgh: new sdef('urgh', {
                             onenter: (_, ik: speler) => {
@@ -166,8 +420,52 @@ class speler extends Sprite {
                         }),
                     }
                 }),
+                float: new mdef('float', {
+                    states: {
+                        floating: new sdef('floating', {
+                            nudges2move: 50,
+                            onrun: (s: sstate, ik: speler): void => {
+                                ++s.nudges;
+                            },
+                            onnext: (s: sstate, ik: speler): void => {
+                                ik.floatbit && --ik.pos.y;
+                                (!ik.floatbit) && ++ik.pos.y;
+                                ik.floatbit = !ik.floatbit;
+                            },
+                        }),
+                    }
+                }),
                 anistate: new mdef('anistate', {
                     states: {
+                        relax: new sdef('relax', {
+                            onrun: (): void => { }
+                        }),
+                        spot: new sdef('spot', {
+                            onrun: (): void => { }
+                        }),
+                        boos: new sdef('boos', {
+                            onrun: (): void => { }
+                        }),
+                        gooi: new sdef('gooi', {
+                            tape: <Array<number>>[
+                                BitmapId.p4,
+                                BitmapId.p4,
+                                BitmapId.p5,
+                                BitmapId.p5,
+                            ],
+                            nudges2move: 4,
+
+                            onrun: (s: sstate): void => { ++s.nudges; },
+                            onnext: (s: sstate, ik: speler): void => {
+                                ik.imgid = s.current;
+                            },
+                            onend: (_, ik: speler): void => {
+                                ik.state.to('boos', 'anistate');
+                                ik.state.to('fight');
+                                _model.spawn(new fles(), newPoint(ik.pos.x + 16, ik.pos.y));
+                            }
+                        }),
+
                     }
                 }),
             }
@@ -177,16 +475,41 @@ class speler extends Sprite {
     constructor() {
         super();
         this.imgid = BitmapId.p1;
-        this.direction = Direction.Down;
+        this.direction = Direction.Right;
         this.z = 1000;
-        this.hitarea = newArea(0, 8, 16, 16);
+        this.floatbit = false;
+        this.hitarea = newArea(0, 0, 16, 16);
+        this.size = newSize(16, 16);
     }
 
     override onspawn(spawningPos?: Point): void {
         super.onspawn(spawningPos);
-        this.state.to('walk');
-        this.state.to('down', 'anistate');
+        this.state.to('relax');
+        this.state.to('relax', 'anistate');
+        this.state.to('floating', 'float');
     }
+
+    override paint = (offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }) => {
+        if (this.state.getCurrentId() == 'spot') {
+            TextWriter.drawText(64, 40, "Artiestieke impressie");
+            TextWriter.drawText(64, 48, "van stressoren zoals");
+            TextWriter.drawText(64, 56, "corona,moederzorgen,");
+            TextWriter.drawText(64, 64, "voetbal en f1.");
+
+            _global.view.drawImg(BitmapId.arrowed, 0, 32, DrawImgFlags.None);
+        }
+        if (this.state.getCurrentId() == 'spot2') {
+            TextWriter.drawText(64, 40, "Druk de shifttoets");
+            TextWriter.drawText(64, 48, "om meditatietechnieken");
+            TextWriter.drawText(64, 56, "toe te passen tegen,");
+            TextWriter.drawText(64, 64, "de stressoren!");
+            TextWriter.drawText(64, 72, "Beweeg met");
+            TextWriter.drawText(64, 80, "links en rechts!");
+        }
+
+        paintSprite.call(this, offset, colorize); // .call() nodig, anders "this" undefined
+    };
+
 };
 
 class yakuzi extends Sprite {
@@ -197,7 +520,7 @@ class yakuzi extends Sprite {
                 master: new mdef('master', {
                     states: {
                         wees_een_yakuzi: new sdef('wees_een_yakuzi', {
-                            // nudges2move: TIME_CORONA_SPAWN,
+                            nudges2move: 50,
                             onenter(s: sstate) {
                                 s.reset();
                             },
@@ -205,6 +528,7 @@ class yakuzi extends Sprite {
                                 ++s.nudges;
                             },
                             onnext() {
+                                _model.spawn(new stoom(), newPoint(randomInt(8, 160), randomInt(140, 172)));
                             },
                         }),
                     }
@@ -215,7 +539,7 @@ class yakuzi extends Sprite {
 
     constructor() {
         super();
-        this.imgid = BitmapId.Yakuzi;
+        this.imgid = BitmapId.chillruimte;
         this.z = 0;
     }
 
@@ -223,6 +547,32 @@ class yakuzi extends Sprite {
         super.onspawn(spawningPos);
         this.state.to('wees_een_yakuzi');
     }
+};
+
+class hud extends Sprite {
+    protected static HealthBarSizeX: number = 63;
+
+    constructor() {
+        super();
+        this.z = 2000;
+        this.imgid = BitmapId.HUD;
+    }
+
+    private percentageToBarLength(percentage: number): number {
+        if (percentage === 0) return 0;
+        // Let op: +1 wegens scaling i.p.v. render-loop!
+        if (percentage === 100) return hud.HealthBarSizeX + 1;
+        return ~~(hud.HealthBarSizeX / 100 * percentage) + 1;
+    }
+
+    override paint = (offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }) => {
+        let lengthShown = this.percentageToBarLength(_model.stressLevel);
+        _global.view.drawImg(BitmapId.HUD_stress, 60, 10, DrawImgFlags.None, lengthShown);
+
+        lengthShown = this.percentageToBarLength(_model.enemyHp);
+        _global.view.drawImg(BitmapId.HUD_enemy, 60, 19, DrawImgFlags.None, lengthShown);
+        paintSprite.call(this, offset, colorize); // .call() nodig, anders "this" undefined
+    };
 };
 
 class viewclass extends GLView {
@@ -243,9 +593,9 @@ _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: Gain
 
     global.game.start();
     let model = global.model;
-    model.spawn(new yakuzi(), newPoint(0, 0));
+    model.spawn(new yakuzi(), newPoint(0, 32));
+    model.spawn(new hud(), newPoint(0, 0));
     let marlies = new speler();
     _model.marlies = marlies;
-    // model.spawn(marlies, newPoint(COLUMN_X[START_COLUMN], 16));
-    model.spawn(marlies, newPoint(16, 16));
+    model.spawn(marlies, newPoint(30, 142));
 };
