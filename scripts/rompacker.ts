@@ -835,7 +835,7 @@ try {
 		if (!respath) throw new Error("Missing parameter for location of the resource folder ('respath', e.g. './src/sintervania/res'.");
 
 		if (!force) {
-			// TODO: DIT WERKT NIET!!! MOET NIET KIJKEN NAAR [megarom.js], MAAR NAAR SOURCE FOLDERS!!
+			// TODO: DIT WERKT NIET!!! MOET NIET KIJKEN NAAR [megarom.js], MAAR NAAR SOURCE FOLDERS EN ASSERT FOLDERS!!
 			if (existsSync(`./dist/${outfile}`) && existsSync(`./rom/megarom.js`)) {
 				let romstats = statSync(`./dist/${outfile}`);
 				let rommtime = romstats.mtime;

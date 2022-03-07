@@ -2,8 +2,7 @@
 	"version": "0.2.0",
 	"configurations": [
 		{
-			// "type": "pwa-msedge",
-			"type": "edge",
+			"type": "pwa-msedge",
 			"version": "dev",
 			"request": "launch",
 			"name": "Debug the game!",
@@ -15,6 +14,7 @@
 			"sourceMaps": true,
 			"showAsyncStacks": true,
 			"smartStep": true,
+			"disableNetworkCache": true
 		}
 	]
 }

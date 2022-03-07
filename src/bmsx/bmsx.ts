@@ -899,7 +899,6 @@ export abstract class BaseModel {
         delete this[id2obj];
         this[id2obj] = {};
         this.paused = false;
-
     }
 
     public spawn(o: GameObject, pos?: Point, ignoreSpawnhandler?: boolean): void {

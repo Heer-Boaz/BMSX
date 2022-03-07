@@ -1,3 +1,7 @@
+.head {
+	touch-action: none;
+}
+
 .modal-dialog {
 	position: fixed;
 	background-color: rgba(240, 248, 255, 0.66);
@@ -151,6 +155,26 @@ svg.buttons {
 	touch-action: none;
 }
 
+svg.buttons#btn1_svg {
+	top: 40vh;
+	left: 85vw;
+}
+
+svg.buttons#btn2_svg {
+	top: 30vh;
+	left: 92vw;
+}
+
+svg.buttons#btn3_svg {
+	top: 30vh;
+	left: 78vw;
+}
+
+svg.buttons#btn4_svg {
+	top: 20vh;
+	left: 85vw;
+}
+
 .knop {
 	pointer-events: fill;
 	touch-action: auto;
@@ -164,8 +188,6 @@ svg.buttons {
 	user-select: none;
 	-webkit-touch-callout: none;
 	-webkit-tap-highlight-color: transparent;
-	-webkit-text-size-adjust: none;
-	-moz-text-size-adjust: none;
 }
 
 .knop.red:not(.los) {
@@ -238,8 +260,6 @@ svg.d-pad {
 	user-select: none;
 	-webkit-touch-callout: none;
 	-webkit-tap-highlight-color: transparent;
-	-webkit-text-size-adjust: none;
-	-moz-text-size-adjust: none;
 }
 
 @keyframes dknop-los {

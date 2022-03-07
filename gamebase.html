@@ -2,8 +2,8 @@
 <html lang="en" xmlns="http://www.w3.org/1999/xhtml">
 
     <head>
-        <title>#title</title>
         <meta charset="utf-8" />
+        <title>#title</title>
         <meta name="viewport"
             content="width=device-width,initial-scale=1.0,minimum-scale=1,maximum-scale=1,user-scalable=no" />
         <meta name="apple-mobile-web-app-capable" content="yes">
@@ -21,18 +21,21 @@
         <div>
             <img id="msx" class="hidden" src="#bmsxurl" hidden />
             <div id="hidor"></div>
-            <span id="loading" class="coloring" hidden>Loading...</span>
-            <span id="controls" hidden>
-                <svg class="buttons" style="top: 40vh; left: 85vw;">
+            <div id="loading" class="coloring" hidden>Loading...</div>
+			<div id="debug_controls">
+				<span>&#xF4C2;</span>
+			</div>
+            <div id="controls" hidden>
+                <svg class="buttons" id="btn1_svg">
                     <circle id="btn1_knop" class="knop red los" cx="4vmax" cy="4vmax" r="4vmax" fill="transparent" />
                 </svg>
-                <svg class="buttons" style="top: 30vh; left: 92vw;">
+                <svg class="buttons" id="btn2_svg">
                     <circle id="btn2_knop" class="knop blue los" cx="4vmax" cy="4vmax" r="4vmax" fill="transparent" />
                 </svg>
-                <svg class="buttons" style="top: 30vh; left: 78vw;">
+                <svg class="buttons" id="btn3_svg">
                     <circle id="btn3_knop" class="knop green los" cx="4vmax" cy="4vmax" r="4vmax" fill="transparent" />
                 </svg>
-                <svg class="buttons" style="top: 20vh; left: 85vw;">
+                <svg class="buttons" id="btn4_svg">
                     <circle id="btn4_knop" class="knop yellow los" cx="4vmax" cy="4vmax" r="4vmax" fill="transparent" />
                 </svg>
                 <svg class="d-pad">
@@ -68,7 +71,7 @@
                         <circle id="dmid" class="dstick" cx="50" cy="50" r="10" />
                     </g>
                 </svg>
-            </span>
+            </div>
             <canvas id="gamescreen" hidden></canvas>
         </div>
     </body>
