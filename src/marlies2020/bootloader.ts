@@ -1,5 +1,5 @@
 import { RomLoadResult } from '../bmsx/rompack';
-import { Game, BaseModel, GameObject, Sprite, BSTEventType, sdef, mdef, leavingScreenHandler_prohibit as prohibitLeavingScreenHandler, statedef_builder, cmdef, sstate, cmstate, setPoint, newPoint, Direction, newSize, newArea, Point, randomInt, copyPoint, getOppositeDirection, Space } from '../bmsx/bmsx';
+import { Game, BaseModel, GameObject, Sprite, sdef, mdef, leavingScreenHandler_prohibit as prohibitLeavingScreenHandler, statedef_builder, cmdef, sstate, cmstate, setPoint, newPoint, Direction, newSize, newArea, Point, randomInt, copyPoint, getOppositeDirection, Space } from '../bmsx/bmsx';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
@@ -139,7 +139,7 @@ class modelclass extends BaseModel {
                 pita.ingredientenInPita.push(type);
                 this.ingredientEquipped.markForDisposure(); // Exile ingredient
                 this.ingredientEquipped = null; // Haal inventory leeg
-                // Check of pita nu gevuld is met alle ingredienten
+                // Check of pita nu gevul>d is met alle ingredienten
                 if (pita.ingredientenInPita.length == INGREDIENTEN_IN_PITA) {
                     pita.nuGevuld(); // Zo ja, verander type en plaatje van de pita
                 }
