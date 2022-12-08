@@ -179,13 +179,14 @@
 			"id": "romtobuild",
 			"description": "Choose ROM to build",
 			"options": [
-				"Marlies2021",
+				"Joanneke2022",
 				"Testrom",
+				"Marlies2021",
 				"Marlies2020",
 				"Sintervania",
 			],
-			"default": "Testrom"
-			// "default": "Marlies2021"
+			// "default": "Testrom"
+			"default": "Joanneke2022"
 		}
 	]
 }
