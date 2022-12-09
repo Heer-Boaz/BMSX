@@ -48,7 +48,7 @@
     "ts-key-enum": "*",
     "tsify": "*",
     "tslib": "*",
-    "typescript": "*",
+    "typescript": "^4.9.4",
     "typescript-bundle": "*"
   },
   "scripts": {
