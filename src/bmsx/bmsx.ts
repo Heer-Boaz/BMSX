@@ -820,7 +820,7 @@ export abstract class BaseModel {
 
         let objects = global.model.objects;
         // Let all game objects take a turn
-        objects.forEach(o => !o.disposeFlag && o.run());
+        objects.forEach(o => !o.disposeFlag && o.run && o.run());
 
         // Remove all objects that are to be disposed
         objects.filter(o => o.disposeFlag).forEach(o => global.model.exile(o));

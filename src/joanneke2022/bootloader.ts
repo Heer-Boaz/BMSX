@@ -9,7 +9,6 @@ import { DrawImgFlags, paintSprite } from '../bmsx/view';
 import { GameMenu } from './gamemenu';
 import { KonamiFont } from './konamifont';
 
-
 class modelclass extends BaseModel {
     // public diamand: speler;
 
@@ -97,7 +96,7 @@ class hoeraStuff extends Sprite {
     }
 };
 
-class diamand extends Sprite {
+class diamant extends Sprite {
 	public onvolmaaktheden : onvolmaaktheid[];
 	public _getoonde_zijde : zijde;
 
@@ -189,11 +188,13 @@ _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: Gain
 
     global.game.start();
     let model = global.model;
+	let _diamant = new diamant();
+
     // model.spawn(new yakuzi(), newPoint(0, 32));
-    // model.spawn(new hud(), newPoint(0, 0));
+    // model.spawn(new huBd(), newPoint(0, 0));
     // let marlies = new speler();
     // _model.marlies = marlies;
-    model.spawn(marlies, newPoint(30, 142));
+    model.spawn(diamant, newPoint(30, 142));
 };
 
 // https://www.25karats.com/education/diamonds/features
