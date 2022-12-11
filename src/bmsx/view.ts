@@ -189,6 +189,8 @@ export abstract class BaseView {
 }
 
 export function paintSprite(this: Sprite, offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }): void {
+	if (this.imgid == 0) return; // Don't draw anything when imgid = BitmapId.None. For animations, we don't always want to use visible = false
+
     let options: number = this.flippedH ? DrawImgFlags.HFLIP : 0;
     options |= (this.flippedV ? DrawImgFlags.VFLIP : 0);
     let dx = offset?.x || 0;

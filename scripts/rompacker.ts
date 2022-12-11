@@ -19,8 +19,11 @@ const ATLAS_PX_SIZE = 4096;
 const CROP_ATLAS = true;
 const GENERATE_AND_USE_TEXTURE_ATLAS = true;
 const DONT_PACK_IMAGES_WHEN_USING_ATLAS = true;
-const BOILERPLATE_RESOURCE_ID = `import { IResourceId } from '../bmsx/rompack';`;
-const BOILERPLATE_RESOURCE_ID_BITMAP = `export var BitmapId: IResourceId = {
+const BOILERPLATE_RESOURCE_ID_IMPORT_DECLARATION = `import { IResourceId } from '../bmsx/rompack';`;
+const BOILERPLATE_RESOURCE_ID_BITMAP_TYPE_DECLARATION = `type BitmapType = IResourceId & {
+	None: 0,
+`;
+const BOILERPLATE_RESOURCE_ID_BITMAP_INSTANCE = `export var BitmapId: BitmapType = {
 	None: 0,
 `;
 
@@ -531,13 +534,15 @@ async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>): 
 
 function buildResourceList(respath: string): void {
 	log("resourceids.ts knutselen...  ");
-	let tsimgout = new Array<string>();
+	let tsimgout_type_declaration = new Array<string>();
+	let tsimgout_instance = new Array<string>();
 	let tssndout = new Array<string>();
 
 	let metalist = getResMetaList(respath);
 
-	tsimgout.push(BOILERPLATE_RESOURCE_ID);
-	tsimgout.push(BOILERPLATE_RESOURCE_ID_BITMAP);
+	tsimgout_type_declaration.push(BOILERPLATE_RESOURCE_ID_IMPORT_DECLARATION);
+	tsimgout_type_declaration.push(BOILERPLATE_RESOURCE_ID_BITMAP_TYPE_DECLARATION);
+	tsimgout_instance.push(BOILERPLATE_RESOURCE_ID_BITMAP_INSTANCE);
 	tssndout.push(BOILERPLATE_RESOURCE_ID_AUDIO);
 
 	for (let i = 0; i < metalist.length; i++) {
@@ -549,21 +554,25 @@ function buildResourceList(respath: string): void {
 		switch (type) {
 			case 'image':
 			case 'atlas':
-				tsimgout.push(`\t${name}: ${id},`);
+				let property_to_add = `\t${name}: ${id},`;
+				tsimgout_type_declaration.push(`${property_to_add}`);
+				tsimgout_instance.push(`${property_to_add}`);
 				break;
 			case 'audio':
-				tssndout.push(`\t${name} = ${id},`);
+				let enummember_to_add = `\t${name} = ${id},`;
+				tssndout.push(`${enummember_to_add}`);
 				break;
 		}
 	}
 
-	tsimgout.push("}\n");
+	tsimgout_type_declaration.push("}\n");
+	tsimgout_instance.push("}\n");
 	tssndout.push("}\n");
 
 	let targetPath = respath.replace('/res', '/resourceids.ts');
 	log(`resourceids.ts wegschrijven naar "${targetPath}"... `);
 	startRotator();
-	writeFileSync(targetPath, tsimgout.concat(tssndout).join('\n'));
+	writeFileSync(targetPath, tsimgout_type_declaration.concat(tsimgout_instance).concat(tssndout).join('\n'));
 	stopRotator();
 	appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 }

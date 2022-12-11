@@ -1,15 +1,20 @@
+import { MSX2ScreenHeight, MSX2ScreenWidth } from './../bmsx/msx';
 import { RomLoadResult } from '../bmsx/rompack';
 import { Game, BaseModel, GameObject, Sprite, sdef, mdef, leavingScreenHandler_prohibit as prohibitLeavingScreenHandler, statedef_builder, cmdef, sstate, cmstate, setPoint, newPoint, Direction, newSize, newArea, Point, randomInt, copyPoint, getOppositeDirection, Space } from '../bmsx/bmsx';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
 import { Input } from '../bmsx/input';
-import { TextWriter } from '../bmsx/textwriter';
 import { DrawImgFlags, paintSprite } from '../bmsx/view';
+import { TextWriter } from '../bmsx/textwriter';
 import { GameMenu } from './gamemenu';
 import { KonamiFont } from './konamifont';
 
+const TIME_TO_SHINE = 3;
 class modelclass extends BaseModel {
+	public time_to_shine: number;
+	public score: number = 0;
+
 	public get diamant() : diamant {
 		return this.get('diamant');
 	}
@@ -21,6 +26,20 @@ class modelclass extends BaseModel {
 		return this.filter(o => (o as any).is_onvolmaaktheid) as onvolmaaktheid[];
 	}
 
+	public tel_onvolmaaktheden() : number {
+		let total = 0;
+		this.filter_and_foreach(
+			o => (o as any).is_onvolmaaktheid,
+			o => {
+				let onvolmaaktje = o as onvolmaaktheid;
+				if (onvolmaaktje.ben_ik_nog_onvolmaakt)
+					++total;
+			}
+		);
+
+		return total;
+	}
+
     @statedef_builder
     public static buildModelStates(classname: string): cmdef {
         return new cmdef(classname, {
@@ -28,11 +47,28 @@ class modelclass extends BaseModel {
                 master: new mdef('default', {
                     states: {
                         default: new sdef('default', {
-                            onrun() {
+							nudges2move: 50,
+							onenter(s: sstate) {
+								let ik = global.model as modelclass;
+								ik.time_to_shine = TIME_TO_SHINE;
+							},
+							onnext(s: sstate) {
+								let ik = global.model as modelclass;
+
+								--ik.time_to_shine;
+								if (ik.time_to_shine < 0) {
+									ik.time_to_shine = 0;
+									ik.state.to('evaluatie!');
+								}
+							},
+                            onrun(s: sstate, ik: modelclass) {
                                 BaseModel.defaultrun();
-                                if (Input.KC_F5) {
-                                    global.model.state.to('gamemenu');
-                                }
+
+								++s.nudges; // Laat timer lopen
+
+								if (Input.KC_F5) {
+									global.model.state.to('gamemenu');
+								}
                             },
                         }),
                         gamemenu: new sdef('gamemenu', {
@@ -54,9 +90,31 @@ class modelclass extends BaseModel {
                                 global.model.exile(menu);
                             },
                         }),
+						'evaluatie!': new sdef('evaluatie!', {
+							nudges2move: 50,
+                            onenter() {
+								let ik = global.model as modelclass;
+								ik.setSpace('evaluatie!');
+								ik.time_to_shine = 5;
+                            },
+							onnext(s: sstate) {
+								let ik = global.model as modelclass;
+
+								--ik.time_to_shine;
+								if (ik.time_to_shine < 0) {
+									ik.time_to_shine = 0;
+									ik.state.to('hoera!');
+								}
+							},
+							onrun(s: sstate) {
+								++s.nudges;
+							},
+                        }),
                         'hoera!': new sdef('hoera!', {
                             onenter() {
-                                global.model.setSpace('hoera!');
+								let ik = global.model as modelclass;
+								ik.score = ik.tel_onvolmaaktheden();
+                                ik.setSpace('hoera!');
                             }
                         }),
                     }
@@ -70,6 +128,10 @@ class modelclass extends BaseModel {
         let winSpace = new Space('hoera!');
         winSpace.spawn(new hoeraStuff());
         this.addSpace(winSpace);
+
+		let evaluatieSpace = new Space('evaluatie!');
+		evaluatieSpace.spawn(new evaluatieStuff());
+        this.addSpace(evaluatieSpace);
     }
 
     public init() {
@@ -100,10 +162,95 @@ class modelclass extends BaseModel {
 class hoeraStuff extends Sprite {
     constructor() {
         super();
-        this.z = 5000;
+        this.z = 0;
         this.imgid = BitmapId.Sint;
     }
+
+	override paint = (offset?: Point) => {
+		let line1: string;
+		let line2: string;
+		let line3: string;
+
+		let score = _model.score;
+		switch (true) {
+			case (score == 0):
+				line1 = `De diamant is perfect!`;
+				line2 = `Redelijk gedaan Joanneke!`;
+				line3 = ``;
+			break;
+			case (score > 0 && score < 2):
+				line1 = `De diamant is imperfect`;
+				line2 = `doch erg mooi`;
+				line3 = `Acceptabel gedaan Joanneke!`;
+			break;
+			case (score >= 2):
+				line1 = `De diamant is nu`;
+				line2 = `een baksteen geworden.`;
+				line3 = `Maar toch ok gedaan Joanneke!`;
+			break;
+		}
+
+		TextWriter.drawText(4, 8, `${line1}`);
+		TextWriter.drawText(4, 16, `${line2}`);
+		TextWriter.drawText(4, 24, `${line3}`);
+
+		paintSprite.call(this, offset); // .call() nodig, anders "this" undefined
+	};
 };
+
+class evaluatieStuff extends Sprite {
+    constructor() {
+        super();
+        this.z = 0;
+        this.imgid = BitmapId.sint_evalueert;
+    }
+
+	override paint = (offset?: Point) => {
+		TextWriter.drawText(4, 8, `Sinterklaas kijkt nu hoe goed`);
+		TextWriter.drawText(4, 16, `je het hebt gedaan Joanneke...`);
+
+		paintSprite.call(this, offset); // .call() nodig, anders "this" undefined
+	};
+};
+
+class hud extends GameObject {
+	@statedef_builder
+	public static bouw(classname: string): cmdef {
+		return new cmdef(classname, {
+			machines: {
+				master: new mdef('master', {
+					states: {
+						default: new sdef('default', {
+							// nudges2move: 50,
+							onenter(s: sstate, ik: hud) {
+								s.reset();
+								ik.visible = true;
+							},
+							onrun(s: sstate, ik: hud) {
+								// ++s.nudges;
+							},
+							onnext(s: sstate, ik: hud) {
+							},
+						}),
+					}
+				})
+			}
+		});
+	}
+
+	constructor() {
+		super();
+		// this.imgid = BitmapId.None;
+	}
+
+	override onspawn(spawningPos?: Point): void {
+		this.state.to('default');
+	}
+
+	override paint = (offset?: Point) => {
+		TextWriter.drawText(0, 0, `Time to shine: ${_model.time_to_shine}`);
+	}
+}
 
 class diamant extends Sprite {
 	public _getoonde_zijde : zijde;
@@ -116,10 +263,24 @@ class diamant extends Sprite {
 		this._getoonde_zijde = _zijde;
 
 		switch (this._getoonde_zijde) {
-			case zijde.Voor: this.imgid = BitmapId.diamond_front; break;
-			case zijde.Zij: this.imgid = BitmapId.diamond_front; break;
-			case zijde.Boven: this.imgid = BitmapId.diamond_top; break;
+			case zijde.Voor:
+			this.imgid = BitmapId.diamond_front;
+				this.hitarea = newArea(0, 0, 187, 105);
+				this.size = newSize(187, 105);
+			break;
+			case zijde.Zij:
+				this.imgid = BitmapId.diamond_front;
+				this.hitarea = newArea(0, 0, 187, 105);
+				this.size = newSize(187, 105);
+			break;
+			case zijde.Boven:
+				this.imgid = BitmapId.diamond_top;
+				this.hitarea = newArea(0, 0, 192, 192);
+				this.size = newSize(192, 192);
+			break;
 		}
+
+		this.pos = newPoint((MSX2ScreenWidth - this.size.x) / 2, (MSX2ScreenHeight - this.size.y) / 2);
 	}
 
 	constructor() {
@@ -137,41 +298,93 @@ class draaischijf extends Sprite {
 				master: new mdef('master', {
 					states: {
 						idle: new sdef('idle', {
-							nudges2move: 1,
 							onenter: (s: sstate, ik: draaischijf): void => {
 								s.reset();
-								ik.imgid = s.current;
+								ik.imgid = BitmapId.slijpschijf1;
 							},
 							onrun(s: sstate, ik: draaischijf) {
-								switch (ik.direction) {
-									case Direction.Up: ik.sety(ik.pos.y - 1); break;
-									case Direction.Right: ik.setx(ik.pos.x + 1); break;
-									case Direction.Down: ik.sety(ik.pos.y + 1); break;
-									case Direction.Left: ik.setx(ik.pos.x - 1); break;
-								}
+								ik.handle_input_idle_state();
 							},
 						}),
-						slijpen: new sdef('slijpen', {
-							nudges2move: 2,
+						slijpen_opstart: new sdef('slijpen_opstart', {
+							nudges2move: 5,
+							auto_rewind_tape_after_end: false,
 							tape: <Array<number>> [
-								BitmapId.Corona4,
-								BitmapId.Corona11,
-								BitmapId.None,
+								BitmapId.slijpschijf2,
+								BitmapId.slijpschijf1,
+								BitmapId.slijpschijf2,
+								BitmapId.slijpschijf1,
+								BitmapId.slijpschijf2,
+								BitmapId.slijpschijf1,
+								BitmapId.slijpschijf2,
+								BitmapId.slijpschijf1,
+								BitmapId.slijpschijf2,
 							],
 							onenter(s: sstate, ik: draaischijf) {
 								s.reset();
 								ik.imgid = s.current;
 							},
-							onrun(s: sstate) {
+							onrun(s: sstate, ik: draaischijf) {
 								++s.nudges;
+								ik.handle_input_slijp_opstart_state();
 							},
 							onend(s: sstate, ik: draaischijf) {
-								s.reset();
+								ik.state.to('slijpen');
 							},
 							onnext(s: sstate, ik: draaischijf) {
 								ik.imgid = s.current;
 							},
-						})
+						}),
+						slijpen: new sdef('slijpen', {
+							nudges2move: 10,
+							tape: <Array<number>> [
+								BitmapId.slijpschijf3,
+								BitmapId.slijpschijf4,
+							],
+							onenter(s: sstate, ik: draaischijf) {
+								s.reset();
+								ik.imgid = s.current;
+							},
+							onrun(s: sstate, ik: draaischijf) {
+								++s.nudges;
+								ik.handle_input_slijp_state();
+							},
+							// onend(s: sstate, ik: draaischijf) {
+								// s.reset();
+							// },
+							onnext(s: sstate, ik: draaischijf) {
+								ik.imgid = s.current;
+							},
+						}),
+						slijpen_afkoel: new sdef('slijpen_afkoel', {
+							nudges2move: 5,
+							auto_rewind_tape_after_end: false,
+							tape: <Array<number>>[
+								BitmapId.slijpschijf2,
+								BitmapId.slijpschijf1,
+								BitmapId.slijpschijf2,
+								BitmapId.slijpschijf1,
+								BitmapId.slijpschijf2,
+								BitmapId.slijpschijf1,
+								BitmapId.slijpschijf2,
+								BitmapId.slijpschijf1,
+								BitmapId.slijpschijf2,
+							],
+							onenter(s: sstate, ik: draaischijf) {
+								s.reset();
+								ik.imgid = s.current;
+							},
+							onrun(s: sstate, ik: draaischijf) {
+								++s.nudges;
+								ik.handle_input_slijp_afkoel_state();
+							},
+							onend(s: sstate, ik: draaischijf) {
+								ik.state.to('idle');
+							},
+							onnext(s: sstate, ik: draaischijf) {
+								ik.imgid = s.current;
+							},
+						}),
 					}
 				})
 			}
@@ -180,40 +393,64 @@ class draaischijf extends Sprite {
 
 	constructor() {
 		super('draaischijf');
-		this.z = 100;
-		this.imgid = BitmapId.None; // TODO: Naar echte plaatje
+		this.z = 20;
+		this.imgid = BitmapId.None; // Wordt goed gezet bij ingang start state
 		this.onLeaveScreen = (ik: draaischijf, d: Direction, old_x_or_y: number) => prohibitLeavingScreenHandler(ik, d, old_x_or_y);
-		this.size = { x: 32, y: 32 };
-		this.hitarea = newArea(4, 4, 28, 28);
+		this.size = { x: 64, y: 64 };
+		this.hitarea = newArea(24, 24, 64 - 24, 64 - 24);
 	}
 
 	public handle_input_idle_state(): void {
-		if (Input.KC_LEFT) {
+		if (Input.KD_LEFT) {
 			this.setx(this.pos.x - 1);
 		}
-		else if (Input.KC_RIGHT) {
+		else if (Input.KD_RIGHT) {
 			this.setx(this.pos.x + 1);
 		}
-		else if (Input.KC_UP) {
+		else if (Input.KD_UP) {
 			this.sety(this.pos.y - 1);
 		}
-		else if (Input.KC_DOWN) {
+		else if (Input.KD_DOWN) {
 			this.sety(this.pos.y + 1);
 		}
-		if (Input.KC_BTN1) {
-			this.state.to('slijpen');
+		if (Input.KD_BTN1) {
+			this.state.to('slijpen_opstart');
+		}
+	}
+
+	public handle_input_slijp_opstart_state(): void {
+		if (!Input.KD_BTN1) {
+			this.state.to('slijpen_afkoel');
+		}
+	}
+
+	public handle_input_slijp_afkoel_state(): void {
+		if (Input.KD_BTN1) {
+			this.state.to('slijpen_opstart');
 		}
 	}
 
 	public handle_input_slijp_state(): void {
-		if (!Input.KC_BTN1) {
-			this.state.to('idle');
+		if (!Input.KD_BTN1) {
+			this.state.to('slijpen_afkoel');
+		}
+		else {
+			// Slijpen!!
+			_model.filter_and_foreach(
+				o => (o as any).is_onvolmaaktheid,
+				o => {
+					let onvolmaaktje = o as onvolmaaktheid;
+					if (onvolmaaktje.collides(this)) {
+						onvolmaaktje.polijst_nudge();
+					}
+				}
+			);
 		}
 	}
 
 	override onspawn(spawningPos?: Point): void {
 		super.onspawn(spawningPos);
-		this.state.to('bla');
+		this.state.to('idle');
 	}
 }
 
@@ -233,6 +470,7 @@ export enum zijde {
 
 abstract class onvolmaaktheid extends Sprite {
 	public is_onvolmaaktheid = true; // Om objecten te filteren
+	public ben_ik_nog_onvolmaakt = true; // Overwinningspunten tellen
 	public soort : onvolmaaktheid_soort;
 	public zijde : zijde;
 	public _ernst : number;
@@ -242,7 +480,12 @@ abstract class onvolmaaktheid extends Sprite {
 		this.soort = _soort;
 		this.zijde = _zijde;
 		this.pos = _plek;
+		this.z = 10;
 		__ernst && (this._ernst = __ernst);
+	}
+
+	public polijst_nudge = (): void => {
+		++this.state.getCurrentState().nudges;
 	}
 
 	override paint = (offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }) => {
@@ -254,8 +497,70 @@ abstract class onvolmaaktheid extends Sprite {
 }
 
 class burn extends onvolmaaktheid {
+	@statedef_builder
+	public static bouw(classname: string): cmdef {
+		return new cmdef(classname, {
+			machines: {
+				master: new mdef('master', {
+					states: {
+						wees_een_burn: new sdef('wees_een_burn', {
+							nudges2move: 20,
+							auto_rewind_tape_after_end: false,
+							tape: <Array<number>>[
+								BitmapId.burn1,
+								BitmapId.burn2,
+								BitmapId.burn3,
+								BitmapId.burn4,
+								BitmapId.burn5,
+							],
+							onenter(s: sstate, ik: burn) {
+								s.reset();
+								ik.imgid = s.current;
+								this.ben_ik_nog_onvolmaakt = true;
+							},
+							onrun(s: sstate) { },
+							onend(s: sstate, ik: burn) {
+								ik.state.to('gepolijst');
+							},
+							onnext(s: sstate, ik: burn) {
+								ik.imgid = s.current;
+							},
+						}),
+						gepolijst: new sdef('gepolijst', {
+							nudges2move: 20,
+							tape: <Array<number>>[
+								BitmapId.None,
+								BitmapId.None,
+								BitmapId.None,
+							],
+							onenter(s: sstate, ik: burn) {
+								s.reset();
+								ik.imgid = s.current;
+								this.ben_ik_nog_onvolmaakt = false;
+							},
+							onrun(s: sstate) { },
+							onend(s: sstate, _) { },
+							onnext(s: sstate, ik: burn) {
+								// BURN!!!!
+								ik.state.to('wees_een_burn');
+							}
+						}),
+					}
+				})
+			}
+		});
+	}
+
+	override onspawn = (spawningPos?: Point): void => {
+		super.onspawn?.(spawningPos);
+		this.state.to('wees_een_burn');
+	};
+
 	constructor(_zijde : zijde, _plek : Point, __ernst? : number) {
 		super(onvolmaaktheid_soort.Burn, _zijde, _plek, __ernst);
+		this.imgid = BitmapId.Letter_A;
+		this.hitarea = newArea(0, 0, 40, 31);
+		this.size = newSize(40, 31);
 	}
 }
 
@@ -275,15 +580,15 @@ class barst extends onvolmaaktheid {
 								BitmapId.break4,
 								BitmapId.break5,
 								BitmapId.break6,
-								BitmapId.None,
 							],
 							onenter(s: sstate, ik: barst) {
 								s.reset();
 								ik.imgid = s.current;
+								this.ben_ik_nog_onvolmaakt = true;
 							},
 							onrun(s: sstate) { },
 							onend(s: sstate, ik: barst) {
-								s.reset();
+								ik.state.to('gepolijst');
 							},
 							onnext(s: sstate, ik: barst) {
 								ik.imgid = s.current;
@@ -294,21 +599,22 @@ class barst extends onvolmaaktheid {
 							onenter(s: sstate, ik: barst) {
 								s.reset();
 								ik.imgid = BitmapId.None;
+								this.ben_ik_nog_onvolmaakt = false;
 							},
 							onrun(s: sstate) { },
 							onend(s: sstate, _) { },
 							onnext(s: sstate, ik: barst) {
 								// BURN!!!!
-								global.model.spawn(new burn(this.zijde, copyPoint(this.pos)));
-								ik.state.to('gedaan');
+								_model.spawn(new burn(ik.zijde, copyPoint(ik.pos)));
+								ik.disposeFlag = true; // Vervang met nieuwe soort onvolmaaktheid
 							}
 						}),
-						gedaan: new sdef('gedaan', {
-							onenter(s: sstate, ik: barst) {
-								s.reset();
-								ik.imgid = BitmapId.None;
-							}
-						}),
+						// gedaan: new sdef('gedaan', {
+						// 	onenter(s: sstate, ik: barst) {
+						// 		s.reset();
+						// 		ik.imgid = BitmapId.None;
+						// 	}
+						// }),
 					}
 				})
 			}
@@ -331,10 +637,17 @@ class barst extends onvolmaaktheid {
 		return s.tape.length - 1;
 	}
 
-	constructor(_zijde: zijde, _plek: Point, __ernst: number) {
+	override onspawn = (spawningPos?: Point): void => {
+		super.onspawn?.(spawningPos);
+		this.state.to('wees_een_barst');
+	};
+
+	constructor(_zijde: zijde, _plek: Point, __ernst?: number) {
 		super(onvolmaaktheid_soort.Barst, _zijde, _plek);
 		let defaultErnst = this.max_ernst();
 		__ernst && (this.ernst = defaultErnst);
+		this.hitarea = newArea(0, 0, 40, 31);
+		this.size = newSize(40, 31);
 	}
 }
 
@@ -355,10 +668,16 @@ _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: Gain
     global.view.default_font = new KonamiFont();
 
     global.game.start();
-    let model = global.model;
+    let model = global.model as modelclass;
 	let _diamant = new diamant();
+	let _draaischijf = new draaischijf();
 
-    model.spawn(diamant, newPoint(30, 142));
+	model.spawn(new hud());
+    model.spawn(_diamant);
+    model.spawn(_draaischijf, newPoint(96, 120));
+	model.spawn(new barst(zijde.Voor, newPoint(_diamant.pos.x + 30, _diamant.pos.y + 10)));
+	model.spawn(new barst(zijde.Voor, newPoint(_diamant.pos.x + 60, _diamant.pos.y + 40)));
+	// model.spawn(new barst(zijde.Voor, newPoint(_diamant.pos.x + 30, _diamant.pos.y + 10)));
 };
 
 // https://www.25karats.com/education/diamonds/features
