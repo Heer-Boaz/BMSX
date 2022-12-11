@@ -10,7 +10,7 @@ import { TextWriter } from '../bmsx/textwriter';
 import { GameMenu } from './gamemenu';
 import { KonamiFont } from './konamifont';
 
-const TIME_TO_SHINE = 60;
+const TIME_TO_SHINE = 90;
 class modelclass extends BaseModel {
 	public time_to_shine: number;
 	public uitleg_tekst_dinges: number;
@@ -228,7 +228,7 @@ class uitlegStuff extends Sprite {
 				master: new mdef('master', {
 					states: {
 						uitleg: new sdef('uitleg', {
-							nudges2move: 300,
+							nudges2move: 1,
 							tape: <Array<number>>[
 								0,
 								1,
@@ -602,6 +602,17 @@ class draaischijf extends Sprite {
 		if (Input.KD_BTN1) {
 			this.state.to('slijpen_opstart');
 		}
+		if (Input.KC_BTN2) {
+			let getoonde_zijde = _model.diamant.getoonde_zijde;
+			switch (getoonde_zijde) {
+				case zijde.Voor:
+					_model.diamant.getoonde_zijde = zijde.Boven;
+				break;
+				case zijde.Boven:
+					_model.diamant.getoonde_zijde = zijde.Voor;
+				break;
+			}
+		}
 	}
 
 	public handle_input_slijp_opstart_state(): void {
@@ -866,6 +877,7 @@ _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: Gain
 	model.spawn(new barst(zijde.Voor, newPoint(_diamant.pos.x + 60, _diamant.pos.y + 40)));
 	model.spawn(new barst(zijde.Voor, newPoint(_diamant.pos.x + 110, _diamant.pos.y + 20)));
 	model.spawn(new barst(zijde.Voor, newPoint(_diamant.pos.x + 80, _diamant.pos.y + 60)));
+	model.spawn(new barst(zijde.Boven, newPoint(_diamant.pos.x + 90, _diamant.pos.y + 100)));
 
 	model.state.to('uitleg');
 };
