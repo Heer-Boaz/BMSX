@@ -10,29 +10,29 @@ import { TextWriter } from '../bmsx/textwriter';
 import { GameMenu } from './gamemenu';
 import { KonamiFont } from './konamifont';
 
-const TIME_TO_SHINE = 3;
+const TIME_TO_SHINE = 60;
 class modelclass extends BaseModel {
 	public time_to_shine: number;
 	public score: number = 0;
 
-	public get diamant() : diamant {
+	public get diamant(): diamant {
 		return this.get('diamant');
 	}
-	public get draaischijf() : draaischijf {
+	public get draaischijf(): draaischijf {
 		return this.get('draaischijf');
 	}
 
-	public get_onvolmaaktheden() : onvolmaaktheid[] {
+	public get_onvolmaaktheden(): onvolmaaktheid[] {
 		return this.filter(o => (o as any).is_onvolmaaktheid) as onvolmaaktheid[];
 	}
 
-	public tel_onvolmaaktheden() : number {
+	public tel_onvolmaaktheden(): number {
 		let total = 0;
 		this.filter_and_foreach(
 			o => (o as any).is_onvolmaaktheid,
 			o => {
 				let onvolmaaktje = o as onvolmaaktheid;
-				if (onvolmaaktje.ben_ik_nog_onvolmaakt)
+				if (onvolmaaktje.ben_ik_nog_onvolmaakt === true)
 					++total;
 			}
 		);
@@ -40,13 +40,13 @@ class modelclass extends BaseModel {
 		return total;
 	}
 
-    @statedef_builder
-    public static buildModelStates(classname: string): cmdef {
-        return new cmdef(classname, {
-            machines: {
-                master: new mdef('default', {
-                    states: {
-                        default: new sdef('default', {
+	@statedef_builder
+	public static buildModelStates(classname: string): cmdef {
+		return new cmdef(classname, {
+			machines: {
+				master: new mdef('default', {
+					states: {
+						default: new sdef('default', {
 							nudges2move: 50,
 							onenter(s: sstate) {
 								let ik = global.model as modelclass;
@@ -58,45 +58,47 @@ class modelclass extends BaseModel {
 								--ik.time_to_shine;
 								if (ik.time_to_shine < 0) {
 									ik.time_to_shine = 0;
+									ik.score = ik.tel_onvolmaaktheden();
 									ik.state.to('evaluatie!');
+									// ik.state.to('hoera!');
 								}
 							},
-                            onrun(s: sstate, ik: modelclass) {
-                                BaseModel.defaultrun();
+							onrun(s: sstate, ik: modelclass) {
+								BaseModel.defaultrun();
 
 								++s.nudges; // Laat timer lopen
 
 								if (Input.KC_F5) {
 									global.model.state.to('gamemenu');
 								}
-                            },
-                        }),
-                        gamemenu: new sdef('gamemenu', {
-                            onenter() {
-                                let menu = new GameMenu();
-                                global.model.spawn(menu);
-                                menu.Open();
-                            },
-                            onrun() {
-                                let menu = global.model.get('gamemenu') as GameMenu;
-                                menu.run();
-                                if (Input.KC_F5) {
-                                    global.model.state.to('default');
-                                }
-                            },
-                            onexit() {
-                                let menu = global.model.get('gamemenu') as GameMenu;
-                                menu.Close();
-                                global.model.exile(menu);
-                            },
-                        }),
+							},
+						}),
+						gamemenu: new sdef('gamemenu', {
+							onenter() {
+								let menu = new GameMenu();
+								global.model.spawn(menu);
+								menu.Open();
+							},
+							onrun() {
+								let menu = global.model.get('gamemenu') as GameMenu;
+								menu.run();
+								if (Input.KC_F5) {
+									global.model.state.to('default');
+								}
+							},
+							onexit() {
+								let menu = global.model.get('gamemenu') as GameMenu;
+								menu.Close();
+								global.model.exile(menu);
+							},
+						}),
 						'evaluatie!': new sdef('evaluatie!', {
 							nudges2move: 50,
-                            onenter() {
+							onenter() {
 								let ik = global.model as modelclass;
 								ik.setSpace('evaluatie!');
 								ik.time_to_shine = 5;
-                            },
+							},
 							onnext(s: sstate) {
 								let ik = global.model as modelclass;
 
@@ -109,62 +111,61 @@ class modelclass extends BaseModel {
 							onrun(s: sstate) {
 								++s.nudges;
 							},
-                        }),
-                        'hoera!': new sdef('hoera!', {
-                            onenter() {
+						}),
+						'hoera!': new sdef('hoera!', {
+							onenter() {
 								let ik = global.model as modelclass;
-								ik.score = ik.tel_onvolmaaktheden();
-                                ik.setSpace('hoera!');
-                            }
-                        }),
-                    }
-                }),
-            }
-        });
-    }
+								ik.setSpace('hoera!');
+							}
+						}),
+					}
+				}),
+			}
+		});
+	}
 
-    constructor() {
-        super();
-        let winSpace = new Space('hoera!');
-        winSpace.spawn(new hoeraStuff());
-        this.addSpace(winSpace);
+	constructor() {
+		super();
+		let winSpace = new Space('hoera!');
+		winSpace.spawn(new hoeraStuff());
+		this.addSpace(winSpace);
 
 		let evaluatieSpace = new Space('evaluatie!');
 		evaluatieSpace.spawn(new evaluatieStuff());
-        this.addSpace(evaluatieSpace);
-    }
+		this.addSpace(evaluatieSpace);
+	}
 
-    public init() {
-        this.state = new cmstate(this.constructor.name, '_');
-        this.state.populateMachines();
-        this.state.to('default');
+	public init() {
+		this.state = new cmstate(this.constructor.name, '_');
+		this.state.populateMachines();
+		this.state.to('default');
 
-        return this;
-    }
+		return this;
+	}
 
-    public get gamewidth(): number {
-        return MSX1ScreenWidth;
-    }
+	public get gamewidth(): number {
+		return MSX1ScreenWidth;
+	}
 
-    public get gameheight(): number {
-        return MSX1ScreenHeight;
-    }
+	public get gameheight(): number {
+		return MSX1ScreenHeight;
+	}
 
-    public collidesWithTile(o: GameObject, dir: Direction): boolean {
-        return false;
-    }
+	public collidesWithTile(o: GameObject, dir: Direction): boolean {
+		return false;
+	}
 
-    public isCollisionTile(x: number, y: number): boolean {
-        return false;
-    }
+	public isCollisionTile(x: number, y: number): boolean {
+		return false;
+	}
 };
 
 class hoeraStuff extends Sprite {
-    constructor() {
-        super();
-        this.z = 0;
-        this.imgid = BitmapId.Sint;
-    }
+	constructor() {
+		super();
+		this.z = 0;
+		this.imgid = BitmapId.Sint;
+	}
 
 	override paint = (offset?: Point) => {
 		let line1: string;
@@ -177,33 +178,33 @@ class hoeraStuff extends Sprite {
 				line1 = `De diamant is perfect!`;
 				line2 = `Redelijk gedaan Joanneke!`;
 				line3 = ``;
-			break;
-			case (score > 0 && score < 2):
+				break;
+			case (score > 0 && score <= 2):
 				line1 = `De diamant is imperfect`;
-				line2 = `doch erg mooi`;
+				line2 = `doch erg mooi!`;
 				line3 = `Acceptabel gedaan Joanneke!`;
-			break;
-			case (score >= 2):
+				break;
+			case (score > 2):
 				line1 = `De diamant is nu`;
 				line2 = `een baksteen geworden.`;
 				line3 = `Maar toch ok gedaan Joanneke!`;
-			break;
+				break;
 		}
 
-		TextWriter.drawText(4, 8, `${line1}`);
-		TextWriter.drawText(4, 16, `${line2}`);
-		TextWriter.drawText(4, 24, `${line3}`);
+		TextWriter.drawText(16, 160, `${line1}`);
+		TextWriter.drawText(16, 168, `${line2}`);
+		TextWriter.drawText(16, 176, `${line3}`);
 
 		paintSprite.call(this, offset); // .call() nodig, anders "this" undefined
 	};
 };
 
 class evaluatieStuff extends Sprite {
-    constructor() {
-        super();
-        this.z = 0;
-        this.imgid = BitmapId.sint_evalueert;
-    }
+	constructor() {
+		super();
+		this.z = 0;
+		this.imgid = BitmapId.sint_evalueert;
+	}
 
 	override paint = (offset?: Point) => {
 		TextWriter.drawText(4, 8, `Sinterklaas kijkt nu hoe goed`);
@@ -249,35 +250,89 @@ class hud extends GameObject {
 
 	override paint = (offset?: Point) => {
 		TextWriter.drawText(0, 0, `Time to shine: ${_model.time_to_shine}`);
+	};
+}
+
+class stoom extends Sprite {
+	@statedef_builder
+	public static bouw(classname: string): cmdef {
+		return new cmdef(classname, {
+			machines: {
+				master: new mdef('master', {
+					states: {
+						doepluim: new sdef('doepluim', {
+							tape: <Array<number>>[
+								BitmapId.pluim1,
+								BitmapId.pluim2,
+								BitmapId.pluim3,
+								BitmapId.pluim4,
+								BitmapId.pluim5,
+								BitmapId.pluim6,
+								BitmapId.pluim7,
+								BitmapId.pluim8,
+								BitmapId.pluim9,
+								BitmapId.pluimx,
+								BitmapId.pluimx,
+							],
+							nudges2move: 2,
+							onenter: (s: sstate, ik: stoom): void => {
+								s.reset();
+								ik.imgid = s.current;
+							},
+							onrun: (s: sstate, ik: stoom): void => {
+								++s.nudges;
+							},
+							onnext: (s: sstate, ik: stoom): void => {
+								ik.imgid = s.current;
+							},
+							onend: (_, ik: stoom): void => {
+								ik.markForDisposure();
+							}
+						}),
+					}
+				})
+			}
+		});
+	}
+
+	constructor() {
+		super();
+		this.z = 1010;
+		this.imgid = BitmapId.None;
+	}
+
+	override onspawn(spawningPos?: Point): void {
+		super.onspawn(spawningPos);
+		this.state.to('doepluim');
 	}
 }
 
 class diamant extends Sprite {
-	public _getoonde_zijde : zijde;
+	public _getoonde_zijde: zijde;
 
 	public get getoonde_zijde() {
 		return this._getoonde_zijde;
 	}
 
-	public set getoonde_zijde(_zijde : zijde) {
+	public set getoonde_zijde(_zijde: zijde) {
 		this._getoonde_zijde = _zijde;
 
 		switch (this._getoonde_zijde) {
 			case zijde.Voor:
-			this.imgid = BitmapId.diamond_front;
+				this.imgid = BitmapId.diamond_front;
 				this.hitarea = newArea(0, 0, 187, 105);
 				this.size = newSize(187, 105);
-			break;
+				break;
 			case zijde.Zij:
 				this.imgid = BitmapId.diamond_front;
 				this.hitarea = newArea(0, 0, 187, 105);
 				this.size = newSize(187, 105);
-			break;
+				break;
 			case zijde.Boven:
 				this.imgid = BitmapId.diamond_top;
 				this.hitarea = newArea(0, 0, 192, 192);
 				this.size = newSize(192, 192);
-			break;
+				break;
 		}
 
 		this.pos = newPoint((MSX2ScreenWidth - this.size.x) / 2, (MSX2ScreenHeight - this.size.y) / 2);
@@ -309,7 +364,7 @@ class draaischijf extends Sprite {
 						slijpen_opstart: new sdef('slijpen_opstart', {
 							nudges2move: 5,
 							auto_rewind_tape_after_end: false,
-							tape: <Array<number>> [
+							tape: <Array<number>>[
 								BitmapId.slijpschijf2,
 								BitmapId.slijpschijf1,
 								BitmapId.slijpschijf2,
@@ -337,7 +392,7 @@ class draaischijf extends Sprite {
 						}),
 						slijpen: new sdef('slijpen', {
 							nudges2move: 10,
-							tape: <Array<number>> [
+							tape: <Array<number>>[
 								BitmapId.slijpschijf3,
 								BitmapId.slijpschijf4,
 							],
@@ -350,10 +405,13 @@ class draaischijf extends Sprite {
 								ik.handle_input_slijp_state();
 							},
 							// onend(s: sstate, ik: draaischijf) {
-								// s.reset();
+
 							// },
 							onnext(s: sstate, ik: draaischijf) {
 								ik.imgid = s.current;
+								if (s.head === 0) ++ik.pos.y;
+								else --ik.pos.y;
+								_model.spawn(new stoom(), newPoint(randomInt(ik.pos.x, ik.pos.x + ik.size.x), randomInt(ik.pos.y, ik.pos.y + ik.size.y)));
 							},
 						}),
 						slijpen_afkoel: new sdef('slijpen_afkoel', {
@@ -471,11 +529,11 @@ export enum zijde {
 abstract class onvolmaaktheid extends Sprite {
 	public is_onvolmaaktheid = true; // Om objecten te filteren
 	public ben_ik_nog_onvolmaakt = true; // Overwinningspunten tellen
-	public soort : onvolmaaktheid_soort;
-	public zijde : zijde;
-	public _ernst : number;
+	public soort: onvolmaaktheid_soort;
+	public zijde: zijde;
+	public _ernst: number;
 
-	constructor(_soort : onvolmaaktheid_soort, _zijde : zijde, _plek : Point, __ernst? : number) {
+	constructor(_soort: onvolmaaktheid_soort, _zijde: zijde, _plek: Point, __ernst?: number) {
 		super();
 		this.soort = _soort;
 		this.zijde = _zijde;
@@ -486,14 +544,14 @@ abstract class onvolmaaktheid extends Sprite {
 
 	public polijst_nudge = (): void => {
 		++this.state.getCurrentState().nudges;
-	}
+	};
 
 	override paint = (offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }) => {
 		// Toon alleen als diamant op zelfde locatie is als dat diamant is weergegeven
 		if (_model.diamant.getoonde_zijde == this.zijde) {
 			paintSprite.call(this, offset, colorize); // .call() nodig, anders "this" undefined
 		}
-	}
+	};
 }
 
 class burn extends onvolmaaktheid {
@@ -516,7 +574,7 @@ class burn extends onvolmaaktheid {
 							onenter(s: sstate, ik: burn) {
 								s.reset();
 								ik.imgid = s.current;
-								this.ben_ik_nog_onvolmaakt = true;
+								ik.ben_ik_nog_onvolmaakt = true;
 							},
 							onrun(s: sstate) { },
 							onend(s: sstate, ik: burn) {
@@ -536,7 +594,7 @@ class burn extends onvolmaaktheid {
 							onenter(s: sstate, ik: burn) {
 								s.reset();
 								ik.imgid = s.current;
-								this.ben_ik_nog_onvolmaakt = false;
+								ik.ben_ik_nog_onvolmaakt = false;
 							},
 							onrun(s: sstate) { },
 							onend(s: sstate, _) { },
@@ -556,7 +614,7 @@ class burn extends onvolmaaktheid {
 		this.state.to('wees_een_burn');
 	};
 
-	constructor(_zijde : zijde, _plek : Point, __ernst? : number) {
+	constructor(_zijde: zijde, _plek: Point, __ernst?: number) {
 		super(onvolmaaktheid_soort.Burn, _zijde, _plek, __ernst);
 		this.imgid = BitmapId.Letter_A;
 		this.hitarea = newArea(0, 0, 40, 31);
@@ -584,7 +642,7 @@ class barst extends onvolmaaktheid {
 							onenter(s: sstate, ik: barst) {
 								s.reset();
 								ik.imgid = s.current;
-								this.ben_ik_nog_onvolmaakt = true;
+								ik.ben_ik_nog_onvolmaakt = true;
 							},
 							onrun(s: sstate) { },
 							onend(s: sstate, ik: barst) {
@@ -595,11 +653,11 @@ class barst extends onvolmaaktheid {
 							},
 						}),
 						gepolijst: new sdef('gepolijst', {
-							nudges2move : 40,
+							nudges2move: 40,
 							onenter(s: sstate, ik: barst) {
 								s.reset();
 								ik.imgid = BitmapId.None;
-								this.ben_ik_nog_onvolmaakt = false;
+								ik.ben_ik_nog_onvolmaakt = false;
 							},
 							onrun(s: sstate) { },
 							onend(s: sstate, _) { },
@@ -652,32 +710,33 @@ class barst extends onvolmaaktheid {
 }
 
 class viewclass extends GLView {
-    override drawgame(): void {
-        super.drawgame();
-        super.drawSprites();
-    }
+	override drawgame(): void {
+		super.drawgame();
+		super.drawSprites();
+	}
 };
 
 let _model: modelclass;
 
 var _global = window || global;
 _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: GainNode): void => {
-    let _view = new viewclass(newSize(MSX1ScreenWidth, MSX1ScreenHeight));
-    _model = new modelclass();
-    new Game(rom, _model, _view, sndcontext, gainnode);
-    global.view.default_font = new KonamiFont();
+	let _view = new viewclass(newSize(MSX1ScreenWidth, MSX1ScreenHeight));
+	_model = new modelclass();
+	new Game(rom, _model, _view, sndcontext, gainnode);
+	global.view.default_font = new KonamiFont();
 
-    global.game.start();
-    let model = global.model as modelclass;
+	global.game.start();
+	let model = global.model as modelclass;
 	let _diamant = new diamant();
 	let _draaischijf = new draaischijf();
 
 	model.spawn(new hud());
-    model.spawn(_diamant);
-    model.spawn(_draaischijf, newPoint(96, 120));
+	model.spawn(_diamant);
+	model.spawn(_draaischijf, newPoint(96, 120));
 	model.spawn(new barst(zijde.Voor, newPoint(_diamant.pos.x + 30, _diamant.pos.y + 10)));
 	model.spawn(new barst(zijde.Voor, newPoint(_diamant.pos.x + 60, _diamant.pos.y + 40)));
-	// model.spawn(new barst(zijde.Voor, newPoint(_diamant.pos.x + 30, _diamant.pos.y + 10)));
+	model.spawn(new barst(zijde.Voor, newPoint(_diamant.pos.x + 100, _diamant.pos.y + 20)));
+	model.spawn(new barst(zijde.Voor, newPoint(_diamant.pos.x + 80, _diamant.pos.y + 60)));
 };
 
 // https://www.25karats.com/education/diamonds/features
