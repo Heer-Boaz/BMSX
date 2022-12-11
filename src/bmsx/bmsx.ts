@@ -297,6 +297,14 @@ export class cmstate {
         return this.machines[machine_id].currentid;
     }
 
+	public getCurrentState(machine_id: string = DEFAULT_BST_ID) : sstate {
+		return this.machines[machine_id].states[this.getCurrentId(machine_id)];
+	}
+
+	public getState(state_id : string, machine_id: string = DEFAULT_BST_ID) : sstate {
+		return this.machines[machine_id].states[state_id];
+	}
+
     public run(): void {
         if (this.paused) return;
         for (const key of Object.keys(this.machines)) {
@@ -734,7 +742,6 @@ export abstract class BaseModel {
     public exists(id: string): boolean {
         let foundObj = this.get(id);
         return foundObj ? true : false;
-        // return this[id2obj][id] !== undefined;
     }
 
     public static getCMachinedef(cmachineid: string): cmdef {

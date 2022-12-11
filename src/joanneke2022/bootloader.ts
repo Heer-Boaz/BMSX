@@ -10,7 +10,16 @@ import { GameMenu } from './gamemenu';
 import { KonamiFont } from './konamifont';
 
 class modelclass extends BaseModel {
-    // public diamand: speler;
+	public get diamant() : diamant {
+		return this.get('diamant');
+	}
+	public get draaischijf() : draaischijf {
+		return this.get('draaischijf');
+	}
+
+	public get_onvolmaaktheden() : onvolmaaktheid[] {
+		return this.filter(o => (o as any).is_onvolmaaktheid) as onvolmaaktheid[];
+	}
 
     @statedef_builder
     public static buildModelStates(classname: string): cmdef {
@@ -26,7 +35,7 @@ class modelclass extends BaseModel {
                                 }
                             },
                         }),
-                        'gamemenu': new sdef('gamemenu', {
+                        gamemenu: new sdef('gamemenu', {
                             onenter() {
                                 let menu = new GameMenu();
                                 global.model.spawn(menu);
@@ -97,7 +106,6 @@ class hoeraStuff extends Sprite {
 };
 
 class diamant extends Sprite {
-	public onvolmaaktheden : onvolmaaktheid[];
 	public _getoonde_zijde : zijde;
 
 	public get getoonde_zijde() {
@@ -107,23 +115,105 @@ class diamant extends Sprite {
 	public set getoonde_zijde(_zijde : zijde) {
 		this._getoonde_zijde = _zijde;
 
-		// TODO: KIES IMG OP BASIS VAN GETOONDE ZIJDE
+		switch (this._getoonde_zijde) {
+			case zijde.Voor: this.imgid = BitmapId.diamond_front; break;
+			case zijde.Zij: this.imgid = BitmapId.diamond_front; break;
+			case zijde.Boven: this.imgid = BitmapId.diamond_top; break;
+		}
 	}
 
 	constructor() {
-		super('diamond');
+		super('diamant');
 		this.z = 0;
-		this.imgid = BitmapId.None; // TODO: Naar echte plaatje
-		this.onvolmaaktheden  = [];
 		this.getoonde_zijde = zijde.Voor;
 	}
 }
 
 class draaischijf extends Sprite {
+	@statedef_builder
+	public static bouw(classname: string): cmdef {
+		return new cmdef(classname, {
+			machines: {
+				master: new mdef('master', {
+					states: {
+						idle: new sdef('idle', {
+							nudges2move: 1,
+							onenter: (s: sstate, ik: draaischijf): void => {
+								s.reset();
+								ik.imgid = s.current;
+							},
+							onrun(s: sstate, ik: draaischijf) {
+								switch (ik.direction) {
+									case Direction.Up: ik.sety(ik.pos.y - 1); break;
+									case Direction.Right: ik.setx(ik.pos.x + 1); break;
+									case Direction.Down: ik.sety(ik.pos.y + 1); break;
+									case Direction.Left: ik.setx(ik.pos.x - 1); break;
+								}
+							},
+						}),
+						slijpen: new sdef('slijpen', {
+							nudges2move: 2,
+							tape: <Array<number>> [
+								BitmapId.Corona4,
+								BitmapId.Corona11,
+								BitmapId.None,
+							],
+							onenter(s: sstate, ik: draaischijf) {
+								s.reset();
+								ik.imgid = s.current;
+							},
+							onrun(s: sstate) {
+								++s.nudges;
+							},
+							onend(s: sstate, ik: draaischijf) {
+								s.reset();
+							},
+							onnext(s: sstate, ik: draaischijf) {
+								ik.imgid = s.current;
+							},
+						})
+					}
+				})
+			}
+		});
+	}
+
 	constructor() {
 		super('draaischijf');
 		this.z = 100;
 		this.imgid = BitmapId.None; // TODO: Naar echte plaatje
+		this.onLeaveScreen = (ik: draaischijf, d: Direction, old_x_or_y: number) => prohibitLeavingScreenHandler(ik, d, old_x_or_y);
+		this.size = { x: 32, y: 32 };
+		this.hitarea = newArea(4, 4, 28, 28);
+	}
+
+	public handle_input_idle_state(): void {
+		if (Input.KC_LEFT) {
+			this.setx(this.pos.x - 1);
+		}
+		else if (Input.KC_RIGHT) {
+			this.setx(this.pos.x + 1);
+		}
+		else if (Input.KC_UP) {
+			this.sety(this.pos.y - 1);
+		}
+		else if (Input.KC_DOWN) {
+			this.sety(this.pos.y + 1);
+		}
+		if (Input.KC_BTN1) {
+			this.state.to('slijpen');
+		}
+	}
+
+	public handle_input_slijp_state(): void {
+		if (!Input.KC_BTN1) {
+			this.state.to('idle');
+		}
+	}
+
+	override onspawn(spawningPos?: Point): void {
+		super.onspawn(spawningPos);
+		this.state.to('bla');
 	}
 }
 
@@ -142,6 +232,7 @@ export enum zijde {
 }
 
 abstract class onvolmaaktheid extends Sprite {
+	public is_onvolmaaktheid = true; // Om objecten te filteren
 	public soort : onvolmaaktheid_soort;
 	public zijde : zijde;
 	public _ernst : number;
@@ -153,20 +244,97 @@ abstract class onvolmaaktheid extends Sprite {
 		this.pos = _plek;
 		__ernst && (this._ernst = __ernst);
 	}
+
+	override paint = (offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }) => {
+		// Toon alleen als diamant op zelfde locatie is als dat diamant is weergegeven
+		if (_model.diamant.getoonde_zijde == this.zijde) {
+			paintSprite.call(this, offset, colorize); // .call() nodig, anders "this" undefined
+		}
+	}
+}
+
+class burn extends onvolmaaktheid {
+	constructor(_zijde : zijde, _plek : Point, __ernst? : number) {
+		super(onvolmaaktheid_soort.Burn, _zijde, _plek, __ernst);
+	}
 }
 
 class barst extends onvolmaaktheid {
+	@statedef_builder
+	public static bouw(classname: string): cmdef {
+		return new cmdef(classname, {
+			machines: {
+				master: new mdef('master', {
+					states: {
+						wees_een_barst: new sdef('wees_een_barst', {
+							nudges2move: 20,
+							tape: <Array<number>>[
+								BitmapId.break1,
+								BitmapId.break2,
+								BitmapId.break3,
+								BitmapId.break4,
+								BitmapId.break5,
+								BitmapId.break6,
+								BitmapId.None,
+							],
+							onenter(s: sstate, ik: barst) {
+								s.reset();
+								ik.imgid = s.current;
+							},
+							onrun(s: sstate) { },
+							onend(s: sstate, ik: barst) {
+								s.reset();
+							},
+							onnext(s: sstate, ik: barst) {
+								ik.imgid = s.current;
+							},
+						}),
+						gepolijst: new sdef('gepolijst', {
+							nudges2move : 40,
+							onenter(s: sstate, ik: barst) {
+								s.reset();
+								ik.imgid = BitmapId.None;
+							},
+							onrun(s: sstate) { },
+							onend(s: sstate, _) { },
+							onnext(s: sstate, ik: barst) {
+								// BURN!!!!
+								global.model.spawn(new burn(this.zijde, copyPoint(this.pos)));
+								ik.state.to('gedaan');
+							}
+						}),
+						gedaan: new sdef('gedaan', {
+							onenter(s: sstate, ik: barst) {
+								s.reset();
+								ik.imgid = BitmapId.None;
+							}
+						}),
+					}
+				})
+			}
+		});
+	}
+
 	public get ernst() {
 		return this._ernst;
 	}
 
 	public set ernst(x) {
 		this._ernst = x;
-		// TODO: KIES IMG OP BASIS VAN ERNST
+		let s = this.state.getState('wees_een_barst');
+		s.reset();
+		s.head = this.max_ernst() - this._ernst;
 	}
 
-	constructor(_zijde: zijde, _plek: Point) {
-		super(onvolmaaktheid_soort.Barst, _zijde, _plek, 3);
+	private max_ernst() {
+		let s = this.state.getState('wees_een_barst');
+		return s.tape.length - 1;
+	}
+
+	constructor(_zijde: zijde, _plek: Point, __ernst: number) {
+		super(onvolmaaktheid_soort.Barst, _zijde, _plek);
+		let defaultErnst = this.max_ernst();
+		__ernst && (this.ernst = defaultErnst);
 	}
 }
 
@@ -190,10 +358,6 @@ _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: Gain
     let model = global.model;
 	let _diamant = new diamant();
 
-    // model.spawn(new yakuzi(), newPoint(0, 32));
-    // model.spawn(new huBd(), newPoint(0, 0));
-    // let marlies = new speler();
-    // _model.marlies = marlies;
     model.spawn(diamant, newPoint(30, 142));
 };
 

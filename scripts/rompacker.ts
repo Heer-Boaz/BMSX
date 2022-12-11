@@ -827,6 +827,7 @@ try {
 		writeOut('Building resource list and writing output to "./src/bmsx/resourceids.ts"...\n');
 		writeOut('  Note: ROM packing and deployement are skipped.\n');
 		buildResourceList(respath);
+		writeOut(`\n${_colors.brightWhite.bold('[Resource list bouwen ge-DONUT]')}\n`);
 	}
 	else {
 		if (!title) throw new Error("Missing parameter for title ('title', e.g. 'Sintervania'.");
