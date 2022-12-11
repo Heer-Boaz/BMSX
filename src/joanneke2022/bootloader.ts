@@ -13,6 +13,7 @@ import { KonamiFont } from './konamifont';
 const TIME_TO_SHINE = 60;
 class modelclass extends BaseModel {
 	public time_to_shine: number;
+	public uitleg_tekst_dinges: number;
 	public score: number = 0;
 
 	public get diamant(): diamant {
@@ -50,6 +51,7 @@ class modelclass extends BaseModel {
 							nudges2move: 50,
 							onenter(s: sstate) {
 								let ik = global.model as modelclass;
+								ik.setSpace('default');
 								ik.time_to_shine = TIME_TO_SHINE;
 							},
 							onnext(s: sstate) {
@@ -116,7 +118,22 @@ class modelclass extends BaseModel {
 							onenter() {
 								let ik = global.model as modelclass;
 								ik.setSpace('hoera!');
-							}
+							},
+						}),
+						uitleg: new sdef('uitleg', {
+							onenter() {
+								let ik = global.model as modelclass;
+								ik.uitleg_tekst_dinges = 0;
+								ik.setSpace('uitleg');
+								ik.spawn(new uitlegStuff());
+							},
+							onrun(s: sstate, ik: modelclass) {
+								BaseModel.defaultrun();
+
+								if (Input.KC_F5) {
+									global.model.state.to('gamemenu');
+								}
+							},
 						}),
 					}
 				}),
@@ -133,12 +150,16 @@ class modelclass extends BaseModel {
 		let evaluatieSpace = new Space('evaluatie!');
 		evaluatieSpace.spawn(new evaluatieStuff());
 		this.addSpace(evaluatieSpace);
+
+		let uitlegSpace = new Space('uitleg');
+		this.addSpace(uitlegSpace);
 	}
 
 	public init() {
 		this.state = new cmstate(this.constructor.name, '_');
 		this.state.populateMachines();
 		this.state.to('default');
+		// this.state.to('uitleg');
 
 		return this;
 	}
@@ -197,6 +218,113 @@ class hoeraStuff extends Sprite {
 
 		paintSprite.call(this, offset); // .call() nodig, anders "this" undefined
 	};
+};
+
+class uitlegStuff extends Sprite {
+	@statedef_builder
+	public static bouw(classname: string): cmdef {
+		return new cmdef(classname, {
+			machines: {
+				master: new mdef('master', {
+					states: {
+						uitleg: new sdef('uitleg', {
+							nudges2move: 300,
+							tape: <Array<number>>[
+								0,
+								1,
+								2,
+								3,
+								4,
+								5,
+								6,
+							],
+							onenter(s: sstate, ik: uitlegStuff) {
+								s.reset();
+								if (_model)
+								_model.uitleg_tekst_dinges = s.current;
+							},
+							onrun(s: sstate, ik: uitlegStuff) {
+								++s.nudges;
+							},
+							onnext(s: sstate, ik: uitlegStuff) {
+								if (_model)
+									_model.uitleg_tekst_dinges = s.current;
+							},
+							onend(s: sstate, ik: uitlegStuff) {
+								if (_model)
+									_model.state.to('default');
+							},
+						}),
+					}
+				})
+			}
+		});
+	}
+
+	constructor() {
+		super();
+		this.z = 0;
+		this.imgid = BitmapId.diamond_front;
+		this.hitarea = newArea(0, 0, 187, 105);
+		this.size = newSize(187, 105);
+		this.pos = newPoint((MSX2ScreenWidth - this.size.x) / 2, (MSX2ScreenHeight - this.size.y) / 2);
+	}
+
+	override paint = (offset?: Point) => {
+		let line1: string;
+		let line2: string;
+		let line3: string;
+
+		if (!_model) return;
+		let bla = _model.uitleg_tekst_dinges;
+		switch (bla) {
+			case 0:
+				line1 = `Deze diamant heeft blemishes!`;
+				line2 = `Jij moet dit nu fixen!`;
+				line3 = ``;
+				break;
+			case 1:
+				line1 = `Gebruik de slijpsteen om`;
+				line2 = `de diamant te herstellen!`;
+				line3 = ``;
+				break;
+			case 2:
+				line1 = `Bestuur de slijpsteen met`;
+				line2 = `de cursortoetsen en zet deze`;
+				line3 = `boven de kapotte delen.`;
+				break;
+			case 3:
+				line1 = `Druk op lshift`;
+				line2 = `Om de slijpsteen aan te zetten.`;
+				line3 = ``;
+				break;
+			case 4:
+				line1 = `Maar pas op!`;
+				line2 = `Te lang slijpen maakt`;
+				line3 = `nieuwe problemen en`;
+				break;
+			case 5:
+				line1 = `Die moet je dan weer`;
+				line2 = `repareren met de slijpsteen`;
+				line3 = `Oh en je hebt 1 minuut!`;
+				break;
+			case 6:
+				line1 = `De Sint gaat je beoordelen!`;
+				line2 = `Goed geluk!`;
+				line3 = ``;
+				break;
+		}
+
+		TextWriter.drawText(16, 160, `${line1}`);
+		TextWriter.drawText(16, 168, `${line2}`);
+		TextWriter.drawText(16, 176, `${line3}`);
+
+		paintSprite.call(this, offset); // .call() nodig, anders "this" undefined
+	};
+
+	override onspawn(spawningPos?: Point): void {
+		this.state.to('uitleg');
+	}
 };
 
 class evaluatieStuff extends Sprite {
@@ -730,13 +858,16 @@ _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: Gain
 	let _diamant = new diamant();
 	let _draaischijf = new draaischijf();
 
+	model.setSpace('default');
 	model.spawn(new hud());
 	model.spawn(_diamant);
 	model.spawn(_draaischijf, newPoint(96, 120));
 	model.spawn(new barst(zijde.Voor, newPoint(_diamant.pos.x + 30, _diamant.pos.y + 10)));
 	model.spawn(new barst(zijde.Voor, newPoint(_diamant.pos.x + 60, _diamant.pos.y + 40)));
-	model.spawn(new barst(zijde.Voor, newPoint(_diamant.pos.x + 100, _diamant.pos.y + 20)));
+	model.spawn(new barst(zijde.Voor, newPoint(_diamant.pos.x + 110, _diamant.pos.y + 20)));
 	model.spawn(new barst(zijde.Voor, newPoint(_diamant.pos.x + 80, _diamant.pos.y + 60)));
+
+	model.state.to('uitleg');
 };
 
 // https://www.25karats.com/education/diamonds/features
