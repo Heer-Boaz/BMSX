@@ -73,7 +73,7 @@ class bclass extends Sprite {
 
 const savestring = Symbol('savestring');
 // @insavegame
-class _modelclass extends BaseModel {
+class gamemodel extends BaseModel {
     public [savestring]: string;
 
     @statedef_builder
@@ -82,6 +82,12 @@ class _modelclass extends BaseModel {
             machines: {
                 master: new mdef('default', {
                     states: {
+                        game_start: new sdef('game_start', {
+                            onrun(s: sstate) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
+                                let ik = global.model as gamemodel;
+                                ik.state.to('default');
+                            }
+                        }),
                         default: new sdef('default', {
                             onrun: BaseModel.defaultrun,
                         }),
@@ -91,11 +97,26 @@ class _modelclass extends BaseModel {
         });
     }
 
+    // DO NOT CHANGE THIS CODE! PLEASE USE STATE DEFS TO HANDLE GAME STARTUP LOGIC!
+    // Trying to add logic here will most often result in runtime errors.
+    // These runtime errors usually occur because the model was not created and initialized (with states),
+    // while creating new game objects that reference the model or the model states
+    constructor() {
+        super();
+    }
+
+	// Build and populate states. Can only be executed once main game objects and view have been created
+	// DO NOT CHANGE THIS CODE! PLEASE USE STATE DEFS TO HANDLE GAME STARTUP LOGIC!
     public init_model_state_machines(): this {
         this.state = new cmstate(this.constructor.name, '_');
         this.state.populateMachines();
-        this.state.to('default');
+        this.state.to('game_start');
 
+        return this;
+    }
+
+    public override do_one_time_game_init(): this {
+        _model.spawn(new bclass(), newPoint(100, 100));
         return this;
     }
 
@@ -116,21 +137,22 @@ class _modelclass extends BaseModel {
     }
 };
 
-class _viewclass extends GLView {
+class gameview extends GLView {
     override drawgame() {
         super.drawgame();
         super.drawSprites();
     }
 };
 
-let _model: _modelclass;
+var _game: Game;
+let _model: gamemodel;
+var _view: gameview;
 
 var _global = window || global;
-_global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: GainNode): void => {
-    _model = new _modelclass();
-    let _view = new _viewclass(newSize(MSX1ScreenWidth, MSX1ScreenHeight));
-    new Game(rom, _model, _view, sndcontext, gainnode);
 
-    global.game.start();
-    _model.spawn(new bclass(), newPoint(100, 100));
+_global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: GainNode): void => {
+    _model = new gamemodel();
+    _view = new gameview(newSize(MSX1ScreenWidth, MSX1ScreenHeight));
+    _game = new Game(rom, _model, _view, sndcontext, gainnode);
+    _game.start();
 };

@@ -12,7 +12,9 @@ import { GameMenu } from './gamemenu';
 import { KonamiFont } from './konamifont';
 
 const TIME_TO_SHINE = 90;
-class modelclass extends BaseModel {
+type model_spaces = 'default' | 'uitleg' | 'evaluatie' | 'hoera!';
+
+class gamemodel extends BaseModel {
 	public time_to_shine: number;
 	public uitleg_tekst_dinges: number;
 	public score: number = 0;
@@ -50,28 +52,28 @@ class modelclass extends BaseModel {
 					states: {
 						game_start: new sdef('game_start', {
 							onrun(s: sstate) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
-								let ik = global.model as modelclass;
+								let ik = _model;
 								ik.state.to('uitleg');
 							}
 						}),
 						default: new sdef('default', {
 							nudges2move: 50,
 							onenter(s: sstate) {
-								let ik = global.model as modelclass;
-								ik.setSpace('default');
+								let ik = global.model as gamemodel;
+								ik.setSpace(<model_spaces>'default');
 								ik.time_to_shine = TIME_TO_SHINE;
 							},
 							onnext(s: sstate) {
-								let ik = global.model as modelclass;
+								let ik = global.model as gamemodel;
 
 								--ik.time_to_shine;
 								if (ik.time_to_shine < 0) {
 									ik.time_to_shine = 0;
 									ik.score = ik.tel_onvolmaaktheden();
-									ik.state.to('evaluatie!');
+									ik.state.to('evaluatie');
 								}
 							},
-							onrun(s: sstate, ik: modelclass) {
+							onrun(s: sstate, ik: gamemodel) {
 								BaseModel.defaultrun();
 
 								++s.nudges; // Laat timer lopen
@@ -103,12 +105,12 @@ class modelclass extends BaseModel {
 						'evaluatie!': new sdef('evaluatie!', {
 							nudges2move: 50,
 							onenter() {
-								let ik = global.model as modelclass;
-								ik.setSpace('evaluatie!');
+								let ik = global.model as gamemodel;
+								ik.setSpace('evaluatie!' as model_spaces);
 								ik.time_to_shine = 5;
 							},
 							onnext(s: sstate) {
-								let ik = global.model as modelclass;
+								let ik = global.model as gamemodel;
 
 								--ik.time_to_shine;
 								if (ik.time_to_shine < 0) {
@@ -122,17 +124,17 @@ class modelclass extends BaseModel {
 						}),
 						'hoera!': new sdef('hoera!', {
 							onenter() {
-								let ik = global.model as modelclass;
+								let ik = global.model as gamemodel;
 								ik.setSpace('hoera!');
 							},
 						}),
 						uitleg: new sdef('uitleg', {
 							onenter() {
-								let ik = global.model as modelclass;
+								let ik = global.model as gamemodel;
 								ik.uitleg_tekst_dinges = 0;
 								ik.setSpace('uitleg');
 							},
-							onrun(s: sstate, ik: modelclass) {
+							onrun(s: sstate, ik: gamemodel) {
 								BaseModel.defaultrun();
 
 								if (Input.KC_F5) {
@@ -791,7 +793,7 @@ class burn extends onvolmaaktheid {
 
 	constructor(_zijde: zijde, _plek: Point, __ernst?: number) {
 		super(onvolmaaktheid_soort.Burn, _zijde, _plek, __ernst);
-		this.imgid = BitmapId.Letter_A;
+		this.imgid = BitmapId.None;
 		this.hitarea = newArea(0, 0, 40, 31);
 		this.size = newSize(40, 31);
 	}
@@ -884,23 +886,25 @@ class barst extends onvolmaaktheid {
 	}
 }
 
-class viewclass extends GLView {
+class gameview extends GLView {
 	override drawgame(): void {
 		super.drawgame();
 		super.drawSprites();
 	}
 };
 
-let _model: modelclass;
+let _game: Game;
+let _model: gamemodel;
+let _view: gameview;
 
 var _global = window || global;
 _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: GainNode): void => {
-	let _view = new viewclass(newSize(MSX1ScreenWidth, MSX1ScreenHeight));
-	_model = new modelclass();
-	new Game(rom, _model, _view, sndcontext, gainnode);
-	global.view.default_font = new KonamiFont();
+	_model = new gamemodel();
+	_view = new gameview(newSize(MSX1ScreenWidth, MSX1ScreenHeight));
+	_view.default_font = new KonamiFont();
+	_game = new Game(rom, _model, _view, sndcontext, gainnode);
 
-	global.game.start();
+	_game.start();
 };
 
 // https://www.25karats.com/education/diamonds/features

@@ -6,7 +6,6 @@ const tsify = require("tsify");
 
 import * as terser from 'terser';
 import * as term from 'terminal-kit';
-import { ProgressBarController } from "terminal-kit/Terminal";
 const _colors = require('colors');
 const pako = require('pako');
 const minify = require('@node-minify/core');
@@ -64,7 +63,7 @@ function writeOut(_tolog: string, type?: logentryType): void {
 		case 'warning': tolog = _colors.yellow(_tolog); break;
 		default: tolog = _tolog; break;
 	}
-	process.stdout.write(`${tolog}`);
+	term.terminal(`${tolog}`);
 }
 
 function log(_tolog: string, type?: logentryType): void {
@@ -73,12 +72,17 @@ function log(_tolog: string, type?: logentryType): void {
 	switch (type) {
 		case 'error':
 			tolog = _colors.red(_tolog);
-			process.stdout.write(`${_colors.cyan(d.toTimeString().split(' ')[0])}:${_colors.cyan(d.getMilliseconds().toString().substring(0, 3))} ${tolog}`);
+			// process.stdout.write(`${_colors.cyan(d.toTimeString().split(' ')[0])}:${_colors.cyan(d.getMilliseconds().toString().substring(0, 3))} ${tolog}`);
+			term.terminal(`${_colors.cyan(d.toTimeString().split(' ')[0])}:${_colors.cyan(d.getMilliseconds().toString().substring(0, 3))} ${tolog}`);
 			break;
 		case 'warning': tolog = _colors.yellow(_tolog);
-			process.stdout.write(`${_colors.cyan(d.toTimeString().split(' ')[0])}:${_colors.cyan(d.getMilliseconds().toString().substring(0, 3))} ${tolog}`);
+			// process.stdout.write(`${_colors.cyan(d.toTimeString().split(' ')[0])}:${_colors.cyan(d.getMilliseconds().toString().substring(0, 3))} ${tolog}`);
+			term.terminal(`${_colors.cyan(d.toTimeString().split(' ')[0])}:${_colors.cyan(d.getMilliseconds().toString().substring(0, 3))} ${tolog}`);
 			break;
-		default: tolog = _tolog; break;
+		default:
+			tolog = _tolog;
+			// term.terminal(`${_colors.white(d.toTimeString().split(' ')[0])}:${_colors.cyan(d.getMilliseconds().toString().substring(0, 3))} ${tolog}`);
+			break;
 	}
 }
 
@@ -87,11 +91,13 @@ function appendLogEntry(_toappend: string, type?: logentryType): void {
 	switch (type) {
 		case 'error':
 			toappend = _colors.red(_toappend);
-			process.stdout.write(toappend);
+			// process.stdout.write(toappend);
+			term.terminal(toappend);
 			break;
 		case 'warning':
 			toappend = _colors.yellow(_toappend);
-			process.stdout.write(toappend);
+			// process.stdout.write(toappend);
+			term.terminal(toappend);
 			break;
 		default: toappend = _toappend; break;
 	}
@@ -794,9 +800,9 @@ let outputError = (e: any) => writeOut(`\n[GEFAALD]\nEr ging iets niet goed:\n${
 
 try {
 	term.terminal.clear();
-	writeOut(_colors.brightGreen("┏————————————————————————————————————————————————————————————————————————————————┓\n"));
-	writeOut(_colors.brightGreen("|                          BMSX ROMPACKER DOOR BOAZ©®™                           |\n"));
-	writeOut(_colors.brightGreen("┗————————————————————————————————————————————————————————————————————————————————┛\n"));
+	writeOut(_colors.brightGreen('┏————————————————————————————————————————————————————————————————————————————————┓\n'));
+	writeOut(_colors.brightGreen('|                          BMSX ROMPACKER DOOR BOAZ©®™                           |\n'));
+	writeOut(_colors.brightGreen('┗————————————————————————————————————————————————————————————————————————————————┛\n'));
 	let args = process.argv.slice(2);
 	let outfile: string = undefined;
 	let title: string = undefined;
@@ -856,7 +862,7 @@ try {
 		if (!respath) throw new Error("Missing parameter for location of the resource folder ('respath', e.g. './src/sintervania/res'.");
 
 		if (!force) {
-			// TODO: DIT WERKT NIET!!! MOET NIET KIJKEN NAAR [megarom.js], MAAR NAAR SOURCE FOLDERS EN ASSERT FOLDERS!!
+			// TODO: DIT WERKT NIET!!! MOET NIET KIJKEN NAAR [megarom.js], MAAR NAAR SOURCE FOLDERS EN ASSET FOLDERS!!
 			if (existsSync(`./dist/${outfile}`) && existsSync(`./rom/megarom.js`)) {
 				let romstats = statSync(`./dist/${outfile}`);
 				let rommtime = romstats.mtime;
@@ -879,23 +885,25 @@ try {
 		if (force) writeOut('  Note: Recompilation and Building forced via --force\n');
 		if (!deployToFtp) writeOut('  Note: Deploy to FTP server disabled via --nodeploy\n');
 
-		const takenlijst = ['Game compileren en bundleren', 'YAML bestanden omzetten in JSON voor importatie', 'Minifying + Resource bestanden inladen en bufferen', 'game.html en game_debug.html bouwen', 'Deployeren'];
+		const takenlijst = ['Progress bar weergeven', 'Game compileren en bundleren', 'YAML bestanden omzetten in JSON voor importatie', 'Minifying + Resource bestanden inladen en bufferen', 'game.html en game_debug.html bouwen', 'Deployeren'];
 		if (!deployToFtp) takenlijst.pop();
 
-		let progress = term.terminal.progressBar({
+		let poptions: term.Terminal.ProgressBarOptions = {
 			title: 'Beunen:',
 			barChar: '█',
-			barHeadChar: '▒',
+			barHeadChar: '█',
 			eta: false,
-			percent: true,
+			percent: false,
 			items: takenlijst.length,
-			syncMode: false,
-			maxRefreshTime: 200,
-			minRefreshTime: 100,
-		});
+			itemStyle: term.terminal.dim,
+			syncMode: true,
+			maxRefreshTime: 10,
+			minRefreshTime: 10,
+		};
+
+		let progress = term.terminal.progressBar(poptions);
 
 		let huidigeTaak = takenlijst.shift();
-
 		let taakAfgevinkt = () => {
 			progress.itemDone(huidigeTaak);
 
@@ -906,16 +914,22 @@ try {
 
 		progress.startItem(huidigeTaak);
 
-		buildAndBundleRomSource('megarom', bootloader_path)
-			.then(result => { taakAfgevinkt(); return yaml2Json(); })
-			.then(result => { taakAfgevinkt(); return buildRompack(outfile, respath); })
-			.then(result => { taakAfgevinkt(); return buildGameHtmlAndManifest(outfile, title); })
-			.then(result => {
+		timer(200) // Nodig om de progress bar te laten werken. Bugt nogal
+			.then(() => {
+				taakAfgevinkt(); // Meteen eerste taak afvinken: progressbar tonen!
+				return timer(200); // Nodig om de progress bar te laten werken. Bugt nogal
+			})
+			.then(() => {
+				return buildAndBundleRomSource('megarom', bootloader_path);
+			})
+			.then(() => { taakAfgevinkt(); return yaml2Json(); })
+			.then(() => { taakAfgevinkt(); return buildRompack(outfile, respath); })
+			.then(() => { taakAfgevinkt(); return buildGameHtmlAndManifest(outfile, title); })
+			.then((): Promise<any> | void => {
 				taakAfgevinkt();
 				if (deployToFtp) return deploy(outfile, title);
-				else return new Promise((resolve) => { resolve(null); });
 			})
-			.then(result => {
+			.then(() => {
 				if (deployToFtp) taakAfgevinkt();
 				progress.stop();
 				writeOut(`\n${_colors.brightWhite.bold('[ALLES DONUT]')}\n`);

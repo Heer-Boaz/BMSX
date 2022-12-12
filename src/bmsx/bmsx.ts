@@ -1058,6 +1058,7 @@ export class Game {
 	}
 }
 
+@insavegame
 export class GameObject {
 	// For converting this GameObject to a string ('id')
 	public [Symbol.toPrimitive]() {
@@ -1368,14 +1369,14 @@ export function Reviver(key: any, value: any) {
 
 // target: the class that the member is on.
 // name: the name of the member in the class.
-// descriptor: the member descriptor.This is essentially the object that would have been passed to Object.defineProperty.
+// descriptor: the member descriptor; This is essentially the object that would have been passed to Object.defineProperty.
 export function onsave(target: any, name: any, descriptor: any): any {
 	target.onsave = descriptor.value;
 }
 
 // target: the class that the member is on.
 // name: the name of the member in the class.
-// descriptor: the member descriptor.This is essentially the object that would have been passed to Object.defineProperty.
+// descriptor: the member descriptor; This is essentially the object that would have been passed to Object.defineProperty.
 export function statedef_builder(target: any, name: any, descriptor: any): any {
 	MachineDefinitionBuilders ??= {};
 	MachineDefinitionBuilders[target.name] = descriptor.value;
@@ -1383,7 +1384,7 @@ export function statedef_builder(target: any, name: any, descriptor: any): any {
 
 // target: the class that the member is on.
 // name: the name of the member in the class.
-// descriptor: the member descriptor.This is essentially the object that would have been passed to Object.defineProperty.
+// descriptor: the member descriptor; This is essentially the object that would have been passed to Object.defineProperty.
 export function onrevive(target: any, name: any, descriptor: any): any {
 	Reviver.onRevives ??= {};
 	Reviver.onRevives[target.name] = descriptor.value;
