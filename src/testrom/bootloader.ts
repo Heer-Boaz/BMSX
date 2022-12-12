@@ -91,7 +91,7 @@ class _modelclass extends BaseModel {
         });
     }
 
-    public init(): this {
+    public init_model_state_machines(): this {
         this.state = new cmstate(this.constructor.name, '_');
         this.state.populateMachines();
         this.state.to('default');

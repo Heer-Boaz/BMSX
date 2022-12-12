@@ -1,3 +1,4 @@
+import { id2space } from './../bmsx/bmsx';
 import { MSX2ScreenHeight, MSX2ScreenWidth } from './../bmsx/msx';
 import { RomLoadResult } from '../bmsx/rompack';
 import { Game, BaseModel, GameObject, Sprite, sdef, mdef, leavingScreenHandler_prohibit as prohibitLeavingScreenHandler, statedef_builder, cmdef, sstate, cmstate, setPoint, newPoint, Direction, newSize, newArea, Point, randomInt, copyPoint, getOppositeDirection, Space } from '../bmsx/bmsx';
@@ -47,6 +48,12 @@ class modelclass extends BaseModel {
 			machines: {
 				master: new mdef('default', {
 					states: {
+						game_start: new sdef('game_start', {
+							onrun(s: sstate) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
+								let ik = global.model as modelclass;
+								ik.state.to('uitleg');
+							}
+						}),
 						default: new sdef('default', {
 							nudges2move: 50,
 							onenter(s: sstate) {
@@ -62,7 +69,6 @@ class modelclass extends BaseModel {
 									ik.time_to_shine = 0;
 									ik.score = ik.tel_onvolmaaktheden();
 									ik.state.to('evaluatie!');
-									// ik.state.to('hoera!');
 								}
 							},
 							onrun(s: sstate, ik: modelclass) {
@@ -125,7 +131,6 @@ class modelclass extends BaseModel {
 								let ik = global.model as modelclass;
 								ik.uitleg_tekst_dinges = 0;
 								ik.setSpace('uitleg');
-								ik.spawn(new uitlegStuff());
 							},
 							onrun(s: sstate, ik: modelclass) {
 								BaseModel.defaultrun();
@@ -141,25 +146,53 @@ class modelclass extends BaseModel {
 		});
 	}
 
+	// DO NOT CHANGE THIS CODE! PLEASE USE STATE DEFS TO HANDLE GAME STARTUP LOGIC!
+	// Trying to add logic here will most often result in runtime errors.
+	// These runtime errors usually occur because the model was not created and initialized (with states),
+	// while creating new game objects that reference the model or the model states
 	constructor() {
 		super();
-		let winSpace = new Space('hoera!');
-		winSpace.spawn(new hoeraStuff());
-		this.addSpace(winSpace);
-
-		let evaluatieSpace = new Space('evaluatie!');
-		evaluatieSpace.spawn(new evaluatieStuff());
-		this.addSpace(evaluatieSpace);
-
-		let uitlegSpace = new Space('uitleg');
-		this.addSpace(uitlegSpace);
 	}
 
-	public init() {
+	// Build and populate states. Can only be executed once main game objects and view have been created
+	// DO NOT CHANGE THIS CODE! PLEASE USE STATE DEFS TO HANDLE GAME STARTUP LOGIC!
+	public init_model_state_machines(): this {
 		this.state = new cmstate(this.constructor.name, '_');
 		this.state.populateMachines();
-		this.state.to('default');
-		// this.state.to('uitleg');
+		this.state.to('game_start');
+
+		return this;
+	}
+
+	// Use this function for initializing spaces, global/static game objects, ...
+	// Is automagically called from Game contructor and expects the model to be created and its state machines populated.
+	// Note: use the state 'game_start' to transition to the state in which the game will start after it started running and
+	// not this function.
+	// Game is not expected to be running yet.
+	public do_one_time_game_init(): this {
+		this.addSpace(new Space('game_start')); // Empty space for game start (otherwise, game objects will immediately show)
+		this.setSpace('game_start');
+
+		this.addSpace(new Space('hoera!'));
+		this[id2space]['hoera!'].spawn(new hoeraStuff());
+
+		this.addSpace(new Space('evaluatie'));
+		this[id2space]['evaluatie'].spawn(new evaluatieStuff());
+
+		this.addSpace(new Space('uitleg'));
+		this[id2space]['uitleg'].spawn(new uitlegStuff());
+
+		let _diamant = new diamant();
+		let _draaischijf = new draaischijf();
+
+		this[id2space]['default'].spawn(new hud());
+		this[id2space]['default'].spawn(_diamant);
+		this[id2space]['default'].spawn(_draaischijf, newPoint(96, 120));
+		this[id2space]['default'].spawn(new barst(zijde.Voor, newPoint(_diamant.pos.x + 30, _diamant.pos.y + 10)));
+		this[id2space]['default'].spawn(new barst(zijde.Voor, newPoint(_diamant.pos.x + 60, _diamant.pos.y + 40)));
+		this[id2space]['default'].spawn(new barst(zijde.Voor, newPoint(_diamant.pos.x + 110, _diamant.pos.y + 20)));
+		this[id2space]['default'].spawn(new barst(zijde.Voor, newPoint(_diamant.pos.x + 80, _diamant.pos.y + 60)));
+		this[id2space]['default'].spawn(new barst(zijde.Boven, newPoint(_diamant.pos.x + 90, _diamant.pos.y + 100)));
 
 		return this;
 	}
@@ -228,7 +261,7 @@ class uitlegStuff extends Sprite {
 				master: new mdef('master', {
 					states: {
 						uitleg: new sdef('uitleg', {
-							nudges2move: 1,
+							nudges2move: 300,
 							tape: <Array<number>>[
 								0,
 								1,
@@ -245,6 +278,9 @@ class uitlegStuff extends Sprite {
 							},
 							onrun(s: sstate, ik: uitlegStuff) {
 								++s.nudges;
+								if (Input.KC_BTN1) {
+									++s.head; // Skip to next tape entry. Note that this will reset nudges and stuff
+								}
 							},
 							onnext(s: sstate, ik: uitlegStuff) {
 								if (_model)
@@ -865,21 +901,6 @@ _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: Gain
 	global.view.default_font = new KonamiFont();
 
 	global.game.start();
-	let model = global.model as modelclass;
-	let _diamant = new diamant();
-	let _draaischijf = new draaischijf();
-
-	model.setSpace('default');
-	model.spawn(new hud());
-	model.spawn(_diamant);
-	model.spawn(_draaischijf, newPoint(96, 120));
-	model.spawn(new barst(zijde.Voor, newPoint(_diamant.pos.x + 30, _diamant.pos.y + 10)));
-	model.spawn(new barst(zijde.Voor, newPoint(_diamant.pos.x + 60, _diamant.pos.y + 40)));
-	model.spawn(new barst(zijde.Voor, newPoint(_diamant.pos.x + 110, _diamant.pos.y + 20)));
-	model.spawn(new barst(zijde.Voor, newPoint(_diamant.pos.x + 80, _diamant.pos.y + 60)));
-	model.spawn(new barst(zijde.Boven, newPoint(_diamant.pos.x + 90, _diamant.pos.y + 100)));
-
-	model.state.to('uitleg');
 };
 
 // https://www.25karats.com/education/diamonds/features

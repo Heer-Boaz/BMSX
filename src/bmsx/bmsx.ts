@@ -675,12 +675,12 @@ export class Savegame {
 
 export type id2objectType = { [key: string]: GameObject; };
 export type id2spaceType = { [key: string]: Space; };
-const id2obj = Symbol('id2object');
-const id2space = Symbol('id2space');
+export const id2obj = Symbol('id2object');
+export const id2space = Symbol('id2space');
 
 @insavegame
 export class Space {
-	protected [id2obj]: id2objectType;
+	public [id2obj]: id2objectType;
 	public get<T extends GameObject>(id: string) { return <T>this[id2obj][id]; }
 	public id: string;
 	public objects: GameObject[];
@@ -741,14 +741,11 @@ export var MachineDefinitions: { [key: string]: cmdef; };
 var MachineDefinitionBuilders: { [key: string]: (classname: string) => cmdef; };
 export abstract class BaseModel {
 	public state: cmstate;
-	// protected [id2obj]: id2objectType;
-	protected [id2space]: id2spaceType;
+	public [id2space]: id2spaceType;
 
-	// public objects: GameObject[]; // All objects in the model
 	public get objects(): GameObject[] {
 		return this.getSpace(this.currentSpaceid).objects;
 	}
-	// protected allSpacesObjects: GameObject[];
 
 	public spaces: Space[]; // All spaces in the model
 	protected currentSpaceid: string; // Current space. On model creation, a default space is created with id 'default'
@@ -757,8 +754,16 @@ export abstract class BaseModel {
 	public paused: boolean;
 	public startAfterLoad: boolean;
 
-	// public get<T extends GameObject>(id: string) { return <T>this[id2obj][id]; }
-	public get<T extends GameObject>(id: string) { return <T>this[id2space][this.currentSpaceid][id2obj][id]; }
+	public get_from_current_space<T extends GameObject>(id: string) { return <T>this[id2space][this.currentSpaceid][id2obj][id]; }
+	public get<T extends GameObject>(id: string) {
+		for (let i = 0; i < this.spaces.length; i++) {
+			let space = this.spaces[i];
+			let obj = this[id2space][space.id][id2obj][id];
+			if (obj) return <T>obj;
+		}
+		return null; // No object found
+	}
+
 	public getSpace<T extends Space>(id: string) { return <T>this[id2space][id]; }
 	public exists(id: string): boolean {
 		let foundObj = this.get(id);
@@ -804,8 +809,6 @@ export abstract class BaseModel {
 	}
 
 	constructor() {
-		// this.allSpacesObjects = [];
-		// this[id2obj] = {};
 		this.spaces = [];
 		this[id2space] = {};
 
@@ -832,7 +835,10 @@ export abstract class BaseModel {
 	// Init model after construction. Needed as the states have not been build at
 	// the constructor's scope yet. So, this is a kind of onspawn(...) for the model
 	// Returns [this] for chaining
-	public abstract init(): this;
+	public abstract init_model_state_machines(): this;
+
+	// Returns [this] for chaining
+	public abstract do_one_time_game_init(): this;
 
 	public run() {
 		this.state.run();
@@ -981,6 +987,10 @@ export class Game {
 		SM.init(_rom['sndresources'], sndcontext, gainnode);
 		Input.init();
 
+		// Init the model to populate states (and do other init stuff) and
+		// Init all the stuff that is game-specific. Placed here to reduce boilerplating
+		global.model.init_model_state_machines().do_one_time_game_init();
+
 		this.running = false;
 		this.paused = false;
 		this.wasupdated = true;
@@ -994,7 +1004,6 @@ export class Game {
 		window.addEventListener('resize', global.view.handleResize, false);
 		window.addEventListener('orientationchange', global.view.handleResize, false);
 		global.view.handleResize();
-		global.model.init(); // Init the model to populate states (and do other init stuff)
 
 		this.running = true;
 		this.lastTick = performance.now();

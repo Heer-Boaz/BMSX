@@ -83,7 +83,7 @@ class modelclass extends BaseModel {
         this.addSpace(winSpace);
     }
 
-    public init() {
+    public init_model_state_machines() {
         this.state = new cmstate(this.constructor.name, '_');
         this.state.populateMachines();
         this.state.to('default');
