@@ -425,7 +425,7 @@ class stoom extends Sprite {
 				master: new mdef('master', {
 					states: {
 						doepluim: new sdef('doepluim', {
-							tape: <Array<number>>[
+							tape: [
 								BitmapId.pluim1,
 								BitmapId.pluim2,
 								BitmapId.pluim3,
@@ -528,7 +528,7 @@ class draaischijf extends Sprite {
 						slijpen_opstart: new sdef('slijpen_opstart', {
 							nudges2move: 5,
 							auto_rewind_tape_after_end: false,
-							tape: <Array<number>>[
+							tape: [
 								BitmapId.slijpschijf2,
 								BitmapId.slijpschijf1,
 								BitmapId.slijpschijf2,
@@ -556,7 +556,7 @@ class draaischijf extends Sprite {
 						}),
 						slijpen: new sdef('slijpen', {
 							nudges2move: 10,
-							tape: <Array<number>>[
+							tape: [
 								BitmapId.slijpschijf3,
 								BitmapId.slijpschijf4,
 							],
@@ -581,7 +581,7 @@ class draaischijf extends Sprite {
 						slijpen_afkoel: new sdef('slijpen_afkoel', {
 							nudges2move: 5,
 							auto_rewind_tape_after_end: false,
-							tape: <Array<number>>[
+							tape: [
 								BitmapId.slijpschijf2,
 								BitmapId.slijpschijf1,
 								BitmapId.slijpschijf2,
@@ -739,7 +739,7 @@ class burn extends onvolmaaktheid {
 						wees_een_burn: new sdef('wees_een_burn', {
 							nudges2move: 20,
 							auto_rewind_tape_after_end: false,
-							tape: <Array<number>>[
+							tape: [
 								BitmapId.burn1,
 								BitmapId.burn2,
 								BitmapId.burn3,
@@ -761,7 +761,7 @@ class burn extends onvolmaaktheid {
 						}),
 						gepolijst: new sdef('gepolijst', {
 							nudges2move: 20,
-							tape: <Array<number>>[
+							tape: [
 								BitmapId.None,
 								BitmapId.None,
 								BitmapId.None,
@@ -806,7 +806,7 @@ class barst extends onvolmaaktheid {
 					states: {
 						wees_een_barst: new sdef('wees_een_barst', {
 							nudges2move: 20,
-							tape: <Array<number>>[
+							tape: [
 								BitmapId.break1,
 								BitmapId.break2,
 								BitmapId.break3,

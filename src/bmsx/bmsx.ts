@@ -1314,7 +1314,7 @@ Reviver.onSave = Reviver.onSave ?? {};
 export abstract class Sprite extends GameObject {
 	public flippedH: boolean;
 	public flippedV: boolean;
-	public imgid: number;
+	public imgid: string;
 
 	constructor(id?: string) {
 		super(id);

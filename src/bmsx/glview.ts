@@ -255,7 +255,7 @@ export abstract class GLView extends BaseView {
 		_this.drawImgReqIndex = 0;
 	}
 
-	override drawImg(imgid: number, x: number, y: number, options?: number, sx?: number, sy?: number): void {
+	override drawImg(imgid: string, x: number, y: number, options?: number, sx?: number, sy?: number): void {
 		let _this = global.view as GLView;
 		let gl = _this.glctx;
 		let width = global.game.rom['imgresources'][imgid]['imgmeta']['width'];
@@ -276,7 +276,7 @@ export abstract class GLView extends BaseView {
 		++_this.drawImgReqIndex;
 	}
 
-	override drawColoredBitmap(imgid: number, x: number, y: number, options: number, r: boolean = true, g: boolean = true, b: boolean = true, a: boolean = true) {
+	override drawColoredBitmap(imgid: string, x: number, y: number, options: number, r: boolean = true, g: boolean = true, b: boolean = true, a: boolean = true) {
 		let _this = global.view as GLView;
 		_this.drawImg(imgid, x, y, options);
 		// console.warn('GLView.drawColoredBitmap nog niet gecodeerd :-(');

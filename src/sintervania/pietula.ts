@@ -21,7 +21,7 @@ export class Pietula extends Foe {
 	public hover: mdef;
 	public blink: mdef;
 	public loops: number;
-	public bliksem: { imgid: number, paint(offset: Point): void, pos: Point, flipped: boolean; };
+	public bliksem: { imgid: string, paint(offset: Point): void, pos: Point, flipped: boolean; };
 
 	constructor() {
 		super();

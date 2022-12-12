@@ -138,7 +138,7 @@ export abstract class BaseView {
         global.view.context.restore();
     }
 
-    public drawImg(imgid: number, x: number, y: number, options?: number, sx?: number, sy?: number): void {
+    public drawImg(imgid: string, x: number, y: number, options?: number, sx?: number, sy?: number): void {
         let img = BaseView.images[imgid];
         let scalex = sx ?? 1;
         let scaley = sy ?? 1;
@@ -156,7 +156,7 @@ export abstract class BaseView {
         global.view.context.restore();
     }
 
-    public drawColoredBitmap(imgid: number, x: number, y: number, options: number, r: boolean = true, g: boolean = true, b: boolean = true, a: boolean = true) {
+    public drawColoredBitmap(imgid: string, x: number, y: number, options: number, r: boolean = true, g: boolean = true, b: boolean = true, a: boolean = true) {
         // TODO: IMPLEMENTEER!!
         global.view.drawImg(imgid, x, y, options);
     }
@@ -189,7 +189,7 @@ export abstract class BaseView {
 }
 
 export function paintSprite(this: Sprite, offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }): void {
-	if (this.imgid == 0) return; // Don't draw anything when imgid = BitmapId.None. For animations, we don't always want to use visible = false
+	if (this.imgid === 'None') return; // Don't draw anything when imgid = BitmapId.None. For animations, we don't always want to use visible = false
 
     let options: number = this.flippedH ? DrawImgFlags.HFLIP : 0;
     options |= (this.flippedV ? DrawImgFlags.VFLIP : 0);

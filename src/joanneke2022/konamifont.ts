@@ -5,8 +5,8 @@ export class KonamiFont implements BFont {
 	get char_width(): number { return 8; }
 	get char_height(): number { return 8; }
 
-	public char_to_img(c: string): number {
-		let letter: number;
+	public char_to_img(c: string): string {
+		let letter: string;
 		switch (c) {
 			case '0':
 				letter = BitmapId.Letter_0;

@@ -34,22 +34,23 @@ export interface RomMeta {
 	end: number;
 }
 
-export type id2res = { [key: number]: RomResource; };
+export type id2res = Record<number | string, RomResource>;
+export type id2htmlimg = Record<number | string, HTMLImageElement>;
 export interface RomLoadResult {
 	rom: ArrayBuffer,
-	images: { [key: number]: HTMLImageElement; };
+	images: id2htmlimg;
 	imgresources: id2res;
 	sndresources: id2res;
 	source: any;
 }
 
 export interface BFont {
-	char_to_img(c: string): number;
+	char_to_img(c: string): string;
 	char_width: number;
 	char_height: number;
 }
 
-export interface IResourceId {
-	None: number,
-	[propName: string]: number;
-}
+// export interface IResourceId {
+// 	None: number,
+// 	[propName: string]: number;
+// }
