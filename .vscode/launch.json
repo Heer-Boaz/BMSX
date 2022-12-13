@@ -2,19 +2,46 @@
 	"version": "0.2.0",
 	"configurations": [
 		{
-			"type": "pwa-msedge",
-			"version": "dev",
+			"type": "msedge",
+			"version": "stable",
 			"request": "launch",
 			"name": "Debug the game!",
 			"url": "${workspaceFolder}/dist/game_debug.html",
 			"runtimeArgs": [
-				"--disable-web-security",
-				"--nolazy"
+				// "--disable-web-security", // Old and outdated, but it works when using the non-debug URL!
+				"--nolazy",
+				"--allow-file-access-from-files", // https://www.webmo.net/link/help/AccessingLocalFiles.html
 			],
 			"sourceMaps": true,
 			"showAsyncStacks": true,
 			"smartStep": true,
-			"disableNetworkCache": true
-		}
-	]
+			"disableNetworkCache": true,
+			"presentation": {
+				"hidden": false,
+				"group": "",
+				"order": 1
+			}
+		},
+		{
+			"type": "msedge",
+			"version": "stable",
+			"request": "launch",
+			"name": "Run the game in non-debug mode!",
+			"url": "${workspaceFolder}/dist/game.html",
+			"runtimeArgs": [
+				// "--disable-web-security", // Old and outdated, but it works when using the non-debug URL!
+				"--nolazy",
+				"--allow-file-access-from-files", // https://www.webmo.net/link/help/AccessingLocalFiles.html
+			],
+			"sourceMaps": true,
+			"showAsyncStacks": true,
+			"smartStep": true,
+			"disableNetworkCache": true,
+			"presentation": {
+				"hidden": false,
+				"group": "",
+				"order": 1
+			}
+		},
+	],
 }

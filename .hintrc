@@ -4,6 +4,14 @@
   ],
   "hints": {
     "typescript-config/strict": "off",
-    "typescript-config/consistent-casing": "off"
-  }
+    "typescript-config/consistent-casing": "off",
+    "meta-viewport": "off"
+  },
+  "browserslist": [
+    "defaults",
+    "not ie 11",
+    "not and_ff <= 106",
+    "not firefox <= 106",
+    "not safari <= 16.1"
+  ]
 }
