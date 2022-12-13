@@ -75,6 +75,252 @@ export interface Area {
 	end: Point;
 }
 
+export class BFont {
+	protected accessor font_res_map: Record<string, string>;
+	get char_width(): number { return 8; }
+	get char_height(): number { return 8; }
+
+	constructor(_font_res_map: Record<string, string>) {
+		this.font_res_map = _font_res_map;
+	}
+
+	public char_to_img(c: string): string {
+		let letter: string;
+		let _font_res_map = this.font_res_map;
+		switch (c) {
+			case '0':
+				letter = _font_res_map.letter_0;
+				break;
+			case '1':
+				letter = _font_res_map.letter_1;
+				break;
+			case '2':
+				letter = _font_res_map.letter_2;
+				break;
+			case '3':
+				letter = _font_res_map.letter_3;
+				break;
+			case '4':
+				letter = _font_res_map.letter_4;
+				break;
+			case '5':
+				letter = _font_res_map.letter_5;
+				break;
+			case '6':
+				letter = _font_res_map.letter_6;
+				break;
+			case '7':
+				letter = _font_res_map.letter_7;
+				break;
+			case '8':
+				letter = _font_res_map.letter_8;
+				break;
+			case '9':
+				letter = _font_res_map.letter_9;
+				break;
+			case 'a':
+				letter = _font_res_map.letter_a;
+				break;
+			case 'b':
+				letter = _font_res_map.letter_b;
+				break;
+			case 'c':
+				letter = _font_res_map.letter_c;
+				break;
+			case 'd':
+				letter = _font_res_map.letter_d;
+				break;
+			case 'e':
+				letter = _font_res_map.letter_e;
+				break;
+			case 'f':
+				letter = _font_res_map.letter_f;
+				break;
+			case 'g':
+				letter = _font_res_map.letter_g;
+				break;
+			case 'h':
+				letter = _font_res_map.letter_h;
+				break;
+			case 'i':
+				letter = _font_res_map.letter_i;
+				break;
+			case 'j':
+				letter = _font_res_map.letter_j;
+				break;
+			case 'k':
+				letter = _font_res_map.letter_k;
+				break;
+			case 'l':
+				letter = _font_res_map.letter_l;
+				break;
+			case 'm':
+				letter = _font_res_map.letter_m;
+				break;
+			case 'n':
+				letter = _font_res_map.letter_n;
+				break;
+			case 'o':
+				letter = _font_res_map.letter_o;
+				break;
+			case 'p':
+				letter = _font_res_map.letter_p;
+				break;
+			case 'q':
+				letter = _font_res_map.letter_q;
+				break;
+			case 'r':
+				letter = _font_res_map.letter_r;
+				break;
+			case 's':
+				letter = _font_res_map.letter_s;
+				break;
+			case 't':
+				letter = _font_res_map.letter_t;
+				break;
+			case 'u':
+				letter = _font_res_map.letter_u;
+				break;
+			case 'v':
+				letter = _font_res_map.letter_v;
+				break;
+			case 'w':
+				letter = _font_res_map.letter_w;
+				break;
+			case 'x':
+				letter = _font_res_map.letter_x;
+				break;
+			case 'y':
+				letter = _font_res_map.letter_y;
+				break;
+			case 'z':
+				letter = _font_res_map.letter_z;
+				break;
+			case 'A':
+				letter = _font_res_map.letter_a;
+				break;
+			case 'B':
+				letter = _font_res_map.letter_b;
+				break;
+			case 'C':
+				letter = _font_res_map.letter_c;
+				break;
+			case 'D':
+				letter = _font_res_map.letter_d;
+				break;
+			case 'E':
+				letter = _font_res_map.letter_e;
+				break;
+			case 'F':
+				letter = _font_res_map.letter_f;
+				break;
+			case 'G':
+				letter = _font_res_map.letter_g;
+				break;
+			case 'H':
+				letter = _font_res_map.letter_h;
+				break;
+			case 'I':
+				letter = _font_res_map.letter_i;
+				break;
+			case 'J':
+				letter = _font_res_map.letter_j;
+				break;
+			case 'K':
+				letter = _font_res_map.letter_k;
+				break;
+			case 'L':
+				letter = _font_res_map.letter_l;
+				break;
+			case 'M':
+				letter = _font_res_map.letter_m;
+				break;
+			case 'N':
+				letter = _font_res_map.letter_n;
+				break;
+			case 'O':
+				letter = _font_res_map.letter_o;
+				break;
+			case 'P':
+				letter = _font_res_map.letter_p;
+				break;
+			case 'Q':
+				letter = _font_res_map.letter_q;
+				break;
+			case 'R':
+				letter = _font_res_map.letter_r;
+				break;
+			case 'S':
+				letter = _font_res_map.letter_s;
+				break;
+			case 'T':
+				letter = _font_res_map.letter_t;
+				break;
+			case 'U':
+				letter = _font_res_map.letter_u;
+				break;
+			case 'V':
+				letter = _font_res_map.letter_v;
+				break;
+			case 'W':
+				letter = _font_res_map.letter_w;
+				break;
+			case 'X':
+				letter = _font_res_map.letter_x;
+				break;
+			case '¡':
+				letter = _font_res_map.letter_ij;
+				break;
+			case 'Y':
+				letter = _font_res_map.letter_y;
+				break;
+			case 'Z':
+				letter = _font_res_map.letter_z;
+				break;
+			case ',':
+				letter = _font_res_map.letter_comma;
+				break;
+			case '.':
+				letter = _font_res_map.letter_dot;
+				break;
+			case '!':
+				letter = _font_res_map.letter_exclamation;
+				break;
+			case '?':
+				letter = _font_res_map.letter_question;
+				break;
+			case '\'':
+				letter = _font_res_map.letter_apostroph;
+				break;
+			case ' ':
+				letter = _font_res_map.letter_space;
+				break;
+			case ':':
+				letter = _font_res_map.letter_colon;
+				break;
+			case '-':
+				letter = _font_res_map.letter_streep;
+				break;
+			case '/':
+				letter = _font_res_map.letter_slash;
+				break;
+			case '%':
+				letter = _font_res_map.letter_percent;
+				break;
+			case '[':
+				letter = _font_res_map.letter_speakstart;
+				break;
+			case ']':
+				letter = _font_res_map.letter_speakend;
+				break;
+			default:
+				letter = _font_res_map.letter_question;
+				break;
+		}
+		return letter;
+	}
+}
+
 export function mod(n: number, p: number): number {
 	let r = n % p;
 	return r < 0 ? r + p : r;

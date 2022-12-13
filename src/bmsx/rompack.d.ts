@@ -31,7 +31,7 @@ export interface RomResource {
 
 export interface RomMeta {
 	start: number;
-	end: number;
+	end: number;abstrabsdsfsdfsdfssdfsdf
 }
 
 export type id2res = Record<number | string, RomResource>;
@@ -43,14 +43,3 @@ export interface RomLoadResult {
 	sndresources: id2res;
 	source: any;
 }
-
-export interface BFont {
-	char_to_img(c: string): string;
-	char_width: number;
-	char_height: number;
-}
-
-// export interface IResourceId {
-// 	None: number,
-// 	[propName: string]: number;
-// }

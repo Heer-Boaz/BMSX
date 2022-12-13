@@ -1,4 +1,4 @@
-import { id2space } from './../bmsx/bmsx';
+import { BFont, id2space } from './../bmsx/bmsx';
 import { MSX2ScreenHeight, MSX2ScreenWidth } from './../bmsx/msx';
 import { RomLoadResult } from '../bmsx/rompack';
 import { Game, BaseModel, GameObject, Sprite, sdef, mdef, leavingScreenHandler_prohibit as prohibitLeavingScreenHandler, statedef_builder, cmdef, sstate, cmstate, setPoint, newPoint, Direction, newSize, newArea, Point, randomInt, copyPoint, getOppositeDirection, Space } from '../bmsx/bmsx';
@@ -9,7 +9,6 @@ import { Input } from '../bmsx/input';
 import { DrawImgFlags, paintSprite } from '../bmsx/view';
 import { TextWriter } from '../bmsx/textwriter';
 import { GameMenu } from './gamemenu';
-import { KonamiFont } from './konamifont';
 
 const TIME_TO_SHINE = 90;
 type model_spaces = 'default' | 'uitleg' | 'evaluatie' | 'hoera!';
@@ -220,7 +219,7 @@ class hoeraStuff extends Sprite {
 	constructor() {
 		super();
 		this.z = 0;
-		this.imgid = BitmapId.Sint;
+		this.imgid = BitmapId.sint;
 	}
 
 	override paint = (offset?: Point) => {
@@ -901,7 +900,7 @@ var _global = window || global;
 _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: GainNode): void => {
 	_model = new gamemodel();
 	_view = new gameview(newSize(MSX1ScreenWidth, MSX1ScreenHeight));
-	_view.default_font = new KonamiFont();
+	_view.default_font = new BFont(BitmapId);
 	_game = new Game(rom, _model, _view, sndcontext, gainnode);
 
 	_game.start();

@@ -100,7 +100,7 @@ export class GameMenu extends GameObject {
         this.visible = true;
         this.CurrentScreen = currentscreen;
         if (this.CurrentScreen == MenuItem.Main)
-            SM.play(AudioId.Selectie);
+            SM.play(AudioId.selectie);
     }
 
     public Close(): void {
@@ -159,14 +159,14 @@ export class GameMenu extends GameObject {
                 default:
                     this.CurrentScreen = MenuItem.Main;
                     this.selectedItemIndex = 0;
-                    SM.play(AudioId.Selectie);
+                    SM.play(AudioId.selectie);
                     break;
             }
         }
         if (Input.KC_SPACE || Input.KC_BTN1) {
             switch (this.CurrentScreen) {
                 case MenuItem.Main:
-                    SM.play(AudioId.Selectie);
+                    SM.play(AudioId.selectie);
                     switch (this.selectedItem) {
                         case MenuItem.ReturnToGame:
                             global.model.state.pop();
@@ -197,7 +197,7 @@ export class GameMenu extends GameObject {
                 case MenuItem.LoadFromMainMenu:
                     switch (this.selectedItem) {
                         case MenuItem.ReturnToMain:
-                            SM.play(AudioId.Selectie);
+                            SM.play(AudioId.selectie);
                             switch (this.CurrentScreen) {
                                 case MenuItem.LoadFromGameOver:
                                 case MenuItem.LoadFromMainMenu:
@@ -222,7 +222,7 @@ export class GameMenu extends GameObject {
                     }
                     break;
                 case MenuItem.Save:
-                    SM.play(AudioId.Selectie);
+                    SM.play(AudioId.selectie);
                     switch (this.selectedItem) {
                         case MenuItem.ReturnToMain:
                             this.CurrentScreen = MenuItem.Main;
@@ -240,7 +240,7 @@ export class GameMenu extends GameObject {
                 case MenuItem.OptionsFromMainMenu:
                     switch (this.selectedItem) {
                         case MenuItem.ReturnToMain:
-                            SM.play(AudioId.Selectie);
+                            SM.play(AudioId.selectie);
                             switch (this.CurrentScreen) {
                                 case MenuItem.OptionsFromMainMenu:
                                     this.Close();
@@ -252,7 +252,7 @@ export class GameMenu extends GameObject {
                             }
                             break;
                         default:
-                            SM.play(AudioId.Fout);
+                            SM.play(AudioId.fout);
                             break;
                     }
                     break;
@@ -339,7 +339,7 @@ export class GameMenu extends GameObject {
             }
         }
         if (selectionChanged) {
-            SM.play(AudioId.Selectie);
+            SM.play(AudioId.selectie);
         }
     }
 
@@ -568,7 +568,7 @@ export class GameMenu extends GameObject {
                     break;
                 }
         }
-        global.view.drawImg(BitmapId.MenuCursor, this.cursorPos.x, this.cursorPos.y);
+        global.view.drawImg(BitmapId.menucursor, this.cursorPos.x, this.cursorPos.y);
 
         let scalex = GameMenu.menuEndX - GameMenu.menuPosX;
         let scaley = GameMenu.menuEndY - GameMenu.menuPosY;

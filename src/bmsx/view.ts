@@ -1,6 +1,6 @@
 ﻿import { id2htmlimg } from './rompack.d';
 import { Size, Point, Sprite } from "./bmsx";
-import { BFont } from "./rompack";
+import { BFont } from "./bmsx";
 
 export interface Color {
     r: number;
@@ -25,7 +25,7 @@ export abstract class BaseView {
     public canvas: HTMLCanvasElement;
     public context: CanvasRenderingContext2D;
     public static images: id2htmlimg;
-    public default_font: BFont;
+    public accessor default_font: BFont;
 
     public windowSize: Size;
     public viewportSize: Size;
@@ -56,18 +56,8 @@ export abstract class BaseView {
     public calculateSize(): void {
         let self = global.view || this;
 
-        // var width = gl.canvas.clientWidth;
-        // var height = gl.canvas.clientHeight;
-        // if (gl.canvas.width != width ||
-        //     gl.canvas.height != height) {
-        //     gl.canvas.width = width;
-        //     gl.canvas.height = height;
-        // }
-
         let w = Math.max(document.documentElement.clientWidth, window.innerWidth || screen.width);
         let h = Math.max(document.documentElement.clientHeight, window.innerHeight || screen.height);
-        // let w = self.canvas.clientWidth;
-        // let h = self.canvas.clientHeight;
         self.windowSize = { x: w, y: h };
         self.dx = self.windowSize.x / self.viewportSize.x;
         self.dy = self.windowSize.y / self.viewportSize.y;
@@ -80,7 +70,6 @@ export abstract class BaseView {
         self.calculateSize();
         self.canvas.style.width = `${self.viewportSize.x * self.scale}px`;
         self.canvas.style.height = `${self.viewportSize.y * self.scale}px`;
-        // self.canvas.style.transform = `scale(${self.scale})`;
         self.canvas.style.left = (self.windowSize.x - self.canvas.width * self.scale) / 2 + "px";
         self.canvas.style.top = (self.windowSize.y - self.canvas.height * self.scale) / 2 + "px";
     }
@@ -191,16 +180,16 @@ export abstract class BaseView {
 
 export function paintSprite(this: Sprite, offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }): void {
 	if (this.imgid === 'None') return; // Don't draw anything when imgid = BitmapId.None. For animations, we don't always want to use visible = false
-
+    let _view = global.view as BaseView;
     let options: number = this.flippedH ? DrawImgFlags.HFLIP : 0;
     options |= (this.flippedV ? DrawImgFlags.VFLIP : 0);
     let dx = offset?.x || 0;
     let dy = offset?.y || 0;
 
     if (colorize) {
-        global.view.drawColoredBitmap(this.imgid, this.pos.x + dx, this.pos.y + dy, options, colorize.r, colorize.g, colorize.b, colorize.a);
+        _view.drawColoredBitmap(this.imgid, this.pos.x + dx, this.pos.y + dy, options, colorize.r, colorize.g, colorize.b, colorize.a);
     }
     else {
-        global.view.drawImg(this.imgid, this.pos.x + dx, this.pos.y + dy, options);
+        _view.drawImg(this.imgid, this.pos.x + dx, this.pos.y + dy, options);
     }
 }

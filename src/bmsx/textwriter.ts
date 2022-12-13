@@ -1,10 +1,9 @@
-import { GameOptions as GO, Point } from "./bmsx";
+import { BFont, GameOptions as GO, Point } from "./bmsx";
 import { Color } from './view';
-import { BFont } from "./rompack";
 
 export class TextWriter {
     public static drawText(x: number, y: number, textToWrite: string | string[], _font: BFont = null, color: Color = null): void {
-        let font = _font ?? global.view.default_font;
+        let font = _font ?? global.view.default_font as BFont;
         let startPos: Point = <Point>{ x: x, y: y }
         let stepX: number = font.char_width;
         let stepY: number = font.char_height;

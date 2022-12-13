@@ -38,7 +38,7 @@ export class SM {
 		} else { return SM.sndContext.decodeAudioData(audioData); }
 	}
 
-	private static async createNode(id: number): Promise<AudioBufferSourceNode> {
+	private static async createNode(id: string): Promise<AudioBufferSourceNode> {
 		let srcnode = SM.sndContext.createBufferSource();
 		return new Promise<AudioBufferSourceNode>((resolve, reject) => {
 			SM.decode(global.game.rom['rom'].slice(SM.tracks[id]['start'], SM.tracks[id]['end'])).then(buffer => srcnode.buffer = buffer).then(() => resolve(srcnode))
@@ -62,7 +62,7 @@ export class SM {
 		}
 	}
 
-	public static play(id: number): void {
+	public static play(id: string): void {
 		let track = SM.tracks[id]?.['audiometa'];
 		if (!track) return;
 
@@ -89,7 +89,7 @@ export class SM {
 		}
 	}
 
-	private static stop(id: number): void {
+	private static stop(id: string): void {
 		switch (SM.tracks[id]?.['audiometa']['audiotype']) {
 			case AudioType.effect: SM.stopEffect(); break;
 			case AudioType.music: SM.stopMusic(); break;

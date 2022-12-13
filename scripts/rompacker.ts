@@ -31,7 +31,7 @@ const BOILERPLATE_RESOURCE_ID_BITMAP = `export enum BitmapId {
 `;
 
 const BOILERPLATE_RESOURCE_ID_AUDIO = `export enum AudioId {
-	None = 0,
+	None = 'None',
 `;
 
 const atlasCanvas: HTMLCanvasElement = <any>createCanvas(ATLAS_PX_SIZE, ATLAS_PX_SIZE);
@@ -431,8 +431,8 @@ async function deploy(outfile: string, title: string): Promise<any> {
 }
 
 function getResMetaByFilename(filepath: string): { name: string, ext: string, type: string; } {
-	let name = parse(filepath).name.replace(' ', '');
-	let ext = parse(filepath).ext;
+	let name = parse(filepath).name.replace(' ', '').toLowerCase();
+	let ext = parse(filepath).ext.toLowerCase();
 	let type: string;
 
 	switch (ext) {
@@ -572,7 +572,7 @@ function buildResourceList(respath: string): void {
 				// tsimgout_instance.push(`${property_to_add}`);
 				break;
 			case 'audio':
-				let enummember_to_add = `\t${name} = ${id},`;
+				let enummember_to_add = `\t${name} = '${name}',`;
 				tssndout.push(`${enummember_to_add}`);
 				break;
 		}
