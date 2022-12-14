@@ -1229,7 +1229,8 @@ export class Game {
 		global['view'] = _view;
 
 		BaseView.images = _rom.images;
-		global.view.init();
+		let globalView = global.view as BaseView;
+		globalView.init();
 		SM.init(_rom['sndresources'], sndcontext, gainnode);
 		Input.init();
 

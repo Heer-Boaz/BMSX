@@ -64,7 +64,10 @@ export class SM {
 
 	public static play(id: string): void {
 		let track = SM.tracks[id]?.['audiometa'];
-		if (!track) return;
+		if (!track) {
+			console.warn(`SoundMaster: Attempted to play unknown track with id = "${id}". Skipping.`);
+		 	return;
+		}
 
 		switch (track['audiotype']) {
 			case AudioType.effect:

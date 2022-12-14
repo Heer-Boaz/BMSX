@@ -11,8 +11,21 @@
 				// "--disable-web-security", // Old and outdated, but it works when using the non-debug URL!
 				"--nolazy",
 				"--allow-file-access-from-files", // https://www.webmo.net/link/help/AccessingLocalFiles.html
+				"--disable-session-crashed-bubble",
+				"-inprivate", // https://dev.to/kasuken/debug-with-visual-studio-using-all-browsers-in-incognito-mode-57mb
+				"--start-fullscreen",
+				// "--kiosk",
+				// "--edge-kiosk-type=public-browsing",
 			],
 			"sourceMaps": true,
+			// "sourceMapPathOverrides": {
+			// 	"meteor://💻app/*": "${workspaceFolder}/*",
+			// 	"webpack:///./~/*": "${workspaceFolder}/node_modules/*",
+			// 	"webpack://?:*/*": "${workspaceFolder}/*",
+			// 	"webpack:///./*": "${webRoot}/*",
+			// 	"webpack:///src/*": "${webRoot}/*",
+			// 	"webpack:///*": "*"
+			// },
 			"showAsyncStacks": true,
 			"smartStep": true,
 			"disableNetworkCache": true,
@@ -32,6 +45,9 @@
 				// "--disable-web-security", // Old and outdated, but it works when using the non-debug URL!
 				"--nolazy",
 				"--allow-file-access-from-files", // https://www.webmo.net/link/help/AccessingLocalFiles.html
+				"--disable-session-crashed-bubble",
+				"-inprivate", // https://dev.to/kasuken/debug-with-visual-studio-using-all-browsers-in-incognito-mode-57mb
+				"--start-fullscreen",
 			],
 			"sourceMaps": true,
 			"showAsyncStacks": true,

@@ -1,4 +1,4 @@
-import { readdirSync, statSync, readFileSync, writeFileSync, copyFile, copyFileSync, existsSync, exists, createWriteStream } from "fs";
+import { readdirSync, statSync, readFileSync, writeFileSync, copyFile, copyFileSync, existsSync, exists, createWriteStream, rmSync } from "fs";
 import { join, parse } from "path";
 import { AudioMeta, AudioType, RomResource, RomMeta, ImgMeta } from '../src/bmsx/rompack';
 import * as browserify from 'browserify';
@@ -604,6 +604,9 @@ async function buildRompack(outfile: string, respath: string): Promise<any> {
 			writeFileSync("./rom/megarom.min.map", minifyGamecodeResult.map as string);
 		}
 
+		copyFileSync('./rom/megarom.js', './megarom.js');
+		rmSync('./rom/megarom.js');
+
 		stopRotator();
 
 		let buffers = new Array<Buffer>();
@@ -646,7 +649,7 @@ async function buildRompack(outfile: string, respath: string): Promise<any> {
 					{
 						let parsedMeta = parseAudioMeta(res.filepath);
 
-						name = parsedMeta.sanitizedName;
+						// name = parsedMeta.sanitizedName;
 						jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: null, audiometa: parsedMeta.meta });
 					}
 					bufferPointer += res.buffer.length;
