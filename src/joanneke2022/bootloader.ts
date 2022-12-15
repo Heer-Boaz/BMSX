@@ -1,7 +1,7 @@
 import { BFont, id2space } from './../bmsx/bmsx';
 import { MSX2ScreenHeight, MSX2ScreenWidth } from './../bmsx/msx';
 import { RomLoadResult } from '../bmsx/rompack';
-import { Game, BaseModel, GameObject, Sprite, sdef, mdef, leavingScreenHandler_prohibit as prohibitLeavingScreenHandler, statedef_builder, cmdef, sstate, cmstate, setPoint, newPoint, Direction, newSize, newArea, Point, randomInt, copyPoint, getOppositeDirection, Space } from '../bmsx/bmsx';
+import { Game, BaseModel, GameObject, Sprite, sdef, mdef, leavingScreenHandler_prohibit as prohibitLeavingScreenHandler, statedef_builder, cmdef, sstate, cmstate, setPoint, newPoint, Direction, newSize, newArea, Point, randomInt, copyPoint, getOppositeDirection, Space, base_model_spaces } from '../bmsx/bmsx';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
@@ -11,7 +11,9 @@ import { TextWriter } from '../bmsx/textwriter';
 import { GameMenu } from './gamemenu';
 
 const TIME_TO_SHINE = 90;
-type model_spaces = 'default' | 'uitleg' | 'evaluatie' | 'hoera!';
+
+type model_spaces = base_model_spaces |	'uitleg' | 'evaluatie' | 'hoera!';
+type model_states = keyof typeof gamemodel.states;
 
 class gamemodel extends BaseModel {
 	public time_to_shine: number;
@@ -43,100 +45,103 @@ class gamemodel extends BaseModel {
 		return total;
 	}
 
+	static get states() {
+		return {
+			game_start: new sdef('game_start', {
+				onrun(s: sstate, ik: gamemodel) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
+					ik.state.to('uitleg');
+				}
+			}),
+			default: new sdef('default', {
+				nudges2move: 50,
+				onenter(s: sstate, ik: gamemodel) {
+					ik.setSpace('default');
+					ik.time_to_shine = TIME_TO_SHINE;
+				},
+				onnext(s: sstate, ik: gamemodel) {
+					--ik.time_to_shine;
+					if (ik.time_to_shine < 0) {
+						ik.time_to_shine = 0;
+						ik.score = ik.tel_onvolmaaktheden();
+						ik.state.to('evaluatie!' satisfies model_states);
+					}
+				},
+				onrun(s: sstate, ik: gamemodel) {
+					BaseModel.defaultrun();
+
+					++s.nudges; // Laat timer lopen
+
+					if (Input.KC_F5) {
+						ik.state.to('gamemenu');
+					}
+				},
+			}),
+			gamemenu: new sdef('gamemenu', {
+				onenter() {
+					let menu = new GameMenu();
+					global.model.spawn(menu);
+					menu.Open();
+				},
+				onrun() {
+					let menu = global.model.get('gamemenu') as GameMenu;
+					menu.run();
+					if (Input.KC_F5) {
+						global.model.state.to('default');
+					}
+				},
+				onexit() {
+					let menu = global.model.get('gamemenu') as GameMenu;
+					menu.Close();
+					global.model.exile(menu);
+				},
+			}),
+			'evaluatie!': new sdef('evaluatie!', {
+				nudges2move: 50,
+				onenter(s: sstate, ik: gamemodel) {
+					ik.setSpace('evaluatie' satisfies model_spaces);
+					ik.time_to_shine = 5;
+				},
+				onnext(s: sstate, ik: gamemodel) {
+					--ik.time_to_shine;
+					if (ik.time_to_shine < 0) {
+						ik.time_to_shine = 0;
+						ik.state.to('hoera!' satisfies model_states);
+					}
+				},
+				onrun(s: sstate) {
+					++s.nudges;
+				},
+			}),
+			'hoera!': new sdef('hoera!', {
+				onenter(s: sstate, ik: gamemodel) {
+					ik.setSpace('hoera!' satisfies model_spaces);
+				},
+			}),
+			uitleg: new sdef('uitleg', {
+				onenter(s: sstate, ik: gamemodel) {
+					ik.uitleg_tekst_dinges = 0;
+					ik.setSpace('uitleg');
+				},
+				onrun(s: sstate, ik: gamemodel) {
+					BaseModel.defaultrun();
+
+					if (Input.KC_F5) {
+						ik.state.to('gamemenu');
+					}
+				},
+			}),
+		};
+	}
+
 	@statedef_builder
-	public static buildModelStates(classname: string): cmdef {
-		return new cmdef(classname, {
+	public static bouw() {
+		return {
 			machines: {
 				master: new mdef('default', {
-					states: {
-						game_start: new sdef('game_start', {
-							onrun(s: sstate, ik: gamemodel) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
-								ik.state.to('uitleg');
-							}
-						}),
-						default: new sdef('default', {
-							nudges2move: 50,
-							onenter(s: sstate, ik: gamemodel) {
-								ik.setSpace('default');
-								ik.time_to_shine = TIME_TO_SHINE;
-							},
-							onnext(s: sstate, ik: gamemodel) {
-								--ik.time_to_shine;
-								if (ik.time_to_shine < 0) {
-									ik.time_to_shine = 0;
-									ik.score = ik.tel_onvolmaaktheden();
-									ik.state.to('evaluatie');
-								}
-							},
-							onrun(s: sstate, ik: gamemodel) {
-								BaseModel.defaultrun();
-
-								++s.nudges; // Laat timer lopen
-
-								if (Input.KC_F5) {
-									ik.state.to('gamemenu');
-								}
-							},
-						}),
-						gamemenu: new sdef('gamemenu', {
-							onenter() {
-								let menu = new GameMenu();
-								global.model.spawn(menu);
-								menu.Open();
-							},
-							onrun() {
-								let menu = global.model.get('gamemenu') as GameMenu;
-								menu.run();
-								if (Input.KC_F5) {
-									global.model.state.to('default');
-								}
-							},
-							onexit() {
-								let menu = global.model.get('gamemenu') as GameMenu;
-								menu.Close();
-								global.model.exile(menu);
-							},
-						}),
-						'evaluatie!': new sdef('evaluatie!', {
-							nudges2move: 50,
-							onenter(s: sstate, ik: gamemodel) {
-								let new_space: model_spaces = 'evaluatie';
-								ik.setSpace(new_space);
-								ik.time_to_shine = 5;
-							},
-							onnext(s: sstate, ik: gamemodel) {
-								--ik.time_to_shine;
-								if (ik.time_to_shine < 0) {
-									ik.time_to_shine = 0;
-									ik.state.to('hoera!');
-								}
-							},
-							onrun(s: sstate) {
-								++s.nudges;
-							},
-						}),
-						'hoera!': new sdef('hoera!', {
-							onenter(s: sstate, ik: gamemodel) {
-								ik.setSpace('hoera!');
-							},
-						}),
-						uitleg: new sdef('uitleg', {
-							onenter(s: sstate, ik: gamemodel) {
-								ik.uitleg_tekst_dinges = 0;
-								ik.setSpace('uitleg');
-							},
-							onrun(s: sstate, ik: gamemodel) {
-								BaseModel.defaultrun();
-
-								if (Input.KC_F5) {
-									ik.state.to('gamemenu');
-								}
-							},
-						}),
-					}
+					states: gamemodel.states,
 				}),
 			}
-		});
+		};
 	}
 
 	// DO NOT CHANGE THIS CODE! PLEASE USE STATE DEFS TO HANDLE GAME STARTUP LOGIC!
@@ -242,8 +247,8 @@ class hoeraStuff extends Sprite {
 
 class uitlegStuff extends Sprite {
 	@statedef_builder
-	public static bouw(classname: string): cmdef {
-		return new cmdef(classname, {
+	public static bouw() {
+		return {
 			machines: {
 				master: new mdef('master', {
 					states: {
@@ -261,7 +266,7 @@ class uitlegStuff extends Sprite {
 							onenter(s: sstate, ik: uitlegStuff) {
 								s.reset();
 								if (_model)
-								_model.uitleg_tekst_dinges = s.current;
+									_model.uitleg_tekst_dinges = s.current;
 							},
 							onrun(s: sstate, ik: uitlegStuff) {
 								++s.nudges;
@@ -281,7 +286,7 @@ class uitlegStuff extends Sprite {
 					}
 				})
 			}
-		});
+		};
 	}
 
 	constructor() {
@@ -367,8 +372,8 @@ class evaluatieStuff extends Sprite {
 
 class hud extends GameObject {
 	@statedef_builder
-	public static bouw(classname: string): cmdef {
-		return new cmdef(classname, {
+	public static bouw() {
+		return {
 			machines: {
 				master: new mdef('master', {
 					states: {
@@ -387,7 +392,7 @@ class hud extends GameObject {
 					}
 				})
 			}
-		});
+		};
 	}
 
 	constructor() {
@@ -406,8 +411,8 @@ class hud extends GameObject {
 
 class stoom extends Sprite {
 	@statedef_builder
-	public static bouw(classname: string): cmdef {
-		return new cmdef(classname, {
+	public static bouw() {
+		return {
 			machines: {
 				master: new mdef('master', {
 					states: {
@@ -443,7 +448,7 @@ class stoom extends Sprite {
 					}
 				})
 			}
-		});
+		};
 	}
 
 	constructor() {
@@ -498,8 +503,8 @@ class diamant extends Sprite {
 
 class draaischijf extends Sprite {
 	@statedef_builder
-	public static bouw(classname: string): cmdef {
-		return new cmdef(classname, {
+	public static bouw() {
+		return {
 			machines: {
 				master: new mdef('master', {
 					states: {
@@ -598,7 +603,7 @@ class draaischijf extends Sprite {
 					}
 				})
 			}
-		});
+		};
 	}
 
 	constructor() {
@@ -631,10 +636,10 @@ class draaischijf extends Sprite {
 			switch (getoonde_zijde) {
 				case zijde.Voor:
 					_model.diamant.getoonde_zijde = zijde.Boven;
-				break;
+					break;
 				case zijde.Boven:
 					_model.diamant.getoonde_zijde = zijde.Voor;
-				break;
+					break;
 			}
 		}
 	}
@@ -719,8 +724,8 @@ abstract class onvolmaaktheid extends Sprite {
 
 class burn extends onvolmaaktheid {
 	@statedef_builder
-	public static bouw(classname: string): cmdef {
-		return new cmdef(classname, {
+	public static bouw() {
+		return {
 			machines: {
 				master: new mdef('master', {
 					states: {
@@ -769,7 +774,7 @@ class burn extends onvolmaaktheid {
 					}
 				})
 			}
-		});
+		};
 	}
 
 	override onspawn = (spawningPos?: Point): void => {
@@ -787,8 +792,8 @@ class burn extends onvolmaaktheid {
 
 class barst extends onvolmaaktheid {
 	@statedef_builder
-	public static bouw(classname: string): cmdef {
-		return new cmdef(classname, {
+	public static bouw() {
+		return {
 			machines: {
 				master: new mdef('master', {
 					states: {
@@ -839,7 +844,7 @@ class barst extends onvolmaaktheid {
 					}
 				})
 			}
-		});
+		};
 	}
 
 	public get ernst() {

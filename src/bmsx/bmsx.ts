@@ -500,11 +500,11 @@ export const enum BSTEventType {
 	End = 5,
 }
 
-export type str2bssd = { [key: string]: sdef; };
-export type str2bstd = { [key: string]: mdef; };
-export type str2cmstate = { [key: string]: cmstate; };
-export type str2mstate = { [key: string]: mstate; };
-export type str2sstate = { [key: string]: sstate; };
+export type str2bssd = Record<string, sdef>;
+export type str2bstd = Record<string, mdef>;
+export type str2cmstate = Record<string, cmstate>;
+export type str2mstate = Record<string, mstate>;
+export type str2sstate = Record<string, sstate>;
 export type bsfthandle = (state: sstate, me: any, type: BSTEventType) => void;
 export type Tape = any[];
 
@@ -933,8 +933,8 @@ export class Savegame {
 	spaces: Space[];
 }
 
-export type id2objectType = { [key: string]: GameObject; };
-export type id2spaceType = { [key: string]: Space; };
+export type id2objectType = Record<string, GameObject>;
+export type id2spaceType = Record<string, Space>;
 export const id2obj = Symbol('id2object');
 export const id2space = Symbol('id2space');
 
@@ -997,8 +997,10 @@ export class Space {
 	}
 }
 
-export var MachineDefinitions: { [key: string]: cmdef; };
-var MachineDefinitionBuilders: { [key: string]: (classname: string) => cmdef; };
+export var MachineDefinitions: Record<string, cmdef>;
+var MachineDefinitionBuilders: Record<string, () => Partial<cmdef>>;
+export type base_model_spaces = 'default';
+
 export abstract class BaseModel {
 	public state: cmstate;
 	public [id2space]: id2spaceType;
@@ -1089,8 +1091,10 @@ export abstract class BaseModel {
 	private static buildStates() {
 		MachineDefinitions = {};
 		for (let classname in MachineDefinitionBuilders) {
-			let machineBuilded = MachineDefinitionBuilders[classname](classname);
-			machineBuilded && (MachineDefinitions[classname] = MachineDefinitionBuilders[classname](classname)); // A class might choose not to create a new machine
+			let machinesReturned = MachineDefinitionBuilders[classname]();
+			let machineBuilded: cmdef = undefined;
+			machinesReturned && (machineBuilded = new cmdef(classname, MachineDefinitionBuilders[classname]()));
+			machineBuilded && (MachineDefinitions[classname] = machineBuilded); // A class might choose not to create a new machine
 		}
 	}
 
