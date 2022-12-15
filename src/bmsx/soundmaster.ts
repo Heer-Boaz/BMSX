@@ -35,7 +35,7 @@ export class SM {
 					resolve(buffer);
 				});
 			});
-		} else { return SM.sndContext.decodeAudioData(audioData); }
+		} else return SM.sndContext.decodeAudioData(audioData);
 	}
 
 	private static async createNode(id: string): Promise<AudioBufferSourceNode> {

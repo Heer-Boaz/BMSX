@@ -31,7 +31,7 @@ export interface RomResource {
 
 export interface RomMeta {
 	start: number;
-	end: number;abstrabsdsfsdfsdfssdfsdf
+	end: number;
 }
 
 export type id2res = Record<number | string, RomResource>;

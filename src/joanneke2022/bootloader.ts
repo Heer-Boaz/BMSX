@@ -6,7 +6,7 @@ import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
 import { Input } from '../bmsx/input';
-import { DrawImgFlags, paintSprite } from '../bmsx/view';
+import { BaseView, DrawImgFlags, paintSprite } from '../bmsx/view';
 import { TextWriter } from '../bmsx/textwriter';
 import { GameMenu } from './gamemenu';
 
@@ -50,21 +50,17 @@ class gamemodel extends BaseModel {
 				master: new mdef('default', {
 					states: {
 						game_start: new sdef('game_start', {
-							onrun(s: sstate) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
-								let ik = _model;
+							onrun(s: sstate, ik: gamemodel) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
 								ik.state.to('uitleg');
 							}
 						}),
 						default: new sdef('default', {
 							nudges2move: 50,
-							onenter(s: sstate) {
-								let ik = global.model as gamemodel;
-								ik.setSpace(<model_spaces>'default');
+							onenter(s: sstate, ik: gamemodel) {
+								ik.setSpace('default');
 								ik.time_to_shine = TIME_TO_SHINE;
 							},
-							onnext(s: sstate) {
-								let ik = global.model as gamemodel;
-
+							onnext(s: sstate, ik: gamemodel) {
 								--ik.time_to_shine;
 								if (ik.time_to_shine < 0) {
 									ik.time_to_shine = 0;
@@ -78,7 +74,7 @@ class gamemodel extends BaseModel {
 								++s.nudges; // Laat timer lopen
 
 								if (Input.KC_F5) {
-									global.model.state.to('gamemenu');
+									ik.state.to('gamemenu');
 								}
 							},
 						}),
@@ -103,14 +99,12 @@ class gamemodel extends BaseModel {
 						}),
 						'evaluatie!': new sdef('evaluatie!', {
 							nudges2move: 50,
-							onenter() {
-								let ik = global.model as gamemodel;
-								ik.setSpace('evaluatie!' as model_spaces);
+							onenter(s: sstate, ik: gamemodel) {
+								let new_space: model_spaces = 'evaluatie';
+								ik.setSpace(new_space);
 								ik.time_to_shine = 5;
 							},
-							onnext(s: sstate) {
-								let ik = global.model as gamemodel;
-
+							onnext(s: sstate, ik: gamemodel) {
 								--ik.time_to_shine;
 								if (ik.time_to_shine < 0) {
 									ik.time_to_shine = 0;
@@ -122,14 +116,12 @@ class gamemodel extends BaseModel {
 							},
 						}),
 						'hoera!': new sdef('hoera!', {
-							onenter() {
-								let ik = global.model as gamemodel;
+							onenter(s: sstate, ik: gamemodel) {
 								ik.setSpace('hoera!');
 							},
 						}),
 						uitleg: new sdef('uitleg', {
-							onenter() {
-								let ik = global.model as gamemodel;
+							onenter(s: sstate, ik: gamemodel) {
 								ik.uitleg_tekst_dinges = 0;
 								ik.setSpace('uitleg');
 							},
@@ -137,7 +129,7 @@ class gamemodel extends BaseModel {
 								BaseModel.defaultrun();
 
 								if (Input.KC_F5) {
-									global.model.state.to('gamemenu');
+									ik.state.to('gamemenu');
 								}
 							},
 						}),
@@ -155,14 +147,8 @@ class gamemodel extends BaseModel {
 		super();
 	}
 
-	// Build and populate states. Can only be executed once main game objects and view have been created
-	// DO NOT CHANGE THIS CODE! PLEASE USE STATE DEFS TO HANDLE GAME STARTUP LOGIC!
-	public init_model_state_machines(): this {
-		this.state = new cmstate(this.constructor.name, '_');
-		this.state.populateMachines();
-		this.state.to('game_start');
-
-		return this;
+	public get constructor_name(): string {
+		return this.constructor.name;
 	}
 
 	// Use this function for initializing spaces, global/static game objects, ...
@@ -523,8 +509,9 @@ class draaischijf extends Sprite {
 								ik.imgid = BitmapId.slijpschijf1;
 							},
 							onrun(s: sstate, ik: draaischijf) {
-								ik.handle_input_idle_state();
+								// ik.handle_input_idle_state();
 							},
+							process_input: draaischijf.handle_input_idle_state,
 						}),
 						slijpen_opstart: new sdef('slijpen_opstart', {
 							nudges2move: 5,
@@ -623,21 +610,21 @@ class draaischijf extends Sprite {
 		this.hitarea = newArea(24, 24, 64 - 24, 64 - 24);
 	}
 
-	public handle_input_idle_state(): void {
+	public static handle_input_idle_state(s: sstate, ik: draaischijf): void {
 		if (Input.KD_LEFT) {
-			this.setx(this.pos.x - 1);
+			ik.setx(ik.pos.x - 1);
 		}
 		else if (Input.KD_RIGHT) {
-			this.setx(this.pos.x + 1);
+			ik.setx(ik.pos.x + 1);
 		}
 		else if (Input.KD_UP) {
-			this.sety(this.pos.y - 1);
+			ik.sety(ik.pos.y - 1);
 		}
 		else if (Input.KD_DOWN) {
-			this.sety(this.pos.y + 1);
+			ik.sety(ik.pos.y + 1);
 		}
 		if (Input.KD_BTN1) {
-			this.state.to('slijpen_opstart');
+			ik.state.to('slijpen_opstart');
 		}
 		if (Input.KC_BTN2) {
 			let getoonde_zijde = _model.diamant.getoonde_zijde;
@@ -896,7 +883,8 @@ let _game: Game;
 let _model: gamemodel;
 let _view: gameview;
 
-var _global = window || global;
+var _global = globalThis;
+
 _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: GainNode): void => {
 	_model = new gamemodel();
 	_view = new gameview(newSize(MSX1ScreenWidth, MSX1ScreenHeight));

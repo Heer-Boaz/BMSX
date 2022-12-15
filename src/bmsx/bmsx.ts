@@ -6,13 +6,9 @@ import { MSX2ScreenWidth, MSX2ScreenHeight, TileSize } from "./msx";
 import assert = require("assert");
 
 declare global {
-	namespace NodeJS {
-		interface Global {
-			game: Game;
-			model: BaseModel;
-			view: BaseView;
-		}
-	}
+	var game: Game;
+	var model: BaseModel;
+	var view: BaseView;
 }
 
 const fps: number = 50;
@@ -553,8 +549,17 @@ export class cmstate {
 
 	public run(): void {
 		if (this.paused) return;
+
 		for (const key of Object.keys(this.machines)) {
 			this.machines[key].run();
+		}
+	}
+
+	public process_input(): void {
+		if (this.paused) return;
+
+		for (const key of Object.keys(this.machines)) {
+			this.machines[key].process_input();
 		}
 	}
 
@@ -597,7 +602,7 @@ export class mstate {
 	paused: boolean; // Iff paused, skip 'onrun'
 	targetid: string; // This state machine reflects the (partial) state of the game object with id [targetid]
 
-	public get target(): GameObject { return global.model.get(this.targetid); }
+	public get target(): GameObject | BaseModel { return global.model.get(this.targetid); }
 	public get current(): sstate { return this.states[this.currentid]; };
 
 	public get machinedef(): mdef {
@@ -623,6 +628,13 @@ export class mstate {
 		if (this.paused) return;
 		// [this.currentStatedef] can be undefined if we are in the 'none' state
 		this.currentStatedef?.onrun?.(this.current, this.target, BSTEventType.Run);
+	}
+
+	public process_input(): void {
+		if (this.paused) return;
+
+		// [this.currentStatedef] can be undefined if we are in the 'none' state
+		this.currentStatedef?.process_input?.(this.current, this.target, BSTEventType.None);
 	}
 
 	public to(newstate: string): void {
@@ -691,9 +703,9 @@ export class sstate {
 	protected get beyondEnd(): boolean { return !this.tape || this.head >= this.tape.length; } // Note that beyond end also returns true if there is no tape!
 	public get atStart(): boolean { return this.head === 0; }
 	public get internalstate() { return { statedata: this.tape, tapehead: this.head, nudges: this.nudges, nudges2move: this.nudges2move }; }
-	public get target(): GameObject { return global.model.get(this.targetid); }
+	public get target(): GameObject | BaseModel { return global.model.get(this.targetid); }
 	// https://github.com/microsoft/TypeScript/issues/35986
-	public targetAs<T extends GameObject>(): T { return <T>global.model.get(this.targetid); }
+	public targetAs<T extends GameObject | BaseModel>(): T { return <T>global.model.get(this.targetid); }
 
 	public constructor(_id: string, _machineid: string, _cmachineid: string, _targetid: string) {
 		this.id = _id;
@@ -802,6 +814,7 @@ export class sdef {
 	public onnext: bsfthandle;
 	public onenter: bsfthandle;
 	public onexit: bsfthandle;
+	public process_input: bsfthandle;
 
 	// Helper function to set all handlers
 	public setAllHandlers(handler: bsfthandle): void {
@@ -811,6 +824,7 @@ export class sdef {
 		this.onnext = handler;
 		this.onenter = handler;
 		this.onexit = handler;
+		this.process_input = handler;
 	}
 }
 
@@ -1001,13 +1015,21 @@ export abstract class BaseModel {
 	public startAfterLoad: boolean;
 
 	public get_from_current_space<T extends GameObject>(id: string) { return <T>this[id2space][this.currentSpaceid][id2obj][id]; }
-	public get<T extends GameObject>(id: string) {
+	/**
+	 * Gets the game object with the given id accross -all- spaces.
+	 * @remarks If `id === 'model'`, returns the game model instead! (used for sstate to make game model as target for callbacks.
+	 * @param {string} id - the id of the game object.
+	 * @returns {GameObject | BaseModel} The game object with the given id or the game model itself (when id === 'model').
+	 */
+	public get<T extends GameObject>(id: string | 'model'): T {
+		if (id == 'model') return global.model as any; // Dirty fix for scenario where model should return itself as target for the model state machine
+
 		for (let i = 0; i < this.spaces.length; i++) {
 			let space = this.spaces[i];
 			let obj = this[id2space][space.id][id2obj][id];
 			if (obj) return <T>obj;
 		}
-		return null; // No object found
+		return <T>null; // No object found
 	}
 
 	public getSpace<T extends Space>(id: string) { return <T>this[id2space][id]; }
@@ -1068,7 +1090,7 @@ export abstract class BaseModel {
 		MachineDefinitions = {};
 		for (let classname in MachineDefinitionBuilders) {
 			let machineBuilded = MachineDefinitionBuilders[classname](classname);
-			machineBuilded && (MachineDefinitions[classname] = MachineDefinitionBuilders[classname](classname)); // A clas might choose not to create a new machine
+			machineBuilded && (MachineDefinitions[classname] = MachineDefinitionBuilders[classname](classname)); // A class might choose not to create a new machine
 		}
 	}
 
@@ -1078,15 +1100,32 @@ export abstract class BaseModel {
 		this.currentSpaceid = defaultSpace.id;
 	}
 
-	// Init model after construction. Needed as the states have not been build at
-	// the constructor's scope yet. So, this is a kind of onspawn(...) for the model
-	// Returns [this] for chaining
-	public abstract init_model_state_machines(): this;
+	/**
+	 * Returns the constructor name of the specific derived class that extends this `BaseModel`.
+	 * @remarks Required during game initialization where `init_model_state_machines` is called.
+	 * @see init_model_state_machines
+	 */
+	public abstract get constructor_name(): string;
+
+	/**
+	* Init model after construction. Needed as the states have not been build at
+	* the constructor's scope yet. So, this is a kind of onspawn(...) for the model
+	* @remarks Each derived model class should override this method and call it with the proper constructor classname of that derived model class. We need the exact classname in order to map a state machine definition to an instance of an object.
+	* @param {string} derived_modelclass_constructor_name - the constructor name of the derived modelclass (that derives from this BaseModel.
+	*/
+	public init_model_state_machines(derived_modelclass_constructor_name: string): this {
+		this.state = new cmstate(derived_modelclass_constructor_name, 'model');
+		this.state.populateMachines();
+		this.state.to('game_start');
+
+		return this;
+	}
 
 	// Returns [this] for chaining
 	public abstract do_one_time_game_init(): this;
 
 	public run() {
+		this.state.process_input();
 		this.state.run();
 	}
 
@@ -1211,6 +1250,7 @@ export abstract class BaseModel {
 	public abstract isCollisionTile(x: number, y: number): boolean;
 }
 
+
 export class Game {
 	lastTick: number;
 	_turnCounter: number;
@@ -1220,6 +1260,9 @@ export class Game {
 	wasupdated: boolean;
 	public rom: RomLoadResult;
 	public debug_runSingleFrameAndPause: boolean;
+	public model<T extends BaseModel>(): T { return <T>global.model; }
+	public view<T extends BaseView>(): T { return <T>global.view; }
+
 
 	constructor(_rom: RomLoadResult, _model: BaseModel, _view: BaseView, sndcontext: AudioContext, gainnode: GainNode) {
 		global['game'] = this;
@@ -1229,14 +1272,13 @@ export class Game {
 		global['view'] = _view;
 
 		BaseView.images = _rom.images;
-		let globalView = global.view as BaseView;
-		globalView.init();
+		global.view.init();
 		SM.init(_rom['sndresources'], sndcontext, gainnode);
 		Input.init();
 
 		// Init the model to populate states (and do other init stuff) and
 		// Init all the stuff that is game-specific. Placed here to reduce boilerplating
-		global.model.init_model_state_machines().do_one_time_game_init();
+		global.model.init_model_state_machines(global.model.constructor_name).do_one_time_game_init();
 
 		this.running = false;
 		this.paused = false;
@@ -1538,6 +1580,7 @@ export class GameObject {
 	}
 
 	public run(): void {
+		this.state.process_input();
 		this.state.run();
 	}
 }
@@ -1642,3 +1685,5 @@ export function insavegame<TFunction extends Function>(target: any, toJSON?: () 
 	Reviver.constructors[target.name] = target;
 	return target;
 }
+
+export {}
