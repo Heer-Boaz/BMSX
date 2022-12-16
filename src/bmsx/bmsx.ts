@@ -512,13 +512,27 @@ const BST_MAX_HISTORY = 10;
 export const DEFAULT_BST_ID = 'master';
 export const NONE_STATE_ID = 'none';
 
+/**
+ * Type used for getting all the states of a nested object containing both the machines as well as the inner states per machine. Allows for type checking state-names without having to create a type per machine.
+ * @see https://www.raygesualdo.com/posts/flattening-object-keys-with-typescript-types
+ */
+export type FlattenedPropKeys<T extends Record<string, unknown>, Key = keyof T> = Key extends string ? T[Key] extends Record<string, unknown> ? FlattenedPropKeys<T[Key]> : Key : never;
+
 @insavegame
 export class cmstate {
 	id: string;
+	/**
+	 * All mstate's in this concurrent state machine.
+	 * @see mstate
+	 */
 	machines: str2mstate;
 	savedMachines: str2bstd;
 	paused: boolean;
-	targetid: string; // This concurrent state machine reflects the (partial) state of the game object with id [targetid]
+	/**
+	 * This concurrent state machine reflects the (partial) state of the game object with the given id
+	 * @see BaseModel.get
+	 */
+	targetid: string;
 
 	public get cmachinedef(): cmdef {
 		return MachineDefinitions[this.id];
@@ -551,15 +565,10 @@ export class cmstate {
 		if (this.paused) return;
 
 		for (const key of Object.keys(this.machines)) {
-			this.machines[key].run();
-		}
-	}
-
-	public process_input(): void {
-		if (this.paused) return;
-
-		for (const key of Object.keys(this.machines)) {
 			this.machines[key].process_input();
+		}
+		for (const key of Object.keys(this.machines)) {
+			this.machines[key].run();
 		}
 	}
 
@@ -600,7 +609,11 @@ export class mstate {
 	currentid: string; // Identifier of current state
 	history: Array<string>; // History of previous states
 	paused: boolean; // Iff paused, skip 'onrun'
-	targetid: string; // This state machine reflects the (partial) state of the game object with id [targetid]
+	/**
+	 * This state machine reflects the (partial) state of the game object with the given id
+	 * @see BaseModel.get
+	 */
+	targetid: string;
 
 	public get target(): GameObject | BaseModel { return global.model.get(this.targetid); }
 	public get current(): sstate { return this.states[this.currentid]; };
@@ -632,7 +645,6 @@ export class mstate {
 
 	public process_input(): void {
 		if (this.paused) return;
-
 		// [this.currentStatedef] can be undefined if we are in the 'none' state
 		this.currentStatedef?.process_input?.(this.current, this.target, BSTEventType.None);
 	}
@@ -693,7 +705,11 @@ export class sstate {
 	id: string;
 	machineid: string;
 	cmachineid: string;
-	targetid: string; // This state reflects the (partial) state of the game object with id [targetid]
+	/**
+	 * This concurrent state machine reflects the (partial) state of the game object with the given id
+	 * @see BaseModel.get
+	 */
+	targetid: string;
 	nudges2move: number; // Number of runs before tapehead moves to next statedata
 
 	public get statedef(): sdef { return MachineDefinitions[this.cmachineid]?.machines[this.machineid].states[this.id]; }
@@ -952,7 +968,7 @@ export class Space {
 		Object.assign(result, o);
 		result.objects = undefined;
 
-		console.log(`Ik ga dit nu opslaan als Space: ${result.id}, ${result.objects}`);
+		console.info(`Ik ga dit nu opslaan als Space: ${result.id}, ${result.objects}`);
 		return result;
 	}
 
@@ -972,21 +988,23 @@ export class Space {
 		this.sortObjectsByPriority();
 
 		this[id2obj][o.id] = o;
-		this[id2obj][o.id] = o;
 		!afterload && o.onspawn?.(pos);
 	}
 
 	public exile(o: GameObject): void {
 		let index = this.objects.indexOf(o);
+		if (index < 0) throw `GameObject ${o?.id ?? o} to remove from space '${this.id}' was not found, while calling [BaseModel.exile]!`;
+		o.ondispose?.();
+
 		if (index > -1) {
 			delete this.objects[index];
 			this.objects.splice(index, 1);
 		}
 
-		if (this[id2obj][o.id])
+		if (this[id2obj][o.id]) {
 			this[id2obj][o.id] = undefined;
-
-		o.ondispose?.();
+			delete this[id2obj][o.id];
+		}
 	}
 
 	public clear(): void {
@@ -999,7 +1017,7 @@ export class Space {
 
 export var MachineDefinitions: Record<string, cmdef>;
 var MachineDefinitionBuilders: Record<string, () => Partial<cmdef>>;
-export type base_model_spaces = 'default';
+export type base_model_spaces = 'game_start' | 'default';
 
 export abstract class BaseModel {
 	public state: cmstate;
@@ -1016,7 +1034,7 @@ export abstract class BaseModel {
 	public paused: boolean;
 	public startAfterLoad: boolean;
 
-	public get_from_current_space<T extends GameObject>(id: string) { return <T>this[id2space][this.currentSpaceid][id2obj][id]; }
+	public getFromCurrentSpace<T extends GameObject>(id: string) { return <T>this[id2space][this.currentSpaceid][id2obj][id]; }
 	/**
 	 * Gets the game object with the given id accross -all- spaces.
 	 * @remarks If `id === 'model'`, returns the game model instead! (used for sstate to make game model as target for callbacks.
@@ -1031,7 +1049,7 @@ export abstract class BaseModel {
 			let obj = this[id2space][space.id][id2obj][id];
 			if (obj) return <T>obj;
 		}
-		return <T>null; // No object found
+		return <T>undefined; // No object found
 	}
 
 	public getSpace<T extends Space>(id: string) { return <T>this[id2space][id]; }
@@ -1078,14 +1096,20 @@ export abstract class BaseModel {
 		});
 	}
 
+	/** **DO NOT CHANGE THIS CODE! PLEASE USE STATE DEFS TO HANDLE GAME STARTUP LOGIC!**
+	 *
+	 * _Trying to add logic here will most often result in runtime errors!_
+	 * These runtime errors usually occur because the model was not created and initialized (with states),
+	 * while creating new game objects that reference the model or the model states
+	 */
 	constructor() {
 		this.spaces = [];
 		this[id2space] = {};
 
 		this.paused = false;
 
+		this.addDefaultSpaces();
 		BaseModel.buildStates();
-		this.addDefaultSpace();
 	}
 
 	private static buildStates() {
@@ -1098,24 +1122,25 @@ export abstract class BaseModel {
 		}
 	}
 
-	private addDefaultSpace() {
-		let defaultSpace: Space = new Space('default');
-		this.addSpace(defaultSpace);
-		this.currentSpaceid = defaultSpace.id;
+	private addDefaultSpaces() {
+		this.addSpace('default' satisfies base_model_spaces);
+		this.addSpace('game_start' satisfies base_model_spaces);
+		this.setSpace('game_start' satisfies base_model_spaces);
 	}
 
 	/**
 	 * Returns the constructor name of the specific derived class that extends this `BaseModel`.
-	 * @remarks Required during game initialization where `init_model_state_machines` is called.
-	 * @see init_model_state_machines
+	 * Required during game initialization where @see {@link init_model_state_machines} is called.
+	 * @see {@link init_model_state_machines}
 	 */
 	public abstract get constructor_name(): string;
 
 	/**
 	* Init model after construction. Needed as the states have not been build at
-	* the constructor's scope yet. So, this is a kind of onspawn(...) for the model
-	* @remarks Each derived model class should override this method and call it with the proper constructor classname of that derived model class. We need the exact classname in order to map a state machine definition to an instance of an object.
-	* @param {string} derived_modelclass_constructor_name - the constructor name of the derived modelclass (that derives from this BaseModel.
+	* the constructor's scope yet. So, this is a kind of `onspawn` for the model.
+	*
+	* Each derived model class should override this method and call it with the proper constructor classname of that derived model class. We need the exact classname in order to map a state machine definition to an instance of an object.
+	* @param {string} `derived_modelclass_constructor_name` - the constructor name of the derived modelclass (that derives from this BaseModel.
 	*/
 	public init_model_state_machines(derived_modelclass_constructor_name: string): this {
 		this.state = new cmstate(derived_modelclass_constructor_name, 'model');
@@ -1125,11 +1150,18 @@ export abstract class BaseModel {
 		return this;
 	}
 
-	// Returns [this] for chaining
+	/** Use this function for initializing spaces, global/static game objects, ...
+	* Is automagically called from {@link Game} and expects the model to be created and its state machines populated.
+	*
+	* **Notes:**
+	* 1. Use the state `game_start` to transition to the state in which the game will start after it started running and
+	* not this function.**
+	* 2. Game is not expected to be running yet.
+	* @returns {this} `this` for chaining.
+	 */
 	public abstract do_one_time_game_init(): this;
 
 	public run() {
-		this.state.process_input();
 		this.state.run();
 	}
 
@@ -1148,6 +1180,21 @@ export abstract class BaseModel {
 		// Remove all objects that are to be disposed
 		objects.filter(o => o.disposeFlag).forEach(o => global.model.exile(o));
 	};
+
+	static default_input_handler_for_allow_open_gamemenu(s: sstate, ik: BaseModel) {
+		if (Input.KC_F5) {
+			ik.state.machines['gamemenu'].to('open');
+		}
+	}
+
+	static default_input_handler_for_allow_close_gamemenu(s: sstate, ik: BaseModel) {
+		if (Input.KC_F5) {
+			ik.state.machines['gamemenu'].to('closed');
+		}
+	}
+
+	static default_input_handler(s: sstate, ik: BaseModel) {
+	}
 
 	public load(serialized: string): void {
 		this.clear();
@@ -1229,25 +1276,60 @@ export abstract class BaseModel {
 	}
 
 	public exile(o: GameObject): void {
+		this.spaces.forEach(s => s.get(o.id) && s.exile(o));
+	}
+
+	public exileFromCurrentSpace(o: GameObject): void {
 		this.getSpace(this.currentSpaceid).exile(o);
 	}
 
-	public addSpace(s: Space): void {
-		this.spaces.push(s);
-		this[id2space][s.id] = s;
+	public addSpace(s: Space | string): void {
+		if (s instanceof Space) {
+			this.spaces.push(s);
+			this[id2space][s.id] = s;
+		}
+		else {
+			let new_space = new Space(s);
+			this.spaces.push(new_space);
+			this[id2space][s] = new_space;
+		}
 	}
 
-	public removeSpace(s: Space): void {
-		let index = this.spaces.indexOf(s);
+	public removeSpace(s: Space | string): void {
+		let index: number;
+		let id: string;
+		let space: Space;
+
+		if (s instanceof Space) {
+			space = s;
+			index = this.spaces.indexOf(s);
+			id = s.id;
+		}
+		else {
+			id = s;
+			index = -1;
+			let i = 0;
+			for (i = 0; i < this.spaces.length; i++) {
+				if (this.spaces[i].id === id) {
+					index = i;
+					space = this.spaces[i];
+					break;
+				}
+			}
+		}
+		if (!space) throw `Space ${id ?? space.id} to remove from model was not found, while calling [BaseModel.removeSpace]!`;
+
 		if (index > -1) {
-			s.clear(); // Remove all objects from the space
+			space.clear(); // Remove all objects from the space
 			delete this.spaces[index];
 			this.spaces.splice(index, 1);
 		}
 
-		if (this[id2space][s.id])
-			this[id2space][s.id] = undefined;
-		s.ondispose?.();
+		if (this[id2space][id]) {
+			this[id2space][id] = undefined;
+			delete this[id2space][id];
+		}
+		space.ondispose?.();
 	}
 
 	public abstract collidesWithTile(o: GameObject, dir: Direction): boolean;
@@ -1515,7 +1597,7 @@ export class GameObject {
 		return false;
 	}
 
-	/*
+	/**
 	*  This method is used for debugging. Handling mouse events on game objects requires
 	*  transforming the game coordinates to canvas coordinates and that requires scaling
 	*  to be taken into account.
@@ -1584,7 +1666,6 @@ export class GameObject {
 	}
 
 	public run(): void {
-		this.state.process_input();
 		this.state.run();
 	}
 }
@@ -1690,4 +1771,4 @@ export function insavegame<TFunction extends Function>(target: any, toJSON?: () 
 	return target;
 }
 
-export {}
+export { };
