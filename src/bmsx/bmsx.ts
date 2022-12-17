@@ -3,7 +3,8 @@ import { SM } from "./soundmaster";
 import { Input } from "./input";
 import { RomLoadResult } from "./rompack";
 import { MSX2ScreenWidth, MSX2ScreenHeight, TileSize } from "./msx";
-import assert = require("assert");
+import { mstate, mdef, sdef, sstate, setup_fsmdef_library, MachineDefinitions } from "./bfsm";
+import { insavegame, onsave, Reviver, serializeObj } from "./gamereviver";
 
 declare global {
 	var game: Game;
@@ -350,6 +351,10 @@ export function multiplyPoint(toMult: Point, factor: number): Point {
 	return <Point>{ x: toMult.x * factor, y: toMult.y * factor };
 }
 
+export function divPoint(toDivide: Point, divide_by: number): Point {
+	return <Point>{ x: toDivide.x / divide_by, y: toDivide.y / divide_by };
+}
+
 export function newArea(sx: number, sy: number, ex: number, ey: number): Area {
 	return <Area>{ start: { x: sx, y: sy }, end: { x: ex, y: ey } };
 }
@@ -491,453 +496,6 @@ export function getOppositeDirection(dir: Direction): Direction {
 	}
 }
 
-export const enum BSTEventType {
-	None = 0,
-	Run = 1,
-	Enter = 2,
-	Exit = 3,
-	Next = 4,
-	End = 5,
-}
-
-export type str2bssd = Record<string, sdef>;
-export type str2bstd = Record<string, mdef>;
-export type str2cmstate = Record<string, cmstate>;
-export type str2mstate = Record<string, mstate>;
-export type str2sstate = Record<string, sstate>;
-export type bsfthandle = (state: sstate, me: any, type: BSTEventType) => void;
-export type Tape = any[];
-
-const BST_MAX_HISTORY = 10;
-export const DEFAULT_BST_ID = 'master';
-export const NONE_STATE_ID = 'none';
-
-/**
- * Type used for getting all the states of a nested object containing both the machines as well as the inner states per machine. Allows for type checking state-names without having to create a type per machine.
- * @see https://www.raygesualdo.com/posts/flattening-object-keys-with-typescript-types
- */
-export type FlattenedPropKeys<T extends Record<string, unknown>, Key = keyof T> = Key extends string ? T[Key] extends Record<string, unknown> ? FlattenedPropKeys<T[Key]> : Key : never;
-
-@insavegame
-export class cmstate {
-	id: string;
-	/**
-	 * All mstate's in this concurrent state machine.
-	 * @see mstate
-	 */
-	machines: str2mstate;
-	savedMachines: str2bstd;
-	paused: boolean;
-	/**
-	 * This concurrent state machine reflects the (partial) state of the game object with the given id
-	 * @see BaseModel.get
-	 */
-	targetid: string;
-
-	public get cmachinedef(): cmdef {
-		return MachineDefinitions[this.id];
-	}
-
-	public getMachinedef(machineid: string): mdef {
-		return MachineDefinitions[this.id].machines[machineid];
-	}
-
-	constructor(cm_id: string, target_id: string) {
-		this.id = cm_id;
-		this.targetid = target_id;
-		this.machines = {};
-		this.paused ??= false;
-	}
-
-	public getCurrentId(machine_id: string = DEFAULT_BST_ID): string {
-		return this.machines[machine_id].currentid;
-	}
-
-	public getCurrentState(machine_id: string = DEFAULT_BST_ID): sstate {
-		return this.machines[machine_id].states[this.getCurrentId(machine_id)];
-	}
-
-	public getState(state_id: string, machine_id: string = DEFAULT_BST_ID): sstate {
-		return this.machines[machine_id].states[state_id];
-	}
-
-	public run(): void {
-		if (this.paused) return;
-
-		for (const key of Object.keys(this.machines)) {
-			this.machines[key].process_input();
-		}
-		for (const key of Object.keys(this.machines)) {
-			this.machines[key].run();
-		}
-	}
-
-	public to(newstate: string, machine_id: string = DEFAULT_BST_ID): void {
-		this.machines[machine_id].to(newstate);
-	}
-
-	public pop(machine_id: string = DEFAULT_BST_ID): void {
-		this.machines[machine_id].pop();
-	}
-
-	public reset(machine_id: string = DEFAULT_BST_ID): void {
-		this.machines[machine_id].reset();
-	}
-
-	public populateMachines(): void {
-		let cdef = this.cmachinedef;
-		if (!cdef) {
-			// A class is not required to have a defined cmachine.
-			// Thus, we create a default machine that automatically has a generated
-			// 'none'-state associated with it
-			this.machines[DEFAULT_BST_ID] = new mstate(DEFAULT_BST_ID, this.id, this.targetid);
-			return;
-		}
-
-		for (let mdef_id in cdef.machines) {
-			this.machines[mdef_id] = new mstate(mdef_id, this.id, this.targetid);
-			this.machines[mdef_id].populateStates();
-		}
-	}
-}
-
-@insavegame
-export class mstate {
-	id: string;
-	cmachineid: string;
-	states: str2sstate;
-	currentid: string; // Identifier of current state
-	history: Array<string>; // History of previous states
-	paused: boolean; // Iff paused, skip 'onrun'
-	/**
-	 * This state machine reflects the (partial) state of the game object with the given id
-	 * @see BaseModel.get
-	 */
-	targetid: string;
-
-	public get target(): GameObject | BaseModel { return global.model.get(this.targetid); }
-	public get current(): sstate { return this.states[this.currentid]; };
-
-	public get machinedef(): mdef {
-		return MachineDefinitions[this.cmachineid]?.machines[this.id];
-	}
-
-	public get currentStatedef(): sdef {
-		return MachineDefinitions[this.cmachineid]?.machines[this.id].states[this.currentid];
-	}
-
-	constructor(_id: string, _cmachineid: string, _targetid: string) {
-		this.id = _id ?? DEFAULT_BST_ID;
-		this.cmachineid = _cmachineid;
-		this.targetid = _targetid;
-		this.states ??= {};
-		this.paused ??= false;
-
-		// Note: when parameters are undefined, this constructor was invoked without parameters. This happens when it is revived. In that situation, don't init this object
-		_id && _cmachineid && this.reset();
-	}
-
-	public run(): void {
-		if (this.paused) return;
-		// [this.currentStatedef] can be undefined if we are in the 'none' state
-		this.currentStatedef?.onrun?.(this.current, this.target, BSTEventType.Run);
-	}
-
-	public process_input(): void {
-		if (this.paused) return;
-		// [this.currentStatedef] can be undefined if we are in the 'none' state
-		this.currentStatedef?.process_input?.(this.current, this.target, BSTEventType.None);
-	}
-
-	public to(newstate: string): void {
-		let stateDef = this.currentStatedef;
-		// stateDef can be undefined if we are in the 'none' state
-		stateDef?.onexit?.(this.current, this.target, BSTEventType.Exit);
-		stateDef && this.pushHistory(this.currentid); // Store the previous state on the history stack, if it is other than 'none'
-
-		this.currentid = newstate; // Switch the current state to the new state
-		if (!this.current) throw new Error(`State "${newstate}" doesn't exist for this state machine!`);
-
-		stateDef = this.currentStatedef;
-		// stateDef can be undefined if we are in the 'none' state
-		stateDef?.onenter?.(this.current, this.target, BSTEventType.Enter);
-	}
-
-	protected pushHistory(toPush: string): void {
-		this.history.push(toPush);
-		if (this.history.length > BST_MAX_HISTORY)
-			this.history.shift(); // Remove the first element in the history-array
-	}
-
-	public reset(): void {
-		this.currentid = NONE_STATE_ID;
-		this.history = new Array();
-		this.paused = false;
-	}
-
-	public pop(): void {
-		if (this.history.length <= 0) return;
-		let poppedStateId = this.history.pop();
-		this.to(poppedStateId);
-	}
-
-	public populateStates(): void {
-		let mdef = this.machinedef;
-
-		for (let sdef_id in mdef.states) {
-			this.add(new sstate(sdef_id, this.id, this.cmachineid, this.targetid));
-		}
-	}
-
-	private add(...states: sstate[]): void {
-		for (let state of states) {
-			if (!state.id) throw new Error(`State is missing an id, while attempting to add it to this mstate!`);
-			if (this.states[state.id]) throw new Error(`State ${state.id} already exists for state machine!`);
-			this.states[state.id] = state;
-			state.cmachineid = this.cmachineid;
-			state.machineid = this.id;
-		}
-	}
-}
-
-@insavegame
-export class sstate {
-	id: string;
-	machineid: string;
-	cmachineid: string;
-	/**
-	 * This concurrent state machine reflects the (partial) state of the game object with the given id
-	 * @see BaseModel.get
-	 */
-	targetid: string;
-	nudges2move: number; // Number of runs before tapehead moves to next statedata
-
-	public get statedef(): sdef { return MachineDefinitions[this.cmachineid]?.machines[this.machineid].states[this.id]; }
-	public get tape(): Tape { return this.statedef.tape; }
-	public get current(): any { return (this.tape && this.head < this.tape.length) ? this.tape[this.head] : undefined; };
-	public get atEnd(): boolean { return !this.tape || this.head >= this.tape.length - 1; } // Note that beyond end also returns true if there is no tape!
-	protected get beyondEnd(): boolean { return !this.tape || this.head >= this.tape.length; } // Note that beyond end also returns true if there is no tape!
-	public get atStart(): boolean { return this.head === 0; }
-	public get internalstate() { return { statedata: this.tape, tapehead: this.head, nudges: this.nudges, nudges2move: this.nudges2move }; }
-	public get target(): GameObject | BaseModel { return global.model.get(this.targetid); }
-	// https://github.com/microsoft/TypeScript/issues/35986
-	public targetAs<T extends GameObject | BaseModel>(): T { return <T>global.model.get(this.targetid); }
-
-	public constructor(_id: string, _machineid: string, _cmachineid: string, _targetid: string) {
-		this.id = _id;
-		this.machineid = _machineid;
-		this.cmachineid = _cmachineid;
-		this.targetid = _targetid;
-
-		// Note: when parameters are undefined, this constructor was invoked without parameters. This happens when it is revived. In that situation, don't init this object
-		_id && _machineid && _cmachineid && this.reset();
-	}
-
-	protected _tapehead: number;
-	public get head(): number {
-		return this._tapehead;
-	}
-	public set head(v: number) {
-		this._nudges = 0; // Always reset tapehead nudges after moving tapehead
-		this._tapehead = v; // Move the tape to new position
-
-		// Check if the tapehead is going out of bounds (or there is no tape at all)
-		if (!this.tape) {
-			this._tapehead = 0;
-
-			// Trigger the event for moving the tape, after having set the tapehead to the correct position
-			this.tapemove();
-
-			// Trigger the event for reaching the end of the tape
-			this.tapeend();
-		}
-		// Check if the tape now is at the end
-		else if (this.beyondEnd) {
-			// Check whether we automagically rewind the tape
-			if (this.statedef.auto_rewind_tape_after_end) {
-				// If so, rewind and move to the first element of the tapehead
-				// But why? (Yes... Why?) Because we then can loop an animation,
-				// including the first and last element of the tape, without having
-				// to resort to any workarounds like duplicating the first entry
-				// of the tape or similar.
-				this._tapehead = 0;
-			}
-			else {
-				// Set the tapehead to the end of the tape (or 0 if there is no tape)
-				this._tapehead = this.tape.length - 1;
-			}
-			// Trigger the event for moving the tape, after having set the tapehead to the correct position
-			this.tapemove();
-
-			// Trigger the event for reaching the end of the tape
-			this.tapeend();
-		}
-		else {
-			// Trigger the event for moving the tape. This is executed when no tapehead correction was required
-			this.tapemove();
-		}
-
-	}
-
-	public setHeadNoSideEffect(v: number) {
-		this._tapehead = v;
-	}
-
-	public setHeadNudgesNoSideEffect(v: number) {
-		this._nudges = v;
-	}
-
-	protected _nudges: number;
-	public get nudges(): number {
-		return this._nudges;
-	}
-	public set nudges(v: number) {
-		this._nudges = v;
-		if (v >= this.nudges2move) { ++this.head; }
-	}
-
-	protected tapemove() {
-		this.statedef.onnext?.(this, this.target, BSTEventType.Next);
-	}
-
-	protected tapeend() {
-		this.statedef.onend?.(this, this.target, BSTEventType.End);
-	}
-
-	public reset(): void {
-		this._tapehead = 0;
-		this._nudges = 0;
-		this.nudges2move = this.statedef.nudges2move;
-	}
-}
-
-export class sdef {
-	public id: string;
-	public parent: mdef;
-	public tape: Tape;
-	public nudges2move: number; // Number of runs before tapehead moves to next statedata
-	public auto_rewind_tape_after_end: boolean = true; // Automagically set the tapehead to index 0 when tapehead would go out of bound. Otherwise, will remain at end
-
-	public constructor(_id: string = '_', _partialdef?: Partial<sdef>) {
-		this.id = _id;
-		this.nudges2move ??= 1;
-		_partialdef && Object.assign(this, _partialdef);
-	}
-
-	public onrun: bsfthandle;
-	public onfinal: bsfthandle;
-	public onend: bsfthandle;
-	public onnext: bsfthandle;
-	public onenter: bsfthandle;
-	public onexit: bsfthandle;
-	public process_input: bsfthandle;
-
-	// Helper function to set all handlers
-	public setAllHandlers(handler: bsfthandle): void {
-		this.onrun = handler;
-		this.onfinal = handler;
-		this.onend = handler;
-		this.onnext = handler;
-		this.onenter = handler;
-		this.onexit = handler;
-		this.process_input = handler;
-	}
-}
-
-export class mdef {
-	public id: string;
-	public states: str2bssd;
-	public getStateDef(s_id: string): sdef { return this.states[s_id]; }
-
-	constructor(id?: string, _partialdef?: Partial<mdef>) {
-		this.id = id ?? DEFAULT_BST_ID;
-		this.states ??= {};
-		_partialdef && Object.assign(this, _partialdef);
-	}
-
-	public create(id: string): sdef {
-		if (this.states[id]) throw new Error(`State ${id} already exists for state machine!`);
-		let result = new sdef(id);
-		this.states[id] = result;
-		result.parent = this;
-		return result;
-	}
-
-	public add(...states: sdef[]): void {
-		for (let state of states) {
-			if (!state.id) throw new Error(`State is missing an id, while attempting to add it to this bst!`);
-			if (this.states[state.id]) throw new Error(`State ${state.id} already exists for state machine!`);
-			this.states[state.id] = state;
-			state.parent = this;
-		}
-	}
-
-	public append(_state: sdef, _id: string): void {
-		this.states[_id] = _state;
-	}
-
-	public remove(_id: string): void {
-		delete this.states[_id];
-	}
-}
-
-export class cmdef {
-	public id: string;
-	public machines: str2bstd;
-	public savedMachines: str2bstd;
-
-	constructor(id: string, _partialdef?: Partial<cmdef>) {
-		this.id = id;
-		this.machines = {};
-		_partialdef && Object.assign(this, _partialdef);
-		assert(this.id, `${this.constructor.name}.id should be defined!`);
-	}
-
-	public getBst(machine_id: string): mdef {
-		return this.machines[machine_id];
-	}
-
-	public addBst(machine_id?: string): mdef {
-		let m_id = machine_id ?? DEFAULT_BST_ID;
-		let result = new mdef(m_id);
-		this.machines[m_id] = result;
-
-		return result;
-	}
-
-	public removeBst(machine_id: string): mdef {
-		let result = this.machines[machine_id];
-		delete this.machines[machine_id];
-		this.machines[machine_id] = undefined;
-		return result;
-	}
-
-	public createState(state_id: string, machine_id: string = DEFAULT_BST_ID): sdef {
-		return this.machines[machine_id].create(state_id);
-	}
-
-	public add(...states: sdef[]): void {
-		this.addTo(DEFAULT_BST_ID, ...states);
-	}
-
-	public addTo(machine_id: string = DEFAULT_BST_ID, ...states: sdef[]): void {
-		!this.machines[machine_id] && this.addBst(machine_id);
-		this.machines[machine_id].add(...states);
-	}
-
-	public appendBst(machine_def: mdef): void {
-		this.machines[machine_def.id] = machine_def;
-	}
-
-	public appendState(_state: sdef, _id: string, machine_id: string = DEFAULT_BST_ID): void {
-		this.machines[machine_id].append(_state, _id);
-	}
-
-	public removeState(state_id: string, machine_id: string = DEFAULT_BST_ID): void {
-		this.machines[machine_id].remove(state_id);
-	}
-}
-
 interface ISpaceObject {
 	spaceid: string;
 	objects: GameObject[];
@@ -979,7 +537,7 @@ export class Space {
 	}
 
 	public sortObjectsByPriority(): void {
-		this.objects.sort((o1, o2) => (o2.z || 0) - (o1.z || 0));
+		this.objects = this.objects.sort((o1, o2) => (o2.z || 0) - (o1.z || 0));
 	}
 
 	public spawn(o: GameObject, pos?: Point, afterload?: boolean): void {
@@ -1014,13 +572,10 @@ export class Space {
 		this[id2obj] = {};
 	}
 }
-
-export var MachineDefinitions: Record<string, cmdef>;
-var MachineDefinitionBuilders: Record<string, () => Partial<cmdef>>;
 export type base_model_spaces = 'game_start' | 'default';
 
 export abstract class BaseModel {
-	public state: cmstate;
+	public state: mstate;
 	public [id2space]: id2spaceType;
 
 	public get objects(): GameObject[] {
@@ -1058,43 +613,16 @@ export abstract class BaseModel {
 		return foundObj ? true : false;
 	}
 
-	public static getCMachinedef(cmachineid: string): cmdef {
-		return MachineDefinitions[cmachineid];
+	public static getMachinedef(machineid: string): mdef {
+		return MachineDefinitions[machineid];
 	}
 
-	public static getMachinedef(cmachineid: string, machineid: string): mdef {
-		return MachineDefinitions[cmachineid]?.machines[machineid];
+	public static getMachineStatedef(machineid: string, stateid: string): sdef {
+		return MachineDefinitions[machineid].states[stateid];
 	}
 
-	public static getMachineStatedef(cmachineid: string, machineid: string, stateid: string): sdef {
-		return MachineDefinitions[cmachineid]?.machines[machineid].states[stateid];
-	}
 	public abstract get gamewidth(): number;
 	public abstract get gameheight(): number;
-
-	public static serializeObj(obj: any) {
-		let cache = [];
-		return JSON.stringify(obj, function (key, value) {
-			if (Array.isArray(value)) return value;
-			let type = typeof value;
-			switch (type) {
-				case 'object':
-					if (cache.includes(value)) return undefined;
-					cache.push(value);
-					let typename = value.constructor?.name ?? value.prototype?.name;
-					if (typename !== 'Object' && typename !== 'object') {
-						value.typename = typename;
-						if (value.prototype?.onsave) return value.prototype.onsave(value);
-						if (value.constructor?.onsave) return value.constructor.onsave(value);
-					}
-					return value;
-				case 'function':
-					return undefined;
-				default:
-					return value;
-			}
-		});
-	}
 
 	/** **DO NOT CHANGE THIS CODE! PLEASE USE STATE DEFS TO HANDLE GAME STARTUP LOGIC!**
 	 *
@@ -1109,17 +637,11 @@ export abstract class BaseModel {
 		this.paused = false;
 
 		this.addDefaultSpaces();
-		BaseModel.buildStates();
+		BaseModel.setup_fsmdef_library();
 	}
 
-	private static buildStates() {
-		MachineDefinitions = {};
-		for (let classname in MachineDefinitionBuilders) {
-			let machinesReturned = MachineDefinitionBuilders[classname]();
-			let machineBuilded: cmdef = undefined;
-			machinesReturned && (machineBuilded = new cmdef(classname, MachineDefinitionBuilders[classname]()));
-			machineBuilded && (MachineDefinitions[classname] = machineBuilded); // A class might choose not to create a new machine
-		}
+	private static setup_fsmdef_library() {
+		setup_fsmdef_library();
 	}
 
 	private addDefaultSpaces() {
@@ -1131,7 +653,7 @@ export abstract class BaseModel {
 	/**
 	 * Returns the constructor name of the specific derived class that extends this `BaseModel`.
 	 * Required during game initialization where @see {@link init_model_state_machines} is called.
-	 * @see {@link init_model_state_machines}
+	 * @see {@link this.init_model_state_machines}
 	 */
 	public abstract get constructor_name(): string;
 
@@ -1143,8 +665,7 @@ export abstract class BaseModel {
 	* @param {string} `derived_modelclass_constructor_name` - the constructor name of the derived modelclass (that derives from this BaseModel.
 	*/
 	public init_model_state_machines(derived_modelclass_constructor_name: string): this {
-		this.state = new cmstate(derived_modelclass_constructor_name, 'model');
-		this.state.populateMachines();
+		this.state = mstate.create(derived_modelclass_constructor_name, 'model');
 		this.state.to('game_start');
 
 		return this;
@@ -1183,13 +704,13 @@ export abstract class BaseModel {
 
 	static default_input_handler_for_allow_open_gamemenu(s: sstate, ik: BaseModel) {
 		if (Input.KC_F5) {
-			ik.state.machines['gamemenu'].to('open');
+			// ik.state.machines['gamemenu'].to('open');
 		}
 	}
 
 	static default_input_handler_for_allow_close_gamemenu(s: sstate, ik: BaseModel) {
 		if (Input.KC_F5) {
-			ik.state.machines['gamemenu'].to('closed');
+			// ik.state.machines['gamemenu'].to('closed');
 		}
 	}
 
@@ -1240,7 +761,7 @@ export abstract class BaseModel {
 
 		let savegame = createSavegame();
 		global.game.paused = false;
-		return BaseModel.serializeObj(savegame);
+		return serializeObj(savegame);
 	}
 
 	public filter(predicate: (value: GameObject, index: number, array: GameObject[], thisArg?: any) => unknown): GameObject[] {
@@ -1447,7 +968,7 @@ export class GameObject {
 	public size?: Size;
 
 	public get wallHitarea(): Area { return this.hitarea; }
-	public state: cmstate;
+	public state: mstate;
 	public isWall?: boolean;
 
 	protected _hitarea?: Area;
@@ -1543,11 +1064,14 @@ export class GameObject {
 		return result;
 	}
 
-	constructor(_id?: string) {
+	/**
+	 * @param _id The id of the newly created object. If not given, defaults to generated id. @see {@link generateId}.
+	 * @param _fsm_id The id of the state machine that will be created for this object. Defaults to `this.constructor.name`. If there is no state machine with the given (default) name, the state machine factory will ensure that an "empty" state machine is created. @see {@link mstate.create}.
+	 */
+	constructor(_id?: string, _fsm_id?: string) {
 		this.id = _id ?? GameObject.generateId();
 		this.hittable = true;
-		this.state = new cmstate(this.constructor.name, this.id);
-		this.state.populateMachines();
+		this.state = mstate.create(_fsm_id ?? this.constructor.name, this.id);
 	}
 
 	static objectCollide(o1: GameObject, o2: GameObject): boolean {
@@ -1602,7 +1126,7 @@ export class GameObject {
 	*  transforming the game coordinates to canvas coordinates and that requires scaling
 	*  to be taken into account.
 	*/
-	public insideScaled(p: Point): boolean {
+	public insideScaled(p: Point): Point {
 		let o1 = this;
 
 		let o1p = multiplyPoint(o1.pos, global.view.scale);
@@ -1613,10 +1137,14 @@ export class GameObject {
 		else if (o1.size) {
 			o1a = <Area>{ start: newPoint(0, 0), end: multiplyPoint(o1.size, global.view.scale) };
 		}
-		else return false;
+		else return undefined;
 
-		return o1p.x + o1a.end.x >= p.x && o1p.x + o1a.start.x <= p.x &&
-			o1p.y + o1a.end.y >= p.y && o1p.y + o1a.start.y <= p.y;
+		if (o1p.x + o1a.end.x >= p.x && o1p.x + o1a.start.x <= p.x &&
+			o1p.y + o1a.end.y >= p.y && o1p.y + o1a.start.y <= p.y) {
+			let offsetToP = newPoint(p.x - o1p.x, p.y - o1p.y);
+			return divPoint(offsetToP, global.view.scale);
+		}
+		return undefined;
 	}
 
 	public setx(newx: number) {
@@ -1682,10 +1210,6 @@ export function leavingScreenHandler_prohibit(ik: GameObject, d: Direction, old_
 	}
 }
 
-Reviver.constructors = Reviver.constructors ?? {};
-Reviver.onRevives = Reviver.onRevives ?? {};
-Reviver.onSave = Reviver.onSave ?? {};
-
 @insavegame
 export abstract class Sprite extends GameObject {
 	public flippedH: boolean;
@@ -1717,58 +1241,3 @@ export abstract class Sprite extends GameObject {
 
 	override paint = paintSprite;
 }
-
-// https://stackoverflow.com/questions/8111446/turning-json-strings-into-objects-with-methods
-// A generic "smart reviver" function.
-// Looks for object values with a `ctor` property and
-// a `data` property. If it finds them, and finds a matching
-// constructor that has a `fromJSON` property on it, it hands
-// off to that `fromJSON` fuunction, passing in the value.
-export function Reviver(key: any, value: any) {
-	if (value === null || value === undefined) return value;
-
-	if (Array.isArray(value)) {
-		return value;
-	}
-
-	if (typeof value === "object" &&
-		typeof value.typename === "string") {
-		let theConstructor = Reviver.constructors[value.typename];
-		assert(theConstructor, `No constructor known for object of type '${value.typename}'. Did you forget to add '@insavegame' to the class definition?`);
-		let result = Object.assign(new theConstructor(), value);
-		let onRevive = Reviver.onRevives[value.typename];
-		return onRevive ? onRevive(result, this) : result;
-	}
-	return value;
-}
-
-// target: the class that the member is on.
-// name: the name of the member in the class.
-// descriptor: the member descriptor; This is essentially the object that would have been passed to Object.defineProperty.
-export function onsave(target: any, name: any, descriptor: any): any {
-	target.onsave = descriptor.value;
-}
-
-// target: the class that the member is on.
-// name: the name of the member in the class.
-// descriptor: the member descriptor; This is essentially the object that would have been passed to Object.defineProperty.
-export function statedef_builder(target: any, name: any, descriptor: any): any {
-	MachineDefinitionBuilders ??= {};
-	MachineDefinitionBuilders[target.name] = descriptor.value;
-}
-
-// target: the class that the member is on.
-// name: the name of the member in the class.
-// descriptor: the member descriptor; This is essentially the object that would have been passed to Object.defineProperty.
-export function onrevive(target: any, name: any, descriptor: any): any {
-	Reviver.onRevives ??= {};
-	Reviver.onRevives[target.name] = descriptor.value;
-}
-
-export function insavegame<TFunction extends Function>(target: any, toJSON?: () => any, fromJSON?: (value: any, value_data: any) => any): any {
-	Reviver.constructors ??= {};
-	Reviver.constructors[target.name] = target;
-	return target;
-}
-
-export { };

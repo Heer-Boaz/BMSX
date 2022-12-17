@@ -169,7 +169,7 @@ export class GameMenu extends GameObject {
                     SM.play(AudioId.selectie);
                     switch (this.selectedItem) {
                         case MenuItem.ReturnToGame:
-                            global.model.state.machines['gamemenu'].pop();
+                            global.model.state['gamemenu'].pop();
                             // (controller as Controller).CloseGameMenu();
                             break;
                         case MenuItem.ChangeOptions:

@@ -1,19 +1,21 @@
-import { cmstate, GameObject, newPoint, sstate, mstate, MachineDefinitions } from './bmsx';
-import { SM } from './soundmaster';
+import { MachineDefinitions } from './bfsm';
+import { GameObject, newPoint, Point } from './bmsx';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
 
 let draggedObj: GameObject;
+let draggedObjCursorOffset: Point;
 let dragSrcEl: HTMLElement;
 let shiftX: number;
 let shiftY: number;
+let prevPausedState: boolean; // Remember the paused-state before a dialog was opened. This allows to return to the original "paused" state after closing debug dialogs
 
 export function handleDebugMouseDown(e: MouseEvent): void {
 	if (!e.shiftKey) return; // Only start dragging when shift is pressed
 
 	if (!draggedObj) {
-		let gameobject_at_cursor = getGameObjectAtCursor(e);
-		if (gameobject_at_cursor) {
-			startDragGameObject(gameobject_at_cursor);
+		let { objUnderCursor, offsetToCursor } = getGameObjectAtCursor(e);
+		if (objUnderCursor) {
+			startDragGameObject(objUnderCursor, offsetToCursor);
 		}
 	}
 	else {
@@ -27,8 +29,8 @@ export function handleDebugMouseMove(e: MouseEvent): void {
 		let y = e.offsetY / global.view.scale;
 
 		if (draggedObj.pos) {
-			draggedObj.pos.x = Math.trunc(x);
-			draggedObj.pos.y = Math.trunc(y);
+			draggedObj.pos.x = Math.trunc(x) - draggedObjCursorOffset.x;
+			draggedObj.pos.y = Math.trunc(y) - draggedObjCursorOffset.y;
 		}
 	}
 }
@@ -42,8 +44,9 @@ export function handleDebugMouseOut(e: MouseEvent): void {
 	draggedObj = null;
 }
 
-function startDragGameObject(gameobject_at_cursor: GameObject): void {
+function startDragGameObject(gameobject_at_cursor: GameObject, offsetToCursor: Point): void {
 	draggedObj = gameobject_at_cursor;
+	draggedObjCursorOffset = newPoint(Math.trunc(offsetToCursor.x), Math.trunc(offsetToCursor.y));
 }
 
 export function handleContextMenu(e: MouseEvent): void {
@@ -79,23 +82,6 @@ function addContent(addContentTo: HTMLElement, elementType: keyof HTMLElementTag
 function addElement(addElementTo: HTMLElement, contentAsElement: HTMLElement) {
 	addElementTo.insertBefore(contentAsElement, null);
 }
-
-// function createStateTableElement(addContentTo: HTMLElement, state: cmstate, ignoreProps?: string[]): HTMLElement {
-// 	let table = addContent(addContentTo, 'table', null);
-// 	let headerRow = addContent(table, 'tr', null);
-// 	addContent(headerRow, 'th', 'Prop');
-// 	addContent(headerRow, 'th', 'Value');
-
-// 	let row = addContent(table, 'tr', null);
-// 	addContent(row, 'td', `State machine id`);
-// 	addContent(row, 'td', `${state.id}`);
-
-// 	row = addContent(table, 'tr', null);
-// 	addContent(row, 'td', `paused`);
-// 	addContent(row, 'td', `${state.paused}`);
-
-// 	return table;
-// }
 
 const OBJECT_TABLE_PROPS_TO_REDIRECT_NAMES = ['state', 'objects', 'spaces'];
 const OBJECT_TABLE_REDIRECT_BY_INNER_OBJECT = false;
@@ -159,10 +145,6 @@ function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement
 									case 'boolean': convertedNewValue = (newValue.toLowerCase() === 'true' || newValue === '1' || newValue.toLowerCase() === 'y'); break;
 									case 'bigint': convertedNewValue = BigInt(newValue); break;
 									case 'number': convertedNewValue = Number(newValue); break;
-									// case 'function':
-									// 	let stringToEval = `() => { eval('${newValue}').call(obj); }`;
-									// 	convertedNewValue = eval(stringToEval);
-									// 	break;
 									default: console.warn(`Property ${key} cannot be updated, because Boaz still needs to develop an update solution for type '${type}'.`);
 								}
 								if (convertedNewValue !== null) {
@@ -181,8 +163,6 @@ function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement
 					valueCell.classList.add('immutable-propvalue');
 					break;
 			}
-
-			// valueCell.contentEditable = 'true';
 		}
 	}
 
@@ -198,7 +178,7 @@ function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement
 	else {
 		let arr = obj as [];
 		for (let i = 0; i < arr.length; i++) {
-			addTableRowForProperty(`${i}`,arr[i]);
+			addTableRowForProperty(`${i}`, arr[i]);
 		}
 	}
 
@@ -307,6 +287,7 @@ function createDebugDialog(title?: string, previousDialog: HTMLElement = null): 
 			document.body.removeChild(previous);
 			previous = (previous as any).previous;
 		}
+		global.game.paused = prevPausedState; // Return to the original paused state
 	};
 
 	const contentDiv = document.createElement('div');
@@ -336,7 +317,10 @@ function createDebugDialog(title?: string, previousDialog: HTMLElement = null): 
 
 export function handleOpenObjectMenu(e: UIEvent, previous: HTMLElement = null): void {
 	if (e && e.type !== 'keydown') return;
-	global.game.paused = true;
+	if (!previous) {
+		prevPausedState = global.game.paused; // Remember the original paused-state so that we can return to that state
+		global.game.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
+	}
 
 	const [dialogDiv, contentDiv] = createDebugDialog('Objects', previous);
 
@@ -353,9 +337,6 @@ export function handleOpenObjectMenu(e: UIEvent, previous: HTMLElement = null): 
 
 		row.onclick = (_) => {
 			openObjectDetailMenu(o, o.id, dialogDiv);
-			// const [objDialogDiv, objDialogContentDiv] = createDebugDialog(o.id, dialogDiv);
-			// createObjectTableElement(objDialogDiv, objDialogContentDiv, o, o.id, ['objects']);
-			// document.body.insertBefore(objDialogDiv, null);
 		};
 	});
 
@@ -364,7 +345,8 @@ export function handleOpenObjectMenu(e: UIEvent, previous: HTMLElement = null): 
 
 export function handleOpenDebugMenu(e: UIEvent): void {
 	if (e && e.type !== 'keydown') return;
-	global.game.paused = true;
+	prevPausedState = global.game.paused; // Remember the original paused-state so that we can return to that state
+	global.game.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
 
 	const [dialogDiv, contentDiv] = createDebugDialog();
 
@@ -393,15 +375,21 @@ export function handleOpenDebugMenu(e: UIEvent): void {
 
 export function handleOpenModelMenu(e: UIEvent, previous: HTMLElement): void {
 	if (e && e.type !== 'keydown') return;
-	global.game.paused = true;
+	if (!previous) {
+		prevPausedState = global.game.paused; // Remember the original paused-state so that we can return to that state
+		global.game.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
+		draggedObj = null; // Make sure that we stop dragging any object
+	}
 
 	openObjectDetailMenu(global.model, 'The Model', previous);
-	// const [objDialogDiv, objDialogContentDiv] = createDebugDialog('Model Menu', previous);
-	// createObjectTableElement(objDialogDiv, objDialogContentDiv, global.model, 'The Model', ['objects']);
-	// document.body.insertBefore(objDialogDiv, null);
 }
 
 function openObjectDetailMenu(obj: any, title: string, previous: HTMLElement): void {
+	if (!previous) {
+		prevPausedState = global.game.paused; // Remember the original paused-state so that we can return to that state
+		global.game.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
+	}
+
 	const [dialogDiv, contentDiv] = createDebugDialog(title, previous);
 
 	createObjectTableElement(dialogDiv, contentDiv, obj, title, ['objects']);
@@ -411,22 +399,23 @@ function openObjectDetailMenu(obj: any, title: string, previous: HTMLElement): v
 
 export function handleDebugClick(e: MouseEvent): void {
 	if (e.button === 0 && !e.shiftKey) { // Only open when main button is clicked
-		let gameobject_at_cursor = getGameObjectAtCursor(e);
-
-		if (gameobject_at_cursor) {
-			global.game.paused = true; // Pause the game automatically if an object was found at this location
-			openObjectDetailMenu(gameobject_at_cursor, gameobject_at_cursor.id, null);
+		let { objUnderCursor, offsetToCursor } = getGameObjectAtCursor(e);
+		if (objUnderCursor) {
+			openObjectDetailMenu(objUnderCursor, objUnderCursor.id, null);
 		}
 	}
-	// else {
-	// 	console.log(`Debugger - No object @${x}, ${y}.`);
-	// }
 }
 
-function getGameObjectAtCursor(e: MouseEvent) {
-	let x = e.offsetX;// / global.view.scale;
-	let y = e.offsetY;// / global.view.scale;
+function getGameObjectAtCursor(e: MouseEvent): { objUnderCursor: GameObject; offsetToCursor: Point; } {
+	let x = e.offsetX;
+	let y = e.offsetY;
 	let p = newPoint(x, y);
 
-	return global.model.objects.find(o => o.hitarea && o.insideScaled(p));
+	let objsUnderCursor: GameObject[] = global.model.objects.filter(o => o.hitarea && o.insideScaled(p));
+	if (objsUnderCursor && objsUnderCursor.length > 0) {
+		// Choose obj with highest z-value
+		let objUnderCursorWithHighestZ = objsUnderCursor.reduce((o1, o2) => o1.z > o2.z ? o1 : o2);
+		return { objUnderCursor: objUnderCursorWithHighestZ, offsetToCursor: objUnderCursorWithHighestZ.insideScaled(p) };
+	}
+	return { objUnderCursor: undefined, offsetToCursor: undefined };;
 }

@@ -1,14 +1,16 @@
 import { RomLoadResult } from '../bmsx/rompack';
-import { Game, BaseModel, GameObject, Sprite, insavegame, cmdef, sdef, statedef_builder, sstate, mdef, cmstate, newPoint, Direction, newSize, Point, newArea } from '../bmsx/bmsx';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
 import { Input } from '../bmsx/input';
+import { mdef, sstate, sdef } from '../bmsx/bfsm';
+import { Sprite, statedef_builder, newArea, Point, BaseModel, newPoint, GameObject, Direction, Game, newSize } from '../bmsx/bmsx';
+import { insavegame } from '../bmsx/gamereviver';
 
 @insavegame
 class bclass extends Sprite {
     @statedef_builder
-    public static _states(classname: string): cmdef {
+    public static bouw(): Partial<mdef> {
         let blarun = (s: sstate, me: bclass) => {
             if (Input.KD_UP) {
                 me.pos.y -= 2;
@@ -41,22 +43,20 @@ class bclass extends Sprite {
             // Input.KC_BTN4 && debugtest2();
         };
 
-        return new cmdef(classname, {
-            machines: {
-                master: new mdef('master', {
-                    states: {
-                        bla: new sdef('bla', {
-                            onrun: blarun,
-                            onenter: (_, me: bclass) => { me.imgid = BitmapId.b; },
-                        }),
-                        blap: new sdef('blap', {
-                            onrun: blarun,
-                            onenter: (_, me: bclass) => { me.imgid = BitmapId.b2; },
-                        }),
-                    }
-                })
+        return {
+            states: {
+                game_start: new sdef('game_start', {
+                }),
+                bla: new sdef('bla', {
+                    onrun: blarun,
+                    onenter: (_, me: bclass) => { me.imgid = BitmapId.b; },
+                }),
+                blap: new sdef('blap', {
+                    onrun: blarun,
+                    onenter: (_, me: bclass) => { me.imgid = BitmapId.b2; },
+                }),
             }
-        });
+        };
     }
 
     constructor() {
@@ -72,29 +72,25 @@ class bclass extends Sprite {
 };
 
 const savestring = Symbol('savestring');
-// @insavegame
+@insavegame
 class gamemodel extends BaseModel {
     public [savestring]: string;
 
     @statedef_builder
-    public static buildModelStates(classname: string): cmdef {
-        return new cmdef(classname, {
-            machines: {
-                master: new mdef('default', {
-                    states: {
-                        game_start: new sdef('game_start', {
-                            onrun(s: sstate) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
-                                let ik = global.model as gamemodel;
-                                ik.state.to('default');
-                            }
-                        }),
-                        default: new sdef('default', {
-                            onrun: BaseModel.defaultrun,
-                        }),
+    public static bouw(): Partial<mdef> {
+        return {
+            states: {
+                game_start: new sdef('game_start', {
+                    onrun(s: sstate) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
+                        let ik = global.model as gamemodel;
+                        ik.state.to('default');
                     }
                 }),
+                default: new sdef('default', {
+                    onrun: BaseModel.defaultrun,
+                }),
             }
-        });
+        };
     }
 
     // DO NOT CHANGE THIS CODE! PLEASE USE STATE DEFS TO HANDLE GAME STARTUP LOGIC!
@@ -105,14 +101,8 @@ class gamemodel extends BaseModel {
         super();
     }
 
-	// Build and populate states. Can only be executed once main game objects and view have been created
-	// DO NOT CHANGE THIS CODE! PLEASE USE STATE DEFS TO HANDLE GAME STARTUP LOGIC!
-    public init_model_state_machines(): this {
-        this.state = new cmstate(this.constructor.name, '_');
-        this.state.populateMachines();
-        this.state.to('game_start');
-
-        return this;
+    public get constructor_name(): string {
+        return this.constructor.name;
     }
 
     public override do_one_time_game_init(): this {

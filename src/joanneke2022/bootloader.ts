@@ -1,7 +1,7 @@
-import { BFont, FlattenedPropKeys, id2space } from './../bmsx/bmsx';
+import { BFont, id2space } from './../bmsx/bmsx';
 import { MSX2ScreenHeight, MSX2ScreenWidth } from './../bmsx/msx';
 import { RomLoadResult } from '../bmsx/rompack';
-import { Game, BaseModel, GameObject, Sprite, sdef, mdef, leavingScreenHandler_prohibit as prohibitLeavingScreenHandler, statedef_builder, sstate, newPoint, Direction, newSize, newArea, Point, randomInt, copyPoint, Space, base_model_spaces } from '../bmsx/bmsx';
+import { Game, BaseModel, GameObject, Sprite, leavingScreenHandler_prohibit as prohibitLeavingScreenHandler, newPoint, Direction, newSize, newArea, Point, randomInt, copyPoint, base_model_spaces } from '../bmsx/bmsx';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
@@ -9,12 +9,12 @@ import { Input } from '../bmsx/input';
 import { paintSprite } from '../bmsx/view';
 import { TextWriter } from '../bmsx/textwriter';
 import { GameMenu } from './gamemenu';
+import { FlattenedPropKeys, sdef, sstate, mdef, statedef_builder, build_fsm } from '../bmsx/bfsm';
 
 const TIME_TO_SHINE = 90;
 
 type model_spaces = base_model_spaces | 'uitleg' | 'evaluatie' | 'hoera!';
 type model_states = FlattenedPropKeys<typeof gamemodel.states>;
-type model_machines = keyof typeof gamemodel.machines;
 
 class gamemodel extends BaseModel {
 	public time_to_shine: number;
@@ -46,33 +46,9 @@ class gamemodel extends BaseModel {
 		return total;
 	}
 
-	static get states() {
+	public static get states() {
 		return {
-			gamemenu: {
-				closed: new sdef('closed', {
-					process_input: BaseModel.default_input_handler_for_allow_open_gamemenu,
-				}),
-				open: new sdef('open', {
-					process_input: BaseModel.default_input_handler_for_allow_close_gamemenu,
-					onenter(s: sstate, ik: gamemodel) {
-						let menu = new GameMenu();
-						ik.spawn(menu);
-						menu.Open();
-						ik.state.machines['master' satisfies model_machines].paused = true;
-					},
-					onrun(s: sstate, ik: gamemodel) {
-						ik.get<GameMenu>('gamemenu').run();
-					},
-					onexit(s: sstate, ik: gamemodel) {
-						let menu = ik.get<GameMenu>('gamemenu');
-						ik.state.machines['master' satisfies model_machines].paused = false;
-
-						menu.Close();
-						ik.exile(menu);
-					},
-				}),
-			},
-			master: {
+			states: {
 				game_start: new sdef('game_start', {
 					onrun(s: sstate, ik: gamemodel) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
 						ik.state.to('uitleg' satisfies model_states);
@@ -131,26 +107,35 @@ class gamemodel extends BaseModel {
 					},
 					process_input: BaseModel.default_input_handler,
 				}),
-			},
-		};
-	}
+				closed: new sdef('closed', {
+					process_input: BaseModel.default_input_handler_for_allow_open_gamemenu,
+				}),
+				open: new sdef('open', {
+					process_input: BaseModel.default_input_handler_for_allow_close_gamemenu,
+					onenter(s: sstate, ik: gamemodel) {
+						let menu = new GameMenu();
+						ik.spawn(menu);
+						menu.Open();
+						// ik.state.['master' satisfies model_machines].paused = true;
+					},
+					onrun(s: sstate, ik: gamemodel) {
+						ik.get<GameMenu>('gamemenu').run();
+					},
+					onexit(s: sstate, ik: gamemodel) {
+						let menu = ik.get<GameMenu>('gamemenu');
+						// ik.state.machines['master' satisfies model_machines].paused = false;
 
-	static get machines() {
-		return {
-			master: new mdef('master', {
-				states: gamemodel.states.master,
-			}),
-			gamemenu: new mdef('gamemenu', {
-				states: gamemodel.states.gamemenu,
-			}),
+						menu.Close();
+						ik.exile(menu);
+					},
+				}),
+			}
 		};
 	}
 
 	@statedef_builder
 	public static bouw() {
-		return {
-			machines: gamemodel.machines,
-		};
+		return gamemodel.states;
 	}
 
 	constructor() {
@@ -162,7 +147,7 @@ class gamemodel extends BaseModel {
 	}
 
 	public do_one_time_game_init(): this {
-		this.state.machines['gamemenu' satisfies model_machines].to('closed' satisfies model_states);
+		// this.state.machines['gamemenu' satisfies model_machines].to('closed' satisfies model_states);
 		this.addSpace('hoera!' satisfies model_spaces);
 		this[id2space]['hoera!'].spawn(new hoeraStuff());
 
@@ -247,42 +232,38 @@ class uitlegStuff extends Sprite {
 	@statedef_builder
 	public static bouw() {
 		return {
-			machines: {
-				master: new mdef('master', {
-					states: {
-						uitleg: new sdef('uitleg', {
-							nudges2move: 300,
-							tape: <Array<number>>[
-								0,
-								1,
-								2,
-								3,
-								4,
-								5,
-								6,
-							],
-							onenter(s: sstate, ik: uitlegStuff) {
-								s.reset();
-								if (_model)
-									_model.uitleg_tekst_dinges = s.current;
-							},
-							onrun(s: sstate, ik: uitlegStuff) {
-								++s.nudges;
-								if (Input.KC_BTN1) {
-									++s.head; // Skip to next tape entry. Note that this will reset nudges and stuff
-								}
-							},
-							onnext(s: sstate, ik: uitlegStuff) {
-								if (_model)
-									_model.uitleg_tekst_dinges = s.current;
-							},
-							onend(s: sstate, ik: uitlegStuff) {
-								if (_model)
-									_model.state.to('default');
-							},
-						}),
-					}
-				})
+			states: {
+				uitleg: new sdef('uitleg', {
+					nudges2move: 300,
+					tape: <Array<number>>[
+						0,
+						1,
+						2,
+						3,
+						4,
+						5,
+						6,
+					],
+					onenter(s: sstate, ik: uitlegStuff) {
+						s.reset();
+						if (_model)
+							_model.uitleg_tekst_dinges = s.current;
+					},
+					onrun(s: sstate, ik: uitlegStuff) {
+						++s.nudges;
+						if (Input.KC_BTN1) {
+							++s.head; // Skip to next tape entry. Note that this will reset nudges and stuff
+						}
+					},
+					onnext(s: sstate, ik: uitlegStuff) {
+						if (_model)
+							_model.uitleg_tekst_dinges = s.current;
+					},
+					onend(s: sstate, ik: uitlegStuff) {
+						if (_model)
+							_model.state.to('default');
+					},
+				}),
 			}
 		};
 	}
@@ -369,32 +350,28 @@ class evaluatieStuff extends Sprite {
 };
 
 class hud extends GameObject {
-	@statedef_builder
+	@build_fsm('test')
 	public static bouw() {
 		return {
-			machines: {
-				master: new mdef('master', {
-					states: {
-						default: new sdef('default', {
-							// nudges2move: 50,
-							onenter(s: sstate, ik: hud) {
-								s.reset();
-								ik.visible = true;
-							},
-							onrun(s: sstate, ik: hud) {
-								// ++s.nudges;
-							},
-							onnext(s: sstate, ik: hud) {
-							},
-						}),
-					}
-				})
+			states: {
+				default: new sdef('default', {
+					// nudges2move: 50,
+					onenter(s: sstate, ik: hud) {
+						s.reset();
+						ik.visible = true;
+					},
+					onrun(s: sstate, ik: hud) {
+						// ++s.nudges;
+					},
+					onnext(s: sstate, ik: hud) {
+					},
+				}),
 			}
 		};
 	}
 
 	constructor() {
-		super();
+		super(undefined, 'test');
 	}
 
 	override onspawn(spawningPos?: Point): void {
@@ -403,47 +380,43 @@ class hud extends GameObject {
 
 	override paint = (offset?: Point) => {
 		TextWriter.drawText(0, 0, `Time to shine: ${_model.time_to_shine}`);
-	}
+	};
 }
 
 class stoom extends Sprite {
 	@statedef_builder
 	public static bouw() {
 		return {
-			machines: {
-				master: new mdef('master', {
-					states: {
-						doepluim: new sdef('doepluim', {
-							tape: [
-								BitmapId.pluim1,
-								BitmapId.pluim2,
-								BitmapId.pluim3,
-								BitmapId.pluim4,
-								BitmapId.pluim5,
-								BitmapId.pluim6,
-								BitmapId.pluim7,
-								BitmapId.pluim8,
-								BitmapId.pluim9,
-								BitmapId.pluimx,
-								BitmapId.pluimx,
-							],
-							nudges2move: 2,
-							onenter: (s: sstate, ik: stoom): void => {
-								s.reset();
-								ik.imgid = s.current;
-							},
-							onrun: (s: sstate, ik: stoom): void => {
-								++s.nudges;
-							},
-							onnext: (s: sstate, ik: stoom): void => {
-								ik.imgid = s.current;
-							},
-							onend: (_, ik: stoom): void => {
-								ik.markForDisposure();
-							}
-						}),
+			states: {
+				doepluim: new sdef('doepluim', {
+					tape: [
+						BitmapId.pluim1,
+						BitmapId.pluim2,
+						BitmapId.pluim3,
+						BitmapId.pluim4,
+						BitmapId.pluim5,
+						BitmapId.pluim6,
+						BitmapId.pluim7,
+						BitmapId.pluim8,
+						BitmapId.pluim9,
+						BitmapId.pluimx,
+						BitmapId.pluimx,
+					],
+					nudges2move: 2,
+					onenter: (s: sstate, ik: stoom): void => {
+						s.reset();
+						ik.imgid = s.current;
+					},
+					onrun: (s: sstate, ik: stoom): void => {
+						++s.nudges;
+					},
+					onnext: (s: sstate, ik: stoom): void => {
+						ik.imgid = s.current;
+					},
+					onend: (_, ik: stoom): void => {
+						ik.markForDisposure();
 					}
-				})
+				}),
 			}
 		};
 	}
@@ -502,103 +475,99 @@ class draaischijf extends Sprite {
 	@statedef_builder
 	public static bouw() {
 		return {
-			machines: {
-				master: new mdef('master', {
-					states: {
-						idle: new sdef('idle', {
-							onenter: (s: sstate, ik: draaischijf): void => {
-								s.reset();
-								ik.imgid = BitmapId.slijpschijf1;
-							},
-							onrun(s: sstate, ik: draaischijf) {
-								// ik.handle_input_idle_state();
-							},
-							process_input: draaischijf.handle_input_idle_state,
-						}),
-						slijpen_opstart: new sdef('slijpen_opstart', {
-							nudges2move: 5,
-							auto_rewind_tape_after_end: false,
-							tape: [
-								BitmapId.slijpschijf2,
-								BitmapId.slijpschijf1,
-								BitmapId.slijpschijf2,
-								BitmapId.slijpschijf1,
-								BitmapId.slijpschijf2,
-								BitmapId.slijpschijf1,
-								BitmapId.slijpschijf2,
-								BitmapId.slijpschijf1,
-								BitmapId.slijpschijf2,
-							],
-							onenter(s: sstate, ik: draaischijf) {
-								s.reset();
-								ik.imgid = s.current;
-							},
-							process_input: draaischijf.handle_input_slijp_opstart_state,
-							onrun(s: sstate, ik: draaischijf) {
-								++s.nudges;
-							},
-							onend(s: sstate, ik: draaischijf) {
-								ik.state.to('slijpen');
-							},
-							onnext(s: sstate, ik: draaischijf) {
-								ik.imgid = s.current;
-							},
-						}),
-						slijpen: new sdef('slijpen', {
-							nudges2move: 10,
-							tape: [
-								BitmapId.slijpschijf3,
-								BitmapId.slijpschijf4,
-							],
-							onenter(s: sstate, ik: draaischijf) {
-								s.reset();
-								ik.imgid = s.current;
-							},
-							process_input: draaischijf.handle_input_slijp_state,
-							onrun(s: sstate, ik: draaischijf) {
-								++s.nudges;
-							},
-							// onend(s: sstate, ik: draaischijf) {
+			states: {
+				idle: new sdef('idle', {
+					onenter: (s: sstate, ik: draaischijf): void => {
+						s.reset();
+						ik.imgid = BitmapId.slijpschijf1;
+					},
+					onrun(s: sstate, ik: draaischijf) {
+						// ik.handle_input_idle_state();
+					},
+					process_input: draaischijf.handle_input_idle_state,
+				}),
+				slijpen_opstart: new sdef('slijpen_opstart', {
+					nudges2move: 5,
+					auto_rewind_tape_after_end: false,
+					tape: [
+						BitmapId.slijpschijf2,
+						BitmapId.slijpschijf1,
+						BitmapId.slijpschijf2,
+						BitmapId.slijpschijf1,
+						BitmapId.slijpschijf2,
+						BitmapId.slijpschijf1,
+						BitmapId.slijpschijf2,
+						BitmapId.slijpschijf1,
+						BitmapId.slijpschijf2,
+					],
+					onenter(s: sstate, ik: draaischijf) {
+						s.reset();
+						ik.imgid = s.current;
+					},
+					process_input: draaischijf.handle_input_slijp_opstart_state,
+					onrun(s: sstate, ik: draaischijf) {
+						++s.nudges;
+					},
+					onend(s: sstate, ik: draaischijf) {
+						ik.state.to('slijpen');
+					},
+					onnext(s: sstate, ik: draaischijf) {
+						ik.imgid = s.current;
+					},
+				}),
+				slijpen: new sdef('slijpen', {
+					nudges2move: 10,
+					tape: [
+						BitmapId.slijpschijf3,
+						BitmapId.slijpschijf4,
+					],
+					onenter(s: sstate, ik: draaischijf) {
+						s.reset();
+						ik.imgid = s.current;
+					},
+					process_input: draaischijf.handle_input_slijp_state,
+					onrun(s: sstate, ik: draaischijf) {
+						++s.nudges;
+					},
+					// onend(s: sstate, ik: draaischijf) {
 
-							// },
-							onnext(s: sstate, ik: draaischijf) {
-								ik.imgid = s.current;
-								if (s.head === 0) ++ik.pos.y;
-								else --ik.pos.y;
-								_model.spawn(new stoom(), newPoint(randomInt(ik.pos.x, ik.pos.x + ik.size.x), randomInt(ik.pos.y, ik.pos.y + ik.size.y)));
-							},
-						}),
-						slijpen_afkoel: new sdef('slijpen_afkoel', {
-							nudges2move: 5,
-							auto_rewind_tape_after_end: false,
-							tape: [
-								BitmapId.slijpschijf2,
-								BitmapId.slijpschijf1,
-								BitmapId.slijpschijf2,
-								BitmapId.slijpschijf1,
-								BitmapId.slijpschijf2,
-								BitmapId.slijpschijf1,
-								BitmapId.slijpschijf2,
-								BitmapId.slijpschijf1,
-								BitmapId.slijpschijf2,
-							],
-							onenter(s: sstate, ik: draaischijf) {
-								s.reset();
-								ik.imgid = s.current;
-							},
-							process_input: draaischijf.handle_input_slijp_afkoel_state,
-							onrun(s: sstate, ik: draaischijf) {
-								++s.nudges;
-							},
-							onend(s: sstate, ik: draaischijf) {
-								ik.state.to('idle');
-							},
-							onnext(s: sstate, ik: draaischijf) {
-								ik.imgid = s.current;
-							},
-						}),
-					}
-				})
+					// },
+					onnext(s: sstate, ik: draaischijf) {
+						ik.imgid = s.current;
+						if (s.head === 0) ++ik.pos.y;
+						else --ik.pos.y;
+						_model.spawn(new stoom(), newPoint(randomInt(ik.pos.x, ik.pos.x + ik.size.x), randomInt(ik.pos.y, ik.pos.y + ik.size.y)));
+					},
+				}),
+				slijpen_afkoel: new sdef('slijpen_afkoel', {
+					nudges2move: 5,
+					auto_rewind_tape_after_end: false,
+					tape: [
+						BitmapId.slijpschijf2,
+						BitmapId.slijpschijf1,
+						BitmapId.slijpschijf2,
+						BitmapId.slijpschijf1,
+						BitmapId.slijpschijf2,
+						BitmapId.slijpschijf1,
+						BitmapId.slijpschijf2,
+						BitmapId.slijpschijf1,
+						BitmapId.slijpschijf2,
+					],
+					onenter(s: sstate, ik: draaischijf) {
+						s.reset();
+						ik.imgid = s.current;
+					},
+					process_input: draaischijf.handle_input_slijp_afkoel_state,
+					onrun(s: sstate, ik: draaischijf) {
+						++s.nudges;
+					},
+					onend(s: sstate, ik: draaischijf) {
+						ik.state.to('idle');
+					},
+					onnext(s: sstate, ik: draaischijf) {
+						ik.imgid = s.current;
+					},
+				}),
 			}
 		};
 	}
@@ -708,7 +677,7 @@ abstract class onvolmaaktheid extends Sprite {
 	}
 
 	public polijst_nudge = (): void => {
-		++this.state.getCurrentState().nudges;
+		++this.state.current.nudges;
 	};
 
 	override paint = (offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }) => {
@@ -723,53 +692,49 @@ class burn extends onvolmaaktheid {
 	@statedef_builder
 	public static bouw() {
 		return {
-			machines: {
-				master: new mdef('master', {
-					states: {
-						wees_een_burn: new sdef('wees_een_burn', {
-							nudges2move: 20,
-							auto_rewind_tape_after_end: false,
-							tape: [
-								BitmapId.burn1,
-								BitmapId.burn2,
-								BitmapId.burn3,
-								BitmapId.burn4,
-								BitmapId.burn5,
-							],
-							onenter(s: sstate, ik: burn) {
-								s.reset();
-								ik.imgid = s.current;
-								ik.ben_ik_nog_onvolmaakt = true;
-							},
-							onrun(s: sstate) { },
-							onend(s: sstate, ik: burn) {
-								ik.state.to('gepolijst');
-							},
-							onnext(s: sstate, ik: burn) {
-								ik.imgid = s.current;
-							},
-						}),
-						gepolijst: new sdef('gepolijst', {
-							nudges2move: 20,
-							tape: [
-								BitmapId.None,
-								BitmapId.None,
-								BitmapId.None,
-							],
-							onenter(s: sstate, ik: burn) {
-								s.reset();
-								ik.imgid = s.current;
-								ik.ben_ik_nog_onvolmaakt = false;
-							},
-							onrun(s: sstate) { },
-							onend(s: sstate, _) { },
-							onnext(s: sstate, ik: burn) {
-								// BURN!!!!
-								ik.state.to('wees_een_burn');
-							}
-						}),
+			states: {
+				wees_een_burn: new sdef('wees_een_burn', {
+					nudges2move: 20,
+					auto_rewind_tape_after_end: false,
+					tape: [
+						BitmapId.burn1,
+						BitmapId.burn2,
+						BitmapId.burn3,
+						BitmapId.burn4,
+						BitmapId.burn5,
+					],
+					onenter(s: sstate, ik: burn) {
+						s.reset();
+						ik.imgid = s.current;
+						ik.ben_ik_nog_onvolmaakt = true;
+					},
+					onrun(s: sstate) { },
+					onend(s: sstate, ik: burn) {
+						ik.state.to('gepolijst');
+					},
+					onnext(s: sstate, ik: burn) {
+						ik.imgid = s.current;
+					},
+				}),
+				gepolijst: new sdef('gepolijst', {
+					nudges2move: 20,
+					tape: [
+						BitmapId.None,
+						BitmapId.None,
+						BitmapId.None,
+					],
+					onenter(s: sstate, ik: burn) {
+						s.reset();
+						ik.imgid = s.current;
+						ik.ben_ik_nog_onvolmaakt = false;
+					},
+					onrun(s: sstate) { },
+					onend(s: sstate, _) { },
+					onnext(s: sstate, ik: burn) {
+						// BURN!!!!
+						ik.state.to('wees_een_burn');
 					}
-				})
+				}),
 			}
 		};
 	}
@@ -791,55 +756,51 @@ class barst extends onvolmaaktheid {
 	@statedef_builder
 	public static bouw() {
 		return {
-			machines: {
-				master: new mdef('master', {
-					states: {
-						wees_een_barst: new sdef('wees_een_barst', {
-							nudges2move: 20,
-							tape: [
-								BitmapId.break1,
-								BitmapId.break2,
-								BitmapId.break3,
-								BitmapId.break4,
-								BitmapId.break5,
-								BitmapId.break6,
-							],
-							onenter(s: sstate, ik: barst) {
-								s.reset();
-								ik.imgid = s.current;
-								ik.ben_ik_nog_onvolmaakt = true;
-							},
-							onrun(s: sstate) { },
-							onend(s: sstate, ik: barst) {
-								ik.state.to('gepolijst');
-							},
-							onnext(s: sstate, ik: barst) {
-								ik.imgid = s.current;
-							},
-						}),
-						gepolijst: new sdef('gepolijst', {
-							nudges2move: 40,
-							onenter(s: sstate, ik: barst) {
-								s.reset();
-								ik.imgid = BitmapId.None;
-								ik.ben_ik_nog_onvolmaakt = false;
-							},
-							onrun(s: sstate) { },
-							onend(s: sstate, _) { },
-							onnext(s: sstate, ik: barst) {
-								// BURN!!!!
-								_model.spawn(new burn(ik.zijde, copyPoint(ik.pos)));
-								ik.disposeFlag = true; // Vervang met nieuwe soort onvolmaaktheid
-							}
-						}),
-						// gedaan: new sdef('gedaan', {
-						// 	onenter(s: sstate, ik: barst) {
-						// 		s.reset();
-						// 		ik.imgid = BitmapId.None;
-						// 	}
-						// }),
+			states: {
+				wees_een_barst: new sdef('wees_een_barst', {
+					nudges2move: 20,
+					tape: [
+						BitmapId.break1,
+						BitmapId.break2,
+						BitmapId.break3,
+						BitmapId.break4,
+						BitmapId.break5,
+						BitmapId.break6,
+					],
+					onenter(s: sstate, ik: barst) {
+						s.reset();
+						ik.imgid = s.current;
+						ik.ben_ik_nog_onvolmaakt = true;
+					},
+					onrun(s: sstate) { },
+					onend(s: sstate, ik: barst) {
+						ik.state.to('gepolijst');
+					},
+					onnext(s: sstate, ik: barst) {
+						ik.imgid = s.current;
+					},
+				}),
+				gepolijst: new sdef('gepolijst', {
+					nudges2move: 40,
+					onenter(s: sstate, ik: barst) {
+						s.reset();
+						ik.imgid = BitmapId.None;
+						ik.ben_ik_nog_onvolmaakt = false;
+					},
+					onrun(s: sstate) { },
+					onend(s: sstate, _) { },
+					onnext(s: sstate, ik: barst) {
+						// BURN!!!!
+						_model.spawn(new burn(ik.zijde, copyPoint(ik.pos)));
+						ik.disposeFlag = true; // Vervang met nieuwe soort onvolmaaktheid
 					}
-				})
+				}),
+				// gedaan: new sdef('gedaan', {
+				// 	onenter(s: sstate, ik: barst) {
+				// 		s.reset();
+				// 		ik.imgid = BitmapId.None;
+				// 	}
+				// }),
 			}
 		};
 	}
@@ -850,13 +811,13 @@ class barst extends onvolmaaktheid {
 
 	public set ernst(x) {
 		this._ernst = x;
-		let s = this.state.getState('wees_een_barst');
+		let s = this.state.states['wees_een_barst'];
 		s.reset();
 		s.head = this.max_ernst() - this._ernst;
 	}
 
 	private max_ernst() {
-		let s = this.state.getState('wees_een_barst');
+		let s = this.state.states['wees_een_barst'];
 		return s.tape.length - 1;
 	}
 
