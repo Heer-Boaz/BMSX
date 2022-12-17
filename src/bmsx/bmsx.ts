@@ -3,7 +3,7 @@ import { SM } from "./soundmaster";
 import { Input } from "./input";
 import { RomLoadResult } from "./rompack";
 import { MSX2ScreenWidth, MSX2ScreenHeight, TileSize } from "./msx";
-import { mstate, mdef, sdef, sstate, setup_fsmdef_library, MachineDefinitions } from "./bfsm";
+import { mstate, mdef, sdef, sstate, setup_fsmdef_library, MachineDefinitions, id2mstate } from "./bfsm";
 import { insavegame, onsave, Reviver, serializeObj } from "./gamereviver";
 
 declare global {
@@ -661,7 +661,7 @@ export abstract class BaseModel {
 	* Init model after construction. Needed as the states have not been build at
 	* the constructor's scope yet. So, this is a kind of `onspawn` for the model.
 	*
-	* Each derived model class should override this method and call it with the proper constructor classname of that derived model class. We need the exact classname in order to map a state machine definition to an instance of an object.
+	* Each derived model class should override @see {@link BaseModel.constructor_name} to get the proper constructor classname of that derived model class. We need the exact classname in order to map a state machine definition to an instance of an object.
 	* @param {string} `derived_modelclass_constructor_name` - the constructor name of the derived modelclass (that derives from this BaseModel.
 	*/
 	public init_model_state_machines(derived_modelclass_constructor_name: string): this {
@@ -704,13 +704,13 @@ export abstract class BaseModel {
 
 	static default_input_handler_for_allow_open_gamemenu(s: sstate, ik: BaseModel) {
 		if (Input.KC_F5) {
-			// ik.state.machines['gamemenu'].to('open');
+			ik.state.substate.gamemenu.to('open');
 		}
 	}
 
 	static default_input_handler_for_allow_close_gamemenu(s: sstate, ik: BaseModel) {
 		if (Input.KC_F5) {
-			// ik.state.machines['gamemenu'].to('closed');
+			ik.state.substate.gamemenu.to('closed');
 		}
 	}
 
@@ -954,6 +954,9 @@ export class Game {
 	}
 }
 
+type States = mstate & {
+}
+
 @insavegame
 export class GameObject {
 	// For converting this GameObject to a string ('id')
@@ -968,7 +971,7 @@ export class GameObject {
 	public size?: Size;
 
 	public get wallHitarea(): Area { return this.hitarea; }
-	public state: mstate;
+	public state: States;
 	public isWall?: boolean;
 
 	protected _hitarea?: Area;

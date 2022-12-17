@@ -26,7 +26,7 @@ var bootrom = {
 	},
 
 	usr(x: number): number {
-		if (bootrom.theshowsover) return -x; // :-(
+		// if (bootrom.theshowsover) return -x; // :-(
 
 		document.body.style.backgroundColor = "#000000";
 		document.getElementById('gamescreen').hidden = false;
@@ -52,6 +52,8 @@ var bootrom = {
 		};
 
 		createAudioContext();
+		console.error('Trying to focus!');
+		document.body.focus();
 
 		let fetchRom = () => new Promise<ArrayBuffer>(async (resolve, reject) => {
 			if (bootrom.localfetch) {
@@ -175,11 +177,13 @@ async function awaitBootComplete(): Promise<void> {
 		msx.onanimationend = ev => {
 			let loading = <HTMLElement>document.querySelector('#loading');
 			loading.hidden = false;
+			bootrom.theshowsover = true;
+			console.error('The show\'s over!');
 			resolve();
 		};
 		msx.className = "enter";
 		msx.hidden = false;
-		if (bootrom.debug) resolve(); // Resolve immediately in debug-mode
+		// if (bootrom.debug) resolve(); // Resolve immediately in debug-mode
 	});
 	return result;
 }
@@ -226,7 +230,7 @@ async function awaitPressedAnyKey(): Promise<void> {
 	let result: Promise<void> = new Promise((resolve, reject) => {
 		let onuserinteraction = (e: UIEvent) => {
 			try {
-				if (!bootrom.snd_unlocked || bootrom.theshowsover) { return; }
+				if (!bootrom.snd_unlocked || !bootrom.theshowsover) { return; }
 				if (e.type == 'touchend') {
 					let controls = document.getElementById("controls");
 					controls.hidden = false;

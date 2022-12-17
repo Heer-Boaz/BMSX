@@ -7,6 +7,12 @@ const GAMEPAD_UP: number = 1002;
 const GAMEPAD_DOWN: number = 1003;
 
 type ButtonId = 'BTN1' | 'BTN2' | 'BTN3' | 'BTN4' | Key;
+let preventActionAndPropagation = (e: Event): boolean => {
+    e.preventDefault();
+    e.stopPropagation();
+    // return false;
+    return e.returnValue = false; // https://javascriptio.com/view/5386822/prevent-text-selection-on-tap-and-hold-on-ios-13-mobile-safari
+};
 
 export class Input {
     public static KeyState: {};
@@ -141,17 +147,12 @@ export class Input {
         Input.GamepadClickRequestedState = {};
         Input.reset();
 
+        window.addEventListener('beforeunload', e => { e.preventDefault(); return e.returnValue = 'Are you sure you want to exit this awesome game?'; }, true);
+
         window.addEventListener("gamepadconnected", function (e: Event) {
             let gp = navigator.getGamepads()[(e as any).gamepad.index];
             console.info("Gamepad connected at index " + gp.index + ": " + gp.id + ". It has " + gp.buttons.length + " buttons and " + gp.axes.length + " axes.");
         });
-
-        let preventActionAndPropagation = (e: Event): boolean => {
-            e.returnValue = false; // https://javascriptio.com/view/5386822/prevent-text-selection-on-tap-and-hold-on-ios-13-mobile-safari
-            e.preventDefault();
-            e.stopPropagation();
-            return false;
-        }
 
         window.addEventListener('keydown', e => { preventDefaultEventAction(e, e.code); keydown(e.code); }, false);
         window.addEventListener('keyup', e => { preventDefaultEventAction(e, e.code); keyup(e.code); }, false);
@@ -270,18 +271,24 @@ function preventDefaultEventAction(e: UIEvent, key: string) {
         switch (key) {
             case 'Escape':
             case 'Esc':
-            case 'F11':
             case 'F12':
                 break;
             case 'F6':
+                e.preventDefault();
                 handleOpenDebugMenu(e);
                 break;
             case 'F7':
+                e.preventDefault();
                 handleOpenObjectMenu(e);
+                break;
+            case 'F11':
+                e.preventDefault();
+                if (global.view.isFullscreen)
+                    global.view.ToWindowed();
+                else global.view.ToFullscreen();
                 break;
             default:
                 e.preventDefault();
-                e.stopPropagation();
                 break;
         }
     }

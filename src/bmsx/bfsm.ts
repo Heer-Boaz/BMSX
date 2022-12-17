@@ -69,6 +69,7 @@ export class mstate {
 	 * @see BaseModel.get
 	 */
 	targetid: string;
+	substate: Record<string, mstate>;
 
 	public get target(): GameObject | BaseModel { return global.model.get(this.targetid); }
 	public get current(): sstate { return this.states[this.currentid]; };
@@ -81,9 +82,23 @@ export class mstate {
 		return this.current?.definition; // Note that definition can be empty, as not all objects have a defined machine
 	}
 
-	public static create(_id: string, _targetid: string): mstate {
+	/**
+	 * Factory for creating new FSMs.
+	 * @param _id - id of the FSM definition to use for this machine.
+	 * @param _targetid - id of the object that is stated by this FSM. @see {@link BaseModel.get}.
+	 * @param _sub_fsm_ids - array of ids of any additional machines to be added to this machines. @see {@link mstate.substate}.
+	 */
+	public static create(_id: string, _targetid: string, _sub_fsm_ids?: string[]): mstate {
 		let result = new mstate(_id, _targetid);
 		result.populateStates();
+
+		if (_sub_fsm_ids && _sub_fsm_ids.length > 0) {
+			_sub_fsm_ids.forEach(sub_id => {
+				result.substate.sub_id = new mstate(_id, _targetid);
+				result.substate.sub_id.populateStates();
+			});
+		}
+
 		return result;
 	}
 
@@ -92,6 +107,7 @@ export class mstate {
 		this.targetid = _targetid;
 		this.states ??= {};
 		this.paused ??= false;
+		this.substate = {};
 
 		// Note: when parameters are undefined, this constructor was invoked without parameters. This happens when it is revived. In that situation, don't init this object
 		_id && _targetid && this.reset();
@@ -141,7 +157,7 @@ export class mstate {
 		if (!mdef) {
 			// A class is not required to have a defined machine.
 			// Thus, we create a default machine that automatically has a generated
-			// 'none'-state associated with it
+			// 'none'-state associated with it.
 			this.add(new sstate('none', this.id, this.targetid));
 		}
 		else {
@@ -177,10 +193,10 @@ export class sstate {
 	 */
 	targetid: string;
 	nudges2move: number; // Number of runs before tapehead moves to next statedata
-	/**
-	 * `If != undefined`, this state has substates
-	 */
-	submachine: mstate;
+	// /**
+	//  * `If != undefined`, this state has substates
+	//  */
+	// submachine: mstate;
 
 	public get definition(): sdef { return MachineDefinitions[this.machineid]?.states[this.id]; } // Note that definition can be empty, as not all objects have a defined machine
 	public get tape(): Tape { return this.definition.tape; }
@@ -203,11 +219,11 @@ export class sstate {
 			this.reset();
 
 			// If this state has its own state machine, create submachine and populate substates
-			let sub_machine_def = this.definition.submachine;
-			if (sub_machine_def) {
-				this.submachine = new mstate(sub_machine_def.id, this.targetid);
-				this.submachine.populateStates();
-			}
+			// let sub_machine_def = this.definition.submachine;
+			// if (sub_machine_def) {
+			// 	this.submachine = new mstate(sub_machine_def.id, this.targetid);
+			// 	this.submachine.populateStates();
+			// }
 		}
 	}
 
@@ -295,11 +311,11 @@ export class sdef {
 	public nudges2move: number; // Number of runs before tapehead moves to next statedata
 	public auto_rewind_tape_after_end: boolean = true; // Automagically set the tapehead to index 0 when tapehead would go out of bound. Otherwise, will remain at end
 	public parent: mdef;
-	public parent_state: sdef;
+	// public parent_state: sdef;
 	/**
 	 * `If != undefined`, this state has substates
 	 */
-	public submachine: mdef;
+	// public submachine: mdef;
 
 	public constructor(_id: string = '_', _partialdef?: Partial<sdef>) {
 		this.id = _id;

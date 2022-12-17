@@ -169,7 +169,7 @@ export class GameMenu extends GameObject {
                     SM.play(AudioId.selectie);
                     switch (this.selectedItem) {
                         case MenuItem.ReturnToGame:
-                            global.model.state['gamemenu'].pop();
+                            global.model.state.substate.gamemenu.pop();
                             // (controller as Controller).CloseGameMenu();
                             break;
                         case MenuItem.ChangeOptions:
@@ -270,8 +270,8 @@ export class GameMenu extends GameObject {
                             }
                             break;
                         case MenuItem.Fullscreen:
-                            if (GO.Fullscreen) {
-                                GO.Fullscreen = false;
+                            if (global.view.isFullscreen) {
+                                // GO.Fullscreen = false;
                                 global.view.ToWindowed();
                                 // game.GameOptionsChanged();
                             }
@@ -281,7 +281,7 @@ export class GameMenu extends GameObject {
                                 GO.VolumePercentage += 10;
                                 if (GO.VolumePercentage > 100)
                                     GO.VolumePercentage = 100;
-                                SM.setVolume(GO.VolumePercentage / 100);
+                                SM.volume += .1;
                                 // game.GameOptionsChanged();
                             }
                             break;
@@ -310,8 +310,8 @@ export class GameMenu extends GameObject {
                             }
                             break;
                         case MenuItem.Fullscreen:
-                            if (!GO.Fullscreen) {
-                                GO.Fullscreen = true;
+                            if (!global.view.isFullscreen) {
+                                // GO.Fullscreen = true;
                                 global.view.ToFullscreen();
                                 // game.GameOptionsChanged();
                             }
@@ -321,7 +321,7 @@ export class GameMenu extends GameObject {
                                 GO.VolumePercentage -= 10;
                                 if (GO.VolumePercentage < 0)
                                     GO.VolumePercentage = 0;
-                                SM.setVolume(GO.VolumePercentage / 100);
+                                SM.volume -= .1;
                                 // game.GameOptionsChanged();
                             }
                             break;
@@ -525,6 +525,7 @@ export class GameMenu extends GameObject {
                                 {
                                     TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
                                     offsetX += GameMenu.soundVolumeText.length * global.view.default_font.char_width;
+                                    GO.VolumePercentage = Math.trunc(SM.volume * 100); // TODO: LELIJK!!!!
                                     let text = GO.VolumePercentage > 0 ? GO.VolumePercentage + "%" : "Off";
                                     TextWriter.drawText(offsetX, y, text);
                                 }
@@ -577,7 +578,8 @@ export class GameMenu extends GameObject {
     }
 
     private printFullscreenOptionRectangle(y: number): void {
-        let selectedIndex: number = GO.Fullscreen ? 0 : 1;
+        // let selectedIndex: number = GO.Fullscreen ? 0 : 1;
+        let selectedIndex: number = global.view.isFullscreen ? 0 : 1;
         global.view.drawImg(BitmapId.redpixel, GameMenu.fullscreenOptionsOffsets[selectedIndex] + GameMenu.menuPosX + GameMenu.optionItemsOffsetX, y + GameMenu.fullscreenOptionsOffsetY, DrawImgFlags.None, GameMenu.fullscreenOptionsRectangleSize.x, GameMenu.fullscreenOptionsRectangleSize.y);
     }
 

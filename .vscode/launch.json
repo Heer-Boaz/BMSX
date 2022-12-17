@@ -13,7 +13,7 @@
 				"--allow-file-access-from-files", // https://www.webmo.net/link/help/AccessingLocalFiles.html
 				"--disable-session-crashed-bubble",
 				"-inprivate", // https://dev.to/kasuken/debug-with-visual-studio-using-all-browsers-in-incognito-mode-57mb
-				"--start-fullscreen",
+				// "--start-fullscreen",
 				// "--kiosk",
 				// "--edge-kiosk-type=public-browsing",
 			],
@@ -47,7 +47,7 @@
 				"--allow-file-access-from-files", // https://www.webmo.net/link/help/AccessingLocalFiles.html
 				"--disable-session-crashed-bubble",
 				"-inprivate", // https://dev.to/kasuken/debug-with-visual-studio-using-all-browsers-in-incognito-mode-57mb
-				"--start-fullscreen",
+				// "--start-fullscreen",
 			],
 			"sourceMaps": true,
 			"showAsyncStacks": true,

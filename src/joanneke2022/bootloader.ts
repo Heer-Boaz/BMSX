@@ -9,7 +9,7 @@ import { Input } from '../bmsx/input';
 import { paintSprite } from '../bmsx/view';
 import { TextWriter } from '../bmsx/textwriter';
 import { GameMenu } from './gamemenu';
-import { FlattenedPropKeys, sdef, sstate, mdef, statedef_builder, build_fsm } from '../bmsx/bfsm';
+import { FlattenedPropKeys, sdef, sstate, mdef, statedef_builder, build_fsm, mstate } from '../bmsx/bfsm';
 
 const TIME_TO_SHINE = 90;
 
@@ -70,7 +70,8 @@ class gamemodel extends BaseModel {
 					},
 					onrun(s: sstate, ik: gamemodel) {
 						BaseModel.defaultrun();
-						++s.nudges; // Laat timer lopen
+						ik.state.substate.gamemenu.run();
+						if (!ik.paused) ++s.nudges; // Laat timer lopen
 					},
 					process_input: BaseModel.default_input_handler,
 				}),
@@ -107,6 +108,14 @@ class gamemodel extends BaseModel {
 					},
 					process_input: BaseModel.default_input_handler,
 				}),
+			}
+		};
+	}
+
+	@build_fsm('model_substate')
+	public static substates(): Partial<mdef> {
+		return {
+			states: {
 				closed: new sdef('closed', {
 					process_input: BaseModel.default_input_handler_for_allow_open_gamemenu,
 				}),
@@ -116,21 +125,22 @@ class gamemodel extends BaseModel {
 						let menu = new GameMenu();
 						ik.spawn(menu);
 						menu.Open();
-						// ik.state.['master' satisfies model_machines].paused = true;
+
+						ik.paused = true;
 					},
 					onrun(s: sstate, ik: gamemodel) {
 						ik.get<GameMenu>('gamemenu').run();
 					},
 					onexit(s: sstate, ik: gamemodel) {
 						let menu = ik.get<GameMenu>('gamemenu');
-						// ik.state.machines['master' satisfies model_machines].paused = false;
-
 						menu.Close();
 						ik.exile(menu);
+
+						ik.paused = false;
 					},
 				}),
 			}
-		};
+		}
 	}
 
 	@statedef_builder
@@ -140,6 +150,13 @@ class gamemodel extends BaseModel {
 
 	constructor() {
 		super();
+	}
+
+	public override init_model_state_machines(derived_modelclass_constructor_name: string): this {
+		super.init_model_state_machines(derived_modelclass_constructor_name);
+		this.state.substate.gamemenu = mstate.create('model_substate', 'model');
+		this.state.substate.gamemenu.to('closed');
+		return this;
 	}
 
 	public get constructor_name(): string {

@@ -45,6 +45,7 @@ export abstract class BaseView {
 
     public init(): void {
         this.handleResize();
+        this.listenToMediaEvents();
     }
 
     public drawgame(gamescreenOffset?: Point, clearCanvas: boolean = true): void {
@@ -74,6 +75,17 @@ export abstract class BaseView {
         self.canvas.style.top = (self.windowSize.y - self.canvas.height * self.scale) / 2 + "px";
     }
 
+    protected listenToMediaEvents(): void {
+        // https://stackoverflow.com/a/70719693
+        window.matchMedia('(display-mode: fullscreen)').addEventListener('change', ({ matches }) => {
+            if (matches) {
+                window['isFullScreen'] = true;
+            } else {
+                window['isFullScreen'] = false;
+            }
+        });
+    }
+
     public DetermineMaxScaleForFullscreen(clientWidth: number, clientHeight: number, originalBufferWidth: number, originalBufferHeight: number): number {
         if (clientWidth >= clientHeight) {
             return clientHeight / originalBufferHeight;
@@ -88,8 +100,40 @@ export abstract class BaseView {
         window.addEventListener('keyup', BaseView.triggerFullScreenOnFakeUserEvent);
     }
 
+    public get isFullscreen() {
+        return window['isFullScreen'] ?? false;
+    }
+
+    public static get fullscreenEnabled() {
+        return document.fullscreenEnabled || document['webkitFullscreenEnabled'] || document['webkitFullScreenEnabled'] || document['mozFullScreenEnabled'];
+    }
+
     public static triggerFullScreenOnFakeUserEvent(): void {
-        if (document.fullscreenEnabled) document.documentElement.requestFullscreen();
+        if (BaseView.fullscreenEnabled) {
+            try {
+                global.game.paused = true;
+                document.documentElement.requestFullscreen?.()
+                    .then(() => {
+                        global.game.paused = false;
+                    })
+                    .catch(e => {
+                        global.game.paused = false;
+                        console.error(e);
+                    });
+
+                document.documentElement['mozRequestFullScreen']?.()
+                    .then(() => global.game.paused = false)
+                    .catch(e => {
+                        global.game.paused = false;
+                        console.error(e);
+                    });
+                document.documentElement['webkitRequestFullScreen']?.();
+                document.documentElement['webkitRequestFullscreen']?.();
+            }
+            catch (error) {
+                console.error(error);
+            }
+        }
         window.removeEventListener('keyup', BaseView.triggerFullScreenOnFakeUserEvent);
     }
 
@@ -98,9 +142,17 @@ export abstract class BaseView {
     }
 
     public static triggerWindowedOnFakeUserEvent(): void {
-        if (document.fullscreenEnabled) {
+        if (BaseView.fullscreenEnabled) {
             try {
-                document.exitFullscreen();
+                global.game.paused = true;
+                document.exitFullscreen?.()
+                    .then(() => global.game.paused = false)
+                    .catch(e => {
+                        global.game.paused = false;
+                        console.error(e);
+                    });
+                document['webkitExitFullscreen']?.();
+                document['mozExitFullScreen']?.();
             }
             catch (error) {
                 // !BUG: Heb een bug gezien waarbij dit voorkomt.
@@ -179,7 +231,7 @@ export abstract class BaseView {
 }
 
 export function paintSprite(this: Sprite, offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }): void {
-	if (this.imgid === 'None') return; // Don't draw anything when imgid = BitmapId.None. For animations, we don't always want to use visible = false
+    if (this.imgid === 'None') return; // Don't draw anything when imgid = BitmapId.None. For animations, we don't always want to use visible = false
     let _view = global.view as BaseView;
     let options: number = this.flippedH ? DrawImgFlags.HFLIP : 0;
     options |= (this.flippedV ? DrawImgFlags.VFLIP : 0);

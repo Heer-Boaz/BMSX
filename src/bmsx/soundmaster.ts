@@ -21,7 +21,7 @@ export class SM {
 			if (!gainnode) {
 				SM.gainNode = SM.sndContext.createGain();
 				SM.gainNode.connect(SM.sndContext.destination);
-				SM.setVolume(0);
+				SM.volume = 0;
 			}
 		});
 
@@ -58,7 +58,8 @@ export class SM {
 			_track['audiotype'] === AudioType.effect ?
 				node.addEventListener('ended', (ev) => SM.currentEffectAudio = null) :
 				node.addEventListener('ended', (ev) => SM.currentMusicAudio = null);
-		} catch {
+		} catch(error) {
+			console.warn(error);
 		}
 	}
 
@@ -127,7 +128,13 @@ export class SM {
 		}
 	}
 
-	public static setVolume(volume: number): void {
-		SM.gainNode.gain.setValueAtTime(SM.gainNode.gain.defaultValue * volume, SM.sndContext.currentTime + .1);
+	public static get volume(): number {
+		return parseFloat(SM.gainNode.gain.value.toFixed(1)); // Remove unnecessary digits from float
+	}
+
+	public static set volume(_v: number) {
+		let v = parseFloat(_v.toFixed(1)); // Remove unnecessary digits from float
+		// SM.gainNode.gain.setValueAtTime(SM.gainNode.gain.defaultValue * v, SM.sndContext.currentTime + .0);
+		SM.gainNode.gain.value = SM.gainNode.gain.defaultValue * v;
 	}
 }
