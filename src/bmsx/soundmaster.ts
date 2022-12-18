@@ -1,9 +1,11 @@
+import { Key } from 'ts-key-enum';
 import { id2res, AudioMeta, AudioType } from "./rompack";
 
 export class SM {
 	private static limitToOneEffect: boolean = true;
 
 	private static tracks: id2res;
+	private static buffers: Record<string, AudioBuffer>;
 	private static sndContext: AudioContext;
 
 	private static currentMusicNode: AudioBufferSourceNode;
@@ -26,6 +28,14 @@ export class SM {
 		});
 
 		SM.tracks = _audioResources;
+		SM.predecodeTracks();
+	}
+
+	private static predecodeTracks() {
+		SM.buffers = {};
+		Object.keys(SM.tracks).forEach(id => {
+			SM.decode(global.game.rom['rom'].slice(SM.tracks[id]['start'], SM.tracks[id]['end'])).then(decoded => SM.buffers[id] = decoded);
+		});
 	}
 
 	private static async decode(audioData: ArrayBuffer): Promise<AudioBuffer> {
@@ -41,7 +51,9 @@ export class SM {
 	private static async createNode(id: string): Promise<AudioBufferSourceNode> {
 		let srcnode = SM.sndContext.createBufferSource();
 		return new Promise<AudioBufferSourceNode>((resolve, reject) => {
-			SM.decode(global.game.rom['rom'].slice(SM.tracks[id]['start'], SM.tracks[id]['end'])).then(buffer => srcnode.buffer = buffer).then(() => resolve(srcnode))
+			// WARNING! Predecoding tracks might hog memory. TODO: Make optional when memory gets hogged?
+			// SM.decode(global.game.rom['rom'].slice(SM.tracks[id]['start'], SM.tracks[id]['end'])).then(buffer => srcnode.buffer = buffer).then(() => resolve(srcnode))
+			Promise.resolve(srcnode.buffer = SM.buffers[id]).then(() => resolve(srcnode))
 				.catch(e => reject(e));
 		});
 	}
@@ -54,7 +66,7 @@ export class SM {
 				node.loopStart = _track['loop'];
 			}
 			else node.loop = false;
-			node.start(0);
+			node.start();
 			_track['audiotype'] === AudioType.effect ?
 				node.addEventListener('ended', (ev) => SM.currentEffectAudio = null) :
 				node.addEventListener('ended', (ev) => SM.currentMusicAudio = null);
@@ -103,7 +115,7 @@ export class SM {
 	public static stopEffect(): void {
 		try {
 			if (SM.currentEffectAudio) SM.currentEffectNode?.stop();
-		} catch { }
+		} catch (e) { console.warn(e); }
 		SM.currentEffectNode?.disconnect();
 		SM.currentEffectNode = null;
 	}
@@ -111,7 +123,7 @@ export class SM {
 	public static stopMusic(): void {
 		try {
 			if (SM.currentMusicAudio) SM.currentMusicNode?.stop();
-		} catch { }
+		} catch (e) { console.warn(e); }
 		SM.currentMusicNode?.disconnect();
 		SM.currentMusicNode = null;
 	}
