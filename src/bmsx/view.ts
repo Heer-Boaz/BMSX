@@ -1,6 +1,7 @@
 ﻿import { id2htmlimg } from './rompack.d';
-import { Size, Point, Sprite } from "./bmsx";
+import { Size, Point } from "./bmsx";
 import { BFont } from "./bmsx";
+import { Sprite } from './sprite';
 
 export interface Color {
     r: number;
@@ -76,6 +77,8 @@ export abstract class BaseView {
     }
 
     protected listenToMediaEvents(): void {
+        window.addEventListener('resize', global.view.handleResize, false);
+        window.addEventListener('orientationchange', global.view.handleResize, false);
         // https://stackoverflow.com/a/70719693
         window.matchMedia('(display-mode: fullscreen)').addEventListener('change', ({ matches }) => {
             if (matches) {
@@ -86,7 +89,7 @@ export abstract class BaseView {
         });
     }
 
-    public DetermineMaxScaleForFullscreen(clientWidth: number, clientHeight: number, originalBufferWidth: number, originalBufferHeight: number): number {
+    public determineMaxScaleForFullscreen(clientWidth: number, clientHeight: number, originalBufferWidth: number, originalBufferHeight: number): number {
         if (clientWidth >= clientHeight) {
             return clientHeight / originalBufferHeight;
         }
@@ -95,7 +98,7 @@ export abstract class BaseView {
         }
     }
 
-    public ToFullscreen(): void {
+    public toFullscreen(): void {
         // https://zinoui.com/blog/javascript-fullscreen-api
         window.addEventListener('keyup', BaseView.triggerFullScreenOnFakeUserEvent);
     }

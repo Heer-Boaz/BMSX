@@ -1,3 +1,5 @@
+import { ISpaceObject, Space } from "./model";
+
 export function serializeObj(obj: any): string {
 	let cache = [];
 	return JSON.stringify(obj, function (key, value) {
@@ -80,4 +82,11 @@ export function insavegame(constructor: InstanceType<any>, toJSON?: () => any, f
 	Reviver.constructors ??= {};
 	Reviver.constructors[constructor.name] = constructor;
 	return constructor;
+}
+
+@insavegame
+export class Savegame {
+	modelprops: {};
+	allSpacesObjects: ISpaceObject[];
+	spaces: Space[];
 }

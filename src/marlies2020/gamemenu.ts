@@ -312,7 +312,7 @@ export class GameMenu extends GameObject {
                         case MenuItem.Fullscreen:
                             if (!GO.Fullscreen) {
                                 GO.Fullscreen = true;
-                                global.view.ToFullscreen();
+                                global.view.toFullscreen();
                                 // game.GameOptionsChanged();
                             }
                             break;

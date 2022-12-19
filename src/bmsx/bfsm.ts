@@ -1,5 +1,6 @@
-import { GameObject, BaseModel } from "./bmsx";
+import { GameObject } from "./gameobject";
 import { insavegame } from "./gamereviver";
+import { BaseModel } from "./model";
 
 export var MachineDefinitions: Record<string, mdef>;
 var MachineDefinitionBuilders: Record<string, () => Partial<mdef>>;

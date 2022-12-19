@@ -285,7 +285,7 @@ function preventDefaultEventAction(e: UIEvent, key: string) {
                 e.preventDefault();
                 if (global.view.isFullscreen)
                     global.view.ToWindowed();
-                else global.view.ToFullscreen();
+                else global.view.toFullscreen();
                 break;
             default:
                 e.preventDefault();

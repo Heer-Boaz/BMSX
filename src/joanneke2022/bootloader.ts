@@ -1,7 +1,8 @@
-import { BFont, id2space } from './../bmsx/bmsx';
+import { BFont } from './../bmsx/bmsx';
 import { MSX2ScreenHeight, MSX2ScreenWidth } from './../bmsx/msx';
 import { RomLoadResult } from '../bmsx/rompack';
-import { Game, BaseModel, GameObject, Sprite, leavingScreenHandler_prohibit as prohibitLeavingScreenHandler, newPoint, Direction, newSize, newArea, Point, randomInt, copyPoint, base_model_spaces } from '../bmsx/bmsx';
+import { Game, newPoint, Direction, newSize, newArea, Point, randomInt, copyPoint } from '../bmsx/bmsx';
+import { FlattenedPropKeys, sdef, sstate, mdef, statedef_builder, build_fsm, mstate } from '../bmsx/bfsm';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
@@ -9,7 +10,9 @@ import { Input } from '../bmsx/input';
 import { paintSprite } from '../bmsx/view';
 import { TextWriter } from '../bmsx/textwriter';
 import { GameMenu } from './gamemenu';
-import { FlattenedPropKeys, sdef, sstate, mdef, statedef_builder, build_fsm, mstate } from '../bmsx/bfsm';
+import { GameObject } from '../bmsx/gameobject';
+import { base_model_spaces, BaseModel, id2space } from '../bmsx/model';
+import { Sprite } from '../bmsx/sprite';
 
 const TIME_TO_SHINE = 90;
 
@@ -874,6 +877,10 @@ _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: Gain
 	_game.start();
 };
 
+
+function prohibitLeavingScreenHandler(ik: draaischijf, d: Direction, old_x_or_y: number): void {
+	throw new Error('Function not implemented.');
+}
 // https://www.25karats.com/education/diamonds/features
 // Diamond Inclusions
 // Inclusions are internal clarity characteristic of a diamond.

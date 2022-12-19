@@ -1,5 +1,6 @@
 import { MachineDefinitions } from './bfsm';
-import { GameObject, newPoint, Point } from './bmsx';
+import { newPoint, Point } from './bmsx';
+import { GameObject } from './gameobject';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
 
 let draggedObj: GameObject;

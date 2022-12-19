@@ -1,4 +1,3 @@
-import { Key } from 'ts-key-enum';
 import { id2res, AudioMeta, AudioType } from "./rompack";
 
 export class SM {

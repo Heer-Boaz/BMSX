@@ -2,11 +2,12 @@ import { AudioId, BitmapId } from "./resourceids";
 import { TextWriter } from "../bmsx/textwriter";
 import { SM } from "../bmsx/soundmaster";
 // import { SlotExists, LoadGame } from "../bmsx/gamepersistor";
-import { GameOptions as GO, GameObject, Direction, Size, Point, newSize, setPoint } from '../bmsx/bmsx';
+import { GameOptions as GO, Direction, Size, Point, newSize, setPoint } from '../bmsx/bmsx';
 import { Constants } from "../bmsx/bmsx";
 import { Input } from "../bmsx/input";
 import { Msx1ExtColors } from "../bmsx/msx";
 import { DrawImgFlags } from '../bmsx/view';
+import { GameObject } from "../bmsx/gameobject";
 
 interface MenuOption {
     type: MenuItem;
@@ -312,7 +313,7 @@ export class GameMenu extends GameObject {
                         case MenuItem.Fullscreen:
                             if (!global.view.isFullscreen) {
                                 // GO.Fullscreen = true;
-                                global.view.ToFullscreen();
+                                global.view.toFullscreen();
                                 // game.GameOptionsChanged();
                             }
                             break;
