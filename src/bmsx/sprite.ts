@@ -7,18 +7,16 @@ import { paintSprite } from "./view";
 export abstract class Sprite extends GameObject {
 	public flippedH: boolean;
 	public flippedV: boolean;
-	public imgid: string;
+	public imgid!: string;
+	declare pos: Point; // Redeclare to ensure that it is defined and not null
+	declare size: Point; // Redeclare to ensure that it is defined and not null
 
 	constructor(id?: string) {
 		super(id);
-		this.pos = { x: 0, y: 0 };
 		this.visible = true;
 		this.hittable = true;
 		this.flippedH = false;
 		this.flippedV = false;
-		this.z = 0;
-		this.disposeFlag = false;
-		this.disposeOnSwitchRoom = true;
 	}
 
 	override onspawn(spawningPos?: Point): void {
@@ -27,7 +25,7 @@ export abstract class Sprite extends GameObject {
 		}
 	}
 
-	override spawn(spawningPos: Point = null): this {
+	override spawn(spawningPos?: Point): this {
 		global.model.spawn(this, spawningPos);
 		return this; // Voor chaining
 	}

@@ -7,10 +7,12 @@ export class Tile {
 	public y: number;
 
 	public static create(x: number, y: number): Tile {
-		let result = new Tile();
-		result.x = x * TileSize;
-		result.y = y * TileSize;
-		return result;
+		return new Tile(x, y);
+	}
+
+	public constructor(x: number, y: number) {
+		this.x = x * TileSize;
+		this.y = y * TileSize;
 	}
 
 	public [Symbol.toPrimitive](hint: any): any {
@@ -41,9 +43,10 @@ export class Tile {
 		return v * TileSize;
 	}
 
-	public static toStagePoint(x: number | Point, y: number): Point {
-		if ((<Point>x).y)
-			return { x: (<Point>x).x * TileSize, y: (<Point>x).y * TileSize };
+	public static toStagePoint(x: number, y: number): Point {
+		// if ((<Point>x).y) {
+			// return { x: (<Point>x).x * TileSize, y: (<Point>x).y * TileSize };
+		// }
 		return { x: <number>x * TileSize, y: y * TileSize };
 	}
 }

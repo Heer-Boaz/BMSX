@@ -3,7 +3,7 @@ import { newPoint, Point } from './bmsx';
 import { GameObject } from './gameobject';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
 
-let draggedObj: GameObject;
+let draggedObj: GameObject | null;
 let draggedObjCursorOffset: Point;
 let dragSrcEl: HTMLElement;
 let shiftX: number;
@@ -15,8 +15,8 @@ export function handleDebugMouseDown(e: MouseEvent): void {
 
 	if (!draggedObj) {
 		let { objUnderCursor, offsetToCursor } = getGameObjectAtCursor(e);
-		if (objUnderCursor) {
-			startDragGameObject(objUnderCursor, offsetToCursor);
+		if (objUnderCursor && offsetToCursor) {
+			startDragGameObject(objUnderCursor!, offsetToCursor!);
 		}
 	}
 	else {
@@ -72,7 +72,7 @@ export function handleContextMenu(e: MouseEvent): void {
 	}
 }
 
-function addContent(addContentTo: HTMLElement, elementType: keyof HTMLElementTagNameMap, content: string): HTMLElement {
+function addContent(addContentTo: HTMLElement, elementType: keyof HTMLElementTagNameMap, content: string | null): HTMLElement {
 	let newElement = document.createElement(elementType);
 	content && (newElement.innerHTML = content);
 	addContentTo.insertBefore(newElement, null);
@@ -202,7 +202,7 @@ function toggleFullscreenOnElement(el: HTMLElement) {
 	el.classList.toggle('fullscreen');
 }
 
-function createDebugDialog(title?: string, previousDialog: HTMLElement = null): [dialogDiv: HTMLDivElement, contentDiv: HTMLDivElement] {
+function createDebugDialog(title?: string, previousDialog?: HTMLElement): [dialogDiv: HTMLDivElement, contentDiv: HTMLDivElement] {
 	const theDialogDiv = document.createElement('div');
 	theDialogDiv.className = 'modal-dialog';
 	theDialogDiv.id = DEBUG_ELEMENT_ID;
@@ -212,38 +212,38 @@ function createDebugDialog(title?: string, previousDialog: HTMLElement = null): 
 		(theDialogDiv as any).previous = previousDialog;
 	}
 
-	function dialogMouseDownHandler(e: MouseEvent) {
-		shiftX = e.clientX - this.getBoundingClientRect().left;
-		shiftY = e.clientY - this.getBoundingClientRect().top;
+	function dialogMouseDownHandler(this: typeof theDialogDiv, ev: MouseEvent) {
+		shiftX = ev.clientX - this.getBoundingClientRect().left;
+		shiftY = ev.clientY - this.getBoundingClientRect().top;
 	};
 
-	function dialogDragStartHandler(e: DragEvent) {
+	function dialogDragStartHandler(this: typeof theDialogDiv, ev: DragEvent) {
 		dragSrcEl = this;
 
-		e.dataTransfer.effectAllowed = 'move';
-		e.dataTransfer.setData('text/html', this.innerHTML);
+		ev.dataTransfer!.effectAllowed = 'move';
+		ev.dataTransfer!.setData('text/html', this.innerHTML);
 	};
 
-	function dialogDragEndHandler(e: DragEvent) {
-		this.style.left = e.pageX - shiftX + 'px';
-		this.style.top = e.pageY - shiftY + 'px';
+	function dialogDragEndHandler(this: typeof theDialogDiv, ev: DragEvent) {
+		this.style.left = ev.pageX - shiftX + 'px';
+		this.style.top = ev.pageY - shiftY + 'px';
 	};
 
-	function dialogDropHandler(e: DragEvent) {
-		e.stopPropagation();
+	function dialogDropHandler(this: typeof theDialogDiv, ev: DragEvent) {
+		ev.stopPropagation();
 
 		if (dragSrcEl !== this) {
 			dragSrcEl.innerHTML = this.innerHTML;
-			this.innerHTML = e.dataTransfer.getData('text/html');
+			this.innerHTML = ev.dataTransfer!.getData('text/html');
 		}
 
 		return false;
 	};
 
-	theDialogDiv.onmousedown = dialogMouseDownHandler;
-	theDialogDiv.ondragstart = dialogDragStartHandler;
-	theDialogDiv.ondragend = dialogDragEndHandler;
-	theDialogDiv.ondrop = dialogDropHandler;
+	theDialogDiv.onmousedown = dialogMouseDownHandler as (this: GlobalEventHandlers, ev: MouseEvent) => any;
+	theDialogDiv.ondragstart = dialogDragStartHandler as (this: GlobalEventHandlers, ev: DragEvent) => any;
+	theDialogDiv.ondragend = dialogDragEndHandler as (this: GlobalEventHandlers, ev: DragEvent) => any;
+	theDialogDiv.ondrop = dialogDropHandler as (this: GlobalEventHandlers, ev: DragEvent) => any;
 
 	const wrapperDiv = document.createElement('div');
 	wrapperDiv.className = 'modal-title-wrapper';
@@ -255,7 +255,7 @@ function createDebugDialog(title?: string, previousDialog: HTMLElement = null): 
 	titleSpan.className = 'modal-title';
 	title && (titleSpan.innerHTML = title);
 
-	let backSpan: HTMLSpanElement = null;
+	let backSpan: HTMLSpanElement | undefined = undefined;
 	if (previousDialog) {
 		backSpan = document.createElement('span');
 		backSpan.className = 'modal-back';
@@ -316,7 +316,7 @@ function createDebugDialog(title?: string, previousDialog: HTMLElement = null): 
 	return [theDialogDiv, contentDiv];
 }
 
-export function handleOpenObjectMenu(e: UIEvent, previous: HTMLElement = null): void {
+export function handleOpenObjectMenu(e: UIEvent | null, previous?: HTMLElement): void {
 	if (e && e.type !== 'keydown') return;
 	if (!previous) {
 		prevPausedState = global.game.paused; // Remember the original paused-state so that we can return to that state
@@ -374,7 +374,7 @@ export function handleOpenDebugMenu(e: UIEvent): void {
 	document.body.insertBefore(dialogDiv, null);
 }
 
-export function handleOpenModelMenu(e: UIEvent, previous: HTMLElement): void {
+export function handleOpenModelMenu(e: UIEvent | null, previous: HTMLElement): void {
 	if (e && e.type !== 'keydown') return;
 	if (!previous) {
 		prevPausedState = global.game.paused; // Remember the original paused-state so that we can return to that state
@@ -385,7 +385,7 @@ export function handleOpenModelMenu(e: UIEvent, previous: HTMLElement): void {
 	openObjectDetailMenu(global.model, 'The Model', previous);
 }
 
-function openObjectDetailMenu(obj: any, title: string, previous: HTMLElement): void {
+function openObjectDetailMenu(obj: any, title: string, previous?: HTMLElement): void {
 	if (!previous) {
 		prevPausedState = global.game.paused; // Remember the original paused-state so that we can return to that state
 		global.game.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
@@ -402,12 +402,12 @@ export function handleDebugClick(e: MouseEvent): void {
 	if (e.button === 0 && !e.shiftKey) { // Only open when main button is clicked
 		let { objUnderCursor, offsetToCursor } = getGameObjectAtCursor(e);
 		if (objUnderCursor) {
-			openObjectDetailMenu(objUnderCursor, objUnderCursor.id, null);
+			openObjectDetailMenu(objUnderCursor, objUnderCursor.id);
 		}
 	}
 }
 
-function getGameObjectAtCursor(e: MouseEvent): { objUnderCursor: GameObject; offsetToCursor: Point; } {
+function getGameObjectAtCursor(e: MouseEvent): { objUnderCursor: GameObject | null; offsetToCursor: Point | null; } {
 	let x = e.offsetX;
 	let y = e.offsetY;
 	let p = newPoint(x, y);
@@ -418,5 +418,5 @@ function getGameObjectAtCursor(e: MouseEvent): { objUnderCursor: GameObject; off
 		let objUnderCursorWithHighestZ = objsUnderCursor.reduce((o1, o2) => o1.z > o2.z ? o1 : o2);
 		return { objUnderCursor: objUnderCursorWithHighestZ, offsetToCursor: objUnderCursorWithHighestZ.insideScaled(p) };
 	}
-	return { objUnderCursor: undefined, offsetToCursor: undefined };;
+	return { objUnderCursor: null, offsetToCursor: null };;
 }

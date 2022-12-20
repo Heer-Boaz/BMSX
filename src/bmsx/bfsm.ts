@@ -24,7 +24,7 @@ export function setup_fsmdef_library(): void {
 	MachineDefinitions = {};
 	for (let classname in MachineDefinitionBuilders) {
 		let machineDefForClass = MachineDefinitionBuilders[classname]();
-		let machineBuilt: mdef = undefined;
+		let machineBuilt: mdef;
 		if (machineDefForClass) {
 			machineBuilt = new mdef(classname, machineDefForClass);
 			if (machineDefForClass) MachineDefinitions[classname] = machineBuilt; // A class might choose not to create a new machine
@@ -43,7 +43,7 @@ export const enum state_event_type {
 
 export type id2sdef = Record<string, sdef>;
 export type id2mdef = Record<string, mdef>;
-export type id2mstate = Record<string, mstate>;
+export type id2mstate = Record<string, statecontext>;
 export type id2sstate = Record<string, sstate>;
 export type state_event_handler = (state: sstate, me: any, type: state_event_type) => void;
 export type Tape = any[];
@@ -59,18 +59,18 @@ export const NONE_STATE_ID = 'none';
 export type FlattenedPropKeys<T extends Record<string, unknown>, Key = keyof T> = Key extends string ? T[Key] extends Record<string, unknown> ? FlattenedPropKeys<T[Key]> : Key : never;
 
 @insavegame
-export class mstate {
+export class statecontext {
 	id: string;
 	states: id2sstate;
-	currentid: string; // Identifier of current state
-	history: Array<string>; // History of previous states
+	currentid!: string; // Identifier of current state
+	history!: Array<string>; // History of previous states
 	paused: boolean; // Iff paused, skip 'onrun'
 	/**
 	 * This state machine reflects the (partial) state of the game object with the given id
 	 * @see BaseModel.get
 	 */
 	targetid: string;
-	substate: Record<string, mstate>;
+	substate: Record<string, statecontext>;
 
 	public get target(): GameObject | BaseModel { return global.model.get(this.targetid); }
 	public get current(): sstate { return this.states[this.currentid]; };
@@ -87,15 +87,15 @@ export class mstate {
 	 * Factory for creating new FSMs.
 	 * @param _id - id of the FSM definition to use for this machine.
 	 * @param _targetid - id of the object that is stated by this FSM. @see {@link BaseModel.get}.
-	 * @param _sub_fsm_ids - array of ids of any additional machines to be added to this machines. @see {@link mstate.substate}.
+	 * @param _sub_fsm_ids - array of ids of any additional machines to be added to this machines. @see {@link statecontext.substate}.
 	 */
-	public static create(_id: string, _targetid: string, _sub_fsm_ids?: string[]): mstate {
-		let result = new mstate(_id, _targetid);
+	public static create(_id: string, _targetid: string, _sub_fsm_ids?: string[]): statecontext {
+		let result = new statecontext(_id, _targetid);
 		result.populateStates();
 
 		if (_sub_fsm_ids && _sub_fsm_ids.length > 0) {
 			_sub_fsm_ids.forEach(sub_id => {
-				result.substate.sub_id = new mstate(_id, _targetid);
+				result.substate.sub_id = new statecontext(_id, _targetid);
 				result.substate.sub_id.populateStates();
 			});
 		}
@@ -150,7 +150,7 @@ export class mstate {
 	public pop(): void {
 		if (this.history.length <= 0) return;
 		let poppedStateId = this.history.pop();
-		this.to(poppedStateId);
+		poppedStateId && this.to(poppedStateId);
 	}
 
 	public populateStates(): void {
@@ -180,20 +180,34 @@ export class mstate {
 	}
 }
 
+// export type tsstate<T extends GameObject> = {
+// 	get ik(): T;
+// } & sstate;
+
+// export type bla<T extends GameObject> = sstate & {
+// 	// on<Key extends string & keyof T>
+// 	// 	(bla: `${Key}`, blip: 2): void;
+
+// 	// [targetid => GameObject in sstate as any]
+// }
+
+// type blup = bla<GameObject>;
+// let a:blup = undefined;
+
 @insavegame
-export class sstate {
+export class sstate<T extends GameObject | BaseModel = any> {
 	id: string;
 	machineid: string;
 	/**
 	 * `If != undefined`, this state is a substate of the the state with `parentid`
 	 */
-	parentid: string;
+	// parentid: string;
 	/**
 	 * This concurrent state machine reflects the (partial) state of the game object with the given id
 	 * @see BaseModel.get
 	 */
 	targetid: string;
-	nudges2move: number; // Number of runs before tapehead moves to next statedata
+	nudges2move!: number; // Number of runs before tapehead moves to next statedata
 	// /**
 	//  * `If != undefined`, this state has substates
 	//  */
@@ -206,8 +220,9 @@ export class sstate {
 	protected get beyond_tapeend(): boolean { return !this.tape || this.head >= this.tape.length; } // Note that beyond end also returns true if there is no tape!
 	public get at_tape_start(): boolean { return this.head === 0; }
 	// public get internalstate() { return { statedata: this.tape, tapehead: this.head, nudges: this.nudges, nudges2move: this.nudges2move }; }
-	public get target(): GameObject | BaseModel { return global.model.get(this.targetid); }
+	public get target() { return this.targetAs<T>(); }//return global.model.get(this.targetid); }
 	// https://github.com/microsoft/TypeScript/issues/35986
+	// public ik = () => this.targetAs<T>();
 	public targetAs<T extends GameObject | BaseModel>(): T { return <T>global.model.get(this.targetid); }
 
 	public constructor(_id: string, _machineid: string, _targetid: string) {
@@ -228,7 +243,7 @@ export class sstate {
 		}
 	}
 
-	protected _tapehead: number;
+	protected _tapehead!: number;
 	public get head(): number {
 		return this._tapehead;
 	}
@@ -282,7 +297,7 @@ export class sstate {
 		this._nudges = v;
 	}
 
-	protected _nudges: number;
+	protected _nudges!: number;
 	public get nudges(): number {
 		return this._nudges;
 	}
@@ -292,11 +307,11 @@ export class sstate {
 	}
 
 	protected tapemove() {
-		this.definition.onnext?.(this, this.target, state_event_type.Next);
+		this.definition.onnext?.(this as sstate<T>, this.target, state_event_type.Next);
 	}
 
 	protected tapeend() {
-		this.definition.onend?.(this, this.target, state_event_type.End);
+		this.definition.onend?.(this as sstate<T>, this.target, state_event_type.End);
 	}
 
 	public reset(): void {
@@ -308,10 +323,10 @@ export class sstate {
 
 export class sdef {
 	public id: string;
-	public tape: Tape;
+	public tape!: Tape;
 	public nudges2move: number; // Number of runs before tapehead moves to next statedata
 	public auto_rewind_tape_after_end: boolean = true; // Automagically set the tapehead to index 0 when tapehead would go out of bound. Otherwise, will remain at end
-	public parent: mdef;
+	public parent!: mdef;
 	// public parent_state: sdef;
 	/**
 	 * `If != undefined`, this state has substates
@@ -324,13 +339,13 @@ export class sdef {
 		_partialdef && Object.assign(this, _partialdef);
 	}
 
-	public onrun: state_event_handler;
-	public onfinal: state_event_handler;
-	public onend: state_event_handler;
-	public onnext: state_event_handler;
-	public onenter: state_event_handler;
-	public onexit: state_event_handler;
-	public process_input: state_event_handler;
+	public onrun?: state_event_handler;
+	public onfinal?: state_event_handler;
+	public onend?: state_event_handler;
+	public onnext?: state_event_handler;
+	public onenter?: state_event_handler;
+	public onexit?: state_event_handler;
+	public process_input?: state_event_handler;
 
 	// Helper function to set all handlers
 	public setAllHandlers(handler: state_event_handler): void {

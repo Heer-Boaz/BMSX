@@ -3,7 +3,7 @@ import { SM } from "./soundmaster";
 import { Input } from "./input";
 import { RomLoadResult } from "./rompack";
 import { MSX2ScreenWidth, MSX2ScreenHeight, TileSize } from "./msx";
-import { mstate, mdef, sdef, sstate, setup_fsmdef_library, MachineDefinitions, id2mstate } from "./bfsm";
+import { statecontext, mdef, sdef, sstate, setup_fsmdef_library, MachineDefinitions, id2mstate } from "./bfsm";
 import { insavegame, onsave, Reviver, serializeObj } from "./gamereviver";
 import { BaseModel } from "./model";
 
@@ -380,14 +380,12 @@ export function area2size(a: Area) {
 	return <Size>{ x: a.end.x - a.start.x, y: a.end.y - a.start.y };
 }
 
-export function addToScreen(element: HTMLElement): void {
-	let gamescreen = document.getElementById('gamescreen');
-	gamescreen.appendChild(element);
+export function addElementToScreen(element: HTMLElement): void {
+	(document.getElementById('gamescreen') as HTMLElement).appendChild(element);
 }
 
-export function removeFromScreen(element: HTMLElement): void {
-	let gamescreen = document.getElementById('gamescreen');
-	gamescreen.removeChild(element);
+export function removeElementFromScreen(element: HTMLElement): void {
+	(document.getElementById('gamescreen') as HTMLElement).removeChild(element);
 }
 
 export function createDivSprite(img?: HTMLImageElement, imgsrc?: string | null, classnames?: string[] | null): HTMLDivElement {
@@ -498,17 +496,16 @@ export function getOppositeDirection(dir: Direction): Direction {
 }
 
 export class Game {
-	lastTick: number;
-	_turnCounter: number;
-	animationFrameRequestid: number;
+	lastTick!: number;
+	_turnCounter!: number;
+	animationFrameRequestid!: number;
 	public running: boolean;
 	public paused: boolean;
 	wasupdated: boolean;
 	public rom: RomLoadResult;
-	public debug_runSingleFrameAndPause: boolean;
+	public debug_runSingleFrameAndPause!: boolean;
 	public model<T extends BaseModel>(): T { return <T>global.model; }
 	public view<T extends BaseView>(): T { return <T>global.view; }
-
 
 	constructor(_rom: RomLoadResult, _model: BaseModel, _view: BaseView, sndcontext: AudioContext, gainnode: GainNode) {
 		global['game'] = this;
@@ -551,7 +548,7 @@ export class Game {
 		}
 	}
 
-	public run(tFrame?: number): void {
+	public run(tFrame: number): void {
 		let game = global.game;
 		if (!game.running) return;
 

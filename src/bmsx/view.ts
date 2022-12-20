@@ -67,7 +67,7 @@ export abstract class BaseView {
     }
 
     public handleResize(): void {
-        if (document.getElementById('gamescreen').style.visibility === 'hidden') return;
+        if (document.getElementById('gamescreen')!.style.visibility === 'hidden') return;
         let self = global.view || this;
         self.calculateSize();
         self.canvas.style.width = `${self.viewportSize.x * self.scale}px`;
@@ -189,6 +189,7 @@ export abstract class BaseView {
         let scaley = sy ?? 1;
         global.view.context.save();
         global.view.context.translate(~~x, ~~y);
+        options = options ?? 0;
         if (options & DrawImgFlags.HFLIP) {
             global.view.context.scale(-1 * scalex, 1 * scaley);
             global.view.context.translate(-img.width, 0);

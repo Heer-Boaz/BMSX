@@ -6,11 +6,12 @@
     "module": "commonjs", /* Specify module code generation: 'none', 'commonjs', 'amd', 'system', 'umd', 'es2015', or 'ESNext'. */
     "moduleResolution": "Node",
     "lib": [
-      "ESNEXT",
-      "dom",
+      "ESNext",
+      "DOM",
       "es2015.collection",
       "es2015.iterable",
-      "ES2017.object"
+      // "ES2017.object",
+      "ES2022.Object",
     ],
     "pretty": true,
     "preserveConstEnums": false, // Nodig voor rooms bouwen
@@ -35,11 +36,11 @@
     /* Strict Type-Checking Options */
     "strict": false, /* Enable all strict type-checking options. */
     "noImplicitAny": false, /* Raise error on expressions and declarations with an implied 'any' type. */
-    "strictNullChecks": false, /* Enable strict null checks. */
-    "strictFunctionTypes": false, /* Enable strict checking of function types. */
+    "strictNullChecks": true, /* Enable strict null checks. */
+    "strictFunctionTypes": true, /* Enable strict checking of function types. */
     "strictBindCallApply": false, /* Enable strict 'bind', 'call', and 'apply' methods on functions. */
     // "strictPropertyInitialization": true,  /* Enable strict checking of property initialization in classes. */
-    "noImplicitThis": false, /* Raise error on 'this' expressions with an implied 'any' type. */
+    "noImplicitThis": true, /* Raise error on 'this' expressions with an implied 'any' type. */
     "alwaysStrict": false, /* Parse in strict mode and emit "use strict" for each source file. */
     /* Additional Checks */
     // "noUnusedLocals": true,                /* Report errors on unused locals. */
@@ -55,6 +56,8 @@
     //   "src/bmsx"
     // ], /* List of root folders whose combined content represents the structure of the project at runtime. */
     /* List of folders to include type definitions from. */
+    "watch": true,
+    "useDefineForClassFields": true,
     "noImplicitOverride": true,
     "typeRoots": [
       "node_modules/@types"
@@ -74,17 +77,27 @@
     "inlineSourceMap": false, /* Emit a single file with source maps instead of having a separate file. */
     "inlineSources": true, /* Emit the source alongside the sourcemaps within a single file; requires '--inlineSourceMap' or '--sourceMap' to be set. */
     /* Experimental Options */
-    "experimentalDecorators": true,        /* Enables experimental support for ES7 decorators. */
-    "emitDecoratorMetadata": false         /* Enables experimental support for emitting type metadata for decorators. */
+    "experimentalDecorators": true, /* Enables experimental support for ES7 decorators. */
+    "emitDecoratorMetadata": false /* Enables experimental support for emitting type metadata for decorators. */
+  },
+  // NEW: Options for file/directory watching
+  "watchOptions": {
+    // Use native file system events for files and directories
+    "watchFile": "useFsEvents",
+    "watchDirectory": "useFsEvents",
+    // Poll files for updates more frequently
+    // when they're updated a lot.
+    "fallbackPolling": "dynamicPriority",
+    // Don't coalesce watch notification
+    "synchronousWatchDirectory": true,
+    // Finally, two additional settings for reducing the amount of possible
+    // files to track work from these directories
+    "excludeDirectories": [
+      "**/node_modules",
+      "dist",
+      "**/marlies2020",
+      "**/marlies2021",
+      "**/sintervania",
+    ],
   }
-  // "files": []
-  // "references": [
-  //   {
-  //     "path": "src/bmsx/tsconfig.json",
-  //     "prepend": false
-  //   }
-  // ]
-  // "include": [
-  //   "src/bmsx/**.*"
-  // ]
 }

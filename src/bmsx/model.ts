@@ -1,4 +1,4 @@
-import { mstate, mdef, MachineDefinitions, sdef, setup_fsmdef_library, sstate } from "./bfsm";
+import { statecontext, mdef, MachineDefinitions, sdef, setup_fsmdef_library, sstate } from "./bfsm";
 import { Direction, Point } from "./bmsx";
 import { GameObject } from "./gameobject";
 import { insavegame, onsave, Reviver, Savegame, serializeObj } from "./gamereviver";
@@ -77,7 +77,7 @@ export class Space {
 export type base_model_spaces = 'game_start' | 'default';
 
 export abstract class BaseModel {
-	public state: mstate;
+	public state: statecontext;
 	public [id2space]: id2spaceType;
 
 	public get objects(): GameObject[] {
@@ -167,7 +167,7 @@ export abstract class BaseModel {
 	* @param {string} `derived_modelclass_constructor_name` - the constructor name of the derived modelclass (that derives from this BaseModel.
 	*/
 	public init_model_state_machines(derived_modelclass_constructor_name: string): this {
-		this.state = mstate.create(derived_modelclass_constructor_name, 'model');
+		this.state = statecontext.create(derived_modelclass_constructor_name, 'model');
 		this.state.to('game_start');
 
 		return this;

@@ -48,7 +48,7 @@ var bvec = {
 };
 
 export abstract class GLView extends BaseView {
-	public glctx: WebGLRenderingContext;
+	public glctx: WebGL2RenderingContext;
 	private textures: { [key: number]: WebGLTexture; };
 
 	private program: WebGLProgram;
@@ -124,7 +124,7 @@ export abstract class GLView extends BaseView {
 			desynchronized: false,
 			preserveDrawingBuffer: false,
 			antialias: false,
-		});
+		}) as WebGL2RenderingContext;
 	}
 
 	override init(): void {
@@ -141,7 +141,7 @@ export abstract class GLView extends BaseView {
 		this.glctx.uniform2fv(this.resolutionLocation, this.resVec2);
 
 		// setup GLSL program
-		this.program = gl.createProgram();
+		this.program = gl.createProgram() as WebGLProgram;
 		let vertShader = this.loadShader(gl.VERTEX_SHADER, this.vertexShaderCode);
 		let fragShader = this.loadShader(gl.FRAGMENT_SHADER, this.fragmentShaderTextureCode);
 		if (!vertShader || !fragShader) return;
@@ -155,15 +155,15 @@ export abstract class GLView extends BaseView {
 		this.texcoordLocation = gl.getAttribLocation(this.program, "a_texcoord");
 
 		// lookup uniforms
-		this.resolutionLocation = gl.getUniformLocation(this.program, "u_resolution");
-		this.textureLocation = gl.getUniformLocation(this.program, "u_texture");
+		this.resolutionLocation = gl.getUniformLocation(this.program, "u_resolution")!;
+		this.textureLocation = gl.getUniformLocation(this.program, "u_texture")!;
 
 		// Create a buffer.
-		this.positionBuffer = gl.createBuffer();
+		this.positionBuffer = gl.createBuffer()!;
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
 		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(12 * 1000), gl.DYNAMIC_DRAW);
 		// Create a buffer for texture coords
-		this.texcoordBuffer = gl.createBuffer();
+		this.texcoordBuffer = gl.createBuffer()!;
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.texcoordBuffer);
 		let uglyTexCoordStuff = new Float32Array(12 * 1000);
 		for (let i = 0; i < 12 * 1000 - 12; i += 12) {
@@ -198,9 +198,9 @@ export abstract class GLView extends BaseView {
 		this.textures['_atlas'] = this.createTexture(BaseView.images['_atlas']);
 	}
 
-	private loadShader(type: number, source: string): WebGLShader {
+	private loadShader(type: number, source: string): WebGLShader | null {
 		let gl = this.glctx;
-		const shader = gl.createShader(type);
+		const shader = gl.createShader(type)!;
 
 		// Send the source to the shader object
 		gl.shaderSource(shader, source);
@@ -221,7 +221,7 @@ export abstract class GLView extends BaseView {
 	private createTexture(img: HTMLImageElement): WebGLTexture {
 		let gl = this.glctx;
 
-		let result = gl.createTexture();
+		let result = gl.createTexture()!;
 		gl.bindTexture(gl.TEXTURE_2D, result);
 		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
 		// let's assume all images are not a power of 2
@@ -258,17 +258,18 @@ export abstract class GLView extends BaseView {
 	override drawImg(imgid: string, x: number, y: number, options?: number, sx?: number, sy?: number): void {
 		let _this = global.view as GLView;
 		let gl = _this.glctx;
-		let width = global.game.rom['imgresources'][imgid]['imgmeta']['width'];
-		let height = global.game.rom['imgresources'][imgid]['imgmeta']['height'];
+		let width = global.game.rom.imgresources[imgid].imgmeta.width;
+		let height = global.game.rom.imgresources[imgid].imgmeta.height;
 
-		let flipx = (options & DrawImgFlags.HFLIP);
-		let flipy = (options & DrawImgFlags.VFLIP);
+		options = options ?? 0;
+		let flipx: number = options & DrawImgFlags.HFLIP;
+		let flipy: number = options & DrawImgFlags.VFLIP;
 
 		bvec.set(_this.vertexcoords, x, y, width, height, sx ?? 1, sy ?? 1);
-		if (flipx && flipy) _this.texcoords.set(global.game.rom['imgresources'][imgid]['imgmeta']['texcoords_fliphv']);
-		else if (flipx) _this.texcoords.set(global.game.rom['imgresources'][imgid]['imgmeta']['texcoords_fliph']);
-		else if (flipy) _this.texcoords.set(global.game.rom['imgresources'][imgid]['imgmeta']['texcoords_flipv']);
-		else _this.texcoords.set(global.game.rom['imgresources'][imgid]['imgmeta']['texcoords']);
+		if (flipx && flipy) _this.texcoords.set(global.game.rom.imgresources[imgid].imgmeta.texcoords_fliphv!);
+		else if (flipx) _this.texcoords.set(global.game.rom.imgresources[imgid].imgmeta.texcoords_fliph!);
+		else if (flipy) _this.texcoords.set(global.game.rom.imgresources[imgid].imgmeta.texcoords_flipv!);
+		else _this.texcoords.set(global.game.rom.imgresources[imgid].imgmeta.texcoords!);
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
 		gl.bufferSubData(gl.ARRAY_BUFFER, 48 * _this.drawImgReqIndex, _this.vertexcoords);
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.texcoordBuffer);

@@ -1,4 +1,4 @@
-import { mstate } from "./bfsm";
+import { statecontext } from "./bfsm";
 import { Point, Size, Area, Direction, moveArea, multiplyPoint, newPoint, divPoint, mod } from "./bmsx";
 import { insavegame } from "./gamereviver";
 import { TileSize } from "./msx";
@@ -12,17 +12,15 @@ export class GameObject {
 
 	public id: string;
 	public disposeFlag: boolean;
-	public z?: number;
-	public pos?: Point;
-	public size?: Size;
+	public z: number;
+	public pos: Point;
+	public size: Size;
 
 	public get wallHitarea(): Area { return this.hitarea; }
-	public state: mstate;
+	public state: statecontext;
 	public isWall?: boolean;
 
-	protected _hitarea?: Area;
-	public get hitarea() { return this._hitarea; }
-	public set hitarea(value: Area) { this._hitarea = value; }
+	public accessor hitarea: Area;
 
 	public hittable: boolean;
 	public visible?: boolean;
@@ -105,7 +103,7 @@ export class GameObject {
 	private static readonly GENERATED_ID_LENGTH = 10;
 	private static generateId(): string {
 		const chars = [..."abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"];
-		let result = undefined;
+		let result: string;
 		do {
 			result = [...Array(GameObject.GENERATED_ID_LENGTH)].map(() => chars[Math.random() * chars.length | 0]).join('');
 		} while (global.model?.exists(result)); // Make sure that the randomly generated string is unique!
@@ -115,12 +113,16 @@ export class GameObject {
 
 	/**
 	 * @param _id The id of the newly created object. If not given, defaults to generated id. @see {@link generateId}.
-	 * @param _fsm_id The id of the state machine that will be created for this object. Defaults to `this.constructor.name`. If there is no state machine with the given (default) name, the state machine factory will ensure that an "empty" state machine is created. @see {@link mstate.create}.
+	 * @param _fsm_id The id of the state machine that will be created for this object. Defaults to `this.constructor.name`. If there is no state machine with the given (default) name, the state machine factory will ensure that an "empty" state machine is created. @see {@link statecontext.create}.
 	 */
 	constructor(_id?: string, _fsm_id?: string) {
 		this.id = _id ?? GameObject.generateId();
 		this.hittable = true;
-		this.state = mstate.create(_fsm_id ?? this.constructor.name, this.id);
+		this.pos = { x: 0, y: 0 };
+		this.z = 0;
+		this.disposeFlag = false;
+		this.disposeOnSwitchRoom = true;
+		this.state = statecontext.create(_fsm_id ?? this.constructor.name, this.id);
 	}
 
 	static objectCollide(o1: GameObject, o2: GameObject): boolean {
@@ -175,25 +177,25 @@ export class GameObject {
 	*  transforming the game coordinates to canvas coordinates and that requires scaling
 	*  to be taken into account.
 	*/
-	public insideScaled(p: Point): Point {
+	public insideScaled(p: Point): Point | null {
 		let o1 = this;
 
 		let o1p = multiplyPoint(o1.pos, global.view.scale);
-		let o1a: Area = null;
+		let o1a: Area;
 		if (o1.hitarea) {
 			o1a = <Area>{ start: multiplyPoint(o1.hitarea.start, global.view.scale), end: multiplyPoint(o1.hitarea.end, global.view.scale) };
 		}
 		else if (o1.size) {
 			o1a = <Area>{ start: newPoint(0, 0), end: multiplyPoint(o1.size, global.view.scale) };
 		}
-		else return undefined;
+		else return null;
 
 		if (o1p.x + o1a.end.x >= p.x && o1p.x + o1a.start.x <= p.x &&
 			o1p.y + o1a.end.y >= p.y && o1p.y + o1a.start.y <= p.y) {
 			let offsetToP = newPoint(p.x - o1p.x, p.y - o1p.y);
 			return divPoint(offsetToP, global.view.scale);
 		}
-		return undefined;
+		return null;
 	}
 
 	public setx(newx: number) {

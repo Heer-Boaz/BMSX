@@ -57,7 +57,7 @@
 			],
 			"group": {
 				"kind": "build",
-				"isDefault": true,
+				"isDefault": true
 			},
 			"dependsOrder": "sequence",
 			"dependsOn": [
@@ -202,6 +202,24 @@
 				"group": "ROMPACKER"
 			},
 			"problemMatcher": []
+		},
+		{
+			// See https://go.microsoft.com/fwlink/?LinkId=733558
+			// for the documentation about the tasks.json format
+			"label": "Watch!",
+			"type": "typescript",
+			"tsconfig": "tsconfig.json",
+			"problemMatcher": [
+				"$tsc"
+			],
+			"icon": {
+				"id": "eye-watch",
+				"color": "terminal.ansiWhite"
+			},
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
 		}
 	],
 	"inputs": [
