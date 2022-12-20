@@ -20,7 +20,7 @@ export class GameObject {
 	public state: statecontext;
 	public isWall?: boolean;
 
-	public accessor hitarea: Area;
+	public hitarea: Area;
 
 	public hittable: boolean;
 	public visible?: boolean;

@@ -3,26 +3,29 @@ import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
 import { Input } from '../bmsx/input';
-import { mdef, sstate, sdef } from '../bmsx/bfsm';
-import { Sprite, statedef_builder, newArea, Point, BaseModel, newPoint, GameObject, Direction, Game, newSize } from '../bmsx/bmsx';
+import { mdef, sstate, sdef, statedef_builder, machine_states } from '../bmsx/bfsm';
 import { insavegame } from '../bmsx/gamereviver';
+import { newArea, Point, newPoint, Direction, Game, newSize } from '../bmsx/bmsx';
+import { GameObject } from '../bmsx/gameobject';
+import { BaseModel } from '../bmsx/model';
+import { Sprite } from '../bmsx/sprite';
 
 @insavegame
 class bclass extends Sprite {
     @statedef_builder
-    public static bouw(): Partial<mdef> {
-        let blarun = (s: sstate, me: bclass) => {
+    public static bouw(): machine_states {
+        function blarun(this: bclass, s: sstate) {
             if (Input.KD_UP) {
-                me.pos.y -= 2;
+                this.pos.y -= 2;
             }
             if (Input.KD_RIGHT) {
-                me.pos.x += 2;
+                this.pos.x += 2;
             }
             if (Input.KD_DOWN) {
-                me.pos.y += 2;
+                this.pos.y += 2;
             }
             if (Input.KD_LEFT) {
-                me.pos.x -= 2;
+                this.pos.x -= 2;
             }
             if (Input.KC_BTN1) {
                 _model[savestring] = _model.save();
@@ -45,16 +48,14 @@ class bclass extends Sprite {
 
         return {
             states: {
-                game_start: new sdef('game_start', {
-                }),
-                bla: new sdef('bla', {
+                bla: {
                     onrun: blarun,
-                    onenter: (_, me: bclass) => { me.imgid = BitmapId.b; },
-                }),
-                blap: new sdef('blap', {
+                    onenter(this: bclass) { this.imgid = BitmapId.b; },
+                },
+                blap: {
                     onrun: blarun,
-                    onenter: (_, me: bclass) => { me.imgid = BitmapId.b2; },
-                }),
+                    onenter(this: bclass) { this.imgid = BitmapId.b2; },
+                },
             }
         };
     }
@@ -77,18 +78,17 @@ class gamemodel extends BaseModel {
     public [savestring]: string;
 
     @statedef_builder
-    public static bouw(): Partial<mdef> {
+    public static bouw(): machine_states {
         return {
             states: {
-                game_start: new sdef('game_start', {
-                    onrun(s: sstate) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
-                        let ik = global.model as gamemodel;
-                        ik.state.to('default');
+                game_start: {
+                    onrun(this: gamemodel, s: sstate) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
+                        this.state.to('default');
                     }
-                }),
-                default: new sdef('default', {
+                },
+                default: {
                     onrun: BaseModel.defaultrun,
-                }),
+                },
             }
         };
     }

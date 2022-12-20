@@ -1,7 +1,7 @@
 import { statecontext, mdef, MachineDefinitions, sdef, setup_fsmdef_library, sstate } from "./bfsm";
 import { Direction, Point } from "./bmsx";
 import { GameObject } from "./gameobject";
-import { insavegame, onsave, Reviver, Savegame, serializeObj } from "./gamereviver";
+import { insavegame, onsave, Reviver, Savegame, Serializer } from "./gamereviver";
 import { Input } from "./input";
 
 export interface ISpaceObject {
@@ -204,19 +204,19 @@ export abstract class BaseModel {
 		objects.filter(o => o.disposeFlag).forEach(o => global.model.exile(o));
 	};
 
-	static default_input_handler_for_allow_open_gamemenu(s: sstate, ik: BaseModel) {
+	static default_input_handler_for_allow_open_gamemenu(this: BaseModel, s: sstate<BaseModel>) {
 		if (Input.KC_F5) {
-			ik.state.substate.gamemenu.to('open');
+			this.state.substate.gamemenu.to('open');
 		}
 	}
 
-	static default_input_handler_for_allow_close_gamemenu(s: sstate, ik: BaseModel) {
+	static default_input_handler_for_allow_close_gamemenu(this: BaseModel, s: sstate<BaseModel>) {
 		if (Input.KC_F5) {
-			ik.state.substate.gamemenu.to('closed');
+			this.state.substate.gamemenu.to('closed');
 		}
 	}
 
-	static default_input_handler(s: sstate, ik: BaseModel) {
+	static default_input_handler(this: BaseModel, s: sstate<BaseModel>) {
 	}
 
 	public load(serialized: string): void {
@@ -263,7 +263,7 @@ export abstract class BaseModel {
 
 		let savegame = createSavegame();
 		global.game.paused = false;
-		return serializeObj(savegame);
+		return Serializer(savegame);
 	}
 
 	public filter(predicate: (value: GameObject, index: number, array: GameObject[], thisArg?: any) => unknown): GameObject[] {

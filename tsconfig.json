@@ -11,7 +11,7 @@
       "es2015.collection",
       "es2015.iterable",
       // "ES2017.object",
-      "ES2022.Object",
+      "ES2022.Object"
     ],
     "pretty": true,
     "preserveConstEnums": false, // Nodig voor rooms bouwen
@@ -36,7 +36,7 @@
     /* Strict Type-Checking Options */
     "strict": false, /* Enable all strict type-checking options. */
     "noImplicitAny": false, /* Raise error on expressions and declarations with an implied 'any' type. */
-    "strictNullChecks": true, /* Enable strict null checks. */
+    "strictNullChecks": false, /* Enable strict null checks. */
     "strictFunctionTypes": true, /* Enable strict checking of function types. */
     "strictBindCallApply": false, /* Enable strict 'bind', 'call', and 'apply' methods on functions. */
     // "strictPropertyInitialization": true,  /* Enable strict checking of property initialization in classes. */
@@ -95,9 +95,9 @@
     "excludeDirectories": [
       "**/node_modules",
       "dist",
-      "**/marlies2020",
-      "**/marlies2021",
-      "**/sintervania",
-    ],
+      "src/marlies2020",
+      "src/marlies2021",
+      "src/sintervania"
+    ]
   }
 }

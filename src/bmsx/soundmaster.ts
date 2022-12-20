@@ -9,11 +9,11 @@ export class SM {
 
 	private static currentMusicNode: AudioBufferSourceNode;
 	private static currentEffectNode: AudioBufferSourceNode;
-	public static currentEffectAudio: AudioMeta;
-	public static currentMusicAudio: AudioMeta;
+	public static currentEffectAudio: AudioMeta | null;
+	public static currentMusicAudio: AudioMeta | null;
 	private static gainNode: GainNode;
 
-	public static init(_audioResources: id2res, sndcontext?: AudioContext, gainnode?: GainNode) {
+	public static init(_audioResources: id2res, sndcontext: AudioContext, gainnode?: GainNode) {
 		SM.sndContext = sndcontext;
 		SM.currentEffectAudio = null;
 		SM.currentMusicAudio = null;
@@ -62,7 +62,7 @@ export class SM {
 			node.connect(SM.gainNode);
 			if (_track['loop'] !== null) {
 				node.loop = true;
-				node.loopStart = _track['loop'];
+				node.loopStart = _track['loop']!;
 			}
 			else node.loop = false;
 			node.start();

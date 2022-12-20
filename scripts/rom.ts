@@ -13,12 +13,12 @@ declare var h406A: (rom: RomLoadResult, sndcontext: AudioContext, gainnode: Gain
 // };
 
 var bootrom = {
-	rom: null as RomLoadResult,
+	rom: null as RomLoadResult | null,
 	debug: false,
 	localfetch: false,
-	sndcontext: <AudioContext>null,
+	sndcontext: null as AudioContext | null,
 	snd_unlocked: false,
-	gainnode: <GainNode>null,
+	gainnode: null as GainNode | null,
 	theshowsover: false,
 
 	set defusr(rom: RomLoadResult) {
@@ -29,9 +29,9 @@ var bootrom = {
 		// if (bootrom.theshowsover) return -x; // :-(
 
 		document.body.style.backgroundColor = "#000000";
-		document.getElementById('gamescreen').hidden = false;
-		loadScript(bootrom.rom).then(() => {
-			h406A(bootrom.rom, bootrom.sndcontext, bootrom.gainnode);
+		document.getElementById('gamescreen')!.hidden = false;
+		loadScript(bootrom.rom!).then(() => {
+			h406A(bootrom.rom!, bootrom.sndcontext!, bootrom.gainnode!);
 			bootrom.rom = null;
 			return x;
 		})
@@ -41,7 +41,7 @@ var bootrom = {
 		return 255;
 	},
 
-	async bload(url: string): Promise<RomLoadResult> {
+	async bload(url: string): Promise<RomLoadResult | null> {
 		window.onunhandledrejection = event => {
 			console.log(event.cancelable, event.reason, "unhandled rejection??");
 			event.preventDefault();
@@ -67,7 +67,7 @@ var bootrom = {
 
 		return new Promise(async (resolve, reject) => {
 			let bootCompletePromise = awaitBootComplete();
-			let result: RomLoadResult = null;
+			let result: RomLoadResult | null = null;
 			fetchRom()
 				.then(response_array => pako.inflate(response_array).buffer)
 				.then(rom => loadResources(rom))
@@ -134,7 +134,7 @@ async function loadResources(rom: ArrayBuffer): Promise<RomLoadResult> {
 async function load(rom: ArrayBuffer, res: RomResource, romResult: RomLoadResult): Promise<void> {
 	switch (res.type) {
 		case 'image':
-			if (!res.imgmeta.atlassed) {
+			if (!res.imgmeta!.atlassed) {
 				let mime: string;
 				let blub: Blob;
 				let url: string;
@@ -218,7 +218,7 @@ async function loadScript(rom: RomLoadResult): Promise<void> {
 async function awaitPressedAnyKey(): Promise<void> {
 	let remove = (id: string) => {
 		let element = document.querySelector(id);
-		if (element) element.parentElement.removeChild(element);
+		if (element) element.parentElement!.removeChild(element);
 	};
 	let wrapup = () => {
 		(document.querySelector('#loading') as HTMLElement).hidden = true;
@@ -233,7 +233,7 @@ async function awaitPressedAnyKey(): Promise<void> {
 				if (!bootrom.snd_unlocked || !bootrom.theshowsover) { return; }
 				if (e.type == 'touchend') {
 					let controls = document.getElementById("controls");
-					controls.hidden = false;
+					controls!.hidden = false;
 					document.documentElement.setAttribute("style", "touch-action: none;");
 					document.documentElement.setAttribute("style", "pointer-events: none;");
 				}

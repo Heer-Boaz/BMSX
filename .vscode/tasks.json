@@ -1,6 +1,6 @@
 {
 	"version": "2.0.0",
-	"_runner": "terminal",
+	// "_runner": "terminal",
 	"tasks": [
 		{
 			"label": "build game + all deps",
@@ -28,9 +28,9 @@
 				"focus": false,
 				"panel": "shared",
 				"showReuseMessage": false,
-				"clear": false,
+				"clear": true,
 				"revealProblems": "onProblem",
-				"group": "ROMPACKER"
+				"group": "ROMPACKER",
 			}
 		},
 		{
@@ -73,7 +73,7 @@
 				"focus": false,
 				"panel": "shared",
 				"showReuseMessage": false,
-				"clear": false,
+				"clear": true,
 				"revealProblems": "onProblem",
 				"group": "ROMPACKER"
 			}
@@ -218,7 +218,7 @@
 			},
 			"group": {
 				"kind": "build",
-				"isDefault": true
+				"isDefault": false
 			}
 		}
 	],

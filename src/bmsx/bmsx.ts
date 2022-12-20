@@ -1,10 +1,8 @@
-﻿import { BaseView, paintSprite } from "./view";
+﻿import { BaseView } from "./view";
 import { SM } from "./soundmaster";
 import { Input } from "./input";
 import { RomLoadResult } from "./rompack";
 import { MSX2ScreenWidth, MSX2ScreenHeight, TileSize } from "./msx";
-import { statecontext, mdef, sdef, sstate, setup_fsmdef_library, MachineDefinitions, id2mstate } from "./bfsm";
-import { insavegame, onsave, Reviver, serializeObj } from "./gamereviver";
 import { BaseModel } from "./model";
 
 declare global {

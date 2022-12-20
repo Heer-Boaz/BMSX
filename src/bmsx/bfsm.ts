@@ -1,9 +1,9 @@
 import { GameObject } from "./gameobject";
-import { insavegame } from "./gamereviver";
+import { exclude_save, insavegame } from "./gamereviver";
 import { BaseModel } from "./model";
 
 export var MachineDefinitions: Record<string, mdef>;
-var MachineDefinitionBuilders: Record<string, () => Partial<mdef>>;
+var MachineDefinitionBuilders: Record<string, () => machine_states>;
 
 // target: the class that the member is on.
 // name: the name of the member in the class.
@@ -22,12 +22,12 @@ export function statedef_builder(target: any, name: any, descriptor: PropertyDes
 
 export function setup_fsmdef_library(): void {
 	MachineDefinitions = {};
-	for (let classname in MachineDefinitionBuilders) {
-		let machineDefForClass = MachineDefinitionBuilders[classname]();
+	for (let machine_name in MachineDefinitionBuilders) {
+		let machine_definition = MachineDefinitionBuilders[machine_name]();
 		let machineBuilt: mdef;
-		if (machineDefForClass) {
-			machineBuilt = new mdef(classname, machineDefForClass);
-			if (machineDefForClass) MachineDefinitions[classname] = machineBuilt; // A class might choose not to create a new machine
+		if (machine_definition) {
+			machineBuilt = new mdef(machine_name, machine_definition);
+			if (machine_definition) MachineDefinitions[machine_name] = machineBuilt; // A class might choose not to create a new machine
 		}
 	}
 }
@@ -45,7 +45,7 @@ export type id2sdef = Record<string, sdef>;
 export type id2mdef = Record<string, mdef>;
 export type id2mstate = Record<string, statecontext>;
 export type id2sstate = Record<string, sstate>;
-export type state_event_handler = (state: sstate, me: any, type: state_event_type) => void;
+export type state_event_handler = (state: sstate, type: state_event_type) => void;
 export type Tape = any[];
 
 const BST_MAX_HISTORY = 10;
@@ -108,7 +108,7 @@ export class statecontext {
 		this.targetid = _targetid;
 		this.states ??= {};
 		this.paused ??= false;
-		this.substate = {};
+		this.substate ??= {};
 
 		// Note: when parameters are undefined, this constructor was invoked without parameters. This happens when it is revived. In that situation, don't init this object
 		_id && _targetid && this.reset();
@@ -117,14 +117,14 @@ export class statecontext {
 	public run(): void {
 		if (this.paused) return;
 		// [this.currentStatedef] can be undefined if we are in the 'none' state
-		this.current_state_definition?.process_input?.(this.current, this.target, state_event_type.None);
-		this.current_state_definition?.onrun?.(this.current, this.target, state_event_type.Run);
+		this.current_state_definition?.process_input?.call(this.target, this.current, this.target, state_event_type.None);
+		this.current_state_definition?.onrun?.call(this.target, this.current, this.target, state_event_type.Run);
 	}
 
 	public to(newstate: string): void {
 		let stateDef = this.current_state_definition;
 		// stateDef can be undefined if we are in the 'none' state
-		stateDef?.onexit?.(this.current, this.target, state_event_type.Exit);
+		stateDef?.onexit?.call(this.target, this.current, this.target, state_event_type.Exit);
 		stateDef && this.pushHistory(this.currentid); // Store the previous state on the history stack, if it is other than 'none'
 
 		this.currentid = newstate; // Switch the current state to the new state
@@ -132,7 +132,7 @@ export class statecontext {
 
 		stateDef = this.current_state_definition;
 		// stateDef can be undefined if we are in the 'none' state
-		stateDef?.onenter?.(this.current, this.target, state_event_type.Enter);
+		stateDef?.onenter?.call(this.target, this.current, this.target, state_event_type.Enter);
 	}
 
 	protected pushHistory(toPush: string): void {
@@ -172,10 +172,10 @@ export class statecontext {
 
 	private add(...states: sstate[]): void {
 		for (let state of states) {
-			if (!state.id) throw new Error(`State is missing an id, while attempting to add it to this mstate!`);
-			if (this.states[state.id]) throw new Error(`State ${state.id} already exists for state machine!`);
-			this.states[state.id] = state;
-			state.machineid = this.id;
+			if (!state.statedef_id) throw new Error(`State is missing an id, while attempting to add it to this mstate!`);
+			if (this.states[state.statedef_id]) throw new Error(`State ${state.statedef_id} already exists for state machine!`);
+			this.states[state.statedef_id] = state;
+			state.machinedef_id = this.id;
 		}
 	}
 }
@@ -196,8 +196,8 @@ export class statecontext {
 
 @insavegame
 export class sstate<T extends GameObject | BaseModel = any> {
-	id: string;
-	machineid: string;
+	public statedef_id: string;
+	public machinedef_id: string;
 	/**
 	 * `If != undefined`, this state is a substate of the the state with `parentid`
 	 */
@@ -206,14 +206,10 @@ export class sstate<T extends GameObject | BaseModel = any> {
 	 * This concurrent state machine reflects the (partial) state of the game object with the given id
 	 * @see BaseModel.get
 	 */
-	targetid: string;
-	nudges2move!: number; // Number of runs before tapehead moves to next statedata
-	// /**
-	//  * `If != undefined`, this state has substates
-	//  */
-	// submachine: mstate;
+	public targetid: string;
+	public nudges2move!: number; // Number of runs before tapehead moves to next statedata
 
-	public get definition(): sdef { return MachineDefinitions[this.machineid]?.states[this.id]; } // Note that definition can be empty, as not all objects have a defined machine
+	public get definition(): sdef { return MachineDefinitions[this.machinedef_id]?.states[this.statedef_id]; } // Note that definition can be empty, as not all objects have a defined machine
 	public get tape(): Tape { return this.definition.tape; }
 	public get current(): any { return (this.tape && this.head < this.tape.length) ? this.tape[this.head] : undefined; };
 	public get at_tapeend(): boolean { return !this.tape || this.head >= this.tape.length - 1; } // Note that beyond end also returns true if there is no tape!
@@ -226,20 +222,13 @@ export class sstate<T extends GameObject | BaseModel = any> {
 	public targetAs<T extends GameObject | BaseModel>(): T { return <T>global.model.get(this.targetid); }
 
 	public constructor(_id: string, _machineid: string, _targetid: string) {
-		this.id = _id;
-		this.machineid = _machineid;
+		this.statedef_id = _id;
+		this.machinedef_id = _machineid;
 		this.targetid = _targetid;
 
 		// Note: when parameters are undefined, this constructor was invoked without parameters. This happens when it is revived. In that situation, don't init this object
 		if (_id && _machineid && this.definition) { // No definition exists for the empty 'none'-state
 			this.reset();
-
-			// If this state has its own state machine, create submachine and populate substates
-			// let sub_machine_def = this.definition.submachine;
-			// if (sub_machine_def) {
-			// 	this.submachine = new mstate(sub_machine_def.id, this.targetid);
-			// 	this.submachine.populateStates();
-			// }
 		}
 	}
 
@@ -307,11 +296,13 @@ export class sstate<T extends GameObject | BaseModel = any> {
 	}
 
 	protected tapemove() {
-		this.definition.onnext?.(this as sstate<T>, this.target, state_event_type.Next);
+		this.definition.onnext?.call(this.target, this as sstate<T>, this.target, state_event_type.Next);
+		// this.definition.onnext?.(this as sstate<T>, this.target, state_event_type.Next);
 	}
 
 	protected tapeend() {
-		this.definition.onend?.(this as sstate<T>, this.target, state_event_type.End);
+		this.definition.onend?.call(this.target, this as sstate<T>, this.target, state_event_type.End);
+		// this.definition.onend?.(this as sstate<T>, this.target, state_event_type.End);
 	}
 
 	public reset(): void {
@@ -326,6 +317,8 @@ export class sdef {
 	public tape!: Tape;
 	public nudges2move: number; // Number of runs before tapehead moves to next statedata
 	public auto_rewind_tape_after_end: boolean = true; // Automagically set the tapehead to index 0 when tapehead would go out of bound. Otherwise, will remain at end
+
+	@exclude_save
 	public parent!: mdef;
 	// public parent_state: sdef;
 	/**
@@ -359,15 +352,38 @@ export class sdef {
 	}
 }
 
+export type id2partial_sdef = Record<string, Partial<sdef>>;
+
+export interface machine_states {
+	states: id2partial_sdef;
+}
+
+let test: machine_states = {
+	states: {
+		bla: {
+			nudges2move:10,
+		}
+	}
+}
+
 export class mdef {
 	public id: string;
 	public states: id2sdef;
-	public getStateDef(s_id: string): sdef { return this.states[s_id]; }
+	// public getStateDef(s_id: string): sdef { return this.states[s_id]; }
 
-	constructor(id?: string, _partialdef?: Partial<mdef>) {
+	// constructor(id?: string, _partialdef?: Partial<mdef>) {
+	// 	this.id = id ?? DEFAULT_BST_ID;
+	// 	this.states ??= {};
+	// 	_partialdef && Object.assign(this, _partialdef);
+	// }
+
+	constructor(id?: string, state_list?: machine_states) {
 		this.id = id ?? DEFAULT_BST_ID;
 		this.states ??= {};
-		_partialdef && Object.assign(this, _partialdef);
+		for (let state_id of Object.keys(state_list.states)) {
+			this.append(this.#create_state(state_list.states[state_id], state_id));
+		}
+		// _partialdef && Object.assign(this, _partialdef);
 	}
 
 	// public create(id: string): sdef {
@@ -378,19 +394,21 @@ export class mdef {
 	// 	return result;
 	// }
 
-	// public add(...states: sdef[]): void {
-	// 	for (let state of states) {
-	// 		if (!state.id) throw new Error(`State is missing an id, while attempting to add it to this bst!`);
-	// 		if (this.states[state.id]) throw new Error(`State ${state.id} already exists for state machine!`);
-	// 		this.states[state.id] = state;
-	// 		state.parent = this;
-	// 	}
-	// }
+	#create_state(partial: Partial<sdef>, _state_id: string): sdef {
+		if (!partial) throw new Error(`'sdef' with id '${_state_id}' is missing definitionm while attempting to add it to this 'mdef'!`);
+		return new sdef(_state_id, partial);
+	}
 
-	// public append(_state: sdef, _id: string): void {
-	// 	this.states[_id] = _state;
-	// 	_state.parent = this;
-	// }
+	public add(...states: sdef[]): void {
+		states.forEach(s => this.append(s));
+	}
+
+	public append(_state: sdef): void {
+		if (!_state.id) throw new Error(`'sdef' is missing an id, while attempting to add it to this 'mdef'!`);
+		if (this.states[_state.id]) throw new Error(`'sdef' with id='${_state.id}' already exists for this 'mdef'!`);
+		this.states[_state.id] = _state;
+		_state.parent = this;
+	}
 
 	// public remove(_id: string): void {
 	// 	let s = this.states[_id];

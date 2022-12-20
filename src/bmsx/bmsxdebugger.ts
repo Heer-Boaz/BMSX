@@ -1,6 +1,7 @@
 import { MachineDefinitions } from './bfsm';
 import { newPoint, Point } from './bmsx';
 import { GameObject } from './gameobject';
+import { Serializer } from './gamereviver';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
 
 let draggedObj: GameObject | null;
@@ -87,6 +88,14 @@ function addElement(addElementTo: HTMLElement, contentAsElement: HTMLElement) {
 const OBJECT_TABLE_PROPS_TO_REDIRECT_NAMES = ['state', 'objects', 'spaces'];
 const OBJECT_TABLE_REDIRECT_BY_INNER_OBJECT = false;
 
+function shouldPropertyBeExcluded(propName: string, parent_obj: Object): boolean {
+	let parent_obj_name = parent_obj?.constructor?.name;
+	if (!parent_obj_name || !propName) return false;
+
+	let exclude = Serializer.excludedProperties[parent_obj_name]?.[propName];
+	return exclude ?? false;
+}
+
 function shouldPropertyValueBeRedirectedToSubDialog(propName: string, propValue: any): boolean {
 	if (OBJECT_TABLE_REDIRECT_BY_INNER_OBJECT) {
 		let valuesInSubobject = Object.values(propValue);
@@ -103,7 +112,7 @@ function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement
 	addContent(headerRow, 'th', 'Prop');
 	addContent(headerRow, 'th', 'Value');
 
-	function addTableRowForProperty(key: string, value: any): void {
+	function addTableRowForProperty(key: string, value: any, parent_obj: Object): void {
 		let row = addContent(table, 'tr', null);
 		addContent(row, 'td', `${key}`);
 		let type = typeof value;
@@ -111,7 +120,11 @@ function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement
 			let newObjName = `${objName}.${key}`;
 			if (!value) {
 				let valueCell = addContent(row, 'td', value === undefined ? 'undefined' : 'null');
-				valueCell.classList.add('immutable-propvalue');
+				valueCell.classList.add('empty-propvalue');
+			}
+			else if (shouldPropertyBeExcluded(key, parent_obj)) {
+				let valueCell = addContent(row, 'td', 'Excluded!');
+				valueCell.classList.add('excluded-propvalue');
 			}
 			else if (shouldPropertyValueBeRedirectedToSubDialog(key, value)) {
 				let valueCell = addContent(row, 'td', `< ... >`);
@@ -123,7 +136,13 @@ function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement
 				};
 			}
 			else {
-				addElement(row, createObjectTableElement(dialog, row, value, newObjName, ignoreProps));
+				if (Object.keys(value)?.length ?? 0 > 0) {
+					addElement(row, createObjectTableElement(dialog, row, value, newObjName, ignoreProps));
+				}
+				else {
+					let valueCell = addContent(row, 'td', 'Empty like your ❤️');
+					valueCell.classList.add('empty-propvalue');
+				}
 			}
 		}
 		else {
@@ -134,7 +153,13 @@ function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement
 				case 'boolean':
 				case 'bigint':
 				case 'number':
-					valueCell.classList.add('propvalue');
+				case 'undefined':
+					if (type === 'undefined') {
+						valueCell.classList.add('undefined-propvalue');
+					}
+					else {
+						valueCell.classList.add('propvalue');
+					}
 					valueCell.onclick = (e) => {
 						let currentValueAsStringInHandlerScope = String(obj[key]);
 						let newValue = prompt(`Edit value for "${key}":`, currentValueAsStringInHandlerScope);
@@ -173,13 +198,13 @@ function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement
 				if (ignoreProps.includes(key)) continue;
 			}
 
-			addTableRowForProperty(key, value);
+			addTableRowForProperty(key, value, obj);
 		}
 	}
 	else {
 		let arr = obj as [];
 		for (let i = 0; i < arr.length; i++) {
-			addTableRowForProperty(`${i}`, arr[i]);
+			addTableRowForProperty(`${i}`, arr[i], obj);
 		}
 	}
 

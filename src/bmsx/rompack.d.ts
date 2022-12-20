@@ -25,8 +25,8 @@ export interface RomResource {
 	type: string;
 	start: number;
 	end: number;
-	imgmeta: ImgMeta;
-	audiometa: AudioMeta;
+	imgmeta?: ImgMeta;
+	audiometa?: AudioMeta;
 }
 
 export interface RomMeta {

@@ -35,7 +35,7 @@ const BOILERPLATE_RESOURCE_ID_AUDIO = `export enum AudioId {
 `;
 
 const atlasCanvas: HTMLCanvasElement = <any>createCanvas(ATLAS_PX_SIZE, ATLAS_PX_SIZE);
-const ctx: CanvasRenderingContext2D = atlasCanvas.getContext('2d');
+const ctx: CanvasRenderingContext2D = atlasCanvas.getContext('2d')!;
 const atlasPos = { x: 0, y: 0 };
 let atlasExploitedX = 0; // For cropping atlas later, because we are not sure that full width is exploited
 let atlasUnsafeY = 0; // Also used for cropping atlas later, but primarily used to create atlas
@@ -46,9 +46,9 @@ interface LoadedResource extends ResourceMeta {
 }
 
 interface ResourceMeta {
-	filepath: string;
+	filepath?: string;
 	name: string;
-	ext: string;
+	ext?: string;
 	type: string;
 	id: number;
 }
@@ -144,14 +144,15 @@ function getFiles(dirPath: string, arrayOfFiles?: string[], filterExtension?: st
 
 function getAllNonRootDirs(dirPath: string, arrayOfFiles?: string[], filterExtension?: string): string[] {
 	let entries = readdirSync(dirPath);
+	arrayOfFiles = arrayOfFiles || [];
 	entries.filter(entry => statSync(`${dirPath}/${entry}`).isDirectory() && `${dirPath}/${entry}`.indexOf("_ignore") === -1).forEach(entry => arrayOfFiles = getAllFiles(`${dirPath}/${entry}`, arrayOfFiles, filterExtension));
 	return arrayOfFiles;
 }
 
-function getAllFiles(dirPath: string, arrayOfFiles?: string[], filterExtension?: string): string[] {
+function getAllFiles(dirPath: string, _arrayOfFiles?: string[], filterExtension?: string): string[] {
 	let files = readdirSync(dirPath);
 
-	arrayOfFiles = arrayOfFiles || [];
+	let arrayOfFiles = _arrayOfFiles || [];
 
 	files.filter(f => f.indexOf("_ignore") === -1).forEach(function (file) {
 		let fullpath = `${dirPath}/${file}`;
@@ -190,7 +191,7 @@ function yaml2Json(): Promise<void> {
 		catch (err) {
 			reject(err);
 		}
-		resolve(null);
+		resolve();
 	});
 }
 
@@ -322,7 +323,7 @@ async function buildGameHtmlAndManifest(outfile: string, title: string): Promise
 			webkit: true,
 		}
 	};
-	let romjsMinified = (await terser.minify(romjs, options)).code;
+	let romjsMinified = (await terser.minify(romjs, options)).code!;
 	let bmsx = readFileSync("./rom/bmsx.png");
 	let bmsx_base64ed = bmsx.toString('base64');
 
@@ -380,7 +381,7 @@ function parseAudioMeta(filename: string): { sanitizedName: string, meta: AudioM
 		{
 			audiotype: filename.indexOf('@m') >= 0 ? AudioType.music : AudioType.effect,
 			priority: priority,
-			loop: loop
+			loop: loop!
 		}
 	};
 }
@@ -485,7 +486,7 @@ function getResMetaList(respath: string): ResourceMeta[] {
 		}
 	}
 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-		result.push({ filepath: null, name: '_atlas', ext: null, type: 'atlas', id: imgid }); // Note that 'atlas' is an internal type, used only for this script
+		result.push({ filepath: undefined, name: '_atlas', ext: undefined, type: 'atlas', id: imgid }); // Note that 'atlas' is an internal type, used only for this script
 	}
 
 	// appendLogEntry(`${_colors.grey('[Donut]')}\n`);
@@ -508,13 +509,13 @@ async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>): 
 		let img: any = undefined;
 		if (type === 'image') {
 			if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-				const base64Encoded = readFileSync(meta.filepath, 'base64');
+				const base64Encoded = readFileSync(meta.filepath!, 'base64');
 				const dataURL = `data:image/png;base64,${base64Encoded}`;
 				img = await loadImage(dataURL);
 			}
 		}
 
-		loadedResources.push({ buffer: buffer, filepath: meta.filepath, name: name, ext: ext, type: type, img: img, id: id });
+		loadedResources.push({ buffer: buffer!, filepath: meta.filepath, name: name, ext: ext, type: type, img: img, id: id });
 	}
 
 	// Manually add the ROM source code to the list
@@ -599,7 +600,7 @@ async function buildRompack(outfile: string, respath: string): Promise<any> {
 		log("Minifyen... ");
 		startRotator();
 		let minifyGamecodeResult = await minifyGamecode("./rom/megarom.js");
-		writeFileSync("./rom/megarom.min.js", minifyGamecodeResult.code);
+		writeFileSync("./rom/megarom.min.js", minifyGamecodeResult.code!);
 		if (minifyGamecodeResult.map) {
 			writeFileSync("./rom/megarom.min.map", minifyGamecodeResult.map as string);
 		}
@@ -629,19 +630,19 @@ async function buildRompack(outfile: string, respath: string): Promise<any> {
 			switch (type) {
 				case 'image':
 					let img = res.img;
-					let imgmeta: ImgMeta = null;
+					let imgmeta: ImgMeta;
 					if (GENERATE_AND_USE_TEXTURE_ATLAS) {
 						imgmeta = addToAtlas(img);
 						if (DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
-							jsonout.push({ resid: resid, resname: name, type: type, start: 0, end: 0, imgmeta: { atlassed: imgmeta.atlassed, width: imgmeta.width, height: imgmeta.height, texcoords: imgmeta.texcoords, texcoords_fliph: imgmeta.texcoords_fliph, texcoords_flipv: imgmeta.texcoords_flipv, texcoords_fliphv: imgmeta.texcoords_fliphv }, audiometa: null, });
+							jsonout.push({ resid: resid, resname: name, type: type, start: 0, end: 0, imgmeta: { atlassed: imgmeta.atlassed, width: imgmeta.width, height: imgmeta.height, texcoords: imgmeta.texcoords, texcoords_fliph: imgmeta.texcoords_fliph, texcoords_flipv: imgmeta.texcoords_flipv, texcoords_fliphv: imgmeta.texcoords_fliphv }, audiometa: undefined, });
 						}
 						else {
-							jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: { atlassed: imgmeta.atlassed, width: imgmeta.width, height: imgmeta.height, texcoords: imgmeta.texcoords, texcoords_fliph: imgmeta.texcoords_fliph, texcoords_flipv: imgmeta.texcoords_flipv, texcoords_fliphv: imgmeta.texcoords_fliphv }, audiometa: null, });
+							jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: { atlassed: imgmeta.atlassed, width: imgmeta.width, height: imgmeta.height, texcoords: imgmeta.texcoords, texcoords_fliph: imgmeta.texcoords_fliph, texcoords_flipv: imgmeta.texcoords_flipv, texcoords_fliphv: imgmeta.texcoords_fliphv }, audiometa: undefined, });
 							bufferPointer += res.buffer.length;
 						}
 					}
 					else {
-						jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: { atlassed: false, width: img.width, height: img.height, }, audiometa: null, });
+						jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: { atlassed: false, width: img.width, height: img.height, }, audiometa: undefined, });
 						bufferPointer += res.buffer.length;
 					}
 					break;
@@ -650,13 +651,13 @@ async function buildRompack(outfile: string, respath: string): Promise<any> {
 						let parsedMeta = parseAudioMeta(res.filepath);
 
 						// name = parsedMeta.sanitizedName;
-						jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: null, audiometa: parsedMeta.meta });
+						jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: undefined, audiometa: parsedMeta.meta });
 					}
 					bufferPointer += res.buffer.length;
 					break;
 				case 'source':
 					name = name.replace('.min', '');
-					jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: null, audiometa: null });
+					jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: undefined, audiometa: undefined });
 					bufferPointer += res.buffer.length;
 					break;
 				case 'atlas':
@@ -680,7 +681,7 @@ async function buildRompack(outfile: string, respath: string): Promise<any> {
 			}
 			buffers.push(atlasbuffer);
 
-			jsonout.push({ resid: loadedResources[i].id, resname: loadedResources[i].name, type: 'image', start: bufferPointer, end: bufferPointer + atlasbuffer.length, imgmeta: { atlassed: false, width: atlasSize.x, height: atlasSize.y }, audiometa: null });
+			jsonout.push({ resid: loadedResources[i].id, resname: loadedResources[i].name, type: 'image', start: bufferPointer, end: bufferPointer + atlasbuffer.length, imgmeta: { atlassed: false, width: atlasSize.x, height: atlasSize.y }, audiometa: undefined });
 			bufferPointer += atlasbuffer.length;
 			writeFileSync("./rom/_ignore/atlas.png", atlasbuffer);
 		}
@@ -721,8 +722,8 @@ async function buildRompack(outfile: string, respath: string): Promise<any> {
 
 function addToAtlas(img: any): ImgMeta {
 	function uvcoords(x: number, y: number, width: number, height: number, imageWidth: number, imageHeight: number) {
-		let result: ImgMeta = {
-			width: imageWidth, height: imageHeight, atlassed: true, texcoords: [], texcoords_fliph: [], texcoords_flipv: [], texcoords_fliphv: []
+		let result = {
+			width: imageWidth, height: imageHeight, atlassed: true, texcoords: [] as number[], texcoords_fliph: [] as number[], texcoords_flipv: [] as number[], texcoords_fliphv: [] as number[]
 		};
 		let left: number;
 		let top: number;
@@ -778,7 +779,7 @@ function cropAtlas(romResources: Array<RomResource>): HTMLCanvasElement {
 	if (croph === 0) croph = 1;
 
 	const result: HTMLCanvasElement = <any>createCanvas(cropw, croph);
-	const croppedctx: CanvasRenderingContext2D = result.getContext('2d');
+	const croppedctx: CanvasRenderingContext2D = result.getContext('2d')!;
 	croppedctx.drawImage(atlasCanvas, 0, 0);
 
 	let recalc = (coords: number[]) => {
@@ -790,10 +791,10 @@ function cropAtlas(romResources: Array<RomResource>): HTMLCanvasElement {
 
 	// Must also recalculate image texcoords, because while canvas size is taken into account
 	romResources.filter(x => x.type === 'image').forEach(x => {
-		recalc(x.imgmeta.texcoords);
-		recalc(x.imgmeta.texcoords_fliph);
-		recalc(x.imgmeta.texcoords_flipv);
-		recalc(x.imgmeta.texcoords_fliphv);
+		recalc(x.imgmeta!.texcoords!);
+		recalc(x.imgmeta!.texcoords_fliph!);
+		recalc(x.imgmeta!.texcoords_flipv!);
+		recalc(x.imgmeta!.texcoords_fliphv!);
 	});
 
 	return result;
@@ -807,11 +808,11 @@ try {
 	writeOut(_colors.brightGreen('|                          BMSX ROMPACKER DOOR BOAZ©®™                           |\n'));
 	writeOut(_colors.brightGreen('┗————————————————————————————————————————————————————————————————————————————————┛\n'));
 	let args = process.argv.slice(2);
-	let outfile: string = undefined;
-	let title: string = undefined;
-	let bootloader_path: string = undefined;
-	let respath: string = undefined;
-	let force: boolean = undefined;
+	let outfile: string = 'not-parsed!';
+	let title: string = 'not-parsed!';
+	let bootloader_path: string = 'not-parsed!';
+	let respath: string = 'not-parsed!';
+	let force: boolean = false;
 	let unrecognizedParam: boolean = false;
 	let buildreslist: boolean = false;
 	let deployToFtp: boolean = true;
@@ -906,12 +907,12 @@ try {
 
 		let progress = term.terminal.progressBar(poptions);
 
-		let huidigeTaak = takenlijst.shift();
+		let huidigeTaak = takenlijst.shift()!;
 		let taakAfgevinkt = () => {
 			progress.itemDone(huidigeTaak);
 
 			if (!takenlijst.length) return;
-			huidigeTaak = takenlijst.shift();
+			huidigeTaak = takenlijst.shift()!;
 			progress.startItem(huidigeTaak);
 		};
 

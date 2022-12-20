@@ -74,6 +74,42 @@
 	cursor: not-allowed;
 }
 
+.modal-content table tr td.undefined-propvalue {
+	color: darkslategray;
+	font-style: italic;
+}
+
+.modal-content table tr td.undefined-propvalue:hover,
+.modal-content table tr td.undefined-propvalue:focus {
+	color: white;
+	background-color: rgba(0, 0, 255, 0.66);
+	text-decoration: none;
+	cursor: text;
+}
+
+.modal-content table tr td.empty-propvalue {
+	color: darkslategray;
+	font-style: italic;
+}
+
+.modal-content table tr td.empty-propvalue:hover,
+.modal-content table tr td.empty-propvalue:focus {
+	background-color: rgba(128, 128, 128, 0.66);
+	cursor: not-allowed;
+}
+
+.modal-content table tr td.excluded-propvalue {
+	color: darkslategray;
+	font-style: italic;
+	text-decoration: line-through;
+}
+
+.modal-content table tr td.excluded-propvalue:hover,
+.modal-content table tr td.excluded-propvalue:focus {
+	background-color: rgba(128, 128, 128, 0.66);
+	cursor: not-allowed;
+}
+
 .modal-content table tr td:first-of-type {
 	font-weight: bold;
 	border-right-style: solid;
@@ -193,6 +229,7 @@ svg.buttons#btn4_svg {
 .knop.red:not(.los) {
 	fill: red;
 }
+
 .knop.red.los {
 	stroke: red;
 }
@@ -200,6 +237,7 @@ svg.buttons#btn4_svg {
 .knop.blue:not(.los) {
 	fill: blue;
 }
+
 .knop.blue.los {
 	stroke: blue;
 }
@@ -207,6 +245,7 @@ svg.buttons#btn4_svg {
 .knop.green:not(.los) {
 	fill: green;
 }
+
 .knop.green.los {
 	stroke: green;
 }
@@ -214,6 +253,7 @@ svg.buttons#btn4_svg {
 .knop.yellow:not(.los) {
 	fill: yellow;
 }
+
 .knop.yellow.los {
 	stroke: yellow;
 }
@@ -334,7 +374,7 @@ html {
 	-ms-interpolation-mode: nearest-neighbor;
 	image-rendering: pixelated;
 	overflow: hidden;
-  	display: block;
+	display: block;
 	z-index: 999;
 }
 
@@ -344,7 +384,7 @@ html {
 	top: 60vh;
 	left: 0;
 	width: 100%;
-  	height: 100%;
+	height: 100%;
 	background-color: #2020ff;
 }
 
@@ -416,9 +456,17 @@ html {
 }
 
 @keyframes coloring {
-	0% { color: #ffffff; }
-	50% { color: #2020ff; }
-	100% { color: #ffffff; }
+	0% {
+		color: #ffffff;
+	}
+
+	50% {
+		color: #2020ff;
+	}
+
+	100% {
+		color: #ffffff;
+	}
 }
 
 @keyframes fadein {

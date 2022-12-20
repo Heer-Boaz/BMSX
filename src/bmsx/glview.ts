@@ -258,18 +258,18 @@ export abstract class GLView extends BaseView {
 	override drawImg(imgid: string, x: number, y: number, options?: number, sx?: number, sy?: number): void {
 		let _this = global.view as GLView;
 		let gl = _this.glctx;
-		let width = global.game.rom.imgresources[imgid].imgmeta.width;
-		let height = global.game.rom.imgresources[imgid].imgmeta.height;
+		let width = global.game.rom['imgresources'][imgid]['imgmeta']['width'];
+		let height = global.game.rom['imgresources'][imgid]['imgmeta']['height'];
 
 		options = options ?? 0;
 		let flipx: number = options & DrawImgFlags.HFLIP;
 		let flipy: number = options & DrawImgFlags.VFLIP;
 
 		bvec.set(_this.vertexcoords, x, y, width, height, sx ?? 1, sy ?? 1);
-		if (flipx && flipy) _this.texcoords.set(global.game.rom.imgresources[imgid].imgmeta.texcoords_fliphv!);
-		else if (flipx) _this.texcoords.set(global.game.rom.imgresources[imgid].imgmeta.texcoords_fliph!);
-		else if (flipy) _this.texcoords.set(global.game.rom.imgresources[imgid].imgmeta.texcoords_flipv!);
-		else _this.texcoords.set(global.game.rom.imgresources[imgid].imgmeta.texcoords!);
+		if (flipx && flipy) _this.texcoords.set(global.game.rom['imgresources'][imgid]['imgmeta']['texcoords_fliphv']);
+		else if (flipx) _this.texcoords.set(global.game.rom['imgresources'][imgid]['imgmeta']['texcoords_fliph']);
+		else if (flipy) _this.texcoords.set(global.game.rom['imgresources'][imgid]['imgmeta']['texcoords_flipv']);
+		else _this.texcoords.set(global.game.rom['imgresources'][imgid]['imgmeta']['texcoords']);
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
 		gl.bufferSubData(gl.ARRAY_BUFFER, 48 * _this.drawImgReqIndex, _this.vertexcoords);
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.texcoordBuffer);
