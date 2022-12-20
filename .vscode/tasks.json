@@ -15,11 +15,12 @@
 				"build the game"
 			],
 			"problemMatcher": [
-				"$node-sass"
+				"$node-sass",
+				"$tsc"
 			],
 			"icon": {
 				"id": "run-all",
-				"color": "terminal.ansiGreen"
+				"color": "terminal.ansiRed"
 			},
 			"presentation": {
 				"echo": false,
@@ -48,14 +49,15 @@
 				"-title",
 				"${input:romtobuild}",
 				"--nodeploy",
-				"--force",
+				"--force"
 			],
 			"problemMatcher": [
-				"$node-sass"
+				"$node-sass",
+				"$tsc"
 			],
 			"group": {
 				"kind": "build",
-				"isDefault": true
+				"isDefault": true,
 			},
 			"dependsOrder": "sequence",
 			"dependsOn": [
@@ -96,8 +98,8 @@
 				"output romtobuild"
 			],
 			"icon": {
-				"id": "archive",
-				"color": "terminal.ansiGreen",
+				"id": "package",
+				"color": "terminal.ansiYellow"
 			},
 			"presentation": {
 				"echo": false,
@@ -130,14 +132,15 @@
 			],
 			"icon": {
 				"id": "library",
-				"color": "terminal.ansiBlack",
+				"color": "terminal.ansiBlue"
 			},
 			"presentation": {
 				"echo": true,
 				"reveal": "always",
 				"focus": false,
 				"panel": "shared",
-				"showReuseMessage": true,
+				"showReuseMessage": false,
+				"close": true,
 				"clear": true,
 				"group": "ROMPACKER"
 			},
@@ -161,15 +164,16 @@
 			],
 			"group": "build",
 			"icon": {
-				"id": "run-below",
-				"color": "terminal.ansiRed"
+				"id": "symbol-property",
+				"color": "terminal.ansiMagenta"
 			},
 			"presentation": {
 				"echo": true,
 				"reveal": "always",
 				"focus": false,
 				"panel": "shared",
-				"showReuseMessage": true,
+				"showReuseMessage": false,
+				"close": true,
 				"clear": false,
 				"group": "ROMPACKER"
 			}
@@ -181,20 +185,23 @@
 			"args": [
 				"${input:romtobuild}"
 			],
+			"hide": true,
 			"group": "build",
 			"icon": {
 				"id": "output",
-				"color": "terminal.ansiBlack",
+				"color": "terminal.ansiBlack"
 			},
 			"presentation": {
 				"echo": false,
-				"reveal": "always",
+				"reveal": "never",
 				"focus": false,
 				"panel": "shared",
 				"showReuseMessage": false,
+				"close": true,
 				"clear": true,
 				"group": "ROMPACKER"
-			}
+			},
+			"problemMatcher": []
 		}
 	],
 	"inputs": [
