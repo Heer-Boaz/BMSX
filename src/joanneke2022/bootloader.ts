@@ -2,7 +2,7 @@ import { BFont } from './../bmsx/bmsx';
 import { MSX2ScreenHeight, MSX2ScreenWidth } from './../bmsx/msx';
 import { RomLoadResult } from '../bmsx/rompack';
 import { Game, newPoint, Direction, newSize, newArea, Point, randomInt, copyPoint } from '../bmsx/bmsx';
-import { FlattenedPropKeys, sdef, sstate, mdef, statedef_builder, build_fsm, mstate } from '../bmsx/bfsm';
+import { FlattenedPropKeys, sdef, sstate, mdef, statedef_builder, build_fsm, statecontext } from '../bmsx/bfsm';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
@@ -10,7 +10,7 @@ import { Input } from '../bmsx/input';
 import { paintSprite } from '../bmsx/view';
 import { TextWriter } from '../bmsx/textwriter';
 import { GameMenu } from './gamemenu';
-import { GameObject } from '../bmsx/gameobject';
+import { GameObject, leavingScreenHandler_prohibit } from '../bmsx/gameobject';
 import { base_model_spaces, BaseModel, id2space } from '../bmsx/model';
 import { Sprite } from '../bmsx/sprite';
 
@@ -20,8 +20,8 @@ type model_spaces = base_model_spaces | 'uitleg' | 'evaluatie' | 'hoera!';
 type model_states = FlattenedPropKeys<typeof gamemodel.states>;
 
 class gamemodel extends BaseModel {
-	public time_to_shine: number;
-	public uitleg_tekst_dinges: number;
+	public time_to_shine!: number;
+	public uitleg_tekst_dinges!: number;
 	public score: number = 0;
 
 	public get diamant(): diamant {
@@ -53,8 +53,9 @@ class gamemodel extends BaseModel {
 		return {
 			states: {
 				game_start: new sdef('game_start', {
-					onrun(s: sstate, ik: gamemodel) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
+					onrun(s: sstate<gamemodel>, ik: gamemodel) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
 						ik.state.to('uitleg' satisfies model_states);
+						s.target.currentSpace
 					}
 				}),
 				default: new sdef('default', {
@@ -157,7 +158,7 @@ class gamemodel extends BaseModel {
 
 	public override init_model_state_machines(derived_modelclass_constructor_name: string): this {
 		super.init_model_state_machines(derived_modelclass_constructor_name);
-		this.state.substate.gamemenu = mstate.create('model_substate', 'model');
+		this.state.substate.gamemenu = statecontext.create('model_substate', 'model');
 		this.state.substate.gamemenu.to('closed');
 		return this;
 	}
@@ -237,6 +238,9 @@ class hoeraStuff extends Sprite {
 				line1 = `De diamant is nu`;
 				line2 = `een baksteen geworden.`;
 				line3 = `Maar toch ok gedaan Joanneke!`;
+				break;
+			default:
+				line1 = line2 = line3 = 'Geen tekst voor de Sint :-(';
 				break;
 		}
 
@@ -339,6 +343,9 @@ class uitlegStuff extends Sprite {
 				line1 = `De Sint gaat je beoordelen!`;
 				line2 = `Goed geluk!`;
 				line3 = ``;
+				break;
+			default:
+				line1 = line2 = line3 = 'Urghh!!';
 				break;
 		}
 
@@ -454,7 +461,7 @@ class stoom extends Sprite {
 }
 
 class diamant extends Sprite {
-	public _getoonde_zijde: zijde;
+	public _getoonde_zijde!: zijde;
 
 	public get getoonde_zijde() {
 		return this._getoonde_zijde;
@@ -596,7 +603,7 @@ class draaischijf extends Sprite {
 		super('draaischijf');
 		this.z = 20;
 		this.imgid = BitmapId.None; // Wordt goed gezet bij ingang start state
-		this.onLeaveScreen = (ik: draaischijf, d: Direction, old_x_or_y: number) => prohibitLeavingScreenHandler(ik, d, old_x_or_y);
+		this.onLeaveScreen = (ik, d, old_x_or_y) => leavingScreenHandler_prohibit(ik, d, old_x_or_y);
 		this.size = { x: 64, y: 64 };
 		this.hitarea = newArea(24, 24, 64 - 24, 64 - 24);
 	}
@@ -685,7 +692,7 @@ abstract class onvolmaaktheid extends Sprite {
 	public ben_ik_nog_onvolmaakt = true; // Overwinningspunten tellen
 	public soort: onvolmaaktheid_soort;
 	public zijde: zijde;
-	public _ernst: number;
+	public _ernst!: number;
 
 	constructor(_soort: onvolmaaktheid_soort, _zijde: zijde, _plek: Point, __ernst?: number) {
 		super();
@@ -877,10 +884,6 @@ _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: Gain
 	_game.start();
 };
 
-
-function prohibitLeavingScreenHandler(ik: draaischijf, d: Direction, old_x_or_y: number): void {
-	throw new Error('Function not implemented.');
-}
 // https://www.25karats.com/education/diamonds/features
 // Diamond Inclusions
 // Inclusions are internal clarity characteristic of a diamond.
