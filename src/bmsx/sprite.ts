@@ -13,6 +13,7 @@ export abstract class Sprite extends GameObject {
 
 	constructor(id?: string) {
 		super(id);
+		this.imgid = 'None';
 		this.visible = true;
 		this.hittable = true;
 		this.flippedH = false;
@@ -20,9 +21,7 @@ export abstract class Sprite extends GameObject {
 	}
 
 	override onspawn(spawningPos?: Point): void {
-		if (spawningPos) {
-			[this.pos.x, this.pos.y] = [spawningPos.x, spawningPos.y];
-		}
+		super.onspawn?.(spawningPos);
 	}
 
 	override spawn(spawningPos?: Point): this {

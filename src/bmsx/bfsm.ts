@@ -73,11 +73,9 @@ export class statecontext {
 	substate: Record<string, statecontext>;
 
 	public get target(): GameObject | BaseModel { return global.model.get(this.targetid); }
-	public get current(): sstate { return this.states[this.currentid]; };
-
-	public get definition(): mdef {
-		return MachineDefinitions[this.id];
-	}
+	public get current(): sstate { return this.states[this.currentid]; }
+	public get definition(): mdef { return MachineDefinitions[this.id]; }
+	public get start_state_id(): string { return MachineDefinitions[this.id].start_state; }
 
 	public get current_state_definition(): sdef {
 		return this.current?.definition; // Note that definition can be empty, as not all objects have a defined machine
@@ -128,7 +126,7 @@ export class statecontext {
 		stateDef && this.pushHistory(this.currentid); // Store the previous state on the history stack, if it is other than 'none'
 
 		this.currentid = newstate; // Switch the current state to the new state
-		if (!this.current) throw new Error(`State "${newstate}" doesn't exist for this state machine!`);
+		if (!this.current) throw new Error(`State "${newstate}" doesn't exist for this state machine '${this.id}'!`);
 
 		stateDef = this.current_state_definition;
 		// stateDef can be undefined if we are in the 'none' state
@@ -142,7 +140,12 @@ export class statecontext {
 	}
 
 	public reset(): void {
-		this.currentid = NONE_STATE_ID;
+		let start = this.definition.start_state;
+		/* N.B. doesn't trigger the onenter-event!
+		 * Not feasible, as the object doesn't exist in the model (or the model itself doesn't exist yet).
+		 * Therefore, problems will occur when attempting to do stuff during the onenter-event if the object does not yet exist in the model.
+		 */
+		this.currentid = start ?? NONE_STATE_ID;
 		this.history = new Array();
 		this.paused = false;
 	}
@@ -172,8 +175,8 @@ export class statecontext {
 
 	private add(...states: sstate[]): void {
 		for (let state of states) {
-			if (!state.statedef_id) throw new Error(`State is missing an id, while attempting to add it to this mstate!`);
-			if (this.states[state.statedef_id]) throw new Error(`State ${state.statedef_id} already exists for state machine!`);
+			if (!state.statedef_id) throw new Error(`State is missing an id, while attempting to add it to this statecontext '${this.id}'!`);
+			if (this.states[state.statedef_id]) throw new Error(`State ${state.statedef_id} already exists for statecontext  '${this.id}'!`);
 			this.states[state.statedef_id] = state;
 			state.machinedef_id = this.id;
 		}
@@ -369,6 +372,9 @@ let test: machine_states = {
 export class mdef {
 	public id: string;
 	public states: id2sdef;
+	public start_state: string;
+	public static readonly START_STATE_PREFIX = '#';
+
 	// public getStateDef(s_id: string): sdef { return this.states[s_id]; }
 
 	// constructor(id?: string, _partialdef?: Partial<mdef>) {
@@ -380,8 +386,12 @@ export class mdef {
 	constructor(id?: string, state_list?: machine_states) {
 		this.id = id ?? DEFAULT_BST_ID;
 		this.states ??= {};
-		for (let state_id of Object.keys(state_list.states)) {
-			this.append(this.#create_state(state_list.states[state_id], state_id));
+		let keys = Object.keys(state_list.states);
+		for (let state_id of keys) {
+			this.append(mdef.#create_state(state_list.states[state_id], state_id));
+		}
+		if (keys.length > 0) { // Only look for a start state if we have at least one state in our definition
+			this.start_state ??= keys[0]; // If no default state was defined, we default to the first state found in the list of states
 		}
 		// _partialdef && Object.assign(this, _partialdef);
 	}
@@ -394,9 +404,17 @@ export class mdef {
 	// 	return result;
 	// }
 
-	#create_state(partial: Partial<sdef>, _state_id: string): sdef {
-		if (!partial) throw new Error(`'sdef' with id '${_state_id}' is missing definitionm while attempting to add it to this 'mdef'!`);
+	static #create_state(partial: Partial<sdef>, _state_id: string): sdef {
+		if (!partial) throw new Error(`'sdef' with id '${_state_id}' is missing definition while attempting to add it to this 'mdef'!`);
 		return new sdef(_state_id, partial);
+	}
+
+	static #is_start_state(_state: sdef): boolean {
+		return _state.id.startsWith(mdef.START_STATE_PREFIX);
+	}
+
+	#set_start_state(_state: sdef): void {
+		this.start_state = _state.id;
 	}
 
 	public add(...states: sdef[]): void {
@@ -408,6 +426,7 @@ export class mdef {
 		if (this.states[_state.id]) throw new Error(`'sdef' with id='${_state.id}' already exists for this 'mdef'!`);
 		this.states[_state.id] = _state;
 		_state.parent = this;
+		mdef.#is_start_state(_state) && this.#set_start_state(_state);
 	}
 
 	// public remove(_id: string): void {

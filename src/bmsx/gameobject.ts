@@ -68,7 +68,17 @@ export class GameObject {
 	public disposeOnSwitchRoom?: boolean;
 
 	public spawn?(spawningPos?: Point): void;
-	public onspawn?(spawningPos?: Point): void;
+	/**
+	 * By default, will set location to `spawningPos` and
+	 * the FSM-state to the initial state (if specified).
+	 * @param spawningPos
+	 */
+	public onspawn?(spawningPos?: Point): void {
+		if (spawningPos) [this.pos.x, this.pos.y] = [spawningPos.x, spawningPos.y];
+
+		let start_state_id = this.state?.definition?.start_state;
+		start_state_id && this.state.to(start_state_id);
+	}
 	public ondispose?: () => void;
 
 	public paint?: (offset?: Point) => void;

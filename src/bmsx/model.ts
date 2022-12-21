@@ -168,7 +168,7 @@ export abstract class BaseModel {
 	*/
 	public init_model_state_machines(derived_modelclass_constructor_name: string): this {
 		this.state = statecontext.create(derived_modelclass_constructor_name, 'model');
-		this.state.to('game_start');
+		// this.state.to('game_start');
 
 		return this;
 	}

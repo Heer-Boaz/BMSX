@@ -52,7 +52,7 @@ class bclass extends Sprite {
                     onrun: blarun,
                     onenter(this: bclass) { this.imgid = BitmapId.b; },
                 },
-                blap: {
+                '#blap': {
                     onrun: blarun,
                     onenter(this: bclass) { this.imgid = BitmapId.b2; },
                 },
@@ -62,14 +62,9 @@ class bclass extends Sprite {
 
     constructor() {
         super('The B');
-        this.imgid = BitmapId.b;
+        // this.imgid = BitmapId.b;
         this.hitarea = newArea(0, 0, 14, 18);
     }
-
-    override onspawn = (spawningPos?: Point): void => {
-        super.onspawn?.(spawningPos);
-        this.state.to('blap');
-    };
 };
 
 const savestring = Symbol('savestring');
@@ -81,7 +76,7 @@ class gamemodel extends BaseModel {
     public static bouw(): machine_states {
         return {
             states: {
-                game_start: {
+                '#game_start': {
                     onrun(this: gamemodel, s: sstate) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
                         this.state.to('default');
                     }
