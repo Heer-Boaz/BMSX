@@ -45,7 +45,7 @@ export type id2sdef = Record<string, sdef>;
 export type id2mdef = Record<string, mdef>;
 export type id2mstate = Record<string, statecontext>;
 export type id2sstate = Record<string, sstate>;
-export type state_event_handler = (state: sstate, type: state_event_type) => void;
+export interface state_event_handler { ( state: sstate, type: state_event_type): void; }
 export type Tape = any[];
 
 const BST_MAX_HISTORY = 10;
@@ -115,14 +115,14 @@ export class statecontext {
 	public run(): void {
 		if (this.paused) return;
 		// [this.currentStatedef] can be undefined if we are in the 'none' state
-		this.current_state_definition?.process_input?.call(this.target, this.current, this.target, state_event_type.None);
-		this.current_state_definition?.onrun?.call(this.target, this.current, this.target, state_event_type.Run);
+		this.current_state_definition?.process_input?.call(this.target, this.current, state_event_type.None);
+		this.current_state_definition?.onrun?.call(this.target, this.current, state_event_type.Run);
 	}
 
 	public to(newstate: string): void {
 		let stateDef = this.current_state_definition;
 		// stateDef can be undefined if we are in the 'none' state
-		stateDef?.onexit?.call(this.target, this.current, this.target, state_event_type.Exit);
+		stateDef?.onexit?.call(this.target, this.current, state_event_type.Exit);
 		stateDef && this.pushHistory(this.currentid); // Store the previous state on the history stack, if it is other than 'none'
 
 		this.currentid = newstate; // Switch the current state to the new state
@@ -130,7 +130,7 @@ export class statecontext {
 
 		stateDef = this.current_state_definition;
 		// stateDef can be undefined if we are in the 'none' state
-		stateDef?.onenter?.call(this.target, this.current, this.target, state_event_type.Enter);
+		stateDef?.onenter?.call(this.target, this.current, state_event_type.Enter);
 	}
 
 	protected pushHistory(toPush: string): void {
@@ -140,7 +140,7 @@ export class statecontext {
 	}
 
 	public reset(): void {
-		let start = this.definition.start_state;
+		let start = this.definition?.start_state; // Definition doesn't need to exist
 		/* N.B. doesn't trigger the onenter-event!
 		 * Not feasible, as the object doesn't exist in the model (or the model itself doesn't exist yet).
 		 * Therefore, problems will occur when attempting to do stuff during the onenter-event if the object does not yet exist in the model.
@@ -299,12 +299,12 @@ export class sstate<T extends GameObject | BaseModel = any> {
 	}
 
 	protected tapemove() {
-		this.definition.onnext?.call(this.target, this as sstate<T>, this.target, state_event_type.Next);
+		this.definition.onnext?.call(this.target, this as sstate<T>, state_event_type.Next);
 		// this.definition.onnext?.(this as sstate<T>, this.target, state_event_type.Next);
 	}
 
 	protected tapeend() {
-		this.definition.onend?.call(this.target, this as sstate<T>, this.target, state_event_type.End);
+		this.definition.onend?.call(this.target, this as sstate<T>, state_event_type.End);
 		// this.definition.onend?.(this as sstate<T>, this.target, state_event_type.End);
 	}
 

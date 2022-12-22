@@ -1,33 +1,78 @@
-import { Point } from "./bmsx";
+import { newPoint, Point, translatePoint } from "./bmsx";
 import { GameObject } from "./gameobject";
 import { insavegame } from "./gamereviver";
-import { paintSprite } from "./view";
+import { DrawImgFlags, paintImage } from "./view";
 
 @insavegame
-export abstract class Sprite extends GameObject {
-	public flippedH: boolean;
-	public flippedV: boolean;
-	public imgid!: string;
-	declare pos: Point; // Redeclare to ensure that it is defined and not null
-	declare size: Point; // Redeclare to ensure that it is defined and not null
+export abstract class SpriteObject extends GameObject {
+	public get flippedH() {
+		return this.sprite.flippedH;
+	}
+	public set flippedH(fh: boolean) {
+		this.sprite.flippedH = fh;
+	}
+
+	public get flippedV() {
+		return this.sprite.flippedV;
+	}
+	public set flippedV(fv: boolean) {
+		this.sprite.flippedV = fv;
+	}
+
+	public get imgid() {
+		return this.sprite.imgid;
+	}
+	public set imgid(id: string) {
+		this.sprite.imgid = id;
+	}
+
+	public get offset() {
+		return this.sprite.pos;
+	}
+	public set offset(o: Point) {
+		this.sprite.pos = o;
+	}
+
+	sprite: Sprite;
 
 	constructor(id?: string) {
 		super(id);
-		this.imgid = 'None';
-		this.visible = true;
-		this.hittable = true;
-		this.flippedH = false;
-		this.flippedV = false;
+		this.sprite ??= new Sprite();
 	}
 
-	override onspawn(spawningPos?: Point): void {
-		super.onspawn?.(spawningPos);
+	override paint(offset?: Point) {
+		offset ??= newPoint(0, 0);
+		let total_offset = translatePoint(offset, this.pos);
+		this.sprite.paint.call(this.sprite, total_offset);
+	}
+}
+
+export class Sprite {
+	public get flippedH(): boolean {
+		return (this.#options & DrawImgFlags.HFLIP) === DrawImgFlags.HFLIP;
+	}
+	public set flippedH(f: boolean) {
+		this.#options |= DrawImgFlags.HFLIP;
 	}
 
-	override spawn(spawningPos?: Point): this {
-		global.model.spawn(this, spawningPos);
-		return this; // Voor chaining
+	public get flippedV(): boolean {
+		return (this.#options & DrawImgFlags.VFLIP) === DrawImgFlags.VFLIP;
+	}
+	public set flippedV(f: boolean) {
+		this.#options |= DrawImgFlags.VFLIP;
 	}
 
-	override paint = paintSprite;
+	public imgid: string;
+	public pos: Point;
+	#options: DrawImgFlags;
+
+	constructor() {
+		this.imgid ??= 'None';
+		this.#options ??= 0;
+		this.pos ??= newPoint(0, 0);
+	}
+
+	public paint(offset?: Point) {
+		paintImage(this.imgid, translatePoint(this.pos, offset || { x: 0, y: 0 }), this.#options);
+	}
 }

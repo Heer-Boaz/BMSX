@@ -1,7 +1,7 @@
 ﻿import { id2htmlimg } from './rompack.d';
 import { Size, Point } from "./bmsx";
 import { BFont } from "./bmsx";
-import { Sprite } from './sprite';
+import { SpriteObject } from './sprite';
 
 export interface Color {
     r: number;
@@ -20,6 +20,9 @@ export const enum DrawImgFlags {
     None = 0,
     HFLIP = 1 << 0,
     VFLIP = 1 << 1,
+    COLORIZE_R = 1 << 2, // ! TODO: IMPLEMENT
+    COLORIZE_G = 1 << 3, // ! TODO: IMPLEMENT
+    COLORIZE_B = 1 << 4, // ! TODO: IMPLEMENT
 }
 
 export abstract class BaseView {
@@ -202,11 +205,6 @@ export abstract class BaseView {
         global.view.context.restore();
     }
 
-    public drawColoredBitmap(imgid: string, x: number, y: number, options: number, r: boolean = true, g: boolean = true, b: boolean = true, a: boolean = true) {
-        // TODO: IMPLEMENTEER!!
-        global.view.drawImg(imgid, x, y, options);
-    }
-
     public drawRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
         global.view.context.save();
         global.view.context.translate(0.5, 0.5);
@@ -234,18 +232,8 @@ export abstract class BaseView {
     }
 }
 
-export function paintSprite(this: Sprite, offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }): void {
-    if (this.imgid === 'None') return; // Don't draw anything when imgid = BitmapId.None. For animations, we don't always want to use visible = false
-    let _view = global.view as BaseView;
-    let options: number = this.flippedH ? DrawImgFlags.HFLIP : 0;
-    options |= (this.flippedV ? DrawImgFlags.VFLIP : 0);
-    let dx = offset?.x || 0;
-    let dy = offset?.y || 0;
+export function paintImage(imgid: string, pos: Point, options?: DrawImgFlags): void {
+    if (!imgid || imgid === 'None') return; // Don't draw anything when imgid = BitmapId.None. For animations, we don't always want to use visible = false
 
-    if (colorize) {
-        _view.drawColoredBitmap(this.imgid, this.pos.x + dx, this.pos.y + dy, options, colorize.r, colorize.g, colorize.b, colorize.a);
-    }
-    else {
-        _view.drawImg(this.imgid, this.pos.x + dx, this.pos.y + dy, options);
-    }
+    global.view.drawImg(imgid, pos.x, pos.y, options);
 }

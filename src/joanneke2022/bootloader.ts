@@ -7,12 +7,11 @@ import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
 import { Input } from '../bmsx/input';
-import { paintSprite } from '../bmsx/view';
 import { TextWriter } from '../bmsx/textwriter';
 import { GameMenu } from './gamemenu';
 import { GameObject, leavingScreenHandler_prohibit } from '../bmsx/gameobject';
 import { base_model_spaces, BaseModel, id2space } from '../bmsx/model';
-import { Sprite } from '../bmsx/sprite';
+import { SpriteObject } from '../bmsx/sprite';
 
 const TIME_TO_SHINE = 90;
 
@@ -209,14 +208,14 @@ class gamemodel extends BaseModel {
 	}
 };
 
-class hoeraStuff extends Sprite {
+class hoeraStuff extends SpriteObject {
 	constructor() {
 		super();
 		this.z = 0;
 		this.imgid = BitmapId.sint;
 	}
 
-	override paint = (offset?: Point) => {
+	override paint(offset?: Point) {
 		let line1: string;
 		let line2: string;
 		let line3: string;
@@ -247,11 +246,11 @@ class hoeraStuff extends Sprite {
 		TextWriter.drawText(16, 168, `${line2}`);
 		TextWriter.drawText(16, 176, `${line3}`);
 
-		paintSprite.call(this, offset); // .call() nodig, anders "this" undefined
+		super.paint.call(this, offset); // .call() nodig, anders "this" undefined
 	};
 };
 
-class uitlegStuff extends Sprite {
+class uitlegStuff extends SpriteObject {
 	@statedef_builder
 	public static bouw() {
 		return {
@@ -300,7 +299,7 @@ class uitlegStuff extends Sprite {
 		this.pos = newPoint((MSX2ScreenWidth - this.size.x) / 2, (MSX2ScreenHeight - this.size.y) / 2);
 	}
 
-	override paint = (offset?: Point) => {
+	override paint(offset?: Point) {
 		let line1: string;
 		let line2: string;
 		let line3: string;
@@ -352,7 +351,7 @@ class uitlegStuff extends Sprite {
 		TextWriter.drawText(16, 168, `${line2}`);
 		TextWriter.drawText(16, 176, `${line3}`);
 
-		paintSprite.call(this, offset); // .call() nodig, anders "this" undefined
+		super.paint.call(this, offset); // .call() nodig, anders "this" undefined
 	};
 
 	override onspawn(spawningPos?: Point): void {
@@ -360,18 +359,18 @@ class uitlegStuff extends Sprite {
 	}
 };
 
-class evaluatieStuff extends Sprite {
+class evaluatieStuff extends SpriteObject {
 	constructor() {
 		super();
 		this.z = 0;
 		this.imgid = BitmapId.sint_evalueert;
 	}
 
-	override paint = (offset?: Point) => {
+	override paint(offset?: Point) {
 		TextWriter.drawText(4, 8, `Sinterklaas kijkt nu hoe goed`);
 		TextWriter.drawText(4, 16, `je het hebt gedaan Joanneke...`);
 
-		paintSprite.call(this, offset); // .call() nodig, anders "this" undefined
+		super.paint.call(this, offset); // .call() nodig, anders "this" undefined
 	};
 };
 
@@ -404,12 +403,12 @@ class hud extends GameObject {
 		this.state.to('default');
 	}
 
-	override paint = (offset?: Point) => {
+	override paint(offset?: Point) {
 		TextWriter.drawText(0, 0, `Time to shine: ${_model.time_to_shine}`);
 	};
 }
 
-class stoom extends Sprite {
+class stoom extends SpriteObject {
 	@statedef_builder
 	public static bouw() {
 		return {
@@ -459,7 +458,7 @@ class stoom extends Sprite {
 	}
 }
 
-class diamant extends Sprite {
+class diamant extends SpriteObject {
 	public _getoonde_zijde!: zijde;
 
 	public get getoonde_zijde() {
@@ -497,7 +496,7 @@ class diamant extends Sprite {
 	}
 }
 
-class draaischijf extends Sprite {
+class draaischijf extends SpriteObject {
 	@statedef_builder
 	public static bouw() {
 		return {
@@ -686,7 +685,7 @@ export enum zijde {
 	Boven = 2
 }
 
-abstract class onvolmaaktheid extends Sprite {
+abstract class onvolmaaktheid extends SpriteObject {
 	public is_onvolmaaktheid = true; // Om objecten te filteren
 	public ben_ik_nog_onvolmaakt = true; // Overwinningspunten tellen
 	public soort: onvolmaaktheid_soort;
@@ -704,14 +703,13 @@ abstract class onvolmaaktheid extends Sprite {
 
 	public polijst_nudge = (): void => {
 		++this.state.current.nudges;
-	};
+	}
 
-	override paint = (offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }) => {
+	override paint(offset?: Point) {
 		// Toon alleen als diamant op zelfde locatie is als dat diamant is weergegeven
-		if (_model.diamant.getoonde_zijde == this.zijde) {
-			paintSprite.call(this, offset, colorize); // .call() nodig, anders "this" undefined
-		}
-	};
+		if (_model.diamant.getoonde_zijde === this.zijde)
+			super.paint.call(this, offset); // .call() nodig, anders "this" undefined
+	}
 }
 
 class burn extends onvolmaaktheid {

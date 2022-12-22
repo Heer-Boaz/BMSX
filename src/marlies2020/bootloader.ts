@@ -1,5 +1,4 @@
 import { RomLoadResult } from '../bmsx/rompack';
-import { Game, BaseModel, GameObject, Sprite, sdef, mdef, leavingScreenHandler_prohibit as prohibitLeavingScreenHandler, statedef_builder, cmdef, sstate, cmstate, setPoint, newPoint, Direction, newSize, newArea, Point, randomInt, copyPoint, getOppositeDirection, Space } from '../bmsx/bmsx';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
@@ -8,6 +7,11 @@ import { TextWriter } from '../bmsx/textwriter';
 import { paintSprite } from '../bmsx/view';
 import { GameMenu } from './gamemenu';
 import { KonamiFont } from './konamifont';
+import { statedef_builder, mdef, sdef, sstate } from '../bmsx/bfsm';
+import { Point, Direction, setPoint, newArea, randomInt, getOppositeDirection, copyPoint, newPoint, newSize, Game } from '../bmsx/bmsx';
+import { GameObject } from '../bmsx/gameobject';
+import { BaseModel, Space } from '../bmsx/model';
+import { SpriteObject } from '../bmsx/sprite';
 
 const COLUMN_X = <Array<number>>[36, 48, 80, 160, 200];
 const START_COLUMN = 1;
@@ -26,7 +30,7 @@ const INVENTORY_POS = { x: 12, y: 12 };
 // https://drive.google.com/file/d/1vyCxVBeMr89pQdUBCUcDjW6W2ImA6q2j/view?usp=sharing
 
 class modelclass extends BaseModel {
-    public marlies: Sprite;
+    public marlies: SpriteObject;
     public ingredientEquipped: Ingredient;
     public pitasOpBord: number;
 
@@ -171,7 +175,7 @@ class modelclass extends BaseModel {
     }
 };
 
-class brandblusser extends Sprite {
+class brandblusser extends SpriteObject {
     @statedef_builder
     public static bouw(classname: string): cmdef {
         return new cmdef(classname, {
@@ -206,7 +210,7 @@ class brandblusser extends Sprite {
     }
 };
 
-interface Ingredient extends Sprite {
+interface Ingredient extends SpriteObject {
     ingredientType: string;
 }
 
@@ -216,12 +220,12 @@ interface Pita extends Ingredient {
     nuGevuld(): void;
 }
 
-interface Bord extends Sprite {
+interface Bord extends SpriteObject {
     gevuld: boolean;
     nuGevuld(): void;
 }
 
-class invFrame extends Sprite {
+class invFrame extends SpriteObject {
     constructor() {
         super();
         this.z = 2000;
@@ -229,7 +233,7 @@ class invFrame extends Sprite {
     }
 };
 
-class hoeraStuff extends Sprite {
+class hoeraStuff extends SpriteObject {
     constructor() {
         super();
         this.z = 5000;
@@ -242,7 +246,7 @@ class hoeraStuff extends Sprite {
     }
 };
 
-class ingredient extends Sprite implements Ingredient {
+class ingredient extends SpriteObject implements Ingredient {
     constructor() {
         super();
         this.z = 850;
@@ -306,7 +310,7 @@ class pita extends ingredient implements Pita {
     gevuld = false;
 };
 
-class bord extends Sprite implements Bord {
+class bord extends SpriteObject implements Bord {
     constructor() {
         super();
         this.imgid = BitmapId.Bord;
@@ -323,7 +327,7 @@ class bord extends Sprite implements Bord {
     isBord = true;
 };
 
-class vuur extends Sprite {
+class vuur extends SpriteObject {
     @statedef_builder
     public static bouw(classname: string) {
         return new cmdef(classname, {
@@ -386,7 +390,7 @@ class vuur extends Sprite {
     isVuur = true;
 };
 
-class corona extends Sprite {
+class corona extends SpriteObject {
     @statedef_builder
     public static bouw(classname: string): cmdef {
         return new cmdef(classname, {
@@ -489,7 +493,7 @@ class corona extends Sprite {
     }
 }
 // http://livetv.sx/enx/eventinfo/1017596_ajax_psv_eindhoven/#_&h=AT3-qpCc0X_J3DgIWX3xpJ-9OVzV4caLwSUuTtTWvRBn84rp63llZo-kOgMY2P8mxbe65OLcencMjq39IwqJxzrsxLI3VpXOIBg1W4_ujbB827fjeYTHKsnPxBp_CJ_QqKL7_Ku6a9XW-372RIE
-class speler extends Sprite {
+class speler extends SpriteObject {
     @statedef_builder
     public static bouw(classname: string): cmdef {
         let shared_switch_run = (_: sstate, ik: speler) => {
@@ -796,7 +800,7 @@ class speler extends Sprite {
     }
 };
 
-class keuken extends Sprite {
+class keuken extends SpriteObject {
     @statedef_builder
     public static bouw(classname: string): cmdef {
         return new cmdef(classname, {

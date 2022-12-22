@@ -8,10 +8,10 @@ import { insavegame } from '../bmsx/gamereviver';
 import { newArea, Point, newPoint, Direction, Game, newSize } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
 import { BaseModel } from '../bmsx/model';
-import { Sprite } from '../bmsx/sprite';
+import { SpriteObject } from '../bmsx/sprite';
 
 @insavegame
-class bclass extends Sprite {
+class bclass extends SpriteObject {
     @statedef_builder
     public static bouw(): machine_states {
         function blarun(this: bclass, s: sstate) {

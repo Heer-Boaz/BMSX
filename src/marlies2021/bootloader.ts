@@ -1,5 +1,4 @@
 import { RomLoadResult } from '../bmsx/rompack';
-import { Game, BaseModel, GameObject, Sprite, sdef, mdef, leavingScreenHandler_prohibit as prohibitLeavingScreenHandler, statedef_builder, cmdef, sstate, cmstate, setPoint, newPoint, Direction, newSize, newArea, Point, randomInt, copyPoint, getOppositeDirection, Space, BFont } from '../bmsx/bmsx';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
@@ -7,6 +6,11 @@ import { Input } from '../bmsx/input';
 import { TextWriter } from '../bmsx/textwriter';
 import { DrawImgFlags, paintSprite } from '../bmsx/view';
 import { GameMenu } from './gamemenu';
+import { statedef_builder, mdef, sdef, sstate } from '../bmsx/bfsm';
+import { Direction, newArea, newSize, Point, newPoint, randomInt, Game, BFont } from '../bmsx/bmsx';
+import { GameObject } from '../bmsx/gameobject';
+import { BaseModel, Space } from '../bmsx/model';
+import { SpriteObject } from '../bmsx/sprite';
 
 // https://drive.google.com/file/d/1vyCxVBeMr89pQdUBCUcDjW6W2ImA6q2j/view?usp=sharing
 
@@ -94,7 +98,7 @@ class modelclass extends BaseModel {
     }
 };
 
-class hoeraStuff extends Sprite {
+class hoeraStuff extends SpriteObject {
     constructor() {
         super();
         this.z = 5000;
@@ -102,7 +106,7 @@ class hoeraStuff extends Sprite {
     }
 };
 
-class fles extends Sprite {
+class fles extends SpriteObject {
     @statedef_builder
     public static bouw(classname: string) {
         return new cmdef(classname, {
@@ -165,7 +169,7 @@ class fles extends Sprite {
     }
 }
 
-class stoom extends Sprite {
+class stoom extends SpriteObject {
     @statedef_builder
     public static bouw(classname: string): cmdef {
         return new cmdef(classname, {
@@ -219,7 +223,7 @@ class stoom extends Sprite {
     }
 }
 
-class monster extends Sprite {
+class monster extends SpriteObject {
     constructor() {
         super();
         this.imgid = BitmapId.monster;
@@ -245,7 +249,7 @@ class monster extends Sprite {
     }
 }
 
-class speler extends Sprite {
+class speler extends SpriteObject {
     public floatbit: boolean;
 
     @statedef_builder
@@ -511,7 +515,7 @@ class speler extends Sprite {
 
 };
 
-class yakuzi extends Sprite {
+class yakuzi extends SpriteObject {
     @statedef_builder
     public static bouw(classname: string): cmdef {
         return new cmdef(classname, {
@@ -548,7 +552,7 @@ class yakuzi extends Sprite {
     }
 };
 
-class hud extends Sprite {
+class hud extends SpriteObject {
     protected static HealthBarSizeX: number = 63;
 
     constructor() {

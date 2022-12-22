@@ -23,7 +23,7 @@ export class GameObject {
 	public hitarea: Area;
 
 	public hittable: boolean;
-	public visible?: boolean;
+	public visible: boolean;
 
 	public get hitbox_sx(): number {
 		return this.pos.x + this.hitarea.start.x;
@@ -67,7 +67,6 @@ export class GameObject {
 
 	public disposeOnSwitchRoom?: boolean;
 
-	public spawn?(spawningPos?: Point): void;
 	/**
 	 * By default, will set location to `spawningPos` and
 	 * the FSM-state to the initial state (if specified).
@@ -81,7 +80,7 @@ export class GameObject {
 	}
 	public ondispose?: () => void;
 
-	public paint?: (offset?: Point) => void;
+	public paint?(offset?: Point): void;
 	public postpaint?(offset?: Point): void; // Post-processing such as lighting effects or the characters of an ASCII-buffer in case of an ASCII-sprite
 	public onloaded?: () => void;
 
@@ -128,6 +127,7 @@ export class GameObject {
 	constructor(_id?: string, _fsm_id?: string) {
 		this.id = _id ?? GameObject.generateId();
 		this.hittable = true;
+		this.visible = true;
 		this.pos = { x: 0, y: 0 };
 		this.z = 0;
 		this.disposeFlag = false;

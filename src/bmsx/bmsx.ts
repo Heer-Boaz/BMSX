@@ -346,6 +346,10 @@ export function copyPoint(toCopy: Point): Point {
 	return <Point>{ x: toCopy.x, y: toCopy.y };
 }
 
+export function translatePoint(toTranslate: Point, translate: Point): Point {
+	return <Point>{ x: toTranslate.x + translate.x, y: toTranslate.y + translate.y };
+}
+
 export function multiplyPoint(toMult: Point, factor: number): Point {
 	return <Point>{ x: toMult.x * factor, y: toMult.y * factor };
 }

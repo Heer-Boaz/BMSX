@@ -255,32 +255,27 @@ export abstract class GLView extends BaseView {
 		_this.drawImgReqIndex = 0;
 	}
 
-	override drawImg(imgid: string, x: number, y: number, options?: number, sx?: number, sy?: number): void {
+	override drawImg(imgid: string, x: number, y: number, options: number = 0, sx?: number, sy?: number): void {
+		let imgmeta = global.game.rom['imgresources'][imgid]?.['imgmeta'];
+		if (!imgmeta) throw `Image with id '${imgid}' not found while trying to retrieve image metadata!`;
 		let _this = global.view as GLView;
 		let gl = _this.glctx;
-		let width = global.game.rom['imgresources'][imgid]['imgmeta']['width'];
-		let height = global.game.rom['imgresources'][imgid]['imgmeta']['height'];
+		let width = imgmeta['width'];
+		let height = imgmeta['height'];
 
-		options = options ?? 0;
 		let flipx: number = options & DrawImgFlags.HFLIP;
 		let flipy: number = options & DrawImgFlags.VFLIP;
 
 		bvec.set(_this.vertexcoords, x, y, width, height, sx ?? 1, sy ?? 1);
-		if (flipx && flipy) _this.texcoords.set(global.game.rom['imgresources'][imgid]['imgmeta']['texcoords_fliphv']);
-		else if (flipx) _this.texcoords.set(global.game.rom['imgresources'][imgid]['imgmeta']['texcoords_fliph']);
-		else if (flipy) _this.texcoords.set(global.game.rom['imgresources'][imgid]['imgmeta']['texcoords_flipv']);
-		else _this.texcoords.set(global.game.rom['imgresources'][imgid]['imgmeta']['texcoords']);
+		if (flipx && flipy) _this.texcoords.set(imgmeta['texcoords_fliphv']);
+		else if (flipx) _this.texcoords.set(imgmeta['texcoords_fliph']);
+		else if (flipy) _this.texcoords.set(imgmeta['texcoords_flipv']);
+		else _this.texcoords.set(imgmeta['texcoords']);
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
 		gl.bufferSubData(gl.ARRAY_BUFFER, 48 * _this.drawImgReqIndex, _this.vertexcoords);
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.texcoordBuffer);
 		gl.bufferSubData(gl.ARRAY_BUFFER, 48 * _this.drawImgReqIndex, _this.texcoords);
 		++_this.drawImgReqIndex;
-	}
-
-	override drawColoredBitmap(imgid: string, x: number, y: number, options: number, r: boolean = true, g: boolean = true, b: boolean = true, a: boolean = true) {
-		let _this = global.view as GLView;
-		_this.drawImg(imgid, x, y, options);
-		// console.warn('GLView.drawColoredBitmap nog niet gecodeerd :-(');
 	}
 
 	override drawRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
