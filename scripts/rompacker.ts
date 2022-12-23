@@ -40,7 +40,7 @@ const atlasPos = { x: 0, y: 0 };
 let atlasExploitedX = 0; // For cropping atlas later, because we are not sure that full width is exploited
 let atlasUnsafeY = 0; // Also used for cropping atlas later, but primarily used to create atlas
 
-interface LoadedResource extends ResourceMeta {
+interface ILoadedResource extends ResourceMeta {
 	buffer: Buffer;
 	img?: any;
 }
@@ -436,6 +436,12 @@ function getResMetaByFilename(filepath: string): { name: string, ext: string, ty
 	let ext = parse(filepath).ext.toLowerCase();
 	let type: string;
 
+	switch (name) {
+		case 'romlabel':
+			if (ext === '.png')
+				return { name: name, ext: ext, type: 'romlabel' };
+	}
+
 	switch (ext) {
 		case '.wav':
 			type = 'audio';
@@ -454,7 +460,7 @@ function getResMetaByFilename(filepath: string): { name: string, ext: string, ty
 function getResMetaList(respath: string): ResourceMeta[] {
 	// log(`Lees all bestanden in de resource pad ${_colors.brightGreen(`"${respath}"`)}... `);
 	// startRotator();
-	const arrayOfFiles = getFiles(respath) ?? []; // Also handle corner case where we don't have any resources by adding "?? []"
+	let arrayOfFiles = getFiles(respath) ?? []; // Also handle corner case where we don't have any resources by adding "?? []"
 	addFile("./rom", "megarom.min.js", arrayOfFiles); // Add source at the end
 	// stopRotator();
 
@@ -462,6 +468,7 @@ function getResMetaList(respath: string): ResourceMeta[] {
 
 	let imgid = 1;
 	let sndid = 1;
+	// let index_of_romlabel = -1;
 	for (let i = 0; i < arrayOfFiles.length; i++) {
 		let filepath = arrayOfFiles[i];
 		let meta = getResMetaByFilename(filepath);
@@ -480,6 +487,11 @@ function getResMetaList(respath: string): ResourceMeta[] {
 				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: sndid });
 				++sndid;
 				break;
+			case 'romlabel':
+				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: undefined });
+				// if (index_of_romlabel >= 0) throw `Found multiple 'romlabel.png' files! Cannot choose which one to use as enclosed rom image ¯\_(ツ)_/¯!`;
+				// index_of_romlabel = i;
+				break;
 			// case 'source':
 			// 	name = name.replace('.min', '');
 			// 	break;
@@ -489,14 +501,25 @@ function getResMetaList(respath: string): ResourceMeta[] {
 		result.push({ filepath: undefined, name: '_atlas', ext: undefined, type: 'atlas', id: imgid }); // Note that 'atlas' is an internal type, used only for this script
 	}
 
+	// if (index_of_romlabel >= 0) {
+	// 	// Move romlabel to index 0
+	// 	let label_meta = result.slice(index_of_romlabel, 1);
+	// 	result.unshift(label_meta[0]);
+	// }
 	// appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 
 	return result;
 }
 
-async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>): Promise<LoadedResource[]> {
+async function load_img(_meta: ResourceMeta) {
+	const base64Encoded = readFileSync(_meta.filepath!, 'base64');
+	const dataURL = `data:image/png;base64,${base64Encoded}`;
+	return await loadImage(dataURL);
+}
+
+async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>): Promise<ILoadedResource[]> {
 	let resMetaList = getResMetaList(respath);
-	let loadedResources: Array<LoadedResource> = [];
+	let loadedResources: Array<ILoadedResource> = [];
 	for (let i = 0; i < resMetaList.length; i++) {
 		let meta = resMetaList[i];
 
@@ -507,12 +530,15 @@ async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>): 
 		let buffer = meta.filepath ? readFileSync(meta.filepath) : null;
 
 		let img: any = undefined;
-		if (type === 'image') {
-			if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-				const base64Encoded = readFileSync(meta.filepath!, 'base64');
-				const dataURL = `data:image/png;base64,${base64Encoded}`;
-				img = await loadImage(dataURL);
-			}
+
+		switch (type) {
+			case 'romlabel':
+				break;
+			case 'image':
+				if (GENERATE_AND_USE_TEXTURE_ATLAS) {
+					img = await load_img(meta);
+				}
+				break;
 		}
 
 		loadedResources.push({ buffer: buffer!, filepath: meta.filepath, name: name, ext: ext, type: type, img: img, id: id });
@@ -533,12 +559,14 @@ async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>): 
 		loadedResources = loadedResources.sort((b1, b2) => ((b1.img?.height || 0) - (b2.img?.height || 0)));
 		// Also: place the atlas in the back, so that we can correctly use the bufferpointer to point to the atlas
 		loadedResources = loadedResources.sort((b1, b2) => ((b1.type === 'atlas' ? 1 : 0) - (b2.type === 'atlas' ? 1 : 0)));
+		// Also: place the romlabel in front, so that it is put at the start of the rom and will be recognized as a proper image
+		loadedResources = loadedResources.sort((b1, b2) => ((b1.type === 'romlabel' ? 0 : 1) - (b2.type === 'romlabel' ? 0 : 1)));
 	}
 	if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
-		loadedResources.filter(x => x.type !== 'image' && x.type !== 'atlas').forEach(x => buffers.push(x.buffer));
+		loadedResources.filter(x => x.type !== 'image' && x.type !== 'atlas' && x.type !== 'romlabel').forEach(x => buffers.push(x.buffer));
 	}
 	else {
-		loadedResources.forEach(x => buffers.push(x.buffer));
+		loadedResources.filter(x => x.type !== 'romlabel').forEach(x => buffers.push(x.buffer));
 	}
 	return loadedResources;
 }
@@ -563,7 +591,7 @@ function buildResourceList(respath: string): void {
 
 		let type = current.type;
 		let name = current.name;
-		let id = current.id;
+		// let id = current.id;
 		switch (type) {
 			case 'image':
 			case 'atlas':
@@ -613,7 +641,7 @@ async function buildRompack(outfile: string, respath: string): Promise<any> {
 		let buffers = new Array<Buffer>();
 		log("Resource bestanden inladen en bufferen...  ");
 		startRotator();
-		let loadedResources = await getLoadedResourcesList(respath, buffers).catch(err => reject(err)) as LoadedResource[];
+		let loadedResources: ILoadedResource[] = await getLoadedResourcesList(respath, buffers).catch(err => reject(err)) as ILoadedResource[];
 		stopRotator();
 		appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 
@@ -622,12 +650,19 @@ async function buildRompack(outfile: string, respath: string): Promise<any> {
 
 		let jsonout = new Array<RomResource>();
 		let bufferPointer = 0;
+		let romlabel_buffer: Buffer = undefined;
 		for (let i = 0; i < loadedResources.length; i++) {
-			let res = loadedResources[i];
+			let res: ILoadedResource = loadedResources[i];
 			let type = res.type;
 			let name = res.name;
 			let resid = res.id;
 			switch (type) {
+				case 'romlabel':
+					if (i > 0) throw '"romlabel.png" must appear at start of the ResourceMeta-list, while building the rompack ("romresources.json")! Thus, this is a bug and a fix is required!';
+					// Ignore this part. Don't even increase the buffer pointer (all other buffers will be zipped)!
+					romlabel_buffer = res.buffer;
+					//bufferPointer += res.buffer.length; // Skip over this part
+					break;
 				case 'image':
 					let img = res.img;
 					let imgmeta: ImgMeta;
@@ -693,8 +728,8 @@ async function buildRompack(outfile: string, respath: string): Promise<any> {
 			start: bufferPointer,
 			end: bufferPointer + jsonbuffer.length
 		};
-		let rommetastr = JSON.stringify(rommeta).padStart(100, ' ');
-		buffers.push(Buffer.from(encodeuint8arr(rommetastr)));
+		let rom_meta_string = JSON.stringify(rommeta).padStart(100, ' ');
+		buffers.push(Buffer.from(encodeuint8arr(rom_meta_string)));
 		stopRotator();
 		appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 		log(`\t#images: ${loadedResources.filter(r => r.type == 'image').length}\n`);
@@ -702,14 +737,22 @@ async function buildRompack(outfile: string, respath: string): Promise<any> {
 
 		log("Alles nu zippen... ");
 		startRotator();
-		let zipped = zip(Buffer.concat(buffers));
+		let all_buffers = Buffer.concat(buffers);
+		let zipped = zip(all_buffers);
+		// let rom_as_blob = romlabel_buffer ? Buffer.concat([romlabel_buffer, zipped]) : zipped;
+		let blobmeta = <RomMeta>{
+			start: romlabel_buffer?.length ?? 0,
+			end: zipped.length + (romlabel_buffer?.length ?? 0)
+		};
+		let blob_meta_string = JSON.stringify(blobmeta).padStart(100, ' ');
+		let blob_meta_as_buffer = Buffer.from(encodeuint8arr(blob_meta_string));
 		stopRotator();
 		appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 		log(`\tSize: ${_colors.red(`${(Buffer.concat(buffers).length / (1024 * 1024)).toFixed(2)} mB`)} ⇒  Deflated: ${_colors.blue(`${(zipped.length / (1024 * 1024)).toFixed(2)} mB (${((zipped.length / Buffer.concat(buffers).length) * 100).toFixed(0)}%)`)}\n`);
 
 		log(`"${_colors.green(outfile)}" wegschrijven naar ${_colors.green(`\"./dist/${outfile}\"`)}...`);
 		startRotator();
-		writeFileSync(`./dist/${outfile}`, zipped);
+		writeFileSync(`./dist/${outfile}`, Buffer.concat([romlabel_buffer ?? Buffer.alloc(0), zipped, blob_meta_as_buffer]));
 		writeFileSync("./rom/_ignore/romresources.json", jsonbuffer);
 		stopRotator();
 		appendLogEntry(`${_colors.grey('[Donut]')}\n`);

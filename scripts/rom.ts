@@ -1,16 +1,7 @@
-import { rejects } from 'assert';
 import { RomLoadResult, RomResource, RomMeta } from '../src/bmsx/rompack';
 
 declare var pako: any;
 declare var h406A: (rom: RomLoadResult, sndcontext: AudioContext, gainnode: GainNode) => void;
-
-// Only implement if no native implementation is available
-// https://stackoverflow.com/questions/4775722/how-to-check-if-an-object-is-an-array
-// if (typeof Array.isArray === 'undefined') {
-// 	Array.isArray = function (obj): obj is Array<any> {
-// 		return Object.prototype.toString.call(obj) === '[object Array]';
-// 	};
-// };
 
 var bootrom = {
 	rom: null as RomLoadResult | null,
@@ -26,8 +17,6 @@ var bootrom = {
 	},
 
 	usr(x: number): number {
-		// if (bootrom.theshowsover) return -x; // :-(
-
 		document.body.style.backgroundColor = "#000000";
 		document.getElementById('gamescreen')!.hidden = false;
 		loadScript(bootrom.rom!).then(() => {
@@ -52,8 +41,6 @@ var bootrom = {
 		};
 
 		createAudioContext();
-		console.error('Trying to focus!');
-		document.body.focus();
 
 		let fetchRom = () => new Promise<ArrayBuffer>(async (resolve, reject) => {
 			if (bootrom.localfetch) {
@@ -68,13 +55,26 @@ var bootrom = {
 		return new Promise(async (resolve, reject) => {
 			let bootCompletePromise = awaitBootComplete();
 			let result: RomLoadResult | null = null;
+			let romlabel_bloburl: string = undefined;
 			fetchRom()
-				.then(response_array => pako.inflate(response_array).buffer)
+				.then((response_array: ArrayBuffer) => getZippedRomAndRomLabelFromBlob(response_array))
+				.then((ziprom_and_label: { zipped_rom: ArrayBuffer, romlabel: string }) => { romlabel_bloburl = ziprom_and_label.romlabel; return pako.inflate(ziprom_and_label.zipped_rom).buffer; })
 				.then(rom => loadResources(rom))
 				.then((loadResult: any) => result = loadResult)
 				.catch(err => reject(err));
 
 			await bootCompletePromise;
+			// if (romlabel_bloburl) {
+			// 	let msx = document.querySelector('#msx') as HTMLElement;
+			// 	debugger;
+			// 	delete msx.onanimationend;
+			// 	msx.className = 'fade-out';
+			// 	msx.onanimationend = (ev: AnimationEvent) => {
+			// 		let msx = ev.target as HTMLImageElement;
+			// 		msx.src = romlabel_bloburl;
+			// 		msx.className = 'fade-in';
+			// 	};
+			// }
 			setLoaderText('Press any key or touch screen to start...');
 			setClassForLoader('');
 			let pressedAnyKey = awaitPressedAnyKey();
@@ -102,17 +102,40 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
 	});
 }
 
-async function loadResourceList(rom: ArrayBuffer): Promise<RomResource[]> {
-	let bytearray = new Uint8Array(rom);
+function parseMetaFromBuffer(to_parse: ArrayBuffer): RomMeta {
+	let bytearray = new Uint8Array(to_parse);
 	let sliced = bytearray.slice(bytearray.length - 100);
 	let metaJsonStr = decodeuint8arr(sliced);
-	let metaJson: RomMeta = JSON.parse(metaJsonStr);
+	return JSON.parse(metaJsonStr);
+}
 
-	sliced = bytearray.slice(metaJson.start, metaJson.end);
+function getSubBufferAsPerMeta(buffer: ArrayBuffer, meta: RomMeta): ArrayBuffer {
+	return buffer.slice(meta.start, meta.end);
+}
+
+function getSubBufferFromBufferWithMeta(buffer: ArrayBuffer): ArrayBuffer {
+	let buffer_meta: RomMeta = parseMetaFromBuffer(buffer);
+	return getSubBufferAsPerMeta(buffer, buffer_meta);
+}
+
+async function getZippedRomAndRomLabelFromBlob(blob_buffer: ArrayBuffer): Promise<{ zipped_rom: ArrayBuffer, romlabel: string }> {
+	// let blob_meta = parseMetaFromBuffer(blob_buffer);
+	// let romlabel_htmlimg: string = undefined;
+	// if (blob_meta.start > 0) {
+	// 	romlabel_htmlimg = getImageURL(blob_buffer.slice(0, blob_meta.start));
+	// }
+
+	// return Promise.resolve({ zipped_rom: getSubBufferAsPerMeta(blob_buffer, blob_meta), romlabel: romlabel_htmlimg });
+	return Promise.resolve({ zipped_rom: getSubBufferFromBufferWithMeta(blob_buffer), romlabel: undefined });
+}
+
+async function loadResourceList(rom: ArrayBuffer): Promise<RomResource[]> {
+	let sliced = new Uint8Array(getSubBufferFromBufferWithMeta(rom));
+
 	let resJsonStr = decodeuint8arr(sliced);
 	let resJson: RomResource[] = JSON.parse(resJsonStr);
 
-	return resJson;
+	return Promise.resolve<RomResource[]>(resJson);
 }
 
 async function loadResources(rom: ArrayBuffer): Promise<RomLoadResult> {
@@ -131,20 +154,26 @@ async function loadResources(rom: ArrayBuffer): Promise<RomLoadResult> {
 	return Promise.resolve<RomLoadResult>(result);
 }
 
+function getImageURL(buffer: ArrayBuffer): string {
+	let mime: string;
+	let blub: Blob;
+
+	mime = 'image/png';
+	blub = new Blob([new Uint8Array(buffer)], { type: mime });
+	return URL.createObjectURL(blub);
+}
+
+async function getImageFromBuffer(buffer: ArrayBuffer): Promise<HTMLImageElement> {
+	let url = getImageURL(buffer);
+	return loadImage(url);
+}
+
 async function load(rom: ArrayBuffer, res: RomResource, romResult: RomLoadResult): Promise<void> {
 	switch (res.type) {
 		case 'image':
 			if (!res.imgmeta!.atlassed) {
-				let mime: string;
-				let blub: Blob;
-				let url: string;
-				let sliced = new Uint8Array(rom.slice(res.start, res.end));
+				let img = await getImageFromBuffer(rom.slice(res.start, res.end));
 
-				mime = 'image/png';
-				blub = new Blob([sliced], { type: mime });
-				url = URL.createObjectURL(blub);
-
-				let img = await loadImage(url);
 				romResult.images[res.resid] = img;
 				romResult.images[res.resname] = img;
 			}
@@ -166,7 +195,6 @@ async function load(rom: ArrayBuffer, res: RomResource, romResult: RomLoadResult
 			break;
 		default:
 			let msg = `Unrecognised resource type in rom: ${res.type}, while processing rompack!`;
-			// outputError(msg);
 			return Promise.reject(msg);
 	}
 }
@@ -178,22 +206,19 @@ async function awaitBootComplete(): Promise<void> {
 			let loading = <HTMLElement>document.querySelector('#loading');
 			loading.hidden = false;
 			bootrom.theshowsover = true;
-			console.error('The show\'s over!');
 			resolve();
 		};
 		msx.className = "enter";
 		msx.hidden = false;
-		// if (bootrom.debug) resolve(); // Resolve immediately in debug-mode
+		if (bootrom.debug) resolve(); // Resolve immediately in debug-mode
 	});
 	return result;
 }
 
 async function loadScript(rom: RomLoadResult): Promise<void> {
 	let result: Promise<void> = new Promise((resolve, reject) => {
-		// try {
 		let romcode = document.createElement('script');
 		romcode.async = false;
-		// romcode.onload = () => resolve();
 		romcode.onerror = (event: Event | string, source?: string, lineno?: number, colno?: number, error?: Error) => {
 			reject('urgh');
 		};
@@ -206,7 +231,6 @@ async function loadScript(rom: RomLoadResult): Promise<void> {
 			resolve();
 		}
 		else {
-			// romcode.src = '../rom/megarom.js';
 			romcode.src = '../megarom.js';
 			romcode.onload = () => resolve();
 			document.head.appendChild(romcode);
@@ -282,7 +306,7 @@ async function fetchLocal(url: string): Promise<ArrayBuffer> {
 			resolve(xhr.response);
 		};
 		xhr.onabort = xhr.ontimeout = xhr.onerror = function (ev: ProgressEvent) {
-			reject(new TypeError('Local request failed for ROM image'));
+			reject((reason?: any) => new TypeError(`Local request failed for ROM image ${reason ?? 'unknown reason'}`));
 		};
 		xhr.open('GET', url);
 		xhr.send(null);
@@ -321,7 +345,7 @@ function createAudioContext(): void {
 	let context: AudioContext = new AContext({
 		latencyHint: 'interactive',
 		sampleRate: 44100,
-	});
+	}) as AudioContext;
 	// https://createjs.com/docs/soundjs/files/soundjs_webaudio_WebAudioPlugin.js.html#l355
 	// Check if hack is necessary. Only occurs in iOS6+ devices
 	// and only when you first boot the iPhone, or play a audio/video

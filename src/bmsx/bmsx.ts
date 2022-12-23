@@ -498,7 +498,7 @@ export function getOppositeDirection(dir: Direction): Direction {
 }
 
 export class Game {
-	lastTick!: number;
+	last_gametick_time!: number;
 	_turnCounter!: number;
 	animationFrameRequestid!: number;
 	public running: boolean;
@@ -538,7 +538,7 @@ export class Game {
 		// global.view.handleResize();
 
 		this.running = true;
-		this.lastTick = performance.now();
+		this.last_gametick_time = performance.now();
 		this.run(performance.now());
 	}
 
@@ -550,32 +550,35 @@ export class Game {
 		}
 	}
 
-	public run(tFrame: number): void {
+	public run(current_time: number): void {
 		let game = global.game;
 		if (!game.running) return;
 
-		game.animationFrameRequestid = window.requestAnimationFrame(game.run);
-		let nextTick = game.lastTick + fpstime;
-		let numTicks = 0;
+		let ticks_to_run = 0;
 
 		// If tFrame < nextTick then 0 ticks need to be updated (0 is default for numTicks).
 		// If tFrame = nextTick then 1 tick needs to be updated (and so forth).
 		// Note: As we mention in summary, you should keep track of how large numTicks is.
 		// If it is large, then either your game was asleep, or the machine cannot keep up.
-		if (tFrame > nextTick) {
-			let timeSinceTick = tFrame - game.lastTick;
-			numTicks = Math.floor(timeSinceTick / fpstime);
+		let time_since_last_run_gametick = current_time - game.last_gametick_time;
+
+		if (time_since_last_run_gametick > fpstime) {
+			ticks_to_run = Math.floor(time_since_last_run_gametick / fpstime);
 		}
 
-		for (let i = 0; i < numTicks; i++) {
+		for (let i = 0; i < ticks_to_run; i++) {
 			++game._turnCounter;
-			game.lastTick = game.lastTick + fpstime; // Now lastTick is this tick.
+			game.last_gametick_time = game.last_gametick_time + fpstime; // Now lastTick is this tick.
 			if (game.paused) continue;
 			Input.pollGamepadInput();
 			game.update();
-			// game.update(game.lastTick);
 		}
-		global.view.drawgame();
+		if (ticks_to_run > 0) global.view.drawgame();
+		if (ticks_to_run > 1) console.warn(`${ticks_to_run}`);
+
+		// global.view.drawgame();
+		game.last_gametick_time = current_time - (time_since_last_run_gametick % fpstime); // https://codepen.io/rishabhp/pen/XKpBQX
+		game.animationFrameRequestid = window.requestAnimationFrame(game.run);
 	}
 
 	public stop(): void {

@@ -410,6 +410,14 @@ html {
 	display: block;
 }
 
+/* #msx.fade-in {
+	animation: fade-in 5s;
+}
+
+#msx.fade-out {
+	animation: fade-out 5s;
+} */
+
 @keyframes enter {
 	from {
 		transform: translateX(-50%) translateY(65vh);
@@ -444,11 +452,11 @@ html {
 }
 
 #loading.appear {
-	animation: fadein 1.0s infinite linear alternate;
+	animation: fade-in-partial 1.0s infinite linear alternate;
 }
 
 #loading.fadeout {
-	animation: fadeout 1.0s linear forwards;
+	animation: fade-out 1.0s linear forwards;
 }
 
 #loading.coloring {
@@ -469,7 +477,7 @@ html {
 	}
 }
 
-@keyframes fadein {
+@keyframes fade-in-partial {
 	from {
 		opacity: .3;
 	}
@@ -479,7 +487,17 @@ html {
 	}
 }
 
-@keyframes fadeout {
+@keyframes fade-in {
+	from {
+		opacity: 0;
+	}
+
+	to {
+		opacity: 1;
+	}
+}
+
+@keyframes fade-out {
 	from {
 		opacity: 1;
 	}
