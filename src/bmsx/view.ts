@@ -6,7 +6,7 @@ export interface Color {
     r: number;
     g: number;
     b: number;
-    a?: number;
+    a: number;
 }
 
 export class PixelData {
@@ -53,7 +53,7 @@ export abstract class BaseView {
 
     public drawgame(gamescreenOffset?: Point, clearCanvas: boolean = true): void {
         if (clearCanvas) global.view.clear();
-        // global.model.currentSpace.sortObjectsByPriority();
+        global.model.currentSpace.sort_by_depth(); // Required for each frame as objects can change depth during the flow of the game
         global.model.currentSpace.objects.forEach(o => !o.disposeFlag && o.visible && o.paint?.(gamescreenOffset));
     }
 
@@ -185,7 +185,7 @@ export abstract class BaseView {
         global.view.context.restore();
     }
 
-    public drawImg(imgid: string, x: number, y: number, options: number = DrawImgFlags.None, sx: number = 1, sy: number = 1): void {
+    public drawImg(imgid: string, x: number, y: number, z: number, options: DrawImgFlags = DrawImgFlags.None, sx: number = 1, sy: number = 1, color_override?: Color): void {
         let img = BaseView.images[imgid];
         global.view.context.save();
         global.view.context.translate(~~x, ~~y);
@@ -228,14 +228,14 @@ export abstract class BaseView {
     }
 }
 
-export function paintImage(imgid: string, pos: Point, options: DrawImgFlags = DrawImgFlags.None): void {
+export function paintImage(imgid: string, pos: Point, z: number, options: DrawImgFlags = DrawImgFlags.None): void {
     if (!imgid || imgid === 'None') return; // Don't draw anything when imgid = BitmapId.None. For animations, we don't always want to use visible = false
 
-    global.view.drawImg(imgid, pos.x, pos.y, options);
+    global.view.drawImg(imgid, pos.x, pos.y, z, options);
 }
 
-export function paintImageScaled(imgid: string, pos: Point, scale_x: number, scale_y: number, options: DrawImgFlags = DrawImgFlags.None): void {
+export function paintImageScaled(imgid: string, pos: Point, z: number, scale_x: number, scale_y: number, options: DrawImgFlags = DrawImgFlags.None): void {
     if (!imgid || imgid === 'None') return; // Don't draw anything when imgid = BitmapId.None. For animations, we don't always want to use visible = false
 
-    global.view.drawImg(imgid, pos.x, pos.y, options, scale_x, scale_y);
+    global.view.drawImg(imgid, pos.x, pos.y, z, options, scale_x, scale_y);
 }

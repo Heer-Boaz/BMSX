@@ -1,8 +1,9 @@
+import { Msx1Colors } from './../bmsx/msx';
 import { AudioId, BitmapId } from "./resourceids";
 import { TextWriter } from "../bmsx/textwriter";
 import { SM } from "../bmsx/soundmaster";
 // import { SlotExists, LoadGame } from "../bmsx/gamepersistor";
-import { GameOptions as GO, Direction, Size, Point, newSize, setPoint } from '../bmsx/bmsx';
+import { GameOptions as GO, Direction, Size, Point, newSize, setPoint, newPoint } from '../bmsx/bmsx';
 import { Constants } from "../bmsx/bmsx";
 import { Input } from "../bmsx/input";
 import { Msx1ExtColors } from "../bmsx/msx";
@@ -86,9 +87,11 @@ export class GameMenu extends GameObject {
     constructor() {
         super();
         this.id = 'gamemenu';
-        this.z = 5000;
+        this.z = 900;
         this.visible = false;
-        this.cursorPos = { x: 0, y: 0 };
+        this.cursorPos = newPoint(0, 0);
+        this.pos = newPoint(GameMenu.menuPosX, GameMenu.menuPosY);
+        this.size = newSize(GameMenu.menuEndX - GameMenu.menuPosX, GameMenu.menuEndY - GameMenu.menuPosY);
         this.selectedItemIndex = 0;
         this.CurrentScreen = MenuItem.Main;
         GameMenu.fullscreenOptionsOffsets = [global.view.default_font.char_width * 12 - 1, global.view.default_font.char_height * 14 - 1];
@@ -444,7 +447,7 @@ export class GameMenu extends GameObject {
         // view.fillRectangle(GameMenu.menuPosX, GameMenu.menuPosY, GameMenu.menuEndX, GameMenu.menuEndY, Msx1Colors[1]);
         // view.drawRectangle(GameMenu.menuPosX, GameMenu.menuPosY, GameMenu.menuEndX, GameMenu.menuEndY, Msx1Colors[15]);
         let titleToDraw: string;
-        let titleX: number, titleY;
+        let titleX: number, titleY: number;
         switch (this.CurrentScreen) {
             case MenuItem.Main:
                 titleToDraw = GameMenu.menuText;
@@ -475,7 +478,7 @@ export class GameMenu extends GameObject {
                 titleY = GameMenu.mainMenuTextY;
                 break;
         }
-        TextWriter.drawText(titleX, titleY, titleToDraw);
+        TextWriter.drawText(titleX, titleY, titleToDraw, undefined, undefined, Msx1Colors[4]);
         let y = GameMenu.mainMenuTextY + GameMenu.itemOffsetY;
         switch (this.CurrentScreen) {
             case MenuItem.Main:
@@ -487,7 +490,7 @@ export class GameMenu extends GameObject {
                                 // if ((model as Model).state != GameState.Event)
                                     // TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
                                 // else
-                                TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, null, Msx1ExtColors[0]);
+                                TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, undefined, undefined, Msx1ExtColors[0]);
                                 break;
                             default:
                                 TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
@@ -512,7 +515,7 @@ export class GameMenu extends GameObject {
                                     TextWriter.drawText(offsetX, y, `${global.view.scale.toPrecision(2)}X`);
                                 }
                                 else {
-                                    TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, null, Msx1ExtColors[0]);
+                                    TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, undefined, undefined, Msx1ExtColors[0]);
                                     offsetX += GameMenu.scaleText.length * global.view.default_font.char_height;
                                     // textToDisplay = BDX._.Zoom.ToString("n2");
                                     TextWriter.drawText(offsetX, y, `${global.view.scale.toPrecision(2)}X`);
@@ -570,18 +573,18 @@ export class GameMenu extends GameObject {
                     break;
                 }
         }
-        global.view.drawImg(BitmapId.menucursor, this.cursorPos.x, this.cursorPos.y);
+        global.view.drawImg(BitmapId.menucursor, this.cursorPos.x, this.cursorPos.y, this.z + 10);
 
         let scalex = GameMenu.menuEndX - GameMenu.menuPosX;
         let scaley = GameMenu.menuEndY - GameMenu.menuPosY;
-        global.view.drawImg(BitmapId.blackpixel, GameMenu.menuPosX + 1, GameMenu.menuPosY + 1, DrawImgFlags.None, scalex - 2, scaley - 2);
-        global.view.drawImg(BitmapId.whitepixel, GameMenu.menuPosX, GameMenu.menuPosY, DrawImgFlags.None, scalex, scaley);
+        global.view.drawImg(BitmapId.blackpixel, GameMenu.menuPosX + 1, GameMenu.menuPosY + 1, this.z + 1, DrawImgFlags.None, scalex - 2, scaley - 2);
+        global.view.drawImg(BitmapId.whitepixel, GameMenu.menuPosX, GameMenu.menuPosY, this.z, DrawImgFlags.None, scalex, scaley);
     }
 
     private printFullscreenOptionRectangle(y: number): void {
         // let selectedIndex: number = GO.Fullscreen ? 0 : 1;
         let selectedIndex: number = global.view.isFullscreen ? 0 : 1;
-        global.view.drawImg(BitmapId.redpixel, GameMenu.fullscreenOptionsOffsets[selectedIndex] + GameMenu.menuPosX + GameMenu.optionItemsOffsetX, y + GameMenu.fullscreenOptionsOffsetY, DrawImgFlags.None, GameMenu.fullscreenOptionsRectangleSize.x, GameMenu.fullscreenOptionsRectangleSize.y);
+        global.view.drawImg(BitmapId.redpixel, GameMenu.fullscreenOptionsOffsets[selectedIndex] + GameMenu.menuPosX + GameMenu.optionItemsOffsetX, y + GameMenu.fullscreenOptionsOffsetY, this.z + 2, DrawImgFlags.None, GameMenu.fullscreenOptionsRectangleSize.x, GameMenu.fullscreenOptionsRectangleSize.y);
     }
 
     private printSaveSlot(x: number, y: number, slotIndex: number): void {

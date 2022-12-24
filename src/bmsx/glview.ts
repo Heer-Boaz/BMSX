@@ -2,7 +2,7 @@ import { Size, Point } from "./bmsx";
 import { BaseView, Color, DrawImgFlags } from './view';
 
 var bvec = {
-	set: function (v: Float32Array, x: number, y: number, w: number, h: number, sx: number, sy: number): void {
+	set: function(v: Float32Array, x: number, y: number, w: number, h: number, sx: number, sy: number): void {
 		// Do the Boaz matrix translate and scale
 		let x1 = x;
 		let x2 = x + w * sx;
@@ -15,6 +15,9 @@ var bvec = {
 			v[6] = x1, v[7] = y2,
 			v[8] = x2, v[9] = y1,
 			v[10] = x2, v[11] = y2;
+	},
+	set_zcoord: function(v: Float32Array, z: number): void {
+		v[0] = z, v[1] = z, v[2] = z, v[3] = z, v[4] = z, v[5] = z;
 	},
 	set_color: function (v: Float32Array, color: Color): void {
 		v[0] = color.r,  v[1]  = color.g, v[2]  = color.b, v[3]  = color.a,
@@ -75,16 +78,19 @@ export abstract class GLView extends BaseView {
 	private program: WebGLProgram;
 	private positionLocation: number;
 	private texcoordLocation: number;
+	private zcoordLocation: number;
 	private color_overrideLocation: number;
 	private resolutionLocation: WebGLUniformLocation;
 	private textureLocation: WebGLUniformLocation;
 	// private colorOverrideLocation: WebGLUniformLocation;
 	private positionBuffer: WebGLBuffer;
 	private texcoordBuffer: WebGLBuffer;
+	private zBuffer: WebGLBuffer;
 	private color_overrideBuffer: WebGLBuffer;
 	private resVec2: Float32Array = new Float32Array(2);
 	private vertexcoords: Float32Array = new Float32Array(12);
 	private texcoords: Float32Array = new Float32Array(12);
+	private zcoords: Float32Array = new Float32Array(6);
 	private color_override: Float32Array = new Float32Array(24);
 	private drawImgReqIndex: number = 0;
 
@@ -95,6 +101,7 @@ export abstract class GLView extends BaseView {
 			in vec2 a_position;
 			in vec2 a_texcoord;
 			in vec4 a_color_override;
+			in float a_pos_z;
 
 			uniform vec2 u_resolution;
 
@@ -111,11 +118,12 @@ export abstract class GLView extends BaseView {
 			// Convert from 0->2 to -1->+1 (clipspace)
 			vec2 clipSpace = zeroToTwo - 1.0;
 
-			gl_Position = vec4(clipSpace * vec2(1, -1), 0, 1);
+			gl_Position = vec4(clipSpace * vec2(1, -1), a_pos_z, 1);
 
 			// Pass the texCoord to the fragment shader
 			// The GPU will interpolate this value between points.
 			v_texcoord = a_texcoord;
+			// Pass the color_override value to the fragment shader to colorize sprites!
 			v_color_override = a_color_override;
 		}`;
 
@@ -164,7 +172,7 @@ export abstract class GLView extends BaseView {
 		let gl = this.glctx;
 		gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 		gl.enable(gl.DEPTH_TEST);
-		gl.depthFunc(gl.LESS);
+		gl.depthFunc(gl.GREATER);
 		gl.enable(gl.BLEND);
 		gl.enable(gl.CULL_FACE);
 		gl.cullFace(gl.FRONT);
@@ -184,6 +192,7 @@ export abstract class GLView extends BaseView {
 		// look up where the vertex data needs to go
 		this.positionLocation = gl.getAttribLocation(this.program, "a_position");
 		this.texcoordLocation = gl.getAttribLocation(this.program, "a_texcoord");
+		this.zcoordLocation = gl.getAttribLocation(this.program, "a_pos_z");
 		this.color_overrideLocation = gl.getAttribLocation(this.program, "a_color_override");
 
 		// lookup uniforms
@@ -212,6 +221,11 @@ export abstract class GLView extends BaseView {
 		}
 		gl.bufferData(gl.ARRAY_BUFFER, uglyTexCoordStuff, gl.DYNAMIC_DRAW);
 
+		// Create buffer for z position information for the vertex shader
+		this.zBuffer = gl.createBuffer()!;
+		gl.bindBuffer(gl.ARRAY_BUFFER, this.zBuffer);
+		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(1 * 1000), gl.DYNAMIC_DRAW);
+
 		// Create buffer for color override information for the vertex shader
 		this.color_overrideBuffer = gl.createBuffer()!;
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.color_overrideBuffer);
@@ -223,11 +237,17 @@ export abstract class GLView extends BaseView {
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
 		gl.enableVertexAttribArray(this.positionLocation);
 		gl.vertexAttribPointer(this.positionLocation, 2, gl.FLOAT, false, 0, 0);
+
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.texcoordBuffer);
 		gl.enableVertexAttribArray(this.texcoordLocation);
 		gl.vertexAttribPointer(this.texcoordLocation, 2, gl.FLOAT, false, 0, 0);
-		gl.bindBuffer(gl.ARRAY_BUFFER, this.color_overrideBuffer);
+
+		gl.bindBuffer(gl.ARRAY_BUFFER, this.zBuffer);
+		gl.enableVertexAttribArray(this.zcoordLocation);
+		gl.vertexAttribPointer(this.zcoordLocation, 1, gl.FLOAT, false, 0, 0);
+
 		gl.enableVertexAttribArray(this.color_overrideLocation);
+		gl.bindBuffer(gl.ARRAY_BUFFER, this.color_overrideBuffer);
 		gl.vertexAttribPointer(this.color_overrideLocation, 4, gl.FLOAT, false, 0, 0);
 
 		// this matrix will convert from pixels to clip space
@@ -289,6 +309,7 @@ export abstract class GLView extends BaseView {
 
 	override clear(): void {
 		let gl = this.glctx;
+		gl.clearDepth(0.0);
 		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 	}
 
@@ -307,7 +328,7 @@ export abstract class GLView extends BaseView {
 		_this.drawImgReqIndex = 0;
 	}
 
-	override drawImg(imgid: string, x: number, y: number, options: number = DrawImgFlags.None, sx: number = 1, sy: number = 1, _color_override?: Color): void {
+	override drawImg(imgid: string, x: number, y: number, z: number, options: DrawImgFlags = DrawImgFlags.None, sx: number = 1, sy: number = 1, _color_override?: Color): void {
 		let imgmeta = global.game.rom['imgresources'][imgid]?.['imgmeta'];
 		if (!imgmeta) throw `Image with id '${imgid}' not found while trying to retrieve image metadata!`;
 		let _this = global.view as GLView;
@@ -324,6 +345,8 @@ export abstract class GLView extends BaseView {
 		else if (flipy) _this.texcoords.set(imgmeta['texcoords_flipv']);
 		else _this.texcoords.set(imgmeta['texcoords']);
 
+		bvec.set_zcoord(_this.zcoords, z / 1000);
+
 		if (_color_override) bvec.set_color(_this.color_override, _color_override);
 		else if ((options & DrawImgFlags.COLORIZE_R) === DrawImgFlags.COLORIZE_R) bvec.set_color(_this.color_override, VERTEX_COLOR_COLORIZED_RED);
 		else if ((options & DrawImgFlags.COLORIZE_G) === DrawImgFlags.COLORIZE_G) bvec.set_color(_this.color_override, VERTEX_COLOR_COLORIZED_GREEN);
@@ -334,6 +357,8 @@ export abstract class GLView extends BaseView {
 		gl.bufferSubData(gl.ARRAY_BUFFER, 48 * _this.drawImgReqIndex, _this.vertexcoords);
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.texcoordBuffer);
 		gl.bufferSubData(gl.ARRAY_BUFFER, 48 * _this.drawImgReqIndex, _this.texcoords);
+		gl.bindBuffer(gl.ARRAY_BUFFER, this.zBuffer);
+		gl.bufferSubData(gl.ARRAY_BUFFER, 24 * _this.drawImgReqIndex, _this.zcoords);
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.color_overrideBuffer);
 		gl.bufferSubData(gl.ARRAY_BUFFER, 96 * _this.drawImgReqIndex, _this.color_override);
 		++_this.drawImgReqIndex;

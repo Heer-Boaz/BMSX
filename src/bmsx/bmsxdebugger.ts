@@ -1,5 +1,5 @@
 import { MachineDefinitions } from './bfsm';
-import { area2size, copySize, divPoint, newPoint, newSize, Point, translatePoint, truncPoint } from './bmsx';
+import { area2size, copyPoint, copySize, divPoint, newPoint, newSize, Point, translatePoint, truncPoint } from './bmsx';
 import { GameObject } from './gameobject';
 import { Serializer } from './gamereviver';
 import { Sprite, SpriteObject } from './sprite';
@@ -37,17 +37,22 @@ class ObjectHighlighter extends SpriteObject {
 		}
 
 		this.#highlighted_obj = o;
-		this.pos = translatePoint(o.pos, o.hitarea.start);
-		if (o.hitarea) this.size = area2size(o.hitarea);
-		else this.size = copySize(o.size);
-		this.size = divPoint(this.size, 4);
+		if (o.hitarea) {
+			this.size = area2size(o.hitarea);
+			this.pos = translatePoint(o.pos, o.hitarea.start);
+		}
+		else {
+			this.pos = copyPoint(o.pos);
+			this.size = copySize(o.size);
+		}
+		// this.size = divPoint(this.size, 4);
 		this.pos = truncPoint(this.pos);
 		this.size = truncPoint(this.size);
 		this.visible = true;
 	}
 
 	public override paint(offset?: Point): void {
-		paintImageScaled(this.imgid, translatePoint(this.pos, offset), this.size.x, this.size.y);
+		paintImageScaled(this.imgid, translatePoint(this.pos, offset), this.z, this.size.x, this.size.y);
 	}
 }
 
@@ -77,25 +82,30 @@ export function handleDebugMouseMove(e: MouseEvent): void {
 		}
 	}
 	else {
-		let model = global.model;
 		// Highlight mouse-overed objects
 		let { objUnderCursor, offsetToCursor } = getGameObjectAtCursor(e);
-		let highlighter = model.get<ObjectHighlighter>('debug_highlighter');
-		if (objUnderCursor) {
-			if (!highlighter) {
-				highlighter = new ObjectHighlighter();
-				model.spawn(highlighter);
-			}
-			else if (!model.is_obj_in_current_space('debug_highlighter')) {
-				model.move_obj_to_space('debug_highlighter', model.current_space_id);
-			}
-			highlighter.target = objUnderCursor;
-		}
-		else {
-			highlighter && (highlighter.target = null);
-		}
+		highlight_object(objUnderCursor);
 
 	}
+}
+
+function highlight_object(o: GameObject) {
+	let model = global.model;
+	let highlighter = model.get<ObjectHighlighter>('debug_highlighter');
+	if (o) {
+		if (!highlighter) {
+			highlighter = new ObjectHighlighter();
+			model.spawn(highlighter);
+		}
+		else if (!model.is_obj_in_current_space('debug_highlighter')) {
+			model.move_obj_to_space('debug_highlighter', model.current_space_id);
+		}
+		highlighter.target = o;
+	}
+	else {
+		highlighter && (highlighter.target = null);
+	}
+
 }
 
 export function handleDebugMouseDragEnd(e: MouseEvent): void {
@@ -425,6 +435,12 @@ export function handleOpenObjectMenu(e: UIEvent | null, previous?: HTMLElement):
 		row.onclick = (_) => {
 			openObjectDetailMenu(o, o.id, dialogDiv);
 		};
+		row.onmouseenter = (_) => {
+			highlight_object(o);
+		};
+		row.onmouseleave = (_) => {
+			highlight_object(null);
+		};
 	});
 
 	document.body.insertBefore(dialogDiv, null);
@@ -498,7 +514,7 @@ function getGameObjectAtCursor(e: MouseEvent): { objUnderCursor: GameObject | nu
 	let y = e.offsetY;
 	let p = newPoint(x, y);
 
-	let objsUnderCursor: GameObject[] = global.model.objects.filter(o => o.hitarea && o.insideScaled(p));
+	let objsUnderCursor: GameObject[] = global.model.objects.filter(o => o.id !== 'debug_highlighter' && o.insideScaled(p));
 	if (objsUnderCursor && objsUnderCursor.length > 0) {
 		// Choose obj with highest z-value
 		let objUnderCursorWithHighestZ = objsUnderCursor.reduce((o1, o2) => o1.z > o2.z ? o1 : o2);

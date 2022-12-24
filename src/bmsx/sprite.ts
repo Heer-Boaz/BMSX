@@ -33,6 +33,11 @@ export abstract class SpriteObject extends GameObject {
 		this.sprite.pos = o;
 	}
 
+	// public override set z(__z: number) {
+	// 	super.z = __z;
+	// 	if (this.sprite) this.sprite.z = this.z;
+	// }
+
 	sprite: Sprite;
 
 	constructor(id?: string) {
@@ -43,7 +48,7 @@ export abstract class SpriteObject extends GameObject {
 	override paint(offset?: Point) {
 		offset ??= newPoint(0, 0);
 		let total_offset = translatePoint(offset, this.pos);
-		this.sprite.paint.call(this.sprite, total_offset);
+		this.sprite.paint.call(this.sprite, total_offset, this.z);
 	}
 }
 
@@ -64,15 +69,17 @@ export class Sprite {
 
 	public imgid: string;
 	public pos: Point;
+	public z: number;
 	#options: DrawImgFlags;
 
 	constructor() {
 		this.imgid ??= 'None';
 		this.#options ??= 0;
 		this.pos ??= newPoint(0, 0);
+		this.z ??= 0;
 	}
 
-	public paint(offset?: Point) {
-		paintImage(this.imgid, translatePoint(this.pos, offset || { x: 0, y: 0 }), this.#options);
+	public paint(offset?: Point, z?: number) {
+		paintImage(this.imgid, translatePoint(this.pos, offset || { x: 0, y: 0 }), z ?? this.z, this.#options);
 	}
 }

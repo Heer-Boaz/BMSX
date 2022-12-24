@@ -44,7 +44,7 @@ export class Space {
 
 	public sort_by_depth(): void {
 		// this.objects = this.objects.sort((o1, o2) => (o2.z || 0) - (o1.z || 0));
-		this.objects.sort((o1, o2) => o2.z - o1.z);
+		this.objects.sort((o1, o2) => o1.z - o2.z);
 	}
 
 	/**

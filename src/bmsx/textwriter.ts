@@ -1,8 +1,8 @@
 import { BFont, GameOptions as GO, Point } from "./bmsx";
-import { Color } from './view';
+import { Color, DrawImgFlags } from './view';
 
 export class TextWriter {
-    public static drawText(x: number, y: number, textToWrite: string | string[], _font: BFont = null, color: Color = null): void {
+    public static drawText(x: number, y: number, textToWrite: string | string[], z: number = 950, _font: BFont = null, color: Color = null): void {
         let font = _font ?? global.view.default_font as BFont;
         let startPos: Point = <Point>{ x: x, y: y }
         let stepX: number = font.char_width;
@@ -11,7 +11,7 @@ export class TextWriter {
         if (Array.isArray(textToWrite)) {
             for (let text of textToWrite) {
                 for (let i: number = 0; i < text.length; i++) {
-                    global.view.drawImg(font.char_to_img(text[i]), pos.x, pos.y);
+                    global.view.drawImg(font.char_to_img(text[i]), pos.x, pos.y, z, DrawImgFlags.None, undefined, undefined, color);
                     pos.x += stepX;
                 }
                 pos.x = startPos.x;
@@ -22,7 +22,7 @@ export class TextWriter {
         }
         else {
             for (let i: number = 0; i < textToWrite.length; i++) {
-                global.view.drawImg(font.char_to_img(textToWrite[i]), pos.x, pos.y);
+                global.view.drawImg(font.char_to_img(textToWrite[i]), pos.x, pos.y, z, DrawImgFlags.None, undefined, undefined, color);
                 pos.x += stepX;
             }
             pos.x = startPos.x;

@@ -12,7 +12,15 @@ export class GameObject {
 
 	public id: string;
 	public disposeFlag: boolean;
-	public z: number;
+	public _z: number;
+	public get z(): number {
+		return this._z;
+	}
+	public set z(__z: number) {
+		if (__z > 1000) __z = 1000;
+		if (__z < 0) __z = 0;
+		this._z = __z;
+	}
 	public pos: Point;
 	public size: Size;
 

@@ -56,21 +56,21 @@ export const MSX1ScreenHeight: number = 192;
 export const MSX2ScreenWidth: number = 256;
 export const MSX2ScreenHeight: number = 212;
 export const Msx1Colors: Color[] = [
-	<Color>{ r: 0, g: 0, b: 0 },
-	<Color>{ r: 0, g: 0, b: 0 },
-	<Color>{ r: 0, g: 241, b: 20 },
-	<Color>{ r: 68, g: 249, b: 86 },
-	<Color>{ r: 85, g: 79, b: 255 },
-	<Color>{ r: 128, g: 111, b: 255 },
-	<Color>{ r: 250, g: 80, b: 51 },
-	<Color>{ r: 12, g: 255, b: 255 },
-	<Color>{ r: 255, g: 81, b: 52 },
-	<Color>{ r: 255, g: 115, b: 86 },
-	<Color>{ r: 226, g: 210, b: 4 },
-	<Color>{ r: 242, g: 217, b: 71 },
-	<Color>{ r: 4, g: 212, b: 19 },
-	<Color>{ r: 231, g: 80, b: 229 },
-	<Color>{ r: 208, g: 208, b: 208 },
-	<Color>{ r: 255, g: 255, b: 255 },
+	{ r: 0   / 255, g: 0   / 255, b: 0   / 255 , a: 1 },
+	{ r: 0   / 255, g: 0   / 255, b: 0   / 255 , a: 1 },
+	{ r: 0   / 255, g: 241 / 255, b: 20  / 255 , a: 1 },
+	{ r: 68  / 255, g: 249 / 255, b: 86  / 255 , a: 1 },
+	{ r: 85  / 255, g: 79  / 255, b: 255 / 255 , a: 1 },
+	{ r: 128 / 255, g: 111 / 255, b: 255 / 255 , a: 1 },
+	{ r: 250 / 255, g: 80  / 255, b: 51  / 255 , a: 1 },
+	{ r: 12  / 255, g: 255 / 255, b: 255 / 255 , a: 1 },
+	{ r: 255 / 255, g: 81  / 255, b: 52  / 255 , a: 1 },
+	{ r: 255 / 255, g: 115 / 255, b: 86  / 255 , a: 1 },
+	{ r: 226 / 255, g: 210 / 255, b: 4   / 255 , a: 1 },
+	{ r: 242 / 255, g: 217 / 255, b: 71  / 255 , a: 1 },
+	{ r: 4   / 255, g: 212 / 255, b: 19  / 255 , a: 1 },
+	{ r: 231 / 255, g: 80  / 255, b: 229 / 255 , a: 1 },
+	{ r: 208 / 255, g: 208 / 255, b: 208 / 255 , a: 1 },
+	{ r: 255 / 255, g: 255 / 255, b: 255 / 255 , a: 1 },
 ];
-export const Msx1ExtColors: Color[] = [<Color>{ r: 104, g: 104, b: 104 }];
+export const Msx1ExtColors: Color[] = [{ r: 104, g: 104, b: 104, a: 1 }];
