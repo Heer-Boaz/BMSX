@@ -1,7 +1,6 @@
 ﻿import { id2htmlimg } from './rompack.d';
 import { Size, Point } from "./bmsx";
 import { BFont } from "./bmsx";
-import { SpriteObject } from './sprite';
 
 export interface Color {
     r: number;
@@ -54,7 +53,7 @@ export abstract class BaseView {
 
     public drawgame(gamescreenOffset?: Point, clearCanvas: boolean = true): void {
         if (clearCanvas) global.view.clear();
-        global.model.currentSpace.sortObjectsByPriority();
+        // global.model.currentSpace.sortObjectsByPriority();
         global.model.currentSpace.objects.forEach(o => !o.disposeFlag && o.visible && o.paint?.(gamescreenOffset));
     }
 

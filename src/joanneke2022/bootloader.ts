@@ -860,11 +860,7 @@ class barst extends onvolmaaktheid {
 }
 
 class gameview extends GLView {
-	override drawgame(): void {
-		super.drawgame();
-		super.drawSprites();
-	}
-};
+}
 
 let _game: Game;
 let _model: gamemodel;

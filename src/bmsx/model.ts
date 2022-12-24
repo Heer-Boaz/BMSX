@@ -42,8 +42,9 @@ export class Space {
 		this[id2obj] = {};
 	}
 
-	public sortObjectsByPriority(): void {
-		this.objects = this.objects.sort((o1, o2) => (o2.z || 0) - (o1.z || 0));
+	public sort_by_depth(): void {
+		// this.objects = this.objects.sort((o1, o2) => (o2.z || 0) - (o1.z || 0));
+		this.objects.sort((o1, o2) => o2.z - o1.z);
 	}
 
 	/**
@@ -59,11 +60,11 @@ export class Space {
 
 		this.objects.push(o);
 
-		this.sortObjectsByPriority();
-
 		this[id2obj][o.id] = o;
 		global.model[obj_id2obj_space_id][o.id] = this.id;
 		!skip_onspawn_event && o.onspawn?.(pos);
+
+		this.sort_by_depth(); // Sort after spawn-event, just to be sure
 	}
 
 	/**
