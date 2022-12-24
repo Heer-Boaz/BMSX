@@ -346,8 +346,12 @@ export function copyPoint(toCopy: Point): Point {
 	return <Point>{ x: toCopy.x, y: toCopy.y };
 }
 
-export function translatePoint(toTranslate: Point, translate: Point): Point {
-	return <Point>{ x: toTranslate.x + translate.x, y: toTranslate.y + translate.y };
+export function truncPoint(p: Point): Point {
+	return <Point>{ x: Math.trunc(p.x), y: Math.trunc(p.y) };
+}
+
+export function translatePoint(toTranslate: Point, translate?: Point): Point {
+	return <Point>{ x: toTranslate.x + (translate?.x ?? 0), y: toTranslate.y + (translate?.y ?? 0) };
 }
 
 export function multiplyPoint(toMult: Point, factor: number): Point {
@@ -364,6 +368,10 @@ export function newArea(sx: number, sy: number, ex: number, ey: number): Area {
 
 export function newSize(x: number, y: number): Size {
 	return <Size>{ x: x, y: y };
+}
+
+export function copySize(toCopy: Size): Size {
+	return <Size>{ x: toCopy.x, y: toCopy.y };
 }
 
 /// Alternative implementation for Point.Set()

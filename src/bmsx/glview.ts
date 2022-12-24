@@ -255,7 +255,7 @@ export abstract class GLView extends BaseView {
 		_this.drawImgReqIndex = 0;
 	}
 
-	override drawImg(imgid: string, x: number, y: number, options: number = 0, sx?: number, sy?: number): void {
+	override drawImg(imgid: string, x: number, y: number, options: number = DrawImgFlags.None, sx: number = 1, sy: number = 1): void {
 		let imgmeta = global.game.rom['imgresources'][imgid]?.['imgmeta'];
 		if (!imgmeta) throw `Image with id '${imgid}' not found while trying to retrieve image metadata!`;
 		let _this = global.view as GLView;
@@ -263,10 +263,10 @@ export abstract class GLView extends BaseView {
 		let width = imgmeta['width'];
 		let height = imgmeta['height'];
 
-		let flipx: number = options & DrawImgFlags.HFLIP;
-		let flipy: number = options & DrawImgFlags.VFLIP;
+		let flipx = (options & DrawImgFlags.HFLIP) === DrawImgFlags.HFLIP;
+		let flipy = (options & DrawImgFlags.VFLIP) === DrawImgFlags.VFLIP;
 
-		bvec.set(_this.vertexcoords, x, y, width, height, sx ?? 1, sy ?? 1);
+		bvec.set(_this.vertexcoords, x, y, width, height, sx, sy);
 		if (flipx && flipy) _this.texcoords.set(imgmeta['texcoords_fliphv']);
 		else if (flipx) _this.texcoords.set(imgmeta['texcoords_fliph']);
 		else if (flipy) _this.texcoords.set(imgmeta['texcoords_flipv']);

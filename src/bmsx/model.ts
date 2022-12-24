@@ -9,10 +9,14 @@ export interface ISpaceObject {
 	objects: GameObject[];
 }
 
-export type id2objectType = Record<string, GameObject>;
-export type id2spaceType = Record<string, Space>;
+export type obj_id_type = string;
+export type space_id_type = string;
+export type id2objectType = Record<obj_id_type, GameObject>;
+export type id2spaceType = Record<space_id_type, Space>;
+export type obj_id2space_id_type = Record<obj_id_type, space_id_type>;
 export const id2obj = Symbol('id2object');
 export const id2space = Symbol('id2space');
+export const obj_id2obj_space_id = Symbol('obj_id2obj_space_id');
 
 @insavegame
 export class Space {
@@ -42,19 +46,36 @@ export class Space {
 		this.objects = this.objects.sort((o1, o2) => (o2.z || 0) - (o1.z || 0));
 	}
 
-	public spawn(o: GameObject, pos?: Point, afterload?: boolean): void {
+	/**
+	 * Adds object to the game and triggers it's onspawn-event.
+	 * @param {GameObject} o  - GameObject to add
+	 * @param {Point?} pos - Position to spawn object
+	 * @param {boolean} skip_onspawn_event - Disables triggering onspawn-event. Example uses include reviving the game (part of loading a saved game) and moving objects from one space to another.
+	 * @returns {void} Nothing
+	 */
+	public spawn(o: GameObject, pos?: Point, skip_onspawn_event?: boolean): void {
+		if (!o?.id) throw `Cannot spawn object '${o?.id ?? 'undefined'}' as it doesn't have a valid id!`;
+		if (global.model[obj_id2obj_space_id][o.id]) throw `Cannot spawn object '${o.id}' in space '${this.id}' as it already exists in space '${global.model[obj_id2obj_space_id][o.id]}'!`;
+
 		this.objects.push(o);
 
 		this.sortObjectsByPriority();
 
 		this[id2obj][o.id] = o;
-		!afterload && o.onspawn?.(pos);
+		global.model[obj_id2obj_space_id][o.id] = this.id;
+		!skip_onspawn_event && o.onspawn?.(pos);
 	}
 
-	public exile(o: GameObject): void {
+	/**
+	 * Removes object from the game and triggers it's ondispose-event.
+	 * @param {GameObject} o  - GameObject to dispose
+	 * @param {boolean} skip_ondispose_event - Disables triggering ondispose-event. Example uses include moving objects from one space to another.
+	 * @returns {void} Nothing
+	 */
+	public exile(o: GameObject, skip_ondispose_event: boolean = false): void {
 		let index = this.objects.indexOf(o);
 		if (index < 0) throw `GameObject ${o?.id ?? o} to remove from space '${this.id}' was not found, while calling [BaseModel.exile]!`;
-		o.ondispose?.();
+		!skip_ondispose_event && o.ondispose?.();
 
 		if (index > -1) {
 			delete this.objects[index];
@@ -65,54 +86,86 @@ export class Space {
 			this[id2obj][o.id] = undefined;
 			delete this[id2obj][o.id];
 		}
+
+		if (global.model[obj_id2obj_space_id][o.id]) {
+			global.model[obj_id2obj_space_id][o.id] = undefined;
+			delete global.model[obj_id2obj_space_id][o.id];
+		}
 	}
 
 	public clear(): void {
-		this.objects.forEach(o => global.model.exile);
+		this.objects.forEach(o => this.exile);
 		this.objects.length = 0;
 		delete this[id2obj];
 		this[id2obj] = {};
 	}
 }
+
 export type base_model_spaces = 'game_start' | 'default';
 
 export abstract class BaseModel {
 	public state: statecontext;
 	public [id2space]: id2spaceType;
+	public [obj_id2obj_space_id]: obj_id2space_id_type;
 
 	public get objects(): GameObject[] {
-		return this.getSpace(this.currentSpaceid).objects;
+		return this.currentSpace.objects;
 	}
 
 	public spaces: Space[]; // All spaces in the model
 	protected currentSpaceid: string; // Current space. On model creation, a default space is created with id 'default'
-	public get currentSpace(): Space { return this.getSpace(this.currentSpaceid); } // Current space. On model creation, a default space is created with id 'default'
+	public get current_space_id(): string { return this.currentSpaceid; } // Current space id. On model creation, a default space is created with id 'default'
+	public get currentSpace(): Space { return this.get_space(this.currentSpaceid); } // Current space. On model creation, a default space is created with id 'default'
 	public setSpace(newSpaceId: string) { this.currentSpaceid = newSpaceId; }
+	public get_space<T extends Space>(id: string) { return <T>this[id2space][id]; }
+
 	public paused: boolean;
 	public startAfterLoad: boolean;
 
-	public getFromCurrentSpace<T extends GameObject>(id: string) { return <T>this[id2space][this.currentSpaceid][id2obj][id]; }
+	public getFromCurrentSpace<T extends GameObject>(id: string) { return <T>this.currentSpace[id2obj][id]; }
 	/**
 	 * Gets the game object with the given id accross -all- spaces.
-	 * @remarks If `id === 'model'`, returns the game model instead! (used for sstate to make game model as target for callbacks.
-	 * @param {string} id - the id of the game object.
-	 * @returns {GameObject | BaseModel} The game object with the given id or the game model itself (when id === 'model').
+	 * If `id === 'model'`, returns the game model instead! (used for {@link sstate} to make game model as target for callbacks.
+	 * @param {string} id - the id of the {@link GameObject}.
+	 * @returns {GameObject | BaseModel} The game object with the given id or the game model itself (when `id === 'model'`).
 	 */
 	public get<T extends GameObject>(id: string | 'model'): T {
 		if (id == 'model') return global.model as any; // Dirty fix for scenario where model should return itself as target for the model state machine
 
-		for (let i = 0; i < this.spaces.length; i++) {
-			let space = this.spaces[i];
-			let obj = this[id2space][space.id][id2obj][id];
-			if (obj) return <T>obj;
-		}
-		return <T>undefined; // No object found
+		let space = this.get_space(this[obj_id2obj_space_id][id]);
+		if (!space) return <T>undefined;
+		return space.get<T>(id);
 	}
 
-	public getSpace<T extends Space>(id: string) { return <T>this[id2space][id]; }
+
 	public exists(id: string): boolean {
 		let foundObj = this.get(id);
 		return foundObj ? true : false;
+	}
+
+	public get_space_id_that_has_obj(obj_id: string): string {
+		return this[obj_id2obj_space_id][obj_id];
+	}
+
+	public is_obj_in_current_space(obj_id: string): boolean {
+		return this.get_space_id_that_has_obj(obj_id) === this.currentSpaceid;
+	}
+
+	/**
+	 * Moves an object from one space to another. Object should exist in a space, otherwise error is thrown!
+	 * @param {string} obj_id - id of object to move.
+	 * @param {string} space_id_to_move_obj_to - id of the new space of the object to move.
+	 * @returns {void} Nothing
+	 */
+	public move_obj_to_space(obj_id: string, space_id_to_move_obj_to: string): void {
+		let obj = this.get(obj_id);
+		if (!obj) throw `Cannot move unknown object '${obj_id}' to space '${space_id_to_move_obj_to}'!`; // ? SHOULD THROW ERROR?
+		let target_space = this.get_space(space_id_to_move_obj_to);
+		if (!target_space) throw `Cannot move object '${obj_id}' to unknown space '${space_id_to_move_obj_to}'!`; // ? SHOULD THROW ERROR?
+		let origin_space = this.get_space(this.get_space_id_that_has_obj(obj_id));
+
+		origin_space.exile(obj, true);
+		target_space.spawn(obj, undefined, true);
 	}
 
 	public static getMachinedef(machineid: string): mdef {
@@ -135,6 +188,7 @@ export abstract class BaseModel {
 	constructor() {
 		this.spaces = [];
 		this[id2space] = {};
+		this[obj_id2obj_space_id] = {};
 
 		this.paused = false;
 
@@ -281,21 +335,21 @@ export abstract class BaseModel {
 	}
 
 	public clear(): void {
-		this.getSpace(this.currentSpaceid).clear();
+		this.currentSpace.clear();
 	}
 
 	public clearAllSpaces(): void {
 		this.spaces.forEach(s => s.clear());
 
-		// this.allSpacesObjects.forEach(o => o.ondispose?.());
-		// this.allSpacesObjects.length = 0;
 		delete this[id2obj];
 		this[id2obj] = {};
+		delete this[obj_id2obj_space_id];
+		this[obj_id2obj_space_id] = {};
 		this.paused = false;
 	}
 
 	public spawn(o: GameObject, pos?: Point, ignoreSpawnhandler?: boolean): void {
-		this.getSpace(this.currentSpaceid).spawn(o, pos, ignoreSpawnhandler);
+		this.currentSpace.spawn(o, pos, ignoreSpawnhandler);
 	}
 
 	public exile(o: GameObject): void {
@@ -303,44 +357,23 @@ export abstract class BaseModel {
 	}
 
 	public exileFromCurrentSpace(o: GameObject): void {
-		this.getSpace(this.currentSpaceid).exile(o);
+		this.currentSpace.exile(o);
 	}
 
 	public addSpace(s: Space | string): void {
-		if (s instanceof Space) {
-			this.spaces.push(s);
-			this[id2space][s.id] = s;
-		}
-		else {
-			let new_space = new Space(s);
-			this.spaces.push(new_space);
-			this[id2space][s] = new_space;
-		}
+		let new_space: Space = (s instanceof Space ? s : new Space(s));
+		if (this[id2space][new_space.id]) throw `Cannot add duplicate Space '${new_space.id}' to model!`;
+
+		this.spaces.push(new_space);
+		this[id2space][new_space.id] = new_space;
 	}
 
 	public removeSpace(s: Space | string): void {
-		let index: number;
-		let id: string;
-		let space: Space;
+		let space: Space = (s instanceof Space ? s : this.get_space(s));
+		if (!space) throw `Space '${s}' to remove from model was not found, while calling [BaseModel.removeSpace]!`;
 
-		if (s instanceof Space) {
-			space = s;
-			index = this.spaces.indexOf(s);
-			id = s.id;
-		}
-		else {
-			id = s;
-			index = -1;
-			let i = 0;
-			for (i = 0; i < this.spaces.length; i++) {
-				if (this.spaces[i].id === id) {
-					index = i;
-					space = this.spaces[i];
-					break;
-				}
-			}
-		}
-		if (!space) throw `Space ${id ?? space.id} to remove from model was not found, while calling [BaseModel.removeSpace]!`;
+		let index = this.spaces.indexOf(space);
+		let id = space.id;
 
 		if (index > -1) {
 			space.clear(); // Remove all objects from the space

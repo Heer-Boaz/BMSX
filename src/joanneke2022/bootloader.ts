@@ -601,7 +601,7 @@ class draaischijf extends SpriteObject {
 		super('draaischijf');
 		this.z = 20;
 		this.imgid = BitmapId.None; // Wordt goed gezet bij ingang start state
-		this.onLeaveScreen = (ik, d, old_x_or_y) => leavingScreenHandler_prohibit(ik, d, old_x_or_y);
+		this.onLeavingScreen = (ik, d, old_x_or_y) => leavingScreenHandler_prohibit(ik, d, old_x_or_y);
 		this.size = { x: 64, y: 64 };
 		this.hitarea = newArea(24, 24, 64 - 24, 64 - 24);
 	}
@@ -610,13 +610,13 @@ class draaischijf extends SpriteObject {
 		if (Input.KD_LEFT) {
 			this.setx(this.pos.x - 1);
 		}
-		else if (Input.KD_RIGHT) {
+		if (Input.KD_RIGHT) {
 			this.setx(this.pos.x + 1);
 		}
-		else if (Input.KD_UP) {
+		if (Input.KD_UP) {
 			this.sety(this.pos.y - 1);
 		}
-		else if (Input.KD_DOWN) {
+		if (Input.KD_DOWN) {
 			this.sety(this.pos.y + 1);
 		}
 		if (Input.KD_BTN1) {

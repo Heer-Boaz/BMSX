@@ -128,7 +128,8 @@ export class GameObject {
 		this.id = _id ?? GameObject.generateId();
 		this.hittable = true;
 		this.visible = true;
-		this.pos = { x: 0, y: 0 };
+		this.pos ??= { x: 0, y: 0 };
+		this.size ??= { x: 0, y: 0 };
 		this.z = 0;
 		this.disposeFlag = false;
 		this.disposeOnSwitchRoom = true;

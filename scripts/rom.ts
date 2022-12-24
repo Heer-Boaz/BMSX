@@ -17,7 +17,7 @@ var bootrom = {
 	},
 
 	usr(x: number): number {
-		document.body.style.backgroundColor = "#000000";
+		document.body.classList.add('game-started'); // Change background color of body
 		document.getElementById('gamescreen')!.hidden = false;
 		loadScript(bootrom.rom!).then(() => {
 			h406A(bootrom.rom!, bootrom.sndcontext!, bootrom.gainnode!);

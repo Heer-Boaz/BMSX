@@ -10,6 +10,7 @@ type ButtonId = 'BTN1' | 'BTN2' | 'BTN3' | 'BTN4' | Key;
 let preventActionAndPropagation = (e: Event): boolean => {
     e.preventDefault();
     e.stopPropagation();
+    e.stopImmediatePropagation();
     // return false;
     return e.returnValue = false; // https://javascriptio.com/view/5386822/prevent-text-selection-on-tap-and-hold-on-ios-13-mobile-safari
 };
@@ -21,25 +22,21 @@ export class Input {
     public static GamepadClickRequestedState: {};
 
     private static getKeyState(key: string, checkClick: boolean = false): boolean {
-        if (checkClick) {
-            if (Input.KeyState[key] === true && !Input.KeyClickRequestedState[key]) {
-                Input.KeyClickRequestedState[key] = true;
-                return true;
-            }
-            else return false;
+        let state = Input.KeyState[key] === true;
+        if (checkClick && state) {
+            if (Input.KeyClickRequestedState[key]) return false;
+            Input.KeyClickRequestedState[key] = true;
         }
-        else return Input.KeyState[key] === true;
+        return state;
     }
 
     private static getGamepadButtonState(btn: number, checkClick: boolean = false): boolean {
-        if (checkClick) {
-            if (Input.GamepadButtonState[btn] === true && !Input.GamepadClickRequestedState[btn]) {
-                Input.GamepadClickRequestedState[btn] = true;
-                return true;
-            }
-            else return false;
+        let state = Input.GamepadButtonState[btn] === true;
+        if (checkClick && state) {
+            if (Input.GamepadClickRequestedState[btn]) return false;
+            Input.GamepadClickRequestedState[btn] = true;
         }
-        else return Input.GamepadButtonState[btn] === true;
+        return state;
     }
 
     public static get KC_F1(): boolean {

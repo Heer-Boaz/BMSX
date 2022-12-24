@@ -1,7 +1,9 @@
 import { MachineDefinitions } from './bfsm';
-import { newPoint, Point } from './bmsx';
+import { area2size, copySize, divPoint, newPoint, newSize, Point, translatePoint, truncPoint } from './bmsx';
 import { GameObject } from './gameobject';
 import { Serializer } from './gamereviver';
+import { Sprite, SpriteObject } from './sprite';
+import { DrawImgFlags, paintImage, paintImageScaled } from './view';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
 
 let draggedObj: GameObject | null;
@@ -10,6 +12,44 @@ let dragSrcEl: HTMLElement;
 let shiftX: number;
 let shiftY: number;
 let prevPausedState: boolean; // Remember the paused-state before a dialog was opened. This allows to return to the original "paused" state after closing debug dialogs
+
+class ObjectHighlighter extends SpriteObject {
+	#highlighted_obj: GameObject;
+
+	public constructor() {
+		super('debug_highlighter');
+		this.imgid = 'highlight_pixel'; // ! FIXME: HARDCODED
+		this.visible = false;
+		this.#highlighted_obj = null;
+		this.z = Math.pow(10, 9);
+	}
+
+	public get target() {
+		return this.#highlighted_obj;
+	}
+
+	public set target(o: GameObject) {
+		if (!o) {
+			this.#highlighted_obj = null;
+			this.pos.x = this.pos.y = this.size.x = this.size.y = 0;
+			this.visible = false;
+			return;
+		}
+
+		this.#highlighted_obj = o;
+		this.pos = translatePoint(o.pos, o.hitarea.start);
+		if (o.hitarea) this.size = area2size(o.hitarea);
+		else this.size = copySize(o.size);
+		this.size = divPoint(this.size, 4);
+		this.pos = truncPoint(this.pos);
+		this.size = truncPoint(this.size);
+		this.visible = true;
+	}
+
+	public override paint(offset?: Point): void {
+		paintImageScaled(this.imgid, translatePoint(this.pos, offset), this.size.x, this.size.y);
+	}
+}
 
 export function handleDebugMouseDown(e: MouseEvent): void {
 	if (!e.shiftKey) return; // Only start dragging when shift is pressed
@@ -27,6 +67,7 @@ export function handleDebugMouseDown(e: MouseEvent): void {
 
 export function handleDebugMouseMove(e: MouseEvent): void {
 	if (draggedObj) {
+		// Drag dragged object around
 		let x = e.offsetX / global.view.scale;
 		let y = e.offsetY / global.view.scale;
 
@@ -34,6 +75,26 @@ export function handleDebugMouseMove(e: MouseEvent): void {
 			draggedObj.pos.x = Math.trunc(x) - draggedObjCursorOffset.x;
 			draggedObj.pos.y = Math.trunc(y) - draggedObjCursorOffset.y;
 		}
+	}
+	else {
+		let model = global.model;
+		// Highlight mouse-overed objects
+		let { objUnderCursor, offsetToCursor } = getGameObjectAtCursor(e);
+		let highlighter = model.get<ObjectHighlighter>('debug_highlighter');
+		if (objUnderCursor) {
+			if (!highlighter) {
+				highlighter = new ObjectHighlighter();
+				model.spawn(highlighter);
+			}
+			else if (!model.is_obj_in_current_space('debug_highlighter')) {
+				model.move_obj_to_space('debug_highlighter', model.current_space_id);
+			}
+			highlighter.target = objUnderCursor;
+		}
+		else {
+			highlighter && (highlighter.target = null);
+		}
+
 	}
 }
 

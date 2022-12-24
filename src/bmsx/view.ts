@@ -186,19 +186,16 @@ export abstract class BaseView {
         global.view.context.restore();
     }
 
-    public drawImg(imgid: string, x: number, y: number, options?: number, sx?: number, sy?: number): void {
+    public drawImg(imgid: string, x: number, y: number, options: number = DrawImgFlags.None, sx: number = 1, sy: number = 1): void {
         let img = BaseView.images[imgid];
-        let scalex = sx ?? 1;
-        let scaley = sy ?? 1;
         global.view.context.save();
         global.view.context.translate(~~x, ~~y);
-        options = options ?? 0;
         if (options & DrawImgFlags.HFLIP) {
-            global.view.context.scale(-1 * scalex, 1 * scaley);
+            global.view.context.scale(-1 * sx, 1 * sy);
             global.view.context.translate(-img.width, 0);
         }
         if (options & DrawImgFlags.VFLIP) {
-            global.view.context.scale(1 * scalex, -1 * scaley);
+            global.view.context.scale(1 * sx, -1 * sy);
             global.view.context.translate(0, -img.height);
         }
         global.view.context.drawImage(img, 0, 0);
@@ -232,8 +229,14 @@ export abstract class BaseView {
     }
 }
 
-export function paintImage(imgid: string, pos: Point, options?: DrawImgFlags): void {
+export function paintImage(imgid: string, pos: Point, options: DrawImgFlags = DrawImgFlags.None): void {
     if (!imgid || imgid === 'None') return; // Don't draw anything when imgid = BitmapId.None. For animations, we don't always want to use visible = false
 
     global.view.drawImg(imgid, pos.x, pos.y, options);
+}
+
+export function paintImageScaled(imgid: string, pos: Point, scale_x: number, scale_y: number, options: DrawImgFlags = DrawImgFlags.None): void {
+    if (!imgid || imgid === 'None') return; // Don't draw anything when imgid = BitmapId.None. For animations, we don't always want to use visible = false
+
+    global.view.drawImg(imgid, pos.x, pos.y, options, scale_x, scale_y);
 }

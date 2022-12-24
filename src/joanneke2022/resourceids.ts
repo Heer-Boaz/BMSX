@@ -68,6 +68,7 @@ export enum BitmapId {
 	letter_x = 'letter_x',
 	letter_y = 'letter_y',
 	letter_z = 'letter_z',
+	highlight_pixel = 'highlight_pixel',
 	menucursor = 'menucursor',
 	pluim1 = 'pluim1',
 	pluim2 = 'pluim2',
