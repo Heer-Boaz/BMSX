@@ -1,7 +1,7 @@
 import { MachineDefinitions } from './bfsm';
 import { area2size, copyPoint, copySize, newPoint, Point, translatePoint, truncPoint } from './bmsx';
 import { GameObject } from './gameobject';
-import { exclude_save, Serializer } from './gamereviver';
+import { Serializer } from './gamereviver';
 import { SpriteObject } from './sprite';
 import { Color, DrawImgFlags, paintImageScaled } from './view';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
