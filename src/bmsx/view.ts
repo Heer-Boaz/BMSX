@@ -228,14 +228,14 @@ export abstract class BaseView {
     }
 }
 
-export function paintImage(imgid: string, pos: Point, z: number, options: DrawImgFlags = DrawImgFlags.None): void {
+export function paintImage(imgid: string, pos: Point, z: number, options: DrawImgFlags = DrawImgFlags.None, color_override?: Color): void {
     if (!imgid || imgid === 'None') return; // Don't draw anything when imgid = BitmapId.None. For animations, we don't always want to use visible = false
 
-    global.view.drawImg(imgid, pos.x, pos.y, z, options);
+    global.view.drawImg(imgid, pos.x, pos.y, z, options, undefined, undefined, color_override);
 }
 
-export function paintImageScaled(imgid: string, pos: Point, z: number, scale_x: number, scale_y: number, options: DrawImgFlags = DrawImgFlags.None): void {
+export function paintImageScaled(imgid: string, pos: Point, z: number, scale_x: number, scale_y: number, options: DrawImgFlags = DrawImgFlags.None, color_override?: Color): void {
     if (!imgid || imgid === 'None') return; // Don't draw anything when imgid = BitmapId.None. For animations, we don't always want to use visible = false
 
-    global.view.drawImg(imgid, pos.x, pos.y, z, options, scale_x, scale_y);
+    global.view.drawImg(imgid, pos.x, pos.y, z, options, scale_x, scale_y, color_override);
 }
