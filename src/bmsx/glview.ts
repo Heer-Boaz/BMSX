@@ -127,17 +127,6 @@ export abstract class GLView extends BaseView {
 			v_color_override = a_color_override;
 		}`;
 
-    // private readonly fragmentShaderFillRectangleCode =
-    // 	`#version 300 es
-    // 		precision highp float;
-    // 		uniform vec4 uColor;
-
-    // 		out vec4 outputColor;
-
-    // 		void main() {
-    // 			outputColor = uColor;
-    // 		}`;
-
     private readonly fragmentShaderTextureCode =
         `#version 300 es
 		precision highp float;
@@ -145,12 +134,10 @@ export abstract class GLView extends BaseView {
  		in vec2 v_texcoord;
 		in vec4 v_color_override;
 		out vec4 outputColor;
-		// uniform vec4 overrideColor;
 
 		void main() {
 			// gl_FragColor = vec4(1, 0, 0, 1);
 			lowp vec4 color = texture(u_texture, v_texcoord);
-			// color = color * overrideColor;
 			color = color * v_color_override;
 			if (color.a < 0.1)
     			discard;
@@ -198,7 +185,6 @@ export abstract class GLView extends BaseView {
         // lookup uniforms
         this.resolutionLocation = gl.getUniformLocation(this.program, "u_resolution")!;
         this.textureLocation = gl.getUniformLocation(this.program, "u_texture")!;
-        // this.colorOverrideLocation = gl.getUniformLocation(this.program, "overrideColor")!;
 
         // Create a buffer.
         this.positionBuffer = gl.createBuffer()!;
@@ -363,5 +349,6 @@ export abstract class GLView extends BaseView {
 
     override fillRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
         // console.warn('GLView.fillRectangle nog niet gecodeerd :-(');
+
     }
 }
