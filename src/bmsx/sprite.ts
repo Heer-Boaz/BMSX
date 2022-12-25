@@ -24,6 +24,11 @@ export abstract class SpriteObject extends GameObject {
     }
     public set imgid(id: string) {
         this.sprite.imgid = id;
+        let imgmeta = global.game.rom['imgresources'][id]?.['imgmeta'];
+        if (imgmeta) {
+            this.size.x = imgmeta['width'];
+            this.size.y = imgmeta['height'];
+        }
     }
 
     public get offset() {
