@@ -2,7 +2,7 @@ import { BFont } from './../bmsx/bmsx';
 import { MSX2ScreenHeight, MSX2ScreenWidth } from './../bmsx/msx';
 import { RomLoadResult } from '../bmsx/rompack';
 import { Game, newPoint, Direction, newSize, newArea, Point, randomInt, copyPoint } from '../bmsx/bmsx';
-import { FlattenedPropKeys, sdef, sstate, mdef, statedef_builder, build_fsm, statecontext } from '../bmsx/bfsm';
+import { sdef, sstate, Bla, statedef_builder, build_fsm, statecontext, machine_states } from '../bmsx/bfsm';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
@@ -16,7 +16,7 @@ import { SpriteObject } from '../bmsx/sprite';
 const TIME_TO_SHINE = 90;
 
 type model_spaces = base_model_spaces | 'uitleg' | 'evaluatie' | 'hoera!';
-type model_states = FlattenedPropKeys<typeof gamemodel.states>;
+type model_states = Bla<typeof gamemodel.states.states>;
 
 class gamemodel extends BaseModel {
     public time_to_shine!: number;
@@ -48,15 +48,15 @@ class gamemodel extends BaseModel {
         return total;
     }
 
-    public static get states() {
+    public static get states(): machine_states {
         return {
             states: {
-                game_start: new sdef('game_start', {
+                game_start: {
                     onrun(this: gamemodel, s: sstate<gamemodel>) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
                         this.state.to('uitleg' satisfies model_states);
                     }
-                }),
-                default: new sdef('default', {
+                },
+                default: {
                     nudges2move: 50,
                     onenter(this: gamemodel, s: sstate<gamemodel>) {
                         this.setSpace('default');
@@ -67,7 +67,7 @@ class gamemodel extends BaseModel {
                         if (this.time_to_shine < 0) {
                             this.time_to_shine = 0;
                             this.score = this.tel_onvolmaaktheden();
-                            this.state.to('evaluatie!' satisfies model_states);
+                            this.state.to('evaluatie' satisfies model_states);
                         }
                     },
                     onrun(this: gamemodel, s: sstate<gamemodel>) {
@@ -76,8 +76,8 @@ class gamemodel extends BaseModel {
                         if (!this.paused) ++s.nudges; // Laat timer lopen
                     },
                     process_input: BaseModel.default_input_handler,
-                }),
-                'evaluatie!': new sdef('evaluatie!', {
+                },
+                evaluatie: {
                     nudges2move: 50,
                     onenter(this: gamemodel, s: sstate<gamemodel>) {
                         this.setSpace('evaluatie' satisfies model_spaces);
@@ -87,20 +87,20 @@ class gamemodel extends BaseModel {
                         --this.time_to_shine;
                         if (this.time_to_shine < 0) {
                             this.time_to_shine = 0;
-                            this.state.to('hoera!' satisfies model_states);
+                            this.state.to('hoera' satisfies model_states);
                         }
                     },
                     onrun(s: sstate) {
                         ++s.nudges;
                     },
                     process_input: BaseModel.default_input_handler,
-                }),
-                'hoera!': new sdef('hoera!', {
+                },
+                hoera: {
                     onenter(this: gamemodel, s: sstate<gamemodel>) {
                         this.setSpace('hoera!' satisfies model_spaces);
                     },
-                }),
-                uitleg: new sdef('uitleg', {
+                },
+                uitleg: {
                     onenter(this: gamemodel, s: sstate<gamemodel>) {
                         this.uitleg_tekst_dinges = 0;
                         this.setSpace('uitleg');
@@ -109,19 +109,19 @@ class gamemodel extends BaseModel {
                         BaseModel.defaultrun();
                     },
                     process_input: BaseModel.default_input_handler,
-                }),
+                },
             }
         };
     }
 
     @build_fsm('model_substate')
-    public static substates(): Partial<mdef> {
+    public static substates(): machine_states {
         return {
             states: {
-                closed: new sdef('closed', {
+                closed:{
                     process_input: BaseModel.default_input_handler_for_allow_open_gamemenu,
-                }),
-                open: new sdef('open', {
+                },
+                open:{
                     process_input: BaseModel.default_input_handler_for_allow_close_gamemenu,
                     onenter(this: gamemodel, s: sstate<gamemodel>) {
                         let menu = new GameMenu();
@@ -140,7 +140,7 @@ class gamemodel extends BaseModel {
 
                         this.paused = false;
                     },
-                }),
+                },
             }
         };
     }
@@ -255,7 +255,7 @@ class uitlegStuff extends SpriteObject {
     public static bouw() {
         return {
             states: {
-                uitleg: new sdef('uitleg', {
+                uitleg: {
                     nudges2move: 300,
                     tape: <Array<number>>[
                         0,
@@ -285,7 +285,7 @@ class uitlegStuff extends SpriteObject {
                         if (_model)
                             _model.state.to('default');
                     },
-                }),
+                },
             }
         };
     }
@@ -717,7 +717,7 @@ class burn extends onvolmaaktheid {
     public static bouw() {
         return {
             states: {
-                wees_een_burn: new sdef('wees_een_burn', {
+                wees_een_burn: {
                     nudges2move: 20,
                     auto_rewind_tape_after_end: false,
                     tape: [
@@ -739,8 +739,8 @@ class burn extends onvolmaaktheid {
                     onnext(this: burn, s: sstate<burn>) {
                         this.imgid = s.current;
                     },
-                }),
-                gepolijst: new sdef('gepolijst', {
+                },
+                gepolijst: {
                     nudges2move: 20,
                     tape: [
                         BitmapId.None,
@@ -758,7 +758,7 @@ class burn extends onvolmaaktheid {
                         // BURN!!!!
                         this.state.to('wees_een_burn');
                     }
-                }),
+                },
             }
         };
     }
@@ -781,7 +781,7 @@ class barst extends onvolmaaktheid {
     public static bouw() {
         return {
             states: {
-                wees_een_barst: new sdef('wees_een_barst', {
+                wees_een_barst: {
                     nudges2move: 20,
                     tape: [
                         BitmapId.break1,
@@ -803,8 +803,8 @@ class barst extends onvolmaaktheid {
                     onnext(this: barst, s: sstate<barst>) {
                         this.imgid = s.current;
                     },
-                }),
-                gepolijst: new sdef('gepolijst', {
+                },
+                gepolijst: {
                     nudges2move: 40,
                     onenter(this: barst, s: sstate<barst>) {
                         s.reset();
@@ -818,7 +818,7 @@ class barst extends onvolmaaktheid {
                         _model.spawn(new burn(this.zijde, copyPoint(this.pos)));
                         this.disposeFlag = true; // Vervang met nieuwe soort onvolmaaktheid
                     }
-                }),
+                },
                 // gedaan: new sdef('gedaan', {
                 // 	onenter(this: barst, s: sstate<barst>) {
                 // 		s.reset();

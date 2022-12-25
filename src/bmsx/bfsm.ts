@@ -56,7 +56,9 @@ export const NONE_STATE_ID = 'none';
  * Type used for getting all the states of a nested object containing both the machines as well as the inner states per machine. Allows for type checking state-names without having to create a type per machine.
  * @see https://www.raygesualdo.com/posts/flattening-object-keys-with-typescript-types
  */
-export type FlattenedPropKeys<T extends Record<string, unknown>, Key = keyof T> = Key extends string ? T[Key] extends Record<string, unknown> ? FlattenedPropKeys<T[Key]> : Key : never;
+// export type FlattenedPropKeys<T extends Record<string, unknown>, Key = keyof T> = Key extends string ? T[Key] extends Record<string, unknown> ? FlattenedPropKeys<T[Key]> : Key : never;
+// export type Bla<T extends id2partial_sdef, Key = keyof T> = Key extends string ? Key : never;
+export type Bla<T extends id2partial_sdef> = keyof T;
 
 @insavegame
 export class statecontext {
