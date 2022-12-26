@@ -54,7 +54,7 @@ class ObjectHighlighter extends SpriteObject {
     }
 
     public override paint(offset?: Point): void {
-        paintImageScaled(this.imgid, translatePoint(this.pos, offset), this.z, this.size.x, this.size.y, DrawImgFlags.None, this.#mijnkleur);
+        paintImageScaled(this.imgid, translatePoint(this.pos, offset), this.z, this.size.x + 1, this.size.y + 1, DrawImgFlags.None, this.#mijnkleur);
     }
 }
 
