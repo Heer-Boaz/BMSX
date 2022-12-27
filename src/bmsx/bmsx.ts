@@ -59,16 +59,22 @@ export enum Direction {
     Down = 3,
     Left = 4,
 }
-export interface Point {
+export interface vec2 {
     x: number;
     y: number;
 }
 
-export type Size = Point;
+export interface vec3 extends vec2 {
+    x: number;
+    y: number;
+    z: number;
+}
+
+export type Size = vec3;
 
 export interface Area {
-    start: Point;
-    end: Point;
+    start: vec3;
+    end: vec3;
 }
 
 export class BFont {
@@ -322,15 +328,15 @@ export function mod(n: number, p: number): number {
     return r < 0 ? r + p : r;
 }
 
-export function moveArea(a: Area, p: Point): Area {
+export function moveArea(a: Area, p: vec3): Area {
     return <Area>{
-        start: <Point>{ x: a.start.x + p.x, y: a.start.y + p.y },
-        end: <Point>{ x: a.end.x + p.x, y: a.end.y + p.y },
+        start: <vec3>{ x: a.start.x + p.x, y: a.start.y + p.y },
+        end: <vec3>{ x: a.end.x + p.x, y: a.end.y + p.y },
     };
 }
 
-export function addPoints(a: Point, b: Point): Point {
-    return <Point>{ x: a.x + b.x, y: a.y + b.y };
+export function addPoints(a: vec3, b: vec3): vec3 {
+    return <vec3>{ x: a.x + b.x, y: a.y + b.y };
 }
 
 /// http://stackoverflow.com/questions/4959975/generate-random-value-between-two-numbers-in-javascript
@@ -338,28 +344,28 @@ export function randomInt(min: number, max: number) {
     return Math.floor(Math.random() * (max - min + 1) + min);
 }
 
-export function newPoint(x: number, y: number): Point {
-    return <Point>{ x: x, y: y };
+export function newPoint(x: number, y: number): vec3 {
+    return <vec3>{ x: x, y: y };
 }
 
-export function copyPoint(toCopy: Point): Point {
-    return <Point>{ x: toCopy.x, y: toCopy.y };
+export function copyPoint(toCopy: vec3): vec3 {
+    return <vec3>{ x: toCopy.x, y: toCopy.y };
 }
 
-export function truncPoint(p: Point): Point {
-    return <Point>{ x: Math.trunc(p.x), y: Math.trunc(p.y) };
+export function truncPoint(p: vec3): vec3 {
+    return <vec3>{ x: Math.trunc(p.x), y: Math.trunc(p.y) };
 }
 
-export function translatePoint(toTranslate: Point, translate?: Point): Point {
-    return <Point>{ x: toTranslate.x + (translate?.x ?? 0), y: toTranslate.y + (translate?.y ?? 0) };
+export function translatePoint(toTranslate: vec3, translate?: vec3): vec3 {
+    return <vec3>{ x: toTranslate.x + (translate?.x ?? 0), y: toTranslate.y + (translate?.y ?? 0) };
 }
 
-export function multiplyPoint(toMult: Point, factor: number): Point {
-    return <Point>{ x: toMult.x * factor, y: toMult.y * factor };
+export function multiplyPoint(toMult: vec3, factor: number): vec3 {
+    return <vec3>{ x: toMult.x * factor, y: toMult.y * factor };
 }
 
-export function divPoint(toDivide: Point, divide_by: number): Point {
-    return <Point>{ x: toDivide.x / divide_by, y: toDivide.y / divide_by };
+export function divPoint(toDivide: vec3, divide_by: number): vec3 {
+    return <vec3>{ x: toDivide.x / divide_by, y: toDivide.y / divide_by };
 }
 
 export function newArea(sx: number, sy: number, ex: number, ey: number): Area {
@@ -375,7 +381,7 @@ export function copySize(toCopy: Size): Size {
 }
 
 /// Alternative implementation for Point.Set()
-export function setPoint(p: Point, new_x: number, new_y: number) {
+export function setPoint(p: vec3, new_x: number, new_y: number) {
     p.x = new_x;
     p.y = new_y;
 }
@@ -416,8 +422,8 @@ export function createDivSprite(img?: HTMLImageElement, imgsrc?: string | null, 
     return result;
 }
 
-export function GetDeltaFromSourceToTarget(source: Point, target: Point): Point {
-    let delta = <Point>{ x: 0, y: 0 };
+export function GetDeltaFromSourceToTarget(source: vec3, target: vec3): vec3 {
+    let delta = <vec3>{ x: 0, y: 0 };
 
     if (Math.abs(target.x - source.x - 0) < 0.01) {
         delta.x = 0;
@@ -439,7 +445,7 @@ export function GetDeltaFromSourceToTarget(source: Point, target: Point): Point 
     return delta;
 }
 
-export function LineLength(p1: Point, p2: Point): number {
+export function LineLength(p1: vec3, p2: vec3): number {
     return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2)) - 1;
 }
 
@@ -476,8 +482,8 @@ export function isSessionStorageAvailable(): boolean {
     return isStorageAvailable('sessionStorage');
 }
 
-export function getLookAtDirection(subjectpos: Point, targetpos: Point): Direction {
-    let delta: Point = <Point>{ x: subjectpos.x - targetpos.x, y: subjectpos.x - targetpos.y };
+export function getLookAtDirection(subjectpos: vec3, targetpos: vec3): Direction {
+    let delta: vec3 = <vec3>{ x: subjectpos.x - targetpos.x, y: subjectpos.x - targetpos.y };
     if (Math.abs(delta.x) >= Math.abs(delta.y)) {
         if (delta.x < 0)
             return Direction.Right;

@@ -1,5 +1,5 @@
 import { statecontext } from "./bfsm";
-import { Point, Size, Area, Direction, moveArea, multiplyPoint, newPoint, divPoint, mod } from "./bmsx";
+import { vec3, Size, Area, Direction, moveArea, multiplyPoint, newPoint, divPoint, mod, vec2 } from "./bmsx";
 import { insavegame } from "./gamereviver";
 import { TileSize } from "./msx";
 
@@ -12,6 +12,23 @@ export class GameObject {
 
     public id: string;
     public disposeFlag: boolean;
+
+    public _x: number;
+    public _y: number;
+
+    public get x(): number {
+        return this._x;
+    }
+    public set x(__x: number) {
+        this._x = __x;
+    }
+    public get y(): number {
+        return this._y;
+    }
+    public set y(__y: number) {
+        this._y = __y;
+    }
+
     public _z: number;
     public get z(): number {
         return this._z;
@@ -21,8 +38,35 @@ export class GameObject {
         if (__z < 0) __z = 0;
         this._z = __z;
     }
-    public pos: Point;
-    public size: Size;
+
+    public get pos(): vec3 {
+        return { x: this.x, y: this.y, z: this.z };
+    }
+    public set pos(p: vec2 | vec3) {
+        this.x = p.x;
+        this.y = p.y;
+        this.z = p.z;
+    }
+
+    public get xy(): vec2 {
+    }
+
+    public _sx: number;
+    public set sx(__sx: number) {
+        this._sx = __sx;
+    }
+    public _sy: number;
+    public set sy(__sy: number) {
+        this._sy = __sy;
+    }
+    public _sz: number;
+    public set sz(__sz: number) {
+        this._sz = __sz;
+    }
+
+    public get size(): Size {
+        return { x: this.x, y: this.y, z: this.z };
+    }
 
     public get wallHitarea(): Area { return this.hitarea; }
     public state: statecontext;
@@ -80,7 +124,7 @@ export class GameObject {
      * the FSM-state to the initial state (if specified).
      * @param spawningPos
      */
-    public onspawn?(spawningPos?: Point): void {
+    public onspawn?(spawningPos?: vec3): void {
         if (spawningPos) [this.pos.x, this.pos.y] = [spawningPos.x, spawningPos.y];
 
         let start_state_id = this.state?.definition?.start_state;
@@ -88,8 +132,8 @@ export class GameObject {
     }
     public ondispose?: () => void;
 
-    public paint?(offset?: Point): void;
-    public postpaint?(offset?: Point): void; // Post-processing such as lighting effects or the characters of an ASCII-buffer in case of an ASCII-sprite
+    public paint?(offset?: vec3): void;
+    public postpaint?(offset?: vec3): void; // Post-processing such as lighting effects or the characters of an ASCII-buffer in case of an ASCII-sprite
     public onloaded?: () => void;
 
     /**
@@ -174,7 +218,7 @@ export class GameObject {
             o1p.y + o1a.end.y >= o2a.start.y && o1p.y + o1a.start.y <= o2a.end.y;
     }
 
-    public inside(p: Point): boolean {
+    public inside(p: vec3): boolean {
         let o1 = this;
 
         let o1p = o1.pos;
@@ -196,7 +240,7 @@ export class GameObject {
     *  transforming the game coordinates to canvas coordinates and that requires scaling
     *  to be taken into account.
     */
-    public insideScaled(p: Point): Point | null {
+    public insideScaled(p: vec3): vec3 | null {
         let o1 = this;
 
         let o1p = multiplyPoint(o1.pos, global.view.scale);

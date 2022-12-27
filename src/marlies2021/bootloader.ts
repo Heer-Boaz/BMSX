@@ -7,7 +7,7 @@ import { TextWriter } from '../bmsx/textwriter';
 import { DrawImgFlags, paintSprite } from '../bmsx/view';
 import { GameMenu } from './gamemenu';
 import { statedef_builder, mdef, sdef, sstate } from '../bmsx/bfsm';
-import { Direction, newArea, newSize, Point, newPoint, randomInt, Game, BFont } from '../bmsx/bmsx';
+import { Direction, newArea, newSize, vec3, newPoint, randomInt, Game, BFont } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
 import { BaseModel, Space } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';
@@ -163,7 +163,7 @@ class fles extends SpriteObject {
         this.hittable = true;
     }
 
-    override onspawn(spawningPos?: Point): void {
+    override onspawn(spawningPos?: vec3): void {
         super.onspawn(spawningPos);
         this.state.to('vlieg');
     }
@@ -217,7 +217,7 @@ class stoom extends SpriteObject {
         this.imgid = BitmapId.None;
     }
 
-    override onspawn(spawningPos?: Point): void {
+    override onspawn(spawningPos?: vec3): void {
         super.onspawn(spawningPos);
         this.state.to('doepluim');
     }
@@ -243,7 +243,7 @@ class monster extends SpriteObject {
         };
     }
 
-    override onspawn(spawningPos?: Point): void {
+    override onspawn(spawningPos?: vec3): void {
         super.onspawn(spawningPos);
         _model.monster = this;
     }
@@ -485,14 +485,14 @@ class speler extends SpriteObject {
         this.size = newSize(16, 16);
     }
 
-    override onspawn(spawningPos?: Point): void {
+    override onspawn(spawningPos?: vec3): void {
         super.onspawn(spawningPos);
         this.state.to('relax');
         this.state.to('relax', 'anistate');
         this.state.to('floating', 'float');
     }
 
-    override paint = (offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }) => {
+    override paint = (offset?: vec3, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }) => {
         if (this.state.getCurrentId() == 'spot') {
             TextWriter.drawText(64, 40, "Artiestieke impressie");
             TextWriter.drawText(64, 48, "van stressoren zoals");
@@ -546,7 +546,7 @@ class yakuzi extends SpriteObject {
         this.z = 0;
     }
 
-    override onspawn(spawningPos?: Point): void {
+    override onspawn(spawningPos?: vec3): void {
         super.onspawn(spawningPos);
         this.state.to('wees_een_yakuzi');
     }
@@ -568,7 +568,7 @@ class hud extends SpriteObject {
         return ~~(hud.HealthBarSizeX / 100 * percentage) + 1;
     }
 
-    override paint = (offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }) => {
+    override paint = (offset?: vec3, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }) => {
         let lengthShown = this.percentageToBarLength(_model.stressLevel);
         _global.view.drawImg(BitmapId.HUD_stress, 60, 10, DrawImgFlags.None, lengthShown);
 

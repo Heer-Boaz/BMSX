@@ -1,5 +1,5 @@
 import { statecontext, mdef, MachineDefinitions, sdef, setup_fsmdef_library, sstate } from "./bfsm";
-import { Direction, Point } from "./bmsx";
+import { Direction, vec3 } from "./bmsx";
 import { GameObject } from "./gameobject";
 import { insavegame, onsave, Reviver, Savegame, Serializer } from "./gamereviver";
 import { Input } from "./input";
@@ -50,11 +50,11 @@ export class Space {
     /**
      * Adds object to the game and triggers it's onspawn-event.
      * @param {GameObject} o  - GameObject to add
-     * @param {Point?} pos - Position to spawn object
+     * @param {vec3?} pos - Position to spawn object
      * @param {boolean} skip_onspawn_event - Disables triggering onspawn-event. Example uses include reviving the game (part of loading a saved game) and moving objects from one space to another.
      * @returns {void} Nothing
      */
-    public spawn(o: GameObject, pos?: Point, skip_onspawn_event?: boolean): void {
+    public spawn(o: GameObject, pos?: vec3, skip_onspawn_event?: boolean): void {
         if (!o?.id) throw `Cannot spawn object '${o?.id ?? 'undefined'}' as it doesn't have a valid id!`;
         if (global.model[obj_id2obj_space_id][o.id]) throw `Cannot spawn object '${o.id}' in space '${this.id}' as it already exists in space '${global.model[obj_id2obj_space_id][o.id]}'!`;
 
@@ -345,7 +345,7 @@ export abstract class BaseModel {
         this.spaces.forEach(s => s.clear());
     }
 
-    public spawn(o: GameObject, pos?: Point, ignoreSpawnhandler?: boolean): void {
+    public spawn(o: GameObject, pos?: vec3, ignoreSpawnhandler?: boolean): void {
         this.currentSpace.spawn(o, pos, ignoreSpawnhandler);
     }
 

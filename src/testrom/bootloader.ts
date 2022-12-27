@@ -5,7 +5,7 @@ import { BitmapId } from './resourceids';
 import { Input } from '../bmsx/input';
 import { mdef, sstate, sdef, statedef_builder, machine_states } from '../bmsx/bfsm';
 import { insavegame } from '../bmsx/gamereviver';
-import { newArea, Point, newPoint, Direction, Game, newSize } from '../bmsx/bmsx';
+import { newArea, vec3, newPoint, Direction, Game, newSize } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
 import { BaseModel } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';

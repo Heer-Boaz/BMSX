@@ -1,5 +1,5 @@
 import { MachineDefinitions } from './bfsm';
-import { area2size, copyPoint, copySize, newPoint, Point, translatePoint, truncPoint } from './bmsx';
+import { area2size, copyPoint, copySize, newPoint, vec3, translatePoint, truncPoint } from './bmsx';
 import { GameObject } from './gameobject';
 import { Serializer } from './gamereviver';
 import { SpriteObject } from './sprite';
@@ -7,7 +7,7 @@ import { Color, DrawImgFlags, paintImageScaled } from './view';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
 
 let draggedObj: GameObject | null;
-let draggedObjCursorOffset: Point;
+let draggedObjCursorOffset: vec3;
 let dragSrcEl: HTMLElement;
 let shiftX: number;
 let shiftY: number;
@@ -53,7 +53,7 @@ class ObjectHighlighter extends SpriteObject {
         this.visible = true;
     }
 
-    public override paint(offset?: Point): void {
+    public override paint(offset?: vec3): void {
         paintImageScaled(this.imgid, translatePoint(this.pos, offset), this.z, this.size.x + 1, this.size.y + 1, DrawImgFlags.None, this.#mijnkleur);
     }
 }
@@ -119,7 +119,7 @@ export function handleDebugMouseOut(e: MouseEvent): void {
     draggedObj = null;
 }
 
-function startDragGameObject(gameobject_at_cursor: GameObject, offsetToCursor: Point): void {
+function startDragGameObject(gameobject_at_cursor: GameObject, offsetToCursor: vec3): void {
     draggedObj = gameobject_at_cursor;
     draggedObjCursorOffset = newPoint(Math.trunc(offsetToCursor.x), Math.trunc(offsetToCursor.y));
 }
@@ -511,7 +511,7 @@ export function handleDebugClick(e: MouseEvent): void {
     }
 }
 
-function getGameObjectAtCursor(e: MouseEvent): { objUnderCursor: GameObject | null; offsetToCursor: Point | null; } {
+function getGameObjectAtCursor(e: MouseEvent): { objUnderCursor: GameObject | null; offsetToCursor: vec3 | null; } {
     let x = e.offsetX;
     let y = e.offsetY;
     let p = newPoint(x, y);

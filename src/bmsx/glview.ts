@@ -1,4 +1,4 @@
-import { Size, Point } from "./bmsx";
+import { Size, vec3 } from "./bmsx";
 import { BaseView, Color, DrawImgFlags } from './view';
 
 var bvec = {
@@ -288,7 +288,7 @@ export abstract class GLView extends BaseView {
         _this.glctx.viewport(0, 0, _this.canvas.width, _this.canvas.height);
     }
 
-    override drawgame(gamescreenOffset?: Point, clearCanvas: boolean = true): void {
+    override drawgame(gamescreenOffset?: vec3, clearCanvas: boolean = true): void {
         super.drawgame(gamescreenOffset, clearCanvas);
         this.drawSprites();
     }

@@ -1,7 +1,7 @@
 import { BFont } from './../bmsx/bmsx';
 import { MSX2ScreenHeight, MSX2ScreenWidth } from './../bmsx/msx';
 import { RomLoadResult } from '../bmsx/rompack';
-import { Game, newPoint, Direction, newSize, newArea, Point, randomInt, copyPoint } from '../bmsx/bmsx';
+import { Game, newPoint, Direction, newSize, newArea, vec3, randomInt, copyPoint } from '../bmsx/bmsx';
 import { sdef, sstate, Bla, statedef_builder, build_fsm, statecontext, machine_states } from '../bmsx/bfsm';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
@@ -215,7 +215,7 @@ class hoeraStuff extends SpriteObject {
         this.imgid = BitmapId.sint;
     }
 
-    override paint(offset?: Point) {
+    override paint(offset?: vec3) {
         let line1: string;
         let line2: string;
         let line3: string;
@@ -299,7 +299,7 @@ class uitlegStuff extends SpriteObject {
         this.pos = newPoint((MSX2ScreenWidth - this.size.x) / 2, (MSX2ScreenHeight - this.size.y) / 2);
     }
 
-    override paint(offset?: Point) {
+    override paint(offset?: vec3) {
         let line1: string;
         let line2: string;
         let line3: string;
@@ -354,7 +354,7 @@ class uitlegStuff extends SpriteObject {
         super.paint.call(this, offset); // .call() nodig, anders "this" undefined
     };
 
-    override onspawn(spawningPos?: Point): void {
+    override onspawn(spawningPos?: vec3): void {
         this.state.to('uitleg');
     }
 };
@@ -366,7 +366,7 @@ class evaluatieStuff extends SpriteObject {
         this.imgid = BitmapId.sint_evalueert;
     }
 
-    override paint(offset?: Point) {
+    override paint(offset?: vec3) {
         TextWriter.drawText(4, 8, `Sinterklaas kijkt nu hoe goed`);
         TextWriter.drawText(4, 16, `je het hebt gedaan Joanneke...`);
 
@@ -399,11 +399,11 @@ class hud extends GameObject {
         super(undefined, 'test');
     }
 
-    override onspawn(spawningPos?: Point): void {
+    override onspawn(spawningPos?: vec3): void {
         this.state.to('default');
     }
 
-    override paint(offset?: Point) {
+    override paint(offset?: vec3) {
         TextWriter.drawText(0, 0, `Time to shine: ${_model.time_to_shine}`);
     };
 }
@@ -452,7 +452,7 @@ class stoom extends SpriteObject {
         this.imgid = BitmapId.None;
     }
 
-    override onspawn(spawningPos?: Point): void {
+    override onspawn(spawningPos?: vec3): void {
         super.onspawn(spawningPos);
         this.state.to('doepluim');
     }
@@ -665,7 +665,7 @@ class draaischijf extends SpriteObject {
         }
     }
 
-    override onspawn(spawningPos?: Point): void {
+    override onspawn(spawningPos?: vec3): void {
         super.onspawn(spawningPos);
         this.state.to('idle');
     }
@@ -692,7 +692,7 @@ abstract class onvolmaaktheid extends SpriteObject {
     public zijde: zijde;
     public _ernst!: number;
 
-    constructor(_soort: onvolmaaktheid_soort, _zijde: zijde, _plek: Point, __ernst?: number) {
+    constructor(_soort: onvolmaaktheid_soort, _zijde: zijde, _plek: vec3, __ernst?: number) {
         super();
         this.soort = _soort;
         this.zijde = _zijde;
@@ -705,7 +705,7 @@ abstract class onvolmaaktheid extends SpriteObject {
         ++this.state.current.nudges;
     };
 
-    override paint(offset?: Point) {
+    override paint(offset?: vec3) {
         // Toon alleen als diamant op zelfde locatie is als dat diamant is weergegeven
         if (_model.diamant.getoonde_zijde === this.zijde)
             super.paint.call(this, offset); // .call() nodig, anders "this" undefined
@@ -763,12 +763,12 @@ class burn extends onvolmaaktheid {
         };
     }
 
-    override onspawn = (spawningPos?: Point): void => {
+    override onspawn = (spawningPos?: vec3): void => {
         super.onspawn?.(spawningPos);
         this.state.to('wees_een_burn');
     };
 
-    constructor(_zijde: zijde, _plek: Point, __ernst?: number) {
+    constructor(_zijde: zijde, _plek: vec3, __ernst?: number) {
         super(onvolmaaktheid_soort.Burn, _zijde, _plek, __ernst);
         this.imgid = BitmapId.None;
         this.hitarea = newArea(0, 0, 40, 31);
@@ -845,12 +845,12 @@ class barst extends onvolmaaktheid {
         return s.tape.length - 1;
     }
 
-    override onspawn = (spawningPos?: Point): void => {
+    override onspawn = (spawningPos?: vec3): void => {
         super.onspawn?.(spawningPos);
         this.state.to('wees_een_barst');
     };
 
-    constructor(_zijde: zijde, _plek: Point, __ernst?: number) {
+    constructor(_zijde: zijde, _plek: vec3, __ernst?: number) {
         super(onvolmaaktheid_soort.Barst, _zijde, _plek);
         let defaultErnst = this.max_ernst();
         __ernst && (this.ernst = defaultErnst);

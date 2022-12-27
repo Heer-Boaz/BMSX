@@ -3,7 +3,7 @@ import { AudioId, BitmapId } from "./resourceids";
 import { TextWriter } from "../bmsx/textwriter";
 import { SM } from "../bmsx/soundmaster";
 // import { SlotExists, LoadGame } from "../bmsx/gamepersistor";
-import { GameOptions as GO, Direction, Size, Point, newSize, setPoint, newPoint } from '../bmsx/bmsx';
+import { GameOptions as GO, Direction, Size, vec3, newSize, setPoint, newPoint } from '../bmsx/bmsx';
 import { Constants } from "../bmsx/bmsx";
 import { Input } from "../bmsx/input";
 import { Msx1ExtColors } from "../bmsx/msx";
@@ -80,7 +80,7 @@ export class GameMenu extends GameObject {
     private static fullscreenOptionsOffsets: number[];
     private static fullscreenOptionsOffsetY: number;
     private static fullscreenOptionsRectangleSize: Size;
-    private cursorPos: Point;
+    private cursorPos: vec3;
     private selectedItemIndex: number;
     private CurrentScreen: MenuItem;
 
@@ -443,7 +443,7 @@ export class GameMenu extends GameObject {
         }
     }
 
-    override paint = (offset?: Point):void => {
+    override paint = (offset?: vec3):void => {
         // view.fillRectangle(GameMenu.menuPosX, GameMenu.menuPosY, GameMenu.menuEndX, GameMenu.menuEndY, Msx1Colors[1]);
         // view.drawRectangle(GameMenu.menuPosX, GameMenu.menuPosY, GameMenu.menuEndX, GameMenu.menuEndY, Msx1Colors[15]);
         let titleToDraw: string;

@@ -1,5 +1,5 @@
 import { BitmapId } from "./resourceids";
-import { GameOptions as GO, Point } from "../bmsx/bmsx";
+import { GameOptions as GO, vec3 } from "../bmsx/bmsx";
 import { Color } from '../bmsx/view';
 
 export class TextWriter {
@@ -7,10 +7,10 @@ export class TextWriter {
     public static FontHeight: number = 8;
 
     public static drawText(x: number, y: number, textToWrite: string | string[], color: Color = null): void {
-        let startPos: Point = <Point>{ x: x, y: y };
+        let startPos: vec3 = <vec3>{ x: x, y: y };
         let stepX: number = TextWriter.FontWidth;
         let stepY: number = TextWriter.FontHeight;
-        let pos: Point = <Point>{ x: startPos.x, y: startPos.y };
+        let pos: vec3 = <vec3>{ x: startPos.x, y: startPos.y };
         if (Array.isArray(textToWrite)) {
             for (let text of textToWrite) {
                 for (let i: number = 0; i < text.length; i++) {

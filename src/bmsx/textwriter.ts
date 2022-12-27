@@ -1,13 +1,13 @@
-import { BFont, GameOptions as GO, Point } from "./bmsx";
+import { BFont, GameOptions as GO, vec3 } from "./bmsx";
 import { Color, DrawImgFlags } from './view';
 
 export class TextWriter {
     public static drawText(x: number, y: number, textToWrite: string | string[], z: number = 950, _font: BFont = null, color: Color = null): void {
         let font = _font ?? global.view.default_font as BFont;
-        let startPos: Point = <Point>{ x: x, y: y }
+        let startPos: vec3 = <vec3>{ x: x, y: y }
         let stepX: number = font.char_width;
         let stepY: number = font.char_height;
-        let pos: Point = <Point>{ x: startPos.x, y: startPos.y };
+        let pos: vec3 = <vec3>{ x: startPos.x, y: startPos.y };
         if (Array.isArray(textToWrite)) {
             for (let text of textToWrite) {
                 for (let i: number = 0; i < text.length; i++) {

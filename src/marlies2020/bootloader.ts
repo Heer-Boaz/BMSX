@@ -8,7 +8,7 @@ import { paintSprite } from '../bmsx/view';
 import { GameMenu } from './gamemenu';
 import { KonamiFont } from './konamifont';
 import { statedef_builder, mdef, sdef, sstate } from '../bmsx/bfsm';
-import { Point, Direction, setPoint, newArea, randomInt, getOppositeDirection, copyPoint, newPoint, newSize, Game } from '../bmsx/bmsx';
+import { vec3, Direction, setPoint, newArea, randomInt, getOppositeDirection, copyPoint, newPoint, newSize, Game } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
 import { BaseModel, Space } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';
@@ -19,7 +19,7 @@ const MAX_CORONA = 3;
 const TIME_CORONA_SPAWN = 200;
 const MIN_CORONA_MOVE = 16;
 const MAX_CORONA_MOVE = 72;
-const CORONA_SPAWN_LOCS = <Array<Point>>[
+const CORONA_SPAWN_LOCS = <Array<vec3>>[
     { x: MSX1ScreenWidth, y: 0 },
     { x: MSX1ScreenWidth, y: MSX1ScreenHeight },
 ];
@@ -240,7 +240,7 @@ class hoeraStuff extends SpriteObject {
         this.imgid = BitmapId.Sint;
     }
 
-    override paint = (offset?: Point, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }) => {
+    override paint = (offset?: vec3, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }) => {
         TextWriter.drawText(24, 100, "Redelijk gedaan,Marlies!");
         paintSprite.call(this, offset, colorize); // .call() nodig, anders "this" undefined
     }
@@ -382,7 +382,7 @@ class vuur extends SpriteObject {
         this.z = dir != Direction.Up ? 1100 : 900;
     }
 
-    override onspawn(spawningPos?: Point): void {
+    override onspawn(spawningPos?: vec3): void {
         super.onspawn(spawningPos);
         this.state.to('brand');
     }
@@ -487,7 +487,7 @@ class corona extends SpriteObject {
         this.onLeavingScreen = this.onLeavingScreenHandler;
     }
 
-    override onspawn(spawningPos?: Point): void {
+    override onspawn(spawningPos?: vec3): void {
         super.onspawn(spawningPos);
         this.state.to('skulk');
     }
@@ -719,7 +719,7 @@ class speler extends SpriteObject {
         this.hitarea = newArea(0, 8, 16, 16);
     }
 
-    override onspawn(spawningPos?: Point): void {
+    override onspawn(spawningPos?: vec3): void {
         super.onspawn(spawningPos);
         this.state.to('walk');
         this.state.to('down', 'anistate');
@@ -835,7 +835,7 @@ class keuken extends SpriteObject {
         this.z = 0;
     }
 
-    override onspawn(spawningPos?: Point): void {
+    override onspawn(spawningPos?: vec3): void {
         super.onspawn(spawningPos);
         this.state.to('wees_een_keuken');
     }
