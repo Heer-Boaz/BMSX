@@ -89,8 +89,8 @@ export class GameMenu extends GameObject {
         this.z = 900;
         this.visible = false;
         this.cursorPos = new_vec2(0, 0);
-        this.pos = new_vec2(GameMenu.menuPosX, GameMenu.menuPosY);
-        this.size = new_vec2(GameMenu.menuEndX - GameMenu.menuPosX, GameMenu.menuEndY - GameMenu.menuPosY);
+        this.x = GameMenu.menuPosX, this.y = GameMenu.menuPosY;
+        this.size.x = GameMenu.menuEndX - GameMenu.menuPosX, this.size.y = GameMenu.menuEndY - GameMenu.menuPosY;
         this.selectedItemIndex = 0;
         this.CurrentScreen = MenuItem.Main;
         GameMenu.fullscreenOptionsOffsets = [global.view.default_font.char_width * 12 - 1, global.view.default_font.char_height * 14 - 1];

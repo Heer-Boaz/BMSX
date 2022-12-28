@@ -485,7 +485,7 @@ class diamant extends SpriteObject {
                 break;
         }
 
-        this.xy = new_vec2((MSX2ScreenWidth - this.sx) / 2, (MSX2ScreenHeight - this.sy) / 2);
+        this.x = (MSX2ScreenWidth - this.sx) / 2, this.y = (MSX2ScreenHeight - this.sy) / 2;
     }
 
     constructor() {
@@ -598,11 +598,11 @@ class draaischijf extends SpriteObject {
 
     constructor() {
         super('draaischijf');
-        this.z = 20;
         this.imgid = BitmapId.None; // Wordt goed gezet bij ingang start state
         this.onLeavingScreen = (ik, d, old_x_or_y) => leavingScreenHandler_prohibit(ik, d, old_x_or_y);
-        this.size = { x: 64, y: 64 };
+        this.size = { x: 64, y: 64, z: undefined };
         this.hitarea = newArea(24, 24, 64 - 24, 64 - 24);
+        this.z = 20;
     }
 
     public static handle_input_idle_state(this: draaischijf, s: sstate<draaischijf>): void {
@@ -695,7 +695,8 @@ abstract class onvolmaaktheid extends SpriteObject {
         super();
         this.soort = _soort;
         this.zijde = _zijde;
-        this.pos = _plek;
+        this.x = _plek.x;
+        this.y = _plek.y;
         this.z = 10;
         __ernst && (this._ernst = __ernst);
     }
@@ -854,7 +855,7 @@ class barst extends onvolmaaktheid {
         let defaultErnst = this.max_ernst();
         __ernst && (this.ernst = defaultErnst);
         this.hitarea = newArea(0, 0, 40, 31);
-        this.size = new_vec2(40, 31);
+        this.size = new_vec3(40, 31, undefined);
     }
 }
 

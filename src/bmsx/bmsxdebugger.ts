@@ -1,5 +1,5 @@
 import { MachineDefinitions } from './bfsm';
-import { area2size, copy_vec2, new_vec2, vec3, vec2_translate, trunc_vec2, vec2 } from './bmsx';
+import { area2size, copy_vec2, new_vec2, vec3, vec2_translate, trunc_vec2, vec2, trunc_vec3 } from './bmsx';
 import { GameObject } from './gameobject';
 import { Serializer } from './gamereviver';
 import { SpriteObject } from './sprite';
@@ -40,16 +40,18 @@ class ObjectHighlighter extends SpriteObject {
 
         this.#highlighted_obj = o;
         if (o.hitarea) {
-            this.pos = vec2_translate(o.pos, o.hitarea.start);
-            this.size = area2size(o.hitarea);
+            let translate = vec2_translate(o.pos, o.hitarea.start);
+            this.x = translate.x, this.y = translate.y;
+            let size = area2size(o.hitarea);
+            this.sx = size.x, this.sy = size.y;
         }
         else {
-            this.pos = copy_vec2(o.pos);
-            this.size = copy_vec2(o.size);
+            this.x = o.x, this.y = o.y;
+            this.sx = o.sx, this.sy = o.sy;
         }
         // this.size = divPoint(this.size, 4);
-        this.pos = trunc_vec2(this.pos);
-        this.size = trunc_vec2(this.size);
+        this.pos = trunc_vec3(this.pos);
+        this.size = trunc_vec3(this.size);
         this.sprite.sx = this.size.x + 1;
         this.sprite.sy = this.size.y + 1;
         this.visible = true;

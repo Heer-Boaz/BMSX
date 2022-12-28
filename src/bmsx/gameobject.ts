@@ -13,87 +13,47 @@ export class GameObject implements vec2, vec3 {
     public id: string;
     public disposeFlag: boolean;
 
-    public _x: number;
-    public _y: number;
-    public _z: number;
-
+    public pos: vec3;
     public get x(): number {
-        return this._x;
+        return this.pos.x;
     }
     public set x(__x: number) {
-        this._x = __x;
+        this.pos.x = __x;
     }
     public get y(): number {
-        return this._y;
+        return this.pos.y;
     }
     public set y(__y: number) {
-        this._y = __y;
+        this.pos.y = __y;
     }
     public get z(): number {
-        return this._z;
+        return this.pos.z;
     }
     public set z(__z: number) {
         if (__z > 10000) __z = 10000;
         if (__z < 0) __z = 0;
-        this._z = __z;
+        this.pos.z = __z;
     }
 
-    public get pos(): vec3 {
-        return { x: this._x, y: this._y, z: this._z };
-    }
-    public set pos(p: vec2 | vec3) {
-        this._x = p.x;
-        this._y = p.y;
-        this._z = p.z ?? this._z;
-    }
+    public size: vec3;
 
-    public get xy(): vec2 {
-        return { x: this._x, y: this._y };
-    }
-
-    public set xy(v: vec2) {
-        this._x = v.x;
-        this._y = v.y;
-    }
-
-    public get xyz(): vec3 {
-        return { x: this._x, y: this._y, z: this._z };
-    }
-    public set xyz(v: vec3) {
-        this._x = v.x;
-        this._y = v.y;
-        this._z = v.z;
-    }
-
-    public _sx: number;
     public get sx(): number {
-        return this._sx;
+        return this.size.x;
     }
     public set sx(__sx: number) {
-        this._sx = __sx;
+        this.size.x = __sx;
     }
-    public _sy: number;
     public get sy(): number {
-        return this._sy;
+        return this.size.y;
     }
     public set sy(__sy: number) {
-        this._sy = __sy;
+        this.size.y = __sy;
     }
-    public _sz: number;
     public get sz(): number {
-        return this._sz;
+        return this.size.z;
     }
     public set sz(__sz: number) {
-        this._sz = __sz;
-    }
-
-    public get size(): vec3 {
-        return { x: this._sx, y: this._sy, z: this._sz };
-    }
-    public set size(__s: vec2 | vec3) {
-        this._sx = __s.x;
-        this._sy = __s.y;
-        this._sz = __s.z ?? this._sz;
+        this.size.z = __sz;
     }
 
     public get wallHitarea(): Area { return this.hitarea; }
@@ -153,7 +113,11 @@ export class GameObject implements vec2, vec3 {
      * @param spawningPos
      */
     public onspawn?(spawningPos?: vec2 | vec3): void {
-        if (spawningPos) this.pos = spawningPos;
+        if (spawningPos) {
+            this.x = spawningPos.x ?? this.x;
+            this.y = spawningPos.y ?? this.y;
+            this.z = spawningPos.z ?? this.z;
+        }
 
         let start_state_id = this.state?.definition?.start_state;
         start_state_id && this.state.to(start_state_id);
@@ -208,8 +172,8 @@ export class GameObject implements vec2, vec3 {
         this.id = _id ?? GameObject.generateId();
         this.hittable = true;
         this.visible = true;
-        this.xyz = new_vec3(0, 0, 0);
-        this.size = new_vec2(0, 0);
+        this.pos = new_vec3(0, 0, 0);
+        this.size = new_vec3(0, 0, 0);
         this.disposeFlag = false;
         this.disposeOnSwitchRoom = true;
         this.state = statecontext.create(_fsm_id ?? this.constructor.name, this.id);

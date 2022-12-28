@@ -364,6 +364,9 @@ export function trunc_vec2(p: vec2): vec2 {
     return { x: Math.trunc(p.x), y: Math.trunc(p.y) };
 }
 
+export function trunc_vec3(p: vec3): vec3 {
+    return { x: Math.trunc(p.x), y: Math.trunc(p.y), z: Math.trunc(p.z) };
+}
 
 export function multiply_vec2(toMult: vec2, factor: number): vec2 {
     return { x: toMult.x * factor, y: toMult.y * factor };
