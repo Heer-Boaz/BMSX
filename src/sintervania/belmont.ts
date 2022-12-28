@@ -1,7 +1,7 @@
 import { BStopwatch, Sprite, model, controller } from "../bmsx/bmsx";
 import { Animation } from "../bmsx/animation";
 import { BitmapId, AudioId } from './resourceids';
-import { Direction, Point, newPoint, Area, newArea, copyPoint, waitDuration, addPoints, newSize, mod } from '../bmsx/common';
+import { Direction, Point, newPoint, Area, newArea, copyPoint, waitDuration, addPoints, new_vec2, mod } from '../bmsx/common';
 import { TileSize } from '../bmsx/msx';
 import { SM } from '../bmsx/soundmaster';
 import { Input } from '../bmsx/input';
@@ -214,7 +214,7 @@ export class Belmont extends Sprite {
 		this.direction = Direction.Right;
 		this.id = "Belmont";
 		this.state = State.Normal;
-		this.size = newSize(16, 32);
+		this.size = new_vec2(16, 32);
 		this.Health = CS.Belmont_MaxHealth_AtStart;
 		this.MaxHealth = CS.Belmont_MaxHealth_AtStart;
 		this.Crouching = false;

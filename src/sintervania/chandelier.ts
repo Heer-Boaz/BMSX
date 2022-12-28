@@ -4,7 +4,7 @@ import { Animation, AniData } from "../bmsx/animation";
 import { Foe } from "./foe";
 import { ItemType } from "./item";
 import { BitmapId } from "./resourceids";
-import { newArea, newSize } from "../bmsx/common";
+import { newArea, new_vec2 } from "../bmsx/common";
 import { Model } from "./gamemodel";
 import { Area } from "../bmsx/common";
 
@@ -44,7 +44,7 @@ export class Chandelier extends Foe {
 		this.timer = BStopwatch.createWatch();
 		// this.imgid = BitmapId.Chandelier_1;
 		this.hitarea = Chandelier.ChandelierHitArea;
-		this.size = newSize(50, 64);
+		this.size = new_vec2(50, 64);
 		this.itemSpawnedAfterKill = itemSpawned;
 		this.health = 0;
 		this.state = ChandelierState.None;

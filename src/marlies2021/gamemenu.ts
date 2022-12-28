@@ -2,7 +2,7 @@ import { AudioId, BitmapId } from "./resourceids";
 import { TextWriter } from "../bmsx/textwriter";
 import { SM } from "../bmsx/soundmaster";
 // import { SlotExists, LoadGame } from "../bmsx/gamepersistor";
-import { GameOptions as GO, GameObject, Direction, Size, vec3, newSize, setPoint } from '../bmsx/bmsx';
+import { GameOptions as GO, GameObject, Direction, Size, vec3, new_vec2, set_vec2 } from '../bmsx/bmsx';
 import { Constants } from "../bmsx/bmsx";
 import { Input } from "../bmsx/input";
 import { Msx1ExtColors } from "../bmsx/msx";
@@ -92,7 +92,7 @@ export class GameMenu extends GameObject {
         this.CurrentScreen = MenuItem.Main;
         GameMenu.fullscreenOptionsOffsets = [global.view.default_font.char_width * 12 - 1, global.view.default_font.char_height * 14 - 1];
         GameMenu.fullscreenOptionsOffsetY  = -1;
-        GameMenu.fullscreenOptionsRectangleSize = newSize(global.view.default_font.char_width + 2, global.view.default_font.char_height + 2);
+        GameMenu.fullscreenOptionsRectangleSize = new_vec2(global.view.default_font.char_width + 2, global.view.default_font.char_height + 2);
     }
 
     public Open(currentscreen: MenuItem = MenuItem.Main): void {
@@ -123,7 +123,7 @@ export class GameMenu extends GameObject {
         if (!this.visible)
             return;
         this.HandleInput();
-        setPoint(this.cursorPos, this.calculateCursorX(), this.calculateCursorY());
+        set_vec2(this.cursorPos, this.calculateCursorX(), this.calculateCursorY());
     }
 
     public HandleInput(): void {

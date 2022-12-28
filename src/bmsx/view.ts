@@ -2,6 +2,18 @@
 import { Size, vec3 } from "./bmsx";
 import { BFont } from "./bmsx";
 
+export interface DrawImgOptions {
+    imgid: string;
+    x: number;
+    y: number;
+    z: number;
+    sx?: number;
+    sy?: number;
+    flip_h?: boolean;
+    flip_v?: boolean;
+    colorize?: Color;
+}
+
 export interface Color {
     r: number;
     g: number;
@@ -13,15 +25,6 @@ export class PixelData {
     public B: number;
     public G: number;
     public R: number;
-}
-
-export const enum DrawImgFlags {
-    None = 0,
-    HFLIP = 1 << 0,
-    VFLIP = 1 << 1,
-    COLORIZE_R = 1 << 2, // ! TODO: IMPLEMENT
-    COLORIZE_G = 1 << 3, // ! TODO: IMPLEMENT
-    COLORIZE_B = 1 << 4, // ! TODO: IMPLEMENT
 }
 
 export abstract class BaseView {
@@ -51,10 +54,10 @@ export abstract class BaseView {
         this.listenToMediaEvents();
     }
 
-    public drawgame(gamescreenOffset?: vec3, clearCanvas: boolean = true): void {
+    public drawgame(clearCanvas: boolean = true): void {
         if (clearCanvas) global.view.clear();
         global.model.currentSpace.sort_by_depth(); // Required for each frame as objects can change depth during the flow of the game
-        global.model.currentSpace.objects.forEach(o => !o.disposeFlag && o.visible && o.paint?.(gamescreenOffset));
+        global.model.currentSpace.objects.forEach(o => !o.disposeFlag && o.visible && o.paint?.());
     }
 
     public calculateSize(): void {
@@ -185,15 +188,17 @@ export abstract class BaseView {
         global.view.context.restore();
     }
 
-    public drawImg(imgid: string, x: number, y: number, z: number, options: DrawImgFlags = DrawImgFlags.None, sx: number = 1, sy: number = 1, color_override?: Color): void {
+    public drawImg(options: DrawImgOptions): void {
+        let { x, y, imgid, flip_h = false, flip_v = false, sx = 1, sy = 1 } = options;
+
         let img = BaseView.images[imgid];
         global.view.context.save();
         global.view.context.translate(~~x, ~~y);
-        if (options & DrawImgFlags.HFLIP) {
+        if (flip_h) {
             global.view.context.scale(-1 * sx, 1 * sy);
             global.view.context.translate(-img.width, 0);
         }
-        if (options & DrawImgFlags.VFLIP) {
+        if (flip_v) {
             global.view.context.scale(1 * sx, -1 * sy);
             global.view.context.translate(0, -img.height);
         }
@@ -228,14 +233,8 @@ export abstract class BaseView {
     }
 }
 
-export function paintImage(imgid: string, pos: vec3, z: number, options: DrawImgFlags = DrawImgFlags.None, color_override?: Color): void {
-    if (!imgid || imgid === 'None') return; // Don't draw anything when imgid = BitmapId.None. For animations, we don't always want to use visible = false
+export function paintImage(options: DrawImgOptions): void {
+    if (!options.imgid || options.imgid === 'None') return; // Don't draw anything when imgid = BitmapId.None. For animations, we don't always want to use visible = false
 
-    global.view.drawImg(imgid, pos.x, pos.y, z, options, undefined, undefined, color_override);
-}
-
-export function paintImageScaled(imgid: string, pos: vec3, z: number, scale_x: number, scale_y: number, options: DrawImgFlags = DrawImgFlags.None, color_override?: Color): void {
-    if (!imgid || imgid === 'None') return; // Don't draw anything when imgid = BitmapId.None. For animations, we don't always want to use visible = false
-
-    global.view.drawImg(imgid, pos.x, pos.y, z, options, scale_x, scale_y, color_override);
+    global.view.drawImg(options);
 }

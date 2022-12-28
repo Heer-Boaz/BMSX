@@ -8,7 +8,7 @@ import { paintSprite } from '../bmsx/view';
 import { GameMenu } from './gamemenu';
 import { KonamiFont } from './konamifont';
 import { statedef_builder, mdef, sdef, sstate } from '../bmsx/bfsm';
-import { vec3, Direction, setPoint, newArea, randomInt, getOppositeDirection, copyPoint, newPoint, newSize, Game } from '../bmsx/bmsx';
+import { vec2, Direction, set_vec2, newArea, randomInt, getOppositeDirection, copy_vec2, new_vec2, new_vec2, Game } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
 import { BaseModel, Space } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';
@@ -19,7 +19,7 @@ const MAX_CORONA = 3;
 const TIME_CORONA_SPAWN = 200;
 const MIN_CORONA_MOVE = 16;
 const MAX_CORONA_MOVE = 72;
-const CORONA_SPAWN_LOCS = <Array<vec3>>[
+const CORONA_SPAWN_LOCS = <Array<vec2>>[
     { x: MSX1ScreenWidth, y: 0 },
     { x: MSX1ScreenWidth, y: MSX1ScreenHeight },
 ];
@@ -185,7 +185,7 @@ class brandblusser extends SpriteObject {
                         bla: new sdef('bla', {
                             nudges2move: 20,
                             onrun: (s: sstate, ik: brandblusser): void => {
-                                setPoint(ik.pos, _model.marlies.pos.x, _model.marlies.pos.y + 12);
+                                set_vec2(ik.pos, _model.marlies.pos.x, _model.marlies.pos.y + 12);
                                 // let oldPrio = ik.z;
                                 if (_model.marlies.direction == Direction.Up) ik.z = 950;
                                 else ik.z = 1050;
@@ -240,7 +240,7 @@ class hoeraStuff extends SpriteObject {
         this.imgid = BitmapId.Sint;
     }
 
-    override paint = (offset?: vec3, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }) => {
+    override paint = (offset?: vec2, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }) => {
         TextWriter.drawText(24, 100, "Redelijk gedaan,Marlies!");
         paintSprite.call(this, offset, colorize); // .call() nodig, anders "this" undefined
     }
@@ -382,7 +382,7 @@ class vuur extends SpriteObject {
         this.z = dir != Direction.Up ? 1100 : 900;
     }
 
-    override onspawn(spawningPos?: vec3): void {
+    override onspawn(spawningPos?: vec2): void {
         super.onspawn(spawningPos);
         this.state.to('brand');
     }
@@ -487,7 +487,7 @@ class corona extends SpriteObject {
         this.onLeavingScreen = this.onLeavingScreenHandler;
     }
 
-    override onspawn(spawningPos?: vec3): void {
+    override onspawn(spawningPos?: vec2): void {
         super.onspawn(spawningPos);
         this.state.to('skulk');
     }
@@ -674,7 +674,7 @@ class speler extends SpriteObject {
                             onenter(s: sstate, ik: speler): void {
                                 s.reset();
                                 ik.imgid = s.current;
-                                ik.flippedH = false;
+                                ik.flip_h = false;
                             },
                             onrun(s: sstate): void {
                                 ++s.nudges;
@@ -693,10 +693,10 @@ class speler extends SpriteObject {
                             onenter(_, ik: speler): void {
                                 ik.imgid = BitmapId.p7;
                                 if (ik.state.getCurrentId() === 'switchright')
-                                    ik.flippedH = true;
+                                    ik.flip_h = true;
                             },
                             onexit(_, ik: speler): void {
-                                ik.flippedH = false;
+                                ik.flip_h = false;
                             },
                         }),
                         win: new sdef('win', {
@@ -719,7 +719,7 @@ class speler extends SpriteObject {
         this.hitarea = newArea(0, 8, 16, 16);
     }
 
-    override onspawn(spawningPos?: vec3): void {
+    override onspawn(spawningPos?: vec2): void {
         super.onspawn(spawningPos);
         this.state.to('walk');
         this.state.to('down', 'anistate');
@@ -727,7 +727,7 @@ class speler extends SpriteObject {
 
     zetBoelInDeHens(): void {
         let brand = new vuur(this.direction);
-        let brandpos = copyPoint(this.pos);
+        let brandpos = copy_vec2(this.pos);
         switch (this.direction) {
             case Direction.Down: brandpos.y += 8; break;
             case Direction.Right: brandpos.x += 4; brandpos.y += 8; break;
@@ -736,18 +736,18 @@ class speler extends SpriteObject {
         }
         _model.spawn(brand, brandpos);
         let brand2 = new vuur(this.direction);
-        let brandpos2 = copyPoint(brandpos);
+        let brandpos2 = copy_vec2(brandpos);
         brandpos2.x += randomInt(0, 16) - 8;
         brandpos2.y += randomInt(0, 8) - 4;
         _model.spawn(brand2, brandpos2);
         let brand3 = new vuur(this.direction);
-        let brandpos3 = copyPoint(brandpos);
+        let brandpos3 = copy_vec2(brandpos);
         brandpos3.x += randomInt(0, 16) - 8;
         brandpos3.y += randomInt(0, 8) - 4;
         _model.spawn(brand3, brandpos3);
 
         let blusser = new brandblusser();
-        _model.spawn(blusser, newPoint(this.pos.x, this.pos.y + 12));
+        _model.spawn(blusser, new_vec2(this.pos.x, this.pos.y + 12));
     }
 
     doeCoronaTest(): void {
@@ -835,7 +835,7 @@ class keuken extends SpriteObject {
         this.z = 0;
     }
 
-    override onspawn(spawningPos?: vec3): void {
+    override onspawn(spawningPos?: vec2): void {
         super.onspawn(spawningPos);
         this.state.to('wees_een_keuken');
     }
@@ -852,32 +852,32 @@ let _model: modelclass;
 
 var _global = window || global;
 _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: GainNode): void => {
-    let _view = new viewclass(newSize(MSX1ScreenWidth, MSX1ScreenHeight));
+    let _view = new viewclass(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
     _model = new modelclass();
     new Game(rom, _model, _view, sndcontext, gainnode);
     global.view.default_font = new KonamiFont();
 
     global.game.start();
     let model = global.model;
-    model.spawn(new keuken(), newPoint(0, 0));
-    model.spawn(new invFrame(), newPoint(4, 4));
+    model.spawn(new keuken(), new_vec2(0, 0));
+    model.spawn(new invFrame(), new_vec2(4, 4));
     let marlies = new speler(START_COLUMN);
     _model.marlies = marlies;
-    model.spawn(marlies, newPoint(COLUMN_X[START_COLUMN], 16));
+    model.spawn(marlies, new_vec2(COLUMN_X[START_COLUMN], 16));
 
-    model.spawn(new bord(), newPoint(160, 74));
-    model.spawn(new bord(), newPoint(160, 100));
-    model.spawn(new bord(), newPoint(200, 74));
-    model.spawn(new bord(), newPoint(200, 100));
+    model.spawn(new bord(), new_vec2(160, 74));
+    model.spawn(new bord(), new_vec2(160, 100));
+    model.spawn(new bord(), new_vec2(200, 74));
+    model.spawn(new bord(), new_vec2(200, 100));
 
-    model.spawn(new komkommer(), newPoint(26, 40));
+    model.spawn(new komkommer(), new_vec2(26, 40));
     // model.spawn(new komkommer(), newPoint(26, 64));
-    model.spawn(new tomaatjes(), newPoint(26, 88));
+    model.spawn(new tomaatjes(), new_vec2(26, 88));
     // model.spawn(new tomaatjes(), newPoint(26, 112));
-    model.spawn(new mes(), newPoint(26, 136));
-    model.spawn(new falafel(), newPoint(100, 64));
+    model.spawn(new mes(), new_vec2(26, 136));
+    model.spawn(new falafel(), new_vec2(100, 64));
     // model.spawn(new falafel(), newPoint(100, 40));
-    model.spawn(new pita(), newPoint(100, 88));
+    model.spawn(new pita(), new_vec2(100, 88));
     // model.spawn(new pita(), newPoint(100, 112));
     // model.spawn(new mes(), newPoint(100, 136));
 };

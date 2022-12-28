@@ -1,6 +1,6 @@
 import { Foe } from "./foe";
 import { ItemType } from "./item";
-import { Area, Direction, newArea, newSize } from "../bmsx/common";
+import { Area, Direction, newArea, new_vec2 } from "../bmsx/common";
 import { BitmapId } from "./resourceids";
 import { Model } from "./gamemodel";
 import { BSTEventType, sdef, model } from "../bmsx/bmsx";
@@ -16,7 +16,7 @@ export class ZakFoe extends Foe {
 		super();
 		this.imgid = BitmapId.ZakFoe1;
 		this.hitarea = ZakFoe.ZakFoeHitArea;
-		this.size = newSize(16, 16);
+		this.size = new_vec2(16, 16);
 		this.itemSpawnedAfterKill = itemSpawned;
 		this.direction = dir;
 		this.z = 10;

@@ -1,22 +1,23 @@
-import { newPoint, vec3, translatePoint } from "./bmsx";
+import { new_vec2, vec3, vec2_translate, vec2, new_vec3, vec3_translate } from "./bmsx";
 import { GameObject } from "./gameobject";
 import { insavegame } from "./gamereviver";
-import { DrawImgFlags, paintImage } from "./view";
+import { DEFAULT_VERTEX_COLOR } from "./glview";
+import { Color, paintImage } from "./view";
 
 @insavegame
 export abstract class SpriteObject extends GameObject {
-    public get flippedH() {
-        return this.sprite.flippedH;
+    public get flip_h() {
+        return this.sprite.flip_h;
     }
-    public set flippedH(fh: boolean) {
-        this.sprite.flippedH = fh;
+    public set flip_h(fh: boolean) {
+        this.sprite.flip_h = fh;
     }
 
-    public get flippedV() {
-        return this.sprite.flippedV;
+    public get flip_v() {
+        return this.sprite.flip_v;
     }
-    public set flippedV(fv: boolean) {
-        this.sprite.flippedV = fv;
+    public set flip_v(fv: boolean) {
+        this.sprite.flip_v = fv;
     }
 
     public get imgid() {
@@ -26,22 +27,10 @@ export abstract class SpriteObject extends GameObject {
         this.sprite.imgid = id;
         let imgmeta = global.game.rom['imgresources'][id]?.['imgmeta'];
         if (imgmeta) {
-            this.size.x = imgmeta['width'];
-            this.size.y = imgmeta['height'];
+            this.sx = imgmeta['width'];
+            this.sy = imgmeta['height'];
         }
     }
-
-    public get offset() {
-        return this.sprite.pos;
-    }
-    public set offset(o: vec3) {
-        this.sprite.pos = o;
-    }
-
-    // public override set z(__z: number) {
-    // 	super.z = __z;
-    // 	if (this.sprite) this.sprite.z = this.z;
-    // }
 
     sprite: Sprite;
 
@@ -50,42 +39,42 @@ export abstract class SpriteObject extends GameObject {
         this.sprite ??= new Sprite();
     }
 
-    override paint(offset?: vec3) {
-        offset ??= newPoint(0, 0);
-        let total_offset = translatePoint(offset, this.pos);
-        this.sprite.paint.call(this.sprite, total_offset, this.z);
+    override paint() {
+        this.sprite.paint.call(this.sprite, this.x, this.y, this.z);
     }
 }
 
 @insavegame
 export class Sprite {
-    public get flippedH(): boolean {
-        return (this.#options & DrawImgFlags.HFLIP) === DrawImgFlags.HFLIP;
-    }
-    public set flippedH(f: boolean) {
-        this.#options |= DrawImgFlags.HFLIP;
-    }
-
-    public get flippedV(): boolean {
-        return (this.#options & DrawImgFlags.VFLIP) === DrawImgFlags.VFLIP;
-    }
-    public set flippedV(f: boolean) {
-        this.#options |= DrawImgFlags.VFLIP;
-    }
-
-    public imgid: string;
-    public pos: vec3;
+    public x: number;
+    public y: number;
     public z: number;
-    #options: DrawImgFlags;
+    public sx: number;
+    public sy: number;
+    public flip_h: boolean;
+    public flip_v: any;
+    public colorize: Color;
+    public imgid: string;
 
     constructor() {
         this.imgid ??= 'None';
-        this.#options ??= 0;
-        this.pos ??= newPoint(0, 0);
+        this.flip_h ??= false;
+        this.flip_v ??= false;
+        this.colorize ??= DEFAULT_VERTEX_COLOR;
+        this.x ??= 0;
+        this.y ??= 0;
         this.z ??= 0;
+        this.sx ??= 1;
+        this.sy ??= 1;
     }
 
-    public paint(offset?: vec3, z?: number) {
-        paintImage(this.imgid, translatePoint(this.pos, offset || { x: 0, y: 0 }), z ?? this.z, this.#options);
+    public paint(dx: number = 0, dy: number = 0, dz: number = 0) {
+        this.x += dx; // ! LELIJK!
+        this.y += dy;
+        this.z += dz;
+        paintImage(this);
+        this.x -= dx; // ! LELIJKER!
+        this.y -= dy;
+        this.z -= dz;
     }
 }

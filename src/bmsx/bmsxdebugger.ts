@@ -1,13 +1,13 @@
 import { MachineDefinitions } from './bfsm';
-import { area2size, copyPoint, copySize, newPoint, vec3, translatePoint, truncPoint } from './bmsx';
+import { area2size, copy_vec2, new_vec2, vec3, vec2_translate, trunc_vec2, vec2 } from './bmsx';
 import { GameObject } from './gameobject';
 import { Serializer } from './gamereviver';
 import { SpriteObject } from './sprite';
-import { Color, DrawImgFlags, paintImageScaled } from './view';
+import { Color, paintImage } from './view';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
 
 let draggedObj: GameObject | null;
-let draggedObjCursorOffset: vec3;
+let draggedObjCursorOffset: vec2;
 let dragSrcEl: HTMLElement;
 let shiftX: number;
 let shiftY: number;
@@ -15,7 +15,7 @@ let prevPausedState: boolean; // Remember the paused-state before a dialog was o
 
 class ObjectHighlighter extends SpriteObject {
     #highlighted_obj: GameObject;
-    #mijnkleur: Color;
+    static readonly #mijnkleur: Color = { r: 0, g: 0, b: 1, a: .5 };
 
     public constructor() {
         super('debug_highlighter');
@@ -23,7 +23,7 @@ class ObjectHighlighter extends SpriteObject {
         this.visible = false;
         this.#highlighted_obj = null;
         this.z = Math.pow(10, 9);
-        this.#mijnkleur = { r: 0, g: 0, b: 1, a: .5 };
+        this.sprite.colorize = ObjectHighlighter.#mijnkleur;
     }
 
     public get target() {
@@ -33,28 +33,26 @@ class ObjectHighlighter extends SpriteObject {
     public set target(o: GameObject) {
         if (!o) {
             this.#highlighted_obj = null;
-            this.pos.x = this.pos.y = this.size.x = this.size.y = 0;
+            this.x = this.y = this.sx = this.sy = 0;
             this.visible = false;
             return;
         }
 
         this.#highlighted_obj = o;
         if (o.hitarea) {
+            this.pos = vec2_translate(o.pos, o.hitarea.start);
             this.size = area2size(o.hitarea);
-            this.pos = translatePoint(o.pos, o.hitarea.start);
         }
         else {
-            this.pos = copyPoint(o.pos);
-            this.size = copySize(o.size);
+            this.pos = copy_vec2(o.pos);
+            this.size = copy_vec2(o.size);
         }
         // this.size = divPoint(this.size, 4);
-        this.pos = truncPoint(this.pos);
-        this.size = truncPoint(this.size);
+        this.pos = trunc_vec2(this.pos);
+        this.size = trunc_vec2(this.size);
+        this.sprite.sx = this.size.x + 1;
+        this.sprite.sy = this.size.y + 1;
         this.visible = true;
-    }
-
-    public override paint(offset?: vec3): void {
-        paintImageScaled(this.imgid, translatePoint(this.pos, offset), this.z, this.size.x + 1, this.size.y + 1, DrawImgFlags.None, this.#mijnkleur);
     }
 }
 
@@ -119,9 +117,9 @@ export function handleDebugMouseOut(e: MouseEvent): void {
     draggedObj = null;
 }
 
-function startDragGameObject(gameobject_at_cursor: GameObject, offsetToCursor: vec3): void {
+function startDragGameObject(gameobject_at_cursor: GameObject, offsetToCursor: vec2): void {
     draggedObj = gameobject_at_cursor;
-    draggedObjCursorOffset = newPoint(Math.trunc(offsetToCursor.x), Math.trunc(offsetToCursor.y));
+    draggedObjCursorOffset = new_vec2(Math.trunc(offsetToCursor.x), Math.trunc(offsetToCursor.y));
 }
 
 export function handleContextMenu(e: MouseEvent): void {
@@ -511,10 +509,10 @@ export function handleDebugClick(e: MouseEvent): void {
     }
 }
 
-function getGameObjectAtCursor(e: MouseEvent): { objUnderCursor: GameObject | null; offsetToCursor: vec3 | null; } {
+function getGameObjectAtCursor(e: MouseEvent): { objUnderCursor: GameObject | null; offsetToCursor: vec2 | null; } {
     let x = e.offsetX;
     let y = e.offsetY;
-    let p = newPoint(x, y);
+    let p = new_vec2(x, y);
 
     let objsUnderCursor: GameObject[] = global.model.objects.filter(o => o.id !== 'debug_highlighter' && o.insideScaled(p));
     if (objsUnderCursor && objsUnderCursor.length > 0) {

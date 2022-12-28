@@ -60,21 +60,21 @@ export enum Direction {
     Left = 4,
 }
 export interface vec2 {
+    // [Symbol.iterator](): Iterator<number>;
     x: number;
     y: number;
+    z?: number;
 }
 
 export interface vec3 extends vec2 {
-    x: number;
-    y: number;
     z: number;
 }
 
-export type Size = vec3;
+export type Size = vec2 | vec3;
 
 export interface Area {
-    start: vec3;
-    end: vec3;
+    start: vec2 | vec3;
+    end: vec2 | vec3;
 }
 
 export class BFont {
@@ -329,14 +329,18 @@ export function mod(n: number, p: number): number {
 }
 
 export function moveArea(a: Area, p: vec3): Area {
-    return <Area>{
-        start: <vec3>{ x: a.start.x + p.x, y: a.start.y + p.y },
-        end: <vec3>{ x: a.end.x + p.x, y: a.end.y + p.y },
+    return {
+        start: { x: a.start.x + p.x, y: a.start.y + p.y },
+        end: { x: a.end.x + p.x, y: a.end.y + p.y },
     };
 }
 
-export function addPoints(a: vec3, b: vec3): vec3 {
-    return <vec3>{ x: a.x + b.x, y: a.y + b.y };
+export function vec2_translate(a: vec2, b: vec2): vec2 {
+    return { x: a.x + b.x, y: a.y + b.y };
+}
+
+export function vec3_translate(a: vec3, b: vec3): vec3 {
+    return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z };
 }
 
 /// http://stackoverflow.com/questions/4959975/generate-random-value-between-two-numbers-in-javascript
@@ -344,46 +348,45 @@ export function randomInt(min: number, max: number) {
     return Math.floor(Math.random() * (max - min + 1) + min);
 }
 
-export function newPoint(x: number, y: number): vec3 {
-    return <vec3>{ x: x, y: y };
+export function new_vec2(x: number, y: number): vec2 {
+    return { x: x, y: y };
 }
 
-export function copyPoint(toCopy: vec3): vec3 {
-    return <vec3>{ x: toCopy.x, y: toCopy.y };
+export function new_vec3(x: number, y: number, z: number): vec3 {
+    return { x: x, y: y, z: z };
 }
 
-export function truncPoint(p: vec3): vec3 {
-    return <vec3>{ x: Math.trunc(p.x), y: Math.trunc(p.y) };
+export function copy_vec2(toCopy: vec2): vec2 {
+    return { x: toCopy.x, y: toCopy.y };
 }
 
-export function translatePoint(toTranslate: vec3, translate?: vec3): vec3 {
-    return <vec3>{ x: toTranslate.x + (translate?.x ?? 0), y: toTranslate.y + (translate?.y ?? 0) };
+export function trunc_vec2(p: vec2): vec2 {
+    return { x: Math.trunc(p.x), y: Math.trunc(p.y) };
 }
 
-export function multiplyPoint(toMult: vec3, factor: number): vec3 {
-    return <vec3>{ x: toMult.x * factor, y: toMult.y * factor };
+
+export function multiply_vec2(toMult: vec2, factor: number): vec2 {
+    return { x: toMult.x * factor, y: toMult.y * factor };
 }
 
-export function divPoint(toDivide: vec3, divide_by: number): vec3 {
-    return <vec3>{ x: toDivide.x / divide_by, y: toDivide.y / divide_by };
+export function div_vec2(toDivide: vec2, divide_by: number): vec2 {
+    return { x: toDivide.x / divide_by, y: toDivide.y / divide_by };
 }
 
 export function newArea(sx: number, sy: number, ex: number, ey: number): Area {
-    return <Area>{ start: { x: sx, y: sy }, end: { x: ex, y: ey } };
-}
-
-export function newSize(x: number, y: number): Size {
-    return <Size>{ x: x, y: y };
-}
-
-export function copySize(toCopy: Size): Size {
-    return <Size>{ x: toCopy.x, y: toCopy.y };
+    return { start: { x: sx, y: sy }, end: { x: ex, y: ey } };
 }
 
 /// Alternative implementation for Point.Set()
-export function setPoint(p: vec3, new_x: number, new_y: number) {
+export function set_vec2(p: vec2, new_x: number, new_y: number) {
     p.x = new_x;
     p.y = new_y;
+}
+
+export function set_vec3(p: vec3, new_x: number, new_y: number, new_z: number) {
+    p.x = new_x;
+    p.y = new_y;
+    p.z = new_z;
 }
 
 /// Alternative implementation for Size.Set()
@@ -393,7 +396,7 @@ export function setSize(s: Size, new_x: number, new_y: number) {
 }
 
 export function area2size(a: Area) {
-    return <Size>{ x: a.end.x - a.start.x, y: a.end.y - a.start.y };
+    return { x: a.end.x - a.start.x, y: a.end.y - a.start.y };
 }
 
 export function addElementToScreen(element: HTMLElement): void {
@@ -422,8 +425,8 @@ export function createDivSprite(img?: HTMLImageElement, imgsrc?: string | null, 
     return result;
 }
 
-export function GetDeltaFromSourceToTarget(source: vec3, target: vec3): vec3 {
-    let delta = <vec3>{ x: 0, y: 0 };
+export function GetDeltaFromSourceToTarget(source: vec2, target: vec2): vec2 {
+    let delta = { x: 0, y: 0 };
 
     if (Math.abs(target.x - source.x - 0) < 0.01) {
         delta.x = 0;
@@ -482,8 +485,8 @@ export function isSessionStorageAvailable(): boolean {
     return isStorageAvailable('sessionStorage');
 }
 
-export function getLookAtDirection(subjectpos: vec3, targetpos: vec3): Direction {
-    let delta: vec3 = <vec3>{ x: subjectpos.x - targetpos.x, y: subjectpos.x - targetpos.y };
+export function getLookAtDirection(subjectpos: vec2, targetpos: vec2): Direction {
+    let delta: vec2 = { x: subjectpos.x - targetpos.x, y: subjectpos.x - targetpos.y };
     if (Math.abs(delta.x) >= Math.abs(delta.y)) {
         if (delta.x < 0)
             return Direction.Right;

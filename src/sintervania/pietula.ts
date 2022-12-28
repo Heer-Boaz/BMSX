@@ -1,6 +1,6 @@
 import { TileSize, Tile } from '../bmsx/msx';
 import { GameConstants } from './gameconstants';
-import { Area, newArea, Point, newSize, copyPoint, addPoints } from '../bmsx/common';
+import { Area, newArea, Point, new_vec2, copyPoint, addPoints } from '../bmsx/common';
 import { mdef, view, model, controller, sdef } from '../bmsx/bmsx';
 import { BitmapId, AudioId } from './resourceids';
 import { Controller } from './gamecontroller';
@@ -28,7 +28,7 @@ export class Pietula extends Foe {
 		this.canHurtPlayer = false;
 		this.imgid = BitmapId.Pietula1;
 		this.hitarea = newArea(8, 0, 32, 40);
-		this.size = newSize(this.hitarea.end.x, this.hitarea.end.y);
+		this.size = new_vec2(this.hitarea.end.x, this.hitarea.end.y);
 		this.health = 30;
 		this.maxHealth = this.health;
 		this.loops = 0;

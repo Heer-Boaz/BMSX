@@ -3,11 +3,10 @@ import { AudioId, BitmapId } from "./resourceids";
 import { TextWriter } from "../bmsx/textwriter";
 import { SM } from "../bmsx/soundmaster";
 // import { SlotExists, LoadGame } from "../bmsx/gamepersistor";
-import { GameOptions as GO, Direction, Size, vec3, newSize, setPoint, newPoint } from '../bmsx/bmsx';
+import { GameOptions as GO, Direction, Size, vec3, set_vec2, new_vec2, vec2 } from '../bmsx/bmsx';
 import { Constants } from "../bmsx/bmsx";
 import { Input } from "../bmsx/input";
 import { Msx1ExtColors } from "../bmsx/msx";
-import { DrawImgFlags } from '../bmsx/view';
 import { GameObject } from "../bmsx/gameobject";
 
 interface MenuOption {
@@ -80,7 +79,7 @@ export class GameMenu extends GameObject {
     private static fullscreenOptionsOffsets: number[];
     private static fullscreenOptionsOffsetY: number;
     private static fullscreenOptionsRectangleSize: Size;
-    private cursorPos: vec3;
+    private cursorPos: vec2;
     private selectedItemIndex: number;
     private CurrentScreen: MenuItem;
 
@@ -89,14 +88,14 @@ export class GameMenu extends GameObject {
         this.id = 'gamemenu';
         this.z = 900;
         this.visible = false;
-        this.cursorPos = newPoint(0, 0);
-        this.pos = newPoint(GameMenu.menuPosX, GameMenu.menuPosY);
-        this.size = newSize(GameMenu.menuEndX - GameMenu.menuPosX, GameMenu.menuEndY - GameMenu.menuPosY);
+        this.cursorPos = new_vec2(0, 0);
+        this.pos = new_vec2(GameMenu.menuPosX, GameMenu.menuPosY);
+        this.size = new_vec2(GameMenu.menuEndX - GameMenu.menuPosX, GameMenu.menuEndY - GameMenu.menuPosY);
         this.selectedItemIndex = 0;
         this.CurrentScreen = MenuItem.Main;
         GameMenu.fullscreenOptionsOffsets = [global.view.default_font.char_width * 12 - 1, global.view.default_font.char_height * 14 - 1];
-        GameMenu.fullscreenOptionsOffsetY  = -1;
-        GameMenu.fullscreenOptionsRectangleSize = newSize(global.view.default_font.char_width + 2, global.view.default_font.char_height + 2);
+        GameMenu.fullscreenOptionsOffsetY = -1;
+        GameMenu.fullscreenOptionsRectangleSize = new_vec2(global.view.default_font.char_width + 2, global.view.default_font.char_height + 2);
     }
 
     public Open(currentscreen: MenuItem = MenuItem.Main): void {
@@ -127,7 +126,7 @@ export class GameMenu extends GameObject {
         if (!this.visible)
             return;
         this.HandleInput();
-        setPoint(this.cursorPos, this.calculateCursorX(), this.calculateCursorY());
+        set_vec2(this.cursorPos, this.calculateCursorX(), this.calculateCursorY());
     }
 
     public HandleInput(): void {
@@ -186,8 +185,8 @@ export class GameMenu extends GameObject {
                             break;
                         case MenuItem.SaveGame:
                             // if ((model as Model).state != GameState.Event) {
-                                this.CurrentScreen = MenuItem.Save;
-                                this.selectedItemIndex = 0;
+                            this.CurrentScreen = MenuItem.Save;
+                            this.selectedItemIndex = 0;
                             // }
                             // else SM.play(AudioId.Fout);
                             break;
@@ -443,7 +442,7 @@ export class GameMenu extends GameObject {
         }
     }
 
-    override paint = (offset?: vec3):void => {
+    override paint = (offset?: vec3): void => {
         // view.fillRectangle(GameMenu.menuPosX, GameMenu.menuPosY, GameMenu.menuEndX, GameMenu.menuEndY, Msx1Colors[1]);
         // view.drawRectangle(GameMenu.menuPosX, GameMenu.menuPosY, GameMenu.menuEndX, GameMenu.menuEndY, Msx1Colors[15]);
         let titleToDraw: string;
@@ -488,7 +487,7 @@ export class GameMenu extends GameObject {
                         switch (item.type) {
                             case MenuItem.SaveGame:
                                 // if ((model as Model).state != GameState.Event)
-                                    // TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
+                                // TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
                                 // else
                                 TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, undefined, undefined, Msx1ExtColors[0]);
                                 break;
@@ -573,18 +572,25 @@ export class GameMenu extends GameObject {
                     break;
                 }
         }
-        global.view.drawImg(BitmapId.menucursor, this.cursorPos.x, this.cursorPos.y, this.z + 10);
+        global.view.drawImg({ ...this.cursorPos, imgid: BitmapId.menucursor, z: this.z + 10 });
 
         let scalex = GameMenu.menuEndX - GameMenu.menuPosX;
         let scaley = GameMenu.menuEndY - GameMenu.menuPosY;
-        global.view.drawImg(BitmapId.blackpixel, GameMenu.menuPosX + 1, GameMenu.menuPosY + 1, this.z + 1, DrawImgFlags.None, scalex - 2, scaley - 2);
-        global.view.drawImg(BitmapId.whitepixel, GameMenu.menuPosX, GameMenu.menuPosY, this.z, DrawImgFlags.None, scalex, scaley);
-    }
+        global.view.drawImg({ imgid: BitmapId.blackpixel, x: GameMenu.menuPosX + 1, y: GameMenu.menuPosY + 1, z: this.z + 1, sx: scalex - 2, sy: scaley - 2 });
+        global.view.drawImg({ imgid: BitmapId.whitepixel, x: GameMenu.menuPosX, y: GameMenu.menuPosY, z: this.z, sx: scalex, sy: scaley });
+    };
 
     private printFullscreenOptionRectangle(y: number): void {
         // let selectedIndex: number = GO.Fullscreen ? 0 : 1;
         let selectedIndex: number = global.view.isFullscreen ? 0 : 1;
-        global.view.drawImg(BitmapId.redpixel, GameMenu.fullscreenOptionsOffsets[selectedIndex] + GameMenu.menuPosX + GameMenu.optionItemsOffsetX, y + GameMenu.fullscreenOptionsOffsetY, this.z + 2, DrawImgFlags.None, GameMenu.fullscreenOptionsRectangleSize.x, GameMenu.fullscreenOptionsRectangleSize.y);
+        global.view.drawImg({
+            imgid: BitmapId.redpixel,
+            x: GameMenu.fullscreenOptionsOffsets[selectedIndex] + GameMenu.menuPosX + GameMenu.optionItemsOffsetX,
+            y: y + GameMenu.fullscreenOptionsOffsetY,
+            z: this.z + 2,
+            sx: GameMenu.fullscreenOptionsRectangleSize.x,
+            sy: GameMenu.fullscreenOptionsRectangleSize.y
+        });
     }
 
     private printSaveSlot(x: number, y: number, slotIndex: number): void {

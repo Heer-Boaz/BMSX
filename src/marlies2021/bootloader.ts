@@ -7,7 +7,7 @@ import { TextWriter } from '../bmsx/textwriter';
 import { DrawImgFlags, paintSprite } from '../bmsx/view';
 import { GameMenu } from './gamemenu';
 import { statedef_builder, mdef, sdef, sstate } from '../bmsx/bfsm';
-import { Direction, newArea, newSize, vec3, newPoint, randomInt, Game, BFont } from '../bmsx/bmsx';
+import { Direction, newArea, new_vec2, vec2, new_vec2, randomInt, Game, BFont } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
 import { BaseModel, Space } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';
@@ -159,11 +159,11 @@ class fles extends SpriteObject {
         let me = this;
 
         this.hitarea = newArea(4, 4, 12, 12);
-        this.size = newSize(16, 16);
+        this.size = new_vec2(16, 16);
         this.hittable = true;
     }
 
-    override onspawn(spawningPos?: vec3): void {
+    override onspawn(spawningPos?: vec2): void {
         super.onspawn(spawningPos);
         this.state.to('vlieg');
     }
@@ -217,7 +217,7 @@ class stoom extends SpriteObject {
         this.imgid = BitmapId.None;
     }
 
-    override onspawn(spawningPos?: vec3): void {
+    override onspawn(spawningPos?: vec2): void {
         super.onspawn(spawningPos);
         this.state.to('doepluim');
     }
@@ -229,7 +229,7 @@ class monster extends SpriteObject {
         this.imgid = BitmapId.monster;
         this.z = 1100;
         this.hitarea = newArea(0, 80, 0, 50);
-        this.size = newSize(80, 50);
+        this.size = new_vec2(80, 50);
         this.hittable = true;
         let me = this;
 
@@ -243,7 +243,7 @@ class monster extends SpriteObject {
         };
     }
 
-    override onspawn(spawningPos?: vec3): void {
+    override onspawn(spawningPos?: vec2): void {
         super.onspawn(spawningPos);
         _model.monster = this;
     }
@@ -297,7 +297,7 @@ class speler extends SpriteObject {
                                     _model.stressLevel = 0;
                                     ik.state.to('spot');
                                     _model.enemyHp = 100;
-                                    _model.spawn(new monster(), newPoint(256 - 80, 192 - 60));
+                                    _model.spawn(new monster(), new_vec2(256 - 80, 192 - 60));
                                 }
                             }
                         }),
@@ -465,7 +465,7 @@ class speler extends SpriteObject {
                             onend: (_, ik: speler): void => {
                                 ik.state.to('boos', 'anistate');
                                 ik.state.to('fight');
-                                _model.spawn(new fles(), newPoint(ik.pos.x + 16, ik.pos.y));
+                                _model.spawn(new fles(), new_vec2(ik.pos.x + 16, ik.pos.y));
                             }
                         }),
 
@@ -482,17 +482,17 @@ class speler extends SpriteObject {
         this.z = 1000;
         this.floatbit = false;
         this.hitarea = newArea(0, 0, 16, 16);
-        this.size = newSize(16, 16);
+        this.size = new_vec2(16, 16);
     }
 
-    override onspawn(spawningPos?: vec3): void {
+    override onspawn(spawningPos?: vec2): void {
         super.onspawn(spawningPos);
         this.state.to('relax');
         this.state.to('relax', 'anistate');
         this.state.to('floating', 'float');
     }
 
-    override paint = (offset?: vec3, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }) => {
+    override paint = (offset?: vec2, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }) => {
         if (this.state.getCurrentId() == 'spot') {
             TextWriter.drawText(64, 40, "Artiestieke impressie");
             TextWriter.drawText(64, 48, "van stressoren zoals");
@@ -531,7 +531,7 @@ class yakuzi extends SpriteObject {
                                 ++s.nudges;
                             },
                             onnext() {
-                                _model.spawn(new stoom(), newPoint(randomInt(8, 160), randomInt(140, 172)));
+                                _model.spawn(new stoom(), new_vec2(randomInt(8, 160), randomInt(140, 172)));
                             },
                         }),
                     }
@@ -546,7 +546,7 @@ class yakuzi extends SpriteObject {
         this.z = 0;
     }
 
-    override onspawn(spawningPos?: vec3): void {
+    override onspawn(spawningPos?: vec2): void {
         super.onspawn(spawningPos);
         this.state.to('wees_een_yakuzi');
     }
@@ -568,7 +568,7 @@ class hud extends SpriteObject {
         return ~~(hud.HealthBarSizeX / 100 * percentage) + 1;
     }
 
-    override paint = (offset?: vec3, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }) => {
+    override paint = (offset?: vec2, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }) => {
         let lengthShown = this.percentageToBarLength(_model.stressLevel);
         _global.view.drawImg(BitmapId.HUD_stress, 60, 10, DrawImgFlags.None, lengthShown);
 
@@ -589,16 +589,16 @@ let _model: modelclass;
 
 var _global = window || global;
 _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: GainNode): void => {
-    let _view = new viewclass(newSize(MSX1ScreenWidth, MSX1ScreenHeight));
+    let _view = new viewclass(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
     _model = new modelclass();
     new Game(rom, _model, _view, sndcontext, gainnode);
     global.view.default_font = new BFont(BitmapId);
 
     global.game.start();
     let model = global.model;
-    model.spawn(new yakuzi(), newPoint(0, 32));
-    model.spawn(new hud(), newPoint(0, 0));
+    model.spawn(new yakuzi(), new_vec2(0, 32));
+    model.spawn(new hud(), new_vec2(0, 0));
     let marlies = new speler();
     _model.marlies = marlies;
-    model.spawn(marlies, newPoint(30, 142));
+    model.spawn(marlies, new_vec2(30, 142));
 };

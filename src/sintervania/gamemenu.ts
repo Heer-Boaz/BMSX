@@ -9,7 +9,7 @@ import { GameState, Model } from "./gamemodel";
 import { SlotExists, LoadGame } from "../bmsx/gamepersistor";
 import { GameOptions as GO, GameObject, mdef, model, controller } from '../bmsx/bmsx';
 import { Constants } from "../bmsx/bmsx";
-import { newSize, setPoint } from "../bmsx/common";
+import { new_vec2, setPoint } from "../bmsx/common";
 import { view, game } from "../bmsx/bmsx";
 import { Input } from "../bmsx/input";
 import { Msx1ExtColors } from "../bmsx/msx";
@@ -84,7 +84,7 @@ export class GameMenu extends mdef implements GameObject {
     ];
     private static fullscreenOptionsOffsets: number[] = [TextWriter.FontWidth * 12 - 1, TextWriter.FontWidth * 14 - 1];
     private static fullscreenOptionsOffsetY: number = -1;
-    private static fullscreenOptionsRectangleSize: Size = newSize(TextWriter.FontWidth + 2, TextWriter.FontHeight + 2);
+    private static fullscreenOptionsRectangleSize: Size = new_vec2(TextWriter.FontWidth + 2, TextWriter.FontHeight + 2);
     public visible: boolean;
     private cursorPos: Point;
     private selectedItemIndex: number;

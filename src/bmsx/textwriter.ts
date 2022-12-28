@@ -1,17 +1,17 @@
-import { BFont, GameOptions as GO, vec3 } from "./bmsx";
-import { Color, DrawImgFlags } from './view';
+import { BFont, GameOptions as GO, vec2 } from "./bmsx";
+import { Color } from './view';
 
 export class TextWriter {
-    public static drawText(x: number, y: number, textToWrite: string | string[], z: number = 950, _font: BFont = null, color: Color = null): void {
-        let font = _font ?? global.view.default_font as BFont;
-        let startPos: vec3 = <vec3>{ x: x, y: y }
+    public static drawText(x: number, y: number, textToWrite: string | string[], z: number = 950, _font?: BFont, color?: Color): void {
+        let font = _font ?? global.view.default_font;
+        let startPos: vec2 = { x: x, y: y }
         let stepX: number = font.char_width;
         let stepY: number = font.char_height;
-        let pos: vec3 = <vec3>{ x: startPos.x, y: startPos.y };
+        let pos: vec2 = { x: startPos.x, y: startPos.y };
         if (Array.isArray(textToWrite)) {
             for (let text of textToWrite) {
                 for (let i: number = 0; i < text.length; i++) {
-                    global.view.drawImg(font.char_to_img(text[i]), pos.x, pos.y, z, DrawImgFlags.None, undefined, undefined, color);
+                    global.view.drawImg({ imgid: font.char_to_img(text[i]), x: pos.x, y: pos.y, z: z, colorize: color });
                     pos.x += stepX;
                 }
                 pos.x = startPos.x;
@@ -22,7 +22,7 @@ export class TextWriter {
         }
         else {
             for (let i: number = 0; i < textToWrite.length; i++) {
-                global.view.drawImg(font.char_to_img(textToWrite[i]), pos.x, pos.y, z, DrawImgFlags.None, undefined, undefined, color);
+                global.view.drawImg({ imgid: font.char_to_img(textToWrite[i]), x: pos.x, y: pos.y, z: z, colorize: color });
                 pos.x += stepX;
             }
             pos.x = startPos.x;

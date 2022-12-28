@@ -1,10 +1,10 @@
 import { statecontext } from "./bfsm";
-import { vec3, Size, Area, Direction, moveArea, multiplyPoint, newPoint, divPoint, mod, vec2 } from "./bmsx";
+import { vec3, Area, Direction, moveArea, multiply_vec2, new_vec2, div_vec2, mod, vec2, new_vec3 } from "./bmsx";
 import { insavegame } from "./gamereviver";
 import { TileSize } from "./msx";
 
 @insavegame
-export class GameObject {
+export class GameObject implements vec2, vec3 {
     // For converting this GameObject to a string ('id')
     public [Symbol.toPrimitive]() {
         return this.id;
@@ -15,6 +15,7 @@ export class GameObject {
 
     public _x: number;
     public _y: number;
+    public _z: number;
 
     public get x(): number {
         return this._x;
@@ -28,44 +29,71 @@ export class GameObject {
     public set y(__y: number) {
         this._y = __y;
     }
-
-    public _z: number;
     public get z(): number {
         return this._z;
     }
     public set z(__z: number) {
-        if (__z > 1000) __z = 1000;
+        if (__z > 10000) __z = 10000;
         if (__z < 0) __z = 0;
         this._z = __z;
     }
 
     public get pos(): vec3 {
-        return { x: this.x, y: this.y, z: this.z };
+        return { x: this._x, y: this._y, z: this._z };
     }
     public set pos(p: vec2 | vec3) {
-        this.x = p.x;
-        this.y = p.y;
-        this.z = p.z;
+        this._x = p.x;
+        this._y = p.y;
+        this._z = p.z ?? this._z;
     }
 
     public get xy(): vec2 {
+        return { x: this._x, y: this._y };
+    }
+
+    public set xy(v: vec2) {
+        this._x = v.x;
+        this._y = v.y;
+    }
+
+    public get xyz(): vec3 {
+        return { x: this._x, y: this._y, z: this._z };
+    }
+    public set xyz(v: vec3) {
+        this._x = v.x;
+        this._y = v.y;
+        this._z = v.z;
     }
 
     public _sx: number;
+    public get sx(): number {
+        return this._sx;
+    }
     public set sx(__sx: number) {
         this._sx = __sx;
     }
     public _sy: number;
+    public get sy(): number {
+        return this._sy;
+    }
     public set sy(__sy: number) {
         this._sy = __sy;
     }
     public _sz: number;
+    public get sz(): number {
+        return this._sz;
+    }
     public set sz(__sz: number) {
         this._sz = __sz;
     }
 
-    public get size(): Size {
-        return { x: this.x, y: this.y, z: this.z };
+    public get size(): vec3 {
+        return { x: this._sx, y: this._sy, z: this._sz };
+    }
+    public set size(__s: vec2 | vec3) {
+        this._sx = __s.x;
+        this._sy = __s.y;
+        this._sz = __s.z ?? this._sz;
     }
 
     public get wallHitarea(): Area { return this.hitarea; }
@@ -124,16 +152,16 @@ export class GameObject {
      * the FSM-state to the initial state (if specified).
      * @param spawningPos
      */
-    public onspawn?(spawningPos?: vec3): void {
-        if (spawningPos) [this.pos.x, this.pos.y] = [spawningPos.x, spawningPos.y];
+    public onspawn?(spawningPos?: vec2 | vec3): void {
+        if (spawningPos) this.pos = spawningPos;
 
         let start_state_id = this.state?.definition?.start_state;
         start_state_id && this.state.to(start_state_id);
     }
     public ondispose?: () => void;
 
-    public paint?(offset?: vec3): void;
-    public postpaint?(offset?: vec3): void; // Post-processing such as lighting effects or the characters of an ASCII-buffer in case of an ASCII-sprite
+    public paint?(): void;
+    public postpaint?(): void; // Post-processing such as lighting effects or the characters of an ASCII-buffer in case of an ASCII-sprite
     public onloaded?: () => void;
 
     /**
@@ -180,9 +208,8 @@ export class GameObject {
         this.id = _id ?? GameObject.generateId();
         this.hittable = true;
         this.visible = true;
-        this.pos ??= { x: 0, y: 0 };
-        this.size ??= { x: 0, y: 0 };
-        this.z = 0;
+        this.xyz = new_vec3(0, 0, 0);
+        this.size = new_vec2(0, 0);
         this.disposeFlag = false;
         this.disposeOnSwitchRoom = true;
         this.state = statecontext.create(_fsm_id ?? this.constructor.name, this.id);
@@ -240,23 +267,23 @@ export class GameObject {
     *  transforming the game coordinates to canvas coordinates and that requires scaling
     *  to be taken into account.
     */
-    public insideScaled(p: vec3): vec3 | null {
+    public insideScaled(p: vec2): vec2 | null {
         let o1 = this;
 
-        let o1p = multiplyPoint(o1.pos, global.view.scale);
+        let o1p = multiply_vec2(o1.pos, global.view.scale);
         let o1a: Area;
         if (o1.hitarea) {
-            o1a = <Area>{ start: multiplyPoint(o1.hitarea.start, global.view.scale), end: multiplyPoint(o1.hitarea.end, global.view.scale) };
+            o1a = <Area>{ start: multiply_vec2(o1.hitarea.start, global.view.scale), end: multiply_vec2(o1.hitarea.end, global.view.scale) };
         }
         else if (o1.size) {
-            o1a = <Area>{ start: newPoint(0, 0), end: multiplyPoint(o1.size, global.view.scale) };
+            o1a = <Area>{ start: new_vec2(0, 0), end: multiply_vec2(o1.size, global.view.scale) };
         }
         else return null;
 
         if (o1p.x + o1a.end.x >= p.x && o1p.x + o1a.start.x <= p.x &&
             o1p.y + o1a.end.y >= p.y && o1p.y + o1a.start.y <= p.y) {
-            let offsetToP = newPoint(p.x - o1p.x, p.y - o1p.y);
-            return divPoint(offsetToP, global.view.scale);
+            let offsetToP = new_vec2(p.x - o1p.x, p.y - o1p.y);
+            return div_vec2(offsetToP, global.view.scale);
         }
         return null;
     }

@@ -5,7 +5,7 @@ import { BitmapId } from './resourceids';
 import { Input } from '../bmsx/input';
 import { mdef, sstate, sdef, statedef_builder, machine_states } from '../bmsx/bfsm';
 import { insavegame } from '../bmsx/gamereviver';
-import { newArea, vec3, newPoint, Direction, Game, newSize } from '../bmsx/bmsx';
+import { newArea, vec3, new_vec2, Direction, Game, new_vec2 } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
 import { BaseModel } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';
@@ -101,7 +101,7 @@ class gamemodel extends BaseModel {
     }
 
     public override do_one_time_game_init(): this {
-        _model.spawn(new bclass(), newPoint(100, 100));
+        _model.spawn(new bclass(), new_vec2(100, 100));
         return this;
     }
 
@@ -137,7 +137,7 @@ var _global = window || global;
 
 _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: GainNode): void => {
     _model = new gamemodel();
-    _view = new gameview(newSize(MSX1ScreenWidth, MSX1ScreenHeight));
+    _view = new gameview(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
     _game = new Game(rom, _model, _view, sndcontext, gainnode);
     _game.start();
 };

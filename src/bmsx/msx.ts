@@ -1,4 +1,4 @@
-import { vec3 } from "./bmsx";
+import { vec2 } from "./bmsx";
 import { Color } from "./view";
 
 export const TileSize: number = 16;
@@ -43,11 +43,11 @@ export class Tile {
         return v * TileSize;
     }
 
-    public static toStagePoint(x: number, y: number): vec3 {
+    public static toStagePoint(x: number, y: number): vec2 {
         // if ((<Point>x).y) {
         // return { x: (<Point>x).x * TileSize, y: (<Point>x).y * TileSize };
         // }
-        return { x: <number>x * TileSize, y: y * TileSize };
+        return { x: x * TileSize, y: y * TileSize };
     }
 }
 

@@ -1,5 +1,5 @@
 import { Size, vec3 } from "./bmsx";
-import { BaseView, Color, DrawImgFlags } from './view';
+import { BaseView, Color, DrawImgOptions } from './view';
 
 var bvec = {
     set: function (v: Float32Array, x: number, y: number, w: number, h: number, sx: number, sy: number): void {
@@ -66,10 +66,10 @@ var bvec = {
     // },
 };
 
-const DEFAULT_VERTEX_COLOR: Color = { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
-const VERTEX_COLOR_COLORIZED_RED: Color = { r: 1.0, g: 0.0, b: 0.0, a: 1.0 };
-const VERTEX_COLOR_COLORIZED_GREEN: Color = { r: 0.0, g: 1.0, b: 0.0, a: 1.0 };
-const VERTEX_COLOR_COLORIZED_BLUE: Color = { r: 0.0, g: 0.0, b: 1.0, a: 1.0 };
+export const DEFAULT_VERTEX_COLOR: Color = { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
+export const VERTEX_COLOR_COLORIZED_RED: Color = { r: 1.0, g: 0.0, b: 0.0, a: 1.0 };
+export const VERTEX_COLOR_COLORIZED_GREEN: Color = { r: 0.0, g: 1.0, b: 0.0, a: 1.0 };
+export const VERTEX_COLOR_COLORIZED_BLUE: Color = { r: 0.0, g: 0.0, b: 1.0, a: 1.0 };
 
 export abstract class GLView extends BaseView {
     public glctx: WebGL2RenderingContext;
@@ -288,8 +288,8 @@ export abstract class GLView extends BaseView {
         _this.glctx.viewport(0, 0, _this.canvas.width, _this.canvas.height);
     }
 
-    override drawgame(gamescreenOffset?: vec3, clearCanvas: boolean = true): void {
-        super.drawgame(gamescreenOffset, clearCanvas);
+    override drawgame(clearCanvas: boolean = true): void {
+        super.drawgame(clearCanvas);
         this.drawSprites();
     }
 
@@ -306,7 +306,8 @@ export abstract class GLView extends BaseView {
         _this.drawImgReqIndex = 0;
     }
 
-    override drawImg(imgid: string, x: number, y: number, z: number, options: DrawImgFlags = DrawImgFlags.None, sx: number = 1, sy: number = 1, _color_override?: Color): void {
+    override drawImg(options: DrawImgOptions): void {
+        let { x, y, z, imgid, flip_h = false, flip_v = false, sx = 1, sy = 1, colorize = DEFAULT_VERTEX_COLOR } = options;
         let imgmeta = global.game.rom['imgresources'][imgid]?.['imgmeta'];
         if (!imgmeta) throw `Image with id '${imgid}' not found while trying to retrieve image metadata!`;
         let _this = global.view as GLView;
@@ -314,22 +315,14 @@ export abstract class GLView extends BaseView {
         let width = imgmeta['width'];
         let height = imgmeta['height'];
 
-        let flipx = (options & DrawImgFlags.HFLIP) === DrawImgFlags.HFLIP;
-        let flipy = (options & DrawImgFlags.VFLIP) === DrawImgFlags.VFLIP;
-
         bvec.set(_this.vertexcoords, x, y, width, height, sx, sy);
-        if (flipx && flipy) _this.texcoords.set(imgmeta['texcoords_fliphv']);
-        else if (flipx) _this.texcoords.set(imgmeta['texcoords_fliph']);
-        else if (flipy) _this.texcoords.set(imgmeta['texcoords_flipv']);
+        if (flip_h && flip_v) _this.texcoords.set(imgmeta['texcoords_fliphv']);
+        else if (flip_h) _this.texcoords.set(imgmeta['texcoords_fliph']);
+        else if (flip_v) _this.texcoords.set(imgmeta['texcoords_flipv']);
         else _this.texcoords.set(imgmeta['texcoords']);
 
-        bvec.set_zcoord(_this.zcoords, z / 1000);
-
-        if (_color_override) bvec.set_color(_this.color_override, _color_override);
-        else if ((options & DrawImgFlags.COLORIZE_R) === DrawImgFlags.COLORIZE_R) bvec.set_color(_this.color_override, VERTEX_COLOR_COLORIZED_RED);
-        else if ((options & DrawImgFlags.COLORIZE_G) === DrawImgFlags.COLORIZE_G) bvec.set_color(_this.color_override, VERTEX_COLOR_COLORIZED_GREEN);
-        else if ((options & DrawImgFlags.COLORIZE_B) === DrawImgFlags.COLORIZE_B) bvec.set_color(_this.color_override, VERTEX_COLOR_COLORIZED_BLUE);
-        else bvec.set_color(_this.color_override, DEFAULT_VERTEX_COLOR);
+        bvec.set_zcoord(_this.zcoords, z / 10000);
+        bvec.set_color(_this.color_override, colorize);
 
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
         gl.bufferSubData(gl.ARRAY_BUFFER, 48 * _this.drawImgReqIndex, _this.vertexcoords);

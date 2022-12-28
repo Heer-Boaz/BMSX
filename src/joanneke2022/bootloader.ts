@@ -1,7 +1,7 @@
-import { BFont } from './../bmsx/bmsx';
+import { BFont, new_vec3, vec2 } from './../bmsx/bmsx';
 import { MSX2ScreenHeight, MSX2ScreenWidth } from './../bmsx/msx';
 import { RomLoadResult } from '../bmsx/rompack';
-import { Game, newPoint, Direction, newSize, newArea, vec3, randomInt, copyPoint } from '../bmsx/bmsx';
+import { Game, new_vec2, Direction, newArea, randomInt, copy_vec2 } from '../bmsx/bmsx';
 import { sdef, sstate, Bla, statedef_builder, build_fsm, statecontext, machine_states } from '../bmsx/bfsm';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
@@ -181,12 +181,12 @@ class gamemodel extends BaseModel {
 
         this[id2space]['default' satisfies model_spaces].spawn(new hud());
         this[id2space]['default' satisfies model_spaces].spawn(_diamant);
-        this[id2space]['default' satisfies model_spaces].spawn(_draaischijf, newPoint(96, 120));
-        this[id2space]['default' satisfies model_spaces].spawn(new barst(zijde.Voor, newPoint(_diamant.pos.x + 30, _diamant.pos.y + 10)));
-        this[id2space]['default' satisfies model_spaces].spawn(new barst(zijde.Voor, newPoint(_diamant.pos.x + 60, _diamant.pos.y + 40)));
-        this[id2space]['default' satisfies model_spaces].spawn(new barst(zijde.Voor, newPoint(_diamant.pos.x + 110, _diamant.pos.y + 20)));
-        this[id2space]['default' satisfies model_spaces].spawn(new barst(zijde.Voor, newPoint(_diamant.pos.x + 80, _diamant.pos.y + 60)));
-        this[id2space]['default' satisfies model_spaces].spawn(new barst(zijde.Boven, newPoint(_diamant.pos.x + 90, _diamant.pos.y + 100)));
+        this[id2space]['default' satisfies model_spaces].spawn(_draaischijf, new_vec2(96, 120));
+        this[id2space]['default' satisfies model_spaces].spawn(new barst(zijde.Voor, new_vec2(_diamant.pos.x + 30, _diamant.pos.y + 10)));
+        this[id2space]['default' satisfies model_spaces].spawn(new barst(zijde.Voor, new_vec2(_diamant.pos.x + 60, _diamant.pos.y + 40)));
+        this[id2space]['default' satisfies model_spaces].spawn(new barst(zijde.Voor, new_vec2(_diamant.pos.x + 110, _diamant.pos.y + 20)));
+        this[id2space]['default' satisfies model_spaces].spawn(new barst(zijde.Voor, new_vec2(_diamant.pos.x + 80, _diamant.pos.y + 60)));
+        this[id2space]['default' satisfies model_spaces].spawn(new barst(zijde.Boven, new_vec2(_diamant.pos.x + 90, _diamant.pos.y + 100)));
 
         return this;
     }
@@ -215,7 +215,7 @@ class hoeraStuff extends SpriteObject {
         this.imgid = BitmapId.sint;
     }
 
-    override paint(offset?: vec3) {
+    override paint() {
         let line1: string;
         let line2: string;
         let line3: string;
@@ -246,7 +246,7 @@ class hoeraStuff extends SpriteObject {
         TextWriter.drawText(16, 168, `${line2}`);
         TextWriter.drawText(16, 176, `${line3}`);
 
-        super.paint.call(this, offset); // .call() nodig, anders "this" undefined
+        super.paint.call(this); // .call() nodig, anders "this" undefined
     };
 };
 
@@ -292,14 +292,13 @@ class uitlegStuff extends SpriteObject {
 
     constructor() {
         super();
-        this.z = 0;
         this.imgid = BitmapId.diamond_front;
-        this.hitarea = newArea(0, 0, 187, 105);
-        this.size = newSize(187, 105);
-        this.pos = newPoint((MSX2ScreenWidth - this.size.x) / 2, (MSX2ScreenHeight - this.size.y) / 2);
+        this.hitarea = newArea(0, 0, this.sx, this.sy);
+        // this.size = new_vec2(187, 105);
+        this.pos = new_vec3((MSX2ScreenWidth - this.sx) / 2, (MSX2ScreenHeight - this.sy) / 2, 0);
     }
 
-    override paint(offset?: vec3) {
+    override paint() {
         let line1: string;
         let line2: string;
         let line3: string;
@@ -351,10 +350,10 @@ class uitlegStuff extends SpriteObject {
         TextWriter.drawText(16, 168, `${line2}`);
         TextWriter.drawText(16, 176, `${line3}`);
 
-        super.paint.call(this, offset); // .call() nodig, anders "this" undefined
+        super.paint.call(this); // .call() nodig, anders "this" undefined
     };
 
-    override onspawn(spawningPos?: vec3): void {
+    override onspawn(spawningPos?: vec2): void {
         this.state.to('uitleg');
     }
 };
@@ -366,11 +365,11 @@ class evaluatieStuff extends SpriteObject {
         this.imgid = BitmapId.sint_evalueert;
     }
 
-    override paint(offset?: vec3) {
+    override paint() {
         TextWriter.drawText(4, 8, `Sinterklaas kijkt nu hoe goed`);
         TextWriter.drawText(4, 16, `je het hebt gedaan Joanneke...`);
 
-        super.paint.call(this, offset); // .call() nodig, anders "this" undefined
+        super.paint.call(this); // .call() nodig, anders "this" undefined
     };
 };
 
@@ -399,11 +398,11 @@ class hud extends GameObject {
         super(undefined, 'test');
     }
 
-    override onspawn(spawningPos?: vec3): void {
+    override onspawn(spawningPos?: vec2): void {
         this.state.to('default');
     }
 
-    override paint(offset?: vec3) {
+    override paint() {
         TextWriter.drawText(0, 0, `Time to shine: ${_model.time_to_shine}`);
     };
 }
@@ -452,7 +451,7 @@ class stoom extends SpriteObject {
         this.imgid = BitmapId.None;
     }
 
-    override onspawn(spawningPos?: vec3): void {
+    override onspawn(spawningPos?: vec2): void {
         super.onspawn(spawningPos);
         this.state.to('doepluim');
     }
@@ -471,22 +470,22 @@ class diamant extends SpriteObject {
         switch (this._getoonde_zijde) {
             case zijde.Voor:
                 this.imgid = BitmapId.diamond_front;
-                this.hitarea = newArea(0, 0, 187, 105);
-                this.size = newSize(187, 105);
+                this.hitarea = newArea(0, 0, this.sx, this.sy);
+                // this.size = new_vec2(187, 105);
                 break;
             case zijde.Zij:
                 this.imgid = BitmapId.diamond_front;
-                this.hitarea = newArea(0, 0, 187, 105);
-                this.size = newSize(187, 105);
+                this.hitarea = newArea(0, 0, this.sx, this.sy);
+                // this.size = new_vec2(187, 105);
                 break;
             case zijde.Boven:
                 this.imgid = BitmapId.diamond_top;
-                this.hitarea = newArea(0, 0, 192, 192);
-                this.size = newSize(192, 192);
+                this.hitarea = newArea(0, 0, this.sx, this.sy);
+                // this.size = new_vec2(192, 192);
                 break;
         }
 
-        this.pos = newPoint((MSX2ScreenWidth - this.size.x) / 2, (MSX2ScreenHeight - this.size.y) / 2);
+        this.xy = new_vec2((MSX2ScreenWidth - this.sx) / 2, (MSX2ScreenHeight - this.sy) / 2);
     }
 
     constructor() {
@@ -561,7 +560,7 @@ class draaischijf extends SpriteObject {
                         this.imgid = s.current;
                         if (s.head === 0) ++this.pos.y;
                         else --this.pos.y;
-                        _model.spawn(new stoom(), newPoint(randomInt(this.pos.x, this.pos.x + this.size.x), randomInt(this.pos.y, this.pos.y + this.size.y)));
+                        _model.spawn(new stoom(), new_vec2(randomInt(this.pos.x, this.pos.x + this.size.x), randomInt(this.pos.y, this.pos.y + this.size.y)));
                     },
                 }),
                 slijpen_afkoel: new sdef('slijpen_afkoel', {
@@ -608,16 +607,16 @@ class draaischijf extends SpriteObject {
 
     public static handle_input_idle_state(this: draaischijf, s: sstate<draaischijf>): void {
         if (Input.KD_LEFT) {
-            this.setx(this.pos.x - 1);
+            this.setx(this.x - 1);
         }
         if (Input.KD_RIGHT) {
-            this.setx(this.pos.x + 1);
+            this.setx(this.x + 1);
         }
         if (Input.KD_UP) {
-            this.sety(this.pos.y - 1);
+            this.sety(this.y - 1);
         }
         if (Input.KD_DOWN) {
-            this.sety(this.pos.y + 1);
+            this.sety(this.y + 1);
         }
         if (Input.KD_BTN1) {
             this.state.to('slijpen_opstart');
@@ -665,7 +664,7 @@ class draaischijf extends SpriteObject {
         }
     }
 
-    override onspawn(spawningPos?: vec3): void {
+    override onspawn(spawningPos?: vec2): void {
         super.onspawn(spawningPos);
         this.state.to('idle');
     }
@@ -692,7 +691,7 @@ abstract class onvolmaaktheid extends SpriteObject {
     public zijde: zijde;
     public _ernst!: number;
 
-    constructor(_soort: onvolmaaktheid_soort, _zijde: zijde, _plek: vec3, __ernst?: number) {
+    constructor(_soort: onvolmaaktheid_soort, _zijde: zijde, _plek: vec2, __ernst?: number) {
         super();
         this.soort = _soort;
         this.zijde = _zijde;
@@ -705,10 +704,10 @@ abstract class onvolmaaktheid extends SpriteObject {
         ++this.state.current.nudges;
     };
 
-    override paint(offset?: vec3) {
+    override paint() {
         // Toon alleen als diamant op zelfde locatie is als dat diamant is weergegeven
         if (_model.diamant.getoonde_zijde === this.zijde)
-            super.paint.call(this, offset); // .call() nodig, anders "this" undefined
+            super.paint.call(this); // .call() nodig, anders "this" undefined
     }
 }
 
@@ -763,16 +762,16 @@ class burn extends onvolmaaktheid {
         };
     }
 
-    override onspawn = (spawningPos?: vec3): void => {
+    override onspawn = (spawningPos?: vec2): void => {
         super.onspawn?.(spawningPos);
         this.state.to('wees_een_burn');
     };
 
-    constructor(_zijde: zijde, _plek: vec3, __ernst?: number) {
+    constructor(_zijde: zijde, _plek: vec2, __ernst?: number) {
         super(onvolmaaktheid_soort.Burn, _zijde, _plek, __ernst);
         this.imgid = BitmapId.None;
-        this.hitarea = newArea(0, 0, 40, 31);
-        this.size = newSize(40, 31);
+        this.hitarea = newArea(0, 0, this.sx, this.sy);
+        // this.size = new_vec2(40, 31);
     }
 }
 
@@ -815,7 +814,7 @@ class barst extends onvolmaaktheid {
                     onend(s: sstate, _) { },
                     onnext(this: barst, s: sstate<barst>) {
                         // BURN!!!!
-                        _model.spawn(new burn(this.zijde, copyPoint(this.pos)));
+                        _model.spawn(new burn(this.zijde, copy_vec2(this.pos)));
                         this.disposeFlag = true; // Vervang met nieuwe soort onvolmaaktheid
                     }
                 },
@@ -845,17 +844,17 @@ class barst extends onvolmaaktheid {
         return s.tape.length - 1;
     }
 
-    override onspawn = (spawningPos?: vec3): void => {
+    override onspawn = (spawningPos?: vec2): void => {
         super.onspawn?.(spawningPos);
         this.state.to('wees_een_barst');
     };
 
-    constructor(_zijde: zijde, _plek: vec3, __ernst?: number) {
+    constructor(_zijde: zijde, _plek: vec2, __ernst?: number) {
         super(onvolmaaktheid_soort.Barst, _zijde, _plek);
         let defaultErnst = this.max_ernst();
         __ernst && (this.ernst = defaultErnst);
         this.hitarea = newArea(0, 0, 40, 31);
-        this.size = newSize(40, 31);
+        this.size = new_vec2(40, 31);
     }
 }
 
@@ -870,7 +869,7 @@ var _global = globalThis;
 
 _global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: GainNode): void => {
     _model = new gamemodel();
-    _view = new gameview(newSize(MSX1ScreenWidth, MSX1ScreenHeight));
+    _view = new gameview(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
     _view.default_font = new BFont(BitmapId);
     _game = new Game(rom, _model, _view, sndcontext, gainnode);
 
