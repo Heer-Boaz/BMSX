@@ -528,7 +528,7 @@ export class GameMenu extends GameObject {
                                 {
                                     TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
                                     offsetX += GameMenu.soundVolumeText.length * global.view.default_font.char_width;
-                                    GO.VolumePercentage = Math.trunc(SM.volume * 100); // TODO: LELIJK!!!!
+                                    GO.VolumePercentage = ~~(SM.volume * 100); // TODO: LELIJK!!!!
                                     let text = GO.VolumePercentage > 0 ? GO.VolumePercentage + "%" : "Off";
                                     TextWriter.drawText(offsetX, y, text);
                                 }

@@ -1,8 +1,8 @@
-import { new_vec2, vec3, vec2_translate, vec2, new_vec3, vec3_translate } from "./bmsx";
+import { new_vec2, vec3, translate_vec2, vec2, new_vec3, translate_vec3, overwrite_vec3 as set_inplace_vec3 } from "./bmsx";
 import { GameObject } from "./gameobject";
 import { insavegame } from "./gamereviver";
 import { DEFAULT_VERTEX_COLOR } from "./glview";
-import { Color, paintImage } from "./view";
+import { Color, DrawImgOptions, paintImage } from "./view";
 
 @insavegame
 export abstract class SpriteObject extends GameObject {
@@ -25,7 +25,7 @@ export abstract class SpriteObject extends GameObject {
     }
     public set imgid(id: string) {
         this.sprite.imgid = id;
-        let imgmeta = global.game.rom['imgresources'][id]?.['imgmeta'];
+        let imgmeta = global.rom['img_assets'][id]?.['imgmeta'];
         if (imgmeta) {
             this.sx = imgmeta['width'];
             this.sy = imgmeta['height'];
@@ -40,7 +40,7 @@ export abstract class SpriteObject extends GameObject {
     }
 
     override paint() {
-        this.sprite.paint.call(this.sprite, this.x, this.y, this.z);
+        this.sprite.paint_offset.call(this.sprite, this);
     }
 }
 
@@ -49,32 +49,68 @@ export class Sprite {
     public x: number;
     public y: number;
     public z: number;
-    public sx: number;
-    public sy: number;
-    public flip_h: boolean;
-    public flip_v: any;
-    public colorize: Color;
-    public imgid: string;
+    public options: DrawImgOptions;
+    public get sx(): number {
+        return this.options.sx;
+    }
+    public set sx(v: number) {
+        this.options.sx = v;
+    }
+    public get sy(): number {
+        return this.options.sy;
+    }
+    public set sy(v: number) {
+        this.options.sy = v;
+    }
+    public get flip_h(): boolean {
+        return this.options.flip_h;
+    }
+    public set flip_h(v: boolean) {
+        this.options.flip_h = v;
+    }
+    public get flip_v(): boolean {
+        return this.options.flip_v;
+    }
+    public set flip_v(v: boolean) {
+        this.options.flip_v = v;
+    }
+    public get colorize(): Color {
+        return this.options.colorize;
+    }
+    public set colorize(v: Color) {
+        this.options.colorize = v;
+    }
+    public get imgid(): string {
+        return this.options.imgid;
+    }
+    public set imgid(v: string) {
+        this.options.imgid = v;
+    }
 
     constructor() {
-        this.imgid ??= 'None';
-        this.flip_h ??= false;
-        this.flip_v ??= false;
-        this.colorize ??= DEFAULT_VERTEX_COLOR;
+        this.options ??= {
+            imgid: 'None',
+            x: 0,
+            y: 0,
+            z: 0,
+            flip_h: false,
+            flip_v: false,
+            sx: 1,
+            sy: 1,
+            colorize: DEFAULT_VERTEX_COLOR,
+        };
         this.x ??= 0;
         this.y ??= 0;
         this.z ??= 0;
-        this.sx ??= 1;
-        this.sy ??= 1;
     }
 
-    public paint(dx: number = 0, dy: number = 0, dz: number = 0) {
-        this.x += dx; // ! LELIJK!
-        this.y += dy;
-        this.z += dz;
-        paintImage(this);
-        this.x -= dx; // ! LELIJKER!
-        this.y -= dy;
-        this.z -= dz;
+    public paint_offset(offset: vec3) {
+        set_inplace_vec3(this.options, translate_vec3(this, offset));
+        paintImage(this.options);
+    }
+
+    public paint() {
+        set_inplace_vec3(this.options, this);
+        paintImage(this.options);
     }
 }

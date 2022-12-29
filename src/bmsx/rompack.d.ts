@@ -19,7 +19,7 @@ export interface ImgMeta {
 	texcoords_fliphv?: number[];
 }
 
-export interface RomResource {
+export interface RomAsset {
 	resid: number;
 	resname: string;
 	type: string;
@@ -34,12 +34,12 @@ export interface RomMeta {
 	end: number;
 }
 
-export type id2res = Record<number | string, RomResource>;
+export type id2res = Record<number | string, RomAsset>;
 export type id2htmlimg = Record<number | string, HTMLImageElement>;
-export interface RomLoadResult {
+export interface RomPack {
 	rom: ArrayBuffer,
 	images: id2htmlimg;
-	imgresources: id2res;
-	sndresources: id2res;
-	source: any;
+	img_assets: id2res;
+	snd_assets: id2res;
+	code: string;
 }

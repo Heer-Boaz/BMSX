@@ -1,6 +1,6 @@
-import { BFont, new_vec3, vec2 } from './../bmsx/bmsx';
+import { BFont, new_vec3, trunc_vec3, vec2 } from './../bmsx/bmsx';
 import { MSX2ScreenHeight, MSX2ScreenWidth } from './../bmsx/msx';
-import { RomLoadResult } from '../bmsx/rompack';
+import { RomPack } from '../bmsx/rompack';
 import { Game, new_vec2, Direction, newArea, randomInt, copy_vec2 } from '../bmsx/bmsx';
 import { sdef, sstate, Bla, statedef_builder, build_fsm, statecontext, machine_states } from '../bmsx/bfsm';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
@@ -295,7 +295,7 @@ class uitlegStuff extends SpriteObject {
         this.imgid = BitmapId.diamond_front;
         this.hitarea = newArea(0, 0, this.sx, this.sy);
         // this.size = new_vec2(187, 105);
-        this.pos = new_vec3((MSX2ScreenWidth - this.sx) / 2, (MSX2ScreenHeight - this.sy) / 2, 0);
+        this.pos = trunc_vec3(new_vec3((MSX2ScreenWidth - this.sx) / 2, (MSX2ScreenHeight - this.sy) / 2, 0));
     }
 
     override paint() {
@@ -485,7 +485,7 @@ class diamant extends SpriteObject {
                 break;
         }
 
-        this.x = (MSX2ScreenWidth - this.sx) / 2, this.y = (MSX2ScreenHeight - this.sy) / 2;
+        this.x = ~~((MSX2ScreenWidth - this.sx) / 2), this.y = ~~((MSX2ScreenHeight - this.sy) / 2);
     }
 
     constructor() {
@@ -868,7 +868,7 @@ let _view: gameview;
 
 var _global = globalThis;
 
-_global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: GainNode): void => {
+_global['h406A'] = (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode): void => {
     _model = new gamemodel();
     _view = new gameview(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
     _view.default_font = new BFont(BitmapId);

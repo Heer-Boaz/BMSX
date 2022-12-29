@@ -1,10 +1,10 @@
-import { RomLoadResult, RomResource, RomMeta } from '../src/bmsx/rompack';
+import { RomPack, RomAsset, RomMeta } from '../src/bmsx/rompack';
 
 declare var pako: any;
-declare var h406A: (rom: RomLoadResult, sndcontext: AudioContext, gainnode: GainNode) => void;
+declare var h406A: (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode) => void;
 
 var bootrom = {
-	rom: null as RomLoadResult | null,
+	rom: null as RomPack | null,
 	debug: false,
 	localfetch: false,
 	sndcontext: null as AudioContext | null,
@@ -12,7 +12,7 @@ var bootrom = {
 	gainnode: null as GainNode | null,
 	theshowsover: false,
 
-	set defusr(rom: RomLoadResult) {
+	set defusr(rom: RomPack) {
 		bootrom.rom = rom;
 	},
 
@@ -30,7 +30,7 @@ var bootrom = {
 		return 255;
 	},
 
-	async bload(url: string): Promise<RomLoadResult | null> {
+	async bload(url: string): Promise<RomPack | null> {
 		window.onunhandledrejection = event => {
 			console.log(event.cancelable, event.reason, "unhandled rejection??");
 			event.preventDefault();
@@ -54,7 +54,7 @@ var bootrom = {
 
 		return new Promise(async (resolve, reject) => {
 			let bootCompletePromise = awaitBootComplete();
-			let result: RomLoadResult | null = null;
+			let result: RomPack | null = null;
 			let romlabel_bloburl: string = undefined;
 			fetchRom()
 				.then((response_array: ArrayBuffer) => getZippedRomAndRomLabelFromBlob(response_array))
@@ -129,29 +129,29 @@ async function getZippedRomAndRomLabelFromBlob(blob_buffer: ArrayBuffer): Promis
 	return Promise.resolve({ zipped_rom: getSubBufferFromBufferWithMeta(blob_buffer), romlabel: undefined });
 }
 
-async function loadResourceList(rom: ArrayBuffer): Promise<RomResource[]> {
+async function loadResourceList(rom: ArrayBuffer): Promise<RomAsset[]> {
 	let sliced = new Uint8Array(getSubBufferFromBufferWithMeta(rom));
 
 	let resJsonStr = decodeuint8arr(sliced);
-	let resJson: RomResource[] = JSON.parse(resJsonStr);
+	let resJson: RomAsset[] = JSON.parse(resJsonStr);
 
-	return Promise.resolve<RomResource[]>(resJson);
+	return Promise.resolve<RomAsset[]>(resJson);
 }
 
-async function loadResources(rom: ArrayBuffer): Promise<RomLoadResult> {
-	let result: RomLoadResult = {
+async function loadResources(rom: ArrayBuffer): Promise<RomPack> {
+	let result: RomPack = {
 		images: {},
 		rom: rom,
-		imgresources: {},
-		sndresources: {},
-		source: null
+		img_assets: {},
+		snd_assets: {},
+		code: null
 	};
 
 	let list = await loadResourceList(rom);
 	for (let i = 0; i < list.length; i++) {
 		await load(rom, list[i], result);
 	}
-	return Promise.resolve<RomLoadResult>(result);
+	return Promise.resolve<RomPack>(result);
 }
 
 function getImageURL(buffer: ArrayBuffer): string {
@@ -168,7 +168,7 @@ async function getImageFromBuffer(buffer: ArrayBuffer): Promise<HTMLImageElement
 	return loadImage(url);
 }
 
-async function load(rom: ArrayBuffer, res: RomResource, romResult: RomLoadResult): Promise<void> {
+async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack): Promise<void> {
 	switch (res.type) {
 		case 'image':
 			if (!res.imgmeta!.atlassed) {
@@ -177,21 +177,21 @@ async function load(rom: ArrayBuffer, res: RomResource, romResult: RomLoadResult
 				romResult.images[res.resid] = img;
 				romResult.images[res.resname] = img;
 			}
-			romResult.imgresources[res.resid] = res;
-			romResult.imgresources[res.resname] = res;
+			romResult.img_assets[res.resid] = res;
+			romResult.img_assets[res.resname] = res;
 			break;
 		case 'source':
 			try {
 				let bytearray = new Uint8Array(rom);
 				let sliced = bytearray.slice(res.start, res.end);
-				romResult.source = decodeuint8arr(sliced);
+				romResult.code = decodeuint8arr(sliced);
 			} catch (err) {
 				return Promise.reject(err);
 			}
 			break;
 		case 'audio':
-			romResult.sndresources[res.resid] = res;
-			romResult.sndresources[res.resname] = res;
+			romResult.snd_assets[res.resid] = res;
+			romResult.snd_assets[res.resname] = res;
 			break;
 		default:
 			let msg = `Unrecognised resource type in rom: ${res.type}, while processing rompack!`;
@@ -215,7 +215,7 @@ async function awaitBootComplete(): Promise<void> {
 	return result;
 }
 
-async function loadScript(rom: RomLoadResult): Promise<void> {
+async function loadScript(rom: RomPack): Promise<void> {
 	let result: Promise<void> = new Promise((resolve, reject) => {
 		let romcode = document.createElement('script');
 		romcode.async = false;
@@ -226,7 +226,7 @@ async function loadScript(rom: RomLoadResult): Promise<void> {
 			reject('urgh');
 		};
 		if (!bootrom.debug) {
-			romcode.innerText = rom.source;
+			romcode.innerText = rom.code;
 			document.head.appendChild(romcode);
 			resolve();
 		}

@@ -1,6 +1,6 @@
 import { readdirSync, statSync, readFileSync, writeFileSync, copyFile, copyFileSync, existsSync, exists, createWriteStream, rmSync } from "fs";
 import { join, parse } from "path";
-import { AudioMeta, AudioType, RomResource, RomMeta, ImgMeta } from '../src/bmsx/rompack';
+import { AudioMeta, AudioType, RomAsset, RomMeta, ImgMeta } from '../src/bmsx/rompack';
 import * as browserify from 'browserify';
 const tsify = require("tsify");
 
@@ -648,7 +648,7 @@ async function buildRompack(outfile: string, respath: string): Promise<any> {
 		log("romresources.json knutselen...  ");
 		startRotator();
 
-		let jsonout = new Array<RomResource>();
+		let jsonout = new Array<RomAsset>();
 		let bufferPointer = 0;
 		let romlabel_buffer: Buffer = undefined;
 		for (let i = 0; i < loadedResources.length; i++) {
@@ -814,7 +814,7 @@ function addToAtlas(img: any): ImgMeta {
 	return result;
 }
 
-function cropAtlas(romResources: Array<RomResource>): HTMLCanvasElement {
+function cropAtlas(romResources: Array<RomAsset>): HTMLCanvasElement {
 	let cropw = atlasExploitedX;
 	let croph = atlasUnsafeY;
 	// Handle corner case where there are no textures in the ROM

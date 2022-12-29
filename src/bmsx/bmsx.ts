@@ -1,7 +1,7 @@
 ﻿import { BaseView } from "./view";
 import { SM } from "./soundmaster";
 import { Input } from "./input";
-import { RomLoadResult } from "./rompack";
+import { RomPack } from "./rompack";
 import { MSX2ScreenWidth, MSX2ScreenHeight, TileSize } from "./msx";
 import { BaseModel } from "./model";
 
@@ -9,6 +9,7 @@ declare global {
     var game: Game;
     var model: BaseModel;
     var view: BaseView;
+    var rom: RomPack;
 }
 
 const fps: number = 50;
@@ -335,11 +336,11 @@ export function moveArea(a: Area, p: vec3): Area {
     };
 }
 
-export function vec2_translate(a: vec2, b: vec2): vec2 {
+export function translate_vec2(a: vec2, b: vec2): vec2 {
     return { x: a.x + b.x, y: a.y + b.y };
 }
 
-export function vec3_translate(a: vec3, b: vec3): vec3 {
+export function translate_vec3(a: vec3, b: vec3): vec3 {
     return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z };
 }
 
@@ -361,11 +362,11 @@ export function copy_vec2(toCopy: vec2): vec2 {
 }
 
 export function trunc_vec2(p: vec2): vec2 {
-    return { x: Math.trunc(p.x), y: Math.trunc(p.y) };
+    return { x: ~~p.x, y: ~~p.y };
 }
 
 export function trunc_vec3(p: vec3): vec3 {
-    return { x: Math.trunc(p.x), y: Math.trunc(p.y), z: Math.trunc(p.z) };
+    return { x: ~~p.x, y: ~~p.y, z: ~~p.z };
 }
 
 export function multiply_vec2(toMult: vec2, factor: number): vec2 {
@@ -390,6 +391,12 @@ export function set_vec3(p: vec3, new_x: number, new_y: number, new_z: number) {
     p.x = new_x;
     p.y = new_y;
     p.z = new_z;
+}
+
+export function overwrite_vec3(to_overwrite: vec3, data: vec3) {
+    to_overwrite.x = data.x;
+    to_overwrite.y = data.y;
+    to_overwrite.z = data.z;
 }
 
 /// Alternative implementation for Size.Set()
@@ -524,21 +531,20 @@ export class Game {
     public running: boolean;
     public paused: boolean;
     wasupdated: boolean;
-    public rom: RomLoadResult;
     public debug_runSingleFrameAndPause!: boolean;
     public model<T extends BaseModel>(): T { return <T>global.model; }
     public view<T extends BaseView>(): T { return <T>global.view; }
 
-    constructor(_rom: RomLoadResult, _model: BaseModel, _view: BaseView, sndcontext: AudioContext, gainnode: GainNode) {
+    constructor(_rom: RomPack, _model: BaseModel, _view: BaseView, sndcontext: AudioContext, gainnode: GainNode) {
         global['game'] = this;
-        this.rom = _rom;
+        global['rom'] = _rom;
 
         global['model'] = _model;
         global['view'] = _view;
 
         BaseView.images = _rom.images;
         global.view.init();
-        SM.init(_rom['sndresources'], sndcontext, gainnode);
+        SM.init(_rom['snd_assets'], sndcontext, gainnode);
         Input.init();
 
         // Init the model to populate states (and do other init stuff) and

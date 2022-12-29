@@ -1,4 +1,4 @@
-import { RomLoadResult } from '../bmsx/rompack';
+import { RomPack } from '../bmsx/rompack';
 import { Game, game, model, controller } from '../bmsx/bmsx';
 import { GameConstants } from './gameconstants';
 import { Model, Chapter } from './gamemodel';
@@ -8,7 +8,7 @@ import { setPoint } from '../bmsx/common';
 import { Tile } from '../bmsx/msx';
 
 var _global = window || global;
-_global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: GainNode): void => {
+_global['h406A'] = (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode): void => {
     let _model = new Model();
     let _view = new GameView({ x: GameConstants.ViewportWidth, y: GameConstants.ViewportHeight });
     let _controller = new Controller();

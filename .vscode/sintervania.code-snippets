@@ -15,6 +15,19 @@
 	// 	],
 	// 	"description": "Log output to console"
 	// }
+    "get_set_accessor": {
+        "scope": "typescript",
+        "prefix": "@accessor",
+        "body": [
+            "public get ${1:name}(): ${2:type} {",
+            "    return this.${1:name};",
+            "}",
+            "public set ${1:name}(v: ${2:type}) {",
+            "    this.${1:name} = v;",
+            "}",
+        ],
+        "description": "Generate get and set accessors"
+    },
 	"add_image_resource_to_game": {
 		"scope": "csharp",
 		"prefix": "@resimg",

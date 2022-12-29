@@ -33,7 +33,7 @@ export class SM {
     private static predecodeTracks() {
         SM.buffers = {};
         Object.keys(SM.tracks).forEach(id => {
-            SM.decode(global.game.rom['rom'].slice(SM.tracks[id]['start'], SM.tracks[id]['end'])).then(decoded => SM.buffers[id] = decoded);
+            SM.decode(global.rom['rom'].slice(SM.tracks[id]['start'], SM.tracks[id]['end'])).then(decoded => SM.buffers[id] = decoded);
         });
     }
 
@@ -52,7 +52,7 @@ export class SM {
         return new Promise<AudioBufferSourceNode>((resolve, reject) => {
             // WARNING! Predecoding tracks might hog memory.
             // ? Make optional when memory gets hogged?
-            // SM.decode(global.game.rom['rom'].slice(SM.tracks[id]['start'], SM.tracks[id]['end'])).then(buffer => srcnode.buffer = buffer).then(() => resolve(srcnode))
+            // SM.decode(global.rom['rom'].slice(SM.tracks[id]['start'], SM.tracks[id]['end'])).then(buffer => srcnode.buffer = buffer).then(() => resolve(srcnode))
             Promise.resolve(srcnode.buffer = SM.buffers[id]).then(() => resolve(srcnode))
                 .catch(e => reject(e));
         });

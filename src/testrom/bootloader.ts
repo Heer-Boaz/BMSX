@@ -1,4 +1,4 @@
-import { RomLoadResult } from '../bmsx/rompack';
+import { RomPack } from '../bmsx/rompack';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
@@ -135,7 +135,7 @@ var _view: gameview;
 
 var _global = window || global;
 
-_global['h406A'] = (rom: RomLoadResult, sndcontext: AudioContext, gainnode: GainNode): void => {
+_global['h406A'] = (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode): void => {
     _model = new gamemodel();
     _view = new gameview(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
     _game = new Game(rom, _model, _view, sndcontext, gainnode);

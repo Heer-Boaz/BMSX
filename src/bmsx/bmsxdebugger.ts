@@ -1,5 +1,5 @@
 import { MachineDefinitions } from './bfsm';
-import { area2size, copy_vec2, new_vec2, vec3, vec2_translate, trunc_vec2, vec2, trunc_vec3 } from './bmsx';
+import { area2size, copy_vec2, new_vec2, vec3, translate_vec2, trunc_vec2, vec2, trunc_vec3 } from './bmsx';
 import { GameObject } from './gameobject';
 import { Serializer } from './gamereviver';
 import { SpriteObject } from './sprite';
@@ -40,7 +40,7 @@ class ObjectHighlighter extends SpriteObject {
 
         this.#highlighted_obj = o;
         if (o.hitarea) {
-            let translate = vec2_translate(o.pos, o.hitarea.start);
+            let translate = translate_vec2(o.pos, o.hitarea.start);
             this.x = translate.x, this.y = translate.y;
             let size = area2size(o.hitarea);
             this.sx = size.x, this.sy = size.y;
@@ -79,8 +79,8 @@ export function handleDebugMouseMove(e: MouseEvent): void {
         let y = e.offsetY / global.view.scale;
 
         if (draggedObj.pos) {
-            draggedObj.pos.x = Math.trunc(x) - draggedObjCursorOffset.x;
-            draggedObj.pos.y = Math.trunc(y) - draggedObjCursorOffset.y;
+            draggedObj.pos.x = ~~x - draggedObjCursorOffset.x;
+            draggedObj.pos.y = ~~y - draggedObjCursorOffset.y;
         }
     }
     else {
@@ -121,7 +121,7 @@ export function handleDebugMouseOut(e: MouseEvent): void {
 
 function startDragGameObject(gameobject_at_cursor: GameObject, offsetToCursor: vec2): void {
     draggedObj = gameobject_at_cursor;
-    draggedObjCursorOffset = new_vec2(Math.trunc(offsetToCursor.x), Math.trunc(offsetToCursor.y));
+    draggedObjCursorOffset = new_vec2(~~offsetToCursor.x, ~~offsetToCursor.y);
 }
 
 export function handleContextMenu(e: MouseEvent): void {

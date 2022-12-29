@@ -308,7 +308,7 @@ export abstract class GLView extends BaseView {
 
     override drawImg(options: DrawImgOptions): void {
         let { x, y, z, imgid, flip_h = false, flip_v = false, sx = 1, sy = 1, colorize = DEFAULT_VERTEX_COLOR } = options;
-        let imgmeta = global.game.rom['imgresources'][imgid]?.['imgmeta'];
+        let imgmeta = global.rom['img_assets'][imgid]?.['imgmeta'];
         if (!imgmeta) throw `Image with id '${imgid}' not found while trying to retrieve image metadata!`;
         let _this = global.view as GLView;
         let gl = _this.glctx;
