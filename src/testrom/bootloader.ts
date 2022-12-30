@@ -5,7 +5,7 @@ import { BitmapId } from './resourceids';
 import { Input } from '../bmsx/input';
 import { mdef, sstate, sdef, statedef_builder, machine_states } from '../bmsx/bfsm';
 import { insavegame } from '../bmsx/gamereviver';
-import { newArea, vec3, new_vec2, Direction, Game, new_vec2 } from '../bmsx/bmsx';
+import { new_area, vec3, new_vec2, Direction, Game, new_vec2 } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
 import { BaseModel } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';
@@ -63,7 +63,7 @@ class bclass extends SpriteObject {
     constructor() {
         super('The B');
         // this.imgid = BitmapId.b;
-        this.hitarea = newArea(0, 0, 14, 18);
+        this.hitarea = new_area(0, 0, 14, 18);
     }
 };
 

@@ -1,7 +1,7 @@
 import { BFont, new_vec3, trunc_vec3, vec2 } from './../bmsx/bmsx';
 import { MSX2ScreenHeight, MSX2ScreenWidth } from './../bmsx/msx';
 import { RomPack } from '../bmsx/rompack';
-import { Game, new_vec2, Direction, newArea, randomInt, copy_vec2 } from '../bmsx/bmsx';
+import { Game, new_vec2, Direction, new_area, randomInt, copy_vec2 } from '../bmsx/bmsx';
 import { sdef, sstate, Bla, statedef_builder, build_fsm, statecontext, machine_states } from '../bmsx/bfsm';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
@@ -293,7 +293,7 @@ class uitlegStuff extends SpriteObject {
     constructor() {
         super();
         this.imgid = BitmapId.diamond_front;
-        this.hitarea = newArea(0, 0, this.sx, this.sy);
+        this.hitarea = new_area(0, 0, this.sx, this.sy);
         // this.size = new_vec2(187, 105);
         this.pos = trunc_vec3(new_vec3((MSX2ScreenWidth - this.sx) / 2, (MSX2ScreenHeight - this.sy) / 2, 0));
     }
@@ -438,7 +438,7 @@ class stoom extends SpriteObject {
                         this.imgid = s.current;
                     },
                     onend(this: stoom, s: sstate<stoom>) {
-                        this.markForDisposure();
+                        this.banish();
                     }
                 }),
             }
@@ -470,17 +470,17 @@ class diamant extends SpriteObject {
         switch (this._getoonde_zijde) {
             case zijde.Voor:
                 this.imgid = BitmapId.diamond_front;
-                this.hitarea = newArea(0, 0, this.sx, this.sy);
+                this.hitarea = new_area(0, 0, this.sx, this.sy);
                 // this.size = new_vec2(187, 105);
                 break;
             case zijde.Zij:
                 this.imgid = BitmapId.diamond_front;
-                this.hitarea = newArea(0, 0, this.sx, this.sy);
+                this.hitarea = new_area(0, 0, this.sx, this.sy);
                 // this.size = new_vec2(187, 105);
                 break;
             case zijde.Boven:
                 this.imgid = BitmapId.diamond_top;
-                this.hitarea = newArea(0, 0, this.sx, this.sy);
+                this.hitarea = new_area(0, 0, this.sx, this.sy);
                 // this.size = new_vec2(192, 192);
                 break;
         }
@@ -601,7 +601,7 @@ class draaischijf extends SpriteObject {
         this.imgid = BitmapId.None; // Wordt goed gezet bij ingang start state
         this.onLeavingScreen = (ik, d, old_x_or_y) => leavingScreenHandler_prohibit(ik, d, old_x_or_y);
         this.size = { x: 64, y: 64, z: undefined };
-        this.hitarea = newArea(24, 24, 64 - 24, 64 - 24);
+        this.hitarea = new_area(24, 24, 64 - 24, 64 - 24);
         this.z = 20;
     }
 
@@ -771,7 +771,7 @@ class burn extends onvolmaaktheid {
     constructor(_zijde: zijde, _plek: vec2, __ernst?: number) {
         super(onvolmaaktheid_soort.Burn, _zijde, _plek, __ernst);
         this.imgid = BitmapId.None;
-        this.hitarea = newArea(0, 0, this.sx, this.sy);
+        this.hitarea = new_area(0, 0, this.sx, this.sy);
         // this.size = new_vec2(40, 31);
     }
 }
@@ -854,7 +854,7 @@ class barst extends onvolmaaktheid {
         super(onvolmaaktheid_soort.Barst, _zijde, _plek);
         let defaultErnst = this.max_ernst();
         __ernst && (this.ernst = defaultErnst);
-        this.hitarea = newArea(0, 0, 40, 31);
+        this.hitarea = new_area(0, 0, 40, 31);
         this.size = new_vec3(40, 31, undefined);
     }
 }

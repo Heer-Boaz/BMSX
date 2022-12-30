@@ -7,7 +7,7 @@ import { TextWriter } from '../bmsx/textwriter';
 import { DrawImgFlags, paintSprite } from '../bmsx/view';
 import { GameMenu } from './gamemenu';
 import { statedef_builder, mdef, sdef, sstate } from '../bmsx/bfsm';
-import { Direction, newArea, new_vec2, vec2, new_vec2, randomInt, Game, BFont } from '../bmsx/bmsx';
+import { Direction, new_area, new_vec2, vec2, new_vec2, randomInt, Game, BFont } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
 import { BaseModel, Space } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';
@@ -131,7 +131,7 @@ class fles extends SpriteObject {
                                 if (_model.monster) {
                                     if (ik.pos.x >= _model.monster.pos.x - 12) {
                                         _model.monster.collide(ik);
-                                        ik.markForDisposure();
+                                        ik.banish();
                                     }
                                 }
                                 // if (ik.objectCollide(_model.monster)) {
@@ -155,10 +155,10 @@ class fles extends SpriteObject {
         super();
         this.z = 1020;
         this.imgid = BitmapId.fles2;
-        this.onLeaveScreen = (ik: fles, _) => ik.markForDisposure();
+        this.onLeaveScreen = (ik: fles, _) => ik.banish();
         let me = this;
 
-        this.hitarea = newArea(4, 4, 12, 12);
+        this.hitarea = new_area(4, 4, 12, 12);
         this.size = new_vec2(16, 16);
         this.hittable = true;
     }
@@ -202,7 +202,7 @@ class stoom extends SpriteObject {
                                 ik.imgid = s.current;
                             },
                             onend: (_, ik: stoom): void => {
-                                ik.markForDisposure();
+                                ik.banish();
                             }
                         }),
                     }
@@ -228,7 +228,7 @@ class monster extends SpriteObject {
         super();
         this.imgid = BitmapId.monster;
         this.z = 1100;
-        this.hitarea = newArea(0, 80, 0, 50);
+        this.hitarea = new_area(0, 80, 0, 50);
         this.size = new_vec2(80, 50);
         this.hittable = true;
         let me = this;
@@ -236,7 +236,7 @@ class monster extends SpriteObject {
         this.oncollide = (src: GameObject) => {
             _model.enemyHp -= 10;
             if (_model.enemyHp <= 0) {
-                me.markForDisposure();
+                me.banish();
                 // _model.monster = null;
                 _model.marlies.state.to('naarrelax');
             }
@@ -481,7 +481,7 @@ class speler extends SpriteObject {
         this.direction = Direction.Right;
         this.z = 1000;
         this.floatbit = false;
-        this.hitarea = newArea(0, 0, 16, 16);
+        this.hitarea = new_area(0, 0, 16, 16);
         this.size = new_vec2(16, 16);
     }
 

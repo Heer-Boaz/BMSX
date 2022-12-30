@@ -1,5 +1,5 @@
 import { MachineDefinitions } from './bfsm';
-import { area2size, copy_vec2, new_vec2, vec3, translate_vec2, trunc_vec2, vec2, trunc_vec3 } from './bmsx';
+import { area2size, copy_vec2, new_vec2, vec3, translate_vec2, trunc_vec2, vec2, trunc_vec3, div_vec2 } from './bmsx';
 import { GameObject } from './gameobject';
 import { Serializer } from './gamereviver';
 import { SpriteObject } from './sprite';
@@ -514,13 +514,16 @@ export function handleDebugClick(e: MouseEvent): void {
 function getGameObjectAtCursor(e: MouseEvent): { objUnderCursor: GameObject | null; offsetToCursor: vec2 | null; } {
     let x = e.offsetX;
     let y = e.offsetY;
-    let p = new_vec2(x, y);
-
-    let objsUnderCursor: GameObject[] = global.model.objects.filter(o => o.id !== 'debug_highlighter' && o.insideScaled(p));
+    /* Handling mouse events on game objects requires
+     * transforming the game coordinates to canvas coordinates and that requires scaling
+     * to be taken into account.
+     */
+    let p = div_vec2(new_vec2(x, y), global.view.scale);
+    let objsUnderCursor: GameObject[] = global.model.objects.filter(o => o.id !== 'debug_highlighter' && o.overlaps_point(p));
     if (objsUnderCursor && objsUnderCursor.length > 0) {
         // Choose obj with highest z-value
         let objUnderCursorWithHighestZ = objsUnderCursor.reduce((o1, o2) => o1.z > o2.z ? o1 : o2);
-        return { objUnderCursor: objUnderCursorWithHighestZ, offsetToCursor: objUnderCursorWithHighestZ.insideScaled(p) };
+        return { objUnderCursor: objUnderCursorWithHighestZ, offsetToCursor: objUnderCursorWithHighestZ.overlaps_point(p) };
     }
     return { objUnderCursor: null, offsetToCursor: null };;
 }

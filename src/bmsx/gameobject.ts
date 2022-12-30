@@ -1,5 +1,5 @@
 import { statecontext } from "./bfsm";
-import { vec3, Area, Direction, moveArea, multiply_vec2, new_vec2, div_vec2, mod, vec2, new_vec3 } from "./bmsx";
+import { vec3, Area, Direction, moveArea, multiply_vec2, new_vec2, div_vec2, mod, vec2, new_vec3, translate_vec2, new_area } from "./bmsx";
 import { insavegame } from "./gamereviver";
 import { TileSize } from "./msx";
 
@@ -56,28 +56,49 @@ export class GameObject implements vec2, vec3 {
         this.size.z = __sz;
     }
 
-    public get wallHitarea(): Area { return this.hitarea; }
     public state: statecontext;
-    public isWall?: boolean;
-
     public hitarea: Area;
 
     public hittable: boolean;
     public visible: boolean;
 
-    public get hitbox_sx(): number {
+    public get hitbox(): Area {
+        return new_area(this.hitbox_left, this.hitbox_top, this.hitbox_right, this.hitbox_bottom);
+    }
+
+    public get hitbox_left(): number {
+        if (this.hitarea) return this.hitarea_left;
+        return this.x;
+    }
+
+    public get hitbox_top(): number {
+        if (this.hitarea) return this.hitarea_top;
+        return this.y;
+    }
+
+    public get hitbox_right(): number {
+        if (this.hitarea) return this.hitarea_right;
+        return this.x_plus_width;
+    }
+
+    public get hitbox_bottom(): number {
+        if (this.hitarea) return this.hitarea_bottom;
+        return this.y_plus_height;
+    }
+
+    public get hitarea_left(): number {
         return this.pos.x + this.hitarea.start.x;
     }
 
-    public get hitbox_sy(): number {
+    public get hitarea_top(): number {
         return this.pos.y + this.hitarea.start.y;
     }
 
-    public get hitbox_ex(): number {
+    public get hitarea_right(): number {
         return this.pos.x + this.hitarea.end.x;
     }
 
-    public get hitbox_ey(): number {
+    public get hitarea_bottom(): number {
         return this.pos.y + this.hitarea.end.y;
     }
 
@@ -88,24 +109,6 @@ export class GameObject implements vec2, vec3 {
     public get y_plus_height(): number {
         return this.pos.y + this.size.y;
     }
-
-    public get wallhitbox_sx(): number {
-        return this.pos.x + this.wallHitarea.start.x;
-    }
-
-    public get wallhitbox_sy(): number {
-        return this.pos.y + this.wallHitarea.start.y;
-    }
-
-    public get wallhitbox_ex(): number {
-        return this.pos.x + this.wallHitarea.end.x;
-    }
-
-    public get wallhitbox_ey(): number {
-        return this.pos.y + this.wallHitarea.end.y;
-    }
-
-    public disposeOnSwitchRoom?: boolean;
 
     /**
      * By default, will set location to `spawningPos` and
@@ -131,7 +134,7 @@ export class GameObject implements vec2, vec3 {
     /**
     * Gebruik ik als event handler voor e.g. onLeaveScreen
     */
-    public markForDisposure(): void {
+    public banish(): void {
         this.disposeFlag = true;
     }
 
@@ -175,80 +178,45 @@ export class GameObject implements vec2, vec3 {
         this.pos = new_vec3(0, 0, 0);
         this.size = new_vec3(0, 0, 0);
         this.disposeFlag = false;
-        this.disposeOnSwitchRoom = true;
         this.state = statecontext.create(_fsm_id ?? this.constructor.name, this.id);
     }
 
     static objectCollide(o1: GameObject, o2: GameObject): boolean {
-        return o1.objectCollide(o2);
-    }
-
-    public collides(o: GameObject | Area): boolean {
-        if ((o as GameObject).id) return this.objectCollide(<GameObject>o);
-        else return this.areaCollide(<Area>o);
+        return o1.detect_object_collision(o2);
     }
 
     public collide(src: GameObject): void {
         this.oncollide?.(src);
     }
 
-    public objectCollide(o: GameObject): boolean {
-        return this.areaCollide(moveArea(o.hitarea, o.pos));
-    }
-
-    public areaCollide(a: Area): boolean {
-        if (!this.hittable) return false;
-
-        let o1 = this;
-        let o1p = o1.pos;
-        let o1a = o1.hitarea;
-
-        let o2a = a;
-
-        return o1p.x + o1a.end.x >= o2a.start.x && o1p.x + o1a.start.x <= o2a.end.x &&
-            o1p.y + o1a.end.y >= o2a.start.y && o1p.y + o1a.start.y <= o2a.end.y;
-    }
-
-    public inside(p: vec3): boolean {
-        let o1 = this;
-
-        let o1p = o1.pos;
-        if (o1.hitarea) {
-            let o1a = o1.hitarea;
-            return o1p.x + o1a.end.x >= p.x && o1p.x + o1a.start.x <= p.x &&
-                o1p.y + o1a.end.y >= p.y && o1p.y + o1a.start.y <= p.y;
-        }
-        if (o1.size) {
-            let o1a = o1.size;
-            return o1p.x + o1a.x >= p.x && o1p.x <= p.x &&
-                o1p.y + o1a.y >= p.y && o1p.y <= p.y;
-        }
-        return false;
+    public collides(o: GameObject | Area): boolean {
+        if ((o as GameObject).id) return this.detect_object_collision(o as GameObject);
+        else return this.detect_aabb_collision_area(o as Area);
     }
 
     /**
-    *  This method is used for debugging. Handling mouse events on game objects requires
-    *  transforming the game coordinates to canvas coordinates and that requires scaling
-    *  to be taken into account.
-    */
-    public insideScaled(p: vec2): vec2 | null {
-        let o1 = this;
+     * Detects Axis-Aligned Bounding Box collision (AABB)
+     */
+    public detect_object_collision(o: GameObject): boolean {
+        if (!this.hittable || !o.hittable) return false;
+        return !(this.hitbox_left > o.hitbox_right || this.hitbox_right < o.hitbox_left || this.hitbox_bottom < o.hitbox_top || this.hitbox_top > o.hitbox_bottom);
+    }
 
-        let o1p = multiply_vec2(o1.pos, global.view.scale);
-        let o1a: Area;
-        if (o1.hitarea) {
-            o1a = <Area>{ start: multiply_vec2(o1.hitarea.start, global.view.scale), end: multiply_vec2(o1.hitarea.end, global.view.scale) };
-        }
-        else if (o1.size) {
-            o1a = <Area>{ start: new_vec2(0, 0), end: multiply_vec2(o1.size, global.view.scale) };
-        }
-        else return null;
+    /**
+     * Detects Axis-Aligned Bounding Box collision (AABB)
+     */
+    public detect_aabb_collision_area(a: Area): boolean {
+        return !(this.hitbox_left > a.end.x || this.hitbox_right < a.start.x || this.hitbox_bottom < a.start.y || this.hitbox_top > a.end.y);
+    }
 
-        if (o1p.x + o1a.end.x >= p.x && o1p.x + o1a.start.x <= p.x &&
-            o1p.y + o1a.end.y >= p.y && o1p.y + o1a.start.y <= p.y) {
-            let offsetToP = new_vec2(p.x - o1p.x, p.y - o1p.y);
-            return div_vec2(offsetToP, global.view.scale);
-        }
+    /**
+     * Detects whether this object overlaps the given 2D point.
+     * @param {vec2} p 2D vector; The points for which the overlap is checked.
+     * @returns {vec2} If there is an overlap, the offset from this object to the point **(used for dragging in debugger)**, or _null_ otherwisse.
+     */
+    public overlaps_point(p: vec2): vec2 | null {
+        if (!(this.hitbox_left >= p.x || this.hitbox_right <= p.x || this.hitbox_bottom <= p.y || this.hitbox_top >= p.y))
+            return new_vec2(p.x - this.hitbox_left, p.y - this.hitbox_top);
         return null;
     }
 

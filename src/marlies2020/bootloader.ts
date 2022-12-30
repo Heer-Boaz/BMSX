@@ -8,7 +8,7 @@ import { paintSprite } from '../bmsx/view';
 import { GameMenu } from './gamemenu';
 import { KonamiFont } from './konamifont';
 import { statedef_builder, mdef, sdef, sstate } from '../bmsx/bfsm';
-import { vec2, Direction, set_vec2, newArea, randomInt, getOppositeDirection, copy_vec2, new_vec2, new_vec2, Game } from '../bmsx/bmsx';
+import { vec2, Direction, set_vec2, new_area, randomInt, getOppositeDirection, copy_vec2, new_vec2, new_vec2, Game } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
 import { BaseModel, Space } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';
@@ -119,7 +119,7 @@ class modelclass extends BaseModel {
                     o.ingredientType = 'gesneden_komkommer';
                     o.imgid = BitmapId.Komkommer_gesneden;
 
-                    this.ingredientEquipped.markForDisposure();
+                    this.ingredientEquipped.banish();
                     this.ingredientEquipped = null; // Haal inventory leeg
                 }
             }
@@ -141,7 +141,7 @@ class modelclass extends BaseModel {
             // Check of dit ingredient als was gestopt in deze pita
             if (!pita.ingredientenInPita.some(i => i == type)) {
                 pita.ingredientenInPita.push(type);
-                this.ingredientEquipped.markForDisposure(); // Exile ingredient
+                this.ingredientEquipped.banish(); // Exile ingredient
                 this.ingredientEquipped = null; // Haal inventory leeg
                 // Check of pita nu gevul>d is met alle ingredienten
                 if (pita.ingredientenInPita.length == INGREDIENTEN_IN_PITA) {
@@ -169,7 +169,7 @@ class modelclass extends BaseModel {
         this.ingredientEquipped = null; // Haal inventory leeg
         if (++this.pitasOpBord >= PITAS_OP_BORD_VOOR_WINST) {
             this.marlies.state.to('win');
-            this.filter_and_foreach(o => (<any>o).isEng, o => o.markForDisposure());
+            this.filter_and_foreach(o => (<any>o).isEng, o => o.banish());
             // this.objects.filter(o => (<any>o).isEng).forEach(o => o.markForDisposure());
         }
     }
@@ -193,7 +193,7 @@ class brandblusser extends SpriteObject {
                                 ++s.nudges;
                             },
                             onnext: (_, ik: brandblusser): void => {
-                                ik.markForDisposure();
+                                ik.banish();
                             },
                         }),
                     }
@@ -250,7 +250,7 @@ class ingredient extends SpriteObject implements Ingredient {
     constructor() {
         super();
         this.z = 850;
-        this.hitarea = newArea(-8, 0, 24, 16);
+        this.hitarea = new_area(-8, 0, 24, 16);
     }
 
     ingredientType: string = 'niet_bepaald!';
@@ -315,7 +315,7 @@ class bord extends SpriteObject implements Bord {
         super();
         this.imgid = BitmapId.Bord;
         this.z = 800;
-        this.hitarea = newArea(0, -16, 16, 20);
+        this.hitarea = new_area(0, -16, 16, 20);
         this.gevuld = false;
     }
     gevuld: boolean;
@@ -366,7 +366,7 @@ class vuur extends SpriteObject {
                                 ik.imgid = s.current;
                             },
                             onend: (_, ik: vuur): void => {
-                                ik.markForDisposure();
+                                ik.banish();
                             }
                         }),
                     }
@@ -378,7 +378,7 @@ class vuur extends SpriteObject {
     constructor(dir: Direction) {
         super();
         this.direction = dir;
-        this.hitarea = newArea(4, 4, 12, 12);
+        this.hitarea = new_area(4, 4, 12, 12);
         this.z = dir != Direction.Up ? 1100 : 900;
     }
 
@@ -411,7 +411,7 @@ class corona extends SpriteObject {
                                 ik.setRandomMove();
                             },
                             onrun(s: sstate, ik: corona) {
-                                if (_model.objects.filter(o => (<any>o)?.isVuur).some(v => ik.objectCollide(v))) {
+                                if (_model.objects.filter(o => (<any>o)?.isVuur).some(v => ik.detect_object_collision(v))) {
                                     ik.state.to('sterf');
                                 }
                                 switch (ik.direction) {
@@ -450,7 +450,7 @@ class corona extends SpriteObject {
                                 ++s.nudges;
                             },
                             onend(_, ik: corona) {
-                                ik.markForDisposure();
+                                ik.banish();
                             },
                             onnext(s: sstate, ik: corona) {
                                 ik.imgid = s.current;
@@ -481,7 +481,7 @@ class corona extends SpriteObject {
 
         this.imgid = BitmapId.Corona1;
         this.size = { x: 32, y: 32 };
-        this.hitarea = newArea(4, 4, 28, 28);
+        this.hitarea = new_area(4, 4, 28, 28);
         this.z = 1200;
 
         this.onLeavingScreen = this.onLeavingScreenHandler;
@@ -716,7 +716,7 @@ class speler extends SpriteObject {
         this.direction = Direction.Down;
         this.z = 1000;
         this.column = startcolumn;
-        this.hitarea = newArea(0, 8, 16, 16);
+        this.hitarea = new_area(0, 8, 16, 16);
     }
 
     override onspawn(spawningPos?: vec2): void {
@@ -752,14 +752,14 @@ class speler extends SpriteObject {
 
     doeCoronaTest(): void {
         if (this.state.getCurrentId() == 'urgh') return;
-        if (_model.objects.filter(o => (<any>o)?.isEng).some(c => this.objectCollide(c))) {
+        if (_model.objects.filter(o => (<any>o)?.isEng).some(c => this.detect_object_collision(c))) {
             this.state.to('urgh');
         }
     }
 
     checkNaastIngredientOfPitaOfBord(): void {
         if (this.state.getCurrentId() == 'urgh') return;
-        _model.objects.filter(o => (<any>o)?.ingredientType && this.objectCollide(o)).forEach(o => {
+        _model.objects.filter(o => (<any>o)?.ingredientType && this.detect_object_collision(o)).forEach(o => {
             let i = o as any;
             switch (i.ingredientType) {
                 case 'pita':
@@ -772,7 +772,7 @@ class speler extends SpriteObject {
             }
         });
 
-        _model.objects.filter(o => (<any>o)?.isBord && this.objectCollide(o)).forEach(b => {
+        _model.objects.filter(o => (<any>o)?.isBord && this.detect_object_collision(o)).forEach(b => {
             _model.checkOfIetsMetBordMogelijk(<Bord>b);
         });
 

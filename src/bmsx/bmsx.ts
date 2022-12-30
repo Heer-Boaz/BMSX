@@ -377,7 +377,7 @@ export function div_vec2(toDivide: vec2, divide_by: number): vec2 {
     return { x: toDivide.x / divide_by, y: toDivide.y / divide_by };
 }
 
-export function newArea(sx: number, sy: number, ex: number, ey: number): Area {
+export function new_area(sx: number, sy: number, ex: number, ey: number): Area {
     return { start: { x: sx, y: sy }, end: { x: ex, y: ey } };
 }
 
