@@ -10,7 +10,7 @@ import { Input } from '../bmsx/input';
 import { TextWriter } from '../bmsx/textwriter';
 import { GameMenu } from './gamemenu';
 import { GameObject, leavingScreenHandler_prohibit } from '../bmsx/gameobject';
-import { base_model_spaces, BaseModel, id2space } from '../bmsx/model';
+import { base_model_spaces, BaseModel, spaceid_2_space } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';
 
 const TIME_TO_SHINE = 90;
@@ -168,25 +168,25 @@ class gamemodel extends BaseModel {
     public do_one_time_game_init(): this {
         // this.state.machines['gamemenu' satisfies model_machines].to('closed' satisfies model_states);
         this.addSpace('hoera!' satisfies model_spaces);
-        this[id2space]['hoera!'].spawn(new hoeraStuff());
+        this[spaceid_2_space]['hoera!'].spawn(new hoeraStuff());
 
         this.addSpace('evaluatie' satisfies model_spaces);
-        this[id2space]['evaluatie'].spawn(new evaluatieStuff());
+        this[spaceid_2_space]['evaluatie'].spawn(new evaluatieStuff());
 
         this.addSpace('uitleg' satisfies model_spaces);
-        this[id2space]['uitleg'].spawn(new uitlegStuff());
+        this[spaceid_2_space]['uitleg'].spawn(new uitlegStuff());
 
         let _diamant = new diamant();
         let _draaischijf = new draaischijf();
 
-        this[id2space]['default' satisfies model_spaces].spawn(new hud());
-        this[id2space]['default' satisfies model_spaces].spawn(_diamant);
-        this[id2space]['default' satisfies model_spaces].spawn(_draaischijf, new_vec2(96, 120));
-        this[id2space]['default' satisfies model_spaces].spawn(new barst(zijde.Voor, new_vec2(_diamant.pos.x + 30, _diamant.pos.y + 10)));
-        this[id2space]['default' satisfies model_spaces].spawn(new barst(zijde.Voor, new_vec2(_diamant.pos.x + 60, _diamant.pos.y + 40)));
-        this[id2space]['default' satisfies model_spaces].spawn(new barst(zijde.Voor, new_vec2(_diamant.pos.x + 110, _diamant.pos.y + 20)));
-        this[id2space]['default' satisfies model_spaces].spawn(new barst(zijde.Voor, new_vec2(_diamant.pos.x + 80, _diamant.pos.y + 60)));
-        this[id2space]['default' satisfies model_spaces].spawn(new barst(zijde.Boven, new_vec2(_diamant.pos.x + 90, _diamant.pos.y + 100)));
+        this[spaceid_2_space]['default' satisfies model_spaces].spawn(new hud());
+        this[spaceid_2_space]['default' satisfies model_spaces].spawn(_diamant);
+        this[spaceid_2_space]['default' satisfies model_spaces].spawn(_draaischijf, new_vec2(96, 120));
+        this[spaceid_2_space]['default' satisfies model_spaces].spawn(new barst(zijde.Voor, new_vec2(_diamant.pos.x + 30, _diamant.pos.y + 10)));
+        this[spaceid_2_space]['default' satisfies model_spaces].spawn(new barst(zijde.Voor, new_vec2(_diamant.pos.x + 60, _diamant.pos.y + 40)));
+        this[spaceid_2_space]['default' satisfies model_spaces].spawn(new barst(zijde.Voor, new_vec2(_diamant.pos.x + 110, _diamant.pos.y + 20)));
+        this[spaceid_2_space]['default' satisfies model_spaces].spawn(new barst(zijde.Voor, new_vec2(_diamant.pos.x + 80, _diamant.pos.y + 60)));
+        this[spaceid_2_space]['default' satisfies model_spaces].spawn(new barst(zijde.Boven, new_vec2(_diamant.pos.x + 90, _diamant.pos.y + 100)));
 
         return this;
     }
@@ -855,7 +855,7 @@ class barst extends onvolmaaktheid {
         let defaultErnst = this.max_ernst();
         __ernst && (this.ernst = defaultErnst);
         this.hitarea = new_area(0, 0, 40, 31);
-        this.size = new_vec3(40, 31, undefined);
+        this.size = new_vec3(40, 31, null);
     }
 }
 

@@ -69,7 +69,7 @@ export class statecontext {
 	paused: boolean; // Iff paused, skip 'onrun'
 	/**
 	 * This state machine reflects the (partial) state of the game object with the given id
-	 * @see BaseModel.get
+	 * @see {@link BaseModel.get}
 	 */
 	targetid: string;
 	substate: Record<string, statecontext>;

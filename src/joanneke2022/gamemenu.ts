@@ -477,7 +477,7 @@ export class GameMenu extends GameObject {
                 titleY = GameMenu.mainMenuTextY;
                 break;
         }
-        TextWriter.drawText(titleX, titleY, titleToDraw, undefined, undefined, Msx1Colors[4]);
+        TextWriter.drawText(titleX, titleY, titleToDraw, null, null, Msx1Colors[4]);
         let y = GameMenu.mainMenuTextY + GameMenu.itemOffsetY;
         switch (this.CurrentScreen) {
             case MenuItem.Main:
@@ -489,7 +489,7 @@ export class GameMenu extends GameObject {
                                 // if ((model as Model).state != GameState.Event)
                                 // TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
                                 // else
-                                TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, undefined, undefined, Msx1ExtColors[0]);
+                                TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, null, null, Msx1ExtColors[0]);
                                 break;
                             default:
                                 TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
@@ -514,7 +514,7 @@ export class GameMenu extends GameObject {
                                     TextWriter.drawText(offsetX, y, `${global.view.scale.toPrecision(2)}X`);
                                 }
                                 else {
-                                    TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, undefined, undefined, Msx1ExtColors[0]);
+                                    TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, null, null, Msx1ExtColors[0]);
                                     offsetX += GameMenu.scaleText.length * global.view.default_font.char_height;
                                     // textToDisplay = BDX._.Zoom.ToString("n2");
                                     TextWriter.drawText(offsetX, y, `${global.view.scale.toPrecision(2)}X`);
