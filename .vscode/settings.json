@@ -1,13 +1,16 @@
-{
-        "files.exclude": {
-                "**/.git": true,
-                "**/.DS_Store": true,
-                "**/*.pdn": true,
-                "**/*.bmp": true,
-                "**/*.piskel": true,
-                "**/*.js.map": true,
-                "**/*.log": true,
-                "**/*.js": {"when": "$(basename).ts"}
-        },
-        "typescript.tsdk": "node_modules\\typescript\\lib",
-}
+// {
+//         "files.exclude": {
+//                 "**/.git": true,
+//                 "**/.DS_Store": true,
+//                 "**/*.pdn": true,
+//                 "**/*.bmp": true,
+//                 "**/*.piskel": true,
+//                 "**/*.js.map": true,
+//                 "**/*.log": true,
+//                 "**/*.js": {"when": "$(basename).ts"}
+//         },
+//         "search.exclude": { // Required, as VSCode somehow doesn't honor the .gitignore rules! And I can enjoy using the extra wide display of my Samsung Ultra Wide 49'' monitor!
+//             "**/*.js": false
+//         },
+//         "typescript.tsdk": "node_modules\\typescript\\lib",
+// }

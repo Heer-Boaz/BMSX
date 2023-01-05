@@ -146,6 +146,7 @@ export class statecontext {
 		/* N.B. doesn't trigger the onenter-event!
 		 * Not feasible, as the object doesn't exist in the model (or the model itself doesn't exist yet).
 		 * Therefore, problems will occur when attempting to do stuff during the onenter-event if the object does not yet exist in the model.
+         * Better to use onspawn instead and treat the start-state as just the start-state.
 		 */
 		this.currentid = start ?? NONE_STATE_ID;
 		this.history = new Array();
