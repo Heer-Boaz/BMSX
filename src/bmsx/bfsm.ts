@@ -302,12 +302,10 @@ export class sstate<T extends GameObject | BaseModel = any> {
 
 	protected tapemove() {
 		this.definition.onnext?.call(this.target, this as sstate<T>, state_event_type.Next);
-		// this.definition.onnext?.(this as sstate<T>, this.target, state_event_type.Next);
 	}
 
 	protected tapeend() {
 		this.definition.onend?.call(this.target, this as sstate<T>, state_event_type.End);
-		// this.definition.onend?.(this as sstate<T>, this.target, state_event_type.End);
 	}
 
 	public reset(): void {
@@ -325,11 +323,6 @@ export class sdef {
 
 	@exclude_save
 	public parent!: mdef;
-	// public parent_state: sdef;
-	/**
-	 * `If != undefined`, this state has substates
-	 */
-	// public submachine: mdef;
 
 	public constructor(_id: string = '_', _partialdef?: Partial<sdef>) {
 		this.id = _id;
@@ -363,27 +356,11 @@ export interface machine_states {
 	states: id2partial_sdef;
 }
 
-let test: machine_states = {
-	states: {
-		bla: {
-			nudges2move:10,
-		}
-	}
-}
-
 export class mdef {
 	public id: string;
 	public states: id2sdef;
 	public start_state: string;
 	public static readonly START_STATE_PREFIX = '#';
-
-	// public getStateDef(s_id: string): sdef { return this.states[s_id]; }
-
-	// constructor(id?: string, _partialdef?: Partial<mdef>) {
-	// 	this.id = id ?? DEFAULT_BST_ID;
-	// 	this.states ??= {};
-	// 	_partialdef && Object.assign(this, _partialdef);
-	// }
 
 	constructor(id?: string, state_list?: machine_states) {
 		this.id = id ?? DEFAULT_BST_ID;
@@ -397,14 +374,6 @@ export class mdef {
 		}
 		// _partialdef && Object.assign(this, _partialdef);
 	}
-
-	// public create(id: string): sdef {
-	// 	if (this.states[id]) throw new Error(`State ${id} already exists for state machine!`);
-	// 	let result = new sdef(id);
-	// 	this.states[id] = result;
-	// 	result.parent = this;
-	// 	return result;
-	// }
 
 	static #create_state(partial: Partial<sdef>, _state_id: string): sdef {
 		if (!partial) throw new Error(`'sdef' with id '${_state_id}' is missing definition while attempting to add it to this 'mdef'!`);
@@ -430,10 +399,4 @@ export class mdef {
 		_state.parent = this;
 		mdef.#is_start_state(_state) && this.#set_start_state(_state);
 	}
-
-	// public remove(_id: string): void {
-	// 	let s = this.states[_id];
-	// 	s.parent = undefined;
-	// 	delete this.states[_id];
-	// }
 }
