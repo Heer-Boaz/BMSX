@@ -15,28 +15,28 @@ let preventActionAndPropagation = (e: Event): boolean => {
     return e.returnValue = false; // https://javascriptio.com/view/5386822/prevent-text-selection-on-tap-and-hold-on-ios-13-mobile-safari
 };
 
+type Index2State = { [index: string | number]: boolean };
 export class Input {
-    public static KeyState: {};
-    public static KeyClickRequestedState: {};
-    public static GamepadButtonState: {};
-    public static GamepadClickRequestedState: {};
+    public static KeyState: Index2State;
+    public static KeyClickRequestedState: Index2State;
+    public static GamepadButtonState: Index2State;
+    public static GamepadClickRequestedState: Index2State;
 
-    private static getKeyState(key: string, checkClick: boolean = false): boolean {
-        let state = Input.KeyState[key] === true;
+    private static get_pressed_state(state_map: Index2State, clickstate_map: Index2State, key: string | number, checkClick: boolean = false): boolean {
+        let state = state_map[key] === true;
         if (checkClick && state) {
-            if (Input.KeyClickRequestedState[key]) return false;
-            Input.KeyClickRequestedState[key] = true;
+            if (clickstate_map[key]) return false;
+            clickstate_map[key] = true;
         }
         return state;
     }
 
+    private static getKeyState(key: string, checkClick: boolean = false): boolean {
+        return Input.get_pressed_state(Input.KeyState, Input.KeyClickRequestedState, key, checkClick);
+    }
+
     private static getGamepadButtonState(btn: number, checkClick: boolean = false): boolean {
-        let state = Input.GamepadButtonState[btn] === true;
-        if (checkClick && state) {
-            if (Input.GamepadClickRequestedState[btn]) return false;
-            Input.GamepadClickRequestedState[btn] = true;
-        }
-        return state;
+        return Input.get_pressed_state(Input.GamepadButtonState, Input.GamepadClickRequestedState, btn, checkClick);
     }
 
     public static get KC_F1(): boolean {
@@ -146,9 +146,14 @@ export class Input {
 
         window.addEventListener('beforeunload', e => { e.preventDefault(); return e.returnValue = 'Are you sure you want to exit this awesome game?'; }, true);
 
-        window.addEventListener("gamepadconnected", function (e: Event) {
+        window.addEventListener("gamepadconnected", function (e: GamepadEvent) {
             let gp = navigator.getGamepads()[(e as any).gamepad.index];
             console.info("Gamepad connected at index " + gp.index + ": " + gp.id + ". It has " + gp.buttons.length + " buttons and " + gp.axes.length + " axes.");
+            console.info(`Gamepad mapping = ${gp.mapping}`);
+        });
+        window.addEventListener("gamepaddisconnected", function (e: GamepadEvent) {
+            let gp = navigator.getGamepads()[(e as any).gamepad.index];
+            console.info("Gamepad disconnected at index " + gp.index + ": " + gp.id + ". It has " + gp.buttons.length + " buttons and " + gp.axes.length + " axes.");
         });
 
         window.addEventListener('keydown', e => { preventDefaultEventAction(e, e.code); keydown(e.code); }, false);
@@ -189,7 +194,7 @@ export class Input {
         gamescreen.addEventListener('contextmenu', e => handleDebugContextMenu(e), false);
     }
 
-    public static pollGamepadInput(): void {
+    public static pollGamepadInput(): void { // ! FIXME: ONDERSTEUND ALLEEN 1 SPELER!!
         let buttonPressed = (button: GamepadButton) => {
             if (typeof (button) == "object") {
                 return button.pressed;
@@ -201,8 +206,12 @@ export class Input {
         Input.GamepadButtonState[GAMEPAD_UP] = false;
         Input.GamepadButtonState[GAMEPAD_DOWN] = false;
 
-        let gamepads = navigator.getGamepads ? navigator.getGamepads() : ((navigator as any).webkitGetGamepads ? (navigator as any).webkitGetGamepads : undefined);
-        let gp: Gamepad = gamepads?.[0];
+        let gamepads: Gamepad[] = navigator.getGamepads ? navigator.getGamepads() : ((navigator as any).webkitGetGamepads ? (navigator as any).webkitGetGamepads : undefined);
+        // ! FIXME: Moet niet hardcoded zijn!
+        let gp: Gamepad = gamepads?.find((gp: Gamepad) => {
+            if (gp) return !gp.id.includes('Sound Blaster');
+            return false;
+        }); // Note that gp can be `null` if gamepads have not been connected yet
         if (!gp) { return; }
         for (let i = 0; i < gp.buttons.length; i++) {
             if (buttonPressed(gp.buttons[i])) {
@@ -213,6 +222,8 @@ export class Input {
                 Input.GamepadClickRequestedState[i] = false;
             }
         }
+
+        // Check whether any axes have been triggered
         for (let i = 0; i < gp.axes.length && i < 2; i++) {
             let axis = gp.axes[i];
             switch (i) {
@@ -296,8 +307,9 @@ function keydown(key: ButtonId | string): void {
 }
 
 function keyup(key: ButtonId | string): void {
-    delete Input.KeyState[key];
-    delete Input.KeyClickRequestedState[key];
+    Input.KeyState[key] = Input.KeyClickRequestedState[key] = false;
+    // delete Input.KeyState[key];
+    // delete Input.KeyClickRequestedState[key];
 }
 
 function blur(e: FocusEvent): void {
@@ -351,7 +363,6 @@ function handleElementUnderTouch(e: Element): (ButtonId | string)[] {
             keydown('ArrowDown');
             document.getElementById('d-pad-d').classList.add('druk');
             return [Key.ArrowDown];
-            break;
         case 'd-pad-ld':
             keydown('ArrowLeft');
             keydown('ArrowDown');
