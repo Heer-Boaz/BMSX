@@ -147,7 +147,7 @@ export abstract class GLView extends BaseView {
     constructor(viewportsize: Size) {
         super(viewportsize);
         this.glctx = this.canvas.getContext('webgl2', {
-            alpha: false,
+            alpha: true,
             desynchronized: false,
             preserveDrawingBuffer: false,
             antialias: false,
