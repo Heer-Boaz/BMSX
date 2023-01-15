@@ -11,7 +11,7 @@
 				// "--disable-web-security", // Old and outdated, but it works when using the non-debug URL!
 				// "--headless",
 				"--nolazy",
-				// "--allow-file-access-from-files", // https://www.webmo.net/link/help/AccessingLocalFiles.html
+				"--allow-file-access-from-files", // https://www.webmo.net/link/help/AccessingLocalFiles.html
 				"--disable-session-crashed-bubble",
 				"-inprivate", // https://dev.to/kasuken/debug-with-visual-studio-using-all-browsers-in-incognito-mode-57mb
 				"--remote-debugging-port=9222",

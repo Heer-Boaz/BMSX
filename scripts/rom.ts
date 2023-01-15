@@ -306,7 +306,8 @@ async function fetchLocal(url: string): Promise<ArrayBuffer> {
 			resolve(xhr.response);
 		};
 		xhr.onabort = xhr.ontimeout = xhr.onerror = function (ev: ProgressEvent) {
-			reject(`Local request failed for ROM image ${(ev.target as XMLHttpRequest).statusText ?? 'unknown reason'}`);
+			// On error, [ev.target.statusText] is empty :-(
+			reject(`Failed to download rompack from "${url}" :-(`);
 		};
 		xhr.open('GET', url);
 		xhr.send(null);
