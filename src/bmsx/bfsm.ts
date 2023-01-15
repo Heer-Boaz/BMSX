@@ -45,7 +45,7 @@ export type id2sdef = Record<string, sdef>;
 export type id2mdef = Record<string, mdef>;
 export type id2mstate = Record<string, statecontext>;
 export type id2sstate = Record<string, sstate>;
-export interface state_event_handler { ( state: sstate, type: state_event_type): void; }
+export interface state_event_handler { ( state: sstate, type: state_event_type): any; }
 export type Tape = any[];
 
 const BST_MAX_HISTORY = 10;
@@ -75,7 +75,17 @@ export class statecontext {
 	substate: Record<string, statecontext>;
 
 	public get target(): GameObject | BaseModel { return global.model.get(this.targetid); }
+	/**
+	 * Returns the current state of the FSM
+	 */
 	public get current(): sstate { return this.states[this.currentid]; }
+	/**
+	 * Gets the state with the given id from the state machine.
+	 * Used for referencing states from within the state instance, instead
+	 * of referencing states from the state machine definition.
+	 * @param id - id of the state, according to its definition
+	 */
+	public get_sstate(id: string) { return this.states[id]; }
 	public get definition(): mdef { return MachineDefinitions[this.id]; }
 	public get start_state_id(): string { return MachineDefinitions[this.id].start_state; }
 
@@ -185,20 +195,6 @@ export class statecontext {
 		}
 	}
 }
-
-// export type tsstate<T extends GameObject> = {
-// 	get ik(): T;
-// } & sstate;
-
-// export type bla<T extends GameObject> = sstate & {
-// 	// on<Key extends string & keyof T>
-// 	// 	(bla: `${Key}`, blip: 2): void;
-
-// 	// [targetid => GameObject in sstate as any]
-// }
-
-// type blup = bla<GameObject>;
-// let a:blup = undefined;
 
 @insavegame
 export class sstate<T extends GameObject | BaseModel = any> {
@@ -332,7 +328,6 @@ export class sdef {
 	}
 
 	public onrun?: state_event_handler;
-	public onfinal?: state_event_handler;
 	public onend?: state_event_handler;
 	public onnext?: state_event_handler;
 	public onenter?: state_event_handler;
@@ -342,7 +337,6 @@ export class sdef {
 	// Helper function to set all handlers
 	public setAllHandlers(handler: state_event_handler): void {
 		this.onrun = handler;
-		this.onfinal = handler;
 		this.onend = handler;
 		this.onnext = handler;
 		this.onenter = handler;

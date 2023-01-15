@@ -9,10 +9,12 @@
 			"url": "${workspaceFolder}/dist/game_debug.html",
 			"runtimeArgs": [
 				// "--disable-web-security", // Old and outdated, but it works when using the non-debug URL!
+				// "--headless",
 				"--nolazy",
-				"--allow-file-access-from-files", // https://www.webmo.net/link/help/AccessingLocalFiles.html
+				// "--allow-file-access-from-files", // https://www.webmo.net/link/help/AccessingLocalFiles.html
 				"--disable-session-crashed-bubble",
 				"-inprivate", // https://dev.to/kasuken/debug-with-visual-studio-using-all-browsers-in-incognito-mode-57mb
+				"--remote-debugging-port=9222",
 				// "--start-fullscreen",
 				// "--kiosk",
 				// "--edge-kiosk-type=public-browsing",
@@ -59,5 +61,24 @@
 				"order": 2
 			}
 		},
+		{
+			"type": "vscode-edge-devtools.debug",
+			"name": "Open Edge DevTools",
+			"request": "attach",
+			"url": "${workspaceFolder}/dist/game_debug.html",
+			// "url": "c:\\Users\\boazp\\.vscode\\extensions\\ms-edgedevtools.vscode-edge-devtools-2.1.1\\out\\startpage\\index.html",
+			"presentation": {
+				"hidden": true
+			}
+		}
 	],
+	// "compounds": [
+	// 	{
+	// 		"name": "Launch Edge and attach DevTools",
+	// 		"configurations": [
+	// 			"Debug the game!",
+	// 			"Open Edge DevTools"
+	// 		]
+	// 	}
+	// ],
 }
