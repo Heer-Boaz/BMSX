@@ -459,7 +459,7 @@ export function GetDeltaFromSourceToTarget(source: vec2, target: vec2): vec2 {
 }
 
 export function LineLength(p1: vec3, p2: vec3): number {
-    return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2)) - 1;
+    return Math.sqrt((p2.x - p1.x)**2 + (p2.y - p1.y)**2) - 1;
 }
 
 // https://developer.mozilla.org/en-US/docs/Web/API/Web_Storage_API/Using_the_Web_Storage_API
