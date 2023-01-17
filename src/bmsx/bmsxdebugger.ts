@@ -1,7 +1,7 @@
 import { MachineDefinitions } from './bfsm';
 import { area2size, copy_vec2, new_vec2, vec3, translate_vec2, trunc_vec2, vec2, trunc_vec3, div_vec2 } from './bmsx';
 import { GameObject } from './gameobject';
-import { Serializer } from './gamereviver';
+import { Serializer } from './gameserializer';
 import { SpriteObject } from './sprite';
 import { Color, paintImage } from './view';
 const DEBUG_ELEMENT_ID = 'debug_element_id';

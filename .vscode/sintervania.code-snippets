@@ -15,6 +15,16 @@
 	// 	],
 	// 	"description": "Log output to console"
 	// }
+	"add_region": {
+		"scope": "typescript",
+		"prefix": "@region",
+		"body": [
+			"$0",
+			"// #region ${1:name}",
+			"// #endregion",
+		],
+		"description": "Voeg region toe",
+	},
     "get_set_accessor": {
         "scope": "typescript",
         "prefix": "@accessor",

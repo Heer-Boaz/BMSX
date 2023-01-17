@@ -4,7 +4,7 @@ import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
 import { Input } from '../bmsx/input';
 import { sstate, statedef_builder, machine_states } from '../bmsx/bfsm';
-import { insavegame } from '../bmsx/gamereviver';
+import { show_download_savestate_dialog, insavegame, show_openfile_dialog, show_load_savestate_dialog } from '../bmsx/gameserializer';
 import { new_area, Direction, Game, new_vec2 } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
 import { BaseModel } from '../bmsx/model';
@@ -28,17 +28,23 @@ class bclass extends SpriteObject {
                 this.pos.x -= 2;
             }
             if (Input.KC_BTN1) {
-                _model[savestring] = _model.save();
-                console.info(`${new Date().toTimeString()} Game saved!`);
-                console.info(`${_model[savestring]}`);
+                // _model[savestring] = _model.save();
+                // console.info(`${new Date().toTimeString()} Game saved!`);
+                // console.info(`${_model[savestring]}`);
+                show_download_savestate_dialog();
             }
             if (Input.KC_BTN2) {
-                if (_model[savestring]) {
-                    _model.load(_model[savestring]);
-                    _model[savestring] = undefined;
-                    delete _model[savestring];
-                    console.info(`${new Date().toTimeString()} Game loaded!`);
-                }
+                // if (_model[savestring]) {
+                //     _model.load(_model[savestring]);
+                //     _model[savestring] = undefined;
+                //     delete _model[savestring];
+                //     console.info(`${new Date().toTimeString()} Game loaded!`);
+                // }
+                show_load_savestate_dialog();
+            }
+            if (Input.KC_BTN3) {
+            }
+            if (Input.KC_BTN4) {
             }
             // Input.KC_BTN3 && me.state.to('blap');
             // Input.KC_BTN3 && debugtest1();

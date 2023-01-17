@@ -1,7 +1,7 @@
 import { statecontext, mdef, MachineDefinitions, sdef, setup_fsmdef_library, sstate } from "./bfsm";
 import { Direction, vec2, vec3 } from "./bmsx";
 import { GameObject } from "./gameobject";
-import { insavegame, onsave, Reviver, Savegame, Serializer } from "./gamereviver";
+import { insavegame, onsave, Reviver, Savegame, Serializer } from "./gameserializer";
 import { Input } from "./input";
 
 export interface ISpaceObject {

@@ -156,3 +156,59 @@ export class Savegame {
     allSpacesObjects: ISpaceObject[];
     spaces: Space[];
 }
+
+export function show_download_savestate_dialog() {
+    const data = model.save();
+
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(
+        new Blob([data], {
+            type: "data:application/json"
+        })
+    );
+    a.download = 'savestate.bmsx';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+}
+
+let setload: HTMLInputElement = undefined;
+
+export function show_openfile_dialog(options: { multiple: boolean, accept: string, eventlistener: (this: HTMLInputElement, ev: Event) => any }) {
+    setload = document.createElement('input');
+    setload.type = 'file';
+    setload.multiple = options.multiple;
+    setload.accept = options.accept;
+    setload.style.display = 'none';
+    setload.click();
+
+    setload.addEventListener('change', options.eventlistener);
+}
+
+export function show_load_savestate_dialog() {
+    show_openfile_dialog({ multiple: false, accept: '.bmsx', eventlistener: load_savestate });
+}
+
+function are_any_files_selected_via_openfile_dialog(files: FileList) {
+    return files && files.length !== 0;
+}
+
+function get_first_selected_file_from_openfile_dialog(files: FileList): File {
+    if (!are_any_files_selected_via_openfile_dialog(files)) {
+        // Do nothing
+        console.debug('Geen bestand geselecteerd!');
+        return undefined;
+    }
+    else {
+        return files[0];
+    }
+}
+
+function load_savestate(this: HTMLInputElement, ev: Event) {
+    const file = get_first_selected_file_from_openfile_dialog(setload.files);
+    if (file) {
+        file.text().then(result => globalThis.model.load(result));
+    }
+    setload = undefined;
+}

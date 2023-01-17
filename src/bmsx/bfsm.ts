@@ -1,5 +1,5 @@
 import { GameObject } from "./gameobject";
-import { exclude_save, insavegame } from "./gamereviver";
+import { exclude_save, insavegame } from "./gameserializer";
 import { BaseModel } from "./model";
 
 export var MachineDefinitions: Record<string, mdef>;

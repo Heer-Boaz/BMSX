@@ -27,6 +27,7 @@ var bvec = {
             v[16] = color.r, v[17] = color.g, v[18] = color.b, v[19] = color.a,
             v[20] = color.r, v[21] = color.g, v[22] = color.b, v[23] = color.a;
     },
+    // #region old matrix stuff
     // set_color_values: function (v: Float32Array, r: number, g: number, b: number, a: number): void {
     // 	v[0] = r, v[1] = g, v[2] = b, v[3] = a,
     // 	v[4] = r, v[5] = g, v[6] = b, v[7] = a,
@@ -64,6 +65,7 @@ var bvec = {
     // 		v[i + 6] = left,
     // 		v[i + 7] = bottom;
     // },
+    // #endregion
 };
 
 export const DEFAULT_VERTEX_COLOR: Color = { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };

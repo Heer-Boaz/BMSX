@@ -1,6 +1,6 @@
 import { statecontext } from "./bfsm";
 import { vec3, Area, Direction, moveArea, multiply_vec2, new_vec2, div_vec2, mod, vec2, new_vec3, translate_vec2, new_area } from "./bmsx";
-import { insavegame } from "./gamereviver";
+import { insavegame } from "./gameserializer";
 import { TileSize } from "./msx";
 
 @insavegame
