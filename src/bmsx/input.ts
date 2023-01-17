@@ -143,6 +143,10 @@ export class Input {
         Input.GamepadButtonState = {};
         Input.GamepadClickRequestedState = {};
         Input.reset();
+        const options = {
+            passive: false,
+            once: false,
+        };
 
         window.addEventListener('beforeunload', e => { e.preventDefault(); return e.returnValue = 'Are you sure you want to exit this awesome game?'; }, true);
 
@@ -150,32 +154,32 @@ export class Input {
             let gp = navigator.getGamepads()[(e as any).gamepad.index];
             console.info("Gamepad connected at index " + gp.index + ": " + gp.id + ". It has " + gp.buttons.length + " buttons and " + gp.axes.length + " axes.");
             console.info(`Gamepad mapping = ${gp.mapping}`);
-        });
+        }, options);
         window.addEventListener("gamepaddisconnected", function (e: GamepadEvent) {
             let gp = navigator.getGamepads()[(e as any).gamepad.index];
             console.info("Gamepad disconnected at index " + gp.index + ": " + gp.id + ". It has " + gp.buttons.length + " buttons and " + gp.axes.length + " axes.");
-        });
+        }, options);
 
-        window.addEventListener('keydown', e => { preventDefaultEventAction(e, e.code); keydown(e.code); }, false);
-        window.addEventListener('keyup', e => { preventDefaultEventAction(e, e.code); keyup(e.code); }, false);
+        window.addEventListener('keydown', e => { preventDefaultEventAction(e, e.code); keydown(e.code); }, options);
+        window.addEventListener('keyup', e => { preventDefaultEventAction(e, e.code); keyup(e.code); }, options);
         window.addEventListener('blur', blur, false);
 
-        document.addEventListener('touchmove', e => { preventActionAndPropagation(e); handleTouchStuff(e); return false; }, false);
-        document.addEventListener('touchstart', e => { preventActionAndPropagation(e); handleTouchStuff(e); return false; }, false);
-        document.addEventListener('touchend', e => { preventActionAndPropagation(e); handleTouchStuff(e); return false; }, false);
-        document.addEventListener('touchcancel', e => { preventActionAndPropagation(e); handleTouchStuff(e); return false; }, false);
+        document.addEventListener('touchmove', e => { preventActionAndPropagation(e); handleTouchStuff(e); return false; }, options);
+        document.addEventListener('touchstart', e => { preventActionAndPropagation(e); handleTouchStuff(e); return false; }, options);
+        document.addEventListener('touchend', e => { preventActionAndPropagation(e); handleTouchStuff(e); return false; }, options);
+        document.addEventListener('touchcancel', e => { preventActionAndPropagation(e); handleTouchStuff(e); return false; }, options);
         // document.addEventListener('dragenter', e => { preventActionAndPropagation(e); return false; }, false);
         // document.addEventListener('dragover', e => { preventActionAndPropagation(e); return false; }, false);
         // document.addEventListener('dragstart', e => { preventActionAndPropagation(e); return false; }, false);
 
-        document.addEventListener('webkitmouseforcewillbegin', e => preventActionAndPropagation(e), false);
-        window.addEventListener('webkitmouseforcewillbegin', e => preventActionAndPropagation(e), false);
-        document.addEventListener('webkitmouseforcedown', e => preventActionAndPropagation(e), false);
-        window.addEventListener('webkitmouseforcedown', e => preventActionAndPropagation(e), false);
+        document.addEventListener('webkitmouseforcewillbegin', e => preventActionAndPropagation(e), options);
+        window.addEventListener('webkitmouseforcewillbegin', e => preventActionAndPropagation(e), options);
+        document.addEventListener('webkitmouseforcedown', e => preventActionAndPropagation(e), options);
+        window.addEventListener('webkitmouseforcedown', e => preventActionAndPropagation(e), options);
         // document.addEventListener('contextmenu', e => preventActionAndPropagation(e), false);
         // window.addEventListener('contextmenu', e => preventActionAndPropagation(e), false);
-        document.addEventListener('touchforcechange', e => preventActionAndPropagation(e), false);// iOS -- https://stackoverflow.com/questions/58159526/draggable-element-in-iframe-on-mobile-is-buggy && iOS -- https://stackoverflow.com/questions/50980876/can-you-prevent-3d-touch-on-an-img-but-not-tap-and-hold-to-save
-        window.addEventListener('touchforcechange', e => preventActionAndPropagation(e), false);
+        document.addEventListener('touchforcechange', e => preventActionAndPropagation(e), options);// iOS -- https://stackoverflow.com/questions/58159526/draggable-element-in-iframe-on-mobile-is-buggy && iOS -- https://stackoverflow.com/questions/50980876/can-you-prevent-3d-touch-on-an-img-but-not-tap-and-hold-to-save
+        window.addEventListener('touchforcechange', e => preventActionAndPropagation(e), options);
         // document.addEventListener('dragstart', e => preventActionAndPropagation(e), false);
         // window.addEventListener('dragstart', e => preventActionAndPropagation(e), false);
         // document.addEventListener('dragover', e => preventActionAndPropagation(e), false);
@@ -186,12 +190,12 @@ export class Input {
         // window.addEventListener('pointermove', e => preventActionAndPropagation(e), false);
 
         let gamescreen = document.getElementById('gamescreen');
-        gamescreen.addEventListener('click', e => handleDebugClick(e), false);
-        gamescreen.addEventListener('mousedown', e => handleDebugMouseDown(e), false);
-        gamescreen.addEventListener('mousemove', e => handleDebugMouseMove(e), false);
-        gamescreen.addEventListener('mouseup', e => handleDebugMouseDragEnd(e), false);
-        gamescreen.addEventListener('mouseout', e => handleDebugMouseOut(e), false);
-        gamescreen.addEventListener('contextmenu', e => handleDebugContextMenu(e), false);
+        gamescreen.addEventListener('click', e => handleDebugClick(e), options);
+        gamescreen.addEventListener('mousedown', e => handleDebugMouseDown(e), options);
+        gamescreen.addEventListener('mousemove', e => handleDebugMouseMove(e), options);
+        gamescreen.addEventListener('mouseup', e => handleDebugMouseDragEnd(e), options);
+        gamescreen.addEventListener('mouseout', e => handleDebugMouseOut(e), options);
+        gamescreen.addEventListener('contextmenu', e => handleDebugContextMenu(e), options);
     }
 
     public static pollGamepadInput(): void { // ! FIXME: ONDERSTEUND ALLEEN 1 SPELER!!

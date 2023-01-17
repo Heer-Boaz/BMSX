@@ -273,8 +273,8 @@ async function awaitPressedAnyKey(): Promise<void> {
 
 		document.addEventListener('keyup', startAudioOnIos, true);
 		document.addEventListener('touchend', startAudioOnIos, true);
-		document.body.addEventListener('keyup', onuserinteraction);
-		document.body.addEventListener('touchend', onuserinteraction, true);
+		document.body.addEventListener('keyup', onuserinteraction, { passive: false, once: true, capture: false });
+		document.body.addEventListener('touchend', onuserinteraction, { passive: false, once: true, capture: false });
 	});
 	return result;
 }
@@ -306,7 +306,8 @@ async function fetchLocal(url: string): Promise<ArrayBuffer> {
 			resolve(xhr.response);
 		};
 		xhr.onabort = xhr.ontimeout = xhr.onerror = function (ev: ProgressEvent) {
-			reject((reason?: any) => new TypeError(`Local request failed for ROM image ${reason ?? 'unknown reason'}`));
+			// On error, [ev.target.statusText] is empty :-(
+			reject(`Failed to download rompack from "${url}" :-(`);
 		};
 		xhr.open('GET', url);
 		xhr.send(null);
