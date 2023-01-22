@@ -10,15 +10,8 @@
     "requirejs": "*"
   },
   "devDependencies": {
-    "@babel/core": "*",
-    "@babel/plugin-proposal-nullish-coalescing-operator": "*",
-    "@babel/plugin-proposal-optional-chaining": "*",
-    "@babel/plugin-transform-modules-commonjs": "*",
-    "@babel/plugin-transform-modules-systemjs": "*",
-    "@babel/preset-env": "*",
     "@node-minify/clean-css": "*",
     "@node-minify/core": "*",
-    "@types/babelify": "*",
     "@types/browserify": "*",
     "@types/cli-progress": "*",
     "@types/js-yaml": "*",
@@ -27,8 +20,6 @@
     "@types/pako": "*",
     "@types/systemjs": "*",
     "@types/terminal-kit": "*",
-    "babel-core": "*",
-    "babel-preset-env": "*",
     "browserify": "*",
     "canvas": "*",
     "colors": "*",
@@ -53,7 +44,7 @@
     "type": "git",
     "url": "git+https://github.com/Heer-Boaz/Sintervania.git"
   },
-  "author": "",
+  "author": "Boaz Pat-El",
   "license": "ISC",
   "bugs": {
     "url": "https://github.com/Heer-Boaz/Sintervania/issues"
