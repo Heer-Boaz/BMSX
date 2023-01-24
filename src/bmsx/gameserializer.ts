@@ -197,7 +197,7 @@ function are_any_files_selected_via_openfile_dialog(files: FileList) {
 function get_first_selected_file_from_openfile_dialog(files: FileList): File {
     if (!are_any_files_selected_via_openfile_dialog(files)) {
         // Do nothing
-        console.debug('Geen bestand geselecteerd!');
+        console.info('Geen bestand geselecteerd!');
         return undefined;
     }
     else {
