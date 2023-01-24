@@ -57,12 +57,12 @@ class bclass extends SpriteObject {
         return {
             states: {
                 bla: {
-                    onrun: blarun,
-                    onenter(this: bclass) { this.imgid = BitmapId.b; },
+                    run: blarun,
+                    enter(this: bclass) { this.imgid = BitmapId.b; },
                 },
                 '#blap': {
-                    onrun: blarun,
-                    onenter(this: bclass) { this.imgid = BitmapId.b2; },
+                    run: blarun,
+                    enter(this: bclass) { this.imgid = BitmapId.b2; },
                 },
             }
         };
@@ -85,12 +85,12 @@ class gamemodel extends BaseModel {
         return {
             states: {
                 '#game_start': {
-                    onrun(this: gamemodel, s: sstate) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
+                    run(this: gamemodel, s: sstate) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
                         this.state.to('default');
                     }
                 },
                 default: {
-                    onrun: BaseModel.defaultrun,
+                    run: BaseModel.defaultrun,
                 },
             }
         };

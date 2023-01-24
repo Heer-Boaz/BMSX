@@ -52,17 +52,17 @@ class gamemodel extends BaseModel {
         return {
             states: {
                 game_start: {
-                    onrun(this: gamemodel, s: sstate<gamemodel>) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
+                    run(this: gamemodel, s: sstate<gamemodel>) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
                         this.state.to('uitleg' satisfies model_states);
                     }
                 },
                 default: {
                     nudges2move: 50,
-                    onenter(this: gamemodel, s: sstate<gamemodel>) {
+                    enter(this: gamemodel, s: sstate<gamemodel>) {
                         this.setSpace('default');
                         this.time_to_shine = TIME_TO_SHINE;
                     },
-                    onnext(this: gamemodel, s: sstate<gamemodel>) {
+                    next(this: gamemodel, s: sstate<gamemodel>) {
                         --this.time_to_shine;
                         if (this.time_to_shine < 0) {
                             this.time_to_shine = 0;
@@ -70,7 +70,7 @@ class gamemodel extends BaseModel {
                             this.state.to('evaluatie' satisfies model_states);
                         }
                     },
-                    onrun(this: gamemodel, s: sstate<gamemodel>) {
+                    run(this: gamemodel, s: sstate<gamemodel>) {
                         BaseModel.defaultrun();
                         this.state.substate.gamemenu.run();
                         if (!this.paused) ++s.nudges; // Laat timer lopen
@@ -79,33 +79,33 @@ class gamemodel extends BaseModel {
                 },
                 evaluatie: {
                     nudges2move: 50,
-                    onenter(this: gamemodel, s: sstate<gamemodel>) {
+                    enter(this: gamemodel, s: sstate<gamemodel>) {
                         this.setSpace('evaluatie' satisfies model_spaces);
                         this.time_to_shine = 5;
                     },
-                    onnext(this: gamemodel, s: sstate<gamemodel>) {
+                    next(this: gamemodel, s: sstate<gamemodel>) {
                         --this.time_to_shine;
                         if (this.time_to_shine < 0) {
                             this.time_to_shine = 0;
                             this.state.to('hoera' satisfies model_states);
                         }
                     },
-                    onrun(s: sstate) {
+                    run(s: sstate) {
                         ++s.nudges;
                     },
                     process_input: BaseModel.default_input_handler,
                 },
                 hoera: {
-                    onenter(this: gamemodel, s: sstate<gamemodel>) {
+                    enter(this: gamemodel, s: sstate<gamemodel>) {
                         this.setSpace('hoera!' satisfies model_spaces);
                     },
                 },
                 uitleg: {
-                    onenter(this: gamemodel, s: sstate<gamemodel>) {
+                    enter(this: gamemodel, s: sstate<gamemodel>) {
                         this.uitleg_tekst_dinges = 0;
                         this.setSpace('uitleg');
                     },
-                    onrun(this: gamemodel, s: sstate<gamemodel>) {
+                    run(this: gamemodel, s: sstate<gamemodel>) {
                         BaseModel.defaultrun();
                     },
                     process_input: BaseModel.default_input_handler,
@@ -123,17 +123,17 @@ class gamemodel extends BaseModel {
                 },
                 open:{
                     process_input: BaseModel.default_input_handler_for_allow_close_gamemenu,
-                    onenter(this: gamemodel, s: sstate<gamemodel>) {
+                    enter(this: gamemodel, s: sstate<gamemodel>) {
                         let menu = new GameMenu();
                         this.spawn(menu);
                         menu.Open();
 
                         this.paused = true;
                     },
-                    onrun(this: gamemodel, s: sstate<gamemodel>) {
+                    run(this: gamemodel, s: sstate<gamemodel>) {
                         this.get<GameMenu>('gamemenu').run();
                     },
-                    onexit(this: gamemodel, s: sstate<gamemodel>) {
+                    exit(this: gamemodel, s: sstate<gamemodel>) {
                         let menu = this.get<GameMenu>('gamemenu');
                         menu.Close();
                         this.exile(menu);
@@ -299,56 +299,38 @@ class uitlegStuff extends SpriteObject {
     }
 
     override paint() {
-        let line1: string;
-        let line2: string;
-        let line3: string;
+        let lines: string[];
 
         if (!_model) return;
         let bla = _model.uitleg_tekst_dinges;
         switch (bla) {
             case 0:
-                line1 = `Deze diamant heeft blemishes!`;
-                line2 = `Jij moet dit nu fixen!`;
-                line3 = ``;
+                lines = [`Deze diamant heeft blemishes!`, `Jij moet dit nu fixen!`, ``];
                 break;
             case 1:
-                line1 = `Gebruik de slijpsteen om`;
-                line2 = `de diamant te herstellen!`;
-                line3 = ``;
+                lines = [`Gebruik de slijpsteen om`, `de diamant te herstellen!`, ``];
                 break;
             case 2:
-                line1 = `Bestuur de slijpsteen met`;
-                line2 = `de cursortoetsen en zet deze`;
-                line3 = `boven de kapotte delen.`;
+                lines = [`Bestuur de slijpsteen met`, `de cursortoetsen en zet deze`, `boven de kapotte delen.`];
                 break;
             case 3:
-                line1 = `Druk op lshift`;
-                line2 = `Om de slijpsteen aan te zetten.`;
-                line3 = ``;
+                lines = [`Druk op lshift`, `Om de slijpsteen aan te zetten.`, ``];
                 break;
             case 4:
-                line1 = `Maar pas op!`;
-                line2 = `Te lang slijpen maakt`;
-                line3 = `nieuwe problemen en`;
+                lines = [`Maar pas op!`, `Te lang slijpen maakt`, `nieuwe problemen en`];
                 break;
             case 5:
-                line1 = `Die moet je dan weer`;
-                line2 = `repareren met de slijpsteen`;
-                line3 = `Oh en je hebt 1 minuut!`;
+                lines = [`Die moet je dan weer`, `repareren met de slijpsteen`, `Oh en je hebt 1 minuut!`];
                 break;
             case 6:
-                line1 = `De Sint gaat je beoordelen!`;
-                line2 = `Goed geluk!`;
-                line3 = ``;
+                lines = [`De Sint gaat je beoordelen!`, `Goed geluk!`, ``];
                 break;
             default:
-                line1 = line2 = line3 = 'Urghh!!';
+                lines = ['Urghh!!'];
                 break;
         }
 
-        TextWriter.drawText(16, 160, `${line1}`);
-        TextWriter.drawText(16, 168, `${line2}`);
-        TextWriter.drawText(16, 176, `${line3}`);
+        TextWriter.drawText(16, 160, lines);
 
         super.paint.call(this); // .call() nodig, anders "this" undefined
     };
@@ -380,14 +362,14 @@ class hud extends GameObject {
             states: {
                 default: new sdef('default', {
                     // nudges2move: 50,
-                    onenter(this: hud, s: sstate<hud>) {
+                    enter(this: hud, s: sstate<hud>) {
                         s.reset();
                         this.visible = true;
                     },
-                    onrun(this: hud, s: sstate<hud>) {
+                    run(this: hud, s: sstate<hud>) {
                         // ++s.nudges;
                     },
-                    onnext(this: hud, s: sstate<hud>) {
+                    next(this: hud, s: sstate<hud>) {
                     },
                 }),
             }
@@ -427,17 +409,17 @@ class stoom extends SpriteObject {
                         BitmapId.pluimx,
                     ],
                     nudges2move: 2,
-                    onenter(this: stoom, s: sstate<stoom>) {
+                    enter(this: stoom, s: sstate<stoom>) {
                         s.reset();
                         this.imgid = s.current;
                     },
-                    onrun(this: stoom, s: sstate<stoom>) {
+                    run(this: stoom, s: sstate<stoom>) {
                         ++s.nudges;
                     },
-                    onnext(this: stoom, s: sstate<stoom>) {
+                    next(this: stoom, s: sstate<stoom>) {
                         this.imgid = s.current;
                     },
-                    onend(this: stoom, s: sstate<stoom>) {
+                    end(this: stoom, s: sstate<stoom>) {
                         this.banish();
                     }
                 }),
@@ -470,18 +452,15 @@ class diamant extends SpriteObject {
         switch (this._getoonde_zijde) {
             case zijde.Voor:
                 this.imgid = BitmapId.diamond_front;
-                this.hitarea = new_area(0, 0, this.sx, this.sy);
-                // this.size = new_vec2(187, 105);
+                this.hitarea = new_area(0, 0, this.sx, this.sy); // ? TODO: Dit nog nodig?
                 break;
             case zijde.Zij:
                 this.imgid = BitmapId.diamond_front;
                 this.hitarea = new_area(0, 0, this.sx, this.sy);
-                // this.size = new_vec2(187, 105);
                 break;
             case zijde.Boven:
                 this.imgid = BitmapId.diamond_top;
                 this.hitarea = new_area(0, 0, this.sx, this.sy);
-                // this.size = new_vec2(192, 192);
                 break;
         }
 
@@ -501,11 +480,11 @@ class draaischijf extends SpriteObject {
         return {
             states: {
                 idle: new sdef('idle', {
-                    onenter(this: draaischijf, s: sstate<draaischijf>) {
+                    enter(this: draaischijf, s: sstate<draaischijf>) {
                         s.reset();
                         this.imgid = BitmapId.slijpschijf1;
                     },
-                    onrun(this: draaischijf, s: sstate<draaischijf>) {
+                    run(this: draaischijf, s: sstate<draaischijf>) {
                         // this.handle_input_idle_state();
                     },
                     process_input: draaischijf.handle_input_idle_state,
@@ -524,18 +503,18 @@ class draaischijf extends SpriteObject {
                         BitmapId.slijpschijf1,
                         BitmapId.slijpschijf2,
                     ],
-                    onenter(this: draaischijf, s: sstate<draaischijf>) {
+                    enter(this: draaischijf, s: sstate<draaischijf>) {
                         s.reset();
                         this.imgid = s.current;
                     },
                     process_input: draaischijf.handle_input_slijp_opstart_state,
-                    onrun(this: draaischijf, s: sstate<draaischijf>) {
+                    run(this: draaischijf, s: sstate<draaischijf>) {
                         ++s.nudges;
                     },
-                    onend(this: draaischijf, s: sstate<draaischijf>) {
+                    end(this: draaischijf, s: sstate<draaischijf>) {
                         this.state.to('slijpen');
                     },
-                    onnext(this: draaischijf, s: sstate<draaischijf>) {
+                    next(this: draaischijf, s: sstate<draaischijf>) {
                         this.imgid = s.current;
                     },
                 }),
@@ -545,18 +524,18 @@ class draaischijf extends SpriteObject {
                         BitmapId.slijpschijf3,
                         BitmapId.slijpschijf4,
                     ],
-                    onenter(this: draaischijf, s: sstate<draaischijf>) {
+                    enter(this: draaischijf, s: sstate<draaischijf>) {
                         s.reset();
                         this.imgid = s.current;
                     },
                     process_input: draaischijf.handle_input_slijp_state,
-                    onrun(this: draaischijf, s: sstate<draaischijf>) {
+                    run(this: draaischijf, s: sstate<draaischijf>) {
                         ++s.nudges;
                     },
                     // onend(this: draaischijf, s: sstate<draaischijf>) {
 
                     // },
-                    onnext(this: draaischijf, s: sstate<draaischijf>) {
+                    next(this: draaischijf, s: sstate<draaischijf>) {
                         this.imgid = s.current;
                         if (s.head === 0) ++this.pos.y;
                         else --this.pos.y;
@@ -577,18 +556,18 @@ class draaischijf extends SpriteObject {
                         BitmapId.slijpschijf1,
                         BitmapId.slijpschijf2,
                     ],
-                    onenter(this: draaischijf, s: sstate<draaischijf>) {
+                    enter(this: draaischijf, s: sstate<draaischijf>) {
                         s.reset();
                         this.imgid = s.current;
                     },
                     process_input: draaischijf.handle_input_slijp_afkoel_state,
-                    onrun(this: draaischijf, s: sstate<draaischijf>) {
+                    run(this: draaischijf, s: sstate<draaischijf>) {
                         ++s.nudges;
                     },
-                    onend(this: draaischijf, s: sstate<draaischijf>) {
+                    end(this: draaischijf, s: sstate<draaischijf>) {
                         this.state.to('idle');
                     },
-                    onnext(this: draaischijf, s: sstate<draaischijf>) {
+                    next(this: draaischijf, s: sstate<draaischijf>) {
                         this.imgid = s.current;
                     },
                 }),
