@@ -41,7 +41,7 @@ class modelclass extends BaseModel {
                 master: new mdef('default', {
                     states: {
                        default: new sdef('default', {
-                           onrun() {
+                           run() {
                                BaseModel.defaultrun();
                                if (Input.KC_F5) {
                                    global.model.state.to('gamemenu');
@@ -49,26 +49,26 @@ class modelclass extends BaseModel {
                            },
                        }),
                        'gamemenu': new sdef('gamemenu', {
-                           onenter() {
+                           enter() {
                                let menu = new GameMenu();
                                global.model.spawn(menu);
                                menu.Open();
                            },
-                           onrun() {
+                           run() {
                                let menu = global.model.get('gamemenu') as GameMenu;
                                menu.run();
                                if (Input.KC_F5) {
                                    global.model.state.to('default');
                                }
                            },
-                           onexit() {
+                           exit() {
                                let menu = global.model.get('gamemenu') as GameMenu;
                                menu.Close();
                                global.model.exile(menu);
                            },
                        }),
                        'hoera!': new sdef('hoera!', {
-                           onenter() {
+                           enter() {
                                global.model.setSpace('hoera!');
                            }
                        }),
@@ -184,7 +184,7 @@ class brandblusser extends SpriteObject {
                     states: {
                         bla: new sdef('bla', {
                             nudges2move: 20,
-                            onrun: (s: sstate, ik: brandblusser): void => {
+                            run: (s: sstate, ik: brandblusser): void => {
                                 set_vec2(ik.pos, _model.marlies.pos.x, _model.marlies.pos.y + 12);
                                 // let oldPrio = ik.z;
                                 if (_model.marlies.direction == Direction.Up) ik.z = 950;
@@ -192,7 +192,7 @@ class brandblusser extends SpriteObject {
                                 // if (ik.z != oldPrio) _model.currentSpace.sortObjectsByPriority();
                                 ++s.nudges;
                             },
-                            onnext: (_, ik: brandblusser): void => {
+                            next: (_, ik: brandblusser): void => {
                                 ik.banish();
                             },
                         }),
@@ -349,11 +349,11 @@ class vuur extends SpriteObject {
                                 BitmapId.None,
                             ],
                             nudges2move: 2,
-                            onenter: (s: sstate, ik: vuur): void => {
+                            enter: (s: sstate, ik: vuur): void => {
                                 s.reset();
                                 ik.imgid = s.current;
                             },
-                            onrun: (s: sstate, ik: vuur): void => {
+                            run: (s: sstate, ik: vuur): void => {
                                 ++s.nudges;
                                 switch (ik.direction) {
                                     case Direction.Up: ik.pos.y -= 3; break;
@@ -362,10 +362,10 @@ class vuur extends SpriteObject {
                                     case Direction.Left: ik.pos.x -= 3; break;
                                 }
                             },
-                            onnext: (s: sstate, ik: vuur): void => {
+                            next: (s: sstate, ik: vuur): void => {
                                 ik.imgid = s.current;
                             },
-                            onend: (_, ik: vuur): void => {
+                            end: (_, ik: vuur): void => {
                                 ik.banish();
                             }
                         }),
@@ -405,12 +405,12 @@ class corona extends SpriteObject {
                                 BitmapId.Corona3,
                                 BitmapId.Corona2,
                             ],
-                            onenter: (s: sstate, ik: corona): void => {
+                            enter: (s: sstate, ik: corona): void => {
                                 s.reset();
                                 ik.imgid = s.current;
                                 ik.setRandomMove();
                             },
-                            onrun(s: sstate, ik: corona) {
+                            run(s: sstate, ik: corona) {
                                 if (_model.objects.filter(o => (<any>o)?.isVuur).some(v => ik.detect_object_collision(v))) {
                                     ik.state.to('sterf');
                                 }
@@ -426,7 +426,7 @@ class corona extends SpriteObject {
                                 }
                                 ++s.nudges;
                             },
-                            onnext(s: sstate, ik: corona) { ik.imgid = s.current; },
+                            next(s: sstate, ik: corona) { ik.imgid = s.current; },
                         }),
                         sterf: new sdef('sterf', {
                             nudges2move: 4,
@@ -441,18 +441,18 @@ class corona extends SpriteObject {
                                 BitmapId.Corona11,
                                 BitmapId.None,
                             ],
-                            onenter(s: sstate, ik: corona) {
+                            enter(s: sstate, ik: corona) {
                                 ik.isEng = false;
                                 s.reset();
                                 ik.imgid = s.current;
                             },
-                            onrun(s: sstate) {
+                            run(s: sstate) {
                                 ++s.nudges;
                             },
-                            onend(_, ik: corona) {
+                            end(_, ik: corona) {
                                 ik.banish();
                             },
-                            onnext(s: sstate, ik: corona) {
+                            next(s: sstate, ik: corona) {
                                 ik.imgid = s.current;
                             },
                         })
@@ -532,10 +532,10 @@ class speler extends SpriteObject {
 
         let down_up_state_def: Partial<sdef> = {
             nudges2move: 8,
-            onenter: (s: sstate, ik: speler): void => (s.reset(), ik.imgid = s.current),
-            onrun: (s: sstate, ik: speler): void => { ++s.nudges; },
-            onend: (s: sstate, ik: speler): void => s.reset(),
-            onnext: (s: sstate, ik: speler): void => ik.imgid = s.current,
+            enter: (s: sstate, ik: speler): void => (s.reset(), ik.imgid = s.current),
+            run: (s: sstate, ik: speler): void => { ++s.nudges; },
+            end: (s: sstate, ik: speler): void => s.reset(),
+            next: (s: sstate, ik: speler): void => ik.imgid = s.current,
         };
 
         return new cmdef(classname, {
@@ -543,7 +543,7 @@ class speler extends SpriteObject {
                 master: new mdef('master', {
                     states: {
                         walk: new sdef('walk', {
-                            onrun: (_, ik: speler): void => {
+                            run: (_, ik: speler): void => {
                                 if (Input.KC_LEFT) {
                                     if (ik.canSwitchLeft) {
                                         ik.state.to('switchleft');
@@ -588,24 +588,24 @@ class speler extends SpriteObject {
                                 }
                                 ik.doeCoronaTest();
                             },
-                            onenter: (_, ik: speler) => ik.hittable = true
+                            enter: (_, ik: speler) => ik.hittable = true
                         }),
                         switchleft: new sdef('switchleft', {
-                            onenter: (_, ik: speler) => {
+                            enter: (_, ik: speler) => {
                                 ik.state.to('columnswitch', 'anistate');
                                 ik.hittable = false;
                             },
-                            onrun: shared_switch_run,
+                            run: shared_switch_run,
                         }),
                         switchright: new sdef('switchright', {
-                            onenter: (_, ik: speler) => {
+                            enter: (_, ik: speler) => {
                                 ik.state.to('columnswitch', 'anistate');
                                 ik.hittable = false;
                             },
-                            onrun: shared_switch_run,
+                            run: shared_switch_run,
                         }),
                         urgh: new sdef('urgh', {
-                            onenter: (_, ik: speler) => {
+                            enter: (_, ik: speler) => {
                                 ik.hittable = false; // Kan niet opnieuw geraakt worden als eenmaal in pain
                                 ik.state.to('urgh', 'anistate');
                             }
@@ -613,9 +613,9 @@ class speler extends SpriteObject {
                         }),
                         win: new sdef('win', {
                             nudges2move: 300,
-                            onenter: (_, ik: speler) => ik.state.to('win', 'anistate'),
-                            onrun: (s: sstate) => (++s.nudges, _model.objects.filter(o => (<any>o).isEng).forEach(o => o.disposeFlag = true)),
-                            onnext: () => _model.state.to('hoera!')
+                            enter: (_, ik: speler) => ik.state.to('win', 'anistate'),
+                            run: (s: sstate) => (++s.nudges, _model.objects.filter(o => (<any>o).isEng).forEach(o => o.disposeFlag = true)),
+                            next: () => _model.state.to('hoera!')
                         }),
                     }
                 }),
@@ -671,36 +671,36 @@ class speler extends SpriteObject {
                                 BitmapId.p9,
                             ],
                             nudges2move: 4,
-                            onenter(s: sstate, ik: speler): void {
+                            enter(s: sstate, ik: speler): void {
                                 s.reset();
                                 ik.imgid = s.current;
                                 ik.flip_h = false;
                             },
-                            onrun(s: sstate): void {
+                            run(s: sstate): void {
                                 ++s.nudges;
                             },
-                            onend(s: sstate, ik: speler): void {
+                            end(s: sstate, ik: speler): void {
                                 s.reset();
                                 ik.hittable = true; // Zorg dat ik weer geraakt kan worden!
                                 ik.state.machines['anistate'].pop();
                                 ik.state.pop();
                             },
-                            onnext(s: sstate, ik: speler): void {
+                            next(s: sstate, ik: speler): void {
                                 ik.imgid = s.current;
                             },
                         }),
                         columnswitch: new sdef('columnswitch', {
-                            onenter(_, ik: speler): void {
+                            enter(_, ik: speler): void {
                                 ik.imgid = BitmapId.p7;
                                 if (ik.state.getCurrentId() === 'switchright')
                                     ik.flip_h = true;
                             },
-                            onexit(_, ik: speler): void {
+                            exit(_, ik: speler): void {
                                 ik.flip_h = false;
                             },
                         }),
                         win: new sdef('win', {
-                            onenter: (_, ik: speler) => ik.imgid = BitmapId.p10
+                            enter: (_, ik: speler) => ik.imgid = BitmapId.p10
                         }),
                     }
                 }),
@@ -809,13 +809,13 @@ class keuken extends SpriteObject {
                     states: {
                         wees_een_keuken: new sdef('wees_een_keuken', {
                             nudges2move: TIME_CORONA_SPAWN,
-                            onenter(s: sstate) {
+                            enter(s: sstate) {
                                 s.reset();
                             },
-                            onrun(s: sstate) {
+                            run(s: sstate) {
                                 ++s.nudges;
                             },
-                            onnext() {
+                            next() {
                                 if (_model.objects.filter(o => (<any>o)?.isEng).length < MAX_CORONA) {
                                     let rloc = randomInt(0, CORONA_SPAWN_LOCS.length - 1);
                                     let sloc = CORONA_SPAWN_LOCS[rloc];

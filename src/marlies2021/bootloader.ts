@@ -27,7 +27,7 @@ class modelclass extends BaseModel {
                 master: new mdef('default', {
                     states: {
                         default: new sdef('default', {
-                            onrun() {
+                            run() {
                                 BaseModel.defaultrun();
                                 if (Input.KC_F5) {
                                     global.model.state.to('gamemenu');
@@ -35,26 +35,26 @@ class modelclass extends BaseModel {
                             },
                         }),
                         'gamemenu': new sdef('gamemenu', {
-                            onenter() {
+                            enter() {
                                 let menu = new GameMenu();
                                 global.model.spawn(menu);
                                 menu.Open();
                             },
-                            onrun() {
+                            run() {
                                 let menu = global.model.get('gamemenu') as GameMenu;
                                 menu.run();
                                 if (Input.KC_F5) {
                                     global.model.state.to('default');
                                 }
                             },
-                            onexit() {
+                            exit() {
                                 let menu = global.model.get('gamemenu') as GameMenu;
                                 menu.Close();
                                 global.model.exile(menu);
                             },
                         }),
                         'hoera!': new sdef('hoera!', {
-                            onenter() {
+                            enter() {
                                 global.model.setSpace('hoera!');
                             }
                         }),
@@ -121,11 +121,11 @@ class fles extends SpriteObject {
                                 BitmapId.fles1,
                             ],
                             nudges2move: 4,
-                            onenter: (s: sstate, ik: fles): void => {
+                            enter: (s: sstate, ik: fles): void => {
                                 s.reset();
                                 ik.imgid = s.current;
                             },
-                            onrun: (s: sstate, ik: fles): void => {
+                            run: (s: sstate, ik: fles): void => {
                                 ++s.nudges;
                                 ik.setx(ik.pos.x + 4);
                                 if (_model.monster) {
@@ -138,10 +138,10 @@ class fles extends SpriteObject {
                                 //     _model.monster.collide(ik);
                                 // }
                             },
-                            onnext: (s: sstate, ik: fles): void => {
+                            next: (s: sstate, ik: fles): void => {
                                 ik.imgid = s.current;
                             },
-                            onend: (s: sstate, ik: fles): void => {
+                            end: (s: sstate, ik: fles): void => {
                                 s.reset();
                             }
                         }),
@@ -191,17 +191,17 @@ class stoom extends SpriteObject {
                                 BitmapId.pluimx,
                             ],
                             nudges2move: 4,
-                            onenter: (s: sstate, ik: stoom): void => {
+                            enter: (s: sstate, ik: stoom): void => {
                                 s.reset();
                                 ik.imgid = s.current;
                             },
-                            onrun: (s: sstate, ik: stoom): void => {
+                            run: (s: sstate, ik: stoom): void => {
                                 ++s.nudges;
                             },
-                            onnext: (s: sstate, ik: stoom): void => {
+                            next: (s: sstate, ik: stoom): void => {
                                 ik.imgid = s.current;
                             },
-                            onend: (_, ik: stoom): void => {
+                            end: (_, ik: stoom): void => {
                                 ik.banish();
                             }
                         }),
@@ -271,10 +271,10 @@ class speler extends SpriteObject {
 
         let down_up_state_def: Partial<sdef> = {
             nudges2move: 8,
-            onenter: (s: sstate, ik: speler): void => (s.reset(), ik.imgid = s.current),
-            onrun: (s: sstate, ik: speler): void => { ++s.nudges; },
-            onend: (s: sstate, ik: speler): void => s.reset(),
-            onnext: (s: sstate, ik: speler): void => ik.imgid = s.current,
+            enter: (s: sstate, ik: speler): void => (s.reset(), ik.imgid = s.current),
+            run: (s: sstate, ik: speler): void => { ++s.nudges; },
+            end: (s: sstate, ik: speler): void => s.reset(),
+            next: (s: sstate, ik: speler): void => ik.imgid = s.current,
         };
 
         return new cmdef(classname, {
@@ -283,14 +283,14 @@ class speler extends SpriteObject {
                     states: {
                         relax: new sdef('relax', {
                             nudges2move: 4,
-                            onrun: (s: sstate, ik: speler): void => {
+                            run: (s: sstate, ik: speler): void => {
                                 ++s.nudges;
                             },
-                            onenter: (_, ik: speler) => {
+                            enter: (_, ik: speler) => {
                                 ik.hittable = false;
                                 ik.imgid = BitmapId.p1;
                             },
-                            onnext: (s: sstate, ik: speler): void => {
+                            next: (s: sstate, ik: speler): void => {
                                 s.reset();
                                 --_model.stressLevel;
                                 if (_model.stressLevel <= 0) {
@@ -303,47 +303,47 @@ class speler extends SpriteObject {
                         }),
                         spot: new sdef('spot', {
                             nudges2move: 500,
-                            onrun: (s: sstate, ik: speler): void => {
+                            run: (s: sstate, ik: speler): void => {
                                 ++s.nudges;
                             },
-                            onenter: (_, ik: speler) => ik.imgid = BitmapId.p2,
-                            onnext: (s: sstate, ik: speler): void => {
+                            enter: (_, ik: speler) => ik.imgid = BitmapId.p2,
+                            next: (s: sstate, ik: speler): void => {
                                 s.reset();
                                 ik.state.to('spot2');
                             }
                         }),
                         spot2: new sdef('spot2', {
                             nudges2move: 500,
-                            onrun: (s: sstate, ik: speler): void => {
+                            run: (s: sstate, ik: speler): void => {
                                 ++s.nudges;
                             },
-                            onenter: (_, ik: speler) => ik.imgid = BitmapId.p2,
-                            onnext: (s: sstate, ik: speler): void => {
+                            enter: (_, ik: speler) => ik.imgid = BitmapId.p2,
+                            next: (s: sstate, ik: speler): void => {
                                 s.reset();
                                 ik.state.to('boos');
                             }
                         }),
                         naarrelax: new sdef('naarrelax', {
                             nudges2move: 100,
-                            onrun: (s: sstate, ik: speler): void => {
+                            run: (s: sstate, ik: speler): void => {
                                 ++s.nudges;
                             },
-                            onenter: (_, ik: speler) => ik.imgid = BitmapId.p2,
-                            onnext: (s: sstate, ik: speler): void => {
+                            enter: (_, ik: speler) => ik.imgid = BitmapId.p2,
+                            next: (s: sstate, ik: speler): void => {
                                 s.reset();
                                 ik.state.to('relax2');
                             }
                         }),
                         relax2: new sdef('relax2', {
                             nudges2move: 4,
-                            onrun: (s: sstate, ik: speler): void => {
+                            run: (s: sstate, ik: speler): void => {
                                 ++s.nudges;
                             },
-                            onenter: (_, ik: speler) => {
+                            enter: (_, ik: speler) => {
                                 ik.hittable = false;
                                 ik.imgid = BitmapId.p1;
                             },
-                            onnext: (s: sstate, ik: speler): void => {
+                            next: (s: sstate, ik: speler): void => {
                                 s.reset();
                                 --_model.stressLevel;
                                 if (_model.stressLevel <= 0) {
@@ -354,29 +354,29 @@ class speler extends SpriteObject {
                         }),
                         waitforit: new sdef('waitforit', {
                             nudges2move: 100,
-                            onrun: (s: sstate, ik: speler): void => {
+                            run: (s: sstate, ik: speler): void => {
                                 ++s.nudges;
                             },
-                            onenter: (_, ik: speler) => {
+                            enter: (_, ik: speler) => {
                             },
-                            onnext: (s: sstate, ik: speler): void => {
+                            next: (s: sstate, ik: speler): void => {
                                 s.reset();
                                 _model.state.to('hoera!');
                             }
                         }),
                         boos: new sdef('boos', {
                             nudges2move: 40,
-                            onrun: (s: sstate, ik: speler): void => {
+                            run: (s: sstate, ik: speler): void => {
                                 ++s.nudges;
                             },
-                            onenter: (_, ik: speler) => ik.imgid = BitmapId.p3,
-                            onnext: (s: sstate, ik: speler): void => {
+                            enter: (_, ik: speler) => ik.imgid = BitmapId.p3,
+                            next: (s: sstate, ik: speler): void => {
                                 s.reset();
                                 ik.state.to('fight');
                             }
                         }),
                         fight: new sdef('fight', {
-                            onrun: (_, ik: speler): void => {
+                            run: (_, ik: speler): void => {
                                 if (++_model.stressLevel >= 100) {
                                     _model.stressLevel = 100;
                                 }
@@ -392,24 +392,24 @@ class speler extends SpriteObject {
                                         ik.setx(ik.pos.x - 1);
                                 }
                             },
-                            onenter: (_, ik: speler) => {
+                            enter: (_, ik: speler) => {
                                 ik.hittable = true;
                                 ik.imgid = BitmapId.p3;
                             }
                         }),
                         gooi: new sdef('gooi', {
-                            onrun: (_, ik: speler): void => {
+                            run: (_, ik: speler): void => {
                                 if (++_model.stressLevel >= 100) {
                                     _model.stressLevel = 100;
                                 }
                             },
-                            onenter: (_, ik: speler) => {
+                            enter: (_, ik: speler) => {
                                 ik.state.to('gooi', 'anistate');
                                 ik.imgid = BitmapId.p4;
                             }
                         }),
                         urgh: new sdef('urgh', {
-                            onenter: (_, ik: speler) => {
+                            enter: (_, ik: speler) => {
                                 ik.hittable = false; // Kan niet opnieuw geraakt worden als eenmaal in pain
                                 ik.state.to('urgh', 'anistate');
                             }
@@ -417,9 +417,9 @@ class speler extends SpriteObject {
                         }),
                         win: new sdef('win', {
                             nudges2move: 300,
-                            onenter: (_, ik: speler) => ik.state.to('win', 'anistate'),
-                            onrun: (s: sstate) => (++s.nudges, _model.objects.filter(o => (<any>o).isEng).forEach(o => o.disposeFlag = true)),
-                            onnext: () => _model.state.to('hoera!')
+                            enter: (_, ik: speler) => ik.state.to('win', 'anistate'),
+                            run: (s: sstate) => (++s.nudges, _model.objects.filter(o => (<any>o).isEng).forEach(o => o.disposeFlag = true)),
+                            next: () => _model.state.to('hoera!')
                         }),
                     }
                 }),
@@ -427,10 +427,10 @@ class speler extends SpriteObject {
                     states: {
                         floating: new sdef('floating', {
                             nudges2move: 50,
-                            onrun: (s: sstate, ik: speler): void => {
+                            run: (s: sstate, ik: speler): void => {
                                 ++s.nudges;
                             },
-                            onnext: (s: sstate, ik: speler): void => {
+                            next: (s: sstate, ik: speler): void => {
                                 ik.floatbit && --ik.pos.y;
                                 (!ik.floatbit) && ++ik.pos.y;
                                 ik.floatbit = !ik.floatbit;
@@ -441,13 +441,13 @@ class speler extends SpriteObject {
                 anistate: new mdef('anistate', {
                     states: {
                         relax: new sdef('relax', {
-                            onrun: (): void => { }
+                            run: (): void => { }
                         }),
                         spot: new sdef('spot', {
-                            onrun: (): void => { }
+                            run: (): void => { }
                         }),
                         boos: new sdef('boos', {
-                            onrun: (): void => { }
+                            run: (): void => { }
                         }),
                         gooi: new sdef('gooi', {
                             tape: <Array<number>>[
@@ -458,11 +458,11 @@ class speler extends SpriteObject {
                             ],
                             nudges2move: 4,
 
-                            onrun: (s: sstate): void => { ++s.nudges; },
-                            onnext: (s: sstate, ik: speler): void => {
+                            run: (s: sstate): void => { ++s.nudges; },
+                            next: (s: sstate, ik: speler): void => {
                                 ik.imgid = s.current;
                             },
-                            onend: (_, ik: speler): void => {
+                            end: (_, ik: speler): void => {
                                 ik.state.to('boos', 'anistate');
                                 ik.state.to('fight');
                                 _model.spawn(new fles(), new_vec2(ik.pos.x + 16, ik.pos.y));
@@ -524,13 +524,13 @@ class yakuzi extends SpriteObject {
                     states: {
                         wees_een_yakuzi: new sdef('wees_een_yakuzi', {
                             nudges2move: 50,
-                            onenter(s: sstate) {
+                            enter(s: sstate) {
                                 s.reset();
                             },
-                            onrun(s: sstate) {
+                            run(s: sstate) {
                                 ++s.nudges;
                             },
-                            onnext() {
+                            next() {
                                 _model.spawn(new stoom(), new_vec2(randomInt(8, 160), randomInt(140, 172)));
                             },
                         }),

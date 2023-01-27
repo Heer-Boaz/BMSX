@@ -14,6 +14,10 @@ declare global {
 
 const fps: number = 50;
 const fpstime: number = 1000 / fps;
+export function get_gamemodel<T extends BaseModel>(): T {
+
+    return <T>globalThis.model;
+}
 
 //@insavegame
 export class GameOptions {

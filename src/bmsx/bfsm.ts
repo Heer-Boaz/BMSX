@@ -128,13 +128,13 @@ export class statecontext {
 		if (this.paused) return;
 		// [this.currentStatedef] can be undefined if we are in the 'none' state
 		this.current_state_definition?.process_input?.call(this.target, this.current, state_event_type.None);
-		this.current_state_definition?.onrun?.call(this.target, this.current, state_event_type.Run);
+		this.current_state_definition?.run?.call(this.target, this.current, state_event_type.Run);
 	}
 
 	public to(newstate: string): void {
 		let stateDef = this.current_state_definition;
 		// stateDef can be undefined if we are in the 'none' state
-		stateDef?.onexit?.call(this.target, this.current, state_event_type.Exit);
+		stateDef?.exit?.call(this.target, this.current, state_event_type.Exit);
 		stateDef && this.pushHistory(this.currentid); // Store the previous state on the history stack, if it is other than 'none'
 
 		this.currentid = newstate; // Switch the current state to the new state
@@ -142,7 +142,7 @@ export class statecontext {
 
 		stateDef = this.current_state_definition;
 		// stateDef can be undefined if we are in the 'none' state
-		stateDef?.onenter?.call(this.target, this.current, state_event_type.Enter);
+		stateDef?.enter?.call(this.target, this.current, state_event_type.Enter);
 	}
 
 	protected pushHistory(toPush: string): void {
@@ -298,11 +298,11 @@ export class sstate<T extends GameObject | BaseModel = any> {
 	}
 
 	protected tapemove() {
-		this.definition.onnext?.call(this.target, this as sstate<T>, state_event_type.Next);
+		this.definition.next?.call(this.target, this as sstate<T>, state_event_type.Next);
 	}
 
 	protected tapeend() {
-		this.definition.onend?.call(this.target, this as sstate<T>, state_event_type.End);
+		this.definition.end?.call(this.target, this as sstate<T>, state_event_type.End);
 	}
 
 	public reset(): void {
@@ -327,20 +327,20 @@ export class sdef {
 		_partialdef && Object.assign(this, _partialdef);
 	}
 
-	public onrun?: state_event_handler;
-	public onend?: state_event_handler;
-	public onnext?: state_event_handler;
-	public onenter?: state_event_handler;
-	public onexit?: state_event_handler;
+	public run?: state_event_handler;
+	public end?: state_event_handler;
+	public next?: state_event_handler;
+	public enter?: state_event_handler;
+	public exit?: state_event_handler;
 	public process_input?: state_event_handler;
 
 	// Helper function to set all handlers
 	public setAllHandlers(handler: state_event_handler): void {
-		this.onrun = handler;
-		this.onend = handler;
-		this.onnext = handler;
-		this.onenter = handler;
-		this.onexit = handler;
+		this.run = handler;
+		this.end = handler;
+		this.next = handler;
+		this.enter = handler;
+		this.exit = handler;
 		this.process_input = handler;
 	}
 }

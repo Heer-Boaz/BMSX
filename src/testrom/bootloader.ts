@@ -5,10 +5,12 @@ import { BitmapId } from './resourceids';
 import { Input } from '../bmsx/input';
 import { sstate, statedef_builder, machine_states } from '../bmsx/bfsm';
 import { show_download_savestate_dialog, insavegame, show_openfile_dialog, show_load_savestate_dialog } from '../bmsx/gameserializer';
-import { new_area, Direction, Game, new_vec2 } from '../bmsx/bmsx';
+import { new_area, Direction, Game, new_vec2, get_gamemodel } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
 import { BaseModel } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';
+
+const get_model = get_gamemodel<gamemodel>;
 
 @insavegame
 class bclass extends SpriteObject {
@@ -28,7 +30,7 @@ class bclass extends SpriteObject {
                 this.pos.x -= 2;
             }
             if (Input.KC_BTN1) {
-                // _model[savestring] = _model.save();
+                get_model()[savestring] = get_model().save();
                 // console.info(`${new Date().toTimeString()} Game saved!`);
                 // console.info(`${_model[savestring]}`);
                 show_download_savestate_dialog();
@@ -55,12 +57,12 @@ class bclass extends SpriteObject {
         return {
             states: {
                 bla: {
-                    onrun: blarun,
-                    onenter(this: bclass) { this.imgid = BitmapId.b; },
+                    run: blarun,
+                    enter(this: bclass) { this.imgid = BitmapId.b; },
                 },
                 '#blap': {
-                    onrun: blarun,
-                    onenter(this: bclass) { this.imgid = BitmapId.b2; },
+                    run: blarun,
+                    enter(this: bclass) { this.imgid = BitmapId.b2; },
                 },
             }
         };
@@ -83,12 +85,12 @@ class gamemodel extends BaseModel {
         return {
             states: {
                 '#game_start': {
-                    onrun(this: gamemodel, s: sstate) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
+                    run(this: gamemodel, s: sstate) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
                         this.state.to('default');
                     }
                 },
                 default: {
-                    onrun: BaseModel.defaultrun,
+                    run: BaseModel.defaultrun,
                 },
             }
         };

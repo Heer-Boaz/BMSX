@@ -380,6 +380,7 @@ html {
 	overflow: hidden;
 	display: block;
 	z-index: 999;
+	background-color: #000000;
 }
 
 #hidor {
