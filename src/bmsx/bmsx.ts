@@ -581,20 +581,21 @@ export class Game {
     }
 
     public run(current_time: number): void {
-        let game = global.game;
+        const game = global.game;
         if (!game.running) return;
 
-        let ticks_to_run = 0;
+        let ticks_to_run: number;
 
         // If tFrame < nextTick then 0 ticks need to be updated (0 is default for numTicks).
         // If tFrame = nextTick then 1 tick needs to be updated (and so forth).
         // Note: As we mention in summary, you should keep track of how large numTicks is.
         // If it is large, then either your game was asleep, or the machine cannot keep up.
-        let time_since_last_run_gametick = current_time - game.last_gametick_time;
+        const time_since_last_run_gametick = current_time - game.last_gametick_time;
 
         if (time_since_last_run_gametick > fpstime) {
             ticks_to_run = Math.floor(time_since_last_run_gametick / fpstime);
         }
+        else ticks_to_run = 0;
 
         for (let i = 0; i < ticks_to_run; i++) {
             ++game._turnCounter;
