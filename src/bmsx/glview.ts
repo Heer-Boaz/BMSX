@@ -96,7 +96,7 @@ export abstract class GLView extends BaseView {
     private color_override: Float32Array = new Float32Array(24);
     private drawImgReqIndex: number = 0;
 
-    private readonly vertexShaderCode =
+    private readonly vertexShaderCode: string =
         `#version 300 es
 			precision highp float;
 
@@ -129,7 +129,7 @@ export abstract class GLView extends BaseView {
 			v_color_override = a_color_override;
 		}`;
 
-    private readonly fragmentShaderTextureCode =
+    private readonly fragmentShaderTextureCode: string =
         `#version 300 es
 		precision highp float;
  		uniform sampler2D u_texture;
@@ -145,6 +145,119 @@ export abstract class GLView extends BaseView {
     			discard;
 			outputColor = color;
 		}`;
+
+    private readonly fragmentShaderAsciiCode: string =
+        // `#version 330 core
+        //  in vec2 TexCoords;
+        //  out vec4 color;
+        //  uniform sampler2D screenTexture;
+
+        //  const float blockSize = 8.0;
+
+        //  void main() {
+        //     vec2 texCoord = TexCoords * vec2(blockSize);
+        //     vec2 texel = floor(texCoord) / blockSize;
+        //     vec3 sample = texture(screenTexture, texel).rgb;
+        //     float luminance = dot(sample, vec3(0.2126, 0.7152, 0.0722));
+        //     float ascii = floor(luminance * 16.0);
+        //     color = vec4(vec3(ascii / 16.0), 1.0);
+        // }`;
+        `#version 300 es
+            precision highp float;
+
+            uniform sampler2D u_texture;
+            uniform vec2 u_resolution;
+            uniform vec2 u_characterSize;
+
+            out vec4 outColor;
+
+            void main() {
+            vec2 st = gl_FragCoord.xy / u_resolution;
+            vec4 color = texture(u_texture, st);
+
+            float intensity = (color.r + color.g + color.b) / 3.0;
+
+            vec2 characterCoord = vec2(
+                floor(st.x / u_characterSize.x) * u_characterSize.x,
+                floor(st.y / u_characterSize.y) * u_characterSize.y
+            );
+
+            vec4 asciiColor = vec4(0.0);
+
+            if (intensity >= 0.95) {
+                asciiColor = vec4(1.0);
+            } else if (intensity >= 0.8) {
+                asciiColor = vec4(0.9, 0.9, 0.9, 1.0);
+            } else if (intensity >= 0.6) {
+                asciiColor = vec4(0.8, 0.8, 0.8, 1.0);
+            } else if (intensity >= 0.4) {
+                asciiColor = vec4(0.7, 0.7, 0.7, 1.0);
+            } else if (intensity >= 0.2) {
+                asciiColor = vec4(0.6, 0.6, 0.6, 1.0);
+            } else {
+                asciiColor = vec4(0.5, 0.5, 0.5, 1.0);
+            }
+
+            outColor = vec4(asciiColor.rgb, 1.0);
+            }`;
+    // This is a basic example of an ASCII shader that converts the input texture to an ASCII-like representation by reducing the number of colors and brightness levels. The intensity of each pixel is calculated by averaging the red, green, and blue channels and then mapping it to one of several predefined ASCII characters based on a set of if-else statements. The resulting ASCII-like image is output to the "outColor" variable which is passed to the fragment shader. You can use this by creating a texture and passing it to the fragment shader and using the u_resolution and u_characterSize uniforms to control the size of the characters.
+
+    // This is a basic example and you can customize it to add more levels of brightness and characters to make the output more detailed. Keep in mind that this is just an example, and you will need to adjust the code based on the specific requirements of your project and the technologies you are using.
+
+    private readonly fragmentShaderPSXCode: string =
+        `#version 300 es
+        precision highp float;
+
+        uniform sampler2D u_texture;
+        uniform vec2 u_resolution;
+        uniform float u_ditherStrength;
+
+        out vec4 outColor;
+
+        float dither(vec2 st) {
+            vec2 grid = fract(st * u_resolution / 8.0);
+            return step(0.5, grid.x + grid.y);
+        }
+
+        void main() {
+            vec2 st = gl_FragCoord.xy / u_resolution;
+            vec4 color = texture(u_texture, st);
+
+            float ditherValue = dither(st);
+            outColor = mix(color, vec4(0.0), u_ditherStrength * ditherValue);
+        }`;
+
+    private readonly fragmentShaderMSXCode: string =
+        `#version 300 es
+        precision highp float;
+
+        uniform sampler2D u_texture;
+        uniform vec2 u_resolution;
+        uniform vec3 u_colorPalette[16];
+
+        out vec4 outColor;
+
+        void main() {
+        vec2 st = gl_FragCoord.xy / u_resolution;
+        vec4 color = texture(u_texture, st);
+
+        // Convert color to grayscale
+        float gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+
+        // Quantize color to closest value in palette
+        float closestIndex = 0.0;
+        float closestDistance = length(gray - u_colorPalette[0].r);
+        for (int i = 1; i < 16; i++) {
+            float distance = length(gray - u_colorPalette[i].r);
+            if (distance < closestDistance) {
+            closestIndex = float(i);
+            closestDistance = distance;
+            }
+        }
+
+        // Look up closest color in palette
+        outColor = vec4(u_colorPalette[int(closestIndex)], 1.0);
+        }`;
 
     constructor(viewportsize: Size) {
         super(viewportsize);
@@ -346,4 +459,4 @@ export abstract class GLView extends BaseView {
         // console.warn('GLView.fillRectangle nog niet gecodeerd :-(');
 
     }
-}
+};
