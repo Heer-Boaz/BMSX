@@ -570,72 +570,72 @@ Yes, you could use anonymous objects instead of classes that inherit from LeafNo
 
 // Here's an example of how you might use anonymous objects instead of classes to achieve the same logic:
 class EnemyBehaviorTree {
-  selectorNodeEnemyBehavior = new SelectorNodeEnemyBehavior([
-    {
-      execute: (gameObject) => {
-        // logic for LeafNodeEnemyBehavior1
-        return true;
-      }
-    },
-    {
-      execute: (gameObject) => {
-        // logic for LeafNodeEnemyBehavior2
-        return true;
-      }
-    },
-    {
-      execute: (gameObject) => {
-        // logic for LeafNodeEnemyBehavior3
-        return true;
-      }
-    }
-  ]);
+        selectorNodeEnemyBehavior = new SelectorNodeEnemyBehavior([
+            {
+                execute: (gameObject) => {
+                    // logic for LeafNodeEnemyBehavior1
+                    return true;
+                }
+            },
+            {
+                execute: (gameObject) => {
+                    // logic for LeafNodeEnemyBehavior2
+                    return true;
+                }
+            },
+            {
+                execute: (gameObject) => {
+                    // logic for LeafNodeEnemyBehavior3
+                    return true;
+                }
+            }
+        ]);
 
-  update(gameObject) {
-    this.selectorNodeEnemyBehavior.execute(gameObject);
-  }
-}
+        update(gameObject) {
+            this.selectorNodeEnemyBehavior.execute(gameObject);
+        }
+    }
 
 // Certainly! Here's an updated version of the EnemyBehaviorTree class that uses anonymous objects instead of classes:
 class EnemyBehaviorTree {
-  constructor(private selectorNode: IBehavior) {}
+    constructor(private selectorNode: IBehavior) { }
 
-  update() {
-    this.selectorNode.update();
-  }
+    update() {
+        this.selectorNode.update();
+    }
 }
 
 const selectorNode = new SelectorNode([
-  {
-    update: () => {
-      // Check if enemy should move towards player
-      if (shouldMoveTowardsPlayer()) {
-        moveTowardsPlayer();
-        return Status.Success;
-      }
-      return Status.Failure;
+    {
+        update: () => {
+            // Check if enemy should move towards player
+            if (shouldMoveTowardsPlayer()) {
+                moveTowardsPlayer();
+                return Status.Success;
+            }
+            return Status.Failure;
+        }
+    },
+    {
+        update: () => {
+            // Check if enemy should attack player
+            if (shouldAttackPlayer()) {
+                attackPlayer();
+                return Status.Success;
+            }
+            return Status.Failure;
+        }
+    },
+    {
+        update: () => {
+            // Check if enemy should flee from player
+            if (shouldFleeFromPlayer()) {
+                fleeFromPlayer();
+                return Status.Success;
+            }
+            return Status.Failure;
+        }
     }
-  },
-  {
-    update: () => {
-      // Check if enemy should attack player
-      if (shouldAttackPlayer()) {
-        attackPlayer();
-        return Status.Success;
-      }
-      return Status.Failure;
-    }
-  },
-  {
-    update: () => {
-      // Check if enemy should flee from player
-      if (shouldFleeFromPlayer()) {
-        fleeFromPlayer();
-        return Status.Success;
-      }
-      return Status.Failure;
-    }
-  }
 ]);
 
 const enemyBehaviorTree = new EnemyBehaviorTree(selectorNode);
@@ -644,196 +644,196 @@ const enemyBehaviorTree = new EnemyBehaviorTree(selectorNode);
 
 // Here is an example of how you can update the code to reflect that logic takes more than one update cycle to complete:
 class LeafNodeEnemyBehavior {
-  isLogicInProgress: boolean = false;
+    isLogicInProgress: boolean = false;
 
-  update(): BehaviorStatus {
-    if (!this.isLogicInProgress) {
-      // start logic
-      this.isLogicInProgress = true;
-    } else {
-      // update logic
-      const outcome = this.continueLogic();
-      if (outcome === LogicOutcome.SUCCESS) {
-        this.isLogicInProgress = false;
-        return BehaviorStatus.SUCCESS;
-      } else if (outcome === LogicOutcome.FAILURE) {
-        this.isLogicInProgress = false;
-        return BehaviorStatus.FAILURE;
-      }
+    update(): BehaviorStatus {
+        if (!this.isLogicInProgress) {
+            // start logic
+            this.isLogicInProgress = true;
+        } else {
+            // update logic
+            const outcome = this.continueLogic();
+            if (outcome === LogicOutcome.SUCCESS) {
+                this.isLogicInProgress = false;
+                return BehaviorStatus.SUCCESS;
+            } else if (outcome === LogicOutcome.FAILURE) {
+                this.isLogicInProgress = false;
+                return BehaviorStatus.FAILURE;
+            }
+        }
+        return BehaviorStatus.RUNNING;
     }
-    return BehaviorStatus.RUNNING;
-  }
 
-  continueLogic(): LogicOutcome {
-    // ...
-    // return LogicOutcome.SUCCESS or LogicOutcome.FAILURE
-  }
+    continueLogic(): LogicOutcome {
+        // ...
+        // return LogicOutcome.SUCCESS or LogicOutcome.FAILURE
+    }
 }
 
 // Note that you may also need to add similar state variables and logic to track the progress of the logic in other node types, such as SelectorNode, SequenceNode, etc.
 
 interface ILogic {
-  (): BehaviorState;
+    (): BehaviorState;
 }
 
 class LeafNodeEnemyBehavior {
-  private logic: ILogic;
+    private logic: ILogic;
 
-  constructor(logic: ILogic) {
-    this.logic = logic;
-  }
+    constructor(logic: ILogic) {
+        this.logic = logic;
+    }
 
-  public update(): BehaviorState {
-    return this.logic();
-  }
+    public update(): BehaviorState {
+        return this.logic();
+    }
 }
 
 class EnemyBehaviorTree {
-  private rootNode: SelectorNodeEnemyBehavior;
+    private rootNode: SelectorNodeEnemyBehavior;
 
-  constructor() {
-    this.rootNode = new SelectorNodeEnemyBehavior([
-      new LeafNodeEnemyBehavior(() => {
-        // move towards player logic here
-        return BehaviorState.SUCCESS;
-      }),
-      new LeafNodeEnemyBehavior(() => {
-        // attack player logic here
-        return BehaviorState.SUCCESS;
-      }),
-      new LeafNodeEnemyBehavior(() => {
-        // flee logic here
-        return BehaviorState.SUCCESS;
-      }),
-    ]);
-  }
+    constructor() {
+        this.rootNode = new SelectorNodeEnemyBehavior([
+            new LeafNodeEnemyBehavior(() => {
+                // move towards player logic here
+                return BehaviorState.SUCCESS;
+            }),
+            new LeafNodeEnemyBehavior(() => {
+                // attack player logic here
+                return BehaviorState.SUCCESS;
+            }),
+            new LeafNodeEnemyBehavior(() => {
+                // flee logic here
+                return BehaviorState.SUCCESS;
+            }),
+        ]);
+    }
 
-  public update(): BehaviorState {
-    return this.rootNode.update();
-  }
+    public update(): BehaviorState {
+        return this.rootNode.update();
+    }
 }
 
 // To update the SequenceNode or SelectorNode to track whether the logic in the leaf nodes is still in progress or not, you could add a status property in the LeafNodeEnemyBehavior class that indicates whether the logic is still running (RUNNING), has succeeded (SUCCESS), or has failed (FAILURE). Then, in the SequenceNode or SelectorNode, you can use this property to keep track of the state of each child node, and only advance to the next node if the current node has returned a SUCCESS status. If a node returns a RUNNING status, the SequenceNode or SelectorNode can return the same status to indicate that it's waiting for the logic to complete.
 
 // Here's an updated version of the code to illustrate this:
 enum BehaviorStatus {
-  RUNNING,
-  SUCCESS,
-  FAILURE,
+    RUNNING,
+    SUCCESS,
+    FAILURE,
 }
 
 interface IBehavior {
-  update(dt: number): BehaviorStatus;
+    update(dt: number): BehaviorStatus;
 }
 
 class LeafNodeEnemyBehavior implements IBehavior {
-  private logic: (dt: number) => BehaviorStatus;
-  public status: BehaviorStatus;
+    private logic: (dt: number) => BehaviorStatus;
+    public status: BehaviorStatus;
 
-  constructor(logic: (dt: number) => BehaviorStatus) {
-    this.logic = logic;
-    this.status = BehaviorStatus.RUNNING;
-  }
+    constructor(logic: (dt: number) => BehaviorStatus) {
+        this.logic = logic;
+        this.status = BehaviorStatus.RUNNING;
+    }
 
-  update(dt: number): BehaviorStatus {
-    this.status = this.logic(dt);
-    return this.status;
-  }
+    update(dt: number): BehaviorStatus {
+        this.status = this.logic(dt);
+        return this.status;
+    }
 }
 
 class SequenceNodeEnemyBehavior implements IBehavior {
-  private children: IBehavior[];
-  private currentChildIndex = 0;
+    private children: IBehavior[];
+    private currentChildIndex = 0;
 
-  constructor(children: IBehavior[]) {
-    this.children = children;
-  }
-
-  update(dt: number): BehaviorStatus {
-    while (this.currentChildIndex < this.children.length) {
-      const currentChild = this.children[this.currentChildIndex];
-      const status = currentChild.update(dt);
-      if (status === BehaviorStatus.RUNNING) {
-        return BehaviorStatus.RUNNING;
-      } else if (status === BehaviorStatus.FAILURE) {
-        return BehaviorStatus.FAILURE;
-      }
-      this.currentChildIndex++;
+    constructor(children: IBehavior[]) {
+        this.children = children;
     }
-    return BehaviorStatus.SUCCESS;
-  }
+
+    update(dt: number): BehaviorStatus {
+        while (this.currentChildIndex < this.children.length) {
+            const currentChild = this.children[this.currentChildIndex];
+            const status = currentChild.update(dt);
+            if (status === BehaviorStatus.RUNNING) {
+                return BehaviorStatus.RUNNING;
+            } else if (status === BehaviorStatus.FAILURE) {
+                return BehaviorStatus.FAILURE;
+            }
+            this.currentChildIndex++;
+        }
+        return BehaviorStatus.SUCCESS;
+    }
 }
 
 class SelectorNodeEnemyBehavior implements IBehavior {
-  private children: IBehavior[];
-  private currentChildIndex = 0;
+    private children: IBehavior[];
+    private currentChildIndex = 0;
 
-  constructor(children: IBehavior[]) {
-    this.children = children;
-  }
-
-  update(dt: number): BehaviorStatus {
-    while (this.currentChildIndex < this.children.length) {
-      const currentChild = this.children[this.currentChildIndex];
-      const status = currentChild.update(dt);
-      if (status === BehaviorStatus.RUNNING) {
-        return BehaviorStatus.RUNNING;
-      } else if (status === BehaviorStatus.SUCCESS) {
-        return BehaviorStatus.SUCCESS;
-      }
-      this.currentChildIndex++;
+    constructor(children: IBehavior[]) {
+        this.children = children;
     }
-    return BehaviorStatus.FAILURE;
-  }
+
+    update(dt: number): BehaviorStatus {
+        while (this.currentChildIndex < this.children.length) {
+            const currentChild = this.children[this.currentChildIndex];
+            const status = currentChild.update(dt);
+            if (status === BehaviorStatus.RUNNING) {
+                return BehaviorStatus.RUNNING;
+            } else if (status === BehaviorStatus.SUCCESS) {
+                return BehaviorStatus.SUCCESS;
+            }
+            this.currentChildIndex++;
+        }
+        return BehaviorStatus.FAILURE;
+    }
 }
 
 class EnemyBehaviorTree {
-  rootNode: IBehavior;
+    rootNode: IBehavior;
 
-  constructor() {
-    const moveTowardsPlayer = (dt: number) => {
-      // code to move towards player
-      return BehaviorStatus.SUCCESS;
-    };
-  }
+    constructor() {
+        const moveTowardsPlayer = (dt: number) => {
+            // code to move towards player
+            return BehaviorStatus.SUCCESS;
+        };
+    }
 }
 // You can update the SequenceNode and SelectorNode to keep track of the state of the child nodes by using the tick function to traverse through the child nodes, and then evaluate their states.
 
 // The SequenceNode and SelectorNode classes traverse through the child nodes, calling their tick method, and then evaluate the returned status. If the status of any child node is not SUCCESS, the SequenceNode will immediately return FAILURE. If the status of any child node is SUCCESS, the SelectorNode will immediately return SUCCESS.
 class SequenceNode implements IBehavior {
-  children: IBehavior[];
+    children: IBehavior[];
 
-  constructor(children: IBehavior[]) {
-    this.children = children;
-  }
-
-  tick(state: IState) {
-    for (let i = 0; i < this.children.length; i++) {
-      const status = this.children[i].tick(state);
-      if (status !== BehaviorStatus.SUCCESS) {
-        return status;
-      }
+    constructor(children: IBehavior[]) {
+        this.children = children;
     }
-    return BehaviorStatus.SUCCESS;
-  }
+
+    tick(state: IState) {
+        for (let i = 0; i < this.children.length; i++) {
+            const status = this.children[i].tick(state);
+            if (status !== BehaviorStatus.SUCCESS) {
+                return status;
+            }
+        }
+        return BehaviorStatus.SUCCESS;
+    }
 }
 
 class SelectorNode implements IBehavior {
-  children: IBehavior[];
+    children: IBehavior[];
 
-  constructor(children: IBehavior[]) {
-    this.children = children;
-  }
-
-  tick(state: IState) {
-    for (let i = 0; i < this.children.length; i++) {
-      const status = this.children[i].tick(state);
-      if (status === BehaviorStatus.SUCCESS) {
-        return status;
-      }
+    constructor(children: IBehavior[]) {
+        this.children = children;
     }
-    return BehaviorStatus.FAILURE;
-  }
+
+    tick(state: IState) {
+        for (let i = 0; i < this.children.length; i++) {
+            const status = this.children[i].tick(state);
+            if (status === BehaviorStatus.SUCCESS) {
+                return status;
+            }
+        }
+        return BehaviorStatus.FAILURE;
+    }
 }
 
 // Would a leaf node initiate animations and other things?
@@ -842,89 +842,89 @@ class SelectorNode implements IBehavior {
 
 // With this code, animations and other logic can be initiated when the leaf node is entered (when the logic is started), and completed when the leaf node is exited (when the logic is finished).
 class LeafNodeEnemyBehavior<T> implements IBehavior {
-  private _logic: (state: T) => Status;
-  private _enter: (state: T) => void;
-  private _exit: (state: T) => void;
-  private _state: T;
+    private _logic: (state: T) => Status;
+    private _enter: (state: T) => void;
+    private _exit: (state: T) => void;
+    private _state: T;
 
-  constructor(logic: (state: T) => Status, enter?: (state: T) => void, exit?: (state: T) => void, state?: T) {
-    this._logic = logic;
-    this._enter = enter;
-    this._exit = exit;
-    this._state = state;
-  }
-
-  update(): Status {
-    this._enter?.(this._state);
-    const result = this._logic(this._state);
-    if (result !== Status.RUNNING) {
-      this._exit?.(this._state);
+    constructor(logic: (state: T) => Status, enter?: (state: T) => void, exit?: (state: T) => void, state?: T) {
+        this._logic = logic;
+        this._enter = enter;
+        this._exit = exit;
+        this._state = state;
     }
-    return result;
-  }
+
+    update(): Status {
+        this._enter?.(this._state);
+        const result = this._logic(this._state);
+        if (result !== Status.RUNNING) {
+            this._exit?.(this._state);
+        }
+        return result;
+    }
 }
 
 // To avoid cyclic references in the serialized form of the Behavior Tree, a node's children can be represented as an array of node ids instead of objects. When deserializing, a separate object pool can be used to store all nodes based on their id, so that references can be reconstructed. For example:
 interface INodeData {
-  id: string;
-  type: string;
-  children: string[];
-  // Other properties specific to each node type
+    id: string;
+    type: string;
+    children: string[];
+    // Other properties specific to each node type
 }
 
 const objectPool = new Map<string, IBehaviorNode>();
 
 function deserializeNode(data: INodeData): IBehaviorNode {
-  let node = objectPool.get(data.id);
-  if (!node) {
-    switch (data.type) {
-      case "SequenceNode":
-        node = new SequenceNode();
-        break;
-      case "SelectorNode":
-        node = new SelectorNode();
-        break;
-      // Other node types
+    let node = objectPool.get(data.id);
+    if (!node) {
+        switch (data.type) {
+            case "SequenceNode":
+                node = new SequenceNode();
+                break;
+            case "SelectorNode":
+                node = new SelectorNode();
+                break;
+            // Other node types
+        }
+        objectPool.set(data.id, node);
     }
-    objectPool.set(data.id, node);
-  }
 
-  node.children = data.children.map(childId => objectPool.get(childId) || deserializeNode({id: childId, type: "", children: []}));
-  // Reconstruct other properties
+    node.children = data.children.map(childId => objectPool.get(childId) || deserializeNode({ id: childId, type: "", children: [] }));
+    // Reconstruct other properties
 
-  return node;
+    return node;
 }
 
 function serializeTree(root: IBehaviorNode): INodeData[] {
-  const nodes = [];
-  const visited = new Set<IBehaviorNode>();
+    const nodes = [];
+    const visited = new Set<IBehaviorNode>();
 
-  function serializeNode(node: IBehaviorNode): INodeData {
-    if (visited.has(node)) {
-      return {
-        id: node.id,
-        type: "",
-        children: []
-      };
+    function serializeNode(node: IBehaviorNode): INodeData {
+        if (visited.has(node)) {
+            return {
+                id: node.id,
+                type: "",
+                children: []
+            };
+        }
+
+        visited.add(node);
+        const childrenIds = node.children.map(child => serializeNode(child).id);
+
+        nodes.push({
+            id: node.id,
+            type: node.constructor.name,
+            children: childrenIds,
+            // Serialize other properties specific to each node type
+        });
+
+        return {
+            id: node.id,
+            type: "",
+            children: []
+        };
     }
 
-    visited.add(node);
-    const childrenIds = node.children.map(child => serializeNode(child).id);
-
-    nodes.push({
-      id: node.id,
-      type: node.constructor.name,
-      children: childrenIds,
-      // Serialize other properties specific to each node type
-    });
-
-    return {
-      id: node.id,
-      type: "",
-      children: []
-    };
-  }
-
-  serializeNode(root);
-  return nodes;
+    serializeNode(root);
+    return nodes;
 }
