@@ -53,3 +53,11 @@ class FieldHockeyDrill {
 let drill = new FieldHockeyDrill(10);
 drill.setPlayerPositions(4, 6);
 drill.runDrill();
+
+// Young female wearing white button-up shirt, brown jacket, necktie and holding a folded umbrella, walking, sideways, manga, professional pencil uncolored, concept art
+
+// Young female wearing white button-up shirt, brown jacket, necktie, walking, sideways, professional uncolored manga sketch
+
+// Young female wearing white button-up shirt, brown jacket, necktie, posing, looking into the camera, full front view, professional uncolored manga sketch
+
+// manga, Young female wearing white button-up shirt, short coat, thin necktie, front view, smiling, in the style of a black & white book
