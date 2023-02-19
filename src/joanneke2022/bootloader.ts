@@ -266,22 +266,22 @@ class uitlegStuff extends SpriteObject {
                         5,
                         6,
                     ],
-                    onenter(this: uitlegStuff, s: sstate<uitlegStuff>) {
+                    enter(this: uitlegStuff, s: sstate<uitlegStuff>) {
                         s.reset();
                         if (_model)
                             _model.uitleg_tekst_dinges = s.current;
                     },
-                    onrun(this: uitlegStuff, s: sstate<uitlegStuff>) {
+                    run(this: uitlegStuff, s: sstate<uitlegStuff>) {
                         ++s.nudges;
                         if (Input.KC_BTN1) {
                             ++s.head; // Skip to next tape entry. Note that this will reset nudges and stuff
                         }
                     },
-                    onnext(this: uitlegStuff, s: sstate<uitlegStuff>) {
+                    next(this: uitlegStuff, s: sstate<uitlegStuff>) {
                         if (_model)
                             _model.uitleg_tekst_dinges = s.current;
                     },
-                    onend(this: uitlegStuff, s: sstate<uitlegStuff>) {
+                    end(this: uitlegStuff, s: sstate<uitlegStuff>) {
                         if (_model)
                             _model.state.to('default');
                     },
