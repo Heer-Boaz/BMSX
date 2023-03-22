@@ -98,36 +98,28 @@ export abstract class GLView extends BaseView {
 
     private readonly vertexShaderCode: string =
         `#version 300 es
-			precision highp float;
+        precision highp float;
 
-			in vec2 a_position;
-			in vec2 a_texcoord;
-			in vec4 a_color_override;
-			in float a_pos_z;
+        in vec2 a_position;
+        in vec2 a_texcoord;
+        in vec4 a_color_override;
+        in float a_pos_z;
 
-			uniform vec2 u_resolution;
+        uniform vec2 u_resolution;
 
-			out vec2 v_texcoord;
-			out vec4 v_color_override;
+        out vec2 v_texcoord;
+        out vec4 v_color_override;
 
-		void main() {
-			// Convert the rectangle from pixels to 0.0 to 1.0
-			vec2 zeroToOne = a_position / u_resolution;
+        void main() {
+            // Convert the rectangle from pixels to clipspace coordinates and invert Y-axis
+            vec2 clipSpace = ((a_position / u_resolution) * 2.0 - 1.0) * vec2(1, -1);
 
-			// Convert from 0->1 to 0->2
-			vec2 zeroToTwo = zeroToOne * 2.0;
+            gl_Position = vec4(clipSpace, a_pos_z, 1);
 
-			// Convert from 0->2 to -1->+1 (clipspace)
-			vec2 clipSpace = zeroToTwo - 1.0;
-
-			gl_Position = vec4(clipSpace * vec2(1, -1), a_pos_z, 1);
-
-			// Pass the texCoord to the fragment shader
-			// The GPU will interpolate this value between points.
-			v_texcoord = a_texcoord;
-			// Pass the color_override value to the fragment shader to colorize sprites!
-			v_color_override = a_color_override;
-		}`;
+            // Pass the texCoord and color_override to the fragment shader
+            v_texcoord = a_texcoord;
+            v_color_override = a_color_override;
+    	}`;
 
     private readonly fragmentShaderTextureCode: string =
         `#version 300 es
@@ -138,9 +130,7 @@ export abstract class GLView extends BaseView {
 		out vec4 outputColor;
 
 		void main() {
-			// gl_FragColor = vec4(1, 0, 0, 1);
-			lowp vec4 color = texture(u_texture, v_texcoord);
-			color = color * v_color_override;
+			lowp vec4 color = texture(u_texture, v_texcoord) * v_color_override;
 			if (color.a < 0.1)
     			discard;
 			outputColor = color;
@@ -421,33 +411,36 @@ export abstract class GLView extends BaseView {
         _this.drawImgReqIndex = 0;
     }
 
+    private static updateBuffer(gl: WebGLRenderingContext, buffer: WebGLBuffer, target: GLenum, offset: number, data: ArrayBufferView) {
+        gl.bindBuffer(target, buffer);
+        gl.bufferSubData(target, offset, data);
+    }
+
     override drawImg(options: DrawImgOptions): void {
-        let { x, y, z, imgid, flip_h = false, flip_v = false, sx = 1, sy = 1, colorize = DEFAULT_VERTEX_COLOR } = options;
-        let imgmeta = global.rom['img_assets'][imgid]?.['imgmeta'];
+        const { x, y, z, imgid, flip_h = false, flip_v = false, sx = 1, sy = 1, colorize = DEFAULT_VERTEX_COLOR } = options;
+        const imgmeta = global.rom['img_assets'][imgid]?.['imgmeta'];
         if (!imgmeta) throw `Image with id '${imgid}' not found while trying to retrieve image metadata!`;
-        let _this = global.view as GLView;
-        let gl = _this.glctx;
-        let width = imgmeta['width'];
-        let height = imgmeta['height'];
 
-        bvec.set(_this.vertexcoords, x, y, width, height, sx, sy);
-        if (flip_h && flip_v) _this.texcoords.set(imgmeta['texcoords_fliphv']);
-        else if (flip_h) _this.texcoords.set(imgmeta['texcoords_fliph']);
-        else if (flip_v) _this.texcoords.set(imgmeta['texcoords_flipv']);
-        else _this.texcoords.set(imgmeta['texcoords']);
+        const _this = global.view as GLView;
+        const { glctx: gl, vertexcoords, texcoords, zcoords, color_override, drawImgReqIndex } = _this;
+        const width = imgmeta['width'];
+        const height = imgmeta['height'];
 
-        bvec.set_zcoord(_this.zcoords, z / 10000);
-        bvec.set_color(_this.color_override, colorize);
+        bvec.set(vertexcoords, x, y, width, height, sx, sy);
+        texcoords.set(flip_h && flip_v ? imgmeta['texcoords_fliphv'] :
+                      flip_h ? imgmeta['texcoords_fliph'] :
+                      flip_v ? imgmeta['texcoords_flipv'] :
+                      imgmeta['texcoords']);
+        bvec.set_zcoord(zcoords, z / 10000);
+        bvec.set_color(color_override, colorize);
 
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-        gl.bufferSubData(gl.ARRAY_BUFFER, 48 * _this.drawImgReqIndex, _this.vertexcoords);
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.texcoordBuffer);
-        gl.bufferSubData(gl.ARRAY_BUFFER, 48 * _this.drawImgReqIndex, _this.texcoords);
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.zBuffer);
-        gl.bufferSubData(gl.ARRAY_BUFFER, 24 * _this.drawImgReqIndex, _this.zcoords);
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.color_overrideBuffer);
-        gl.bufferSubData(gl.ARRAY_BUFFER, 96 * _this.drawImgReqIndex, _this.color_override);
-        ++_this.drawImgReqIndex;
+        const bufferOffset = 48 * drawImgReqIndex;
+        GLView.updateBuffer(gl, this.positionBuffer, gl.ARRAY_BUFFER, bufferOffset, vertexcoords);
+        GLView.updateBuffer(gl, this.texcoordBuffer, gl.ARRAY_BUFFER, bufferOffset, texcoords);
+        GLView.updateBuffer(gl, this.zBuffer, gl.ARRAY_BUFFER, 24 * drawImgReqIndex, zcoords);
+        GLView.updateBuffer(gl, this.color_overrideBuffer, gl.ARRAY_BUFFER, 96 * drawImgReqIndex, color_override);
+
+        _this.drawImgReqIndex++;
     }
 
     override drawRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {

@@ -116,8 +116,9 @@
 			"label": "build rom.js",
 			"detail": "Generate shared script for boot and load/start ROM",
 			"type": "shell",
-			"command": "tsc",
+			"command": "npx",
 			"args": [
+				"tsc",
 				"${workspaceFolder}/scripts/rom.ts",
 				"--removeComments",
 				"-m",
@@ -150,8 +151,9 @@
 			"label": "build rompacker.js",
 			"detail": "Generates script used for creating & deploying the ROM image",
 			"type": "shell",
-			"command": "tsc",
+			"command": "npx",
 			"args": [
+				"tsc",
 				"${workspaceFolder}/scripts/rompacker.ts",
 				"--removeComments",
 				"--target",
