@@ -1,8 +1,9 @@
-import { readdirSync, statSync, readFileSync, writeFileSync, copyFile, copyFileSync, existsSync, exists, createWriteStream, rmSync } from "fs";
-import { join, parse } from "path";
+import { readdirSync, statSync, readFileSync, writeFileSync, copyFile, copyFileSync, existsSync, exists, createWriteStream, rmSync } from 'fs';
+import { join, parse } from 'path';
 import { AudioMeta, AudioType, RomAsset, RomMeta, ImgMeta } from '../src/bmsx/rompack';
 import * as browserify from 'browserify';
-const tsify = require("tsify");
+import * as binpacker from 'bin-pack';
+const tsify = require('tsify');
 
 import * as terser from 'terser';
 import * as term from 'terminal-kit';
@@ -18,13 +19,6 @@ const ATLAS_PX_SIZE = 4096;
 const CROP_ATLAS = true;
 const GENERATE_AND_USE_TEXTURE_ATLAS = true;
 const DONT_PACK_IMAGES_WHEN_USING_ATLAS = true;
-// const BOILERPLATE_RESOURCE_ID_IMPORT_DECLARATION = `import { IResourceId } from '../bmsx/rompack';`;
-// const BOILERPLATE_RESOURCE_ID_BITMAP_TYPE_DECLARATION = `type BitmapType = IResourceId & {
-// 	None: 0,
-// `;
-// const BOILERPLATE_RESOURCE_ID_BITMAP_INSTANCE = `export var BitmapId: BitmapType = {
-// 	None: 0,
-// `;
 
 const BOILERPLATE_RESOURCE_ID_BITMAP = `export enum BitmapId {
 	None = 'None',
@@ -43,6 +37,7 @@ let atlasUnsafeY = 0; // Also used for cropping atlas later, but primarily used 
 interface ILoadedResource extends ResourceMeta {
 	buffer: Buffer;
 	img?: any;
+	imgmeta?: ImgMeta;
 }
 
 interface ResourceMeta {
@@ -72,16 +67,13 @@ function log(_tolog: string, type?: logentryType): void {
 	switch (type) {
 		case 'error':
 			tolog = _colors.red(_tolog);
-			// process.stdout.write(`${_colors.cyan(d.toTimeString().split(' ')[0])}:${_colors.cyan(d.getMilliseconds().toString().substring(0, 3))} ${tolog}`);
 			term.terminal(`${_colors.cyan(d.toTimeString().split(' ')[0])}:${_colors.cyan(d.getMilliseconds().toString().substring(0, 3))} ${tolog}`);
 			break;
 		case 'warning': tolog = _colors.yellow(_tolog);
-			// process.stdout.write(`${_colors.cyan(d.toTimeString().split(' ')[0])}:${_colors.cyan(d.getMilliseconds().toString().substring(0, 3))} ${tolog}`);
 			term.terminal(`${_colors.cyan(d.toTimeString().split(' ')[0])}:${_colors.cyan(d.getMilliseconds().toString().substring(0, 3))} ${tolog}`);
 			break;
 		default:
 			tolog = _tolog;
-			// term.terminal(`${_colors.white(d.toTimeString().split(' ')[0])}:${_colors.cyan(d.getMilliseconds().toString().substring(0, 3))} ${tolog}`);
 			break;
 	}
 }
@@ -91,12 +83,10 @@ function appendLogEntry(_toappend: string, type?: logentryType): void {
 	switch (type) {
 		case 'error':
 			toappend = _colors.red(_toappend);
-			// process.stdout.write(toappend);
 			term.terminal(toappend);
 			break;
 		case 'warning':
 			toappend = _colors.yellow(_toappend);
-			// process.stdout.write(toappend);
 			term.terminal(toappend);
 			break;
 		default: toappend = _toappend; break;
@@ -105,24 +95,6 @@ function appendLogEntry(_toappend: string, type?: logentryType): void {
 
 function timer(ms: number) {
 	return new Promise(res => setTimeout(res, ms));
-}
-
-const rotatorchars = ['-', '\\', '|', '/'];
-var runrotator = false;
-async function startRotator() {
-	// runrotator = true;
-	// process.stdout.write(`/`);
-	// let i = 0;
-	// while (runrotator) {
-	// 	await timer(100);
-	// 	runrotator && process.stdout.write(`\b${rotatorchars[i]}`);
-	// 	if (++i >= rotatorchars.length) i = 0;
-	// }
-}
-
-function stopRotator(): void {
-	// runrotator = false;
-	// process.stdout.write(`\b\b  `);
 }
 
 /**
@@ -179,13 +151,11 @@ function yaml2Json(): Promise<void> {
 		try {
 			log("YAML bestanden omzetten in JSON voor importatie...  ");
 			let yamlfiles = getAllFiles('./src', [], '.yaml');
-			startRotator();
 			for (let file of yamlfiles) {
 				let doc = yaml.load(readFileSync(file, 'utf8'));
 				let outfilename = file.replace('.yaml', '.json');
 				writeFileSync(outfilename, Buffer.from(encodeuint8arr(JSON.stringify(doc))));
 			}
-			stopRotator();
 			appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 		}
 		catch (err) {
@@ -197,7 +167,6 @@ function yaml2Json(): Promise<void> {
 
 async function buildAndBundleRomSource(outfile: string, bootloader_path: string): Promise<any> {
 	log("Game compileren en bundleren...  ");
-	startRotator();
 	return new Promise((resolve, reject) => {
 		try {
 			let writeOutput = createWriteStream(`./rom/${outfile}.js`);
@@ -218,17 +187,14 @@ async function buildAndBundleRomSource(outfile: string, bootloader_path: string)
 				})
 				.bundle()
 				.on('error', e => {
-					stopRotator();
 					reject(e);
 				})
 				.pipe(writeOutput);
 			writeOutput.on('finish', () => {
-				stopRotator();
 				appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 				resolve(null);
 			});
 			writeOutput.on('error', e => {
-				stopRotator();
 				appendLogEntry(`${_colors.red('[Urgh]')}\n`);
 				reject(e);
 			});
@@ -394,7 +360,6 @@ function zip(content: Buffer): Uint8Array {
 async function deploy(outfile: string, title: string): Promise<any> {
 	return new Promise<any>((resolve, reject) => {
 		log("Deployeren... ");
-		startRotator();
 		let ftpDeploy = new FtpDeploy();
 
 		ftpDeploy.on("upload-error", function (data) {
@@ -422,7 +387,7 @@ async function deploy(outfile: string, title: string): Promise<any> {
 
 		ftpDeploy
 			.deploy(config)
-			.then(res => { stopRotator(); appendLogEntry(`${res}. ${_colors.grey('[Donut]')}\n`); resolve(null); })
+			.then(res => { appendLogEntry(`${res}. ${_colors.grey('[Donut]')}\n`); resolve(null); })
 			.catch(err => {
 				// stopRotator();
 				// log(`\tFTP upload mislukt :-(\n`, 'error');
@@ -458,17 +423,13 @@ function getResMetaByFilename(filepath: string): { name: string, ext: string, ty
 }
 
 function getResMetaList(respath: string): ResourceMeta[] {
-	// log(`Lees all bestanden in de resource pad ${_colors.brightGreen(`"${respath}"`)}... `);
-	// startRotator();
 	let arrayOfFiles = getFiles(respath) ?? []; // Also handle corner case where we don't have any resources by adding "?? []"
 	addFile("./rom", "megarom.min.js", arrayOfFiles); // Add source at the end
-	// stopRotator();
 
 	let result: Array<ResourceMeta> = [];
 
 	let imgid = 1;
 	let sndid = 1;
-	// let index_of_romlabel = -1;
 	for (let i = 0; i < arrayOfFiles.length; i++) {
 		let filepath = arrayOfFiles[i];
 		let meta = getResMetaByFilename(filepath);
@@ -489,24 +450,12 @@ function getResMetaList(respath: string): ResourceMeta[] {
 				break;
 			case 'romlabel':
 				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: undefined });
-				// if (index_of_romlabel >= 0) throw `Found multiple 'romlabel.png' files! Cannot choose which one to use as enclosed rom image ¯\_(ツ)_/¯!`;
-				// index_of_romlabel = i;
 				break;
-			// case 'source':
-			// 	name = name.replace('.min', '');
-			// 	break;
 		}
 	}
 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
 		result.push({ filepath: undefined, name: '_atlas', ext: undefined, type: 'atlas', id: imgid }); // Note that 'atlas' is an internal type, used only for this script
 	}
-
-	// if (index_of_romlabel >= 0) {
-	// 	// Move romlabel to index 0
-	// 	let label_meta = result.slice(index_of_romlabel, 1);
-	// 	result.unshift(label_meta[0]);
-	// }
-	// appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 
 	return result;
 }
@@ -536,6 +485,7 @@ async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>): 
 				break;
 			case 'image':
 				if (GENERATE_AND_USE_TEXTURE_ATLAS) {
+					// We only load the actual image when we need to place it in an atlas. Otherwise, we already have the buffer loaded from the resource URI
 					img = await load_img(meta);
 				}
 				break;
@@ -556,7 +506,7 @@ async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>): 
 
 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
 		// Sort the files on buffer size for atlassing
-		loadedResources = loadedResources.sort((b1, b2) => ((b1.img?.height || 0) - (b2.img?.height || 0)));
+		// loadedResources = loadedResources.sort((b1, b2) => ((b1.img?.height || 0) - (b2.img?.height || 0))); // Sort from small to large
 		// Also: place the atlas in the back, so that we can correctly use the bufferpointer to point to the atlas
 		loadedResources = loadedResources.sort((b1, b2) => ((b1.type === 'atlas' ? 1 : 0) - (b2.type === 'atlas' ? 1 : 0)));
 		// Also: place the romlabel in front, so that it is put at the start of the rom and will be recognized as a proper image
@@ -573,16 +523,11 @@ async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>): 
 
 function buildResourceList(respath: string): void {
 	log("resourceids.ts knutselen...  ");
-	// let tsimgout_type_declaration = new Array<string>();
-	// let tsimgout_instance = new Array<string>();
 	let tsimgout = new Array<string>();
 	let tssndout = new Array<string>();
 
 	let metalist = getResMetaList(respath);
 
-	// tsimgout_type_declaration.push(BOILERPLATE_RESOURCE_ID_IMPORT_DECLARATION);
-	// tsimgout_type_declaration.push(BOILERPLATE_RESOURCE_ID_BITMAP_TYPE_DECLARATION);
-	// tsimgout_instance.push(BOILERPLATE_RESOURCE_ID_BITMAP_INSTANCE);
 	tsimgout.push(BOILERPLATE_RESOURCE_ID_BITMAP);
 	tssndout.push(BOILERPLATE_RESOURCE_ID_AUDIO);
 
@@ -591,14 +536,11 @@ function buildResourceList(respath: string): void {
 
 		let type = current.type;
 		let name = current.name;
-		// let id = current.id;
 		switch (type) {
 			case 'image':
 			case 'atlas':
 				let property_to_add = `\t${name} = '${name}',`;
 				tsimgout.push(`${property_to_add}`);
-				// tsimgout_type_declaration.push(`${property_to_add}`);
-				// tsimgout_instance.push(`${property_to_add}`);
 				break;
 			case 'audio':
 				let enummember_to_add = `\t${name} = '${name}',`;
@@ -607,26 +549,20 @@ function buildResourceList(respath: string): void {
 		}
 	}
 
-	// tsimgout_type_declaration.push("}\n");
-	// tsimgout_instance.push("}\n");
 	tsimgout.push("}\n");
 	tssndout.push("}\n");
 
-	// let total_output: string = tsimgout_type_declaration.concat(tsimgout_instance).concat(tssndout).join('\n');
 	let total_output: string = tsimgout.concat(tssndout).join('\n');
 
 	let targetPath = respath.replace('/res', '/resourceids.ts');
 	log(`resourceids.ts wegschrijven naar "${targetPath}"... `);
-	startRotator();
 	writeFileSync(targetPath, total_output);
-	stopRotator();
 	appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 }
 
 async function buildRompack(outfile: string, respath: string): Promise<any> {
 	return new Promise<any>(async (resolve, reject) => {
 		log("Minifyen... ");
-		startRotator();
 		let minifyGamecodeResult = await minifyGamecode("./rom/megarom.js");
 		writeFileSync("./rom/megarom.min.js", minifyGamecodeResult.code!);
 		if (minifyGamecodeResult.map) {
@@ -636,17 +572,17 @@ async function buildRompack(outfile: string, respath: string): Promise<any> {
 		copyFileSync('./rom/megarom.js', './megarom.js');
 		rmSync('./rom/megarom.js');
 
-		stopRotator();
-
 		let buffers = new Array<Buffer>();
 		log("Resource bestanden inladen en bufferen...  ");
-		startRotator();
 		let loadedResources: ILoadedResource[] = await getLoadedResourcesList(respath, buffers).catch(err => reject(err)) as ILoadedResource[];
-		stopRotator();
+		if (GENERATE_AND_USE_TEXTURE_ATLAS) {
+			// Use binpacking algorithm to optimize atlas
+			createOptimizedAtlas(loadedResources);
+		}
+
 		appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 
 		log("romresources.json knutselen...  ");
-		startRotator();
 
 		let jsonout = new Array<RomAsset>();
 		let bufferPointer = 0;
@@ -661,13 +597,13 @@ async function buildRompack(outfile: string, respath: string): Promise<any> {
 					if (i > 0) throw '"romlabel.png" must appear at start of the ResourceMeta-list, while building the rompack ("romresources.json")! Thus, this is a bug and a fix is required!';
 					// Ignore this part. Don't even increase the buffer pointer (all other buffers will be zipped)!
 					romlabel_buffer = res.buffer;
-					//bufferPointer += res.buffer.length; // Skip over this part
 					break;
 				case 'image':
 					let img = res.img;
 					let imgmeta: ImgMeta;
 					if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-						imgmeta = addToAtlas(img);
+						// imgmeta = addToAtlas(img);
+						imgmeta = res.imgmeta;
 						if (DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
 							jsonout.push({ resid: resid, resname: name, type: type, start: 0, end: 0, imgmeta: { atlassed: imgmeta.atlassed, width: imgmeta.width, height: imgmeta.height, texcoords: imgmeta.texcoords, texcoords_fliph: imgmeta.texcoords_fliph, texcoords_flipv: imgmeta.texcoords_flipv, texcoords_fliphv: imgmeta.texcoords_fliphv }, audiometa: undefined, });
 						}
@@ -730,87 +666,83 @@ async function buildRompack(outfile: string, respath: string): Promise<any> {
 		};
 		let rom_meta_string = JSON.stringify(rommeta).padStart(100, ' ');
 		buffers.push(Buffer.from(encodeuint8arr(rom_meta_string)));
-		stopRotator();
 		appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 		log(`\t#images: ${loadedResources.filter(r => r.type == 'image').length}\n`);
 		log(`\t#audio: ${loadedResources.filter(r => r.type == 'audio').length}\n`);
 
 		log("Alles nu zippen... ");
-		startRotator();
 		let all_buffers = Buffer.concat(buffers);
 		let zipped = zip(all_buffers);
-		// let rom_as_blob = romlabel_buffer ? Buffer.concat([romlabel_buffer, zipped]) : zipped;
 		let blobmeta = <RomMeta>{
 			start: romlabel_buffer?.length ?? 0,
 			end: zipped.length + (romlabel_buffer?.length ?? 0)
 		};
 		let blob_meta_string = JSON.stringify(blobmeta).padStart(100, ' ');
 		let blob_meta_as_buffer = Buffer.from(encodeuint8arr(blob_meta_string));
-		stopRotator();
 		appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 		log(`\tSize: ${_colors.red(`${(Buffer.concat(buffers).length / (1024 * 1024)).toFixed(2)} mB`)} ⇒  Deflated: ${_colors.blue(`${(zipped.length / (1024 * 1024)).toFixed(2)} mB (${((zipped.length / Buffer.concat(buffers).length) * 100).toFixed(0)}%)`)}\n`);
 
 		log(`"${_colors.green(outfile)}" wegschrijven naar ${_colors.green(`\"./dist/${outfile}\"`)}...`);
-		startRotator();
 		writeFileSync(`./dist/${outfile}`, Buffer.concat([romlabel_buffer ?? Buffer.alloc(0), zipped, blob_meta_as_buffer]));
 		writeFileSync("./rom/_ignore/romresources.json", jsonbuffer);
-		stopRotator();
 		appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 
 		resolve(null);
 	});
-	// log("Rom is gepackt!!\n");
-	// log(`\tFiles: ${arrayOfFiles.length}\n\t\timages: ${imgi}\n\t\taudio: ${sndi}\n`);
 }
 
-function addToAtlas(img: any): ImgMeta {
-	function uvcoords(x: number, y: number, width: number, height: number, imageWidth: number, imageHeight: number) {
-		let result = {
-			width: imageWidth, height: imageHeight, atlassed: true, texcoords: [] as number[], texcoords_fliph: [] as number[], texcoords_flipv: [] as number[], texcoords_fliphv: [] as number[]
-		};
-		let left: number;
-		let top: number;
-		let right: number;
-		let bottom: number;
-		if (!CROP_ATLAS) {
-			left = x / width;
-			top = y / height;
-			right = (x + imageWidth) / width;
-			bottom = (y + imageHeight) / height;
-		}
-		else {
-			left = x;
-			top = y;
-			right = (x + imageWidth);
-			bottom = (y + imageHeight);
-		}
+function createOptimizedAtlas(loadedResources: ILoadedResource[]): void {
+	const image_assets = loadedResources.filter(resource => resource.type === "image");
+	const rects = image_assets.map(img_resource => ({ width: img_resource.img?.width, height: img_resource.img?.height, id: img_resource.id }));
 
-		result.texcoords.push(left, top, right, top, left, bottom, left, bottom, right, top, right, bottom);
-		result.texcoords_fliph.push(right, top, left, top, right, bottom, right, bottom, left, top, left, bottom);
-		result.texcoords_flipv.push(left, bottom, right, bottom, left, top, left, top, right, bottom, right, top);
-		result.texcoords_fliphv.push(right, bottom, left, bottom, right, top, right, top, left, bottom, left, top);
-		return result;
+	// Fit all image rectangles into the packer
+	const packresult = binpacker(rects);
+
+	// Check if any rectangle couldn't be packed inside the constraints of the atlas (given its defined maximum size)
+	if (packresult.width >= ATLAS_PX_SIZE || packresult.height >= ATLAS_PX_SIZE) {
+		throw new Error(`Could not pack all images into the atlas! The maximum dimensions of the atlas are (${ATLAS_PX_SIZE} x ${ATLAS_PX_SIZE}), while the actual dimensions are (${packresult.width} x ${packresult.height}).`);
 	}
 
-	if (atlasPos.x + img.width > ATLAS_PX_SIZE) {
-		atlasPos.x = 0;
-		atlasPos.y = atlasUnsafeY;
+	atlasExploitedX = packresult.width;
+	atlasUnsafeY = packresult.height;
+
+	// Draw images onto the atlas canvas
+	for (let i = 0; i < packresult.items.length; i++) {
+		const fitted_rect = packresult.items[i];
+		// Find the image resource that is related to the fitted rectangle
+		// Note that the packing algorithm sorts the given input. Thus, we cannot assume that the index of the packresult equals that of the original image_asset
+		const img_asset = image_assets.find(img_asset => img_asset.id == fitted_rect.item.id);
+		const img = img_asset.img;
+		img_asset.imgmeta = uvcoords(fitted_rect.x, fitted_rect.y, ATLAS_PX_SIZE, ATLAS_PX_SIZE, img.width, img.height);
+		ctx.drawImage(img, fitted_rect.x, fitted_rect.y);
+	}
+}
+
+function uvcoords(x: number, y: number, width: number, height: number, imageWidth: number, imageHeight: number) {
+	let result = {
+		width: imageWidth, height: imageHeight, atlassed: true, texcoords: [] as number[], texcoords_fliph: [] as number[], texcoords_flipv: [] as number[], texcoords_fliphv: [] as number[]
+	};
+	let left: number;
+	let top: number;
+	let right: number;
+	let bottom: number;
+	if (!CROP_ATLAS) {
+		left = x / width;
+		top = y / height;
+		right = (x + imageWidth) / width;
+		bottom = (y + imageHeight) / height;
+	}
+	else {
+		left = x;
+		top = y;
+		right = (x + imageWidth);
+		bottom = (y + imageHeight);
 	}
 
-	ctx.drawImage(img, atlasPos.x, atlasPos.y);
-	if (atlasPos.y + img.height > atlasUnsafeY) {
-		atlasUnsafeY = atlasPos.y + img.height;
-		if (atlasUnsafeY > ATLAS_PX_SIZE) {
-			log('Oh nee!! We krijgen de plaatjes niet meer in de atlas!', 'error');
-		}
-	}
-	if (atlasPos.x + img.width > atlasExploitedX) {
-		atlasExploitedX = atlasPos.x + img.width;
-	}
-
-	let result = uvcoords(atlasPos.x, atlasPos.y, ATLAS_PX_SIZE, ATLAS_PX_SIZE, img.width, img.height);
-	atlasPos.x += img.width;
-
+	result.texcoords.push(left, top, right, top, left, bottom, left, bottom, right, top, right, bottom);
+	result.texcoords_fliph.push(right, top, left, top, right, bottom, right, bottom, left, top, left, bottom);
+	result.texcoords_flipv.push(left, bottom, right, bottom, left, top, left, top, right, bottom, right, top);
+	result.texcoords_fliphv.push(right, bottom, left, bottom, right, top, right, top, left, bottom, left, top);
 	return result;
 }
 

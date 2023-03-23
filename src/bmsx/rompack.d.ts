@@ -25,6 +25,7 @@ export interface RomAsset {
 	type: string;
 	start: number;
 	end: number;
+	buffer?: ArrayBuffer;
 	imgmeta?: ImgMeta;
 	audiometa?: AudioMeta;
 }

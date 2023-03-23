@@ -378,7 +378,7 @@ html {
 	-ms-interpolation-mode: nearest-neighbor;
 	image-rendering: pixelated;
 	overflow: hidden;
-	display: block;
+	display: none;
 	z-index: 999;
 	background-color: #000000;
 }

@@ -12,6 +12,7 @@
   "devDependencies": {
     "@node-minify/clean-css": "*",
     "@node-minify/core": "*",
+    "@types/bin-pack": "^1.0.1",
     "@types/browserify": "*",
     "@types/cli-progress": "*",
     "@types/js-yaml": "*",
@@ -20,6 +21,7 @@
     "@types/pako": "*",
     "@types/systemjs": "*",
     "@types/terminal-kit": "*",
+    "bin-pack": "^1.0.2",
     "browserify": "*",
     "canvas": "*",
     "colors": "*",

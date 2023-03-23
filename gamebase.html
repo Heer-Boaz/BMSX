@@ -10,7 +10,7 @@
         <meta name="apple-mobile-web-app-status-bar-style" content="black" />
         <meta name="apple-mobile-web-app-title" content="#title" />
         <link rel="manifest" href="manifest.webmanifest">
-		<link rel="apple-touch-icon" href="bmsx_icon.png">
+        <link rel="apple-touch-icon" href="bmsx_icon.png">
         <script id="bootrom">//#romjs</script>
         <script id="pacojs" distributedby="http://nodeca.github.io/pako/">//#zipjs</script>
         <!-- #vis-networkjs -->
@@ -23,9 +23,9 @@
             <img id="msx" class="hidden" src="#bmsxurl" hidden />
             <div id="hidor"></div>
             <div id="loading" class="coloring" hidden>Loading...</div>
-			<div id="debug_controls" hidden >
-				<span>&nrArr;</span>
-			</div>
+            <!-- <div id="debug_controls" hidden>
+                <span>&nrArr;</span>
+            </div> -->
             <div id="controls" hidden>
                 <svg class="buttons" id="btn1_svg">
                     <circle id="btn1_knop" class="knop red los" cx="4vmax" cy="4vmax" r="4vmax" fill="transparent" />
@@ -73,7 +73,18 @@
                     </g>
                 </svg>
             </div>
-            <canvas id="gamescreen" hidden></canvas>
+            <div id="gameContainer">
+                <canvas id="gamescreen" hidden></canvas>
+                <div id="debugPanel" hidden>
+                    <img id="pauseResumeButton" class="debugIcon" src="path/to/pause-resume-icon.png"
+                        onclick="pauseResumeGame();" />
+                    <img id="rewindButton" class="debugIcon" src="path/to/rewind-icon.png" onclick="rewindGame();" />
+                    <img id="fastForwardButton" class="debugIcon" src="path/to/fast-forward-icon.png"
+                        onclick="fastForwardGame();" />
+                    <img id="openDebugToolsButton" class="debugIcon" src="path/to/open-debug-tools-icon.png"
+                        onclick="openDebugTools();" />
+                </div>
+            </div>
         </div>
     </body>
     <script>
@@ -82,7 +93,7 @@
         bootrom.bload("./#outfile").then(function (h406A) {
             bootrom.defusr = h406A;
             bootrom.usr(0);
-        }).catch(function(err) {
+        }).catch(function (err) {
             bootrom.theshowsover = true;
             document.querySelector('#loading').hidden = false;
             document.querySelector('#msx').onanimationend = undefined;
@@ -93,6 +104,22 @@
     </script>
     <style>
         /*css*/
+        #gameContainer {
+            position: relative;
+        }
+
+        #debugPanel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+        }
+
+        .debugIcon {
+            width: 40px;
+            height: 40px;
+            margin: 5px;
+            cursor: pointer;
+        }
     </style>
 
 </html>

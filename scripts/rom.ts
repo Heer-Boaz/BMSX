@@ -19,6 +19,11 @@ var bootrom = {
 	usr(x: number): number {
 		document.body.classList.add('game-started'); // Change background color of body
 		document.getElementById('gamescreen')!.hidden = false;
+		document.getElementById('gamescreen')!.style.display = 'block';
+		if (this.debug) {
+			document.getElementById('debugPanel')!.hidden = false;
+			document.getElementById('debugPanel')!.style.display = 'block';
+		}
 		loadScript(bootrom.rom!).then(() => {
 			h406A(bootrom.rom!, bootrom.sndcontext!, bootrom.gainnode!);
 			bootrom.rom = null;

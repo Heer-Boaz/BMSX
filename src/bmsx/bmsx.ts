@@ -12,8 +12,6 @@ declare global {
     var rom: RomPack;
 }
 
-const fps: number = 50;
-const fpstime: number = 1000 / fps;
 export function get_gamemodel<T extends BaseModel>(): T {
 
     return <T>globalThis.model;
@@ -463,7 +461,7 @@ export function GetDeltaFromSourceToTarget(source: vec2, target: vec2): vec2 {
 }
 
 export function LineLength(p1: vec3, p2: vec3): number {
-    return Math.sqrt((p2.x - p1.x)**2 + (p2.y - p1.y)**2) - 1;
+    return Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2) - 1;
 }
 
 // https://developer.mozilla.org/en-US/docs/Web/API/Web_Storage_API/Using_the_Web_Storage_API
@@ -529,6 +527,12 @@ export function getOppositeDirection(dir: Direction): Direction {
 }
 
 export class Game {
+    public targetFPS: number = 50;
+    public updateInterval: number;
+    public lastUpdate: number = 0;
+    public deltaTime: number = 0;
+    public accumulatedTime: number = 0;
+
     last_gametick_time!: number;
     _turnCounter!: number;
     animationFrameRequestid!: number;
@@ -558,6 +562,7 @@ export class Game {
         this.running = false;
         this.paused = false;
         this.wasupdated = true;
+        this.updateInterval = 1000 / this.targetFPS;
     }
 
     public get turnCounter(): number {
@@ -568,48 +573,74 @@ export class Game {
         // global.view.handleResize();
 
         this.running = true;
+        this.lastUpdate = performance.now();
         this.last_gametick_time = performance.now();
         this.run(performance.now());
     }
 
-    public update(): void {
-        global.model.run();
-        if (global.game.debug_runSingleFrameAndPause) {
-            global.game.debug_runSingleFrameAndPause = false;
-            global.game.paused = true;
+    public update(deltaTime: number): void {
+        const game = global.game;
+        const model = global.model;
+        model.run();
+        if (game.debug_runSingleFrameAndPause) {
+            game.debug_runSingleFrameAndPause = false;
+            game.paused = true;
         }
+        game.wasupdated = true;
     }
 
-    public run(current_time: number): void {
+    public run(currentTime: number): void {
         const game = global.game;
         if (!game.running) return;
 
-        let ticks_to_run: number;
+        game.deltaTime = currentTime - game.lastUpdate;
+        game.lastUpdate = currentTime;
+        game.accumulatedTime += game.deltaTime;
 
-        // If tFrame < nextTick then 0 ticks need to be updated (0 is default for numTicks).
-        // If tFrame = nextTick then 1 tick needs to be updated (and so forth).
-        // Note: As we mention in summary, you should keep track of how large numTicks is.
-        // If it is large, then either your game was asleep, or the machine cannot keep up.
-        const time_since_last_run_gametick = current_time - game.last_gametick_time;
+        game.wasupdated = false;
 
-        if (time_since_last_run_gametick > fpstime) {
-            ticks_to_run = Math.floor(time_since_last_run_gametick / fpstime);
+        while (game.accumulatedTime >= game.updateInterval) {
+            if (!game.paused) {
+                Input.pollGamepadInput();
+                game.update(game.updateInterval);
+            }
+            game.accumulatedTime -= game.updateInterval;
         }
-        else ticks_to_run = 0;
 
-        for (let i = 0; i < ticks_to_run; i++) {
-            ++game._turnCounter;
-            game.last_gametick_time = game.last_gametick_time + fpstime; // Now lastTick is this tick.
-            if (game.paused) continue;
-            Input.pollGamepadInput();
-            game.update();
-        }
-        if (ticks_to_run > 0) global.view.drawgame();
-        if (ticks_to_run > 1) console.warn(`${ticks_to_run}`);
+        if (game.wasupdated) global.view.drawgame();
 
-        // global.view.drawgame();
-        game.last_gametick_time = current_time - (time_since_last_run_gametick % fpstime); // https://codepen.io/rishabhp/pen/XKpBQX
         game.animationFrameRequestid = window.requestAnimationFrame(game.run);
+
+        // OLD!!
+        // const game = global.game;
+        // if (!game.running) return;
+
+        // let ticks_to_run: number;
+        // const fpstime = game.updateInterval;
+
+        // // If tFrame < nextTick then 0 ticks need to be updated (0 is default for numTicks).
+        // // If tFrame = nextTick then 1 tick needs to be updated (and so forth).
+        // // Note: As we mention in summary, you should keep track of how large numTicks is.
+        // // If it is large, then either your game was asleep, or the machine cannot keep up.
+        // const time_since_last_run_gametick = currentTime - game.last_gametick_time;
+
+        // if (time_since_last_run_gametick > fpstime) {
+        //     ticks_to_run = Math.floor(time_since_last_run_gametick / fpstime);
+        // }
+        // else ticks_to_run = 0;
+
+        // for (let i = 0; i < ticks_to_run; i++) {
+        //     ++game._turnCounter;
+        //     game.last_gametick_time = game.last_gametick_time + fpstime; // Now lastTick is this tick.
+        //     if (game.paused) continue;
+        //     Input.pollGamepadInput();
+        //     game.update(fpstime);
+        // }
+        // if (ticks_to_run > 0) global.view.drawgame();
+        // if (ticks_to_run > 1) console.warn(`${ticks_to_run}`);
+
+        // game.last_gametick_time = currentTime - (time_since_last_run_gametick % fpstime); // https://codepen.io/rishabhp/pen/XKpBQX
+        // game.animationFrameRequestid = window.requestAnimationFrame(game.run);
     }
 
     public stop(): void {

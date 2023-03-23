@@ -1,8 +1,6 @@
 export enum BitmapId {
 	None = 'None',
 
-	arrowed = 'arrowed',
-	b = 'b',
 	blackpixel = 'blackpixel',
 	break1 = 'break1',
 	break2 = 'break2',
