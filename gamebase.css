@@ -372,6 +372,27 @@ html {
 	height: 100%;
 }
 
+#gameContainer {
+	position: relative;
+}
+
+#debugPanel {
+	position: absolute;
+	top: 10px;
+	right: 10px;
+	background-color: transparent;
+	z-index: 1000;
+	fill-opacity: 0.25;
+	;
+}
+
+.debugIcon {
+	width: 40px;
+	height: 40px;
+	margin: 5px;
+	cursor: pointer;
+}
+
 #gamescreen {
 	position: absolute;
 	transform-origin: 0 0;
