@@ -1,10 +1,8 @@
 import { readdirSync, statSync, readFileSync, writeFileSync, copyFile, copyFileSync, existsSync, exists, createWriteStream, rmSync } from "fs";
-// import { MaxRectsPacker } from "rectangle-bin-pack";
 import { join, parse } from "path";
 import { AudioMeta, AudioType, RomAsset, RomMeta, ImgMeta } from '../src/bmsx/rompack';
 import * as browserify from 'browserify';
 const tsify = require("tsify");
-const MaxRectsPacker = require("rectangle-bin-pack");
 
 import * as terser from 'terser';
 import * as term from 'terminal-kit';
@@ -20,6 +18,13 @@ const ATLAS_PX_SIZE = 4096;
 const CROP_ATLAS = true;
 const GENERATE_AND_USE_TEXTURE_ATLAS = true;
 const DONT_PACK_IMAGES_WHEN_USING_ATLAS = true;
+// const BOILERPLATE_RESOURCE_ID_IMPORT_DECLARATION = `import { IResourceId } from '../bmsx/rompack';`;
+// const BOILERPLATE_RESOURCE_ID_BITMAP_TYPE_DECLARATION = `type BitmapType = IResourceId & {
+// 	None: 0,
+// `;
+// const BOILERPLATE_RESOURCE_ID_BITMAP_INSTANCE = `export var BitmapId: BitmapType = {
+// 	None: 0,
+// `;
 
 const BOILERPLATE_RESOURCE_ID_BITMAP = `export enum BitmapId {
 	None = 'None',
@@ -102,6 +107,24 @@ function timer(ms: number) {
 	return new Promise(res => setTimeout(res, ms));
 }
 
+const rotatorchars = ['-', '\\', '|', '/'];
+var runrotator = false;
+async function startRotator() {
+	// runrotator = true;
+	// process.stdout.write(`/`);
+	// let i = 0;
+	// while (runrotator) {
+	// 	await timer(100);
+	// 	runrotator && process.stdout.write(`\b${rotatorchars[i]}`);
+	// 	if (++i >= rotatorchars.length) i = 0;
+	// }
+}
+
+function stopRotator(): void {
+	// runrotator = false;
+	// process.stdout.write(`\b\b  `);
+}
+
 /**
  * Convert a string into a Uint8Array.
  * https://ourcodeworld.com/articles/read/164/how-to-convert-an-uint8array-to-string-in-javascript
@@ -156,11 +179,13 @@ function yaml2Json(): Promise<void> {
 		try {
 			log("YAML bestanden omzetten in JSON voor importatie...  ");
 			let yamlfiles = getAllFiles('./src', [], '.yaml');
+			startRotator();
 			for (let file of yamlfiles) {
 				let doc = yaml.load(readFileSync(file, 'utf8'));
 				let outfilename = file.replace('.yaml', '.json');
 				writeFileSync(outfilename, Buffer.from(encodeuint8arr(JSON.stringify(doc))));
 			}
+			stopRotator();
 			appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 		}
 		catch (err) {
@@ -172,6 +197,7 @@ function yaml2Json(): Promise<void> {
 
 async function buildAndBundleRomSource(outfile: string, bootloader_path: string): Promise<any> {
 	log("Game compileren en bundleren...  ");
+	startRotator();
 	return new Promise((resolve, reject) => {
 		try {
 			let writeOutput = createWriteStream(`./rom/${outfile}.js`);
@@ -192,14 +218,17 @@ async function buildAndBundleRomSource(outfile: string, bootloader_path: string)
 				})
 				.bundle()
 				.on('error', e => {
+					stopRotator();
 					reject(e);
 				})
 				.pipe(writeOutput);
 			writeOutput.on('finish', () => {
+				stopRotator();
 				appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 				resolve(null);
 			});
 			writeOutput.on('error', e => {
+				stopRotator();
 				appendLogEntry(`${_colors.red('[Urgh]')}\n`);
 				reject(e);
 			});
@@ -365,6 +394,7 @@ function zip(content: Buffer): Uint8Array {
 async function deploy(outfile: string, title: string): Promise<any> {
 	return new Promise<any>((resolve, reject) => {
 		log("Deployeren... ");
+		startRotator();
 		let ftpDeploy = new FtpDeploy();
 
 		ftpDeploy.on("upload-error", function (data) {
@@ -392,8 +422,10 @@ async function deploy(outfile: string, title: string): Promise<any> {
 
 		ftpDeploy
 			.deploy(config)
-			.then(res => { appendLogEntry(`${res}. ${_colors.grey('[Donut]')}\n`); resolve(null); })
+			.then(res => { stopRotator(); appendLogEntry(`${res}. ${_colors.grey('[Donut]')}\n`); resolve(null); })
 			.catch(err => {
+				// stopRotator();
+				// log(`\tFTP upload mislukt :-(\n`, 'error');
 				reject(err);
 			});
 	});
@@ -585,168 +617,16 @@ function buildResourceList(respath: string): void {
 
 	let targetPath = respath.replace('/res', '/resourceids.ts');
 	log(`resourceids.ts wegschrijven naar "${targetPath}"... `);
+	startRotator();
 	writeFileSync(targetPath, total_output);
+	stopRotator();
 	appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 }
-
-async function createRomAssets(loadedResources: ILoadedResource[]): Promise<RomAsset[]> {
-	const jsonout: RomAsset[] = [];
-	let bufferPointer = 0;
-	let romlabel_buffer: Buffer = undefined;
-
-	for (const res of loadedResources) {
-		const { type, name, id, buffer, img, filepath } = res;
-
-		switch (type) {
-			case 'romlabel':
-				if (jsonout.length > 0) {
-					throw 'Error: "romlabel.png" must appear at the start of the ResourceMeta-list.';
-				}
-				romlabel_buffer = buffer;
-				break;
-			case 'image':
-				const imgMeta = processImageMeta(res, bufferPointer);
-				jsonout.push(imgMeta);
-				bufferPointer += imgMeta.end - imgMeta.start;
-				break;
-			case 'audio':
-				const parsedMeta = parseAudioMeta(filepath);
-				jsonout.push({
-					resid: id,
-					resname: name,
-					type,
-					start: bufferPointer,
-					end: bufferPointer + buffer.length,
-					imgmeta: undefined,
-					audiometa: parsedMeta.meta,
-				});
-				bufferPointer += buffer.length;
-				break;
-			case 'source':
-				jsonout.push({
-					resid: id,
-					resname: name.replace('.min', ''),
-					type,
-					start: bufferPointer,
-					end: bufferPointer + buffer.length,
-					imgmeta: undefined,
-					audiometa: undefined,
-				});
-				bufferPointer += buffer.length;
-				break;
-			case 'atlas':
-				break;
-		}
-	}
-
-	return jsonout;
-}
-
-async function prepareBuffers(loadedResources: ILoadedResource[], jsonout: RomAsset[]): Promise<Buffer[]> {
-	const buffers: Buffer[] = [];
-	const atlasInfo = await processAtlas(loadedResources, jsonout);
-
-	if (atlasInfo) {
-		buffers.push(atlasInfo.buffer);
-	}
-
-	const jsonbuffer = Buffer.from(encodeuint8arr(JSON.stringify(jsonout)));
-	buffers.push(jsonbuffer);
-
-	const rommeta = <RomMeta>{
-		start: atlasInfo ? atlasInfo.pointer : 0,
-		end: atlasInfo ? atlasInfo.pointer + jsonbuffer.length : jsonbuffer.length,
-	};
-
-	const rom_meta_string = JSON.stringify(rommeta).padStart(100, ' ');
-	buffers.push(Buffer.from(encodeuint8arr(rom_meta_string)));
-
-	return buffers;
-}
-
-function saveRom(outfile: string, zipped: Uint8Array): void {
-	const romlabel_buffer = getRomLabelBuffer();
-	const blobmeta = <RomMeta>{
-		start: romlabel_buffer?.length ?? 0,
-		end: zipped.length + (romlabel_buffer?.length ?? 0),
-	};
-
-	const blob_meta_string = JSON.stringify(blobmeta).padStart(100, ' ');
-	const blob_meta_as_buffer = Buffer.from(encodeuint8arr(blob_meta_string));
-
-	writeFileSync(`./dist/${outfile}`, Buffer.concat([romlabel_buffer ?? Buffer.alloc(0), zipped, blob_meta_as_buffer]));
-	writeFileSync("./rom/_ignore/romresources.json", jsonbuffer);
-}
-
-function processImageMeta(romResources: Array<RomAsset>) {
-	romResources
-		.filter((x) => x.type === "image")
-		.forEach((x) => {
-			const img = new Image();
-			img.src = x.data!;
-			img.onload = () => {
-				x.imgmeta = addToAtlas(img);
-			};
-		});
-}
-
-function processAtlas(romResources: Array<RomAsset>) {
-	// Process images and add them to the texture atlas
-	processImageMeta(romResources);
-
-	// Crop the texture atlas to optimize GPU memory
-	const croppedAtlas = cropAtlas(romResources);
-
-	return croppedAtlas;
-}
-
-function getRomLabelBuffer(romResources: Array<RomAsset>) {
-	const atlas = processAtlas(romResources);
-
-	// Generate a label buffer or any other necessary data
-	// This is a placeholder for your actual implementation
-	const labelBuffer = new ArrayBuffer(0);
-
-	return { atlas, labelBuffer };
-}
-
-async function buildRompackNew(outfile: string, respath: string): Promise<void> {
-	log("Minifying...");
-
-	const minifyGamecodeResult = await minifyGamecode("./rom/megarom.js");
-	writeFileSync("./rom/megarom.min.js", minifyGamecodeResult.code!);
-
-	if (minifyGamecodeResult.map) {
-		writeFileSync("./rom/megarom.min.map", minifyGamecodeResult.map as string);
-	}
-
-	copyFileSync('./rom/megarom.js', './megarom.js');
-	rmSync('./rom/megarom.js');
-
-	log("Loading and buffering resource files...");
-
-	const loadedResources: ILoadedResource[] = await getLoadedResourcesList(respath).catch(err => { throw err; });
-	appendLogEntry(`${_colors.grey('[Donut]')}\n`);
-
-	log("Creating romresources.json...");
-
-	const jsonout: RomAsset[] = await createRomAssets(loadedResources);
-	appendLogEntry(`${_colors.grey('[Donut]')}\n`);
-
-	log("Zipping everything...");
-	const buffers = await prepareBuffers(loadedResources, jsonout);
-	const zipped = zip(Buffer.concat(buffers));
-	appendLogEntry(`${_colors.grey('[Donut]')}\n`);
-
-	log(`Writing "${_colors.green(outfile)}" to ${_colors.green(`"./dist/${outfile}"`)}`);
-	saveRom(outfile, zipped);
-	appendLogEntry(`${_colors.grey('[Donut]')}\n`);
-}
-
 
 async function buildRompack(outfile: string, respath: string): Promise<any> {
 	return new Promise<any>(async (resolve, reject) => {
 		log("Minifyen... ");
+		startRotator();
 		let minifyGamecodeResult = await minifyGamecode("./rom/megarom.js");
 		writeFileSync("./rom/megarom.min.js", minifyGamecodeResult.code!);
 		if (minifyGamecodeResult.map) {
@@ -756,12 +636,17 @@ async function buildRompack(outfile: string, respath: string): Promise<any> {
 		copyFileSync('./rom/megarom.js', './megarom.js');
 		rmSync('./rom/megarom.js');
 
+		stopRotator();
+
 		let buffers = new Array<Buffer>();
 		log("Resource bestanden inladen en bufferen...  ");
+		startRotator();
 		let loadedResources: ILoadedResource[] = await getLoadedResourcesList(respath, buffers).catch(err => reject(err)) as ILoadedResource[];
+		stopRotator();
 		appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 
 		log("romresources.json knutselen...  ");
+		startRotator();
 
 		let jsonout = new Array<RomAsset>();
 		let bufferPointer = 0;
@@ -845,11 +730,13 @@ async function buildRompack(outfile: string, respath: string): Promise<any> {
 		};
 		let rom_meta_string = JSON.stringify(rommeta).padStart(100, ' ');
 		buffers.push(Buffer.from(encodeuint8arr(rom_meta_string)));
+		stopRotator();
 		appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 		log(`\t#images: ${loadedResources.filter(r => r.type == 'image').length}\n`);
 		log(`\t#audio: ${loadedResources.filter(r => r.type == 'audio').length}\n`);
 
 		log("Alles nu zippen... ");
+		startRotator();
 		let all_buffers = Buffer.concat(buffers);
 		let zipped = zip(all_buffers);
 		// let rom_as_blob = romlabel_buffer ? Buffer.concat([romlabel_buffer, zipped]) : zipped;
@@ -859,12 +746,15 @@ async function buildRompack(outfile: string, respath: string): Promise<any> {
 		};
 		let blob_meta_string = JSON.stringify(blobmeta).padStart(100, ' ');
 		let blob_meta_as_buffer = Buffer.from(encodeuint8arr(blob_meta_string));
+		stopRotator();
 		appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 		log(`\tSize: ${_colors.red(`${(Buffer.concat(buffers).length / (1024 * 1024)).toFixed(2)} mB`)} ⇒  Deflated: ${_colors.blue(`${(zipped.length / (1024 * 1024)).toFixed(2)} mB (${((zipped.length / Buffer.concat(buffers).length) * 100).toFixed(0)}%)`)}\n`);
 
 		log(`"${_colors.green(outfile)}" wegschrijven naar ${_colors.green(`\"./dist/${outfile}\"`)}...`);
+		startRotator();
 		writeFileSync(`./dist/${outfile}`, Buffer.concat([romlabel_buffer ?? Buffer.alloc(0), zipped, blob_meta_as_buffer]));
 		writeFileSync("./rom/_ignore/romresources.json", jsonbuffer);
+		stopRotator();
 		appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 
 		resolve(null);
@@ -873,46 +763,69 @@ async function buildRompack(outfile: string, respath: string): Promise<any> {
 	// log(`\tFiles: ${arrayOfFiles.length}\n\t\timages: ${imgi}\n\t\taudio: ${sndi}\n`);
 }
 
-function uvcoords(x: number, y: number, width: number, height: number, imageWidth: number, imageHeight: number) {
-	const left = x / width;
-	const top = y / height;
-	const right = (x + imageWidth) / width;
-	const bottom = (y + imageHeight) / height;
-
-	return {
-		width: imageWidth,
-		height: imageHeight,
-		atlassed: true,
-		texcoords: [left, top, right, top, left, bottom, left, bottom, right, top, right, bottom],
-		texcoords_fliph: [right, top, left, top, right, bottom, right, bottom, left, top, left, bottom],
-		texcoords_flipv: [left, bottom, right, bottom, left, top, left, top, right, bottom, right, top],
-		texcoords_fliphv: [right, bottom, left, bottom, right, top, right, top, left, bottom, left, top],
-	};
-}
-
-const packer = new MaxRectsPacker(ATLAS_PX_SIZE, ATLAS_PX_SIZE);
-
 function addToAtlas(img: any): ImgMeta {
-	const packed = packer.packOne(img.width, img.height);
+	function uvcoords(x: number, y: number, width: number, height: number, imageWidth: number, imageHeight: number) {
+		let result = {
+			width: imageWidth, height: imageHeight, atlassed: true, texcoords: [] as number[], texcoords_fliph: [] as number[], texcoords_flipv: [] as number[], texcoords_fliphv: [] as number[]
+		};
+		let left: number;
+		let top: number;
+		let right: number;
+		let bottom: number;
+		if (!CROP_ATLAS) {
+			left = x / width;
+			top = y / height;
+			right = (x + imageWidth) / width;
+			bottom = (y + imageHeight) / height;
+		}
+		else {
+			left = x;
+			top = y;
+			right = (x + imageWidth);
+			bottom = (y + imageHeight);
+		}
 
-	if (!packed) {
-		log("Oh nee!! We krijgen de plaatjes niet meer in de atlas!", "error");
-		return;
+		result.texcoords.push(left, top, right, top, left, bottom, left, bottom, right, top, right, bottom);
+		result.texcoords_fliph.push(right, top, left, top, right, bottom, right, bottom, left, top, left, bottom);
+		result.texcoords_flipv.push(left, bottom, right, bottom, left, top, left, top, right, bottom, right, top);
+		result.texcoords_fliphv.push(right, bottom, left, bottom, right, top, right, top, left, bottom, left, top);
+		return result;
 	}
 
-	ctx.drawImage(img, packed.x, packed.y);
-	return uvcoords(packed.x, packed.y, ATLAS_PX_SIZE, ATLAS_PX_SIZE, img.width, img.height);
+	if (atlasPos.x + img.width > ATLAS_PX_SIZE) {
+		atlasPos.x = 0;
+		atlasPos.y = atlasUnsafeY;
+	}
+
+	ctx.drawImage(img, atlasPos.x, atlasPos.y);
+	if (atlasPos.y + img.height > atlasUnsafeY) {
+		atlasUnsafeY = atlasPos.y + img.height;
+		if (atlasUnsafeY > ATLAS_PX_SIZE) {
+			log('Oh nee!! We krijgen de plaatjes niet meer in de atlas!', 'error');
+		}
+	}
+	if (atlasPos.x + img.width > atlasExploitedX) {
+		atlasExploitedX = atlasPos.x + img.width;
+	}
+
+	let result = uvcoords(atlasPos.x, atlasPos.y, ATLAS_PX_SIZE, ATLAS_PX_SIZE, img.width, img.height);
+	atlasPos.x += img.width;
+
+	return result;
 }
 
 function cropAtlas(romResources: Array<RomAsset>): HTMLCanvasElement {
-	const cropw = packer.binWidth;
-	const croph = packer.binHeight;
+	let cropw = atlasExploitedX;
+	let croph = atlasUnsafeY;
+	// Handle corner case where there are no textures in the ROM
+	if (cropw === 0) cropw = 1;
+	if (croph === 0) croph = 1;
 
 	const result: HTMLCanvasElement = <any>createCanvas(cropw, croph);
-	const croppedctx: CanvasRenderingContext2D = result.getContext("2d")!;
+	const croppedctx: CanvasRenderingContext2D = result.getContext('2d')!;
 	croppedctx.drawImage(atlasCanvas, 0, 0);
 
-	const recalc = (coords: number[]) => {
+	let recalc = (coords: number[]) => {
 		for (let i = 0; i < coords.length; i += 2) {
 			coords[i] = coords[i] / cropw;
 			coords[i + 1] = coords[i + 1] / croph;
@@ -920,14 +833,12 @@ function cropAtlas(romResources: Array<RomAsset>): HTMLCanvasElement {
 	};
 
 	// Must also recalculate image texcoords, because while canvas size is taken into account
-	romResources
-		.filter((x) => x.type === "image")
-		.forEach((x) => {
-			recalc(x.imgmeta!.texcoords!);
-			recalc(x.imgmeta!.texcoords_fliph!);
-			recalc(x.imgmeta!.texcoords_flipv!);
-			recalc(x.imgmeta!.texcoords_fliphv!);
-		});
+	romResources.filter(x => x.type === 'image').forEach(x => {
+		recalc(x.imgmeta!.texcoords!);
+		recalc(x.imgmeta!.texcoords_fliph!);
+		recalc(x.imgmeta!.texcoords_flipv!);
+		recalc(x.imgmeta!.texcoords_fliphv!);
+	});
 
 	return result;
 }
