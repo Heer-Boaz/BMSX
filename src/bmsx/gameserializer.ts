@@ -1,6 +1,35 @@
 import { ISpaceObject, Space } from "./model";
-
 type class2propkey2bool = Record<string, Record<string, boolean>>;
+
+// Apologies for the confusion. I made a mistake in the previous response. The Structured Clone algorithm does not output an ArrayBuffer directly. It is used for cloning objects, including objects with circular references. To serialize and deserialize objects using the Structured Clone algorithm, you can use the structured-clone package in combination with MessagePack.
+
+// First, install the required packages:
+
+// bash
+// Copy code
+// npm install structured-clone msgpack5
+// Now, update the serialization and deserialization functions to use the structured-clone package with MessagePack:
+
+// typescript
+// Copy code
+// import { structuredClone } from "structured-clone";
+// import * as msgpack from "msgpack5";
+
+// function serialize(obj: any): Buffer {
+//   const clonedObj = structuredClone(obj);
+//   const serializer = msgpack();
+//   return serializer.encode(clonedObj);
+// }
+
+// function deserialize(buffer: Buffer): any {
+//   const deserializer = msgpack();
+//   const clonedObj = deserializer.decode(buffer);
+//   const obj = structuredClone(clonedObj);
+//   return obj;
+// }
+// In this updated example, the serialize function clones the input object using the Structured Clone algorithm to handle circular references, and then encodes the cloned object into a Buffer using MessagePack. The deserialize function decodes the MessagePack Buffer into a cloned object and then uses the Structured Clone algorithm to reconstruct the original object, including circular references.
+
+// This approach should offer better performance and handle circular references efficiently.
 
 interface IReviver {
     (key: any, value: any): any;
