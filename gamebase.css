@@ -223,7 +223,6 @@ svg.buttons#btn4_svg {
 	-ms-user-select: none;
 	user-select: none;
 	-webkit-touch-callout: none;
-	-webkit-tap-highlight-color: transparent;
 }
 
 .knop.red:not(.los) {
@@ -299,7 +298,6 @@ svg.d-pad {
 	-ms-user-select: none;
 	user-select: none;
 	-webkit-touch-callout: none;
-	-webkit-tap-highlight-color: transparent;
 }
 
 @keyframes dknop-los {
@@ -350,10 +348,6 @@ body {
 	user-select: none;
 	-webkit-touch-callout: none;
 	-webkit-user-drag: none;
-	-webkit-tap-highlight-color: transparent;
-	-webkit-text-size-adjust: none;
-	-moz-text-size-adjust: none;
-	text-size-adjust: none;
 	overflow: hidden;
 	background-color: #2020ff;
 

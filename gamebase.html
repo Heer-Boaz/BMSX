@@ -4,43 +4,54 @@
     <head>
         <meta charset="utf-8" />
         <title>#title</title>
-        <meta name="viewport"
-            content="width=device-width,initial-scale=1.0,minimum-scale=1,maximum-scale=1,user-scalable=no">
+        <meta name="viewport" content="width=device-width,initial-scale=1.0,minimum-scale=1,maximum-scale=1,user-scalable=no">
         <meta name="apple-mobile-web-app-capable" content="yes">
-        <meta name="apple-mobile-web-app-status-bar-style" content="black" />
-        <meta name="apple-mobile-web-app-title" content="#title" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black">
+        <meta name="apple-mobile-web-app-title" content="#title">
         <link rel="manifest" href="manifest.webmanifest">
         <link rel="apple-touch-icon" href="bmsx_icon.png">
+        <link rel="icon" type="image/png" href="bmsx_icon.png">
+         <link rel="shortcut icon" type="image/x-icon" href="bmsx_icon.png">
         <script id="bootrom">//#romjs</script>
         <script id="pacojs" distributedby="http://nodeca.github.io/pako/">//#zipjs</script>
         <!-- #vis-networkjs -->
+        <style>
+            /*css*/
+        </style>
     </head>
 
     <body>
-        <!-- https://stackoverflow.com/questions/24077725/mobile-safari-sometimes-does-not-trigger-the-click-event -->
-        <!-- <div onclick="void(0);"> -->
         <div>
-            <img id="msx" class="hidden" src="#bmsxurl" hidden />
+            <img id="msx" class="hidden" src="#bmsxurl" alt="MSX" hidden>
             <div id="hidor"></div>
             <div id="loading" class="coloring" hidden>Loading...</div>
-            <!-- <div id="debug_controls" hidden>
-                <span>&nrArr;</span>
-            </div> -->
+            <!-- Button controls -->
             <div id="controls" hidden>
-                <svg class="buttons" id="btn1_svg">
-                    <circle id="btn1_knop" class="knop red los" cx="4vmax" cy="4vmax" r="4vmax" fill="transparent" />
-                </svg>
-                <svg class="buttons" id="btn2_svg">
-                    <circle id="btn2_knop" class="knop blue los" cx="4vmax" cy="4vmax" r="4vmax" fill="transparent" />
-                </svg>
-                <svg class="buttons" id="btn3_svg">
-                    <circle id="btn3_knop" class="knop green los" cx="4vmax" cy="4vmax" r="4vmax" fill="transparent" />
-                </svg>
-                <svg class="buttons" id="btn4_svg">
-                    <circle id="btn4_knop" class="knop yellow los" cx="4vmax" cy="4vmax" r="4vmax" fill="transparent" />
-                </svg>
+                <nav class="buttons-container">
+                    <!-- Button 1 -->
+                    <svg class="buttons" id="btn1_svg">
+                        <circle id="btn1_knop" class="knop red los" cx="4vmax" cy="4vmax" r="4vmax"
+                            fill="transparent" />
+                    </svg>
+                    <!-- Button 2 -->
+                    <svg class="buttons" id="btn2_svg">
+                        <circle id="btn2_knop" class="knop blue los" cx="4vmax" cy="4vmax" r="4vmax"
+                            fill="transparent" />
+                    </svg>
+                    <!-- Button 3 -->
+                    <svg class="buttons" id="btn3_svg">
+                        <circle id="btn3_knop" class="knop green los" cx="4vmax" cy="4vmax" r="4vmax"
+                            fill="transparent" />
+                    </svg>
+                    <!-- Button 4 -->
+                    <svg class="buttons" id="btn4_svg">
+                        <circle id="btn4_knop" class="knop yellow los" cx="4vmax" cy="4vmax" r="4vmax"
+                            fill="transparent" />
+                    </svg>
+                </nav>
+                <!-- D-Pad controls -->
                 <svg class="d-pad">
-                    <g>
+                    <g id="d-pad-buttons">
                         <path id="d-pad-u" class="dknop los"
                             d="M 50 50 L 50 40 A 10 10, 0, 0, 1, 57.99 44.212 L 50 50 L 50 0 A 50 50, 0, 0, 1, 90 21 Z"
                             fill-rule="evenodd" transform="rotate(-27 50 50)" />
@@ -123,8 +134,5 @@
             bootrom.outputError(err?.message ?? err);
         });
     </script>
-    <style>
-        /*css*/
-    </style>
 
 </html>

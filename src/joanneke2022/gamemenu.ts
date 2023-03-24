@@ -57,7 +57,6 @@ export class GameMenu extends GameObject {
     private static emptySlot: string = "----";
     private static scaleText: string = "Scale: ";
     private static soundVolumeText: string = "Volume: ";
-    // private static musicVolumeText: string = "Music: ";
     private static mainMenuTextX: number = GameMenu.menuPosX + 56;
     private static mainMenuTextY: number = GameMenu.menuPosY + 16;
     private static cursorOffsetX: number = -16;
@@ -74,7 +73,6 @@ export class GameMenu extends GameObject {
         { type: MenuItem.SoundVolume, label: GameMenu.soundVolumeText },
         { type: MenuItem.Fullscreen, label: "Fullscreen: y n" },
         { type: MenuItem.Scale, label: GameMenu.scaleText },
-        // { type: MenuItem.MusicVolume, label: GameMenu.musicVolumeText },
     ];
     private static fullscreenOptionsOffsets: number[];
     private static fullscreenOptionsOffsetY: number;
@@ -157,7 +155,6 @@ export class GameMenu extends GameObject {
         if (Input.KC_BTN2) {
             switch (this.CurrentScreen) {
                 case MenuItem.Main:
-                    // (controller as Controller).CloseGameMenu();
                     break;
                 default:
                     this.CurrentScreen = MenuItem.Main;
@@ -173,7 +170,6 @@ export class GameMenu extends GameObject {
                     switch (this.selectedItem) {
                         case MenuItem.ReturnToGame:
                             global.model.state.substate.gamemenu.pop();
-                            // (controller as Controller).CloseGameMenu();
                             break;
                         case MenuItem.ChangeOptions:
                             this.CurrentScreen = MenuItem.Options;
@@ -184,11 +180,9 @@ export class GameMenu extends GameObject {
                             this.selectedItemIndex = 0;
                             break;
                         case MenuItem.SaveGame:
-                            // if ((model as Model).state != GameState.Event) {
                             this.CurrentScreen = MenuItem.Save;
                             this.selectedItemIndex = 0;
                             // }
-                            // else SM.play(AudioId.Fout);
                             break;
                         case MenuItem.ExitGame:
                             global.game.stop();
@@ -214,12 +208,6 @@ export class GameMenu extends GameObject {
                             break;
                         case MenuItem.SaveSlot:
                             {
-                                // let slot = this.selectedItemIndex - 1;
-                                // if (SlotExists(slot)) {
-                                //     let sg = LoadGame(slot);
-                                //     // (controller as Controller).LoadGame(sg);
-                                // }
-                                // else SM.play(AudioId.Fout);
                             }
                             break;
                     }
@@ -234,7 +222,6 @@ export class GameMenu extends GameObject {
                         case MenuItem.SaveSlot:
                             {
                                 let slot = this.selectedItemIndex - 1;
-                                // (controller as Controller).SaveGame(slot);
                             }
                             break;
                     }
@@ -268,15 +255,11 @@ export class GameMenu extends GameObject {
                     switch (this.selectedItem) {
                         case MenuItem.Scale:
                             if (!GO.Fullscreen) {
-                                // V._.ChangeScale(GO.Scale + 1);
-                                // game.GameOptionsChanged();
                             }
                             break;
                         case MenuItem.Fullscreen:
                             if (global.view.isFullscreen) {
-                                // GO.Fullscreen = false;
                                 global.view.ToWindowed();
-                                // game.GameOptionsChanged();
                             }
                             break;
                         case MenuItem.SoundVolume:
@@ -285,18 +268,8 @@ export class GameMenu extends GameObject {
                                 if (GO.VolumePercentage > 100)
                                     GO.VolumePercentage = 100;
                                 SM.volume += .1;
-                                // game.GameOptionsChanged();
                             }
                             break;
-                        // case MenuItem.MusicVolume:
-                        //     if (GO.MusicVolumePercentage < 100) {
-                        //         GO.MusicVolumePercentage += 10;
-                        //         if (GO.MusicVolumePercentage > 100)
-                        //             GO.MusicVolumePercentage = 100;
-                        //         SM.setMusicVolume(GO.MusicVolumePercentage / 100);
-                        //         game.GameOptionsChanged();
-                        //     }
-                        //     break;
                     }
                     break;
             }
@@ -308,15 +281,11 @@ export class GameMenu extends GameObject {
                     switch (this.selectedItem) {
                         case MenuItem.Scale:
                             if (!GO.Fullscreen && GO.Scale > 1) {
-                                // V._.ChangeScale(GO.Scale - 1);
-                                // game.GameOptionsChanged();
                             }
                             break;
                         case MenuItem.Fullscreen:
                             if (!global.view.isFullscreen) {
-                                // GO.Fullscreen = true;
                                 global.view.toFullscreen();
-                                // game.GameOptionsChanged();
                             }
                             break;
                         case MenuItem.SoundVolume:
@@ -325,18 +294,8 @@ export class GameMenu extends GameObject {
                                 if (GO.VolumePercentage < 0)
                                     GO.VolumePercentage = 0;
                                 SM.volume -= .1;
-                                // game.GameOptionsChanged();
                             }
                             break;
-                        // case MenuItem.MusicVolume:
-                        //     if (GO.MusicVolumePercentage > 0) {
-                        //         GO.MusicVolumePercentage -= 10;
-                        //         if (GO.MusicVolumePercentage < 0)
-                        //             GO.MusicVolumePercentage = 0;
-                        //         SM.setMusicVolume(GO.MusicVolumePercentage / 100);
-                        //         game.GameOptionsChanged();
-                        //     }
-                        //     break;
                     }
                     break;
             }
@@ -443,8 +402,6 @@ export class GameMenu extends GameObject {
     }
 
     override paint = (offset?: vec3): void => {
-        // view.fillRectangle(GameMenu.menuPosX, GameMenu.menuPosY, GameMenu.menuEndX, GameMenu.menuEndY, Msx1Colors[1]);
-        // view.drawRectangle(GameMenu.menuPosX, GameMenu.menuPosY, GameMenu.menuEndX, GameMenu.menuEndY, Msx1Colors[15]);
         let titleToDraw: string;
         let titleX: number, titleY: number;
         switch (this.CurrentScreen) {
@@ -486,9 +443,6 @@ export class GameMenu extends GameObject {
                     GameMenu.mainItems.forEach(function (item) {
                         switch (item.type) {
                             case MenuItem.SaveGame:
-                                // if ((model as Model).state != GameState.Event)
-                                // TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
-                                // else
                                 TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, undefined, undefined, Msx1ExtColors[0]);
                                 break;
                             default:
@@ -516,7 +470,6 @@ export class GameMenu extends GameObject {
                                 else {
                                     TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, undefined, undefined, Msx1ExtColors[0]);
                                     offsetX += GameMenu.scaleText.length * global.view.default_font.char_height;
-                                    // textToDisplay = BDX._.Zoom.ToString("n2");
                                     TextWriter.drawText(offsetX, y, `${global.view.scale.toPrecision(2)}X`);
                                 }
                                 break;
@@ -533,14 +486,6 @@ export class GameMenu extends GameObject {
                                     TextWriter.drawText(offsetX, y, text);
                                 }
                                 break;
-                            // case MenuItem.MusicVolume:
-                            //     {
-                            //         TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
-                            //         offsetX += GameMenu.musicVolumeText.length * TextWriter.FontWidth;
-                            //         let text = GO.MusicVolumePercentage > 0 ? GO.MusicVolumePercentage + "%" : "Off";
-                            //         TextWriter.drawText(offsetX, y, text);
-                            //     }
-                            //     break;
                             default:
                                 TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
                                 break;
@@ -594,13 +539,5 @@ export class GameMenu extends GameObject {
     }
 
     private printSaveSlot(x: number, y: number, slotIndex: number): void {
-        // let exists = SlotExists(slotIndex);
-        // if (!exists) {
-        //     TextWriter.drawText(GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX, y, `${slotIndex} + 1: ${GameMenu.emptySlot}`);
-        //     return;
-        // }
-        // let savegame = LoadGame(slotIndex);
-        // let time = savegame.Timestamp;
-        // TextWriter.drawText(GameMenu.menuPosX + GameMenu.loadsaveItemOffsetX, y, `${slotIndex + 1}: ${time.getDay().toFixed(2)}/${time.getMonth().toFixed(2)}/${time.getFullYear().toFixed(2)} - ${time.getHours().toFixed(2)}:${time.getMinutes().toFixed(2)}`);
     }
 }

@@ -62,8 +62,15 @@ export class GameObject implements vec2, vec3 {
     public hittable: boolean;
     public visible: boolean;
 
+    private _hitbox: Area; // Cached hitbox
     public get hitbox(): Area {
-        return new_area(this.hitbox_left, this.hitbox_top, this.hitbox_right, this.hitbox_bottom);
+        if (!this._hitbox) {
+            this._hitbox = new_area(this.hitbox_left, this.hitbox_top, this.hitbox_right, this.hitbox_bottom);
+        }
+        return this._hitbox;
+    }
+    public update_hitbox(): void {
+        this._hitbox = new_area(this.hitbox_left, this.hitbox_top, this.hitbox_right, this.hitbox_bottom);
     }
 
     public get hitbox_left(): number {
@@ -158,11 +165,12 @@ export class GameObject implements vec2, vec3 {
     // https://gist.github.com/6174/6062387
     private static readonly GENERATED_ID_LENGTH = 10;
     private static generateId(): string {
+        const model = global.model;
         const chars = [..."abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"];
         let result: string;
         do {
             result = [...Array(GameObject.GENERATED_ID_LENGTH)].map(() => chars[Math.random() * chars.length | 0]).join('');
-        } while (global.model?.exists(result)); // Make sure that the randomly generated string is unique!
+        } while (model?.exists(result)); // Make sure that the randomly generated string is unique!
         // (Note that the model can be undefined. This can happen when an id is genereated for an object that is spawned as part of the model constructor)
         return result;
     }
@@ -199,14 +207,27 @@ export class GameObject implements vec2, vec3 {
      */
     public detect_object_collision(o: GameObject): boolean {
         if (!this.hittable || !o.hittable) return false;
-        return !(this.hitbox_left > o.hitbox_right || this.hitbox_right < o.hitbox_left || this.hitbox_bottom < o.hitbox_top || this.hitbox_top > o.hitbox_bottom);
+        const thisLeft = this.hitbox_left;
+        const thisRight = this.hitbox_right;
+        const thisTop = this.hitbox_top;
+        const thisBottom = this.hitbox_bottom;
+        const otherLeft = o.hitbox_left;
+        const otherRight = o.hitbox_right;
+        const otherTop = o.hitbox_top;
+        const otherBottom = o.hitbox_bottom;
+        return !(thisRight < otherLeft || thisLeft > otherRight || thisBottom < otherTop || thisTop > otherBottom);
     }
 
     /**
      * Detects Axis-Aligned Bounding Box collision (AABB)
      */
     public detect_aabb_collision_area(a: Area): boolean {
-        return !(this.hitbox_left > a.end.x || this.hitbox_right < a.start.x || this.hitbox_bottom < a.start.y || this.hitbox_top > a.end.y);
+        const hitbox_left = this.hitbox_left;
+        const hitbox_right = this.hitbox_right;
+        const hitbox_top = this.hitbox_top;
+        const hitbox_bottom = this.hitbox_bottom;
+
+        return !(hitbox_left > a.end.x || hitbox_right < a.start.x || hitbox_bottom < a.start.y || hitbox_top > a.end.y);
     }
 
     /**
@@ -221,10 +242,13 @@ export class GameObject implements vec2, vec3 {
     }
 
     public setx(newx: number) {
-        let oldx = this.pos.x;
+        const oldx = this.pos.x;
+        const model = global.model;
+
         this.pos.x = ~~newx;
+
         if (newx < oldx) {
-            if (global.model.collidesWithTile(this, Direction.Left)) {
+            if (model.collidesWithTile(this, Direction.Left)) {
                 this.onWallcollide?.(Direction.Up);
                 newx += TileSize - mod(newx, TileSize);
             }
@@ -233,21 +257,23 @@ export class GameObject implements vec2, vec3 {
             else if (newx < 0) { this.onLeavingScreen?.(this, Direction.Left, oldx); }
         }
         else if (newx > oldx) {
-            if (global.model.collidesWithTile(this, Direction.Right)) {
+            if (model.collidesWithTile(this, Direction.Right)) {
                 this.onWallcollide?.(Direction.Right);
                 newx -= newx % TileSize;
             }
             this.pos.x = ~~newx;
-            if (newx >= global.model.gamewidth) { this.onLeaveScreen?.(this, Direction.Right, oldx); }
-            else if (newx + this.size.x >= global.model.gamewidth) { this.onLeavingScreen?.(this, Direction.Right, oldx); }
+            if (newx >= model.gamewidth) { this.onLeaveScreen?.(this, Direction.Right, oldx); }
+            else if (newx + this.size.x >= model.gamewidth) { this.onLeavingScreen?.(this, Direction.Right, oldx); }
         }
     }
 
     public sety(newy: number) {
-        let oldy = this.pos.y;
+        const oldy = this.pos.y;
+        const model = global.model;
+
         this.pos.y = ~~newy;
         if (newy < oldy) {
-            if (global.model.collidesWithTile(this, Direction.Up)) {
+            if (model.collidesWithTile(this, Direction.Up)) {
                 this.onWallcollide?.(Direction.Up);
                 newy += TileSize - mod(newy, TileSize);
             }
@@ -256,13 +282,13 @@ export class GameObject implements vec2, vec3 {
             else if (newy < 0) { this.onLeavingScreen?.(this, Direction.Up, oldy); }
         }
         else if (newy > oldy) {
-            if (global.model.collidesWithTile(this, Direction.Down)) {
+            if (model.collidesWithTile(this, Direction.Down)) {
                 this.onWallcollide?.(Direction.Down);
                 newy -= newy % TileSize;
             }
             this.pos.y = ~~newy;
-            if (newy >= global.model.gameheight) { this.onLeaveScreen?.(this, Direction.Down, oldy); }
-            else if (newy + this.size.y >= global.model.gameheight) { this.onLeavingScreen?.(this, Direction.Down, oldy); }
+            if (newy >= model.gameheight) { this.onLeaveScreen?.(this, Direction.Down, oldy); }
+            else if (newy + this.size.y >= model.gameheight) { this.onLeavingScreen?.(this, Direction.Down, oldy); }
         }
     }
 

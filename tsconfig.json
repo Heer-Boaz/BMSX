@@ -55,7 +55,6 @@
     //   "src/bmsx"
     // ], /* List of root folders whose combined content represents the structure of the project at runtime. */
     /* List of folders to include type definitions from. */
-    "watch": true,
     "useDefineForClassFields": true,
     "noImplicitOverride": true,
     "typeRoots": [
