@@ -15,6 +15,72 @@ let preventActionAndPropagation = (e: Event): boolean => {
     return e.returnValue = false; // https://javascriptio.com/view/5386822/prevent-text-selection-on-tap-and-hold-on-ios-13-mobile-safari
 };
 
+const GamepadButtons = {
+  LEFT: 1000,
+  RIGHT: 1001,
+  UP: 1002,
+  DOWN: 1003,
+} as const;
+
+// type ButtonId = 'BTN1' | 'BTN2' | 'BTN3' | 'BTN4' | Key | typeof GamepadButtons[keyof typeof GamepadButtons];
+
+// type InputStateMap = Record<ButtonId, boolean>;
+
+// class Input {
+//   private static KeyState: InputStateMap = {};
+//   private static KeyClickRequestedState: InputStateMap = {};
+//   private static GamepadButtonState: InputStateMap = {};
+//   private static GamepadClickRequestedState: InputStateMap = {};
+
+//   private static getPressedState(key: ButtonId, checkClick = false): boolean {
+//     const state = Input.KeyState[key] || Input.GamepadButtonState[key];
+//     if (checkClick && state) {
+//       const clickState = Input.KeyClickRequestedState[key] || Input.GamepadClickRequestedState[key];
+//       if (clickState) return false;
+//       Input.KeyClickRequestedState[key] = true;
+//       Input.GamepadClickRequestedState[key] = true;
+//     }
+//     return state;
+//   }
+
+//   public static isPressed(key: ButtonId, checkClick = false): boolean {
+//     return Input.getPressedState(key, checkClick);
+//   }
+
+//   public static init(): void {
+//     const options = {
+//       passive: false,
+//       once: false,
+//     };
+//     // ... Initialize event listeners here ...
+//   }
+
+//   public static pollGamepadInput(): void {
+//     // ... Handle gamepad input here ...
+//   }
+
+//   public static reset(except?: ButtonId[]): void {
+//     const resetMap = (map: InputStateMap, except?: ButtonId[]) => {
+//       Object.keys(map).forEach((key) => {
+//         if (!except || !except.includes(key as ButtonId)) {
+//           delete map[key as ButtonId];
+//         }
+//       });
+//     };
+
+//     resetMap(Input.KeyState, except);
+//     resetMap(Input.KeyClickRequestedState, except);
+//     resetMap(Input.GamepadButtonState, except);
+//     resetMap(Input.GamepadClickRequestedState, except);
+//   }
+
+//   public static resetUI(): void {
+//     // ... Reset UI here ...
+//   }
+// }
+
+// // ... Add other helper functions and event handlers here ...
+
 type Index2State = { [index: string | number]: boolean };
 export class Input {
     public static KeyState: Index2State;

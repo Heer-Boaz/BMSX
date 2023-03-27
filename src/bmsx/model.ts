@@ -28,7 +28,7 @@ export class Space {
 
     @onsave
     public static tosaved(o: Space): Space {
-        let result = new Space(o.id);
+        const result = new Space(o.id);
         Object.assign(result, o);
         result.objects = undefined;
         delete result.objects;
@@ -74,7 +74,7 @@ export class Space {
      * @returns {void} Nothing
      */
     public exile(o: GameObject, skip_ondispose_event: boolean = false): void {
-        let index = this.objects.indexOf(o);
+        const index = this.objects.indexOf(o);
         if (index < 0) throw `GameObject ${o?.id ?? o} to remove from space '${this.id}' was not found, while calling [BaseModel.exile]!`;
         !skip_ondispose_event && o.ondispose?.();
 
@@ -95,7 +95,7 @@ export class Space {
     }
 
     public clear(): void {
-        let temp_array = this.objects.slice();
+        const temp_array = this.objects.slice();
         temp_array.forEach(o => this.exile(o));
     }
 }
@@ -133,7 +133,7 @@ export abstract class BaseModel {
     public get<T extends GameObject>(id: string | 'model'): T {
         if (id == 'model') return global.model as any; // Dirty fix for scenario where model should return itself as target for the model state machine
 
-        let space = this.get_space(this[objid_2_objspaceid][id]);
+        const space = this.get_space(this[objid_2_objspaceid][id]);
         if (!space) return <T>null;
         return space.get<T>(id);
     }
@@ -162,11 +162,11 @@ export abstract class BaseModel {
      * @returns {void} Nothing
      */
     public move_obj_to_space(obj_id: string, spaceid_to_move_obj_to: string): void {
-        let obj = this.get(obj_id);
+        const obj = this.get(obj_id);
         if (!obj) throw `Cannot move unknown object '${obj_id}' to space '${spaceid_to_move_obj_to}'!`; // ? SHOULD THROW ERROR?
-        let target_space = this.get_space(spaceid_to_move_obj_to);
+        const target_space = this.get_space(spaceid_to_move_obj_to);
         if (!target_space) throw `Cannot move object '${obj_id}' to unknown space '${spaceid_to_move_obj_to}'!`; // ? SHOULD THROW ERROR?
-        let origin_space = this.get_space(this.get_spaceid_that_has_obj(obj_id));
+        const origin_space = this.get_space(this.get_spaceid_that_has_obj(obj_id));
 
         origin_space.exile(obj, true);
         target_space.spawn(obj, null, true);
@@ -279,9 +279,9 @@ export abstract class BaseModel {
 
     public load(serialized: string): void {
         this.clearAllSpaces();
-        let temp_array = this.spaces.slice();
+        const temp_array = this.spaces.slice();
         temp_array.forEach(s => this.removeSpace(s));
-        let savegame = JSON.parse(serialized, Reviver) as Savegame;
+        const savegame = JSON.parse(serialized, Reviver) as Savegame;
         Object.assign(this, savegame.modelprops);
         this.onloaded(savegame);
     }
@@ -289,25 +289,25 @@ export abstract class BaseModel {
     public onloaded(savegame: Savegame): void {
         savegame.spaces.forEach(space => this.addSpace(space));
         savegame.allSpacesObjects.forEach(space_and_objects => {
-            let space = this[spaceid_2_space][space_and_objects.spaceid];
-            let objects = space_and_objects.objects;
+            const space = this[spaceid_2_space][space_and_objects.spaceid];
+            const objects = space_and_objects.objects;
             objects.forEach(o => (o.onloaded?.(), space.spawn(o, null, true)));
         });
     }
 
     public save(): string {
         global.game.paused = true;
-        let createSavegame = () => {
-            let keys = Object.keys(this);
-            let data = {};
+        const createSavegame = () => {
+            const keys = Object.keys(this);
+            const data = {};
             for (let index = 0; index < keys.length; ++index) {
-                let key = keys[index];
+                const key = keys[index];
                 if (BaseModel.keys_to_exclude_from_save.includes(key)) continue;
                 if (this[key] !== null && this[key] !== undefined) {
                     data[key] = this[key];
                 }
             }
-            let result = new Savegame();
+            const result = new Savegame();
             result.modelprops = data;
             result.spaces = this.spaces;
             result.allSpacesObjects = [];
@@ -321,7 +321,7 @@ export abstract class BaseModel {
             return result;
         };
 
-        let savegame = createSavegame();
+        const savegame = createSavegame();
         global.game.paused = false;
         return Serializer(savegame);
     }
@@ -333,7 +333,7 @@ export abstract class BaseModel {
     // https://hackernoon.com/3-javascript-performance-mistakes-you-should-stop-doing-ebf84b9de951
     public filter_and_foreach(predicate: (value: GameObject, index: number, array: GameObject[], thisArg?: any) => unknown, callbackfn: (value: GameObject, index: number, array: GameObject[], thisArg?: any) => void): void {
         for (let i = 0; i < this.objects.length; i++) {
-            let obj = this.objects[i];
+            const obj = this.objects[i];
             if (predicate(obj, i, this.objects, this)) {
                 callbackfn(obj, i, this.objects, this);
             }
@@ -361,7 +361,7 @@ export abstract class BaseModel {
     }
 
     public addSpace(s: Space | string): void {
-        let new_space: Space = (s instanceof Space ? s : new Space(s));
+        const new_space: Space = (s instanceof Space ? s : new Space(s));
         if (this[spaceid_2_space][new_space.id]) throw `Cannot add duplicate Space '${new_space.id}' to model!`;
 
         this.spaces.push(new_space);
@@ -369,11 +369,11 @@ export abstract class BaseModel {
     }
 
     public removeSpace(s: Space | string): void {
-        let space: Space = (s instanceof Space ? s : this.get_space(s));
+        const space: Space = (s instanceof Space ? s : this.get_space(s));
         if (!space) throw `Space '${s}' to remove from model was not found, while calling [BaseModel.removeSpace]!`;
 
-        let index = this.spaces.indexOf(space);
-        let id = space.id;
+        const index = this.spaces.indexOf(space);
+        const id = space.id;
 
         if (index > -1) {
             space.clear(); // Remove all objects from the space

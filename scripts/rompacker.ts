@@ -2,11 +2,11 @@ import { readdirSync, statSync, readFileSync, writeFileSync, copyFile, copyFileS
 import { join, parse } from 'path';
 import { AudioMeta, AudioType, RomAsset, RomMeta, ImgMeta } from '../src/bmsx/rompack';
 import * as browserify from 'browserify';
-import * as binpacker from 'bin-pack';
 const tsify = require('tsify');
 
 import * as terser from 'terser';
 import * as term from 'terminal-kit';
+import { readdir } from 'fs/promises';
 const _colors = require('colors');
 const pako = require('pako');
 const minify = require('@node-minify/core');
@@ -15,7 +15,7 @@ const FtpDeploy = require('ftp-deploy');
 const { createCanvas, loadImage } = require('canvas');
 const yaml = require('js-yaml');
 
-const ATLAS_PX_SIZE = 4096;
+const ATLAS_MAX_SIZE_IN_PIXELS = 4096;
 const CROP_ATLAS = true;
 const GENERATE_AND_USE_TEXTURE_ATLAS = true;
 const DONT_PACK_IMAGES_WHEN_USING_ATLAS = true;
@@ -27,12 +27,6 @@ const BOILERPLATE_RESOURCE_ID_BITMAP = `export enum BitmapId {
 const BOILERPLATE_RESOURCE_ID_AUDIO = `export enum AudioId {
 	None = 'None',
 `;
-
-const atlasCanvas: HTMLCanvasElement = <any>createCanvas(ATLAS_PX_SIZE, ATLAS_PX_SIZE);
-const ctx: CanvasRenderingContext2D = atlasCanvas.getContext('2d')!;
-const atlasPos = { x: 0, y: 0 };
-let atlasExploitedX = 0; // For cropping atlas later, because we are not sure that full width is exploited
-let atlasUnsafeY = 0; // Also used for cropping atlas later, but primarily used to create atlas
 
 interface ILoadedResource extends ResourceMeta {
 	buffer: Buffer;
@@ -167,6 +161,7 @@ function yaml2Json(): Promise<void> {
 
 async function buildAndBundleRomSource(outfile: string, bootloader_path: string): Promise<any> {
 	log("Game compileren en bundleren...  ");
+	const bootloader_ts_path = `${bootloader_path}/bootloader.ts`;
 	return new Promise((resolve, reject) => {
 		try {
 			let writeOutput = createWriteStream(`./rom/${outfile}.js`);
@@ -180,10 +175,10 @@ async function buildAndBundleRomSource(outfile: string, bootloader_path: string)
 				exclude: [],
 				ignore: ['node_modules', 'dist', 'rom'],
 			})
-				.add(bootloader_path)
+				.add(bootloader_ts_path)
 				.plugin(tsify, {
 					noImplicitAny: false,
-					files: [bootloader_path],
+					files: [bootloader_ts_path],
 				})
 				.bundle()
 				.on('error', e => {
@@ -563,7 +558,7 @@ function buildResourceList(respath: string): void {
 async function buildRompack(outfile: string, respath: string): Promise<any> {
 	return new Promise<any>(async (resolve, reject) => {
 		log("Minifyen... ");
-		let minifyGamecodeResult = await minifyGamecode("./rom/megarom.js");
+		const minifyGamecodeResult = await minifyGamecode("./rom/megarom.js");
 		writeFileSync("./rom/megarom.min.js", minifyGamecodeResult.code!);
 		if (minifyGamecodeResult.map) {
 			writeFileSync("./rom/megarom.min.map", minifyGamecodeResult.map as string);
@@ -572,12 +567,13 @@ async function buildRompack(outfile: string, respath: string): Promise<any> {
 		copyFileSync('./rom/megarom.js', './megarom.js');
 		rmSync('./rom/megarom.js');
 
-		let buffers = new Array<Buffer>();
+		const buffers = new Array<Buffer>();
 		log("Resource bestanden inladen en bufferen...  ");
-		let loadedResources: ILoadedResource[] = await getLoadedResourcesList(respath, buffers).catch(err => reject(err)) as ILoadedResource[];
+		const loadedResources: ILoadedResource[] = await getLoadedResourcesList(respath, buffers).catch(err => reject(err)) as ILoadedResource[];
+		let generated_atlas: HTMLCanvasElement = undefined;
 		if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-			// Use binpacking algorithm to optimize atlas
-			createOptimizedAtlas(loadedResources);
+			// Use algorithm to optimize atlas
+			generated_atlas = createOptimizedAtlas(loadedResources);
 		}
 
 		appendLogEntry(`${_colors.grey('[Donut]')}\n`);
@@ -637,19 +633,9 @@ async function buildRompack(outfile: string, respath: string): Promise<any> {
 		}
 
 		if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-			let atlasbuffer: Buffer;
 			let i = loadedResources.findIndex(x => x.type === 'atlas');
-			let atlasSize = { x: atlasCanvas.width, y: atlasCanvas.height };
-			if (CROP_ATLAS) {
-				let croppedCanvas = cropAtlas(jsonout);
-				atlasSize.x = croppedCanvas.width;
-				atlasSize.y = croppedCanvas.height;
-
-				atlasbuffer = (<any>croppedCanvas).toBuffer('image/png');
-			}
-			else {
-				atlasbuffer = (<any>atlasCanvas).toBuffer('image/png');
-			}
+			const atlasSize = { x: generated_atlas.width, y: generated_atlas.height };
+			const atlasbuffer: Buffer = (<any>generated_atlas).toBuffer('image/png');
 			buffers.push(atlasbuffer);
 
 			jsonout.push({ resid: loadedResources[i].id, resname: loadedResources[i].name, type: 'image', start: bufferPointer, end: bufferPointer + atlasbuffer.length, imgmeta: { atlassed: false, width: atlasSize.x, height: atlasSize.y }, audiometa: undefined });
@@ -657,28 +643,28 @@ async function buildRompack(outfile: string, respath: string): Promise<any> {
 			writeFileSync("./rom/_ignore/atlas.png", atlasbuffer);
 		}
 
-		let jsonbuffer = Buffer.from(encodeuint8arr(JSON.stringify(jsonout)));
+		const jsonbuffer = Buffer.from(encodeuint8arr(JSON.stringify(jsonout)));
 		buffers.push(jsonbuffer);
 
-		let rommeta = <RomMeta>{
+		const rommeta = <RomMeta>{
 			start: bufferPointer,
 			end: bufferPointer + jsonbuffer.length
 		};
-		let rom_meta_string = JSON.stringify(rommeta).padStart(100, ' ');
+		const rom_meta_string = JSON.stringify(rommeta).padStart(100, ' ');
 		buffers.push(Buffer.from(encodeuint8arr(rom_meta_string)));
 		appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 		log(`\t#images: ${loadedResources.filter(r => r.type == 'image').length}\n`);
 		log(`\t#audio: ${loadedResources.filter(r => r.type == 'audio').length}\n`);
 
 		log("Alles nu zippen... ");
-		let all_buffers = Buffer.concat(buffers);
-		let zipped = zip(all_buffers);
-		let blobmeta = <RomMeta>{
+		const all_buffers = Buffer.concat(buffers);
+		const zipped = zip(all_buffers);
+		const blobmeta = <RomMeta>{
 			start: romlabel_buffer?.length ?? 0,
 			end: zipped.length + (romlabel_buffer?.length ?? 0)
 		};
-		let blob_meta_string = JSON.stringify(blobmeta).padStart(100, ' ');
-		let blob_meta_as_buffer = Buffer.from(encodeuint8arr(blob_meta_string));
+		const blob_meta_string = JSON.stringify(blobmeta).padStart(100, ' ');
+		const blob_meta_as_buffer = Buffer.from(encodeuint8arr(blob_meta_string));
 		appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 		log(`\tSize: ${_colors.red(`${(Buffer.concat(buffers).length / (1024 * 1024)).toFixed(2)} mB`)} ⇒  Deflated: ${_colors.blue(`${(zipped.length / (1024 * 1024)).toFixed(2)} mB (${((zipped.length / Buffer.concat(buffers).length) * 100).toFixed(0)}%)`)}\n`);
 
@@ -691,53 +677,331 @@ async function buildRompack(outfile: string, respath: string): Promise<any> {
 	});
 }
 
-function createOptimizedAtlas(loadedResources: ILoadedResource[]): void {
-	const image_assets = loadedResources.filter(resource => resource.type === "image");
-	const rects = image_assets.map(img_resource => ({ width: img_resource.img?.width, height: img_resource.img?.height, id: img_resource.id }));
+type Rect = { width: number; height: number; id: number; };
+type Bin = { x: number; y: number; width: number; height: number; };
 
-	// Fit all image rectangles into the packer
-	const packresult = binpacker(rects);
+// Helper function to split a free rectangle
+function splitFreeRectangle(freeRect: Bin, usedRect: Bin): Bin[] {
+	const newFreeRects: Bin[] = [];
 
-	// Check if any rectangle couldn't be packed inside the constraints of the atlas (given its defined maximum size)
-	if (packresult.width >= ATLAS_PX_SIZE || packresult.height >= ATLAS_PX_SIZE) {
-		throw new Error(`Could not pack all images into the atlas! The maximum dimensions of the atlas are (${ATLAS_PX_SIZE} x ${ATLAS_PX_SIZE}), while the actual dimensions are (${packresult.width} x ${packresult.height}).`);
+	// Check for overlap on the horizontal axis
+	if (usedRect.x < freeRect.x + freeRect.width && usedRect.x + usedRect.width > freeRect.x) {
+		if (usedRect.y > freeRect.y && usedRect.y < freeRect.y + freeRect.height) {
+			// Split the free rectangle horizontally (top)
+			newFreeRects.push({
+				x: freeRect.x,
+				y: freeRect.y,
+				width: freeRect.width,
+				height: usedRect.y - freeRect.y,
+			});
+		}
+
+		if (usedRect.y + usedRect.height < freeRect.y + freeRect.height) {
+			// Split the free rectangle horizontally (bottom)
+			newFreeRects.push({
+				x: freeRect.x,
+				y: usedRect.y + usedRect.height,
+				width: freeRect.width,
+				height: (freeRect.y + freeRect.height) - (usedRect.y + usedRect.height),
+			});
+		}
 	}
 
-	atlasExploitedX = packresult.width;
-	atlasUnsafeY = packresult.height;
+	// Check for overlap on the vertical axis
+	if (usedRect.y < freeRect.y + freeRect.height && usedRect.y + usedRect.height > freeRect.y) {
+		if (usedRect.x > freeRect.x && usedRect.x < freeRect.x + freeRect.width) {
+			// Split the free rectangle vertically (left)
+			newFreeRects.push({
+				x: freeRect.x,
+				y: freeRect.y,
+				width: usedRect.x - freeRect.x,
+				height: freeRect.height,
+			});
+		}
+
+		if (usedRect.x + usedRect.width < freeRect.x + freeRect.width) {
+			// Split the free rectangle vertically (right)
+			newFreeRects.push({
+				x: usedRect.x + usedRect.width,
+				y: freeRect.y,
+				width: (freeRect.x + freeRect.width) - (usedRect.x + usedRect.width),
+				height: freeRect.height,
+			});
+		}
+	}
+
+	return newFreeRects;
+}
+
+// Helper function to remove overlapping free rectangles
+function pruneFreeRectangles(newFreeRectangles: Bin[], freeRectangles: Bin[]): void {
+	newFreeRectangles.forEach((newRect) => {
+		let addNewRect = true;
+
+		// Remove any free rectangles that are fully contained within the new rectangle
+		freeRectangles.forEach((freeRect, index) => {
+			if (isContained(newRect, freeRect)) {
+				addNewRect = false;
+			} else if (isContained(freeRect, newRect)) {
+				freeRectangles.splice(index, 1);
+			}
+		});
+
+		if (addNewRect) {
+			freeRectangles.push(newRect);
+		}
+	});
+}
+function isContained(rect1: Bin, rect2: Bin): boolean {
+	return rect1.x >= rect2.x && rect1.y >= rect2.y &&
+		rect1.x + rect1.width <= rect2.x + rect2.width &&
+		rect1.y + rect1.height <= rect2.y + rect2.height;
+}
+
+// Helper function to check for overlaps between two bins
+function overlaps(bin1: Bin, bin2: Bin): boolean {
+	return bin1.x < bin2.x + bin2.width && bin1.x + bin1.width > bin2.x && bin1.y < bin2.y + bin2.height && bin1.y + bin1.height > bin2.y;
+}
+
+function maximalRectanglesPacker(rects: Rect[], binWidth: number, binHeight: number): { items: { item: Rect, x: number, y: number; }[], width: number, height: number; } {
+	// Sort the rectangles by area in descending order
+	const sortedRects = rects.slice().sort((a, b) => b.width * b.height - a.width * a.height);
+
+	// Initialize the used bins array
+	const usedBins: { item: Rect, x: number, y: number; }[] = [];
+
+	// Initialize the available free rectangles array
+	const freeRectangles: Bin[] = [{ x: 0, y: 0, width: binWidth, height: binHeight }];
+
+	// Helper function to find the best placement for a rectangle
+	function findBestPlacement(rect: Rect): { bin: Bin, score: number; } | null {
+		let bestBin: Bin | null = null;
+		let bestScore = Number.MAX_VALUE;
+
+		for (const freeRect of freeRectangles) {
+			if (rect.width <= freeRect.width && rect.height <= freeRect.height) {
+				const score = freeRect.width * freeRect.height - rect.width * rect.height;
+
+				if (score < bestScore) {
+					bestScore = score;
+					bestBin = {
+						x: freeRect.x,
+						y: freeRect.y,
+						width: rect.width,
+						height: rect.height,
+					};
+				}
+			}
+		}
+
+		return bestBin ? { bin: bestBin, score: bestScore } : null;
+	}
+
+	// Pack all rectangles
+	for (const rect of sortedRects) {
+		const bestPlacement = findBestPlacement(rect);
+
+		if (bestPlacement) {
+			usedBins.push({ item: rect, x: bestPlacement.bin.x, y: bestPlacement.bin.y });
+
+			const newFreeRectangles: Bin[] = [];
+			for (const freeRect of freeRectangles) {
+				const splitRects = splitFreeRectangle(freeRect, bestPlacement.bin);
+				newFreeRectangles.push(...splitRects);
+			}
+			freeRectangles.length = 0;
+			pruneFreeRectangles(newFreeRectangles, freeRectangles);
+		}
+	}
+
+	// Return the packed bins and the dimensions of the texture atlas
+	const items = usedBins.map(({ item, x, y }) => ({ item, x, y }));
+	const width = usedBins.reduce((maxWidth, { item, x }) => Math.max(maxWidth, x + item.width), 0);
+	const height = usedBins.reduce((maxHeight, { item, y }) => Math.max(maxHeight, y + item.height), 0);
+
+	return { items: items, width: width, height: height };
+}
+
+type Shelf = {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+};
+
+function shelfBinPacker(rects: Rect[], binWidth: number, binHeight: number): { items: { item: Rect, x: number, y: number; }[], width: number, height: number; } {
+	// Sort the rectangles by height in descending order
+	const sortedRects = rects.slice().sort((a, b) => b.height - a.height);
+
+	// Initialize the used bins array
+	const usedBins: { item: Rect, x: number, y: number; }[] = [];
+
+	// Initialize the current shelf
+	let currentShelf: Shelf = { x: 0, y: 0, width: binWidth, height: sortedRects[0].height };
+
+	// Pack all rectangles
+	for (const rect of sortedRects) {
+		// Check if the rectangle fits into the current shelf
+		if (currentShelf.width >= rect.width) {
+			// Add the rectangle to the current shelf
+			usedBins.push({ item: rect, x: currentShelf.x, y: currentShelf.y });
+			currentShelf.x += rect.width;
+			currentShelf.width -= rect.width;
+		} else {
+			// Create a new shelf for the rectangle
+			currentShelf = {
+				x: 0,
+				y: currentShelf.y + currentShelf.height,
+				width: binWidth - rect.width,
+				height: rect.height,
+			};
+
+			if (currentShelf.y + currentShelf.height > binHeight) {
+				throw new Error("The rectangles do not fit into the given bin dimensions.");
+			}
+
+			// Add the rectangle to the new shelf
+			usedBins.push({ item: rect, x: currentShelf.x, y: currentShelf.y });
+			currentShelf.x += rect.width;
+		}
+	}
+
+	// Return the packed bins and the dimensions of the texture atlas
+	const items = usedBins.map(({ item, x, y }) => ({ item, x, y }));
+	const width = usedBins.reduce((maxWidth, { item, x }) => Math.max(maxWidth, x + item.width), 0);
+	const height = usedBins.reduce((maxHeight, { item, y }) => Math.max(maxHeight, y + item.height), 0);
+
+	return { items: items, width: width, height: height };
+}
+
+type Node = {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+};
+
+function tprfPacker(rects: Rect[], binWidth: number, binHeight: number): { items: { item: Rect, x: number, y: number; }[], width: number, height: number; } {
+	// Sort the rectangles by area in descending order
+	const sortedRects = rects.slice().sort((a, b) => b.width * b.height - a.width * a.height);
+
+	// Initialize the used bins array
+	const usedBins: { item: Rect, x: number, y: number; }[] = [];
+
+	// Initialize the initial free node
+	const initialNode: Node = { x: 0, y: 0, width: binWidth, height: binHeight };
+
+	// Initialize the free nodes list
+	const freeNodes: Node[] = [initialNode];
+
+	// Calculate the touching perimeter of a rectangle placed at a node
+	function touchingPerimeter(rect: Rect, node: Node): number {
+		let perimeter = 0;
+
+		if (node.x === 0 || node.x + rect.width === binWidth) {
+			perimeter += rect.height;
+		}
+
+		if (node.y === 0 || node.y + rect.height === binHeight) {
+			perimeter += rect.width;
+		}
+
+		for (const usedBin of usedBins) {
+			if (usedBin.y + usedBin.item.height === node.y) {
+				const widthIntersection = Math.max(0, Math.min(node.x + rect.width, usedBin.x + usedBin.item.width) - Math.max(node.x, usedBin.x));
+				perimeter += widthIntersection;
+			}
+
+			if (usedBin.x + usedBin.item.width === node.x) {
+				const heightIntersection = Math.max(0, Math.min(node.y + rect.height, usedBin.y + usedBin.item.height) - Math.max(node.y, usedBin.y));
+				perimeter += heightIntersection;
+			}
+		}
+
+		return perimeter;
+	}
+
+	// Check if a rectangle can fit into a node without overlaps
+	function canFit(rect: Rect, node: Node): boolean {
+		return rect.width <= node.width && rect.height <= node.height;
+	}
+
+	// Pack all rectangles
+	for (const rect of sortedRects) {
+		let bestNode: Node | null = null;
+		let bestPerimeter = Number.MAX_VALUE;
+
+		// Find the best node to place the rectangle
+		for (const freeNode of freeNodes) {
+			if (canFit(rect, freeNode)) {
+				const perimeter = touchingPerimeter(rect, freeNode);
+
+				if (perimeter < bestPerimeter) {
+					bestNode = freeNode;
+					bestPerimeter = perimeter;
+				}
+			}
+		}
+
+		if (!bestNode) {
+			throw new Error("The rectangles do not fit into the given bin dimensions.");
+		}
+
+		// Add the rectangle to the best node
+		usedBins.push({ item: rect, x: bestNode.x, y: bestNode.y });
+
+		// Update the free nodes list
+		freeNodes.push({ x: bestNode.x + rect.width, y: bestNode.y, width: bestNode.width - rect.width, height: rect.height });
+		freeNodes.push({ x: bestNode.x, y: bestNode.y + rect.height, width: rect.width, height: bestNode.height - rect.height });
+
+		// Remove the used node from the free nodes list
+		const nodeIndex = freeNodes.indexOf(bestNode);
+		freeNodes.splice(nodeIndex, 1);
+	}
+
+	// Return the packed bins and the dimensions of the texture atlas
+	const items = usedBins.map(({ item, x, y }) => ({ item, x, y }));
+	const width = usedBins.reduce((maxWidth, { item, x }) => Math.max(maxWidth, x + item.width), 0);
+	const height = usedBins.reduce((maxHeight, { item, y }) => Math.max(maxHeight, y + item.height), 0);
+
+	return { items: items, width: width, height: height };
+}
+
+function createOptimizedAtlas(loadedResources: ILoadedResource[]): HTMLCanvasElement {
+	const image_assets = loadedResources.filter(resource => resource.type === "image");
+	const rects = image_assets.map(img_resource => ({ x: undefined, y: undefined, width: img_resource.img?.width, height: img_resource.img?.height, id: img_resource.id }));
+
+	// const binpack_result = maximalRectanglesPacker(rects, ATLAS_PX_SIZE, ATLAS_PX_SIZE);
+	// const binpack_result = shelfBinPacker(rects, ATLAS_PX_SIZE, ATLAS_PX_SIZE);
+	const imagepacker_result = tprfPacker(rects, ATLAS_MAX_SIZE_IN_PIXELS, ATLAS_MAX_SIZE_IN_PIXELS);
+
+	// atlasExploitedX = Math.max(...packedRects.map(rect => rect.x + rect.item.width));
+	// atlasUnsafeY = Math.max(...packedRects.map(rect => rect.y + rect.item.height));
+	// atlasExploitedX = binpack_result.width;
+	// atlasUnsafeY = binpack_result.height;
+	const atlas_width = CROP_ATLAS ? imagepacker_result.width : ATLAS_MAX_SIZE_IN_PIXELS, atlas_height = CROP_ATLAS ? imagepacker_result.height : ATLAS_MAX_SIZE_IN_PIXELS;
+
+	const atlasCanvas: HTMLCanvasElement = <any>createCanvas(atlas_width, atlas_height);
+	const ctx: CanvasRenderingContext2D = atlasCanvas.getContext('2d')!;
 
 	// Draw images onto the atlas canvas
-	for (let i = 0; i < packresult.items.length; i++) {
-		const fitted_rect = packresult.items[i];
-		// Find the image resource that is related to the fitted rectangle
-		// Note that the packing algorithm sorts the given input. Thus, we cannot assume that the index of the packresult equals that of the original image_asset
-		const img_asset = image_assets.find(img_asset => img_asset.id == fitted_rect.item.id);
+	for (const packedRect of imagepacker_result.items) {
+		const img_asset = image_assets.find(img_asset => img_asset.id == packedRect.item.id);
 		const img = img_asset.img;
-		img_asset.imgmeta = uvcoords(fitted_rect.x, fitted_rect.y, ATLAS_PX_SIZE, ATLAS_PX_SIZE, img.width, img.height);
-		ctx.drawImage(img, fitted_rect.x, fitted_rect.y);
+		ctx.drawImage(img, packedRect.x, packedRect.y);
+		img_asset.imgmeta = uvcoords(packedRect.x, packedRect.y, atlas_width, atlas_height, img.width, img.height);
 	}
+	return atlasCanvas;
 }
 
 function uvcoords(x: number, y: number, width: number, height: number, imageWidth: number, imageHeight: number) {
-	let result = {
+	const result = {
 		width: imageWidth, height: imageHeight, atlassed: true, texcoords: [] as number[], texcoords_fliph: [] as number[], texcoords_flipv: [] as number[], texcoords_fliphv: [] as number[]
 	};
-	let left: number;
-	let top: number;
-	let right: number;
-	let bottom: number;
-	if (!CROP_ATLAS) {
-		left = x / width;
-		top = y / height;
-		right = (x + imageWidth) / width;
-		bottom = (y + imageHeight) / height;
-	}
-	else {
-		left = x;
-		top = y;
-		right = (x + imageWidth);
-		bottom = (y + imageHeight);
-	}
+	const left = x / width;
+	const top = y / height;
+	const right = (x + imageWidth) / width;
+	const bottom = (y + imageHeight) / height;
 
 	result.texcoords.push(left, top, right, top, left, bottom, left, bottom, right, top, right, bottom);
 	result.texcoords_fliph.push(right, top, left, top, right, bottom, right, bottom, left, top, left, bottom);
@@ -746,180 +1010,191 @@ function uvcoords(x: number, y: number, width: number, height: number, imageWidt
 	return result;
 }
 
-function cropAtlas(romResources: Array<RomAsset>): HTMLCanvasElement {
-	let cropw = atlasExploitedX;
-	let croph = atlasUnsafeY;
-	// Handle corner case where there are no textures in the ROM
-	if (cropw === 0) cropw = 1;
-	if (croph === 0) croph = 1;
+const outputError = (e: any) => writeOut(`\n[GEFAALD]\nEr ging iets niet goed:\n${e?.message ?? e ?? 'Geen error message'};\n${e?.stack ?? 'Geen stacktrace.'}\n`, 'error');
 
-	const result: HTMLCanvasElement = <any>createCanvas(cropw, croph);
-	const croppedctx: CanvasRenderingContext2D = result.getContext('2d')!;
-	croppedctx.drawImage(atlasCanvas, 0, 0);
+async function isRebuildRequired(outfile: string, bootloaderPath: string, resPath: string): Promise<boolean> {
+	const distPath = `./dist/${outfile}`;
 
-	let recalc = (coords: number[]) => {
-		for (let i = 0; i < coords.length; i += 2) {
-			coords[i] = coords[i] / cropw;
-			coords[i + 1] = coords[i + 1] / croph;
+	if (!existsSync(distPath)) {
+		return true;
+	}
+
+	const romStats = statSync(distPath);
+	const romMtime = romStats.mtime;
+
+	const shouldRebuild = async (dir: string, checkTsFiles: boolean, checkAssets: boolean): Promise<boolean> => {
+		const entries = await readdir(dir, { withFileTypes: true });
+
+		for (const entry of entries) {
+			const entryPath = join(dir, entry.name);
+
+			if (entry.isDirectory()) {
+				if (entry.name === '_ignore') {
+					continue;
+				}
+				const rebuild = await shouldRebuild(entryPath, checkTsFiles, checkAssets);
+				if (rebuild) {
+					return true;
+				}
+			} else {
+				if (
+					(checkTsFiles && entry.name.endsWith('.ts')) ||
+					(checkAssets && existsSync(entryPath))
+				) {
+					const entryStats = statSync(entryPath);
+					const entryMtime = entryStats.mtime;
+
+					if (entryMtime > romMtime) {
+						return true;
+					}
+				}
+			}
 		}
+
+		return false;
 	};
 
-	// Must also recalculate image texcoords, because while canvas size is taken into account
-	romResources.filter(x => x.type === 'image').forEach(x => {
-		recalc(x.imgmeta!.texcoords!);
-		recalc(x.imgmeta!.texcoords_fliph!);
-		recalc(x.imgmeta!.texcoords_flipv!);
-		recalc(x.imgmeta!.texcoords_fliphv!);
-	});
+	const shouldCheckTsFiles = dir => dir.startsWith(bootloaderPath);
+	const shouldCheckAssets = dir => dir.startsWith(resPath);
 
-	return result;
+	return await shouldRebuild(bootloaderPath, shouldCheckTsFiles(bootloaderPath), shouldCheckAssets(bootloaderPath)) ||
+		await shouldRebuild(resPath, shouldCheckTsFiles(resPath), shouldCheckAssets(resPath));
 }
 
-let outputError = (e: any) => writeOut(`\n[GEFAALD]\nEr ging iets niet goed:\n${e?.message ?? e ?? 'Geen error message'};\n${e?.stack ?? 'Geen stacktrace.'}\n`, 'error');
+async function main() {
+	try {
+		term.terminal.clear();
+		writeOut(_colors.brightGreen('┏————————————————————————————————————————————————————————————————————————————————┓\n'));
+		writeOut(_colors.brightGreen('|                          BMSX ROMPACKER DOOR BOAZ©®™                           |\n'));
+		writeOut(_colors.brightGreen('┗————————————————————————————————————————————————————————————————————————————————┛\n'));
+		const args = process.argv.slice(2);
+		let outfile: string = 'not-parsed!';
+		let title: string = 'not-parsed!';
+		let bootloader_path: string = 'not-parsed!';
+		let respath: string = 'not-parsed!';
+		let force: boolean = false;
+		let unrecognizedParam: boolean = false;
+		let buildreslist: boolean = false;
+		let deployToFtp: boolean = true;
 
-try {
-	term.terminal.clear();
-	writeOut(_colors.brightGreen('┏————————————————————————————————————————————————————————————————————————————————┓\n'));
-	writeOut(_colors.brightGreen('|                          BMSX ROMPACKER DOOR BOAZ©®™                           |\n'));
-	writeOut(_colors.brightGreen('┗————————————————————————————————————————————————————————————————————————————————┛\n'));
-	let args = process.argv.slice(2);
-	let outfile: string = 'not-parsed!';
-	let title: string = 'not-parsed!';
-	let bootloader_path: string = 'not-parsed!';
-	let respath: string = 'not-parsed!';
-	let force: boolean = false;
-	let unrecognizedParam: boolean = false;
-	let buildreslist: boolean = false;
-	let deployToFtp: boolean = true;
-
-	let i = 0;
-	while (i < args.length) {
-		switch (args[i]) {
-			case '-title':
-				++i;
-				title = args[i];
-				break;
-			case '-outfile':
-				++i;
-				outfile = args[i].toLowerCase();
-				break;
-			case '-bootloaderpath':
-				++i;
-				bootloader_path = args[i];
-				break;
-			case '-respath':
-				++i;
-				respath = args[i];
-				break;
-			case '--force':
-				force = true;
-				break;
-			case '--buildreslist':
-				buildreslist = true;
-				break;
-			case '--nodeploy':
-				deployToFtp = false;
-				break;
-			default:
-				writeOut(_colors.red(`Unrecognized argument: ${args[i]}.\n`));
-				unrecognizedParam = true;
-		}
-		++i;
-	}
-	if (unrecognizedParam) throw new Error("Unrecognized parameter(s) passed. Exiting rompacker...");
-
-	if (buildreslist) {
-		writeOut('Building resource list and writing output to "./src/bmsx/resourceids.ts"...\n');
-		writeOut('  Note: ROM packing and deployement are skipped.\n');
-		buildResourceList(respath);
-		writeOut(`\n${_colors.brightWhite.bold('[Resource list bouwen ge-DONUT]')}\n`);
-	}
-	else {
-		if (!title) throw new Error("Missing parameter for title ('title', e.g. 'Sintervania'.");
-		if (!outfile) throw new Error("Missing parameter for output file ('outfile', e.g. 'sintervania.rom'.");
-		if (!bootloader_path) throw new Error("Missing parameter for location of the bootloader.ts-file ('bootloader_path', e.g. 'src/bootloader.ts'.");
-		if (!respath) throw new Error("Missing parameter for location of the resource folder ('respath', e.g. './src/sintervania/res'.");
-
-		if (!force) {
-			// TODO: DIT WERKT NIET!!! MOET NIET KIJKEN NAAR [megarom.js], MAAR NAAR SOURCE FOLDERS EN ASSET FOLDERS!!
-			if (existsSync(`./dist/${outfile}`) && existsSync(`./rom/megarom.js`)) {
-				let romstats = statSync(`./dist/${outfile}`);
-				let rommtime = romstats.mtime;
-				let jsstats = statSync('./rom/megarom.js');
-				let jsmtime = jsstats.mtime;
-				if (jsmtime < rommtime) {
-					writeOut('No action performed: game rom was newer than code (use --force option to ignore this check).');
-					process.exit(0);
-				}
-				// else {
-				// 	writeOut(`Ga toch bouwen, want [jsmtime] = ${jsmtime} en [rommtime] = ${rommtime}`);
-				// }
+		for (let i = 0; i < args.length; i++) {
+			switch (args[i]) {
+				case '-title':
+					title = args[++i];
+					break;
+				case '-outfile':
+					outfile = args[++i].toLowerCase();
+					break;
+				case '-bootloaderpath':
+					bootloader_path = args[++i];
+					break;
+				case '-respath':
+					respath = args[++i];
+					break;
+				case '--force':
+					force = true;
+					break;
+				case '--buildreslist':
+					buildreslist = true;
+					break;
+				case '--nodeploy':
+					deployToFtp = false;
+					break;
+				default:
+					writeOut(_colors.red(`Unrecognized argument: ${args[i]}.\n`));
+					unrecognizedParam = true;
+					break;
 			}
-			// else {
-			// 	writeOut(`Ga toch bouwen, want [./dist/${outfile}] bestond niet, of [./rom/megarom.js] bestond niet.`);
-			// }
 		}
+		if (unrecognizedParam) throw new Error("Unrecognized parameter(s) passed. Exiting rompacker...");
 
-		writeOut(`Starting ROM packing and deployment process for ROM ${_colors.brightBlue.bold(`${outfile}`)}...\n`);
-		if (force) writeOut('  Note: Recompilation and Building forced via --force\n');
-		if (!deployToFtp) writeOut('  Note: Deploy to FTP server disabled via --nodeploy\n');
+		if (buildreslist) {
+			writeOut('Building resource list and writing output to "./src/bmsx/resourceids.ts"...\n');
+			writeOut('  Note: ROM packing and deployement are skipped.\n');
+			await buildResourceList(respath);
+			writeOut(`\n${_colors.brightWhite.bold('[Resource list bouwen ge-DONUT]')}\n`);
+		}
+		else {
+			if (!title) throw new Error("Missing parameter for title ('title', e.g. 'Sintervania'.");
+			if (!outfile) throw new Error("Missing parameter for output file ('outfile', e.g. 'sintervania.rom'.");
+			if (!bootloader_path) throw new Error("Missing parameter for location of the bootloader.ts-file ('bootloader_path', e.g. 'src/testrom'.");
+			if (!respath) throw new Error("Missing parameter for location of the resource folder ('respath', e.g. './src/testrom/res'.");
 
-		const takenlijst = ['Progress bar weergeven', 'Game compileren en bundleren', 'YAML bestanden omzetten in JSON voor importatie', 'Minifying + Resource bestanden inladen en bufferen', 'game.html en game_debug.html bouwen', 'Deployeren'];
-		if (!deployToFtp) takenlijst.pop();
+			let rebuildRequired = true;
 
-		let poptions: term.Terminal.ProgressBarOptions = {
-			title: 'Beunen:',
-			barChar: '█',
-			barHeadChar: '█',
-			eta: false,
-			percent: false,
-			items: takenlijst.length,
-			itemStyle: term.terminal.dim,
-			syncMode: true,
-			maxRefreshTime: 10,
-			minRefreshTime: 10,
-		};
+			if (!force) {
+				rebuildRequired = await isRebuildRequired(outfile, bootloader_path, respath);
+				if (!rebuildRequired) {
+					writeOut('Rebuild skipped: game rom was newer than code/assets (use --force option to ignore this check).');
+				}
+			}
 
-		let progress = term.terminal.progressBar(poptions);
+			writeOut(`Starting ROM packing and deployment process for ROM ${_colors.brightBlue.bold(`${outfile}`)}...\n`);
+			if (force) writeOut('  Note: Recompilation and Building forced via --force\n');
+			if (!deployToFtp) writeOut('  Note: Deploy to FTP server disabled via --nodeploy\n');
 
-		let huidigeTaak = takenlijst.shift()!;
-		let taakAfgevinkt = () => {
-			progress.itemDone(huidigeTaak);
+			const takenlijst = ['Game compileren en bundleren', 'YAML bestanden omzetten in JSON voor importatie', 'Minifying + Resource bestanden inladen en bufferen', 'game.html en game_debug.html bouwen', 'Deployeren'];
+			if (!deployToFtp) takenlijst.pop();
+			if (!rebuildRequired) {
+				takenlijst.shift();
+				takenlijst.shift();
+				takenlijst.shift();
+			}
 
-			if (!takenlijst.length) return;
-			huidigeTaak = takenlijst.shift()!;
+			let poptions: term.Terminal.ProgressBarOptions = {
+				title: 'Beunen:',
+				barChar: '█',
+				barHeadChar: '█',
+				eta: false,
+				percent: false,
+				items: takenlijst.length,
+				itemStyle: term.terminal.dim,
+				syncMode: true,
+				maxRefreshTime: 10,
+				minRefreshTime: 10,
+			};
+
+			let progress = term.terminal.progressBar(poptions);
+
+			let huidigeTaak = takenlijst.shift()!;
+			let taakAfgevinkt = () => {
+				progress.itemDone(huidigeTaak);
+
+				if (!takenlijst.length) return;
+				huidigeTaak = takenlijst.shift()!;
+				progress.startItem(huidigeTaak);
+			};
+
 			progress.startItem(huidigeTaak);
-		};
 
-		progress.startItem(huidigeTaak);
-
-		timer(200) // Nodig om de progress bar te laten werken. Bugt nogal
-			.then(() => {
-				taakAfgevinkt(); // Meteen eerste taak afvinken: progressbar tonen!
-				return timer(200); // Nodig om de progress bar te laten werken. Bugt nogal
-			})
-			.then(() => {
-				return buildAndBundleRomSource('megarom', bootloader_path);
-			})
-			.then(() => { taakAfgevinkt(); return yaml2Json(); })
-			.then(() => { taakAfgevinkt(); return buildRompack(outfile, respath); })
-			.then(() => { taakAfgevinkt(); return buildGameHtmlAndManifest(outfile, title); })
-			.then((): Promise<any> | void => {
+			try {
+				await timer(200);
+				if (rebuildRequired) {
+					await buildAndBundleRomSource('megarom', bootloader_path);
+					taakAfgevinkt();
+					await yaml2Json();
+					taakAfgevinkt();
+					await buildRompack(outfile, respath);
+					taakAfgevinkt();
+				}
+				await buildGameHtmlAndManifest(outfile, title);
 				taakAfgevinkt();
-				if (deployToFtp) return deploy(outfile, title);
-			})
-			.then(() => {
-				if (deployToFtp) taakAfgevinkt();
+				if (deployToFtp) {
+					await deploy(outfile, title);
+					taakAfgevinkt();
+				}
 				progress.stop();
 				writeOut(`\n${_colors.brightWhite.bold('[ALLES DONUT]')}\n`);
-			})
-			.catch(e => {
+			} catch (e) {
 				outputError(e);
 				progress.stop();
 				process.exit(-1);
-			});
+			}
+		}
+	} catch (e) {
+		outputError(e);
+		process.exit(-1);
 	}
-} catch (e) {
-	outputError(e);
-	process.exit(-1);
 }
+
+main();

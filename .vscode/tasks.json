@@ -43,13 +43,13 @@
 				"-outfile",
 				"${input:romtobuild}.rom",
 				"-bootloaderpath",
-				"src/${input:romtobuild}/bootloader.ts",
+				"src/${input:romtobuild}",
 				"-respath",
 				"./src/${input:romtobuild}/res",
 				"-title",
 				"${input:romtobuild}",
 				"--nodeploy",
-				"--force"
+				// "--force"
 			],
 			"problemMatcher": [
 				"$node-sass",

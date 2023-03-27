@@ -21,7 +21,6 @@
     "@types/pako": "*",
     "@types/systemjs": "*",
     "@types/terminal-kit": "*",
-    "bin-pack": "^1.0.2",
     "browserify": "*",
     "canvas": "*",
     "colors": "*",

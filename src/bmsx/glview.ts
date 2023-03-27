@@ -57,7 +57,7 @@ export abstract class GLView extends BaseView {
     private color_override: Float32Array = new Float32Array(24);
     private drawImgReqIndex: number;
 
-    private readonly vertexShaderCode: string =
+    public static readonly vertexShaderCode: string =
         `#version 300 es
         precision highp float;
 
@@ -82,7 +82,7 @@ export abstract class GLView extends BaseView {
             v_color_override = a_color_override;
     	}`;
 
-    private readonly fragmentShaderTextureCode: string =
+    public static readonly fragmentShaderTextureCode: string =
         `#version 300 es
 		precision highp float;
  		uniform sampler2D u_texture;
@@ -109,7 +109,7 @@ export abstract class GLView extends BaseView {
 
     override init(): void {
         super.init();
-        let gl = this.glctx;
+        const gl = this.glctx;
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
         gl.enable(gl.DEPTH_TEST);
         gl.depthFunc(gl.GREATER);
@@ -117,27 +117,29 @@ export abstract class GLView extends BaseView {
         gl.enable(gl.CULL_FACE);
         gl.cullFace(gl.FRONT);
 
-        this.resVec2.set([this.viewportSize.x, this.viewportSize.y]);
 
         // setup GLSL program
-        this.program = gl.createProgram() as WebGLProgram;
-        let vertShader = this.loadShader(gl.VERTEX_SHADER, this.vertexShaderCode);
-        let fragShader = this.loadShader(gl.FRAGMENT_SHADER, this.fragmentShaderTextureCode);
-        if (!vertShader || !fragShader) return;
+        const program = gl.createProgram();
+        if (!program) throw `Failed to create the GLSL program! Aborting as we cannot create the GLView for the game!`;
+        this.program = program;
 
-        gl.attachShader(this.program, vertShader);
-        gl.attachShader(this.program, fragShader);
-        gl.linkProgram(this.program);
+        const vertShader = this.loadShader(gl.VERTEX_SHADER, GLView.vertexShaderCode);
+        const fragShader = this.loadShader(gl.FRAGMENT_SHADER, GLView.fragmentShaderTextureCode);
 
+        gl.attachShader(program, vertShader);
+        gl.attachShader(program, fragShader);
+        gl.linkProgram(program);
+
+        this.resVec2.set([this.viewportSize.x, this.viewportSize.y]);
         // look up where the vertex data needs to go
-        this.positionLocation = gl.getAttribLocation(this.program, "a_position");
-        this.texcoordLocation = gl.getAttribLocation(this.program, "a_texcoord");
-        this.zcoordLocation = gl.getAttribLocation(this.program, "a_pos_z");
-        this.color_overrideLocation = gl.getAttribLocation(this.program, "a_color_override");
+        this.positionLocation = gl.getAttribLocation(program, "a_position");
+        this.texcoordLocation = gl.getAttribLocation(program, "a_texcoord");
+        this.zcoordLocation = gl.getAttribLocation(program, "a_pos_z");
+        this.color_overrideLocation = gl.getAttribLocation(program, "a_color_override");
 
         // lookup uniforms
-        this.resolutionLocation = gl.getUniformLocation(this.program, "u_resolution")!;
-        this.textureLocation = gl.getUniformLocation(this.program, "u_texture")!;
+        this.resolutionLocation = gl.getUniformLocation(program, "u_resolution")!;
+        this.textureLocation = gl.getUniformLocation(program, "u_texture")!;
 
         // Create a buffer.
         this.positionBuffer = gl.createBuffer()!;
@@ -146,7 +148,7 @@ export abstract class GLView extends BaseView {
         // Create a buffer for texture coords
         this.texcoordBuffer = gl.createBuffer()!;
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texcoordBuffer);
-        let uglyTexCoordStuff = new Float32Array(12 * 1000);
+        const uglyTexCoordStuff = new Float32Array(12 * 1000);
         for (let i = 0; i < 12 * 1000 - 12; i += 12) {
             uglyTexCoordStuff.set([
                 0.0, 0.0,
@@ -169,7 +171,7 @@ export abstract class GLView extends BaseView {
         gl.bindBuffer(gl.ARRAY_BUFFER, this.color_overrideBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(24 * 1000), gl.DYNAMIC_DRAW);
 
-        gl.useProgram(this.program);
+        gl.useProgram(program);
 
         // Setup the attributes to pull data from our buffers
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
@@ -199,8 +201,8 @@ export abstract class GLView extends BaseView {
         this.textures['_atlas'] = this.createTexture(BaseView.images['_atlas']);
     }
 
-    private loadShader(type: number, source: string): WebGLShader | null {
-        let gl = this.glctx;
+    private loadShader(type: number, source: string): WebGLShader {
+        const gl = this.glctx;
         const shader = gl.createShader(type)!;
 
         // Send the source to the shader object
@@ -211,18 +213,20 @@ export abstract class GLView extends BaseView {
 
         // See if it compiled successfully
         if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-            console.error('An error occurred compiling the shaders: ' + gl.getShaderInfoLog(shader));
+            const message = `'An error occurred compiling the shaders: ${gl.getShaderInfoLog(shader)}`;
             gl.deleteShader(shader);
-            return null;
+
+            console.error(message);
+            throw message;
         }
 
         return shader;
     }
 
     private createTexture(img: HTMLImageElement): WebGLTexture {
-        let gl = this.glctx;
+        const gl = this.glctx;
 
-        let result = gl.createTexture()!;
+        const result = gl.createTexture()!;
         gl.bindTexture(gl.TEXTURE_2D, result);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
         // let's assume all images are not a power of 2
@@ -236,7 +240,7 @@ export abstract class GLView extends BaseView {
 
     override handleResize(): void {
         super.handleResize();
-        let _this = global.view as GLView;
+        const _this = global.view as GLView;
         _this.glctx.viewport(0, 0, _this.canvas.width, _this.canvas.height);
     }
 
@@ -246,14 +250,14 @@ export abstract class GLView extends BaseView {
     }
 
     override clear(): void {
-        let gl = this.glctx;
+        const gl = this.glctx;
         gl.clearDepth(0.0);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     }
 
     public drawSprites(): void {
-        let _this = global.view as GLView;
-        let gl = _this.glctx;
+        const _this = global.view as GLView;
+        const gl = _this.glctx;
         gl.drawArrays(gl.TRIANGLES, 0, 6 * _this.drawImgReqIndex);
         _this.drawImgReqIndex = 0;
     }

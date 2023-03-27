@@ -93,9 +93,7 @@
     "excludeDirectories": [
       "**/node_modules",
       "dist",
-      "src/marlies2020",
-      "src/marlies2021",
-      "src/sintervania"
+      "src"
     ]
   }
 }
