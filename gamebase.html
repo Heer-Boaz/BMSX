@@ -122,7 +122,8 @@
     <script>
         //#debug
         //#localfetch
-        bootrom.bload("./#outfile").then(function (h406A) {
+        bootrom.romname = '#romname';
+        bootrom.bload('./#outfile').then(function (h406A) {
             bootrom.defusr = h406A;
             bootrom.usr(0);
         }).catch(function (err) {

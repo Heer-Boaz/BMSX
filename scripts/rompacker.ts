@@ -1,3 +1,4 @@
+import { createOptimizedAtlas } from './atlasbuilder';
 import { readdirSync, statSync, readFileSync, writeFileSync, copyFile, copyFileSync, existsSync, exists, createWriteStream, rmSync } from 'fs';
 import { join, parse } from 'path';
 import { AudioMeta, AudioType, RomAsset, RomMeta, ImgMeta } from '../src/bmsx/rompack';
@@ -12,11 +13,9 @@ const pako = require('pako');
 const minify = require('@node-minify/core');
 const cleanCSS = require('@node-minify/clean-css');
 const FtpDeploy = require('ftp-deploy');
-const { createCanvas, loadImage } = require('canvas');
+const { loadImage } = require('canvas');
 const yaml = require('js-yaml');
 
-const ATLAS_MAX_SIZE_IN_PIXELS = 4096;
-const CROP_ATLAS = true;
 const GENERATE_AND_USE_TEXTURE_ATLAS = true;
 const DONT_PACK_IMAGES_WHEN_USING_ATLAS = true;
 
@@ -28,13 +27,13 @@ const BOILERPLATE_RESOURCE_ID_AUDIO = `export enum AudioId {
 	None = 'None',
 `;
 
-interface ILoadedResource extends ResourceMeta {
+export interface ILoadedResource extends ResourceMeta {
 	buffer: Buffer;
 	img?: any;
 	imgmeta?: ImgMeta;
 }
 
-interface ResourceMeta {
+export interface ResourceMeta {
 	filepath?: string;
 	name: string;
 	ext?: string;
@@ -159,12 +158,12 @@ function yaml2Json(): Promise<void> {
 	});
 }
 
-async function buildAndBundleRomSource(outfile: string, bootloader_path: string): Promise<any> {
+async function buildAndBundleRomSource(romname: string, bootloader_path: string): Promise<any> {
 	log("Game compileren en bundleren...  ");
 	const bootloader_ts_path = `${bootloader_path}/bootloader.ts`;
 	return new Promise((resolve, reject) => {
 		try {
-			let writeOutput = createWriteStream(`./rom/${outfile}.js`);
+			let writeOutput = createWriteStream(`./rom/${romname}.js`);
 			browserify({
 				debug: true,
 				basedir: '.',
@@ -212,6 +211,10 @@ async function minifyGamecode(infile: string): Promise<terser.MinifyOutput> {
 			compress: <terser.CompressOptions>{
 				passes: 3, // The maximum number of times to run compress. In some cases more than one pass leads to further compressed code. Keep in mind more passes will take more time
 				ecma: 2017,
+				collapse_vars: true,
+				join_vars: true,
+				loops: true,
+				sequences: true,
 			},
 			mangle: <terser.MangleOptions>{
 				reserved:
@@ -249,10 +252,13 @@ async function minifyGamecode(infile: string): Promise<terser.MinifyOutput> {
 				max_line_len: 80,
 				semicolons: true, // Must be true for Safari support (on iOS)! Otherwise, only black screen shows
 				keep_quoted_props: true,
-				beautify: true,
+				beautify: false,
 				source_map: {
 					content: 'inline',
-				}
+				},
+				comments: false,
+				indent_level: 0,
+				braces: false,
 			},
 		};
 
@@ -265,7 +271,7 @@ async function minifyGamecode(infile: string): Promise<terser.MinifyOutput> {
 	}
 }
 
-async function buildGameHtmlAndManifest(outfile: string, title: string): Promise<any> {
+async function buildGameHtmlAndManifest(romname: string, title: string): Promise<any> {
 	log("game.html en game_debug.html bouwen...\n");
 	let html = readFileSync("./gamebase.html", 'utf8');
 	let romjs = readFileSync("./rom/rom.js", 'utf8').replace('Object.defineProperty(exports, "__esModule", { value: true });', '');
@@ -304,7 +310,8 @@ async function buildGameHtmlAndManifest(outfile: string, title: string): Promise
 						.replace('//#zipjs', zipjs)
 						.replace('/*css*/', cssMinified)
 						.replace(/#title/g, title) // https://stackoverflow.com/questions/44324892/how-can-i-replace-multiple-characters-in-a-string
-						.replace('#outfile', outfile)
+						.replace('#romname', `${romname}`)
+						.replace('#outfile', `${romname}.rom`)
 						.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed)
 						.replace('//#debug', `bootrom.debug = ${debug};\n`)
 						.replace('//#localfetch', `bootrom.localfetch = ${debug};\n`);
@@ -352,10 +359,11 @@ function zip(content: Buffer): Uint8Array {
 	return pako.deflate(toCompress);
 }
 
-async function deploy(outfile: string, title: string): Promise<any> {
+async function deploy(romname: string, title: string): Promise<any> {
 	return new Promise<any>((resolve, reject) => {
 		log("Deployeren... ");
-		let ftpDeploy = new FtpDeploy();
+		const outfile = romname.concat('.rom');
+		const ftpDeploy = new FtpDeploy();
 
 		ftpDeploy.on("upload-error", function (data) {
 			// Error already handled through catch.
@@ -417,9 +425,10 @@ function getResMetaByFilename(filepath: string): { name: string, ext: string, ty
 	return { name: name, ext: ext, type: type };
 }
 
-function getResMetaList(respath: string): ResourceMeta[] {
+function getResMetaList(respath: string, romname: string): ResourceMeta[] {
 	let arrayOfFiles = getFiles(respath) ?? []; // Also handle corner case where we don't have any resources by adding "?? []"
-	addFile("./rom", "megarom.min.js", arrayOfFiles); // Add source at the end
+	const megarom_filename = `${romname}.min.js`;
+	addFile("./rom", megarom_filename, arrayOfFiles); // Add source at the end
 
 	let result: Array<ResourceMeta> = [];
 
@@ -461,8 +470,8 @@ async function load_img(_meta: ResourceMeta) {
 	return await loadImage(dataURL);
 }
 
-async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>): Promise<ILoadedResource[]> {
-	let resMetaList = getResMetaList(respath);
+async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>, romname: string): Promise<ILoadedResource[]> {
+	let resMetaList = getResMetaList(respath, romname);
 	let loadedResources: Array<ILoadedResource> = [];
 	for (let i = 0; i < resMetaList.length; i++) {
 		let meta = resMetaList[i];
@@ -489,11 +498,13 @@ async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>): 
 		loadedResources.push({ buffer: buffer!, filepath: meta.filepath, name: name, ext: ext, type: type, img: img, id: id });
 	}
 
+	const megarom_filename = `${romname}.min.js`;
+	const filepath = `./rom/${megarom_filename}`;
 	// Manually add the ROM source code to the list
 	loadedResources.push({
-		buffer: readFileSync('./rom/megarom.min.js'),
-		filepath: './rom/megarom.min.js',
-		name: 'megarom.min.js',
+		buffer: readFileSync(filepath),
+		filepath: filepath,
+		name: megarom_filename,
 		ext: '.js',
 		type: 'source',
 		id: 1
@@ -516,12 +527,12 @@ async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>): 
 	return loadedResources;
 }
 
-function buildResourceList(respath: string): void {
+function buildResourceList(respath: string, romname: string): void {
 	log("resourceids.ts knutselen...  ");
 	let tsimgout = new Array<string>();
 	let tssndout = new Array<string>();
 
-	let metalist = getResMetaList(respath);
+	let metalist = getResMetaList(respath, romname);
 
 	tsimgout.push(BOILERPLATE_RESOURCE_ID_BITMAP);
 	tssndout.push(BOILERPLATE_RESOURCE_ID_AUDIO);
@@ -555,21 +566,29 @@ function buildResourceList(respath: string): void {
 	appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 }
 
-async function buildRompack(outfile: string, respath: string): Promise<any> {
+async function buildRompack(romname: string, respath: string): Promise<any> {
 	return new Promise<any>(async (resolve, reject) => {
 		log("Minifyen... ");
-		const minifyGamecodeResult = await minifyGamecode("./rom/megarom.js");
-		writeFileSync("./rom/megarom.min.js", minifyGamecodeResult.code!);
+		const outfile = romname.concat('.rom');
+		const megarom_filename = `${romname}.js`;
+		const megarom_min_filename = `${romname}.min.js`;
+		const megarom_min_map_filename = `${romname}.min.map`;
+		const megarom_filepath = `./rom/${megarom_filename}`;
+		const megarom_min_filepath = `./rom/${megarom_min_filename}`;
+		const megarom_min_map_filepath = `./rom/${megarom_min_map_filename}`;
+
+		const minifyGamecodeResult = await minifyGamecode(megarom_filepath);
+		writeFileSync(megarom_min_filepath, minifyGamecodeResult.code!);
 		if (minifyGamecodeResult.map) {
-			writeFileSync("./rom/megarom.min.map", minifyGamecodeResult.map as string);
+			writeFileSync(megarom_min_map_filepath, minifyGamecodeResult.map as string);
 		}
 
-		copyFileSync('./rom/megarom.js', './megarom.js');
-		rmSync('./rom/megarom.js');
+		copyFileSync(megarom_filepath, `./${megarom_filename}`);
+		rmSync(megarom_filepath);
 
 		const buffers = new Array<Buffer>();
 		log("Resource bestanden inladen en bufferen...  ");
-		const loadedResources: ILoadedResource[] = await getLoadedResourcesList(respath, buffers).catch(err => reject(err)) as ILoadedResource[];
+		const loadedResources: ILoadedResource[] = await getLoadedResourcesList(respath, buffers, romname).catch(err => reject(err)) as ILoadedResource[];
 		let generated_atlas: HTMLCanvasElement = undefined;
 		if (GENERATE_AND_USE_TEXTURE_ATLAS) {
 			// Use algorithm to optimize atlas
@@ -668,7 +687,7 @@ async function buildRompack(outfile: string, respath: string): Promise<any> {
 		appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 		log(`\tSize: ${_colors.red(`${(Buffer.concat(buffers).length / (1024 * 1024)).toFixed(2)} mB`)} ⇒  Deflated: ${_colors.blue(`${(zipped.length / (1024 * 1024)).toFixed(2)} mB (${((zipped.length / Buffer.concat(buffers).length) * 100).toFixed(0)}%)`)}\n`);
 
-		log(`"${_colors.green(outfile)}" wegschrijven naar ${_colors.green(`\"./dist/${outfile}\"`)}...`);
+		log(`"${_colors.green(romname)}" wegschrijven naar ${_colors.green(`\"./dist/${outfile}\"`)}...`);
 		writeFileSync(`./dist/${outfile}`, Buffer.concat([romlabel_buffer ?? Buffer.alloc(0), zipped, blob_meta_as_buffer]));
 		writeFileSync("./rom/_ignore/romresources.json", jsonbuffer);
 		appendLogEntry(`${_colors.grey('[Donut]')}\n`);
@@ -677,345 +696,14 @@ async function buildRompack(outfile: string, respath: string): Promise<any> {
 	});
 }
 
-type Rect = { width: number; height: number; id: number; };
-type Bin = { x: number; y: number; width: number; height: number; };
-
-// Helper function to split a free rectangle
-function splitFreeRectangle(freeRect: Bin, usedRect: Bin): Bin[] {
-	const newFreeRects: Bin[] = [];
-
-	// Check for overlap on the horizontal axis
-	if (usedRect.x < freeRect.x + freeRect.width && usedRect.x + usedRect.width > freeRect.x) {
-		if (usedRect.y > freeRect.y && usedRect.y < freeRect.y + freeRect.height) {
-			// Split the free rectangle horizontally (top)
-			newFreeRects.push({
-				x: freeRect.x,
-				y: freeRect.y,
-				width: freeRect.width,
-				height: usedRect.y - freeRect.y,
-			});
-		}
-
-		if (usedRect.y + usedRect.height < freeRect.y + freeRect.height) {
-			// Split the free rectangle horizontally (bottom)
-			newFreeRects.push({
-				x: freeRect.x,
-				y: usedRect.y + usedRect.height,
-				width: freeRect.width,
-				height: (freeRect.y + freeRect.height) - (usedRect.y + usedRect.height),
-			});
-		}
-	}
-
-	// Check for overlap on the vertical axis
-	if (usedRect.y < freeRect.y + freeRect.height && usedRect.y + usedRect.height > freeRect.y) {
-		if (usedRect.x > freeRect.x && usedRect.x < freeRect.x + freeRect.width) {
-			// Split the free rectangle vertically (left)
-			newFreeRects.push({
-				x: freeRect.x,
-				y: freeRect.y,
-				width: usedRect.x - freeRect.x,
-				height: freeRect.height,
-			});
-		}
-
-		if (usedRect.x + usedRect.width < freeRect.x + freeRect.width) {
-			// Split the free rectangle vertically (right)
-			newFreeRects.push({
-				x: usedRect.x + usedRect.width,
-				y: freeRect.y,
-				width: (freeRect.x + freeRect.width) - (usedRect.x + usedRect.width),
-				height: freeRect.height,
-			});
-		}
-	}
-
-	return newFreeRects;
-}
-
-// Helper function to remove overlapping free rectangles
-function pruneFreeRectangles(newFreeRectangles: Bin[], freeRectangles: Bin[]): void {
-	newFreeRectangles.forEach((newRect) => {
-		let addNewRect = true;
-
-		// Remove any free rectangles that are fully contained within the new rectangle
-		freeRectangles.forEach((freeRect, index) => {
-			if (isContained(newRect, freeRect)) {
-				addNewRect = false;
-			} else if (isContained(freeRect, newRect)) {
-				freeRectangles.splice(index, 1);
-			}
-		});
-
-		if (addNewRect) {
-			freeRectangles.push(newRect);
-		}
-	});
-}
-function isContained(rect1: Bin, rect2: Bin): boolean {
-	return rect1.x >= rect2.x && rect1.y >= rect2.y &&
-		rect1.x + rect1.width <= rect2.x + rect2.width &&
-		rect1.y + rect1.height <= rect2.y + rect2.height;
-}
-
-// Helper function to check for overlaps between two bins
-function overlaps(bin1: Bin, bin2: Bin): boolean {
-	return bin1.x < bin2.x + bin2.width && bin1.x + bin1.width > bin2.x && bin1.y < bin2.y + bin2.height && bin1.y + bin1.height > bin2.y;
-}
-
-function maximalRectanglesPacker(rects: Rect[], binWidth: number, binHeight: number): { items: { item: Rect, x: number, y: number; }[], width: number, height: number; } {
-	// Sort the rectangles by area in descending order
-	const sortedRects = rects.slice().sort((a, b) => b.width * b.height - a.width * a.height);
-
-	// Initialize the used bins array
-	const usedBins: { item: Rect, x: number, y: number; }[] = [];
-
-	// Initialize the available free rectangles array
-	const freeRectangles: Bin[] = [{ x: 0, y: 0, width: binWidth, height: binHeight }];
-
-	// Helper function to find the best placement for a rectangle
-	function findBestPlacement(rect: Rect): { bin: Bin, score: number; } | null {
-		let bestBin: Bin | null = null;
-		let bestScore = Number.MAX_VALUE;
-
-		for (const freeRect of freeRectangles) {
-			if (rect.width <= freeRect.width && rect.height <= freeRect.height) {
-				const score = freeRect.width * freeRect.height - rect.width * rect.height;
-
-				if (score < bestScore) {
-					bestScore = score;
-					bestBin = {
-						x: freeRect.x,
-						y: freeRect.y,
-						width: rect.width,
-						height: rect.height,
-					};
-				}
-			}
-		}
-
-		return bestBin ? { bin: bestBin, score: bestScore } : null;
-	}
-
-	// Pack all rectangles
-	for (const rect of sortedRects) {
-		const bestPlacement = findBestPlacement(rect);
-
-		if (bestPlacement) {
-			usedBins.push({ item: rect, x: bestPlacement.bin.x, y: bestPlacement.bin.y });
-
-			const newFreeRectangles: Bin[] = [];
-			for (const freeRect of freeRectangles) {
-				const splitRects = splitFreeRectangle(freeRect, bestPlacement.bin);
-				newFreeRectangles.push(...splitRects);
-			}
-			freeRectangles.length = 0;
-			pruneFreeRectangles(newFreeRectangles, freeRectangles);
-		}
-	}
-
-	// Return the packed bins and the dimensions of the texture atlas
-	const items = usedBins.map(({ item, x, y }) => ({ item, x, y }));
-	const width = usedBins.reduce((maxWidth, { item, x }) => Math.max(maxWidth, x + item.width), 0);
-	const height = usedBins.reduce((maxHeight, { item, y }) => Math.max(maxHeight, y + item.height), 0);
-
-	return { items: items, width: width, height: height };
-}
-
-type Shelf = {
-	x: number;
-	y: number;
-	width: number;
-	height: number;
-};
-
-function shelfBinPacker(rects: Rect[], binWidth: number, binHeight: number): { items: { item: Rect, x: number, y: number; }[], width: number, height: number; } {
-	// Sort the rectangles by height in descending order
-	const sortedRects = rects.slice().sort((a, b) => b.height - a.height);
-
-	// Initialize the used bins array
-	const usedBins: { item: Rect, x: number, y: number; }[] = [];
-
-	// Initialize the current shelf
-	let currentShelf: Shelf = { x: 0, y: 0, width: binWidth, height: sortedRects[0].height };
-
-	// Pack all rectangles
-	for (const rect of sortedRects) {
-		// Check if the rectangle fits into the current shelf
-		if (currentShelf.width >= rect.width) {
-			// Add the rectangle to the current shelf
-			usedBins.push({ item: rect, x: currentShelf.x, y: currentShelf.y });
-			currentShelf.x += rect.width;
-			currentShelf.width -= rect.width;
-		} else {
-			// Create a new shelf for the rectangle
-			currentShelf = {
-				x: 0,
-				y: currentShelf.y + currentShelf.height,
-				width: binWidth - rect.width,
-				height: rect.height,
-			};
-
-			if (currentShelf.y + currentShelf.height > binHeight) {
-				throw new Error("The rectangles do not fit into the given bin dimensions.");
-			}
-
-			// Add the rectangle to the new shelf
-			usedBins.push({ item: rect, x: currentShelf.x, y: currentShelf.y });
-			currentShelf.x += rect.width;
-		}
-	}
-
-	// Return the packed bins and the dimensions of the texture atlas
-	const items = usedBins.map(({ item, x, y }) => ({ item, x, y }));
-	const width = usedBins.reduce((maxWidth, { item, x }) => Math.max(maxWidth, x + item.width), 0);
-	const height = usedBins.reduce((maxHeight, { item, y }) => Math.max(maxHeight, y + item.height), 0);
-
-	return { items: items, width: width, height: height };
-}
-
-type Node = {
-	x: number;
-	y: number;
-	width: number;
-	height: number;
-};
-
-function tprfPacker(rects: Rect[], binWidth: number, binHeight: number): { items: { item: Rect, x: number, y: number; }[], width: number, height: number; } {
-	// Sort the rectangles by area in descending order
-	const sortedRects = rects.slice().sort((a, b) => b.width * b.height - a.width * a.height);
-
-	// Initialize the used bins array
-	const usedBins: { item: Rect, x: number, y: number; }[] = [];
-
-	// Initialize the initial free node
-	const initialNode: Node = { x: 0, y: 0, width: binWidth, height: binHeight };
-
-	// Initialize the free nodes list
-	const freeNodes: Node[] = [initialNode];
-
-	// Calculate the touching perimeter of a rectangle placed at a node
-	function touchingPerimeter(rect: Rect, node: Node): number {
-		let perimeter = 0;
-
-		if (node.x === 0 || node.x + rect.width === binWidth) {
-			perimeter += rect.height;
-		}
-
-		if (node.y === 0 || node.y + rect.height === binHeight) {
-			perimeter += rect.width;
-		}
-
-		for (const usedBin of usedBins) {
-			if (usedBin.y + usedBin.item.height === node.y) {
-				const widthIntersection = Math.max(0, Math.min(node.x + rect.width, usedBin.x + usedBin.item.width) - Math.max(node.x, usedBin.x));
-				perimeter += widthIntersection;
-			}
-
-			if (usedBin.x + usedBin.item.width === node.x) {
-				const heightIntersection = Math.max(0, Math.min(node.y + rect.height, usedBin.y + usedBin.item.height) - Math.max(node.y, usedBin.y));
-				perimeter += heightIntersection;
-			}
-		}
-
-		return perimeter;
-	}
-
-	// Check if a rectangle can fit into a node without overlaps
-	function canFit(rect: Rect, node: Node): boolean {
-		return rect.width <= node.width && rect.height <= node.height;
-	}
-
-	// Pack all rectangles
-	for (const rect of sortedRects) {
-		let bestNode: Node | null = null;
-		let bestPerimeter = Number.MAX_VALUE;
-
-		// Find the best node to place the rectangle
-		for (const freeNode of freeNodes) {
-			if (canFit(rect, freeNode)) {
-				const perimeter = touchingPerimeter(rect, freeNode);
-
-				if (perimeter < bestPerimeter) {
-					bestNode = freeNode;
-					bestPerimeter = perimeter;
-				}
-			}
-		}
-
-		if (!bestNode) {
-			throw new Error("The rectangles do not fit into the given bin dimensions.");
-		}
-
-		// Add the rectangle to the best node
-		usedBins.push({ item: rect, x: bestNode.x, y: bestNode.y });
-
-		// Update the free nodes list
-		freeNodes.push({ x: bestNode.x + rect.width, y: bestNode.y, width: bestNode.width - rect.width, height: rect.height });
-		freeNodes.push({ x: bestNode.x, y: bestNode.y + rect.height, width: rect.width, height: bestNode.height - rect.height });
-
-		// Remove the used node from the free nodes list
-		const nodeIndex = freeNodes.indexOf(bestNode);
-		freeNodes.splice(nodeIndex, 1);
-	}
-
-	// Return the packed bins and the dimensions of the texture atlas
-	const items = usedBins.map(({ item, x, y }) => ({ item, x, y }));
-	const width = usedBins.reduce((maxWidth, { item, x }) => Math.max(maxWidth, x + item.width), 0);
-	const height = usedBins.reduce((maxHeight, { item, y }) => Math.max(maxHeight, y + item.height), 0);
-
-	return { items: items, width: width, height: height };
-}
-
-function createOptimizedAtlas(loadedResources: ILoadedResource[]): HTMLCanvasElement {
-	const image_assets = loadedResources.filter(resource => resource.type === "image");
-	const rects = image_assets.map(img_resource => ({ x: undefined, y: undefined, width: img_resource.img?.width, height: img_resource.img?.height, id: img_resource.id }));
-
-	// const binpack_result = maximalRectanglesPacker(rects, ATLAS_PX_SIZE, ATLAS_PX_SIZE);
-	// const binpack_result = shelfBinPacker(rects, ATLAS_PX_SIZE, ATLAS_PX_SIZE);
-	const imagepacker_result = tprfPacker(rects, ATLAS_MAX_SIZE_IN_PIXELS, ATLAS_MAX_SIZE_IN_PIXELS);
-
-	// atlasExploitedX = Math.max(...packedRects.map(rect => rect.x + rect.item.width));
-	// atlasUnsafeY = Math.max(...packedRects.map(rect => rect.y + rect.item.height));
-	// atlasExploitedX = binpack_result.width;
-	// atlasUnsafeY = binpack_result.height;
-	const atlas_width = CROP_ATLAS ? imagepacker_result.width : ATLAS_MAX_SIZE_IN_PIXELS, atlas_height = CROP_ATLAS ? imagepacker_result.height : ATLAS_MAX_SIZE_IN_PIXELS;
-
-	const atlasCanvas: HTMLCanvasElement = <any>createCanvas(atlas_width, atlas_height);
-	const ctx: CanvasRenderingContext2D = atlasCanvas.getContext('2d')!;
-
-	// Draw images onto the atlas canvas
-	for (const packedRect of imagepacker_result.items) {
-		const img_asset = image_assets.find(img_asset => img_asset.id == packedRect.item.id);
-		const img = img_asset.img;
-		ctx.drawImage(img, packedRect.x, packedRect.y);
-		img_asset.imgmeta = uvcoords(packedRect.x, packedRect.y, atlas_width, atlas_height, img.width, img.height);
-	}
-	return atlasCanvas;
-}
-
-function uvcoords(x: number, y: number, width: number, height: number, imageWidth: number, imageHeight: number) {
-	const result = {
-		width: imageWidth, height: imageHeight, atlassed: true, texcoords: [] as number[], texcoords_fliph: [] as number[], texcoords_flipv: [] as number[], texcoords_fliphv: [] as number[]
-	};
-	const left = x / width;
-	const top = y / height;
-	const right = (x + imageWidth) / width;
-	const bottom = (y + imageHeight) / height;
-
-	result.texcoords.push(left, top, right, top, left, bottom, left, bottom, right, top, right, bottom);
-	result.texcoords_fliph.push(right, top, left, top, right, bottom, right, bottom, left, top, left, bottom);
-	result.texcoords_flipv.push(left, bottom, right, bottom, left, top, left, top, right, bottom, right, top);
-	result.texcoords_fliphv.push(right, bottom, left, bottom, right, top, right, top, left, bottom, left, top);
-	return result;
-}
 
 const outputError = (e: any) => writeOut(`\n[GEFAALD]\nEr ging iets niet goed:\n${e?.message ?? e ?? 'Geen error message'};\n${e?.stack ?? 'Geen stacktrace.'}\n`, 'error');
 
-async function isRebuildRequired(outfile: string, bootloaderPath: string, resPath: string): Promise<boolean> {
-	const distPath = `./dist/${outfile}`;
+async function isRebuildRequired(romname: string, bootloaderPath: string, resPath: string): Promise<boolean> {
+	const distPath = `./dist/${romname}.rom`;
+	const distPath2 = `./rom/${romname}.min.js`; // TODO: LELIJK! PROBLEEM IS DAT NORMALE .JS WORDT VERPLAATST NAAR ROOT-FOLDER (EN DAT IS OOK LELIJK!)
 
-	if (!existsSync(distPath)) {
+	if (!existsSync(distPath) || !existsSync(distPath2)) {
 		return true;
 	}
 
@@ -1068,7 +756,7 @@ async function main() {
 		writeOut(_colors.brightGreen('|                          BMSX ROMPACKER DOOR BOAZ©®™                           |\n'));
 		writeOut(_colors.brightGreen('┗————————————————————————————————————————————————————————————————————————————————┛\n'));
 		const args = process.argv.slice(2);
-		let outfile: string = 'not-parsed!';
+		let romname: string = 'not-parsed!';
 		let title: string = 'not-parsed!';
 		let bootloader_path: string = 'not-parsed!';
 		let respath: string = 'not-parsed!';
@@ -1082,8 +770,11 @@ async function main() {
 				case '-title':
 					title = args[++i];
 					break;
-				case '-outfile':
-					outfile = args[++i].toLowerCase();
+				case '-romname':
+					romname = args[++i].toLowerCase();
+					if (romname.includes('.')) {
+						throw new Error(`'-romname' should not contain any extensions! The given romname was ${romname}. Example of good '-romname': 'testrom'.`);
+					}
 					break;
 				case '-bootloaderpath':
 					bootloader_path = args[++i];
@@ -1111,27 +802,27 @@ async function main() {
 		if (buildreslist) {
 			writeOut('Building resource list and writing output to "./src/bmsx/resourceids.ts"...\n');
 			writeOut('  Note: ROM packing and deployement are skipped.\n');
-			await buildResourceList(respath);
+			await buildResourceList(respath, romname);
 			writeOut(`\n${_colors.brightWhite.bold('[Resource list bouwen ge-DONUT]')}\n`);
 		}
 		else {
 			if (!title) throw new Error("Missing parameter for title ('title', e.g. 'Sintervania'.");
-			if (!outfile) throw new Error("Missing parameter for output file ('outfile', e.g. 'sintervania.rom'.");
+			if (!romname) throw new Error("Missing parameter for output file ('outfile', e.g. 'sintervania.rom'.");
 			if (!bootloader_path) throw new Error("Missing parameter for location of the bootloader.ts-file ('bootloader_path', e.g. 'src/testrom'.");
 			if (!respath) throw new Error("Missing parameter for location of the resource folder ('respath', e.g. './src/testrom/res'.");
 
 			let rebuildRequired = true;
 
 			if (!force) {
-				rebuildRequired = await isRebuildRequired(outfile, bootloader_path, respath);
+				rebuildRequired = await isRebuildRequired(romname, bootloader_path, respath);
 				if (!rebuildRequired) {
 					writeOut('Rebuild skipped: game rom was newer than code/assets (use --force option to ignore this check).');
 				}
 			}
-
-			writeOut(`Starting ROM packing and deployment process for ROM ${_colors.brightBlue.bold(`${outfile}`)}...\n`);
-			if (force) writeOut('  Note: Recompilation and Building forced via --force\n');
+			else writeOut('  Note: Recompilation and Building forced via --force\n');
 			if (!deployToFtp) writeOut('  Note: Deploy to FTP server disabled via --nodeploy\n');
+
+			writeOut(`Starting ROM packing and deployment process for ROM ${_colors.brightBlue.bold(`${romname}`)}...\n`);
 
 			const takenlijst = ['Game compileren en bundleren', 'YAML bestanden omzetten in JSON voor importatie', 'Minifying + Resource bestanden inladen en bufferen', 'game.html en game_debug.html bouwen', 'Deployeren'];
 			if (!deployToFtp) takenlijst.pop();
@@ -1170,17 +861,17 @@ async function main() {
 			try {
 				await timer(200);
 				if (rebuildRequired) {
-					await buildAndBundleRomSource('megarom', bootloader_path);
+					await buildAndBundleRomSource(romname, bootloader_path);
 					taakAfgevinkt();
 					await yaml2Json();
 					taakAfgevinkt();
-					await buildRompack(outfile, respath);
+					await buildRompack(romname, respath);
 					taakAfgevinkt();
 				}
-				await buildGameHtmlAndManifest(outfile, title);
+				await buildGameHtmlAndManifest(romname, title);
 				taakAfgevinkt();
 				if (deployToFtp) {
-					await deploy(outfile, title);
+					await deploy(romname, title);
 					taakAfgevinkt();
 				}
 				progress.stop();

@@ -527,6 +527,7 @@ export function getOppositeDirection(dir: Direction): Direction {
 }
 
 export class Game {
+    public debug: boolean = false;
     public targetFPS: number = 50;
     public updateInterval: number;
     public lastUpdate: number = 0;
@@ -543,7 +544,7 @@ export class Game {
     public model<T extends BaseModel>(): T { return <T>global.model; }
     public view<T extends BaseView>(): T { return <T>global.view; }
 
-    constructor(_rom: RomPack, _model: BaseModel, _view: BaseView, sndcontext: AudioContext, gainnode: GainNode) {
+    constructor(_rom: RomPack, _model: BaseModel, _view: BaseView, sndcontext: AudioContext, gainnode: GainNode, debug: boolean = false) {
         global['game'] = this;
         global['rom'] = _rom;
 
@@ -559,6 +560,7 @@ export class Game {
         // Init all the stuff that is game-specific. Placed here to reduce boilerplating
         global.model.init_spaces().init_model_state_machines(global.model.constructor_name).do_one_time_game_init();
 
+        this.debug ??= debug;
         this.running = false;
         this.paused = false;
         this.wasupdated = true;

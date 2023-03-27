@@ -6,6 +6,7 @@ declare var h406A: (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode) 
 var bootrom = {
 	rom: null as RomPack | null,
 	debug: false,
+	romname: undefined, // Currently, used for fetching the megarom Javascript for debug mode
 	localfetch: false,
 	sndcontext: null as AudioContext | null,
 	snd_unlocked: false,
@@ -24,7 +25,7 @@ var bootrom = {
 			document.getElementById('debugPanel')!.hidden = false;
 			document.getElementById('debugPanel')!.style.display = 'block';
 		}
-		loadScript(bootrom.rom!).then(() => {
+		loadScript(bootrom.rom!, bootrom.romname).then(() => {
 			h406A(bootrom.rom!, bootrom.sndcontext!, bootrom.gainnode!);
 			bootrom.rom = null;
 			return x;
@@ -220,7 +221,7 @@ async function awaitBootComplete(): Promise<void> {
 	return result;
 }
 
-async function loadScript(rom: RomPack): Promise<void> {
+async function loadScript(rom: RomPack, romname: string): Promise<void> {
 	let result: Promise<void> = new Promise((resolve, reject) => {
 		let romcode = document.createElement('script');
 		romcode.async = false;
@@ -236,7 +237,7 @@ async function loadScript(rom: RomPack): Promise<void> {
 			resolve();
 		}
 		else {
-			romcode.src = '../megarom.js';
+			romcode.src = `../${romname}.js`;
 			romcode.onload = () => resolve();
 			document.head.appendChild(romcode);
 		}
