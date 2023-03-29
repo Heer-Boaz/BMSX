@@ -15,7 +15,7 @@ Produce Japanese-style pencil-drawn concept art for a young female detective cha
 
 Create high-quality RPG-style full-body illustration for a adolescent female with short, messy brown hair and blue eyes. She wears an office blouse and short bow tie, a long skirt that reaches to her knees, and brown knee-length boots. Her posture is confident and alert, with her arms resting by her side. The character should be drawn from the front. The character's head should be turned to face the viewer. The art should have a noir-inspired aesthetic with a slightly exaggerated, animated style to evoke the feeling of classic 16-bit RPG character portraits.
 
-side. The character should be facing to the right. 
+side. The character should be facing to the right.
 
 right hand resting on her hip
 
@@ -50,3 +50,10 @@ Draw a manga-style black and white illustration of Sinterklaas. The character sh
 Draw a manga-style concept art illustration of Sinterklaas. The character should be drawn from the front. The character's head should be turned to face the viewer. The art should have a slightly exaggerated, animated style to evoke the feeling of modern JRPG character portraits like Final Fantasy VII.
 
 Produce Japanese-style pencil-drawn concept art for Sinterklaas. His posture is confident and alert, with his right hand resting on his hip. The art should have a noir-inspired aesthetic with a slightly exaggerated, animated style to evoke the feeling of classic 16-bit RPG character portraits. The character should be drawn from head to toe, and both front and side views are required.
+
+Create a full-body JRPG game character portrait of a young woman with long brown hair and blue eyes. She is dressed in a white blouse, a blue bow tie, a brown A-line skirt, and brown knee-length boots. She has a confident and alert posture. The art should have a slightly exaggerated, animated style to evoke the feeling of classic character portraits. The image should be limited to a resolution of 256 x 212 pixels and use no more than 256 colors.
+
+Manga-style character portrait young female half-elf ranger with a giant wolf pet. No background
+Manga-style character portrait young female druid with green cloak and long wooden staff. No background
+
+Manga-style character portrait young female detective. Noir. No background
