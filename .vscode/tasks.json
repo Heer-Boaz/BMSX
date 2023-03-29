@@ -40,8 +40,8 @@
 			"command": "node",
 			"args": [
 				"${workspaceFolder}/rom/rompacker.js",
-				"-outfile",
-				"${input:romtobuild}.rom",
+				"-romname",
+				"${input:romtobuild}",
 				"-bootloaderpath",
 				"src/${input:romtobuild}",
 				"-respath",
