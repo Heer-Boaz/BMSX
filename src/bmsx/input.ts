@@ -15,13 +15,6 @@ let preventActionAndPropagation = (e: Event): boolean => {
     return e.returnValue = false; // https://javascriptio.com/view/5386822/prevent-text-selection-on-tap-and-hold-on-ios-13-mobile-safari
 };
 
-const GamepadButtons = {
-  LEFT: 1000,
-  RIGHT: 1001,
-  UP: 1002,
-  DOWN: 1003,
-} as const;
-
 // type ButtonId = 'BTN1' | 'BTN2' | 'BTN3' | 'BTN4' | Key | typeof GamepadButtons[keyof typeof GamepadButtons];
 
 // type InputStateMap = Record<ButtonId, boolean>;
@@ -81,28 +74,111 @@ const GamepadButtons = {
 
 // // ... Add other helper functions and event handlers here ...
 
-type Index2State = { [index: string | number]: boolean };
+type Index2State = { [index: string | number]: boolean; };
+interface InputMap {
+    keyboard: { [action: string]: string; };
+    gamepad: { [action: string]: number; };
+}
 export class Input {
-    public static KeyState: Index2State;
-    public static KeyClickRequestedState: Index2State;
-    public static GamepadButtonState: Index2State;
-    public static GamepadClickRequestedState: Index2State;
+    public static readonly GAMEPAD_UP = 12;
+    public static readonly GAMEPAD_DOWN = 13;
+    public static readonly GAMEPAD_LEFT = 14;
+    public static readonly GAMEPAD_RIGHT = 15;
 
-    private static get_pressed_state(state_map: Index2State, clickstate_map: Index2State, key: string | number, checkClick: boolean = false): boolean {
-        let state = state_map[key] === true;
+    private static KeyState: Index2State = {};
+    private static KeyClickRequestedState: Index2State = {};
+    private static GamepadButtonStates: Index2State[] = [];
+    private static GamepadClickRequestedStates: Index2State[] = [];
+    private static inputMaps: InputMap[] = [];
+
+    public static setInputMap(playerIndex: number, inputMap: InputMap): void {
+        Input.inputMaps[playerIndex] = inputMap;
+    }
+
+    public static isActionPressed(playerIndex: number, action: string, checkClick: boolean = false): boolean {
+        const inputMap = Input.inputMaps[playerIndex];
+        if (!inputMap) return false;
+        const keyboardKey = inputMap.keyboard[action];
+        const gamepadButton = inputMap.gamepad[action];
+
+        return (
+            (keyboardKey && Input.getKeyState(keyboardKey, checkClick)) ||
+            (gamepadButton !== undefined && Input.getGamepadButtonState(playerIndex, gamepadButton, checkClick))
+        );
+    }
+
+    public static bla() {
+        // Example usage
+        Input.setInputMap(0, {
+            keyboard: {
+                'jump': 'Space',
+                'left': 'ArrowLeft',
+                'right': 'ArrowRight',
+                'up': 'ArrowUp',
+                'down': 'ArrowDown',
+            },
+            gamepad: {
+                'jump': 0,
+                'left': 14,
+                'right': 15,
+                'up': 12,
+                'down': 13,
+            },
+        });
+
+        // To check if an action is pressed for player 0
+        Input.isActionPressed(0, 'jump', true);
+    }
+
+    private static getPressedState(
+        stateMap: Index2State,
+        clickStateMap: Index2State,
+        key: string | number,
+        checkClick: boolean = false
+    ): boolean {
+        const state = stateMap[key] === true;
         if (checkClick && state) {
-            if (clickstate_map[key]) return false;
-            clickstate_map[key] = true;
+            if (clickStateMap[key]) return false;
+            clickStateMap[key] = true;
         }
         return state;
     }
 
     private static getKeyState(key: string, checkClick: boolean = false): boolean {
-        return Input.get_pressed_state(Input.KeyState, Input.KeyClickRequestedState, key, checkClick);
+        return Input.getPressedState(Input.KeyState, Input.KeyClickRequestedState, key, checkClick);
     }
 
-    private static getGamepadButtonState(btn: number, checkClick: boolean = false): boolean {
-        return Input.get_pressed_state(Input.GamepadButtonState, Input.GamepadClickRequestedState, btn, checkClick);
+    private static getGamepadButtonState(playerIndex: number, btn: number, checkClick: boolean = false): boolean {
+        const stateMap = Input.GamepadButtonStates[playerIndex] || {};
+        const clickStateMap = Input.GamepadClickRequestedStates[playerIndex] || {};
+        return Input.getPressedState(stateMap, clickStateMap, btn, checkClick);
+    }
+
+    public static isKeyPressed(key: string, checkClick: boolean = false): boolean {
+        return Input.getKeyState(key, checkClick);
+    }
+
+    public static isGamepadButtonPressed(playerIndex: number, btn: number, checkClick: boolean = false): boolean {
+        return Input.getGamepadButtonState(playerIndex, btn, checkClick);
+    }
+
+    // Update gamepad states for each player
+    public static updateGamepadStates(): void {
+        const gamepads = navigator.getGamepads();
+        for (let i = 0; i < gamepads.length; i++) {
+            const gamepad = gamepads[i];
+            if (!gamepad) continue;
+
+            if (!Input.GamepadButtonStates[i]) {
+                Input.GamepadButtonStates[i] = {};
+                Input.GamepadClickRequestedStates[i] = {};
+            }
+
+            for (let btnIndex = 0; btnIndex < gamepad.buttons.length; btnIndex++) {
+                const btn = gamepad.buttons[btnIndex];
+                Input.GamepadButtonStates[i][btnIndex] = btn.pressed;
+            }
+        }
     }
 
     public static get KC_F1(): boolean {
@@ -342,7 +418,7 @@ export class Input {
             }
         }
     }
-}
+};
 
 function preventDefaultEventAction(e: UIEvent, key: string) {
     if (global.game.running || !global.game.paused) {
