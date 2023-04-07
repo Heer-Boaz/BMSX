@@ -279,7 +279,48 @@ export class Input {
         return Input.getKeyState('F5') || Input.getGamepadButtonState(3, true);
     }
 
-    public static init(): void {
+    private static handleDebugEvents(e: MouseEvent | TouchEvent): void {
+        if (e instanceof MouseEvent) {
+            switch (e.type) {
+                case "mousedown":
+                    handleDebugMouseDown(e);
+                    break;
+                case "mousemove":
+                    handleDebugMouseMove(e);
+                    break;
+                case "mouseup":
+                    handleDebugMouseDragEnd(e);
+                    break;
+                case "mouseout":
+                    handleDebugMouseOut(e);
+                    break;
+                case "contextmenu":
+                    handleDebugContextMenu(e);
+                    break;
+                case "click":
+                    handleDebugClick(e);
+                    break;
+            }
+        } else if (e instanceof TouchEvent) {
+            switch (e.type) {
+                case "touchstart":
+                    // handleDebugTouchStart(e);
+                    break;
+                case "touchmove":
+                    // handleDebugTouchMove(e);
+                    break;
+                case "touchend":
+                    // handleDebugTouchEnd(e);
+                    break;
+                case "touchcancel":
+                    // handleDebugTouchCancel(e);
+                    break;
+            }
+        }
+    }
+
+
+    public static init(debug = true): void {
         Input.KeyState = {};
         Input.KeyClickRequestedState = {};
         Input.GamepadButtonState = {};
@@ -331,13 +372,15 @@ export class Input {
         // document.addEventListener('pointermove', e => preventActionAndPropagation(e), false);
         // window.addEventListener('pointermove', e => preventActionAndPropagation(e), false);
 
-        let gamescreen = document.getElementById('gamescreen');
-        gamescreen.addEventListener('click', e => handleDebugClick(e), options);
-        gamescreen.addEventListener('mousedown', e => handleDebugMouseDown(e), options);
-        gamescreen.addEventListener('mousemove', e => handleDebugMouseMove(e), options);
-        gamescreen.addEventListener('mouseup', e => handleDebugMouseDragEnd(e), options);
-        gamescreen.addEventListener('mouseout', e => handleDebugMouseOut(e), options);
-        gamescreen.addEventListener('contextmenu', e => handleDebugContextMenu(e), options);
+        if (debug) {
+            const gamescreen = document.getElementById('gamescreen');
+            gamescreen.addEventListener('click', Input.handleDebugEvents, options);
+            gamescreen.addEventListener('mousedown', Input.handleDebugEvents, options);
+            gamescreen.addEventListener('mousemove', Input.handleDebugEvents, options);
+            gamescreen.addEventListener('mouseup', Input.handleDebugEvents, options);
+            gamescreen.addEventListener('mouseout', Input.handleDebugEvents, options);
+            gamescreen.addEventListener('contextmenu', Input.handleDebugEvents, options);
+        }
     }
 
     public static pollGamepadInput(): void { // ! FIXME: ONDERSTEUND ALLEEN 1 SPELER!!
@@ -486,63 +529,50 @@ function handleTouchStuff(e: TouchEvent): void {
     Input.reset(filterFromReset);
 }
 
+const buttonMap = {
+    'd-pad-u': {
+        keys: [Key.ArrowUp],
+    },
+    'd-pad-ru': {
+        keys: [Key.ArrowUp, Key.ArrowRight],
+    },
+    'd-pad-r': {
+        keys: [Key.ArrowRight],
+    },
+    'd-pad-rd': {
+        keys: [Key.ArrowDown, Key.ArrowRight],
+    },
+    'd-pad-d': {
+        keys: [Key.ArrowDown],
+    },
+    'd-pad-ld': {
+        keys: [Key.ArrowLeft, Key.ArrowDown],
+    },
+    'd-pad-l': {
+        keys: [Key.ArrowLeft],
+    },
+    'd-pad-lu': {
+        keys: [Key.ArrowUp, Key.ArrowLeft],
+    },
+    'btn1_knop': {
+        keys: ['BTN1', 'ShiftLeft'],
+    },
+    'btn2_knop': {
+        keys: ['BTN2', 'KeyZ'],
+    },
+    'btn3_knop': {
+        keys: ['BTN3', 'F1'],
+    },
+    'btn4_knop': {
+        keys: ['BTN4', 'F5'],
+    },
+};
 function handleElementUnderTouch(e: Element): (ButtonId | string)[] {
-    switch (e.id) {
-        case 'd-pad-u':
-            keydown('ArrowUp');
-            return [Key.ArrowUp];
-        case 'd-pad-ru':
-            keydown('ArrowUp');
-            keydown('ArrowRight');
-            document.getElementById('d-pad-ru').classList.add('druk');
-            return [Key.ArrowUp, Key.ArrowRight];
-        case 'd-pad-r':
-            keydown('ArrowRight');
-            document.getElementById('d-pad-r').classList.add('druk');
-            return [Key.ArrowRight];
-        case 'd-pad-rd':
-            keydown('ArrowRight');
-            keydown('ArrowDown');
-            document.getElementById('d-pad-rd').classList.add('druk');
-            return [Key.ArrowDown, Key.ArrowRight];
-        case 'd-pad-d':
-            keydown('ArrowDown');
-            document.getElementById('d-pad-d').classList.add('druk');
-            return [Key.ArrowDown];
-        case 'd-pad-ld':
-            keydown('ArrowLeft');
-            keydown('ArrowDown');
-            document.getElementById('d-pad-ld').classList.add('druk');
-            return [Key.ArrowLeft, Key.ArrowDown];
-        case 'd-pad-l':
-            keydown('ArrowLeft');
-            document.getElementById('d-pad-l').classList.add('druk');
-            return [Key.ArrowLeft];
-        case 'd-pad-lu':
-            keydown('ArrowLeft');
-            keydown('ArrowUp');
-            document.getElementById('d-pad-lu').classList.add('druk');
-            return [Key.ArrowUp, Key.ArrowLeft];
-        case 'btn1_knop':
-            keydown('ShiftLeft');
-            keydown('BTN1');
-            document.getElementById('btn1_knop').classList.add('druk');
-            return ['BTN1', 'ShiftLeft'];
-        case 'btn2_knop':
-            keydown('KeyZ');
-            keydown('BTN2');
-            document.getElementById('btn2_knop').classList.add('druk');
-            return ['BTN2', 'KeyZ'];
-        case 'btn3_knop':
-            keydown('F1');
-            keydown('BTN3');
-            document.getElementById('btn3_knop').classList.add('druk');
-            return ['BTN3', 'F1'];
-        case 'btn4_knop':
-            keydown('F5');
-            keydown('BTN4');
-            document.getElementById('btn4_knop').classList.add('druk');
-            return ['BTN4', 'F5'];
+    const buttonData = buttonMap[e.id];
+    if (buttonData) {
+        buttonData.keys.forEach(key => keydown(key));
+        document.getElementById(e.id).classList.add('druk');
+        return buttonData.keys;
     }
     return [];
 }
