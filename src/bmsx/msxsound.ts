@@ -519,6 +519,8 @@ class MSXSound {
             defaultLength: number;
             volume: number;
             noise: boolean;
+            tied: boolean;
+            remainingTiedDuration: number,
         };
     };
     private tempo: number;
@@ -536,6 +538,8 @@ class MSXSound {
                 defaultLength: 4,
                 volume: 15,
                 noise: false,
+                tied: false,
+                remainingTiedDuration: 0,
             },
             2: {
                 mml: "",
@@ -544,6 +548,8 @@ class MSXSound {
                 defaultLength: 4,
                 volume: 15,
                 noise: false,
+                tied: false,
+                remainingTiedDuration: 0,
             },
             3: {
                 mml: "",
@@ -552,6 +558,8 @@ class MSXSound {
                 defaultLength: 4,
                 volume: 15,
                 noise: false,
+                tied: false,
+                remainingTiedDuration: 0,
             },
             4: {
                 mml: "",
@@ -560,6 +568,8 @@ class MSXSound {
                 defaultLength: 4,
                 volume: 15,
                 noise: true,
+                tied: false,
+                remainingTiedDuration: 0,
             },
         };
         this.tempo = 120;
@@ -616,23 +626,26 @@ class MSXSound {
                 const volume = parseInt(value);
                 ch.volume = Math.max(0, Math.min(15, volume));
                 break;
+            case "&": {
+                const noteLength = value === "" ? ch.defaultLength : parseInt(value, 10);
+                if (ch.tied) {
+                    ch.tied = false;
+                    this.rest(channel, noteLength);
+                } else {
+                    this.playNote(channel, command, ch.octave, noteLength);
+                }
+
+                if (ch.mml[ch.index] === "&") {
+                    ch.tied = true;
+                    ch.index++;
+                }
+                else ch.tied = false;
+                break;
+            }
         }
 
         const delay = 60 / this.tempo;
         setTimeout(() => this.processMML(channel), delay * 1000);
-    }
-
-    private setVolume(channel: number, volume: number): void {
-        if (!this.gainers[channel]) {
-            const gainNode = this.audioContext.createGain();
-            this.gainers[channel] = gainNode;
-            this.oscillators[channel]?.connect(gainNode);
-            gainNode.connect(this.audioContext.destination);
-        }
-        this.gainers[channel].gain.setValueAtTime(
-            this.channels[channel].volume / 15,
-            this.audioContext.currentTime
-        );
     }
 
     private setNoiseVolume(channel: number, volume: number): void {
@@ -653,44 +666,44 @@ class MSXSound {
         octave: number,
         length: number
     ): void {
+        const ch = this.channels[channel];
+        const osc = this.oscillators[channel];
         const frequency = this.noteToFrequency(note, octave);
         const duration = this.lengthToDuration(length);
 
-        const oscillator = this.audioContext.createOscillator();
-        oscillator.type = "square";
-        oscillator.frequency.setValueAtTime(
+        if (!ch.tied) {
+            if (osc) {
+                osc.stop();
+            }
+            const oscillator = this.audioContext.createOscillator();
+            oscillator.type = "square";
+            this.oscillators[channel] = oscillator;
+
+            if (ch.noise) {
+                // ...
+            } else {
+                if (!this.gainers[channel]) {
+                    const gainNode = this.audioContext.createGain();
+                    this.gainers[channel] = gainNode;
+                    oscillator.connect(gainNode);
+                    gainNode.connect(this.audioContext.destination);
+                } else {
+                    oscillator.connect(this.gainers[channel]);
+                }
+            }
+
+            oscillator.start();
+        }
+
+        this.oscillators[channel].frequency.setValueAtTime(
             frequency,
             this.audioContext.currentTime
         );
-        this.oscillators[channel] = oscillator;
-
-        if (this.channels[channel].noise) {
-            if (!this.noiseGainers[channel]) {
-                const gainNode = this.audioContext.createGain();
-                this.noiseGainers[channel] = gainNode;
-                gainNode.connect(this.audioContext.destination);
-            }
-            const noise = this.audioContext.createBufferSource();
-            noise.buffer = this.createNoiseBuffer();
-            noise.loop = true;
-            noise.start();
-            noise.connect(this.noiseGainers[channel]);
-        } else {
-            if (!this.gainers[channel]) {
-                const gainNode = this.audioContext.createGain();
-                this.gainers[channel] = gainNode;
-                oscillator.connect(gainNode);
-                gainNode.connect(this.audioContext.destination);
-            } else {
-                oscillator.connect(this.gainers[channel]);
-            }
-        }
-
-        oscillator.start();
 
         setTimeout(() => {
-            oscillator.stop();
-            this.oscillators[channel] = null;
+            if (!ch.tied) {
+                this.oscillators[channel].stop();
+            }
         }, duration * 1000);
     }
 
