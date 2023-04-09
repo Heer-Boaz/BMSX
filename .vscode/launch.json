@@ -41,6 +41,29 @@
 			"type": "msedge",
 			"version": "stable",
 			"request": "launch",
+			"name": "Debug the MSXSOUND!",
+			"url": "${workspaceFolder}/src/bmsx/bla.html",
+			"runtimeArgs": [
+				"--nolazy",
+				"--allow-file-access-from-files", // https://www.webmo.net/link/help/AccessingLocalFiles.html
+				"--disable-session-crashed-bubble",
+				"-inprivate", // https://dev.to/kasuken/debug-with-visual-studio-using-all-browsers-in-incognito-mode-57mb
+				"--remote-debugging-port=9222",
+			],
+			"sourceMaps": true,
+			"showAsyncStacks": true,
+			"smartStep": true,
+			"disableNetworkCache": true,
+			"presentation": {
+				"hidden": false,
+				"group": "",
+				"order": 3,
+			}
+		},
+		{
+			"type": "msedge",
+			"version": "stable",
+			"request": "launch",
 			"name": "Run the game in non-debug mode!",
 			"url": "${workspaceFolder}/dist/game.html",
 			"runtimeArgs": [
