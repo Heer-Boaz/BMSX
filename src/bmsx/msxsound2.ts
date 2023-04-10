@@ -303,11 +303,11 @@ const keySpikeSpec: CellSpec[] = Array.from({ length: 16 }, (_, index) => ({
 
 const bassdrumSpec: CellSpec[] = [
     { cellType: CellType.NoSoftNoHard, volume: 15, noise: 1, pitch: 0, },
-    { cellType: CellType.SoftOnly, volume: 14, noise: 0, pitch: -0x96, },
-    { cellType: CellType.SoftOnly, volume: 13, noise: 0, pitch: -0x12c, },
-    { cellType: CellType.SoftOnly, volume: 12, noise: 0, pitch: -0x190, },
-    { cellType: CellType.SoftOnly, volume: 11, noise: 0, pitch: -0x1f4, },
-    { cellType: CellType.SoftOnly, volume: 10, noise: 0, pitch: -0x258, },
+    // { cellType: CellType.SoftOnly, volume: 14, noise: 0, pitch: -0x96, },
+    // { cellType: CellType.SoftOnly, volume: 13, noise: 0, pitch: -0x12c, },
+    // { cellType: CellType.SoftOnly, volume: 12, noise: 0, pitch: -0x190, },
+    // { cellType: CellType.SoftOnly, volume: 11, noise: 0, pitch: -0x1f4, },
+    // { cellType: CellType.SoftOnly, volume: 10, noise: 0, pitch: -0x258, },
 ];
 
 const instruments = [
@@ -359,14 +359,14 @@ function main() {
     psg.volume = .5;
     const code = `
 Pattern 0
-  Row 0: --- -- --- | C-0 01 --- | --- -- ---
-  Row 1: --- -- --- | C-1 01 --- | --- -- ---
-  Row 2: --- -- --- | C-2 01 --- | --- -- ---
-  Row 3: --- -- --- | C-3 01 --- | --- -- ---
-  Row 4: --- -- --- | C-4 01 --- | --- -- ---
-  Row 5: --- -- --- | C-5 01 --- | --- -- ---
-  Row 6: --- -- --- | C-6 01 --- | --- -- ---
-  Row 7: --- -- --- | C-7 01 --- | --- -- ---
+  Row 0: C-4 02 --- | C-0 -- --- | --- -- ---
+  Row 1: D-4 02 --- | C-1 -- --- | --- -- ---
+  Row 2: E-4 02 --- | C-2 -- --- | --- -- ---
+  Row 3: F-4 02 --- | C-3 -- --- | --- -- ---
+  Row 4: G-4 02 --- | C-4 -- --- | --- -- ---
+  Row 5: A-4 02 --- | C-5 -- --- | --- -- ---
+  Row 6: B-4 02 --- | C-6 -- --- | --- -- ---
+  Row 7: C-5 02 --- | C-7 -- --- | --- -- ---
 `;
     const tempo = 300; // Beats per minute
     const pattern = parseTrackerCode(code);
