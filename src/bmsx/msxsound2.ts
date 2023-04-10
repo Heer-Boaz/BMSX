@@ -1,347 +1,376 @@
-// type Cell = {
-//     note: string;
-//     octave: number;
-//     instrument: number;
-// } | null;
+class PSGChannel {
+    public audioContext: AudioContext;
+    private gainNode: GainNode;
+    private envelopeNode: GainNode;
+    private oscillator: OscillatorNode;
+    private noiseNode: AudioBufferSourceNode;
+    private mixer: GainNode;
+    private amplitudeValues: number[] = [0, 0.0625, 0.125, 0.1875, 0.25, 0.3125, 0.375, 0.4375, 0.5, 0.5625, 0.625, 0.6875, 0.75, 0.8125, 0.875, 0.9375];
 
-// type Pattern = Cell[][];
+    constructor(audioContext: AudioContext) {
+        this.audioContext = audioContext;
+        this.gainNode = this.audioContext.createGain();
+        this.noiseNode = null;
+        this.envelopeNode = null;
+        this.oscillator = this.audioContext.createOscillator();
+        this.mixer = this.audioContext.createGain();
 
-// class PSGChannel {
-//     public audioContext: AudioContext;
-//     private gainNode: GainNode;
-//     private oscillator: OscillatorNode;
-//     private noiseNode: AudioBufferSourceNode;
-//     private mixer: GainNode;
+        this.oscillator.connect(this.mixer);
+        this.mixer.connect(this.gainNode);
+    }
 
-//     constructor(audioContext: AudioContext) {
-//         this.audioContext = audioContext;
-//         this.gainNode = this.audioContext.createGain();
-//         this.noiseNode = this.audioContext.createBufferSource();
-//         this.oscillator = this.audioContext.createOscillator();
-//         this.mixer = this.audioContext.createGain();
+    connect(destination: AudioNode): void {
+        this.gainNode.connect(destination);
+    }
 
-//         this.oscillator.connect(this.mixer);
-//         this.noiseNode.connect(this.mixer);
-//         this.mixer.connect(this.gainNode);
-//     }
+    disconnect(destination: AudioNode): void {
+        this.gainNode.disconnect(destination);
+    }
 
-//     connect(destination: AudioNode): void {
-//         this.gainNode.connect(destination);
-//     }
+    // setVolume(volume: number, time: number): void {
+    //     this.gainNode.gain.setValueAtTime(volume / 15, time);
+    // }
+    setVolume(volume: number, time: number): void {
+        const amplitudeIndex = Math.floor(volume * this.amplitudeValues.length / 16);
+        const amplitude = this.amplitudeValues[amplitudeIndex];
+        this.gainNode.gain.setValueAtTime(amplitude, time);
+    }
 
-//     disconnect(destination: AudioNode): void {
-//         this.gainNode.disconnect(destination);
-//     }
+    setFrequency(frequency: number, time: number): void {
+        this.oscillator.frequency.setValueAtTime(frequency, time);
+    }
 
-//     setVolume(volume: number, time: number): void {
-//         this.gainNode.gain.setValueAtTime(volume / 15, time);
-//     }
+    setWaveType(waveType: number, time: number): void {
+        switch (waveType) {
+            case 0: // Square wave (SoftOnly and NoSoftNoHard)
+                this.oscillator.type = "square";
+                break;
+            case 1: // Custom square wave (SoftToHard)
+                const real1 = new Float32Array([0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]);
+                const imag1 = new Float32Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+                const wave1 = this.audioContext.createPeriodicWave(real1, imag1);
+                this.oscillator.setPeriodicWave(wave1);
+                break;
+            case 2: // Sawtooth wave (HardOnly)
+                const real2 = new Float32Array([0, -0.5, -1, -1.5, -2, -2.5, -3, -3.5, 0, 0, 0]);
+                const imag2 = new Float32Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+                const wave2 = this.audioContext.createPeriodicWave(real2, imag2);
+                this.oscillator.setPeriodicWave(wave2);
+                break;
+            case 3: // Triangle wave (HardToSoft)
+                const real3 = new Float32Array([0, 0.25, 0.5, 0.75, 1, 0.75, 0.5, 0.25, 0, 0, 0]);
+                const imag3 = new Float32Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+                const wave3 = this.audioContext.createPeriodicWave(real3, imag3);
+                this.oscillator.setPeriodicWave(wave3);
+                break;
+            case 4: // Custom wave for autonomous software and hardware sounds (HardAndSoft)
+                const real4 = new Float32Array([0, 1, 1, 0.6, 0.6, 1, 1, 0.6, 0.6, 1, 1]);
+                const imag4 = new Float32Array([0, 0, 0, -0.8, 0.8, 0, 0, 0.8, -0.8, 0, 0]);
+                const wave4 = this.audioContext.createPeriodicWave(real4, imag4);
+                this.oscillator.setPeriodicWave(wave4);
+                break;
+            default:
+                console.error("Invalid wave type:", waveType);
+        }
+    }
 
-//     setFrequency(frequency: number, time: number): void {
-//         this.oscillator.frequency.setValueAtTime(frequency, time);
-//     }
+    setNoise(noise: number, duration: number, time: number): void {
+        if (this.noiseNode) {
+            this.noiseNode.stop();
+            this.noiseNode.disconnect(this.mixer);
+            this.noiseNode = null;
+        }
+        if (this.envelopeNode) {
+            this.envelopeNode.disconnect(this.mixer);
+            this.envelopeNode = null;
+        }
+        const noiseLevel = Math.max(1, Math.min(31, noise));
+        const bufferSize = 4096;
+        const noiseBuffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
+        const output = noiseBuffer.getChannelData(0);
 
-//     setWaveType(waveType: number, time: number): void {
-//         switch (waveType) {
-//             case 0: // Square wave (SoftOnly and NoSoftNoHard)
-//                 this.oscillator.type = "square";
-//                 break;
-//             case 1: // Custom square wave (SoftToHard)
-//                 const real1 = new Float32Array(2);
-//                 const imag1 = new Float32Array(2);
-//                 real1[0] = 0;
-//                 real1[1] = 1;
-//                 imag1[0] = 0;
-//                 imag1[1] = 0;
-//                 const wave1 = this.audioContext.createPeriodicWave(real1, imag1);
-//                 this.oscillator.setPeriodicWave(wave1);
-//                 break;
-//             case 2: // Sawtooth wave (HardOnly)
-//                 this.oscillator.type = "sawtooth";
-//                 break;
-//             case 3: // Triangle wave (HardToSoft)
-//                 this.oscillator.type = "triangle";
-//                 break;
-//             case 4: // Custom wave for autonomous software and hardware sounds (HardAndSoft)
-//                 const real4 = new Float32Array(3);
-//                 const imag4 = new Float32Array(3);
-//                 real4[0] = 0;
-//                 real4[1] = 1;
-//                 real4[2] = 1;
-//                 imag4[0] = 0;
-//                 imag4[1] = 0;
-//                 imag4[2] = 0;
-//                 const wave4 = this.audioContext.createPeriodicWave(real4, imag4);
-//                 this.oscillator.setPeriodicWave(wave4);
-//                 break;
-//             default:
-//                 console.error("Invalid wave type:", waveType);
-//         }
-//     }
+        const noisePeriod = Math.max(1, (noiseLevel & 0x1f) * 2);
+        let shiftRegister = 0x1ffff;
+        for (let i = 0; i < bufferSize; i++) {
+            if ((shiftRegister & 1) === 0) {
+                shiftRegister ^= 0x24000;
+            }
+            shiftRegister >>= 1;
+            output[i] = (shiftRegister & 1) === 0 ? -1 : 1;
+            if (i % noisePeriod === noisePeriod - 1) {
+                shiftRegister = 0x1ffff;
+            }
+        }
 
-//     setNoise(noise: number, time: number): void {
-//         const bufferSize = 4096;
-//         const noiseBuffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
-//         const output = noiseBuffer.getChannelData(0);
+        this.envelopeNode = this.audioContext.createGain();
+        this.envelopeNode.gain.setValueAtTime(noiseLevel, time);
+        this.envelopeNode.gain.linearRampToValueAtTime(0, time + duration);
 
-//         // Generate the AY-3-8910 noise by XORing the bits of a 17-bit shift register
-//         let shiftRegister = 0x1ffff;
-//         for (let i = 0; i < bufferSize; i++) {
-//             const bit = ((shiftRegister >> 0) ^ (shiftRegister >> 3) ^ (shiftRegister >> 14) ^ (shiftRegister >> 16)) & 1;
-//             shiftRegister = (shiftRegister >> 1) | (bit << 16);
-//             output[i] = (bit * 2 - 1) * noise;
-//         }
+        this.noiseNode = this.audioContext.createBufferSource();
+        this.noiseNode.buffer = noiseBuffer;
+        this.noiseNode.loop = true;
+        this.noiseNode.connect(this.mixer);
+        this.envelopeNode.connect(this.mixer);
+        this.noiseNode.start(time);
+    }
 
-//         if (this.noiseNode) {
-//             this.noiseNode.stop();
-//             this.noiseNode.disconnect(this.mixer);
-//             this.noiseNode = null;
-//         }
+    setNoiseFrequency(frequency: number, time: number): void {
+        if (this.noiseNode) {
+            this.noiseNode.playbackRate.setValueAtTime(frequency, time);
+        }
+    }
+    start(): void {
+        this.oscillator.start();
+        this.noiseNode?.start();
+    }
 
-//         this.noiseNode = this.audioContext.createBufferSource();
-//         this.noiseNode.buffer = noiseBuffer;
-//         this.noiseNode.loop = true;
-//         this.noiseNode.connect(this.mixer);
-//         this.noiseNode.start(time);
-//     }
+    stop(): void {
+        this.oscillator.stop();
+        this.noiseNode?.stop();
+    }
+}
 
-//     setNoiseFrequency(frequency: number, time: number): void {
-//         this.noiseNode?.playbackRate.setValueAtTime(frequency, time);
-//     }
+const frequencyTable: { [key: string]: number[]; } = {
+    'C': [16.35, 32.70, 65.41, 130.81, 261.63, 523.25, 1046.50, 2093.00, 4186.01],
+    'C#': [17.32, 34.65, 69.30, 138.59, 277.18, 554.37, 1108.73, 2217.46, 4434.92],
+    'D': [18.35, 36.71, 73.42, 146.83, 293.66, 587.33, 1174.66, 2349.32, 4698.64],
+    'D#': [19.45, 38.89, 77.78, 155.56, 311.13, 622.25, 1244.51, 2489.02, 4978.03],
+    'E': [20.60, 41.20, 82.41, 164.81, 329.63, 659.26, 1318.51, 2637.02, 5274.04],
+    'F': [21.83, 43.65, 87.31, 174.61, 349.23, 698.46, 1396.91, 2793.83, 5587.65],
+    'F#': [23.12, 46.25, 92.50, 185.00, 369.99, 739.99, 1479.98, 2959.96, 5919.91],
+    'G': [24.50, 49.00, 98.00, 196.00, 392.00, 783.99, 1567.98, 3135.96, 6271.93],
+    'G#': [25.96, 51.91, 103.83, 207.65, 415.30, 830.61, 1661.22, 3322.44, 6644.88],
+    'A': [27.50, 55.00, 110.00, 220.00, 440.00, 880.00, 1760.00, 3520.00, 7040.00],
+    'A#': [29.14, 58.27, 116.54, 233.08, 466.16, 932.33, 1864.66, 3729.31, 7458.62],
+    'B': [30.87, 61.74, 123.47, 246.94, 493.88, 987.77, 1975.53, 3951.07, 7902.13],
+};
 
-//     start(): void {
-//         this.oscillator.start();
-//         this.noiseNode.start();
-//     }
+class PSG {
+    audioContext: AudioContext;
+    channels: PSGChannel[];
+    masterVolume: number;
+    gainNode: GainNode;
+    msxFrequencyTable: number[];
 
-//     stop(): void {
-//         this.oscillator.stop();
-//         this.noiseNode.stop();
-//     }
-// }
+    constructor() {
+        this.audioContext = new AudioContext();
+        this.gainNode = this.audioContext.createGain();
+        this.gainNode.connect(this.audioContext.destination);
+        // Add the following line to load the processor
+        this.channels = [
+            new PSGChannel(this.audioContext),
+            new PSGChannel(this.audioContext),
+            new PSGChannel(this.audioContext),
+        ];
 
-// class PSG {
-//     audioContext: AudioContext;
-//     channels: PSGChannel[];
-//     masterVolume: number;
+        for (const channel of this.channels) {
+            channel.connect(this.gainNode);
+            channel.setVolume(0, 0);
+            channel.start();
+        }
+        this.volume = 1;
+    }
 
-//     constructor() {
-//         this.audioContext = new AudioContext();
-//         this.channels = [
-//             new PSGChannel(this.audioContext),
-//             new PSGChannel(this.audioContext),
-//             new PSGChannel(this.audioContext),
-//         ];
+    get volume(): number {
+        return this.masterVolume;
+    }
 
-//         this.masterVolume = 0;
+    set volume(volume: number) {
+        this.masterVolume = volume;
+        this.gainNode.gain.setValueAtTime(volume, this.audioContext.currentTime);
+    }
 
-//         for (const channel of this.channels) {
-//             channel.connect(this.audioContext.destination);
-//             channel.start();
-//             channel.setVolume(0, 0);
-//         }
-//     }
+    getNoteFrequency(note: string, octave: number): number {
+        if (frequencyTable.hasOwnProperty(note) && octave >= 0 && octave < frequencyTable[note].length) {
+            return frequencyTable[note][octave];
+        } else {
+            throw new Error(`Invalid note or octave: ${note}, ${octave}`);
+        }
+    }
+}
 
-//     getMasterVolume(): number {
-//         return this.masterVolume;
-//     }
+class Song {
+    pattern: Pattern;
+    tempo: number;
+    instruments: Instrument[];
+    psg: PSG;
 
-//     setMasterVolume(volume: number): void {
-//         this.masterVolume = volume;
-//         // MISSING CODE FOR UPDATING THE MASTER VOLUME, AS IT REQUIRES A GAINNODE AT THE PSG-LEVEL!
-//     }
-// }
+    constructor(psg: PSG, pattern: Pattern, tempo: number, instruments: Instrument[]) {
+        this.pattern = pattern;
+        this.tempo = tempo;
+        this.instruments = instruments;
+        this.psg = psg;
+    }
 
-// class Song {
-//     pattern: Pattern;
-//     tempo: number;
-//     instruments: Instrument[];
-//     psg: PSG;
+    play(): void {
+        const duration = 60 / this.tempo; // Duration of a single row in seconds
 
-//     constructor(psg: PSG, pattern: Pattern, tempo: number, instruments: Instrument[]) {
-//         this.pattern = pattern;
-//         this.tempo = tempo;
-//         this.instruments = instruments;
-//         this.psg = psg;
-//     }
+        this.pattern.forEach((row, rowIndex) => {
+            row.forEach((cell, columnIndex) => {
+                if (cell && cell.note) {
+                    const instrument = this.instruments[cell.instrument];
+                    if (instrument) {
+                        const time = this.psg.audioContext.currentTime + duration * rowIndex;
+                        const frequency = this.psg.getNoteFrequency(cell.note, cell.octave);
+                        instrument.play(this.psg.channels[cell.channelIndex], duration, frequency, time);
+                    } else if (cell.instrument !== 0) {
+                        throw `Instrument "${cell.instrument}" not recognized!!`;
+                    }
+                }
+            });
+        });
+    }
+}
 
-//     play(): void {
-//         const duration = 60 / this.tempo; // Duration of a single row in seconds
+enum CellType {
+    NoSoftNoHard = 0,
+    SoftOnly = 1,
+    SoftToHard = 2,
+    HardOnly = 3,
+    HardToSoft = 4,
+    HardAndSoft = 5
+}
 
-//         this.pattern.forEach((row, rowIndex) => {
-//             row.forEach((cell, channelIndex) => {
-//                 if (cell && cell.note) {
-//                     const instrument = this.instruments[cell.instrument];
-//                     if (instrument) {
-//                         const time = this.psg.audioContext.currentTime + duration * rowIndex;
-//                         const frequency = noteToFrequency(cell.note, cell.octave);
-//                         instrument.play(this.psg.channels[channelIndex], duration, frequency, time);
-//                     } else if (cell.instrument !== 0) {
-//                         throw `Instrument "${cell.instrument}" not recognized!!`;
-//                     }
-//                 }
-//             });
-//         });
-//     }
-// }
+interface CellSpec {
+    cellType: CellType;
+    volume: number;
+    noise: number;
+    pitch: number;
+}
 
-// enum CellType {
-//     NoSoftNoHard = 0,
-//     SoftOnly = 1,
-//     SoftToHard = 2,
-//     HardOnly = 3,
-//     HardToSoft = 4,
-//     HardAndSoft = 5
-// }
+class Instrument {
+    protected cells: CellSpec[];
 
-// interface CellSpec {
-//     cellType: CellType;
-//     volume: number;
-//     noise: number;
-//     pitch: number;
-// }
+    constructor(cells: CellSpec[]) {
+        this.cells = cells;
+    }
 
-// class Instrument {
-//     protected cells: CellSpec[];
+    play(psgChannel: PSGChannel, duration: number, frequency: number, time: number): void {
+        this.cells.forEach((cell, step) => {
+            const eventTime = time + step * (duration / this.cells.length);
+            psgChannel.setWaveType(cell.cellType, eventTime);
+            psgChannel.setVolume(cell.volume, eventTime);
 
-//     constructor(cells: CellSpec[]) {
-//         this.cells = cells;
-//     }
+            if (cell.noise > 0) {
+                psgChannel.setNoise(cell.noise, duration / this.cells.length, eventTime);
+                psgChannel.setNoiseFrequency(0x2000 / cell.noise, eventTime); // Adjust the divisor based on noise value
+            } else {
+                psgChannel.setNoise(0, 0, eventTime);
+            }
 
-//     play(psgChannel: PSGChannel, duration: number, frequency: number, time: number): void {
-//         this.cells.forEach((cell, step) => {
-//             const eventTime = time + step * (duration / this.cells.length);
-//             psgChannel.setWaveType(cell.cellType, eventTime);
-//             psgChannel.setVolume(cell.volume, eventTime);
+            const pitchOffset = cell.pitch || 0;
+            psgChannel.setFrequency(frequency + pitchOffset, eventTime);
 
-//             if (cell.noise > 0) {
-//                 psgChannel.setNoise(cell.noise, eventTime);
-//                 psgChannel.setNoiseFrequency(0x2000 / cell.noise, eventTime); // Adjust the divisor based on noise value
-//             } else {
-//                 psgChannel.setNoise(0, eventTime);
-//             }
+            // Implement sound generation logic based on the cell type
+            switch (cell.cellType) {
+                case CellType.NoSoftNoHard:
+                    // Generate noise, stop sound, or handle special effects
+                    psgChannel.setWaveType(0, eventTime);
+                    break;
+                case CellType.SoftOnly:
+                    // Generate rectangular sound wave with volume, arpeggio, and pitch
+                    psgChannel.setWaveType(0, eventTime);
+                    break;
+                case CellType.SoftToHard:
+                    psgChannel.setWaveType(1, eventTime);
+                    break;
+                case CellType.HardOnly:
+                    // Generate hardware curve (sawtooth or triangle wave)
+                    psgChannel.setWaveType(2, eventTime);
+                    break;
+                case CellType.HardToSoft:
+                    // Generate "still" result and desynchronize for interesting sounds
+                    psgChannel.setWaveType(3, eventTime);
+                    break;
+                case CellType.HardAndSoft:
+                    // Generate autonomous software and hardware sounds
+                    psgChannel.setWaveType(4, eventTime);
+                    break;
+            }
+        });
 
-//             const pitchOffset = cell.pitch || 0;
-//             psgChannel.setFrequency(frequency + pitchOffset, eventTime);
-
-//             // Implement sound generation logic based on the cell type
-//             switch (cell.cellType) {
-//                 case CellType.NoSoftNoHard:
-//                     // Generate noise, stop sound, or handle special effects
-//                     psgChannel.setWaveType(0, eventTime);
-//                     break;
-//                 case CellType.SoftOnly:
-//                     // Generate rectangular sound wave with volume, arpeggio, and pitch
-//                     psgChannel.setWaveType(0, eventTime);
-//                     break;
-//                 case CellType.SoftToHard:
-//                     psgChannel.setWaveType(1, eventTime);
-//                     break;
-//                 case CellType.HardOnly:
-//                     // Generate hardware curve (sawtooth or triangle wave)
-//                     psgChannel.setWaveType(2, eventTime);
-//                     break;
-//                 case CellType.HardToSoft:
-//                     // Generate "still" result and desynchronize for interesting sounds
-//                     psgChannel.setWaveType(3, eventTime);
-//                     break;
-//                 case CellType.HardAndSoft:
-//                     // Generate autonomous software and hardware sounds
-//                     psgChannel.setWaveType(4, eventTime);
-//                     break;
-//             }
-//         });
-
-//         psgChannel.setVolume(0, time + duration);
-//     }
-// }
-
-
-// const keySpikeSpec: CellSpec[] = Array.from({ length: 16 }, (_, index) => ({
-//     volume: 15 - index,
-//     noise: 0,
-//     pitch: 0,
-//     cellType: CellType.SoftOnly, // Use the InstrumentType enum here
-// }));
-
-// const bassdrumSpec: CellSpec[] = [
-//     { cellType: CellType.NoSoftNoHard, volume: 15, noise: 1, pitch: 0, },
-//     { cellType: CellType.SoftOnly, volume: 14, noise: 0, pitch: -0x96, },
-//     { cellType: CellType.SoftOnly, volume: 13, noise: 0, pitch: -0x12c, },
-//     { cellType: CellType.SoftOnly, volume: 12, noise: 0, pitch: -0x190, },
-//     { cellType: CellType.SoftOnly, volume: 11, noise: 0, pitch: -0x1f4, },
-//     { cellType: CellType.SoftOnly, volume: 10, noise: 0, pitch: -0x258, },
-// ];
-
-// const instruments = [
-//     null, // Instrument 0 = No instrument
-//     new Instrument(keySpikeSpec),
-//     new Instrument(bassdrumSpec),
-// ];
-
-// function noteToFrequency(note: string, octave: number): number {
-//     const noteToSemitone: { [key: string]: number; } = {
-//         C: 0,
-//         'C#': 1,
-//         D: 2,
-//         'D#': 3,
-//         E: 4,
-//         F: 5,
-//         'F#': 6,
-//         G: 7,
-//         'G#': 8,
-//         A: 9,
-//         'A#': 10,
-//         B: 11,
-//     };
-//     const semitone = noteToSemitone[note] + (octave + 1) * 12;
-//     const frequency = 440 * Math.pow(2, (semitone - 69) / 12);
-//     return frequency;
-// }
-
-// function parseTrackerCode(code: string) {
-//     const lines = code.trim().split('\n');
-//     const patternLength = lines.length - 1; // Subtract 1 to ignore the pattern header
-//     const pattern = [];
-
-//     for (let i = 0; i < patternLength; i++) {
-//         pattern.push([]);
-//     }
-
-//     for (let i = 1; i < lines.length; i++) { // Start from index 1 to ignore the pattern header
-//         const line = lines[i];
-//         const fields = line.trim().split('|');
-//         for (let j = 0; j < fields.length; j++) {
-//             const field = fields[j].trim();
-//             const match = field.match(/^(?:Row\s+\d+:\s+)?([A-G])-?(\d+)\s+(\d+)?/);
-//             if (match) {
-//                 const note = match[1];
-//                 const octave = parseInt(match[2] || '4', 10);
-//                 const instrumentIndex = parseInt(match[3] || '0', 10);
-//                 pattern[i - 1].push({ note, octave, instrument: instrumentIndex });
-//             } else {
-//                 pattern[i - 1].push(null);
-//             }
-//         }
-//     }
-
-//     return pattern;
-// }
+        psgChannel.setVolume(0, time + duration);
+    }
+}
 
 
-// const psg = new PSG();
-// psg.setMasterVolume(1);
+const keySpikeSpec: CellSpec[] = Array.from({ length: 16 }, (_, index) => ({
+    volume: 15 - index,
+    noise: 0,
+    pitch: 0,
+    cellType: CellType.SoftOnly, // Use the InstrumentType enum here
+}));
 
-// const code = `
-// Pattern 0
-//   Row 0: C-1 01 --- | A-4 01 --- | C-5 01 ---
-//   Row 1: C-1 01 --- | B-4 01 --- | D-5 01 ---
-//   Row 2: C-1 01 --- | C-4 01 --- | E-5 01 ---
-//   Row 3: C-1 01 --- | D-4 01 --- | F-5 01 ---
-// `;
+const bassdrumSpec: CellSpec[] = [
+    { cellType: CellType.NoSoftNoHard, volume: 15, noise: 1, pitch: 0, },
+    { cellType: CellType.SoftOnly, volume: 14, noise: 0, pitch: -0x96, },
+    { cellType: CellType.SoftOnly, volume: 13, noise: 0, pitch: -0x12c, },
+    { cellType: CellType.SoftOnly, volume: 12, noise: 0, pitch: -0x190, },
+    { cellType: CellType.SoftOnly, volume: 11, noise: 0, pitch: -0x1f4, },
+    { cellType: CellType.SoftOnly, volume: 10, noise: 0, pitch: -0x258, },
+];
 
-// const tempo = 300; // Beats per minute
-// const pattern = parseTrackerCode(code);
-// const song = new Song(psg, pattern, tempo, instruments);
-// console.log(pattern);
-// song.play();
+const instruments = [
+    null, // Instrument 0 = No instrument
+    new Instrument(keySpikeSpec),
+    new Instrument(bassdrumSpec),
+];
+
+type Cell = {
+    note: string;
+    octave: number;
+    instrument: number;
+    channelIndex: number;
+} | null;
+
+type Pattern = Cell[][];
+
+function parseTrackerCode(code: string): Pattern {
+    const lines = code.trim().split('\n');
+    const patternLength = lines.length - 1; // Subtract 1 to ignore the pattern header
+    const pattern: Pattern = [];
+
+    for (let i = 0; i < patternLength; i++) {
+        pattern.push([]);
+    }
+
+    for (let i = 1; i < lines.length; i++) { // Start from index 1 to ignore the pattern header
+        const line = lines[i];
+        const fields = line.trim().split('|');
+        for (let j = 0; j < fields.length; j++) {
+            const field = fields[j].trim();
+            const match = field.match(/^(?:Row\s+\d+:\s+)?([A-G])-?(\d+)\s+(\d+)?/);
+            if (match) {
+                const note = match[1];
+                const octave = parseInt(match[2] || '4', 10);
+                const instrumentIndex = parseInt(match[3] || '0', 10);
+                pattern[i - 1].push({ note, octave, instrument: instrumentIndex, channelIndex: j });
+            } else {
+                pattern[i - 1].push(null);
+            }
+        }
+    }
+
+    return pattern;
+}
+
+function main() {
+    const psg = new PSG();
+    psg.volume = .5;
+    const code = `
+Pattern 0
+  Row 0: --- -- --- | C-0 01 --- | --- -- ---
+  Row 1: --- -- --- | C-1 01 --- | --- -- ---
+  Row 2: --- -- --- | C-2 01 --- | --- -- ---
+  Row 3: --- -- --- | C-3 01 --- | --- -- ---
+  Row 4: --- -- --- | C-4 01 --- | --- -- ---
+  Row 5: --- -- --- | C-5 01 --- | --- -- ---
+  Row 6: --- -- --- | C-6 01 --- | --- -- ---
+  Row 7: --- -- --- | C-7 01 --- | --- -- ---
+`;
+    const tempo = 300; // Beats per minute
+    const pattern = parseTrackerCode(code);
+    const song = new Song(psg, pattern, tempo, instruments);
+    console.log(pattern);
+    song.play();
+}

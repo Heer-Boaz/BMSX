@@ -186,7 +186,7 @@
 			"command": "npx",
 			"args": [
 				"tsc",
-				"${workspaceFolder}/src/bmsx/msxsound3.ts",
+				"${workspaceFolder}/src/bmsx/msxsound2.ts",
 				"--removeComments",
 				"--target",
 				"ES5",
