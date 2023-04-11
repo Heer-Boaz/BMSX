@@ -1,9 +1,10 @@
-class PSGChannel {
+class PSGChannelEmulator {
 	public audioContext: AudioContext;
 	private gainNode: GainNode;
 	private envelopeNode: GainNode;
 	private oscillator: OscillatorNode;
 	private noiseNode: AudioBufferSourceNode;
+	private noiseGainNode: GainNode;
 	private mixer: GainNode;
 	private amplitudeValues: number[] = [0, 0.0625, 0.125, 0.1875, 0.25, 0.3125, 0.375, 0.4375, 0.5, 0.5625, 0.625, 0.6875, 0.75, 0.8125, 0.875, 0.9375];
 
@@ -14,6 +15,11 @@ class PSGChannel {
 		this.envelopeNode = this.audioContext.createGain();
 		this.oscillator = this.audioContext.createOscillator();
 		this.mixer = this.audioContext.createGain();
+		this.noiseGainNode = this.audioContext.createGain();
+		this.noiseGainNode.gain.value = 0;
+		this.connectNoiseGain();
+		this.mixer.connect(this.gainNode);
+
 
 		this.connectOscillator();
 		this.connectEnveloper();
@@ -26,6 +32,10 @@ class PSGChannel {
 
 	disconnect(destination: AudioNode): void {
 		this.gainNode.disconnect(destination);
+	}
+
+	private connectNoiseGain(): void {
+		this.noiseGainNode.connect(this.mixer);
 	}
 
 	connectOscillator(): void {
@@ -50,56 +60,14 @@ class PSGChannel {
 		this.gainNode.gain.setValueAtTime(amplitude, time);
 	}
 
-	// setFrequency(frequency: number, time: number): void {
-	// 	this.oscillator.frequency.setValueAtTime(frequency, time);
-	// }
-	setFrequency(frequency: number, time: number, pitch_software: number = 0, waveType: number = 0): void {
+	setFrequency(
+		frequency: number,
+		time: number,
+		pitch_software: number = 0
+	): void {
 		const targetFrequency = frequency + pitch_software;
-		// Convert software pitch to hardware pitch
-		// const targetFrequency = frequency * Math.pow(2, pitch_software / 4096);
-		// Convert pitch_software value to frequency modification factor
-		// const frequencyModFactor = pitch_software / 4096;
-
-		// // Calculate total frequency multiplier
-		// const totalFrequencyMultiplier = 1 + frequencyModFactor;
-
-		// // Calculate modified frequency
-		// const targetFrequency = frequency * totalFrequencyMultiplier;
-
-		// let targetFrequency = frequency;
-		// if (pitch_software) {
-		// 	targetFrequency += (3579545 / 2 / pitch_software) - 1;
-		// }
-
-		// Emulate software pitch
-		// const softwareFrequency = frequency + pitch_software;
-
-		// // Emulate hardware pitch
-		// const clock = 1789773; // PSG clock speed in Hz
-		// let period = 0;
-		// switch (waveType) {
-		// 	case 0: // Square wave (NoSoftNoHard)
-		// 		period = 0;
-		// 		break;
-		// 	case 1: // Custom square wave (SoftOnly)
-		// 		period = 0;
-		// 		break;
-		// 	case 2: // Sawtooth wave (SoftToHard)
-		// 		period = 2;
-		// 		break;
-		// 	case 3: // Triangle wave (HardOnly)
-		// 		period = 32;
-		// 		break;
-		// 	case 4: // Custom wave for autonomous software and hardware sounds (HardAndSoft)
-		// 		period = 2;
-		// 		break;
-		// 	default:
-		// 		console.error("Invalid wave type:", waveType);
-		// }
-		// const hardwareFrequency = period ? (clock / (16 * period)) : 0;
-
-		// Set the frequency in the oscillator
-		this.oscillator.frequency.setValueAtTime(targetFrequency, time);
+		// Set the frequency in the oscillator using an exponential ramp
+		this.oscillator.frequency.exponentialRampToValueAtTime(targetFrequency, time + 0.01);
 	}
 
 	resetNote(time: number): void {
@@ -147,11 +115,11 @@ class PSGChannel {
 		const noiseBuffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
 		const output = noiseBuffer.getChannelData(0);
 
-		const noisePeriod = Math.max(1, (noiseLevel & 0x1f) * 2);
+		const noisePeriod = Math.max(1, (noiseLevel & 0x1f) * 16); // AY-3-8910 has 16 steps in the noise period
 		let shiftRegister = 0x1ffff;
 		for (let i = 0; i < bufferSize; i++) {
-			if ((shiftRegister & 1) === 0) {
-				shiftRegister ^= 0x24000;
+			if ((shiftRegister & 1) !== 0) {
+				shiftRegister ^= 0x12000;
 			}
 			shiftRegister >>= 1;
 			output[i] = (shiftRegister & 1) === 0 ? -1 : 1;
@@ -159,9 +127,11 @@ class PSGChannel {
 				shiftRegister = 0x1ffff;
 			}
 		}
-
 		this.envelopeNode.gain.setValueAtTime(noiseLevel, time);
 		this.envelopeNode.gain.linearRampToValueAtTime(0, time + duration);
+		this.noiseGainNode.gain.setValueAtTime(noiseLevel, time);
+		this.noiseGainNode.gain.linearRampToValueAtTime(0, time + duration);
+
 
 		this.noiseNode = this.audioContext.createBufferSource();
 		this.noiseNode.buffer = noiseBuffer;
@@ -176,26 +146,26 @@ class PSGChannel {
 		}
 	}
 
-	setEnvelope(envelopeType: EnvelopeType, time: number, duration: number): void {
+	setEnvelope(envelopeType: PSGInstruction_EnvelopeType, time: number, duration: number): void {
 		const attackTime = duration * 0.1;
 		const decayTime = duration * 0.9;
 		this.envelopeNode.gain.setValueAtTime(0, time);
 
 		switch (envelopeType) {
-			case EnvelopeType.Sawtooth:
+			case PSGInstruction_EnvelopeType.Sawtooth:
 				this.envelopeNode.gain.linearRampToValueAtTime(1, time + attackTime);
 				this.envelopeNode.gain.linearRampToValueAtTime(0, time + attackTime + decayTime);
 				break;
-			case EnvelopeType.Sawtooth_Mirrored:
+			case PSGInstruction_EnvelopeType.Sawtooth_Mirrored:
 				this.envelopeNode.gain.linearRampToValueAtTime(0, time + attackTime);
 				this.envelopeNode.gain.linearRampToValueAtTime(1, time + attackTime + decayTime);
 				break;
-			case EnvelopeType.Triangle:
+			case PSGInstruction_EnvelopeType.Triangle:
 				this.envelopeNode.gain.linearRampToValueAtTime(1, time + attackTime);
 				this.envelopeNode.gain.linearRampToValueAtTime(0, time + attackTime + decayTime * 0.5);
 				this.envelopeNode.gain.linearRampToValueAtTime(1, time + duration);
 				break;
-			case EnvelopeType.Triangle_Mirrored:
+			case PSGInstruction_EnvelopeType.Triangle_Mirrored:
 				this.envelopeNode.gain.linearRampToValueAtTime(0, time + attackTime);
 				this.envelopeNode.gain.linearRampToValueAtTime(1, time + attackTime + decayTime * 0.5);
 				this.envelopeNode.gain.linearRampToValueAtTime(0, time + duration);
@@ -229,9 +199,90 @@ const frequencyTable: { [key: string]: number[]; } = {
 	'B': [30.87, 61.74, 123.47, 246.94, 493.88, 987.77, 1975.53, 3951.07, 7902.13],
 };
 
-class PSG {
+class Instrument {
+	protected psgInstructions: PSGInstruction[];
+
+	constructor(instructions: PSGInstruction[]) {
+		this.psgInstructions = instructions;
+	}
+
+	executePSGInstruction(psgInstruction: PSGInstruction, psgChannel: PSGChannelEmulator, stepDuration: number, frequency: number, time: number) {
+		psgChannel.setWaveType(psgInstruction.cellType, time);
+		psgChannel.setVolume(psgInstruction.volume, time);
+
+		// if (cell.cellType === CellType.HardOnly || cell.cellType === CellType.HardToSoft || cell.cellType === CellType.HardAndSoft) {
+		// 	psgChannel.setEnvelope(cell.envelopeType, eventTime, duration / this.cells.length);
+		// }
+
+		if (psgInstruction.noise) {
+			psgChannel.setNoise(psgInstruction.noise, stepDuration, time);
+		} else {
+			psgChannel.setNoise(0, 0, time);
+		}
+		// if (cell.envelopeType) {
+		// 	psgChannel.setEnvelope(cell.envelopeType, time, duration * 0.8); // Adjust envelope timing
+		// }
+
+		const pitchOffset = psgInstruction.pitch_software || 0;
+		psgChannel.setFrequency(frequency, time, pitchOffset);
+
+		// Implement sound generation logic based on the cell type
+		switch (psgInstruction.cellType) {
+			case PSGInstructionType.NoSoftNoHard:
+				// Generate noise, stop sound, or handle special effects
+				psgChannel.setWaveType(0, time);
+				psgChannel.disconnectOscillator();
+				break;
+			case PSGInstructionType.SoftOnly:
+				// Generate rectangular sound wave with volume, arpeggio, and pitch
+				psgChannel.setWaveType(0, time);
+				psgChannel.connectOscillator();
+				break;
+			case PSGInstructionType.SoftToHard:
+				psgChannel.setWaveType(1, time);
+				psgChannel.connectOscillator();
+				break;
+			case PSGInstructionType.HardOnly:
+				// Generate hardware curve (sawtooth or triangle wave)
+				psgChannel.setWaveType(2, time);
+				psgChannel.connectOscillator();
+				psgChannel.setEnvelope(psgInstruction.envelopeType, time, stepDuration);
+				break;
+			case PSGInstructionType.HardToSoft:
+				// Generate "still" result and desynchronize for interesting sounds
+				psgChannel.setWaveType(3, time);
+				psgChannel.connectOscillator();
+				psgChannel.setEnvelope(psgInstruction.envelopeType, time, stepDuration);
+				break;
+			case PSGInstructionType.HardAndSoft:
+				// Generate autonomous software and hardware sounds
+				psgChannel.setWaveType(4, time);
+				psgChannel.connectOscillator();
+				psgChannel.setEnvelope(psgInstruction.envelopeType, time, stepDuration);
+				break;
+		}
+	}
+
+	play(psgChannel: PSGChannelEmulator, duration: number, frequency: number, time: number): void {
+		let index = 0;
+		const stepDuration = (duration / this.psgInstructions.length);
+		this.psgInstructions.forEach((psgInstruction, step) => {
+			// if (index++ !== 0) {
+			// 	this.executePSGInstruction(psgInstruction, psgChannel, stepDuration, frequency, time);
+			// }
+			// else {
+			const eventTime = time + (step + 0.01) * stepDuration; // Add a small delay to account for the exponential ramp
+			setTimeout(() => this.executePSGInstruction(psgInstruction, psgChannel, stepDuration, frequency, eventTime), eventTime);
+			// }
+		});
+
+		psgChannel.setVolume(0, time + duration + (0.01 * this.psgInstructions.length));
+	}
+}
+
+class PSGEmulator {
 	audioContext: AudioContext;
-	channels: PSGChannel[];
+	channels: PSGChannelEmulator[];
 	masterVolume: number;
 	gainNode: GainNode;
 	msxFrequencyTable: number[];
@@ -242,9 +293,9 @@ class PSG {
 		this.gainNode.connect(this.audioContext.destination);
 		// Add the following line to load the processor
 		this.channels = [
-			new PSGChannel(this.audioContext),
-			new PSGChannel(this.audioContext),
-			new PSGChannel(this.audioContext),
+			new PSGChannelEmulator(this.audioContext),
+			new PSGChannelEmulator(this.audioContext),
+			new PSGChannelEmulator(this.audioContext),
 		];
 
 		for (const channel of this.channels) {
@@ -274,14 +325,14 @@ class PSG {
 }
 
 class Song {
-	pattern: Pattern;
+	pattern: SongPattern;
 	tempo: number;
 	instruments: Instrument[];
-	psg: PSG;
+	psg: PSGEmulator;
 	currentRow: number;
 	paused: boolean;
 
-	constructor(psg: PSG, pattern: Pattern, tempo: number, instruments: Instrument[]) {
+	constructor(psg: PSGEmulator, pattern: SongPattern, tempo: number, instruments: Instrument[]) {
 		this.pattern = pattern;
 		this.tempo = tempo;
 		this.instruments = instruments;
@@ -296,17 +347,17 @@ class Song {
 			const duration = 60 / this.tempo;
 			const time = this.psg.audioContext.currentTime;
 
-			row.forEach((cell) => {
-				if (cell?.note === 'RST') {
-					this.psg.channels[cell.channelIndex].resetNote(time);
+			row.forEach((trackerCell) => {
+				if (trackerCell?.note === 'RST') {
+					this.psg.channels[trackerCell.channelIndex].resetNote(time);
 				} else {
-					if (cell && cell.note) {
-						const instrument = this.instruments[cell.instrument];
+					if (trackerCell && trackerCell.note) {
+						const instrument = this.instruments[trackerCell.instrument];
 						if (instrument) {
-							const frequency = this.psg.getNoteFrequency(cell.note, cell.octave);
-							instrument.play(this.psg.channels[cell.channelIndex], duration, frequency, time);
-						} else if (cell.instrument !== 0) {
-							throw `Instrument "${cell.instrument}" not recognized!!`;
+							const frequency = this.psg.getNoteFrequency(trackerCell.note, trackerCell.octave);
+							instrument.play(this.psg.channels[trackerCell.channelIndex], duration, frequency, time);
+						} else if (trackerCell.instrument !== 0) {
+							throw `Instrument "${trackerCell.instrument}" not recognized!!`;
 						}
 					}
 				}
@@ -367,20 +418,20 @@ class Song {
 			stepCell.onclick = (ev => boundedPlayRow(rowIndex));
 			tableRow.appendChild(stepCell);
 
-			row.forEach((cell, cellIndex) => {
+			row.forEach((trackerCell, trackerCellIndex) => {
 				const noteCell = document.createElement('td');
 				const instrumentCell = document.createElement('td');
 				const effectCell = document.createElement('td');
 
-				if (cell) {
-					if (cell.note) {
-						noteCell.innerText = `${cell.note}${cell.octave}`;
+				if (trackerCell) {
+					if (trackerCell.note) {
+						noteCell.innerText = `${trackerCell.note}${trackerCell.octave}`;
 					}
 					else {
 						noteCell.innerText = '---';
 					}
-					if (cell.instrument) {
-						instrumentCell.innerText = cell.instrument.toString().padStart(2, '0');
+					if (trackerCell.instrument) {
+						instrumentCell.innerText = trackerCell.instrument.toString().padStart(2, '0');
 					}
 					else {
 						instrumentCell.innerText = '--';
@@ -392,7 +443,7 @@ class Song {
 					effectCell.innerText = '---';
 				}
 
-				if (cellIndex !== 0) {
+				if (trackerCellIndex !== 0) {
 					noteCell.classList.add('channel-divider');
 				}
 
@@ -406,7 +457,7 @@ class Song {
 	}
 }
 
-enum CellType {
+enum PSGInstructionType {
 	NoSoftNoHard = 0, // No software wave and no hardware wave are generated, so that only the noise and volume are available
 	SoftOnly = 1, // Produces the nice, rectangular sound that we are all fond about. The volume, an arpeggio and pitch are available.
 	SoftToHard = 2, // This is the typical hardware sound you hear in every modern YM/AY music. This is especially used for bass, as it may be quite ugly for high-pitched sound, depending on how you use it. Basically, the frequency is first calculated for the software part. Once it is done, the frequency is transmitted to the hardware part, adding more "life" to the somehow boring rectangular wave. In output, we have a rectangular wave modulated by the hardware curve.
@@ -415,14 +466,14 @@ enum CellType {
 	HardAndSoft = 5, // It allows the software and hardware part to be autonomous. You could play a C in the software part, yet another note in the hardware part. With a bit of experiment, you can simulate two channels with just one channel! However, one simple yet effective effect is the "Ben Daglish" sounds: the hardware period is forced to a very low value (1, 2, 3...) yet the software period is normal: you can get funny melodic sounds.
 }
 
-enum EnvelopeType {
+enum PSGInstruction_EnvelopeType {
 	Sawtooth = 0x8,
 	Sawtooth_Mirrored = 0xc,
 	Triangle = 0xa,
 	Triangle_Mirrored = 0xe,
 }
 
-enum EffectType {
+enum TrackerCell_EffectType {
 	// Here is the list of all the effects managed in the patterns.
 	// All pitch and volume slides continue till a new note is found. No need to spread these effects on several lines for a continuing effect! Use a 0 value to stop them if needed. Pitch effects will stop on each new note.
 	a, // arpeggio table
@@ -443,101 +494,38 @@ enum EffectType {
 	x, // force the spped of a pitch
 }
 
-interface CellSpec {
-	cellType: CellType; // defines how the line will sound. According to it, some columns will be disabled because not taken in account.
+interface PSGInstruction {
+	cellType: PSGInstructionType; // defines how the line will sound. According to it, some columns will be disabled because not taken in account.
 	volume: number; // Quite simple to understand, the volume indicates how soft or loud the rectangle wave is, from 0 (inaudible) to 15 (&f, full). It is disabled as soon as the hardware part is involved (because the hardware takes control over the volume).
 	noise?: number; // The noise is especially used for drums and special effects. 0 means no noise, else it varies from 1 (light noise) to 31 (low noise). It is the only parameter, along with the type, that is always available.
 	period_software?: number, // This is the period of the software sound. The period is the invert of the frequency. The period can vary from 1 (very high pitch) to &fff (very low). But most of the time, you will use 0, meaning "auto" (you can type "auto" directly, but if you type "0", it will be transformed into "auto"). What "auto" means? It means that the period of your sound matches the one of your score. Most of the time that's what you want! You want your sound to "play" your music.
 	pitch_software?: number; // The pitch will add a little (or a big!) bump in the frequency (from -&fff to &fff). It is effective at the beginning of a sound to add a little attack. But most of the time, you will use it to create a vibrato effect.
 	arpeggio_software?: number; // This indicates how many semi-tones to add - or subtract - to the base note (from -&7f to &7f). This adds a lot of expression to the sound. For example, you can have a first line with an arpeggio of 12, that is, a whole octave, to add a nice attack to your sound. Or you can even add chords: one line at 0, the next at 4 the next at 7: you have a major chord.
-	envelopeType?: EnvelopeType, // This indicates what hardware envelope is used. It is only available in modes where the hardware generator is enabled ("hard only", "hard to soft" and "soft and hard")! All the relevant envelopes available on the YM/AY can be selected (from 8 to 15, the ones from 0 to 7 are duplicate). However, you will probably use only 4 of them, which are denoted in the enum "EnvelopeType". That is because the others won't loop.
+	envelopeType?: PSGInstruction_EnvelopeType, // This indicates what hardware envelope is used. It is only available in modes where the hardware generator is enabled ("hard only", "hard to soft" and "soft and hard")! All the relevant envelopes available on the YM/AY can be selected (from 8 to 15, the ones from 0 to 7 are duplicate). However, you will probably use only 4 of them, which are denoted in the enum "EnvelopeType". That is because the others won't loop.
 	period_hardware?: number, // This works exactly as the software period, except it has a larger range: from 1 to &ffff. Use 0 or "auto" for the hardware period to be calculated automatically.
 	arpeggio_hardware?: number, // The same as for the software arpeggio. Only available for the same modes as the "hardware period", explained just above, and if the hardware period is "auto".
 	pitch_hardware?: number, // The same as for the software pitch. Only available for the same modes as the "hardware period", explained just above, and if the hardware period is "auto". Also, this pitch can be used in Soft To Hard to add more desynchronization between the waves.
 	ratio?: number, // This spec is neither in a "software" or "hardware" part. It is only available if both hardware and software are used: it serves as a mean to calculate the period of one part according to the other. Example: you used the "Soft to Hard" type. So first the software period is calculated, then the hardware period derives from it. But how? Easy: thanks to the ratio.
 }
 
-class Instrument {
-	protected cells: CellSpec[];
-
-	constructor(cells: CellSpec[]) {
-		this.cells = cells;
-	}
-
-	play(psgChannel: PSGChannel, duration: number, frequency: number, time: number): void {
-		this.cells.forEach((cell, step) => {
-			const eventTime = time + step * (duration / this.cells.length);
-			psgChannel.setWaveType(cell.cellType, eventTime);
-			psgChannel.setVolume(cell.volume, eventTime);
-
-			if (cell.cellType === CellType.HardOnly || cell.cellType === CellType.HardToSoft || cell.cellType === CellType.HardAndSoft) {
-				psgChannel.setEnvelope(cell.envelopeType, eventTime, duration / this.cells.length);
-			}
-
-			if (cell.noise > 0) {
-				psgChannel.setNoise(cell.noise, duration / this.cells.length, eventTime);
-				psgChannel.setNoiseFrequency(0x2000 / cell.noise, eventTime); // Adjust the divisor based on noise value
-			} else {
-				psgChannel.setNoise(0, 0, eventTime);
-			}
-
-			const pitchOffset = cell.pitch_software || 0;
-			psgChannel.setFrequency(frequency, eventTime, pitchOffset);
-
-			// Implement sound generation logic based on the cell type
-			switch (cell.cellType) {
-				case CellType.NoSoftNoHard:
-					// Generate noise, stop sound, or handle special effects
-					psgChannel.setWaveType(0, eventTime);
-					psgChannel.disconnectOscillator();
-					break;
-				case CellType.SoftOnly:
-					// Generate rectangular sound wave with volume, arpeggio, and pitch
-					psgChannel.setWaveType(0, eventTime);
-					psgChannel.connectOscillator();
-					break;
-				case CellType.SoftToHard:
-					psgChannel.setWaveType(1, eventTime);
-					psgChannel.connectOscillator();
-					break;
-				case CellType.HardOnly:
-					// Generate hardware curve (sawtooth or triangle wave)
-					psgChannel.setWaveType(2, eventTime);
-					psgChannel.connectOscillator();
-					psgChannel.setEnvelope(cell.envelopeType, eventTime, duration / this.cells.length);
-					break;
-				case CellType.HardToSoft:
-					// Generate "still" result and desynchronize for interesting sounds
-					psgChannel.setWaveType(3, eventTime);
-					psgChannel.connectOscillator();
-					psgChannel.setEnvelope(cell.envelopeType, eventTime, duration / this.cells.length);
-					break;
-				case CellType.HardAndSoft:
-					// Generate autonomous software and hardware sounds
-					psgChannel.setWaveType(4, eventTime);
-					psgChannel.connectOscillator();
-					psgChannel.setEnvelope(cell.envelopeType, eventTime, duration / this.cells.length);
-					break;
-			}
-		});
-
-		psgChannel.setVolume(0, time + duration);
-	}
-}
-
-const keySpikeSpec: CellSpec[] = Array.from({ length: 15 }, (_, index) => ({
+const keySpikeSpec: PSGInstruction[] = Array.from({ length: 15 }, (_, index) => ({
 	volume: 15 - index,
 	noise: 0,
 	pitch: 0,
-	cellType: CellType.SoftOnly, // Use the InstrumentType enum here
+	cellType: PSGInstructionType.SoftOnly, // Use the InstrumentType enum here
 }));
 
-const bassdrumSpec: CellSpec[] = [
-	{ cellType: CellType.NoSoftNoHard, volume: 14, noise: 1, pitch_software: -0x96, },
-	{ cellType: CellType.SoftOnly, volume: 13, noise: 0, pitch_software: -0x12c, },
-	{ cellType: CellType.SoftOnly, volume: 12, noise: 0, pitch_software: -0x190, },
-	{ cellType: CellType.SoftOnly, volume: 11, noise: 0, pitch_software: -0x1f4, },
-	{ cellType: CellType.SoftOnly, volume: 10, noise: 0, pitch_software: -0x258, },
+const bassdrumSpec: PSGInstruction[] = [
+	{ cellType: PSGInstructionType.NoSoftNoHard, volume: 14, noise: 1, pitch_software: -0x96, },
+	// { cellType: PSGInstructionType.NoSoftNoHard, volume: 14, noise: 1, pitch_software: -0x96, },
+	// { cellType: PSGInstructionType.NoSoftNoHard, volume: 14, noise: 1, pitch_software: -0x96, },
+	// { cellType: PSGInstructionType.NoSoftNoHard, volume: 14, noise: 1, pitch_software: -0x96, },
+	// { cellType: PSGInstructionType.NoSoftNoHard, volume: 14, noise: 1, pitch_software: -0x96, },
+	// { cellType: PSGInstructionType.NoSoftNoHard, volume: 14, noise: 1, pitch_software: -0x96, },
+	// { cellType: PSGInstructionType.SoftOnly, volume: 13, noise: 0, pitch_software: -0x12c, },
+	// { cellType: PSGInstructionType.SoftOnly, volume: 12, noise: 0, pitch_software: -0x190, },
+	// { cellType: PSGInstructionType.SoftOnly, volume: 11, noise: 0, pitch_software: -0x1f4, },
+	// { cellType: PSGInstructionType.SoftOnly, volume: 10, noise: 0, pitch_software: -0x258, },
 ];
 
 const instruments = [
@@ -546,7 +534,7 @@ const instruments = [
 	new Instrument(bassdrumSpec),
 ];
 
-type Cell = { // Each track is represented by 6 columns
+type TrackerCell = { // Each track is represented by 6 columns
 	note: string; // Column 1, together with octave. HOWEVER, a note called "RST" is a rest note that stops the sound being produced for that channel!
 	octave: number; // Column 1, together with note
 	instrument: number; // Column 2, "01" indicates that the instrument 1 is used. The instrument 0 does not exist. It is possible that a note is present without any instrument. It means that a legato is used: the instrument does not start again when encountered: only the note changes. To create a legato, add a new note, and delete the instrument.
@@ -554,12 +542,12 @@ type Cell = { // Each track is represented by 6 columns
 	channelIndex: number; // Not a column, denotes the channel that will play the note
 } | null;
 
-type Pattern = Cell[][];
+type SongPattern = TrackerCell[][];
 
-function parseTrackerCode(code: string): Pattern {
+function parseTrackerCode(code: string): SongPattern {
 	const lines = code.trim().split('\n');
 	const patternLength = lines.length - 1; // Subtract 1 to ignore the pattern header
-	const pattern: Pattern = [];
+	const pattern: SongPattern = [];
 
 	for (let i = 0; i < patternLength; i++) {
 		pattern.push([]);
@@ -585,7 +573,7 @@ function parseTrackerCode(code: string): Pattern {
 	return pattern;
 }
 
-const psg = new PSG();
+const psg = new PSGEmulator();
 psg.volume = .5;
 const code = `
 Pattern 0
