@@ -11,7 +11,97 @@
         <meta name="apple-mobile-web-app-title" content="MSX SOUND">
         <!-- <script src="psg-channel-processor.js"></script> -->
         <script src="msxsound2.js"></script>
+        <style>
+            body {
+                background-color: #222;
+                font-family: 'monospace', monospace;
+                color: #eee;
+            }
+
+            table {
+                border-collapse: collapse;
+                width: 100%;
+                max-width: 960px;
+                margin: 0 auto;
+                background-color: #333;
+            }
+
+            th,
+            td {
+                /* padding: 8px 12px; */
+                text-align: left;
+                /* border: 1px solid #555; */
+            }
+
+            th {
+                background-color: #444;
+                color: #ccc;
+            }
+
+            tr:nth-child(even) {
+                background-color: #393939;
+            }
+
+            tr:hover {
+                background-color: #8a8a8a;
+            }
+
+            .editable {
+                cursor: pointer;
+            }
+
+            tr.current-row {
+                background-color: #9eebcf;
+            }
+            tr.current-row:nth-child(even) {
+                background-color: #9eebcf;
+            }
+            tr.last-row, tr.last-row:nth-child(even) {
+                background-color: #f8c471;;
+            }
+
+            .step {
+                cursor: pointer;
+            }
+
+            /* .note,
+            .instrument,
+            .effect { */
+                /* width: 50px; */
+            /* } */
+
+            .channel-divider {
+                border-left: 2px solid #7a7a7a;
+            }
+
+            .pattern {
+                text-align: center;
+                margin-bottom: 10px;
+            }
+        </style>
     </head>
+
     <body>
-        <button onclick="main()">ISODFHF</button>
+        <div class="pattern" id="patternHeader">Pattern 0</div>
+        <table id="trackerTable">
+            <thead>
+                <tr>
+                    <th class="step">Step</th>
+                    <th class="note">Note 1</th>
+                    <th class="instrument">Inst 1</th>
+                    <th class="effect">FX 1</th>
+                    <th class="note channel-divider">Note 2</th>
+                    <th class="instrument">Inst 2</th>
+                    <th class="effect">FX 2</th>
+                    <th class="note channel-divider">Note 3</th>
+                    <th class="instrument">Inst 3</th>
+                    <th class="effect">FX 3</th>
+                </tr>
+            </thead>
+            <tbody>
+            </tbody>
+        </table>
+        <button id="start" type="button" onclick="start()">Start</button>
+        <button id="pause" disabled type="button" onclick="pause()">Pause</button>
+        <button id="continue" disabled type="button" onclick="cont()">Continue?!</button>
     </body>
