@@ -84,74 +84,6 @@ class PSGChannelEmulator {
 		this.oscillator.frequency.exponentialRampToValueAtTime(targetFrequency, time + 0.01);
 	}
 
-
-
-
-	// setToneFrequency(
-	// 	frequency: number,
-	// 	time: number,
-	// 	pitch_software: number = 0,
-	// 	pitch_hardware: number = 0,
-	// 	amplitude_modulation: boolean = false
-	// ): void {
-	// 	const targetFrequency = frequency + pitch_software + pitch_hardware;
-	// 	const frequencyRatio = targetFrequency / PSGEmulator.PSG_FREQUENCY;
-	// 	const coarse = Math.floor(frequencyRatio);
-	// 	const fine = Math.floor((targetFrequency - coarse * PSGEmulator.PSG_FREQUENCY) * PSGEmulator.FINE_STEPS_PER_NOTE);
-
-	// 	if (this.oscillator.type === 'square') {
-	// 		// For square waves, set the frequency directly and adjust the duty cycle
-	// 		this.oscillator.frequency.setValueAtTime(targetFrequency, time);
-	// 		if (amplitude_modulation) {
-	// 			this.oscillator.width.setValueAtTime(Math.min(1, Math.max(0, this.volume / 15)), time);
-	// 		} else {
-	// 			const dutyCycle = this.dutyCycle / 31;
-	// 			this.oscillator.width.setValueAtTime(dutyCycle, time);
-	// 		}
-	// 	} else {
-	// 		// For other waveforms, use a wave table to adjust the frequency and apply amplitude modulation
-	// 		const tableSize = this.oscillator.frequencyBinCount;
-	// 		const table = new Float32Array(tableSize);
-	// 		for (let i = 0; i < tableSize; i++) {
-	// 			const phase = i / tableSize;
-	// 			const frequency = (coarse + phase) * PSGEmulator.PSG_FREQUENCY + fine / PSGEmulator.FINE_STEPS_PER_NOTE;
-	// 			table[i] = Math.sin(phase * Math.PI * 2) * Math.sin(phase * frequencyRatio * Math.PI * 2);
-	// 		}
-
-	// 		const waveTable = this.audioContext.createPeriodicWave(table, [0, 1]);
-	// 		this.oscillator.setPeriodicWave(waveTable);
-
-	// 		if (amplitude_modulation) {
-	// 			const gainNode = this.amplitudeModulationNode.gain;
-	// 			gainNode.setValueAtTime(0, time);
-	// 			gainNode.linearRampToValueAtTime(Math.min(1, Math.max(0, this.volume / 15)), time + PSGEmulator.WAVEFORM_PERIOD / 2);
-	// 		}
-	// 	}
-
-	// 	this.frequency = targetFrequency;
-	// }
-
-	// setToneFrequency(
-	// 	frequency: number,
-	// 	time: number,
-	// 	pitch_software: number = 0,
-	// 	pitch_hardware: number = 0
-	// ): void {
-	// 	const targetFrequency = frequency + pitch_software + pitch_hardware;
-	// 	// Set the frequency in the oscillator using an exponential ramp
-	// 	this.oscillator.frequency.exponentialRampToValueAtTime(targetFrequency, time + 0.01);
-	// }
-
-	// setFrequency(
-	// 	frequency: number,
-	// 	time: number,
-	// 	pitch_software: number = 0
-	// ): void {
-	// 	const targetFrequency = frequency + pitch_software;
-	// 	// Set the frequency in the oscillator using an exponential ramp
-	// 	this.oscillator.frequency.exponentialRampToValueAtTime(targetFrequency, time + 0.01);
-	// }
-
 	resetNote(time: number): void {
 		this.setVolume(0, time);
 		this.oscillator.type = "sine"; // Set the oscillator type to sine wave
@@ -259,73 +191,6 @@ class PSGChannelEmulator {
 		}
 	}
 
-	// setNoiseFrequency(noise_divider: number, time: number): void {
-	// 	if (this.noiseNode) {
-	// 		const noise_frequency = noise_divider ? PSGEmulator.PSG_FREQUENCY / (16 * (noise_divider + 1)) : 0;
-	// 		this.noiseNode.playbackRate.setValueAtTime(noise_frequency, time);
-	// 	}
-	// }
-
-	// setNoise(noise: number, duration: number, time: number): void {
-	// 	if (this.noiseNode) {
-	// 		this.noiseNode.stop();
-	// 		this.noiseNode.disconnect(this.lowPassFilter);
-	// 		this.noiseNode = null;
-	// 	}
-	// 	if (!noise) return;
-
-	// 	const noiseLevel = Math.max(1, Math.min(31, noise));
-	// 	const bufferSize = Math.round(PSGEmulator.PSG_FREQUENCY * duration);
-	// 	const noiseBuffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
-	// 	const output = noiseBuffer.getChannelData(0);
-
-	// 	let noisePeriod = NOISE_PERIODS[(noiseLevel >> 3) & 0x07];
-	// 	let shiftRegister = 0x4000;
-	// 	for (let i = 0; i < bufferSize; i++) {
-	// 		output[i] = (shiftRegister & 1) === 0 ? -1 : 1;
-
-	// 		// Update the shift register
-	// 		const feedback = ((shiftRegister & NOISE_FEEDBACK) ^ ((shiftRegister >> 1) & NOISE_FEEDBACK)) & 1;
-	// 		shiftRegister = ((shiftRegister >> 1) & 0x3fff) | (feedback << 14);
-
-	// 		if (i % noisePeriod === noisePeriod - 1) {
-	// 			const avg = output.slice(i - noisePeriod + 1, i + 1).reduce((acc, val) => acc + val, 0) / noisePeriod;
-	// 			for (let j = i - noisePeriod + 1; j <= i; j++) {
-	// 				output[j] -= avg;
-	// 			}
-	// 		}
-	// 	}
-
-	// 	// Apply the envelope
-	// 	// const envelope = this.instrument.envelope;
-	// 	const envelope = [
-	// 		0, 1, 2, 3, 4, 5, 6, 7,
-	// 		8, 9, 10, 11, 12, 13, 14, 15,
-	// 		14, 13, 12, 11, 10, 9, 8, 7,
-	// 		6, 5, 4, 3, 2, 1, 0, 0,
-	// 	];
-	// 	const gainNode = this.envelopeNode.gain;
-	// 	gainNode.setValueAtTime(0, time);
-	// 	for (let i = 0; i < envelope.length; i++) {
-	// 		const timeValue = time + i / envelope.length * duration;
-	// 		const value = envelope[i] / 15 * noiseLevel;
-	// 		gainNode.linearRampToValueAtTime(value, timeValue);
-	// 	}
-	// 	gainNode.linearRampToValueAtTime(0, time + duration);
-
-	// 	// Resample the noise buffer to match the PSG frequency
-	// 	const resampledBuffer = this.resampleBuffer(noiseBuffer, this.audioContext.sampleRate);
-
-	// 	this.noiseNode = this.audioContext.createBufferSource();
-	// 	this.noiseNode.buffer = resampledBuffer;
-	// 	this.noiseNode.loop = true;
-
-	// 	// Connect the noise node to the low-pass filter and then to the mixer
-	// 	this.noiseNode.connect(this.lowPassFilter);
-	// 	this.noiseNode.start(time);
-	// }
-
-
 	private resampleBuffer(buffer: AudioBuffer, targetSampleRate: number): AudioBuffer {
 		const sourceSampleRate = buffer.sampleRate;
 		const sourceChannelData = buffer.getChannelData(0);
@@ -348,58 +213,6 @@ class PSGChannelEmulator {
 
 		return targetBuffer;
 	}
-
-	// setNoise(noise: number, duration: number, time: number): void {
-	// 	if (this.noiseNode) {
-	// 		this.noiseNode.stop();
-	// 		this.noiseNode.disconnect(this.lowPassFilter);
-	// 		this.noiseNode = null;
-	// 	}
-	// 	if (!noise) return;
-
-	// 	const noiseLevel = Math.max(1, Math.min(31, noise));
-	// 	const bufferSize = Math.ceil(this.audioContext.sampleRate * duration);
-	// 	const noiseBuffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
-	// 	const output = noiseBuffer.getChannelData(0);
-
-	// 	const noisePeriod = Math.max(1, (noiseLevel & 0x1f) * 2);
-	// 	let lfsr = 0x7fff;
-	// 	for (let i = 0; i < bufferSize; i++) {
-	// 		output[i] = (lfsr & 1) === 0 ? -1 : 1;
-
-	// 		// Update the LFSR
-	// 		const feedback = ((lfsr & 1) ^ ((lfsr >> 6) & 1)) & 1;
-	// 		lfsr = ((lfsr >> 1) & 0x3fff) | (feedback << 14);
-
-	// 		if (i % noisePeriod === noisePeriod - 1) {
-	// 			const avg = output.slice(i - noisePeriod + 1, i + 1).reduce((acc, val) => acc + val, 0) / noisePeriod;
-	// 			for (let j = i - noisePeriod + 1; j <= i; j++) {
-	// 				output[j] -= avg;
-	// 			}
-	// 		}
-	// 	}
-
-	// 	this.envelopeNode.gain.setValueAtTime(noiseLevel, time);
-	// 	this.envelopeNode.gain.linearRampToValueAtTime(0, time + duration);
-	// 	this.noiseGainNode.gain.setValueAtTime(noiseLevel, time);
-	// 	this.noiseGainNode.gain.linearRampToValueAtTime(0, time + duration);
-
-	// 	this.noiseNode = this.audioContext.createBufferSource();
-	// 	this.noiseNode.buffer = noiseBuffer;
-	// 	this.noiseNode.loop = true;
-
-	// 	// Connect the noise node to the low-pass filter and then to the mixer
-	// 	this.noiseNode.connect(this.lowPassFilter);
-	// 	this.noiseNode.start(time);
-	// }
-
-	// setNoiseFrequency(noise_divider: number, time: number): void {
-	// 	if (this.noiseNode) {
-	// 		const noise_frequency = noise_divider ? PSGEmulator.PSG_FREQUENCY / (16 * (noise_divider + 1)) : 0;
-	// 		this.noiseNode.playbackRate.setValueAtTime(noise_frequency, time);
-	// 	}
-	// }
-
 	setEnvelope(envelopeType: PSGInstruction_EnvelopeType, time: number, duration: number): void {
 		const attackTime = duration * 0.1;
 		const decayTime = duration * 0.9;
@@ -527,6 +340,137 @@ class Instrument {
 	}
 }
 
+interface VGMInstrumentRecord {
+	id: number;
+	type: number;
+	chip: string;
+	data: number[];
+}
+
+// const VGMInstrumentData = {
+// 	id: 6,
+// 	type: 0,
+// 	chip: 'AY-3-8910',
+// 	data: [
+// 		4, 8, 10, 8, 10, 0, 4, 0, 4, 0, 4, 0,
+// 		4, 0, 3, 1, 0, 4, 0, 4, 0, 4, 0, 4,
+// 		0, 3, 1, 0, 4, 0, 4, 4, 0, 4, 0, 3,
+// 		1, 0, 4, 0, 4, 0, 4, 0, 4, 0, 4, 0,
+// 		4, 0, 4, 0, 4, 3, 1, 4, 0, 4, 0, 4,
+// 		0, 4, 0, 4, 0, 4, 4, 0, 4, 4, 0, 3,
+// 		1, 0, 4, 0, 4, 0, 4, 0, 4, 0, 4, 0,
+// 		3, 1, 3, 1, 4, 0, 4, 0, 3, 1, 1, 4,
+// 		0, 4, 0, 3, // (...)
+// 	]
+// };
+const VGMInstrumentData: VGMInstrumentRecord = {
+	id: 0,
+	type: 0,
+	chip: 'AY-3-8910',
+	data: [0, 255, 440, 0, 0, 255, 880, 0] // Example A440/A880 tone with full volume
+};
+
+class VGMInstrument {
+	id: number;
+	type: number;
+	chip: string;
+	data: number[];
+	channel: PSGChannelEmulator;
+
+	constructor(channel: PSGChannelEmulator, instrumentData: VGMInstrumentRecord) {
+		this.id = instrumentData.id;
+		this.type = instrumentData.type;
+		this.chip = instrumentData.chip;
+		this.data = instrumentData.data;
+		this.channel = channel;
+	}
+
+	// setInstrumentProperties(duration: number, time: number) {
+	// 	const dataLength = this.data.length;
+	// 	const psgClockTime = 1 / 3579545;
+	// 	const psgWritesPerNote = 4; // Each note consists of 4 PSG register writes
+	// 	const timePerNote = psgClockTime * psgWritesPerNote * (dataLength / psgWritesPerNote);
+
+	// 	for (let i = 0; i < dataLength; i += psgWritesPerNote) {
+	// 		const waveType = this.data[i];
+	// 		const volume = this.data[i + 1];
+	// 		const frequency = this.data[i + 2] + (this.data[i + 3] << 8);
+	// 		const targetTime = time + (i / psgWritesPerNote) * timePerNote;
+
+	// 		console.log(`wavetype=${waveType}, volume=${volume}, frequency=${frequency}, targetTime=${targetTime}`);
+	// 		this.channel.setWaveType(waveType, targetTime);
+	// 		this.channel.setVolume(volume, targetTime);
+	// 		this.channel.setToneFrequency(frequency, targetTime);
+	// 	}
+	// }
+	// setInstrumentProperties(duration: number, time: number) {
+	// 	const dataLength = this.data.length;
+	// 	for (let i = 0; i < dataLength; i += 4) {
+	// 		const waveType = this.data[i];
+	// 		const volume = this.data[i + 1];
+	// 		const frequency = this.data[i + 2] + (this.data[i + 3] << 8);
+	// 		const targetTime = time + ((i / dataLength) * duration);
+
+	// 		this.channel.setWaveType(waveType, targetTime);
+	// 		this.channel.setVolume(volume, targetTime);
+	// 		this.channel.setToneFrequency(frequency, targetTime);
+	// 	}
+	// }
+
+	playNote(frequency: number, duration: number, time: number) {
+		// this.setInstrumentProperties(duration, time);
+		// this.channel.setToneFrequency(frequency, time);
+		// // this.channel.setVolume(1, time);
+		// this.channel.setVolume(0, time + duration);
+		this.play();
+	}
+
+	play() {
+		const context = new AudioContext();
+		const oscillator = context.createOscillator();
+		const gainNode = context.createGain();
+		oscillator.connect(gainNode);
+		gainNode.connect(context.destination);
+		const currentTime = context.currentTime;
+
+		const dataLength = this.data.length;
+		for (let i = 0; i < dataLength; i += 4) {
+			const waveType = this.data[i];
+			const volume = this.data[i + 1];
+			const frequency = this.data[i + 2] + (this.data[i + 3] << 8);
+
+			oscillator.type = this.getWaveType(waveType);
+			// gainNode.gain.value = volume / 255;
+			gainNode.gain.setValueAtTime(volume / 255, currentTime + i * context.sampleRate);
+			// oscillator.frequency.value = frequency;
+
+			oscillator.frequency.setValueAtTime(frequency, currentTime + i * context.sampleRate);
+			oscillator.frequency.setValueAtTime(0, currentTime + (i + 4) * context.sampleRate);
+			// oscillator.frequency.setValueAtTime((i + 4) * context.sampleRate, 0);
+			// oscillator.stop((i + 4) * context.sampleRate);
+		}
+		oscillator.start(currentTime);
+		oscillator.stop(currentTime + (dataLength / 4) * context.sampleRate);
+	}
+
+	getWaveType(type: number): OscillatorType {
+		switch (type) {
+			case 0:
+				return 'sine';
+			case 1:
+				return 'square';
+			case 2:
+				return 'sawtooth';
+			case 3:
+				return 'triangle';
+			default:
+				return 'sine';
+		}
+	}
+
+}
+
+
 class PSGEmulator {
 	public static readonly PSG_FREQUENCY = 1789772.5; // in Hz;
 	audioContext: AudioContext;
@@ -563,6 +507,10 @@ class PSGEmulator {
 		this.gainNode.gain.setValueAtTime(volume, this.audioContext.currentTime);
 	}
 
+	public getChannel(index: number): PSGChannelEmulator {
+		return this.channels[index];
+	}
+
 	getNoteFrequency(note: string, octave: number): number {
 		if (frequencyTable.hasOwnProperty(note) && octave >= 0 && octave < frequencyTable[note].length) {
 			return frequencyTable[note][octave];
@@ -589,27 +537,31 @@ class Song {
 		this.paused = false;
 	}
 
+	playTrackerCell(trackerCell: TrackerCell, duration: number, time: number) {
+		if (trackerCell?.note === 'RST') {
+			this.psg.channels[trackerCell.channelIndex].resetNote(time);
+		} else {
+			if (trackerCell && trackerCell.note) {
+				const instrument = this.instruments[trackerCell.instrument];
+				if (instrument) {
+					const vgmInstrument = new VGMInstrument(this.psg.getChannel(trackerCell.channelIndex), VGMInstrumentData);
+					const frequency = this.psg.getNoteFrequency(trackerCell.note, trackerCell.octave);
+					vgmInstrument.playNote(frequency, duration, time);
+					// 	instrument.play(this.psg.channels[trackerCell.channelIndex], duration, frequency, time);
+				} else if (trackerCell.instrument !== 0) {
+					throw `Instrument "${trackerCell.instrument}" not recognized!!`;
+				}
+			}
+		}
+	}
+
 	playRow(rowIndex: number): void {
 		if (rowIndex >= 0 && rowIndex < this.pattern.length) {
 			const row = this.pattern[rowIndex];
 			const duration = 60 / this.tempo;
 			const time = this.psg.audioContext.currentTime;
 
-			row.forEach((trackerCell) => {
-				if (trackerCell?.note === 'RST') {
-					this.psg.channels[trackerCell.channelIndex].resetNote(time);
-				} else {
-					if (trackerCell && trackerCell.note) {
-						const instrument = this.instruments[trackerCell.instrument];
-						if (instrument) {
-							const frequency = this.psg.getNoteFrequency(trackerCell.note, trackerCell.octave);
-							instrument.play(this.psg.channels[trackerCell.channelIndex], duration, frequency, time);
-						} else if (trackerCell.instrument !== 0) {
-							throw `Instrument "${trackerCell.instrument}" not recognized!!`;
-						}
-					}
-				}
-			});
+			row.forEach(trackerCell => this.playTrackerCell(trackerCell, duration, time));
 			this.updateTrackerTable();
 		}
 	}
