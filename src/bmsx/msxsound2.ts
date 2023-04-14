@@ -340,137 +340,6 @@ class Instrument {
 	}
 }
 
-interface VGMInstrumentRecord {
-	id: number;
-	type: number;
-	chip: string;
-	data: number[];
-}
-
-// const VGMInstrumentData = {
-// 	id: 6,
-// 	type: 0,
-// 	chip: 'AY-3-8910',
-// 	data: [
-// 		4, 8, 10, 8, 10, 0, 4, 0, 4, 0, 4, 0,
-// 		4, 0, 3, 1, 0, 4, 0, 4, 0, 4, 0, 4,
-// 		0, 3, 1, 0, 4, 0, 4, 4, 0, 4, 0, 3,
-// 		1, 0, 4, 0, 4, 0, 4, 0, 4, 0, 4, 0,
-// 		4, 0, 4, 0, 4, 3, 1, 4, 0, 4, 0, 4,
-// 		0, 4, 0, 4, 0, 4, 4, 0, 4, 4, 0, 3,
-// 		1, 0, 4, 0, 4, 0, 4, 0, 4, 0, 4, 0,
-// 		3, 1, 3, 1, 4, 0, 4, 0, 3, 1, 1, 4,
-// 		0, 4, 0, 3, // (...)
-// 	]
-// };
-const VGMInstrumentData: VGMInstrumentRecord = {
-	id: 0,
-	type: 0,
-	chip: 'AY-3-8910',
-	data: [0, 255, 440, 0, 0, 255, 880, 0] // Example A440/A880 tone with full volume
-};
-
-class VGMInstrument {
-	id: number;
-	type: number;
-	chip: string;
-	data: number[];
-	channel: PSGChannelEmulator;
-
-	constructor(channel: PSGChannelEmulator, instrumentData: VGMInstrumentRecord) {
-		this.id = instrumentData.id;
-		this.type = instrumentData.type;
-		this.chip = instrumentData.chip;
-		this.data = instrumentData.data;
-		this.channel = channel;
-	}
-
-	// setInstrumentProperties(duration: number, time: number) {
-	// 	const dataLength = this.data.length;
-	// 	const psgClockTime = 1 / 3579545;
-	// 	const psgWritesPerNote = 4; // Each note consists of 4 PSG register writes
-	// 	const timePerNote = psgClockTime * psgWritesPerNote * (dataLength / psgWritesPerNote);
-
-	// 	for (let i = 0; i < dataLength; i += psgWritesPerNote) {
-	// 		const waveType = this.data[i];
-	// 		const volume = this.data[i + 1];
-	// 		const frequency = this.data[i + 2] + (this.data[i + 3] << 8);
-	// 		const targetTime = time + (i / psgWritesPerNote) * timePerNote;
-
-	// 		console.log(`wavetype=${waveType}, volume=${volume}, frequency=${frequency}, targetTime=${targetTime}`);
-	// 		this.channel.setWaveType(waveType, targetTime);
-	// 		this.channel.setVolume(volume, targetTime);
-	// 		this.channel.setToneFrequency(frequency, targetTime);
-	// 	}
-	// }
-	// setInstrumentProperties(duration: number, time: number) {
-	// 	const dataLength = this.data.length;
-	// 	for (let i = 0; i < dataLength; i += 4) {
-	// 		const waveType = this.data[i];
-	// 		const volume = this.data[i + 1];
-	// 		const frequency = this.data[i + 2] + (this.data[i + 3] << 8);
-	// 		const targetTime = time + ((i / dataLength) * duration);
-
-	// 		this.channel.setWaveType(waveType, targetTime);
-	// 		this.channel.setVolume(volume, targetTime);
-	// 		this.channel.setToneFrequency(frequency, targetTime);
-	// 	}
-	// }
-
-	playNote(frequency: number, duration: number, time: number) {
-		// this.setInstrumentProperties(duration, time);
-		// this.channel.setToneFrequency(frequency, time);
-		// // this.channel.setVolume(1, time);
-		// this.channel.setVolume(0, time + duration);
-		this.play();
-	}
-
-	play() {
-		const context = new AudioContext();
-		const oscillator = context.createOscillator();
-		const gainNode = context.createGain();
-		oscillator.connect(gainNode);
-		gainNode.connect(context.destination);
-		const currentTime = context.currentTime;
-
-		const dataLength = this.data.length;
-		for (let i = 0; i < dataLength; i += 4) {
-			const waveType = this.data[i];
-			const volume = this.data[i + 1];
-			const frequency = this.data[i + 2] + (this.data[i + 3] << 8);
-
-			oscillator.type = this.getWaveType(waveType);
-			// gainNode.gain.value = volume / 255;
-			gainNode.gain.setValueAtTime(volume / 255, currentTime + i * context.sampleRate);
-			// oscillator.frequency.value = frequency;
-
-			oscillator.frequency.setValueAtTime(frequency, currentTime + i * context.sampleRate);
-			oscillator.frequency.setValueAtTime(0, currentTime + (i + 4) * context.sampleRate);
-			// oscillator.frequency.setValueAtTime((i + 4) * context.sampleRate, 0);
-			// oscillator.stop((i + 4) * context.sampleRate);
-		}
-		oscillator.start(currentTime);
-		oscillator.stop(currentTime + (dataLength / 4) * context.sampleRate);
-	}
-
-	getWaveType(type: number): OscillatorType {
-		switch (type) {
-			case 0:
-				return 'sine';
-			case 1:
-				return 'square';
-			case 2:
-				return 'sawtooth';
-			case 3:
-				return 'triangle';
-			default:
-				return 'sine';
-		}
-	}
-
-}
-
-
 class PSGEmulator {
 	public static readonly PSG_FREQUENCY = 1789772.5; // in Hz;
 	audioContext: AudioContext;
@@ -520,142 +389,142 @@ class PSGEmulator {
 	}
 }
 
-class Song {
-	pattern: SongPattern;
-	tempo: number;
-	instruments: Instrument[];
-	psg: PSGEmulator;
-	currentRow: number;
-	paused: boolean;
+// class Song {
+// 	pattern: SongPattern;
+// 	tempo: number;
+// 	instruments: Instrument[];
+// 	psg: PSGEmulator;
+// 	currentRow: number;
+// 	paused: boolean;
 
-	constructor(psg: PSGEmulator, pattern: SongPattern, tempo: number, instruments: Instrument[]) {
-		this.pattern = pattern;
-		this.tempo = tempo;
-		this.instruments = instruments;
-		this.psg = psg;
-		this.currentRow = 0;
-		this.paused = false;
-	}
+// 	constructor(psg: PSGEmulator, pattern: SongPattern, tempo: number, instruments: Instrument[]) {
+// 		this.pattern = pattern;
+// 		this.tempo = tempo;
+// 		this.instruments = instruments;
+// 		this.psg = psg;
+// 		this.currentRow = 0;
+// 		this.paused = false;
+// 	}
 
-	playTrackerCell(trackerCell: TrackerCell, duration: number, time: number) {
-		if (trackerCell?.note === 'RST') {
-			this.psg.channels[trackerCell.channelIndex].resetNote(time);
-		} else {
-			if (trackerCell && trackerCell.note) {
-				const instrument = this.instruments[trackerCell.instrument];
-				if (instrument) {
-					const vgmInstrument = new VGMInstrument(this.psg.getChannel(trackerCell.channelIndex), VGMInstrumentData);
-					const frequency = this.psg.getNoteFrequency(trackerCell.note, trackerCell.octave);
-					vgmInstrument.playNote(frequency, duration, time);
-					// 	instrument.play(this.psg.channels[trackerCell.channelIndex], duration, frequency, time);
-				} else if (trackerCell.instrument !== 0) {
-					throw `Instrument "${trackerCell.instrument}" not recognized!!`;
-				}
-			}
-		}
-	}
+// 	playTrackerCell(trackerCell: TrackerCell, duration: number, time: number) {
+// 		if (trackerCell?.note === 'RST') {
+// 			this.psg.channels[trackerCell.channelIndex].resetNote(time);
+// 		} else {
+// 			if (trackerCell && trackerCell.note) {
+// 				const instrument = this.instruments[trackerCell.instrument];
+// 				if (instrument) {
+// 					const vgmInstrument = new VGMInstrument(this.psg.getChannel(trackerCell.channelIndex), VGMInstrumentData);
+// 					const frequency = this.psg.getNoteFrequency(trackerCell.note, trackerCell.octave);
+// 					vgmInstrument.playNote(frequency, duration, time);
+// 					// 	instrument.play(this.psg.channels[trackerCell.channelIndex], duration, frequency, time);
+// 				} else if (trackerCell.instrument !== 0) {
+// 					throw `Instrument "${trackerCell.instrument}" not recognized!!`;
+// 				}
+// 			}
+// 		}
+// 	}
 
-	playRow(rowIndex: number): void {
-		if (rowIndex >= 0 && rowIndex < this.pattern.length) {
-			const row = this.pattern[rowIndex];
-			const duration = 60 / this.tempo;
-			const time = this.psg.audioContext.currentTime;
+// 	playRow(rowIndex: number): void {
+// 		if (rowIndex >= 0 && rowIndex < this.pattern.length) {
+// 			const row = this.pattern[rowIndex];
+// 			const duration = 60 / this.tempo;
+// 			const time = this.psg.audioContext.currentTime;
 
-			row.forEach(trackerCell => this.playTrackerCell(trackerCell, duration, time));
-			this.updateTrackerTable();
-		}
-	}
+// 			row.forEach(trackerCell => this.playTrackerCell(trackerCell, duration, time));
+// 			this.updateTrackerTable();
+// 		}
+// 	}
 
-	playNextRow(): void {
-		if (this.currentRow < this.pattern.length) {
-			this.playRow(this.currentRow);
-			this.currentRow++;
-		}
-		this.updateTrackerTable();
-	}
+// 	playNextRow(): void {
+// 		if (this.currentRow < this.pattern.length) {
+// 			this.playRow(this.currentRow);
+// 			this.currentRow++;
+// 		}
+// 		this.updateTrackerTable();
+// 	}
 
-	start(): void {
-		this.paused = false;
-		this.currentRow = 0;
-		this.playSong();
-	}
+// 	start(): void {
+// 		this.paused = false;
+// 		this.currentRow = 0;
+// 		this.playSong();
+// 	}
 
-	continue(): void {
-		this.paused = false;
-		this.playSong();
-	}
+// 	continue(): void {
+// 		this.paused = false;
+// 		this.playSong();
+// 	}
 
-	pause(): void {
-		this.paused = true;
-	}
+// 	pause(): void {
+// 		this.paused = true;
+// 	}
 
-	protected playSong(): void {
-		if (this.currentRow < this.pattern.length && !this.paused) {
-			this.playNextRow();
-			const duration = 60 / this.tempo;
-			setTimeout(() => this.playSong(), duration * 1000);
-		}
-	}
+// 	protected playSong(): void {
+// 		if (this.currentRow < this.pattern.length && !this.paused) {
+// 			this.playNextRow();
+// 			const duration = 60 / this.tempo;
+// 			setTimeout(() => this.playSong(), duration * 1000);
+// 		}
+// 	}
 
-	updateTrackerTable(): void {
-		const table = document.getElementById('trackerTable') as HTMLTableElement;
-		const patternHeader = document.getElementById('patternHeader');
-		table.innerHTML = '';
-		patternHeader.innerHTML = `Pattern ${0}`;
+// 	updateTrackerTable(): void {
+// 		const table = document.getElementById('trackerTable') as HTMLTableElement;
+// 		const patternHeader = document.getElementById('patternHeader');
+// 		table.innerHTML = '';
+// 		patternHeader.innerHTML = `Pattern ${0}`;
 
-		this.pattern.forEach((row, rowIndex) => {
-			const tableRow = document.createElement('tr');
-			if (rowIndex === this.currentRow - 1) {
-				tableRow.classList.add('current-row');
-			} else if (rowIndex === this.pattern.length - 1) {
-				tableRow.classList.add('last-row');
-			}
+// 		this.pattern.forEach((row, rowIndex) => {
+// 			const tableRow = document.createElement('tr');
+// 			if (rowIndex === this.currentRow - 1) {
+// 				tableRow.classList.add('current-row');
+// 			} else if (rowIndex === this.pattern.length - 1) {
+// 				tableRow.classList.add('last-row');
+// 			}
 
-			const stepCell = document.createElement('td');
-			stepCell.classList.add('step');
-			stepCell.innerText = rowIndex.toString();
-			const boundedPlayRow = this.playRow.bind(this);
-			stepCell.onclick = (ev => boundedPlayRow(rowIndex));
-			tableRow.appendChild(stepCell);
+// 			const stepCell = document.createElement('td');
+// 			stepCell.classList.add('step');
+// 			stepCell.innerText = rowIndex.toString();
+// 			const boundedPlayRow = this.playRow.bind(this);
+// 			stepCell.onclick = (ev => boundedPlayRow(rowIndex));
+// 			tableRow.appendChild(stepCell);
 
-			row.forEach((trackerCell, trackerCellIndex) => {
-				const noteCell = document.createElement('td');
-				const instrumentCell = document.createElement('td');
-				const effectCell = document.createElement('td');
+// 			row.forEach((trackerCell, trackerCellIndex) => {
+// 				const noteCell = document.createElement('td');
+// 				const instrumentCell = document.createElement('td');
+// 				const effectCell = document.createElement('td');
 
-				if (trackerCell) {
-					if (trackerCell.note) {
-						noteCell.innerText = `${trackerCell.note}${trackerCell.octave}`;
-					}
-					else {
-						noteCell.innerText = '---';
-					}
-					if (trackerCell.instrument) {
-						instrumentCell.innerText = trackerCell.instrument.toString().padStart(2, '0');
-					}
-					else {
-						instrumentCell.innerText = '--';
-					}
-					effectCell.innerText = '---';
-				} else {
-					noteCell.innerText = '---';
-					instrumentCell.innerText = '--';
-					effectCell.innerText = '---';
-				}
+// 				if (trackerCell) {
+// 					if (trackerCell.note) {
+// 						noteCell.innerText = `${trackerCell.note}${trackerCell.octave}`;
+// 					}
+// 					else {
+// 						noteCell.innerText = '---';
+// 					}
+// 					if (trackerCell.instrument) {
+// 						instrumentCell.innerText = trackerCell.instrument.toString().padStart(2, '0');
+// 					}
+// 					else {
+// 						instrumentCell.innerText = '--';
+// 					}
+// 					effectCell.innerText = '---';
+// 				} else {
+// 					noteCell.innerText = '---';
+// 					instrumentCell.innerText = '--';
+// 					effectCell.innerText = '---';
+// 				}
 
-				if (trackerCellIndex !== 0) {
-					noteCell.classList.add('channel-divider');
-				}
+// 				if (trackerCellIndex !== 0) {
+// 					noteCell.classList.add('channel-divider');
+// 				}
 
-				tableRow.appendChild(noteCell);
-				tableRow.appendChild(instrumentCell);
-				tableRow.appendChild(effectCell);
-			});
+// 				tableRow.appendChild(noteCell);
+// 				tableRow.appendChild(instrumentCell);
+// 				tableRow.appendChild(effectCell);
+// 			});
 
-			table.appendChild(tableRow);
-		});
-	}
-}
+// 			table.appendChild(tableRow);
+// 		});
+// 	}
+// }
 
 enum PSGInstructionType {
 	NoSoftNoHard = 0, // No software wave and no hardware wave are generated, so that only the noise and volume are available
@@ -717,11 +586,6 @@ const keySpikeSpec: PSGInstruction[] = Array.from({ length: 15 }, (_, index) => 
 
 const bassdrumSpec: PSGInstruction[] = [
 	{ cellType: PSGInstructionType.NoSoftNoHard, volume: 15, noise: 1, pitch_software: 0, },
-	// { cellType: PSGInstructionType.NoSoftNoHard, volume: 14, noise: 1, pitch_software: -0x96, },
-	// { cellType: PSGInstructionType.NoSoftNoHard, volume: 14, noise: 1, pitch_software: -0x96, },
-	// { cellType: PSGInstructionType.NoSoftNoHard, volume: 14, noise: 1, pitch_software: -0x96, },
-	// { cellType: PSGInstructionType.NoSoftNoHard, volume: 14, noise: 1, pitch_software: -0x96, },
-	// { cellType: PSGInstructionType.NoSoftNoHard, volume: 14, noise: 1, pitch_software: -0x96, },
 	{ cellType: PSGInstructionType.NoSoftNoHard, volume: 14, noise: 2, pitch_software: -0x96, },
 	{ cellType: PSGInstructionType.SoftOnly, volume: 13, noise: 3, pitch_software: -0x12c, },
 	{ cellType: PSGInstructionType.SoftOnly, volume: 12, noise: 4, pitch_software: -0x190, },
@@ -735,85 +599,85 @@ const instruments = [
 	new Instrument(bassdrumSpec),
 ];
 
-type TrackerCell = { // Each track is represented by 6 columns
-	note: string; // Column 1, together with octave. HOWEVER, a note called "RST" is a rest note that stops the sound being produced for that channel!
-	octave: number; // Column 1, together with note
-	instrument: number; // Column 2, "01" indicates that the instrument 1 is used. The instrument 0 does not exist. It is possible that a note is present without any instrument. It means that a legato is used: the instrument does not start again when encountered: only the note changes. To create a legato, add a new note, and delete the instrument.
-	effects?: string; // Columns 3 to 6: the 4 columns of effects. They are always composed of one lower-case letter indicating the type of the effect, and three digits maximum for its value. How many digits depends on the effect. For example, the Reset ("r") effect only accept one digit (0 here). The same for the volume effect ("v"). The pitch up ("u") however requires 3 digits.
-	channelIndex: number; // Not a column, denotes the channel that will play the note
-} | null;
+// type TrackerCell = { // Each track is represented by 6 columns
+// 	note: string; // Column 1, together with octave. HOWEVER, a note called "RST" is a rest note that stops the sound being produced for that channel!
+// 	octave: number; // Column 1, together with note
+// 	instrument: number; // Column 2, "01" indicates that the instrument 1 is used. The instrument 0 does not exist. It is possible that a note is present without any instrument. It means that a legato is used: the instrument does not start again when encountered: only the note changes. To create a legato, add a new note, and delete the instrument.
+// 	effects?: string; // Columns 3 to 6: the 4 columns of effects. They are always composed of one lower-case letter indicating the type of the effect, and three digits maximum for its value. How many digits depends on the effect. For example, the Reset ("r") effect only accept one digit (0 here). The same for the volume effect ("v"). The pitch up ("u") however requires 3 digits.
+// 	channelIndex: number; // Not a column, denotes the channel that will play the note
+// } | null;
 
-type SongPattern = TrackerCell[][];
+// type SongPattern = TrackerCell[][];
 
-function parseTrackerCode(code: string): SongPattern {
-	const lines = code.trim().split('\n');
-	const patternLength = lines.length - 1; // Subtract 1 to ignore the pattern header
-	const pattern: SongPattern = [];
+// function parseTrackerCode(code: string): SongPattern {
+// 	const lines = code.trim().split('\n');
+// 	const patternLength = lines.length - 1; // Subtract 1 to ignore the pattern header
+// 	const pattern: SongPattern = [];
 
-	for (let i = 0; i < patternLength; i++) {
-		pattern.push([]);
-	}
+// 	for (let i = 0; i < patternLength; i++) {
+// 		pattern.push([]);
+// 	}
 
-	for (let i = 1; i < lines.length; i++) { // Start from index 1 to ignore the pattern header
-		const line = lines[i];
-		const fields = line.trim().split('|');
-		for (let j = 0; j < fields.length; j++) {
-			const field = fields[j].trim();
-			const match = field.match(/^(?:Row\s+\d+:\s+)?([A-G])-?(\d+)\s+(\d+)?/);
-			if (match) {
-				const note = match[1];
-				const octave = parseInt(match[2] || '4', 10);
-				const instrumentIndex = parseInt(match[3] || '0', 10);
-				pattern[i - 1].push({ note, octave, instrument: instrumentIndex, channelIndex: j });
-			} else {
-				pattern[i - 1].push(null);
-			}
-		}
-	}
+// 	for (let i = 1; i < lines.length; i++) { // Start from index 1 to ignore the pattern header
+// 		const line = lines[i];
+// 		const fields = line.trim().split('|');
+// 		for (let j = 0; j < fields.length; j++) {
+// 			const field = fields[j].trim();
+// 			const match = field.match(/^(?:Row\s+\d+:\s+)?([A-G])-?(\d+)\s+(\d+)?/);
+// 			if (match) {
+// 				const note = match[1];
+// 				const octave = parseInt(match[2] || '4', 10);
+// 				const instrumentIndex = parseInt(match[3] || '0', 10);
+// 				pattern[i - 1].push({ note, octave, instrument: instrumentIndex, channelIndex: j });
+// 			} else {
+// 				pattern[i - 1].push(null);
+// 			}
+// 		}
+// 	}
 
-	return pattern;
-}
+// 	return pattern;
+// }
 
-const psg = new PSGEmulator();
-psg.volume = .5;
-const code = `
-Pattern 0
-  Row 0: C-4 01 --- | C-0 00 --- | --- -- ---
-  Row 1: D-4 01 --- | C-1 00 --- | --- -- ---
-  Row 2: E-4 01 --- | C-2 00 --- | --- -- ---
-  Row 3: F-4 01 --- | C-3 00 --- | --- -- ---
-  Row 4: G-4 02 --- | C-4 00 --- | --- -- ---
-  Row 5: A-4 02 --- | C-5 00 --- | --- -- ---
-  Row 6: B-4 02 --- | C-6 00 --- | --- -- ---
-  Row 7: C-5 02 --- | C-7 00 --- | --- -- ---
-`;
-const tempo = 300; // Beats per minute
-const pattern = parseTrackerCode(code);
-console.log(pattern);
-const song = new Song(psg, pattern, tempo, instruments);
+// const psg = new PSGEmulator();
+// psg.volume = .5;
+// const code = `
+// Pattern 0
+//   Row 0: C-4 01 --- | C-0 00 --- | --- -- ---
+//   Row 1: D-4 01 --- | C-1 00 --- | --- -- ---
+//   Row 2: E-4 01 --- | C-2 00 --- | --- -- ---
+//   Row 3: F-4 01 --- | C-3 00 --- | --- -- ---
+//   Row 4: G-4 02 --- | C-4 00 --- | --- -- ---
+//   Row 5: A-4 02 --- | C-5 00 --- | --- -- ---
+//   Row 6: B-4 02 --- | C-6 00 --- | --- -- ---
+//   Row 7: C-5 02 --- | C-7 00 --- | --- -- ---
+// `;
+// const tempo = 300; // Beats per minute
+// const pattern = parseTrackerCode(code);
+// console.log(pattern);
+// const song = new Song(psg, pattern, tempo, instruments);
 
-window.addEventListener("DOMContentLoaded", (event) => {
-	song.updateTrackerTable();
-});
+// window.addEventListener("DOMContentLoaded", (event) => {
+// 	song.updateTrackerTable();
+// });
 
-function start() {
-	song.start();
-	const pausebutton = document.getElementById('pause');
-	pausebutton.removeAttribute('disabled');
-}
+// function start() {
+// 	song.start();
+// 	const pausebutton = document.getElementById('pause');
+// 	pausebutton.removeAttribute('disabled');
+// }
 
-function pause() {
-	song.pause();
-	const pausebutton = document.getElementById('pause');
-	const contbutton = document.getElementById('continue');
-	pausebutton.setAttribute('disabled', '');
-	contbutton.removeAttribute('disabled');
-}
+// function pause() {
+// 	song.pause();
+// 	const pausebutton = document.getElementById('pause');
+// 	const contbutton = document.getElementById('continue');
+// 	pausebutton.setAttribute('disabled', '');
+// 	contbutton.removeAttribute('disabled');
+// }
 
-function cont() {
-	song.continue();
-	const pausebutton = document.getElementById('pause');
-	const contbutton = document.getElementById('continue');
-	contbutton.setAttribute('disabled', '');
-	pausebutton.removeAttribute('disabled');
-}
+// function cont() {
+// 	song.continue();
+// 	const pausebutton = document.getElementById('pause');
+// 	const contbutton = document.getElementById('continue');
+// 	contbutton.setAttribute('disabled', '');
+// 	pausebutton.removeAttribute('disabled');
+// }
