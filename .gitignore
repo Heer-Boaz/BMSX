@@ -1,4 +1,3 @@
-BoazEngineJS/tsconfig.jsonmaarbugt
 **.cs
 **/node_modules
 **/output
@@ -9,13 +8,15 @@ BoazEngineJS/tsconfig.jsonmaarbugt
 **.bmp
 **.gif
 **.mp3
+**.js.map
+# Ignore all .js files except those in the "scripts" folder
 **.js
+!scripts/*.js
+**/tempCodeRunnerFile.*
+# Include specific .js files that were previously ignored
 **.map
 !pako_inflate.min.js
 !gl-matrix-min.js
-src/sintervaniamodelold.ts
-**/thegame.js.map
-**/thegame.js
 **.tsbuildinfo
 **.rom
 **.d.ts
@@ -25,5 +26,3 @@ rom/ignore
 dist/game_debug.html
 dist/game.html
 dist/manifest.json
-tempCodeRunnerFile.ts
-**.js.map

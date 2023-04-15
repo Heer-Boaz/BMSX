@@ -28,6 +28,7 @@
     "ftp-deploy": "*",
     "js-yaml": "*",
     "libkss-js": "*",
+    "midi-file": "^1.2.4",
     "minify-stream": "*",
     "pako": "*",
     "terminal-kit": "*",
