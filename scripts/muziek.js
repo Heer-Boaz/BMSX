@@ -229,13 +229,6 @@ class PSGEmulator {
         this.start();
     }
 
-    playInstructions(instructions) {
-        instructions.forEach(instruction => {
-            const psgInstruction = new PSGInstruction(instruction);
-            this.executePSGInstruction(psgInstruction);
-        });
-    }
-
     connect(destination) {
         this.channels.forEach(channel => {
             channel.connect(destination);
@@ -518,27 +511,12 @@ class SongGenerator {
 }
 
 class SongGeneratorLSystem extends SongGenerator {
-    genereerLSystemString(axioma, regels, iteraties) {
-        let result = axioma;
-        for (let i = 0; i < iteraties; i++) {
-            let nieuwResult = '';
-            for (const teken of result) {
-                nieuwResult += regels[teken] || teken;
-            }
-            result = nieuwResult;
-        }
-        return result;
-    }
-
+    /**
+     * @override
+     */
     generateSong(noten) {
         // MIDI-output
-        const midiOutput = {
-            '0': 'AaBaCaDaAaBaCaDaAaBaCaDaAaBaCaDaEaFaGaHaEaFaGaHaEaFaGaHaEaFaGaHaIaAaJaCaIaAaJaCaIaAaJaCaIaAaJaCaEaFaGaHaEaFaGaHaEaFaGaHaEaFaGaHaDbCbGbHbDbCbGcGcGcGcBdBdBdBdKeDfCfBgFfLfBaGhDeCfHfDgMfDfKaKhKeDfCfBgFfLfBaGhDeCfHfDgMfDhKfKaDgBgNiNjKfKaDgOgPiPjKfKaDgGgQiQjCfDkKfKaDgBgNiNaKfKaDgOgPiPaKfKaDgGgQiQaBfDbAjEjIjEjFjAjIjEjFjAjIgEfFjAiIjEjFjAjIgEfFjAiIjEjFjAjIgEfIjEjIjQjNiQiEfBiGiHfAaAfNaNfEaElAjEjIfAaAfNaNfEaElAjEjIfAiEiIfQiEiFfAbRjIjRjIjRjIjRjIjKeDfCfBgFfLfBaGhDeCfHfDgMfDfKaKhKeDfCfBgFfLfBaGhDeCfHfDgMfDhKfKaDgBgNiNjKfKaDgOgPiPjKfKaDgGgQiQjCfDkKfKaDgBgNiNaKfKaDgOgPiPaKfKaDgGgQiQaBfDbAjEjIjEjFjAjIjEjFjAjIgEfFjAiIjEjFjAjIgEfFjAiIjEjFjAjIgEfIjEjIjQjNiQiEfBiGiHfAaAfNaNfEaElAjEjIfAaAfNaNfEaElAjEjIfAiEiIfQiEiFfAbRjIjRjIjRjIjRjIjKeDfCfBgFfLfBaGhDeCfHfDgMfDfKaKhKeDfCfBgFfLfBaGhDeCfHfDgMfDhKfKaDgBgNiNjKfKa',
-            '1': 'AaBaCaDaAaBaCaDaAaBaCaDaAaBaCaDaEaFaGaHaEaFaGaHaEaFaGaHaEaFaGaHaIaAaJaCaIaAaJaCaIaAaJaCaIaAaJaCaEaFaGaHaEaFaGaHaEaFaGaHaEaFaGaHaKbMbDbSbKbMbDcDcDcDcHdHdHdHdTeTfKfMgHfDfMaShTeKfUfTgVfTfTaThTeTfKfMgHfDfMaShTeKfUfTgVfThTfTaKgCgNiNjTfTaKgHgPiPjTfTaKgHgQiQjDfKkTfTaKgCgNiNaTfTaKgHgPiPaTfTaKgHgQiQaCfKbBjGjHjCjBgGfHjCiBjGjHjCjBgGfHjCiBjGjHjCjBgGfBjGjBjLjWiWiWfBiGiHfCaCfFaFfGaGlCjGjBfCaCfFaFfGaGlCjGaBfCiGiBfJiGiHfCbNjAjNjAjNjAjNjAjTeTfKfMgHfDfMaShTeKfUfTgVfTfTaThTeTfKfMgHfDfMaShTeKfUfTgVfThTfTaKgCgNiNjTfTaKgHgPiPjTfTaKgHgQiQjDfKkTfTaKgCgNiNaTfTaKgHgPiPaTfTaKgHgQiQaCfKbBjGjHjCjBgGfHjCiBjGjHjCjBgGfHjCiBjGjHjCjBgGfBjGjBjLjWiWiWfBiGiHfCaCfFaFfGaGlCjGjBfCaCfFaFfGaGlCjGaBfCiGiBfJiGiHfCbNjAjNjAjNjAjNjAjTeTfKfMgHfDfMaShTeKfUfTgVfTfTaThTeTfKfMgHfDfMaShTeKfUfTgVfThTfTaKgCgNiNjTfTa',
-            '2': 'XmYmZm[n[n[o[o[o[o\\o\\d\\d\\o\\d\\d\\o\\d\\d\\d\\o\\d\\o\\d\\d\\o\\d\\d\\d\\d\\d\\d\\o[dXdXoXdXdXoXdXdXdXoXdXdXdXdXdXoXdXdXoXdXdXdXdXoXoXdXd\\p\\dXo\\o\\p\\dXo\\o]p]dUo]o]o]d]dUo]oZpZd^oZoYpYdMoYo\\p\\dXo\\o\\o\\d\\dXo\\o\\p\\dXo\\o\\p\\dXo\\o]p]dUo]o]o]d]dUo]oZpZd^oZoYpYdMoYo\\p\\dXo\\o\\o\\d\\dXoXd\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXoXd\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\p\\dXo\\oXd\\dXd\\d\\d\\d\\dXd\\dXd\\dXd\\dXd\\dXd\\dXd\\dXd\\dXdZd^dZd^dZd^dZd^dZd^dZd^dZd^dZd^d]dUd]dUd]dUd]dUd]dUd]dUd]dUd]dUd[dKd[dKd[dKd[dKd[dKd[dKd[dKd[dKdXdDdXdDdXdDdXdDdXdDdXdDdXdDdXdDdYdMdYdMdYdMdYdMdYdMdYdMdYdMdYdMdZpZd^oZo[p[dKo[o\\p\\dXo\\o\\p\\dXo\\o\\p\\dXo\\o\\p\\dXo\\o]p]dUo]o]o]d]dUo]oZpZd^oZoYpYdMoYo\\p\\dXo\\o\\o\\d\\dXo\\o\\p\\dXo\\o\\p\\dXo\\o]p]dUo]o]o]d]dUo]oZpZd^oZoYpYdMoYo\\p\\dXo\\o\\o\\d\\dXoXd\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXoXd\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\p\\dXo\\oXd\\dXd\\d\\d\\d\\dXd\\dXd\\dXd\\dXd\\dXd\\dXd\\dXd\\dXdZd^dZd^dZd^dZd^dZd^dZd^dZd^dZd^d]dUd]dUd]dUd]dUd]dUd]dUd]dUd]dUd[dKd[dKd[dKd[dKd[dKd[dKd[dKd[dKdXdDdXdDdXdDdXdDdXdDdXdDdXdDdXdDdYdMdYdMdYdMdYdMdYdMdYdMdYdMdYdMdZpZd^oZo[p[dKo[o\\p\\dXo\\o\\p\\dXo\\o\\p\\dXo\\o\\p\\dXo\\o]p]dUo]o]o]d]dUo]oZpZd^oZoYpYdMoYo\\p\\dXo\\o\\o\\d\\dXo\\o\\p\\dXo\\o\\p\\dXo\\o]p]dUo]o]o]d]dUo]oZpZd^oZoYpYdMoYo\\p\\dXo\\o\\o\\d\\dXoXd\\o\\oXo\\o\\o\\oXo\\o\\o',
-            '3': 'KjKjKjKjKjKjKjKjKjKj',
-            '9': '\\d\\d\\d\\d\\d\\d\\d\\d\\d\\d\\d\\d'
-        };
+        const midiOutput = { "channelStrings": { "0": "AaBaCaDaAaBaCaDaAaBaCaDaAaBaCaDaEaFaGaHaEaFaGaHaEaFaGaHaEaFaGaHaIaAaJaCaIaAaJaCaIaAaJaCaIaAaJaCaEaFaGaHaEaFaGaHaEaFaGaHaEaFaGaHaDbCbGbHbDbCbGcGcGcGcBdBdBdBdKeDfCfBgFfLfBaGhDeCfHfDgMfDfKaKhKeDfCfBgFfLfBaGhDeCfHfDgMfDhKfKaDgBgNiNjKfKaDgOgPiPjKfKaDgGgQiQjCfDkKfKaDgBgNiNaKfKaDgOgPiPaKfKaDgGgQiQaBfDbAjEjIjEjFjAjIjEjFjAjIgEfFjAiIjEjFjAjIgEfFjAiIjEjFjAjIgEfIjEjIjQjNiQiEfBiGiHfAaAfNaNfEaElAjEjIfAaAfNaNfEaElAjEjIfAiEiIfQiEiFfAbRjIjRjIjRjIjRjIjKeDfCfBgFfLfBaGhDeCfHfDgMfDfKaKhKeDfCfBgFfLfBaGhDeCfHfDgMfDhKfKaDgBgNiNjKfKaDgOgPiPjKfKaDgGgQiQjCfDkKfKaDgBgNiNaKfKaDgOgPiPaKfKaDgGgQiQaBfDbAjEjIjEjFjAjIjEjFjAjIgEfFjAiIjEjFjAjIgEfFjAiIjEjFjAjIgEfIjEjIjQjNiQiEfBiGiHfAaAfNaNfEaElAjEjIfAaAfNaNfEaElAjEjIfAiEiIfQiEiFfAbRjIjRjIjRjIjRjIjKeDfCfBgFfLfBaGhDeCfHfDgMfDfKaKhKeDfCfBgFfLfBaGhDeCfHfDgMfDhKfKaDgBgNiNjKfKa", "1": "AaBaCaDaAaBaCaDaAaBaCaDaAaBaCaDaEaFaGaHaEaFaGaHaEaFaGaHaEaFaGaHaIaAaJaCaIaAaJaCaIaAaJaCaIaAaJaCaEaFaGaHaEaFaGaHaEaFaGaHaEaFaGaHaKbMbDbSbKbMbDcDcDcDcHdHdHdHdTeTfKfMgHfDfMaShTeKfUfTgVfTfTaThTeTfKfMgHfDfMaShTeKfUfTgVfThTfTaKgCgNiNjTfTaKgHgPiPjTfTaKgHgQiQjDfKkTfTaKgCgNiNaTfTaKgHgPiPaTfTaKgHgQiQaCfKbBjGjHjCjBgGfHjCiBjGjHjCjBgGfHjCiBjGjHjCjBgGfBjGjBjLjWiWiWfBiGiHfCaCfFaFfGaGlCjGjBfCaCfFaFfGaGlCjGaBfCiGiBfJiGiHfCbNjAjNjAjNjAjNjAjTeTfKfMgHfDfMaShTeKfUfTgVfTfTaThTeTfKfMgHfDfMaShTeKfUfTgVfThTfTaKgCgNiNjTfTaKgHgPiPjTfTaKgHgQiQjDfKkTfTaKgCgNiNaTfTaKgHgPiPaTfTaKgHgQiQaCfKbBjGjHjCjBgGfHjCiBjGjHjCjBgGfHjCiBjGjHjCjBgGfBjGjBjLjWiWiWfBiGiHfCaCfFaFfGaGlCjGjBfCaCfFaFfGaGlCjGaBfCiGiBfJiGiHfCbNjAjNjAjNjAjNjAjTeTfKfMgHfDfMaShTeKfUfTgVfTfTaThTeTfKfMgHfDfMaShTeKfUfTgVfThTfTaKgCgNiNjTfTa", "2": "XmYmZm[n[n[o[o[o[o\\o\\d\\d\\o\\d\\d\\o\\d\\d\\d\\o\\d\\o\\d\\d\\o\\d\\d\\d\\d\\d\\d\\o[dXdXoXdXdXoXdXdXdXoXdXdXdXdXdXoXdXdXoXdXdXdXdXoXoXdXd\\p\\dXo\\o\\p\\dXo\\o]p]dUo]o]o]d]dUo]oZpZd^oZoYpYdMoYo\\p\\dXo\\o\\o\\d\\dXo\\o\\p\\dXo\\o\\p\\dXo\\o]p]dUo]o]o]d]dUo]oZpZd^oZoYpYdMoYo\\p\\dXo\\o\\o\\d\\dXoXd\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXoXd\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\p\\dXo\\oXd\\dXd\\d\\d\\d\\dXd\\dXd\\dXd\\dXd\\dXd\\dXd\\dXd\\dXdZd^dZd^dZd^dZd^dZd^dZd^dZd^dZd^d]dUd]dUd]dUd]dUd]dUd]dUd]dUd]dUd[dKd[dKd[dKd[dKd[dKd[dKd[dKd[dKdXdDdXdDdXdDdXdDdXdDdXdDdXdDdXdDdYdMdYdMdYdMdYdMdYdMdYdMdYdMdYdMdZpZd^oZo[p[dKo[o\\p\\dXo\\o\\p\\dXo\\o\\p\\dXo\\o\\p\\dXo\\o]p]dUo]o]o]d]dUo]oZpZd^oZoYpYdMoYo\\p\\dXo\\o\\o\\d\\dXo\\o\\p\\dXo\\o\\p\\dXo\\o]p]dUo]o]o]d]dUo]oZpZd^oZoYpYdMoYo\\p\\dXo\\o\\o\\d\\dXoXd\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXoXd\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\o\\oXo\\o\\p\\dXo\\oXd\\dXd\\d\\d\\d\\dXd\\dXd\\dXd\\dXd\\dXd\\dXd\\dXd\\dXdZd^dZd^dZd^dZd^dZd^dZd^dZd^dZd^d]dUd]dUd]dUd]dUd]dUd]dUd]dUd]dUd[dKd[dKd[dKd[dKd[dKd[dKd[dKd[dKdXdDdXdDdXdDdXdDdXdDdXdDdXdDdXdDdYdMdYdMdYdMdYdMdYdMdYdMdYdMdYdMdZpZd^oZo[p[dKo[o\\p\\dXo\\o\\p\\dXo\\o\\p\\dXo\\o\\p\\dXo\\o]p]dUo]o]o]d]dUo]oZpZd^oZoYpYdMoYo\\p\\dXo\\o\\o\\d\\dXo\\o\\p\\dXo\\o\\p\\dXo\\o]p]dUo]o]o]d]dUo]oZpZd^oZoYpYdMoYo\\p\\dXo\\o\\o\\d\\dXoXd\\o\\oXo\\o\\o\\oXo\\o\\o", "3": "KjKjKjKjKjKjKjKjKjKj", "9": "\\d\\d\\d\\d\\d\\d\\d\\d\\d\\d\\d\\d" }, "pitchToSymbol": { "38": "\\", "43": "]", "45": "[", "46": "Z", "48": "Y", "50": "X", "52": "V", "53": "T", "55": "U", "57": "K", "58": "^", "59": "S", "60": "M", "62": "D", "64": "H", "65": "C", "67": "G", "68": "O", "69": "B", "70": "J", "71": "L", "72": "F", "73": "W", "74": "A", "76": "E", "77": "I", "79": "Q", "80": "P", "81": "N", "86": "R" }, "symbolToPitch": { "A": 74, "B": 69, "C": 65, "D": 62, "E": 76, "F": 72, "G": 67, "H": 64, "I": 77, "J": 70, "K": 57, "L": 71, "M": 60, "N": 81, "O": 68, "P": 80, "Q": 79, "R": 86, "S": 59, "T": 53, "U": 55, "V": 52, "W": 73, "X": 50, "Y": 48, "Z": 46, "[": 45, "\\": 38, "]": 43, "^": 58 }, "durationToSymbol": { "9": "j", "11": "a", "12": "d", "21": "c", "22": "f", "23": "o", "33": "i", "35": "p", "44": "g", "46": "n", "56": "l", "68": "e", "92": "b", "118": "k", "140": "h", "190": "m" }, "symbolToDuration": { "a": 11, "b": 92, "c": 21, "d": 12, "e": 68, "f": 22, "g": 44, "h": 140, "i": 33, "j": 9, "k": 118, "l": 56, "m": 190, "n": 46, "o": 23, "p": 35 } };
 
         const lengte = 8; // Het aantal maten in het nummer
         const akkoordenPerMaat = 4; // Het aantal akkoorden per maat
@@ -549,14 +527,23 @@ class SongGeneratorLSystem extends SongGenerator {
         const aantalDrumNoten = lengte * drumNotenPerMaat;
 
         // Maak L-systeemregels op basis van de geëxtraheerde noten uit het MIDI-bestand
-        const lSystemRegels = maakLSystemRegels(channelStrings['0'], midiOutput['0']);
-        const lSystemDrumRegels = maakLSystemRegels(channelStrings['1'], midiOutput['1']);
+        // const lSystemRegels = maakLSystemRegels(channelStrings['0'], midiOutput['0']);
+        // const lSystemDrumRegels = maakLSystemRegels(channelStrings['1'], midiOutput['1']);
+        // Maak L-systeemregels op basis van de geëxtraheerde noten uit het MIDI-bestand
+        const channelStrings = midiOutput['channelStrings'];
+        const pitchToSymbol = midiOutput['pitchToSymbol'];
+        const durationToSymbol = midiOutput['durationToSymbol'];
+        const symbolToDuration = midiOutput['symbolToDuration'];
+        const symbolToPitch = midiOutput['symbolToPitch'];
+        const symbolToDrum = midiOutput['symbolToDrum'];
+        const lSystemRegels = this.maakLSystemRegels(channelStrings['0'], { pitchToSymbol, durationToSymbol, symbolToDuration });
+        const lSystemDrumRegels = this.maakLSystemRegels(channelStrings['1'], { pitchToSymbol, durationToSymbol, symbolToDuration });
 
-        const lSystemString = genereerLSystemString('A', lSystemRegels, 3);
-        const lSystemDrumString = genereerLSystemString('A', lSystemDrumRegels, 3);
+        const lSystemString = this.genereerLSystemString('A', lSystemRegels, 3);
+        // const lSystemDrumString = this.genereerLSystemString('A', lSystemDrumRegels, 3);
 
-        const melodie = genereerMelodieEnRitme(lSystemString, lSystemRegels, aantalNoten);
-        const drumRitme = genereerDrumRitme(lSystemDrumString, lSystemDrumRegels, aantalDrumNoten);
+        const melodie = this.genereerMelodieEnRitme(lSystemString, symbolToPitch, symbolToDuration, aantalNoten);
+        // const drumRitme = this.genereerDrumRitme(lSystemDrumString, symbolToDrum, symbolToDuration, aantalDrumNoten);
 
         const akkoordenlijst = []; // een lijst om de gebruikte akkoorden bij te houden
         let tijdMelodie = 0; // de huidige tijd in de muziek
@@ -608,13 +595,28 @@ class SongGeneratorLSystem extends SongGenerator {
     }
 
     maakLSystemRegels(inputString, midiOutput) {
-        // Maak L-systeemregels op basis van de geëxtraheerde noten uit het MIDI-bestand
         const lSystemRegels = {};
-        for (let i = 0; i < inputString.length; i += 2) {
-            const symbool = inputString[i];
-            const volgendSymbool = inputString[i + 2] || '';
+
+        // Parse inputString into an array of note and duration pairs
+        const noteDurationPairs = inputString.match(/.{2}/g);
+
+        for (let i = 0; i < noteDurationPairs.length - 1; i++) {
+            const symbool = noteDurationPairs[i];
+            const volgendSymbool = noteDurationPairs[i + 1];
             lSystemRegels[symbool] = lSystemRegels[symbool] ? lSystemRegels[symbool] + volgendSymbool : volgendSymbool;
         }
+
+        // Add rules from midiOutput to lSystemRegels
+        for (const pitch in midiOutput.pitchToSymbol) {
+            const pitchSymbol = midiOutput.pitchToSymbol[pitch];
+            const duration = midiOutput.durationToSymbol[Math.round(midiOutput.symbolToDuration[pitchSymbol])];
+            const rule = pitchSymbol + duration;
+
+            if (!lSystemRegels[rule]) {
+                lSystemRegels[rule] = '';
+            }
+        }
+
         return lSystemRegels;
     }
 
@@ -630,9 +632,9 @@ class SongGeneratorLSystem extends SongGenerator {
         return huidigeString;
     }
 
-    genereerMelodieEnRitme(lSystemString, lSystemRegels, aantalNoten) {
+    genereerMelodieEnRitme(lSystemString, symbolToPitch, symbolToDuration, aantalNoten) {
         const melodie = [];
-        for (let i = 0; i < aantalNoten; i++) {
+        for (let i = 0; i < aantalNoten * 2; i += 2) {
             const symbool = lSystemString[i];
             const noot = symbolToPitch[symbool] || '';
             const duur = symbolToDuration[lSystemString[i + 1]] || '';
@@ -641,9 +643,9 @@ class SongGeneratorLSystem extends SongGenerator {
         return melodie;
     }
 
-    genereerDrumRitme(lSystemString, lSystemRegels, aantalDrumNoten) {
+    genereerDrumRitme(lSystemString, symbolToDrum, symbolToDuration, aantalDrumNoten) {
         const drumRitme = [];
-        for (let i = 0; i < aantalDrumNoten; i++) {
+        for (let i = 0; i < aantalDrumNoten * 2; i += 2) {
             const symbool = lSystemString[i];
             const type = symbolToDrum[symbool] || '';
             const duur = symbolToDuration[lSystemString[i + 1]] || '';
@@ -651,6 +653,7 @@ class SongGeneratorLSystem extends SongGenerator {
         }
         return drumRitme;
     }
+
 
 
     // generateSong(noten) {
@@ -774,14 +777,17 @@ class SongGeneratorMarkov extends SongGenerator {
         super();
     }
 
+    /**
+     * @override
+     */
     generateSong(noten) {
         super.generateSong(noten);
 
         // Genereer 2D Markov-ketenmatrix voor toonladder
-        markovKetenToonladder = this.genereerMarkovKetenMatrix(toonladder.length);
+        let markovKetenToonladder = this.genereerMarkovKetenMatrix(toonladder.length);
 
         // Genereer 3D Markov-ketenmatrix voor akkoorden
-        markovKetenAkkoorden = {};
+        let markovKetenAkkoorden = {};
 
         for (const akkoord in akkoorden) {
             markovKetenAkkoorden[akkoord] = this.genereerMarkovKetenMatrix(akkoorden[akkoord].length);
@@ -802,7 +808,7 @@ class SongGeneratorMarkov extends SongGenerator {
                 }
 
                 // Kies een noot uit het huidige akkoord met behulp van Markov-ketens
-                const huidigMarkovKeten = SongGeneratorMarkov.markovKetenAkkoorden[huidigAkkoord];
+                const huidigMarkovKeten = markovKetenAkkoorden[huidigAkkoord];
                 let nootIndex;
                 let willekeurig = Math.random();
                 vorigeNootIndex = Math.min(vorigeNootIndex, huidigMarkovKeten.length - 1);
@@ -835,11 +841,11 @@ class SongGeneratorMarkov extends SongGenerator {
             for (let j = 0; j < drumRitme.length; j++) {
                 const geluiden = Object.keys(drumgeluidenPerRitme);
                 for (let k = 0; k < geluiden.length; k++) {
-                    const drum = geluiden[k];
-                    if (drumgeluidenPerRitme[drum][j] === 1) {
+                    const drumType = geluiden[k];
+                    if (drumgeluidenPerRitme[drumType][j] === 1) {
                         const t = (i * drumRitme.length + j) * (60 / tempo);
                         noten.push({
-                            type: drumtype,
+                            type: drumType,
                             drum: true,
                             tijd: t,
                             duur: 0.1,

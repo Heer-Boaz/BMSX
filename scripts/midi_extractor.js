@@ -1,142 +1,3 @@
-// const fs = require('fs');
-// const args = process.argv.slice(2);
-
-// if (args.length !== 1) {
-//     console.error('Usage: node extract-midi-notes.js <filename>');
-//     process.exit(1);
-// }
-
-// const fileName = args[0];
-// const fileBuffer = fs.readFileSync(fileName);
-
-// // Definieer een hulpfunctie om een reeks bytes in een getal te converteren
-// function bytesToNumber(bytes) {
-//     let result = 0;
-//     for (let i = 0; i < bytes.length; i++) {
-//         result += bytes[i] << (8 * (bytes.length - 1 - i));
-//     }
-//     return result;
-// }
-
-// function readVariableLengthQuantity(buffer, startOffset) {
-//     let result = 0;
-//     let offset = startOffset;
-//     let byte;
-//     do {
-//         byte = buffer.readUInt8(offset);
-//         offset++;
-//         result = (result << 7) | (byte & 0x7F);
-//     } while (byte & 0x80);
-//     return { value: result, bytesRead: offset - startOffset };
-// }
-
-// // Blijf door alle chunks in het MIDI-bestand lussen totdat het einde van het bestand is bereikt
-// let offset = 0;
-// let timeDivision = null;
-// let notes = [];
-
-// while (offset < fileBuffer.length) {
-//     // Lees het volgende chunk
-//     const chunkHeader = fileBuffer.slice(offset, offset + 8);
-//     const chunkHeaderType = chunkHeader.slice(0, 4).toString();
-//     const chunkHeaderLength = bytesToNumber(Array.from(chunkHeader.slice(4, 8)));
-
-//     offset += 8;
-
-//     // Verwerk de chunk op basis van het type
-//     if (chunkHeaderType === 'MThd') {
-//         // Verwerk het header chunk
-//         const formatType = bytesToNumber(Array.from(fileBuffer.slice(offset, offset + 2)));
-//         const numTracks = bytesToNumber(Array.from(fileBuffer.slice(offset + 2, offset + 4)));
-//         timeDivision = bytesToNumber(Array.from(fileBuffer.slice(offset + 4, offset + 6)));
-//         console.log(`Format type: ${formatType}`);
-//         console.log(`Number of tracks: ${numTracks}`);
-//         console.log(`Time division: ${timeDivision}`);
-
-//         offset += chunkHeaderLength;
-//     } else if (chunkHeaderType === 'MTrk') {
-//         // Verwerk een track chunk
-//         // const chunkEndOffset = offset + chunkHeaderLength;
-//         // Houd de huidige tijd en toonhoogte bij
-
-//         let currentTime = 0;
-//         let currentPitch = null;
-//         let currentVelocity = null;
-
-//         // Houd de startpositie van de huidige track chunk bij
-//         const trackChunkStart = offset;
-
-//         while (offset < fileBuffer.length && offset < trackChunkStart + chunkHeaderLength) {
-//             const { value: deltaTime, bytesRead: deltaTimeBytesRead } = readVariableLengthQuantity(fileBuffer, offset);
-//             currentTime += deltaTime / timeDivision;
-//             offset += deltaTimeBytesRead;
-
-//             const currentEventTypeByte = fileBuffer.readUInt8(offset);
-//             if (currentEventTypeByte >= 128) {
-//                 eventTypeByte = currentEventTypeByte;
-//                 offset++;
-//             }
-
-//             const channel = eventTypeByte & 0x0F;
-
-//             if (eventTypeByte === 0xff) {
-//                 // Meta-evenement
-//                 const metaEventTypeByte = fileBuffer.readUInt8(offset);
-//                 offset++;
-//                 const { value: metaEventLength, bytesRead: metaEventLengthBytesRead } = readVariableLengthQuantity(fileBuffer, offset);
-//                 offset += metaEventLengthBytesRead + metaEventLength;
-//             } else if ((eventTypeByte >> 4) === 0x8 || (eventTypeByte >> 4) === 0x9 && fileBuffer[offset + 1] === 0) {
-//                 // Note off or note on with velocity 0
-//                 const noteOffPitch = fileBuffer.readUInt8(offset);
-//                 offset++;
-//                 const noteOffVelocity = fileBuffer.readUInt8(offset);
-//                 offset++;
-
-//                 // Find the note in the list and set its duration
-//                 for (const note of notes) {
-//                     if (note.pitch === noteOffPitch && note.channel === channel && note.duration === null) {
-//                         note.duration = currentTime - note.startTime;
-//                         break;
-//                     }
-//                 }
-//             } else if ((eventTypeByte >> 4) === 0x9) {
-//                 // Note on
-//                 const noteOnPitch = fileBuffer.readUInt8(offset);
-//                 offset++;
-//                 const noteOnVelocity = fileBuffer.readUInt8(offset);
-//                 offset++;
-
-//                 // Add the note to the list of notes
-//                 notes.push({
-//                     pitch: noteOnPitch,
-//                     velocity: noteOnVelocity,
-//                     startTime: currentTime,
-//                     duration: null,
-//                     channel
-//                 });
-//             } else {
-//                 // Onbekend evenementstype, sla de rest van de gegevens voor dit evenement over
-//                 const eventDataLengthBytes = [];
-//                 while (true) {
-//                     const byte = fileBuffer.readUInt8(offset);
-//                     offset++;
-//                     eventDataLengthBytes.push(byte);
-//                     if (byte < 128) {
-//                         break;
-//                     }
-//                 }
-//                 const eventDataLength = bytesToNumber(eventDataLengthBytes);
-//                 offset += eventDataLength;
-//             }
-//         }
-//     } else {
-//         // Onbekend chunktype, sla de inhoud van de chunk over
-//         offset += chunkHeaderLength;
-//     }
-// }
-
-// console.log(notes);
-
 const fs = require('fs');
 const { parseMidi } = require('midi-file');
 const args = process.argv.slice(2);
@@ -154,13 +15,17 @@ const midiData = parseMidi(fileBuffer);
 
 // Extract notes from the MIDI file
 const notes = [];
+let tempo = 120;
 for (const track of midiData.tracks) {
     let currentTime = 0;
 
     for (const event of track) {
         currentTime += event.deltaTime;
-
-        if (event.type === 'noteOn') {
+        if (event.type === 'setTempo') {
+            tempo = 60000000 / event.microsecondsPerBeat;
+            break;
+        }
+        if (event.type === 'noteOn' && event.noteNumber !== undefined) {
             notes.push({
                 pitch: event.noteNumber,
                 velocity: event.velocity,
@@ -168,7 +33,7 @@ for (const track of midiData.tracks) {
                 duration: null,
                 channel: event.channel
             });
-        } else if (event.type === 'noteOff') {
+        } else if (event.type === 'noteOff' && event.noteNumber !== undefined) {
             for (const note of notes) {
                 if (note.pitch === event.noteNumber && note.channel === event.channel && note.duration === null) {
                     note.duration = currentTime - note.startTime;
@@ -190,64 +55,72 @@ for (const note of notes) {
     }
 }
 
-// Convert notes to LSystem symbols
-const pitchToSymbol = {};
-const symbolToPitch = {};
-const basePitchCharCode = 'A'.charCodeAt(0);
-
-for (const channel in notesByChannel) {
-    for (const note of notesByChannel[channel]) {
-        if (!pitchToSymbol[note.pitch]) {
-            const symbol = String.fromCharCode(basePitchCharCode + Object.keys(pitchToSymbol).length);
-            pitchToSymbol[note.pitch] = symbol;
-            symbolToPitch[symbol] = note.pitch;
-        }
-    }
+function gcd(a, b) {
+    return b === 0 ? a : gcd(b, a % b);
 }
 
-// Create a mapping for durations
-const durationToSymbol = {};
-const symbolToDuration = {};
-const baseDurationCharCode = 'a'.charCodeAt(0);
-
-const getDurationSymbol = (duration) => {
-    if (!durationToSymbol[duration]) {
-        const symbol = String.fromCharCode(baseDurationCharCode + Object.keys(durationToSymbol).length);
-        durationToSymbol[duration] = symbol;
-        symbolToDuration[symbol] = duration;
+function findBaseNoteLength(durations) {
+    let baseNoteLength = durations[0];
+    for (let i = 1; i < durations.length; i++) {
+        baseNoteLength = gcd(baseNoteLength, durations[i]);
     }
+    return baseNoteLength;
+}
+function midiDurationToAbcDuration(duration, baseNoteLength) {
+    const wholeNoteLength = baseNoteLength * 4;
+    const noteLength = Math.round(wholeNoteLength / duration);
+    if (noteLength === 1) {
+        return '';
+    }
+    let numerator = Math.round(wholeNoteLength * 4 / duration);
+    let denominator = 4;
+    if (!isFinite(numerator)) {
+        numerator = 1;
+        denominator = Math.round(duration / (baseNoteLength * 4));
+    }
+    return `${numerator}/${denominator}`;
+}
 
-    return durationToSymbol[duration];
-};
+function midiNoteToAbcPitch(midiNote) {
+    const noteNames = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+    const octaveShift = Math.floor((midiNote - 12) / 12);
+    const noteIndex = (midiNote - 12) % 12;
+    const noteName = noteNames[Math.floor(noteIndex / 2)];
+    const octave = "'".repeat(octaveShift);
+    return noteName + octave;
+}
 
-// Convert notes to strings per channel
+// Convert notes to ABC notation per channel
+const ppqn = midiData.header.ticksPerBeat;
 const channelStrings = {};
 for (const channel in notesByChannel) {
-    const noteStrings = notesByChannel[channel].map(note => {
-        return pitchToSymbol[note.pitch] + getDurationSymbol(Math.round(note.duration));
+    const durations = notesByChannel[channel].map(note => note.duration);
+    const baseNoteLength = findBaseNoteLength(durations);
+    const noteStrings = notesByChannel[channel].map((note, i) => {
+        if (typeof note.pitch === 'undefined') {
+            return '';
+        }
+        const pitch = midiNoteToAbcPitch(note.pitch);
+        const duration = midiDurationToAbcDuration(note.duration, baseNoteLength);
+
+        // Check for rests
+        const prevNoteEndTime = i > 0 ? notesByChannel[channel][i - 1].startTime + notesByChannel[channel][i - 1].duration : 0;
+        const restDuration = midiDurationToAbcDuration(note.startTime - prevNoteEndTime, baseNoteLength * ppqn);
+        const restString = restDuration ? `z${restDuration} ` : '';
+
+        return restString + pitch + duration;
     });
 
-    channelStrings[channel] = noteStrings.join('');
+    channelStrings[channel] = noteStrings.join(' ');
 }
 
-console.log(channelStrings);
-
-// Optional: Print the mappings for reference
-console.log('Pitch to Symbol mapping:', pitchToSymbol);
-console.log('Symbol to Pitch mapping:', symbolToPitch);
-console.log('Duration to Symbol mapping:', durationToSymbol);
-console.log('Symbol to Duration mapping:', symbolToDuration);
-
-// Kan je de code geven voor "maakLsystemRegels" die er nu zo uit ziet?
-//     maakLSystemRegels(inputString, midiOutput) {
-//         // Maak L-systeemregels op basis van de geëxtraheerde noten uit het MIDI-bestand
-//         const lSystemRegels = {};
-//         for (let i = 0; i < inputString.length; i += 2) {
-//             const symbool = inputString[i];
-//             const volgendSymbool = inputString[i + 2] || '';
-//             lSystemRegels[symbool] = lSystemRegels[symbool] ? lSystemRegels[symbool] + volgendSymbool : volgendSymbool;
-//         }
-//         return lSystemRegels;
-//     }
-
-// De code moet je updaten om de LSysteemregels te produceren op basis van MIDI-output dat is geextraheerd. De code die dat doet zie je hieronder:
+const baseName = fileName.split('\\').pop().split('/').pop().replace(/\..+$/, '');
+const header = `X:1
+T:${baseName}
+M:C
+L:1/4
+K:C
+Q:${Math.round(tempo)}
+`;
+const abcNotation = Object.values(channelStrings).join('\n| ');
+console.log(header + abcNotation);
