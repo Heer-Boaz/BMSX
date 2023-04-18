@@ -24,6 +24,7 @@
     "browserify": "*",
     "canvas": "*",
     "colors": "*",
+    "dagre": "^0.8.5",
     "flatted": "*",
     "ftp-deploy": "*",
     "js-yaml": "*",
