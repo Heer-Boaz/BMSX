@@ -66,7 +66,7 @@ class Graph {
         // Calculate matrix dimensions
         // const { matrixWidth, matrixHeight } = dagreLayout(graph, maxLabelLength);
         // const { matrixWidth, matrixHeight } = flowchartLayout(graph);
-        const { matrixWidth, matrixHeight } = layeredGraphLayout(graph);
+        const { matrixWidth, matrixHeight } = layeredGraphLayout(this);
         console.log(`${matrixWidth}, ${matrixHeight}`);
 
         // Draw the vertices and edges on the grid
@@ -368,12 +368,6 @@ vertex1.connectTo(vertex2);
 vertex1.connectTo(vertex3);
 vertex1.connectTo(vertex4);
 vertex1.connectTo(vertex5);
-// vertex2.connectTo(vertex3);
-// vertex2.connectTo(vertex4);
-// vertex2.connectTo(vertex5);
-// vertex3.connectTo(vertex4);
-// vertex3.connectTo(vertex5);
-// vertex4.connectTo(vertex5);
 
 console.log(graph.toAscii());
 
