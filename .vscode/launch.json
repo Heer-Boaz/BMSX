@@ -91,7 +91,13 @@
 				"--allow-file-access-from-files",
 				"--disable-session-crashed-bubble",
 				"-inprivate"
-			],
+			]
+		},
+		{
+			"type": "msedge",
+			"name": "http://127.0.0.1:3000/scripts/ascii_shader.html",
+			"request": "launch",
+			"url": "http://127.0.0.1:3000/scripts/ascii_shader.html"
 		}
 	],
 	// "compounds": [
