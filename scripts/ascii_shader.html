@@ -17,13 +17,48 @@
     <body>
         <canvas id="canvas"></canvas>
         <script>
+            function generateAsciiFontAtlas(callback) {
+                const charsPerRow = 16;
+                const numRows = 16;
+                const charSize = 32;
+                const canvasWidth = charsPerRow * charSize;
+                const canvasHeight = numRows * charSize;
+
+                const offscreenCanvas = document.createElement('canvas');
+                offscreenCanvas.width = canvasWidth;
+                offscreenCanvas.height = canvasHeight;
+                const ctx = offscreenCanvas.getContext('2d');
+
+                ctx.fillStyle = 'rgba(0, 0, 0, 0)';
+                ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+                ctx.font = `${charSize}px monospace`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = 'red';
+
+                for (let row = 0; row < numRows; row++) {
+                    for (let col = 0; col < charsPerRow; col++) {
+                        const charIndex = row * charsPerRow + col;
+                        const char = String.fromCharCode(charIndex);
+                        const x = col * charSize + charSize / 2;
+                        const y = row * charSize + charSize / 2;
+                        ctx.fillText(char, x, y);
+                    }
+                }
+
+
+                const image = new Image();
+                image.src = offscreenCanvas.toDataURL();
+                callback(image);
+            }
+
             const canvas = document.getElementById('canvas');
             const gl = canvas.getContext('webgl');
 
             if (!gl) {
                 alert('WebGL is not supported in your browser.');
             }
-
 
             const vertShaderSrc = `
       attribute vec4 a_position;
@@ -36,24 +71,31 @@
     `;
 
             const fragShaderSrc = `
-      precision mediump float;
-      uniform sampler2D u_image;
-      varying vec2 v_texCoord;
-      uniform float u_pixelSize;
-      const float ASCII_CHARS = 256.0;
-      const float charAspect = 1.2;
-      void main() {
-        vec2 pixel = floor(v_texCoord / u_pixelSize) * u_pixelSize;
-        vec4 color = texture2D(u_image, pixel);
-        float gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));
-        float index = gray * (ASCII_CHARS - 1.0);
-        float row = floor(index / 16.0);
-        float col = index - row * 16.0;
-        vec2 uv = (pixel + vec2(col, row) * u_pixelSize) / (16.0 * u_pixelSize * charAspect);
-        gl_FragColor = vec4(color.rgb, step(0.5, texture2D(u_image, uv).a));
-      }
-    `;
+  precision mediump float;
+  uniform sampler2D u_image;
+  uniform sampler2D u_asciiAtlas;
+  varying vec2 v_texCoord;
+  uniform float u_pixelSize;
+  const float ASCII_CHARS = 256.0;
+  const float charAspect = 1.2;
+  void main() {
+    vec2 pixel = floor(v_texCoord / u_pixelSize) * u_pixelSize;
+    vec4 color = texture2D(u_image, pixel);
+    float gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+    float index = gray * (ASCII_CHARS - 1.0);
+    float row = floor(index / 16.0);
+    float col = index - row * 16.0;
+    vec2 uv = (pixel + vec2(col, row) * u_pixelSize) / (16.0 * u_pixelSize * charAspect);
+    vec4 charColor = texture2D(u_asciiAtlas, uv);
+    gl_FragColor = vec4(color.rgb, 1.0);
+    // gl_FragColor = vec4(color.rgb * charColor.a, charColor.a);
 
+    // vec2 uv = (vec2(fract(col / 16.0), fract(row / 16.0)) + (pixel / (16.0 * u_pixelSize))) / charAspect;
+    // vec4 charColor = texture2D(u_asciiAtlas, uv);
+    // gl_FragColor = vec4(color.rg, charColor.a);
+  }
+`;
+            // The remaining code is the same up until the render function...
             // Create shaders
             const vertShader = gl.createShader(gl.VERTEX_SHADER);
             gl.shaderSource(vertShader, vertShaderSrc);
@@ -82,10 +124,10 @@
             const texCoordBuffer = gl.createBuffer();
             gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
             gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-                0, 1,
-                1, 1,
                 0, 0,
-                1, 0
+                1, 0,
+                0, 1,
+                1, 1
             ]), gl.STATIC_DRAW);
 
             // Create texture
@@ -96,13 +138,26 @@
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-            function render(image) {
+
+            // Create ASCII atlas texture
+            const asciiAtlasTexture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, asciiAtlasTexture);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 255, 255]));
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+            function render(image, asciiAtlas) {
                 canvas.width = image.width;
                 canvas.height = image.height;
 
-                // Update texture with the image
+                // Update textures with the image and asciiAtlas
                 gl.bindTexture(gl.TEXTURE_2D, texture);
                 gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+
+                gl.bindTexture(gl.TEXTURE_2D, asciiAtlasTexture);
+                gl.texImage2D(gl.TEXTURE_2D, 1, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, asciiAtlas);
 
                 // Set viewport
                 gl.viewport(0, 0, canvas.width, canvas.height);
@@ -111,35 +166,53 @@
                 gl.clearColor(0, 0, 0, 0);
                 gl.clear(gl.COLOR_BUFFER_BIT);
 
-                // Use the shader program
+                // Use program
                 gl.useProgram(program);
-
-                // Set attributes
-                const positionLocation = gl.getAttribLocation(program, 'a_position');
-                gl.enableVertexAttribArray(positionLocation);
-                gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-                gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
-
-                const texCoordLocation = gl.getAttribLocation(program, 'a_texCoord');
-                gl.enableVertexAttribArray(texCoordLocation);
-                gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
-                gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
 
                 // Set uniforms
                 const u_image = gl.getUniformLocation(program, 'u_image');
                 gl.uniform1i(u_image, 0);
-
+                const u_asciiAtlas = gl.getUniformLocation(program, 'u_asciiAtlas');
+                gl.uniform1i(u_asciiAtlas, 1);
                 const u_pixelSize = gl.getUniformLocation(program, 'u_pixelSize');
-                gl.uniform1f(u_pixelSize, 1.0 / 32.0); // You can adjust the ASCII resolution here
+                gl.uniform1f(u_pixelSize, 1.0 / 16.0); // You can adjust the ASCII resolution here
 
+                // // Set up vertex attributes
+                const a_position = gl.getAttribLocation(program, 'a_position');
+                gl.enableVertexAttribArray(a_position);
+                gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+                gl.vertexAttribPointer(a_position, 2, gl.FLOAT, false, 0, 0);
+
+                const a_texCoord = gl.getAttribLocation(program, 'a_texCoord');
+                gl.enableVertexAttribArray(a_texCoord);
+                gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+                gl.vertexAttribPointer(a_texCoord, 2, gl.FLOAT, false, 0, 0);
+
+                // gl.activeTexture(gl.TEXTURE0);
                 // Draw the rectangle
                 gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
             }
 
-            // Load an example image
+            // Load an example image and ASCII atlas
             const image = new Image();
-            image.src = '../src//testrom/res/_ignore/rokvoorbeeld.png'; // Replace with a valid image URL
-            image.onload = () => render(image);
+            let asciiAtlas = null;
+
+            let imagesLoaded = 0;
+            function onLoad() {
+                imagesLoaded++;
+                if (imagesLoaded === 2) {
+                    requestAnimationFrame(() => render(image, asciiAtlas));
+                }
+            }
+
+            image.src = '../src/testrom/res/_ignore/rokvoorbeeld.png'; // Replace with a valid image URL
+            image.onload = onLoad;
+            generateAsciiFontAtlas((atlas) => {
+                // Do something with the asciiAtlas canvas element here
+                asciiAtlas = atlas;
+                onLoad();
+            });
         </script>
     </body>
 
