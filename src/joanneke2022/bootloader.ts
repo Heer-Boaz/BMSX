@@ -798,12 +798,6 @@ class barst extends onvolmaaktheid {
                         this.disposeFlag = true; // Vervang met nieuwe soort onvolmaaktheid
                     }
                 },
-                // gedaan: new sdef('gedaan', {
-                // 	onenter(this: barst, s: sstate<barst>) {
-                // 		s.reset();
-                // 		this.imgid = BitmapId.None;
-                // 	}
-                // }),
             }
         };
     }
