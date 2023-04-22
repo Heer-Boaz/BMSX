@@ -271,40 +271,77 @@ function drawEdge(matrix, v1, v2) {
     }
 }
 function parseStateMachineCode(code) {
-    const sourceFile = ts.createSourceFile('temp.ts', code, ts.ScriptTarget.ES2020, true);
+    const sourceFile = ts.createSourceFile("temp.ts", code, ts.ScriptTarget.ES2020, true);
     const states = [];
     function parseNode(node) {
-        var _a, _b;
+        var _a, _b, _c, _d, _e;
         if (ts.isClassDeclaration(node)) {
             const methods = node.members.filter(ts.isMethodDeclaration);
             for (const method of methods) {
-                const stateTransitions = [];
-                function findStateTransitions(childNode) {
-                    const expression = childNode;
-                    if (ts.isCallExpression(expression) && expression.expression.getText() === 'this.state.to') {
-                        // const targetState = expression.arguments[0].getText();
-                        // stateTransitions.push({ input: method.name.getText(), targetState });
-                        const targetState = expression.arguments[0].getText();
-                        // Find the nearest IfStatement ancestor
-                        let currentNode = childNode.parent;
-                        let input;
-                        while (currentNode && !ts.isIfStatement(currentNode)) {
-                            currentNode = currentNode.parent;
+                const decorators = ts.canHaveDecorators(method) ? ts.getDecorators(method) : undefined;
+                if (decorators) {
+                    for (const decorator of decorators) {
+                        if (decorator.expression.getText() === "statedef_builder") {
+                            const stateTransitions = [];
+                            const stateProperties = {};
+                            const stateFunction = method.name.getText();
+                            function findStateTransitions(childNode, className) {
+                                var _a, _b;
+                                if (ts.isCallExpression(childNode) && childNode.expression.getText() === "this.state.to") {
+                                    const toState = childNode.arguments[0].getText().replace(/'/g, "");
+                                    let currentNode = childNode.parent;
+                                    let input;
+                                    while (currentNode && !ts.isIfStatement(currentNode)) {
+                                        currentNode = currentNode.parent;
+                                    }
+                                    if (currentNode && ts.isIfStatement(currentNode)) {
+                                        input = currentNode.expression.getText();
+                                    }
+                                    else {
+                                        input = "No condition found";
+                                    }
+                                    // Find state name
+                                    let fromState;
+                                    const statesObject = (_b = (_a = method.body) === null || _a === void 0 ? void 0 : _a.statements.find(ts.isReturnStatement)) === null || _b === void 0 ? void 0 : _b.expression;
+                                    if (statesObject && ts.isObjectLiteralExpression(statesObject)) {
+                                        statesObject.properties.forEach((property) => {
+                                            if (ts.isPropertyAssignment(property) && property.name.getText() === "states") {
+                                                if (ts.isObjectLiteralExpression(property.initializer)) {
+                                                    property.initializer.properties.forEach((innerProperty) => {
+                                                        if (ts.isPropertyAssignment(innerProperty)) {
+                                                            if (innerProperty.initializer.getText().includes("this.state.to('" + toState + "')")) {
+                                                                fromState = innerProperty.name.getText();
+                                                            }
+                                                        }
+                                                    });
+                                                }
+                                            }
+                                        });
+                                    }
+                                    stateTransitions.push({
+                                        method: method.name.getText(),
+                                        input,
+                                        fromState: fromState !== null && fromState !== void 0 ? fromState : "unknown",
+                                        toState,
+                                        stateFunction,
+                                        classname: className,
+                                    });
+                                }
+                                ts.forEachChild(childNode, childNode => findStateTransitions(childNode, className));
+                            }
+                            findStateTransitions(method, (_b = (_a = node.name) === null || _a === void 0 ? void 0 : _a.getText()) !== null && _b !== void 0 ? _b : 'none');
+                            const returnStatement = (_c = method.body) === null || _c === void 0 ? void 0 : _c.statements.find(ts.isReturnStatement);
+                            if (stateTransitions.length || Object.keys(stateProperties).length) {
+                                states.push({
+                                    classname: (_e = (_d = node.name) === null || _d === void 0 ? void 0 : _d.getText()) !== null && _e !== void 0 ? _e : "none",
+                                    id: method.name.getText(),
+                                    name: 'troep en poep',
+                                    stateTransitions: stateTransitions,
+                                    properties: stateProperties,
+                                });
+                            }
                         }
-                        // Get the condition text if an IfStatement is found
-                        if (currentNode && ts.isIfStatement(currentNode)) {
-                            input = currentNode.expression.getText();
-                        }
-                        else {
-                            input = 'No condition found';
-                        }
-                        stateTransitions.push({ method: method.name.getText(), input, targetState });
                     }
-                    ts.forEachChild(childNode, findStateTransitions);
-                }
-                findStateTransitions(method);
-                if (stateTransitions.length) {
-                    states.push({ classname: (_b = (_a = node.name) === null || _a === void 0 ? void 0 : _a.getText()) !== null && _b !== void 0 ? _b : 'none', id: 'sadsf', name: method.name.getText(), transitions: stateTransitions });
                 }
             }
         }
@@ -313,44 +350,88 @@ function parseStateMachineCode(code) {
     parseNode(sourceFile);
     return states;
 }
-// Example usage
-const args = process.argv.slice(2);
-if (args.length !== 1) {
-    console.error('Usage: node parse_states.js <filename>');
-    process.exit(1);
+function lees_args() {
+    const args = process.argv.slice(2);
+    if (args.length !== 1) {
+        console.error('Usage: node parse_states.js <filename>');
+        process.exit(1);
+    }
+    const fileName = args[0];
+    const fileBuffer = fs.readFileSync(fileName);
+    return fileBuffer.toString();
 }
-const fileName = args[0];
-const fileBuffer = fs.readFileSync(fileName);
-const code = fileBuffer.toString();
-// const code = `/* Your TypeScript code containing the draaischijf class */`;
-const parsedStates = parseStateMachineCode(code);
-const g = generateGraph(parsedStates);
-console.log(g);
-const matrix = g.toAscii();
-console.log(matrix);
-// parsedStates.forEach(s => { console.log(s); s.transitions.forEach(t => console.log); });
-// console.log(parsedStates);
+function main() {
+    const code = lees_args();
+    const parsedStates = parseStateMachineCode(code);
+    const graphs = generateGraph(parsedStates);
+    for (const classname in graphs) {
+        console.log(`Graph for class "${classname}":`);
+        const matrix = graphs[classname].toAscii();
+        console.log(matrix);
+    }
+    parsedStates.forEach(s => { var _a; console.log(s); (_a = s.stateTransitions) === null || _a === void 0 ? void 0 : _a.forEach(t => console.log); });
+    parsedStates.forEach(s => { console.log(s); }); // s.stateTransitions?.forEach(t => console.log); });
+    // console.log(parsedStates);
+}
+function main2() {
+    const code = lees_args();
+    const sourceFile = ts.createSourceFile("temp.ts", code, ts.ScriptTarget.ES2020, true);
+    function findStateNames(node) {
+        var _a, _b;
+        if (ts.isClassDeclaration(node)) {
+            const classname = node.name.getText();
+            for (const member of node.members) {
+                if (ts.isMethodDeclaration(member) && ((_a = ts.getDecorators(member)) === null || _a === void 0 ? void 0 : _a.some(decorator => decorator.expression.getText() === "statedef_builder"))) {
+                    const returnStatement = (_b = member.body) === null || _b === void 0 ? void 0 : _b.statements.find(ts.isReturnStatement);
+                    if (returnStatement && ts.isReturnStatement(returnStatement)) {
+                        const objectLiteralExpression = returnStatement.expression;
+                        if (objectLiteralExpression && ts.isObjectLiteralExpression(objectLiteralExpression)) {
+                            const statesProperty = objectLiteralExpression.properties.find(p => ts.isPropertyAssignment(p) && p.name.getText() === "states");
+                            if (statesProperty && ts.isPropertyAssignment(statesProperty)) {
+                                const statesObjectLiteralExpression = statesProperty.initializer;
+                                if (ts.isObjectLiteralExpression(statesObjectLiteralExpression)) {
+                                    const stateNames = statesObjectLiteralExpression.properties.map(p => p.name.getText());
+                                    console.log(`${classname}: ${stateNames}`);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        ts.forEachChild(node, findStateNames);
+    }
+    findStateNames(sourceFile);
+}
 function generateGraph(parsedStates) {
-    const graph = new Graph();
-    // Maak een Vertex-object voor elke staat en voeg deze toe aan de graaf
+    const graphs = {};
+    // Maak een Vertex-object voor elke staat en voeg deze toe aan de bijbehorende graaf
     parsedStates.forEach((state) => {
         if (!state)
             return;
-        const vertex = new Vertex(state.id, state.name);
-        graph.addVertex(vertex);
+        const classname = state.classname;
+        if (!graphs[classname]) {
+            graphs[classname] = new Graph();
+        }
+        const vertex = new Vertex(state.id, state.id);
+        graphs[classname].addVertex(vertex);
     });
     // Verbind de Vertex-objecten op basis van hun overgangen
     parsedStates.forEach((state) => {
+        if (!state.transitions)
+            return;
         state.transitions.forEach((transition) => {
-            const fromVertex = graph.getVertexById(state.id);
-            const toVertex = graph.getVertexById(transition.targetState);
+            const classname = state.classname;
+            const fromVertex = graphs[classname].getVertexById(transition.fromState);
+            const toVertex = graphs[classname].getVertexById(transition.toState);
             if (fromVertex && toVertex) {
                 fromVertex.connectTo(toVertex, transition.method);
             }
         });
     });
-    return graph;
+    return graphs;
 }
+main2();
 module.exports.func = function () {
     console.log('dsf');
 };
