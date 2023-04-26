@@ -90,7 +90,8 @@
 				"--nolazy",
 				"--allow-file-access-from-files",
 				"--disable-session-crashed-bubble",
-				"-inprivate"
+				"-inprivate",
+				"--remote-debugging-port=9222"
 			]
 		},
 		{

@@ -17,9 +17,9 @@
     <body>
         <canvas id="canvas"></canvas>
         <script>
-            function generateAsciiFontAtlas(callback) {
+            function generateAsciiFontAtlas(startCharIndex, numChars, callback) {
                 const charsPerRow = 16;
-                const numRows = 16;
+                const numRows = Math.ceil(numChars / charsPerRow);
                 const charSize = 32;
                 const canvasWidth = charsPerRow * charSize;
                 const canvasHeight = numRows * charSize;
@@ -39,14 +39,13 @@
 
                 for (let row = 0; row < numRows; row++) {
                     for (let col = 0; col < charsPerRow; col++) {
-                        const charIndex = row * charsPerRow + col;
+                        const charIndex = startCharIndex + row * charsPerRow + col;
                         const char = String.fromCharCode(charIndex);
                         const x = col * charSize + charSize / 2;
                         const y = row * charSize + charSize / 2;
                         ctx.fillText(char, x, y);
                     }
                 }
-
 
                 const image = new Image();
                 image.src = offscreenCanvas.toDataURL();
@@ -61,14 +60,14 @@
             }
 
             const vertShaderSrc = `
-      attribute vec4 a_position;
-      attribute vec2 a_texCoord;
-      varying vec2 v_texCoord;
-      void main() {
-        gl_Position = a_position;
-        v_texCoord = a_texCoord;
-      }
-    `;
+  attribute vec4 a_position;
+  attribute vec2 a_texCoord;
+  varying vec2 v_texCoord;
+  void main() {
+    gl_Position = a_position;
+    v_texCoord = a_texCoord;
+  }
+`;
 
             const fragShaderSrc = `
   precision mediump float;
@@ -85,17 +84,13 @@
     float index = gray * (ASCII_CHARS - 1.0);
     float row = floor(index / 16.0);
     float col = index - row * 16.0;
-    vec2 uv = (pixel + vec2(col, row) * u_pixelSize) / (16.0 * u_pixelSize * charAspect);
+    vec2 uv = (vec2(col, row) * u_pixelSize + mod(v_texCoord, u_pixelSize)) / (16.0 * u_pixelSize * charAspect);
     vec4 charColor = texture2D(u_asciiAtlas, uv);
-    gl_FragColor = vec4(color.rgb, 1.0);
-    // gl_FragColor = vec4(color.rgb * charColor.a, charColor.a);
-
-    // vec2 uv = (vec2(fract(col / 16.0), fract(row / 16.0)) + (pixel / (16.0 * u_pixelSize))) / charAspect;
-    // vec4 charColor = texture2D(u_asciiAtlas, uv);
-    // gl_FragColor = vec4(color.rg, charColor.a);
+    gl_FragColor = vec4(color.rgb * charColor.a, charColor.a);
   }
 `;
-            // The remaining code is the same up until the render function...
+
+
             // Create shaders
             const vertShader = gl.createShader(gl.VERTEX_SHADER);
             gl.shaderSource(vertShader, vertShaderSrc);
@@ -147,6 +142,8 @@
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            const startCharIndex = 33;
+            const numChars = 90;
 
             function render(image, asciiAtlas) {
                 canvas.width = image.width;
@@ -176,6 +173,10 @@
                 gl.uniform1i(u_asciiAtlas, 1);
                 const u_pixelSize = gl.getUniformLocation(program, 'u_pixelSize');
                 gl.uniform1f(u_pixelSize, 1.0 / 16.0); // You can adjust the ASCII resolution here
+                const startCharIndexLocation = gl.getUniformLocation(program, "u_startCharIndex");
+                const numCharsLocation = gl.getUniformLocation(program, "u_numChars");
+                gl.uniform1f(startCharIndexLocation, startCharIndex);
+                gl.uniform1f(numCharsLocation, numChars);
 
                 // // Set up vertex attributes
                 const a_position = gl.getAttribLocation(program, 'a_position');
@@ -208,7 +209,7 @@
 
             image.src = '../src/testrom/res/_ignore/rokvoorbeeld.png'; // Replace with a valid image URL
             image.onload = onLoad;
-            generateAsciiFontAtlas((atlas) => {
+            generateAsciiFontAtlas(startCharIndex, numChars, (atlas) => {
                 // Do something with the asciiAtlas canvas element here
                 asciiAtlas = atlas;
                 onLoad();
