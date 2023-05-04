@@ -179,6 +179,55 @@ function shouldPropertyValueBeRedirectedToSubDialog(propName: string, propValue:
     }
 }
 
+function customPrompt(title, initialValue, type) {
+    return new Promise((resolve) => {
+        const promptDialog = document.createElement('div');
+        promptDialog.className = 'custom-prompt-dialog';
+
+        const titleLabel = document.createElement('label');
+        titleLabel.innerHTML = title;
+        titleLabel.className = 'custom-prompt-title';
+        promptDialog.appendChild(titleLabel);
+
+        let inputElement;
+        switch (type) {
+            case 'boolean':
+                inputElement = document.createElement('select');
+                inputElement.innerHTML = `<option value="true">True</option><option value="false">False</option>`;
+                inputElement.value = initialValue ? 'true' : 'false';
+                break;
+            default:
+                inputElement = document.createElement('input');
+                inputElement.value = initialValue;
+                inputElement.type = type;
+        }
+        inputElement.className = 'custom-prompt-input';
+        promptDialog.appendChild(inputElement);
+
+        const buttonsDiv = document.createElement('div');
+        buttonsDiv.className = 'custom-prompt-buttons';
+
+        const cancelButton = document.createElement('button');
+        cancelButton.innerHTML = 'Cancel';
+        cancelButton.onclick = () => {
+            document.body.removeChild(promptDialog);
+            resolve(null);
+        };
+        buttonsDiv.appendChild(cancelButton);
+
+        const confirmButton = document.createElement('button');
+        confirmButton.innerHTML = 'OK';
+        confirmButton.onclick = () => {
+            document.body.removeChild(promptDialog);
+            resolve(inputElement.value);
+        };
+        buttonsDiv.appendChild(confirmButton);
+
+        promptDialog.appendChild(buttonsDiv);
+        document.body.appendChild(promptDialog);
+    });
+}
+
 function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement, obj: Object, objName: string, ignoreProps?: string[]): HTMLElement {
     let table = addContent(addContentTo, 'table', null);
     let headerRow = addContent(table, 'tr', null);
@@ -235,28 +284,29 @@ function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement
                     }
                     valueCell.onclick = (e) => {
                         let currentValueAsStringInHandlerScope = String(obj[key]);
-                        let newValue = prompt(`Edit value for "${key}":`, currentValueAsStringInHandlerScope);
-                        if (newValue && newValue != currentValueAsStringInHandlerScope) {
-                            try {
-                                let convertedNewValue: any = null;
-                                switch (type) {
-                                    case 'string': convertedNewValue = newValue; break;
-                                    case 'boolean': convertedNewValue = (newValue.toLowerCase() === 'true' || newValue === '1' || newValue.toLowerCase() === 'y'); break;
-                                    case 'bigint': convertedNewValue = BigInt(newValue); break;
-                                    case 'number': convertedNewValue = Number(newValue); break;
-                                    default: console.warn(`Property ${key} cannot be updated, because Boaz still needs to develop an update solution for type '${type}'.`);
+                        customPrompt(`Edit value for "${key}":`, currentValueAsStringInHandlerScope, type).then((newValue: any) => {
+                            if (newValue && newValue != currentValueAsStringInHandlerScope) {
+                                try {
+                                    let convertedNewValue: any = null;
+                                    switch (type) {
+                                        case 'string': convertedNewValue = newValue; break;
+                                        case 'boolean': convertedNewValue = (newValue.toLowerCase() === 'true' || newValue === '1' || newValue.toLowerCase() === 'y'); break;
+                                        case 'bigint': convertedNewValue = BigInt(newValue); break;
+                                        case 'number': convertedNewValue = Number(newValue); break;
+                                        default: console.warn(`Property ${key} cannot be updated, because Boaz still needs to develop an update solution for type '${type}'.`);
+                                    }
+                                    if (convertedNewValue !== null) {
+                                        obj[key] = convertedNewValue;
+                                        valueCell.classList.remove('propvalue');
+                                        valueCell.classList.add('mutated-propvalue');
+                                        valueCell.innerHTML = newValue;
+                                    }
+                                } catch (e) {
+                                    console.warn(`Updating property ${key} to value '${newValue}' (type '${type}') failed.`);
                                 }
-                                if (convertedNewValue !== null) {
-                                    obj[key] = convertedNewValue;
-                                    valueCell.classList.remove('propvalue');
-                                    valueCell.classList.add('mutated-propvalue');
-                                    valueCell.innerHTML = newValue;
-                                }
-                            } catch (e) {
-                                console.warn(`Updating property ${key} to value '${newValue}' (type '${type}') failed.`);
                             }
-                        }
-                    };
+                        });
+                    }
                     break;
                 default:
                     valueCell.classList.add('immutable-propvalue');
