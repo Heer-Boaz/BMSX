@@ -392,8 +392,6 @@ async function deploy(romname: string, title: string): Promise<any> {
 			.deploy(config)
 			.then(res => { appendLogEntry(`${res}. ${_colors.grey('[Donut]')}\n`); resolve(null); })
 			.catch(err => {
-				// stopRotator();
-				// log(`\tFTP upload mislukt :-(\n`, 'error');
 				reject(err);
 			});
 	});
@@ -512,7 +510,6 @@ async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>, r
 
 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
 		// Sort the files on buffer size for atlassing
-		// loadedResources = loadedResources.sort((b1, b2) => ((b1.img?.height || 0) - (b2.img?.height || 0))); // Sort from small to large
 		// Also: place the atlas in the back, so that we can correctly use the bufferpointer to point to the atlas
 		loadedResources = loadedResources.sort((b1, b2) => ((b1.type === 'atlas' ? 1 : 0) - (b2.type === 'atlas' ? 1 : 0)));
 		// Also: place the romlabel in front, so that it is put at the start of the rom and will be recognized as a proper image
@@ -751,6 +748,7 @@ async function isRebuildRequired(romname: string, bootloaderPath: string, resPat
 
 async function main() {
 	try {
+		// #region stuff
 		term.terminal.clear();
 		writeOut(_colors.brightGreen('┏————————————————————————————————————————————————————————————————————————————————┓\n'));
 		writeOut(_colors.brightGreen('|                          BMSX ROMPACKER DOOR BOAZ©®™                           |\n'));
@@ -857,7 +855,7 @@ async function main() {
 			};
 
 			progress.startItem(huidigeTaak);
-
+			// #endregion
 			try {
 				await timer(200);
 				if (rebuildRequired) {
