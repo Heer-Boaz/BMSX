@@ -1,11 +1,6 @@
 ﻿import { Key } from 'ts-key-enum';
 import { handleDebugClick, handleDebugMouseDown, handleDebugMouseDragEnd, handleDebugMouseMove, handleDebugMouseOut, handleContextMenu as handleDebugContextMenu, handleOpenObjectMenu, handleOpenDebugMenu as handleOpenDebugMenu } from './bmsxdebugger';
 
-const GAMEPAD_LEFT: number = 1000;
-const GAMEPAD_RIGHT: number = 1001;
-const GAMEPAD_UP: number = 1002;
-const GAMEPAD_DOWN: number = 1003;
-
 type ButtonId = 'BTN1' | 'BTN2' | 'BTN3' | 'BTN4' | Key;
 let preventActionAndPropagation = (e: Event): boolean => {
     e.preventDefault();
@@ -79,14 +74,29 @@ interface InputMap {
     keyboard: { [action: string]: string; };
     gamepad: { [action: string]: number; };
 }
-export class Input {
-    public static readonly GAMEPAD_UP = 12;
-    public static readonly GAMEPAD_DOWN = 13;
-    public static readonly GAMEPAD_LEFT = 14;
-    public static readonly GAMEPAD_RIGHT = 15;
 
-    private static KeyState: Index2State = {};
-    private static KeyClickRequestedState: Index2State = {};
+export class Input {
+    public static readonly GAMEPAD_BUTTONS = {
+        'a': 0,
+        'b': 1,
+        'x': 2,
+        'y': 3,
+        'lb': 4,
+        'rb': 5,
+        'lt': 6,
+        'rt': 7,
+        'back': 8,
+        'start': 9,
+        'ls': 10,
+        'rs': 11,
+        'up': 12,
+        'down': 13,
+        'left': 14,
+        'right': 15,
+    };
+
+    public static KeyState: Index2State = {};
+    public static KeyClickRequestedState: Index2State = {};
     private static GamepadButtonStates: Index2State[] = [];
     private static GamepadClickRequestedStates: Index2State[] = [];
     private static inputMaps: InputMap[] = [];
@@ -154,31 +164,12 @@ export class Input {
         return Input.getPressedState(stateMap, clickStateMap, btn, checkClick);
     }
 
-    public static isKeyPressed(key: string, checkClick: boolean = false): boolean {
-        return Input.getKeyState(key, checkClick);
+    public static isKeyDown(key: string): boolean {
+        return Input.getKeyState(key, false);
     }
 
-    public static isGamepadButtonPressed(playerIndex: number, btn: number, checkClick: boolean = false): boolean {
-        return Input.getGamepadButtonState(playerIndex, btn, checkClick);
-    }
-
-    // Update gamepad states for each player
-    public static updateGamepadStates(): void {
-        const gamepads = navigator.getGamepads();
-        for (let i = 0; i < gamepads.length; i++) {
-            const gamepad = gamepads[i];
-            if (!gamepad) continue;
-
-            if (!Input.GamepadButtonStates[i]) {
-                Input.GamepadButtonStates[i] = {};
-                Input.GamepadClickRequestedStates[i] = {};
-            }
-
-            for (let btnIndex = 0; btnIndex < gamepad.buttons.length; btnIndex++) {
-                const btn = gamepad.buttons[btnIndex];
-                Input.GamepadButtonStates[i][btnIndex] = btn.pressed;
-            }
-        }
+    public static isGamepadButtonDown(playerIndex: number, btn: number): boolean {
+        return Input.getGamepadButtonState(playerIndex, btn, false);
     }
 
     public static get KC_F1(): boolean {
@@ -206,28 +197,28 @@ export class Input {
         return Input.getKeyState('Space', true);
     }
     public static get KC_UP(): boolean {
-        return Input.getKeyState('ArrowUp', true) || Input.getGamepadButtonState(GAMEPAD_UP, true);
+        return Input.getKeyState('ArrowUp', true) || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.up, true);
     }
     public static get KC_RIGHT(): boolean {
-        return Input.getKeyState('ArrowRight', true) || Input.getGamepadButtonState(GAMEPAD_RIGHT, true);
+        return Input.getKeyState('ArrowRight', true) || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.right, true);
     }
     public static get KC_DOWN(): boolean {
-        return Input.getKeyState('ArrowDown', true) || Input.getGamepadButtonState(GAMEPAD_DOWN, true);
+        return Input.getKeyState('ArrowDown', true) || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.down, true);
     }
     public static get KC_LEFT(): boolean {
-        return Input.getKeyState('ArrowLeft', true) || Input.getGamepadButtonState(GAMEPAD_LEFT, true);
+        return Input.getKeyState('ArrowLeft', true) || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.left, true);
     }
     public static get KC_BTN1(): boolean {
-        return Input.getKeyState('ShiftLeft', true) || Input.getGamepadButtonState(0, true);
+        return Input.getKeyState('ShiftLeft', true) || Input.getGamepadButtonState(0,Input.GAMEPAD_BUTTONS.a, true);
     }
     public static get KC_BTN2(): boolean {
-        return Input.getKeyState('KeyZ', true) || Input.getGamepadButtonState(1, true);
+        return Input.getKeyState('KeyZ', true) || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.b, true);
     }
     public static get KC_BTN3(): boolean {
-        return Input.getKeyState('F1', true) || Input.getGamepadButtonState(2, true);
+        return Input.getKeyState('F1', true) || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.x, true);
     }
     public static get KC_BTN4(): boolean {
-        return Input.getKeyState('F5', true) || Input.getGamepadButtonState(3, true);
+        return Input.getKeyState('F5', true) || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.y, true);
     }
 
     public static get KD_F1(): boolean {
@@ -255,28 +246,28 @@ export class Input {
         return Input.getKeyState('Space');
     }
     public static get KD_UP(): boolean {
-        return Input.getKeyState('ArrowUp') || Input.getGamepadButtonState(GAMEPAD_UP, false);
+        return Input.getKeyState('ArrowUp') || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.up, false);
     }
     public static get KD_RIGHT(): boolean {
-        return Input.getKeyState('ArrowRight') || Input.getGamepadButtonState(GAMEPAD_RIGHT, false);
+        return Input.getKeyState('ArrowRight') || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.right, false);
     }
     public static get KD_DOWN(): boolean {
-        return Input.getKeyState('ArrowDown') || Input.getGamepadButtonState(GAMEPAD_DOWN, false);
+        return Input.getKeyState('ArrowDown') || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.down, false);
     }
     public static get KD_LEFT(): boolean {
-        return Input.getKeyState('ArrowLeft') || Input.getGamepadButtonState(GAMEPAD_LEFT, false);
+        return Input.getKeyState('ArrowLeft') || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.left, false);
     }
     public static get KD_BTN1(): boolean {
-        return Input.getKeyState('ShiftLeft') || Input.getGamepadButtonState(0, false);
+        return Input.getKeyState('ShiftLeft') || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.a, false);
     }
     public static get KD_BTN2(): boolean {
-        return Input.getKeyState('KeyZ') || Input.getGamepadButtonState(1, false);
+        return Input.getKeyState('KeyZ') || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.b, false);
     }
     public static get KD_BTN3(): boolean {
-        return Input.getKeyState('F1') || Input.getGamepadButtonState(2, true);
+        return Input.getKeyState('F1') || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.x, true);
     }
     public static get KD_BTN4(): boolean {
-        return Input.getKeyState('F5') || Input.getGamepadButtonState(3, true);
+        return Input.getKeyState('F5') || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.y, true);
     }
 
     private static handleDebugEvents(e: MouseEvent | TouchEvent): void {
@@ -323,8 +314,8 @@ export class Input {
     public static init(debug = true): void {
         Input.KeyState = {};
         Input.KeyClickRequestedState = {};
-        Input.GamepadButtonState = {};
-        Input.GamepadClickRequestedState = {};
+        // Input.GamepadButtonState = {};
+        // Input.GamepadClickRequestedState = {};
         Input.reset();
         const options = {
             passive: false,
@@ -383,51 +374,58 @@ export class Input {
         }
     }
 
-    public static pollGamepadInput(): void { // ! FIXME: ONDERSTEUND ALLEEN 1 SPELER!!
-        let buttonPressed = (button: GamepadButton) => {
-            if (typeof (button) == "object") {
-                return button.pressed;
-            }
-            return button == 1.0;
-        };
-        Input.GamepadButtonState[GAMEPAD_LEFT] = false;
-        Input.GamepadButtonState[GAMEPAD_RIGHT] = false;
-        Input.GamepadButtonState[GAMEPAD_UP] = false;
-        Input.GamepadButtonState[GAMEPAD_DOWN] = false;
-
+    // Update gamepad states for each player
+    public static updateGamepadStates(): void {
+        const gamepads = navigator.getGamepads();
+    }
+    public static pollGamepadInput(): void {
         let gamepads: Gamepad[] = navigator.getGamepads ? navigator.getGamepads() : ((navigator as any).webkitGetGamepads ? (navigator as any).webkitGetGamepads : undefined);
-        // ! FIXME: Moet niet hardcoded zijn!
-        let gp: Gamepad = gamepads?.find((gp: Gamepad) => {
-            if (gp) return !gp.id.includes('Sound Blaster');
-            return false;
-        }); // Note that gp can be `null` if gamepads have not been connected yet
-        if (!gp) { return; }
-        for (let i = 0; i < gp.buttons.length; i++) {
-            if (buttonPressed(gp.buttons[i])) {
-                Input.GamepadButtonState[i] = true;
-            }
-            else {
-                Input.GamepadButtonState[i] = false;
-                Input.GamepadClickRequestedState[i] = false;
-            }
-        }
+        if (!gamepads) return;
 
-        // Check whether any axes have been triggered
-        for (let i = 0; i < gp.axes.length && i < 2; i++) {
-            let axis = gp.axes[i];
-            switch (i) {
-                case 0:
-                    if (axis < -.5) { Input.GamepadButtonState[GAMEPAD_LEFT] = true; }
-                    else if (axis > .5) { Input.GamepadButtonState[GAMEPAD_RIGHT] = true; }
-                    break;
-                case 1:
-                    if (axis < -.5) { Input.GamepadButtonState[GAMEPAD_UP] = true; }
-                    else if (axis > .5) { Input.GamepadButtonState[GAMEPAD_DOWN] = true; }
-                    break;
+        for (let gamepad_index = 0; gamepad_index < gamepads.length; gamepad_index++) {
+            const gamepad = gamepads[gamepad_index];
+            if (!gamepad) continue;
+            // if (gamepad.id.includes('Sound Blaster')) continue;
+            if (!gamepad.id.toLowerCase().includes('gamepad')) continue;
+
+            // Reset gamepad button states
+            Input.GamepadButtonStates[gamepad_index] = {};
+            if (!Input.GamepadClickRequestedStates[gamepad_index]) {
+                Input.GamepadClickRequestedStates[gamepad_index] = {};
+            }
+
+            // Check whether any axes have been triggered
+            Input.pollGamepadAxes(gamepad_index, gamepad.axes);
+
+            // Check button states
+            Input.pollGamepadButtons(gamepad_index, gamepad.buttons);
+        }
+    }
+
+    private static pollGamepadAxes(gamepad_index: number, axes: readonly number[]): void {
+        const [xAxis, yAxis] = axes;
+        Input.GamepadButtonStates[gamepad_index][Input.GAMEPAD_BUTTONS.left] = xAxis < -0.5;
+        Input.GamepadButtonStates[gamepad_index][Input.GAMEPAD_BUTTONS.right] = xAxis > 0.5;
+        Input.GamepadButtonStates[gamepad_index][Input.GAMEPAD_BUTTONS.up] = yAxis < -0.5;
+        Input.GamepadButtonStates[gamepad_index][Input.GAMEPAD_BUTTONS.down] = yAxis > 0.5;
+    }
+
+    private static pollGamepadButtons(gamepad_index: number, buttons: readonly GamepadButton[]): void {
+        for (let btnIndex = 0; btnIndex < buttons.length; btnIndex++) {
+            const btn = buttons[btnIndex];
+            const pressed = typeof btn === "object" ? btn.pressed : btn === 1.0;
+            // Consider that the button can already be regarded as pressed if it was pressed as part of another action, like an axis
+            Input.GamepadButtonStates[gamepad_index][btnIndex] = Input.GamepadButtonStates[gamepad_index][btnIndex] || pressed;
+            if (!pressed) {
+                Input.GamepadClickRequestedStates[gamepad_index][btnIndex] = false;
             }
         }
     }
 
+    /**
+     * Resets the state of all input keys and gamepad buttons.
+     * @param except An optional array of keys or buttons to exclude from the reset.
+     */
     public static reset(except?: string[]): void {
         let props = Object.keys(Input.KeyState);
         for (let i = 0; i < props.length; i++) {
@@ -439,14 +437,18 @@ export class Input {
             if (!except || except.indexOf(props[i]) === -1) { delete Input.KeyClickRequestedState[props[i]]; }
         }
 
-        props = Object.keys(Input.GamepadButtonState);
-        for (let i = 0; i < props.length; i++) {
-            if (!except || except.indexOf(props[i]) === -1) { delete Input.GamepadButtonState[props[i]]; }
+        for (let gamepad_index = 0; gamepad_index < Input.GamepadButtonStates.length; gamepad_index++) {
+            props = Object.keys(Input.GamepadButtonStates[gamepad_index]);
+            for (let prop_index = 0; prop_index < props.length; prop_index++) {
+                if (!except || except.indexOf(props[prop_index]) === -1) { delete Input.GamepadButtonStates[gamepad_index][props[prop_index]]; }
+            }
         }
 
-        props = Object.keys(Input.GamepadClickRequestedState);
-        for (let i = 0; i < props.length; i++) {
-            if (!except || except.indexOf(props[i]) === -1) { delete Input.GamepadClickRequestedState[props[i]]; }
+        for (let gamepad_index = 0; gamepad_index < Input.GamepadClickRequestedStates.length; gamepad_index++) {
+            props = Object.keys(Input.GamepadClickRequestedStates[gamepad_index]);
+            for (let prop_index = 0; prop_index < props.length; prop_index++) {
+                if (!except || except.indexOf(props[prop_index]) === -1) { delete Input.GamepadClickRequestedStates[gamepad_index][props[prop_index]]; }
+            }
         }
     }
 
@@ -497,8 +499,6 @@ function keydown(key: ButtonId | string): void {
 
 function keyup(key: ButtonId | string): void {
     Input.KeyState[key] = Input.KeyClickRequestedState[key] = false;
-    // delete Input.KeyState[key];
-    // delete Input.KeyClickRequestedState[key];
 }
 
 function blur(e: FocusEvent): void {
@@ -566,7 +566,8 @@ const buttonMap = {
     'btn4_knop': {
         keys: ['BTN4', 'F5'],
     },
-};
+}
+
 function handleElementUnderTouch(e: Element): (ButtonId | string)[] {
     const buttonData = buttonMap[e.id];
     if (buttonData) {

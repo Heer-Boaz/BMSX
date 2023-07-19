@@ -1,0 +1,42 @@
+toAscii() {
+    // Determine the maximum label length
+    const maxLabelLength = this.vertices.reduce((max, vertex) => {
+        return Math.max(max, vertex.label.length);
+    }, 0);
+
+    // Determine the number of rows and columns needed
+    const maxColumns = Math.max(1, ...this.vertices.map((vertex) => vertex.edges.length + 1));
+    const numColumns = this.vertices.length;
+    const numRows = maxColumns * 2 - 1;
+
+    // Determine the grid positions of the vertices
+    const vertexPositions = [];
+    const offsetX = maxLabelLength + 2;
+    const offsetY = numRows - 1;
+    for (let i = 0; i < numColumns; i++) {
+        const x = i * offsetX;
+        const y = offsetY - Math.floor(i / maxColumns) * 2;
+        vertexPositions.push({ x, y });
+    }
+
+    // Calculate matrix dimensions
+    const matrixHeight = Math.max(...vertexPositions.map(pos => pos.y)) + 3;
+    const matrixWidth = Math.max(...vertexPositions.map(pos => pos.x)) + offsetX;
+
+    // Draw the vertices and edges on the grid
+    const matrix = Array(matrixHeight)
+        .fill()
+        .map(() => Array(matrixWidth).fill(" "));
+    this.vertices.forEach((vertex, index) => {
+        drawVertex(matrix, vertex, vertexPositions[index], maxLabelLength);
+        if (vertex.edges.length > 0) {
+            vertex.edges.forEach((edge) => {
+                const otherVertex = edge.vertices.find((v) => v !== vertex);
+                const otherIndex = this.vertices.indexOf(otherVertex);
+                drawEdge(matrix, vertexPositions[index], vertexPositions[otherIndex]);
+            });
+        }
+    });
+    // Convert the grid to ASCII
+    return matrixToASCII(matrix);
+}

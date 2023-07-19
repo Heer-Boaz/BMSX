@@ -1,6 +1,7 @@
 {
-    "typescript.tsdk": "node_modules\\typescript\\lib"
-} // {
+    "typescript.tsdk": "node_modules/typescript/lib"
+}
+// {
 //         "files.exclude": {
 //                 "**/.git": true,
 //                 "**/.DS_Store": true,
@@ -15,4 +16,4 @@
 //             "**/*.js": false
 //         },
 //         "typescript.tsdk": "node_modules\\typescript\\lib",
-// }
+}

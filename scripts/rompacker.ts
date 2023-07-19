@@ -708,6 +708,9 @@ async function isRebuildRequired(romname: string, bootloaderPath: string, resPat
 	const romMtime = romStats.mtime;
 
 	const shouldRebuild = async (dir: string, checkTsFiles: boolean, checkAssets: boolean): Promise<boolean> => {
+		if (!existsSync(dir)) {
+			throw new Error(`Directory "${dir}" bestaat niet!`);
+		}
 		const entries = await readdir(dir, { withFileTypes: true });
 
 		for (const entry of entries) {
@@ -742,8 +745,9 @@ async function isRebuildRequired(romname: string, bootloaderPath: string, resPat
 	const shouldCheckTsFiles = dir => dir.startsWith(bootloaderPath);
 	const shouldCheckAssets = dir => dir.startsWith(resPath);
 
-	return await shouldRebuild(bootloaderPath, shouldCheckTsFiles(bootloaderPath), shouldCheckAssets(bootloaderPath)) ||
-		await shouldRebuild(resPath, shouldCheckTsFiles(resPath), shouldCheckAssets(resPath));
+    return await shouldRebuild(bootloaderPath, shouldCheckTsFiles(bootloaderPath), shouldCheckAssets(bootloaderPath)) ||
+        await shouldRebuild(resPath, shouldCheckTsFiles(resPath), shouldCheckAssets(resPath)) ||
+        await shouldRebuild('src/bmsx', true, false);
 }
 
 async function main() {
