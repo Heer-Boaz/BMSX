@@ -72,11 +72,11 @@ let preventActionAndPropagation = (e: Event): boolean => {
 type Index2State = { [index: string | number]: boolean; };
 interface InputMap {
     keyboard: { [action: string]: string; };
-    gamepad: { [action: string]: number; };
+    gamepad: { [action: string]: string; };
 }
 
 export class Input {
-    public static readonly GAMEPAD_BUTTONS = {
+    public static readonly GAMEPAD_BUTTONS: { [button: string]: number } = {
         'a': 0,
         'b': 1,
         'x': 2,
@@ -109,7 +109,7 @@ export class Input {
         const inputMap = Input.inputMaps[playerIndex];
         if (!inputMap) return false;
         const keyboardKey = inputMap.keyboard[action];
-        const gamepadButton = inputMap.gamepad[action];
+        const gamepadButton = Input.GAMEPAD_BUTTONS[inputMap.gamepad[action]];
 
         return (
             (keyboardKey && Input.getKeyState(keyboardKey, checkClick)) ||
@@ -128,11 +128,11 @@ export class Input {
                 'down': 'ArrowDown',
             },
             gamepad: {
-                'jump': 0,
-                'left': 14,
-                'right': 15,
-                'up': 12,
-                'down': 13,
+                'jump': 'a',
+                'left': 'left',
+                'right': 'right',
+                'up': 'up',
+                'down': 'down',
             },
         });
 
