@@ -5,6 +5,10 @@ import { DEFAULT_VERTEX_COLOR } from "./glview";
 import { Color, DrawImgOptions, paintImage } from "./view";
 
 @insavegame
+/**
+ * An abstract class representing a game object that can be rendered as a sprite.
+ * Extends the GameObject class.
+ */
 export abstract class SpriteObject extends GameObject {
     public get flip_h() {
         return this.sprite.flip_h;
@@ -45,6 +49,10 @@ export abstract class SpriteObject extends GameObject {
 }
 
 @insavegame
+/**
+ * A class representing a sprite that can be rendered on the screen.
+ * Contains information about the sprite's position, size, image, and other options.
+ */
 export class Sprite {
     public x: number;
     public y: number;
