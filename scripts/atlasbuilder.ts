@@ -7,7 +7,12 @@ const CROP_ATLAS = true;
 export type Rect = { width: number; height: number; id: number; };
 export type Bin = { x: number; y: number; width: number; height: number; };
 
-// Helper function to split a free rectangle
+/**
+ * Splits a free rectangle into smaller rectangles based on the position and size of a used rectangle.
+ * @param freeRect The free rectangle to split.
+ * @param usedRect The used rectangle to use as a reference for splitting the free rectangle.
+ * @returns An array of new free rectangles created by splitting the original free rectangle.
+ */
 export function splitFreeRectangle(freeRect: Bin, usedRect: Bin): Bin[] {
 	const newFreeRects: Bin[] = [];
 
@@ -60,7 +65,11 @@ export function splitFreeRectangle(freeRect: Bin, usedRect: Bin): Bin[] {
 	return newFreeRects;
 }
 
-// Helper function to remove overlapping free rectangles
+/**
+ * Prunes the free rectangles array by removing any rectangles that are fully contained within a new rectangle, and adding the new rectangle if it is not fully contained within any existing free rectangle.
+ * @param newFreeRectangles An array of new free rectangles to add to the free rectangles array.
+ * @param freeRectangles The current array of free rectangles.
+ */
 function pruneFreeRectangles(newFreeRectangles: Bin[], freeRectangles: Bin[]): void {
 	newFreeRectangles.forEach((newRect) => {
 		let addNewRect = true;
@@ -79,17 +88,35 @@ function pruneFreeRectangles(newFreeRectangles: Bin[], freeRectangles: Bin[]): v
 		}
 	});
 }
+/**
+ * Checks if a rectangle is fully contained within another rectangle.
+ * @param rect1 The first rectangle to check.
+ * @param rect2 The second rectangle to check.
+ * @returns True if rect1 is fully contained within rect2, false otherwise.
+ */
 export function isContained(rect1: Bin, rect2: Bin): boolean {
 	return rect1.x >= rect2.x && rect1.y >= rect2.y &&
 		rect1.x + rect1.width <= rect2.x + rect2.width &&
 		rect1.y + rect1.height <= rect2.y + rect2.height;
 }
 
-// Helper function to check for overlaps between two bins
+/**
+ * Checks if two bins overlap.
+ * @param bin1 The first bin to check.
+ * @param bin2 The second bin to check.
+ * @returns True if bin1 overlaps with bin2, false otherwise.
+ */
 export function overlaps(bin1: Bin, bin2: Bin): boolean {
 	return bin1.x < bin2.x + bin2.width && bin1.x + bin1.width > bin2.x && bin1.y < bin2.y + bin2.height && bin1.y + bin1.height > bin2.y;
 }
 
+/**
+ * Packs an array of rectangles into a texture atlas using the maximal rectangles algorithm.
+ * @param rects An array of rectangles to pack into the texture atlas.
+ * @param binWidth The maximum width of the texture atlas.
+ * @param binHeight The maximum height of the texture atlas.
+ * @returns An object containing the packed rectangles, their positions in the texture atlas, and the dimensions of the texture atlas.
+ */
 export function maximalRectanglesPacker(rects: Rect[], binWidth: number, binHeight: number): { items: { item: Rect, x: number, y: number; }[], width: number, height: number; } {
 	// Sort the rectangles by area in descending order
 	const sortedRects = rects.slice().sort((a, b) => b.width * b.height - a.width * a.height);
@@ -149,6 +176,9 @@ export function maximalRectanglesPacker(rects: Rect[], binWidth: number, binHeig
 	return { items: items, width: width, height: height };
 }
 
+/**
+ * Represents a shelf in the shelf bin packing algorithm.
+ */
 type Shelf = {
 	x: number;
 	y: number;
@@ -156,6 +186,13 @@ type Shelf = {
 	height: number;
 };
 
+/**
+ * Packs an array of rectangles into a texture atlas using the shelf bin packing algorithm.
+ * @param rects An array of rectangles to pack into the texture atlas.
+ * @param binWidth The maximum width of the texture atlas.
+ * @param binHeight The maximum height of the texture atlas.
+ * @returns An object containing the packed rectangles, their positions in the texture atlas, and the dimensions of the texture atlas.
+ */
 export function shelfBinPacker(rects: Rect[], binWidth: number, binHeight: number): { items: { item: Rect, x: number, y: number; }[], width: number, height: number; } {
 	// Sort the rectangles by height in descending order
 	const sortedRects = rects.slice().sort((a, b) => b.height - a.height);
@@ -201,6 +238,9 @@ export function shelfBinPacker(rects: Rect[], binWidth: number, binHeight: numbe
 	return { items: items, width: width, height: height };
 }
 
+/**
+ * Represents a node in a binary tree used by the maximal rectangles algorithm.
+ */
 type Node = {
 	x: number;
 	y: number;
@@ -208,6 +248,13 @@ type Node = {
 	height: number;
 };
 
+/**
+ * Packs an array of rectangles into a texture atlas using the texture-packing with rotation and flipping algorithm.
+ * @param rects An array of rectangles to pack into the texture atlas.
+ * @param binWidth The maximum width of the texture atlas.
+ * @param binHeight The maximum height of the texture atlas.
+ * @returns An object containing the packed rectangles, their positions in the texture atlas, and the dimensions of the texture atlas.
+ */
 export function tprfPacker(rects: Rect[], binWidth: number, binHeight: number): { items: { item: Rect, x: number, y: number; }[], width: number, height: number; } {
 	// Sort the rectangles by area in descending order
 	const sortedRects = rects.slice().sort((a, b) => b.width * b.height - a.width * a.height);
@@ -321,6 +368,16 @@ export function createOptimizedAtlas(loadedResources: ILoadedResource[]): HTMLCa
 	return atlasCanvas;
 }
 
+/**
+ * Calculates the UV coordinates of an image that has been packed into a texture atlas.
+ * @param x The x-coordinate of the image in the texture atlas.
+ * @param y The y-coordinate of the image in the texture atlas.
+ * @param width The width of the texture atlas.
+ * @param height The height of the texture atlas.
+ * @param imageWidth The width of the image.
+ * @param imageHeight The height of the image.
+ * @returns An object containing the UV coordinates of the image in the texture atlas.
+ */
 export function uvcoords(x: number, y: number, width: number, height: number, imageWidth: number, imageHeight: number) {
 	const result = {
 		width: imageWidth, height: imageHeight, atlassed: true, texcoords: [] as number[], texcoords_fliph: [] as number[], texcoords_flipv: [] as number[], texcoords_fliphv: [] as number[]

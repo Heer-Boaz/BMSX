@@ -27,6 +27,10 @@ export class PixelData {
     public R: number;
 }
 
+/**
+ * The `BaseView` class is an abstract class that serves as the base for all views in the application.
+ * It provides common functionality and properties that are shared across all views.
+ */
 export abstract class BaseView {
     public canvas: HTMLCanvasElement;
     public context: CanvasRenderingContext2D;
@@ -54,12 +58,21 @@ export abstract class BaseView {
         this.listenToMediaEvents();
     }
 
+    /**
+     * Draws the game on the canvas. If `clearCanvas` is set to `true`, the canvas will be cleared before drawing.
+     * The method sorts the objects in the current space by depth and then iterates over them, calling their `paint` method if they are visible and not flagged for disposal.
+     */
     public drawgame(clearCanvas: boolean = true): void {
         if (clearCanvas) global.view.clear();
         global.model.currentSpace.sort_by_depth(); // Required for each frame as objects can change depth during the flow of the game
         global.model.currentSpace.objects.forEach(o => !o.disposeFlag && o.visible && o.paint?.());
     }
 
+    /**
+     * Calculates the size of the canvas and the scale factor based on the current viewport size and window size.
+     * The `dx` and `dy` properties represent the ratio of the window size to the viewport size in the x and y directions, respectively.
+     * The `scale` property represents the minimum of `dx` and `dy`.
+     */
     public calculateSize(): void {
         let self = global.view || this;
 
@@ -81,6 +94,10 @@ export abstract class BaseView {
         self.canvas.style.top = (self.windowSize.y - self.canvas.height * self.scale) / 2 + "px";
     }
 
+    /**
+     * Registers event listeners for window resize, orientation change, and fullscreen mode change.
+     * When any of these events occur, the `handleResize` method is called to recalculate the size of the canvas and adjust its position and scale.
+     */
     protected listenToMediaEvents(): void {
         window.addEventListener('resize', global.view.handleResize, false);
         window.addEventListener('orientationchange', global.view.handleResize, false);
@@ -94,6 +111,14 @@ export abstract class BaseView {
         });
     }
 
+    /**
+     * Determines the maximum scale factor that can be applied to the original buffer dimensions to fit the current client dimensions while maintaining aspect ratio.
+     * @param clientWidth The current width of the client.
+     * @param clientHeight The current height of the client.
+     * @param originalBufferWidth The original width of the buffer.
+     * @param originalBufferHeight The original height of the buffer.
+     * @returns The maximum scale factor that can be applied to the original buffer dimensions.
+     */
     public determineMaxScaleForFullscreen(clientWidth: number, clientHeight: number, originalBufferWidth: number, originalBufferHeight: number): number {
         if (clientWidth >= clientHeight) {
             return clientHeight / originalBufferHeight;
@@ -178,6 +203,9 @@ export abstract class BaseView {
         global.view.context.translate(-0.5, -0.5);
     }
 
+    /**
+     * Draws the "Press any key to start" message on the canvas.
+     */
     public drawPressKey(): void {
         global.view.context.fillRect(0, 0, this.canvas.width, this.canvas.height);
 

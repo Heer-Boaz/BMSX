@@ -1,5 +1,6 @@
 ﻿import { Key } from 'ts-key-enum';
 import { handleDebugClick, handleDebugMouseDown, handleDebugMouseDragEnd, handleDebugMouseMove, handleDebugMouseOut, handleContextMenu as handleDebugContextMenu, handleOpenObjectMenu, handleOpenDebugMenu as handleOpenDebugMenu } from './bmsxdebugger';
+import { EventDispatcher } from './eventdispatcher';
 
 type ButtonId = 'BTN1' | 'BTN2' | 'BTN3' | 'BTN4' | Key;
 let preventActionAndPropagation = (e: Event): boolean => {
@@ -9,43 +10,6 @@ let preventActionAndPropagation = (e: Event): boolean => {
     // return false;
     return e.returnValue = false; // https://javascriptio.com/view/5386822/prevent-text-selection-on-tap-and-hold-on-ios-13-mobile-safari
 };
-
-// type ButtonId = 'BTN1' | 'BTN2' | 'BTN3' | 'BTN4' | Key | typeof GamepadButtons[keyof typeof GamepadButtons];
-
-// type InputStateMap = Record<ButtonId, boolean>;
-
-// class Input {
-//   private static KeyState: InputStateMap = {};
-//   private static KeyClickRequestedState: InputStateMap = {};
-//   private static GamepadButtonState: InputStateMap = {};
-//   private static GamepadClickRequestedState: InputStateMap = {};
-
-//   private static getPressedState(key: ButtonId, checkClick = false): boolean {
-//     const state = Input.KeyState[key] || Input.GamepadButtonState[key];
-//     if (checkClick && state) {
-//       const clickState = Input.KeyClickRequestedState[key] || Input.GamepadClickRequestedState[key];
-//       if (clickState) return false;
-//       Input.KeyClickRequestedState[key] = true;
-//       Input.GamepadClickRequestedState[key] = true;
-//     }
-//     return state;
-//   }
-
-//   public static isPressed(key: ButtonId, checkClick = false): boolean {
-//     return Input.getPressedState(key, checkClick);
-//   }
-
-//   public static init(): void {
-//     const options = {
-//       passive: false,
-//       once: false,
-//     };
-//     // ... Initialize event listeners here ...
-//   }
-
-//   public static pollGamepadInput(): void {
-//     // ... Handle gamepad input here ...
-//   }
 
 //   public static reset(except?: ButtonId[]): void {
 //     const resetMap = (map: InputStateMap, except?: ButtonId[]) => {
@@ -62,20 +26,46 @@ let preventActionAndPropagation = (e: Event): boolean => {
 //     resetMap(Input.GamepadClickRequestedState, except);
 //   }
 
-//   public static resetUI(): void {
-//     // ... Reset UI here ...
-//   }
-// }
-
-// // ... Add other helper functions and event handlers here ...
-
 type Index2State = { [index: string | number]: boolean; };
 interface InputMap {
     keyboard: { [action: string]: string; };
     gamepad: { [action: string]: string; };
 }
 
+/**
+ * Represents the input state of the game.
+ */
 export class Input {
+    public static GamepadPlayerMap = {};
+
+    /**
+     * The state of each keyboard key.
+     */
+    public static KeyState: Index2State = {};
+
+    /**
+     * The state of each keyboard key click request.
+     */
+    public static KeyClickRequestedState: Index2State = {};
+
+    /**
+     * The state of each gamepad button for each player.
+     */
+    private static GamepadButtonStates: Index2State[] = [];
+
+    /**
+     * The state of each gamepad button click request for each player.
+     */
+    private static GamepadClickRequestedStates: Index2State[] = [];
+
+    /**
+     * The input maps for each player.
+     */
+    private static inputMaps: InputMap[] = [];
+
+    /**
+     * The mapping of gamepad button names to their corresponding indices.
+     */
     public static readonly GAMEPAD_BUTTONS: { [button: string]: number } = {
         'a': 0,
         'b': 1,
@@ -93,18 +83,45 @@ export class Input {
         'down': 13,
         'left': 14,
         'right': 15,
-    };
+    }
 
-    public static KeyState: Index2State = {};
-    public static KeyClickRequestedState: Index2State = {};
-    private static GamepadButtonStates: Index2State[] = [];
-    private static GamepadClickRequestedStates: Index2State[] = [];
-    private static inputMaps: InputMap[] = [];
+    public static playerJoinEvent = new EventDispatcher<number>();
 
+    /**
+     * Resets the input state for all buttons except the specified ones.
+     * @param except - The list of buttons to exclude from the reset.
+     */
+    // public static reset(except?: ButtonId[]): void {
+    //     const resetMap = (map: Index2State, except?: ButtonId[]) => {
+    //         Object.keys(map).forEach((key) => {
+    //             if (!except || !except.includes(key as ButtonId)) {
+    //                 delete map[key as ButtonId];
+    //             }
+    //         });
+    //     };
+
+    //     resetMap(Input.KeyState, except);
+    //     resetMap(Input.KeyClickRequestedState, except);
+    //     resetMap(Input.GamepadButtonStates[0], except);
+    //     resetMap(Input.GamepadClickRequestedStates[0], except);
+    // }
+
+    /**
+     * Sets the input map for a specific player.
+     * @param playerIndex - The index of the player to set the input map for.
+     * @param inputMap - The input map to set.
+     */
     public static setInputMap(playerIndex: number, inputMap: InputMap): void {
         Input.inputMaps[playerIndex] = inputMap;
     }
 
+    /**
+     * Returns whether a specific action is currently pressed for a given player index, and optionally checks if it was clicked.
+     * @param playerIndex - The index of the player to check the action for.
+     * @param action - The name of the action to check.
+     * @param checkClick - Whether to check if the action was clicked.
+     * @returns Whether the action is currently pressed for the given player index.
+     */
     public static isActionPressed(playerIndex: number, action: string, checkClick: boolean = false): boolean {
         const inputMap = Input.inputMaps[playerIndex];
         if (!inputMap) return false;
@@ -140,6 +157,14 @@ export class Input {
         Input.isActionPressed(0, 'jump', true);
     }
 
+    /**
+     * Returns the pressed state of a key or button, and optionally checks if it was clicked.
+     * @param stateMap - The state map to check for the key or button.
+     * @param clickStateMap - The click state map to check for the key or button.
+     * @param key - The key or button to check the state of.
+     * @param checkClick - Whether to check if the key or button was clicked.
+     * @returns The pressed state of the key or button.
+     */
     private static getPressedState(
         stateMap: Index2State,
         clickStateMap: Index2State,
@@ -209,7 +234,7 @@ export class Input {
         return Input.getKeyState('ArrowLeft', true) || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.left, true);
     }
     public static get KC_BTN1(): boolean {
-        return Input.getKeyState('ShiftLeft', true) || Input.getGamepadButtonState(0,Input.GAMEPAD_BUTTONS.a, true);
+        return Input.getKeyState('ShiftLeft', true) || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.a, true);
     }
     public static get KC_BTN2(): boolean {
         return Input.getKeyState('KeyZ', true) || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.b, true);
@@ -310,12 +335,9 @@ export class Input {
         }
     }
 
-
     public static init(debug = true): void {
         Input.KeyState = {};
         Input.KeyClickRequestedState = {};
-        // Input.GamepadButtonState = {};
-        // Input.GamepadClickRequestedState = {};
         Input.reset();
         const options = {
             passive: false,
@@ -324,15 +346,70 @@ export class Input {
 
         window.addEventListener('beforeunload', e => { e.preventDefault(); return e.returnValue = 'Are you sure you want to exit this awesome game?'; }, true);
 
+        /**
+         * Assigns a gamepad to a player and returns the player index.
+         * If no player index is available, returns null.
+         * @param gamepad The gamepad to assign to a player.
+         * @returns The player index the gamepad was assigned to, or null if no player index was available.
+         */
+        const assignGamepadToPlayer = (gamepad: Gamepad): number | null => {
+            // Find the next available player index
+            const playerIndex = Input.getNextAvailablePlayerIndex();
+            if (playerIndex === undefined) return null;
+            console.info(`Gamepad ${gamepad.index} assigned to player ${playerIndex}`);
+
+            // Assign gamepad to player
+            Input.GamepadPlayerMap[gamepad.index] = playerIndex;
+            Input.GamepadButtonStates[playerIndex] = {};
+            Input.GamepadClickRequestedStates[playerIndex] = {};
+
+            return playerIndex;
+        };
+
+        // Initialize gamepad states for already connected gamepads
+        const gamepads = navigator.getGamepads();
+        for (let i = 0; i < gamepads.length; i++) {
+            const gamepad = gamepads[i];
+            if (!gamepad || !gamepad.id.toLowerCase().includes('gamepad')) continue;
+
+            assignGamepadToPlayer(gamepad);
+        }
+
+        /**
+         * Event listener for when a gamepad is connected. Assigns the gamepad to a player and dispatches a player join event.
+         * @param e The gamepad event.
+         */
         window.addEventListener("gamepadconnected", function (e: GamepadEvent) {
-            let gp = navigator.getGamepads()[(e as any).gamepad.index];
-            console.info("Gamepad connected at index " + gp.index + ": " + gp.id + ". It has " + gp.buttons.length + " buttons and " + gp.axes.length + " axes.");
-            console.info(`Gamepad mapping = ${gp.mapping}`);
-        }, options);
+            const gamepad = e.gamepad;
+            if (!gamepad || !gamepad.id.toLowerCase().includes('gamepad')) return;
+            console.info(`Gamepad ${gamepad.index} connected`);
+
+            let playerIndex = assignGamepadToPlayer(gamepad);
+
+            if (playerIndex != null) Input.playerJoinEvent.dispatch(playerIndex);
+        });
+
         window.addEventListener("gamepaddisconnected", function (e: GamepadEvent) {
-            let gp = navigator.getGamepads()[(e as any).gamepad.index];
-            console.info("Gamepad disconnected at index " + gp.index + ": " + gp.id + ". It has " + gp.buttons.length + " buttons and " + gp.axes.length + " axes.");
-        }, options);
+            const gamepad = e.gamepad;
+            if (!gamepad.id.toLowerCase().includes('gamepad')) return;
+
+            // Find player index for disconnected gamepad
+            const playerIndex = Input.GamepadPlayerMap[gamepad.index];
+            if (playerIndex === undefined) return;
+
+            // Remove gamepad from player map
+            delete Input.GamepadPlayerMap[gamepad.index];
+
+            console.info(`Gamepad ${gamepad.index}, that was assigned to player ${playerIndex}, disconnected`);
+
+            // Remove button states for corresponding player index
+            if (Input.GamepadButtonStates[playerIndex]) {
+                delete Input.GamepadButtonStates[playerIndex];
+            }
+            if (Input.GamepadClickRequestedStates[playerIndex]) {
+                delete Input.GamepadClickRequestedStates[playerIndex];
+            }
+        });
 
         window.addEventListener('keydown', e => { preventDefaultEventAction(e, e.code); keydown(e.code); }, options);
         window.addEventListener('keyup', e => { preventDefaultEventAction(e, e.code); keyup(e.code); }, options);
@@ -342,26 +419,20 @@ export class Input {
         document.addEventListener('touchstart', e => { preventActionAndPropagation(e); handleTouchStuff(e); return false; }, options);
         document.addEventListener('touchend', e => { preventActionAndPropagation(e); handleTouchStuff(e); return false; }, options);
         document.addEventListener('touchcancel', e => { preventActionAndPropagation(e); handleTouchStuff(e); return false; }, options);
-        // document.addEventListener('dragenter', e => { preventActionAndPropagation(e); return false; }, false);
-        // document.addEventListener('dragover', e => { preventActionAndPropagation(e); return false; }, false);
-        // document.addEventListener('dragstart', e => { preventActionAndPropagation(e); return false; }, false);
 
         document.addEventListener('webkitmouseforcewillbegin', e => preventActionAndPropagation(e), options);
         window.addEventListener('webkitmouseforcewillbegin', e => preventActionAndPropagation(e), options);
         document.addEventListener('webkitmouseforcedown', e => preventActionAndPropagation(e), options);
         window.addEventListener('webkitmouseforcedown', e => preventActionAndPropagation(e), options);
-        // document.addEventListener('contextmenu', e => preventActionAndPropagation(e), false);
-        // window.addEventListener('contextmenu', e => preventActionAndPropagation(e), false);
+        document.addEventListener('contextmenu', e => {
+            if (e.target === document.getElementById('gamescreen')) {
+                return true; // Allow context menu on gamescreen
+            } else {
+                e.preventDefault(); // Suppress context menu on rest of document
+                return false;
+            }
+        }, false);
         document.addEventListener('touchforcechange', e => preventActionAndPropagation(e), options);// iOS -- https://stackoverflow.com/questions/58159526/draggable-element-in-iframe-on-mobile-is-buggy && iOS -- https://stackoverflow.com/questions/50980876/can-you-prevent-3d-touch-on-an-img-but-not-tap-and-hold-to-save
-        window.addEventListener('touchforcechange', e => preventActionAndPropagation(e), options);
-        // document.addEventListener('dragstart', e => preventActionAndPropagation(e), false);
-        // window.addEventListener('dragstart', e => preventActionAndPropagation(e), false);
-        // document.addEventListener('dragover', e => preventActionAndPropagation(e), false);
-        // window.addEventListener('dragover', e => preventActionAndPropagation(e), false);
-        // document.addEventListener('pointerdown', e => preventActionAndPropagation(e), false);
-        // window.addEventListener('pointerdown', e => preventActionAndPropagation(e), false);
-        // document.addEventListener('pointermove', e => preventActionAndPropagation(e), false);
-        // window.addEventListener('pointermove', e => preventActionAndPropagation(e), false);
 
         if (debug) {
             const gamescreen = document.getElementById('gamescreen');
@@ -374,52 +445,76 @@ export class Input {
         }
     }
 
-    // Update gamepad states for each player
-    public static updateGamepadStates(): void {
-        const gamepads = navigator.getGamepads();
-    }
+    /**
+     * Polls the state of all connected gamepads and updates the corresponding button states.
+     * This function should be called once per frame to ensure that gamepad input is up-to-date.
+     */
     public static pollGamepadInput(): void {
         let gamepads: Gamepad[] = navigator.getGamepads ? navigator.getGamepads() : ((navigator as any).webkitGetGamepads ? (navigator as any).webkitGetGamepads : undefined);
         if (!gamepads) return;
 
-        for (let gamepad_index = 0; gamepad_index < gamepads.length; gamepad_index++) {
-            const gamepad = gamepads[gamepad_index];
+        for (let gamepad of gamepads) {
             if (!gamepad) continue;
             // if (gamepad.id.includes('Sound Blaster')) continue;
             if (!gamepad.id.toLowerCase().includes('gamepad')) continue;
 
             // Reset gamepad button states
-            Input.GamepadButtonStates[gamepad_index] = {};
-            if (!Input.GamepadClickRequestedStates[gamepad_index]) {
-                Input.GamepadClickRequestedStates[gamepad_index] = {};
+            const playerIndex = Input.GamepadPlayerMap[gamepad.index];
+            Input.GamepadButtonStates[playerIndex] = {};
+            if (!Input.GamepadClickRequestedStates[playerIndex]) {
+                Input.GamepadClickRequestedStates[playerIndex] = {};
             }
 
             // Check whether any axes have been triggered
-            Input.pollGamepadAxes(gamepad_index, gamepad.axes);
+            Input.pollGamepadAxes(gamepad, playerIndex);
 
             // Check button states
-            Input.pollGamepadButtons(gamepad_index, gamepad.buttons);
+            Input.pollGamepadButtons(gamepad, playerIndex);
         }
     }
 
-    private static pollGamepadAxes(gamepad_index: number, axes: readonly number[]): void {
-        const [xAxis, yAxis] = axes;
-        Input.GamepadButtonStates[gamepad_index][Input.GAMEPAD_BUTTONS.left] = xAxis < -0.5;
-        Input.GamepadButtonStates[gamepad_index][Input.GAMEPAD_BUTTONS.right] = xAxis > 0.5;
-        Input.GamepadButtonStates[gamepad_index][Input.GAMEPAD_BUTTONS.up] = yAxis < -0.5;
-        Input.GamepadButtonStates[gamepad_index][Input.GAMEPAD_BUTTONS.down] = yAxis > 0.5;
+    /**
+     * Polls the state of the axes on the given gamepad and updates the corresponding button states.
+     * @param gamepad The gamepad to poll.
+     */
+    private static pollGamepadAxes(gamepad: Gamepad, playerIndex: number): void {
+        const [xAxis, yAxis] = gamepad.axes;
+        Input.GamepadButtonStates[playerIndex][Input.GAMEPAD_BUTTONS.left] = xAxis < -0.5;
+        Input.GamepadButtonStates[playerIndex][Input.GAMEPAD_BUTTONS.right] = xAxis > 0.5;
+        Input.GamepadButtonStates[playerIndex][Input.GAMEPAD_BUTTONS.up] = yAxis < -0.5;
+        Input.GamepadButtonStates[playerIndex][Input.GAMEPAD_BUTTONS.down] = yAxis > 0.5;
     }
 
-    private static pollGamepadButtons(gamepad_index: number, buttons: readonly GamepadButton[]): void {
+    /**
+     * Polls the state of all buttons on the given gamepad and updates the corresponding button states.
+     * @param gamepad The gamepad to poll.
+     */
+    private static pollGamepadButtons(gamepad: Gamepad, playerIndex: number): void {
+        const buttons = gamepad.buttons;
+        if (!buttons) return;
         for (let btnIndex = 0; btnIndex < buttons.length; btnIndex++) {
             const btn = buttons[btnIndex];
             const pressed = typeof btn === "object" ? btn.pressed : btn === 1.0;
             // Consider that the button can already be regarded as pressed if it was pressed as part of another action, like an axis
-            Input.GamepadButtonStates[gamepad_index][btnIndex] = Input.GamepadButtonStates[gamepad_index][btnIndex] || pressed;
+            Input.GamepadButtonStates[playerIndex][btnIndex] = Input.GamepadButtonStates[playerIndex][btnIndex] || pressed;
             if (!pressed) {
-                Input.GamepadClickRequestedStates[gamepad_index][btnIndex] = false;
+                Input.GamepadClickRequestedStates[playerIndex][btnIndex] = false;
             }
         }
+    }
+
+    /**
+     * Returns the index of the next available player for gamepad input, or undefined if no player is available.
+     * A player is considered available if there is a connected gamepad that is not already assigned to a player.
+     * @returns The index of the next available player, or undefined if no player is available.
+     */
+    private static getNextAvailablePlayerIndex(): number | undefined {
+        for (let i = 0; i < navigator.getGamepads().length; i++) {
+            if (Input.GamepadPlayerMap[i] === undefined) {
+                return i;
+            }
+        }
+        return undefined;
     }
 
     /**
@@ -463,8 +558,13 @@ export class Input {
             }
         }
     }
-};
+}
 
+/**
+ * Prevents the default action of a UI event based on the key pressed, except for certain keys when the game is running or not paused.
+ * @param e The UI event to prevent the default action of.
+ * @param key The key pressed that triggered the event.
+ */
 function preventDefaultEventAction(e: UIEvent, key: string) {
     if (global.game.running || !global.game.paused) {
         switch (key) {
@@ -505,6 +605,12 @@ function blur(e: FocusEvent): void {
     Input.reset();
 }
 
+/**
+ * Handles touch events by resetting the UI and checking which elements were touched.
+ * If an element is touched, it adds the 'druk' class to it and removes the 'los' class.
+ * It also filters the touched buttons from the reset.
+ * @param e The touch event to handle.
+ */
 function handleTouchStuff(e: TouchEvent): void {
     Input.resetUI();
     if (e.touches.length == 0) {
@@ -568,6 +674,11 @@ const buttonMap = {
     },
 }
 
+/**
+ * Handles the element under touch by triggering the corresponding keydown event and adding the 'druk' class to the element.
+ * @param e The element under touch.
+ * @returns An array of keys or buttons that were triggered by the touch event.
+ */
 function handleElementUnderTouch(e: Element): (ButtonId | string)[] {
     const buttonData = buttonMap[e.id];
     if (buttonData) {

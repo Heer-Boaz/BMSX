@@ -5,6 +5,10 @@ import { RomPack } from "./rompack";
 import { MSX2ScreenWidth, MSX2ScreenHeight, TileSize } from "./msx";
 import { BaseModel } from "./model";
 
+
+/**
+ * Declare global variables and types.
+ */
 declare global {
     var game: Game;
     var model: BaseModel;
@@ -80,15 +84,27 @@ export interface Area {
     end: vec2 | vec3;
 }
 
+/**
+ * Represents a bitmap font used for rendering text.
+ */
 export class BFont {
     protected accessor font_res_map: Record<string, string>;
     get char_width(): number { return 8; }
     get char_height(): number { return 8; }
 
+    /**
+     * Creates a new instance of the `BFont` class.
+     * @param _font_res_map A map of font resources.
+     */
     constructor(_font_res_map: Record<string, string>) {
         this.font_res_map = _font_res_map;
     }
 
+    /**
+     * Converts a character to an image.
+     * @param c The character to convert.
+     * @returns The image as a string.
+     */
     public char_to_img(c: string): string {
         let letter: string;
         let _font_res_map = this.font_res_map;
@@ -326,6 +342,12 @@ export class BFont {
     }
 }
 
+/**
+ * Calculates the modulus of a number.
+ * @param n The dividend.
+ * @param p The divisor.
+ * @returns The modulus of the division.
+ */
 export function mod(n: number, p: number): number {
     let r = n % p;
     return r < 0 ? r + p : r;
@@ -437,6 +459,12 @@ export function createDivSprite(img?: HTMLImageElement, imgsrc?: string | null, 
     return result;
 }
 
+/**
+ * Calculates the delta vector from a source point to a target point.
+ * @param source The source point.
+ * @param target The target point.
+ * @returns The delta vector from the source point to the target point.
+ */
 export function GetDeltaFromSourceToTarget(source: vec2, target: vec2): vec2 {
     let delta = { x: 0, y: 0 };
 
@@ -460,6 +488,12 @@ export function GetDeltaFromSourceToTarget(source: vec2, target: vec2): vec2 {
     return delta;
 }
 
+/**
+ * Calculates the length of a line segment defined by two 2D points.
+ * @param p1 The first point of the line segment.
+ * @param p2 The second point of the line segment.
+ * @returns The length of the line segment.
+ */
 export function LineLength(p1: vec3, p2: vec3): number {
     return Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2) - 1;
 }
@@ -497,6 +531,12 @@ export function isSessionStorageAvailable(): boolean {
     return isStorageAvailable('sessionStorage');
 }
 
+/**
+ * Calculates the direction from a subject position to a target position.
+ * @param subjectpos The position of the subject.
+ * @param targetpos The position of the target.
+ * @returns The direction from the subject position to the target position.
+ */
 export function getLookAtDirection(subjectpos: vec2, targetpos: vec2): Direction {
     let delta: vec2 = { x: subjectpos.x - targetpos.x, y: subjectpos.x - targetpos.y };
     if (Math.abs(delta.x) >= Math.abs(delta.y)) {
@@ -511,6 +551,11 @@ export function getLookAtDirection(subjectpos: vec2, targetpos: vec2): Direction
     }
 }
 
+/**
+ * Returns the opposite direction of the given direction.
+ * @param dir The direction to get the opposite of.
+ * @returns The opposite direction of the given direction.
+ */
 export function getOppositeDirection(dir: Direction): Direction {
     switch (dir) {
         case Direction.Up:
@@ -526,6 +571,9 @@ export function getOppositeDirection(dir: Direction): Direction {
     }
 }
 
+/**
+ * Represents the main game loop and manages the game state.
+ */
 export class Game {
     public debug: boolean = false;
     public targetFPS: number = 50;
@@ -544,6 +592,16 @@ export class Game {
     public model<T extends BaseModel>(): T { return <T>global.model; }
     public view<T extends BaseView>(): T { return <T>global.view; }
 
+    /**
+     * Represents the game object that manages the game state and main game loop.
+     * @constructor
+     * @param _rom - The ROM pack containing game assets.
+     * @param _model - The model object that manages the game state.
+     * @param _view - The view object that manages the game display.
+     * @param sndcontext - The audio context used for playing sounds.
+     * @param gainnode - The gain node used for controlling the volume of sounds.
+     * @param debug - Whether to enable debug mode. Defaults to false.
+     */
     constructor(_rom: RomPack, _model: BaseModel, _view: BaseView, sndcontext: AudioContext, gainnode: GainNode, debug: boolean = false) {
         global['game'] = this;
         global['rom'] = _rom;
@@ -571,15 +629,22 @@ export class Game {
         return this._turnCounter;
     }
 
+    /**
+     * Starts the game loop and sets the `running` flag to `true`.
+     * @returns void
+     */
     public start(): void {
-        // global.view.handleResize();
-
         this.running = true;
         this.lastUpdate = performance.now();
         this.last_gametick_time = performance.now();
         this.run(performance.now());
     }
 
+    /**
+     * Updates the game state with the given delta time.
+     * @param deltaTime - The time elapsed since the last update.
+     * @returns void
+     */
     public update(deltaTime: number): void {
         const game = global.game;
         const model = global.model;
@@ -591,6 +656,11 @@ export class Game {
         game.wasupdated = true;
     }
 
+    /**
+     * Runs the game loop and updates the game state.
+     * @param currentTime - The current time in milliseconds.
+     * @returns void
+     */
     public run(currentTime: number): void {
         const game = global.game;
         if (!game.running) return;
@@ -645,6 +715,10 @@ export class Game {
         // game.animationFrameRequestid = window.requestAnimationFrame(game.run);
     }
 
+    /**
+     * Stops the game loop and clears the screen, stops all sound effects and music.
+     * @returns void
+     */
     public stop(): void {
         global.game.running = false;
         window.cancelAnimationFrame(this.animationFrameRequestid);

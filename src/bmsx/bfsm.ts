@@ -45,7 +45,7 @@ export type id2sdef = Record<string, sdef>;
 export type id2mdef = Record<string, mdef>;
 export type id2mstate = Record<string, statecontext>;
 export type id2sstate = Record<string, sstate>;
-export interface state_event_handler { ( state: sstate, type: state_event_type): any; }
+export interface state_event_handler { (state: sstate, type: state_event_type): any; }
 export type Tape = any[];
 
 const BST_MAX_HISTORY = 10;
@@ -61,6 +61,10 @@ export const NONE_STATE_ID = 'none';
 export type Bla<T extends id2partial_sdef> = keyof T;
 
 @insavegame
+/**
+ * Represents the context of a state in a finite state machine.
+ * Contains information about the current state, the state machine it belongs to, and any substate machines.
+ */
 export class statecontext {
 	id: string;
 	states: id2sstate;
@@ -156,7 +160,7 @@ export class statecontext {
 		/* N.B. doesn't trigger the onenter-event!
 		 * Not feasible, as the object doesn't exist in the model (or the model itself doesn't exist yet).
 		 * Therefore, problems will occur when attempting to do stuff during the onenter-event if the object does not yet exist in the model.
-         * Better to use onspawn instead and treat the start-state as just the start-state.
+		 * Better to use onspawn instead and treat the start-state as just the start-state.
 		 */
 		this.currentid = start ?? NONE_STATE_ID;
 		this.history = new Array();
@@ -312,6 +316,9 @@ export class sstate<T extends GameObject | BaseModel = any> {
 	}
 }
 
+/**
+ * Represents a state definition for a state machine.
+ */
 export class sdef {
 	public id: string;
 	public tape!: Tape;
@@ -351,12 +358,35 @@ export interface machine_states {
 	states: id2partial_sdef;
 }
 
+/**
+ * Represents a state machine definition.
+ */
 export class mdef {
+	/**
+	 * The unique identifier for this state machine definition.
+	 */
 	public id: string;
+
+	/**
+	 * The states defined for this state machine.
+	 */
 	public states: id2sdef;
+
+	/**
+	 * The identifier of the state that the state machine should start in.
+	 */
 	public start_state: string;
+
+	/**
+	 * The prefix used to identify the start state.
+	 */
 	public static readonly START_STATE_PREFIX = '#';
 
+	/**
+	 * Creates a new state machine definition.
+	 * @param id The unique identifier for this state machine definition.
+	 * @param state_list The list of states defined for this state machine.
+	 */
 	constructor(id?: string, state_list?: machine_states) {
 		this.id = id ?? DEFAULT_BST_ID;
 		this.states ??= {};
@@ -370,15 +400,31 @@ export class mdef {
 		// _partialdef && Object.assign(this, _partialdef);
 	}
 
+	/**
+	 * Creates a new state definition.
+	 * @param partial The partial definition of the state.
+	 * @param _state_id The identifier of the state.
+	 * @returns The new state definition.
+	 * @throws An error if the state definition is missing.
+	 */
 	static #create_state(partial: Partial<sdef>, _state_id: string): sdef {
 		if (!partial) throw new Error(`'sdef' with id '${_state_id}' is missing definition while attempting to add it to this 'mdef'!`);
 		return new sdef(_state_id, partial);
 	}
 
+	/**
+	 * Determines if a given state is the start state.
+	 * @param _state The state to check.
+	 * @returns True if the state is the start state, false otherwise.
+	 */
 	static #is_start_state(_state: sdef): boolean {
 		return _state.id.startsWith(mdef.START_STATE_PREFIX);
 	}
 
+	/**
+	 * Sets the start state of the state machine to the given state.
+	 * @param _state The state to set as the start state.
+	 */
 	#set_start_state(_state: sdef): void {
 		this.start_state = _state.id;
 	}
@@ -387,6 +433,11 @@ export class mdef {
 		states.forEach(s => this.append(s));
 	}
 
+	/**
+	 * Appends a state to the list of states defined for this state machine.
+	 * @param _state The state to append.
+	 * @throws An error if the state is missing an id or if a state with the same id already exists for this state machine.
+	 */
 	public append(_state: sdef): void {
 		if (!_state.id) throw new Error(`'sdef' is missing an id, while attempting to add it to this 'mdef'!`);
 		if (this.states[_state.id]) throw new Error(`'sdef' with id='${_state.id}' already exists for this 'mdef'!`);

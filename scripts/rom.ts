@@ -1,9 +1,47 @@
 import { RomPack, RomAsset, RomMeta } from '../src/bmsx/rompack';
 
+/**
+ * Pako is a high-speed zlib port to JavaScript, which is used to compress and decompress data.
+ */
 declare var pako: any;
+/**
+ * Function that initializes the boot ROM and starts the game.
+ * @param {RomPack} rom - The boot ROM pack.
+ * @param {AudioContext} sndcontext - The audio context for the boot ROM.
+ * @param {GainNode} gainnode - The gain node for the boot ROM.
+ * @returns {void}
+ */
 declare var h406A: (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode) => void;
 
+/**
+ * Object representing the boot ROM.
+ */
 var bootrom = {
+	/**
+	 * This section of code defines the boot ROM object and its properties and methods.
+	 *
+	 * @property {RomPack | null} rom - The boot ROM pack.
+	 * @property {boolean} debug - A flag indicating whether debug mode is enabled.
+	 * @property {string | undefined} romname - The name of the boot ROM pack.
+	 * @property {boolean} localfetch - A flag indicating whether the boot ROM pack should be fetched locally.
+	 * @property {AudioContext | null} sndcontext - The audio context for the boot ROM.
+	 * @property {GainNode | null} gainnode - The gain node for the boot ROM.
+	 * @property {boolean} theshowsover - A flag indicating whether the boot animation has ended.
+	 * @property {boolean} snd_unlocked - A flag indicating whether the audio has been unlocked.
+	 *
+	 * @function defusr - Sets the boot ROM pack.
+	 * @param {RomPack} rom - The boot ROM pack.
+	 *
+	 * @function usr - Loads the boot ROM and starts the game.
+	 * @param {number} x - The value to return after the game is started.
+	 * @returns {number} 255 after the game is started.
+	 *
+	 * @function bload - Asynchronously loads a ROM pack from the specified URL.
+	 * @param {string} url - The URL of the ROM pack to load.
+	 * @returns {Promise<RomPack | null>} A Promise that resolves to the loaded ROM pack, or null if the loading failed.
+	 *
+	 * @var {boolean} snd_unlocked - A flag indicating whether the audio has been unlocked.
+	 */
 	rom: null as RomPack | null,
 	debug: false,
 	romname: undefined, // Currently, used for fetching the megarom Javascript for debug mode
@@ -13,10 +51,20 @@ var bootrom = {
 	gainnode: null as GainNode | null,
 	theshowsover: false,
 
+	/**
+	 * Sets the boot ROM pack.
+	 * @param {RomPack} rom - The boot ROM pack.
+	 * @returns {void}
+	 */
 	set defusr(rom: RomPack) {
 		bootrom.rom = rom;
 	},
 
+	/**
+	 * Loads the boot ROM and starts the game.
+	 * @param x - The value to return after the game is started.
+	 * @returns 255 after the game is started.
+	 */
 	usr(x: number): number {
 		document.body.classList.add('game-started'); // Change background color of body
 		document.getElementById('gamescreen')!.hidden = false;
@@ -36,6 +84,11 @@ var bootrom = {
 		return 255;
 	},
 
+	/**
+	 * Asynchronously loads a ROM pack from the specified URL.
+	 * @param url - The URL of the ROM pack to load.
+	 * @returns A Promise that resolves to the loaded ROM pack, or null if the loading failed.
+	 */
 	async bload(url: string): Promise<RomPack | null> {
 		window.onunhandledrejection = event => {
 			console.log(event.cancelable, event.reason, "unhandled rejection??");
@@ -97,6 +150,12 @@ var bootrom = {
 	}
 };
 
+
+/**
+ * Asynchronously loads an image from the specified URL.
+ * @param url - The URL of the image to load.
+ * @returns A Promise that resolves to the loaded image, or rejects with an error message if the loading failed.
+ */
 async function loadImage(url: string): Promise<HTMLImageElement> {
 	return new Promise((resolve, reject) => {
 		let img = new Image();
@@ -108,6 +167,12 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
 	});
 }
 
+
+/**
+ * Parses the metadata of a ROM pack from the end of the given buffer.
+ * @param to_parse - The buffer to parse the metadata from.
+ * @returns The metadata of the ROM pack.
+ */
 function parseMetaFromBuffer(to_parse: ArrayBuffer): RomMeta {
 	let bytearray = new Uint8Array(to_parse);
 	let sliced = bytearray.slice(bytearray.length - 100);
@@ -115,15 +180,31 @@ function parseMetaFromBuffer(to_parse: ArrayBuffer): RomMeta {
 	return JSON.parse(metaJsonStr);
 }
 
+/**
+ * Returns a sub-buffer of the given buffer as per the start and end positions specified in the given metadata.
+ * @param buffer - The buffer to extract the sub-buffer from.
+ * @param meta - The metadata containing the start and end positions of the sub-buffer.
+ * @returns The sub-buffer of the given buffer as per the start and end positions specified in the given metadata.
+ */
 function getSubBufferAsPerMeta(buffer: ArrayBuffer, meta: RomMeta): ArrayBuffer {
 	return buffer.slice(meta.start, meta.end);
 }
 
+/**
+ * Returns a sub-buffer of the given buffer as per the start and end positions specified in the metadata of the buffer.
+ * @param buffer - The buffer to extract the sub-buffer from.
+ * @returns The sub-buffer of the given buffer as per the start and end positions specified in the metadata of the buffer.
+ */
 function getSubBufferFromBufferWithMeta(buffer: ArrayBuffer): ArrayBuffer {
 	let buffer_meta: RomMeta = parseMetaFromBuffer(buffer);
 	return getSubBufferAsPerMeta(buffer, buffer_meta);
 }
 
+/**
+ * Extracts the zipped ROM and the ROM label from the given blob buffer.
+ * @param blob_buffer - The buffer containing the blob data.
+ * @returns A Promise that resolves to an object containing the zipped ROM and the ROM label.
+ */
 async function getZippedRomAndRomLabelFromBlob(blob_buffer: ArrayBuffer): Promise<{ zipped_rom: ArrayBuffer, romlabel: string }> {
 	// let blob_meta = parseMetaFromBuffer(blob_buffer);
 	// let romlabel_htmlimg: string = undefined;
@@ -135,6 +216,11 @@ async function getZippedRomAndRomLabelFromBlob(blob_buffer: ArrayBuffer): Promis
 	return Promise.resolve({ zipped_rom: getSubBufferFromBufferWithMeta(blob_buffer), romlabel: undefined });
 }
 
+/**
+ * Parses the resource list from the given ROM buffer and returns it as an array of `RomAsset` objects.
+ * @param rom - The buffer containing the ROM data.
+ * @returns A Promise that resolves to an array of `RomAsset` objects representing the resources in the ROM.
+ */
 async function loadResourceList(rom: ArrayBuffer): Promise<RomAsset[]> {
 	let sliced = new Uint8Array(getSubBufferFromBufferWithMeta(rom));
 
@@ -144,6 +230,11 @@ async function loadResourceList(rom: ArrayBuffer): Promise<RomAsset[]> {
 	return Promise.resolve<RomAsset[]>(resJson);
 }
 
+/**
+ * Asynchronously loads all resources from the given ROM buffer and returns a `RomPack` object containing the loaded resources.
+ * @param rom - The buffer containing the ROM data.
+ * @returns A Promise that resolves to a `RomPack` object containing the loaded resources.
+ */
 async function loadResources(rom: ArrayBuffer): Promise<RomPack> {
 	let result: RomPack = {
 		images: {},
@@ -160,6 +251,11 @@ async function loadResources(rom: ArrayBuffer): Promise<RomPack> {
 	return Promise.resolve<RomPack>(result);
 }
 
+/**
+ * Returns a URL for the given buffer as a PNG image.
+ * @param buffer - The buffer to convert to a PNG image URL.
+ * @returns A URL for the given buffer as a PNG image.
+ */
 function getImageURL(buffer: ArrayBuffer): string {
 	let mime: string;
 	let blub: Blob;
@@ -169,11 +265,24 @@ function getImageURL(buffer: ArrayBuffer): string {
 	return URL.createObjectURL(blub);
 }
 
+/**
+ * Asynchronously creates an HTMLImageElement from the given buffer.
+ * @param buffer - The buffer to create the image from.
+ * @returns A Promise that resolves to an HTMLImageElement created from the given buffer.
+ */
 async function getImageFromBuffer(buffer: ArrayBuffer): Promise<HTMLImageElement> {
 	let url = getImageURL(buffer);
 	return loadImage(url);
 }
 
+/**
+ * Asynchronously loads the given resource from the ROM buffer and adds it to the given `RomPack` object.
+ * @param rom - The buffer containing the ROM data.
+ * @param res - The `RomAsset` object representing the resource to load.
+ * @param romResult - The `RomPack` object to add the loaded resource to.
+ * @returns A Promise that resolves when the resource has been loaded and added to the `RomPack` object.
+ * If an error occurs during loading, the Promise is rejected with an error message.
+ */
 async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack): Promise<void> {
 	switch (res.type) {
 		case 'image':
@@ -205,6 +314,10 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack): Promis
 	}
 }
 
+/**
+ * Waits for the boot animation to complete before resolving the Promise.
+ * @returns A Promise that resolves when the boot animation is complete.
+ */
 async function awaitBootComplete(): Promise<void> {
 	let result: Promise<void> = new Promise((resolve, reject) => {
 		let msx = <HTMLElement>document.querySelector('#msx');
@@ -221,6 +334,13 @@ async function awaitBootComplete(): Promise<void> {
 	return result;
 }
 
+/**
+ * Asynchronously loads the script from the given `RomPack` object and adds it to the document head.
+ * @param rom - The `RomPack` object containing the script to load.
+ * @param romname - The name of the ROM.
+ * @returns A Promise that resolves when the script has been loaded and added to the document head.
+ * If an error occurs during loading, the Promise is rejected with an error message.
+ */
 async function loadScript(rom: RomPack, romname: string): Promise<void> {
 	let result: Promise<void> = new Promise((resolve, reject) => {
 		let romcode = document.createElement('script');
@@ -245,6 +365,10 @@ async function loadScript(rom: RomPack, romname: string): Promise<void> {
 	return result;
 }
 
+/**
+ * Waits for the user to press any key before resolving the Promise.
+ * @returns A Promise that resolves when the user presses any key.
+ */
 async function awaitPressedAnyKey(): Promise<void> {
 	let remove = (id: string) => {
 		let element = document.querySelector(id);
@@ -285,11 +409,19 @@ async function awaitPressedAnyKey(): Promise<void> {
 	return result;
 }
 
+/**
+ * Sets the text content of the loader element with the given string.
+ * @param txt - The string to set as the text content of the loader element.
+ */
 function setLoaderText(txt: string) {
 	let loading = <HTMLElement>document.querySelector('#loading');
 	loading.innerText = txt;
 }
 
+/**
+ * Sets the class name of the loader element to the given string.
+ * @param cls - The class name to set for the loader element.
+ */
 function setClassForLoader(cls: string) {
 	let loading = <HTMLElement>document.querySelector('#loading');
 	loading.className = cls;
@@ -304,6 +436,12 @@ function decodeuint8arr(to_decode: Uint8Array): string {
 	return new TextDecoder("utf-8").decode(to_decode);
 }
 
+/**
+ * Asynchronously fetches an ArrayBuffer from the given URL using XMLHttpRequest.
+ * @param url - The URL to fetch the ArrayBuffer from.
+ * @returns A Promise that resolves with the fetched ArrayBuffer.
+ * If an error occurs during fetching, the Promise is rejected with an error message.
+ */
 async function fetchLocal(url: string): Promise<ArrayBuffer> {
 	return new Promise(function (resolve, reject) {
 		var xhr = new XMLHttpRequest;
@@ -320,6 +458,11 @@ async function fetchLocal(url: string): Promise<ArrayBuffer> {
 	});
 }
 
+/**
+ * Starts audio on iOS devices by creating a dummy audio buffer source and playing it.
+ * If the audio context is already running, removes the event listeners for keyup and touchend.
+ * @returns void
+ */
 function startAudioOnIos(): void {
 	if (!bootrom.sndcontext) { return; }
 	if (bootrom.snd_unlocked) {
@@ -340,6 +483,13 @@ function startAudioOnIos(): void {
 	}
 }
 
+/**
+ * Creates an AudioContext object and sets it to the `bootrom.sndcontext` property if it doesn't exist.
+ * If the AudioContext object already exists, this function does nothing.
+ * This function also fixes the iOS Audio Context by creating a dummy audio buffer source and playing it.
+ * If the audio context is already running, removes the event listeners for keyup and touchend.
+ * @returns void
+ */
 function createAudioContext(): void {
 	if (bootrom.sndcontext) return;
 

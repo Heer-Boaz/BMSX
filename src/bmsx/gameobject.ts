@@ -3,8 +3,13 @@ import { vec3, Area, Direction, moveArea, multiply_vec2, new_vec2, div_vec2, mod
 import { insavegame } from "./gameserializer";
 import { TileSize } from "./msx";
 
+/**
+ * Represents a game object with a position, size, state, and hitbox.
+ * Implements both vec2 and vec3 interfaces.
+ */
 @insavegame
 export class GameObject implements vec2, vec3 {
+
     // For converting this GameObject to a string ('id')
     public [Symbol.toPrimitive]() {
         return this.id;
@@ -164,6 +169,13 @@ export class GameObject implements vec2, vec3 {
 
     // https://gist.github.com/6174/6062387
     private static readonly GENERATED_ID_LENGTH = 10;
+    /**
+     * Generates a unique identifier for a `GameObject` instance.
+     * The generated identifier is a string of length `GameObject.GENERATED_ID_LENGTH` consisting of random alphanumeric characters.
+     * The method ensures that the generated string is unique by checking if it already exists in the global model.
+     * If the generated string already exists, a new string is generated until a unique one is found.
+     * @returns A unique identifier for a `GameObject` instance.
+     */
     private static generateId(): string {
         const model = global.model;
         const chars = [..."abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"];
@@ -241,6 +253,10 @@ export class GameObject implements vec2, vec3 {
         return null;
     }
 
+    /**
+     * Sets the x-coordinate of the object's position and handles collisions with tiles and screen edges.
+     * @param newx The new x-coordinate to set.
+     */
     public setx(newx: number) {
         const oldx = this.pos.x;
         const model = global.model;
@@ -267,6 +283,10 @@ export class GameObject implements vec2, vec3 {
         }
     }
 
+    /**
+     * Sets the y-coordinate of the object's position and handles collisions with tiles and screen edges.
+     * @param newy The new y-coordinate to set.
+     */
     public sety(newy: number) {
         const oldy = this.pos.y;
         const model = global.model;
@@ -297,7 +317,14 @@ export class GameObject implements vec2, vec3 {
     }
 }
 
-// Shared function used for using as event handler for IGameObject/Sprite.OnLeavingScreen
+/**
+ * Shared function used for using as event handler for `IGameObject`/`Sprite.OnLeavingScreen`
+ * This function is used as an event handler for the `onLeavingScreen` event of a `GameObject`.
+ * It prohibits the `GameObject` from leaving the screen in the direction specified by setting its position to its old position.
+ * @param ik The `GameObject` that is leaving the screen.
+ * @param d The direction in which the `GameObject` is leaving the screen.
+ * @param old_x_or_y The old x or y position of the `GameObject`.
+ */
 export function leavingScreenHandler_prohibit(ik: GameObject, d: Direction, old_x_or_y: number): void {
     switch (d) {
         case Direction.Left: case Direction.Right:

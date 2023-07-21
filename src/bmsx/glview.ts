@@ -238,12 +238,20 @@ export abstract class GLView extends BaseView {
         return result;
     }
 
+    /**
+     * Overrides the base class method to handle resizing of the canvas and viewport for WebGL rendering.
+     * This method should be called whenever the canvas is resized.
+     */
     override handleResize(): void {
         super.handleResize();
         const _this = global.view as GLView;
         _this.glctx.viewport(0, 0, _this.canvas.width, _this.canvas.height);
     }
 
+    /**
+     * Overrides the base class method to draw the game using WebGL.
+     * @param clearCanvas Whether to clear the canvas before drawing.
+     */
     override drawgame(clearCanvas: boolean = true): void {
         super.drawgame(clearCanvas);
         this.drawSprites();
@@ -255,6 +263,10 @@ export abstract class GLView extends BaseView {
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     }
 
+    /**
+     * Draws all the sprites that have been queued for drawing using WebGL.
+     * This method should be called once per frame after all sprites have been queued.
+     */
     public drawSprites(): void {
         const _this = global.view as GLView;
         const gl = _this.glctx;
@@ -267,6 +279,11 @@ export abstract class GLView extends BaseView {
         gl.bufferSubData(target, offset, data);
     }
 
+    /**
+     * Draws an image on the canvas using WebGL.
+     * @param options An object containing the image's position, size, and other options.
+     * @throws An error if the image metadata cannot be found.
+     */
     override drawImg(options: DrawImgOptions): void {
         const { x, y, z, imgid, flip_h = false, flip_v = false, sx = 1, sy = 1, colorize = DEFAULT_VERTEX_COLOR } = options;
         const imgmeta = global.rom['img_assets'][imgid]?.['imgmeta'];
@@ -279,9 +296,9 @@ export abstract class GLView extends BaseView {
 
         bvec.set(vertexcoords, x, y, width, height, sx, sy);
         texcoords.set(flip_h && flip_v ? imgmeta['texcoords_fliphv'] :
-                      flip_h ? imgmeta['texcoords_fliph'] :
-                      flip_v ? imgmeta['texcoords_flipv'] :
-                      imgmeta['texcoords']);
+            flip_h ? imgmeta['texcoords_fliph'] :
+                flip_v ? imgmeta['texcoords_flipv'] :
+                    imgmeta['texcoords']);
         bvec.set_zcoord(zcoords, z / 10000);
         bvec.set_color(color_override, colorize);
 

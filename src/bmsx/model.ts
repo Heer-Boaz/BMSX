@@ -19,6 +19,9 @@ export const spaceid_2_space = Symbol('id2space');
 export const objid_2_objspaceid = Symbol('obj_id2obj_space_id');
 
 @insavegame
+/**
+ * Represents a space in the game world, which contains a collection of game objects.
+ */
 export class Space {
     public [id2obj]: id2objectType;
     public get<T extends GameObject>(id: string) { return <T>this[id2obj][id]; }
@@ -103,6 +106,10 @@ export class Space {
 export type base_model_spaces = 'game_start' | 'default';
 
 @insavegame
+/**
+ * The base model class for the game. Contains all the spaces and objects in the game world.
+ * Provides methods to add, remove, and manipulate game objects and spaces.
+ */
 export abstract class BaseModel {
     public static readonly keys_to_exclude_from_save = ['objects', 'id2object', 'spaces', 'id2space', 'obj_id2obj_space_id'];
     public state: statecontext;
@@ -123,7 +130,15 @@ export abstract class BaseModel {
     public paused: boolean;
     public startAfterLoad: boolean;
 
-    public getFromCurrentSpace<T extends GameObject>(id: string) { return <T>this.currentSpace[id2obj][id]; }
+    /**
+     * Gets the game object with the given id from the current space only.
+     * @param {string} id - the id of the {@link GameObject}.
+     * @returns {T} The game object with the given id from the current space only.
+     */
+    public getFromCurrentSpace<T extends GameObject>(id: string): T {
+        return <T>this.currentSpace[id2obj][id];
+    }
+
     /**
      * Gets the game object with the given id **across all spaces**.
      * If `id === 'model'`, returns the game model instead! (used for {@link sstate} to make game model as target for callbacks.
@@ -147,10 +162,20 @@ export abstract class BaseModel {
         return this.get(obj_id) ? true : false;
     }
 
+    /**
+     * Returns the id of the space that contains the object with the given id.
+     * @param {string} obj_id - The id of the object to search for.
+     * @returns {string} The id of the space that contains the object with the given id.
+     */
     public get_spaceid_that_has_obj(obj_id: string): string {
         return this[objid_2_objspaceid][obj_id];
     }
 
+    /**
+     * Returns true if the object with the given id is in the current space.
+     * @param {string} obj_id - The id of the object to check.
+     * @returns {boolean} Whether the object with the given id is in the current space.
+     */
     public is_obj_in_current_space(obj_id: string): boolean {
         return this.get_spaceid_that_has_obj(obj_id) === this.currentSpaceid;
     }
@@ -172,10 +197,21 @@ export abstract class BaseModel {
         target_space.spawn(obj, null, true);
     }
 
+    /**
+     * Returns the machine definition for the given machine id.
+     * @param {string} machineid - The id of the machine to get the definition for.
+     * @returns {mdef} The machine definition for the given machine id.
+     */
     public static getMachinedef(machineid: string): mdef {
         return MachineDefinitions[machineid];
     }
 
+    /**
+     * Returns the state definition for the given machine and state id.
+     * @param {string} machineid - The id of the machine to get the state definition for.
+     * @param {string} stateid - The id of the state to get the definition for.
+     * @returns {sdef} The state definition for the given machine and state id.
+     */
     public static getMachineStatedef(machineid: string, stateid: string): sdef {
         return MachineDefinitions[machineid].states[stateid];
     }
@@ -199,6 +235,11 @@ export abstract class BaseModel {
         BaseModel.setup_fsmdef_library();
     }
 
+    /**
+     * Initializes the spaces for the model. This method should only be executed when the model is not being revived.
+     * Adds the 'default' and 'game_start' spaces to the model and sets the current space to 'game_start'.
+     * @returns {BaseModel} The current instance of the BaseModel.
+     */
     public init_spaces(): BaseModel { // Should only be executed when model is *not* revived
         this.addSpace('default' satisfies base_model_spaces);
         this.addSpace('game_start' satisfies base_model_spaces);
@@ -207,6 +248,11 @@ export abstract class BaseModel {
         return this;
     }
 
+    /**
+     * Sets up the finite state machine definition library for the `BaseModel` class.
+     * This method should only be called once during the initialization of the `BaseModel` class.
+     * @returns {void} Nothing.
+     */
     private static setup_fsmdef_library() {
         setup_fsmdef_library();
     }
@@ -242,10 +288,19 @@ export abstract class BaseModel {
      */
     public abstract do_one_time_game_init(): this;
 
+    /**
+     * Runs the current state of the model by calling the `run` method of the current state.
+     * @returns {void} Nothing.
+     */
     public run() {
         this.state.run();
     }
 
+    /**
+     * Runs the game loop by calling the `run` method of all game objects and removing objects that are marked for disposal.
+     * If the game is paused or is set to start after loading, this function returns without doing anything.
+     * @returns {void} Nothing
+     */
     public static defaultrun = (): void => {
         if (global.model.paused) {
             return;
@@ -277,6 +332,12 @@ export abstract class BaseModel {
     static default_input_handler(this: BaseModel, s: sstate<BaseModel>) {
     }
 
+    /**
+     * Loads a serialized game state and applies it to the current model instance.
+     * Clears all spaces and removes all objects from the model instance before loading the new state.
+     * @param {string} serialized - The serialized game state to load.
+     * @returns {void} Nothing.
+     */
     public load(serialized: string): void {
         this.clearAllSpaces();
         const temp_array = this.spaces.slice();
@@ -286,6 +347,11 @@ export abstract class BaseModel {
         this.onloaded(savegame);
     }
 
+    /**
+     * Adds spaces and objects from a loaded savegame to the current model instance.
+     * @param {Savegame} savegame - The savegame to load.
+     * @returns {void} Nothing.
+     */
     public onloaded(savegame: Savegame): void {
         savegame.spaces.forEach(space => this.addSpace(space));
         savegame.allSpacesObjects.forEach(space_and_objects => {
@@ -295,6 +361,12 @@ export abstract class BaseModel {
         });
     }
 
+    /**
+     * Saves the current game state by creating a `Savegame` object and serializing it.
+     * Pauses the game while creating the `Savegame` object to ensure consistency.
+     * Excludes keys listed in `BaseModel.keys_to_exclude_from_save` from the saved data.
+     * @returns {string} The serialized `Savegame` object.
+     */
     public save(): string {
         global.game.paused = true;
         const createSavegame = () => {
@@ -326,11 +398,22 @@ export abstract class BaseModel {
         return Serializer(savegame);
     }
 
+    /**
+     * Filters the game objects in the model instance using the provided predicate function and returns a new array containing the filtered objects.
+     * @param {function} predicate - The function used to filter the game objects. It should take a game object as its first argument, and return a boolean indicating whether the object should be included in the filtered list.
+     * @returns {GameObject[]} An array containing the filtered game objects.
+     */
     public filter(predicate: (value: GameObject, index: number, array: GameObject[], thisArg?: any) => unknown): GameObject[] {
         return this.objects.filter(predicate);
     }
 
     // https://hackernoon.com/3-javascript-performance-mistakes-you-should-stop-doing-ebf84b9de951
+    /**
+     * Filters the game objects in the model instance using the provided predicate function and calls the provided callback function on each filtered object.
+     * @param {function} predicate - The function used to filter the game objects. It should take a game object as its first argument, and return a boolean indicating whether the object should be included in the filtered list.
+     * @param {function} callbackfn - The function called on each filtered game object. It should take a game object as its first argument, and can optionally take the index of the object in the filtered list, the filtered list itself, and the model instance as additional arguments.
+     * @returns {void} Nothing.
+     */
     public filter_and_foreach(predicate: (value: GameObject, index: number, array: GameObject[], thisArg?: any) => unknown, callbackfn: (value: GameObject, index: number, array: GameObject[], thisArg?: any) => void): void {
         for (let i = 0; i < this.objects.length; i++) {
             const obj = this.objects[i];

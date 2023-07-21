@@ -27,12 +27,18 @@ const BOILERPLATE_RESOURCE_ID_AUDIO = `export enum AudioId {
 	None = 'None',
 `;
 
+/**
+ * Interface for a loaded resource, which includes metadata about the resource.
+ */
 export interface ILoadedResource extends ResourceMeta {
 	buffer: Buffer;
 	img?: any;
 	imgmeta?: ImgMeta;
 }
 
+/**
+ * Interface for metadata about a resource.
+ */
 export interface ResourceMeta {
 	filepath?: string;
 	name: string;
@@ -99,10 +105,24 @@ function encodeuint8arr(myString: string): Uint8Array {
 	return new TextEncoder().encode(myString);
 }
 
+/**
+ * Adds a file to an array of files.
+ * @param {string} dirPath - The path of the directory containing the file.
+ * @param {string} filePath - The path of the file to add.
+ * @param {string[]} arrayOfFiles - The array of files to append to.
+ * @returns {void}
+ */
 function addFile(dirPath: string, filePath: string, arrayOfFiles: string[]): void {
 	arrayOfFiles.push(join(dirPath, "/", filePath));
 }
 
+/**
+ * Recursively gets all files in a directory and its subdirectories, optionally filtered by file extension.
+ * @param {string} dirPath - The path of the directory to search.
+ * @param {string[]} [_arrayOfFiles] - An optional array of files to append to.
+ * @param {string} [filterExtension] - An optional file extension to filter by.
+ * @returns {string[]} An array of file paths.
+ */
 function getFiles(dirPath: string, arrayOfFiles?: string[], filterExtension?: string): string[] {
 	return getAllNonRootDirs(dirPath, arrayOfFiles, filterExtension);
 }
@@ -114,6 +134,13 @@ function getAllNonRootDirs(dirPath: string, arrayOfFiles?: string[], filterExten
 	return arrayOfFiles;
 }
 
+/**
+ * Recursively gets all files in a directory and its subdirectories, optionally filtered by file extension.
+ * @param {string} dirPath - The path of the directory to search.
+ * @param {string[]} [_arrayOfFiles] - An optional array of files to append to.
+ * @param {string} [filterExtension] - An optional file extension to filter by.
+ * @returns {string[]} An array of file paths.
+ */
 function getAllFiles(dirPath: string, _arrayOfFiles?: string[], filterExtension?: string): string[] {
 	let files = readdirSync(dirPath);
 
@@ -139,6 +166,10 @@ function getAllFiles(dirPath: string, _arrayOfFiles?: string[], filterExtension?
 	return arrayOfFiles;
 }
 
+/**
+ * Converts YAML files to JSON for importation.
+ * @returns {Promise<void>} A promise that resolves when all YAML files have been converted to JSON.
+ */
 function yaml2Json(): Promise<void> {
 	return new Promise((resolve, reject) => {
 		try {
@@ -158,6 +189,12 @@ function yaml2Json(): Promise<void> {
 	});
 }
 
+/**
+ * Builds and bundles the source code for a ROM.
+ * @param {string} romname - The name of the ROM.
+ * @param {string} bootloader_path - The path to the bootloader file.
+ * @returns {Promise<any>} A promise that resolves when the ROM source code has been built and bundled.
+ */
 async function buildAndBundleRomSource(romname: string, bootloader_path: string): Promise<any> {
 	log("Game compileren en bundleren...  ");
 	const bootloader_ts_path = `${bootloader_path}/bootloader.ts`;
@@ -271,6 +308,12 @@ async function minifyGamecode(infile: string): Promise<terser.MinifyOutput> {
 	}
 }
 
+/**
+ * Builds the game HTML and manifest files for the specified ROM.
+ * @param {string} romname - The name of the ROM.
+ * @param {string} title - The title of the game.
+ * @returns {Promise<any>} A promise that resolves when the game HTML and manifest files have been built.
+ */
 async function buildGameHtmlAndManifest(romname: string, title: string): Promise<any> {
 	log("game.html en game_debug.html bouwen...\n");
 	let html = readFileSync("./gamebase.html", 'utf8');
@@ -331,6 +374,11 @@ async function buildGameHtmlAndManifest(romname: string, title: string): Promise
 	});
 }
 
+/**
+ * Parses the metadata of an audio file from its filename.
+ * @param {string} filename - The name of the audio file.
+ * @returns {Object} An object containing the sanitized name of the audio file and its metadata.
+ */
 function parseAudioMeta(filename: string): { sanitizedName: string, meta: AudioMeta; } {
 	let priorityregex = /@p\=\d+/;
 	let priorityresult = priorityregex.exec(filename);
@@ -397,6 +445,11 @@ async function deploy(romname: string, title: string): Promise<any> {
 	});
 }
 
+/**
+ * Returns an object containing the name, extension, and type of a resource file based on its filepath.
+ * @param filepath The path of the resource file.
+ * @returns An object containing the name, extension, and type of the resource file.
+ */
 function getResMetaByFilename(filepath: string): { name: string, ext: string, type: string; } {
 	let name = parse(filepath).name.replace(' ', '').toLowerCase();
 	let ext = parse(filepath).ext.toLowerCase();
@@ -423,6 +476,12 @@ function getResMetaByFilename(filepath: string): { name: string, ext: string, ty
 	return { name: name, ext: ext, type: type };
 }
 
+/**
+ * Builds a list of `ResourceMeta` objects located at `respath` for the specified `romname`.
+ * @param respath The path to the resources to include in the list.
+ * @param romname The name of the ROM pack to build the list for.
+ * @returns An array of `ResourceMeta` objects.
+ */
 function getResMetaList(respath: string, romname: string): ResourceMeta[] {
 	let arrayOfFiles = getFiles(respath) ?? []; // Also handle corner case where we don't have any resources by adding "?? []"
 	const megarom_filename = `${romname}.min.js`;
@@ -462,12 +521,24 @@ function getResMetaList(respath: string, romname: string): ResourceMeta[] {
 	return result;
 }
 
+/**
+ * Loads an image from the specified `ResourceMeta` object.
+ * @param _meta The `ResourceMeta` object containing information about the image to load.
+ * @returns A Promise that resolves with the loaded image.
+ */
 async function load_img(_meta: ResourceMeta) {
 	const base64Encoded = readFileSync(_meta.filepath!, 'base64');
 	const dataURL = `data:image/png;base64,${base64Encoded}`;
 	return await loadImage(dataURL);
 }
 
+/**
+ * Builds a list of loaded resources located at `respath` for the specified `romname`.
+ * @param respath The path to the resources to include in the list.
+ * @param buffers An array of buffers to add the loaded resources to.
+ * @param romname The name of the ROM pack to build the list for.
+ * @returns An array of loaded resources.
+ */
 async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>, romname: string): Promise<ILoadedResource[]> {
 	let resMetaList = getResMetaList(respath, romname);
 	let loadedResources: Array<ILoadedResource> = [];
@@ -524,6 +595,11 @@ async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>, r
 	return loadedResources;
 }
 
+/**
+ * Builds a list of resources located at `respath` for the specified `romname`.
+ * @param respath The path to the resources to include in the list.
+ * @param romname The name of the ROM pack to build the list for.
+ */
 function buildResourceList(respath: string, romname: string): void {
 	log("resourceids.ts knutselen...  ");
 	let tsimgout = new Array<string>();
@@ -563,6 +639,12 @@ function buildResourceList(respath: string, romname: string): void {
 	appendLogEntry(`${_colors.grey('[Donut]')}\n`);
 }
 
+/**
+ * Builds a ROM pack for the specified `romname` using the resources located at `respath`.
+ * @param romname The name of the ROM pack to build.
+ * @param respath The path to the resources to include in the ROM pack.
+ * @returns A Promise that resolves when the ROM pack has been successfully built.
+ */
 async function buildRompack(romname: string, respath: string): Promise<any> {
 	return new Promise<any>(async (resolve, reject) => {
 		log("Minifyen... ");
@@ -696,6 +778,13 @@ async function buildRompack(romname: string, respath: string): Promise<any> {
 
 const outputError = (e: any) => writeOut(`\n[GEFAALD]\nEr ging iets niet goed:\n${e?.message ?? e ?? 'Geen error message'};\n${e?.stack ?? 'Geen stacktrace.'}\n`, 'error');
 
+/**
+ * Determines whether a rebuild of the ROM is required based on the modification times of the bootloader and resource files.
+ * @param {string} romname - The name of the ROM.
+ * @param {string} bootloaderPath - The path to the bootloader files.
+ * @param {string} resPath - The path to the resource files.
+ * @returns {Promise<boolean>} A Promise that resolves with a boolean indicating whether a rebuild is required.
+ */
 async function isRebuildRequired(romname: string, bootloaderPath: string, resPath: string): Promise<boolean> {
 	const distPath = `./dist/${romname}.rom`;
 	const distPath2 = `./rom/${romname}.min.js`; // TODO: LELIJK! PROBLEEM IS DAT NORMALE .JS WORDT VERPLAATST NAAR ROOT-FOLDER (EN DAT IS OOK LELIJK!)
@@ -745,11 +834,15 @@ async function isRebuildRequired(romname: string, bootloaderPath: string, resPat
 	const shouldCheckTsFiles = dir => dir.startsWith(bootloaderPath);
 	const shouldCheckAssets = dir => dir.startsWith(resPath);
 
-    return await shouldRebuild(bootloaderPath, shouldCheckTsFiles(bootloaderPath), shouldCheckAssets(bootloaderPath)) ||
-        await shouldRebuild(resPath, shouldCheckTsFiles(resPath), shouldCheckAssets(resPath)) ||
-        await shouldRebuild('src/bmsx', true, false);
+	return await shouldRebuild(bootloaderPath, shouldCheckTsFiles(bootloaderPath), shouldCheckAssets(bootloaderPath)) ||
+		await shouldRebuild(resPath, shouldCheckTsFiles(resPath), shouldCheckAssets(resPath)) ||
+		await shouldRebuild('src/bmsx', true, false);
 }
 
+/**
+ * The main function that runs the ROM packing and deployment process.
+ * @returns {Promise<void>} A Promise that resolves when the process is complete.
+ */
 async function main() {
 	try {
 		// #region stuff
