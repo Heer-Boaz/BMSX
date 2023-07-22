@@ -368,26 +368,26 @@ export abstract class BaseModel {
         objects.filter(o => o.disposeFlag).forEach(o => global.model.exile(o));
     };
 
-/**
- * The default input handler for allowing the game menu to be opened.
- * If the F5 key is pressed, the game menu substate is set to 'open'.
- * @param {BaseModel} this - The current instance of the BaseModel.
- * @param {sstate<BaseModel>} s - The current state of the BaseModel.
- * @returns {void} Nothing.
- */
+    /**
+     * The default input handler for allowing the game menu to be opened.
+     * If the F5 key is pressed, the game menu substate is set to 'open'.
+     * @param {BaseModel} this - The current instance of the BaseModel.
+     * @param {sstate<BaseModel>} s - The current state of the BaseModel.
+     * @returns {void} Nothing.
+     */
     static default_input_handler_for_allow_open_gamemenu(this: BaseModel, s: sstate<BaseModel>) {
         if (Input.KC_F5) {
             this.state.substate.gamemenu.to('open');
         }
     }
 
-/**
- * The default input handler for allowing the game menu to be closed.
- * If the F5 key is pressed, the game menu substate is set to 'closed'.
- * @param {BaseModel} this - The current instance of the BaseModel.
- * @param {sstate<BaseModel>} s - The current state of the BaseModel.
- * @returns {void} Nothing.
- */
+    /**
+     * The default input handler for allowing the game menu to be closed.
+     * If the F5 key is pressed, the game menu substate is set to 'closed'.
+     * @param {BaseModel} this - The current instance of the BaseModel.
+     * @param {sstate<BaseModel>} s - The current state of the BaseModel.
+     * @returns {void} Nothing.
+     */
     static default_input_handler_for_allow_close_gamemenu(this: BaseModel, s: sstate<BaseModel>) {
         if (Input.KC_F5) {
             this.state.substate.gamemenu.to('closed');
@@ -488,22 +488,47 @@ export abstract class BaseModel {
         }
     }
 
+    /**
+     * Clears the current space in the model instance by calling the `clear` method on the current space.
+     * @returns {void} Nothing.
+     */
     public clear(): void {
         this.currentSpace.clear();
     }
 
+    /**
+     * Clears all spaces in the model instance by calling the `clear` method on each space.
+     * @returns {void} Nothing.
+     */
     public clearAllSpaces(): void {
         this.spaces.forEach(s => s.clear());
     }
 
+    /**
+     * Spawns a new game object in the current space.
+     * @param {GameObject} o - The game object to spawn.
+     * @param {vec2 | vec3} [pos] - The position to spawn the game object at. If not provided, the game object's default position will be used.
+     * @param {boolean} [ignoreSpawnhandler=false] - Whether to ignore the game object's spawn handler. If not provided, the spawn handler will be executed.
+     * @returns {void} Nothing.
+     */
     public spawn(o: GameObject, pos?: vec2 | vec3, ignoreSpawnhandler?: boolean): void {
         this.currentSpace.spawn(o, pos, ignoreSpawnhandler);
     }
 
+    /**
+     * Exiles a game object from all spaces in the model instance.
+     * @param {GameObject} o - The game object to exile.
+     * @returns {void} Nothing.
+     */
     public exile(o: GameObject): void {
         this.spaces.forEach(s => s.get(o.id) && s.exile(o));
     }
 
+    /**
+     * Exiles a game object from the current space in the model instance.
+     * @param {GameObject} o - The game object to exile.
+     * @returns {void} Nothing.
+     */
     public exileFromCurrentSpace(o: GameObject): void {
         this.currentSpace.exile(o);
     }
@@ -522,12 +547,12 @@ export abstract class BaseModel {
         this[spaceid_2_space][new_space.id] = new_space;
     }
 
-/**
- * Removes a space from the model instance.
- * @param {Space | string} s - The space to remove from the model instance. Can be a `Space` object or a string representing the ID of the space to remove.
- * @returns {void} Nothing.
- * @throws {string} Throws an error if the space to remove is not found in the model instance.
- */
+    /**
+     * Removes a space from the model instance.
+     * @param {Space | string} s - The space to remove from the model instance. Can be a `Space` object or a string representing the ID of the space to remove.
+     * @returns {void} Nothing.
+     * @throws {string} Throws an error if the space to remove is not found in the model instance.
+     */
     public removeSpace(s: Space | string): void {
         const space: Space = (s instanceof Space ? s : this.get_space(s));
         if (!space) throw `Space '${s}' to remove from model was not found, while calling [BaseModel.removeSpace]!`;

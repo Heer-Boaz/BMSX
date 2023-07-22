@@ -498,8 +498,14 @@ export class sdef {
 	}
 }
 
+/**
+ * A type representing a mapping of state IDs to partial state definitions.
+ */
 export type id2partial_sdef = Record<string, Partial<sdef>>;
 
+/**
+ * Represents the states of a state machine.
+ */
 export interface machine_states {
 	states: id2partial_sdef;
 }
