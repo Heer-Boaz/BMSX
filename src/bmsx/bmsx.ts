@@ -369,7 +369,13 @@ export function translate_vec3(a: vec3, b: vec3): vec3 {
 }
 
 /// http://stackoverflow.com/questions/4959975/generate-random-value-between-two-numbers-in-javascript
-export function randomInt(min: number, max: number) {
+/**
+ * Generates a random integer between the specified minimum and maximum values (inclusive).
+ * @param min The minimum value.
+ * @param max The maximum value.
+ * @returns A random integer between the minimum and maximum values (inclusive).
+ */
+export function randomInt(min: number, max: number): number {
     return Math.floor(Math.random() * (max - min + 1) + min);
 }
 
@@ -625,6 +631,10 @@ export class Game {
         this.updateInterval = 1000 / this.targetFPS;
     }
 
+    /**
+     * Gets the current turn counter value.
+     * @returns The current turn counter value.
+     */
     public get turnCounter(): number {
         return this._turnCounter;
     }
