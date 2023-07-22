@@ -23,13 +23,34 @@ export const objid_2_objspaceid = Symbol('obj_id2obj_space_id');
  * Represents a space in the game world, which contains a collection of game objects.
  */
 export class Space {
+    /**
+     * A dictionary that maps object IDs to their corresponding GameObject instances.
+     * @type {Record<obj_id_type, GameObject>}
+     */
     public [id2obj]: id2objectType;
-    public get<T extends GameObject>(id: string) { return <T>this[id2obj][id]; }
+    /**
+     * Returns the GameObject with the specified ID, or undefined if no such object exists in this space.
+     * @template T - The type of the GameObject to return.
+     * @param {string} id - The ID of the GameObject to retrieve.
+     * @returns {T | undefined} The GameObject with the specified ID, or undefined if no such object exists in this space.
+     */
+    public get<T extends GameObject>(id: string): T | undefined {
+        return <T>this[id2obj][id];
+    }
     public id: string;
     public objects: GameObject[];
+    /**
+     * A function that is called when the Space object is disposed of.
+     * @type {() => void}
+     */
     public ondispose?: () => void;
 
     @onsave
+    /**
+     * Creates a new Space object that can be safely serialized for saving the game.
+     * @param {Space} o - The Space object to be serialized.
+     * @returns {Space} A new Space object that can be safely serialized for saving the game.
+     */
     public static tosaved(o: Space): Space {
         const result = new Space(o.id);
         Object.assign(result, o);
@@ -40,12 +61,22 @@ export class Space {
         return result;
     }
 
+    /**
+     * Represents a space in the game world, which contains a collection of game objects.
+     * @constructor
+     * @param {string} _id - The unique identifier for the space.
+     */
     public constructor(_id: string) {
         this.id = _id;
         this.objects = [];
         this[id2obj] = {};
     }
 
+    /**
+     * Sorts the objects in the space by their depth (z-coordinate).
+     * Objects with a lower z-coordinate will be drawn first, and objects with a higher z-coordinate will be drawn on top of them.
+     * @returns {void} Nothing
+     */
     public sort_by_depth(): void {
         this.objects.sort((o1, o2) => o1.z - o2.z);
     }
@@ -97,6 +128,10 @@ export class Space {
         }
     }
 
+    /**
+     * Removes all objects from the current space and triggers their ondispose-event.
+     * @returns {void} Nothing
+     */
     public clear(): void {
         const temp_array = this.objects.slice();
         temp_array.forEach(o => this.exile(o));
@@ -111,11 +146,27 @@ export type base_model_spaces = 'game_start' | 'default';
  * Provides methods to add, remove, and manipulate game objects and spaces.
  */
 export abstract class BaseModel {
+    /**
+     * An array of keys to exclude from the serialized game state when saving the game.
+     * These keys include references to objects and spaces that should not be saved.
+     */
     public static readonly keys_to_exclude_from_save = ['objects', 'id2object', 'spaces', 'id2space', 'obj_id2obj_space_id'];
     public state: statecontext;
+    /**
+     * An object that maps space IDs to their corresponding Space objects.
+     * @type {id2spaceType}
+     */
     public [spaceid_2_space]: id2spaceType;
+    /**
+     * An object that maps object IDs to their corresponding space IDs.
+     * @type {obj_id2space_id_type}
+     */
     public [objid_2_objspaceid]: obj_id2space_id_type;
 
+    /**
+     * Gets all game objects in the current space.
+     * @returns {GameObject[]} An array of all game objects in the current space.
+     */
     public get objects(): GameObject[] {
         return this.currentSpace.objects;
     }
@@ -317,12 +368,26 @@ export abstract class BaseModel {
         objects.filter(o => o.disposeFlag).forEach(o => global.model.exile(o));
     };
 
+/**
+ * The default input handler for allowing the game menu to be opened.
+ * If the F5 key is pressed, the game menu substate is set to 'open'.
+ * @param {BaseModel} this - The current instance of the BaseModel.
+ * @param {sstate<BaseModel>} s - The current state of the BaseModel.
+ * @returns {void} Nothing.
+ */
     static default_input_handler_for_allow_open_gamemenu(this: BaseModel, s: sstate<BaseModel>) {
         if (Input.KC_F5) {
             this.state.substate.gamemenu.to('open');
         }
     }
 
+/**
+ * The default input handler for allowing the game menu to be closed.
+ * If the F5 key is pressed, the game menu substate is set to 'closed'.
+ * @param {BaseModel} this - The current instance of the BaseModel.
+ * @param {sstate<BaseModel>} s - The current state of the BaseModel.
+ * @returns {void} Nothing.
+ */
     static default_input_handler_for_allow_close_gamemenu(this: BaseModel, s: sstate<BaseModel>) {
         if (Input.KC_F5) {
             this.state.substate.gamemenu.to('closed');
@@ -443,6 +508,12 @@ export abstract class BaseModel {
         this.currentSpace.exile(o);
     }
 
+    /**
+     * Adds a new space to the model instance.
+     * @param {Space | string} s - The space to add to the model instance. Can be a `Space` object or a string representing the ID of the new space.
+     * @returns {void} Nothing.
+     * @throws {string} Throws an error if a space with the same ID already exists in the model instance.
+     */
     public addSpace(s: Space | string): void {
         const new_space: Space = (s instanceof Space ? s : new Space(s));
         if (this[spaceid_2_space][new_space.id]) throw `Cannot add duplicate Space '${new_space.id}' to model!`;
@@ -451,6 +522,12 @@ export abstract class BaseModel {
         this[spaceid_2_space][new_space.id] = new_space;
     }
 
+/**
+ * Removes a space from the model instance.
+ * @param {Space | string} s - The space to remove from the model instance. Can be a `Space` object or a string representing the ID of the space to remove.
+ * @returns {void} Nothing.
+ * @throws {string} Throws an error if the space to remove is not found in the model instance.
+ */
     public removeSpace(s: Space | string): void {
         const space: Space = (s instanceof Space ? s : this.get_space(s));
         if (!space) throw `Space '${s}' to remove from model was not found, while calling [BaseModel.removeSpace]!`;

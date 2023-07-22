@@ -27,6 +27,10 @@ export abstract class SpriteObject extends GameObject {
     public get imgid() {
         return this.sprite.imgid;
     }
+    /**
+     * Sets the ID of the image used for this sprite and updates the sprite's size based on the image's metadata.
+     * @param id The ID of the image to use for this sprite.
+     */
     public set imgid(id: string) {
         this.sprite.imgid = id;
         let imgmeta = global.rom['img_assets'][id]?.['imgmeta'];
