@@ -8,6 +8,11 @@ var MachineDefinitionBuilders: Record<string, () => machine_states>;
 // target: the class that the member is on.
 // name: the name of the member in the class.
 // descriptor: the member descriptor; This is essentially the object that would have been passed to Object.defineProperty.
+/**
+ * Returns a function that can be used as a decorator to build a finite state machine definition.
+ * @param fsm_name - Optional name of the finite state machine. If not provided, the name of the decorated class will be used.
+ * @returns A decorator function that can be used to build a finite state machine definition.
+ */
 export function build_fsm(fsm_name?: string) {
 	return function statedef_builder(target: any, name: any, descriptor: PropertyDescriptor): any {
 		MachineDefinitionBuilders ??= {};
@@ -15,11 +20,24 @@ export function build_fsm(fsm_name?: string) {
 	};
 }
 
+/**
+ * Decorator function that builds a finite state machine definition.
+ * @param target - The class that the member is on.
+ * @param name - The name of the member in the class.
+ * @param descriptor - The member descriptor; This is essentially the object that would have been passed to Object.defineProperty.
+ * @returns The decorated function.
+ */
 export function statedef_builder(target: any, name: any, descriptor: PropertyDescriptor): any {
 	MachineDefinitionBuilders ??= {};
 	MachineDefinitionBuilders[target.name] = descriptor.value;
 }
 
+/**
+ * Builds the state machine definitions and sets them in the `MachineDefinitions` object.
+ * Loops through all the `MachineDefinitionBuilders` and calls them to get the state machine definition.
+ * If a definition is returned, it creates a new `mdef` object with the machine name and definition.
+ * If the `mdef` object is created successfully, it sets the machine definition in the `MachineDefinitions` object.
+ */
 export function setup_fsmdef_library(): void {
 	MachineDefinitions = {};
 	for (let machine_name in MachineDefinitionBuilders) {
@@ -78,6 +96,9 @@ export class statecontext {
 	targetid: string;
 	substate: Record<string, statecontext>;
 
+	/**
+	 * Returns the game object or model that this state machine is associated with.
+	 */
 	public get target(): GameObject | BaseModel { return global.model.get(this.targetid); }
 	/**
 	 * Returns the current state of the FSM
@@ -90,11 +111,23 @@ export class statecontext {
 	 * @param id - id of the state, according to its definition
 	 */
 	public get_sstate(id: string) { return this.states[id]; }
+	/**
+	 * Gets the definition of the current state machine.
+	 * @returns The definition of the current state machine.
+	 */
 	public get definition(): mdef { return MachineDefinitions[this.id]; }
+	/**
+	 * Gets the id of the start state of the FSM.
+	 * @returns The id of the start state of the FSM.
+	 */
 	public get start_state_id(): string { return MachineDefinitions[this.id].start_state; }
 
+	/**
+	 * Gets the definition of the current state of the FSM.
+	 * Note that the definition can be empty, as not all objects have a defined machine.
+	 */
 	public get current_state_definition(): sdef {
-		return this.current?.definition; // Note that definition can be empty, as not all objects have a defined machine
+		return this.current?.definition;
 	}
 
 	/**
@@ -117,6 +150,12 @@ export class statecontext {
 		return result;
 	}
 
+	/**
+	 * Represents the context of a state in a finite state machine.
+	 * Contains information about the current state, the state machine it belongs to, and any substate machines.
+	 * @param _id - id of the state machine definition to use for this machine.
+	 * @param _targetid - id of the object that is stated by this FSM. @see {@link BaseModel.get}.
+	 */
 	constructor(_id: string, _targetid: string) {
 		this.id = _id ?? DEFAULT_BST_ID;
 		this.targetid = _targetid;
@@ -128,6 +167,12 @@ export class statecontext {
 		_id && _targetid && this.reset();
 	}
 
+	/**
+	 * Runs the current state of the FSM.
+	 * If the FSM is paused, this function does nothing.
+	 * Calls the process_input function of the current state, if it exists, with the state_event_type.None event type.
+	 * Calls the run function of the current state, if it exists, with the state_event_type.Run event type.
+	 */
 	public run(): void {
 		if (this.paused) return;
 		// [this.currentStatedef] can be undefined if we are in the 'none' state
@@ -135,6 +180,13 @@ export class statecontext {
 		this.current_state_definition?.run?.call(this.target, this.current, state_event_type.Run);
 	}
 
+	/**
+	 * Transitions the state machine to the given state ID.
+	 * Calls the exit function of the current state, if it exists, and stores the previous state on the history stack.
+	 * Then switches the current state to the new state ID and calls the enter function of the new state, if it exists.
+	 * @param newstate - the ID of the state to transition to
+	 * @throws Error if the new state ID does not exist in the state machine definition
+	 */
 	public to(newstate: string): void {
 		let stateDef = this.current_state_definition;
 		// stateDef can be undefined if we are in the 'none' state
@@ -149,12 +201,21 @@ export class statecontext {
 		stateDef?.enter?.call(this.target, this.current, state_event_type.Enter);
 	}
 
+	/**
+	 * Adds the given state ID to the history stack, which tracks the previous states of the state machine.
+	 * If the history stack exceeds the maximum length, the oldest state is removed from the stack.
+	 * @param toPush - the state ID to add to the history stack
+	 */
 	protected pushHistory(toPush: string): void {
 		this.history.push(toPush);
 		if (this.history.length > BST_MAX_HISTORY)
 			this.history.shift(); // Remove the first element in the history-array
 	}
 
+	// Resets the state machine to its initial state.
+	// If a start state is defined in the state machine definition, the current state is set to that state.
+	// Otherwise, the current state is set to the 'none' state.
+	// The history of previous states is cleared and the state machine is unpaused.
 	public reset(): void {
 		let start = this.definition?.start_state; // Definition doesn't need to exist
 		/* N.B. doesn't trigger the onenter-event!
@@ -167,12 +228,21 @@ export class statecontext {
 		this.paused = false;
 	}
 
+	/**
+	 * Goes back to the previous state in the history stack.
+	 * If there is no previous state, nothing happens.
+	 */
 	public pop(): void {
 		if (this.history.length <= 0) return;
 		let poppedStateId = this.history.pop();
 		poppedStateId && this.to(poppedStateId);
 	}
 
+	/**
+	 * Populates the state machine with states defined in the state machine definition.
+	 * If no state machine definition is defined, a default machine with a generated 'none'-state is created.
+	 * If no current state is set, the state is set to the first state found in the set of states.
+	 */
 	public populateStates(): void {
 		let mdef = this.definition;
 		if (!mdef) {
@@ -190,10 +260,16 @@ export class statecontext {
 		if (!this.currentid) this.currentid = Object.keys(this.states)[0];
 	}
 
+	/**
+	 * Adds the given states to the state machine.
+	 * If a state with the same ID already exists in the state machine, an error is thrown.
+	 * @param states - the states to add to the state machine
+	 * @throws Error if a state with the same ID already exists in the state machine
+	 */
 	private add(...states: sstate[]): void {
 		for (let state of states) {
 			if (!state.statedef_id) throw new Error(`State is missing an id, while attempting to add it to this statecontext '${this.id}'!`);
-			if (this.states[state.statedef_id]) throw new Error(`State ${state.statedef_id} already exists for statecontext  '${this.id}'!`);
+			if (this.states[state.statedef_id]) throw new Error(`State ${state.statedef_id} already exists for statecontext '${this.id}'!`);
 			this.states[state.statedef_id] = state;
 			state.machinedef_id = this.id;
 		}
@@ -215,18 +291,54 @@ export class sstate<T extends GameObject | BaseModel = any> {
 	public targetid: string;
 	public nudges2move!: number; // Number of runs before tapehead moves to next statedata
 
+	/**
+	 * Returns the state definition associated with this state.
+	 * If the state machine definition or the state definition is not found, returns undefined.
+	 * @returns The state definition associated with this state, or undefined if not found.
+	 */
 	public get definition(): sdef { return MachineDefinitions[this.machinedef_id]?.states[this.statedef_id]; } // Note that definition can be empty, as not all objects have a defined machine
+	/**
+	 * Returns the tape associated with the state machine definition.
+	 * If no tape is defined, returns undefined.
+	 * @returns The tape associated with the state machine definition, or undefined if not found.
+	 */
 	public get tape(): Tape { return this.definition.tape; }
+	/**
+	 * Returns the current value of the tape at the position of the tape head.
+	 * If there is no tape or the tape head is beyond the end of the tape, returns undefined.
+	 */
 	public get current(): any { return (this.tape && this.head < this.tape.length) ? this.tape[this.head] : undefined; };
 	public get at_tapeend(): boolean { return !this.tape || this.head >= this.tape.length - 1; } // Note that beyond end also returns true if there is no tape!
+	/**
+	 * Determines whether the tape head is currently beyond the end of the tape.
+	 * Returns true if the tape head is beyond the end of the tape or if there is no tape, false otherwise.
+	 * Note that this function assumes that the tape head is within the bounds of the tape.
+	 */
 	protected get beyond_tapeend(): boolean { return !this.tape || this.head >= this.tape.length; } // Note that beyond end also returns true if there is no tape!
+	// Determines whether the tape head is currently at the start of the tape.
+	// Returns true if the tape head is at the start of the tape, false otherwise.
+	// Note that this function assumes that the tape head is within the bounds of the tape.
 	public get at_tape_start(): boolean { return this.head === 0; }
-	// public get internalstate() { return { statedata: this.tape, tapehead: this.head, nudges: this.nudges, nudges2move: this.nudges2move }; }
-	public get target() { return this.targetAs<T>(); }//return global.model.get(this.targetid); }
-	// https://github.com/microsoft/TypeScript/issues/35986
-	// public ik = () => this.targetAs<T>();
+	/**
+	 * Returns the game object or model associated with the target ID of this state.
+	 * @returns The game object or model associated with the target ID of this state.
+	 * @template T - The type of the game object or model to return.
+	 */
+	public get target() { return this.targetAs<T>(); }
+	/**
+	 * Returns the game object or model associated with the target ID of this state.
+	 * @returns The game object or model associated with the target ID of this state.
+	 * @template T - The type of the game object or model to return.
+	 */
 	public targetAs<T extends GameObject | BaseModel>(): T { return <T>global.model.get(this.targetid); }
 
+	/**
+	 * Creates a new state object with the given ID, machine ID, and target ID.
+	 * If parameters are undefined, this constructor was invoked without parameters. This happens when it is revived. In that situation, the object is not initialized.
+	 * @param _id - The ID of the state object.
+	 * @param _machineid - The ID of the state machine object.
+	 * @param _targetid - The ID of the target object.
+	 */
 	public constructor(_id: string, _machineid: string, _targetid: string) {
 		this.statedef_id = _id;
 		this.machinedef_id = _machineid;
@@ -239,9 +351,20 @@ export class sstate<T extends GameObject | BaseModel = any> {
 	}
 
 	protected _tapehead!: number;
+	/**
+	 * Gets the current position of the tapehead.
+	 * @returns The current position of the tapehead.
+	 */
 	public get head(): number {
 		return this._tapehead;
 	}
+	/**
+	 * Sets the current position of the tapehead to the given value.
+	 * If the tapehead is going out of bounds, the tapehead is moved to the beginning or end of the tape, depending on the state machine definition.
+	 * If the tapehead is moved, the tapemove event is triggered.
+	 * If the tapehead reaches the end of the tape, the tapeend event is triggered.
+	 * @param v - the new position of the tapehead
+	 */
 	public set head(v: number) {
 		this._nudges = 0; // Always reset tapehead nudges after moving tapehead
 		this._tapehead = v; // Move the tape to new position
@@ -284,31 +407,54 @@ export class sstate<T extends GameObject | BaseModel = any> {
 
 	}
 
+	// Sets the current position of the tapehead to the given value without triggering any events or side effects.
+	// @param v - the new position of the tapehead
 	public setHeadNoSideEffect(v: number) {
 		this._tapehead = v;
 	}
 
+	/**
+	 * Sets the current number of nudges of the tapehead to the given value without triggering any events or side effects.
+	 * @param v - the new number of nudges of the tapehead
+	 */
 	public setHeadNudgesNoSideEffect(v: number) {
 		this._nudges = v;
 	}
 
 	protected _nudges!: number;
+	/**
+	 * Returns the current number of nudges of the tapehead.
+	 * @returns The current number of nudges of the tapehead.
+	 */
 	public get nudges(): number {
 		return this._nudges;
 	}
+	/**
+	 * Sets the current number of nudges of the tapehead to the given value.
+	 * If the number of nudges is greater than or equal to the number of nudges required to move the tapehead,
+	 * the tapehead is moved to the next position.
+	 * @param v - the new number of nudges of the tapehead
+	 */
 	public set nudges(v: number) {
 		this._nudges = v;
 		if (v >= this.nudges2move) { ++this.head; }
 	}
 
+	// Triggers the `next` event of the state machine definition, passing this state and the `state_event_type.Next` event type as arguments.
 	protected tapemove() {
 		this.definition.next?.call(this.target, this as sstate<T>, state_event_type.Next);
 	}
 
+	/**
+	 * Triggers the `end` event of the state machine definition, passing this state and the `state_event_type.End` event type as arguments.
+	 */
 	protected tapeend() {
 		this.definition.end?.call(this.target, this as sstate<T>, state_event_type.End);
 	}
 
+	/**
+	 * Resets the state machine by setting the tapehead and nudges to 0 and the nudges2move to the value defined in the state machine definition.
+	 */
 	public reset(): void {
 		this._tapehead = 0;
 		this._nudges = 0;
@@ -352,8 +498,14 @@ export class sdef {
 	}
 }
 
+/**
+ * A type representing a mapping of state IDs to partial state definitions.
+ */
 export type id2partial_sdef = Record<string, Partial<sdef>>;
 
+/**
+ * Represents the states of a state machine.
+ */
 export interface machine_states {
 	states: id2partial_sdef;
 }
@@ -429,6 +581,11 @@ export class mdef {
 		this.start_state = _state.id;
 	}
 
+	/**
+	 * Adds one or more states to the list of states defined for this state machine.
+	 * @param states The states to add.
+	 * @throws An error if any of the states are missing an id or if a state with the same id already exists for this state machine.
+	 */
 	public add(...states: sdef[]): void {
 		states.forEach(s => this.append(s));
 	}

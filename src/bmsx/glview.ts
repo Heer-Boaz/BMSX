@@ -2,6 +2,16 @@ import { Size, vec3 } from "./bmsx";
 import { BaseView, Color, DrawImgOptions } from './view';
 
 var bvec = {
+    /**
+     * Sets the vertices of a rectangle in a Float32Array, using the given parameters.
+     * @param v - The Float32Array to set the vertices in.
+     * @param x - The x-coordinate of the top-left corner of the rectangle.
+     * @param y - The y-coordinate of the top-left corner of the rectangle.
+     * @param w - The width of the rectangle.
+     * @param h - The height of the rectangle.
+     * @param sx - The horizontal scaling factor.
+     * @param sy - The vertical scaling factor.
+     */
     set: function (v: Float32Array, x: number, y: number, w: number, h: number, sx: number, sy: number): void {
         // Do the Boaz matrix translate and scale
         const x1 = x;
@@ -16,9 +26,19 @@ var bvec = {
             v[8] = x2, v[9] = y1,
             v[10] = x2, v[11] = y2;
     },
+    /**
+     * Sets the z-coordinates of a rectangle in a Float32Array, using the given parameter.
+     * @param v - The Float32Array to set the z-coordinates in.
+     * @param z - The z-coordinate of the rectangle.
+     */
     set_zcoord: function (v: Float32Array, z: number): void {
         v[0] = z, v[1] = z, v[2] = z, v[3] = z, v[4] = z, v[5] = z;
     },
+    /**
+     * Sets the color of a rectangle in a Float32Array, using the given Color object.
+     * @param v - The Float32Array to set the color in.
+     * @param color - The Color object to use for the rectangle's color.
+     */
     set_color: function (v: Float32Array, color: Color): void {
         v[0] = color.r, v[1] = color.g, v[2] = color.b, v[3] = color.a,
             v[4] = color.r, v[5] = color.g, v[6] = color.b, v[7] = color.a,
@@ -34,6 +54,9 @@ export const VERTEX_COLOR_COLORIZED_RED: Color = { r: 1.0, g: 0.0, b: 0.0, a: 1.
 export const VERTEX_COLOR_COLORIZED_GREEN: Color = { r: 0.0, g: 1.0, b: 0.0, a: 1.0 };
 export const VERTEX_COLOR_COLORIZED_BLUE: Color = { r: 0.0, g: 0.0, b: 1.0, a: 1.0 };
 
+/**
+ * Represents a view that renders graphics using WebGL.
+ */
 export abstract class GLView extends BaseView {
     public glctx: WebGL2RenderingContext;
     private textures: { [key: number]: WebGLTexture; };
@@ -45,7 +68,6 @@ export abstract class GLView extends BaseView {
     private color_overrideLocation: number;
     private resolutionLocation: WebGLUniformLocation;
     private textureLocation: WebGLUniformLocation;
-    // private colorOverrideLocation: WebGLUniformLocation;
     private positionBuffer: WebGLBuffer;
     private texcoordBuffer: WebGLBuffer;
     private zBuffer: WebGLBuffer;
@@ -201,6 +223,13 @@ export abstract class GLView extends BaseView {
         this.textures['_atlas'] = this.createTexture(BaseView.images['_atlas']);
     }
 
+    /**
+     * Compiles a WebGL shader from the provided source code.
+     * @param type The type of shader to compile (either gl.VERTEX_SHADER or gl.FRAGMENT_SHADER).
+     * @param source The source code of the shader.
+     * @returns The compiled WebGL shader.
+     * @throws An error if the shader fails to compile.
+     */
     private loadShader(type: number, source: string): WebGLShader {
         const gl = this.glctx;
         const shader = gl.createShader(type)!;
@@ -223,6 +252,11 @@ export abstract class GLView extends BaseView {
         return shader;
     }
 
+    /**
+     * Creates a WebGL texture from an HTMLImageElement.
+     * @param img The HTMLImageElement to create the texture from.
+     * @returns The created WebGL texture.
+     */
     private createTexture(img: HTMLImageElement): WebGLTexture {
         const gl = this.glctx;
 
@@ -257,6 +291,9 @@ export abstract class GLView extends BaseView {
         this.drawSprites();
     }
 
+    /**
+     * Overrides the base class method to clear the WebGL canvas.
+     */
     override clear(): void {
         const gl = this.glctx;
         gl.clearDepth(0.0);
@@ -274,6 +311,14 @@ export abstract class GLView extends BaseView {
         _this.drawImgReqIndex = 0;
     }
 
+    /**
+     * Updates a WebGL buffer with new data.
+     * @param gl The WebGL rendering context.
+     * @param buffer The buffer to update.
+     * @param target The target buffer object.
+     * @param offset The offset into the buffer to start updating.
+     * @param data The new data to write into the buffer.
+     */
     private static updateBuffer(gl: WebGLRenderingContext, buffer: WebGLBuffer, target: GLenum, offset: number, data: ArrayBufferView) {
         gl.bindBuffer(target, buffer);
         gl.bufferSubData(target, offset, data);

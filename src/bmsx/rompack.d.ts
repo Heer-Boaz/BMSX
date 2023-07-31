@@ -1,14 +1,23 @@
+/**
+ * Enum representing the type of an audio asset.
+ */
 export const enum AudioType {
 	effect = 1,
 	music = 2,
 }
 
+/**
+ * Metadata for an audio asset.
+ */
 export interface AudioMeta {
-	audiotype: AudioType,
-	priority: number;
-	loop?: number;
+	audiotype: AudioType; // The type of audio asset.
+	priority: number; // The priority of the audio asset.
+	loop?: number; // The loop point of the audio asset.
 }
 
+/**
+ * Metadata for an image asset.
+ */
 export interface ImgMeta {
 	atlassed: boolean;
 	width: number;
@@ -19,6 +28,9 @@ export interface ImgMeta {
 	texcoords_fliphv?: number[];
 }
 
+/**
+ * Represents an asset in a ROM pack.
+ */
 export interface RomAsset {
 	resid: number;
 	resname: string;

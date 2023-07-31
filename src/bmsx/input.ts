@@ -179,10 +179,23 @@ export class Input {
         return state;
     }
 
+    /**
+     * Returns the pressed state of a key, and optionally checks if it was clicked.
+     * @param key - The key to check the state of.
+     * @param checkClick - Whether to check if the key was clicked.
+     * @returns The pressed state of the key.
+     */
     private static getKeyState(key: string, checkClick: boolean = false): boolean {
         return Input.getPressedState(Input.KeyState, Input.KeyClickRequestedState, key, checkClick);
     }
 
+    /**
+     * Returns the pressed state of a gamepad button, and optionally checks if it was clicked.
+     * @param playerIndex - The index of the player to check the button for.
+     * @param btn - The index of the button to check the state of.
+     * @param checkClick - Whether to check if the button was clicked.
+     * @returns The pressed state of the button.
+     */
     private static getGamepadButtonState(playerIndex: number, btn: number, checkClick: boolean = false): boolean {
         const stateMap = Input.GamepadButtonStates[playerIndex] || {};
         const clickStateMap = Input.GamepadClickRequestedStates[playerIndex] || {};
@@ -547,6 +560,12 @@ export class Input {
         }
     }
 
+
+    /**
+     * Resets the state of all UI elements related to the gamepad input.
+     * This function is used to clear the state of all UI elements that represent the gamepad input buttons.
+     * It is called once per frame to ensure that the UI is up-to-date with the current gamepad input state.
+     */
     public static resetUI(): void {
         const dpadlist = ['d-pad-u', 'd-pad-ru', 'd-pad-r', 'd-pad-rd', 'd-pad-d', 'd-pad-ld', 'd-pad-l', 'd-pad-lu', 'btn1_knop', 'btn2_knop', 'btn3_knop', 'btn4_knop'];
         let d: HTMLElement;
@@ -558,6 +577,7 @@ export class Input {
             }
         }
     }
+
 }
 
 /**

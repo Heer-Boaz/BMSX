@@ -201,21 +201,37 @@ export class GameObject implements vec2, vec3 {
         this.state = statecontext.create(_fsm_id ?? this.constructor.name, this.id);
     }
 
+    /**
+     * Determines if two `GameObject` instances collide with each other.
+     * @param o1 The first `GameObject` instance.
+     * @param o2 The second `GameObject` instance.
+     * @returns `true` if the two instances collide, `false` otherwise.
+     */
     static objectCollide(o1: GameObject, o2: GameObject): boolean {
         return o1.detect_object_collision(o2);
     }
 
+    /**
+     * Calls the `oncollide` event handler with the given `GameObject` instance as the source of the collision.
+     * @param src The `GameObject` instance that collided with this instance.
+     */
     public collide(src: GameObject): void {
         this.oncollide?.(src);
     }
 
+    // Determines if the current GameObject instance collides with another GameObject or an Area instance.
+    // @param o The GameObject or Area instance to check for collision.
+    // @returns `true` if the current instance collides with the given instance, `false` otherwise.
     public collides(o: GameObject | Area): boolean {
         if ((o as GameObject).id) return this.detect_object_collision(o as GameObject);
         else return this.detect_aabb_collision_area(o as Area);
     }
 
     /**
-     * Detects Axis-Aligned Bounding Box collision (AABB)
+     * Determines if the current `GameObject` instance collides with another `GameObject` instance.
+     * Detects Axis-Aligned Bounding Box collision (AABB).
+     * @param o The `GameObject` instance to check for collision.
+     * @returns `true` if the current instance collides with the given instance, `false` otherwise.
      */
     public detect_object_collision(o: GameObject): boolean {
         if (!this.hittable || !o.hittable) return false;
@@ -231,7 +247,10 @@ export class GameObject implements vec2, vec3 {
     }
 
     /**
-     * Detects Axis-Aligned Bounding Box collision (AABB)
+     * Determines if the current `GameObject` instance collides with an `Area` instance.
+     * Detects Axis-Aligned Bounding Box collision (AABB).
+     * @param a The `Area` instance to check for collision.
+     * @returns `true` if the current instance collides with the given instance, `false` otherwise.
      */
     public detect_aabb_collision_area(a: Area): boolean {
         const hitbox_left = this.hitbox_left;

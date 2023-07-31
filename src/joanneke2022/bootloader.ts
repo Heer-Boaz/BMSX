@@ -118,10 +118,10 @@ class gamemodel extends BaseModel {
     public static substates(): machine_states {
         return {
             states: {
-                closed:{
+                closed: {
                     process_input: BaseModel.default_input_handler_for_allow_open_gamemenu,
                 },
-                open:{
+                open: {
                     process_input: BaseModel.default_input_handler_for_allow_close_gamemenu,
                     enter(this: gamemodel, s: sstate<gamemodel>) {
                         let menu = new GameMenu();
@@ -165,6 +165,11 @@ class gamemodel extends BaseModel {
         return this.constructor.name;
     }
 
+    /**
+     * Initializes the game state and spawns necessary game objects.
+     * This method should only be called once at the beginning of the game.
+     * @returns This instance of the game model.
+     */
     public do_one_time_game_init(): this {
         // this.state.machines['gamemenu' satisfies model_machines].to('closed' satisfies model_states);
         this.addSpace('hoera!' satisfies model_spaces);
