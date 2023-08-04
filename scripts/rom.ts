@@ -167,7 +167,6 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
 	});
 }
 
-
 /**
  * Parses the metadata of a ROM pack from the end of the given buffer.
  * @param to_parse - The buffer to parse the metadata from.
@@ -384,7 +383,12 @@ async function awaitPressedAnyKey(): Promise<void> {
 	let result: Promise<void> = new Promise((resolve, reject) => {
 		let onuserinteraction = (e: UIEvent) => {
 			try {
-				if (!bootrom.snd_unlocked || !bootrom.theshowsover) { return; }
+				if (!bootrom.snd_unlocked || !bootrom.theshowsover) {
+					if (bootrom.debug) {
+						console.info(`Did not start game on user interaction because either the sound was not unlocked (bootrom.snd_unlocked=${bootrom.snd_unlocked}) or the boot animation had not ended (bootrom.theshowsover=${bootrom.theshowsover}).`);
+					}
+					return;
+				}
 				if (e.type == 'touchend') {
 					let controls = document.getElementById("controls");
 					controls!.hidden = false;

@@ -13,7 +13,7 @@ import { SpriteObject } from '../bmsx/sprite';
 
 const get_model = get_gamemodel<gamemodel>;
 
-const actions = ['up', 'right', 'down', 'left', 'jump'] as const;
+const actions = ['up', 'right', 'down', 'left', 'load', 'save', 'bla', 'blap'] as const;
 type Action = typeof actions[number];
 
 type MyKeyboardInputMapping = {
@@ -29,7 +29,10 @@ const keyboardInputMapping: MyKeyboardInputMapping = {
     'right': 'ArrowRight',
     'down': 'ArrowDown',
     'left': 'ArrowLeft',
-    'jump': 'Space',
+    'load': 'ShiftLeft',
+    'save': 'KeyZ',
+    'bla': 'KeyA',
+    'blap': 'KeyS',
 };
 
 const gamepadInputMapping: MyGamepadInputMapping = {
@@ -37,7 +40,10 @@ const gamepadInputMapping: MyGamepadInputMapping = {
     'right': 'right',
     'down': 'down',
     'left': 'left',
-    'jump': 'x',
+    'load': 'a',
+    'save': 'b',
+    'bla': 'x',
+    'blap': 'y',
 };
 
 @insavegame
@@ -56,8 +62,8 @@ class bclass extends SpriteObject {
 
             const pressedActions = Input.getPressedActions(0);
 
-            for (const { action, click } of pressedActions) {
-                switch (action) {
+            for (const { action, pressed, consumed } of pressedActions) {
+                switch (action as Action) {
                     case 'up':
                         this.pos.y -= speed;
                         break;
@@ -70,33 +76,42 @@ class bclass extends SpriteObject {
                     case 'left':
                         this.pos.x -= speed;
                         break;
+                    case 'load':
+                        if (consumed) break;
+                        Input.consumeAction(0, action);
+
+                        if (_model[savestring]) {
+                            _model.load(_model[savestring]);
+                            _model[savestring] = undefined;
+                            delete _model[savestring];
+                            console.info(`${new Date().toTimeString()} Game loaded!`);
+                        }
+                        // show_load_savestate_dialog();
+                        break;
+                    case 'save':
+                        if (consumed) break;
+                        Input.consumeAction(0, action);
+
+                        get_model()[savestring] = get_model().save();
+                        console.info(`${new Date().toTimeString()} Game saved!`);
+                        console.info(`${_model[savestring]}`);
+                        // show_download_savestate_dialog();
+                        break;
+                    case 'bla':
+                        if (consumed) break;
+                        Input.consumeAction(0, action);
+
+                        this.state.to('bla');
+                    break;
+                    case 'blap':
+                        if (consumed) break;
+                        Input.consumeAction(0, action);
+
+                        this.state.to('#blap');
+                    break;
                 }
             }
-
-            if (Input.KC_BTN1) {
-                get_model()[savestring] = get_model().save();
-                // console.info(`${new Date().toTimeString()} Game saved!`);
-                // console.info(`${_model[savestring]}`);
-                show_download_savestate_dialog();
-            }
-            if (Input.KC_BTN2) {
-                // if (_model[savestring]) {
-                //     _model.load(_model[savestring]);
-                //     _model[savestring] = undefined;
-                //     delete _model[savestring];
-                //     console.info(`${new Date().toTimeString()} Game loaded!`);
-                // }
-                show_load_savestate_dialog();
-            }
-            if (Input.KC_BTN3) {
-            }
-            if (Input.KC_BTN4) {
-            }
-            // Input.KC_BTN3 && me.state.to('blap');
-            // Input.KC_BTN3 && debugtest1();
-            // Input.KC_BTN4 && me.state.to('bla');
-            // Input.KC_BTN4 && debugtest2();
-        };
+        }
 
         return {
             states: {

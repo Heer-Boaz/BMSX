@@ -44,6 +44,9 @@ export interface InputMap {
 export type KeyboardButton = keyof typeof Key | string;
 export type GamepadButton = keyof typeof Input.GAMEPAD_BUTTONS;
 
+export type ButtonState = { pressed: boolean; consumed: boolean; };
+export type ActionState = { action: string } & ButtonState;
+
 /**
  * Represents the input state of the game.
  */
@@ -58,7 +61,7 @@ export class Input {
     /**
      * The state of each keyboard key click request.
      */
-    public static KeyClickRequestedState: Index2State = {};
+    public static KeyPressedConsumedState: Index2State = {};
 
     /**
      * The state of each gamepad button for each player.
@@ -68,7 +71,7 @@ export class Input {
     /**
      * The state of each gamepad button click request for each player.
      */
-    private static GamepadClickRequestedStates: Index2State[] = [];
+    private static GamepadButtonPressedConsumedStates: Index2State[] = [];
 
     /**
      * The input maps for each player.
@@ -131,19 +134,18 @@ export class Input {
      * Returns whether a specific action is currently pressed for a given player index, and optionally checks if it was clicked.
      * @param playerIndex - The index of the player to check the action for.
      * @param action - The name of the action to check.
-     * @param checkClick - Whether to check if the action was clicked.
      * @returns Whether the action is currently pressed for the given player index.
      */
-    public static isActionPressed(playerIndex: number, action: string, checkClick: boolean = false): boolean {
+    public static getActionState(playerIndex: number, action: string): ActionState {
         const inputMap = Input.inputMaps[playerIndex];
-        if (!inputMap) return false;
+        if (!inputMap) return { action, pressed: false, consumed: false };
+
         const keyboardKey = inputMap.keyboard[action];
         const gamepadButton = Input.GAMEPAD_BUTTONS[inputMap.gamepad[action]];
 
-        return (
-            (keyboardKey && Input.getKeyState(keyboardKey, checkClick)) ||
-            (gamepadButton !== undefined && Input.getGamepadButtonState(playerIndex, gamepadButton, checkClick))
-        );
+        const keyboardButtonState = Input.getKeyState(keyboardKey);
+        const gamepadButtonState = Input.getGamepadButtonState(playerIndex, gamepadButton);
+        return { action: action, pressed: keyboardButtonState.pressed || gamepadButtonState.pressed, consumed: keyboardButtonState.consumed || gamepadButtonState.consumed };
     }
 
     /**
@@ -151,21 +153,63 @@ export class Input {
      * @param playerIndex - The index of the player to check the actions for.
      * @returns An array of objects containing the name of the action and whether it was clicked.
      */
-    public static getPressedActions(playerIndex: number): { action: string, click: boolean }[] {
+    public static getPressedActions(playerIndex: number): ActionState[] {
         const inputMap = Input.inputMaps[playerIndex];
         if (!inputMap) return [];
 
-        const pressedActions = [];
+        const pressedActions: ActionState[] = [];
 
         for (const action in inputMap.keyboard) {
-            if (Input.isActionPressed(playerIndex, action, true)) {
-                pressedActions.push({ action, click: true });
-            } else if (Input.isActionPressed(playerIndex, action)) {
-                pressedActions.push({ action, click: false });
+            const actionState = Input.getActionState(playerIndex, action);
+            if (actionState.pressed) {
+                pressedActions.push(actionState);
             }
         }
 
         return pressedActions;
+    }
+
+    /**
+     * Consumes the given key by setting its key state to "consumed".
+     * @param key The key to consume.
+     */
+    public static consumeKey(key: string) {
+        const keyState = Input.getKeyState(key);
+        if (keyState) {
+            keyState.consumed = true;
+        }
+    }
+
+    /**
+     * Consumes the given button press for the specified player index.
+     * @param playerIndex The index of the player whose button press should be consumed.
+     * @param button The button to consume.
+     */
+    public static consumeButton(playerIndex: number, button: number) {
+        const gamepadButton = Input.GAMEPAD_BUTTONS[button];
+        const gamepadButtonState = Input.getGamepadButtonState(playerIndex, gamepadButton);
+        gamepadButtonState.consumed = true;
+    }
+
+    /**
+     * Consumes the input action for the specified player index.
+     * @param playerIndex The index of the player whose input should be consumed.
+     * @param action The name of the input action to consume.
+     */
+    public static consumeAction(playerIndex: number, action: string) {
+        const inputMap = Input.inputMaps[playerIndex];
+        if (!inputMap) return;
+
+        const keyboardKey = inputMap.keyboard[action];
+        const gamepadButton = Input.GAMEPAD_BUTTONS[inputMap.gamepad[action]];
+
+        if (keyboardKey) {
+            Input.consumeKey(keyboardKey);
+        }
+
+        if (gamepadButton) {
+            Input.consumeButton(playerIndex, gamepadButton);
+        }
     }
 
     public static bla() {
@@ -188,39 +232,32 @@ export class Input {
         });
 
         // To check if an action is pressed for player 0
-        Input.isActionPressed(0, 'jump', true);
+        Input.getActionState(0, 'jump');
     }
 
     /**
      * Returns the pressed state of a key or button, and optionally checks if it was clicked.
      * @param stateMap - The state map to check for the key or button.
-     * @param clickStateMap - The click state map to check for the key or button.
+     * @param checkedStateMap - The click state map to check for the key or button.
      * @param key - The key or button to check the state of.
      * @param checkClick - Whether to check if the key or button was clicked.
      * @returns The pressed state of the key or button.
      */
     private static getPressedState(
         stateMap: Index2State,
-        clickStateMap: Index2State,
-        key: string | number,
-        checkClick: boolean = false
-    ): boolean {
-        const state = stateMap[key] === true;
-        if (checkClick && state) {
-            if (clickStateMap[key]) return false;
-            clickStateMap[key] = true;
-        }
-        return state;
+        checkedStateMap: Index2State,
+        key: string | number
+    ): ButtonState {
+        return { pressed: stateMap[key], consumed: checkedStateMap[key] };
     }
 
     /**
      * Returns the pressed state of a key, and optionally checks if it was clicked.
      * @param key - The key to check the state of.
-     * @param checkClick - Whether to check if the key was clicked.
      * @returns The pressed state of the key.
      */
-    private static getKeyState(key: string, checkClick: boolean = false): boolean {
-        return Input.getPressedState(Input.KeyState, Input.KeyClickRequestedState, key, checkClick);
+    private static getKeyState(key: string): ButtonState {
+        return Input.getPressedState(Input.KeyState, Input.KeyPressedConsumedState, key);
     }
 
     /**
@@ -230,116 +267,158 @@ export class Input {
      * @param checkClick - Whether to check if the button was clicked.
      * @returns The pressed state of the button.
      */
-    private static getGamepadButtonState(playerIndex: number, btn: number, checkClick: boolean = false): boolean {
+    private static getGamepadButtonState(playerIndex: number, btn: number): ButtonState {
         const stateMap = Input.GamepadButtonStates[playerIndex] || {};
-        const clickStateMap = Input.GamepadClickRequestedStates[playerIndex] || {};
-        return Input.getPressedState(stateMap, clickStateMap, btn, checkClick);
+        const pressRequestedStateMap = Input.GamepadButtonPressedConsumedStates[playerIndex] || {};
+        return Input.getPressedState(stateMap, pressRequestedStateMap, btn);
     }
 
     public static isKeyDown(key: string): boolean {
-        return Input.getKeyState(key, false);
+        const buttonState = Input.getKeyState(key);
+        return buttonState.pressed;
     }
 
     public static isGamepadButtonDown(playerIndex: number, btn: number): boolean {
-        return Input.getGamepadButtonState(playerIndex, btn, false);
+        const buttonState = Input.getGamepadButtonState(playerIndex, btn);
+        return buttonState.pressed;
     }
 
     public static get KC_F1(): boolean {
-        return Input.getKeyState(Key.F1, true);
+        const result = !Input.getKeyState(Key.F1).consumed;
+        Input.consumeKey(Key.F1);
+        return result;
     }
     public static get KC_F12(): boolean {
-        return Input.getKeyState('F12', true);
+        const result = !Input.getKeyState('F12').consumed;
+        Input.consumeKey('F12');
+        return result;
     }
     public static get KC_F2(): boolean {
-        return Input.getKeyState('F2', true);
+        const result = !Input.getKeyState('F2').consumed;
+        Input.consumeKey('F2');
+        return result;
     }
     public static get KC_F3(): boolean {
-        return Input.getKeyState('F3', true);
+        const result = !Input.getKeyState('F3').consumed;
+        Input.consumeKey('F3');
+        return result;
     }
     public static get KC_F4(): boolean {
-        return Input.getKeyState('F4', true);
+        const result = !Input.getKeyState('F4').consumed;
+        Input.consumeKey('F4');
+        return result;
     }
     public static get KC_F5(): boolean {
-        return Input.getKeyState('F5', true);
+        const result = !Input.getKeyState('F5').consumed;
+        Input.consumeKey('F5');
+        return result;
     }
     public static get KC_M(): boolean {
-        return Input.getKeyState('KeyM', true);
+        const result = !Input.getKeyState('KeyM').consumed;
+        Input.consumeKey('KeyM');
+        return result;
     }
     public static get KC_SPACE(): boolean {
-        return Input.getKeyState('Space', true);
+        const result = !Input.getKeyState('Space').consumed;
+        Input.consumeKey('Space');
+        return result;
     }
     public static get KC_UP(): boolean {
-        return Input.getKeyState('ArrowUp', true) || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.up, true);
+        const result = !Input.getKeyState('ArrowUp').consumed || !Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.up).consumed;
+        Input.consumeKey('ArrowUp');
+        Input.consumeButton(0, Input.GAMEPAD_BUTTONS.up);
+        return result;
     }
     public static get KC_RIGHT(): boolean {
-        return Input.getKeyState('ArrowRight', true) || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.right, true);
+        const result = !Input.getKeyState('ArrowRight').consumed || !Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.right).consumed;
+        Input.consumeKey('ArrowRight');
+        Input.consumeButton(0, Input.GAMEPAD_BUTTONS.right);
+        return result;
     }
     public static get KC_DOWN(): boolean {
-        return Input.getKeyState('ArrowDown', true) || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.down, true);
+        const result = !Input.getKeyState('ArrowDown').consumed || !Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.down).consumed;
+        Input.consumeKey('ArrowDown');
+        Input.consumeButton(0, Input.GAMEPAD_BUTTONS.down);
+        return result;
     }
     public static get KC_LEFT(): boolean {
-        return Input.getKeyState('ArrowLeft', true) || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.left, true);
+        const result = !Input.getKeyState('ArrowLeft').consumed || !Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.left).consumed;
+        Input.consumeKey('ArrowLeft');
+        Input.consumeButton(0, Input.GAMEPAD_BUTTONS.left);
+        return result;
     }
     public static get KC_BTN1(): boolean {
-        return Input.getKeyState('ShiftLeft', true) || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.a, true);
+        const result = !Input.getKeyState('ShiftLeft').consumed || !Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.a).consumed;
+        Input.consumeKey('ShiftLeft');
+        Input.consumeButton(0, Input.GAMEPAD_BUTTONS.a);
+        return result;
     }
     public static get KC_BTN2(): boolean {
-        return Input.getKeyState('KeyZ', true) || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.b, true);
+        const result = !Input.getKeyState('KeyZ').consumed || !Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.b).consumed;
+        Input.consumeKey('KeyZ');
+        Input.consumeButton(0, Input.GAMEPAD_BUTTONS.b);
+        return result;
     }
     public static get KC_BTN3(): boolean {
-        return Input.getKeyState('F1', true) || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.x, true);
+        const result = !Input.getKeyState('F1').consumed || !Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.x).consumed;
+        Input.consumeKey('F1');
+        Input.consumeButton(0, Input.GAMEPAD_BUTTONS.x);
+        return result;
     }
     public static get KC_BTN4(): boolean {
-        return Input.getKeyState('F5', true) || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.y, true);
+        const result = !Input.getKeyState('F5').consumed || !Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.y).consumed;
+        Input.consumeKey('F5');
+        Input.consumeButton(0, Input.GAMEPAD_BUTTONS.y);
+        return result;
     }
 
     public static get KD_F1(): boolean {
-        return Input.getKeyState('F1');
+        return Input.getKeyState('F1').pressed;
     }
     public static get KD_F12(): boolean {
-        return Input.getKeyState('F12');
+        return Input.getKeyState('F12').pressed;
     }
     public static get KD_F2(): boolean {
-        return Input.getKeyState('F2');
+        return Input.getKeyState('F2').pressed;
     }
     public static get KD_F3(): boolean {
-        return Input.getKeyState('F3');
+        return Input.getKeyState('F3').pressed;
     }
     public static get KD_F4(): boolean {
-        return Input.getKeyState('F4');
+        return Input.getKeyState('F4').pressed;
     }
     public static get KD_F5(): boolean {
-        return Input.getKeyState('F5');
+        return Input.getKeyState('F5').pressed;
     }
     public static get KD_M(): boolean {
-        return Input.getKeyState('KeyM');
+        return Input.getKeyState('KeyM').pressed;
     }
     public static get KD_SPACE(): boolean {
-        return Input.getKeyState('Space');
+        return Input.getKeyState('Space').pressed;
     }
     public static get KD_UP(): boolean {
-        return Input.getKeyState('ArrowUp') || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.up, false);
+        return Input.getKeyState('ArrowUp').pressed || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.up).pressed;
     }
     public static get KD_RIGHT(): boolean {
-        return Input.getKeyState('ArrowRight') || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.right, false);
+        return Input.getKeyState('ArrowRight').pressed || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.right).pressed;
     }
     public static get KD_DOWN(): boolean {
-        return Input.getKeyState('ArrowDown') || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.down, false);
+        return Input.getKeyState('ArrowDown').pressed || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.down).pressed;
     }
     public static get KD_LEFT(): boolean {
-        return Input.getKeyState('ArrowLeft') || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.left, false);
+        return Input.getKeyState('ArrowLeft').pressed || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.left).pressed;
     }
     public static get KD_BTN1(): boolean {
-        return Input.getKeyState('ShiftLeft') || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.a, false);
+        return Input.getKeyState('ShiftLeft').pressed || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.a).pressed;
     }
     public static get KD_BTN2(): boolean {
-        return Input.getKeyState('KeyZ') || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.b, false);
+        return Input.getKeyState('KeyZ').pressed || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.b).pressed;
     }
     public static get KD_BTN3(): boolean {
-        return Input.getKeyState('F1') || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.x, true);
+        return Input.getKeyState('F1') .pressed|| Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.x).pressed;
     }
     public static get KD_BTN4(): boolean {
-        return Input.getKeyState('F5') || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.y, true);
+        return Input.getKeyState('F5').pressed || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.y).pressed;
     }
 
     private static handleDebugEvents(e: MouseEvent | TouchEvent): void {
@@ -384,7 +463,7 @@ export class Input {
 
     public static init(debug = true): void {
         Input.KeyState = {};
-        Input.KeyClickRequestedState = {};
+        Input.KeyPressedConsumedState = {};
         Input.reset();
         const options = {
             passive: false,
@@ -408,7 +487,7 @@ export class Input {
             // Assign gamepad to player
             Input.GamepadPlayerMap[gamepad.index] = playerIndex;
             Input.GamepadButtonStates[playerIndex] = {};
-            Input.GamepadClickRequestedStates[playerIndex] = {};
+            Input.GamepadButtonPressedConsumedStates[playerIndex] = {};
 
             return playerIndex;
         };
@@ -453,8 +532,8 @@ export class Input {
             if (Input.GamepadButtonStates[playerIndex]) {
                 delete Input.GamepadButtonStates[playerIndex];
             }
-            if (Input.GamepadClickRequestedStates[playerIndex]) {
-                delete Input.GamepadClickRequestedStates[playerIndex];
+            if (Input.GamepadButtonPressedConsumedStates[playerIndex]) {
+                delete Input.GamepadButtonPressedConsumedStates[playerIndex];
             }
         });
 
@@ -507,8 +586,8 @@ export class Input {
             // Reset gamepad button states
             const playerIndex = Input.GamepadPlayerMap[gamepad.index];
             Input.GamepadButtonStates[playerIndex] = {};
-            if (!Input.GamepadClickRequestedStates[playerIndex]) {
-                Input.GamepadClickRequestedStates[playerIndex] = {};
+            if (!Input.GamepadButtonPressedConsumedStates[playerIndex]) {
+                Input.GamepadButtonPressedConsumedStates[playerIndex] = {};
             }
 
             // Check whether any axes have been triggered
@@ -544,7 +623,7 @@ export class Input {
             // Consider that the button can already be regarded as pressed if it was pressed as part of another action, like an axis
             Input.GamepadButtonStates[playerIndex][btnIndex] = Input.GamepadButtonStates[playerIndex][btnIndex] || pressed;
             if (!pressed) {
-                Input.GamepadClickRequestedStates[playerIndex][btnIndex] = false;
+                Input.GamepadButtonPressedConsumedStates[playerIndex][btnIndex] = false;
             }
         }
     }
@@ -573,9 +652,9 @@ export class Input {
             if (!except || except.indexOf(props[i]) === -1) { delete Input.KeyState[props[i]]; }
         }
 
-        props = Object.keys(Input.KeyClickRequestedState);
+        props = Object.keys(Input.KeyPressedConsumedState);
         for (let i = 0; i < props.length; i++) {
-            if (!except || except.indexOf(props[i]) === -1) { delete Input.KeyClickRequestedState[props[i]]; }
+            if (!except || except.indexOf(props[i]) === -1) { delete Input.KeyPressedConsumedState[props[i]]; }
         }
 
         for (let gamepad_index = 0; gamepad_index < Input.GamepadButtonStates.length; gamepad_index++) {
@@ -585,10 +664,10 @@ export class Input {
             }
         }
 
-        for (let gamepad_index = 0; gamepad_index < Input.GamepadClickRequestedStates.length; gamepad_index++) {
-            props = Object.keys(Input.GamepadClickRequestedStates[gamepad_index]);
+        for (let gamepad_index = 0; gamepad_index < Input.GamepadButtonPressedConsumedStates.length; gamepad_index++) {
+            props = Object.keys(Input.GamepadButtonPressedConsumedStates[gamepad_index]);
             for (let prop_index = 0; prop_index < props.length; prop_index++) {
-                if (!except || except.indexOf(props[prop_index]) === -1) { delete Input.GamepadClickRequestedStates[gamepad_index][props[prop_index]]; }
+                if (!except || except.indexOf(props[prop_index]) === -1) { delete Input.GamepadButtonPressedConsumedStates[gamepad_index][props[prop_index]]; }
             }
         }
     }
@@ -650,7 +729,7 @@ function keydown(key: ButtonId | string): void {
 }
 
 function keyup(key: ButtonId | string): void {
-    Input.KeyState[key] = Input.KeyClickRequestedState[key] = false;
+    Input.KeyState[key] = Input.KeyPressedConsumedState[key] = false;
 }
 
 function blur(e: FocusEvent): void {
