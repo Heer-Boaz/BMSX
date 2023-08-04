@@ -27,10 +27,22 @@ let preventActionAndPropagation = (e: Event): boolean => {
 //   }
 
 type Index2State = { [index: string | number]: boolean; };
-interface InputMap {
-    keyboard: { [action: string]: string; };
-    gamepad: { [action: string]: string; };
+export type InputMapping = { [action: string]: string; };
+export type KeyboardInputMapping = {
+    [action: string]: KeyboardButton;
+};
+
+export type GamepadInputMapping = {
+    [action: string]: GamepadButton;
+};
+
+export interface InputMap {
+    keyboard: KeyboardInputMapping;
+    gamepad: GamepadInputMapping;
 }
+
+export type KeyboardButton = keyof typeof Key | string;
+export type GamepadButton = keyof typeof Input.GAMEPAD_BUTTONS;
 
 /**
  * Represents the input state of the game.
@@ -66,7 +78,7 @@ export class Input {
     /**
      * The mapping of gamepad button names to their corresponding indices.
      */
-    public static readonly GAMEPAD_BUTTONS: { [button: string]: number } = {
+    public static readonly GAMEPAD_BUTTONS = {
         'a': 0,
         'b': 1,
         'x': 2,
@@ -83,7 +95,7 @@ export class Input {
         'down': 13,
         'left': 14,
         'right': 15,
-    }
+    } as const;
 
     public static playerJoinEvent = new EventDispatcher<number>();
 
@@ -132,6 +144,28 @@ export class Input {
             (keyboardKey && Input.getKeyState(keyboardKey, checkClick)) ||
             (gamepadButton !== undefined && Input.getGamepadButtonState(playerIndex, gamepadButton, checkClick))
         );
+    }
+
+    /**
+     * Returns all actions that have been pressed for a given player index.
+     * @param playerIndex - The index of the player to check the actions for.
+     * @returns An array of objects containing the name of the action and whether it was clicked.
+     */
+    public static getPressedActions(playerIndex: number): { action: string, click: boolean }[] {
+        const inputMap = Input.inputMaps[playerIndex];
+        if (!inputMap) return [];
+
+        const pressedActions = [];
+
+        for (const action in inputMap.keyboard) {
+            if (Input.isActionPressed(playerIndex, action, true)) {
+                pressedActions.push({ action, click: true });
+            } else if (Input.isActionPressed(playerIndex, action)) {
+                pressedActions.push({ action, click: false });
+            }
+        }
+
+        return pressedActions;
     }
 
     public static bla() {
@@ -468,7 +502,6 @@ export class Input {
 
         for (let gamepad of gamepads) {
             if (!gamepad) continue;
-            // if (gamepad.id.includes('Sound Blaster')) continue;
             if (!gamepad.id.toLowerCase().includes('gamepad')) continue;
 
             // Reset gamepad button states
@@ -577,7 +610,6 @@ export class Input {
             }
         }
     }
-
 }
 
 /**

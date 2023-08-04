@@ -1,8 +1,9 @@
+import { GamepadButton } from './../bmsx/input';
 import { RomPack } from '../bmsx/rompack';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
-import { Input } from '../bmsx/input';
+import { Input, InputMap, KeyboardButton, GamepadInputMapping, KeyboardInputMapping } from '../bmsx/input';
 import { sstate, statedef_builder, machine_states } from '../bmsx/bfsm';
 import { show_download_savestate_dialog, insavegame, show_openfile_dialog, show_load_savestate_dialog } from '../bmsx/gameserializer';
 import { new_area, Direction, Game, new_vec2, get_gamemodel } from '../bmsx/bmsx';
@@ -12,23 +13,66 @@ import { SpriteObject } from '../bmsx/sprite';
 
 const get_model = get_gamemodel<gamemodel>;
 
+const actions = ['up', 'right', 'down', 'left', 'jump'] as const;
+type Action = typeof actions[number];
+
+type MyKeyboardInputMapping = {
+    [key in keyof KeyboardInputMapping & Action]: KeyboardButton;
+};
+
+type MyGamepadInputMapping = {
+    [key in keyof GamepadInputMapping & Action]: GamepadButton;
+};
+
+const keyboardInputMapping: MyKeyboardInputMapping = {
+    'up': 'ArrowUp',
+    'right': 'ArrowRight',
+    'down': 'ArrowDown',
+    'left': 'ArrowLeft',
+    'jump': 'Space',
+};
+
+const gamepadInputMapping: MyGamepadInputMapping = {
+    'up': 'up',
+    'right': 'right',
+    'down': 'down',
+    'left': 'left',
+    'jump': 'x',
+};
+
 @insavegame
 class bclass extends SpriteObject {
     @statedef_builder
     public static bouw(): machine_states {
+        Input.setInputMap(0, {
+            keyboard: keyboardInputMapping,
+            gamepad: gamepadInputMapping,
+        } as InputMap);
+
+        // To check if an action is pressed for player 0
+
         function blarun(this: bclass, s: sstate) {
-            if (Input.KD_UP) {
-                this.pos.y -= 2;
+            const speed = 2;
+
+            const pressedActions = Input.getPressedActions(0);
+
+            for (const { action, click } of pressedActions) {
+                switch (action) {
+                    case 'up':
+                        this.pos.y -= speed;
+                        break;
+                    case 'right':
+                        this.pos.x += speed;
+                        break;
+                    case 'down':
+                        this.pos.y += speed;
+                        break;
+                    case 'left':
+                        this.pos.x -= speed;
+                        break;
+                }
             }
-            if (Input.KD_RIGHT) {
-                this.pos.x += 2;
-            }
-            if (Input.KD_DOWN) {
-                this.pos.y += 2;
-            }
-            if (Input.KD_LEFT) {
-                this.pos.x -= 2;
-            }
+
             if (Input.KC_BTN1) {
                 get_model()[savestring] = get_model().save();
                 // console.info(`${new Date().toTimeString()} Game saved!`);

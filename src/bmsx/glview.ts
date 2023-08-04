@@ -53,14 +53,13 @@ export const DEFAULT_VERTEX_COLOR: Color = { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
 export const VERTEX_COLOR_COLORIZED_RED: Color = { r: 1.0, g: 0.0, b: 0.0, a: 1.0 };
 export const VERTEX_COLOR_COLORIZED_GREEN: Color = { r: 0.0, g: 1.0, b: 0.0, a: 1.0 };
 export const VERTEX_COLOR_COLORIZED_BLUE: Color = { r: 0.0, g: 0.0, b: 1.0, a: 1.0 };
-
+export const MAX_SPRITES = 1000;
 /**
  * Represents a view that renders graphics using WebGL.
  */
 export abstract class GLView extends BaseView {
     public glctx: WebGL2RenderingContext;
     private textures: { [key: number]: WebGLTexture; };
-
     private program: WebGLProgram;
     private positionLocation: number;
     private texcoordLocation: number;
@@ -166,12 +165,12 @@ export abstract class GLView extends BaseView {
         // Create a buffer.
         this.positionBuffer = gl.createBuffer()!;
         gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(12 * 1000), gl.DYNAMIC_DRAW);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(12 * MAX_SPRITES), gl.DYNAMIC_DRAW);
         // Create a buffer for texture coords
         this.texcoordBuffer = gl.createBuffer()!;
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texcoordBuffer);
-        const uglyTexCoordStuff = new Float32Array(12 * 1000);
-        for (let i = 0; i < 12 * 1000 - 12; i += 12) {
+        const uglyTexCoordStuff = new Float32Array(12 * MAX_SPRITES);
+        for (let i = 0; i < 12 * MAX_SPRITES - 12; i += 12) {
             uglyTexCoordStuff.set([
                 0.0, 0.0,
                 1.0, 0.0,
@@ -186,12 +185,12 @@ export abstract class GLView extends BaseView {
         // Create buffer for z position information for the vertex shader
         this.zBuffer = gl.createBuffer()!;
         gl.bindBuffer(gl.ARRAY_BUFFER, this.zBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(1 * 1000), gl.DYNAMIC_DRAW);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(1 * MAX_SPRITES), gl.DYNAMIC_DRAW);
 
         // Create buffer for color override information for the vertex shader
         this.color_overrideBuffer = gl.createBuffer()!;
         gl.bindBuffer(gl.ARRAY_BUFFER, this.color_overrideBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(24 * 1000), gl.DYNAMIC_DRAW);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(24 * MAX_SPRITES), gl.DYNAMIC_DRAW);
 
         gl.useProgram(program);
 

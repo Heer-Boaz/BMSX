@@ -1,0 +1,551 @@
+Instructions (ordered per category)
+Arithmetic Operators
+Instruction	Generation	Function
+-	MSX1	Subtraction
++	MSX1	Addition
+/	MSX1	Division
+\ or ¥ or ₩	MSX1	Division without a digit after the decimal point in result
+¥ is used on Japanese MSX instead of \
+₩ is used on Korean MSX instead of \
+*	MSX1	Multiplication
+^	MSX1	Root squared
+MOD	MSX1	Rest resulting of a division
+
+Call/Return, Jump and Loop
+Instruction	Generation	Function
+FOR...NEXT	MSX1	Sets up a loop in order to repeat several times a block of instructions
+GOSUB	MSX1	Calls a subroutine located on the specified line number
+GOTO	MSX1	Jumps to the specified line number and execute the instructions from there
+RETURN	MSX1	Returns from a subroutine that was invoked by GOSUB
+
+Clock & Timing
+Instruction	Generation	Function
+CALL PAUSE	MSX turbo R	Stops execution of a BASIC program for the specified time
+Short version: _PAUSE
+GET DATE	MSX2	Reads the date in the SRAM of the Real Time Clock (RTC)
+GET TIME	MSX2	Reads the time in the SRAM of the Real Time Clock (RTC)
+INTERVAL	MSX1	Changes the way BASIC timer interrupts are handled
+ON INTERVAL GOSUB	MSX1	Calls a subroutine after the specified timeout has been elapsed
+SET DATE	MSX2	Sets the date and saves it in the SRAM of the Real Time Clock (RTC)
+SET TIME	MSX2	Sets the time and saves it in the SRAM of the Real Time Clock (RTC)
+TIME	MSX1	Timer that is incremented by 1 on each time VDP completes screen draw
+
+Conditions
+Instruction	Generation	Function
+<	MSX1	Checks if the first argument is less than the second
+Returns -1 or 0 if true or false
+>	MSX1	Checks if the first argument is greater than the second
+Returns -1 or 0 if true or false
+=	MSX1	Checks if the first argument is equal to the second
+Returns -1 or 0 if true or false
+>= or =>	MSX1	Checks if the first argument is greater than the second or equal
+Returns -1 or 0 if true or false
+<= or =<	MSX1	Checks if the first argument is less than the second or equal
+Returns -1 or 0 if true or false
+<> or ><	MSX1	Checks if the first argument is diffent than the second
+Returns -1 or 0 if true or false
+IF...GOTO...ELSE	MSX1	Checks if a condition has been met to jump to number line specified after GOTO
+IF...THEN...ELSE	MSX1	Checks if a condition has been met to execute instruction(s) specified after THEN
+NOT	MSX1	Performs a bitwise NOT-operation (logical complement) on an expression
+ON...GOSUB	MSX1	Can be used to branch execution to certain subroutine depending of condition
+ON...GOTO	MSX1	Can be used to branch execution to certain line depending of condition
+
+Conversion Functions
+Instruction	Generation	Function
+ASC()	MSX1	Returns the ASCII value of a character
+BIN$()	MSX1	Returns a string with the binary representation of a value
+CDBL()	MSX1	Converts a integer or simple precision value to a double precision value
+CHR$()	MSX1	Converts a value to the corresponding MSX character
+CINT()	MSX1	Converts a value to an integer number by truncating numbers after the decimal point
+CSNG()	MSX1	Converts a variable to a single precision number
+HEX$()	MSX1	Returns a string with the hexadecimal representation of a value
+OCT$()	MSX1	Returns a string with the octal representation of a value
+STR$()	MSX1	Returns a string representation of a numeric variable
+VAL()	MSX1	Returns the numerical value of the contents of a string
+
+Data Storage
+Notes:
+
+The Data Recorder support has been removed from the MSX turbo R
+Most of these instructions are extended by Disk BASIC and other extensions
+Instruction	Generation	Function
+BLOAD	MSX1	Loads binary code from the specified device and/or filename
+BSAVE	MSX1	Saves a specified area of memory to the specified device and/or file name
+CLOAD	MSX1	Loads a BASIC program from cassette if ithas been saved in tokenized mode with CSAVE
+CLOAD?	MSX1	Verifies whether or not a BASIC file has been successfully saved to cassette with CSAVE
+CLOSE	MSX1	Closes one or more opened files and frees corresponding I/O buffer(s)
+CSAVE	MSX1	Saves a BASIC program to cassette in tokenized mode
+EOF()	MSX1	Returns whether or not the end of a file has been reached
+LOAD	MSX1	Loads a BASIC program in the MSX memory and optionally executes it
+MAXFILES	MSX1	Sets the maximum of files that can be opened simultaneously with the OPEN instruction
+MERGE	MSX1	Merges a BASIC program saved in ASCII text to the program currently in the MSX memory
+MOTOR	MSX1	Turns the motor of the data tape recorder on or off
+OPEN	MSX1	Opens a file for a specific direction in a specified device
+RUN	MSX1	Executes a BASIC program present in the MSX memory or after loading
+SAVE	MSX1	Saves the BASIC program present in the MSX memory to a device
+VARPTR()	MSX1	Returns a pointer to the beginning of FCB associated with a file number
+or the actual memory address of the first byte of the variable passed
+(FCB = File Control Block)
+
+Debugging
+Instruction	Generation	Function
+CONT	MSX1	Attempts to continue an MSX-BASIC program from where it was interrupted
+FRE()	MSX1	Returns the amount of bytes in memory which can be used for BASIC programs,
+variables, etc.. or specifically for strings
+TROFF	MSX1	Disables tracing of MSX-BASIC program execution
+TRON	MSX1	Enables tracing of MSX-BASIC program execution
+
+Digitizer
+Instruction	Generation	Function
+COPY SCREEN	MSX2	Digitizes picture from video input and copies it to VRAM (on!y screens 5 to 8 and 10 to 12)
+Optional, can be used only on machines with an internal or external digitizer
+SET VIDEO	MSX2	Sets superimposition and digitization modes
+Optional, can be used only on machines with an internal or external digitizer
+
+Display
+Instruction	Generation	Function
+CIRCLE	MSX1	Draws a circle, arc or ellipse on a graphic screen (2 to 8, 10 to 12)
+CLS	MSX1	Clears the screen and resets the cursor coordinates for text
+This instruction is extended by Delta BASIC
+COLOR	MSX1	Changes the color(s) to be used for the foreground, background and border
+Updated since MSX2 and MSX2+, extended by Hangul BASIC and Kanji BASIC
+COLOR=	MSX2	Alters MSX color palette, loads default color palette or restores color palette from VRAM
+COPY	MSX2	Copies data between RAM and VRAM (standard MSX2 instruction)
+Must not be confused with the COPY instruction added by Disk BASIC
+CSRLIN	MSX1	Returns the vertical coordinate of the cursor
+DRAW	MSX1	Executes instructions of a Graphics Macro Language (GML) to draw complex figures
+LINE	MSX1	Draws a line or a rectangle on a graphic screen (2 to 8, 10 to 12)
+Updated since MSX2
+LOCATE	MSX1	Controls text cursor position and visibility in text modes
+This instruction is extended by Delta BASIC
+OPEN	MSX1	Opens a file for a specific direction in a specified device
+This instruction is extended by many extensions
+PAINT	MSX1	Fills the zone of a drawing in graphic screen with the specified color
+POINT	MSX1	Returns the color number of the specified point in graphic screen
+POS()	MSX1	Returns the horizontal coordinate of the cursor
+PRESET	MSX1	Puts a point of specified color on a graphic screen (2 to 8, 10 to 12)
+If not specified the current background color is chosen - Updated since MSX2
+PRINT or ?	MSX1	Displays and formats text and numbers on the screen
+or sends formatted data to different devices
+PSET	MSX1	Puts a point of specified color on a graphic screen (2 to 8, 10 to 12)
+If not specified the current plot color is chosen - Updated since MSX2
+PUT KANJI	MSX2	Displays kanji on graphic screen (only screen modes 5 to 8 and 10 to 12)
+Related to Kanji BASIC
+SCREEN	MSX1	Sets display mode and several other parameters
+Updated since MSX2 and MSX2+, extended by Arabic BASIC and Hangul BASIC
+SET ADJUST	MSX2	Sets the top left point of the MSX screen (without the borders) and stores
+the coordinates in the SRAM of the Real Time Clock (RTC)
+SET PAGE	MSX2	Defines display page and active page for screens 5 to 8 and 10 to 12
+SET SCREEN	MSX2	Stores in the SRAM of the Real Time Clock (RTC) the parameters corresponding
+to COLOR, KEY ON / OFF, SCREEN and WIDTH instructions
+SET SCROLL	MSX2+	Performs horizontal and vertical scrolling of the screen contents
+SPC()	MSX1	Inserts a variable amount of spaces in a PRINT or LPRINT instruction
+TAB()	MSX1	Inserts amount of spaces needed to reach a position in a PRINT or LPRINT instruction
+WIDTH	MSX1	Sets the number of columns on current or last used text mode
+Updated since MSX2, extended by Hangul BASIC and Kanji BASIC
+
+Error Handling
+Instruction	Generation	Function
+ERL	MSX1	Returns the line number in which an error occured
+ERR	MSX1	Returns the code number of the error that occured
+Codes are added by extensions such as Disk BASIC, Delta BASIC
+ERROR	MSX1	Simulates an error that is specified by its code
+Codes are added by extensions such as Disk BASIC, Delta BASIC
+ON ERROR GOTO	MSX1	Jumps to a specified line of an error handling routine, whenever an eror occurs
+RESUME	MSX1	Jumps to a specified line after execution of the ON ERROR GOTO error handling routine
+
+Input/Output Bus
+Instruction	Generation	Function
+INP()	MSX1	Returns the value of an input port
+OUT	MSX1	Writes a value to an output port
+WAIT	MSX1	Reads the specified I/O port and suspends the BASIC program execution
+until the result of the read value modified by 2 specified values equals zero
+
+Keyboard and/or Controllers
+Instruction	Generation	Function
+CALL ADJUST	MSX2	Enables internal light pen interface - Short version: _ADJUST
+Only on non-Korean MSX2 computers manufactured by Daewoo
+and maybe also on Sanyo MPC-X Graphic Expander Unit and Sanyo MPC-27 computer
+This instruction is part of Hangul BASIC on the Korean MSX2 computers
+INKEY$	MSX1	Returns either a single character read from the keyboard or an empty string
+INPUT	MSX1	Retrieves data from the keyboard or reads data from a sequential file
+INPUT$()	MSX1	Returns a string characters of defined length retrieved from keyboard or a sequential file
+KEY	MSX1	Lists or chage the contents of the function keys, enables or disables their display
+KEY()	MSX1	Enables/disables/stops a function key
+LINE INPUT	MSX1	Retrieves a complete string from the keyboard or a sequential file
+ON KEY GOSUB	MSX1	Defines subroutine to execute when a function key is pressed down.
+ON STOP GOSUB	MSX1	Defines subroutine to execute when CTRL+STOP is pressed down
+ON STRIG GOSUB	MSX1	Defines subroutine to execute when space key or a joystick/mouse button is pressed down
+OPEN	MSX1	Opens a file for a specific direction in a specified device
+This instruction is extended by many extensions
+PAD()	MSX1	Returns infos about input devices: graphic tablet or touchpad, light pen, mouse or trackball
+Instruction updated since MSX2 - Light pen support removed on MSX turbo R
+PDL()	MSX1	Returns the position of asked paddle, connected to a joystick port
+Paddle controllers support removed on MSX turbo R - Devices unused on MSXPLAYer
+STICK()	MSX1	Returns the direction of the cursor keys or the joysticks
+STRIG()	MSX1	Returns the state of the space key and the joystick/mouse/trackball buttons or
+enables/disables/stops call to subroutine when pressing the space key or these buttons
+
+Logical Operators
+Instruction	Generation	Function
+AND	MSX1	Performs a bitwise AND-operation (logical conjunction) between two expressions
+EQV	MSX1	Performs a bitwise EQV-operation (logical equivalence) between two expressions
+IMP	MSX1	Performs a bitwise IMP-operation (logical implication) between two expressions
+NOT	MSX1	Performs a bitwise NOT-operation (logical complement) on an expression
+OR	MSX1	Performs a bitwise OR-operation (logical inclusive or) between two expressions
+XOR	MSX1	Performs a bitwise OR-operation (logical inclusive or) between two expressions
+
+Mathematical Functions
+Instruction	Generation	Function
+ABS()	MSX1	Returns the absolute value of a value
+EXP()	MSX1	Returns mathematical constant e (base of natural logarithm) to the power of a specified number
+FIX()	MSX1	Returns the integer part of a variable by truncating numbers after the decimal point
+FN	MSX1	Performs the functions defined by DEF FN
+INT()	MSX1	Returns the largest integer equal to or smaller than a variable
+LOG()	MSX1	Returns the natural logarithm (base e=2.718281884588) of a number
+RND()	MSX1	Returns a pseudo-random value between 0 and 1
+SGN()	MSX1	Returns the sign (positive of negative) of a variable
+SQR()	MSX1	Returns the square root of a variable
+
+New BASIC Instructions/Machine Language Functions
+Instruction	Generation	Function
+CALL or _	MSX1	Allows to extend the existing BASIC instructions
+Instruction for machine language experts
+DEF USR	MSX1	Defines the start address of a machine language routine
+USR()	MSX1	Calls a subroutine in machine language, defined with DEF USR, and passes a value to it
+
+Printer
+Instruction	Generation	Function
+LLIST	MSX1	Sends the program, or a part of it, in memory to the printer
+LPOS()	MSX1	Returns the current memory address of the print head within the printer buffer
+LPRINT	MSX1	Prints and formats text and numbers to a connected printer
+OPEN	MSX1	Opens a file for a specific direction in a specified device
+This instruction is extended by many extensions
+
+Programming
+Instruction	Generation	Function
+ :	MSX1	Separator between two instructions
+AUTO	MSX1	Starts automatic line numbering
+DELETE	MSX1	Erases part of an MSX-BASIC program from memory
+ELSE	MSX1	Skips the rest of the line
+END	MSX1	Closes all open files (if any) and ends program execution
+LIST	MSX1	Displays the program, or a part of it, in memory on screen
+NEW	MSX1	Erases the MSX-BASIC program in RAM, clears all variables and closes all open files
+REM or '	MSX1	Add remarks to the source code
+RENUM	MSX1	Renumbers the lines of a program in memory and the references to these lines
+RUN	MSX1	Executes a BASIC program present in the MSX memory or after loading
+Instruction extended by Disk BASIC and other extensions
+STOP	MSX1	Stops the execution of a program or handles calling to subroutine after CTRL+STOP
+
+Prompt
+Instruction	Generation	Function
+SET PASSWORD	MSX2	Sets a system password and stores it in the SRAM of the Real Time Clock (RTC)
+SET PROMPT	MSX2	Modifies the 'Ok' prompt and saves it in the SRAM of the Real Time Clock (RTC)
+SET TITLE	MSX2	Changes title and colors of the initial logo screen at system startup
+and saves these parameters in the SRAM of the Real Time Clock (RTC)
+
+RAM Access
+Instruction	Generation	Function
+PEEK()	MSX1	Returns the value read from a byte of the memory (RAM)
+POKE	MSX1	Writes a value to a byte of the memory (RAM)
+VARPTR()	MSX1	Returns a pointer to the beginning of FCB associated with a file number
+or the actual memory address of the first byte of the variable passed
+(FCB = File Control Block)
+
+Sound and Music
+Instruction	Generation	Function
+BEEP	MSX1	Lets the PSG produce a simple 'beep' sound
+CALL PCMPLAY	MSX turbo R	Plays a PCM audio file, first loaded in RAM or VRAM with BLOAD or an array with COPY
+Short version: _PCMPLAY
+CALL PCMREC	MSX turbo R	Records a PCM audio file in RAM, VRAM or as an array by using the built-in microphone
+Short version: _PCMREC
+PLAY	MSX1	Executes Music Macro Language (MML) instructions to play notes on PSG channel(s)
+This instruction is extended by MSX-AUDIO BASIC and MSX-MUSIC BASIC
+PLAY()	MSX1	Checks if music is being played via PSG channels
+SET BEEP	MSX2	Modifies the timbre and the volume of the 'beep' sound produced by the PSG
+The settings are stored to the SRAM of the Real Time Clock (RTC)
+SOUND	MSX1	Writes a value in a specific PSG register (Instruction for PSG experts)
+
+Sprites
+Instruction	Generation	Function
+COLOR SPRITE()	MSX2	Changes entirely the color of a sprite on screens 4 to 8 and 10 to 12
+COLOR SPRITE$()	MSX2	Changes the color for an horizontal line of a sprite on screens 4 to 8 and 10 to 12
+ON SPRITE GOSUB	MSX1	Defines a subroutine to execute when two or more sprites have collided on screen
+PUT SPRITE	MSX1	Displays a sprite
+Updated version since MSX2 for sprites on screens 4 to 8 and 10 to 12
+SPRITE	MSX1	Changes the way BASIC sprite collision interrupts are handled
+SPRITE$()	MSX1	Defines a sprite's outlook (or pattern) and works like a regular 1-dimensional string array
+
+String Handling
+Instruction	Generation	Function
+INSTR()	MSX1	Returns position of first occurrence of a substring in a string, this from a specified position
+LEFT$()	MSX1	Returns a string corresponding to a number of the leftmost characters from an original string
+LEN()	MSX1	Returns the length of a string, including all non-printable characters
+MID$()	MSX1	Returns a string corresponding to a number of characters from an original string,
+this from a specified position - Can also replace a substring by another string
+RIGHT$()	MSX1	Returns a string corresponding to a number of the rightmost characters from an original string
+SPACE$()	MSX1	Generates a string with a specified number of spaces
+STRING$()	MSX1	Returns a string with a variable length, all containing either the same character,
+which is defined as an ASCII code or the first character of a string
+
+Trigonometric Functions
+Instruction	Generation	Function
+ATN()	MSX1	Returns the arctangent of a variable
+COS()	MSX1	Returns the cosine of a variable in radians
+SIN()	MSX1	Returns the cosine of a variable in radians
+TAN()	MSX1	Returns the tangent of a variable
+
+Variable Settings
+Instruction	Generation	Function
+=	MSX1	Defines a variable - see LET
+CLEAR	MSX1	Clears the contents of all variables and arrays, closes all open files
+DATA	MSX1	Stores data in a program (e.g. graphics), to be read with READ
+DEFDBL	MSX1	Defines a variable or a range of variables as double precision
+DEF FN	MSX1	Defines a function which returns user-specified output based on optional variables
+DEFINT	MSX1	Defines a vriable or a range of variables as integer
+DEFSNG	MSX1	Defines a variable or a range of variables as single precision
+DEFSTR	MSX1	Defines a variable or a range of variables as string.
+DIM	MSX1	Reserves memory for the specified variables and initializes the array(s)
+ERASE	MSX1	Frees memory by erasing one or more arrays
+LET	MSX1	Assigns a value to a specified variable
+Optional instruction, can be omitted
+READ	MSX1	Returns next value(s) that has been stored in the program source by using DATA
+RESTORE	MSX1	Sets the line number where READ instruction can read next value
+SWAP	MSX1	Exchanges the contents of two variables
+
+VDP/VRAM Access
+Instruction	Generation	Function
+BASE	MSX1	Returns the first VRAM address for a specific purpose (all screens)
+or modifies it (only screens 0 to 3)
+Instruction for VDP experts (updaded since MSX2 and MSX2+)
+VDP()	MSX1	Reads the content of a VDP register, or writes a value in a VDP register
+Instruction for VDP experts (updaded since MSX2 and MSX2+)
+VPEEK()	MSX1	Returns the value of a byte within the video memory (VRAM)
+Instruction updated since MSX2
+VPOKE	MSX1	Writes a value to a byte of the video memory (VRAM)
+Instruction updated since MSX2
+
+
+Instructions (alphabetical order)
+Instruction	Generation	Updates	Type
+-	MSX1		Arithmetic Operators
++	MSX1		Arithmetic Operators
+/	MSX1		Arithmetic Operators
+\ or ¥ or ₩	MSX1		Arithmetic Operators
+*	MSX1		Arithmetic Operators
+^	MSX1		Arithmetic Operators
+<	MSX1		Conditions
+>	MSX1		Conditions
+=	MSX1		Conditions
+>= or =>	MSX1		Conditions
+<= or =<	MSX1		Conditions
+<> or ><	MSX1		Conditions
+ :	MSX1		Programming
+=	MSX1		Variable Settings
+ABS()	MSX1		Mathematical Functions
+AND	MSX1		Logical Operators
+ASC()	MSX1		Conversion Functions
+ATN()	MSX1		Trigonometric Functions
+AUTO	MSX1		Programming
+BASE	MSX1	MSX2, MSX2+	VDP/VRAM Access
+BEEP	MSX1	MSX2	Sound and Music
+BIN$()	MSX1		Conversion Functions
+BLOAD	MSX1		Data Storage
+BSAVE	MSX1		Data Storage
+CALL or _	MSX1		New BASIC Instructions/ML Functions
+CALL ADJUST	MSX2		Keyboard and/or Controllers
+CALL PAUSE	MSX turbo R		Clock & Timing
+CALL PCMPLAY	MSX turbo R		Sound and Music
+CALL PCMREC	MSX turbo R		Sound and Music
+CDBL()	MSX1		Conversion Functions
+CHR$()	MSX1		Conversion Functions
+CINT()	MSX1		Conversion Functions
+CIRCLE	MSX1		Display
+CLEAR	MSX1		Variable Settings
+CLOAD	MSX1	Not for MSX turbo R	Data Storage
+CLOAD?	MSX1	Not for MSX turbo R	Data Storage
+CLOSE	MSX1		Data Storage
+CLS	MSX1		Display
+COLOR	MSX1	MSX2, MSX2+	Display
+COLOR=	MSX2		Display
+COLOR SPRITE()	MSX2		Sprites
+COLOR SPRITE$()	MSX2		Sprites
+CONT	MSX1		Debugging
+COPY	MSX2		Display
+COPY SCREEN	MSX2		Digitizer
+COS()	MSX1		Trigonometric Functions
+CSAVE	MSX1	Not for MSX turbo R	Data Storage
+CSNG()	MSX1		Conversion Functions
+CSRLIN	MSX1		Display
+DATA	MSX1		Variable Settings
+DEFDBL	MSX1		Variable Settings
+DEF FN	MSX1		Variable Settings
+DEFINT	MSX1		Variable Settings
+DEFSNG	MSX1		Variable Settings
+DEFSTR	MSX1		Variable Settings
+DEF USR	MSX1		New BASIC Instructions/ML Functions
+DELETE	MSX1		Programming
+DIM	MSX1		Variable Settings
+DRAW	MSX1		Display
+ELSE	MSX1		Programming
+END	MSX1		Programming
+EOF()	MSX1		Data Storage
+EQV	MSX1		Logical Operators
+ERASE	MSX1		Variable Settings
+ERL	MSX1		Error Handling
+ERR	MSX1		Error Handling
+ERROR	MSX1		Error Handling
+EXP()	MSX1		Mathematical Functions
+FIX()	MSX1		Mathematical Functions
+FN	MSX1		Mathematical Functions
+FOR...NEXT	MSX1		Call/Return, Jump and Loop
+FRE()	MSX1		Debugging
+GET DATE	MSX2		Clock & Timing
+GET TIME	MSX2		Clock & Timing
+GOSUB	MSX1		Call/Return, Jump and Loop
+GOTO	MSX1		Call/Return, Jump and Loop
+HEX$()	MSX1		Conversion Functions
+IF...GOTO...ELSE	MSX1		Conditions
+IF...THEN...ELSE	MSX1		Conditions
+IMP	MSX1		Logical Operators
+INKEY$	MSX1		Keyboard and/or Controllers
+INP()	MSX1		Input/Output Bus
+INPUT	MSX1		Keyboard and/or Controllers
+INPUT$()	MSX1		Keyboard and/or Controllers
+INSTR()	MSX1		String Handling
+INT()	MSX1		Mathematical Functions
+INTERVAL	MSX1		Clock & Timing
+KEY	MSX1		Keyboard and/or Controllers
+KEY()	MSX1		Keyboard and/or Controllers
+LEFT$()	MSX1		String function
+LEN()	MSX1		String Handling
+LET	MSX1		Variable Settings
+LINE	MSX1	MSX2	Display
+LINE INPUT	MSX1		Keyboard and/or Controllers
+LIST	MSX1		Programming
+LLIST	MSX1		Printer
+LOAD	MSX1		Data Storage
+LOCATE	MSX1		Display
+LOG()	MSX1		Mathematical Functions
+LPOS()	MSX1		Printer
+LPRINT	MSX1		Printer
+MAXFILES	MSX1		Data Storage
+MERGE	MSX1		Data Storage
+MID$()	MSX1		String Handling
+MOD	MSX1		Arithmetic Operators
+MOTOR	MSX1	Not for MSX turbo R	Data Storage
+NEW	MSX1		Programming
+NOT	MSX1		Conditions
+Logical Operators
+OCT$()	MSX1		Conversion Functions
+ON...GOSUB	MSX1		Conditions
+ON...GOTO	MSX1		Conditions
+ON ERROR GOTO	MSX1		Error Handling
+ON INTERVAL GOSUB	MSX1		Clock & Timing
+ON KEY GOSUB	MSX1		Keyboard and/or Controllers
+ON SPRITE GOSUB	MSX1		Sprites
+ON STOP GOSUB	MSX1		Keyboard and/or Controllers
+ON STRIG GOSUB	MSX1		Keyboard and/or Controllers
+OPEN	MSX1		Data Storage
+Display
+Keyboard and/or Controllers
+Printer
+OR	MSX1		Logical Operators
+OUT	MSX1		Input/Output Bus
+PAD()	MSX1	MSX2	Keyboard and/or Controllers
+PAINT	MSX1		Display
+PDL()	MSX1		Keyboard and/or Controllers
+PEEK()	MSX1		RAM Access
+PLAY	MSX1		Sound and Music
+PLAY()	MSX1		Sound and Music
+POINT	MSX1		Display
+POKE	MSX1		RAM Access
+POS()	MSX1		Display
+PRESET	MSX1	MSX2	Display
+PRINT or ?	MSX1		Display
+PSET	MSX1	MSX2	Display
+PUT KANJI	MSX2		Display
+PUT SPRITE	MSX1	MSX2	Sprites
+READ	MSX1		Variable Settings
+REM or '	MSX1		Programming
+RENUM	MSX1		Programming
+RESTORE	MSX1		Variable Settings
+RESUME	MSX1		Error Handling
+RETURN	MSX1		Call/Return, Jump and Loop
+RIGHT$()	MSX1		String Handling
+RND()	MSX1		Mathematical Functions
+RUN	MSX1		Data Storage
+Programming
+SAVE	MSX1		Data Storage
+SCREEN	MSX1	MSX2, MSX2+	Display
+SET ADJUST	MSX2		Display
+SET BEEP	MSX2		Sound and Music
+SET DATE	MSX2		Clock & Timing
+SET PAGE	MSX2		Display
+SET PASSWORD	MSX2		Prompt
+SET PROMPT	MSX2		Prompt
+SET SCREEN	MSX2		Display
+SET SCROLL	MSX2+		Display
+SET TIME	MSX2		Clock & Timing
+SET TITLE	MSX2		Prompt
+SET VIDEO	MSX2		Digitizer
+SGN()	MSX1		Mathematical Functions
+SIN()	MSX1		Trigonometric Functions
+SOUND	MSX1		Sound and Music
+SPACE$()	MSX1		String Handling
+SPC()	MSX1		Display
+SPRITE	MSX1		Sprites
+SPRITE$()	MSX1		Sprites
+SQR()	MSX1		Mathematical Functions
+STICK()	MSX1		Keyboard and/or Controllers
+STOP	MSX1		Programming
+STR$()	MSX1		Conversion Functions
+STRIG()	MSX1		Keyboard and/or Controllers
+STRING$()	MSX1		String Handling
+SWAP	MSX1		Variable Settings
+TAB()	MSX1		Display
+TAN()	MSX1		Trigonometric Functions
+TIME	MSX1		Clock & Timing
+TROFF	MSX1		Debugging
+TRON	MSX1		Debugging
+USR()	MSX1		New BASIC Instructions/ML Functions
+VAL()	MSX1		Conversion Functions
+VARPTR()	MSX1		Data Storage
+RAM Access
+VDP()	MSX1	MSX2, MSX2+	VDP/VRAM Access
+VPEEK()	MSX1	MSX2	VDP/VRAM Access
+VPOKE	MSX1	MSX2	VDP/VRAM Access
+WAIT	MSX1		Input/Output Bus
+WIDTH	MSX1	MSX2	Display
+XOR	MSX1		Logical Operators
+
+Reserved Words
+Most of these reserved words are used in Disk BASIC.
+
+Instruction	Generation	Function
+ATTR$()	MSX1	Without diversion, returns "Illegal function call"
+CMD	MSX1	Without diversion, returns "Illegal function call"
+COPY	MSX1	Returns "Illegal function call" on diskless MSX1
+Do not confuse with the graphical COPY instruction added on MSX2
+CVD()	MSX1	Used in Disk BASIC, returns "Illegal function call" otherwise
+CVI()	MSX1	Used in Disk BASIC, returns "Illegal function call" otherwise
+CVS()	MSX1	Used in Disk BASIC, returns "Illegal function call" otherwise
+DSKF()	MSX1	Used in Disk BASIC, returns "Illegal function call" otherwise
+DSKO$	MSX1	Used in Disk BASIC, returns "Illegal function call" otherwise
+FIELD	MSX1	Used in Disk BASIC, returns "Illegal function call" otherwise
+FILES	MSX1	Used in Disk BASIC, returns "Illegal function call" otherwise
+FPOS()	MSX1	Without diversion, returns "Internal error"
+GET	MSX1	Instruction works, but is useless on diskless MSX1
+IPL	MSX1	Without diversion, returns "Illegal function call"
+KILL	MSX1	Used in Disk BASIC, returns "Illegal function call" otherwise
+LOC()	MSX1	Used in Disk BASIC, returns "Illegal function call" otherwise
+LOF()	MSX1	Used in Disk BASIC, returns "Illegal function call" otherwise
+LSET	MSX1	Used in Disk BASIC, returns "Illegal function call" otherwise.
+MKD$()	MSX1	Used in Disk BASIC, returns "Illegal function call" otherwise
+MKI$()	MSX1	Used in Disk BASIC, returns "Illegal function call" otherwise
+MKS$()	MSX1	Used in Disk BASIC, returns "Illegal function call" otherwise
+NAME	MSX1	Used in Disk BASIC, returns "Illegal function call" otherwise
+PUT	MSX1	Instruction works, but is useless on diskless MSX1
+(except when combined with SPRITE)
+RSET	MSX1	Used in Disk BASIC, returns "Illegal function call" otherwise
+SET	MSX1	Returns "Illegal function call" on MSX1

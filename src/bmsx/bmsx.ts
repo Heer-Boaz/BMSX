@@ -5,7 +5,6 @@ import { RomPack } from "./rompack";
 import { MSX2ScreenWidth, MSX2ScreenHeight, TileSize } from "./msx";
 import { BaseModel } from "./model";
 
-
 /**
  * Declare global variables and types.
  */
@@ -473,22 +472,28 @@ export function createDivSprite(img?: HTMLImageElement, imgsrc?: string | null, 
  */
 export function GetDeltaFromSourceToTarget(source: vec2, target: vec2): vec2 {
     let delta = { x: 0, y: 0 };
+    const dx = target.x - source.x;
+    const dy = target.y - source.y;
 
-    if (Math.abs(target.x - source.x - 0) < 0.01) {
+    if (target.x === source.x) {
         delta.x = 0;
-        delta.y = (target.y - source.y) > 0 ? 1 : -1;
+        delta.y = dy > 0 ? 1 : -1;
     }
-    else if (Math.abs(target.y - source.y - 0) < 0.01) {
-        delta.x = (target.x - source.x) > 0 ? 1 : -1;
+    else if (target.y === source.y) {
+        delta.x = dx > 0 ? 1 : -1;
         delta.y = 0;
     }
-    else if (Math.abs((target.x - source.x)) > Math.abs((target.y - source.y))) {
-        delta.x = (target.x - source.x) > 0 ? 1 : -1;
-        delta.y = (target.y - source.y) / (Math.abs(target.x - source.x));
-    }
     else {
-        delta.x = (target.x - source.x) / (Math.abs(target.y - source.y));
-        delta.y = (target.y - source.y) > 0 ? 1 : -1;
+        const adx = Math.abs(dx);
+        const ady = Math.abs(dy);
+        if (adx > ady) {
+            delta.x = dx > 0 ? 1 : -1;
+            delta.y = dy / adx;
+        }
+        else {
+            delta.x = dx / ady;
+            delta.y = dy > 0 ? 1 : -1;
+        }
     }
 
     return delta;
@@ -505,27 +510,22 @@ export function LineLength(p1: vec3, p2: vec3): number {
 }
 
 // https://developer.mozilla.org/en-US/docs/Web/API/Web_Storage_API/Using_the_Web_Storage_API
-export function isStorageAvailable(type: string): boolean {
+export function isStorageAvailable(storageType: string): boolean {
     try {
-        // var storage: any = window[type],
-        //     x = '__storage_test__';
-        // storage.setItem(x, x);
-        // storage.removeItem(x);
+        const storage = window[storageType];
+        const testKey = '__test__';
+        storage.setItem(testKey, testKey);
+        storage.removeItem(testKey);
         return true;
-    }
-    catch (e) {
-        return e instanceof DOMException && (
-            // everything except Firefox
-            e.code === 22 ||
-            // Firefox
-            e.code === 1014 ||
-            // test name field too, because code might not be present
-            // everything except Firefox
-            e.name === 'QuotaExceededError' ||
-            // Firefox
-            e.name === 'NS_ERROR_DOM_QUOTA_REACHED') &&
-            // acknowledge QuotaExceededError only if there's something already stored
-            true;// storage.length !== 0;
+    } catch (error) {
+        return error.hasOwnProperty('code') && (
+            error.code === 22 || // everything except Firefox
+            error.code === 1014 || // Firefox
+            error.hasOwnProperty('name') && (
+                error.name === 'QuotaExceededError' || // everything except Firefox
+                error.name === 'NS_ERROR_DOM_QUOTA_REACHED' // Firefox
+            )
+        );
     }
 }
 
@@ -544,16 +544,11 @@ export function isSessionStorageAvailable(): boolean {
  * @returns The direction from the subject position to the target position.
  */
 export function getLookAtDirection(subjectpos: vec2, targetpos: vec2): Direction {
-    let delta: vec2 = { x: subjectpos.x - targetpos.x, y: subjectpos.x - targetpos.y };
+    const delta: vec2 = { x: targetpos.x - subjectpos.x, y: targetpos.y - subjectpos.y };
     if (Math.abs(delta.x) >= Math.abs(delta.y)) {
-        if (delta.x < 0)
-            return Direction.Right;
-        else return Direction.Left;
-    }
-    else {
-        if (delta.y < 0)
-            return Direction.Down;
-        else return Direction.Up;
+        return delta.x < 0 ? Direction.Left : Direction.Right;
+    } else {
+        return delta.y < 0 ? Direction.Up : Direction.Down;
     }
 }
 

@@ -103,14 +103,27 @@ export class SM {
      * @returns A Promise that resolves with the created AudioBufferSourceNode.
      */
     private static async createNode(id: string): Promise<AudioBufferSourceNode> {
-        let srcnode = SM.sndContext.createBufferSource();
+        // If no node is available in the pool, create a new one
+        const node = SM.sndContext.createBufferSource();
         return new Promise<AudioBufferSourceNode>((resolve, reject) => {
             // WARNING! Predecoding tracks might hog memory.
             // ? Make optional when memory gets hogged?
             // SM.decode(global.rom['rom'].slice(SM.tracks[id]['start'], SM.tracks[id]['end'])).then(buffer => srcnode.buffer = buffer).then(() => resolve(srcnode))
-            Promise.resolve(srcnode.buffer = SM.buffers[id]).then(() => resolve(srcnode))
+            Promise.resolve(node.buffer = SM.buffers[id]).then(() => resolve(node))
                 .catch(e => reject(e));
         });
+    }
+
+    private static nodeEndedHandler(node: AudioBufferSourceNode, type: AudioType) {
+        switch (type) {
+            case AudioType.effect:
+                SM.currentEffectAudio = null;
+                break;
+            case AudioType.music:
+                SM.currentMusicAudio = null;
+                break;
+        }
+        SM.releaseNode(node);
     }
 
     /**
@@ -128,12 +141,17 @@ export class SM {
             }
             else node.loop = false;
             node.start();
-            _track['audiotype'] === AudioType.effect ?
-                node.addEventListener('ended', (ev) => SM.currentEffectAudio = null) :
-                node.addEventListener('ended', (ev) => SM.currentMusicAudio = null);
+            node.onended = () => SM.nodeEndedHandler(node, _track['audiotype']);
         } catch (error) {
             console.warn(error);
         }
+    }
+
+    private static releaseNode(node: AudioBufferSourceNode) {
+        if (!node) return;
+        node.disconnect();
+        node.stop();
+        node.buffer = null;
     }
 
     /**
@@ -192,9 +210,8 @@ export class SM {
      */
     public static stopEffect(): void {
         try {
-            if (SM.currentEffectAudio) SM.currentEffectNode?.stop();
+            if (SM.currentEffectAudio) SM.releaseNode(SM.currentEffectNode);
         } catch (e) { console.warn(e); }
-        SM.currentEffectNode?.disconnect();
         SM.currentEffectNode = null;
     }
 
@@ -204,9 +221,8 @@ export class SM {
      */
     public static stopMusic(): void {
         try {
-            if (SM.currentMusicAudio) SM.currentMusicNode?.stop();
+            if (SM.currentMusicAudio) SM.releaseNode(SM.currentMusicNode);
         } catch (e) { console.warn(e); }
-        SM.currentMusicNode?.disconnect();
         SM.currentMusicNode = null;
     }
 
