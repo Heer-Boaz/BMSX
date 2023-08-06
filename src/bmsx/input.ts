@@ -7,34 +7,17 @@ let preventActionAndPropagation = (e: Event): boolean => {
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
-    // return false;
-    return e.returnValue = false; // https://javascriptio.com/view/5386822/prevent-text-selection-on-tap-and-hold-on-ios-13-mobile-safari
-};
+    return false;
+}
 
-//   public static reset(except?: ButtonId[]): void {
-//     const resetMap = (map: InputStateMap, except?: ButtonId[]) => {
-//       Object.keys(map).forEach((key) => {
-//         if (!except || !except.includes(key as ButtonId)) {
-//           delete map[key as ButtonId];
-//         }
-//       });
-//     };
-
-//     resetMap(Input.KeyState, except);
-//     resetMap(Input.KeyClickRequestedState, except);
-//     resetMap(Input.GamepadButtonState, except);
-//     resetMap(Input.GamepadClickRequestedState, except);
-//   }
-
-type Index2State = { [index: string | number]: boolean; };
-export type InputMapping = { [action: string]: string; };
+type Index2State = { [index: string | number]: boolean; }
 export type KeyboardInputMapping = {
     [action: string]: KeyboardButton;
-};
+}
 
 export type GamepadInputMapping = {
     [action: string]: GamepadButton;
-};
+}
 
 export interface InputMap {
     keyboard: KeyboardInputMapping;
@@ -75,12 +58,36 @@ export class Input {
 
     /**
      * The input maps for each player.
+     * @private
+     * @param {number} playerIndex - The index of the player to set the input map for.
+     * @param {InputMap} inputMap - The input map to set for the player.
+     * @returns {void}
+     * @throws {Error} Throws an error if the player index is out of range.
+     * @throws {Error} Throws an error if the input map is invalid.
+     * @see {@link Input.getActionState} and {@link Input.getPressedActions} for checking if an action is pressed for a player.
+     * @example
+     * Input.setInputMap(0, {
+     *     keyboard: {
+     *         'jump': 'Space',
+     *         'left': 'ArrowLeft',
+     *         'right': 'ArrowRight',
+     *         'up': 'ArrowUp',
+     *         'down': 'ArrowDown',
+     *     },
+     *     gamepad: {
+     *         'jump': 'a',
+     *         'left': 'left',
+     *         'right': 'right',
+     *         'up': 'up',
+     *         'down': 'down',
+     *     },
+     * });
      */
     private static inputMaps: InputMap[] = [];
-
     /**
      * The mapping of gamepad button names to their corresponding indices.
      */
+
     public static readonly GAMEPAD_BUTTONS = {
         'a': 0,
         'b': 1,
@@ -210,29 +217,6 @@ export class Input {
         if (gamepadButton) {
             Input.consumeButton(playerIndex, gamepadButton);
         }
-    }
-
-    public static bla() {
-        // Example usage
-        Input.setInputMap(0, {
-            keyboard: {
-                'jump': 'Space',
-                'left': 'ArrowLeft',
-                'right': 'ArrowRight',
-                'up': 'ArrowUp',
-                'down': 'ArrowDown',
-            },
-            gamepad: {
-                'jump': 'a',
-                'left': 'left',
-                'right': 'right',
-                'up': 'up',
-                'down': 'down',
-            },
-        });
-
-        // To check if an action is pressed for player 0
-        Input.getActionState(0, 'jump');
     }
 
     /**
@@ -415,7 +399,7 @@ export class Input {
         return Input.getKeyState('KeyZ').pressed || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.b).pressed;
     }
     public static get KD_BTN3(): boolean {
-        return Input.getKeyState('F1') .pressed|| Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.x).pressed;
+        return Input.getKeyState('F1').pressed || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.x).pressed;
     }
     public static get KD_BTN4(): boolean {
         return Input.getKeyState('F5').pressed || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.y).pressed;
@@ -647,31 +631,19 @@ export class Input {
      * @param except An optional array of keys or buttons to exclude from the reset.
      */
     public static reset(except?: string[]): void {
-        let props = Object.keys(Input.KeyState);
-        for (let i = 0; i < props.length; i++) {
-            if (!except || except.indexOf(props[i]) === -1) { delete Input.KeyState[props[i]]; }
-        }
+        const resetObject = (obj: Index2State) => {
+            Object.keys(obj).forEach(key => {
+                if (!except || !except.includes(key)) {
+                    delete obj[key];
+                }
+            });
+        };
 
-        props = Object.keys(Input.KeyPressedConsumedState);
-        for (let i = 0; i < props.length; i++) {
-            if (!except || except.indexOf(props[i]) === -1) { delete Input.KeyPressedConsumedState[props[i]]; }
-        }
-
-        for (let gamepad_index = 0; gamepad_index < Input.GamepadButtonStates.length; gamepad_index++) {
-            props = Object.keys(Input.GamepadButtonStates[gamepad_index]);
-            for (let prop_index = 0; prop_index < props.length; prop_index++) {
-                if (!except || except.indexOf(props[prop_index]) === -1) { delete Input.GamepadButtonStates[gamepad_index][props[prop_index]]; }
-            }
-        }
-
-        for (let gamepad_index = 0; gamepad_index < Input.GamepadButtonPressedConsumedStates.length; gamepad_index++) {
-            props = Object.keys(Input.GamepadButtonPressedConsumedStates[gamepad_index]);
-            for (let prop_index = 0; prop_index < props.length; prop_index++) {
-                if (!except || except.indexOf(props[prop_index]) === -1) { delete Input.GamepadButtonPressedConsumedStates[gamepad_index][props[prop_index]]; }
-            }
-        }
+        resetObject(Input.KeyState);
+        resetObject(Input.KeyPressedConsumedState);
+        Input.GamepadButtonStates.forEach(gamepad => resetObject(gamepad));
+        Input.GamepadButtonPressedConsumedStates.forEach(gamepad => resetObject(gamepad));
     }
-
 
     /**
      * Resets the state of all UI elements related to the gamepad input.

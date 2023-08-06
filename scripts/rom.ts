@@ -150,7 +150,6 @@ var bootrom = {
 	}
 };
 
-
 /**
  * Asynchronously loads an image from the specified URL.
  * @param url - The URL of the image to load.
@@ -369,19 +368,19 @@ async function loadScript(rom: RomPack, romname: string): Promise<void> {
  * @returns A Promise that resolves when the user presses any key.
  */
 async function awaitPressedAnyKey(): Promise<void> {
-	let remove = (id: string) => {
+	const remove = (id: string) => {
 		let element = document.querySelector(id);
 		if (element) element.parentElement!.removeChild(element);
 	};
-	let wrapup = () => {
+	const wrapup = () => {
 		(document.querySelector('#loading') as HTMLElement).hidden = true;
 		remove('#msx');
 		remove('#hidor');
 		remove('#romjs');
 	};
 
-	let result: Promise<void> = new Promise((resolve, reject) => {
-		let onuserinteraction = (e: UIEvent) => {
+	const result: Promise<void> = new Promise((resolve, reject) => {
+		const onuserinteraction = (e: UIEvent) => {
 			try {
 				if (!bootrom.snd_unlocked || !bootrom.theshowsover) {
 					if (bootrom.debug) {
@@ -407,8 +406,8 @@ async function awaitPressedAnyKey(): Promise<void> {
 
 		document.addEventListener('keyup', startAudioOnIos, true);
 		document.addEventListener('touchend', startAudioOnIos, true);
-		document.body.addEventListener('keyup', onuserinteraction, { passive: false, once: true, capture: false });
-		document.body.addEventListener('touchend', onuserinteraction, { passive: false, once: true, capture: false });
+		document.body.addEventListener('keyup', onuserinteraction, { passive: false, once: false, capture: false });
+		document.body.addEventListener('touchend', onuserinteraction, { passive: false, once: false, capture: false });
 	});
 	return result;
 }
@@ -469,10 +468,15 @@ async function fetchLocal(url: string): Promise<ArrayBuffer> {
  */
 function startAudioOnIos(): void {
 	if (!bootrom.sndcontext) { return; }
-	if (bootrom.snd_unlocked) {
+	const removeEventListeners = () => {
 		// Remove event listener if it wasn't removed already
 		document.removeEventListener('keyup', startAudioOnIos);
 		document.removeEventListener('touchend', startAudioOnIos, true);
+	};
+
+	if (bootrom.snd_unlocked) {
+		// Remove event listener if it wasn't removed already
+		removeEventListeners();
 		return;
 	}
 	var source = bootrom.sndcontext.createBufferSource();
@@ -481,8 +485,7 @@ function startAudioOnIos(): void {
 	source.start(0, 0, 0);
 
 	if (bootrom.sndcontext.state == 'running') {
-		document.removeEventListener('keyup', startAudioOnIos);
-		document.removeEventListener('touchend', startAudioOnIos, true);
+		removeEventListeners();
 		bootrom.snd_unlocked = true;
 	}
 }

@@ -88,6 +88,7 @@ function pruneFreeRectangles(newFreeRectangles: Bin[], freeRectangles: Bin[]): v
 		}
 	});
 }
+
 /**
  * Checks if a rectangle is fully contained within another rectangle.
  * @param rect1 The first rectangle to check.
