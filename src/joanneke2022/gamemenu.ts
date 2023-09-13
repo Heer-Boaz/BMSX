@@ -28,7 +28,6 @@ export const enum MenuItem {
     SoundVolume,
     ExitGame,
     Options,
-
     // ScreenMenu
     Main,
     Load,
