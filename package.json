@@ -22,7 +22,7 @@
     "@types/systemjs": "*",
     "@types/terminal-kit": "*",
     "browserify": "*",
-    "canvas": "*",
+    "canvas": "^2.11.2",
     "colors": "*",
     "dagre": "^0.8.5",
     "flatted": "*",
