@@ -89,7 +89,8 @@
     "src/**/*",
     "scripts/rom.ts",
     "scripts/rompacker.ts",
-    "scripts/atlasbuilder.ts"
+    "scripts/atlasbuilder.ts",
+    "tsconfig.json"
   ],
   "watchOptions": {
     // Use native file system events for files and directories

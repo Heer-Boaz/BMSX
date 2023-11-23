@@ -176,8 +176,14 @@ export class statecontext {
 	public run(): void {
 		if (this.paused) return;
 		// [this.currentStatedef] can be undefined if we are in the 'none' state
-		this.current_state_definition?.process_input?.call(this.target, this.current, state_event_type.None);
-		this.current_state_definition?.run?.call(this.target, this.current, state_event_type.Run);
+		// First process any input
+		let currentStatedef = this.current_state_definition;
+		if (!currentStatedef) return;
+
+		currentStatedef.process_input?.call(this.target, this.current, state_event_type.None);
+		// Then, run the state
+		currentStatedef.behaviorTree?.tick();
+		currentStatedef.run?.call(this.target, this.current, state_event_type.Run);
 	}
 
 	/**
@@ -471,6 +477,8 @@ export class sdef {
 	public nudges2move: number; // Number of runs before tapehead moves to next statedata
 	public auto_rewind_tape_after_end: boolean = true; // Automagically set the tapehead to index 0 when tapehead would go out of bound. Otherwise, will remain at end
 
+	public behaviorTree?: BTNode;
+
 	@exclude_save
 	public parent!: mdef;
 
@@ -486,16 +494,6 @@ export class sdef {
 	public enter?: state_event_handler;
 	public exit?: state_event_handler;
 	public process_input?: state_event_handler;
-
-	// Helper function to set all handlers
-	public setAllHandlers(handler: state_event_handler): void {
-		this.run = handler;
-		this.end = handler;
-		this.next = handler;
-		this.enter = handler;
-		this.exit = handler;
-		this.process_input = handler;
-	}
 }
 
 /**
@@ -601,5 +599,223 @@ export class mdef {
 		this.states[_state.id] = _state;
 		_state.parent = this;
 		mdef.#is_start_state(_state) && this.#set_start_state(_state);
+	}
+}
+
+type BTStatus = 'RUNNING' | 'SUCCESS' | 'FAILED';
+
+type BTNodeFeedback = {
+	status: BTStatus,
+	updates?: (blackboard: Blackboard) => void;  // Detailed information about the action taken or decision made
+};
+
+class Blackboard {
+	private data: Map<string, any> = new Map();
+
+	get<T>(key: string): T {
+		return this.data.get(key) as T;
+	}
+
+	set<T>(key: string, value: T) {
+		this.data.set(key, value);
+	}
+}
+
+// Base class for BT nodes
+abstract class BTNode {
+	public targetid: string;
+	public priority: number;
+	public blackboard: Blackboard;
+	constructor(_targetid: string, _blackboard: Blackboard, _priority = 0) {
+		this.targetid = _targetid;
+		this.blackboard = _blackboard;
+		this.priority = _priority;
+	}
+
+	abstract tick(): BTNodeFeedback;
+}
+
+class SequenceNode extends BTNode {
+	constructor(_targetid: string, _blackboard: Blackboard, public children: BTNode[], _priority = 0) {
+		super(_targetid, _blackboard, _priority);
+	}
+
+	tick(): BTNodeFeedback {
+		for (const child of this.children) {
+			const result = child.tick();
+			if (result.status === 'FAILED') {
+				return { status: 'FAILED' };
+			}
+		}
+		return { status: 'SUCCESS' };
+	}
+}
+
+class SelectorNode extends BTNode {
+	constructor(_targetid: string, _blackboard: Blackboard, public children: BTNode[], _priority = 0) {
+		super(_targetid, _blackboard, _priority);
+	}
+
+	tick(): BTNodeFeedback {
+		for (const child of this.children) {
+			const result = child.tick();
+			if (result.status !== 'FAILED') {
+				return result;
+			}
+		}
+		return { status: 'FAILED' };
+	}
+}
+
+class ParallelNode extends BTNode {
+	constructor(_targetid: string, _blackboard: Blackboard, public children: BTNode[], public successPolicy: 'ONE' | 'ALL', _proirity = 0) {
+		super(_targetid, _blackboard, _proirity);
+	}
+
+	tick(): BTNodeFeedback {
+		let successCount = 0;
+		let running = false;
+
+		for (const child of this.children) {
+			const result = child.tick();
+			if (result.status === 'SUCCESS') {
+				successCount++;
+				if (this.successPolicy === 'ONE') {
+					return { status: 'SUCCESS' };
+				}
+			} else if (result.status === 'RUNNING') {
+				running = true;
+			}
+		}
+
+		if (this.successPolicy === 'ALL' && successCount === this.children.length) {
+			return { status: 'SUCCESS' };
+		}
+
+		return running ? { status: 'RUNNING' } : { status: 'FAILED' };
+	}
+}
+
+class DecoratorNode extends BTNode {
+	constructor(_targetid: string, _blackboard: Blackboard, public child: BTNode, public decorator: (status: BTStatus) => BTStatus, _priority = 0) {
+		super(_targetid, _blackboard, _priority);
+	}
+
+	tick(): BTNodeFeedback {
+		const result = this.child.tick();
+		return { status: this.decorator(result.status) };
+	}
+}
+
+class ConditionNode extends BTNode {
+	constructor(_targetid: string, _blackboard: Blackboard, public condition: () => boolean, _priority = 0) {
+		super(_targetid, _blackboard, _priority);
+	}
+
+	tick(): BTNodeFeedback {
+		return this.condition() ? { status: 'SUCCESS' } : { status: 'FAILED' };
+	}
+}
+
+class RandomSelectorNode extends BTNode {
+	constructor(_targetid: string, _blackboard: Blackboard, public children: BTNode[], _priorirty = 0) {
+		super(_targetid, _blackboard, _priorirty);
+	}
+
+	tick(): BTNodeFeedback {
+		const randomIndex = Math.floor(Math.random() * this.children.length);
+		return this.children[randomIndex].tick();
+	}
+}
+
+class LimitNode extends BTNode {
+	private count: number = 0;
+
+	constructor(_targetid: string, _blackboard: Blackboard, public limit: number, public child: BTNode, _priority = 0) {
+		super(_targetid, _blackboard, _priority);
+	}
+
+	tick(): BTNodeFeedback {
+		if (this.count < this.limit) {
+			const result = this.child.tick();
+			if (result.status !== 'RUNNING') {
+				this.count++;
+			}
+			return result;
+		}
+		return { status: 'FAILED' };
+	}
+}
+
+class PrioritySelectorNode extends BTNode {
+	constructor(_targetid: string, _blackboard: Blackboard, public children: BTNode[], _priority = 0) {
+		super(_targetid, _blackboard, _priority);
+	}
+
+	tick(): BTNodeFeedback {
+		for (const child of this.children) {
+			const result = child.tick();
+			if (result.status === 'SUCCESS') {
+				return { status: 'SUCCESS' };
+			}
+		}
+		return { status: 'FAILED' };
+	}
+}
+
+class WaitNode extends BTNode {
+	private startTime: number | null = null;
+
+	constructor(_targetid: string, _blackboard: Blackboard, public waitTime: number, _priority = 0) {
+		super(_targetid, _blackboard, _priority);
+	}
+
+	tick(): BTNodeFeedback {
+		const currentTime = Date.now();
+		if (this.startTime === null) {
+			this.startTime = currentTime;
+			return { status: 'RUNNING' };
+		}
+
+		if (currentTime - this.startTime < this.waitTime) {
+			return { status: 'RUNNING' };
+		}
+
+		this.startTime = null;
+		return { status: 'SUCCESS' };
+	}
+}
+
+class ActionNode extends BTNode {
+	constructor(_targetid: string, _blackboard: Blackboard, public action: (blackboard: Blackboard) => void, _proirity = 0) {
+		super(_targetid, _blackboard, _proirity);
+	}
+
+	tick(): BTNodeFeedback {
+		this.action(this.blackboard);
+		return { status: 'SUCCESS' };
+	}
+}
+// Example usage
+// const changeHealthAction = (blackboard: Blackboard) => {
+//     let currentHealth = blackboard.get<number>('health');
+//     blackboard.set('health', currentHealth - 10); // Example: reduce health
+// };
+
+// // Usage in an ActionNode
+// const healthActionNode = new ActionNode('enemy1', blackboard, changeHealthAction);
+
+
+
+class CompositeActionNode extends BTNode {
+	constructor(_targetid: string, _blackboard: Blackboard, public actions: ActionNode[], _priority = 0) {
+		super(_targetid, _blackboard, _priority);
+	}
+
+	tick(): BTNodeFeedback {
+		for (const action of this.actions) {
+			action.tick();
+		}
+		return { status: 'SUCCESS' };
 	}
 }

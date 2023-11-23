@@ -260,14 +260,15 @@
 			"id": "romtobuild",
 			"description": "Choose ROM to build",
 			"options": [
-				"Joanneke2022",
+				"Ella2023",
 				"Testrom",
+				"Joanneke2022",
 				"Marlies2021",
 				"Marlies2020",
 				"Sintervania",
 			],
-			"default": "Testrom"
-			// "default": "Joanneke2022"
+			"default": "Ella2023"
+			// "default": "Testrom"
 		}
 	]
 }

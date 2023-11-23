@@ -304,7 +304,7 @@ export abstract class BaseModel {
      * This method should only be called once during the initialization of the `BaseModel` class.
      * @returns {void} Nothing.
      */
-    private static setup_fsmdef_library() {
+    private static setup_fsmdef_library(): void {
         setup_fsmdef_library();
     }
 
@@ -343,7 +343,7 @@ export abstract class BaseModel {
      * Runs the current state of the model by calling the `run` method of the current state.
      * @returns {void} Nothing.
      */
-    public run() {
+    public run(): void {
         this.state.run();
     }
 
@@ -375,7 +375,7 @@ export abstract class BaseModel {
      * @param {sstate<BaseModel>} s - The current state of the BaseModel.
      * @returns {void} Nothing.
      */
-    static default_input_handler_for_allow_open_gamemenu(this: BaseModel, s: sstate<BaseModel>) {
+    static default_input_handler_for_allow_open_gamemenu(this: BaseModel, s: sstate<BaseModel>): void {
         if (Input.KC_F5) {
             this.state.substate.gamemenu.to('open');
         }
@@ -388,7 +388,7 @@ export abstract class BaseModel {
      * @param {sstate<BaseModel>} s - The current state of the BaseModel.
      * @returns {void} Nothing.
      */
-    static default_input_handler_for_allow_close_gamemenu(this: BaseModel, s: sstate<BaseModel>) {
+    static default_input_handler_for_allow_close_gamemenu(this: BaseModel, s: sstate<BaseModel>): void {
         if (Input.KC_F5) {
             this.state.substate.gamemenu.to('closed');
         }
