@@ -1,6 +1,6 @@
 ﻿import { Key } from 'ts-key-enum';
 import { handleDebugClick, handleDebugMouseDown, handleDebugMouseDragEnd, handleDebugMouseMove, handleDebugMouseOut, handleContextMenu as handleDebugContextMenu, handleOpenObjectMenu, handleOpenDebugMenu as handleOpenDebugMenu } from './bmsxdebugger';
-import { EventDispatcher } from './eventdispatcher';
+import { EventEmitter } from './eventdispatcher';
 
 type ButtonId = 'BTN1' | 'BTN2' | 'BTN3' | 'BTN4' | Key;
 let preventActionAndPropagation = (e: Event): boolean => {
@@ -107,7 +107,7 @@ export class Input {
         'right': 15,
     } as const;
 
-    public static playerJoinEvent = new EventDispatcher<number>();
+    public static playerJoinEvent = new EventEmitter();
 
     /**
      * Resets the input state for all buttons except the specified ones.
@@ -496,7 +496,7 @@ export class Input {
 
             let playerIndex = assignGamepadToPlayer(gamepad);
 
-            if (playerIndex != null) Input.playerJoinEvent.dispatch(playerIndex);
+            if (playerIndex != null) Input.playerJoinEvent.emit('playerjoin', playerIndex);
         });
 
         window.addEventListener("gamepaddisconnected", function (e: GamepadEvent) {

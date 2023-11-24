@@ -635,6 +635,22 @@ class Blackboard {
 		this.getBindings.set(key, getProperty);
 		this.setBindings.set(key, setProperty);
 	}
+
+	public static createBinding<T>(object: T, property: keyof T, key: string) {
+		return {
+			getProperty: () => (object[property] as any),
+			setProperty: (value: any) => { object[property] = value; },
+			key: key
+		};
+	}
+
+	public static createBindings<T>(object: T, properties: Array<{ property: keyof T, key: string }>) {
+		return properties.map(prop => ({
+			getProperty: () => (object[prop.property] as any),
+			setProperty: (value: any) => { object[prop.property] = value; },
+			key: prop.key
+		}));
+	}
 }
 
 // Base class for BT nodes

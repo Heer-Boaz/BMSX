@@ -3,38 +3,37 @@
  *
  * @template T The type of data that will be dispatched to listeners.
  */
-export class EventDispatcher<T> {
-    private listeners: ((data: T) => void)[] = [];
+export class EventEmitter {
+    private listeners: Record<string, Function[]> = {};
 
-    /**
-     * Adds a listener function to the event dispatcher.
-     *
-     * @param listener The listener function to be added.
-     */
-    public addListener(listener: (data: T) => void): void {
-        this.listeners.push(listener);
+    on(event: string, listener: Function): void {
+        if (!this.listeners[event]) {
+            this.listeners[event] = [];
+        }
+        this.listeners[event].push(listener);
     }
 
-    /**
-     * Removes a listener function from the event dispatcher.
-     *
-     * @param listener The listener function to be removed.
-     */
-    public removeListener(listener: (data: T) => void): void {
-        const index = this.listeners.indexOf(listener);
-        if (index >= 0) {
-            this.listeners.splice(index, 1);
+    emit(event: string, ...args: any[]): void {
+        this.listeners[event]?.forEach(listener => listener(...args));
+    }
+
+    // Additional methods for removing listeners, etc.
+    remove(event: string, listener: Function): void {
+        const listeners = this.listeners[event];
+        if (listeners) {
+            this.listeners[event] = listeners.filter(l => l !== listener);
         }
     }
 
-    /**
-     * Dispatches an event to all registered listeners.
-     *
-     * @param data The data to be dispatched to listeners.
-     */
-    public dispatch(data: T): void {
-        this.listeners.forEach((listener) => {
-            listener(data);
-        });
+    removeAll(event: string): void {
+        delete this.listeners[event];
+    }
+
+    once(event: string, listener: Function): void {
+        const onceListener = (...args: any[]) => {
+            listener(...args);
+            this.remove(event, onceListener);
+        };
+        this.on(event, onceListener);
     }
 }

@@ -1,14 +1,25 @@
 import { statecontext } from "./bfsm";
-import { vec3, Area, Direction, moveArea, multiply_vec2, new_vec2, div_vec2, mod, vec2, new_vec3, translate_vec2, new_area } from "./bmsx";
+import { vec3, Area, Direction, new_vec2, mod, vec2, new_vec3, new_area } from "./bmsx";
 import { insavegame } from "./gameserializer";
 import { TileSize } from "./msx";
+import { Component } from "./component";
 
 /**
  * Represents a game object with a position, size, state, and hitbox.
  * Implements both vec2 and vec3 interfaces.
  */
 @insavegame
+
 export class GameObject implements vec2, vec3 {
+    public components = new Map<string, Component>();
+
+    addComponent<T extends Component>(component: T): void {
+        this.components.set(component.constructor.name, component);
+    }
+
+    getComponent<T extends Component>(constructor: { new(): T }): T | undefined {
+        return this.components.get(constructor.name) as T | undefined;
+    }
 
     // For converting this GameObject to a string ('id')
     public [Symbol.toPrimitive]() {
@@ -332,6 +343,7 @@ export class GameObject implements vec2, vec3 {
     }
 
     public run(): void {
+        this.components.forEach(component => component.update());
         this.state.run();
     }
 }
