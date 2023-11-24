@@ -610,14 +610,30 @@ type BTNodeFeedback = {
 };
 
 class Blackboard {
-	private data: Map<string, any> = new Map();
+	private getBindings: Map<string, () => any> = new Map();
+	private setBindings: Map<string, (value: any) => void> = new Map();
 
-	get<T>(key: string): T {
-		return this.data.get(key) as T;
+	constructor(bindings: Array<{ getProperty: () => any, setProperty: (value: any) => void, key: string }>) {
+		bindings.forEach(binding => {
+			this.getBindings.set(binding.key, binding.getProperty);
+			this.setBindings.set(binding.key, binding.setProperty);
+		});
 	}
 
-	set<T>(key: string, value: T) {
-		this.data.set(key, value);
+	get<T>(key: string): T | undefined {
+		const propertyFunc = this.getBindings.get(key);
+		return propertyFunc ? propertyFunc() as T : undefined;
+	}
+
+	set(key: string, value: any) {
+		const setFunc = this.setBindings.get(key);
+		setFunc && setFunc(value);
+	}
+
+	// Optional: Method to update/add new bindings dynamically
+	bindProperty(getProperty: () => any, setProperty: (value: any) => void, key: string) {
+		this.getBindings.set(key, getProperty);
+		this.setBindings.set(key, setProperty);
 	}
 }
 
@@ -804,8 +820,6 @@ class ActionNode extends BTNode {
 
 // // Usage in an ActionNode
 // const healthActionNode = new ActionNode('enemy1', blackboard, changeHealthAction);
-
-
 
 class CompositeActionNode extends BTNode {
 	constructor(_targetid: string, _blackboard: Blackboard, public actions: ActionNode[], _priority = 0) {
