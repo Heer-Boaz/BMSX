@@ -1,5 +1,5 @@
 import { statecontext } from "./bfsm";
-import { vec3, Area, Direction, new_vec2, mod, vec2, new_vec3, new_area } from "./bmsx";
+import { vec3, Area, Direction, new_vec2, mod, vec2, new_vec3, new_area, GameObjectId as GameObjectId } from "./bmsx";
 import { insavegame } from "./gameserializer";
 import { TileSize } from "./msx";
 import { Component } from "./component";
@@ -26,7 +26,7 @@ export class GameObject implements vec2, vec3 {
         return this.id;
     }
 
-    public id: string;
+    public id: GameObjectId;
     public disposeFlag: boolean;
 
     public pos: vec3;

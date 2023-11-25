@@ -76,6 +76,8 @@ export interface vec3 extends vec2 {
     z: number;
 }
 
+export type GameObjectId = string;
+
 export type Size = vec2 | vec3;
 
 export interface Area {

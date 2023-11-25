@@ -1,12 +1,12 @@
 import { GameObject } from './gameObject'; // Add the import statement for GameObject
+import { GameObjectId } from './bmsx'; // Add the import statement for ObjectId
 import { exclude_save } from './gameserializer';
 
 export abstract class Component {
-    @exclude_save
-    public gameObject: GameObject | null = null;
+    public parentid: GameObjectId | null = null;
 
-    initialize(gameObject: GameObject): void {
-        this.gameObject = gameObject;
+    initialize(_id: GameObjectId): void {
+        this.parentid = _id;
     }
 
     // Implement this method to handle component updates
