@@ -71,6 +71,9 @@ export type ActionState = { action: string } & ButtonState;
  * Represents the Input class responsible for handling user input.
  */
 export class Input {
+    /**
+     * Mapping of gamepad IDs to player IDs.
+     */
     public static GamepadPlayerMap = {};
 
     /**
@@ -121,10 +124,10 @@ export class Input {
      * });
      */
     private static inputMaps: InputMap[] = [];
+
     /**
      * The mapping of gamepad button names to their corresponding indices.
      */
-
     public static readonly GAMEPAD_BUTTONS = {
         'a': 0,
         'b': 1,
@@ -292,11 +295,22 @@ export class Input {
         return Input.getPressedState(stateMap, pressRequestedStateMap, btn);
     }
 
+    /**
+     * Checks if a specific key is currently being pressed down.
+     * @param key - The key to check.
+     * @returns True if the key is being pressed down, false otherwise.
+     */
     public static isKeyDown(key: string): boolean {
         const buttonState = Input.getKeyState(key);
         return buttonState.pressed;
     }
 
+    /**
+     * Checks if a specific button on a gamepad is currently being pressed down.
+     * @param playerIndex - The index of the player's gamepad.
+     * @param btn - The button code of the gamepad button to check.
+     * @returns A boolean indicating whether the button is currently pressed down.
+     */
     public static isGamepadButtonDown(playerIndex: number, btn: number): boolean {
         const buttonState = Input.getGamepadButtonState(playerIndex, btn);
         return buttonState.pressed;
@@ -440,6 +454,11 @@ export class Input {
         return Input.getKeyState('F5').pressed || Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.y).pressed;
     }
 
+    /**
+     * Handles debug events such as mouse events and touch events.
+     *
+     * @param e The event object representing the debug event.
+     */
     private static handleDebugEvents(e: MouseEvent | TouchEvent): void {
         if (e instanceof MouseEvent) {
             switch (e.type) {
@@ -480,6 +499,10 @@ export class Input {
         }
     }
 
+    /**
+     * Initializes the input system.
+     * @param debug Whether to enable debug mode. Default is true.
+     */
     public static init(debug = true): void {
         Input.KeyState = {};
         Input.KeyPressedConsumedState = {};
@@ -731,10 +754,18 @@ function preventDefaultEventAction(e: UIEvent, key: string) {
     }
 }
 
+/**
+ * Sets the key state to true when a key is pressed.
+ * @param key - The button ID or string representing the key.
+ */
 function keydown(key: ButtonId | string): void {
     Input.KeyState[key] = true;
 }
 
+/**
+ * Handles the keyup event for a given key.
+ * @param key - The key identifier or name.
+ */
 function keyup(key: ButtonId | string): void {
     Input.KeyState[key] = Input.KeyPressedConsumedState[key] = false;
 }
@@ -773,6 +804,9 @@ function handleTouchStuff(e: TouchEvent): void {
     Input.reset(filterFromReset);
 }
 
+/**
+ * Mapping of button names to their corresponding key inputs.
+ */
 const buttonMap = {
     'd-pad-u': {
         keys: [Key.ArrowUp],
