@@ -2,6 +2,30 @@ import { GameObjectId } from './bmsx';
 import { GameObject } from './gameobject';
 import { onload, exclude_save } from './gameserializer';
 
+/**
+ * Represents a container for components.
+ */
+export interface IComponentContainer {
+    /**
+     * A map of components, where the key is the component name and the value is the component instance.
+     */
+    components: Map<string, Component>;
+
+    /**
+     * Retrieves a component of the specified type from the container.
+     * @param constructor - The constructor function of the component type.
+     * @returns The component instance of the specified type, or undefined if not found.
+     */
+    getComponent<T extends Component>(constructor: { new(): T }): T | undefined;
+
+    /**
+     * Adds a component to the container.
+     * @param component - The component instance to add.
+     */
+    addComponent<T extends Component>(component: T): void;
+}
+
+
 export abstract class Component {
     public parentid: GameObjectId | null = null;
     @exclude_save
@@ -86,7 +110,7 @@ function UpdateTaggedComponents(tag: ComponentTag) {
     return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
         const originalMethod = descriptor.value;
         descriptor.value = function (...args: any[]) {
-            (this as GameObject).components.forEach(component => {
+            (this as IComponentContainer).components.forEach(component => {
                 const componentClass = (component.constructor as ConstructorWithTagsProperty);
                 if (componentClass.tags && componentClass.tags.has(tag)) {
                     component.update.apply(component, args);

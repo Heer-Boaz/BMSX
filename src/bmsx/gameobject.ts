@@ -2,30 +2,7 @@ import { statecontext } from "./bfsm";
 import { vec3, Area, Direction, new_vec2, mod, vec2, new_vec3, new_area, GameObjectId as GameObjectId } from "./bmsx";
 import { insavegame } from "./gameserializer";
 import { TileSize } from "./msx";
-import { Component } from "./component";
-
-/**
- * Represents a container for components.
- */
-export interface IComponentContainer {
-    /**
-     * A map of components, where the key is the component name and the value is the component instance.
-     */
-    components: Map<string, Component>;
-
-    /**
-     * Retrieves a component of the specified type from the container.
-     * @param constructor - The constructor function of the component type.
-     * @returns The component instance of the specified type, or undefined if not found.
-     */
-    getComponent<T extends Component>(constructor: { new(): T }): T | undefined;
-
-    /**
-     * Adds a component to the container.
-     * @param component - The component instance to add.
-     */
-    addComponent<T extends Component>(component: T): void;
-}
+import { Component, IComponentContainer } from "./component";
 
 /**
  * Represents a game object with a position, size, state, and hitbox.
