@@ -1,5 +1,4 @@
 import { GameObjectId } from './bmsx';
-import { GameObject } from './gameobject';
 import { onload, exclude_save } from './gameserializer';
 
 /**

@@ -80,16 +80,24 @@ export class EventEmitter {
 }
 
 /**
- * Decorator function that marks a method as a handler for a specific event.
- * @param eventName The name of the event.
- * @returns A decorator function.
+ * Decorator that registers a method as a handler for a specific event.
+ *
+ * @param eventName The name of the event to handle.
+ * @returns A function that decorates the target method.
  */
 export function handles_event(eventName: string) {
     return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
-        if (!target.registeredEvents) {
-            target.registeredEvents = {};
-        }
-        target.registeredEvents[eventName] = descriptor.value;
+        EventEmitter.getInstance().on(eventName, descriptor.value);
+    };
+}
+
+/* Decorator function that registers itself as a handler for a specific event using the `once` function.
+ * @param eventName The name of the event to handle.
+ * @returns A decorator function that can be applied to a method.
+ */
+export function registers_event_once(eventName: string) {
+    return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
+        EventEmitter.getInstance().once(eventName, descriptor.value);
     };
 }
 
