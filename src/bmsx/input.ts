@@ -1,6 +1,6 @@
 ﻿import { Key } from 'ts-key-enum';
 import { handleDebugClick, handleDebugMouseDown, handleDebugMouseDragEnd, handleDebugMouseMove, handleDebugMouseOut, handleContextMenu as handleDebugContextMenu, handleOpenObjectMenu, handleOpenDebugMenu as handleOpenDebugMenu } from './bmsxdebugger';
-import { EventEmitter } from './eventdispatcher';
+import { EventEmitter } from './eventemitter';
 
 type ButtonId = 'BTN1' | 'BTN2' | 'BTN3' | 'BTN4' | Key;
 let preventActionAndPropagation = (e: Event): boolean => {

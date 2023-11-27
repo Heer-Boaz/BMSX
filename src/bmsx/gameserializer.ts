@@ -229,7 +229,12 @@ Reviver.get_constructor_for_type = (typename: string): new () => any => {
     return Reviver.constructors[typename];
 }
 
+/**
+ * A dictionary of constructors for each type that can be deserialized.
+ */
 Reviver.constructors = Reviver.constructors ?? {};
+
+// Ensure Reviver.onLoad is not null or undefined. If it is, initialize it as an empty object.
 Reviver.onLoad = Reviver.onLoad ?? {};
 /**
  * Removes the helper-property that was added during serialization from the given object.
@@ -241,8 +246,6 @@ Reviver.removeSerializerProps = (obj: { typename: string; }): void => {
     obj.typename = undefined;
     delete obj.typename;
 }
-
-// Reviver.onSave = Reviver.onSave ?? {};
 
 // target: the class that the member is on.
 // propertyKey: the name of the member in the class.
