@@ -71,12 +71,12 @@ type ConstructorWithTagsProperty = Function & {
  * @param tag The tag to be added.
  * @returns A decorator function that adds the tag to the component constructor.
  */
-export function Tag(tag: ComponentTag) {
+export function tag(...tags: ComponentTag[]) {
     return function (constructor: ConstructorWithTagsProperty) {
         if (!constructor.hasOwnProperty('tags')) {
             constructor.tags = new Set<ComponentTag>();
         }
-        constructor.tags.add(tag);
+        tags.forEach(tag => constructor.tags.add(tag));
         updateAllTags(constructor);
     };
 }
@@ -105,14 +105,17 @@ function updateAllTags(constructor: any) {
  * @param tag - The tag of the components to update.
  * @returns A decorator function.
  */
-function UpdateTaggedComponents(tag: ComponentTag) {
+export function update_tagged_components(...tags: ComponentTag[]) {
     return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
         const originalMethod = descriptor.value;
         descriptor.value = function (...args: any[]) {
             (this as IComponentContainer).components.forEach(component => {
                 const componentClass = (component.constructor as ConstructorWithTagsProperty);
-                if (componentClass.tags && componentClass.tags.has(tag)) {
-                    component.update.apply(component, args);
+                if (componentClass.tags) {
+                    const hasAnyTag = tags.some(tag => componentClass.tags.has(tag));
+                    if (hasAnyTag) {
+                        component.update.apply(component, args);
+                    }
                 }
             });
             originalMethod.apply(this, args);

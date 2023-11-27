@@ -2,7 +2,18 @@
 import { handleDebugClick, handleDebugMouseDown, handleDebugMouseDragEnd, handleDebugMouseMove, handleDebugMouseOut, handleContextMenu as handleDebugContextMenu, handleOpenObjectMenu, handleOpenDebugMenu as handleOpenDebugMenu } from './bmsxdebugger';
 import { EventEmitter } from './eventemitter';
 
+/**
+ * Represents the ID of a button.
+ * It can be one of the predefined values 'BTN1', 'BTN2', 'BTN3', 'BTN4',
+ * or a custom Key value.
+ */
 type ButtonId = 'BTN1' | 'BTN2' | 'BTN3' | 'BTN4' | Key;
+/**
+ * Prevents the default action, propagation, and immediate propagation of an event.
+ *
+ * @param e The event object.
+ * @returns Returns false.
+ */
 let preventActionAndPropagation = (e: Event): boolean => {
     e.preventDefault();
     e.stopPropagation();
@@ -10,28 +21,54 @@ let preventActionAndPropagation = (e: Event): boolean => {
     return false;
 }
 
+/**
+ * Represents the state of an index in the Index2State type.
+ */
 type Index2State = { [index: string | number]: boolean; }
+/**
+ * Represents a mapping of keyboard inputs to actions.
+ */
 export type KeyboardInputMapping = {
     [action: string]: KeyboardButton;
 }
 
+/**
+ * Represents a mapping of gamepad inputs to gamepad buttons.
+ */
 export type GamepadInputMapping = {
     [action: string]: GamepadButton;
 }
 
+/**
+ * Represents the input mapping for a game.
+ */
 export interface InputMap {
     keyboard: KeyboardInputMapping;
     gamepad: GamepadInputMapping;
 }
 
+/**
+ * Represents a keyboard button.
+ * It can be one of the predefined keys or a custom string.
+ */
 export type KeyboardButton = keyof typeof Key | string;
+/**
+ * Represents a gamepad button.
+ * @typedef {keyof typeof Input.GAMEPAD_BUTTONS} GamepadButton
+ */
 export type GamepadButton = keyof typeof Input.GAMEPAD_BUTTONS;
 
+/**
+ * Represents the state of a button.
+ */
 export type ButtonState = { pressed: boolean; consumed: boolean; };
+/**
+ * Represents the state of an action, including the action name and button state.
+ */
 export type ActionState = { action: string } & ButtonState;
 
 /**
- * Represents the input state of the game.
+ * Represents the Input class responsible for handling user input.
  */
 export class Input {
     public static GamepadPlayerMap = {};
@@ -106,8 +143,6 @@ export class Input {
         'left': 14,
         'right': 15,
     } as const;
-
-    public static playerJoinEvent = new EventEmitter();
 
     /**
      * Resets the input state for all buttons except the specified ones.
@@ -496,7 +531,7 @@ export class Input {
 
             let playerIndex = assignGamepadToPlayer(gamepad);
 
-            if (playerIndex != null) Input.playerJoinEvent.emit('playerjoin', playerIndex);
+            if (playerIndex != null) EventEmitter.getInstance().emit('playerjoin', playerIndex);
         });
 
         window.addEventListener("gamepaddisconnected", function (e: GamepadEvent) {

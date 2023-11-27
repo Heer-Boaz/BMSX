@@ -2,7 +2,7 @@ import { statecontext } from "./bfsm";
 import { vec3, Area, Direction, new_vec2, mod, vec2, new_vec3, new_area, GameObjectId as GameObjectId } from "./bmsx";
 import { insavegame } from "./gameserializer";
 import { TileSize } from "./msx";
-import { Component, IComponentContainer } from "./component";
+import { Component, IComponentContainer, update_tagged_components } from "./component";
 
 /**
  * Represents a game object with a position, size, state, and hitbox.
@@ -294,6 +294,7 @@ export class GameObject implements vec2, vec3, IComponentContainer {
      * Sets the x-coordinate of the object's position and handles collisions with tiles and screen edges.
      * @param newx The new x-coordinate to set.
      */
+    @update_tagged_components('position')
     public setx(newx: number) {
         const oldx = this.pos.x;
         const model = global.model;
@@ -324,6 +325,7 @@ export class GameObject implements vec2, vec3, IComponentContainer {
      * Sets the y-coordinate of the object's position and handles collisions with tiles and screen edges.
      * @param newy The new y-coordinate to set.
      */
+    @update_tagged_components('position')
     public sety(newy: number) {
         const oldy = this.pos.y;
         const model = global.model;

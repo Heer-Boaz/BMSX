@@ -40,7 +40,6 @@ export class EventEmitter {
         this.listeners[event]?.forEach(listener => listener(...args));
     }
 
-    // Additional methods for removing listeners, etc.
     /**
      * Removes a listener function from the specified event.
      *
