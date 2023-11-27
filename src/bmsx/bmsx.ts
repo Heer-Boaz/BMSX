@@ -768,21 +768,70 @@ export function getOppositeDirection(dir: Direction): Direction {
  * Represents the main game loop and manages the game state.
  */
 export class Game {
+    /**
+     * Indicates whether debug mode is enabled.
+     */
     public debug: boolean = false;
+    /**
+     * The target frames per second for the game.
+     */
     public targetFPS: number = 50;
+    /**
+     * The update interval for the bmsx module.
+     */
     public updateInterval: number;
+    /**
+     * The timestamp of the last update.
+     */
     public lastUpdate: number = 0;
+    /**
+     * The time difference between the current frame and the previous frame.
+     */
     public deltaTime: number = 0;
+    /**
+     * The accumulated time in milliseconds.
+     */
     public accumulatedTime: number = 0;
 
+    /**
+     * The timestamp of the last game tick.
+     */
     last_gametick_time!: number;
+    /**
+     * The turn counter for the game.
+     */
     _turnCounter!: number;
+    /**
+     * The ID of the animation frame request.
+     */
     animationFrameRequestid!: number;
+    /**
+     * Indicates whether the game is currently running.
+     */
     public running: boolean;
+    /**
+     * Indicates whether the game is currently paused.
+     */
     public paused: boolean;
+    /**
+     * Indicates whether the game was updated.
+     * This property is used to track if any changes were made to the game before rendering a new frame.
+     */
     wasupdated: boolean;
+    /**
+     * Indicates whether the game should run a single frame and then pause for debugging purposes.
+     */
     public debug_runSingleFrameAndPause!: boolean;
+    /**
+     * Retrieves the model instance of type T.
+     * @returns The model instance of type T.
+     * @template T - The type of the model.
+     */
     public model<T extends BaseModel>(): T { return <T>global.model; }
+    /**
+     * Retrieves the global view of type T.
+     * @returns The global view of type T.
+     */
     public view<T extends BaseView>(): T { return <T>global.view; }
 
     /**

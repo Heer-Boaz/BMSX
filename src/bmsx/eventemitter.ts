@@ -2,7 +2,14 @@
  * A generic event dispatcher that can be used to manage listeners and dispatch events.
  */
 export class EventEmitter {
+    /**
+     * An object that stores event listeners.
+     * The keys are event names, and the values are arrays of listener functions.
+     */
     private listeners: Record<string, Function[]> = {};
+    /**
+     * The singleton instance of the EventEmitter class.
+     */
     private static instance: EventEmitter;
     /**
      * Returns the singleton instance of the EventEmitter class.
