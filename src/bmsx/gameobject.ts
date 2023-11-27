@@ -5,12 +5,34 @@ import { TileSize } from "./msx";
 import { Component } from "./component";
 
 /**
+ * Represents a container for components.
+ */
+export interface IComponentContainer {
+    /**
+     * A map of components, where the key is the component name and the value is the component instance.
+     */
+    components: Map<string, Component>;
+
+    /**
+     * Retrieves a component of the specified type from the container.
+     * @param constructor - The constructor function of the component type.
+     * @returns The component instance of the specified type, or undefined if not found.
+     */
+    getComponent<T extends Component>(constructor: { new(): T }): T | undefined;
+
+    /**
+     * Adds a component to the container.
+     * @param component - The component instance to add.
+     */
+    addComponent<T extends Component>(component: T): void;
+}
+
+/**
  * Represents a game object with a position, size, state, and hitbox.
  * Implements both vec2 and vec3 interfaces.
  */
 @insavegame
-
-export class GameObject implements vec2, vec3 {
+export class GameObject implements vec2, vec3, IComponentContainer {
     public components = new Map<string, Component>();
 
     addComponent<T extends Component>(component: T): void {
@@ -21,7 +43,10 @@ export class GameObject implements vec2, vec3 {
         return this.components.get(constructor.name) as T | undefined;
     }
 
-    // For converting this GameObject to a string ('id')
+    /**
+     * Returns the primitive value of the GameObject instance.
+     * @returns The ID of the GameObject.
+     */
     public [Symbol.toPrimitive]() {
         return this.id;
     }
@@ -79,6 +104,11 @@ export class GameObject implements vec2, vec3 {
     public visible: boolean;
 
     private _hitbox: Area; // Cached hitbox
+    /**
+     * Gets the hitbox area of the game object.
+     * If the hitbox is not initialized, it creates a new area using the provided coordinates.
+     * @returns The hitbox area of the game object.
+     */
     public get hitbox(): Area {
         if (!this._hitbox) {
             this._hitbox = new_area(this.hitbox_left, this.hitbox_top, this.hitbox_right, this.hitbox_bottom);
@@ -342,6 +372,9 @@ export class GameObject implements vec2, vec3 {
         }
     }
 
+    /**
+     * Runs the game object by updating its components and running its state.
+     */
     public run(): void {
         this.components.forEach(component => component.update());
         this.state.run();

@@ -1,14 +1,98 @@
-import { GameObject } from './gameObject'; // Add the import statement for GameObject
-import { GameObjectId } from './bmsx'; // Add the import statement for ObjectId
-import { exclude_save } from './gameserializer';
+import { GameObjectId } from './bmsx';
+import { GameObject } from './gameobject';
+import { onload, exclude_save } from './gameserializer';
 
 export abstract class Component {
     public parentid: GameObjectId | null = null;
+    @exclude_save
+    public static tags: Set<ComponentTag>;
 
-    initialize(_id: GameObjectId): void {
+    constructor(_id: GameObjectId) {
         this.parentid = _id;
+        // this.init();
     }
 
+    hasTag(tag: ComponentTag): boolean {
+        const componentClass = this.constructor as ConstructorWithTagsProperty;
+        return componentClass.tags?.has(tag) ?? false;
+    }
+
+    // @onload
+    // init() {
+    //     this.initEventHandlers();
+    // }
+
+    // // Implement this method to handle component initialization
+    // initEventHandlers() { }
+
+    // Implement this method to handle component initialization
+    initTags() { }
+
     // Implement this method to handle component updates
-    update(): void { }
+    update(...args: any[]): void { }
+}
+
+/**
+ * Represents a component tag.
+ */
+export type ComponentTag = string;
+/**
+ * Represents a constructor function with an optional 'tags' property.
+ */
+type ConstructorWithTagsProperty = Function & {
+    tags?: Set<ComponentTag>;
+};
+
+/**
+ * Decorator function that adds a tag to a component.
+ * @param tag The tag to be added.
+ * @returns A decorator function that adds the tag to the component constructor.
+ */
+export function Tag(tag: ComponentTag) {
+    return function (constructor: ConstructorWithTagsProperty) {
+        if (!constructor.hasOwnProperty('tags')) {
+            constructor.tags = new Set<ComponentTag>();
+        }
+        constructor.tags.add(tag);
+        updateAllTags(constructor);
+    };
+}
+
+/**
+ * Updates all tags for the given constructor by traversing the prototype chain.
+ * @param constructor - The constructor function.
+ */
+function updateAllTags(constructor: any) {
+    const tags = new Set<ComponentTag>();
+    let currentClass: any = constructor;
+
+    while (currentClass !== Object) {
+        if (currentClass.tags) {
+            currentClass.tags.forEach((tag: ComponentTag) => tags.add(tag));
+        }
+        currentClass = Object.getPrototypeOf(currentClass);
+    }
+
+    constructor.allTagsCache = tags;
+}
+
+/**
+ * Decorator that updates all components with a specific tag.
+ *
+ * @param tag - The tag of the components to update.
+ * @returns A decorator function.
+ */
+function UpdateTaggedComponents(tag: ComponentTag) {
+    return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
+        const originalMethod = descriptor.value;
+        descriptor.value = function (...args: any[]) {
+            (this as GameObject).components.forEach(component => {
+                const componentClass = (component.constructor as ConstructorWithTagsProperty);
+                if (componentClass.tags && componentClass.tags.has(tag)) {
+                    component.update.apply(component, args);
+                }
+            });
+            originalMethod.apply(this, args);
+        };
+    };
 }

@@ -4,6 +4,7 @@ import { Input } from "./input";
 import { RomPack } from "./rompack";
 import { MSX2ScreenWidth, MSX2ScreenHeight, TileSize } from "./msx";
 import { BaseModel } from "./model";
+import { EventEmitter } from "./eventemitter";
 
 /**
  * Declare global variables and types.
@@ -12,52 +13,125 @@ declare global {
     var game: Game;
     var model: BaseModel;
     var view: BaseView;
+    var eventEmitter: EventEmitter;
     var rom: RomPack;
 }
 
+/**
+ * Retrieves the game model and returns it as type T.
+ * @returns The game model of type T.
+ * @template T - The type of the game model.
+ */
 export function get_gamemodel<T extends BaseModel>(): T {
-
     return <T>globalThis.model;
 }
 
-//@insavegame
+/**
+ * Represents the game options.
+ */
 export class GameOptions {
+    /**
+     * The initial scale of the game.
+     */
     public static readonly INITIAL_SCALE: number = 1;
+
+    /**
+     * The initial fullscreen mode of the game.
+     */
     public static readonly INITIAL_FULLSCREEN: boolean = false;
 
+    /**
+     * The current scale of the game.
+     */
     public static Scale: number = GameOptions.INITIAL_SCALE;
+
+    /**
+     * The current fullscreen mode of the game.
+     */
     public static Fullscreen: boolean = GameOptions.INITIAL_FULLSCREEN;
+
+    /**
+     * The volume percentage of the game.
+     */
     public static VolumePercentage: number = 50;
+
+    /**
+     * The music volume percentage of the game.
+     */
     public static MusicVolumePercentage: number = 50;
 
+    /**
+     * Gets the width of the game window.
+     */
     public static get WindowWidth(): number {
         return (MSX2ScreenWidth * GameOptions.Scale);
     }
 
+    /**
+     * Gets the height of the game window.
+     */
     public static get WindowHeight(): number {
         return (MSX2ScreenHeight * GameOptions.Scale);
     }
 
+    /**
+     * Gets the width of the game buffer.
+     */
     public static get BufferWidth(): number {
         return (MSX2ScreenWidth * GameOptions.Scale);
     }
 
+    /**
+     * Gets the height of the game buffer.
+     */
     public static get BufferHeight(): number {
         return (MSX2ScreenHeight * GameOptions.Scale);
     }
 }
 
+/**
+ * Module containing constants used in the Sintervania application.
+ */
 export module Constants {
+    /**
+     * The path to the directory containing the images.
+     */
     export const IMAGE_PATH: string = 'rom/Graphics/';
+
+    /**
+     * The path to the directory containing the audio files.
+     */
     export const AUDIO_PATH: string = 'rom/';
 
+    /**
+     * The number of save slots available.
+     */
     export const SaveSlotCount: number = 6;
+
+    /**
+     * The value representing a checkpoint save slot.
+     */
     export const SaveSlotCheckpoint: number = -1;
+
+    /**
+     * The path to the save game file.
+     */
     export const SaveGamePath: string = "./Saves/sintervania.sa";
+
+    /**
+     * The path to the checkpoint game file.
+     */
     export const CheckpointGamePath: string = "./Saves/sintervania.chk";
+
+    /**
+     * The path to the options file.
+     */
     export const OptionsPath: string = "./sintervania.ini";
 }
 
+/**
+ * Represents the direction values.
+ */
 export enum Direction {
     None = 0,
     Up = 1,
@@ -65,21 +139,43 @@ export enum Direction {
     Down = 3,
     Left = 4,
 }
+
+/**
+ * Represents a 2D vector.
+ */
 export interface vec2 {
-    // [Symbol.iterator](): Iterator<number>;
+    /**
+     * The x-coordinate of the vector.
+     */
     x: number;
+    /**
+     * The y-coordinate of the vector.
+     */
     y: number;
-    // z?: number;
 }
 
+/**
+ * Represents a 3-dimensional vector.
+ * Extends the vec2 interface.
+ */
 export interface vec3 extends vec2 {
     z: number;
 }
 
+/**
+ * Represents the identifier of a game object.
+ */
 export type GameObjectId = string;
 
+/**
+ * Represents the size of an object.
+ * It can be either a 2D vector or a 3D vector.
+ */
 export type Size = vec2 | vec3;
 
+/**
+ * Represents an area defined by a start and end point.
+ */
 export interface Area {
     start: vec2 | vec3;
     end: vec2 | vec3;
@@ -354,6 +450,12 @@ export function mod(n: number, p: number): number {
     return r < 0 ? r + p : r;
 }
 
+/**
+ * Moves an area by adding the specified vector to its start and end points.
+ * @param a - The area to be moved.
+ * @param p - The vector representing the amount to move the area by.
+ * @returns The moved area.
+ */
 export function moveArea(a: Area, p: vec3): Area {
     return {
         start: { x: a.start.x + p.x, y: a.start.y + p.y },
@@ -361,10 +463,22 @@ export function moveArea(a: Area, p: vec3): Area {
     };
 }
 
+/**
+ * Translates a 2D vector by adding another vector to it.
+ * @param a The first vector.
+ * @param b The second vector to be added.
+ * @returns The resulting translated vector.
+ */
 export function translate_vec2(a: vec2, b: vec2): vec2 {
     return { x: a.x + b.x, y: a.y + b.y };
 }
 
+/**
+ * Translates a 3D vector by adding another 3D vector to it.
+ * @param a The first 3D vector.
+ * @param b The second 3D vector to be added.
+ * @returns The resulting translated 3D vector.
+ */
 export function translate_vec3(a: vec3, b: vec3): vec3 {
     return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z };
 }
@@ -380,34 +494,85 @@ export function randomInt(min: number, max: number): number {
     return Math.floor(Math.random() * (max - min + 1) + min);
 }
 
+/**
+ * Creates a new 2D vector with the specified x and y coordinates.
+ * @param x The x coordinate of the vector.
+ * @param y The y coordinate of the vector.
+ * @returns The newly created 2D vector.
+ */
 export function new_vec2(x: number, y: number): vec2 {
     return { x: x, y: y };
 }
 
+/**
+ * Creates a new vec3 object with the specified x, y, and z coordinates.
+ *
+ * @param x - The x coordinate of the vec3 object.
+ * @param y - The y coordinate of the vec3 object.
+ * @param z - The z coordinate of the vec3 object.
+ * @returns A new vec3 object with the specified coordinates.
+ */
 export function new_vec3(x: number, y: number, z: number): vec3 {
     return { x: x, y: y, z: z };
 }
 
+/**
+ * Creates a copy of a vec2 object.
+ * @param toCopy - The vec2 object to be copied.
+ * @returns A new vec2 object with the same x and y values as the original.
+ */
 export function copy_vec2(toCopy: vec2): vec2 {
     return { x: toCopy.x, y: toCopy.y };
 }
 
+/**
+ * Truncates the components of a 2D vector to integers.
+ *
+ * @param p The input vector.
+ * @returns A new vector with truncated components.
+ */
 export function trunc_vec2(p: vec2): vec2 {
     return { x: ~~p.x, y: ~~p.y };
 }
 
+/**
+ * Truncates the values of a vec3 object to integers.
+ *
+ * @param p - The vec3 object to truncate.
+ * @returns A new vec3 object with truncated values.
+ */
 export function trunc_vec3(p: vec3): vec3 {
     return { x: ~~p.x, y: ~~p.y, z: ~~p.z };
 }
 
+/**
+ * Multiplies a vec2 by a factor.
+ * @param toMult The vec2 to multiply.
+ * @param factor The factor to multiply by.
+ * @returns The multiplied vec2.
+ */
 export function multiply_vec2(toMult: vec2, factor: number): vec2 {
     return { x: toMult.x * factor, y: toMult.y * factor };
 }
 
+/**
+ * Divides each component of a 2D vector by a scalar value.
+ * @param toDivide - The vector to be divided.
+ * @param divide_by - The scalar value to divide the vector by.
+ * @returns The resulting vector after division.
+ */
 export function div_vec2(toDivide: vec2, divide_by: number): vec2 {
     return { x: toDivide.x / divide_by, y: toDivide.y / divide_by };
 }
 
+/**
+ * Creates a new area with the specified coordinates.
+ * @param sx The x-coordinate of the start point.
+ * @param sy The y-coordinate of the start point.
+ * @param ex The x-coordinate of the end point.
+ * @param ey The y-coordinate of the end point.
+ * @returns The newly created area.
+ */
 export function new_area(sx: number, sy: number, ex: number, ey: number): Area {
     return { start: { x: sx, y: sy }, end: { x: ex, y: ey } };
 }
@@ -418,12 +583,24 @@ export function set_vec2(p: vec2, new_x: number, new_y: number) {
     p.y = new_y;
 }
 
+/**
+ * Sets the values of a vec3 object.
+ * @param p - The vec3 object to modify.
+ * @param new_x - The new value for the x coordinate.
+ * @param new_y - The new value for the y coordinate.
+ * @param new_z - The new value for the z coordinate.
+ */
 export function set_vec3(p: vec3, new_x: number, new_y: number, new_z: number) {
     p.x = new_x;
     p.y = new_y;
     p.z = new_z;
 }
 
+/**
+ * Overwrites the values of a vec3 with the values from another vec3.
+ * @param to_overwrite - The vec3 to be overwritten.
+ * @param data - The vec3 containing the new values.
+ */
 export function overwrite_vec3(to_overwrite: vec3, data: vec3) {
     to_overwrite.x = data.x;
     to_overwrite.y = data.y;
@@ -436,6 +613,11 @@ export function setSize(s: Size, new_x: number, new_y: number) {
     s.y = new_y;
 }
 
+/**
+ * Calculates the size of an area by subtracting the start coordinates from the end coordinates.
+ * @param a The area object containing the start and end coordinates.
+ * @returns An object representing the size of the area with properties `x` and `y`.
+ */
 export function area2size(a: Area) {
     return { x: a.end.x - a.start.x, y: a.end.y - a.start.y };
 }
@@ -531,10 +713,18 @@ export function isStorageAvailable(storageType: string): boolean {
     }
 }
 
+/**
+ * Checks if the localStorage is available in the current environment.
+ * @returns {boolean} True if localStorage is available, false otherwise.
+ */
 export function isLocalStorageAvailable(): boolean {
     return isStorageAvailable('localStorage');
 }
 
+/**
+ * Checks if the session storage is available in the current browser.
+ * @returns A boolean value indicating whether the session storage is available.
+ */
 export function isSessionStorageAvailable(): boolean {
     return isStorageAvailable('sessionStorage');
 }
@@ -611,6 +801,7 @@ export class Game {
 
         global['model'] = _model;
         global['view'] = _view;
+        global['eventEmitter'] = EventEmitter.getInstance();
 
         BaseView.images = _rom.images;
         global.view.init();
@@ -689,37 +880,6 @@ export class Game {
         if (game.wasupdated) global.view.drawgame();
 
         game.animationFrameRequestid = window.requestAnimationFrame(game.run);
-
-        // OLD!!
-        // const game = global.game;
-        // if (!game.running) return;
-
-        // let ticks_to_run: number;
-        // const fpstime = game.updateInterval;
-
-        // // If tFrame < nextTick then 0 ticks need to be updated (0 is default for numTicks).
-        // // If tFrame = nextTick then 1 tick needs to be updated (and so forth).
-        // // Note: As we mention in summary, you should keep track of how large numTicks is.
-        // // If it is large, then either your game was asleep, or the machine cannot keep up.
-        // const time_since_last_run_gametick = currentTime - game.last_gametick_time;
-
-        // if (time_since_last_run_gametick > fpstime) {
-        //     ticks_to_run = Math.floor(time_since_last_run_gametick / fpstime);
-        // }
-        // else ticks_to_run = 0;
-
-        // for (let i = 0; i < ticks_to_run; i++) {
-        //     ++game._turnCounter;
-        //     game.last_gametick_time = game.last_gametick_time + fpstime; // Now lastTick is this tick.
-        //     if (game.paused) continue;
-        //     Input.pollGamepadInput();
-        //     game.update(fpstime);
-        // }
-        // if (ticks_to_run > 0) global.view.drawgame();
-        // if (ticks_to_run > 1) console.warn(`${ticks_to_run}`);
-
-        // game.last_gametick_time = currentTime - (time_since_last_run_gametick % fpstime); // https://codepen.io/rishabhp/pen/XKpBQX
-        // game.animationFrameRequestid = window.requestAnimationFrame(game.run);
     }
 
     /**
