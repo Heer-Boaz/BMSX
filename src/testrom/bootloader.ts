@@ -5,11 +5,25 @@ import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
 import { Input, InputMap, KeyboardButton, GamepadInputMapping, KeyboardInputMapping } from '../bmsx/input';
 import { sstate, statedef_builder, machine_states } from '../bmsx/bfsm';
-import { show_download_savestate_dialog, insavegame, show_openfile_dialog, show_load_savestate_dialog } from '../bmsx/gameserializer';
+import { insavegame } from '../bmsx/gameserializer';
+import { show_download_savestate_dialog, show_openfile_dialog, show_load_savestate_dialog } from '../bmsx/gamestatedialog';
 import { new_area, Direction, Game, new_vec2, get_gamemodel } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
 import { BaseModel } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';
+
+var _game: Game;
+let _model: gamemodel;
+var _view: gameview;
+
+const _global = window || global;
+
+_global['h406A'] = (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode): void => {
+    _model = new gamemodel();
+    _view = new gameview(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
+    _game = new Game(rom, _model, _view, sndcontext, gainnode);
+    _game.start();
+};
 
 const get_model = get_gamemodel<gamemodel>;
 
@@ -102,13 +116,13 @@ class bclass extends SpriteObject {
                         Input.consumeAction(0, action);
 
                         this.state.to('bla');
-                    break;
+                        break;
                     case 'blap':
                         if (consumed) break;
                         Input.consumeAction(0, action);
 
                         this.state.to('#blap');
-                    break;
+                        break;
                 }
             }
         }
@@ -194,17 +208,4 @@ class gameview extends GLView {
         super.drawgame();
         super.drawSprites();
     }
-};
-
-var _game: Game;
-let _model: gamemodel;
-var _view: gameview;
-
-var _global = window || global;
-
-_global['h406A'] = (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode): void => {
-    _model = new gamemodel();
-    _view = new gameview(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
-    _game = new Game(rom, _model, _view, sndcontext, gainnode);
-    _game.start();
-};
+}

@@ -142,7 +142,7 @@ export class GameObject implements vec2, vec3 {
         if (spawningPos) {
             this.x = spawningPos.x ?? this.x;
             this.y = spawningPos.y ?? this.y;
-            this.z = spawningPos.z ?? this.z;
+            this.z = (spawningPos as vec3).z ?? this.z;
         }
 
         let start_state_id = this.state?.definition?.start_state;

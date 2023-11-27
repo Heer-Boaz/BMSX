@@ -69,7 +69,7 @@ export interface vec2 {
     // [Symbol.iterator](): Iterator<number>;
     x: number;
     y: number;
-    z?: number;
+    // z?: number;
 }
 
 export interface vec3 extends vec2 {
