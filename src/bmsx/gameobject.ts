@@ -4,12 +4,16 @@ import { insavegame } from "./gameserializer";
 import { TileSize } from "./msx";
 import { Component, IComponentContainer, update_tagged_components } from "./component";
 
+export interface IIdentifiable {
+    id: string;
+}
+
 /**
  * Represents a game object with a position, size, state, and hitbox.
  * Implements both vec2 and vec3 interfaces.
  */
 @insavegame
-export class GameObject implements vec2, vec3, IComponentContainer {
+export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiable {
     public components = new Map<string, Component>();
 
     addComponent<T extends Component>(component: T): void {

@@ -1,12 +1,9 @@
+import { IIdentifiable } from './gameobject';
 /**
  * A generic event dispatcher that can be used to manage listeners and dispatch events.
  */
 export class EventEmitter {
-    /**
-     * An object that stores event listeners.
-     * The keys are event names, and the values are arrays of listener functions.
-     */
-    private listeners: Record<string, Function[]> = {};
+    private listeners: Record<string, Record<string, Function[]>> = {};
     /**
      * The singleton instance of the EventEmitter class.
      */
@@ -23,50 +20,35 @@ export class EventEmitter {
         return EventEmitter.instance;
     }
 
-    /**
-     * Adds a listener function to the specified event.
-     *
-     * @param event - The name of the event.
-     * @param listener - The listener function to be added.
-     */
-    on(event: string, listener: Function): void {
+    on(event: string, listener: Function, emitter?: string): void {
         if (!this.listeners[event]) {
-            this.listeners[event] = [];
+            this.listeners[event] = {};
         }
-        this.listeners[event].push(listener);
+        const key = emitter || 'all';
+        if (!this.listeners[event][key]) {
+            this.listeners[event][key] = [];
+        }
+        this.listeners[event][key].push(listener);
     }
 
-    /**
-     * Emits an event and invokes all registered listeners with the provided arguments.
-     *
-     * @param event - The name of the event to emit.
-     * @param sender - The sender of the event.
-     * @param args - Additional arguments to pass to the listeners.
-     */
-    emit(event: string, sender: any, ...args: any[]): void {
-        this.listeners[event]?.forEach(listener => listener(...args));
+    emit(event: string, emitter: string, ...args: any[]): void {
+        // Emit to specific listeners
+        this.listeners[event]?.[emitter]?.forEach(listener => listener(...args));
+        // Emit to all listeners
+        this.listeners[event]?.['all']?.forEach(listener => listener(...args));
     }
 
-    /**
-     * Removes a listener function from the specified event.
-     *
-     * @param event - The name of the event.
-     * @param listener - The listener function to remove.
-     */
-    off(event: string, listener: Function): void {
-        const listeners = this.listeners[event];
-        if (listeners) {
-            this.listeners[event] = listeners.filter(l => l !== listener);
+    off(event: string, listener: Function, emitter?: string): void {
+        const key = emitter || 'all';
+        const emitterListeners = this.listeners[event]?.[key];
+        if (emitterListeners) {
+            this.listeners[event][key] = emitterListeners.filter(l => l !== listener);
         }
     }
 
-    /**
-     * Removes all listeners for the specified event.
-     *
-     * @param event - The event to remove all listeners for.
-     */
-    removeAll(event: string): void {
-        delete this.listeners[event];
+    removeAll(event: string, emitter?: string): void {
+        const key = emitter || 'all';
+        delete this.listeners[event]?.[key];
     }
 
     /**
@@ -118,7 +100,7 @@ export function emits_event(eventName: string) {
         descriptor.value = function (...args: any[]) {
             originalMethod.apply(this, args);
             // Logic to emit the event
-            EventEmitter.getInstance().emit(eventName, this, ...args);
+            EventEmitter.getInstance().emit(eventName, (this as IIdentifiable).id, this, ...args);
         };
     };
 }

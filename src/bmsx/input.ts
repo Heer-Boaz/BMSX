@@ -554,7 +554,7 @@ export class Input {
 
             let playerIndex = assignGamepadToPlayer(gamepad);
 
-            if (playerIndex != null) EventEmitter.getInstance().emit('playerjoin', playerIndex);
+            if (playerIndex != null) EventEmitter.getInstance().emit('playerjoin', 'input', playerIndex);
         });
 
         window.addEventListener("gamepaddisconnected", function (e: GamepadEvent) {
