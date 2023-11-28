@@ -354,8 +354,9 @@ export class GameObject implements vec2, vec3, IComponentContainer {
     /**
      * Runs the game object by updating its components and running its state.
      */
+    @update_tagged_components('run')
     public run(): void {
-        this.components.forEach(component => component.update());
+        // this.components.forEach(component => component.update());
         this.state.run();
     }
 }
