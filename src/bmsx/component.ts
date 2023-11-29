@@ -57,8 +57,6 @@ export abstract class Component {
             eventEmitter.on(subscription.eventName, handler, this.parentid);
         });
     }
-    // Implement this method to handle component initialization
-    initTags() { }
 
     // Implement this method to handle component updates
     update(...args: any[]): void { }
@@ -98,7 +96,7 @@ function updateAllTags(constructor: any) {
     const tags = new Set<ComponentTag>();
     let currentClass: any = constructor;
 
-    while (currentClass !== Object) {
+    while (currentClass && currentClass !== Object) {
         if (currentClass.tags) {
             currentClass.tags.forEach((tag: ComponentTag) => tags.add(tag));
         }

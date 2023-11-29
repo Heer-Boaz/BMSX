@@ -93,7 +93,7 @@ function updateAllEventSubscriptions(constructor: any) {
     let currentClass: any = constructor;
     const subscriptions = new Array<EventSubscription>();
 
-    while (currentClass !== Object) {
+    while (currentClass && currentClass !== Object) {
         if (currentClass.eventSubscriptions) {
             subscriptions.push(...currentClass.eventSubscriptions);
         }
@@ -104,7 +104,7 @@ function updateAllEventSubscriptions(constructor: any) {
 }
 
 // Decorator for event subscriptions
-export function SubscribesToParentScopedEvent(eventName: string) {
+export function subscribesToParentScopedEvent(eventName: string) {
     return function (target: any, propertyKey: string) {
         if (!target.constructor.eventSubscriptions) {
             target.constructor.eventSubscriptions = [];
