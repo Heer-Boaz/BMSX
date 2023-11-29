@@ -104,7 +104,7 @@ function updateAllEventSubscriptions(constructor: any) {
 }
 
 // Decorator for event subscriptions
-export function subscribes_to(eventName: string) {
+export function SubscribesToParentScopedEvent(eventName: string) {
     return function (target: any, propertyKey: string) {
         if (!target.constructor.eventSubscriptions) {
             target.constructor.eventSubscriptions = [];
@@ -120,7 +120,7 @@ export function subscribes_to(eventName: string) {
  * @param eventName The name of the event to handle.
  * @returns A function that decorates the target method.
  */
-export function handles_event(eventName: string) {
+export function globalEventHandler(eventName: string) {
     return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
         EventEmitter.getInstance().on(eventName, descriptor.value);
     };
@@ -130,7 +130,7 @@ export function handles_event(eventName: string) {
  * @param eventName The name of the event to handle.
  * @returns A decorator function that can be applied to a method.
  */
-export function registers_event_once(eventName: string) {
+export function oneTimeGlobalEventHandler(eventName: string) {
     return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
         EventEmitter.getInstance().once(eventName, descriptor.value);
     };
