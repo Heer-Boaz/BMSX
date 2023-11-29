@@ -219,10 +219,7 @@ export class Input {
      * @param key The key to consume.
      */
     public static consumeKey(key: string) {
-        const keyState = Input.getKeyState(key);
-        if (keyState) {
-            keyState.consumed = true;
-        }
+        Input.KeyPressedConsumedState[key] = true;
     }
 
     /**
@@ -231,9 +228,7 @@ export class Input {
      * @param button The button to consume.
      */
     public static consumeButton(playerIndex: number, button: number) {
-        const gamepadButton = Input.GAMEPAD_BUTTONS[button];
-        const gamepadButtonState = Input.getGamepadButtonState(playerIndex, gamepadButton);
-        gamepadButtonState.consumed = true;
+        Input.GamepadButtonPressedConsumedStates[playerIndex][button] = true;
     }
 
     /**
@@ -248,12 +243,15 @@ export class Input {
         const keyboardKey = inputMap.keyboard[action];
         const gamepadButton = Input.GAMEPAD_BUTTONS[inputMap.gamepad[action]];
 
-        if (keyboardKey) {
-            Input.consumeKey(keyboardKey);
+        if (keyboardKey && playerIndex === 0) {
+            this.consumeKey(keyboardKey);
         }
 
         if (gamepadButton) {
-            Input.consumeButton(playerIndex, gamepadButton);
+            const gamepadButtonStates = Input.GamepadButtonStates[playerIndex];
+            if (gamepadButtonStates && gamepadButtonStates[gamepadButton]) {
+                this.consumeButton(playerIndex, gamepadButton);
+            }
         }
     }
 
