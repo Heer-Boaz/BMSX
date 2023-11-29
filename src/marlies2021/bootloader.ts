@@ -21,8 +21,8 @@ class modelclass extends BaseModel {
     public monster: monster;
 
     @statedef_builder
-    public static buildModelStates(classname: string): cmdef {
-        return new cmdef(classname, {
+    public static buildModelStates(classname: string): mdef {
+        return new mdef(classname, {
             machines: {
                 master: new mdef('default', {
                     states: {

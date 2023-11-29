@@ -88,7 +88,11 @@ export type ConstructorWithEventSubscriptions = Function & {
     eventSubscriptions?: EventSubscription[];
 };
 
-// Helper function to update all event subscriptions
+/**
+ * Helper function to update all event subscriptions
+ * Updates all event subscriptions for a given constructor by traversing the prototype chain.
+ * @param constructor - The constructor function to update event subscriptions for.
+ */
 function updateAllEventSubscriptions(constructor: any) {
     let currentClass: any = constructor;
     const subscriptions = new Array<EventSubscription>();
@@ -103,7 +107,12 @@ function updateAllEventSubscriptions(constructor: any) {
     constructor.eventSubscriptions = subscriptions;
 }
 
-// Decorator for event subscriptions
+/**
+ * Decorator function that subscribes a method to a parent-scoped event.
+ *
+ * @param eventName - The name of the event to subscribe to.
+ * @returns A decorator function that adds the event subscription to the target class.
+ */
 export function subscribesToParentScopedEvent(eventName: string) {
     return function (target: any, propertyKey: string) {
         if (!target.constructor.eventSubscriptions) {

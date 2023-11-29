@@ -1,10 +1,11 @@
+import { machine_states, statecontext } from './../bmsx/bfsm';
 import { GamepadButton } from './../bmsx/input';
 import { RomPack } from '../bmsx/rompack';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
 import { Input, InputMap, KeyboardButton, GamepadInputMapping, KeyboardInputMapping } from '../bmsx/input';
-import { sstate, statedef_builder, machine_states } from '../bmsx/bfsm';
+import { sstate, statedef_builder, machine_states, build_fsm } from '../bmsx/bfsm';
 import { insavegame } from '../bmsx/gameserializer';
 import { show_download_savestate_dialog, show_openfile_dialog, show_load_savestate_dialog } from '../bmsx/gamestatedialog';
 import { new_area, Direction, Game, new_vec2, get_gamemodel } from '../bmsx/bmsx';
@@ -64,6 +65,22 @@ const gamepadInputMapping: MyGamepadInputMapping = {
 
 @insavegame
 class bclass extends SpriteObject {
+    @build_fsm('animation')
+    public static bouw_testfms(): machine_states {
+        return {
+            states: {
+                ani1: {
+                    run: () => {},
+                    enter(this: bclass) { this.imgid = BitmapId.b; },
+                },
+                '#ani2': {
+                    run: () => {},
+                    enter(this: bclass) { this.imgid = BitmapId.b2; },
+                },
+            }
+        };
+    }
+
     @statedef_builder
     public static bouw(): machine_states {
         Input.setInputMap(0, {
@@ -152,6 +169,7 @@ class bclass extends SpriteObject {
 
     constructor() {
         super('The B');
+        this.state.substate.animation.to('ani1');
         this.hitarea = new_area(0, 0, 14, 18);
         this.addComponent(new DerivedTestComponent(this.id));
 

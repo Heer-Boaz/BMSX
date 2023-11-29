@@ -115,7 +115,7 @@ class bclass extends SpriteObject {
                     case 'bla':
                         if (consumed) break;
                         Input.consumeAction(0, action);
-                        EventEmitter.getInstance().emit('testEvent', this.id);
+                        global.eventEmitter.emit('testEvent', this.id);
                         this.testmeuk();
 
                         this.state.to('bla');

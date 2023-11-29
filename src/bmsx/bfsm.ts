@@ -34,7 +34,7 @@ export function statedef_builder(target: any, name: any, descriptor: PropertyDes
 
 /**
  * Builds the state machine definitions and sets them in the `MachineDefinitions` object.
- * Loops through all the `MachineDefinitionBuilders` and calls them to get the state machine definition.
+ * Loops thr	ough all the `MachineDefinitionBuilders` and calls them to get the state machine definition.
  * If a definition is returned, it creates a new `mdef` object with the machine name and definition.
  * If the `mdef` object is created successfully, it sets the machine definition in the `MachineDefinitions` object.
  */
@@ -59,15 +59,45 @@ export const enum state_event_type {
 	End = 5,
 }
 
+/**
+ * Represents a type definition for mapping IDs to `sdef` objects.
+ */
 export type id2sdef = Record<string, sdef>;
+/**
+ * Represents a mapping of IDs to mdefs.
+ */
 export type id2mdef = Record<string, mdef>;
+/**
+ * Represents a mapping of IDs to state contexts.
+ */
 export type id2mstate = Record<string, statecontext>;
+/**
+ * Represents a mapping of IDs to sstates.
+ */
 export type id2sstate = Record<string, sstate>;
+/**
+ * Represents a state event handler function.
+ * @param state - The state object.
+ * @param type - The type of state event.
+ * @returns The result of the state event handler.
+ */
 export interface state_event_handler { (state: sstate, type: state_event_type): any; }
+/**
+ * Represents a tape used in the BFSM.
+ */
 export type Tape = any[];
 
+/**
+ * Maximum history size for the state transition stack.
+ */
 const BST_MAX_HISTORY = 10;
+/**
+ * The default BST ID.
+ */
 export const DEFAULT_BST_ID = 'master';
+/**
+ * The ID representing the none state.
+ */
 export const NONE_STATE_ID = 'none';
 
 /**
@@ -84,16 +114,34 @@ export type Bla<T extends id2partial_sdef> = keyof T;
  * Contains information about the current state, the state machine it belongs to, and any substate machines.
  */
 export class statecontext {
+	/**
+	 * The unique identifier for the bfsm.
+	 */
 	id: string;
+	/**
+	 * Represents the states of the Bfsm.
+	 */
 	states: id2sstate;
+	/**
+	 * Identifier of the current state.
+	 */
 	currentid!: string; // Identifier of current state
+	/**
+	 * History of previous states.
+	 */
 	history!: Array<string>; // History of previous states
+	/**
+	 * Indicates whether the execution is paused.
+	 */
 	paused: boolean; // Iff paused, skip 'onrun'
 	/**
 	 * This state machine reflects the (partial) state of the game object with the given id
 	 * @see {@link BaseModel.get}
 	 */
 	targetid: string;
+	/**
+	 * The substate object that holds the state context for each substate.
+	 */
 	substate: Record<string, statecontext>;
 
 	/**
@@ -283,8 +331,18 @@ export class statecontext {
 }
 
 @insavegame
+/**
+ * Represents a state in a state machine.
+ * @template T - The type of the game object or model associated with the state.
+ */
 export class sstate<T extends GameObject | BaseModel = any> {
+	/**
+	 * The unique identifier for the state definition.
+	 */
 	public statedef_id: string;
+	/**
+	 * The identifier of the machine definition.
+	 */
 	public machinedef_id: string;
 	/**
 	 * `If != undefined`, this state is a substate of the the state with `parentid`
@@ -295,6 +353,9 @@ export class sstate<T extends GameObject | BaseModel = any> {
 	 * @see BaseModel.get
 	 */
 	public targetid: string;
+	/**
+	 * Number of runs before tapehead moves to next statedata.
+	 */
 	public nudges2move!: number; // Number of runs before tapehead moves to next statedata
 
 	/**
@@ -356,6 +417,9 @@ export class sstate<T extends GameObject | BaseModel = any> {
 		}
 	}
 
+	/**
+	 * The position of the tape head.
+	 */
 	protected _tapehead!: number;
 	/**
 	 * Gets the current position of the tapehead.
@@ -427,6 +491,9 @@ export class sstate<T extends GameObject | BaseModel = any> {
 		this._nudges = v;
 	}
 
+	/**
+	 * The number of nudges.
+	 */
 	protected _nudges!: number;
 	/**
 	 * Returns the current number of nudges of the tapehead.
@@ -472,16 +539,38 @@ export class sstate<T extends GameObject | BaseModel = any> {
  * Represents a state definition for a state machine.
  */
 export class sdef {
+	/**
+	 * The unique identifier for the bfsm.
+	 */
 	public id: string;
+	/**
+	 * The tape used by the BFSM.
+	 */
 	public tape!: Tape;
+	/**
+	 * Number of runs before tapehead moves to next statedata.
+	 */
 	public nudges2move: number; // Number of runs before tapehead moves to next statedata
+	/**
+	 * Specifies whether the tapehead should automatically rewind to index 0 when it reaches the end of the tape.
+	 * If set to true, the tapehead will be set to index 0 when it would go out of bounds.
+	 * If set to false, the tapehead will remain at the end of the tape.
+	 */
 	public auto_rewind_tape_after_end: boolean = true; // Automagically set the tapehead to index 0 when tapehead would go out of bound. Otherwise, will remain at end
 
+	/**
+	 * The behavior tree associated with this bfsm.
+	 */
 	public behaviorTree?: BTNode;
 
 	@exclude_save
 	public parent!: mdef;
 
+	/**
+	 * Constructs a new instance of the `bfsm` class.
+	 * @param _id - The ID of the `bfsm` instance.
+	 * @param _partialdef - An optional partial definition to assign to the `bfsm` instance.
+	 */
 	public constructor(_id: string = '_', _partialdef?: Partial<sdef>) {
 		this.id = _id;
 		this.nudges2move ??= 1;
@@ -602,13 +691,23 @@ export class mdef {
 	}
 }
 
+/**
+ * Represents the status of a behavior tree node.
+ * Possible values are 'RUNNING', 'SUCCESS', and 'FAILED'.
+ */
 type BTStatus = 'RUNNING' | 'SUCCESS' | 'FAILED';
 
+/**
+ * Represents the feedback of a behavior tree node.
+ */
 type BTNodeFeedback = {
 	status: BTStatus,
 	updates?: (blackboard: Blackboard) => void;  // Detailed information about the action taken or decision made
 };
 
+/**
+ * Represents a blackboard that stores key-value bindings.
+ */
 class Blackboard {
 	private getBindings: Map<string, () => any> = new Map();
 	private setBindings: Map<string, (value: any) => void> = new Map();
@@ -620,22 +719,48 @@ class Blackboard {
 		});
 	}
 
+	/**
+	 * Retrieves the value associated with the specified key.
+	 *
+	 * @param key - The key of the value to retrieve.
+	 * @returns The value associated with the key, or undefined if the key does not exist.
+	 * @template T - The type of the value to retrieve.
+	 */
 	get<T>(key: string): T | undefined {
 		const propertyFunc = this.getBindings.get(key);
 		return propertyFunc ? propertyFunc() as T : undefined;
 	}
 
+	/**
+	 * Sets the value for the specified key.
+	 *
+	 * @param key - The key to set the value for.
+	 * @param value - The value to set.
+	 */
 	set(key: string, value: any) {
 		const setFunc = this.setBindings.get(key);
 		setFunc && setFunc(value);
 	}
 
-	// Optional: Method to update/add new bindings dynamically
+	/**
+	 * Binds a property to the specified key.
+	 *
+	 * @param getProperty A function that retrieves the property value.
+	 * @param setProperty A function that sets the property value.
+	 * @param key The key to bind the property to.
+	 */
 	bindProperty(getProperty: () => any, setProperty: (value: any) => void, key: string) {
 		this.getBindings.set(key, getProperty);
 		this.setBindings.set(key, setProperty);
 	}
 
+	/**
+	 * Creates a binding object for a property of an object.
+	 * @param object The object to bind the property to.
+	 * @param property The property name to bind.
+	 * @param key The key for the binding object.
+	 * @returns The binding object with getter, setter, and key properties.
+	 */
 	public static createBinding<T>(object: T, property: keyof T, key: string) {
 		return {
 			getProperty: () => (object[property] as any),
@@ -644,6 +769,14 @@ class Blackboard {
 		};
 	}
 
+	/**
+	 * Creates bindings for the specified object properties.
+	 *
+	 * @template T - The type of the object.
+	 * @param object - The object to create bindings for.
+	 * @param properties - An array of property definitions.
+	 * @returns An array of binding objects.
+	 */
 	public static createBindings<T>(object: T, properties: Array<{ property: keyof T, key: string }>) {
 		return properties.map(prop => ({
 			getProperty: () => (object[prop.property] as any),
@@ -653,25 +786,62 @@ class Blackboard {
 	}
 }
 
-// Base class for BT nodes
+/**
+ * Represents an abstract base class for behavior tree nodes.
+ */
 abstract class BTNode {
+	/**
+	 * The ID of the target object.
+	 */
 	public targetid: string;
+	/**
+	 * The priority of the node.
+	 */
 	public priority: number;
+	/**
+	 * The blackboard object used for storing data in the BT.
+	 */
 	public blackboard: Blackboard;
+	/**
+	 * Constructs a new instance of the Bfsm class.
+	 * @param _targetid - The target ID.
+	 * @param _blackboard - The blackboard.
+	 * @param _priority - The priority (optional, default value is 0).
+	 */
 	constructor(_targetid: string, _blackboard: Blackboard, _priority = 0) {
 		this.targetid = _targetid;
 		this.blackboard = _blackboard;
 		this.priority = _priority;
 	}
 
+	/**
+	 * Executes the behavior tree node.
+	 * @returns The feedback from the execution of the node.
+	 */
 	abstract tick(): BTNodeFeedback;
 }
 
+/**
+ * Represents a sequence node in a behavior tree.
+ */
 class SequenceNode extends BTNode {
+	/**
+	 * Creates an instance of the BFsm class.
+	 * @param _targetid - The target ID.
+	 * @param _blackboard - The blackboard.
+	 * @param children - The child nodes.
+	 * @param _priority - The priority (optional, default is 0).
+	 */
 	constructor(_targetid: string, _blackboard: Blackboard, public children: BTNode[], _priority = 0) {
 		super(_targetid, _blackboard, _priority);
 	}
 
+	/**
+	 * Executes the tick operation on each child node in sequence.
+	 * If any child node fails, the sequence fails.
+	 * If all child nodes succeed, the sequence succeeds.
+	 * @returns The feedback status of the sequence node.
+	 */
 	tick(): BTNodeFeedback {
 		for (const child of this.children) {
 			const result = child.tick();
@@ -683,11 +853,25 @@ class SequenceNode extends BTNode {
 	}
 }
 
+/**
+ * Represents a selector node in a behavior tree.
+ */
 class SelectorNode extends BTNode {
+	/**
+	 * Creates an instance of the BFsm class.
+	 * @param _targetid - The target ID.
+	 * @param _blackboard - The blackboard.
+	 * @param children - The child nodes.
+	 * @param _priority - The priority (optional).
+	 */
 	constructor(_targetid: string, _blackboard: Blackboard, public children: BTNode[], _priority = 0) {
 		super(_targetid, _blackboard, _priority);
 	}
 
+	/**
+	 * Executes the tick operation on the selector node.
+	 * @returns The feedback of the tick operation.
+	 */
 	tick(): BTNodeFeedback {
 		for (const child of this.children) {
 			const result = child.tick();
@@ -699,11 +883,18 @@ class SelectorNode extends BTNode {
 	}
 }
 
+/**
+ * Represents a parallel node in a behavior tree.
+ */
 class ParallelNode extends BTNode {
 	constructor(_targetid: string, _blackboard: Blackboard, public children: BTNode[], public successPolicy: 'ONE' | 'ALL', _proirity = 0) {
 		super(_targetid, _blackboard, _proirity);
 	}
 
+	/**
+	 * Executes the tick operation on the parallel node.
+	 * @returns The feedback of the tick operation.
+	 */
 	tick(): BTNodeFeedback {
 		let successCount = 0;
 		let running = false;
@@ -728,45 +919,103 @@ class ParallelNode extends BTNode {
 	}
 }
 
+/**
+ * Represents a decorator node in a behavior tree.
+ */
 class DecoratorNode extends BTNode {
+	/**
+	 * Constructs a new instance of the BFsm class.
+	 * @param _targetid The target ID.
+	 * @param _blackboard The blackboard.
+	 * @param child The child node.
+	 * @param decorator The decorator function.
+	 * @param _priority The priority.
+	 */
 	constructor(_targetid: string, _blackboard: Blackboard, public child: BTNode, public decorator: (status: BTStatus) => BTStatus, _priority = 0) {
 		super(_targetid, _blackboard, _priority);
 	}
 
+	/**
+	 * Executes the tick operation on the child node and applies the decorator function to the result.
+	 * @returns The feedback of the decorator node.
+	 */
 	tick(): BTNodeFeedback {
 		const result = this.child.tick();
 		return { status: this.decorator(result.status) };
 	}
 }
 
+/**
+ * Represents a node in a behavior tree that evaluates a condition.
+ */
 class ConditionNode extends BTNode {
+	/**
+	 * Constructs a new instance of the Bfsm class.
+	 * @param _targetid The target ID.
+	 * @param _blackboard The blackboard.
+	 * @param condition The condition function.
+	 * @param _priority The priority (optional, default value is 0).
+	 */
 	constructor(_targetid: string, _blackboard: Blackboard, public condition: () => boolean, _priority = 0) {
 		super(_targetid, _blackboard, _priority);
 	}
 
+	/**
+	 * Executes the condition node and returns the feedback based on the evaluation result.
+	 * @returns The feedback indicating the status of the condition node.
+	 */
 	tick(): BTNodeFeedback {
 		return this.condition() ? { status: 'SUCCESS' } : { status: 'FAILED' };
 	}
 }
 
+/**
+ * Represents a node in a behavior tree that randomly selects and executes one of its child nodes.
+ */
 class RandomSelectorNode extends BTNode {
+	/**
+	 * Constructs a new instance of the BFsm class.
+	 * @param _targetid The target ID.
+	 * @param _blackboard The blackboard.
+	 * @param children The child nodes.
+	 * @param _priorirty The priority (optional, default value is 0).
+	 */
 	constructor(_targetid: string, _blackboard: Blackboard, public children: BTNode[], _priorirty = 0) {
 		super(_targetid, _blackboard, _priorirty);
 	}
 
+	/**
+	 * Executes the random selection logic and ticks the selected child node.
+	 * @returns The feedback from the selected child node.
+	 */
 	tick(): BTNodeFeedback {
 		const randomIndex = Math.floor(Math.random() * this.children.length);
 		return this.children[randomIndex].tick();
 	}
 }
 
+/**
+ * Represents a node in a behavior tree that limits the number of times its child node can be executed.
+ */
 class LimitNode extends BTNode {
 	private count: number = 0;
 
+	/**
+	 * Creates an instance of LimitNode.
+	 * @param _targetid - The target ID of the node.
+	 * @param _blackboard - The blackboard object.
+	 * @param limit - The maximum number of times the child node can be executed.
+	 * @param child - The child node to be executed.
+	 * @param _priority - The priority of the node.
+	 */
 	constructor(_targetid: string, _blackboard: Blackboard, public limit: number, public child: BTNode, _priority = 0) {
 		super(_targetid, _blackboard, _priority);
 	}
 
+	/**
+	 * Executes the node's logic.
+	 * @returns The feedback of the node's execution.
+	 */
 	tick(): BTNodeFeedback {
 		if (this.count < this.limit) {
 			const result = this.child.tick();
@@ -779,11 +1028,25 @@ class LimitNode extends BTNode {
 	}
 }
 
+/**
+ * Represents a priority selector node in a behavior tree.
+ */
 class PrioritySelectorNode extends BTNode {
+	/**
+	 * Constructs a new instance of the BFsm class.
+	 * @param _targetid The target ID.
+	 * @param _blackboard The blackboard.
+	 * @param children The child nodes.
+	 * @param _priority The priority.
+	 */
 	constructor(_targetid: string, _blackboard: Blackboard, public children: BTNode[], _priority = 0) {
 		super(_targetid, _blackboard, _priority);
 	}
 
+	/**
+	 * Executes the tick operation on the priority selector node.
+	 * @returns The feedback of \the tick operation.
+	 */
 	tick(): BTNodeFeedback {
 		for (const child of this.children) {
 			const result = child.tick();
@@ -795,53 +1058,95 @@ class PrioritySelectorNode extends BTNode {
 	}
 }
 
+/**
+ * Represents a node in a behavior tree that waits for a specific amount of time before returning success.
+ */
 class WaitNode extends BTNode {
-	private startTime: number | null = null;
+	private startTick: number | null = null;
+	private currentTick: number = 0;
 
+	/**
+	 * Creates an instance of WaitNode.
+	 * @param _targetid - The target ID of the node.
+	 * @param _blackboard - The blackboard object.
+	 * @param waitTime - The amount of time to wait in ticks.
+	 * @param _priority - The priority of the node.
+	 */
 	constructor(_targetid: string, _blackboard: Blackboard, public waitTime: number, _priority = 0) {
 		super(_targetid, _blackboard, _priority);
 	}
 
+	/**
+	 * Executes the tick logic of the node.
+	 * @returns The feedback of the node.
+	 */
 	tick(): BTNodeFeedback {
-		const currentTime = Date.now();
-		if (this.startTime === null) {
-			this.startTime = currentTime;
+		if (!this.startTick) this.startTick = this.currentTick;
+
+		if (this.currentTick - this.startTick < this.waitTime) {
+			this.currentTick++;
 			return { status: 'RUNNING' };
 		}
 
-		if (currentTime - this.startTime < this.waitTime) {
-			return { status: 'RUNNING' };
-		}
-
-		this.startTime = null;
+		this.startTick = null;
+		this.currentTick = 0;
 		return { status: 'SUCCESS' };
 	}
 }
+/**
+ * Represents a node in a behavior tree that performs an action.
+ * @example
+ * const changeHealthAction = (blackboard: Blackboard) => {
+ *     let currentHealth = blackboard.get<number>('health');
+ *     blackboard.set('health', currentHealth - 10); // Example: reduce health
+ * };
+ * // Usage in an ActionNode
+ * const healthActionNode = new ActionNode('enemy1', blackboard, changeHealthAction);
 
+ */
 class ActionNode extends BTNode {
-	constructor(_targetid: string, _blackboard: Blackboard, public action: (blackboard: Blackboard) => void, _proirity = 0) {
-		super(_targetid, _blackboard, _proirity);
+	/**
+	 * Constructs a new instance of the `BFSM` class.
+	 * @param _targetid The target ID.
+	 * @param _blackboard The blackboard.
+	 * @param action The action to be performed by the `BFSM`.
+	 * @param _priority The priority of the `BFSM`. Default is 0.
+	 */
+	constructor(_targetid: string, _blackboard: Blackboard, public action: (blackboard: Blackboard) => void, _priority = 0) {
+		super(_targetid, _blackboard, _priority);
 	}
 
+	/**
+	 * Executes the action associated with this node.
+	 * @returns The feedback of the action execution.
+	 */
 	tick(): BTNodeFeedback {
 		this.action(this.blackboard);
 		return { status: 'SUCCESS' };
 	}
 }
-// Example usage
-// const changeHealthAction = (blackboard: Blackboard) => {
-//     let currentHealth = blackboard.get<number>('health');
-//     blackboard.set('health', currentHealth - 10); // Example: reduce health
-// };
 
-// // Usage in an ActionNode
-// const healthActionNode = new ActionNode('enemy1', blackboard, changeHealthAction);
-
+/**
+ * Represents a composite action node in a behavior tree.
+ * A composite action node is a type of node that contains multiple child action nodes.
+ * When ticked, it executes all the child action nodes in sequence.
+ */
 class CompositeActionNode extends BTNode {
+	/**
+	 * Constructs a new instance of the Bfsm class.
+	 * @param _targetid - The target ID.
+	 * @param _blackboard - The blackboard.
+	 * @param actions - The action nodes.
+	 * @param _priority - The priority (optional, default value is 0).
+	 */
 	constructor(_targetid: string, _blackboard: Blackboard, public actions: ActionNode[], _priority = 0) {
 		super(_targetid, _blackboard, _priority);
 	}
 
+	/**
+	 * Executes the tick operation for the BFStateMachine.
+	 * @returns The feedback of the tick operation.
+	 */
 	tick(): BTNodeFeedback {
 		for (const action of this.actions) {
 			action.tick();
