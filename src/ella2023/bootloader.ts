@@ -152,7 +152,6 @@ class bclass extends SpriteObject {
 
     constructor() {
         super('The B');
-        // this.imgid = BitmapId.b;
         this.hitarea = new_area(0, 0, 14, 18);
         this.addComponent(new TestComponent(this.id));
     }

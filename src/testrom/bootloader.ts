@@ -11,6 +11,8 @@ import { new_area, Direction, Game, new_vec2, get_gamemodel } from '../bmsx/bmsx
 import { GameObject } from '../bmsx/gameobject';
 import { BaseModel } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';
+import { Component, componenttag, update_tagged_components } from '../bmsx/component';
+import { oneTimeGlobalEventHandler, subscribesToParentScopedEvent } from '../bmsx/eventemitter';
 
 var _game: Game;
 let _model: gamemodel;
@@ -114,12 +116,14 @@ class bclass extends SpriteObject {
                     case 'bla':
                         if (consumed) break;
                         Input.consumeAction(0, action);
+                        this.testmeuk();
 
                         this.state.to('bla');
                         break;
                     case 'blap':
                         if (consumed) break;
                         Input.consumeAction(0, action);
+                        global.eventEmitter.emit('testEventOnce', this.id);
 
                         this.state.to('#blap');
                         break;
@@ -141,12 +145,48 @@ class bclass extends SpriteObject {
         };
     }
 
+    @update_tagged_components('test')
+    testmeuk() {
+        console.log('testmeuk');
+    }
+
     constructor() {
         super('The B');
-        // this.imgid = BitmapId.b;
         this.hitarea = new_area(0, 0, 14, 18);
+        this.addComponent(new DerivedTestComponent(this.id));
+
     }
 };
+
+@componenttag('test')
+class TestComponent extends Component {
+    // Implement virtual methods
+    override update() {
+        console.log('TestComponent update');
+    }
+
+    // Implement event handlers
+    @subscribesToParentScopedEvent('testEvent')
+    onTestEvent() {
+        console.log('TestComponent onTestEvent');
+    }
+
+    @oneTimeGlobalEventHandler('testEventOnce')
+    onTestEvent2() {
+        console.log('TestComponent onTestEvent2');
+    }
+
+    onTestEvent3() {
+        console.log('TestComponent onTestEvent3');
+    }
+}
+
+class DerivedTestComponent extends TestComponent {
+    override update() {
+        super.update();
+        console.log('DerivedTestComponent update');
+    }
+}
 
 const savestring = Symbol('savestring');
 @insavegame
