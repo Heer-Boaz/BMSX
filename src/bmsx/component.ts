@@ -1,5 +1,6 @@
 import { GameObjectId } from './bmsx';
 import { onload, exclude_save } from './gameserializer';
+import { ConstructorWithEventSubscriptions, EventEmitter, EventSubscription } from './eventemitter';
 
 /**
  * Represents a container for components.
@@ -29,10 +30,11 @@ export abstract class Component {
     public parentid: GameObjectId | null = null;
     @exclude_save
     public static tags: Set<ComponentTag>;
+    public static eventSubscriptions: EventSubscription[];
 
     constructor(_id: GameObjectId) {
         this.parentid = _id;
-        // this.init();
+        this.init();
     }
 
     hasTag(tag: ComponentTag): boolean {
@@ -40,14 +42,21 @@ export abstract class Component {
         return componentClass.tags?.has(tag) ?? false;
     }
 
-    // @onload
-    // init() {
-    //     this.initEventHandlers();
-    // }
+    @onload
+    init() {
+        this.initEventSubscriptions();
+    }
 
-    // // Implement this method to handle component initialization
-    // initEventHandlers() { }
+    protected initEventSubscriptions() {
+        const constr = this.constructor as ConstructorWithEventSubscriptions;
+        if (!constr.eventSubscriptions) return;
 
+        const eventEmitter = EventEmitter.getInstance();
+        constr.eventSubscriptions.forEach(subscription => {
+            const handler = this[subscription.handlerName].bind(this);
+            eventEmitter.on(subscription.eventName, handler, this.parentid);
+        });
+    }
     // Implement this method to handle component initialization
     initTags() { }
 
@@ -96,7 +105,7 @@ function updateAllTags(constructor: any) {
         currentClass = Object.getPrototypeOf(currentClass);
     }
 
-    constructor.allTagsCache = tags;
+    constructor.tags = tags;
 }
 
 /**

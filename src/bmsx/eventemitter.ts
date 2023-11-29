@@ -68,6 +68,53 @@ export class EventEmitter {
 }
 
 /**
+ * Represents a subscription to an event.
+ */
+export type EventSubscription = {
+    /**
+     * The name of the event.
+     */
+    eventName: string;
+    /**
+     * The name of the event handler.
+     */
+    handlerName: string;
+};
+
+/**
+ * Represents a constructor function that supports event subscriptions.
+ */
+export type ConstructorWithEventSubscriptions = Function & {
+    eventSubscriptions?: EventSubscription[];
+};
+
+// Helper function to update all event subscriptions
+function updateAllEventSubscriptions(constructor: any) {
+    let currentClass: any = constructor;
+    const subscriptions = new Array<EventSubscription>();
+
+    while (currentClass !== Object) {
+        if (currentClass.eventSubscriptions) {
+            subscriptions.push(...currentClass.eventSubscriptions);
+        }
+        currentClass = Object.getPrototypeOf(currentClass);
+    }
+
+    constructor.eventSubscriptions = subscriptions;
+}
+
+// Decorator for event subscriptions
+export function subscribes_to(eventName: string) {
+    return function (target: any, propertyKey: string) {
+        if (!target.constructor.eventSubscriptions) {
+            target.constructor.eventSubscriptions = [];
+        }
+        target.constructor.eventSubscriptions.push({ eventName, handlerName: propertyKey });
+        updateAllEventSubscriptions(target.constructor);
+    };
+}
+
+/**
  * Decorator that registers a method as a handler for a specific event.
  *
  * @param eventName The name of the event to handle.
