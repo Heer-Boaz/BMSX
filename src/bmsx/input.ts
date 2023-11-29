@@ -240,10 +240,10 @@ export class Input {
         const inputMap = Input.inputMaps[playerIndex];
         if (!inputMap) return;
 
-        const keyboardKey = inputMap.keyboard[action];
-        const gamepadButton = Input.GAMEPAD_BUTTONS[inputMap.gamepad[action]];
+        const keyboardKey = inputMap.keyboard?.[action];
+        const gamepadButton = inputMap.gamepad?.[action] ? Input.GAMEPAD_BUTTONS[inputMap.gamepad[action]] : null;
 
-        if (keyboardKey && playerIndex === 0) {
+        if (keyboardKey) {
             this.consumeKey(keyboardKey);
         }
 
