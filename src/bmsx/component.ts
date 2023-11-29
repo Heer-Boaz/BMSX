@@ -78,7 +78,7 @@ type ConstructorWithTagsProperty = Function & {
  * @param tag The tag to be added.
  * @returns A decorator function that adds the tag to the component constructor.
  */
-export function tag(...tags: ComponentTag[]) {
+export function componenttag(...tags: ComponentTag[]) {
     return function (constructor: ConstructorWithTagsProperty) {
         if (!constructor.hasOwnProperty('tags')) {
             constructor.tags = new Set<ComponentTag>();

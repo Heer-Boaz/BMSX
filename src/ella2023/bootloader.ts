@@ -11,7 +11,7 @@ import { new_area, Direction, Game, new_vec2, get_gamemodel } from '../bmsx/bmsx
 import { GameObject } from '../bmsx/gameobject';
 import { BaseModel } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';
-import { Component, tag, update_tagged_components } from '../bmsx/component';
+import { Component, componenttag, update_tagged_components } from '../bmsx/component';
 import { EventEmitter, oneTimeGlobalEventHandler, subscribesToParentScopedEvent as subscribesToParentScopedEvent } from '../bmsx/eventemitter';
 
 var _game: Game;
@@ -158,7 +158,7 @@ class bclass extends SpriteObject {
     }
 };
 
-@tag('test')
+@componenttag('test')
 class TestComponent extends Component {
     // Implement virtual methods
     override update() {
