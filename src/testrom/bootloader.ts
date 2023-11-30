@@ -1,11 +1,11 @@
-import { machine_states, statecontext } from './../bmsx/bfsm';
+import { base_model_spaces } from './../bmsx/model';
 import { GamepadButton } from './../bmsx/input';
 import { RomPack } from '../bmsx/rompack';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
 import { Input, InputMap, KeyboardButton, GamepadInputMapping, KeyboardInputMapping } from '../bmsx/input';
-import { sstate, statedef_builder, machine_states, build_fsm } from '../bmsx/bfsm';
+import { sstate, statedef_builder, machine_states, build_fsm, assign_fsm } from '../bmsx/bfsm';
 import { insavegame } from '../bmsx/gameserializer';
 import { show_download_savestate_dialog, show_openfile_dialog, show_load_savestate_dialog } from '../bmsx/gamestatedialog';
 import { new_area, Direction, Game, new_vec2, get_gamemodel } from '../bmsx/bmsx';
@@ -64,9 +64,11 @@ const gamepadInputMapping: MyGamepadInputMapping = {
 };
 
 @insavegame
+// @assign_fsm('bclass_animation', 'bclass_meuk')
+@assign_fsm('bclass_animation', 'bclass_meuk')
 class bclass extends SpriteObject {
-    @build_fsm('animation')
-    public static bouw_testfms(): machine_states {
+    @build_fsm('bclass_animation')
+    public static bouw_testfsm(): machine_states {
         return {
             states: {
                 ani1: {
@@ -76,6 +78,22 @@ class bclass extends SpriteObject {
                 '#ani2': {
                     run: () => {},
                     enter(this: bclass) { this.imgid = BitmapId.b2; },
+                },
+            }
+        };
+    }
+
+    @build_fsm('bclass_meuk')
+    public static bouw_meukfsm(): machine_states {
+        return {
+            states: {
+                '#meuk1': {
+                    run: () => {},
+                    enter(this: bclass) { this.pos.x += 10; },
+                },
+                meuk2: {
+                    run: () => {},
+                    enter(this: bclass) { this.pos.y += 10; },
                 },
             }
         };
@@ -136,13 +154,17 @@ class bclass extends SpriteObject {
                         this.testmeuk();
 
                         this.state.to('bla');
+                        this.state.substate.bclass_animation.to('#ani2');
+                        this.state.substate.bclass_meuk.to('meuk2');
                         break;
                     case 'blap':
                         if (consumed) break;
                         Input.consumeAction(0, action);
                         global.eventEmitter.emit('testEventOnce', this.id);
 
+                        this.state.substate.bclass_animation.to('ani1');
                         this.state.to('#blap');
+                        this.state.substate.bclass_meuk.to('#meuk1');
                         break;
                 }
             }
@@ -152,11 +174,11 @@ class bclass extends SpriteObject {
             states: {
                 bla: {
                     run: blarun,
-                    enter(this: bclass) { this.imgid = BitmapId.b; },
+                    // enter(this: bclass) { this.imgid = BitmapId.b; },
                 },
                 '#blap': {
                     run: blarun,
-                    enter(this: bclass) { this.imgid = BitmapId.b2; },
+                    // enter(this: bclass) { this.imgid = BitmapId.b2; },
                 },
             }
         };
@@ -169,7 +191,7 @@ class bclass extends SpriteObject {
 
     constructor() {
         super('The B');
-        this.state.substate.animation.to('ani1');
+        this.imgid = BitmapId.b2;
         this.hitarea = new_area(0, 0, 14, 18);
         this.addComponent(new DerivedTestComponent(this.id));
 

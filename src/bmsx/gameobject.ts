@@ -1,4 +1,4 @@
-import { statecontext } from "./bfsm";
+import { ConstructorWithFSMProperty, statecontext } from "./bfsm";
 import { vec3, Area, Direction, new_vec2, mod, vec2, new_vec3, new_area, GameObjectId as GameObjectId } from "./bmsx";
 import { insavegame } from "./gameserializer";
 import { TileSize } from "./msx";
@@ -221,6 +221,21 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
         this.size = new_vec3(0, 0, 0);
         this.disposeFlag = false;
         this.state = statecontext.create(_fsm_id ?? this.constructor.name, this.id);
+        // Call the method to initialize linked state machines
+        this.initializeLinkedFSMs();
+    }
+
+    protected initializeLinkedFSMs() {
+        // Get the constructor of the current instance
+        const constructor = this.constructor as ConstructorWithFSMProperty;
+
+        // Check if the constructor has the 'linkedFSMs' property
+        if (constructor.linkedFSMs) {
+            // Iterate over the FSM names and create the state machines
+            constructor.linkedFSMs.forEach(fsm => {
+                this.state.substate[fsm] = statecontext.create(fsm, this.id);
+            });
+        }
     }
 
     /**
