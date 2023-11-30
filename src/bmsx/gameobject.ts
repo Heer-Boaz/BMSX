@@ -3,6 +3,7 @@ import { vec3, Area, Direction, new_vec2, mod, vec2, new_vec3, new_area, GameObj
 import { insavegame } from "./gameserializer";
 import { TileSize } from "./msx";
 import { Component, IComponentContainer, update_tagged_components } from "./component";
+import { Blackboard, BTNode, constructBehaviorTree, ConstructorWithBTProperty } from "./behaviourtree";
 
 export interface IIdentifiable {
     id: string;
@@ -79,6 +80,7 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
     }
 
     public state: statecontext;
+    public behaviortrees: { [name: string]: BTNode };
     public hitarea: Area;
 
     public hittable: boolean;
@@ -223,6 +225,7 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
         this.state = statecontext.create(_fsm_id ?? this.constructor.name, this.id);
         // Call the method to initialize linked state machines
         this.initializeLinkedFSMs();
+        this.initializeBehaviorTrees();
     }
 
     protected initializeLinkedFSMs() {
@@ -234,6 +237,21 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
             // Iterate over the FSM names and create the state machines
             constructor.linkedFSMs.forEach(fsm => {
                 this.state.substate[fsm] = statecontext.create(fsm, this.id);
+            });
+        }
+    }
+
+    protected initializeBehaviorTrees() {
+        // Get the constructor of the current instance
+        const constructor = this.constructor as ConstructorWithBTProperty;
+
+        // Check if the constructor has the 'linkedBTs' property
+        if (constructor.linkedBTs) {
+            // Iterate over the behavior tree names and create the behavior trees
+            constructor.linkedBTs.forEach(bt => {
+                let blackboard = new Blackboard();
+                let treeBuilt = constructBehaviorTree(bt, blackboard, this.id);
+                if (treeBuilt) this.behaviortrees[bt] = treeBuilt;
             });
         }
     }

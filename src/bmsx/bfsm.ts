@@ -33,13 +33,13 @@ export type ConstructorWithFSMProperty = Function & {
  * @returns A decorator function.
  */
 export function assign_fsm(...fsms: FSMName[]) {
-    return function (constructor: ConstructorWithFSMProperty) {
-        if (!constructor.hasOwnProperty('linkedFSMs')) {
-            constructor.linkedFSMs = new Set<FSMName>();
-        }
-        fsms.forEach(fsm => constructor.linkedFSMs.add(fsm));
-        updateAllAssignedFSMs(constructor);
-    };
+	return function (constructor: ConstructorWithFSMProperty) {
+		if (!constructor.hasOwnProperty('linkedFSMs')) {
+			constructor.linkedFSMs = new Set<FSMName>();
+		}
+		fsms.forEach(fsm => constructor.linkedFSMs.add(fsm));
+		updateAllAssignedFSMs(constructor);
+	};
 }
 
 /**
@@ -48,17 +48,17 @@ export function assign_fsm(...fsms: FSMName[]) {
  * @param constructor - The constructor function.
  */
 function updateAllAssignedFSMs(constructor: any) {
-    const linkedFSMs = new Set<FSMName>();
-    let currentClass: any = constructor;
+	const linkedFSMs = new Set<FSMName>();
+	let currentClass: any = constructor;
 
-    while (currentClass && currentClass !== Object) {
-        if (currentClass.linkedFSMs) {
-            currentClass.linkedFSMs.forEach((fsm: FSMName) => linkedFSMs.add(fsm));
-        }
-        currentClass = Object.getPrototypeOf(currentClass);
-    }
+	while (currentClass && currentClass !== Object) {
+		if (currentClass.linkedFSMs) {
+			currentClass.linkedFSMs.forEach((fsm: FSMName) => linkedFSMs.add(fsm));
+		}
+		currentClass = Object.getPrototypeOf(currentClass);
+	}
 
-    constructor.linkedFSMs = linkedFSMs;
+	constructor.linkedFSMs = linkedFSMs;
 }
 
 /**

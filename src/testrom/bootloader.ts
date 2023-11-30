@@ -14,6 +14,7 @@ import { BaseModel } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';
 import { Component, componenttag, update_tagged_components } from '../bmsx/component';
 import { oneTimeGlobalEventHandler, subscribesToParentScopedEvent } from '../bmsx/eventemitter';
+import { BehaviorTreeDefinition, Blackboard, BTNode, BTStatus, build_bt, SelectorNode } from '../bmsx/behaviourtree';
 
 var _game: Game;
 let _model: gamemodel;
@@ -63,20 +64,32 @@ const gamepadInputMapping: MyGamepadInputMapping = {
     'blap': 'y',
 };
 
+
 @insavegame
-// @assign_fsm('bclass_animation', 'bclass_meuk')
 @assign_fsm('bclass_animation', 'bclass_meuk')
 class bclass extends SpriteObject {
+    @build_bt('myTreeName')
+    public static buildMyTree(): BehaviorTreeDefinition {
+        return {
+            type: 'Selector',
+            children: [
+                { type: 'Condition', condition: () => { return false; }/* condition logic */ },
+                { type: 'Action', action: () => { }/* action logic */ },
+                // Other nodes...
+            ]
+        };
+    }
+
     @build_fsm('bclass_animation')
     public static bouw_testfsm(): machine_states {
         return {
             states: {
                 ani1: {
-                    run: () => {},
+                    run: () => { },
                     enter(this: bclass) { this.imgid = BitmapId.b; },
                 },
                 '#ani2': {
-                    run: () => {},
+                    run: () => { },
                     enter(this: bclass) { this.imgid = BitmapId.b2; },
                 },
             }
@@ -88,11 +101,11 @@ class bclass extends SpriteObject {
         return {
             states: {
                 '#meuk1': {
-                    run: () => {},
+                    run: () => { },
                     enter(this: bclass) { this.pos.x += 10; },
                 },
                 meuk2: {
-                    run: () => {},
+                    run: () => { },
                     enter(this: bclass) { this.pos.y += 10; },
                 },
             }
@@ -174,11 +187,9 @@ class bclass extends SpriteObject {
             states: {
                 bla: {
                     run: blarun,
-                    // enter(this: bclass) { this.imgid = BitmapId.b; },
                 },
                 '#blap': {
                     run: blarun,
-                    // enter(this: bclass) { this.imgid = BitmapId.b2; },
                 },
             }
         };
