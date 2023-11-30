@@ -14,7 +14,7 @@ import { BaseModel } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';
 import { Component, componenttag, update_tagged_components } from '../bmsx/component';
 import { oneTimeGlobalEventHandler, subscribesToParentScopedEvent } from '../bmsx/eventemitter';
-import { BehaviorTreeDefinition, Blackboard, BTNode, BTStatus, build_bt, SelectorNode } from '../bmsx/behaviourtree';
+import { assign_bt, BehaviorTreeDefinition, Blackboard, BTNode, BTStatus, build_bt, SelectorNode } from '../bmsx/behaviourtree';
 
 var _game: Game;
 let _model: gamemodel;
@@ -67,8 +67,9 @@ const gamepadInputMapping: MyGamepadInputMapping = {
 
 @insavegame
 @assign_fsm('bclass_animation', 'bclass_meuk')
+@assign_bt('bclass_tree')
 class bclass extends SpriteObject {
-    @build_bt('myTreeName')
+    @build_bt('bclass_tree')
     public static buildMyTree(): BehaviorTreeDefinition {
         return {
             type: 'Selector',

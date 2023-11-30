@@ -16,6 +16,7 @@ export type BehaviorTreeDefinition =
     | { type: 'Action'; action: (blackboard: Blackboard) => void }
     | { type: 'CompositeAction'; actions: BehaviorTreeDefinition[] };
 
+let BehaviorTreeDefinitions: { [key: string]: () => BehaviorTreeDefinition } | null = null;
 /**
  * Builds a behavior tree based on the provided configuration.
  *
@@ -95,7 +96,6 @@ function updateAllAssignedBTs(constructor: any) {
     constructor.linkedBTs = linkedBTs;
 }
 
-let BehaviorTreeDefinitions: { [key: string]: BehaviorTreeDefinition } | null = null;
 /**
  * Builds a behavior tree definition.
  * @param treeName - The name of the behavior tree. If not provided, the target's name will be used.
@@ -118,7 +118,7 @@ export function build_bt(treeName?: string) {
 export function constructBehaviorTree(treeName: string, blackboard: Blackboard, targetId: GameObjectId): BTNode | null {
     const treeDefinition = BehaviorTreeDefinitions?.[treeName];
     if (treeDefinition) {
-        return buildBehaviorTree(treeDefinition, blackboard, targetId);
+        return buildBehaviorTree(treeDefinition(), blackboard, targetId);
     }
     return null;
 }

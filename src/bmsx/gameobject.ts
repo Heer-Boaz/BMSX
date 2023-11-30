@@ -244,14 +244,15 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
     protected initializeBehaviorTrees() {
         // Get the constructor of the current instance
         const constructor = this.constructor as ConstructorWithBTProperty;
+        this.behaviortrees = {};
 
         // Check if the constructor has the 'linkedBTs' property
         if (constructor.linkedBTs) {
             // Iterate over the behavior tree names and create the behavior trees
-            constructor.linkedBTs.forEach(bt => {
+            constructor.linkedBTs.forEach(btname => {
                 let blackboard = new Blackboard();
-                let treeBuilt = constructBehaviorTree(bt, blackboard, this.id);
-                if (treeBuilt) this.behaviortrees[bt] = treeBuilt;
+                let treeBuilt = constructBehaviorTree(btname, blackboard, this.id);
+                if (treeBuilt) this.behaviortrees[btname] = treeBuilt;
             });
         }
     }
