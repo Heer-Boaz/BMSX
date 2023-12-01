@@ -74,16 +74,20 @@ class bclass extends SpriteObject {
         return {
             type: 'Selector',
             children: [
-                // {
-                //     type: 'Sequence',
-                //     children: [
-                //         { type: 'Condition', condition: () => Math.random() > 0.5 },
-                //         { type: 'Action', action: (targetid, blackboard) => console.log(`Action 1 executed for ${targetid}`) }
-                //     ]
-                // },
                 {
                     type: 'Sequence',
-                    // successPolicy: 'ALL',
+                    children: [
+                        { type: 'Condition', condition: () => Math.random() > .9 },
+                        {
+                            type: 'Action', action: (targetid, blackboard) => {
+                                console.log(`Action 1 executed for ${targetid}`)
+                                return 'SUCCESS';
+                            }
+                        }
+                    ]
+                },
+                {
+                    type: 'Sequence',
                     children: [
                         { type: 'Wait', waitTime: 50, wait_propname: 'waiting' },
                         {
@@ -123,17 +127,31 @@ class bclass extends SpriteObject {
                         }
                     }
                 },
-                // {
-                //     type: 'RandomSelector',
-                //     children: [
-                //         { type: 'Action', action: (targetid, blackboard) => console.log(`Random action A for ${targetid}`) },
-                //         { type: 'Action', action: (targetid, blackboard) => console.log(`Random action B for ${targetid}`) }
-                //     ]
-                // },
-                // {
-                //     type: 'Action',
-                //     action: (targetid, blackboard) => console.log(`Fallback action executed for ${targetid}`)
-                // }
+                {
+                    type: 'RandomSelector',
+                    children: [
+                        {
+                            type: 'Action', action: (targetid, blackboard) => {
+                                console.log(`Random action A for ${targetid}`)
+                                return 'SUCCESS';
+                            }
+                        },
+                        {
+                            type: 'Action', action: (targetid, blackboard) => {
+                                console.log(`Random action B for ${targetid}`)
+                                return 'SUCCESS';
+                            }
+                        }
+                    ],
+                    currentchild_propname: 'randomchild'
+                },
+                {
+                    type: 'Action',
+                    action: (targetid, blackboard) => {
+                        console.log(`Fallback action executed for ${targetid}`)
+                        return 'SUCCESS';
+                    }
+                }
             ]
         };
     }

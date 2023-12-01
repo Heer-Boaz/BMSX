@@ -207,7 +207,7 @@ export abstract class BTNode {
         this.priority = _priority;
     }
 
-    abstract tick(targetid: GameObjectId, blackboard: Blackboard): any;
+    abstract tick(targetid: GameObjectId, blackboard: Blackboard): BTNodeFeedback;
 }
 
 /**
@@ -227,7 +227,7 @@ export class SequenceNode extends BTNode {
             switch (result.status) {
                 case 'FAILED':
                 case 'RUNNING':
-                    return result.status;
+                    return { status: result.status };
             }
         }
         // Assuming success if none failed
