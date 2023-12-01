@@ -1,3 +1,4 @@
+import { BehaviorTreeDefinition, BehaviorTreeDefinitions, BT_ID, setup_btdef_library, setup_bt_library } from "./behaviourtree";
 import { statecontext, mdef, MachineDefinitions, sdef, setup_fsmdef_library, sstate } from "./bfsm";
 import { Direction, vec2, vec3 } from "./bmsx";
 import { GameObject } from "./gameobject";
@@ -267,6 +268,10 @@ export abstract class BaseModel {
         return MachineDefinitions[machineid].states[stateid];
     }
 
+    public static getBTdef(btid: BT_ID): BehaviorTreeDefinition {
+        return BehaviorTreeDefinitions[btid];
+    }
+
     public abstract get gamewidth(): number;
     public abstract get gameheight(): number;
 
@@ -284,6 +289,7 @@ export abstract class BaseModel {
         this.paused = false;
 
         BaseModel.setup_fsmdef_library();
+        BaseModel.setup_bt_library();
     }
 
     /**
@@ -306,6 +312,11 @@ export abstract class BaseModel {
      */
     private static setup_fsmdef_library(): void {
         setup_fsmdef_library();
+    }
+
+    private static setup_bt_library(): void {
+        setup_btdef_library();
+        setup_bt_library();
     }
 
     /**

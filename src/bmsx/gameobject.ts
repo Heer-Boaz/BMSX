@@ -3,7 +3,7 @@ import { vec3, Area, Direction, new_vec2, mod, vec2, new_vec3, new_area, GameObj
 import { insavegame } from "./gameserializer";
 import { TileSize } from "./msx";
 import { Component, IComponentContainer, update_tagged_components } from "./component";
-import { Blackboard, BTNode, constructBehaviorTree, ConstructorWithBTProperty } from "./behaviourtree";
+import { BehaviorTrees, Blackboard, BTNode, BT_ID, constructBehaviorTree, ConstructorWithBTProperty } from "./behaviourtree";
 
 export interface IIdentifiable {
     id: string;
@@ -80,9 +80,25 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
     }
 
     public state: statecontext;
-    public behaviortrees: { [name: string]: BTNode };
-    public hitarea: Area;
 
+    public behaviortreeIds: { [id: BT_ID]: BT_ID };
+    public get behaviortrees(): { [id: BT_ID]: BTNode } {
+        return new Proxy(BehaviorTrees, {
+            get: (target, prop: string) => {
+                if (this.behaviortreeIds[prop]) {
+                    return target[prop];
+                }
+                return undefined;
+            }
+        });
+    }
+    public blackboards: { [name: BT_ID]: Blackboard };
+
+    public tickTree(bt_id: BT_ID): void {
+        this.behaviortrees[bt_id].tick(this.id, this.blackboards[bt_id]);
+    }
+
+    public hitarea: Area;
     public hittable: boolean;
     public visible: boolean;
 
@@ -244,15 +260,16 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
     protected initializeBehaviorTrees() {
         // Get the constructor of the current instance
         const constructor = this.constructor as ConstructorWithBTProperty;
-        this.behaviortrees = {};
+        this.behaviortreeIds = {};
+        this.blackboards = {};
 
         // Check if the constructor has the 'linkedBTs' property
         if (constructor.linkedBTs) {
             // Iterate over the behavior tree names and create the behavior trees
-            constructor.linkedBTs.forEach(btname => {
+            constructor.linkedBTs.forEach(bt_id => {
                 let blackboard = new Blackboard();
-                let treeBuilt = constructBehaviorTree(btname, blackboard, this.id);
-                if (treeBuilt) this.behaviortrees[btname] = treeBuilt;
+                this.blackboards[bt_id] = blackboard;
+                this.behaviortreeIds[bt_id] = bt_id;
             });
         }
     }
@@ -394,7 +411,6 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
      */
     @update_tagged_components('run')
     public run(): void {
-        // this.components.forEach(component => component.update());
         this.state.run();
     }
 }
