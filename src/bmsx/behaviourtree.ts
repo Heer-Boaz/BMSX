@@ -9,7 +9,7 @@ export type BehaviorTreeDefinition =
     | { type: 'Parallel'; children: BehaviorTreeDefinition[]; successPolicy: 'ONE' | 'ALL' }
     | { type: 'Decorator'; child: BehaviorTreeDefinition; decorator: NodeDecorator }
     | { type: 'Condition'; condition: (targetid: GameObjectId, Blackboard: Blackboard) => boolean }
-    | { type: 'RandomSelector'; children: BehaviorTreeDefinition[] }
+    | { type: 'RandomSelector'; children: BehaviorTreeDefinition[], currentchild_propname: string }
     | { type: 'Limit'; child: BehaviorTreeDefinition; limit: number, count_propname: string, priority?: number }
     | { type: 'PrioritySelector'; children: BehaviorTreeDefinition[] }
     | { type: 'Wait'; waitTime: number, wait_propname: string }
@@ -73,7 +73,7 @@ function buildBehaviorTree(config: BehaviorTreeDefinition, id: BT_ID): BTNode {
         case 'Condition':
             return new ConditionNode(id, config.condition);
         case 'RandomSelector':
-            return new RandomSelectorNode(id, config.children.map(childConfig => buildBehaviorTree(childConfig, id)));
+            return new RandomSelectorNode(id, config.children.map(childConfig => buildBehaviorTree(childConfig, id)), config.currentchild_propname);
         case 'Limit':
             return new LimitNode(id, config.limit, config.count_propname, buildBehaviorTree(config.child, id), config.priority);
         case 'PrioritySelector':
@@ -362,10 +362,12 @@ export class ConditionNode extends BTNode {
  */
 export class RandomSelectorNode extends BTNode {
     public children: BTNode[];
+    public currentchild_propname: string;
 
-    constructor(id: BT_ID, children: BTNode[], _priority = 0) {
+    constructor(id: BT_ID, children: BTNode[], _currentchild_propname: string, _priority = 0) {
         super(id, _priority);
         this.children = children;
+        this.currentchild_propname = _currentchild_propname;
     }
 
     /**
@@ -373,10 +375,25 @@ export class RandomSelectorNode extends BTNode {
      * @returns The feedback from the selected child node.
      */
     tick(targetid: GameObjectId, blackboard: Blackboard): BTNodeFeedback {
-        const randomIndex = Math.floor(Math.random() * this.children.length);
-        return this.children[randomIndex].tick(targetid, blackboard);
+        let currentChildIndex = blackboard.get<number>(this.currentchild_propname);
+
+        // If there is no currently executing child, select a random child
+        if (!currentChildIndex) {
+            currentChildIndex = Math.floor(Math.random() * this.children.length);
+            blackboard.set(this.currentchild_propname, currentChildIndex);
+        }
+
+        // Tick the currently executing child
+        const feedback = this.children[currentChildIndex].tick(targetid, blackboard);
+
+        // If the child has finished executing (either succeeded or failed), reset the current child index
+        if (feedback.status !== 'RUNNING') {
+            blackboard.set(this.currentchild_propname, undefined);
+        }
+        return feedback;
     }
 }
+
 
 /**
  * Represents a node in a behavior tree that limits the number of times its child node can be executed.
@@ -488,15 +505,17 @@ export class WaitNode extends BTNode {
  * };
  * // Usage in an ActionNode
  * const healthActionNode = new ActionNode('enemy1', blackboard, changeHealthAction);
-
  */
+
+export type NodeAction = (targetid: GameObjectId, blackboard: Blackboard) => BTStatus;
+
 /**
  * Represents a node in a behavior tree that performs an action.
  */
 export class ActionNode extends BTNode {
-    public action: (targetid: GameObjectId, blackboard: Blackboard) => BTStatus;
+    public action: NodeAction;
 
-    constructor(id: BT_ID, action: (targetid: GameObjectId, blackboard: Blackboard) => BTStatus, _priority = 0) {
+    constructor(id: BT_ID, action: NodeAction, _priority = 0) {
         super(id, _priority);
         this.action = action;
     }
@@ -530,12 +549,16 @@ export class CompositeActionNode extends BTNode {
      * @returns The feedback of the node.
      */
     tick(targetid: GameObjectId, blackboard: Blackboard): BTNodeFeedback {
+        let feedback: BTNodeFeedback = { status: 'SUCCESS' };
         for (const action of this.actions) {
             const result = action.tick(targetid, blackboard);
-            if (result.status !== 'SUCCESS') {
+            if (result.status === 'FAILED') {
                 return result;
             }
+            if (result.status === 'RUNNING') { // If any action is running, return running
+                feedback = result;
+            }
         }
-        return { status: 'SUCCESS' };
+        return feedback
     }
 }
