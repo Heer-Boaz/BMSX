@@ -14,7 +14,7 @@ import { BaseModel } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';
 import { Component, componenttag, update_tagged_components } from '../bmsx/component';
 import { oneTimeGlobalEventHandler, subscribesToParentScopedEvent } from '../bmsx/eventemitter';
-import { assign_bt, BehaviorTreeDefinition, Blackboard, BTNode, BTStatus, build_bt, SelectorNode } from '../bmsx/behaviourtree';
+import { assign_bt, BehaviorTreeDefinition, Blackboard, BTNode, BTStatus, build_bt, SelectorNode, WaitForActionCompletionDecorator } from '../bmsx/behaviourtree';
 
 var _game: Game;
 let _model: gamemodel;
@@ -74,9 +74,66 @@ class bclass extends SpriteObject {
         return {
             type: 'Selector',
             children: [
-                { type: 'Condition', condition: () => { return false; }/* condition logic */ },
-                { type: 'Action', action: () => { }/* action logic */ },
-                // Other nodes...
+                // {
+                //     type: 'Sequence',
+                //     children: [
+                //         { type: 'Condition', condition: () => Math.random() > 0.5 },
+                //         { type: 'Action', action: (targetid, blackboard) => console.log(`Action 1 executed for ${targetid}`) }
+                //     ]
+                // },
+                {
+                    type: 'Sequence',
+                    // successPolicy: 'ALL',
+                    children: [
+                        { type: 'Wait', waitTime: 50, wait_propname: 'waiting' },
+                        {
+                            type: 'Decorator', decorator: WaitForActionCompletionDecorator,
+                            child: {
+                                type: 'Action', action: (targetid, blackboard) => {
+                                    console.log(`Sequence action after waiting for ${targetid}`);
+                                    let testieblap = blackboard.get<number>('testdieblap') ?? 0;
+                                    let success = false;
+                                    if (++testieblap > 3) {
+                                        testieblap = 0;
+                                        success = true;
+                                    }
+                                    blackboard.set<number>('testdieblap', testieblap);
+                                    return success ? 'SUCCESS' : 'RUNNING';
+                                }
+                            }
+                        },
+                        {
+                            type: 'Action',
+                            action: (targetid, blackboard) => {
+                                console.log(`Sequence action after decorated action for ${targetid}`);
+                                return 'SUCCESS';
+                            }
+                        },
+                    ]
+                },
+                {
+                    type: 'Limit',
+                    limit: 3,
+                    count_propname: 'counting',
+                    child: {
+                        type: 'Action',
+                        action: (targetid, blackboard) => {
+                            console.log(`Limited action for ${targetid}`);
+                            return 'SUCCESS';
+                        }
+                    }
+                },
+                // {
+                //     type: 'RandomSelector',
+                //     children: [
+                //         { type: 'Action', action: (targetid, blackboard) => console.log(`Random action A for ${targetid}`) },
+                //         { type: 'Action', action: (targetid, blackboard) => console.log(`Random action B for ${targetid}`) }
+                //     ]
+                // },
+                // {
+                //     type: 'Action',
+                //     action: (targetid, blackboard) => console.log(`Fallback action executed for ${targetid}`)
+                // }
             ]
         };
     }
@@ -120,11 +177,13 @@ class bclass extends SpriteObject {
             gamepad: gamepadInputMapping,
         } as InputMap);
 
-        // To check if an action is pressed for player 0
-
         function blarun(this: bclass, s: sstate) {
             const speed = 2;
+            if (this.state.current.statedef_id === '#blap') {
+                this.tickTree('bclass_tree');
+            }
 
+            // To check if an action is pressed for player 0
             const pressedActions = Input.getPressedActions(0);
 
             for (const { action, pressed, consumed } of pressedActions) {

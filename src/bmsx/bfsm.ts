@@ -1,7 +1,6 @@
 import { GameObject } from "./gameobject";
 import { exclude_save, insavegame } from "./gameserializer";
 import { BaseModel } from "./model";
-import { BTNode } from "./behaviourtree";
 
 /**
  * Represents the machine definitions.
@@ -286,7 +285,6 @@ export class statecontext {
 
 		currentStatedef.process_input?.call(this.target, this.current, state_event_type.None);
 		// Then, run the state
-		currentStatedef.behaviorTree?.tick();
 		currentStatedef.run?.call(this.target, this.current, state_event_type.Run);
 	}
 
@@ -613,11 +611,6 @@ export class sdef {
 	 * If set to false, the tapehead will remain at the end of the tape.
 	 */
 	public auto_rewind_tape_after_end: boolean = true; // Automagically set the tapehead to index 0 when tapehead would go out of bound. Otherwise, will remain at end
-
-	/**
-	 * The behavior tree associated with this bfsm.
-	 */
-	public behaviorTree?: BTNode;
 
 	@exclude_save
 	public parent!: mdef;
