@@ -70,6 +70,9 @@ export class EventEmitter {
 /**
  * Represents a subscription to an event.
  */
+/**
+ * Represents a subscription to an event.
+ */
 export type EventSubscription = {
     /**
      * The name of the event.
@@ -79,14 +82,22 @@ export type EventSubscription = {
      * The name of the event handler.
      */
     handlerName: string;
+
+    /**
+     * The scope of the event subscription.
+     * - 'all': The event will be consumed for all instances. NOT IMPLEMENTED!
+     * - 'parent': The event will be consumed for the parent instance only.
+     * - 'self': The event will be consumed for the current instance only.
+     */
+    scope: 'all' | 'parent' | 'self';
 };
 
 /**
  * Represents a constructor function that supports event subscriptions.
  */
-export type ConstructorWithEventSubscriptions = Function & {
-    eventSubscriptions?: EventSubscription[];
-};
+export interface IEventSubscriber {
+    eventSubscriptions?: EventSubscription[]
+}
 
 /**
  * Helper function to update all event subscriptions
@@ -118,7 +129,23 @@ export function subscribesToParentScopedEvent(eventName: string) {
         if (!target.constructor.eventSubscriptions) {
             target.constructor.eventSubscriptions = [];
         }
-        target.constructor.eventSubscriptions.push({ eventName, handlerName: propertyKey });
+        target.constructor.eventSubscriptions.push({ eventName, handlerName: propertyKey, scope: 'parent' });
+        updateAllEventSubscriptions(target.constructor);
+    };
+}
+
+/**
+ * Decorator function that subscribes a method to a self-scoped event.
+ *
+ * @param eventName - The name of the event to subscribe to.
+ * @returns A decorator function that adds the event subscription to the target class.
+ */
+export function subscribesToSelfScopedEvent(eventName: string) {
+    return function (target: any, propertyKey: string) {
+        if (!target.constructor.eventSubscriptions) {
+            target.constructor.eventSubscriptions = [];
+        }
+        target.constructor.eventSubscriptions.push({ eventName, handlerName: propertyKey, scope: 'self' });
         updateAllEventSubscriptions(target.constructor);
     };
 }
@@ -139,11 +166,11 @@ export function globalEventHandler(eventName: string) {
  * @param eventName The name of the event to handle.
  * @returns A decorator function that can be applied to a method.
  */
-export function oneTimeGlobalEventHandler(eventName: string) {
-    return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
-        EventEmitter.getInstance().once(eventName, descriptor.value);
-    };
-}
+// export function oneTimeGlobalEventHandler(eventName: string) {
+//     return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
+//         EventEmitter.getInstance().once(eventName, descriptor.value);
+//     };
+// }
 
 /**
  * Decorator function that emits an event when the decorated method is called.
