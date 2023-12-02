@@ -65,118 +65,120 @@ const gamepadInputMapping: MyGamepadInputMapping = {
 
 class enemy extends SpriteObject {
     @build_bt('enemyBehaviorTree')
-    // public static buildEnemyBehaviorTree(): BehaviorTreeDefinition {
-    //     return {
-    //         type: 'Selector',
-    //         children: [
-    //             {
-    //                 type: 'Sequence',
-    //                 children: [
-    //                     {
-    //                         type: 'Condition',
-    //                         condition: this.isPlayerInRange
-    //                     },
-    //                     {
-    //                         type: 'Action',
-    //                         action: this.attackPlayer
-    //                     }
-    //                 ]
-    //             },
-    //             {
-    //                 type: 'Sequence',
-    //                 children: [
-    //                     {
-    //                         type: 'Condition',
-    //                         condition: this.isUnderAttack
-    //                     },
-    //                     {
-    //                         type: 'Action',
-    //                         action: this.defend
-    //                     }
-    //                 ]
-    //             },
-    //             // Additional Sequences for reposition and idle behaviors
-    //             {
-    //                 type: 'Sequence',
-    //                 children: [
-    //                     {
-    //                         type: 'Condition',
-    //                         condition: this.isAtDisadvantage
-    //                     },
-    //                     {
-    //                         type: 'Action',
-    //                         action: this.reposition
-    //                     }
-    //                 ]
-    //             },
-    //             {
-    //                 type: 'Sequence',
-    //                 children: [
-    //                     {
-    //                         type: 'Condition',
-    //                         condition: this.isPlayerIdle
-    //                     },
-    //                     {
-    //                         type: 'Action',
-    //                         action: this.idleBehavior
-    //                     }
-    //                 ]
-    //             },
-    //         ]
-    //     };
-    // }
+    public static buildEnemyBehaviorTree(): BehaviorTreeDefinition {
+        function isPlayerInRange(): boolean {
+            // Logic to determine if the player is in range
+            return false;
+        }
 
-    public isPlayerInRange(): boolean {
-        // Logic to determine if the player is in range
-        return false;
+        function attackPlayer(): BTStatus {
+            // Logic to perform an attack
+            return 'SUCCESS';
+        }
+
+        function isUnderAttack(): boolean {
+            // Logic to determine if the enemy is under attack
+            return false;
+        }
+
+        function defend(): BTStatus {
+            // Logic for defense actions
+            return 'SUCCESS';
+        }
+
+        // Methods for reposition and idle behaviors
+
+        function isAtDisadvantage(this: enemy): boolean {
+            // Example logic: Check if enemy is cornered or too close to the edge
+            // This logic will depend on your game's environment and enemy capabilities
+            const someThreshold = 10;
+            const anotherThreshold = 100;
+            return this.pos.x < someThreshold || this.pos.x > anotherThreshold;
+        }
+
+        function reposition(): BTStatus {
+            // Example logic: Move towards the center or a better strategic position
+            // Implement movement logic based on your game's mechanics
+            // this.moveTo(newPosition); // `moveTo` is a hypothetical method for movement
+            return 'SUCCESS';
+        }
+
+
+        function isPlayerIdle(): boolean {
+            // Example logic: Check if the player hasn't moved or attacked recently
+            // This will require tracking the player's activity
+            // return model.get('player').lastActionTime > idleThreshold;
+            return false;
+        }
+
+        function idleBehavior(this: enemy, blackboard: Blackboard): BTStatus {
+            // Example logic: Perform a taunt or change stance
+            // Implement this based on your game's visual and AI capabilities
+            // this.taunt(); // `taunt` is a hypothetical method for taunting
+            return 'SUCCESS';
+        }
+
+        return {
+            type: 'Selector',
+            children: [
+                {
+                    type: 'Sequence',
+                    children: [
+                        {
+                            type: 'Condition',
+                            condition: isPlayerInRange
+                        },
+                        {
+                            type: 'Action',
+                            action: attackPlayer
+                        }
+                    ]
+                },
+                {
+                    type: 'Sequence',
+                    children: [
+                        {
+                            type: 'Condition',
+                            condition: isUnderAttack
+                        },
+                        {
+                            type: 'Action',
+                            action: defend
+                        }
+                    ]
+                },
+                // Additional Sequences for reposition and idle behaviors
+                {
+                    type: 'Sequence',
+                    children: [
+                        {
+                            type: 'Condition',
+                            condition: isAtDisadvantage
+                        },
+                        {
+                            type: 'Action',
+                            action: reposition
+                        }
+                    ]
+                },
+                {
+                    type: 'Sequence',
+                    children: [
+                        {
+                            type: 'Condition',
+                            condition: isPlayerIdle
+                        },
+                        {
+                            type: 'Action',
+                            action: idleBehavior
+                        }
+                    ]
+                },
+            ]
+        };
     }
 
-    public attackPlayer(): BTStatus {
-        // Logic to perform an attack
-        return 'SUCCESS';
-    }
 
-    public isUnderAttack(): boolean {
-        // Logic to determine if the enemy is under attack
-        return false;
-    }
-
-    public defend(): BTStatus {
-        // Logic for defense actions
-        return 'SUCCESS';
-    }
-
-    // Methods for reposition and idle behaviors
-
-    public isAtDisadvantage(): boolean {
-        // Example logic: Check if enemy is cornered or too close to the edge
-        // This logic will depend on your game's environment and enemy capabilities
-        const someThreshold = 10;
-        const anotherThreshold = 100;
-        return this.pos.x < someThreshold || this.pos.x > anotherThreshold;
-    }
-
-    public reposition(): BTStatus {
-        // Example logic: Move towards the center or a better strategic position
-        // Implement movement logic based on your game's mechanics
-        // this.moveTo(newPosition); // `moveTo` is a hypothetical method for movement
-        return 'SUCCESS';
-    }
-
-
-    public isPlayerIdle(): boolean {
-        // Example logic: Check if the player hasn't moved or attacked recently
-        // This will require tracking the player's activity
-        // return model.get('player').lastActionTime > idleThreshold;
-        return false;
-    }
-
-    public idleBehavior(targetid: GameObjectId, blackboard: Blackboard): BTStatus {
-        // Example logic: Perform a taunt or change stance
-        // Implement this based on your game's visual and AI capabilities
-        // this.taunt(); // `taunt` is a hypothetical method for taunting
-        return 'SUCCESS';
-    }
 
 }
 

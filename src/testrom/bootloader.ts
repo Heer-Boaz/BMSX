@@ -78,8 +78,8 @@ class bclass extends SpriteObject {
                     children: [
                         { type: 'Condition', condition: () => Math.random() > .9 },
                         {
-                            type: 'Action', action: (targetid, blackboard) => {
-                                console.log(`Action 1 executed for ${targetid}`)
+                            type: 'Action', action: function(this: bclass, blackboard) {
+                                console.log(`Action 1 executed for ${this.id}`)
                                 return 'SUCCESS';
                             }
                         }
@@ -92,8 +92,8 @@ class bclass extends SpriteObject {
                         {
                             type: 'Decorator', decorator: WaitForActionCompletionDecorator,
                             child: {
-                                type: 'Action', action: (targetid, blackboard) => {
-                                    console.log(`Sequence action after waiting for ${targetid}`);
+                                type: 'Action', action: function(this: bclass, blackboard)  {
+                                    console.log(`Sequence action after waiting for ${this.id}`);
                                     let testieblap = blackboard.get<number>('testdieblap') ?? 0;
                                     let success = false;
                                     if (++testieblap > 3) {
@@ -107,8 +107,8 @@ class bclass extends SpriteObject {
                         },
                         {
                             type: 'Action',
-                            action: (targetid, blackboard) => {
-                                console.log(`Sequence action after decorated action for ${targetid}`);
+                            action: function(this: bclass, blackboard)  {
+                                console.log(`Sequence action after decorated action for ${this.id}`);
                                 return 'SUCCESS';
                             }
                         },
@@ -120,8 +120,8 @@ class bclass extends SpriteObject {
                     count_propname: 'counting',
                     child: {
                         type: 'Action',
-                        action: (targetid, blackboard) => {
-                            console.log(`Limited action for ${targetid}`);
+                        action: function(this: bclass, blackboard) {
+                            console.log(`Limited action for ${this.id}`);
                             return 'SUCCESS';
                         }
                     }
@@ -130,14 +130,14 @@ class bclass extends SpriteObject {
                     type: 'RandomSelector',
                     children: [
                         {
-                            type: 'Action', action: (targetid, blackboard) => {
-                                console.log(`Random action A for ${targetid}`)
+                            type: 'Action', action: function(this: bclass, blackboard) {
+                                console.log(`Random action A for ${this.id}`)
                                 return 'SUCCESS';
                             }
                         },
                         {
-                            type: 'Action', action: (targetid, blackboard) => {
-                                console.log(`Random action B for ${targetid}`)
+                            type: 'Action', action: function(this: bclass, blackboard) {
+                                console.log(`Random action B for ${this.id}`)
                                 return 'SUCCESS';
                             }
                         }
@@ -146,8 +146,8 @@ class bclass extends SpriteObject {
                 },
                 {
                     type: 'Action',
-                    action: (targetid, blackboard) => {
-                        console.log(`Fallback action executed for ${targetid}`)
+                    action: function(this: bclass, blackboard) {
+                        console.log(`Fallback action executed for ${this.id}`)
                         return 'SUCCESS';
                     }
                 }

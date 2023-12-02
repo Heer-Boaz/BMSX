@@ -440,12 +440,14 @@ export class sstate<T extends GameObject | BaseModel = any> {
 	// Returns true if the tape head is at the start of the tape, false otherwise.
 	// Note that this function assumes that the tape head is within the bounds of the tape.
 	public get at_tape_start(): boolean { return this.head === 0; }
+
 	/**
 	 * Returns the game object or model associated with the target ID of this state.
 	 * @returns The game object or model associated with the target ID of this state.
 	 * @template T - The type of the game object or model to return.
 	 */
 	public get target() { return this.targetAs<T>(); }
+
 	/**
 	 * Returns the game object or model associated with the target ID of this state.
 	 * @returns The game object or model associated with the target ID of this state.

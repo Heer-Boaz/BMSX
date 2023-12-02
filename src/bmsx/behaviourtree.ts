@@ -1,4 +1,4 @@
-import { IIdentifiable } from './gameobject';
+import { GameObject, IIdentifiable } from './gameobject';
 import { GameObjectId } from './bmsx';
 
 /**
@@ -9,12 +9,12 @@ export type BehaviorTreeDefinition =
     | { type: 'Sequence'; children: BehaviorTreeDefinition[] }
     | { type: 'Parallel'; children: BehaviorTreeDefinition[]; successPolicy: 'ONE' | 'ALL' }
     | { type: 'Decorator'; child: BehaviorTreeDefinition; decorator: NodeDecorator }
-    | { type: 'Condition'; condition: (targetid: GameObjectId, Blackboard: Blackboard) => boolean }
+    | { type: 'Condition'; condition: NodeCondition }
     | { type: 'RandomSelector'; children: BehaviorTreeDefinition[], currentchild_propname: string }
     | { type: 'Limit'; child: BehaviorTreeDefinition; limit: number, count_propname: string, priority?: number }
     | { type: 'PrioritySelector'; children: BehaviorTreeDefinition[] }
     | { type: 'Wait'; waitTime: number, wait_propname: string }
-    | { type: 'Action'; action: (targetid: GameObjectId, blackboard: Blackboard) => BTStatus }
+    | { type: 'Action'; action: NodeAction }
     | { type: 'CompositeAction'; actions: BehaviorTreeDefinition[] };
 
 export var BehaviorTreeDefinitions: { [key: BT_ID]: BehaviorTreeDefinition } | null = null;
@@ -235,6 +235,13 @@ export abstract class BTNode implements IIdentifiable {
     public id: BT_ID;
     public priority: number;
 
+    /**
+     * Retrieves the target object with the specified GameObjectId and casts it to the specified type.
+     * @param targetid The GameObjectId of the target object.
+     * @returns The target object casted to the specified type.
+     */
+    public getTarget<T extends GameObject>(targetid: GameObjectId) { return global.model.get(targetid); }
+
     constructor(id: BT_ID, _priority = 0) {
         this.id = id;
         this.priority = _priority;
@@ -365,13 +372,15 @@ export let WaitForActionCompletionDecorator: NodeDecorator = (status: BTStatus, 
     return status;
 };
 
+type NodeCondition = (blackboard: Blackboard) => boolean;
+
 /**
  * Represents a node in a behavior tree that evaluates a condition.
  */
 export class ConditionNode extends BTNode {
-    public condition: (targetid: GameObjectId, blackboard: Blackboard) => boolean;
+    public condition: NodeCondition;
 
-    constructor(id: BT_ID, condition: (targetid: GameObjectId, blackboard: Blackboard) => boolean, _priority = 0) {
+    constructor(id: BT_ID, condition: (blackboard: Blackboard) => boolean, _priority = 0) {
         super(id, _priority);
         this.condition = condition;
     }
@@ -386,7 +395,7 @@ export class ConditionNode extends BTNode {
             // Optionally, handle this case differently
             return { status: 'FAILED' };
         }
-        return this.condition(targetid, blackboard) ? { status: 'SUCCESS' } : { status: 'FAILED' };
+        return this.condition.call(this.getTarget(targetid), blackboard) ? { status: 'SUCCESS' } : { status: 'FAILED' };
     }
 }
 
@@ -540,7 +549,7 @@ export class WaitNode extends BTNode {
  * const healthActionNode = new ActionNode('enemy1', blackboard, changeHealthAction);
  */
 
-export type NodeAction = (targetid: GameObjectId, blackboard: Blackboard) => BTStatus;
+export type NodeAction = (blackboard: Blackboard) => BTStatus;
 
 /**
  * Represents a node in a behavior tree that performs an action.
@@ -559,7 +568,7 @@ export class ActionNode extends BTNode {
      */
     tick(targetId: GameObjectId, blackboard: Blackboard): BTNodeFeedback {
         // Perform the action
-        const result = this.action(targetId, blackboard);
+        const result = this.action.call(this.getTarget(targetId), blackboard);
         return { status: result };
     }
 }
