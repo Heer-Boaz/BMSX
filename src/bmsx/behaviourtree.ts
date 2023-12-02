@@ -1,5 +1,6 @@
 import { GameObject, IIdentifiable } from './gameobject';
 import { GameObjectId } from './bmsx';
+import { insavegame } from './gameserializer';
 
 /**
  * Represents the definition of a behavior tree.
@@ -171,10 +172,10 @@ export type BTNodeFeedback = {
     updates?: (blackboard: Blackboard) => void;  // Detailed information about the action taken or decision made
 };
 
-
 /**
  * Represents a blackboard that stores key-value bindings.
  */
+@insavegame
 export class Blackboard implements IIdentifiable {
     public id: string;
     public data: { [key: string]: any } = {};
