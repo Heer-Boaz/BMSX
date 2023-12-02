@@ -6,6 +6,8 @@ import { Component, ComponentTag, IComponentContainer, KeyToComponentMap, Compon
 import { BehaviorTrees, Blackboard, BTNode, BT_ID, constructBehaviorTree, ConstructorWithBTProperty } from "./behaviourtree";
 import { ObjectTracker } from "./objecttracker";
 import { ScreenBoundaryComponent, TileCollisionComponent } from "./collisioncomponents";
+import { onload } from "./gameserializer";
+import { IEventSubscriber, EventEmitter } from "./eventemitter";
 
 export interface IIdentifiable {
     id: string;
@@ -247,7 +249,6 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
     public banish(): void {
         this.disposeFlag = true;
     }
-
     public oncollide?: (src: GameObject) => void;
     public onWallcollide?: (dir: Direction) => void;
     public onLeaveScreen?: (ik: GameObject, dir: Direction, old_x_or_y: number) => void;
@@ -300,6 +301,23 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
         // Call the method to initialize linked state machines
         this.initializeLinkedFSMs();
         this.initializeBehaviorTrees();
+        this.init_onloadable_shit();
+    }
+
+    @onload
+    init_onloadable_shit() {
+        this.initEventSubscriptions();
+    }
+
+    protected initEventSubscriptions() {
+        const constr = this.constructor as IEventSubscriber;
+        if (!constr.eventSubscriptions) return;
+
+        const eventEmitter = EventEmitter.getInstance();
+        constr.eventSubscriptions.forEach(subscription => {
+            const handler = this[subscription.handlerName].bind(this);
+            eventEmitter.on(subscription.eventName, handler, this.id);
+        });
     }
 
     protected initializeLinkedFSMs() {
