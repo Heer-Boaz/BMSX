@@ -7,12 +7,13 @@ import { Input, InputMap, KeyboardButton, GamepadInputMapping, KeyboardInputMapp
 import { sstate, statedef_builder, machine_states } from '../bmsx/bfsm';
 import { insavegame } from '../bmsx/gameserializer';
 import { show_download_savestate_dialog, show_openfile_dialog, show_load_savestate_dialog } from '../bmsx/gamestatedialog';
-import { new_area, Direction, Game, new_vec2, get_gamemodel } from '../bmsx/bmsx';
+import { new_area, Direction, Game, new_vec2, get_gamemodel, GameObjectId } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
 import { BaseModel } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';
 import { Component, componenttag, update_tagged_components } from '../bmsx/component';
 import { EventEmitter, oneTimeGlobalEventHandler, subscribesToParentScopedEvent as subscribesToParentScopedEvent } from '../bmsx/eventemitter';
+import { BehaviorTreeDefinition, Blackboard, BTStatus, build_bt } from '../bmsx/behaviourtree';
 
 var _game: Game;
 let _model: gamemodel;
@@ -61,6 +62,123 @@ const gamepadInputMapping: MyGamepadInputMapping = {
     'bla': 'x',
     'blap': 'y',
 };
+
+class enemy extends SpriteObject {
+    @build_bt('enemyBehaviorTree')
+    // public static buildEnemyBehaviorTree(): BehaviorTreeDefinition {
+    //     return {
+    //         type: 'Selector',
+    //         children: [
+    //             {
+    //                 type: 'Sequence',
+    //                 children: [
+    //                     {
+    //                         type: 'Condition',
+    //                         condition: this.isPlayerInRange
+    //                     },
+    //                     {
+    //                         type: 'Action',
+    //                         action: this.attackPlayer
+    //                     }
+    //                 ]
+    //             },
+    //             {
+    //                 type: 'Sequence',
+    //                 children: [
+    //                     {
+    //                         type: 'Condition',
+    //                         condition: this.isUnderAttack
+    //                     },
+    //                     {
+    //                         type: 'Action',
+    //                         action: this.defend
+    //                     }
+    //                 ]
+    //             },
+    //             // Additional Sequences for reposition and idle behaviors
+    //             {
+    //                 type: 'Sequence',
+    //                 children: [
+    //                     {
+    //                         type: 'Condition',
+    //                         condition: this.isAtDisadvantage
+    //                     },
+    //                     {
+    //                         type: 'Action',
+    //                         action: this.reposition
+    //                     }
+    //                 ]
+    //             },
+    //             {
+    //                 type: 'Sequence',
+    //                 children: [
+    //                     {
+    //                         type: 'Condition',
+    //                         condition: this.isPlayerIdle
+    //                     },
+    //                     {
+    //                         type: 'Action',
+    //                         action: this.idleBehavior
+    //                     }
+    //                 ]
+    //             },
+    //         ]
+    //     };
+    // }
+
+    public isPlayerInRange(): boolean {
+        // Logic to determine if the player is in range
+        return false;
+    }
+
+    public attackPlayer(): BTStatus {
+        // Logic to perform an attack
+        return 'SUCCESS';
+    }
+
+    public isUnderAttack(): boolean {
+        // Logic to determine if the enemy is under attack
+        return false;
+    }
+
+    public defend(): BTStatus {
+        // Logic for defense actions
+        return 'SUCCESS';
+    }
+
+    // Methods for reposition and idle behaviors
+
+    public isAtDisadvantage(): boolean {
+        // Example logic: Check if enemy is cornered or too close to the edge
+        // This logic will depend on your game's environment and enemy capabilities
+        const someThreshold = 10;
+        const anotherThreshold = 100;
+        return this.pos.x < someThreshold || this.pos.x > anotherThreshold;
+    }
+
+    public reposition(): BTStatus {
+        // Example logic: Move towards the center or a better strategic position
+        // Implement movement logic based on your game's mechanics
+        // this.moveTo(newPosition); // `moveTo` is a hypothetical method for movement
+        return 'SUCCESS';
+    }
+
+
+    public isPlayerIdle(): boolean {
+        // Example logic: Check if the player hasn't moved or attacked recently
+        // This will require tracking the player's activity
+        // return model.get('player').lastActionTime > idleThreshold;
+        return false;
+    }
+
+    public idleBehavior(targetid: GameObjectId, blackboard: Blackboard): BTStatus {
+        // Example logic: Perform a taunt or change stance
+        // Implement this based on your game's visual and AI capabilities
+        // this.taunt(); // `taunt` is a hypothetical method for taunting
+        return 'SUCCESS';
+    }
+
+}
 
 @insavegame
 class bclass extends SpriteObject {
@@ -119,14 +237,14 @@ class bclass extends SpriteObject {
                         this.testmeuk();
 
                         this.state.to('bla');
-                    break;
+                        break;
                     case 'blap':
                         if (consumed) break;
                         Input.consumeAction(0, action);
                         global.eventEmitter.emit('testEventOnce', this.id);
 
                         this.state.to('#blap');
-                    break;
+                        break;
                 }
             }
         }
