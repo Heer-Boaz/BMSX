@@ -4,6 +4,7 @@ import { insavegame } from "./gameserializer";
 import { TileSize } from "./msx";
 import { Component, IComponentContainer, update_tagged_components } from "./component";
 import { BehaviorTrees, Blackboard, BTNode, BT_ID, constructBehaviorTree, ConstructorWithBTProperty } from "./behaviourtree";
+import { ObjectTracker } from "./objecttracker";
 
 export interface IIdentifiable {
     id: string;
@@ -16,6 +17,7 @@ export interface IIdentifiable {
 @insavegame
 export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiable {
     public components = new Map<string, Component>();
+    public objectTracker?: ObjectTracker;
 
     addComponent<T extends Component>(component: T): void {
         this.components.set(component.constructor.name, component);
@@ -79,9 +81,19 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
         this.size.z = __sz;
     }
 
+    /**
+     * The state of the game object.
+     */
     public state: statecontext;
 
+    /**
+     * The mapping of behavior tree IDs to behavior tree IDs.
+     */
     public behaviortreeIds: { [id: BT_ID]: BT_ID };
+    /**
+     * Gets the behavior trees associated with the game object.
+     * @returns An object containing the behavior trees.
+     */
     public get behaviortrees(): { [id: BT_ID]: BTNode } {
         return new Proxy(BehaviorTrees, {
             get: (target, prop: string) => {
@@ -92,13 +104,47 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
             }
         });
     }
+    /**
+     * The blackboards associated with the game object.
+     * @type {Object.<string, Blackboard>}
+     */
     public blackboards: { [name: BT_ID]: Blackboard };
 
+    /**
+     * Executes the tick operation for the specified behavior tree.
+     * If the behavior tree or blackboard with the given ID does not exist, an error message is logged and the function returns.
+     * If an object tracker is available, it retrieves updates from the tracker and applies them to the blackboard before ticking the behavior tree.
+     *
+     * @param bt_id - The ID of the behavior tree to tick.
+     * @returns void
+     */
     public tickTree(bt_id: BT_ID): void {
+        if (!this.behaviortrees[bt_id] || !this.blackboards[bt_id]) {
+            console.error(`Behavior tree or blackboard with ID ${bt_id} does not exist.`);
+            return;
+        }
+
+        // Get the updates from the ObjectTracker
+        if (this.objectTracker) {
+            let updates = this.objectTracker.getUpdates();
+
+            // Apply the updates to the Blackboard
+            this.blackboards[bt_id].applyUpdates(updates);
+        }
+
         this.behaviortrees[bt_id].tick(this.id, this.blackboards[bt_id]);
     }
 
+    /**
+     * Resets the tree with the specified BT_ID.
+     * If the blackboard with the given BT_ID does not exist, an error message is logged and the function returns.
+     * @param bt_id The ID of the blackboard to reset.
+     */
     public resetTree(bt_id: BT_ID): void {
+        if (!this.blackboards[bt_id]) {
+            console.error(`Blackboard with ID ${bt_id} does not exist.`);
+            return;
+        }
         this.blackboards[bt_id].clearAllNodeData();
     }
 

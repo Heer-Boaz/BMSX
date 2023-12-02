@@ -171,6 +171,7 @@ export type BTNodeFeedback = {
     updates?: (blackboard: Blackboard) => void;  // Detailed information about the action taken or decision made
 };
 
+
 /**
  * Represents a blackboard that stores key-value bindings.
  */
@@ -203,6 +204,26 @@ export class Blackboard implements IIdentifiable {
     public set actionInProgress(inProgress: boolean) {
         this.nodedata['actionInProgress'] = inProgress;
     }
+
+    applyUpdates(updates: { [id: string]: Array<{ property: string, value: any, key?: string }> }): void {
+        for (let properties of Object.values(updates)) {
+            for (let { value, key } of properties) {
+                this.set(key, value);
+            }
+        }
+    }
+    // public copyPropertiesToBlackboard<T extends GameObject>(target: T, properties: Array<{ property: keyof T, key?: string }>): void {
+    //     for (let { property, key } of properties) {
+    //         // If no key is given, use the property name as the key
+    //         key = key ?? (property as string);
+
+    //         // Get the property value from the target
+    //         let value = target[property];
+
+    //         // Set the blackboard entry
+    //         this.set(key as string, value);
+    //     }
+    // }
 }
 
 /**
