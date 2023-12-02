@@ -12,7 +12,7 @@ import { GameObject, leavingScreenHandler_prohibit } from '../bmsx/gameobject';
 import { BaseModel } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';
 import { Component, componenttag, update_tagged_components } from '../bmsx/component';
-import { oneTimeGlobalEventHandler, subscribesToParentScopedEvent } from '../bmsx/eventemitter';
+import { subscribesToParentScopedEvent, subscribesToSelfScopedEvent } from '../bmsx/eventemitter';
 import { assign_bt, BehaviorTreeDefinition, build_bt, WaitForActionCompletionDecorator } from '../bmsx/behaviourtree';
 
 var _game: Game;
@@ -241,6 +241,7 @@ class bclass extends SpriteObject {
                         if (consumed) break;
                         Input.consumeAction(0, action);
                         this.testmeuk();
+                        global.eventEmitter.emit('testEvent', this.id);
 
                         this.state.to('bla');
                         this.state.substate.bclass_animation.to('#ani2');
@@ -276,13 +277,18 @@ class bclass extends SpriteObject {
         console.log('testmeuk');
     }
 
+    @subscribesToSelfScopedEvent('leavingScreen')
+    testmeuk2(d: Direction, old_x_or_y: number) {
+        leavingScreenHandler_prohibit(this, d, old_x_or_y);
+    }
+
     constructor() {
         super('The B');
         this.imgid = BitmapId.b2;
         this.hitarea = new_area(0, 0, 14, 18);
         this.addComponent(new DerivedTestComponent(this.id));
         this.addComponent(new ScreenBoundaryComponent(this.id));
-        this.onLeavingScreen = (ik, d, old_x_or_y) => leavingScreenHandler_prohibit(ik, d, old_x_or_y);
+        // this.onLeavingScreen = (ik, d, old_x_or_y) => leavingScreenHandler_prohibit(ik, d, old_x_or_y);
     }
 };
 
@@ -299,7 +305,7 @@ class TestComponent extends Component {
         console.log('TestComponent onTestEvent');
     }
 
-    @oneTimeGlobalEventHandler('testEventOnce')
+    // @oneTimeGlobalEventHandler('testEventOnce')
     onTestEvent2() {
         console.log('TestComponent onTestEvent2');
     }

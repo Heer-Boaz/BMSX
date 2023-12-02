@@ -12,7 +12,7 @@ import { GameObject } from '../bmsx/gameobject';
 import { BaseModel } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';
 import { Component, componenttag, update_tagged_components } from '../bmsx/component';
-import { oneTimeGlobalEventHandler, subscribesToParentScopedEvent as subscribesToParentScopedEvent } from '../bmsx/eventemitter';
+import { subscribesToParentScopedEvent as subscribesToParentScopedEvent } from '../bmsx/eventemitter';
 import { BehaviorTreeDefinition, build_bt } from '../bmsx/behaviourtree';
 
 var _game: Game;
