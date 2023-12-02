@@ -98,6 +98,10 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
         this.behaviortrees[bt_id].tick(this.id, this.blackboards[bt_id]);
     }
 
+    public resetTree(bt_id: BT_ID): void {
+        this.blackboards[bt_id].clearAllNodeData();
+    }
+
     public hitarea: Area;
     public hittable: boolean;
     public visible: boolean;
@@ -267,7 +271,7 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
         if (constructor.linkedBTs) {
             // Iterate over the behavior tree names and create the behavior trees
             constructor.linkedBTs.forEach(bt_id => {
-                let blackboard = new Blackboard();
+                let blackboard = new Blackboard(bt_id);
                 this.blackboards[bt_id] = blackboard;
                 this.behaviortreeIds[bt_id] = bt_id;
             });

@@ -1,3 +1,4 @@
+import { IIdentifiable } from './gameobject';
 import { GameObjectId } from './bmsx';
 
 /**
@@ -173,8 +174,14 @@ export type BTNodeFeedback = {
 /**
  * Represents a blackboard that stores key-value bindings.
  */
-export class Blackboard {
+export class Blackboard implements IIdentifiable {
+    public id: string;
     public data: { [key: string]: any } = {};
+    public nodedata: { [key: string]: any } = {};
+
+    constructor(_id: string) {
+        this.id = _id;
+    }
 
     set<T>(key: string, value: T): void {
         this.data[key] = value;
@@ -184,12 +191,17 @@ export class Blackboard {
         return this.data[key] as T;
     }
 
+    public clearAllNodeData(): void {
+        delete this.nodedata;
+        this.nodedata = {};
+    }
+
     public get actionInProgress(): boolean {
-        return this.data['actionInProgress'] ?? false;
+        return this.nodedata['actionInProgress'] ?? false;
     }
 
     public set actionInProgress(inProgress: boolean) {
-        this.data['actionInProgress'] = inProgress;
+        this.nodedata['actionInProgress'] = inProgress;
     }
 }
 
@@ -198,7 +210,7 @@ export class Blackboard {
  */
 export type BT_ID = string;
 
-export abstract class BTNode {
+export abstract class BTNode implements IIdentifiable {
     public id: BT_ID;
     public priority: number;
 
@@ -375,12 +387,12 @@ export class RandomSelectorNode extends BTNode {
      * @returns The feedback from the selected child node.
      */
     tick(targetid: GameObjectId, blackboard: Blackboard): BTNodeFeedback {
-        let currentChildIndex = blackboard.get<number>(this.currentchild_propname);
+        let currentChildIndex = blackboard.nodedata[this.currentchild_propname] as number;
 
         // If there is no currently executing child, select a random child
         if (!currentChildIndex) {
             currentChildIndex = Math.floor(Math.random() * this.children.length);
-            blackboard.set(this.currentchild_propname, currentChildIndex);
+            blackboard.nodedata[this.currentchild_propname] = currentChildIndex;
         }
 
         // Tick the currently executing child
@@ -388,7 +400,7 @@ export class RandomSelectorNode extends BTNode {
 
         // If the child has finished executing (either succeeded or failed), reset the current child index
         if (feedback.status !== 'RUNNING') {
-            blackboard.set(this.currentchild_propname, undefined);
+            delete blackboard.nodedata[this.currentchild_propname];
         }
         return feedback;
     }
@@ -415,17 +427,17 @@ export class LimitNode extends BTNode {
      * @returns The feedback of the node's execution.
      */
     tick(targetid: GameObjectId, blackboard: Blackboard): BTNodeFeedback {
-        let count = blackboard.get<number>(this.count_propname);
+        let count = blackboard.nodedata[this.count_propname] as number;
         if (!count) {
             count = 0;
-            blackboard.set<number>(this.count_propname, count);
+            blackboard.nodedata[this.count_propname] = count;
         }
 
         if (count < this.limit) {
             const result = this.child.tick(targetid, blackboard);
             if (result.status !== 'RUNNING') {
                 ++count;
-                blackboard.set<number>(this.count_propname, count);
+                blackboard.nodedata[this.count_propname] = count;
             }
             return result;
         }
@@ -478,19 +490,19 @@ export class WaitNode extends BTNode {
      * @returns The feedback of the node.
      */
     tick(targetid: GameObjectId, blackboard: Blackboard): BTNodeFeedback {
-        let currentTick = blackboard.get<number>(this.wait_propname);
+        let currentTick = blackboard.nodedata[this.wait_propname] as number;
         if (!currentTick) {
             currentTick = 0;
-            blackboard.set<number>(this.wait_propname, currentTick);
+            blackboard.nodedata[this.wait_propname] = currentTick;
         }
 
         if (currentTick < this.waitTime) {
             ++currentTick;
-            blackboard.set<number>(this.wait_propname, currentTick);
+            blackboard.nodedata[this.wait_propname] = currentTick;
             return { status: 'RUNNING' };
         } else {
             currentTick = 0;
-            blackboard.set<number>(this.wait_propname, currentTick);
+            delete blackboard.nodedata[this.wait_propname];
             return { status: 'SUCCESS' };
         }
     }

@@ -64,7 +64,6 @@ const gamepadInputMapping: MyGamepadInputMapping = {
     'blap': 'y',
 };
 
-
 @insavegame
 @assign_fsm('bclass_animation', 'bclass_meuk')
 @assign_bt('bclass_tree')
