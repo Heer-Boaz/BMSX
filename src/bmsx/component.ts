@@ -2,6 +2,8 @@ import { GameObjectId } from './bmsx';
 import { onload, exclude_save } from './gameserializer';
 import { ConstructorWithEventSubscriptions, EventEmitter, EventSubscription } from './eventemitter';
 
+export type KeyToComponentMap = { [key: string]: Component };
+export type ComponentConstructor<T extends Component> = { new(...args: any[]): T };
 /**
  * Represents a container for components.
  */
@@ -9,14 +11,14 @@ export interface IComponentContainer {
     /**
      * A map of components, where the key is the component name and the value is the component instance.
      */
-    components: Map<string, Component>;
+    components: KeyToComponentMap;
 
     /**
      * Retrieves a component of the specified type from the container.
      * @param constructor - The constructor function of the component type.
      * @returns The component instance of the specified type, or undefined if not found.
      */
-    getComponent<T extends Component>(constructor: { new(...args: any[]): T }): T | undefined;
+    getComponent<T extends Component>(constructor: ComponentConstructor<T>): T | undefined;
 
     /**
      * Adds a component to the container.
@@ -29,7 +31,7 @@ export interface IComponentContainer {
      * @param constructor - The constructor function of the component type.
      * @param args - Additional arguments to pass to the component's update method.
      */
-    updateComponent<T extends Component>(constructor: { new(...args: any[]): T }, ...args: any[]): void;
+    updateComponent<T extends Component>(constructor: ComponentConstructor<T>, ...args: any[]): void;
 }
 
 
@@ -122,7 +124,7 @@ export function update_tagged_components(...tags: ComponentTag[]) {
     return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
         const originalMethod = descriptor.value; // Save a reference to the original method
         descriptor.value = function (...args: any[]) { // Wrap the original method
-            (this as IComponentContainer).components.forEach(component => { // Iterate over all components
+            Object.values((this as IComponentContainer).components).forEach(component => { // Iterate over all components
                 const componentClass = (component.constructor as ConstructorWithTagsProperty); // Get the component's constructor
                 if (componentClass.tags) { // Check if the component has any tags
                     const hasAnyTag = tags.some(tag => componentClass.tags.has(tag)); // Check if the component has any of the specified tags

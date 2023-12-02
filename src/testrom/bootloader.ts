@@ -1,3 +1,4 @@
+import { ScreenBoundaryComponent } from './../bmsx/collisioncomponents';
 import { GamepadButton } from './../bmsx/input';
 import { RomPack } from '../bmsx/rompack';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
@@ -7,7 +8,7 @@ import { Input, InputMap, KeyboardButton, GamepadInputMapping, KeyboardInputMapp
 import { sstate, statedef_builder, machine_states, build_fsm, assign_fsm } from '../bmsx/bfsm';
 import { insavegame } from '../bmsx/gameserializer';
 import { new_area, Direction, Game, new_vec2, get_gamemodel } from '../bmsx/bmsx';
-import { GameObject } from '../bmsx/gameobject';
+import { GameObject, leavingScreenHandler_prohibit } from '../bmsx/gameobject';
 import { BaseModel } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';
 import { Component, componenttag, update_tagged_components } from '../bmsx/component';
@@ -204,16 +205,16 @@ class bclass extends SpriteObject {
             for (const { action, pressed, consumed } of pressedActions) {
                 switch (action as Action) {
                     case 'up':
-                        this.pos.y -= speed;
+                        this.sety(this.y - speed);
                         break;
                     case 'right':
-                        this.pos.x += speed;
+                        this.setx(this.x + speed);
                         break;
                     case 'down':
-                        this.pos.y += speed;
+                        this.sety(this.y + speed);
                         break;
                     case 'left':
-                        this.pos.x -= speed;
+                        this.setx(this.x - speed);
                         break;
                     case 'load':
                         if (consumed) break;
@@ -280,7 +281,8 @@ class bclass extends SpriteObject {
         this.imgid = BitmapId.b2;
         this.hitarea = new_area(0, 0, 14, 18);
         this.addComponent(new DerivedTestComponent(this.id));
-
+        this.addComponent(new ScreenBoundaryComponent(this.id));
+        this.onLeavingScreen = (ik, d, old_x_or_y) => leavingScreenHandler_prohibit(ik, d, old_x_or_y);
     }
 };
 

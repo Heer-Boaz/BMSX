@@ -5,12 +5,12 @@ import { TileSize } from "./msx";
 
 @componenttag('screenboundary')
 export class ScreenBoundaryComponent extends Component {
-    override update(args: { axis: 'x' | 'y', oldPos: number, newPos: number }) {
-        if (args.axis === 'x') {
-            this.checkBoundaryForXAxis.call(global.model.get(this.parentid), args.oldPos, args.newPos);
+    override update(axis: 'x' | 'y', oldPos: number, newPos: number) {
+        if (axis === 'x') {
+            this.checkBoundaryForXAxis.call(global.model.get(this.parentid), oldPos, newPos);
         }
         else {
-            this.checkBoundaryForYAxis.call(global.model.get(this.parentid), args.oldPos, args.newPos);
+            this.checkBoundaryForYAxis.call(global.model.get(this.parentid), oldPos, newPos);
         }
     }
 
@@ -39,12 +39,12 @@ export class ScreenBoundaryComponent extends Component {
 
 @componenttag('tilecollision')
 export class TileCollisionComponent extends Component {
-    override update(args: { axis: 'x' | 'y', oldPos: number, newPos: number }) {
-        if (args.axis === 'x') {
-            this.checkTileCollisionForXAxis.call(global.model.get(this.parentid), args.oldPos, args.newPos);
+    override update(axis: 'x' | 'y', oldPos: number, newPos: number) {
+        if (axis === 'x') {
+            this.checkTileCollisionForXAxis.call(global.model.get(this.parentid), oldPos, newPos);
         }
         else {
-            this.checkTileCollisionForYAxis.call(global.model.get(this.parentid), args.oldPos, args.newPos);
+            this.checkTileCollisionForYAxis.call(global.model.get(this.parentid), oldPos, newPos);
         }
     }
 

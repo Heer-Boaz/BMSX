@@ -2,7 +2,7 @@ import { ConstructorWithFSMProperty, statecontext } from "./bfsm";
 import { vec3, Area, Direction, new_vec2, mod, vec2, new_vec3, new_area, GameObjectId as GameObjectId } from "./bmsx";
 import { insavegame } from "./gameserializer";
 import { TileSize } from "./msx";
-import { Component, ComponentTag, IComponentContainer, update_tagged_components } from "./component";
+import { Component, ComponentTag, IComponentContainer, KeyToComponentMap, ComponentConstructor, update_tagged_components } from "./component";
 import { BehaviorTrees, Blackboard, BTNode, BT_ID, constructBehaviorTree, ConstructorWithBTProperty } from "./behaviourtree";
 import { ObjectTracker } from "./objecttracker";
 import { ScreenBoundaryComponent, TileCollisionComponent } from "./collisioncomponents";
@@ -17,21 +17,21 @@ export interface IIdentifiable {
  */
 @insavegame
 export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiable {
-    public components = new Map<string, Component>();
+    public components: KeyToComponentMap = {};
     public objectTracker?: ObjectTracker;
 
     addComponent<T extends Component>(component: T): void {
-        this.components.set(component.constructor.name, component);
+        this.components[component.constructor.name] = component;
     }
 
-    getComponent<T extends Component>(constructor: { new(...args: any[]): T }): T | undefined {
-        return this.components.get(constructor.name) as T | undefined;
+    getComponent<T extends Component>(constructor: ComponentConstructor<T>): T | undefined {
+        return this.components[constructor.name] as T | undefined;
     }
 
-    updateComponent<T extends Component>(constructor: { new(...args: any[]): T }, ...args: any[]): void {
+    updateComponent<T extends Component>(constructor: ComponentConstructor<T>, ...args: any[]): void {
         const component = this.getComponent(constructor);
         if (component) {
-            component.update(args);
+            component.update(...args);
         }
     }
 
@@ -412,8 +412,8 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
         const oldx = this.pos.x;
         this.pos.x = ~~newx;
 
-        this.updateComponent(TileCollisionComponent, { axis: 'x', oldx, newx });
-        this.updateComponent(ScreenBoundaryComponent, { axis: 'x', oldx, newx });
+        this.updateComponent(TileCollisionComponent, 'x', oldx, newx);
+        this.updateComponent(ScreenBoundaryComponent, 'x', oldx, newx);
     }
 
     /**
@@ -425,8 +425,8 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
         const oldy = this.pos.y;
         this.pos.y = ~~newy;
 
-        this.updateComponent(TileCollisionComponent, { axis: 'y', oldy, newy });
-        this.updateComponent(ScreenBoundaryComponent, { axis: 'y', oldy, newy });
+        this.updateComponent(TileCollisionComponent, 'y', oldy, newy);
+        this.updateComponent(ScreenBoundaryComponent, 'y', oldy, newy);
     }
 
     /**
