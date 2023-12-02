@@ -1,4 +1,3 @@
-import { base_model_spaces } from './../bmsx/model';
 import { GamepadButton } from './../bmsx/input';
 import { RomPack } from '../bmsx/rompack';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
@@ -7,14 +6,13 @@ import { BitmapId } from './resourceids';
 import { Input, InputMap, KeyboardButton, GamepadInputMapping, KeyboardInputMapping } from '../bmsx/input';
 import { sstate, statedef_builder, machine_states, build_fsm, assign_fsm } from '../bmsx/bfsm';
 import { insavegame } from '../bmsx/gameserializer';
-import { show_download_savestate_dialog, show_openfile_dialog, show_load_savestate_dialog } from '../bmsx/gamestatedialog';
 import { new_area, Direction, Game, new_vec2, get_gamemodel } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
 import { BaseModel } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';
 import { Component, componenttag, update_tagged_components } from '../bmsx/component';
 import { oneTimeGlobalEventHandler, subscribesToParentScopedEvent } from '../bmsx/eventemitter';
-import { assign_bt, BehaviorTreeDefinition, Blackboard, BTNode, BTStatus, build_bt, SelectorNode, WaitForActionCompletionDecorator } from '../bmsx/behaviourtree';
+import { assign_bt, BehaviorTreeDefinition, build_bt, WaitForActionCompletionDecorator } from '../bmsx/behaviourtree';
 
 var _game: Game;
 let _model: gamemodel;

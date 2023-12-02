@@ -6,13 +6,12 @@ import { BitmapId } from './resourceids';
 import { Input, InputMap, KeyboardButton, GamepadInputMapping, KeyboardInputMapping } from '../bmsx/input';
 import { sstate, statedef_builder, machine_states } from '../bmsx/bfsm';
 import { insavegame } from '../bmsx/gameserializer';
-import { show_download_savestate_dialog, show_openfile_dialog, show_load_savestate_dialog } from '../bmsx/gamestatedialog';
-import { new_area, Direction, Game, new_vec2, get_gamemodel, GameObjectId } from '../bmsx/bmsx';
+import { new_area, Direction, Game, new_vec2, get_gamemodel } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
 import { BaseModel } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';
 import { Component, componenttag, update_tagged_components } from '../bmsx/component';
-import { EventEmitter, oneTimeGlobalEventHandler, subscribesToParentScopedEvent as subscribesToParentScopedEvent } from '../bmsx/eventemitter';
+import { oneTimeGlobalEventHandler, subscribesToParentScopedEvent as subscribesToParentScopedEvent } from '../bmsx/eventemitter';
 import { BehaviorTreeDefinition, Blackboard, BTStatus, build_bt } from '../bmsx/behaviourtree';
 
 var _game: Game;
@@ -66,22 +65,22 @@ const gamepadInputMapping: MyGamepadInputMapping = {
 class enemy extends SpriteObject {
     @build_bt('enemyBehaviorTree')
     public static buildEnemyBehaviorTree(): BehaviorTreeDefinition {
-        function isPlayerInRange(): boolean {
+        function isPlayerInRange(this: enemy): boolean {
             // Logic to determine if the player is in range
             return false;
         }
 
-        function attackPlayer(): BTStatus {
+        function attackPlayer(this: enemy): BTStatus {
             // Logic to perform an attack
             return 'SUCCESS';
         }
 
-        function isUnderAttack(): boolean {
+        function isUnderAttack(this: enemy): boolean {
             // Logic to determine if the enemy is under attack
             return false;
         }
 
-        function defend(): BTStatus {
+        function defend(this: enemy): BTStatus {
             // Logic for defense actions
             return 'SUCCESS';
         }
@@ -96,7 +95,7 @@ class enemy extends SpriteObject {
             return this.pos.x < someThreshold || this.pos.x > anotherThreshold;
         }
 
-        function reposition(): BTStatus {
+        function reposition(this: enemy): BTStatus {
             // Example logic: Move towards the center or a better strategic position
             // Implement movement logic based on your game's mechanics
             // this.moveTo(newPosition); // `moveTo` is a hypothetical method for movement
@@ -104,7 +103,7 @@ class enemy extends SpriteObject {
         }
 
 
-        function isPlayerIdle(): boolean {
+        function isPlayerIdle(this: enemy): boolean {
             // Example logic: Check if the player hasn't moved or attacked recently
             // This will require tracking the player's activity
             // return model.get('player').lastActionTime > idleThreshold;
@@ -177,9 +176,6 @@ class enemy extends SpriteObject {
             ]
         };
     }
-
-
-
 }
 
 @insavegame
