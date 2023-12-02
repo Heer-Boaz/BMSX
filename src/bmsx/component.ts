@@ -1,6 +1,6 @@
 import { GameObjectId } from './bmsx';
-import { onload, exclude_save } from './gameserializer';
-import { ConstructorWithEventSubscriptions, EventEmitter, EventSubscription } from './eventemitter';
+import { onload, exclude_save, insavegame } from './gameserializer';
+import { IEventSubscriber, EventEmitter, EventSubscription } from './eventemitter';
 
 export type KeyToComponentMap = { [key: string]: Component };
 export type ComponentConstructor<T extends Component> = { new(...args: any[]): T };
@@ -34,7 +34,7 @@ export interface IComponentContainer {
     updateComponent<T extends Component>(constructor: ComponentConstructor<T>, ...args: any[]): void;
 }
 
-
+@insavegame
 export abstract class Component {
     public parentid: GameObjectId | null = null;
     @exclude_save
@@ -57,12 +57,13 @@ export abstract class Component {
     }
 
     protected initEventSubscriptions() {
-        const constr = this.constructor as ConstructorWithEventSubscriptions;
+        const constr = this.constructor as IEventSubscriber;
         if (!constr.eventSubscriptions) return;
 
         const eventEmitter = EventEmitter.getInstance();
         constr.eventSubscriptions.forEach(subscription => {
             const handler = this[subscription.handlerName].bind(this);
+            // Note that subscription.scope is not considered here, as all events from Components are emitted by the parent GameObject
             eventEmitter.on(subscription.eventName, handler, this.parentid);
         });
     }
