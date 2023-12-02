@@ -2,9 +2,10 @@ import { ConstructorWithFSMProperty, statecontext } from "./bfsm";
 import { vec3, Area, Direction, new_vec2, mod, vec2, new_vec3, new_area, GameObjectId as GameObjectId } from "./bmsx";
 import { insavegame } from "./gameserializer";
 import { TileSize } from "./msx";
-import { Component, IComponentContainer, update_tagged_components } from "./component";
+import { Component, ComponentTag, IComponentContainer, update_tagged_components } from "./component";
 import { BehaviorTrees, Blackboard, BTNode, BT_ID, constructBehaviorTree, ConstructorWithBTProperty } from "./behaviourtree";
 import { ObjectTracker } from "./objecttracker";
+import { ScreenBoundaryComponent, TileCollisionComponent } from "./collisioncomponents";
 
 export interface IIdentifiable {
     id: string;
@@ -23,8 +24,15 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
         this.components.set(component.constructor.name, component);
     }
 
-    getComponent<T extends Component>(constructor: { new(): T }): T | undefined {
+    getComponent<T extends Component>(constructor: { new(...args: any[]): T }): T | undefined {
         return this.components.get(constructor.name) as T | undefined;
+    }
+
+    updateComponent<T extends Component>(constructor: { new(...args: any[]): T }, ...args: any[]): void {
+        const component = this.getComponent(constructor);
+        if (component) {
+            component.update(args);
+        }
     }
 
     /**
@@ -402,28 +410,10 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
     @update_tagged_components('position')
     public setx(newx: number) {
         const oldx = this.pos.x;
-        const model = global.model;
-
         this.pos.x = ~~newx;
 
-        if (newx < oldx) {
-            if (model.collidesWithTile(this, Direction.Left)) {
-                this.onWallcollide?.(Direction.Up);
-                newx += TileSize - mod(newx, TileSize);
-            }
-            this.pos.x = ~~newx;
-            if (newx + this.size.x < 0) { this.onLeaveScreen?.(this, Direction.Left, oldx); }
-            else if (newx < 0) { this.onLeavingScreen?.(this, Direction.Left, oldx); }
-        }
-        else if (newx > oldx) {
-            if (model.collidesWithTile(this, Direction.Right)) {
-                this.onWallcollide?.(Direction.Right);
-                newx -= newx % TileSize;
-            }
-            this.pos.x = ~~newx;
-            if (newx >= model.gamewidth) { this.onLeaveScreen?.(this, Direction.Right, oldx); }
-            else if (newx + this.size.x >= model.gamewidth) { this.onLeavingScreen?.(this, Direction.Right, oldx); }
-        }
+        this.updateComponent(TileCollisionComponent, { axis: 'x', oldx, newx });
+        this.updateComponent(ScreenBoundaryComponent, { axis: 'x', oldx, newx });
     }
 
     /**
@@ -433,27 +423,10 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
     @update_tagged_components('position')
     public sety(newy: number) {
         const oldy = this.pos.y;
-        const model = global.model;
-
         this.pos.y = ~~newy;
-        if (newy < oldy) {
-            if (model.collidesWithTile(this, Direction.Up)) {
-                this.onWallcollide?.(Direction.Up);
-                newy += TileSize - mod(newy, TileSize);
-            }
-            this.pos.y = ~~newy;
-            if (newy + this.size.y < 0) { this.onLeaveScreen?.(this, Direction.Up, oldy); }
-            else if (newy < 0) { this.onLeavingScreen?.(this, Direction.Up, oldy); }
-        }
-        else if (newy > oldy) {
-            if (model.collidesWithTile(this, Direction.Down)) {
-                this.onWallcollide?.(Direction.Down);
-                newy -= newy % TileSize;
-            }
-            this.pos.y = ~~newy;
-            if (newy >= model.gameheight) { this.onLeaveScreen?.(this, Direction.Down, oldy); }
-            else if (newy + this.size.y >= model.gameheight) { this.onLeavingScreen?.(this, Direction.Down, oldy); }
-        }
+
+        this.updateComponent(TileCollisionComponent, { axis: 'y', oldy, newy });
+        this.updateComponent(ScreenBoundaryComponent, { axis: 'y', oldy, newy });
     }
 
     /**

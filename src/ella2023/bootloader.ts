@@ -1,3 +1,4 @@
+import { BTStatus } from './../bmsx/behaviourtree';
 import { GamepadButton } from './../bmsx/input';
 import { RomPack } from '../bmsx/rompack';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
@@ -12,7 +13,7 @@ import { BaseModel } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';
 import { Component, componenttag, update_tagged_components } from '../bmsx/component';
 import { oneTimeGlobalEventHandler, subscribesToParentScopedEvent as subscribesToParentScopedEvent } from '../bmsx/eventemitter';
-import { BehaviorTreeDefinition, Blackboard, BTStatus, build_bt } from '../bmsx/behaviourtree';
+import { BehaviorTreeDefinition, build_bt } from '../bmsx/behaviourtree';
 
 var _game: Game;
 let _model: gamemodel;
@@ -29,7 +30,7 @@ _global['h406A'] = (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode):
 
 const get_model = get_gamemodel<gamemodel>;
 
-const actions = ['up', 'right', 'down', 'left', 'load', 'save', 'bla', 'blap'] as const;
+const actions = ['jump', 'right', 'duck', 'left', 'punch', 'kick', 'block' ] as const;
 type Action = typeof actions[number];
 
 type MyKeyboardInputMapping = {
@@ -41,79 +42,73 @@ type MyGamepadInputMapping = {
 };
 
 const keyboardInputMapping: MyKeyboardInputMapping = {
-    'up': 'ArrowUp',
+    'jump': 'ArrowUp',
     'right': 'ArrowRight',
-    'down': 'ArrowDown',
+    'duck': 'ArrowDown',
     'left': 'ArrowLeft',
-    'load': 'ShiftLeft',
-    'save': 'KeyZ',
-    'bla': 'KeyA',
-    'blap': 'KeyS',
+    'punch': 'ShiftLeft',
+    'kick': 'KeyZ',
+    'block': 'KeyA',
+    // 'blap': 'KeyS',
 };
 
 const gamepadInputMapping: MyGamepadInputMapping = {
-    'up': 'up',
+    'jump': 'up',
     'right': 'right',
-    'down': 'down',
+    'duck': 'down',
     'left': 'left',
-    'load': 'a',
-    'save': 'b',
-    'bla': 'x',
-    'blap': 'y',
+    'punch': 'a',
+    'kick': 'b',
+    'block': 'x',
+    // 'blap': 'y',
 };
 
+@insavegame
 class enemy extends SpriteObject {
     @build_bt('enemyBehaviorTree')
     public static buildEnemyBehaviorTree(): BehaviorTreeDefinition {
         function isPlayerInRange(this: enemy): boolean {
             // Logic to determine if the player is in range
-            return false;
+            return false; // Placeholder logic
         }
 
-        function attackPlayer(this: enemy): BTStatus {
-            // Logic to perform an attack
+        function isPlayerAttacking(this: enemy): boolean {
+            // Logic to check if the player is attacking
+            return false; // Placeholder logic
+        }
+
+        function performAttackMove1(this: enemy): BTStatus {
+            // Logic for attack move 1
             return 'SUCCESS';
         }
 
-        function isUnderAttack(this: enemy): boolean {
-            // Logic to determine if the enemy is under attack
-            return false;
-        }
-
-        function defend(this: enemy): BTStatus {
-            // Logic for defense actions
+        function performAttackMove2(this: enemy): BTStatus {
+            // Logic for attack move 2
             return 'SUCCESS';
         }
 
-        // Methods for reposition and idle behaviors
-
-        function isAtDisadvantage(this: enemy): boolean {
-            // Example logic: Check if enemy is cornered or too close to the edge
-            // This logic will depend on your game's environment and enemy capabilities
-            const someThreshold = 10;
-            const anotherThreshold = 100;
-            return this.pos.x < someThreshold || this.pos.x > anotherThreshold;
-        }
-
-        function reposition(this: enemy): BTStatus {
-            // Example logic: Move towards the center or a better strategic position
-            // Implement movement logic based on your game's mechanics
-            // this.moveTo(newPosition); // `moveTo` is a hypothetical method for movement
+        function performSpecialMove(this: enemy): BTStatus {
+            // Logic for special move
             return 'SUCCESS';
         }
 
-
-        function isPlayerIdle(this: enemy): boolean {
-            // Example logic: Check if the player hasn't moved or attacked recently
-            // This will require tracking the player's activity
-            // return model.get('player').lastActionTime > idleThreshold;
-            return false;
+        function block(this: enemy): BTStatus {
+            // Logic for block action
+            return 'SUCCESS';
         }
 
-        function idleBehavior(this: enemy, blackboard: Blackboard): BTStatus {
-            // Example logic: Perform a taunt or change stance
-            // Implement this based on your game's visual and AI capabilities
-            // this.taunt(); // `taunt` is a hypothetical method for taunting
+        function dodge(this: enemy): BTStatus {
+            // Logic for dodge action
+            return 'SUCCESS';
+        }
+
+        function counter(this: enemy): BTStatus {
+            // Logic for counter action
+            return 'SUCCESS';
+        }
+
+        function idle(this: enemy): BTStatus {
+            // Logic for idle behavior
             return 'SUCCESS';
         }
 
@@ -128,8 +123,13 @@ class enemy extends SpriteObject {
                             condition: isPlayerInRange
                         },
                         {
-                            type: 'Action',
-                            action: attackPlayer
+                            type: 'RandomSelector',
+                            currentchild_propname: 'currentAttackMove',
+                            children: [
+                                { type: 'Action', action: performAttackMove1 },
+                                { type: 'Action', action: performAttackMove2 },
+                                { type: 'Action', action: performSpecialMove }
+                            ]
                         }
                     ]
                 },
@@ -138,48 +138,30 @@ class enemy extends SpriteObject {
                     children: [
                         {
                             type: 'Condition',
-                            condition: isUnderAttack
+                            condition: isPlayerAttacking
                         },
                         {
-                            type: 'Action',
-                            action: defend
-                        }
-                    ]
-                },
-                // Additional Sequences for reposition and idle behaviors
-                {
-                    type: 'Sequence',
-                    children: [
-                        {
-                            type: 'Condition',
-                            condition: isAtDisadvantage
-                        },
-                        {
-                            type: 'Action',
-                            action: reposition
+                            type: 'RandomSelector',
+                            currentchild_propname: 'currentDefenseMove',
+                            children: [
+                                { type: 'Action', action: block },
+                                { type: 'Action', action: dodge },
+                                { type: 'Action', action: counter }
+                            ]
                         }
                     ]
                 },
                 {
-                    type: 'Sequence',
-                    children: [
-                        {
-                            type: 'Condition',
-                            condition: isPlayerIdle
-                        },
-                        {
-                            type: 'Action',
-                            action: idleBehavior
-                        }
-                    ]
-                },
+                    type: 'Action',
+                    action: idle
+                }
             ]
         };
     }
 }
 
 @insavegame
-class bclass extends SpriteObject {
+class player extends SpriteObject {
     @statedef_builder
     public static bouw(): machine_states {
         Input.setInputMap(0, {
@@ -188,60 +170,18 @@ class bclass extends SpriteObject {
         } as InputMap);
 
         // To check if an action is pressed for player 0
-        function blarun(this: bclass, s: sstate) {
+        function defaultrun(this: player, s: sstate) {
             const speed = 2;
 
             const pressedActions = Input.getPressedActions(0);
 
             for (const { action, pressed, consumed } of pressedActions) {
                 switch (action as Action) {
-                    case 'up':
-                        this.pos.y -= speed;
-                        break;
                     case 'right':
                         this.pos.x += speed;
                         break;
-                    case 'down':
-                        this.pos.y += speed;
-                        break;
                     case 'left':
                         this.pos.x -= speed;
-                        break;
-                    case 'load':
-                        if (consumed) break;
-                        Input.consumeAction(0, action);
-
-                        if (_model[savestring]) {
-                            _model.load(_model[savestring]);
-                            _model[savestring] = undefined;
-                            delete _model[savestring];
-                            console.info(`${new Date().toTimeString()} Game loaded!`);
-                        }
-                        // show_load_savestate_dialog();
-                        break;
-                    case 'save':
-                        if (consumed) break;
-                        Input.consumeAction(0, action);
-
-                        get_model()[savestring] = get_model().save();
-                        console.info(`${new Date().toTimeString()} Game saved!`);
-                        console.info(`${_model[savestring]}`);
-                        // show_download_savestate_dialog();
-                        break;
-                    case 'bla':
-                        if (consumed) break;
-                        Input.consumeAction(0, action);
-                        global.eventEmitter.emit('testEvent', this.id);
-                        this.testmeuk();
-
-                        this.state.to('bla');
-                        break;
-                    case 'blap':
-                        if (consumed) break;
-                        Input.consumeAction(0, action);
-                        global.eventEmitter.emit('testEventOnce', this.id);
-
-                        this.state.to('#blap');
                         break;
                 }
             }
@@ -249,54 +189,22 @@ class bclass extends SpriteObject {
 
         return {
             states: {
-                bla: {
-                    run: blarun,
-                    enter(this: bclass) { this.imgid = BitmapId.b; },
-                },
-                '#blap': {
-                    run: blarun,
-                    enter(this: bclass) { this.imgid = BitmapId.b2; },
+                '#idle': {
+                    run: defaultrun,
+                    enter(this: player) { },
                 },
             }
         };
     }
 
-    @update_tagged_components('test')
-    testmeuk() {
-        console.log('testmeuk');
-    }
-
     constructor() {
-        super('The B');
+        super('player');
         this.hitarea = new_area(0, 0, 14, 18);
-        this.addComponent(new TestComponent(this.id));
     }
 };
 
-@componenttag('test')
-class TestComponent extends Component {
-    // Implement virtual methods
-    override update() {
-        console.log('TestComponent update');
-    }
-
-    // Implement event handlers
-    @subscribesToParentScopedEvent('testEvent')
-    onTestEvent() {
-        console.log('TestComponent onTestEvent');
-    }
-
-    @oneTimeGlobalEventHandler('testEventOnce')
-    onTestEvent2() {
-        console.log('TestComponent onTestEvent2');
-    }
-}
-
-const savestring = Symbol('savestring');
 @insavegame
 class gamemodel extends BaseModel {
-    public [savestring]: string;
-
     @statedef_builder
     public static bouw(): machine_states {
         return {
@@ -326,7 +234,7 @@ class gamemodel extends BaseModel {
     }
 
     public override do_one_time_game_init(): this {
-        _model.spawn(new bclass(), new_vec2(100, 100));
+        _model.spawn(new player(), new_vec2(100, 100));
         return this;
     }
 
