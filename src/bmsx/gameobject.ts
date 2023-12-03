@@ -9,6 +9,21 @@ import { ScreenBoundaryComponent, TileCollisionComponent } from "./collisioncomp
 import { onload } from "./gameserializer";
 import { IEventSubscriber, EventEmitter } from "./eventemitter";
 
+/**
+ * Represents a static GameObject.
+ */
+interface IGameObjectStatic {
+    autoAddComponents?: ComponentConstructor<Component>[];
+}
+
+/**
+ * Represents a constructor for the GameObject.
+ * @typeparam T - The type of the GameObject.
+ */
+export type GameObjectConstructor = {
+    new(_id?: GameObjectId, _fsm_id?: string): GameObject;
+} & IGameObjectStatic;
+
 export interface IIdentifiable {
     id: string;
 }

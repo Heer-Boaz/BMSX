@@ -1,7 +1,7 @@
 import { GameObjectId } from './bmsx';
 import { onload, exclude_save, insavegame } from './gameserializer';
 import { IEventSubscriber, EventEmitter, EventSubscription } from './eventemitter';
-import { GameObject } from './gameobject';
+import { GameObjectConstructor } from './gameobject';
 
 export type KeyToComponentMap = { [key: string]: Component };
 export type ComponentConstructor<T extends Component> = { new(...args: any[]): T };
@@ -140,14 +140,12 @@ export function update_tagged_components(...tags: ComponentTag[]) {
     };
 }
 
-interface IGameObjectStatic {
-    autoAddComponents?: ComponentConstructor<Component>[];
-}
-
-type GameObjectConstructor = {
-    new(_id?: GameObjectId, _fsm_id?: string): GameObject;
-} & IGameObjectStatic;
-
+/**
+ * Attaches the specified components to a game object constructor.
+ *
+ * @param components - The components to attach.
+ * @returns A decorator function that attaches the components to the game object constructor.
+ */
 export function attach_components(...components: ComponentConstructor<Component>[]) {
     return function (constructor: GameObjectConstructor) {
         constructor.autoAddComponents = components;
