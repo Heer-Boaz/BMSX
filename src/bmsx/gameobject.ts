@@ -52,6 +52,12 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
         }
     }
 
+    updateComponentsWithTag(tag: ComponentTag, ...args: any[]): void {
+        // Get all compnents with the given tag
+        const components = Object.values(this.components).filter(component => component.hasTag(tag));
+        components.forEach(component => component.update(...args));
+    }
+
     /**
      * Returns the primitive value of the GameObject instance.
      * @returns The ID of the GameObject.

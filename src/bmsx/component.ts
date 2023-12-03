@@ -5,6 +5,7 @@ import { GameObjectConstructor } from './gameobject';
 
 export type KeyToComponentMap = { [key: string]: Component };
 export type ComponentConstructor<T extends Component> = { new(...args: any[]): T };
+
 /**
  * Represents a container for components.
  */
@@ -33,6 +34,13 @@ export interface IComponentContainer {
      * @param args - Additional arguments to pass to the component's update method.
      */
     updateComponent<T extends Component>(constructor: ComponentConstructor<T>, ...args: any[]): void;
+
+    /**
+     * Updates all components with the specified tag in the container.
+     * @param tag - The tag of the components to update.
+     * @param args - Additional arguments to pass to the components' update method.
+     */
+    updateComponentsWithTag(tag: ComponentTag, ...args: any[]): void;
 }
 
 @insavegame
@@ -122,8 +130,9 @@ function updateAllTags(constructor: any) {
  * @param tags The tags of the components to update.
  * @returns A decorator function that updates the tagged components.
  */
-export function update_tagged_components(...tags: ComponentTag[]) {
+export function update_tagged_components<T extends IComponentContainer>(...tags: ComponentTag[]) {
     return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
+
         const originalMethod = descriptor.value; // Save a reference to the original method
         descriptor.value = function (...args: any[]) { // Wrap the original method
             Object.values((this as IComponentContainer).components).forEach(component => { // Iterate over all components
