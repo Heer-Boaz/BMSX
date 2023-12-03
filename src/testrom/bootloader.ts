@@ -11,7 +11,7 @@ import { new_area, Direction, Game, new_vec2, get_gamemodel } from '../bmsx/bmsx
 import { GameObject, leavingScreenHandler_prohibit } from '../bmsx/gameobject';
 import { BaseModel } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';
-import { Component, componenttag, update_tagged_components } from '../bmsx/component';
+import { attach_components, Component, componenttag, update_tagged_components } from '../bmsx/component';
 import { subscribesToParentScopedEvent, subscribesToSelfScopedEvent } from '../bmsx/eventemitter';
 import { assign_bt, BehaviorTreeDefinition, build_bt, WaitForActionCompletionDecorator } from '../bmsx/behaviourtree';
 
@@ -64,8 +64,41 @@ const gamepadInputMapping: MyGamepadInputMapping = {
 };
 
 @insavegame
+@componenttag('test')
+class TestComponent extends Component {
+    // Implement virtual methods
+    override update() {
+        console.log('TestComponent update');
+    }
+
+    // Implement event handlers
+    @subscribesToParentScopedEvent('testEvent')
+    onTestEvent() {
+        console.log('TestComponent onTestEvent');
+    }
+
+    // @oneTimeGlobalEventHandler('testEventOnce')
+    onTestEvent2() {
+        console.log('TestComponent onTestEvent2');
+    }
+
+    onTestEvent3() {
+        console.log('TestComponent onTestEvent3');
+    }
+}
+
+@insavegame
+class DerivedTestComponent extends TestComponent {
+    override update() {
+        super.update();
+        console.log('DerivedTestComponent update');
+    }
+}
+
+@insavegame
 @assign_fsm('bclass_animation', 'bclass_meuk')
 @assign_bt('bclass_tree')
+@attach_components(TestComponent, DerivedTestComponent, ScreenBoundaryComponent)
 class bclass extends SpriteObject {
     @build_bt('bclass_tree')
     public static buildMyTree(): BehaviorTreeDefinition {
@@ -77,7 +110,7 @@ class bclass extends SpriteObject {
                     children: [
                         { type: 'Condition', condition: () => Math.random() > .9 },
                         {
-                            type: 'Action', action: function(this: bclass, blackboard) {
+                            type: 'Action', action: function (this: bclass, blackboard) {
                                 console.log(`Action 1 executed for ${this.id}`)
                                 return 'SUCCESS';
                             }
@@ -91,7 +124,7 @@ class bclass extends SpriteObject {
                         {
                             type: 'Decorator', decorator: WaitForActionCompletionDecorator,
                             child: {
-                                type: 'Action', action: function(this: bclass, blackboard)  {
+                                type: 'Action', action: function (this: bclass, blackboard) {
                                     console.log(`Sequence action after waiting for ${this.id}`);
                                     let testieblap = blackboard.get<number>('testdieblap') ?? 0;
                                     let success = false;
@@ -106,7 +139,7 @@ class bclass extends SpriteObject {
                         },
                         {
                             type: 'Action',
-                            action: function(this: bclass, blackboard)  {
+                            action: function (this: bclass, blackboard) {
                                 console.log(`Sequence action after decorated action for ${this.id}`);
                                 return 'SUCCESS';
                             }
@@ -119,7 +152,7 @@ class bclass extends SpriteObject {
                     count_propname: 'counting',
                     child: {
                         type: 'Action',
-                        action: function(this: bclass, blackboard) {
+                        action: function (this: bclass, blackboard) {
                             console.log(`Limited action for ${this.id}`);
                             return 'SUCCESS';
                         }
@@ -129,13 +162,13 @@ class bclass extends SpriteObject {
                     type: 'RandomSelector',
                     children: [
                         {
-                            type: 'Action', action: function(this: bclass, blackboard) {
+                            type: 'Action', action: function (this: bclass, blackboard) {
                                 console.log(`Random action A for ${this.id}`)
                                 return 'SUCCESS';
                             }
                         },
                         {
-                            type: 'Action', action: function(this: bclass, blackboard) {
+                            type: 'Action', action: function (this: bclass, blackboard) {
                                 console.log(`Random action B for ${this.id}`)
                                 return 'SUCCESS';
                             }
@@ -145,7 +178,7 @@ class bclass extends SpriteObject {
                 },
                 {
                     type: 'Action',
-                    action: function(this: bclass, blackboard) {
+                    action: function (this: bclass, blackboard) {
                         console.log(`Fallback action executed for ${this.id}`)
                         return 'SUCCESS';
                     }
@@ -286,41 +319,8 @@ class bclass extends SpriteObject {
         super('The B');
         this.imgid = BitmapId.b2;
         this.hitarea = new_area(0, 0, 14, 18);
-        this.addComponent(new DerivedTestComponent(this.id));
-        this.addComponent(new ScreenBoundaryComponent(this.id));
-        // this.onLeavingScreen = (ik, d, old_x_or_y) => leavingScreenHandler_prohibit(ik, d, old_x_or_y);
     }
 };
-
-@componenttag('test')
-class TestComponent extends Component {
-    // Implement virtual methods
-    override update() {
-        console.log('TestComponent update');
-    }
-
-    // Implement event handlers
-    @subscribesToParentScopedEvent('testEvent')
-    onTestEvent() {
-        console.log('TestComponent onTestEvent');
-    }
-
-    // @oneTimeGlobalEventHandler('testEventOnce')
-    onTestEvent2() {
-        console.log('TestComponent onTestEvent2');
-    }
-
-    onTestEvent3() {
-        console.log('TestComponent onTestEvent3');
-    }
-}
-
-class DerivedTestComponent extends TestComponent {
-    override update() {
-        super.update();
-        console.log('DerivedTestComponent update');
-    }
-}
 
 const savestring = Symbol('savestring');
 @insavegame

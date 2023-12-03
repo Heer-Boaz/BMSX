@@ -1,6 +1,7 @@
 import { GameObjectId } from './bmsx';
 import { onload, exclude_save, insavegame } from './gameserializer';
 import { IEventSubscriber, EventEmitter, EventSubscription } from './eventemitter';
+import { GameObject } from './gameobject';
 
 export type KeyToComponentMap = { [key: string]: Component };
 export type ComponentConstructor<T extends Component> = { new(...args: any[]): T };
@@ -136,5 +137,19 @@ export function update_tagged_components(...tags: ComponentTag[]) {
             });
             originalMethod.apply(this, args); // Call the original method
         };
+    };
+}
+
+interface GameObjectStatic {
+    autoAddComponents?: ComponentConstructor<Component>[];
+}
+
+type GameObjectConstructor = {
+    new(_id?: GameObjectId, _fsm_id?: string): GameObject;
+} & GameObjectStatic;
+
+export function attach_components(...components: ComponentConstructor<Component>[]) {
+    return function (constructor: GameObjectConstructor) {
+        constructor.autoAddComponents = components;
     };
 }

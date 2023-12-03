@@ -298,9 +298,19 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
         this.size = new_vec3(0, 0, 0);
         this.disposeFlag = false;
         this.state = statecontext.create(_fsm_id ?? this.constructor.name, this.id);
+
+        // Add components that should be auto-added to this subclass
+        if ((this.constructor as any).autoAddComponents) {
+            for (const componentClass of (this.constructor as any).autoAddComponents) {
+                this.addComponent(new componentClass(this.id));
+            }
+        }
+
         // Call the method to initialize linked state machines
         this.initializeLinkedFSMs();
+        // Call the method to initialize linked behavior trees
         this.initializeBehaviorTrees();
+        // Call the method to initialize event subscriptions
         this.init_onloadable_shit();
     }
 
