@@ -1,6 +1,7 @@
 ﻿import { id2htmlimg } from './rompack.d';
 import { Size, vec3 } from "./bmsx";
 import { BFont } from "./bmsx";
+import { update_tagged_components } from './component';
 
 export interface DrawImgOptions {
     imgid: string;
@@ -65,7 +66,7 @@ export abstract class BaseView {
     public drawgame(clearCanvas: boolean = true): void {
         if (clearCanvas) global.view.clear();
         global.model.currentSpace.sort_by_depth(); // Required for each frame as objects can change depth during the flow of the game
-        global.model.currentSpace.objects.forEach(o => !o.disposeFlag && o.visible && o.paint?.());
+        global.model.currentSpace.objects.forEach(o => !o.disposeFlag && o.visible && (o.updateComponentsWithTag('render'), o.paint?.()));
     }
 
     /**
