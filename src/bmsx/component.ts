@@ -140,13 +140,13 @@ export function update_tagged_components(...tags: ComponentTag[]) {
     };
 }
 
-interface GameObjectStatic {
+interface IGameObjectStatic {
     autoAddComponents?: ComponentConstructor<Component>[];
 }
 
 type GameObjectConstructor = {
     new(_id?: GameObjectId, _fsm_id?: string): GameObject;
-} & GameObjectStatic;
+} & IGameObjectStatic;
 
 export function attach_components(...components: ComponentConstructor<Component>[]) {
     return function (constructor: GameObjectConstructor) {
