@@ -1,21 +1,43 @@
-import { Direction, GameObjectId, mod } from "./bmsx";
-import { Component, componenttags_postprocessing, componenttags_preprocessing } from "./component";
+import { Direction, GameObjectId, mod, new_vec2, overwrite_vec2, set_vec2, vec2 } from "./bmsx";
+import { Component, componenttags_postprocessing, ComponentUpdateArgs, ComponentUpdateParams } from "./component";
 import { EventEmitter, subscribesToParentScopedEvent } from "./eventemitter";
 import { GameObject } from "./gameobject";
 import { insavegame } from "./gameserializer";
 import { TileSize } from "./msx";
 
 @insavegame
-@componenttags_postprocessing('position')
-export class ScreenBoundaryComponent extends Component {
-    override update(...args: any[]) {
-        const [, { axis, oldpos, newpos }] = args;
-        if (axis === 'x') {
-            this.checkBoundaryForXAxis.call(global.model.get(this.parentid), oldpos, newpos);
+@componenttags_postprocessing('position_update_axis')
+export class PositionUpdateAxisComponent extends Component {
+    protected oldPos: vec2;
+    protected currentPos: vec2;
+
+    constructor(_id: GameObjectId) {
+        super(_id);
+        this.oldPos = new_vec2(0, 0)
+        this.currentPos = new_vec2(0, 0);
+    }
+
+    protected setPos(newPos: vec2) {
+        overwrite_vec2(this.oldPos, this.currentPos); // Store the old position
+        overwrite_vec2(this.currentPos, newPos); // Update the position
+    }
+
+    override update(): void {
+        this.setPos(this.parent.pos);
+    }
+}
+
+@insavegame
+export class ScreenBoundaryComponent extends PositionUpdateAxisComponent {
+    override update(): void {
+        super.update();
+        if (this.oldPos.x !== this.currentPos.x) {
+            this.checkBoundaryForXAxis.call(global.model.get(this.parentid), this.oldPos.x, this.currentPos.x);
         }
-        else {
-            this.checkBoundaryForYAxis.call(global.model.get(this.parentid), oldpos, newpos);
+        if (this.oldPos.y !== this.currentPos.y) {
+            this.checkBoundaryForYAxis.call(global.model.get(this.parentid), this.oldPos.y, this.currentPos.y);
         }
+        this.setPos(this.parent.pos);
     }
 
     private checkBoundaryForXAxis(this: GameObject, oldx: number, newx: number) {
@@ -66,15 +88,17 @@ export class ScreenBoundaryComponent extends Component {
 }
 
 @insavegame
-export class TileCollisionComponent extends Component {
-    override update(...args: any[]): void {
-        const [, { axis, oldpos, newpos }] = args;
-        if (axis === 'x') {
-            this.checkTileCollisionForXAxis.call(global.model.get(this.parentid), oldpos, newpos);
+export class TileCollisionComponent extends PositionUpdateAxisComponent {
+    override update(): void {
+        super.update();
+
+        if (this.oldPos.x !== this.currentPos.x) {
+            this.checkTileCollisionForXAxis.call(global.model.get(this.parentid), this.oldPos.x, this.currentPos.x);
         }
-        else {
-            this.checkTileCollisionForYAxis.call(global.model.get(this.parentid), oldpos, newpos);
+        if (this.oldPos.y !== this.currentPos.y) {
+            this.checkTileCollisionForYAxis.call(global.model.get(this.parentid), this.oldPos.y, this.currentPos.y);
         }
+        this.setPos(this.parent.pos);
     }
 
     private checkTileCollisionForXAxis(this: GameObject, oldx: number, newx: number) {

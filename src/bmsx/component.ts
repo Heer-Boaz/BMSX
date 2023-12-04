@@ -8,6 +8,12 @@ export type ComponentConstructor<T extends Component> = { new(...args: any[]): T
 export type ComponentId = string;
 
 /**
+ * Represents the arguments for updating a component.
+ * @template T - The type of the component.
+ */
+export type ComponentUpdateArgs<T> = { [K in keyof T]: T[K] };
+
+/**
  * Represents a container for components.
  */
 export interface IComponentContainer {
@@ -44,6 +50,11 @@ export interface IComponentContainer {
     updateComponentsWithTag(tag: ComponentTag, ...args: any[]): void;
 }
 
+export type ComponentUpdateParams = {
+    params: any[];
+    returnvalue?: any;
+};
+
 @insavegame
 export abstract class Component implements IIdentifiable {
     public parentid: GameObjectId | null = null;
@@ -51,6 +62,8 @@ export abstract class Component implements IIdentifiable {
     public static tagsPre: Set<ComponentTag>;
     public static tagsPost: Set<ComponentTag>;
     public static eventSubscriptions: EventSubscription[]; // Note: This property is only used by the event emitter
+    public get parent() { return global.model.get(this.parentid); }
+
     constructor(_id: GameObjectId) {
         this.parentid = _id; // Store the parent id for later use
         this.id = this.parentid + '_' + this.constructor.name; // Note: A component can be added once per game object
@@ -111,7 +124,7 @@ export abstract class Component implements IIdentifiable {
     }
 
     // Implement this method to handle component updates
-    update(..._args: any[]): void {
+    update({ params, returnvalue }: ComponentUpdateParams): void {
         // Override this method in derived classes to handle component updates (optional)
     }
 }
@@ -208,13 +221,6 @@ function updateAllPostprocessingTags(constructor: ConstructorWithTagsProperty) {
  * Updates tagged components based on the specified tags.
  *
  * @template T - The type of the component container.
- * @param {...ComponentTag[]} tags - The tags to filter the components.
- * @returns {(...args: any[]) => void} - The wrapped method that updates the components.
- */
-/**
- * Updates tagged components based on the specified tags.
- *
- * @template T - The type of the component container.
  * @param tags - The tags to filter the components.
  * @returns A decorator function that wraps the original method and updates the tagged components.
  */
@@ -228,14 +234,14 @@ export function update_tagged_components<T extends IComponentContainer>(...tags:
             for (const component of components) { // Iterate over all components
                 const componentClass = component.constructor as ConstructorWithTagsProperty; // Get the component's constructor function (class) and cast it to the correct type (ConstructorWithTagsProperty) to access the 'tags' property
                 if (componentClass.tagsPre && tags.some(tag => componentClass.tagsPre.has(tag))) { // Check if the component has any of the specified tags for preprocessing
-                    component.update.apply(component, args); // Call the component's update method with the specified arguments
+                    component.update.apply(component, [{ params: args, returnvalue: undefined }]); // Call the component's update method with the specified arguments
                 }
             }
             let returnvalue = originalMethod.apply(this, args); // Call the original method and save the return value (if any) for postprocessing later
             for (const component of components) { // Iterate over all components
                 const componentClass = component.constructor as ConstructorWithTagsProperty; // Get the component's constructor function (class) and cast it to the correct type (ConstructorWithTagsProperty) to access the 'tags' property
                 if (componentClass.tagsPost && tags.some(tag => componentClass.tagsPost.has(tag))) { // Check if the component has any of the specified tags for postprocessing (note: the component may have been removed in the original method)
-                    component.update.apply(component, [...args, returnvalue]); // Call the component's update method with the specified arguments and the return value of the original method (if any) as the last argument
+                    component.update.apply(component, [{ params: args, returnvalue: returnvalue }]); // Call the component's update method with the specified arguments and the return value of the original method (if any) as the last argument
                 }
             }
         };
