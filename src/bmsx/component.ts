@@ -121,17 +121,27 @@ export abstract class Component implements IIdentifiable {
  */
 export type ComponentTag = string;
 /**
- * Represents a constructor function with an optional 'tags' property.
+ * Represents a constructor function with optional tags properties.
  */
 type ConstructorWithTagsProperty = Function & {
+    /**
+     * The set of tags that should be applied before a method is executed.
+     */
     tagsPre?: Set<ComponentTag>;
+
+    /**
+     * The set of tags that should be applied after a method is executed.
+     */
     tagsPost?: Set<ComponentTag>;
 };
 
 /**
- * Decorator function that adds a tag to a component.
- * @param tag The tag to be added.
- * @returns A decorator function that adds the tag to the component constructor.
+ * Decorator function for preprocessing component tags.
+ * Adds the specified tags to the constructor's 'tagsPre' property.
+ * Updates all tags for the constructor's prototype chain.
+ *
+ * @param tags The component tags to be added.
+ * @returns A decorator function.
  */
 export function componenttags_preprocessing(...tags: ComponentTag[]) {
     return function (constructor: ConstructorWithTagsProperty) { // The constructor function is the only argument
@@ -162,9 +172,9 @@ function updateAllPreprocessingTags(constructor: ConstructorWithTagsProperty) {
 }
 
 /**
- * Decorator function that adds a tag to a component.
- * @param tag The tag to be added.
- * @returns A decorator function that adds the tag to the component constructor.
+ * Decorator function that adds postprocessing component tags to a constructor function.
+ * @param tags The postprocessing component tags to be added.
+ * @returns A decorator function that adds the tags to the constructor's prototype chain.
  */
 export function componenttags_postprocessing(...tags: ComponentTag[]) {
     return function (constructor: ConstructorWithTagsProperty) { // The constructor function is the only argument
@@ -195,9 +205,18 @@ function updateAllPostprocessingTags(constructor: ConstructorWithTagsProperty) {
 }
 
 /**
- * Decorator function that updates tagged components.
- * @param tags The tags of the components to update.
- * @returns A decorator function that updates the tagged components.
+ * Updates tagged components based on the specified tags.
+ *
+ * @template T - The type of the component container.
+ * @param {...ComponentTag[]} tags - The tags to filter the components.
+ * @returns {(...args: any[]) => void} - The wrapped method that updates the components.
+ */
+/**
+ * Updates tagged components based on the specified tags.
+ *
+ * @template T - The type of the component container.
+ * @param tags - The tags to filter the components.
+ * @returns A decorator function that wraps the original method and updates the tagged components.
  */
 export function update_tagged_components<T extends IComponentContainer>(...tags: ComponentTag[]) {
     return function (_target: any, _propertyKey: string, descriptor: PropertyDescriptor) {
@@ -205,17 +224,18 @@ export function update_tagged_components<T extends IComponentContainer>(...tags:
         const originalMethod = descriptor.value; // Save a reference to the original method
         descriptor.value = function (...args: any[]) { // Wrap the original method
             const components = Object.values((this as IComponentContainer).components); // Get all components
+            // Note: The components may be removed in the original method, so we need to iterate over them twice
             for (const component of components) { // Iterate over all components
-                const componentClass = component.constructor as ConstructorWithTagsProperty; // Get the component's constructor
-                if (componentClass.tagsPre && tags.some(tag => componentClass.tagsPre.has(tag))) { // Check if the component has any of the specified tags
-                    component.update.apply(component, args); // Call the component's update method
+                const componentClass = component.constructor as ConstructorWithTagsProperty; // Get the component's constructor function (class) and cast it to the correct type (ConstructorWithTagsProperty) to access the 'tags' property
+                if (componentClass.tagsPre && tags.some(tag => componentClass.tagsPre.has(tag))) { // Check if the component has any of the specified tags for preprocessing
+                    component.update.apply(component, args); // Call the component's update method with the specified arguments
                 }
             }
-            let returnvalue = originalMethod.apply(this, args); // Call the original method
+            let returnvalue = originalMethod.apply(this, args); // Call the original method and save the return value (if any) for postprocessing later
             for (const component of components) { // Iterate over all components
-                const componentClass = component.constructor as ConstructorWithTagsProperty; // Get the component's constructor
-                if (componentClass.tagsPost && tags.some(tag => componentClass.tagsPost.has(tag))) { // Check if the component has any of the specified tags
-                    component.update.apply(component, [...args, returnvalue]); // Call the component's update method
+                const componentClass = component.constructor as ConstructorWithTagsProperty; // Get the component's constructor function (class) and cast it to the correct type (ConstructorWithTagsProperty) to access the 'tags' property
+                if (componentClass.tagsPost && tags.some(tag => componentClass.tagsPost.has(tag))) { // Check if the component has any of the specified tags for postprocessing (note: the component may have been removed in the original method)
+                    component.update.apply(component, [...args, returnvalue]); // Call the component's update method with the specified arguments and the return value of the original method (if any) as the last argument
                 }
             }
         };
