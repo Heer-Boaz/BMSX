@@ -33,9 +33,9 @@ export class EventEmitter {
 
     emit(event: string, emitter: string, ...args: any[]): void {
         // Emit to specific listeners
-        this.listeners[event]?.[emitter]?.forEach(listener => listener(...args));
+        this.listeners[event]?.[emitter]?.forEach(listener => listener(emitter, ...args));
         // Emit to all listeners
-        this.listeners[event]?.['all']?.forEach(listener => listener(...args));
+        this.listeners[event]?.['all']?.forEach(listener => listener(emitter, ...args));
     }
 
     off(event: string, listener: Function, emitter?: string): void {
