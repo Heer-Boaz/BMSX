@@ -54,7 +54,7 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
 
     updateComponentsWithTag(tag: ComponentTag, ...args: any[]): void {
         // Get all components with the given tag
-        const components = Object.values(this.components).filter(component => component.hasPreprocessingTag(tag) || component.hadPostprocessingTag(tag));
+        const components = Object.values(this.components).filter(component => component.hasPreprocessingTag(tag) || component.hasPostprocessingTag(tag));
         components.forEach(component => component.update(...args));
     }
 
