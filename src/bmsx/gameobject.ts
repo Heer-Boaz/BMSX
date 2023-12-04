@@ -27,6 +27,11 @@ export interface IIdentifiable {
     id: string;
 }
 
+const DEFAULT_HITTABLE = true;
+const DEFAULT_VISIBLE = true;
+const DEFAULT_POSITION_VALUES: [number, number, number] = [0, 0, 0];
+const DEFAULT_SIZE_VALUES: [number, number, number] = [0, 0, 0];
+
 /**
  * Represents a game object with a position, size, state, and hitbox.
  * Implements both vec2 and vec3 interfaces.
@@ -69,47 +74,25 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
     public disposeFlag: boolean;
 
     public pos: vec3;
-    public get x(): number {
-        return this.pos.x;
-    }
-    public set x(__x: number) {
-        this.pos.x = __x;
-    }
-    public get y(): number {
-        return this.pos.y;
-    }
-    public set y(__y: number) {
-        this.pos.y = __y;
-    }
-    public get z(): number {
-        return this.pos.z;
-    }
-    public set z(__z: number) {
-        if (__z > 10000) __z = 10000;
-        if (__z < 0) __z = 0;
-        this.pos.z = __z;
+    public get x(): number { return this.pos.x; }
+    public set x(x: number) { this.pos.x = x; }
+    public get y(): number { return this.pos.y; }
+    public set y(y: number) { this.pos.y = y; }
+    public get z(): number { return this.pos.z; }
+    public set z(z: number) {
+        if (z > 10000) z = 10000;
+        if (z < 0) z = 0;
+        this.pos.z = z;
     }
 
     public size: vec3;
 
-    public get sx(): number {
-        return this.size.x;
-    }
-    public set sx(__sx: number) {
-        this.size.x = __sx;
-    }
-    public get sy(): number {
-        return this.size.y;
-    }
-    public set sy(__sy: number) {
-        this.size.y = __sy;
-    }
-    public get sz(): number {
-        return this.size.z;
-    }
-    public set sz(__sz: number) {
-        this.size.z = __sz;
-    }
+    public get sx(): number { return this.size.x; }
+    public set sx(sx: number) { this.size.x = sx; }
+    public get sy(): number { return this.size.y; }
+    public set sy(sy: number) { this.size.y = sy; }
+    public get sz(): number { return this.size.z; }
+    public set sz(sz: number) { this.size.z = sz; }
 
     /**
      * The state of the game object.
@@ -195,7 +178,7 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
         return this._hitbox;
     }
     public update_hitbox(): void {
-        this._hitbox = new_area(this.hitbox_left, this.hitbox_top, this.hitbox_right, this.hitbox_bottom);
+        const _ = this.hitbox;
     }
 
     public get hitbox_left(): number {
@@ -219,27 +202,27 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
     }
 
     public get hitarea_left(): number {
-        return this.pos.x + this.hitarea.start.x;
+        return this.pos.x + this.hitarea?.start.x ?? 0;
     }
 
     public get hitarea_top(): number {
-        return this.pos.y + this.hitarea.start.y;
+        return this.pos.y + this.hitarea?.start.y ?? 0;
     }
 
     public get hitarea_right(): number {
-        return this.pos.x + this.hitarea.end.x;
+        return this.pos.x + this.hitarea?.end.x ?? 0;
     }
 
     public get hitarea_bottom(): number {
-        return this.pos.y + this.hitarea.end.y;
+        return this.pos.y + this.hitarea?.end.y ?? 0;
     }
 
     public get x_plus_width(): number {
-        return this.pos.x + this.size.x;
+        return this.pos.x + this.size?.x ?? 0;
     }
 
     public get y_plus_height(): number {
-        return this.pos.y + this.size.y;
+        return this.pos.y + this.size?.y ?? 0;
     }
 
     /**
@@ -286,23 +269,19 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
         this._direction = value;
     }
 
-    // https://gist.github.com/6174/6062387
-    private static readonly GENERATED_ID_LENGTH = 10;
     /**
-     * Generates a unique identifier for a `GameObject` instance.
-     * The generated identifier is a string of length `GameObject.GENERATED_ID_LENGTH` consisting of random alphanumeric characters.
-     * The method ensures that the generated string is unique by checking if it already exists in the global model.
-     * If the generated string already exists, a new string is generated until a unique one is found.
-     * @returns A unique identifier for a `GameObject` instance.
+     * Generates a unique identifier for a game object.
+     * The generated identifier is a combination of the class name and a unique number.
+     * @returns The generated unique identifier.
      */
     private static generateId(): string {
         const model = global.model;
-        const chars = [..."abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"];
         let result: string;
         do {
-            result = [...Array(GameObject.GENERATED_ID_LENGTH)].map(() => chars[Math.random() * chars.length | 0]).join('');
-        } while (model?.exists(result)); // Make sure that the randomly generated string is unique!
-        // (Note that the model can be undefined. This can happen when an id is genereated for an object that is spawned as part of the model constructor)
+            const baseId = this.constructor.name;
+            const uniqueNumber = global.model.getNextIdNumber();
+            result = `${baseId}_${uniqueNumber}`;
+        } while (model?.exists(result));
         return result;
     }
 
@@ -312,30 +291,47 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
      */
     constructor(_id?: string, _fsm_id?: string) {
         this.id = _id ?? GameObject.generateId();
-        this.hittable = true;
-        this.visible = true;
-        this.pos = new_vec3(0, 0, 0);
-        this.size = new_vec3(0, 0, 0);
+        this.hittable = DEFAULT_HITTABLE;
+        this.visible = DEFAULT_VISIBLE;
+        this.pos = new_vec3(...DEFAULT_POSITION_VALUES);
+        this.size = new_vec3(...DEFAULT_SIZE_VALUES);
         this.disposeFlag = false;
-        this.state = statecontext.create(_fsm_id ?? this.constructor.name, this.id);
-
-        // Add components that should be auto-added to this subclass
-        if ((this.constructor as any).autoAddComponents) {
-            for (const componentClass of (this.constructor as any).autoAddComponents) {
-                this.addComponent(new componentClass(this.id));
-            }
-        }
+        // Create the state context that will be used to manage the state of the game object
+        this.state = this.createStateContext(_fsm_id ?? this.constructor.name)
+        // Add components that should be auto-added to this class
+        this.addAutoComponents();
 
         // Call the method to initialize linked state machines
         this.initializeLinkedFSMs();
         // Call the method to initialize linked behavior trees
         this.initializeBehaviorTrees();
         // Call the method to initialize event subscriptions
-        this.init_onloadable_shit();
+        this.onLoadSetup();
+    }
+
+    /**
+     * Creates a state context for the game object.
+     * @param _fsm_id - Optional ID for the finite state machine.
+     * @returns The created state context.
+     */
+    private createStateContext(_fsm_id?: string) {
+        return statecontext.create(_fsm_id ?? this.constructor.name, this.id);
+    }
+
+    /**
+     * Adds auto components to the game object.
+     * Auto components are added based on the `autoAddComponents` property of the game object's constructor.
+     */
+    private addAutoComponents() {
+        if ((this.constructor as any).autoAddComponents) {
+            for (const componentClass of (this.constructor as any).autoAddComponents) {
+                this.addComponent(new componentClass(this.id));
+            }
+        }
     }
 
     @onload
-    init_onloadable_shit() {
+    onLoadSetup() {
         this.initEventSubscriptions();
     }
 
@@ -350,9 +346,9 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
             switch (subscription.scope) {
                 case 'all': emitterFilter = 'all'; break;
                 case 'parent':
-                    emitterFilter = (this as GameObject & { parentid?: GameObjectId } ).parentid;
+                    emitterFilter = (this as GameObject & { parentid?: GameObjectId }).parentid;
                     if (!emitterFilter) throw `Cannot subscribe GameObject ${this.id} to event ${subscription.eventName} with scope ${subscription.scope} as the class (instance) ${this.constructor.name} does not have a "parentid".`;
-                break;
+                    break;
                 case 'self': emitterFilter = this.id; break;
             }
             eventEmitter.on(subscription.eventName, handler, this.id);
