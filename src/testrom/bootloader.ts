@@ -1,4 +1,4 @@
-import { ScreenBoundaryComponent } from './../bmsx/collisioncomponents';
+import { ProhibitLeavingScreenComponent, ScreenBoundaryComponent } from './../bmsx/collisioncomponents';
 import { GamepadButton } from './../bmsx/input';
 import { RomPack } from '../bmsx/rompack';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
@@ -8,10 +8,10 @@ import { Input, InputMap, KeyboardButton, GamepadInputMapping, KeyboardInputMapp
 import { sstate, statedef_builder, machine_states, build_fsm, assign_fsm } from '../bmsx/bfsm';
 import { insavegame } from '../bmsx/gameserializer';
 import { new_area, Direction, Game, new_vec2, get_gamemodel } from '../bmsx/bmsx';
-import { GameObject, leavingScreenHandler_prohibit } from '../bmsx/gameobject';
+import { GameObject } from '../bmsx/gameobject';
 import { BaseModel } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';
-import { attach_components, Component, componenttag, update_tagged_components } from '../bmsx/component';
+import { attach_components, Component, componenttags_preprocessing, update_tagged_components } from '../bmsx/component';
 import { subscribesToParentScopedEvent, subscribesToSelfScopedEvent } from '../bmsx/eventemitter';
 import { assign_bt, BehaviorTreeDefinition, build_bt, WaitForActionCompletionDecorator } from '../bmsx/behaviourtree';
 
@@ -64,7 +64,7 @@ const gamepadInputMapping: MyGamepadInputMapping = {
 };
 
 @insavegame
-@componenttag('test')
+@componenttags_preprocessing('test')
 class TestComponent extends Component {
     // Implement virtual methods
     override update() {
@@ -98,7 +98,7 @@ class DerivedTestComponent extends TestComponent {
 @insavegame
 @assign_fsm('bclass_animation', 'bclass_meuk')
 @assign_bt('bclass_tree')
-@attach_components(TestComponent, DerivedTestComponent, ScreenBoundaryComponent)
+@attach_components(TestComponent, DerivedTestComponent, ProhibitLeavingScreenComponent)
 class bclass extends SpriteObject {
     @build_bt('bclass_tree')
     public static buildMyTree(): BehaviorTreeDefinition {
@@ -310,10 +310,10 @@ class bclass extends SpriteObject {
         console.log('testmeuk');
     }
 
-    @subscribesToSelfScopedEvent('leavingScreen')
-    testmeuk2(d: Direction, old_x_or_y: number) {
-        leavingScreenHandler_prohibit(this, d, old_x_or_y);
-    }
+    // @subscribesToSelfScopedEvent('leavingScreen')
+    // testmeuk2(d: Direction, old_x_or_y: number) {
+    //     leavingScreenHandler_prohibit(this, d, old_x_or_y);
+    // }
 
     constructor() {
         super('The B');

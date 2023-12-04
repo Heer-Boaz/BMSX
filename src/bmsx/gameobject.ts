@@ -54,7 +54,7 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
 
     updateComponentsWithTag(tag: ComponentTag, ...args: any[]): void {
         // Get all compnents with the given tag
-        const components = Object.values(this.components).filter(component => component.hasTag(tag));
+        const components = Object.values(this.components).filter(component => component.hasPreprocessingTag(tag));
         components.forEach(component => component.update(...args));
     }
 
@@ -347,6 +347,15 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
         const eventEmitter = EventEmitter.getInstance();
         constr.eventSubscriptions.forEach(subscription => {
             const handler = this[subscription.handlerName].bind(this);
+            let emitterFilter: string;
+            switch (subscription.scope) {
+                case 'all': emitterFilter = 'all'; break;
+                case 'parent':
+                    emitterFilter = (this as GameObject & { parentid?: GameObjectId } ).parentid;
+                    if (!emitterFilter) throw `Cannot subscribe GameObject ${this.id} to event ${subscription.eventName} with scope ${subscription.scope} as the class (instance) ${this.constructor.name} does not have a "parentid".`;
+                break;
+                case 'self': emitterFilter = this.id; break;
+            }
             eventEmitter.on(subscription.eventName, handler, this.id);
         });
     }
@@ -461,8 +470,10 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
         const oldx = this.pos.x;
         this.pos.x = ~~newx;
 
-        this.updateComponent(TileCollisionComponent, 'x', oldx, newx);
-        this.updateComponent(ScreenBoundaryComponent, 'x', oldx, newx);
+        return { axis: 'x', oldpos: oldx, newpos: newx };
+
+        // this.updateComponent(TileCollisionComponent, 'x', oldx, newx);
+        // this.updateComponent(ScreenBoundaryComponent, 'x', oldx, newx);
     }
 
     /**
@@ -474,8 +485,9 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
         const oldy = this.pos.y;
         this.pos.y = ~~newy;
 
-        this.updateComponent(TileCollisionComponent, 'y', oldy, newy);
-        this.updateComponent(ScreenBoundaryComponent, 'y', oldy, newy);
+        return { axis: 'y', oldpos: oldy, newpos: newy };
+        // this.updateComponent(TileCollisionComponent, 'y', oldy, newy);
+        // this.updateComponent(ScreenBoundaryComponent, 'y', oldy, newy);
     }
 
     /**
@@ -484,24 +496,5 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
     @update_tagged_components('run')
     public run(): void {
         this.state.run();
-    }
-}
-
-/**
- * Shared function used for using as event handler for `IGameObject`/`Sprite.OnLeavingScreen`
- * This function is used as an event handler for the `onLeavingScreen` event of a `GameObject`.
- * It prohibits the `GameObject` from leaving the screen in the direction specified by setting its position to its old position.
- * @param ik The `GameObject` that is leaving the screen.
- * @param d The direction in which the `GameObject` is leaving the screen.
- * @param old_x_or_y The old x or y position of the `GameObject`.
- */
-export function leavingScreenHandler_prohibit(ik: GameObject, d: Direction, old_x_or_y: number): void {
-    switch (d) {
-        case Direction.Left: case Direction.Right:
-            ik.pos.x = old_x_or_y;
-            break;
-        case Direction.Up: case Direction.Down:
-            ik.pos.y = old_x_or_y;
-            break;
     }
 }

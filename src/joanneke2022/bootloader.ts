@@ -9,9 +9,10 @@ import { BitmapId } from './resourceids';
 import { Input } from '../bmsx/input';
 import { TextWriter } from '../bmsx/textwriter';
 import { GameMenu } from './gamemenu';
-import { GameObject, leavingScreenHandler_prohibit } from '../bmsx/gameobject';
+import { GameObject } from '../bmsx/gameobject';
 import { base_model_spaces, BaseModel, spaceid_2_space } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';
+import { leavingScreenHandler_prohibit } from '../bmsx/collisioncomponents';
 
 const TIME_TO_SHINE = 90;
 

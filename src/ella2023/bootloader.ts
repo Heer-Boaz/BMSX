@@ -11,7 +11,7 @@ import { new_area, Direction, Game, new_vec2, get_gamemodel } from '../bmsx/bmsx
 import { GameObject } from '../bmsx/gameobject';
 import { BaseModel } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';
-import { Component, componenttag, update_tagged_components } from '../bmsx/component';
+import { Component, componenttags_preprocessing, update_tagged_components } from '../bmsx/component';
 import { subscribesToParentScopedEvent as subscribesToParentScopedEvent } from '../bmsx/eventemitter';
 import { BehaviorTreeDefinition, build_bt } from '../bmsx/behaviourtree';
 
