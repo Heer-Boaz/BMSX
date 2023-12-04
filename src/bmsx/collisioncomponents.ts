@@ -1,18 +1,20 @@
-import { Direction, mod } from "./bmsx";
-import { Component, componenttag } from "./component";
+import { Direction, GameObjectId, mod } from "./bmsx";
+import { Component, componenttags_postprocessing, componenttags_preprocessing } from "./component";
 import { EventEmitter, subscribesToParentScopedEvent } from "./eventemitter";
-import { GameObject, leavingScreenHandler_prohibit } from "./gameobject";
+import { GameObject } from "./gameobject";
 import { insavegame } from "./gameserializer";
 import { TileSize } from "./msx";
 
 @insavegame
+@componenttags_postprocessing('position')
 export class ScreenBoundaryComponent extends Component {
-    override update(axis: 'x' | 'y', oldPos: number, newPos: number) {
+    override update(...args: any[]) {
+        const [, { axis, oldpos, newpos }] = args;
         if (axis === 'x') {
-            this.checkBoundaryForXAxis.call(global.model.get(this.parentid), oldPos, newPos);
+            this.checkBoundaryForXAxis.call(global.model.get(this.parentid), oldpos, newpos);
         }
         else {
-            this.checkBoundaryForYAxis.call(global.model.get(this.parentid), oldPos, newPos);
+            this.checkBoundaryForYAxis.call(global.model.get(this.parentid), oldpos, newpos);
         }
     }
 
@@ -65,12 +67,13 @@ export class ScreenBoundaryComponent extends Component {
 
 @insavegame
 export class TileCollisionComponent extends Component {
-    override update(axis: 'x' | 'y', oldPos: number, newPos: number) {
+    override update(...args: any[]): void {
+        const [, { axis, oldpos, newpos }] = args;
         if (axis === 'x') {
-            this.checkTileCollisionForXAxis.call(global.model.get(this.parentid), oldPos, newPos);
+            this.checkTileCollisionForXAxis.call(global.model.get(this.parentid), oldpos, newpos);
         }
         else {
-            this.checkTileCollisionForYAxis.call(global.model.get(this.parentid), oldPos, newPos);
+            this.checkTileCollisionForYAxis.call(global.model.get(this.parentid), oldpos, newpos);
         }
     }
 
@@ -113,9 +116,29 @@ export class TileCollisionComponent extends Component {
     }
 }
 
-// export class ProhibitLeavingScreenComponent extends Component {
-//     @subscribesToParentScopedEvent('leavingScreen')
-//     public onLeavingScreen(ik: GameObject, d: Direction, old_x_or_y: number) {
-//         leavingScreenHandler_prohibit(ik, d, old_x_or_y);
-//     }
-// }
+@insavegame
+export class ProhibitLeavingScreenComponent extends ScreenBoundaryComponent {
+    @subscribesToParentScopedEvent('leavingScreen')
+    public onLeavingScreen(emitter: GameObjectId, d: Direction, old_x_or_y: number) {
+        leavingScreenHandler_prohibit(global.model.get(emitter), d, old_x_or_y);
+    }
+}
+
+/**
+ * Shared function used for using as event handler for `IGameObject`/`Sprite.OnLeavingScreen`
+ * This function is used as an event handler for the `onLeavingScreen` event of a `GameObject`.
+ * It prohibits the `GameObject` from leaving the screen in the direction specified by setting its position to its old position.
+ * @param ik The `GameObject` that is leaving the screen.
+ * @param d The direction in which the `GameObject` is leaving the screen.
+ * @param old_x_or_y The old x or y position of the `GameObject`.
+ */
+export function leavingScreenHandler_prohibit(ik: GameObject, d: Direction, old_x_or_y: number): void {
+    switch (d) {
+        case Direction.Left: case Direction.Right:
+            ik.pos.x = old_x_or_y;
+            break;
+        case Direction.Up: case Direction.Down:
+            ik.pos.y = old_x_or_y;
+            break;
+    }
+}
