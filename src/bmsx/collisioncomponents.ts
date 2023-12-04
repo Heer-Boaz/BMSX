@@ -1,45 +1,63 @@
 import { Direction, GameObjectId, mod, new_vec2, overwrite_vec2, set_vec2, vec2 } from "./bmsx";
-import { Component, componenttags_postprocessing, ComponentUpdateArgs, ComponentUpdateParams } from "./component";
+import { Component, componenttags_postprocessing, componenttags_preprocessing, ComponentUpdateArgs, ComponentUpdateParams } from "./component";
 import { EventEmitter, subscribesToParentScopedEvent } from "./eventemitter";
 import { GameObject } from "./gameobject";
 import { insavegame } from "./gameserializer";
 import { TileSize } from "./msx";
 
+/**
+ * Represents a component responsible for updating the position of a game object along a specific axis.
+ * This component handles preprocessing and postprocessing updates to handle collisions, screen boundaries, etc.
+ */
 @insavegame
-@componenttags_postprocessing('position_update_axis')
-export class PositionUpdateAxisComponent extends Component {
+@componenttags_preprocessing('position_update_axis') // Preprocessing update to store the old position so that it can be used in the postprocessing update to place the object back to its old position if it collides with a wall or leaves the screen, etc.
+@componenttags_postprocessing('position_update_axis') // Postprocessing update to check for, and handle, collisions or leaving the screen, etc.
+export abstract class PositionUpdateAxisComponent extends Component {
+    /**
+     * The previous position of the game object.
+     */
     protected oldPos: vec2;
-    protected currentPos: vec2;
 
     constructor(_id: GameObjectId) {
         super(_id);
         this.oldPos = new_vec2(0, 0)
-        this.currentPos = new_vec2(0, 0);
     }
 
-    protected setPos(newPos: vec2) {
-        overwrite_vec2(this.oldPos, this.currentPos); // Store the old position
-        overwrite_vec2(this.currentPos, newPos); // Update the position
-    }
-
-    override update(): void {
-        this.setPos(this.parent.pos);
+    override preprocessingUpdate(): void {
+        super.update();
+        overwrite_vec2(this.oldPos, this.parent.pos); // Store the old position
     }
 }
 
+/**
+ * Represents a screen boundary component that handles collision detection with the screen boundaries.
+ * @class
+ * @extends PositionUpdateAxisComponent
+ */
 @insavegame
 export class ScreenBoundaryComponent extends PositionUpdateAxisComponent {
-    override update(): void {
+    /**
+     * Overrides the postprocessingUpdate method to check for boundary collisions on the X and Y axes.
+     * @override
+     */
+    override postprocessingUpdate(): void {
         super.update();
-        if (this.oldPos.x !== this.currentPos.x) {
-            this.checkBoundaryForXAxis.call(global.model.get(this.parentid), this.oldPos.x, this.currentPos.x);
+        const currentPos = this.parent.pos;
+        if (this.oldPos.x !== currentPos.x) {
+            this.checkBoundaryForXAxis.call(global.model.get(this.parentid), this.oldPos.x, currentPos.x);
         }
-        if (this.oldPos.y !== this.currentPos.y) {
-            this.checkBoundaryForYAxis.call(global.model.get(this.parentid), this.oldPos.y, this.currentPos.y);
+        if (this.oldPos.y !== currentPos.y) {
+            this.checkBoundaryForYAxis.call(global.model.get(this.parentid), this.oldPos.y, currentPos.y);
         }
-        this.setPos(this.parent.pos);
     }
 
+    /**
+     * Checks for boundary collisions on the X axis.
+     * @private
+     * @param {GameObject} this - The game object.
+     * @param {number} oldx - The old x position.
+     * @param {number} newx - The new x position.
+     */
     private checkBoundaryForXAxis(this: GameObject, oldx: number, newx: number) {
         if (newx < oldx) {
             if (newx + this.size.x < 0) {
@@ -63,6 +81,13 @@ export class ScreenBoundaryComponent extends PositionUpdateAxisComponent {
         }
     }
 
+    /**
+     * Checks for boundary collisions on the Y axis.
+     * @private
+     * @param {GameObject} this - The game object.
+     * @param {number} oldy - The old y position.
+     * @param {number} newy - The new y position.
+     */
     private checkBoundaryForYAxis(this: GameObject, oldy: number, newy: number) {
         if (newy < oldy) {
             if (newy + this.size.y < 0) {
@@ -87,21 +112,33 @@ export class ScreenBoundaryComponent extends PositionUpdateAxisComponent {
     }
 }
 
+/**
+ * Represents a collision component for game objects vs tiles.
+ * Extends the PositionUpdateAxisComponent class.
+ */
 @insavegame
 export class TileCollisionComponent extends PositionUpdateAxisComponent {
-    override update(): void {
+    /**
+     * Performs post-processing update for collision components.
+     * Overrides the base class's update method and checks for tile collisions on the x and y axes.
+     */
+    override postprocessingUpdate(): void {
         super.update();
-
-        if (this.oldPos.x !== this.currentPos.x) {
-            this.checkTileCollisionForXAxis.call(global.model.get(this.parentid), this.oldPos.x, this.currentPos.x);
+        const currentPos = this.parent.pos;
+        if (this.oldPos.x !== currentPos.x) {
+            this.checkTileCollisionForXAxis.call(global.model.get(this.parentid), this.oldPos.x, currentPos.x);
         }
-        if (this.oldPos.y !== this.currentPos.y) {
-            this.checkTileCollisionForYAxis.call(global.model.get(this.parentid), this.oldPos.y, this.currentPos.y);
+        if (this.oldPos.y !== currentPos.y) {
+            this.checkTileCollisionForYAxis.call(global.model.get(this.parentid), this.oldPos.y, currentPos.y);
         }
-        this.setPos(this.parent.pos);
     }
 
-    private checkTileCollisionForXAxis(this: GameObject, oldx: number, newx: number) {
+    /**
+     * Checks for tile collision along the X-axis and updates the object's position accordingly.
+     * @param oldx The previous X-coordinate of the object.
+     * @param newx The new X-coordinate of the object.
+     */
+    protected checkTileCollisionForXAxis(this: GameObject, oldx: number, newx: number) {
         if (newx < oldx) {
             if (model.collidesWithTile(this, Direction.Left)) {
                 EventEmitter.getInstance().emit('wallcollide', this.id, Direction.Left);
@@ -120,7 +157,12 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
         }
     }
 
-    private checkTileCollisionForYAxis(this: GameObject, oldy: number, newy: number) {
+    /**
+     * Checks for tile collision along the Y-axis and updates the object's position accordingly.
+     * @param oldy The previous Y-coordinate of the object.
+     * @param newy The new Y-coordinate of the object.
+     */
+    protected checkTileCollisionForYAxis(this: GameObject, oldy: number, newy: number) {
         if (newy < oldy) {
             if (model.collidesWithTile(this, Direction.Up)) {
                 EventEmitter.getInstance().emit('wallcollide', this.id, Direction.Up);
@@ -140,8 +182,18 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
     }
 }
 
+/**
+ * Represents a component that prohibits the game object from leaving the screen boundary.
+ * Inherits from ScreenBoundaryComponent.
+ */
 @insavegame
 export class ProhibitLeavingScreenComponent extends ScreenBoundaryComponent {
+    /**
+     * Event handler for the 'leavingScreen' event.
+     * @param emitter - The ID of the game object emitting the event.
+     * @param d - The direction in which the game object is leaving the screen.
+     * @param old_x_or_y - The previous x or y coordinate of the game object.
+     */
     @subscribesToParentScopedEvent('leavingScreen')
     public onLeavingScreen(emitter: GameObjectId, d: Direction, old_x_or_y: number) {
         leavingScreenHandler_prohibit(global.model.get(emitter), d, old_x_or_y);
