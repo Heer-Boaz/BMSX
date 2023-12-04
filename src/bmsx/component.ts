@@ -1,5 +1,5 @@
 import { GameObjectId } from './bmsx';
-import { onload, exclude_save, insavegame } from './gameserializer';
+import { onload, insavegame } from './gameserializer';
 import { IEventSubscriber, EventEmitter, EventSubscription } from './eventemitter';
 import { GameObjectConstructor, IIdentifiable } from './gameobject';
 
@@ -124,8 +124,18 @@ export abstract class Component implements IIdentifiable {
     }
 
     // Implement this method to handle component updates
-    update({ params, returnvalue }: ComponentUpdateParams): void {
+    update(...args): void {
         // Override this method in derived classes to handle component updates (optional)
+    }
+
+    // Implement this method to handle preprocessing updates
+    preprocessingUpdate(...args): void {
+        // Override this method in derived classes to handle preprocessing updates (optional)
+    }
+
+    // Implement this method to handle postprocessing updates
+    postprocessingUpdate({ params, returnvalue }: ComponentUpdateParams): void {
+        // Override this method in derived classes to handle postprocessing updates (optional)
     }
 }
 
@@ -234,14 +244,14 @@ export function update_tagged_components<T extends IComponentContainer>(...tags:
             for (const component of components) { // Iterate over all components
                 const componentClass = component.constructor as ConstructorWithTagsProperty; // Get the component's constructor function (class) and cast it to the correct type (ConstructorWithTagsProperty) to access the 'tags' property
                 if (componentClass.tagsPre && tags.some(tag => componentClass.tagsPre.has(tag))) { // Check if the component has any of the specified tags for preprocessing
-                    component.update.apply(component, [{ params: args, returnvalue: undefined }]); // Call the component's update method with the specified arguments
+                    component.preprocessingUpdate.apply(component, args); // Call the component's update method with the specified arguments
                 }
             }
             let returnvalue = originalMethod.apply(this, args); // Call the original method and save the return value (if any) for postprocessing later
             for (const component of components) { // Iterate over all components
                 const componentClass = component.constructor as ConstructorWithTagsProperty; // Get the component's constructor function (class) and cast it to the correct type (ConstructorWithTagsProperty) to access the 'tags' property
                 if (componentClass.tagsPost && tags.some(tag => componentClass.tagsPost.has(tag))) { // Check if the component has any of the specified tags for postprocessing (note: the component may have been removed in the original method)
-                    component.update.apply(component, [{ params: args, returnvalue: returnvalue }]); // Call the component's update method with the specified arguments and the return value of the original method (if any) as the last argument
+                    component.postprocessingUpdate.apply(component, [{ params: args, returnvalue: returnvalue }]); // Call the component's update method with the specified arguments and the return value of the original method (if any) as the last argument
                 }
             }
         };
