@@ -584,6 +584,16 @@ export function set_vec2(p: vec2, new_x: number, new_y: number) {
 }
 
 /**
+ * Overwrites the values of a vec2 with the values of another vec2.
+ * @param p - The vec2 to be overwritten.
+ * @param n - The vec2 containing the new values.
+ */
+export function overwrite_vec2(p: vec2, n: vec2) {
+    p.x = n.x;
+    p.y = n.y;
+}
+
+/**
  * Sets the values of a vec3 object.
  * @param p - The vec3 object to modify.
  * @param new_x - The new value for the x coordinate.

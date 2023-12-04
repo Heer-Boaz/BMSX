@@ -2,10 +2,9 @@ import { ConstructorWithFSMProperty, statecontext } from "./bfsm";
 import { vec3, Area, Direction, new_vec2, mod, vec2, new_vec3, new_area, GameObjectId as GameObjectId } from "./bmsx";
 import { insavegame } from "./gameserializer";
 import { TileSize } from "./msx";
-import { Component, ComponentTag, IComponentContainer, KeyToComponentMap, ComponentConstructor, update_tagged_components } from "./component";
+import { Component, ComponentTag, IComponentContainer, KeyToComponentMap, ComponentConstructor, update_tagged_components, ComponentUpdateArgs } from "./component";
 import { BehaviorTrees, Blackboard, BTNode, BT_ID, constructBehaviorTree, ConstructorWithBTProperty } from "./behaviourtree";
 import { ObjectTracker } from "./objecttracker";
-import { ScreenBoundaryComponent, TileCollisionComponent } from "./collisioncomponents";
 import { onload } from "./gameserializer";
 import { IEventSubscriber, EventEmitter } from "./eventemitter";
 
@@ -48,14 +47,14 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
     updateComponent<T extends Component>(constructor: ComponentConstructor<T>, ...args: any[]): void {
         const component = this.getComponent(constructor);
         if (component) {
-            component.update(...args);
+            component.update({ params: args });
         }
     }
 
     updateComponentsWithTag(tag: ComponentTag, ...args: any[]): void {
         // Get all components with the given tag
         const components = Object.values(this.components).filter(component => component.hasPreprocessingTag(tag) || component.hasPostprocessingTag(tag));
-        components.forEach(component => component.update(...args));
+        components.forEach(component => component.update({ params: args }));
     }
 
     /**
@@ -465,12 +464,9 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
      * Sets the x-coordinate of the object's position and handles collisions with tiles and screen edges.
      * @param newx The new x-coordinate to set.
      */
-    @update_tagged_components('position')
+    @update_tagged_components('position_update_axis')
     public setx(newx: number) {
-        const oldx = this.pos.x;
         this.pos.x = ~~newx;
-
-        return { axis: 'x', oldpos: oldx, newpos: newx };
 
         // this.updateComponent(TileCollisionComponent, 'x', oldx, newx);
         // this.updateComponent(ScreenBoundaryComponent, 'x', oldx, newx);
@@ -480,12 +476,10 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
      * Sets the y-coordinate of the object's position and handles collisions with tiles and screen edges.
      * @param newy The new y-coordinate to set.
      */
-    @update_tagged_components('position')
+    @update_tagged_components('position_update_axis')
     public sety(newy: number) {
-        const oldy = this.pos.y;
         this.pos.y = ~~newy;
 
-        return { axis: 'y', oldpos: oldy, newpos: newy };
         // this.updateComponent(TileCollisionComponent, 'y', oldy, newy);
         // this.updateComponent(ScreenBoundaryComponent, 'y', oldy, newy);
     }
