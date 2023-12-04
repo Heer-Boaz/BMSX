@@ -275,6 +275,15 @@ export abstract class BaseModel {
     public abstract get gamewidth(): number;
     public abstract get gameheight(): number;
 
+    private static readonly MAX_ID_NUMBER = Number.MAX_SAFE_INTEGER; // Define a maximum number for wrapping
+    protected idCounter = 0;
+
+    public getNextIdNumber(): number {
+        const nextNumber = this.idCounter;
+        this.idCounter = this.idCounter >= BaseModel.MAX_ID_NUMBER ? 0 : this.idCounter + 1;
+        return nextNumber;
+    }
+
     /** **DO NOT CHANGE THIS CODE! PLEASE USE STATE DEFS TO HANDLE GAME STARTUP LOGIC!**
      *
      * _Trying to add logic here will most often result in runtime errors!_
