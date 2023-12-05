@@ -1,7 +1,7 @@
-import { Size, vec3 } from "./bmsx";
+import { Size } from "./bmsx";
 import { BaseView, Color, DrawImgOptions } from './view';
 
-var bvec = {
+const bvec = {
     /**
      * Sets the vertices of a rectangle in a Float32Array, using the given parameters.
      * @param v - The Float32Array to set the vertices in.
@@ -13,17 +13,14 @@ var bvec = {
      * @param sy - The vertical scaling factor.
      */
     set: function (v: Float32Array, x: number, y: number, w: number, h: number, sx: number, sy: number): void {
-        // Do the Boaz matrix translate and scale
-        const x1 = x;
         const x2 = x + w * sx;
-        const y1 = y;
         const y2 = y + h * sy;
 
-        v[0] = x1, v[1] = y1,
-            v[2] = x2, v[3] = y1,
-            v[4] = x1, v[5] = y2,
-            v[6] = x1, v[7] = y2,
-            v[8] = x2, v[9] = y1,
+        v[0] = x, v[1] = y,
+            v[2] = x2, v[3] = y,
+            v[4] = x, v[5] = y2,
+            v[6] = x, v[7] = y2,
+            v[8] = x2, v[9] = y,
             v[10] = x2, v[11] = y2;
     },
     /**
@@ -32,7 +29,9 @@ var bvec = {
      * @param z - The z-coordinate of the rectangle.
      */
     set_zcoord: function (v: Float32Array, z: number): void {
-        v[0] = z, v[1] = z, v[2] = z, v[3] = z, v[4] = z, v[5] = z;
+        for (let i = 0; i < 6; i++) {
+            v[i] = z;
+        }
     },
     /**
      * Sets the color of a rectangle in a Float32Array, using the given Color object.
@@ -40,12 +39,10 @@ var bvec = {
      * @param color - The Color object to use for the rectangle's color.
      */
     set_color: function (v: Float32Array, color: Color): void {
-        v[0] = color.r, v[1] = color.g, v[2] = color.b, v[3] = color.a,
-            v[4] = color.r, v[5] = color.g, v[6] = color.b, v[7] = color.a,
-            v[8] = color.r, v[9] = color.g, v[10] = color.b, v[11] = color.a,
-            v[12] = color.r, v[13] = color.g, v[14] = color.b, v[15] = color.a,
-            v[16] = color.r, v[17] = color.g, v[18] = color.b, v[19] = color.a,
-            v[20] = color.r, v[21] = color.g, v[22] = color.b, v[23] = color.a;
+        const { r, g, b, a } = color;
+        for (let i = 0; i < 24; i += 4) {
+            v[i] = r, v[i + 1] = g, v[i + 2] = b, v[i + 3] = a;
+        }
     },
 };
 
@@ -59,7 +56,6 @@ const VERTEX_COORDS_SIZE = 12;
 const TEX_COORDS_SIZE = 12;
 const Z_COORDS_SIZE = 6;
 const COLOR_OVERRIDE_SIZE = 24;
-const POSITION_ATTRIBUTE = "a_position";
 
 const POSITION_BUFFER_SIZE = 12;
 const TEXCOORD_BUFFER_SIZE = 12;
@@ -69,6 +65,11 @@ const POSITION_ATTRIBUTE_SIZE = 2;
 const TEXCOORD_ATTRIBUTE_SIZE = 2;
 const ZCOORD_ATTRIBUTE_SIZE = 1;
 const COLOR_OVERRIDE_ATTRIBUTE_SIZE = 4;
+
+const BUFFER_OFFSET_MULTIPLIER = 48;
+const ZCOORD_DIVISOR = 10000;
+const ZCOORD_BUFFER_OFFSET_MULTIPLIER = 24;
+const COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER = 96;
 
 /**
  * Represents a view that renders graphics using WebGL.
@@ -373,28 +374,42 @@ export abstract class GLView extends BaseView {
     override drawImg(options: DrawImgOptions): void {
         const { x, y, z, imgid, flip_h = false, flip_v = false, sx = 1, sy = 1, colorize = DEFAULT_VERTEX_COLOR } = options;
         const imgmeta = global.rom['img_assets'][imgid]?.['imgmeta'];
-        if (!imgmeta) throw `Image with id '${imgid}' not found while trying to retrieve image metadata!`;
 
-        const _this = global.view as GLView;
-        const { glctx: gl, vertexcoords, texcoords, zcoords, color_override, drawImgReqIndex } = _this;
-        const width = imgmeta['width'];
-        const height = imgmeta['height'];
+        if (!imgmeta) {
+            throw `Image with id '${imgid}' not found while trying to retrieve image metadata!`;
+        }
+
+        const { glctx: gl, vertexcoords, texcoords, zcoords, color_override, drawImgReqIndex } = this;
+        const { width, height } = imgmeta;
 
         bvec.set(vertexcoords, x, y, width, height, sx, sy);
-        texcoords.set(flip_h && flip_v ? imgmeta['texcoords_fliphv'] :
-            flip_h ? imgmeta['texcoords_fliph'] :
-                flip_v ? imgmeta['texcoords_flipv'] :
-                    imgmeta['texcoords']);
-        bvec.set_zcoord(zcoords, z / 10000);
+        texcoords.set(this.getTexCoords(flip_h, flip_v, imgmeta));
+        bvec.set_zcoord(zcoords, z / ZCOORD_DIVISOR);
         bvec.set_color(color_override, colorize);
 
-        const bufferOffset = 48 * drawImgReqIndex;
+        const bufferOffset = BUFFER_OFFSET_MULTIPLIER * drawImgReqIndex;
+        this.updateBuffers(gl, bufferOffset, vertexcoords, texcoords, zcoords, color_override);
+
+        this.drawImgReqIndex++;
+    }
+
+    private getTexCoords(flip_h: boolean, flip_v: boolean, imgmeta: any): Float32Array {
+        if (flip_h && flip_v) {
+            return imgmeta['texcoords_fliphv'];
+        } else if (flip_h) {
+            return imgmeta['texcoords_fliph'];
+        } else if (flip_v) {
+            return imgmeta['texcoords_flipv'];
+        } else {
+            return imgmeta['texcoords'];
+        }
+    }
+
+    private updateBuffers(gl: WebGLRenderingContext, bufferOffset: number, vertexcoords: Float32Array, texcoords: Float32Array, zcoords: Float32Array, color_override: Float32Array): void {
         GLView.updateBuffer(gl, this.positionBuffer, gl.ARRAY_BUFFER, bufferOffset, vertexcoords);
         GLView.updateBuffer(gl, this.texcoordBuffer, gl.ARRAY_BUFFER, bufferOffset, texcoords);
-        GLView.updateBuffer(gl, this.zBuffer, gl.ARRAY_BUFFER, 24 * drawImgReqIndex, zcoords);
-        GLView.updateBuffer(gl, this.color_overrideBuffer, gl.ARRAY_BUFFER, 96 * drawImgReqIndex, color_override);
-
-        _this.drawImgReqIndex++;
+        GLView.updateBuffer(gl, this.zBuffer, gl.ARRAY_BUFFER, ZCOORD_BUFFER_OFFSET_MULTIPLIER * this.drawImgReqIndex, zcoords);
+        GLView.updateBuffer(gl, this.color_overrideBuffer, gl.ARRAY_BUFFER, COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER * this.drawImgReqIndex, color_override);
     }
 
     override drawRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
