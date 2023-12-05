@@ -236,24 +236,33 @@ function updateAllPostprocessingTags(constructor: ConstructorWithTagsProperty) {
  */
 export function update_tagged_components<T extends IComponentContainer>(...tags: ComponentTag[]) {
     return function (_target: any, _propertyKey: string, descriptor: PropertyDescriptor) {
+        // Store the original method in a variable to be able to call it later
+        const originalMethod = descriptor.value;
+        // Replace the original method with a new method that calls the original method and updates the tagged components before and after the call to the original method (preprocessing and postprocessing) if the component has the specified tags (tagsPre and tagsPost) and the component has not been updated yet (to avoid updating the same component multiple times)
+        descriptor.value = function (...args: any[]) {
+            const updateComponents = (updateType: 'tagsPre' | 'tagsPost', additionalArgs?: any[]) => {
+                // Get all components of the component container and store them in a set to avoid updating the same component multiple times (e.g. if a component has multiple tags) and to avoid updating components that have been added during the update process (e.g. if a component adds another component during the update process)
+                const components = Object.values((this as IComponentContainer).components);
+                const updatedComponents = new Set<Component>();
 
-        const originalMethod = descriptor.value; // Save a reference to the original method
-        descriptor.value = function (...args: any[]) { // Wrap the original method
-            const components = Object.values((this as IComponentContainer).components); // Get all components
-            // Note: The components may be removed in the original method, so we need to iterate over them twice
-            for (const component of components) { // Iterate over all components
-                const componentClass = component.constructor as ConstructorWithTagsProperty; // Get the component's constructor function (class) and cast it to the correct type (ConstructorWithTagsProperty) to access the 'tags' property
-                if (componentClass.tagsPre && tags.some(tag => componentClass.tagsPre.has(tag))) { // Check if the component has any of the specified tags for preprocessing
-                    component.preprocessingUpdate.apply(component, args); // Call the component's update method with the specified arguments
+                // Iterate over all components and update the ones that have the specified tags and have not been updated yet (to avoid updating the same component multiple times) and store them in the set of updated components to avoid updating them again later
+                for (const component of components) {
+                    const componentClass = component.constructor as ConstructorWithTagsProperty;
+                    if (componentClass[updateType] && tags.some(tag => componentClass[updateType].has(tag)) && !updatedComponents.has(component)) {
+                        // Call the component's preprocessing or postprocessing update method depending on the update type and pass the additional arguments if specified (e.g. the return value of the original method) or the original arguments otherwise (e.g. the arguments of the original method)
+                        const updateMethod = updateType === 'tagsPre' ? component.preprocessingUpdate : component.postprocessingUpdate
+                        updateMethod.apply(component, additionalArgs ? [additionalArgs] : args);
+                        // Add the component to the set of updated components to avoid updating it again later
+                        updatedComponents.add(component);
+                    }
                 }
-            }
-            let returnvalue = originalMethod.apply(this, args); // Call the original method and save the return value (if any) for postprocessing later
-            for (const component of components) { // Iterate over all components
-                const componentClass = component.constructor as ConstructorWithTagsProperty; // Get the component's constructor function (class) and cast it to the correct type (ConstructorWithTagsProperty) to access the 'tags' property
-                if (componentClass.tagsPost && tags.some(tag => componentClass.tagsPost.has(tag))) { // Check if the component has any of the specified tags for postprocessing (note: the component may have been removed in the original method)
-                    component.postprocessingUpdate.apply(component, [{ params: args, returnvalue: returnvalue }]); // Call the component's update method with the specified arguments and the return value of the original method (if any) as the last argument
-                }
-            }
+            };
+
+            updateComponents('tagsPre'); // Preprocessing update
+
+            let returnvalue = originalMethod.apply(this, args); // Call the original method and store the return value to pass it to the postprocessing update method later
+
+            updateComponents('tagsPost', [{ params: args, returnvalue: returnvalue }]); // Postprocessing update (pass the original arguments and the return value of the original method) to the postprocessing update method to allow the component to handle the return value (e.g. to modify it) if necessary (e.g. if the component is a collision component and the component needs to modify the return value to handle a collision) and to allow the component to handle the original arguments (e.g. to modify them) if necessary (e.g. if the component is a collision component and the component needs to modify the original arguments to handle a collision)
         };
     };
 }
