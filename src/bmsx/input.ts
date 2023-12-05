@@ -228,7 +228,9 @@ export class Input {
      * @param button The button to consume.
      */
     public static consumeButton(playerIndex: number, button: number) {
-        Input.GamepadButtonPressedConsumedStates[playerIndex][button] = true;
+        if (Input.GamepadButtonPressedConsumedStates[playerIndex]) {
+            Input.GamepadButtonPressedConsumedStates[playerIndex][button] = true;
+        }
     }
 
     /**
@@ -314,93 +316,87 @@ export class Input {
         return buttonState.pressed;
     }
 
+    private static checkAndConsume(key: string, button?: number): boolean {
+        const keyState = Input.getKeyState(key);
+
+        if (keyState.pressed && !keyState.consumed) {
+            Input.consumeKey(key);
+            return true;
+        }
+
+        if (button !== undefined && Input.isGamepadConnected(0)) {
+            const buttonState = Input.getGamepadButtonState(0, button);
+            if (buttonState.pressed && !buttonState.consumed) {
+                Input.consumeButton(0, button);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public static get KC_F1(): boolean {
-        const result = !Input.getKeyState(Key.F1).consumed;
-        Input.consumeKey(Key.F1);
-        return result;
+        return Input.checkAndConsume(Key.F1);
     }
+
     public static get KC_F12(): boolean {
-        const result = !Input.getKeyState('F12').consumed;
-        Input.consumeKey('F12');
-        return result;
+        return Input.checkAndConsume('F12');
     }
+
     public static get KC_F2(): boolean {
-        const result = !Input.getKeyState('F2').consumed;
-        Input.consumeKey('F2');
-        return result;
+        return Input.checkAndConsume('F2');
     }
+
     public static get KC_F3(): boolean {
-        const result = !Input.getKeyState('F3').consumed;
-        Input.consumeKey('F3');
-        return result;
+        return Input.checkAndConsume('F3');
     }
+
     public static get KC_F4(): boolean {
-        const result = !Input.getKeyState('F4').consumed;
-        Input.consumeKey('F4');
-        return result;
+        return Input.checkAndConsume('F4');
     }
+
     public static get KC_F5(): boolean {
-        const result = !Input.getKeyState('F5').consumed;
-        Input.consumeKey('F5');
-        return result;
+        return Input.checkAndConsume('F5');
     }
+
     public static get KC_M(): boolean {
-        const result = !Input.getKeyState('KeyM').consumed;
-        Input.consumeKey('KeyM');
-        return result;
+        return Input.checkAndConsume('KeyM');
     }
+
     public static get KC_SPACE(): boolean {
-        const result = !Input.getKeyState('Space').consumed;
-        Input.consumeKey('Space');
-        return result;
+        return Input.checkAndConsume('Space');
     }
+
     public static get KC_UP(): boolean {
-        const result = !Input.getKeyState('ArrowUp').consumed || !Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.up).consumed;
-        Input.consumeKey('ArrowUp');
-        Input.consumeButton(0, Input.GAMEPAD_BUTTONS.up);
-        return result;
+        return Input.checkAndConsume('ArrowUp', Input.GAMEPAD_BUTTONS.up);
     }
+
     public static get KC_RIGHT(): boolean {
-        const result = !Input.getKeyState('ArrowRight').consumed || !Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.right).consumed;
-        Input.consumeKey('ArrowRight');
-        Input.consumeButton(0, Input.GAMEPAD_BUTTONS.right);
-        return result;
+        return Input.checkAndConsume('ArrowRight', Input.GAMEPAD_BUTTONS.right);
     }
+
     public static get KC_DOWN(): boolean {
-        const result = !Input.getKeyState('ArrowDown').consumed || !Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.down).consumed;
-        Input.consumeKey('ArrowDown');
-        Input.consumeButton(0, Input.GAMEPAD_BUTTONS.down);
-        return result;
+        return Input.checkAndConsume('ArrowDown', Input.GAMEPAD_BUTTONS.down);
     }
+
     public static get KC_LEFT(): boolean {
-        const result = !Input.getKeyState('ArrowLeft').consumed || !Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.left).consumed;
-        Input.consumeKey('ArrowLeft');
-        Input.consumeButton(0, Input.GAMEPAD_BUTTONS.left);
-        return result;
+        return Input.checkAndConsume('ArrowLeft', Input.GAMEPAD_BUTTONS.left);
     }
+
     public static get KC_BTN1(): boolean {
-        const result = !Input.getKeyState('ShiftLeft').consumed || !Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.a).consumed;
-        Input.consumeKey('ShiftLeft');
-        Input.consumeButton(0, Input.GAMEPAD_BUTTONS.a);
-        return result;
+        return Input.checkAndConsume('ShiftLeft', Input.GAMEPAD_BUTTONS.a);
     }
+
     public static get KC_BTN2(): boolean {
-        const result = !Input.getKeyState('KeyZ').consumed || !Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.b).consumed;
-        Input.consumeKey('KeyZ');
-        Input.consumeButton(0, Input.GAMEPAD_BUTTONS.b);
-        return result;
+        return Input.checkAndConsume('KeyZ', Input.GAMEPAD_BUTTONS.b);
     }
+
     public static get KC_BTN3(): boolean {
-        const result = !Input.getKeyState('F1').consumed || !Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.x).consumed;
-        Input.consumeKey('F1');
-        Input.consumeButton(0, Input.GAMEPAD_BUTTONS.x);
-        return result;
+        return Input.checkAndConsume('F1', Input.GAMEPAD_BUTTONS.x);
     }
+
     public static get KC_BTN4(): boolean {
-        const result = !Input.getKeyState('F5').consumed || !Input.getGamepadButtonState(0, Input.GAMEPAD_BUTTONS.y).consumed;
-        Input.consumeKey('F5');
-        Input.consumeButton(0, Input.GAMEPAD_BUTTONS.y);
-        return result;
+        return Input.checkAndConsume('F5', Input.GAMEPAD_BUTTONS.y);
     }
 
     public static get KD_F1(): boolean {
@@ -675,11 +671,20 @@ export class Input {
      */
     private static getNextAvailablePlayerIndex(): number | undefined {
         for (let i = 0; i < navigator.getGamepads().length; i++) {
-            if (Input.GamepadPlayerMap[i] === undefined) {
+            if (Input.isGamepadConnected(i)) {
                 return i;
             }
         }
         return undefined;
+    }
+
+    /**
+     * Checks if a gamepad is connected for the specified player index.
+     * @param playerIndex - The index of the player.
+     * @returns True if a gamepad is connected for the specified player index, false otherwise.
+     */
+    private static isGamepadConnected(playerIndex: number): boolean {
+        return Input.GamepadPlayerMap[playerIndex] !== undefined;
     }
 
     /**
