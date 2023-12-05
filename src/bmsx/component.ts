@@ -262,7 +262,7 @@ export function update_tagged_components<T extends IComponentContainer>(...tags:
 
             let returnvalue = originalMethod.apply(this, args); // Call the original method and store the return value to pass it to the postprocessing update method later
 
-            updateComponents('tagsPost', [{ params: args, returnvalue: returnvalue }]); // Postprocessing update (pass the original arguments and the return value of the original method) to the postprocessing update method to allow the component to handle the return value (e.g. to modify it) if necessary (e.g. if the component is a collision component and the component needs to modify the return value to handle a collision) and to allow the component to handle the original arguments (e.g. to modify them) if necessary (e.g. if the component is a collision component and the component needs to modify the original arguments to handle a collision)
+            updateComponents('tagsPost', [{ params: args, returnvalue: returnvalue }]); // Postprocessing update (pass the original arguments and the return value of the original method) to the postprocessing update method to allow the component to handle the return value (e.g. to modify it) if necessary (e.g. if the component is a collision component and the component needs to check the return value to handle a collision) and to allow the component to handle the original arguments (e.g. to modify them) if necessary (e.g. if the component is a collision component and the component needs to check the original arguments to handle a collision)
         };
     };
 }
