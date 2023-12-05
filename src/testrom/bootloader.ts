@@ -238,16 +238,16 @@ class bclass extends SpriteObject {
             for (const { action, pressed, consumed } of pressedActions) {
                 switch (action as Action) {
                     case 'up':
-                        this.sety(this.y - speed);
+                        this.y -= speed;
                         break;
                     case 'right':
-                        this.setx(this.x + speed);
+                        this.x += speed;
                         break;
                     case 'down':
-                        this.sety(this.y + speed);
+                        this.y += speed;
                         break;
                     case 'left':
-                        this.setx(this.x - speed);
+                        this.x -= speed;
                         break;
                     case 'load':
                         if (consumed) break;

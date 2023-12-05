@@ -591,17 +591,18 @@ class draaischijf extends SpriteObject {
     }
 
     public static handle_input_idle_state(this: draaischijf, s: sstate<draaischijf>): void {
+        const speed = 1;
         if (Input.KD_LEFT) {
-            this.setx(this.x - 1);
+            this.x -= speed;
         }
         if (Input.KD_RIGHT) {
-            this.setx(this.x + 1);
+            this.x += speed;
         }
         if (Input.KD_UP) {
-            this.sety(this.y - 1);
+            this.y -= speed;
         }
         if (Input.KD_DOWN) {
-            this.sety(this.y + 1);
+            this.y += speed;
         }
         if (Input.KD_BTN1) {
             this.state.to('slijpen_opstart');
