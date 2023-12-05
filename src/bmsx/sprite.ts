@@ -1,4 +1,4 @@
-import { new_vec2, vec3, translate_vec2, vec2, new_vec3, translate_vec3, overwrite_vec3 as set_inplace_vec3 } from "./bmsx";
+import { new_vec2, vec3, translate_vec2, vec2, new_vec3, translate_vec3, set_inplace_vec3 } from "./bmsx";
 import { GameObject } from "./gameobject";
 import { insavegame } from "./gameserializer";
 import { DEFAULT_VERTEX_COLOR } from "./glview";
