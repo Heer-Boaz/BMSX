@@ -1,4 +1,4 @@
-import { BehaviorTreeDefinition, BehaviorTreeDefinitions, BT_ID, setup_btdef_library, setup_bt_library } from "./behaviourtree";
+import { BehaviorTreeDefinition, BehaviorTreeDefinitions, BehaviorTreeID, setup_btdef_library, setup_bt_library } from "./behaviourtree";
 import { statecontext, mdef, MachineDefinitions, sdef, setup_fsmdef_library, sstate } from "./bfsm";
 import { Direction, vec2, vec3 } from "./bmsx";
 import { GameObject } from "./gameobject";
@@ -268,7 +268,7 @@ export abstract class BaseModel {
         return MachineDefinitions[machineid].states[stateid];
     }
 
-    public static getBTdef(btid: BT_ID): BehaviorTreeDefinition {
+    public static getBTdef(btid: BehaviorTreeID): BehaviorTreeDefinition {
         return BehaviorTreeDefinitions[btid];
     }
 
