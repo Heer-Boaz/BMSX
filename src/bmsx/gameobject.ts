@@ -3,7 +3,7 @@ import { vec3, Area, Direction, new_vec2, mod, vec2, new_vec3, new_area, GameObj
 import { insavegame } from "./gameserializer";
 import { TileSize } from "./msx";
 import { Component, ComponentTag, IComponentContainer, KeyToComponentMap, ComponentConstructor, update_tagged_components, ComponentUpdateArgs } from "./component";
-import { BehaviorTrees, Blackboard, BTNode, BT_ID, constructBehaviorTree, ConstructorWithBTProperty } from "./behaviourtree";
+import { BehaviorTrees, Blackboard, BTNode, BehaviorTreeID, constructBehaviorTree, ConstructorWithBTProperty } from "./behaviourtree";
 import { ObjectTracker } from "./objecttracker";
 import { onload } from "./gameserializer";
 import { IEventSubscriber, EventEmitter } from "./eventemitter";
@@ -102,12 +102,12 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
     /**
      * The mapping of behavior tree IDs to behavior tree IDs.
      */
-    public behaviortreeIds: { [id: BT_ID]: BT_ID };
+    public behaviortreeIds: { [id: BehaviorTreeID]: BehaviorTreeID };
     /**
      * Gets the behavior trees associated with the game object.
      * @returns An object containing the behavior trees.
      */
-    public get behaviortrees(): { [id: BT_ID]: BTNode } {
+    public get behaviortrees(): { [id: BehaviorTreeID]: BTNode } {
         return new Proxy(BehaviorTrees, {
             get: (target, prop: string) => {
                 if (this.behaviortreeIds[prop]) {
@@ -119,9 +119,9 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
     }
     /**
      * The blackboards associated with the game object.
-     * @type {Object.<string, Blackboard>}
+     * @type {Object.<BehaviorTreeID, Blackboard>}
      */
-    public blackboards: { [name: BT_ID]: Blackboard };
+    public blackboards: { [name: BehaviorTreeID]: Blackboard };
 
     /**
      * Executes the tick operation for the specified behavior tree.
@@ -131,7 +131,7 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
      * @param bt_id - The ID of the behavior tree to tick.
      * @returns void
      */
-    public tickTree(bt_id: BT_ID): void {
+    public tickTree(bt_id: BehaviorTreeID): void {
         if (!this.behaviortrees[bt_id] || !this.blackboards[bt_id]) {
             console.error(`Behavior tree or blackboard with ID ${bt_id} does not exist.`);
             return;
@@ -153,7 +153,7 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
      * If the blackboard with the given BT_ID does not exist, an error message is logged and the function returns.
      * @param bt_id The ID of the blackboard to reset.
      */
-    public resetTree(bt_id: BT_ID): void {
+    public resetTree(bt_id: BehaviorTreeID): void {
         if (!this.blackboards[bt_id]) {
             console.error(`Blackboard with ID ${bt_id} does not exist.`);
             return;
@@ -463,9 +463,6 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
     @update_tagged_components('position_update_axis')
     public setx(newx: number) {
         this.pos.x = ~~newx;
-
-        // this.updateComponent(TileCollisionComponent, 'x', oldx, newx);
-        // this.updateComponent(ScreenBoundaryComponent, 'x', oldx, newx);
     }
 
     /**
@@ -475,9 +472,6 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
     @update_tagged_components('position_update_axis')
     public sety(newy: number) {
         this.pos.y = ~~newy;
-
-        // this.updateComponent(TileCollisionComponent, 'y', oldy, newy);
-        // this.updateComponent(ScreenBoundaryComponent, 'y', oldy, newy);
     }
 
     /**

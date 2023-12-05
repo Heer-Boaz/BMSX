@@ -18,8 +18,8 @@ export type BehaviorTreeDefinition =
     | { type: 'Action'; action: NodeAction }
     | { type: 'CompositeAction'; actions: BehaviorTreeDefinition[] };
 
-export var BehaviorTreeDefinitions: { [key: BT_ID]: BehaviorTreeDefinition } | null = null;
-export var BehaviorTrees: { [key: BT_ID]: BTNode } | null = null;
+export var BehaviorTreeDefinitions: { [key: BehaviorTreeID]: BehaviorTreeDefinition } | null = null;
+export var BehaviorTrees: { [key: BehaviorTreeID]: BTNode } | null = null;
 
 /**
  * Sets up the behavior tree definition library.
@@ -52,7 +52,7 @@ export function setup_btdef_library(): void {
  *
  * @typeParam key - The key type for the definitions.
  */
-let behaviorTreeDefinitionsBuilders: { [key: BT_ID]: () => BehaviorTreeDefinition } | null = null;
+let behaviorTreeDefinitionsBuilders: { [key: BehaviorTreeID]: () => BehaviorTreeDefinition } | null = null;
 
 /**
  * Builds a behavior tree based on the provided configuration.
@@ -62,7 +62,7 @@ let behaviorTreeDefinitionsBuilders: { [key: BT_ID]: () => BehaviorTreeDefinitio
  * @param targetId - The ID of the target game object.
  * @returns The root node of the built behavior tree.
  */
-function buildBehaviorTree(config: BehaviorTreeDefinition, id: BT_ID): BTNode {
+function buildBehaviorTree(config: BehaviorTreeDefinition, id: BehaviorTreeID): BTNode {
     switch (config.type) {
         case 'Selector':
             return new SelectorNode(id, config.children.map(childConfig => buildBehaviorTree(childConfig, id)));
@@ -96,7 +96,7 @@ export type ConstructorWithBTProperty = Function & {
     /**
      * A set of behavior tree names that are linked to this constructor.
      */
-    linkedBTs?: Set<BT_ID>;
+    linkedBTs?: Set<BehaviorTreeID>;
 };
 
 /**
@@ -104,10 +104,10 @@ export type ConstructorWithBTProperty = Function & {
  * @param bts The behavior trees to assign.
  * @returns A decorator function.
  */
-export function assign_bt(...bts: BT_ID[]) {
+export function assign_bt(...bts: BehaviorTreeID[]) {
     return function (constructor: ConstructorWithBTProperty) {
         if (!constructor.hasOwnProperty('linkedBTs')) {
-            constructor.linkedBTs = new Set<BT_ID>();
+            constructor.linkedBTs = new Set<BehaviorTreeID>();
         }
         bts.forEach(bt => constructor.linkedBTs.add(bt));
         updateAllAssignedBTs(constructor);
@@ -120,13 +120,13 @@ export function assign_bt(...bts: BT_ID[]) {
  * @param constructor - The constructor function.
  */
 function updateAllAssignedBTs(constructor: any) {
-    const linkedBTs = new Set<BT_ID>();
+    const linkedBTs = new Set<BehaviorTreeID>();
     let currentClass: any = constructor;
 
     while (currentClass && currentClass !== Object) {
         if (currentClass.linkedBTs) {
             11
-            currentClass.linkedBTs.forEach((bt: BT_ID) => linkedBTs.add(bt));
+            currentClass.linkedBTs.forEach((bt: BehaviorTreeID) => linkedBTs.add(bt));
         }
         currentClass = Object.getPrototypeOf(currentClass);
     }
@@ -139,7 +139,7 @@ function updateAllAssignedBTs(constructor: any) {
  * @param bt_id - The name of the behavior tree. If not provided, the target's name will be used.
  * @returns A decorator function that defines the behavior tree.
  */
-export function build_bt(bt_id?: BT_ID) {
+export function build_bt(bt_id?: BehaviorTreeID) {
     return function btdef_builder(target: any, name: any, descriptor: PropertyDescriptor): any {
         behaviorTreeDefinitionsBuilders ??= {};
         behaviorTreeDefinitionsBuilders[bt_id ?? target.name] = descriptor.value;
@@ -152,7 +152,7 @@ export function build_bt(bt_id?: BT_ID) {
  * @param targetId - The ID of the target game object.
  * @returns The constructed behavior tree node, or null if the tree definition is not found.
  */
-export function constructBehaviorTree(bt_id: BT_ID): BTNode | null {
+export function constructBehaviorTree(bt_id: BehaviorTreeID): BTNode | null {
     const btdef = BehaviorTreeDefinitions[bt_id];
     if (btdef) return buildBehaviorTree(btdef, bt_id);
     return null;
@@ -213,27 +213,27 @@ export class Blackboard implements IIdentifiable {
             }
         }
     }
-    // public copyPropertiesToBlackboard<T extends GameObject>(target: T, properties: Array<{ property: keyof T, key?: string }>): void {
-    //     for (let { property, key } of properties) {
-    //         // If no key is given, use the property name as the key
-    //         key = key ?? (property as string);
+    public copyPropertiesToBlackboard<T extends GameObject>(target: T, properties: Array<{ property: keyof T, key?: string }>): void {
+        for (let { property, key } of properties) {
+            // If no key is given, use the property name as the key
+            key = key ?? (property as string);
 
-    //         // Get the property value from the target
-    //         let value = target[property];
+            // Get the property value from the target
+            let value = target[property];
 
-    //         // Set the blackboard entry
-    //         this.set(key as string, value);
-    //     }
-    // }
+            // Set the blackboard entry
+            this.set(key as string, value);
+        }
+    }
 }
 
 /**
- * Represents an abstract base class for behavior tree nodes.
+ * Represents the ID for a behavior tree.
  */
-export type BT_ID = string;
+export type BehaviorTreeID = string;
 
 export abstract class BTNode implements IIdentifiable {
-    public id: BT_ID;
+    public id: BehaviorTreeID;
     public priority: number;
 
     /**
@@ -243,7 +243,7 @@ export abstract class BTNode implements IIdentifiable {
      */
     public getTarget<T extends GameObject>(targetid: GameObjectId) { return global.model.get(targetid); }
 
-    constructor(id: BT_ID, _priority = 0) {
+    constructor(id: BehaviorTreeID, _priority = 0) {
         this.id = id;
         this.priority = _priority;
     }
@@ -257,7 +257,7 @@ export abstract class BTNode implements IIdentifiable {
 export class SequenceNode extends BTNode {
     public children: BTNode[];
 
-    constructor(id: BT_ID, children: BTNode[], _priority = 0) {
+    constructor(id: BehaviorTreeID, children: BTNode[], _priority = 0) {
         super(id, _priority);
         this.children = children;
     }
@@ -282,7 +282,7 @@ export class SequenceNode extends BTNode {
 export class SelectorNode extends BTNode {
     public children: BTNode[];
 
-    constructor(id: BT_ID, children: BTNode[], _priority = 0) {
+    constructor(id: BehaviorTreeID, children: BTNode[], _priority = 0) {
         super(id, _priority);
         this.children = children;
     }
@@ -309,7 +309,7 @@ export class ParallelNode extends BTNode {
     public children: BTNode[];
     public successPolicy: 'ONE' | 'ALL';
 
-    constructor(id: BT_ID, children: BTNode[], successPolicy: 'ONE' | 'ALL', _priority = 0) {
+    constructor(id: BehaviorTreeID, children: BTNode[], successPolicy: 'ONE' | 'ALL', _priority = 0) {
         super(id, _priority);
         this.children = children;
         this.successPolicy = successPolicy;
@@ -351,7 +351,7 @@ export class DecoratorNode extends BTNode {
     public child: BTNode;
     public decorator: (status: BTStatus, targetid: GameObjectId, blackboard: Blackboard) => BTStatus;
 
-    constructor(id: BT_ID, child: BTNode, decorator: NodeDecorator, _priority = 0) {
+    constructor(id: BehaviorTreeID, child: BTNode, decorator: NodeDecorator, _priority = 0) {
         super(id, _priority);
         this.child = child;
         this.decorator = decorator;
@@ -381,7 +381,7 @@ type NodeCondition = (blackboard: Blackboard) => boolean;
 export class ConditionNode extends BTNode {
     public condition: NodeCondition;
 
-    constructor(id: BT_ID, condition: (blackboard: Blackboard) => boolean, _priority = 0) {
+    constructor(id: BehaviorTreeID, condition: (blackboard: Blackboard) => boolean, _priority = 0) {
         super(id, _priority);
         this.condition = condition;
     }
@@ -407,7 +407,7 @@ export class RandomSelectorNode extends BTNode {
     public children: BTNode[];
     public currentchild_propname: string;
 
-    constructor(id: BT_ID, children: BTNode[], _currentchild_propname: string, _priority = 0) {
+    constructor(id: BehaviorTreeID, children: BTNode[], _currentchild_propname: string, _priority = 0) {
         super(id, _priority);
         this.children = children;
         this.currentchild_propname = _currentchild_propname;
@@ -446,7 +446,7 @@ export class LimitNode extends BTNode {
     public limit: number;
     public child: BTNode;
 
-    constructor(id: BT_ID, limit: number, _count_propname: string, child: BTNode, _priority = 0) {
+    constructor(id: BehaviorTreeID, limit: number, _count_propname: string, child: BTNode, _priority = 0) {
         super(id, _priority);
         this.limit = limit;
         this.child = child;
@@ -482,7 +482,7 @@ export class LimitNode extends BTNode {
 export class PrioritySelectorNode extends BTNode {
     public children: BTNode[];
 
-    constructor(id: BT_ID, children: BTNode[], _priority = 0) {
+    constructor(id: BehaviorTreeID, children: BTNode[], _priority = 0) {
         super(id, _priority);
         this.children = children;
     }
@@ -510,7 +510,7 @@ export class WaitNode extends BTNode {
     public wait_propname: string;
     public waitTime: number;
 
-    constructor(id: BT_ID, waitTime: number, _wait_propname: string, _priority = 0) {
+    constructor(id: BehaviorTreeID, waitTime: number, _wait_propname: string, _priority = 0) {
         super(id, _priority);
         this.waitTime = waitTime;
         this.wait_propname = _wait_propname;
@@ -558,7 +558,7 @@ export type NodeAction = (blackboard: Blackboard) => BTStatus;
 export class ActionNode extends BTNode {
     public action: NodeAction;
 
-    constructor(id: BT_ID, action: NodeAction, _priority = 0) {
+    constructor(id: BehaviorTreeID, action: NodeAction, _priority = 0) {
         super(id, _priority);
         this.action = action;
     }
@@ -582,7 +582,7 @@ export class ActionNode extends BTNode {
 export class CompositeActionNode extends BTNode {
     public actions: ActionNode[];
 
-    constructor(id: BT_ID, actions: ActionNode[], _priority = 0) {
+    constructor(id: BehaviorTreeID, actions: ActionNode[], _priority = 0) {
         super(id, _priority);
         this.actions = actions;
     }
