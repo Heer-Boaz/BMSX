@@ -6,7 +6,7 @@ import { sdef, sstate, Bla, statedef_builder, build_fsm, statecontext, machine_s
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
-import { Input } from '../bmsx/input';
+import { GamepadInputMapping, Input, KeyboardButton, GamepadButton, KeyboardInputMapping, InputMap } from '../bmsx/input';
 import { TextWriter } from '../bmsx/textwriter';
 import { GameMenu } from './gamemenu';
 import { GameObject } from '../bmsx/gameobject';
@@ -132,7 +132,7 @@ class gamemodel extends BaseModel {
                         this.paused = true;
                     },
                     run(this: gamemodel, s: sstate<gamemodel>) {
-                        this.get<GameMenu>('gamemenu').run();
+                        this.get<GameMenu>('gamemenu')?.run();
                     },
                     exit(this: gamemodel, s: sstate<gamemodel>) {
                         let menu = this.get<GameMenu>('gamemenu');
@@ -173,6 +173,11 @@ class gamemodel extends BaseModel {
      */
     public do_one_time_game_init(): this {
         // this.state.machines['gamemenu' satisfies model_machines].to('closed' satisfies model_states);
+        Input.setInputMap(0, {
+            keyboard: keyboardInputMapping,
+            gamepad: gamepadInputMapping,
+        } as InputMap);
+
         this.addSpace('hoera!' satisfies model_spaces);
         this[spaceid_2_space]['hoera!'].spawn(new hoeraStuff());
 
@@ -479,6 +484,35 @@ class diamant extends SpriteObject {
         this.getoonde_zijde = zijde.Voor;
     }
 }
+
+const actions = ['up', 'right', 'down', 'left', 'btn1', 'btn2'] as const;
+type Action = typeof actions[number];
+
+type MyKeyboardInputMapping = {
+    [key in keyof KeyboardInputMapping & Action]: KeyboardButton;
+};
+
+type MyGamepadInputMapping = {
+    [key in keyof GamepadInputMapping & Action]: GamepadButton;
+};
+
+const keyboardInputMapping: MyKeyboardInputMapping = {
+    'up': 'ArrowUp',
+    'right': 'ArrowRight',
+    'down': 'ArrowDown',
+    'left': 'ArrowLeft',
+    'btn1': 'ShiftLeft',
+    'btn2': 'KeyZ',
+};
+
+const gamepadInputMapping: MyGamepadInputMapping = {
+    'up': 'up',
+    'right': 'right',
+    'down': 'down',
+    'left': 'left',
+    'btn1': 'a',
+    'btn2': 'b',
+};
 
 class draaischijf extends SpriteObject {
     @statedef_builder
