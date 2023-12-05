@@ -1,4 +1,4 @@
-import { Direction, GameObjectId, mod, new_vec2, overwrite_vec2, set_vec2, vec2 } from "./bmsx";
+import { Direction, GameObjectId, mod, new_vec2, set_inplace_vec2, set_vec2, vec2 } from "./bmsx";
 import { Component, componenttags_postprocessing, componenttags_preprocessing, ComponentUpdateArgs, ComponentUpdateParams } from "./component";
 import { EventEmitter, subscribesToParentScopedEvent } from "./eventemitter";
 import { GameObject } from "./gameobject";
@@ -25,7 +25,7 @@ export abstract class PositionUpdateAxisComponent extends Component {
 
     override preprocessingUpdate(): void {
         super.update();
-        overwrite_vec2(this.oldPos, this.parent.pos); // Store the old position
+        set_inplace_vec2(this.oldPos, this.parent.pos); // Store the old position
     }
 }
 
