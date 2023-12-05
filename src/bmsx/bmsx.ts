@@ -474,6 +474,15 @@ export function translate_vec2(a: vec2, b: vec2): vec2 {
 }
 
 /**
+ * Translates the given vector `a` by the values of vector `b` and stores the result in `a`.
+ * @param a - The vector to be translated.
+ * @param b - The vector containing the translation values.
+ */
+export function translate_inplace_vec2(a: vec2, b: vec2): void {
+    set_inplace_vec2(a, { x: a.x + b.x, y: a.y + b.y });
+}
+
+/**
  * Translates a 3D vector by adding another 3D vector to it.
  * @param a The first 3D vector.
  * @param b The second 3D vector to be added.
@@ -481,6 +490,15 @@ export function translate_vec2(a: vec2, b: vec2): vec2 {
  */
 export function translate_vec3(a: vec3, b: vec3): vec3 {
     return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z };
+}
+
+/**
+ * Translates the given vec3 in place by adding the values of another vec3.
+ * @param a - The vec3 to be translated.
+ * @param b - The vec3 containing the translation values.
+ */
+export function translate_inplace_vec3(a: vec3, b: vec3): void {
+    set_inplace_vec3(a, { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z });
 }
 
 /// http://stackoverflow.com/questions/4959975/generate-random-value-between-two-numbers-in-javascript
@@ -588,7 +606,7 @@ export function set_vec2(p: vec2, new_x: number, new_y: number) {
  * @param p - The vec2 to be overwritten.
  * @param n - The vec2 containing the new values.
  */
-export function overwrite_vec2(p: vec2, n: vec2) {
+export function set_inplace_vec2(p: vec2, n: vec2) {
     p.x = n.x;
     p.y = n.y;
 }
@@ -611,7 +629,7 @@ export function set_vec3(p: vec3, new_x: number, new_y: number, new_z: number) {
  * @param to_overwrite - The vec3 to be overwritten.
  * @param data - The vec3 containing the new values.
  */
-export function overwrite_vec3(to_overwrite: vec3, data: vec3) {
+export function set_inplace_vec3(to_overwrite: vec3, data: vec3) {
     to_overwrite.x = data.x;
     to_overwrite.y = data.y;
     to_overwrite.z = data.z;
