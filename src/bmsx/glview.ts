@@ -54,6 +54,22 @@ export const VERTEX_COLOR_COLORIZED_RED: Color = { r: 1.0, g: 0.0, b: 0.0, a: 1.
 export const VERTEX_COLOR_COLORIZED_GREEN: Color = { r: 0.0, g: 1.0, b: 0.0, a: 1.0 };
 export const VERTEX_COLOR_COLORIZED_BLUE: Color = { r: 0.0, g: 0.0, b: 1.0, a: 1.0 };
 export const MAX_SPRITES = 1000;
+const RESOLUTION_VECTOR_SIZE = 2;
+const VERTEX_COORDS_SIZE = 12;
+const TEX_COORDS_SIZE = 12;
+const Z_COORDS_SIZE = 6;
+const COLOR_OVERRIDE_SIZE = 24;
+const POSITION_ATTRIBUTE = "a_position";
+
+const POSITION_BUFFER_SIZE = 12;
+const TEXCOORD_BUFFER_SIZE = 12;
+const Z_BUFFER_SIZE = 1;
+const COLOR_OVERRIDE_BUFFER_SIZE = 24;
+const POSITION_ATTRIBUTE_SIZE = 2;
+const TEXCOORD_ATTRIBUTE_SIZE = 2;
+const ZCOORD_ATTRIBUTE_SIZE = 1;
+const COLOR_OVERRIDE_ATTRIBUTE_SIZE = 4;
+
 /**
  * Represents a view that renders graphics using WebGL.
  */
@@ -71,11 +87,11 @@ export abstract class GLView extends BaseView {
     private texcoordBuffer: WebGLBuffer;
     private zBuffer: WebGLBuffer;
     private color_overrideBuffer: WebGLBuffer;
-    private resVec2: Float32Array = new Float32Array(2);
-    private vertexcoords: Float32Array = new Float32Array(12);
-    private texcoords: Float32Array = new Float32Array(12);
-    private zcoords: Float32Array = new Float32Array(6);
-    private color_override: Float32Array = new Float32Array(24);
+    private readonly resolutionVector: Float32Array = new Float32Array(RESOLUTION_VECTOR_SIZE);
+    private readonly vertexcoords: Float32Array = new Float32Array(VERTEX_COORDS_SIZE);
+    private readonly texcoords: Float32Array = new Float32Array(TEX_COORDS_SIZE);
+    private readonly zcoords: Float32Array = new Float32Array(Z_COORDS_SIZE);
+    private readonly color_override: Float32Array = new Float32Array(COLOR_OVERRIDE_SIZE);
     private drawImgReqIndex: number;
 
     public static readonly vertexShaderCode: string =
@@ -130,6 +146,50 @@ export abstract class GLView extends BaseView {
 
     override init(): void {
         super.init();
+        this.setupGLContext();
+        this.createProgram();
+        this.setupLocations();
+        this.setupBuffers();
+        this.setupAttributes();
+        this.setupUniforms();
+        this.setupTextures();
+    }
+
+    private setupBuffers(): void {
+        const buffers = {
+            position: this.createBuffer(POSITION_BUFFER_SIZE),
+            texcoord: this.createBuffer(TEXCOORD_BUFFER_SIZE, this.getTextureCoordinates()),
+            z: this.createBuffer(Z_BUFFER_SIZE),
+            color_override: this.createBuffer(COLOR_OVERRIDE_BUFFER_SIZE),
+        };
+
+        this.positionBuffer = buffers.position;
+        this.texcoordBuffer = buffers.texcoord;
+        this.zBuffer = buffers.z;
+        this.color_overrideBuffer = buffers.color_override;
+    }
+
+    private setupAttributes(): void {
+        this.glctx.useProgram(this.program);
+
+        this.setupAttribute(this.positionBuffer, this.positionLocation, POSITION_ATTRIBUTE_SIZE);
+        this.setupAttribute(this.texcoordBuffer, this.texcoordLocation, TEXCOORD_ATTRIBUTE_SIZE);
+        this.setupAttribute(this.zBuffer, this.zcoordLocation, ZCOORD_ATTRIBUTE_SIZE);
+        this.setupAttribute(this.color_overrideBuffer, this.color_overrideLocation, COLOR_OVERRIDE_ATTRIBUTE_SIZE);
+    }
+
+    private setupUniforms(): void {
+        this.resolutionVector.set([this.canvas.width, this.canvas.height]);
+        this.glctx.uniform2fv(this.resolutionLocation, this.resolutionVector);
+        this.glctx.uniform1i(this.textureLocation, 0);
+    }
+
+    private setupTextures(): void {
+        this.textures = {};
+        this.textures['_atlas'] = this.createTexture(BaseView.images['_atlas']);
+    }
+
+    private setupGLContext(): void {
         const gl = this.glctx;
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
         gl.enable(gl.DEPTH_TEST);
@@ -137,9 +197,10 @@ export abstract class GLView extends BaseView {
         gl.enable(gl.BLEND);
         gl.enable(gl.CULL_FACE);
         gl.cullFace(gl.FRONT);
+    }
 
-
-        // setup GLSL program
+    private createProgram(): void {
+        const gl = this.glctx;
         const program = gl.createProgram();
         if (!program) throw `Failed to create the GLSL program! Aborting as we cannot create the GLView for the game!`;
         this.program = program;
@@ -151,27 +212,47 @@ export abstract class GLView extends BaseView {
         gl.attachShader(program, fragShader);
         gl.linkProgram(program);
 
-        this.resVec2.set([this.viewportSize.x, this.viewportSize.y]);
-        // look up where the vertex data needs to go
-        this.positionLocation = gl.getAttribLocation(program, "a_position");
-        this.texcoordLocation = gl.getAttribLocation(program, "a_texcoord");
-        this.zcoordLocation = gl.getAttribLocation(program, "a_pos_z");
-        this.color_overrideLocation = gl.getAttribLocation(program, "a_color_override");
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            throw `Unable to initialize the shader program: ${gl.getProgramInfoLog(program)}`;
+        }
+    }
 
-        // lookup uniforms
-        this.resolutionLocation = gl.getUniformLocation(program, "u_resolution")!;
-        this.textureLocation = gl.getUniformLocation(program, "u_texture")!;
+    private setupLocations(): void {
+        const gl = this.glctx;
+        this.resolutionVector.set([this.viewportSize.x, this.viewportSize.y]);
+        const locations = {
+            position: gl.getAttribLocation(this.program, "a_position"),
+            texcoord: gl.getAttribLocation(this.program, "a_texcoord"),
+            zcoord: gl.getAttribLocation(this.program, "a_pos_z"),
+            color_override: gl.getAttribLocation(this.program, "a_color_override")
+        };
+        this.positionLocation = locations.position;
+        this.texcoordLocation = locations.texcoord;
+        this.zcoordLocation = locations.zcoord;
+        this.color_overrideLocation = locations.color_override;
+        this.resolutionLocation = gl.getUniformLocation(this.program, "u_resolution")!;
+        this.textureLocation = gl.getUniformLocation(this.program, "u_texture")!;
+    }
 
-        // Create a buffer.
-        this.positionBuffer = gl.createBuffer()!;
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(12 * MAX_SPRITES), gl.DYNAMIC_DRAW);
-        // Create a buffer for texture coords
-        this.texcoordBuffer = gl.createBuffer()!;
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.texcoordBuffer);
-        const uglyTexCoordStuff = new Float32Array(12 * MAX_SPRITES);
-        for (let i = 0; i < 12 * MAX_SPRITES - 12; i += 12) {
-            uglyTexCoordStuff.set([
+    private createBuffer(size: number, data?: Float32Array): WebGLBuffer {
+        const gl = this.glctx;
+        const buffer = gl.createBuffer()!;
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, data || new Float32Array(size * MAX_SPRITES), gl.DYNAMIC_DRAW);
+        return buffer;
+    }
+
+    private setupAttribute(buffer: WebGLBuffer, location: number, size: number): void {
+        const gl = this.glctx;
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.enableVertexAttribArray(location);
+        gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0);
+    }
+
+    private getTextureCoordinates(): Float32Array {
+        const textureCoordinates = new Float32Array(TEXCOORD_BUFFER_SIZE * MAX_SPRITES);
+        for (let i = 0; i < TEXCOORD_BUFFER_SIZE * MAX_SPRITES - TEXCOORD_BUFFER_SIZE; i += TEXCOORD_BUFFER_SIZE) {
+            textureCoordinates.set([
                 0.0, 0.0,
                 1.0, 0.0,
                 0.0, 1.0,
@@ -180,46 +261,7 @@ export abstract class GLView extends BaseView {
                 1.0, 1.0,
             ], i);
         }
-        gl.bufferData(gl.ARRAY_BUFFER, uglyTexCoordStuff, gl.DYNAMIC_DRAW);
-
-        // Create buffer for z position information for the vertex shader
-        this.zBuffer = gl.createBuffer()!;
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.zBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(1 * MAX_SPRITES), gl.DYNAMIC_DRAW);
-
-        // Create buffer for color override information for the vertex shader
-        this.color_overrideBuffer = gl.createBuffer()!;
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.color_overrideBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(24 * MAX_SPRITES), gl.DYNAMIC_DRAW);
-
-        gl.useProgram(program);
-
-        // Setup the attributes to pull data from our buffers
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.positionBuffer);
-        gl.enableVertexAttribArray(this.positionLocation);
-        gl.vertexAttribPointer(this.positionLocation, 2, gl.FLOAT, false, 0, 0);
-
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.texcoordBuffer);
-        gl.enableVertexAttribArray(this.texcoordLocation);
-        gl.vertexAttribPointer(this.texcoordLocation, 2, gl.FLOAT, false, 0, 0);
-
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.zBuffer);
-        gl.enableVertexAttribArray(this.zcoordLocation);
-        gl.vertexAttribPointer(this.zcoordLocation, 1, gl.FLOAT, false, 0, 0);
-
-        gl.enableVertexAttribArray(this.color_overrideLocation);
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.color_overrideBuffer);
-        gl.vertexAttribPointer(this.color_overrideLocation, 4, gl.FLOAT, false, 0, 0);
-
-        // this matrix will convert from pixels to clip space
-        this.resVec2.set([this.canvas.width, this.canvas.height]);
-        gl.uniform2fv(this.resolutionLocation, this.resVec2);
-
-        // Tell the shader to get the texture from texture unit 0
-        gl.uniform1i(this.textureLocation, 0);
-
-        this.textures = {};
-        this.textures['_atlas'] = this.createTexture(BaseView.images['_atlas']);
+        return textureCoordinates;
     }
 
     /**
