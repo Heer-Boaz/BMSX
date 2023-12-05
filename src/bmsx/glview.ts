@@ -130,8 +130,8 @@ export abstract class GLView extends BaseView {
 
 		void main() {
 			lowp vec4 color = texture(u_texture, v_texcoord) * v_color_override;
-			if (color.a < 0.1)
-    			discard;
+			// if (color.a < 0.1)
+    		// 	discard;
 			outputColor = color;
 		}`;
 
@@ -413,12 +413,24 @@ export abstract class GLView extends BaseView {
     }
 
     override drawRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
-        // console.warn('GLView.drawRectangle nog niet gecodeerd :-(');
+        // Use the white pixel image and color it with the desired color
+        const imgid = 'whitepixel';
 
+        // Draw the top border
+        this.drawImg({ x: x, y: y, z: 0, imgid: imgid, sx: ex - x, sy: 1, colorize: c });
+        // Draw the bottom border
+        this.drawImg({ x: x, y: ey - 1, z: 0, imgid: imgid, sx: ex - x, sy: 1, colorize: c });
+        // Draw the left border
+        this.drawImg({ x: x, y: y, z: 0, imgid: imgid, sx: 1, sy: ey - y, colorize: c });
+        // Draw the right border
+        this.drawImg({ x: ex - 1, y: y, z: 0, imgid: imgid, sx: 1, sy: ey - y, colorize: c });
     }
 
     override fillRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
-        // console.warn('GLView.fillRectangle nog niet gecodeerd :-(');
+        // Use the white pixel image and color it with the desired color
+        const imgid = 'whitepixel';
 
+        // Draw and stretch the image to fill the rectangle
+        this.drawImg({ x: x, y: y, z: 0, imgid: imgid, sx: ex - x, sy: ey - y, colorize: c });
     }
-};
+}
