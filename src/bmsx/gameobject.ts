@@ -73,19 +73,52 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
     public id: GameObjectId;
     public disposeFlag: boolean;
 
-    public pos: vec3;
+    protected _pos: vec3;
+    public get pos(): vec3 { return this._pos; }
+    public set pos(pos: vec3) { this._pos = pos; }
     public get x(): number { return this.pos.x; }
-    public set x(x: number) { this.pos.x = x; }
+    /**
+     * Sets the x-coordinate of the object's position and handles collisions with tiles and screen edges.
+     * @param newx The new x-coordinate to set.
+     */
+    public set x(x: number) {
+        this.setPosX(x);
+    }
+
+    @update_tagged_components('position_update_axis')
+    protected setPosX(x: number) {
+        this.pos.x = x; // Set position here, as accessors cannot be decorated with update_tagged_components
+    }
+
     public get y(): number { return this.pos.y; }
-    public set y(y: number) { this.pos.y = y; }
+    /**
+     * Sets the x-coordinate of the object's position and handles collisions with tiles and screen edges.
+     * @param newx The new x-coordinate to set.
+     */
+    public set y(y: number) {
+        this.setPosY(y);
+    }
+
+    @update_tagged_components('position_update_axis')
+    protected setPosY(y: number) {
+        this.pos.y = y; // Set position here, as accessors cannot be decorated with update_tagged_components
+    }
+
     public get z(): number { return this.pos.z; }
     public set z(z: number) {
         if (z > 10000) z = 10000;
         if (z < 0) z = 0;
-        this.pos.z = z;
+        this.setPosZ(z)
     }
 
-    public size: vec3;
+    @update_tagged_components('position_update_axis')
+    protected setPosZ(z: number) {
+        this.pos.z = z; // Set position here, as accessors cannot be decorated with update_tagged_components
+    }
+
+    protected _size: vec3;
+    public get size(): vec3 { return this._size; }
+    public set size(value: vec3) { this._size = value; }
 
     public get sx(): number { return this.size.x; }
     public set sx(sx: number) { this.size.x = sx; }
@@ -232,9 +265,9 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
      */
     public onspawn?(spawningPos?: vec2 | vec3): void {
         if (spawningPos) {
-            this.x = spawningPos.x ?? this.x;
-            this.y = spawningPos.y ?? this.y;
-            this.z = (spawningPos as vec3).z ?? this.z;
+            this.setXNoSweep(spawningPos.x ?? this.x);
+            this.setYNoSweep(spawningPos.y ?? this.y);
+            this.setZNoSweep((spawningPos as vec3).z ?? this.z);
         }
 
         let start_state_id = this.state?.definition?.start_state;
@@ -457,21 +490,30 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
     }
 
     /**
-     * Sets the x-coordinate of the object's position and handles collisions with tiles and screen edges.
-     * @param newx The new x-coordinate to set.
+     * Sets the x-coordinate of the object's position without triggering component updates (sweeping).
+     *
+     * @param newx - The new x-coordinate value.
      */
-    @update_tagged_components('position_update_axis')
-    public setx(newx: number) {
+    public setXNoSweep(newx: number) {
         this.pos.x = ~~newx;
     }
 
     /**
-     * Sets the y-coordinate of the object's position and handles collisions with tiles and screen edges.
-     * @param newy The new y-coordinate to set.
+     * Sets the y-coordinate of the object's position without triggering component updates (sweeping).
+     *
+     * @param newy - The new y-coordinate value.
      */
-    @update_tagged_components('position_update_axis')
-    public sety(newy: number) {
+    public setYNoSweep(newy: number) {
         this.pos.y = ~~newy;
+    }
+
+    /**
+     * Sets the z-coordinate of the object's position without triggering component updates (sweeping).
+     *
+     * @param newz - The new z-coordinate value.
+     */
+    public setZNoSweep(newz: number) {
+        this.pos.z = ~~newz;
     }
 
     /**
