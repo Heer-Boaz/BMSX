@@ -65,7 +65,7 @@ var bootrom = {
 	 * @param x - The value to return after the game is started.
 	 * @returns 255 after the game is started.
 	 */
-	usr(x: number): number {
+	async usr(x: number): Promise<number> {
 		document.body.classList.add('game-started'); // Change background color of body
 		document.getElementById('gamescreen')!.hidden = false;
 		document.getElementById('gamescreen')!.style.display = 'block';
@@ -73,15 +73,15 @@ var bootrom = {
 			document.getElementById('debugPanel')!.hidden = false;
 			document.getElementById('debugPanel')!.style.display = 'block';
 		}
-		loadScript(bootrom.rom!, bootrom.romname).then(() => {
+		// try {
+			await loadScript(bootrom.rom!, bootrom.romname);
 			h406A(bootrom.rom!, bootrom.sndcontext!, bootrom.gainnode!);
 			bootrom.rom = null;
 			return x;
-		})
-			.catch(err => {
-				throw err ?? 'usr(x) failed with unknown error!';
-			});
-		return 255;
+		// } catch (err) {
+			// throw err ?? 'usr(x) failed with unknown error!';
+		// };
+		// return 255;
 	},
 
 	/**
