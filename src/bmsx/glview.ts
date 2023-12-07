@@ -116,6 +116,7 @@ export abstract class GLView extends BaseView {
     private texcoordBuffer: WebGLBuffer;
     private zBuffer: WebGLBuffer;
     private additionalPositionBuffer: WebGLBuffer;
+    private additionalTexcoordBuffer: WebGLBuffer;
     private color_overrideBuffer: WebGLBuffer;
     private readonly resolutionVector: Float32Array = new Float32Array(RESOLUTION_VECTOR_SIZE);
     private readonly vertexcoords: Float32Array = new Float32Array(VERTEX_COORDS_SIZE);
@@ -182,18 +183,19 @@ out vec4 outputColor;
 
 void main() {
     vec2 uv = v_texcoord;
-    // vec3 texColor = textureLod(u_texture, uv, 0.0).rgb;
-    vec3 texColor = texture(u_texture, uv).rgb;
+    vec3 texColor = textureLod(u_texture, uv, 0.0).rgb;
+    // vec3 texColor = texture(u_texture, uv).rgb;
 
     // Apply scanlines
-    // float scanline = sin(uv.y * u_resolution.y * 2.0) * 0.02;
-    // texColor -= scanline;
+    float scanline = sin(uv.y * u_resolution.y * 2.0) * 0.02;
+    texColor -= scanline;
 
     // Apply vignette
-    // float vignette = smoothstep(1.0, 0.3, length(uv * 2.0 - 1.0));
-    // texColor *= vignette;
+    float vignette = smoothstep(1.0, 0.3, length(uv * 2.0 - 1.0));
+    texColor *= vignette;
 
     outputColor = vec4(texColor, 1.0);
+    // outputColor = vec4(1.0, 1.0, 0.0, 1.0);
 }`;
 
     constructor(viewportsize: Size) {
@@ -218,28 +220,49 @@ void main() {
         this.setupTextures();
         this.createAdditionalProgram();
         this.setupAdditionalLocations();
-        this.createFramebufferAndTexture();
+        // this.createFramebufferAndTexture();
         this.createAdditionalVertexBuffer();
+        this.createAdditionalTexcoordBuffer();
+        this.handleResize(); // This is needed to set the viewport size and create the framebuffer and texture
     }
 
     @catchWebGLError
     private createAdditionalVertexBuffer(): void {
         const gl = this.glctx;
-        // Define the vertex data for a full-screen quad (in clip space)
-        const vertices = new Float32Array([
-            -1.0, -1.0, 0.0, 0.0, // bottom left
-            1.0, -1.0, 1.0, 0.0, // bottom right
-            -1.0, 1.0, 0.0, 1.0, // top left
-            1.0, -1.0, 1.0, 0.0, // bottom right
-            1.0, 1.0, 1.0, 1.0, // top right
-            -1.0, 1.0, 0.0, 1.0  // top left
+        // Define the vertex positions for a full-screen quad (in clip space)
+        const positions = new Float32Array([
+            -1.0, -1.0, // bottom left
+            1.0, -1.0, // bottom right
+            -1.0, 1.0, // top left
+            1.0, -1.0, // bottom right
+            1.0, 1.0, // top right
+            -1.0, 1.0  // top left
         ]);
 
-        // Create a new buffer and bind the vertex data to it
-        const buffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-        gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
-        this.additionalPositionBuffer = buffer;
+        // Create a new buffer and bind the vertex position data to it
+        bvec.set(positions, 0, 0, this.canvas.width, this.canvas.height, 1, 1);
+        this.additionalPositionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.additionalPositionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+    }
+
+    @catchWebGLError
+    private createAdditionalTexcoordBuffer(): void {
+        const gl = this.glctx;
+        // Define the texture coordinates for a full-screen quad
+        const texcoords = new Float32Array([
+            0.0, 1.0,
+            1.0, 1.0,
+            0.0, 0.0,
+            0.0, 0.0,
+            1.0, 1.0,
+            1.0, 0.0,
+        ]);
+
+        // Create a new buffer and bind the texture coordinate data to it
+        this.additionalTexcoordBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.additionalTexcoordBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, texcoords, gl.STATIC_DRAW);
     }
 
     @catchWebGLError
@@ -281,11 +304,9 @@ void main() {
 
         // Enable the position attribute for the shader
         gl.enableVertexAttribArray(this.additionalPositionLocation);
-        gl.vertexAttribPointer(this.additionalPositionLocation, 2, gl.FLOAT, false, 16, 0);
 
         // Enable the texcoord attribute for the shader
         gl.enableVertexAttribArray(this.additionalTexcoordLocation);
-        gl.vertexAttribPointer(this.additionalTexcoordLocation, 2, gl.FLOAT, false, 16, 8);
     }
 
     @catchWebGLError
@@ -498,7 +519,7 @@ void main() {
      * This method should be called whenever the canvas is resized.
      */
     @catchWebGLError
-    override handleResize(): void {
+    override handleResize(this: GLView): void {
         if (this.isRendering) {
             // If a frame is currently being drawn, set the needsResize flag and return
             this.needsResize = true;
@@ -506,17 +527,18 @@ void main() {
         }
 
         super.handleResize();
-        const self = (global.view as GLView);
-        const gl = self.glctx;
+        const gl = this.glctx;
         if (gl) {
-            gl.viewport(0, 0, self.canvas.width, self.canvas.height); // Set the viewport to the new size
+            gl.viewport(0, 0, this.canvas.width, this.canvas.height); // Set the viewport to the new size
 
             // Recreate the framebuffer and texture to match the new size
-            self.createFramebufferAndTexture(); // This also binds the framebuffer
+            this.createFramebufferAndTexture(); // This also binds the framebuffer
 
             // Set the resolution uniform
-            if (self.additionalResolutionLocation) { // This is only set if the additional shader is being used
-                this.glctx.uniform2f(this.additionalResolutionLocation, this.canvas.width, this.canvas.height);
+            if (this.additionalResolutionLocation) { // This is only set if the additional shader is being used
+                gl.useProgram(this.additionalProgram);
+                gl.uniform2fv(this.additionalResolutionLocation, new Float32Array([this.canvas.width, this.canvas.height]));
+                gl.useProgram(this.program);
             }
         }
 
@@ -621,32 +643,28 @@ void main() {
         // 7. Unbind the framebuffer to return to default rendering to the screen
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
+
     @catchWebGLError
     private drawFullScreenQuad(): void {
         const gl = this.glctx;
         // Bind the default framebuffer so that the rendering output goes to the screen
-        this.glctx.bindFramebuffer(this.glctx.FRAMEBUFFER, null);
-
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
         // Switch to the post-processing shader
         this.switchProgram(this.additionalProgram);
-        gl.uniform2fv(this.additionalResolutionLocation, new Float32Array([this.canvas.width, this.canvas.height]));
 
         // Bind the texture as the input to the post-processing shader
-        gl.activeTexture(gl.TEXTURE0);
-        this.glctx.bindTexture(this.glctx.TEXTURE_2D, this.textures['additional']);
-        // gl.uniform1i(gl.getUniformLocation(this.additionalProgram, "u_texture"), 0);
+        gl.bindTexture(gl.TEXTURE_2D, this.textures['additional']);
 
-        // Bind the vertex buffer
+        // Bind the vertex position buffer
         gl.bindBuffer(gl.ARRAY_BUFFER, this.additionalPositionBuffer);
-
-        // Enable the position attribute for the shader
+        gl.vertexAttribPointer(this.additionalPositionLocation, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(this.additionalPositionLocation);
-        gl.vertexAttribPointer(this.additionalPositionLocation, 2, gl.FLOAT, false, 16, 0);
 
-        // // Enable the texcoord attribute for the shader
+        // Bind the texcoord buffer
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.additionalTexcoordBuffer);
+        gl.vertexAttribPointer(this.additionalTexcoordLocation, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(this.additionalTexcoordLocation);
-        gl.vertexAttribPointer(this.additionalTexcoordLocation, 2, gl.FLOAT, false, 16, 8);
 
         // Draw the full-screen quad
         gl.drawArrays(gl.TRIANGLES, 0, 6);
@@ -692,6 +710,7 @@ void main() {
         gl.bindBuffer(gl.ARRAY_BUFFER, _this.texcoordBuffer);
         gl.vertexAttribPointer(_this.texcoordLocation, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(_this.texcoordLocation);
+
         gl.drawArrays(gl.TRIANGLES, 0, 6 * _this.drawImgReqIndex);
         _this.drawImgReqIndex = 0;
     }

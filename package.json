@@ -12,7 +12,7 @@
   "devDependencies": {
     "@node-minify/clean-css": "*",
     "@node-minify/core": "*",
-    "@types/bin-pack": "^1.0.1",
+    "@types/bin-pack": "*",
     "@types/browserify": "*",
     "@types/cli-progress": "*",
     "@types/js-yaml": "*",
@@ -22,14 +22,14 @@
     "@types/systemjs": "*",
     "@types/terminal-kit": "*",
     "browserify": "*",
-    "canvas": "^2.11.2",
+    "canvas": "*",
     "colors": "*",
-    "dagre": "^0.8.5",
+    "dagre": "*",
     "flatted": "*",
     "ftp-deploy": "*",
     "js-yaml": "*",
     "libkss-js": "*",
-    "midi-file": "^1.2.4",
+    "midi-file": "*",
     "minify-stream": "*",
     "pako": "*",
     "terminal-kit": "*",
@@ -37,8 +37,8 @@
     "ts-key-enum": "*",
     "tsify": "*",
     "tslib": "*",
-    "typescript": "^4.9.4",
-    "typescript-bundle": "^1.0.18"
+    "typescript": "*",
+    "typescript-bundle": "*"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

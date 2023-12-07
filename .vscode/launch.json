@@ -3,7 +3,6 @@
 	"configurations": [
 		{
 			"type": "msedge",
-			"version": "stable",
 			"request": "launch",
 			"name": "Debug the game!",
 			"url": "${workspaceFolder}/dist/game_debug.html",
@@ -11,7 +10,7 @@
 				"--nolazy",
 				"--allow-file-access-from-files",
 				"--disable-session-crashed-bubble",
-				"-inprivate",
+				// "-inprivate",
 				"--remote-debugging-port=9222"
 			],
 			"sourceMaps": true,
@@ -26,7 +25,6 @@
 		},
 		{
 			"type": "msedge",
-			"version": "stable",
 			"request": "launch",
 			"name": "Debug the MSXSOUND!",
 			"url": "${workspaceFolder}/src/bmsx/bla.html",
@@ -49,7 +47,6 @@
 		},
 		{
 			"type": "msedge",
-			"version": "stable",
 			"request": "launch",
 			"name": "Run the game in non-debug mode!",
 			"url": "${workspaceFolder}/dist/game.html",

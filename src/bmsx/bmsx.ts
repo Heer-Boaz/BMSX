@@ -967,8 +967,8 @@ export class Game {
         global.game.running = false;
         window.cancelAnimationFrame(this.animationFrameRequestid);
         window.requestAnimationFrame(() => {
-            global.view.clear();
-            global.view.handleResize();
+            global.view.clear.call(global.view);
+            global.view.handleResize.call(global.view);
             SM.stopEffect();
             SM.stopMusic();
         });

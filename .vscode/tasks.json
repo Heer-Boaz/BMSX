@@ -19,7 +19,7 @@
 				"$tsc"
 			],
 			"icon": {
-				"id": "run-all",
+				"id": "game",
 				"color": "terminal.ansiRed"
 			},
 			"presentation": {
@@ -63,7 +63,7 @@
 				"output romtobuild"
 			],
 			"icon": {
-				"id": "run",
+				"id": "game",
 				"color": "terminal.ansiGreen"
 			},
 			"presentation": {

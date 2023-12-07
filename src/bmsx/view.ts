@@ -100,8 +100,14 @@ export abstract class BaseView {
      * When any of these events occur, the `handleResize` method is called to recalculate the size of the canvas and adjust its position and scale.
      */
     protected listenToMediaEvents(): void {
-        window.addEventListener('resize', global.view.handleResize, false);
-        window.addEventListener('orientationchange', global.view.handleResize, false);
+        const view = global.view;
+
+        function handleResizeHelper() {
+            view.handleResize.call(view);
+        }
+
+        window.addEventListener('resize', handleResizeHelper, false);
+        window.addEventListener('orientationchange', handleResizeHelper, false);
         // https://stackoverflow.com/a/70719693
         window.matchMedia('(display-mode: fullscreen)').addEventListener('change', ({ matches }) => {
             if (matches) {
