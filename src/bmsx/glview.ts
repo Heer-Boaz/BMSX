@@ -1,6 +1,34 @@
 import { Size } from "./bmsx";
 import { BaseView, Color, DrawImgOptions } from './view';
 
+function catchWebGLError(target: any, propertyKey: string, descriptor: PropertyDescriptor): PropertyDescriptor {
+    const originalMethod = descriptor.value;
+    descriptor.value = function (...args: any[]) {
+        const returnValue = originalMethod.apply(this, args);
+        const gl = (global.view as GLView).glctx;
+        if (gl) {
+            const error = gl.getError();
+            if (error != gl.NO_ERROR) {
+                throw new Error(`WebGL error in ${propertyKey}: ${getWebGLErrorString(gl, error)}`);
+            }
+        }
+        return returnValue;
+    };
+    return descriptor;
+}
+
+function getWebGLErrorString(gl: WebGLRenderingContext, error: number): string {
+    switch (error) {
+        case gl.NO_ERROR: return "NO_ERROR";
+        case gl.INVALID_ENUM: return "INVALID_ENUM";
+        case gl.INVALID_VALUE: return "INVALID_VALUE";
+        case gl.INVALID_OPERATION: return "INVALID_OPERATION";
+        case gl.OUT_OF_MEMORY: return "OUT_OF_MEMORY";
+        case gl.CONTEXT_LOST_WEBGL: return "CONTEXT_LOST_WEBGL";
+        default: return "UNKNOWN_ERROR";
+    }
+}
+
 const bvec = {
     /**
      * Sets the vertices of a rectangle in a Float32Array, using the given parameters.
@@ -87,6 +115,7 @@ export abstract class GLView extends BaseView {
     private positionBuffer: WebGLBuffer;
     private texcoordBuffer: WebGLBuffer;
     private zBuffer: WebGLBuffer;
+    private additionalPositionBuffer: WebGLBuffer;
     private color_overrideBuffer: WebGLBuffer;
     private readonly resolutionVector: Float32Array = new Float32Array(RESOLUTION_VECTOR_SIZE);
     private readonly vertexcoords: Float32Array = new Float32Array(VERTEX_COORDS_SIZE);
@@ -94,6 +123,14 @@ export abstract class GLView extends BaseView {
     private readonly zcoords: Float32Array = new Float32Array(Z_COORDS_SIZE);
     private readonly color_override: Float32Array = new Float32Array(COLOR_OVERRIDE_SIZE);
     private drawImgReqIndex: number;
+
+    private additionalTexcoordLocation: GLint;
+    private additionalResolutionLocation: WebGLUniformLocation;
+    private additionalPositionLocation: GLint;
+    private additionalProgram: WebGLProgram;
+    private framebuffer: WebGLFramebuffer;
+    private isRendering: boolean = false;
+    private needsResize: boolean = false;
 
     public static readonly vertexShaderCode: string =
         `#version 300 es
@@ -130,10 +167,34 @@ export abstract class GLView extends BaseView {
 
 		void main() {
 			lowp vec4 color = texture(u_texture, v_texcoord) * v_color_override;
-			// if (color.a < 0.1)
-    		// 	discard;
 			outputColor = color;
 		}`;
+
+    public static readonly fragmentShaderCRTCode: string =
+        `#version 300 es
+precision highp float;
+
+uniform sampler2D u_texture;
+uniform vec2 u_resolution;
+
+in vec2 v_texcoord;
+out vec4 outputColor;
+
+void main() {
+    vec2 uv = v_texcoord;
+    // vec3 texColor = textureLod(u_texture, uv, 0.0).rgb;
+    vec3 texColor = texture(u_texture, uv).rgb;
+
+    // Apply scanlines
+    // float scanline = sin(uv.y * u_resolution.y * 2.0) * 0.02;
+    // texColor -= scanline;
+
+    // Apply vignette
+    // float vignette = smoothstep(1.0, 0.3, length(uv * 2.0 - 1.0));
+    // texColor *= vignette;
+
+    outputColor = vec4(texColor, 1.0);
+}`;
 
     constructor(viewportsize: Size) {
         super(viewportsize);
@@ -145,6 +206,7 @@ export abstract class GLView extends BaseView {
         }) as WebGL2RenderingContext;
     }
 
+    @catchWebGLError
     override init(): void {
         super.init();
         this.setupGLContext();
@@ -154,8 +216,79 @@ export abstract class GLView extends BaseView {
         this.setupAttributes();
         this.setupUniforms();
         this.setupTextures();
+        this.createAdditionalProgram();
+        this.setupAdditionalLocations();
+        this.createFramebufferAndTexture();
+        this.createAdditionalVertexBuffer();
     }
 
+    @catchWebGLError
+    private createAdditionalVertexBuffer(): void {
+        const gl = this.glctx;
+        // Define the vertex data for a full-screen quad (in clip space)
+        const vertices = new Float32Array([
+            -1.0, -1.0, 0.0, 0.0, // bottom left
+            1.0, -1.0, 1.0, 0.0, // bottom right
+            -1.0, 1.0, 0.0, 1.0, // top left
+            1.0, -1.0, 1.0, 0.0, // bottom right
+            1.0, 1.0, 1.0, 1.0, // top right
+            -1.0, 1.0, 0.0, 1.0  // top left
+        ]);
+
+        // Create a new buffer and bind the vertex data to it
+        const buffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+        this.additionalPositionBuffer = buffer;
+    }
+
+    @catchWebGLError
+    private switchProgram(program: WebGLProgram): void {
+        this.glctx.useProgram(program);
+    }
+
+    @catchWebGLError
+    private createAdditionalProgram(): void {
+        const gl = this.glctx;
+        const program = gl.createProgram();
+        if (!program) throw `Failed to create the additional GLSL program! Aborting as we cannot create the GLView for the game!`;
+        this.additionalProgram = program;
+
+        const vertShader = this.loadShader(gl.VERTEX_SHADER, GLView.vertexShaderCode);
+        const fragShader = this.loadShader(gl.FRAGMENT_SHADER, GLView.fragmentShaderCRTCode);
+
+        gl.attachShader(program, vertShader);
+        gl.attachShader(program, fragShader);
+        gl.linkProgram(program);
+
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            throw `Unable to initialize the additional shader program: ${gl.getProgramInfoLog(program)}`;
+        }
+    }
+
+    @catchWebGLError
+    private setupAdditionalLocations(): void {
+        const gl = this.glctx;
+        this.resolutionVector.set([this.viewportSize.x, this.viewportSize.y]);
+        const locations = {
+            position: gl.getAttribLocation(this.additionalProgram, "a_position"),
+            texcoord: gl.getAttribLocation(this.additionalProgram, "a_texcoord"),
+            resolution: gl.getUniformLocation(this.additionalProgram, "u_resolution")
+        };
+        this.additionalPositionLocation = locations.position;
+        this.additionalTexcoordLocation = locations.texcoord;
+        this.additionalResolutionLocation = locations.resolution;
+
+        // Enable the position attribute for the shader
+        gl.enableVertexAttribArray(this.additionalPositionLocation);
+        gl.vertexAttribPointer(this.additionalPositionLocation, 2, gl.FLOAT, false, 16, 0);
+
+        // Enable the texcoord attribute for the shader
+        gl.enableVertexAttribArray(this.additionalTexcoordLocation);
+        gl.vertexAttribPointer(this.additionalTexcoordLocation, 2, gl.FLOAT, false, 16, 8);
+    }
+
+    @catchWebGLError
     private setupBuffers(): void {
         const buffers = {
             position: this.createBuffer(POSITION_BUFFER_SIZE),
@@ -170,6 +303,7 @@ export abstract class GLView extends BaseView {
         this.color_overrideBuffer = buffers.color_override;
     }
 
+    @catchWebGLError
     private setupAttributes(): void {
         this.glctx.useProgram(this.program);
 
@@ -179,17 +313,22 @@ export abstract class GLView extends BaseView {
         this.setupAttribute(this.color_overrideBuffer, this.color_overrideLocation, COLOR_OVERRIDE_ATTRIBUTE_SIZE);
     }
 
+    @catchWebGLError
     private setupUniforms(): void {
         this.resolutionVector.set([this.canvas.width, this.canvas.height]);
         this.glctx.uniform2fv(this.resolutionLocation, this.resolutionVector);
         this.glctx.uniform1i(this.textureLocation, 0);
     }
 
+    @catchWebGLError
     private setupTextures(): void {
         this.textures = {};
         this.textures['_atlas'] = this.createTexture(BaseView.images['_atlas']);
+
+        // The 'additional' texture is created in createFramebufferAndTexture
     }
 
+    @catchWebGLError
     private setupGLContext(): void {
         const gl = this.glctx;
         gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -200,24 +339,24 @@ export abstract class GLView extends BaseView {
         gl.cullFace(gl.FRONT);
     }
 
+    @catchWebGLError
     private createProgram(): void {
         const gl = this.glctx;
         const program = gl.createProgram();
         if (!program) throw `Failed to create the GLSL program! Aborting as we cannot create the GLView for the game!`;
         this.program = program;
-
         const vertShader = this.loadShader(gl.VERTEX_SHADER, GLView.vertexShaderCode);
         const fragShader = this.loadShader(gl.FRAGMENT_SHADER, GLView.fragmentShaderTextureCode);
 
         gl.attachShader(program, vertShader);
         gl.attachShader(program, fragShader);
         gl.linkProgram(program);
-
         if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
             throw `Unable to initialize the shader program: ${gl.getProgramInfoLog(program)}`;
         }
     }
 
+    @catchWebGLError
     private setupLocations(): void {
         const gl = this.glctx;
         this.resolutionVector.set([this.viewportSize.x, this.viewportSize.y]);
@@ -235,6 +374,7 @@ export abstract class GLView extends BaseView {
         this.textureLocation = gl.getUniformLocation(this.program, "u_texture")!;
     }
 
+    @catchWebGLError
     private createBuffer(size: number, data?: Float32Array): WebGLBuffer {
         const gl = this.glctx;
         const buffer = gl.createBuffer()!;
@@ -243,6 +383,7 @@ export abstract class GLView extends BaseView {
         return buffer;
     }
 
+    @catchWebGLError
     private setupAttribute(buffer: WebGLBuffer, location: number, size: number): void {
         const gl = this.glctx;
         gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
@@ -250,6 +391,7 @@ export abstract class GLView extends BaseView {
         gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0);
     }
 
+    @catchWebGLError
     private getTextureCoordinates(): Float32Array {
         const textureCoordinates = new Float32Array(TEXCOORD_BUFFER_SIZE * MAX_SPRITES);
         for (let i = 0; i < TEXCOORD_BUFFER_SIZE * MAX_SPRITES - TEXCOORD_BUFFER_SIZE; i += TEXCOORD_BUFFER_SIZE) {
@@ -272,39 +414,45 @@ export abstract class GLView extends BaseView {
      * @returns The compiled WebGL shader.
      * @throws An error if the shader fails to compile.
      */
+    @catchWebGLError
     private loadShader(type: number, source: string): WebGLShader {
         const gl = this.glctx;
         const shader = gl.createShader(type)!;
-
         // Send the source to the shader object
         gl.shaderSource(shader, source);
 
         // Compile the shader program
         gl.compileShader(shader);
 
-        // See if it compiled successfully
+        // Check for errors
         if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-            const message = `'An error occurred compiling the shaders: ${gl.getShaderInfoLog(shader)}`;
-            gl.deleteShader(shader);
-
-            console.error(message);
-            throw message;
+            throw `Error compiling vertex shader: ${gl.getShaderInfoLog(shader)}`;
         }
 
         return shader;
     }
 
     /**
-     * Creates a WebGL texture from an HTMLImageElement.
+     * Creates a WebGL texture from an HTMLImageElement or a given size.
      * @param img The HTMLImageElement to create the texture from.
+     * @param size The size to create the texture if no image is provided.
      * @returns The created WebGL texture.
      */
-    private createTexture(img: HTMLImageElement): WebGLTexture {
+    @catchWebGLError
+    private createTexture(img?: HTMLImageElement, size?: { width: number, height: number }): WebGLTexture {
         const gl = this.glctx;
 
         const result = gl.createTexture()!;
         gl.bindTexture(gl.TEXTURE_2D, result);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+
+        if (img) {
+            // Create the texture from the image
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+        } else if (size) {
+            // Allocate memory for the texture
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, size.width, size.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        }
+
         // let's assume all images are not a power of 2
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
@@ -314,31 +462,210 @@ export abstract class GLView extends BaseView {
         return result;
     }
 
+    @catchWebGLError
+    private createFramebufferAndTexture(): void {
+        const gl = this.glctx;
+
+        // Delete the old framebuffer and texture if they exist
+        if (this.framebuffer) {
+            gl.deleteFramebuffer(this.framebuffer);
+        }
+        if (!this.textures) {
+            this.textures = {};
+        } else if (this.textures['additional']) {
+            gl.deleteTexture(this.textures['additional']);
+        }
+
+        // Create a new texture
+        this.textures['additional'] = this.createTexture(undefined, { width: this.canvas.width, height: this.canvas.height });
+
+        // Create a new framebuffer
+        this.framebuffer = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
+
+        // Attach the texture to the framebuffer
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.textures['additional'], 0);
+
+        // Unbind the framebuffer
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+        // Unbind the texture
+        gl.bindTexture(gl.TEXTURE_2D, null);
+    }
+
     /**
      * Overrides the base class method to handle resizing of the canvas and viewport for WebGL rendering.
      * This method should be called whenever the canvas is resized.
      */
+    @catchWebGLError
     override handleResize(): void {
+        if (this.isRendering) {
+            // If a frame is currently being drawn, set the needsResize flag and return
+            this.needsResize = true;
+            return;
+        }
+
         super.handleResize();
-        const _this = global.view as GLView;
-        _this.glctx.viewport(0, 0, _this.canvas.width, _this.canvas.height);
+        const self = (global.view as GLView);
+        const gl = self.glctx;
+        if (gl) {
+            gl.viewport(0, 0, self.canvas.width, self.canvas.height); // Set the viewport to the new size
+
+            // Recreate the framebuffer and texture to match the new size
+            self.createFramebufferAndTexture(); // This also binds the framebuffer
+
+            // Set the resolution uniform
+            if (self.additionalResolutionLocation) { // This is only set if the additional shader is being used
+                this.glctx.uniform2f(this.additionalResolutionLocation, this.canvas.width, this.canvas.height);
+            }
+        }
+
+        // Clear the needsResize flag
+        this.needsResize = false;
     }
 
-    /**
-     * Overrides the base class method to draw the game using WebGL.
-     * @param clearCanvas Whether to clear the canvas before drawing.
-     */
+    @catchWebGLError
     override drawgame(clearCanvas: boolean = true): void {
+        this.isRendering = true;
         super.drawgame(clearCanvas);
+
+        // Draw all the sprites to a texture using the main shader
         this.drawSprites();
+        // this.saveTextureToFile();
+        // debugger;
+
+        // Draw a full-screen quad using the post-processing shader
+        this.drawFullScreenQuad();
+
+        this.switchProgram(this.program); // Switch back to the main shader
+
+        this.isRendering = false;
+
+        // Check if a resize was requested while rendering
+        if (this.needsResize) {
+            this.handleResize();
+        }
+    }
+
+    public saveFramebufferToFile(): void {
+        const gl = this.glctx;
+        // 2. Read the pixels from the framebuffer into an array
+        const width = gl.drawingBufferWidth;
+        const height = gl.drawingBufferHeight;
+        const pixels = new Uint8Array(width * height * 4);
+        gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+
+        // 3. Create a new canvas and context
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext('2d');
+
+        // 4. Put the pixel data into an ImageData object and draw it to the canvas
+        const imageData = new ImageData(new Uint8ClampedArray(pixels), width, height);
+        context.putImageData(imageData, 0, 0);
+
+        // Flip the context vertically
+        context.scale(1, -1);
+        context.translate(0, -height);
+
+        // 5. Convert the canvas to a data URL and download it as an image
+        const a = document.createElement('a');
+        a.download = 'image.png';
+        a.href = canvas.toDataURL();
+        a.click();
+    }
+
+    public saveTextureToFile(): void {
+        const gl = this.glctx;
+
+        // 1. Bind the framebuffer that has the texture attached
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
+
+        // 2. Read the pixels from the framebuffer into an array
+        const width = this.canvas.width;  // replace with the width of your texture
+        const height = this.canvas.height;  // replace with the height of your texture
+        const pixels = new Uint8Array(width * height * 4);
+        gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+
+        // 3. Create a new canvas and context
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext('2d');
+
+        // 4. Put the pixel data into an ImageData object
+        const imageData = new ImageData(new Uint8ClampedArray(pixels), width, height);
+
+        // Draw the image data to the canvas
+        context.putImageData(imageData, 0, 0);
+
+        // 5. Flip the canvas vertically
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = width;
+        tempCanvas.height = height;
+        const tempContext = tempCanvas.getContext('2d');
+        tempContext.putImageData(context.getImageData(0, 0, width, height), 0, 0);
+        context.clearRect(0, 0, width, height);
+        context.save();
+        context.scale(1, -1);
+        context.drawImage(tempCanvas, 0, -height);
+        context.restore();
+
+        // 6. Convert the canvas to a data URL and download it as an image
+        const a = document.createElement('a');
+        a.download = 'image.png';
+        a.href = canvas.toDataURL();
+        a.click();
+
+        // 7. Unbind the framebuffer to return to default rendering to the screen
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
+    @catchWebGLError
+    private drawFullScreenQuad(): void {
+        const gl = this.glctx;
+        // Bind the default framebuffer so that the rendering output goes to the screen
+        this.glctx.bindFramebuffer(this.glctx.FRAMEBUFFER, null);
+
+
+        // Switch to the post-processing shader
+        this.switchProgram(this.additionalProgram);
+        gl.uniform2fv(this.additionalResolutionLocation, new Float32Array([this.canvas.width, this.canvas.height]));
+
+        // Bind the texture as the input to the post-processing shader
+        gl.activeTexture(gl.TEXTURE0);
+        this.glctx.bindTexture(this.glctx.TEXTURE_2D, this.textures['additional']);
+        // gl.uniform1i(gl.getUniformLocation(this.additionalProgram, "u_texture"), 0);
+
+        // Bind the vertex buffer
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.additionalPositionBuffer);
+
+        // Enable the position attribute for the shader
+        gl.enableVertexAttribArray(this.additionalPositionLocation);
+        gl.vertexAttribPointer(this.additionalPositionLocation, 2, gl.FLOAT, false, 16, 0);
+
+        // // Enable the texcoord attribute for the shader
+        gl.enableVertexAttribArray(this.additionalTexcoordLocation);
+        gl.vertexAttribPointer(this.additionalTexcoordLocation, 2, gl.FLOAT, false, 16, 8);
+
+        // Draw the full-screen quad
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
     }
 
     /**
      * Overrides the base class method to clear the WebGL canvas.
      */
+    @catchWebGLError
     override clear(): void {
         const gl = this.glctx;
         gl.clearDepth(0.0);
+
+        // Clear the texture
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+        // Clear the screen
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     }
 
@@ -346,9 +673,25 @@ export abstract class GLView extends BaseView {
      * Draws all the sprites that have been queued for drawing using WebGL.
      * This method should be called once per frame after all sprites have been queued.
      */
+    @catchWebGLError
     public drawSprites(): void {
         const _this = global.view as GLView;
         const gl = _this.glctx;
+        // Bind the framebuffer so that the rendering output goes to the texture
+        this.glctx.bindFramebuffer(this.glctx.FRAMEBUFFER, this.framebuffer);
+        // Set the viewport to the dimensions of the 'additional' texture
+        this.switchProgram(this.program);
+        gl.bindTexture(gl.TEXTURE_2D, this.textures['_atlas']);
+
+        // Bind the position buffer and set the position attribute
+        gl.bindBuffer(gl.ARRAY_BUFFER, _this.positionBuffer);
+        gl.vertexAttribPointer(_this.positionLocation, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(_this.positionLocation);
+
+        // Bind the texcoord buffer and set the texcoord attribute
+        gl.bindBuffer(gl.ARRAY_BUFFER, _this.texcoordBuffer);
+        gl.vertexAttribPointer(_this.texcoordLocation, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(_this.texcoordLocation);
         gl.drawArrays(gl.TRIANGLES, 0, 6 * _this.drawImgReqIndex);
         _this.drawImgReqIndex = 0;
     }
@@ -361,6 +704,7 @@ export abstract class GLView extends BaseView {
      * @param offset The offset into the buffer to start updating.
      * @param data The new data to write into the buffer.
      */
+    @catchWebGLError
     private static updateBuffer(gl: WebGLRenderingContext, buffer: WebGLBuffer, target: GLenum, offset: number, data: ArrayBufferView) {
         gl.bindBuffer(target, buffer);
         gl.bufferSubData(target, offset, data);
@@ -371,6 +715,7 @@ export abstract class GLView extends BaseView {
      * @param options An object containing the image's position, size, and other options.
      * @throws An error if the image metadata cannot be found.
      */
+    @catchWebGLError
     override drawImg(options: DrawImgOptions): void {
         const { x, y, z, imgid, flip_h = false, flip_v = false, sx = 1, sy = 1, colorize = DEFAULT_VERTEX_COLOR } = options;
         const imgmeta = global.rom['img_assets'][imgid]?.['imgmeta'];
@@ -405,6 +750,7 @@ export abstract class GLView extends BaseView {
         }
     }
 
+    @catchWebGLError
     private updateBuffers(gl: WebGLRenderingContext, bufferOffset: number, vertexcoords: Float32Array, texcoords: Float32Array, zcoords: Float32Array, color_override: Float32Array): void {
         GLView.updateBuffer(gl, this.positionBuffer, gl.ARRAY_BUFFER, bufferOffset, vertexcoords);
         GLView.updateBuffer(gl, this.texcoordBuffer, gl.ARRAY_BUFFER, bufferOffset, texcoords);
