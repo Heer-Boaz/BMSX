@@ -1,9 +1,11 @@
 import { MachineDefinitions } from './bfsm';
-import { area2size, copy_vec2, new_vec2, vec3, translate_vec2, trunc_vec2, vec2, trunc_vec3, div_vec2 } from './bmsx';
+import { area2size, copy_vec2, new_vec2, vec3, translate_vec2, trunc_vec2, vec2, trunc_vec3, div_vec2, set_inplace_vec2 } from './bmsx';
+import { PositionUpdateAxisComponent } from './collisioncomponents';
+import { ComponentUpdateParams } from './component';
 import { GameObject } from './gameobject';
 import { Serializer } from './gameserializer';
 import { SpriteObject } from './sprite';
-import { Color, paintImage } from './view';
+import { Color } from './view';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
 
 let draggedObj: GameObject | null;
@@ -12,6 +14,17 @@ let dragSrcEl: HTMLElement;
 let shiftX: number;
 let shiftY: number;
 let prevPausedState: boolean; // Remember the paused-state before a dialog was opened. This allows to return to the original "paused" state after closing debug dialogs
+
+export class DebugHighlightComponent extends PositionUpdateAxisComponent { // Note: MUST export this class, otherwise decorator will cause it to be undefined
+    override postprocessingUpdate({ params, returnvalue }: ComponentUpdateParams): void {
+        super.postprocessingUpdate({ params, returnvalue });
+        const highlighter = model.get<ObjectHighlighter>('debug_highlighter');
+        if (highlighter) {
+            highlighter.setHighlightPos(this.parent);
+        }
+    }
+
+}
 
 class ObjectHighlighter extends SpriteObject {
     #highlighted_obj: GameObject;
@@ -26,19 +39,7 @@ class ObjectHighlighter extends SpriteObject {
         this.sprite.colorize = ObjectHighlighter.#mijnkleur;
     }
 
-    public get target() {
-        return this.#highlighted_obj;
-    }
-
-    public set target(o: GameObject) {
-        if (!o) {
-            this.#highlighted_obj = null;
-            this.x = this.y = this.sx = this.sy = 0;
-            this.visible = false;
-            return;
-        }
-
-        this.#highlighted_obj = o;
+    public setHighlightPos(o: GameObject) {
         if (o.hitarea) {
             let translate = translate_vec2(o.pos, o.hitarea.start);
             this.x = translate.x, this.y = translate.y;
@@ -54,6 +55,28 @@ class ObjectHighlighter extends SpriteObject {
         this.size = trunc_vec3(this.size);
         this.sprite.sx = this.size.x + 1;
         this.sprite.sy = this.size.y + 1;
+    }
+
+    public get target() {
+        return this.#highlighted_obj;
+    }
+
+    public set target(o: GameObject) {
+        if (!o) {
+            if (this.#highlighted_obj) {
+                this.#highlighted_obj.removeComponent(DebugHighlightComponent);
+                this.#highlighted_obj = null;
+            }
+            this.x = this.y = this.sx = this.sy = 0;
+            this.visible = false;
+            return;
+        }
+
+        this.#highlighted_obj = o;
+        if (!o.getComponent(DebugHighlightComponent)) {
+            o.addComponent(new DebugHighlightComponent(o.id));
+        }
+        this.setHighlightPos(o);
         this.visible = true;
     }
 }
@@ -79,8 +102,8 @@ export function handleDebugMouseMove(e: MouseEvent): void {
         let y = e.offsetY / global.view.scale;
 
         if (draggedObj.pos) {
-            draggedObj.pos.x = ~~x - draggedObjCursorOffset.x;
-            draggedObj.pos.y = ~~y - draggedObjCursorOffset.y;
+            draggedObj.x = ~~x - draggedObjCursorOffset.x;
+            draggedObj.y = ~~y - draggedObjCursorOffset.y;
         }
     }
     else {
@@ -107,7 +130,7 @@ function highlight_object(o: GameObject) {
     else {
         highlighter && (highlighter.target = null);
     }
-
+    global.view.drawgame();
 }
 
 export function handleDebugMouseDragEnd(e: MouseEvent): void {
