@@ -274,7 +274,7 @@ void main() {
 
     // Improved noise
     float n = noise(uv * u_resolution + vec2(u_random));
-    texColor += vec3(n) * 0.02; // Adjust noise intensity as needed
+    texColor += vec3(n) * 0.03; // Adjust noise intensity as needed
 
     // Apply subtle color bleed
     vec3 bleed = vec3(0.02, 0.0, 0.0); // Adjust bleed intensity and color
@@ -290,13 +290,7 @@ void main() {
     texColor += glow * clamp(brightness, 0.0, 1.0); // Glow only affects brighter areas
 
     // Calculate scaled UV coordinates based on the original resolution
-    vec2 scaledUV = vec2(uv.x * originalResolution.x / u_resolution.x, uv.y * originalResolution.y / u_resolution.y);
-
-    // // Apply dynamic scanline effect based on the original resolution
-    // float scanlineFrequency = originalResolution.y * 20.0; // Increase frequency for smaller scanlines
-    // float scanlineOffset = mod(u_time, 40.0) * 0.1; // Adjust speed of scanline movement
-    // float scanline = sin((scaledUV.y  + scanlineOffset) * scanlineFrequency);
-    // texColor *= 0.9 + 0.1 * scanline; // Adjust scanline intensity
+    // vec2 scaledUV = vec2(uv.x * originalResolution.x / u_resolution.x, uv.y * originalResolution.y / u_resolution.y);
 
     outputColor = vec4(texColor, 1.0);
 }`
