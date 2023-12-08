@@ -62,6 +62,8 @@ class gamemodel extends BaseModel {
                     enter(this: gamemodel, s: sstate<gamemodel>) {
                         this.setSpace('default');
                         this.time_to_shine = TIME_TO_SHINE;
+                            // this.state.to('evaluatie' satisfies model_states);
+
                     },
                     next(this: gamemodel, s: sstate<gamemodel>) {
                         --this.time_to_shine;

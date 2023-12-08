@@ -403,8 +403,8 @@ export class GameMenu extends GameObject {
     override paint = (offset?: vec3): void => {
         let scalex = GameMenu.menuEndX - GameMenu.menuPosX;
         let scaley = GameMenu.menuEndY - GameMenu.menuPosY;
-        global.view.drawImg({ imgid: BitmapId.blackpixel, x: GameMenu.menuPosX + 1, y: GameMenu.menuPosY + 1, z: this.z + 1, sx: scalex - 2, sy: scaley - 2 });
         global.view.drawImg({ imgid: BitmapId.whitepixel, x: GameMenu.menuPosX, y: GameMenu.menuPosY, z: this.z, sx: scalex, sy: scaley });
+        global.view.drawImg({ imgid: BitmapId.blackpixel, x: GameMenu.menuPosX + 1, y: GameMenu.menuPosY + 1, z: this.z + 1, sx: scalex - 2, sy: scaley - 2 });
 
         let titleToDraw: string;
         let titleX: number, titleY: number;
