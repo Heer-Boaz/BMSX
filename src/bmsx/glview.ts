@@ -128,6 +128,7 @@ export abstract class GLView extends BaseView {
     private additionalTexcoordLocation: GLint;
     private additionalResolutionLocation: WebGLUniformLocation;
     private additionalTimeLocation: WebGLUniformLocation;
+    private additionalRandomLocation: WebGLUniformLocation;
     private additionalPositionLocation: GLint;
     private additionalProgram: WebGLProgram;
     private framebuffer: WebGLFramebuffer;
@@ -205,6 +206,29 @@ export abstract class GLView extends BaseView {
     // }
 
 
+    // // Define a 3x3 blur kernel
+    // const float kernel[9] = float[](
+    //     0.0, 1.0/4.0, 0.0,
+    //     1.0/4.0, 1.0/2.0, 1.0/4.0,
+    //     0.0, 1.0/4.0, 0.0
+    // );
+
+    // vec3 applyBlur(vec2 uv) {
+    //     vec3 blurredColor = vec3(0.0);
+    //     for (int y = -1; y <= 1; y++) {
+    //         for (int x = -1; x <= 1; x++) {
+    //             vec2 offset = vec2(x, y) / u_resolution;
+    //             vec3 color = textureLod(u_texture, uv + offset, 0.0).rgb;
+    //             blurredColor += color * kernel[(y + 1) * 3 + (x + 1)];
+    //         }
+    //     }
+    //     return blurredColor;
+    // }
+
+
+    // Apply MSX1 color palette emulation
+    // texColor = findClosestMSX1Color(texColor); // Implement this function
+
     public static readonly fragmentShaderCRTCode: string =
         `#version 300 es
 precision highp float;
@@ -212,9 +236,11 @@ precision highp float;
 uniform sampler2D u_texture;
 uniform vec2 u_resolution;
 uniform float u_random;
+uniform float u_time;
 
 in vec2 v_texcoord;
 out vec4 outputColor;
+const vec2 originalResolution = vec2(256.0, 192.0);
 
 // Define a 5x5 blur kernel
 const float kernel[25] = float[](
@@ -237,25 +263,6 @@ vec3 applyBlur(vec2 uv) {
     return blurredColor;
 }
 
-// // Define a 3x3 blur kernel
-// const float kernel[9] = float[](
-//     0.0, 1.0/4.0, 0.0,
-//     1.0/4.0, 1.0/2.0, 1.0/4.0,
-//     0.0, 1.0/4.0, 0.0
-// );
-
-// vec3 applyBlur(vec2 uv) {
-//     vec3 blurredColor = vec3(0.0);
-//     for (int y = -1; y <= 1; y++) {
-//         for (int x = -1; x <= 1; x++) {
-//             vec2 offset = vec2(x, y) / u_resolution;
-//             vec3 color = textureLod(u_texture, uv + offset, 0.0).rgb;
-//             blurredColor += color * kernel[(y + 1) * 3 + (x + 1)];
-//         }
-//     }
-//     return blurredColor;
-// }
-
 // Function to generate noise
 float noise(vec2 uv) {
     return fract(sin(dot(uv, vec2(12.9898,78.233))) * 43758.5453);
@@ -265,40 +272,31 @@ void main() {
     vec2 uv = v_texcoord;
     vec3 texColor = textureLod(u_texture, uv, 0.0).rgb;
 
-    // Find the closest color in the palette
-    // texColor = findClosestColor(texColor);
-
     // Improved noise
-    float time = mod(u_random, 60.0); // Use a uniform u_random for dynamic noise
-    float n = noise(uv * u_resolution + vec2(time));
-    texColor += vec3(n) * 0.025; // Additive noise
-    // float n = noise(uv * u_resolution + vec2(time));
-    // texColor += vec3(n) * 0.01; // Additive noise
-    // texColor *= 1.0 + vec3(n) * 0.01; // Multiplicative noise
+    float n = noise(uv * u_resolution + vec2(u_random));
+    texColor += vec3(n) * 0.02; // Adjust noise intensity as needed
 
-    // Add some color bleed
-    // vec3 bleed = vec3(0.025, 0.0, 0.0); // MSX1 had a red color bleed
+    // Apply subtle color bleed
+    vec3 bleed = vec3(0.02, 0.0, 0.0); // Adjust bleed intensity and color
+    texColor += bleed;
 
-    // // Get the color of the adjacent pixels
-    // vec3 leftColor = textureLod(u_texture, uv - vec2(1.0/u_resolution.x, 0.0), 0.0).rgb;
-    // vec3 rightColor = textureLod(u_texture, uv + vec2(1.0/u_resolution.x, 0.0), 0.0).rgb;
-
-    // // Calculate the bleed factor based on the color of the current pixel and its neighbors
-    // float bleedFactor = dot(texColor, vec3(0.299, 0.587, 0.114)); // Weighted sum for perceived brightness
-    // bleedFactor += dot(leftColor, vec3(0.299, 0.587, 0.114));
-    // bleedFactor += dot(rightColor, vec3(0.299, 0.587, 0.114));
-    // bleedFactor /= 4.0; // Average
-
-    // // Apply the color bleed
-    // texColor = max(texColor - bleed * bleedFactor, 0.0) + min(texColor + bleed * bleedFactor, 1.0);
-
+    // Apply blur
     vec3 blurredColor = applyBlur(uv);
-    texColor = mix(texColor, blurredColor, 0.5);
+    texColor = mix(texColor, blurredColor, 0.4); // Adjust blur intensity
 
-    // Add phosphor glow
-    // vec3 glow = vec3(0.0, 0.05, 0.0);
-    // vec3 glow = vec3(0.1, 0.05, 0.05);
-    // texColor += glow;
+    // Apply selective phosphor glow
+    vec3 glow = vec3(0.05, 0.02, 0.02);
+    float brightness = dot(texColor, vec3(0.299, 0.587, 0.114)); // Luminance
+    texColor += glow * clamp(brightness, 0.0, 1.0); // Glow only affects brighter areas
+
+    // Calculate scaled UV coordinates based on the original resolution
+    vec2 scaledUV = vec2(uv.x * originalResolution.x / u_resolution.x, uv.y * originalResolution.y / u_resolution.y);
+
+    // // Apply dynamic scanline effect based on the original resolution
+    // float scanlineFrequency = originalResolution.y * 20.0; // Increase frequency for smaller scanlines
+    // float scanlineOffset = mod(u_time, 40.0) * 0.1; // Adjust speed of scanline movement
+    // float scanline = sin((scaledUV.y  + scanlineOffset) * scanlineFrequency);
+    // texColor *= 0.9 + 0.1 * scanline; // Adjust scanline intensity
 
     outputColor = vec4(texColor, 1.0);
 }`
@@ -402,12 +400,14 @@ void main() {
             position: gl.getAttribLocation(this.additionalProgram, "a_position"),
             texcoord: gl.getAttribLocation(this.additionalProgram, "a_texcoord"),
             resolution: gl.getUniformLocation(this.additionalProgram, "u_resolution"),
-            time: gl.getUniformLocation(this.additionalProgram, "u_random") // Add this line
+            random: gl.getUniformLocation(this.additionalProgram, "u_random"),
+            time: gl.getUniformLocation(this.additionalProgram, "u_time")
         };
         this.additionalPositionLocation = locations.position;
         this.additionalTexcoordLocation = locations.texcoord;
         this.additionalResolutionLocation = locations.resolution;
-        this.additionalTimeLocation = locations.time; // And this line
+        this.additionalTimeLocation = locations.time;
+        this.additionalRandomLocation = locations.random;
 
         // Enable the position attribute for the shader
         gl.enableVertexAttribArray(this.additionalPositionLocation);
@@ -775,7 +775,8 @@ void main() {
 
         // Update the time uniform
         let currentTime = Date.now() / 1000; // Get the current time in seconds
-        gl.uniform1f(this.additionalTimeLocation, Math.random()); // Add this line
+        gl.uniform1f(this.additionalTimeLocation, currentTime); // Add this line
+        gl.uniform1f(this.additionalRandomLocation, Math.random()); // Add this line
 
         // Draw the full-screen quad
         gl.drawArrays(gl.TRIANGLES, 0, 6);
