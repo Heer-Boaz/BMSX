@@ -90,13 +90,13 @@ var bootrom = {
 	 * @returns A Promise that resolves to the loaded ROM pack, or null if the loading failed.
 	 */
 	async bload(url: string): Promise<RomPack | null> {
-		window.onunhandledrejection = event => {
-			console.log(event.cancelable, event.reason, "unhandled rejection??");
+		window.onunhandledrejection = (event: PromiseRejectionEvent) => {
+			console.log(`Unhandled rejection during "bload"-command: "${event.reason}".`);
 			event.preventDefault();
 			event.stopPropagation();
 			event.stopImmediatePropagation();
-
-			return false;
+			throw event.reason;
+			// return false;
 		};
 
 		createAudioContext();
