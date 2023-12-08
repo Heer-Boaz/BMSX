@@ -1,4 +1,4 @@
-import { Direction, GameObjectId, mod, new_vec2, set_inplace_vec2, set_vec2, vec2 } from "./bmsx";
+import { Direction, GameObjectId, mod, new_vec2, set_inplace_vec2, vec2 } from "./bmsx";
 import { Component, componenttags_postprocessing, componenttags_preprocessing, ComponentUpdateArgs, ComponentUpdateParams } from "./component";
 import { EventEmitter, subscribesToParentScopedEvent } from "./eventemitter";
 import { GameObject } from "./gameobject";
@@ -24,7 +24,7 @@ export abstract class PositionUpdateAxisComponent extends Component {
     }
 
     override preprocessingUpdate(): void {
-        super.update();
+        super.preprocessingUpdate();
         set_inplace_vec2(this.oldPos, this.parent.pos); // Store the old position
     }
 }
@@ -40,8 +40,8 @@ export class ScreenBoundaryComponent extends PositionUpdateAxisComponent {
      * Overrides the postprocessingUpdate method to check for boundary collisions on the X and Y axes.
      * @override
      */
-    override postprocessingUpdate(): void {
-        super.update();
+    override postprocessingUpdate({ params, returnvalue }: ComponentUpdateParams): void {
+        super.postprocessingUpdate({ params, returnvalue });
         const currentPos = this.parent.pos;
         if (this.oldPos.x !== currentPos.x) {
             this.checkBoundaryForXAxis.call(global.model.get(this.parentid), this.oldPos.x, currentPos.x);
@@ -122,8 +122,8 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
      * Performs post-processing update for collision components.
      * Overrides the base class's update method and checks for tile collisions on the x and y axes.
      */
-    override postprocessingUpdate(): void {
-        super.update();
+    override postprocessingUpdate({ params, returnvalue }: ComponentUpdateParams): void {
+        super.postprocessingUpdate({ params, returnvalue });
         const currentPos = this.parent.pos;
         if (this.oldPos.x !== currentPos.x) {
             this.checkTileCollisionForXAxis.call(global.model.get(this.parentid), this.oldPos.x, currentPos.x);

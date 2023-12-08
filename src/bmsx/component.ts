@@ -36,6 +36,12 @@ export interface IComponentContainer {
     addComponent<T extends Component>(component: T): void;
 
     /**
+     * Remove a component to the container.
+     * @param component - The component instance to remove.
+     */
+    removeComponent<T extends Component>(constructor: ComponentConstructor<T>): void;
+
+    /**
      * Updates a component of the specified type in the container.
      * @param constructor - The constructor function of the component type.
      * @param args - Additional arguments to pass to the component's update method.
@@ -63,10 +69,14 @@ export abstract class Component implements IIdentifiable {
     public static tagsPost: Set<ComponentTag>;
     public static eventSubscriptions: EventSubscription[]; // Note: This property is only used by the event emitter
     public get parent() { return global.model.get(this.parentid); }
+    protected _enabled: boolean;
+    public set enabled(value: boolean) { this._enabled = value; }
+    public get enabled() { return this._enabled; }
 
     constructor(_id: GameObjectId) {
         this.parentid = _id; // Store the parent id for later use
         this.id = this.parentid + '_' + this.constructor.name; // Note: A component can be added once per game object
+        this.enabled = true;
         this.init();
     }
 
@@ -109,6 +119,9 @@ export abstract class Component implements IIdentifiable {
         const eventEmitter = EventEmitter.getInstance();
         constr.eventSubscriptions.forEach(subscription => { // Iterate over all event subscriptions
             const handler = this[subscription.handlerName].bind(this); // Bind the handler to the component instance
+            // const wrappedHandler = (...args: any[]) => { // Wrap the handler to check if the component is enabled
+                // if (this.enabled) handler(...args);
+            // };
             let emitterFilter: string;
             switch (subscription.scope) {
                 case 'all': emitterFilter = 'all'; break;
@@ -119,6 +132,7 @@ export abstract class Component implements IIdentifiable {
                     break;
                 case 'self': emitterFilter = this.id; break;
             }
+            // eventEmitter.on(subscription.eventName, wrappedHandler, emitterFilter); // Subscribe to the event
             eventEmitter.on(subscription.eventName, handler, emitterFilter); // Subscribe to the event
         });
     }
@@ -247,6 +261,7 @@ export function update_tagged_components<T extends IComponentContainer>(...tags:
 
                 // Iterate over all components and update the ones that have the specified tags and have not been updated yet (to avoid updating the same component multiple times) and store them in the set of updated components to avoid updating them again later
                 for (const component of components) {
+                    if (!component.enabled) continue; // Skip disabled components
                     const componentClass = component.constructor as ConstructorWithTagsProperty;
                     if (componentClass[updateType] && tags.some(tag => componentClass[updateType].has(tag)) && !updatedComponents.has(component)) {
                         // Call the component's preprocessing or postprocessing update method depending on the update type and pass the additional arguments if specified (e.g. the return value of the original method) or the original arguments otherwise (e.g. the arguments of the original method)
