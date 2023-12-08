@@ -41,12 +41,16 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
     public components: KeyToComponentMap = {};
     public objectTracker?: ObjectTracker;
 
+    getComponent<T extends Component>(constructor: ComponentConstructor<T>): T | undefined {
+        return this.components[constructor.name] as T | undefined;
+    }
+
     addComponent<T extends Component>(component: T): void {
         this.components[component.constructor.name] = component;
     }
 
-    getComponent<T extends Component>(constructor: ComponentConstructor<T>): T | undefined {
-        return this.components[constructor.name] as T | undefined;
+    removeComponent<T extends Component>(constructor: ComponentConstructor<T>): void {
+        delete this.components[constructor.name];
     }
 
     updateComponent<T extends Component>(constructor: ComponentConstructor<T>, ...args: any[]): void {
@@ -307,7 +311,7 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
      * The generated identifier is a combination of the class name and a unique number.
      * @returns The generated unique identifier.
      */
-    private static generateId(): string {
+    protected generateId(): string {
         const model = global.model;
         let result: string;
         do {
@@ -323,7 +327,7 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
      * @param _fsm_id The id of the state machine that will be created for this object. Defaults to `this.constructor.name`. If there is no state machine with the given (default) name, the state machine factory will ensure that an "empty" state machine is created. @see {@link statecontext.create}.
      */
     constructor(_id?: string, _fsm_id?: string) {
-        this.id = _id ?? GameObject.generateId();
+        this.id = _id ?? this.generateId();
         this.hittable = DEFAULT_HITTABLE;
         this.visible = DEFAULT_VISIBLE;
         this.pos = new_vec3(...DEFAULT_POSITION_VALUES);
