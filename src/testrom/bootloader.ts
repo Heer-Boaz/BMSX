@@ -211,7 +211,17 @@ class bclass extends SpriteObject {
                 '#meuk1': {
                     run: () => { },
                     enter(this: bclass) { this.pos.x += 10; },
-                    submachine_id: 'bclass_meuk_submachine',
+                    // submachine_id: 'bclass_meuk_submachine',
+                    states: {
+                        '#blupperblop1': {
+                            run(this: bclass) { },
+                            enter(this: bclass) { console.log('enter blupperblop1'); },
+                        },
+                        blupperblop2: {
+                            run(this: bclass) { },
+                            enter(this: bclass) { console.log('enter blupperblop2'); },
+                        },
+                    },
                 },
                 meuk2: {
                     run: () => { },
@@ -221,21 +231,13 @@ class bclass extends SpriteObject {
         };
     }
 
-    @build_fsm('bclass_meuk_submachine')
-    public static bouw_meuksubfsm(): machine_states {
-        return {
-            states: {
-                '#blupperblop1': {
-                    run(this: bclass) { },
-                    enter(this: bclass) { console.log('enter blupperblop1'); },
-                },
-                blupperblop2: {
-                    run(this: bclass) { },
-                    enter(this: bclass) { console.log('enter blupperblop2'); },
-                },
-            }
-        }
-    }
+    // @build_fsm('bclass_meuk_submachine')
+    // public static bouw_meuksubfsm(): machine_states {
+    //     return {
+    //         states: {
+    //         }
+    //     }
+    // }
 
     @statedef_builder
     public static bouw(): machine_states {
