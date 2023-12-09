@@ -1,4 +1,4 @@
-import { ConstructorWithFSMProperty, statecontext } from "./bfsm";
+import { ConstructorWithFSMProperty, bfsm_controller, statecontext } from "./bfsm";
 import { vec3, Area, Direction, new_vec2, mod, vec2, new_vec3, new_area, GameObjectId as GameObjectId } from "./bmsx";
 import { insavegame } from "./gameserializer";
 import { TileSize } from "./msx";
@@ -134,7 +134,7 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
     /**
      * The state of the game object.
      */
-    public state: statecontext;
+    public state: bfsm_controller;
 
     /**
      * The mapping of behavior tree IDs to behavior tree IDs.
@@ -334,7 +334,8 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
         this.size = new_vec3(...DEFAULT_SIZE_VALUES);
         this.disposeFlag = false;
         // Create the state context that will be used to manage the state of the game object
-        this.state = this.createStateContext(_fsm_id ?? this.constructor.name)
+        this.state = new bfsm_controller();
+        this.state.add_statemachine(_fsm_id ?? this.constructor.name, this.id)
         // Add components that should be auto-added to this class
         this.addAutoComponents();
 
@@ -400,7 +401,7 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
         if (constructor.linkedFSMs) {
             // Iterate over the FSM names and create the state machines
             constructor.linkedFSMs.forEach(fsm => {
-                this.state.substate[fsm] = statecontext.create(fsm, this.id);
+                this.state.add_statemachine(fsm, this.id);
             });
         }
     }
