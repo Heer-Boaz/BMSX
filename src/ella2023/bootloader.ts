@@ -192,20 +192,6 @@ class player extends SpriteObject {
                 '#idle': {
                     run: defaultrun,
                     enter(this: player) { },
-                    submachines: {
-                        bla: {
-                            states: {
-                                '#blupperblop1': {
-                                    run(this: player) { },
-                                    enter(this: player) { console.log('enter blupperblop1'); },
-                                },
-                                blupperblop2: {
-                                    run(this: player) { },
-                                    enter(this: player) { console.log('enter blupperblop2'); },
-                                },
-                            }
-                        }
-                    }
                 },
             }
         };

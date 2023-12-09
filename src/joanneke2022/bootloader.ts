@@ -283,7 +283,7 @@ class uitlegStuff extends SpriteObject {
                     enter(this: uitlegStuff, s: sstate<uitlegStuff>) {
                         s.reset();
                         if (_model)
-                            _model.uitleg_tekst_dinges = s.current;
+                            _model.uitleg_tekst_dinges = s.current_tape_value;
                     },
                     run(this: uitlegStuff, s: sstate<uitlegStuff>) {
                         ++s.nudges;
@@ -293,7 +293,7 @@ class uitlegStuff extends SpriteObject {
                     },
                     next(this: uitlegStuff, s: sstate<uitlegStuff>) {
                         if (_model)
-                            _model.uitleg_tekst_dinges = s.current;
+                            _model.uitleg_tekst_dinges = s.current_tape_value;
                     },
                     end(this: uitlegStuff, s: sstate<uitlegStuff>) {
                         if (_model)
@@ -425,13 +425,13 @@ class stoom extends SpriteObject {
                     nudges2move: 2,
                     enter(this: stoom, s: sstate<stoom>) {
                         s.reset();
-                        this.imgid = s.current;
+                        this.imgid = s.current_tape_value;
                     },
                     run(this: stoom, s: sstate<stoom>) {
                         ++s.nudges;
                     },
                     next(this: stoom, s: sstate<stoom>) {
-                        this.imgid = s.current;
+                        this.imgid = s.current_tape_value;
                     },
                     end(this: stoom, s: sstate<stoom>) {
                         this.banish();
@@ -548,7 +548,7 @@ class draaischijf extends SpriteObject {
                     ],
                     enter(this: draaischijf, s: sstate<draaischijf>) {
                         s.reset();
-                        this.imgid = s.current;
+                        this.imgid = s.current_tape_value;
                     },
                     process_input: draaischijf.handle_input_slijp_opstart_state,
                     run(this: draaischijf, s: sstate<draaischijf>) {
@@ -558,7 +558,7 @@ class draaischijf extends SpriteObject {
                         this.state.to('slijpen');
                     },
                     next(this: draaischijf, s: sstate<draaischijf>) {
-                        this.imgid = s.current;
+                        this.imgid = s.current_tape_value;
                     },
                 }),
                 slijpen: new sdef('slijpen', {
@@ -569,7 +569,7 @@ class draaischijf extends SpriteObject {
                     ],
                     enter(this: draaischijf, s: sstate<draaischijf>) {
                         s.reset();
-                        this.imgid = s.current;
+                        this.imgid = s.current_tape_value;
                     },
                     process_input: draaischijf.handle_input_slijp_state,
                     run(this: draaischijf, s: sstate<draaischijf>) {
@@ -579,7 +579,7 @@ class draaischijf extends SpriteObject {
 
                     // },
                     next(this: draaischijf, s: sstate<draaischijf>) {
-                        this.imgid = s.current;
+                        this.imgid = s.current_tape_value;
                         if (s.head === 0) ++this.pos.y;
                         else --this.pos.y;
                         _model.spawn(new stoom(), new_vec2(randomInt(this.pos.x, this.pos.x + this.size.x), randomInt(this.pos.y, this.pos.y + this.size.y)));
@@ -601,7 +601,7 @@ class draaischijf extends SpriteObject {
                     ],
                     enter(this: draaischijf, s: sstate<draaischijf>) {
                         s.reset();
-                        this.imgid = s.current;
+                        this.imgid = s.current_tape_value;
                     },
                     process_input: draaischijf.handle_input_slijp_afkoel_state,
                     run(this: draaischijf, s: sstate<draaischijf>) {
@@ -611,7 +611,7 @@ class draaischijf extends SpriteObject {
                         this.state.to('idle');
                     },
                     next(this: draaischijf, s: sstate<draaischijf>) {
-                        this.imgid = s.current;
+                        this.imgid = s.current_tape_value;
                     },
                 }),
             }
@@ -752,7 +752,7 @@ class burn extends onvolmaaktheid {
                     ],
                     onenter(this: burn, s: sstate<burn>) {
                         s.reset();
-                        this.imgid = s.current;
+                        this.imgid = s.current_tape_value;
                         this.ben_ik_nog_onvolmaakt = true;
                     },
                     onrun(s: sstate) { },
@@ -760,7 +760,7 @@ class burn extends onvolmaaktheid {
                         this.state.to('gepolijst');
                     },
                     onnext(this: burn, s: sstate<burn>) {
-                        this.imgid = s.current;
+                        this.imgid = s.current_tape_value;
                     },
                 },
                 gepolijst: {
@@ -772,7 +772,7 @@ class burn extends onvolmaaktheid {
                     ],
                     onenter(this: burn, s: sstate<burn>) {
                         s.reset();
-                        this.imgid = s.current;
+                        this.imgid = s.current_tape_value;
                         this.ben_ik_nog_onvolmaakt = false;
                     },
                     onrun(s: sstate) { },
@@ -816,7 +816,7 @@ class barst extends onvolmaaktheid {
                     ],
                     onenter(this: barst, s: sstate<barst>) {
                         s.reset();
-                        this.imgid = s.current;
+                        this.imgid = s.current_tape_value;
                         this.ben_ik_nog_onvolmaakt = true;
                     },
                     onrun(s: sstate) { },
@@ -824,7 +824,7 @@ class barst extends onvolmaaktheid {
                         this.state.to('gepolijst');
                     },
                     onnext(this: barst, s: sstate<barst>) {
-                        this.imgid = s.current;
+                        this.imgid = s.current_tape_value;
                     },
                 },
                 gepolijst: {
