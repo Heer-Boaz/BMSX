@@ -185,7 +185,7 @@ export class bfsm_controller {
 
 	get current_machine(): statecontext { return this.statemachines[this.current_machine_id]; }
 
-	get current_state(): sstate { return this.current_machine.current_state; }
+	get current_state(): sstate { return this.current_machine.current; }
 
 	get states(): id2sstate { return this.current_machine.states; }
 
@@ -217,6 +217,8 @@ export class bfsm_controller {
 			machineid = this.current_machine_id; // If no machineid is specified, assume that the machineid is the same as the current machine
 		}
 
+		const machine = this.statemachines[machineid];
+		if (!machine) throw new Error(`No machine with ID "${machineid}"`);
 		this.current_machine_id = machineid;
 		this.current_machine.to(stateids.join('.'));
 	}
@@ -245,31 +247,21 @@ export class bfsm_controller {
 	 */
 	getCurrentState(path: string): sstate | undefined {
 		let parts = path.split('.');
-		let currentContext: statecontext | sstate = this.machines[parts[0]];
+		let currentContext: IStateController = this.machines[parts[0]];
 		if (!currentContext) {
 			throw new Error(`No machine with ID "${parts[0]}"`);
 		}
 
-		// Interchange between state and submachine
 		for (let i = 1; i < parts.length; i++) {
-			// Check whether the current context is a state or a submachine by checking whether it has a submachines property
-			if ('submachines' in currentContext) {
-				if (!currentContext.submachines?.[parts[i]]) {
-					throw new Error(`No submachine with ID "${parts[i]}" in machine "${currentContext.machinedef_id}"`);
-				}
-				currentContext = currentContext.submachines[parts[i]];
-				continue;
+			let submachine = currentContext.states?.[parts[i]];
+			if (!submachine) {
+				let currentPath = parts.slice(0, i).join('.');
+				throw new Error(`No submachine with ID "${parts[i]}" in machine "${currentPath}"`);
 			}
-			else {
-				if (!currentContext.states?.[parts[i]]) {
-					throw new Error(`No state with ID "${parts[i]}" in machine "${currentContext.id}"`);
-				}
-				currentContext = currentContext.states[parts[i]];
-				continue;
-			}
+			currentContext = submachine;
 		}
-		// Return the current state of the current context, depending on whether it is a state or a submachine
-		return 'submachines' in currentContext ? currentContext : currentContext.current_state;
+
+		return currentContext?.current;
 	}
 
 	/**
@@ -353,12 +345,26 @@ export class bfsm_controller {
 	}
 }
 
+/**
+ * Represents the context of a state in a finite state machine.
+ * Contains information about the current state, the state machine it belongs to, and any substate machines.
+ */
+interface IStateController {
+	run(): void;
+	to(id: string): void;
+	pop(): void;
+	state: statecontext;
+	states: id2sstate;
+	get current(): sstate;
+	get start_state_id(): string;
+}
+
 @insavegame
 /**
  * Represents the context of a state in a finite state machine.
  * Contains information about the current state, the state machine it belongs to, and any substate machines.
  */
-export class statecontext {
+export class statecontext implements IStateController {
 	/**
 	 * The unique identifier for the bfsm.
 	 */
@@ -367,6 +373,8 @@ export class statecontext {
 	 * Represents the states of the Bfsm.
 	 */
 	states: id2sstate;
+
+	get state() { return this; }
 	/**
 	 * Indicates whether the state machine is running in parallel with the "current" state machine as defined in {@link bfsm_controller.current_machine}.
 	 */
@@ -396,8 +404,7 @@ export class statecontext {
 	/**
 	 * Returns the current state of the FSM
 	 */
-	public get current_state(): sstate { return this.states[this.currentid]; }
-	public get current_machine(): mdef { return MachineDefinitions[this.id]; }
+	public get current(): sstate { return this.states[this.currentid]; }
 	/**
 	 * Gets the state with the given id from the state machine.
 	 * Used for referencing states from within the state instance, instead
@@ -421,7 +428,7 @@ export class statecontext {
 	 * Note that the definition can be empty, as not all objects have a defined machine.
 	 */
 	public get current_state_definition(): sdef {
-		return this.current_state?.definition;
+		return this.current?.definition;
 	}
 
 	/**
@@ -465,73 +472,68 @@ export class statecontext {
 		let currentStatedef = this.current_state_definition;
 		if (!currentStatedef) return;
 
-		currentStatedef.process_input?.call(this.target, this.current_state, state_event_type.None);
+		currentStatedef.process_input?.call(this.target, this.current, state_event_type.None);
 		// Then, run the state
-		currentStatedef.run?.call(this.target, this.current_state, state_event_type.Run);
-		// Then run each submachine for the state
-		let currentState = this.current_state;
-		if (currentState.submachines) {
-			for (let submachineId in currentState.submachines) {
-				let submachine = currentState.submachines[submachineId];
-				submachine.run();
-			}
-		}
+		currentStatedef.run?.call(this.target, this.current, state_event_type.Run);
+		// Then run the submachine for the state if it exists
+		this.current.state?.run();
 	}
 
-	public to(id: string): void {
-		let parts = id.split('.');
-		let currentContext: statecontext | sstate = this.states[parts[0]];
+	public to(id: string, parts: string[] = id.split('.')): void {
+		let currentPart = parts[0];
+		let restParts = parts.slice(1);
+
+		let currentContext: IStateController = this.states[currentPart];
 		if (!currentContext) {
-			throw new Error(`No state with ID "${parts[0]}"`);
+			throw new Error(`No state with ID "${currentPart}"`);
 		}
 
-		if (parts.length === 1) {
-			// If there is only one part, we are switching to a state in the same machine
-			let stateDef = this.current_state_definition;
-			stateDef?.exit?.call(this.target, this.current_state, state_event_type.Exit);
-			stateDef && this.pushHistory(this.currentid);
+		// Perform exit actions for the current state
+		let stateDef = this.current_state_definition;
+		stateDef?.exit?.call(this.target, this.current, state_event_type.Exit);
+		stateDef && this.pushHistory(this.currentid);
 
-			this.currentid = parts[0];
-			if (!this.current_state) throw new Error(`State "${parts[0]}" doesn't exist for this state machine '${this.id}'!`);
+		// Update the current state
+		this.currentid = currentPart;
+		if (!this.current) throw new Error(`State "${currentPart}" doesn't exist for this state machine '${this.id}'!`);
 
-			stateDef = this.current_state_definition;
-			stateDef?.enter?.call(this.target, this.current_state, state_event_type.Enter);
-			return;
+		// Perform enter actions for the new current state
+		stateDef = this.current_state_definition;
+		stateDef?.enter?.call(this.target, this.current, state_event_type.Enter);
+
+		// If there are more parts, transition to the next state
+		if (restParts.length > 0) {
+			currentContext.to(restParts.join('.'));
 		}
-
-		// Interchange between state and submachine
-		for (let i = 1; i < parts.length; i++) {
-			// Check whether the current context is a state or a submachine by checking whether it has a submachines property
-			if ('statedef_id' in currentContext) {
-				if (!currentContext.submachines?.[parts[i]]) {
-					throw new Error(`No submachine with ID "${parts[i]}" in machine "${currentContext.machinedef_id}"`);
-				}
-				currentContext = currentContext.submachines[parts[i]];
-				continue;
-			}
-			else {
-				// Recursively call the to function on the current context
-				const sliced = parts.slice(i + 1).join('.');
-				if (sliced && sliced.length > 0) {
-					currentContext.to(parts.slice(i + 1).join('.'));
-				}
-
-				// Set the current state to the state given in the current part of the path
-				let stateDef = currentContext.current_state_definition;
-				stateDef?.exit?.call(this.target, currentContext.current_state, state_event_type.Exit);
-				stateDef && currentContext.pushHistory(currentContext.currentid);
-
-				currentContext.currentid = parts[i];
-				if (!currentContext.current_state) throw new Error(`State "${parts[i]}" doesn't exist for this state machine '${currentContext.id}'!`);
-
-				stateDef = currentContext.current_state_definition;
-				stateDef?.enter?.call(this.target, currentContext.current_state, state_event_type.Enter);
-				// Don't continue, as the to function already handles the rest of the path
-				break;
-			}
-		}
-
 	}
+
+	// public toLowest(id: string, parts: string[] = id.split('.')): void {
+	// 	let currentPart = parts[0];
+	// 	let restParts = parts.slice(1);
+
+	// 	let currentContext: IStateController = this.states[currentPart];
+	// 	if (!currentContext) {
+	// 		throw new Error(`No state with ID "${currentPart}"`);
+	// 	}
+
+	// 	// If there are more parts, continue to the next state
+	// 	if (restParts.length > 0) {
+	// 		currentContext.toLowest(restParts.join('.'));
+	// 	} else {
+	// 		// Perform exit actions for the current state
+	// 		let stateDef = this.current_state_definition;
+	// 		stateDef?.exit?.call(this.target, this.current, state_event_type.Exit);
+	// 		stateDef && this.pushHistory(this.currentid);
+
+	// 		// Update the current state
+	// 		this.currentid = currentPart;
+	// 		if (!this.current) throw new Error(`State "${currentPart}" doesn't exist for this state machine '${this.id}'!`);
+
+	// 		// Perform enter actions for the new current state
+	// 		stateDef = this.current_state_definition;
+	// 		stateDef?.enter?.call(this.target, this.current, state_event_type.Enter);
+	// 	}
+	// }
 
 	/**
 	 * Adds the given state ID to the history stack, which tracks the previous states of the state machine.
@@ -587,15 +589,6 @@ export class statecontext {
 			for (let sdef_id in mdef.states) {
 				let state = new sstate(sdef_id, this.id, this.targetid);
 				this.add(state);
-
-				// If the state definition has substates, recursively populate them
-				if (mdef.states[sdef_id].submachines) {
-					state.submachines = {};
-					for (let submachine_id in mdef.states[sdef_id].submachines) {
-						let submachine = statecontext.create(submachine_id, this.targetid);
-						state.submachines[submachine_id] = submachine;
-					}
-				}
 			}
 		}
 		// If no current state is set, set the state to the first state that it finds in the set of states
@@ -623,8 +616,29 @@ export class statecontext {
  * Represents a state in a state machine.
  * @template T - The type of the game object or model associated with the state.
  */
-export class sstate<T extends GameObject | BaseModel = any> {
-	submachines: Record<string, statecontext>;
+export class sstate<T extends GameObject | BaseModel = any> implements IStateController {
+	pop(): void {
+		this.state.pop();
+	}
+
+	to(id: string): void {
+		this.state.to(id);
+	}
+
+	run(): void {
+		this.state.run();
+	}
+
+	get current(): sstate {
+		return this.state.current;
+	}
+
+	get start_state_id(): string {
+		return this.state.start_state_id;
+	}
+
+	state: statecontext;
+	get states(): id2sstate { return this.state?.states; }
 	/**
 	 * The unique identifier for the state definition.
 	 */
@@ -663,7 +677,7 @@ export class sstate<T extends GameObject | BaseModel = any> {
 	 * Returns the current value of the tape at the position of the tape head.
 	 * If there is no tape or the tape head is beyond the end of the tape, returns undefined.
 	 */
-	public get current(): any { return (this.tape && this.head < this.tape.length) ? this.tape[this.head] : undefined; };
+	public get current_tape_value(): any { return (this.tape && this.head < this.tape.length) ? this.tape[this.head] : undefined; };
 	public get at_tapeend(): boolean { return !this.tape || this.head >= this.tape.length - 1; } // Note that beyond end also returns true if there is no tape!
 	/**
 	 * Determines whether the tape head is currently beyond the end of the tape.
@@ -701,7 +715,8 @@ export class sstate<T extends GameObject | BaseModel = any> {
 		this.statedef_id = _id;
 		this.machinedef_id = _machineid;
 		this.targetid = _targetid;
-		this.submachines ??= {};
+		const substateDefinition = this.definition?.submachine_id;
+		this.state = substateDefinition ? statecontext.create(substateDefinition, this.targetid) : undefined;
 
 		// Note: when parameters are undefined, this constructor was invoked without parameters. This happens when it is revived. In that situation, don't init this object
 		if (_id && _machineid && this.definition) { // No definition exists for the empty 'none'-state
@@ -831,7 +846,7 @@ export class sstate<T extends GameObject | BaseModel = any> {
  * Represents a state definition for a state machine.
  */
 export class sdef {
-	submachines?: Record<string, machine_states>;
+	submachine_id?: string; // Represents the machine name of the substate machine
 	/**
 	 * The unique identifier for the bfsm.
 	 */
@@ -883,6 +898,7 @@ export type id2partial_sdef = Record<string, Partial<sdef>>;
  */
 export interface machine_states {
 	parallel?: boolean;
+
 	states: id2partial_sdef;
 }
 

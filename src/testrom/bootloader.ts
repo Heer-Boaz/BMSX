@@ -211,21 +211,7 @@ class bclass extends SpriteObject {
                 '#meuk1': {
                     run: () => { },
                     enter(this: bclass) { this.pos.x += 10; },
-                    submachines: {
-                        bclass_meuk_bla: {
-                            states: {
-                                '#blupperblop1': {
-                                    run(this: bclass) { },
-                                    enter(this: bclass) { console.log('enter blupperblop1'); },
-                                },
-                                blupperblop2: {
-                                    run(this: bclass) { },
-                                    enter(this: bclass) { console.log('enter blupperblop2'); },
-                                },
-                            }
-                        }
-                    }
-
+                    submachine_id: 'bclass_meuk_submachine',
                 },
                 meuk2: {
                     run: () => { },
@@ -233,6 +219,22 @@ class bclass extends SpriteObject {
                 },
             }
         };
+    }
+
+    @build_fsm('bclass_meuk_submachine')
+    public static bouw_meuksubfsm(): machine_states {
+        return {
+            states: {
+                '#blupperblop1': {
+                    run(this: bclass) { },
+                    enter(this: bclass) { console.log('enter blupperblop1'); },
+                },
+                blupperblop2: {
+                    run(this: bclass) { },
+                    enter(this: bclass) { console.log('enter blupperblop2'); },
+                },
+            }
+        }
     }
 
     @statedef_builder
@@ -292,9 +294,8 @@ class bclass extends SpriteObject {
                         this.testmeuk();
                         global.eventEmitter.emit('testEvent', this.id);
 
-                        this.state.to('bla');
+                        this.state.to('bclass.bla');
                         this.state.machines.bclass_animation.to('#ani2');
-                        this.state.machines.bclass_meuk.to('meuk2');
                         break;
                     case 'blap':
                         if (consumed) break;
@@ -302,14 +303,13 @@ class bclass extends SpriteObject {
                         global.eventEmitter.emit('testEventOnce', this.id);
 
                         this.state.machines.bclass_animation.to('ani1');
-                        this.state.to('#blap');
-                        this.state.machines.bclass_meuk.to('#meuk1');
-                        if (this.state.getCurrentState('bclass_meuk.#meuk1.bclass_meuk_bla').statedef_id === '#blupperblop1') {
-                            this.state.to('bclass_meuk.#meuk1.bclass_meuk_bla.blupperblop2');
+                        if (this.state.getCurrentState('bclass_meuk.#meuk1').statedef_id === '#blupperblop1') {
+                            this.state.to('bclass_meuk.#meuk1.blupperblop2');
                         }
                         else {
-                            this.state.to('bclass_meuk.#meuk1.bclass_meuk_bla.blupperblop1');
+                            this.state.to('bclass_meuk.#meuk1.#blupperblop1');
                         }
+                        this.state.to('bclass.#blap');
 
                         break;
                 }
@@ -317,6 +317,7 @@ class bclass extends SpriteObject {
         }
 
         return {
+            parallel: true,
             states: {
                 bla: {
                     run: blarun,
