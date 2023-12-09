@@ -164,6 +164,196 @@ export const NONE_STATE_ID = 'none';
 export type Bla<T extends id2partial_sdef> = keyof T;
 
 @insavegame
+export class bfsm_controller {
+	/**
+	 * The substate object that holds the state context for each substate.
+	 */
+	statemachines: Record<string, statecontext>;
+
+	public get machines(): Record<string, statecontext> {
+		return new Proxy(this.statemachines, {
+			get: (target, prop: string) => {
+				if (target[prop]) {
+					return target[prop];
+				}
+				throw new Error(`No machine with ID "${prop}"`);
+			}
+		});
+	}
+
+	current_machine_id: string;
+
+	get current_machine(): statecontext { return this.statemachines[this.current_machine_id]; }
+
+	get current_state(): sstate { return this.current_machine.current_state; }
+
+	get states(): id2sstate { return this.current_machine.states; }
+
+	get definition(): mdef { return this.current_machine.definition; }
+
+	constructor() {
+		this.statemachines = {};
+	}
+
+	run(): void {
+		// Runs the current state of the current state machine
+		this.current_machine.run();
+
+		// Run all state machines that have 'parallel' set to true
+		for (let id in this.statemachines) {
+			// Skip the current machine, as it has already been run
+			if (id === this.current_machine_id) continue;
+			if (this.statemachines[id].parallel) this.statemachines[id].run();
+		}
+	}
+
+	to(newstate: string): void {
+		// Switches both statemachine and state, based on the newstate which is a combination of statemachine and state, written as "statemachine.state.substate"
+		let [machineid, ...stateids] = newstate.split('.');
+
+		// Allow for switching to a state in the same machine without having to specify the machineid
+		if (stateids.length === 0) {
+			stateids = [machineid]; // If no stateid is specified, assume that the stateid is the same as the machineid
+			machineid = this.current_machine_id; // If no machineid is specified, assume that the machineid is the same as the current machine
+		}
+
+		this.current_machine_id = machineid;
+		this.current_machine.to(stateids.join('.'));
+	}
+
+	add_statemachine(id: string, targetid: string): void {
+		this.statemachines[id] = statecontext.create(id, targetid);
+		// If this is the first id that was added, set it as the current machine
+		if (!this.current_machine_id) this.current_machine_id = id;
+	}
+
+	/**
+	 * Gets the state machine with the given ID.
+	 * @param id - The ID of the state machine.
+	 * @returns The state machine with the given ID.
+	 */
+	get_statemachine(id: string): statecontext {
+		return this.statemachines[id];
+	}
+
+	/**
+	 * Retrieves the current state of a given path in the state machine.
+	 *
+	 * @param path - The path to the desired state, represented as a dot-separated string.
+	 * @returns The current state object if found, otherwise undefined.
+	 * @throws Error if no machine with the specified ID is found.
+	 */
+	getCurrentState(path: string): sstate | undefined {
+		let parts = path.split('.');
+		let currentContext: statecontext | sstate = this.machines[parts[0]];
+		if (!currentContext) {
+			throw new Error(`No machine with ID "${parts[0]}"`);
+		}
+
+		// Interchange between state and submachine
+		for (let i = 1; i < parts.length; i++) {
+			// Check whether the current context is a state or a submachine by checking whether it has a submachines property
+			if ('submachines' in currentContext) {
+				if (!currentContext.submachines?.[parts[i]]) {
+					throw new Error(`No submachine with ID "${parts[i]}" in machine "${currentContext.machinedef_id}"`);
+				}
+				currentContext = currentContext.submachines[parts[i]];
+				continue;
+			}
+			else {
+				if (!currentContext.states?.[parts[i]]) {
+					throw new Error(`No state with ID "${parts[i]}" in machine "${currentContext.id}"`);
+				}
+				currentContext = currentContext.states[parts[i]];
+				continue;
+			}
+		}
+		// Return the current state of the current context, depending on whether it is a state or a submachine
+		return 'submachines' in currentContext ? currentContext : currentContext.current_state;
+	}
+
+	/**
+	 * Runs the state machine with the given ID.
+	 * @param id - The ID of the state machine.
+	 */
+	run_statemachine(id: string): void {
+		this.statemachines[id].run();
+	}
+
+	/**
+	 * Runs all state machines.
+	 */
+	run_all_statemachines(): void {
+		for (let id in this.statemachines) {
+			this.statemachines[id].run();
+		}
+	}
+
+	/**
+	 * Resets the state machine with the given ID.
+	 * @param id - The ID of the state machine.
+	 */
+	reset_statemachine(id: string): void {
+		this.statemachines[id].reset();
+	}
+
+	/**
+	 * Resets all state machines.
+	 */
+	reset_all_statemachines(): void {
+		for (let id in this.statemachines) {
+			this.statemachines[id].reset();
+		}
+	}
+
+	/**
+	 * Goes back to the previous state of the state machine with the given ID.
+	 * @param id - The ID of the state machine.
+	 */
+	pop_statemachine(id: string): void {
+		this.statemachines[id].pop();
+	}
+
+	/**
+	 * Goes back to the previous state of all state machines.
+	 */
+	pop_all_statemachines(): void {
+		for (let id in this.statemachines) {
+			this.statemachines[id].pop();
+		}
+	}
+
+	/**
+	 * Sets the state of the state machine with the given ID to the state with the given ID.
+	 * @param id - The ID of the state machine.
+	 * @param stateid - The ID of the state.
+	 */
+	switch_state(id: string, stateid: string): void {
+		this.statemachines[id].to(stateid);
+	}
+
+	pause_statemachine(id: string): void {
+		this.statemachines[id].paused = true;
+	}
+
+	pause_all_statemachines(): void {
+		for (let id in this.statemachines) {
+			this.statemachines[id].paused = true;
+		}
+	}
+
+	unpause_statemachine(id: string): void {
+		this.statemachines[id].paused = false;
+	}
+
+	unpause_all_statemachines(): void {
+		for (let id in this.statemachines) {
+			this.statemachines[id].paused = false;
+		}
+	}
+}
+
+@insavegame
 /**
  * Represents the context of a state in a finite state machine.
  * Contains information about the current state, the state machine it belongs to, and any substate machines.
@@ -177,6 +367,10 @@ export class statecontext {
 	 * Represents the states of the Bfsm.
 	 */
 	states: id2sstate;
+	/**
+	 * Indicates whether the state machine is running in parallel with the "current" state machine as defined in {@link bfsm_controller.current_machine}.
+	 */
+	get parallel(): boolean { return this.definition.parallel; }
 	/**
 	 * Identifier of the current state.
 	 */
@@ -194,10 +388,6 @@ export class statecontext {
 	 * @see {@link BaseModel.get}
 	 */
 	targetid: string;
-	/**
-	 * The substate object that holds the state context for each substate.
-	 */
-	substate: Record<string, statecontext>;
 
 	/**
 	 * Returns the game object or model that this state machine is associated with.
@@ -206,7 +396,8 @@ export class statecontext {
 	/**
 	 * Returns the current state of the FSM
 	 */
-	public get current(): sstate { return this.states[this.currentid]; }
+	public get current_state(): sstate { return this.states[this.currentid]; }
+	public get current_machine(): mdef { return MachineDefinitions[this.id]; }
 	/**
 	 * Gets the state with the given id from the state machine.
 	 * Used for referencing states from within the state instance, instead
@@ -230,25 +421,17 @@ export class statecontext {
 	 * Note that the definition can be empty, as not all objects have a defined machine.
 	 */
 	public get current_state_definition(): sdef {
-		return this.current?.definition;
+		return this.current_state?.definition;
 	}
 
 	/**
 	 * Factory for creating new FSMs.
 	 * @param _id - id of the FSM definition to use for this machine.
 	 * @param _targetid - id of the object that is stated by this FSM. @see {@link BaseModel.get}.
-	 * @param _sub_fsm_ids - array of ids of any additional machines to be added to this machines. @see {@link statecontext.substate}.
 	 */
-	public static create(_id: string, _targetid: string, _sub_fsm_ids?: string[]): statecontext {
+	public static create(_id: string, _targetid: string): statecontext {
 		let result = new statecontext(_id, _targetid);
 		result.populateStates();
-
-		if (_sub_fsm_ids && _sub_fsm_ids.length > 0) {
-			_sub_fsm_ids.forEach(sub_id => {
-				result.substate.sub_id = new statecontext(_id, _targetid);
-				result.substate.sub_id.populateStates();
-			});
-		}
 
 		return result;
 	}
@@ -264,7 +447,6 @@ export class statecontext {
 		this.targetid = _targetid;
 		this.states ??= {};
 		this.paused ??= false;
-		this.substate ??= {};
 
 		// Note: when parameters are undefined, this constructor was invoked without parameters. This happens when it is revived. In that situation, don't init this object
 		_id && _targetid && this.reset();
@@ -283,30 +465,72 @@ export class statecontext {
 		let currentStatedef = this.current_state_definition;
 		if (!currentStatedef) return;
 
-		currentStatedef.process_input?.call(this.target, this.current, state_event_type.None);
+		currentStatedef.process_input?.call(this.target, this.current_state, state_event_type.None);
 		// Then, run the state
-		currentStatedef.run?.call(this.target, this.current, state_event_type.Run);
+		currentStatedef.run?.call(this.target, this.current_state, state_event_type.Run);
+		// Then run each submachine for the state
+		let currentState = this.current_state;
+		if (currentState.submachines) {
+			for (let submachineId in currentState.submachines) {
+				let submachine = currentState.submachines[submachineId];
+				submachine.run();
+			}
+		}
 	}
 
-	/**
-	 * Transitions the state machine to the given state ID.
-	 * Calls the exit function of the current state, if it exists, and stores the previous state on the history stack.
-	 * Then switches the current state to the new state ID and calls the enter function of the new state, if it exists.
-	 * @param newstate - the ID of the state to transition to
-	 * @throws Error if the new state ID does not exist in the state machine definition
-	 */
-	public to(newstate: string): void {
-		let stateDef = this.current_state_definition;
-		// stateDef can be undefined if we are in the 'none' state
-		stateDef?.exit?.call(this.target, this.current, state_event_type.Exit);
-		stateDef && this.pushHistory(this.currentid); // Store the previous state on the history stack, if it is other than 'none'
+	public to(id: string): void {
+		let parts = id.split('.');
+		let currentContext: statecontext | sstate = this.states[parts[0]];
+		if (!currentContext) {
+			throw new Error(`No state with ID "${parts[0]}"`);
+		}
 
-		this.currentid = newstate; // Switch the current state to the new state
-		if (!this.current) throw new Error(`State "${newstate}" doesn't exist for this state machine '${this.id}'!`);
+		if (parts.length === 1) {
+			// If there is only one part, we are switching to a state in the same machine
+			let stateDef = this.current_state_definition;
+			stateDef?.exit?.call(this.target, this.current_state, state_event_type.Exit);
+			stateDef && this.pushHistory(this.currentid);
 
-		stateDef = this.current_state_definition;
-		// stateDef can be undefined if we are in the 'none' state
-		stateDef?.enter?.call(this.target, this.current, state_event_type.Enter);
+			this.currentid = parts[0];
+			if (!this.current_state) throw new Error(`State "${parts[0]}" doesn't exist for this state machine '${this.id}'!`);
+
+			stateDef = this.current_state_definition;
+			stateDef?.enter?.call(this.target, this.current_state, state_event_type.Enter);
+			return;
+		}
+
+		// Interchange between state and submachine
+		for (let i = 1; i < parts.length; i++) {
+			// Check whether the current context is a state or a submachine by checking whether it has a submachines property
+			if ('statedef_id' in currentContext) {
+				if (!currentContext.submachines?.[parts[i]]) {
+					throw new Error(`No submachine with ID "${parts[i]}" in machine "${currentContext.machinedef_id}"`);
+				}
+				currentContext = currentContext.submachines[parts[i]];
+				continue;
+			}
+			else {
+				// Recursively call the to function on the current context
+				const sliced = parts.slice(i + 1).join('.');
+				if (sliced && sliced.length > 0) {
+					currentContext.to(parts.slice(i + 1).join('.'));
+				}
+
+				// Set the current state to the state given in the current part of the path
+				let stateDef = currentContext.current_state_definition;
+				stateDef?.exit?.call(this.target, currentContext.current_state, state_event_type.Exit);
+				stateDef && currentContext.pushHistory(currentContext.currentid);
+
+				currentContext.currentid = parts[i];
+				if (!currentContext.current_state) throw new Error(`State "${parts[i]}" doesn't exist for this state machine '${currentContext.id}'!`);
+
+				stateDef = currentContext.current_state_definition;
+				stateDef?.enter?.call(this.target, currentContext.current_state, state_event_type.Enter);
+				// Don't continue, as the to function already handles the rest of the path
+				break;
+			}
+		}
+
 	}
 
 	/**
@@ -361,7 +585,17 @@ export class statecontext {
 		}
 		else {
 			for (let sdef_id in mdef.states) {
-				this.add(new sstate(sdef_id, this.id, this.targetid));
+				let state = new sstate(sdef_id, this.id, this.targetid);
+				this.add(state);
+
+				// If the state definition has substates, recursively populate them
+				if (mdef.states[sdef_id].submachines) {
+					state.submachines = {};
+					for (let submachine_id in mdef.states[sdef_id].submachines) {
+						let submachine = statecontext.create(submachine_id, this.targetid);
+						state.submachines[submachine_id] = submachine;
+					}
+				}
 			}
 		}
 		// If no current state is set, set the state to the first state that it finds in the set of states
@@ -390,6 +624,7 @@ export class statecontext {
  * @template T - The type of the game object or model associated with the state.
  */
 export class sstate<T extends GameObject | BaseModel = any> {
+	submachines: Record<string, statecontext>;
 	/**
 	 * The unique identifier for the state definition.
 	 */
@@ -466,6 +701,7 @@ export class sstate<T extends GameObject | BaseModel = any> {
 		this.statedef_id = _id;
 		this.machinedef_id = _machineid;
 		this.targetid = _targetid;
+		this.submachines ??= {};
 
 		// Note: when parameters are undefined, this constructor was invoked without parameters. This happens when it is revived. In that situation, don't init this object
 		if (_id && _machineid && this.definition) { // No definition exists for the empty 'none'-state
@@ -595,6 +831,7 @@ export class sstate<T extends GameObject | BaseModel = any> {
  * Represents a state definition for a state machine.
  */
 export class sdef {
+	submachines?: Record<string, machine_states>;
 	/**
 	 * The unique identifier for the bfsm.
 	 */
@@ -645,6 +882,7 @@ export type id2partial_sdef = Record<string, Partial<sdef>>;
  * Represents the states of a state machine.
  */
 export interface machine_states {
+	parallel?: boolean;
 	states: id2partial_sdef;
 }
 
@@ -663,6 +901,11 @@ export class mdef {
 	public states: id2sdef;
 
 	/**
+	 * Indicates whether the state machine is running in parallel with the "current" state machine as defined in {@link bfsm_controller.current_machine}.
+	 */
+	public parallel: boolean;
+
+	/**
 	 * The identifier of the state that the state machine should start in.
 	 */
 	public start_state: string;
@@ -679,6 +922,7 @@ export class mdef {
 	 */
 	constructor(id?: string, state_list?: machine_states) {
 		this.id = id ?? DEFAULT_BST_ID;
+		this.parallel = state_list?.parallel ?? false;
 		this.states ??= {};
 		let keys = Object.keys(state_list.states);
 		for (let state_id of keys) {
