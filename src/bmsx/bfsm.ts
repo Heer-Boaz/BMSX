@@ -94,12 +94,37 @@ export function setup_fsmdef_library(): void {
 	MachineDefinitions = {};
 	for (let machine_name in MachineDefinitionBuilders) {
 		let machine_definition = MachineDefinitionBuilders[machine_name]();
-		let machineBuilt: mdef;
 		if (machine_definition) {
-			machineBuilt = new mdef(machine_name, machine_definition);
-			if (machine_definition) MachineDefinitions[machine_name] = machineBuilt; // A class might choose not to create a new machine
+			createMachine(machine_name, machine_definition);
 		}
 	}
+}
+
+function createMachine(machine_name: string, machine_definition: machine_states): void {
+	// If the machine_definition has states, create a new machine definition for each state
+	if (machine_definition.states) {
+		for (let stateId in machine_definition.states) {
+			let state = machine_definition.states[stateId];
+
+			// If the state has substates, create a new machine definition for each substate
+			if (state.states) {
+				// Generate a new submachine_id
+				let submachine_id = generateSubmachineId(machine_name, stateId);
+				state.submachine_id = submachine_id;
+
+				// Create a new machine with the substate's states
+				let submachine_definition: machine_states = { states: state.states };
+				createMachine(submachine_id, submachine_definition);
+			}
+		}
+	}
+	let machineBuilt = new mdef(machine_name, machine_definition);
+	MachineDefinitions[machine_name] = machineBuilt; // A class might choose not to create a new machine
+}
+
+// Function to generate a new submachine_id
+function generateSubmachineId(machine_name: string, stateId: string): string {
+	return `${machine_name}_${stateId}`;
 }
 
 /**
@@ -847,6 +872,7 @@ export class sstate<T extends GameObject | BaseModel = any> implements IStateCon
  */
 export class sdef {
 	submachine_id?: string; // Represents the machine name of the substate machine
+	states?: id2partial_sdef; // Represents the states of the substate machine
 	/**
 	 * The unique identifier for the bfsm.
 	 */
