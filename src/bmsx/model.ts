@@ -1,5 +1,5 @@
 import { BehaviorTreeDefinition, BehaviorTreeDefinitions, BehaviorTreeID, setup_btdef_library, setup_bt_library } from "./behaviourtree";
-import { statecontext, mdef, MachineDefinitions, sdef, setup_fsmdef_library, sstate } from "./bfsm";
+import { statecontext, mdef, MachineDefinitions, sdef, setup_fsmdef_library, sstate, bfsm_controller } from "./bfsm";
 import { Direction, vec2, vec3 } from "./bmsx";
 import { GameObject } from "./gameobject";
 import { insavegame, onsave, Reviver, Savegame, Serializer } from "./gameserializer";
@@ -152,7 +152,7 @@ export abstract class BaseModel {
      * These keys include references to objects and spaces that should not be saved.
      */
     public static readonly keys_to_exclude_from_save = ['objects', 'id2object', 'spaces', 'id2space', 'obj_id2obj_space_id'];
-    public state: statecontext;
+    public state: bfsm_controller;
     /**
      * An object that maps space IDs to their corresponding Space objects.
      * @type {id2spaceType}
@@ -343,7 +343,8 @@ export abstract class BaseModel {
     * @param {string} `derived_modelclass_constructor_name` - the constructor name of the derived modelclass (that derives from this BaseModel.
     */
     public init_model_state_machines(derived_modelclass_constructor_name: string): this {
-        this.state = statecontext.create(derived_modelclass_constructor_name, 'model');
+        this.state = new bfsm_controller();
+        this.state.add_statemachine(derived_modelclass_constructor_name, 'model');
 
         return this;
     }
@@ -397,7 +398,7 @@ export abstract class BaseModel {
      */
     static default_input_handler_for_allow_open_gamemenu(this: BaseModel, s: sstate<BaseModel>): void {
         if (Input.KC_F5) {
-            this.state.substate.gamemenu.to('open');
+            this.state.machines.gamemenu.to('open');
         }
     }
 
@@ -410,7 +411,7 @@ export abstract class BaseModel {
      */
     static default_input_handler_for_allow_close_gamemenu(this: BaseModel, s: sstate<BaseModel>): void {
         if (Input.KC_F5) {
-            this.state.substate.gamemenu.to('closed');
+            this.state.machines.gamemenu.to('closed');
         }
     }
 
