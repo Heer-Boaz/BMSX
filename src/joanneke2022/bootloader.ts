@@ -75,7 +75,7 @@ class gamemodel extends BaseModel {
                     },
                     run(this: gamemodel, s: sstate<gamemodel>) {
                         BaseModel.defaultrun();
-                        this.state.substate.gamemenu.run();
+                        this.state.machines.gamemenu.run();
                         if (!this.paused) ++s.nudges; // Laat timer lopen
                     },
                     process_input: BaseModel.default_input_handler,
@@ -120,6 +120,7 @@ class gamemodel extends BaseModel {
     @build_fsm('model_substate')
     public static substates(): machine_states {
         return {
+            parallel: true,
             states: {
                 closed: {
                     process_input: BaseModel.default_input_handler_for_allow_open_gamemenu,
@@ -159,8 +160,8 @@ class gamemodel extends BaseModel {
 
     public override init_model_state_machines(derived_modelclass_constructor_name: string): this {
         super.init_model_state_machines(derived_modelclass_constructor_name);
-        this.state.substate.gamemenu = statecontext.create('model_substate', 'model');
-        this.state.substate.gamemenu.to('closed');
+        this.state.machines.gamemenu = statecontext.create('model_substate', 'model');
+        this.state.machines.gamemenu.to('closed');
         return this;
     }
 
@@ -724,7 +725,7 @@ abstract class onvolmaaktheid extends SpriteObject {
     }
 
     public polijst_nudge = (): void => {
-        ++this.state.current.nudges;
+        ++this.state.current_state.nudges;
     };
 
     override paint() {

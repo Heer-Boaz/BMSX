@@ -1,4 +1,3 @@
-import { ProhibitLeavingScreenComponent, ScreenBoundaryComponent } from './../bmsx/collisioncomponents';
 import { GamepadButton } from './../bmsx/input';
 import { RomPack } from '../bmsx/rompack';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
@@ -14,6 +13,7 @@ import { SpriteObject } from '../bmsx/sprite';
 import { attach_components, Component, componenttags_preprocessing, update_tagged_components } from '../bmsx/component';
 import { subscribesToParentScopedEvent, subscribesToSelfScopedEvent } from '../bmsx/eventemitter';
 import { assign_bt, BehaviorTreeDefinition, build_bt, WaitForActionCompletionDecorator } from '../bmsx/behaviourtree';
+import { ProhibitLeavingScreenComponent } from './../bmsx/collisioncomponents';
 
 var _game: Game;
 let _model: gamemodel;
@@ -206,10 +206,26 @@ class bclass extends SpriteObject {
     @build_fsm('bclass_meuk')
     public static bouw_meukfsm(): machine_states {
         return {
+            parallel: true,
             states: {
                 '#meuk1': {
                     run: () => { },
                     enter(this: bclass) { this.pos.x += 10; },
+                    submachines: {
+                        bclass_meuk_bla: {
+                            states: {
+                                '#blupperblop1': {
+                                    run(this: bclass) { },
+                                    enter(this: bclass) { console.log('enter blupperblop1'); },
+                                },
+                                blupperblop2: {
+                                    run(this: bclass) { },
+                                    enter(this: bclass) { console.log('enter blupperblop2'); },
+                                },
+                            }
+                        }
+                    }
+
                 },
                 meuk2: {
                     run: () => { },
@@ -228,7 +244,7 @@ class bclass extends SpriteObject {
 
         function blarun(this: bclass, s: sstate) {
             const speed = 2;
-            if (this.state.current.statedef_id === '#blap') {
+            if (this.state.current_state.statedef_id === '#blap') {
                 this.tickTree('bclass_tree');
             }
 
@@ -277,17 +293,24 @@ class bclass extends SpriteObject {
                         global.eventEmitter.emit('testEvent', this.id);
 
                         this.state.to('bla');
-                        this.state.substate.bclass_animation.to('#ani2');
-                        this.state.substate.bclass_meuk.to('meuk2');
+                        this.state.machines.bclass_animation.to('#ani2');
+                        this.state.machines.bclass_meuk.to('meuk2');
                         break;
                     case 'blap':
                         if (consumed) break;
                         Input.consumeAction(0, action);
                         global.eventEmitter.emit('testEventOnce', this.id);
 
-                        this.state.substate.bclass_animation.to('ani1');
+                        this.state.machines.bclass_animation.to('ani1');
                         this.state.to('#blap');
-                        this.state.substate.bclass_meuk.to('#meuk1');
+                        this.state.machines.bclass_meuk.to('#meuk1');
+                        if (this.state.getCurrentState('bclass_meuk.#meuk1.bclass_meuk_bla').statedef_id === '#blupperblop1') {
+                            this.state.to('bclass_meuk.#meuk1.bclass_meuk_bla.blupperblop2');
+                        }
+                        else {
+                            this.state.to('bclass_meuk.#meuk1.bclass_meuk_bla.blupperblop1');
+                        }
+
                         break;
                 }
             }
