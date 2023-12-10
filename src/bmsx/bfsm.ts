@@ -128,18 +128,6 @@ function generateSubmachineId(machine_name: string, stateId: string): string {
 }
 
 /**
- * Represents the types of events that can occur in the state machine.
- */
-export const enum state_event_type {
-	None = 0,
-	Run = 1,
-	Enter = 2,
-	Exit = 3,
-	Next = 4,
-	End = 5,
-}
-
-/**
  * Represents a type definition for mapping IDs to `sdef` objects.
  */
 export type id2sdef = Record<string, sdef>;
@@ -161,7 +149,7 @@ export type id2sstate = Record<string, sstate>;
  * @param type - The type of state event.
  * @returns The result of the state event handler.
  */
-export interface state_event_handler { (state: sstate, machine: statecontext, type: state_event_type): any; }
+export interface state_event_handler { (state: sstate, ...args: any[]); }
 /**
  * Represents a tape used in the BFSM.
  */
@@ -238,7 +226,7 @@ export class bfsm_controller {
 		}
 	}
 
-	to(newstate: string): void {
+	to(newstate: string, ...args: any[]): void {
 		// Switches both statemachine and state, based on the newstate which is a combination of statemachine and state, written as "statemachine.state.substate"
 		let [machineid, ...stateids] = newstate.split('.');
 
@@ -251,10 +239,10 @@ export class bfsm_controller {
 		const machine = this.statemachines[machineid];
 		if (!machine) throw new Error(`No machine with ID "${machineid}"`);
 		this.current_machine_id = machineid;
-		this.current_machine.to(stateids.join('.'));
+		this.current_machine.to(stateids.join('.'), ...args);
 	}
 
-	switch(path: string): void {
+	switch(path: string, ...args: any[]): void {
 		// Switches only the state, based on the path which is a combination of statemachine and state, written as "statemachine.state.substate"
 		let [machineid, ...stateids] = path.split('.');
 
@@ -267,7 +255,7 @@ export class bfsm_controller {
 		if (!machine) throw new Error(`No machine with ID "${machineid}"`);
 
 		// Only switch the state in the specified machine, without changing the current machine
-		machine.switch(stateids.join('.'));
+		machine.switch(stateids.join('.'), ...args);
 	}
 
 	add_statemachine(id: string, targetid: string): void {
@@ -447,6 +435,11 @@ export class statecontext implements IStateController {
 	targetid: string;
 
 	/**
+	 * Represents the state data for the state machine that is shared across its states.
+	 */
+	public data: { [key: string]: any } = {};
+
+	/**
 	 * Returns the game object or model that this state machine is associated with.
 	 */
 	public get target(): GameObject | BaseModel { return global.model.get(this.targetid); }
@@ -517,7 +510,7 @@ export class statecontext implements IStateController {
 		const startStateDef = this.get_sstate(startStateId)?.definition;
 
 		// Trigger the enter event for the start state. Note that there is no definition for the none-state, so we don't trigger the enter event for that state.
-		startStateDef?.enter?.call(this.target, this.get_sstate(startStateId), this, state_event_type.Enter);
+		startStateDef?.enter?.call(this.target, this.get_sstate(startStateId));
 
 		// Start the state machine for the current active state
 		this.states[startStateId].state?.start();
@@ -535,12 +528,12 @@ export class statecontext implements IStateController {
 		// First process any input
 		let currentStatedef = this.current_state_definition;
 		if (!currentStatedef) return;
-
-		currentStatedef.process_input?.call(this.target, this.current, this, state_event_type.None);
+		const currentState = this.current;
+		currentStatedef.process_input?.call(this.target, currentState);
 		// Then, run the state
-		currentStatedef.run?.call(this.target, this.current, this, state_event_type.Run);
+		currentStatedef.run?.call(this.target, currentState);
 		// Then run the submachine for the state if it exists
-		this.current.state?.run();
+		currentState.run(); // Note that this will do nothing if there is no submachine
 	}
 
 	/**
@@ -550,7 +543,7 @@ export class statecontext implements IStateController {
 	 * @param parts - Optional array of parts that make up the ID.
 	 * @throws Error if the state with the given ID does not exist.
 	 */
-	public to(id: string): void {
+	public to(id: string, ...args: any[]): void {
 		const parts: string[] = id.split('.');
 		let currentPart = parts[0];
 		let restParts = parts.slice(1);
@@ -563,7 +556,7 @@ export class statecontext implements IStateController {
 		if (this.currentid !== currentPart) { // Don't switch to the same state
 			// Perform exit actions for the current state
 			let stateDef = this.current_state_definition;
-			stateDef?.exit?.call(this.target, this.current, this, state_event_type.Exit);
+			stateDef?.exit?.call(this.target, this.current, ...args);
 			stateDef && this.pushHistory(this.currentid);
 
 			// Update the current state
@@ -572,7 +565,7 @@ export class statecontext implements IStateController {
 
 			// Perform enter actions for the new current state
 			stateDef = this.current_state_definition;
-			stateDef?.enter?.call(this.target, this.current, this, state_event_type.Enter);
+			stateDef?.enter?.call(this.target, this.current, ...args);
 		}
 		// If there are more parts, transition to the next state
 		if (restParts.length > 0) {
@@ -590,7 +583,7 @@ export class statecontext implements IStateController {
 	 * @returns void
 	 * @throws Error - If the state with the specified ID doesn't exist.
 	 */
-	public switch(id: string): void {
+	public switch(id: string, ...args: any[]): void {
 		const parts: string[] = id.split('.');
 		let currentPart = parts[0];
 		let restParts = parts.slice(1);
@@ -608,7 +601,7 @@ export class statecontext implements IStateController {
 
 			// Perform exit actions for the current state
 			let stateDef = this.current_state_definition;
-			stateDef?.exit?.call(this.target, this.current, this, state_event_type.Exit);
+			stateDef?.exit?.call(this.target, this.current, ...args);
 			stateDef && this.pushHistory(this.currentid);
 
 			// Update the current state
@@ -617,7 +610,7 @@ export class statecontext implements IStateController {
 
 			// Perform enter actions for the new current state
 			stateDef = this.current_state_definition;
-			stateDef?.enter?.call(this.target, this.current, this, state_event_type.Enter);
+			stateDef?.enter?.call(this.target, this.current, ...args);
 		}
 	}
 
@@ -646,6 +639,8 @@ export class statecontext implements IStateController {
 		 */
 		this.history = new Array();
 		this.paused = false;
+		if (!this.definition) return; // If the definition doesn't exist, the state machine is empty and there is nothing to reset
+		this.data = { ...this.definition.data }; // Reset the state machine data by shallow copying the definition's data
 	}
 
 	/**
@@ -704,23 +699,23 @@ export class statecontext implements IStateController {
  */
 export class sstate<T extends GameObject | BaseModel = any> implements IStateController {
 	pop(): void {
-		this.state.pop();
+		this.getOrThrowStateMachine().pop();
 	}
 
-	to(id: string): void {
-		this.state.to(id);
+	to(id: string, ...args: any[]): void {
+		this.getOrThrowStateMachine().to(id, ...args);
 	}
 
-	switch(id: string): void {
-		this.state.switch(id);
+	switch(id: string, ...args: any[]): void {
+		this.getOrThrowStateMachine().switch(id, ...args);
 	}
 
 	run(): void {
-		this.state.run();
+		this.state?.run();
 	}
 
 	get current(): sstate {
-		return this.state.current;
+		return this.getOrThrowStateMachine().current;
 	}
 
 	get currentid(): string {
@@ -728,10 +723,20 @@ export class sstate<T extends GameObject | BaseModel = any> implements IStateCon
 	}
 
 	get start_state_id(): string {
-		return this.state.start_state_id;
+		return this.getOrThrowStateMachine().start_state_id;
 	}
 
 	state: statecontext;
+	/**
+	 * Retrieves the state machine associated with the current state.
+	 * @returns The state machine object.
+	 * @throws Error if the state doesn't have a state machine.
+	 */
+	private getOrThrowStateMachine(): statecontext {
+		if (!this.state) throw new Error(`State "${this.statedef_id}" doesn't have a state machine.`);
+		return this.state;
+	}
+
 	get states(): id2sstate { return this.state?.states; }
 	/**
 	 * The unique identifier for the state definition.
@@ -797,6 +802,11 @@ export class sstate<T extends GameObject | BaseModel = any> implements IStateCon
 	 * @template T - The type of the game object or model to return.
 	 */
 	public targetAs<T extends GameObject | BaseModel>(): T { return <T>global.model.get(this.targetid); }
+
+	/**
+	 * Represents the state data for the state.
+	 */
+	public data: { [key: string]: any } = {};
 
 	/**
 	 * Creates a new state object with the given ID, machine ID, and target ID.
@@ -916,23 +926,25 @@ export class sstate<T extends GameObject | BaseModel = any> implements IStateCon
 
 	// Triggers the `next` event of the state machine definition, passing this state and the `state_event_type.Next` event type as arguments.
 	protected tapemove() {
-		this.definition.next?.call(this.target, this as sstate<T>, undefined, state_event_type.Next);
+		this.definition.next?.call(this.target, this as sstate<T>, undefined);
 	}
 
 	/**
 	 * Triggers the `end` event of the state machine definition, passing this state and the `state_event_type.End` event type as arguments.
 	 */
 	protected tapeend() {
-		this.definition.end?.call(this.target, this as sstate<T>, undefined, state_event_type.End);
+		this.definition.end?.call(this.target, this as sstate<T>, undefined);
 	}
 
 	/**
 	 * Resets the state machine by setting the tapehead and nudges to 0 and the nudges2move to the value defined in the state machine definition.
 	 */
 	public reset(): void {
-		this._tapehead = 0;
-		this._nudges = 0;
-		this.nudges2move = this.definition.nudges2move;
+		this._tapehead = 0; // Reset the tapehead to the beginning of the tape
+		this._nudges = 0; // Reset the nudges
+		if (!this.definition) return; // No definition exists for the empty 'none'-state
+		this.nudges2move = this.definition.nudges2move; // Reset the nudges2move to the value defined in the state machine definition
+		this.data = { ...this.definition.data }; // Reset the state data by shallow copying the definition's data
 	}
 }
 
@@ -942,6 +954,8 @@ export class sstate<T extends GameObject | BaseModel = any> implements IStateCon
 export class sdef {
 	submachine_id?: string; // Represents the machine name of the substate machine
 	states?: id2partial_sdef; // Represents the states of the substate machine
+
+	public data?: { [key: string]: any };
 	/**
 	 * The unique identifier for the bfsm.
 	 */
@@ -975,6 +989,7 @@ export class sdef {
 		this.nudges2move ??= 1;
 		this.repetitions ??= 1;
 		this.auto_rewind_tape_after_end ??= true;
+		this.data ??= {};
 		_partialdef && Object.assign(this, _partialdef); // Assign the partial definition to the instance
 
 		// Repeat the tape if necessary (and if it exists) by appending the tape to itself
@@ -1031,6 +1046,11 @@ export class mdef {
 	 * The identifier of the state that the state machine should start in.
 	 */
 	public start_state: string;
+
+	/**
+	 * Represents the state data for the state machine that is shared across its states.
+	 */
+	public data?: { [key: string]: any } = {};
 
 	/**
 	 * The prefix used to identify the start state.
