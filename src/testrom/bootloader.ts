@@ -248,7 +248,7 @@ class bclass extends SpriteObject {
 
         function blarun(this: bclass, s: sstate) {
             const speed = 2;
-            if (this.state.current_state.statedef_id === '#blap') {
+            if (this.state.current_state.statedef_id === 'blap') {
                 this.tickTree('bclass_tree');
             }
 
@@ -297,7 +297,7 @@ class bclass extends SpriteObject {
                         global.eventEmitter.emit('testEvent', this.id);
 
                         this.state.to('bclass.bla');
-                        this.state.machines.bclass_animation.to('#ani2');
+                        this.state.machines.bclass_animation.to('ani2');
                         break;
                     case 'blap':
                         if (consumed) break;
@@ -305,13 +305,13 @@ class bclass extends SpriteObject {
                         global.eventEmitter.emit('testEventOnce', this.id);
 
                         this.state.machines.bclass_animation.to('ani1');
-                        if (this.state.getCurrentState('bclass_meuk.#meuk1').statedef_id === '#blupperblop1') {
-                            this.state.to('bclass_meuk.#meuk1.blupperblop2');
+                        if (this.state.is('bclass_meuk.meuk1.blupperblop1')) {
+                            this.state.to('bclass_meuk.meuk1.blupperblop2');
                         }
                         else {
-                            this.state.to('bclass_meuk.#meuk1.#blupperblop1');
+                            this.state.to('bclass_meuk.meuk1.blupperblop1');
                         }
-                        this.state.to('bclass.#blap');
+                        this.state.to('bclass.blap');
 
                         break;
                 }
