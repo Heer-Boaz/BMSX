@@ -161,7 +161,7 @@ export type id2sstate = Record<string, sstate>;
  * @param type - The type of state event.
  * @returns The result of the state event handler.
  */
-export interface state_event_handler { (state: sstate, type: state_event_type): any; }
+export interface state_event_handler { (state: sstate, machine: statecontext, type: state_event_type): any; }
 /**
  * Represents a tape used in the BFSM.
  */
@@ -178,7 +178,7 @@ export const DEFAULT_BST_ID = 'master';
 /**
  * The ID representing the none state.
  */
-export const NONE_STATE_ID = 'none';
+export const NONE_STATE_ID = '_none';
 
 /**
  * Type used for getting all the states of a nested object containing both the machines as well as the inner states per machine. Allows for type checking state-names without having to create a type per machine.
@@ -220,6 +220,12 @@ export class bfsm_controller {
 		this.statemachines = {};
 	}
 
+	start(): void {
+		for (const id in this.statemachines) {
+			this.statemachines[id].start();
+		}
+	}
+
 	run(): void {
 		// Runs the current state of the current state machine
 		this.current_machine.run();
@@ -248,6 +254,22 @@ export class bfsm_controller {
 		this.current_machine.to(stateids.join('.'));
 	}
 
+	switch(path: string): void {
+		// Switches only the state, based on the path which is a combination of statemachine and state, written as "statemachine.state.substate"
+		let [machineid, ...stateids] = path.split('.');
+
+		// If no stateid is specified, assume that the stateid is the same as the machineid
+		if (stateids.length === 0) {
+			stateids = [machineid];
+		}
+
+		const machine = this.statemachines[machineid];
+		if (!machine) throw new Error(`No machine with ID "${machineid}"`);
+
+		// Only switch the state in the specified machine, without changing the current machine
+		machine.switch(stateids.join('.'));
+	}
+
 	add_statemachine(id: string, targetid: string): void {
 		this.statemachines[id] = statecontext.create(id, targetid);
 		// If this is the first id that was added, set it as the current machine
@@ -270,7 +292,7 @@ export class bfsm_controller {
 	 * @returns The current state object if found, otherwise undefined.
 	 * @throws Error if no machine with the specified ID is found.
 	 */
-	getCurrentState(path: string): sstate | undefined {
+	is(path: string): boolean {
 		let parts = path.split('.');
 		let currentContext: IStateController = this.machines[parts[0]];
 		if (!currentContext) {
@@ -286,7 +308,7 @@ export class bfsm_controller {
 			currentContext = submachine;
 		}
 
-		return currentContext?.current;
+		return currentContext?.currentid === parts[parts.length - 1];
 	}
 
 	/**
@@ -376,11 +398,13 @@ export class bfsm_controller {
  */
 interface IStateController {
 	run(): void;
+	switch(id: string): void;
 	to(id: string): void;
 	pop(): void;
 	state: statecontext;
 	states: id2sstate;
-	get current(): sstate;
+	current: sstate;
+	currentid: string;
 	get start_state_id(): string;
 }
 
@@ -446,7 +470,7 @@ export class statecontext implements IStateController {
 	 * Gets the id of the start state of the FSM.
 	 * @returns The id of the start state of the FSM.
 	 */
-	public get start_state_id(): string { return MachineDefinitions[this.id].start_state; }
+	public get start_state_id(): string { return MachineDefinitions[this.id]?.start_state ?? NONE_STATE_ID; }
 
 	/**
 	 * Gets the definition of the current state of the FSM.
@@ -484,6 +508,21 @@ export class statecontext implements IStateController {
 		_id && _targetid && this.reset();
 	}
 
+	public start(): void {
+		const startStateId = this.start_state_id;
+		if (!startStateId) {
+			throw new Error(`No start state defined for state machine '${this.id}'`);
+		}
+
+		const startStateDef = this.get_sstate(startStateId)?.definition;
+
+		// Trigger the enter event for the start state. Note that there is no definition for the none-state, so we don't trigger the enter event for that state.
+		startStateDef?.enter?.call(this.target, this.get_sstate(startStateId), this, state_event_type.Enter);
+
+		// Start the state machine for the current active state
+		this.states[startStateId].state?.start();
+	}
+
 	/**
 	 * Runs the current state of the FSM.
 	 * If the FSM is paused, this function does nothing.
@@ -497,14 +536,22 @@ export class statecontext implements IStateController {
 		let currentStatedef = this.current_state_definition;
 		if (!currentStatedef) return;
 
-		currentStatedef.process_input?.call(this.target, this.current, state_event_type.None);
+		currentStatedef.process_input?.call(this.target, this.current, this, state_event_type.None);
 		// Then, run the state
-		currentStatedef.run?.call(this.target, this.current, state_event_type.Run);
+		currentStatedef.run?.call(this.target, this.current, this, state_event_type.Run);
 		// Then run the submachine for the state if it exists
 		this.current.state?.run();
 	}
 
-	public to(id: string, parts: string[] = id.split('.')): void {
+	/**
+	 * Transition to a new state identified by the given ID.
+	 * If no parts are provided, the ID will be split by '.' to determine the parts.
+	 * @param id - The ID of the state to transition to.
+	 * @param parts - Optional array of parts that make up the ID.
+	 * @throws Error if the state with the given ID does not exist.
+	 */
+	public to(id: string): void {
+		const parts: string[] = id.split('.');
 		let currentPart = parts[0];
 		let restParts = parts.slice(1);
 
@@ -513,52 +560,66 @@ export class statecontext implements IStateController {
 			throw new Error(`No state with ID "${currentPart}"`);
 		}
 
-		// Perform exit actions for the current state
-		let stateDef = this.current_state_definition;
-		stateDef?.exit?.call(this.target, this.current, state_event_type.Exit);
-		stateDef && this.pushHistory(this.currentid);
+		if (this.currentid !== currentPart) { // Don't switch to the same state
+			// Perform exit actions for the current state
+			let stateDef = this.current_state_definition;
+			stateDef?.exit?.call(this.target, this.current, this, state_event_type.Exit);
+			stateDef && this.pushHistory(this.currentid);
 
-		// Update the current state
-		this.currentid = currentPart;
-		if (!this.current) throw new Error(`State "${currentPart}" doesn't exist for this state machine '${this.id}'!`);
+			// Update the current state
+			this.currentid = currentPart;
+			if (!this.current) throw new Error(`State "${currentPart}" doesn't exist for this state machine '${this.id}'!`);
 
-		// Perform enter actions for the new current state
-		stateDef = this.current_state_definition;
-		stateDef?.enter?.call(this.target, this.current, state_event_type.Enter);
-
+			// Perform enter actions for the new current state
+			stateDef = this.current_state_definition;
+			stateDef?.enter?.call(this.target, this.current, this, state_event_type.Enter);
+		}
 		// If there are more parts, transition to the next state
 		if (restParts.length > 0) {
 			currentContext.to(restParts.join('.'));
 		}
 	}
 
-	// public toLowest(id: string, parts: string[] = id.split('.')): void {
-	// 	let currentPart = parts[0];
-	// 	let restParts = parts.slice(1);
+	/**
+	 * Switches the state of the state machine to the specified ID.
+	 * If the ID contains multiple parts separated by '.', it traverses through the states accordingly and only switches the state of the last part.
+	 * Performs exit actions for the current state and enter actions for the new current state.
+	 * Throws an error if the state with the specified ID doesn't exist.
+	 *
+	 * @param id - The ID of the state to switch to.
+	 * @returns void
+	 * @throws Error - If the state with the specified ID doesn't exist.
+	 */
+	public switch(id: string): void {
+		const parts: string[] = id.split('.');
+		let currentPart = parts[0];
+		let restParts = parts.slice(1);
 
-	// 	let currentContext: IStateController = this.states[currentPart];
-	// 	if (!currentContext) {
-	// 		throw new Error(`No state with ID "${currentPart}"`);
-	// 	}
+		let currentContext: IStateController = this.states[currentPart];
+		if (!currentContext) {
+			throw new Error(`No state with ID "${currentPart}"`);
+		}
 
-	// 	// If there are more parts, continue to the next state
-	// 	if (restParts.length > 0) {
-	// 		currentContext.toLowest(restParts.join('.'));
-	// 	} else {
-	// 		// Perform exit actions for the current state
-	// 		let stateDef = this.current_state_definition;
-	// 		stateDef?.exit?.call(this.target, this.current, state_event_type.Exit);
-	// 		stateDef && this.pushHistory(this.currentid);
+		// If there are more parts, continue to the next state
+		if (restParts.length > 0) {
+			currentContext.switch(restParts.join('.'));
+		} else {
+			if (this.currentid === currentPart) return; // Don't switch to the same state
 
-	// 		// Update the current state
-	// 		this.currentid = currentPart;
-	// 		if (!this.current) throw new Error(`State "${currentPart}" doesn't exist for this state machine '${this.id}'!`);
+			// Perform exit actions for the current state
+			let stateDef = this.current_state_definition;
+			stateDef?.exit?.call(this.target, this.current, this, state_event_type.Exit);
+			stateDef && this.pushHistory(this.currentid);
 
-	// 		// Perform enter actions for the new current state
-	// 		stateDef = this.current_state_definition;
-	// 		stateDef?.enter?.call(this.target, this.current, state_event_type.Enter);
-	// 	}
-	// }
+			// Update the current state
+			this.currentid = currentPart;
+			if (!this.current) throw new Error(`State "${currentPart}" doesn't exist for this state machine '${this.id}'!`);
+
+			// Perform enter actions for the new current state
+			stateDef = this.current_state_definition;
+			stateDef?.enter?.call(this.target, this.current, this, state_event_type.Enter);
+		}
+	}
 
 	/**
 	 * Adds the given state ID to the history stack, which tracks the previous states of the state machine.
@@ -576,13 +637,13 @@ export class statecontext implements IStateController {
 	// Otherwise, the current state is set to the 'none' state.
 	// The history of previous states is cleared and the state machine is unpaused.
 	public reset(): void {
-		let start = this.definition?.start_state; // Definition doesn't need to exist
+		// let start = this.definition?.start_state; // Definition doesn't need to exist
 		/* N.B. doesn't trigger the onenter-event!
 		 * Not feasible, as the object doesn't exist in the model (or the model itself doesn't exist yet).
 		 * Therefore, problems will occur when attempting to do stuff during the onenter-event if the object does not yet exist in the model.
 		 * Better to use onspawn instead and treat the start-state as just the start-state.
-		 */
 		this.currentid = start ?? NONE_STATE_ID;
+		 */
 		this.history = new Array();
 		this.paused = false;
 	}
@@ -608,7 +669,7 @@ export class statecontext implements IStateController {
 			// A class is not required to have a defined machine.
 			// Thus, we create a default machine that automatically has a generated
 			// 'none'-state associated with it.
-			this.add(new sstate('none', this.id, this.targetid));
+			this.add(new sstate(NONE_STATE_ID, this.id, this.targetid));
 		}
 		else {
 			for (let sdef_id in mdef.states) {
@@ -650,12 +711,20 @@ export class sstate<T extends GameObject | BaseModel = any> implements IStateCon
 		this.state.to(id);
 	}
 
+	switch(id: string): void {
+		this.state.switch(id);
+	}
+
 	run(): void {
 		this.state.run();
 	}
 
 	get current(): sstate {
 		return this.state.current;
+	}
+
+	get currentid(): string {
+		return this.state?.currentid ?? this.statedef_id;
 	}
 
 	get start_state_id(): string {
@@ -847,14 +916,14 @@ export class sstate<T extends GameObject | BaseModel = any> implements IStateCon
 
 	// Triggers the `next` event of the state machine definition, passing this state and the `state_event_type.Next` event type as arguments.
 	protected tapemove() {
-		this.definition.next?.call(this.target, this as sstate<T>, state_event_type.Next);
+		this.definition.next?.call(this.target, this as sstate<T>, undefined, state_event_type.Next);
 	}
 
 	/**
 	 * Triggers the `end` event of the state machine definition, passing this state and the `state_event_type.End` event type as arguments.
 	 */
 	protected tapeend() {
-		this.definition.end?.call(this.target, this as sstate<T>, state_event_type.End);
+		this.definition.end?.call(this.target, this as sstate<T>, undefined, state_event_type.End);
 	}
 
 	/**
@@ -890,7 +959,8 @@ export class sdef {
 	 * If set to true, the tapehead will be set to index 0 when it would go out of bounds.
 	 * If set to false, the tapehead will remain at the end of the tape.
 	 */
-	public auto_rewind_tape_after_end: boolean = true; // Automagically set the tapehead to index 0 when tapehead would go out of bound. Otherwise, will remain at end
+	public auto_rewind_tape_after_end: boolean; // Automagically set the tapehead to index 0 when tapehead would go out of bound. Otherwise, will remain at end
+	public repetitions: number; // Number of times the tape should be repeated
 
 	@exclude_save
 	public parent!: mdef;
@@ -903,7 +973,17 @@ export class sdef {
 	public constructor(_id: string = '_', _partialdef?: Partial<sdef>) {
 		this.id = _id;
 		this.nudges2move ??= 1;
-		_partialdef && Object.assign(this, _partialdef);
+		this.repetitions ??= 1;
+		this.auto_rewind_tape_after_end ??= true;
+		_partialdef && Object.assign(this, _partialdef); // Assign the partial definition to the instance
+
+		// Repeat the tape if necessary (and if it exists) by appending the tape to itself
+		if (this.tape && this.repetitions > 1) {
+			let originalTape = [...this.tape]; // Copy the tape
+			for (let i = 1; i < this.repetitions; i++) { // Repeat the tape
+				this.tape.push(...originalTape); // Append the tape to itself
+			}
+		}
 	}
 
 	public run?: state_event_handler;
@@ -955,7 +1035,7 @@ export class mdef {
 	/**
 	 * The prefix used to identify the start state.
 	 */
-	public static readonly START_STATE_PREFIX = '#';
+	public static readonly START_STATE_PREFIXES = '_#';
 
 	/**
 	 * Creates a new state machine definition.
@@ -994,7 +1074,7 @@ export class mdef {
 	 * @returns True if the state is the start state, false otherwise.
 	 */
 	static #is_start_state(_state: sdef): boolean {
-		return _state.id.startsWith(mdef.START_STATE_PREFIX);
+		return mdef.START_STATE_PREFIXES.includes(_state.id.charAt(0));
 	}
 
 	/**
@@ -1022,8 +1102,12 @@ export class mdef {
 	public append(_state: sdef): void {
 		if (!_state.id) throw new Error(`'sdef' is missing an id, while attempting to add it to this 'mdef'!`);
 		if (this.states[_state.id]) throw new Error(`'sdef' with id='${_state.id}' already exists for this 'mdef'!`);
+		if (mdef.#is_start_state(_state)) {
+			// Remove the start state prefix from the id
+			_state.id = _state.id.substring(1);
+			this.#set_start_state(_state);
+		}
 		this.states[_state.id] = _state;
 		_state.parent = this;
-		mdef.#is_start_state(_state) && this.#set_start_state(_state);
 	}
 }
