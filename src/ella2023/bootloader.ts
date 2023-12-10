@@ -5,15 +5,16 @@ import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
 import { Input, InputMap, KeyboardButton, GamepadInputMapping, KeyboardInputMapping } from '../bmsx/input';
-import { sstate, statedef_builder, machine_states } from '../bmsx/bfsm';
+import { sstate, statedef_builder, machine_states, build_fsm, assign_fsm } from '../bmsx/bfsm';
 import { insavegame } from '../bmsx/gameserializer';
 import { new_area, Direction, Game, new_vec2, get_gamemodel } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
 import { BaseModel } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';
-import { Component, componenttags_preprocessing, update_tagged_components } from '../bmsx/component';
-import { subscribesToParentScopedEvent as subscribesToParentScopedEvent } from '../bmsx/eventemitter';
+import { attach_components } from '../bmsx/component';
 import { BehaviorTreeDefinition, build_bt } from '../bmsx/behaviourtree';
+import { ProhibitLeavingScreenComponent } from './../bmsx/collisioncomponents';
+import { PositionUpdateAxisComponent } from './../bmsx/collisioncomponents';
 
 var _game: Game;
 let _model: gamemodel;
@@ -30,7 +31,7 @@ _global['h406A'] = (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode):
 
 const get_model = get_gamemodel<gamemodel>;
 
-const actions = ['jump', 'right', 'duck', 'left', 'punch', 'kick', 'block' ] as const;
+const actions = ['jump', 'right', 'duck', 'left', 'punch', 'kick', 'block'] as const;
 type Action = typeof actions[number];
 
 type MyKeyboardInputMapping = {
@@ -161,7 +162,129 @@ class enemy extends SpriteObject {
 }
 
 @insavegame
-class player extends SpriteObject {
+@assign_fsm('player_animation')
+@attach_components(ProhibitLeavingScreenComponent)
+class Player extends SpriteObject {
+    facing: 'left' | 'right';
+
+    @build_fsm('player_animation')
+    public static buildAnimationFsm(): machine_states {
+        return {
+            parallel: true,
+            states: {
+                _idle: {
+                    run: () => { },
+                    enter(this: Player) {
+                        this.imgid = BitmapId.lee_idle;
+                    },
+                },
+                walk: {
+                    run(this: Player, state: sstate) { },
+                    enter(this: Player, state: sstate) {
+                        state.state.reset();
+                        this.imgid = BitmapId.lee_walk;
+                    },
+                    states: {
+                        _walk1: {
+                            nudges2move: 8,
+                            run(this: Player, state: sstate) {
+                                ++state.nudges;
+                            },
+                            enter(this: Player, state: sstate) {
+                                this.imgid = BitmapId.lee_walk;
+                                state.reset();
+                            },
+                            next(this: Player, state: sstate) {
+                                this.state.switch('player_animation.walk.walk2');
+                            }
+                        },
+                        walk2: {
+                            nudges2move: 8,
+                            run(this: Player, state: sstate) { ++state.nudges; },
+                            enter(this: Player, state: sstate) {
+                                this.imgid = BitmapId.lee_idle;
+                                state.reset();
+                            },
+                            next(this: Player, state: sstate) {
+                                this.state.switch('player_animation.walk.walk1');
+                            }
+                        },
+                    }
+                },
+                highkick: {
+                    run: () => { },
+                    enter(this: Player) { this.imgid = BitmapId.lee_highkick; },
+                },
+                lowkick: {
+                    run: () => { },
+                    enter(this: Player) { this.imgid = BitmapId.lee_lowkick; },
+                },
+                punch: {
+                    run: () => { },
+                    enter(this: Player) { this.imgid = BitmapId.lee_punch; },
+                },
+                flyingkick: {
+                    run: () => { },
+                    enter(this: Player) { this.imgid = BitmapId.lee_flyingkick; },
+                },
+                duck: {
+                    run: () => { },
+                    enter(this: Player) { this.imgid = BitmapId.lee_duckorjump; },
+                },
+                jump: {
+                    run: () => { },
+                    enter(this: Player) { this.imgid = BitmapId.lee_duckorjump; },
+                },
+                humiliated: {
+                    nudges2move: 50,
+                    enter(this: Player) { this.imgid = BitmapId.lee_humiliated_1; },
+                    states: {
+                        _wait: {
+                            nudges2move: 50,
+                            enter(this: Player) { this.imgid = BitmapId.lee_humiliated_1; },
+                            next(this: Player, state: sstate) {
+                                this.state['player_animation'].to('humiliated.animation');
+                            }
+                        },
+                        animation: {
+                            nudges2move: 25,
+                            states: {
+                                _humiliated1: {
+                                    nudges2move: 25,
+                                    enter(this: Player) { this.imgid = BitmapId.lee_humiliated_1; },
+                                    next(this: Player, state: sstate) {
+                                        this.state['player_animation'].to('humiliated.animation.humiliated2');
+                                    }
+                                },
+                                humiliated2: {
+                                    nudges2move: 25,
+                                    enter(this: Player) { this.imgid = BitmapId.lee_humiliated_2; },
+                                    next(this: Player, state: sstate) {
+                                        this.state['player_animation'].to('humiliated.animation._humiliated1');
+                                    }
+                                },
+                            },
+                            tape: ['humiliated1', 'humiliated2'],
+                            repetitions: 8,
+                            auto_rewind_tape_after_end: true,
+                            next(this: Player, state: sstate) {
+                                this.state['player_animation'].to('humiliated.waitEnd');
+                            }
+                        },
+                        waitEnd: {
+                            nudges2move: 50,
+                            enter(this: Player) { this.imgid = BitmapId.lee_humiliated_1; },
+                            next(this: Player, state: sstate) {
+                                this.state['player_animation'].to('nextState'); // replace 'nextState' with the actual state to transition to
+                            }
+                        },
+                    },
+                    tape: ['wait', 'animation', 'waitEnd'],
+                },
+            }
+        };
+    }
+
     @statedef_builder
     public static bouw(): machine_states {
         Input.setInputMap(0, {
@@ -170,28 +293,40 @@ class player extends SpriteObject {
         } as InputMap);
 
         // To check if an action is pressed for player 0
-        function defaultrun(this: player, s: sstate) {
+        function defaultrun(this: Player, s: sstate) {
             const speed = 2;
 
             const pressedActions = Input.getPressedActions(0);
+            let walked = false;
 
             for (const { action, pressed, consumed } of pressedActions) {
                 switch (action as Action) {
                     case 'right':
-                        this.pos.x += speed;
+                        walked = true;
+                        this.facing = 'right';
+                        this.x += speed;
                         break;
                     case 'left':
-                        this.pos.x -= speed;
+                        walked = true;
+                        this.facing = 'left';
+                        this.x -= speed;
                         break;
                 }
+            }
+            if (walked && !this.state.is('player_animation.walk')) {
+                this.state.switch('player_animation.walk');
+            } else if (!walked && this.state.is('Player.idle_or_walk')) {
+                this.state.switch('player_animation.idle');
             }
         }
 
         return {
             states: {
-                '#idle': {
+                _idle_or_walk: {
                     run: defaultrun,
-                    enter(this: player) { },
+                    enter(this: Player) {
+                        this.state.switch('player_animation.idle');
+                    },
                 },
             }
         };
@@ -199,7 +334,15 @@ class player extends SpriteObject {
 
     constructor() {
         super('player');
-        this.hitarea = new_area(0, 0, 14, 18);
+        this.facing = 'left';
+        this.size.x = 40;
+        this.size.y = 37;
+        this.hitarea = new_area(0, 0, 40, 37);
+    }
+
+    override paint(): void {
+        this.flip_h = this.facing !== 'left';
+        super.paint();
     }
 };
 
@@ -209,7 +352,7 @@ class gamemodel extends BaseModel {
     public static bouw(): machine_states {
         return {
             states: {
-                '#game_start': {
+                _game_start: {
                     run(this: gamemodel, s: sstate) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
                         this.state.to('default');
                     }
@@ -234,7 +377,7 @@ class gamemodel extends BaseModel {
     }
 
     public override do_one_time_game_init(): this {
-        _model.spawn(new player(), new_vec2(100, 100));
+        _model.spawn(new Player(), new_vec2(100, 100));
         return this;
     }
 
@@ -253,11 +396,11 @@ class gamemodel extends BaseModel {
     public isCollisionTile(x: number, y: number): boolean {
         return false;
     }
-};
+}
 
 class gameview extends GLView {
     override drawgame() {
         super.drawgame();
         super.drawSprites();
     }
-};
+}
