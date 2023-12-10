@@ -255,51 +255,6 @@ function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement
     let table = addContent(addContentTo, 'table', null) as HTMLTableElement;
     let headerRow = addContent(table, 'tr', null);
 
-    // Create filter dropdown for 'Prop' column
-    let propTh = addContent(headerRow, 'th', 'Prop');
-    let propFilter = document.createElement('select');
-    propTh.appendChild(propFilter);
-    let propClearButton = document.createElement('button');
-    propClearButton.innerText = 'Clear Filter';
-    propTh.appendChild(propClearButton);
-
-    // Create filter dropdown for 'Value' column
-    let valueTh = addContent(headerRow, 'th', 'Value');
-    let valueFilter = document.createElement('select');
-    valueTh.appendChild(valueFilter);
-    let valueClearButton = document.createElement('button');
-    valueClearButton.innerText = 'Clear Filter';
-    valueTh.appendChild(valueClearButton);
-
-    propClearButton.onclick = function () {
-        propFilter.value = '';
-        filterTable(table);
-        populateFilterDropdown(table, 0, propFilter);
-    };
-
-    valueClearButton.onclick = function () {
-        valueFilter.value = '';
-        filterTable(table);
-        populateFilterDropdown(table, 1, valueFilter);
-    };
-
-    propFilter.onchange = function () {
-        filterTable(table);
-        // Get all dropdowns in the table
-        const dropdowns = Array.from(table.querySelectorAll('th > select'));
-        dropdowns.forEach((dropdown, index) => {
-            populateFilterDropdown(table, index, dropdown as HTMLSelectElement);
-        });
-    };
-
-    valueFilter.onchange = function () {
-        filterTable(table);
-        // Get all dropdowns in the table
-        const dropdowns = Array.from(table.querySelectorAll('th > select'));
-        dropdowns.forEach((dropdown, index) => {
-            populateFilterDropdown(table, index, dropdown as HTMLSelectElement);
-        });
-    };
     function addTableRowForProperty(key: string, value: any, parent_obj: Object): void {
         let row = addContent(table, 'tr', null);
         addContent(row, 'td', `${key}`);
@@ -382,7 +337,7 @@ function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement
     }
 
     if (!Array.isArray(obj)) {
-        for (const [key, value] of Object.entries(obj)) {
+        for (const [key, value] of Object.entries(obj).sort()) {
             if (ignoreProps && ignoreProps.length > 0) {
                 if (ignoreProps.includes(key)) continue;
             }
@@ -395,71 +350,6 @@ function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement
         for (let i = 0; i < arr.length; i++) {
             addTableRowForProperty(`${i}`, arr[i], obj);
         }
-    }
-
-    // After populating the table, populate the filter dropdowns
-    populateFilterDropdown(table, 0, propFilter);
-    populateFilterDropdown(table, 1, valueFilter);
-
-    // Function to filter the table based on selected value in a filter dropdown
-    function filterTable(table: HTMLTableElement) {
-        // Get all dropdowns in the table
-        const dropdowns = Array.from(table.querySelectorAll('th > select'));
-
-        for (let i = 1; i < table.rows.length; i++) {
-            let row = table.rows[i];
-            let shouldDisplay = true;
-
-            dropdowns.forEach((dropdown, index) => {
-                let cell = row.cells[index];
-                if (cell) {
-                    let cellValue = cell.innerText;
-                    let filterValue = (dropdown as HTMLOptionElement).value;
-                    if (filterValue !== "" && cellValue !== filterValue) {
-                        shouldDisplay = false;
-                    }
-                }
-            });
-
-            row.style.display = shouldDisplay ? '' : 'none';
-
-            // If the row contains a nested table, recursively apply the filter
-            let nestedTable = row.querySelector('table');
-            if (nestedTable) {
-                filterTable(nestedTable);
-            }
-        }
-    }
-
-    // Function to populate a filter dropdown with unique values in a column
-    function populateFilterDropdown(table: HTMLTableElement, columnIndex: number, filterDropdown: HTMLSelectElement) {
-        let uniqueValues = new Set();
-        for (let i = 1; i < table.rows.length; i++) {
-            let row = table.rows[i];
-            // Only consider visible rows when populating the dropdown
-            if (row.style.display !== 'none') {
-                let cell = row.cells[columnIndex];
-                if (cell) {
-                    // If the cell contains a nested table, ignore it
-                    if (!cell.querySelector('table')) {
-                        uniqueValues.add(cell.innerText);
-                    }
-                }
-            }
-        }
-
-        // Clear the current options in the dropdown
-        filterDropdown.innerHTML = '';
-        // Add an empty option to allow clearing the filter
-        let emptyOption = document.createElement('option');
-        emptyOption.text = '';
-        filterDropdown.add(emptyOption);
-        // Add the unique values to the dropdown
-        uniqueValues.forEach(value => {
-            let option = document.createElement('option');
-            option.text = value as string;
-            filterDropdown.add(option);
-        });
     }
 
     return table;
