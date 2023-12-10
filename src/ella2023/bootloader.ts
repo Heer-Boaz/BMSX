@@ -168,6 +168,9 @@ type Action = typeof actions[number];
 @attach_components(ProhibitLeavingScreenComponent)
 class Player extends SpriteObject {
     public static readonly ATTACK_DURATION = 15;
+    public static readonly JUMP_SPEED = 1;
+    public static readonly JUMP_DURATION = 30;
+    public static readonly SPEED = 2;
 
     @statedef_builder
     public static bouw(): machine_states {
@@ -178,60 +181,52 @@ class Player extends SpriteObject {
 
         // To check if an action is pressed for player 0
         function defaultrun(this: Player, s: sstate) {
-            const speed = 2;
+            const priorityActions = Input.getPriorityActions(0, ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick', 'block']);
+            let higherPrioActionProcessed = false;
 
-            const pressedActions = Input.getPressedActions(0);
+            for (const actionObject of priorityActions) {
+                const { action, pressed, consumed } = actionObject;
+                if (higherPrioActionProcessed) break;
 
-            for (const { action, pressed, consumed } of pressedActions) {
                 switch (action as Action) {
                     case 'right':
-                        // `duck` has higher priority than `right`, so if `duck` is pressed, `right` will not be processed
-                        if (pressedActions.some(action => action.action === 'duck')) {
-                            break;
-                        }
-                        this.facing = 'right';
-                        this.x += speed;
-                        if (!this.state.is('player_animation.walk')) {
-                            this.state.switch('player_animation.walk');
-                        }
-                        break;
                     case 'left':
-                        // `duck` has higher priority than `left`, so if `duck` is pressed, `left` will not be processed
-                        if (pressedActions.some(action => action.action === 'duck')) {
-                            break;
-                        }
-                        this.facing = 'left';
-                        this.x -= speed;
-                        if (!this.state.is('player_animation.walk')) {
-                            this.state.switch('player_animation.walk');
+                        if (pressed) {
+                            this.facing = action as typeof this.facing;
+
+                            // Check for combined jump left/right action
+                            if (priorityActions.some(action => action.action === 'up')) {
+                                this.state.to('jump', action as typeof this.facing);
+                                higherPrioActionProcessed = true;
+                            }
+                            else {
+                                this.x += action === 'right' ? Player.SPEED : -Player.SPEED;
+                                if (!this.state.is('player_animation.walk')) {
+                                    this.state.switch('player_animation.walk');
+                                }
+                            }
                         }
                         break;
                     case 'duck':
                         this.state.to('duck');
+                        higherPrioActionProcessed = true;
                         break;
                     case 'punch':
-                        if (!consumed) {
-                            Input.consumeAction(0, action);
-                            this.state.to('punch');
-                        }
-                        break;
                     case 'highkick':
-                        if (!consumed) {
-                            Input.consumeAction(0, action);
-                            this.state.to('highkick');
-                        }
-                        break;
                     case 'lowkick':
                         if (!consumed) {
                             Input.consumeAction(0, action);
-                            this.state.to('lowkick');
+                            this.state.to(action);
                         }
+                        break;
+                    case 'jump':
+                        this.state.to('jump'); // Actions 'left' and 'right' have higher priority than 'jump' and thus directonal jumps are handled in the 'left' and 'right' cases
                         break;
                 }
             }
 
             // If no actions are pressed, switch to idle
-            if (pressedActions.length === 0) {
+            if (priorityActions.length === 0) {
                 this.state.to('idle_or_walk');
             }
         }
@@ -282,8 +277,58 @@ class Player extends SpriteObject {
                         this.state.machines.player_animation.to('duck');
                     },
                 },
+                jump: {
+                    enter(this: Player, state: sstate, direction?: 'left' | 'right') {
+                        this.state.to('Player.jump.jump_up', direction);
+                        this.state.to('player_animation.jump');
+                    },
+                    states: {
+                        _jump_up: {
+                            nudges2move: Player.JUMP_DURATION / 2,
+                            enter(this: Player, state: sstate, direction?: 'left' | 'right') {
+                                if (direction) {
+                                    state.data.jumpDirection = direction;
+                                }
+                                else state.data.jumpDirection = '';
+                            },
+                            run(this: Player, state: sstate) {
+                                ++state.nudges;
+                                this.y -= Player.JUMP_SPEED;
+                                if (state.data.jumpDirection === 'left') {
+                                    this.x -= Player.SPEED;
+                                } else if (state.data.jumpDirection === 'right') {
+                                    this.x += Player.SPEED;
+                                }
+                            },
+                            next(this: Player, state: sstate) {
+                                this.state.switch('Player.jump.jump_down', state.data.jumpDirection);
+                            }
+                        },
+                        jump_down: {
+                            nudges2move: Player.JUMP_DURATION / 2,
+                            enter(this: Player, state: sstate, direction?: 'left' | 'right') {
+                                if (direction) {
+                                    state.data.jumpDirection = direction;
+                                }
+                                else state.data.jumpDirection = '';
+                            },
+                            run(this: Player, state: sstate) {
+                                ++state.nudges;
+                                this.y += Player.JUMP_SPEED;
+                                if (state.data.jumpDirection === 'left') {
+                                    this.x -= Player.SPEED;
+                                } else if (state.data.jumpDirection === 'right') {
+                                    this.x += Player.SPEED;
+                                }
+                            },
+                            next(this: Player, state: sstate) {
+                                this.state.to('_idle_or_walk');
+                            }
+                        },
+                    },
+                },
             }
-        };
+        }
     }
 
     @subscribesToSelfScopedEvent('animationEnd')
