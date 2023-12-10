@@ -294,7 +294,7 @@ class bclass extends SpriteObject {
                         if (consumed) break;
                         Input.consumeAction(0, action);
                         this.testmeuk();
-                        global.eventEmitter.emit('testEvent', this.id);
+                        global.eventEmitter.emit('testEvent', this);
 
                         this.state.to('bclass.bla');
                         this.state.machines.bclass_animation.to('ani2');
@@ -302,7 +302,7 @@ class bclass extends SpriteObject {
                     case 'blap':
                         if (consumed) break;
                         Input.consumeAction(0, action);
-                        global.eventEmitter.emit('testEventOnce', this.id);
+                        global.eventEmitter.emit('testEventOnce', this);
 
                         this.state.machines.bclass_animation.to('ani1');
                         if (this.state.is('bclass_meuk.meuk1.blupperblop1')) {

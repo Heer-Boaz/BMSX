@@ -20,22 +20,22 @@ export class EventEmitter {
         return EventEmitter.instance;
     }
 
-    on(event: string, listener: Function, emitter?: string): void {
-        if (!this.listeners[event]) {
-            this.listeners[event] = {};
+    on(event_name: string, listener: Function, emitter_id?: string): void {
+        if (!this.listeners[event_name]) {
+            this.listeners[event_name] = {};
         }
-        const key = emitter || 'all';
-        if (!this.listeners[event][key]) {
-            this.listeners[event][key] = [];
+        const key = emitter_id || 'all';
+        if (!this.listeners[event_name][key]) {
+            this.listeners[event_name][key] = [];
         }
-        this.listeners[event][key].push(listener);
+        this.listeners[event_name][key].push(listener);
     }
 
-    emit(event: string, emitter: string, ...args: any[]): void {
+    emit(event_name: string, emitter: IIdentifiable, ...args: any[]): void {
         // Emit to specific listeners
-        this.listeners[event]?.[emitter]?.forEach(listener => listener(emitter, ...args));
+        this.listeners[event_name]?.[emitter.id]?.forEach(listener => listener(event_name, emitter, ...args));
         // Emit to all listeners
-        this.listeners[event]?.['all']?.forEach(listener => listener(emitter, ...args));
+        this.listeners[event_name]?.['all']?.forEach(listener => listener(event_name, emitter, ...args));
     }
 
     off(event: string, listener: Function, emitter?: string): void {
@@ -183,7 +183,7 @@ export function emits_event(eventName: string) {
         descriptor.value = function (...args: any[]) {
             originalMethod.apply(this, args);
             // Logic to emit the event
-            EventEmitter.getInstance().emit(eventName, (this as IIdentifiable).id, this, ...args);
+            EventEmitter.getInstance().emit(eventName, this as IIdentifiable, ...args);
         };
     };
 }

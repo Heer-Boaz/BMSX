@@ -15,6 +15,7 @@ import { attach_components } from '../bmsx/component';
 import { BehaviorTreeDefinition, build_bt } from '../bmsx/behaviourtree';
 import { ProhibitLeavingScreenComponent } from './../bmsx/collisioncomponents';
 import { PositionUpdateAxisComponent } from './../bmsx/collisioncomponents';
+import { subscribesToSelfScopedEvent } from '../bmsx/eventemitter';
 
 var _game: Game;
 let _model: gamemodel;
@@ -31,9 +32,6 @@ _global['h406A'] = (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode):
 
 const get_model = get_gamemodel<gamemodel>;
 
-const actions = ['jump', 'right', 'duck', 'left', 'punch', 'kick', 'block'] as const;
-type Action = typeof actions[number];
-
 type MyKeyboardInputMapping = {
     [key in keyof KeyboardInputMapping & Action]: KeyboardButton;
 };
@@ -47,10 +45,10 @@ const keyboardInputMapping: MyKeyboardInputMapping = {
     'right': 'ArrowRight',
     'duck': 'ArrowDown',
     'left': 'ArrowLeft',
-    'punch': 'ShiftLeft',
-    'kick': 'KeyZ',
-    'block': 'KeyA',
-    // 'blap': 'KeyS',
+    'punch': 'KeyZ',
+    'highkick': 'KeyA',
+    'lowkick': 'KeyX',
+    'block': 'ShiftLeft',
 };
 
 const gamepadInputMapping: MyGamepadInputMapping = {
@@ -59,8 +57,9 @@ const gamepadInputMapping: MyGamepadInputMapping = {
     'duck': 'down',
     'left': 'left',
     'punch': 'a',
-    'kick': 'b',
-    'block': 'x',
+    'highkick': 'b',
+    'lowkick': 'x',
+    'block': 'y',
     // 'blap': 'y',
 };
 
@@ -161,10 +160,153 @@ class enemy extends SpriteObject {
     }
 }
 
+const actions = ['jump', 'right', 'duck', 'left', 'punch', 'highkick', 'lowkick', 'block'] as const;
+type Action = typeof actions[number];
+
 @insavegame
 @assign_fsm('player_animation')
 @attach_components(ProhibitLeavingScreenComponent)
 class Player extends SpriteObject {
+    public static readonly ATTACK_DURATION = 15;
+
+    @statedef_builder
+    public static bouw(): machine_states {
+        Input.setInputMap(0, {
+            keyboard: keyboardInputMapping,
+            gamepad: gamepadInputMapping,
+        } as InputMap);
+
+        // To check if an action is pressed for player 0
+        function defaultrun(this: Player, s: sstate) {
+            const speed = 2;
+
+            const pressedActions = Input.getPressedActions(0);
+
+            for (const { action, pressed, consumed } of pressedActions) {
+                switch (action as Action) {
+                    case 'right':
+                        // `duck` has higher priority than `right`, so if `duck` is pressed, `right` will not be processed
+                        if (pressedActions.some(action => action.action === 'duck')) {
+                            break;
+                        }
+                        this.facing = 'right';
+                        this.x += speed;
+                        if (!this.state.is('player_animation.walk')) {
+                            this.state.switch('player_animation.walk');
+                        }
+                        break;
+                    case 'left':
+                        // `duck` has higher priority than `left`, so if `duck` is pressed, `left` will not be processed
+                        if (pressedActions.some(action => action.action === 'duck')) {
+                            break;
+                        }
+                        this.facing = 'left';
+                        this.x -= speed;
+                        if (!this.state.is('player_animation.walk')) {
+                            this.state.switch('player_animation.walk');
+                        }
+                        break;
+                    case 'duck':
+                        this.state.to('duck');
+                        break;
+                    case 'punch':
+                        if (!consumed) {
+                            Input.consumeAction(0, action);
+                            this.state.to('punch');
+                        }
+                        break;
+                    case 'highkick':
+                        if (!consumed) {
+                            Input.consumeAction(0, action);
+                            this.state.to('highkick');
+                        }
+                        break;
+                    case 'lowkick':
+                        if (!consumed) {
+                            Input.consumeAction(0, action);
+                            this.state.to('lowkick');
+                        }
+                        break;
+                }
+            }
+
+            // If no actions are pressed, switch to idle
+            if (pressedActions.length === 0) {
+                this.state.to('idle_or_walk');
+            }
+        }
+
+        function duckrun(this: Player) {
+            const pressedActions = Input.getPressedActions(0);
+
+            if (pressedActions.some(action => action.action === 'lowkick')) {
+                this.state.to('duckkick');
+            }
+            // Search whether the `duck` action was NOT pressed
+            else if (!pressedActions.some(action => action.action === 'duck')) {
+                this.state.to('idle_or_walk');
+            }
+        }
+
+        return {
+            states: {
+                _idle_or_walk: {
+                    run: defaultrun,
+                    enter(this: Player) {
+                        this.state.machines.player_animation.to('idle');
+                    },
+                },
+                punch: {
+                    enter(this: Player) {
+                        this.state.machines.player_animation.to('punch');
+                    },
+                },
+                highkick: {
+                    enter(this: Player) {
+                        this.state.machines.player_animation.to('highkick');
+                    },
+                },
+                lowkick: {
+                    enter(this: Player) {
+                        this.state.machines.player_animation.to('lowkick');
+                    },
+                },
+                duckkick: {
+                    enter(this: Player) {
+                        this.state.machines.player_animation.to('duckkick');
+                    },
+                },
+                duck: {
+                    run: duckrun,
+                    enter(this: Player) {
+                        this.state.machines.player_animation.to('duck');
+                    },
+                },
+            }
+        };
+    }
+
+    @subscribesToSelfScopedEvent('animationEnd')
+    public handleAnimationEndEvent(event_name: string, emitter: Player, animation_name: string): void {
+        switch (event_name) {
+            case 'animationEnd':
+                switch (animation_name) {
+                    case 'highkick':
+                    case 'punch':
+                    case 'lowkick':
+                        this.state.to('idle_or_walk');
+                        break;
+                    case 'flyingkick':
+                        this.state.to('jump');
+                        break;
+                    case 'duckkick':
+                        this.state.to('duck');
+                        break;
+                }
+                break;
+        }
+    }
+
     facing: 'left' | 'right';
 
     @build_fsm('player_animation')
@@ -212,20 +354,74 @@ class Player extends SpriteObject {
                     }
                 },
                 highkick: {
-                    run: () => { },
-                    enter(this: Player) { this.imgid = BitmapId.lee_highkick; },
+                    nudges2move: Player.ATTACK_DURATION,
+                    run(this: Player, state: sstate) {
+                        ++state.nudges;
+                    },
+                    enter(this: Player, state: sstate) {
+                        state.reset();
+                        this.imgid = BitmapId.lee_highkick;
+                    },
+                    next(this: Player, state: sstate) {
+                        global.eventEmitter.emit('animationEnd', this, 'highkick');
+                        this.state.switch('player_animation.idle');
+                    }
                 },
                 lowkick: {
-                    run: () => { },
-                    enter(this: Player) { this.imgid = BitmapId.lee_lowkick; },
+                    nudges2move: Player.ATTACK_DURATION,
+                    run(this: Player, state: sstate) {
+                        ++state.nudges;
+                    },
+                    enter(this: Player, state: sstate) {
+                        state.reset();
+                        this.imgid = BitmapId.lee_lowkick;
+                    },
+                    next(this: Player, state: sstate) {
+                        global.eventEmitter.emit('animationEnd', this, 'lowkick');
+                        this.state.switch('player_animation.idle');
+                    }
                 },
                 punch: {
-                    run: () => { },
-                    enter(this: Player) { this.imgid = BitmapId.lee_punch; },
+                    nudges2move: Player.ATTACK_DURATION,
+                    run(this: Player, state: sstate) {
+                        ++state.nudges;
+                    },
+                    enter(this: Player, state: sstate) {
+                        state.reset();
+                        this.imgid = BitmapId.lee_punch;
+                    },
+                    next(this: Player, state: sstate) {
+                        global.eventEmitter.emit('animationEnd', this, 'punch');
+                        this.state.switch('player_animation.idle');
+                    }
+                },
+                duckkick: {
+                    nudges2move: Player.ATTACK_DURATION,
+                    run(this: Player, state: sstate) {
+                        ++state.nudges;
+                    },
+                    enter(this: Player, state: sstate) {
+                        state.reset();
+                        this.imgid = BitmapId.lee_flyingkick;
+                    },
+                    next(this: Player, state: sstate) {
+                        global.eventEmitter.emit('animationEnd', this, 'duckkick');
+                        this.state.switch('player_animation.duck');
+                    }
                 },
                 flyingkick: {
-                    run: () => { },
-                    enter(this: Player) { this.imgid = BitmapId.lee_flyingkick; },
+                    nudges2move: Player.ATTACK_DURATION,
+                    run(this: Player, state: sstate) {
+                        ++state.nudges;
+                    },
+                    enter(this: Player, state: sstate) {
+                        state.reset();
+                        this.imgid = BitmapId.lee_flyingkick;
+                    },
+                    next(this: Player, state: sstate) {
+                        global.eventEmitter.emit('animationEnd', this, 'flyingkick');
+                        this.state.switch('player_animation.jump');
+                    }
                 },
                 duck: {
                     run: () => { },
@@ -280,53 +476,6 @@ class Player extends SpriteObject {
                         },
                     },
                     tape: ['wait', 'animation', 'waitEnd'],
-                },
-            }
-        };
-    }
-
-    @statedef_builder
-    public static bouw(): machine_states {
-        Input.setInputMap(0, {
-            keyboard: keyboardInputMapping,
-            gamepad: gamepadInputMapping,
-        } as InputMap);
-
-        // To check if an action is pressed for player 0
-        function defaultrun(this: Player, s: sstate) {
-            const speed = 2;
-
-            const pressedActions = Input.getPressedActions(0);
-            let walked = false;
-
-            for (const { action, pressed, consumed } of pressedActions) {
-                switch (action as Action) {
-                    case 'right':
-                        walked = true;
-                        this.facing = 'right';
-                        this.x += speed;
-                        break;
-                    case 'left':
-                        walked = true;
-                        this.facing = 'left';
-                        this.x -= speed;
-                        break;
-                }
-            }
-            if (walked && !this.state.is('player_animation.walk')) {
-                this.state.switch('player_animation.walk');
-            } else if (!walked && this.state.is('Player.idle_or_walk')) {
-                this.state.switch('player_animation.idle');
-            }
-        }
-
-        return {
-            states: {
-                _idle_or_walk: {
-                    run: defaultrun,
-                    enter(this: Player) {
-                        this.state.switch('player_animation.idle');
-                    },
                 },
             }
         };
