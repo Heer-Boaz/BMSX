@@ -274,9 +274,9 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
             this.setZNoSweep((spawningPos as vec3).z ?? this.z);
         }
 
-        let start_state_id = this.state?.definition?.start_state;
-        start_state_id && this.state.to(start_state_id);
+        this.state.start();
     }
+
     public ondispose?: () => void;
 
     public paint?(): void;
@@ -286,9 +286,10 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
     /**
     * Gebruik ik als event handler voor e.g. onLeaveScreen
     */
-    public banish(): void {
+    public exile(): void {
         this.disposeFlag = true;
     }
+
     public oncollide?: (src: GameObject) => void;
     public onWallcollide?: (dir: Direction) => void;
     public onLeaveScreen?: (ik: GameObject, dir: Direction, old_x_or_y: number) => void;
@@ -345,15 +346,6 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
         this.initializeBehaviorTrees();
         // Call the method to initialize event subscriptions
         this.onLoadSetup();
-    }
-
-    /**
-     * Creates a state context for the game object.
-     * @param _fsm_id - Optional ID for the finite state machine.
-     * @returns The created state context.
-     */
-    private createStateContext(_fsm_id?: string) {
-        return statecontext.create(_fsm_id ?? this.constructor.name, this.id);
     }
 
     /**
