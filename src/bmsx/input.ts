@@ -215,6 +215,27 @@ export class Input {
     }
 
     /**
+     * Retrieves the priority actions for a given player index based on the action priority list.
+     * @param playerIndex - The index of the player.
+     * @param actionPriority - The list of action priorities.
+     * @returns An array of ActionObject representing the priority actions.
+     */
+    static getPriorityActions(playerIndex: number, actionPriority: string[]): ActionState[] {
+        const pressedActions = this.getPressedActions(playerIndex);
+        const priorityActions: ActionState[] = [];
+
+        for (const priorityAction of actionPriority) {
+            const actionObject = pressedActions.find(action => action.action === priorityAction);
+
+            if (actionObject) {
+                priorityActions.push(actionObject);
+            }
+        }
+
+        return priorityActions;
+    }
+
+    /**
      * Consumes the given key by setting its key state to "consumed".
      * @param key The key to consume.
      */
