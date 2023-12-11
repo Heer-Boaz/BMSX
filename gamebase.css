@@ -29,7 +29,7 @@
 	border-bottom-style: solid;
 	border-bottom-width: thin;
 	border-bottom-color: gainsboro;
-	padding: 8px;
+	/* padding: 8px; */
 	font-size: 12px;
 	border: 1px solid #ddd;
 }
