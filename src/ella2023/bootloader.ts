@@ -13,9 +13,9 @@ import { BaseModel } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';
 import { attach_components } from '../bmsx/component';
 import { BehaviorTreeDefinition, build_bt } from '../bmsx/behaviourtree';
-import { ProhibitLeavingScreenComponent } from './../bmsx/collisioncomponents';
+import { ProhibitLeavingScreenComponent, ScreenBoundaryComponent } from './../bmsx/collisioncomponents';
 import { PositionUpdateAxisComponent } from './../bmsx/collisioncomponents';
-import { subscribesToSelfScopedEvent } from '../bmsx/eventemitter';
+import { subscribesToParentScopedEvent, subscribesToSelfScopedEvent } from '../bmsx/eventemitter';
 
 var _game: Game;
 let _model: gamemodel;
@@ -45,9 +45,9 @@ const keyboardInputMapping: MyKeyboardInputMapping = {
     'right': 'ArrowRight',
     'duck': 'ArrowDown',
     'left': 'ArrowLeft',
-    'punch': 'KeyZ',
+    'punch': 'KeyX',
     'highkick': 'KeyA',
-    'lowkick': 'KeyX',
+    'lowkick': 'KeyZ',
     'block': 'ShiftLeft',
 };
 
@@ -62,6 +62,27 @@ const gamepadInputMapping: MyGamepadInputMapping = {
     'block': 'y',
     // 'blap': 'y',
 };
+
+@insavegame
+export class JumpingWhileLeavingScreenComponent extends ScreenBoundaryComponent {
+    /**
+     * Event handler for the 'leavingScreen' event.
+     * @param emitter - The ID of the game object emitting the event.
+     * @param d - The direction in which the game object is leaving the screen.
+     * @param old_x_or_y - The previous x or y coordinate of the game object.
+     */
+    @subscribesToParentScopedEvent('leavingScreen')
+    public onLeavingScreen(event_name: string, emitter: Player, d: Direction, old_x_or_y: number) {
+        if (d === Direction.Left) {
+            emitter.facing = 'right';
+        }
+        else emitter.facing = 'left';
+        // if (d === Direction.Left || d === Direction.Right) {
+        //     if (emitter.state.is('Player.jump.jump_up')) {
+        //         emitter.state.switch('Player.jump.jump_down'); // Gaat niet werken wegens niet passen van kickstate
+        //     }
+    }
+}
 
 @insavegame
 class enemy extends SpriteObject {
@@ -165,11 +186,11 @@ type Action = typeof actions[number];
 
 @insavegame
 @assign_fsm('player_animation')
-@attach_components(ProhibitLeavingScreenComponent)
+@attach_components(JumpingWhileLeavingScreenComponent, ProhibitLeavingScreenComponent)
 class Player extends SpriteObject {
     public static readonly ATTACK_DURATION = 15;
-    public static readonly JUMP_SPEED = 1;
-    public static readonly JUMP_DURATION = 30;
+    public static readonly JUMP_SPEED = 2;
+    public static readonly JUMP_DURATION = 60;
     public static readonly SPEED = 2;
 
     @statedef_builder
@@ -181,7 +202,7 @@ class Player extends SpriteObject {
 
         // To check if an action is pressed for player 0
         function defaultrun(this: Player, s: sstate) {
-            const priorityActions = Input.getPriorityActions(0, ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick', 'block']);
+            const priorityActions = Input.getPressedPriorityActions(0, ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick', 'block']);
             let higherPrioActionProcessed = false;
 
             for (const actionObject of priorityActions) {
@@ -191,19 +212,17 @@ class Player extends SpriteObject {
                 switch (action as Action) {
                     case 'right':
                     case 'left':
-                        if (pressed) {
-                            this.facing = action as typeof this.facing;
+                        this.facing = action as typeof this.facing;
 
-                            // Check for combined jump left/right action
-                            if (priorityActions.some(action => action.action === 'up')) {
-                                this.state.to('jump', action as typeof this.facing);
-                                higherPrioActionProcessed = true;
-                            }
-                            else {
-                                this.x += action === 'right' ? Player.SPEED : -Player.SPEED;
-                                if (!this.state.is('player_animation.walk')) {
-                                    this.state.switch('player_animation.walk');
-                                }
+                        // Check for combined jump left/right action
+                        if (priorityActions.some(action => action.action === 'jump')) {
+                            this.state.to('jump', true);
+                            higherPrioActionProcessed = true;
+                        }
+                        else {
+                            this.x += action === 'right' ? Player.SPEED : -Player.SPEED;
+                            if (!this.state.is('player_animation.walk')) {
+                                this.state.switch('player_animation.walk');
                             }
                         }
                         break;
@@ -220,7 +239,7 @@ class Player extends SpriteObject {
                         }
                         break;
                     case 'jump':
-                        this.state.to('jump'); // Actions 'left' and 'right' have higher priority than 'jump' and thus directonal jumps are handled in the 'left' and 'right' cases
+                        this.state.to('jump', false); // Actions 'left' and 'right' have higher priority than 'jump' and thus directonal jumps are handled in the 'left' and 'right' cases
                         break;
                 }
             }
@@ -240,6 +259,15 @@ class Player extends SpriteObject {
             // Search whether the `duck` action was NOT pressed
             else if (!pressedActions.some(action => action.action === 'duck')) {
                 this.state.to('idle_or_walk');
+            }
+        }
+
+        function jumprun(this: Player) {
+            const pressedActions = Input.getPressedActions(0);
+
+            if (pressedActions.some(action => action.action === 'lowkick')) {
+                this.state.switch('Player.jump.jump_up.flyingkick');
+                this.state.switch('Player.jump.jump_down.flyingkick');
             }
         }
 
@@ -280,49 +308,77 @@ class Player extends SpriteObject {
                 jump: {
                     enter(this: Player, state: sstate, direction?: 'left' | 'right') {
                         this.state.to('Player.jump.jump_up', direction);
-                        this.state.to('player_animation.jump');
+                        this.state.machines.player_animation.to('jump');
                     },
+                    run: jumprun,
                     states: {
                         _jump_up: {
                             nudges2move: Player.JUMP_DURATION / 2,
-                            enter(this: Player, state: sstate, direction?: 'left' | 'right') {
-                                if (direction) {
-                                    state.data.jumpDirection = direction;
-                                }
-                                else state.data.jumpDirection = '';
+                            enter(this: Player, state: sstate, directional: boolean = false) {
+                                state.reset();
+                                state.data.directional = directional;
+                                state.to('normal');
                             },
                             run(this: Player, state: sstate) {
                                 ++state.nudges;
                                 this.y -= Player.JUMP_SPEED;
-                                if (state.data.jumpDirection === 'left') {
-                                    this.x -= Player.SPEED;
-                                } else if (state.data.jumpDirection === 'right') {
-                                    this.x += Player.SPEED;
+                                if (state.data.directional) {
+                                    if (this.facing === 'left') {
+                                        this.x -= Player.SPEED;
+                                    } else {
+                                        this.x += Player.SPEED;
+                                    }
                                 }
                             },
                             next(this: Player, state: sstate) {
-                                this.state.switch('Player.jump.jump_down', state.data.jumpDirection);
+                                this.state.switch('Player.jump.jump_down', state.data.directional, state.currentid);
+                            },
+                            states: {
+                                _normal: {
+                                    enter(this: Player) {
+                                        this.state.machines.player_animation.to('jump');
+                                    }
+                                },
+                                flyingkick: {
+                                    enter(this: Player) {
+                                        this.state.machines.player_animation.to('flyingkick');
+                                    }
+                                },
                             }
                         },
                         jump_down: {
                             nudges2move: Player.JUMP_DURATION / 2,
-                            enter(this: Player, state: sstate, direction?: 'left' | 'right') {
-                                if (direction) {
-                                    state.data.jumpDirection = direction;
-                                }
-                                else state.data.jumpDirection = '';
+                            enter(this: Player, state: sstate, directional: boolean = false, substate: 'normal' | 'flyingkick' = 'normal') {
+                                state.reset();
+                                state.data.directional = directional;
+                                state.to(substate);
                             },
                             run(this: Player, state: sstate) {
                                 ++state.nudges;
                                 this.y += Player.JUMP_SPEED;
-                                if (state.data.jumpDirection === 'left') {
-                                    this.x -= Player.SPEED;
-                                } else if (state.data.jumpDirection === 'right') {
-                                    this.x += Player.SPEED;
+
+                                if (state.data.directional) {
+                                    if (this.facing === 'left') {
+                                        this.x -= Player.SPEED;
+                                    } else {
+                                        this.x += Player.SPEED;
+                                    }
                                 }
                             },
                             next(this: Player, state: sstate) {
-                                this.state.to('_idle_or_walk');
+                                this.state.to('idle_or_walk');
+                            },
+                            states: {
+                                _normal: {
+                                    enter(this: Player) {
+                                        this.state.machines.player_animation.to('jump');
+                                    }
+                                },
+                                flyingkick: {
+                                    enter(this: Player) {
+                                        this.state.machines.player_animation.to('flyingkick');
+                                    }
+                                },
                             }
                         },
                     },
@@ -342,7 +398,8 @@ class Player extends SpriteObject {
                         this.state.to('idle_or_walk');
                         break;
                     case 'flyingkick':
-                        this.state.to('jump');
+                        this.state.switch('Player.jump.jump_up.normal');
+                        this.state.switch('Player.jump.jump_down.normal');
                         break;
                     case 'duckkick':
                         this.state.to('duck');
