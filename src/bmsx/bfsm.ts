@@ -287,16 +287,8 @@ export class bfsm_controller {
 			throw new Error(`No machine with ID "${parts[0]}"`);
 		}
 
-		for (let i = 1; i < parts.length; i++) {
-			let submachine = currentContext.states?.[parts[i]];
-			if (!submachine) {
-				let currentPath = parts.slice(0, i).join('.');
-				throw new Error(`No submachine with ID "${parts[i]}" in machine "${currentPath}"`);
-			}
-			currentContext = submachine;
-		}
-
-		return currentContext?.currentid === parts[parts.length - 1];
+		// Use the 'to' method in 'statecontext' to navigate to the desired state
+		return currentContext.is(parts.slice(1).join('.'));
 	}
 
 	/**
@@ -386,8 +378,9 @@ export class bfsm_controller {
  */
 interface IStateController {
 	run(): void;
-	switch(id: string): void;
-	to(id: string): void;
+	switch(path: string, ...args: any[]): void;
+	to(path: string, ...args: any[]): void;
+	is(path: string): boolean;
 	pop(): void;
 	state: statecontext;
 	states: id2sstate;
@@ -443,10 +436,12 @@ export class statecontext implements IStateController {
 	 * Returns the game object or model that this state machine is associated with.
 	 */
 	public get target(): GameObject | BaseModel { return global.model.get(this.targetid); }
+
 	/**
 	 * Returns the current state of the FSM
 	 */
 	public get current(): sstate { return this.states[this.currentid]; }
+
 	/**
 	 * Gets the state with the given id from the state machine.
 	 * Used for referencing states from within the state instance, instead
@@ -569,8 +564,34 @@ export class statecontext implements IStateController {
 		}
 		// If there are more parts, transition to the next state
 		if (restParts.length > 0) {
-			currentContext.to(restParts.join('.'));
+			currentContext.to(restParts.join('.'), ...args);
 		}
+	}
+
+	/**
+	 * Checks if the current state matches the given path.
+	 *
+	 * @param path - The path to the desired state, represented as a dot-separated string.
+	 * @returns true if the current state matches the path, false otherwise.
+	 * @throws Error if no machine with the specified ID is found.
+	 */
+	public is(path: string): boolean {
+		const parts: string[] = path.split('.');
+		let currentPart = parts[0];
+		let restParts = parts.slice(1);
+
+		let currentContext: IStateController = this.states[currentPart];
+		if (!currentContext) {
+			throw new Error(`No state with ID "${currentPart}"`);
+		}
+
+		// If there are more parts, check the state of the submachine
+		if (restParts.length > 0) {
+			return currentContext.is(restParts.join('.'));
+		}
+
+		// If there are no more parts, check if the current state matches the current part
+		return this.currentid === currentPart;
 	}
 
 	/**
@@ -595,7 +616,7 @@ export class statecontext implements IStateController {
 
 		// If there are more parts, continue to the next state
 		if (restParts.length > 0) {
-			currentContext.switch(restParts.join('.'));
+			currentContext.switch(restParts.join('.'), ...args);
 		} else {
 			if (this.currentid === currentPart) return; // Don't switch to the same state
 
@@ -712,6 +733,10 @@ export class sstate<T extends GameObject | BaseModel = any> implements IStateCon
 
 	run(): void {
 		this.state?.run();
+	}
+
+	is(id: string): boolean {
+		return this.getOrThrowStateMachine().is(id);
 	}
 
 	get current(): sstate {
