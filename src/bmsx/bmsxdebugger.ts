@@ -1,4 +1,4 @@
-import { MachineDefinitions } from './bfsm';
+import { MachineDefinitions, bfsm_controller, statecontext } from './bfsm';
 import { area2size, copy_vec2, new_vec2, vec3, translate_vec2, trunc_vec2, vec2, trunc_vec3, div_vec2, set_inplace_vec2 } from './bmsx';
 import { PositionUpdateAxisComponent } from './collisioncomponents';
 import { ComponentUpdateParams } from './component';
@@ -169,12 +169,17 @@ export function handleContextMenu(e: MouseEvent): void {
     }
 }
 
-function addContent(addContentTo: HTMLElement, elementType: keyof HTMLElementTagNameMap, content: string | null): HTMLElement {
-    let newElement = document.createElement(elementType);
-    content && (newElement.innerHTML = content);
-    addContentTo.insertBefore(newElement, null);
-
-    return newElement;
+function addContent(parent: HTMLElement, type: string, content: string | null, depth: number = 0): HTMLElement {
+    let element = document.createElement(type);
+    if (content !== null) {
+        element.textContent = content;
+    }
+    for (let i = 0; i < depth; i++) {
+        let spacer = document.createElement('td');
+        parent.appendChild(spacer);
+    }
+    parent.appendChild(element);
+    return element;
 }
 
 function addElement(addElementTo: HTMLElement, contentAsElement: HTMLElement) {
@@ -252,6 +257,9 @@ function customPrompt(title, initialValue, type) {
 }
 
 function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement, obj: Object, objName: string, ignoreProps?: string[]): HTMLElement {
+    if (obj instanceof bfsm_controller) {
+        return visualizeStateMachine(dialog, addContentTo, obj, objName);
+    }
     let table = addContent(addContentTo, 'table', null) as HTMLTableElement;
     let headerRow = addContent(table, 'tr', null);
 
@@ -353,6 +361,59 @@ function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement
     }
 
     return table;
+}
+
+function visualizeStateMachine(dialog: HTMLElement, addContentTo: HTMLElement, bfsmController: bfsm_controller, stateMachineName: string): HTMLElement {
+    let baseTable = addContent(addContentTo, 'table', null) as HTMLTableElement;
+
+    // Recursive function to visualize a state machine
+    function visualizeMachine(machine: statecontext, machineName: string, parentElement: HTMLElement, isActive: boolean): void {
+        let table = addContent(parentElement, 'table', null);
+
+        // Add a row for the machine name
+        let machineNameRow = addContent(table, 'th', null);
+        let machineNameCell = addContent(machineNameRow, 'td', machineName);
+
+        // Update isActive if the current machine is active or parallel
+        if (isActive || machine.parallel) {
+            machineNameCell.style.backgroundColor = machine.parallel ? 'green' : 'yellow';
+        }
+
+        // Add a row for each state in the state machine
+        for (let stateId in machine.states) {
+            let state = machine.states?.[stateId];
+            let stateRow = addContent(table, 'tr', null);
+            let stateCell = addContent(stateRow, 'td', state?.statedef_id ?? 'undefined');
+
+            // Highlight the active states if isActive is true
+            if (isActive && machine.currentid === stateId) {
+                stateCell.style.backgroundColor = 'yellow';
+            }
+
+            // If the state is a state machine, visualize it
+            if (state.state instanceof statecontext) {
+                let subTableCell = addContent(stateRow, 'td', null) as HTMLTableCellElement;
+                visualizeMachine(state.state, state.state.id, subTableCell, isActive && machine.currentid === stateId);
+            }
+        }
+
+        parentElement.appendChild(table);
+    }
+
+    // Visualize each machine in the bfsm_controller
+    for (let machineName in bfsmController.machines) {
+        let machine = bfsmController.machines[machineName];
+        let machineRow = addContent(baseTable, 'tr', null);
+        let machineCell = addContent(machineRow, 'td', machineName);
+        if (bfsmController.current_machine_id === machineName || machine.parallel) {
+            machineCell.style.backgroundColor = machine.parallel ? 'green' : 'yellow';
+        }
+        let subTableCell = addContent(machineRow, 'td', null) as HTMLTableCellElement;
+
+        visualizeMachine(machine, machineName, subTableCell, bfsmController.current_machine_id === machineName || machine.parallel);
+    }
+
+    return addContentTo;
 }
 
 function toggleFullscreenOnElement(el: HTMLElement) {
