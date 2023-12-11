@@ -287,7 +287,7 @@ export class bfsm_controller {
 			throw new Error(`No machine with ID "${parts[0]}"`);
 		}
 
-		// Use the 'to' method in 'statecontext' to navigate to the desired state
+		// If there are more parts, check the state of the submachine with the given path
 		return currentContext.is(parts.slice(1).join('.'));
 	}
 
