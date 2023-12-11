@@ -220,7 +220,7 @@ export class Input {
      * @param actionPriority - The list of action priorities.
      * @returns An array of ActionObject representing the priority actions.
      */
-    static getPriorityActions(playerIndex: number, actionPriority: string[]): ActionState[] {
+    static getPressedPriorityActions(playerIndex: number, actionPriority: string[]): ActionState[] {
         const pressedActions = this.getPressedActions(playerIndex);
         const priorityActions: ActionState[] = [];
 
