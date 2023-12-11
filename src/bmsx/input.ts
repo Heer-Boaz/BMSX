@@ -474,8 +474,24 @@ export class Input {
      *
      * @param e The event object representing the debug event.
      */
-    private static handleDebugEvents(e: MouseEvent | TouchEvent): void {
-        if (e instanceof MouseEvent) {
+    private static handleDebugEvents(e: MouseEvent | TouchEvent | KeyboardEvent): void {
+        if (e instanceof KeyboardEvent) {
+            switch (e.code) {
+                case 'Space':
+                    if (Input.getKeyState(e.code).consumed) break;
+                    else Input.consumeKey(e.code);
+                    if (!global.game.paused) {
+                        global.game.paused = true;
+                        global.game.debug_runSingleFrameAndPause = false;
+                    }
+                    else {
+                        global.game.paused = false;
+                        global.game.debug_runSingleFrameAndPause = Input.getKeyState('ShiftLeft').pressed;
+                    }
+                    break;
+            }
+        }
+        else if (e instanceof MouseEvent) {
             switch (e.type) {
                 case "mousedown":
                     handleDebugMouseDown(e);
@@ -526,8 +542,6 @@ export class Input {
             passive: false,
             once: false,
         };
-
-        window.addEventListener('beforeunload', e => { e.preventDefault(); return e.returnValue = 'Are you sure you want to exit this awesome game?'; }, true);
 
         /**
          * Assigns a gamepad to a player and returns the player index.
@@ -625,6 +639,13 @@ export class Input {
             gamescreen.addEventListener('mouseup', Input.handleDebugEvents, options);
             gamescreen.addEventListener('mouseout', Input.handleDebugEvents, options);
             gamescreen.addEventListener('contextmenu', Input.handleDebugEvents, options);
+            window.addEventListener('keydown', Input.handleDebugEvents);
+            window.addEventListener('click', function (e) {
+                if ((e.target as Element).matches('ul.tree li:before')) {
+                    const parentNode = (e.target as HTMLElement).parentNode as HTMLElement;
+                    parentNode?.classList.toggle('open');
+                }
+            });
         }
     }
 
