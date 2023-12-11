@@ -21,10 +21,10 @@ var _view: gameview;
 
 const _global = window || global;
 
-_global['h406A'] = (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode): void => {
+_global['h406A'] = (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode, debug: boolean = false): void => {
     _model = new gamemodel();
     _view = new gameview(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
-    _game = new Game(rom, _model, _view, sndcontext, gainnode);
+    _game = new Game(rom, _model, _view, sndcontext, gainnode, debug);
     _game.start();
 };
 

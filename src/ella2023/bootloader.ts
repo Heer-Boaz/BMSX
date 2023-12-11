@@ -23,10 +23,10 @@ var _view: gameview;
 
 const _global = window || global;
 
-_global['h406A'] = (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode): void => {
+_global['h406A'] = (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode, debug: boolean = false): void => {
     _model = new gamemodel();
     _view = new gameview(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
-    _game = new Game(rom, _model, _view, sndcontext, gainnode);
+    _game = new Game(rom, _model, _view, sndcontext, gainnode, debug);
     _game.start();
 };
 
@@ -202,8 +202,14 @@ class Player extends SpriteObject {
         // To check if an action is pressed for player 0
         function defaultrun(this: Player, s: sstate) {
             const priorityActions = Input.getPressedPriorityActions(0, ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick', 'block']);
-            let higherPrioActionProcessed = false;
 
+            // If no actions are pressed, switch to idle
+            if (priorityActions.length === 0) {
+                this.state.to('idle_or_walk');
+                return;
+            }
+
+            let higherPrioActionProcessed = false;
             for (const actionObject of priorityActions) {
                 const { action, pressed, consumed } = actionObject;
                 if (higherPrioActionProcessed) break;
@@ -241,11 +247,6 @@ class Player extends SpriteObject {
                         this.state.to('jump', false); // Actions 'left' and 'right' have higher priority than 'jump' and thus directonal jumps are handled in the 'left' and 'right' cases
                         break;
                 }
-            }
-
-            // If no actions are pressed, switch to idle
-            if (priorityActions.length === 0) {
-                this.state.to('idle_or_walk');
             }
         }
 
@@ -305,8 +306,8 @@ class Player extends SpriteObject {
                     },
                 },
                 jump: {
-                    enter(this: Player, state: sstate, direction?: 'left' | 'right') {
-                        this.state.to('Player.jump.jump_up', direction);
+                    enter(this: Player, state: sstate, directional: boolean = false) {
+                        this.state.to('Player.jump.jump_up', directional);
                         this.state.machines.player_animation.to('jump');
                     },
                     run: jumprun,
