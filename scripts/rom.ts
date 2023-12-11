@@ -11,7 +11,7 @@ declare var pako: any;
  * @param {GainNode} gainnode - The gain node for the boot ROM.
  * @returns {void}
  */
-declare var h406A: (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode) => void;
+declare var h406A: (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode, debug?: boolean) => void;
 
 /**
  * Object representing the boot ROM.
@@ -75,7 +75,7 @@ var bootrom = {
 		}
 		// try {
 			await loadScript(bootrom.rom!, bootrom.romname);
-			h406A(bootrom.rom!, bootrom.sndcontext!, bootrom.gainnode!);
+			h406A(bootrom.rom!, bootrom.sndcontext!, bootrom.gainnode!, this.debug);
 			bootrom.rom = null;
 			return x;
 		// } catch (err) {
