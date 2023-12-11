@@ -885,6 +885,11 @@ export class Game {
         SM.init(_rom['snd_assets'], sndcontext, gainnode);
         Input.init();
 
+        // Prevent the user from accidentally closing the game window if not in debug mode
+        if (!debug) {
+            window.addEventListener('beforeunload', e => { e.preventDefault(); return e.returnValue = 'Are you sure you want to exit this awesome game?'; }, true);
+        }
+
         // Init the model to populate states (and do other init stuff) and
         // Init all the stuff that is game-specific. Placed here to reduce boilerplating
         global.model.init_spaces().init_model_state_machines(global.model.constructor_name).do_one_time_game_init();
