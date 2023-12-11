@@ -60,7 +60,6 @@ const gamepadInputMapping: MyGamepadInputMapping = {
     'highkick': 'b',
     'lowkick': 'x',
     'block': 'y',
-    // 'blap': 'y',
 };
 
 @insavegame
@@ -541,7 +540,7 @@ class Player extends SpriteObject {
                             nudges2move: 50,
                             enter(this: Player) { this.imgid = BitmapId.lee_humiliated_1; },
                             next(this: Player, state: sstate) {
-                                this.state['player_animation'].to('humiliated.animation');
+                                this.state.to('player_animation.humiliated.animation');
                             }
                         },
                         animation: {
@@ -551,14 +550,14 @@ class Player extends SpriteObject {
                                     nudges2move: 25,
                                     enter(this: Player) { this.imgid = BitmapId.lee_humiliated_1; },
                                     next(this: Player, state: sstate) {
-                                        this.state['player_animation'].to('humiliated.animation.humiliated2');
+                                        this.state.switch('player_animation.humiliated.animation.humiliated2');
                                     }
                                 },
                                 humiliated2: {
                                     nudges2move: 25,
                                     enter(this: Player) { this.imgid = BitmapId.lee_humiliated_2; },
                                     next(this: Player, state: sstate) {
-                                        this.state['player_animation'].to('humiliated.animation._humiliated1');
+                                        this.state.switch('player_animation.humiliated.animation.humiliated1');
                                     }
                                 },
                             },
@@ -566,14 +565,14 @@ class Player extends SpriteObject {
                             repetitions: 8,
                             auto_rewind_tape_after_end: true,
                             next(this: Player, state: sstate) {
-                                this.state['player_animation'].to('humiliated.waitEnd');
+                                this.state.to('player_animation.humiliated.waitEnd');
                             }
                         },
                         waitEnd: {
                             nudges2move: 50,
                             enter(this: Player) { this.imgid = BitmapId.lee_humiliated_1; },
                             next(this: Player, state: sstate) {
-                                this.state['player_animation'].to('nextState'); // replace 'nextState' with the actual state to transition to
+                                // Implement!
                             }
                         },
                     },
