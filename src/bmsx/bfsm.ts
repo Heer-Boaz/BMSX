@@ -237,12 +237,13 @@ export class bfsm_controller {
 	 * @returns void
 	 */
 	to(newstate: string, ...args: any[]): void {
-		// Switches both statemachine and state, based on the newstate which is a combination of statemachine and state, written as "statemachine.state.substate"
-		let [machineid, ...stateids] = newstate.split('.');
+		const dotIndex = newstate.indexOf('.');
+		let machineid = dotIndex !== -1 ? newstate.slice(0, dotIndex) : newstate;
+		let stateids = dotIndex !== -1 ? newstate.slice(dotIndex + 1) : undefined;
 
 		// Allow for switching to a state in the same machine without having to specify the machineid
-		if (stateids.length === 0) {
-			stateids = [machineid]; // If no stateid is specified, assume that the stateid is the same as the machineid
+		if (!stateids) {
+			stateids = machineid; // If no stateid is specified, assume that the stateid is the same as the machineid
 			machineid = this.current_machine_id; // If no machineid is specified, assume that the machineid is the same as the current machine
 		}
 
@@ -251,23 +252,24 @@ export class bfsm_controller {
 		if (!machine.parallel) { // If the machine is not running in parallel, set it as the current machine
 			this.current_machine_id = machineid;
 		}
-		machine.to(stateids.join('.'), ...args);
+		machine.to(stateids, ...args);
 	}
 
 	switch(path: string, ...args: any[]): void {
-		// Switches only the state, based on the path which is a combination of statemachine and state, written as "statemachine.state.substate"
-		let [machineid, ...stateids] = path.split('.');
+		const dotIndex = path.indexOf('.');
+		const machineid = dotIndex !== -1 ? path.slice(0, dotIndex) : path;
+		let stateids = dotIndex !== -1 ? path.slice(dotIndex + 1) : undefined;
 
 		// If no stateid is specified, assume that the stateid is the same as the machineid
-		if (stateids.length === 0) {
-			stateids = [machineid];
+		if (!stateids) {
+			stateids = machineid;
 		}
 
 		const machine = this.statemachines[machineid];
 		if (!machine) throw new Error(`No machine with ID "${machineid}"`);
 
 		// Only switch the state in the specified machine, without changing the current machine
-		machine.switch(stateids.join('.'), ...args);
+		machine.switch(stateids, ...args);
 	}
 
 	add_statemachine(id: string, targetid: string): void {
@@ -293,14 +295,17 @@ export class bfsm_controller {
 	 * @throws Error if no machine with the specified ID is found.
 	 */
 	is(path: string): boolean {
-		let parts = path.split('.');
-		let currentContext: IStateController = this.machines[parts[0]];
-		if (!currentContext) {
-			throw new Error(`No machine with ID "${parts[0]}"`);
+		const dotIndex = path.indexOf('.');
+		const machineid = dotIndex !== -1 ? path.slice(0, dotIndex) : path;
+		const stateids = dotIndex !== -1 ? path.slice(dotIndex + 1) : undefined;
+
+		const machine = this.machines[machineid];
+		if (!machine) {
+			throw new Error(`No machine with ID "${machineid}"`);
 		}
 
 		// If there are more parts, check the state of the submachine with the given path
-		return currentContext.is(parts.slice(1).join('.'));
+		return machine.is(stateids);
 	}
 
 	/**
@@ -589,9 +594,10 @@ export class statecontext implements IStateController {
 	 * @throws Error if no machine with the specified ID is found.
 	 */
 	public is(path: string): boolean {
-		const parts: string[] = path.split('.');
-		let currentPart = parts[0];
-		let restParts = parts.slice(1);
+		const dotIndex = path.indexOf('.');
+		const currentPart = dotIndex !== -1 ? path.slice(0, dotIndex) : path;
+		const restParts = dotIndex !== -1 ? path.slice(dotIndex + 1) : undefined;
+		const moreThanOneRestParts = restParts && restParts.indexOf('.') !== -1;
 
 		let currentContext: IStateController = this.states[currentPart];
 		if (!currentContext) {
@@ -599,52 +605,76 @@ export class statecontext implements IStateController {
 		}
 
 		// If there are more parts, check the state of the submachine
-		if (restParts.length > 0) {
-			return currentContext.is(restParts.join('.'));
+		if (moreThanOneRestParts) {
+			return currentContext.is(restParts);
 		}
 
 		// If there are no more parts, check if the current state matches the current part
-		return this.currentid === currentPart;
+		return restParts ? this.currentid === currentPart : false;
 	}
 
 	/**
 	 * Switches the state of the state machine to the specified ID.
 	 * If the ID contains multiple parts separated by '.', it traverses through the states accordingly and only switches the state of the last part.
+	 * If the state ID is '*', it switches all states and substates.
 	 * Performs exit actions for the current state and enter actions for the new current state.
 	 * Throws an error if the state with the specified ID doesn't exist.
 	 *
-	 * @param id - The ID of the state to switch to.
+	 * @param path - The ID of the state to switch to.
 	 * @returns void
 	 * @throws Error - If the state with the specified ID doesn't exist.
 	 */
-	public switch(id: string, ...args: any[]): void {
-		const parts: string[] = id.split('.');
-		let currentPart = parts[0];
-		let restParts = parts.slice(1);
+	public switch(path: string, ...args: any[]): void {
+		const dotIndex = path.indexOf('.');
+		const currentPart = dotIndex !== -1 ? path.slice(0, dotIndex) : path;
+		const restParts = dotIndex !== -1 ? path.slice(dotIndex + 1) : undefined;
+		const moreThanOneRestParts = restParts && restParts.indexOf('.') !== -1;
 
-		let currentContext: IStateController = this.states[currentPart];
-		if (!currentContext) {
-			throw new Error(`No state with ID "${currentPart}"`);
-		}
-
-		// If there are more parts, continue to the next state
-		if (restParts.length > 0) {
-			currentContext.switch(restParts.join('.'), ...args);
+		if (currentPart === '*') {
+			// Iterate over all states and substates
+			for (let stateid in this.states) {
+				const currentContext = this.states[stateid] as IStateController;
+				if (!currentContext) continue;
+				// If a match is found, remove the '*' from the id and continue with the rest of the path
+				if (restParts && (restParts === stateid || restParts.startsWith(stateid + '.'))) {
+					if (moreThanOneRestParts) {
+						// If there are more parts, continue to the next state
+						currentContext.switch(restParts, ...args);
+						return;
+					} else {
+						// If this is the final part of the id, switch the state
+						this.to(stateid, ...args);
+						return;
+					}
+				} else if (currentContext.state) {
+					currentContext.switch(path, ...args);
+				}
+			}
 		} else {
-			if (this.currentid === currentPart) return; // Don't switch to the same state
+			let currentContext: IStateController = this.states[currentPart];
+			if (!currentContext) {
+				throw new Error(`No state with ID "${currentPart}"`);
+			}
 
-			// Perform exit actions for the current state
-			let stateDef = this.current_state_definition;
-			stateDef?.exit?.call(this.target, this.current, ...args);
-			stateDef && this.pushHistory(this.currentid);
+			// If there are more parts, continue to the next state
+			if (restParts) {
+				currentContext.switch(restParts, ...args);
+			} else {
+				if (this.currentid === currentPart) return; // Don't switch to the same state
 
-			// Update the current state
-			this.currentid = currentPart;
-			if (!this.current) throw new Error(`State "${currentPart}" doesn't exist for this state machine '${this.id}'!`);
+				// Perform exit actions for the current state
+				let stateDef = this.current_state_definition;
+				stateDef?.exit?.call(this.target, this.current, ...args);
+				stateDef && this.pushHistory(this.currentid);
 
-			// Perform enter actions for the new current state
-			stateDef = this.current_state_definition;
-			stateDef?.enter?.call(this.target, this.current, ...args);
+				// Update the current state
+				this.currentid = currentPart;
+				if (!this.current) throw new Error(`State "${currentPart}" doesn't exist for this state machine '${this.id}'!`);
+
+				// Perform enter actions for the new current state
+				stateDef = this.current_state_definition;
+				stateDef?.enter?.call(this.target, this.current, ...args);
+			}
 		}
 	}
 
