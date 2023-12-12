@@ -272,9 +272,10 @@ class Player extends SpriteObject {
         function jumprun(this: Player) {
             const pressedActions = Input.getPressedActions(0);
 
-            if (pressedActions.some(action => action.action === 'lowkick')) {
-                this.state.switch('Player.jump.jump_up.flyingkick');
-                this.state.switch('Player.jump.jump_down.flyingkick');
+            if (pressedActions.some(action => action.action === 'lowkick' || action.action === 'highkick')) {
+                if (this.state.is('Player.jump.jump_up.normal') || this.state.is('Player.jump.jump_down.normal')) {
+                    this.state.switch('Player.jump.*.flyingkick');
+                }
             }
         }
 
