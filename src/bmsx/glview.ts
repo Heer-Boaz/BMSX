@@ -274,7 +274,8 @@ void main() {
 
     // Improved noise
     float n = noise(uv * u_resolution + vec2(u_random));
-    texColor += vec3(n) * 0.03; // Adjust noise intensity as needed
+    // texColor += vec3(n) * 0.03; // Adjust noise intensity as needed
+    texColor += vec3(n) * 0.04; // Adjust noise intensity as needed
 
     // Apply subtle color bleed
     vec3 bleed = vec3(0.02, 0.0, 0.0); // Adjust bleed intensity and color
@@ -282,7 +283,8 @@ void main() {
 
     // Apply blur
     vec3 blurredColor = applyBlur(uv);
-    texColor = mix(texColor, blurredColor, 0.4); // Adjust blur intensity
+    // texColor = mix(texColor, blurredColor, 0.4); // Adjust blur intensity
+    texColor = mix(texColor, blurredColor, 0.5); // Adjust blur intensity
 
     // Apply selective phosphor glow
     vec3 glow = vec3(0.05, 0.02, 0.02);
