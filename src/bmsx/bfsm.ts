@@ -226,6 +226,16 @@ export class bfsm_controller {
 		}
 	}
 
+	/**
+	 * Switches both statemachine and state, based on the newstate which is a combination of statemachine and state, written as "statemachine.state.substate...".
+	 * If no stateid is specified, assume that the stateid is the same as the machineid.
+	 * If no machineid is specified, assume that the machineid is the same as the current machine.
+	 * If the machine is not running in parallel, set it as the current machine. Otherwise, only switch the state in the specified machine, without changing the current machine.
+	 * Throws an error if no machine with the specified ID exists.
+	 * @param newstate The new state to switch to, in the format "statemachine.state.substate".
+	 * @param args Optional arguments to pass to the new state.
+	 * @returns void
+	 */
 	to(newstate: string, ...args: any[]): void {
 		// Switches both statemachine and state, based on the newstate which is a combination of statemachine and state, written as "statemachine.state.substate"
 		let [machineid, ...stateids] = newstate.split('.');
@@ -238,8 +248,10 @@ export class bfsm_controller {
 
 		const machine = this.statemachines[machineid];
 		if (!machine) throw new Error(`No machine with ID "${machineid}"`);
-		this.current_machine_id = machineid;
-		this.current_machine.to(stateids.join('.'), ...args);
+		if (!machine.parallel) { // If the machine is not running in parallel, set it as the current machine
+			this.current_machine_id = machineid;
+		}
+		machine.to(stateids.join('.'), ...args);
 	}
 
 	switch(path: string, ...args: any[]): void {
@@ -493,7 +505,7 @@ export class statecontext implements IStateController {
 		this.paused ??= false;
 
 		// Note: when parameters are undefined, this constructor was invoked without parameters. This happens when it is revived. In that situation, don't init this object
-		_id && _targetid && this.reset();
+		_id && _targetid && this.reset(false);
 	}
 
 	public start(): void {
@@ -527,6 +539,7 @@ export class statecontext implements IStateController {
 		currentStatedef.process_input?.call(this.target, currentState);
 		// Then, run the state
 		currentStatedef.run?.call(this.target, currentState);
+		if (currentStatedef.auto_nudge) ++currentState.nudges; // Auto-nudge the state if auto_nudge is set to true
 		// Then run the submachine for the state if it exists
 		currentState.run(); // Note that this will do nothing if there is no submachine
 	}
@@ -650,18 +663,20 @@ export class statecontext implements IStateController {
 	// If a start state is defined in the state machine definition, the current state is set to that state.
 	// Otherwise, the current state is set to the 'none' state.
 	// The history of previous states is cleared and the state machine is unpaused.
-	public reset(): void {
-		// let start = this.definition?.start_state; // Definition doesn't need to exist
-		/* N.B. doesn't trigger the onenter-event!
-		 * Not feasible, as the object doesn't exist in the model (or the model itself doesn't exist yet).
-		 * Therefore, problems will occur when attempting to do stuff during the onenter-event if the object does not yet exist in the model.
-		 * Better to use onspawn instead and treat the start-state as just the start-state.
-		this.currentid = start ?? NONE_STATE_ID;
-		 */
+	public reset(reset_tree: boolean = true): void {
+		// N.B. doesn't trigger the onenter-event!
+		const start = this.definition?.start_state; // Definition doesn't need to exist
+		this.currentid = start ?? NONE_STATE_ID; // Set the current state to the start state (if it exists)
 		this.history = new Array();
 		this.paused = false;
 		if (!this.definition) return; // If the definition doesn't exist, the state machine is empty and there is nothing to reset
 		this.data = { ...this.definition.data }; // Reset the state machine data by shallow copying the definition's data
+		if (reset_tree) {
+			// Call the reset function for each state
+			for (let state in this.states) {
+				this.states[state].reset(reset_tree);
+			}
+		}
 	}
 
 	/**
@@ -849,7 +864,7 @@ export class sstate<T extends GameObject | BaseModel = any> implements IStateCon
 
 		// Note: when parameters are undefined, this constructor was invoked without parameters. This happens when it is revived. In that situation, don't init this object
 		if (_id && _machineid && this.definition) { // No definition exists for the empty 'none'-state
-			this.reset();
+			this.reset(false);
 		}
 	}
 
@@ -964,12 +979,13 @@ export class sstate<T extends GameObject | BaseModel = any> implements IStateCon
 	/**
 	 * Resets the state machine by setting the tapehead and nudges to 0 and the nudges2move to the value defined in the state machine definition.
 	 */
-	public reset(): void {
+	public reset(reset_tree: boolean = true): void {
 		this._tapehead = 0; // Reset the tapehead to the beginning of the tape
 		this._nudges = 0; // Reset the nudges
 		if (!this.definition) return; // No definition exists for the empty 'none'-state
 		this.nudges2move = this.definition.nudges2move; // Reset the nudges2move to the value defined in the state machine definition
 		this.data = { ...this.definition.data }; // Reset the state data by shallow copying the definition's data
+		if (reset_tree) this.state?.reset(); // Reset the substate machine if it exists
 	}
 }
 
@@ -998,6 +1014,7 @@ export class sdef {
 	 * If set to true, the tapehead will be set to index 0 when it would go out of bounds.
 	 * If set to false, the tapehead will remain at the end of the tape.
 	 */
+	public auto_nudge: boolean; // Automagically increase the nudges during run
 	public auto_rewind_tape_after_end: boolean; // Automagically set the tapehead to index 0 when tapehead would go out of bound. Otherwise, will remain at end
 	public repetitions: number; // Number of times the tape should be repeated
 
@@ -1013,6 +1030,7 @@ export class sdef {
 		this.id = _id;
 		this.nudges2move ??= 1;
 		this.repetitions ??= 1;
+		this.auto_nudge ??= true;
 		this.auto_rewind_tape_after_end ??= true;
 		this.data ??= {};
 		_partialdef && Object.assign(this, _partialdef); // Assign the partial definition to the instance
