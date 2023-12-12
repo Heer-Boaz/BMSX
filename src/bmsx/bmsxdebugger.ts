@@ -1,7 +1,8 @@
+import { title } from 'process';
 import { MachineDefinitions, bfsm_controller, statecontext } from './bfsm';
-import { area2size, copy_vec2, new_vec2, vec3, translate_vec2, trunc_vec2, vec2, trunc_vec3, div_vec2, set_inplace_vec2 } from './bmsx';
+import { area2size, copy_vec2, new_vec2, vec3, translate_vec2, trunc_vec2, vec2, trunc_vec3, div_vec2, set_inplace_vec2, GameObjectId } from './bmsx';
 import { PositionUpdateAxisComponent } from './collisioncomponents';
-import { ComponentUpdateParams } from './component';
+import { Component, ComponentUpdateParams, componenttags_postprocessing } from './component';
 import { GameObject } from './gameobject';
 import { Serializer } from './gameserializer';
 import { SpriteObject } from './sprite';
@@ -23,7 +24,34 @@ export class DebugHighlightComponent extends PositionUpdateAxisComponent { // No
             highlighter.setHighlightPos(this.parent);
         }
     }
+}
 
+@componenttags_postprocessing('render') // Postprocessing update to render the state machine
+export class StateMachineVisualizer extends Component {
+    private dialog: FloatingDialog;
+    private bfsmController: bfsm_controller;
+    private machineElements: Map<string, HTMLElement>;
+    private stateElements: Map<string, HTMLElement>;
+
+    constructor(_id: GameObjectId) {
+        super(_id);
+        this.bfsmController = global.model.get(_id).state;
+        this.dialog = new FloatingDialog(`FSM: [${_id}]`);
+    }
+
+    override postprocessingUpdate({ params, returnvalue }: ComponentUpdateParams): void {
+        if (!this.machineElements || !this.stateElements) {
+            let _contentDiv: HTMLElement;
+            [_contentDiv, this.machineElements, this.stateElements] = visualizeStateMachine(this.dialog.getElement(), this.dialog.getElement(), this.bfsmController, 'stateMachineName');
+
+            this.dialog.updateSize();
+        }
+        // Clear the dialog
+        // this.dialog.clear();
+
+        // Re-visualize the state machine
+        highlightCurrentState(this.stateElements, this.machineElements, this.bfsmController);
+    }
 }
 
 class ObjectHighlighter extends SpriteObject {
@@ -78,6 +106,52 @@ class ObjectHighlighter extends SpriteObject {
         }
         this.setHighlightPos(o);
         this.visible = true;
+    }
+}
+
+class FloatingDialog {
+    private dialogDiv: HTMLDivElement;
+    private contentDiv: HTMLDivElement;
+    private titleElement: HTMLSpanElement;
+    private wrapperElement: HTMLDivElement;
+
+    constructor(title?: string, previousDialog?: HTMLElement) {
+        [this.dialogDiv, this.contentDiv, this.titleElement, this.wrapperElement] = this.createDialog(title, previousDialog);
+
+        document.body.appendChild(this.dialogDiv);
+    }
+
+    private createDialog(title?: string, previousDialog?: HTMLElement): [HTMLDivElement, HTMLDivElement, HTMLSpanElement, HTMLDivElement] {
+        return createDebugDialog(title, previousDialog);
+    }
+
+    public clear(): void {
+        while (this.contentDiv.firstChild) {
+            this.contentDiv.removeChild(this.contentDiv.firstChild);
+        }
+    }
+
+    public updateSize(): void {
+        // Add a CSS class that sets the size automatically
+        this.dialogDiv.classList.add('autosize');
+
+        // Force a reflow to ensure the automatic size is applied
+        void this.dialogDiv.offsetHeight;
+
+        // Get the automatic size
+        const autoHeight = this.dialogDiv.offsetHeight;
+        const autoWidth = this.dialogDiv.offsetWidth;
+
+        // Remove the autosize class
+        this.dialogDiv.classList.remove('autosize');
+
+        // Set the size manually to the automatic size
+        this.dialogDiv.style.height = `${autoHeight}px`;
+        this.dialogDiv.style.width = `${autoWidth}px`;
+    }
+
+    public getElement(): HTMLDivElement {
+        return this.contentDiv;
     }
 }
 
@@ -257,9 +331,9 @@ function customPrompt(title, initialValue, type) {
 }
 
 function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement, obj: Object, objName: string, ignoreProps?: string[]): HTMLElement {
-    if (obj instanceof bfsm_controller) {
-        return visualizeStateMachine(dialog, addContentTo, obj, objName);
-    }
+    // if (obj instanceof bfsm_controller) {
+    //     return visualizeStateMachine(dialog, addContentTo, obj, objName);
+    // }
     let table = addContent(addContentTo, 'table', null) as HTMLTableElement;
     let headerRow = addContent(table, 'tr', null);
 
@@ -363,37 +437,50 @@ function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement
     return table;
 }
 
-function visualizeStateMachine(dialog: HTMLElement, addContentTo: HTMLElement, bfsmController: bfsm_controller, stateMachineName: string): HTMLElement {
+function visualizeStateMachine(dialog: HTMLElement, addContentTo: HTMLElement, bfsmController: bfsm_controller, stateMachineName: string): [addContentTo: HTMLElement, machineElements: Map<string, HTMLElement>, stateElements: Map<string, HTMLElement>] {
     let baseTable = addContent(addContentTo, 'table', null) as HTMLTableElement;
+    let stateElements = new Map<string, HTMLElement>();
+    let machineElements = new Map<string, HTMLElement>();
 
     // Recursive function to visualize a state machine
-    function visualizeMachine(machine: statecontext, machineName: string, parentElement: HTMLElement, isActive: boolean): void {
+    function visualizeMachine(machine: statecontext, machineName: string, parentElement: HTMLElement, isActive: boolean, path: string): void {
         let table = addContent(parentElement, 'table', null);
 
         // Add a row for the machine name
         let machineNameRow = addContent(table, 'th', null);
         let machineNameCell = addContent(machineNameRow, 'td', machineName);
-
+        machineElements.set(path, machineNameCell);
         // Update isActive if the current machine is active or parallel
-        if (isActive || machine.parallel) {
-            machineNameCell.style.backgroundColor = machine.parallel ? 'green' : 'yellow';
-        }
+        // if (isActive) {
+        //     machineNameCell.classList.add('active-machine-or-state');
+        // }
+        // else if (machine.parallel) {
+        //     machineNameCell.classList.add('parallel-machine');
+        // }
 
         // Add a row for each state in the state machine
         for (let stateId in machine.states) {
             let state = machine.states?.[stateId];
             let stateRow = addContent(table, 'tr', null);
             let stateCell = addContent(stateRow, 'td', state?.statedef_id ?? 'undefined');
+            stateCell.classList.add('state');
 
             // Highlight the active states if isActive is true
-            if (isActive && machine.currentid === stateId) {
-                stateCell.style.backgroundColor = 'yellow';
-            }
+            // if (isActive && machine.currentid === stateId) {
+            //     stateCell.classList.add('active-machine-or-state');
+            // }
+
+            // Add an event listener to the state cell
+            const newpath = `${path}.${stateId}`;
+            stateCell.onclick = () => {
+                bfsmController.to(newpath);
+            };
+            stateElements.set(newpath, stateCell);
 
             // If the state is a state machine, visualize it
             if (state.state instanceof statecontext) {
                 let subTableCell = addContent(stateRow, 'td', null) as HTMLTableCellElement;
-                visualizeMachine(state.state, state.state.id, subTableCell, isActive && machine.currentid === stateId);
+                visualizeMachine(state.state, state.state.id, subTableCell, isActive && machine.currentid === stateId, newpath);
             }
         }
 
@@ -405,15 +492,65 @@ function visualizeStateMachine(dialog: HTMLElement, addContentTo: HTMLElement, b
         let machine = bfsmController.machines[machineName];
         let machineRow = addContent(baseTable, 'tr', null);
         let machineCell = addContent(machineRow, 'td', machineName);
-        if (bfsmController.current_machine_id === machineName || machine.parallel) {
-            machineCell.style.backgroundColor = machine.parallel ? 'green' : 'yellow';
+        if (bfsmController.current_machine_id === machineName) {
+            machineCell.classList.add('active-machine-or-state');
         }
+        else if (machine.parallel) {
+            machineCell.classList.add('parallel-machine');
+        }
+
         let subTableCell = addContent(machineRow, 'td', null) as HTMLTableCellElement;
 
-        visualizeMachine(machine, machineName, subTableCell, bfsmController.current_machine_id === machineName || machine.parallel);
+        visualizeMachine(machine, machineName, subTableCell, bfsmController.current_machine_id === machineName || machine.parallel, machineName);
     }
 
-    return addContentTo;
+    return [addContentTo, machineElements, stateElements];
+}
+
+// Function to set the CSS classes for highlighting the current machines/states
+function highlightCurrentState(stateElements: Map<string, HTMLElement>, machineElements: Map<string, HTMLElement>, bfsmController: bfsm_controller): void {
+    // Recursive function to update the classes of a state machine
+    function updateMachineClasses(machine: statecontext, machineName: string, isActive: boolean, path: string): void {
+        // Remove the 'active-machine-or-state' and 'parallel-machine' classes from the machine element
+        let machineElement = machineElements.get(machineName);
+        if (machineElement) {
+            machineElement.classList.remove('active-machine-or-state', 'parallel-machine');
+        }
+
+        if (isActive) {
+            machineElement?.classList.add('active-machine-or-state');
+        }
+        else if (machine.parallel) {
+            machineElement?.classList.add('parallel-machine');
+        }
+
+        // Update the classes of each state in the state machine
+        for (let stateId in machine.states) {
+            // Remove the 'active-machine-or-state' class from the state element
+            const newpath = `${path}.${stateId}`;
+            let stateElement = stateElements.get(newpath);
+            if (stateElement) {
+                stateElement.classList.remove('active-machine-or-state');
+            }
+
+            // If the state is active, add the 'active-machine-or-state' class
+            if (isActive && machine.currentid === stateId) {
+                stateElement?.classList.add('active-machine-or-state');
+            }
+
+            // If the state is a state machine, update its classes
+            let state = machine.states?.[stateId];
+            if (state?.state instanceof statecontext) {
+                updateMachineClasses(state.state, state.state.id, isActive && machine.currentid === stateId, newpath);
+            }
+        }
+    }
+
+    // Update the classes of each machine in the bfsm_controller
+    for (let machineName in bfsmController.machines) {
+        let machine = bfsmController.machines[machineName];
+        updateMachineClasses(machine, machineName, true, machineName);
+    }
 }
 
 function toggleFullscreenOnElement(el: HTMLElement) {
@@ -432,7 +569,7 @@ function toggleFullscreenOnElement(el: HTMLElement) {
     el.classList.toggle('fullscreen');
 }
 
-function createDebugDialog(title?: string, previousDialog?: HTMLElement): [dialogDiv: HTMLDivElement, contentDiv: HTMLDivElement] {
+function createDebugDialog(title?: string, previousDialog?: HTMLElement): [dialogDiv: HTMLDivElement, contentDiv: HTMLDivElement, titleElement: HTMLSpanElement, wrapperElelement: HTMLDivElement] {
     const theDialogDiv = document.createElement('div');
     theDialogDiv.className = 'modal-dialog';
     theDialogDiv.id = DEBUG_ELEMENT_ID;
@@ -477,9 +614,9 @@ function createDebugDialog(title?: string, previousDialog?: HTMLElement): [dialo
 
     const wrapperDiv = document.createElement('div');
     wrapperDiv.className = 'modal-title-wrapper';
-    wrapperDiv.ondblclick = (e) => {
-        toggleFullscreenOnElement(theDialogDiv);
-    };
+    // wrapperDiv.ondblclick = (e) => {
+    //     toggleFullscreenOnElement(theDialogDiv);
+    // };
 
     const titleSpan = document.createElement('span');
     titleSpan.className = 'modal-title';
@@ -507,7 +644,7 @@ function createDebugDialog(title?: string, previousDialog?: HTMLElement): [dialo
     }
 
     const closeSpan = document.createElement('span');
-    closeSpan.className = 'modal-close';
+    closeSpan.className = 'modal-dialog-button';
     closeSpan.innerHTML = '&times;';
     closeSpan.onclick = (e) => {
         e.preventDefault();
@@ -537,13 +674,50 @@ function createDebugDialog(title?: string, previousDialog?: HTMLElement): [dialo
         }
     }
 
+    const maximizeSpan = document.createElement('span');
+    maximizeSpan.className = 'modal-dialog-button';
+    maximizeSpan.innerHTML = '&#x1F5D6;'; // Unicode for maximize dialog icon
+    maximizeSpan.onclick = (e) => {
+        e.preventDefault();
+        toggleFullscreenOnElement(theDialogDiv);
+    };
+
+    const minimizeSpan = document.createElement('span');
+    minimizeSpan.className = 'modal-dialog-button';
+    minimizeSpan.innerHTML = '&#x1F5D5;'; // Unicode for minimize icon
+
+    minimizeSpan.onclick = (e) => {
+        e.preventDefault();
+        if (theDialogDiv.classList.contains('minimized')) {
+            theDialogDiv.classList.remove('minimized');
+            contentDiv.style.display = 'block';
+            minimizeSpan.innerHTML = '&#x1F5D5;'; // Unicode for horizontal bar
+            if (theDialogDiv.classList.contains('fullscreen')) {
+                toggleFullscreenOnElement(theDialogDiv);
+            }
+            // Restore the original size of the dialog
+            theDialogDiv.style.height = theDialogDiv.dataset.oldHeight;
+            theDialogDiv.style.width = theDialogDiv.dataset.oldWidth;
+        } else {
+            theDialogDiv.classList.add('minimized');
+            contentDiv.style.display = 'none';
+            minimizeSpan.innerHTML = '&#x25B2;'; // Unicode for up arrow
+            // Save the original size of the dialog and set its size to fit the title bar
+            theDialogDiv.dataset.oldHeight = theDialogDiv.style.height;
+            theDialogDiv.dataset.oldWidth = theDialogDiv.style.width;
+            theDialogDiv.style.height = window.getComputedStyle(titleSpan).height;
+        }
+    };
+
     backSpan && wrapperDiv.insertBefore(backSpan, null);
     wrapperDiv.insertBefore(titleSpan, null);
     wrapperDiv.insertBefore(closeSpan, null);
+    wrapperDiv.insertBefore(maximizeSpan, null);
+    wrapperDiv.insertBefore(minimizeSpan, null);
     theDialogDiv.insertBefore(wrapperDiv, null);
     theDialogDiv.insertBefore(contentDiv, null);
 
-    return [theDialogDiv, contentDiv];
+    return [theDialogDiv, contentDiv, titleSpan, wrapperDiv];
 }
 
 export function handleOpenObjectMenu(e: UIEvent | null, previous?: HTMLElement): void {
