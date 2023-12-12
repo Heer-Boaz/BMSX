@@ -1,4 +1,3 @@
-import { title } from 'process';
 import { MachineDefinitions, bfsm_controller, statecontext } from './bfsm';
 import { area2size, copy_vec2, new_vec2, vec3, translate_vec2, trunc_vec2, vec2, trunc_vec3, div_vec2, set_inplace_vec2, GameObjectId } from './bmsx';
 import { PositionUpdateAxisComponent } from './collisioncomponents';
