@@ -127,6 +127,10 @@ class FloatingDialog {
         }
     }
 
+    public close(): void {
+        document.body.removeChild(this.dialogDiv);
+    }
+
     public updateSize(): void {
         // Add a CSS class that sets the size automatically
         this.dialogDiv.classList.add('autosize');
@@ -283,6 +287,8 @@ function shouldPropertyValueBeRedirectedToSubDialog(propName: string, propValue:
 
 function customPrompt(title, initialValue, type) {
     return new Promise((resolve) => {
+        const dialog = new FloatingDialog(title);
+        const [dialogElement, dialogContentElement] = [dialog.getDialogElement(), dialog.getContentElement()];
         const promptDialog = document.createElement('div');
         promptDialog.className = 'custom-prompt-dialog';
 
@@ -291,19 +297,44 @@ function customPrompt(title, initialValue, type) {
         titleLabel.className = 'custom-prompt-title';
         promptDialog.appendChild(titleLabel);
 
-        let inputElement;
+        let inputElement: HTMLInputElement | HTMLSelectElement;
+        // 'text': A simple text box.
+        // 'password': A text box that masks the user's input.
+        // 'number': A text box that only accepts numerical input.
+        // 'email': A text box that validates the input for a valid email format.
+        // 'date': A control for entering a date (year, month, and day, with no time).
+        // 'datetime-local': A control for entering a date and time, with no time zone.
+        // 'time': A control for entering a time value with no time zone.
+        // 'url': A text box that validates the input for a valid URL format.
+        // 'search': A text box for entering search strings. The behavior of this type is similar to text but varies in some contexts, like styling in some browsers.
+        // 'tel': A text box for entering a telephone number. Note that this type does not enforce any syntax or pattern checking.
+        // 'color': A control for specifying a color.
+        // 'range': A control for entering a number whose exact value is not important.
+        // 'checkbox': A check box.
+        // 'radio': A radio button.
+        // 'file': A control that lets the user select a file to upload.
+        // 'submit': A button that submits the form.
+        // 'reset': A button that resets the form to its initial values.
+        // 'button': A clickable button.
         switch (type) {
             case 'boolean':
                 inputElement = document.createElement('select');
                 inputElement.innerHTML = `<option value="true">True</option><option value="false">False</option>`;
-                inputElement.value = initialValue ? 'true' : 'false';
+                inputElement.value = initialValue ?? 'true';
+                break;
+            case 'number':
+                inputElement = document.createElement('input') as HTMLInputElement;
+                inputElement.value = initialValue;
                 break;
             default:
                 inputElement = document.createElement('input');
                 inputElement.value = initialValue;
                 inputElement.type = type;
+                break;
         }
         inputElement.className = 'custom-prompt-input';
+        inputElement.ariaReadOnly = 'false';
+        inputElement.disabled = false;
         promptDialog.appendChild(inputElement);
 
         const buttonsDiv = document.createElement('div');
@@ -312,7 +343,7 @@ function customPrompt(title, initialValue, type) {
         const cancelButton = document.createElement('button');
         cancelButton.innerHTML = 'Cancel';
         cancelButton.onclick = () => {
-            document.body.removeChild(promptDialog);
+            dialog.close();
             resolve(null);
         };
         buttonsDiv.appendChild(cancelButton);
@@ -320,13 +351,14 @@ function customPrompt(title, initialValue, type) {
         const confirmButton = document.createElement('button');
         confirmButton.innerHTML = 'OK';
         confirmButton.onclick = () => {
-            document.body.removeChild(promptDialog);
+            dialog.close();
             resolve(inputElement.value);
         };
         buttonsDiv.appendChild(confirmButton);
 
         promptDialog.appendChild(buttonsDiv);
-        document.body.appendChild(promptDialog);
+        dialogContentElement.appendChild(promptDialog);
+        dialog.updateSize();
     });
 }
 
