@@ -42,13 +42,6 @@ export interface IComponentContainer {
     removeComponent<T extends Component>(constructor: ComponentConstructor<T>): void;
 
     /**
-     * Updates a component of the specified type in the container.
-     * @param constructor - The constructor function of the component type.
-     * @param args - Additional arguments to pass to the component's update method.
-     */
-    updateComponent<T extends Component>(constructor: ComponentConstructor<T>, ...args: any[]): void;
-
-    /**
      * Updates all components with the specified tag in the container.
      * @param tag - The tag of the components to update.
      * @param args - Additional arguments to pass to the components' update method.
@@ -119,9 +112,9 @@ export abstract class Component implements IIdentifiable {
         const eventEmitter = EventEmitter.getInstance();
         constr.eventSubscriptions.forEach(subscription => { // Iterate over all event subscriptions
             const handler = this[subscription.handlerName].bind(this); // Bind the handler to the component instance
-            // const wrappedHandler = (...args: any[]) => { // Wrap the handler to check if the component is enabled
-                // if (this.enabled) handler(...args);
-            // };
+            const wrappedHandler = (...args: any[]) => { // Wrap the handler to check if the component is enabled
+                if (this.enabled) handler(...args);
+            };
             let emitterFilter: string;
             switch (subscription.scope) {
                 case 'all': emitterFilter = 'all'; break;
@@ -132,14 +125,9 @@ export abstract class Component implements IIdentifiable {
                     break;
                 case 'self': emitterFilter = this.id; break;
             }
-            // eventEmitter.on(subscription.eventName, wrappedHandler, emitterFilter); // Subscribe to the event
-            eventEmitter.on(subscription.eventName, handler, emitterFilter); // Subscribe to the event
+            eventEmitter.on(subscription.eventName, wrappedHandler, emitterFilter); // Subscribe to the event
+            // eventEmitter.on(subscription.eventName, handler, emitterFilter); // Subscribe to the event
         });
-    }
-
-    // Implement this method to handle component updates
-    update(...args): void {
-        // Override this method in derived classes to handle component updates (optional)
     }
 
     // Implement this method to handle preprocessing updates
