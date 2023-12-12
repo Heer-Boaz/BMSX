@@ -95,7 +95,7 @@ var bootrom = {
 			event.preventDefault();
 			event.stopPropagation();
 			event.stopImmediatePropagation();
-			throw event.reason;
+			throw event.reason ?? '"bload(url)" failed with unknown error!';
 			// return false;
 		};
 
@@ -343,18 +343,18 @@ async function loadScript(rom: RomPack, romname: string): Promise<void> {
 	let result: Promise<void> = new Promise((resolve, reject) => {
 		let romcode = document.createElement('script');
 		romcode.async = false;
-		romcode.onerror = (event: Event | string, source?: string, lineno?: number, colno?: number, error?: Error) => {
-			reject('urgh');
+		const rejectOnError = (event: ErrorEvent | string) => {
+			const errorMessage = typeof event === 'string' ? event : event.message;
+			reject(errorMessage);
 		};
-		window.onerror = (event: Event | string, source?: string, lineno?: number, colno?: number, error?: Error) => {
-			reject('urgh');
-		};
+
+		romcode.onerror = rejectOnError;
+		window.onerror = rejectOnError;
 		if (!bootrom.debug) {
 			romcode.innerText = rom.code;
 			document.head.appendChild(romcode);
 			resolve();
-		}
-		else {
+		} else {
 			romcode.src = `../${romname}.js`;
 			romcode.onload = () => resolve();
 			document.head.appendChild(romcode);
