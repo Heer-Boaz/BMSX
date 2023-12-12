@@ -53,17 +53,11 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
         delete this.components[constructor.name];
     }
 
-    updateComponent<T extends Component>(constructor: ComponentConstructor<T>, ...args: any[]): void {
-        const component = this.getComponent(constructor);
-        if (component) {
-            component.update({ params: args });
-        }
-    }
-
     updateComponentsWithTag(tag: ComponentTag, ...args: any[]): void {
-        // Get all components with the given tag
-        const components = Object.values(this.components).filter(component => component.hasPreprocessingTag(tag) || component.hasPostprocessingTag(tag));
-        components.forEach(component => component.update({ params: args }));
+        // Update components with the given tag (preprocessing)
+        Object.values(this.components).filter(component => component.hasPreprocessingTag(tag)).forEach(component => component.preprocessingUpdate(...args));
+        // Update components with the given tag (postprocessing)
+        Object.values(this.components).filter(component => component.hasPostprocessingTag(tag)).forEach(component => component.postprocessingUpdate({ params: args }));
     }
 
     /**
@@ -265,14 +259,21 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
     /**
      * By default, will set location to `spawningPos` and
      * the FSM-state to the initial state (if specified).
-     * @param spawningPos
+     * @param spawningPos The position to spawn the object at.
      */
-    public onspawn?(spawningPos?: vec2 | vec3): void {
+    public onspawn(spawningPos?: vec2 | vec3): void {
         if (spawningPos) {
             this.setXNoSweep(spawningPos.x ?? this.x);
             this.setYNoSweep(spawningPos.y ?? this.y);
             this.setZNoSweep((spawningPos as vec3).z ?? this.z);
         }
+        // Call the method to initialize linked state machines
+        this.initializeLinkedFSMs();
+        // Call the method to initialize linked behavior trees
+        this.initializeBehaviorTrees();
+
+        // Add components that should be auto-added to this class after the object has been spawned so that the component can retrieve the object via its id
+        this.addAutoComponents();
 
         this.state.start();
     }
@@ -337,13 +338,7 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
         // Create the state context that will be used to manage the state of the game object
         this.state = new bfsm_controller();
         this.state.add_statemachine(_fsm_id ?? this.constructor.name, this.id)
-        // Add components that should be auto-added to this class
-        this.addAutoComponents();
 
-        // Call the method to initialize linked state machines
-        this.initializeLinkedFSMs();
-        // Call the method to initialize linked behavior trees
-        this.initializeBehaviorTrees();
         // Call the method to initialize event subscriptions
         this.onLoadSetup();
     }
