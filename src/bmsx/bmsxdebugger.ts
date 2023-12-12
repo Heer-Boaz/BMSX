@@ -41,12 +41,10 @@ export class StateMachineVisualizer extends Component {
     override postprocessingUpdate({ params, returnvalue }: ComponentUpdateParams): void {
         if (!this.machineElements || !this.stateElements) {
             let _contentDiv: HTMLElement;
-            [_contentDiv, this.machineElements, this.stateElements] = visualizeStateMachine(this.dialog.getElement(), this.dialog.getElement(), this.bfsmController, 'stateMachineName');
 
+            [_contentDiv, this.machineElements, this.stateElements] = visualizeStateMachine(this.dialog.getDialogElement(), this.dialog.getContentElement(), this.bfsmController);
             this.dialog.updateSize();
         }
-        // Clear the dialog
-        // this.dialog.clear();
 
         // Re-visualize the state machine
         highlightCurrentState(this.stateElements, this.machineElements, this.bfsmController);
@@ -116,8 +114,7 @@ class FloatingDialog {
 
     constructor(title?: string, previousDialog?: HTMLElement) {
         [this.dialogDiv, this.contentDiv, this.titleElement, this.wrapperElement] = this.createDialog(title, previousDialog);
-
-        document.body.appendChild(this.dialogDiv);
+        document.body.insertBefore(this.dialogDiv, null);
     }
 
     private createDialog(title?: string, previousDialog?: HTMLElement): [HTMLDivElement, HTMLDivElement, HTMLSpanElement, HTMLDivElement] {
@@ -149,7 +146,11 @@ class FloatingDialog {
         this.dialogDiv.style.width = `${autoWidth}px`;
     }
 
-    public getElement(): HTMLDivElement {
+    public getDialogElement(): HTMLDivElement {
+        return this.dialogDiv;
+    }
+
+    public getContentElement(): HTMLDivElement {
         return this.contentDiv;
     }
 }
@@ -330,9 +331,6 @@ function customPrompt(title, initialValue, type) {
 }
 
 function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement, obj: Object, objName: string, ignoreProps?: string[]): HTMLElement {
-    // if (obj instanceof bfsm_controller) {
-    //     return visualizeStateMachine(dialog, addContentTo, obj, objName);
-    // }
     let table = addContent(addContentTo, 'table', null) as HTMLTableElement;
     let headerRow = addContent(table, 'tr', null);
 
@@ -436,8 +434,8 @@ function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement
     return table;
 }
 
-function visualizeStateMachine(dialog: HTMLElement, addContentTo: HTMLElement, bfsmController: bfsm_controller, stateMachineName: string): [addContentTo: HTMLElement, machineElements: Map<string, HTMLElement>, stateElements: Map<string, HTMLElement>] {
-    let baseTable = addContent(addContentTo, 'table', null) as HTMLTableElement;
+function visualizeStateMachine(dialogElement: HTMLElement, container: HTMLElement, bfsmController: bfsm_controller): [addContentTo: HTMLElement, machineElements: Map<string, HTMLElement>, stateElements: Map<string, HTMLElement>] {
+    let baseTable = addContent(container, 'table', null) as HTMLTableElement;
     let stateElements = new Map<string, HTMLElement>();
     let machineElements = new Map<string, HTMLElement>();
 
@@ -449,13 +447,6 @@ function visualizeStateMachine(dialog: HTMLElement, addContentTo: HTMLElement, b
         let machineNameRow = addContent(table, 'th', null);
         let machineNameCell = addContent(machineNameRow, 'td', machineName);
         machineElements.set(path, machineNameCell);
-        // Update isActive if the current machine is active or parallel
-        // if (isActive) {
-        //     machineNameCell.classList.add('active-machine-or-state');
-        // }
-        // else if (machine.parallel) {
-        //     machineNameCell.classList.add('parallel-machine');
-        // }
 
         // Add a row for each state in the state machine
         for (let stateId in machine.states) {
@@ -464,15 +455,15 @@ function visualizeStateMachine(dialog: HTMLElement, addContentTo: HTMLElement, b
             let stateCell = addContent(stateRow, 'td', state?.statedef_id ?? 'undefined');
             stateCell.classList.add('state');
 
-            // Highlight the active states if isActive is true
-            // if (isActive && machine.currentid === stateId) {
-            //     stateCell.classList.add('active-machine-or-state');
-            // }
-
             // Add an event listener to the state cell
             const newpath = `${path}.${stateId}`;
             stateCell.onclick = () => {
                 bfsmController.to(newpath);
+            };
+            stateCell.oncontextmenu = () => {
+                const stateDialog = new FloatingDialog(`State: [${newpath}]`, dialogElement);
+                createObjectTableElement(stateDialog.getDialogElement(), stateDialog.getContentElement(), state, newpath, ['objects']);
+                stateDialog.updateSize();
             };
             stateElements.set(newpath, stateCell);
 
@@ -503,7 +494,7 @@ function visualizeStateMachine(dialog: HTMLElement, addContentTo: HTMLElement, b
         visualizeMachine(machine, machineName, subTableCell, bfsmController.current_machine_id === machineName || machine.parallel, machineName);
     }
 
-    return [addContentTo, machineElements, stateElements];
+    return [container, machineElements, stateElements];
 }
 
 // Function to set the CSS classes for highlighting the current machines/states
@@ -629,10 +620,10 @@ function createDebugDialog(title?: string, previousDialog?: HTMLElement): [dialo
         backSpan.onclick = (e) => {
             e.preventDefault();
             document.body.removeChild(theDialogDiv);
-            previousDialog.style.left = theDialogDiv.style.left;
-            previousDialog.style.top = theDialogDiv.style.top;
-            previousDialog.style.width = theDialogDiv.style.width;
-            previousDialog.style.height = theDialogDiv.style.height;
+            // previousDialog.style.left = theDialogDiv.style.left;
+            // previousDialog.style.top = theDialogDiv.style.top;
+            // previousDialog.style.width = theDialogDiv.style.width;
+            // previousDialog.style.height = theDialogDiv.style.height;
             previousDialog.style.display = 'flex';
             let newDivFullscreen = theDialogDiv.classList.contains('fullscreen');
             let previousDialogFullscreen = previousDialog.classList.contains('fullscreen');
