@@ -2,6 +2,20 @@
 	touch-action: none;
 }
 
+.minimized {
+	height: 30px;
+	/* Or whatever height you want for the title bar */
+	/* Add any other styles you want for the minimized dialog here */
+}
+
+.autosize {
+	width: auto !important;
+	height: auto !important;
+	max-width: 100% !important;
+	max-height: 100% !important;
+	overflow: auto !important;
+}
+
 .modal-dialog {
 	position: fixed;
 	background-color: rgba(240, 248, 255, 0.66);
@@ -43,6 +57,16 @@
 	text-align: center;
 }
 
+.active-machine-or-state {
+	color: white;
+	background-color: darkblue;
+}
+
+.parallel-machine {
+	color: white;
+	background-color: darkgreen;
+}
+
 .modal-content table tr.selectableoption:hover,
 .modal-content table tr.selectableoption:focus {
 	color: white;
@@ -65,6 +89,14 @@
 	background-color: rgba(0, 0, 255, 0.66);
 	text-decoration: none;
 	cursor: text;
+}
+
+.modal-content table tr td.state:hover,
+.modal-content table tr td.state:focus {
+	color: white;
+	background-color: rgba(0, 0, 255, 0.66);
+	text-decoration: none;
+	cursor: pointer;
 }
 
 .modal-content table tr td.mutated-propvalue {
@@ -151,7 +183,7 @@
 	white-space: nowrap;
 }
 
-.modal-close {
+.modal-dialog-button {
 	color: white;
 	text-align: right;
 	font-size: 28px;
@@ -187,8 +219,8 @@
 	min-height: 100%;
 }
 
-.modal-close:hover,
-.modal-close:focus,
+.modal-dialog-button:hover,
+.modal-dialog-button:focus,
 .modal-back:hover,
 .modal-back:focus {
 	color: white;
