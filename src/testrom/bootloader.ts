@@ -67,7 +67,7 @@ const gamepadInputMapping: MyGamepadInputMapping = {
 @componenttags_preprocessing('test')
 class TestComponent extends Component {
     // Implement virtual methods
-    override update() {
+    override postprocessingUpdate() {
         console.log('TestComponent update');
     }
 
@@ -89,8 +89,8 @@ class TestComponent extends Component {
 
 @insavegame
 class DerivedTestComponent extends TestComponent {
-    override update() {
-        super.update();
+    override postprocessingUpdate() {
+        super.postprocessingUpdate();
         console.log('DerivedTestComponent update');
     }
 }
