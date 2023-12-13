@@ -88,7 +88,7 @@ const bootrom = {
 			h406A(bootrom.rom!, bootrom.sndcontext!, bootrom.gainnode!, this.debug);
 			wrapup();
 			bootrom.rom = undefined;
-			return x;
+			return 255;
 		} catch (err) {
 			console.error(err);
 			document.getElementById('gamescreen')!.hidden = true;
@@ -327,7 +327,7 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack): Promis
 				let sliced = bytearray.slice(res.start, res.end);
 				romResult.code = decodeuint8arr(sliced);
 			} catch (err) {
-				return Promise.reject(err);
+				throw new Error(`Failed to load 'source' from rom: ${err.message}.`);
 			}
 			break;
 		case 'audio':
@@ -335,8 +335,7 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack): Promis
 			romResult.snd_assets[res.resname] = res;
 			break;
 		default:
-			let msg = `Unrecognised resource type in rom: ${res.type}, while processing rompack!`;
-			return Promise.reject(msg);
+			throw new Error(`Unrecognised resource type in rom: ${res.type}, while processing rompack!`);
 	}
 }
 
