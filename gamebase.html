@@ -127,11 +127,6 @@
             bootrom.defusr = h406A;
             bootrom.usr(0);
         }).catch(function (err) {
-            bootrom.theshowsover = true;
-            document.querySelector('#loading').hidden = false;
-            document.querySelector('#msx').onanimationend = undefined;
-            document.querySelector('#hidor').className = 'showsover';
-            document.body.className = "showsover";
             bootrom.outputError(err?.message ?? err);
         });
     </script>
