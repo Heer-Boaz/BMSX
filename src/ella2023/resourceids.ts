@@ -1,8 +1,6 @@
 export enum BitmapId {
 	None = 'None',
 
-	b = 'b',
-	b2 = 'b2',
 	lee_duckorjump = 'lee_duckorjump',
 	lee_flyingkick = 'lee_flyingkick',
 	lee_highkick = 'lee_highkick',
