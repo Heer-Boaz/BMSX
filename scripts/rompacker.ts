@@ -357,7 +357,6 @@ async function buildGameHtmlAndManifest(romname: string, title: string): Promise
 						.replace('#outfile', `${romname}.rom`)
 						.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed)
 						.replace('//#debug', `bootrom.debug = ${debug};\n`)
-						.replace('//#localfetch', `bootrom.localfetch = ${debug};\n`);
 				};
 				writeFileSync("./dist/game.html", transformHtml(html, false));
 				writeFileSync("./dist/game_debug.html", transformHtml(html, true));

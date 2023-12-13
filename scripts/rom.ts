@@ -23,7 +23,6 @@ const bootrom = {
 	 * @property {RomPack | null} rom - The boot ROM pack.
 	 * @property {boolean} debug - A flag indicating whether debug mode is enabled.
 	 * @property {string | undefined} romname - The name of the boot ROM pack.
-	 * @property {boolean} localfetch - A flag indicating whether the boot ROM pack should be fetched locally.
 	 * @property {AudioContext | null} sndcontext - The audio context for the boot ROM.
 	 * @property {GainNode | null} gainnode - The gain node for the boot ROM.
 	 * @property {boolean} theshowsover - A flag indicating whether the boot animation has ended.
@@ -45,7 +44,6 @@ const bootrom = {
 	rom: null as RomPack | null,
 	debug: false,
 	romname: undefined, // Currently, used for fetching the megarom Javascript for debug mode
-	localfetch: false,
 	sndcontext: null as AudioContext | null,
 	snd_unlocked: false,
 	gainnode: null as GainNode | null,
