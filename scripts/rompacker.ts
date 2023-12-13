@@ -662,9 +662,6 @@ async function buildRompack(romname: string, respath: string): Promise<any> {
 			writeFileSync(megarom_min_map_filepath, minifyGamecodeResult.map as string);
 		}
 
-		copyFileSync(megarom_filepath, `./${megarom_filename}`);
-		rmSync(megarom_filepath);
-
 		const buffers = new Array<Buffer>();
 		log("Resource bestanden inladen en bufferen...  ");
 		const loadedResources: ILoadedResource[] = await getLoadedResourcesList(respath, buffers, romname).catch(err => reject(err)) as ILoadedResource[];
