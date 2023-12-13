@@ -1,7 +1,8 @@
 import { createOptimizedAtlas } from './atlasbuilder';
-import { readdirSync, statSync, readFileSync, writeFileSync, copyFile, copyFileSync, existsSync, exists, createWriteStream, rmSync } from 'fs';
-import { join, parse } from 'path';
+import { readdirSync, statSync, readFileSync, writeFileSync, copyFile, copyFileSync, existsSync, exists, createWriteStream, rmSync, Stats } from 'fs';
+import { dirname, join, parse } from 'path';
 import { AudioMeta, AudioType, RomAsset, RomMeta, ImgMeta } from '../src/bmsx/rompack';
+import { exec } from 'child_process';
 import * as browserify from 'browserify';
 const tsify = require('tsify');
 
@@ -316,9 +317,14 @@ async function minifyGamecode(infile: string): Promise<terser.MinifyOutput> {
  */
 async function buildGameHtmlAndManifest(romname: string, title: string): Promise<any> {
 	log("game.html en game_debug.html bouwen...\n");
-	let html = readFileSync("./gamebase.html", 'utf8');
-	let romjs = readFileSync("./rom/rom.js", 'utf8').replace('Object.defineProperty(exports, "__esModule", { value: true });', '');
-	let zipjs = readFileSync("./scripts/pako_inflate.min.js", 'utf8');
+	let html, romjs, zipjs;
+	try {
+		html = readFileSync("./gamebase.html", 'utf8');
+		romjs = readFileSync("./rom/rom.js", 'utf8').replace('Object.defineProperty(exports, "__esModule", { value: true });', '');
+		zipjs = readFileSync("./scripts/pako_inflate.min.js", 'utf8');
+	} catch (error) {
+		throw new Error(`Error reading files while building HTML and Manifest files: ${error.message}`);
+	}
 	let options = {
 		compress: {
 			arrows: false
@@ -334,7 +340,13 @@ async function buildGameHtmlAndManifest(romname: string, title: string): Promise
 		}
 	};
 	let romjsMinified = (await terser.minify(romjs, options)).code!;
-	let bmsx = readFileSync("./rom/bmsx.png");
+	let bmsx;
+	try {
+		bmsx = readFileSync("./rom/bmsx.png");
+	}
+	catch (error) {
+		throw new Error(`Error reading file "${__dirname}/rom/bmsx.png": ${error.message}`);
+	}
 	let bmsx_base64ed = bmsx.toString('base64');
 
 	return new Promise<any>((resolve, reject) => {
@@ -771,6 +783,38 @@ async function buildRompack(romname: string, respath: string): Promise<any> {
 	});
 }
 
+async function compileRomLoaderScriptIfNewer() {
+	const romTsPath = join(__dirname, '../scripts/rom.ts');
+	const romJsPath = join(__dirname, '../rom/rom.js');
+
+	if (!existsSync(romTsPath)) {
+		throw new Error(`rom.ts could not be found at "${romTsPath}"`);
+	}
+
+	const romTsStats = statSync(romTsPath);
+	let romJsStats: Stats | undefined;
+
+	if (existsSync(romJsPath)) {
+		romJsStats = statSync(romJsPath);
+	}
+
+	if (!romJsStats || romTsStats.mtime > romJsStats.mtime) {
+		return new Promise<void>((resolve, reject) => {
+			try {
+				exec(`npx tsc ${romTsPath} --removeComments -m commonjs -t ES2017 --outDir ${join(__dirname, '../rom/')}`, (error, stdout, stderr) => {
+					if (error || stderr) {
+						throw new Error(`Error while compiling "rom.ts": ${error?.message ?? stderr}`);
+					} else {
+						resolve();
+					}
+				});
+			} catch (e) {
+				throw new Error(`Error while compiling "rom.ts": ${e?.message ?? e}`);
+			}
+		});
+	}
+	// rom.js is newer or up to date. No need to compile
+}
 
 const outputError = (e: any) => writeOut(`\n[GEFAALD]\nEr ging iets niet goed:\n${e?.message ?? e ?? 'Geen error message'};\n${e?.stack ?? 'Geen stacktrace.'}\n`, 'error');
 
@@ -915,7 +959,7 @@ async function main() {
 
 			writeOut(`Starting ROM packing and deployment process for ROM ${_colors.brightBlue.bold(`${romname}`)}...\n`);
 
-			const takenlijst = ['Game compileren en bundleren', 'YAML bestanden omzetten in JSON voor importatie', 'Minifying + Resource bestanden inladen en bufferen', 'game.html en game_debug.html bouwen', 'Deployeren'];
+			const takenlijst = ['Game compileren en bundleren', 'YAML bestanden omzetten in JSON voor importatie', 'Minifying + Resource bestanden inladen en bufferen', '"rom.ts" compileren (als nodig)', 'game.html en game_debug.html bouwen', 'Deployeren'];
 			if (!deployToFtp) takenlijst.pop();
 			if (!rebuildRequired) {
 				takenlijst.shift();
@@ -959,6 +1003,8 @@ async function main() {
 					await buildRompack(romname, respath);
 					taakAfgevinkt();
 				}
+				await compileRomLoaderScriptIfNewer();
+				taakAfgevinkt();
 				await buildGameHtmlAndManifest(romname, title);
 				taakAfgevinkt();
 				if (deployToFtp) {
@@ -970,12 +1016,12 @@ async function main() {
 			} catch (e) {
 				outputError(e);
 				progress.stop();
-				process.exit(-1);
+				// process.exit(-1);
 			}
 		}
 	} catch (e) {
 		outputError(e);
-		process.exit(-1);
+		// process.exit(-1);
 	}
 }
 
