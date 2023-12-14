@@ -1,57 +1,14 @@
-import { BTStatus } from './../bmsx/behaviourtree';
-import { GamepadButton } from './../bmsx/input';
-import { RomPack } from '../bmsx/rompack';
-import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
-import { GLView } from '../bmsx/glview';
+import { Action, gamepadInputMapping, keyboardInputMapping } from './inputmapping';
 import { BitmapId } from './resourceids';
-import { Input, InputMap, KeyboardButton, GamepadInputMapping, KeyboardInputMapping } from '../bmsx/input';
+import { Input, InputMap } from '../bmsx/input';
 import { sstate, statedef_builder, machine_states, build_fsm, assign_fsm } from '../bmsx/bfsm';
 import { insavegame } from '../bmsx/gameserializer';
-import { new_area, Direction, Game, new_vec2, get_gamemodel, BFont, new_vec3 } from '../bmsx/bmsx';
-import { GameObject } from '../bmsx/gameobject';
-import { Sprite, SpriteObject } from '../bmsx/sprite';
+import { new_area, Direction } from '../bmsx/bmsx';
+import { SpriteObject } from '../bmsx/sprite';
 import { attach_components } from '../bmsx/component';
-import { BehaviorTreeDefinition, build_bt } from '../bmsx/behaviourtree';
 import { ProhibitLeavingScreenComponent, ScreenBoundaryComponent } from './../bmsx/collisioncomponents';
-import { PositionUpdateAxisComponent } from './../bmsx/collisioncomponents';
 import { subscribesToParentScopedEvent, subscribesToSelfScopedEvent } from '../bmsx/eventemitter';
 import { StateMachineVisualizer } from '../bmsx/bmsxdebugger';
-import { gamemodel } from './gamemodel';
-
-
-const actions = ['jump', 'right', 'duck', 'left', 'punch', 'highkick', 'lowkick', 'block'] as const;
-type Action = typeof actions[number];
-const get_model = get_gamemodel<gamemodel>;
-
-type MyKeyboardInputMapping = {
-    [key in keyof KeyboardInputMapping & Action]: KeyboardButton;
-};
-
-type MyGamepadInputMapping = {
-    [key in keyof GamepadInputMapping & Action]: GamepadButton;
-};
-
-const keyboardInputMapping: MyKeyboardInputMapping = {
-    'jump': 'ArrowUp',
-    'right': 'ArrowRight',
-    'duck': 'ArrowDown',
-    'left': 'ArrowLeft',
-    'punch': 'KeyX',
-    'highkick': 'KeyA',
-    'lowkick': 'KeyZ',
-    'block': 'ShiftLeft',
-};
-
-const gamepadInputMapping: MyGamepadInputMapping = {
-    'jump': 'up',
-    'right': 'right',
-    'duck': 'down',
-    'left': 'left',
-    'punch': 'a',
-    'highkick': 'b',
-    'lowkick': 'x',
-    'block': 'y',
-};
 
 @insavegame
 export class JumpingWhileLeavingScreenComponent extends ScreenBoundaryComponent {
@@ -72,10 +29,6 @@ export class JumpingWhileLeavingScreenComponent extends ScreenBoundaryComponent 
             emitter.facing = 'right';
         }
         else emitter.facing = 'left';
-        // if (d === Direction.Left || d === Direction.Right) {
-        //     if (emitter.state.is('Player.jump.jump_up')) {
-        //         emitter.state.switch('Player.jump.jump_down'); // Gaat niet werken wegens niet passen van kickstate
-        //     }
     }
 }
 
@@ -152,10 +105,20 @@ export class Player extends SpriteObject {
 
             if (pressedActions.some(action => action.action === 'lowkick')) {
                 this.state.to('duckkick');
+                return;
             }
             // Search whether the `duck` action was NOT pressed
             else if (!pressedActions.some(action => action.action === 'duck')) {
                 this.state.to('idle');
+                return;
+            }
+            else if (pressedActions.some(action => action.action === 'left')) {
+                this.facing = 'left';
+                return;
+            }
+            else if (pressedActions.some(action => action.action === 'right')) {
+                this.facing = 'right';
+                return;
             }
         }
 
@@ -174,7 +137,7 @@ export class Player extends SpriteObject {
                 _idle: {
                     run: defaultrun,
                     enter(this: Player) {
-                        this.state.machines.player_animation.to('idle');
+                        this.state.to('player_animation.idle');
                     },
                 },
                 walk: {

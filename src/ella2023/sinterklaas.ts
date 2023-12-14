@@ -4,6 +4,7 @@ import { get_gamemodel } from "../bmsx/bmsx";
 import { StateMachineVisualizer } from "../bmsx/bmsxdebugger";
 import { ProhibitLeavingScreenComponent } from "../bmsx/collisioncomponents";
 import { attach_components } from "../bmsx/component";
+import { subscribesToSelfScopedEvent } from "../bmsx/eventemitter";
 import { insavegame } from "../bmsx/gameserializer";
 import { SpriteObject } from "../bmsx/sprite";
 import { JumpingWhileLeavingScreenComponent } from "./eila";
@@ -21,8 +22,175 @@ export class Sinterklaas extends SpriteObject {
     public static readonly JUMP_DURATION = 60;
     public static readonly SPEED = 2;
 
+    facing: 'left' | 'right';
+
     constructor() {
         super('sinterklaas');
+        this.facing = 'right';
+    }
+
+    override paint(): void {
+        this.flip_h = this.facing !== 'left';
+        super.paint();
+    }
+
+
+
+    @statedef_builder
+    public static bouw(): machine_states {
+        function defaultrun(this: Sinterklaas, state: sstate) {
+        }
+        function jumprun(this: Sinterklaas, state: sstate) {
+        }
+        function duckrun(this: Sinterklaas, state: sstate) {
+        }
+
+        return {
+            states: {
+                _idle: {
+                    run: defaultrun,
+                    enter(this: Sinterklaas) {
+                        this.state.to('sint_animation.idle');
+                    },
+                },
+                walk: {
+                    run: defaultrun,
+                    enter(this: Sinterklaas) {
+                        if (!this.state.is('sint_animation.walk')) {
+                            this.state.to('sint_animation.walk');
+                        }
+                    },
+                },
+                punch: {
+                    enter(this: Sinterklaas) {
+                        this.state.to('sint_animation.punch');
+                    },
+                },
+                highkick: {
+                    enter(this: Sinterklaas) {
+                        this.state.to('sint_animation.highkick');
+                    },
+                },
+                lowkick: {
+                    enter(this: Sinterklaas) {
+                        this.state.to('sint_animation.lowkick');
+                    },
+                },
+                duckkick: {
+                    enter(this: Sinterklaas) {
+                        this.state.to('sint_animation.duckkick');
+                    },
+                },
+                duck: {
+                    run: duckrun,
+                    enter(this: Sinterklaas) {
+                        this.state.to('sint_animation.duck');
+                    },
+                },
+                jump: {
+                    enter(this: Sinterklaas, state: sstate, directional: boolean = false) {
+                        this.state.to('Sinterklaas.jump.jump_up', directional);
+                        this.state.to('sint_animation.jump');
+                        this.getComponent(JumpingWhileLeavingScreenComponent).enabled = true;
+                    },
+                    exit(this: Sinterklaas) {
+                        this.getComponent(JumpingWhileLeavingScreenComponent).enabled = false;
+                    },
+                    run: jumprun,
+                    states: {
+                        _jump_up: {
+                            nudges2move: Sinterklaas.JUMP_DURATION / 2,
+                            enter(this: Sinterklaas, state: sstate, directional: boolean = false) {
+                                state.reset();
+                                state.data.directional = directional;
+                                state.to('normal');
+                            },
+                            run(this: Sinterklaas, state: sstate) {
+                                this.y -= Sinterklaas.JUMP_SPEED;
+                                if (state.data.directional) {
+                                    if (this.facing === 'left') {
+                                        this.x -= Sinterklaas.SPEED;
+                                    } else {
+                                        this.x += Sinterklaas.SPEED;
+                                    }
+                                }
+                            },
+                            next(this: Sinterklaas, state: sstate) {
+                                this.state.switch('Sinterklaas.jump.jump_down', state.data.directional, state.currentid);
+                            },
+                            states: {
+                                _normal: {
+                                    enter(this: Sinterklaas) {
+                                        this.state.machines.sint_animation.to('jump');
+                                    }
+                                },
+                                flyingkick: {
+                                    enter(this: Sinterklaas) {
+                                        this.state.machines.sint_animation.to('flyingkick');
+                                    }
+                                },
+                            }
+                        },
+                        jump_down: {
+                            nudges2move: Sinterklaas.JUMP_DURATION / 2,
+                            enter(this: Sinterklaas, state: sstate, directional: boolean = false, substate: 'normal' | 'flyingkick' = 'normal') {
+                                state.reset();
+                                state.data.directional = directional;
+                                state.to(substate);
+                            },
+                            run(this: Sinterklaas, state: sstate) {
+                                this.y += Sinterklaas.JUMP_SPEED;
+
+                                if (state.data.directional) {
+                                    if (this.facing === 'left') {
+                                        this.x -= Sinterklaas.SPEED;
+                                    } else {
+                                        this.x += Sinterklaas.SPEED;
+                                    }
+                                }
+                            },
+                            next(this: Sinterklaas, state: sstate) {
+                                this.state.to('idle');
+                            },
+                            states: {
+                                _normal: {
+                                    enter(this: Sinterklaas) {
+                                        this.state.machines.sint_animation.to('jump');
+                                    }
+                                },
+                                flyingkick: {
+                                    enter(this: Sinterklaas) {
+                                        this.state.machines.sint_animation.to('flyingkick');
+                                    }
+                                },
+                            }
+                        },
+                    },
+                },
+            }
+        }
+    }
+
+    @subscribesToSelfScopedEvent('animationEnd')
+    public handleAnimationEndEvent(event_name: string, emitter: Sinterklaas, animation_name: string): void {
+        switch (event_name) {
+            case 'animationEnd':
+                switch (animation_name) {
+                    case 'highkick':
+                    case 'punch':
+                    case 'lowkick':
+                        this.state.to('idle');
+                        break;
+                    case 'flyingkick':
+                        this.state.switch('Sinterklaas.jump.jump_up.normal');
+                        this.state.switch('Sinterklaas.jump.jump_down.normal');
+                        break;
+                    case 'duckkick':
+                        this.state.to('duck');
+                        break;
+                }
+                break;
+        }
     }
 
     @build_fsm('sint_animation')
@@ -181,20 +349,6 @@ export class Sinterklaas extends SpriteObject {
             }
         };
 
-    }
-
-    @statedef_builder
-    public static build_fsm(): machine_states {
-        return {
-            states: {
-                _idle: {
-                    run: () => { },
-                    enter(this: Sinterklaas) {
-                        this.state.to('sint_animation.idle');
-                    },
-                },
-            },
-        };
     }
 
     @build_bt('enemyBehaviorTree')
