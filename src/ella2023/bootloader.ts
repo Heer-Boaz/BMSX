@@ -7,10 +7,10 @@ import { BitmapId } from './resourceids';
 import { Input, InputMap, KeyboardButton, GamepadInputMapping, KeyboardInputMapping } from '../bmsx/input';
 import { sstate, statedef_builder, machine_states, build_fsm, assign_fsm } from '../bmsx/bfsm';
 import { insavegame } from '../bmsx/gameserializer';
-import { new_area, Direction, Game, new_vec2, get_gamemodel } from '../bmsx/bmsx';
+import { new_area, Direction, Game, new_vec2, get_gamemodel, BFont, new_vec3 } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
 import { BaseModel } from '../bmsx/model';
-import { SpriteObject } from '../bmsx/sprite';
+import { Sprite, SpriteObject } from '../bmsx/sprite';
 import { attach_components } from '../bmsx/component';
 import { BehaviorTreeDefinition, build_bt } from '../bmsx/behaviourtree';
 import { ProhibitLeavingScreenComponent, ScreenBoundaryComponent } from './../bmsx/collisioncomponents';
@@ -18,15 +18,16 @@ import { PositionUpdateAxisComponent } from './../bmsx/collisioncomponents';
 import { subscribesToParentScopedEvent, subscribesToSelfScopedEvent } from '../bmsx/eventemitter';
 import { StateMachineVisualizer } from '../bmsx/bmsxdebugger';
 
-var _game: Game;
+let _game: Game;
 let _model: gamemodel;
-var _view: gameview;
+let _view: gameview;
 
 const _global = window || global;
 
 _global['h406A'] = (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode, debug: boolean = false): void => {
     _model = new gamemodel();
     _view = new gameview(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
+    _view.default_font = new BFont(BitmapId);
     _game = new Game(rom, _model, _view, sndcontext, gainnode, debug);
     _game.start();
 };
@@ -90,50 +91,228 @@ export class JumpingWhileLeavingScreenComponent extends ScreenBoundaryComponent 
 }
 
 @insavegame
-class enemy extends SpriteObject {
+@assign_fsm('sint_animation')
+@attach_components(ProhibitLeavingScreenComponent, JumpingWhileLeavingScreenComponent, StateMachineVisualizer)
+class Sinterklaas extends SpriteObject {
+    constructor() {
+        super('sinterklaas');
+    }
+
+    @build_fsm('sint_animation')
+    public static buildAnimationFsm(): machine_states {
+        return {
+            parallel: true,
+            states: {
+                _idle: {
+                    run: () => { },
+                    enter(this: SpriteObject) {
+                        this.imgid = BitmapId.sint_idle;
+                    },
+                },
+                walk: {
+                    run(this: SpriteObject, state: sstate) { },
+                    enter(this: SpriteObject, state: sstate) {
+                        state.state.reset();
+                        this.imgid = BitmapId.sint_walk;
+                    },
+                    states: {
+                        _walk1: {
+                            nudges2move: 8,
+                            enter(this: SpriteObject, state: sstate) {
+                                this.imgid = BitmapId.sint_walk;
+                                state.reset();
+                            },
+                            next(this: SpriteObject, state: sstate) {
+                                this.state.switch('sint_animation.walk.walk2');
+                            }
+                        },
+                        walk2: {
+                            nudges2move: 8,
+                            enter(this: SpriteObject, state: sstate) {
+                                this.imgid = BitmapId.sint_idle;
+                                state.reset();
+                            },
+                            next(this: SpriteObject, state: sstate) {
+                                this.state.switch('sint_animation.walk.walk1');
+                            }
+                        },
+                    }
+                },
+                highkick: {
+                    nudges2move: Player.ATTACK_DURATION,
+                    enter(this: SpriteObject, state: sstate) {
+                        state.reset();
+                        this.imgid = BitmapId.sint_highkick;
+                    },
+                    next(this: SpriteObject, state: sstate) {
+                        global.eventEmitter.emit('animationEnd', this, 'highkick');
+                        this.state.switch('sint_animation.idle');
+                    }
+                },
+                lowkick: {
+                    nudges2move: Player.ATTACK_DURATION,
+                    enter(this: SpriteObject, state: sstate) {
+                        state.reset();
+                        this.imgid = BitmapId.sint_lowkick;
+                    },
+                    next(this: SpriteObject, state: sstate) {
+                        global.eventEmitter.emit('animationEnd', this, 'lowkick');
+                        this.state.switch('sint_animation.idle');
+                    }
+                },
+                punch: {
+                    nudges2move: Player.ATTACK_DURATION,
+                    enter(this: SpriteObject, state: sstate) {
+                        state.reset();
+                        this.imgid = BitmapId.sint_punch;
+                    },
+                    next(this: SpriteObject, state: sstate) {
+                        global.eventEmitter.emit('animationEnd', this, 'punch');
+                        this.state.switch('sint_animation.idle');
+                    }
+                },
+                duckkick: {
+                    nudges2move: Player.ATTACK_DURATION,
+                    enter(this: SpriteObject, state: sstate) {
+                        state.reset();
+                        this.imgid = BitmapId.sint_flyingkick;
+                    },
+                    next(this: SpriteObject, state: sstate) {
+                        global.eventEmitter.emit('animationEnd', this, 'duckkick');
+                        this.state.switch('sint_animation.duck');
+                    }
+                },
+                flyingkick: {
+                    nudges2move: Player.ATTACK_DURATION,
+                    enter(this: SpriteObject, state: sstate) {
+                        state.reset();
+                        this.imgid = BitmapId.sint_flyingkick;
+                    },
+                    next(this: SpriteObject, state: sstate) {
+                        global.eventEmitter.emit('animationEnd', this, 'flyingkick');
+                        this.state.switch('sint_animation.jump');
+                    }
+                },
+                duck: {
+                    run: () => { },
+                    enter(this: SpriteObject) { this.imgid = BitmapId.sint_duckorjump; },
+                },
+                jump: {
+                    run: () => { },
+                    enter(this: SpriteObject) { this.imgid = BitmapId.sint_duckorjump; },
+                },
+                humiliated: {
+                    nudges2move: 50,
+                    enter(this: SpriteObject, state: sstate) {
+                        state.reset();
+                        this.imgid = BitmapId.sint_humiliated_1;
+                    },
+                    states: {
+                        _wait: {
+                            nudges2move: 50,
+                            auto_nudge: true,
+                            enter(this: SpriteObject) { this.imgid = BitmapId.sint_humiliated_1; },
+                            next(this: SpriteObject, state: sstate) {
+                                this.state.to('sint_animation.humiliated.animation');
+                            }
+                        },
+                        animation: {
+                            nudges2move: 10,
+                            tape: ['humiliated1', 'humiliated2'],
+                            repetitions: 8,
+                            auto_rewind_tape_after_end: true,
+                            auto_nudge: true,
+                            enter(this: SpriteObject, state: sstate) {
+                                state.reset();
+                            },
+                            next(this: SpriteObject, state: sstate) {
+                                this.state.to(`sint_animation.humiliated.animation.${state.current_tape_value}`);
+                            },
+                            end(this: SpriteObject, state: sstate) {
+                                this.state.to('sint_animation.humiliated.waitEnd');
+                            },
+                            states: {
+                                _humiliated1: {
+                                    enter(this: SpriteObject) { this.imgid = BitmapId.sint_humiliated_1; },
+                                },
+                                humiliated2: {
+                                    enter(this: SpriteObject) { this.imgid = BitmapId.sint_humiliated_2; },
+                                },
+                            },
+                        },
+                        waitEnd: {
+                            nudges2move: 50,
+                            auto_nudge: true,
+                            enter(this: SpriteObject) { this.imgid = BitmapId.sint_humiliated_1; },
+                            next(this: SpriteObject, state: sstate) {
+                                this.state.to('sint_animation.idle'); // Placeholder
+                            }
+                        },
+                    },
+                    tape: ['wait', 'animation', 'waitEnd'],
+                },
+            }
+        };
+
+    }
+
+    @statedef_builder
+    public static build_fsm(): machine_states {
+        return {
+            states: {
+                _idle: {
+                    run: () => { },
+                    enter(this: Sinterklaas) {
+                        this.state.to('sint_animation.idle');
+                    },
+                },
+            },
+        };
+    }
+
     @build_bt('enemyBehaviorTree')
     public static buildEnemyBehaviorTree(): BehaviorTreeDefinition {
-        function isPlayerInRange(this: enemy): boolean {
+        function isPlayerInRange(this: Sinterklaas): boolean {
             // Logic to determine if the player is in range
             return false; // Placeholder logic
         }
 
-        function isPlayerAttacking(this: enemy): boolean {
+        function isPlayerAttacking(this: Sinterklaas): boolean {
             // Logic to check if the player is attacking
             return false; // Placeholder logic
         }
 
-        function performAttackMove1(this: enemy): BTStatus {
+        function performAttackMove1(this: Sinterklaas): BTStatus {
             // Logic for attack move 1
             return 'SUCCESS';
         }
 
-        function performAttackMove2(this: enemy): BTStatus {
+        function performAttackMove2(this: Sinterklaas): BTStatus {
             // Logic for attack move 2
             return 'SUCCESS';
         }
 
-        function performSpecialMove(this: enemy): BTStatus {
+        function performSpecialMove(this: Sinterklaas): BTStatus {
             // Logic for special move
             return 'SUCCESS';
         }
 
-        function block(this: enemy): BTStatus {
+        function block(this: Sinterklaas): BTStatus {
             // Logic for block action
             return 'SUCCESS';
         }
 
-        function dodge(this: enemy): BTStatus {
+        function dodge(this: Sinterklaas): BTStatus {
             // Logic for dodge action
             return 'SUCCESS';
         }
 
-        function counter(this: enemy): BTStatus {
+        function counter(this: Sinterklaas): BTStatus {
             // Logic for counter action
             return 'SUCCESS';
         }
 
-        function idle(this: enemy): BTStatus {
+        function idle(this: Sinterklaas): BTStatus {
             // Logic for idle behavior
             return 'SUCCESS';
         }
@@ -437,20 +616,20 @@ class Player extends SpriteObject {
                 _idle: {
                     run: () => { },
                     enter(this: Player) {
-                        this.imgid = BitmapId.lee_idle;
+                        this.imgid = BitmapId.eila_idle;
                     },
                 },
                 walk: {
                     run(this: Player, state: sstate) { },
                     enter(this: Player, state: sstate) {
                         state.state.reset();
-                        this.imgid = BitmapId.lee_walk;
+                        this.imgid = BitmapId.eila_walk;
                     },
                     states: {
                         _walk1: {
                             nudges2move: 8,
                             enter(this: Player, state: sstate) {
-                                this.imgid = BitmapId.lee_walk;
+                                this.imgid = BitmapId.eila_walk;
                                 state.reset();
                             },
                             next(this: Player, state: sstate) {
@@ -460,7 +639,7 @@ class Player extends SpriteObject {
                         walk2: {
                             nudges2move: 8,
                             enter(this: Player, state: sstate) {
-                                this.imgid = BitmapId.lee_idle;
+                                this.imgid = BitmapId.eila_idle;
                                 state.reset();
                             },
                             next(this: Player, state: sstate) {
@@ -473,7 +652,7 @@ class Player extends SpriteObject {
                     nudges2move: Player.ATTACK_DURATION,
                     enter(this: Player, state: sstate) {
                         state.reset();
-                        this.imgid = BitmapId.lee_highkick;
+                        this.imgid = BitmapId.eila_highkick;
                     },
                     next(this: Player, state: sstate) {
                         global.eventEmitter.emit('animationEnd', this, 'highkick');
@@ -484,7 +663,7 @@ class Player extends SpriteObject {
                     nudges2move: Player.ATTACK_DURATION,
                     enter(this: Player, state: sstate) {
                         state.reset();
-                        this.imgid = BitmapId.lee_lowkick;
+                        this.imgid = BitmapId.eila_lowkick;
                     },
                     next(this: Player, state: sstate) {
                         global.eventEmitter.emit('animationEnd', this, 'lowkick');
@@ -495,7 +674,7 @@ class Player extends SpriteObject {
                     nudges2move: Player.ATTACK_DURATION,
                     enter(this: Player, state: sstate) {
                         state.reset();
-                        this.imgid = BitmapId.lee_punch;
+                        this.imgid = BitmapId.eila_punch;
                     },
                     next(this: Player, state: sstate) {
                         global.eventEmitter.emit('animationEnd', this, 'punch');
@@ -506,7 +685,7 @@ class Player extends SpriteObject {
                     nudges2move: Player.ATTACK_DURATION,
                     enter(this: Player, state: sstate) {
                         state.reset();
-                        this.imgid = BitmapId.lee_flyingkick;
+                        this.imgid = BitmapId.eila_duckkick;
                     },
                     next(this: Player, state: sstate) {
                         global.eventEmitter.emit('animationEnd', this, 'duckkick');
@@ -517,7 +696,7 @@ class Player extends SpriteObject {
                     nudges2move: Player.ATTACK_DURATION,
                     enter(this: Player, state: sstate) {
                         state.reset();
-                        this.imgid = BitmapId.lee_flyingkick;
+                        this.imgid = BitmapId.eila_flyingkick;
                     },
                     next(this: Player, state: sstate) {
                         global.eventEmitter.emit('animationEnd', this, 'flyingkick');
@@ -526,61 +705,21 @@ class Player extends SpriteObject {
                 },
                 duck: {
                     run: () => { },
-                    enter(this: Player) { this.imgid = BitmapId.lee_duckorjump; },
+                    enter(this: Player) { this.imgid = BitmapId.eila_duck; },
                 },
                 jump: {
                     run: () => { },
-                    enter(this: Player) { this.imgid = BitmapId.lee_duckorjump; },
+                    enter(this: Player) { this.imgid = BitmapId.eila_jump; },
                 },
                 humiliated: {
                     nudges2move: 50,
                     enter(this: Player, state: sstate) {
                         state.reset();
-                        this.imgid = BitmapId.lee_humiliated_1;
+                        this.imgid = BitmapId.eila_humiliated;
                     },
-                    states: {
-                        _wait: {
-                            nudges2move: 50,
-                            auto_nudge: true,
-                            enter(this: Player) { this.imgid = BitmapId.lee_humiliated_1; },
-                            next(this: Player, state: sstate) {
-                                this.state.to('player_animation.humiliated.animation');
-                            }
-                        },
-                        animation: {
-                            nudges2move: 10,
-                            tape: ['humiliated1', 'humiliated2'],
-                            repetitions: 8,
-                            auto_rewind_tape_after_end: true,
-                            auto_nudge: true,
-                            enter(this: Player, state: sstate) {
-                                state.reset();
-                            },
-                            next(this: Player, state: sstate) {
-                                this.state.to(`player_animation.humiliated.animation.${state.current_tape_value}`);
-                            },
-                            end(this: Player, state: sstate) {
-                                this.state.to('player_animation.humiliated.waitEnd');
-                            },
-                            states: {
-                                _humiliated1: {
-                                    enter(this: Player) { this.imgid = BitmapId.lee_humiliated_1; },
-                                },
-                                humiliated2: {
-                                    enter(this: Player) { this.imgid = BitmapId.lee_humiliated_2; },
-                                },
-                            },
-                        },
-                        waitEnd: {
-                            nudges2move: 50,
-                            auto_nudge: true,
-                            enter(this: Player) { this.imgid = BitmapId.lee_humiliated_1; },
-                            next(this: Player, state: sstate) {
-                                this.state.to('player_animation.idle'); // Placeholder
-                            }
-                        },
-                    },
-                    tape: ['wait', 'animation', 'waitEnd'],
+                    next(this: Player, state: sstate) {
+                        this.state.to('player_animation.idle'); // Placeholder
+                    }
                 },
             }
         };
@@ -631,7 +770,8 @@ class gamemodel extends BaseModel {
     }
 
     public override do_one_time_game_init(): this {
-        _model.spawn(new Player(), new_vec2(100, 100));
+        _model.spawn(new Player(), new_vec3(100, 100, 10));
+        _model.spawn(new Sinterklaas(), new_vec3(10, 95, 0));
         return this;
     }
 
