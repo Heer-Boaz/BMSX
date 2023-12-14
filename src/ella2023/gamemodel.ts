@@ -1,3 +1,4 @@
+import { Room, RoomMgr } from './roommgr';
 import { Sinterklaas } from './sinterklaas';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { sstate, statedef_builder, machine_states } from '../bmsx/bfsm';
@@ -9,6 +10,11 @@ import { Player } from './eila';
 
 @insavegame
 export class gamemodel extends BaseModel {
+    private _currentRoomId: string;
+    public get currentRoomId(): string { return this._currentRoomId; }
+    public set currentRoomId(room_id: string) { this._currentRoomId = room_id; }
+    public room_mgr: RoomMgr;
+
     @statedef_builder
     public static bouw(): machine_states {
         return {
@@ -39,6 +45,9 @@ export class gamemodel extends BaseModel {
 
     public override do_one_time_game_init(): this {
         const _model = get_gamemodel<gamemodel>();
+        _model.room_mgr = new RoomMgr();
+        _model.room_mgr.loadRoom('room2');
+        _model.spawn(_model.room_mgr.rooms[_model._currentRoomId], new_vec3(0, 0, 0));
         _model.spawn(new Player(), new_vec3(100, 100, 10));
         _model.spawn(new Sinterklaas(), new_vec3(10, 95, 0));
         return this;
