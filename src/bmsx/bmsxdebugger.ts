@@ -44,6 +44,7 @@ export class StateMachineVisualizer extends Component {
 
             [_contentDiv, this.machineElements, this.stateElements] = visualizeStateMachine(this.dialog.getDialogElement(), this.dialog.getContentElement(), this.bfsmController);
             this.dialog.updateSize();
+            this.dialog.minimize(); // Minimize the dialog by default
         }
 
         // Re-visualize the state machine
@@ -109,15 +110,16 @@ class ObjectHighlighter extends SpriteObject {
 class FloatingDialog {
     private dialogDiv: HTMLDivElement;
     private contentDiv: HTMLDivElement;
+    private minimizeSpan: HTMLSpanElement;
     private titleElement: HTMLSpanElement;
     private wrapperElement: HTMLDivElement;
 
     constructor(title?: string, previousDialog?: HTMLElement) {
-        [this.dialogDiv, this.contentDiv, this.titleElement, this.wrapperElement] = this.createDialog(title, previousDialog);
+        [this.dialogDiv, this.contentDiv, this.titleElement, this.wrapperElement, this.minimizeSpan] = this.createDialog(title, previousDialog);
         document.body.insertBefore(this.dialogDiv, null);
     }
 
-    private createDialog(title?: string, previousDialog?: HTMLElement): [HTMLDivElement, HTMLDivElement, HTMLSpanElement, HTMLDivElement] {
+    private createDialog(title?: string, previousDialog?: HTMLElement): [HTMLDivElement, HTMLDivElement, HTMLSpanElement, HTMLDivElement, HTMLSpanElement] {
         return createDebugDialog(title, previousDialog);
     }
 
@@ -125,6 +127,12 @@ class FloatingDialog {
         while (this.contentDiv.firstChild) {
             this.contentDiv.removeChild(this.contentDiv.firstChild);
         }
+    }
+
+    public minimize(): void {
+        // Check if the dialog is already minimized
+        if (this.dialogDiv.classList.contains('minimized')) return;
+        this.minimizeSpan.click();
     }
 
     public close(): void {
@@ -591,7 +599,7 @@ function toggleFullscreenOnElement(el: HTMLElement) {
     el.classList.toggle('fullscreen');
 }
 
-function createDebugDialog(title?: string, previousDialog?: HTMLElement): [dialogDiv: HTMLDivElement, contentDiv: HTMLDivElement, titleElement: HTMLSpanElement, wrapperElelement: HTMLDivElement] {
+function createDebugDialog(title?: string, previousDialog?: HTMLElement): [dialogDiv: HTMLDivElement, contentDiv: HTMLDivElement, titleElement: HTMLSpanElement, wrapperElelement: HTMLDivElement, minimizeSpam: HTMLSpanElement] {
     const theDialogDiv = document.createElement('div');
     theDialogDiv.className = 'modal-dialog';
     theDialogDiv.id = DEBUG_ELEMENT_ID;
@@ -739,7 +747,7 @@ function createDebugDialog(title?: string, previousDialog?: HTMLElement): [dialo
     theDialogDiv.insertBefore(wrapperDiv, null);
     theDialogDiv.insertBefore(contentDiv, null);
 
-    return [theDialogDiv, contentDiv, titleSpan, wrapperDiv];
+    return [theDialogDiv, contentDiv, titleSpan, wrapperDiv, minimizeSpan];
 }
 
 export function handleOpenObjectMenu(e: UIEvent | null, previous?: HTMLElement): void {
