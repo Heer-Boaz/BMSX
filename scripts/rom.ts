@@ -369,18 +369,32 @@ async function awaitBootComplete(): Promise<void> {
 async function loadScript(rom: RomPack, romname: string): Promise<void> {
 	try {
 		let scriptText: string;
-		if (!bootrom.debug) {
+		let scriptUrl: string; // Only used for debug mode
+		if (!bootrom.debug) { // If not in debug mode, load the script from the ROM pack
 			scriptText = rom.code;
 		} else {
-			const response = await fetchText(`../rom/${romname}.js`);
-			if (!response) throw new Error(`Failed to fetch file: ${romname}.js`);
-			scriptText = response;
+			const romUrl = `../${romname}.js`; // Fetch the script from the the root of the server for the source maps to work correctly
+			// const response = await fetchText(romUrl);
+			// if (!response) throw new Error(`Failed to fetch file: ${romUrl}`);
+			scriptUrl = romUrl;
+			// scriptText = response; // TODO: Can only be done if we can somehow get the source maps to work in combination with Terser. Solution idea: have Terser be a Browserify transform instead of a seperate build step.
+			// Replace the source map's sources with the correct location of the source files - DOES NOT WORK
+			// scriptText = scriptText.replace(/\n\/\/# sourceMappingURL=.*$/, `//# sourceMappingURL=${romname}.js.map`);
 		}
 
 		let romcode = document.createElement('script');
 		romcode.async = false;
-		romcode.textContent = scriptText;
-		document.head.appendChild(romcode);
+		if (!bootrom.debug) {
+			romcode.textContent = scriptText;
+			document.head.appendChild(romcode); // Add the script to the document head
+		}
+		else {
+			romcode.onload = () => {
+				Promise.resolve(); // Resolve the Promise when the script has been loaded
+			}
+			romcode.src = scriptUrl; // Load the script from the given URL
+			document.head.appendChild(romcode); // Add the script to the document head - this will start loading the script
+		}
 	} catch (err) {
 		throw new Error(`Error in loadScript: ${err.message}`);
 	}
@@ -465,13 +479,13 @@ async function fetchText(url: string): Promise<string> {
 	try {
 		const response = await fetch(url);
 		if (!response.ok) {
-			throw new Error(`Failed to fetch file: ${url}`);
+        	throw new Error(`Failed @fetchText for URL "${url}"`);
 		}
 		const decoder = new TextDecoder('utf-8');
 		const data = await response.arrayBuffer();
 		return decoder.decode(data);
 	} catch (err) {
-		throw new Error(`Error in fetchText: "${err.message}"`);
+        throw new Error(`Error @fetchText for URL "${url}": ${err.message}`);
 	}
 }
 
@@ -485,11 +499,11 @@ async function fetchBuffer(url: string): Promise<ArrayBuffer> {
 	try {
 		const response = await fetch(url);
 		if (!response.ok) {
-			throw new Error(`Failed to fetch file: ${url}`);
+        	throw new Error(`Failed @fetchBuffer for URL "${url}"`);
 		}
 		return await response.arrayBuffer();
 	} catch (err) {
-		throw new Error(`Error in fetchBuffer: "${err.message}"`);
+        throw new Error(`Error @fetchBuffer for URL "${url}": ${err.message}`);
 	}
 }
 
