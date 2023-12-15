@@ -168,22 +168,25 @@ class FloatingDialog {
 }
 
 export function handleDebugMouseDown(e: MouseEvent): void {
-    if (!e.shiftKey) return; // Only start dragging when shift is pressed
+    if (!e.shiftKey) { // Only start or continue dragging when shift is pressed. Note that the shift key is not updated after the mouse is pressed down
+        draggedObj = null; // Stop dragging object
+        return;
+    }
 
-    if (!draggedObj) {
-        let { objUnderCursor, offsetToCursor } = getGameObjectAtCursor(e);
-        if (objUnderCursor && offsetToCursor) {
-            startDragGameObject(objUnderCursor!, offsetToCursor!);
+    if (!draggedObj) { // Only start dragging when no object is currently being dragged
+        let { objUnderCursor, offsetToCursor } = getGameObjectAtCursor(e); // Get the object under the cursor and the offset from the cursor to the object's position
+        if (objUnderCursor && offsetToCursor) { // Only start dragging when an object is under the cursor and the offset is valid (i.e. the object has a position)
+            startDragGameObject(objUnderCursor!, offsetToCursor!); // Start dragging the object under the cursor around
         }
     }
-    else {
-        handleDebugMouseMove(e);
+    else { // Otherwise, continue dragging the object that is already being dragged
+        handleDebugMouseMove(e); // Update the dragged object's position when the mouse is pressed down and moved
     }
 }
 
 export function handleDebugMouseMove(e: MouseEvent): void {
     if (draggedObj) {
-        // Drag dragged object around
+        // Otherwise, continue dragging the object that is already being dragged
         let x = e.offsetX / global.view.scale;
         let y = e.offsetY / global.view.scale;
 
@@ -191,12 +194,18 @@ export function handleDebugMouseMove(e: MouseEvent): void {
             draggedObj.x = ~~x - draggedObjCursorOffset.x;
             draggedObj.y = ~~y - draggedObjCursorOffset.y;
         }
+        if (!e.shiftKey) {
+            draggedObj = null; // Stop dragging object when shift is released
+        }
+        return;
+    }
+    const { objUnderCursor, offsetToCursor } = getGameObjectAtCursor(e);
+    if (e.ctrlKey) { // Ctrl + mouse move = allow for selecting objects in the game world (for debugging)
+        // Highlight mouse-overed objects
+        highlight_object(objUnderCursor);
     }
     else {
-        // Highlight mouse-overed objects
-        let { objUnderCursor, offsetToCursor } = getGameObjectAtCursor(e);
-        highlight_object(objUnderCursor);
-
+        highlight_object(null); // Remove highlight when Ctrl is not pressed or when no object is under the cursor
     }
 }
 
@@ -220,11 +229,12 @@ function highlight_object(o: GameObject) {
 }
 
 export function handleDebugMouseDragEnd(e: MouseEvent): void {
-    if (e.button !== 0) return; // Only stop dragging when primary button is released
+    if (e.shiftKey && e.button !== 0) return; // Only stop dragging when primary button is released or shift is not pressed. Note that the shift key is not updated after the mouse is pressed down
     draggedObj = null;
 }
 
 export function handleDebugMouseOut(e: MouseEvent): void {
+    highlight_object(null);
     draggedObj = null;
 }
 
@@ -839,7 +849,7 @@ function openObjectDetailMenu(obj: any, title: string, previous?: HTMLElement): 
 }
 
 export function handleDebugClick(e: MouseEvent): void {
-    if (e.button === 0 && !e.shiftKey) { // Only open when main button is clicked
+    if (e.button === 0 && !e.shiftKey && e.ctrlKey && !draggedObj) { // Only open when main button is clicked and shift is not pressed and ctrl is pressed and no object is being dragged
         let { objUnderCursor, offsetToCursor } = getGameObjectAtCursor(e);
         if (objUnderCursor) {
             openObjectDetailMenu(objUnderCursor, objUnderCursor.id);

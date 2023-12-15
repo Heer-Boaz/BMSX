@@ -205,12 +205,13 @@ async function buildAndBundleRomSource(romname: string, bootloader_path: string)
 			browserify({
 				debug: true,
 				basedir: '.',
-				project: true,
+				// project: true,
 				cache: {},
 				packageCache: {},
 				exposeAll: true,
 				exclude: [],
 				ignore: ['node_modules', 'dist', 'rom'],
+				entries: [bootloader_ts_path], // Note: this is the entry point for the bundler
 			})
 				.add(bootloader_ts_path)
 				.plugin(tsify, {
@@ -291,9 +292,7 @@ async function minifyGamecode(infile: string): Promise<terser.MinifyOutput> {
 				semicolons: true, // Must be true for Safari support (on iOS)! Otherwise, only black screen shows
 				keep_quoted_props: true,
 				beautify: false,
-				source_map: {
-					content: 'inline',
-				},
+				sourceMap: { content: 'inline', url: 'inline' },
 				comments: false,
 				indent_level: 0,
 				braces: false,
@@ -672,6 +671,9 @@ async function buildRompack(romname: string, respath: string): Promise<any> {
 		if (minifyGamecodeResult.map) {
 			writeFileSync(megarom_min_map_filepath, minifyGamecodeResult.map as string);
 		}
+
+		// copyFileSync(megarom_filepath, `./${megarom_filename}`);
+		// rmSync(megarom_filepath);
 
 		const buffers = new Array<Buffer>();
 		log("Resource bestanden inladen en bufferen...  ");
