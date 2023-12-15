@@ -240,7 +240,7 @@ async function buildAndBundleRomSource(romname: string, bootloader_path: string)
 async function minifyGamecode(infile: string): Promise<terser.MinifyOutput> {
 	try {
 		let options = <terser.MinifyOptions>{
-			ecma: 2017,
+			ecma: 2020,
 			sourceMap: {
 				content: 'inline',
 				url: 'inline',
@@ -249,7 +249,7 @@ async function minifyGamecode(infile: string): Promise<terser.MinifyOutput> {
 			keep_classnames: true,
 			compress: <terser.CompressOptions>{
 				passes: 3, // The maximum number of times to run compress. In some cases more than one pass leads to further compressed code. Keep in mind more passes will take more time
-				ecma: 2017,
+				ecma: 2020,
 				collapse_vars: true,
 				join_vars: true,
 				loops: true,
@@ -285,14 +285,14 @@ async function minifyGamecode(infile: string): Promise<terser.MinifyOutput> {
 				properties: false,
 			},
 			output: <terser.FormatOptions>{
-				ecma: 2017,
+				ecma: 2020,
 				safari10: false,
 				webkit: true,
 				max_line_len: 80,
 				semicolons: true, // Must be true for Safari support (on iOS)! Otherwise, only black screen shows
 				keep_quoted_props: true,
 				beautify: false,
-				sourceMap: { content: 'inline', url: 'inline' },
+				source_map: { content: 'inline', url: 'inline' },
 				comments: false,
 				indent_level: 0,
 				braces: false,
@@ -672,8 +672,10 @@ async function buildRompack(romname: string, respath: string): Promise<any> {
 			writeFileSync(megarom_min_map_filepath, minifyGamecodeResult.map as string);
 		}
 
-		// copyFileSync(megarom_filepath, `./${megarom_filename}`);
-		// rmSync(megarom_filepath);
+		// Copy the minified file to the root folder and remove the original file
+		// This is required for the source map to work correctly
+		copyFileSync(megarom_filepath, `./${megarom_filename}`);
+		rmSync(megarom_filepath);
 
 		const buffers = new Array<Buffer>();
 		log("Resource bestanden inladen en bufferen...  ");
