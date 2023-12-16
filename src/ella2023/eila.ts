@@ -133,6 +133,7 @@ export class Player extends Fighter {
             }
         }
 
+        const statemachine = 'player_animation';
         return {
             states: {
                 _idle: {
@@ -144,7 +145,35 @@ export class Player extends Fighter {
                 humiliated: {
                     enter(this: Player) {
                         this.hittable = false;
+                        this.resetVerticalPosition();
                         this.state.to('player_animation.humiliated');
+                    },
+                },
+                stoerheidsdans: {
+                    auto_tick: false,
+                    ticks2move: 1,
+                    tape: ['highkick', 'lowkick', 'duckkick', 'punch', 'punch'],
+                    repetitions: 2,
+                    enter(this: Fighter, state: sstate) {
+                        state.reset();
+                        this.resetVerticalPosition();
+                        this.hittable = false;
+                        this.state.to(`${statemachine}.${state.current_tape_value}`);
+                        this.facing = (this.facing === 'left' ? 'right' : 'left');
+                    },
+                    run(this: Player, state: sstate) {
+                        // Lelijk
+                        if (this.state.machines[statemachine].is(`idle`)) {
+                            ++state.ticks;
+                        }
+                    },
+                    next(this: Fighter, state: sstate) {
+                        this.state.to(`${statemachine}.${state.current_tape_value}`);
+                        this.facing = (this.facing === 'left' ? 'right' : 'left');
+                    },
+                    end(this: Fighter) {
+                        this.state.to('idle');
+                        this.facing = (this.facing === 'left' ? 'right' : 'left');
                     },
                 },
                 au: {
@@ -295,14 +324,21 @@ export class Player extends Fighter {
                     case 'highkick':
                     case 'punch':
                     case 'lowkick':
-                        this.state.to('idle');
+                        if (!this.state.is('stoerheidsdans')) {
+                            this.state.to('idle');
+                        }
                         break;
                     case 'flyingkick':
                         this.state.switch('Player.jump.jump_up.normal');
                         this.state.switch('Player.jump.jump_down.normal');
                         break;
                     case 'duckkick':
-                        this.state.to('duck');
+                        if (!this.state.is('stoerheidsdans')) {
+                            this.state.to('duck');
+                        }
+                        else {
+                            this.state.to('player_animation.idle');
+                        }
                         break;
                 }
                 break;
@@ -311,6 +347,7 @@ export class Player extends Fighter {
 
     override handleFighterStukEvent(this: Fighter, event_name: string, emitter: Fighter): void {
         this.state.to('humiliated');
+        get_model().theOtherFighter(emitter).state.to('stoerheidsdans');
     }
 
     @build_fsm('player_animation')
@@ -401,8 +438,8 @@ export class Player extends Fighter {
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Player, state: sstate) {
-                        global.eventEmitter.emit('animationEnd', this, 'duckkick');
                         this.state.switch('player_animation.duck');
+                        global.eventEmitter.emit('animationEnd', this, 'duckkick');
                     }
                 },
                 flyingkick: {
@@ -414,8 +451,8 @@ export class Player extends Fighter {
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Player, state: sstate) {
-                        global.eventEmitter.emit('animationEnd', this, 'flyingkick');
                         this.state.switch('player_animation.jump');
+                        global.eventEmitter.emit('animationEnd', this, 'flyingkick');
                     }
                 },
                 duck: {
@@ -427,7 +464,7 @@ export class Player extends Fighter {
                     enter(this: Player) { this.imgid = BitmapId.eila_jump; },
                 },
                 humiliated: {
-                    ticks2move: 100,
+                    ticks2move: 300,
                     enter(this: Player, state: sstate) {
                         state.reset();
                         SM.play(AudioId.stuk);
