@@ -1,7 +1,7 @@
 import { createOptimizedAtlas } from './atlasbuilder';
 import { readdirSync, statSync, readFileSync, writeFileSync, copyFileSync, existsSync, createWriteStream, rmSync, Stats } from 'fs';
 import { join, parse } from 'path';
-import { AudioMeta, RomAsset, RomMeta, ImgMeta, Area, vec2, AudioType, BoundingBoxesPrecalc } from '../src/bmsx/rompack';
+import { AudioMeta, RomAsset, RomMeta, ImgMeta, Area, vec2, AudioType, BoundingBoxesPrecalc, BoundingBoxPrecalc } from '../src/bmsx/rompack';
 import { exec } from 'child_process';
 import * as browserify from 'browserify';
 const tsify = require('tsify');
@@ -656,21 +656,36 @@ function extractBoundingBoxes(image: Image, extractedBoundingBox: Area): Area[] 
 	return adjustBoundingBoxes(image, boundingBoxes);
 }
 
+function flipBoundingBoxHorizontally(box: Area, width: number): Area {
+	return {
+		start: { x: width - box.end.x, y: box.start.y },
+		end: { x: width - box.start.x, y: box.end.y }
+	};
+}
+
+function flipBoundingBoxVertically(box: Area, height: number): Area {
+	return {
+		start: { x: box.start.x, y: height - box.end.y },
+		end: { x: box.end.x, y: height - box.start.y }
+	};
+}
+
+function generateFlippedBoundingBox(image: Image, extractedBoundingBox: Area): BoundingBoxPrecalc {
+	const originalBoundingBox = extractedBoundingBox;
+
+	const horizontalFlipped = flipBoundingBoxHorizontally(originalBoundingBox, image.width);
+	const verticalFlipped = flipBoundingBoxVertically(originalBoundingBox, image.height);
+	const bothFlipped = flipBoundingBoxHorizontally(flipBoundingBoxVertically(originalBoundingBox, image.height), image.width);
+
+	return {
+		original: originalBoundingBox,
+		fliph: horizontalFlipped,
+		flipv: verticalFlipped,
+		fliphv: bothFlipped
+	};
+}
+
 function generateFlippedBoundingBoxes(image: Image, extractedBoundingBoxes: Area[]): BoundingBoxesPrecalc {
-	function flipBoundingBoxHorizontally(box: Area, width: number): Area {
-		return {
-			start: { x: width - box.end.x, y: box.start.y },
-			end: { x: width - box.start.x, y: box.end.y }
-		};
-	}
-
-	function flipBoundingBoxVertically(box: Area, height: number): Area {
-		return {
-			start: { x: box.start.x, y: height - box.end.y },
-			end: { x: box.end.x, y: height - box.start.y }
-		};
-	}
-
 	const originalBoundingBoxes = extractedBoundingBoxes;
 
 	const horizontalFlipped = originalBoundingBoxes.map(box => flipBoundingBoxHorizontally(box, image.width));
@@ -857,6 +872,7 @@ async function buildRompack(romname: string, respath: string): Promise<any> {
 				case 'image':
 					const img = res.img;
 					const img_boundingbox = extractBoundingBox(img); // Extract the bounding box of the image (i.e. the smallest rectangle that contains all non-transparent pixels)
+					const img_boundingbox_precalc: BoundingBoxPrecalc = generateFlippedBoundingBox(img, img_boundingbox);
 					const img_boundingboxes = extractBoundingBoxes(img, img_boundingbox); // Extract the bounding boxes of the image (i.e. the smallest rectangles that contain all non-transparent pixels)
 					const img_boundingboxes_precalc: BoundingBoxesPrecalc = {
 						original: img_boundingboxes,
@@ -868,7 +884,7 @@ async function buildRompack(romname: string, respath: string): Promise<any> {
 						atlassed: false,
 						width: img.width,
 						height: img.height,
-						boundingbox: img_boundingbox,
+						boundingbox: img_boundingbox_precalc,
 						boundingboxes: img_boundingboxes_precalc,
 						centerpoint: img_centerpoint
 					};
