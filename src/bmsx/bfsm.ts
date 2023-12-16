@@ -299,6 +299,10 @@ export class bfsm_controller {
 		const machineid = dotIndex !== -1 ? path.slice(0, dotIndex) : path;
 		const stateids = dotIndex !== -1 ? path.slice(dotIndex + 1) : undefined;
 
+		if (dotIndex === -1) {
+			return this.current_machine.is(path);
+		}
+
 		const machine = this.machines[machineid];
 		if (!machine) {
 			throw new Error(`No machine with ID "${machineid}"`);
@@ -611,7 +615,7 @@ export class statecontext implements IStateController {
 		const dotIndex = path.indexOf('.');
 		const currentPart = dotIndex !== -1 ? path.slice(0, dotIndex) : path;
 		const restParts = dotIndex !== -1 ? path.slice(dotIndex + 1) : undefined;
-		const moreThanOneRestParts = restParts && restParts.indexOf('.') !== -1;
+		const moreThanOneRestParts = restParts ? (restParts.indexOf('.') !== -1) : false;
 
 		let currentContext: IStateController = this.states[currentPart];
 		if (!currentContext) {
@@ -624,7 +628,7 @@ export class statecontext implements IStateController {
 		}
 
 		// If there are no more parts, check if the current state matches the current part
-		return restParts ? this.currentid === currentPart : false;
+		return this.currentid === currentPart;
 	}
 
 	/**
