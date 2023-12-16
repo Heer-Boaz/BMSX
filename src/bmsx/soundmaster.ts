@@ -53,7 +53,7 @@ export class SM {
      * @param sndcontext The audio context to be used by the `SM` class.
      * @param gainnode An optional gain node to be used by the `SM` class. If not provided, a new gain node will be created and connected to the audio context destination.
      */
-    public static init(_audioResources: id2res, sndcontext: AudioContext, gainnode?: GainNode) {
+    public static init(_audioResources: id2res, sndcontext: AudioContext, startingVolume: number, gainnode?: GainNode) {
         SM.sndContext = sndcontext;
         SM.currentEffectAudio = null;
         SM.currentMusicAudio = null;
@@ -62,8 +62,8 @@ export class SM {
             if (!gainnode) {
                 SM.gainNode = SM.sndContext.createGain();
                 SM.gainNode.connect(SM.sndContext.destination);
-                SM.volume = 0;
             }
+            SM.volume = startingVolume ?? 0;
         });
 
         SM.tracks = _audioResources;
