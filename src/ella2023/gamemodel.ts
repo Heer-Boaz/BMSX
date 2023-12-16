@@ -8,6 +8,14 @@ import { GameObject } from '../bmsx/gameobject';
 import { BaseModel } from '../bmsx/model';
 import { Player } from './eila';
 import type { Direction } from "../bmsx/bmsx";
+import { Fighter } from './fighter';
+import { subscribesToGlobalEvent } from '../bmsx/eventemitter';
+import { Hud } from './hud';
+import { Input, InputMap } from '../bmsx/input';
+import { keyboardInputMapping1, gamepadInputMapping, keyboardInputMapping2 } from './inputmapping';
+import { GameOver, Hoera, TitleScreen } from './stuff';
+import { SM } from '../bmsx/soundmaster';
+import { AudioId } from './resourceids';
 
 @insavegame
 export class gamemodel extends BaseModel {
@@ -16,16 +24,92 @@ export class gamemodel extends BaseModel {
     public set currentRoomId(room_id: string) { this._currentRoomId = room_id; }
     public room_mgr: RoomMgr;
 
+    public static readonly SINT_START_HP = 100;
+    public static readonly EILA_START_HP = 100;
+    public static readonly VERTICAL_POSITION_FIGHTERS = 176;
+
+    public theOtherFighter(fighterAskingForTheOther: Fighter): Fighter {
+        if (fighterAskingForTheOther.id === 'player') return this.get('sinterklaas');
+        else return this.get('player');
+    }
+
+    @subscribesToGlobalEvent('hit_animation_end')
+    public handleHitAnimationEndEvent(event_name: string, emitter: Fighter): void {
+        const model = get_gamemodel<gamemodel>();
+        const otherFighter = model.theOtherFighter(emitter);
+        otherFighter.hideHitMarker();
+        otherFighter.state.to('hitanimation.geen_au');
+
+        if (emitter.hp <= 0) {
+            SM.stopMusic();
+            emitter.handleFighterStukEvent(event_name, emitter);
+        }
+    }
+
     @statedef_builder
     public static bouw(): machine_states {
         return {
             states: {
                 _game_start: {
                     run(this: gamemodel, s: sstate) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
-                        this.state.to('default');
+                        this.state.to('titlescreen');
                     }
                 },
                 default: {
+                    enter(this: gamemodel, s: sstate) {
+                        s.reset();
+                        SM.play(AudioId.start);
+                        this.setSpace('niets');
+                    },
+                    states: {
+                        _ffwachten: {
+                            ticks2move: 150,
+                            end(this: gamemodel, s: sstate) {
+                                this.state.to('gamemodel.default.knokken');
+                            },
+                        },
+                        knokken: {
+                            enter(this: gamemodel, s: sstate) {
+                                this.setSpace('default');
+                                this.clear(); // Clear all game objects in the current space
+                                this.room_mgr.loadRoom('room2');
+                                this.spawn(this.room_mgr.rooms[this._currentRoomId], new_vec3(0, 0, 0));
+                                this.spawn(new Player(), new_vec3(256 - 40, 0, 10));
+                                this.spawn(new Sinterklaas(), new_vec3(40, 0, 0));
+                                this.spawn(new Hud(), new_vec3(0, 0, 100));
+                                SM.play(AudioId.knokken);
+                            },
+                        },
+                    },
+                    run: BaseModel.defaultrun,
+                },
+                gameover: {
+                    enter(this: gamemodel, s: sstate) {
+                        this.setSpace('gameover');
+                        if (!this.get('gameover')) {
+                            this.spawn(new GameOver(), new_vec3(0, 0, 0));
+                        }
+                        SM.play(AudioId.gameover);
+                    },
+                    run: BaseModel.defaultrun,
+                },
+                hoera: {
+                    enter(this: gamemodel, s: sstate) {
+                        this.setSpace('hoera');
+                        if (!this.get('hoera')) {
+                            this.spawn(new Hoera(), new_vec3(0, 0, 0));
+                        }
+                        SM.play(AudioId.gameover);
+                    },
+                    run: BaseModel.defaultrun,
+                },
+                titlescreen: {
+                    enter(this: gamemodel, s: sstate) {
+                        this.setSpace('titlescreen');
+                        if (!this.get('title')) {
+                            this.spawn(new TitleScreen(), new_vec3(0, 0, 0));
+                        }
+                    },
                     run: BaseModel.defaultrun,
                 },
             }
@@ -46,11 +130,21 @@ export class gamemodel extends BaseModel {
 
     public override do_one_time_game_init(): this {
         const _model = get_gamemodel<gamemodel>();
+        _model.addSpace('gameover');
+        _model.addSpace('hoera');
+        _model.addSpace('titlescreen');
+        _model.addSpace('niets');
+
+        Input.setInputMap(0, {
+            keyboard: keyboardInputMapping1,
+            gamepad: null,
+        } as InputMap);
+        Input.setInputMap(1, {
+            keyboard: null,
+            gamepad: gamepadInputMapping,
+        } as InputMap);
+
         _model.room_mgr = new RoomMgr();
-        _model.room_mgr.loadRoom('room2');
-        _model.spawn(_model.room_mgr.rooms[_model._currentRoomId], new_vec3(0, 0, 0));
-        _model.spawn(new Player(), new_vec3(100, 100, 10));
-        _model.spawn(new Sinterklaas(), new_vec3(10, 95, 0));
         return this;
     }
 
