@@ -3,11 +3,12 @@ import { SpriteObject } from '../bmsx/sprite';
 import { attach_components } from '../bmsx/component';
 import { ProhibitLeavingScreenComponent } from './../bmsx/collisioncomponents';
 import { HitBoxVisualizer, StateMachineVisualizer } from '../bmsx/bmsxdebugger';
-import { BitmapId } from './resourceids';
+import { AudioId, BitmapId } from './resourceids';
 import { assign_fsm, build_fsm, machine_states, sstate } from '../bmsx/bfsm';
 import type { vec2, GameObjectId, Area, vec3 } from '../bmsx/rompack';
 import { middlepoint_area, new_area } from '../bmsx/bmsx';
 import { gamemodel } from './gamemodel';
+import { SM } from '../bmsx/soundmaster';
 
 export type AttackType = string;
 
@@ -81,6 +82,7 @@ export abstract class Fighter extends SpriteObject {
     public abstract handleFighterStukEvent(event_name: string, emitter: Fighter): void;
 
     protected doAttackFlow(attackType: AttackType, opponent: Fighter): boolean {
+        if (!opponent) return false;
         const hitArea = this.attackHitsOpponent(attackType, opponent);
         if (hitArea) {
             this.handleHittingOpponent(attackType, opponent, hitArea);
@@ -102,10 +104,15 @@ export abstract class Fighter extends SpriteObject {
         this.showHitMarker(hitMarkerInfo);
     }
 
-    protected handleBeingHit(AttackType: AttackType, opponent: Fighter) {
+    protected handleBeingHit(attackType: AttackType, opponent: Fighter) {
         this.state.to('hitanimation.wel_au');
         opponent.state.to('hitanimation.doet_au');
-        this.hp -= getDamage(AttackType);
+        this.hp -= getDamage(attackType);
+        if (attackType === 'punch') {
+            SM.play(AudioId.hit2);
+        } else {
+            SM.play(AudioId.hit1);
+        }
     }
 
     override paint(): void {
@@ -120,7 +127,7 @@ export abstract class Fighter extends SpriteObject {
         this.resetVerticalPosition();
     }
 
-    protected resetVerticalPosition(): void {
+    public resetVerticalPosition(): void {
         this.setYNoSweep(gamemodel.VERTICAL_POSITION_FIGHTERS - this.sy);
     }
 
