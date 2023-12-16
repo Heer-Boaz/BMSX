@@ -885,25 +885,41 @@ void main() {
         GLView.updateBuffer(gl, this.color_overrideBuffer, gl.ARRAY_BUFFER, COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER * this.drawImgReqIndex, color_override);
     }
 
-    override drawRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
+    override drawRectangle(x: number, y: number, ex: number, ey: number, c: Color, z = 0): void {
         // Use the white pixel image and color it with the desired color
         const imgid = 'whitepixel';
+        // Reverse x and ex if ex < x
+        if (ex < x) {
+            [x, ex] = [ex, x];
+        }
+        // Reverse y and ey if ey < y
+        if (ey < y) {
+            [y, ey] = [ey, y];
+        }
 
         // Draw the top border
-        this.drawImg({ x: x, y: y, z: 0, imgid: imgid, sx: ex - x, sy: 1, colorize: c });
+        this.drawImg({ x: x, y: y, z: z, imgid: imgid, sx: ex - x, sy: 1, colorize: c });
         // Draw the bottom border
-        this.drawImg({ x: x, y: ey - 1, z: 0, imgid: imgid, sx: ex - x, sy: 1, colorize: c });
+        this.drawImg({ x: x, y: ey - 1, z: z, imgid: imgid, sx: ex - x, sy: 1, colorize: c });
         // Draw the left border
-        this.drawImg({ x: x, y: y, z: 0, imgid: imgid, sx: 1, sy: ey - y, colorize: c });
+        this.drawImg({ x: x, y: y, z: z, imgid: imgid, sx: 1, sy: ey - y, colorize: c });
         // Draw the right border
-        this.drawImg({ x: ex - 1, y: y, z: 0, imgid: imgid, sx: 1, sy: ey - y, colorize: c });
+        this.drawImg({ x: ex - 1, y: y, z: z, imgid: imgid, sx: 1, sy: ey - y, colorize: c });
     }
 
-    override fillRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
+    override fillRectangle(x: number, y: number, ex: number, ey: number, c: Color, z = 0): void {
         // Use the white pixel image and color it with the desired color
         const imgid = 'whitepixel';
+        // Reverse x and ex if ex < x
+        if (ex < x) {
+            [x, ex] = [ex, x];
+        }
+        // Reverse y and ey if ey < y
+        if (ey < y) {
+            [y, ey] = [ey, y];
+        }
 
         // Draw and stretch the image to fill the rectangle
-        this.drawImg({ x: x, y: y, z: 0, imgid: imgid, sx: ex - x, sy: ey - y, colorize: c });
+        this.drawImg({ x: x, y: y, z: z, imgid: imgid, sx: ex - x, sy: ey - y, colorize: c, });
     }
 }
