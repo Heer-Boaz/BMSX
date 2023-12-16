@@ -2,7 +2,7 @@ import { translate_vec3, set_inplace_vec3, set_inplace_area } from "./bmsx";
 import { GameObject } from "./gameobject";
 import { insavegame } from "./gameserializer";
 import { DEFAULT_VERTEX_COLOR } from "./glview";
-import { Area, BoundingBoxesPrecalc, vec3 } from "./rompack";
+import { Area, BoundingBoxPrecalc, BoundingBoxesPrecalc, vec3 } from "./rompack";
 import { Color, DrawImgOptions, paintImage } from "./view";
 
 @insavegame
@@ -41,20 +41,33 @@ export abstract class SpriteObject extends GameObject {
         if (imgmeta) {
             this.sx = imgmeta['width'];
             this.sy = imgmeta['height'];
-            if (this.hitarea) { // Only update the hitarea if it exists
-                const boundingbox = imgmeta['boundingbox']; // Get the bounding box of the image
-                if (boundingbox) { // Only update the hitarea if the bounding box exists
-                    set_inplace_area(this.hitarea, boundingbox); // Update the hitarea to match the bounding box of the image (used for collision detection)
-                }
-            }
+
+            this.updateBoundingBoxes();
         }
     }
 
     private updateBoundingBoxes() {
+        if (!this.hitarea) return; // Only update the hitarea if it exists
         const imgmeta = global.rom['img_assets'][this.sprite.imgid]?.['imgmeta'];
+        const boundingbox = imgmeta['boundingbox']; // Get the bounding box of the image
+        if (boundingbox) { // Only update the hitarea if the bounding box exists
+            set_inplace_area(this.hitarea, SpriteObject.selectBoundingBox(this.flip_h, this.flip_v, boundingbox)); // Update the hitarea to match the bounding box of the image (used for collision detection)
+        }
         const boundingboxes = imgmeta['boundingboxes']; // Get the bounding boxes of the image
         if (boundingboxes) { // Only update the hitarea if the bounding boxes exist
             this.boundingBoxes = SpriteObject.selectBoundingBoxes(this.flip_h, this.flip_v, boundingboxes); // Update the hitarea to match the bounding boxes of the image (used for collision detection)
+        }
+    }
+
+    private static selectBoundingBox(flip_h: boolean, flip_v: boolean, box: BoundingBoxPrecalc): Area {
+        if (flip_h && flip_v) {
+            return box.fliphv;
+        } else if (flip_h) {
+            return box.fliph;
+        } else if (flip_v) {
+            return box.flipv;
+        } else {
+            return box.original;
         }
     }
 
