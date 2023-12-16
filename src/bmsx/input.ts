@@ -192,7 +192,7 @@ export class Input {
 
         const keyboardButtonState = Input.getKeyState(keyboardKey);
         const gamepadButtonState = Input.getGamepadButtonState(playerIndex, gamepadButton);
-        return { action: action, pressed: keyboardButtonState.pressed || gamepadButtonState.pressed, consumed: keyboardButtonState.consumed || gamepadButtonState.consumed };
+        return { action: action, pressed: keyboardButtonState.pressed || (gamepadButtonState?.pressed ?? false), consumed: keyboardButtonState.consumed && (gamepadButtonState?.consumed ?? true) };
     }
 
     /**
@@ -317,7 +317,8 @@ export class Input {
         if (btn === null) return { pressed: false, consumed: false };
 
         const stateMap = Input.GamepadButtonStates[playerIndex] || {};
-        const pressRequestedStateMap = Input.GamepadButtonPressedConsumedStates[playerIndex] || {};
+        const pressRequestedStateMap = Input.GamepadButtonPressedConsumedStates[playerIndex];
+        if (!pressRequestedStateMap) return null;
         return Input.getPressedState(stateMap, pressRequestedStateMap, btn);
     }
 
@@ -671,9 +672,9 @@ export class Input {
             // Reset gamepad button states
             const playerIndex = Input.GamepadPlayerMap[gamepad.index];
             Input.GamepadButtonStates[playerIndex] = {};
-            if (!Input.GamepadButtonPressedConsumedStates[playerIndex]) {
-                Input.GamepadButtonPressedConsumedStates[playerIndex] = {};
-            }
+            // if (!Input.GamepadButtonPressedConsumedStates[playerIndex]) {
+            Input.GamepadButtonPressedConsumedStates[playerIndex] = {};
+            // }
 
             // Check whether any axes have been triggered
             Input.pollGamepadAxes(gamepad, playerIndex);
@@ -718,9 +719,11 @@ export class Input {
      * A player is considered available if there is a connected gamepad that is not already assigned to a player.
      * @returns The index of the next available player, or undefined if no player is available.
      */
+    private static assignedGamepads: number = 0;
     private static getNextAvailablePlayerIndex(): number | undefined {
-        for (let i = 1; i < navigator.getGamepads().length; i++) {
+        for (let i = this.assignedGamepads; i < navigator.getGamepads().length; i++) {
             if (Input.isGamepadConnected(i)) {
+                this.assignedGamepads++;
                 return i;
             }
         }
