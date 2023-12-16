@@ -39,7 +39,7 @@ export class StateMachineVisualizer extends Component {
     constructor(_id: GameObjectId) {
         super(_id);
         this.bfsmController = global.model.get(_id).state;
-        this.enabled = true;
+        this.enabled = false;
     }
 
     override postprocessingUpdate({ params, returnvalue }: ComponentUpdateParams): void {
