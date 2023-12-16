@@ -19,7 +19,7 @@
 				"$tsc"
 			],
 			"icon": {
-				"id": "game",
+				"id": "history",
 				"color": "terminal.ansiRed"
 			},
 			"presentation": {
@@ -65,6 +65,51 @@
 			"icon": {
 				"id": "game",
 				"color": "terminal.ansiGreen"
+			},
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem",
+				"group": "ROMPACKER"
+			}
+		},
+		{
+			"label": "Forcefully build the game",
+			"detail": "Runs rompacker.js to create the ROM + resources. Doesn't run dependent tasks for building rom.js & rompacker.js!",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"${workspaceFolder}/rom/rompacker.js",
+				"-romname",
+				"${input:romtobuild}",
+				"-bootloaderpath",
+				"src/${input:romtobuild}",
+				"-respath",
+				"./src/${input:romtobuild}/res",
+				"-title",
+				"${input:romtobuild}",
+				"--nodeploy",
+				"--force",
+			],
+			"problemMatcher": [
+				"$node-sass",
+				"$tsc"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"dependsOrder": "sequence",
+			"dependsOn": [
+				"output romtobuild"
+			],
+			"icon": {
+				"id": "sync",
+				"color": "terminal.ansiRed"
 			},
 			"presentation": {
 				"echo": false,
