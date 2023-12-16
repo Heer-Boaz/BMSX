@@ -20,6 +20,7 @@ export type SinterklaasAttackType = 'punch' | 'lowkick' | 'highkick' | 'flyingki
 
 @insavegame
 @assign_fsm('sint_animation')
+@attach_components(JumpingWhileLeavingScreenComponent)
 export class Sinterklaas extends Fighter {
     public static readonly ATTACK_DURATION = 15;
     public static readonly JUMP_SPEED = 2;
