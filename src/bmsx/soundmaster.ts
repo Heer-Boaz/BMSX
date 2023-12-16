@@ -210,7 +210,7 @@ export class SM {
      */
     public static stopEffect(): void {
         try {
-            if (SM.currentEffectAudio) SM.releaseNode(SM.currentEffectNode);
+            SM.releaseNode(SM.currentEffectNode);
         } catch (e) { console.warn(e); }
         SM.currentEffectNode = null;
     }
@@ -221,7 +221,7 @@ export class SM {
      */
     public static stopMusic(): void {
         try {
-            if (SM.currentMusicAudio) SM.releaseNode(SM.currentMusicNode);
+            SM.releaseNode(SM.currentMusicNode);
         } catch (e) { console.warn(e); }
         SM.currentMusicNode = null;
     }
