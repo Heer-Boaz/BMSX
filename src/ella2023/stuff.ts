@@ -53,7 +53,6 @@ export class GameOver extends SpriteObject {
         super('gameover');
         this.imgid = BitmapId.gameover;
     }
-
 }
 
 export class Hoera extends SpriteObject {
