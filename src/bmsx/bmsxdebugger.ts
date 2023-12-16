@@ -1,10 +1,12 @@
 import { MachineDefinitions, bfsm_controller, statecontext } from './bfsm';
 import { area2size, new_vec2, translate_vec2, trunc_vec3, div_vec2 } from './bmsx';
 import { PositionUpdateAxisComponent } from './collisioncomponents';
-import { Component, ComponentUpdateParams, componenttags_postprocessing } from './component';
+import { Component, ComponentUpdateParams, componenttags_postprocessing, componenttags_preprocessing } from './component';
 import { GameObject } from './gameobject';
 import { Serializer } from './gameserializer';
+import { GLView } from './glview';
 import { Input } from './input';
+import { Msx1Colors } from './msx';
 import type { GameObjectId, vec2 } from './rompack';
 import { SpriteObject } from './sprite';
 import { Color } from './view';
@@ -37,10 +39,13 @@ export class StateMachineVisualizer extends Component {
     constructor(_id: GameObjectId) {
         super(_id);
         this.bfsmController = global.model.get(_id).state;
-        this.dialog = new FloatingDialog(`FSM: [${_id}]`);
+        this.enabled = false;
     }
 
     override postprocessingUpdate({ params, returnvalue }: ComponentUpdateParams): void {
+        if (!this.dialog) {
+            this.dialog = new FloatingDialog(`FSM: [${this.parentid}]`);
+        }
         if (!this.machineElements || !this.stateElements) {
             let _contentDiv: HTMLElement;
 
@@ -51,6 +56,24 @@ export class StateMachineVisualizer extends Component {
 
         // Re-visualize the state machine
         highlightCurrentState(this.stateElements, this.machineElements, this.bfsmController);
+    }
+}
+
+@componenttags_preprocessing('render') // Postprocessing update to render the state machine
+export class HitBoxVisualizer extends Component {
+    constructor(_id: GameObjectId) {
+        super(_id);
+        this.enabled = false;
+    }
+
+    override preprocessingUpdate(): void {
+        const parent = this.parent as SpriteObject;
+        if (parent.hasBoundingBoxes()) {
+            parent.boundingBoxes.forEach(box => {
+                (global.view as GLView).drawRectangle(box.start.x, box.start.y, box.end.x, box.end.y, Msx1Colors[6]);
+            });
+        }
+
     }
 }
 
