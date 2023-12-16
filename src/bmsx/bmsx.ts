@@ -562,6 +562,10 @@ export function new_area(sx: number, sy: number, ex: number, ey: number): Area {
     return { start: { x: sx, y: sy }, end: { x: ex, y: ey } };
 }
 
+export function middlepoint_area(a: Area): vec2 {
+    return { x: ~~((a.start.x + a.end.x) / 2), y: ~~((a.start.y + a.end.y) / 2) };
+}
+
 /// Alternative implementation for Point.Set()
 export function set_vec2(p: vec2, new_x: number, new_y: number) {
     p.x = new_x;
@@ -849,7 +853,7 @@ export class Game {
 
         BaseView.images = _rom.images;
         global.view.init();
-        SM.init(_rom['snd_assets'], sndcontext, gainnode);
+        SM.init(_rom['snd_assets'], sndcontext, 1, gainnode);
         Input.init();
 
         // Prevent the user from accidentally closing the game window if not in debug mode
@@ -950,9 +954,9 @@ export class Game {
  * Represents the direction values.
  */
 export enum Direction {
-	None = 0,
-	Up = 1,
-	Right = 2,
-	Down = 3,
-	Left = 4
+    None = 0,
+    Up = 1,
+    Right = 2,
+    Down = 3,
+    Left = 4
 }
