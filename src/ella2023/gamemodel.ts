@@ -163,7 +163,7 @@ export class gamemodel extends BaseModel {
 
         Input.setInputMap(0, {
             keyboard: keyboardInputMapping1,
-            gamepad: null,
+            gamepad: gamepadInputMapping,
         } as InputMap);
         Input.setInputMap(1, {
             keyboard: null,
