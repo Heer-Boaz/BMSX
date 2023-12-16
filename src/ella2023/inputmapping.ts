@@ -11,7 +11,7 @@ export type MyGamepadInputMapping = {
     [key in keyof GamepadInputMapping & Action]: GamepadButton;
 };
 
-export const keyboardInputMapping: MyKeyboardInputMapping = {
+export const keyboardInputMapping1: MyKeyboardInputMapping = {
     'jump': 'ArrowUp',
     'right': 'ArrowRight',
     'duck': 'ArrowDown',
@@ -21,14 +21,24 @@ export const keyboardInputMapping: MyKeyboardInputMapping = {
     'lowkick': 'KeyZ',
     'block': 'ShiftLeft',
 };
+export const keyboardInputMapping2: MyKeyboardInputMapping = {
+    'jump': 'q',
+    'right': 'w',
+    'duck': 'e',
+    'left': 'r',
+    'punch': 't',
+    'highkick': 'y',
+    'lowkick': 'u',
+    'block': 'i',
+};
 
 export const gamepadInputMapping: MyGamepadInputMapping = {
     'jump': 'up',
     'right': 'right',
     'duck': 'down',
     'left': 'left',
-    'punch': 'a',
-    'highkick': 'b',
-    'lowkick': 'x',
+    'punch': 'b',
+    'highkick': 'x',
+    'lowkick': 'a',
     'block': 'y',
 };
