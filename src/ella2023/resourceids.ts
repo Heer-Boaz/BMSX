@@ -102,6 +102,7 @@ export enum AudioId {
 	knokken = 'knokken',
 	oei = 'oei',
 	start = 'start',
+	trainen = 'trainen',
 	vernederdans = 'vernederdans',
 	hit1 = 'hit1',
 	hit2 = 'hit2',
