@@ -1,6 +1,6 @@
 import { KeyboardInputMapping, KeyboardButton, GamepadInputMapping, GamepadButton } from '../bmsx/input';
 
-export const actions = ['jump', 'right', 'duck', 'left', 'punch', 'highkick', 'lowkick', 'block'] as const;
+export const actions = ['jump', 'right', 'duck', 'left', 'punch', 'highkick', 'lowkick', 'stoer'] as const;
 export type Action = typeof actions[number];
 
 export type MyKeyboardInputMapping = {
@@ -19,7 +19,7 @@ export const keyboardInputMapping1: MyKeyboardInputMapping = {
     'punch': 'KeyX',
     'highkick': 'KeyA',
     'lowkick': 'KeyZ',
-    'block': 'ShiftLeft',
+    'stoer': 'ShiftLeft',
 };
 export const keyboardInputMapping2: MyKeyboardInputMapping = {
     'jump': 'q',
@@ -29,7 +29,7 @@ export const keyboardInputMapping2: MyKeyboardInputMapping = {
     'punch': 't',
     'highkick': 'y',
     'lowkick': 'u',
-    'block': 'i',
+    'stoer': 'i',
 };
 
 export const gamepadInputMapping: MyGamepadInputMapping = {
@@ -40,5 +40,5 @@ export const gamepadInputMapping: MyGamepadInputMapping = {
     'punch': 'b',
     'highkick': 'x',
     'lowkick': 'a',
-    'block': 'y',
+    'stoer': 'y',
 };
