@@ -56,6 +56,13 @@ export interface AudioMeta {
 	loop?: number; // The loop point of the audio asset.
 }
 
+export interface BoundingBoxPrecalc {
+	original: Area, // The bounding box of the image. Used for collision detection.
+	fliph: Area, // The bounding box of the image, when flipped horizontally. Used for collision detection.
+	flipv: Area, // The bounding box of the image, when flipped vertically. Used for collision detection.
+	fliphv: Area, // The bounding box of the image, when flipped both horizontally and vertically. Used for collision detection.
+}
+
 export interface BoundingBoxesPrecalc {
 	original: Area[], // The bounding boxes of the image. Used for collision detection.
 	fliph: Area[], // The bounding boxes of the image, when flipped horizontally. Used for collision detection.
@@ -74,7 +81,7 @@ export interface ImgMeta {
 	texcoords_fliph?: number[]; // The texture coordinates for the image, when flipped horizontally.
 	texcoords_flipv?: number[]; // The texture coordinates for the image, when flipped vertically.
 	texcoords_fliphv?: number[]; // The texture coordinates for the image, when flipped both horizontally and vertically.
-	boundingbox?: Area; // The bounding box of the image. Used for collision detection.
+	boundingbox?: BoundingBoxPrecalc; // The bounding box of the image. Used for collision detection.
 	boundingboxes?: BoundingBoxesPrecalc; // The bounding boxes of the image. Used for collision detection.
 	centerpoint?: vec2; // The center point of the image, based on the bounding box.
 }
