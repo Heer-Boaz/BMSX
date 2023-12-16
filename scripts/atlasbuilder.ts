@@ -346,21 +346,25 @@ export function createOptimizedAtlas(loadedResources: ILoadedResource[]): HTMLCa
 	const image_assets = loadedResources.filter(resource => resource.type === "image");
 	const rects = image_assets.map(img_resource => ({ x: undefined, y: undefined, width: img_resource.img?.width, height: img_resource.img?.height, id: img_resource.id }));
 
-	// const binpack_result = maximalRectanglesPacker(rects, ATLAS_PX_SIZE, ATLAS_PX_SIZE);
-	// const binpack_result = shelfBinPacker(rects, ATLAS_PX_SIZE, ATLAS_PX_SIZE);
+	const maxrect_result = maximalRectanglesPacker(rects, ATLAS_MAX_SIZE_IN_PIXELS, ATLAS_MAX_SIZE_IN_PIXELS);
+	const binpack_result = shelfBinPacker(rects, ATLAS_MAX_SIZE_IN_PIXELS, ATLAS_MAX_SIZE_IN_PIXELS);
 	const imagepacker_result = tprfPacker(rects, ATLAS_MAX_SIZE_IN_PIXELS, ATLAS_MAX_SIZE_IN_PIXELS);
 
-	// atlasExploitedX = Math.max(...packedRects.map(rect => rect.x + rect.item.width));
-	// atlasUnsafeY = Math.max(...packedRects.map(rect => rect.y + rect.item.height));
-	// atlasExploitedX = binpack_result.width;
-	// atlasUnsafeY = binpack_result.height;
-	const atlas_width = CROP_ATLAS ? imagepacker_result.width : ATLAS_MAX_SIZE_IN_PIXELS, atlas_height = CROP_ATLAS ? imagepacker_result.height : ATLAS_MAX_SIZE_IN_PIXELS;
+	// Determine the smallest result
+	const results = [maxrect_result, binpack_result, imagepacker_result];
+	const smallest_result = results.reduce((smallest, current) => {
+		const smallestArea = smallest.width * smallest.height;
+		const currentArea = current.width * current.height;
+		return currentArea < smallestArea ? current : smallest;
+	});
+
+	const atlas_width = CROP_ATLAS ? smallest_result.width : ATLAS_MAX_SIZE_IN_PIXELS, atlas_height = CROP_ATLAS ? smallest_result.height : ATLAS_MAX_SIZE_IN_PIXELS;
 
 	const atlasCanvas: HTMLCanvasElement = <any>createCanvas(atlas_width, atlas_height);
 	const ctx: CanvasRenderingContext2D = atlasCanvas.getContext('2d')!;
 
 	// Draw images onto the atlas canvas
-	for (const packedRect of imagepacker_result.items) {
+	for (const packedRect of smallest_result.items) {
 		const img_asset = image_assets.find(img_asset => img_asset.id == packedRect.item.id);
 		const img = img_asset.img;
 		ctx.drawImage(img, packedRect.x, packedRect.y);
