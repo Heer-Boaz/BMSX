@@ -65,6 +65,32 @@ export class gamemodel extends BaseModel {
                         _ffwachten: {
                             ticks2move: 150,
                             end(this: gamemodel, s: sstate) {
+                                this.state.to('gamemodel.default.oefenen');
+                            },
+                        },
+                        oefenen: {
+                            enter(this: gamemodel, s: sstate) {
+                                this.setSpace('default');
+                                this.clear(); // Clear all game objects in the current space
+                                this.room_mgr.loadRoom('room1');
+                                this.spawn(this.room_mgr.rooms[this._currentRoomId], new_vec3(0, 0, 0));
+                                this.spawn(new Player(), new_vec3(256 - 60, 0, 10));
+                                this.spawn(new Hud(), new_vec3(0, 0, 100));
+                                SM.play(AudioId.trainen);
+                            },
+                            run(this: gamemodel, s: sstate) {
+                                const player = this.get('player');
+                                if (player.x < 16) {
+                                    this.state.to('gamemodel.default.ffwachten2');
+                                }
+                            },
+                        },
+                        ffwachten2: {
+                            ticks2move: 50,
+                            enter(this: gamemodel, s: sstate) {
+                                this.setSpace('niets');
+                            },
+                            end(this: gamemodel, s: sstate) {
                                 this.state.to('gamemodel.default.knokken');
                             },
                         },
@@ -74,8 +100,8 @@ export class gamemodel extends BaseModel {
                                 this.clear(); // Clear all game objects in the current space
                                 this.room_mgr.loadRoom('room2');
                                 this.spawn(this.room_mgr.rooms[this._currentRoomId], new_vec3(0, 0, 0));
-                                this.spawn(new Player(), new_vec3(256 - 40, 0, 10));
-                                this.spawn(new Sinterklaas(), new_vec3(40, 0, 0));
+                                this.spawn(new Player(), new_vec3(256 - 60, 0, 10));
+                                this.spawn(new Sinterklaas(), new_vec3(60, 0, 0));
                                 this.spawn(new Hud(), new_vec3(0, 0, 100));
                                 SM.play(AudioId.knokken);
                             },
