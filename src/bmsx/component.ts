@@ -271,6 +271,18 @@ export function update_tagged_components<T extends IComponentContainer>(...tags:
     };
 }
 
+// /**
+//  * Attaches the specified components to a game object constructor.
+//  *
+//  * @param components - The components to attach.
+//  * @returns A decorator function that attaches the components to the game object constructor.
+//  */
+// export function attach_components(...components: ComponentConstructor<Component>[]) {
+//     return function (constructor: GameObjectConstructorWithComponentList) {
+//         constructor.autoAddComponents = components;
+//     };
+// }
+
 /**
  * Attaches the specified components to a game object constructor.
  *
@@ -279,6 +291,10 @@ export function update_tagged_components<T extends IComponentContainer>(...tags:
  */
 export function attach_components(...components: ComponentConstructor<Component>[]) {
     return function (constructor: GameObjectConstructorWithComponentList) {
-        constructor.autoAddComponents = components;
+        // Get components from parent class
+        const parentComponents = Object.getPrototypeOf(constructor).autoAddComponents || [];
+
+        // Merge parent components with current components
+        constructor.autoAddComponents = [...parentComponents, ...components];
     };
 }
