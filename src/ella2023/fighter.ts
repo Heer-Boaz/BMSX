@@ -2,11 +2,12 @@ import { insavegame } from '../bmsx/gameserializer';
 import { SpriteObject } from '../bmsx/sprite';
 import { attach_components } from '../bmsx/component';
 import { ProhibitLeavingScreenComponent } from './../bmsx/collisioncomponents';
-import { StateMachineVisualizer } from '../bmsx/bmsxdebugger';
+import { HitBoxVisualizer, StateMachineVisualizer } from '../bmsx/bmsxdebugger';
 import { BitmapId } from './resourceids';
 import { assign_fsm, build_fsm, machine_states, sstate } from '../bmsx/bfsm';
-import type { vec2, GameObjectId } from '../bmsx/rompack';
-import { new_area } from '../bmsx/bmsx';
+import type { vec2, GameObjectId, Area, vec3 } from '../bmsx/rompack';
+import { middlepoint_area, new_area } from '../bmsx/bmsx';
+import { gamemodel } from './gamemodel';
 
 export type AttackType = string;
 
@@ -14,18 +15,34 @@ export type HitMarkerType = 'player_hit' | 'enemy_hit' | 'poef';
 
 export type HitMarkerInfo = {
     type: HitMarkerType,
-    offset: vec2, // Offset from the fighter's position
+    pos: vec2, // Offset from the fighter's position
 };
 
+function getDamage(attackType: AttackType): number {
+    switch (attackType) {
+        default:
+            return 10;
+    }
+}
+
 @insavegame
-@attach_components(ProhibitLeavingScreenComponent, StateMachineVisualizer)
+@attach_components(ProhibitLeavingScreenComponent, StateMachineVisualizer, HitBoxVisualizer)
 @assign_fsm('hitanimation')
 export abstract class Fighter extends SpriteObject {
     @build_fsm('hitanimation')
     static bouw_hitanimation_fsm(): machine_states {
         return {
+            parallel: true,
             states: {
                 _geen_au: {
+                },
+                doet_au: {
+                    enter(this: Fighter, state: sstate) {
+                        this.state.pause_all_except('hitanimation');
+                    },
+                    exit(this: Fighter, state: sstate) {
+                        this.state.resume_all_statemachines();
+                    },
                 },
                 wel_au: {
                     tape: [-1, 1],
@@ -33,14 +50,17 @@ export abstract class Fighter extends SpriteObject {
                     auto_tick: true,
                     enter(this: Fighter, state: sstate) {
                         state.reset();
-                        this.moveXNoSweep(state.head);
+                        this.state.pause_all_except('hitanimation');
                     },
                     next(this: Fighter, state: sstate) {
-                        this.moveXNoSweep(state.head);
+                        this.moveXNoSweep(state.current_tape_value);
                     },
                     end(this: Fighter, state: sstate) {
                         this.state.to('hitanimation.geen_au');
                         global.eventEmitter.emit('hit_animation_end', this);
+                    },
+                    exit(this: Fighter, state: sstate) {
+                        this.state.resume_all_statemachines();
                     },
                 },
             }
@@ -49,6 +69,7 @@ export abstract class Fighter extends SpriteObject {
 
     protected currentHitMarker: HitMarkerInfo;
     public facing: 'left' | 'right';
+    public hp: number;
 
     constructor(id: GameObjectId, fsm_id: string, facing: 'left' | 'right' = 'right') {
         super(id, fsm_id);
@@ -57,11 +78,50 @@ export abstract class Fighter extends SpriteObject {
         this.currentHitMarker = null;
     }
 
+    public abstract handleFighterStukEvent(event_name: string, emitter: Fighter): void;
+
+    protected doAttackFlow(attackType: AttackType, opponent: Fighter): boolean {
+        const hitArea = this.attackHitsOpponent(attackType, opponent);
+        if (hitArea) {
+            this.handleHittingOpponent(attackType, opponent, hitArea);
+            opponent.handleBeingHit(attackType, this);
+            return true;
+        }
+        return false;
+    }
+
+    protected attackHitsOpponent(attackType: AttackType, opponent: Fighter): Area | null {
+        // if (this.state.is('hitanimation.wel_au')) return null; // Only check for hits when the fighter is not already being hit
+        // Check if the opponent is hit by the attack
+        const overlappingAreaOrFalse = this.collides(opponent);
+        return overlappingAreaOrFalse ? overlappingAreaOrFalse : null;
+    }
+
+    protected handleHittingOpponent(attackType: AttackType, opponent: Fighter, hitArea: Area) {
+        const hitMarkerInfo = this.determineHitMarker(attackType, hitArea);
+        this.showHitMarker(hitMarkerInfo);
+    }
+
+    protected handleBeingHit(AttackType: AttackType, opponent: Fighter) {
+        this.state.to('hitanimation.wel_au');
+        opponent.state.to('hitanimation.doet_au');
+        this.hp -= getDamage(AttackType);
+    }
+
     override paint(): void {
         this.flip_h = this.facing !== 'left';
         super.paint();
 
         this.paintHitMarker(this.currentHitMarker);
+    }
+
+    override onspawn(spawningPos?: vec3 | vec2): void {
+        super.onspawn(spawningPos);
+        this.resetVerticalPosition();
+    }
+
+    protected resetVerticalPosition(): void {
+        this.setYNoSweep(gamemodel.VERTICAL_POSITION_FIGHTERS - this.sy);
     }
 
     protected paintHitMarker(hitMarker: HitMarkerInfo) {
@@ -82,15 +142,16 @@ export abstract class Fighter extends SpriteObject {
 
             global.view.drawImg({
                 imgid: hitMarkerImgId,
-                x: this.x + hitMarker.offset.x,
-                y: this.y + hitMarker.offset.y,
+                x: hitMarker.pos.x,
+                y: hitMarker.pos.y,
                 z: this.z + 10,
             });
         }
     }
 
-    // Abstract method to be implemented by each specific fighter
-    abstract determineHitMarker(attackType: AttackType): HitMarkerInfo;
+    determineHitMarker(attackType: AttackType, hitArea: Area): HitMarkerInfo {
+        return { type: (this.id === 'player') ? 'enemy_hit' : 'player_hit', pos: middlepoint_area(hitArea) };
+    }
 
     showHitMarker(hitMarkerInfo: HitMarkerInfo) {
         this.currentHitMarker = hitMarkerInfo;

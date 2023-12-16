@@ -1,14 +1,18 @@
-import { Action, gamepadInputMapping, keyboardInputMapping } from './inputmapping';
-import { BitmapId } from './resourceids';
+import { Action, gamepadInputMapping, keyboardInputMapping1 } from './inputmapping';
+import { AudioId, BitmapId } from './resourceids';
 import { Input, InputMap } from '../bmsx/input';
 import { sstate, statedef_builder, machine_states, build_fsm, assign_fsm } from '../bmsx/bfsm';
 import { insavegame } from '../bmsx/gameserializer';
-import { new_area } from '../bmsx/bmsx';
+import { get_gamemodel, new_area } from '../bmsx/bmsx';
+import { ScreenBoundaryComponent } from './../bmsx/collisioncomponents';
 import { Fighter, HitMarkerInfo } from './fighter';
 import { attach_components } from '../bmsx/component';
-import { ScreenBoundaryComponent } from './../bmsx/collisioncomponents';
-import { subscribesToParentScopedEvent, subscribesToSelfScopedEvent } from '../bmsx/eventemitter';
+import { subscribesToGlobalEvent, subscribesToParentScopedEvent, subscribesToSelfScopedEvent } from '../bmsx/eventemitter';
 import { Direction } from "../bmsx/bmsx";
+import { gamemodel } from './gamemodel';
+import { SM } from '../bmsx/soundmaster';
+
+const get_model = get_gamemodel<gamemodel>;
 
 export type EilaAttackType = 'punch' | 'lowkick' | 'highkick' | 'flyingkick';
 
@@ -45,11 +49,6 @@ export class Player extends Fighter {
 
     @statedef_builder
     public static bouw(): machine_states {
-        Input.setInputMap(0, {
-            keyboard: keyboardInputMapping,
-            gamepad: gamepadInputMapping,
-        } as InputMap);
-
         // To check if an action is pressed for player 0
         function defaultrun(this: Player, s: sstate) {
             const priorityActions = Input.getPressedPriorityActions(0, ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick', 'block']);
@@ -142,6 +141,28 @@ export class Player extends Fighter {
                         this.state.to('player_animation.idle');
                     },
                 },
+                humiliated: {
+                    enter(this: Player) {
+                        this.hittable = false;
+                        this.state.to('player_animation.humiliated');
+                    },
+                },
+                au: {
+                    enter(this: Player) {
+                        this.state.pause_statemachine('player_animation');
+                    },
+                    exit(this: Player) {
+                        this.state.resume_statemachine('player_animation');
+                    }
+                },
+                doetau: {
+                    enter(this: Player) {
+                        this.state.pause_statemachine('player_animation');
+                    },
+                    exit(this: Player) {
+                        this.state.resume_statemachine('player_animation');
+                    }
+                },
                 walk: {
                     run: defaultrun,
                     enter(this: Player) {
@@ -152,22 +173,26 @@ export class Player extends Fighter {
                 },
                 punch: {
                     enter(this: Player) {
-                        this.state.to('player_animation.punch');
+                        const hit = this.doAttackFlow('punch', get_model().theOtherFighter(this));
+                        this.state.to('player_animation.punch', hit);
                     },
                 },
                 highkick: {
                     enter(this: Player) {
-                        this.state.to('player_animation.highkick');
+                        const hit = this.doAttackFlow('highkick', get_model().theOtherFighter(this));
+                        this.state.to('player_animation.highkick', hit);
                     },
                 },
                 lowkick: {
                     enter(this: Player) {
-                        this.state.to('player_animation.lowkick');
+                        const hit = this.doAttackFlow('lowkick', get_model().theOtherFighter(this));
+                        this.state.to('player_animation.lowkick', hit);
                     },
                 },
                 duckkick: {
                     enter(this: Player) {
-                        this.state.to('player_animation.duckkick');
+                        const hit = this.doAttackFlow('dickkick', get_model().theOtherFighter(this));
+                        this.state.to('player_animation.duckkick', hit);
                     },
                 },
                 duck: {
@@ -216,6 +241,7 @@ export class Player extends Fighter {
                                 flyingkick: {
                                     enter(this: Player) {
                                         this.state.machines.player_animation.to('flyingkick');
+                                        this.doAttackFlow('flyingkick', get_model().theOtherFighter(this));
                                     }
                                 },
                             }
@@ -250,6 +276,7 @@ export class Player extends Fighter {
                                 flyingkick: {
                                     enter(this: Player) {
                                         this.state.machines.player_animation.to('flyingkick');
+                                        this.doAttackFlow('flyingkick', get_model().theOtherFighter(this));
                                     }
                                 },
                             }
@@ -280,6 +307,10 @@ export class Player extends Fighter {
                 }
                 break;
         }
+    }
+
+    override handleFighterStukEvent(this: Fighter, event_name: string, emitter: Fighter): void {
+        this.state.to('humiliated');
     }
 
     @build_fsm('player_animation')
@@ -324,9 +355,11 @@ export class Player extends Fighter {
                 },
                 highkick: {
                     ticks2move: Player.ATTACK_DURATION,
-                    enter(this: Player, state: sstate) {
+                    enter(this: Player, state: sstate, hit: boolean) {
                         state.reset();
                         this.imgid = BitmapId.eila_highkick;
+                        SM.play(AudioId.kick);
+                        if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Player, state: sstate) {
                         global.eventEmitter.emit('animationEnd', this, 'highkick');
@@ -335,9 +368,11 @@ export class Player extends Fighter {
                 },
                 lowkick: {
                     ticks2move: Player.ATTACK_DURATION,
-                    enter(this: Player, state: sstate) {
+                    enter(this: Player, state: sstate, hit: boolean) {
                         state.reset();
+                        SM.play(AudioId.kick);
                         this.imgid = BitmapId.eila_lowkick;
+                        if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Player, state: sstate) {
                         global.eventEmitter.emit('animationEnd', this, 'lowkick');
@@ -346,9 +381,11 @@ export class Player extends Fighter {
                 },
                 punch: {
                     ticks2move: Player.ATTACK_DURATION,
-                    enter(this: Player, state: sstate) {
+                    enter(this: Player, state: sstate, hit: boolean) {
                         state.reset();
+                        SM.play(AudioId.punch);
                         this.imgid = BitmapId.eila_punch;
+                        if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Player, state: sstate) {
                         global.eventEmitter.emit('animationEnd', this, 'punch');
@@ -357,9 +394,11 @@ export class Player extends Fighter {
                 },
                 duckkick: {
                     ticks2move: Player.ATTACK_DURATION,
-                    enter(this: Player, state: sstate) {
+                    enter(this: Player, state: sstate, hit: boolean) {
                         state.reset();
+                        SM.play(AudioId.kick);
                         this.imgid = BitmapId.eila_duckkick;
+                        if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Player, state: sstate) {
                         global.eventEmitter.emit('animationEnd', this, 'duckkick');
@@ -368,9 +407,11 @@ export class Player extends Fighter {
                 },
                 flyingkick: {
                     ticks2move: Player.ATTACK_DURATION,
-                    enter(this: Player, state: sstate) {
+                    enter(this: Player, state: sstate, hit: boolean) {
                         state.reset();
+                        SM.play(AudioId.kick);
                         this.imgid = BitmapId.eila_flyingkick;
+                        if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Player, state: sstate) {
                         global.eventEmitter.emit('animationEnd', this, 'flyingkick');
@@ -386,28 +427,23 @@ export class Player extends Fighter {
                     enter(this: Player) { this.imgid = BitmapId.eila_jump; },
                 },
                 humiliated: {
-                    ticks2move: 50,
+                    ticks2move: 100,
                     enter(this: Player, state: sstate) {
                         state.reset();
+                        SM.play(AudioId.stuk);
                         this.imgid = BitmapId.eila_humiliated;
                     },
                     next(this: Player, state: sstate) {
-                        this.state.to('player_animation.idle'); // Placeholder
+                        get_gamemodel().state.to('gameover');
                     }
                 },
             }
         };
     }
 
-    override determineHitMarker(attackType: EilaAttackType): HitMarkerInfo {
-        return null;
-    }
-
     constructor() {
         super('player', undefined, 'left');
-        this.size.x = 40;
-        this.size.y = 37;
-        this.hitarea = new_area(0, 0, 40, 37);
+        this.hp = gamemodel.EILA_START_HP;
     }
 
     override paint(): void {

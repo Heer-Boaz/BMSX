@@ -4,13 +4,16 @@ import { get_gamemodel } from "../bmsx/bmsx";
 import { StateMachineVisualizer } from "../bmsx/bmsxdebugger";
 import { ProhibitLeavingScreenComponent } from "../bmsx/collisioncomponents";
 import { attach_components } from "../bmsx/component";
-import { subscribesToSelfScopedEvent } from "../bmsx/eventemitter";
+import { subscribesToGlobalEvent, subscribesToSelfScopedEvent } from "../bmsx/eventemitter";
 import { insavegame } from "../bmsx/gameserializer";
+import { Input } from "../bmsx/input";
+import { SM } from "../bmsx/soundmaster";
 import { SpriteObject } from "../bmsx/sprite";
-import { JumpingWhileLeavingScreenComponent } from "./eila";
+import { JumpingWhileLeavingScreenComponent, Player } from "./eila";
 import { Fighter, HitMarkerInfo } from "./fighter";
 import { gamemodel } from "./gamemodel";
-import { BitmapId } from "./resourceids";
+import { Action } from "./inputmapping";
+import { AudioId, BitmapId } from "./resourceids";
 
 const get_model = get_gamemodel<gamemodel>;
 export type SinterklaasAttackType = 'punch' | 'lowkick' | 'highkick' | 'flyingkick' | 'mijter_throw';
@@ -25,23 +28,97 @@ export class Sinterklaas extends Fighter {
 
     constructor() {
         super('sinterklaas', undefined, 'right');
+        this.hp = gamemodel.SINT_START_HP;
     }
 
     override paint(): void {
         super.paint();
     }
 
-    override determineHitMarker(attackType: string): HitMarkerInfo {
-        throw new Error("Method not implemented.");
-    }
-
     @statedef_builder
     public static bouw(): machine_states {
         function defaultrun(this: Sinterklaas, state: sstate) {
+            // To check if an action is pressed for player 1
+            const priorityActions = Input.getPressedPriorityActions(1, ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick', 'block']);
+
+            // If no actions are pressed, switch to idle
+            if (!priorityActions.some(action => action.pressed && !action.consumed)) {
+                this.state.to('idle');
+                return;
+            }
+
+            let higherPrioActionProcessed = false;
+            let leftOrRightPressed = false;
+            for (const actionObject of priorityActions) {
+                const { action, pressed, consumed } = actionObject;
+                if (higherPrioActionProcessed) break;
+
+                switch (action as Action) {
+                    case 'right':
+                    case 'left':
+                        if (leftOrRightPressed) break;
+                        leftOrRightPressed = true;
+                        this.facing = action as typeof this.facing;
+
+                        // Check for combined jump left/right action
+                        if (priorityActions.some(action => action.action === 'jump')) {
+                            this.state.to('jump', true);
+                            higherPrioActionProcessed = true;
+                        }
+                        else {
+                            this.x += action === 'right' ? Player.SPEED : -Player.SPEED;
+                            this.state.to('walk');
+                        }
+                        break;
+                    case 'duck':
+                        this.state.to('duck');
+                        higherPrioActionProcessed = true;
+                        break;
+                    case 'punch':
+                    case 'highkick':
+                    case 'lowkick':
+                        if (!consumed) {
+                            Input.consumeAction(0, action);
+                            this.state.to(action);
+                        }
+                        break;
+                    case 'jump':
+                        this.state.to('jump', false); // Actions 'left' and 'right' have higher priority than 'jump' and thus directonal jumps are handled in the 'left' and 'right' cases
+                        break;
+                }
+            }
         }
-        function jumprun(this: Sinterklaas, state: sstate) {
+
+        function duckrun(this: Player) {
+            const pressedActions = Input.getPressedActions(1);
+
+            if (pressedActions.some(action => action.action === 'lowkick')) {
+                this.state.to('duckkick');
+                return;
+            }
+            // Search whether the `duck` action was NOT pressed
+            else if (!pressedActions.some(action => action.action === 'duck')) {
+                this.state.to('idle');
+                return;
+            }
+            else if (pressedActions.some(action => action.action === 'left')) {
+                this.facing = 'left';
+                return;
+            }
+            else if (pressedActions.some(action => action.action === 'right')) {
+                this.facing = 'right';
+                return;
+            }
         }
-        function duckrun(this: Sinterklaas, state: sstate) {
+
+        function jumprun(this: Player) {
+            const pressedActions = Input.getPressedActions(1);
+
+            if (pressedActions.some(action => action.action === 'lowkick' || action.action === 'highkick')) {
+                if (this.state.is('Sinterklaas.jump.jump_up.normal') || this.state.is('Sinterklaas.jump.jump_down.normal')) {
+                    this.state.switch('Sinterklaas.jump.*.flyingkick');
+                }
+            }
         }
 
         return {
@@ -51,6 +128,28 @@ export class Sinterklaas extends Fighter {
                     enter(this: Sinterklaas) {
                         this.state.to('sint_animation.idle');
                     },
+                },
+                humiliated: {
+                    enter(this: Sinterklaas) {
+                        this.hittable = false;
+                        this.state.to('sint_animation.humiliated');
+                    },
+                },
+                au: {
+                    enter(this: Sinterklaas) {
+                        this.state.pause_statemachine('sint_animation');
+                    },
+                    exit(this: Sinterklaas) {
+                        this.state.resume_statemachine('sint_animation');
+                    }
+                },
+                doetau: {
+                    enter(this: Sinterklaas) {
+                        this.state.pause_statemachine('sint_animation');
+                    },
+                    exit(this: Sinterklaas) {
+                        this.state.resume_statemachine('sint_animation');
+                    }
                 },
                 walk: {
                     run: defaultrun,
@@ -62,22 +161,26 @@ export class Sinterklaas extends Fighter {
                 },
                 punch: {
                     enter(this: Sinterklaas) {
-                        this.state.to('sint_animation.punch');
+                        const hit = this.doAttackFlow('punch', get_model().theOtherFighter(this));
+                        this.state.to('sint_animation.punch', hit);
                     },
                 },
                 highkick: {
                     enter(this: Sinterklaas) {
-                        this.state.to('sint_animation.highkick');
+                        const hit = this.doAttackFlow('highkick', get_model().theOtherFighter(this));
+                        this.state.to('sint_animation.highkick', hit);
                     },
                 },
                 lowkick: {
                     enter(this: Sinterklaas) {
-                        this.state.to('sint_animation.lowkick');
+                        const hit = this.doAttackFlow('lowkick', get_model().theOtherFighter(this));
+                        this.state.to('sint_animation.lowkick', hit);
                     },
                 },
                 duckkick: {
                     enter(this: Sinterklaas) {
-                        this.state.to('sint_animation.duckkick');
+                        const hit = this.doAttackFlow('dickkick', get_model().theOtherFighter(this));
+                        this.state.to('sint_animation.duckkick', hit);
                     },
                 },
                 duck: {
@@ -126,6 +229,7 @@ export class Sinterklaas extends Fighter {
                                 flyingkick: {
                                     enter(this: Sinterklaas) {
                                         this.state.machines.sint_animation.to('flyingkick');
+                                        this.doAttackFlow('flyingkick', get_model().theOtherFighter(this));
                                     }
                                 },
                             }
@@ -160,6 +264,7 @@ export class Sinterklaas extends Fighter {
                                 flyingkick: {
                                     enter(this: Sinterklaas) {
                                         this.state.machines.sint_animation.to('flyingkick');
+                                        this.doAttackFlow('flyingkick', get_model().theOtherFighter(this));
                                     }
                                 },
                             }
@@ -191,6 +296,11 @@ export class Sinterklaas extends Fighter {
                 break;
         }
     }
+
+    override handleFighterStukEvent(this: Fighter, event_name: string, emitter: Fighter): void {
+        this.state.to('sint_animation.humiliated');
+    }
+
 
     @build_fsm('sint_animation')
     public static buildAnimationFsm(): machine_states {
@@ -234,9 +344,11 @@ export class Sinterklaas extends Fighter {
                 },
                 highkick: {
                     ticks2move: Sinterklaas.ATTACK_DURATION,
-                    enter(this: SpriteObject, state: sstate) {
+                    enter(this: SpriteObject, state: sstate, hit: boolean) {
                         state.reset();
+                        SM.play(AudioId.kick);
                         this.imgid = BitmapId.sint_highkick;
+                        if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: SpriteObject, state: sstate) {
                         global.eventEmitter.emit('animationEnd', this, 'highkick');
@@ -245,9 +357,11 @@ export class Sinterklaas extends Fighter {
                 },
                 lowkick: {
                     ticks2move: Sinterklaas.ATTACK_DURATION,
-                    enter(this: SpriteObject, state: sstate) {
+                    enter(this: SpriteObject, state: sstate, hit: boolean) {
                         state.reset();
+                        SM.play(AudioId.kick);
                         this.imgid = BitmapId.sint_lowkick;
+                        if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: SpriteObject, state: sstate) {
                         global.eventEmitter.emit('animationEnd', this, 'lowkick');
@@ -256,9 +370,11 @@ export class Sinterklaas extends Fighter {
                 },
                 punch: {
                     ticks2move: Sinterklaas.ATTACK_DURATION,
-                    enter(this: SpriteObject, state: sstate) {
+                    enter(this: SpriteObject, state: sstate, hit: boolean) {
                         state.reset();
+                        SM.play(AudioId.punch);
                         this.imgid = BitmapId.sint_punch;
+                        if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: SpriteObject, state: sstate) {
                         global.eventEmitter.emit('animationEnd', this, 'punch');
@@ -267,9 +383,11 @@ export class Sinterklaas extends Fighter {
                 },
                 duckkick: {
                     ticks2move: Sinterklaas.ATTACK_DURATION,
-                    enter(this: SpriteObject, state: sstate) {
+                    enter(this: SpriteObject, state: sstate, hit: boolean) {
                         state.reset();
+                        SM.play(AudioId.kick);
                         this.imgid = BitmapId.sint_flyingkick;
+                        if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: SpriteObject, state: sstate) {
                         global.eventEmitter.emit('animationEnd', this, 'duckkick');
@@ -278,9 +396,11 @@ export class Sinterklaas extends Fighter {
                 },
                 flyingkick: {
                     ticks2move: Sinterklaas.ATTACK_DURATION,
-                    enter(this: SpriteObject, state: sstate) {
+                    enter(this: SpriteObject, state: sstate, hit: boolean) {
                         state.reset();
+                        SM.play(AudioId.kick);
                         this.imgid = BitmapId.sint_flyingkick;
+                        if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: SpriteObject, state: sstate) {
                         global.eventEmitter.emit('animationEnd', this, 'flyingkick');
@@ -299,6 +419,7 @@ export class Sinterklaas extends Fighter {
                     ticks2move: 50,
                     enter(this: SpriteObject, state: sstate) {
                         state.reset();
+                        SM.play(AudioId.stuk);
                         this.imgid = BitmapId.sint_humiliated_1;
                     },
                     states: {
@@ -318,6 +439,7 @@ export class Sinterklaas extends Fighter {
                             auto_tick: true,
                             enter(this: SpriteObject, state: sstate) {
                                 state.reset();
+                                SM.play(AudioId.vernederdans);
                             },
                             next(this: SpriteObject, state: sstate) {
                                 this.state.to(`sint_animation.humiliated.animation.${state.current_tape_value}`);
@@ -339,7 +461,7 @@ export class Sinterklaas extends Fighter {
                             auto_tick: true,
                             enter(this: SpriteObject) { this.imgid = BitmapId.sint_humiliated_1; },
                             next(this: SpriteObject, state: sstate) {
-                                this.state.to('sint_animation.idle'); // Placeholder
+                                get_gamemodel().state.to('hoera');
                             }
                         },
                     },
