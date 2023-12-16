@@ -25,6 +25,9 @@ export class GameOver extends SpriteObject {
                         if (!priorityActions.some(action => action.pressed && !action.consumed)) {
                             return;
                         }
+                        for (const action of ['punch', 'highkick', 'lowkick', 'block']) {
+                            Input.consumeAction(0, action);
+                        }
                         // If a priority action is pressed, go to the game.
                         get_model().state.to('titlescreen');
                     },
@@ -41,7 +44,7 @@ export class GameOver extends SpriteObject {
         const x = 16;
         const y = 144;
 
-        const lines = ['je bent toch niet', ' de strijder die ik nodig heb..', 'ik ben toch', 'lichtelijk teleurgesteld...'];
+        const lines = ['je bent toch niet', 'de strijder die ik nodig heb..', 'ik ben toch', 'lichtelijk teleurgesteld...'];
 
         TextWriter.drawText(x, y, lines);
     }
@@ -68,7 +71,11 @@ export class Hoera extends SpriteObject {
                             return;
                         }
                         // If a priority action is pressed, go to the game.
+                        for (const action of ['punch', 'highkick', 'lowkick', 'block']) {
+                            Input.consumeAction(0, action);
+                        }
                         get_model().state.to('titlescreen');
+
                     },
                     end(this: Hoera, state: sstate) {
                         get_model().state.to('titlescreen');
@@ -107,6 +114,9 @@ export class TitleScreen extends SpriteObject {
                         if (!priorityActions.some(action => action.pressed && !action.consumed)) {
                             return;
                         }
+                        for (const action of ['punch', 'highkick', 'lowkick', 'block']) {
+                            Input.consumeAction(0, action);
+                        }
                         // If a priority action is pressed, go to the game.
                         get_model().state.to('default');
                     },
@@ -118,7 +128,7 @@ export class TitleScreen extends SpriteObject {
     override paint(): void {
         super.paint();
 
-        global.view.drawImg( { imgid: BitmapId.menu_arrow, x: 80, y: 160, z: 100 });
+        global.view.drawImg({ imgid: BitmapId.menu_arrow, x: 80, y: 160, z: 100 });
     }
 
     constructor() {
