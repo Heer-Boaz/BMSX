@@ -40,7 +40,7 @@ export class Sinterklaas extends Fighter {
     public static bouw(): machine_states {
         function defaultrun(this: Sinterklaas, state: sstate) {
             // To check if an action is pressed for player 1
-            const priorityActions = Input.getPressedPriorityActions(1, ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick', 'block']);
+            const priorityActions = Input.getPressedPriorityActions(1, ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick', 'stoer']);
 
             // If no actions are pressed, switch to idle
             if (!priorityActions.some(action => action.pressed && !action.consumed)) {
@@ -85,6 +85,9 @@ export class Sinterklaas extends Fighter {
                         break;
                     case 'jump':
                         this.state.to('jump', false); // Actions 'left' and 'right' have higher priority than 'jump' and thus directonal jumps are handled in the 'left' and 'right' cases
+                        break;
+                    case 'stoer':
+                        this.state.to('stoerheidsdans');
                         break;
                 }
             }
@@ -133,7 +136,7 @@ export class Sinterklaas extends Fighter {
                 },
                 humiliated: {
                     enter(this: Sinterklaas) {
-                        this.hittable = false;
+                        // this.hittable = false;
                         this.resetVerticalPosition();
                         this.state.to('sint_animation.humiliated');
                     },

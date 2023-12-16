@@ -51,7 +51,7 @@ export class Player extends Fighter {
     public static bouw(): machine_states {
         // To check if an action is pressed for player 0
         function defaultrun(this: Player, s: sstate) {
-            const priorityActions = Input.getPressedPriorityActions(0, ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick', 'block']);
+            const priorityActions = Input.getPressedPriorityActions(0, ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick', 'stoer']);
 
             // If no actions are pressed, switch to idle
             if (!priorityActions.some(action => action.pressed && !action.consumed)) {
@@ -97,27 +97,34 @@ export class Player extends Fighter {
                     case 'jump':
                         this.state.to('jump', false); // Actions 'left' and 'right' have higher priority than 'jump' and thus directonal jumps are handled in the 'left' and 'right' cases
                         break;
+                    case 'stoer':
+                        this.state.to('stoerheidsdans');
+                        break;
                 }
             }
         }
 
         function duckrun(this: Player) {
             const pressedActions = Input.getPressedActions(0);
+            const actionMap = new Map();
 
-            if (pressedActions.some(action => action.action === 'lowkick')) {
+            // Create a map of actions for efficient lookup
+            pressedActions.forEach(action => actionMap.set(action.action, true));
+
+            if (actionMap.get('lowkick')) {
                 this.state.to('duckkick');
                 return;
             }
             // Search whether the `duck` action was NOT pressed
-            else if (!pressedActions.some(action => action.action === 'duck')) {
+            else if (!actionMap.get('duck')) {
                 this.state.to('idle');
                 return;
             }
-            else if (pressedActions.some(action => action.action === 'left')) {
+            else if (actionMap.get('left')) {
                 this.facing = 'left';
                 return;
             }
-            else if (pressedActions.some(action => action.action === 'right')) {
+            else if (actionMap.get('right')) {
                 this.facing = 'right';
                 return;
             }
@@ -157,7 +164,7 @@ export class Player extends Fighter {
                     enter(this: Fighter, state: sstate) {
                         state.reset();
                         this.resetVerticalPosition();
-                        this.hittable = false;
+                        // this.hittable = false;
                         this.state.to(`${statemachine}.${state.current_tape_value}`);
                         this.facing = (this.facing === 'left' ? 'right' : 'left');
                     },
