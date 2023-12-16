@@ -64,7 +64,9 @@ export enum BitmapId {
 	letter_x = 'letter_x',
 	letter_y = 'letter_y',
 	letter_z = 'letter_z',
+	gameover = 'gameover',
 	hallway = 'hallway',
+	hoera = 'hoera',
 	hud = 'hud',
 	hud2 = 'hud2',
 	lee_duckorjump = 'lee_duckorjump',
@@ -96,4 +98,14 @@ export enum BitmapId {
 export enum AudioId {
 	None = 'None',
 
+	gameover = 'gameover',
+	knokken = 'knokken',
+	oei = 'oei',
+	start = 'start',
+	vernederdans = 'vernederdans',
+	hit1 = 'hit1',
+	hit2 = 'hit2',
+	kick = 'kick',
+	punch = 'punch',
+	stuk = 'stuk',
 }
