@@ -382,7 +382,7 @@ export abstract class BaseModel {
             return;
         }
 
-        let objects = global.model.objects;
+        let objects = global.model.objects; // Get all objects in the current space
         // Let all game objects take a turn
         objects.forEach(o => !o.disposeFlag && o.run && o.run());
 
