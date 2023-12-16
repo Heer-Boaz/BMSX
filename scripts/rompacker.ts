@@ -543,36 +543,6 @@ async function load_img(_meta: ResourceMeta) {
 	return await loadImage(dataURL);
 }
 
-// function extractBoundingBox(image: Image): Area {
-// 	const canvas = createCanvas(image.width, image.height);
-// 	const context = canvas.getContext('2d');
-
-// 	context.drawImage(image, 0, 0, image.width, image.height);
-
-// 	const imageData = context.getImageData(0, 0, image.width, image.height);
-// 	const data = imageData.data;
-
-// 	let startx = image.width, starty = image.height, endx = 0, endy = 0;
-
-// 	// Scan image data from top-left to bottom-right
-// 	for (let y = 0; y < image.height; y++) {
-// 		for (let x = 0; x < image.width; x++) {
-// 			const index = (y * image.width + x) * 4;
-// 			const alpha = data[index + 3];
-
-// 			if (alpha !== 0) {
-// 				startx = Math.min(startx, x);
-// 				starty = Math.min(starty, y);
-// 				endx = Math.max(endx, x);
-// 				endy = Math.max(endy, y);
-// 			}
-// 		}
-// 	}
-
-// 	// Scan image data from bottom-right to top-left
-// 	return { start: { x: startx, y: starty }, end: { x: endx, y: endy } };
-// }
-
 function extractBoundingBox(image: Image): Area {
 	const canvas = createCanvas(image.width, image.height);
 	const context = canvas.getContext('2d');
