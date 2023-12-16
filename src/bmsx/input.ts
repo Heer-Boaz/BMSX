@@ -174,6 +174,7 @@ export class Input {
      */
     public static setInputMap(playerIndex: number, inputMap: InputMap): void {
         Input.inputMaps[playerIndex] = inputMap;
+        Input.GamepadPlayerMap[playerIndex] = inputMap.gamepad ?? null;
     }
 
     /**
@@ -186,8 +187,8 @@ export class Input {
         const inputMap = Input.inputMaps[playerIndex];
         if (!inputMap) return { action, pressed: false, consumed: false };
 
-        const keyboardKey = inputMap.keyboard[action];
-        const gamepadButton = Input.GAMEPAD_BUTTONS[inputMap.gamepad[action]];
+        const keyboardKey = inputMap.keyboard ? inputMap.keyboard[action] : null;
+        const gamepadButton = inputMap.gamepad ? Input.GAMEPAD_BUTTONS[inputMap.gamepad[action]] : null;
 
         const keyboardButtonState = Input.getKeyState(keyboardKey);
         const gamepadButtonState = Input.getGamepadButtonState(playerIndex, gamepadButton);
@@ -205,7 +206,7 @@ export class Input {
 
         const pressedActions: ActionState[] = [];
 
-        for (const action in inputMap.keyboard) {
+        for (const action in inputMap.keyboard ?? inputMap.gamepad) {
             const actionState = Input.getActionState(playerIndex, action);
             if (actionState.pressed) {
                 pressedActions.push(actionState);
@@ -292,7 +293,7 @@ export class Input {
         checkedStateMap: Index2State,
         key: string | number
     ): ButtonState {
-        return { pressed: stateMap[key], consumed: checkedStateMap[key] };
+        return { pressed: stateMap[key] ?? false, consumed: checkedStateMap[key] ?? false };
     }
 
     /**
@@ -301,6 +302,7 @@ export class Input {
      * @returns The pressed state of the key.
      */
     public static getKeyState(key: string): ButtonState {
+        if (key === null) return { pressed: false, consumed: false };
         return Input.getPressedState(Input.KeyState, Input.KeyPressedConsumedState, key);
     }
 
@@ -311,7 +313,9 @@ export class Input {
      * @param checkClick - Whether to check if the button was clicked.
      * @returns The pressed state of the button.
      */
-    private static getGamepadButtonState(playerIndex: number, btn: number): ButtonState {
+    private static getGamepadButtonState(playerIndex: number, btn: number | null): ButtonState {
+        if (btn === null) return { pressed: false, consumed: false };
+
         const stateMap = Input.GamepadButtonStates[playerIndex] || {};
         const pressRequestedStateMap = Input.GamepadButtonPressedConsumedStates[playerIndex] || {};
         return Input.getPressedState(stateMap, pressRequestedStateMap, btn);
@@ -715,7 +719,7 @@ export class Input {
      * @returns The index of the next available player, or undefined if no player is available.
      */
     private static getNextAvailablePlayerIndex(): number | undefined {
-        for (let i = 0; i < navigator.getGamepads().length; i++) {
+        for (let i = 1; i < navigator.getGamepads().length; i++) {
             if (Input.isGamepadConnected(i)) {
                 return i;
             }
