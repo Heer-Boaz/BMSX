@@ -1,7 +1,7 @@
 import { createOptimizedAtlas } from './atlasbuilder';
-import { readdirSync, statSync, readFileSync, writeFileSync, copyFile, copyFileSync, existsSync, exists, createWriteStream, rmSync, Stats } from 'fs';
-import { dirname, join, parse } from 'path';
-import { AudioMeta, AudioType, RomAsset, RomMeta, ImgMeta } from '../src/bmsx/rompack';
+import { readdirSync, statSync, readFileSync, writeFileSync, copyFileSync, existsSync, createWriteStream, rmSync, Stats } from 'fs';
+import { join, parse } from 'path';
+import { AudioMeta, RomAsset, RomMeta, ImgMeta, Area, vec2, AudioType, BoundingBoxesPrecalc } from '../src/bmsx/rompack';
 import { exec } from 'child_process';
 import * as browserify from 'browserify';
 const tsify = require('tsify');
@@ -16,6 +16,7 @@ const cleanCSS = require('@node-minify/clean-css');
 const FtpDeploy = require('ftp-deploy');
 const { loadImage } = require('canvas');
 const yaml = require('js-yaml');
+import { Image, createCanvas } from 'canvas';
 
 const GENERATE_AND_USE_TEXTURE_ATLAS = true;
 const DONT_PACK_IMAGES_WHEN_USING_ATLAS = true;
@@ -542,6 +543,185 @@ async function load_img(_meta: ResourceMeta) {
 	return await loadImage(dataURL);
 }
 
+// function extractBoundingBox(image: Image): Area {
+// 	const canvas = createCanvas(image.width, image.height);
+// 	const context = canvas.getContext('2d');
+
+// 	context.drawImage(image, 0, 0, image.width, image.height);
+
+// 	const imageData = context.getImageData(0, 0, image.width, image.height);
+// 	const data = imageData.data;
+
+// 	let startx = image.width, starty = image.height, endx = 0, endy = 0;
+
+// 	// Scan image data from top-left to bottom-right
+// 	for (let y = 0; y < image.height; y++) {
+// 		for (let x = 0; x < image.width; x++) {
+// 			const index = (y * image.width + x) * 4;
+// 			const alpha = data[index + 3];
+
+// 			if (alpha !== 0) {
+// 				startx = Math.min(startx, x);
+// 				starty = Math.min(starty, y);
+// 				endx = Math.max(endx, x);
+// 				endy = Math.max(endy, y);
+// 			}
+// 		}
+// 	}
+
+// 	// Scan image data from bottom-right to top-left
+// 	return { start: { x: startx, y: starty }, end: { x: endx, y: endy } };
+// }
+
+function extractBoundingBox(image: Image): Area {
+	const canvas = createCanvas(image.width, image.height);
+	const context = canvas.getContext('2d');
+
+	context.drawImage(image, 0, 0, image.width, image.height);
+
+	const imageData = context.getImageData(0, 0, image.width, image.height);
+	const data = imageData.data;
+
+	let startx = image.width, starty = image.height, endx = 0, endy = 0;
+	let totalWeightX = 0, totalWeightY = 0;
+	let totalAlpha = 0;
+
+	for (let y = 0; y < image.height; y++) {
+		for (let x = 0; x < image.width; x++) {
+			const index = (y * image.width + x) * 4;
+			const alpha = data[index + 3];
+
+			if (alpha !== 0) {
+				startx = Math.min(startx, x);
+				starty = Math.min(starty, y);
+				endx = Math.max(endx, x);
+				endy = Math.max(endy, y);
+
+				totalWeightX += x * alpha;
+				totalWeightY += y * alpha;
+				totalAlpha += alpha;
+			}
+		}
+	}
+
+	// const weightedCenterX = totalAlpha ? totalWeightX / totalAlpha : 0;
+	// const weightedCenterY = totalAlpha ? totalWeightY / totalAlpha : 0;
+
+	// // Adjust bounding box based on weighted average
+	// const width = endx - startx;
+	// const height = endy - starty;
+
+	// const adjustedStartX = Math.max(startx, weightedCenterX - width / 2);
+	// const adjustedEndX = Math.min(endx, weightedCenterX + width / 2);
+	// const adjustedStartY = Math.max(starty, weightedCenterY - height / 2);
+	// const adjustedEndY = Math.min(endy, weightedCenterY + height / 2);
+
+	// return { start: { x: ~~adjustedStartX, y: ~~adjustedStartY }, end: { x: ~~adjustedEndX, y: ~~adjustedEndY } };
+	return { start: { x: ~~startx, y: ~~starty }, end: { x: ~~endx, y: ~~endy } };
+}
+
+function extractBoundingBoxes(image: Image, extractedBoundingBox: Area): Area[] {
+	function adjustBoundingBoxes(image: Image, boundingBoxes: Area[]): Area[] {
+		const imageBoundingBox = extractedBoundingBox;
+
+		return boundingBoxes.map(box => ({
+			start: {
+				x: Math.max(imageBoundingBox.start.x, box.start.x),
+				y: Math.max(imageBoundingBox.start.y, box.start.y),
+			},
+			end: {
+				x: Math.min(imageBoundingBox.end.x, box.end.x),
+				y: Math.min(imageBoundingBox.end.y, box.end.y),
+			},
+		}));
+	}
+	const canvas = createCanvas(image.width, image.height);
+	const context = canvas.getContext('2d');
+	context.drawImage(image, 0, 0);
+	const imageData = context.getImageData(0, 0, image.width, image.height);
+	const data = imageData.data;
+
+	const boundingBoxes: Area[] = [];
+
+	// Split the image into 8x8 pixel blocks
+	for (let y = 0; y < image.height; y += 8) {
+		for (let x = 0; x < image.width; x += 8) {
+			let blockHasAlpha = false;
+
+			// Check each pixel in the block
+			blockLoop:
+			for (let blockY = y; blockY < y + 8 && blockY < image.height; blockY++) {
+				for (let blockX = x; blockX < x + 8 && blockX < image.width; blockX++) {
+					const index = (blockY * image.width + blockX) * 4;
+					if (data[index + 3] !== 0) {
+						blockHasAlpha = true;
+						break blockLoop;
+					}
+				}
+			}
+
+			// If the block has at least one non-transparent pixel, add it to the list of bounding boxes
+			if (blockHasAlpha) {
+				let merged = false;
+				// Try to merge this block with an existing bounding box if they are adjacent
+				for (let box of boundingBoxes) {
+					if (y >= box.start.y && y <= box.end.y + 8 && x >= box.start.x && x <= box.end.x + 8) {
+						box.end.x = Math.max(box.end.x, x + 7);
+						box.end.y = Math.max(box.end.y, y + 7);
+						merged = true;
+						break;
+					}
+				}
+				// If no merge happened, add as a new bounding box
+				if (!merged) {
+					boundingBoxes.push({
+						start: { x, y },
+						end: { x: x + 7, y: y + 7 },
+					});
+				}
+			}
+		}
+	}
+
+	return adjustBoundingBoxes(image, boundingBoxes);
+}
+
+function generateFlippedBoundingBoxes(image: Image, extractedBoundingBoxes: Area[]): BoundingBoxesPrecalc {
+	function flipBoundingBoxHorizontally(box: Area, width: number): Area {
+		return {
+			start: { x: width - box.end.x, y: box.start.y },
+			end: { x: width - box.start.x, y: box.end.y }
+		};
+	}
+
+	function flipBoundingBoxVertically(box: Area, height: number): Area {
+		return {
+			start: { x: box.start.x, y: height - box.end.y },
+			end: { x: box.end.x, y: height - box.start.y }
+		};
+	}
+
+	const originalBoundingBoxes = extractedBoundingBoxes;
+
+	const horizontalFlipped = originalBoundingBoxes.map(box => flipBoundingBoxHorizontally(box, image.width));
+	const verticalFlipped = originalBoundingBoxes.map(box => flipBoundingBoxVertically(box, image.height));
+	const bothFlipped = originalBoundingBoxes.map(box => flipBoundingBoxHorizontally(flipBoundingBoxVertically(box, image.height), image.width));
+
+	return {
+		original: originalBoundingBoxes,
+		fliph: horizontalFlipped,
+		flipv: verticalFlipped,
+		fliphv: bothFlipped
+	};
+}
+
+function calculateCenterPoint(boundingBox: Area): vec2 {
+	const middlex = (boundingBox.start.x + boundingBox.end.x) / 2;
+	const middley = (boundingBox.start.y + boundingBox.end.y) / 2;
+
+	return { x: ~~middlex, y: ~~middley };
+}
+
 /**
  * Builds a list of loaded resources located at `respath` for the specified `romname`.
  * @param respath The path to the resources to include in the list.
@@ -705,29 +885,80 @@ async function buildRompack(romname: string, respath: string): Promise<any> {
 					romlabel_buffer = res.buffer;
 					break;
 				case 'image':
-					let img = res.img;
-					let imgmeta: ImgMeta;
+					const img = res.img;
+					const img_boundingbox = extractBoundingBox(img); // Extract the bounding box of the image (i.e. the smallest rectangle that contains all non-transparent pixels)
+					const img_boundingboxes = extractBoundingBoxes(img, img_boundingbox); // Extract the bounding boxes of the image (i.e. the smallest rectangles that contain all non-transparent pixels)
+					const img_boundingboxes_precalc: BoundingBoxesPrecalc = {
+						original: img_boundingboxes,
+						...generateFlippedBoundingBoxes(img, img_boundingboxes),
+					};
+					const img_centerpoint = calculateCenterPoint(img_boundingbox);
+
+					let imgmeta: ImgMeta = {
+						atlassed: false,
+						width: img.width,
+						height: img.height,
+						boundingbox: img_boundingbox,
+						boundingboxes: img_boundingboxes_precalc,
+						centerpoint: img_centerpoint
+					};
+
 					if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-						// imgmeta = addToAtlas(img);
-						imgmeta = res.imgmeta;
-						if (DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
-							jsonout.push({ resid: resid, resname: name, type: type, start: 0, end: 0, imgmeta: { atlassed: imgmeta.atlassed, width: imgmeta.width, height: imgmeta.height, texcoords: imgmeta.texcoords, texcoords_fliph: imgmeta.texcoords_fliph, texcoords_flipv: imgmeta.texcoords_flipv, texcoords_fliphv: imgmeta.texcoords_fliphv }, audiometa: undefined, });
-						}
-						else {
-							jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: { atlassed: imgmeta.atlassed, width: imgmeta.width, height: imgmeta.height, texcoords: imgmeta.texcoords, texcoords_fliph: imgmeta.texcoords_fliph, texcoords_flipv: imgmeta.texcoords_flipv, texcoords_fliphv: imgmeta.texcoords_fliphv }, audiometa: undefined, });
-							bufferPointer += res.buffer.length;
-						}
+						imgmeta = {
+							...imgmeta,
+							atlassed: res.imgmeta.atlassed,
+							texcoords: res.imgmeta.texcoords,
+							texcoords_fliph: res.imgmeta.texcoords_fliph,
+							texcoords_flipv: res.imgmeta.texcoords_flipv,
+							texcoords_fliphv: res.imgmeta.texcoords_fliphv,
+						};
 					}
-					else {
-						jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: { atlassed: false, width: img.width, height: img.height, }, audiometa: undefined, });
+
+					const baseJson = {
+						resid: resid,
+						resname: name,
+						type: type,
+						imgmeta: imgmeta
+					};
+
+					if (GENERATE_AND_USE_TEXTURE_ATLAS && !DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
+						jsonout.push({
+							...baseJson,
+							start: bufferPointer,
+							end: bufferPointer + res.buffer.length,
+						});
 						bufferPointer += res.buffer.length;
+					} else {
+						jsonout.push({
+							...baseJson,
+							start: 0,
+							end: 0,
+						});
 					}
 					break;
+				// case 'image':
+				// 	let img = res.img;
+				// 	let imgmeta: ImgMeta;
+				// 	const img_boundingbox = extractBoundingBox(img); // Extract the bounding box of the image (i.e. the smallest rectangle that contains all non-transparent pixels)
+				// 	const img_centerpoint = calculateCenterPoint(img_boundingbox);
+				// 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
+				// 		imgmeta = res.imgmeta;
+				// 		if (DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
+				// 			jsonout.push({ resid: resid, resname: name, type: type, start: 0, end: 0, imgmeta: { atlassed: imgmeta.atlassed, width: imgmeta.width, height: imgmeta.height, texcoords: imgmeta.texcoords, texcoords_fliph: imgmeta.texcoords_fliph, texcoords_flipv: imgmeta.texcoords_flipv, texcoords_fliphv: imgmeta.texcoords_fliphv, boundingbox: img_boundingbox, centerpoint: img_centerpoint }});
+				// 		}
+				// 		else {
+				// 			jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: { atlassed: imgmeta.atlassed, width: imgmeta.width, height: imgmeta.height, texcoords: imgmeta.texcoords, texcoords_fliph: imgmeta.texcoords_fliph, texcoords_flipv: imgmeta.texcoords_flipv, texcoords_fliphv: imgmeta.texcoords_fliphv, boundingbox: img_boundingbox, centerpoint: img_centerpoint }});
+				// 			bufferPointer += res.buffer.length;
+				// 		}
+				// 	}
+				// 	else {
+				// 		jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: { atlassed: false, width: img.width, height: img.height, boundingbox: img_boundingbox, centerpoint: img_centerpoint }});
+				// 		bufferPointer += res.buffer.length;
+				// 	}
+				// 	break;
 				case 'audio':
 					{
 						let parsedMeta = parseAudioMeta(res.filepath);
-
-						// name = parsedMeta.sanitizedName;
 						jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: undefined, audiometa: parsedMeta.meta });
 					}
 					bufferPointer += res.buffer.length;
