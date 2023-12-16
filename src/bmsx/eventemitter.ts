@@ -156,7 +156,7 @@ export function subscribesToSelfScopedEvent(eventName: string) {
  * @param eventName The name of the event to handle.
  * @returns A function that decorates the target method.
  */
-export function globalEventHandler(eventName: string) {
+export function subscribesToGlobalEvent(eventName: string) {
     return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
         EventEmitter.getInstance().on(eventName, descriptor.value);
     };
