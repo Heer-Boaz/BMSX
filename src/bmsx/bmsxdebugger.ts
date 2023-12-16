@@ -1,9 +1,11 @@
 import { MachineDefinitions, bfsm_controller, statecontext } from './bfsm';
-import { area2size, copy_vec2, new_vec2, vec3, translate_vec2, trunc_vec2, vec2, trunc_vec3, div_vec2, set_inplace_vec2, GameObjectId } from './bmsx';
+import { area2size, new_vec2, translate_vec2, trunc_vec3, div_vec2 } from './bmsx';
 import { PositionUpdateAxisComponent } from './collisioncomponents';
 import { Component, ComponentUpdateParams, componenttags_postprocessing } from './component';
 import { GameObject } from './gameobject';
 import { Serializer } from './gameserializer';
+import { Input } from './input';
+import type { GameObjectId, vec2 } from './rompack';
 import { SpriteObject } from './sprite';
 import { Color } from './view';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
@@ -168,7 +170,7 @@ class FloatingDialog {
 }
 
 export function handleDebugMouseDown(e: MouseEvent): void {
-    if (!e.shiftKey) { // Only start or continue dragging when shift is pressed. Note that the shift key is not updated after the mouse is pressed down
+    if (!Input.getKeyState('ShiftLeft')) { // Only start or continue dragging when shift is pressed. Note that the shift key is not updated after the mouse is pressed down
         draggedObj = null; // Stop dragging object
         return;
     }
@@ -185,6 +187,15 @@ export function handleDebugMouseDown(e: MouseEvent): void {
 }
 
 export function handleDebugMouseMove(e: MouseEvent): void {
+    const { objUnderCursor, offsetToCursor } = getGameObjectAtCursor(e);
+    if (Input.getKeyState('ControlLeft').pressed) { // Ctrl + mouse move = allow for selecting objects in the game world (for debugging)
+        // Highlight mouse-overed objects
+        highlight_object(objUnderCursor);
+    }
+    else {
+        highlight_object(null); // Remove highlight when Ctrl is not pressed or when no object is under the cursor
+    }
+
     if (draggedObj) {
         // Otherwise, continue dragging the object that is already being dragged
         let x = e.offsetX / global.view.scale;
@@ -194,25 +205,21 @@ export function handleDebugMouseMove(e: MouseEvent): void {
             draggedObj.x = ~~x - draggedObjCursorOffset.x;
             draggedObj.y = ~~y - draggedObjCursorOffset.y;
         }
-        if (!e.shiftKey) {
+        if (!Input.getKeyState('ShiftLeft').pressed) {
             draggedObj = null; // Stop dragging object when shift is released
         }
         return;
     }
-    const { objUnderCursor, offsetToCursor } = getGameObjectAtCursor(e);
-    if (e.ctrlKey) { // Ctrl + mouse move = allow for selecting objects in the game world (for debugging)
-        // Highlight mouse-overed objects
-        highlight_object(objUnderCursor);
-    }
-    else {
-        highlight_object(null); // Remove highlight when Ctrl is not pressed or when no object is under the cursor
-    }
 }
 
 function highlight_object(o: GameObject) {
-    let model = global.model;
+    const model = global.model;
     let highlighter = model.get<ObjectHighlighter>('debug_highlighter');
-    if (o) {
+
+    if (!o) {
+        highlighter && (highlighter.target = null);
+    }
+    else {
         if (!highlighter) {
             highlighter = new ObjectHighlighter();
             model.spawn(highlighter);
@@ -222,15 +229,14 @@ function highlight_object(o: GameObject) {
         }
         highlighter.target = o;
     }
-    else {
-        highlighter && (highlighter.target = null);
-    }
     global.view.drawgame();
 }
 
-export function handleDebugMouseDragEnd(e: MouseEvent): void {
-    if (e.shiftKey && e.button !== 0) return; // Only stop dragging when primary button is released or shift is not pressed. Note that the shift key is not updated after the mouse is pressed down
-    draggedObj = null;
+export function handleDebugMouseUp(e: MouseEvent): void {
+    if (draggedObj) {
+        if (Input.getKeyState('ShiftLeft').pressed && e.button !== 0) return; // Only stop dragging when primary button is released or shift is not pressed. Note that the shift key is not updated after the mouse is pressed down
+        draggedObj = null;
+    }
 }
 
 export function handleDebugMouseOut(e: MouseEvent): void {

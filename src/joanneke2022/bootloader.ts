@@ -1,7 +1,8 @@
-import { BFont, new_vec3, trunc_vec3, vec2 } from './../bmsx/bmsx';
+import { BFont, new_vec3, trunc_vec3 } from './../bmsx/bmsx';
 import { MSX2ScreenHeight, MSX2ScreenWidth } from './../bmsx/msx';
-import { RomPack } from '../bmsx/rompack';
-import { Game, new_vec2, Direction, new_area, randomInt, copy_vec2 } from '../bmsx/bmsx';
+import type { RomPack, vec2 } from '../bmsx/rompack';
+import type { Direction } from "../bmsx/bmsx";
+import { Game, new_vec2, new_area, randomInt, copy_vec2 } from '../bmsx/bmsx';
 import { sdef, sstate, Bla, statedef_builder, build_fsm, statecontext, machine_states } from '../bmsx/bfsm';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
@@ -58,7 +59,7 @@ class gamemodel extends BaseModel {
                     }
                 },
                 default: {
-                    nudges2move: 50,
+                    ticks2move: 50,
                     enter(this: gamemodel, s: sstate<gamemodel>) {
                         this.setSpace('default');
                         this.time_to_shine = TIME_TO_SHINE;
@@ -76,12 +77,12 @@ class gamemodel extends BaseModel {
                     run(this: gamemodel, s: sstate<gamemodel>) {
                         BaseModel.defaultrun();
                         this.state.machines.gamemenu.run();
-                        if (!this.paused) ++s.nudges; // Laat timer lopen
+                        if (!this.paused) ++s.ticks; // Laat timer lopen
                     },
                     process_input: BaseModel.default_input_handler,
                 },
                 evaluatie: {
-                    nudges2move: 50,
+                    ticks2move: 50,
                     enter(this: gamemodel, s: sstate<gamemodel>) {
                         this.setSpace('evaluatie' satisfies model_spaces);
                         this.time_to_shine = 5;
@@ -94,7 +95,7 @@ class gamemodel extends BaseModel {
                         }
                     },
                     run(s: sstate) {
-                        ++s.nudges;
+                        ++s.ticks;
                     },
                     process_input: BaseModel.default_input_handler,
                 },
@@ -286,7 +287,7 @@ class uitlegStuff extends SpriteObject {
                             _model.uitleg_tekst_dinges = s.current_tape_value;
                     },
                     run(this: uitlegStuff, s: sstate<uitlegStuff>) {
-                        ++s.nudges;
+                        ++s.ticks;
                         if (Input.KC_BTN1) {
                             ++s.head; // Skip to next tape entry. Note that this will reset nudges and stuff
                         }
@@ -422,13 +423,13 @@ class stoom extends SpriteObject {
                         BitmapId.pluimx,
                         BitmapId.pluimx,
                     ],
-                    nudges2move: 2,
+                    ticks2move: 2,
                     enter(this: stoom, s: sstate<stoom>) {
                         s.reset();
                         this.imgid = s.current_tape_value;
                     },
                     run(this: stoom, s: sstate<stoom>) {
-                        ++s.nudges;
+                        ++s.ticks;
                     },
                     next(this: stoom, s: sstate<stoom>) {
                         this.imgid = s.current_tape_value;
@@ -533,7 +534,7 @@ class draaischijf extends SpriteObject {
                     process_input: draaischijf.handle_input_idle_state,
                 }),
                 slijpen_opstart: new sdef('slijpen_opstart', {
-                    nudges2move: 5,
+                    ticks2move: 5,
                     auto_rewind_tape_after_end: false,
                     tape: [
                         BitmapId.slijpschijf2,
@@ -552,7 +553,7 @@ class draaischijf extends SpriteObject {
                     },
                     process_input: draaischijf.handle_input_slijp_opstart_state,
                     run(this: draaischijf, s: sstate<draaischijf>) {
-                        ++s.nudges;
+                        ++s.ticks;
                     },
                     end(this: draaischijf, s: sstate<draaischijf>) {
                         this.state.to('slijpen');
@@ -562,7 +563,7 @@ class draaischijf extends SpriteObject {
                     },
                 }),
                 slijpen: new sdef('slijpen', {
-                    nudges2move: 10,
+                    ticks2move: 10,
                     tape: [
                         BitmapId.slijpschijf3,
                         BitmapId.slijpschijf4,
@@ -573,7 +574,7 @@ class draaischijf extends SpriteObject {
                     },
                     process_input: draaischijf.handle_input_slijp_state,
                     run(this: draaischijf, s: sstate<draaischijf>) {
-                        ++s.nudges;
+                        ++s.ticks;
                     },
                     // onend(this: draaischijf, s: sstate<draaischijf>) {
 
@@ -586,7 +587,7 @@ class draaischijf extends SpriteObject {
                     },
                 }),
                 slijpen_afkoel: new sdef('slijpen_afkoel', {
-                    nudges2move: 5,
+                    ticks2move: 5,
                     auto_rewind_tape_after_end: false,
                     tape: [
                         BitmapId.slijpschijf2,
@@ -605,7 +606,7 @@ class draaischijf extends SpriteObject {
                     },
                     process_input: draaischijf.handle_input_slijp_afkoel_state,
                     run(this: draaischijf, s: sstate<draaischijf>) {
-                        ++s.nudges;
+                        ++s.ticks;
                     },
                     end(this: draaischijf, s: sstate<draaischijf>) {
                         this.state.to('idle');
@@ -725,7 +726,7 @@ abstract class onvolmaaktheid extends SpriteObject {
     }
 
     public polijst_nudge = (): void => {
-        ++this.state.current_state.nudges;
+        ++this.state.current_state.ticks;
     };
 
     override paint() {

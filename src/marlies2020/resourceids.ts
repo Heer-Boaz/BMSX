@@ -1,4 +1,4 @@
-import { IResourceId } from '../bmsx/rompack';
+import type { IResourceId } from '../bmsx/rompack';
 export var BitmapId: IResourceId = {
 	None: 0,
 

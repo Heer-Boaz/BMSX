@@ -1,7 +1,5 @@
-﻿import { id2htmlimg } from './rompack.d';
-import { Size, vec3 } from "./bmsx";
+﻿import type { Size, id2htmlimg } from './rompack';
 import { BFont } from "./bmsx";
-import { update_tagged_components } from './component';
 
 export interface DrawImgOptions {
     imgid: string;

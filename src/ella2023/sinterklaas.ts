@@ -8,33 +8,32 @@ import { subscribesToSelfScopedEvent } from "../bmsx/eventemitter";
 import { insavegame } from "../bmsx/gameserializer";
 import { SpriteObject } from "../bmsx/sprite";
 import { JumpingWhileLeavingScreenComponent } from "./eila";
+import { Fighter, HitMarkerInfo } from "./fighter";
 import { gamemodel } from "./gamemodel";
 import { BitmapId } from "./resourceids";
 
 const get_model = get_gamemodel<gamemodel>;
+export type SinterklaasAttackType = 'punch' | 'lowkick' | 'highkick' | 'flyingkick' | 'mijter_throw';
 
 @insavegame
 @assign_fsm('sint_animation')
-@attach_components(ProhibitLeavingScreenComponent, JumpingWhileLeavingScreenComponent, StateMachineVisualizer)
-export class Sinterklaas extends SpriteObject {
+export class Sinterklaas extends Fighter {
     public static readonly ATTACK_DURATION = 15;
     public static readonly JUMP_SPEED = 2;
     public static readonly JUMP_DURATION = 60;
     public static readonly SPEED = 2;
 
-    facing: 'left' | 'right';
-
     constructor() {
-        super('sinterklaas');
-        this.facing = 'right';
+        super('sinterklaas', undefined, 'right');
     }
 
     override paint(): void {
-        this.flip_h = this.facing !== 'left';
         super.paint();
     }
 
-
+    override determineHitMarker(attackType: string): HitMarkerInfo {
+        throw new Error("Method not implemented.");
+    }
 
     @statedef_builder
     public static bouw(): machine_states {
@@ -91,15 +90,15 @@ export class Sinterklaas extends SpriteObject {
                     enter(this: Sinterklaas, state: sstate, directional: boolean = false) {
                         this.state.to('Sinterklaas.jump.jump_up', directional);
                         this.state.to('sint_animation.jump');
-                        this.getComponent(JumpingWhileLeavingScreenComponent).enabled = true;
+                        // this.getComponent(JumpingWhileLeavingScreenComponent).enabled = true;
                     },
                     exit(this: Sinterklaas) {
-                        this.getComponent(JumpingWhileLeavingScreenComponent).enabled = false;
+                        // this.getComponent(JumpingWhileLeavingScreenComponent).enabled = false;
                     },
                     run: jumprun,
                     states: {
                         _jump_up: {
-                            nudges2move: Sinterklaas.JUMP_DURATION / 2,
+                            ticks2move: Sinterklaas.JUMP_DURATION / 2,
                             enter(this: Sinterklaas, state: sstate, directional: boolean = false) {
                                 state.reset();
                                 state.data.directional = directional;
@@ -132,7 +131,7 @@ export class Sinterklaas extends SpriteObject {
                             }
                         },
                         jump_down: {
-                            nudges2move: Sinterklaas.JUMP_DURATION / 2,
+                            ticks2move: Sinterklaas.JUMP_DURATION / 2,
                             enter(this: Sinterklaas, state: sstate, directional: boolean = false, substate: 'normal' | 'flyingkick' = 'normal') {
                                 state.reset();
                                 state.data.directional = directional;
@@ -212,7 +211,7 @@ export class Sinterklaas extends SpriteObject {
                     },
                     states: {
                         _walk1: {
-                            nudges2move: 8,
+                            ticks2move: 8,
                             enter(this: SpriteObject, state: sstate) {
                                 this.imgid = BitmapId.sint_walk;
                                 state.reset();
@@ -222,7 +221,7 @@ export class Sinterklaas extends SpriteObject {
                             }
                         },
                         walk2: {
-                            nudges2move: 8,
+                            ticks2move: 8,
                             enter(this: SpriteObject, state: sstate) {
                                 this.imgid = BitmapId.sint_idle;
                                 state.reset();
@@ -234,7 +233,7 @@ export class Sinterklaas extends SpriteObject {
                     }
                 },
                 highkick: {
-                    nudges2move: Sinterklaas.ATTACK_DURATION,
+                    ticks2move: Sinterklaas.ATTACK_DURATION,
                     enter(this: SpriteObject, state: sstate) {
                         state.reset();
                         this.imgid = BitmapId.sint_highkick;
@@ -245,7 +244,7 @@ export class Sinterklaas extends SpriteObject {
                     }
                 },
                 lowkick: {
-                    nudges2move: Sinterklaas.ATTACK_DURATION,
+                    ticks2move: Sinterklaas.ATTACK_DURATION,
                     enter(this: SpriteObject, state: sstate) {
                         state.reset();
                         this.imgid = BitmapId.sint_lowkick;
@@ -256,7 +255,7 @@ export class Sinterklaas extends SpriteObject {
                     }
                 },
                 punch: {
-                    nudges2move: Sinterklaas.ATTACK_DURATION,
+                    ticks2move: Sinterklaas.ATTACK_DURATION,
                     enter(this: SpriteObject, state: sstate) {
                         state.reset();
                         this.imgid = BitmapId.sint_punch;
@@ -267,7 +266,7 @@ export class Sinterklaas extends SpriteObject {
                     }
                 },
                 duckkick: {
-                    nudges2move: Sinterklaas.ATTACK_DURATION,
+                    ticks2move: Sinterklaas.ATTACK_DURATION,
                     enter(this: SpriteObject, state: sstate) {
                         state.reset();
                         this.imgid = BitmapId.sint_flyingkick;
@@ -278,7 +277,7 @@ export class Sinterklaas extends SpriteObject {
                     }
                 },
                 flyingkick: {
-                    nudges2move: Sinterklaas.ATTACK_DURATION,
+                    ticks2move: Sinterklaas.ATTACK_DURATION,
                     enter(this: SpriteObject, state: sstate) {
                         state.reset();
                         this.imgid = BitmapId.sint_flyingkick;
@@ -297,26 +296,26 @@ export class Sinterklaas extends SpriteObject {
                     enter(this: SpriteObject) { this.imgid = BitmapId.sint_duckorjump; },
                 },
                 humiliated: {
-                    nudges2move: 50,
+                    ticks2move: 50,
                     enter(this: SpriteObject, state: sstate) {
                         state.reset();
                         this.imgid = BitmapId.sint_humiliated_1;
                     },
                     states: {
                         _wait: {
-                            nudges2move: 50,
-                            auto_nudge: true,
+                            ticks2move: 50,
+                            auto_tick: true,
                             enter(this: SpriteObject) { this.imgid = BitmapId.sint_humiliated_1; },
                             next(this: SpriteObject, state: sstate) {
                                 this.state.to('sint_animation.humiliated.animation');
                             }
                         },
                         animation: {
-                            nudges2move: 10,
+                            ticks2move: 10,
                             tape: ['humiliated1', 'humiliated2'],
                             repetitions: 8,
                             auto_rewind_tape_after_end: true,
-                            auto_nudge: true,
+                            auto_tick: true,
                             enter(this: SpriteObject, state: sstate) {
                                 state.reset();
                             },
@@ -336,8 +335,8 @@ export class Sinterklaas extends SpriteObject {
                             },
                         },
                         waitEnd: {
-                            nudges2move: 50,
-                            auto_nudge: true,
+                            ticks2move: 50,
+                            auto_tick: true,
                             enter(this: SpriteObject) { this.imgid = BitmapId.sint_humiliated_1; },
                             next(this: SpriteObject, state: sstate) {
                                 this.state.to('sint_animation.idle'); // Placeholder

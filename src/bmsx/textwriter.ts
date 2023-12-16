@@ -1,4 +1,5 @@
-import { BFont, GameOptions as GO, vec2 } from "./bmsx";
+import { BFont, GameOptions as GO } from "./bmsx";
+import { vec2 } from "./rompack";
 import { Color } from './view';
 
 /**

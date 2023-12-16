@@ -1,12 +1,13 @@
 import { GamepadButton } from './../bmsx/input';
-import { RomPack } from '../bmsx/rompack';
+import type { RomPack } from '../bmsx/rompack';
+import type { Direction } from "../bmsx/bmsx";
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
 import { Input, InputMap, KeyboardButton, GamepadInputMapping, KeyboardInputMapping } from '../bmsx/input';
 import { sstate, statedef_builder, machine_states, build_fsm, assign_fsm } from '../bmsx/bfsm';
 import { insavegame } from '../bmsx/gameserializer';
-import { new_area, Direction, Game, new_vec2, get_gamemodel } from '../bmsx/bmsx';
+import { new_area, Game, new_vec2, get_gamemodel } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
 import { BaseModel } from '../bmsx/model';
 import { SpriteObject } from '../bmsx/sprite';

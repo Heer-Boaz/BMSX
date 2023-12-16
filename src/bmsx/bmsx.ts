@@ -1,8 +1,8 @@
-﻿import { BaseView } from "./view";
+﻿import { Area, RomPack, Size, vec2, vec3 } from "./rompack";
+import { BaseView } from "./view";
 import { SM } from "./soundmaster";
 import { Input } from "./input";
-import { RomPack } from "./rompack";
-import { MSX2ScreenWidth, MSX2ScreenHeight, TileSize } from "./msx";
+import { MSX2ScreenWidth, MSX2ScreenHeight } from "./msx";
 import { BaseModel } from "./model";
 import { EventEmitter } from "./eventemitter";
 
@@ -130,56 +130,12 @@ export module Constants {
 }
 
 /**
- * Represents the direction values.
+ * Represents a type that is a constructor function with a prototype of type T.
+ * This effectively allows it to match any class (including abstract classes) that produces T instances.
+ * Used for attaching abstract classes to game objects.
  */
-export enum Direction {
-    None = 0,
-    Up = 1,
-    Right = 2,
-    Down = 3,
-    Left = 4,
-}
+export type AbstractConstructor<T> = Function & { prototype: T };
 
-/**
- * Represents a 2D vector.
- */
-export interface vec2 {
-    /**
-     * The x-coordinate of the vector.
-     */
-    x: number;
-    /**
-     * The y-coordinate of the vector.
-     */
-    y: number;
-}
-
-/**
- * Represents a 3-dimensional vector.
- * Extends the vec2 interface.
- */
-export interface vec3 extends vec2 {
-    z: number;
-}
-
-/**
- * Represents the identifier of a game object.
- */
-export type GameObjectId = string;
-
-/**
- * Represents the size of an object.
- * It can be either a 2D vector or a 3D vector.
- */
-export type Size = vec2 | vec3;
-
-/**
- * Represents an area defined by a start and end point.
- */
-export interface Area {
-    start: vec2 | vec3;
-    end: vec2 | vec3;
-}
 
 /**
  * Represents a bitmap font used for rendering text.
@@ -584,6 +540,17 @@ export function div_vec2(toDivide: vec2, divide_by: number): vec2 {
 }
 
 /**
+ * Sets the values of the given `Area` object in place with the values from another `Area` object.
+ *
+ * @param a - The target `Area` object to be modified.
+ * @param n - The source `Area` object containing the new values.
+ */
+export function set_inplace_area(a: Area, n: Area): void {
+    set_inplace_vec2(a.start, n.start);
+    set_inplace_vec2(a.end, n.end);
+}
+
+/**
  * Creates a new area with the specified coordinates.
  * @param sx The x-coordinate of the start point.
  * @param sy The y-coordinate of the start point.
@@ -978,4 +945,14 @@ export class Game {
             SM.stopMusic();
         });
     }
+}
+/**
+ * Represents the direction values.
+ */
+export enum Direction {
+	None = 0,
+	Up = 1,
+	Right = 2,
+	Down = 3,
+	Left = 4
 }

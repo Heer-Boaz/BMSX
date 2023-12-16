@@ -1,10 +1,11 @@
-import { GameObjectId } from './bmsx';
 import { onload, insavegame } from './gameserializer';
 import { IEventSubscriber, EventEmitter, EventSubscription } from './eventemitter';
-import { GameObjectConstructor, IIdentifiable } from './gameobject';
+import { GameObjectConstructorWithComponentList, IIdentifiable } from './gameobject';
+import { AbstractConstructor } from './bmsx';
+import type { GameObjectId } from './rompack';
 
 export type KeyToComponentMap = { [key: string]: Component };
-export type ComponentConstructor<T extends Component> = { new(...args: any[]): T };
+export type ComponentConstructor<T extends Component> = new (...args: any[]) => T | AbstractConstructor<new (...args: any[]) => T>; // Allows abstract Component classes to be used as component constructors. This is necessary to allow abstract Component classes to be used as component types in other components (e.g. to allow a collision component to have a list of collision components as a property). NOT IMPLEMENTED YET.
 export type ComponentId = string;
 
 /**
@@ -277,7 +278,7 @@ export function update_tagged_components<T extends IComponentContainer>(...tags:
  * @returns A decorator function that attaches the components to the game object constructor.
  */
 export function attach_components(...components: ComponentConstructor<Component>[]) {
-    return function (constructor: GameObjectConstructor) {
+    return function (constructor: GameObjectConstructorWithComponentList) {
         constructor.autoAddComponents = components;
     };
 }

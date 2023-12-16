@@ -1,4 +1,4 @@
-import { vec2 } from "./bmsx";
+import { vec2 } from "./rompack";
 import { Color } from "./view";
 
 export const TileSize: number = 16;

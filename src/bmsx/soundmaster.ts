@@ -1,4 +1,4 @@
-import { id2res, AudioMeta, AudioType } from "./rompack";
+import { AudioMeta, AudioType, id2res } from "./rompack";
 
 /**
  * The `SM` class provides a set of static methods to manage audio playback in the game.

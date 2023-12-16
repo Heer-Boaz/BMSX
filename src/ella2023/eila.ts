@@ -3,12 +3,14 @@ import { BitmapId } from './resourceids';
 import { Input, InputMap } from '../bmsx/input';
 import { sstate, statedef_builder, machine_states, build_fsm, assign_fsm } from '../bmsx/bfsm';
 import { insavegame } from '../bmsx/gameserializer';
-import { new_area, Direction } from '../bmsx/bmsx';
-import { SpriteObject } from '../bmsx/sprite';
+import { new_area } from '../bmsx/bmsx';
+import { Fighter, HitMarkerInfo } from './fighter';
 import { attach_components } from '../bmsx/component';
-import { ProhibitLeavingScreenComponent, ScreenBoundaryComponent } from './../bmsx/collisioncomponents';
+import { ScreenBoundaryComponent } from './../bmsx/collisioncomponents';
 import { subscribesToParentScopedEvent, subscribesToSelfScopedEvent } from '../bmsx/eventemitter';
-import { StateMachineVisualizer } from '../bmsx/bmsxdebugger';
+import { Direction } from "../bmsx/bmsx";
+
+export type EilaAttackType = 'punch' | 'lowkick' | 'highkick' | 'flyingkick';
 
 @insavegame
 export class JumpingWhileLeavingScreenComponent extends ScreenBoundaryComponent {
@@ -34,8 +36,8 @@ export class JumpingWhileLeavingScreenComponent extends ScreenBoundaryComponent 
 
 @insavegame
 @assign_fsm('player_animation')
-@attach_components(JumpingWhileLeavingScreenComponent, ProhibitLeavingScreenComponent, StateMachineVisualizer)
-export class Player extends SpriteObject {
+@attach_components(JumpingWhileLeavingScreenComponent)
+export class Player extends Fighter {
     public static readonly ATTACK_DURATION = 15;
     public static readonly JUMP_SPEED = 2;
     public static readonly JUMP_DURATION = 60;
@@ -186,7 +188,7 @@ export class Player extends SpriteObject {
                     run: jumprun,
                     states: {
                         _jump_up: {
-                            nudges2move: Player.JUMP_DURATION / 2,
+                            ticks2move: Player.JUMP_DURATION / 2,
                             enter(this: Player, state: sstate, directional: boolean = false) {
                                 state.reset();
                                 state.data.directional = directional;
@@ -219,7 +221,7 @@ export class Player extends SpriteObject {
                             }
                         },
                         jump_down: {
-                            nudges2move: Player.JUMP_DURATION / 2,
+                            ticks2move: Player.JUMP_DURATION / 2,
                             enter(this: Player, state: sstate, directional: boolean = false, substate: 'normal' | 'flyingkick' = 'normal') {
                                 state.reset();
                                 state.data.directional = directional;
@@ -280,8 +282,6 @@ export class Player extends SpriteObject {
         }
     }
 
-    facing: 'left' | 'right';
-
     @build_fsm('player_animation')
     public static buildAnimationFsm(): machine_states {
         return {
@@ -301,7 +301,7 @@ export class Player extends SpriteObject {
                     },
                     states: {
                         _walk1: {
-                            nudges2move: 8,
+                            ticks2move: 8,
                             enter(this: Player, state: sstate) {
                                 this.imgid = BitmapId.eila_walk;
                                 state.reset();
@@ -311,7 +311,7 @@ export class Player extends SpriteObject {
                             }
                         },
                         walk2: {
-                            nudges2move: 8,
+                            ticks2move: 8,
                             enter(this: Player, state: sstate) {
                                 this.imgid = BitmapId.eila_idle;
                                 state.reset();
@@ -323,7 +323,7 @@ export class Player extends SpriteObject {
                     }
                 },
                 highkick: {
-                    nudges2move: Player.ATTACK_DURATION,
+                    ticks2move: Player.ATTACK_DURATION,
                     enter(this: Player, state: sstate) {
                         state.reset();
                         this.imgid = BitmapId.eila_highkick;
@@ -334,7 +334,7 @@ export class Player extends SpriteObject {
                     }
                 },
                 lowkick: {
-                    nudges2move: Player.ATTACK_DURATION,
+                    ticks2move: Player.ATTACK_DURATION,
                     enter(this: Player, state: sstate) {
                         state.reset();
                         this.imgid = BitmapId.eila_lowkick;
@@ -345,7 +345,7 @@ export class Player extends SpriteObject {
                     }
                 },
                 punch: {
-                    nudges2move: Player.ATTACK_DURATION,
+                    ticks2move: Player.ATTACK_DURATION,
                     enter(this: Player, state: sstate) {
                         state.reset();
                         this.imgid = BitmapId.eila_punch;
@@ -356,7 +356,7 @@ export class Player extends SpriteObject {
                     }
                 },
                 duckkick: {
-                    nudges2move: Player.ATTACK_DURATION,
+                    ticks2move: Player.ATTACK_DURATION,
                     enter(this: Player, state: sstate) {
                         state.reset();
                         this.imgid = BitmapId.eila_duckkick;
@@ -367,7 +367,7 @@ export class Player extends SpriteObject {
                     }
                 },
                 flyingkick: {
-                    nudges2move: Player.ATTACK_DURATION,
+                    ticks2move: Player.ATTACK_DURATION,
                     enter(this: Player, state: sstate) {
                         state.reset();
                         this.imgid = BitmapId.eila_flyingkick;
@@ -386,7 +386,7 @@ export class Player extends SpriteObject {
                     enter(this: Player) { this.imgid = BitmapId.eila_jump; },
                 },
                 humiliated: {
-                    nudges2move: 50,
+                    ticks2move: 50,
                     enter(this: Player, state: sstate) {
                         state.reset();
                         this.imgid = BitmapId.eila_humiliated;
@@ -399,16 +399,18 @@ export class Player extends SpriteObject {
         };
     }
 
+    override determineHitMarker(attackType: EilaAttackType): HitMarkerInfo {
+        return null;
+    }
+
     constructor() {
-        super('player');
-        this.facing = 'left';
+        super('player', undefined, 'left');
         this.size.x = 40;
         this.size.y = 37;
         this.hitarea = new_area(0, 0, 40, 37);
     }
 
     override paint(): void {
-        this.flip_h = this.facing !== 'left';
         super.paint();
     }
 };

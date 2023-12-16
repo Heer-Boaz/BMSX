@@ -544,7 +544,7 @@ export class statecontext implements IStateController {
 		currentStatedef.process_input?.call(this.target, currentState);
 		// Then, run the state
 		currentStatedef.run?.call(this.target, currentState);
-		if (currentStatedef.auto_nudge) ++currentState.nudges; // Auto-nudge the state if auto_nudge is set to true
+		if (currentStatedef.auto_tick) ++currentState.ticks; // Auto-nudge the state if auto_nudge is set to true
 		// Then run the submachine for the state if it exists
 		currentState.run(); // Note that this will do nothing if there is no submachine
 	}
@@ -825,10 +825,6 @@ export class sstate<T extends GameObject | BaseModel = any> implements IStateCon
 	 * @see BaseModel.get
 	 */
 	public targetid: string;
-	/**
-	 * Number of runs before tapehead moves to next statedata.
-	 */
-	public nudges2move!: number; // Number of runs before tapehead moves to next statedata
 
 	/**
 	 * Returns the state definition associated with this state.
@@ -917,7 +913,7 @@ export class sstate<T extends GameObject | BaseModel = any> implements IStateCon
 	 * @param v - the new position of the tapehead
 	 */
 	public set head(v: number) {
-		this._nudges = 0; // Always reset tapehead nudges after moving tapehead
+		this._ticks = 0; // Always reset tapehead ticks after moving tapehead
 		this._tapehead = v; // Move the tape to new position
 
 		// Check if the tapehead is going out of bounds (or there is no tape at all)
@@ -965,33 +961,33 @@ export class sstate<T extends GameObject | BaseModel = any> implements IStateCon
 	}
 
 	/**
-	 * Sets the current number of nudges of the tapehead to the given value without triggering any events or side effects.
-	 * @param v - the new number of nudges of the tapehead
+	 * Sets the current number of ticks of the tapehead to the given value without triggering any events or side effects.
+	 * @param v - the new number of ticks of the tapehead
 	 */
-	public setHeadNudgesNoSideEffect(v: number) {
-		this._nudges = v;
+	public setTicksNoSideEffect(v: number) {
+		this._ticks = v;
 	}
 
 	/**
-	 * The number of nudges.
+	 * The number of ticks.
 	 */
-	protected _nudges!: number;
+	protected _ticks!: number;
 	/**
-	 * Returns the current number of nudges of the tapehead.
-	 * @returns The current number of nudges of the tapehead.
+	 * Returns the current number of ticks of the tapehead.
+	 * @returns The current number of ticks of the tapehead.
 	 */
-	public get nudges(): number {
-		return this._nudges;
+	public get ticks(): number {
+		return this._ticks;
 	}
 	/**
-	 * Sets the current number of nudges of the tapehead to the given value.
-	 * If the number of nudges is greater than or equal to the number of nudges required to move the tapehead,
+	 * Sets the current number of ticks of the tapehead to the given value.
+	 * If the number of ticks is greater than or equal to the number of ticks required to move the tapehead,
 	 * the tapehead is moved to the next position.
-	 * @param v - the new number of nudges of the tapehead
+	 * @param v - the new number of ticks of the tapehead
 	 */
-	public set nudges(v: number) {
-		this._nudges = v;
-		if (v >= this.nudges2move) { ++this.head; }
+	public set ticks(v: number) {
+		this._ticks = v;
+		if (v >= this.definition.ticks2move) { ++this.head; }
 	}
 
 	// Triggers the `next` event of the state machine definition, passing this state and the `state_event_type.Next` event type as arguments.
@@ -1007,13 +1003,12 @@ export class sstate<T extends GameObject | BaseModel = any> implements IStateCon
 	}
 
 	/**
-	 * Resets the state machine by setting the tapehead and nudges to 0 and the nudges2move to the value defined in the state machine definition.
+	 * Resets the state machine by setting the tapehead and ticks to 0 and the ticks2move to the value defined in the state machine definition.
 	 */
 	public reset(reset_tree: boolean = true): void {
 		this._tapehead = 0; // Reset the tapehead to the beginning of the tape
-		this._nudges = 0; // Reset the nudges
+		this._ticks = 0; // Reset the ticks
 		if (!this.definition) return; // No definition exists for the empty 'none'-state
-		this.nudges2move = this.definition.nudges2move; // Reset the nudges2move to the value defined in the state machine definition
 		this.data = { ...this.definition.data }; // Reset the state data by shallow copying the definition's data
 		if (reset_tree) this.state?.reset(); // Reset the substate machine if it exists
 	}
@@ -1038,13 +1033,13 @@ export class sdef {
 	/**
 	 * Number of runs before tapehead moves to next statedata.
 	 */
-	public nudges2move: number; // Number of runs before tapehead moves to next statedata
+	public ticks2move: number; // Number of runs before tapehead moves to next statedata
 	/**
 	 * Specifies whether the tapehead should automatically rewind to index 0 when it reaches the end of the tape.
 	 * If set to true, the tapehead will be set to index 0 when it would go out of bounds.
 	 * If set to false, the tapehead will remain at the end of the tape.
 	 */
-	public auto_nudge: boolean; // Automagically increase the nudges during run
+	public auto_tick: boolean; // Automagically increase the ticks during run
 	public auto_rewind_tape_after_end: boolean; // Automagically set the tapehead to index 0 when tapehead would go out of bound. Otherwise, will remain at end
 	public repetitions: number; // Number of times the tape should be repeated
 
@@ -1058,9 +1053,9 @@ export class sdef {
 	 */
 	public constructor(_id: string = '_', _partialdef?: Partial<sdef>) {
 		this.id = _id;
-		this.nudges2move ??= 1;
+		this.ticks2move ??= 1;
 		this.repetitions ??= 1;
-		this.auto_nudge ??= true;
+		this.auto_tick ??= true;
 		this.auto_rewind_tape_after_end ??= true;
 		this.data ??= {};
 		_partialdef && Object.assign(this, _partialdef); // Assign the partial definition to the instance

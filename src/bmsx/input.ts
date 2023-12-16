@@ -1,5 +1,5 @@
 ﻿import { Key } from 'ts-key-enum';
-import { handleDebugClick, handleDebugMouseDown, handleDebugMouseDragEnd, handleDebugMouseMove, handleDebugMouseOut, handleContextMenu as handleDebugContextMenu, handleOpenObjectMenu, handleOpenDebugMenu as handleOpenDebugMenu } from './bmsxdebugger';
+import { handleDebugClick, handleDebugMouseDown, handleDebugMouseUp, handleDebugMouseMove, handleDebugMouseOut, handleContextMenu as handleDebugContextMenu, handleOpenObjectMenu, handleOpenDebugMenu as handleOpenDebugMenu } from './bmsxdebugger';
 import { EventEmitter } from './eventemitter';
 
 /**
@@ -146,6 +146,7 @@ export class Input {
         'left': 14,
         'right': 15,
     } as const;
+    static preventInput: boolean; // Prevents input from being registered. For instance, when the game loses focus.
 
     /**
      * Resets the input state for all buttons except the specified ones.
@@ -299,7 +300,7 @@ export class Input {
      * @param key - The key to check the state of.
      * @returns The pressed state of the key.
      */
-    private static getKeyState(key: string): ButtonState {
+    public static getKeyState(key: string): ButtonState {
         return Input.getPressedState(Input.KeyState, Input.KeyPressedConsumedState, key);
     }
 
@@ -500,7 +501,7 @@ export class Input {
                     handleDebugMouseMove(e);
                     break;
                 case "mouseup":
-                    handleDebugMouseDragEnd(e);
+                    handleDebugMouseUp(e);
                     break;
                 case "mouseout":
                     handleDebugMouseOut(e);
@@ -608,9 +609,11 @@ export class Input {
             }
         });
 
-        window.addEventListener('keydown', e => { preventDefaultEventAction(e, e.code); keydown(e.code); }, options);
-        window.addEventListener('keyup', e => { preventDefaultEventAction(e, e.code); keyup(e.code); }, options);
-        window.addEventListener('blur', blur, false);
+        window.addEventListener('keydown', e => { preventDefaultEventAction(e, e.code); !Input.preventInput && keydown(e.code); }, options);
+        window.addEventListener('keyup', e => { preventDefaultEventAction(e, e.code); !Input.preventInput && keyup(e.code); }, options);
+        window.addEventListener('blur', blur, false); // Blur event will pause the game and prevent any input from being registered and reset the key states
+        window.addEventListener('focus', focus, false); // Focus event will allow input to be registered again
+        window.addEventListener('mouseout', () => Input.reset(), options); // Reset input states when mouse leaves the window
 
         document.addEventListener('touchmove', e => { preventActionAndPropagation(e); handleTouchStuff(e); return false; }, options);
         document.addEventListener('touchstart', e => { preventActionAndPropagation(e); handleTouchStuff(e); return false; }, options);
@@ -793,7 +796,7 @@ function preventDefaultEventAction(e: UIEvent, key: string) {
                 else global.view.toFullscreen();
                 break;
             default:
-                e.preventDefault();
+                // e.preventDefault();
                 break;
         }
     }
@@ -801,22 +804,28 @@ function preventDefaultEventAction(e: UIEvent, key: string) {
 
 /**
  * Sets the key state to true when a key is pressed.
- * @param key - The button ID or string representing the key.
+ * @param key_code - The button ID or string representing the key.
  */
-function keydown(key: ButtonId | string): void {
-    Input.KeyState[key] = true;
+function keydown(key_code: ButtonId | string): void {
+    Input.KeyState[key_code] = true;
 }
 
 /**
  * Handles the keyup event for a given key.
- * @param key - The key identifier or name.
+ * @param key_code - The key identifier or name.
  */
-function keyup(key: ButtonId | string): void {
-    Input.KeyState[key] = Input.KeyPressedConsumedState[key] = false;
+function keyup(key_code: ButtonId | string): void {
+    Input.KeyState[key_code] = Input.KeyPressedConsumedState[key_code] = false;
 }
 
 function blur(e: FocusEvent): void {
+    Input.preventInput = true; // Prevent input when the window loses focus
     Input.reset();
+}
+
+function focus(e: FocusEvent): void {
+    Input.reset();
+    Input.preventInput = false; // Allow input when the window regains focus
 }
 
 /**
@@ -827,6 +836,8 @@ function blur(e: FocusEvent): void {
  */
 function handleTouchStuff(e: TouchEvent): void {
     Input.resetUI();
+    if (Input.preventInput) return;
+
     if (e.touches.length == 0) {
         Input.reset();
         return;

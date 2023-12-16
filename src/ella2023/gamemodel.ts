@@ -3,10 +3,11 @@ import { Sinterklaas } from './sinterklaas';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { sstate, statedef_builder, machine_states } from '../bmsx/bfsm';
 import { insavegame } from '../bmsx/gameserializer';
-import { Direction, get_gamemodel, new_vec3 } from '../bmsx/bmsx';
+import { get_gamemodel, new_vec3 } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
 import { BaseModel } from '../bmsx/model';
 import { Player } from './eila';
+import type { Direction } from "../bmsx/bmsx";
 
 @insavegame
 export class gamemodel extends BaseModel {

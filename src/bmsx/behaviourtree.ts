@@ -1,6 +1,6 @@
 import { GameObject, IIdentifiable } from './gameobject';
-import { GameObjectId } from './bmsx';
 import { insavegame } from './gameserializer';
+import type { GameObjectId } from './rompack';
 
 /**
  * Represents the definition of a behavior tree.

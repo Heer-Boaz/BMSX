@@ -1,5 +1,5 @@
-import { GameObjectId } from "./bmsx";
 import { GameObject } from "./gameobject";
+import { GameObjectId } from "./rompack";
 
 /**
  * Class representing an ObjectTracker.

@@ -1,4 +1,4 @@
-import { RomPack } from '../bmsx/rompack';
+import type { RomPack } from '../bmsx/rompack';
 import { Game, game, model, controller } from '../bmsx/bmsx';
 import { GameConstants } from './gameconstants';
 import { Model, Chapter } from './gamemodel';

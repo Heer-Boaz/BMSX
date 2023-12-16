@@ -1,9 +1,10 @@
 import { BehaviorTreeDefinition, BehaviorTreeDefinitions, BehaviorTreeID, setup_btdef_library, setup_bt_library } from "./behaviourtree";
 import { statecontext, mdef, MachineDefinitions, sdef, setup_fsmdef_library, sstate, bfsm_controller } from "./bfsm";
-import { Direction, vec2, vec3 } from "./bmsx";
 import { GameObject } from "./gameobject";
 import { insavegame, onsave, Reviver, Savegame, Serializer } from "./gameserializer";
 import { Input } from "./input";
+import { vec2, vec3 } from "./rompack";
+import { Direction } from "./bmsx";
 
 export interface ISpaceObject {
     spaceid: string;

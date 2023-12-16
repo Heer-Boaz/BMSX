@@ -1,5 +1,5 @@
 import { gamemodel } from './gamemodel';
-import { RomPack } from '../bmsx/rompack';
+import type { RomPack } from '../bmsx/rompack';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
