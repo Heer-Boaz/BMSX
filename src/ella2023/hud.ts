@@ -36,8 +36,8 @@ export class Hud extends SpriteObject {
         const COLOR = Msx1Colors[4];
         const Z = 200;
 
-        const hp1 = sinterklaas.hp;
-        const hp2 = player.hp;
+        const hp1 = sinterklaas?.hp ?? 100;
+        const hp2 = player?.hp ?? 100;
 
         const hp1Width = HP_BAR1.startX + (HP_BAR1.endX - HP_BAR1.startX) * hp1 / MAX_HP;
         const hp2Width = HP_BAR2.endX - (HP_BAR2.endX - HP_BAR2.startX) * hp2 / MAX_HP;
