@@ -343,6 +343,13 @@ export class bfsm_controller {
 	}
 
 	/**
+	 * Goes back to the previous state of the current state machine
+	 */
+	pop(): void {
+		this.current_machine.pop();
+	}
+
+	/**
 	 * Goes back to the previous state of the state machine with the given ID.
 	 * @param id - The ID of the state machine.
 	 */
@@ -378,11 +385,18 @@ export class bfsm_controller {
 		}
 	}
 
-	unpause_statemachine(id: string): void {
+	pause_all_except(id: string): void {
+		for (let _id in this.statemachines) {
+			if (_id === id) continue;
+			this.statemachines[_id].paused = true;
+		}
+	}
+
+	resume_statemachine(id: string): void {
 		this.statemachines[id].paused = false;
 	}
 
-	unpause_all_statemachines(): void {
+	resume_all_statemachines(): void {
 		for (let id in this.statemachines) {
 			this.statemachines[id].paused = false;
 		}
