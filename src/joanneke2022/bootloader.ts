@@ -435,7 +435,7 @@ class stoom extends SpriteObject {
                         this.imgid = s.current_tape_value;
                     },
                     end(this: stoom, s: sstate<stoom>) {
-                        this.exile();
+                        this.markForDisposal();
                     }
                 }),
             }
