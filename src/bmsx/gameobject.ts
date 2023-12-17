@@ -278,7 +278,14 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
         this.state.start();
     }
 
-    public ondispose?: () => void;
+    public ondispose(): void {
+        // Unsubscribe from events
+        const eventEmitter = EventEmitter.getInstance();
+        eventEmitter.removeSubscriber(this);
+
+        // Dispose of components
+        Object.values(this.components).forEach(component => component.dispose());
+    }
 
     public paint?(): void;
     public postpaint?(): void; // Post-processing such as lighting effects or the characters of an ASCII-buffer in case of an ASCII-sprite
@@ -287,7 +294,7 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
     /**
     * Gebruik ik als event handler voor e.g. onLeaveScreen
     */
-    public exile(): void {
+    public markForDisposal(): void {
         this.disposeFlag = true;
     }
 
@@ -376,7 +383,7 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
                     break;
                 case 'self': emitterFilter = this.id; break;
             }
-            eventEmitter.on(subscription.eventName, handler, emitterFilter);
+            eventEmitter.on(subscription.eventName, handler, this, emitterFilter);
         });
     }
 
