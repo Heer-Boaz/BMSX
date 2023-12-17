@@ -43,6 +43,21 @@ export class StateMachineVisualizer extends Component {
     }
 
     override postprocessingUpdate({ params, returnvalue }: ComponentUpdateParams): void {
+        this.openDialog();
+        const [machineElements, stateElements] = [this.machineElements, this.stateElements]; // Make sure these aren't disposed of while the method is running
+
+        // Re-visualize the state machine
+        highlightCurrentState(stateElements, machineElements, this.bfsmController);
+    }
+
+    public closeDialog(): void {
+        this.dialog.close();
+        this.dialog = null;
+        this.machineElements = null;
+        this.stateElements = null;
+    }
+
+    public openDialog(): void {
         if (!this.dialog) {
             this.dialog = new FloatingDialog(`FSM: [${this.parentid}]`);
         }
@@ -51,11 +66,9 @@ export class StateMachineVisualizer extends Component {
 
             [_contentDiv, this.machineElements, this.stateElements] = visualizeStateMachine(this.dialog.getDialogElement(), this.dialog.getContentElement(), this.bfsmController);
             this.dialog.updateSize();
-            this.dialog.minimize(); // Minimize the dialog by default
+            // this.dialog.minimize(); // Minimize the dialog by default
         }
 
-        // Re-visualize the state machine
-        highlightCurrentState(this.stateElements, this.machineElements, this.bfsmController);
     }
 }
 
@@ -161,7 +174,9 @@ class FloatingDialog {
     }
 
     public close(): void {
-        document.body.removeChild(this.dialogDiv);
+        // Check if the dialog is a child of the body element
+        if (!this.dialogDiv.parentElement) return;
+        this.dialogDiv.parentElement.removeChild(this.dialogDiv);
     }
 
     public updateSize(): void {
@@ -274,24 +289,34 @@ function startDragGameObject(gameobject_at_cursor: GameObject, offsetToCursor: v
 
 export function handleContextMenu(e: MouseEvent): void {
     e.preventDefault();
-    e.stopPropagation();
-
-    if (e.shiftKey) {
-        // Unpause game
-        global.game.debug_runSingleFrameAndPause = false;
-        global.game.paused = false;
-    }
-    else {
-        // Pause game for debugging, and only compute a single frame
-        if (global.game.paused) {
-            global.game.debug_runSingleFrameAndPause = true;
-            global.game.paused = false;
+    const { objUnderCursor, offsetToCursor } = getGameObjectAtCursor(e);
+    // if (Input.getKeyState('ControlLeft').pressed) { // Ctrl + mouse move = allow for selecting objects in the game world (for debugging)
+    // Highlight mouse-overed objects
+    highlight_object(objUnderCursor);
+    // Add state visualiser component to the object
+    if (objUnderCursor) {
+        // Verify that the object does not already have a state visualiser component
+        const existingVisualiser = objUnderCursor.getComponent(StateMachineVisualizer);
+        if (!objUnderCursor.getComponent(StateMachineVisualizer)) {
+            const visualiser = new StateMachineVisualizer(objUnderCursor.id);
+            objUnderCursor.addComponent(visualiser);
+            visualiser.enabled = true;
         }
         else {
-            global.game.paused = true;
-            global.game.debug_runSingleFrameAndPause = false;
+            existingVisualiser.enabled = !existingVisualiser.enabled;
+            if (!existingVisualiser.enabled) {
+                existingVisualiser.closeDialog();
+            }
+            else {
+                existingVisualiser.openDialog();
+            }
         }
     }
+    // }
+    else {
+        highlight_object(null); // Remove highlight when Ctrl is not pressed or when no object is under the cursor
+    }
+
 }
 
 function addContent(parent: HTMLElement, type: string, content: string | null, depth: number = 0): HTMLElement {
@@ -715,7 +740,7 @@ function createDebugDialog(title?: string, previousDialog?: HTMLElement): [dialo
     const closeSpan = document.createElement('span');
     closeSpan.className = 'modal-dialog-button';
     closeSpan.innerHTML = '&times;';
-    closeSpan.onclick = (e) => {
+    closeSpan.onclick = (e) => { // TODO: SHOULD ALSO BE HANDLED BY STATE VISUALISER COMPONENT SO THAT IT CAN BE REMOVED WHEN THE DIALOG IS CLOSED
         e.preventDefault();
         document.body.removeChild(theDialogDiv);
 
