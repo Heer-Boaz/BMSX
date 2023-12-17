@@ -222,7 +222,7 @@ export abstract class BaseView {
     }
 
     public drawImg(options: DrawImgOptions): void {
-        let { x, y, imgid, flip_h = false, flip_v = false, sx = 1, sy = 1 } = options;
+        let { x, y, z, imgid, flip_h = false, flip_v = false, sx = 1, sy = 1 } = options;
 
         let img = BaseView.images[imgid];
         global.view.context.save();

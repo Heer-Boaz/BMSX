@@ -222,7 +222,7 @@ export class Input implements IIdentifiable {
             const gamepad = e.gamepad;
             if (!gamepad || !gamepad.id.toLowerCase().includes('gamepad')) return;
             console.info(`Gamepad ${gamepad.index} connected.`);
-
+            self.addPendingGamepadAssignment(gamepad)
             // let playerIndex = assignGamepadToPlayer(gamepad);
         });
 
@@ -272,10 +272,31 @@ export class Input implements IIdentifiable {
                     const proposedPlayerIndex = this.getNextAvailablePlayerIndexForGamepadAssignment();
                     if (proposedPlayerIndex !== null) {
                         pending.proposedPlayerIndex = proposedPlayerIndex;
+                        console.info(`Gamepad ${gamepadInput.gamepadIndex} proposed to be assigned to player ${proposedPlayerIndex}.`);
                     }
                 }
             }
-
+            else {
+                if (gamepadInput.getButtonState(Input.BUTTON2INDEX['start']).pressed && !gamepadInput.getButtonState(Input.BUTTON2INDEX['start']).consumed) {
+                    gamepadInput.consumeButton(Input.BUTTON2INDEX['start']);
+                    this.assignGamepadToPlayer(gamepadInput, pending.proposedPlayerIndex);
+                    this.removePendingGamepadAssignment(pending.gamepadInput);
+                }
+                else if (gamepadInput.getButtonState(Input.BUTTON2INDEX['left']).pressed && !gamepadInput.getButtonState(Input.BUTTON2INDEX['left']).consumed) {
+                    gamepadInput.consumeButton(Input.BUTTON2INDEX['left']);
+                    let proposedPlayerIndex = pending.proposedPlayerIndex - 1;
+                    if (proposedPlayerIndex < 1) proposedPlayerIndex = Input.playerInputs.length;
+                    pending.proposedPlayerIndex = proposedPlayerIndex;
+                    console.info(`Gamepad ${gamepadInput.gamepadIndex} proposed to be assigned to player ${proposedPlayerIndex}.`);
+                }
+                else if (gamepadInput.getButtonState(Input.BUTTON2INDEX['right']).pressed && !gamepadInput.getButtonState(Input.BUTTON2INDEX['right']).consumed) {
+                    gamepadInput.consumeButton(Input.BUTTON2INDEX['right']);
+                    let proposedPlayerIndex = pending.proposedPlayerIndex + 1;
+                    if (proposedPlayerIndex > 4) proposedPlayerIndex = 1;
+                    pending.proposedPlayerIndex = proposedPlayerIndex;
+                    console.info(`Gamepad ${gamepadInput.gamepadIndex} proposed to be assigned to player ${proposedPlayerIndex}.`);
+                }
+            }
         });
     }
 
@@ -303,12 +324,22 @@ export class Input implements IIdentifiable {
     }
 
     /**
+     * Remove a pending gamepad assignment.
+     *
+     * @param gamepad - The gamepad waiting to be assigned.
+     */
+    private removePendingGamepadAssignment(gamepadInput: GamepadInput): void {
+        const index = this.pendingGamepadAssignments.findIndex(pending => pending.gamepadInput === gamepadInput);
+        if (index !== -1) this.pendingGamepadAssignments.splice(index, 1);
+    }
+
+    /**
      * Assigns a gamepad to a player.
      *
      * @param gamepad The gamepad to assign.
      * @param playerIndex The index of the player.
      */
-    public assignGamepadToPlayer(gamepad: Gamepad, playerIndex: number): void {
+    public assignGamepadToPlayer(gamepad: GamepadInput, playerIndex: number): void {
         Input.getPlayerInput(playerIndex).assignGamepadToPlayer(gamepad);
         EventEmitter.getInstance().emit('playerjoin', this, playerIndex);
     }
@@ -695,11 +726,10 @@ export class PlayerInput {
     * @param gamepad The gamepad to assign to a player.
     * @returns The player index the gamepad was assigned to, or null if no player index was available.
     */
-    assignGamepadToPlayer(gamepad: Gamepad): void {
-        const gamepadInput = new GamepadInput(gamepad.index);
+    assignGamepadToPlayer(gamepadInput: GamepadInput): void {
         this.gamepad = gamepadInput;
 
-        console.info(`Gamepad ${gamepad.index} assigned to player ${this.playerIndex}.`);
+        console.info(`Gamepad ${gamepadInput.gamepadIndex} assigned to player ${this.playerIndex}.`);
     }
 
     /**
@@ -781,7 +811,11 @@ export class PlayerInput {
 }
 
 class GamepadInput {
-    private gamepadIndex: number | null;
+    private _gamepadIndex: number | null;
+    public get gamepadIndex(): number | null {
+        return this._gamepadIndex;
+    }
+
     /**
      * The state of each gamepad button for each player.
      */
@@ -793,7 +827,7 @@ class GamepadInput {
     private gamepadButtonPressedConsumedStates: Index2State = {};
 
     constructor(gamepadIndex: number | null) {
-        this.gamepadIndex = gamepadIndex;
+        this._gamepadIndex = gamepadIndex;
 
         // Reset gamepad button states
         this.reset();
@@ -807,19 +841,19 @@ class GamepadInput {
      * This function should be called once per frame to ensure that gamepad input is up-to-date.
      */
     public pollInput(): void {
-        if (this.gamepadIndex === null) return; // No gamepad was assigned to this GamepadInput-object
+        if (this._gamepadIndex === null) return; // No gamepad was assigned to this GamepadInput-object
         const gamepads: Gamepad[] = navigator.getGamepads ? navigator.getGamepads() : ((navigator as any).webkitGetGamepads ? (navigator as any).webkitGetGamepads : undefined); // Get gamepads from browser API
         if (!gamepads) return; // Browser does not support gamepads API
-        if (gamepads.length < this.gamepadIndex) return; // Gamepad index is out of range of connected gamepads array (this can happen if multiple gamepads are connected and one is disconnected)
+        if (gamepads.length < this._gamepadIndex) return; // Gamepad index is out of range of connected gamepads array (this can happen if multiple gamepads are connected and one is disconnected)
 
         // Reset gamepad button states
         this.gamepadButtonStates = {};
 
         // Check whether any axes have been triggered
-        this.pollGamepadAxes(gamepads[this.gamepadIndex]);
+        this.pollGamepadAxes(gamepads[this._gamepadIndex]);
 
         // Check button states
-        this.pollGamepadButtons(gamepads[this.gamepadIndex]);
+        this.pollGamepadButtons(gamepads[this._gamepadIndex]);
     }
 
     /**

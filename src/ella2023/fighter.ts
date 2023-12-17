@@ -151,7 +151,7 @@ export abstract class Fighter extends SpriteObject {
                 imgid: hitMarkerImgId,
                 x: hitMarker.pos.x,
                 y: hitMarker.pos.y,
-                z: this.z + 10,
+                z: this.z + 100,
             });
         }
     }
