@@ -1,18 +1,18 @@
 import { IIdentifiable } from './gameobject';
+
+type Listener = { listener: Function, subscriber: any };
+type ListenerSet = Set<Listener>;
+type EventListenerMap = Record<string, ListenerSet>;
+type EmitterScopeListenerMap = Record<string, EventListenerMap>;
+
 /**
  * A generic event dispatcher that can be used to manage listeners and dispatch events.
  */
 export class EventEmitter {
-    private listeners: Record<string, Record<string, Function[]>> = {};
-    /**
-     * The singleton instance of the EventEmitter class.
-     */
+    private emitterScopeListeners: EmitterScopeListenerMap = {};
+    private globalScopeListeners: EventListenerMap = {};
     private static instance: EventEmitter;
-    /**
-     * Returns the singleton instance of the EventEmitter class.
-     * If the instance does not exist, it creates a new one.
-     * @returns The singleton instance of the EventEmitter class.
-     */
+
     public static getInstance(): EventEmitter {
         if (!EventEmitter.instance) {
             EventEmitter.instance = new EventEmitter();
@@ -20,56 +20,66 @@ export class EventEmitter {
         return EventEmitter.instance;
     }
 
-    on(event_name: string, listener: Function, emitter_id?: string): void {
-        if (!this.listeners[event_name]) {
-            this.listeners[event_name] = {};
+    on(event_name: string, listener: Function, subscriber: any, emitter_id?: string): void {
+        if (emitter_id) {
+            if (!this.emitterScopeListeners[event_name]) {
+                this.emitterScopeListeners[event_name] = {};
+            }
+            if (!this.emitterScopeListeners[event_name][emitter_id]) {
+                this.emitterScopeListeners[event_name][emitter_id] = new Set();
+            }
+            this.emitterScopeListeners[event_name][emitter_id].add({ listener, subscriber });
+        } else {
+            if (!this.globalScopeListeners[event_name]) {
+                this.globalScopeListeners[event_name] = new Set();
+            }
+            this.globalScopeListeners[event_name].add({ listener, subscriber });
         }
-        const key = emitter_id || 'all';
-        if (!this.listeners[event_name][key]) {
-            this.listeners[event_name][key] = [];
-        }
-        this.listeners[event_name][key].push(listener);
     }
 
     emit(event_name: string, emitter: IIdentifiable, ...args: any[]): void {
-        // Emit to specific listeners
-        this.listeners[event_name]?.[emitter.id]?.forEach(listener => listener(event_name, emitter, ...args));
-        // Emit to all listeners
-        this.listeners[event_name]?.['all']?.forEach(listener => listener(event_name, emitter, ...args));
+        this.emitterScopeListeners[event_name]?.[emitter.id]?.forEach(({ listener, subscriber }) => {
+            listener.call(subscriber, event_name, emitter, ...args);
+        });
+        this.globalScopeListeners[event_name]?.forEach(({ listener, subscriber }) => {
+            listener.call(subscriber, event_name, emitter, ...args);
+        });
     }
 
     off(event: string, listener: Function, emitter?: string): void {
         const key = emitter || 'all';
-        const emitterListeners = this.listeners[event]?.[key];
-        if (emitterListeners) {
-            this.listeners[event][key] = emitterListeners.filter(l => l !== listener);
+        const emitterListeners = this.emitterScopeListeners[event]?.[key];
+        if (!emitterListeners) {
+            console.warn(`No listeners for event "${event}" and emitter "${key}"`);
+            return;
+        }
+        for (let item of emitterListeners) {
+            if (item.listener === listener) {
+                emitterListeners.delete(item);
+            }
         }
     }
 
-    removeAll(event: string, emitter?: string): void {
-        const key = emitter || 'all';
-        delete this.listeners[event]?.[key];
-    }
-
-    /**
-     * Adds a one-time listener function for the specified event.
-     * The listener will be automatically removed after it is called.
-     *
-     * @param event - The name of the event to listen for.
-     * @param listener - The listener function to be called when the event is emitted.
-     */
-    once(event: string, listener: Function): void {
-        const onceListener = (...args: any[]) => {
-            listener(...args);
-            this.off(event, onceListener);
-        };
-        this.on(event, onceListener);
+    removeSubscriber(subscriber: any): void {
+        for (const event in this.emitterScopeListeners) {
+            for (const key in this.emitterScopeListeners[event]) {
+                for (let item of this.emitterScopeListeners[event][key]) {
+                    if (item.subscriber === subscriber) {
+                        this.emitterScopeListeners[event][key].delete(item);
+                    }
+                }
+            }
+        }
+        for (const event in this.globalScopeListeners) {
+            for (let item of this.globalScopeListeners[event]) {
+                if (item.subscriber === subscriber) {
+                    this.globalScopeListeners[event].delete(item);
+                }
+            }
+        }
     }
 }
 
-/**
- * Represents a subscription to an event.
- */
 /**
  * Represents a subscription to an event.
  */
@@ -158,19 +168,13 @@ export function subscribesToSelfScopedEvent(eventName: string) {
  */
 export function subscribesToGlobalEvent(eventName: string) {
     return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
-        EventEmitter.getInstance().on(eventName, descriptor.value);
+        if (!target.constructor.eventSubscriptions) {
+            target.constructor.eventSubscriptions = [];
+        }
+        target.constructor.eventSubscriptions.push({ eventName, handlerName: propertyKey, scope: 'all' });
+        updateAllEventSubscriptions(target.constructor);
     };
 }
-
-/* Decorator function that registers itself as a handler for a specific event using the `once` function.
- * @param eventName The name of the event to handle.
- * @returns A decorator function that can be applied to a method.
- */
-// export function oneTimeGlobalEventHandler(eventName: string) {
-//     return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
-//         EventEmitter.getInstance().once(eventName, descriptor.value);
-//     };
-// }
 
 /**
  * Decorator function that emits an event when the decorated method is called.
