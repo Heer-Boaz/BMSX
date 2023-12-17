@@ -99,7 +99,7 @@ const options = {
 export class Input implements IIdentifiable {
     private static instance: Input;
     private static playerInputs: PlayerInput[] = [];
-    private static pendingGamepadAssignments: { gamepad: Gamepad; playerIndex: number }[] = [];
+    private pendingGamepadAssignments: { gamepadInput: GamepadInput, proposedPlayerIndex: number }[] = [];
 
     public static getInstance(debug = false): Input {
         if (!Input.instance) {
@@ -204,35 +204,6 @@ export class Input implements IIdentifiable {
     constructor(debug = true) {
         const self = this;
 
-        /**
-         * Returns the index of the next available player for gamepad input, or undefined if no player is available.
-         * A player is considered available if there is a connected gamepad that is not already assigned to a player.
-         * @returns The index of the next available player, or undefined if no player is available.
-         */
-        const getNextAvailablePlayerIndex = (): number | null => {
-            for (let i = 0; i < Input.playerInputs.length; i++) {
-                const playerInput = Input.playerInputs[i];
-                if (!playerInput.gamepad) return playerInput.playerIndex;
-            }
-            return null;
-        }
-
-        // /**
-        //  * Assigns a gamepad to a player and returns the player index.
-        //  * If no player index is available, returns null.
-        //  * @param gamepad The gamepad to assign to a player.
-        //  * @returns The player index the gamepad was assigned to, or null if no player index was available.
-        //  */
-        const assignGamepadToPlayer = (gamepad: Gamepad): number | null => {
-            // Find the next available player index
-            const playerIndex = getNextAvailablePlayerIndex();
-            if (playerIndex === null) return null;
-
-            // Assign gamepad to player
-            Input.getPlayerInput(playerIndex).assignGamepadToPlayer(gamepad);
-
-            return playerIndex;
-        };
 
         // Initialize gamepad states for already connected gamepads
         const gamepads = navigator.getGamepads();
@@ -240,7 +211,7 @@ export class Input implements IIdentifiable {
             const gamepad = gamepads[i];
             if (!gamepad || !gamepad.id.toLowerCase().includes('gamepad')) continue;
 
-            assignGamepadToPlayer(gamepad);
+            this.addPendingGamepadAssignment(gamepad);
         }
 
         /**
@@ -252,9 +223,7 @@ export class Input implements IIdentifiable {
             if (!gamepad || !gamepad.id.toLowerCase().includes('gamepad')) return;
             console.info(`Gamepad ${gamepad.index} connected.`);
 
-            let playerIndex = assignGamepadToPlayer(gamepad);
-
-            if (playerIndex != null) EventEmitter.getInstance().emit('playerjoin', self, playerIndex);
+            // let playerIndex = assignGamepadToPlayer(gamepad);
         });
 
         document.addEventListener('webkitmouseforcewillbegin', e => preventActionAndPropagation(e), options);
@@ -291,6 +260,57 @@ export class Input implements IIdentifiable {
 
     public pollInput(): void {
         Input.playerInputs.forEach(player => { player.pollInput(); });
+        this.pendingGamepadAssignments.forEach(pending => {
+            const gamepadInput = pending.gamepadInput
+            gamepadInput.pollInput();
+
+            // Check whether the start button was pressed and not consumed yet to assign the gamepad to a player
+            if (pending.proposedPlayerIndex === null) {
+                if (gamepadInput.getButtonState(Input.BUTTON2INDEX['start']).pressed && !gamepadInput.getButtonState(Input.BUTTON2INDEX['start']).consumed) {
+                    gamepadInput.consumeButton(Input.BUTTON2INDEX['start']);
+
+                    const proposedPlayerIndex = this.getNextAvailablePlayerIndexForGamepadAssignment();
+                    if (proposedPlayerIndex !== null) {
+                        pending.proposedPlayerIndex = proposedPlayerIndex;
+                    }
+                }
+            }
+
+        });
+    }
+
+    /**
+     * Returns the index of the next available player for gamepad input, or undefined if no player is available.
+     * A player is considered available if there is a connected gamepad that is not already assigned to a player.
+     * @returns The index of the next available player, or undefined if no player is available.
+     */
+    public getNextAvailablePlayerIndexForGamepadAssignment(): number | null {
+        for (let i = 0; i < Input.playerInputs.length; i++) {
+            const playerInput = Input.playerInputs[i];
+            if (!playerInput.gamepad && !this.pendingGamepadAssignments.some(pending => pending.proposedPlayerIndex === playerInput.playerIndex)) return playerInput.playerIndex;
+        }
+        return null;
+    }
+
+    /**
+     * Adds a pending gamepad assignment.
+     *
+     * @param gamepad - The gamepad waiting to be assigned.
+     */
+    private addPendingGamepadAssignment(gamepad: Gamepad): void {
+        const gamepadInput = new GamepadInput(gamepad.index);
+        this.pendingGamepadAssignments.push({ gamepadInput: gamepadInput, proposedPlayerIndex: null });
+    }
+
+    /**
+     * Assigns a gamepad to a player.
+     *
+     * @param gamepad The gamepad to assign.
+     * @param playerIndex The index of the player.
+     */
+    public assignGamepadToPlayer(gamepad: Gamepad, playerIndex: number): void {
+        Input.getPlayerInput(playerIndex).assignGamepadToPlayer(gamepad);
+        EventEmitter.getInstance().emit('playerjoin', this, playerIndex);
     }
 
     public static get KC_F1(): boolean {
@@ -758,7 +778,6 @@ export class PlayerInput {
         this.reset();
         this.preventInput = false; // Allow input when the window regains focus
     }
-
 }
 
 class GamepadInput {
