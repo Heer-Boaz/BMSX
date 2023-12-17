@@ -1,10 +1,12 @@
 import { BehaviorTreeDefinition, BehaviorTreeDefinitions, BehaviorTreeID, setup_btdef_library, setup_bt_library } from "./behaviourtree";
-import { statecontext, mdef, MachineDefinitions, sdef, setup_fsmdef_library, sstate, bfsm_controller } from "./bfsm";
+import { mdef, MachineDefinitions, sdef, setup_fsmdef_library, sstate, bfsm_controller } from "./bfsm";
+import { onload } from "./gameserializer";
 import { GameObject } from "./gameobject";
 import { insavegame, onsave, Reviver, Savegame, Serializer } from "./gameserializer";
 import { Input } from "./input";
-import { vec2, vec3 } from "./rompack";
+import { GameObjectId, vec2, vec3 } from "./rompack";
 import { Direction } from "./bmsx";
+import { EventEmitter, IEventSubscriber } from "./eventemitter";
 
 export interface ISpaceObject {
     spaceid: string;
@@ -300,6 +302,26 @@ export abstract class BaseModel {
 
         BaseModel.setup_fsmdef_library();
         BaseModel.setup_bt_library();
+        this.init_event_subscriptions();
+    }
+
+    @onload
+    public init_event_subscriptions(): void {
+        const constr = this.constructor as IEventSubscriber;
+        if (!constr.eventSubscriptions) return;
+
+        const eventEmitter = EventEmitter.getInstance();
+        constr.eventSubscriptions.forEach(subscription => {
+            const handler = this[subscription.handlerName].bind(this);
+            let emitterFilter: string;
+            switch (subscription.scope) {
+                case 'all': emitterFilter = undefined; break;
+                case 'parent':
+                    throw new Error(`Cannot subscribe the game model (BaseModel) to event ${subscription.eventName} with scope ${subscription.scope} as the model doesn't have a parent.`);
+                case 'self': emitterFilter = 'model'; break;
+            }
+            eventEmitter.on(subscription.eventName, handler, this, emitterFilter);
+        });
     }
 
     /**
