@@ -37,8 +37,10 @@ export class gamemodel extends BaseModel {
     public handleHitAnimationEndEvent(event_name: string, emitter: Fighter): void {
         const model = get_gamemodel<gamemodel>();
         const otherFighter = model.theOtherFighter(emitter);
-        otherFighter.hideHitMarker();
-        otherFighter.state.to('hitanimation.geen_au');
+        if (otherFighter) {
+            otherFighter.hideHitMarker();
+            otherFighter.state.to('hitanimation.geen_au');
+        }
 
         if (emitter.hp <= 0) {
             SM.stopMusic();
