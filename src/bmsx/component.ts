@@ -74,6 +74,13 @@ export abstract class Component implements IIdentifiable {
         this.init();
     }
 
+    public dispose() {
+        this.enabled = false;
+        // Remove event subscriptions
+        const eventEmitter = EventEmitter.getInstance();
+        eventEmitter.removeSubscriber(this);
+    }
+
     /**
      * Checks if the component has the specified tag.
      * @param tag The tag to check.
@@ -118,7 +125,7 @@ export abstract class Component implements IIdentifiable {
             };
             let emitterFilter: string;
             switch (subscription.scope) {
-                case 'all': emitterFilter = 'all'; break;
+                case 'all': emitterFilter = undefined; break;
                 case 'parent':
                     emitterFilter = (this as Component & { parentid?: string }).parentid;
                     if (!emitterFilter) throw `Cannot subscribe Component ${this.id} to event ${subscription.eventName} with scope ${subscription.scope} as the class (instance) ${this.constructor.name} does not have a "parentid".`;
@@ -126,8 +133,7 @@ export abstract class Component implements IIdentifiable {
                     break;
                 case 'self': emitterFilter = this.id; break;
             }
-            eventEmitter.on(subscription.eventName, wrappedHandler, emitterFilter); // Subscribe to the event
-            // eventEmitter.on(subscription.eventName, handler, emitterFilter); // Subscribe to the event
+            eventEmitter.on(subscription.eventName, wrappedHandler, this, emitterFilter); // Subscribe to the event
         });
     }
 
