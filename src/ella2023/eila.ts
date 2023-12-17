@@ -51,7 +51,7 @@ export class Player extends Fighter {
     public static bouw(): machine_states {
         // To check if an action is pressed for player 0
         function defaultrun(this: Player, s: sstate) {
-            const priorityActions = Input.getPressedPriorityActions(0, ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick', 'stoer']);
+            const priorityActions = Input.getPlayerInput(0).getPressedPriorityActions( ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick', 'stoer']);
 
             // If no actions are pressed, switch to idle
             if (!priorityActions.some(action => action.pressed && !action.consumed)) {
@@ -90,7 +90,7 @@ export class Player extends Fighter {
                     case 'highkick':
                     case 'lowkick':
                         if (!consumed) {
-                            Input.consumeAction(0, action);
+                            Input.getPlayerInput(0).consumeAction(action);
                             this.state.to(action);
                         }
                         break;
@@ -105,7 +105,7 @@ export class Player extends Fighter {
         }
 
         function duckrun(this: Player) {
-            const pressedActions = Input.getPressedActions(0);
+            const pressedActions = Input.getPlayerInput(0).getPressedActions();
             const actionMap = new Map();
 
             // Create a map of actions for efficient lookup
@@ -131,7 +131,7 @@ export class Player extends Fighter {
         }
 
         function jumprun(this: Player) {
-            const pressedActions = Input.getPressedActions(0);
+            const pressedActions = Input.getPlayerInput(0).getPressedActions();
 
             if (pressedActions.some(action => action.action === 'lowkick' || action.action === 'highkick')) {
                 if (this.state.is('Player.jump.jump_up.normal') || this.state.is('Player.jump.jump_down.normal')) {

@@ -854,7 +854,7 @@ export class Game {
         BaseView.images = _rom.images;
         global.view.init();
         SM.init(_rom['snd_assets'], sndcontext, 1, gainnode);
-        Input.init();
+        Input.getInstance(debug); // Init input module
 
         // Prevent the user from accidentally closing the game window if not in debug mode
         if (!debug) {
@@ -924,7 +924,7 @@ export class Game {
 
         while (game.accumulatedTime >= game.updateInterval) {
             if (!game.paused) {
-                Input.pollGamepadInput();
+                Input.getInstance().pollInput();
                 game.update(game.updateInterval);
             }
             game.accumulatedTime -= game.updateInterval;

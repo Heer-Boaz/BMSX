@@ -40,7 +40,7 @@ export class Sinterklaas extends Fighter {
     public static bouw(): machine_states {
         function defaultrun(this: Sinterklaas, state: sstate) {
             // To check if an action is pressed for player 1
-            const priorityActions = Input.getPressedPriorityActions(1, ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick', 'stoer']);
+            const priorityActions = Input.getPlayerInput(1).getPressedPriorityActions( ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick', 'stoer']);
 
             // If no actions are pressed, switch to idle
             if (!priorityActions.some(action => action.pressed && !action.consumed)) {
@@ -79,7 +79,7 @@ export class Sinterklaas extends Fighter {
                     case 'highkick':
                     case 'lowkick':
                         if (!consumed) {
-                            Input.consumeAction(0, action);
+                            Input.getPlayerInput(1).consumeAction(action);
                             this.state.to(action);
                         }
                         break;
@@ -94,7 +94,7 @@ export class Sinterklaas extends Fighter {
         }
 
         function duckrun(this: Player) {
-            const pressedActions = Input.getPressedActions(1);
+            const pressedActions = Input.getPlayerInput(1).getPressedActions();
 
             if (pressedActions.some(action => action.action === 'lowkick')) {
                 this.state.to('duckkick');
@@ -116,7 +116,7 @@ export class Sinterklaas extends Fighter {
         }
 
         function jumprun(this: Player) {
-            const pressedActions = Input.getPressedActions(1);
+            const pressedActions = Input.getPlayerInput(1).getPressedActions();
 
             if (pressedActions.some(action => action.action === 'lowkick' || action.action === 'highkick')) {
                 if (this.state.is('Sinterklaas.jump.jump_up.normal') || this.state.is('Sinterklaas.jump.jump_down.normal')) {

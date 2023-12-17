@@ -242,7 +242,7 @@ class bclass extends SpriteObject {
 
     @statedef_builder
     public static bouw(): machine_states {
-        Input.setInputMap(0, {
+        Input.getPlayerInput(0).setInputMap({
             keyboard: keyboardInputMapping,
             gamepad: gamepadInputMapping,
         } as InputMap);
@@ -254,7 +254,7 @@ class bclass extends SpriteObject {
             }
 
             // To check if an action is pressed for player 0
-            const pressedActions = Input.getPressedActions(0);
+            const pressedActions = Input.getPlayerInput(0).getPressedActions();
 
             for (const { action, pressed, consumed } of pressedActions) {
                 switch (action as Action) {
@@ -272,7 +272,7 @@ class bclass extends SpriteObject {
                         break;
                     case 'load':
                         if (consumed) break;
-                        Input.consumeAction(0, action);
+                        Input.getPlayerInput(0).consumeAction(action);
 
                         if (_model[savestring]) {
                             _model.load(_model[savestring]);
@@ -284,7 +284,7 @@ class bclass extends SpriteObject {
                         break;
                     case 'save':
                         if (consumed) break;
-                        Input.consumeAction(0, action);
+                        Input.getPlayerInput(0).consumeAction(action);
 
                         get_model()[savestring] = get_model().save();
                         console.info(`${new Date().toTimeString()} Game saved!`);
@@ -293,7 +293,7 @@ class bclass extends SpriteObject {
                         break;
                     case 'bla':
                         if (consumed) break;
-                        Input.consumeAction(0, action);
+                        Input.getPlayerInput(0).consumeAction(action);
                         this.testmeuk();
                         global.eventEmitter.emit('testEvent', this);
 
@@ -302,7 +302,7 @@ class bclass extends SpriteObject {
                         break;
                     case 'blap':
                         if (consumed) break;
-                        Input.consumeAction(0, action);
+                        Input.getPlayerInput(0).consumeAction(action);
                         global.eventEmitter.emit('testEventOnce', this);
 
                         this.state.machines.bclass_animation.to('ani1');
