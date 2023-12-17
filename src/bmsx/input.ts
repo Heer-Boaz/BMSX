@@ -22,6 +22,29 @@ function preventActionAndPropagation(e: Event): boolean {
     return false;
 }
 
+function resetObject(obj: Index2State, except?: string[]) {
+    Object.keys(obj).forEach(key => {
+        if (!except || !except.includes(key)) {
+            delete obj[key];
+        }
+    });
+};
+
+/**
+ * Returns the pressed state of a key or button, and optionally checks if it was clicked.
+ * @param stateMap - The state map to check for the key or button.
+ * @param consumedStateMap - The click state map to check for the key or button.
+ * @param key - The key or button to check the state of.
+ * @returns The pressed state of the key or button.
+ */
+function getPressedState(
+    stateMap: Index2State,
+    consumedStateMap: Index2State,
+    key: string | number
+): ButtonState {
+    return { pressed: stateMap[key] ?? false, consumed: consumedStateMap[key] ?? false };
+}
+
 /**
  * Represents the state of an index in the Index2State type.
  */
@@ -55,9 +78,9 @@ export interface InputMap {
 export type KeyboardButton = keyof typeof Key | string;
 /**
  * Represents a gamepad button.
- * @typedef {keyof typeof Input.GAMEPAD_BUTTONS} GamepadButton
+ * @typedef {keyof typeof Input.BUTTON2INDEX } GamepadButton
  */
-export type GamepadButton = keyof typeof Input.GAMEPAD_BUTTONS;
+export type GamepadButton = keyof typeof Input.BUTTON2INDEX;
 
 /**
  * Represents the state of a button.
@@ -76,6 +99,7 @@ const options = {
 export class Input implements IIdentifiable {
     private static instance: Input;
     private static playerInputs: PlayerInput[] = [];
+    private static pendingGamepadAssignments: { gamepad: Gamepad; playerIndex: number }[] = [];
 
     public static getInstance(debug = false): Input {
         if (!Input.instance) {
@@ -95,23 +119,47 @@ export class Input implements IIdentifiable {
     /**
     * The mapping of gamepad button names to their corresponding indices.
     */
-    public static readonly GAMEPAD_BUTTONS = {
-        'a': 0,
-        'b': 1,
-        'x': 2,
-        'y': 3,
-        'lb': 4,
-        'rb': 5,
-        'lt': 6,
-        'rt': 7,
-        'back': 8,
-        'start': 9,
-        'ls': 10,
-        'rs': 11,
-        'up': 12,
-        'down': 13,
-        'left': 14,
-        'right': 15,
+    public static readonly BUTTON2INDEX = {
+        'a': 0, // Bottom face button
+        'b': 1, // Right face button
+        'x': 2, // Left face button
+        'y': 3, // Top face button
+        'lb': 4, // Left shoulder button
+        'rb': 5, // Right shoulder button
+        'lt': 6, // Left trigger button
+        'rt': 7, // Right trigger button
+        'back': 8, // Back button
+        'start': 9, // Start button
+        'ls': 10, // Left stick button
+        'rs': 11, // Right stick button
+        'up': 12, // D-pad up
+        'down': 13, // D-pad down
+        'left': 14, // D-pad left
+        'right': 15, // D-pad right
+        'home': 16, // Xbox button
+    } as const;
+
+    /**
+    * The mapping of indices to their corresponding gamepad button names.
+    */
+    public static readonly INDEX2BUTTON = {
+        0: 'a', // Bottom face button
+        1: 'b', // Right face button
+        2: 'x', // Left face button
+        3: 'y', // Top face button
+        4: 'lb', // Left shoulder button
+        5: 'rb', // Right shoulder button
+        6: 'lt', // Left trigger button
+        7: 'rt', // Right trigger button
+        8: 'back', // Back button
+        9: 'start', // Start button
+        10: 'ls', // Left stick button
+        11: 'rs', // Right stick button
+        12: 'up', // D-pad up
+        13: 'down', // D-pad down
+        14: 'left', // D-pad left
+        15: 'right', // D-pad right
+        16: 'home', // Xbox button
     } as const;
 
     /**
@@ -164,7 +212,7 @@ export class Input implements IIdentifiable {
         const getNextAvailablePlayerIndex = (): number | null => {
             for (let i = 0; i < Input.playerInputs.length; i++) {
                 const playerInput = Input.playerInputs[i];
-                if (playerInput.gamepadIndex === null) return playerInput.playerIndex;
+                if (!playerInput.gamepad) return playerInput.playerIndex;
             }
             return null;
         }
@@ -242,7 +290,7 @@ export class Input implements IIdentifiable {
     }
 
     public pollInput(): void {
-        Input.playerInputs.forEach(player => { player.pollGamepadInput(); });
+        Input.playerInputs.forEach(player => { player.pollInput(); });
     }
 
     public static get KC_F1(): boolean {
@@ -278,35 +326,35 @@ export class Input implements IIdentifiable {
     }
 
     public static get KC_UP(): boolean {
-        return Input.getPlayerInput(1).checkAndConsume('ArrowUp', Input.GAMEPAD_BUTTONS.up);
+        return Input.getPlayerInput(1).checkAndConsume('ArrowUp', Input.BUTTON2INDEX.up);
     }
 
     public static get KC_RIGHT(): boolean {
-        return Input.getPlayerInput(1).checkAndConsume('ArrowRight', Input.GAMEPAD_BUTTONS.right);
+        return Input.getPlayerInput(1).checkAndConsume('ArrowRight', Input.BUTTON2INDEX.right);
     }
 
     public static get KC_DOWN(): boolean {
-        return Input.getPlayerInput(1).checkAndConsume('ArrowDown', Input.GAMEPAD_BUTTONS.down);
+        return Input.getPlayerInput(1).checkAndConsume('ArrowDown', Input.BUTTON2INDEX.down);
     }
 
     public static get KC_LEFT(): boolean {
-        return Input.getPlayerInput(1).checkAndConsume('ArrowLeft', Input.GAMEPAD_BUTTONS.left);
+        return Input.getPlayerInput(1).checkAndConsume('ArrowLeft', Input.BUTTON2INDEX.left);
     }
 
     public static get KC_BTN1(): boolean {
-        return Input.getPlayerInput(1).checkAndConsume('ShiftLeft', Input.GAMEPAD_BUTTONS.a);
+        return Input.getPlayerInput(1).checkAndConsume('ShiftLeft', Input.BUTTON2INDEX.a);
     }
 
     public static get KC_BTN2(): boolean {
-        return Input.getPlayerInput(1).checkAndConsume('KeyZ', Input.GAMEPAD_BUTTONS.b);
+        return Input.getPlayerInput(1).checkAndConsume('KeyZ', Input.BUTTON2INDEX.b);
     }
 
     public static get KC_BTN3(): boolean {
-        return Input.getPlayerInput(1).checkAndConsume('F1', Input.GAMEPAD_BUTTONS.x);
+        return Input.getPlayerInput(1).checkAndConsume('F1', Input.BUTTON2INDEX.x);
     }
 
     public static get KC_BTN4(): boolean {
-        return Input.getPlayerInput(1).checkAndConsume('F5', Input.GAMEPAD_BUTTONS.y);
+        return Input.getPlayerInput(1).checkAndConsume('F5', Input.BUTTON2INDEX.y);
     }
 
     public static get KD_F1(): boolean {
@@ -334,28 +382,28 @@ export class Input implements IIdentifiable {
         return Input.getPlayerInput(1).getKeyState('Space').pressed;
     }
     public static get KD_UP(): boolean {
-        return Input.getPlayerInput(1).getKeyState('ArrowUp').pressed || Input.getPlayerInput(1).getGamepadButtonState(Input.GAMEPAD_BUTTONS.up).pressed;
+        return Input.getPlayerInput(1).getKeyState('ArrowUp').pressed || Input.getPlayerInput(1).getGamepadButtonState(Input.BUTTON2INDEX.up).pressed;
     }
     public static get KD_RIGHT(): boolean {
-        return Input.getPlayerInput(1).getKeyState('ArrowRight').pressed || Input.getPlayerInput(1).getGamepadButtonState(Input.GAMEPAD_BUTTONS.right).pressed;
+        return Input.getPlayerInput(1).getKeyState('ArrowRight').pressed || Input.getPlayerInput(1).getGamepadButtonState(Input.BUTTON2INDEX.right).pressed;
     }
     public static get KD_DOWN(): boolean {
-        return Input.getPlayerInput(1).getKeyState('ArrowDown').pressed || Input.getPlayerInput(1).getGamepadButtonState(Input.GAMEPAD_BUTTONS.down).pressed;
+        return Input.getPlayerInput(1).getKeyState('ArrowDown').pressed || Input.getPlayerInput(1).getGamepadButtonState(Input.BUTTON2INDEX.down).pressed;
     }
     public static get KD_LEFT(): boolean {
-        return Input.getPlayerInput(1).getKeyState('ArrowLeft').pressed || Input.getPlayerInput(1).getGamepadButtonState(Input.GAMEPAD_BUTTONS.left).pressed;
+        return Input.getPlayerInput(1).getKeyState('ArrowLeft').pressed || Input.getPlayerInput(1).getGamepadButtonState(Input.BUTTON2INDEX.left).pressed;
     }
     public static get KD_BTN1(): boolean {
-        return Input.getPlayerInput(1).getKeyState('ShiftLeft').pressed || Input.getPlayerInput(1).getGamepadButtonState(Input.GAMEPAD_BUTTONS.a).pressed;
+        return Input.getPlayerInput(1).getKeyState('ShiftLeft').pressed || Input.getPlayerInput(1).getGamepadButtonState(Input.BUTTON2INDEX.a).pressed;
     }
     public static get KD_BTN2(): boolean {
-        return Input.getPlayerInput(1).getKeyState('KeyZ').pressed || Input.getPlayerInput(1).getGamepadButtonState(Input.GAMEPAD_BUTTONS.b).pressed;
+        return Input.getPlayerInput(1).getKeyState('KeyZ').pressed || Input.getPlayerInput(1).getGamepadButtonState(Input.BUTTON2INDEX.b).pressed;
     }
     public static get KD_BTN3(): boolean {
-        return Input.getPlayerInput(1).getKeyState('F1').pressed || Input.getPlayerInput(1).getGamepadButtonState(Input.GAMEPAD_BUTTONS.x).pressed;
+        return Input.getPlayerInput(1).getKeyState('F1').pressed || Input.getPlayerInput(1).getGamepadButtonState(Input.BUTTON2INDEX.x).pressed;
     }
     public static get KD_BTN4(): boolean {
-        return Input.getPlayerInput(1).getKeyState('F5').pressed || Input.getPlayerInput(1).getGamepadButtonState(Input.GAMEPAD_BUTTONS.y).pressed;
+        return Input.getPlayerInput(1).getKeyState('F5').pressed || Input.getPlayerInput(1).getGamepadButtonState(Input.BUTTON2INDEX.y).pressed;
     }
 
     /**
@@ -425,7 +473,7 @@ export class Input implements IIdentifiable {
  */
 export class PlayerInput {
     public playerIndex: number;
-    public gamepadIndex: number | null;
+    public gamepad: GamepadInput;
     /**
      * The state of each keyboard key.
      */
@@ -435,16 +483,6 @@ export class PlayerInput {
      * The state of each keyboard key click request.
      */
     public KeyPressedConsumedState: Index2State = {};
-
-    /**
-     * The state of each gamepad button for each player.
-     */
-    private GamepadButtonStates: Index2State = {};
-
-    /**
-     * The state of each gamepad button click request for each player.
-     */
-    private GamepadButtonPressedConsumedStates: Index2State = {};
 
     /**
      * The input maps for each player.
@@ -495,11 +533,15 @@ export class PlayerInput {
         if (!inputMap) return { action, pressed: false, consumed: false };
 
         const keyboardKey = inputMap.keyboard ? inputMap.keyboard[action] : null;
-        const gamepadButton = inputMap.gamepad ? Input.GAMEPAD_BUTTONS[inputMap.gamepad[action]] : null;
+        const gamepadButton = inputMap.gamepad ? Input.BUTTON2INDEX[inputMap.gamepad[action]] : null;
 
         const keyboardButtonState = this.getKeyState(keyboardKey);
         const gamepadButtonState = this.getGamepadButtonState(gamepadButton);
-        return { action: action, pressed: keyboardButtonState.pressed || (gamepadButtonState?.pressed ?? false), consumed: keyboardButtonState.consumed && (gamepadButtonState?.consumed ?? true) };
+        return {
+            action: action,
+            pressed: keyboardButtonState.pressed || (gamepadButtonState?.pressed ?? false),
+            consumed: keyboardButtonState.consumed || (gamepadButtonState?.consumed ?? false)
+        };
     }
 
     /**
@@ -551,16 +593,6 @@ export class PlayerInput {
     }
 
     /**
-     * Consumes the given button press for the specified player index.
-     * @param button The button to consume.
-     */
-    public consumeButton(button: number) {
-        if (this.GamepadButtonPressedConsumedStates) {
-            this.GamepadButtonPressedConsumedStates[button] = true;
-        }
-    }
-
-    /**
      * Consumes the input action for the specified player index.
      * @param action The name of the input action to consume.
      */
@@ -569,34 +601,13 @@ export class PlayerInput {
         if (!inputMap) return;
 
         const keyboardKey = inputMap.keyboard?.[action];
-        const gamepadButton = inputMap.gamepad?.[action] ? Input.GAMEPAD_BUTTONS[inputMap.gamepad[action]] : null;
+        // Check whether the keyboard key was actually pressed before consuming it
+        if (keyboardKey && this.KeyState[keyboardKey]) this.consumeKey(keyboardKey);
 
-        if (keyboardKey) {
-            this.consumeKey(keyboardKey);
+        if (this.gamepad) {
+            const gamepadButton = inputMap.gamepad[action] ? Input.BUTTON2INDEX[inputMap.gamepad[action]] : null;
+            (gamepadButton !== null) && this.gamepad.consumeButton(gamepadButton);
         }
-
-        if (gamepadButton) {
-            const gamepadButtonStates = this.GamepadButtonStates;
-            if (gamepadButtonStates && gamepadButtonStates[gamepadButton]) {
-                this.consumeButton(gamepadButton);
-            }
-        }
-    }
-
-    /**
-     * Returns the pressed state of a key or button, and optionally checks if it was clicked.
-     * @param stateMap - The state map to check for the key or button.
-     * @param checkedStateMap - The click state map to check for the key or button.
-     * @param key - The key or button to check the state of.
-     * @param checkClick - Whether to check if the key or button was clicked.
-     * @returns The pressed state of the key or button.
-     */
-    private getPressedState(
-        stateMap: Index2State,
-        checkedStateMap: Index2State,
-        key: string | number
-    ): ButtonState {
-        return { pressed: stateMap[key] ?? false, consumed: checkedStateMap[key] ?? false };
     }
 
     /**
@@ -606,22 +617,17 @@ export class PlayerInput {
      */
     public getKeyState(key: string): ButtonState {
         if (key === null) return { pressed: false, consumed: false };
-        return this.getPressedState(this.KeyState, this.KeyPressedConsumedState, key);
+        return getPressedState(this.KeyState, this.KeyPressedConsumedState, key);
     }
 
     /**
-     * Returns the pressed state of a gamepad button, and optionally checks if it was clicked.
-     * @param btn - The index of the button to check the state of.
-     * @param checkClick - Whether to check if the button was clicked.
-     * @returns The pressed state of the button.
+     * Retrieves the state of a gamepad button.
+     * @param button - The button index.
+     * @returns The state of the button.
      */
-    public getGamepadButtonState(btn: number | null): ButtonState {
-        if (btn === null) return { pressed: false, consumed: false };
-
-        const stateMap = this.GamepadButtonStates || {};
-        const pressRequestedStateMap = this.GamepadButtonPressedConsumedStates;
-        if (!pressRequestedStateMap) return null;
-        return this.getPressedState(stateMap, pressRequestedStateMap, btn);
+    public getGamepadButtonState(button: number): ButtonState {
+        if (!this.isGamepadConnected()) return null;
+        return this.gamepad.getButtonState(button);
     }
 
     /**
@@ -655,7 +661,7 @@ export class PlayerInput {
         if (button !== undefined && this.isGamepadConnected()) {
             const buttonState = this.getGamepadButtonState(button);
             if (buttonState.pressed && !buttonState.consumed) {
-                this.consumeButton(button);
+                this.gamepad.consumeButton(button);
                 return true;
             }
         }
@@ -670,13 +676,18 @@ export class PlayerInput {
     * @returns The player index the gamepad was assigned to, or null if no player index was available.
     */
     assignGamepadToPlayer(gamepad: Gamepad): void {
-        this.gamepadIndex = gamepad.index;
-        this.GamepadButtonStates = {};
-        this.GamepadButtonPressedConsumedStates = {};
+        const gamepadInput = new GamepadInput(gamepad.index);
+        this.gamepad = gamepadInput;
 
         console.info(`Gamepad ${gamepad.index} assigned to player ${this.playerIndex}.`);
     }
 
+    /**
+     * Polls the input from the gamepad.
+     */
+    pollInput(): void {
+        this.gamepad?.pollInput();
+    }
 
     /**
      * Initializes the input system.
@@ -685,7 +696,7 @@ export class PlayerInput {
     public constructor(playerIndex: number) {
         const self = this;
         this.playerIndex = playerIndex;
-        this.gamepadIndex = null; // Gamepad should be null by default, and set to a value when a gamepad is connected.
+        this.gamepad = null; // Gamepad should be null by default, and set to a value when a gamepad is connected and assigned to this player
         this.KeyState = {};
         this.KeyPressedConsumedState = {};
         this.reset();
@@ -694,69 +705,14 @@ export class PlayerInput {
             const gamepad = e.gamepad;
             if (!gamepad.id.toLowerCase().includes('gamepad')) return;
 
-            if (self.gamepadIndex === null) return; // Gamepad was not assigned to this player, so ignore the event (this can happen if multiple gamepads are connected and one is disconnected)
+            if (!self.gamepad) return; // No gamepad was not assigned to this player, so ignore the event (this can happen if multiple gamepads are connected and one is disconnected)
 
             console.info(`Gamepad ${gamepad.index}, that was assigned to player ${playerIndex}, disconnected`);
-            self.gamepadIndex = null; // Remove gamepad assignment for this player
-
-            // Remove button states for corresponding player index
-            self.GamepadButtonStates = {};
-            self.GamepadButtonPressedConsumedStates = {};
+            self.gamepad = null; // Remove gamepad assignment for this player
         });
 
-        window.addEventListener('keydown', e => { !this.preventInput && this.keydown(e.code); }, options);
-        window.addEventListener('keyup', e => { !this.preventInput && this.keyup(e.code); }, options);
-    }
-
-    /**
-     * Polls the state of all connected gamepads and updates the corresponding button states.
-     * This function should be called once per frame to ensure that gamepad input is up-to-date.
-     */
-    public pollGamepadInput(): void {
-        if (this.gamepadIndex === null) return; // No gamepad was assigned to this player
-        const gamepads: Gamepad[] = navigator.getGamepads ? navigator.getGamepads() : ((navigator as any).webkitGetGamepads ? (navigator as any).webkitGetGamepads : undefined); // Get gamepads from browser API
-        if (!gamepads) return; // Browser does not support gamepads API
-        if (gamepads.length < this.gamepadIndex) return; // Gamepad index is out of range of connected gamepads array (this can happen if multiple gamepads are connected and one is disconnected)
-
-        // Reset gamepad button states
-        this.GamepadButtonStates = {};
-        this.GamepadButtonPressedConsumedStates = {};
-
-        // Check whether any axes have been triggered
-        this.pollGamepadAxes(gamepads[this.gamepadIndex]);
-
-        // Check button states
-        this.pollGamepadButtons(gamepads[this.gamepadIndex]);
-    }
-
-    /**
-     * Polls the state of the axes on the given gamepad and updates the corresponding button states.
-     * @param gamepad The gamepad to poll.
-     */
-    private pollGamepadAxes(gamepad: Gamepad): void {
-        const [xAxis, yAxis] = gamepad.axes;
-        this.GamepadButtonStates[Input.GAMEPAD_BUTTONS.left] = xAxis < -0.5;
-        this.GamepadButtonStates[Input.GAMEPAD_BUTTONS.right] = xAxis > 0.5;
-        this.GamepadButtonStates[Input.GAMEPAD_BUTTONS.up] = yAxis < -0.5;
-        this.GamepadButtonStates[Input.GAMEPAD_BUTTONS.down] = yAxis > 0.5;
-    }
-
-    /**
-     * Polls the state of all buttons on the given gamepad and updates the corresponding button states.
-     * @param gamepad The gamepad to poll.
-     */
-    private pollGamepadButtons(gamepad: Gamepad): void {
-        const buttons = gamepad.buttons;
-        if (!buttons) return;
-        for (let btnIndex = 0; btnIndex < buttons.length; btnIndex++) {
-            const btn = buttons[btnIndex];
-            const pressed = typeof btn === "object" ? btn.pressed : btn === 1.0;
-            // Consider that the button can already be regarded as pressed if it was pressed as part of another action, like an axis
-            this.GamepadButtonStates[btnIndex] = this.GamepadButtonStates[btnIndex] || pressed;
-            if (!pressed) {
-                this.GamepadButtonPressedConsumedStates[btnIndex] = false;
-            }
-        }
+        window.addEventListener('keydown', e => { e.preventDefault(); !this.preventInput && this.keydown(e.code); }, options);
+        window.addEventListener('keyup', e => { e.preventDefault(); !this.preventInput && this.keyup(e.code); }, options);
     }
 
     /**
@@ -764,7 +720,7 @@ export class PlayerInput {
      * @returns True if a gamepad is connected for the specified player index, false otherwise.
      */
     private isGamepadConnected(): boolean {
-        return this.gamepadIndex !== null;
+        return !(!this.gamepad);
     }
 
     /**
@@ -772,18 +728,9 @@ export class PlayerInput {
      * @param except An optional array of keys or buttons to exclude from the reset.
      */
     public reset(except?: string[]): void {
-        const resetObject = (obj: Index2State) => {
-            Object.keys(obj).forEach(key => {
-                if (!except || !except.includes(key)) {
-                    delete obj[key];
-                }
-            });
-        };
-
-        resetObject(this.KeyState);
-        resetObject(this.KeyPressedConsumedState);
-        resetObject(this.GamepadButtonStates);
-        resetObject(this.GamepadButtonPressedConsumedStates);
+        resetObject(this.KeyState, except);
+        resetObject(this.KeyPressedConsumedState, except);
+        this.gamepad?.reset(except);
     }
 
     /**
@@ -812,6 +759,118 @@ export class PlayerInput {
         this.preventInput = false; // Allow input when the window regains focus
     }
 
+}
+
+class GamepadInput {
+    private gamepadIndex: number | null;
+    /**
+     * The state of each gamepad button for each player.
+     */
+    private gamepadButtonStates: Index2State = {};
+
+    /**
+     * The state of each gamepad button click request for each player.
+     */
+    private gamepadButtonPressedConsumedStates: Index2State = {};
+
+    constructor(gamepadIndex: number | null) {
+        this.gamepadIndex = gamepadIndex;
+
+        // Reset gamepad button states
+        this.reset();
+    }
+
+    /**
+     * Polls the input from the assigned gamepad for this player.
+     * If no gamepad is assigned, or if the browser does not support the gamepads API,
+     * or if the gamepad index is out of range of the connected gamepads array,
+     * this method does nothing.
+     * This function should be called once per frame to ensure that gamepad input is up-to-date.
+     */
+    public pollInput(): void {
+        if (this.gamepadIndex === null) return; // No gamepad was assigned to this GamepadInput-object
+        const gamepads: Gamepad[] = navigator.getGamepads ? navigator.getGamepads() : ((navigator as any).webkitGetGamepads ? (navigator as any).webkitGetGamepads : undefined); // Get gamepads from browser API
+        if (!gamepads) return; // Browser does not support gamepads API
+        if (gamepads.length < this.gamepadIndex) return; // Gamepad index is out of range of connected gamepads array (this can happen if multiple gamepads are connected and one is disconnected)
+
+        // Reset gamepad button states
+        this.gamepadButtonStates = {};
+
+        // Check whether any axes have been triggered
+        this.pollGamepadAxes(gamepads[this.gamepadIndex]);
+
+        // Check button states
+        this.pollGamepadButtons(gamepads[this.gamepadIndex]);
+    }
+
+    /**
+     * Polls the state of the axes on the given gamepad and updates the corresponding button states.
+     * @param gamepad The gamepad to poll.
+     */
+    private pollGamepadAxes(gamepad: Gamepad): void {
+        const [xAxis, yAxis] = gamepad.axes;
+        this.gamepadButtonStates[Input.BUTTON2INDEX.left] = xAxis < -0.5;
+        this.gamepadButtonStates[Input.BUTTON2INDEX.right] = xAxis > 0.5;
+        this.gamepadButtonStates[Input.BUTTON2INDEX.up] = yAxis < -0.5;
+        this.gamepadButtonStates[Input.BUTTON2INDEX.down] = yAxis > 0.5;
+    }
+
+    /**
+     * Polls the state of all buttons on the given gamepad and updates the corresponding button states.
+     * @param gamepad The gamepad to poll.
+     */
+    private pollGamepadButtons(gamepad: Gamepad): void {
+        const buttons = gamepad.buttons;
+        if (!buttons) return;
+        for (let btnIndex = 0; btnIndex < buttons.length; btnIndex++) {
+            const btn = buttons[btnIndex];
+            const pressed = typeof btn === "object" ? btn.pressed : btn === 1.0;
+            // Consider that the button can already be regarded as pressed if it was pressed as part of another action, like an axis
+            this.gamepadButtonStates[btnIndex] = this.gamepadButtonStates[btnIndex] || pressed;
+            if (!pressed) {
+                this.gamepadButtonPressedConsumedStates[btnIndex] = false;
+            }
+        }
+    }
+
+    /**
+     * Returns the pressed state of a gamepad button, and optionally checks if it was clicked.
+     * @param btn - The index of the button to check the state of.
+     * @returns The pressed state of the button.
+     */
+    public getButtonState(btn: number | null): ButtonState {
+        if (btn === null) return { pressed: false, consumed: false };
+
+        const stateMap = this.gamepadButtonStates || {};
+        const consumedStateMap = this.gamepadButtonPressedConsumedStates;
+        if (!consumedStateMap) return null;
+        return getPressedState(stateMap, consumedStateMap, btn);
+    }
+
+    /**
+     * Consumes the given button press for the specified player index.
+     * @param button The button to consume.
+     */
+    public consumeButton(button: number) {
+        if (this.gamepadButtonPressedConsumedStates) {
+            this.gamepadButtonPressedConsumedStates[button] = true;
+        }
+    }
+
+    /**
+     * Resets the state of all gamepad buttons.
+     * @param except An optional array of buttons to exclude from the reset.
+     */
+    public reset(except?: string[]): void {
+        if (!except) {
+            this.gamepadButtonStates = {};
+            this.gamepadButtonPressedConsumedStates = {};
+        }
+        else {
+            resetObject(this.gamepadButtonStates, except);
+            resetObject(this.gamepadButtonPressedConsumedStates, except);
+        }
+    }
 }
 
 class OnScreenGamepad {
@@ -858,7 +917,6 @@ class OnScreenGamepad {
     }
 
     private static readonly dpadlist = ['d-pad-u', 'd-pad-ru', 'd-pad-r', 'd-pad-rd', 'd-pad-d', 'd-pad-ld', 'd-pad-l', 'd-pad-lu', 'btn1_knop', 'btn2_knop', 'btn3_knop', 'btn4_knop'];
-
 
     constructor(public playerIndex: number) {
         const controlsElement = document.getElementById('controls');
