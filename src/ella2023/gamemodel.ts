@@ -163,11 +163,11 @@ export class gamemodel extends BaseModel {
         _model.addSpace('titlescreen');
         _model.addSpace('niets');
 
-        Input.getPlayerInput(0).setInputMap({
+        Input.getPlayerInput(1).setInputMap({
             keyboard: keyboardInputMapping1,
             gamepad: gamepadInputMapping,
         } as InputMap);
-        Input.getPlayerInput(1).setInputMap({
+        Input.getPlayerInput(2).setInputMap({
             keyboard: null,
             gamepad: gamepadInputMapping,
         } as InputMap);

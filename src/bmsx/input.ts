@@ -85,10 +85,11 @@ export class Input implements IIdentifiable {
     }
 
     public static getPlayerInput(playerIndex: number): PlayerInput {
-        if (!Input.playerInputs[playerIndex]) {
-            Input.playerInputs[playerIndex] = new PlayerInput(playerIndex);
+        const index = playerIndex - 1;
+        if (!Input.playerInputs[index]) {
+            Input.playerInputs[index] = new PlayerInput(playerIndex);
         }
-        return Input.playerInputs[playerIndex];
+        return Input.playerInputs[index];
     }
 
     /**
@@ -155,16 +156,15 @@ export class Input implements IIdentifiable {
     constructor(debug = true) {
         const self = this;
 
-
         /**
          * Returns the index of the next available player for gamepad input, or undefined if no player is available.
          * A player is considered available if there is a connected gamepad that is not already assigned to a player.
          * @returns The index of the next available player, or undefined if no player is available.
          */
         const getNextAvailablePlayerIndex = (): number | null => {
-            for (let i = 0; i < navigator.getGamepads().length; i++) {
-                if (Input.getPlayerInput(i).gamepadIndex !== null) continue; // Gamepad already assigned to a player
-                return i;
+            for (let i = 0; i < Input.playerInputs.length; i++) {
+                const playerInput = Input.playerInputs[i];
+                if (playerInput.gamepadIndex === null) return playerInput.playerIndex;
             }
             return null;
         }
@@ -192,7 +192,7 @@ export class Input implements IIdentifiable {
             const gamepad = gamepads[i];
             if (!gamepad || !gamepad.id.toLowerCase().includes('gamepad')) continue;
 
-            Input.getPlayerInput(i).assignGamepadToPlayer(gamepad);
+            assignGamepadToPlayer(gamepad);
         }
 
         /**
@@ -246,116 +246,116 @@ export class Input implements IIdentifiable {
     }
 
     public static get KC_F1(): boolean {
-        return Input.getPlayerInput(0).checkAndConsume(Key.F1);
+        return Input.getPlayerInput(1).checkAndConsume(Key.F1);
     }
 
     public static get KC_F12(): boolean {
-        return Input.getPlayerInput(0).checkAndConsume('F12');
+        return Input.getPlayerInput(1).checkAndConsume('F12');
     }
 
     public static get KC_F2(): boolean {
-        return Input.getPlayerInput(0).checkAndConsume('F2');
+        return Input.getPlayerInput(1).checkAndConsume('F2');
     }
 
     public static get KC_F3(): boolean {
-        return Input.getPlayerInput(0).checkAndConsume('F3');
+        return Input.getPlayerInput(1).checkAndConsume('F3');
     }
 
     public static get KC_F4(): boolean {
-        return Input.getPlayerInput(0).checkAndConsume('F4');
+        return Input.getPlayerInput(1).checkAndConsume('F4');
     }
 
     public static get KC_F5(): boolean {
-        return Input.getPlayerInput(0).checkAndConsume('F5');
+        return Input.getPlayerInput(1).checkAndConsume('F5');
     }
 
     public static get KC_M(): boolean {
-        return Input.getPlayerInput(0).checkAndConsume('KeyM');
+        return Input.getPlayerInput(1).checkAndConsume('KeyM');
     }
 
     public static get KC_SPACE(): boolean {
-        return Input.getPlayerInput(0).checkAndConsume('Space');
+        return Input.getPlayerInput(1).checkAndConsume('Space');
     }
 
     public static get KC_UP(): boolean {
-        return Input.getPlayerInput(0).checkAndConsume('ArrowUp', Input.GAMEPAD_BUTTONS.up);
+        return Input.getPlayerInput(1).checkAndConsume('ArrowUp', Input.GAMEPAD_BUTTONS.up);
     }
 
     public static get KC_RIGHT(): boolean {
-        return Input.getPlayerInput(0).checkAndConsume('ArrowRight', Input.GAMEPAD_BUTTONS.right);
+        return Input.getPlayerInput(1).checkAndConsume('ArrowRight', Input.GAMEPAD_BUTTONS.right);
     }
 
     public static get KC_DOWN(): boolean {
-        return Input.getPlayerInput(0).checkAndConsume('ArrowDown', Input.GAMEPAD_BUTTONS.down);
+        return Input.getPlayerInput(1).checkAndConsume('ArrowDown', Input.GAMEPAD_BUTTONS.down);
     }
 
     public static get KC_LEFT(): boolean {
-        return Input.getPlayerInput(0).checkAndConsume('ArrowLeft', Input.GAMEPAD_BUTTONS.left);
+        return Input.getPlayerInput(1).checkAndConsume('ArrowLeft', Input.GAMEPAD_BUTTONS.left);
     }
 
     public static get KC_BTN1(): boolean {
-        return Input.getPlayerInput(0).checkAndConsume('ShiftLeft', Input.GAMEPAD_BUTTONS.a);
+        return Input.getPlayerInput(1).checkAndConsume('ShiftLeft', Input.GAMEPAD_BUTTONS.a);
     }
 
     public static get KC_BTN2(): boolean {
-        return Input.getPlayerInput(0).checkAndConsume('KeyZ', Input.GAMEPAD_BUTTONS.b);
+        return Input.getPlayerInput(1).checkAndConsume('KeyZ', Input.GAMEPAD_BUTTONS.b);
     }
 
     public static get KC_BTN3(): boolean {
-        return Input.getPlayerInput(0).checkAndConsume('F1', Input.GAMEPAD_BUTTONS.x);
+        return Input.getPlayerInput(1).checkAndConsume('F1', Input.GAMEPAD_BUTTONS.x);
     }
 
     public static get KC_BTN4(): boolean {
-        return Input.getPlayerInput(0).checkAndConsume('F5', Input.GAMEPAD_BUTTONS.y);
+        return Input.getPlayerInput(1).checkAndConsume('F5', Input.GAMEPAD_BUTTONS.y);
     }
 
     public static get KD_F1(): boolean {
-        return Input.getPlayerInput(0).getKeyState('F1').pressed;
+        return Input.getPlayerInput(1).getKeyState('F1').pressed;
     }
     public static get KD_F12(): boolean {
-        return Input.getPlayerInput(0).getKeyState('F12').pressed;
+        return Input.getPlayerInput(1).getKeyState('F12').pressed;
     }
     public static get KD_F2(): boolean {
-        return Input.getPlayerInput(0).getKeyState('F2').pressed;
+        return Input.getPlayerInput(1).getKeyState('F2').pressed;
     }
     public static get KD_F3(): boolean {
-        return Input.getPlayerInput(0).getKeyState('F3').pressed;
+        return Input.getPlayerInput(1).getKeyState('F3').pressed;
     }
     public static get KD_F4(): boolean {
-        return Input.getPlayerInput(0).getKeyState('F4').pressed;
+        return Input.getPlayerInput(1).getKeyState('F4').pressed;
     }
     public static get KD_F5(): boolean {
-        return Input.getPlayerInput(0).getKeyState('F5').pressed;
+        return Input.getPlayerInput(1).getKeyState('F5').pressed;
     }
     public static get KD_M(): boolean {
-        return Input.getPlayerInput(0).getKeyState('KeyM').pressed;
+        return Input.getPlayerInput(1).getKeyState('KeyM').pressed;
     }
     public static get KD_SPACE(): boolean {
-        return Input.getPlayerInput(0).getKeyState('Space').pressed;
+        return Input.getPlayerInput(1).getKeyState('Space').pressed;
     }
     public static get KD_UP(): boolean {
-        return Input.getPlayerInput(0).getKeyState('ArrowUp').pressed || Input.getPlayerInput(0).getGamepadButtonState(Input.GAMEPAD_BUTTONS.up).pressed;
+        return Input.getPlayerInput(1).getKeyState('ArrowUp').pressed || Input.getPlayerInput(1).getGamepadButtonState(Input.GAMEPAD_BUTTONS.up).pressed;
     }
     public static get KD_RIGHT(): boolean {
-        return Input.getPlayerInput(0).getKeyState('ArrowRight').pressed || Input.getPlayerInput(0).getGamepadButtonState(Input.GAMEPAD_BUTTONS.right).pressed;
+        return Input.getPlayerInput(1).getKeyState('ArrowRight').pressed || Input.getPlayerInput(1).getGamepadButtonState(Input.GAMEPAD_BUTTONS.right).pressed;
     }
     public static get KD_DOWN(): boolean {
-        return Input.getPlayerInput(0).getKeyState('ArrowDown').pressed || Input.getPlayerInput(0).getGamepadButtonState(Input.GAMEPAD_BUTTONS.down).pressed;
+        return Input.getPlayerInput(1).getKeyState('ArrowDown').pressed || Input.getPlayerInput(1).getGamepadButtonState(Input.GAMEPAD_BUTTONS.down).pressed;
     }
     public static get KD_LEFT(): boolean {
-        return Input.getPlayerInput(0).getKeyState('ArrowLeft').pressed || Input.getPlayerInput(0).getGamepadButtonState(Input.GAMEPAD_BUTTONS.left).pressed;
+        return Input.getPlayerInput(1).getKeyState('ArrowLeft').pressed || Input.getPlayerInput(1).getGamepadButtonState(Input.GAMEPAD_BUTTONS.left).pressed;
     }
     public static get KD_BTN1(): boolean {
-        return Input.getPlayerInput(0).getKeyState('ShiftLeft').pressed || Input.getPlayerInput(0).getGamepadButtonState(Input.GAMEPAD_BUTTONS.a).pressed;
+        return Input.getPlayerInput(1).getKeyState('ShiftLeft').pressed || Input.getPlayerInput(1).getGamepadButtonState(Input.GAMEPAD_BUTTONS.a).pressed;
     }
     public static get KD_BTN2(): boolean {
-        return Input.getPlayerInput(0).getKeyState('KeyZ').pressed || Input.getPlayerInput(0).getGamepadButtonState(Input.GAMEPAD_BUTTONS.b).pressed;
+        return Input.getPlayerInput(1).getKeyState('KeyZ').pressed || Input.getPlayerInput(1).getGamepadButtonState(Input.GAMEPAD_BUTTONS.b).pressed;
     }
     public static get KD_BTN3(): boolean {
-        return Input.getPlayerInput(0).getKeyState('F1').pressed || Input.getPlayerInput(0).getGamepadButtonState(Input.GAMEPAD_BUTTONS.x).pressed;
+        return Input.getPlayerInput(1).getKeyState('F1').pressed || Input.getPlayerInput(1).getGamepadButtonState(Input.GAMEPAD_BUTTONS.x).pressed;
     }
     public static get KD_BTN4(): boolean {
-        return Input.getPlayerInput(0).getKeyState('F5').pressed || Input.getPlayerInput(0).getGamepadButtonState(Input.GAMEPAD_BUTTONS.y).pressed;
+        return Input.getPlayerInput(1).getKeyState('F5').pressed || Input.getPlayerInput(1).getGamepadButtonState(Input.GAMEPAD_BUTTONS.y).pressed;
     }
 
     /**
@@ -367,15 +367,15 @@ export class Input implements IIdentifiable {
         if (e instanceof KeyboardEvent) {
             switch (e.code) {
                 case 'Space':
-                    if (Input.getPlayerInput(1).getKeyState(e.code).consumed) break;
-                    else Input.getPlayerInput(1).consumeKey(e.code);
+                    if (Input.getPlayerInput(2).getKeyState(e.code).consumed) break;
+                    else Input.getPlayerInput(2).consumeKey(e.code);
                     if (!global.game.paused) {
                         global.game.paused = true;
                         global.game.debug_runSingleFrameAndPause = false;
                     }
                     else {
                         global.game.paused = false;
-                        global.game.debug_runSingleFrameAndPause = Input.getPlayerInput(1).getKeyState('ShiftLeft').pressed;
+                        global.game.debug_runSingleFrameAndPause = Input.getPlayerInput(2).getKeyState('ShiftLeft').pressed;
                     }
                     break;
             }

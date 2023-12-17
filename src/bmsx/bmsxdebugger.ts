@@ -208,7 +208,7 @@ class FloatingDialog {
 }
 
 export function handleDebugMouseDown(e: MouseEvent): void {
-    if (!Input.getPlayerInput(0).getKeyState('ShiftLeft')) { // Only start or continue dragging when shift is pressed. Note that the shift key is not updated after the mouse is pressed down
+    if (!Input.getPlayerInput(1).getKeyState('ShiftLeft')) { // Only start or continue dragging when shift is pressed. Note that the shift key is not updated after the mouse is pressed down
         draggedObj = null; // Stop dragging object
         return;
     }
@@ -226,7 +226,7 @@ export function handleDebugMouseDown(e: MouseEvent): void {
 
 export function handleDebugMouseMove(e: MouseEvent): void {
     const { objUnderCursor, offsetToCursor } = getGameObjectAtCursor(e);
-    if (Input.getPlayerInput(0).getKeyState('ControlLeft').pressed) { // Ctrl + mouse move = allow for selecting objects in the game world (for debugging)
+    if (Input.getPlayerInput(1).getKeyState('ControlLeft').pressed) { // Ctrl + mouse move = allow for selecting objects in the game world (for debugging)
         // Highlight mouse-overed objects
         highlight_object(objUnderCursor);
     }
@@ -243,7 +243,7 @@ export function handleDebugMouseMove(e: MouseEvent): void {
             draggedObj.x = ~~x - draggedObjCursorOffset.x;
             draggedObj.y = ~~y - draggedObjCursorOffset.y;
         }
-        if (!Input.getPlayerInput(0).getKeyState('ShiftLeft').pressed) {
+        if (!Input.getPlayerInput(1).getKeyState('ShiftLeft').pressed) {
             draggedObj = null; // Stop dragging object when shift is released
         }
         return;
@@ -272,7 +272,7 @@ function highlight_object(o: GameObject) {
 
 export function handleDebugMouseUp(e: MouseEvent): void {
     if (draggedObj) {
-        if (Input.getPlayerInput(0).getKeyState('ShiftLeft').pressed && e.button !== 0) return; // Only stop dragging when primary button is released or shift is not pressed. Note that the shift key is not updated after the mouse is pressed down
+        if (Input.getPlayerInput(1).getKeyState('ShiftLeft').pressed && e.button !== 0) return; // Only stop dragging when primary button is released or shift is not pressed. Note that the shift key is not updated after the mouse is pressed down
         draggedObj = null;
     }
 }
@@ -290,7 +290,7 @@ function startDragGameObject(gameobject_at_cursor: GameObject, offsetToCursor: v
 export function handleContextMenu(e: MouseEvent): void {
     e.preventDefault();
     const { objUnderCursor, offsetToCursor } = getGameObjectAtCursor(e);
-    // if (Input.getPlayerInput(0).getKeyState('ControlLeft').pressed) { // Ctrl + mouse move = allow for selecting objects in the game world (for debugging)
+    // if (Input.getPlayerInput(1).getKeyState('ControlLeft').pressed) { // Ctrl + mouse move = allow for selecting objects in the game world (for debugging)
     // Highlight mouse-overed objects
     highlight_object(objUnderCursor);
     // Add state visualiser component to the object
