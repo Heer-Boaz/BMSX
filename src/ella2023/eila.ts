@@ -97,9 +97,9 @@ export class Player extends Fighter {
                     case 'jump':
                         this.state.to('jump', false); // Actions 'left' and 'right' have higher priority than 'jump' and thus directonal jumps are handled in the 'left' and 'right' cases
                         break;
-                    case 'stoer':
-                        this.state.to('stoerheidsdans');
-                        break;
+                    // case 'stoer':
+                    //     this.state.to('stoerheidsdans');
+                    //     break;
                 }
             }
         }
