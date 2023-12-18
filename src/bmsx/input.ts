@@ -110,7 +110,6 @@ class PendingAssignmentProcessor {
 
     private icon: SelectedPlayerIndexIcon = null;
 
-    private makeIconId(gamepadIndex: number) { return SelectedPlayerIndexIcon.getIconId(gamepadIndex); }
     private checkNonConsumedPressed(button: GamepadButton, gamepadInput: GamepadInput) {
         return gamepadInput.getButtonState(Input.BUTTON2INDEX[button]).pressed && !gamepadInput.getButtonState(Input.BUTTON2INDEX[button]).consumed;
     }
