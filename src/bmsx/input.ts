@@ -187,12 +187,20 @@ class PendingAssignmentProcessor {
         }
         else {
             this.icon.x = this.calcIconPositionX(this.pendingIndex);
-            if (this.checkNonConsumedPressed('start', gamepadInput)) {
-                gamepadInput.consumeButton(Input.BUTTON2INDEX['start']);
+            if (this.checkNonConsumedPressed('a', gamepadInput)) {
+                // Assign gamepad to player and remove the joystick icon
+                gamepadInput.consumeButton(Input.BUTTON2INDEX['a']);
                 inputMaestro.assignGamepadToPlayer(gamepadInput, this.proposedPlayerIndex);
                 inputMaestro.removePendingGamepadAssignment(this.gamepadInput.gamepad);
             }
+            else if (this.checkNonConsumedPressed('b', gamepadInput)) {
+                // Cancel assignment process for this gamepad and remove the joystick icon
+                gamepadInput.consumeButton(Input.BUTTON2INDEX['b']);
+                this.proposedPlayerIndex = null; // Set proposed player index to null to indicate that the gamepad is no longer proposed to be assigned to a player. Note that we keep the pending gamepad assignment object around, so that the gamepad can be assigned to a player again later.
+                this.removeIcon();
+            }
             else {
+                // Handle joystick icon movement to change the proposed player index
                 this.handleSelectPlayerIndexButtonPress('up', 1, gamepadInput);
                 this.handleSelectPlayerIndexButtonPress('right', 1, gamepadInput);
                 this.handleSelectPlayerIndexButtonPress('down', -1, gamepadInput);
@@ -201,8 +209,9 @@ class PendingAssignmentProcessor {
         }
     }
 
-    dispose(): void {
+    removeIcon(): void {
         this.icon?.markForDisposal();
+        this.icon = undefined;
     }
 }
 
@@ -414,7 +423,7 @@ export class Input implements IIdentifiable {
         if (index !== -1) {
             const pendingAssignmentProcessor = this.pendingGamepadAssignments[index];
             this.pendingGamepadAssignments.splice(index, 1);
-            pendingAssignmentProcessor.dispose(); // Dispose the joystick icon
+            pendingAssignmentProcessor.removeIcon(); // Dispose the joystick icon
         }
     }
 
