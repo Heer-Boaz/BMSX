@@ -95,7 +95,7 @@ const ZCOORD_ATTRIBUTE_SIZE = 1;
 const COLOR_OVERRIDE_ATTRIBUTE_SIZE = 4;
 
 const BUFFER_OFFSET_MULTIPLIER = 48;
-const ZCOORD_DIVISOR = 10000;
+export const ZCOORD_MAX = 10000;
 const ZCOORD_BUFFER_OFFSET_MULTIPLIER = 24;
 const COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER = 96;
 
@@ -856,7 +856,7 @@ void main() {
 
         bvec.set(vertexcoords, x, y, width, height, sx, sy);
         texcoords.set(this.getTexCoords(flip_h, flip_v, imgmeta));
-        bvec.set_zcoord(zcoords, z / ZCOORD_DIVISOR);
+        bvec.set_zcoord(zcoords, z / ZCOORD_MAX);
         bvec.set_color(color_override, colorize);
 
         const bufferOffset = BUFFER_OFFSET_MULTIPLIER * drawImgReqIndex;
