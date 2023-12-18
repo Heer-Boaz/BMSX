@@ -2,6 +2,12 @@
 import { handleDebugClick, handleDebugMouseDown, handleDebugMouseUp, handleDebugMouseMove, handleDebugMouseOut, handleContextMenu as handleDebugContextMenu, handleOpenObjectMenu, handleOpenDebugMenu as handleOpenDebugMenu } from './bmsxdebugger';
 import { EventEmitter } from './eventemitter';
 import { IIdentifiable } from './gameobject';
+import { new_vec2 } from './bmsx';
+import { GLView, ZCOORD_MAX } from './glview';
+import { DrawImgOptions } from './view';
+import { BitmapId } from '../ella2023/resourceids';
+import { SpriteObject } from './sprite';
+import { GameObjectId } from './rompack';
 
 /**
  * Represents the ID of a button.
@@ -96,10 +102,15 @@ const options = {
     once: false,
 };
 
+type PendingAssignment = { gamepadInput: GamepadInput, proposedPlayerIndex: number | null };
+
 export class Input implements IIdentifiable {
     private static instance: Input;
     private static playerInputs: PlayerInput[] = [];
-    private pendingGamepadAssignments: { gamepadInput: GamepadInput, proposedPlayerIndex: number }[] = [];
+    private pendingGamepadAssignments: PendingAssignment[] = [];
+
+    public static PLAYERS_MAX = 4;
+    public static PLAYER_MAX_INDEX = Input.PLAYERS_MAX - 1;
 
     public static getInstance(debug = false): Input {
         if (!Input.instance) {
@@ -110,6 +121,7 @@ export class Input implements IIdentifiable {
 
     public static getPlayerInput(playerIndex: number): PlayerInput {
         const index = playerIndex - 1;
+        if (index < 0 || index > Input.PLAYER_MAX_INDEX) throw new Error(`Player index ${playerIndex} is out of range, should be between 1 and ${Input.PLAYERS_MAX}.`);
         if (!Input.playerInputs[index]) {
             Input.playerInputs[index] = new PlayerInput(playerIndex);
         }
@@ -259,45 +271,93 @@ export class Input implements IIdentifiable {
     }
 
     public pollInput(): void {
+        const joystick_icon_start = new_vec2(0, 0);
+        const joystick_icon_increment_x = 32;
+
+        const makeIconId = (gamepadIndex: number) => SelectedPlayerIndexIcon.getIconId(gamepadIndex);
+        const checkNonConsumedPressed = (button: GamepadButton, gamepadInput: GamepadInput) => gamepadInput.getButtonState(Input.BUTTON2INDEX[button]).pressed && !gamepadInput.getButtonState(Input.BUTTON2INDEX[button]).consumed;
+        const getIconPositionX = (positionIndex: number) => joystick_icon_start.x + (joystick_icon_increment_x * (positionIndex));
+        const handleSelectPlayerIndexButtonPress = (button: GamepadButton, increment: number, gamepadInput: GamepadInput, pending: PendingAssignment, icon_id: GameObjectId) => {
+            if (checkNonConsumedPressed(button, gamepadInput)) {
+                gamepadInput.consumeButton(Input.BUTTON2INDEX[button]);
+
+                let newProposedPlayerIndex: number = pending.proposedPlayerIndex;
+                let triedPlayerIndicesCount = 0;
+                do {
+                    ++triedPlayerIndicesCount;
+                    newProposedPlayerIndex += increment;
+                    if (newProposedPlayerIndex < 1) newProposedPlayerIndex = Input.PLAYERS_MAX;
+                    if (newProposedPlayerIndex > Input.PLAYERS_MAX) newProposedPlayerIndex = 1;
+                } while (!this.isPlayerIndexAvailableForGamepadAssignment(newProposedPlayerIndex) && triedPlayerIndicesCount <= Input.PLAYERS_MAX);
+                if (triedPlayerIndicesCount > Input.PLAYERS_MAX) {
+                    // No player index available for gamepad assignment found => abort assignment process for this gamepad
+                    newProposedPlayerIndex = null;
+                }
+
+                pending.proposedPlayerIndex = newProposedPlayerIndex;
+                global.model.get<SelectedPlayerIndexIcon>(icon_id).playerIndex = newProposedPlayerIndex;
+                console.info(`Gamepad ${gamepadInput.gamepadIndex} proposed to be assigned to player ${newProposedPlayerIndex ?? 'none (no free slots left)'}.`);
+            }
+        }
+
+        const createSelectPlayerIconIfNeeded = (pending: PendingAssignment, positionIndex: number) => {
+            // If the joystick icon is not part of the current space (scene) yet, add it to the current space (scene) or move it to the current space (scene)
+            const icon_id = makeIconId(pending.gamepadInput.gamepadIndex);
+            if (!global.model.getFromCurrentSpace(icon_id)) { // Check whether the joystick icon is already part of the current space (scene)
+                const existingIcon = global.model.get(icon_id);
+                if (!existingIcon) { // If the joystick icon doesn't exist yet, create it
+                    const joystick_icon = new SelectedPlayerIndexIcon(icon_id);
+                    global.model.spawn(joystick_icon);
+                    joystick_icon.x = getIconPositionX(positionIndex);
+                    joystick_icon.y = joystick_icon_start.y;
+                }
+                else { // If the joystick icon already exists, move it to the current space (scene)
+                    model.move_obj_to_space(existingIcon.id, global.model.current_space_id); // Move the icon to the current space (scene) if it's not already there (e.g. if the player changed scenes)
+                }
+            }
+        };
+
         Input.playerInputs.forEach(player => { player.pollInput(); });
+        let i = 0;
         this.pendingGamepadAssignments.forEach(pending => {
             const gamepadInput = pending.gamepadInput
             gamepadInput.pollInput();
 
             // Check whether the start button was pressed and not consumed yet to assign the gamepad to a player
             if (pending.proposedPlayerIndex === null) {
-                if (gamepadInput.getButtonState(Input.BUTTON2INDEX['start']).pressed && !gamepadInput.getButtonState(Input.BUTTON2INDEX['start']).consumed) {
+                if (checkNonConsumedPressed('start', gamepadInput)) {
                     gamepadInput.consumeButton(Input.BUTTON2INDEX['start']);
-
                     const proposedPlayerIndex = this.getNextAvailablePlayerIndexForGamepadAssignment();
+
                     if (proposedPlayerIndex !== null) {
                         pending.proposedPlayerIndex = proposedPlayerIndex;
+                        createSelectPlayerIconIfNeeded(pending, i);
+                        global.model.get<SelectedPlayerIndexIcon>(makeIconId(gamepadInput.gamepadIndex)).playerIndex = proposedPlayerIndex;
                         console.info(`Gamepad ${gamepadInput.gamepadIndex} proposed to be assigned to player ${proposedPlayerIndex}.`);
                     }
                 }
             }
             else {
-                if (gamepadInput.getButtonState(Input.BUTTON2INDEX['start']).pressed && !gamepadInput.getButtonState(Input.BUTTON2INDEX['start']).consumed) {
+                const icon_id = makeIconId(pending.gamepadInput.gamepadIndex);
+                global.model.get<SelectedPlayerIndexIcon>(makeIconId(gamepadInput.gamepadIndex)).x = getIconPositionX(i);
+                if (checkNonConsumedPressed('start', gamepadInput)) {
                     gamepadInput.consumeButton(Input.BUTTON2INDEX['start']);
                     this.assignGamepadToPlayer(gamepadInput, pending.proposedPlayerIndex);
                     this.removePendingGamepadAssignment(pending.gamepadInput);
+                    global.model.get(icon_id)?.markForDisposal();
+
                 }
-                else if (gamepadInput.getButtonState(Input.BUTTON2INDEX['left']).pressed && !gamepadInput.getButtonState(Input.BUTTON2INDEX['left']).consumed) {
-                    gamepadInput.consumeButton(Input.BUTTON2INDEX['left']);
-                    let proposedPlayerIndex = pending.proposedPlayerIndex - 1;
-                    if (proposedPlayerIndex < 1) proposedPlayerIndex = Input.playerInputs.length;
-                    pending.proposedPlayerIndex = proposedPlayerIndex;
-                    console.info(`Gamepad ${gamepadInput.gamepadIndex} proposed to be assigned to player ${proposedPlayerIndex}.`);
+                else {
+                    handleSelectPlayerIndexButtonPress('up', 1, gamepadInput, pending, icon_id);
+                    handleSelectPlayerIndexButtonPress('right', 1, gamepadInput, pending, icon_id);
+                    handleSelectPlayerIndexButtonPress('down', -1, gamepadInput, pending, icon_id);
+                    handleSelectPlayerIndexButtonPress('left', -1, gamepadInput, pending, icon_id);
                 }
-                else if (gamepadInput.getButtonState(Input.BUTTON2INDEX['right']).pressed && !gamepadInput.getButtonState(Input.BUTTON2INDEX['right']).consumed) {
-                    gamepadInput.consumeButton(Input.BUTTON2INDEX['right']);
-                    let proposedPlayerIndex = pending.proposedPlayerIndex + 1;
-                    if (proposedPlayerIndex > 4) proposedPlayerIndex = 1;
-                    pending.proposedPlayerIndex = proposedPlayerIndex;
-                    console.info(`Gamepad ${gamepadInput.gamepadIndex} proposed to be assigned to player ${proposedPlayerIndex}.`);
-                }
+
             }
+            ++i; // Increment the position-index of the joystick icon
         });
+
     }
 
     /**
@@ -305,12 +365,16 @@ export class Input implements IIdentifiable {
      * A player is considered available if there is a connected gamepad that is not already assigned to a player.
      * @returns The index of the next available player, or undefined if no player is available.
      */
-    public getNextAvailablePlayerIndexForGamepadAssignment(): number | null {
-        for (let i = 0; i < Input.playerInputs.length; i++) {
-            const playerInput = Input.playerInputs[i];
-            if (!playerInput.gamepad && !this.pendingGamepadAssignments.some(pending => pending.proposedPlayerIndex === playerInput.playerIndex)) return playerInput.playerIndex;
+    private getNextAvailablePlayerIndexForGamepadAssignment(): number | null {
+        for (let i = 1; i < Input.PLAYERS_MAX; i++) {
+            if (this.isPlayerIndexAvailableForGamepadAssignment(i)) return i;
         }
         return null;
+    }
+
+    private isPlayerIndexAvailableForGamepadAssignment(playerIndex: number): boolean {
+        const playerInput = Input.getPlayerInput(playerIndex);
+        return (!playerInput.gamepad && !this.pendingGamepadAssignments.some(pending => pending.proposedPlayerIndex === playerInput.playerIndex));
     }
 
     /**
@@ -1060,5 +1124,26 @@ class OnScreenGamepad {
 
     focus(e: FocusEvent): void {
         this.reset();
+    }
+}
+
+class SelectedPlayerIndexIcon extends SpriteObject {
+    public static getIconId(gamepadIndex: number): GameObjectId {
+        return `joystick_icon_${gamepadIndex}`;
+    }
+
+    constructor(id: GameObjectId) {
+        super(id);
+        this.z = ZCOORD_MAX;
+    }
+
+    public set playerIndex(playerIndex: number) {
+        if (playerIndex === null) {
+            this.imgid = BitmapId['joystick_none'];
+            return;
+        }
+        else {
+            this.imgid = BitmapId[`joystick${playerIndex}`];
+        }
     }
 }
