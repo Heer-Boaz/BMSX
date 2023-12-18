@@ -43,6 +43,7 @@ export class gamemodel extends BaseModel {
         }
 
         if (emitter.hp <= 0) {
+            emitter.hp = 0;
             SM.stopMusic();
             emitter.handleFighterStukEvent(event_name, emitter);
         }
