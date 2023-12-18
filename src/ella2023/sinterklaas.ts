@@ -226,10 +226,10 @@ export class Sinterklaas extends Fighter {
                     enter(this: Sinterklaas, state: sstate, directional: boolean = false) {
                         this.state.to('Sinterklaas.jump.jump_up', directional);
                         this.state.to('sint_animation.jump');
-                        // this.getComponent(JumpingWhileLeavingScreenComponent).enabled = true;
+                        this.getComponent(JumpingWhileLeavingScreenComponent).enabled = true;
                     },
                     exit(this: Sinterklaas) {
-                        // this.getComponent(JumpingWhileLeavingScreenComponent).enabled = false;
+                        this.getComponent(JumpingWhileLeavingScreenComponent).enabled = false;
                     },
                     run: jumprun,
                     states: {
