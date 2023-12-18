@@ -26,7 +26,7 @@ function preventActionAndPropagation(e: Event): boolean {
     return false;
 }
 
-function resetObject(obj: Index2State, except?: string[]) {
+function resetObject(obj: Index2State | Index2PressTime, except?: string[]) {
     Object.keys(obj).forEach(key => {
         if (!except || !except.includes(key)) {
             delete obj[key];
@@ -44,15 +44,18 @@ function resetObject(obj: Index2State, except?: string[]) {
 function getPressedState(
     stateMap: Index2State,
     consumedStateMap: Index2State,
+    pressTimeMap: Index2PressTime,
     key: string | number
 ): ButtonState {
-    return { pressed: stateMap[key] ?? false, consumed: consumedStateMap[key] ?? false };
+    return { pressed: stateMap[key] ?? false, consumed: consumedStateMap[key] ?? false, presstime: pressTimeMap[key] ?? null };
 }
 
 /**
  * Represents the state of an index in the Index2State type.
  */
 type Index2State = { [index: string | number]: boolean; }
+
+type Index2PressTime = { [index: string | number]: number | null; }
 /**
  * Represents a mapping of keyboard inputs to actions.
  */
@@ -89,7 +92,7 @@ export type GamepadButton = keyof typeof Input.BUTTON2INDEX;
 /**
  * Represents the state of a button.
  */
-export type ButtonState = { pressed: boolean; consumed: boolean; };
+export type ButtonState = { pressed: boolean; consumed: boolean; presstime: number | null; };
 /**
  * Represents the state of an action, including the action name and button state.
  */
@@ -122,8 +125,14 @@ class PendingAssignmentProcessor {
             do {
                 ++triedPlayerIndicesCount;
                 newProposedPlayerIndex += increment;
-                if (newProposedPlayerIndex < 1) newProposedPlayerIndex = Input.PLAYERS_MAX;
-                if (newProposedPlayerIndex > Input.PLAYERS_MAX) newProposedPlayerIndex = 1;
+                if (newProposedPlayerIndex < 1) {
+                    newProposedPlayerIndex = 1; // No wrap-around to avoid accidentally assigning a gamepad to the wrong player
+                    break;
+                }
+                if (newProposedPlayerIndex > Input.PLAYERS_MAX) {
+                    newProposedPlayerIndex = Input.PLAYERS_MAX; // No wrap-around to avoid accidentally assigning a gamepad to the wrong player
+                    break;
+                }
             } while (!Input.getInstance().isPlayerIndexAvailableForGamepadAssignment(newProposedPlayerIndex) && triedPlayerIndicesCount <= Input.PLAYERS_MAX);
             if (triedPlayerIndicesCount > Input.PLAYERS_MAX) {
                 // No player index available for gamepad assignment found => abort assignment process for this gamepad
@@ -186,6 +195,9 @@ class PendingAssignmentProcessor {
             }
         }
         else {
+            if (!global.model.getFromCurrentSpace(this.icon.id)) {
+                model.move_obj_to_space(this.icon.id, global.model.current_space_id);
+            }
             this.icon.x = this.calcIconPositionX(this.pendingIndex);
             if (this.checkNonConsumedPressed('a', gamepadInput)) {
                 // Assign gamepad to player and remove the joystick icon
@@ -210,8 +222,10 @@ class PendingAssignmentProcessor {
     }
 
     removeIcon(): void {
-        this.icon?.markForDisposal();
-        this.icon = undefined;
+        if (this.icon) {
+            global.model.exile(this.icon);
+            this.icon = undefined;
+        }
     }
 }
 
@@ -382,7 +396,18 @@ export class Input implements IIdentifiable {
     }
 
     public pollInput(): void {
-        Input.playerInputs.forEach(player => { player.pollInput(); });
+        Input.playerInputs.forEach(player => {
+            player.pollInput();
+            const gamepadInput = player.gamepadInput;
+            if (gamepadInput) {
+                const buttonState = gamepadInput.getButtonState(Input.BUTTON2INDEX['start']);
+                if (buttonState.pressed && buttonState.presstime >= 50) {
+                    gamepadInput.reset();
+                    player.gamepadInput = null;
+                    this.pendingGamepadAssignments.push(new PendingAssignmentProcessor(gamepadInput, null));
+                }
+            }
+        });
         this.pendingGamepadAssignments.forEach(pending => pending.run());
     }
 
@@ -629,6 +654,8 @@ export class PlayerInput {
      */
     public KeyPressedConsumedState: Index2State = {};
 
+    public KeyPressedTimes: Index2PressTime = {};
+
     /**
      * The input maps for each player.
      * @private
@@ -675,7 +702,7 @@ export class PlayerInput {
      */
     public getActionState(action: string): ActionState {
         const inputMap = this.inputMap;
-        if (!inputMap) return { action, pressed: false, consumed: false };
+        if (!inputMap) return { action, pressed: false, consumed: false, presstime: null };
 
         const keyboardKey = inputMap.keyboard ? inputMap.keyboard[action] : null;
         const gamepadButton = inputMap.gamepad ? Input.BUTTON2INDEX[inputMap.gamepad[action]] : null;
@@ -685,7 +712,8 @@ export class PlayerInput {
         return {
             action: action,
             pressed: keyboardButtonState.pressed || (gamepadButtonState?.pressed ?? false),
-            consumed: keyboardButtonState.consumed || (gamepadButtonState?.consumed ?? false)
+            consumed: keyboardButtonState.consumed || (gamepadButtonState?.consumed ?? false),
+            presstime: keyboardButtonState.presstime ?? (gamepadButtonState?.presstime ?? null),
         };
     }
 
@@ -761,8 +789,8 @@ export class PlayerInput {
      * @returns The pressed state of the key.
      */
     public getKeyState(key: string): ButtonState {
-        if (key === null) return { pressed: false, consumed: false };
-        return getPressedState(this.KeyState, this.KeyPressedConsumedState, key);
+        if (key === null) return { pressed: false, consumed: false, presstime: null };
+        return getPressedState(this.KeyState, this.KeyPressedConsumedState, this.KeyPressedTimes, key);
     }
 
     /**
@@ -876,9 +904,17 @@ export class PlayerInput {
      * @param except An optional array of keys or buttons to exclude from the reset.
      */
     public reset(except?: string[]): void {
+        this.gamepadInput?.reset(except);
+        if (!except) {
+            this.KeyState = {};
+            this.KeyPressedConsumedState = {};
+            this.KeyPressedTimes = {};
+            return;
+        }
+
         resetObject(this.KeyState, except);
         resetObject(this.KeyPressedConsumedState, except);
-        this.gamepadInput?.reset(except);
+        resetObject(this.KeyPressedTimes, except);
     }
 
     /**
@@ -887,6 +923,7 @@ export class PlayerInput {
      */
     keydown(key_code: ButtonId | string): void {
         this.KeyState[key_code] = true;
+        this.KeyPressedTimes[key_code] = 0;
     }
 
     /**
@@ -895,6 +932,7 @@ export class PlayerInput {
      */
     keyup(key_code: ButtonId | string): void {
         this.KeyState[key_code] = this.KeyPressedConsumedState[key_code] = false;
+        this.KeyPressedTimes[key_code] = null;
     }
 
     blur(e: FocusEvent): void {
@@ -925,6 +963,11 @@ class GamepadInput {
      * The state of each gamepad button click request for each player.
      */
     private gamepadButtonPressedConsumedStates: Index2State = {};
+
+    /**
+     * The state of each gamepad button click request for each player.
+     */
+    private gamepadButtonPressTimes: Index2PressTime = {};
 
     constructor(gamepad: Gamepad) {
         this._gamepad = gamepad;
@@ -985,6 +1028,11 @@ class GamepadInput {
             this.gamepadButtonStates[btnIndex] = this.gamepadButtonStates[btnIndex] || pressed;
             if (!pressed) {
                 this.gamepadButtonPressedConsumedStates[btnIndex] = false;
+                this.gamepadButtonPressTimes[btnIndex] = null;
+            }
+            else {
+                // If the button is pressed, increment the press time counter for detecting hold actions
+                this.gamepadButtonPressTimes[btnIndex] = (this.gamepadButtonPressTimes[btnIndex] ?? 0) + 1;
             }
         }
     }
@@ -995,12 +1043,13 @@ class GamepadInput {
      * @returns The pressed state of the button.
      */
     public getButtonState(btn: number | null): ButtonState {
-        if (btn === null) return { pressed: false, consumed: false };
+        if (btn === null) return { pressed: false, consumed: false, presstime: null };
 
         const stateMap = this.gamepadButtonStates || {};
         const consumedStateMap = this.gamepadButtonPressedConsumedStates;
+        const pressTimes = this.gamepadButtonPressTimes;
         if (!consumedStateMap) return null;
-        return getPressedState(stateMap, consumedStateMap, btn);
+        return getPressedState(stateMap, consumedStateMap, pressTimes, btn);
     }
 
     /**
@@ -1021,10 +1070,12 @@ class GamepadInput {
         if (!except) {
             this.gamepadButtonStates = {};
             this.gamepadButtonPressedConsumedStates = {};
+            this.gamepadButtonPressTimes = {};
         }
         else {
             resetObject(this.gamepadButtonStates, except);
             resetObject(this.gamepadButtonPressedConsumedStates, except);
+            resetObject(this.gamepadButtonPressTimes, except);
         }
     }
 }
