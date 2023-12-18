@@ -8,6 +8,7 @@ import { IEventSubscriber, EventEmitter } from "./eventemitter";
 import { new_area, new_vec3, new_vec2, AbstractConstructor } from "./bmsx";
 import { vec2, vec3, GameObjectId, Area, BoundingBoxesPrecalc } from "./rompack";
 import { Direction } from "./bmsx";
+import { ZCOORD_MAX } from "./glview";
 
 /**
  * Represents a static GameObject.
@@ -97,8 +98,8 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
 
     public get z(): number { return this.pos.z; }
     public set z(z: number) {
-        if (z > 10000) z = 10000;
         if (z < 0) z = 0;
+        else if (z > ZCOORD_MAX) z = ZCOORD_MAX;
         this.setPosZ(z)
     }
 
