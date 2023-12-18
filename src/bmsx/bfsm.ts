@@ -584,7 +584,7 @@ export class statecontext implements IStateController {
 			throw new Error(`No state with ID "${currentPart}"`);
 		}
 
-		if (this.currentid !== currentPart) { // Don't switch to the same state
+		if (this.currentid !== currentPart || restParts.length === 0) { // Don't switch to the same state, except if this is the final part of the id
 			// Perform exit actions for the current state
 			let stateDef = this.current_state_definition;
 			stateDef?.exit?.call(this.target, this.current, ...args);
@@ -598,6 +598,7 @@ export class statecontext implements IStateController {
 			stateDef = this.current_state_definition;
 			stateDef?.enter?.call(this.target, this.current, ...args);
 		}
+
 		// If there are more parts, transition to the next state
 		if (restParts.length > 0) {
 			currentContext.to(restParts.join('.'), ...args);
@@ -678,7 +679,7 @@ export class statecontext implements IStateController {
 			if (restParts) {
 				currentContext.switch(restParts, ...args);
 			} else {
-				if (this.currentid === currentPart) return; // Don't switch to the same state
+				// if (this.currentid === currentPart) return; // Don't switch to the same state
 
 				// Perform exit actions for the current state
 				let stateDef = this.current_state_definition;
