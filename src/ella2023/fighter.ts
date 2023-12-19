@@ -9,7 +9,7 @@ import type { vec2, Area, vec3 } from '../bmsx/rompack';
 import { middlepoint_area, new_area } from '../bmsx/bmsx';
 import { gamemodel } from './gamemodel';
 import { SM } from '../bmsx/soundmaster';
-import type { IIdentifiable, Identifier } from "../bmsx/bmsx";
+import type { Identifier } from "../bmsx/bmsx";
 
 export type AttackType = string;
 
@@ -39,10 +39,10 @@ export abstract class Fighter extends SpriteObject {
                 _geen_au: {
                 },
                 doet_au: {
-                    enter(this: Fighter, state: sstate) {
+                    enter(this: Fighter) {
                         this.sc.pause_all_except('hitanimation');
                     },
-                    exit(this: Fighter, state: sstate) {
+                    exit(this: Fighter) {
                         this.sc.resume_all_statemachines();
                     },
                 },
@@ -57,11 +57,11 @@ export abstract class Fighter extends SpriteObject {
                     next(this: Fighter, state: sstate) {
                         this.moveXNoSweep(state.current_tape_value);
                     },
-                    end(this: Fighter, state: sstate) {
+                    end(this: Fighter) {
                         this.sc.to('hitanimation.geen_au');
                         global.eventEmitter.emit('hit_animation_end', this);
                     },
-                    exit(this: Fighter, state: sstate) {
+                    exit(this: Fighter) {
                         this.sc.resume_all_statemachines();
                     },
                 },
@@ -93,14 +93,14 @@ export abstract class Fighter extends SpriteObject {
         return false;
     }
 
-    protected attackHitsOpponent(attackType: AttackType, opponent: Fighter): Area | null {
+    protected attackHitsOpponent(_attackType: AttackType, opponent: Fighter): Area | null {
         // if (this.state.is('hitanimation.wel_au')) return null; // Only check for hits when the fighter is not already being hit
         // Check if the opponent is hit by the attack
         const overlappingAreaOrFalse = this.collides(opponent);
         return overlappingAreaOrFalse ? overlappingAreaOrFalse : null;
     }
 
-    protected handleHittingOpponent(attackType: AttackType, opponent: Fighter, hitArea: Area) {
+    protected handleHittingOpponent(attackType: AttackType, _opponent: Fighter, hitArea: Area) {
         const hitMarkerInfo = this.determineHitMarker(attackType, hitArea);
         this.showHitMarker(hitMarkerInfo);
     }
@@ -157,7 +157,7 @@ export abstract class Fighter extends SpriteObject {
         }
     }
 
-    determineHitMarker(attackType: AttackType, hitArea: Area): HitMarkerInfo {
+    determineHitMarker(_attackType: AttackType, hitArea: Area): HitMarkerInfo {
         return { type: (this.id === 'player') ? 'enemy_hit' : 'player_hit', pos: middlepoint_area(hitArea) };
     }
 

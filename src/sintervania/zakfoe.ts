@@ -55,7 +55,7 @@ export class ZakFoe extends Foe {
 			{ i: BitmapId.ZakFoe3, dy: 0 },
 			{ i: BitmapId.ZakFoe1, dy: -1 },
 		];
-		state0.nudges2move = 2;
+		state0.ticks2move = 2;
 		let state0handler = (s: sdef, type: BSTEventType) => {
 			switch (type) {
 				case BSTEventType.Run:
@@ -93,7 +93,7 @@ export class ZakFoe extends Foe {
 		state0.onnext = state0handler;
 
 		let state1 = this.add(1);
-		state1.nudges2move = 8;
+		state1.ticks2move = 8;
 		let state1handler = (s: sdef, type: BSTEventType) => {
 			switch (type) {
 				case BSTEventType.Run:

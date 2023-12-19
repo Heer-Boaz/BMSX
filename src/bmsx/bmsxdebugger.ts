@@ -7,7 +7,7 @@ import { Serializer } from './gameserializer';
 import { GLView } from './glview';
 import { Input } from './input';
 import { Msx1Colors } from './msx';
-import type { IIdentifiable, Identifier } from "./bmsx";
+import type { Identifier } from "./bmsx";
 import type { vec2 } from './rompack';
 import { SpriteObject } from './sprite';
 import { Color } from './view';
@@ -43,7 +43,7 @@ export class StateMachineVisualizer extends Component {
         this.enabled = false;
     }
 
-    override postprocessingUpdate({ params, returnvalue }: ComponentUpdateParams): void {
+    override postprocessingUpdate(): void {
         this.openDialog();
         const [machineElements, stateElements] = [this.machineElements, this.stateElements]; // Make sure these aren't disposed of while the method is running
 
@@ -63,11 +63,8 @@ export class StateMachineVisualizer extends Component {
             this.dialog = new FloatingDialog(`FSM: [${this.parentid}]`);
         }
         if (!this.machineElements || !this.stateElements) {
-            let _contentDiv: HTMLElement;
-
-            [_contentDiv, this.machineElements, this.stateElements] = visualizeStateMachine(this.dialog.getDialogElement(), this.dialog.getContentElement(), this.bfsmController);
+            [, this.machineElements, this.stateElements] = visualizeStateMachine(this.dialog.getDialogElement(), this.dialog.getContentElement(), this.bfsmController);
             this.dialog.updateSize();
-            // this.dialog.minimize(); // Minimize the dialog by default
         }
 
     }
@@ -150,11 +147,9 @@ class FloatingDialog {
     private dialogDiv: HTMLDivElement;
     private contentDiv: HTMLDivElement;
     private minimizeSpan: HTMLSpanElement;
-    private titleElement: HTMLSpanElement;
-    private wrapperElement: HTMLDivElement;
 
     constructor(title?: string, previousDialog?: HTMLElement) {
-        [this.dialogDiv, this.contentDiv, this.titleElement, this.wrapperElement, this.minimizeSpan] = this.createDialog(title, previousDialog);
+        [this.dialogDiv, this.contentDiv, , , this.minimizeSpan] = this.createDialog(title, previousDialog);
         document.body.insertBefore(this.dialogDiv, null);
     }
 
@@ -226,7 +221,7 @@ export function handleDebugMouseDown(e: MouseEvent): void {
 }
 
 export function handleDebugMouseMove(e: MouseEvent): void {
-    const { objUnderCursor, offsetToCursor } = getGameObjectAtCursor(e);
+    const { objUnderCursor } = getGameObjectAtCursor(e);
     if (Input.getPlayerInput(1).getKeyState('ControlLeft').pressed) { // Ctrl + mouse move = allow for selecting objects in the game world (for debugging)
         // Highlight mouse-overed objects
         highlight_object(objUnderCursor);
@@ -278,7 +273,7 @@ export function handleDebugMouseUp(e: MouseEvent): void {
     }
 }
 
-export function handleDebugMouseOut(e: MouseEvent): void {
+export function handleDebugMouseOut(_e: MouseEvent): void {
     highlight_object(null);
     draggedObj = null;
 }
@@ -290,7 +285,7 @@ function startDragGameObject(gameobject_at_cursor: GameObject, offsetToCursor: v
 
 export function handleContextMenu(e: MouseEvent): void {
     e.preventDefault();
-    const { objUnderCursor, offsetToCursor } = getGameObjectAtCursor(e);
+    const { objUnderCursor } = getGameObjectAtCursor(e);
     // if (Input.getPlayerInput(1).getKeyState('ControlLeft').pressed) { // Ctrl + mouse move = allow for selecting objects in the game world (for debugging)
     // Highlight mouse-overed objects
     highlight_object(objUnderCursor);
@@ -361,7 +356,7 @@ function shouldPropertyValueBeRedirectedToSubDialog(propName: string, propValue:
 function customPrompt(title, initialValue, type) {
     return new Promise((resolve) => {
         const dialog = new FloatingDialog(title);
-        const [dialogElement, dialogContentElement] = [dialog.getDialogElement(), dialog.getContentElement()];
+        const [, dialogContentElement] = [dialog.getDialogElement(), dialog.getContentElement()];
         const promptDialog = document.createElement('div');
         promptDialog.className = 'custom-prompt-dialog';
 
@@ -437,7 +432,7 @@ function customPrompt(title, initialValue, type) {
 
 function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement, obj: Object, objName: string, ignoreProps?: string[]): HTMLElement {
     let table = addContent(addContentTo, 'table', null) as HTMLTableElement;
-    let headerRow = addContent(table, 'tr', null);
+    // let headerRow = addContent(table, 'tr', null);
 
     function addTableRowForProperty(key: string, value: any, parent_obj: Object): void {
         let row = addContent(table, 'tr', null);
@@ -456,7 +451,7 @@ function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement
             else if (shouldPropertyValueBeRedirectedToSubDialog(key, value)) {
                 let valueCell = addContent(row, 'td', `< ... >`);
                 valueCell.classList.add('propvalue');
-                valueCell.onclick = (e) => {
+                valueCell.onclick = (_e) => {
                     const [objDialogDiv, objDialogContentDiv] = createDebugDialog(newObjName, dialog);
                     createObjectTableElement(objDialogDiv, objDialogContentDiv, value, newObjName, ignoreProps);
                     document.body.insertBefore(objDialogDiv, null);
@@ -487,7 +482,7 @@ function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement
                     else {
                         valueCell.classList.add('propvalue');
                     }
-                    valueCell.onclick = (e) => {
+                    valueCell.onclick = (_e) => {
                         let currentValueAsStringInHandlerScope = String(obj[key]);
                         customPrompt(`Edit value for "${key}":`, currentValueAsStringInHandlerScope, type).then((newValue: any) => {
                             if (newValue && newValue != currentValueAsStringInHandlerScope) {
@@ -905,7 +900,7 @@ function openObjectDetailMenu(obj: any, title: string, previous?: HTMLElement): 
 
 export function handleDebugClick(e: MouseEvent): void {
     if (e.button === 0 && !e.shiftKey && e.ctrlKey && !draggedObj) { // Only open when main button is clicked and shift is not pressed and ctrl is pressed and no object is being dragged
-        let { objUnderCursor, offsetToCursor } = getGameObjectAtCursor(e);
+        let { objUnderCursor } = getGameObjectAtCursor(e);
         if (objUnderCursor) {
             openObjectDetailMenu(objUnderCursor, objUnderCursor.id);
         }

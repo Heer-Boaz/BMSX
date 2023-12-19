@@ -4,21 +4,19 @@ import { onload } from "./gameserializer";
 import { GameObject } from "./gameobject";
 import { insavegame, onsave, Reviver, Savegame, Serializer } from "./gameserializer";
 import { Input } from "./input";
-import { Vector, vec2, vec3 } from "./rompack";
+import { Vector } from "./rompack";
 import { Direction } from "./bmsx";
 import { EventEmitter, IEventSubscriber } from "./eventemitter";
 import type { IIdentifiable, Identifier } from "./bmsx";
 
 export interface ISpaceObject {
-    spaceid: string;
+    spaceid: Identifier;
     objects: GameObject[];
 }
 
-export type obj_id_type = string;
-export type space_id_type = string;
-export type id2objectType = Record<obj_id_type, GameObject>;
-export type id2spaceType = Record<space_id_type, Space>;
-export type obj_id2space_id_type = Record<obj_id_type, space_id_type>;
+export type id2objectType = Record<Identifier, GameObject>;
+export type id2spaceType = Record<Identifier, Space>;
+export type obj_id2space_id_type = Record<Identifier, Identifier>;
 export const id2obj = Symbol('id2object');
 export const spaceid_2_space = Symbol('id2space');
 export const objid_2_objspaceid = Symbol('obj_id2obj_space_id');
@@ -30,19 +28,19 @@ export const objid_2_objspaceid = Symbol('obj_id2obj_space_id');
 export class Space {
     /**
      * A dictionary that maps object IDs to their corresponding GameObject instances.
-     * @type {Record<obj_id_type, GameObject>}
+     * @type {Record<Identifier, GameObject>}
      */
     public [id2obj]: id2objectType;
     /**
      * Returns the GameObject with the specified ID, or undefined if no such object exists in this space.
      * @template T - The type of the GameObject to return.
-     * @param {string} id - The ID of the GameObject to retrieve.
+     * @param {Identifier} id - The ID of the GameObject to retrieve.
      * @returns {T | undefined} The GameObject with the specified ID, or undefined if no such object exists in this space.
      */
-    public get<T extends GameObject>(id: string): T | undefined {
+    public get<T extends GameObject>(id: Identifier): T | undefined {
         return <T>this[id2obj][id];
     }
-    public id: string;
+    public id: Identifier;
     public objects: GameObject[];
     /**
      * A function that is called when the Space object is disposed of.
@@ -69,10 +67,10 @@ export class Space {
     /**
      * Represents a space in the game world, which contains a collection of game objects.
      * @constructor
-     * @param {string} _id - The unique identifier for the space.
+     * @param {Identifier} id - The unique identifier for the space.
      */
-    public constructor(_id: string) {
-        this.id = _id;
+    public constructor(id: Identifier) {
+        this.id = id;
         this.objects = [];
         this[id2obj] = {};
     }
@@ -151,7 +149,7 @@ export type base_model_spaces = 'game_start' | 'default';
  * Provides methods to add, remove, and manipulate game objects and spaces.
  */
 export abstract class BaseModel implements IStateful, IIdentifiable {
-    public get id(): string { return 'model'; } // Required for IStateful and IIdentifiable
+    public get id(): Identifier { return 'model'; } // Required for IStateful and IIdentifiable
 
     /**
      * An array of keys to exclude from the serialized game state when saving the game.
@@ -184,32 +182,32 @@ export abstract class BaseModel implements IStateful, IIdentifiable {
     }
 
     public spaces: Space[]; // All spaces in the model
-    protected currentSpaceid: string; // Current space. On model creation, a default space is created with id 'default'
-    public get current_space_id(): string { return this.currentSpaceid; } // Current space id. On model creation, a default space is created with id 'default'
+    protected currentSpaceid: Identifier; // Current space. On model creation, a default space is created with id 'default'
+    public get current_space_id(): Identifier { return this.currentSpaceid; } // Current space id. On model creation, a default space is created with id 'default'
     public get currentSpace(): Space { return this.get_space(this.currentSpaceid); } // Current space. On model creation, a default space is created with id 'default'
-    public setSpace(newSpaceId: string) { this.currentSpaceid = newSpaceId; }
-    public get_space<T extends Space>(id: string) { return <T>this[spaceid_2_space][id]; }
+    public setSpace(newSpaceId: Identifier) { this.currentSpaceid = newSpaceId; }
+    public get_space<T extends Space>(id: Identifier) { return <T>this[spaceid_2_space][id]; }
 
     public paused: boolean;
     public startAfterLoad: boolean;
 
     /**
      * Gets the game object with the given id from the current space only.
-     * @param {string} id - the id of the {@link GameObject}.
+     * @param {Identifier} id - the id of the {@link GameObject}.
      * @returns {T} The game object with the given id from the current space only.
      */
-    public getFromCurrentSpace<T extends GameObject>(id: string): T {
+    public getFromCurrentSpace<T extends GameObject>(id: Identifier): T {
         return <T>this.currentSpace[id2obj][id];
     }
 
     /**
      * Gets the game object with the given id **across all spaces**.
      * If `id === 'model'`, returns the game model instead! (used for {@link sstate} to make game model as target for callbacks.
-     * @param {string} id - the id of the {@link GameObject}.
+     * @param {Identifier} id - the id of the {@link GameObject}.
      * @returns {GameObject | BaseModel} The game object with the given id or the game model itself (when `id === 'model'`).
      */
-    public get<T extends GameObject>(id: string | 'model'): T {
-        if (id == 'model') return global.model as any; // Dirty fix for scenario where model should return itself as target for the model state machine
+    public get<T extends GameObject>(id: Identifier | 'model'): T {
+        if (id === 'model') return global.model as any; // Dirty fix for scenario where model should return itself as target for the model state machine
 
         const space = this.get_space(this[objid_2_objspaceid][id]);
         if (!space) return <T>null;
@@ -218,38 +216,38 @@ export abstract class BaseModel implements IStateful, IIdentifiable {
 
     /**
      * Returns true if an object exists **in any space** with the given object id.
-     * @param {string} obj_id The id of the object that we want to know whether it exists.
+     * @param {Identifier} obj_id The id of the object that we want to know whether it exists.
      * @returns {boolean} Whether an object was found _in any space_ with the given object id.
      */
-    public exists(obj_id: string): boolean {
+    public exists(obj_id: Identifier): boolean {
         return this.get(obj_id) ? true : false;
     }
 
     /**
      * Returns the id of the space that contains the object with the given id.
-     * @param {string} obj_id - The id of the object to search for.
-     * @returns {string} The id of the space that contains the object with the given id.
+     * @param {Identifier} obj_id - The id of the object to search for.
+     * @returns {Identifier} The id of the space that contains the object with the given id.
      */
-    public get_spaceid_that_has_obj(obj_id: string): string {
+    public get_spaceid_that_has_obj(obj_id: Identifier): Identifier {
         return this[objid_2_objspaceid][obj_id];
     }
 
     /**
      * Returns true if the object with the given id is in the current space.
-     * @param {string} obj_id - The id of the object to check.
+     * @param {Identifier} obj_id - The id of the object to check.
      * @returns {boolean} Whether the object with the given id is in the current space.
      */
-    public is_obj_in_current_space(obj_id: string): boolean {
+    public is_obj_in_current_space(obj_id: Identifier): boolean {
         return this.get_spaceid_that_has_obj(obj_id) === this.currentSpaceid;
     }
 
     /**
      * Moves an object from one space to another. Object should exist in a space, otherwise error is thrown!
-     * @param {string} obj_id - id of object to move.
-     * @param {string} spaceid_to_move_obj_to - id of the new space of the object to move.
+     * @param {Identifier} obj_id - id of object to move.
+     * @param {Identifier} spaceid_to_move_obj_to - id of the new space of the object to move.
      * @returns {void} Nothing
      */
-    public move_obj_to_space(obj_id: string, spaceid_to_move_obj_to: string): void {
+    public move_obj_to_space(obj_id: Identifier, spaceid_to_move_obj_to: Identifier): void {
         const obj = this.get(obj_id);
         if (!obj) throw `Cannot move unknown object '${obj_id}' to space '${spaceid_to_move_obj_to}'!`; // ? SHOULD THROW ERROR?
         const target_space = this.get_space(spaceid_to_move_obj_to);
@@ -262,20 +260,20 @@ export abstract class BaseModel implements IStateful, IIdentifiable {
 
     /**
      * Returns the machine definition for the given machine id.
-     * @param {string} machineid - The id of the machine to get the definition for.
+     * @param {Identifier} machineid - The id of the machine to get the definition for.
      * @returns {mdef} The machine definition for the given machine id.
      */
-    public static getMachinedef(machineid: string): mdef {
+    public static getMachinedef(machineid: Identifier): mdef {
         return MachineDefinitions[machineid];
     }
 
     /**
      * Returns the state definition for the given machine and state id.
-     * @param {string} machineid - The id of the machine to get the state definition for.
-     * @param {string} stateid - The id of the state to get the definition for.
+     * @param {Identifier} machineid - The id of the machine to get the state definition for.
+     * @param {Identifier} stateid - The id of the state to get the definition for.
      * @returns {sdef} The state definition for the given machine and state id.
      */
-    public static getMachineStatedef(machineid: string, stateid: string): sdef {
+    public static getMachineStatedef(machineid: Identifier, stateid: Identifier): sdef {
         return MachineDefinitions[machineid].states[stateid];
     }
 
@@ -395,7 +393,7 @@ export abstract class BaseModel implements IStateful, IIdentifiable {
      * Runs the current state of the model by calling the `run` method of the current state.
      * @returns {void} Nothing.
      */
-    public run(): void {
+    public run(_deltaTime: number): void {
         this.sc.run();
     }
 
@@ -427,7 +425,7 @@ export abstract class BaseModel implements IStateful, IIdentifiable {
      * @param {sstate<BaseModel>} s - The current state of the BaseModel.
      * @returns {void} Nothing.
      */
-    static default_input_handler_for_allow_open_gamemenu(this: BaseModel, s: sstate<BaseModel>): void {
+    static default_input_handler_for_allow_open_gamemenu(this: BaseModel): void {
         if (Input.KC_F5) {
             this.sc.machines.gamemenu.to('open');
         }
@@ -440,13 +438,13 @@ export abstract class BaseModel implements IStateful, IIdentifiable {
      * @param {sstate<BaseModel>} s - The current state of the BaseModel.
      * @returns {void} Nothing.
      */
-    static default_input_handler_for_allow_close_gamemenu(this: BaseModel, s: sstate<BaseModel>): void {
+    static default_input_handler_for_allow_close_gamemenu(this: BaseModel): void {
         if (Input.KC_F5) {
             this.sc.machines.gamemenu.to('closed');
         }
     }
 
-    static default_input_handler(this: BaseModel, s: sstate<BaseModel>) {
+    static default_input_handler(this: BaseModel) {
     }
 
     /**
@@ -587,13 +585,13 @@ export abstract class BaseModel implements IStateful, IIdentifiable {
 
     /**
      * Adds a new space to the model instance.
-     * @param {Space | string} s - The space to add to the model instance. Can be a `Space` object or a string representing the ID of the new space.
+     * @param {Space | Identifier} s - The space to add to the model instance. Can be a `Space` object or a string representing the ID of the new space.
      * @returns {void} Nothing.
-     * @throws {string} Throws an error if a space with the same ID already exists in the model instance.
+     * @throws {Error} Throws an error if a space with the same ID already exists in the model instance.
      */
-    public addSpace(s: Space | string): void {
+    public addSpace(s: Space | Identifier): void {
         const new_space: Space = (s instanceof Space ? s : new Space(s));
-        if (this[spaceid_2_space][new_space.id]) throw `Cannot add duplicate Space '${new_space.id}' to model!`;
+        if (this[spaceid_2_space][new_space.id]) throw Error(`Cannot add duplicate Space '${new_space.id}' to model!`);
 
         this.spaces.push(new_space);
         this[spaceid_2_space][new_space.id] = new_space;
@@ -601,13 +599,13 @@ export abstract class BaseModel implements IStateful, IIdentifiable {
 
     /**
      * Removes a space from the model instance.
-     * @param {Space | string} s - The space to remove from the model instance. Can be a `Space` object or a string representing the ID of the space to remove.
+     * @param {Space | Identifier} s - The space to remove from the model instance. Can be a `Space` object or a string representing the ID of the space to remove.
      * @returns {void} Nothing.
-     * @throws {string} Throws an error if the space to remove is not found in the model instance.
+     * @throws {Error} Throws an error if the space to remove is not found in the model instance.
      */
-    public removeSpace(s: Space | string): void {
+    public removeSpace(s: Space | Identifier): void {
         const space: Space = (s instanceof Space ? s : this.get_space(s));
-        if (!space) throw `Space '${s}' to remove from model was not found, while calling [BaseModel.removeSpace]!`;
+        if (!space) throw Error(`Space '${s}' to remove from model was not found, while calling [BaseModel.removeSpace]!`);
 
         const index = this.spaces.indexOf(space);
         const id = space.id;

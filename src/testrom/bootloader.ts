@@ -5,7 +5,7 @@ import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
 import { Input, InputMap, KeyboardButton, GamepadInputMapping, KeyboardInputMapping } from '../bmsx/input';
-import { sstate, statedef_builder, machine_states, build_fsm, assign_fsm } from '../bmsx/bfsm';
+import { statedef_builder, machine_states, build_fsm, assign_fsm } from '../bmsx/bfsm';
 import { insavegame } from '../bmsx/gameserializer';
 import { new_area, Game, new_vec2, get_gamemodel } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
@@ -78,7 +78,7 @@ class TestComponent extends Component {
         console.log('TestComponent onTestEvent');
     }
 
-    // @oneTimeGlobalEventHandler('testEventOnce')
+    @subscribesToSelfScopedEvent('testEvent2')
     onTestEvent2() {
         console.log('TestComponent onTestEvent2');
     }
@@ -111,7 +111,7 @@ class bclass extends SpriteObject {
                     children: [
                         { type: 'Condition', condition: () => Math.random() > .9 },
                         {
-                            type: 'Action', action: function (this: bclass, blackboard) {
+                            type: 'Action', action: function (this: bclass, _blackboard) {
                                 console.log(`Action 1 executed for ${this.id}`)
                                 return 'SUCCESS';
                             }
@@ -140,7 +140,7 @@ class bclass extends SpriteObject {
                         },
                         {
                             type: 'Action',
-                            action: function (this: bclass, blackboard) {
+                            action: function (this: bclass, _blackboard) {
                                 console.log(`Sequence action after decorated action for ${this.id}`);
                                 return 'SUCCESS';
                             }
@@ -153,7 +153,7 @@ class bclass extends SpriteObject {
                     count_propname: 'counting',
                     child: {
                         type: 'Action',
-                        action: function (this: bclass, blackboard) {
+                        action: function (this: bclass, _blackboard) {
                             console.log(`Limited action for ${this.id}`);
                             return 'SUCCESS';
                         }
@@ -163,13 +163,13 @@ class bclass extends SpriteObject {
                     type: 'RandomSelector',
                     children: [
                         {
-                            type: 'Action', action: function (this: bclass, blackboard) {
+                            type: 'Action', action: function (this: bclass, _blackboard) {
                                 console.log(`Random action A for ${this.id}`)
                                 return 'SUCCESS';
                             }
                         },
                         {
-                            type: 'Action', action: function (this: bclass, blackboard) {
+                            type: 'Action', action: function (this: bclass, _blackboard) {
                                 console.log(`Random action B for ${this.id}`)
                                 return 'SUCCESS';
                             }
@@ -179,7 +179,7 @@ class bclass extends SpriteObject {
                 },
                 {
                     type: 'Action',
-                    action: function (this: bclass, blackboard) {
+                    action: function (this: bclass, _blackboard) {
                         console.log(`Fallback action executed for ${this.id}`)
                         return 'SUCCESS';
                     }
@@ -247,7 +247,7 @@ class bclass extends SpriteObject {
             gamepad: gamepadInputMapping,
         } as InputMap);
 
-        function blarun(this: bclass, s: sstate) {
+        function blarun(this: bclass) {
             const speed = 2;
             if (this.sc.current_state.statedef_id === 'blap') {
                 this.tickTree('bclass_tree');
@@ -256,7 +256,7 @@ class bclass extends SpriteObject {
             // To check if an action is pressed for player 0
             const pressedActions = Input.getPlayerInput(1).getPressedActions();
 
-            for (const { action, pressed, consumed } of pressedActions) {
+            for (const { action, consumed } of pressedActions) {
                 switch (action as Action) {
                     case 'up':
                         this.y -= speed;
@@ -359,7 +359,7 @@ class gamemodel extends BaseModel {
         return {
             states: {
                 '#game_start': {
-                    run(this: gamemodel, s: sstate) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
+                    run(this: gamemodel) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
                         this.sc.to('default');
                     }
                 },
@@ -395,11 +395,11 @@ class gamemodel extends BaseModel {
         return MSX1ScreenHeight;
     }
 
-    public collidesWithTile(o: GameObject, dir: Direction): boolean {
+    public collidesWithTile(_o: GameObject, _dir: Direction): boolean {
         return false;
     }
 
-    public isCollisionTile(x: number, y: number): boolean {
+    public isCollisionTile(_x: number, _y: number): boolean {
         return false;
     }
 };

@@ -4,7 +4,7 @@ import { EventEmitter, subscribesToParentScopedEvent } from "./eventemitter";
 import { GameObject } from "./gameobject";
 import { insavegame } from "./gameserializer";
 import { TileSize } from "./msx";
-import type { IIdentifiable, Identifier } from "./bmsx";
+import type { Identifier } from "./bmsx";
 import { vec2 } from "./rompack";
 import { Direction } from "./bmsx";
 
@@ -27,7 +27,6 @@ export abstract class PositionUpdateAxisComponent extends Component {
     }
 
     override preprocessingUpdate(): void {
-        super.preprocessingUpdate();
         set_inplace_vec2(this.oldPos, this.parent.pos); // Store the old position
     }
 }
@@ -198,7 +197,7 @@ export class ProhibitLeavingScreenComponent extends ScreenBoundaryComponent {
      * @param old_x_or_y - The previous x or y coordinate of the game object.
      */
     @subscribesToParentScopedEvent('leavingScreen')
-    public onLeavingScreen(event_name: string, emitter: GameObject, d: Direction, old_x_or_y: number) {
+    public onLeavingScreen(_event_name: string, emitter: GameObject, d: Direction, old_x_or_y: number) {
         leavingScreenHandler_prohibit(emitter, d, old_x_or_y);
     }
 }

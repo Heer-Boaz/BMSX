@@ -132,13 +132,11 @@ export abstract class Component implements IIdentifiable {
     }
 
     // Implement this method to handle preprocessing updates
-    preprocessingUpdate(...args): void {
-        // Override this method in derived classes to handle preprocessing updates (optional)
+    public preprocessingUpdate(..._args): void {
     }
 
     // Implement this method to handle postprocessing updates
-    postprocessingUpdate({ params, returnvalue }: ComponentUpdateParams): void {
-        // Override this method in derived classes to handle postprocessing updates (optional)
+    public postprocessingUpdate({ }: ComponentUpdateParams): void {
     }
 }
 
@@ -245,7 +243,7 @@ export function update_tagged_components<T extends IComponentContainer>(...tags:
         descriptor.value = function (...args: any[]) {
             const updateComponents = (updateType: 'tagsPre' | 'tagsPost', additionalArgs?: any[]) => {
                 // Get all components of the component container and store them in a set to avoid updating the same component multiple times (e.g. if a component has multiple tags) and to avoid updating components that have been added during the update process (e.g. if a component adds another component during the update process)
-                const components = Object.values((this as IComponentContainer).components);
+                const components = Object.values((this as T).components);
                 const updatedComponents = new Set<Component>();
 
                 // Iterate over all components and update the ones that have the specified tags and have not been updated yet (to avoid updating the same component multiple times) and store them in the set of updated components to avoid updating them again later

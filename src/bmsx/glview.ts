@@ -1,7 +1,7 @@
 import type { Size } from './rompack';
 import { BaseView, Color, DrawImgOptions } from './view';
 
-function catchWebGLError(target: any, propertyKey: string, descriptor: PropertyDescriptor): PropertyDescriptor {
+function catchWebGLError(_target: any, propertyKey: string, descriptor: PropertyDescriptor): PropertyDescriptor {
     const originalMethod = descriptor.value;
     descriptor.value = function (...args: any[]) {
         const returnValue = originalMethod.apply(this, args);

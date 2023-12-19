@@ -120,7 +120,7 @@ class fles extends SpriteObject {
                                 BitmapId.fles4,
                                 BitmapId.fles1,
                             ],
-                            nudges2move: 4,
+                            ticks2move: 4,
                             enter: (s: sstate, ik: fles): void => {
                                 s.reset();
                                 ik.imgid = s.current;
@@ -190,7 +190,7 @@ class stoom extends SpriteObject {
                                 BitmapId.pluimx,
                                 BitmapId.pluimx,
                             ],
-                            nudges2move: 4,
+                            ticks2move: 4,
                             enter: (s: sstate, ik: stoom): void => {
                                 s.reset();
                                 ik.imgid = s.current;
@@ -270,7 +270,7 @@ class speler extends SpriteObject {
         };
 
         let down_up_state_def: Partial<sdef> = {
-            nudges2move: 8,
+            ticks2move: 8,
             enter: (s: sstate, ik: speler): void => (s.reset(), ik.imgid = s.current),
             run: (s: sstate, ik: speler): void => { ++s.nudges; },
             end: (s: sstate, ik: speler): void => s.reset(),
@@ -282,7 +282,7 @@ class speler extends SpriteObject {
                 master: new mdef('master', {
                     states: {
                         relax: new sdef('relax', {
-                            nudges2move: 4,
+                            ticks2move: 4,
                             run: (s: sstate, ik: speler): void => {
                                 ++s.nudges;
                             },
@@ -302,7 +302,7 @@ class speler extends SpriteObject {
                             }
                         }),
                         spot: new sdef('spot', {
-                            nudges2move: 500,
+                            ticks2move: 500,
                             run: (s: sstate, ik: speler): void => {
                                 ++s.nudges;
                             },
@@ -313,7 +313,7 @@ class speler extends SpriteObject {
                             }
                         }),
                         spot2: new sdef('spot2', {
-                            nudges2move: 500,
+                            ticks2move: 500,
                             run: (s: sstate, ik: speler): void => {
                                 ++s.nudges;
                             },
@@ -324,7 +324,7 @@ class speler extends SpriteObject {
                             }
                         }),
                         naarrelax: new sdef('naarrelax', {
-                            nudges2move: 100,
+                            ticks2move: 100,
                             run: (s: sstate, ik: speler): void => {
                                 ++s.nudges;
                             },
@@ -335,7 +335,7 @@ class speler extends SpriteObject {
                             }
                         }),
                         relax2: new sdef('relax2', {
-                            nudges2move: 4,
+                            ticks2move: 4,
                             run: (s: sstate, ik: speler): void => {
                                 ++s.nudges;
                             },
@@ -353,7 +353,7 @@ class speler extends SpriteObject {
                             }
                         }),
                         waitforit: new sdef('waitforit', {
-                            nudges2move: 100,
+                            ticks2move: 100,
                             run: (s: sstate, ik: speler): void => {
                                 ++s.nudges;
                             },
@@ -365,7 +365,7 @@ class speler extends SpriteObject {
                             }
                         }),
                         boos: new sdef('boos', {
-                            nudges2move: 40,
+                            ticks2move: 40,
                             run: (s: sstate, ik: speler): void => {
                                 ++s.nudges;
                             },
@@ -416,7 +416,7 @@ class speler extends SpriteObject {
                             // Lelijk, maar animatie-state zorgt voor terugkeer naar previous state
                         }),
                         win: new sdef('win', {
-                            nudges2move: 300,
+                            ticks2move: 300,
                             enter: (_, ik: speler) => ik.state.to('win', 'anistate'),
                             run: (s: sstate) => (++s.nudges, _model.objects.filter(o => (<any>o).isEng).forEach(o => o.disposeFlag = true)),
                             next: () => _model.state.to('hoera!')
@@ -426,7 +426,7 @@ class speler extends SpriteObject {
                 float: new mdef('float', {
                     states: {
                         floating: new sdef('floating', {
-                            nudges2move: 50,
+                            ticks2move: 50,
                             run: (s: sstate, ik: speler): void => {
                                 ++s.nudges;
                             },
@@ -456,7 +456,7 @@ class speler extends SpriteObject {
                                 BitmapId.p5,
                                 BitmapId.p5,
                             ],
-                            nudges2move: 4,
+                            ticks2move: 4,
 
                             run: (s: sstate): void => { ++s.nudges; },
                             next: (s: sstate, ik: speler): void => {
@@ -523,7 +523,7 @@ class yakuzi extends SpriteObject {
                 master: new mdef('master', {
                     states: {
                         wees_een_yakuzi: new sdef('wees_een_yakuzi', {
-                            nudges2move: 50,
+                            ticks2move: 50,
                             enter(s: sstate) {
                                 s.reset();
                             },

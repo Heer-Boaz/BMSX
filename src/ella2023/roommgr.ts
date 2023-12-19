@@ -2,7 +2,7 @@ import { BitmapId } from './resourceids';
 import { get_gamemodel } from "../bmsx/bmsx";
 import { SpriteObject } from "../bmsx/sprite";
 import { gamemodel } from "./gamemodel";
-import { machine_states, sstate, statedef_builder } from '../bmsx/bfsm';
+import { machine_states, statedef_builder } from '../bmsx/bfsm';
 import { Direction } from "../bmsx/bmsx";
 
 const get_model = get_gamemodel<gamemodel>;
@@ -33,7 +33,7 @@ export class RoomMgr {
         }
     }
 
-    public transitionToRoom(room_id: string) {
+    public transitionToRoom(_room_id: string) {
         // Handle the logic to move to an adjacent room
         // Update currentRoom and adjacent rooms
     }
@@ -56,12 +56,12 @@ export class Room extends SpriteObject {
 
     @statedef_builder
     public static bouw(): machine_states {
-        function handlePlayerLeavingScreenEvent(this: Room) {
+        // function handlePlayerLeavingScreenEvent(this: Room) {
             // Check if player is leaving the screen
             // If so, transition to the adjacent room
-        }
+        // }
 
-        function defaultrun(this: Room, s: sstate) {
+        function defaultrun(this: Room) {
         }
 
         return {

@@ -21,16 +21,6 @@ export const keyboardInputMapping1: MyKeyboardInputMapping = {
     'lowkick': 'KeyZ',
     'stoer': 'ShiftLeft',
 };
-export const keyboardInputMapping2: MyKeyboardInputMapping = {
-    'jump': 'q',
-    'right': 'w',
-    'duck': 'e',
-    'left': 'r',
-    'punch': 't',
-    'highkick': 'y',
-    'lowkick': 'u',
-    'stoer': 'i',
-};
 
 export const gamepadInputMapping: MyGamepadInputMapping = {
     'jump': 'up',

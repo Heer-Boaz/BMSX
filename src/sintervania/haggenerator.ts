@@ -15,7 +15,7 @@ export class HagGenerator extends mdef implements GameObject {
         super();
         this.disposeOnSwitchRoom = true;
         let state0 = this.add(0);
-        state0.nudges2move = 100;
+        state0.ticks2move = 100;
         state0.onrun = (s) => ++s.nudges;
         state0.onnext = (s) => {
             // Poop hags based on where Belmont is

@@ -5,11 +5,8 @@ import { ZCOORD_MAX } from './glview';
 import { BitmapId } from '../ella2023/resourceids';
 import { SpriteObject } from './sprite';
 import { get_gamemodel } from './bmsx';
-import { BaseModel } from './model';
 import { machine_states } from './bfsm';
 import type { IIdentifiable, Identifier } from "./bmsx";
-
-const get_model = get_gamemodel<BaseModel>;
 
 /**
  * Represents the ID of a button.
@@ -940,12 +937,12 @@ export class PlayerInput {
         this.KeyPressedTimes[key_code] = null;
     }
 
-    blur(e: FocusEvent): void {
+    blur(_e: FocusEvent): void {
         this.preventInput = true; // Prevent input when the window loses focus
         this.reset();
     }
 
-    focus(e: FocusEvent): void {
+    focus(_e: FocusEvent): void {
         this.reset();
         this.preventInput = false; // Allow input when the window regains focus
     }
@@ -1085,7 +1082,8 @@ class GamepadInput {
     }
 }
 
-class OnScreenGamepad {
+// @ts-ignore
+class OnScreenGamepad { //
     /**
     * Mapping of button names to their corresponding key inputs.
     */
@@ -1213,11 +1211,11 @@ class OnScreenGamepad {
     }
 
 
-    blur(e: FocusEvent): void {
+    blur(_e: FocusEvent): void {
         this.reset();
     }
 
-    focus(e: FocusEvent): void {
+    focus(_e: FocusEvent): void {
         this.reset();
     }
 }

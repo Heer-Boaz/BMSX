@@ -183,7 +183,7 @@ class brandblusser extends SpriteObject {
                 master: new mdef('master', {
                     states: {
                         bla: new sdef('bla', {
-                            nudges2move: 20,
+                            ticks2move: 20,
                             run: (s: sstate, ik: brandblusser): void => {
                                 set_vec2(ik.pos, _model.marlies.pos.x, _model.marlies.pos.y + 12);
                                 // let oldPrio = ik.z;
@@ -348,7 +348,7 @@ class vuur extends SpriteObject {
                                 BitmapId.Vuur10,
                                 BitmapId.None,
                             ],
-                            nudges2move: 2,
+                            ticks2move: 2,
                             enter: (s: sstate, ik: vuur): void => {
                                 s.reset();
                                 ik.imgid = s.current;
@@ -398,7 +398,7 @@ class corona extends SpriteObject {
                 master: new mdef('master', {
                     states: {
                         skulk: new sdef('skulk', {
-                            nudges2move: 4,
+                            ticks2move: 4,
                             tape: <Array<number>>[
                                 BitmapId.Corona1,
                                 BitmapId.Corona2,
@@ -429,7 +429,7 @@ class corona extends SpriteObject {
                             next(s: sstate, ik: corona) { ik.imgid = s.current; },
                         }),
                         sterf: new sdef('sterf', {
-                            nudges2move: 4,
+                            ticks2move: 4,
                             tape: <Array<number>>[
                                 BitmapId.Corona4,
                                 BitmapId.Corona5,
@@ -531,7 +531,7 @@ class speler extends SpriteObject {
         };
 
         let down_up_state_def: Partial<sdef> = {
-            nudges2move: 8,
+            ticks2move: 8,
             enter: (s: sstate, ik: speler): void => (s.reset(), ik.imgid = s.current),
             run: (s: sstate, ik: speler): void => { ++s.nudges; },
             end: (s: sstate, ik: speler): void => s.reset(),
@@ -612,7 +612,7 @@ class speler extends SpriteObject {
                             // Lelijk, maar animatie-state zorgt voor terugkeer naar previous state
                         }),
                         win: new sdef('win', {
-                            nudges2move: 300,
+                            ticks2move: 300,
                             enter: (_, ik: speler) => ik.state.to('win', 'anistate'),
                             run: (s: sstate) => (++s.nudges, _model.objects.filter(o => (<any>o).isEng).forEach(o => o.disposeFlag = true)),
                             next: () => _model.state.to('hoera!')
@@ -670,7 +670,7 @@ class speler extends SpriteObject {
                                 BitmapId.p8,
                                 BitmapId.p9,
                             ],
-                            nudges2move: 4,
+                            ticks2move: 4,
                             enter(s: sstate, ik: speler): void {
                                 s.reset();
                                 ik.imgid = s.current;
@@ -808,7 +808,7 @@ class keuken extends SpriteObject {
                 master: new mdef('master', {
                     states: {
                         wees_een_keuken: new sdef('wees_een_keuken', {
-                            nudges2move: TIME_CORONA_SPAWN,
+                            ticks2move: TIME_CORONA_SPAWN,
                             enter(s: sstate) {
                                 s.reset();
                             },

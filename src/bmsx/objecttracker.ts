@@ -1,5 +1,5 @@
 import { GameObject } from "./gameobject";
-import type { IIdentifiable, Identifier } from "./bmsx";
+import type { Identifier } from "./bmsx";
 
 /**
  * Class representing an ObjectTracker.

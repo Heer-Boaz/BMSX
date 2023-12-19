@@ -67,7 +67,7 @@ function updateAllAssignedFSMs(constructor: any) {
  * @returns A decorator function that can be used to build a finite state machine definition.
  */
 export function build_fsm(fsm_name?: string) {
-	return function statedef_builder(target: any, name: any, descriptor: PropertyDescriptor): any {
+	return function statedef_builder(target: any, _name: any, descriptor: PropertyDescriptor): any {
 		MachineDefinitionBuilders ??= {};
 		MachineDefinitionBuilders[fsm_name ?? target.name] = descriptor.value;
 	};
@@ -80,7 +80,7 @@ export function build_fsm(fsm_name?: string) {
  * @param descriptor - The member descriptor; This is essentially the object that would have been passed to Object.defineProperty.
  * @returns The decorated function.
  */
-export function statedef_builder(target: any, name: any, descriptor: PropertyDescriptor): any {
+export function statedef_builder(target: any, _name: any, descriptor: PropertyDescriptor): any {
 	MachineDefinitionBuilders ??= {};
 	MachineDefinitionBuilders[target.name] = descriptor.value;
 }

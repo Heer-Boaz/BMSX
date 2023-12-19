@@ -167,7 +167,7 @@ export function subscribesToSelfScopedEvent(eventName: string) {
  * @returns A function that decorates the target method.
  */
 export function subscribesToGlobalEvent(eventName: string) {
-    return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
+    return function (target: any, propertyKey: string, _descriptor: PropertyDescriptor) {
         if (!target.constructor.eventSubscriptions) {
             target.constructor.eventSubscriptions = [];
         }
@@ -182,7 +182,7 @@ export function subscribesToGlobalEvent(eventName: string) {
  * @returns A decorator function that can be applied to a method.
  */
 export function emits_event(eventName: string) {
-    return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
+    return function (_target: any, _propertyKey: string, descriptor: PropertyDescriptor) {
         const originalMethod = descriptor.value;
         descriptor.value = function (...args: any[]) {
             originalMethod.apply(this, args);

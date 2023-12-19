@@ -908,7 +908,7 @@ export class Game {
     public update(deltaTime: number): void {
         const game = global.game;
         const model = global.model;
-        model.run();
+        model.run(deltaTime);
         if (game.debug_runSingleFrameAndPause) {
             game.debug_runSingleFrameAndPause = false;
             game.paused = true;

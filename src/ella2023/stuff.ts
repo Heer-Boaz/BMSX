@@ -1,11 +1,8 @@
 import { SpriteObject } from '../bmsx/sprite';
 import { BitmapId } from './resourceids';
-import { machine_states, sstate, statedef_builder } from '../bmsx/bfsm';
+import { machine_states, statedef_builder } from '../bmsx/bfsm';
 import { get_gamemodel } from '../bmsx/bmsx';
-import { GLView } from '../bmsx/glview';
-import { Msx1Colors } from '../bmsx/msx';
 import { gamemodel } from './gamemodel';
-import { Fighter } from './fighter';
 import { TextWriter } from '../bmsx/textwriter';
 import { Input } from '../bmsx/input';
 
@@ -18,7 +15,7 @@ export class GameOver extends SpriteObject {
             states: {
                 _default: {
                     ticks2move: 500,
-                    run(this: TitleScreen, state: sstate) {
+                    run(this: TitleScreen) {
                         const priorityActions = Input.getPlayerInput(1).getPressedPriorityActions( ['punch', 'highkick', 'lowkick', 'block']);
 
                         // If no priority actions are pressed, do nothing.
@@ -31,7 +28,7 @@ export class GameOver extends SpriteObject {
                         // If a priority action is pressed, go to the game.
                         get_model().sc.to('titlescreen');
                     },
-                    end(this: GameOver, state: sstate) {
+                    end(this: GameOver) {
                         get_model().sc.to('titlescreen');
                     },
                 }
@@ -62,7 +59,7 @@ export class Hoera extends SpriteObject {
             states: {
                 _default: {
                     ticks2move: 500,
-                    run(this: TitleScreen, state: sstate) {
+                    run(this: TitleScreen) {
                         const priorityActions = Input.getPlayerInput(1).getPressedPriorityActions( ['punch', 'highkick', 'lowkick', 'block']);
 
                         // If no priority actions are pressed, do nothing.
@@ -76,7 +73,7 @@ export class Hoera extends SpriteObject {
                         get_model().sc.to('titlescreen');
 
                     },
-                    end(this: Hoera, state: sstate) {
+                    end(this: Hoera) {
                         get_model().sc.to('titlescreen');
                     },
                 }
@@ -106,7 +103,7 @@ export class TitleScreen extends SpriteObject {
         return {
             states: {
                 _default: {
-                    run(this: TitleScreen, state: sstate) {
+                    run(this: TitleScreen) {
                         const priorityActions = Input.getPlayerInput(1).getPressedPriorityActions( ['punch', 'highkick', 'lowkick', 'block']);
 
                         // If no priority actions are pressed, do nothing.

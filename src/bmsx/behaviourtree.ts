@@ -140,7 +140,7 @@ function updateAllAssignedBTs(constructor: any) {
  * @returns A decorator function that defines the behavior tree.
  */
 export function build_bt(bt_id?: BehaviorTreeID) {
-    return function btdef_builder(target: any, name: any, descriptor: PropertyDescriptor): any {
+    return function btdef_builder(target: any, _name: any, descriptor: PropertyDescriptor): any {
         behaviorTreeDefinitionsBuilders ??= {};
         behaviorTreeDefinitionsBuilders[bt_id ?? target.name] = descriptor.value;
     };
@@ -241,7 +241,7 @@ export abstract class BTNode implements IIdentifiable {
      * @param targetid The Identifier of the target object.
      * @returns The target object casted to the specified type.
      */
-    public getTarget<T extends GameObject>(targetid: Identifier) { return global.model.get(targetid); }
+    public getTarget<T extends GameObject>(targetid: Identifier) { return global.model.get<T>(targetid); }
 
     constructor(id: BehaviorTreeID, _priority = 0) {
         this.id = id;
@@ -364,7 +364,7 @@ export class DecoratorNode extends BTNode {
     }
 }
 
-export let WaitForActionCompletionDecorator: NodeDecorator = (status: BTStatus, targetid: Identifier, blackboard: Blackboard) => {
+export let WaitForActionCompletionDecorator: NodeDecorator = (status: BTStatus, _targetid: Identifier, blackboard: Blackboard) => {
     if (status === 'RUNNING') {
         blackboard.actionInProgress = true;
     } else {
@@ -520,7 +520,7 @@ export class WaitNode extends BTNode {
      * Executes the tick logic of the node.
      * @returns The feedback of the node.
      */
-    tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
+    tick(_targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
         let currentTick = blackboard.nodedata[this.wait_propname] as number;
         if (!currentTick) {
             currentTick = 0;

@@ -49,13 +49,13 @@ export class GameMenu extends GameObject {
     private static loadsaveItemOffsetX: number = 24;
     private static optionItemsOffsetX: number = 56;
     private static itemOffsetY: number = 16;
-    private static itemVerticalSkipPerEntry: number = GameMenu.cursorVerticalSkipPerEntry;
+    // private static itemVerticalSkipPerEntry: number = GameMenu.cursorVerticalSkipPerEntry;
     private static menuText: string = "- Game Menu -";
     private static loadMenuText: string = "- Load game -";
     private static saveMenuText: string = "- Save game -";
     private static optionMenuText: string = "- Options -";
     private static backText: string = "Back";
-    private static emptySlot: string = "----";
+    // private static emptySlot: string = "----";
     private static scaleText: string = "Scale: ";
     private static soundVolumeText: string = "Volume: ";
     private static mainMenuTextX: number = GameMenu.menuPosX + 56;
@@ -144,13 +144,13 @@ export class GameMenu extends GameObject {
             case MenuItem.Save:
             case MenuItem.LoadFromGameOver:
                 if (clickUp)
-                    this.changeSelection('up', selectionChanged);
+                    this.changeSelection('up');
                 else if (clickRight)
-                    this.changeSelection('right', selectionChanged);
+                    this.changeSelection('right');
                 else if (clickDown)
-                    this.changeSelection('down', selectionChanged);
+                    this.changeSelection('down');
                 else if (clickLeft)
-                    this.changeSelection('left', selectionChanged);
+                    this.changeSelection('left');
                 break;
         }
         if (Input.KC_BTN2) {
@@ -222,7 +222,7 @@ export class GameMenu extends GameObject {
                             break;
                         case MenuItem.SaveSlot:
                             {
-                                let slot = this.selectedItemIndex - 1;
+                                // let slot = this.selectedItemIndex - 1;
                             }
                             break;
                     }
@@ -328,7 +328,7 @@ export class GameMenu extends GameObject {
         }
     }
 
-    private changeSelection(direction: Direction, selectionChanged: boolean): void {
+    private changeSelection(direction: Direction): void {
         let maxX: number, maxY, x, y;
         switch (this.CurrentScreen) {
             case MenuItem.Main:
@@ -362,24 +362,24 @@ export class GameMenu extends GameObject {
                 if (y > 0)
                     y--;
                 else y = maxY;
-                selectionChanged = true;
+                // selectionChanged = true;
                 break;
             case 'right':
                 if (x < maxX) {
                     x++;
-                    selectionChanged = true;
+                    // selectionChanged = true;
                 }
                 break;
             case 'down':
                 if (y < maxY)
                     y++;
                 else y = 0;
-                selectionChanged = true;
+                // selectionChanged = true;
                 break;
             case 'left':
                 if (x > 0) {
                     x--;
-                    selectionChanged = true;
+                    // selectionChanged = true;
                 }
                 break;
         }
@@ -402,7 +402,7 @@ export class GameMenu extends GameObject {
         }
     }
 
-    override paint = (offset?: vec3): void => {
+    override paint = (_offset?: vec3): void => {
         let scalex = GameMenu.menuEndX - GameMenu.menuPosX;
         let scaley = GameMenu.menuEndY - GameMenu.menuPosY;
         global.view.drawImg({ imgid: BitmapId.whitepixel, x: GameMenu.menuPosX, y: GameMenu.menuPosY, z: this.z, sx: scalex, sy: scaley });
@@ -467,7 +467,6 @@ export class GameMenu extends GameObject {
                         let offsetX: number = GameMenu.menuPosX + GameMenu.mainItemsOffsetX;
                         switch (item.type) {
                             case MenuItem.Scale:
-                                let textToDisplay: string;
                                 if (!GO.Fullscreen) {
                                     TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
                                     offsetX += GameMenu.scaleText.length * global.view.default_font.char_width;
@@ -539,6 +538,7 @@ export class GameMenu extends GameObject {
         });
     }
 
+    // @ts-ignore
     private printSaveSlot(x: number, y: number, slotIndex: number): void {
     }
 }

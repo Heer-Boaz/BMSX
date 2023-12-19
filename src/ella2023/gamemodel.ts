@@ -1,4 +1,4 @@
-import { Room, RoomMgr } from './roommgr';
+import { RoomMgr } from './roommgr';
 import { Sinterklaas } from './sinterklaas';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { sstate, statedef_builder, machine_states } from '../bmsx/bfsm';
@@ -12,7 +12,7 @@ import { Fighter } from './fighter';
 import { subscribesToGlobalEvent } from '../bmsx/eventemitter';
 import { Hud } from './hud';
 import { Input, InputMap } from '../bmsx/input';
-import { keyboardInputMapping1, gamepadInputMapping, keyboardInputMapping2 } from './inputmapping';
+import { keyboardInputMapping1, gamepadInputMapping } from './inputmapping';
 import { GameOver, Hoera, TitleScreen } from './stuff';
 import { SM } from '../bmsx/soundmaster';
 import { AudioId } from './resourceids';
@@ -54,7 +54,7 @@ export class gamemodel extends BaseModel {
         return {
             states: {
                 _game_start: {
-                    run(this: gamemodel, s: sstate) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
+                    run(this: gamemodel) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
                         this.sc.to('titlescreen');
                     }
                 },
@@ -67,12 +67,12 @@ export class gamemodel extends BaseModel {
                     states: {
                         _ffwachten: {
                             ticks2move: 150,
-                            end(this: gamemodel, s: sstate) {
+                            end(this: gamemodel) {
                                 this.sc.to('gamemodel.default.oefenen');
                             },
                         },
                         oefenen: {
-                            enter(this: gamemodel, s: sstate) {
+                            enter(this: gamemodel) {
                                 this.setSpace('default');
                                 this.clear(); // Clear all game objects in the current space
                                 this.room_mgr.loadRoom('room1');
@@ -81,7 +81,7 @@ export class gamemodel extends BaseModel {
                                 this.spawn(new Hud(), new_vec3(0, 0, 100));
                                 SM.play(AudioId.trainen);
                             },
-                            run(this: gamemodel, s: sstate) {
+                            run(this: gamemodel) {
                                 const player = this.get('player');
                                 if (player.x < 16) {
                                     this.sc.to('gamemodel.default.ffwachten2');
@@ -90,15 +90,15 @@ export class gamemodel extends BaseModel {
                         },
                         ffwachten2: {
                             ticks2move: 50,
-                            enter(this: gamemodel, s: sstate) {
+                            enter(this: gamemodel) {
                                 this.setSpace('niets');
                             },
-                            end(this: gamemodel, s: sstate) {
+                            end(this: gamemodel) {
                                 this.sc.to('gamemodel.default.knokken');
                             },
                         },
                         knokken: {
-                            enter(this: gamemodel, s: sstate) {
+                            enter(this: gamemodel) {
                                 this.setSpace('default');
                                 this.clear(); // Clear all game objects in the current space
                                 this.room_mgr.loadRoom('room2');
@@ -113,7 +113,7 @@ export class gamemodel extends BaseModel {
                     run: BaseModel.defaultrun,
                 },
                 gameover: {
-                    enter(this: gamemodel, s: sstate) {
+                    enter(this: gamemodel) {
                         this.setSpace('gameover');
                         if (!this.get('gameover')) {
                             this.spawn(new GameOver(), new_vec3(0, 0, 0));
@@ -123,7 +123,7 @@ export class gamemodel extends BaseModel {
                     run: BaseModel.defaultrun,
                 },
                 hoera: {
-                    enter(this: gamemodel, s: sstate) {
+                    enter(this: gamemodel) {
                         this.setSpace('hoera');
                         if (!this.get('hoera')) {
                             this.spawn(new Hoera(), new_vec3(0, 0, 0));
@@ -133,7 +133,7 @@ export class gamemodel extends BaseModel {
                     run: BaseModel.defaultrun,
                 },
                 titlescreen: {
-                    enter(this: gamemodel, s: sstate) {
+                    enter(this: gamemodel) {
                         this.setSpace('titlescreen');
                         if (!this.get('title')) {
                             this.spawn(new TitleScreen(), new_vec3(0, 0, 0));
@@ -185,11 +185,11 @@ export class gamemodel extends BaseModel {
         return MSX1ScreenHeight;
     }
 
-    public collidesWithTile(o: GameObject, dir: Direction): boolean {
+    public collidesWithTile(_o: GameObject, _dir: Direction): boolean {
         return false;
     }
 
-    public isCollisionTile(x: number, y: number): boolean {
+    public isCollisionTile(_x: number, _y: number): boolean {
         return false;
     }
 }

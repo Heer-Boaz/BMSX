@@ -1,35 +1,4 @@
 import { ISpaceObject, Space } from "./model";
-type class2propkey2bool = Record<string, Record<string, boolean>>;
-
-// Apologies for the confusion. I made a mistake in the previous response. The Structured Clone algorithm does not output an ArrayBuffer directly. It is used for cloning objects, including objects with circular references. To serialize and deserialize objects using the Structured Clone algorithm, you can use the structured-clone package in combination with MessagePack.
-
-// First, install the required packages:
-
-// bash
-// Copy code
-// npm install structured-clone msgpack5
-// Now, update the serialization and deserialization functions to use the structured-clone package with MessagePack:
-
-// typescript
-// Copy code
-// import { structuredClone } from "structured-clone";
-// import * as msgpack from "msgpack5";
-
-// function serialize(obj: any): Buffer {
-//   const clonedObj = structuredClone(obj);
-//   const serializer = msgpack();
-//   return serializer.encode(clonedObj);
-// }
-
-// function deserialize(buffer: Buffer): any {
-//   const deserializer = msgpack();
-//   const clonedObj = deserializer.decode(buffer);
-//   const obj = structuredClone(clonedObj);
-//   return obj;
-// }
-// In this updated example, the serialize function clones the input object using the Structured Clone algorithm to handle circular references, and then encodes the cloned object into a Buffer using MessagePack. The deserialize function decodes the MessagePack Buffer into a cloned object and then uses the Structured Clone algorithm to reconstruct the original object, including circular references.
-
-// This approach should offer better performance and handle circular references efficiently.
 
 /**
  * Interface for a reviver function used in JSON.parse to deserialize objects.
@@ -200,7 +169,7 @@ Serializer.serializeObject = (value: any, cache: any[]): {} => {
  * @returns The parsed value, with any serialized objects revived.
  * @throws An error if there is no constructor known for an object of a certain type.
  */
-export const Reviver: IReviver = (key: any, value: any) => {
+export const Reviver: IReviver = (_key: any, value: any) => {
     if (value === null || value === undefined) return value;
 
     if (Array.isArray(value)) {
@@ -258,7 +227,7 @@ Reviver.removeSerializerProps = (obj: { typename: string; }): void => {
  * @param descriptor - The property descriptor for the property to set the `onsave` property on.
  * @returns The modified property descriptor.
  */
-export function onsave(target: Object & { onsave?: any; }, propertyKey: string | symbol, descriptor: PropertyDescriptor): any {
+export function onsave(target: Object & { onsave?: any; }, _propertyKey: string | symbol, descriptor: PropertyDescriptor): any {
     target.onsave = descriptor.value;
 }
 
@@ -269,7 +238,7 @@ export function onsave(target: Object & { onsave?: any; }, propertyKey: string |
  * @param descriptor - The property descriptor for the property to mark as excluded.
  * @returns The modified property descriptor.
  */
-export function exclude_save(target: Object, propertyKey: string, descriptor?: PropertyDescriptor): any {
+export function exclude_save(target: Object, propertyKey: string, _descriptor?: PropertyDescriptor): any {
     Serializer.excludedProperties[target.constructor.name] ??= {};
     Serializer.excludedProperties[target.constructor.name][propertyKey] = true;
 }
@@ -285,7 +254,7 @@ export function exclude_save(target: Object, propertyKey: string, descriptor?: P
  * @param descriptor - The property descriptor for the property to set the `onload` property on.
  * @returns The modified property descriptor.
  */
-export function onload(target: any, name: any, descriptor: PropertyDescriptor): any {
+export function onload(target: any, _name: any, descriptor: PropertyDescriptor): any {
     Reviver.onLoad ??= {};
     Reviver.onLoad[target.name] = descriptor.value;
 }
@@ -300,7 +269,7 @@ export function onload(target: any, name: any, descriptor: PropertyDescriptor): 
  * @param fromJSON - An optional function that converts a JSON-serialized object back into an instance of the class.
  * @returns The original constructor function.
  */
-export function insavegame(constructor: InstanceType<any>, toJSON?: () => any, fromJSON?: (value: any, value_data: any) => any): any {
+export function insavegame(constructor: InstanceType<any>, _toJSON?: () => any, _fromJSON?: (value: any, value_data: any) => any): any {
     Reviver.constructors ??= {};
     Reviver.constructors[constructor.name] = constructor;
     return constructor;

@@ -1,13 +1,13 @@
-import { Action, gamepadInputMapping, keyboardInputMapping1 } from './inputmapping';
+import { Action } from './inputmapping';
 import { AudioId, BitmapId } from './resourceids';
-import { Input, InputMap } from '../bmsx/input';
+import { Input } from '../bmsx/input';
 import { sstate, statedef_builder, machine_states, build_fsm, assign_fsm } from '../bmsx/bfsm';
 import { insavegame } from '../bmsx/gameserializer';
-import { get_gamemodel, new_area } from '../bmsx/bmsx';
+import { get_gamemodel } from '../bmsx/bmsx';
 import { ScreenBoundaryComponent } from './../bmsx/collisioncomponents';
-import { Fighter, HitMarkerInfo } from './fighter';
+import { Fighter } from './fighter';
 import { attach_components } from '../bmsx/component';
-import { subscribesToGlobalEvent, subscribesToParentScopedEvent, subscribesToSelfScopedEvent } from '../bmsx/eventemitter';
+import { subscribesToParentScopedEvent, subscribesToSelfScopedEvent } from '../bmsx/eventemitter';
 import { Direction } from "../bmsx/bmsx";
 import { gamemodel } from './gamemodel';
 import { SM } from '../bmsx/soundmaster';
@@ -30,7 +30,7 @@ export class JumpingWhileLeavingScreenComponent extends ScreenBoundaryComponent 
      * @param old_x_or_y - The previous x or y coordinate of the game object.
      */
     @subscribesToParentScopedEvent('leavingScreen')
-    public onLeavingScreen(event_name: string, emitter: Player, d: Direction, old_x_or_y: number) {
+    public onLeavingScreen(_event_name: string, emitter: Player, d: Direction, _old_x_or_y: number) {
         if (d === 'left') {
             emitter.facing = 'right';
         }
@@ -50,7 +50,7 @@ export class Player extends Fighter {
     @statedef_builder
     public static bouw(): machine_states {
         // To check if an action is pressed for player 0
-        function defaultrun(this: Player, s: sstate) {
+        function defaultrun(this: Player) {
             const priorityActions = Input.getPlayerInput(1).getPressedPriorityActions( ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick', 'stoer']);
 
             // If no actions are pressed, switch to idle
@@ -62,7 +62,7 @@ export class Player extends Fighter {
             let higherPrioActionProcessed = false;
             let leftOrRightPressed = false;
             for (const actionObject of priorityActions) {
-                const { action, pressed, consumed } = actionObject;
+                const { action, consumed } = actionObject;
                 if (higherPrioActionProcessed) break;
 
                 switch (action as Action) {
@@ -238,7 +238,7 @@ export class Player extends Fighter {
                     },
                 },
                 jump: {
-                    enter(this: Player, state: sstate, directional: boolean = false) {
+                    enter(this: Player, _state: sstate, directional: boolean = false) {
                         this.sc.to('Player.jump.jump_up', directional);
                         this.sc.to('player_animation.jump');
                         this.getComponent(JumpingWhileLeavingScreenComponent).enabled = true;
@@ -300,7 +300,7 @@ export class Player extends Fighter {
                                     }
                                 }
                             },
-                            next(this: Player, state: sstate) {
+                            next(this: Player) {
                                 this.sc.to('idle');
                             },
                             states: {
@@ -324,7 +324,7 @@ export class Player extends Fighter {
     }
 
     @subscribesToSelfScopedEvent('animationEnd')
-    public handleAnimationEndEvent(event_name: string, emitter: Player, animation_name: string): void {
+    public handleAnimationEndEvent(event_name: string, _emitter: Player, animation_name: string): void {
         switch (event_name) {
             case 'animationEnd':
                 switch (animation_name) {
@@ -352,7 +352,7 @@ export class Player extends Fighter {
         }
     }
 
-    override handleFighterStukEvent(this: Fighter, event_name: string, emitter: Fighter): void {
+    override handleFighterStukEvent(this: Fighter, _event_name: string, emitter: Fighter): void {
         this.sc.to('humiliated');
         get_model().theOtherFighter(emitter).sc.to('stoerheidsdans');
     }
@@ -369,7 +369,7 @@ export class Player extends Fighter {
                     },
                 },
                 walk: {
-                    run(this: Player, state: sstate) { },
+                    run(this: Player) { },
                     enter(this: Player, state: sstate) {
                         state.sm.reset();
                         this.imgid = BitmapId.eila_walk;
@@ -381,7 +381,7 @@ export class Player extends Fighter {
                                 this.imgid = BitmapId.eila_walk;
                                 state.reset();
                             },
-                            next(this: Player, state: sstate) {
+                            next(this: Player) {
                                 this.sc.switch('player_animation.walk.walk2');
                             }
                         },
@@ -391,7 +391,7 @@ export class Player extends Fighter {
                                 this.imgid = BitmapId.eila_idle;
                                 state.reset();
                             },
-                            next(this: Player, state: sstate) {
+                            next(this: Player) {
                                 this.sc.switch('player_animation.walk.walk1');
                             }
                         },
@@ -405,7 +405,7 @@ export class Player extends Fighter {
                         SM.play(AudioId.kick);
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
-                    next(this: Player, state: sstate) {
+                    next(this: Player) {
                         global.eventEmitter.emit('animationEnd', this, 'highkick');
                         this.sc.switch('player_animation.idle');
                     }
@@ -418,7 +418,7 @@ export class Player extends Fighter {
                         this.imgid = BitmapId.eila_lowkick;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
-                    next(this: Player, state: sstate) {
+                    next(this: Player) {
                         global.eventEmitter.emit('animationEnd', this, 'lowkick');
                         this.sc.switch('player_animation.idle');
                     }
@@ -431,7 +431,7 @@ export class Player extends Fighter {
                         this.imgid = BitmapId.eila_punch;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
-                    next(this: Player, state: sstate) {
+                    next(this: Player) {
                         global.eventEmitter.emit('animationEnd', this, 'punch');
                         this.sc.switch('player_animation.idle');
                     }
@@ -444,7 +444,7 @@ export class Player extends Fighter {
                         this.imgid = BitmapId.eila_duckkick;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
-                    next(this: Player, state: sstate) {
+                    next(this: Player) {
                         this.sc.switch('player_animation.duck');
                         global.eventEmitter.emit('animationEnd', this, 'duckkick');
                     }
@@ -457,7 +457,7 @@ export class Player extends Fighter {
                         this.imgid = BitmapId.eila_flyingkick;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
-                    next(this: Player, state: sstate) {
+                    next(this: Player) {
                         this.sc.switch('player_animation.jump');
                         global.eventEmitter.emit('animationEnd', this, 'flyingkick');
                     }
@@ -477,7 +477,7 @@ export class Player extends Fighter {
                         SM.play(AudioId.stuk);
                         this.imgid = BitmapId.eila_humiliated;
                     },
-                    next(this: Player, state: sstate) {
+                    next(this: Player) {
                         get_gamemodel().sc.to('gameover');
                     }
                 },

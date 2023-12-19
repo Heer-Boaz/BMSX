@@ -80,7 +80,7 @@ function get_first_selected_file_from_openfile_dialog(files: FileList): File {
  * @param ev - The 'change' event that was triggered.
  * @returns void
  */
-function load_savestate(this: HTMLInputElement, ev: Event) {
+function load_savestate(this: HTMLInputElement, _ev: Event) {
     const file = get_first_selected_file_from_openfile_dialog(setload.files);
     if (file) {
         file.text().then(result => globalThis.model.load(result));

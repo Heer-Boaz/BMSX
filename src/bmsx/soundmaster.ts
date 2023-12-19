@@ -197,6 +197,7 @@ export class SM {
      * If the track is a music track, the currently playing music track will stop.
      * @param id The ID of the audio track to be stopped.
      */
+    // @ts-ignore
     private static stop(id: string): void {
         switch (SM.tracks[id]?.['audiometa']['audiotype']) {
             case 'sfx': SM.stopEffect(); break;

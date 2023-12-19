@@ -38,7 +38,7 @@ export class Pietula extends Foe {
 		let fst = new mdef();
 		this.fst = fst;
 		let waitAfterDeath = fst.add('wachten_op_elmo');
-		waitAfterDeath.nudges2move = 6000 / 20;
+		waitAfterDeath.ticks2move = 6000 / 20;
 		waitAfterDeath.onrun = (s) => ++s.nudges;
 		waitAfterDeath.onnext = (s) => (controller as Controller).switchSubstate(GameSubstate.ToEndDemo);
 
@@ -51,7 +51,7 @@ export class Pietula extends Foe {
 			this.imgid = BitmapId.Pietula1;
 			this.hover.paused = true;
 		};
-		intro_wacht.nudges2move = 2000 / 20;
+		intro_wacht.ticks2move = 2000 / 20;
 		intro_wacht.onrun = (s) => ++s.nudges;
 		intro_wacht.onnext = (s) => s.parentbst.to('naarlinks');
 		intro_wacht.onexit = (s) => this.hover.paused = false;
@@ -87,12 +87,12 @@ export class Pietula extends Foe {
 		};
 
 		let waitforteleport = fst.add('wait_for_teleport');
-		waitforteleport.nudges2move = 1000 / 20;
+		waitforteleport.ticks2move = 1000 / 20;
 		waitforteleport.onrun = (s) => ++s.nudges;
 		waitforteleport.onnext = (s) => s.parentbst.to('wait_for_bliksem');
 
 		let waitforbliksem = fst.add('wait_for_bliksem');
-		waitforbliksem.nudges2move = 3000 / 20;
+		waitforbliksem.ticks2move = 3000 / 20;
 		waitforbliksem.onrun = (s) => {
 			++s.nudges;
 		};
@@ -163,7 +163,7 @@ export class Pietula extends Foe {
 			BitmapId.Lightning5,
 			BitmapId.None,
 		];
-		bliksemstate.nudges2move = 4;
+		bliksemstate.ticks2move = 4;
 		bliksemstate.onrun = (s) => {
 			if ((model as Model).Belmont.areaCollide(
 				<Area>{
@@ -191,7 +191,7 @@ export class Pietula extends Foe {
 		bliksemstate.onend = (s) => s.parentbst.to('wait_after_bliksem1');
 
 		let waitafterbliksem1 = fst.add('wait_after_bliksem1');
-		waitafterbliksem1.nudges2move = 2000 / 20;
+		waitafterbliksem1.ticks2move = 2000 / 20;
 		waitafterbliksem1.onrun = (s) => ++s.nudges;
 		waitafterbliksem1.onnext = (s) => {
 			s.parentbst.to('wait_after_bliksem2');
@@ -199,7 +199,7 @@ export class Pietula extends Foe {
 		};
 
 		let waitafterbliksem2 = fst.add('wait_after_bliksem2');
-		waitafterbliksem2.nudges2move = 2000 / 20;
+		waitafterbliksem2.ticks2move = 2000 / 20;
 		waitafterbliksem2.onrun = (s) => ++s.nudges;
 		waitafterbliksem2.onnext = (s) => s.parentbst.to('intro_wacht');
 
@@ -249,7 +249,7 @@ export class Pietula extends Foe {
 			-2,
 			0,
 		];
-		hovers0.nudges2move = 2;
+		hovers0.ticks2move = 2;
 		hovers0.onrun = (s: sdef) => ++s.nudges;
 		hovers0.onnext = (s: sdef) => this.pos.y += s.current;
 		hovers0.onend = (s: sdef) => s.setHeadNoSideEffect(0);
@@ -269,7 +269,7 @@ export class Pietula extends Foe {
 		};
 
 		let blinkout = blink.add('out');
-		blinkout.nudges2move = 2;
+		blinkout.ticks2move = 2;
 		blinkout.tape = [
 			true,
 			true,
@@ -302,7 +302,7 @@ export class Pietula extends Foe {
 		blinkout.onend = (s) => s.parentbst.to('invisible');
 
 		let blinkin = blink.add('in');
-		blinkin.nudges2move = 2;
+		blinkin.ticks2move = 2;
 		blinkin.tape = [
 			true,
 			true,

@@ -1,6 +1,6 @@
 import { SpriteObject } from '../bmsx/sprite';
 import { BitmapId } from './resourceids';
-import { machine_states, sstate, statedef_builder } from '../bmsx/bfsm';
+import { machine_states, statedef_builder } from '../bmsx/bfsm';
 import { get_gamemodel } from '../bmsx/bmsx';
 import { GLView } from '../bmsx/glview';
 import { Msx1Colors } from '../bmsx/msx';
@@ -16,7 +16,7 @@ export class Hud extends SpriteObject {
         return {
             states: {
                 _default: {
-                    run(this: Hud, state: sstate) {
+                    run(this: Hud) {
                     }
                 }
             }
