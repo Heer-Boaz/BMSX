@@ -6,6 +6,12 @@ import { ZCOORD_MAX } from './glview';
 import { BitmapId } from '../ella2023/resourceids';
 import { SpriteObject } from './sprite';
 import { GameObjectId } from './rompack';
+import { get_gamemodel } from './bmsx';
+import { BaseModel } from './model';
+import { exit } from 'process';
+import { machine_states } from './bfsm';
+
+const get_model = get_gamemodel<BaseModel>;
 
 /**
  * Represents the ID of a button.
@@ -148,13 +154,15 @@ class PendingAssignmentProcessor {
         if (!this.icon) { // If the joystick icon doesn't exist yet, create it
             const joystick_icon = new SelectedPlayerIndexIcon(gamepadInput.gamepadIndex);
             this.icon = joystick_icon;
-            global.model.spawn(joystick_icon);
+            const existingIcon = get_gamemodel().get(this.icon.id); // Check whether the icon already exists. This can happen when the icon was still animating while somehow the assignment needs to happen again.
+            existingIcon ?? get_gamemodel().exile(existingIcon); // Remove the existing icon so that we can replace it with a new, younger and prettier version.
+            get_gamemodel().spawn(joystick_icon);
             joystick_icon.x = this.calcIconPositionX(positionIndex);
             joystick_icon.y = PendingAssignmentProcessor.joystick_icon_start.y;
         }
-        else if (!global.model.getFromCurrentSpace(this.icon.id)) { // Check whether the joystick icon is already part of the current space (scene)
+        else if (!get_gamemodel().getFromCurrentSpace(this.icon.id)) { // Check whether the joystick icon is already part of the current space (scene)
             // If the joystick icon already exists, move it to the current space (scene) (e.g. if the player changed scenes)
-            model.move_obj_to_space(this.icon.id, global.model.current_space_id);
+            get_gamemodel().move_obj_to_space(this.icon.id, get_gamemodel().current_space_id);
         }
     }
 
@@ -194,8 +202,8 @@ class PendingAssignmentProcessor {
             }
         }
         else {
-            if (!global.model.getFromCurrentSpace(this.icon.id)) {
-                model.move_obj_to_space(this.icon.id, global.model.current_space_id);
+            if (!get_gamemodel().getFromCurrentSpace(this.icon.id)) {
+                get_gamemodel().move_obj_to_space(this.icon.id, get_gamemodel().current_space_id);
             }
             this.icon.x = this.calcIconPositionX(this.pendingIndex);
             if (this.checkNonConsumedPressed('a', gamepadInput)) {
@@ -222,7 +230,7 @@ class PendingAssignmentProcessor {
 
     removeIcon(): void {
         if (this.icon) {
-            global.model.exile(this.icon);
+            get_gamemodel().exile(this.icon);
             this.icon = undefined;
         }
     }
@@ -1217,6 +1225,21 @@ class OnScreenGamepad {
 }
 
 class SelectedPlayerIndexIcon extends SpriteObject {
+    // static bouw(): machine_states {
+    //     return {
+    //         states: {
+    //             _default: {
+    //             },
+    //             assigned: {
+    //             //     on: {
+    //             //         PLAYER_JOIN: 'assigned',
+    //             //         PLAYER_LEAVE: 'unassigned',
+    //             //     },
+    //             },
+    //         },
+    //     };
+    // }
+
     public static getIconId(gamepadIndex: number): GameObjectId {
         return `joystick_icon_${gamepadIndex ?? 0}`;
     }
