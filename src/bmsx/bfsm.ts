@@ -1094,6 +1094,11 @@ export class sdef {
 	public enter?: state_event_handler;
 	public exit?: state_event_handler;
 	public process_input?: state_event_handler;
+	/**
+	 * Represents the mapping of event types to state IDs for transitions to other states based on events (e.g. 'click' => 'idle').
+	 * At the individual state level, the `on` property defines the transitions that can occur from that specific state.
+	 */
+	public on?: { [key: string]: string };
 }
 
 /**
@@ -1138,6 +1143,12 @@ export class mdef {
 	 * Represents the state data for the state machine that is shared across its states.
 	 */
 	public data?: { [key: string]: any } = {};
+
+	/**
+	 * Represents the mapping of event types to state IDs for transitions to other states based on events (e.g. 'click' => 'idle').
+	 * At the state machine level, the `on` property defines the global transitions that can occur from any state.
+	 */
+	public on?: { [key: string]: string };
 
 	/**
 	 * The prefix used to identify the start state.
