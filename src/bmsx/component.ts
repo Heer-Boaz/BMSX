@@ -2,7 +2,7 @@ import { onload, insavegame } from './gameserializer';
 import { IEventSubscriber, EventEmitter, EventSubscription } from './eventemitter';
 import { GameObjectConstructorWithComponentList } from './gameobject';
 import { AbstractConstructor } from './bmsx';
-import type { IIdentifiable, Identifier } from "./generic_interfaces";
+import type { IIdentifiable, Identifier } from "./bmsx";
 
 export type KeyToComponentMap = { [key: string]: Component };
 export type ComponentConstructor<T extends Component> = new (...args: any[]) => T | AbstractConstructor<new (...args: any[]) => T>; // Allows abstract Component classes to be used as component constructors. This is necessary to allow abstract Component classes to be used as component types in other components (e.g. to allow a collision component to have a list of collision components as a property). NOT IMPLEMENTED YET.

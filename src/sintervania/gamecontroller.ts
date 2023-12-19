@@ -291,16 +291,16 @@ export class Controller extends BaseControllerOld {
     public HandleRoomExitViaMovement(targetRoom: number, dir: Direction): void {
         let Belmont = (model as Model).Belmont;
         switch (dir) {
-            case Direction.Up:
+            case 'up':
                 setPoint(Belmont.pos, Belmont.pos.x, Tile.toStageCoord(GameConstants.StageScreenHeightTiles) - (Belmont.size.y + 4));
                 break;
-            case Direction.Right:
+            case 'right':
                 setPoint(Belmont.pos, 4, Belmont.pos.y);
                 break;
-            case Direction.Down:
+            case 'down':
                 setPoint(Belmont.pos, Belmont.pos.x, 4);
                 break;
-            case Direction.Left:
+            case 'left':
                 setPoint(Belmont.pos, Tile.toStageCoord(GameConstants.StageScreenWidthTiles) - (Belmont.size.x + 4), Belmont.pos.y);
                 break;
         }

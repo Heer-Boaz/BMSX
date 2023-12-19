@@ -24,13 +24,13 @@ export class ZakFoe extends Foe {
 
 		let collissionHandler = (d: Direction) => {
 			switch (this.direction) {
-				case Direction.Left:
-					this.direction = Direction.Right;
+				case 'left':
+					this.direction = 'right';
 					break;
-				case Direction.Right:
-					this.direction = Direction.Left;
+				case 'right':
+					this.direction = 'left';
 					break;
-				case Direction.Down:
+				case 'down':
 					this.markForDisposure();
 					break;
 			}
@@ -62,14 +62,14 @@ export class ZakFoe extends Foe {
 					++s.nudges;
 
 					switch (this.direction) {
-						case Direction.Left:
+						case 'left':
 							this.setx(this.pos.x - 1);
 							break;
-						case Direction.Right:
+						case 'right':
 							this.setx(this.pos.x + 1);
 							break;
 					}
-					this.flippedH = this.direction == Direction.Left ? true : false;
+					this.flippedH = this.direction == 'left' ? true : false;
 
 					if (!(model as Model).currentRoom.isCollisionTile(this.hitbox_sx + 4, this.hitbox_ey + 12)) {
 						this.pos.y += 4;

@@ -1,5 +1,5 @@
 export enum BitmapId {
-	None = 'None',
+	None = 'none',
 
 	blackpixel = 'blackpixel',
 	break1 = 'break1',
@@ -90,7 +90,7 @@ export enum BitmapId {
 }
 
 export enum AudioId {
-	None = 'None',
+	None = 'none',
 
 	fout = 'fout',
 	init = 'init',

@@ -25,10 +25,10 @@ export class RoomMgr {
         }
         switch (room_id) {
             case 'room1':
-                this.adjacentRooms[Direction.Left] = 'room2';
+                this.adjacentRooms['left'] = 'room2';
                 break;
             case 'room2':
-                this.adjacentRooms[Direction.Right] = 'room1';
+                this.adjacentRooms['right'] = 'room1';
                 break;
         }
     }

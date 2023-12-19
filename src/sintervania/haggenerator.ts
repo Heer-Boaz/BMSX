@@ -22,11 +22,11 @@ export class HagGenerator extends mdef implements GameObject {
             let spawnPoint = { x: 0, y: this.pos.y };
             if (belmont.pos.x <= GameConstants.ViewportWidth / 2) {
                 spawnPoint.x = GameConstants.ViewportWidth - Hag.HagSize.y;
-                new Hag(Direction.Left).spawn(spawnPoint);
+                new Hag('left').spawn(spawnPoint);
             }
             else {
                 spawnPoint.x = 0;
-                new Hag(Direction.Right).spawn(spawnPoint);
+                new Hag('right').spawn(spawnPoint);
             }
         };
     }

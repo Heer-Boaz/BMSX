@@ -22,11 +22,11 @@ const GENERATE_AND_USE_TEXTURE_ATLAS = true;
 const DONT_PACK_IMAGES_WHEN_USING_ATLAS = true;
 
 const BOILERPLATE_RESOURCE_ID_BITMAP = `export enum BitmapId {
-	None = 'None',
+	None = 'none',
 `;
 
 const BOILERPLATE_RESOURCE_ID_AUDIO = `export enum AudioId {
-	None = 'None',
+	None = 'none',
 `;
 
 /**
@@ -406,7 +406,7 @@ function parseAudioMeta(filename: string): { sanitizedName: string, meta: AudioM
 		sanitizedName: sanitized,
 		meta:
 		{
-			audiotype: filename.indexOf('@m') >= 0 ? AudioType.music : AudioType.effect,
+			audiotype: filename.indexOf('@m') >= 0 ? 'music' : 'sfx',
 			priority: priority,
 			loop: loop!
 		}

@@ -7,7 +7,7 @@ import { Serializer } from './gameserializer';
 import { GLView } from './glview';
 import { Input } from './input';
 import { Msx1Colors } from './msx';
-import type { IIdentifiable, Identifier } from "./generic_interfaces";
+import type { IIdentifiable, Identifier } from "./bmsx";
 import type { vec2 } from './rompack';
 import { SpriteObject } from './sprite';
 import { Color } from './view';

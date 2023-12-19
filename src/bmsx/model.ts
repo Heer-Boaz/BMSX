@@ -4,10 +4,10 @@ import { onload } from "./gameserializer";
 import { GameObject } from "./gameobject";
 import { insavegame, onsave, Reviver, Savegame, Serializer } from "./gameserializer";
 import { Input } from "./input";
-import { vec2, vec3 } from "./rompack";
+import { Vector, vec2, vec3 } from "./rompack";
 import { Direction } from "./bmsx";
 import { EventEmitter, IEventSubscriber } from "./eventemitter";
-import type { IIdentifiable, Identifier } from "./generic_interfaces";
+import type { IIdentifiable, Identifier } from "./bmsx";
 
 export interface ISpaceObject {
     spaceid: string;
@@ -89,11 +89,11 @@ export class Space {
     /**
      * Adds object to the game and triggers it's onspawn-event.
      * @param {GameObject} o  - GameObject to add
-     * @param {vec2 | vec3} pos - Position to spawn object
+     * @param {Vector} pos - Position to spawn object
      * @param {boolean} skip_onspawn_event - Disables triggering onspawn-event. Example uses include reviving the game (part of loading a saved game) and moving objects from one space to another.
      * @returns {void} Nothing
      */
-    public spawn(o: GameObject, pos?: vec2 | vec3, skip_onspawn_event?: boolean): void {
+    public spawn(o: GameObject, pos?: Vector, skip_onspawn_event?: boolean): void {
         if (!o?.id) throw `Cannot spawn object '${o?.id ?? 'undefined'}' as it doesn't have a valid id!`;
         if (global.model[objid_2_objspaceid][o.id]) throw `Cannot spawn object '${o.id}' in space '${this.id}' as it already exists in space '${global.model[objid_2_objspaceid][o.id]}'!`;
 
@@ -559,11 +559,11 @@ export abstract class BaseModel implements IStateful, IIdentifiable {
     /**
      * Spawns a new game object in the current space.
      * @param {GameObject} o - The game object to spawn.
-     * @param {vec2 | vec3} [pos] - The position to spawn the game object at. If not provided, the game object's default position will be used.
+     * @param {Vector} [pos] - The position to spawn the game object at. If not provided, the game object's default position will be used.
      * @param {boolean} [ignoreSpawnhandler=false] - Whether to ignore the game object's spawn handler. If not provided, the spawn handler will be executed.
      * @returns {void} Nothing.
      */
-    public spawn(o: GameObject, pos?: vec2 | vec3, ignoreSpawnhandler?: boolean): void {
+    public spawn(o: GameObject, pos?: Vector, ignoreSpawnhandler?: boolean): void {
         this.currentSpace.spawn(o, pos, ignoreSpawnhandler);
     }
 

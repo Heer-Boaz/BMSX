@@ -116,10 +116,10 @@ export class SM {
 
     private static nodeEndedHandler(node: AudioBufferSourceNode, type: AudioType) {
         switch (type) {
-            case AudioType.effect:
+            case 'sfx':
                 SM.currentEffectAudio = null;
                 break;
-            case AudioType.music:
+            case 'music':
                 SM.currentMusicAudio = null;
                 break;
         }
@@ -169,7 +169,7 @@ export class SM {
         }
 
         switch (track['audiotype']) {
-            case AudioType.effect:
+            case 'sfx':
                 if (SM.limitToOneEffect && SM.currentEffectAudio && track['priority'] < SM.currentEffectAudio['priority']) return;
                 SM.stopEffect();
                 SM.createNode(id).then(node => {
@@ -179,7 +179,7 @@ export class SM {
                 })
                     .catch(e => console.error(e.message));
                 break;
-            case AudioType.music:
+            case 'music':
                 SM.stopMusic();
                 SM.createNode(id).then(node => {
                     SM.currentMusicNode = node;
@@ -199,8 +199,8 @@ export class SM {
      */
     private static stop(id: string): void {
         switch (SM.tracks[id]?.['audiometa']['audiotype']) {
-            case AudioType.effect: SM.stopEffect(); break;
-            case AudioType.music: SM.stopMusic(); break;
+            case 'sfx': SM.stopEffect(); break;
+            case 'music': SM.stopMusic(); break;
         }
     }
 

@@ -4,7 +4,7 @@ import { EventEmitter, subscribesToParentScopedEvent } from "./eventemitter";
 import { GameObject } from "./gameobject";
 import { insavegame } from "./gameserializer";
 import { TileSize } from "./msx";
-import type { IIdentifiable, Identifier } from "./generic_interfaces";
+import type { IIdentifiable, Identifier } from "./bmsx";
 import { vec2 } from "./rompack";
 import { Direction } from "./bmsx";
 
@@ -64,22 +64,22 @@ export class ScreenBoundaryComponent extends PositionUpdateAxisComponent {
     private checkBoundaryForXAxis(this: GameObject, oldx: number, newx: number) {
         if (newx < oldx) {
             if (newx + this.size.x < 0) {
-                EventEmitter.getInstance().emit('leaveScreen', this, Direction.Left, oldx);
-                this.onLeaveScreen?.(this, Direction.Left, oldx);
+                EventEmitter.getInstance().emit('leaveScreen', this, 'left', oldx);
+                this.onLeaveScreen?.(this, 'left', oldx);
             }
             else if (newx < 0) {
-                EventEmitter.getInstance().emit('leavingScreen', this, Direction.Left, oldx);
-                this.onLeavingScreen?.(this, Direction.Left, oldx);
+                EventEmitter.getInstance().emit('leavingScreen', this, 'left', oldx);
+                this.onLeavingScreen?.(this, 'left', oldx);
             }
         }
         else if (newx > oldx) {
             if (newx >= model.gamewidth) {
-                EventEmitter.getInstance().emit('leaveScreen', this, Direction.Right, oldx);
-                this.onLeaveScreen?.(this, Direction.Right, oldx);
+                EventEmitter.getInstance().emit('leaveScreen', this, 'right', oldx);
+                this.onLeaveScreen?.(this, 'right', oldx);
             }
             else if (newx + this.size.x >= model.gamewidth) {
-                EventEmitter.getInstance().emit('leavingScreen', this, Direction.Right, oldx);
-                this.onLeavingScreen?.(this, Direction.Right, oldx);
+                EventEmitter.getInstance().emit('leavingScreen', this, 'right', oldx);
+                this.onLeavingScreen?.(this, 'right', oldx);
             }
         }
     }
@@ -94,22 +94,22 @@ export class ScreenBoundaryComponent extends PositionUpdateAxisComponent {
     private checkBoundaryForYAxis(this: GameObject, oldy: number, newy: number) {
         if (newy < oldy) {
             if (newy + this.size.y < 0) {
-                EventEmitter.getInstance().emit('leaveScreen', this, Direction.Up, oldy);
-                this.onLeaveScreen?.(this, Direction.Up, oldy);
+                EventEmitter.getInstance().emit('leaveScreen', this, 'up', oldy);
+                this.onLeaveScreen?.(this, 'up', oldy);
             }
             else if (newy < 0) {
-                EventEmitter.getInstance().emit('leavingScreen', this, Direction.Up, oldy);
-                this.onLeavingScreen?.(this, Direction.Up, oldy);
+                EventEmitter.getInstance().emit('leavingScreen', this, 'up', oldy);
+                this.onLeavingScreen?.(this, 'up', oldy);
             }
         }
         else if (newy > oldy) {
             if (newy >= model.gameheight) {
-                EventEmitter.getInstance().emit('leaveScreen', this, Direction.Down, oldy);
-                this.onLeaveScreen?.(this, Direction.Down, oldy);
+                EventEmitter.getInstance().emit('leaveScreen', this, 'down', oldy);
+                this.onLeaveScreen?.(this, 'down', oldy);
             }
             else if (newy + this.size.y >= model.gameheight) {
-                EventEmitter.getInstance().emit('leavingScreen', this, Direction.Down, oldy);
-                this.onLeavingScreen?.(this, Direction.Down, oldy);
+                EventEmitter.getInstance().emit('leavingScreen', this, 'down', oldy);
+                this.onLeavingScreen?.(this, 'down', oldy);
             }
         }
     }
@@ -143,17 +143,17 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
      */
     protected checkTileCollisionForXAxis(this: GameObject, oldx: number, newx: number) {
         if (newx < oldx) {
-            if (model.collidesWithTile(this, Direction.Left)) {
-                EventEmitter.getInstance().emit('wallcollide', this, Direction.Left);
-                this.onWallcollide?.(Direction.Left);
+            if (model.collidesWithTile(this, 'left')) {
+                EventEmitter.getInstance().emit('wallcollide', this, 'left');
+                this.onWallcollide?.('left');
                 newx += TileSize - mod(newx, TileSize);
             }
             this.pos.x = ~~newx;
         }
         else if (newx > oldx) {
-            if (model.collidesWithTile(this, Direction.Right)) {
-                EventEmitter.getInstance().emit('wallcollide', this, Direction.Right);
-                this.onWallcollide?.(Direction.Right);
+            if (model.collidesWithTile(this, 'right')) {
+                EventEmitter.getInstance().emit('wallcollide', this, 'right');
+                this.onWallcollide?.('right');
                 newx -= newx % TileSize;
             }
             this.pos.x = ~~newx;
@@ -167,17 +167,17 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
      */
     protected checkTileCollisionForYAxis(this: GameObject, oldy: number, newy: number) {
         if (newy < oldy) {
-            if (model.collidesWithTile(this, Direction.Up)) {
-                EventEmitter.getInstance().emit('wallcollide', this, Direction.Up);
-                this.onWallcollide?.(Direction.Up);
+            if (model.collidesWithTile(this, 'up')) {
+                EventEmitter.getInstance().emit('wallcollide', this, 'up');
+                this.onWallcollide?.('up');
                 newy += TileSize - mod(newy, TileSize);
             }
             this.pos.y = ~~newy;
         }
         else if (newy > oldy) {
-            if (model.collidesWithTile(this, Direction.Down)) {
-                EventEmitter.getInstance().emit('wallcollide', this, Direction.Down);
-                this.onWallcollide?.(Direction.Down);
+            if (model.collidesWithTile(this, 'down')) {
+                EventEmitter.getInstance().emit('wallcollide', this, 'down');
+                this.onWallcollide?.('down');
                 newy -= newy % TileSize;
             }
             this.pos.y = ~~newy;
@@ -213,10 +213,10 @@ export class ProhibitLeavingScreenComponent extends ScreenBoundaryComponent {
  */
 export function leavingScreenHandler_prohibit(ik: GameObject, d: Direction, old_x_or_y: number): void {
     switch (d) {
-        case Direction.Left: case Direction.Right:
+        case 'left': case 'right':
             ik.pos.x = old_x_or_y;
             break;
-        case Direction.Up: case Direction.Down:
+        case 'up': case 'down':
             ik.pos.y = old_x_or_y;
             break;
     }

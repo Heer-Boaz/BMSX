@@ -77,13 +77,13 @@ export class MainMenu {
     public HandleInput(): void {
         let selectionChanged: boolean = false;
         if (Input.KC_UP)
-            this.changeSelection(Direction.Up, selectionChanged);
+            this.changeSelection('up', selectionChanged);
         else if (Input.KC_RIGHT)
-            this.changeSelection(Direction.Right, selectionChanged);
+            this.changeSelection('right', selectionChanged);
         else if (Input.KC_DOWN)
-            this.changeSelection(Direction.Down, selectionChanged);
+            this.changeSelection('down', selectionChanged);
         else if (Input.KC_LEFT)
-            this.changeSelection(Direction.Left, selectionChanged);
+            this.changeSelection('left', selectionChanged);
         if (selectionChanged)
             S.play(AudioId.Selectie);
         if (Input.KC_SPACE) {
@@ -157,13 +157,13 @@ export class MainMenu {
                 break;
         }
         switch (dir) {
-            case Direction.Up:
+            case 'up':
                 if (this.selectedIndex > 0)
                     this.selectedIndex--;
                 else this.selectedIndex = currentItems.length - 1;
                 selectionChanged = true;
                 break;
-            case Direction.Down:
+            case 'down':
                 if (this.selectedIndex < currentItems.length - 1)
                     this.selectedIndex++;
                 else this.selectedIndex = 0;

@@ -92,7 +92,7 @@
 			"\t\tprotected static readonly Area ${1:name}HitArea = new Area(0, 0, 10, 16);\r",
 			"\r",
 			"\t\tprotected static readonly Dictionary<Direction, BitmapId[]> ${2:smallname}Sprites = new Dictionary<Direction, BitmapId[]> {\r",
-			"\t\t\t{ Direction.None, new BitmapId[] { BitmapId.${1:name}_1 } },\r",
+			"\t\t\t{ 'none', new BitmapId[] { BitmapId.${1:name}_1 } },\r",
 			"\t\t};\r",
 			"\r",
 			"\t\tprotected static (ulong, (uint img, int dy))[] AnimationFrames = {\r",

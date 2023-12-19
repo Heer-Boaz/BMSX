@@ -267,7 +267,7 @@ export abstract class BaseView {
 }
 
 export function paintImage(options: DrawImgOptions): void {
-    if (!options.imgid || options.imgid === 'None') return; // Don't draw anything when imgid = BitmapId.None. For animations, we don't always want to use visible = false
+    if (!options.imgid || options.imgid === 'none') return; // Don't draw anything when imgid = BitmapId.None. For animations, we don't always want to use visible = false
 
     global.view.drawImg(options);
 }

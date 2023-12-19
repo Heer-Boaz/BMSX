@@ -1,10 +1,7 @@
 /*
  * Enum representing the type of an audio asset.
  */
-export const enum AudioType {
-	effect = 1,
-	music = 2,
-}
+export type AudioType = 'sfx' | 'music';
 
 /**
  * Represents a 2D vector.
@@ -28,18 +25,20 @@ export interface vec3 extends vec2 {
 	z: number;
 }
 
+export type Vector = vec2 | vec3;
+
 /**
  * Represents the size of an object.
  * It can be either a 2D vector or a 3D vector.
  */
-export type Size = vec2 | vec3;
+export type Size = Vector;
 
 /**
  * Represents an area defined by a start and end point.
  */
 export interface Area {
-	start: vec2 | vec3;
-	end: vec2 | vec3;
+	start: Vector;
+	end: Vector;
 }
 
 /**

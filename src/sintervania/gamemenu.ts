@@ -149,13 +149,13 @@ export class GameMenu extends mdef implements GameObject {
             case MenuItem.Save:
             case MenuItem.LoadFromGameOver:
                 if (clickUp)
-                    this.changeSelection(Direction.Up, selectionChanged);
+                    this.changeSelection('up', selectionChanged);
                 else if (clickRight)
-                    this.changeSelection(Direction.Right, selectionChanged);
+                    this.changeSelection('right', selectionChanged);
                 else if (clickDown)
-                    this.changeSelection(Direction.Down, selectionChanged);
+                    this.changeSelection('down', selectionChanged);
                 else if (clickLeft)
-                    this.changeSelection(Direction.Left, selectionChanged);
+                    this.changeSelection('left', selectionChanged);
                 break;
         }
         if (Input.KC_BTN2) {
@@ -401,25 +401,25 @@ export class GameMenu extends mdef implements GameObject {
                 break;
         }
         switch (direction) {
-            case Direction.Up:
+            case 'up':
                 if (y > 0)
                     y--;
                 else y = maxY;
                 selectionChanged = true;
                 break;
-            case Direction.Right:
+            case 'right':
                 if (x < maxX) {
                     x++;
                     selectionChanged = true;
                 }
                 break;
-            case Direction.Down:
+            case 'down':
                 if (y < maxY)
                     y++;
                 else y = 0;
                 selectionChanged = true;
                 break;
-            case Direction.Left:
+            case 'left':
                 if (x > 0) {
                     x--;
                     selectionChanged = true;

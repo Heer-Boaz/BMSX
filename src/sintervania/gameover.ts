@@ -52,13 +52,13 @@ export class GameOver implements GameObject {
     public HandleInput(): void {
         let selectionChanged: boolean = false;
         if (Input.KC_UP)
-            this.changeSelection(Direction.Up, selectionChanged);
+            this.changeSelection('up', selectionChanged);
         else if (Input.KC_RIGHT)
-            this.changeSelection(Direction.Right, selectionChanged);
+            this.changeSelection('right', selectionChanged);
         else if (Input.KC_DOWN)
-            this.changeSelection(Direction.Down, selectionChanged);
+            this.changeSelection('down', selectionChanged);
         else if (Input.KC_LEFT)
-            this.changeSelection(Direction.Left, selectionChanged);
+            this.changeSelection('left', selectionChanged);
         if (Input.KC_SPACE) {
             switch (this.state) {
                 case State.SelectContOrLoad:
@@ -87,13 +87,13 @@ export class GameOver implements GameObject {
         if (this.state == State.SelectFile)
             return
         switch (dir) {
-            case Direction.Up:
+            case 'up':
                 if (this.selectedIndex > 0) {
                     this.selectedIndex = 0;
                     selectionChanged = true;
                 }
                 break;
-            case Direction.Down:
+            case 'down':
                 if (this.selectedIndex < 1) {
                     this.selectedIndex = 1;
                     selectionChanged = true;

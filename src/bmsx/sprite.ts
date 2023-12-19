@@ -144,7 +144,7 @@ export class Sprite {
 
     constructor() {
         this.options ??= {
-            imgid: 'None',
+            imgid: 'none',
             x: 0,
             y: 0,
             z: 0,

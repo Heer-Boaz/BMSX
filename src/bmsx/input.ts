@@ -7,7 +7,7 @@ import { SpriteObject } from './sprite';
 import { get_gamemodel } from './bmsx';
 import { BaseModel } from './model';
 import { machine_states } from './bfsm';
-import type { IIdentifiable, Identifier } from "./generic_interfaces";
+import type { IIdentifiable, Identifier } from "./bmsx";
 
 const get_model = get_gamemodel<BaseModel>;
 

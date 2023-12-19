@@ -16,7 +16,7 @@ export class Hag extends Foe {
     protected timer: BStopwatch;
 
     protected static hagSprites: Map<Direction, BitmapId[]> = new Map([
-        [Direction.None, [BitmapId.Hag1, BitmapId.Hag2]]
+        ['none', [BitmapId.Hag1, BitmapId.Hag2]]
     ]);
 
     protected static movementSprites: Map<Direction, BitmapId[]> = Hag.hagSprites;
@@ -36,7 +36,7 @@ export class Hag extends Foe {
         this.itemSpawnedAfterKill = itemSpawned;
         this.health = 1;
         this.direction = dir;
-        this.flippedH = this.direction == Direction.Left;
+        this.flippedH = this.direction == 'left';
         this.z = 10;
     }
 
@@ -45,7 +45,7 @@ export class Hag extends Foe {
 
         let stepValue = this.animation.doAnimation(this.timer, this.imgid).stepValue;
         this.imgid = stepValue;
-        this.pos.x += this.direction == Direction.Left ? -2 : 2;
+        this.pos.x += this.direction == 'left' ? -2 : 2;
         if (this.pos.x >= GameConstants.GameScreenWidth || (0 > this.pos.x + this.size.x)) {
             this.disposeFlag = true;
         }

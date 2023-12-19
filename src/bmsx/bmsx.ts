@@ -136,6 +136,15 @@ export module Constants {
  */
 export type AbstractConstructor<T> = Function & { prototype: T };
 
+/**
+ * Represents the direction values.
+ */
+export type Direction = 'none' | 'up' | 'right' | 'down' | 'left';
+
+export type Identifier = string;
+export interface IIdentifiable {
+    id: Identifier;
+}
 
 /**
  * Represents a bitmap font used for rendering text.
@@ -737,9 +746,9 @@ export function isSessionStorageAvailable(): boolean {
 export function getLookAtDirection(subjectpos: vec2, targetpos: vec2): Direction {
     const delta: vec2 = { x: targetpos.x - subjectpos.x, y: targetpos.y - subjectpos.y };
     if (Math.abs(delta.x) >= Math.abs(delta.y)) {
-        return delta.x < 0 ? Direction.Left : Direction.Right;
+        return delta.x < 0 ? 'left' : 'right';
     } else {
-        return delta.y < 0 ? Direction.Up : Direction.Down;
+        return delta.y < 0 ? 'up' : 'down';
     }
 }
 
@@ -750,16 +759,16 @@ export function getLookAtDirection(subjectpos: vec2, targetpos: vec2): Direction
  */
 export function getOppositeDirection(dir: Direction): Direction {
     switch (dir) {
-        case Direction.Up:
-            return Direction.Down;
-        case Direction.Right:
-            return Direction.Left;
-        case Direction.Down:
-            return Direction.Up;
-        case Direction.Left:
-            return Direction.Right;
+        case 'up':
+            return 'down';
+        case 'right':
+            return 'left';
+        case 'down':
+            return 'up';
+        case 'left':
+            return 'right';
         default:
-            return Direction.None;
+            return 'none';
     }
 }
 
@@ -949,14 +958,4 @@ export class Game {
             SM.stopMusic();
         });
     }
-}
-/**
- * Represents the direction values.
- */
-export enum Direction {
-    None = 0,
-    Up = 1,
-    Right = 2,
-    Down = 3,
-    Left = 4
 }

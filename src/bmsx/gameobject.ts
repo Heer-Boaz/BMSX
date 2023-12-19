@@ -6,10 +6,10 @@ import { ObjectTracker } from "./objecttracker";
 import { onload } from "./gameserializer";
 import { IEventSubscriber, EventEmitter } from "./eventemitter";
 import { new_area, new_vec3, new_vec2, AbstractConstructor } from "./bmsx";
-import { vec2, vec3, Area } from "./rompack";
+import { vec2, vec3, Area, Vector } from "./rompack";
 import { Direction } from "./bmsx";
 import { ZCOORD_MAX } from "./glview";
-import type { IIdentifiable, Identifier } from "./generic_interfaces";
+import type { IIdentifiable, Identifier } from "./bmsx";
 
 const DEFAULT_HITTABLE = true;
 const DEFAULT_VISIBLE = true;
@@ -28,7 +28,7 @@ interface IGameObjectStatic {
  * Implements both vec2 and vec3 interfaces.
  */
 @insavegame
-export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiable, IStateful {
+export class GameObject implements vec3, IComponentContainer, IIdentifiable, IStateful {
     public components: KeyToComponentMap = {};
     public objectTracker?: ObjectTracker;
 
@@ -259,7 +259,7 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
      * the FSM-state to the initial state (if specified).
      * @param spawningPos The position to spawn the object at.
      */
-    public onspawn(spawningPos?: vec2 | vec3): void {
+    public onspawn(spawningPos?: Vector): void {
         if (spawningPos) {
             this.setXNoSweep(spawningPos.x ?? this.x);
             this.setYNoSweep(spawningPos.y ?? this.y);

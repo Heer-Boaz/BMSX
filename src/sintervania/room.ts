@@ -111,24 +111,24 @@ export class Room implements GameObject {
 	public nearingRoomExit(x: number, y: number): NearingRoomExitResult {
 		let _x: number = ~~(x / TileSize);
 		let _y: number = ~~(y / TileSize);
-		let result: NearingRoomExitResult = { destRoom: Room.NO_ROOM_EXIT, direction: Direction.None };
+		let result: NearingRoomExitResult = { destRoom: Room.NO_ROOM_EXIT, direction: 'none' };
 
 		if (x <= 0) {
 			//  Note: Check for x and not _x, as -1 / (...) will result in 0!
-			let dest = this.roomExit(Direction.Left);
-			result = { destRoom: dest, direction: Direction.Left };
+			let dest = this.roomExit('left');
+			result = { destRoom: dest, direction: 'left' };
 		}
 		else if (_x >= CS.StageScreenWidthTiles) {
-			let dest = this.roomExit(Direction.Right);
-			result = { destRoom: dest, direction: Direction.Right };
+			let dest = this.roomExit('right');
+			result = { destRoom: dest, direction: 'right' };
 		}
 		else if (_y < 2) {
-			let dest = this.roomExit(Direction.Up);
-			result = { destRoom: dest, direction: Direction.Up };
+			let dest = this.roomExit('up');
+			result = { destRoom: dest, direction: 'up' };
 		}
 		else if (_y >= CS.StageScreenHeightTiles) {
-			let dest = this.roomExit(Direction.Down);
-			result = { destRoom: dest, direction: Direction.Down };
+			let dest = this.roomExit('down');
+			result = { destRoom: dest, direction: 'down' };
 		}
 
 		return result;
@@ -140,19 +140,19 @@ export class Room implements GameObject {
 
 		let dx: number, dy: number;
 		switch (dir) {
-			case Direction.Up:
+			case 'up':
 				dx = 0;
 				dy = -1;
 				break;
-			case Direction.Right:
+			case 'right':
 				dx = 1;
 				dy = 0;
 				break;
-			case Direction.Down:
+			case 'down':
 				dx = 0;
 				dy = 1;
 				break;
-			case Direction.Left:
+			case 'left':
 			default:
 				dx = -1;
 				dy = 0;
@@ -161,13 +161,13 @@ export class Room implements GameObject {
 		while (_x >= 0 && _x <= GameConstants.StageScreenWidthTiles - 1 && _y >= 0 && _y <= GameConstants.StageScreenStartHeightTiles + GameConstants.StageScreenHeightTiles - 1) {
 			if (this.tiles[_y][_x] === '.' || this.tiles[_y][_x] === '-') {
 				switch (dir) {
-					case Direction.Up:
+					case 'up':
 						return (_y) * TileSize;
-					case Direction.Down:
+					case 'down':
 						return (_y) * TileSize;
-					case Direction.Left:
+					case 'left':
 						return (_x) * TileSize;
-					case Direction.Right:
+					case 'right':
 						return (_x) * TileSize;
 					default:
 						return 0;
@@ -184,7 +184,7 @@ export class Room implements GameObject {
 		let _y: number = ~~(y / TileSize);
 		if (x < 0) {
 			//  Note: Check for x and not _x, as -1 / (...) will result in 0!
-			if (this.canLeaveRoom(Direction.Left)) {
+			if (this.canLeaveRoom('left')) {
 				_x = 0;
 			}
 			else {
@@ -193,7 +193,7 @@ export class Room implements GameObject {
 
 		}
 		else if (_x >= GameConstants.StageScreenWidthTiles) {
-			if (this.canLeaveRoom(Direction.Right)) {
+			if (this.canLeaveRoom('right')) {
 				_x = (GameConstants.StageScreenWidthTiles - 1);
 			}
 			else {
@@ -203,7 +203,7 @@ export class Room implements GameObject {
 		}
 
 		if (_y < 1 && _y >= -1) {
-			if (this.canLeaveRoom(Direction.Up)) {
+			if (this.canLeaveRoom('up')) {
 				_y = 0;
 			}
 			else {
@@ -212,7 +212,7 @@ export class Room implements GameObject {
 
 		}
 		else if (_y >= GameConstants.StageScreenHeightTiles) {
-			if (this.canLeaveRoom(Direction.Down)) {
+			if (this.canLeaveRoom('down')) {
 				_y = GameConstants.StageScreenHeightTiles - 1;
 			}
 			else {
@@ -234,15 +234,15 @@ export class Room implements GameObject {
 		let endx = o.wallhitbox_ex;
 		let endy = o.wallhitbox_ey;
 		switch (dir) {
-			case Direction.Up:
+			case 'up':
 				return this.isCollisionTile(startx, starty) || this.isCollisionTile(endx, starty);
-			case Direction.Right:
+			case 'right':
 				return this.isCollisionTile(endx, starty) || this.isCollisionTile(endx, endy);
-			case Direction.Down:
+			case 'down':
 				return this.isCollisionTile(startx, endy) || this.isCollisionTile(endx, endy);
-			case Direction.Left:
+			case 'left':
 				return this.isCollisionTile(startx, starty) || this.isCollisionTile(startx, endy);
-			case Direction.None:
+			case 'none':
 				return this.isCollisionTile(startx, starty) || this.isCollisionTile(endx, endy);
 			default:
 				return false;

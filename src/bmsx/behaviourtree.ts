@@ -1,6 +1,6 @@
 import { GameObject } from './gameobject';
 import { insavegame } from './gameserializer';
-import type { IIdentifiable, Identifier } from "./generic_interfaces";
+import type { IIdentifiable, Identifier } from "./bmsx";
 
 /**
  * Represents the definition of a behavior tree.

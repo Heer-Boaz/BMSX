@@ -9,7 +9,7 @@ import type { vec2, Area, vec3 } from '../bmsx/rompack';
 import { middlepoint_area, new_area } from '../bmsx/bmsx';
 import { gamemodel } from './gamemodel';
 import { SM } from '../bmsx/soundmaster';
-import type { IIdentifiable, Identifier } from "../bmsx/generic_interfaces";
+import type { IIdentifiable, Identifier } from "../bmsx/bmsx";
 
 export type AttackType = string;
 

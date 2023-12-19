@@ -1,5 +1,5 @@
 export enum BitmapId {
-	None = 'None',
+	None = 'none',
 
 	b = 'b',
 	b2 = 'b2',
@@ -8,6 +8,6 @@ export enum BitmapId {
 }
 
 export enum AudioId {
-	None = 'None',
+	None = 'none',
 
 }

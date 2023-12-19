@@ -14,21 +14,21 @@ export class RoeState {
 	public static framesPerDrawing: number[] = [4, 2, 8];
 	public aniTimer: BStopwatch;
 	public static RoeSprites: Map<Direction, BitmapId[]> = new Map([
-		[Direction.Right, [BitmapId.Belmont_rw1, BitmapId.Belmont_rw2, BitmapId.Belmont_rw3]],
-		[Direction.Left, [BitmapId.Belmont_lw1, BitmapId.Belmont_lw2, BitmapId.Belmont_lw3]],
+		['right', [BitmapId.Belmont_rw1, BitmapId.Belmont_rw2, BitmapId.Belmont_rw3]],
+		['left', [BitmapId.Belmont_lw1, BitmapId.Belmont_lw2, BitmapId.Belmont_lw3]],
 	]);
 
 	public static RoeSpritesCrouching: Map<Direction, BitmapId[]> = new Map([
-		[Direction.Right, [BitmapId.Belmont_rwd1, BitmapId.Belmont_rwd2, BitmapId.Belmont_rwd3]],
-		[Direction.Left, [BitmapId.Belmont_lwd1, BitmapId.Belmont_lwd2, BitmapId.Belmont_lwd3]],
+		['right', [BitmapId.Belmont_rwd1, BitmapId.Belmont_rwd2, BitmapId.Belmont_rwd3]],
+		['left', [BitmapId.Belmont_lwd1, BitmapId.Belmont_lwd2, BitmapId.Belmont_lwd3]],
 	]);
 	public static RoeSpritePosOffset: Map<Direction, Point[]> = new Map<Direction, Point[]>([
-		[Direction.Right, [newPoint(-16, 0), newPoint(-16, 0), newPoint(0, 0)]],
-		[Direction.Left, [newPoint(0, 0), newPoint(0, 0), newPoint(-25, 0)]],
+		['right', [newPoint(-16, 0), newPoint(-16, 0), newPoint(0, 0)]],
+		['left', [newPoint(0, 0), newPoint(0, 0), newPoint(-25, 0)]],
 	]);
 	public static RoeSpritePosOffsetCrouching: Map<Direction, Point[]> = new Map<Direction, Point[]>([
-		[Direction.Right, [newPoint(-16, 0), newPoint(-16, 0), newPoint(0, 0)]],
-		[Direction.Left, [newPoint(0, 0), newPoint(0, 0), newPoint(-25, 0)]],
+		['right', [newPoint(-16, 0), newPoint(-16, 0), newPoint(0, 0)]],
+		['left', [newPoint(0, 0), newPoint(0, 0), newPoint(-25, 0)]],
 	]);
 
 	public Roeing: boolean;
@@ -95,18 +95,18 @@ export class Belmont extends Sprite {
 	public roeState: RoeState;
 	private jumpState: JumpState;
 	private static MovementSpritesNoShield: Map<Direction, BitmapId[]> = new Map<Direction, BitmapId[]>([
-		[Direction.Right, [BitmapId.Belmont_r1, BitmapId.Belmont_r3, BitmapId.Belmont_r2, BitmapId.Belmont_r3, BitmapId.Belmont_r1]],
-		[Direction.Left, [BitmapId.Belmont_l1, BitmapId.Belmont_l3, BitmapId.Belmont_l2, BitmapId.Belmont_l3, BitmapId.Belmont_l1]],
+		['right', [BitmapId.Belmont_r1, BitmapId.Belmont_r3, BitmapId.Belmont_r2, BitmapId.Belmont_r3, BitmapId.Belmont_r1]],
+		['left', [BitmapId.Belmont_l1, BitmapId.Belmont_l3, BitmapId.Belmont_l2, BitmapId.Belmont_l3, BitmapId.Belmont_l1]],
 	]);
 
 	private static MovementSpritesNoShieldCrouching: Map<Direction, BitmapId[]> = new Map<Direction, BitmapId[]>([
-		[Direction.Right, [BitmapId.Belmont_rd, BitmapId.Belmont_rd, BitmapId.Belmont_rd]],
-		[Direction.Left, [BitmapId.Belmont_ld, BitmapId.Belmont_ld, BitmapId.Belmont_ld]]
+		['right', [BitmapId.Belmont_rd, BitmapId.Belmont_rd, BitmapId.Belmont_rd]],
+		['left', [BitmapId.Belmont_ld, BitmapId.Belmont_ld, BitmapId.Belmont_ld]]
 	]);
 
 	private static MovementSpritesWShieldCrouching: Map<Direction, BitmapId[]> = new Map<Direction, BitmapId[]>([
-		[Direction.Right, [BitmapId.Belmont_rd, BitmapId.Belmont_rd, BitmapId.Belmont_rd]],
-		[Direction.Left, [BitmapId.Belmont_ld, BitmapId.Belmont_ld, BitmapId.Belmont_ld]],
+		['right', [BitmapId.Belmont_rd, BitmapId.Belmont_rd, BitmapId.Belmont_rd]],
+		['left', [BitmapId.Belmont_ld, BitmapId.Belmont_ld, BitmapId.Belmont_ld]],
 	]);
 
 	private static MovementSpritesWShield: Map<Direction, BitmapId[]> = new Map<Direction, BitmapId[]>([]);
@@ -136,13 +136,13 @@ export class Belmont extends Sprite {
 
 	public get EventButtonHitArea(): Area {
 		switch (this.direction) {
-			case Direction.Up:
+			case 'up':
 				return Belmont.buttonPressEventHitAreaUp;
-			case Direction.Right:
+			case 'right':
 				return Belmont.buttonPressEventHitAreaRight;
-			case Direction.Down:
+			case 'down':
 				return Belmont.buttonPressEventHitAreaDown;
-			case Direction.Left:
+			case 'left':
 				return Belmont.buttonPressEventHitAreaLeft;
 			default:
 				return null;
@@ -211,7 +211,7 @@ export class Belmont extends Sprite {
 		this._hitarea = newArea(0, 2, 15, 31)
 		this.flippedH = false;
 		this.CarryingShield = false;
-		this.direction = Direction.Right;
+		this.direction = 'right';
 		this.id = "Belmont";
 		this.state = State.Normal;
 		this.size = new_vec2(16, 32);
@@ -242,11 +242,11 @@ export class Belmont extends Sprite {
 	public GetProjectileOrigin(): Point {
 		let result: Point = copyPoint(this.pos);
 		switch (this.direction) {
-			case Direction.Right:
+			case 'right':
 				result.x += 8;
 				result.y += 12;
 				break;
-			case Direction.Left:
+			case 'left':
 				result.y += 12;
 				break;
 		}
@@ -304,7 +304,7 @@ export class Belmont extends Sprite {
 				}
 				else {
 					this.animateMovement(0);
-					this.firstPressedButton = Direction.None;
+					this.firstPressedButton = 'none';
 				}
 			}
 		}
@@ -325,9 +325,9 @@ export class Belmont extends Sprite {
 	protected doHitFlying(): void {
 		let delta = this.hitState.HitAni.doAnimation(1, <Point>{ x: 0, y: 0 });
 		let originalPos = copyPoint(this.pos);
-		this.setx(this.pos.x + (this.direction == Direction.Right ? delta.stepValue.x : -delta.stepValue.x));
+		this.setx(this.pos.x + (this.direction == 'right' ? delta.stepValue.x : -delta.stepValue.x));
 		let dir = this.direction;
-		this.direction = this.direction == Direction.Left ? Direction.Right : Direction.Left;
+		this.direction = this.direction == 'left' ? 'right' : 'left';
 		this.direction = dir;
 		this.sety(this.pos.y + delta.stepValue.y);
 		if (this.hitState.HitAni.hasNext === false) {
@@ -336,9 +336,9 @@ export class Belmont extends Sprite {
 	}
 
 	protected doHitFall(): void {
-		this.setx(this.pos.x + (this.direction == Direction.Right ? -2 : 2));
+		this.setx(this.pos.x + (this.direction == 'right' ? -2 : 2));
 		let dir = this.direction;
-		this.direction = this.direction == Direction.Left ? Direction.Right : Direction.Left;
+		this.direction = this.direction == 'left' ? 'right' : 'left';
 		this.direction = dir;
 		if (this.FloorCollision) this.handleFloorCollision();
 		else {
@@ -368,9 +368,9 @@ export class Belmont extends Sprite {
 		else if (this.FloorCollision) {
 			this.jumpState.Stop();
 		}
-		if (this.jumpState.JumpDirection == Direction.Right)
+		if (this.jumpState.JumpDirection == 'right')
 			this.setx(this.pos.x + this.movementSpeed);
-		if (this.jumpState.JumpDirection == Direction.Left)
+		if (this.jumpState.JumpDirection == 'left')
 			this.setx(this.pos.x - this.movementSpeed);
 	}
 
@@ -404,8 +404,8 @@ export class Belmont extends Sprite {
 			case State.HitRecovery:
 				if (this.hitState.CurrentStep != HitStateStep.None) {
 					if (this.hitState.CurrentStep == HitStateStep.Falling || this.hitState.CurrentStep == HitStateStep.Flying)
-						this.imgid = this.direction == Direction.Right ? BitmapId.Belmont_rhitfly : BitmapId.Belmont_lhitfly;
-					else this.imgid = this.direction == Direction.Right ? BitmapId.Belmont_rhitdown : BitmapId.Belmont_lhitdown;
+						this.imgid = this.direction == 'right' ? BitmapId.Belmont_rhitfly : BitmapId.Belmont_lhitfly;
+					else this.imgid = this.direction == 'right' ? BitmapId.Belmont_rhitdown : BitmapId.Belmont_lhitdown;
 				}
 				else if (!this.roeState.Roeing) {
 					if (!this.Crouching && !this.Jumping) {
@@ -482,37 +482,37 @@ export class Belmont extends Sprite {
 
 	private handleInput(): { moved: boolean } {
 		let moved = false;
-		if (Input.KD_DOWN && !this.ignoreDirButtonPress(Direction.Down)) {
+		if (Input.KD_DOWN && !this.ignoreDirButtonPress('down')) {
 			this.Crouching = true;
-			if (Input.KD_RIGHT && !this.ignoreDirButtonPress(Direction.Right))
-				this.direction = Direction.Right;
-			if (Input.KD_LEFT && !this.ignoreDirButtonPress(Direction.Left))
-				this.direction = Direction.Left;
+			if (Input.KD_RIGHT && !this.ignoreDirButtonPress('right'))
+				this.direction = 'right';
+			if (Input.KD_LEFT && !this.ignoreDirButtonPress('left'))
+				this.direction = 'left';
 		}
-		else if (Input.KC_BTN2 && !this.ignoreDirButtonPress(Direction.Up)) {
+		else if (Input.KC_BTN2 && !this.ignoreDirButtonPress('up')) {
 			this.Crouching = false;
-			let jumpDir: Direction = Direction.Up;
+			let jumpDir: Direction = 'up';
 			if (Input.KD_RIGHT) {
-				jumpDir = Direction.Right;
-				this.direction = Direction.Right;
+				jumpDir = 'right';
+				this.direction = 'right';
 			}
 			else if (Input.KD_LEFT) {
-				jumpDir = Direction.Left;
-				this.direction = Direction.Left;
+				jumpDir = 'left';
+				this.direction = 'left';
 			}
 			this.jumpState.Start(jumpDir);
 		}
-		else if (Input.KD_RIGHT && !this.ignoreDirButtonPress(Direction.Right)) {
+		else if (Input.KD_RIGHT && !this.ignoreDirButtonPress('right')) {
 			this.Crouching = false;
-			moved = this.doMovement(Direction.Right).moved;
+			moved = this.doMovement('right').moved;
 		}
-		else if (Input.KD_LEFT && !this.ignoreDirButtonPress(Direction.Left)) {
+		else if (Input.KD_LEFT && !this.ignoreDirButtonPress('left')) {
 			this.Crouching = false;
-			moved = this.doMovement(Direction.Left).moved;
+			moved = this.doMovement('left').moved;
 		}
 		else {
 			this.Crouching = false;
-			this.firstPressedButton = Direction.None;
+			this.firstPressedButton = 'none';
 		}
 
 		return { moved: moved };
@@ -522,13 +522,13 @@ export class Belmont extends Sprite {
 		let speed = this.movementSpeed;
 		let originalPos = copyPoint(this.pos);
 		switch (dir) {
-			case Direction.Right:
+			case 'right':
 				this.setx(this.pos.x + speed);
-				this.direction = Direction.Right;
+				this.direction = 'right';
 				break;
-			case Direction.Left:
+			case 'left':
 				this.setx(this.pos.x - speed);
-				this.direction = Direction.Left;
+				this.direction = 'left';
 				break;
 		}
 		return { moved: true };
@@ -543,9 +543,9 @@ export class Belmont extends Sprite {
 
 	protected checkWallCollision(): boolean {
 		switch (this.direction) {
-			case Direction.Right:
+			case 'right':
 				return (model as Model).currentRoom.isCollisionTile(this.pos.x + 16, this.pos.y + 25) || (model as Model).currentRoom.isCollisionTile(this.pos.x + 16, this.pos.y + 31);
-			case Direction.Left:
+			case 'left':
 				return (model as Model).currentRoom.isCollisionTile(this.pos.x, this.pos.y + 25) || (model as Model).currentRoom.isCollisionTile(this.pos.x, this.pos.y + 31);
 			default:
 				return false;
@@ -746,8 +746,8 @@ export class DyingState {
 	public DeathAni: Animation<BitmapAndDir>;
 	public static framesPerDrawing: number = 15;
 	protected static dyingFrames: BitmapAndDir[] = new Array(
-		{ image: BitmapId.Belmont_rhitdown, dir: Direction.Right },
-		{ image: BitmapId.Belmont_rdead, dir: Direction.Right }
+		{ image: BitmapId.Belmont_rhitdown, dir: 'right' },
+		{ image: BitmapId.Belmont_rdead, dir: 'right' }
 	);
 	protected static dyingFrameTimes: number[] = [5, 100];
 	public aniTimer: BStopwatch;

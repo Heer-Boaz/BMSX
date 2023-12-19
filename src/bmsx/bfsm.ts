@@ -1,6 +1,6 @@
 import { GameObject } from "./gameobject";
 import { exclude_save, insavegame } from "./gameserializer";
-import { IIdentifiable } from "./generic_interfaces";
+import { IIdentifiable } from "./bmsx";
 import { BaseModel } from "./model";
 
 /**

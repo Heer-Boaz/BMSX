@@ -31,7 +31,7 @@ export class JumpingWhileLeavingScreenComponent extends ScreenBoundaryComponent 
      */
     @subscribesToParentScopedEvent('leavingScreen')
     public onLeavingScreen(event_name: string, emitter: Player, d: Direction, old_x_or_y: number) {
-        if (d === Direction.Left) {
+        if (d === 'left') {
             emitter.facing = 'right';
         }
         else emitter.facing = 'left';

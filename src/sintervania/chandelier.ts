@@ -20,7 +20,7 @@ export class Chandelier extends Foe {
 
 	protected static ChandelierHitArea: Area = newArea(14, 0, 35, 64);
 	protected static chandelierSprites: Map<Direction, BitmapId[]> = new Map([
-		// [Direction.None, [BitmapId.Chandelier_1]]
+		// ['none', [BitmapId.Chandelier_1]]
 	]);
 	protected static AnimationFrames: AniData<number>[] = [
 		// { time: 125, data: BitmapId.Chandelier_2 },

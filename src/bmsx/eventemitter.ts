@@ -1,4 +1,4 @@
-import { IIdentifiable } from "./generic_interfaces";
+import { IIdentifiable } from "./bmsx.js";
 
 type Listener = { listener: Function, subscriber: any };
 type ListenerSet = Set<Listener>;

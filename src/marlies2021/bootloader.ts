@@ -259,10 +259,10 @@ class speler extends SpriteObject {
             let switchToOld = (): void => {
                 ik.state.to('walk');
                 switch (ik.direction) {
-                    case Direction.Down:
+                    case 'down':
                         ik.state.to('down', 'anistate');
                         break;
-                    case Direction.Up:
+                    case 'up':
                         ik.state.to('up', 'anistate');
                         break;
                 }
@@ -478,7 +478,7 @@ class speler extends SpriteObject {
     constructor() {
         super();
         this.imgid = BitmapId.p1;
-        this.direction = Direction.Right;
+        this.direction = 'right';
         this.z = 1000;
         this.floatbit = false;
         this.hitarea = new_area(0, 0, 16, 16);

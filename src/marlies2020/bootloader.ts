@@ -187,7 +187,7 @@ class brandblusser extends SpriteObject {
                             run: (s: sstate, ik: brandblusser): void => {
                                 set_vec2(ik.pos, _model.marlies.pos.x, _model.marlies.pos.y + 12);
                                 // let oldPrio = ik.z;
-                                if (_model.marlies.direction == Direction.Up) ik.z = 950;
+                                if (_model.marlies.direction == 'up') ik.z = 950;
                                 else ik.z = 1050;
                                 // if (ik.z != oldPrio) _model.currentSpace.sortObjectsByPriority();
                                 ++s.nudges;
@@ -205,7 +205,7 @@ class brandblusser extends SpriteObject {
     constructor() {
         super();
         this.imgid = BitmapId.Brandblusser;
-        this.z = _model.marlies.direction == Direction.Up ? 950 : 1050;
+        this.z = _model.marlies.direction == 'up' ? 950 : 1050;
         this.state.to('bla');
     }
 };
@@ -356,10 +356,10 @@ class vuur extends SpriteObject {
                             run: (s: sstate, ik: vuur): void => {
                                 ++s.nudges;
                                 switch (ik.direction) {
-                                    case Direction.Up: ik.pos.y -= 3; break;
-                                    case Direction.Right: ik.pos.x += 3; break;
-                                    case Direction.Down: ik.pos.y += 3; break;
-                                    case Direction.Left: ik.pos.x -= 3; break;
+                                    case 'up': ik.pos.y -= 3; break;
+                                    case 'right': ik.pos.x += 3; break;
+                                    case 'down': ik.pos.y += 3; break;
+                                    case 'left': ik.pos.x -= 3; break;
                                 }
                             },
                             next: (s: sstate, ik: vuur): void => {
@@ -379,7 +379,7 @@ class vuur extends SpriteObject {
         super();
         this.direction = dir;
         this.hitarea = new_area(4, 4, 12, 12);
-        this.z = dir != Direction.Up ? 1100 : 900;
+        this.z = dir != 'up' ? 1100 : 900;
     }
 
     override onspawn(spawningPos?: vec2): void {
@@ -415,10 +415,10 @@ class corona extends SpriteObject {
                                     ik.state.to('sterf');
                                 }
                                 switch (ik.direction) {
-                                    case Direction.Up: ik.sety(ik.pos.y - 1); break;
-                                    case Direction.Right: ik.setx(ik.pos.x + 1); break;
-                                    case Direction.Down: ik.sety(ik.pos.y + 1); break;
-                                    case Direction.Left: ik.setx(ik.pos.x - 1); break;
+                                    case 'up': ik.sety(ik.pos.y - 1); break;
+                                    case 'right': ik.setx(ik.pos.x + 1); break;
+                                    case 'down': ik.sety(ik.pos.y + 1); break;
+                                    case 'left': ik.setx(ik.pos.x - 1); break;
                                 }
 
                                 if (--ik.moveLeft <= 0) {
@@ -502,10 +502,10 @@ class speler extends SpriteObject {
                 ik.direction = ik.oldDirection;
                 ik.state.to('walk');
                 switch (ik.direction) {
-                    case Direction.Down:
+                    case 'down':
                         ik.state.to('down', 'anistate');
                         break;
-                    case Direction.Up:
+                    case 'up':
                         ik.state.to('up', 'anistate');
                         break;
                 }
@@ -547,13 +547,13 @@ class speler extends SpriteObject {
                                 if (Input.KC_LEFT) {
                                     if (ik.canSwitchLeft) {
                                         ik.state.to('switchleft');
-                                        ik.direction = Direction.Left;
+                                        ik.direction = 'left';
                                     }
                                 }
                                 else if (Input.KC_RIGHT) {
                                     if (ik.canSwitchRight) {
                                         ik.state.to('switchright');
-                                        ik.direction = Direction.Right;
+                                        ik.direction = 'right';
                                     }
                                 }
                                 else if (Input.KD_UP) {
@@ -565,7 +565,7 @@ class speler extends SpriteObject {
                                     }
                                     if (ik.state.getCurrentId('anistate') !== 'up') {
                                         ik.state.to('up', 'anistate');
-                                        ik.direction = Direction.Up;
+                                        ik.direction = 'up';
                                     }
                                 }
                                 else if (Input.KD_DOWN) {
@@ -577,7 +577,7 @@ class speler extends SpriteObject {
                                     }
                                     if (ik.state.getCurrentId('anistate') !== 'down') {
                                         ik.state.to('down', 'anistate');
-                                        ik.direction = Direction.Down;
+                                        ik.direction = 'down';
                                     }
                                 }
                                 if (Input.KC_BTN1 || Input.KC_SPACE) {
@@ -713,7 +713,7 @@ class speler extends SpriteObject {
     constructor(startcolumn: number) {
         super();
         this.imgid = BitmapId.p1;
-        this.direction = Direction.Down;
+        this.direction = 'down';
         this.z = 1000;
         this.column = startcolumn;
         this.hitarea = new_area(0, 8, 16, 16);
@@ -729,10 +729,10 @@ class speler extends SpriteObject {
         let brand = new vuur(this.direction);
         let brandpos = copy_vec2(this.pos);
         switch (this.direction) {
-            case Direction.Down: brandpos.y += 8; break;
-            case Direction.Right: brandpos.x += 4; brandpos.y += 8; break;
-            case Direction.Left: brandpos.x -= 4; brandpos.y += 8; break;
-            case Direction.Up: brandpos.y -= 8; break;
+            case 'down': brandpos.y += 8; break;
+            case 'right': brandpos.x += 4; brandpos.y += 8; break;
+            case 'left': brandpos.x -= 4; brandpos.y += 8; break;
+            case 'up': brandpos.y -= 8; break;
         }
         _model.spawn(brand, brandpos);
         let brand2 = new vuur(this.direction);

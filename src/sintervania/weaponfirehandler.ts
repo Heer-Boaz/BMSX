@@ -86,15 +86,15 @@ export class WeaponFireHandler {
         let cross: Cross;
         let p: Point;
         switch ((model as Model).Belmont.direction) {
-            case Direction.Left:
+            case 'left':
                 p = copyPoint((model as Model).Belmont.pos);
                 p.x -= 26;
-                cross = new Cross(Direction.Left).spawn(p) as Cross;
+                cross = new Cross('left').spawn(p) as Cross;
                 break;
-            case Direction.Right:
+            case 'right':
                 p = copyPoint((model as Model).Belmont.pos);
                 p.x += (model as Model).Belmont.size.x;
-                cross = new Cross(Direction.Right).spawn(p) as Cross;
+                cross = new Cross('right').spawn(p) as Cross;
                 break;
         }
         (model as Model).spawn(cross);
