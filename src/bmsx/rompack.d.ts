@@ -29,11 +29,6 @@ export interface vec3 extends vec2 {
 }
 
 /**
- * Represents the identifier of a game object.
- */
-export type GameObjectId = string;
-
-/**
  * Represents the size of an object.
  * It can be either a 2D vector or a 3D vector.
  */

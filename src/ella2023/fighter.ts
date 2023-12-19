@@ -1,14 +1,15 @@
 import { insavegame } from '../bmsx/gameserializer';
 import { SpriteObject } from '../bmsx/sprite';
 import { attach_components } from '../bmsx/component';
-import { ProhibitLeavingScreenComponent } from './../bmsx/collisioncomponents';
+import { ProhibitLeavingScreenComponent } from '../bmsx/collisioncomponents';
 import { HitBoxVisualizer, StateMachineVisualizer } from '../bmsx/bmsxdebugger';
 import { AudioId, BitmapId } from './resourceids';
 import { assign_fsm, build_fsm, machine_states, sstate } from '../bmsx/bfsm';
-import type { vec2, GameObjectId, Area, vec3 } from '../bmsx/rompack';
+import type { vec2, Area, vec3 } from '../bmsx/rompack';
 import { middlepoint_area, new_area } from '../bmsx/bmsx';
 import { gamemodel } from './gamemodel';
 import { SM } from '../bmsx/soundmaster';
+import type { IIdentifiable, Identifier } from "../bmsx/generic_interfaces";
 
 export type AttackType = string;
 
@@ -39,10 +40,10 @@ export abstract class Fighter extends SpriteObject {
                 },
                 doet_au: {
                     enter(this: Fighter, state: sstate) {
-                        this.state.pause_all_except('hitanimation');
+                        this.sc.pause_all_except('hitanimation');
                     },
                     exit(this: Fighter, state: sstate) {
-                        this.state.resume_all_statemachines();
+                        this.sc.resume_all_statemachines();
                     },
                 },
                 wel_au: {
@@ -51,17 +52,17 @@ export abstract class Fighter extends SpriteObject {
                     auto_tick: true,
                     enter(this: Fighter, state: sstate) {
                         state.reset();
-                        this.state.pause_all_except('hitanimation');
+                        this.sc.pause_all_except('hitanimation');
                     },
                     next(this: Fighter, state: sstate) {
                         this.moveXNoSweep(state.current_tape_value);
                     },
                     end(this: Fighter, state: sstate) {
-                        this.state.to('hitanimation.geen_au');
+                        this.sc.to('hitanimation.geen_au');
                         global.eventEmitter.emit('hit_animation_end', this);
                     },
                     exit(this: Fighter, state: sstate) {
-                        this.state.resume_all_statemachines();
+                        this.sc.resume_all_statemachines();
                     },
                 },
             }
@@ -72,7 +73,7 @@ export abstract class Fighter extends SpriteObject {
     public facing: 'left' | 'right';
     public hp: number;
 
-    constructor(id: GameObjectId, fsm_id: string, facing: 'left' | 'right' = 'right') {
+    constructor(id: Identifier, fsm_id: string, facing: 'left' | 'right' = 'right') {
         super(id, fsm_id);
         this.hitarea = new_area(0, 0, 0, 0); // Populate the hitarea with a default value. It is updated in the imgid setter.
         this.facing = facing;
@@ -105,8 +106,8 @@ export abstract class Fighter extends SpriteObject {
     }
 
     protected handleBeingHit(attackType: AttackType, opponent: Fighter) {
-        this.state.to('hitanimation.wel_au');
-        opponent.state.to('hitanimation.doet_au');
+        this.sc.to('hitanimation.wel_au');
+        opponent.sc.to('hitanimation.doet_au');
         this.hp -= getDamage(attackType);
         if (attackType === 'punch') {
             SM.play(AudioId.hit2);

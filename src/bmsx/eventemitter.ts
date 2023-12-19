@@ -1,4 +1,4 @@
-import { IIdentifiable } from './gameobject';
+import { IIdentifiable } from "./generic_interfaces";
 
 type Listener = { listener: Function, subscriber: any };
 type ListenerSet = Set<Listener>;

@@ -4,7 +4,8 @@ import { EventEmitter, subscribesToParentScopedEvent } from "./eventemitter";
 import { GameObject } from "./gameobject";
 import { insavegame } from "./gameserializer";
 import { TileSize } from "./msx";
-import { vec2, GameObjectId } from "./rompack";
+import type { IIdentifiable, Identifier } from "./generic_interfaces";
+import { vec2 } from "./rompack";
 import { Direction } from "./bmsx";
 
 /**
@@ -20,7 +21,7 @@ export abstract class PositionUpdateAxisComponent extends Component {
      */
     protected oldPos: vec2;
 
-    constructor(_id: GameObjectId) {
+    constructor(_id: Identifier) {
         super(_id);
         this.oldPos = new_vec2(0, 0)
     }

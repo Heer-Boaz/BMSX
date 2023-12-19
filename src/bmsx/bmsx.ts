@@ -22,7 +22,7 @@ declare global {
  * @returns The game model of type T.
  * @template T - The type of the game model.
  */
-export function get_gamemodel<T extends BaseModel>(): T {
+export function get_gamemodel<T extends BaseModel = BaseModel>(): T {
     return globalThis.model as T;
 }
 

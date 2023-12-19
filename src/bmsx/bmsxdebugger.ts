@@ -7,7 +7,8 @@ import { Serializer } from './gameserializer';
 import { GLView } from './glview';
 import { Input } from './input';
 import { Msx1Colors } from './msx';
-import type { GameObjectId, vec2 } from './rompack';
+import type { IIdentifiable, Identifier } from "./generic_interfaces";
+import type { vec2 } from './rompack';
 import { SpriteObject } from './sprite';
 import { Color } from './view';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
@@ -36,9 +37,9 @@ export class StateMachineVisualizer extends Component {
     private machineElements: Map<string, HTMLElement>;
     private stateElements: Map<string, HTMLElement>;
 
-    constructor(_id: GameObjectId) {
+    constructor(_id: Identifier) {
         super(_id);
-        this.bfsmController = global.model.get(_id).state;
+        this.bfsmController = global.model.get(_id).sc;
         this.enabled = false;
     }
 
@@ -74,7 +75,7 @@ export class StateMachineVisualizer extends Component {
 
 @componenttags_preprocessing('render') // Postprocessing update to render the state machine
 export class HitBoxVisualizer extends Component {
-    constructor(_id: GameObjectId) {
+    constructor(_id: Identifier) {
         super(_id);
         this.enabled = false;
     }
@@ -572,9 +573,9 @@ function visualizeStateMachine(dialogElement: HTMLElement, container: HTMLElemen
             stateElements.set(newpath, stateCell);
 
             // If the state is a state machine, visualize it
-            if (state.state instanceof statecontext) {
+            if (state.sm instanceof statecontext) {
                 let subTableCell = addContent(stateRow, 'td', null) as HTMLTableCellElement;
-                visualizeMachine(state.state, state.state.id, subTableCell, isActive && machine.currentid === stateId, newpath);
+                visualizeMachine(state.sm, state.sm.id, subTableCell, isActive && machine.currentid === stateId, newpath);
             }
         }
 
@@ -634,8 +635,8 @@ function highlightCurrentState(stateElements: Map<string, HTMLElement>, machineE
 
             // If the state is a state machine, update its classes
             let state = machine.states?.[stateId];
-            if (state?.state instanceof statecontext) {
-                updateMachineClasses(state.state, state.state.id, isActive && machine.currentid === stateId, newpath);
+            if (state?.sm instanceof statecontext) {
+                updateMachineClasses(state.sm, state.sm.id, isActive && machine.currentid === stateId, newpath);
             }
         }
     }

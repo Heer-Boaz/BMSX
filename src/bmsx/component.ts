@@ -1,18 +1,12 @@
 import { onload, insavegame } from './gameserializer';
 import { IEventSubscriber, EventEmitter, EventSubscription } from './eventemitter';
-import { GameObjectConstructorWithComponentList, IIdentifiable } from './gameobject';
+import { GameObjectConstructorWithComponentList } from './gameobject';
 import { AbstractConstructor } from './bmsx';
-import type { GameObjectId } from './rompack';
+import type { IIdentifiable, Identifier } from "./generic_interfaces";
 
 export type KeyToComponentMap = { [key: string]: Component };
 export type ComponentConstructor<T extends Component> = new (...args: any[]) => T | AbstractConstructor<new (...args: any[]) => T>; // Allows abstract Component classes to be used as component constructors. This is necessary to allow abstract Component classes to be used as component types in other components (e.g. to allow a collision component to have a list of collision components as a property). NOT IMPLEMENTED YET.
 export type ComponentId = string;
-
-/**
- * Represents the arguments for updating a component.
- * @template T - The type of the component.
- */
-export type ComponentUpdateArgs<T> = { [K in keyof T]: T[K] };
 
 /**
  * Represents a container for components.
@@ -57,7 +51,7 @@ export type ComponentUpdateParams = {
 
 @insavegame
 export abstract class Component implements IIdentifiable {
-    public parentid: GameObjectId | null = null;
+    public parentid: Identifier | null = null;
     public id: ComponentId; // The component id is the parent id + the component name
     public static tagsPre: Set<ComponentTag>;
     public static tagsPost: Set<ComponentTag>;
@@ -67,7 +61,7 @@ export abstract class Component implements IIdentifiable {
     public set enabled(value: boolean) { this._enabled = value; }
     public get enabled() { return this._enabled; }
 
-    constructor(_id: GameObjectId) {
+    constructor(_id: Identifier) {
         this.parentid = _id; // Store the parent id for later use
         this.id = this.parentid + '_' + this.constructor.name; // Note: A component can be added once per game object
         this.enabled = true;
@@ -276,18 +270,6 @@ export function update_tagged_components<T extends IComponentContainer>(...tags:
         };
     };
 }
-
-// /**
-//  * Attaches the specified components to a game object constructor.
-//  *
-//  * @param components - The components to attach.
-//  * @returns A decorator function that attaches the components to the game object constructor.
-//  */
-// export function attach_components(...components: ComponentConstructor<Component>[]) {
-//     return function (constructor: GameObjectConstructorWithComponentList) {
-//         constructor.autoAddComponents = components;
-//     };
-// }
 
 /**
  * Attaches the specified components to a game object constructor.

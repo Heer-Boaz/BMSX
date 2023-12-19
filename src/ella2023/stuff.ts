@@ -29,10 +29,10 @@ export class GameOver extends SpriteObject {
                             Input.getPlayerInput(1).consumeAction(action);
                         }
                         // If a priority action is pressed, go to the game.
-                        get_model().state.to('titlescreen');
+                        get_model().sc.to('titlescreen');
                     },
                     end(this: GameOver, state: sstate) {
-                        get_model().state.to('titlescreen');
+                        get_model().sc.to('titlescreen');
                     },
                 }
             }
@@ -73,11 +73,11 @@ export class Hoera extends SpriteObject {
                         for (const action of ['punch', 'highkick', 'lowkick', 'block']) {
                             Input.getPlayerInput(1).consumeAction(action);
                         }
-                        get_model().state.to('titlescreen');
+                        get_model().sc.to('titlescreen');
 
                     },
                     end(this: Hoera, state: sstate) {
-                        get_model().state.to('titlescreen');
+                        get_model().sc.to('titlescreen');
                     },
                 }
             }
@@ -117,7 +117,7 @@ export class TitleScreen extends SpriteObject {
                             Input.getPlayerInput(1).consumeAction(action);
                         }
                         // If a priority action is pressed, go to the game.
-                        get_model().state.to('default');
+                        get_model().sc.to('default');
                     },
                 }
             }

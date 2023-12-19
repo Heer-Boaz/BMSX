@@ -249,7 +249,7 @@ class bclass extends SpriteObject {
 
         function blarun(this: bclass, s: sstate) {
             const speed = 2;
-            if (this.state.current_state.statedef_id === 'blap') {
+            if (this.sc.current_state.statedef_id === 'blap') {
                 this.tickTree('bclass_tree');
             }
 
@@ -297,22 +297,22 @@ class bclass extends SpriteObject {
                         this.testmeuk();
                         global.eventEmitter.emit('testEvent', this);
 
-                        this.state.to('bclass.bla');
-                        this.state.machines.bclass_animation.to('ani2');
+                        this.sc.to('bclass.bla');
+                        this.sc.machines.bclass_animation.to('ani2');
                         break;
                     case 'blap':
                         if (consumed) break;
                         Input.getPlayerInput(1).consumeAction(action);
                         global.eventEmitter.emit('testEventOnce', this);
 
-                        this.state.machines.bclass_animation.to('ani1');
-                        if (this.state.is('bclass_meuk.meuk1.blupperblop1')) {
-                            this.state.to('bclass_meuk.meuk1.blupperblop2');
+                        this.sc.machines.bclass_animation.to('ani1');
+                        if (this.sc.is('bclass_meuk.meuk1.blupperblop1')) {
+                            this.sc.to('bclass_meuk.meuk1.blupperblop2');
                         }
                         else {
-                            this.state.to('bclass_meuk.meuk1.blupperblop1');
+                            this.sc.to('bclass_meuk.meuk1.blupperblop1');
                         }
-                        this.state.to('bclass.blap');
+                        this.sc.to('bclass.blap');
 
                         break;
                 }
@@ -360,7 +360,7 @@ class gamemodel extends BaseModel {
             states: {
                 '#game_start': {
                     run(this: gamemodel, s: sstate) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
-                        this.state.to('default');
+                        this.sc.to('default');
                     }
                 },
                 default: {

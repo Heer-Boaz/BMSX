@@ -1,15 +1,13 @@
 ﻿import { Key } from 'ts-key-enum';
 import { handleDebugClick, handleDebugMouseDown, handleDebugMouseUp, handleDebugMouseMove, handleDebugMouseOut, handleContextMenu as handleDebugContextMenu, handleOpenObjectMenu, handleOpenDebugMenu as handleOpenDebugMenu } from './bmsxdebugger';
 import { EventEmitter } from './eventemitter';
-import { IIdentifiable } from './gameobject';
 import { ZCOORD_MAX } from './glview';
 import { BitmapId } from '../ella2023/resourceids';
 import { SpriteObject } from './sprite';
-import { GameObjectId } from './rompack';
 import { get_gamemodel } from './bmsx';
 import { BaseModel } from './model';
-import { exit } from 'process';
 import { machine_states } from './bfsm';
+import type { IIdentifiable, Identifier } from "./generic_interfaces";
 
 const get_model = get_gamemodel<BaseModel>;
 
@@ -339,7 +337,7 @@ export class Input implements IIdentifiable {
         }
     }
 
-    public readonly id: string = 'input';
+    public get id(): string { return 'input'; }
 
     /**
      * Initializes the input system.
@@ -1225,22 +1223,33 @@ class OnScreenGamepad {
 }
 
 class SelectedPlayerIndexIcon extends SpriteObject {
-    // static bouw(): machine_states {
-    //     return {
-    //         states: {
-    //             _default: {
-    //             },
-    //             assigned: {
-    //             //     on: {
-    //             //         PLAYER_JOIN: 'assigned',
-    //             //         PLAYER_LEAVE: 'unassigned',
-    //             //     },
-    //             },
-    //         },
-    //     };
-    // }
+    static bouw(): machine_states {
+        return {
+            parallel: true,
+            on: {
+                EVENT_1: '_default',
+            },
+            states: {
 
-    public static getIconId(gamepadIndex: number): GameObjectId {
+                _default: {
+                },
+                assigned: {
+                    on: {
+                        PLAYER_JOIN: 'assigned',
+                        PLAYER_LEAVE: 'unassigned',
+                    },
+                },
+                unassigned: {
+                    on: {
+                        PLAYER_JOIN: 'assigned',
+                        PLAYER_LEAVE: 'unassigned',
+                    },
+                },
+            },
+        };
+    }
+
+    public static getIconId(gamepadIndex: number): Identifier {
         return `joystick_icon_${gamepadIndex ?? 0}`;
     }
 

@@ -1,5 +1,5 @@
 import { GameObject } from "./gameobject";
-import { GameObjectId } from "./rompack";
+import type { IIdentifiable, Identifier } from "./generic_interfaces";
 
 /**
  * Class representing an ObjectTracker.
@@ -11,13 +11,13 @@ export class ObjectTracker {
      * The `trackedObjects` property is a dictionary that maps GameObjectIds to an array of tracked properties.
      * Each tracked property is represented by an object with a `property` field and an optional `key` field.
      */
-    private trackedObjects: { [id: GameObjectId]: Array<{ property: string, key?: string }> } = {};
+    private trackedObjects: { [id: Identifier]: Array<{ property: string, key?: string }> } = {};
     /**
      * Stores the last values of properties for each game object.
      * @remarks Used for determining which properties have changed.
-     * @type {Object.<GameObjectId, Object.<string, any>>}
+     * @type {Object.<Identifier, Object.<string, any>>}
      */
-    private lastValues: { [id: GameObjectId]: { [property: string]: any } } = {};
+    private lastValues: { [id: Identifier]: { [property: string]: any } } = {};
 
     /**
      * Tracks the specified object and its properties.
@@ -32,7 +32,7 @@ export class ObjectTracker {
      * Stops tracking the object with the specified ID.
      * @param id - The ID of the object to untrack.
      */
-    untrackObject(id: GameObjectId): void {
+    untrackObject(id: Identifier): void {
         delete this.trackedObjects[id];
     }
 
@@ -40,8 +40,8 @@ export class ObjectTracker {
      * Gets the updates for the tracked objects.
      * @returns An object containing the updates for each tracked object.
      */
-    getUpdates(): { [id: GameObjectId]: Array<{ property: string, value: any, key?: string }> } {
-        let updates: { [id: GameObjectId]: Array<{ property: string, value: any, key?: string }> } = {};
+    getUpdates(): { [id: Identifier]: Array<{ property: string, value: any, key?: string }> } {
+        let updates: { [id: Identifier]: Array<{ property: string, value: any, key?: string }> } = {};
 
         for (let [id, properties] of Object.entries(this.trackedObjects)) {
             for (let { property, key } of properties) {

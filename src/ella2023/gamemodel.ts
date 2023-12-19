@@ -39,7 +39,7 @@ export class gamemodel extends BaseModel {
         const otherFighter = model.theOtherFighter(emitter);
         if (otherFighter) {
             otherFighter.hideHitMarker();
-            otherFighter.state.to('hitanimation.geen_au');
+            otherFighter.sc.to('hitanimation.geen_au');
         }
 
         if (emitter.hp <= 0) {
@@ -55,7 +55,7 @@ export class gamemodel extends BaseModel {
             states: {
                 _game_start: {
                     run(this: gamemodel, s: sstate) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
-                        this.state.to('titlescreen');
+                        this.sc.to('titlescreen');
                     }
                 },
                 default: {
@@ -68,7 +68,7 @@ export class gamemodel extends BaseModel {
                         _ffwachten: {
                             ticks2move: 150,
                             end(this: gamemodel, s: sstate) {
-                                this.state.to('gamemodel.default.oefenen');
+                                this.sc.to('gamemodel.default.oefenen');
                             },
                         },
                         oefenen: {
@@ -84,7 +84,7 @@ export class gamemodel extends BaseModel {
                             run(this: gamemodel, s: sstate) {
                                 const player = this.get('player');
                                 if (player.x < 16) {
-                                    this.state.to('gamemodel.default.ffwachten2');
+                                    this.sc.to('gamemodel.default.ffwachten2');
                                 }
                             },
                         },
@@ -94,7 +94,7 @@ export class gamemodel extends BaseModel {
                                 this.setSpace('niets');
                             },
                             end(this: gamemodel, s: sstate) {
-                                this.state.to('gamemodel.default.knokken');
+                                this.sc.to('gamemodel.default.knokken');
                             },
                         },
                         knokken: {

@@ -55,7 +55,7 @@ export class Player extends Fighter {
 
             // If no actions are pressed, switch to idle
             if (!priorityActions.some(action => action.pressed && !action.consumed)) {
-                this.state.to('idle');
+                this.sc.to('idle');
                 return;
             }
 
@@ -74,16 +74,16 @@ export class Player extends Fighter {
 
                         // Check for combined jump left/right action
                         if (priorityActions.some(action => action.action === 'jump')) {
-                            this.state.to('jump', true);
+                            this.sc.to('jump', true);
                             higherPrioActionProcessed = true;
                         }
                         else {
                             this.x += action === 'right' ? Player.SPEED : -Player.SPEED;
-                            this.state.to('walk');
+                            this.sc.to('walk');
                         }
                         break;
                     case 'duck':
-                        this.state.to('duck');
+                        this.sc.to('duck');
                         higherPrioActionProcessed = true;
                         break;
                     case 'punch':
@@ -91,11 +91,11 @@ export class Player extends Fighter {
                     case 'lowkick':
                         if (!consumed) {
                             Input.getPlayerInput(1).consumeAction(action);
-                            this.state.to(action);
+                            this.sc.to(action);
                         }
                         break;
                     case 'jump':
-                        this.state.to('jump', false); // Actions 'left' and 'right' have higher priority than 'jump' and thus directonal jumps are handled in the 'left' and 'right' cases
+                        this.sc.to('jump', false); // Actions 'left' and 'right' have higher priority than 'jump' and thus directonal jumps are handled in the 'left' and 'right' cases
                         break;
                     // case 'stoer':
                     //     this.state.to('stoerheidsdans');
@@ -112,12 +112,12 @@ export class Player extends Fighter {
             pressedActions.forEach(action => actionMap.set(action.action, true));
 
             if (actionMap.get('lowkick')) {
-                this.state.to('duckkick');
+                this.sc.to('duckkick');
                 return;
             }
             // Search whether the `duck` action was NOT pressed
             else if (!actionMap.get('duck')) {
-                this.state.to('idle');
+                this.sc.to('idle');
                 return;
             }
             else if (actionMap.get('left')) {
@@ -134,8 +134,8 @@ export class Player extends Fighter {
             const pressedActions = Input.getPlayerInput(1).getPressedActions();
 
             if (pressedActions.some(action => action.action === 'lowkick' || action.action === 'highkick')) {
-                if (this.state.is('Player.jump.jump_up.normal') || this.state.is('Player.jump.jump_down.normal')) {
-                    this.state.switch('Player.jump.*.flyingkick');
+                if (this.sc.is('Player.jump.jump_up.normal') || this.sc.is('Player.jump.jump_down.normal')) {
+                    this.sc.switch('Player.jump.*.flyingkick');
                 }
             }
         }
@@ -146,14 +146,14 @@ export class Player extends Fighter {
                 _idle: {
                     run: defaultrun,
                     enter(this: Player) {
-                        this.state.to('player_animation.idle');
+                        this.sc.to('player_animation.idle');
                     },
                 },
                 humiliated: {
                     enter(this: Player) {
                         this.hittable = false;
                         this.resetVerticalPosition();
-                        this.state.to('player_animation.humiliated');
+                        this.sc.to('player_animation.humiliated');
                     },
                 },
                 stoerheidsdans: {
@@ -165,82 +165,82 @@ export class Player extends Fighter {
                         state.reset();
                         this.resetVerticalPosition();
                         // this.hittable = false;
-                        this.state.to(`${statemachine}.${state.current_tape_value}`);
+                        this.sc.to(`${statemachine}.${state.current_tape_value}`);
                         this.facing = (this.facing === 'left' ? 'right' : 'left');
                     },
                     run(this: Player, state: sstate) {
                         // Lelijk
-                        if (this.state.machines[statemachine].is(`idle`)) {
+                        if (this.sc.machines[statemachine].is(`idle`)) {
                             ++state.ticks;
                         }
                     },
                     next(this: Fighter, state: sstate) {
-                        this.state.to(`${statemachine}.${state.current_tape_value}`);
+                        this.sc.to(`${statemachine}.${state.current_tape_value}`);
                         this.facing = (this.facing === 'left' ? 'right' : 'left');
                     },
                     end(this: Fighter) {
-                        this.state.to('idle');
+                        this.sc.to('idle');
                         this.facing = (this.facing === 'left' ? 'right' : 'left');
                     },
                 },
                 au: {
                     enter(this: Player) {
-                        this.state.pause_statemachine('player_animation');
+                        this.sc.pause_statemachine('player_animation');
                     },
                     exit(this: Player) {
-                        this.state.resume_statemachine('player_animation');
+                        this.sc.resume_statemachine('player_animation');
                     }
                 },
                 doetau: {
                     enter(this: Player) {
-                        this.state.pause_statemachine('player_animation');
+                        this.sc.pause_statemachine('player_animation');
                     },
                     exit(this: Player) {
-                        this.state.resume_statemachine('player_animation');
+                        this.sc.resume_statemachine('player_animation');
                     }
                 },
                 walk: {
                     run: defaultrun,
                     enter(this: Player) {
-                        if (!this.state.is('player_animation.walk')) {
-                            this.state.to('player_animation.walk');
+                        if (!this.sc.is('player_animation.walk')) {
+                            this.sc.to('player_animation.walk');
                         }
                     },
                 },
                 punch: {
                     enter(this: Player) {
                         const hit = this.doAttackFlow('punch', get_model().theOtherFighter(this));
-                        this.state.to('player_animation.punch', hit);
+                        this.sc.to('player_animation.punch', hit);
                     },
                 },
                 highkick: {
                     enter(this: Player) {
                         const hit = this.doAttackFlow('highkick', get_model().theOtherFighter(this));
-                        this.state.to('player_animation.highkick', hit);
+                        this.sc.to('player_animation.highkick', hit);
                     },
                 },
                 lowkick: {
                     enter(this: Player) {
                         const hit = this.doAttackFlow('lowkick', get_model().theOtherFighter(this));
-                        this.state.to('player_animation.lowkick', hit);
+                        this.sc.to('player_animation.lowkick', hit);
                     },
                 },
                 duckkick: {
                     enter(this: Player) {
                         const hit = this.doAttackFlow('dickkick', get_model().theOtherFighter(this));
-                        this.state.to('player_animation.duckkick', hit);
+                        this.sc.to('player_animation.duckkick', hit);
                     },
                 },
                 duck: {
                     run: duckrun,
                     enter(this: Player) {
-                        this.state.to('player_animation.duck');
+                        this.sc.to('player_animation.duck');
                     },
                 },
                 jump: {
                     enter(this: Player, state: sstate, directional: boolean = false) {
-                        this.state.to('Player.jump.jump_up', directional);
-                        this.state.to('player_animation.jump');
+                        this.sc.to('Player.jump.jump_up', directional);
+                        this.sc.to('player_animation.jump');
                         this.getComponent(JumpingWhileLeavingScreenComponent).enabled = true;
                     },
                     exit(this: Player) {
@@ -266,17 +266,17 @@ export class Player extends Fighter {
                                 }
                             },
                             next(this: Player, state: sstate) {
-                                this.state.switch('Player.jump.jump_down', state.data.directional, state.currentid);
+                                this.sc.switch('Player.jump.jump_down', state.data.directional, state.currentid);
                             },
                             states: {
                                 _normal: {
                                     enter(this: Player) {
-                                        this.state.machines.player_animation.to('jump');
+                                        this.sc.machines.player_animation.to('jump');
                                     }
                                 },
                                 flyingkick: {
                                     enter(this: Player) {
-                                        this.state.machines.player_animation.to('flyingkick');
+                                        this.sc.machines.player_animation.to('flyingkick');
                                         this.doAttackFlow('flyingkick', get_model().theOtherFighter(this));
                                     }
                                 },
@@ -301,17 +301,17 @@ export class Player extends Fighter {
                                 }
                             },
                             next(this: Player, state: sstate) {
-                                this.state.to('idle');
+                                this.sc.to('idle');
                             },
                             states: {
                                 _normal: {
                                     enter(this: Player) {
-                                        this.state.machines.player_animation.to('jump');
+                                        this.sc.machines.player_animation.to('jump');
                                     }
                                 },
                                 flyingkick: {
                                     enter(this: Player) {
-                                        this.state.machines.player_animation.to('flyingkick');
+                                        this.sc.machines.player_animation.to('flyingkick');
                                         this.doAttackFlow('flyingkick', get_model().theOtherFighter(this));
                                     }
                                 },
@@ -331,20 +331,20 @@ export class Player extends Fighter {
                     case 'highkick':
                     case 'punch':
                     case 'lowkick':
-                        if (!this.state.is('stoerheidsdans')) {
-                            this.state.to('idle');
+                        if (!this.sc.is('stoerheidsdans')) {
+                            this.sc.to('idle');
                         }
                         break;
                     case 'flyingkick':
-                        this.state.switch('Player.jump.jump_up.normal');
-                        this.state.switch('Player.jump.jump_down.normal');
+                        this.sc.switch('Player.jump.jump_up.normal');
+                        this.sc.switch('Player.jump.jump_down.normal');
                         break;
                     case 'duckkick':
-                        if (!this.state.is('stoerheidsdans')) {
-                            this.state.to('duck');
+                        if (!this.sc.is('stoerheidsdans')) {
+                            this.sc.to('duck');
                         }
                         else {
-                            this.state.to('player_animation.idle');
+                            this.sc.to('player_animation.idle');
                         }
                         break;
                 }
@@ -353,8 +353,8 @@ export class Player extends Fighter {
     }
 
     override handleFighterStukEvent(this: Fighter, event_name: string, emitter: Fighter): void {
-        this.state.to('humiliated');
-        get_model().theOtherFighter(emitter).state.to('stoerheidsdans');
+        this.sc.to('humiliated');
+        get_model().theOtherFighter(emitter).sc.to('stoerheidsdans');
     }
 
     @build_fsm('player_animation')
@@ -371,7 +371,7 @@ export class Player extends Fighter {
                 walk: {
                     run(this: Player, state: sstate) { },
                     enter(this: Player, state: sstate) {
-                        state.state.reset();
+                        state.sm.reset();
                         this.imgid = BitmapId.eila_walk;
                     },
                     states: {
@@ -382,7 +382,7 @@ export class Player extends Fighter {
                                 state.reset();
                             },
                             next(this: Player, state: sstate) {
-                                this.state.switch('player_animation.walk.walk2');
+                                this.sc.switch('player_animation.walk.walk2');
                             }
                         },
                         walk2: {
@@ -392,7 +392,7 @@ export class Player extends Fighter {
                                 state.reset();
                             },
                             next(this: Player, state: sstate) {
-                                this.state.switch('player_animation.walk.walk1');
+                                this.sc.switch('player_animation.walk.walk1');
                             }
                         },
                     }
@@ -407,7 +407,7 @@ export class Player extends Fighter {
                     },
                     next(this: Player, state: sstate) {
                         global.eventEmitter.emit('animationEnd', this, 'highkick');
-                        this.state.switch('player_animation.idle');
+                        this.sc.switch('player_animation.idle');
                     }
                 },
                 lowkick: {
@@ -420,7 +420,7 @@ export class Player extends Fighter {
                     },
                     next(this: Player, state: sstate) {
                         global.eventEmitter.emit('animationEnd', this, 'lowkick');
-                        this.state.switch('player_animation.idle');
+                        this.sc.switch('player_animation.idle');
                     }
                 },
                 punch: {
@@ -433,7 +433,7 @@ export class Player extends Fighter {
                     },
                     next(this: Player, state: sstate) {
                         global.eventEmitter.emit('animationEnd', this, 'punch');
-                        this.state.switch('player_animation.idle');
+                        this.sc.switch('player_animation.idle');
                     }
                 },
                 duckkick: {
@@ -445,7 +445,7 @@ export class Player extends Fighter {
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Player, state: sstate) {
-                        this.state.switch('player_animation.duck');
+                        this.sc.switch('player_animation.duck');
                         global.eventEmitter.emit('animationEnd', this, 'duckkick');
                     }
                 },
@@ -458,7 +458,7 @@ export class Player extends Fighter {
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Player, state: sstate) {
-                        this.state.switch('player_animation.jump');
+                        this.sc.switch('player_animation.jump');
                         global.eventEmitter.emit('animationEnd', this, 'flyingkick');
                     }
                 },
@@ -478,7 +478,7 @@ export class Player extends Fighter {
                         this.imgid = BitmapId.eila_humiliated;
                     },
                     next(this: Player, state: sstate) {
-                        get_gamemodel().state.to('gameover');
+                        get_gamemodel().sc.to('gameover');
                     }
                 },
             }

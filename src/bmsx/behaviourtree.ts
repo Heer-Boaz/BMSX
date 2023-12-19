@@ -1,6 +1,6 @@
-import { GameObject, IIdentifiable } from './gameobject';
+import { GameObject } from './gameobject';
 import { insavegame } from './gameserializer';
-import type { GameObjectId } from './rompack';
+import type { IIdentifiable, Identifier } from "./generic_interfaces";
 
 /**
  * Represents the definition of a behavior tree.
@@ -237,18 +237,18 @@ export abstract class BTNode implements IIdentifiable {
     public priority: number;
 
     /**
-     * Retrieves the target object with the specified GameObjectId and casts it to the specified type.
-     * @param targetid The GameObjectId of the target object.
+     * Retrieves the target object with the specified Identifier and casts it to the specified type.
+     * @param targetid The Identifier of the target object.
      * @returns The target object casted to the specified type.
      */
-    public getTarget<T extends GameObject>(targetid: GameObjectId) { return global.model.get(targetid); }
+    public getTarget<T extends GameObject>(targetid: Identifier) { return global.model.get(targetid); }
 
     constructor(id: BehaviorTreeID, _priority = 0) {
         this.id = id;
         this.priority = _priority;
     }
 
-    abstract tick(targetid: GameObjectId, blackboard: Blackboard): BTNodeFeedback;
+    abstract tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback;
 }
 
 /**
@@ -262,7 +262,7 @@ export class SequenceNode extends BTNode {
         this.children = children;
     }
 
-    tick(targetid: GameObjectId, blackboard: Blackboard): BTNodeFeedback {
+    tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
         for (const child of this.children) {
             const result = child.tick(targetid, blackboard);
             switch (result.status) {
@@ -291,7 +291,7 @@ export class SelectorNode extends BTNode {
      * Executes the tick operation on the selector node.
      * @returns The feedback of the tick operation.
      */
-    tick(targetid: GameObjectId, blackboard: Blackboard): BTNodeFeedback {
+    tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
         for (const child of this.children) {
             const result = child.tick(targetid, blackboard);
             if (result.status !== 'FAILED') {
@@ -319,7 +319,7 @@ export class ParallelNode extends BTNode {
      * Executes the tick operation on the parallel node.
      * @returns The feedback of the tick operation.
      */
-    tick(targetid: GameObjectId, blackboard: Blackboard): BTNodeFeedback {
+    tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
         let successCount = 0;
         let running = false;
 
@@ -345,11 +345,11 @@ export class ParallelNode extends BTNode {
     }
 }
 
-type NodeDecorator = (status: BTStatus, targetid: GameObjectId, blackboard: Blackboard) => BTStatus;
+type NodeDecorator = (status: BTStatus, targetid: Identifier, blackboard: Blackboard) => BTStatus;
 
 export class DecoratorNode extends BTNode {
     public child: BTNode;
-    public decorator: (status: BTStatus, targetid: GameObjectId, blackboard: Blackboard) => BTStatus;
+    public decorator: (status: BTStatus, targetid: Identifier, blackboard: Blackboard) => BTStatus;
 
     constructor(id: BehaviorTreeID, child: BTNode, decorator: NodeDecorator, _priority = 0) {
         super(id, _priority);
@@ -357,14 +357,14 @@ export class DecoratorNode extends BTNode {
         this.decorator = decorator;
     }
 
-    tick(targetid: GameObjectId, blackboard: Blackboard): BTNodeFeedback {
+    tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
         const childResult = this.child.tick(targetid, blackboard);
         const modifiedResult = this.decorator(childResult.status, targetid, blackboard);
         return { status: modifiedResult };
     }
 }
 
-export let WaitForActionCompletionDecorator: NodeDecorator = (status: BTStatus, targetid: GameObjectId, blackboard: Blackboard) => {
+export let WaitForActionCompletionDecorator: NodeDecorator = (status: BTStatus, targetid: Identifier, blackboard: Blackboard) => {
     if (status === 'RUNNING') {
         blackboard.actionInProgress = true;
     } else {
@@ -390,7 +390,7 @@ export class ConditionNode extends BTNode {
      * Executes the condition node and returns the feedback based on the evaluation result.
      * @returns The feedback indicating the status of the condition node.
      */
-    tick(targetid: GameObjectId, blackboard: Blackboard): BTNodeFeedback {
+    tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
         // Check if an action is in progress
         if (blackboard.actionInProgress) {
             // Optionally, handle this case differently
@@ -417,7 +417,7 @@ export class RandomSelectorNode extends BTNode {
      * Executes the random selection logic and ticks the selected child node.
      * @returns The feedback from the selected child node.
      */
-    tick(targetid: GameObjectId, blackboard: Blackboard): BTNodeFeedback {
+    tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
         let currentChildIndex = blackboard.nodedata[this.currentchild_propname] as number;
 
         // If there is no currently executing child, select a random child
@@ -457,7 +457,7 @@ export class LimitNode extends BTNode {
      * Executes the node's logic.
      * @returns The feedback of the node's execution.
      */
-    tick(targetid: GameObjectId, blackboard: Blackboard): BTNodeFeedback {
+    tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
         let count = blackboard.nodedata[this.count_propname] as number;
         if (!count) {
             count = 0;
@@ -491,7 +491,7 @@ export class PrioritySelectorNode extends BTNode {
      * Executes the priority selection logic and ticks the highest priority child node.
      * @returns The feedback from the highest priority child node.
      */
-    tick(targetid: GameObjectId, blackboard: Blackboard): BTNodeFeedback {
+    tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
         this.children.sort((a, b) => b.priority - a.priority);
         for (const child of this.children) {
             const result = child.tick(targetid, blackboard);
@@ -520,7 +520,7 @@ export class WaitNode extends BTNode {
      * Executes the tick logic of the node.
      * @returns The feedback of the node.
      */
-    tick(targetid: GameObjectId, blackboard: Blackboard): BTNodeFeedback {
+    tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
         let currentTick = blackboard.nodedata[this.wait_propname] as number;
         if (!currentTick) {
             currentTick = 0;
@@ -567,7 +567,7 @@ export class ActionNode extends BTNode {
      * Executes the action associated with this node.
      * @returns The feedback of the action execution.
      */
-    tick(targetId: GameObjectId, blackboard: Blackboard): BTNodeFeedback {
+    tick(targetId: Identifier, blackboard: Blackboard): BTNodeFeedback {
         // Perform the action
         const result = this.action.call(this.getTarget(targetId), blackboard);
         return { status: result };
@@ -591,7 +591,7 @@ export class CompositeActionNode extends BTNode {
      * Executes the tick logic of the node.
      * @returns The feedback of the node.
      */
-    tick(targetid: GameObjectId, blackboard: Blackboard): BTNodeFeedback {
+    tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
         let feedback: BTNodeFeedback = { status: 'SUCCESS' };
         for (const action of this.actions) {
             const result = action.tick(targetid, blackboard);

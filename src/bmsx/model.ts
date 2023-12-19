@@ -1,12 +1,13 @@
 import { BehaviorTreeDefinition, BehaviorTreeDefinitions, BehaviorTreeID, setup_btdef_library, setup_bt_library } from "./behaviourtree";
-import { mdef, MachineDefinitions, sdef, setup_fsmdef_library, sstate, bfsm_controller } from "./bfsm";
+import { mdef, MachineDefinitions, sdef, setup_fsmdef_library, sstate, bfsm_controller, IStateful } from "./bfsm";
 import { onload } from "./gameserializer";
 import { GameObject } from "./gameobject";
 import { insavegame, onsave, Reviver, Savegame, Serializer } from "./gameserializer";
 import { Input } from "./input";
-import { GameObjectId, vec2, vec3 } from "./rompack";
+import { vec2, vec3 } from "./rompack";
 import { Direction } from "./bmsx";
 import { EventEmitter, IEventSubscriber } from "./eventemitter";
+import type { IIdentifiable, Identifier } from "./generic_interfaces";
 
 export interface ISpaceObject {
     spaceid: string;
@@ -149,13 +150,20 @@ export type base_model_spaces = 'game_start' | 'default';
  * The base model class for the game. Contains all the spaces and objects in the game world.
  * Provides methods to add, remove, and manipulate game objects and spaces.
  */
-export abstract class BaseModel {
+export abstract class BaseModel implements IStateful, IIdentifiable {
+    public get id(): string { return 'model'; } // Required for IStateful and IIdentifiable
+
     /**
      * An array of keys to exclude from the serialized game state when saving the game.
      * These keys include references to objects and spaces that should not be saved.
      */
     public static readonly keys_to_exclude_from_save = ['objects', 'id2object', 'spaces', 'id2space', 'obj_id2obj_space_id'];
-    public state: bfsm_controller;
+
+    /**
+     * The controller for the state machine.
+     */
+    public sc: bfsm_controller;
+
     /**
      * An object that maps space IDs to their corresponding Space objects.
      * @type {id2spaceType}
@@ -366,8 +374,8 @@ export abstract class BaseModel {
     * @param {string} `derived_modelclass_constructor_name` - the constructor name of the derived modelclass (that derives from this BaseModel.
     */
     public init_model_state_machines(derived_modelclass_constructor_name: string): this {
-        this.state = new bfsm_controller();
-        this.state.add_statemachine(derived_modelclass_constructor_name, 'model');
+        this.sc = new bfsm_controller();
+        this.sc.add_statemachine(derived_modelclass_constructor_name, 'model');
 
         return this;
     }
@@ -388,7 +396,7 @@ export abstract class BaseModel {
      * @returns {void} Nothing.
      */
     public run(): void {
-        this.state.run();
+        this.sc.run();
     }
 
     /**
@@ -421,7 +429,7 @@ export abstract class BaseModel {
      */
     static default_input_handler_for_allow_open_gamemenu(this: BaseModel, s: sstate<BaseModel>): void {
         if (Input.KC_F5) {
-            this.state.machines.gamemenu.to('open');
+            this.sc.machines.gamemenu.to('open');
         }
     }
 
@@ -434,7 +442,7 @@ export abstract class BaseModel {
      */
     static default_input_handler_for_allow_close_gamemenu(this: BaseModel, s: sstate<BaseModel>): void {
         if (Input.KC_F5) {
-            this.state.machines.gamemenu.to('closed');
+            this.sc.machines.gamemenu.to('closed');
         }
     }
 

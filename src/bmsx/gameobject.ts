@@ -1,14 +1,20 @@
-import { ConstructorWithFSMProperty, bfsm_controller, statecontext } from "./bfsm";
-import { exclude_save, insavegame } from "./gameserializer";
+import { ConstructorWithFSMProperty, IStateful, bfsm_controller, statecontext } from "./bfsm";
+import { insavegame } from "./gameserializer";
 import { Component, ComponentTag, IComponentContainer, KeyToComponentMap, ComponentConstructor, update_tagged_components } from "./component";
 import { BehaviorTrees, Blackboard, BTNode, BehaviorTreeID, ConstructorWithBTProperty } from "./behaviourtree";
 import { ObjectTracker } from "./objecttracker";
 import { onload } from "./gameserializer";
 import { IEventSubscriber, EventEmitter } from "./eventemitter";
 import { new_area, new_vec3, new_vec2, AbstractConstructor } from "./bmsx";
-import { vec2, vec3, GameObjectId, Area, BoundingBoxesPrecalc } from "./rompack";
+import { vec2, vec3, Area } from "./rompack";
 import { Direction } from "./bmsx";
 import { ZCOORD_MAX } from "./glview";
+import type { IIdentifiable, Identifier } from "./generic_interfaces";
+
+const DEFAULT_HITTABLE = true;
+const DEFAULT_VISIBLE = true;
+const DEFAULT_POSITION_VALUES: [number, number, number] = [0, 0, 0];
+const DEFAULT_SIZE_VALUES: [number, number, number] = [0, 0, 0];
 
 /**
  * Represents a static GameObject.
@@ -17,21 +23,12 @@ interface IGameObjectStatic {
     autoAddComponents?: ComponentConstructor<Component>[];
 }
 
-export interface IIdentifiable {
-    id: string;
-}
-
-const DEFAULT_HITTABLE = true;
-const DEFAULT_VISIBLE = true;
-const DEFAULT_POSITION_VALUES: [number, number, number] = [0, 0, 0];
-const DEFAULT_SIZE_VALUES: [number, number, number] = [0, 0, 0];
-
 /**
  * Represents a game object with a position, size, state, and hitbox.
  * Implements both vec2 and vec3 interfaces.
  */
 @insavegame
-export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiable {
+export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiable, IStateful {
     public components: KeyToComponentMap = {};
     public objectTracker?: ObjectTracker;
 
@@ -62,7 +59,7 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
         return this.id;
     }
 
-    public id: GameObjectId;
+    public id: Identifier;
     public disposeFlag: boolean;
 
     protected _pos: vec3;
@@ -120,9 +117,9 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
     public set sz(sz: number) { this.size.z = sz; }
 
     /**
-     * The state of the game object.
+     * The StatemachineController of the game object.
      */
-    public state: bfsm_controller;
+    public sc: bfsm_controller;
 
     /**
      * The mapping of behavior tree IDs to behavior tree IDs.
@@ -276,7 +273,7 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
         // Add components that should be auto-added to this class after the object has been spawned so that the component can retrieve the object via its id
         this.addAutoComponents();
 
-        this.state.start();
+        this.sc.start();
     }
 
     public ondispose(): void {
@@ -344,8 +341,8 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
         this.size = new_vec3(...DEFAULT_SIZE_VALUES);
         this.disposeFlag = false;
         // Create the state context that will be used to manage the state of the game object
-        this.state = new bfsm_controller();
-        this.state.add_statemachine(fsm_id ?? this.constructor.name, this.id);
+        this.sc = new bfsm_controller();
+        this.sc.add_statemachine(fsm_id ?? this.constructor.name, this.id);
 
         // Call the method to initialize event subscriptions
         this.onLoadSetup();
@@ -379,7 +376,7 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
             switch (subscription.scope) {
                 case 'all': emitterFilter = undefined; break;
                 case 'parent':
-                    emitterFilter = (this as GameObject & { parentid?: GameObjectId }).parentid;
+                    emitterFilter = (this as GameObject & { parentid?: Identifier }).parentid;
                     if (!emitterFilter) throw `Cannot subscribe GameObject ${this.id} to event ${subscription.eventName} with scope ${subscription.scope} as the class (instance) ${this.constructor.name} does not have a "parentid".`;
                     break;
                 case 'self': emitterFilter = this.id; break;
@@ -396,7 +393,7 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
         if (constructor.linkedFSMs) {
             // Iterate over the FSM names and create the state machines
             constructor.linkedFSMs.forEach(fsm => {
-                this.state.add_statemachine(fsm, this.id);
+                this.sc.add_statemachine(fsm, this.id);
             });
         }
     }
@@ -597,11 +594,11 @@ export class GameObject implements vec2, vec3, IComponentContainer, IIdentifiabl
      */
     @update_tagged_components('run')
     public run(): void {
-        this.state.run();
+        this.sc.run();
     }
 }
 
-export type GameObjectConstructorBase = new (_id?: GameObjectId, _fsm_id?: string, ...args: any[]) => GameObject;
+export type GameObjectConstructorBase = new (_id?: Identifier, _fsm_id?: string, ...args: any[]) => GameObject;
 export type GameObjectConstructorBaseOrAbstract = GameObjectConstructorBase | AbstractConstructor<GameObject>;
 
 /**

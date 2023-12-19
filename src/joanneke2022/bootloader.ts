@@ -55,7 +55,7 @@ class gamemodel extends BaseModel {
             states: {
                 game_start: {
                     run(this: gamemodel, s: sstate<gamemodel>) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
-                        this.state.to('uitleg' satisfies model_states);
+                        this.sc.to('uitleg' satisfies model_states);
                     }
                 },
                 default: {
@@ -71,12 +71,12 @@ class gamemodel extends BaseModel {
                         if (this.time_to_shine < 0) {
                             this.time_to_shine = 0;
                             this.score = this.tel_onvolmaaktheden();
-                            this.state.to('evaluatie' satisfies model_states);
+                            this.sc.to('evaluatie' satisfies model_states);
                         }
                     },
                     run(this: gamemodel, s: sstate<gamemodel>) {
                         BaseModel.defaultrun();
-                        this.state.machines.gamemenu.run();
+                        this.sc.machines.gamemenu.run();
                         if (!this.paused) ++s.ticks; // Laat timer lopen
                     },
                     process_input: BaseModel.default_input_handler,
@@ -91,7 +91,7 @@ class gamemodel extends BaseModel {
                         --this.time_to_shine;
                         if (this.time_to_shine < 0) {
                             this.time_to_shine = 0;
-                            this.state.to('hoera' satisfies model_states);
+                            this.sc.to('hoera' satisfies model_states);
                         }
                     },
                     run(s: sstate) {
@@ -161,8 +161,8 @@ class gamemodel extends BaseModel {
 
     public override init_model_state_machines(derived_modelclass_constructor_name: string): this {
         super.init_model_state_machines(derived_modelclass_constructor_name);
-        this.state.machines.gamemenu = statecontext.create('model_substate', 'model');
-        this.state.machines.gamemenu.to('closed');
+        this.sc.machines.gamemenu = statecontext.create('model_substate', 'model');
+        this.sc.machines.gamemenu.to('closed');
         return this;
     }
 
@@ -298,7 +298,7 @@ class uitlegStuff extends SpriteObject {
                     },
                     end(this: uitlegStuff, s: sstate<uitlegStuff>) {
                         if (_model)
-                            _model.state.to('default');
+                            _model.sc.to('default');
                     },
                 },
             }
@@ -351,7 +351,7 @@ class uitlegStuff extends SpriteObject {
     };
 
     override onspawn(spawningPos?: vec2): void {
-        this.state.to('uitleg');
+        this.sc.to('uitleg');
     }
 };
 
@@ -396,7 +396,7 @@ class hud extends GameObject {
     }
 
     override onspawn(spawningPos?: vec2): void {
-        this.state.to('default');
+        this.sc.to('default');
     }
 
     override paint() {
@@ -450,7 +450,7 @@ class stoom extends SpriteObject {
 
     override onspawn(spawningPos?: vec2): void {
         super.onspawn(spawningPos);
-        this.state.to('doepluim');
+        this.sc.to('doepluim');
     }
 }
 
@@ -556,7 +556,7 @@ class draaischijf extends SpriteObject {
                         ++s.ticks;
                     },
                     end(this: draaischijf, s: sstate<draaischijf>) {
-                        this.state.to('slijpen');
+                        this.sc.to('slijpen');
                     },
                     next(this: draaischijf, s: sstate<draaischijf>) {
                         this.imgid = s.current_tape_value;
@@ -609,7 +609,7 @@ class draaischijf extends SpriteObject {
                         ++s.ticks;
                     },
                     end(this: draaischijf, s: sstate<draaischijf>) {
-                        this.state.to('idle');
+                        this.sc.to('idle');
                     },
                     next(this: draaischijf, s: sstate<draaischijf>) {
                         this.imgid = s.current_tape_value;
@@ -643,7 +643,7 @@ class draaischijf extends SpriteObject {
             this.y += speed;
         }
         if (Input.KD_BTN1) {
-            this.state.to('slijpen_opstart');
+            this.sc.to('slijpen_opstart');
         }
         if (Input.KC_BTN2) {
             let getoonde_zijde = _model.diamant.getoonde_zijde;
@@ -660,19 +660,19 @@ class draaischijf extends SpriteObject {
 
     public static handle_input_slijp_opstart_state(this: draaischijf, s: sstate<draaischijf>): void {
         if (!Input.KD_BTN1) {
-            this.state.to('slijpen_afkoel');
+            this.sc.to('slijpen_afkoel');
         }
     }
 
     public static handle_input_slijp_afkoel_state(this: draaischijf, s: sstate<draaischijf>): void {
         if (Input.KD_BTN1) {
-            this.state.to('slijpen_opstart');
+            this.sc.to('slijpen_opstart');
         }
     }
 
     public static handle_input_slijp_state(this: draaischijf, s: sstate<draaischijf>): void {
         if (!Input.KD_BTN1) {
-            this.state.to('slijpen_afkoel');
+            this.sc.to('slijpen_afkoel');
         }
         else {
             // Slijpen!!
@@ -690,7 +690,7 @@ class draaischijf extends SpriteObject {
 
     override onspawn(spawningPos?: vec2): void {
         super.onspawn(spawningPos);
-        this.state.to('idle');
+        this.sc.to('idle');
     }
 }
 
@@ -726,7 +726,7 @@ abstract class onvolmaaktheid extends SpriteObject {
     }
 
     public polijst_nudge = (): void => {
-        ++this.state.current_state.ticks;
+        ++this.sc.current_state.ticks;
     };
 
     override paint() {
@@ -758,7 +758,7 @@ class burn extends onvolmaaktheid {
                     },
                     onrun(s: sstate) { },
                     onend(this: burn, s: sstate<burn>) {
-                        this.state.to('gepolijst');
+                        this.sc.to('gepolijst');
                     },
                     onnext(this: burn, s: sstate<burn>) {
                         this.imgid = s.current_tape_value;
@@ -780,7 +780,7 @@ class burn extends onvolmaaktheid {
                     onend(s: sstate, _) { },
                     onnext(this: burn, s: sstate<burn>) {
                         // BURN!!!!
-                        this.state.to('wees_een_burn');
+                        this.sc.to('wees_een_burn');
                     }
                 },
             }
@@ -789,7 +789,7 @@ class burn extends onvolmaaktheid {
 
     override onspawn = (spawningPos?: vec2): void => {
         super.onspawn?.(spawningPos);
-        this.state.to('wees_een_burn');
+        this.sc.to('wees_een_burn');
     };
 
     constructor(_zijde: zijde, _plek: vec2, __ernst?: number) {
@@ -822,7 +822,7 @@ class barst extends onvolmaaktheid {
                     },
                     onrun(s: sstate) { },
                     onend(this: barst, s: sstate<barst>) {
-                        this.state.to('gepolijst');
+                        this.sc.to('gepolijst');
                     },
                     onnext(this: barst, s: sstate<barst>) {
                         this.imgid = s.current_tape_value;
@@ -853,19 +853,19 @@ class barst extends onvolmaaktheid {
 
     public set ernst(x) {
         this._ernst = x;
-        let s = this.state.states['wees_een_barst'];
+        let s = this.sc.states['wees_een_barst'];
         s.reset();
         s.head = this.max_ernst() - this._ernst;
     }
 
     private max_ernst() {
-        let s = this.state.states['wees_een_barst'];
+        let s = this.sc.states['wees_een_barst'];
         return s.tape.length - 1;
     }
 
     override onspawn = (spawningPos?: vec2): void => {
         super.onspawn?.(spawningPos);
-        this.state.to('wees_een_barst');
+        this.sc.to('wees_een_barst');
     };
 
     constructor(_zijde: zijde, _plek: vec2, __ernst?: number) {
