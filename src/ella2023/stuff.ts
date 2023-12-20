@@ -1,7 +1,7 @@
 import { SpriteObject } from '../bmsx/sprite';
 import { BitmapId } from './resourceids';
 import { machine_states, statedef_builder } from '../bmsx/bfsm';
-import { get_gamemodel } from '../bmsx/bmsx';
+import { get_gamemodel, new_vec3 } from '../bmsx/bmsx';
 import { gamemodel } from './gamemodel';
 import { TextWriter } from '../bmsx/textwriter';
 import { Input } from '../bmsx/input';
@@ -123,8 +123,8 @@ export class TitleScreen extends SpriteObject {
 
     override paint(): void {
         super.paint();
+        global.view.drawImg({ imgid: BitmapId.menu_arrow, pos: new_vec3(80, 160, 100) });
 
-        global.view.drawImg({ imgid: BitmapId.menu_arrow, x: 80, y: 160, z: 100 });
     }
 
     constructor() {
