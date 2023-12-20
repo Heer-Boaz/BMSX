@@ -118,13 +118,14 @@ export abstract class GLView extends BaseView {
     private zBuffer: WebGLBuffer;
     private additionalPositionBuffer: WebGLBuffer;
     private additionalTexcoordBuffer: WebGLBuffer;
+    private depthBuffer: WebGLBuffer;
     private color_overrideBuffer: WebGLBuffer;
     private readonly resolutionVector: Float32Array = new Float32Array(RESOLUTION_VECTOR_SIZE);
     private readonly vertexcoords: Float32Array = new Float32Array(VERTEX_COORDS_SIZE);
     private readonly texcoords: Float32Array = new Float32Array(TEX_COORDS_SIZE);
     private readonly zcoords: Float32Array = new Float32Array(Z_COORDS_SIZE);
     private readonly color_override: Float32Array = new Float32Array(COLOR_OVERRIDE_SIZE);
-    private drawImgReqIndex: number;
+    private imagesToDraw: { options: DrawImgOptions, imgmeta: any }[] = [];
 
     private additionalTexcoordLocation: GLint;
     private additionalResolutionLocation: WebGLUniformLocation;
@@ -152,9 +153,9 @@ export abstract class GLView extends BaseView {
 
         void main() {
             // Convert the rectangle from pixels to clipspace coordinates and invert Y-axis
-            vec2 clipSpace = ((a_position / u_resolution) * 2.0 - 1.0) * vec2(1, -1);
+            vec2 clipSpace = ((a_position / u_resolution) * 2.0 - 1.0) * vec2(1, -1); // Flip Y-axis to match WebGL coordinates (0,0 is bottom-left) and convert to clipspace coordinates (-1 to 1)
 
-            gl_Position = vec4(clipSpace, a_pos_z, 1);
+            gl_Position = vec4(clipSpace, a_pos_z, 1); // Set the vertex position (z is used for depth sorting) and w to 1.0 (required for clipping)
 
             // Pass the texCoord and color_override to the fragment shader
             v_texcoord = a_texcoord;
@@ -170,7 +171,10 @@ export abstract class GLView extends BaseView {
 		out vec4 outputColor;
 
 		void main() {
-			lowp vec4 color = texture(u_texture, v_texcoord) * v_color_override;
+			lowp vec4 color = texture(u_texture, v_texcoord) * v_color_override; // Sample the texture and multiply by the color_override
+            // if (color.a < 0.1) { // Discard transparent pixels
+            //     discard; // Don't draw the pixel
+            // }
 			outputColor = color;
 		}`;
 
@@ -601,8 +605,11 @@ void main() {
             gl.deleteTexture(this.textures['additional']);
         }
 
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+
         // Create a new texture
-        this.textures['additional'] = this.createTexture(undefined, { width: this.canvas.width, height: this.canvas.height });
+        this.textures['additional'] = this.createTexture(undefined, { width, height });
 
         // Create a new framebuffer
         this.framebuffer = gl.createFramebuffer();
@@ -610,6 +617,11 @@ void main() {
 
         // Attach the texture to the framebuffer
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.textures['additional'], 0);
+
+        this.depthBuffer = gl.createRenderbuffer();
+        gl.bindRenderbuffer(gl.RENDERBUFFER, this.depthBuffer);
+        gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, width, height);
+        gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, this.depthBuffer);
 
         // Unbind the framebuffer
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -804,6 +816,32 @@ void main() {
     public drawSprites(): void {
         const _this = global.view as GLView;
         const gl = _this.glctx;
+
+        /**
+         * Sort the images by depth.
+         * This is done here instead of in drawgame so that the images are sorted based on their depth at the
+         * position they should be drawn and not based on the GameObject that they are attached to.
+         */
+        this.imagesToDraw.sort((i1, i2) => (i1.options.pos.z ?? 0) - (i2.options.pos.z ?? 0));
+
+        // Update the buffers with the new data and draw the images to the texture using the main shader
+        const { vertexcoords, texcoords, zcoords, color_override } = this;
+        let i = 0;
+        for (const { options, imgmeta } of this.imagesToDraw) {
+            const { pos, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 }, colorize = DEFAULT_VERTEX_COLOR } = options;
+            const { width, height } = imgmeta;
+
+            bvec.set(vertexcoords, pos.x, pos.y, width, height, scale.x, scale.y);
+            texcoords.set(this.getTexCoords(flip.flip_h, flip.flip_v, imgmeta));
+            bvec.set_zcoord(zcoords, (pos.z ?? 0) / ZCOORD_MAX);
+            bvec.set_color(color_override, colorize);
+
+            const bufferOffset = BUFFER_OFFSET_MULTIPLIER * i;
+            this.updateBuffers(gl, bufferOffset, vertexcoords, texcoords, zcoords, color_override, i);
+
+            ++i;
+        }
+
         // Bind the framebuffer so that the rendering output goes to the texture
         this.glctx.bindFramebuffer(this.glctx.FRAMEBUFFER, this.framebuffer);
         // Set the viewport to the dimensions of the 'additional' texture
@@ -820,8 +858,15 @@ void main() {
         gl.vertexAttribPointer(_this.texcoordLocation, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(_this.texcoordLocation);
 
-        gl.drawArrays(gl.TRIANGLES, 0, 6 * _this.drawImgReqIndex);
-        _this.drawImgReqIndex = 0;
+        // Bind the texcoord buffer and set the texcoord attribute
+        gl.bindBuffer(gl.ARRAY_BUFFER, _this.zBuffer);
+        gl.vertexAttribPointer(_this.zcoordLocation, 1, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(_this.zcoordLocation);
+
+        gl.drawArrays(gl.TRIANGLES, 0, 6 * this.imagesToDraw.length);
+
+        // Clear the list of images to draw for the next frame
+        this.imagesToDraw = [];
     }
 
     /**
@@ -845,25 +890,23 @@ void main() {
      */
     @catchWebGLError
     override drawImg(options: DrawImgOptions): void {
-        const { pos, imgid, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 }, colorize = DEFAULT_VERTEX_COLOR } = options;
+        const { imgid } = options;
         const imgmeta = global.rom['img_assets'][imgid]?.['imgmeta'];
 
         if (!imgmeta) {
             throw `Image with id '${imgid}' not found while trying to retrieve image metadata!`;
         }
 
-        const { glctx: gl, vertexcoords, texcoords, zcoords, color_override, drawImgReqIndex } = this;
-        const { width, height } = imgmeta;
+        const distinct_options_object = {
+            ...options,
+            pos: options.pos !== undefined ? { ...options.pos } : undefined,
+            scale: options.scale !== undefined ? { ...options.scale } : undefined,
+            colorize: options.colorize !== undefined ? { ...options.colorize } : undefined,
+            flip: options.flip !== undefined ? { ...options.flip } : undefined
+        };
 
-        bvec.set(vertexcoords, pos.x, pos.y, width, height, scale.x, scale.y);
-        texcoords.set(this.getTexCoords(flip.flip_h, flip.flip_v, imgmeta));
-        bvec.set_zcoord(zcoords, pos.z ?? 0 / ZCOORD_MAX);
-        bvec.set_color(color_override, colorize);
-
-        const bufferOffset = BUFFER_OFFSET_MULTIPLIER * drawImgReqIndex;
-        this.updateBuffers(gl, bufferOffset, vertexcoords, texcoords, zcoords, color_override);
-
-        this.drawImgReqIndex++;
+        // Create a distinct object so that the original object is not modified
+        this.imagesToDraw.push({ options: distinct_options_object, imgmeta });
     }
 
     private getTexCoords(flip_h: boolean, flip_v: boolean, imgmeta: any): Float32Array {
@@ -879,11 +922,11 @@ void main() {
     }
 
     @catchWebGLError
-    private updateBuffers(gl: WebGLRenderingContext, bufferOffset: number, vertexcoords: Float32Array, texcoords: Float32Array, zcoords: Float32Array, color_override: Float32Array): void {
+    private updateBuffers(gl: WebGLRenderingContext, bufferOffset: number, vertexcoords: Float32Array, texcoords: Float32Array, zcoords: Float32Array, color_override: Float32Array, index: number): void {
         GLView.updateBuffer(gl, this.positionBuffer, gl.ARRAY_BUFFER, bufferOffset, vertexcoords);
         GLView.updateBuffer(gl, this.texcoordBuffer, gl.ARRAY_BUFFER, bufferOffset, texcoords);
-        GLView.updateBuffer(gl, this.zBuffer, gl.ARRAY_BUFFER, ZCOORD_BUFFER_OFFSET_MULTIPLIER * this.drawImgReqIndex, zcoords);
-        GLView.updateBuffer(gl, this.color_overrideBuffer, gl.ARRAY_BUFFER, COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER * this.drawImgReqIndex, color_override);
+        GLView.updateBuffer(gl, this.zBuffer, gl.ARRAY_BUFFER, ZCOORD_BUFFER_OFFSET_MULTIPLIER * index, zcoords);
+        GLView.updateBuffer(gl, this.color_overrideBuffer, gl.ARRAY_BUFFER, COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER * index, color_override);
     }
 
     override drawRectangle(options: DrawRectOptions): void {
