@@ -78,6 +78,11 @@ export class EventEmitter {
             }
         }
     }
+
+    clear(): void {
+        this.emitterScopeListeners = {};
+        this.globalScopeListeners = {};
+    }
 }
 
 /**
