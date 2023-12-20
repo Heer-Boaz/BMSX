@@ -17,7 +17,7 @@ export type HitMarkerType = 'player_hit' | 'enemy_hit' | 'poef';
 
 export type HitMarkerInfo = {
     type: HitMarkerType,
-    pos: vec2, // Offset from the fighter's position
+    pos: vec3, // Offset from the fighter's position
 };
 
 function getDamage(attackType: AttackType): number {
@@ -150,15 +150,13 @@ export abstract class Fighter extends SpriteObject {
 
             global.view.drawImg({
                 imgid: hitMarkerImgId,
-                x: hitMarker.pos.x,
-                y: hitMarker.pos.y,
-                z: this.z + 100,
+                pos: hitMarker.pos
             });
         }
     }
 
     determineHitMarker(_attackType: AttackType, hitArea: Area): HitMarkerInfo {
-        return { type: (this.id === 'player') ? 'enemy_hit' : 'player_hit', pos: middlepoint_area(hitArea) };
+        return { type: (this.id === 'player') ? 'enemy_hit' : 'player_hit', pos: { ...middlepoint_area(hitArea), z: this.z + 100 } };
     }
 
     showHitMarker(hitMarkerInfo: HitMarkerInfo) {
