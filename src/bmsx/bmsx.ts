@@ -567,8 +567,8 @@ export function set_inplace_area(a: Area, n: Area): void {
  * @param ey The y-coordinate of the end point.
  * @returns The newly created area.
  */
-export function new_area(sx: number, sy: number, ex: number, ey: number): Area {
-    return { start: { x: sx, y: sy }, end: { x: ex, y: ey } };
+export function new_area(sx: number, sy: number, ex: number, ey: number, sz?: number, ez?: number): Area {
+    return { start: { x: sx, y: sy, z: sz }, end: { x: ex, y: ey, z: ez } };
 }
 
 export function middlepoint_area(a: Area): vec2 {
