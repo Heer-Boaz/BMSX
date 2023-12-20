@@ -170,6 +170,27 @@ Serializer.serializeObject = (value: any, cache: any[]): {} => {
  * @throws An error if there is no constructor known for an object of a certain type.
  */
 export const Reviver: IReviver = (_key: any, value: any) => {
+    function findAndFireOnLoads(value: any) {
+        // Collect all reviver functions in the prototype chain
+        let reviverFunctions = [];
+        let proto = value;
+
+        while (proto) {
+            const reviver = Reviver.onLoad[proto.constructor.name];
+            if (reviver) {
+                reviverFunctions.push(reviver);
+            }
+            proto = Object.getPrototypeOf(proto);
+        }
+
+        // Execute all reviver functions in descending order
+        for (let i = reviverFunctions.length - 1; i >= 0; i--) {
+            value = reviverFunctions[i].call(value) ?? value;
+        }
+
+        return value;
+    }
+
     if (value === null || value === undefined) return value;
 
     if (Array.isArray(value)) {
@@ -181,8 +202,7 @@ export const Reviver: IReviver = (_key: any, value: any) => {
         let theConstructor = Reviver.get_constructor_for_type(value.typename);
         if (!theConstructor) throw `No constructor known for object of type '${value.typename}'. Did you forget to add '@insavegame' to the class definition?`;
         let result = Object.assign(new theConstructor(), value);
-        let onload = Reviver.onLoad[value.typename];
-        onload && (result = onload(result));
+        result = findAndFireOnLoads(result);
         Reviver.removeSerializerProps(result);
         return result;
     }
@@ -256,7 +276,7 @@ export function exclude_save(target: Object, propertyKey: string, _descriptor?: 
  */
 export function onload(target: any, _name: any, descriptor: PropertyDescriptor): any {
     Reviver.onLoad ??= {};
-    Reviver.onLoad[target.name] = descriptor.value;
+    Reviver.onLoad[target.constructor.name] = descriptor.value;
 }
 
 /**
