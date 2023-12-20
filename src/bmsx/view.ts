@@ -1,15 +1,21 @@
-﻿import type { Size, id2htmlimg } from './rompack';
+﻿import type { Area, Size, Vector, id2htmlimg, vec2 } from './rompack';
 import { BFont } from "./bmsx";
+
+export interface FlipOptions {
+    flip_h: boolean;
+    flip_v: boolean;
+}
+
+export interface DrawRectOptions {
+    area: Area;
+    color: Color;
+}
 
 export interface DrawImgOptions {
     imgid: string;
-    x: number;
-    y: number;
-    z: number;
-    sx?: number;
-    sy?: number;
-    flip_h?: boolean;
-    flip_v?: boolean;
+    pos: Vector;
+    scale?: vec2;
+    flip?: FlipOptions;
     colorize?: Color;
 }
 
@@ -222,24 +228,27 @@ export abstract class BaseView {
     }
 
     public drawImg(options: DrawImgOptions): void {
-        let { x, y, z, imgid, flip_h = false, flip_v = false, sx = 1, sy = 1 } = options;
+        const { pos, imgid, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 } } = options;
 
         let img = BaseView.images[imgid];
         global.view.context.save();
-        global.view.context.translate(~~x, ~~y);
-        if (flip_h) {
-            global.view.context.scale(-1 * sx, 1 * sy);
+        global.view.context.translate(~~pos.x, ~~pos.y);
+        if (flip.flip_h) {
+            global.view.context.scale(-1 * scale.x, 1 * scale.y);
             global.view.context.translate(-img.width, 0);
         }
-        if (flip_v) {
-            global.view.context.scale(1 * sx, -1 * sy);
+        if (flip.flip_v) {
+            global.view.context.scale(1 * scale.x, -1 * scale.y);
             global.view.context.translate(0, -img.height);
         }
         global.view.context.drawImage(img, 0, 0);
         global.view.context.restore();
     }
 
-    public drawRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
+    public drawRectangle(options: DrawRectOptions): void {
+        const { start: { x, y }, end: { x: ex, y: ey } } = options.area;
+        const c = options.color;
+
         global.view.context.save();
         global.view.context.translate(0.5, 0.5);
         global.view.context.beginPath();
@@ -249,7 +258,10 @@ export abstract class BaseView {
         global.view.context.restore();
     }
 
-    public fillRectangle(x: number, y: number, ex: number, ey: number, c: Color): void {
+    public fillRectangle(options: DrawRectOptions): void {
+        const { start: { x, y }, end: { x: ex, y: ey } } = options.area;
+        const c = options.color;
+
         global.view.context.save();
         global.view.context.translate(0.5, 0.5);
         global.view.context.beginPath();
