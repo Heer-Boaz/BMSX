@@ -1,7 +1,7 @@
 import { SpriteObject } from '../bmsx/sprite';
 import { BitmapId } from './resourceids';
 import { machine_states, statedef_builder } from '../bmsx/bfsm';
-import { get_gamemodel } from '../bmsx/bmsx';
+import { get_gamemodel, new_area } from '../bmsx/bmsx';
 import { GLView } from '../bmsx/glview';
 import { Msx1Colors } from '../bmsx/msx';
 import { gamemodel } from './gamemodel';
@@ -27,24 +27,26 @@ export class Hud extends SpriteObject {
         super.paint();
         // Update hitpoints
         const model = get_model();
+        const view = global.view as GLView;
         const player = model.get<Fighter>('player');
         const sinterklaas = model.get<Fighter>('sinterklaas');
 
         const HP_BAR1 = { startX: 112, endX: 40, startY: 25, endY: 29 };
         const HP_BAR2 = { startX: 216, endX: 144, startY: 25, endY: 29 };
         const MAX_HP = 100;
-        const COLOR = Msx1Colors[4];
+        const color = Msx1Colors[4];
         const Z = 200;
 
         const hp1 = sinterklaas?.hp ?? 100;
         const hp2 = player?.hp ?? 100;
 
-        const hp1Width = HP_BAR1.startX + (HP_BAR1.endX - HP_BAR1.startX) * hp1 / MAX_HP;
-        const hp2Width = HP_BAR2.endX - (HP_BAR2.endX - HP_BAR2.startX) * hp2 / MAX_HP;
+        const hp1EndX = HP_BAR1.startX + (HP_BAR1.endX - HP_BAR1.startX) * hp1 / MAX_HP;
+        const hp2EndX = HP_BAR2.endX - (HP_BAR2.endX - HP_BAR2.startX) * hp2 / MAX_HP;
 
-        const view = global.view as GLView;
-        view.fillRectangle(HP_BAR1.startX, HP_BAR1.startY, hp1Width, HP_BAR1.endY, COLOR, Z);
-        view.fillRectangle(hp2Width, HP_BAR2.startY, HP_BAR2.endX, HP_BAR2.endY, COLOR, Z);
+        let area = new_area(HP_BAR1.startX, HP_BAR1.startY, hp1EndX, HP_BAR1.endY, Z, Z)
+        view.fillRectangle({ area, color });
+        area = new_area(hp2EndX, HP_BAR2.startY, HP_BAR2.endX, HP_BAR2.endY, Z, Z)
+        view.fillRectangle({ area, color });
 
         TextWriter.drawText(40, 32, 'sen kai la');
         TextWriter.drawText(144, 32, 'ei la');
