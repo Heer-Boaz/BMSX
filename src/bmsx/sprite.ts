@@ -1,4 +1,4 @@
-import { translate_vec3, set_inplace_vec3, set_inplace_area } from "./bmsx";
+import { translate_vec3, set_inplace_vec3, set_inplace_area, new_vec3, new_vec2 } from "./bmsx";
 import { GameObject } from "./gameobject";
 import { insavegame } from "./gameserializer";
 import { DEFAULT_VERTEX_COLOR } from "./glview";
@@ -106,28 +106,28 @@ export class Sprite {
     public z: number;
     public options: DrawImgOptions;
     public get sx(): number {
-        return this.options.sx;
+        return this.options.scale.x;
     }
     public set sx(v: number) {
-        this.options.sx = v;
+        this.options.scale.x = v;
     }
     public get sy(): number {
-        return this.options.sy;
+        return this.options.scale.y;
     }
     public set sy(v: number) {
-        this.options.sy = v;
+        this.options.scale.y = v;
     }
     public get flip_h(): boolean {
-        return this.options.flip_h;
+        return this.options.flip.flip_h;
     }
     public set flip_h(v: boolean) {
-        this.options.flip_h = v;
+        this.options.flip.flip_h = v;
     }
     public get flip_v(): boolean {
-        return this.options.flip_v;
+        return this.options.flip.flip_v;
     }
     public set flip_v(v: boolean) {
-        this.options.flip_v = v;
+        this.options.flip.flip_v = v;
     }
     public get colorize(): Color {
         return this.options.colorize;
@@ -145,13 +145,9 @@ export class Sprite {
     constructor() {
         this.options ??= {
             imgid: 'none',
-            x: 0,
-            y: 0,
-            z: 0,
-            flip_h: false,
-            flip_v: false,
-            sx: 1,
-            sy: 1,
+            pos: new_vec3(0, 0, 0),
+            flip: { flip_h: false, flip_v: false },
+            scale: new_vec2(1, 1),
             colorize: DEFAULT_VERTEX_COLOR,
         };
         this.x ??= 0;
@@ -160,12 +156,12 @@ export class Sprite {
     }
 
     public paint_offset(offset: vec3) {
-        set_inplace_vec3(this.options, translate_vec3(this, offset));
+        set_inplace_vec3(this.options.pos as vec3, translate_vec3(this, offset));
         paintImage(this.options);
     }
 
     public paint() {
-        set_inplace_vec3(this.options, this);
+        set_inplace_vec3(this.options.pos as vec3, this);
         paintImage(this.options);
     }
 }
