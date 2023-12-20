@@ -22,8 +22,8 @@ type ButtonId = 'BTN1' | 'BTN2' | 'BTN3' | 'BTN4' | Key;
  */
 function preventActionAndPropagation(e: Event): boolean {
     e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
+    // e.stopPropagation();
+    // e.stopImmediatePropagation();
     return false;
 }
 
@@ -380,13 +380,13 @@ export class Input implements IIdentifiable {
         document.addEventListener('touchforcechange', e => preventActionAndPropagation(e), options);// iOS -- https://stackoverflow.com/questions/58159526/draggable-element-in-iframe-on-mobile-is-buggy && iOS -- https://stackoverflow.com/questions/50980876/can-you-prevent-3d-touch-on-an-img-but-not-tap-and-hold-to-save
 
         if (debug) {
-            const gamescreen = document.getElementById('gamescreen');
-            gamescreen.addEventListener('click', this.handleDebugEvents, options);
-            gamescreen.addEventListener('mousedown', this.handleDebugEvents, options);
-            gamescreen.addEventListener('mousemove', this.handleDebugEvents, options);
-            gamescreen.addEventListener('mouseup', this.handleDebugEvents, options);
-            gamescreen.addEventListener('mouseout', this.handleDebugEvents, options);
-            gamescreen.addEventListener('contextmenu', this.handleDebugEvents, options);
+            // const gamescreen = document.getElementById('gamescreen');
+            window.addEventListener('click', this.handleDebugEvents, options);
+            window.addEventListener('mousedown', this.handleDebugEvents, options);
+            window.addEventListener('mousemove', this.handleDebugEvents, options);
+            window.addEventListener('mouseup', this.handleDebugEvents, options);
+            window.addEventListener('mouseout', this.handleDebugEvents, options);
+            window.addEventListener('contextmenu', this.handleDebugEvents, options);
             window.addEventListener('keydown', this.handleDebugEvents);
             window.addEventListener('click', function (e) {
                 if ((e.target as Element).matches('ul.tree li:before')) {
@@ -585,6 +585,7 @@ export class Input implements IIdentifiable {
     */
     private handleDebugEvents(e: MouseEvent | TouchEvent | KeyboardEvent): void {
         if (e instanceof KeyboardEvent) {
+            Input.preventDefaultEventAction(e, e.code);
             switch (e.code) {
                 case 'Space':
                     if (Input.getPlayerInput(2).getKeyState(e.code).consumed) break;
@@ -889,8 +890,8 @@ export class PlayerInput {
             }
         });
 
-        window.addEventListener('keydown', e => { e.preventDefault(); !this.preventInput && this.keydown(e.code); }, options);
-        window.addEventListener('keyup', e => { e.preventDefault(); !this.preventInput && this.keyup(e.code); }, options);
+        window.addEventListener('keydown', e => { !this.preventInput && this.keydown(e.code); }, options);
+        window.addEventListener('keyup', e => { !this.preventInput && this.keyup(e.code); }, options);
     }
 
     /**
