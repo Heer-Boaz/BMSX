@@ -1,4 +1,4 @@
-﻿import { Area, RomPack, Size, vec2, vec3 } from "./rompack";
+﻿import { Area, RomPack, Size, Vector, vec2, vec3 } from "./rompack";
 import { BaseView } from "./view";
 import { SM } from "./soundmaster";
 import { Input } from "./input";
@@ -500,12 +500,12 @@ export function new_vec3(x: number, y: number, z: number): vec3 {
 }
 
 /**
- * Creates a copy of a vec2 object.
- * @param toCopy - The vec2 object to be copied.
- * @returns A new vec2 object with the same x and y values as the original.
+ * Creates a copy of a Vector object.
+ * @param toCopy - The Vector object to be copied.
+ * @returns A new Vector object with the same x, y and z values as the original.
  */
-export function copy_vec2(toCopy: vec2): vec2 {
-    return { x: toCopy.x, y: toCopy.y };
+export function copy_vector(toCopy: Vector): Vector {
+    return { x: toCopy.x, y: toCopy.y, z: toCopy.z };
 }
 
 /**
