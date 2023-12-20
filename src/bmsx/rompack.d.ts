@@ -11,6 +11,7 @@ export interface vec2 {
 	 * The x-coordinate of the vector.
 	 */
 	x: number;
+
 	/**
 	 * The y-coordinate of the vector.
 	 */
@@ -25,7 +26,7 @@ export interface vec3 extends vec2 {
 	z: number;
 }
 
-export type Vector = vec2 | vec3;
+export type Vector = vec2 & { z?: number };
 
 /**
  * Represents the size of an object.
