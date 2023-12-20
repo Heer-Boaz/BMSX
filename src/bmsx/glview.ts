@@ -1,5 +1,6 @@
+import { new_vec2, new_vec3 } from './bmsx';
 import type { Size } from './rompack';
-import { BaseView, Color, DrawImgOptions } from './view';
+import { BaseView, Color, DrawImgOptions, DrawRectOptions } from './view';
 
 function catchWebGLError(_target: any, propertyKey: string, descriptor: PropertyDescriptor): PropertyDescriptor {
     const originalMethod = descriptor.value;
@@ -844,7 +845,7 @@ void main() {
      */
     @catchWebGLError
     override drawImg(options: DrawImgOptions): void {
-        const { x, y, z, imgid, flip_h = false, flip_v = false, sx = 1, sy = 1, colorize = DEFAULT_VERTEX_COLOR } = options;
+        const { pos, imgid, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 }, colorize = DEFAULT_VERTEX_COLOR } = options;
         const imgmeta = global.rom['img_assets'][imgid]?.['imgmeta'];
 
         if (!imgmeta) {
@@ -854,9 +855,9 @@ void main() {
         const { glctx: gl, vertexcoords, texcoords, zcoords, color_override, drawImgReqIndex } = this;
         const { width, height } = imgmeta;
 
-        bvec.set(vertexcoords, x, y, width, height, sx, sy);
-        texcoords.set(this.getTexCoords(flip_h, flip_v, imgmeta));
-        bvec.set_zcoord(zcoords, z / ZCOORD_MAX);
+        bvec.set(vertexcoords, pos.x, pos.y, width, height, scale.x, scale.y);
+        texcoords.set(this.getTexCoords(flip.flip_h, flip.flip_v, imgmeta));
+        bvec.set_zcoord(zcoords, pos.z ?? 0 / ZCOORD_MAX);
         bvec.set_color(color_override, colorize);
 
         const bufferOffset = BUFFER_OFFSET_MULTIPLIER * drawImgReqIndex;
@@ -885,7 +886,10 @@ void main() {
         GLView.updateBuffer(gl, this.color_overrideBuffer, gl.ARRAY_BUFFER, COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER * this.drawImgReqIndex, color_override);
     }
 
-    override drawRectangle(x: number, y: number, ex: number, ey: number, c: Color, z = 0): void {
+    override drawRectangle(options: DrawRectOptions): void {
+        let { start: { x, y, z }, end: { x: ex, y: ey } } = options.area; // Note that DrawImg will handle z = undefined
+        const c = options.color;
+
         // Use the white pixel image and color it with the desired color
         const imgid = 'whitepixel';
         // Reverse x and ex if ex < x
@@ -898,16 +902,19 @@ void main() {
         }
 
         // Draw the top border
-        this.drawImg({ x: x, y: y, z: z, imgid: imgid, sx: ex - x, sy: 1, colorize: c });
+        this.drawImg({ pos: new_vec3(x, y, z), imgid: imgid, scale: new_vec2(ex - x, 1), colorize: c });
         // Draw the bottom border
-        this.drawImg({ x: x, y: ey - 1, z: z, imgid: imgid, sx: ex - x, sy: 1, colorize: c });
+        this.drawImg({ pos: new_vec3(x, ey, z), imgid: imgid, scale: new_vec2(ex - x, 1), colorize: c });
         // Draw the left border
-        this.drawImg({ x: x, y: y, z: z, imgid: imgid, sx: 1, sy: ey - y, colorize: c });
+        this.drawImg({ pos: new_vec3(x, y, z), imgid: imgid, scale: new_vec2(1, ey - y), colorize: c });
         // Draw the right border
-        this.drawImg({ x: ex - 1, y: y, z: z, imgid: imgid, sx: 1, sy: ey - y, colorize: c });
+        this.drawImg({ pos: new_vec3(ex - 1, y, z), imgid: imgid, scale: new_vec2(1, ey - y), colorize: c });
     }
 
-    override fillRectangle(x: number, y: number, ex: number, ey: number, c: Color, z = 0): void {
+    override fillRectangle(options: DrawRectOptions): void {
+        let { start: { x, y, z }, end: { x: ex, y: ey } } = options.area;
+        const c = options.color;
+
         // Use the white pixel image and color it with the desired color
         const imgid = 'whitepixel';
         // Reverse x and ex if ex < x
@@ -920,6 +927,6 @@ void main() {
         }
 
         // Draw and stretch the image to fill the rectangle
-        this.drawImg({ x: x, y: y, z: z, imgid: imgid, sx: ex - x, sy: ey - y, colorize: c, });
+        this.drawImg({ pos: new_vec3(x, y, z), imgid: imgid, scale: new_vec2(ex - x, ey - y), colorize: c });
     }
 }
