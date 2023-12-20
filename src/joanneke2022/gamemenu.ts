@@ -405,8 +405,12 @@ export class GameMenu extends GameObject {
     override paint = (_offset?: vec3): void => {
         let scalex = GameMenu.menuEndX - GameMenu.menuPosX;
         let scaley = GameMenu.menuEndY - GameMenu.menuPosY;
-        global.view.drawImg({ imgid: BitmapId.whitepixel, x: GameMenu.menuPosX, y: GameMenu.menuPosY, z: this.z, sx: scalex, sy: scaley });
-        global.view.drawImg({ imgid: BitmapId.blackpixel, x: GameMenu.menuPosX + 1, y: GameMenu.menuPosY + 1, z: this.z + 1, sx: scalex - 2, sy: scaley - 2 });
+        let pos: vec3 = { x: GameMenu.menuPosX, y: GameMenu.menuPosY, z: this.z };
+        let scale = { x: scalex, y: scaley };
+        global.view.drawImg({ imgid: BitmapId.whitepixel, pos, scale });
+        pos = { x: GameMenu.menuPosX + 1, y: GameMenu.menuPosY + 1, z: this.z + 1 };
+        scale = { x: scalex - 2, y: scaley - 2 };
+        global.view.drawImg({ imgid: BitmapId.blackpixel, pos, scale });
 
         let titleToDraw: string;
         let titleX: number, titleY: number;
@@ -522,20 +526,15 @@ export class GameMenu extends GameObject {
                     break;
                 }
         }
-        global.view.drawImg({ ...this.cursorPos, imgid: BitmapId.menucursor, z: this.z + 10 });
+        global.view.drawImg({ pos: { ...this.cursorPos, z: this.z + 10 }, imgid: BitmapId.menucursor });
     };
 
     private printFullscreenOptionRectangle(y: number): void {
         // let selectedIndex: number = GO.Fullscreen ? 0 : 1;
         let selectedIndex: number = global.view.isFullscreen ? 0 : 1;
-        global.view.drawImg({
-            imgid: BitmapId.redpixel,
-            x: GameMenu.fullscreenOptionsOffsets[selectedIndex] + GameMenu.menuPosX + GameMenu.optionItemsOffsetX,
-            y: y + GameMenu.fullscreenOptionsOffsetY,
-            z: this.z + 2,
-            sx: GameMenu.fullscreenOptionsRectangleSize.x,
-            sy: GameMenu.fullscreenOptionsRectangleSize.y
-        });
+        const pos = { x: GameMenu.fullscreenOptionsOffsets[selectedIndex] + GameMenu.menuPosX + GameMenu.optionItemsOffsetX, y: y + GameMenu.fullscreenOptionsOffsetY, z: this.z + 2 };
+        const scale = { x: GameMenu.fullscreenOptionsRectangleSize.x, y: GameMenu.fullscreenOptionsRectangleSize.y };
+        global.view.drawImg({ imgid: BitmapId.redpixel, pos, scale });
     }
 
     // @ts-ignore
