@@ -11,6 +11,8 @@ import type { Identifier } from "./bmsx";
 import type { vec2 } from './rompack';
 import { SpriteObject } from './sprite';
 import { Color } from './view';
+import { EventEmitter } from './eventemitter';
+import { BehaviorTreeDefinitions } from './behaviourtree';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
 
 let draggedObj: GameObject | null;
@@ -81,7 +83,7 @@ export class HitBoxVisualizer extends Component {
         const parent = this.parent as SpriteObject;
         if (parent.hasBoundingBoxes()) {
             parent.boundingBoxes.forEach(box => {
-                (global.view as GLView).drawRectangle(box.start.x, box.start.y, box.end.x, box.end.y, Msx1Colors[6]);
+                (global.view as GLView).drawRectangle({ area: { ...box, start: { ...box.start, z: parent.z } }, color: Msx1Colors[6] });
             });
         }
 
@@ -870,6 +872,16 @@ export function handleOpenDebugMenu(e: UIEvent): void {
     row.classList.add('selectableoption', 'centered-text');
     addContent(row, 'td', `List all statemachine definitions`);
     row.onclick = (_) => openObjectDetailMenu(MachineDefinitions, 'Statemachine definitions', dialogDiv);
+
+    row = addContent(table, 'tr', null);
+    row.classList.add('selectableoption', 'centered-text');
+    addContent(row, 'td', `List all behavior tree definitions`);
+    row.onclick = (_) => openObjectDetailMenu(BehaviorTreeDefinitions, 'BT definitions', dialogDiv);
+
+    row = addContent(table, 'tr', null);
+    row.classList.add('selectableoption', 'centered-text');
+    addContent(row, 'td', `See the Event Emitter`);
+    row.onclick = (_) => openObjectDetailMenu(EventEmitter.getInstance(), 'Event Emitter', dialogDiv);
 
     document.body.insertBefore(dialogDiv, null);
 }
