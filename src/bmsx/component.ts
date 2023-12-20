@@ -51,7 +51,7 @@ export type ComponentUpdateParams = {
 
 @insavegame
 export abstract class Component implements IIdentifiable {
-    public parentid: Identifier | null = null;
+    public parentid: Identifier;
     public id: ComponentId; // The component id is the parent id + the component name
     public static tagsPre: Set<ComponentTag>;
     public static tagsPost: Set<ComponentTag>;
@@ -61,11 +61,11 @@ export abstract class Component implements IIdentifiable {
     public set enabled(value: boolean) { this._enabled = value; }
     public get enabled() { return this._enabled; }
 
-    constructor(_id: Identifier) {
-        this.parentid = _id; // Store the parent id for later use
-        this.id = this.parentid + '_' + this.constructor.name; // Note: A component can be added once per game object
-        this.enabled = true;
-        this.init();
+    constructor(parentid: Identifier) {
+        this.parentid ??= parentid; // Store the parent id for later use
+        this.id ??= this.parentid + '_' + this.constructor.name; // Note: A component can be added once per game object
+        this.enabled ??= true;
+        parentid && this.init(); // Initialize the component if parent id is specified. If not, then the component was constructed as part of deserialization and will be initialized later.
     }
 
     public dispose() {
@@ -95,10 +95,10 @@ export abstract class Component implements IIdentifiable {
         return componentClass.tagsPost?.has(tag) ?? false; // Check if the component has the specified tag
     }
 
-    @onload
     /**
      * Initializes the component.
      */
+    @onload
     init() {
         this.initEventSubscriptions(); // Initialize event subscriptions
     }
@@ -136,7 +136,8 @@ export abstract class Component implements IIdentifiable {
     }
 
     // Implement this method to handle postprocessing updates
-    public postprocessingUpdate({ }: ComponentUpdateParams): void {
+    // @ts-ignore
+    public postprocessingUpdate({ params, returnvalue }: ComponentUpdateParams): void {
     }
 }
 
