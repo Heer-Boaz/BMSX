@@ -150,7 +150,7 @@ class PendingAssignmentProcessor {
             const joystick_icon = new SelectedPlayerIndexIcon(gamepadInput.gamepadIndex);
             this.icon = joystick_icon;
             const existingIcon = get_gamemodel().get(this.icon.id); // Check whether the icon already exists. This can happen when the icon was still animating while somehow the assignment needs to happen again.
-            existingIcon ?? get_gamemodel().exile(existingIcon); // Remove the existing icon so that we can replace it with a new, younger and prettier version.
+            existingIcon && get_gamemodel().exile(existingIcon); // Remove the existing icon so that we can replace it with a new, younger and prettier version.
             get_gamemodel().spawn(joystick_icon);
             joystick_icon.x = this.calcIconPositionX(positionIndex);
             joystick_icon.y = PendingAssignmentProcessor.joystick_icon_start.y;
