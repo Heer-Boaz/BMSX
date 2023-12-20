@@ -455,6 +455,7 @@ export abstract class BaseModel implements IStateful, IIdentifiable {
      */
     public load(serialized: string): void {
         this.clearAllSpaces();
+        EventEmitter.getInstance().clear();
         const temp_array = this.spaces.slice();
         temp_array.forEach(s => this.removeSpace(s));
         const savegame = JSON.parse(serialized, Reviver) as Savegame;
