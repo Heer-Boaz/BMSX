@@ -2,7 +2,7 @@ import { BFont, new_vec3, trunc_vec3 } from './../bmsx/bmsx';
 import { MSX2ScreenHeight, MSX2ScreenWidth } from './../bmsx/msx';
 import type { RomPack, vec2 } from '../bmsx/rompack';
 import type { Direction } from "../bmsx/bmsx";
-import { Game, new_vec2, new_area, randomInt, copy_vec2 } from '../bmsx/bmsx';
+import { Game, new_vec2, new_area, randomInt, copy_vector } from '../bmsx/bmsx';
 import { sdef, sstate, Bla, statedef_builder, build_fsm, statecontext, machine_states } from '../bmsx/bfsm';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
@@ -829,7 +829,7 @@ class barst extends onvolmaaktheid {
                     },
                     next(this: barst) {
                         // BURN!!!!
-                        _model.spawn(new burn(this.zijde, copy_vec2(this.pos)));
+                        _model.spawn(new burn(this.zijde, copy_vector(this.pos)));
                         this.disposeFlag = true; // Vervang met nieuwe soort onvolmaaktheid
                     }
                 },
