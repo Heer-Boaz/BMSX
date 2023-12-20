@@ -1,5 +1,5 @@
 import { BFont, GameOptions as GO } from "./bmsx";
-import { vec2 } from "./rompack";
+import { vec2, vec3 } from "./rompack";
 import { Color } from './view';
 
 /**
@@ -20,7 +20,7 @@ export class TextWriter {
         let startPos: vec2 = { x: x, y: y };
         let stepX: number = font.char_width;
         let stepY: number = font.char_height;
-        let pos: vec2 = { x: startPos.x, y: startPos.y };
+        let pos: vec3 = { x: startPos.x, y: startPos.y, z: z };
 
         /**
         * Draws a string of text on the screen at the current position.
@@ -29,7 +29,7 @@ export class TextWriter {
         */
         const draw_string = function (text): boolean {
             for (let i: number = 0; i < text.length; i++) {
-                global.view.drawImg({ imgid: font.char_to_img(text[i]), x: pos.x, y: pos.y, z: z, colorize: color });
+                global.view.drawImg({ imgid: font.char_to_img(text[i]), pos, colorize: color });
                 pos.x += stepX;
             }
             pos.x = startPos.x;
