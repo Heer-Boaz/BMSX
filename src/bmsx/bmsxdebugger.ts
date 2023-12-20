@@ -114,7 +114,6 @@ class ObjectHighlighter extends SpriteObject {
             this.x = o.x, this.y = o.y;
             this.sx = o.sx, this.sy = o.sy;
         }
-        // this.size = divPoint(this.size, 4);
         this.pos = trunc_vec3(this.pos);
         this.size = trunc_vec3(this.size);
         this.sprite.sx = this.size.x + 1;
@@ -135,6 +134,8 @@ class ObjectHighlighter extends SpriteObject {
             this.visible = false;
             return;
         }
+
+        if (o.id === this.id) return; // Don't highlight self
 
         this.#highlighted_obj = o;
         if (!o.getComponent(DebugHighlightComponent)) {
