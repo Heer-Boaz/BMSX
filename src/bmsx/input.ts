@@ -747,7 +747,7 @@ export class PlayerInput {
             const actionState = this.getActionState(action);
             if (actionState.pressed === (query?.pressed ?? true) &&
                 actionState.consumed === (query?.consumed ?? actionState.consumed) &&
-                actionState.presstime >= (query?.pressTime ?? 0) {
+                actionState.presstime >= (query?.pressTime ?? 0)) {
                 pressedActions.push(actionState);
             }
         }
