@@ -38,7 +38,7 @@ export class Sinterklaas extends Fighter {
     public static bouw(): machine_states {
         function defaultrun(this: Sinterklaas) {
             // To check if an action is pressed for player 1
-            const priorityActions = Input.getPlayerInput(2).getPressedPriorityActions( ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick', 'stoer']);
+            const priorityActions = Input.getPlayerInput(1).getPressedActions({ pressed: true, actionsByPriority: ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick', 'stoer'] });
 
             // If no actions are pressed, switch to idle
             if (!priorityActions.some(action => action.pressed && !action.consumed)) {
@@ -114,9 +114,10 @@ export class Sinterklaas extends Fighter {
         }
 
         function jumprun(this: Player) {
-            const pressedActions = Input.getPlayerInput(2).getPressedActions();
-
-            if (pressedActions.some(action => action.action === 'lowkick' || action.action === 'highkick')) {
+            const kickActions = Input.getPlayerInput(2).getPressedActions({ pressed: true, consumed: false, filter: ['lowkick', 'highkick'] });
+            if (kickActions.length > 0) {
+                // Consume all kick actions
+                kickActions.forEach(action => Input.getPlayerInput(1).consumeAction(action));
                 if (this.sc.is('Sinterklaas.jump.jump_up.normal') || this.sc.is('Sinterklaas.jump.jump_down.normal')) {
                     this.sc.switch('Sinterklaas.jump.*.flyingkick');
                 }
