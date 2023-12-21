@@ -51,10 +51,10 @@ export class Player extends Fighter {
     public static bouw(): machine_states {
         // To check if an action is pressed for player 0
         function defaultrun(this: Player) {
-            const priorityActions = Input.getPlayerInput(1).getPressedPriorityActions( ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick', 'stoer']);
+            const priorityActions = Input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, actionsByPriority: ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick' ] });
 
             // If no actions are pressed, switch to idle
-            if (!priorityActions.some(action => action.pressed && !action.consumed)) {
+            if (priorityActions.length === 0) {
                 this.sc.to('idle');
                 return;
             }
@@ -62,7 +62,7 @@ export class Player extends Fighter {
             let higherPrioActionProcessed = false;
             let leftOrRightPressed = false;
             for (const actionObject of priorityActions) {
-                const { action, consumed } = actionObject;
+                const { action } = actionObject;
                 if (higherPrioActionProcessed) break;
 
                 switch (action as Action) {
@@ -89,12 +89,11 @@ export class Player extends Fighter {
                     case 'punch':
                     case 'highkick':
                     case 'lowkick':
-                        if (!consumed) {
-                            Input.getPlayerInput(1).consumeAction(action);
-                            this.sc.to(action);
-                        }
+                        Input.getPlayerInput(1).consumeAction(action);
+                        this.sc.to(action);
                         break;
                     case 'jump':
+                        Input.getPlayerInput(1).consumeAction(action);
                         this.sc.to('jump', false); // Actions 'left' and 'right' have higher priority than 'jump' and thus directonal jumps are handled in the 'left' and 'right' cases
                         break;
                     // case 'stoer':
@@ -131,9 +130,10 @@ export class Player extends Fighter {
         }
 
         function jumprun(this: Player) {
-            const pressedActions = Input.getPlayerInput(1).getPressedActions();
-
-            if (pressedActions.some(action => action.action === 'lowkick' || action.action === 'highkick')) {
+            const kickActions = Input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['lowkick', 'highkick'] });
+            if (kickActions.length > 0) {
+                // Consume all kick actions
+                kickActions.forEach(action => Input.getPlayerInput(1).consumeAction(action));
                 if (this.sc.is('Player.jump.jump_up.normal') || this.sc.is('Player.jump.jump_down.normal')) {
                     this.sc.switch('Player.jump.*.flyingkick');
                 }
@@ -276,8 +276,8 @@ export class Player extends Fighter {
                                 },
                                 flyingkick: {
                                     enter(this: Player) {
-                                        this.sc.machines.player_animation.to('flyingkick');
-                                        this.doAttackFlow('flyingkick', get_model().theOtherFighter(this));
+                                        const hit = this.doAttackFlow('flyingkick', get_model().theOtherFighter(this));
+                                        this.sc.machines.player_animation.to('flyingkick', hit);
                                     }
                                 },
                             }
@@ -311,8 +311,8 @@ export class Player extends Fighter {
                                 },
                                 flyingkick: {
                                     enter(this: Player) {
-                                        this.sc.machines.player_animation.to('flyingkick');
-                                        this.doAttackFlow('flyingkick', get_model().theOtherFighter(this));
+                                        const hit = this.doAttackFlow('flyingkick', get_model().theOtherFighter(this));
+                                        this.sc.machines.player_animation.to('flyingkick', hit);
                                     }
                                 },
                             }
