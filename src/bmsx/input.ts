@@ -8,6 +8,14 @@ import { get_gamemodel } from './bmsx';
 import { machine_states } from './bfsm';
 import type { IIdentifiable, Identifier } from "./bmsx";
 
+export type ActionStateQuery = {
+    filter?: string[];
+    pressed?: boolean;
+    consumed?: boolean;
+    pressTime?: number;
+    actionsByPriority?: string[];
+};
+
 /**
  * Represents the ID of a button.
  * It can be one of the predefined values 'BTN1', 'BTN2', 'BTN3', 'BTN4',
@@ -722,42 +730,41 @@ export class PlayerInput {
 
     /**
      * Returns all actions that have been pressed for a given player index.
-     * @returns An array of objects containing the name of the action and whether it was clicked.
+     * Retrieves an array of pressed ActionStates based on the provided filter.
+     * If no filter is provided, all pressed ActionStates are returned.
+     * if `actionsByPriority` is given, it retrieves the priority actions for a given player index based on the action priority list.
+     * @param filter - An optional array of strings representing the actions to filter.
+     * @returns An array of pressed ActionStates.
      */
-    public getPressedActions(): ActionState[] {
+    public getPressedActions(query?: ActionStateQuery): ActionState[] {
         const inputMap = this.inputMap;
         if (!inputMap) return [];
 
         const pressedActions: ActionState[] = [];
 
         for (const action in inputMap.keyboard ?? inputMap.gamepad) {
+            if (query?.filter && !query.filter.includes(action)) continue; // Skip actions that are not in the filter
             const actionState = this.getActionState(action);
-            if (actionState.pressed) {
+            if (actionState.pressed === (query?.pressed ?? true) &&
+                actionState.consumed === (query?.consumed ?? actionState.consumed) &&
+                actionState.presstime >= (query?.pressTime ?? 0) {
                 pressedActions.push(actionState);
             }
         }
 
-        return pressedActions;
-    }
+        if (query?.actionsByPriority) {
+            const priorityActions: ActionState[] = [];
+            for (const priorityAction of query.actionsByPriority) {
+                const actionObject = pressedActions.find(action => action.action === priorityAction);
 
-    /**
-     * Retrieves the priority actions for a given player index based on the action priority list.
-     * @param actionPriority - The list of action priorities.
-     * @returns An array of ActionObject representing the priority actions.
-     */
-    getPressedPriorityActions(actionPriority: string[]): ActionState[] {
-        const pressedActions = this.getPressedActions();
-        const priorityActions: ActionState[] = [];
-
-        for (const priorityAction of actionPriority) {
-            const actionObject = pressedActions.find(action => action.action === priorityAction);
-
-            if (actionObject) {
-                priorityActions.push(actionObject);
+                if (actionObject) {
+                    priorityActions.push(actionObject);
+                }
             }
+            return priorityActions;
         }
 
-        return priorityActions;
+        return pressedActions;
     }
 
     /**
@@ -768,13 +775,19 @@ export class PlayerInput {
         this.KeyPressedConsumedState[key] = true;
     }
 
+    public consumeActions(...actions: ActionState[] | string[]) {
+        actions.forEach(action => this.consumeAction(action));
+    }
+
     /**
      * Consumes the input action for the specified player index.
      * @param action The name of the input action to consume.
      */
-    public consumeAction(action: string) {
+    public consumeAction(actionToConsume: ActionState | string) {
         const inputMap = this.inputMap;
         if (!inputMap) return;
+
+        const action: string = (typeof actionToConsume === 'string') ? actionToConsume : actionToConsume.action;
 
         const keyboardKey = inputMap.keyboard?.[action];
         // Check whether the keyboard key was actually pressed before consuming it
