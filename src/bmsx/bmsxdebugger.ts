@@ -882,7 +882,7 @@ export function handleOpenDebugMenu(e: UIEvent): void {
     row = addContent(table, 'tr', null);
     row.classList.add('selectableoption', 'centered-text');
     addContent(row, 'td', `See the Event Emitter`);
-    row.onclick = (_) => openObjectDetailMenu(EventEmitter.getInstance(), 'Event Emitter', dialogDiv);
+    row.onclick = (_) => openObjectDetailMenu(EventEmitter.instance, 'Event Emitter', dialogDiv);
 
     document.body.insertBefore(dialogDiv, null);
 }
