@@ -395,8 +395,8 @@ export class Input implements IIdentifiable {
             window.addEventListener('mousemove', this.handleDebugEvents, options);
             window.addEventListener('mouseup', this.handleDebugEvents, options);
             window.addEventListener('mouseout', this.handleDebugEvents, options);
-            window.addEventListener('contextmenu', this.handleDebugEvents, options);
-            window.addEventListener('keydown', this.handleDebugEvents);
+            window.addEventListener('contextmenu', e => { preventActionAndPropagation(e), this.handleDebugEvents(e); }, options);
+            window.addEventListener('keydown', e => { preventActionAndPropagation(e), this.handleDebugEvents(e); }, options);
             window.addEventListener('click', function (e) {
                 if ((e.target as Element).matches('ul.tree li:before')) {
                     const parentNode = (e.target as HTMLElement).parentNode as HTMLElement;
