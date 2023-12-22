@@ -57,7 +57,7 @@ export abstract class Component implements IIdentifiable {
     public static tagsPre: Set<ComponentTag>;
     public static tagsPost: Set<ComponentTag>;
     public static eventSubscriptions: EventSubscription[]; // Note: This property is only used by the event emitter
-    public get parent() { return global.model.getGameObject<any>(this.parentid); }
+    public get parent() { return Registry.instance.get(this.parentid); }
     protected _enabled: boolean;
     public set enabled(value: boolean) { this._enabled = value; }
     public get enabled() { return this._enabled; }
