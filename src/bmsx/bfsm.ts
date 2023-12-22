@@ -65,7 +65,7 @@ function updateAllAssignedFSMs(constructor: any) {
  * @param fsm_name - Optional name of the finite state machine. If not provided, the name of the decorated class will be used.
  * @returns A decorator function that can be used to build a finite state machine definition.
  */
-export function build_fsm(fsm_name?: string) {
+export function build_fsm(fsm_name?: Identifier) {
 	return function statedef_builder(target: any, _name: any, descriptor: PropertyDescriptor): any {
 		MachineDefinitionBuilders ??= {};
 		MachineDefinitionBuilders[fsm_name ?? target.name] = descriptor.value;
@@ -108,7 +108,7 @@ export function setup_fsmdef_library(): void {
  * @param machine_name - The name of the machine.
  * @param machine_definition - The definition of the machine, including its states and substates.
  */
-function createMachine(machine_name: string, machine_definition: machine_states): void {
+function createMachine(machine_name: Identifier, machine_definition: machine_states): void {
 	// If the machine_definition has states, create a new machine definition for each state
 	if (machine_definition.states) {
 		for (let stateId in machine_definition.states) { // Loop through all states in the machine definition
@@ -169,7 +169,7 @@ function validateStateMachine(machinedef: mdef): void {
 }
 
 // Function to generate a new submachine_id
-function generateSubmachineId(machine_name: string, stateId: string): string {
+function generateSubmachineId(machine_name: Identifier, stateId: Identifier): string {
 	return `${machine_name}_${stateId}`;
 }
 
@@ -490,8 +490,8 @@ interface IStateController {
 	sm: statecontext;
 	states: id2sstate;
 	current: sstate;
-	currentid: string;
-	get start_state_id(): string;
+	currentid: Identifier;
+	get start_state_id(): Identifier;
 }
 
 @insavegame
@@ -536,7 +536,7 @@ export class statecontext implements IStateController {
 	 * Represents the mapping of event types to state IDs for transitions to other states based on events (e.g. 'click' => 'idle').
 	 * At the individual state level, the `on` property defines the transitions that can occur from that specific state.
 	 */
-	public on?: { [key: string]: string };
+	public on?: { [key: string]: Identifier };
 
 	/**
 	 * Represents the state data for the state machine that is shared across its states.
@@ -559,7 +559,7 @@ export class statecontext implements IStateController {
 	 * of referencing states from the state machine definition.
 	 * @param id - id of the state, according to its definition
 	 */
-	public get_sstate(id: string) { return this.states[id]; }
+	public get_sstate(id: Identifier) { return this.states[id]; }
 	/**
 	 * Gets the definition of the current state machine.
 	 * @returns The definition of the current state machine.
@@ -569,7 +569,7 @@ export class statecontext implements IStateController {
 	 * Gets the id of the start state of the FSM.
 	 * @returns The id of the start state of the FSM.
 	 */
-	public get start_state_id(): string { return MachineDefinitions[this.id]?.start_state ?? NONE_STATE_ID; }
+	public get start_state_id(): Identifier { return MachineDefinitions[this.id]?.start_state ?? NONE_STATE_ID; }
 
 	/**
 	 * Gets the definition of the current state of the FSM.
@@ -915,7 +915,7 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 	 * Otherwise, returns the default ID from the statedef.
 	 * @returns The current ID.
 	 */
-	get currentid(): string {
+	get currentid(): Identifier {
 		return this.sm?.currentid ?? this.statedef_id;
 	}
 
@@ -923,7 +923,7 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 	 * Gets the ID of the start state.
 	 * @returns The ID of the start state.
 	 */
-	get start_state_id(): string {
+	get start_state_id(): Identifier {
 		return this.getOrThrowStateMachine().start_state_id;
 	}
 
@@ -931,6 +931,7 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 	 * Represents the state of the state machine.
 	 */
 	sm: statecontext;
+
 	/**
 	 * Retrieves the state machine associated with the current state.
 	 * @returns The state machine object.
@@ -942,29 +943,28 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 	}
 
 	get states(): id2sstate { return this.sm?.states; }
+
 	/**
 	 * The unique identifier for the state definition.
 	 */
-	public statedef_id: string;
+	public statedef_id: Identifier;
+
 	/**
 	 * The identifier of the machine definition.
 	 */
-	public machinedef_id: string;
-	/**
-	 * `If != undefined`, this state is a substate of the the state with `parentid`
-	 */
-	// parentid: string;
+	public machinedef_id: Identifier;
+
 	/**
 	 * This concurrent state machine reflects the (partial) state of the game object with the given id
 	 * @see BaseModel.getGameObject
 	 */
-	public targetid: string;
+	public targetid: Identifier;
 
 	/**
 	 * Gets the identifier of the state.
 	 * @returns The identifier of the state.
 	 */
-	public get id(): string { return this.statedef_id; } // IIdentifiable implementation for sstate
+	public get id(): Identifier { return this.statedef_id; } // IIdentifiable implementation for sstate
 
 	/**
 	 * Returns the state definition associated with this state.
@@ -1021,7 +1021,7 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 	 * @param _machineid - The ID of the state machine object.
 	 * @param _targetid - The ID of the target object.
 	 */
-	public constructor(_id: string, _machineid: string, _targetid: string) {
+	public constructor(_id: Identifier, _machineid: Identifier, _targetid: Identifier) {
 		this.statedef_id = _id;
 		this.machinedef_id = _machineid;
 		this.targetid = _targetid;
@@ -1223,7 +1223,7 @@ export class sdef implements IIdentifiable  {
 	 * Represents the mapping of event types to state IDs for transitions to other states based on events (e.g. 'click' => 'idle').
 	 * At the individual state level, the `on` property defines the transitions that can occur from that specific state.
 	 */
-	public on?: { [key: string]: string };
+	public on?: { [key: string]: Identifier };
 }
 
 /**
@@ -1249,7 +1249,7 @@ export interface machine_states {
 	 * Represents the mapping of event types to state IDs for transitions to other states based on events (e.g. 'click' => 'idle').
 	 * At the state machine level, the `on` property defines the global transitions that can occur from any state.
 	 */
-	on?: { [key: string]: string }
+	on?: { [key: string]: Identifier }
 // function dispatch(stateMachine, currentState, event, payload = null) {
 //     const state = stateMachine.states[currentState];
 //     const nextState = state.on[event];
@@ -1294,7 +1294,7 @@ export class mdef implements IIdentifiable {
 	/**
 	 * The identifier of the state that the state machine should start in.
 	 */
-	public start_state: string;
+	public start_state: Identifier;
 
 	/**
 	 * Represents the state data for the state machine that is shared across its states.
@@ -1305,7 +1305,7 @@ export class mdef implements IIdentifiable {
 	 * Represents the mapping of event types to state IDs for transitions to other states based on events (e.g. 'click' => 'idle').
 	 * At the state machine level, the `on` property defines the global transitions that can occur from any state.
 	 */
-	public on?: { [key: string]: string };
+	public on?: { [key: string]: Identifier };
 
 	/**
 	 * The prefix used to identify the start state.
