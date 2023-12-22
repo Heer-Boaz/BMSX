@@ -5,6 +5,7 @@ import { Input } from "./input";
 import { MSX2ScreenWidth, MSX2ScreenHeight } from "./msx";
 import { BaseModel } from "./basemodel";
 import { EventEmitter } from "./eventemitter";
+import { Registry } from "./registry";
 
 /**
  * Declare global variables and types.
@@ -13,8 +14,10 @@ declare global {
     var game: Game;
     var model: BaseModel;
     var view: BaseView;
-    var eventEmitter: EventEmitter;
     var rom: RomPack;
+    var registry: Registry;
+    var eventEmitter: EventEmitter;
+    var debug: boolean;
 }
 
 /**
@@ -858,17 +861,25 @@ export class Game {
      * @param debug - Whether to enable debug mode. Defaults to false.
      */
     constructor(_rom: RomPack, _model: BaseModel, _view: BaseView, sndcontext: AudioContext, gainnode: GainNode, debug: boolean = false) {
+        this.debug ??= debug;
+        this.running = false;
+        this.paused = false;
+        this.wasupdated = true;
+        this.updateInterval = 1000 / this.targetFPS;
+
+        global['debug'] = debug;
         global['game'] = this;
         global['rom'] = _rom;
 
         global['model'] = _model;
         global['view'] = _view;
-        global['eventEmitter'] = EventEmitter.getInstance();
+        global['registry'] = Registry.instance;
+        global['eventEmitter'] = EventEmitter.instance;
 
         BaseView.images = _rom.images;
         global.view.init();
         SM.init(_rom['snd_assets'], sndcontext, 1, gainnode);
-        Input.getInstance(debug); // Init input module
+        Input.instance; // Init input module
 
         // Prevent the user from accidentally closing the game window if not in debug mode
         if (!debug) {
@@ -879,11 +890,6 @@ export class Game {
         // Init all the stuff that is game-specific. Placed here to reduce boilerplating
         global.model.init_spaces().init_model_state_machines(global.model.constructor_name).do_one_time_game_init();
 
-        this.debug ??= debug;
-        this.running = false;
-        this.paused = false;
-        this.wasupdated = true;
-        this.updateInterval = 1000 / this.targetFPS;
     }
 
     /**
@@ -938,7 +944,7 @@ export class Game {
 
         while (game.accumulatedTime >= game.updateInterval) {
             if (!game.paused) {
-                Input.getInstance().pollInput();
+                Input.instance.pollInput();
                 game.update(game.updateInterval);
             }
             game.accumulatedTime -= game.updateInterval;
