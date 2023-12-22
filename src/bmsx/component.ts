@@ -11,7 +11,7 @@ export type ComponentId = string;
 /**
  * Represents a container for components.
  */
-export interface IComponentContainer {
+export interface IComponentContainer extends IIdentifiable {
     /**
      * A map of components, where the key is the component name and the value is the component instance.
      */
@@ -56,7 +56,7 @@ export abstract class Component implements IIdentifiable {
     public static tagsPre: Set<ComponentTag>;
     public static tagsPost: Set<ComponentTag>;
     public static eventSubscriptions: EventSubscription[]; // Note: This property is only used by the event emitter
-    public get parent() { return global.model.get(this.parentid); }
+    public get parent() { return global.model.getGameObject<any>(this.parentid); }
     protected _enabled: boolean;
     public set enabled(value: boolean) { this._enabled = value; }
     public get enabled() { return this._enabled; }
@@ -73,6 +73,9 @@ export abstract class Component implements IIdentifiable {
         // Remove event subscriptions
         const eventEmitter = EventEmitter.getInstance();
         eventEmitter.removeSubscriber(this);
+
+        // Deregister the component from the entity registry
+        global.model.registry.deregister(this);
     }
 
     /**
@@ -122,7 +125,7 @@ export abstract class Component implements IIdentifiable {
                 case 'all': emitterFilter = undefined; break;
                 case 'parent':
                     emitterFilter = (this as Component & { parentid?: string }).parentid;
-                    if (!emitterFilter) throw `Cannot subscribe Component ${this.id} to event ${subscription.eventName} with scope ${subscription.scope} as the class (instance) ${this.constructor.name} does not have a "parentid".`;
+                    if (!emitterFilter) throw Error (`Cannot subscribe Component ${this.id} to event ${subscription.eventName} with scope ${subscription.scope} as the class (instance) ${this.constructor.name} does not have a "parentid".`);
                     emitterFilter = this.parentid;
                     break;
                 case 'self': emitterFilter = this.id; break;
