@@ -1,6 +1,5 @@
 import { BehaviorTreeDefinition, BehaviorTreeDefinitions, BehaviorTreeID, setup_btdef_library, setup_bt_library } from "./behaviourtree";
 import { mdef, MachineDefinitions, sdef, setup_fsmdef_library, sstate, bfsm_controller, IStateful } from "./bfsm";
-import { exclude_save } from "./gameserializer";
 import type { IIdentifiable, Identifier } from "./bmsx";
 import { GameObject } from "./gameobject";
 import { insavegame, onsave, Reviver, Savegame, Serializer } from "./gameserializer";
@@ -8,6 +7,7 @@ import { Input } from "./input";
 import { Vector } from "./rompack";
 import { Direction } from "./bmsx";
 import { EventEmitter, IEventSubscriber } from "./eventemitter";
+import { Registry } from "./registry";
 
 export interface ISpaceObject {
     spaceid: Identifier;
@@ -104,7 +104,7 @@ export class Space {
 
         this[id2obj][o.id] = o; // Register the object in the `id2object`-object, so we can retrieve the object by id
         global.model[objid_2_objspaceid][o.id] = this.id; // Register the object in the `obj_id2obj_space_id`-object, so we can retrieve the space id for the object id
-        global.model.registry.register(o); // Register the object in the registry so it can be retrieved by id. Note that we do not register the object in the `o.onspawn`-method, as that won't trigger when the object is revived from a savegame
+        Registry.instance.register(o); // Register the object in the registry so it can be retrieved by id. Note that we do not register the object in the `o.onspawn`-method, as that won't trigger when the object is revived from a savegame
         !skip_onspawn_event && o.onspawn?.(pos); // Trigger onspawn event after adding the object to the space. `onspawn` subscribes the object to events and starts the object's state machine
 
         this.sort_by_depth(); // Sort after spawn-event, just to be sure
@@ -150,70 +150,13 @@ export class Space {
 
 export type base_model_spaces = 'game_start' | 'default';
 
-class EntityRegistry {
-    private registry: Map<Identifier, IIdentifiable>;
-
-    constructor() {
-        this.registry = new Map<Identifier, IIdentifiable>();
-    }
-
-    /**
-     * Retrieves an entity from the registry based on its identifier.
-     * @param id The identifier of the entity to retrieve.
-     * @returns The retrieved entity if found, otherwise null.
-     */
-    public get<T extends IIdentifiable = any>(id: Identifier): T | null {
-        return this.registry.get(id) as T || null;
-    }
-
-    /**
-     * Checks if the model has the specified identifier.
-     * @param id - The identifier to check.
-     * @returns True if the model has the identifier, false otherwise.
-     */
-    public has(id: Identifier): boolean {
-        return this.registry.has(id);
-    }
-
-    public register(entity: IIdentifiable) {
-        this.registry.set(entity.id, entity);
-    }
-
-    public deregister(id: IIdentifiable | Identifier): boolean {
-        const entityId = typeof id === 'string' ? id : id.id;
-        return this.registry.delete(entityId);
-    }
-
-    public clear() {
-        this.registry.clear();
-    }
-
-    public getRegisteredEntities(): IIdentifiable[] {
-        return [...this.registry.values()];
-    }
-
-    public getRegisteredEntityIds(): Identifier[] {
-        return [...this.registry.keys()];
-    }
-
-    public getRegisteredEntityIdsByType(type: string): Identifier[] {
-        return this.getRegisteredEntities().filter(e => e.constructor.name === type).map(e => e.id);
-    }
-
-    public getRegisteredEntitiesByType(type: string): IIdentifiable[] {
-        return this.getRegisteredEntities().filter(e => e.constructor.name === type);
-    }
-}
-
 @insavegame
 /**
  * The base model class for the game. Contains all the spaces and objects in the game world.
  * Provides methods to add, remove, and manipulate game objects and spaces.
  */
 export abstract class BaseModel implements IStateful, IIdentifiable {
-    @exclude_save
-    private _registry: EntityRegistry;
-    public get registry(): EntityRegistry { return this._registry; }
+    private get registry(): Registry { return Registry.instance; }
 
     /**
      * Retrieves an entity from the registry based on its identifier.
@@ -221,7 +164,7 @@ export abstract class BaseModel implements IStateful, IIdentifiable {
      * @returns The retrieved entity if found, otherwise null.
      */
     public get<T extends IIdentifiable = any>(id: Identifier): T | null {
-        return this._registry.get(id);
+        return this.registry.get(id);
     }
 
     public get id(): Identifier { return 'model'; } // Required for IStateful and IIdentifiable
@@ -398,19 +341,16 @@ export abstract class BaseModel implements IStateful, IIdentifiable {
 
     public init_or_reset_registry(): void {
         // Create the registry and register the model itself and the input handler as entities in the registry (so they can be retrieved by id)
-        if (this._registry) {
-            this._registry.clear();
-        }
-        else this._registry = new EntityRegistry();
-        this._registry.register(this);
-        this._registry.register(Input.getInstance());
+        this.registry.clear();
+        this.registry.register(this);
+        this.registry.register(Input.instance);
     }
 
     public init_event_subscriptions(): void {
         const constr = this.constructor as IEventSubscriber;
         if (!constr.eventSubscriptions) return;
 
-        const eventEmitter = EventEmitter.getInstance();
+        const eventEmitter = EventEmitter.instance;
         constr.eventSubscriptions.forEach(subscription => {
             const handler = this[subscription.handlerName].bind(this);
             let emitterFilter: string;
@@ -550,7 +490,7 @@ export abstract class BaseModel implements IStateful, IIdentifiable {
     public load(serialized: string): void {
         this.clearAllSpaces(); // Clear all spaces and objects before loading the new state (otherwise, objects from the previous state will still be present)
         this.init_or_reset_registry(); // Clear the registry before loading the new state (otherwise, objects from the previous state will still be present)
-        EventEmitter.getInstance().clear(); // Clear the event emitter before loading the new state (otherwise, event handlers from the previous state will still be present)
+        EventEmitter.instance.clear(); // Clear the event emitter before loading the new state (otherwise, event handlers from the previous state will still be present)
         const temp_array = this.spaces.slice(); // Create a copy of the spaces array to prevent the spaces from being cleared when clearing the model instance
         temp_array.forEach(s => this.removeSpace(s)); // Remove all spaces from the model instance before loading the new state (otherwise, spaces from the previous state will still be present)
         const savegame = JSON.parse(serialized, Reviver) as Savegame; // Deserialize the savegame and apply it to the current model instance (this)
@@ -568,7 +508,7 @@ export abstract class BaseModel implements IStateful, IIdentifiable {
         savegame.allSpacesObjects.forEach(space_and_objects => {
             const space = this[spaceid_2_space][space_and_objects.spaceid];
             const objects = space_and_objects.objects;
-            objects.forEach(o => (this._registry.register(o), o.onloaded?.(), space.spawn(o, null, true)));
+            objects.forEach(o => (this.registry.register(o), o.onloaded?.(), space.spawn(o, null, true)));
         });
     }
 
@@ -659,7 +599,7 @@ export abstract class BaseModel implements IStateful, IIdentifiable {
      */
     public spawn(o: GameObject, pos?: Vector, ignoreSpawnhandler?: boolean): void {
         if (!o?.id) throw new Error(`Cannot spawn object '${o?.id ?? 'undefined'}' as it doesn't have a valid id.`);
-        this._registry.register(o);
+        this.registry.register(o);
         this.currentSpace.spawn(o, pos, ignoreSpawnhandler);
     }
 
@@ -670,7 +610,7 @@ export abstract class BaseModel implements IStateful, IIdentifiable {
      */
     public exile(o: GameObject): void {
         this.spaces.forEach(s => s.get(o.id) && s.exile(o));
-        this._registry.deregister(o);
+        this.registry.deregister(o);
     }
 
     /**
