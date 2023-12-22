@@ -45,7 +45,7 @@ export class ObjectTracker {
 
         for (let [id, properties] of Object.entries(this.trackedObjects)) {
             for (let { property, key } of properties) {
-                let gameObject = global.model.get<GameObject>(id);
+                let gameObject = global.model.getGameObject<GameObject>(id);
                 let value = gameObject[property];
 
                 // Only include the property in the updates if it has changed
