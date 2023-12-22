@@ -5,7 +5,7 @@ import { sstate, statedef_builder, machine_states } from '../bmsx/bfsm';
 import { insavegame } from '../bmsx/gameserializer';
 import { get_gamemodel, new_vec3 } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
-import { BaseModel } from '../bmsx/model';
+import { BaseModel } from '../bmsx/basemodel';
 import { Player } from './eila';
 import type { Direction } from "../bmsx/bmsx";
 import { Fighter } from './fighter';
@@ -29,8 +29,8 @@ export class gamemodel extends BaseModel {
     public static readonly VERTICAL_POSITION_FIGHTERS = 176;
 
     public theOtherFighter(fighterAskingForTheOther: Fighter): Fighter {
-        if (fighterAskingForTheOther.id === 'player') return this.get('sinterklaas');
-        else return this.get('player');
+        if (fighterAskingForTheOther.id === 'player') return this.getGameObject('sinterklaas');
+        else return this.getGameObject('player');
     }
 
     @subscribesToGlobalEvent('hit_animation_end')
@@ -82,7 +82,7 @@ export class gamemodel extends BaseModel {
                                 SM.play(AudioId.trainen);
                             },
                             run(this: gamemodel) {
-                                const player = this.get('player');
+                                const player = this.getGameObject<Fighter>('player');
                                 if (player.x < 16) {
                                     this.sc.to('gamemodel.default.ffwachten2');
                                 }
@@ -115,7 +115,7 @@ export class gamemodel extends BaseModel {
                 gameover: {
                     enter(this: gamemodel) {
                         this.setSpace('gameover');
-                        if (!this.get('gameover')) {
+                        if (!this.getGameObject('gameover')) {
                             this.spawn(new GameOver(), new_vec3(0, 0, 0));
                         }
                         SM.play(AudioId.gameover);
@@ -125,7 +125,7 @@ export class gamemodel extends BaseModel {
                 hoera: {
                     enter(this: gamemodel) {
                         this.setSpace('hoera');
-                        if (!this.get('hoera')) {
+                        if (!this.getGameObject('hoera')) {
                             this.spawn(new Hoera(), new_vec3(0, 0, 0));
                         }
                         SM.play(AudioId.gameover);
@@ -135,7 +135,7 @@ export class gamemodel extends BaseModel {
                 titlescreen: {
                     enter(this: gamemodel) {
                         this.setSpace('titlescreen');
-                        if (!this.get('title')) {
+                        if (!this.getGameObject('title')) {
                             this.spawn(new TitleScreen(), new_vec3(0, 0, 0));
                         }
                     },
