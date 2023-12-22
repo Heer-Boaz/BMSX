@@ -11,13 +11,13 @@ type EmitterScopeListenerMap = Record<string, EventListenerMap>;
 export class EventEmitter {
     private emitterScopeListeners: EmitterScopeListenerMap = {};
     private globalScopeListeners: EventListenerMap = {};
-    private static instance: EventEmitter;
+    private static _instance: EventEmitter;
 
-    public static getInstance(): EventEmitter {
-        if (!EventEmitter.instance) {
-            EventEmitter.instance = new EventEmitter();
+    public static get instance(): EventEmitter {
+        if (!EventEmitter._instance) {
+            EventEmitter._instance = new EventEmitter();
         }
-        return EventEmitter.instance;
+        return EventEmitter._instance;
     }
 
     on(event_name: string, listener: Function, subscriber: any, emitter_id?: string): void {
@@ -192,7 +192,7 @@ export function emits_event(eventName: string) {
         descriptor.value = function (...args: any[]) {
             originalMethod.apply(this, args);
             // Logic to emit the event
-            EventEmitter.getInstance().emit(eventName, this as IIdentifiable, ...args);
+            EventEmitter.instance.emit(eventName, this as IIdentifiable, ...args);
         };
     };
 }
