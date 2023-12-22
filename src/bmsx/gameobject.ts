@@ -10,6 +10,7 @@ import { vec2, vec3, Area, Vector } from "./rompack";
 import { Direction } from "./bmsx";
 import { ZCOORD_MAX } from "./glview";
 import type { IIdentifiable, Identifier } from "./bmsx";
+import { Registry } from "./registry";
 
 const DEFAULT_HITTABLE = true;
 const DEFAULT_VISIBLE = true;
@@ -279,14 +280,14 @@ export class GameObject implements vec3, IComponentContainer, IIdentifiable, ISt
 
     public ondispose(): void {
         // Unsubscribe from events
-        const eventEmitter = EventEmitter.getInstance();
+        const eventEmitter = EventEmitter.instance;
         eventEmitter.removeSubscriber(this);
 
         // Dispose of components
         Object.values(this.components).forEach(component => component.dispose());
 
         // Deregister the object from the entity registry
-        global.model.registry.deregister(this);
+        Registry.instance.deregister(this);
     }
 
     public paint?(): void;
@@ -373,7 +374,7 @@ export class GameObject implements vec3, IComponentContainer, IIdentifiable, ISt
         const constr = this.constructor as IEventSubscriber;
         if (!constr.eventSubscriptions) return;
 
-        const eventEmitter = EventEmitter.getInstance();
+        const eventEmitter = EventEmitter.instance;
         constr.eventSubscriptions.forEach(subscription => {
             const handler = this[subscription.handlerName].bind(this);
             let emitterFilter: string;
