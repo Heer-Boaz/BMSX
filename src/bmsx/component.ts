@@ -3,6 +3,7 @@ import { IEventSubscriber, EventEmitter, EventSubscription } from './eventemitte
 import { GameObjectConstructorWithComponentList } from './gameobject';
 import { AbstractConstructor } from './bmsx';
 import type { IIdentifiable, Identifier } from "./bmsx";
+import { Registry } from './registry';
 
 export type KeyToComponentMap = { [key: string]: Component };
 export type ComponentConstructor<T extends Component> = new (...args: any[]) => T | AbstractConstructor<new (...args: any[]) => T>; // Allows abstract Component classes to be used as component constructors. This is necessary to allow abstract Component classes to be used as component types in other components (e.g. to allow a collision component to have a list of collision components as a property). NOT IMPLEMENTED YET.
@@ -71,11 +72,11 @@ export abstract class Component implements IIdentifiable {
     public dispose() {
         this.enabled = false;
         // Remove event subscriptions
-        const eventEmitter = EventEmitter.getInstance();
+        const eventEmitter = EventEmitter.instance;
         eventEmitter.removeSubscriber(this);
 
         // Deregister the component from the entity registry
-        global.model.registry.deregister(this);
+        Registry.instance.deregister(this);
     }
 
     /**
@@ -114,7 +115,7 @@ export abstract class Component implements IIdentifiable {
         const constr = this.constructor as IEventSubscriber;
         if (!constr.eventSubscriptions) return; // No event subscriptions
 
-        const eventEmitter = EventEmitter.getInstance();
+        const eventEmitter = EventEmitter.instance;
         constr.eventSubscriptions.forEach(subscription => { // Iterate over all event subscriptions
             const handler = this[subscription.handlerName].bind(this); // Bind the handler to the component instance
             const wrappedHandler = (...args: any[]) => { // Wrap the handler to check if the component is enabled
