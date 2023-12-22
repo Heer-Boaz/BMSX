@@ -1,4 +1,4 @@
-import { ISpaceObject, Space } from "./model";
+import { ISpaceObject, Space } from "./basemodel";
 
 /**
  * Interface for a reviver function used in JSON.parse to deserialize objects.
@@ -18,7 +18,7 @@ interface IReviver {
     /**
      * A dictionary of onLoad functions for each type that can be deserialized.
      */
-    onLoad: Record<string, (result: any) => any>;
+    onLoads: Record<string, ((result: any) => any)[]>;
     /**
      * A function that removes any helper-properties that were added during serialization.
      * @param obj - The object to remove the helper-property from.
@@ -147,7 +147,7 @@ Serializer.serializeObject = (value: any, cache: any[]): {} => {
     if (typename !== 'Object' && typename !== 'object') {
         // Check whether we have a constructor for the given object type
         let theConstructor = Reviver.get_constructor_for_type(typename);
-        if (!theConstructor) throw `No constructor known for object of type '${typename}'. Did you forget to add '@insavegame' to the class definition?`;
+        if (!theConstructor) throw Error (`No constructor known for object of type '${typename}'. Did you forget to add '@insavegame' to the class definition?`);
 
         value.typename = typename;
         if (value.prototype?.onsave) return value.prototype.onsave(value);
@@ -156,12 +156,6 @@ Serializer.serializeObject = (value: any, cache: any[]): {} => {
     return value;
 };
 
-// https://stackoverflow.com/questions/8111446/turning-json-strings-into-objects-with-methods
-// A generic "smart reviver" function.
-// Looks for object values with a `ctor` property and
-// a `data` property. If it finds them, and finds a matching
-// constructor that has a `fromJSON` property on it, it hands
-// off to that `fromJSON` function, passing in the value.
 /**
  * A function that is used to revive serialized objects. It is passed as the second argument to `JSON.parse`.
  * @param key - The key of the current property being parsed.
@@ -170,16 +164,17 @@ Serializer.serializeObject = (value: any, cache: any[]): {} => {
  * @throws An error if there is no constructor known for an object of a certain type.
  */
 export const Reviver: IReviver = (_key: any, value: any) => {
+    // A helper function that finds and executes any onLoad functions on the given value (if any) and returns the result of those functions (if any) or the original value if there were no onLoad functions.
     function findAndFireOnLoads(value: any) {
         // Collect all reviver functions in the prototype chain
         let reviverFunctions = [];
         let proto = value;
 
         while (proto) {
-            const reviver = Reviver.onLoad[proto.constructor.name];
-            if (reviver) {
-                reviverFunctions.push(reviver);
-            }
+            // Add any reviver functions on the prototype to the list. If there are none, this will be an empty array.
+            const revivers = Reviver.onLoads[proto.constructor.name];
+            revivers && reviverFunctions.push(...revivers);
+            // Move up the prototype chain to the next prototype in the chain (if any) and repeat the process until we reach the end of the prototype chain.
             proto = Object.getPrototypeOf(proto);
         }
 
@@ -188,24 +183,34 @@ export const Reviver: IReviver = (_key: any, value: any) => {
             value = reviverFunctions[i].call(value) ?? value;
         }
 
+        // Return the result of the reviver functions (if any) or the original value if there were no reviver functions.
         return value;
     }
 
+    // If the value is null or undefined, return it as-is (no need to revive it)
     if (value === null || value === undefined) return value;
 
+    // If the value is an array, filter out any null or undefined values and return the resulting array (no need to revive it)
     if (Array.isArray(value)) {
         // Remove any empty values
         return value.filter(x => x !== null && x !== undefined);
     }
 
+    // If the value is an object, check whether it has a typename property. If so, we need to revive it. Otherwise, return it as-is (no need to revive it)
     if (typeof value === "object" && typeof value.typename === "string") {
-        let theConstructor = Reviver.get_constructor_for_type(value.typename);
-        if (!theConstructor) throw `No constructor known for object of type '${value.typename}'. Did you forget to add '@insavegame' to the class definition?`;
+        // Check whether we have a constructor for the given object type (typename) and throw an error if we don't have one (we can't revive the object if we don't have a constructor for it)
+        const theConstructor = Reviver.get_constructor_for_type(value.typename);
+        if (!theConstructor) throw Error (`No constructor known for object of type '${value.typename}'. Did you forget to add '@insavegame' to the class definition?`);
+        // Create a new instance of the object using the constructor for the given typename and assign the properties of the serialized object to it (except for the typename property)
         let result = Object.assign(new theConstructor(), value);
+        // Call any onLoad functions on the object (if any) and return the result of those functions (if any) or the original object if there were no onLoad functions.
         result = findAndFireOnLoads(result);
+        // Remove the typename property from the object (it was only used for serialization)
         Reviver.removeSerializerProps(result);
+        // Return the revived object (with any onLoad functions called)
         return result;
     }
+    // If the value is an object, but it does not have a typename property, return it as-is (no need to revive it)
     return value;
 }
 
@@ -224,7 +229,8 @@ Reviver.get_constructor_for_type = (typename: string): new () => any => {
 Reviver.constructors = Reviver.constructors ?? {};
 
 // Ensure Reviver.onLoad is not null or undefined. If it is, initialize it as an empty object.
-Reviver.onLoad = Reviver.onLoad ?? {};
+Reviver.onLoads = Reviver.onLoads ?? {};
+
 /**
  * Removes the helper-property that was added during serialization from the given object.
  * @param obj - The object to remove the helper-property from.
@@ -263,9 +269,6 @@ export function exclude_save(target: Object, propertyKey: string, _descriptor?: 
     Serializer.excludedProperties[target.constructor.name][propertyKey] = true;
 }
 
-// target: the class that the member is on.
-// name: the name of the member in the class.
-// descriptor: the member descriptor; This is essentially the object that would have been passed to Object.defineProperty.
 /**
  * Sets the `onload` property of the target object to the provided function.
  * This function will be called during deserialization to allow the object to perform any custom deserialization logic.
@@ -275,10 +278,10 @@ export function exclude_save(target: Object, propertyKey: string, _descriptor?: 
  * @returns The modified property descriptor.
  */
 export function onload(target: any, _name: any, descriptor: PropertyDescriptor): any {
-    Reviver.onLoad ??= {};
-    Reviver.onLoad[target.constructor.name] = descriptor.value;
+    Reviver.onLoads ??= {};
+    Reviver.onLoads[target.constructor.name] ??= [];
+    Reviver.onLoads[target.constructor.name].push(descriptor.value);
 }
-
 /**
  * **Note: Does not work with `accessor`'s!**
  */
