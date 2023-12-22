@@ -25,7 +25,7 @@ let prevPausedState: boolean; // Remember the paused-state before a dialog was o
 export class DebugHighlightComponent extends PositionUpdateAxisComponent { // Note: MUST export this class, otherwise decorator will cause it to be undefined
     override postprocessingUpdate({ params, returnvalue }: ComponentUpdateParams): void {
         super.postprocessingUpdate({ params, returnvalue });
-        const highlighter = model.get<ObjectHighlighter>('debug_highlighter');
+        const highlighter = model.getGameObject<ObjectHighlighter>('debug_highlighter');
         if (highlighter) {
             highlighter.setHighlightPos(this.parent);
         }
@@ -41,7 +41,7 @@ export class StateMachineVisualizer extends Component {
 
     constructor(_id: Identifier) {
         super(_id);
-        this.bfsmController = global.model.get(_id).sc;
+        this.bfsmController = global.model.getGameObject(_id).sc;
         this.enabled = false;
     }
 
@@ -251,7 +251,7 @@ export function handleDebugMouseMove(e: MouseEvent): void {
 
 function highlight_object(o: GameObject) {
     const model = global.model;
-    let highlighter = model.get<ObjectHighlighter>('debug_highlighter');
+    let highlighter = model.getGameObject<ObjectHighlighter>('debug_highlighter');
 
     if (!o) {
         highlighter && (highlighter.target = null);
