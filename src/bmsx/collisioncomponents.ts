@@ -27,7 +27,7 @@ export abstract class PositionUpdateAxisComponent extends Component {
     }
 
     override preprocessingUpdate(): void {
-        set_inplace_vec2(this.oldPos, this.parent.pos); // Store the old position
+        set_inplace_vec2(this.oldPos, (this.parent as GameObject).pos); // Store the old position
     }
 }
 
@@ -46,10 +46,10 @@ export class ScreenBoundaryComponent extends PositionUpdateAxisComponent {
         super.postprocessingUpdate({ params, returnvalue });
         const currentPos = this.parent.pos;
         if (this.oldPos.x !== currentPos.x) {
-            this.checkBoundaryForXAxis.call(global.model.get(this.parentid), this.oldPos.x, currentPos.x);
+            this.checkBoundaryForXAxis.call(global.model.getGameObject(this.parentid), this.oldPos.x, currentPos.x);
         }
         if (this.oldPos.y !== currentPos.y) {
-            this.checkBoundaryForYAxis.call(global.model.get(this.parentid), this.oldPos.y, currentPos.y);
+            this.checkBoundaryForYAxis.call(global.model.getGameObject(this.parentid), this.oldPos.y, currentPos.y);
         }
     }
 
@@ -128,10 +128,10 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
         super.postprocessingUpdate({ params, returnvalue });
         const currentPos = this.parent.pos;
         if (this.oldPos.x !== currentPos.x) {
-            this.checkTileCollisionForXAxis.call(global.model.get(this.parentid), this.oldPos.x, currentPos.x);
+            this.checkTileCollisionForXAxis.call(global.model.getGameObject(this.parentid), this.oldPos.x, currentPos.x);
         }
         if (this.oldPos.y !== currentPos.y) {
-            this.checkTileCollisionForYAxis.call(global.model.get(this.parentid), this.oldPos.y, currentPos.y);
+            this.checkTileCollisionForYAxis.call(global.model.getGameObject(this.parentid), this.oldPos.y, currentPos.y);
         }
     }
 
