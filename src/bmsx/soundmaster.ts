@@ -25,23 +25,14 @@ export class SM {
     private static sndContext: AudioContext;
 
     /**
-     * The AudioBufferSourceNode currently playing the music track.
-     */
-    private static currentMusicNode: AudioBufferSourceNode;
-    /**
      * The AudioBufferSourceNode currently playing the sound effect.
      */
-    private static currentEffectNode: AudioBufferSourceNode;
+    private static currentAudioNodeByType: Record<AudioType, AudioBufferSourceNode>;
     /**
      * The `AudioMeta` object representing the currently playing sound effect.
      * If no sound effect is currently playing, this value is `null`.
      */
-    public static currentEffectAudio: AudioMeta | null;
-    /**
-     * The `AudioMeta` object representing the currently playing music track.
-     * If no music track is currently playing, this value is `null`.
-     */
-    public static currentMusicAudio: AudioMeta | null;
+    public static currentAudioByType: Record<AudioType, AudioMeta | null>;
     /**
      * The gain node used by the `SM` class for audio playback.
      */
@@ -55,8 +46,8 @@ export class SM {
      */
     public static init(_audioResources: id2res, sndcontext: AudioContext, startingVolume: number, gainnode?: GainNode) {
         SM.sndContext = sndcontext;
-        SM.currentEffectAudio = null;
-        SM.currentMusicAudio = null;
+        SM.currentAudioByType = { sfx: null, music: null };
+        SM.currentAudioNodeByType = { sfx: null, music: null };
 
         SM.sndContext.resume().then(() => {
             if (!gainnode) {
@@ -115,14 +106,7 @@ export class SM {
     }
 
     private static nodeEndedHandler(node: AudioBufferSourceNode, type: AudioType) {
-        switch (type) {
-            case 'sfx':
-                SM.currentEffectAudio = null;
-                break;
-            case 'music':
-                SM.currentMusicAudio = null;
-                break;
-        }
+        SM.currentAudioByType[type] = null;
         SM.releaseNode(node);
     }
 
@@ -148,9 +132,12 @@ export class SM {
     }
 
     private static releaseNode(node: AudioBufferSourceNode) {
-        if (!node) return;
-        node.disconnect();
+        if (!node) {
+            console.warn(`SoundMaster: Attempted to release null node. Skipping.`);
+            return;
+        }
         node.stop();
+        node.disconnect();
         node.buffer = null;
     }
 
@@ -162,33 +149,24 @@ export class SM {
      * @param id The ID of the audio track to be played.
      */
     public static play(id: string): void {
-        let track = SM.tracks[id]?.['audiometa'];
+        const track = SM.tracks[id]?.['audiometa'];
         if (!track) {
             console.warn(`SoundMaster: Attempted to play unknown track with id = "${id}". Skipping.`);
             return;
         }
+        const audiotype = track['audiotype'];
+        if (audiotype === 'sfx' && SM.limitToOneEffect && SM.currentAudioByType[audiotype] && track['priority'] < SM.currentAudioByType[audiotype]['priority']) return;
+        SM.currentAudioByType[audiotype] = track;
 
-        switch (track['audiotype']) {
-            case 'sfx':
-                if (SM.limitToOneEffect && SM.currentEffectAudio && track['priority'] < SM.currentEffectAudio['priority']) return;
-                SM.stopEffect();
-                SM.createNode(id).then(node => {
-                    SM.currentEffectNode = node;
-                    SM.currentEffectAudio = track;
-                    SM.playNode(track, node);
-                })
-                    .catch(e => console.error(e.message));
-                break;
-            case 'music':
-                SM.stopMusic();
-                SM.createNode(id).then(node => {
-                    SM.currentMusicNode = node;
-                    SM.currentMusicAudio = track;
-                    SM.playNode(track, node);
-                })
-                    .catch(e => console.error(e.message));
-                break;
-        }
+        const playCallback = (node: AudioBufferSourceNode) => {
+            SM.stop(id);
+            SM.playNode(track, node);
+            SM.currentAudioNodeByType[audiotype] = node;
+        };
+
+        SM.createNode(id)
+            .then(playCallback)
+            .catch(e => console.error(e.message));
     }
 
     /**
@@ -199,21 +177,26 @@ export class SM {
      */
     // @ts-ignore
     private static stop(id: string): void {
-        switch (SM.tracks[id]?.['audiometa']['audiotype']) {
-            case 'sfx': SM.stopEffect(); break;
-            case 'music': SM.stopMusic(); break;
-        }
+        const audiotype = SM.tracks[id]?.['audiometa']['audiotype'];
+        SM.stopByType(audiotype);
     }
 
     /**
      * Stops the currently playing effect track, if there is one.
      * If there is no effect track currently playing, this method does nothing.
      */
-    public static stopEffect(): void {
+    private static stopByType(type: AudioType): void {
         try {
-            SM.releaseNode(SM.currentEffectNode);
+            const node = SM.currentAudioNodeByType[type];
+            if (node && node.context.state !== 'closed') {
+                SM.releaseNode(node);
+            }
         } catch (e) { console.warn(e); }
-        SM.currentEffectNode = null;
+        SM.currentAudioNodeByType[type] = null;
+    }
+
+    public static stopEffect(): void {
+        SM.stopByType('sfx');
     }
 
     /**
@@ -221,10 +204,7 @@ export class SM {
      * If there is no music track currently playing, this method does nothing.
      */
     public static stopMusic(): void {
-        try {
-            SM.releaseNode(SM.currentMusicNode);
-        } catch (e) { console.warn(e); }
-        SM.currentMusicNode = null;
+        SM.stopByType('music');
     }
 
     /**
