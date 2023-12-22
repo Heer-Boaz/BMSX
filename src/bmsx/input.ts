@@ -154,18 +154,19 @@ class PendingAssignmentProcessor {
     }
 
     private createSelectPlayerIconIfNeeded(gamepadInput: GamepadInput, positionIndex: number) {
+        const model = get_gamemodel();
         if (!this.icon) { // If the joystick icon doesn't exist yet, create it
             const joystick_icon = new SelectedPlayerIndexIcon(gamepadInput.gamepadIndex);
             this.icon = joystick_icon;
-            const existingIcon = get_gamemodel().get(this.icon.id); // Check whether the icon already exists. This can happen when the icon was still animating while somehow the assignment needs to happen again.
-            existingIcon && get_gamemodel().exile(existingIcon); // Remove the existing icon so that we can replace it with a new, younger and prettier version.
-            get_gamemodel().spawn(joystick_icon);
+            const existingIcon = model.getGameObject<SelectedPlayerIndexIcon>(this.icon.id); // Check whether the icon already exists. This can happen when the icon was still animating while somehow the assignment needs to happen again.
+            existingIcon && model.exile(existingIcon); // Remove the existing icon so that we can replace it with a new, younger and prettier version.
+            model.spawn(joystick_icon);
             joystick_icon.x = this.calcIconPositionX(positionIndex);
             joystick_icon.y = PendingAssignmentProcessor.joystick_icon_start.y;
         }
-        else if (!get_gamemodel().getFromCurrentSpace(this.icon.id)) { // Check whether the joystick icon is already part of the current space (scene)
+        else if (!model.is_obj_in_current_space(this.icon.id)) { // Check whether the joystick icon is already part of the current space (scene)
             // If the joystick icon already exists, move it to the current space (scene) (e.g. if the player changed scenes)
-            get_gamemodel().move_obj_to_space(this.icon.id, get_gamemodel().current_space_id);
+            model.move_obj_to_current_space(this.icon.id);
         }
     }
 
