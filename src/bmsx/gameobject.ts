@@ -265,6 +265,7 @@ export class GameObject implements vec3, IComponentContainer, IIdentifiable, ISt
             this.setYNoSweep(spawningPos.y ?? this.y);
             this.setZNoSweep((spawningPos as vec3).z ?? this.z);
         }
+
         // Call the method to initialize linked state machines
         this.initializeLinkedFSMs();
         // Call the method to initialize linked behavior trees
@@ -283,6 +284,9 @@ export class GameObject implements vec3, IComponentContainer, IIdentifiable, ISt
 
         // Dispose of components
         Object.values(this.components).forEach(component => component.dispose());
+
+        // Deregister the object from the entity registry
+        global.model.registry.deregister(this);
     }
 
     public paint?(): void;
@@ -377,7 +381,7 @@ export class GameObject implements vec3, IComponentContainer, IIdentifiable, ISt
                 case 'all': emitterFilter = undefined; break;
                 case 'parent':
                     emitterFilter = (this as GameObject & { parentid?: Identifier }).parentid;
-                    if (!emitterFilter) throw `Cannot subscribe GameObject ${this.id} to event ${subscription.eventName} with scope ${subscription.scope} as the class (instance) ${this.constructor.name} does not have a "parentid".`;
+                    if (!emitterFilter) throw Error (`Cannot subscribe GameObject ${this.id} to event ${subscription.eventName} with scope ${subscription.scope} as the class (instance) ${this.constructor.name} does not have a "parentid".`);
                     break;
                 case 'self': emitterFilter = this.id; break;
             }
