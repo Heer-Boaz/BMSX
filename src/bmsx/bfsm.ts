@@ -1,7 +1,6 @@
-import { GameObject } from "./gameobject";
 import { exclude_save, insavegame } from "./gameserializer";
-import { IIdentifiable } from "./bmsx";
-import { BaseModel } from "./model";
+import { IIdentifiable, Identifier } from "./bmsx";
+import { BaseModel } from "./basemodel";
 
 /**
  * Represents the machine definitions.
@@ -177,22 +176,22 @@ function generateSubmachineId(machine_name: string, stateId: string): string {
 /**
  * Represents a type definition for mapping IDs to `sdef` objects.
  */
-export type id2sdef = Record<string, sdef>;
+export type id2sdef = Record<Identifier, sdef>;
 
 /**
  * Represents a mapping of IDs to mdefs.
  */
-export type id2mdef = Record<string, mdef>;
+export type id2mdef = Record<Identifier, mdef>;
 
 /**
  * Represents a mapping of IDs to state contexts.
  */
-export type id2mstate = Record<string, statecontext>;
+export type id2mstate = Record<Identifier, statecontext>;
 
 /**
  * Represents a mapping of IDs to sstates.
  */
-export type id2sstate = Record<string, sstate>;
+export type id2sstate = Record<Identifier, sstate>;
 
 /**
  * Represents a state event handler function.
@@ -200,7 +199,7 @@ export type id2sstate = Record<string, sstate>;
  * @param type - The type of state event.
  * @returns The result of the state event handler.
  */
-export interface state_event_handler { (state: sstate, ...args: any[]); }
+export interface state_event_handler<T extends IStateful = any> { (state: sstate<T>, ...args: any[]); }
 /**
  * Represents a tape used in the BFSM.
  */
@@ -239,7 +238,7 @@ export class bfsm_controller {
 	/**
 	 * The substate object that holds the state context for each substate.
 	 */
-	statemachines: Record<string, statecontext>;
+	statemachines: Record<Identifier, statecontext>;
 
 	public get machines(): Record<string, statecontext> {
 		return new Proxy(this.statemachines, {
@@ -252,7 +251,7 @@ export class bfsm_controller {
 		});
 	}
 
-	current_machine_id: string;
+	current_machine_id: Identifier;
 
 	get current_machine(): statecontext { return this.statemachines[this.current_machine_id]; }
 
@@ -293,7 +292,7 @@ export class bfsm_controller {
 	 * @param newstate The new state to switch to, in the format "statemachine.state.substate".
 	 * @param args Optional arguments to pass to the new state.
 	 */
-	to(newstate: string, ...args: any[]): void {
+	to(newstate: Identifier, ...args: any[]): void {
 		const dotIndex = newstate.indexOf('.');
 		let machineid = dotIndex !== -1 ? newstate.slice(0, dotIndex) : newstate;
 		let stateids = dotIndex !== -1 ? newstate.slice(dotIndex + 1) : undefined;
@@ -343,7 +342,7 @@ export class bfsm_controller {
 	 * @param id - The ID of the state machine.
 	 * @param targetid - The ID of the target machine.
 	 */
-	add_statemachine(id: string, targetid: string): void {
+	add_statemachine(id: Identifier, targetid: Identifier): void {
 		this.statemachines[id] = statecontext.create(id, targetid);
 		// If this is the first id that was added, set it as the current machine
 		if (!this.current_machine_id) this.current_machine_id = id;
@@ -354,7 +353,7 @@ export class bfsm_controller {
 	 * @param id - The ID of the state machine.
 	 * @returns The state machine with the given ID.
 	 */
-	get_statemachine(id: string): statecontext {
+	get_statemachine(id: Identifier): statecontext {
 		return this.statemachines[id];
 	}
 
@@ -387,7 +386,7 @@ export class bfsm_controller {
 	 * Runs the state machine with the given ID.
 	 * @param id - The ID of the state machine.
 	 */
-	run_statemachine(id: string): void {
+	run_statemachine(id: Identifier): void {
 		this.statemachines[id].run();
 	}
 
@@ -404,7 +403,7 @@ export class bfsm_controller {
 	 * Resets the state machine with the given ID.
 	 * @param id - The ID of the state machine.
 	 */
-	reset_statemachine(id: string): void {
+	reset_statemachine(id: Identifier): void {
 		this.statemachines[id].reset();
 	}
 
@@ -428,7 +427,7 @@ export class bfsm_controller {
 	 * Goes back to the previous state of the state machine with the given ID.
 	 * @param id - The ID of the state machine.
 	 */
-	pop_statemachine(id: string): void {
+	pop_statemachine(id: Identifier): void {
 		this.statemachines[id].pop();
 	}
 
@@ -446,11 +445,11 @@ export class bfsm_controller {
 	 * @param id - The ID of the state machine.
 	 * @param stateid - The ID of the state.
 	 */
-	switch_state(id: string, stateid: string): void {
+	switch_state(id: Identifier, stateid: Identifier): void {
 		this.statemachines[id].to(stateid);
 	}
 
-	pause_statemachine(id: string): void {
+	pause_statemachine(id: Identifier): void {
 		this.statemachines[id].paused = true;
 	}
 
@@ -460,14 +459,14 @@ export class bfsm_controller {
 		}
 	}
 
-	pause_all_except(id: string): void {
+	pause_all_except(id: Identifier): void {
 		for (let _id in this.statemachines) {
 			if (_id === id) continue;
 			this.statemachines[_id].paused = true;
 		}
 	}
 
-	resume_statemachine(id: string): void {
+	resume_statemachine(id: Identifier): void {
 		this.statemachines[id].paused = false;
 	}
 
@@ -504,7 +503,7 @@ export class statecontext implements IStateController {
 	/**
 	 * The unique identifier for the bfsm.
 	 */
-	id: string;
+	id: Identifier;
 	/**
 	 * Represents the states of the Bfsm.
 	 */
@@ -518,7 +517,7 @@ export class statecontext implements IStateController {
 	/**
 	 * Identifier of the current state.
 	 */
-	currentid!: string; // Identifier of current state
+	currentid!: Identifier; // Identifier of current state
 	/**
 	 * History of previous states.
 	 */
@@ -529,9 +528,9 @@ export class statecontext implements IStateController {
 	paused: boolean; // Iff paused, skip 'onrun'
 	/**
 	 * This state machine reflects the (partial) state of the game object with the given id
-	 * @see {@link BaseModel.get}
+	 * @see {@link BaseModel.getGameObject}
 	 */
-	targetid: string;
+	targetid: Identifier;
 
 	/**
 	 * Represents the mapping of event types to state IDs for transitions to other states based on events (e.g. 'click' => 'idle').
@@ -547,7 +546,7 @@ export class statecontext implements IStateController {
 	/**
 	 * Returns the game object or model that this state machine is associated with.
 	 */
-	public get target(): GameObject | BaseModel { return global.model.get(this.targetid); }
+	public get target(): IStateful { return global.model.get(this.targetid); }
 
 	/**
 	 * Returns the current state of the FSM
@@ -583,9 +582,9 @@ export class statecontext implements IStateController {
 	/**
 	 * Factory for creating new FSMs.
 	 * @param _id - id of the FSM definition to use for this machine.
-	 * @param _targetid - id of the object that is stated by this FSM. @see {@link BaseModel.get}.
+	 * @param _targetid - id of the object that is stated by this FSM. @see {@link BaseModel.getGameObject}.
 	 */
-	public static create(_id: string, _targetid: string): statecontext {
+	public static create(_id: Identifier, _targetid: Identifier): statecontext {
 		let result = new statecontext(_id, _targetid);
 		result.populateStates();
 
@@ -596,9 +595,9 @@ export class statecontext implements IStateController {
 	 * Represents the context of a state in a finite state machine.
 	 * Contains information about the current state, the state machine it belongs to, and any substate machines.
 	 * @param _id - id of the state machine definition to use for this machine.
-	 * @param _targetid - id of the object that is stated by this FSM. @see {@link BaseModel.get}.
+	 * @param _targetid - id of the object that is stated by this FSM. @see {@link BaseModel.getGameObject}.
 	 */
-	constructor(_id: string, _targetid: string) {
+	constructor(_id: Identifier, _targetid: Identifier) {
 		this.id = _id ?? DEFAULT_BST_ID;
 		this.targetid = _targetid;
 		this.states ??= {};
@@ -859,7 +858,7 @@ export class statecontext implements IStateController {
  * Represents a state in a state machine.
  * @template T - The type of the game object or model associated with the state.
  */
-export class sstate<T extends GameObject | BaseModel = any> implements IStateController, IIdentifiable {
+export class sstate<T extends IStateful = IStateful> implements IStateController, IIdentifiable {
 	/**
 	 * Removes the topmost state from the state machine and transitions to the previous state.
 	 */
@@ -957,7 +956,7 @@ export class sstate<T extends GameObject | BaseModel = any> implements IStateCon
 	// parentid: string;
 	/**
 	 * This concurrent state machine reflects the (partial) state of the game object with the given id
-	 * @see BaseModel.get
+	 * @see BaseModel.getGameObject
 	 */
 	public targetid: string;
 
@@ -997,18 +996,18 @@ export class sstate<T extends GameObject | BaseModel = any> implements IStateCon
 	public get at_tape_start(): boolean { return this.head === 0; }
 
 	/**
-	 * Returns the game object or model associated with the target ID of this state.
-	 * @returns The game object or model associated with the target ID of this state.
-	 * @template T - The type of the game object or model to return.
+	 * Gets the target value.
+	 * @returns The target value of type T.
 	 */
 	public get target() { return this.targetAs<T>(); }
 
 	/**
-	 * Returns the game object or model associated with the target ID of this state.
-	 * @returns The game object or model associated with the target ID of this state.
-	 * @template T - The type of the game object or model to return.
+	 * Retrieves the target object as the specified type.
+	 *
+	 * @returns The target object casted to the specified type.
+	 * @template T - The type to cast the target object to.
 	 */
-	public targetAs<T extends GameObject | BaseModel>(): T { return <T>global.model.get(this.targetid); }
+	public targetAs<T>(): T { return <T>global.model.get(this.targetid); }
 
 	/**
 	 * Represents the state data for the state.
@@ -1159,22 +1158,26 @@ export class sstate<T extends GameObject | BaseModel = any> implements IStateCon
  * Represents a state definition for a state machine.
  */
 export class sdef implements IIdentifiable  {
-	submachine_id?: string; // Represents the machine name of the substate machine
+	submachine_id?: Identifier; // Represents the machine name of the substate machine
 	states?: id2partial_sdef; // Represents the states of the substate machine
 
 	public data?: { [key: string]: any };
+
 	/**
 	 * The unique identifier for the bfsm.
 	 */
-	public id: string;
+	public id: Identifier;
+
 	/**
 	 * The tape used by the BFSM.
 	 */
 	public tape!: Tape;
+
 	/**
 	 * Number of runs before tapehead moves to next statedata.
 	 */
 	public ticks2move: number; // Number of runs before tapehead moves to next statedata
+
 	/**
 	 * Specifies whether the tapehead should automatically rewind to index 0 when it reaches the end of the tape.
 	 * If set to true, the tapehead will be set to index 0 when it would go out of bounds.
@@ -1192,7 +1195,7 @@ export class sdef implements IIdentifiable  {
 	 * @param _id - The ID of the `bfsm` instance.
 	 * @param _partialdef - An optional partial definition to assign to the `bfsm` instance.
 	 */
-	public constructor(_id: string = '_', _partialdef?: Partial<sdef>) {
+	public constructor(_id: Identifier = '_', _partialdef?: Partial<sdef>) {
 		this.id = _id;
 		this.ticks2move ??= 1;
 		this.repetitions ??= 1;
@@ -1276,7 +1279,7 @@ export class mdef implements IIdentifiable {
 	/**
 	 * The unique identifier for this state machine definition.
 	 */
-	public id: string;
+	public id: Identifier;
 
 	/**
 	 * The states defined for this state machine.
@@ -1314,7 +1317,7 @@ export class mdef implements IIdentifiable {
 	 * @param id The unique identifier for this state machine definition.
 	 * @param state_list The list of states defined for this state machine.
 	 */
-	constructor(id?: string, state_list?: machine_states) {
+	constructor(id?: Identifier, state_list?: machine_states) {
 		this.id = id ?? DEFAULT_BST_ID;
 		this.parallel = state_list?.parallel ?? false;
 		this.states ??= {};
@@ -1335,7 +1338,7 @@ export class mdef implements IIdentifiable {
 	 * @returns The new state definition.
 	 * @throws An error if the state definition is missing.
 	 */
-	static #create_state(partial: Partial<sdef>, _state_id: string): sdef {
+	static #create_state(partial: Partial<sdef>, _state_id: Identifier): sdef {
 		if (!partial) throw new Error(`'sdef' with id '${_state_id}' is missing definition while attempting to add it to this 'mdef'!`);
 		return new sdef(_state_id, partial);
 	}
