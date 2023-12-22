@@ -1,6 +1,7 @@
 import { exclude_save, insavegame } from "./gameserializer";
 import { IIdentifiable, Identifier } from "./bmsx";
 import { BaseModel } from "./basemodel";
+import { Registry } from "./registry";
 
 /**
  * Represents the machine definitions.
@@ -546,7 +547,7 @@ export class statecontext implements IStateController {
 	/**
 	 * Returns the game object or model that this state machine is associated with.
 	 */
-	public get target(): IStateful { return global.model.get(this.targetid); }
+	public get target(): IStateful { return Registry.instance.get(this.targetid); }
 
 	/**
 	 * Returns the current state of the FSM
@@ -1007,7 +1008,7 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 	 * @returns The target object casted to the specified type.
 	 * @template T - The type to cast the target object to.
 	 */
-	public targetAs<T>(): T { return <T>global.model.get(this.targetid); }
+	public targetAs<T>(): T { return <T>Registry.instance.get(this.targetid); }
 
 	/**
 	 * Represents the state data for the state.
