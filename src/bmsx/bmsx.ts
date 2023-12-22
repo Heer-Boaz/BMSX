@@ -3,7 +3,7 @@ import { BaseView } from "./view";
 import { SM } from "./soundmaster";
 import { Input } from "./input";
 import { MSX2ScreenWidth, MSX2ScreenHeight } from "./msx";
-import { BaseModel } from "./model";
+import { BaseModel } from "./basemodel";
 import { EventEmitter } from "./eventemitter";
 
 /**
@@ -141,7 +141,7 @@ export type AbstractConstructor<T> = Function & { prototype: T };
  */
 export type Direction = 'none' | 'up' | 'right' | 'down' | 'left';
 
-export type Identifier = string;
+export type Identifier = string | 'model';
 export interface IIdentifiable {
     id: Identifier;
 }
@@ -150,8 +150,13 @@ export interface IIdentifiable {
  * Represents a bitmap font used for rendering text.
  */
 export class BFont {
+    /**
+     * The map of font resources.
+     */
     protected accessor font_res_map: Record<string, string>;
+    // TODO: Make this a property of the font resource map
     get char_width(): number { return 8; }
+    // TODO: Make this a property of the font resource map
     get char_height(): number { return 8; }
 
     /**
