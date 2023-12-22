@@ -141,7 +141,7 @@ class PendingAssignmentProcessor {
                     newProposedPlayerIndex = Input.PLAYERS_MAX; // No wrap-around to avoid accidentally assigning a gamepad to the wrong player
                     break;
                 }
-            } while (!Input.getInstance().isPlayerIndexAvailableForGamepadAssignment(newProposedPlayerIndex) && triedPlayerIndicesCount <= Input.PLAYERS_MAX);
+            } while (!Input.instance.isPlayerIndexAvailableForGamepadAssignment(newProposedPlayerIndex) && triedPlayerIndicesCount <= Input.PLAYERS_MAX);
             if (triedPlayerIndicesCount > Input.PLAYERS_MAX) {
                 // No player index available for gamepad assignment found => abort assignment process for this gamepad
                 newProposedPlayerIndex = null;
@@ -181,13 +181,13 @@ class PendingAssignmentProcessor {
             if (e.gamepad.index === self.gamepadInput.gamepadIndex) {
                 // No player was assigned to this gamepad yet, but this input object was used for polling input from the gamepad
                 console.info(`Gamepad ${gamepad.index} disconnected while pending assignment.`);
-                Input.getInstance().removePendingGamepadAssignment(gamepad); // Remove pending gamepad assignment
+                Input.instance.removePendingGamepadAssignment(gamepad); // Remove pending gamepad assignment
             }
         });
     }
 
     run(): void {
-        const inputMaestro = Input.getInstance();
+        const inputMaestro = Input.instance;
         const gamepadInput = this.gamepadInput
         gamepadInput.pollInput();
 
@@ -241,18 +241,19 @@ class PendingAssignmentProcessor {
 }
 
 export class Input implements IIdentifiable {
-    private static instance: Input;
+    private static _instance: Input;
     private static playerInputs: PlayerInput[] = [];
     private pendingGamepadAssignments: PendingAssignmentProcessor[] = [];
 
     public static PLAYERS_MAX = 4;
     public static PLAYER_MAX_INDEX = Input.PLAYERS_MAX - 1;
 
-    public static getInstance(debug = false): Input {
-        if (!Input.instance) {
-            Input.instance = new Input(debug);
+    public static get instance(): Input {
+        if (!Input._instance) {
+            Input._instance = new Input();
         }
-        return Input.instance;
+
+        return Input._instance;
     }
 
     public static getPlayerInput(playerIndex: number): PlayerInput {
@@ -349,9 +350,9 @@ export class Input implements IIdentifiable {
      * Initializes the input system.
      * @param debug Whether to enable debug mode. Default is true.
      */
-    constructor(debug = true) {
+    constructor() {
         const self = this;
-
+        const debug = global.debug;
 
         // Initialize gamepad states for already connected gamepads
         const gamepads = navigator.getGamepads();
@@ -471,7 +472,7 @@ export class Input implements IIdentifiable {
      */
     public assignGamepadToPlayer(gamepad: GamepadInput, playerIndex: number): void {
         Input.getPlayerInput(playerIndex).assignGamepadToPlayer(gamepad);
-        EventEmitter.getInstance().emit('playerjoin', this, playerIndex);
+        EventEmitter.instance.emit('playerjoin', this, playerIndex);
     }
 
     public static get KC_F1(): boolean {
