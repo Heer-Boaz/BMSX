@@ -378,7 +378,7 @@ void main() {
     private createAdditionalProgram(): void {
         const gl = this.glctx;
         const program = gl.createProgram();
-        if (!program) throw `Failed to create the additional GLSL program! Aborting as we cannot create the GLView for the game!`;
+        if (!program) throw Error(`Failed to create the additional GLSL program! Aborting as we cannot create the GLView for the game!`);
         this.additionalProgram = program;
 
         const vertShader = this.loadShader(gl.VERTEX_SHADER, GLView.vertexShaderCode);
@@ -389,7 +389,7 @@ void main() {
         gl.linkProgram(program);
 
         if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-            throw `Unable to initialize the additional shader program: ${gl.getProgramInfoLog(program)} `;
+            throw Error(`Unable to initialize the additional shader program: ${gl.getProgramInfoLog(program)}.`);
         }
     }
 
@@ -472,7 +472,7 @@ void main() {
     private createProgram(): void {
         const gl = this.glctx;
         const program = gl.createProgram();
-        if (!program) throw `Failed to create the GLSL program! Aborting as we cannot create the GLView for the game!`;
+        if (!program) throw Error(`Failed to create the GLSL program! Aborting as we cannot create the GLView for the game!`);
         this.program = program;
         const vertShader = this.loadShader(gl.VERTEX_SHADER, GLView.vertexShaderCode);
         const fragShader = this.loadShader(gl.FRAGMENT_SHADER, GLView.fragmentShaderTextureCode);
@@ -481,7 +481,7 @@ void main() {
         gl.attachShader(program, fragShader);
         gl.linkProgram(program);
         if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-            throw `Unable to initialize the shader program: ${gl.getProgramInfoLog(program)} `;
+            throw Error(`Unable to initialize the shader program: ${gl.getProgramInfoLog(program)} `);
         }
     }
 
@@ -555,7 +555,7 @@ void main() {
 
         // Check for errors
         if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-            throw `Error compiling vertex shader: ${gl.getShaderInfoLog(shader)} `;
+            throw Error(`Error compiling vertex shader: ${gl.getShaderInfoLog(shader)} `);
         }
 
         return shader;
@@ -894,7 +894,7 @@ void main() {
         const imgmeta = global.rom['img_assets'][imgid]?.['imgmeta'];
 
         if (!imgmeta) {
-            throw `Image with id '${imgid}' not found while trying to retrieve image metadata!`;
+            throw Error(`Image with id '${imgid}' not found while trying to retrieve image metadata!`);
         }
 
         const distinct_options_object = {
