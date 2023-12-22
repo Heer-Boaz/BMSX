@@ -28,8 +28,8 @@ export class Hud extends SpriteObject {
         // Update hitpoints
         const model = get_model();
         const view = global.view as GLView;
-        const player = model.get<Fighter>('player');
-        const sinterklaas = model.get<Fighter>('sinterklaas');
+        const player = model.getGameObject<Fighter>('player');
+        const sinterklaas = model.getGameObject<Fighter>('sinterklaas');
 
         const HP_BAR1 = { startX: 112, endX: 40, startY: 25, endY: 29 };
         const HP_BAR2 = { startX: 216, endX: 144, startY: 25, endY: 29 };

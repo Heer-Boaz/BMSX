@@ -11,7 +11,7 @@ import { GamepadInputMapping, Input, KeyboardButton, GamepadButton, KeyboardInpu
 import { TextWriter } from '../bmsx/textwriter';
 import { GameMenu } from './gamemenu';
 import { GameObject } from '../bmsx/gameobject';
-import { base_model_spaces, BaseModel, spaceid_2_space } from '../bmsx/model';
+import { base_model_spaces, BaseModel, spaceid_2_space } from '../bmsx/basemodel';
 import { SpriteObject } from '../bmsx/sprite';
 import { leavingScreenHandler_prohibit } from '../bmsx/collisioncomponents';
 
@@ -26,10 +26,10 @@ class gamemodel extends BaseModel {
     public score: number = 0;
 
     public get diamant(): diamant {
-        return this.get('diamant');
+        return this.getGameObject('diamant');
     }
     public get draaischijf(): draaischijf {
-        return this.get('draaischijf');
+        return this.getGameObject('draaischijf');
     }
 
     public get_onvolmaaktheden(): onvolmaaktheid[] {
@@ -135,10 +135,10 @@ class gamemodel extends BaseModel {
                         this.paused = true;
                     },
                     run(this: gamemodel) {
-                        this.get<GameMenu>('gamemenu')?.run();
+                        this.getGameObject<GameMenu>('gamemenu')?.run();
                     },
                     exit(this: gamemodel) {
-                        let menu = this.get<GameMenu>('gamemenu');
+                        let menu = this.getGameObject<GameMenu>('gamemenu');
                         menu.Close();
                         this.exile(menu);
 

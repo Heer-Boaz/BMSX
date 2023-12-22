@@ -9,7 +9,7 @@ import { statedef_builder, machine_states, build_fsm, assign_fsm } from '../bmsx
 import { insavegame } from '../bmsx/gameserializer';
 import { new_area, Game, new_vec2, get_gamemodel } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
-import { BaseModel } from '../bmsx/model';
+import { BaseModel } from '../bmsx/basemodel';
 import { SpriteObject } from '../bmsx/sprite';
 import { attach_components, Component, componenttags_preprocessing, update_tagged_components } from '../bmsx/component';
 import { subscribesToParentScopedEvent, subscribesToSelfScopedEvent } from '../bmsx/eventemitter';

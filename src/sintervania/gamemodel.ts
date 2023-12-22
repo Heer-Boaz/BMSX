@@ -394,7 +394,7 @@ export class Model extends BaseModelOld {
 
     public RemoveItemFromInventory(itemType: ItemType, removeAll: boolean = false): void {
         let itemInInventory = this.ItemsInInventory.find(i => i.Type == itemType);
-        if (!itemInInventory) throw `Item is not in inventory while trying to remove an item: ${itemType}`;
+        if (!itemInInventory) throw Error (`Item is not in inventory while trying to remove an item: ${itemType}`;
         if (itemInInventory.Amount > 1 && !removeAll)
             itemInInventory.Amount--;
         else {
