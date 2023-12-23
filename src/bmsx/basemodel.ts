@@ -1,6 +1,6 @@
 import { BehaviorTreeDefinition, BehaviorTreeDefinitions, BehaviorTreeID, setup_btdef_library, setup_bt_library } from "./behaviourtree";
 import { mdef, MachineDefinitions, sdef, setup_fsmdef_library, sstate, bfsm_controller, IStateful } from "./bfsm";
-import type { IIdentifiable, Identifier } from "./bmsx";
+import type { IRegisterable, Identifier } from "./bmsx";
 import { GameObject } from "./gameobject";
 import { insavegame, onsave, Reviver, Savegame, Serializer } from "./gameserializer";
 import { Input } from "./input";
@@ -120,7 +120,7 @@ export class Space {
     public exile(o: GameObject, skip_ondispose_event: boolean = false): void {
         const index = this.objects.indexOf(o);
         if (index < 0) throw new Error(`GameObject ${o?.id ?? o} to remove from space '${this.id}' was not found, while calling [BaseModel.exile]!`);
-        !skip_ondispose_event && o.ondispose?.(); // Trigger ondispose event before removing the object from the space. `ondispose` unsubscribes the object from events and removes it from the registry
+        !skip_ondispose_event && o.dispose?.(); // Trigger ondispose event before removing the object from the space. `ondispose` unsubscribes the object from events and removes it from the registry
 
         if (index > -1) {
             delete this.objects[index];
@@ -155,7 +155,7 @@ export type base_model_spaces = 'game_start' | 'default';
  * The base model class for the game. Contains all the spaces and objects in the game world.
  * Provides methods to add, remove, and manipulate game objects and spaces.
  */
-export abstract class BaseModel implements IStateful, IIdentifiable {
+export abstract class BaseModel implements IStateful {
     private get registry(): Registry { return Registry.instance; }
 
     /**
@@ -163,7 +163,7 @@ export abstract class BaseModel implements IStateful, IIdentifiable {
      * @param id The identifier of the entity to retrieve.
      * @returns The retrieved entity if found, otherwise null.
      */
-    public get<T extends IIdentifiable = any>(id: Identifier): T | null {
+    public get<T extends IRegisterable = any>(id: Identifier): T | null {
         return this.registry.get(id);
     }
 
@@ -337,6 +337,17 @@ export abstract class BaseModel implements IStateful, IIdentifiable {
         BaseModel.setup_fsmdef_library();
         BaseModel.setup_bt_library();
         this.init_event_subscriptions();
+    }
+
+    public dispose(): void {
+        // Clear all spaces and objects
+        this.clearAllSpaces();
+        // Dispose the state machine controller and deregister all state machines
+        this.sc.dispose();
+        // Unsubscribe from all events
+        EventEmitter.instance.removeSubscriber(this);
+        // Clear the registry and register the model itself and the input handler as entities in the registry (so they can be retrieved by id)
+        this.init_or_reset_registry();
     }
 
     public init_or_reset_registry(): void {
