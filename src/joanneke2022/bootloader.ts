@@ -3,7 +3,7 @@ import { MSX2ScreenHeight, MSX2ScreenWidth } from './../bmsx/msx';
 import type { RomPack, vec2 } from '../bmsx/rompack';
 import type { Direction } from "../bmsx/bmsx";
 import { Game, new_vec2, new_area, randomInt, copy_vector } from '../bmsx/bmsx';
-import { sdef, sstate, Bla, statedef_builder, build_fsm, statecontext, machine_states } from '../bmsx/bfsm';
+import { sdef, sstate, Bla, statedef_builder, build_fsm, machine_states } from '../bmsx/bfsm';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
@@ -160,7 +160,7 @@ class gamemodel extends BaseModel {
 
     public override init_model_state_machines(derived_modelclass_constructor_name: string): this {
         super.init_model_state_machines(derived_modelclass_constructor_name);
-        this.sc.machines.gamemenu = statecontext.create('model_substate', 'model');
+        this.sc.add_statemachine('model_substate', this.id);
         this.sc.machines.gamemenu.to('closed');
         return this;
     }
