@@ -13,6 +13,7 @@ import { SpriteObject } from './sprite';
 import { Color } from './view';
 import { EventEmitter } from './eventemitter';
 import { BehaviorTreeDefinitions } from './behaviourtree';
+import { Registry } from './registry';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
 
 let draggedObj: GameObject | null;
@@ -207,7 +208,12 @@ class FloatingDialog {
 }
 
 export function handleDebugMouseDown(e: MouseEvent): void {
-    if (!Input.getPlayerInput(1).getKeyState('ShiftLeft')) { // Only start or continue dragging when shift is pressed. Note that the shift key is not updated after the mouse is pressed down
+    if (e.button !== 0) {
+        draggedObj = null; // Stop dragging object
+        return; // Only start dragging when primary button is pressed
+    }
+
+    if (!Input.getPlayerInput(1).getKeyState('ShiftLeft').pressed) { // Only start or continue dragging when shift is pressed. Note that the shift key is not updated after the mouse is pressed down
         draggedObj = null; // Stop dragging object
         return;
     }
@@ -215,6 +221,7 @@ export function handleDebugMouseDown(e: MouseEvent): void {
     if (!draggedObj) { // Only start dragging when no object is currently being dragged
         let { objUnderCursor, offsetToCursor } = getGameObjectAtCursor(e); // Get the object under the cursor and the offset from the cursor to the object's position
         if (objUnderCursor && offsetToCursor) { // Only start dragging when an object is under the cursor and the offset is valid (i.e. the object has a position)
+            e.preventDefault();
             startDragGameObject(objUnderCursor!, offsetToCursor!); // Start dragging the object under the cursor around
         }
     }
@@ -269,9 +276,8 @@ function highlight_object(o: GameObject) {
     global.view.drawgame();
 }
 
-export function handleDebugMouseUp(e: MouseEvent): void {
+export function handleDebugMouseUp(_e: MouseEvent): void {
     if (draggedObj) {
-        if (Input.getPlayerInput(1).getKeyState('ShiftLeft').pressed && e.button !== 0) return; // Only stop dragging when primary button is released or shift is not pressed. Note that the shift key is not updated after the mouse is pressed down
         draggedObj = null;
     }
 }
@@ -291,7 +297,7 @@ export function handleContextMenu(e: MouseEvent): void {
     const { objUnderCursor } = getGameObjectAtCursor(e);
     // if (Input.getPlayerInput(1).getKeyState('ControlLeft').pressed) { // Ctrl + mouse move = allow for selecting objects in the game world (for debugging)
     // Highlight mouse-overed objects
-    highlight_object(objUnderCursor);
+    // highlight_object(objUnderCursor);
     // Add state visualiser component to the object
     if (objUnderCursor) {
         // Verify that the object does not already have a state visualiser component
@@ -336,7 +342,7 @@ function addElement(addElementTo: HTMLElement, contentAsElement: HTMLElement) {
 }
 
 const OBJECT_TABLE_PROPS_TO_REDIRECT_NAMES = ['state', 'objects', 'spaces'];
-const OBJECT_TABLE_REDIRECT_BY_INNER_OBJECT = false;
+const OBJECT_TABLE_REDIRECT_BY_INNER_OBJECT = true;
 
 function shouldPropertyBeExcluded(propName: string, parent_obj: Object): boolean {
     let parent_obj_name = parent_obj?.constructor?.name;
@@ -573,7 +579,7 @@ function visualizeStateMachine(dialogElement: HTMLElement, container: HTMLElemen
             // If the state is a state machine, visualize it
             if (state.sm instanceof statecontext) {
                 let subTableCell = addContent(stateRow, 'td', null) as HTMLTableCellElement;
-                visualizeMachine(state.sm, state.sm.id, subTableCell, isActive && machine.currentid === stateId, newpath);
+                visualizeMachine(state.sm, state.sm.def_id, subTableCell, isActive && machine.currentid === stateId, newpath);
             }
         }
 
@@ -634,7 +640,7 @@ function highlightCurrentState(stateElements: Map<string, HTMLElement>, machineE
             // If the state is a state machine, update its classes
             let state = machine.states?.[stateId];
             if (state?.sm instanceof statecontext) {
-                updateMachineClasses(state.sm, state.sm.id, isActive && machine.currentid === stateId, newpath);
+                updateMachineClasses(state.sm, state.sm.def_id, isActive && machine.currentid === stateId, newpath);
             }
         }
     }
@@ -883,6 +889,11 @@ export function handleOpenDebugMenu(e: UIEvent): void {
     row.classList.add('selectableoption', 'centered-text');
     addContent(row, 'td', `See the Event Emitter`);
     row.onclick = (_) => openObjectDetailMenu(EventEmitter.instance, 'Event Emitter', dialogDiv);
+
+    row = addContent(table, 'tr', null);
+    row.classList.add('selectableoption', 'centered-text');
+    addContent(row, 'td', `See da Registry`);
+    row.onclick = (_) => openObjectDetailMenu(Registry.instance, 'Da Registry', dialogDiv);
 
     document.body.insertBefore(dialogDiv, null);
 }
