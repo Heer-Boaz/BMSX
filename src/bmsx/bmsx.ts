@@ -149,6 +149,13 @@ export interface IIdentifiable {
     id: Identifier;
 }
 
+export interface IDisposable {
+    dispose(): void;
+}
+
+export interface IRegisterable extends IIdentifiable, IDisposable {
+}
+
 /**
  * Represents a bitmap font used for rendering text.
  */
@@ -575,7 +582,11 @@ export function set_inplace_area(a: Area, n: Area): void {
  * @param ey The y-coordinate of the end point.
  * @returns The newly created area.
  */
-export function new_area(sx: number, sy: number, ex: number, ey: number, sz?: number, ez?: number): Area {
+export function new_area(sx: number, sy: number, ex: number, ey: number): Area {
+    return { start: { x: sx, y: sy, z: undefined }, end: { x: ex, y: ey, z: undefined } };
+}
+
+export function new_area3d(sx: number, sy: number, sz: number, ex: number, ey: number, ez?: number): Area {
     return { start: { x: sx, y: sy, z: sz }, end: { x: ex, y: ey, z: ez } };
 }
 
@@ -880,6 +891,22 @@ export class Game {
         global.view.init();
         SM.init(_rom['snd_assets'], sndcontext, 1, gainnode);
         Input.instance; // Init input module
+        if (debug) {
+            // @ts-ignore
+            window['model'] = global.model;
+            // @ts-ignore
+            window['view'] = global.view;
+            // @ts-ignore
+            window['rom'] = global.rom;
+            // @ts-ignore
+            window['game'] = global.game;
+            // @ts-ignore
+            window['registry'] = global.registry;
+            // @ts-ignore
+            window['eventEmitter'] = global.eventEmitter;
+
+            Input.instance.enableDebugMode();
+        }
 
         // Prevent the user from accidentally closing the game window if not in debug mode
         if (!debug) {
