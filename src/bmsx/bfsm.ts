@@ -1,5 +1,5 @@
-import { exclude_save, insavegame } from "./gameserializer";
-import { IIdentifiable, Identifier } from "./bmsx";
+import { exclude_save, insavegame, onload } from "./gameserializer";
+import { IIdentifiable, IRegisterable, Identifier } from "./bmsx";
 import { BaseModel } from "./basemodel";
 import { Registry } from "./registry";
 
@@ -158,20 +158,29 @@ function validateStateMachine(machinedef: mdef): void {
 	}
 
 	// Check if the start state is defined
-	if (!machinedef.start_state) {
+	if (!machinedef.start_state_id) {
 		throw new Error(`No start state defined for state machine '${machinedef.id}'`);
 	}
 
 	// Check if the start state exists
-	if (machinedef.start_state && !stateNames.includes(machinedef.start_state)) {
-		throw new Error(`Invalid start state '${machinedef.start_state}', as that state doesn't exist in the machine '${machinedef.
-			id}'.`);
+	if (machinedef.start_state_id && !stateNames.includes(machinedef.start_state_id)) {
+		throw new Error(`Invalid start state '${machinedef.start_state_id}', as that state doesn't exist in the machine '${machinedef.id}'.`);
 	}
 }
 
 // Function to generate a new submachine_id
 function generateSubmachineId(machine_name: Identifier, stateId: Identifier): string {
-	return `${machine_name}_${stateId}`;
+	if (mdef.START_STATE_PREFIXES.includes(stateId.charAt(0))) {
+		stateId = stateId.slice(1);
+	}
+	if (mdef.START_STATE_PREFIXES.includes(machine_name.charAt(0))) {
+		machine_name = machine_name.slice(1);
+	}
+
+	let id = `${machine_name}.${stateId}`; // The submachine_id is the machine_name + the stateId (e.g. 'machine_name.stateId') to create a unique submachine_id
+	let parts = id.split('.'); // Split the id into parts to remove duplicate parts and create a unique submachine_id
+	let uniqueParts = parts.filter((value, index, self) => self.indexOf(value) === index); // Remove duplicate parts
+	return uniqueParts.join('.'); // Join the parts together with a '.' in between each part to create the submachine_id for the substate machine definition
 }
 
 /**
@@ -219,11 +228,11 @@ export const DEFAULT_BST_ID = 'master';
  */
 export const NONE_STATE_ID = '_none';
 
-export interface IStateful extends IIdentifiable {
-    /**
-     * The StatemachineController of the object.
-     */
-    sc: bfsm_controller;
+export interface IStateful extends IRegisterable {
+	/**
+	 * The StatemachineController of the object.
+	 */
+	sc: bfsm_controller;
 }
 
 /**
@@ -264,6 +273,13 @@ export class bfsm_controller {
 
 	constructor() {
 		this.statemachines = {};
+	}
+
+	public dispose(): void {
+		// Deregister all machines
+		for (let id in this.statemachines) {
+			this.statemachines[id].dispose();
+		}
 	}
 
 	start(): void {
@@ -321,30 +337,27 @@ export class bfsm_controller {
 	 * @param args - Additional arguments to pass to the state switch function.
 	 */
 	switch(path: string, ...args: any[]): void {
-		const dotIndex = path.indexOf('.');
-		const machineid = dotIndex !== -1 ? path.slice(0, dotIndex) : path;
-		let stateids = dotIndex !== -1 ? path.slice(dotIndex + 1) : undefined;
-
-		// If no stateid is specified, assume that the stateid is the same as the machineid
-		if (!stateids) {
-			stateids = machineid;
-		}
+		const [machineid, ...stateids] = path.split('.');
 
 		const machine = this.statemachines[machineid];
 		if (!machine) throw new Error(`No machine with ID "${machineid}"`);
 
+		// If no stateid is specified, assume that the stateid is the same as the machineid
+		const stateid = stateids.length > 0 ? stateids.join('.') : machineid;
+
 		// Only switch the state in the specified machine, without changing the current machine
-		machine.switch(stateids, ...args);
+		machine.switch(stateid, ...args);
 	}
 
 	/**
 	 * Adds a state machine to the Bfsm instance.
 	 *
 	 * @param id - The ID of the state machine.
-	 * @param targetid - The ID of the target machine.
+	 * @param target_id - The ID of the target machine.
+	 * @param parent_id - The ID of the target object.
 	 */
-	add_statemachine(id: Identifier, targetid: Identifier): void {
-		this.statemachines[id] = statecontext.create(id, targetid);
+	add_statemachine(id: Identifier, target_id: Identifier): void {
+		this.statemachines[id] = statecontext.create(id, target_id, target_id);
 		// If this is the first id that was added, set it as the current machine
 		if (!this.current_machine_id) this.current_machine_id = id;
 	}
@@ -358,29 +371,22 @@ export class bfsm_controller {
 		return this.statemachines[id];
 	}
 
-	/**
-	 * Retrieves the current state of a given path in the state machine.
-	 *
-	 * @param path - The path to the desired state, represented as a dot-separated string.
-	 * @returns The current state object if found, otherwise undefined.
-	 * @throws Error if no machine with the specified ID is found.
-	 */
-	is(path: string): boolean {
-		const dotIndex = path.indexOf('.');
-		const machineid = dotIndex !== -1 ? path.slice(0, dotIndex) : path;
-		const stateids = dotIndex !== -1 ? path.slice(dotIndex + 1) : undefined;
+	is(id: string): boolean {
+		// const [_targetid, machineid, ...stateids] = id.split(/[:.]/);
+		const [machineid, ...stateids] = id.split('.');
 
-		if (dotIndex === -1) {
-			return this.current_machine.is(path);
+		// If there are no more parts, check the state of the current machine
+		if (stateids.length === 0) {
+			return this.current_machine.is(machineid);
 		}
 
-		const machine = this.machines[machineid];
+		const machine = this.statemachines[machineid];
 		if (!machine) {
 			throw new Error(`No machine with ID "${machineid}"`);
 		}
 
 		// If there are more parts, check the state of the submachine with the given path
-		return machine.is(stateids);
+		return machine.is(stateids.join('.'));
 	}
 
 	/**
@@ -482,7 +488,7 @@ export class bfsm_controller {
  * Represents the context of a state in a finite state machine.
  * Contains information about the current state, the state machine it belongs to, and any substate machines.
  */
-interface IStateController {
+interface IStateController extends IRegisterable {
 	run(): void;
 	switch(path: string, ...args: any[]): void;
 	to(path: string, ...args: any[]): void;
@@ -502,36 +508,56 @@ interface IStateController {
  */
 export class statecontext implements IStateController {
 	/**
-	 * The unique identifier for the bfsm.
+	 * The identifier of this specific instance of the state machine.
+	* @see {@link make_id}
 	 */
 	id: Identifier;
+
+	/**
+	 * The identifier of this specific instance of the state machine's parent.
+	 * @see {@link make_id}
+	 */
+	parent_id: Identifier;
+
+	public get parent() { return Registry.instance.get(this.parent_id); }
+
+	/**
+	 * The unique identifier for the bfsm.
+	 */
+	def_id: Identifier;
+
 	/**
 	 * Represents the states of the Bfsm.
 	 */
 	states: id2sstate;
 
 	get sm() { return this; }
+
 	/**
 	 * Indicates whether the state machine is running in parallel with the "current" state machine as defined in {@link bfsm_controller.current_machine}.
 	 */
 	get parallel(): boolean { return this.definition.parallel; }
+
 	/**
 	 * Identifier of the current state.
 	 */
 	currentid!: Identifier; // Identifier of current state
+
 	/**
 	 * History of previous states.
 	 */
 	history!: Array<string>; // History of previous states
+
 	/**
 	 * Indicates whether the execution is paused.
 	 */
 	paused: boolean; // Iff paused, skip 'onrun'
+
 	/**
 	 * This state machine reflects the (partial) state of the game object with the given id
 	 * @see {@link BaseModel.getGameObject}
 	 */
-	targetid: Identifier;
+	target_id: Identifier;
 
 	/**
 	 * Represents the mapping of event types to state IDs for transitions to other states based on events (e.g. 'click' => 'idle').
@@ -547,7 +573,7 @@ export class statecontext implements IStateController {
 	/**
 	 * Returns the game object or model that this state machine is associated with.
 	 */
-	public get target(): IStateful { return Registry.instance.get(this.targetid); }
+	public get target(): IStateful { return Registry.instance.get(this.target_id); }
 
 	/**
 	 * Returns the current state of the FSM
@@ -561,16 +587,18 @@ export class statecontext implements IStateController {
 	 * @param id - id of the state, according to its definition
 	 */
 	public get_sstate(id: Identifier) { return this.states[id]; }
+
 	/**
 	 * Gets the definition of the current state machine.
 	 * @returns The definition of the current state machine.
 	 */
-	public get definition(): mdef { return MachineDefinitions[this.id]; }
+	public get definition(): mdef { return MachineDefinitions[this.def_id]; }
+
 	/**
 	 * Gets the id of the start state of the FSM.
 	 * @returns The id of the start state of the FSM.
 	 */
-	public get start_state_id(): Identifier { return MachineDefinitions[this.id]?.start_state ?? NONE_STATE_ID; }
+	public get start_state_id(): Identifier { return MachineDefinitions[this.def_id]?.start_state_id ?? NONE_STATE_ID; }
 
 	/**
 	 * Gets the definition of the current state of the FSM.
@@ -582,11 +610,11 @@ export class statecontext implements IStateController {
 
 	/**
 	 * Factory for creating new FSMs.
-	 * @param _id - id of the FSM definition to use for this machine.
-	 * @param _targetid - id of the object that is stated by this FSM. @see {@link BaseModel.getGameObject}.
+	 * @param id - id of the FSM definition to use for this machine.
+	 * @param target_id - id of the object that is stated by this FSM. @see {@link BaseModel.getGameObject}.
 	 */
-	public static create(_id: Identifier, _targetid: Identifier): statecontext {
-		let result = new statecontext(_id, _targetid);
+	public static create(id: Identifier, target_id: Identifier, parent_id: Identifier): statecontext {
+		let result = new statecontext(id, target_id, parent_id);
 		result.populateStates();
 
 		return result;
@@ -595,23 +623,48 @@ export class statecontext implements IStateController {
 	/**
 	 * Represents the context of a state in a finite state machine.
 	 * Contains information about the current state, the state machine it belongs to, and any substate machines.
-	 * @param _id - id of the state machine definition to use for this machine.
-	 * @param _targetid - id of the object that is stated by this FSM. @see {@link BaseModel.getGameObject}.
+	 * @param def_id - id of the state machine definition to use for this machine.
+	 * @param target_id - id of the object that is stated by this FSM. @see {@link BaseModel.getGameObject}.
 	 */
-	constructor(_id: Identifier, _targetid: Identifier) {
-		this.id = _id ?? DEFAULT_BST_ID;
-		this.targetid = _targetid;
+	constructor(def_id: Identifier, target_id: Identifier, parent_id: Identifier) {
+		this.def_id = def_id ?? DEFAULT_BST_ID;
+		this.target_id = target_id;
+		this.parent_id = parent_id;
 		this.states ??= {};
 		this.paused ??= false;
 
 		// Note: when parameters are undefined, this constructor was invoked without parameters. This happens when it is revived. In that situation, don't init this object
-		_id && _targetid && this.reset(false);
+		if (def_id && target_id) {
+			this.id = this.make_id();
+			this.register();
+			this.reset(false);
+		}
+	}
+
+	private make_id(): Identifier {
+		let id = `${this.parent_id}.${this.def_id}`; // The id is the parent_id + the def_id (e.g. 'parent_id.def_id') to create a unique id
+		let parts = id.split('.'); // Split the id into parts to remove duplicate parts and create a unique id
+		let uniqueParts = parts.filter((value, index, self) => self.indexOf(value) === index); // Remove duplicate parts (e.g. 'parent_id.parent_id.def_id' becomes 'parent_id.def_id')
+		return uniqueParts.join('.'); // Join the parts together with a '.' in between each part to create the id for the state machine
+	}
+
+	@onload
+	public register(): void {
+		Registry.instance.register(this);
+	}
+
+	public dispose(): void {
+		Registry.instance.deregister(this);
+		// Also deregister all substates
+		for (let state in this.states) {
+			this.states[state].dispose();
+		}
 	}
 
 	public start(): void {
 		const startStateId = this.start_state_id;
 		if (!startStateId) {
-			throw new Error(`No start state defined for state machine '${this.id}'`);
+			throw new Error(`No start state defined for state machine '${this.def_id}'`);
 		}
 
 		const startStateDef = this.get_sstate(startStateId)?.definition;
@@ -662,18 +715,7 @@ export class statecontext implements IStateController {
 		}
 
 		if (this.currentid !== currentPart || restParts.length === 0) { // Don't switch to the same state, except if this is the final part of the id
-			// Perform exit actions for the current state
-			let stateDef = this.current_state_definition;
-			stateDef?.exit?.call(this.target, this.current, ...args);
-			stateDef && this.pushHistory(this.currentid);
-
-			// Update the current state
-			this.currentid = currentPart;
-			if (!this.current) throw new Error(`State "${currentPart}" doesn't exist for this state machine '${this.id}'!`);
-
-			// Perform enter actions for the new current state
-			stateDef = this.current_state_definition;
-			stateDef?.enter?.call(this.target, this.current, ...args);
+			this.transitionToState(currentPart, ...args);
 		}
 
 		// If there are more parts, transition to the next state
@@ -689,24 +731,21 @@ export class statecontext implements IStateController {
 	 * @returns true if the current state matches the path, false otherwise.
 	 * @throws Error if no machine with the specified ID is found.
 	 */
-	public is(path: string): boolean {
-		const dotIndex = path.indexOf('.');
-		const currentPart = dotIndex !== -1 ? path.slice(0, dotIndex) : path;
-		const restParts = dotIndex !== -1 ? path.slice(dotIndex + 1) : undefined;
-		const moreThanOneRestParts = restParts ? (restParts.indexOf('.') !== -1) : false;
+	public is(id: string): boolean {
+		const [stateid, ...substateids] = id.split('.');
 
-		let currentContext: IStateController = this.states[currentPart];
-		if (!currentContext) {
-			throw new Error(`No state with ID "${currentPart}"`);
+		// If there are no more parts, check the id of the current state
+		if (substateids.length === 0) {
+			return this.currentid === stateid;
 		}
 
-		// If there are more parts, check the state of the submachine
-		if (moreThanOneRestParts) {
-			return currentContext.is(restParts);
+		const state = this.states[stateid];
+		if (!state) {
+			throw new Error(`No state with ID "${stateid}"`);
 		}
 
-		// If there are no more parts, check if the current state matches the current part
-		return this.currentid === currentPart;
+		// If there are more parts, check the state of the substate with the given path
+		return state.is(substateids.join('.'));
 	}
 
 	/**
@@ -721,29 +760,21 @@ export class statecontext implements IStateController {
 	 * @throws Error - If the state with the specified ID doesn't exist.
 	 */
 	public switch(path: string, ...args: any[]): void {
-		const dotIndex = path.indexOf('.');
-		const currentPart = dotIndex !== -1 ? path.slice(0, dotIndex) : path;
-		const restParts = dotIndex !== -1 ? path.slice(dotIndex + 1) : undefined;
-		const moreThanOneRestParts = restParts && restParts.indexOf('.') !== -1;
+		const [currentPart, ...restParts] = path.split('.');
 
 		if (currentPart === '*') {
 			// Iterate over all states and substates
 			for (let stateid in this.states) {
 				const currentContext = this.states[stateid] as IStateController;
 				if (!currentContext) continue;
-				// If a match is found, remove the '*' from the id and continue with the rest of the path
-				if (restParts && (restParts === stateid || restParts.startsWith(stateid + '.'))) {
-					if (moreThanOneRestParts) {
-						// If there are more parts, continue to the next state
-						currentContext.switch(restParts, ...args);
-						return;
-					} else {
-						// If this is the final part of the id, switch the state
-						this.to(stateid, ...args);
-						return;
-					}
-				} else if (currentContext.sm) {
-					currentContext.switch(path, ...args);
+
+				// Remove the '*' from the id and continue with the rest of the path
+				if (restParts.length > 1) {
+					currentContext.switch(restParts.join('.'), ...args);
+				}
+				// If the wildcard is just before the final part, switch to the state
+				else if (restParts.length === 1) {
+					currentContext.switch(restParts[0], ...args);
 				}
 			}
 		} else {
@@ -753,25 +784,27 @@ export class statecontext implements IStateController {
 			}
 
 			// If there are more parts, continue to the next state
-			if (restParts) {
-				currentContext.switch(restParts, ...args);
+			if (restParts.length > 0) {
+				currentContext.switch(restParts.join('.'), ...args);
 			} else {
-				// if (this.currentid === currentPart) return; // Don't switch to the same state
-
-				// Perform exit actions for the current state
-				let stateDef = this.current_state_definition;
-				stateDef?.exit?.call(this.target, this.current, ...args);
-				stateDef && this.pushHistory(this.currentid);
-
-				// Update the current state
-				this.currentid = currentPart;
-				if (!this.current) throw new Error(`State "${currentPart}" doesn't exist for this state machine '${this.id}'!`);
-
-				// Perform enter actions for the new current state
-				stateDef = this.current_state_definition;
-				stateDef?.enter?.call(this.target, this.current, ...args);
+				this.transitionToState(currentPart, ...args);
 			}
 		}
+	}
+
+	private transitionToState(stateId: string, ...args: any[]): void {
+		// Perform exit actions for the current state
+		let stateDef = this.current_state_definition;
+		stateDef?.exit?.call(this.target, this.current, ...args);
+		stateDef && this.pushHistory(this.currentid);
+
+		// Update the current state
+		this.currentid = stateId;
+		if (!this.current) throw new Error(`State "${stateId}" doesn't exist for this state machine '${this.def_id}'!`);
+
+		// Perform enter actions for the new current state
+		stateDef = this.current_state_definition;
+		stateDef?.enter?.call(this.target, this.current, ...args);
 	}
 
 	/**
@@ -791,7 +824,7 @@ export class statecontext implements IStateController {
 	// The history of previous states is cleared and the state machine is unpaused.
 	public reset(reset_tree: boolean = true): void {
 		// N.B. doesn't trigger the onenter-event!
-		const start = this.definition?.start_state; // Definition doesn't need to exist
+		const start = this.definition?.start_state_id; // Definition doesn't need to exist
 		this.currentid = start ?? NONE_STATE_ID; // Set the current state to the start state (if it exists)
 		this.history = new Array();
 		this.paused = false;
@@ -826,11 +859,11 @@ export class statecontext implements IStateController {
 			// A class is not required to have a defined machine.
 			// Thus, we create a default machine that automatically has a generated
 			// 'none'-state associated with it.
-			this.add(new sstate(NONE_STATE_ID, this.id, this.targetid));
+			this.add(new sstate(NONE_STATE_ID, this.def_id, this.target_id, this.id));
 		}
 		else {
 			for (let sdef_id in mdef.states) {
-				let state = new sstate(sdef_id, this.id, this.targetid);
+				let state = new sstate(sdef_id, this.def_id, this.target_id, this.id);
 				this.add(state);
 			}
 		}
@@ -846,10 +879,10 @@ export class statecontext implements IStateController {
 	 */
 	private add(...states: sstate[]): void {
 		for (let state of states) {
-			if (!state.statedef_id) throw new Error(`State is missing an id, while attempting to add it to this statecontext '${this.id}'!`);
-			if (this.states[state.statedef_id]) throw new Error(`State ${state.statedef_id} already exists for statecontext '${this.id}'!`);
+			if (!state.statedef_id) throw new Error(`State is missing an id, while attempting to add it to this statecontext '${this.def_id}'!`);
+			if (this.states[state.statedef_id]) throw new Error(`State ${state.statedef_id} already exists for statecontext '${this.def_id}'!`);
 			this.states[state.statedef_id] = state;
-			state.machinedef_id = this.id;
+			state.machinedef_id = this.def_id;
 		}
 	}
 }
@@ -861,6 +894,20 @@ export class statecontext implements IStateController {
  */
 export class sstate<T extends IStateful = IStateful> implements IStateController, IIdentifiable {
 	/**
+	 * The identifier of this specific state instance.
+	 * @see {@link make_id}
+	 */
+	id: Identifier;
+
+	/**
+	 * The identifier of this specific state instance's parent.
+	 * @see {@link make_id}
+	 */
+	parent_id: Identifier;
+
+	public get parent() { return Registry.instance.get(this.parent_id); }
+
+	/**
 	 * Removes the topmost state from the state machine and transitions to the previous state.
 	 */
 	pop(): void {
@@ -868,12 +915,21 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 	}
 
 	/**
-	 * Transition to the specified state.
+	 * Transition the substate to the specified state.
 	 * @param id - The identifier of the state to transition to.
 	 * @param args - Optional arguments to pass to the state transition.
 	 */
 	to(id: string, ...args: any[]): void {
 		this.getOrThrowStateMachine().to(id, ...args);
+	}
+
+	/**
+	 * Transition to the specified state.
+	 * @param id - The identifier of the state to transition to.
+	 * @param args - Optional arguments to pass to the state transition.
+	 */
+	transition(id: string, ...args: any[]): void {
+		this.parent.to(id, ...args);
 	}
 
 	/**
@@ -959,13 +1015,13 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 	 * This concurrent state machine reflects the (partial) state of the game object with the given id
 	 * @see BaseModel.getGameObject
 	 */
-	public targetid: Identifier;
+	public target_id: Identifier;
 
 	/**
 	 * Gets the identifier of the state.
 	 * @returns The identifier of the state.
 	 */
-	public get id(): Identifier { return this.statedef_id; } // IIdentifiable implementation for sstate
+	public get def_id(): Identifier { return this.statedef_id; } // IIdentifiable implementation for sstate
 
 	/**
 	 * Returns the state definition associated with this state.
@@ -1008,7 +1064,7 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 	 * @returns The target object casted to the specified type.
 	 * @template T - The type to cast the target object to.
 	 */
-	public targetAs<T>(): T { return <T>Registry.instance.get(this.targetid); }
+	public targetAs<T>(): T { return <T>Registry.instance.get(this.target_id); }
 
 	/**
 	 * Represents the state data for the state.
@@ -1018,20 +1074,43 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 	/**
 	 * Creates a new state object with the given ID, machine ID, and target ID.
 	 * If parameters are undefined, this constructor was invoked without parameters. This happens when it is revived. In that situation, the object is not initialized.
-	 * @param _id - The ID of the state object.
-	 * @param _machineid - The ID of the state machine object.
-	 * @param _targetid - The ID of the target object.
+	 * @param statedef_id - The ID of the state object.
+	 * @param machine_id - The ID of the state machine object.
+	 * @param target_id - The ID of the target object.
 	 */
-	public constructor(_id: Identifier, _machineid: Identifier, _targetid: Identifier) {
-		this.statedef_id = _id;
-		this.machinedef_id = _machineid;
-		this.targetid = _targetid;
+	public constructor(statedef_id: Identifier, machine_id: Identifier, target_id: Identifier, parent_id: Identifier) {
+		this.statedef_id = statedef_id;
+		this.machinedef_id = machine_id;
+		this.target_id = target_id;
+		this.parent_id = parent_id;
+		this.id = this.make_id();
 		const substateDefinition = this.definition?.submachine_id;
-		this.sm = substateDefinition ? statecontext.create(substateDefinition, this.targetid) : undefined;
+		this.sm = substateDefinition ? statecontext.create(substateDefinition, this.target_id, this.parent_id) : undefined;
 
 		// Note: when parameters are undefined, this constructor was invoked without parameters. This happens when it is revived. In that situation, don't init this object
-		if (_id && _machineid && this.definition) { // No definition exists for the empty 'none'-state
+		if (statedef_id && machine_id && this.definition) { // No definition exists for the empty 'none'-state
+			this.register();
 			this.reset(false);
+		}
+	}
+
+	private make_id(): Identifier {
+		let id = `${this.parent_id}.${this.def_id}`; // The id is the parent_id + the statedef_id (e.g. 'parent_id.statedef_id') to create a unique id for the state
+		let parts = id.split('.'); // Split the id into parts to remove duplicate parts and create a unique id
+		let uniqueParts = parts.filter((value, index, self) => self.indexOf(value) === index); // Remove duplicate parts (e.g. 'parent_id.parent_id.statedef_id' becomes 'parent_id.statedef_id')
+		return uniqueParts.join('.'); // Join the parts together with a '.' in between each part to create the id for the state
+	}
+
+	@onload
+	public register(): void {
+		Registry.instance.register(this);
+	}
+
+	public dispose(): void {
+		Registry.instance.deregister(this);
+		// Also deregister all substates
+		for (let state in this.states) {
+			this.states[state].dispose();
 		}
 	}
 
@@ -1158,7 +1237,7 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 /**
  * Represents a state definition for a state machine.
  */
-export class sdef implements IIdentifiable  {
+export class sdef {
 	submachine_id?: Identifier; // Represents the machine name of the substate machine
 	states?: id2partial_sdef; // Represents the states of the substate machine
 
@@ -1193,17 +1272,17 @@ export class sdef implements IIdentifiable  {
 
 	/**
 	 * Constructs a new instance of the `bfsm` class.
-	 * @param _id - The ID of the `bfsm` instance.
-	 * @param _partialdef - An optional partial definition to assign to the `bfsm` instance.
+	 * @param id - The ID of the `bfsm` instance.
+	 * @param partialdef - An optional partial definition to assign to the `bfsm` instance.
 	 */
-	public constructor(_id: Identifier = '_', _partialdef?: Partial<sdef>) {
-		this.id = _id;
+	public constructor(id: Identifier = '_', partialdef?: Partial<sdef>) {
+		this.id = id;
 		this.ticks2move ??= 1;
 		this.repetitions ??= 1;
 		this.auto_tick ??= true;
 		this.auto_rewind_tape_after_end ??= true;
 		this.data ??= {};
-		_partialdef && Object.assign(this, _partialdef); // Assign the partial definition to the instance
+		partialdef && Object.assign(this, partialdef); // Assign the partial definition to the instance
 
 		// Repeat the tape if necessary (and if it exists) by appending the tape to itself
 		if (this.tape && this.repetitions > 1) {
@@ -1251,22 +1330,22 @@ export interface machine_states {
 	 * At the state machine level, the `on` property defines the global transitions that can occur from any state.
 	 */
 	on?: { [key: string]: Identifier }
-// function dispatch(stateMachine, currentState, event, payload = null) {
-//     const state = stateMachine.states[currentState];
-//     const nextState = state.on[event];
+	// function dispatch(stateMachine, currentState, event, payload = null) {
+	//     const state = stateMachine.states[currentState];
+	//     const nextState = state.on[event];
 
-//     if (nextState) {
-//         console.log(`Transitioning from ${currentState} to ${nextState}`);
-//         // Here you can handle the payload if it exists
-//         if (payload) {
-//             console.log(`Event payload: ${JSON.stringify(payload)}`);
-//         }
-//         return nextState;
-//     } else {
-//         console.log(`No transition from ${currentState} on ${event}`);
-//         return currentState;
-//     }
-// }
+	//     if (nextState) {
+	//         console.log(`Transitioning from ${currentState} to ${nextState}`);
+	//         // Here you can handle the payload if it exists
+	//         if (payload) {
+	//             console.log(`Event payload: ${JSON.stringify(payload)}`);
+	//         }
+	//         return nextState;
+	//     } else {
+	//         console.log(`No transition from ${currentState} on ${event}`);
+	//         return currentState;
+	//     }
+	// }
 	/**
 	 * The states defined for this state machine.
 	 */
@@ -1295,7 +1374,7 @@ export class mdef implements IIdentifiable {
 	/**
 	 * The identifier of the state that the state machine should start in.
 	 */
-	public start_state: Identifier;
+	public start_state_id: Identifier;
 
 	/**
 	 * Represents the state data for the state machine that is shared across its states.
@@ -1326,54 +1405,66 @@ export class mdef implements IIdentifiable {
 		for (let state_id of keys) {
 			this.append(mdef.#create_state(state_list.states[state_id], state_id));
 		}
-		if (keys.length > 0) { // Only look for a start state if we have at least one state in our definition
-			this.start_state ??= keys[0]; // If no default state was defined, we default to the first state found in the list of states
+		if (keys.length > 0 && !this.start_state_id) { // Only look for a start state if we have at least one state in our definition
+			this.start_state_id = keys[0]; // If no default state was defined, we default to the first state found in the list of states
+			// If the start state is not defined, we don't need to change the key of the start state
 		}
-		// _partialdef && Object.assign(this, _partialdef);
+		else {
+			// If the start state is defined, we need to change the key of the start state to exclude the start state prefix
+			const start_state = this.states[this.start_state_id]; // Get the start state
+			for (const state_id of keys) {
+				if (mdef.START_STATE_PREFIXES.includes(state_id.charAt(0))) { // If the state id starts with a start state prefix
+					delete this.states[state_id]; // Delete the start state from the list of states (with the old key)
+					this.states[start_state.id] = start_state; // Add the start state to the list of states (with the new key)
+					break; // Stop iterating over the states
+				}
+			}
+
+		}
 	}
 
 	/**
 	 * Creates a new state definition.
 	 * @param partial The partial definition of the state.
-	 * @param _state_id The identifier of the state.
+	 * @param state_id The identifier of the state.
 	 * @returns The new state definition.
 	 * @throws An error if the state definition is missing.
 	 */
-	static #create_state(partial: Partial<sdef>, _state_id: Identifier): sdef {
-		if (!partial) throw new Error(`'sdef' with id '${_state_id}' is missing definition while attempting to add it to this 'mdef'!`);
-		return new sdef(_state_id, partial);
+	static #create_state(partial: Partial<sdef>, state_id: Identifier): sdef {
+		if (!partial) throw new Error(`'sdef' with id '${state_id}' is missing definition while attempting to add it to this 'mdef'!`);
+		return new sdef(state_id, partial);
 	}
 
 	/**
 	 * Determines if a given state is the start state.
-	 * @param _state The state to check.
+	 * @param state The state to check.
 	 * @returns True if the state is the start state, false otherwise.
 	 */
-	static #is_start_state(_state: sdef): boolean {
-		return mdef.START_STATE_PREFIXES.includes(_state.id.charAt(0)); // Return true iff the first character of the state id is a start state prefix
+	static #is_start_state(state: sdef): boolean {
+		return mdef.START_STATE_PREFIXES.includes(state.id.charAt(0)); // Return true iff the first character of the state id is a start state prefix
 	}
 
 	/**
 	 * Sets the start state of the state machine to the given state.
-	 * @param _state The state to set as the start state.
+	 * @param state The state to set as the start state.
 	 */
-	#set_start_state(_state: sdef): void {
-		this.start_state = _state.id;
+	#set_start_state(state: sdef): void {
+		this.start_state_id = state.id;
 	}
 
 	/**
 	 * Appends a state to the list of states defined for this state machine.
-	 * @param _state The state to append.
+	 * @param state The state to append.
 	 * @throws An error if the state is missing an id or if a state with the same id already exists for this state machine.
 	 */
-	public append(_state: sdef): void {
-		if (!_state.id) throw new Error(`'sdef' is missing an id, while attempting to add it to this 'mdef'!`);
-		if (this.states[_state.id]) throw new Error(`'sdef' with id='${_state.id}' already exists for this 'mdef'!`);
-		if (mdef.#is_start_state(_state)) { // If the state is a start state, set it as the start state
-			_state.id = _state.id.substring(1); // Remove the start state prefix from the id
-			this.#set_start_state(_state); // Set the start state for the state machine
+	public append(state: sdef): void {
+		if (!state.id) throw new Error(`'sdef' is missing an id, while attempting to add it to this 'mdef'!`);
+		if (this.states[state.id]) throw new Error(`'sdef' with id='${state.id}' already exists for this 'mdef'!`);
+		if (mdef.#is_start_state(state)) { // If the state is a start state, set it as the start state
+			state.id = state.id.substring(1); // Remove the start state prefix from the id
+			this.#set_start_state(state); // Set the start state for the state machine
 		}
-		this.states[_state.id] = _state;
-		_state.parent = this;
+		this.states[state.id] = state;
+		state.parent = this;
 	}
 }
