@@ -6,7 +6,8 @@ import { BitmapId } from '../ella2023/resourceids';
 import { SpriteObject } from './sprite';
 import { get_gamemodel } from './bmsx';
 import { machine_states } from './bfsm';
-import type { IIdentifiable, Identifier } from "./bmsx";
+import type { IRegisterable, Identifier } from "./bmsx";
+import { Registry } from './registry';
 
 export type ActionStateQuery = {
     filter?: string[];
@@ -30,8 +31,8 @@ type ButtonId = 'BTN1' | 'BTN2' | 'BTN3' | 'BTN4' | Key;
  */
 function preventActionAndPropagation(e: Event): boolean {
     e.preventDefault();
-    // e.stopPropagation();
-    // e.stopImmediatePropagation();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
     return false;
 }
 
@@ -240,7 +241,7 @@ class PendingAssignmentProcessor {
     }
 }
 
-export class Input implements IIdentifiable {
+export class Input implements IRegisterable {
     private static _instance: Input;
     private static playerInputs: PlayerInput[] = [];
     private pendingGamepadAssignments: PendingAssignmentProcessor[] = [];
@@ -352,7 +353,6 @@ export class Input implements IIdentifiable {
      */
     constructor() {
         const self = this;
-        const debug = global.debug;
 
         // Initialize gamepad states for already connected gamepads
         const gamepads = navigator.getGamepads();
@@ -388,23 +388,42 @@ export class Input implements IIdentifiable {
             }
         }, false);
         document.addEventListener('touchforcechange', e => preventActionAndPropagation(e), options);// iOS -- https://stackoverflow.com/questions/58159526/draggable-element-in-iframe-on-mobile-is-buggy && iOS -- https://stackoverflow.com/questions/50980876/can-you-prevent-3d-touch-on-an-img-but-not-tap-and-hold-to-save
+    }
 
-        if (debug) {
-            // const gamescreen = document.getElementById('gamescreen');
-            window.addEventListener('click', this.handleDebugEvents, options);
-            window.addEventListener('mousedown', this.handleDebugEvents, options);
-            window.addEventListener('mousemove', this.handleDebugEvents, options);
-            window.addEventListener('mouseup', this.handleDebugEvents, options);
-            window.addEventListener('mouseout', this.handleDebugEvents, options);
-            window.addEventListener('contextmenu', e => { preventActionAndPropagation(e), this.handleDebugEvents(e); }, options);
-            window.addEventListener('keydown', e => { preventActionAndPropagation(e), this.handleDebugEvents(e); }, options);
-            window.addEventListener('click', function (e) {
-                if ((e.target as Element).matches('ul.tree li:before')) {
-                    const parentNode = (e.target as HTMLElement).parentNode as HTMLElement;
-                    parentNode?.classList.toggle('open');
-                }
-            });
-        }
+    public enableDebugMode(): void {
+        const gamescreen = document.getElementById('gamescreen');
+        gamescreen.addEventListener('click', this.handleDebugEvents, options);
+        gamescreen.addEventListener('mousedown', this.handleDebugEvents, options);
+        gamescreen.addEventListener('mousemove', this.handleDebugEvents, options);
+        gamescreen.addEventListener('mouseup', this.handleDebugEvents, options);
+        gamescreen.addEventListener('mouseout', this.handleDebugEvents, options);
+        gamescreen.addEventListener('contextmenu', e => this.handleDebugEvents(e), options);
+        window.addEventListener('keydown', e => this.handleDebugEvents(e), options);
+        // window.addEventListener('click', function (e) {
+        //     if ((e.target as Element).matches('ul.tree li:before')) {
+        //         const parentNode = (e.target as HTMLElement).parentNode as HTMLElement;
+        //         parentNode?.classList.toggle('open');
+        //     }
+        // });
+    }
+
+    public dispose(): void {
+        // Remove all pending gamepad assignments
+        this.pendingGamepadAssignments.forEach(pending => pending.removeIcon());
+        this.pendingGamepadAssignments = [];
+
+        // Remove all player inputs
+        // Input.playerInputs.forEach(player => player.dispose());
+        Input.playerInputs = [];
+
+        // Remove all event subscriptions
+        EventEmitter.instance.removeSubscriber(this);
+
+        // Deregister the input system
+        Registry.instance.deregister(this);
+
+        // Remove the input instance
+        Input._instance = undefined;
     }
 
     public pollInput(): void {
@@ -633,6 +652,7 @@ export class Input implements IIdentifiable {
                     break;
             }
         } else if (e instanceof TouchEvent) {
+            e.preventDefault();
             switch (e.type) {
                 case "touchstart":
                     // handleDebugTouchStart(e);
