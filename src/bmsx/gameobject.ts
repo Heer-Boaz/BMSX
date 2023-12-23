@@ -9,7 +9,7 @@ import { new_area, new_vec3, new_vec2, AbstractConstructor } from "./bmsx";
 import { vec2, vec3, Area, Vector } from "./rompack";
 import { Direction } from "./bmsx";
 import { ZCOORD_MAX } from "./glview";
-import type { IIdentifiable, Identifier } from "./bmsx";
+import type { Identifier } from "./bmsx";
 import { Registry } from "./registry";
 
 const DEFAULT_HITTABLE = true;
@@ -29,7 +29,7 @@ interface IGameObjectStatic {
  * Implements both vec2 and vec3 interfaces.
  */
 @insavegame
-export class GameObject implements vec3, IComponentContainer, IIdentifiable, IStateful {
+export class GameObject implements vec3, IComponentContainer, IStateful {
     public components: KeyToComponentMap = {};
     public objectTracker?: ObjectTracker;
 
@@ -278,13 +278,16 @@ export class GameObject implements vec3, IComponentContainer, IIdentifiable, ISt
         this.sc.start();
     }
 
-    public ondispose(): void {
+    public dispose(): void {
         // Unsubscribe from events
         const eventEmitter = EventEmitter.instance;
         eventEmitter.removeSubscriber(this);
 
         // Dispose of components
         Object.values(this.components).forEach(component => component.dispose());
+
+        // Dispose all state machines
+        this.sc.dispose();
 
         // Deregister the object from the entity registry
         Registry.instance.deregister(this);
