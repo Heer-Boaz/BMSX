@@ -1,8 +1,8 @@
-import { Identifier, IIdentifiable } from "./bmsx";
+import { Identifier, IRegisterable } from "./bmsx";
 
 export class Registry {
     private static _instance: Registry;
-    private _registry: Map<Identifier, IIdentifiable>;
+    private _registry: Record<Identifier, IRegisterable>;
     public static get instance(): Registry {
         if (!Registry._instance) {
             Registry._instance = new Registry();
@@ -11,7 +11,7 @@ export class Registry {
     }
 
     constructor() {
-        this._registry = new Map<Identifier, IIdentifiable>();
+        this._registry = {};
     }
 
     /**
@@ -19,8 +19,8 @@ export class Registry {
      * @param id The identifier of the entity to retrieve.
      * @returns The retrieved entity if found, otherwise null.
      */
-    public get<T extends IIdentifiable = any>(id: Identifier): T | null {
-        return this._registry.get(id) as T || null;
+    public get<T extends IRegisterable = any>(id: Identifier): T | null {
+        return this._registry[id] as T || null;
     }
 
     /**
@@ -29,35 +29,35 @@ export class Registry {
      * @returns True if the model has the identifier, false otherwise.
      */
     public has(id: Identifier): boolean {
-        return this._registry.has(id);
+        return this._registry[id] !== undefined;
     }
 
-    public register(entity: IIdentifiable) {
-        this._registry.set(entity.id, entity);
+    public register(entity: IRegisterable) {
+        this._registry[entity.id] = entity;
     }
 
-    public deregister(id: IIdentifiable | Identifier): boolean {
-        const entityId = typeof id === 'string' ? id : id.id;
-        return this._registry.delete(entityId);
+    public deregister(id: IRegisterable | Identifier): boolean {
+        const entity_id = typeof id === 'string' ? id : id.id;
+        return delete this._registry[entity_id];
     }
 
     public clear() {
-        this._registry.clear();
+        this._registry = {};
     }
 
-    public getRegisteredEntities(): IIdentifiable[] {
-        return [...this._registry.values()];
+    public getRegisteredEntities(): IRegisterable[] {
+        return Object.values(this._registry);
     }
 
     public getRegisteredEntityIds(): Identifier[] {
-        return [...this._registry.keys()];
+        return Object.keys(this._registry);
     }
 
     public getRegisteredEntityIdsByType(type: string): Identifier[] {
         return this.getRegisteredEntities().filter(e => e.constructor.name === type).map(e => e.id);
     }
 
-    public getRegisteredEntitiesByType(type: string): IIdentifiable[] {
+    public getRegisteredEntitiesByType(type: string): IRegisterable[] {
         return this.getRegisteredEntities().filter(e => e.constructor.name === type);
     }
 }
