@@ -124,20 +124,20 @@ export class Sinterklaas extends Fighter {
             }
         }
 
-        const statemachine = 'sint_animation';
+        const animation_machine = 'sint_animation';
         return {
             states: {
                 _idle: {
                     run: defaultrun,
                     enter(this: Sinterklaas) {
-                        this.sc.to('sint_animation.idle');
+                        this.sc.to(`${animation_machine}.idle`);
                     },
                 },
                 humiliated: {
                     enter(this: Sinterklaas) {
                         // this.hittable = false;
                         this.resetVerticalPosition();
-                        this.sc.to('sint_animation.humiliated');
+                        this.sc.to(`${animation_machine}.humiliated`);
                     },
                 },
                 stoerheidsdans: {
@@ -149,82 +149,87 @@ export class Sinterklaas extends Fighter {
                         state.reset();
                         this.resetVerticalPosition();
                         this.hittable = false;
-                        this.sc.to(`${statemachine}.${state.current_tape_value}`);
+                        this.sc.to(`${animation_machine}.${state.current_tape_value}`);
                         this.facing = (this.facing === 'left' ? 'right' : 'left');
                     },
                     run(this: Player, state: sstate) {
                         // Lelijk
-                        if (this.sc.machines[statemachine].is(`idle`)) {
+                        if (this.sc.machines[animation_machine].is(`idle`)) {
                             ++state.ticks;
                         }
                     },
                     next(this: Fighter, state: sstate) {
-                        this.sc.to(`${statemachine}.${state.current_tape_value}`);
+                        this.sc.to(`${animation_machine}.${state.current_tape_value}`);
                         this.facing = (this.facing === 'left' ? 'right' : 'left');
                     },
                     end(this: Fighter) {
-                        this.sc.to('idle');
+                        this.sc.to('nagenieten');
                         this.facing = (this.facing === 'left' ? 'right' : 'left');
+                    },
+                },
+                nagenieten: {
+                    enter(this: Sinterklaas) {
+                        this.sc.to(`${animation_machine}.idle`);
                     },
                 },
                 au: {
                     enter(this: Sinterklaas) {
-                        this.sc.pause_statemachine('sint_animation');
+                        this.sc.pause_statemachine(animation_machine);
                     },
                     exit(this: Sinterklaas) {
-                        this.sc.resume_statemachine('sint_animation');
+                        this.sc.resume_statemachine(animation_machine);
                     }
                 },
                 doetau: {
                     enter(this: Sinterklaas) {
-                        this.sc.pause_statemachine('sint_animation');
+                        this.sc.pause_statemachine(animation_machine);
                     },
                     exit(this: Sinterklaas) {
-                        this.sc.resume_statemachine('sint_animation');
+                        this.sc.resume_statemachine(animation_machine);
                     }
                 },
                 walk: {
                     run: defaultrun,
                     enter(this: Sinterklaas) {
-                        if (!this.sc.is('sint_animation.walk')) {
-                            this.sc.to('sint_animation.walk');
+                        if (!this.sc.is(`${animation_machine}.walk`)) {
+                            this.sc.to(`${animation_machine}.walk`);
                         }
                     },
                 },
                 punch: {
                     enter(this: Sinterklaas) {
                         const hit = this.doAttackFlow('punch', get_model().theOtherFighter(this));
-                        this.sc.to('sint_animation.punch', hit);
+                        this.sc.to(`${animation_machine}.punch`, hit);
                     },
                 },
                 highkick: {
                     enter(this: Sinterklaas) {
                         const hit = this.doAttackFlow('highkick', get_model().theOtherFighter(this));
-                        this.sc.to('sint_animation.highkick', hit);
+                        this.sc.to(`${animation_machine}.highkick`, hit);
                     },
                 },
                 lowkick: {
                     enter(this: Sinterklaas) {
                         const hit = this.doAttackFlow('lowkick', get_model().theOtherFighter(this));
-                        this.sc.to('sint_animation.lowkick', hit);
+                        this.sc.to(`${animation_machine}.lowkick`, hit);
                     },
                 },
                 duckkick: {
                     enter(this: Sinterklaas) {
-                        const hit = this.doAttackFlow('dickkick', get_model().theOtherFighter(this));
-                        this.sc.to('sint_animation.duckkick', hit);
+                        const hit = this.doAttackFlow('duckkick', get_model().theOtherFighter(this));
+                        this.sc.to(`${animation_machine}.duckkick`, hit);
                     },
                 },
                 duck: {
                     run: duckrun,
                     enter(this: Sinterklaas) {
-                        this.sc.to('sint_animation.duck');
+                        this.sc.to(`${animation_machine}.duck`);
                     },
                 },
                 jump: {
                     enter(this: Sinterklaas, _s: sstate, directional: boolean = false) {
                         this.sc.to('Sinterklaas.jump.jump_up', directional);
-                        this.sc.to('sint_animation.jump');
+                        this.sc.to(`${animation_machine}.jump`);
                         this.getComponent(JumpingWhileLeavingScreenComponent).enabled = true;
                     },
                     exit(this: Sinterklaas) {
@@ -337,13 +342,14 @@ export class Sinterklaas extends Fighter {
     }
 
     override handleFighterStukEvent(this: Fighter, _event_name: string, emitter: Fighter): void {
-        this.sc.to('sint_animation.humiliated');
+        this.sc.to('humiliated');
         get_model().theOtherFighter(emitter).sc.to('stoerheidsdans');
     }
 
 
     @build_fsm('sint_animation')
     public static buildAnimationFsm(): machine_states {
+        const statemachine = 'sint_animation';
         return {
             parallel: true,
             states: {
@@ -367,7 +373,7 @@ export class Sinterklaas extends Fighter {
                                 state.reset();
                             },
                             next(this: SpriteObject) {
-                                this.sc.switch('sint_animation.walk.walk2');
+                                this.sc.switch(`${statemachine}.walk.walk2`);
                             }
                         },
                         walk2: {
@@ -377,7 +383,7 @@ export class Sinterklaas extends Fighter {
                                 state.reset();
                             },
                             next(this: SpriteObject) {
-                                this.sc.switch('sint_animation.walk.walk1');
+                                this.sc.switch(`${statemachine}.walk.walk1`);
                             }
                         },
                     }
@@ -392,7 +398,7 @@ export class Sinterklaas extends Fighter {
                     },
                     next(this: SpriteObject) {
                         global.eventEmitter.emit('animationEnd', this, 'highkick');
-                        this.sc.switch('sint_animation.idle');
+                        this.sc.switch(`${statemachine}.idle`);
                     }
                 },
                 lowkick: {
@@ -467,9 +473,7 @@ export class Sinterklaas extends Fighter {
                             ticks2move: 50,
                             auto_tick: true,
                             enter(this: SpriteObject) { this.imgid = BitmapId.sint_humiliated_1; },
-                            next(this: SpriteObject) {
-                                this.sc.to('sint_animation.humiliated.animation');
-                            }
+                            next(this: SpriteObject, state: sstate) { state.transition('animation'); }
                         },
                         animation: {
                             ticks2move: 10,
@@ -481,10 +485,10 @@ export class Sinterklaas extends Fighter {
                                 state.reset();
                             },
                             next(this: SpriteObject, state: sstate) {
-                                this.sc.to(`sint_animation.humiliated.animation.${state.current_tape_value}`);
+                                state.to(`${state.current_tape_value}`);
                             },
-                            end(this: SpriteObject) {
-                                this.sc.to('sint_animation.humiliated.waitEnd');
+                            end(this: SpriteObject, state: sstate) {
+                                state.transition('waitEnd');
                             },
                             states: {
                                 _humiliated1: {
