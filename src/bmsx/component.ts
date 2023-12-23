@@ -2,7 +2,7 @@ import { onload, insavegame } from './gameserializer';
 import { IEventSubscriber, EventEmitter, EventSubscription } from './eventemitter';
 import { GameObjectConstructorWithComponentList } from './gameobject';
 import { AbstractConstructor } from './bmsx';
-import type { IIdentifiable, Identifier } from "./bmsx";
+import type { IDisposable, IIdentifiable, Identifier } from "./bmsx";
 import { Registry } from './registry';
 
 export type KeyToComponentMap = { [key: string]: Component };
@@ -12,7 +12,7 @@ export type ComponentId = string;
 /**
  * Represents a container for components.
  */
-export interface IComponentContainer extends IIdentifiable {
+export interface IComponentContainer extends IIdentifiable, IDisposable {
     /**
      * A map of components, where the key is the component name and the value is the component instance.
      */
