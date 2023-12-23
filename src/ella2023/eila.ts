@@ -179,8 +179,13 @@ export class Player extends Fighter {
                         this.facing = (this.facing === 'left' ? 'right' : 'left');
                     },
                     end(this: Fighter) {
-                        this.sc.to('idle');
+                        this.sc.to('nagenieten');
                         this.facing = (this.facing === 'left' ? 'right' : 'left');
+                    },
+                },
+                nagenieten: {
+                    enter(this: Player) {
+                        this.sc.to(`player_animation.idle`);
                     },
                 },
                 au: {
@@ -310,7 +315,7 @@ export class Player extends Fighter {
                                     }
                                 },
                                 flyingkick: {
-                                    enter(this: Player) {
+                                    enter(this: Player, _state: sstate) {
                                         const hit = this.doAttackFlow('flyingkick', get_model().theOtherFighter(this));
                                         this.sc.machines.player_animation.to('flyingkick', hit);
                                     }
