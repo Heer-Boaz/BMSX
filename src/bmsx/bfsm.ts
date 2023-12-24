@@ -1078,43 +1078,52 @@ export class sdef {
 	 */
 	public constructor(id: Identifier = '_', partialdef?: Partial<sdef>) {
 		this.id = id; //`${parent_id ? (parent_id + '.') : ''}${id ?? DEFAULT_BST_ID}`;
-		this.ticks2move ??= 1;
-		this.repetitions ??= 1;
-		this.auto_tick ??= true;
-		this.auto_rewind_tape_after_end ??= true;
-		this.data ??= {};
+		this.ticks2move ??= 0; // Unless already defined, ticks2move is 0
+		this.repetitions = (this.tape ? (this.repetitions ?? 1) : 0);
+		this.auto_tick = this.auto_tick ?? (this.ticks2move !== 0 ? true : false); // If ticks2move is 0, auto_tick is false. Otherwise, auto_tick is true (unless it was already defined)
+		this.auto_rewind_tape_after_end = this.auto_rewind_tape_after_end ?? (this.tape ? true : false); // If there is a tape, auto_rewind_tape_after_end is true. Otherwise, it is false (unless it was already defined)
+		this.data ??= {}; // Unless already defined, data is an empty object
 		partialdef && Object.assign(this, partialdef); // Assign the partial definition to the instance
 
-		// Repeat the tape if necessary (and if it exists) by appending the tape to itself
-		if (this.tape && this.repetitions > 1) {
-			let originalTape = [...this.tape]; // Copy the tape
-			for (let i = 1; i < this.repetitions; i++) { // Repeat the tape
-				this.tape.push(...originalTape); // Append the tape to itself
-			}
+		if (this.tape) {
+			this.repeat_tape(this.tape, this.repetitions);
 		}
 
-		const substates = (partialdef as machine_states).states;
-		if (substates) {
-			this.states ??= {};
-			const substate_ids = Object.keys(substates);
-			for (let state_id of substate_ids) {
-				const sub_sdef = this.#create_state(substates[state_id], state_id);
-				validateStateMachine(sub_sdef as sdef);
-				this.replace_partialsdef_with_sdef(sub_sdef);
+		if (partialdef.states) {
+			this.construct_substate_machine(partialdef.states);
+		}
+	}
+
+	private repeat_tape(tape: typeof this.tape, repetitions: typeof this.repetitions): void {
+		// Repeat the tape if necessary (and if it exists) by appending the tape to itself
+		if (tape && repetitions > 1) { // If there is a tape and the tape should be repeated at least once
+			let originalTape = [...tape]; // Copy the tape
+			for (let i = 1; i < repetitions; i++) { // Repeat the tape
+				tape.push(...originalTape); // Append the tape to itself
 			}
-			if (substate_ids.length > 0 && !this.start_state_id) { // Only look for a start state if we have at least one state in our definition
-				this.start_state_id = substate_ids[0]; // If no default state was defined, we default to the first state found in the list of states
-				// If the start state is not defined, we don't need to change the key of the start state
-			}
-			else {
-				// If the start state is defined, we need to change the key of the start state to exclude the start state prefix
-				const start_state = this.states[this.start_state_id]; // Get the start state
-				for (const state_id of substate_ids) {
-					if (sdef.START_STATE_PREFIXES.includes(state_id.charAt(0))) { // If the state id starts with a start state prefix
-						delete this.states[state_id]; // Delete the start state from the list of states (with the old key)
-						this.states[start_state.id] = start_state; // Add the start state to the list of states (with the new key)
-						break; // Stop iterating over the states
-					}
+		}
+	}
+
+	private construct_substate_machine(substates: machine_states): void {
+		this.states ??= {};
+		const substate_ids = Object.keys(substates);
+		for (let state_id of substate_ids) {
+			const sub_sdef = this.#create_state(substates[state_id], state_id);
+			validateStateMachine(sub_sdef as sdef);
+			this.replace_partialsdef_with_sdef(sub_sdef);
+		}
+		if (substate_ids.length > 0 && !this.start_state_id) { // Only look for a start state if we have at least one state in our definition
+			this.start_state_id = substate_ids[0]; // If no default state was defined, we default to the first state found in the list of states
+			// If the start state is not defined, we don't need to change the key of the start state
+		}
+		else {
+			// If the start state is defined, we need to change the key of the start state to exclude the start state prefix
+			const start_state = this.states[this.start_state_id]; // Get the start state
+			for (const state_id of substate_ids) {
+				if (sdef.START_STATE_PREFIXES.includes(state_id.charAt(0))) { // If the state id starts with a start state prefix
+					delete this.states[state_id]; // Delete the start state from the list of states (with the old key)
+					this.states[start_state.id] = start_state; // Add the start state to the list of states (with the new key)
+					break; // Stop iterating over the states
 				}
 			}
 		}
@@ -1225,7 +1234,22 @@ export interface machine_states {
 	on?: { [key: string]: Identifier }
 
 	/**
-	 * The states defined for this state machine.
+	 * The states defined for this state machine (key = state id, value = partial state definition), their substate machines and their additional properties are defined in {@link sdef}.
+	 * @example
+	 * {
+	 *		parellel: true,
+	 *		data: { ... },
+	 *		on: { ... }, // Note: defines the state transitions at the *current* level (thus, not for submachines)
+	 *		// (Note: the state id is the key of the state in the states object)
+	 *		_idle: { // The state definition for the idle state which is the start state of this machine, given the prefix '_' (or '#')
+	 *			auto_tick: false, // `true` by default
+	 *			on: { ... }, // Note: defines the state transitions at the *current* level (thus, not for submachines)
+	 *			enter(this: TargetClass, state: sstate): { state.reset(); ... },
+	 *			run(this: TargetClass, state: sstate): { ++state.ticks; },
+	 *			next(this: TargetClass, state: sstate): { let bla = state.current_tape_value; ... },
+	 *		},
+	 *		running: { ... },
+	 * }
 	 */
-	states: id2partial_sdef,
+	states?: id2partial_sdef,
 }
