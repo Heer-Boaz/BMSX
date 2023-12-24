@@ -108,7 +108,6 @@ export class Player extends Fighter {
                     process_input: default_input_processor,
                     enter(this: Fighter) {
                         this.sc.to(statemachine + '.idle');
-                        this.hittable = true;
                     },
                 },
                 humiliated: {
@@ -117,6 +116,9 @@ export class Player extends Fighter {
                         this.resetVerticalPosition();
                         this.sc.to(statemachine + '.humiliated');
                     },
+                    exit(this: Fighter) {
+                        this.hittable = true;
+                    }
                 },
                 stoerheidsdans: {
                     auto_tick: false,
@@ -126,7 +128,6 @@ export class Player extends Fighter {
                     enter(this: Fighter, state: sstate) {
                         state.reset();
                         this.resetVerticalPosition();
-                        // this.hittable = false;
                         this.sc.to(`${statemachine}.${state.current_tape_value}`);
                         this.facing = (this.facing === 'left' ? 'right' : 'left');
                     },
