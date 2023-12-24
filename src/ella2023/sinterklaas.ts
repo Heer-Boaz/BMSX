@@ -4,7 +4,6 @@ import { get_gamemodel } from "../bmsx/bmsx";
 import { attach_components } from "../bmsx/component";
 import { subscribesToSelfScopedEvent } from "../bmsx/eventemitter";
 import { insavegame } from "../bmsx/gameserializer";
-import { Input } from "../bmsx/input";
 import { SM } from "../bmsx/soundmaster";
 import { SpriteObject } from "../bmsx/sprite";
 import { JumpingWhileLeavingScreenComponent, Player } from "./eila";
@@ -20,11 +19,6 @@ export type SinterklaasAttackType = 'punch' | 'lowkick' | 'highkick' | 'flyingki
 @assign_fsm('sint_animation')
 @attach_components(JumpingWhileLeavingScreenComponent)
 export class Sinterklaas extends Fighter {
-    public static readonly ATTACK_DURATION = 15;
-    public static readonly JUMP_SPEED = 2;
-    public static readonly JUMP_DURATION = 60;
-    public static readonly SPEED = 2;
-
     constructor() {
         super('sinterklaas', undefined, 'right');
         this.hp = gamemodel.SINT_START_HP;
@@ -38,7 +32,7 @@ export class Sinterklaas extends Fighter {
     public static bouw(): machine_states {
         function defaultrun(this: Sinterklaas) {
             // To check if an action is pressed for player 1
-            const priorityActions = Input.getPlayerInput(2).getPressedActions({ pressed: true, actionsByPriority: ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick', 'stoer'] });
+            const priorityActions = game.input.getPlayerInput(2).getPressedActions({ pressed: true, actionsByPriority: ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick', 'stoer'] });
 
             // If no actions are pressed, switch to idle
             if (!priorityActions.some(action => action.pressed && !action.consumed)) {
@@ -77,7 +71,7 @@ export class Sinterklaas extends Fighter {
                     case 'highkick':
                     case 'lowkick':
                         if (!consumed) {
-                            Input.getPlayerInput(2).consumeAction(action);
+                            game.input.getPlayerInput(2).consumeAction(action);
                             this.sc.to(action);
                         }
                         break;
@@ -92,7 +86,7 @@ export class Sinterklaas extends Fighter {
         }
 
         function duckrun(this: Player) {
-            const pressedActions = Input.getPlayerInput(2).getPressedActions();
+            const pressedActions = game.input.getPlayerInput(2).getPressedActions();
 
             if (pressedActions.some(action => action.action === 'lowkick')) {
                 this.sc.to('duckkick');
@@ -114,10 +108,10 @@ export class Sinterklaas extends Fighter {
         }
 
         function jumprun(this: Player) {
-            const kickActions = Input.getPlayerInput(2).getPressedActions({ pressed: true, consumed: false, filter: ['lowkick', 'highkick'] });
+            const kickActions = game.input.getPlayerInput(2).getPressedActions({ pressed: true, consumed: false, filter: ['lowkick', 'highkick'] });
             if (kickActions.length > 0) {
                 // Consume all kick actions
-                kickActions.forEach(action => Input.getPlayerInput(2).consumeAction(action));
+                kickActions.forEach(action => game.input.getPlayerInput(2).consumeAction(action));
                 if (this.sc.is('Sinterklaas.jump.jump_up.normal') || this.sc.is('Sinterklaas.jump.jump_down.normal')) {
                     this.sc.switch('Sinterklaas.jump.*.flyingkick');
                 }
