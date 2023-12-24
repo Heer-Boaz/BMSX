@@ -960,9 +960,10 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 
 	private make_id(): Identifier {
 		let id = `${this.parent_id ?? this.target_id}.${this.def_id}`; // The id is the parent_id + the target_id + the def_id (e.g. 'parent_id.target_id.def_id') to create a unique id
-		let parts = id.split('.'); // Split the id into parts to remove duplicate parts and create a unique id
-		let uniqueParts = parts.filter((value, index, self) => self.indexOf(value) === index); // Remove duplicate parts (e.g. 'parent_id.parent_id.def_id' becomes 'parent_id.def_id')
-		return uniqueParts.join('.'); // Join the parts together with a '.' in between each part to create the id for the state
+		// let parts = id.split('.'); // Split the id into parts to remove duplicate parts and create a unique id
+		// let uniqueParts = parts.filter((value, index, self) => self.indexOf(value) === index); // Remove duplicate parts (e.g. 'parent_id.parent_id.def_id' becomes 'parent_id.def_id')
+		// return uniqueParts.join('.'); // Join the parts together with a '.' in between each part to create the id for the state
+		return id;
 	}
 
 	public dispose(): void {
