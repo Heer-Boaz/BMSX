@@ -1,4 +1,4 @@
-import { MachineDefinitions, bfsm_controller, statecontext } from './bfsm';
+import { StateDefinitions, bfsm_controller, sstate } from './bfsm';
 import { area2size, new_vec2, translate_vec2, trunc_vec3, div_vec2 } from './bmsx';
 import { PositionUpdateAxisComponent } from './collisioncomponents';
 import { Component, ComponentUpdateParams, componenttags_postprocessing, componenttags_preprocessing } from './component';
@@ -549,7 +549,7 @@ function visualizeStateMachine(dialogElement: HTMLElement, container: HTMLElemen
     let machineElements = new Map<string, HTMLElement>();
 
     // Recursive function to visualize a state machine
-    function visualizeMachine(machine: statecontext, machineName: string, parentElement: HTMLElement, isActive: boolean, path: string): void {
+    function visualizeMachine(machine: sstate, machineName: string, parentElement: HTMLElement, isActive: boolean, path: string): void {
         let table = addContent(parentElement, 'table', null);
 
         // Add a row for the machine name
@@ -561,7 +561,7 @@ function visualizeStateMachine(dialogElement: HTMLElement, container: HTMLElemen
         for (let stateId in machine.states) {
             let state = machine.states?.[stateId];
             let stateRow = addContent(table, 'tr', null);
-            let stateCell = addContent(stateRow, 'td', state?.statedef_id ?? 'undefined');
+            let stateCell = addContent(stateRow, 'td', state?.def_id ?? 'undefined');
             stateCell.classList.add('state');
 
             // Add an event listener to the state cell
@@ -577,9 +577,9 @@ function visualizeStateMachine(dialogElement: HTMLElement, container: HTMLElemen
             stateElements.set(newpath, stateCell);
 
             // If the state is a state machine, visualize it
-            if (state.sm instanceof statecontext) {
+            if (state.states) {
                 let subTableCell = addContent(stateRow, 'td', null) as HTMLTableCellElement;
-                visualizeMachine(state.sm, state.sm.def_id, subTableCell, isActive && machine.currentid === stateId, newpath);
+                visualizeMachine(state, state.def_id, subTableCell, isActive && machine.currentid === stateId, newpath);
             }
         }
 
@@ -609,7 +609,7 @@ function visualizeStateMachine(dialogElement: HTMLElement, container: HTMLElemen
 // Function to set the CSS classes for highlighting the current machines/states
 function highlightCurrentState(stateElements: Map<string, HTMLElement>, machineElements: Map<string, HTMLElement>, bfsmController: bfsm_controller): void {
     // Recursive function to update the classes of a state machine
-    function updateMachineClasses(machine: statecontext, machineName: string, isActive: boolean, path: string): void {
+    function updateMachineClasses(machine: sstate, machineName: string, isActive: boolean, path: string): void {
         // Remove the 'active-machine-or-state' and 'parallel-machine' classes from the machine element
         let machineElement = machineElements.get(machineName);
         if (machineElement) {
@@ -639,9 +639,7 @@ function highlightCurrentState(stateElements: Map<string, HTMLElement>, machineE
 
             // If the state is a state machine, update its classes
             let state = machine.states?.[stateId];
-            if (state?.sm instanceof statecontext) {
-                updateMachineClasses(state.sm, state.sm.def_id, isActive && machine.currentid === stateId, newpath);
-            }
+            updateMachineClasses(state, state.def_id, isActive && machine.currentid === stateId, newpath);
         }
     }
 
@@ -878,7 +876,7 @@ export function handleOpenDebugMenu(e: UIEvent): void {
     row = addContent(table, 'tr', null);
     row.classList.add('selectableoption', 'centered-text');
     addContent(row, 'td', `List all statemachine definitions`);
-    row.onclick = (_) => openObjectDetailMenu(MachineDefinitions, 'Statemachine definitions', dialogDiv);
+    row.onclick = (_) => openObjectDetailMenu(StateDefinitions, 'Statemachine definitions', dialogDiv);
 
     row = addContent(table, 'tr', null);
     row.classList.add('selectableoption', 'centered-text');

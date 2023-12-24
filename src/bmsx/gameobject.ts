@@ -1,4 +1,4 @@
-import { ConstructorWithFSMProperty, IStateful, bfsm_controller, statecontext } from "./bfsm";
+import { ConstructorWithFSMProperty, IStateful, bfsm_controller } from "./bfsm";
 import { insavegame } from "./gameserializer";
 import { Component, ComponentTag, IComponentContainer, KeyToComponentMap, ComponentConstructor, update_tagged_components } from "./component";
 import { BehaviorTrees, Blackboard, BTNode, BehaviorTreeID, ConstructorWithBTProperty } from "./behaviourtree";

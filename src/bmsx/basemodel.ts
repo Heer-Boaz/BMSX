@@ -1,5 +1,5 @@
 import { BehaviorTreeDefinition, BehaviorTreeDefinitions, BehaviorTreeID, setup_btdef_library, setup_bt_library } from "./behaviourtree";
-import { mdef, MachineDefinitions, sdef, setup_fsmdef_library, sstate, bfsm_controller, IStateful } from "./bfsm";
+import { StateDefinitions, sdef, sstate, bfsm_controller, IStateful, setup_fssdef_library } from "./bfsm";
 import type { IRegisterable, Identifier } from "./bmsx";
 import { GameObject } from "./gameobject";
 import { insavegame, onsave, Reviver, Savegame, Serializer } from "./gameserializer";
@@ -290,8 +290,8 @@ export abstract class BaseModel implements IStateful {
      * @param {Identifier} machineid - The id of the machine to get the definition for.
      * @returns {mdef} The machine definition for the given machine id.
      */
-    public static getMachinedef(machineid: Identifier): mdef {
-        return MachineDefinitions[machineid];
+    public static getMachinedef(machineid: Identifier): sdef {
+        return StateDefinitions[machineid];
     }
 
     /**
@@ -300,8 +300,8 @@ export abstract class BaseModel implements IStateful {
      * @param {Identifier} stateid - The id of the state to get the definition for.
      * @returns {sdef} The state definition for the given machine and state id.
      */
-    public static getMachineStatedef(machineid: Identifier, stateid: Identifier): sdef {
-        return MachineDefinitions[machineid].states[stateid];
+    public static getMachineStatedef(machineid: Identifier): sdef {
+        return StateDefinitions[machineid];
     }
 
     public static getBTdef(btid: BehaviorTreeID): BehaviorTreeDefinition {
@@ -394,7 +394,7 @@ export abstract class BaseModel implements IStateful {
      * @returns {void} Nothing.
      */
     private static setup_fsmdef_library(): void {
-        setup_fsmdef_library();
+        setup_fssdef_library();
     }
 
     private static setup_bt_library(): void {
