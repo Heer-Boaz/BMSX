@@ -10,6 +10,15 @@ export class Registry {
         return Registry._instance;
     }
 
+    public static get registry(): Record<string, IRegisterable> {
+        return new Proxy(Registry.instance._registry, {
+            get: function (target, prop: string) {
+                // prop is expected to be an Identifier
+                return target[prop] || null;
+            }
+        });
+    }
+
     constructor() {
         this._registry = {};
     }
