@@ -31,6 +31,11 @@ function getDamage(attackType: AttackType): number {
 @attach_components(ProhibitLeavingScreenComponent, StateMachineVisualizer, HitBoxVisualizer)
 @assign_fsm('hitanimation')
 export abstract class Fighter extends SpriteObject {
+    public static readonly ATTACK_DURATION = 15;
+    public static readonly JUMP_SPEED = 2;
+    public static readonly JUMP_DURATION = 60;
+    public static readonly SPEED = 2;
+
     @build_fsm('hitanimation')
     static bouw_hitanimation_fsm(): machine_states {
         return {
@@ -82,7 +87,7 @@ export abstract class Fighter extends SpriteObject {
 
     public abstract handleFighterStukEvent(event_name: string, emitter: Fighter): void;
 
-    protected doAttackFlow(attackType: AttackType, opponent: Fighter): boolean {
+    public doAttackFlow(attackType: AttackType, opponent: Fighter): boolean {
         if (!opponent) return false;
         const hitArea = this.attackHitsOpponent(attackType, opponent);
         if (hitArea) {
@@ -93,19 +98,19 @@ export abstract class Fighter extends SpriteObject {
         return false;
     }
 
-    protected attackHitsOpponent(_attackType: AttackType, opponent: Fighter): Area | null {
+    public attackHitsOpponent(_attackType: AttackType, opponent: Fighter): Area | null {
         // if (this.state.is('hitanimation.wel_au')) return null; // Only check for hits when the fighter is not already being hit
         // Check if the opponent is hit by the attack
         const overlappingAreaOrFalse = this.collides(opponent);
         return overlappingAreaOrFalse ? overlappingAreaOrFalse : null;
     }
 
-    protected handleHittingOpponent(attackType: AttackType, _opponent: Fighter, hitArea: Area) {
+    public handleHittingOpponent(attackType: AttackType, _opponent: Fighter, hitArea: Area) {
         const hitMarkerInfo = this.determineHitMarker(attackType, hitArea);
         this.showHitMarker(hitMarkerInfo);
     }
 
-    protected handleBeingHit(attackType: AttackType, opponent: Fighter) {
+    public handleBeingHit(attackType: AttackType, opponent: Fighter) {
         this.sc.to('hitanimation.wel_au');
         opponent.sc.to('hitanimation.doet_au');
         this.hp -= getDamage(attackType);
