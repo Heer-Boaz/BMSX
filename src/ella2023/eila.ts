@@ -2,7 +2,7 @@ import { Action } from './inputmapping';
 import { AudioId, BitmapId } from './resourceids';
 import { sstate, statedef_builder, machine_states, build_fsm, assign_fsm } from '../bmsx/bfsm';
 import { insavegame } from '../bmsx/gameserializer';
-import { get_gamemodel } from '../bmsx/bmsx';
+import { Identifier, get_gamemodel } from '../bmsx/bmsx';
 import { ScreenBoundaryComponent } from './../bmsx/collisioncomponents';
 import { Fighter } from './fighter';
 import { attach_components } from '../bmsx/component';
@@ -43,9 +43,13 @@ export class JumpingWhileLeavingScreenComponent extends ScreenBoundaryComponent 
 export class Player extends Fighter {
 
     @statedef_builder
-    public static bouw(): machine_states {
+    public static bouw_eila(): machine_states {
+        return Player.bouw('player_animation', 'Player');
+    }
+
+    public static bouw(animation_machine_name: Identifier, class_name: string): machine_states {
         function default_input_processor(this: Fighter) {
-            const priorityActions = game.input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, actionsByPriority: ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick'] });
+            const priorityActions = game.input.getPlayerInput(this.playerIndex).getPressedActions({ pressed: true, consumed: false, actionsByPriority: ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick'] });
 
             // If no actions are pressed, switch to idle
             if (priorityActions.length === 0) {
@@ -83,11 +87,11 @@ export class Player extends Fighter {
                     case 'punch':
                     case 'highkick':
                     case 'lowkick':
-                        game.input.getPlayerInput(1).consumeAction(action);
+                        game.input.getPlayerInput(this.playerIndex).consumeAction(action);
                         this.sc.to(action);
                         break;
                     case 'jump':
-                        game.input.getPlayerInput(1).consumeAction(action);
+                        game.input.getPlayerInput(this.playerIndex).consumeAction(action);
                         this.sc.to('jump', false); // Actions 'left' and 'right' have higher priority than 'jump' and thus directonal jumps are handled in the 'left' and 'right' cases
                         break;
                     // case 'stoer':
@@ -97,20 +101,21 @@ export class Player extends Fighter {
             }
         }
 
-        const statemachine = 'player_animation';
+        const statemachine = animation_machine_name;
         return {
             states: {
                 _idle: {
                     process_input: default_input_processor,
                     enter(this: Fighter) {
-                        this.sc.to('player_animation.idle');
+                        this.sc.to(statemachine + '.idle');
+                        this.hittable = true;
                     },
                 },
                 humiliated: {
                     enter(this: Fighter) {
                         this.hittable = false;
                         this.resetVerticalPosition();
-                        this.sc.to('player_animation.humiliated');
+                        this.sc.to(statemachine + '.humiliated');
                     },
                 },
                 stoerheidsdans: {
@@ -142,60 +147,60 @@ export class Player extends Fighter {
                 },
                 nagenieten: {
                     enter(this: Fighter) {
-                        this.sc.to(`player_animation.idle`);
+                        this.sc.to(`${statemachine}.idle`);
                     },
                 },
                 au: {
                     enter(this: Fighter) {
-                        this.sc.pause_statemachine('player_animation');
+                        this.sc.pause_statemachine(statemachine + '');
                     },
                     exit(this: Fighter) {
-                        this.sc.resume_statemachine('player_animation');
+                        this.sc.resume_statemachine(statemachine + '');
                     }
                 },
                 doetau: {
                     enter(this: Fighter) {
-                        this.sc.pause_statemachine('player_animation');
+                        this.sc.pause_statemachine(statemachine + '');
                     },
                     exit(this: Fighter) {
-                        this.sc.resume_statemachine('player_animation');
+                        this.sc.resume_statemachine(statemachine + '');
                     }
                 },
                 walk: {
                     process_input: default_input_processor,
                     enter(this: Fighter) {
-                        if (!this.sc.is('player_animation.walk')) {
-                            this.sc.to('player_animation.walk');
+                        if (!this.sc.is(statemachine + '.walk')) {
+                            this.sc.to(statemachine + '.walk');
                         }
                     },
                 },
                 punch: {
                     enter(this: Fighter) {
                         const hit = this.doAttackFlow('punch', get_model().theOtherFighter(this));
-                        this.sc.to('player_animation.punch', hit);
+                        this.sc.to(statemachine + '.punch', hit);
                     },
                 },
                 highkick: {
                     enter(this: Fighter) {
                         const hit = this.doAttackFlow('highkick', get_model().theOtherFighter(this));
-                        this.sc.to('player_animation.highkick', hit);
+                        this.sc.to(statemachine + '.highkick', hit);
                     },
                 },
                 lowkick: {
                     enter(this: Fighter) {
                         const hit = this.doAttackFlow('lowkick', get_model().theOtherFighter(this));
-                        this.sc.to('player_animation.lowkick', hit);
+                        this.sc.to(statemachine + '.lowkick', hit);
                     },
                 },
                 duckkick: {
                     enter(this: Fighter) {
                         const hit = this.doAttackFlow('dickkick', get_model().theOtherFighter(this));
-                        this.sc.to('player_animation.duckkick', hit);
+                        this.sc.to(statemachine + '.duckkick', hit);
                     },
                 },
                 duck: {
                     process_input(this: Fighter) {
-                        const pressedActions = game.input.getPlayerInput(1).getPressedActions();
+                        const pressedActions = game.input.getPlayerInput(this.playerIndex).getPressedActions();
                         const actionMap = new Map();
 
                         // Create a map of actions for efficient lookup
@@ -220,24 +225,24 @@ export class Player extends Fighter {
                         }
                     },
                     enter(this: Fighter) {
-                        this.sc.to('player_animation.duck');
+                        this.sc.to(statemachine + '.duck');
                     },
                 },
                 jump: {
                     enter(this: Fighter, state: sstate, directional: boolean = false) {
                         state.reset(true);
-                        this.sc.to('Player.jump.jump_up', directional);
-                        this.sc.to('player_animation.jump');
+                        this.sc.to(`${class_name}.jump.jump_up`, directional);
+                        this.sc.to(statemachine + '.jump');
                         this.getComponent(JumpingWhileLeavingScreenComponent).enabled = true;
                     },
                     exit(this: Fighter) {
                         this.getComponent(JumpingWhileLeavingScreenComponent).enabled = false;
                     },
                     process_input(this: Fighter) {
-                        const kickActions = game.input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['lowkick', 'highkick'] });
+                        const kickActions = game.input.getPlayerInput(this.playerIndex).getPressedActions({ pressed: true, consumed: false, filter: ['lowkick', 'highkick'] });
                         if (kickActions.length > 0) {
                             // Consume all kick actions
-                            kickActions.forEach(action => game.input.getPlayerInput(1).consumeAction(action));
+                            kickActions.forEach(action => game.input.getPlayerInput(this.playerIndex).consumeAction(action));
                             this.sc.dispatch('flyingkick', this.id);
                         }
 
@@ -260,7 +265,7 @@ export class Player extends Fighter {
                                 }
                             },
                             next(this: Fighter, state: sstate) {
-                                this.sc.switch('Player.jump.jump_down', state.data.directional);
+                                this.sc.switch(`${class_name}.jump.jump_down`, state.data.directional);
                             },
                         },
                         jump_down: {
@@ -298,10 +303,10 @@ export class Player extends Fighter {
                                     },
                                     enter(this: Fighter, _state: sstate) {
                                         const hit = this.doAttackFlow('flyingkick', get_model().theOtherFighter(this));
-                                        this.sc.machines.player_animation.to('flyingkick', hit);
+                                        this.sc.machines[statemachine].to('flyingkick', hit);
                                     },
                                     exit(this: Fighter) {
-                                        this.sc.machines.player_animation.to('jump');
+                                        this.sc.machines[statemachine].to('jump');
                                     },
                                 },
                             },
@@ -326,8 +331,6 @@ export class Player extends Fighter {
                         break;
                     case 'flyingkick':
                         this.sc.dispatch('flyingkick_end', this.id);
-                        // this.sc.switch('Player.jump.jump_up.normal');
-                        // this.sc.switch('Player.jump.jump_down.normal');
                         break;
                     case 'duckkick':
                         if (!this.sc.is('stoerheidsdans')) {
@@ -468,7 +471,7 @@ export class Player extends Fighter {
                         this.imgid = BitmapId.eila_humiliated;
                     },
                     next(this: Player) {
-                        get_gamemodel().sc.to('gameover');
+                        game.event_emitter.emit('humiliated_animation_end', this, 'eila');
                     }
                 },
             }
@@ -476,7 +479,7 @@ export class Player extends Fighter {
     }
 
     constructor() {
-        super('player', undefined, 'left');
+        super('player', undefined, 'left', 1);
         this.hp = gamemodel.EILA_START_HP;
     }
 
