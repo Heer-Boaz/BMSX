@@ -1,6 +1,5 @@
 import { Action } from './inputmapping';
 import { AudioId, BitmapId } from './resourceids';
-import { Input } from '../bmsx/input';
 import { sstate, statedef_builder, machine_states, build_fsm, assign_fsm } from '../bmsx/bfsm';
 import { insavegame } from '../bmsx/gameserializer';
 import { get_gamemodel } from '../bmsx/bmsx';
@@ -42,16 +41,11 @@ export class JumpingWhileLeavingScreenComponent extends ScreenBoundaryComponent 
 @assign_fsm('player_animation')
 @attach_components(JumpingWhileLeavingScreenComponent)
 export class Player extends Fighter {
-    public static readonly ATTACK_DURATION = 15;
-    public static readonly JUMP_SPEED = 2;
-    public static readonly JUMP_DURATION = 60;
-    public static readonly SPEED = 2;
 
     @statedef_builder
     public static bouw(): machine_states {
-        // To check if an action is pressed for player 0
-        function defaultrun(this: Player) {
-            const priorityActions = Input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, actionsByPriority: ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick' ] });
+        function default_input_processor(this: Fighter) {
+            const priorityActions = game.input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, actionsByPriority: ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick'] });
 
             // If no actions are pressed, switch to idle
             if (priorityActions.length === 0) {
@@ -78,7 +72,7 @@ export class Player extends Fighter {
                             higherPrioActionProcessed = true;
                         }
                         else {
-                            this.x += action === 'right' ? Player.SPEED : -Player.SPEED;
+                            this.x += action === 'right' ? Fighter.SPEED : -Fighter.SPEED;
                             this.sc.to('walk');
                         }
                         break;
@@ -89,11 +83,11 @@ export class Player extends Fighter {
                     case 'punch':
                     case 'highkick':
                     case 'lowkick':
-                        Input.getPlayerInput(1).consumeAction(action);
+                        game.input.getPlayerInput(1).consumeAction(action);
                         this.sc.to(action);
                         break;
                     case 'jump':
-                        Input.getPlayerInput(1).consumeAction(action);
+                        game.input.getPlayerInput(1).consumeAction(action);
                         this.sc.to('jump', false); // Actions 'left' and 'right' have higher priority than 'jump' and thus directonal jumps are handled in the 'left' and 'right' cases
                         break;
                     // case 'stoer':
@@ -103,54 +97,17 @@ export class Player extends Fighter {
             }
         }
 
-        function duckrun(this: Player) {
-            const pressedActions = Input.getPlayerInput(1).getPressedActions();
-            const actionMap = new Map();
-
-            // Create a map of actions for efficient lookup
-            pressedActions.forEach(action => actionMap.set(action.action, true));
-
-            if (actionMap.get('lowkick')) {
-                this.sc.to('duckkick');
-                return;
-            }
-            // Search whether the `duck` action was NOT pressed
-            else if (!actionMap.get('duck')) {
-                this.sc.to('idle');
-                return;
-            }
-            else if (actionMap.get('left')) {
-                this.facing = 'left';
-                return;
-            }
-            else if (actionMap.get('right')) {
-                this.facing = 'right';
-                return;
-            }
-        }
-
-        function jumprun(this: Player) {
-            const kickActions = Input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['lowkick', 'highkick'] });
-            if (kickActions.length > 0) {
-                // Consume all kick actions
-                kickActions.forEach(action => Input.getPlayerInput(1).consumeAction(action));
-                if (this.sc.is('Player.jump.jump_up.normal') || this.sc.is('Player.jump.jump_down.normal')) {
-                    this.sc.switch('Player.jump.*.flyingkick');
-                }
-            }
-        }
-
         const statemachine = 'player_animation';
         return {
             states: {
                 _idle: {
-                    run: defaultrun,
-                    enter(this: Player) {
+                    process_input: default_input_processor,
+                    enter(this: Fighter) {
                         this.sc.to('player_animation.idle');
                     },
                 },
                 humiliated: {
-                    enter(this: Player) {
+                    enter(this: Fighter) {
                         this.hittable = false;
                         this.resetVerticalPosition();
                         this.sc.to('player_animation.humiliated');
@@ -168,7 +125,7 @@ export class Player extends Fighter {
                         this.sc.to(`${statemachine}.${state.current_tape_value}`);
                         this.facing = (this.facing === 'left' ? 'right' : 'left');
                     },
-                    run(this: Player, state: sstate) {
+                    run(this: Fighter, state: sstate) {
                         // Lelijk
                         if (this.sc.machines[statemachine].is(`idle`)) {
                             ++state.ticks;
@@ -184,143 +141,170 @@ export class Player extends Fighter {
                     },
                 },
                 nagenieten: {
-                    enter(this: Player) {
+                    enter(this: Fighter) {
                         this.sc.to(`player_animation.idle`);
                     },
                 },
                 au: {
-                    enter(this: Player) {
+                    enter(this: Fighter) {
                         this.sc.pause_statemachine('player_animation');
                     },
-                    exit(this: Player) {
+                    exit(this: Fighter) {
                         this.sc.resume_statemachine('player_animation');
                     }
                 },
                 doetau: {
-                    enter(this: Player) {
+                    enter(this: Fighter) {
                         this.sc.pause_statemachine('player_animation');
                     },
-                    exit(this: Player) {
+                    exit(this: Fighter) {
                         this.sc.resume_statemachine('player_animation');
                     }
                 },
                 walk: {
-                    run: defaultrun,
-                    enter(this: Player) {
+                    process_input: default_input_processor,
+                    enter(this: Fighter) {
                         if (!this.sc.is('player_animation.walk')) {
                             this.sc.to('player_animation.walk');
                         }
                     },
                 },
                 punch: {
-                    enter(this: Player) {
+                    enter(this: Fighter) {
                         const hit = this.doAttackFlow('punch', get_model().theOtherFighter(this));
                         this.sc.to('player_animation.punch', hit);
                     },
                 },
                 highkick: {
-                    enter(this: Player) {
+                    enter(this: Fighter) {
                         const hit = this.doAttackFlow('highkick', get_model().theOtherFighter(this));
                         this.sc.to('player_animation.highkick', hit);
                     },
                 },
                 lowkick: {
-                    enter(this: Player) {
+                    enter(this: Fighter) {
                         const hit = this.doAttackFlow('lowkick', get_model().theOtherFighter(this));
                         this.sc.to('player_animation.lowkick', hit);
                     },
                 },
                 duckkick: {
-                    enter(this: Player) {
+                    enter(this: Fighter) {
                         const hit = this.doAttackFlow('dickkick', get_model().theOtherFighter(this));
                         this.sc.to('player_animation.duckkick', hit);
                     },
                 },
                 duck: {
-                    run: duckrun,
-                    enter(this: Player) {
+                    process_input(this: Fighter) {
+                        const pressedActions = game.input.getPlayerInput(1).getPressedActions();
+                        const actionMap = new Map();
+
+                        // Create a map of actions for efficient lookup
+                        pressedActions.forEach(action => actionMap.set(action.action, true));
+
+                        if (actionMap.get('lowkick')) {
+                            this.sc.to('duckkick');
+                            return;
+                        }
+                        // Search whether the `duck` action was NOT pressed
+                        else if (!actionMap.get('duck')) {
+                            this.sc.to('idle');
+                            return;
+                        }
+                        else if (actionMap.get('left')) {
+                            this.facing = 'left';
+                            return;
+                        }
+                        else if (actionMap.get('right')) {
+                            this.facing = 'right';
+                            return;
+                        }
+                    },
+                    enter(this: Fighter) {
                         this.sc.to('player_animation.duck');
                     },
                 },
                 jump: {
-                    enter(this: Player, _state: sstate, directional: boolean = false) {
+                    enter(this: Fighter, state: sstate, directional: boolean = false) {
+                        state.reset(true);
                         this.sc.to('Player.jump.jump_up', directional);
                         this.sc.to('player_animation.jump');
                         this.getComponent(JumpingWhileLeavingScreenComponent).enabled = true;
                     },
-                    exit(this: Player) {
+                    exit(this: Fighter) {
                         this.getComponent(JumpingWhileLeavingScreenComponent).enabled = false;
                     },
-                    run: jumprun,
+                    process_input(this: Fighter) {
+                        const kickActions = game.input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['lowkick', 'highkick'] });
+                        if (kickActions.length > 0) {
+                            // Consume all kick actions
+                            kickActions.forEach(action => game.input.getPlayerInput(1).consumeAction(action));
+                            this.sc.dispatch('flyingkick', this.id);
+                        }
+
+                    },
                     states: {
                         _jump_up: {
-                            ticks2move: Player.JUMP_DURATION / 2,
-                            enter(this: Player, state: sstate, directional: boolean = false) {
+                            ticks2move: Fighter.JUMP_DURATION / 2,
+                            enter(this: Fighter, state: sstate, directional: boolean = false) {
                                 state.reset();
                                 state.data.directional = directional;
-                                state.to('normal');
                             },
-                            run(this: Player, state: sstate) {
-                                this.y -= Player.JUMP_SPEED;
+                            run(this: Fighter, state: sstate) {
+                                this.y -= Fighter.JUMP_SPEED;
                                 if (state.data.directional) {
                                     if (this.facing === 'left') {
-                                        this.x -= Player.SPEED;
+                                        this.x -= Fighter.SPEED;
                                     } else {
-                                        this.x += Player.SPEED;
+                                        this.x += Fighter.SPEED;
                                     }
                                 }
                             },
-                            next(this: Player, state: sstate) {
-                                this.sc.switch('Player.jump.jump_down', state.data.directional, state.currentid);
+                            next(this: Fighter, state: sstate) {
+                                this.sc.switch('Player.jump.jump_down', state.data.directional);
                             },
-                            states: {
-                                _normal: {
-                                    enter(this: Player) {
-                                        this.sc.machines.player_animation.to('jump');
-                                    }
-                                },
-                                flyingkick: {
-                                    enter(this: Player) {
-                                        const hit = this.doAttackFlow('flyingkick', get_model().theOtherFighter(this));
-                                        this.sc.machines.player_animation.to('flyingkick', hit);
-                                    }
-                                },
-                            }
                         },
                         jump_down: {
-                            ticks2move: Player.JUMP_DURATION / 2,
-                            enter(this: Player, state: sstate, directional: boolean = false, substate: 'normal' | 'flyingkick' = 'normal') {
+                            ticks2move: Fighter.JUMP_DURATION / 2,
+                            enter(this: Fighter, state: sstate, directional: boolean = false) {
                                 state.reset();
                                 state.data.directional = directional;
-                                state.to(substate);
                             },
-                            run(this: Player, state: sstate) {
-                                this.y += Player.JUMP_SPEED;
+                            run(this: Fighter, state: sstate) {
+                                this.y += Fighter.JUMP_SPEED;
 
                                 if (state.data.directional) {
                                     if (this.facing === 'left') {
-                                        this.x -= Player.SPEED;
+                                        this.x -= Fighter.SPEED;
                                     } else {
-                                        this.x += Player.SPEED;
+                                        this.x += Fighter.SPEED;
                                     }
                                 }
                             },
-                            next(this: Player) {
+                            next(this: Fighter) {
                                 this.sc.to('idle');
                             },
+                        },
+                        flyingkicks: {
+                            parallel: true,
                             states: {
                                 _normal: {
-                                    enter(this: Player) {
-                                        this.sc.machines.player_animation.to('jump');
-                                    }
+                                    on: {
+                                        flyingkick: 'flyingkick',
+                                    },
                                 },
                                 flyingkick: {
-                                    enter(this: Player, _state: sstate) {
+                                    on: {
+                                        flyingkick_end: 'normal',
+                                    },
+                                    enter(this: Fighter, _state: sstate) {
                                         const hit = this.doAttackFlow('flyingkick', get_model().theOtherFighter(this));
                                         this.sc.machines.player_animation.to('flyingkick', hit);
-                                    }
+                                    },
+                                    exit(this: Fighter) {
+                                        this.sc.machines.player_animation.to('jump');
+                                    },
                                 },
-                            }
+                            },
                         },
                     },
                 },
@@ -341,8 +325,9 @@ export class Player extends Fighter {
                         }
                         break;
                     case 'flyingkick':
-                        this.sc.switch('Player.jump.jump_up.normal');
-                        this.sc.switch('Player.jump.jump_down.normal');
+                        this.sc.dispatch('flyingkick_end', this.id);
+                        // this.sc.switch('Player.jump.jump_up.normal');
+                        // this.sc.switch('Player.jump.jump_down.normal');
                         break;
                     case 'duckkick':
                         if (!this.sc.is('stoerheidsdans')) {
