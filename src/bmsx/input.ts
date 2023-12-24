@@ -1262,12 +1262,7 @@ class OnScreenGamepad { //
 class SelectedPlayerIndexIcon extends SpriteObject {
     static bouw(): machine_states {
         return {
-            parallel: true,
-            on: {
-                EVENT_1: '_default',
-            },
             states: {
-
                 _default: {
                 },
                 assigned: {
