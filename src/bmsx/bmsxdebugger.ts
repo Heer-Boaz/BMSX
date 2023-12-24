@@ -538,7 +538,6 @@ function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement
             addTableRowForProperty(`${i}`, arr[i], obj);
         }
     }
-
     return table;
 }
 
@@ -623,22 +622,25 @@ function highlightCurrentState(stateElements: Map<string, HTMLElement>, machineE
         }
 
         // Update the classes of each state in the state machine
-        for (let stateId in machine.states) {
+        for (let state_id in machine.states) {
             // Remove the 'active-machine-or-state' class from the state element
-            const newpath = `${path}.${stateId}`;
+            const newpath = `${path}.${state_id}`;
             let stateElement = stateElements.get(newpath);
             if (stateElement) {
                 stateElement.classList.remove('active-machine-or-state');
             }
 
             // If the state is active, add the 'active-machine-or-state' class
-            if (isActive && machine.currentid === stateId) {
+            if (isActive && machine.currentid === state_id) {
                 stateElement?.classList.add('active-machine-or-state');
+            }
+            else if (machine.states[state_id].parallel) {
+                stateElement?.classList.add('parallel-machine');
             }
 
             // If the state is a state machine, update its classes
-            let state = machine.states?.[stateId];
-            updateMachineClasses(state, state.def_id, isActive && machine.currentid === stateId, newpath);
+            let state = machine.states?.[state_id];
+            updateMachineClasses(state, state.def_id, isActive && (machine.currentid === state_id || machine.states[state_id].parallel), newpath);
         }
     }
 
