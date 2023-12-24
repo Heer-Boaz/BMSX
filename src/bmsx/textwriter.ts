@@ -16,7 +16,7 @@ export class TextWriter {
      * @param color The color to use for the text. If not specified, the default color will be used.
      */
     public static drawText(x: number, y: number, textToWrite: string | string[], z: number = 950, _font?: BFont, color?: Color): void {
-        let font = _font ?? global.view.default_font;
+        let font = _font ?? game.view.default_font;
         let startPos: vec2 = { x: x, y: y };
         let stepX: number = font.char_width;
         let stepY: number = font.char_height;
@@ -29,7 +29,7 @@ export class TextWriter {
         */
         const draw_string = function (text): boolean {
             for (let i: number = 0; i < text.length; i++) {
-                global.view.drawImg({ imgid: font.char_to_img(text[i]), pos, colorize: color });
+                game.view.drawImg({ imgid: font.char_to_img(text[i]), pos, colorize: color });
                 pos.x += stepX;
             }
             pos.x = startPos.x;

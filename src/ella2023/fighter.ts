@@ -59,7 +59,7 @@ export abstract class Fighter extends SpriteObject {
                     },
                     end(this: Fighter) {
                         this.sc.to('hitanimation.geen_au');
-                        global.eventEmitter.emit('hit_animation_end', this);
+                        game.event_emitter.emit('hit_animation_end', this);
                     },
                     exit(this: Fighter) {
                         this.sc.resume_all_statemachines();
@@ -148,7 +148,7 @@ export abstract class Fighter extends SpriteObject {
                     break;
             }
 
-            global.view.drawImg({
+            game.view.drawImg({
                 imgid: hitMarkerImgId,
                 pos: hitMarker.pos
             });

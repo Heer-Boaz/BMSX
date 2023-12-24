@@ -241,7 +241,7 @@ export abstract class BTNode implements IIdentifiable {
      * @param targetid The Identifier of the target object.
      * @returns The target object casted to the specified type.
      */
-    public getTarget<T extends GameObject>(targetid: Identifier) { return global.model.getGameObject<T>(targetid); }
+    public getTarget<T extends GameObject>(targetid: Identifier) { return game.model.getGameObject<T>(targetid); }
 
     constructor(id: BehaviorTreeID, _priority = 0) {
         this.id = id;

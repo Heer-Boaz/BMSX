@@ -90,9 +90,9 @@ export class GameMenu extends GameObject {
         this.cursorPos = { x: 0, y: 0 };
         this.selectedItemIndex = 0;
         this.CurrentScreen = MenuItem.Main;
-        GameMenu.fullscreenOptionsOffsets = [global.view.default_font.char_width * 12 - 1, global.view.default_font.char_height * 14 - 1];
+        GameMenu.fullscreenOptionsOffsets = [game.view.default_font.char_width * 12 - 1, game.view.default_font.char_height * 14 - 1];
         GameMenu.fullscreenOptionsOffsetY  = -1;
-        GameMenu.fullscreenOptionsRectangleSize = new_vec2(global.view.default_font.char_width + 2, global.view.default_font.char_height + 2);
+        GameMenu.fullscreenOptionsRectangleSize = new_vec2(game.view.default_font.char_width + 2, game.view.default_font.char_height + 2);
     }
 
     public Open(currentscreen: MenuItem = MenuItem.Main): void {
@@ -169,7 +169,7 @@ export class GameMenu extends GameObject {
                     SM.play(AudioId.Selectie);
                     switch (this.selectedItem) {
                         case MenuItem.ReturnToGame:
-                            global.model.state.pop();
+                            game.model.state.pop();
                             // (controller as Controller).CloseGameMenu();
                             break;
                         case MenuItem.ChangeOptions:
@@ -272,7 +272,7 @@ export class GameMenu extends GameObject {
                         case MenuItem.Fullscreen:
                             if (GO.Fullscreen) {
                                 GO.Fullscreen = false;
-                                global.view.ToWindowed();
+                                game.view.ToWindowed();
                                 // game.GameOptionsChanged();
                             }
                             break;
@@ -312,7 +312,7 @@ export class GameMenu extends GameObject {
                         case MenuItem.Fullscreen:
                             if (!GO.Fullscreen) {
                                 GO.Fullscreen = true;
-                                global.view.toFullscreen();
+                                game.view.toFullscreen();
                                 // game.GameOptionsChanged();
                             }
                             break;
@@ -507,14 +507,14 @@ export class GameMenu extends GameObject {
                                 let textToDisplay: string;
                                 if (!GO.Fullscreen) {
                                     TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
-                                    offsetX += GameMenu.scaleText.length * global.view.default_font.char_width;
-                                    TextWriter.drawText(offsetX, y, `${global.view.scale.toPrecision(2)}X`);
+                                    offsetX += GameMenu.scaleText.length * game.view.default_font.char_width;
+                                    TextWriter.drawText(offsetX, y, `${game.view.scale.toPrecision(2)}X`);
                                 }
                                 else {
                                     TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, null, Msx1ExtColors[0]);
-                                    offsetX += GameMenu.scaleText.length * global.view.default_font.char_height;
+                                    offsetX += GameMenu.scaleText.length * game.view.default_font.char_height;
                                     // textToDisplay = BDX._.Zoom.ToString("n2");
-                                    TextWriter.drawText(offsetX, y, `${global.view.scale.toPrecision(2)}X`);
+                                    TextWriter.drawText(offsetX, y, `${game.view.scale.toPrecision(2)}X`);
                                 }
                                 break;
                             case MenuItem.Fullscreen:
@@ -524,7 +524,7 @@ export class GameMenu extends GameObject {
                             case MenuItem.SoundVolume:
                                 {
                                     TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
-                                    offsetX += GameMenu.soundVolumeText.length * global.view.default_font.char_width;
+                                    offsetX += GameMenu.soundVolumeText.length * game.view.default_font.char_width;
                                     let text = GO.VolumePercentage > 0 ? GO.VolumePercentage + "%" : "Off";
                                     TextWriter.drawText(offsetX, y, text);
                                 }
@@ -568,17 +568,17 @@ export class GameMenu extends GameObject {
                     break;
                 }
         }
-        global.view.drawImg(BitmapId.MenuCursor, this.cursorPos.x, this.cursorPos.y);
+        game.view.drawImg(BitmapId.MenuCursor, this.cursorPos.x, this.cursorPos.y);
 
         let scalex = GameMenu.menuEndX - GameMenu.menuPosX;
         let scaley = GameMenu.menuEndY - GameMenu.menuPosY;
-        global.view.drawImg(BitmapId.blackpixel, GameMenu.menuPosX + 1, GameMenu.menuPosY + 1, DrawImgFlags.None, scalex - 2, scaley - 2);
-        global.view.drawImg(BitmapId.whitepixel, GameMenu.menuPosX, GameMenu.menuPosY, DrawImgFlags.None, scalex, scaley);
+        game.view.drawImg(BitmapId.blackpixel, GameMenu.menuPosX + 1, GameMenu.menuPosY + 1, DrawImgFlags.None, scalex - 2, scaley - 2);
+        game.view.drawImg(BitmapId.whitepixel, GameMenu.menuPosX, GameMenu.menuPosY, DrawImgFlags.None, scalex, scaley);
     }
 
     private printFullscreenOptionRectangle(y: number): void {
         let selectedIndex: number = GO.Fullscreen ? 0 : 1;
-        global.view.drawImg(BitmapId.redpixel, GameMenu.fullscreenOptionsOffsets[selectedIndex] + GameMenu.menuPosX + GameMenu.optionItemsOffsetX, y + GameMenu.fullscreenOptionsOffsetY, DrawImgFlags.None, GameMenu.fullscreenOptionsRectangleSize.x, GameMenu.fullscreenOptionsRectangleSize.y);
+        game.view.drawImg(BitmapId.redpixel, GameMenu.fullscreenOptionsOffsets[selectedIndex] + GameMenu.menuPosX + GameMenu.optionItemsOffsetX, y + GameMenu.fullscreenOptionsOffsetY, DrawImgFlags.None, GameMenu.fullscreenOptionsRectangleSize.x, GameMenu.fullscreenOptionsRectangleSize.y);
     }
 
     private printSaveSlot(x: number, y: number, slotIndex: number): void {

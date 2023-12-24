@@ -1,4 +1,5 @@
-import { IIdentifiable } from "./bmsx.js";
+import { IIdentifiable, IRegisterable, Identifier } from "./bmsx";
+import { Registry } from "./registry";
 
 type Listener = { listener: Function, subscriber: any };
 type ListenerSet = Set<Listener>;
@@ -8,7 +9,12 @@ type EmitterScopeListenerMap = Record<string, EventListenerMap>;
 /**
  * A generic event dispatcher that can be used to manage listeners and dispatch events.
  */
-export class EventEmitter {
+export class EventEmitter implements IRegisterable {
+    public get id(): Identifier { return 'event_emitter'; }
+    public dispose(): void {
+        Registry.instance.deregister(this);
+    }
+
     private emitterScopeListeners: EmitterScopeListenerMap = {};
     private globalScopeListeners: EventListenerMap = {};
     private static _instance: EventEmitter;
@@ -18,6 +24,10 @@ export class EventEmitter {
             EventEmitter._instance = new EventEmitter();
         }
         return EventEmitter._instance;
+    }
+
+    constructor() {
+        Registry.instance.register(this);
     }
 
     on(event_name: string, listener: Function, subscriber: any, emitter_id?: string): void {

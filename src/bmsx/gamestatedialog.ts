@@ -4,7 +4,7 @@
  * @returns void
  */
 export function show_download_savestate_dialog() {
-    const data = model.save();
+    const data = game.model.save();
 
     const a = document.createElement('a');
     a.href = URL.createObjectURL(

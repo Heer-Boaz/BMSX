@@ -329,11 +329,11 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 	 * @returns The generated unique identifier.
 	 */
 	protected generateId(): string {
-		const model = global.model;
+		const model = game.model;
 		let result: string;
 		do {
 			const baseId = this.constructor.name;
-			const uniqueNumber = global.model.getNextIdNumber();
+			const uniqueNumber = game.model.getNextIdNumber();
 			result = `${baseId}_${uniqueNumber}`;
 		} while (model?.exists(result));
 		return result;

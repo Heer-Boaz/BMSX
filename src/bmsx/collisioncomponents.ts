@@ -46,10 +46,10 @@ export class ScreenBoundaryComponent extends PositionUpdateAxisComponent {
         super.postprocessingUpdate({ params, returnvalue });
         const currentPos = this.parent.pos;
         if (this.oldPos.x !== currentPos.x) {
-            this.checkBoundaryForXAxis.call(global.model.getGameObject(this.parentid), this.oldPos.x, currentPos.x);
+            this.checkBoundaryForXAxis.call(game.model.getGameObject(this.parentid), this.oldPos.x, currentPos.x);
         }
         if (this.oldPos.y !== currentPos.y) {
-            this.checkBoundaryForYAxis.call(global.model.getGameObject(this.parentid), this.oldPos.y, currentPos.y);
+            this.checkBoundaryForYAxis.call(game.model.getGameObject(this.parentid), this.oldPos.y, currentPos.y);
         }
     }
 
@@ -72,11 +72,11 @@ export class ScreenBoundaryComponent extends PositionUpdateAxisComponent {
             }
         }
         else if (newx > oldx) {
-            if (newx >= model.gamewidth) {
+            if (newx >= game.model.gamewidth) {
                 EventEmitter.instance.emit('leaveScreen', this, 'right', oldx);
                 this.onLeaveScreen?.(this, 'right', oldx);
             }
-            else if (newx + this.size.x >= model.gamewidth) {
+            else if (newx + this.size.x >= game.model.gamewidth) {
                 EventEmitter.instance.emit('leavingScreen', this, 'right', oldx);
                 this.onLeavingScreen?.(this, 'right', oldx);
             }
@@ -102,11 +102,11 @@ export class ScreenBoundaryComponent extends PositionUpdateAxisComponent {
             }
         }
         else if (newy > oldy) {
-            if (newy >= model.gameheight) {
+            if (newy >= game.model.gameheight) {
                 EventEmitter.instance.emit('leaveScreen', this, 'down', oldy);
                 this.onLeaveScreen?.(this, 'down', oldy);
             }
-            else if (newy + this.size.y >= model.gameheight) {
+            else if (newy + this.size.y >= game.model.gameheight) {
                 EventEmitter.instance.emit('leavingScreen', this, 'down', oldy);
                 this.onLeavingScreen?.(this, 'down', oldy);
             }
@@ -128,10 +128,10 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
         super.postprocessingUpdate({ params, returnvalue });
         const currentPos = this.parent.pos;
         if (this.oldPos.x !== currentPos.x) {
-            this.checkTileCollisionForXAxis.call(global.model.getGameObject(this.parentid), this.oldPos.x, currentPos.x);
+            this.checkTileCollisionForXAxis.call(game.model.getGameObject(this.parentid), this.oldPos.x, currentPos.x);
         }
         if (this.oldPos.y !== currentPos.y) {
-            this.checkTileCollisionForYAxis.call(global.model.getGameObject(this.parentid), this.oldPos.y, currentPos.y);
+            this.checkTileCollisionForYAxis.call(game.model.getGameObject(this.parentid), this.oldPos.y, currentPos.y);
         }
     }
 
@@ -142,7 +142,7 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
      */
     protected checkTileCollisionForXAxis(this: GameObject, oldx: number, newx: number) {
         if (newx < oldx) {
-            if (model.collidesWithTile(this, 'left')) {
+            if (game.model.collidesWithTile(this, 'left')) {
                 EventEmitter.instance.emit('wallcollide', this, 'left');
                 this.onWallcollide?.('left');
                 newx += TileSize - mod(newx, TileSize);
@@ -150,7 +150,7 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
             this.pos.x = ~~newx;
         }
         else if (newx > oldx) {
-            if (model.collidesWithTile(this, 'right')) {
+            if (game.model.collidesWithTile(this, 'right')) {
                 EventEmitter.instance.emit('wallcollide', this, 'right');
                 this.onWallcollide?.('right');
                 newx -= newx % TileSize;
@@ -166,7 +166,7 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
      */
     protected checkTileCollisionForYAxis(this: GameObject, oldy: number, newy: number) {
         if (newy < oldy) {
-            if (model.collidesWithTile(this, 'up')) {
+            if (game.model.collidesWithTile(this, 'up')) {
                 EventEmitter.instance.emit('wallcollide', this, 'up');
                 this.onWallcollide?.('up');
                 newy += TileSize - mod(newy, TileSize);
@@ -174,7 +174,7 @@ export class TileCollisionComponent extends PositionUpdateAxisComponent {
             this.pos.y = ~~newy;
         }
         else if (newy > oldy) {
-            if (model.collidesWithTile(this, 'down')) {
+            if (game.model.collidesWithTile(this, 'down')) {
                 EventEmitter.instance.emit('wallcollide', this, 'down');
                 this.onWallcollide?.('down');
                 newy -= newy % TileSize;

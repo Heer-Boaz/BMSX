@@ -98,12 +98,12 @@ export class Space {
      */
     public spawn(o: GameObject, pos?: Vector, skip_onspawn_event?: boolean): void {
         if (!o?.id) throw new Error(`Cannot spawn object '${o?.id ?? 'undefined'}' as it doesn't have a valid id!`);
-        if (global.model[objid_2_objspaceid][o.id]) throw new Error(`Cannot spawn object '${o.id}' in space '${this.id}' as it already exists in space '${global.model[objid_2_objspaceid][o.id]}'!`);
+        if (game.model[objid_2_objspaceid][o.id]) throw new Error(`Cannot spawn object '${o.id}' in space '${this.id}' as it already exists in space '${game.model[objid_2_objspaceid][o.id]}'!`);
 
         this.objects.push(o); // Add the object to the space
 
         this[id2obj][o.id] = o; // Register the object in the `id2object`-object, so we can retrieve the object by id
-        global.model[objid_2_objspaceid][o.id] = this.id; // Register the object in the `obj_id2obj_space_id`-object, so we can retrieve the space id for the object id
+        game.model[objid_2_objspaceid][o.id] = this.id; // Register the object in the `obj_id2obj_space_id`-object, so we can retrieve the space id for the object id
         Registry.instance.register(o); // Register the object in the registry so it can be retrieved by id. Note that we do not register the object in the `o.onspawn`-method, as that won't trigger when the object is revived from a savegame
         !skip_onspawn_event && o.onspawn?.(pos); // Trigger onspawn event after adding the object to the space. `onspawn` subscribes the object to events and starts the object's state machine
 
@@ -132,9 +132,9 @@ export class Space {
             delete this[id2obj][o.id];
         }
 
-        if (global.model[objid_2_objspaceid][o.id]) {
-            global.model[objid_2_objspaceid][o.id] = undefined;
-            delete global.model[objid_2_objspaceid][o.id];
+        if (game.model[objid_2_objspaceid][o.id]) {
+            game.model[objid_2_objspaceid][o.id] = undefined;
+            delete game.model[objid_2_objspaceid][o.id];
         }
     }
 
@@ -155,7 +155,7 @@ export type base_model_spaces = 'game_start' | 'default';
  * The base model class for the game. Contains all the spaces and objects in the game world.
  * Provides methods to add, remove, and manipulate game objects and spaces.
  */
-export abstract class BaseModel implements IStateful {
+export abstract class BaseModel implements IStateful, IRegisterable {
     private get registry(): Registry { return Registry.instance; }
 
     /**
@@ -327,6 +327,7 @@ export abstract class BaseModel implements IStateful {
      * while creating new game objects that reference the model or the model states
      */
     constructor() {
+        Registry.instance.register(this);
         this.spaces = [];
         this[spaceid_2_space] = {};
         this[objid_2_objspaceid] = {};
@@ -448,19 +449,19 @@ export abstract class BaseModel implements IStateful {
      * @returns {void} Nothing
      */
     public static defaultrun = (): void => {
-        if (global.model.paused) {
+        if (game.model.paused) {
             return;
         }
-        if (global.model.startAfterLoad) {
+        if (game.model.startAfterLoad) {
             return;
         }
 
-        let objects = global.model.objects; // Get all objects in the current space
+        let objects = game.model.objects; // Get all objects in the current space
         // Let all game objects take a turn
         objects.forEach(o => !o.disposeFlag && o.run && o.run());
 
         // Remove all objects that are to be disposed
-        objects.filter(o => o.disposeFlag).forEach(o => global.model.exile(o));
+        objects.filter(o => o.disposeFlag).forEach(o => game.model.exile(o));
     };
 
     /**

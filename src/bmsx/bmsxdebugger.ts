@@ -26,7 +26,7 @@ let prevPausedState: boolean; // Remember the paused-state before a dialog was o
 export class DebugHighlightComponent extends PositionUpdateAxisComponent { // Note: MUST export this class, otherwise decorator will cause it to be undefined
     override postprocessingUpdate({ params, returnvalue }: ComponentUpdateParams): void {
         super.postprocessingUpdate({ params, returnvalue });
-        const highlighter = model.getGameObject<ObjectHighlighter>('debug_highlighter');
+        const highlighter = game.model.getGameObject<ObjectHighlighter>('debug_highlighter');
         if (highlighter) {
             highlighter.setHighlightPos(this.parent);
         }
@@ -42,7 +42,7 @@ export class StateMachineVisualizer extends Component {
 
     constructor(_id: Identifier) {
         super(_id);
-        this.bfsmController = global.model.getGameObject(_id).sc;
+        this.bfsmController = game.model.getGameObject(_id).sc;
         this.enabled = false;
     }
 
@@ -84,7 +84,7 @@ export class HitBoxVisualizer extends Component {
         const parent = this.parent as SpriteObject;
         if (parent.hasBoundingBoxes()) {
             parent.boundingBoxes.forEach(box => {
-                (global.view as GLView).drawRectangle({ area: { ...box, start: { ...box.start, z: parent.z } }, color: Msx1Colors[6] });
+                (game.view as GLView).drawRectangle({ area: { ...box, start: { ...box.start, z: parent.z } }, color: Msx1Colors[6] });
             });
         }
 
@@ -242,8 +242,8 @@ export function handleDebugMouseMove(e: MouseEvent): void {
 
     if (draggedObj) {
         // Otherwise, continue dragging the object that is already being dragged
-        let x = e.offsetX / global.view.scale;
-        let y = e.offsetY / global.view.scale;
+        let x = e.offsetX / game.view.scale;
+        let y = e.offsetY / game.view.scale;
 
         if (draggedObj.pos) {
             draggedObj.x = ~~x - draggedObjCursorOffset.x;
@@ -257,8 +257,8 @@ export function handleDebugMouseMove(e: MouseEvent): void {
 }
 
 function highlight_object(o: GameObject) {
-    const model = global.model;
-    let highlighter = model.getGameObject<ObjectHighlighter>('debug_highlighter');
+    const model = game.model;
+    let highlighter = game.model.getGameObject<ObjectHighlighter>('debug_highlighter');
 
     if (!o) {
         highlighter && (highlighter.target = null);
@@ -273,7 +273,7 @@ function highlight_object(o: GameObject) {
         }
         highlighter.target = o;
     }
-    global.view.drawgame();
+    game.view.drawgame();
 }
 
 export function handleDebugMouseUp(_e: MouseEvent): void {
@@ -831,7 +831,7 @@ export function handleOpenObjectMenu(e: UIEvent | null, previous?: HTMLElement):
     addContent(headerRow, 'th', 'Type');
     addContent(headerRow, 'th', 'ID');
 
-    global.model.objects.forEach(o => {
+    game.model.objects.forEach(o => {
         let row = addContent(table, 'tr', null);
         row.classList.add('selectableoption');
         addContent(row, 'td', `${o.constructor.name}`);
@@ -904,7 +904,7 @@ export function handleOpenModelMenu(e: UIEvent | null, previous: HTMLElement): v
         draggedObj = null; // Make sure that we stop dragging any object
     }
 
-    openObjectDetailMenu(global.model, 'The Model', previous);
+    openObjectDetailMenu(game.model, 'The Model', previous);
 }
 
 function openObjectDetailMenu(obj: any, title: string, previous?: HTMLElement): void {
@@ -936,8 +936,8 @@ function getGameObjectAtCursor(e: MouseEvent): { objUnderCursor: GameObject | nu
      * transforming the game coordinates to canvas coordinates and that requires scaling
      * to be taken into account.
      */
-    let p = div_vec2(new_vec2(x, y), global.view.scale);
-    let objsUnderCursor: GameObject[] = global.model.objects.filter(o => o.id !== 'debug_highlighter' && o.overlaps_point(p));
+    let p = div_vec2(new_vec2(x, y), game.view.scale);
+    let objsUnderCursor: GameObject[] = game.model.objects.filter(o => o.id !== 'debug_highlighter' && o.overlaps_point(p));
     if (objsUnderCursor && objsUnderCursor.length > 0) {
         // Choose obj with highest z-value
         let objUnderCursorWithHighestZ = objsUnderCursor.reduce((o1, o2) => o1.z > o2.z ? o1 : o2);

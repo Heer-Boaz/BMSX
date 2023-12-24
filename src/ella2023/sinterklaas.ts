@@ -397,7 +397,7 @@ export class Sinterklaas extends Fighter {
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: SpriteObject) {
-                        global.eventEmitter.emit('animationEnd', this, 'highkick');
+                        game.event_emitter.emit('animationEnd', this, 'highkick');
                         this.sc.switch(`${statemachine}.idle`);
                     }
                 },
@@ -410,7 +410,7 @@ export class Sinterklaas extends Fighter {
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: SpriteObject) {
-                        global.eventEmitter.emit('animationEnd', this, 'lowkick');
+                        game.event_emitter.emit('animationEnd', this, 'lowkick');
                         this.sc.switch('sint_animation.idle');
                     }
                 },
@@ -423,7 +423,7 @@ export class Sinterklaas extends Fighter {
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: SpriteObject) {
-                        global.eventEmitter.emit('animationEnd', this, 'punch');
+                        game.event_emitter.emit('animationEnd', this, 'punch');
                         this.sc.switch('sint_animation.idle');
                     }
                 },
@@ -437,7 +437,7 @@ export class Sinterklaas extends Fighter {
                     },
                     next(this: SpriteObject) {
                         this.sc.switch('sint_animation.duck');
-                        global.eventEmitter.emit('animationEnd', this, 'duckkick');
+                        game.event_emitter.emit('animationEnd', this, 'duckkick');
                     }
                 },
                 flyingkick: {
@@ -450,7 +450,7 @@ export class Sinterklaas extends Fighter {
                     },
                     next(this: SpriteObject) {
                         this.sc.switch('sint_animation.jump');
-                        global.eventEmitter.emit('animationEnd', this, 'flyingkick');
+                        game.event_emitter.emit('animationEnd', this, 'flyingkick');
                     }
                 },
                 duck: {

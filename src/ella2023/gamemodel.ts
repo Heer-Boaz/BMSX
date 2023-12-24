@@ -55,7 +55,7 @@ export class gamemodel extends BaseModel {
             states: {
                 _game_start: {
                     run(this: gamemodel) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
-                        this.sc.to('titlescreen');
+                        this.sc.to('gamemodel.default.oefenen');
                     }
                 },
                 default: {

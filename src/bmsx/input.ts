@@ -334,9 +334,9 @@ export class Input implements IRegisterable {
                     break;
                 case 'F11':
                     e.preventDefault();
-                    if (global.view.isFullscreen)
-                        global.view.ToWindowed();
-                    else global.view.toFullscreen();
+                    if (game.view.isFullscreen)
+                        game.view.ToWindowed();
+                    else game.view.toFullscreen();
                     break;
                 default:
                     // e.preventDefault();
@@ -345,7 +345,7 @@ export class Input implements IRegisterable {
         }
     }
 
-    public get id(): string { return 'input'; }
+    public get id(): Identifier { return 'input'; }
 
     /**
      * Initializes the input system.
@@ -353,6 +353,8 @@ export class Input implements IRegisterable {
      */
     constructor() {
         const self = this;
+        // Deregister the input system
+        Registry.instance.deregister(this);
 
         // Initialize gamepad states for already connected gamepads
         const gamepads = navigator.getGamepads();

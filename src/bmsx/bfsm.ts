@@ -1,7 +1,7 @@
-import { exclude_save, insavegame, onload } from "./gameserializer";
-import { IIdentifiable, IRegisterable, Identifier } from "./bmsx";
-import { BaseModel } from "./basemodel";
-import { Registry } from "./registry";
+import { exclude_save, insavegame, onload } from './gameserializer';
+import { IIdentifiable, IRegisterable, Identifier } from './bmsx';
+import { BaseModel } from './basemodel';
+import { Registry } from './registry';
 
 /**
  * Represents the machine definitions.
@@ -208,6 +208,7 @@ export type id2sstate = Record<Identifier, sstate>;
  * @returns The result of the state event handler.
  */
 export interface state_event_handler<T extends IStateful = any> { (state: sstate<T>, ...args: any[]); }
+
 /**
  * Represents a tape used in the BFSM.
  */
@@ -217,14 +218,11 @@ export type Tape = any[];
  * Maximum history size for the state transition stack.
  */
 const BST_MAX_HISTORY = 10;
+
 /**
  * The default BST ID.
  */
 export const DEFAULT_BST_ID = 'master';
-/**
- * The ID representing the none state.
- */
-export const NONE_STATE_ID = '_none';
 
 export interface IStateful extends IRegisterable {
 	/**
@@ -254,7 +252,7 @@ export class bfsm_controller {
 				if (target[prop]) {
 					return target[prop];
 				}
-				throw new Error(`No machine with ID "${prop}"`);
+				throw new Error(`No machine with ID '${prop}'`);
 			}
 		});
 	}
@@ -299,12 +297,12 @@ export class bfsm_controller {
 	}
 
 	/**
-	 * Switches both statemachine and state, based on the newstate which is a combination of statemachine and state, written as "statemachine.state.substate...".
+	 * Switches both statemachine and state, based on the newstate which is a combination of statemachine and state, written as 'statemachine.state.substate...'.
 	 * If no stateid is specified, assume that the stateid is the same as the machineid.
 	 * If no machineid is specified, assume that the machineid is the same as the current machine.
 	 * If the machine is not running in parallel, set it as the current machine. Otherwise, only switch the state in the specified machine, without changing the current machine.
 	 * Throws an error if no machine with the specified ID exists.
-	 * @param newstate The new state to switch to, in the format "statemachine.state.substate".
+	 * @param newstate The new state to switch to, in the format 'statemachine.state.substate'.
 	 * @param args Optional arguments to pass to the new state.
 	 */
 	to(newstate: Identifier, ...args: any[]): void {
@@ -319,7 +317,7 @@ export class bfsm_controller {
 		}
 
 		const machine = this.statemachines[machineid];
-		if (!machine) throw new Error(`No machine with ID "${machineid}"`);
+		if (!machine) throw new Error(`No machine with ID '${machineid}'`);
 		if (!machine.parallel) { // If the machine is not running in parallel, set it as the current machine
 			this.current_machine_id = machineid;
 		}
@@ -331,14 +329,14 @@ export class bfsm_controller {
 	 * If no state ID is specified, it assumes that the state ID is the same as the machine ID.
 	 * Throws an error if no machine with the specified ID is found.
 	 *
-	 * @param path - The path to the state machine and state ID, separated by a dot (e.g., "machineID.stateID").
+	 * @param path - The path to the state machine and state ID, separated by a dot (e.g., 'machineID.stateID').
 	 * @param args - Additional arguments to pass to the state switch function.
 	 */
 	switch(path: string, ...args: any[]): void {
 		const [machineid, ...stateids] = path.split('.');
 
 		const machine = this.statemachines[machineid];
-		if (!machine) throw new Error(`No machine with ID "${machineid}"`);
+		if (!machine) throw new Error(`No machine with ID '${machineid}'`);
 
 		// If no stateid is specified, assume that the stateid is the same as the machineid
 		const stateid = stateids.length > 0 ? stateids.join('.') : machineid;
@@ -380,7 +378,7 @@ export class bfsm_controller {
 
 		const machine = this.statemachines[machineid];
 		if (!machine) {
-			throw new Error(`No machine with ID "${machineid}"`);
+			throw new Error(`No machine with ID '${machineid}'`);
 		}
 
 		// If there are more parts, check the state of the submachine with the given path
@@ -529,9 +527,9 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 	states: id2sstate;
 
 	/**
-	 * Indicates whether the state machine is running in parallel with the "current" state machine as defined in {@link bfsm_controller.current_machine}.
+	 * Indicates whether the state machine is running in parallel with the 'current' state machine as defined in {@link bfsm_controller.current_machine}.
 	 */
-	get parallel(): boolean { return this.definition.parallel; }
+	get parallel(): boolean { return this.definition?.parallel; }
 
 	/**
 	 * Identifier of the current state.
@@ -573,7 +571,7 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 	/**
 	 * Returns the current state of the FSM
 	 */
-	public get current(): sstate { return this.states[this.currentid]; }
+	public get current(): sstate { return this.states?.[this.currentid]; }
 
 	/**
 	 * Gets the state with the given id from the state machine.
@@ -581,7 +579,7 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 	 * of referencing states from the state machine definition.
 	 * @param id - id of the state, according to its definition
 	 */
-	public get_sstate(id: Identifier) { return this.states[id]; }
+	public get_sstate(id: Identifier) { return this.states?.[id]; }
 
 	/**
 	 * Gets the definition of the current state machine.
@@ -593,7 +591,7 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 	 * Gets the id of the start state of the FSM.
 	 * @returns The id of the start state of the FSM.
 	 */
-	public get start_state_id(): Identifier { return this.parent ? this.parent.definition.states[this.def_id]?.start_state_id : NONE_STATE_ID; }
+	public get start_state_id(): Identifier { return this.definition?.start_state_id; }
 
 	/**
 	 * Gets the definition of the current state of the FSM.
@@ -610,7 +608,8 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 	 */
 	public static create(id: Identifier, target_id: Identifier, parent_id: Identifier): sstate {
 		let result = new sstate(id, target_id, parent_id);
-		result.populateStates();
+		result.populateStates(); // Populate the states of the state machine with the states from the state machine definition (if any) and their substates
+		result.reset(true); // Reset the state machine to the start state to initialize the state machine and its substate machines
 
 		return result;
 	}
@@ -625,14 +624,15 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 		this.def_id = def_id ?? DEFAULT_BST_ID;
 		this.target_id = target_id;
 		this.parent_id = (target_id == parent_id ? undefined : parent_id); // If the target_id is the same as the parent_id, don't set the parent_id to denote that this is the root state
-		this.states ??= {};
 		this.paused ??= false;
+		// Note: do not initailize the states here, as this will be done in the populateStates function. Also, do not initialize the currentid here, as this will be done in the reset function
+		// Note: do not initialize the history here, as this will be done in the reset function
+		// Note: do not set the states to an empty object, as this state might not have any states defined. Instead, leave it as undefined, so that it can be checked if the state has states defined
 
-		// Note: when parameters are undefined, this constructor was invoked without parameters. This happens when it is revived. In that situation, don't init this object
+		// When parameters are undefined, this constructor was invoked without parameters. This happens when it is revived. In that situation, don't init this object
 		if (def_id && target_id) {
 			this.id = this.make_id();
 			this.register();
-			this.reset(false);
 			// const substateDefinition = this.definition?.submachine_id;
 			// this.sm = substateDefinition ? sstate.create(substateDefinition, this.target_id, this.parent_id) : undefined;
 		}
@@ -647,10 +647,11 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 	public start(): void {
 		const startStateId = this.start_state_id;
 		if (!startStateId) {
-			throw new Error(`No start state defined for state machine '${this.def_id}'`);
+			if (!this.states) return; // If there are no states defined, there is no start state to start the state machine with and we can return early
+			throw new Error(`No start state defined for state machine '${this.id}', while the state machine has states defined.'`); // If there are states defined, but no start state, throw an error as we can't start the state machine
 		}
 
-		const startStateDef = this.get_sstate(startStateId)?.definition;
+		const startStateDef = this.get_sstate(startStateId)?.definition; // Get the start state definition from the state machine definition
 
 		// Trigger the enter event for the start state. Note that there is no definition for the none-state, so we don't trigger the enter event for that state.
 		startStateDef?.enter?.call(this.target, this.get_sstate(startStateId));
@@ -665,18 +666,21 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 	 * Calls the process_input function of the current state, if it exists, with the state_event_type.None event type.
 	 * Calls the run function of the current state, if it exists, with the state_event_type.Run event type.
 	 */
-	public run(): void {
+	run(): void {
+		const definition = this.definition;
+		if (!definition) return; // If there is no definition, there is nothing to run
 		if (this.paused) return;
-		// [this.currentStatedef] can be undefined if we are in the 'none' state
+
 		// First process any input
-		let currentStatedef = this.current_state_definition;
+		definition.process_input?.call(this.target, this);
+		// Then, run the substate
+		definition.run?.call(this.target, this);
+		if (definition.auto_tick) ++this.ticks; // Auto-nudge the state if auto_nudge is set to true
+
+		// Then run the submachine for the state if it exists
+		const currentStatedef = this.current_state_definition;
 		if (!currentStatedef) return;
 		const currentState = this.current;
-		currentStatedef.process_input?.call(this.target, currentState);
-		// Then, run the state
-		currentStatedef.run?.call(this.target, currentState);
-		if (currentStatedef.auto_tick) ++currentState.ticks; // Auto-nudge the state if auto_nudge is set to true
-		// Then run the submachine for the state if it exists
 		currentState.run(); // Note that this will do nothing if there is no submachine
 	}
 
@@ -694,7 +698,7 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 
 		let currentContext: IStateController = this.states[currentPart];
 		if (!currentContext) {
-			throw new Error(`No state with ID "${currentPart}"`);
+			throw new Error(`No state with ID '${currentPart}'`);
 		}
 
 		if (this.currentid !== currentPart || restParts.length === 0) { // Don't switch to the same state, except if this is the final part of the id
@@ -728,7 +732,7 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 
 		const state = this.states[stateid];
 		if (!state) {
-			throw new Error(`No state with ID "${stateid}"`);
+			throw new Error(`No state with ID '${stateid}'`);
 		}
 
 		// If there are more parts, check the state of the substate with the given path
@@ -767,7 +771,7 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 		} else {
 			let currentContext: IStateController = this.states[currentPart];
 			if (!currentContext) {
-				throw new Error(`No state with ID "${currentPart}"`);
+				throw new Error(`No state with ID '${currentPart}'`);
 			}
 
 			// If there are more parts, continue to the next state
@@ -787,7 +791,7 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 
 		// Update the current state
 		this.currentid = stateId;
-		if (!this.current) throw new Error(`State "${stateId}" doesn't exist for this state machine '${this.def_id}'!`);
+		if (!this.current) throw new Error(`State '${stateId}' doesn't exist for this state machine '${this.def_id}'!`);
 
 		// Perform enter actions for the new current state
 		stateDef = this.current_state_definition;
@@ -821,18 +825,22 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 	 * If no current state is set, the state is set to the first state found in the set of states.
 	 */
 	public populateStates(): void {
-		let sdef = this.definition;
-		if (!sdef) {
-			// A class is not required to have a defined machine.
-			// Thus, we create a default machine that automatically has a generated
-			// 'none'-state associated with it.
-			this.add(new sstate(NONE_STATE_ID, this.target_id, this.id));
+		const sdef = this.definition;
+		if (!sdef || !sdef.states) { // If no state machine definition is defined, don't populate the states
+			this.states = undefined; // Set the states to undefined to denote that there are no states defined (as opposed to an empty object). Note that states should already be undefined, but just to be sure, set it to undefined here as well
+			return; // Don't populate the states
 		}
-		else {
-			for (let sdef_id in sdef.states) {
-				let state = new sstate(sdef_id, this.target_id, this.id);
-				this.add(state);
-			}
+		const state_ids = Object.keys(sdef.states);
+		if (state_ids.length === 0) { // If there are no states defined in the state machine definition, don't populate the states
+			this.states = undefined;
+			return;
+		}
+
+		this.states = {}; // Initialize the states object to an empty object
+		for (let sdef_id in sdef.states) {
+			let state = new sstate(sdef_id, this.target_id, this.id);
+			this.add(state);
+			state.populateStates(); // Populate the substates of the state
 		}
 		// If no current state is set, set the state to the first state that it finds in the set of states
 		if (!this.currentid) this.currentid = Object.keys(this.states)[0];
@@ -857,7 +865,7 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 	 * If no tape is defined, returns undefined.
 	 * @returns The tape associated with the state machine definition, or undefined if not found.
 	 */
-	public get tape(): Tape { return this.definition.tape; }
+	public get tape(): Tape { return this.definition?.tape; }
 	/**
 	 * Returns the current value of the tape at the position of the tape head.
 	 * If there is no tape or the tape head is beyond the end of the tape, returns undefined.
@@ -1022,9 +1030,10 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 	// Otherwise, the current state is set to the 'none' state.
 	// The history of previous states is cleared and the state machine is unpaused.
 	public resetSubmachine(reset_tree: boolean = true): void {
+		this.reset(false);
 		// N.B. doesn't trigger the onenter-event!
 		const start = this.definition?.start_state_id; // Definition doesn't need to exist
-		this.currentid = start ?? NONE_STATE_ID; // Set the current state to the start state (if it exists)
+		this.currentid = start; // Set the current state to the start state (if it exists)
 		this.history = new Array();
 		this.paused = false;
 		if (!this.definition) return; // If the definition doesn't exist, the state machine is empty and there is nothing to reset
@@ -1078,12 +1087,12 @@ export class sdef {
 	 */
 	public constructor(id: Identifier = '_', partialdef?: Partial<sdef>) {
 		this.id = id; //`${parent_id ? (parent_id + '.') : ''}${id ?? DEFAULT_BST_ID}`;
+		partialdef && Object.assign(this, partialdef); // Assign the partial definition to the instance
 		this.ticks2move ??= 0; // Unless already defined, ticks2move is 0
 		this.repetitions = (this.tape ? (this.repetitions ?? 1) : 0);
 		this.auto_tick = this.auto_tick ?? (this.ticks2move !== 0 ? true : false); // If ticks2move is 0, auto_tick is false. Otherwise, auto_tick is true (unless it was already defined)
 		this.auto_rewind_tape_after_end = this.auto_rewind_tape_after_end ?? (this.tape ? true : false); // If there is a tape, auto_rewind_tape_after_end is true. Otherwise, it is false (unless it was already defined)
 		this.data ??= {}; // Unless already defined, data is an empty object
-		partialdef && Object.assign(this, partialdef); // Assign the partial definition to the instance
 
 		if (this.tape) {
 			this.repeat_tape(this.tape, this.repetitions);
@@ -1147,7 +1156,7 @@ export class sdef {
 	public states?: id2partial_sdef;
 
 	/**
-	 * Indicates whether the state machine is running in parallel with the "current" state machine as defined in {@link bfsm_controller.current_machine}.
+	 * Indicates whether the state machine is running in parallel with the 'current' state machine as defined in {@link bfsm_controller.current_machine}.
 	 */
 	public parallel?: boolean;
 
@@ -1218,7 +1227,7 @@ export type id2partial_sdef = Record<string, Partial<sdef>>;
  */
 export interface machine_states {
 	/**
-	 * Indicates whether the state machine is running in parallel with the "current" state machine as defined in {@link bfsm_controller.current_machine}.
+	 * Indicates whether the state machine is running in parallel with the 'current' state machine as defined in {@link bfsm_controller.current_machine}.
 	 */
 	parallel?: boolean,
 

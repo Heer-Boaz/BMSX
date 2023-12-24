@@ -12,11 +12,7 @@ import { Registry } from "./registry";
  */
 declare global {
     var game: Game;
-    var model: BaseModel;
-    var view: BaseView;
     var rom: RomPack;
-    var registry: Registry;
-    var eventEmitter: EventEmitter;
     var debug: boolean;
 }
 
@@ -794,7 +790,7 @@ export function getOppositeDirection(dir: Direction): Direction {
 /**
  * Represents the main game loop and manages the game state.
  */
-export class Game {
+export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView> {
     /**
      * Indicates whether debug mode is enabled.
      */
@@ -836,66 +832,82 @@ export class Game {
      * Indicates whether the game is currently running.
      */
     public running: boolean;
+
     /**
      * Indicates whether the game is currently paused.
      */
     public paused: boolean;
+
     /**
      * Indicates whether the game was updated.
      * This property is used to track if any changes were made to the game before rendering a new frame.
      */
     wasupdated: boolean;
+
     /**
      * Indicates whether the game should run a single frame and then pause for debugging purposes.
      */
     public debug_runSingleFrameAndPause!: boolean;
+
     /**
      * Retrieves the model instance of type T.
      * @returns The model instance of type T.
      * @template T - The type of the model.
      */
-    public model<T extends BaseModel>(): T { return <T>global.model; }
+    public modelAs<T extends BaseModel = BaseModel>(): T { return Registry.instance.get<T>('model'); }
+
+    public get model(): M { return this.modelAs<M>(); }
+
     /**
      * Retrieves the global view of type T.
      * @returns The global view of type T.
      */
-    public view<T extends BaseView>(): T { return <T>global.view; }
+    public viewAs<T extends BaseView = BaseView>(): T { return Registry.instance.get<T>('view'); }
+
+    public get view(): V { return this.viewAs<V>(); }
+
+    public get event_emitter(): EventEmitter { return Registry.instance.get<EventEmitter>('event_emitter'); }
+
+    public get input(): Input { return Registry.instance.get<Input>('input'); }
 
     /**
-     * Represents the game object that manages the game state and main game loop.
-     * @constructor
-     * @param _rom - The ROM pack containing game assets.
-     * @param _model - The model object that manages the game state.
-     * @param _view - The view object that manages the game display.
-     * @param sndcontext - The audio context used for playing sounds.
-     * @param gainnode - The gain node used for controlling the volume of sounds.
-     * @param debug - Whether to enable debug mode. Defaults to false.
+     * Constructs a new instance of the BMSX class.
      */
-    constructor(_rom: RomPack, _model: BaseModel, _view: BaseView, sndcontext: AudioContext, gainnode: GainNode, debug: boolean = false) {
-        this.debug ??= debug;
+    constructor(rom: RomPack, model: BaseModel, view: BaseView, sndcontext: AudioContext, gainnode: GainNode, debug: boolean = false) {
+        global['game'] = this;
+        window['game'] = this;
         this.running = false;
         this.paused = false;
         this.wasupdated = true;
         this.updateInterval = 1000 / this.targetFPS;
 
+        this.init(rom, model, view, sndcontext, gainnode, debug);
+    }
+
+    /**
+     * Inits the game object.
+     * @param rom - The ROM pack containing game assets.
+     * @param model - The model object that manages the game state.
+     * @param view - The view object that manages the game display.
+     * @param sndcontext - The audio context used for playing sounds.
+     * @param gainnode - The gain node used for controlling the volume of sounds.
+     * @param debug - Whether to enable debug mode. Defaults to false.
+     */
+    private init(rom: RomPack, model: BaseModel, view: BaseView, sndcontext: AudioContext, gainnode: GainNode, debug: boolean = false): Game {
+        this.debug ??= debug;
+
         global['debug'] = debug;
-        global['game'] = this;
-        global['rom'] = _rom;
+        global['rom'] = rom;
 
-        global['model'] = _model;
-        global['view'] = _view;
-        global['registry'] = Registry.instance;
-        global['eventEmitter'] = EventEmitter.instance;
-
-        BaseView.images = _rom.images;
-        global.view.init();
-        SM.init(_rom['snd_assets'], sndcontext, 1, gainnode);
+        BaseView.images = rom.images;
+        game.view.init();
+        SM.init(rom['snd_assets'], sndcontext, 1, gainnode);
         Input.instance; // Init input module
         if (debug) {
             // @ts-ignore
-            window['model'] = global.model;
+            window['model'] = model;
             // @ts-ignore
-            window['view'] = global.view;
+            window['view'] = view;
             // @ts-ignore
             window['rom'] = global.rom;
             // @ts-ignore
@@ -903,7 +915,7 @@ export class Game {
             // @ts-ignore
             window['registry'] = global.registry;
             // @ts-ignore
-            window['eventEmitter'] = global.eventEmitter;
+            window['eventEmitter'] = game.event_emitter;
 
             Input.instance.enableDebugMode();
         }
@@ -915,8 +927,9 @@ export class Game {
 
         // Init the model to populate states (and do other init stuff) and
         // Init all the stuff that is game-specific. Placed here to reduce boilerplating
-        global.model.init_spaces().init_model_state_machines(global.model.constructor_name).do_one_time_game_init();
+        game.model.init_spaces().init_model_state_machines(game.model.constructor_name).do_one_time_game_init();
 
+        return this; // Allow chaining
     }
 
     /**
@@ -945,7 +958,7 @@ export class Game {
      */
     public update(deltaTime: number): void {
         const game = global.game;
-        const model = global.model;
+        const model = game.model;
         model.run(deltaTime);
         if (game.debug_runSingleFrameAndPause) {
             game.debug_runSingleFrameAndPause = false;
@@ -977,7 +990,7 @@ export class Game {
             game.accumulatedTime -= game.updateInterval;
         }
 
-        if (game.wasupdated) global.view.drawgame();
+        if (game.wasupdated) game.view.drawgame();
 
         game.animationFrameRequestid = window.requestAnimationFrame(game.run);
     }
@@ -990,8 +1003,8 @@ export class Game {
         global.game.running = false;
         window.cancelAnimationFrame(this.animationFrameRequestid);
         window.requestAnimationFrame(() => {
-            global.view.clear.call(global.view);
-            global.view.handleResize.call(global.view);
+            game.view.clear.call(game.view);
+            game.view.handleResize.call(game.view);
             SM.stopEffect();
             SM.stopMusic();
         });

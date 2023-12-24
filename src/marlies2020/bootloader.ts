@@ -44,32 +44,32 @@ class modelclass extends BaseModel {
                            run() {
                                BaseModel.defaultrun();
                                if (Input.KC_F5) {
-                                   global.model.state.to('gamemenu');
+                                   game.model.state.to('gamemenu');
                                }
                            },
                        }),
                        'gamemenu': new sdef('gamemenu', {
                            enter() {
                                let menu = new GameMenu();
-                               global.model.spawn(menu);
+                               game.model.spawn(menu);
                                menu.Open();
                            },
                            run() {
-                               let menu = global.model.get('gamemenu') as GameMenu;
+                               let menu = game.model.get('gamemenu') as GameMenu;
                                menu.run();
                                if (Input.KC_F5) {
-                                   global.model.state.to('default');
+                                   game.model.state.to('default');
                                }
                            },
                            exit() {
-                               let menu = global.model.get('gamemenu') as GameMenu;
+                               let menu = game.model.get('gamemenu') as GameMenu;
                                menu.Close();
-                               global.model.exile(menu);
+                               game.model.exile(menu);
                            },
                        }),
                        'hoera!': new sdef('hoera!', {
                            enter() {
-                               global.model.setSpace('hoera!');
+                               game.model.setSpace('hoera!');
                            }
                        }),
                     }
@@ -855,10 +855,10 @@ _global['h406A'] = (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode):
     let _view = new viewclass(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
     _model = new modelclass();
     new Game(rom, _model, _view, sndcontext, gainnode);
-    global.view.default_font = new KonamiFont();
+    game.view.default_font = new KonamiFont();
 
     global.game.start();
-    let model = global.model;
+    let model = game.model;
     model.spawn(new keuken(), new_vec2(0, 0));
     model.spawn(new invFrame(), new_vec2(4, 4));
     let marlies = new speler(START_COLUMN);

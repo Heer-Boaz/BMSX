@@ -14,7 +14,7 @@ export class TextWriter {
         if (Array.isArray(textToWrite)) {
             for (let text of textToWrite) {
                 for (let i: number = 0; i < text.length; i++) {
-                    global.view.drawImg(TextWriter.getBitmapForLetter(text[i]), pos.x, pos.y);
+                    game.view.drawImg(TextWriter.getBitmapForLetter(text[i]), pos.x, pos.y);
                     pos.x += stepX;
                 }
                 pos.x = startPos.x;
@@ -25,7 +25,7 @@ export class TextWriter {
         }
         else {
             for (let i: number = 0; i < textToWrite.length; i++) {
-                global.view.drawImg(TextWriter.getBitmapForLetter(textToWrite[i]), pos.x, pos.y);
+                game.view.drawImg(TextWriter.getBitmapForLetter(textToWrite[i]), pos.x, pos.y);
                 pos.x += stepX;
             }
             pos.x = startPos.x;

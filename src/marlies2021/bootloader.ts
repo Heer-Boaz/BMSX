@@ -30,32 +30,32 @@ class modelclass extends BaseModel {
                             run() {
                                 BaseModel.defaultrun();
                                 if (Input.KC_F5) {
-                                    global.model.state.to('gamemenu');
+                                    game.model.state.to('gamemenu');
                                 }
                             },
                         }),
                         'gamemenu': new sdef('gamemenu', {
                             enter() {
                                 let menu = new GameMenu();
-                                global.model.spawn(menu);
+                                game.model.spawn(menu);
                                 menu.Open();
                             },
                             run() {
-                                let menu = global.model.get('gamemenu') as GameMenu;
+                                let menu = game.model.get('gamemenu') as GameMenu;
                                 menu.run();
                                 if (Input.KC_F5) {
-                                    global.model.state.to('default');
+                                    game.model.state.to('default');
                                 }
                             },
                             exit() {
-                                let menu = global.model.get('gamemenu') as GameMenu;
+                                let menu = game.model.get('gamemenu') as GameMenu;
                                 menu.Close();
-                                global.model.exile(menu);
+                                game.model.exile(menu);
                             },
                         }),
                         'hoera!': new sdef('hoera!', {
                             enter() {
-                                global.model.setSpace('hoera!');
+                                game.model.setSpace('hoera!');
                             }
                         }),
                     }
@@ -499,7 +499,7 @@ class speler extends SpriteObject {
             TextWriter.drawText(64, 56, "corona,moederzorgen,");
             TextWriter.drawText(64, 64, "voetbal en f1.");
 
-            _global.view.drawImg(BitmapId.arrowed, 0, 32, DrawImgFlags.None);
+            _game.view.drawImg(BitmapId.arrowed, 0, 32, DrawImgFlags.None);
         }
         if (this.state.getCurrentId() == 'spot2') {
             TextWriter.drawText(64, 40, "Druk de shifttoets");
@@ -570,10 +570,10 @@ class hud extends SpriteObject {
 
     override paint = (offset?: vec2, colorize?: { r: boolean, g: boolean, b: boolean, a: boolean; }) => {
         let lengthShown = this.percentageToBarLength(_model.stressLevel);
-        _global.view.drawImg(BitmapId.HUD_stress, 60, 10, DrawImgFlags.None, lengthShown);
+        _game.view.drawImg(BitmapId.HUD_stress, 60, 10, DrawImgFlags.None, lengthShown);
 
         lengthShown = this.percentageToBarLength(_model.enemyHp);
-        _global.view.drawImg(BitmapId.HUD_enemy, 60, 19, DrawImgFlags.None, lengthShown);
+        _game.view.drawImg(BitmapId.HUD_enemy, 60, 19, DrawImgFlags.None, lengthShown);
         paintSprite.call(this, offset, colorize); // .call() nodig, anders "this" undefined
     };
 };
@@ -592,10 +592,10 @@ _global['h406A'] = (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode):
     let _view = new viewclass(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
     _model = new modelclass();
     new Game(rom, _model, _view, sndcontext, gainnode);
-    global.view.default_font = new BFont(BitmapId);
+    game.view.default_font = new BFont(BitmapId);
 
     global.game.start();
-    let model = global.model;
+    let model = game.model;
     model.spawn(new yakuzi(), new_vec2(0, 32));
     model.spawn(new hud(), new_vec2(0, 0));
     let marlies = new speler();

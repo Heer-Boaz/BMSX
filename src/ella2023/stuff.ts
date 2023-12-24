@@ -43,7 +43,7 @@ export class GameOver extends SpriteObject {
         const y = 144;
 
         const options: DrawRectOptions = { area: new_area3d(0, 136, this.z + 1, 256, 192 - 8, this.z + 1), color: Msx1Colors[0] };
-        global.view.fillRectangle(options);
+        game.view.fillRectangle(options);
         const lines = ['je bent toch niet', 'de strijder die ik nodig heb.', 'ik ben een beetje', 'teleurgesteld in jouw ouders...'];
 
         TextWriter.drawText(x, y, lines);
@@ -89,7 +89,7 @@ export class Hoera extends SpriteObject {
         const y = 160;
 
         const options: DrawRectOptions = { area: new_area3d(0, 152, this.z + 1, 256, 192, this.z + 1), color: Msx1Colors[0] };
-        global.view.fillRectangle(options);
+        game.view.fillRectangle(options);
         const lines = ['dat heb je', 'redelijk gedaan Elly!', 'ik bedoel: Ei La!'];
 
         TextWriter.drawText(x, y, lines);
@@ -126,7 +126,7 @@ export class TitleScreen extends SpriteObject {
 
     override paint(): void {
         super.paint();
-        global.view.drawImg({ imgid: BitmapId.menu_arrow, pos: new_vec3(80, 160, 100) });
+        game.view.drawImg({ imgid: BitmapId.menu_arrow, pos: new_vec3(80, 160, 100) });
 
     }
 

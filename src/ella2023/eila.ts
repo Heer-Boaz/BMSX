@@ -411,7 +411,7 @@ export class Player extends Fighter {
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Player) {
-                        global.eventEmitter.emit('animationEnd', this, 'highkick');
+                        game.event_emitter.emit('animationEnd', this, 'highkick');
                         this.sc.switch('player_animation.idle');
                     }
                 },
@@ -424,7 +424,7 @@ export class Player extends Fighter {
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Player) {
-                        global.eventEmitter.emit('animationEnd', this, 'lowkick');
+                        game.event_emitter.emit('animationEnd', this, 'lowkick');
                         this.sc.switch('player_animation.idle');
                     }
                 },
@@ -437,7 +437,7 @@ export class Player extends Fighter {
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Player) {
-                        global.eventEmitter.emit('animationEnd', this, 'punch');
+                        game.event_emitter.emit('animationEnd', this, 'punch');
                         this.sc.switch('player_animation.idle');
                     }
                 },
@@ -451,7 +451,7 @@ export class Player extends Fighter {
                     },
                     next(this: Player) {
                         this.sc.switch('player_animation.duck');
-                        global.eventEmitter.emit('animationEnd', this, 'duckkick');
+                        game.event_emitter.emit('animationEnd', this, 'duckkick');
                     }
                 },
                 flyingkick: {
@@ -464,7 +464,7 @@ export class Player extends Fighter {
                     },
                     next(this: Player) {
                         this.sc.switch('player_animation.jump');
-                        global.eventEmitter.emit('animationEnd', this, 'flyingkick');
+                        game.event_emitter.emit('animationEnd', this, 'flyingkick');
                     }
                 },
                 duck: {

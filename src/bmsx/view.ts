@@ -1,5 +1,6 @@
 ﻿import type { Area, Size, Vector, id2htmlimg, vec2 } from './rompack';
-import { BFont } from "./bmsx";
+import { BFont, IRegisterable, Identifier } from "./bmsx";
+import { Registry } from './registry';
 
 export interface FlipOptions {
     flip_h: boolean;
@@ -36,7 +37,13 @@ export class PixelData {
  * The `BaseView` class is an abstract class that serves as the base for all views in the application.
  * It provides common functionality and properties that are shared across all views.
  */
-export abstract class BaseView {
+export abstract class BaseView implements IRegisterable {
+    public get id(): Identifier { return 'view'; }
+    public dispose(): void {
+        // Deregister from registry
+        Registry.instance.deregister(this);
+    }
+
     public canvas: HTMLCanvasElement;
     public context: CanvasRenderingContext2D;
     public static images: id2htmlimg;
@@ -49,16 +56,16 @@ export abstract class BaseView {
     public scale: number;
 
     constructor(viewportsize: Size) {
-        this.canvas = <HTMLCanvasElement>document.getElementById('gamescreen');
-        // this.context = this.canvas.getContext('2d');
-        // this.context.imageSmoothingEnabled = false;
+        Registry.instance.register(this);
         this.viewportSize = viewportsize;
-        this.calculateSize();
-        this.canvas.width = this.viewportSize.x;
-        this.canvas.height = this.viewportSize.y;
+        this.canvas = document.getElementById('gamescreen') as HTMLCanvasElement;
     }
 
     public init(): void {
+
+        this.calculateSize();
+        this.canvas.width = this.viewportSize.x;
+        this.canvas.height = this.viewportSize.y;
         this.handleResize();
         this.listenToMediaEvents();
     }
@@ -68,9 +75,9 @@ export abstract class BaseView {
      * The method sorts the objects in the current space by depth and then iterates over them, calling their `paint` method if they are visible and not flagged for disposal.
      */
     public drawgame(clearCanvas: boolean = true): void {
-        if (clearCanvas) global.view.clear();
-        global.model.currentSpace.sort_by_depth(); // Required for each frame as objects can change depth during the flow of the game
-        global.model.currentSpace.objects.forEach(o => !o.disposeFlag && o.visible && (o.updateComponentsWithTag('render'), o.paint?.()));
+        if (clearCanvas) game.view.clear();
+        game.model.currentSpace.sort_by_depth(); // Required for each frame as objects can change depth during the flow of the game
+        game.model.currentSpace.objects.forEach(o => !o.disposeFlag && o.visible && (o.updateComponentsWithTag('render'), o.paint?.()));
     }
 
     /**
@@ -79,7 +86,7 @@ export abstract class BaseView {
      * The `scale` property represents the minimum of `dx` and `dy`.
      */
     public calculateSize(): void {
-        let self = global.view || this;
+        let self = game.view || this;
 
         let w = Math.max(document.documentElement.clientWidth, window.innerWidth || screen.width);
         let h = Math.max(document.documentElement.clientHeight, window.innerHeight || screen.height);
@@ -91,7 +98,7 @@ export abstract class BaseView {
 
     public handleResize(): void {
         if (document.getElementById('gamescreen')!.style.visibility === 'hidden') return;
-        let self = global.view || this;
+        let self = game.view || this;
         self.calculateSize();
         self.canvas.style.width = `${self.viewportSize.x * self.scale}px`;
         self.canvas.style.height = `${self.viewportSize.y * self.scale}px`;
@@ -104,7 +111,7 @@ export abstract class BaseView {
      * When any of these events occur, the `handleResize` method is called to recalculate the size of the canvas and adjust its position and scale.
      */
     protected listenToMediaEvents(): void {
-        const view = global.view;
+        const view = game.view;
 
         function handleResizeHelper() {
             view.handleResize.call(view);
@@ -209,68 +216,68 @@ export abstract class BaseView {
 
 
     public clear(): void {
-        global.view.context.translate(0.5, 0.5);
-        global.view.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        global.view.context.translate(-0.5, -0.5);
+        game.view.context.translate(0.5, 0.5);
+        game.view.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        game.view.context.translate(-0.5, -0.5);
     }
 
     /**
      * Draws the "Press any key to start" message on the canvas.
      */
     public drawPressKey(): void {
-        global.view.context.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        game.view.context.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-        global.view.context.font = '12pt Monaco';
-        global.view.context.fillStyle = 'white';
-        global.view.context.save();
-        global.view.context.fillText('Press any key to start', 56, 80);
-        global.view.context.restore();
+        game.view.context.font = '12pt Monaco';
+        game.view.context.fillStyle = 'white';
+        game.view.context.save();
+        game.view.context.fillText('Press any key to start', 56, 80);
+        game.view.context.restore();
     }
 
     public drawImg(options: DrawImgOptions): void {
         const { pos, imgid, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 } } = options;
 
         let img = BaseView.images[imgid];
-        global.view.context.save();
-        global.view.context.translate(~~pos.x, ~~pos.y);
+        game.view.context.save();
+        game.view.context.translate(~~pos.x, ~~pos.y);
         if (flip.flip_h) {
-            global.view.context.scale(-1 * scale.x, 1 * scale.y);
-            global.view.context.translate(-img.width, 0);
+            game.view.context.scale(-1 * scale.x, 1 * scale.y);
+            game.view.context.translate(-img.width, 0);
         }
         if (flip.flip_v) {
-            global.view.context.scale(1 * scale.x, -1 * scale.y);
-            global.view.context.translate(0, -img.height);
+            game.view.context.scale(1 * scale.x, -1 * scale.y);
+            game.view.context.translate(0, -img.height);
         }
-        global.view.context.drawImage(img, 0, 0);
-        global.view.context.restore();
+        game.view.context.drawImage(img, 0, 0);
+        game.view.context.restore();
     }
 
     public drawRectangle(options: DrawRectOptions): void {
         const { start: { x, y }, end: { x: ex, y: ey } } = options.area;
         const c = options.color;
 
-        global.view.context.save();
-        global.view.context.translate(0.5, 0.5);
-        global.view.context.beginPath();
-        global.view.context.strokeStyle = this.toRgb(c);
-        global.view.context.rect(~~x, ~~y, ~~(ex - x), ~~(ey - y));
-        global.view.context.stroke();
-        global.view.context.restore();
+        game.view.context.save();
+        game.view.context.translate(0.5, 0.5);
+        game.view.context.beginPath();
+        game.view.context.strokeStyle = this.toRgb(c);
+        game.view.context.rect(~~x, ~~y, ~~(ex - x), ~~(ey - y));
+        game.view.context.stroke();
+        game.view.context.restore();
     }
 
     public fillRectangle(options: DrawRectOptions): void {
         const { start: { x, y }, end: { x: ex, y: ey } } = options.area;
         const c = options.color;
 
-        global.view.context.save();
-        global.view.context.translate(0.5, 0.5);
-        global.view.context.beginPath();
-        let colorRgb = global.view.toRgb(c);
-        global.view.context.fillStyle = colorRgb;
-        global.view.context.strokeStyle = colorRgb;
-        global.view.context.fillRect(~~x, ~~y, ~~(ex - x), ~~(ey - y));
-        global.view.context.stroke();
-        global.view.context.restore();
+        game.view.context.save();
+        game.view.context.translate(0.5, 0.5);
+        game.view.context.beginPath();
+        let colorRgb = game.view.toRgb(c);
+        game.view.context.fillStyle = colorRgb;
+        game.view.context.strokeStyle = colorRgb;
+        game.view.context.fillRect(~~x, ~~y, ~~(ex - x), ~~(ey - y));
+        game.view.context.stroke();
+        game.view.context.restore();
     }
 
     private toRgb(c: Color): string {
@@ -281,5 +288,5 @@ export abstract class BaseView {
 export function paintImage(options: DrawImgOptions): void {
     if (!options.imgid || options.imgid === 'none') return; // Don't draw anything when imgid = BitmapId.None. For animations, we don't always want to use visible = false
 
-    global.view.drawImg(options);
+    game.view.drawImg(options);
 }
