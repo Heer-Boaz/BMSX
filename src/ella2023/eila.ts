@@ -284,7 +284,7 @@ export class Player extends Fighter {
                                 this.sc.to('idle');
                             },
                         },
-                        flyingkicks: {
+                        flyingkick: {
                             parallel: true,
                             states: {
                                 _normal: {
