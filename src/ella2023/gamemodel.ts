@@ -66,7 +66,7 @@ export class gamemodel extends BaseModel {
 
         // If one of the fighters is down, go to gameover or hoera.
         switch (who) { // who is the fighter that is down
-            case 'player':
+            case 'eila':
                 this.sc.to('gameover'); // Game over for Eila
                 break;
             case 'sinterklaas':
