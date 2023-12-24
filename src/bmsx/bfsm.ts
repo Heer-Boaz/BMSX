@@ -153,8 +153,10 @@ function validateStateMachine(machinedef: sdef): void {
 		// If there are transitions, check each target state
 		if (transitions) {
 			for (const targetState of Object.values(transitions)) { // Get the target state for each transition
-				if (!stateNames.includes(targetState)) { // Check if the target state exists
-					throw new Error(`Invalid event transition target '${targetState}' in state '${state}'.`);
+				if (typeof targetState === 'string') { // If the target state is a string, check if it exists
+					if (!stateNames.includes(targetState)) { // Check if the target state exists
+						throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}'.`);
+					}
 				}
 			}
 		}
@@ -343,6 +345,18 @@ export class bfsm_controller {
 
 		// Only switch the state in the specified machine, without changing the current machine
 		machine.switch(stateid, ...args);
+	}
+
+	public dispatch(eventName: string, emitter_id: Identifier, ...args: any[]): void {
+		// Dispatch the event to the current machine
+		this.current_machine.dispatch(eventName, emitter_id, ...args);
+
+		for (const id in this.statemachines) {
+			if (this.current_machine_id === id) continue; // Skip the current machine, as the event has already been dispatched to that machine
+			if (this.statemachines[id].paused) continue; // Skip paused machines
+			if (!this.statemachines[id].parallel) continue; // Skip machines that are not running in parallel
+			this.statemachines[id].dispatch(eventName, emitter_id, ...args);
+		}
 	}
 
 	/**
@@ -553,12 +567,6 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 	target_id: Identifier;
 
 	/**
-	 * Represents the mapping of event types to state IDs for transitions to other states based on events (e.g. 'click' => 'idle').
-	 * At the individual state level, the `on` property defines the transitions that can occur from that specific state.
-	 */
-	public on?: { [key: string]: Identifier };
-
-	/**
 	 * Represents the state data for the state machine that is shared across its states.
 	 */
 	public data: { [key: string]: any } = {};
@@ -638,7 +646,6 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 		}
 	}
 
-
 	@onload
 	public register(): void {
 		Registry.instance.register(this);
@@ -678,10 +685,16 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 		if (definition.auto_tick) ++this.ticks; // Auto-nudge the state if auto_nudge is set to true
 
 		// Then run the submachine for the state if it exists
-		const currentStatedef = this.current_state_definition;
-		if (!currentStatedef) return;
-		const currentState = this.current;
-		currentState.run(); // Note that this will do nothing if there is no submachine
+		if (!this.states) return; // If there are no states defined, there is no submachine to run and we can return early
+
+		this.current.run(); // Run the current state of the substate machine
+
+		// Run all substate machines that have 'parallel' set to true
+		for (const id in this.states) {
+			// Skip the current machine, as it has already been run
+			if (id === this.currentid) continue;
+			if (this.states[id].parallel) this.states[id].run();
+		}
 	}
 
 	/**
@@ -712,7 +725,8 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 	}
 
 	public transition(state_id: Identifier, ...args: any[]): void {
-		this.parent.switch(`${state_id}}`, ...args);
+		if (this.def_id === state_id) return; // Don't switch to the same state
+		this.parent.switch(state_id, ...args);
 	}
 
 	/**
@@ -796,6 +810,59 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 		// Perform enter actions for the new current state
 		stateDef = this.current_state_definition;
 		stateDef?.enter?.call(this.target, this.current, ...args);
+	}
+
+	public dispatch(eventName: string, emitter_id: Identifier, ...args: any[]): void {
+		// If the state machine is paused, do not process the event
+		if (this.paused) {
+			return;
+		}
+
+		// If this state has children, dispatch the event to the child states
+		if (this.states && Object.keys(this.states).length > 0) {
+			// Dispatch the event to the current active state
+			this.current?.dispatch(eventName, emitter_id, ...args);
+
+			// Also dispatch the event to all parallel states
+			Object.values(this.states).forEach(state => state.parallel && state.dispatch(eventName, emitter_id, ...args));
+		} else {
+			// This is the deepest part of the state machine, dispatch the event here
+			// console.info(`Event ${eventName} dispatched by ${emitter_id} at state ${this.id}`);
+
+			// Bubble up the event to the parent states
+			let current = this;
+			do {
+				if (current.handleEvent(eventName, ...args)) {
+					// console.warn(`Event '${eventName}' gobbled up by '${current.id}'!`);
+					return; // If the event was handled, stop bubbling up the event
+				}
+				current = current.parent;
+				// console.info(`Event '${eventName}' bubbled up to state '${current?.id ?? 'the great void! This is the end of the line!'}'`);
+			} while (current);
+		}
+	}
+
+	private handleEvent(eventName: string, ...args: any[]): boolean {
+		// If the state machine is paused, do not process the event
+		if (this.paused) {
+			return false; // Return false to indicate that the event was not handled
+		}
+
+		// Check if the 'on' property of the state's definition contains a transition for the event
+		const state_id_or_handler = this.definition?.on?.[eventName];
+		if (state_id_or_handler) {
+			if (typeof state_id_or_handler === 'string') {
+				// If the handler is a string, treat it as a state ID and transition to that state
+				this.transition(state_id_or_handler, ...args); // Transition to the state with the given ID and pass the arguments to the state transition function
+				// Note: the state transition function will handle the enter and exit events for the states, but not if the state is the same as the current state
+			} else {
+				// If the handler is a function, call it as a custom handler
+				state_id_or_handler.call(this.target, this as sstate<T>, ...args);
+			}
+			return true; // Return true to indicate that the event was handled
+		}
+
+		return false; // Return false if the event was not handled (it will bubble up to the parent state)
 	}
 
 	/**
@@ -1144,11 +1211,12 @@ export class sdef {
 	public enter?: state_event_handler;
 	public exit?: state_event_handler;
 	public process_input?: state_event_handler;
+
 	/**
 	 * Represents the mapping of event types to state IDs for transitions to other states based on events (e.g. 'click' => 'idle').
 	 * At the individual state level, the `on` property defines the transitions that can occur from that specific state.
 	 */
-	public on?: { [key: string]: Identifier };
+	public on?: { [key: string]: Identifier | state_event_handler };
 
 	/**
 	 * The states defined for this state machine.
@@ -1240,7 +1308,7 @@ export interface machine_states {
 	 * Represents the mapping of event types to state IDs for transitions to other states based on events (e.g. 'click' => 'idle').
 	 * At the state machine level, the `on` property defines the global transitions that can occur from any state.
 	 */
-	on?: { [key: string]: Identifier }
+	on?: { [key: string]: Identifier | state_event_handler },
 
 	/**
 	 * The states defined for this state machine (key = state id, value = partial state definition), their substate machines and their additional properties are defined in {@link sdef}.
