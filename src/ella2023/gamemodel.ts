@@ -49,6 +49,32 @@ export class gamemodel extends BaseModel {
         }
     }
 
+    @subscribesToGlobalEvent('humiliated_animation_end')
+    public handleHumiliationAnimationEndEvent(_event_name: string, _emitter: Fighter, who: string): void {
+        const player = this.getGameObject<Fighter>('player');
+        const sinterklaas = this.getGameObject<Fighter>('sinterklaas');
+
+        // If both fighters are still alive, go back to idle state. Otherwise, go to gameover or hoera.
+        const hp_player = player?.hp ?? 0;
+        const hp_sinterklaas = sinterklaas?.hp ?? 0;
+
+        if (hp_player > 0 && hp_sinterklaas > 0) {
+            sinterklaas.sc.to('idle');
+            player.sc.to('idle');
+            return;
+        }
+
+        // If one of the fighters is down, go to gameover or hoera.
+        switch (who) { // who is the fighter that is down
+            case 'player':
+                this.sc.to('gameover'); // Game over for Eila
+                break;
+            case 'sinterklaas':
+                this.sc.to('hoera'); // Hoera for Eila (Sinterklaas is down)
+                break;
+        }
+    }
+
     @statedef_builder
     public static bouw(): machine_states {
         return {
