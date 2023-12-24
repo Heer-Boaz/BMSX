@@ -4,7 +4,6 @@ import { machine_states, statedef_builder } from '../bmsx/bfsm';
 import { get_gamemodel, new_area3d, new_vec3 } from '../bmsx/bmsx';
 import { gamemodel } from './gamemodel';
 import { TextWriter } from '../bmsx/textwriter';
-import { Input } from '../bmsx/input';
 import { DrawRectOptions } from '../bmsx/view';
 import { Msx1Colors } from '../bmsx/msx';
 
@@ -18,13 +17,13 @@ export class GameOver extends SpriteObject {
                 _default: {
                     ticks2move: 500,
                     run(this: TitleScreen) {
-                        const priorityActions = Input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['punch', 'highkick', 'lowkick', 'block'] });
+                        const priorityActions = game.input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['punch', 'highkick', 'lowkick', 'block'] });
 
                         // If no priority actions are pressed, do nothing.
                         if (!priorityActions || priorityActions.length === 0) {
                             return;
                         }
-                        Input.getPlayerInput(1).consumeActions(...priorityActions);
+                        game.input.getPlayerInput(1).consumeActions(...priorityActions);
 
                         // If a priority action is pressed, go to the game.
                         get_model().sc.to('titlescreen');
@@ -63,13 +62,13 @@ export class Hoera extends SpriteObject {
                 _default: {
                     ticks2move: 500,
                     run(this: TitleScreen) {
-                        // const priorityActions = Input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['punch', 'highkick', 'lowkick', 'block'] });
+                        // const priorityActions = game.input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['punch', 'highkick', 'lowkick', 'block'] });
 
                         // // If no priority actions are pressed, do nothing.
                         // if (!priorityActions || priorityActions.length === 0) {
                         //     return;
                         // }
-                        // Input.getPlayerInput(1).consumeActions(...priorityActions);
+                        // game.input.getPlayerInput(1).consumeActions(...priorityActions);
 
                         // // If a priority action is pressed, go to the game.
                         // get_model().sc.to('titlescreen');
@@ -108,13 +107,13 @@ export class TitleScreen extends SpriteObject {
             states: {
                 _default: {
                     run(this: TitleScreen) {
-                        const priorityActions = Input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['punch', 'highkick', 'lowkick', 'block'] });
+                        const priorityActions = game.input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['punch', 'highkick', 'lowkick', 'block'] });
 
                         // If no priority actions are pressed, do nothing.
                         if (!priorityActions || priorityActions.length === 0) {
                             return;
                         }
-                        Input.getPlayerInput(1).consumeActions(...priorityActions);
+                        game.input.getPlayerInput(1).consumeActions(...priorityActions);
 
                         // If a priority action is pressed, go to the game.
                         get_model().sc.to('default');

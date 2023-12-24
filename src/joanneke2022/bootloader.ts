@@ -176,7 +176,7 @@ class gamemodel extends BaseModel {
      */
     public do_one_time_game_init(): this {
         // this.state.machines['gamemenu' satisfies model_machines].to('closed' satisfies model_states);
-        Input.getPlayerInput(1).setInputMap({
+        game.input.getPlayerInput(1).setInputMap({
             keyboard: keyboardInputMapping,
             gamepad: gamepadInputMapping,
         } as InputMap);

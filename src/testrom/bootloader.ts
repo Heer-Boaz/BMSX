@@ -4,7 +4,7 @@ import type { Direction } from "../bmsx/bmsx";
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
-import { Input, InputMap, KeyboardButton, GamepadInputMapping, KeyboardInputMapping } from '../bmsx/input';
+import { InputMap, KeyboardButton, GamepadInputMapping, KeyboardInputMapping } from '../bmsx/input';
 import { statedef_builder, machine_states, build_fsm, assign_fsm } from '../bmsx/bfsm';
 import { insavegame } from '../bmsx/gameserializer';
 import { new_area, Game, new_vec2, get_gamemodel } from '../bmsx/bmsx';
@@ -242,7 +242,7 @@ class bclass extends SpriteObject {
 
     @statedef_builder
     public static bouw(): machine_states {
-        Input.getPlayerInput(1).setInputMap({
+        game.input.getPlayerInput(1).setInputMap({
             keyboard: keyboardInputMapping,
             gamepad: gamepadInputMapping,
         } as InputMap);
@@ -254,7 +254,7 @@ class bclass extends SpriteObject {
             }
 
             // To check if an action is pressed for player 0
-            const pressedActions = Input.getPlayerInput(1).getPressedActions();
+            const pressedActions = game.input.getPlayerInput(1).getPressedActions();
 
             for (const { action, consumed } of pressedActions) {
                 switch (action as Action) {
@@ -272,7 +272,7 @@ class bclass extends SpriteObject {
                         break;
                     case 'load':
                         if (consumed) break;
-                        Input.getPlayerInput(1).consumeAction(action);
+                        game.input.getPlayerInput(1).consumeAction(action);
 
                         if (_model[savestring]) {
                             _model.load(_model[savestring]);
@@ -284,7 +284,7 @@ class bclass extends SpriteObject {
                         break;
                     case 'save':
                         if (consumed) break;
-                        Input.getPlayerInput(1).consumeAction(action);
+                        game.input.getPlayerInput(1).consumeAction(action);
 
                         get_model()[savestring] = get_model().save();
                         console.info(`${new Date().toTimeString()} Game saved!`);
@@ -293,7 +293,7 @@ class bclass extends SpriteObject {
                         break;
                     case 'bla':
                         if (consumed) break;
-                        Input.getPlayerInput(1).consumeAction(action);
+                        game.input.getPlayerInput(1).consumeAction(action);
                         this.testmeuk();
                         game.event_emitter.emit('testEvent', this);
 
@@ -302,7 +302,7 @@ class bclass extends SpriteObject {
                         break;
                     case 'blap':
                         if (consumed) break;
-                        Input.getPlayerInput(1).consumeAction(action);
+                        game.input.getPlayerInput(1).consumeAction(action);
                         game.event_emitter.emit('testEventOnce', this);
 
                         this.sc.machines.bclass_animation.to('ani1');
