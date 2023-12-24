@@ -11,7 +11,7 @@ import type { Direction } from "../bmsx/bmsx";
 import { Fighter } from './fighter';
 import { subscribesToGlobalEvent } from '../bmsx/eventemitter';
 import { Hud } from './hud';
-import { Input, InputMap } from '../bmsx/input';
+import { InputMap } from '../bmsx/input';
 import { keyboardInputMapping1, gamepadInputMapping } from './inputmapping';
 import { GameOver, Hoera, TitleScreen } from './stuff';
 import { SM } from '../bmsx/soundmaster';
@@ -164,11 +164,11 @@ export class gamemodel extends BaseModel {
         _model.addSpace('titlescreen');
         _model.addSpace('niets');
 
-        Input.getPlayerInput(1).setInputMap({
+        game.input.getPlayerInput(1).setInputMap({
             keyboard: keyboardInputMapping1,
             gamepad: gamepadInputMapping,
         } as InputMap);
-        Input.getPlayerInput(2).setInputMap({
+        game.input.getPlayerInput(2).setInputMap({
             keyboard: null,
             gamepad: gamepadInputMapping,
         } as InputMap);
