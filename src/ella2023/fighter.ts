@@ -77,12 +77,19 @@ export abstract class Fighter extends SpriteObject {
     protected currentHitMarker: HitMarkerInfo;
     public facing: 'left' | 'right';
     public hp: number;
+    /**
+     * The player index of the fighter.
+     * 1 = player 1
+     * 2 = player 2
+     */
+    public playerIndex: number;
 
-    constructor(id: Identifier, fsm_id: string, facing: 'left' | 'right' = 'right') {
+    constructor(id: Identifier, fsm_id: string, facing: 'left' | 'right' = 'right', playerIndex: number) {
         super(id, fsm_id);
         this.hitarea = new_area(0, 0, 0, 0); // Populate the hitarea with a default value. It is updated in the imgid setter.
         this.facing = facing;
         this.currentHitMarker = null;
+        this.playerIndex = playerIndex;
     }
 
     public abstract handleFighterStukEvent(event_name: string, emitter: Fighter): void;
