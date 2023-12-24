@@ -376,7 +376,7 @@ export class Player extends Fighter {
                 walk: {
                     run(this: Player) { },
                     enter(this: Player, state: sstate) {
-                        state.sm.reset();
+                        state.resetSubmachine();
                         this.imgid = BitmapId.eila_walk;
                     },
                     states: {

@@ -362,7 +362,7 @@ export class Sinterklaas extends Fighter {
                 walk: {
                     run(this: SpriteObject) { },
                     enter(this: SpriteObject, state: sstate) {
-                        state.sm.reset();
+                        state.resetSubmachine();
                         this.imgid = BitmapId.sint_walk;
                     },
                     states: {

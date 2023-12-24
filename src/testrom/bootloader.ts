@@ -249,7 +249,7 @@ class bclass extends SpriteObject {
 
         function blarun(this: bclass) {
             const speed = 2;
-            if (this.sc.current_state.statedef_id === 'blap') {
+            if (this.sc.current_state.def_id === 'blap') {
                 this.tickTree('bclass_tree');
             }
 
