@@ -454,6 +454,27 @@ async function deploy(romname: string, title: string): Promise<any> {
 				reject(err);
 			});
 	});
+// import simpleGit, { SimpleGit } from 'simple-git';
+
+// async function deploy(romname: string, title: string): Promise<any> {
+//     return new Promise<any>((resolve, reject) => {
+//         log("Deploying... ");
+//         const outfile = romname.concat('.rom');
+//         const localRoot = "./dist";
+//         const git: SimpleGit = simpleGit();
+
+//         git.init()
+//             .then(() => git.addConfig('user.name', 'Your Name'))
+//             .then(() => git.addConfig('user.email', 'Your Email'))
+//             .then(() => git.add('./*'))
+//             .then(() => git.commit('Auto-deploy commit'))
+//             .then(() => git.addRemote('origin', 'https://username:password@github.com/username/repo.git'))
+//             .then(() => git.push('origin', 'master'))
+//             .then(() => resolve(null))
+//             .catch((err: any) => reject(err));
+//     });
+// }
+
 }
 
 /**
