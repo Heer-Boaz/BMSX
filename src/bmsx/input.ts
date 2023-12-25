@@ -1122,7 +1122,7 @@ class GamepadInput {
 }
 
 // @ts-ignore
-class OnScreenGamepad { //
+class OnScreenGamepad {
     /**
     * Mapping of button names to their corresponding key inputs.
     */
