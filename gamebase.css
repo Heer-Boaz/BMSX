@@ -270,6 +270,12 @@ svg.buttons#btn4_svg {
 	-webkit-touch-callout: none;
 }
 
+.extrabuttons {
+	z-index: 2000;
+	pointer-events: none;
+	touch-action: none;
+}
+
 .knop.red:not(.los) {
 	fill: red;
 }

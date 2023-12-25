@@ -4,14 +4,15 @@
     <head>
         <meta charset="utf-8" />
         <title>#title</title>
-        <meta name="viewport" content="width=device-width,initial-scale=1.0,minimum-scale=1,maximum-scale=1,user-scalable=no">
+        <meta name="viewport"
+            content="width=device-width,initial-scale=1.0,minimum-scale=1,maximum-scale=1,user-scalable=no">
         <meta name="apple-mobile-web-app-capable" content="yes">
         <meta name="apple-mobile-web-app-status-bar-style" content="black">
         <meta name="apple-mobile-web-app-title" content="#title">
         <link rel="manifest" href="manifest.webmanifest">
         <link rel="apple-touch-icon" href="bmsx_icon.png">
         <link rel="icon" type="image/png" href="bmsx_icon.png">
-         <link rel="shortcut icon" type="image/x-icon" href="bmsx_icon.png">
+        <link rel="shortcut icon" type="image/x-icon" href="bmsx_icon.png">
         <script id="bootrom">//#romjs</script>
         <script id="pacojs" distributedby="http://nodeca.github.io/pako/">//#zipjs</script>
         <!-- #vis-networkjs -->
@@ -28,6 +29,46 @@
             <!-- Button controls -->
             <div id="controls" hidden>
                 <nav class="buttons-container">
+                    <!-- Shoulder Buttons and Triggers -->
+                    <div class="shoulder-container"
+                        style="position: absolute; top: 0; width: 100%; display: flex; justify-content: space-between; padding: 1vmax;">
+                        <!-- Left Side: LS and LT -->
+                        <svg class="extrabuttons" style="width: 20vmax; height: 10vmax;">
+                            <!-- LS Button -->
+                            <rect id="ls_knop" x="1vmax" y="1vmax" width="8vmax" height="2vmax" class="knop green los" />
+                            <text x="2vmax" y="2.5vmax" class="button-label">LS</text>
+                            <!-- LT Trigger -->
+                            <rect id="lt_knop" x="1vmax" y="5vmax" width="8vmax" height="2vmax" class="knop green los" />
+                            <text x="2vmax" y="6.5vmax" class="button-label">LT</text>
+                        </svg>
+
+                        <!-- Right Side: RS and RT -->
+                        <svg class="extrabuttons" style="width: 20vmax; height: 10vmax;">
+                            <!-- RS Button -->
+                            <rect id="rs_knop" x="1vmax" y="1vmax" width="8vmax" height="2vmax" class="knop green los" />
+                            <text x="2vmax" y="2.5vmax" class="button-label">RS</text>
+                            <!-- RT Trigger -->
+                            <rect id="rt_knop" x="1vmax" y="5vmax" width="8vmax" height="2vmax" class="knop green los" />
+                            <text x="2vmax" y="6.5vmax" class="button-label">RT</text>
+                        </svg>
+                    </div>
+
+                    <!-- Adjusted Start and Select Buttons -->
+                    <div class="start-select-buttons"
+                        style="position: absolute; bottom: 5vmax; right: 5vmax; display: flex; flex-direction: column; align-items: center;">
+                        <!-- Start Button -->
+                        <svg class="extrabuttons" style="width: 4vmax; height: 4vmax; margin-bottom: 2vmax;">
+                            <circle id="start_knop" cx="2vmax" cy="2vmax" r="2vmax" class="knop green los" />
+                            <text x="1.5vmax" y="2.5vmax" class="button-label">Start</text>
+                        </svg>
+
+                        <!-- Select Button -->
+                        <svg class="extrabuttons" style="width: 4vmax; height: 4vmax;">
+                            <circle id="select_knop" cx="2vmax" cy="2vmax" r="2vmax" class="knop green los" />
+                            <text x="1.5vmax" y="2.5vmax" class="button-label">Select</text>
+                        </svg>
+                    </div>
+
                     <!-- Button 1 -->
                     <svg class="buttons" id="btn1_svg">
                         <circle id="btn1_knop" class="knop red los" cx="4vmax" cy="4vmax" r="4vmax"

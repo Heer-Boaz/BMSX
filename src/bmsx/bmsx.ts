@@ -903,6 +903,10 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
         game.view.init();
         SM.init(rom['snd_assets'], sndcontext, 1, gainnode);
         Input.instance; // Init input module
+        if (game.input.isOnscreenGamepadEnabled()) {
+            game.input.enableOnscreenGamepad();
+        }
+
         if (debug) {
             // @ts-ignore
             window['model'] = model;

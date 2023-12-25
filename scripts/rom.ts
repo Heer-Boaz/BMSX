@@ -415,7 +415,7 @@ async function awaitPressedAnyKeyPromise(): Promise<void> {
 					return;
 				}
 				if (e.type == 'touchend') {
-					let controls = document.getElementById("controls");
+					const controls = document.getElementById("controls");
 					controls!.hidden = false;
 					document.documentElement.setAttribute("style", "touch-action: none;");
 					document.documentElement.setAttribute("style", "pointer-events: none;");

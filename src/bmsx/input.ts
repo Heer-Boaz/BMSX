@@ -108,6 +108,16 @@ export type ButtonState = { pressed: boolean; consumed: boolean; presstime: numb
  */
 export type ActionState = { action: string } & ButtonState;
 
+// Abstract Input Handler Interface
+interface IInputHandler {
+    pollInput(): void;
+    getButtonState(btn: number | null): ButtonState;
+    consumeButton(button: number): void;
+    reset(except?: string[]): void;
+    gamepadIndex: number;
+}
+
+
 const options = {
     passive: false,
     once: false,
@@ -257,6 +267,7 @@ export class Input implements IRegisterable {
 
     private playerInputs: PlayerInput[] = [];
     private pendingGamepadAssignments: PendingAssignmentProcessor[] = [];
+    private onscreenGamepad: OnscreenGamepad;
 
     public getPlayerInput(playerIndex: number): PlayerInput {
         const index = playerIndex - 1;
@@ -279,7 +290,7 @@ export class Input implements IRegisterable {
         'rb': 5, // Right shoulder button
         'lt': 6, // Left trigger button
         'rt': 7, // Right trigger button
-        'back': 8, // Back button
+        'select': 8, // Select button
         'start': 9, // Start button
         'ls': 10, // Left stick button
         'rs': 11, // Right stick button
@@ -302,7 +313,7 @@ export class Input implements IRegisterable {
         5: 'rb', // Right shoulder button
         6: 'lt', // Left trigger button
         7: 'rt', // Right trigger button
-        8: 'back', // Back button
+        8: 'select', // Select button
         9: 'start', // Start button
         10: 'ls', // Left stick button
         11: 'rs', // Right stick button
@@ -354,8 +365,8 @@ export class Input implements IRegisterable {
      */
     constructor() {
         const self = this;
-        // Deregister the input system
-        Registry.instance.deregister(this);
+        // Register the input system
+        Registry.instance.register(this);
 
         // Initialize gamepad states for already connected gamepads
         const gamepads = navigator.getGamepads();
@@ -375,7 +386,6 @@ export class Input implements IRegisterable {
             if (!gamepad || !gamepad.id.toLowerCase().includes('gamepad')) return;
             console.info(`Gamepad ${gamepad.index} connected.`);
             self.addPendingGamepadAssignment(gamepad)
-            // let playerIndex = assignGamepadToPlayer(gamepad);
         });
 
         document.addEventListener('webkitmouseforcewillbegin', e => preventActionAndPropagation(e), options);
@@ -391,6 +401,19 @@ export class Input implements IRegisterable {
             }
         }, false);
         document.addEventListener('touchforcechange', e => preventActionAndPropagation(e), options);// iOS -- https://stackoverflow.com/questions/58159526/draggable-element-in-iframe-on-mobile-is-buggy && iOS -- https://stackoverflow.com/questions/50980876/can-you-prevent-3d-touch-on-an-img-but-not-tap-and-hold-to-save
+
+        this.getPlayerInput(1).keyboardInput = new KeyboardInput();
+    }
+
+    public isOnscreenGamepadEnabled(): boolean {
+        const controls = document.getElementById('controls');
+        return !controls!.hidden;
+    }
+
+    public enableOnscreenGamepad(): void {
+        this.onscreenGamepad = new OnscreenGamepad();
+        this.onscreenGamepad.init();
+        this.getPlayerInput(1).gamepadInput = this.onscreenGamepad;
     }
 
     public enableDebugMode(): void {
@@ -416,7 +439,6 @@ export class Input implements IRegisterable {
         this.pendingGamepadAssignments = [];
 
         // Remove all player inputs
-        // this.playerInputs.forEach(player => player.dispose());
         this.playerInputs = [];
 
         // Remove all event subscriptions
@@ -438,7 +460,7 @@ export class Input implements IRegisterable {
                 if (buttonState.pressed && buttonState.presstime >= 50) {
                     gamepadInput.reset();
                     player.gamepadInput = null;
-                    this.pendingGamepadAssignments.push(new PendingAssignmentProcessor(gamepadInput, null));
+                    this.pendingGamepadAssignments.push(new PendingAssignmentProcessor(gamepadInput as GamepadInput, null));
                 }
             }
         });
@@ -620,8 +642,8 @@ export class Input implements IRegisterable {
             Input.preventDefaultEventAction(e, e.code);
             switch (e.code) {
                 case 'Space':
-                    if (this.getPlayerInput(2).getKeyState(e.code).consumed) break;
-                    else this.getPlayerInput(2).consumeKey(e.code);
+                    if (this.getPlayerInput(1).getKeyState(e.code).consumed) break;
+                    else this.getPlayerInput(1).consumeKey(e.code);
                     if (!global.game.paused) {
                         global.game.paused = true;
                         global.game.debug_runSingleFrameAndPause = false;
@@ -679,18 +701,8 @@ export class Input implements IRegisterable {
  */
 export class PlayerInput {
     public playerIndex: number;
-    public gamepadInput: GamepadInput;
-    /**
-     * The state of each keyboard key.
-     */
-    public KeyState: Index2State = {};
-
-    /**
-     * The state of each keyboard key click request.
-     */
-    public KeyPressedConsumedState: Index2State = {};
-
-    public KeyPressedTimes: Index2PressTime = {};
+    public keyboardInput: KeyboardInput;
+    public gamepadInput: IInputHandler;
 
     /**
      * The input maps for each player.
@@ -737,6 +749,15 @@ export class PlayerInput {
      * @returns Whether the action is currently pressed for the given player index.
      */
     public getActionState(action: string): ActionState {
+        // let pressed = false, consumed = false, presstime = null;
+
+        // for (const handler of this.inputHandlers) {
+        //     const buttonState = handler.getButtonState(this.inputMap?.gamepad?.[action] ? Input.BUTTON2INDEX[this.inputMap.gamepad[action]] : null);
+        //     pressed = pressed || buttonState.pressed;
+        //     consumed = consumed || buttonState.consumed;
+        //     presstime = presstime ?? buttonState.presstime;
+        // }
+
         const inputMap = this.inputMap;
         if (!inputMap) return { action, pressed: false, consumed: false, presstime: null };
 
@@ -747,9 +768,9 @@ export class PlayerInput {
         const gamepadButtonState = this.getGamepadButtonState(gamepadButton);
         return {
             action: action,
-            pressed: keyboardButtonState.pressed || (gamepadButtonState?.pressed ?? false),
-            consumed: keyboardButtonState.consumed || (gamepadButtonState?.consumed ?? false),
-            presstime: keyboardButtonState.presstime ?? (gamepadButtonState?.presstime ?? null),
+            pressed: (keyboardButtonState?.pressed ?? false) || (gamepadButtonState?.pressed ?? false),
+            consumed: (keyboardButtonState?.consumed ?? false) || (gamepadButtonState?.consumed ?? false),
+            presstime: (keyboardButtonState?.presstime ?? null) ?? (gamepadButtonState?.presstime ?? null),
         };
     }
 
@@ -793,18 +814,6 @@ export class PlayerInput {
     }
 
     /**
-     * Consumes the given key by setting its key state to "consumed".
-     * @param key The key to consume.
-     */
-    public consumeKey(key: string) {
-        this.KeyPressedConsumedState[key] = true;
-    }
-
-    public consumeActions(...actions: ActionState[] | string[]) {
-        actions.forEach(action => this.consumeAction(action));
-    }
-
-    /**
      * Consumes the input action for the specified player index.
      * @param action The name of the input action to consume.
      */
@@ -815,8 +824,7 @@ export class PlayerInput {
         const action: string = (typeof actionToConsume === 'string') ? actionToConsume : actionToConsume.action;
 
         const keyboardKey = inputMap.keyboard?.[action];
-        // Check whether the keyboard key was actually pressed before consuming it
-        if (keyboardKey && this.KeyState[keyboardKey]) this.consumeKey(keyboardKey);
+        if (keyboardKey && this.keyboardInput.KeyState[keyboardKey]) this.keyboardInput?.consumeKey(keyboardKey);
 
         if (this.gamepadInput) {
             const gamepadButton = inputMap.gamepad[action] ? Input.BUTTON2INDEX[inputMap.gamepad[action]] : null;
@@ -824,14 +832,22 @@ export class PlayerInput {
         }
     }
 
+    public consumeActions(...actions: ActionState[] | string[]) {
+        actions.forEach(action => this.consumeAction(action));
+    }
+
     /**
-     * Returns the pressed state of a key, and optionally checks if it was clicked.
-     * @param key - The key to check the state of.
-     * @returns The pressed state of the key.
+     * Retrieves the state of a gamepad button.
+     * @param key - The button index.
+     * @returns The state of the button.
      */
     public getKeyState(key: string): ButtonState {
-        if (key === null) return { pressed: false, consumed: false, presstime: null };
-        return getPressedState(this.KeyState, this.KeyPressedConsumedState, this.KeyPressedTimes, key);
+        if (!this.isKeyboardConnected()) return null;
+        return this.keyboardInput.getKeyState(key);
+    }
+
+    public consumeKey(key: string): void {
+        this.keyboardInput.consumeKey(key);
     }
 
     /**
@@ -845,16 +861,6 @@ export class PlayerInput {
     }
 
     /**
-     * Checks if a specific key is currently being pressed down.
-     * @param key - The key to check.
-     * @returns True if the key is being pressed down, false otherwise.
-     */
-    public isKeyDown(key: string): boolean {
-        const buttonState = this.getKeyState(key);
-        return buttonState.pressed;
-    }
-
-    /**
      * Checks if a specific button on a gamepad is currently being pressed down.
      * @param btn - The button code of the gamepad button to check.
      * @returns A boolean indicating whether the button is currently pressed down.
@@ -865,10 +871,10 @@ export class PlayerInput {
     }
 
     public checkAndConsume(key: string, button?: number): boolean {
-        const keyState = this.getKeyState(key);
+        const keyState = this.keyboardInput.getKeyState(key);
 
         if (keyState.pressed && !keyState.consumed) {
-            this.consumeKey(key);
+            this.keyboardInput.consumeKey(key);
             return true;
         }
 
@@ -910,8 +916,6 @@ export class PlayerInput {
         const self = this;
         this.playerIndex = playerIndex;
         this.gamepadInput = null; // Gamepad should be null by default, and set to a value when a gamepad is connected and assigned to this player
-        this.KeyState = {};
-        this.KeyPressedConsumedState = {};
         this.reset();
 
         window.addEventListener("gamepaddisconnected", function (e: GamepadEvent) {
@@ -927,9 +931,14 @@ export class PlayerInput {
                 }
             }
         });
+    }
 
-        window.addEventListener('keydown', e => { !this.preventInput && this.keydown(e.code); }, options);
-        window.addEventListener('keyup', e => { !this.preventInput && this.keyup(e.code); }, options);
+    /**
+     * Checks if a keyboard is connected for the specified player index.
+     * @returns True if a ketboard is connected for the specified player index, false otherwise.
+     */
+    private isKeyboardConnected(): boolean {
+        return !(!this.keyboardInput);
     }
 
     /**
@@ -946,6 +955,28 @@ export class PlayerInput {
      */
     public reset(except?: string[]): void {
         this.gamepadInput?.reset(except);
+        this.keyboardInput?.reset(except);
+    }
+
+}
+
+class KeyboardInput implements IInputHandler {
+    public readonly gamepadIndex = 0;
+
+    constructor() {
+        this.KeyState = {};
+        this.KeyPressedConsumedState = {};
+        this.reset();
+
+        window.addEventListener('keydown', e => { this.keydown(e.code); }, options);
+        window.addEventListener('keyup', e => { this.keyup(e.code); }, options);
+    }
+
+    /**
+     * Resets the state of all input keys and gamepad buttons.
+     * @param except An optional array of keys or buttons to exclude from the reset.
+     */
+    public reset(except?: string[]): void {
         if (!except) {
             this.KeyState = {};
             this.KeyPressedConsumedState = {};
@@ -956,6 +987,47 @@ export class PlayerInput {
         resetObject(this.KeyState, except);
         resetObject(this.KeyPressedConsumedState, except);
         resetObject(this.KeyPressedTimes, except);
+    }
+
+
+    /**
+     * The state of each keyboard key.
+     */
+    public KeyState: Index2State = {};
+
+    /**
+     * The state of each keyboard key click request.
+     */
+    public KeyPressedConsumedState: Index2State = {};
+
+    public KeyPressedTimes: Index2PressTime = {};
+
+    /**
+     * Consumes the given key by setting its key state to "consumed".
+     * @param key The key to consume.
+     */
+    public consumeKey(key: string) {
+        this.KeyPressedConsumedState[key] = true;
+    }
+
+    public consumeButton(_button: number): void {
+    }
+
+    public getButtonState(_button: number): ButtonState {
+        return null;
+    }
+
+    /**
+     * Returns the pressed state of a key, and optionally checks if it was clicked.
+     * @param key - The key to check the state of.
+     * @returns The pressed state of the key.
+     */
+    public getKeyState(key: string): ButtonState {
+        if (key === null) return { pressed: false, consumed: false, presstime: null };
+        return getPressedState(this.KeyState, this.KeyPressedConsumedState, this.KeyPressedTimes, key);
+    }
+
+    pollInput(): void {
     }
 
     /**
@@ -977,13 +1049,13 @@ export class PlayerInput {
     }
 
     blur(_e: FocusEvent): void {
-        this.preventInput = true; // Prevent input when the window loses focus
+        // this.preventInput = true; // Prevent input when the window loses focus
         this.reset();
     }
 
     focus(_e: FocusEvent): void {
         this.reset();
-        this.preventInput = false; // Allow input when the window regains focus
+        // this.preventInput = false; // Allow input when the window regains focus
     }
 }
 
@@ -1121,56 +1193,139 @@ class GamepadInput {
     }
 }
 
-// @ts-ignore
-class OnScreenGamepad {
+class OnscreenGamepad implements IInputHandler {
+    public readonly gamepadIndex = 0;
+
+    /**
+     * The state of each gamepad button for each player.
+     */
+    private gamepadButtonStates: Index2State = {};
+
+    /**
+     * The state of each gamepad button click request for each player.
+     */
+    private gamepadButtonPressedConsumedStates: Index2State = {};
+
+    /**
+     * The state of each gamepad button click request for each player.
+     */
+    private gamepadButtonPressTimes: Index2PressTime = {};
+
+    /**
+     * Returns the pressed state of a gamepad button, and optionally checks if it was clicked.
+     * @param btn - The index of the button to check the state of.
+     * @returns The pressed state of the button.
+     */
+    public getButtonState(btn: number | null): ButtonState {
+        if (btn === null) return { pressed: false, consumed: false, presstime: null };
+        const button = Input.INDEX2BUTTON[btn];
+        const stateMap = this.gamepadButtonStates || {};
+        const consumedStateMap = this.gamepadButtonPressedConsumedStates;
+        const pressTimes = this.gamepadButtonPressTimes;
+        if (!consumedStateMap) return null;
+        return getPressedState(stateMap, consumedStateMap, pressTimes, button);
+    }
+
+    public pollInput(): void {
+        for (let i = 0; i < OnscreenGamepad.dpadlist.length; i++) {
+            const d = document.getElementById(OnscreenGamepad.dpadlist[i]);
+            const btnIndex = Input.BUTTON2INDEX[OnscreenGamepad.dpadlist[i]];
+            if (d.classList.contains('druk')) {
+                this.gamepadButtonStates[Input.BUTTON2INDEX[OnscreenGamepad.dpadlist[i]]] = true;
+                // If the button is pressed, increment the press time counter for detecting hold actions
+                this.gamepadButtonPressTimes[btnIndex] = (this.gamepadButtonPressTimes[btnIndex] ?? 0) + 1;
+                console.log(`Button ${btnIndex} pressed for ${this.gamepadButtonPressTimes[btnIndex]} frames.`);
+            }
+            else {
+                this.gamepadButtonStates[Input.BUTTON2INDEX[OnscreenGamepad.dpadlist[i]]] = false;
+                this.gamepadButtonPressedConsumedStates[btnIndex] = false;
+                this.gamepadButtonPressTimes[btnIndex] = null;
+            }
+        }
+    }
+
+    /**
+     * Consumes the given button press for the specified player index.
+     * @param button The button to consume.
+     */
+    public consumeButton(button: number) {
+        if (this.gamepadButtonPressedConsumedStates) {
+            this.gamepadButtonPressedConsumedStates[button] = true;
+        }
+    }
+
     /**
     * Mapping of button names to their corresponding key inputs.
     */
-    private static readonly buttonMap = {
+    private static readonly buttonMap: Record<string, { buttons: string[] }> = {
         'd-pad-u': {
-            keys: [Key.ArrowUp],
+            buttons: ['up' satisfies GamepadButton],
         },
         'd-pad-ru': {
-            keys: [Key.ArrowUp, Key.ArrowRight],
+            buttons: ['up' satisfies GamepadButton, 'right' satisfies GamepadButton],
         },
         'd-pad-r': {
-            keys: [Key.ArrowRight],
+            buttons: ['right' satisfies GamepadButton],
         },
         'd-pad-rd': {
-            keys: [Key.ArrowDown, Key.ArrowRight],
+            buttons: ['right' satisfies GamepadButton, 'down' satisfies GamepadButton],
         },
         'd-pad-d': {
-            keys: [Key.ArrowDown],
+            buttons: ['down' satisfies GamepadButton],
         },
         'd-pad-ld': {
-            keys: [Key.ArrowLeft, Key.ArrowDown],
+            buttons: ['down' satisfies GamepadButton, 'left' satisfies GamepadButton],
         },
         'd-pad-l': {
-            keys: [Key.ArrowLeft],
+            buttons: ['left' satisfies GamepadButton],
         },
         'd-pad-lu': {
-            keys: [Key.ArrowUp, Key.ArrowLeft],
+            buttons: ['left' satisfies GamepadButton, 'up' satisfies GamepadButton],
         },
         'btn1_knop': {
-            keys: ['BTN1', 'ShiftLeft'],
+            buttons: ['a' satisfies GamepadButton],
         },
         'btn2_knop': {
-            keys: ['BTN2', 'KeyZ'],
+            buttons: ['b' satisfies GamepadButton],
         },
         'btn3_knop': {
-            keys: ['BTN3', 'F1'],
+            buttons: ['x' satisfies GamepadButton],
         },
         'btn4_knop': {
-            keys: ['BTN4', 'F5'],
+            buttons: ['y' satisfies GamepadButton],
         },
+        'ls_knop': {
+            buttons: ['ls' satisfies GamepadButton],
+        },
+        'rs_knop': {
+            buttons: ['rs' satisfies GamepadButton],
+        },
+        'lt_knop': {
+            buttons: ['lt' satisfies GamepadButton],
+        },
+        'rt_knop': {
+            buttons: ['rt' satisfies GamepadButton],
+        },
+        'select_knop': {
+            buttons: ['select' satisfies GamepadButton],
+        },
+        'start_knop': {
+            buttons: ['start' satisfies GamepadButton],
+        },
+        // 'home_knop': {
+        //     buttons: ['home' satisfies GamepadButton],
+        // },
     }
 
-    private static readonly dpadlist = ['d-pad-u', 'd-pad-ru', 'd-pad-r', 'd-pad-rd', 'd-pad-d', 'd-pad-ld', 'd-pad-l', 'd-pad-lu', 'btn1_knop', 'btn2_knop', 'btn3_knop', 'btn4_knop'];
+    private static readonly dpadlist = Object.keys(OnscreenGamepad.buttonMap);
 
-    constructor(public playerIndex: number) {
+    public init(): void {
+        // Reset gamepad button states
+        this.reset();
+
         const controlsElement = document.getElementById('controls');
-        window.addEventListener('blur', this.blur, false); // Blur event will pause the game and prevent any input from being registered and reset the key states
-        window.addEventListener('focus', this.focus, false); // Focus event will allow input to be registered again
+        window.addEventListener('blur', e => this.blur(e), false); // Blur event will pause the game and prevent any input from being registered and reset the key states
+        window.addEventListener('focus', e => this.focus(e), false); // Focus event will allow input to be registered again
         window.addEventListener('mouseout', () => this.reset(), options); // Reset input states when mouse leaves the window
 
         controlsElement.addEventListener('touchmove', e => { preventActionAndPropagation(e); this.handleTouchStuff(e); return false; }, options);
@@ -1180,11 +1335,20 @@ class OnScreenGamepad {
     }
 
     /**
-     * Resets the state of all input keys and gamepad buttons.
-     * @param except An optional array of keys or buttons to exclude from the reset.
+     * Resets the state of all gamepad buttons.
+     * @param except An optional array of buttons to exclude from the reset.
      */
     public reset(except?: string[]): void {
-        Input.instance.getPlayerInput(this.playerIndex).reset(except);
+        if (!except) {
+            this.gamepadButtonStates = {};
+            this.gamepadButtonPressedConsumedStates = {};
+            this.gamepadButtonPressTimes = {};
+        }
+        else {
+            resetObject(this.gamepadButtonStates, except);
+            resetObject(this.gamepadButtonPressedConsumedStates, except);
+            resetObject(this.gamepadButtonPressTimes, except);
+        }
     }
 
     /**
@@ -1194,8 +1358,8 @@ class OnScreenGamepad {
      */
     public resetUI(): void {
         let d: HTMLElement;
-        for (let i = 0; i < OnScreenGamepad.dpadlist.length; i++) {
-            d = document.getElementById(OnScreenGamepad.dpadlist[i]);
+        for (let i = 0; i < OnscreenGamepad.dpadlist.length; i++) {
+            d = document.getElementById(OnscreenGamepad.dpadlist[i]);
             if (d.classList.contains('druk')) {
                 d.classList.remove('druk');
                 d.classList.add('los');
@@ -1240,11 +1404,20 @@ class OnScreenGamepad {
      * @returns An array of keys or buttons that were triggered by the touch event.
      */
     handleElementUnderTouch(e: Element): (ButtonId | string)[] {
-        const buttonData = OnScreenGamepad.buttonMap[e.id];
+        const buttonData = OnscreenGamepad.buttonMap[e.id];
         if (buttonData) {
-            buttonData.keys.forEach(key => Input.instance.getPlayerInput(this.playerIndex).keydown(key));
+            buttonData.buttons.forEach(button => {
+                if (this.gamepadButtonStates[button]) {
+                    this.gamepadButtonPressTimes[button] = (this.gamepadButtonPressTimes[button] ?? 0) + 1;
+                }
+                else {
+                    this.gamepadButtonStates[button] = true;
+                    this.gamepadButtonPressedConsumedStates[button] = false;
+                    this.gamepadButtonPressTimes[button] = 0;
+                }
+            });
             document.getElementById(e.id).classList.add('druk');
-            return buttonData.keys;
+            return buttonData.buttons;
         }
         return [];
     }
