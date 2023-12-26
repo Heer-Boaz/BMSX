@@ -264,10 +264,37 @@ export class bfsm_controller {
 	}
 
 	start(): void {
+		this.initLoadSetup();
+	}
+
+	@onload
+	initLoadSetup(): void {
 		for (const id in this.statemachines) {
-			this.statemachines[id].start();
+			const machine = this.statemachines[id];
+			// const eventNames = new Set<string>();
+			// this.getStateMachineEvents(eventNames, machine);
+			// eventNames.forEach(eventName => { game.event_emitter.on(eventName, null, machine.target,
+			machine.start();
 		}
 	}
+
+	// private getStateMachineEvents(eventNames: Set<string>, machine: sstate): void {
+	// 	for (const stateId in machine.states) {
+	// 		const state = machine.states[stateId];
+	// 		const state_def = state.definition;
+	// 		if (!state_def) continue;
+	// 		if (state_def.on) {
+	// 			for (const event in state_def.on) {
+	// 				// const handler = state_def.on[event];
+	// 				eventNames.add(event);
+	// 			}
+	// 		}
+	// 		// If the state has a submachine, recursively subscribe to its events
+	// 		if (state_def.states) {
+	// 			this.getStateMachineEvents(eventNames, state);
+	// 		}
+	// 	}
+	// }
 
 	run(): void {
 		// Runs the current state of the current state machine
