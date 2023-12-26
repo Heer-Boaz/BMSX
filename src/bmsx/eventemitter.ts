@@ -1,10 +1,19 @@
-import { IIdentifiable, IRegisterable, Identifier } from "./bmsx";
+import { IIdentifiable, IParentable, IRegisterable, Identifier } from "./bmsx";
 import { Registry } from "./registry";
 
 type Listener = { listener: Function, subscriber: any };
 type ListenerSet = Set<Listener>;
 type EventListenerMap = Record<string, ListenerSet>;
 type EmitterScopeListenerMap = Record<string, EventListenerMap>;
+
+/**
+ * Represents an object that can subscribe to events.
+ * @remarks
+ * The object must implement the IIdentifiable interface if it subscribes to self-scoped events.
+ * The object must implement the IParentable interface if it subscribes to parent-scoped events.
+ * The object must implement the IEventSubscriber interface if it subscribes to events.
+ */
+type EventSubscriberType = IEventSubscriber | (IEventSubscriber & IParentable) | (IEventSubscriber & IIdentifiable);
 
 /**
  * A generic event dispatcher that can be used to manage listeners and dispatch events.
@@ -30,7 +39,42 @@ export class EventEmitter implements IRegisterable {
         Registry.instance.register(this);
     }
 
-    on(event_name: string, listener: Function, subscriber: any, emitter_id?: string): void {
+    /**
+     * Initializes class-bound event subscriptions for the given subscriber.
+     * @param subscriber - The event subscriber.
+     */
+    public initClassBoundEventSubscriptions(subscriber: EventSubscriberType) {
+        const constr = subscriber.constructor as IEventSubscriber;
+        if (!constr?.eventSubscriptions) return;
+
+        const eventEmitter = EventEmitter.instance;
+        constr.eventSubscriptions.forEach(subscription => {
+            const handler = subscriber[subscription.handlerName].bind(subscriber);
+            let emitterFilter: string;
+            switch (subscription.scope) {
+                case 'all': emitterFilter = undefined; break;
+                case 'parent':
+                    emitterFilter = (subscriber as IParentable).parentid;
+                    if (!emitterFilter) throw Error(`Cannot subscribe '${(subscriber as IIdentifiable).id}' to event '${subscription.eventName}' with scope '${subscription.scope}' as the class (instance) '${subscriber.constructor.name}' does not have a 'parentid'.`);
+                    break;
+                case 'self':
+                    emitterFilter = (subscriber as IIdentifiable).id;
+                    if (!emitterFilter) throw Error(`Cannot subscribe '${(subscriber as IIdentifiable).id}' to event '${subscription.eventName}' with scope '${subscription.scope}' as the class (instance) '${subscriber.constructor.name}' does not have an 'id'.`);
+                break;
+            }
+            eventEmitter.on(subscription.eventName, handler, subscriber, emitterFilter);
+        });
+    }
+
+    /**
+     * Adds a listener function to the specified event name.
+     *
+     * @param event_name - The name of the event.
+     * @param listener - The listener function to be called when the event is emitted.
+     * @param subscriber - The subscriber object associated with the listener.
+     * @param emitter_id - (Optional) The ID of the emitter scope. If provided, the listener will be added to the emitter scope listeners, otherwise it will be added to the global scope listeners.
+     */
+    on(event_name: string, listener: Function, subscriber: any, emitter_id?: Identifier): void {
         if (emitter_id) {
             if (!this.emitterScopeListeners[event_name]) {
                 this.emitterScopeListeners[event_name] = {};
@@ -56,11 +100,11 @@ export class EventEmitter implements IRegisterable {
         });
     }
 
-    off(event: string, listener: Function, emitter?: string): void {
+    off(event_name: string, listener: Function, emitter?: string): void {
         const key = emitter || 'all';
-        const emitterListeners = this.emitterScopeListeners[event]?.[key];
+        const emitterListeners = this.emitterScopeListeners[event_name]?.[key];
         if (!emitterListeners) {
-            console.warn(`No listeners for event "${event}" and emitter "${key}"`);
+            console.warn(`No listeners for event "${event_name}" and emitter "${key}"`);
             return;
         }
         for (let item of emitterListeners) {
@@ -96,6 +140,15 @@ export class EventEmitter implements IRegisterable {
 }
 
 /**
+ * Represents the scope of an event subscription. The scope determines which instances will receive the event.
+ * - 'all': The event will be consumed for all instances.
+ * - 'parent': The event will be consumed for events emitted by the parent instance only.
+ * - 'self': The event will be consumed for events emitted by the current instance only.
+ * - Identifier: The event will be consumed for events emitted by the instance with the given ID only.
+ */
+export type EventScope = 'all' | 'parent' | 'self' | Identifier;
+
+/**
  * Represents a subscription to an event.
  */
 export type EventSubscription = {
@@ -103,6 +156,7 @@ export type EventSubscription = {
      * The name of the event.
      */
     eventName: string;
+
     /**
      * The name of the event handler.
      */
@@ -114,7 +168,7 @@ export type EventSubscription = {
      * - 'parent': The event will be consumed for the parent instance only.
      * - 'self': The event will be consumed for the current instance only.
      */
-    scope: 'all' | 'parent' | 'self';
+    scope: EventScope;
 };
 
 /**
@@ -122,6 +176,7 @@ export type EventSubscription = {
  */
 export interface IEventSubscriber {
     eventSubscriptions?: EventSubscription[]
+    // on?(event_name: string, handler: Function, emitter_id: Identifier): void;
 }
 
 /**
@@ -171,6 +226,22 @@ export function subscribesToSelfScopedEvent(eventName: string) {
             target.constructor.eventSubscriptions = [];
         }
         target.constructor.eventSubscriptions.push({ eventName, handlerName: propertyKey, scope: 'self' });
+        updateAllEventSubscriptions(target.constructor);
+    };
+}
+
+/**
+ * Decorator function that subscribes a method to a scoped event emitted by a event emitter specified by its unique ID.
+ * @param eventName The name of the event to subscribe to.
+ * @param emitter_id The ID of the event emitter.
+ * @returns A decorator function that adds the event subscription to the target class.
+ */
+export function subscribesToEmitterScopedEvent(eventName: string, emitter_id: string) {
+    return function (target: any, propertyKey: string, _descriptor: PropertyDescriptor) {
+        if (!target.constructor.eventSubscriptions) {
+            target.constructor.eventSubscriptions = [];
+        }
+        target.constructor.eventSubscriptions.push({ eventName, handlerName: propertyKey, scope: emitter_id });
         updateAllEventSubscriptions(target.constructor);
     };
 }
