@@ -347,7 +347,9 @@ export class bfsm_controller {
 		machine.switch(stateid, ...args);
 	}
 
-	public dispatch(eventName: string, emitter_id: Identifier, ...args: any[]): void {
+	public dispatch(eventName: string, emitter: Identifier | IIdentifiable, ...args: any[]): void {
+		const emitter_id = typeof emitter === 'string' ? emitter : emitter.id;
+
 		// Dispatch the event to the current machine
 		this.current_machine.dispatch(eventName, emitter_id, ...args);
 

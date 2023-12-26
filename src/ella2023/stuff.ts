@@ -116,7 +116,7 @@ export class TitleScreen extends SpriteObject {
                         game.input.getPlayerInput(1).consumeActions(...priorityActions);
 
                         // If a priority action is pressed, go to the game.
-                        get_model().sc.to('default');
+                        game.event_emitter.emit('game_start', this, 2);
                     },
                 }
             }
