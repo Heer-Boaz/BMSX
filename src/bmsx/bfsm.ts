@@ -1,7 +1,7 @@
 import { exclude_save, insavegame, onload } from './gameserializer';
 import { IIdentifiable, IRegisterable, Identifier } from './bmsx';
 import { BaseModel } from './basemodel';
-import { Registry } from './registry';
+import { IEventSubscriber } from './eventemitter';
 
 /**
  * Represents the machine definitions.
@@ -111,23 +111,6 @@ export function setup_fssdef_library(): void {
  * @param machine_definition - The definition of the machine, including its states and substates.
  */
 function createMachine(machine_name: Identifier, machine_definition: machine_states): void {
-	// // If the machine_definition has states, create a new machine definition for each state
-	// if (machine_definition.states) {
-	// 	for (let stateId in machine_definition.states) { // Loop through all states in the machine definition
-	// 		const state = machine_definition.states[stateId]; // Get the state definition
-
-	// 		// If the state has substates, create a new machine definition for each substate
-	// 		if (state.states) {
-	// 			// Create a new submachine_id for the substate and set it in the state definition
-	// 			let submachine_id = generateSubmachineId(machine_name, stateId); // The submachine_id is the machine_name + the stateId
-	// 			state.submachine_id = submachine_id; // Set the submachine_id in the state definition
-
-	// 			// Create a new machine with the substate's states
-	// 			let submachine_definition: machine_states = { states: state.states }; // Create a new machine definition with the substate's states
-	// 			createMachine(submachine_id, submachine_definition); // Create a new machine with the substate's states
-	// 		}
-	// 	}
-	// }
 	// Create a new machine definition object with the machine name and definition and add it to the library of machine definitions
 	let machineBuilt = new sdef(machine_name, machine_definition as Partial<sdef>);
 	validateStateMachine(machineBuilt); // Check if the machine definition is valid before adding it to the library of machine definitions
@@ -226,7 +209,7 @@ const BST_MAX_HISTORY = 10;
  */
 export const DEFAULT_BST_ID = 'master';
 
-export interface IStateful extends IRegisterable {
+export interface IStateful extends IRegisterable, IEventSubscriber {
 	/**
 	 * The StatemachineController of the object.
 	 */
@@ -281,10 +264,37 @@ export class bfsm_controller {
 	}
 
 	start(): void {
+		this.initLoadSetup();
+	}
+
+	@onload
+	initLoadSetup(): void {
 		for (const id in this.statemachines) {
-			this.statemachines[id].start();
+			const machine = this.statemachines[id];
+			// const eventNames = new Set<string>();
+			// this.getStateMachineEvents(eventNames, machine);
+			// eventNames.forEach(eventName => { game.event_emitter.on(eventName, null, machine.target,
+			machine.start();
 		}
 	}
+
+	// private getStateMachineEvents(eventNames: Set<string>, machine: sstate): void {
+	// 	for (const stateId in machine.states) {
+	// 		const state = machine.states[stateId];
+	// 		const state_def = state.definition;
+	// 		if (!state_def) continue;
+	// 		if (state_def.on) {
+	// 			for (const event in state_def.on) {
+	// 				// const handler = state_def.on[event];
+	// 				eventNames.add(event);
+	// 			}
+	// 		}
+	// 		// If the state has a submachine, recursively subscribe to its events
+	// 		if (state_def.states) {
+	// 			this.getStateMachineEvents(eventNames, state);
+	// 		}
+	// 	}
+	// }
 
 	run(): void {
 		// Runs the current state of the current state machine
@@ -517,7 +527,7 @@ interface IStateController extends IRegisterable {
  * Represents a state in a state machine.
  * @template T - The type of the game object or model associated with the state.
  */
-export class sstate<T extends IStateful = IStateful> implements IStateController, IIdentifiable {
+export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any> implements IStateController, IIdentifiable {
 	/**
 	 * The identifier of this specific instance of the state machine.
 	* @see {@link make_id}
@@ -530,7 +540,7 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 	 */
 	parent_id: Identifier;
 
-	public get parent() { return Registry.instance.get(this.parent_id); }
+	public get parent() { return game.registry.get(this.parent_id); }
 
 	/**
 	 * The unique identifier for the bfsm.
@@ -576,7 +586,7 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 	/**
 	 * Returns the game object or model that this state machine is associated with.
 	 */
-	public get target(): IStateful { return Registry.instance.get(this.target_id); }
+	public get target(): T { return game.registry.get<T>(this.target_id); }
 
 	/**
 	 * Returns the current state of the FSM
@@ -642,15 +652,15 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 		// When parameters are undefined, this constructor was invoked without parameters. This happens when it is revived. In that situation, don't init this object
 		if (def_id && target_id) {
 			this.id = this.make_id();
-			this.register();
-			// const substateDefinition = this.definition?.submachine_id;
-			// this.sm = substateDefinition ? sstate.create(substateDefinition, this.target_id, this.parent_id) : undefined;
+			this.onLoadSetup();
 		}
 	}
 
 	@onload
-	public register(): void {
-		Registry.instance.register(this);
+	public onLoadSetup(): void {
+		game.registry.register(this);
+		// this.target.on('destroy', this.dispose, this.target.id);
+
 	}
 
 	public start(): void {
@@ -834,7 +844,7 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 			// Bubble up the event to the parent states
 			let current = this;
 			do {
-				if (current.handleEvent(eventName, ...args)) {
+				if (current.handleEvent(eventName, emitter_id, ...args)) {
 					// console.warn(`Event '${eventName}' gobbled up by '${current.id}'!`);
 					return; // If the event was handled, stop bubbling up the event
 				}
@@ -844,7 +854,7 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 		}
 	}
 
-	private handleEvent(eventName: string, ...args: any[]): boolean {
+	private handleEvent(eventName: string, emitter_id: Identifier, ...args: any[]): boolean {
 		// If the state machine is paused, do not process the event
 		if (this.paused) {
 			return false; // Return false to indicate that the event was not handled
@@ -858,8 +868,27 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 				this.transition(state_id_or_handler, ...args); // Transition to the state with the given ID and pass the arguments to the state transition function
 				// Note: the state transition function will handle the enter and exit events for the states, but not if the state is the same as the current state
 			} else {
-				// If the handler is a function, call it as a custom handler
-				state_id_or_handler.call(this.target, this as sstate<T>, ...args);
+				// If the handler is a StateTransition object (i.e., an object with an 'if' and 'do' handler), call the 'if' handler and if it returns true, call the 'do' handler and transition to the target state
+				const ifHandler = state_id_or_handler.if; // Get the if-handler from the state transition object
+				const doHandler = state_id_or_handler.do; // Get the do-handler from the state transition object
+				const emitterId = state_id_or_handler.emitter_id; // (Optional) The ID of the emitter scope. If provided, the listener will be added to the emitter scope listeners, otherwise it will be added to the global scope listeners.
+				const targetStateId = state_id_or_handler.to; // Get the target state ID from the state transition object
+
+				// If the emitter ID is provided and it is not the same as the emitter ID of the event, do nothing
+				if (emitterId && emitterId !== emitter_id) {
+					return false; // Return false to indicate that the event was not handled
+				}
+
+				// If the emitter ID is not provided or it is the same as the emitter ID of the event, call the if-handler
+				if (ifHandler && !ifHandler.call(this.target, this as sstate<T>, ...args)) {
+					// If the if-handler exists and returns false, do nothing
+					return false; // Return false to indicate that the event was not handled
+				}
+
+				// If the if-handler does not exist or returns true, call the do-handler
+				doHandler?.call(this.target, this as sstate<T>, ...args);
+				// Transition to the target state if it is defined and not the same as the current state ID (otherwise, do nothing)
+				targetStateId && this.transition(targetStateId, ...args);
 			}
 			return true; // Return true to indicate that the event was handled
 		}
@@ -958,7 +987,7 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 	 * @returns The target object casted to the specified type.
 	 * @template T - The type to cast the target object to.
 	 */
-	public targetAs<T>(): T { return <T>Registry.instance.get(this.target_id); }
+	public targetAs<T>(): T { return <T>game.registry.get(this.target_id); }
 
 	private make_id(): Identifier {
 		let id = `${this.parent_id ?? this.target_id}.${this.def_id}`; // The id is the parent_id + the target_id + the def_id (e.g. 'parent_id.target_id.def_id') to create a unique id
@@ -969,7 +998,7 @@ export class sstate<T extends IStateful = IStateful> implements IStateController
 	}
 
 	public dispose(): void {
-		Registry.instance.deregister(this);
+		game.registry.deregister(this);
 		// Also deregister all substates
 		for (let state in this.states) {
 			this.states[state].dispose();
@@ -1219,7 +1248,7 @@ export class sdef {
 	 * Represents the mapping of event types to state IDs for transitions to other states based on events (e.g. 'click' => 'idle').
 	 * At the individual state level, the `on` property defines the transitions that can occur from that specific state.
 	 */
-	public on?: { [key: string]: Identifier | state_event_handler };
+	public on?: { [key: string]: Identifier | StateEventDefinition };
 
 	/**
 	 * The states defined for this state machine.
@@ -1293,6 +1322,32 @@ export class sdef {
  */
 export type id2partial_sdef = Record<string, Partial<sdef>>;
 
+export interface state_event_condition<T extends IStateful & IEventSubscriber = any> extends state_event_handler<T> {
+	(state: sstate<T>, ...args: any[]): boolean;
+}
+
+export type StateEventDefinition<T extends IStateful & IEventSubscriber = any> = {
+	/**
+	 * The state ID to transition to. If not provided, the state will not transition. This is useful for defining a "transition" that only executes an action.
+	 */
+	to?: Identifier,
+
+	/**
+	 * The condition that must be met for the transition to occur.
+	 */
+	if?: state_event_condition<T>,
+
+	/**
+	 * The action that is executed when the transition occurs.
+	 */
+	do?: state_event_handler<T>,
+
+	/**
+	 * (Optional) The ID of the emitter scope. If provided, the listener will be added to the emitter scope listeners, otherwise it will be added to the global scope listeners.
+	 */
+	emitter_id?: Identifier,
+};
+
 /**
  * Represents the states of a state machine.
  */
@@ -1300,18 +1355,18 @@ export interface machine_states {
 	/**
 	 * Indicates whether the state machine is running in parallel with the 'current' state machine as defined in {@link bfsm_controller.current_machine}.
 	 */
-	parallel?: boolean,
+	parallel?: typeof sdef.prototype.parallel,
 
 	/**
 	 * Represents the state data for the state machine that is shared across its states.
 	 */
-	data?: { [key: string]: any },
+	data?: typeof sdef.prototype.data,
 
 	/**
 	 * Represents the mapping of event types to state IDs for transitions to other states based on events (e.g. 'click' => 'idle').
 	 * At the state machine level, the `on` property defines the global transitions that can occur from any state.
 	 */
-	on?: { [key: string]: Identifier | state_event_handler },
+	on?: typeof sdef.prototype.on,
 
 	/**
 	 * The states defined for this state machine (key = state id, value = partial state definition), their substate machines and their additional properties are defined in {@link sdef}.

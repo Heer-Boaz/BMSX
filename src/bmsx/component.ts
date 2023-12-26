@@ -1,5 +1,5 @@
 import { onload, insavegame } from './gameserializer';
-import { IEventSubscriber, EventEmitter, EventSubscription } from './eventemitter';
+import { EventEmitter, EventSubscription } from './eventemitter';
 import { GameObjectConstructorWithComponentList } from './gameobject';
 import { AbstractConstructor } from './bmsx';
 import type { IDisposable, IIdentifiable, Identifier } from "./bmsx";
@@ -66,7 +66,7 @@ export abstract class Component implements IIdentifiable {
         this.parentid ??= parentid; // Store the parent id for later use
         this.id ??= this.parentid + '_' + this.constructor.name; // Note: A component can be added once per game object
         this.enabled ??= true;
-        parentid && this.init(); // Initialize the component if parent id is specified. If not, then the component was constructed as part of deserialization and will be initialized later.
+        parentid && this.onloadSetup(); // Initialize the component if parent id is specified. If not, then the component was constructed as part of deserialization and will be initialized later.
     }
 
     public dispose() {
@@ -76,7 +76,7 @@ export abstract class Component implements IIdentifiable {
         eventEmitter.removeSubscriber(this);
 
         // Deregister the component from the entity registry
-        Registry.instance.deregister(this);
+        game.registry.deregister(this);
     }
 
     /**
@@ -103,7 +103,8 @@ export abstract class Component implements IIdentifiable {
      * Initializes the component.
      */
     @onload
-    init() {
+    onloadSetup() {
+        game.registry.register(this); // Register the component in the entity registry
         this.initEventSubscriptions(); // Initialize event subscriptions
     }
 
@@ -112,27 +113,7 @@ export abstract class Component implements IIdentifiable {
      * It subscribes to the specified events and binds the corresponding handlers to the component instance.
      */
     protected initEventSubscriptions() {
-        const constr = this.constructor as IEventSubscriber;
-        if (!constr.eventSubscriptions) return; // No event subscriptions
-
-        const eventEmitter = EventEmitter.instance;
-        constr.eventSubscriptions.forEach(subscription => { // Iterate over all event subscriptions
-            const handler = this[subscription.handlerName].bind(this); // Bind the handler to the component instance
-            const wrappedHandler = (...args: any[]) => { // Wrap the handler to check if the component is enabled
-                if (this.enabled) handler(...args);
-            };
-            let emitterFilter: string;
-            switch (subscription.scope) {
-                case 'all': emitterFilter = undefined; break;
-                case 'parent':
-                    emitterFilter = (this as Component & { parentid?: string }).parentid;
-                    if (!emitterFilter) throw Error (`Cannot subscribe Component ${this.id} to event ${subscription.eventName} with scope ${subscription.scope} as the class (instance) ${this.constructor.name} does not have a "parentid".`);
-                    emitterFilter = this.parentid;
-                    break;
-                case 'self': emitterFilter = this.id; break;
-            }
-            eventEmitter.on(subscription.eventName, wrappedHandler, this, emitterFilter); // Subscribe to the event
-        });
+		game.event_emitter.initClassBoundEventSubscriptions(this);
     }
 
     // Implement this method to handle preprocessing updates

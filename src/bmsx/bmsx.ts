@@ -145,6 +145,10 @@ export interface IIdentifiable {
     id: Identifier;
 }
 
+export interface IParentable {
+    parentid?: Identifier;
+}
+
 export interface IDisposable {
     dispose(): void;
 }
@@ -869,6 +873,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
     public get event_emitter(): EventEmitter { return Registry.instance.get<EventEmitter>('event_emitter'); }
 
     public get input(): Input { return Registry.instance.get<Input>('input'); }
+    public get registry(): Registry { return Registry.instance; }
 
     /**
      * Constructs a new instance of the BMSX class.
@@ -881,7 +886,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
         this.wasupdated = true;
         this.updateInterval = 1000 / this.targetFPS;
 
-        this.init(rom, model, view, sndcontext, gainnode, debug);
+        this.init_on_boot(rom, model, view, sndcontext, gainnode, debug);
     }
 
     /**
@@ -893,14 +898,15 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
      * @param gainnode - The gain node used for controlling the volume of sounds.
      * @param debug - Whether to enable debug mode. Defaults to false.
      */
-    private init(rom: RomPack, model: BaseModel, view: BaseView, sndcontext: AudioContext, gainnode: GainNode, debug: boolean = false): Game {
+    private init_on_boot(rom: RomPack, model: BaseModel, view: BaseView, sndcontext: AudioContext, gainnode: GainNode, debug: boolean = false): Game {
         this.debug ??= debug;
 
         global['debug'] = debug;
         global['rom'] = rom;
 
         BaseView.images = rom.images;
-        game.view.init();
+        EventEmitter.instance; // Init event emitter
+        game.view.init(); // Init the view. Placed here to ensure that the Game object is available to the view
         SM.init(rom['snd_assets'], sndcontext, 1, gainnode);
         Input.instance; // Init input module
         if (game.input.isOnscreenGamepadEnabled()) {
@@ -931,7 +937,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 
         // Init the model to populate states (and do other init stuff) and
         // Init all the stuff that is game-specific. Placed here to reduce boilerplating
-        game.model.init_spaces().init_model_state_machines(game.model.constructor_name).do_one_time_game_init();
+        model.init_on_boot(); // Init the model to populate states (and do other init stuff). Placed here to ensure that the Game object is available to the model
 
         return this; // Allow chaining
     }

@@ -4,13 +4,11 @@ import { Component, ComponentTag, IComponentContainer, KeyToComponentMap, Compon
 import { BehaviorTrees, Blackboard, BTNode, BehaviorTreeID, ConstructorWithBTProperty } from "./behaviourtree";
 import { ObjectTracker } from "./objecttracker";
 import { onload } from "./gameserializer";
-import { IEventSubscriber, EventEmitter } from "./eventemitter";
 import { new_area, new_vec3, new_vec2, AbstractConstructor } from "./bmsx";
 import { vec2, vec3, Area, Vector } from "./rompack";
 import { Direction } from "./bmsx";
 import { ZCOORD_MAX } from "./glview";
 import type { Identifier } from "./bmsx";
-import { Registry } from "./registry";
 
 const DEFAULT_HITTABLE = true;
 const DEFAULT_VISIBLE = true;
@@ -269,6 +267,8 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 			this.setZNoSweep((spawningPos as vec3).z ?? this.z);
 		}
 
+		// Call the method to initialize event subscriptions
+		this.onLoadSetup();
 		// Call the method to initialize linked state machines
 		this.initializeLinkedFSMs();
 		// Call the method to initialize linked behavior trees
@@ -282,8 +282,7 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 
 	public dispose(): void {
 		// Unsubscribe from events
-		const eventEmitter = EventEmitter.instance;
-		eventEmitter.removeSubscriber(this);
+		game.event_emitter.removeSubscriber(this);
 
 		// Dispose of components
 		Object.values(this.components).forEach(component => component.dispose());
@@ -292,7 +291,7 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 		this.sc.dispose();
 
 		// Deregister the object from the entity registry
-		Registry.instance.deregister(this);
+		game.registry.deregister(this);
 	}
 
 	public paint?(): void;
@@ -353,9 +352,6 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 		// Create the state context that will be used to manage the state of the game object
 		this.sc = new bfsm_controller();
 		this.sc.add_statemachine(fsm_id ?? this.constructor.name, this.id);
-
-		// Call the method to initialize event subscriptions
-		this.onLoadSetup();
 	}
 
 	/**
@@ -372,27 +368,7 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 
 	@onload
 	onLoadSetup() {
-		this.initEventSubscriptions();
-	}
-
-	protected initEventSubscriptions() {
-		const constr = this.constructor as IEventSubscriber;
-		if (!constr.eventSubscriptions) return;
-
-		const eventEmitter = EventEmitter.instance;
-		constr.eventSubscriptions.forEach(subscription => {
-			const handler = this[subscription.handlerName].bind(this);
-			let emitterFilter: string;
-			switch (subscription.scope) {
-				case 'all': emitterFilter = undefined; break;
-				case 'parent':
-					emitterFilter = (this as GameObject & { parentid?: Identifier }).parentid;
-					if (!emitterFilter) throw Error(`Cannot subscribe GameObject ${this.id} to event ${subscription.eventName} with scope ${subscription.scope} as the class (instance) ${this.constructor.name} does not have a "parentid".`);
-					break;
-				case 'self': emitterFilter = this.id; break;
-			}
-			eventEmitter.on(subscription.eventName, handler, this, emitterFilter);
-		});
+		game.event_emitter.initClassBoundEventSubscriptions(this);
 	}
 
 	protected initializeLinkedFSMs() {
