@@ -324,7 +324,6 @@ void main() {
         this.setupTextures();
         this.createAdditionalProgram();
         this.setupAdditionalLocations();
-        // this.createFramebufferAndTexture();
         this.createAdditionalVertexBuffer();
         this.createAdditionalTexcoordBuffer();
         this.handleResize(); // This is needed to set the viewport size and create the framebuffer and texture
