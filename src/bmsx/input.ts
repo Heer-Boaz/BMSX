@@ -2,7 +2,6 @@
 import { handleDebugClick, handleDebugMouseDown, handleDebugMouseUp, handleDebugMouseMove, handleDebugMouseOut, handleContextMenu as handleDebugContextMenu, handleOpenObjectMenu, handleOpenDebugMenu as handleOpenDebugMenu } from './bmsxdebugger';
 import { EventEmitter } from './eventemitter';
 import { ZCOORD_MAX } from './glview';
-import { BitmapId } from '../ella2023/resourceids';
 import { SpriteObject } from './sprite';
 import { get_gamemodel } from './bmsx';
 import { StateMachineBlueprint } from './bfsm';
@@ -1465,11 +1464,11 @@ class SelectedPlayerIndexIcon extends SpriteObject {
 
     public set playerIndex(playerIndex: number) {
         if (playerIndex === null) {
-            this.imgid = BitmapId['joystick_none'];
+            this.imgid = 'joystick_none';
             return;
         }
         else {
-            this.imgid = BitmapId[`joystick${playerIndex}`];
+            this.imgid = `joystick${playerIndex}`;
         }
     }
 }
