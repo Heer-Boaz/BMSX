@@ -329,7 +329,7 @@ export class Input implements IRegisterable {
      * @param key The key pressed that triggered the event.
      */
     static preventDefaultEventAction(e: UIEvent, key: string) {
-        if (global.game.running || !global.game.paused) {
+        if (global.$.running || !global.$.paused) {
             switch (key) {
                 case 'Escape':
                 case 'Esc':
@@ -345,9 +345,9 @@ export class Input implements IRegisterable {
                     break;
                 case 'F11':
                     e.preventDefault();
-                    if (game.view.isFullscreen)
-                        game.view.ToWindowed();
-                    else game.view.toFullscreen();
+                    if ($.view.isFullscreen)
+                        $.view.ToWindowed();
+                    else $.view.toFullscreen();
                     break;
                 default:
                     // e.preventDefault();
@@ -643,13 +643,13 @@ export class Input implements IRegisterable {
                 case 'Space':
                     if (this.getPlayerInput(1).getKeyState(e.code).consumed) break;
                     else this.getPlayerInput(1).consumeKey(e.code);
-                    if (!global.game.paused) {
-                        global.game.paused = true;
-                        global.game.debug_runSingleFrameAndPause = false;
+                    if (!global.$.paused) {
+                        global.$.paused = true;
+                        global.$.debug_runSingleFrameAndPause = false;
                     }
                     else {
-                        global.game.paused = false;
-                        global.game.debug_runSingleFrameAndPause = this.getPlayerInput(2).getKeyState('ShiftLeft').pressed;
+                        global.$.paused = false;
+                        global.$.debug_runSingleFrameAndPause = this.getPlayerInput(2).getKeyState('ShiftLeft').pressed;
                     }
                     break;
             }

@@ -116,7 +116,7 @@ export class Sinterklaas extends Fighter {
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: SpriteObject) {
-                        game.event_emitter.emit('animationEnd', this, 'highkick');
+                        $.event_emitter.emit('animationEnd', this, 'highkick');
                         this.sc.switch(`${statemachine}.idle`);
                     }
                 },
@@ -129,7 +129,7 @@ export class Sinterklaas extends Fighter {
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: SpriteObject) {
-                        game.event_emitter.emit('animationEnd', this, 'lowkick');
+                        $.event_emitter.emit('animationEnd', this, 'lowkick');
                         this.sc.switch('sint_animation.idle');
                     }
                 },
@@ -142,7 +142,7 @@ export class Sinterklaas extends Fighter {
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: SpriteObject) {
-                        game.event_emitter.emit('animationEnd', this, 'punch');
+                        $.event_emitter.emit('animationEnd', this, 'punch');
                         this.sc.switch('sint_animation.idle');
                     }
                 },
@@ -156,7 +156,7 @@ export class Sinterklaas extends Fighter {
                     },
                     next(this: SpriteObject) {
                         this.sc.switch('sint_animation.duck');
-                        game.event_emitter.emit('animationEnd', this, 'duckkick');
+                        $.event_emitter.emit('animationEnd', this, 'duckkick');
                     }
                 },
                 flyingkick: {
@@ -169,7 +169,7 @@ export class Sinterklaas extends Fighter {
                     },
                     next(this: SpriteObject) {
                         this.sc.switch('sint_animation.jump');
-                        game.event_emitter.emit('animationEnd', this, 'flyingkick');
+                        $.event_emitter.emit('animationEnd', this, 'flyingkick');
                     }
                 },
                 duck: {
@@ -223,7 +223,7 @@ export class Sinterklaas extends Fighter {
                             auto_tick: true,
                             enter(this: SpriteObject) { this.imgid = BitmapId.sint_humiliated_1; },
                             next(this: SpriteObject) {
-                                game.event_emitter.emit('humiliated_animation_end', this, 'sinterklaas');
+                                $.event_emitter.emit('humiliated_animation_end', this, 'sinterklaas');
                             }
                         },
                     },

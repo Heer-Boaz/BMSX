@@ -92,9 +92,9 @@ export class GameMenu extends GameObject {
         this.size.x = GameMenu.menuEndX - GameMenu.menuPosX, this.size.y = GameMenu.menuEndY - GameMenu.menuPosY;
         this.selectedItemIndex = 0;
         this.CurrentScreen = MenuItem.Main;
-        GameMenu.fullscreenOptionsOffsets = [game.view.default_font.char_width * 12 - 1, game.view.default_font.char_height * 14 - 1];
+        GameMenu.fullscreenOptionsOffsets = [$.view.default_font.char_width * 12 - 1, $.view.default_font.char_height * 14 - 1];
         GameMenu.fullscreenOptionsOffsetY = -1;
-        GameMenu.fullscreenOptionsRectangleSize = new_vec2(game.view.default_font.char_width + 2, game.view.default_font.char_height + 2);
+        GameMenu.fullscreenOptionsRectangleSize = new_vec2($.view.default_font.char_width + 2, $.view.default_font.char_height + 2);
     }
 
     public Open(currentscreen: MenuItem = MenuItem.Main): void {
@@ -170,7 +170,7 @@ export class GameMenu extends GameObject {
                     SM.play(AudioId.selectie);
                     switch (this.selectedItem) {
                         case MenuItem.ReturnToGame:
-                            game.model.sc.machines.gamemenu.pop();
+                            $.model.sc.machines.gamemenu.pop();
                             break;
                         case MenuItem.ChangeOptions:
                             this.CurrentScreen = MenuItem.Options;
@@ -186,7 +186,7 @@ export class GameMenu extends GameObject {
                             // }
                             break;
                         case MenuItem.ExitGame:
-                            global.game.stop();
+                            global.$.stop();
                             break;
                     }
                     break;
@@ -259,8 +259,8 @@ export class GameMenu extends GameObject {
                             }
                             break;
                         case MenuItem.Fullscreen:
-                            if (game.view.isFullscreen) {
-                                game.view.ToWindowed();
+                            if ($.view.isFullscreen) {
+                                $.view.ToWindowed();
                             }
                             break;
                         case MenuItem.SoundVolume:
@@ -285,8 +285,8 @@ export class GameMenu extends GameObject {
                             }
                             break;
                         case MenuItem.Fullscreen:
-                            if (!game.view.isFullscreen) {
-                                game.view.toFullscreen();
+                            if (!$.view.isFullscreen) {
+                                $.view.toFullscreen();
                             }
                             break;
                         case MenuItem.SoundVolume:
@@ -407,10 +407,10 @@ export class GameMenu extends GameObject {
         let scaley = GameMenu.menuEndY - GameMenu.menuPosY;
         let pos: vec3 = { x: GameMenu.menuPosX, y: GameMenu.menuPosY, z: this.z };
         let scale = { x: scalex, y: scaley };
-        game.view.drawImg({ imgid: BitmapId.whitepixel, pos, scale });
+        $.view.drawImg({ imgid: BitmapId.whitepixel, pos, scale });
         pos = { x: GameMenu.menuPosX + 1, y: GameMenu.menuPosY + 1, z: this.z + 1 };
         scale = { x: scalex - 2, y: scaley - 2 };
-        game.view.drawImg({ imgid: BitmapId.blackpixel, pos, scale });
+        $.view.drawImg({ imgid: BitmapId.blackpixel, pos, scale });
 
         let titleToDraw: string;
         let titleX: number, titleY: number;
@@ -473,13 +473,13 @@ export class GameMenu extends GameObject {
                             case MenuItem.Scale:
                                 if (!GO.Fullscreen) {
                                     TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
-                                    offsetX += GameMenu.scaleText.length * game.view.default_font.char_width;
-                                    TextWriter.drawText(offsetX, y, `${game.view.scale.toPrecision(2)}X`);
+                                    offsetX += GameMenu.scaleText.length * $.view.default_font.char_width;
+                                    TextWriter.drawText(offsetX, y, `${$.view.scale.toPrecision(2)}X`);
                                 }
                                 else {
                                     TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, undefined, undefined, Msx1ExtColors[0]);
-                                    offsetX += GameMenu.scaleText.length * game.view.default_font.char_height;
-                                    TextWriter.drawText(offsetX, y, `${game.view.scale.toPrecision(2)}X`);
+                                    offsetX += GameMenu.scaleText.length * $.view.default_font.char_height;
+                                    TextWriter.drawText(offsetX, y, `${$.view.scale.toPrecision(2)}X`);
                                 }
                                 break;
                             case MenuItem.Fullscreen:
@@ -489,7 +489,7 @@ export class GameMenu extends GameObject {
                             case MenuItem.SoundVolume:
                                 {
                                     TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
-                                    offsetX += GameMenu.soundVolumeText.length * game.view.default_font.char_width;
+                                    offsetX += GameMenu.soundVolumeText.length * $.view.default_font.char_width;
                                     GO.VolumePercentage = ~~(SM.volume * 100); // TODO: LELIJK!!!!
                                     let text = GO.VolumePercentage > 0 ? GO.VolumePercentage + "%" : "Off";
                                     TextWriter.drawText(offsetX, y, text);
@@ -526,15 +526,15 @@ export class GameMenu extends GameObject {
                     break;
                 }
         }
-        game.view.drawImg({ pos: { ...this.cursorPos, z: this.z + 10 }, imgid: BitmapId.menucursor });
+        $.view.drawImg({ pos: { ...this.cursorPos, z: this.z + 10 }, imgid: BitmapId.menucursor });
     };
 
     private printFullscreenOptionRectangle(y: number): void {
         // let selectedIndex: number = GO.Fullscreen ? 0 : 1;
-        let selectedIndex: number = game.view.isFullscreen ? 0 : 1;
+        let selectedIndex: number = $.view.isFullscreen ? 0 : 1;
         const pos = { x: GameMenu.fullscreenOptionsOffsets[selectedIndex] + GameMenu.menuPosX + GameMenu.optionItemsOffsetX, y: y + GameMenu.fullscreenOptionsOffsetY, z: this.z + 2 };
         const scale = { x: GameMenu.fullscreenOptionsRectangleSize.x, y: GameMenu.fullscreenOptionsRectangleSize.y };
-        game.view.drawImg({ imgid: BitmapId.redpixel, pos, scale });
+        $.view.drawImg({ imgid: BitmapId.redpixel, pos, scale });
     }
 
     // @ts-ignore

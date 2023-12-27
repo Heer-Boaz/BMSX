@@ -193,11 +193,11 @@ export class gamemodel extends BaseModel {
 		_model.addSpace('titlescreen');
 		_model.addSpace('niets');
 
-		game.input.getPlayerInput(1).setInputMap({
+		$.input.getPlayerInput(1).setInputMap({
 			keyboard: keyboardInputMapping1,
 			gamepad: gamepadInputMapping,
 		} as InputMap);
-		game.input.getPlayerInput(2).setInputMap({
+		$.input.getPlayerInput(2).setInputMap({
 			keyboard: null,
 			gamepad: gamepadInputMapping,
 		} as InputMap);

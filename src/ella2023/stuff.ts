@@ -17,15 +17,15 @@ export class GameOver extends SpriteObject {
                 _default: {
                     ticks2move: 500,
                     run(this: TitleScreen) {
-                        const priorityActions = game.input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['punch', 'highkick', 'lowkick', 'block'] });
+                        const priorityActions = $.input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['punch', 'highkick', 'lowkick', 'block'] });
 
                         // If no priority actions are pressed, do nothing.
                         if (!priorityActions || priorityActions.length === 0) {
                             return;
                         }
-                        game.input.getPlayerInput(1).consumeActions(...priorityActions);
+                        $.input.getPlayerInput(1).consumeActions(...priorityActions);
 
-                        // If a priority action is pressed, go to the game.
+                        // If a priority action is pressed, go to the $.
                         get_model().sc.to('titlescreen');
                     },
                     end(this: GameOver) {
@@ -42,7 +42,7 @@ export class GameOver extends SpriteObject {
         const y = 144;
 
         const options: DrawRectOptions = { area: new_area3d(0, 136, this.z + 1, 256, 192 - 8, this.z + 1), color: Msx1Colors[0] };
-        game.view.fillRectangle(options);
+        $.view.fillRectangle(options);
         const lines = ['je bent toch niet', 'de strijder die ik nodig heb.', 'ik ben een beetje', 'teleurgesteld in jouw ouders...'];
 
         TextWriter.drawText(x, y, lines);
@@ -62,15 +62,15 @@ export class Hoera extends SpriteObject {
                 _default: {
                     ticks2move: 500,
                     run(this: TitleScreen) {
-                        // const priorityActions = game.input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['punch', 'highkick', 'lowkick', 'block'] });
+                        // const priorityActions = $.input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['punch', 'highkick', 'lowkick', 'block'] });
 
                         // // If no priority actions are pressed, do nothing.
                         // if (!priorityActions || priorityActions.length === 0) {
                         //     return;
                         // }
-                        // game.input.getPlayerInput(1).consumeActions(...priorityActions);
+                        // $.input.getPlayerInput(1).consumeActions(...priorityActions);
 
-                        // // If a priority action is pressed, go to the game.
+                        // // If a priority action is pressed, go to the $.
                         // get_model().sc.to('titlescreen');
 
                     },
@@ -88,7 +88,7 @@ export class Hoera extends SpriteObject {
         const y = 160;
 
         const options: DrawRectOptions = { area: new_area3d(0, 152, this.z + 1, 256, 192, this.z + 1), color: Msx1Colors[0] };
-        game.view.fillRectangle(options);
+        $.view.fillRectangle(options);
         const lines = ['dat heb je', 'redelijk gedaan Elly!', 'ik bedoel: Ei La!'];
 
         TextWriter.drawText(x, y, lines);
@@ -107,16 +107,16 @@ export class TitleScreen extends SpriteObject {
             states: {
                 _default: {
                     run(this: TitleScreen) {
-                        const priorityActions = game.input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['punch', 'highkick', 'lowkick', 'block'] });
+                        const priorityActions = $.input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['punch', 'highkick', 'lowkick', 'block'] });
 
                         // If no priority actions are pressed, do nothing.
                         if (!priorityActions || priorityActions.length === 0) {
                             return;
                         }
-                        game.input.getPlayerInput(1).consumeActions(...priorityActions);
+                        $.input.getPlayerInput(1).consumeActions(...priorityActions);
 
-                        // If a priority action is pressed, go to the game.
-                        game.event_emitter.emit('gamestart_selected', this, 2, 'b');
+                        // If a priority action is pressed, go to the $.
+                        $.event_emitter.emit('gamestart_selected', this, 2, 'b');
                     },
                 }
             }
@@ -125,7 +125,7 @@ export class TitleScreen extends SpriteObject {
 
     override paint(): void {
         super.paint();
-        game.view.drawImg({ imgid: BitmapId.menu_arrow, pos: new_vec3(80, 160, 100) });
+        $.view.drawImg({ imgid: BitmapId.menu_arrow, pos: new_vec3(80, 160, 100) });
 
     }
 

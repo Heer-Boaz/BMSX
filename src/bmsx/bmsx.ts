@@ -11,7 +11,7 @@ import { Registry } from "./registry";
  * Declare global variables and types.
  */
 declare global {
-    var game: Game;
+    var $: Game;
     var rom: RomPack;
     var debug: boolean;
 }
@@ -879,8 +879,8 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
      * Constructs a new instance of the BMSX class.
      */
     constructor(rom: RomPack, model: BaseModel, view: BaseView, sndcontext: AudioContext, gainnode: GainNode, debug: boolean = false) {
-        global['game'] = this;
-        window['game'] = this;
+        global['$'] = this;
+        window['$'] = this;
         this.running = false;
         this.paused = false;
         this.wasupdated = true;
@@ -906,11 +906,11 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 
         BaseView.images = rom.images;
         EventEmitter.instance; // Init event emitter
-        game.view.init(); // Init the view. Placed here to ensure that the Game object is available to the view
+        $.view.init(); // Init the view. Placed here to ensure that the Game object is available to the view
         SM.init(rom['snd_assets'], sndcontext, 1, gainnode);
         Input.instance; // Init input module
-        if (game.input.isOnscreenGamepadEnabled()) {
-            game.input.enableOnscreenGamepad();
+        if ($.input.isOnscreenGamepadEnabled()) {
+            $.input.enableOnscreenGamepad();
         }
 
         if (debug) {
@@ -921,11 +921,11 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
             // @ts-ignore
             window['rom'] = global.rom;
             // @ts-ignore
-            window['game'] = global.game;
+            window['$'] = global.$;
             // @ts-ignore
             window['registry'] = global.registry;
             // @ts-ignore
-            window['eventEmitter'] = game.event_emitter;
+            window['eventEmitter'] = $.event_emitter;
 
             Input.instance.enableDebugMode();
         }
@@ -967,7 +967,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
      * @returns void
      */
     public update(deltaTime: number): void {
-        const game = global.game;
+        const game = global.$;
         const model = game.model;
         model.run(deltaTime);
         if (game.debug_runSingleFrameAndPause) {
@@ -983,7 +983,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
      * @returns void
      */
     public run(currentTime: number): void {
-        const game = global.game;
+        const game = global.$;
         if (!game.running) return;
 
         game.deltaTime = currentTime - game.lastUpdate;
@@ -1010,11 +1010,11 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
      * @returns void
      */
     public stop(): void {
-        global.game.running = false;
+        global.$.running = false;
         window.cancelAnimationFrame(this.animationFrameRequestid);
         window.requestAnimationFrame(() => {
-            game.view.clear.call(game.view);
-            game.view.handleResize.call(game.view);
+            $.view.clear.call($.view);
+            $.view.handleResize.call($.view);
             SM.stopEffect();
             SM.stopMusic();
         });

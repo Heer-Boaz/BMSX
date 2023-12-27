@@ -282,7 +282,7 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 
 	public dispose(): void {
 		// Unsubscribe from events
-		game.event_emitter.removeSubscriber(this);
+		$.event_emitter.removeSubscriber(this);
 
 		// Dispose of components
 		Object.values(this.components).forEach(component => component.dispose());
@@ -291,7 +291,7 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 		this.sc.dispose();
 
 		// Deregister the object from the entity registry
-		game.registry.deregister(this);
+		$.registry.deregister(this);
 	}
 
 	public paint?(): void;
@@ -328,11 +328,11 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 	 * @returns The generated unique identifier.
 	 */
 	protected generateId(): string {
-		const model = game.model;
+		const model = $.model;
 		let result: string;
 		do {
 			const baseId = this.constructor.name;
-			const uniqueNumber = game.model.getNextIdNumber();
+			const uniqueNumber = $.model.getNextIdNumber();
 			result = `${baseId}_${uniqueNumber}`;
 		} while (model?.exists(result));
 		return result;
@@ -368,7 +368,7 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 
 	@onload
 	onLoadSetup() {
-		game.event_emitter.initClassBoundEventSubscriptions(this);
+		$.event_emitter.initClassBoundEventSubscriptions(this);
 	}
 
 	protected initializeLinkedFSMs() {

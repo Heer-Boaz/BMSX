@@ -49,7 +49,7 @@ export class Player extends Fighter {
 
     public static bouw(animation_machine_name: Identifier, class_name: string): StateMachineBlueprint {
         function default_input_processor(this: Fighter) {
-            const priorityActions = game.input.getPlayerInput(this.playerIndex).getPressedActions({ pressed: true, consumed: false, actionsByPriority: ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick'] });
+            const priorityActions = $.input.getPlayerInput(this.playerIndex).getPressedActions({ pressed: true, consumed: false, actionsByPriority: ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick'] });
 
             // If no actions are pressed, switch to idle
             if (priorityActions.length === 0) {
@@ -87,11 +87,11 @@ export class Player extends Fighter {
                     case 'punch':
                     case 'highkick':
                     case 'lowkick':
-                        game.input.getPlayerInput(this.playerIndex).consumeAction(action);
+                        $.input.getPlayerInput(this.playerIndex).consumeAction(action);
                         this.sc.to(action);
                         break;
                     case 'jump':
-                        game.input.getPlayerInput(this.playerIndex).consumeAction(action);
+                        $.input.getPlayerInput(this.playerIndex).consumeAction(action);
                         this.sc.to('jump', false); // Actions 'left' and 'right' have higher priority than 'jump' and thus directonal jumps are handled in the 'left' and 'right' cases
                         break;
                     // case 'stoer':
@@ -201,7 +201,7 @@ export class Player extends Fighter {
                 },
                 duck: {
                     process_input(this: Fighter) {
-                        const pressedActions = game.input.getPlayerInput(this.playerIndex).getPressedActions();
+                        const pressedActions = $.input.getPlayerInput(this.playerIndex).getPressedActions();
                         const actionMap = new Map();
 
                         // Create a map of actions for efficient lookup
@@ -240,10 +240,10 @@ export class Player extends Fighter {
                         this.getComponent(JumpingWhileLeavingScreenComponent).enabled = false;
                     },
                     process_input(this: Fighter) {
-                        const kickActions = game.input.getPlayerInput(this.playerIndex).getPressedActions({ pressed: true, consumed: false, filter: ['lowkick', 'highkick'] });
+                        const kickActions = $.input.getPlayerInput(this.playerIndex).getPressedActions({ pressed: true, consumed: false, filter: ['lowkick', 'highkick'] });
                         if (kickActions.length > 0) {
                             // Consume all kick actions
-                            kickActions.forEach(action => game.input.getPlayerInput(this.playerIndex).consumeAction(action));
+                            kickActions.forEach(action => $.input.getPlayerInput(this.playerIndex).consumeAction(action));
                             this.sc.dispatch('flyingkick', this.id);
                         }
 
@@ -400,7 +400,7 @@ export class Player extends Fighter {
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Player) {
-                        game.event_emitter.emit('animationEnd', this, 'highkick');
+                        $.event_emitter.emit('animationEnd', this, 'highkick');
                         this.sc.switch('player_animation.idle');
                     }
                 },
@@ -413,7 +413,7 @@ export class Player extends Fighter {
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Player) {
-                        game.event_emitter.emit('animationEnd', this, 'lowkick');
+                        $.event_emitter.emit('animationEnd', this, 'lowkick');
                         this.sc.switch('player_animation.idle');
                     }
                 },
@@ -426,7 +426,7 @@ export class Player extends Fighter {
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Player) {
-                        game.event_emitter.emit('animationEnd', this, 'punch');
+                        $.event_emitter.emit('animationEnd', this, 'punch');
                         this.sc.switch('player_animation.idle');
                     }
                 },
@@ -440,7 +440,7 @@ export class Player extends Fighter {
                     },
                     next(this: Player) {
                         this.sc.switch('player_animation.duck');
-                        game.event_emitter.emit('animationEnd', this, 'duckkick');
+                        $.event_emitter.emit('animationEnd', this, 'duckkick');
                     }
                 },
                 flyingkick: {
@@ -453,7 +453,7 @@ export class Player extends Fighter {
                     },
                     next(this: Player) {
                         this.sc.switch('player_animation.jump');
-                        game.event_emitter.emit('animationEnd', this, 'flyingkick');
+                        $.event_emitter.emit('animationEnd', this, 'flyingkick');
                     }
                 },
                 duck: {
@@ -472,7 +472,7 @@ export class Player extends Fighter {
                         this.imgid = BitmapId.eila_humiliated;
                     },
                     next(this: Player) {
-                        game.event_emitter.emit('humiliated_animation_end', this, 'eila');
+                        $.event_emitter.emit('humiliated_animation_end', this, 'eila');
                     }
                 },
             }

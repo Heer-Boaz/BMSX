@@ -27,7 +27,7 @@ export class Hud extends SpriteObject {
         super.paint();
         // Update hitpoints
         const model = get_model();
-        const view = game.view as GLView;
+        const view = $.view as GLView;
         const player = model.getGameObject<Fighter>('player');
         const sinterklaas = model.getGameObject<Fighter>('sinterklaas');
 

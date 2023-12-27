@@ -75,9 +75,9 @@ export abstract class BaseView implements IRegisterable {
      * The method sorts the objects in the current space by depth and then iterates over them, calling their `paint` method if they are visible and not flagged for disposal.
      */
     public drawgame(clearCanvas: boolean = true): void {
-        if (clearCanvas) game.view.clear();
-        game.model.currentSpace.sort_by_depth(); // Required for each frame as objects can change depth during the flow of the game
-        game.model.currentSpace.objects.forEach(o => !o.disposeFlag && o.visible && (o.updateComponentsWithTag('render'), o.paint?.()));
+        if (clearCanvas) $.view.clear();
+        $.model.currentSpace.sort_by_depth(); // Required for each frame as objects can change depth during the flow of the game
+        $.model.currentSpace.objects.forEach(o => !o.disposeFlag && o.visible && (o.updateComponentsWithTag('render'), o.paint?.()));
     }
 
     /**
@@ -86,7 +86,7 @@ export abstract class BaseView implements IRegisterable {
      * The `scale` property represents the minimum of `dx` and `dy`.
      */
     public calculateSize(): void {
-        let self = game.view || this;
+        let self = $.view || this;
 
         let w = Math.max(document.documentElement.clientWidth, window.innerWidth || screen.width);
         let h = Math.max(document.documentElement.clientHeight, window.innerHeight || screen.height);
@@ -98,7 +98,7 @@ export abstract class BaseView implements IRegisterable {
 
     public handleResize(): void {
         if (document.getElementById('gamescreen')!.style.visibility === 'hidden') return;
-        let self = game.view || this;
+        let self = $.view || this;
         self.calculateSize();
         self.canvas.style.width = `${self.viewportSize.x * self.scale}px`;
         self.canvas.style.height = `${self.viewportSize.y * self.scale}px`;
@@ -111,7 +111,7 @@ export abstract class BaseView implements IRegisterable {
      * When any of these events occur, the `handleResize` method is called to recalculate the size of the canvas and adjust its position and scale.
      */
     protected listenToMediaEvents(): void {
-        const view = game.view;
+        const view = $.view;
 
         function handleResizeHelper() {
             view.handleResize.call(view);
@@ -162,20 +162,20 @@ export abstract class BaseView implements IRegisterable {
     public static triggerFullScreenOnFakeUserEvent(): void {
         if (BaseView.fullscreenEnabled) {
             try {
-                global.game.paused = true;
+                global.$.paused = true;
                 document.documentElement.requestFullscreen?.()
                     .then(() => {
-                        global.game.paused = false;
+                        global.$.paused = false;
                     })
                     .catch(e => {
-                        global.game.paused = false;
+                        global.$.paused = false;
                         console.error(e);
                     });
 
                 document.documentElement['mozRequestFullScreen']?.()
-                    .then(() => global.game.paused = false)
+                    .then(() => global.$.paused = false)
                     .catch(e => {
-                        global.game.paused = false;
+                        global.$.paused = false;
                         console.error(e);
                     });
                 document.documentElement['webkitRequestFullScreen']?.();
@@ -195,11 +195,11 @@ export abstract class BaseView implements IRegisterable {
     public static triggerWindowedOnFakeUserEvent(): void {
         if (BaseView.fullscreenEnabled) {
             try {
-                global.game.paused = true;
+                global.$.paused = true;
                 document.exitFullscreen?.()
-                    .then(() => global.game.paused = false)
+                    .then(() => global.$.paused = false)
                     .catch(e => {
-                        global.game.paused = false;
+                        global.$.paused = false;
                         console.error(e);
                     });
                 document['webkitExitFullscreen']?.();
@@ -216,68 +216,68 @@ export abstract class BaseView implements IRegisterable {
 
 
     public clear(): void {
-        game.view.context.translate(0.5, 0.5);
-        game.view.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        game.view.context.translate(-0.5, -0.5);
+        $.view.context.translate(0.5, 0.5);
+        $.view.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        $.view.context.translate(-0.5, -0.5);
     }
 
     /**
      * Draws the "Press any key to start" message on the canvas.
      */
     public drawPressKey(): void {
-        game.view.context.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        $.view.context.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-        game.view.context.font = '12pt Monaco';
-        game.view.context.fillStyle = 'white';
-        game.view.context.save();
-        game.view.context.fillText('Press any key to start', 56, 80);
-        game.view.context.restore();
+        $.view.context.font = '12pt Monaco';
+        $.view.context.fillStyle = 'white';
+        $.view.context.save();
+        $.view.context.fillText('Press any key to start', 56, 80);
+        $.view.context.restore();
     }
 
     public drawImg(options: DrawImgOptions): void {
         const { pos, imgid, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 } } = options;
 
         let img = BaseView.images[imgid];
-        game.view.context.save();
-        game.view.context.translate(~~pos.x, ~~pos.y);
+        $.view.context.save();
+        $.view.context.translate(~~pos.x, ~~pos.y);
         if (flip.flip_h) {
-            game.view.context.scale(-1 * scale.x, 1 * scale.y);
-            game.view.context.translate(-img.width, 0);
+            $.view.context.scale(-1 * scale.x, 1 * scale.y);
+            $.view.context.translate(-img.width, 0);
         }
         if (flip.flip_v) {
-            game.view.context.scale(1 * scale.x, -1 * scale.y);
-            game.view.context.translate(0, -img.height);
+            $.view.context.scale(1 * scale.x, -1 * scale.y);
+            $.view.context.translate(0, -img.height);
         }
-        game.view.context.drawImage(img, 0, 0);
-        game.view.context.restore();
+        $.view.context.drawImage(img, 0, 0);
+        $.view.context.restore();
     }
 
     public drawRectangle(options: DrawRectOptions): void {
         const { start: { x, y }, end: { x: ex, y: ey } } = options.area;
         const c = options.color;
 
-        game.view.context.save();
-        game.view.context.translate(0.5, 0.5);
-        game.view.context.beginPath();
-        game.view.context.strokeStyle = this.toRgb(c);
-        game.view.context.rect(~~x, ~~y, ~~(ex - x), ~~(ey - y));
-        game.view.context.stroke();
-        game.view.context.restore();
+        $.view.context.save();
+        $.view.context.translate(0.5, 0.5);
+        $.view.context.beginPath();
+        $.view.context.strokeStyle = this.toRgb(c);
+        $.view.context.rect(~~x, ~~y, ~~(ex - x), ~~(ey - y));
+        $.view.context.stroke();
+        $.view.context.restore();
     }
 
     public fillRectangle(options: DrawRectOptions): void {
         const { start: { x, y }, end: { x: ex, y: ey } } = options.area;
         const c = options.color;
 
-        game.view.context.save();
-        game.view.context.translate(0.5, 0.5);
-        game.view.context.beginPath();
-        let colorRgb = game.view.toRgb(c);
-        game.view.context.fillStyle = colorRgb;
-        game.view.context.strokeStyle = colorRgb;
-        game.view.context.fillRect(~~x, ~~y, ~~(ex - x), ~~(ey - y));
-        game.view.context.stroke();
-        game.view.context.restore();
+        $.view.context.save();
+        $.view.context.translate(0.5, 0.5);
+        $.view.context.beginPath();
+        let colorRgb = $.view.toRgb(c);
+        $.view.context.fillStyle = colorRgb;
+        $.view.context.strokeStyle = colorRgb;
+        $.view.context.fillRect(~~x, ~~y, ~~(ex - x), ~~(ey - y));
+        $.view.context.stroke();
+        $.view.context.restore();
     }
 
     private toRgb(c: Color): string {
@@ -288,5 +288,5 @@ export abstract class BaseView implements IRegisterable {
 export function paintImage(options: DrawImgOptions): void {
     if (!options.imgid || options.imgid === 'none') return; // Don't draw anything when imgid = BitmapId.None. For animations, we don't always want to use visible = false
 
-    game.view.drawImg(options);
+    $.view.drawImg(options);
 }

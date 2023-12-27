@@ -98,13 +98,13 @@ export class Space {
      */
     public spawn(o: GameObject, pos?: Vector, skip_onspawn_event?: boolean): void {
         if (!o?.id) throw new Error(`Cannot spawn object '${o?.id ?? 'undefined'}' as it doesn't have a valid id!`);
-        if (game.model[objid_2_objspaceid][o.id]) throw new Error(`Cannot spawn object '${o.id}' in space '${this.id}' as it already exists in space '${game.model[objid_2_objspaceid][o.id]}'!`);
+        if ($.model[objid_2_objspaceid][o.id]) throw new Error(`Cannot spawn object '${o.id}' in space '${this.id}' as it already exists in space '${$.model[objid_2_objspaceid][o.id]}'!`);
 
         this.objects.push(o); // Add the object to the space
 
         this[id2obj][o.id] = o; // Register the object in the `id2object`-object, so we can retrieve the object by id
-        game.model[objid_2_objspaceid][o.id] = this.id; // Register the object in the `obj_id2obj_space_id`-object, so we can retrieve the space id for the object id
-        game.registry.register(o); // Register the object in the registry so it can be retrieved by id. Note that we do not register the object in the `o.onspawn`-method, as that won't trigger when the object is revived from a savegame
+        $.model[objid_2_objspaceid][o.id] = this.id; // Register the object in the `obj_id2obj_space_id`-object, so we can retrieve the space id for the object id
+        $.registry.register(o); // Register the object in the registry so it can be retrieved by id. Note that we do not register the object in the `o.onspawn`-method, as that won't trigger when the object is revived from a savegame
         !skip_onspawn_event && o.onspawn?.(pos); // Trigger onspawn event after adding the object to the space. `onspawn` subscribes the object to events and starts the object's state machine
 
         this.sort_by_depth(); // Sort after spawn-event, just to be sure
@@ -132,9 +132,9 @@ export class Space {
             delete this[id2obj][o.id];
         }
 
-        if (game.model[objid_2_objspaceid][o.id]) {
-            game.model[objid_2_objspaceid][o.id] = undefined;
-            delete game.model[objid_2_objspaceid][o.id];
+        if ($.model[objid_2_objspaceid][o.id]) {
+            $.model[objid_2_objspaceid][o.id] = undefined;
+            delete $.model[objid_2_objspaceid][o.id];
         }
     }
 
@@ -162,13 +162,13 @@ export abstract class BaseModel implements IStateful, IRegisterable {
      * @returns The retrieved entity if found, otherwise null.
      */
     public get<T extends IRegisterable = any>(id: Identifier): T | null {
-        return game.registry.get(id);
+        return $.registry.get(id);
     }
 
     public get id(): Identifier { return 'model'; } // Required for IStateful and IIdentifiable
 
     on(event_name: string, handler: Function, emitter_id: Identifier): void {
-        game.event_emitter.on(event_name, handler, this, emitter_id);
+        $.event_emitter.on(event_name, handler, this, emitter_id);
     }
 
     /**
@@ -340,7 +340,7 @@ export abstract class BaseModel implements IStateful, IRegisterable {
     public init_on_boot(): void {
         BaseModel.setup_fsmdef_library();
         BaseModel.setup_bt_library();
-        this.init_event_subscriptions().init_spaces().init_model_state_machines(game.model.constructor_name).do_one_time_game_init();
+        this.init_event_subscriptions().init_spaces().init_model_state_machines($.model.constructor_name).do_one_time_game_init();
     }
 
     public dispose(): void {
@@ -349,12 +349,12 @@ export abstract class BaseModel implements IStateful, IRegisterable {
         // Dispose the state machine controller and deregister all state machines
         this.sc.dispose();
         // Unsubscribe from all events
-        game.event_emitter.removeSubscriber(this);
-        game.registry.deregister(this);
+        $.event_emitter.removeSubscriber(this);
+        $.registry.deregister(this);
     }
 
     public init_event_subscriptions(): BaseModel {
-        game.event_emitter.initClassBoundEventSubscriptions(this);
+        $.event_emitter.initClassBoundEventSubscriptions(this);
         return this; // Return the current instance of the BaseModel for chaining
     }
 
@@ -432,19 +432,19 @@ export abstract class BaseModel implements IStateful, IRegisterable {
      * @returns {void} Nothing
      */
     public static defaultrun = (): void => {
-        if (game.model.paused) {
+        if ($.model.paused) {
             return;
         }
-        if (game.model.startAfterLoad) {
+        if ($.model.startAfterLoad) {
             return;
         }
 
-        let objects = game.model.objects; // Get all objects in the current space
+        let objects = $.model.objects; // Get all objects in the current space
         // Let all game objects take a turn
         objects.forEach(o => !o.disposeFlag && o.run && o.run());
 
         // Remove all objects that are to be disposed
-        objects.filter(o => o.disposeFlag).forEach(o => game.model.exile(o));
+        objects.filter(o => o.disposeFlag).forEach(o => $.model.exile(o));
     };
 
     /**
@@ -513,7 +513,7 @@ export abstract class BaseModel implements IStateful, IRegisterable {
      * @returns {string} The serialized `Savegame` object.
      */
     public save(): string {
-        global.game.paused = true;
+        global.$.paused = true;
         const createSavegame = () => {
             const keys = Object.keys(this);
             const data = {};
@@ -539,7 +539,7 @@ export abstract class BaseModel implements IStateful, IRegisterable {
         };
 
         const savegame = createSavegame();
-        global.game.paused = false;
+        global.$.paused = false;
         return Serializer(savegame);
     }
 

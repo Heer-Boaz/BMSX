@@ -25,7 +25,7 @@ let prevPausedState: boolean; // Remember the paused-state before a dialog was o
 export class DebugHighlightComponent extends PositionUpdateAxisComponent { // Note: MUST export this class, otherwise decorator will cause it to be undefined
     override postprocessingUpdate({ params, returnvalue }: ComponentUpdateParams): void {
         super.postprocessingUpdate({ params, returnvalue });
-        const highlighter = game.model.getGameObject<ObjectHighlighter>('debug_highlighter');
+        const highlighter = $.model.getGameObject<ObjectHighlighter>('debug_highlighter');
         if (highlighter) {
             highlighter.setHighlightPos(this.parent);
         }
@@ -41,7 +41,7 @@ export class StateMachineVisualizer extends Component {
 
     constructor(_id: Identifier) {
         super(_id);
-        this.bfsmController = game.model.getGameObject(_id).sc;
+        this.bfsmController = $.model.getGameObject(_id).sc;
         this.enabled = false;
     }
 
@@ -83,7 +83,7 @@ export class HitBoxVisualizer extends Component {
         const parent = this.parent as SpriteObject;
         if (parent.hasBoundingBoxes()) {
             parent.boundingBoxes.forEach(box => {
-                (game.view as GLView).drawRectangle({ area: { ...box, start: { ...box.start, z: parent.z } }, color: Msx1Colors[6] });
+                ($.view as GLView).drawRectangle({ area: { ...box, start: { ...box.start, z: parent.z } }, color: Msx1Colors[6] });
             });
         }
 
@@ -212,7 +212,7 @@ export function handleDebugMouseDown(e: MouseEvent): void {
         return; // Only start dragging when primary button is pressed
     }
 
-    if (!game.input.getPlayerInput(1).getKeyState('ShiftLeft').pressed) { // Only start or continue dragging when shift is pressed. Note that the shift key is not updated after the mouse is pressed down
+    if (!$.input.getPlayerInput(1).getKeyState('ShiftLeft').pressed) { // Only start or continue dragging when shift is pressed. Note that the shift key is not updated after the mouse is pressed down
         draggedObj = null; // Stop dragging object
         return;
     }
@@ -231,7 +231,7 @@ export function handleDebugMouseDown(e: MouseEvent): void {
 
 export function handleDebugMouseMove(e: MouseEvent): void {
     const { objUnderCursor } = getGameObjectAtCursor(e);
-    if (game.input.getPlayerInput(1).getKeyState('ControlLeft').pressed) { // Ctrl + mouse move = allow for selecting objects in the game world (for debugging)
+    if ($.input.getPlayerInput(1).getKeyState('ControlLeft').pressed) { // Ctrl + mouse move = allow for selecting objects in the game world (for debugging)
         // Highlight mouse-overed objects
         highlight_object(objUnderCursor);
     }
@@ -241,14 +241,14 @@ export function handleDebugMouseMove(e: MouseEvent): void {
 
     if (draggedObj) {
         // Otherwise, continue dragging the object that is already being dragged
-        let x = e.offsetX / game.view.scale;
-        let y = e.offsetY / game.view.scale;
+        let x = e.offsetX / $.view.scale;
+        let y = e.offsetY / $.view.scale;
 
         if (draggedObj.pos) {
             draggedObj.x = ~~x - draggedObjCursorOffset.x;
             draggedObj.y = ~~y - draggedObjCursorOffset.y;
         }
-        if (!game.input.getPlayerInput(1).getKeyState('ShiftLeft').pressed) {
+        if (!$.input.getPlayerInput(1).getKeyState('ShiftLeft').pressed) {
             draggedObj = null; // Stop dragging object when shift is released
         }
         return;
@@ -256,8 +256,8 @@ export function handleDebugMouseMove(e: MouseEvent): void {
 }
 
 function highlight_object(o: GameObject) {
-    const model = game.model;
-    let highlighter = game.model.getGameObject<ObjectHighlighter>('debug_highlighter');
+    const model = $.model;
+    let highlighter = $.model.getGameObject<ObjectHighlighter>('debug_highlighter');
 
     if (!o) {
         highlighter && (highlighter.target = null);
@@ -272,7 +272,7 @@ function highlight_object(o: GameObject) {
         }
         highlighter.target = o;
     }
-    game.view.drawgame();
+    $.view.drawgame();
 }
 
 export function handleDebugMouseUp(_e: MouseEvent): void {
@@ -753,7 +753,7 @@ function createDebugDialog(title?: string, previousDialog?: HTMLElement): [dialo
             document.body.removeChild(previous);
             previous = (previous as any).previous;
         }
-        global.game.paused = prevPausedState; // Return to the original paused state
+        global.$.paused = prevPausedState; // Return to the original paused state
     };
 
     const contentDiv = document.createElement('div');
@@ -821,8 +821,8 @@ function createDebugDialog(title?: string, previousDialog?: HTMLElement): [dialo
 export function handleOpenObjectMenu(e: UIEvent | null, previous?: HTMLElement): void {
     if (e && e.type !== 'keydown') return;
     if (!previous) {
-        prevPausedState = global.game.paused; // Remember the original paused-state so that we can return to that state
-        global.game.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
+        prevPausedState = global.$.paused; // Remember the original paused-state so that we can return to that state
+        global.$.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
     }
 
     const [dialogDiv, contentDiv] = createDebugDialog('Objects', previous);
@@ -832,7 +832,7 @@ export function handleOpenObjectMenu(e: UIEvent | null, previous?: HTMLElement):
     addContent(headerRow, 'th', 'Type');
     addContent(headerRow, 'th', 'ID');
 
-    game.model.objects.forEach(o => {
+    $.model.objects.forEach(o => {
         let row = addContent(table, 'tr', null);
         row.classList.add('selectableoption');
         addContent(row, 'td', `${o.constructor.name}`);
@@ -854,8 +854,8 @@ export function handleOpenObjectMenu(e: UIEvent | null, previous?: HTMLElement):
 
 export function handleOpenDebugMenu(e: UIEvent): void {
     if (e && e.type !== 'keydown') return;
-    prevPausedState = global.game.paused; // Remember the original paused-state so that we can return to that state
-    global.game.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
+    prevPausedState = global.$.paused; // Remember the original paused-state so that we can return to that state
+    global.$.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
 
     const [dialogDiv, contentDiv] = createDebugDialog();
 
@@ -900,18 +900,18 @@ export function handleOpenDebugMenu(e: UIEvent): void {
 export function handleOpenModelMenu(e: UIEvent | null, previous: HTMLElement): void {
     if (e && e.type !== 'keydown') return;
     if (!previous) {
-        prevPausedState = global.game.paused; // Remember the original paused-state so that we can return to that state
-        global.game.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
+        prevPausedState = global.$.paused; // Remember the original paused-state so that we can return to that state
+        global.$.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
         draggedObj = null; // Make sure that we stop dragging any object
     }
 
-    openObjectDetailMenu(game.model, 'The Model', previous);
+    openObjectDetailMenu($.model, 'The Model', previous);
 }
 
 function openObjectDetailMenu(obj: any, title: string, previous?: HTMLElement): void {
     if (!previous) {
-        prevPausedState = global.game.paused; // Remember the original paused-state so that we can return to that state
-        global.game.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
+        prevPausedState = global.$.paused; // Remember the original paused-state so that we can return to that state
+        global.$.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
     }
 
     const [dialogDiv, contentDiv] = createDebugDialog(title, previous);
@@ -937,8 +937,8 @@ function getGameObjectAtCursor(e: MouseEvent): { objUnderCursor: GameObject | nu
      * transforming the game coordinates to canvas coordinates and that requires scaling
      * to be taken into account.
      */
-    let p = div_vec2(new_vec2(x, y), game.view.scale);
-    let objsUnderCursor: GameObject[] = game.model.objects.filter(o => o.id !== 'debug_highlighter' && o.overlaps_point(p));
+    let p = div_vec2(new_vec2(x, y), $.view.scale);
+    let objsUnderCursor: GameObject[] = $.model.objects.filter(o => o.id !== 'debug_highlighter' && o.overlaps_point(p));
     if (objsUnderCursor && objsUnderCursor.length > 0) {
         // Choose obj with highest z-value
         let objUnderCursorWithHighestZ = objsUnderCursor.reduce((o1, o2) => o1.z > o2.z ? o1 : o2);

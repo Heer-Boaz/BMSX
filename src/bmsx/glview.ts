@@ -6,7 +6,7 @@ function catchWebGLError(_target: any, propertyKey: string, descriptor: Property
     const originalMethod = descriptor.value;
     descriptor.value = function (...args: any[]) {
         const returnValue = originalMethod.apply(this, args);
-        const gl = (game.view as GLView).glctx;
+        const gl = ($.view as GLView).glctx;
         if (gl) {
             const error = gl.getError();
             if (error != gl.NO_ERROR) {
@@ -813,7 +813,7 @@ void main() {
      */
     @catchWebGLError
     public drawSprites(): void {
-        const _this = game.view as GLView;
+        const _this = $.view as GLView;
         const gl = _this.glctx;
 
         /**

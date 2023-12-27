@@ -76,7 +76,7 @@ export abstract class Component implements IIdentifiable {
         eventEmitter.removeSubscriber(this);
 
         // Deregister the component from the entity registry
-        game.registry.deregister(this);
+        $.registry.deregister(this);
     }
 
     /**
@@ -104,7 +104,7 @@ export abstract class Component implements IIdentifiable {
      */
     @onload
     onloadSetup() {
-        game.registry.register(this); // Register the component in the entity registry
+        $.registry.register(this); // Register the component in the entity registry
         this.initEventSubscriptions(); // Initialize event subscriptions
     }
 
@@ -113,7 +113,7 @@ export abstract class Component implements IIdentifiable {
      * It subscribes to the specified events and binds the corresponding handlers to the component instance.
      */
     protected initEventSubscriptions() {
-		game.event_emitter.initClassBoundEventSubscriptions(this);
+		$.event_emitter.initClassBoundEventSubscriptions(this);
     }
 
     // Implement this method to handle preprocessing updates

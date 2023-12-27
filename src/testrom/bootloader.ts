@@ -240,7 +240,7 @@ class bclass extends SpriteObject {
 
     @build_fsm()
     public static bouw(): StateMachineBlueprint {
-        game.input.getPlayerInput(1).setInputMap({
+        $.input.getPlayerInput(1).setInputMap({
             keyboard: keyboardInputMapping,
             gamepad: gamepadInputMapping,
         } as InputMap);
@@ -252,7 +252,7 @@ class bclass extends SpriteObject {
             }
 
             // To check if an action is pressed for player 0
-            const pressedActions = game.input.getPlayerInput(1).getPressedActions();
+            const pressedActions = $.input.getPlayerInput(1).getPressedActions();
 
             for (const { action, consumed } of pressedActions) {
                 switch (action as Action) {
@@ -270,7 +270,7 @@ class bclass extends SpriteObject {
                         break;
                     case 'load':
                         if (consumed) break;
-                        game.input.getPlayerInput(1).consumeAction(action);
+                        $.input.getPlayerInput(1).consumeAction(action);
 
                         if (_model[savestring]) {
                             _model.load(_model[savestring]);
@@ -282,26 +282,26 @@ class bclass extends SpriteObject {
                         break;
                     case 'save':
                         if (consumed) break;
-                        game.input.getPlayerInput(1).consumeAction(action);
+                        $.input.getPlayerInput(1).consumeAction(action);
 
-                        game.model[savestring] = game.model.save();
+                        $.model[savestring] = $.model.save();
                         console.info(`${new Date().toTimeString()} Game saved!`);
                         console.info(`${_model[savestring]}`);
                         // show_download_savestate_dialog();
                         break;
                     case 'bla':
                         if (consumed) break;
-                        game.input.getPlayerInput(1).consumeAction(action);
+                        $.input.getPlayerInput(1).consumeAction(action);
                         this.testmeuk();
-                        game.event_emitter.emit('testEvent', this);
+                        $.event_emitter.emit('testEvent', this);
 
                         this.sc.to('bclass.bla');
                         this.sc.machines.bclass_animation.to('ani2');
                         break;
                     case 'blap':
                         if (consumed) break;
-                        game.input.getPlayerInput(1).consumeAction(action);
-                        game.event_emitter.emit('testEventOnce', this);
+                        $.input.getPlayerInput(1).consumeAction(action);
+                        $.event_emitter.emit('testEventOnce', this);
 
                         this.sc.machines.bclass_animation.to('ani1');
                         if (this.sc.is('bclass_meuk.meuk1.blupperblop1')) {

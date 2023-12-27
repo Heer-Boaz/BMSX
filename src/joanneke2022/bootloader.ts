@@ -171,12 +171,12 @@ class gamemodel extends BaseModel {
 
     /**
      * Initializes the game state and spawns necessary game objects.
-     * This method should only be called once at the beginning of the game.
+     * This method should only be called once at the beginning of the $.
      * @returns This instance of the game model.
      */
     public do_one_time_game_init(): this {
         // this.state.machines['gamemenu' satisfies model_machines].to('closed' satisfies model_states);
-        game.input.getPlayerInput(1).setInputMap({
+        $.input.getPlayerInput(1).setInputMap({
             keyboard: keyboardInputMapping,
             gamepad: gamepadInputMapping,
         } as InputMap);

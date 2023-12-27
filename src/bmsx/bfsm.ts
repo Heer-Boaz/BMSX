@@ -365,7 +365,7 @@ export class bfsm_controller {
 							break;
 					}
 					// Subscribe to the event with the given name and scope and dispatch it to the machine with the given id and scope (or global scope if no scope is provided)
-					game.event_emitter.on(event.name, this.auto_dispatch, machine.target, scope);
+					$.event_emitter.on(event.name, this.auto_dispatch, machine.target, scope);
 				});
 			}
 		}
@@ -630,7 +630,7 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 	 */
 	parent_id: Identifier;
 
-	public get parent() { return game.registry.get(this.parent_id); }
+	public get parent() { return $.registry.get(this.parent_id); }
 
 	/**
 	 * The unique identifier for the bfsm.
@@ -676,7 +676,7 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 	/**
 	 * Returns the game object or model that this state machine is associated with.
 	 */
-	public get target(): T { return game.registry.get<T>(this.target_id); }
+	public get target(): T { return $.registry.get<T>(this.target_id); }
 
 	/**
 	 * Returns the current state of the FSM
@@ -748,7 +748,7 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 
 	@onload
 	public onLoadSetup(): void {
-		game.registry.register(this);
+		$.registry.register(this);
 		// this.target.on('destroy', this.dispose, this.target.id);
 
 	}
@@ -1077,7 +1077,7 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 	 * @returns The target object casted to the specified type.
 	 * @template T - The type to cast the target object to.
 	 */
-	public targetAs<T>(): T { return <T>game.registry.get(this.target_id); }
+	public targetAs<T>(): T { return <T>$.registry.get(this.target_id); }
 
 	private make_id(): Identifier {
 		let id = `${this.parent_id ?? this.target_id}.${this.def_id}`; // The id is the parent_id + the target_id + the def_id (e.g. 'parent_id.target_id.def_id') to create a unique id
@@ -1088,7 +1088,7 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 	}
 
 	public dispose(): void {
-		game.registry.deregister(this);
+		$.registry.deregister(this);
 		// Also deregister all substates
 		for (let state in this.states) {
 			this.states[state].dispose();
