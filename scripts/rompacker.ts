@@ -22,11 +22,11 @@ const GENERATE_AND_USE_TEXTURE_ATLAS = true;
 const DONT_PACK_IMAGES_WHEN_USING_ATLAS = true;
 
 const BOILERPLATE_RESOURCE_ID_BITMAP = `export enum BitmapId {
-	None = 'none',
-`;
+	none = 'none',
+`; // Note: cannot use const enums here, because BFont uses BitmapId as a type (and const enums are not available at runtime)
 
 const BOILERPLATE_RESOURCE_ID_AUDIO = `export enum AudioId {
-	None = 'none',
+	none = 'none',
 `;
 
 /**
@@ -212,12 +212,14 @@ async function buildAndBundleRomSource(romname: string, bootloader_path: string)
 				exposeAll: true,
 				exclude: [],
 				ignore: ['node_modules', 'dist', 'rom'],
+				// standalone: 'bootrom',
 				entries: [bootloader_ts_path], // Note: this is the entry point for the bundler
 			})
 				.add(bootloader_ts_path)
 				.plugin(tsify, {
 					noImplicitAny: false,
 					files: [bootloader_ts_path],
+					project: bootloader_path,
 				})
 				.bundle()
 				.on('error', e => {

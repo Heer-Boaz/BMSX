@@ -1,4 +1,4 @@
-import { GamepadButton } from './../bmsx/input';
+import { GamepadButton } from '../bmsx/input';
 import type { RomPack } from '../bmsx/rompack';
 import type { Direction } from "../bmsx/bmsx";
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
@@ -7,7 +7,7 @@ import { BitmapId } from './resourceids';
 import { InputMap, KeyboardButton, GamepadInputMapping, KeyboardInputMapping } from '../bmsx/input';
 import { StateMachineBlueprint, build_fsm, assign_fsm } from '../bmsx/bfsm';
 import { insavegame } from '../bmsx/gameserializer';
-import { new_area, Game, new_vec2, get_gamemodel } from '../bmsx/bmsx';
+import { new_area, Game, new_vec2 } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
 import { BaseModel } from '../bmsx/basemodel';
 import { SpriteObject } from '../bmsx/sprite';
@@ -28,8 +28,6 @@ _global['h406A'] = (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode, 
     _game = new Game(rom, _model, _view, sndcontext, gainnode, debug);
     _game.start();
 };
-
-const get_model = get_gamemodel<gamemodel>;
 
 const actions = ['up', 'right', 'down', 'left', 'load', 'save', 'bla', 'blap'] as const;
 type Action = typeof actions[number];
@@ -286,7 +284,7 @@ class bclass extends SpriteObject {
                         if (consumed) break;
                         game.input.getPlayerInput(1).consumeAction(action);
 
-                        get_model()[savestring] = get_model().save();
+                        game.model[savestring] = game.model.save();
                         console.info(`${new Date().toTimeString()} Game saved!`);
                         console.info(`${_model[savestring]}`);
                         // show_download_savestate_dialog();
