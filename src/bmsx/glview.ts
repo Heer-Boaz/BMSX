@@ -1,4 +1,4 @@
-import { new_vec2, new_vec3 } from './bmsx';
+import { new_vec2, new_vec3 } from './game';
 import type { Size } from './rompack';
 import { BaseView, Color, DrawImgOptions, DrawRectOptions } from './view';
 

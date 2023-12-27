@@ -4,9 +4,13 @@
         "composite": true, /* Enable project compilation */
         "declaration": true,
         "rootDir": "./",
-        "tsBuildInfoFile": "./tsconfig.buildinfo"
+        "tsBuildInfoFile": "./tsconfig.buildinfo",
+        // "outFile": "./bmsx.js", WON'T WORK WITH "module": "system" or "amd", as that only supports targeting "ES6" and that doesn't support features like "private" or "accessors"
+        "target": "ESNext",
+        // "module": "system",  // Won't work with "outFile" and "target": "ESNext"
     },
     "include": [
-        "."
+        ".",
+        "rompack.ts"
     ]
 }

@@ -1,12 +1,12 @@
 import { StateDefinitions, bfsm_controller, sstate } from './bfsm';
-import { area2size, new_vec2, translate_vec2, trunc_vec3, div_vec2 } from './bmsx';
+import { area2size, new_vec2, translate_vec2, trunc_vec3, div_vec2 } from './game';
 import { PositionUpdateAxisComponent } from './collisioncomponents';
 import { Component, ComponentUpdateParams, componenttags_postprocessing, componenttags_preprocessing } from './component';
 import { GameObject } from './gameobject';
 import { Serializer } from './gameserializer';
 import { GLView } from './glview';
 import { Msx1Colors } from './msx';
-import type { Identifier } from "./bmsx";
+import type { Identifier } from "./game";
 import type { vec2 } from './rompack';
 import { SpriteObject } from './sprite';
 import { Color } from './view';

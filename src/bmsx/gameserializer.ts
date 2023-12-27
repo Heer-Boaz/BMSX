@@ -70,6 +70,8 @@ interface ISerializer {
     get_typename: (value: any) => string;
 }
 
+export type { IReviver, ISerializer };
+
 /**
  * Serializes the input object to a string using JSON.stringify, excluding any properties that should not be serialized.
  * @param obj - The object to serialize.

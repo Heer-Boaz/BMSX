@@ -1,5 +1,5 @@
 ﻿import type { Area, Size, Vector, id2htmlimg, vec2 } from './rompack';
-import { BFont, IRegisterable, Identifier } from "./bmsx";
+import { BFont, IRegisterable, Identifier } from "./game";
 import { Registry } from './registry';
 
 export interface FlipOptions {

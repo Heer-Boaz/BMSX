@@ -1,7 +1,7 @@
 import { SpriteObject } from '../bmsx/sprite';
 import { BitmapId } from './resourceids';
 import { StateMachineBlueprint, build_fsm } from '../bmsx/bfsm';
-import { get_gamemodel, new_area3d, new_vec3 } from '../bmsx/bmsx';
+import { get_gamemodel, new_area3d, new_vec3 } from '../bmsx/game';
 import { gamemodel } from './gamemodel';
 import { TextWriter } from '../bmsx/textwriter';
 import { DrawRectOptions } from '../bmsx/view';

@@ -1,8 +1,7 @@
-import { BFont, new_vec3, trunc_vec3 } from './../bmsx/bmsx';
+import { BFont, new_vec3, trunc_vec3 } from './../bmsx/game';
 import { MSX2ScreenHeight, MSX2ScreenWidth } from './../bmsx/msx';
-import type { RomPack, vec2 } from '../bmsx/rompack';
-import type { Direction } from "../bmsx/bmsx";
-import { Game, new_vec2, new_area, randomInt, copy_vector } from '../bmsx/bmsx';
+import type { Direction } from "../bmsx/game";
+import { Game, new_vec2, new_area, randomInt, copy_vector } from '../bmsx/game';
 import { sdef, sstate, Bla, build_fsm, StateMachineBlueprint } from '../bmsx/bfsm';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
@@ -14,6 +13,7 @@ import { GameObject } from '../bmsx/gameobject';
 import { base_model_spaces, BaseModel, spaceid_2_space } from '../bmsx/basemodel';
 import { SpriteObject } from '../bmsx/sprite';
 import { leavingScreenHandler_prohibit } from '../bmsx/collisioncomponents';
+import { RomPack, vec2 } from 'bmsx';
 
 const TIME_TO_SHINE = 90;
 

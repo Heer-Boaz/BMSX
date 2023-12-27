@@ -17,7 +17,7 @@
     ],
     "pretty": true,
     "preserveConstEnums": false, // Nodig voor rooms bouwen
-    "resolveJsonModule": true, // Nodig voor rooms bouwen
+    // "resolveJsonModule": true, // Nodig voor rooms bouwen **** MAAR NU UITGEZET WANT DEZE KAN NIET GEBRUIKT WORDEN VOOR BMSX NAAR MODULE VAN TYPE `EXNext` TE COMPILEREN! ****
     /* Specify library files to be included in the compilation.*/
     // "allowJs": true,                       /* Allow javascript files to be compiled. */
     "checkJs": false, /* Report errors in .js files. */

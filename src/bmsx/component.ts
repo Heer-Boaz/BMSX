@@ -1,8 +1,8 @@
 import { onload, insavegame } from './gameserializer';
 import { EventEmitter, EventSubscription } from './eventemitter';
 import { GameObjectConstructorWithComponentList } from './gameobject';
-import { AbstractConstructor } from './bmsx';
-import type { IDisposable, IIdentifiable, Identifier } from "./bmsx";
+import { AbstractConstructor } from './game';
+import type { IDisposable, IIdentifiable, Identifier } from "./game";
 import { Registry } from './registry';
 
 export type KeyToComponentMap = { [key: string]: Component };

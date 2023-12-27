@@ -1,7 +1,7 @@
 import { createOptimizedAtlas } from './atlasbuilder';
 import { readdirSync, statSync, readFileSync, writeFileSync, copyFileSync, existsSync, createWriteStream, rmSync, Stats } from 'fs';
 import { join, parse } from 'path';
-import { AudioMeta, RomAsset, RomMeta, ImgMeta, Area, vec2, AudioType, BoundingBoxesPrecalc, BoundingBoxPrecalc } from '../src/bmsx/rompack';
+import { AudioMeta, RomAsset, RomMeta, ImgMeta, Area, vec2, AudioType, BoundingBoxesPrecalc, BoundingBoxPrecalc } from './rompacker.rompack';
 import { exec } from 'child_process';
 import * as browserify from 'browserify';
 const tsify = require('tsify');

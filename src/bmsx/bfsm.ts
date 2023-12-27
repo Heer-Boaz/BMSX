@@ -1,5 +1,5 @@
 import { exclude_save, insavegame, onload } from './gameserializer';
-import { IIdentifiable, IRegisterable, Identifier } from './bmsx';
+import { IIdentifiable, IRegisterable, Identifier } from './game';
 import { BaseModel } from './basemodel';
 import { EventScope, IEventSubscriber } from './eventemitter';
 

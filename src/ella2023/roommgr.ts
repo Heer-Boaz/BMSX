@@ -1,9 +1,9 @@
 import { BitmapId } from './resourceids';
-import { get_gamemodel } from "../bmsx/bmsx";
+import { get_gamemodel } from "../bmsx/game";
 import { SpriteObject } from "../bmsx/sprite";
 import { gamemodel } from "./gamemodel";
 import { StateMachineBlueprint, build_fsm } from '../bmsx/bfsm';
-import { Direction } from "../bmsx/bmsx";
+import { Direction } from "../bmsx/game";
 
 const get_model = get_gamemodel<gamemodel>;
 

@@ -1,10 +1,6 @@
+import { BFont, GLView, Game, MSX1ScreenHeight, MSX1ScreenWidth, RomPack, new_vec2 } from 'bmsx';
 import { gamemodel } from './gamemodel';
-import type { RomPack } from '../bmsx/rompack';
-import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
-import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
-import { Game, new_vec2 } from '../bmsx/bmsx';
-import { BFont } from '../bmsx/bmsx';
 
 let _game: Game;
 let _model: gamemodel;

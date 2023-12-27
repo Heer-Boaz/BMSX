@@ -1,12 +1,12 @@
-import { new_vec2, set_inplace_vec2, mod } from "./bmsx";
+import { new_vec2, set_inplace_vec2, mod } from "./game";
 import { componenttags_preprocessing, componenttags_postprocessing, Component, ComponentUpdateParams } from "./component";
 import { EventEmitter, subscribesToParentScopedEvent } from "./eventemitter";
 import { GameObject } from "./gameobject";
 import { insavegame } from "./gameserializer";
 import { TileSize } from "./msx";
-import type { Identifier } from "./bmsx";
+import type { Identifier } from "./game";
 import { vec2 } from "./rompack";
-import { Direction } from "./bmsx";
+import { Direction } from "./game";
 
 /**
  * Represents a component responsible for updating the position of a game object along a specific axis.

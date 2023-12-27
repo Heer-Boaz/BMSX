@@ -1,4 +1,4 @@
-import { IIdentifiable, IParentable, IRegisterable, Identifier } from "./bmsx";
+import { IIdentifiable, IParentable, IRegisterable, Identifier } from "./game";
 import { Registry } from "./registry";
 
 type Listener = { listener: Function, subscriber: any };

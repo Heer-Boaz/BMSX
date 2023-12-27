@@ -1,0 +1,14 @@
+{
+    "extends": "../tsconfig.json", // path to the main tsconfig.json file
+    "compilerOptions": {
+        "composite": false,
+        "declaration": false,
+        "rootDir": "./",
+        "target": "ESNext",
+        "moduleResolution": "Node"
+    },
+    "include": [
+        ".",
+        ".rompacker.rompack.d.ts"
+    ]
+}

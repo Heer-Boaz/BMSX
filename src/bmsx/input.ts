@@ -3,9 +3,9 @@ import { handleDebugClick, handleDebugMouseDown, handleDebugMouseUp, handleDebug
 import { EventEmitter } from './eventemitter';
 import { ZCOORD_MAX } from './glview';
 import { SpriteObject } from './sprite';
-import { get_gamemodel } from './bmsx';
+import { get_gamemodel } from './game';
 import { StateMachineBlueprint } from './bfsm';
-import type { IRegisterable, Identifier } from "./bmsx";
+import type { IRegisterable, Identifier } from "./game";
 import { Registry } from './registry';
 
 export type ActionStateQuery = {

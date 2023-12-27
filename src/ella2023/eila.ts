@@ -1,17 +1,8 @@
-import { Action } from './inputmapping';
+import { Direction, Identifier, SM, ScreenBoundaryComponent, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, insavegame, sstate, subscribesToParentScopedEvent, subscribesToSelfScopedEvent } from 'bmsx';
 import { AudioId, BitmapId } from './resourceids';
-import { sstate, StateMachineBlueprint, build_fsm, assign_fsm } from '../bmsx/bfsm';
-import { insavegame } from '../bmsx/gameserializer';
-import { Identifier, get_gamemodel } from '../bmsx/bmsx';
-import { ScreenBoundaryComponent } from './../bmsx/collisioncomponents';
 import { Fighter } from './fighter';
-import { attach_components } from '../bmsx/component';
-import { subscribesToParentScopedEvent, subscribesToSelfScopedEvent } from '../bmsx/eventemitter';
-import { Direction } from "../bmsx/bmsx";
 import { gamemodel } from './gamemodel';
-import { SM } from '../bmsx/soundmaster';
-
-const get_model = get_gamemodel<gamemodel>;
+import { Action } from './inputmapping';
 
 export type EilaAttackType = 'punch' | 'lowkick' | 'highkick' | 'flyingkick';
 
@@ -177,25 +168,25 @@ export class Player extends Fighter {
                 },
                 punch: {
                     enter(this: Fighter) {
-                        const hit = this.doAttackFlow('punch', get_model().theOtherFighter(this));
+                        const hit = this.doAttackFlow('punch', $.modelAs<gamemodel>().theOtherFighter(this));
                         this.sc.to(statemachine + '.punch', hit);
                     },
                 },
                 highkick: {
                     enter(this: Fighter) {
-                        const hit = this.doAttackFlow('highkick', get_model().theOtherFighter(this));
+                        const hit = this.doAttackFlow('highkick', $.modelAs<gamemodel>().theOtherFighter(this));
                         this.sc.to(statemachine + '.highkick', hit);
                     },
                 },
                 lowkick: {
                     enter(this: Fighter) {
-                        const hit = this.doAttackFlow('lowkick', get_model().theOtherFighter(this));
+                        const hit = this.doAttackFlow('lowkick', $.modelAs<gamemodel>().theOtherFighter(this));
                         this.sc.to(statemachine + '.lowkick', hit);
                     },
                 },
                 duckkick: {
                     enter(this: Fighter) {
-                        const hit = this.doAttackFlow('dickkick', get_model().theOtherFighter(this));
+                        const hit = this.doAttackFlow('dickkick', $.modelAs<gamemodel>().theOtherFighter(this));
                         this.sc.to(statemachine + '.duckkick', hit);
                     },
                 },
@@ -303,7 +294,7 @@ export class Player extends Fighter {
                                         flyingkick_end: 'normal',
                                     },
                                     enter(this: Fighter, _state: sstate) {
-                                        const hit = this.doAttackFlow('flyingkick', get_model().theOtherFighter(this));
+                                        const hit = this.doAttackFlow('flyingkick', $.modelAs<gamemodel>().theOtherFighter(this));
                                         this.sc.machines[statemachine].to('flyingkick', hit);
                                     },
                                     exit(this: Fighter) {
@@ -348,7 +339,7 @@ export class Player extends Fighter {
 
     override handleFighterStukEvent(this: Fighter, _event_name: string, emitter: Fighter): void {
         this.sc.to('humiliated');
-        get_model().theOtherFighter(emitter).sc.to('stoerheidsdans');
+        $.modelAs<gamemodel>().theOtherFighter(emitter).sc.to('stoerheidsdans');
     }
 
     @build_fsm('player_animation')

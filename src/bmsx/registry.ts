@@ -1,4 +1,4 @@
-import { Identifier, IRegisterable } from "./bmsx";
+import { Identifier, IRegisterable } from "./game";
 
 export class Registry {
     private static _instance: Registry;

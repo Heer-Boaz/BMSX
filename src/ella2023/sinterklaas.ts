@@ -1,6 +1,6 @@
 import { build_bt, BehaviorTreeDefinition, BTStatus } from "../bmsx/behaviourtree";
 import { assign_fsm, StateMachineBlueprint, sstate, build_fsm } from "../bmsx/bfsm";
-import { get_gamemodel } from "../bmsx/bmsx";
+import { get_gamemodel } from "../bmsx/game";
 import { attach_components } from "../bmsx/component";
 import { subscribesToSelfScopedEvent } from "../bmsx/eventemitter";
 import { insavegame } from "../bmsx/gameserializer";

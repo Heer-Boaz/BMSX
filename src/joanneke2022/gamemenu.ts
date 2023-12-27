@@ -1,15 +1,5 @@
-import { Msx1Colors } from './../bmsx/msx';
-import { AudioId, BitmapId } from "./resourceids";
-import { TextWriter } from "../bmsx/textwriter";
-import { SM } from "../bmsx/soundmaster";
-// import { SlotExists, LoadGame } from "../bmsx/gamepersistor";
-import { GameOptions as GO, set_vec2, new_vec2 } from '../bmsx/bmsx';
-import { Constants } from "../bmsx/bmsx";
-import { Input } from "../bmsx/input";
-import { Msx1ExtColors } from "../bmsx/msx";
-import { GameObject } from "../bmsx/gameobject";
-import type { Size, vec2, vec3 } from '../bmsx/rompack';
-import { Direction } from "../bmsx/bmsx";
+import { Constants, Direction, GameObject, Input, Msx1Colors, Msx1ExtColors, SM, Size, TextWriter, new_vec2, set_vec2, vec2, vec3, GameOptions as GO } from 'bmsx';
+import { AudioId, BitmapId } from './resourceids';
 
 interface MenuOption {
     type: MenuItem;

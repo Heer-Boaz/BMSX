@@ -1,20 +1,5 @@
-import { GamepadButton } from '../bmsx/input';
-import type { RomPack } from '../bmsx/rompack';
-import type { Direction } from "../bmsx/bmsx";
-import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
-import { GLView } from '../bmsx/glview';
+import { BaseModel, BehaviorTreeDefinition, Component, Direction, GLView, Game, GameObject, GamepadInputMapping, InputMap, GamepadButton, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, ProhibitLeavingScreenComponent, RomPack, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, insavegame, new_area, new_vec2, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components } from 'bmsx';
 import { BitmapId } from './resourceids';
-import { InputMap, KeyboardButton, GamepadInputMapping, KeyboardInputMapping } from '../bmsx/input';
-import { StateMachineBlueprint, build_fsm, assign_fsm } from '../bmsx/bfsm';
-import { insavegame } from '../bmsx/gameserializer';
-import { new_area, Game, new_vec2 } from '../bmsx/bmsx';
-import { GameObject } from '../bmsx/gameobject';
-import { BaseModel } from '../bmsx/basemodel';
-import { SpriteObject } from '../bmsx/sprite';
-import { attach_components, Component, componenttags_preprocessing, update_tagged_components } from '../bmsx/component';
-import { subscribesToParentScopedEvent, subscribesToSelfScopedEvent } from '../bmsx/eventemitter';
-import { assign_bt, BehaviorTreeDefinition, build_bt, WaitForActionCompletionDecorator } from '../bmsx/behaviourtree';
-import { ProhibitLeavingScreenComponent } from './../bmsx/collisioncomponents';
 
 var _game: Game;
 let _model: gamemodel;

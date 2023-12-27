@@ -1,15 +1,6 @@
-import { insavegame } from '../bmsx/gameserializer';
-import { SpriteObject } from '../bmsx/sprite';
-import { attach_components } from '../bmsx/component';
-import { ProhibitLeavingScreenComponent } from '../bmsx/collisioncomponents';
-import { HitBoxVisualizer, StateMachineVisualizer } from '../bmsx/bmsxdebugger';
-import { AudioId, BitmapId } from './resourceids';
-import { assign_fsm, build_fsm, StateMachineBlueprint, sstate } from '../bmsx/bfsm';
-import type { vec2, Area, vec3 } from '../bmsx/rompack';
-import { middlepoint_area, new_area } from '../bmsx/bmsx';
+import { HitBoxVisualizer, Identifier, ProhibitLeavingScreenComponent, SM, SpriteObject, StateMachineBlueprint, StateMachineVisualizer, assign_fsm, attach_components, build_fsm, insavegame, middlepoint_area, new_area, sstate, vec2, Area, vec3 } from 'bmsx';
 import { gamemodel } from './gamemodel';
-import { SM } from '../bmsx/soundmaster';
-import type { Identifier } from "../bmsx/bmsx";
+import { AudioId, BitmapId } from './resourceids';
 
 export type AttackType = string;
 

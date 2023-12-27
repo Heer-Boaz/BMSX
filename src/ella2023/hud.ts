@@ -1,7 +1,7 @@
 import { SpriteObject } from '../bmsx/sprite';
 import { BitmapId } from './resourceids';
 import { StateMachineBlueprint, build_fsm } from '../bmsx/bfsm';
-import { get_gamemodel, new_area3d } from '../bmsx/bmsx';
+import { get_gamemodel, new_area3d } from '../bmsx/game';
 import { GLView } from '../bmsx/glview';
 import { Msx1Colors } from '../bmsx/msx';
 import { gamemodel } from './gamemodel';
