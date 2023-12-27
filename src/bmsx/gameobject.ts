@@ -40,6 +40,9 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 	}
 
 	removeComponent<T extends Component>(constructor: ComponentConstructor<T>): void {
+		const component = this.components[constructor.name];
+		if (!component) return;
+		component.dispose();
 		delete this.components[constructor.name];
 	}
 
@@ -285,7 +288,8 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 		$.event_emitter.removeSubscriber(this);
 
 		// Dispose of components
-		Object.values(this.components).forEach(component => component.dispose());
+		const components = Object.values(this.components);
+		components.forEach(component => this.removeComponent(component.constructor as ComponentConstructor<Component>)); // Remove the component from the game object and dispose (as part of the removal process)
 
 		// Dispose all state machines
 		this.sc.dispose();

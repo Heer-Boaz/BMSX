@@ -168,26 +168,26 @@ export class Player extends Fighter {
                 },
                 punch: {
                     enter(this: Fighter) {
-                        const hit = this.doAttackFlow('punch', $.modelAs<gamemodel>().theOtherFighter(this));
-                        this.sc.to(statemachine + '.punch', hit);
+                        this.sc.to(statemachine + '.punch');
+                        this.doAttackFlow('punch', $.modelAs<gamemodel>().theOtherFighter(this));
                     },
                 },
                 highkick: {
                     enter(this: Fighter) {
-                        const hit = this.doAttackFlow('highkick', $.modelAs<gamemodel>().theOtherFighter(this));
-                        this.sc.to(statemachine + '.highkick', hit);
+                        this.sc.to(statemachine + '.highkick');
+                      this.doAttackFlow('highkick', $.modelAs<gamemodel>().theOtherFighter(this));
                     },
                 },
                 lowkick: {
                     enter(this: Fighter) {
-                        const hit = this.doAttackFlow('lowkick', $.modelAs<gamemodel>().theOtherFighter(this));
-                        this.sc.to(statemachine + '.lowkick', hit);
+                        this.sc.to(statemachine + '.lowkick');
+                        this.doAttackFlow('lowkick', $.modelAs<gamemodel>().theOtherFighter(this));
                     },
                 },
                 duckkick: {
                     enter(this: Fighter) {
-                        const hit = this.doAttackFlow('dickkick', $.modelAs<gamemodel>().theOtherFighter(this));
-                        this.sc.to(statemachine + '.duckkick', hit);
+                        this.sc.to(statemachine + '.duckkick');
+                        this.doAttackFlow('dickkick', $.modelAs<gamemodel>().theOtherFighter(this));
                     },
                 },
                 duck: {
@@ -294,8 +294,8 @@ export class Player extends Fighter {
                                         flyingkick_end: 'normal',
                                     },
                                     enter(this: Fighter, _state: sstate) {
-                                        const hit = this.doAttackFlow('flyingkick', $.modelAs<gamemodel>().theOtherFighter(this));
-                                        this.sc.machines[statemachine].to('flyingkick', hit);
+                                        this.sc.machines[statemachine].to('flyingkick');
+                                        this.doAttackFlow('flyingkick', $.modelAs<gamemodel>().theOtherFighter(this));
                                     },
                                     exit(this: Fighter) {
                                         this.sc.machines[statemachine].to('jump');
@@ -346,6 +346,13 @@ export class Player extends Fighter {
     public static buildAnimationFsm(): StateMachineBlueprint {
         return {
             parallel: true,
+            on: {
+                i_hit_face: {
+                    do(state: sstate) {
+                        state.setTicksNoSideEffect(state.definition.ticks2move - 1);
+                    }
+                }
+            },
             states: {
                 _idle: {
                     run: () => { },
@@ -423,11 +430,10 @@ export class Player extends Fighter {
                 },
                 duckkick: {
                     ticks2move: Player.ATTACK_DURATION,
-                    enter(this: Player, state: sstate, hit: boolean) {
+                    enter(this: Player, state: sstate) {
                         state.reset();
                         SM.play(AudioId.kick);
                         this.imgid = BitmapId.eila_duckkick;
-                        if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Player) {
                         this.sc.switch('player_animation.duck');

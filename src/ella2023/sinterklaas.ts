@@ -62,6 +62,13 @@ export class Sinterklaas extends Fighter {
         const statemachine = 'sint_animation';
         return {
             parallel: true,
+            on: {
+                i_hit_face: {
+                    do(state: sstate) {
+                        state.setTicksNoSideEffect(state.definition.ticks2move - 1);
+                    }
+                }
+            },
             states: {
                 _idle: {
                     run: () => { },

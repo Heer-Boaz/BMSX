@@ -113,10 +113,8 @@ function addEventListToDefinition(machine: StateMachineBlueprint): void {
 		machine.event_list = []; // Create a new event list for the machine definition
 		eventMap.forEach(event_entry => { // Add the events to the event list of the
 			machine.event_list.push({ name: event_entry.name, scope: event_entry.scope }); // Add the event to the event list of the machine definition
-			console.info(`Added event '${event_entry.name}' with scope '${event_entry.scope}' to machine '${machine.id}'.`); // Log that the event was added to the machine definition
 		});
 	}
-	else console.info(`No events defined for machine '${machine.id}'.`); // Log that no events were defined for the machine definition
 }
 
 function getStateMachineEvents(machine: StateMachineBlueprint, eventNamesAndScopes?: Set<listed_sdef_event>) {
@@ -929,17 +927,13 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 			Object.values(this.states).forEach(state => state.parallel && state.dispatch(eventName, emitter_id, ...args));
 		} else {
 			// This is the deepest part of the state machine, dispatch the event here
-			// console.info(`Event ${eventName} dispatched by ${emitter_id} at state ${this.id}`);
-
 			// Bubble up the event to the parent states
 			let current = this;
 			do {
 				if (current.handleEvent(eventName, emitter_id, ...args)) {
-					// console.warn(`Event '${eventName}' gobbled up by '${current.id}'!`);
 					return; // If the event was handled, stop bubbling up the event
 				}
 				current = current.parent;
-				// console.info(`Event '${eventName}' bubbled up to state '${current?.id ?? 'the great void! This is the end of the line!'}'`);
 			} while (current);
 		}
 	}

@@ -604,7 +604,7 @@ function extractBoundingBox(image: Image): Area {
 	return { start: { x: ~~startx, y: ~~starty }, end: { x: ~~endx, y: ~~endy } };
 }
 
-function extractBoundingBoxes(image: Image, extractedBoundingBox: Area): Area[] {
+function extractBoundingBoxes(image: Image, extractedBoundingBox: Area, boxsize: number = 8): Area[] {
 	function adjustBoundingBoxes(image: Image, boundingBoxes: Area[]): Area[] {
 		const imageBoundingBox = extractedBoundingBox;
 
@@ -627,15 +627,15 @@ function extractBoundingBoxes(image: Image, extractedBoundingBox: Area): Area[] 
 
 	const boundingBoxes: Area[] = [];
 
-	// Split the image into 8x8 pixel blocks
-	for (let y = 0; y < image.height; y += 8) {
-		for (let x = 0; x < image.width; x += 8) {
+	// Split the image into boxsize x boxsize pixel blocks
+	for (let y = 0; y < image.height; y += boxsize) {
+		for (let x = 0; x < image.width; x += boxsize) {
 			let blockHasAlpha = false;
 
 			// Check each pixel in the block
 			blockLoop:
-			for (let blockY = y; blockY < y + 8 && blockY < image.height; blockY++) {
-				for (let blockX = x; blockX < x + 8 && blockX < image.width; blockX++) {
+			for (let blockY = y; blockY < y + boxsize && blockY < image.height; blockY++) {
+				for (let blockX = x; blockX < x + boxsize && blockX < image.width; blockX++) {
 					const index = (blockY * image.width + blockX) * 4;
 					if (data[index + 3] !== 0) {
 						blockHasAlpha = true;
@@ -647,20 +647,23 @@ function extractBoundingBoxes(image: Image, extractedBoundingBox: Area): Area[] 
 			// If the block has at least one non-transparent pixel, add it to the list of bounding boxes
 			if (blockHasAlpha) {
 				let merged = false;
-				// Try to merge this block with an existing bounding box if they are adjacent
+				// Try to merge this block with an existing bounding box if they are adjacent and the block has non-transparent pixels
 				for (let box of boundingBoxes) {
-					if (y >= box.start.y && y <= box.end.y + 8 && x >= box.start.x && x <= box.end.x + 8) {
-						box.end.x = Math.max(box.end.x, x + 7);
-						box.end.y = Math.max(box.end.y, y + 7);
-						merged = true;
-						break;
+					if (y >= box.start.y && y <= box.end.y + boxsize && x >= box.start.x && x <= box.end.x + boxsize) {
+						const index = (y * image.width + x) * 4;
+						if (data[index + 3] !== 0) {
+							box.end.x = Math.max(box.end.x, x + (boxsize - 1));
+							box.end.y = Math.max(box.end.y, y + (boxsize - 1));
+							merged = true;
+							break;
+						}
 					}
 				}
 				// If no merge happened, add as a new bounding box
 				if (!merged) {
 					boundingBoxes.push({
 						start: { x, y },
-						end: { x: x + 7, y: y + 7 },
+						end: { x: x + (boxsize - 1), y: y + (boxsize - 1) },
 					});
 				}
 			}
@@ -721,14 +724,14 @@ function calculateCenterPoint(boundingBox: Area): vec2 {
 	return { x: ~~middlex, y: ~~middley };
 }
 
-// function createAsciiBoundingBoxMap(image: Image, boundingBoxes: Area[]) {
-//     const asciiMap: string[][] = Array.from({ length: ~~Math.ceil(image.height / 8) }, () => Array(~~Math.ceil(image.width / 8)).fill(' '));
+// function createAsciiBoundingBoxMap(image: Image, boundingBoxes: Area[], boxsize: number = boxsize) {
+//     const asciiMap: string[][] = Array.from({ length: ~~Math.ceil(image.height / boxsize) }, () => Array(~~Math.ceil(image.width / boxsize)).fill(' '));
 
 //     for (const box of boundingBoxes) {
-//         const startX = ~~Math.floor(box.start.x / 8);
-//         const startY = ~~Math.floor(box.start.y / 8);
-//         const endX = ~~Math.ceil(box.end.x / 8);
-//         const endY = ~~Math.ceil(box.end.y / 8);
+//         const startX = ~~Math.floor(box.start.x / boxsize);
+//         const startY = ~~Math.floor(box.start.y / boxsize);
+//         const endX = ~~Math.ceil(box.end.x / boxsize);
+//         const endY = ~~Math.ceil(box.end.y / boxsize);
 
 //         for (let y = startY; y < endY; y++) {
 //             for (let x = startX; x < endX; x++) {
@@ -903,7 +906,7 @@ async function buildRompack(romname: string, respath: string): Promise<any> {
 					const img = res.img;
 					const img_boundingbox = extractBoundingBox(img); // Extract the bounding box of the image (i.e. the smallest rectangle that contains all non-transparent pixels)
 					const img_boundingbox_precalc: BoundingBoxPrecalc = generateFlippedBoundingBox(img, img_boundingbox);
-					const img_boundingboxes = extractBoundingBoxes(img, img_boundingbox); // Extract the bounding boxes of the image (i.e. the smallest rectangles that contain all non-transparent pixels)
+					const img_boundingboxes = extractBoundingBoxes(img, img_boundingbox, 2); // Extract the bounding boxes of the image (i.e. the smallest rectangles that contain all non-transparent pixels)
 					// const img_ascii_boundingbox_map = createAsciiBoundingBoxMap(img, img_boundingboxes);
 					const img_boundingboxes_precalc: BoundingBoxesPrecalc = {
 						original: img_boundingboxes,

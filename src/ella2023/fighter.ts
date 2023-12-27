@@ -1,4 +1,4 @@
-import { HitBoxVisualizer, Identifier, ProhibitLeavingScreenComponent, SM, SpriteObject, StateMachineBlueprint, StateMachineVisualizer, assign_fsm, attach_components, build_fsm, insavegame, middlepoint_area, new_area, sstate, vec2, Area, vec3 } from '../bmsx/bmsx';
+import { Identifier, ProhibitLeavingScreenComponent, SM, SpriteObject, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, insavegame, middlepoint_area, new_area, sstate, vec2, Area, vec3 } from '../bmsx/bmsx';
 import { gamemodel } from './gamemodel';
 import { AudioId, BitmapId } from './resourceids';
 
@@ -19,7 +19,7 @@ function getDamage(attackType: AttackType): number {
 }
 
 @insavegame
-@attach_components(ProhibitLeavingScreenComponent, StateMachineVisualizer, HitBoxVisualizer)
+@attach_components(ProhibitLeavingScreenComponent)
 @assign_fsm('hitanimation')
 export abstract class Fighter extends SpriteObject {
     public static readonly ATTACK_DURATION = 15;
@@ -88,12 +88,14 @@ export abstract class Fighter extends SpriteObject {
     public doAttackFlow(attackType: AttackType, opponent: Fighter): boolean {
         if (!opponent) return false;
         const hitArea = this.attackHitsOpponent(attackType, opponent);
+        let hit: boolean = false;
         if (hitArea) {
             this.handleHittingOpponent(attackType, opponent, hitArea);
             opponent.handleBeingHit(attackType, this);
-            return true;
+            hit = true;
         }
-        return false;
+        if (hit) { $.event_emitter.emit('i_hit_face', this); }
+         return hit;
     }
 
     public attackHitsOpponent(_attackType: AttackType, opponent: Fighter): Area | null {

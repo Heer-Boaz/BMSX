@@ -648,7 +648,7 @@ export class Input implements IRegisterable {
                     }
                     else {
                         global.$.paused = false;
-                        global.$.debug_runSingleFrameAndPause = this.getPlayerInput(2).getKeyState('ShiftLeft').pressed;
+                        global.$.debug_runSingleFrameAndPause = this.getPlayerInput(1).getKeyState('ShiftLeft').pressed;
                     }
                     break;
             }
