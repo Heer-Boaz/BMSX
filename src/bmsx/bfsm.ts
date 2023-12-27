@@ -11,7 +11,7 @@ export var StateDefinitions: Record<string, sdef>;
 /**
  * A record that maps string keys to functions that build machine states.
  */
-var StateDefinitionBuilders: Record<string, () => machine_states>;
+var StateDefinitionBuilders: Record<string, () => StateMachineBlueprint>;
 
 /**
  * Represents the name of a Finite State Machine (FSM).
@@ -75,18 +75,6 @@ export function build_fsm(fsm_name?: Identifier) {
 }
 
 /**
- * Decorator function that builds a finite state machine definition.
- * @param target - The class that the member is on.
- * @param name - The name of the member in the class.
- * @param descriptor - The member descriptor; This is essentially the object that would have been passed to Object.defineProperty.
- * @returns The decorated function.
- */
-export function statedef_builder(target: any, _name: any, descriptor: PropertyDescriptor): any {
-	StateDefinitionBuilders ??= {};
-	StateDefinitionBuilders[target.name] = descriptor.value;
-}
-
-/**
  * Builds the state machine definitions and sets them in the `MachineDefinitions` object.
  * Loops through all the `MachineDefinitionBuilders` and calls them to get the state machine definition.
  * If a definition is returned, it creates a new `sdef` object with the machine name and definition.
@@ -97,7 +85,10 @@ export function setup_fssdef_library(): void {
 	for (let machine_name in StateDefinitionBuilders) {
 		let machine_definition = StateDefinitionBuilders[machine_name]();
 		if (machine_definition) {
-			createMachine(machine_name, machine_definition);
+			const machineBuilt = createMachine(machine_name, machine_definition);
+			validateStateMachine(machineBuilt); // Check if the machine definition is valid before adding it to the library of machine definitions
+			StateDefinitions[machine_name] = machineBuilt; // Add the machine definition to the library of machine definitions
+			addEventListToDefinition(machineBuilt); // Add the events to the event list of the machine definition
 		}
 	}
 }
@@ -110,28 +101,32 @@ export function setup_fssdef_library(): void {
  * @param machine_name - The name of the machine.
  * @param machine_definition - The definition of the machine, including its states and substates.
  */
-function createMachine(machine_name: Identifier, machine_definition: machine_states): void {
-	// Create a new machine definition object with the machine name and definition and add it to the library of machine definitions
-	const machineBuilt = new sdef(machine_name, machine_definition as Partial<sdef>);
-	validateStateMachine(machineBuilt); // Check if the machine definition is valid before adding it to the library of machine definitions
-	StateDefinitions[machine_name] = machineBuilt; // Note: A class might choose not to create a new machine
-
-	// If the machine has events defined, add them to the event list of the machine definition
-	const eventMap = getStateMachineEvents(machineBuilt); // Get the events from the machine definition
-	eventMap.forEach(event_entry => { // Add the events to the event list of the
-		machineBuilt.event_list.push({ name: event_entry.name, scope: event_entry.scope }); // Add the event to the event list of the machine definition
-	});
-
+function createMachine(machine_name: Identifier, machine_definition: StateMachineBlueprint): sdef {
+	// If the machine has states defined, create a new machine definition for each state
+	return new sdef(machine_name, machine_definition);
 }
 
-function getStateMachineEvents(machine: machine_states, eventNamesAndScopes?: Set<{ name: string, scope: string }>): Set<{ name: string, scope: string }> {
+function addEventListToDefinition(machine: StateMachineBlueprint): void {
+	// If the machine has events defined, add them to the event list of the machine definition
+	const eventMap = getStateMachineEvents(machine); // Get the events from the machine definition
+	if (eventMap && eventMap.size > 0) {
+		machine.event_list = []; // Create a new event list for the machine definition
+		eventMap.forEach(event_entry => { // Add the events to the event list of the
+			machine.event_list.push({ name: event_entry.name, scope: event_entry.scope }); // Add the event to the event list of the machine definition
+			console.info(`Added event '${event_entry.name}' with scope '${event_entry.scope}' to machine '${machine.id}'.`); // Log that the event was added to the machine definition
+		});
+	}
+	else console.info(`No events defined for machine '${machine.id}'.`); // Log that no events were defined for the machine definition
+}
+
+function getStateMachineEvents(machine: StateMachineBlueprint, eventNamesAndScopes?: Set<listed_sdef_event>) {
 	function add(name: string, scope: string): void {
 		if (events.has({ name: name, scope: 'all' })) return; // If the event is already in the set, and the scope is global, don't add it again
 		if (events.has({ name: name, scope: scope })) return; // If the event is already in the set, and the scope is the same, don't add it again
 		events.add({ name: name, scope: scope });
 	}
 
-	const events = eventNamesAndScopes ?? new Set<{ name: string, scope: string }>();
+	const events = eventNamesAndScopes ?? new Set<listed_sdef_event>();
 	for (const stateId in machine.states) {
 		const state = machine.states[stateId];
 		const state_def = state;
@@ -143,7 +138,7 @@ function getStateMachineEvents(machine: machine_states, eventNamesAndScopes?: Se
 					add(name, 'all');
 				}
 				else {
-					add(name, definition.scope ?? 'all');
+					add(name, definition.scope ?? 'self');
 				}
 			}
 		}
@@ -155,7 +150,6 @@ function getStateMachineEvents(machine: machine_states, eventNamesAndScopes?: Se
 
 	return events;
 }
-
 
 /**
  * Validates the state machine definition.
@@ -196,21 +190,6 @@ function validateStateMachine(machinedef: sdef): void {
 	}
 }
 
-// // Function to generate a new submachine_id
-// function generateSubmachineId(machine_name: Identifier, stateId: Identifier): string {
-// 	if (sdef.START_STATE_PREFIXES.includes(stateId.charAt(0))) {
-// 		stateId = stateId.slice(1);
-// 	}
-// 	if (sdef.START_STATE_PREFIXES.includes(machine_name.charAt(0))) {
-// 		machine_name = machine_name.slice(1);
-// 	}
-
-// 	let id = `${machine_name}.${stateId}`; // The submachine_id is the machine_name + the stateId (e.g. 'machine_name.stateId') to create a unique submachine_id
-// 	let parts = id.split('.'); // Split the id into parts to remove duplicate parts and create a unique submachine_id
-// 	let uniqueParts = parts.filter((value, index, self) => self.indexOf(value) === index); // Remove duplicate parts
-// 	return uniqueParts.join('.'); // Join the parts together with a '.' in between each part to create the submachine_id for the substate machine definition
-// }
-
 /**
  * Represents a type definition for mapping IDs to `sdef` objects.
  */
@@ -225,6 +204,60 @@ export type id2mstate = Record<Identifier, sstate>;
  * Represents a mapping of IDs to sstates.
  */
 export type id2sstate = Record<Identifier, sstate>;
+
+
+/**
+ * The states defined for this state machine (key = state id, value = partial state definition), their substate machines and their additional properties are defined in {@link sdef}.
+ * @example
+ * {
+ *		parellel: true,
+ *		data: { ... },
+ *		on: { ... }, // Note: defines the state transitions at the *current* level (thus, not for submachines)
+ *		// (Note: the state id is the key of the state in the states object)
+ *		_idle: { // The state definition for the idle state which is the start state of this machine, given the prefix '_' (or '#')
+ *			auto_tick: false, // `true` by default
+ *			on: { ... }, // Note: defines the state transitions at the *current* level (thus, not for submachines)
+ *			enter(this: TargetClass, state: sstate): { state.reset(); ... },
+ *			run(this: TargetClass, state: sstate): { ++state.ticks; },
+ *			next(this: TargetClass, state: sstate): { let bla = state.current_tape_value; ... },
+ *		},
+ *		running: { ... },
+ * }
+ */
+export type StateMachineBlueprint = Partial<sdef>;
+
+/**
+ * A type representing a mapping of state IDs to partial state definitions.
+ */
+export type id2partial_sdef = Record<string, StateMachineBlueprint>;
+
+export interface state_event_condition<T extends IStateful & IEventSubscriber = any> extends state_event_handler<T> {
+	(state: sstate<T>, ...args: any[]): boolean;
+}
+
+type listed_sdef_event = { name: string, scope: EventScope };
+
+export type StateEventDefinition<T extends IStateful & IEventSubscriber = any> = {
+	/**
+	 * The state ID to transition to. If not provided, the state will not transition. This is useful for defining a "transition" that only executes an action.
+	 */
+	to?: Identifier,
+
+	/**
+	 * The condition that must be met for the transition to occur.
+	 */
+	if?: state_event_condition<T>,
+
+	/**
+	 * The action that is executed when the transition occurs.
+	 */
+	do?: state_event_handler<T>,
+
+	/**
+	 * (Optional) The ID of the emitter scope. If provided, the listener will be added to the emitter scope listeners, otherwise it will be added to the global scope listeners.
+	 */
+	scope?: EventScope,
+};
 
 /**
  * Represents a state event handler function.
@@ -311,9 +344,25 @@ export class bfsm_controller {
 	initLoadSetup(): void {
 		for (const id in this.statemachines) {
 			const machine = this.statemachines[id];
-			// const eventNames = new Set<string>();
-			// this.getStateMachineEvents(eventNames, machine);
-			// eventNames.forEach(eventName => { game.event_emitter.on(eventName, null, machine.target,
+
+			// Subscribe to all events that are defined in the machine definition for the machine and its submachines
+			const events = machine.definition?.event_list;
+			if (events && events.length > 0) {
+				events.forEach(event => {
+					let scope = event.scope ?? 'self';
+					switch (scope) {
+						case 'self':
+							scope = machine.target; // If the scope is 'self', subscribe to the event with the given name and scope and dispatch it to the machine with the given id and scope, using the `target`-object as the event filter (i.e., only dispatch the event if the emitter is the target object)
+							break;
+						case 'all':
+						default:
+							scope = undefined; // If the scope is 'all' or undefined, subscribe to the event with the given name and scope and dispatch it to the machine with the given id and global scope, meaning that the event will be dispatched to all machines
+							break;
+					}
+					// Subscribe to the event with the given name and scope and dispatch it to the machine with the given id and scope (or global scope if no scope is provided)
+					game.event_emitter.on(event.name, this.auto_dispatch, machine.target, scope);
+				});
+			}
 			machine.start();
 		}
 	}
@@ -379,17 +428,32 @@ export class bfsm_controller {
 		machine.switch(stateid, ...args);
 	}
 
-	public dispatch(eventName: string, emitter: Identifier | IIdentifiable, ...args: any[]): void {
+	public dispatch(event_name: string, emitter: Identifier | IIdentifiable, ...args: any[]): void {
 		const emitter_id = typeof emitter === 'string' ? emitter : emitter.id;
 
 		// Dispatch the event to the current machine
-		this.current_machine.dispatch(eventName, emitter_id, ...args);
+		this.current_machine.dispatch(event_name, emitter_id, ...args);
 
 		for (const id in this.statemachines) {
 			if (this.current_machine_id === id) continue; // Skip the current machine, as the event has already been dispatched to that machine
 			if (this.statemachines[id].paused) continue; // Skip paused machines
 			if (!this.statemachines[id].parallel) continue; // Skip machines that are not running in parallel
-			this.statemachines[id].dispatch(eventName, emitter_id, ...args);
+			this.statemachines[id].dispatch(event_name, emitter_id, ...args);
+		}
+	}
+
+	private auto_dispatch(this: IStateful, event_name: string, emitter: Identifier | IIdentifiable, ...args: any[]): void {
+		const emitter_id = typeof emitter === 'string' ? emitter : emitter.id;
+
+		// Dispatch the event to the current machine
+		this.sc.current_machine.dispatch(event_name, emitter_id, ...args); // Note: this.sc is the state machine controller of the object that is subscribed to the event
+
+		// Dispatch the event to all machines that are running in parallel with the current machine (i.e., all parallel machines except the current machine)
+		for (const id in this.sc.statemachines) { // Note: this.sc is the state machine controller of the object that is subscribed to the event
+			if (this.sc.current_machine_id === id) continue; // Skip the current machine, as the event has already been dispatched to that machine
+			if (this.sc.statemachines[id].paused) continue; // Skip paused machines
+			if (!this.sc.statemachines[id].parallel) continue; // Skip machines that are not running in parallel
+			this.sc.statemachines[id].dispatch(event_name, emitter_id, ...args);
 		}
 	}
 
@@ -1236,7 +1300,7 @@ export class sdef {
 		}
 	}
 
-	private construct_substate_machine(substates: machine_states): void {
+	private construct_substate_machine(substates: StateMachineBlueprint): void {
 		this.states ??= {};
 		const substate_ids = Object.keys(substates);
 		for (let state_id of substate_ids) {
@@ -1340,77 +1404,3 @@ export class sdef {
 	}
 
 }
-
-export type machine_states = Partial<sdef>;
-
-/**
- * A type representing a mapping of state IDs to partial state definitions.
- */
-export type id2partial_sdef = Record<string, machine_states>;
-
-export interface state_event_condition<T extends IStateful & IEventSubscriber = any> extends state_event_handler<T> {
-	(state: sstate<T>, ...args: any[]): boolean;
-}
-
-export type StateEventDefinition<T extends IStateful & IEventSubscriber = any> = {
-	/**
-	 * The state ID to transition to. If not provided, the state will not transition. This is useful for defining a "transition" that only executes an action.
-	 */
-	to?: Identifier,
-
-	/**
-	 * The condition that must be met for the transition to occur.
-	 */
-	if?: state_event_condition<T>,
-
-	/**
-	 * The action that is executed when the transition occurs.
-	 */
-	do?: state_event_handler<T>,
-
-	/**
-	 * (Optional) The ID of the emitter scope. If provided, the listener will be added to the emitter scope listeners, otherwise it will be added to the global scope listeners.
-	 */
-	scope?: EventScope,
-};
-
-/**
- * Represents the states of a state machine.
- */
-// export interface machine_states {
-// 	/**
-// 	 * Indicates whether the state machine is running in parallel with the 'current' state machine as defined in {@link bfsm_controller.current_machine}.
-// 	 */
-// 	parallel?: typeof sdef.prototype.parallel,
-
-// 	/**
-// 	 * Represents the state data for the state machine that is shared across its states.
-// 	 */
-// 	data?: typeof sdef.prototype.data,
-
-// 	/**
-// 	 * Represents the mapping of event types to state IDs for transitions to other states based on events (e.g. 'click' => 'idle').
-// 	 * At the state machine level, the `on` property defines the global transitions that can occur from any state.
-// 	 */
-// 	on?: typeof sdef.prototype.on,
-
-// 	/**
-// 	 * The states defined for this state machine (key = state id, value = partial state definition), their substate machines and their additional properties are defined in {@link sdef}.
-// 	 * @example
-// 	 * {
-// 	 *		parellel: true,
-// 	 *		data: { ... },
-// 	 *		on: { ... }, // Note: defines the state transitions at the *current* level (thus, not for submachines)
-// 	 *		// (Note: the state id is the key of the state in the states object)
-// 	 *		_idle: { // The state definition for the idle state which is the start state of this machine, given the prefix '_' (or '#')
-// 	 *			auto_tick: false, // `true` by default
-// 	 *			on: { ... }, // Note: defines the state transitions at the *current* level (thus, not for submachines)
-// 	 *			enter(this: TargetClass, state: sstate): { state.reset(); ... },
-// 	 *			run(this: TargetClass, state: sstate): { ++state.ticks; },
-// 	 *			next(this: TargetClass, state: sstate): { let bla = state.current_tape_value; ... },
-// 	 *		},
-// 	 *		running: { ... },
-// 	 * }
-// 	 */
-// 	states?: id2partial_sdef,
-// }
