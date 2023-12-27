@@ -79,6 +79,7 @@ export interface ImgMeta {
 	boundingbox?: BoundingBoxPrecalc; // The bounding box of the image. Used for collision detection.
 	boundingboxes?: BoundingBoxesPrecalc; // The bounding boxes of the image. Used for collision detection.
 	centerpoint?: vec2; // The center point of the image, based on the bounding box.
+	// ascii_boundingbox_map?: string[]; // The ASCII bounding box map of the image. Used for collision detection.
 }
 
 /**

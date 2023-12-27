@@ -721,6 +721,25 @@ function calculateCenterPoint(boundingBox: Area): vec2 {
 	return { x: ~~middlex, y: ~~middley };
 }
 
+// function createAsciiBoundingBoxMap(image: Image, boundingBoxes: Area[]) {
+//     const asciiMap: string[][] = Array.from({ length: ~~Math.ceil(image.height / 8) }, () => Array(~~Math.ceil(image.width / 8)).fill(' '));
+
+//     for (const box of boundingBoxes) {
+//         const startX = ~~Math.floor(box.start.x / 8);
+//         const startY = ~~Math.floor(box.start.y / 8);
+//         const endX = ~~Math.ceil(box.end.x / 8);
+//         const endY = ~~Math.ceil(box.end.y / 8);
+
+//         for (let y = startY; y < endY; y++) {
+//             for (let x = startX; x < endX; x++) {
+//                 asciiMap[y][x] = '#';
+//             }
+//         }
+//     }
+
+//     return asciiMap.map(row => row.join(''));
+// }
+
 /**
  * Builds a list of loaded resources located at `respath` for the specified `romname`.
  * @param respath The path to the resources to include in the list.
@@ -885,6 +904,7 @@ async function buildRompack(romname: string, respath: string): Promise<any> {
 					const img_boundingbox = extractBoundingBox(img); // Extract the bounding box of the image (i.e. the smallest rectangle that contains all non-transparent pixels)
 					const img_boundingbox_precalc: BoundingBoxPrecalc = generateFlippedBoundingBox(img, img_boundingbox);
 					const img_boundingboxes = extractBoundingBoxes(img, img_boundingbox); // Extract the bounding boxes of the image (i.e. the smallest rectangles that contain all non-transparent pixels)
+					// const img_ascii_boundingbox_map = createAsciiBoundingBoxMap(img, img_boundingboxes);
 					const img_boundingboxes_precalc: BoundingBoxesPrecalc = {
 						original: img_boundingboxes,
 						...generateFlippedBoundingBoxes(img, img_boundingboxes),
@@ -897,7 +917,8 @@ async function buildRompack(romname: string, respath: string): Promise<any> {
 						height: img.height,
 						boundingbox: img_boundingbox_precalc,
 						boundingboxes: img_boundingboxes_precalc,
-						centerpoint: img_centerpoint
+						centerpoint: img_centerpoint,
+						// ascii_boundingbox_map: img_ascii_boundingbox_map,
 					};
 
 					if (GENERATE_AND_USE_TEXTURE_ATLAS) {
@@ -933,26 +954,6 @@ async function buildRompack(romname: string, respath: string): Promise<any> {
 						});
 					}
 					break;
-				// case 'image':
-				// 	let img = res.img;
-				// 	let imgmeta: ImgMeta;
-				// 	const img_boundingbox = extractBoundingBox(img); // Extract the bounding box of the image (i.e. the smallest rectangle that contains all non-transparent pixels)
-				// 	const img_centerpoint = calculateCenterPoint(img_boundingbox);
-				// 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-				// 		imgmeta = res.imgmeta;
-				// 		if (DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
-				// 			jsonout.push({ resid: resid, resname: name, type: type, start: 0, end: 0, imgmeta: { atlassed: imgmeta.atlassed, width: imgmeta.width, height: imgmeta.height, texcoords: imgmeta.texcoords, texcoords_fliph: imgmeta.texcoords_fliph, texcoords_flipv: imgmeta.texcoords_flipv, texcoords_fliphv: imgmeta.texcoords_fliphv, boundingbox: img_boundingbox, centerpoint: img_centerpoint }});
-				// 		}
-				// 		else {
-				// 			jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: { atlassed: imgmeta.atlassed, width: imgmeta.width, height: imgmeta.height, texcoords: imgmeta.texcoords, texcoords_fliph: imgmeta.texcoords_fliph, texcoords_flipv: imgmeta.texcoords_flipv, texcoords_fliphv: imgmeta.texcoords_fliphv, boundingbox: img_boundingbox, centerpoint: img_centerpoint }});
-				// 			bufferPointer += res.buffer.length;
-				// 		}
-				// 	}
-				// 	else {
-				// 		jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: { atlassed: false, width: img.width, height: img.height, boundingbox: img_boundingbox, centerpoint: img_centerpoint }});
-				// 		bufferPointer += res.buffer.length;
-				// 	}
-				// 	break;
 				case 'audio':
 					{
 						let parsedMeta = parseAudioMeta(res.filepath);
@@ -1137,7 +1138,7 @@ const gauge = new Gauge(process.stdout, {
 	autoSize: false,
 });
 gauge.setTemplate([
-	{ type: 'progressbar', length: 100 },
+	{ type: 'progressbar', length: 50 },
 	{ type: 'activityIndicator', kerning: 1, length: 1 },
 	{ type: 'section', kerning: 1, default: '' },
 	{ type: 'subsection', kerning: 1, default: '' },
