@@ -244,10 +244,10 @@ async function minifyGamecode(infile: string): Promise<terser.MinifyOutput> {
 	try {
 		let options = <terser.MinifyOptions>{
 			ecma: 2020,
-			sourceMap: {
-				content: 'inline',
-				url: 'inline',
-			},
+			sourceMap: false, //{
+				// content: 'inline',
+				// url: 'inline',
+			// },
 			keep_fnames: /^_/,
 			keep_classnames: true,
 			compress: <terser.CompressOptions>{
@@ -257,6 +257,9 @@ async function minifyGamecode(infile: string): Promise<terser.MinifyOutput> {
 				join_vars: true,
 				loops: true,
 				sequences: true,
+				booleans_as_integers: true,
+				switches: true,
+				drop_console: true,
 			},
 			mangle: <terser.MangleOptions>{
 				reserved:
@@ -291,14 +294,16 @@ async function minifyGamecode(infile: string): Promise<terser.MinifyOutput> {
 				ecma: 2020,
 				safari10: false,
 				webkit: true,
-				max_line_len: 80,
+				// max_line_len: 80,
 				semicolons: true, // Must be true for Safari support (on iOS)! Otherwise, only black screen shows
 				keep_quoted_props: true,
 				beautify: false,
-				source_map: { content: 'inline', url: 'inline' },
+				source_map: null,
+				// source_map: { content: 'inline', url: 'inline' },
 				comments: false,
 				indent_level: 0,
 				braces: false,
+				shorthand: true,
 			},
 		};
 
