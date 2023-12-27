@@ -72,17 +72,17 @@ export class EventEmitter implements IRegisterable {
      * @param event_name - The name of the event.
      * @param listener - The listener function to be called when the event is emitted.
      * @param subscriber - The subscriber object associated with the listener.
-     * @param emitter_id - (Optional) The ID of the emitter scope. If provided, the listener will be added to the emitter scope listeners, otherwise it will be added to the global scope listeners.
+     * @param filtered_on_emitter_id - (Optional) The ID of the emitter scope. If provided, the listener will be added to the emitter scope listeners, otherwise it will be added to the global scope listeners.
      */
-    on(event_name: string, listener: Function, subscriber: any, emitter_id?: Identifier): void {
-        if (emitter_id) {
+    on(event_name: string, listener: Function, subscriber: any, filtered_on_emitter_id?: Identifier): void {
+        if (filtered_on_emitter_id) {
             if (!this.emitterScopeListeners[event_name]) {
                 this.emitterScopeListeners[event_name] = {};
             }
-            if (!this.emitterScopeListeners[event_name][emitter_id]) {
-                this.emitterScopeListeners[event_name][emitter_id] = new Set();
+            if (!this.emitterScopeListeners[event_name][filtered_on_emitter_id]) {
+                this.emitterScopeListeners[event_name][filtered_on_emitter_id] = new Set();
             }
-            this.emitterScopeListeners[event_name][emitter_id].add({ listener, subscriber });
+            this.emitterScopeListeners[event_name][filtered_on_emitter_id].add({ listener, subscriber });
         } else {
             if (!this.globalScopeListeners[event_name]) {
                 this.globalScopeListeners[event_name] = new Set();
