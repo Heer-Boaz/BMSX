@@ -338,6 +338,11 @@ export class bfsm_controller {
 
 	start(): void {
 		this.initLoadSetup();
+
+		// Start all state machines
+		for ( const id in this.statemachines) {
+			this.statemachines[id].start(); // Start the state machine with the given id (i.e., set the start state as the current state) and run the start state (i.e., run the start state's 'onenter' function)
+		}
 	}
 
 	@onload
@@ -363,7 +368,6 @@ export class bfsm_controller {
 					game.event_emitter.on(event.name, this.auto_dispatch, machine.target, scope);
 				});
 			}
-			machine.start();
 		}
 	}
 
