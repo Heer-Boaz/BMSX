@@ -340,10 +340,7 @@ export abstract class BaseModel implements IStateful, IRegisterable {
     public init_on_boot(): void {
         BaseModel.setup_fsmdef_library();
         BaseModel.setup_bt_library();
-        this.init_event_subscriptions();
-        this.init_spaces();
-        this.init_model_state_machines(game.model.constructor_name);
-        this.do_one_time_game_init();
+        this.init_event_subscriptions().init_spaces().init_model_state_machines(game.model.constructor_name).do_one_time_game_init();
     }
 
     public dispose(): void {
@@ -356,8 +353,9 @@ export abstract class BaseModel implements IStateful, IRegisterable {
         game.registry.deregister(this);
     }
 
-    public init_event_subscriptions(): void {
+    public init_event_subscriptions(): BaseModel {
         game.event_emitter.initClassBoundEventSubscriptions(this);
+        return this; // Return the current instance of the BaseModel for chaining
     }
 
     /**
@@ -370,7 +368,7 @@ export abstract class BaseModel implements IStateful, IRegisterable {
         this.addSpace('game_start' satisfies base_model_spaces);
         this.setSpace('game_start' satisfies base_model_spaces);
 
-        return this;
+        return this; // Return the current instance of the BaseModel for chaining
     }
 
     /**
@@ -403,9 +401,10 @@ export abstract class BaseModel implements IStateful, IRegisterable {
     */
     public init_model_state_machines(derived_modelclass_constructor_name: string): this {
         this.sc = new bfsm_controller();
-        this.sc.add_statemachine(derived_modelclass_constructor_name, 'model');
+        this.sc.add_statemachine(derived_modelclass_constructor_name, this.id);
+        this.sc.start(); // Start the state machine controller (this will start all state machines that are added to the controller) and transition to the default state of the model, and subscribe to all events that are defined in the state machine definitions
 
-        return this;
+        return this; // Return the current instance of the BaseModel for chaining
     }
 
     /** Use this function for initializing spaces, global/static game objects, ...
