@@ -1,6 +1,6 @@
 import { Action } from './inputmapping';
 import { AudioId, BitmapId } from './resourceids';
-import { sstate, statedef_builder, machine_states, build_fsm, assign_fsm } from '../bmsx/bfsm';
+import { sstate, StateMachineBlueprint, build_fsm, assign_fsm } from '../bmsx/bfsm';
 import { insavegame } from '../bmsx/gameserializer';
 import { Identifier, get_gamemodel } from '../bmsx/bmsx';
 import { ScreenBoundaryComponent } from './../bmsx/collisioncomponents';
@@ -42,12 +42,12 @@ export class JumpingWhileLeavingScreenComponent extends ScreenBoundaryComponent 
 @attach_components(JumpingWhileLeavingScreenComponent)
 export class Player extends Fighter {
 
-    @statedef_builder
-    public static bouw_eila(): machine_states {
+    @build_fsm()
+    public static bouw_eila(): StateMachineBlueprint {
         return Player.bouw('player_animation', 'Player');
     }
 
-    public static bouw(animation_machine_name: Identifier, class_name: string): machine_states {
+    public static bouw(animation_machine_name: Identifier, class_name: string): StateMachineBlueprint {
         function default_input_processor(this: Fighter) {
             const priorityActions = game.input.getPlayerInput(this.playerIndex).getPressedActions({ pressed: true, consumed: false, actionsByPriority: ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick'] });
 
@@ -352,7 +352,7 @@ export class Player extends Fighter {
     }
 
     @build_fsm('player_animation')
-    public static buildAnimationFsm(): machine_states {
+    public static buildAnimationFsm(): StateMachineBlueprint {
         return {
             parallel: true,
             states: {

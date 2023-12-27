@@ -1,7 +1,7 @@
 import { RoomMgr } from './roommgr';
 import { Sinterklaas } from './sinterklaas';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
-import { sstate, statedef_builder, machine_states } from '../bmsx/bfsm';
+import { sstate, build_fsm, StateMachineBlueprint } from '../bmsx/bfsm';
 import { insavegame } from '../bmsx/gameserializer';
 import { get_gamemodel, new_vec3 } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
@@ -75,13 +75,8 @@ export class gamemodel extends BaseModel {
 		}
 	}
 
-	@subscribesToGlobalEvent('game_start')
-	public handleGameStartSelectedEvent(_event_name: string, _emitter: GameObject, _who: string, ...args): void {
-		this.sc.dispatch('gamestart_selected', this, ...args);
-	}
-
-	@statedef_builder
-	public static bouw(): machine_states {
+	@build_fsm()
+	public static bouw(): StateMachineBlueprint {
 		return {
 			states: {
 				_game_start: {

@@ -6,10 +6,10 @@ import { Input } from '../bmsx/input';
 import { TextWriter } from '../bmsx/textwriter';
 import { DrawImgFlags, paintSprite } from '../bmsx/view';
 import { GameMenu } from './gamemenu';
-import { statedef_builder, mdef, sdef, sstate } from '../bmsx/bfsm';
+import { build_fsm, sdef, sstate } from '../bmsx/bfsm';
 import { Direction, new_area, new_vec2, vec2, new_vec2, randomInt, Game, BFont } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
-import { BaseModel, Space } from '../bmsx/model';
+import { BaseModel, Space } from '../bmsx/basemodel';
 import { SpriteObject } from '../bmsx/sprite';
 
 // https://drive.google.com/file/d/1vyCxVBeMr89pQdUBCUcDjW6W2ImA6q2j/view?usp=sharing
@@ -20,7 +20,7 @@ class modelclass extends BaseModel {
     public enemyHp: number;
     public monster: monster;
 
-    @statedef_builder
+    @build_fsm()
     public static buildModelStates(classname: string): mdef {
         return new mdef(classname, {
             machines: {
@@ -107,7 +107,7 @@ class hoeraStuff extends SpriteObject {
 };
 
 class fles extends SpriteObject {
-    @statedef_builder
+    @build_fsm()
     public static bouw(classname: string) {
         return new cmdef(classname, {
             machines: {
@@ -170,7 +170,7 @@ class fles extends SpriteObject {
 }
 
 class stoom extends SpriteObject {
-    @statedef_builder
+    @build_fsm()
     public static bouw(classname: string): cmdef {
         return new cmdef(classname, {
             machines: {
@@ -252,7 +252,7 @@ class monster extends SpriteObject {
 class speler extends SpriteObject {
     public floatbit: boolean;
 
-    @statedef_builder
+    @build_fsm()
     public static bouw(classname: string): cmdef {
         let shared_switch_run = (_: sstate, ik: speler) => {
             // if (Input.KC_BTN1 || Input.KC_SPACE) ik.zetBoelInDeHens();
@@ -516,7 +516,7 @@ class speler extends SpriteObject {
 };
 
 class yakuzi extends SpriteObject {
-    @statedef_builder
+    @build_fsm()
     public static bouw(classname: string): cmdef {
         return new cmdef(classname, {
             machines: {

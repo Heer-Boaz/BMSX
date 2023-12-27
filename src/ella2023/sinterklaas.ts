@@ -1,5 +1,5 @@
 import { build_bt, BehaviorTreeDefinition, BTStatus } from "../bmsx/behaviourtree";
-import { assign_fsm, build_fsm, machine_states, sstate, statedef_builder } from "../bmsx/bfsm";
+import { assign_fsm, StateMachineBlueprint, sstate, build_fsm } from "../bmsx/bfsm";
 import { get_gamemodel } from "../bmsx/bmsx";
 import { attach_components } from "../bmsx/component";
 import { subscribesToSelfScopedEvent } from "../bmsx/eventemitter";
@@ -27,9 +27,8 @@ export class Sinterklaas extends Fighter {
         super.paint();
     }
 
-    @statedef_builder
-    @statedef_builder
-    public static bouw_sinterklaas(): machine_states {
+    @build_fsm()
+    public static bouw_sinterklaas(): StateMachineBlueprint {
         return Player.bouw('sint_animation', 'Sinterklaas');
     }
 
@@ -68,7 +67,7 @@ export class Sinterklaas extends Fighter {
 
 
     @build_fsm('sint_animation')
-    public static buildAnimationFsm(): machine_states {
+    public static buildAnimationFsm(): StateMachineBlueprint {
         const statemachine = 'sint_animation';
         return {
             parallel: true,

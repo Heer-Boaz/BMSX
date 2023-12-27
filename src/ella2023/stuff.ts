@@ -1,6 +1,6 @@
 import { SpriteObject } from '../bmsx/sprite';
 import { BitmapId } from './resourceids';
-import { machine_states, statedef_builder } from '../bmsx/bfsm';
+import { StateMachineBlueprint, build_fsm } from '../bmsx/bfsm';
 import { get_gamemodel, new_area3d, new_vec3 } from '../bmsx/bmsx';
 import { gamemodel } from './gamemodel';
 import { TextWriter } from '../bmsx/textwriter';
@@ -10,8 +10,8 @@ import { Msx1Colors } from '../bmsx/msx';
 const get_model = get_gamemodel<gamemodel>;
 
 export class GameOver extends SpriteObject {
-    @statedef_builder
-    static bouw(): machine_states {
+    @build_fsm()
+    static bouw(): StateMachineBlueprint {
         return {
             states: {
                 _default: {
@@ -55,8 +55,8 @@ export class GameOver extends SpriteObject {
 }
 
 export class Hoera extends SpriteObject {
-    @statedef_builder
-    static bouw(): machine_states {
+    @build_fsm()
+    static bouw(): StateMachineBlueprint {
         return {
             states: {
                 _default: {
@@ -101,8 +101,8 @@ export class Hoera extends SpriteObject {
 }
 
 export class TitleScreen extends SpriteObject {
-    @statedef_builder
-    static bouw(): machine_states {
+    @build_fsm()
+    static bouw(): StateMachineBlueprint {
         return {
             states: {
                 _default: {
@@ -116,7 +116,7 @@ export class TitleScreen extends SpriteObject {
                         game.input.getPlayerInput(1).consumeActions(...priorityActions);
 
                         // If a priority action is pressed, go to the game.
-                        game.event_emitter.emit('game_start', this, 2);
+                        game.event_emitter.emit('gamestart_selected', this, 2, 'b');
                     },
                 }
             }

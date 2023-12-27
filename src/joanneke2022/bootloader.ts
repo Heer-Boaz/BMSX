@@ -3,7 +3,7 @@ import { MSX2ScreenHeight, MSX2ScreenWidth } from './../bmsx/msx';
 import type { RomPack, vec2 } from '../bmsx/rompack';
 import type { Direction } from "../bmsx/bmsx";
 import { Game, new_vec2, new_area, randomInt, copy_vector } from '../bmsx/bmsx';
-import { sdef, sstate, Bla, statedef_builder, build_fsm, machine_states } from '../bmsx/bfsm';
+import { sdef, sstate, Bla, build_fsm, StateMachineBlueprint } from '../bmsx/bfsm';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
@@ -50,7 +50,7 @@ class gamemodel extends BaseModel {
         return total;
     }
 
-    public static get states(): machine_states {
+    public static get states(): StateMachineBlueprint {
         return {
             states: {
                 game_start: {
@@ -118,7 +118,7 @@ class gamemodel extends BaseModel {
     }
 
     @build_fsm('model_substate')
-    public static substates(): machine_states {
+    public static substates(): StateMachineBlueprint {
         return {
             parallel: true,
             states: {
@@ -149,8 +149,8 @@ class gamemodel extends BaseModel {
         };
     }
 
-    @statedef_builder
-    public static bouw(): machine_states {
+    @build_fsm()
+    public static bouw(): StateMachineBlueprint {
         return gamemodel.states;
     }
 
@@ -265,8 +265,8 @@ class hoeraStuff extends SpriteObject {
 };
 
 class uitlegStuff extends SpriteObject {
-    @statedef_builder
-    public static bouw(): machine_states {
+    @build_fsm()
+    public static bouw(): StateMachineBlueprint {
         return {
             states: {
                 uitleg: {
@@ -402,7 +402,7 @@ class hud extends GameObject {
 }
 
 class stoom extends SpriteObject {
-    @statedef_builder
+    @build_fsm()
     public static bouw() {
         return {
             states: {
@@ -516,7 +516,7 @@ const gamepadInputMapping: MyGamepadInputMapping = {
 };
 
 class draaischijf extends SpriteObject {
-    @statedef_builder
+    @build_fsm()
     public static bouw() {
         return {
             states: {
@@ -731,7 +731,7 @@ abstract class onvolmaaktheid extends SpriteObject {
 }
 
 class burn extends onvolmaaktheid {
-    @statedef_builder
+    @build_fsm()
     public static bouw() {
         return {
             states: {
@@ -793,8 +793,8 @@ class burn extends onvolmaaktheid {
 }
 
 class barst extends onvolmaaktheid {
-    @statedef_builder
-    public static bouw(): machine_states {
+    @build_fsm()
+    public static bouw(): StateMachineBlueprint {
         return {
             states: {
                 wees_een_barst: {

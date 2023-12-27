@@ -34,7 +34,7 @@ class modelclass extends BaseModel {
     public ingredientEquipped: Ingredient;
     public pitasOpBord: number;
 
-    @statedef_builder
+    @build_fsm()
     public static buildModelStates(classname: string): cmdef {
         return new cmdef(classname, {
             machines: {
@@ -176,7 +176,7 @@ class modelclass extends BaseModel {
 };
 
 class brandblusser extends SpriteObject {
-    @statedef_builder
+    @build_fsm()
     public static bouw(classname: string): cmdef {
         return new cmdef(classname, {
             machines: {
@@ -328,7 +328,7 @@ class bord extends SpriteObject implements Bord {
 };
 
 class vuur extends SpriteObject {
-    @statedef_builder
+    @build_fsm()
     public static bouw(classname: string) {
         return new cmdef(classname, {
             machines: {
@@ -391,7 +391,7 @@ class vuur extends SpriteObject {
 };
 
 class corona extends SpriteObject {
-    @statedef_builder
+    @build_fsm()
     public static bouw(classname: string): cmdef {
         return new cmdef(classname, {
             machines: {
@@ -494,7 +494,7 @@ class corona extends SpriteObject {
 }
 // http://livetv.sx/enx/eventinfo/1017596_ajax_psv_eindhoven/#_&h=AT3-qpCc0X_J3DgIWX3xpJ-9OVzV4caLwSUuTtTWvRBn84rp63llZo-kOgMY2P8mxbe65OLcencMjq39IwqJxzrsxLI3VpXOIBg1W4_ujbB827fjeYTHKsnPxBp_CJ_QqKL7_Ku6a9XW-372RIE
 class speler extends SpriteObject {
-    @statedef_builder
+    @build_fsm()
     public static bouw(classname: string): cmdef {
         let shared_switch_run = (_: sstate, ik: speler) => {
             if (Input.KC_BTN1 || Input.KC_SPACE) ik.zetBoelInDeHens();
@@ -801,7 +801,7 @@ class speler extends SpriteObject {
 };
 
 class keuken extends SpriteObject {
-    @statedef_builder
+    @build_fsm()
     public static bouw(classname: string): cmdef {
         return new cmdef(classname, {
             machines: {

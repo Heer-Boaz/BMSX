@@ -4,7 +4,7 @@ import { attach_components } from '../bmsx/component';
 import { ProhibitLeavingScreenComponent } from '../bmsx/collisioncomponents';
 import { HitBoxVisualizer, StateMachineVisualizer } from '../bmsx/bmsxdebugger';
 import { AudioId, BitmapId } from './resourceids';
-import { assign_fsm, build_fsm, machine_states, sstate } from '../bmsx/bfsm';
+import { assign_fsm, build_fsm, StateMachineBlueprint, sstate } from '../bmsx/bfsm';
 import type { vec2, Area, vec3 } from '../bmsx/rompack';
 import { middlepoint_area, new_area } from '../bmsx/bmsx';
 import { gamemodel } from './gamemodel';
@@ -37,7 +37,7 @@ export abstract class Fighter extends SpriteObject {
     public static readonly SPEED = 2;
 
     @build_fsm('hitanimation')
-    static bouw_hitanimation_fsm(): machine_states {
+    static bouw_hitanimation_fsm(): StateMachineBlueprint {
         return {
             parallel: true,
             states: {

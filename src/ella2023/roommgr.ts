@@ -2,7 +2,7 @@ import { BitmapId } from './resourceids';
 import { get_gamemodel } from "../bmsx/bmsx";
 import { SpriteObject } from "../bmsx/sprite";
 import { gamemodel } from "./gamemodel";
-import { machine_states, statedef_builder } from '../bmsx/bfsm';
+import { StateMachineBlueprint, build_fsm } from '../bmsx/bfsm';
 import { Direction } from "../bmsx/bmsx";
 
 const get_model = get_gamemodel<gamemodel>;
@@ -54,8 +54,8 @@ export class Room extends SpriteObject {
         }
     }
 
-    @statedef_builder
-    public static bouw(): machine_states {
+    @build_fsm()
+    public static bouw(): StateMachineBlueprint {
         // function handlePlayerLeavingScreenEvent(this: Room) {
             // Check if player is leaving the screen
             // If so, transition to the adjacent room

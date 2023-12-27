@@ -1,6 +1,6 @@
 import { SpriteObject } from '../bmsx/sprite';
 import { BitmapId } from './resourceids';
-import { machine_states, statedef_builder } from '../bmsx/bfsm';
+import { StateMachineBlueprint, build_fsm } from '../bmsx/bfsm';
 import { get_gamemodel, new_area3d } from '../bmsx/bmsx';
 import { GLView } from '../bmsx/glview';
 import { Msx1Colors } from '../bmsx/msx';
@@ -11,8 +11,8 @@ import { TextWriter } from '../bmsx/textwriter';
 const get_model = get_gamemodel<gamemodel>;
 
 export class Hud extends SpriteObject {
-    @statedef_builder
-    static bouw(): machine_states {
+    @build_fsm()
+    static bouw(): StateMachineBlueprint {
         return {
             states: {
                 _default: {

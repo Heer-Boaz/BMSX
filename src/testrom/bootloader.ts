@@ -5,7 +5,7 @@ import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
 import { InputMap, KeyboardButton, GamepadInputMapping, KeyboardInputMapping } from '../bmsx/input';
-import { statedef_builder, machine_states, build_fsm, assign_fsm } from '../bmsx/bfsm';
+import { StateMachineBlueprint, build_fsm, assign_fsm } from '../bmsx/bfsm';
 import { insavegame } from '../bmsx/gameserializer';
 import { new_area, Game, new_vec2, get_gamemodel } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
@@ -189,7 +189,7 @@ class bclass extends SpriteObject {
     }
 
     @build_fsm('bclass_animation')
-    public static bouw_testfsm(): machine_states {
+    public static bouw_testfsm(): StateMachineBlueprint {
         return {
             states: {
                 ani1: {
@@ -205,7 +205,7 @@ class bclass extends SpriteObject {
     }
 
     @build_fsm('bclass_meuk')
-    public static bouw_meukfsm(): machine_states {
+    public static bouw_meukfsm(): StateMachineBlueprint {
         return {
             parallel: true,
             states: {
@@ -240,8 +240,8 @@ class bclass extends SpriteObject {
     //     }
     // }
 
-    @statedef_builder
-    public static bouw(): machine_states {
+    @build_fsm()
+    public static bouw(): StateMachineBlueprint {
         game.input.getPlayerInput(1).setInputMap({
             keyboard: keyboardInputMapping,
             gamepad: gamepadInputMapping,
@@ -354,8 +354,8 @@ const savestring = Symbol('savestring');
 class gamemodel extends BaseModel {
     public [savestring]: string;
 
-    @statedef_builder
-    public static bouw(): machine_states {
+    @build_fsm()
+    public static bouw(): StateMachineBlueprint {
         return {
             states: {
                 '#game_start': {
