@@ -5,7 +5,7 @@ import { ZCOORD_MAX } from './glview';
 import { BitmapId } from '../ella2023/resourceids';
 import { SpriteObject } from './sprite';
 import { get_gamemodel } from './bmsx';
-import { machine_states } from './bfsm';
+import { StateMachineBlueprint } from './bfsm';
 import type { IRegisterable, Identifier } from "./bmsx";
 import { Registry } from './registry';
 
@@ -1433,7 +1433,7 @@ class OnscreenGamepad implements IInputHandler {
 }
 
 class SelectedPlayerIndexIcon extends SpriteObject {
-    static bouw(): machine_states {
+    static bouw(): StateMachineBlueprint {
         return {
             states: {
                 _default: {
