@@ -1,4 +1,4 @@
-import { BaseModel, BehaviorTreeDefinition, Component, Direction, GLView, Game, GameObject, GamepadInputMapping, InputMap, GamepadButton, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, ProhibitLeavingScreenComponent, RomPack, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, insavegame, new_area, new_vec2, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components } from 'bmsx';
+import { BaseModel, BehaviorTreeDefinition, Component, Direction, GLView, Game, GameObject, GamepadInputMapping, InputMap, GamepadButton, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, ProhibitLeavingScreenComponent, RomPack, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, insavegame, new_area, new_vec2, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components } from '../bmsx/bmsx';
 import { BitmapId } from './resourceids';
 
 var _game: Game;

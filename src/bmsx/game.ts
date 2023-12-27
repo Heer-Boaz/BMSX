@@ -17,15 +17,6 @@ declare global {
 }
 
 /**
- * Retrieves the game model and returns it as type T.
- * @returns The game model of type T.
- * @template T - The type of the game model.
- */
-export function get_gamemodel<T extends BaseModel = BaseModel>(): T {
-    return globalThis.model as T;
-}
-
-/**
  * Represents the game options.
  */
 export class GameOptions {

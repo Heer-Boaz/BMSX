@@ -1,11 +1,6 @@
 import { BitmapId } from './resourceids';
-import { get_gamemodel } from "../bmsx/game";
-import { SpriteObject } from "../bmsx/sprite";
 import { gamemodel } from "./gamemodel";
-import { StateMachineBlueprint, build_fsm } from '../bmsx/bfsm';
-import { Direction } from "../bmsx/game";
-
-const get_model = get_gamemodel<gamemodel>;
+import { Direction, SpriteObject, StateMachineBlueprint, build_fsm } from '../bmsx/bmsx';
 
 export class RoomMgr {
     constructor() {
@@ -17,7 +12,7 @@ export class RoomMgr {
     public adjacentRooms: Record<Direction, string>;
 
     public loadRoom(room_id: string) {
-        const model = get_model();
+        const model = $.modelAs<gamemodel>();
         model.currentRoomId = room_id;
         this.adjacentRooms = {} as Record<Direction, string>;
         if (!this.rooms[room_id]) {

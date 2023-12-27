@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "forceConsistentCasingInFileNames": false,
     /* Basic Options */
     "incremental": true, /* Enable incremental compilation */
     "composite": true, /* Enable project compilation */

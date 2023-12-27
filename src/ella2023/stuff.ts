@@ -1,13 +1,5 @@
-import { SpriteObject } from '../bmsx/sprite';
+import { DrawRectOptions, Msx1Colors, SpriteObject, StateMachineBlueprint, TextWriter, build_fsm, new_area3d, new_vec3 } from '../bmsx/bmsx';
 import { BitmapId } from './resourceids';
-import { StateMachineBlueprint, build_fsm } from '../bmsx/bfsm';
-import { get_gamemodel, new_area3d, new_vec3 } from '../bmsx/game';
-import { gamemodel } from './gamemodel';
-import { TextWriter } from '../bmsx/textwriter';
-import { DrawRectOptions } from '../bmsx/view';
-import { Msx1Colors } from '../bmsx/msx';
-
-const get_model = get_gamemodel<gamemodel>;
 
 export class GameOver extends SpriteObject {
     @build_fsm()
@@ -26,10 +18,10 @@ export class GameOver extends SpriteObject {
                         $.input.getPlayerInput(1).consumeActions(...priorityActions);
 
                         // If a priority action is pressed, go to the $.
-                        get_model().sc.to('titlescreen');
+                        $.model.sc.to('titlescreen');
                     },
                     end(this: GameOver) {
-                        get_model().sc.to('titlescreen');
+                        $.model.sc.to('titlescreen');
                     },
                 }
             }
@@ -75,7 +67,7 @@ export class Hoera extends SpriteObject {
 
                     },
                     end(this: Hoera) {
-                        get_model().sc.to('titlescreen');
+                        $.model.sc.to('titlescreen');
                     },
                 }
             }

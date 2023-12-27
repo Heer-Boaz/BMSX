@@ -1,4 +1,4 @@
-import { Constants, Direction, GameObject, Input, Msx1Colors, Msx1ExtColors, SM, Size, TextWriter, new_vec2, set_vec2, vec2, vec3, GameOptions as GO } from 'bmsx';
+import { Constants, Direction, GameObject, Input, Msx1Colors, Msx1ExtColors, SM, Size, TextWriter, new_vec2, set_vec2, vec2, vec3, GameOptions as GO } from '../bmsx/bmsx';
 import { AudioId, BitmapId } from './resourceids';
 
 interface MenuOption {

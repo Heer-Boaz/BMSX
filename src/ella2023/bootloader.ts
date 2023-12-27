@@ -1,4 +1,4 @@
-import { BFont, GLView, Game, MSX1ScreenHeight, MSX1ScreenWidth, RomPack, new_vec2 } from 'bmsx';
+import { BFont, GLView, Game, MSX1ScreenHeight, MSX1ScreenWidth, RomPack, new_vec2 } from '../bmsx/bmsx';
 import { gamemodel } from './gamemodel';
 import { BitmapId } from './resourceids';
 

@@ -4,12 +4,7 @@
         "composite": true, /* Enable project compilation */
         "declaration": true,
         "rootDir": "../",
-        "tsBuildInfoFile": "./tsconfig.buildinfo",
-        "paths": {
-            "bmsx": [
-                "../bmsx/bmsx.ts"
-            ]
-        }
+        "tsBuildInfoFile": "./tsconfig.buildinfo"
     },
     "include": [
         ".",

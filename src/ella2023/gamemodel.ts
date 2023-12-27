@@ -1,20 +1,11 @@
+import { BaseModel, Direction, GameObject, InputMap, MSX1ScreenHeight, MSX1ScreenWidth, SM, StateMachineBlueprint, build_fsm, insavegame, new_vec3, sstate, subscribesToGlobalEvent } from '../bmsx/bmsx';
 import { RoomMgr } from './roommgr';
 import { Sinterklaas } from './sinterklaas';
-import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
-import { sstate, build_fsm, StateMachineBlueprint } from '../bmsx/bfsm';
-import { insavegame } from '../bmsx/gameserializer';
-import { get_gamemodel, new_vec3 } from '../bmsx/game';
-import { GameObject } from '../bmsx/gameobject';
-import { BaseModel } from '../bmsx/basemodel';
 import { Player } from './eila';
-import type { Direction } from "../bmsx/game";
 import { Fighter } from './fighter';
-import { subscribesToGlobalEvent } from '../bmsx/eventemitter';
 import { Hud } from './hud';
-import { InputMap } from '../bmsx/input';
 import { keyboardInputMapping1, gamepadInputMapping } from './inputmapping';
 import { GameOver, Hoera, TitleScreen } from './stuff';
-import { SM } from '../bmsx/soundmaster';
 import { AudioId } from './resourceids';
 
 @insavegame
@@ -35,7 +26,7 @@ export class gamemodel extends BaseModel {
 
 	@subscribesToGlobalEvent('hit_animation_end')
 	public handleHitAnimationEndEvent(event_name: string, emitter: Fighter): void {
-		const model = get_gamemodel<gamemodel>();
+		const model = $.modelAs<gamemodel>();
 		const otherFighter = model.theOtherFighter(emitter);
 		if (otherFighter) {
 			otherFighter.hideHitMarker();
@@ -187,7 +178,7 @@ export class gamemodel extends BaseModel {
 	}
 
 	public override do_one_time_game_init(): this {
-		const _model = get_gamemodel<gamemodel>();
+		const _model = $.modelAs<gamemodel>();
 		_model.addSpace('gameover');
 		_model.addSpace('hoera');
 		_model.addSpace('titlescreen');

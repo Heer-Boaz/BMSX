@@ -13,7 +13,7 @@ import { GameObject } from '../bmsx/gameobject';
 import { base_model_spaces, BaseModel, spaceid_2_space } from '../bmsx/basemodel';
 import { SpriteObject } from '../bmsx/sprite';
 import { leavingScreenHandler_prohibit } from '../bmsx/collisioncomponents';
-import { RomPack, vec2 } from 'bmsx';
+import { RomPack, vec2 } from '../bmsx/bmsx';
 
 const TIME_TO_SHINE = 90;
 

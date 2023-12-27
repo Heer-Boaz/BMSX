@@ -1,14 +1,6 @@
-import { SpriteObject } from '../bmsx/sprite';
+import { GLView, Msx1Colors, SpriteObject, StateMachineBlueprint, TextWriter, build_fsm, new_area3d } from '../bmsx/bmsx';
 import { BitmapId } from './resourceids';
-import { StateMachineBlueprint, build_fsm } from '../bmsx/bfsm';
-import { get_gamemodel, new_area3d } from '../bmsx/game';
-import { GLView } from '../bmsx/glview';
-import { Msx1Colors } from '../bmsx/msx';
-import { gamemodel } from './gamemodel';
 import { Fighter } from './fighter';
-import { TextWriter } from '../bmsx/textwriter';
-
-const get_model = get_gamemodel<gamemodel>;
 
 export class Hud extends SpriteObject {
     @build_fsm()
@@ -26,7 +18,7 @@ export class Hud extends SpriteObject {
     override paint(): void {
         super.paint();
         // Update hitpoints
-        const model = get_model();
+        const model = $.model;
         const view = $.view as GLView;
         const player = model.getGameObject<Fighter>('player');
         const sinterklaas = model.getGameObject<Fighter>('sinterklaas');

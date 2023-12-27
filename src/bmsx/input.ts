@@ -3,10 +3,9 @@ import { handleDebugClick, handleDebugMouseDown, handleDebugMouseUp, handleDebug
 import { EventEmitter } from './eventemitter';
 import { ZCOORD_MAX } from './glview';
 import { SpriteObject } from './sprite';
-import { get_gamemodel } from './game';
-import { StateMachineBlueprint } from './bfsm';
 import type { IRegisterable, Identifier } from "./game";
 import { Registry } from './registry';
+import { StateMachineBlueprint } from './bfsm';
 
 export type ActionStateQuery = {
     filter?: string[];
@@ -164,7 +163,7 @@ class PendingAssignmentProcessor {
     }
 
     private createSelectPlayerIconIfNeeded(gamepadInput: GamepadInput, positionIndex: number) {
-        const model = get_gamemodel();
+        const model = $.model;
         if (!this.icon) { // If the joystick icon doesn't exist yet, create it
             const joystick_icon = new SelectedPlayerIndexIcon(gamepadInput.gamepadIndex);
             this.icon = joystick_icon;
@@ -216,8 +215,8 @@ class PendingAssignmentProcessor {
             }
         }
         else {
-            if (!get_gamemodel().getFromCurrentSpace(this.icon.id)) {
-                get_gamemodel().move_obj_to_space(this.icon.id, get_gamemodel().current_space_id);
+            if (!$.model.getFromCurrentSpace(this.icon.id)) {
+                $.model.move_obj_to_space(this.icon.id, $.model.current_space_id);
             }
             this.icon.x = this.calcIconPositionX(this.pendingIndex);
             if (this.checkNonConsumedPressed('a', gamepadInput)) {
@@ -244,7 +243,7 @@ class PendingAssignmentProcessor {
 
     removeIcon(): void {
         if (this.icon) {
-            get_gamemodel().exile(this.icon);
+            $.model.exile(this.icon);
             this.icon = undefined;
         }
     }

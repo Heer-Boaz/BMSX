@@ -1,4 +1,4 @@
-import { Direction, Identifier, SM, ScreenBoundaryComponent, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, insavegame, sstate, subscribesToParentScopedEvent, subscribesToSelfScopedEvent } from 'bmsx';
+import { Direction, Identifier, SM, ScreenBoundaryComponent, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, insavegame, sstate, subscribesToParentScopedEvent, subscribesToSelfScopedEvent } from '../bmsx/bmsx';
 import { AudioId, BitmapId } from './resourceids';
 import { Fighter } from './fighter';
 import { gamemodel } from './gamemodel';

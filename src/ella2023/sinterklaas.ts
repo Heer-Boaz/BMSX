@@ -1,17 +1,9 @@
-import { build_bt, BehaviorTreeDefinition, BTStatus } from "../bmsx/behaviourtree";
-import { assign_fsm, StateMachineBlueprint, sstate, build_fsm } from "../bmsx/bfsm";
-import { get_gamemodel } from "../bmsx/game";
-import { attach_components } from "../bmsx/component";
-import { subscribesToSelfScopedEvent } from "../bmsx/eventemitter";
-import { insavegame } from "../bmsx/gameserializer";
-import { SM } from "../bmsx/soundmaster";
-import { SpriteObject } from "../bmsx/sprite";
+import { BTStatus, BehaviorTreeDefinition, SM, SpriteObject, StateMachineBlueprint, assign_fsm, attach_components, build_bt, build_fsm, insavegame, sstate, subscribesToSelfScopedEvent } from '../bmsx/bmsx';
 import { JumpingWhileLeavingScreenComponent, Player } from "./eila";
 import { Fighter } from "./fighter";
 import { gamemodel } from "./gamemodel";
 import { AudioId, BitmapId } from "./resourceids";
 
-const get_model = get_gamemodel<gamemodel>;
 export type SinterklaasAttackType = 'punch' | 'lowkick' | 'highkick' | 'flyingkick' | 'mijter_throw';
 
 @insavegame
@@ -62,9 +54,8 @@ export class Sinterklaas extends Fighter {
 
     override handleFighterStukEvent(this: Fighter, _event_name: string, emitter: Fighter): void {
         this.sc.to('humiliated');
-        get_model().theOtherFighter(emitter).sc.to('stoerheidsdans');
+        $.modelAs<gamemodel>().theOtherFighter(emitter).sc.to('stoerheidsdans');
     }
-
 
     @build_fsm('sint_animation')
     public static buildAnimationFsm(): StateMachineBlueprint {
