@@ -5,7 +5,7 @@ import { Player } from './eila';
 import { Fighter } from './fighter';
 import { Hud } from './hud';
 import { keyboardInputMapping1, gamepadInputMapping } from './inputmapping';
-import { GameOver, Hoera, TitleScreen } from './stuff';
+import { GameOver, Gordijn, Hoera, TitleScreen } from './stuff';
 import { AudioId } from './resourceids';
 
 @insavegame
@@ -76,14 +76,18 @@ export class gamemodel extends BaseModel {
 					}
 				},
 				game: {
-					enter(this: gamemodel, s: sstate) {
-						s.reset();
-						SM.play(AudioId.start);
-						this.setSpace('niets');
+					enter(this: gamemodel, state: sstate) {
+						state.reset();
+						// this.setSpace('niets');
+						state.to('ffwachten');
 					},
 					states: {
 						_ffwachten: {
 							ticks2move: 150,
+							enter(this: gamemodel) {
+								SM.play(AudioId.start);
+								$.event_emitter.emit('its_curtains', this);
+							},
 							end(state: sstate) {
 								state.transition('oefenen');
 							},
@@ -135,7 +139,7 @@ export class gamemodel extends BaseModel {
 						if (!this.getGameObject('gameover')) {
 							this.spawn(new GameOver(), new_vec3(0, 0, 0));
 						}
-						SM.play(AudioId.gameover);
+						$.playAudio(AudioId.gameover);
 					},
 					run: BaseModel.defaultrun,
 				},
@@ -145,7 +149,7 @@ export class gamemodel extends BaseModel {
 						if (!this.getGameObject('hoera')) {
 							this.spawn(new Hoera(), new_vec3(0, 0, 0));
 						}
-						SM.play(AudioId.gameover);
+						$.playAudio(AudioId.gameover);
 					},
 					run: BaseModel.defaultrun,
 				},
@@ -154,7 +158,11 @@ export class gamemodel extends BaseModel {
 						this.setSpace('titlescreen');
 						if (!this.getGameObject('title')) {
 							this.spawn(new TitleScreen(), new_vec3(0, 0, 0));
+							if (!this.getGameObject('gordijn')) {
+								this.spawn(new Gordijn(), new_vec3(0, 0, 100));
+							}
 						}
+						this.getFromCurrentSpace('gordijn').sc.dispatch('reset', this);
 					},
 					run: BaseModel.defaultrun,
 					on: {
