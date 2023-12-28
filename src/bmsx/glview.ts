@@ -1,5 +1,5 @@
 import { new_vec2, new_vec3 } from './game';
-import type { Size } from './rompack';
+import type { ImgMeta, Size } from './rompack';
 import { BaseView, Color, DrawImgOptions, DrawRectOptions } from './view';
 
 function catchWebGLError(_target: any, propertyKey: string, descriptor: PropertyDescriptor): PropertyDescriptor {
@@ -30,10 +30,14 @@ function getWebGLErrorString(gl: WebGLRenderingContext, error: number): string {
     }
 }
 
+/**
+ * Represents a utility object for setting vertices, texture coordinates, z-coordinates, and colors of rectangles in a Float32Array.
+ */
 const bvec = {
     /**
      * Sets the vertices of a rectangle in a Float32Array, using the given parameters.
      * @param v - The Float32Array to set the vertices in.
+     * @param i - The offset in the Float32Array to start setting the vertices, in terms of rectangles.
      * @param x - The x-coordinate of the top-left corner of the rectangle.
      * @param y - The y-coordinate of the top-left corner of the rectangle.
      * @param w - The width of the rectangle.
@@ -41,36 +45,65 @@ const bvec = {
      * @param sx - The horizontal scaling factor.
      * @param sy - The vertical scaling factor.
      */
-    set: function (v: Float32Array, x: number, y: number, w: number, h: number, sx: number, sy: number): void {
+    set: function (v: Float32Array, i: number, x: number, y: number, w: number, h: number, sx: number, sy: number): void {
         const x2 = x + w * sx;
         const y2 = y + h * sy;
 
-        v[0] = x, v[1] = y,
-            v[2] = x2, v[3] = y,
-            v[4] = x, v[5] = y2,
-            v[6] = x, v[7] = y2,
-            v[8] = x2, v[9] = y,
-            v[10] = x2, v[11] = y2;
+        // Convert the rectangle index to the vertex index
+        const offset = i * 12;
+
+        v[offset] = x, v[offset + 1] = y,
+            v[offset + 2] = x2, v[offset + 3] = y,
+            v[offset + 4] = x, v[offset + 5] = y2,
+            v[offset + 6] = x, v[offset + 7] = y2,
+            v[offset + 8] = x2, v[offset + 9] = y,
+            v[offset + 10] = x2, v[offset + 11] = y2;
     },
+
     /**
-     * Sets the z-coordinates of a rectangle in a Float32Array, using the given parameter.
-     * @param v - The Float32Array to set the z-coordinates in.
-     * @param z - The z-coordinate of the rectangle.
+     * Sets the texcture coords of a rectangle in a Float32Array, using the given parameters.
+     * @param v - The Float32Array to set the vertices in.
+     * @param i - The offset in the Float32Array to start setting the vertices, in terms of rectangles.
+     * @param coords - The coordinates of the rectangle, in the format [ x, y, w, h, sx, sy ].
      */
-    set_zcoord: function (v: Float32Array, z: number): void {
-        for (let i = 0; i < 6; i++) {
-            v[i] = z;
+    set_texturecoords: function (v: Float32Array, i: number, coords: number[]): void {
+        // Convert the rectangle index to the texture coords index
+        const offset = i * 12;
+
+        for (let j = 0; j < 12; j++) {
+            v[offset + j] = coords[j];
         }
     },
+
+    /**
+     * Sets the z-coordinates of a rectangle in a Float32Array, using the given parameters.
+     * @param v - The Float32Array to set the z-coordinates in.
+     * @param i - The offset in the Float32Array to start setting the z-coordinates, in terms of rectangles.
+     * @param z - The z-coordinate of the rectangle.
+     */
+    set_zcoord: function (v: Float32Array, i: number, z: number): void {
+        // Convert the rectangle index to the vertex index
+        const offset = i * 6;
+
+        for (let j = 0; j < 6; j++) {
+            v[offset + j] = z;
+        }
+    },
+
     /**
      * Sets the color of a rectangle in a Float32Array, using the given Color object.
      * @param v - The Float32Array to set the color in.
+     * @param i - The offset in the Float32Array to start setting the color, in terms of rectangles.
      * @param color - The Color object to use for the rectangle's color.
      */
-    set_color: function (v: Float32Array, color: Color): void {
+    set_color: function (v: Float32Array, i: number, color: Color): void {
         const { r, g, b, a } = color;
-        for (let i = 0; i < 24; i += 4) {
-            v[i] = r, v[i + 1] = g, v[i + 2] = b, v[i + 3] = a;
+
+        // Convert the rectangle index to the color index
+        const offset = i * 24;
+
+        for (let j = 0; j < 24; j += 4) {
+            v[offset + j] = r, v[offset + j + 1] = g, v[offset + j + 2] = b, v[offset + j + 3] = a;
         }
     },
 };
@@ -79,19 +112,19 @@ export const DEFAULT_VERTEX_COLOR: Color = { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
 export const VERTEX_COLOR_COLORIZED_RED: Color = { r: 1.0, g: 0.0, b: 0.0, a: 1.0 };
 export const VERTEX_COLOR_COLORIZED_GREEN: Color = { r: 0.0, g: 1.0, b: 0.0, a: 1.0 };
 export const VERTEX_COLOR_COLORIZED_BLUE: Color = { r: 0.0, g: 0.0, b: 1.0, a: 1.0 };
-export const MAX_SPRITES = 1000;
+export const MAX_SPRITES = 256;
 const RESOLUTION_VECTOR_SIZE = 2;
-const VERTEX_COORDS_SIZE = 12;
-const TEX_COORDS_SIZE = 12;
-const Z_COORDS_SIZE = 6;
+const VERTEXCOORDS_SIZE = 12;
+const TEXTURECOORDS_SIZE = 12;
+const ZCOORDS_SIZE = 6;
 const COLOR_OVERRIDE_SIZE = 24;
 
-const POSITION_BUFFER_SIZE = 12;
-const TEXCOORD_BUFFER_SIZE = 12;
-const Z_BUFFER_SIZE = 1;
-const COLOR_OVERRIDE_BUFFER_SIZE = 24;
-const POSITION_ATTRIBUTE_SIZE = 2;
-const TEXCOORD_ATTRIBUTE_SIZE = 2;
+// const VERTEXCOORDS_BUFFER_SIZE = 12;
+// const TEXCOORD_BUFFER_SIZE = 12;
+// const Z_BUFFER_SIZE = 1;
+// const COLOR_OVERRIDE_BUFFER_SIZE = 24;
+const VERTEX_ATTRIBUTE_SIZE = 2;
+const TEXTURECOORD_ATTRIBUTE_SIZE = 2;
 const ZCOORD_ATTRIBUTE_SIZE = 1;
 const COLOR_OVERRIDE_ATTRIBUTE_SIZE = 4;
 
@@ -107,32 +140,34 @@ export abstract class GLView extends BaseView {
     public glctx: WebGL2RenderingContext;
     private textures: { [key: number]: WebGLTexture; };
     private program: WebGLProgram;
-    private positionLocation: number;
+    private vertexLocation: number;
     private texcoordLocation: number;
     private zcoordLocation: number;
     private color_overrideLocation: number;
     private resolutionLocation: WebGLUniformLocation;
     private textureLocation: WebGLUniformLocation;
-    private positionBuffer: WebGLBuffer;
+    private vertexBuffer: WebGLBuffer;
     private texcoordBuffer: WebGLBuffer;
     private zBuffer: WebGLBuffer;
-    private additionalPositionBuffer: WebGLBuffer;
+    private additionalVertexBuffer: WebGLBuffer;
     private additionalTexcoordBuffer: WebGLBuffer;
     private depthBuffer: WebGLBuffer;
     private color_overrideBuffer: WebGLBuffer;
-    private readonly resolutionVector: Float32Array = new Float32Array(RESOLUTION_VECTOR_SIZE);
-    private readonly vertexcoords: Float32Array = new Float32Array(VERTEX_COORDS_SIZE);
-    private readonly texcoords: Float32Array = new Float32Array(TEX_COORDS_SIZE);
-    private readonly zcoords: Float32Array = new Float32Array(Z_COORDS_SIZE);
-    private readonly color_override: Float32Array = new Float32Array(COLOR_OVERRIDE_SIZE);
+    private readonly vertex_shader_data = {
+        resolutionVector: new Float32Array(RESOLUTION_VECTOR_SIZE),
+        vertexcoords: GLView.getTextureCoordinates(),
+        texcoords: new Float32Array(TEXTURECOORDS_SIZE * MAX_SPRITES),
+        zcoords: new Float32Array(ZCOORDS_SIZE * MAX_SPRITES),
+        color_override: new Float32Array(COLOR_OVERRIDE_SIZE * MAX_SPRITES),
+    }
     private imagesToDraw: { options: DrawImgOptions, imgmeta: any }[] = [];
 
     private additionalTexcoordLocation: GLint;
     private additionalResolutionLocation: WebGLUniformLocation;
     private additionalTimeLocation: WebGLUniformLocation;
     private additionalRandomLocation: WebGLUniformLocation;
-    private additionalPositionLocation: GLint;
-    private additionalProgram: WebGLProgram;
+    private additionalVertexLocation: GLint;
+    private additionalProgram: WebGLProgram; a
     private framebuffer: WebGLFramebuffer;
     private isRendering: boolean = false;
     private needsResize: boolean = false;
@@ -312,7 +347,6 @@ void main() {
         }) as WebGL2RenderingContext;
     }
 
-    @catchWebGLError
     override init(): void {
         super.init();
         this.setupGLContext();
@@ -333,7 +367,7 @@ void main() {
     private createAdditionalVertexBuffer(): void {
         const gl = this.glctx;
         // Define the vertex positions for a full-screen quad (in clip space)
-        const positions = new Float32Array([
+        const vertices = new Float32Array([
             -1.0, -1.0, // bottom left
             1.0, -1.0, // bottom right
             -1.0, 1.0, // top left
@@ -343,10 +377,10 @@ void main() {
         ]);
 
         // Create a new buffer and bind the vertex position data to it
-        bvec.set(positions, 0, 0, this.canvas.width, this.canvas.height, 1, 1);
-        this.additionalPositionBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.additionalPositionBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+        bvec.set(vertices, 0, 0, 0, this.canvas.width, this.canvas.height, 1, 1);
+        this.additionalVertexBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.additionalVertexBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
     }
 
     @catchWebGLError
@@ -395,22 +429,22 @@ void main() {
     @catchWebGLError
     private setupAdditionalLocations(): void {
         const gl = this.glctx;
-        this.resolutionVector.set([this.viewportSize.x, this.viewportSize.y]);
+        this.vertex_shader_data.resolutionVector.set([this.viewportSize.x, this.viewportSize.y]);
         const locations = {
-            position: gl.getAttribLocation(this.additionalProgram, "a_position"),
-            texcoord: gl.getAttribLocation(this.additionalProgram, "a_texcoord"),
+            vertex: gl.getAttribLocation(this.additionalProgram, "a_position"),
+            texturecoord: gl.getAttribLocation(this.additionalProgram, "a_texcoord"),
             resolution: gl.getUniformLocation(this.additionalProgram, "u_resolution"),
             random: gl.getUniformLocation(this.additionalProgram, "u_random"),
             time: gl.getUniformLocation(this.additionalProgram, "u_time")
         };
-        this.additionalPositionLocation = locations.position;
-        this.additionalTexcoordLocation = locations.texcoord;
+        this.additionalVertexLocation = locations.vertex;
+        this.additionalTexcoordLocation = locations.texturecoord;
         this.additionalResolutionLocation = locations.resolution;
         this.additionalTimeLocation = locations.time;
         this.additionalRandomLocation = locations.random;
 
         // Enable the position attribute for the shader
-        gl.enableVertexAttribArray(this.additionalPositionLocation);
+        gl.enableVertexAttribArray(this.additionalVertexLocation);
 
         // Enable the texcoord attribute for the shader
         gl.enableVertexAttribArray(this.additionalTexcoordLocation);
@@ -419,14 +453,14 @@ void main() {
     @catchWebGLError
     private setupBuffers(): void {
         const buffers = {
-            position: this.createBuffer(POSITION_BUFFER_SIZE),
-            texcoord: this.createBuffer(TEXCOORD_BUFFER_SIZE, this.getTextureCoordinates()),
-            z: this.createBuffer(Z_BUFFER_SIZE),
-            color_override: this.createBuffer(COLOR_OVERRIDE_BUFFER_SIZE),
+            vertex: this.createBuffer(this.vertex_shader_data.vertexcoords),
+            texturecoord: this.createBuffer(this.vertex_shader_data.texcoords),
+            z: this.createBuffer(this.vertex_shader_data.zcoords),
+            color_override: this.createBuffer(this.vertex_shader_data.color_override),
         };
 
-        this.positionBuffer = buffers.position;
-        this.texcoordBuffer = buffers.texcoord;
+        this.vertexBuffer = buffers.vertex;
+        this.texcoordBuffer = buffers.texturecoord;
         this.zBuffer = buffers.z;
         this.color_overrideBuffer = buffers.color_override;
     }
@@ -435,16 +469,15 @@ void main() {
     private setupAttributes(): void {
         this.glctx.useProgram(this.program);
 
-        this.setupAttribute(this.positionBuffer, this.positionLocation, POSITION_ATTRIBUTE_SIZE);
-        this.setupAttribute(this.texcoordBuffer, this.texcoordLocation, TEXCOORD_ATTRIBUTE_SIZE);
+        this.setupAttribute(this.vertexBuffer, this.vertexLocation, VERTEX_ATTRIBUTE_SIZE);
+        this.setupAttribute(this.texcoordBuffer, this.texcoordLocation, TEXTURECOORD_ATTRIBUTE_SIZE);
         this.setupAttribute(this.zBuffer, this.zcoordLocation, ZCOORD_ATTRIBUTE_SIZE);
         this.setupAttribute(this.color_overrideBuffer, this.color_overrideLocation, COLOR_OVERRIDE_ATTRIBUTE_SIZE);
     }
 
-    @catchWebGLError
     private setupUniforms(): void {
-        this.resolutionVector.set([this.canvas.width, this.canvas.height]);
-        this.glctx.uniform2fv(this.resolutionLocation, this.resolutionVector);
+        this.vertex_shader_data.resolutionVector.set([this.canvas.width, this.canvas.height]);
+        this.glctx.uniform2fv(this.resolutionLocation, this.vertex_shader_data.resolutionVector);
         this.glctx.uniform1i(this.textureLocation, 0);
     }
 
@@ -487,14 +520,14 @@ void main() {
     @catchWebGLError
     private setupLocations(): void {
         const gl = this.glctx;
-        this.resolutionVector.set([this.viewportSize.x, this.viewportSize.y]);
+        this.vertex_shader_data.resolutionVector.set([this.viewportSize.x, this.viewportSize.y]);
         const locations = {
-            position: gl.getAttribLocation(this.program, "a_position"),
+            vertex: gl.getAttribLocation(this.program, "a_position"),
             texcoord: gl.getAttribLocation(this.program, "a_texcoord"),
             zcoord: gl.getAttribLocation(this.program, "a_pos_z"),
             color_override: gl.getAttribLocation(this.program, "a_color_override")
         };
-        this.positionLocation = locations.position;
+        this.vertexLocation = locations.vertex;
         this.texcoordLocation = locations.texcoord;
         this.zcoordLocation = locations.zcoord;
         this.color_overrideLocation = locations.color_override;
@@ -503,11 +536,11 @@ void main() {
     }
 
     @catchWebGLError
-    private createBuffer(size: number, data?: Float32Array): WebGLBuffer {
+    private createBuffer(data?: Float32Array): WebGLBuffer {
         const gl = this.glctx;
         const buffer = gl.createBuffer()!;
         gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-        gl.bufferData(gl.ARRAY_BUFFER, data || new Float32Array(size * MAX_SPRITES), gl.DYNAMIC_DRAW);
+        gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
         return buffer;
     }
 
@@ -519,10 +552,9 @@ void main() {
         gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0);
     }
 
-    @catchWebGLError
-    private getTextureCoordinates(): Float32Array {
-        const textureCoordinates = new Float32Array(TEXCOORD_BUFFER_SIZE * MAX_SPRITES);
-        for (let i = 0; i < TEXCOORD_BUFFER_SIZE * MAX_SPRITES - TEXCOORD_BUFFER_SIZE; i += TEXCOORD_BUFFER_SIZE) {
+    private static getTextureCoordinates(): Float32Array {
+        const textureCoordinates = new Float32Array(VERTEXCOORDS_SIZE * MAX_SPRITES);
+        for (let i = 0; i < VERTEXCOORDS_SIZE * MAX_SPRITES - VERTEXCOORDS_SIZE; i += VERTEXCOORDS_SIZE) {
             textureCoordinates.set([
                 0.0, 0.0,
                 1.0, 0.0,
@@ -661,7 +693,6 @@ void main() {
         this.needsResize = false;
     }
 
-    @catchWebGLError
     override drawgame(clearCanvas: boolean = true): void {
         this.isRendering = true;
         super.drawgame(clearCanvas);
@@ -772,9 +803,9 @@ void main() {
         gl.bindTexture(gl.TEXTURE_2D, this.textures['additional']);
 
         // Bind the vertex position buffer
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.additionalPositionBuffer);
-        gl.vertexAttribPointer(this.additionalPositionLocation, 2, gl.FLOAT, false, 0, 0);
-        gl.enableVertexAttribArray(this.additionalPositionLocation);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.additionalVertexBuffer);
+        gl.vertexAttribPointer(this.additionalVertexLocation, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(this.additionalVertexLocation);
 
         // Bind the texcoord buffer
         gl.bindBuffer(gl.ARRAY_BUFFER, this.additionalTexcoordBuffer);
@@ -816,31 +847,6 @@ void main() {
         const _this = $.view as GLView;
         const gl = _this.glctx;
 
-        /**
-         * Sort the images by depth.
-         * This is done here instead of in drawgame so that the images are sorted based on their depth at the
-         * position they should be drawn and not based on the GameObject that they are attached to.
-         */
-        this.imagesToDraw.sort((i1, i2) => (i1.options.pos.z ?? 0) - (i2.options.pos.z ?? 0));
-
-        // Update the buffers with the new data and draw the images to the texture using the main shader
-        const { vertexcoords, texcoords, zcoords, color_override } = this;
-        let i = 0;
-        for (const { options, imgmeta } of this.imagesToDraw) {
-            const { pos, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 }, colorize = DEFAULT_VERTEX_COLOR } = options;
-            const { width, height } = imgmeta;
-
-            bvec.set(vertexcoords, pos.x, pos.y, width, height, scale.x, scale.y);
-            texcoords.set(this.getTexCoords(flip.flip_h, flip.flip_v, imgmeta));
-            bvec.set_zcoord(zcoords, (pos.z ?? 0) / ZCOORD_MAX);
-            bvec.set_color(color_override, colorize);
-
-            const bufferOffset = BUFFER_OFFSET_MULTIPLIER * i;
-            this.updateBuffers(gl, bufferOffset, vertexcoords, texcoords, zcoords, color_override, i);
-
-            ++i;
-        }
-
         // Bind the framebuffer so that the rendering output goes to the texture
         this.glctx.bindFramebuffer(this.glctx.FRAMEBUFFER, this.framebuffer);
         // Set the viewport to the dimensions of the 'additional' texture
@@ -848,9 +854,9 @@ void main() {
         gl.bindTexture(gl.TEXTURE_2D, this.textures['_atlas']);
 
         // Bind the position buffer and set the position attribute
-        gl.bindBuffer(gl.ARRAY_BUFFER, _this.positionBuffer);
-        gl.vertexAttribPointer(_this.positionLocation, 2, gl.FLOAT, false, 0, 0);
-        gl.enableVertexAttribArray(_this.positionLocation);
+        gl.bindBuffer(gl.ARRAY_BUFFER, _this.vertexBuffer);
+        gl.vertexAttribPointer(_this.vertexLocation, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(_this.vertexLocation);
 
         // Bind the texcoord buffer and set the texcoord attribute
         gl.bindBuffer(gl.ARRAY_BUFFER, _this.texcoordBuffer);
@@ -862,8 +868,40 @@ void main() {
         gl.vertexAttribPointer(_this.zcoordLocation, 1, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(_this.zcoordLocation);
 
-        gl.drawArrays(gl.TRIANGLES, 0, 6 * this.imagesToDraw.length);
+        /**
+         * Sort the images by depth.
+         * This is done here instead of in drawgame so that the images are sorted based on their depth at the
+         * position they should be drawn and not based on the GameObject that they are attached to.
+         */
+        this.imagesToDraw.sort((i1, i2) => (i1.options.pos.z ?? 0) - (i2.options.pos.z ?? 0));
 
+        // Update the buffers with the new data and draw the images to the texture using the main shader
+        const { vertexcoords, texcoords, zcoords, color_override } = this.vertex_shader_data;
+        let i = 0;
+        // let totalAwesomeness = 0;
+        for (const { options, imgmeta } of this.imagesToDraw) {
+            const { pos, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 }, colorize = DEFAULT_VERTEX_COLOR } = options;
+            const { width, height } = imgmeta;
+
+            bvec.set(vertexcoords, i, pos.x, pos.y, width, height, scale.x, scale.y);
+            bvec.set_texturecoords(texcoords, i, this.getTexCoords(flip.flip_h, flip.flip_v, imgmeta));
+            bvec.set_zcoord(zcoords, i, (pos.z ?? 0) / ZCOORD_MAX);
+            bvec.set_color(color_override, i, colorize);
+
+            ++i;
+            // ++totalAwesomeness;
+            if (i >= MAX_SPRITES) {
+                this.updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, 0);
+                gl.drawArrays(gl.TRIANGLES, 0, 6 * i);
+                i = 0;
+            }
+        }
+
+        if (i > 0) {
+            this.updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, 0);
+            gl.drawArrays(gl.TRIANGLES, 0, 6 * i);
+        }
+        // console.log(`Total awesomeness: ${totalAwesomeness}`);
         // Clear the list of images to draw for the next frame
         this.imagesToDraw = [];
     }
@@ -887,7 +925,6 @@ void main() {
      * @param options An object containing the image's position, size, and other options.
      * @throws An error if the image metadata cannot be found.
      */
-    @catchWebGLError
     override drawImg(options: DrawImgOptions): void {
         const { imgid } = options;
         const imgmeta = global.rom['img_assets'][imgid]?.['imgmeta'];
@@ -908,7 +945,7 @@ void main() {
         this.imagesToDraw.push({ options: distinct_options_object, imgmeta });
     }
 
-    private getTexCoords(flip_h: boolean, flip_v: boolean, imgmeta: any): Float32Array {
+    private getTexCoords(flip_h: boolean, flip_v: boolean, imgmeta: ImgMeta): number[] {
         if (flip_h && flip_v) {
             return imgmeta['texcoords_fliphv'];
         } else if (flip_h) {
@@ -921,9 +958,9 @@ void main() {
     }
 
     @catchWebGLError
-    private updateBuffers(gl: WebGLRenderingContext, bufferOffset: number, vertexcoords: Float32Array, texcoords: Float32Array, zcoords: Float32Array, color_override: Float32Array, index: number): void {
-        GLView.updateBuffer(gl, this.positionBuffer, gl.ARRAY_BUFFER, bufferOffset, vertexcoords);
-        GLView.updateBuffer(gl, this.texcoordBuffer, gl.ARRAY_BUFFER, bufferOffset, texcoords);
+    private updateBuffers(gl: WebGLRenderingContext, vertexcoords: Float32Array, texcoords: Float32Array, zcoords: Float32Array, color_override: Float32Array, index: number): void {
+        GLView.updateBuffer(gl, this.vertexBuffer, gl.ARRAY_BUFFER, BUFFER_OFFSET_MULTIPLIER * index, vertexcoords);
+        GLView.updateBuffer(gl, this.texcoordBuffer, gl.ARRAY_BUFFER, BUFFER_OFFSET_MULTIPLIER * index, texcoords);
         GLView.updateBuffer(gl, this.zBuffer, gl.ARRAY_BUFFER, ZCOORD_BUFFER_OFFSET_MULTIPLIER * index, zcoords);
         GLView.updateBuffer(gl, this.color_overrideBuffer, gl.ARRAY_BUFFER, COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER * index, color_override);
     }
@@ -950,7 +987,7 @@ void main() {
         // Draw the left border
         this.drawImg({ pos: new_vec3(x, y, z), imgid: imgid, scale: new_vec2(1, ey - y), colorize: c });
         // Draw the right border
-        this.drawImg({ pos: new_vec3(ex - 1, y, z), imgid: imgid, scale: new_vec2(1, ey - y), colorize: c });
+        this.drawImg({ pos: new_vec3(ex, y, z), imgid: imgid, scale: new_vec2(1, ey - y), colorize: c });
     }
 
     override fillRectangle(options: DrawRectOptions): void {
