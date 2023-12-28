@@ -40,6 +40,9 @@ export abstract class Fighter extends SpriteObject {
                     },
                     exit(this: Fighter) {
                         this.sc.resume_all_statemachines();
+                        // This is needed to quickly end the animation of the attack action.
+                        // Must be done after the state machine is resumed, otherwise the event will not be handled.
+                        $.emit('i_hit_face', this);
                     },
                 },
                 wel_au: {
@@ -55,7 +58,7 @@ export abstract class Fighter extends SpriteObject {
                     },
                     end(this: Fighter) {
                         this.sc.to('hitanimation.geen_au');
-                        $.event_emitter.emit('hit_animation_end', this);
+                        $.emit('hit_animation_end', this);
                     },
                     exit(this: Fighter) {
                         this.sc.resume_all_statemachines();
@@ -94,8 +97,7 @@ export abstract class Fighter extends SpriteObject {
             opponent.handleBeingHit(attackType, this);
             hit = true;
         }
-        if (hit) { $.event_emitter.emit('i_hit_face', this); }
-         return hit;
+        return hit;
     }
 
     public attackHitsOpponent(_attackType: AttackType, opponent: Fighter): Area | null {
