@@ -747,15 +747,6 @@ export class PlayerInput {
      * @returns Whether the action is currently pressed for the given player index.
      */
     public getActionState(action: string): ActionState {
-        // let pressed = false, consumed = false, presstime = null;
-
-        // for (const handler of this.inputHandlers) {
-        //     const buttonState = handler.getButtonState(this.inputMap?.gamepad?.[action] ? Input.BUTTON2INDEX[this.inputMap.gamepad[action]] : null);
-        //     pressed = pressed || buttonState.pressed;
-        //     consumed = consumed || buttonState.consumed;
-        //     presstime = presstime ?? buttonState.presstime;
-        // }
-
         const inputMap = this.inputMap;
         if (!inputMap) return { action, pressed: false, consumed: false, presstime: null };
 
@@ -830,7 +821,7 @@ export class PlayerInput {
         }
     }
 
-    public consumeActions(...actions: ActionState[] | string[]) {
+    public consumeActions(...actions: (ActionState | string)[]) {
         actions.forEach(action => this.consumeAction(action));
     }
 
