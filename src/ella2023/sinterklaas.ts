@@ -1,4 +1,4 @@
-import { BTStatus, BehaviorTreeDefinition, SM, SpriteObject, StateMachineBlueprint, assign_fsm, attach_components, build_bt, build_fsm, insavegame, sstate, subscribesToSelfScopedEvent } from '../bmsx/bmsx';
+import { BTStatus, BehaviorTreeDefinition, SM, SpriteObject, StateMachineBlueprint, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, insavegame, sstate, subscribesToSelfScopedEvent } from '../bmsx/bmsx';
 import { JumpingWhileLeavingScreenComponent, Player } from "./eila";
 import { Fighter } from "./fighter";
 import { gamemodel } from "./gamemodel";
@@ -8,6 +8,7 @@ export type SinterklaasAttackType = 'punch' | 'lowkick' | 'highkick' | 'flyingki
 
 @insavegame
 @assign_fsm('sint_animation')
+@assign_bt('sinterklaasBT')
 @attach_components(JumpingWhileLeavingScreenComponent)
 export class Sinterklaas extends Fighter {
     constructor() {
@@ -232,50 +233,157 @@ export class Sinterklaas extends Fighter {
 
     }
 
-    @build_bt('enemyBehaviorTree')
+    @build_bt('sinterklaasBT')
     public static buildEnemyBehaviorTree(): BehaviorTreeDefinition {
-        function isPlayerInRange(this: Sinterklaas): boolean {
-            // Logic to determine if the player is in range
-            return false; // Placeholder logic
+        function getOpponentRange(this: Fighter): [number, number] {
+            const theOther = $.modelAs<gamemodel>().theOtherFighter(this);
+
+            if (theOther) {
+                const dx = Math.abs(theOther.center_x - this.center_x);
+                const dy = Math.abs(theOther.center_y - this.center_y);
+
+                // Check if the player is within range
+                return [dx, dy];
+            }
+            return [Number.MAX_VALUE, Number.MAX_VALUE];
         }
 
-        function isPlayerAttacking(this: Sinterklaas): boolean {
+        // @ts-ignore
+        function isPlayerInPunchRange(this: Fighter): boolean {
+            const [dx] = getOpponentRange.apply(this);
+            const RANGE = (this.sx / 5) * 3; // Define the range
+
+            if (dx <= RANGE) {
+                return true;
+            }
+
+            return false;
+        }
+
+        // @ts-ignore
+        function isPlayerInKickRange(this: Fighter): boolean {
+            const [dx] = getOpponentRange.apply(this);
+            const RANGE = (this.sx / 4) * 3; // Define the range
+
+            if (dx <= RANGE) {
+                return true;
+            }
+
+            return false;
+        }
+
+        function isPlayerFarAway(this: Fighter): boolean {
+            const [dx] = getOpponentRange.apply(this);
+            const RANGE = this.sx * 2.5; // Define the range
+
+            if (dx >= RANGE) {
+                return true;
+            }
+
+            return false;
+        }
+
+        // @ts-ignore
+        function isPlayerAttacking(this: Fighter): boolean {
             // Logic to check if the player is attacking
+            const theOther = $.modelAs<gamemodel>().theOtherFighter(this);
+            if (theOther) {
+                return theOther.isAttacking;
+            }
             return false; // Placeholder logic
         }
 
-        function performAttackMove1(this: Sinterklaas): BTStatus {
-            // Logic for attack move 1
+        // @ts-ignore
+        function punch(this: Fighter): BTStatus {
+            this.sc.dispatch('go_punch', this);
             return 'SUCCESS';
         }
 
-        function performAttackMove2(this: Sinterklaas): BTStatus {
-            // Logic for attack move 2
+        // @ts-ignore
+        function highkick(this: Fighter): BTStatus {
+            this.sc.dispatch('go_highkick', this);
             return 'SUCCESS';
         }
 
-        function performSpecialMove(this: Sinterklaas): BTStatus {
-            // Logic for special move
+        function performJump(this: Fighter): BTStatus {
+            this.sc.dispatch('go_jump', this, this.facing);
             return 'SUCCESS';
         }
 
-        function block(this: Sinterklaas): BTStatus {
-            // Logic for block action
+        // @ts-ignore
+        function jumpkick(this: Fighter): BTStatus {
+            this.sc.dispatch('go_flyingkick', this, this.facing);
             return 'SUCCESS';
         }
 
-        function dodge(this: Sinterklaas): BTStatus {
-            // Logic for dodge action
-            return 'SUCCESS';
-        }
+        // function performDuckkick(this: Sinterklaas): BTStatus {
+        //     this.sc.dispatch('go_duckkick', this);
+        //     return 'SUCCESS';
+        // }
 
-        function counter(this: Sinterklaas): BTStatus {
-            // Logic for counter action
-            return 'SUCCESS';
-        }
+        // function performSpecialMove(this: Sinterklaas): BTStatus {
+        //     // Logic for special move
+        //     return 'SUCCESS';
+        // }
 
-        function idle(this: Sinterklaas): BTStatus {
+        // function block(this: Sinterklaas): BTStatus {
+        //     // Logic for block action
+        //     return 'SUCCESS';
+        // }
+
+        // function dodge(this: Sinterklaas): BTStatus {
+        //     // Logic for dodge action
+        //     return 'SUCCESS';
+        // }
+
+        // @ts-ignore
+        function idle(this: Fighter): BTStatus {
             // Logic for idle behavior
+            this.sc.dispatch('go_idle', this);
+            return 'SUCCESS';
+        }
+
+        function walk(this: Fighter): BTStatus {
+            // Logic for walk behavior
+            this.sc.dispatch('go_walk', this, this.facing);
+            this.x += this.facing === 'left' ? -Fighter.SPEED : Fighter.SPEED;
+            return 'SUCCESS';
+        }
+
+        function isAttacking(this: Fighter): boolean {
+            return this.isAttacking;
+        }
+
+        function isNotAttacking(this: Fighter): boolean {
+            return !this.isAttacking;
+        }
+
+        function isJumping(this: Fighter): boolean {
+            return this.isJumping;
+        }
+
+        function isNotJumping(this: Fighter): boolean {
+            return !this.isJumping;
+        }
+
+        function faceYourFoe(this: Fighter): BTStatus {
+            const theOther = $.modelAs<gamemodel>().theOtherFighter(this);
+            let targetFacing: 'left' | 'right';
+            if (theOther) {
+                if (theOther.center_x > this.center_x) {
+                    targetFacing = 'right';
+                } else {
+                    targetFacing = 'left';
+                }
+            }
+            else return 'FAILED';
+
+            if (this.facing === targetFacing) return 'SUCCESS';
+
+            if (isAttacking.apply(this)) return 'FAILED';
+            if (isJumping.apply(this)) return 'FAILED';
+
+            this.facing = targetFacing;
             return 'SUCCESS';
         }
 
@@ -287,15 +395,64 @@ export class Sinterklaas extends Fighter {
                     children: [
                         {
                             type: 'Condition',
-                            condition: isPlayerInRange
+                            condition: isNotAttacking
                         },
                         {
-                            type: 'RandomSelector',
-                            currentchild_propname: 'currentAttackMove',
+                            type: 'Selector',
                             children: [
-                                { type: 'Action', action: performAttackMove1 },
-                                { type: 'Action', action: performAttackMove2 },
-                                { type: 'Action', action: performSpecialMove }
+                                {
+                                    type: 'Sequence', children: [
+                                        { type: 'Condition', condition: isJumping },
+                                        { type: 'Condition', condition: isPlayerInKickRange },
+                                        { type: 'Action', action: faceYourFoe },
+                                        { type: 'Action', action: jumpkick }
+                                    ]
+                                },
+                                {
+                                    type: 'Sequence', children: [
+                                        { type: 'Condition', condition: isNotJumping },
+                                        { type: 'Action', action: faceYourFoe },
+                                        // { type: 'Decorator', decorator: InvertorDecorator, child: { type: 'Condition', condition: isJumping } },
+                                        {
+                                            type: 'RandomSelector',
+                                            currentchild_propname: 'currentRandomAttackMove',
+                                            children: [
+                                                {
+                                                    type: 'Sequence',
+                                                    children: [
+                                                        { type: 'Condition', condition: isPlayerInPunchRange },
+                                                        { type: 'Action', action: punch },
+                                                    ],
+                                                },
+                                                {
+                                                    type: 'Sequence',
+                                                    children: [
+                                                        { type: 'Condition', condition: isPlayerInKickRange },
+                                                        { type: 'Action', action: highkick },
+                                                    ],
+                                                },
+                                                // { type: 'Action', action: performDuckkick },
+                                                // { type: 'Action', action: performSpecialMove }
+                                            ]
+                                        }
+                                    ]
+                                },
+                            ]
+                        },
+                    ]
+                },
+                {
+                    type: 'Sequence',
+                    children: [
+                        { type: 'Condition', condition: isPlayerFarAway },
+                        { type: 'Condition', condition: isNotAttacking },
+                        { type: 'Condition', condition: isNotJumping },
+                        { type: 'Action', action: faceYourFoe },
+                        {
+                            type: 'RandomSelector',
+                            currentchild_propname: 'currentDefenseMove',
+                            children: [
+                                { type: 'Action', action: performJump },
                             ]
                         }
                     ]
@@ -303,25 +460,16 @@ export class Sinterklaas extends Fighter {
                 {
                     type: 'Sequence',
                     children: [
-                        {
-                            type: 'Condition',
-                            condition: isPlayerAttacking
-                        },
-                        {
-                            type: 'RandomSelector',
-                            currentchild_propname: 'currentDefenseMove',
-                            children: [
-                                { type: 'Action', action: block },
-                                { type: 'Action', action: dodge },
-                                { type: 'Action', action: counter }
-                            ]
-                        }
+                        { type: 'Condition', condition: isNotAttacking },
+                        { type: 'Condition', condition: isNotJumping },
+                        { type: 'Action', action: faceYourFoe },
+                        { type: 'Action', action: walk }
                     ]
                 },
-                {
-                    type: 'Action',
-                    action: idle
-                }
+                // {
+                //     type: 'Action',
+                //     action: idle
+                // }
             ]
         };
     }

@@ -96,9 +96,24 @@ export class Player extends Fighter {
         return {
             states: {
                 _idle: {
+                    on: {
+                        $go_idle: 'idle',
+                        $go_walk: {
+                            do(this: Fighter) {
+                                this.sc.to('walk');
+                            },
+                        },
+                        $go_punch: 'punch',
+                        $go_highkick: 'highkick',
+                        $go_lowkick: 'lowkick',
+                        $go_duckkick: 'duckkick',
+                        $go_duck: 'duck',
+                        $go_jump: 'jump',
+                    },
                     process_input: default_input_processor,
                     enter(this: Fighter) {
                         this.sc.to(statemachine + '.idle');
+                        this.attacking = false;
                     },
                 },
                 humiliated: {
@@ -164,6 +179,7 @@ export class Player extends Fighter {
                         if (!this.sc.is(statemachine + '.walk')) {
                             this.sc.to(statemachine + '.walk');
                         }
+                        this.attacking = false;
                     },
                 },
                 punch: {
@@ -176,19 +192,31 @@ export class Player extends Fighter {
                     enter(this: Fighter) {
                         this.sc.to(statemachine + '.highkick');
                         this.doAttackFlow('highkick', $.modelAs<gamemodel>().theOtherFighter(this));
+                        this.attacking = true;
                     },
+                    exit(this: Fighter) {
+                        this.attacking = false;
+                    }
                 },
                 lowkick: {
                     enter(this: Fighter) {
                         this.sc.to(statemachine + '.lowkick');
                         this.doAttackFlow('lowkick', $.modelAs<gamemodel>().theOtherFighter(this));
+                        this.attacking = true;
                     },
+                    exit(this: Fighter) {
+                        this.attacking = false;
+                    }
                 },
                 duckkick: {
                     enter(this: Fighter) {
                         this.sc.to(statemachine + '.duckkick');
                         this.doAttackFlow('dickkick', $.modelAs<gamemodel>().theOtherFighter(this));
+                        this.attacking = true;
                     },
+                    exit(this: Fighter) {
+                        this.attacking = false;
+                    }
                 },
                 duck: {
                     process_input(this: Fighter) {
@@ -226,9 +254,11 @@ export class Player extends Fighter {
                         this.sc.to(`${class_name}.jump.jump_up`, directional);
                         this.sc.to(statemachine + '.jump');
                         this.getComponent(JumpingWhileLeavingScreenComponent).enabled = true;
+                        this.jumping = true;
                     },
                     exit(this: Fighter) {
                         this.getComponent(JumpingWhileLeavingScreenComponent).enabled = false;
+                        this.jumping = false;
                     },
                     process_input(this: Fighter) {
                         const kickActions = $.input.getPlayerInput(this.playerIndex).getPressedActions({ pressed: true, consumed: false, filter: ['lowkick', 'highkick'] });
@@ -286,7 +316,8 @@ export class Player extends Fighter {
                             states: {
                                 _normal: {
                                     on: {
-                                        flyingkick: 'flyingkick',
+                                        $go_flyingkick: 'flyingkick',
+                                        $flyingkick: 'flyingkick',
                                     },
                                 },
                                 flyingkick: {
@@ -296,9 +327,11 @@ export class Player extends Fighter {
                                     enter(this: Fighter, _state: sstate) {
                                         this.sc.machines[statemachine].to('flyingkick');
                                         this.doAttackFlow('flyingkick', $.modelAs<gamemodel>().theOtherFighter(this));
+                                        this.attacking = true;
                                     },
                                     exit(this: Fighter) {
                                         this.sc.machines[statemachine].to('jump');
+                                        this.attacking = false;
                                     },
                                 },
                             },
