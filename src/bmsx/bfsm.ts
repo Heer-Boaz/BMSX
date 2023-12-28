@@ -118,7 +118,16 @@ function addEventListToDefinition(machine: StateMachineBlueprint): void {
 }
 
 function getStateMachineEvents(machine: StateMachineBlueprint, eventNamesAndScopes?: Set<listed_sdef_event>) {
-	function add(name: string, scope: string): void {
+	function add(name: string, definition: string | StateEventDefinition): void {
+		if (typeof definition === 'string') {
+			addAndReplace(removeScopeFromEventName(name), parseScopeFromEventName(name));
+		}
+		else {
+			addAndReplace(removeScopeFromEventName(name), definition.scope ?? parseScopeFromEventName(name));
+		}
+	}
+
+	function addAndReplace(name: string, scope: string): void {
 		if (events.has({ name: name, scope: 'all' })) return; // If the event is already in the set, and the scope is global, don't add it again
 		if (events.has({ name: name, scope: scope })) return; // If the event is already in the set, and the scope is the same, don't add it again
 		events.add({ name: name, scope: scope });
@@ -135,6 +144,14 @@ function getStateMachineEvents(machine: StateMachineBlueprint, eventNamesAndScop
 	}
 
 	const events = eventNamesAndScopes ?? new Set<listed_sdef_event>();
+	// Start with the events defined in the machine definition
+	if (machine.on) {
+		for (const name in machine.on) {
+			const definition = machine.on[name];
+			add(name, definition);
+		}
+	}
+
 	for (const stateId in machine.states) {
 		const state = machine.states[stateId];
 		const state_def = state;
@@ -142,12 +159,7 @@ function getStateMachineEvents(machine: StateMachineBlueprint, eventNamesAndScop
 		if (state_def.on) {
 			for (const name in state_def.on) {
 				const definition = state_def.on[name];
-				if (typeof definition === 'string') {
-					add(removeScopeFromEventName(name), parseScopeFromEventName(name));
-				}
-				else {
-					add(removeScopeFromEventName(name), definition.scope ?? parseScopeFromEventName(name));
-				}
+				add(name, definition);
 			}
 			// Remove all '$' prefixes from the event names
 			state_def.on = Object.fromEntries(Object.entries(state_def.on).map(([name, value]) => [removeScopeFromEventName(name), value]));
@@ -173,6 +185,18 @@ function validateStateMachine(machinedef: sdef): void {
 
 	// Get all state names
 	const stateNames = Object.keys(machinedef.states);
+
+	// Check the defined event state transitions for the machine definition to see if they are valid
+	const transitions = machinedef.on; // Get the transitions for the machine if they exist
+	if (transitions) {
+		for (const targetState of Object.values(transitions)) { // Get the target state for each transition
+			if (typeof targetState === 'string') { // If the target state is a string, check if it exists
+				if (!stateNames.includes(targetState)) { // Check if the target state exists
+					throw new Error(`Invalid event transition target '${targetState}' in the highest-level (i.e. not a (sub)state) of machine '${machinedef.id}'.`);
+				}
+			}
+		}
+	}
 
 	// Check the defined event state transitions for each state in the machine definition to see if they are valid
 	for (const state of stateNames) {
@@ -458,18 +482,7 @@ export class bfsm_controller {
 	}
 
 	private auto_dispatch(this: IStateful, event_name: string, emitter: Identifier | IIdentifiable, ...args: any[]): void {
-		const emitter_id = typeof emitter === 'string' ? emitter : emitter.id;
-
-		// Dispatch the event to the current machine
-		this.sc.current_machine.dispatch(event_name, emitter_id, ...args); // Note: this.sc is the state machine controller of the object that is subscribed to the event
-
-		// Dispatch the event to all machines that are running in parallel with the current machine (i.e., all parallel machines except the current machine)
-		for (const id in this.sc.statemachines) { // Note: this.sc is the state machine controller of the object that is subscribed to the event
-			if (this.sc.current_machine_id === id) continue; // Skip the current machine, as the event has already been dispatched to that machine
-			if (this.sc.statemachines[id].paused) continue; // Skip paused machines
-			if (!this.sc.statemachines[id].parallel) continue; // Skip machines that are not running in parallel
-			this.sc.statemachines[id].dispatch(event_name, emitter_id, ...args);
-		}
+		this.sc.dispatch(event_name, emitter, ...args);
 	}
 
 	/**
@@ -972,7 +985,7 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 				const targetStateId = state_id_or_handler.to; // Get the target state ID from the state transition object
 
 				// If the emitter ID is provided and it is not the same as the emitter ID of the event, do nothing
-				if (emitterId && emitterId !== emitter_id) {
+				if (emitterId && emitterId !== 'all' && emitterId !== emitter_id) {
 					return false; // Return false to indicate that the event was not handled
 				}
 
