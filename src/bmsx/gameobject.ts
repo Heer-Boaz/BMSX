@@ -118,6 +118,18 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 	public get sz(): number { return this.size.z; }
 	public set sz(sz: number) { this.size.z = sz; }
 
+	public get center(): vec2 {
+		return new_vec2(this.x + this.size.x / 2, this.y + this.size.y / 2);
+	}
+
+	public get center_x(): number {
+		return this.x + this.size.x / 2;
+	}
+
+	public get center_y(): number {
+		return this.y + this.size.y / 2;
+	}
+
 	/**
 	 * The StatemachineController of the game object.
 	 */
@@ -584,6 +596,9 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 	 */
 	@update_tagged_components('run')
 	public run(): void {
+		for (const bt_id in this.behaviortreeIds) {
+			this.tickTree(bt_id);
+		}
 		this.sc.run();
 	}
 }
