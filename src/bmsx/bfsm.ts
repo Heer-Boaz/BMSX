@@ -124,6 +124,16 @@ function getStateMachineEvents(machine: StateMachineBlueprint, eventNamesAndScop
 		events.add({ name: name, scope: scope });
 	}
 
+	function parseScopeFromEventName(name: string): EventScope {
+		if (name.startsWith('$')) return 'self';
+		return 'all';
+	}
+
+	function removeScopeFromEventName(name: string): string {
+		if (name.startsWith('$')) return name.slice(1);
+		return name;
+	}
+
 	const events = eventNamesAndScopes ?? new Set<listed_sdef_event>();
 	for (const stateId in machine.states) {
 		const state = machine.states[stateId];
@@ -133,13 +143,16 @@ function getStateMachineEvents(machine: StateMachineBlueprint, eventNamesAndScop
 			for (const name in state_def.on) {
 				const definition = state_def.on[name];
 				if (typeof definition === 'string') {
-					add(name, 'all');
+					add(removeScopeFromEventName(name), parseScopeFromEventName(name));
 				}
 				else {
-					add(name, definition.scope ?? 'self');
+					add(removeScopeFromEventName(name), definition.scope ?? parseScopeFromEventName(name));
 				}
 			}
+			// Remove all '$' prefixes from the event names
+			state_def.on = Object.fromEntries(Object.entries(state_def.on).map(([name, value]) => [removeScopeFromEventName(name), value]));
 		}
+
 		// If the state has a submachine, recursively subscribe to its events
 		if (state_def.states) {
 			getStateMachineEvents(state, events);
@@ -338,7 +351,7 @@ export class bfsm_controller {
 		this.initLoadSetup();
 
 		// Start all state machines
-		for ( const id in this.statemachines) {
+		for (const id in this.statemachines) {
 			this.statemachines[id].start(); // Start the state machine with the given id (i.e., set the start state as the current state) and run the start state (i.e., run the start state's 'onenter' function)
 		}
 	}
@@ -352,7 +365,7 @@ export class bfsm_controller {
 			const events = machine.definition?.event_list;
 			if (events && events.length > 0) {
 				events.forEach(event => {
-					let scope = event.scope ?? 'self';
+					let scope = event.scope;
 					switch (scope) {
 						case 'self':
 							scope = machine.target; // If the scope is 'self', subscribe to the event with the given name and scope and dispatch it to the machine with the given id and scope, using the `target`-object as the event filter (i.e., only dispatch the event if the emitter is the target object)
@@ -1333,6 +1346,15 @@ export class sdef {
 	/**
 	 * Represents the mapping of event types to state IDs for transitions to other states based on events (e.g. 'click' => 'idle').
 	 * At the individual state level, the `on` property defines the transitions that can occur from that specific state.
+	 * NOTE: If the `event_name` starts with a `$` (e.g. `$click`), the event will be triggered on the *local scope* (= self). Otherwise, it will be triggered on the *global scope*.
+	 * @example
+	 * ```typescript
+	   * {
+		 *	'$click': 'idle',
+	   *	'game_end': 'prepare_for_end_of_the_world_I_mean_game',
+	 *		'$drag': { if: (state: sstate) => state.data.dragging, do: (state: sstate) => state.data.dragging = false, to: 'idle', scope: 'self' },
+	   * }
+	 * ```
 	 */
 	public on?: { [key: string]: Identifier | StateEventDefinition };
 
