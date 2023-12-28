@@ -175,7 +175,7 @@ export class Player extends Fighter {
                 highkick: {
                     enter(this: Fighter) {
                         this.sc.to(statemachine + '.highkick');
-                      this.doAttackFlow('highkick', $.modelAs<gamemodel>().theOtherFighter(this));
+                        this.doAttackFlow('highkick', $.modelAs<gamemodel>().theOtherFighter(this));
                     },
                 },
                 lowkick: {
@@ -349,7 +349,7 @@ export class Player extends Fighter {
             on: {
                 i_hit_face: {
                     do(state: sstate) {
-                        state.setTicksNoSideEffect(state.definition.ticks2move - 1);
+                        state.current.setTicksNoSideEffect(state.current.definition.ticks2move - 1);
                     }
                 }
             },
