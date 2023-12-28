@@ -887,6 +887,10 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		return this.registry.get(id);
 	}
 
+	public getGameObject<T extends GameObject>(id: Identifier): T {
+		return this.model.getGameObject<T>(id);
+	}
+
 	public has(id: Identifier): boolean {
 		return this.registry.has(id);
 	}
