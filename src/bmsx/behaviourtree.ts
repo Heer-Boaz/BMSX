@@ -125,7 +125,6 @@ function updateAllAssignedBTs(constructor: any) {
 
     while (currentClass && currentClass !== Object) {
         if (currentClass.linkedBTs) {
-            11
             currentClass.linkedBTs.forEach((bt: BehaviorTreeID) => linkedBTs.add(bt));
         }
         currentClass = Object.getPrototypeOf(currentClass);
@@ -346,7 +345,6 @@ export class ParallelNode extends BTNode {
 }
 
 type NodeDecorator = (status: BTStatus, targetid: Identifier, blackboard: Blackboard) => BTStatus;
-
 export class DecoratorNode extends BTNode {
     public child: BTNode;
     public decorator: (status: BTStatus, targetid: Identifier, blackboard: Blackboard) => BTStatus;
@@ -364,6 +362,13 @@ export class DecoratorNode extends BTNode {
     }
 }
 
+export let InvertorDecorator: NodeDecorator = (status: BTStatus, _targetid: Identifier, _blackboard: Blackboard) => {
+    if (status === 'SUCCESS') return 'FAILED';
+    if (status === 'FAILED') return 'SUCCESS';
+    return status;
+};
+
+
 export let WaitForActionCompletionDecorator: NodeDecorator = (status: BTStatus, _targetid: Identifier, blackboard: Blackboard) => {
     if (status === 'RUNNING') {
         blackboard.actionInProgress = true;
@@ -372,6 +377,7 @@ export let WaitForActionCompletionDecorator: NodeDecorator = (status: BTStatus, 
     }
     return status;
 };
+
 
 type NodeCondition = (blackboard: Blackboard) => boolean;
 
@@ -436,7 +442,6 @@ export class RandomSelectorNode extends BTNode {
         return feedback;
     }
 }
-
 
 /**
  * Represents a node in a behavior tree that limits the number of times its child node can be executed.
