@@ -119,10 +119,6 @@ const TEXTURECOORDS_SIZE = 12;
 const ZCOORDS_SIZE = 6;
 const COLOR_OVERRIDE_SIZE = 24;
 
-// const VERTEXCOORDS_BUFFER_SIZE = 12;
-// const TEXCOORD_BUFFER_SIZE = 12;
-// const Z_BUFFER_SIZE = 1;
-// const COLOR_OVERRIDE_BUFFER_SIZE = 24;
 const VERTEX_ATTRIBUTE_SIZE = 2;
 const TEXTURECOORD_ATTRIBUTE_SIZE = 2;
 const ZCOORD_ATTRIBUTE_SIZE = 1;
@@ -205,69 +201,64 @@ export abstract class GLView extends BaseView {
 		in vec4 v_color_override;
 		out vec4 outputColor;
 
+        // MSX1 color palette
+        const vec3 palette[16] = vec3[](
+            vec3(0.0, 0.0, 0.0), // Transparent
+            vec3(0.0, 0.0, 0.0), // Black
+            vec3(0.0, 241.0/255.0, 20.0/255.0), // Medium Green
+            vec3(68.0/255.0, 249.0/255.0, 86.0/255.0), // Light Green
+            vec3(85.0/255.0, 79.0/255.0, 255.0/255.0), // Dark Blue
+            vec3(128.0/255.0, 111.0/255.0, 255.0/255.0), // Light Blue
+            vec3(250.0/255.0, 80.0/255.0, 51.0/255.0), // Dark Red
+            vec3(12.0/255.0, 255.0/255.0, 255.0/255.0), // Cyan
+            vec3(255.0/255.0, 81.0/255.0, 52.0/255.0), // Medium Red
+            vec3(255.0/255.0, 115.0/255.0, 86.0/255.0), // Light Red
+            vec3(226.0/255.0, 210.0/255.0, 4.0/255.0), // Dark Yellow
+            vec3(242.0/255.0, 217.0/255.0, 71.0/255.0), // Light Yellow
+            vec3(4.0/255.0, 212.0/255.0, 19.0/255.0), // Dark Green
+            vec3(231.0/255.0, 80.0/255.0, 229.0/255.0), // Magenta
+            vec3(208.0/255.0, 208.0/255.0, 208.0/255.0), // Gray
+            vec3(255.0/255.0, 255.0/255.0, 255.0/255.0) // White
+        );
+
+        // Function to find the closest color in the palette
+        vec3 findClosestColor(vec3 color) {
+            highp float minDistance = distance(color, palette[0]);
+            vec3 closestColor = palette[0]; for (int i = 1; i < 16; i++) {
+                float currentDistance = distance(color, palette[i]);
+                if (currentDistance < minDistance) {
+                    minDistance = currentDistance;
+                    closestColor = palette[i];
+                }
+            } return closestColor;
+        }
+
 		void main() {
-			lowp vec4 color = texture(u_texture, v_texcoord) * v_color_override; // Sample the texture and multiply by the color_override
-            // if (color.a < 0.1) { // Discard transparent pixels
-            //     discard; // Don't draw the pixel
-            // }
-			outputColor = color;
+			vec4 texColor = texture(u_texture, v_texcoord) * v_color_override; // Sample the texture and multiply by the color_override
+            // vec3 msxColor = findClosestColor(texColor.rgb); // Apply MSX1 color palette emulation
+            // outputColor = vec4(msxColor, texColor.a); // Set the output color
+
+			outputColor = texColor;
 		}`;
 
-    // MSX1 color palette
-    // const vec3 palette[16] = vec3[](
-    //     vec3(0.0, 0.0, 0.0), // Transparent
-    //     vec3(0.0, 0.0, 0.0), // Black
-    //     vec3(0.0, 241.0/255.0, 20.0/255.0), // Medium Green
-    //     vec3(68.0/255.0, 249.0/255.0, 86.0/255.0), // Light Green
-    //     vec3(85.0/255.0, 79.0/255.0, 255.0/255.0), // Dark Blue
-    //     vec3(128.0/255.0, 111.0/255.0, 255.0/255.0), // Light Blue
-    //     vec3(250.0/255.0, 80.0/255.0, 51.0/255.0), // Dark Red
-    //     vec3(12.0/255.0, 255.0/255.0, 255.0/255.0), // Cyan
-    //     vec3(255.0/255.0, 81.0/255.0, 52.0/255.0), // Medium Red
-    //     vec3(255.0/255.0, 115.0/255.0, 86.0/255.0), // Light Red
-    //     vec3(226.0/255.0, 210.0/255.0, 4.0/255.0), // Dark Yellow
-    //     vec3(242.0/255.0, 217.0/255.0, 71.0/255.0), // Light Yellow
-    //     vec3(4.0/255.0, 212.0/255.0, 19.0/255.0), // Dark Green
-    //     vec3(231.0/255.0, 80.0/255.0, 229.0/255.0), // Magenta
-    //     vec3(208.0/255.0, 208.0/255.0, 208.0/255.0), // Gray
-    //     vec3(255.0/255.0, 255.0/255.0, 255.0/255.0) // White
-    // );
+        // // Define a 3x3 blur kernel
+        // const float kernel[9] = float[](
+        //     0.0, 1.0/4.0, 0.0,
+        //     1.0/4.0, 1.0/2.0, 1.0/4.0,
+        //     0.0, 1.0/4.0, 0.0
+        // );
 
-    // // Function to find the closest color in the palette
-    // vec3 findClosestColor(vec3 color) {
-    //     float minDistance = distance(color, palette[0]);
-    //     vec3 closestColor = palette[0]; for (int i = 1; i < 16; i++) {
-    //         float currentDistance = distance(color, palette[i]);
-    //         if (currentDistance < minDistance) {
-    //             minDistance = currentDistance;
-    //             closestColor = palette[i];
-    //         }
-    //     } return closestColor;
-    // }
-
-
-    // // Define a 3x3 blur kernel
-    // const float kernel[9] = float[](
-    //     0.0, 1.0/4.0, 0.0,
-    //     1.0/4.0, 1.0/2.0, 1.0/4.0,
-    //     0.0, 1.0/4.0, 0.0
-    // );
-
-    // vec3 applyBlur(vec2 uv) {
-    //     vec3 blurredColor = vec3(0.0);
-    //     for (int y = -1; y <= 1; y++) {
-    //         for (int x = -1; x <= 1; x++) {
-    //             vec2 offset = vec2(x, y) / u_resolution;
-    //             vec3 color = textureLod(u_texture, uv + offset, 0.0).rgb;
-    //             blurredColor += color * kernel[(y + 1) * 3 + (x + 1)];
-    //         }
-    //     }
-    //     return blurredColor;
-    // }
-
-
-    // Apply MSX1 color palette emulation
-    // texColor = findClosestMSX1Color(texColor); // Implement this function
+        // vec3 applyBlur(vec2 uv) {
+        //     vec3 blurredColor = vec3(0.0);
+        //     for (int y = -1; y <= 1; y++) {
+        //         for (int x = -1; x <= 1; x++) {
+        //             vec2 offset = vec2(x, y) / u_resolution;
+        //             vec3 color = textureLod(u_texture, uv + offset, 0.0).rgb;
+        //             blurredColor += color * kernel[(y + 1) * 3 + (x + 1)];
+        //         }
+        //     }
+        //     return blurredColor;
+        // }
 
     public static readonly fragmentShaderCRTCode: string =
         `#version 300 es
@@ -965,13 +956,7 @@ void main() {
         GLView.updateBuffer(gl, this.color_overrideBuffer, gl.ARRAY_BUFFER, COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER * index, color_override);
     }
 
-    override drawRectangle(options: DrawRectOptions): void {
-        let { start: { x, y, z }, end: { x: ex, y: ey } } = options.area; // Note that DrawImg will handle z = undefined
-        const c = options.color;
-
-        // Use the white pixel image and color it with the desired color
-        const imgid = 'whitepixel';
-        // Reverse x and ex if ex < x
+    private correctAreaStartEnd(x: number, y: number, ex: number, ey: number) {
         if (ex < x) {
             [x, ex] = [ex, x];
         }
@@ -979,6 +964,18 @@ void main() {
         if (ey < y) {
             [y, ey] = [ey, y];
         }
+
+        return [x, y, ex, ey];
+    }
+
+    override drawRectangle(options: DrawRectOptions): void {
+        let { start: { x, y, z }, end: { x: ex, y: ey } } = options.area; // Note that DrawImg will handle z = undefined
+        const c = options.color;
+
+        // Use the white pixel image and color it with the desired color
+        const imgid = 'whitepixel';
+
+        [ x, y, ex, ey ] = this.correctAreaStartEnd(x, y, ex, ey);
 
         // Draw the top border
         this.drawImg({ pos: new_vec3(x, y, z), imgid: imgid, scale: new_vec2(ex - x, 1), colorize: c });
@@ -996,14 +993,7 @@ void main() {
 
         // Use the white pixel image and color it with the desired color
         const imgid = 'whitepixel';
-        // Reverse x and ex if ex < x
-        if (ex < x) {
-            [x, ex] = [ex, x];
-        }
-        // Reverse y and ey if ey < y
-        if (ey < y) {
-            [y, ey] = [ey, y];
-        }
+        [ x, y, ex, ey ] = this.correctAreaStartEnd(x, y, ex, ey);
 
         // Draw and stretch the image to fill the rectangle
         this.drawImg({ pos: new_vec3(x, y, z), imgid: imgid, scale: new_vec2(ex - x, ey - y), colorize: c });

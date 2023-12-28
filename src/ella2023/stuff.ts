@@ -1,4 +1,4 @@
-import { DrawRectOptions, Msx1Colors, SpriteObject, StateMachineBlueprint, TextWriter, build_fsm, new_area3d, new_vec3 } from '../bmsx/bmsx';
+import { DrawRectOptions, GameObject, Msx1Colors, SpriteObject, StateMachineBlueprint, TextWriter, build_fsm, new_area3d, new_vec3, sstate } from '../bmsx/bmsx';
 import { BitmapId } from './resourceids';
 
 export class GameOver extends SpriteObject {
@@ -124,5 +124,53 @@ export class TitleScreen extends SpriteObject {
     constructor() {
         super('title');
         this.imgid = BitmapId.title;
+    }
+}
+
+export class Gordijn extends GameObject {
+    private width;
+
+    @build_fsm()
+    static bouw(): StateMachineBlueprint {
+        return {
+            on: {
+                $its_curtains: 'its_curtains_for_you',
+                curtained: '_idle',
+            },
+            states: {
+                _idle: {
+                },
+                its_curtains_for_you: {
+                    ticks2move: 5,
+                    tape: [8],
+                    repetitions: 256 / 8,
+                    enter(this: Gordijn, state: sstate) {
+                        this.width = 0;
+                        state.reset();
+                    },
+                    next(this: Gordijn, state: sstate) {
+                        this.width += state.current_tape_value;
+                    },
+                    end(this: Gordijn) {
+                        $.event_emitter.emit('curtained', this);
+                    },
+                },
+            }
+        }
+    }
+
+    constructor() {
+        super('gordijn');
+        this.z = 200;
+        this.width = 0;
+    }
+
+    override paint(): void {
+        if (this.width === 0) {
+            return;
+        }
+        super.paint();
+        const options: DrawRectOptions = { area: new_area3d(0, 0, this.z + 1, 256, 192, this.z), color: Msx1Colors[0] };
+        $.view.fillRectangle(options);
     }
 }

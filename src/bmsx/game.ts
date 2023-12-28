@@ -574,11 +574,24 @@ export function set_inplace_area(a: Area, n: Area): void {
  * @returns The newly created area.
  */
 export function new_area(sx: number, sy: number, ex: number, ey: number): Area {
-    return { start: { x: sx, y: sy, z: undefined }, end: { x: ex, y: ey, z: undefined } };
+    return new_area3d(sx, sy, undefined, ex, ey, undefined);
 }
 
 export function new_area3d(sx: number, sy: number, sz: number, ex: number, ey: number, ez?: number): Area {
+    [sx, sy, ex, ey] = correctAreaStartEnd(sx, sy, ex, ey);
     return { start: { x: sx, y: sy, z: sz }, end: { x: ex, y: ey, z: ez } };
+}
+
+function correctAreaStartEnd(x: number, y: number, ex: number, ey: number) {
+    if (ex < x) {
+        [x, ex] = [ex, x];
+    }
+    // Reverse y and ey if ey < y
+    if (ey < y) {
+        [y, ey] = [ey, y];
+    }
+
+    return [x, y, ex, ey];
 }
 
 export function middlepoint_area(a: Area): vec2 {
