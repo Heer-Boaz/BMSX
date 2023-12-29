@@ -883,8 +883,8 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		this.event_emitter.emit(event_name, emitter, ...args);
 	}
 
-	public get(id: Identifier): IRegisterable {
-		return this.registry.get(id);
+	public get<T extends IRegisterable>(id: Identifier): T {
+		return this.registry.get<T>(id);
 	}
 
 	public getGameObject<T extends GameObject>(id: Identifier): T {

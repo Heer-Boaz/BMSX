@@ -1,4 +1,4 @@
-import { BTStatus, BehaviorTreeDefinition, SM, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, insavegame, sstate, subscribesToSelfScopedEvent } from '../bmsx/bmsx';
+import { BTStatus, BTVisualizer, BehaviorTreeDefinition, SM, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, insavegame, sstate, subscribesToSelfScopedEvent } from '../bmsx/bmsx';
 import { JumpingWhileLeavingScreenComponent, Player } from "./eila";
 import { Fighter } from "./fighter";
 import { gamemodel } from "./gamemodel";
@@ -9,7 +9,7 @@ export type SinterklaasAttackType = 'punch' | 'lowkick' | 'highkick' | 'flyingki
 @insavegame
 @assign_fsm('sint_animation')
 @assign_bt('sinterklaasBT')
-@attach_components(JumpingWhileLeavingScreenComponent)
+@attach_components(JumpingWhileLeavingScreenComponent, BTVisualizer)
 export class Sinterklaas extends Fighter {
     constructor() {
         super('sinterklaas', undefined, 'right', 2);

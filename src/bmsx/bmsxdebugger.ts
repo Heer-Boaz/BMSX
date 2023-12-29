@@ -11,7 +11,7 @@ import type { vec2 } from './rompack';
 import { SpriteObject } from './sprite';
 import { Color } from './view';
 import { EventEmitter } from './eventemitter';
-import { BehaviorTreeDefinitions } from './behaviourtree';
+import { BehaviorTreeDefinitions, BTNode } from './behaviourtree';
 import { Registry } from './registry';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
 
@@ -66,6 +66,39 @@ export class StateMachineVisualizer extends Component {
 		}
 		if (!this.machineElements || !this.stateElements) {
 			[, this.machineElements, this.stateElements] = visualizeStateMachine(this.dialog.getDialogElement(), this.dialog.getContentElement(), this.bfsmController);
+			this.dialog.updateSize();
+		}
+
+	}
+}
+
+@componenttags_postprocessing('render') // Postprocessing update to render the state machine
+export class BTVisualizer extends Component {
+	private dialog: FloatingDialog;
+	private machineElements: Map<string, HTMLElement>;
+
+	constructor(_id: Identifier) {
+		super(_id);
+		this.enabled = false;
+	}
+
+	override postprocessingUpdate(): void {
+		this.openDialog();
+		[, this.machineElements ] = visualizeBehaviorTree(this.dialog.getContentElement(), $.get<GameObject>(this.parentid));
+	}
+
+	public closeDialog(): void {
+		this.dialog.close();
+		this.dialog = null;
+		this.machineElements = null;
+	}
+
+	public openDialog(): void {
+		if (!this.dialog) {
+			this.dialog = new FloatingDialog(`BT: [${this.parentid}]`);
+		}
+		if (!this.machineElements) {
+			[, this.machineElements ] = visualizeBehaviorTree(this.dialog.getContentElement(), $.get<GameObject>(this.parentid));
 			this.dialog.updateSize();
 		}
 
@@ -681,6 +714,67 @@ function highlightCurrentState(stateElements: Map<string, HTMLElement>, machineE
 		let machine = bfsmController.machines[machineName];
 		updateMachineClasses(machine, machineName, true, machineName);
 	}
+}
+function visualizeBehaviorTree(container: HTMLElement, btController: GameObject): [addContentTo: HTMLElement, nodeElements: Map<string, HTMLElement>] {
+	let baseTable = addContent(container, 'table', null) as HTMLTableElement;
+	let nodeElements = new Map<string, HTMLElement>();
+
+	// Recursive function to visualize a behavior tree
+	function visualizeNode(node: BTNode, nodeName: string, parentElement: HTMLElement, path: string): void {
+		let table = addContent(parentElement, 'table', null);
+
+		// Add a row for the node name
+		let nodeNameRow = addContent(table, 'th', null);
+		let nodeNameCell = addContent(nodeNameRow, 'td', nodeName);
+		nodeElements.set(path, nodeNameCell);
+
+		// Find the node in the execution path
+		let nodeInPath = btController.blackboards[node.id].executionPath.find(n => n.node.id === node.id);
+
+		// Add a row for the node result
+		let nodeResultRow = addContent(table, 'tr', null);
+		let nodeResultCell = addContent(nodeResultRow, 'td', 'Result: ' + (nodeInPath ? nodeInPath.result : 'Not executed'));
+		nodeResultCell.classList.add('result');
+
+		// If the node is a composite node, visualize its children
+		let any_node = node as any;
+		if (any_node.child) {
+			let childNode = any_node.child;
+			let childNodeRow = addContent(table, 'tr', null);
+			let childNodeCell = addContent(childNodeRow, 'td', childNode.name);
+			childNodeCell.classList.add('node');
+
+			const newPath = `${path}.child`;
+			visualizeNode(childNode, childNode.name, childNodeCell, newPath);
+		}
+
+		if (any_node.children) {
+			for (let i = 0; i < any_node.children.length; i++) {
+				let childNode = any_node.children[i];
+				let childNodeRow = addContent(table, 'tr', null);
+				let childNodeCell = addContent(childNodeRow, 'td', childNode.name);
+				childNodeCell.classList.add('node');
+
+				const newPath = `${path}.${i}`;
+				visualizeNode(childNode, childNode.name, childNodeCell, newPath);
+			}
+		}
+
+		parentElement.appendChild(table);
+	}
+
+	// Visualize each tree in the btController
+	for (let treeName in btController.behaviortreeIds) {
+		let tree = btController.behaviortrees[treeName];
+		let treeRow = addContent(baseTable, 'tr', null);
+		// let treeCell = addContent(treeRow, 'td', treeName);
+
+		let subTableCell = addContent(treeRow, 'td', null) as HTMLTableCellElement;
+
+		visualizeNode(tree, treeName, subTableCell, treeName);
+	}
+
+	return [container, nodeElements];
 }
 
 function toggleFullscreenOnElement(el: HTMLElement) {

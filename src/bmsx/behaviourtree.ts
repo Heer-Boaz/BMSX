@@ -179,6 +179,7 @@ export class Blackboard implements IIdentifiable {
     public id: string;
     public data: { [key: string]: any } = {};
     public nodedata: { [key: string]: any } = {};
+    public executionPath: { node: BTNode, result: BTNodeFeedback }[] = [];
 
     constructor(_id: string) {
         this.id = _id;
@@ -245,6 +246,15 @@ export abstract class BTNode implements IIdentifiable {
     constructor(id: BehaviorTreeID, _priority = 0) {
         this.id = id;
         this.priority = _priority;
+    }
+    debug_tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
+        // Call the actual tick method
+        const result = this.tick(targetid, blackboard);
+
+        // Add this node and its result to the execution path
+        blackboard.executionPath.push({ node: this, result });
+
+        return result;
     }
 
     abstract tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback;
