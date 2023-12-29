@@ -72,7 +72,7 @@ export class gamemodel extends BaseModel {
 			states: {
 				_game_start: {
 					run(this: gamemodel, state: sstate) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
-						state.transition('titlescreen');
+						state.transition('game.knokken');
 					}
 				},
 				game: {

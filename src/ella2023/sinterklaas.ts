@@ -1,4 +1,4 @@
-import { BTStatus, BehaviorTreeDefinition, SM, SpriteObject, StateMachineBlueprint, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, insavegame, sstate, subscribesToSelfScopedEvent } from '../bmsx/bmsx';
+import { BTStatus, BehaviorTreeDefinition, SM, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, insavegame, sstate, subscribesToSelfScopedEvent } from '../bmsx/bmsx';
 import { JumpingWhileLeavingScreenComponent, Player } from "./eila";
 import { Fighter } from "./fighter";
 import { gamemodel } from "./gamemodel";
@@ -295,23 +295,27 @@ export class Sinterklaas extends Fighter {
 
         // @ts-ignore
         function punch(this: Fighter): BTStatus {
+            if (isBusy.apply(this)) return 'RUNNING';
             this.sc.dispatch('go_punch', this);
             return 'SUCCESS';
         }
 
         // @ts-ignore
         function highkick(this: Fighter): BTStatus {
+            if (isBusy.apply(this)) return 'RUNNING';
             this.sc.dispatch('go_highkick', this);
             return 'SUCCESS';
         }
 
         function performJump(this: Fighter): BTStatus {
+            if (isAttacking.apply(this)) return 'FAILED';
             this.sc.dispatch('go_jump', this, this.facing);
             return 'SUCCESS';
         }
 
         // @ts-ignore
         function jumpkick(this: Fighter): BTStatus {
+            if (!isJumping.apply(this) || isAttacking.apply(this)) return 'RUNNING';
             this.sc.dispatch('go_flyingkick', this, this.facing);
             return 'SUCCESS';
         }
@@ -338,12 +342,14 @@ export class Sinterklaas extends Fighter {
 
         // @ts-ignore
         function idle(this: Fighter): BTStatus {
+            if (isBusy.apply(this)) return 'FAILED';
             // Logic for idle behavior
             this.sc.dispatch('go_idle', this);
             return 'SUCCESS';
         }
 
         function walk(this: Fighter): BTStatus {
+            if (isBusy.apply(this)) return 'FAILED';
             // Logic for walk behavior
             this.sc.dispatch('go_walk', this, this.facing);
             this.x += this.facing === 'left' ? -Fighter.SPEED : Fighter.SPEED;
@@ -380,11 +386,14 @@ export class Sinterklaas extends Fighter {
 
             if (this.facing === targetFacing) return 'SUCCESS';
 
-            if (isAttacking.apply(this)) return 'FAILED';
-            if (isJumping.apply(this)) return 'FAILED';
+            if (isBusy.apply(this)) return 'FAILED';
 
             this.facing = targetFacing;
             return 'SUCCESS';
+        }
+
+        function isBusy(this: Fighter): boolean {
+            return isAttacking.apply(this) || isJumping.apply(this);
         }
 
         return {
@@ -404,8 +413,8 @@ export class Sinterklaas extends Fighter {
                                     type: 'Sequence', children: [
                                         { type: 'Condition', condition: isJumping },
                                         { type: 'Condition', condition: isPlayerInKickRange },
-                                        { type: 'Action', action: faceYourFoe },
-                                        { type: 'Action', action: jumpkick }
+                                        { type: 'Decorator', decorator: WaitForActionCompletionDecorator, child: { type: 'Action', action: faceYourFoe } },
+                                        { type: 'Decorator', decorator: WaitForActionCompletionDecorator, child: { type: 'Action', action: jumpkick } },
                                     ]
                                 },
                                 {
@@ -421,14 +430,14 @@ export class Sinterklaas extends Fighter {
                                                     type: 'Sequence',
                                                     children: [
                                                         { type: 'Condition', condition: isPlayerInPunchRange },
-                                                        { type: 'Action', action: punch },
+                                                        { type: 'Decorator', decorator: WaitForActionCompletionDecorator, child: { type: 'Action', action: punch } },
                                                     ],
                                                 },
                                                 {
                                                     type: 'Sequence',
                                                     children: [
                                                         { type: 'Condition', condition: isPlayerInKickRange },
-                                                        { type: 'Action', action: highkick },
+                                                        { type: 'Decorator', decorator: WaitForActionCompletionDecorator, child: { type: 'Action', action: highkick } },
                                                     ],
                                                 },
                                                 // { type: 'Action', action: performDuckkick },
@@ -447,12 +456,12 @@ export class Sinterklaas extends Fighter {
                         { type: 'Condition', condition: isPlayerFarAway },
                         { type: 'Condition', condition: isNotAttacking },
                         { type: 'Condition', condition: isNotJumping },
-                        { type: 'Action', action: faceYourFoe },
+                        { type: 'Decorator', decorator: WaitForActionCompletionDecorator, child: { type: 'Action', action: faceYourFoe } },
                         {
                             type: 'RandomSelector',
                             currentchild_propname: 'currentDefenseMove',
                             children: [
-                                { type: 'Action', action: performJump },
+                                { type: 'Decorator', decorator: WaitForActionCompletionDecorator, child: { type: 'Action', action: performJump } },
                             ]
                         }
                     ]
@@ -462,8 +471,8 @@ export class Sinterklaas extends Fighter {
                     children: [
                         { type: 'Condition', condition: isNotAttacking },
                         { type: 'Condition', condition: isNotJumping },
-                        { type: 'Action', action: faceYourFoe },
-                        { type: 'Action', action: walk }
+                        { type: 'Decorator', decorator: WaitForActionCompletionDecorator, child: { type: 'Action', action: faceYourFoe } },
+                        { type: 'Decorator', decorator: WaitForActionCompletionDecorator, child: { type: 'Action', action: walk } },
                     ]
                 },
                 // {
