@@ -28,8 +28,10 @@ export abstract class Fighter extends SpriteObject {
     public static readonly SPEED = 2;
     public attacking: boolean = false;
     public jumping: boolean = false;
+    public _aied: boolean = false;
     public get isAttacking(): boolean { return this.attacking; }
     public get isJumping(): boolean { return this.jumping; }
+    public get isAIed(): boolean { return this._aied; }
 
     @build_fsm('hitanimation')
     static bouw_hitanimation_fsm(): StateMachineBlueprint {

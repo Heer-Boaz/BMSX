@@ -14,6 +14,7 @@ export class Sinterklaas extends Fighter {
     constructor() {
         super('sinterklaas', undefined, 'right', 2);
         this.hp = gamemodel.SINT_START_HP;
+        this._aied = true;
     }
 
     override paint(): void {
@@ -475,10 +476,10 @@ export class Sinterklaas extends Fighter {
                         { type: 'Decorator', decorator: WaitForActionCompletionDecorator, child: { type: 'Action', action: walk } },
                     ]
                 },
-                // {
-                //     type: 'Action',
-                //     action: idle
-                // }
+                {
+                    type: 'Action',
+                    action: idle
+                }
             ]
         };
     }
