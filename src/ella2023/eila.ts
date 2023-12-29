@@ -40,6 +40,8 @@ export class Player extends Fighter {
 
     public static bouw(animation_machine_name: Identifier, class_name: string): StateMachineBlueprint {
         function default_input_processor(this: Fighter) {
+            if (this.isAIed) return; // AIed fighters don't process input
+
             const priorityActions = $.input.getPlayerInput(this.playerIndex).getPressedActions({ pressed: true, consumed: false, actionsByPriority: ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick'] });
 
             // If no actions are pressed, switch to idle
@@ -220,6 +222,7 @@ export class Player extends Fighter {
                 },
                 duck: {
                     process_input(this: Fighter) {
+                        if (this.isAIed) return; // AIed fighters don't process input
                         const pressedActions = $.input.getPlayerInput(this.playerIndex).getPressedActions();
                         const actionMap = new Map();
 
@@ -261,6 +264,7 @@ export class Player extends Fighter {
                         this.jumping = false;
                     },
                     process_input(this: Fighter) {
+                        if (this.isAIed) return; // AIed fighters don't process input
                         const kickActions = $.input.getPlayerInput(this.playerIndex).getPressedActions({ pressed: true, consumed: false, filter: ['lowkick', 'highkick'] });
                         if (kickActions.length > 0) {
                             // Consume all kick actions
