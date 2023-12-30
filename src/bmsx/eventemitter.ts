@@ -43,13 +43,19 @@ export class EventEmitter implements IRegisterable {
      * Initializes class-bound event subscriptions for the given subscriber.
      * @param subscriber - The event subscriber.
      */
-    public initClassBoundEventSubscriptions(subscriber: EventSubscriberType) {
+    public initClassBoundEventSubscriptions(subscriber: EventSubscriberType, wrapper?: (...args: any[]) => any) {
         const constr = subscriber.constructor as IEventSubscriber;
         if (!constr?.eventSubscriptions) return;
 
         const eventEmitter = EventEmitter.instance;
         constr.eventSubscriptions.forEach(subscription => {
-            const handler = subscriber[subscription.handlerName].bind(subscriber);
+            let handler = subscriber[subscription.handlerName].bind(subscriber);
+            // If a wrapper function is provided, use it to call the handler
+            if (wrapper) {
+                const originalHandler = handler;
+                handler = (...args: any[]) => wrapper(originalHandler, ...args);
+            }
+
             let emitterFilter: string;
             switch (subscription.scope) {
                 case 'all': emitterFilter = undefined; break;
@@ -60,7 +66,7 @@ export class EventEmitter implements IRegisterable {
                 case 'self':
                     emitterFilter = (subscriber as IIdentifiable).id;
                     if (!emitterFilter) throw Error(`Cannot subscribe '${(subscriber as IIdentifiable).id}' to event '${subscription.eventName}' with scope '${subscription.scope}' as the class (instance) '${subscriber.constructor.name}' does not have an 'id'.`);
-                break;
+                    break;
             }
             eventEmitter.on(subscription.eventName, handler, subscriber, emitterFilter);
         });
