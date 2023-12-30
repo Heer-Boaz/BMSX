@@ -150,6 +150,8 @@ function getStateMachineEvents(machine: StateMachineBlueprint, eventNamesAndScop
 			const definition = machine.on[name];
 			add(name, definition);
 		}
+		// Remove all '$' prefixes from the event names
+		machine.on = Object.fromEntries(Object.entries(machine.on).map(([name, value]) => [removeScopeFromEventName(name), value]));
 	}
 
 	for (const stateId in machine.states) {
@@ -186,13 +188,26 @@ function validateStateMachine(machinedef: sdef): void {
 	// Get all state names
 	const stateNames = Object.keys(machinedef.states);
 
-	// Check the defined event state transitions for the machine definition to see if they are valid
-	const transitions = machinedef.on; // Get the transitions for the machine if they exist
-	if (transitions) {
-		for (const targetState of Object.values(transitions)) { // Get the target state for each transition
-			if (typeof targetState === 'string') { // If the target state is a string, check if it exists
-				if (!stateNames.includes(targetState)) { // Check if the target state exists
-					throw new Error(`Invalid event transition target '${targetState}' in the highest-level (i.e. not a (sub)state) of machine '${machinedef.id}'.`);
+	// Check the defined event state transitions for each state in the machine definition to see if they are valid
+	for (const state of stateNames) {
+		const transitions = machinedef.states[state].on; // Get the transitions for the state if they exist
+
+		// If there are transitions, check each target state
+		if (transitions) {
+			for (const targetState of Object.values(transitions)) { // Get the target state for each transition
+				if (typeof targetState === 'string') { // If the target state is a string, check if it exists
+					let targetStateParts = targetState.split('.');
+					let currentContext = machinedef.states;
+
+					for (const part of targetStateParts) {
+						if (part === '<this>') continue; // Skip '<this>' parts
+
+						if (!currentContext[part]) { // Check if the part exists in the current context
+							throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}'.`);
+						}
+
+						currentContext = currentContext[part].states; // Move to the next context
+					}
 				}
 			}
 		}
@@ -455,13 +470,19 @@ export class bfsm_controller {
 	 * @param args - Additional arguments to pass to the state switch function.
 	 */
 	switch(path: string, ...args: any[]): void {
-		const [machineid, ...stateids] = path.split('.');
+		let parts: string[];
+		if (typeof path === 'string') {
+			parts = path.split('.');
+		} else {
+			parts = path;
+		}
+		const [machineid, ...stateids] = parts;
 
 		const machine = this.statemachines[machineid];
 		if (!machine) throw new Error(`No machine with ID '${machineid}'`);
 
 		// If no stateid is specified, assume that the stateid is the same as the machineid
-		const stateid = stateids.length > 0 ? stateids.join('.') : machineid;
+		const stateid = stateids.length > 0 ? stateids : machineid;
 
 		// Only switch the state in the specified machine, without changing the current machine
 		machine.switch(stateid, ...args);
@@ -522,7 +543,7 @@ export class bfsm_controller {
 		}
 
 		// If there are more parts, check the state of the submachine with the given path
-		return machine.is(stateids.join('.'));
+		return machine.is(stateids);
 	}
 
 	/**
@@ -626,8 +647,8 @@ export class bfsm_controller {
  */
 interface IStateController extends IRegisterable {
 	run(): void;
-	switch(path: string, ...args: any[]): void;
-	to(path: string, ...args: any[]): void;
+	switch(path: string | string[], ...args: any[]): void;
+	to(path: string | string[], ...args: any[]): void;
 	is(path: string): boolean;
 	pop(): void;
 	states: id2sstate;
@@ -830,14 +851,30 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 	 * @param parts - Optional array of parts that make up the ID.
 	 * @throws Error if the state with the given ID does not exist.
 	 */
-	public to(id: string, ...args: any[]): void {
-		const parts: string[] = id.split('.');
+	public to(id: string | string[], ...args: any[]): void {
+		let parts: string[];
+		if (typeof id === 'string') {
+			parts = id.split('.');
+		} else {
+			parts = id;
+		}
+
 		let currentPart = parts[0];
 		let restParts = parts.slice(1);
 
 		let currentContext: IStateController = this.states[currentPart];
 		if (!currentContext) {
-			throw new Error(`No state with ID '${currentPart}'`);
+			if (currentPart === '<this>') {
+				// If there are more parts, continue to the next state from the root
+				if (restParts.length > 0) {
+					this.to(restParts, ...args);
+				} else {
+					// If '<this>' is the only part, throw an error because the root state cannot be switched to
+					throw new Error(`Cannot switch to the '<this>' state.`);
+				}
+			} else {
+				throw new Error(`No state with ID '${currentPart}'`);
+			}
 		}
 
 		if (this.currentid !== currentPart || restParts.length === 0) { // Don't switch to the same state, except if this is the final part of the id
@@ -846,13 +883,20 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 
 		// If there are more parts, transition to the next state
 		if (restParts.length > 0) {
-			currentContext.to(restParts.join('.'), ...args);
+			currentContext.to(restParts, ...args);
 		}
 	}
 
 	public transition(state_id: Identifier, ...args: any[]): void {
 		if (this.def_id === state_id) return; // Don't switch to the same state
-		this.parent.switch(state_id, ...args);
+		if (state_id.startsWith('<this>.')) {
+			// Remove the '<this>.' prefix and continue to the next state from the root
+			const restParts = state_id.slice('<this>.'.length);
+			this.to(restParts, ...args);
+		}
+		else {
+			(this.parent as sstate).switch(state_id, ...args);
+		}
 	}
 
 	/**
@@ -862,8 +906,14 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 	 * @returns true if the current state matches the path, false otherwise.
 	 * @throws Error if no machine with the specified ID is found.
 	 */
-	public is(id: string): boolean {
-		const [stateid, ...substateids] = id.split('.');
+	public is(path: string | string[]): boolean {
+		let parts: string[];
+		if (typeof path === 'string') {
+			parts = path.split('.');
+		} else {
+			parts = path;
+		}
+		const [stateid, ...substateids] = parts;
 
 		// If there are no more parts, check the id of the current state
 		if (substateids.length === 0) {
@@ -876,7 +926,7 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 		}
 
 		// If there are more parts, check the state of the substate with the given path
-		return state.is(substateids.join('.'));
+		return state.is(substateids);
 	}
 
 	/**
@@ -890,10 +940,24 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 	 * @returns void
 	 * @throws Error - If the state with the specified ID doesn't exist.
 	 */
-	public switch(path: string, ...args: any[]): void {
-		const [currentPart, ...restParts] = path.split('.');
+	public switch(path: string | string[], ...args: any[]): void {
+		let parts: string[];
+		if (typeof path === 'string') {
+			parts = path.split('.');
+		} else {
+			parts = path;
+		}
+		const [currentPart, ...restParts] = parts;
 
-		if (currentPart === '*') {
+		if (currentPart === '<this>') {
+			// If there are more parts, continue to the next state from the root
+			if (restParts.length > 0) {
+				this.switch(restParts, ...args);
+			} else {
+				// If '<this>' is the only part, throw an error because the root state cannot be switched to
+				throw new Error(`Cannot switch to the root state`);
+			}
+		} else if (currentPart === '*') {
 			// Iterate over all states and substates
 			for (let stateid in this.states) {
 				const currentContext = this.states[stateid] as IStateController;
@@ -901,7 +965,7 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 
 				// Remove the '*' from the id and continue with the rest of the path
 				if (restParts.length > 1) {
-					currentContext.switch(restParts.join('.'), ...args);
+					currentContext.switch(restParts, ...args);
 				}
 				// If the wildcard is just before the final part, switch to the state
 				else if (restParts.length === 1) {
@@ -916,7 +980,7 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 
 			// If there are more parts, continue to the next state
 			if (restParts.length > 0) {
-				currentContext.switch(restParts.join('.'), ...args);
+				currentContext.switch(restParts, ...args);
 			} else {
 				this.transitionToState(currentPart, ...args);
 			}
@@ -975,6 +1039,8 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 		if (state_id_or_handler) {
 			if (typeof state_id_or_handler === 'string') {
 				// If the handler is a string, treat it as a state ID and transition to that state
+				// If the string starts with a '#', it is a state ID relative to the parent state machine, otherwise it is a state ID relative to the current state machine
+				// const state_id = state_id_or_handler.startsWith('#') ? state_id_or_handler.slice(1) : state_id_or_handler;
 				this.transition(state_id_or_handler, ...args); // Transition to the state with the given ID and pass the arguments to the state transition function
 				// Note: the state transition function will handle the enter and exit events for the states, but not if the state is the same as the current state
 			} else {
@@ -1101,9 +1167,6 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 
 	private make_id(): Identifier {
 		let id = `${this.parent_id ?? this.target_id}.${this.def_id}`; // The id is the parent_id + the target_id + the def_id (e.g. 'parent_id.target_id.def_id') to create a unique id
-		// let parts = id.split('.'); // Split the id into parts to remove duplicate parts and create a unique id
-		// let uniqueParts = parts.filter((value, index, self) => self.indexOf(value) === index); // Remove duplicate parts (e.g. 'parent_id.parent_id.def_id' becomes 'parent_id.def_id')
-		// return uniqueParts.join('.'); // Join the parts together with a '.' in between each part to create the id for the state
 		return id;
 	}
 
