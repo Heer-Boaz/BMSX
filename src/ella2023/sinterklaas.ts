@@ -67,7 +67,7 @@ export class Sinterklaas extends Fighter {
             on: {
                 i_hit_face: {
                     do(state: sstate) {
-                        state.setTicksNoSideEffect(state.definition.ticks2move - 1);
+                        state.current.setTicksNoSideEffect(state.current.definition.ticks2move - 1);
                     }
                 }
             },
@@ -284,6 +284,35 @@ export class Sinterklaas extends Fighter {
             return false;
         }
 
+        function isPlayerDucking(this: Fighter): boolean {
+            // Logic to check if the player is ducking
+            const theOther = $.modelAs<gamemodel>().theOtherFighter(this);
+            if (theOther) {
+                return theOther.isDucking;
+            }
+            return false; // Placeholder logic
+        }
+
+        // @ts-ignore
+        function isOrWasPlayerHighKicking(this: Fighter): boolean {
+            // Logic to check if the player is ducking
+            const theOther = $.modelAs<gamemodel>().theOtherFighter(this);
+            if (theOther) {
+                return theOther.currentAttackType === 'highkick' || theOther.previousAttackType === 'highkick';
+            }
+            return false; // Placeholder logic
+        }
+
+        // @ts-ignore
+        function isOrWasPlayerLowOrDuckKicking(this: Fighter): boolean {
+            // Logic to check if the player is ducking
+            const theOther = $.modelAs<gamemodel>().theOtherFighter(this);
+            if (theOther) {
+                return theOther.currentAttackType === 'lowkick' || theOther.previousAttackType === 'lowkick' || theOther.currentAttackType === 'duckkick' || theOther.previousAttackType === 'duckkick';
+            }
+            return false; // Placeholder logic
+        }
+
         // @ts-ignore
         function isPlayerAttacking(this: Fighter): boolean {
             // Logic to check if the player is attacking
@@ -294,63 +323,58 @@ export class Sinterklaas extends Fighter {
             return false; // Placeholder logic
         }
 
-        // @ts-ignore
         function punch(this: Fighter): BTStatus {
-            if (isBusy.apply(this)) return 'RUNNING';
+            if (isAttacking.apply(this)) return 'RUNNING';
+            // if (isBusy.apply(this)) return 'FAILED';
             this.sc.dispatch('go_punch', this);
             return 'SUCCESS';
         }
 
-        // @ts-ignore
         function highkick(this: Fighter): BTStatus {
-            if (isBusy.apply(this)) return 'RUNNING';
+            if (isAttacking.apply(this)) return 'RUNNING';
+            // if (isBusy.apply(this)) return 'FAILED';
             this.sc.dispatch('go_highkick', this);
             return 'SUCCESS';
         }
 
+        function duckkick(this: Fighter): BTStatus {
+            if (isAttacking.apply(this)) return 'RUNNING';
+            // if (isBusy.apply(this)) return 'FAILED';
+            this.sc.dispatch('go_duckkick', this);
+            return 'SUCCESS';
+        }
+
+        // @ts-ignore
+        function duck(this: Fighter): BTStatus {
+            this.sc.dispatch('go_duck', this);
+            return 'SUCCESS';
+        }
+
         function performJump(this: Fighter): BTStatus {
-            if (isAttacking.apply(this)) return 'FAILED';
+            if (this.isJumping) return 'RUNNING';
+            // if (isAttacking.apply(this)) return 'FAILED';
             this.sc.dispatch('go_jump', this, this.facing);
             return 'SUCCESS';
         }
 
-        // @ts-ignore
         function jumpkick(this: Fighter): BTStatus {
-            if (!isJumping.apply(this) || isAttacking.apply(this)) return 'RUNNING';
+            if (isAttacking.apply(this)) return 'RUNNING';
+            // if (!isJumping.apply(this)) return 'FAILED';
             this.sc.dispatch('go_flyingkick', this, this.facing);
             return 'SUCCESS';
         }
 
-        // function performDuckkick(this: Sinterklaas): BTStatus {
-        //     this.sc.dispatch('go_duckkick', this);
-        //     return 'SUCCESS';
-        // }
-
-        // function performSpecialMove(this: Sinterklaas): BTStatus {
-        //     // Logic for special move
-        //     return 'SUCCESS';
-        // }
-
-        // function block(this: Sinterklaas): BTStatus {
-        //     // Logic for block action
-        //     return 'SUCCESS';
-        // }
-
-        // function dodge(this: Sinterklaas): BTStatus {
-        //     // Logic for dodge action
-        //     return 'SUCCESS';
-        // }
-
         // @ts-ignore
         function idle(this: Fighter): BTStatus {
-            if (isBusy.apply(this)) return 'FAILED';
+            // if (isBusy.apply(this)) return 'FAILED';
             // Logic for idle behavior
             this.sc.dispatch('go_idle', this);
             return 'SUCCESS';
         }
 
+        // @ts-ignore
         function walk(this: Fighter): BTStatus {
-            if (isBusy.apply(this)) return 'FAILED';
+            // if (isBusy.apply(this)) return 'FAILED';
             // Logic for walk behavior
             this.sc.dispatch('go_walk', this, this.facing);
             this.x += this.facing === 'left' ? -Fighter.SPEED : Fighter.SPEED;
@@ -393,92 +417,124 @@ export class Sinterklaas extends Fighter {
             return 'SUCCESS';
         }
 
+        function isFighting(this: Fighter): boolean {
+            return this.isFighting;
+        }
+
         function isBusy(this: Fighter): boolean {
             return isAttacking.apply(this) || isJumping.apply(this);
         }
 
         return {
-            type: 'Selector',
-            children: [
+            type: 'Sequence', children: [
+                { type: 'Condition', condition: isFighting },
                 {
-                    type: 'Sequence',
+                    type: 'Selector',
                     children: [
                         {
-                            type: 'Condition',
-                            condition: isNotAttacking
-                        },
-                        {
-                            type: 'Selector',
+                            type: 'Sequence',
                             children: [
+                                { type: 'Condition', condition: isNotAttacking },
                                 {
-                                    type: 'Sequence', children: [
-                                        { type: 'Condition', condition: isJumping },
-                                        { type: 'Condition', condition: isPlayerInKickRange },
-                                        { type: 'Decorator', decorator: WaitForActionCompletionDecorator, child: { type: 'Action', action: faceYourFoe } },
-                                        { type: 'Decorator', decorator: WaitForActionCompletionDecorator, child: { type: 'Action', action: jumpkick } },
-                                    ]
-                                },
-                                {
-                                    type: 'Sequence', children: [
-                                        { type: 'Condition', condition: isNotJumping },
-                                        { type: 'Action', action: faceYourFoe },
-                                        // { type: 'Decorator', decorator: InvertorDecorator, child: { type: 'Condition', condition: isJumping } },
+                                    type: 'Selector',
+                                    children: [
                                         {
-                                            type: 'RandomSelector',
-                                            currentchild_propname: 'currentRandomAttackMove',
-                                            children: [
+                                            type: 'Sequence', children: [
+                                                { type: 'Condition', condition: isJumping },
+                                                { type: 'Condition', condition: isPlayerInKickRange },
+                                                { type: 'Decorator', decorator: WaitForActionCompletionDecorator, child: { type: 'Action', action: faceYourFoe } },
+                                                { type: 'Decorator', decorator: WaitForActionCompletionDecorator, child: { type: 'Action', action: jumpkick } },
+                                            ]
+                                        },
+                                        {
+                                            type: 'Sequence', children: [
+                                                { type: 'Condition', condition: isNotJumping },
+                                                { type: 'Action', action: faceYourFoe },
                                                 {
-                                                    type: 'Sequence',
+                                                    type: 'RandomSelector',
+                                                    currentchild_propname: 'currentRandomAttackMove',
                                                     children: [
-                                                        { type: 'Condition', condition: isPlayerInPunchRange },
-                                                        { type: 'Decorator', decorator: WaitForActionCompletionDecorator, child: { type: 'Action', action: punch } },
+                                                        {
+                                                            type: 'Sequence',
+                                                            children: [
+                                                                { type: 'Condition', condition: isPlayerInPunchRange },
+                                                                { type: 'Decorator', decorator: WaitForActionCompletionDecorator, child: { type: 'Action', action: punch } },
+                                                            ],
+                                                        },
+                                                        {
+                                                            type: 'Sequence',
+                                                            children: [
+                                                                { type: 'Condition', condition: isPlayerInKickRange },
+                                                                {
+                                                                    type: 'Selector', children: [
+                                                                        {
+                                                                            type: 'Sequence', children: [
+                                                                                { type: 'Condition', condition: isPlayerDucking },
+                                                                                { type: 'Action', action: duckkick },
+                                                                            ]
+                                                                        },
+                                                                        { type: 'Decorator', decorator: WaitForActionCompletionDecorator, child: { type: 'Action', action: highkick } },
+                                                                    ]
+                                                                },
+                                                            ],
+                                                        },
                                                     ],
                                                 },
-                                                {
-                                                    type: 'Sequence',
-                                                    children: [
-                                                        { type: 'Condition', condition: isPlayerInKickRange },
-                                                        { type: 'Decorator', decorator: WaitForActionCompletionDecorator, child: { type: 'Action', action: highkick } },
-                                                    ],
-                                                },
-                                                // { type: 'Action', action: performDuckkick },
-                                                // { type: 'Action', action: performSpecialMove }
                                             ]
                                         }
                                     ]
                                 },
                             ]
                         },
-                    ]
-                },
-                {
-                    type: 'Sequence',
-                    children: [
-                        { type: 'Condition', condition: isPlayerFarAway },
-                        { type: 'Condition', condition: isNotAttacking },
-                        { type: 'Condition', condition: isNotJumping },
-                        { type: 'Decorator', decorator: WaitForActionCompletionDecorator, child: { type: 'Action', action: faceYourFoe } },
                         {
-                            type: 'RandomSelector',
-                            currentchild_propname: 'currentDefenseMove',
+                            type: 'Sequence',
                             children: [
-                                { type: 'Decorator', decorator: WaitForActionCompletionDecorator, child: { type: 'Action', action: performJump } },
+                                { type: 'Condition', condition: isNotAttacking },
+                                { type: 'Condition', condition: isNotJumping },
+                                {
+                                    type: 'Selector', children: [
+                                        {
+                                            type: 'Sequence',
+                                            children: [
+                                                { type: 'Condition', condition: isPlayerFarAway },
+                                                { type: 'Decorator', decorator: WaitForActionCompletionDecorator, child: { type: 'Action', action: performJump } },
+                                            ]
+                                        },
+                                        {
+                                            type: 'Sequence',
+                                            children: [
+                                                { type: 'Condition', condition: isPlayerInKickRange },
+                                                { type: 'Condition', condition: isOrWasPlayerHighKicking },
+                                                { type: 'Action', action: duck },
+                                            ]
+                                        },
+                                        {
+                                            type: 'Sequence',
+                                            children: [
+                                                { type: 'Condition', condition: isPlayerInKickRange },
+                                                { type: 'Condition', condition: isOrWasPlayerLowOrDuckKicking },
+                                                { type: 'Action', action: performJump },
+                                            ]
+                                        },
+                                        {
+                                            type: 'Sequence',
+                                            children: [
+                                                { type: 'Decorator', decorator: WaitForActionCompletionDecorator, child: { type: 'Action', action: faceYourFoe } },
+                                                { type: 'Decorator', decorator: WaitForActionCompletionDecorator, child: { type: 'Action', action: walk } },
+                                            ]
+                                        },
+                                        {
+                                            type: 'Sequence',
+                                            children: [
+                                                { type: 'Decorator', decorator: WaitForActionCompletionDecorator, child: { type: 'Action', action: faceYourFoe } },
+                                                { type: 'Decorator', decorator: WaitForActionCompletionDecorator, child: { type: 'Action', action: idle } },
+                                            ]
+                                        },
+                                    ]
+                                },
                             ]
                         }
                     ]
-                },
-                {
-                    type: 'Sequence',
-                    children: [
-                        { type: 'Condition', condition: isNotAttacking },
-                        { type: 'Condition', condition: isNotJumping },
-                        { type: 'Decorator', decorator: WaitForActionCompletionDecorator, child: { type: 'Action', action: faceYourFoe } },
-                        { type: 'Decorator', decorator: WaitForActionCompletionDecorator, child: { type: 'Action', action: walk } },
-                    ]
-                },
-                {
-                    type: 'Action',
-                    action: idle
                 }
             ]
         };
