@@ -225,7 +225,10 @@ export class Player extends Fighter {
                         this.ducking = true;
                         this.currentAttackType = 'duckkick';
                     },
-                    exit: attackExit,
+                    exit(this: Fighter) {
+                        attackExit.apply(this);
+                        this.ducking = false;
+                    },
                 },
                 duck: {
                     process_input(this: Fighter) {
@@ -395,7 +398,7 @@ export class Player extends Fighter {
         return {
             parallel: true,
             on: {
-                i_hit_face: {
+                $i_was_hit: {
                     do(state: sstate) {
                         state.current.setTicksNoSideEffect(state.current.definition.ticks2move - 1);
                     }
