@@ -799,10 +799,11 @@ export function getOppositeDirection(dir: Direction): Direction {
  * Represents the main game loop and manages the game state.
  */
 export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView> {
+	private _debug: boolean = false;
 	/**
 	 * Indicates whether debug mode is enabled.
 	 */
-	public debug: boolean = false;
+	public get debug(): boolean { return this._debug; }
 	/**
 	 * The target frames per second for the game.
 	 */
@@ -987,9 +988,9 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	 * @param debug - Whether to enable debug mode. Defaults to false.
 	 */
 	private init_on_boot(rom: RomPack, model: BaseModel, view: BaseView, sndcontext: AudioContext, gainnode: GainNode, debug: boolean = false): Game {
-		this.debug ??= debug;
+		this._debug = debug ?? this._debug;
 
-		global['debug'] = debug;
+		global['debug'] = this.debug;
 		global['rom'] = rom;
 
 		BaseView.images = rom.images;
@@ -1001,7 +1002,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 			$.input.enableOnscreenGamepad();
 		}
 
-		if (debug) {
+		if (this.debug) {
 			// @ts-ignore
 			window['model'] = model;
 			// @ts-ignore
@@ -1019,7 +1020,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		}
 
 		// Prevent the user from accidentally closing the game window if not in debug mode
-		if (!debug) {
+		if (!this.debug) {
 			window.addEventListener('beforeunload', e => { e.preventDefault(); return e.returnValue = 'Are you sure you want to exit this awesome game?'; }, true);
 		}
 
