@@ -113,7 +113,29 @@ export abstract class Component implements IIdentifiable {
      * It subscribes to the specified events and binds the corresponding handlers to the component instance.
      */
     protected initEventSubscriptions() {
-		$.event_emitter.initClassBoundEventSubscriptions(this);
+        const wrappedHandler = (handler: (...args: any[]) => any, ...args: any[]) => {
+            // Wrap the handler to check if the component is enabled
+            if (this.enabled) handler(...args);
+        };
+        $.event_emitter.initClassBoundEventSubscriptions(this, wrappedHandler);
+        // const constr = this.constructor as IEventSubscriber;
+        // if (!constr.eventSubscriptions) return; // No event subscriptions
+
+        // const eventEmitter = EventEmitter.instance;
+        // constr.eventSubscriptions.forEach(subscription => { // Iterate over all event subscriptions
+        //     const handler = this[subscription.handlerName].bind(this); // Bind the handler to the component instance
+        //     let emitterFilter: string;
+        //     switch (subscription.scope) {
+        //         case 'all': emitterFilter = undefined; break;
+        //         case 'parent':
+        //             emitterFilter = (this as Component & { parentid?: string }).parentid;
+        //             if (!emitterFilter) throw Error(`Cannot subscribe Component ${this.id} to event ${subscription.eventName} with scope ${subscription.scope} as the class (instance) ${this.constructor.name} does not have a "parentid".`);
+        //             break;
+        //         case 'self': emitterFilter = this.id; break;
+        //     }
+        //     eventEmitter.on(subscription.eventName, wrappedHandler, this, emitterFilter); // Subscribe to the event
+        // });
+
     }
 
     // Implement this method to handle preprocessing updates
