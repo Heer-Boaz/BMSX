@@ -52,9 +52,7 @@ export abstract class Fighter extends SpriteObject {
                     },
                     exit(this: Fighter) {
                         this.sc.resume_all_statemachines();
-                        // This is needed to quickly end the animation of the attack action.
-                        // Must be done after the state machine is resumed, otherwise the event will not be handled.
-                        $.emit('i_hit_face', this);
+                        // No emit here, because the player that was hit needs to be able to recuperate from the hit first, so that the attacking player can't hit them again immediately.
                     },
                 },
                 wel_au: {
@@ -74,6 +72,10 @@ export abstract class Fighter extends SpriteObject {
                     },
                     exit(this: Fighter) {
                         this.sc.resume_all_statemachines();
+                        // This is needed to quickly end the animation of the attack action.
+                        // Must be done after the state machine is resumed, otherwise the event will not be handled.
+                        // It will allow the player to recuperate first, before the next attack can be done by the opponent.
+                        $.emit('i_was_hit', this);
                     },
                 },
             }
@@ -87,6 +89,8 @@ export abstract class Fighter extends SpriteObject {
      * The player index of the fighter.
      * 1 = player 1
      * 2 = player 2
+     * 3 = player 3
+     * 4 = player 4
      */
     public playerIndex: number;
 
@@ -112,8 +116,17 @@ export abstract class Fighter extends SpriteObject {
         return hit;
     }
 
-    public attackHitsOpponent(_attackType: AttackType, opponent: Fighter): Area | null {
-        // if (this.state.is('hitanimation.wel_au')) return null; // Only check for hits when the fighter is not already being hit
+    public attackHitsOpponent(attackType: AttackType, opponent: Fighter): Area | null {
+        switch (attackType) {
+            case 'highkick':
+                if (opponent.isDucking) { return null; }
+                break;
+            case 'lowkick':
+            case 'duckkick':
+                if (opponent.isJumping) { return null; }
+                break;
+        }
+
         // Check if the opponent is hit by the attack
         const overlappingAreaOrFalse = this.collides(opponent);
         return overlappingAreaOrFalse ? overlappingAreaOrFalse : null;
