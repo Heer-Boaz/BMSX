@@ -14,7 +14,7 @@ export type BehaviorTreeDefinition =
     | { type: 'RandomSelector'; children: BehaviorTreeDefinition[], currentchild_propname: string }
     | { type: 'Limit'; child: BehaviorTreeDefinition; limit: number, count_propname: string, priority?: number }
     | { type: 'PrioritySelector'; children: BehaviorTreeDefinition[] }
-    | { type: 'Wait'; waitTime: number, wait_propname: string }
+    | { type: 'Wait'; wait_time: number, wait_propname: string }
     | { type: 'Action'; action: NodeAction }
     | { type: 'CompositeAction'; actions: BehaviorTreeDefinition[] };
 
@@ -81,7 +81,7 @@ function buildBehaviorTree(config: BehaviorTreeDefinition, id: BehaviorTreeID): 
         case 'PrioritySelector':
             return new PrioritySelectorNode(id, config.children.map(childConfig => buildBehaviorTree(childConfig, id)));
         case 'Wait':
-            return new WaitNode(id, config.waitTime, config.wait_propname);
+            return new WaitNode(id, config.wait_time, config.wait_propname);
         case 'Action':
             return new ActionNode(id, config.action);
         case 'CompositeAction':
@@ -523,11 +523,11 @@ export class PrioritySelectorNode extends BTNode {
  */
 export class WaitNode extends BTNode {
     public wait_propname: string;
-    public waitTime: number;
+    public wait_time: number;
 
     constructor(id: BehaviorTreeID, waitTime: number, _wait_propname: string, _priority = 0) {
         super(id, _priority);
-        this.waitTime = waitTime;
+        this.wait_time = waitTime;
         this.wait_propname = _wait_propname;
     }
 
@@ -542,7 +542,7 @@ export class WaitNode extends BTNode {
             blackboard.nodedata[this.wait_propname] = currentTick;
         }
 
-        if (currentTick < this.waitTime) {
+        if (currentTick < this.wait_time) {
             ++currentTick;
             blackboard.nodedata[this.wait_propname] = currentTick;
             return { status: 'RUNNING' };
