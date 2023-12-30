@@ -183,7 +183,13 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 			this.blackboards[bt_id].applyUpdates(updates);
 		}
 
-		this.behaviortrees[bt_id].tick(this.id, this.blackboards[bt_id]);
+		if ($.debug) {
+			this.blackboards[bt_id].executionPath = [];
+			this.behaviortrees[bt_id].debug_tick(this.id, this.blackboards[bt_id]);
+		}
+		else {
+			this.behaviortrees[bt_id].tick(this.id, this.blackboards[bt_id]);
+		}
 	}
 
 	/**
