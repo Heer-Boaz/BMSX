@@ -378,16 +378,16 @@ export let InvertorDecorator: NodeDecorator = (status: BTStatus, _targetid: Iden
     return status;
 };
 
-
-export let WaitForActionCompletionDecorator: NodeDecorator = (status: BTStatus, _targetid: Identifier, blackboard: Blackboard) => {
+export let WaitForActionCompletionDecorator: NodeDecorator = (status: BTStatus, _targetid: Identifier, blackboard: Blackboard, actionName?: string) => {
     if (status === 'RUNNING') {
-        blackboard.actionInProgress = true;
+        if (actionName) { blackboard.set(actionName, true); }
+        else { blackboard.actionInProgress = true; }
     } else {
-        blackboard.actionInProgress = false;
+        if (actionName) { blackboard.set(actionName, false); }
+        else { blackboard.actionInProgress = false; }
     }
     return status;
 };
-
 
 type NodeCondition = (blackboard: Blackboard) => boolean;
 
