@@ -118,8 +118,8 @@ export abstract class Fighter extends SpriteObject {
 
     public attackHitsOpponent(attackType: AttackType, opponent: Fighter): Area | null {
         // Check if the fighter is facing the opponent
-        const middlepoint = middlepoint_area(this.hitbox);
-        const opponentMiddlepoint = middlepoint_area(opponent.hitbox);
+        const middlepoint = this.middlepoint;
+        const opponentMiddlepoint = opponent.middlepoint;
         if (this.facing === 'left' && middlepoint.x< opponentMiddlepoint.x) { return null; }
         if (this.facing === 'right' && middlepoint.x > opponentMiddlepoint.x) { return null; }
 
