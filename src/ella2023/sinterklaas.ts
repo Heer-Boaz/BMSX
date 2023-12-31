@@ -1,5 +1,5 @@
 import { BTStatus, BTVisualizer, BehaviorTreeDefinition, Blackboard, SM, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, insavegame, sstate, subscribesToSelfScopedEvent } from '../bmsx/bmsx';
-import { JumpingWhileLeavingScreenComponent, Player } from "./eila";
+import { JumpingWhileLeavingScreenComponent, Eila } from "./eila";
 import { Fighter } from "./fighter";
 import { gamemodel } from "./gamemodel";
 import { AudioId, BitmapId } from "./resourceids";
@@ -23,7 +23,7 @@ export class Sinterklaas extends Fighter {
 
     @build_fsm()
     public static bouw_sinterklaas(): StateMachineBlueprint {
-        return Player.bouw('sint_animation', 'Sinterklaas');
+        return Eila.bouw('sint_animation', 'Sinterklaas');
     }
 
     @subscribesToSelfScopedEvent('animationEnd')

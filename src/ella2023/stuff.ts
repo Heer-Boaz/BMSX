@@ -16,8 +16,9 @@ export class GameOver extends SpriteObject {
 							return;
 						}
 						$.consumeActions(1, ...priorityActions);
+						$.stopMusic();
 
-						// If a priority action is pressed, go to the $.
+						// If a priority action is pressed, go to the title screen.
 						$.model.sc.to('titlescreen');
 					},
 					end(this: GameOver) {
@@ -54,17 +55,16 @@ export class Hoera extends SpriteObject {
 				_default: {
 					ticks2move: 500,
 					run(this: TitleScreen) {
-						// const priorityActions = $.input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['punch', 'highkick', 'lowkick', 'block'] });
+						const priorityActions = $.input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['punch', 'highkick', 'lowkick', 'block'] });
 
-						// // If no priority actions are pressed, do nothing.
-						// if (!priorityActions || priorityActions.length === 0) {
-						//     return;
-						// }
-						// $.input.getPlayerInput(1).consumeActions(...priorityActions);
-
-						// // If a priority action is pressed, go to the $.
-						// get_model().sc.to('titlescreen');
-
+						// If no priority actions are pressed, do nothing.
+						if (!priorityActions || priorityActions.length === 0) {
+							return;
+						}
+						$.input.getPlayerInput(1).consumeActions(...priorityActions);
+						$.stopMusic();
+						// If a priority action is pressed, go to the title screen.
+						$.model.sc.to('titlescreen');
 					},
 					end(this: Hoera) {
 						$.model.sc.to('titlescreen');

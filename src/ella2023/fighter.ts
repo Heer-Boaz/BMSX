@@ -30,6 +30,7 @@ export abstract class Fighter extends SpriteObject {
     public attacking: boolean = false;
     public jumping: boolean = false;
     public ducking: boolean = false;
+    public attacked_while_jumping: boolean = false;
     public _aied: boolean = false;
     public previousAttackType: AttackType = null;
     public currentAttackType: AttackType = null;

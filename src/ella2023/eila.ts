@@ -20,7 +20,7 @@ export class JumpingWhileLeavingScreenComponent extends ScreenBoundaryComponent 
      * @param old_x_or_y - The previous x or y coordinate of the game object.
      */
     @subscribesToParentScopedEvent('leavingScreen')
-    public onLeavingScreen(_event_name: string, emitter: Player, d: Direction, _old_x_or_y: number) {
+    public onLeavingScreen(_event_name: string, emitter: Eila, d: Direction, _old_x_or_y: number) {
         if (d === 'left') {
             emitter.facing = 'right';
         }
@@ -31,11 +31,11 @@ export class JumpingWhileLeavingScreenComponent extends ScreenBoundaryComponent 
 @insavegame
 @assign_fsm('player_animation')
 @attach_components(JumpingWhileLeavingScreenComponent)
-export class Player extends Fighter {
+export class Eila extends Fighter {
 
     @build_fsm()
     public static bouw_eila(): StateMachineBlueprint {
-        return Player.bouw('player_animation', 'Player');
+        return Eila.bouw('player_animation', 'Eila');
     }
 
     public static bouw(animation_machine_name: Identifier, class_name: string): StateMachineBlueprint {
@@ -118,6 +118,7 @@ export class Player extends Fighter {
                     enter(this: Fighter) {
                         this.sc.to(statemachine + '.idle');
                         this.attacking = false;
+                        this.attacked_while_jumping = false;
                     },
                 },
                 humiliated: {
@@ -235,19 +236,20 @@ export class Player extends Fighter {
                 duck: {
                     process_input(this: Fighter) {
                         if (this.isAIed) return; // AIed fighters don't process input
-                        const pressedActions = $.input.getPlayerInput(this.playerIndex).getPressedActions();
+                        const pressedActions = $.getPressedActions(this.playerIndex);
                         const actionMap = new Map();
 
                         // Create a map of actions for efficient lookup
                         pressedActions.forEach(action => actionMap.set(action.action, true));
 
                         if (actionMap.get('lowkick')) {
-                            this.sc.to('duckkick');
+                            $.consumeAction(this.playerIndex, 'lowkick');
+                            this.sc.dispatch('go_duckkick', this);
                             return;
                         }
                         // Search whether the `duck` action was NOT pressed
                         else if (!actionMap.get('duck')) {
-                            this.sc.to('idle');
+                            this.sc.dispatch('go_idle', this);
                             return;
                         }
                         else if (actionMap.get('left')) {
@@ -274,6 +276,7 @@ export class Player extends Fighter {
                         this.sc.to(statemachine + '.jump');
                         this.getComponent(JumpingWhileLeavingScreenComponent).enabled = true;
                         this.jumping = true;
+                        this.attacked_while_jumping = false;
                     },
                     exit(this: Fighter) {
                         this.getComponent(JumpingWhileLeavingScreenComponent).enabled = false;
@@ -285,7 +288,7 @@ export class Player extends Fighter {
                         if (kickActions.length > 0) {
                             // Consume all kick actions
                             kickActions.forEach(action => $.input.getPlayerInput(this.playerIndex).consumeAction(action));
-                            this.sc.dispatch('flyingkick', this.id);
+                            this.sc.dispatch('go_flyingkick', this.id);
                         }
 
                     },
@@ -336,8 +339,10 @@ export class Player extends Fighter {
                             states: {
                                 _normal: {
                                     on: {
-                                        $go_flyingkick: 'flyingkick',
-                                        $flyingkick: 'flyingkick',
+                                        $go_flyingkick: {
+                                            if(this: Fighter) { return !this.attacked_while_jumping; },
+                                            to: 'flyingkick',
+                                        },
                                     },
                                 },
                                 flyingkick: {
@@ -348,6 +353,7 @@ export class Player extends Fighter {
                                         this.sc.machines[statemachine].to('flyingkick');
                                         this.doAttackFlow('flyingkick', $.modelAs<gamemodel>().theOtherFighter(this));
                                         this.attacking = true;
+                                        this.attacked_while_jumping = true;
                                     },
                                     exit(this: Fighter) {
                                         this.sc.machines[statemachine].to('jump');
@@ -363,7 +369,7 @@ export class Player extends Fighter {
     }
 
     @subscribesToSelfScopedEvent('animationEnd')
-    public handleAnimationEndEvent(event_name: string, _emitter: Player, animation_name: string): void {
+    public handleAnimationEndEvent(event_name: string, _emitter: Eila, animation_name: string): void {
         switch (event_name) {
             case 'animationEnd':
                 switch (animation_name) {
@@ -409,119 +415,119 @@ export class Player extends Fighter {
             states: {
                 _idle: {
                     run: () => { },
-                    enter(this: Player) {
+                    enter(this: Eila) {
                         this.imgid = BitmapId.eila_idle;
                     },
                 },
                 walk: {
-                    run(this: Player) { },
-                    enter(this: Player, state: sstate) {
+                    run(this: Eila) { },
+                    enter(this: Eila, state: sstate) {
                         state.resetSubmachine();
                         this.imgid = BitmapId.eila_walk;
                     },
                     states: {
                         _walk1: {
                             ticks2move: 8,
-                            enter(this: Player, state: sstate) {
+                            enter(this: Eila, state: sstate) {
                                 this.imgid = BitmapId.eila_walk;
                                 state.reset();
                             },
-                            next(this: Player) {
+                            next(this: Eila) {
                                 this.sc.switch('player_animation.walk.walk2');
                             }
                         },
                         walk2: {
                             ticks2move: 8,
-                            enter(this: Player, state: sstate) {
+                            enter(this: Eila, state: sstate) {
                                 this.imgid = BitmapId.eila_idle;
                                 state.reset();
                             },
-                            next(this: Player) {
+                            next(this: Eila) {
                                 this.sc.switch('player_animation.walk.walk1');
                             }
                         },
                     }
                 },
                 highkick: {
-                    ticks2move: Player.ATTACK_DURATION,
-                    enter(this: Player, state: sstate, hit: boolean) {
+                    ticks2move: Eila.ATTACK_DURATION,
+                    enter(this: Eila, state: sstate, hit: boolean) {
                         state.reset();
                         this.imgid = BitmapId.eila_highkick;
                         SM.play(AudioId.kick);
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
-                    next(this: Player) {
+                    next(this: Eila) {
                         $.event_emitter.emit('animationEnd', this, 'highkick');
                         this.sc.switch('player_animation.idle');
                     }
                 },
                 lowkick: {
-                    ticks2move: Player.ATTACK_DURATION,
-                    enter(this: Player, state: sstate, hit: boolean) {
+                    ticks2move: Eila.ATTACK_DURATION,
+                    enter(this: Eila, state: sstate, hit: boolean) {
                         state.reset();
                         SM.play(AudioId.kick);
                         this.imgid = BitmapId.eila_lowkick;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
-                    next(this: Player) {
+                    next(this: Eila) {
                         $.event_emitter.emit('animationEnd', this, 'lowkick');
                         this.sc.switch('player_animation.idle');
                     }
                 },
                 punch: {
-                    ticks2move: Player.ATTACK_DURATION,
-                    enter(this: Player, state: sstate, hit: boolean) {
+                    ticks2move: Eila.ATTACK_DURATION,
+                    enter(this: Eila, state: sstate, hit: boolean) {
                         state.reset();
                         SM.play(AudioId.punch);
                         this.imgid = BitmapId.eila_punch;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
-                    next(this: Player) {
+                    next(this: Eila) {
                         $.event_emitter.emit('animationEnd', this, 'punch');
                         this.sc.switch('player_animation.idle');
                     }
                 },
                 duckkick: {
-                    ticks2move: Player.ATTACK_DURATION,
-                    enter(this: Player, state: sstate) {
+                    ticks2move: Eila.ATTACK_DURATION,
+                    enter(this: Eila, state: sstate) {
                         state.reset();
                         SM.play(AudioId.kick);
                         this.imgid = BitmapId.eila_duckkick;
                     },
-                    next(this: Player) {
+                    next(this: Eila) {
                         this.sc.switch('player_animation.duck');
                         $.event_emitter.emit('animationEnd', this, 'duckkick');
                     }
                 },
                 flyingkick: {
-                    ticks2move: Player.ATTACK_DURATION,
-                    enter(this: Player, state: sstate, hit: boolean) {
+                    ticks2move: Eila.ATTACK_DURATION,
+                    enter(this: Eila, state: sstate, hit: boolean) {
                         state.reset();
                         SM.play(AudioId.kick);
                         this.imgid = BitmapId.eila_flyingkick;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
-                    next(this: Player) {
+                    next(this: Eila) {
                         this.sc.switch('player_animation.jump');
                         $.event_emitter.emit('animationEnd', this, 'flyingkick');
                     }
                 },
                 duck: {
                     run: () => { },
-                    enter(this: Player) { this.imgid = BitmapId.eila_duck; },
+                    enter(this: Eila) { this.imgid = BitmapId.eila_duck; },
                 },
                 jump: {
                     run: () => { },
-                    enter(this: Player) { this.imgid = BitmapId.eila_jump; },
+                    enter(this: Eila) { this.imgid = BitmapId.eila_jump; },
                 },
                 humiliated: {
                     ticks2move: 300,
-                    enter(this: Player, state: sstate) {
+                    enter(this: Eila, state: sstate) {
                         state.reset();
                         SM.play(AudioId.stuk);
                         this.imgid = BitmapId.eila_humiliated;
                     },
-                    next(this: Player) {
+                    next(this: Eila) {
                         $.event_emitter.emit('humiliated_animation_end', this, 'eila');
                     }
                 },

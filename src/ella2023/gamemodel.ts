@@ -1,7 +1,7 @@
 import { BaseModel, Direction, GameObject, InputMap, MSX1ScreenHeight, MSX1ScreenWidth, SM, StateMachineBlueprint, build_fsm, insavegame, new_vec3, sstate, subscribesToGlobalEvent } from '../bmsx/bmsx';
 import { RoomMgr } from './roommgr';
 import { Sinterklaas } from './sinterklaas';
-import { Player } from './eila';
+import { Eila } from './eila';
 import { Fighter } from './fighter';
 import { Hud } from './hud';
 import { keyboardInputMapping1, gamepadInputMapping } from './inputmapping';
@@ -99,7 +99,7 @@ export class gamemodel extends BaseModel {
 								this.clear(); // Clear all game objects in the current space
 								this.room_mgr.loadRoom('room1');
 								this.spawn(this.room_mgr.rooms[this._currentRoomId], new_vec3(0, 0, 0));
-								this.spawn(new Player(), new_vec3(256 - 60, 0, 11));
+								this.spawn(new Eila(), new_vec3(256 - 60, 0, 11));
 								this.spawn(new Hud(), new_vec3(0, 0, 100));
 								SM.play(AudioId.trainen);
 							},
@@ -125,7 +125,7 @@ export class gamemodel extends BaseModel {
 								this.clear(); // Clear all game objects in the current space
 								this.room_mgr.loadRoom('room2');
 								this.spawn(this.room_mgr.rooms[this._currentRoomId], new_vec3(0, 0, 0));
-								this.spawn(new Player(), new_vec3(256 - 60, 0, 11));
+								this.spawn(new Eila(), new_vec3(256 - 60, 0, 11));
 								this.spawn(new Sinterklaas(), new_vec3(60, 0, 10));
 								this.spawn(new Hud(), new_vec3(0, 0, 100));
 								SM.play(AudioId.knokken);
