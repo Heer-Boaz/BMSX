@@ -316,6 +316,7 @@ export type StateEventDefinition<T extends IStateful & IEventSubscriber = any> =
  * @returns The result of the state event handler.
  */
 export interface state_event_handler<T extends IStateful = any> { (state: sstate<T>, ...args: any[]); }
+export interface state_nextevent_handler<T extends IStateful = any> { (state: sstate<T>, beyond_tape_end: boolean, ...args: any[]); }
 
 /**
  * Represents a tape used in the BFSM.
@@ -1226,7 +1227,7 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 				this._tapehead = this.tape.length - 1;
 			}
 			// Trigger the event for moving the tape, after having set the tapehead to the correct position
-			this.tapemove();
+			this.tapemove(true);
 
 			// Trigger the event for reaching the end of the tape
 			this.tapeend();
@@ -1275,8 +1276,8 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 	}
 
 	// Triggers the `next` event of the state machine definition, passing this state and the `state_event_type.Next` event type as arguments.
-	protected tapemove() {
-		this.definition.next?.call(this.target, this as sstate<T>, undefined);
+	protected tapemove(beyond_tape_end: boolean = false) {
+		this.definition.next?.call(this.target, this as sstate<T>, beyond_tape_end);
 	}
 
 	/**
@@ -1414,7 +1415,7 @@ export class sdef {
 
 	public run?: state_event_handler;
 	public end?: state_event_handler;
-	public next?: state_event_handler;
+	public next?: state_nextevent_handler;
 	public enter?: state_event_handler;
 	public exit?: state_event_handler;
 	public process_input?: state_event_handler;
