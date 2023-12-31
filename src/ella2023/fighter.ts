@@ -1,4 +1,4 @@
-import { Identifier, ProhibitLeavingScreenComponent, SM, SpriteObject, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, insavegame, middlepoint_area, new_area, sstate, vec2, Area, vec3 } from '../bmsx/bmsx';
+import { Identifier, ProhibitLeavingScreenComponent, SM, SpriteObject, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, insavegame, middlepoint_area, new_area, sstate, Area, vec3, Vector } from '../bmsx/bmsx';
 import { gamemodel } from './gamemodel';
 import { AudioId, BitmapId } from './resourceids';
 
@@ -163,7 +163,7 @@ export abstract class Fighter extends SpriteObject {
         this.paintHitMarker(this.currentHitMarker);
     }
 
-    override onspawn(spawningPos?: vec3 | vec2): void {
+    override onspawn(spawningPos?: Vector): void {
         super.onspawn(spawningPos);
         this.resetVerticalPosition();
     }

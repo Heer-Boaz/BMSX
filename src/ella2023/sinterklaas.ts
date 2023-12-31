@@ -1,4 +1,4 @@
-import { BTStatus, BTVisualizer, BehaviorTreeDefinition, Blackboard, SM, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, insavegame, sstate, subscribesToSelfScopedEvent } from '../bmsx/bmsx';
+import { BTStatus, BTVisualizer, BehaviorTreeDefinition, Blackboard, SM, SpriteObject, StateMachineBlueprint, Vector, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, insavegame, sstate, subscribesToSelfScopedEvent } from '../bmsx/bmsx';
 import { JumpingWhileLeavingScreenComponent, Eila } from "./eila";
 import { Fighter } from "./fighter";
 import { gamemodel } from "./gamemodel";
@@ -11,14 +11,22 @@ export type SinterklaasAttackType = 'punch' | 'lowkick' | 'highkick' | 'flyingki
 @assign_bt('sinterklaasBT')
 @attach_components(JumpingWhileLeavingScreenComponent, BTVisualizer)
 export class Sinterklaas extends Fighter {
-    constructor() {
+    constructor(aied: boolean) {
         super('sinterklaas', undefined, 'right', 2);
         this.hp = gamemodel.SINT_START_HP;
-        this._aied = true;
+        this._aied = aied;
     }
 
     override paint(): void {
         super.paint();
+    }
+
+    override onspawn(spawningPos?: Vector): void {
+        super.onspawn(spawningPos);
+        // Note: this is a hack to make sure the sinterklaasBT is initialized before the sinterklaasBT can be stopped.
+        if (!this.isAIed) { // Only the player can control Sinterklaas
+            this.behaviortrees['sinterklaasBT'].stop();
+        }
     }
 
     @build_fsm()
