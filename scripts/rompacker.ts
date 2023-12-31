@@ -50,6 +50,12 @@ export interface ResourceMeta {
 	id: number;
 }
 
+interface RomManifest {
+	title?: string;
+	short_name?: string;
+	rom_name?: string;
+}
+
 type logentryType = undefined | 'error' | 'warning';
 
 function writeOut(_tolog: string, type?: logentryType): void {
@@ -62,38 +68,6 @@ function writeOut(_tolog: string, type?: logentryType): void {
 	}
 	term.terminal(`${tolog}`);
 }
-
-// function log(_tolog: string, type?: logentryType): void {
-// 	let d = new Date();
-// 	let tolog: string;
-// 	switch (type) {
-// 		case 'error':
-// 			tolog = _colors.red(_tolog);
-// 			term.terminal(`${_colors.cyan(d.toTimeString().split(' ')[0])}:${_colors.cyan(d.getMilliseconds().toString().substring(0, 3))} ${tolog}`);
-// 			break;
-// 		case 'warning': tolog = _colors.yellow(_tolog);
-// 			term.terminal(`${_colors.cyan(d.toTimeString().split(' ')[0])}:${_colors.cyan(d.getMilliseconds().toString().substring(0, 3))} ${tolog}`);
-// 			break;
-// 		default:
-// 			tolog = _tolog;
-// 			break;
-// 	}
-// }
-
-// function appendLogEntry(_toappend: string, type?: logentryType): void {
-// 	let toappend: string;
-// 	switch (type) {
-// 		case 'error':
-// 			toappend = _colors.red(_toappend);
-// 			term.terminal(toappend);
-// 			break;
-// 		case 'warning':
-// 			toappend = _colors.yellow(_toappend);
-// 			term.terminal(toappend);
-// 			break;
-// 		default: toappend = _toappend; break;
-// 	}
-// }
 
 function timer(ms: number) {
 	return new Promise(res => setTimeout(res, ms));
@@ -162,7 +136,7 @@ async function getAllFiles(dirPath: string, _arrayOfFiles?: string[], filterExte
 						arrayOfFiles.push(fullpath);
 					}
 				}
-				else if (ext != ".rom" && ext != ".js" && ext != ".ts" && ext != ".map" && ext != ".tsbuildinfo") {
+				else if (ext != ".rom" && ext != ".js" && ext != ".ts" && ext != ".map" && ext != ".tsbuildinfo" && ext != ".rommanifest") {
 					arrayOfFiles.push(fullpath);
 				}
 			}
@@ -170,6 +144,22 @@ async function getAllFiles(dirPath: string, _arrayOfFiles?: string[], filterExte
 	}
 
 	return arrayOfFiles;
+}
+
+async function getRomManifest(dirPath: string): Promise<RomManifest> {
+	let files = await getAllFiles(dirPath, [], '.rommanifest');
+
+	if (files.length > 1) {
+		throw new Error(`More than one rommanifest found in ${dirPath}.`);
+	}
+	else if (files.length === 1) {
+		let res = await readFile(files[0]);
+		// Read the rommanifest file
+		JSON.parse(res.toString()) as RomManifest;
+
+		return JSON.parse(res.toString()) as RomManifest;
+	}
+	else return null;
 }
 
 async function yaml2Json(): Promise<void> {
@@ -303,11 +293,11 @@ async function minifyGamecode(infile: string): Promise<terser.MinifyOutput> {
 
 /**
  * Builds the game HTML and manifest files for the specified ROM.
- * @param {string} romname - The name of the ROM.
+ * @param {string} rom_name - The name of the ROM.
  * @param {string} title - The title of the game.
  * @returns {Promise<any>} A promise that resolves when the game HTML and manifest files have been built.
  */
-async function buildGameHtmlAndManifest(romname: string, title: string): Promise<any> {
+async function buildGameHtmlAndManifest(rom_name: string, title: string, short_name: string): Promise<any> {
 	let html, romjs, zipjs;
 	try {
 		html = await readFile("./gamebase.html", 'utf8');
@@ -355,8 +345,8 @@ async function buildGameHtmlAndManifest(romname: string, title: string): Promise
 						.replace('//#zipjs', zipjs)
 						.replace('/*css*/', cssMinified)
 						.replace(/#title/g, title) // https://stackoverflow.com/questions/44324892/how-can-i-replace-multiple-characters-in-a-string
-						.replace('#romname', `${romname}`)
-						.replace('#outfile', `${romname}.rom`)
+						.replace('#romname', `${rom_name}`)
+						.replace('#outfile', `${rom_name}.rom`)
 						.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed)
 						.replace('//#debug', `bootrom.debug = ${debug};\n`)
 				};
@@ -364,7 +354,7 @@ async function buildGameHtmlAndManifest(romname: string, title: string): Promise
 				writeFile("./dist/game_debug.html", await transformHtml(html, true));
 
 				// Update the manifest.json-file that is used for app-versions of the webpage
-				let manifest = (await readFile("./rom/manifest.json", 'utf8')).replace('#title', title);
+				let manifest = (await readFile("./rom/manifest.json", 'utf8')).replace('#title', title).replace('#short_name', short_name);
 
 				// Write updated manifest to dist-folder
 				await writeFile("./dist/manifest.webmanifest", manifest);
@@ -493,6 +483,9 @@ function getResMetaByFilename(filepath: string): { name: string, ext: string, ty
 		case '.js':
 			type = 'source';
 			break;
+		case '.rommanifest':
+			type = 'rommanifest';
+			break;
 		case '.png':
 		default:
 			type = 'image';
@@ -535,6 +528,9 @@ async function getResMetaList(respath: string, romname: string) {
 				++sndid;
 				break;
 			case 'romlabel':
+				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: undefined });
+				break;
+			case 'rommanifest':
 				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: undefined });
 				break;
 		}
@@ -747,11 +743,11 @@ function calculateCenterPoint(boundingBox: Area): vec2 {
  * Builds a list of loaded resources located at `respath` for the specified `romname`.
  * @param respath The path to the resources to include in the list.
  * @param buffers An array of buffers to add the loaded resources to.
- * @param romname The name of the ROM pack to build the list for.
+ * @param rom_name The name of the ROM pack to build the list for.
  * @returns An array of loaded resources.
  */
-async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>, romname: string): Promise<ILoadedResource[]> {
-	let resMetaList = await getResMetaList(respath, romname);
+async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>, rom_name: string): Promise<ILoadedResource[]> {
+	let resMetaList = await getResMetaList(respath, rom_name);
 	let loadedResources: Array<ILoadedResource> = [];
 	for (let i = 0; i < resMetaList.length; i++) {
 		let meta = resMetaList[i];
@@ -778,7 +774,7 @@ async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>, r
 		loadedResources.push({ buffer: buffer!, filepath: meta.filepath, name: name, ext: ext, type: type, img: img, id: id });
 	}
 
-	const megarom_filename = `${romname}.min.js`;
+	const megarom_filename = `${rom_name}.min.js`;
 	const filepath = `./rom/${megarom_filename}`;
 	// Manually add the ROM source code to the list
 	loadedResources.push({
@@ -835,6 +831,9 @@ async function buildResourceList(respath: string, romname: string) {
 				let enummember_to_add = `\t${name} = '${name}',`;
 				tssndout.push(`${enummember_to_add}`);
 				break;
+			case 'romlabel':
+				// Ignore this part
+				break;
 		}
 	}
 
@@ -849,16 +848,16 @@ async function buildResourceList(respath: string, romname: string) {
 
 /**
  * Builds a ROM pack for the specified `romname` using the resources located at `respath`.
- * @param romname The name of the ROM pack to build.
+ * @param rom_name The name of the ROM pack to build.
  * @param respath The path to the resources to include in the ROM pack.
  * @returns A Promise that resolves when the ROM pack has been successfully built.
  */
-async function buildRompack(romname: string, respath: string): Promise<any> {
+async function buildRompack(rom_name: string, respath: string): Promise<void> {
 	return new Promise<any>(async (resolve, reject) => {
-		const outfile = romname.concat('.rom');
-		const megarom_filename = `${romname}.js`;
-		const megarom_min_filename = `${romname}.min.js`;
-		const megarom_min_map_filename = `${romname}.min.map`;
+		const outfile = rom_name.concat('.rom');
+		const megarom_filename = `${rom_name}.js`;
+		const megarom_min_filename = `${rom_name}.min.js`;
+		const megarom_min_map_filename = `${rom_name}.min.map`;
 		const megarom_filepath = `./rom/${megarom_filename}`;
 		const megarom_min_filepath = `./rom/${megarom_min_filename}`;
 		const megarom_min_map_filepath = `./rom/${megarom_min_map_filename}`;
@@ -879,7 +878,7 @@ async function buildRompack(romname: string, respath: string): Promise<any> {
 		taakAfgevinkt();
 
 		const buffers = new Array<Buffer>();
-		const loadedResources: ILoadedResource[] = await getLoadedResourcesList(respath, buffers, romname).catch(err => reject(err)) as ILoadedResource[];
+		const loadedResources: ILoadedResource[] = await getLoadedResourcesList(respath, buffers, rom_name).catch(err => reject(err)) as ILoadedResource[];
 		taakAfgevinkt();
 		let generated_atlas: HTMLCanvasElement = undefined;
 		if (GENERATE_AND_USE_TEXTURE_ATLAS) {
@@ -970,6 +969,10 @@ async function buildRompack(romname: string, respath: string): Promise<any> {
 					bufferPointer += res.buffer.length;
 					break;
 				case 'atlas':
+					// Ignore this part - don't increase the buffer pointer.
+					break;
+				case 'rommanifest':
+					// Ignore this part - don't increase the buffer pointer.
 					break;
 			}
 		}
@@ -1130,7 +1133,7 @@ async function isRebuildRequired(romname: string, bootloaderPath: string, resPat
 		await shouldRebuild('src/bmsx', true, false);
 }
 
-const takenlijst = ['Game compileren en bundleren', 'YAML bestanden omzetten in JSON voor importatie', 'Minifieëren', 'MiniJS wegschrijveren', 'Uitvoer kopieëren en plakken naar wortel-folder', 'Resource bestanden inladen en bufferen', 'Textuuratlas bouwen die optimaal klein is', 'Resource bibliotheek bouwen for in rompack', 'Totale rompack wegschrijven', 'Check "rom.ts" vereist recompilatie', '"rom.ts" compileren (als nodig)', 'game.html en game_debug.html bouwen', 'Deployeren'];
+const takenlijst = ['Rom manifest zoekeren en parseren', 'Game compileren en bundleren', 'YAML bestanden omzetten in JSON voor importatie', 'Minifieëren', 'MiniJS wegschrijveren', 'Uitvoer kopieëren en plakken naar wortel-folder', 'Resource bestanden inladen en bufferen', 'Textuuratlas bouwen die optimaal klein is', 'Resource bibliotheek bouwen for in rompack', 'Totale rompack wegschrijven', 'Check "rom.ts" vereist recompilatie', '"rom.ts" compileren (als nodig)', 'game.html en game_debug.html bouwen', 'Deployeren'];
 
 const totaalTaken = takenlijst.length;
 let afgevinkteTaken = 0;
@@ -1175,7 +1178,7 @@ async function main() {
 		writeOut(_colors.brightGreen.bold('|                          BMSX ROMPACKER DOOR BOAZ©®™                           |\n'));
 		writeOut(_colors.brightGreen.bold('┗————————————————————————————————————————————————————————————————————————————————┛\n'));
 		const args = process.argv.slice(2);
-		let romname: string = 'not-parsed!';
+		let rom_name: string = 'not-parsed!';
 		let title: string = 'not-parsed!';
 		let bootloader_path: string = 'not-parsed!';
 		let respath: string = 'not-parsed!';
@@ -1190,9 +1193,9 @@ async function main() {
 					title = args[++i];
 					break;
 				case '-romname':
-					romname = args[++i].toLowerCase();
-					if (romname.includes('.')) {
-						throw new Error(`'-romname' should not contain any extensions! The given romname was ${romname}. Example of good '-romname': 'testrom'.`);
+					rom_name = args[++i].toLowerCase();
+					if (rom_name.includes('.')) {
+						throw new Error(`'-romname' should not contain any extensions! The given romname was ${rom_name}. Example of good '-romname': 'testrom'.`);
 					}
 					break;
 				case '-bootloaderpath':
@@ -1221,20 +1224,20 @@ async function main() {
 		if (buildreslist) {
 			writeOut('Building resource list and writing output to "./src/bmsx/resourceids.ts"...\n');
 			writeOut('Note: ROM packing and deployement are skipped.\n');
-			await buildResourceList(respath, romname);
+			await buildResourceList(respath, rom_name);
 			writeOut(`\n${_colors.brightWhite.bold('[Resource list bouwen ge-DONUT]')}\n`);
 			return;
 		}
 
 		if (!title) throw new Error("Missing parameter for title ('title', e.g. 'Sintervania'.");
-		if (!romname) throw new Error("Missing parameter for output file ('outfile', e.g. 'sintervania.rom'.");
+		if (!rom_name) throw new Error("Missing parameter for output file ('outfile', e.g. 'sintervania.rom'.");
 		if (!bootloader_path) throw new Error("Missing parameter for location of the bootloader.ts-file ('bootloader_path', e.g. 'src/testrom'.");
 		if (!respath) throw new Error("Missing parameter for location of the resource folder ('respath', e.g. './src/testrom/res'.");
 
 		let rebuildRequired = true;
 
 		if (!force) {
-			rebuildRequired = await isRebuildRequired(romname, bootloader_path, respath);
+			rebuildRequired = await isRebuildRequired(rom_name, bootloader_path, respath);
 			if (!rebuildRequired) {
 				writeOut('Rebuild skipped: game rom was newer than code/assets (use --force option to ignore this check).');
 			}
@@ -1242,10 +1245,11 @@ async function main() {
 		else writeOut(`Note: Recompilation and Building forced via ${_colors.brightRed.bold('--force')}\n`);
 		if (!deployToFtp) writeOut(`Note: Deploy to FTP server disabled via ${_colors.brightRed.bold('--nodeploy')}\n`);
 
-		writeOut(`Starting ROM packing and deployment process for ROM ${_colors.brightBlue.bold(`${romname}`)}...\n`);
+		writeOut(`Starting ROM packing and deployment process for ROM ${_colors.brightBlue.bold(`${rom_name}`)}...\n`);
 
 		if (!deployToFtp) takenlijst.pop();
 		if (!rebuildRequired) {
+			takenlijst.shift();
 			takenlijst.shift();
 			takenlijst.shift();
 			takenlijst.shift();
@@ -1255,15 +1259,24 @@ async function main() {
 		gauge.pulse();
 		// #endregion
 		try {
+			let romManifest: RomManifest;
+			let short_name: string = 'BMSX';
 			if (rebuildRequired) {
-				await buildAndBundleRomSource(romname, bootloader_path);
+				romManifest = await getRomManifest(respath);
+				taakAfgevinkt();
+				if (!romManifest) throw new Error(`Rom manifest not found at "${respath}"!`);
+				rom_name = romManifest?.rom_name ?? rom_name;
+				title = romManifest?.title ?? title;
+				short_name = romManifest?.short_name ?? short_name;
+				await buildAndBundleRomSource(rom_name, bootloader_path);
 				await yaml2Json();
-				await buildRompack(romname, respath);
+				await buildRompack(rom_name, respath);
 			}
 			await compileRomLoaderScriptIfNewer();
-			await buildGameHtmlAndManifest(romname, title);
+
+			await buildGameHtmlAndManifest(rom_name, title, short_name);
 			if (deployToFtp) {
-				await deploy(romname, title);
+				await deploy(rom_name, title);
 			}
 			gauge.show('ALLES DONUT', 1);
 			gauge.pulse();

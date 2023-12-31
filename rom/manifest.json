@@ -1,6 +1,6 @@
 {
 	"name": "#title",
-	"short_name": "BMSX",
+	"short_name": "#short_name",
 	"display": "fullscreen",
 	"orientation": "landscape",
 	"background_color": "#000000"
