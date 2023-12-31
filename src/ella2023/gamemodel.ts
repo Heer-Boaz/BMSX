@@ -14,6 +14,7 @@ export class gamemodel extends BaseModel {
 	public get currentRoomId(): string { return this._currentRoomId; }
 	public set currentRoomId(room_id: string) { this._currentRoomId = room_id; }
 	public room_mgr: RoomMgr;
+	public numOfPlayers: number;
 
 	public static readonly SINT_START_HP = 100;
 	public static readonly EILA_START_HP = 100;
@@ -77,9 +78,9 @@ export class gamemodel extends BaseModel {
 					}
 				},
 				game: {
-					enter(this: gamemodel, state: sstate) {
+					enter(this: gamemodel, state: sstate, numOfPlayers: number) {
+						this.numOfPlayers = numOfPlayers;
 						state.reset();
-						// this.setSpace('niets');
 						state.to('ffwachten');
 					},
 					states: {
@@ -126,7 +127,7 @@ export class gamemodel extends BaseModel {
 								this.room_mgr.loadRoom('room2');
 								this.spawn(this.room_mgr.rooms[this._currentRoomId], new_vec3(0, 0, 0));
 								this.spawn(new Eila(), new_vec3(256 - 60, 0, 11));
-								this.spawn(new Sinterklaas(), new_vec3(60, 0, 10));
+								this.spawn(new Sinterklaas(this.numOfPlayers === 1), new_vec3(60, 0, 10));
 								this.spawn(new Hud(), new_vec3(0, 0, 100));
 								SM.play(AudioId.knokken);
 							},
@@ -159,9 +160,10 @@ export class gamemodel extends BaseModel {
 						this.setSpace('titlescreen');
 						if (!this.getGameObject('title')) {
 							this.spawn(new TitleScreen(), new_vec3(0, 0, 0));
-							if (!this.getGameObject('gordijn')) {
-								this.spawn(new Gordijn(), new_vec3(0, 0, 100));
-							}
+						}
+						this.getFromCurrentSpace('title').sc.dispatch('reset', this);
+						if (!this.getGameObject('gordijn')) {
+							this.spawn(new Gordijn(), new_vec3(0, 0, 100));
 						}
 						this.getFromCurrentSpace('gordijn').sc.dispatch('reset', this);
 					},
