@@ -477,15 +477,19 @@ function decodeuint8arr(to_decode: Uint8Array): string {
  */
 async function fetchText(url: string): Promise<string> {
 	try {
-		const response = await fetch(url);
+		const response = await fetch(url, {
+			headers: {
+				'Cache-Control': 'no-cache'
+			}
+		});
 		if (!response.ok) {
-        	throw new Error(`Failed @fetchText for URL "${url}"`);
+			throw new Error(`Failed @fetchText for URL "${url}"`);
 		}
 		const decoder = new TextDecoder('utf-8');
 		const data = await response.arrayBuffer();
 		return decoder.decode(data);
 	} catch (err) {
-        throw new Error(`Error @fetchText for URL "${url}": ${err.message}`);
+		throw new Error(`Error @fetchText for URL "${url}": ${err.message}`);
 	}
 }
 
@@ -497,13 +501,17 @@ async function fetchText(url: string): Promise<string> {
  */
 async function fetchBuffer(url: string): Promise<ArrayBuffer> {
 	try {
-		const response = await fetch(url);
+		const response = await fetch(url, {
+			headers: {
+				'Cache-Control': 'no-cache'
+			}
+		});
 		if (!response.ok) {
-        	throw new Error(`Failed @fetchBuffer for URL "${url}"`);
+			throw new Error(`Failed @fetchBuffer for URL "${url}"`);
 		}
 		return await response.arrayBuffer();
 	} catch (err) {
-        throw new Error(`Error @fetchBuffer for URL "${url}": ${err.message}`);
+		throw new Error(`Error @fetchBuffer for URL "${url}": ${err.message}`);
 	}
 }
 
