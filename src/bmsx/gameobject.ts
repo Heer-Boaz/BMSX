@@ -170,8 +170,14 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 	 * @returns void
 	 */
 	public tickTree(bt_id: BehaviorTreeID): void {
-		if (!this.behaviortrees[bt_id] || !this.blackboards[bt_id]) {
+		const tree = this.behaviortrees[bt_id];
+		const blackboard = this.blackboards[bt_id];
+		if (!tree || !blackboard) {
 			console.error(`Behavior tree or blackboard with ID ${bt_id} does not exist.`);
+			return;
+		}
+
+		if (!tree.isRunning) {
 			return;
 		}
 
@@ -180,15 +186,15 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 			let updates = this.objectTracker.getUpdates();
 
 			// Apply the updates to the Blackboard
-			this.blackboards[bt_id].applyUpdates(updates);
+			blackboard.applyUpdates(updates);
 		}
 
 		if ($.debug) {
-			this.blackboards[bt_id].executionPath = [];
-			this.behaviortrees[bt_id].debug_tick(this.id, this.blackboards[bt_id]);
+			blackboard.executionPath = [];
+			tree.debug_tick(this.id, blackboard);
 		}
 		else {
-			this.behaviortrees[bt_id].tick(this.id, this.blackboards[bt_id]);
+			tree.tick(this.id, blackboard);
 		}
 	}
 
