@@ -781,7 +781,7 @@ export class PlayerInput {
             if (query?.filter && !query.filter.includes(action)) continue; // Skip actions that are not in the filter
             const actionState = this.getActionState(action);
             if (actionState.pressed === (query?.pressed ?? true) &&
-                actionState.consumed === (query?.consumed ?? actionState.consumed) &&
+                actionState.consumed === (query?.consumed ?? false) &&
                 actionState.presstime >= (query?.pressTime ?? 0)) {
                 pressedActions.push(actionState);
             }
