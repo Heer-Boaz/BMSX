@@ -93,13 +93,32 @@ export class Hoera extends SpriteObject {
 }
 
 export class TitleScreen extends SpriteObject {
+	private static readonly SELECT_PLAYER_1_Y = 160 - 16;
+	private static readonly SELECT_PLAYER_2_Y = 160;
+	private cursorY: number;
+	private selectedPlayers: number;
+	private cursorVisible;
+
 	@build_fsm()
 	static bouw(): StateMachineBlueprint {
 		return {
 			states: {
 				_default: {
-					run(this: TitleScreen) {
-						const priorityActions = $.input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['punch', 'highkick', 'lowkick', 'block'] });
+					on: {
+						reset: {
+							do(this: TitleScreen) {
+								this.cursorY = TitleScreen.SELECT_PLAYER_1_Y;
+								this.selectedPlayers = 1;
+								this.cursorVisible = true;
+								this.sc.dispatch('players_1', this);
+								this.sc.dispatch('resume_blink', this);
+							},
+						},
+					},
+					enter(this: TitleScreen) {
+					},
+					process_input(this: TitleScreen) {
+						const priorityActions = $.input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['up', 'down', 'punch', 'highkick', 'lowkick', 'block'] });
 
 						// If no priority actions are pressed, do nothing.
 						if (!priorityActions || priorityActions.length === 0) {
@@ -107,9 +126,75 @@ export class TitleScreen extends SpriteObject {
 						}
 						$.consumeActions(1, ...priorityActions);
 
-						// If a priority action is pressed, go to the $.
-						$.emit('gamestart_selected', this, 2, 'b');
+						if (priorityActions.some(action => action.action === 'up' || action.action === 'down')) {
+							this.sc.dispatch('switch', this);
+							return;
+						}
+
+						// If a priority action is pressed, start the game.
+						this.cursorVisible = true;
+						this.sc.dispatch('pause_blink', this);
+						$.emit('gamestart_selected', this, this.selectedPlayers);
 					},
+					states: {
+						_players_1: {
+							on: {
+								$switch: 'players_2',
+							},
+							enter(this: TitleScreen, state: sstate) {
+								this.cursorY = TitleScreen.SELECT_PLAYER_1_Y;
+								this.selectedPlayers = 1;
+								this.cursorVisible = true;
+								state.parent.states.blink.reset();
+							},
+						},
+						players_2: {
+							on: {
+								$switch: 'players_1',
+							},
+							enter(this: TitleScreen, state: sstate) {
+								this.cursorY = TitleScreen.SELECT_PLAYER_2_Y;
+								this.selectedPlayers = 2;
+								this.cursorVisible = true;
+								state.parent.states.blink.reset();
+							},
+						},
+						blink: {
+							parallel: true,
+							ticks2move: 20,
+							tape: [true, false],
+							auto_rewind_tape_after_end: true,
+							data: {
+								pause_blink: false,
+							},
+							enter(this: TitleScreen, state: sstate) {
+								state.reset();
+								this.cursorVisible = state.current_tape_value;
+							},
+							next(this: TitleScreen, state: sstate) {
+								if (state.data.pause_blink) return;
+								this.cursorVisible = state.current_tape_value;
+							},
+							states: {
+								_default: {
+									on: {
+										$pause_blink: 'paused',
+									},
+									enter(state: sstate) {
+										state.parent.data.pause_blink = false;
+									},
+								},
+								paused: {
+									on: {
+										$resume_blink: 'default',
+									},
+									enter(state: sstate) {
+										state.parent.data.pause_blink = true;
+									},
+								}
+							}
+						}
+					}
 				}
 			}
 		}
@@ -117,7 +202,9 @@ export class TitleScreen extends SpriteObject {
 
 	override paint(): void {
 		super.paint();
-		$.drawImg({ imgid: BitmapId.menu_arrow, pos: new_vec3(80, 160, this.z + 1) });
+		if (this.cursorVisible) {
+			$.drawImg({ imgid: BitmapId.menu_arrow, pos: new_vec3(80, this.cursorY, this.z + 1) });
+		}
 
 	}
 
