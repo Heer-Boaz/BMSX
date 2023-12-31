@@ -112,7 +112,7 @@ interface IInputHandler {
     getButtonState(btn: number | null): ButtonState;
     consumeButton(button: number): void;
     reset(except?: string[]): void;
-    gamepadIndex: number;
+    get gamepadIndex(): number;
 }
 
 
@@ -124,16 +124,16 @@ const options = {
 class PendingAssignmentProcessor {
     private static readonly joystick_icon_start = { x: 0, y: 0 };
     private static readonly joystick_icon_increment_x = 32;
-    private get pendingIndex() { return this.gamepadInput.gamepadIndex; }
+    private get pendingIndex() { return this.gamepadInput.gamepadIndex; } // DOESN'T WORK, AS THE GAMEPAD INDEX 0 WILL OVERLAP THE HARDCODED INDEX 0 OF ON-SCREEN GAMEPAD!
 
     private icon: SelectedPlayerIndexIcon = null;
 
-    private checkNonConsumedPressed(button: GamepadButton, gamepadInput: GamepadInput) {
+    private checkNonConsumedPressed(button: GamepadButton, gamepadInput: IInputHandler) {
         return gamepadInput.getButtonState(Input.BUTTON2INDEX[button]).pressed && !gamepadInput.getButtonState(Input.BUTTON2INDEX[button]).consumed;
     }
 
     private calcIconPositionX(positionIndex: number) { return PendingAssignmentProcessor.joystick_icon_start.x + (PendingAssignmentProcessor.joystick_icon_increment_x * (positionIndex ?? 0)) };
-    private handleSelectPlayerIndexButtonPress(button: GamepadButton, increment: number, gamepadInput: GamepadInput) {
+    private handleSelectPlayerIndexButtonPress(button: GamepadButton, increment: number, gamepadInput: IInputHandler) {
         if (this.checkNonConsumedPressed(button, gamepadInput)) {
             gamepadInput.consumeButton(Input.BUTTON2INDEX[button]);
 
@@ -162,7 +162,7 @@ class PendingAssignmentProcessor {
         }
     }
 
-    private createSelectPlayerIconIfNeeded(gamepadInput: GamepadInput, positionIndex: number) {
+    private createSelectPlayerIconIfNeeded(gamepadInput: IInputHandler, positionIndex: number) {
         const model = $.model;
         if (!this.icon) { // If the joystick icon doesn't exist yet, create it
             const joystick_icon = new SelectedPlayerIndexIcon(gamepadInput.gamepadIndex);
@@ -179,18 +179,18 @@ class PendingAssignmentProcessor {
         }
     }
 
-    constructor(public gamepadInput: GamepadInput, public proposedPlayerIndex: number | null) {
+    constructor(public gamepadInput: IInputHandler, public proposedPlayerIndex: number | null) {
         const self = this;
         window.addEventListener("gamepaddisconnected", function (e: GamepadEvent) {
             const gamepad = e.gamepad;
             if (!gamepad.id.toLowerCase().includes('gamepad')) return;
 
             if (!self.gamepadInput) return; // No gamepad was not assigned to this object, so ignore the event (should not happen).
-
-            if (e.gamepad.index === self.gamepadInput.gamepadIndex) {
+            const gamepadIndex = e.gamepad.index;
+            if (gamepadIndex === self.gamepadInput.gamepadIndex) {
                 // No player was assigned to this gamepad yet, but this input object was used for polling input from the gamepad
                 console.info(`Gamepad ${gamepad.index} disconnected while pending assignment.`);
-                Input.instance.removePendingGamepadAssignment(gamepad); // Remove pending gamepad assignment
+                Input.instance.removePendingGamepadAssignment(gamepadIndex); // Remove pending gamepad assignment
             }
         });
     }
@@ -223,7 +223,7 @@ class PendingAssignmentProcessor {
                 // Assign gamepad to player and remove the joystick icon
                 gamepadInput.consumeButton(Input.BUTTON2INDEX['a']);
                 inputMaestro.assignGamepadToPlayer(gamepadInput, this.proposedPlayerIndex);
-                inputMaestro.removePendingGamepadAssignment(this.gamepadInput.gamepad);
+                inputMaestro.removePendingGamepadAssignment(this.gamepadInput.gamepadIndex);
             }
             else if (this.checkNonConsumedPressed('b', gamepadInput)) {
                 // Cancel assignment process for this gamepad and remove the joystick icon
@@ -458,7 +458,7 @@ export class Input implements IRegisterable {
                 if (buttonState.pressed && buttonState.presstime >= 50) {
                     gamepadInput.reset();
                     player.gamepadInput = null;
-                    this.pendingGamepadAssignments.push(new PendingAssignmentProcessor(gamepadInput as GamepadInput, null));
+                    this.pendingGamepadAssignments.push(new PendingAssignmentProcessor(gamepadInput, null));
                 }
             }
         });
@@ -497,8 +497,8 @@ export class Input implements IRegisterable {
      *
      * @param gamepad - The gamepad waiting to be assigned.
      */
-    public removePendingGamepadAssignment(gamepad: Gamepad): void {
-        const index = this.pendingGamepadAssignments.findIndex(pending => pending.gamepadInput.gamepadIndex === gamepad.index);
+    public removePendingGamepadAssignment(gamepadIndex: number): void {
+        const index = this.pendingGamepadAssignments.findIndex(pending => pending.gamepadInput.gamepadIndex === gamepadIndex);
         if (index !== -1) {
             const pendingAssignmentProcessor = this.pendingGamepadAssignments[index];
             this.pendingGamepadAssignments.splice(index, 1);
@@ -512,7 +512,7 @@ export class Input implements IRegisterable {
      * @param gamepad The gamepad to assign.
      * @param playerIndex The index of the player.
      */
-    public assignGamepadToPlayer(gamepad: GamepadInput, playerIndex: number): void {
+    public assignGamepadToPlayer(gamepad: IInputHandler, playerIndex: number): void {
         this.getPlayerInput(playerIndex).assignGamepadToPlayer(gamepad);
         EventEmitter.instance.emit('playerjoin', this, playerIndex);
     }
@@ -884,7 +884,7 @@ export class PlayerInput {
     * @param gamepad The gamepad to assign to a player.
     * @returns The player index the gamepad was assigned to, or null if no player index was available.
     */
-    assignGamepadToPlayer(gamepadInput: GamepadInput): void {
+    assignGamepadToPlayer(gamepadInput: IInputHandler): void {
         this.gamepadInput = gamepadInput;
 
         console.info(`Gamepad ${gamepadInput.gamepadIndex} assigned to player ${this.playerIndex}.`);
@@ -1207,7 +1207,6 @@ class OnscreenGamepad implements IInputHandler {
      */
     public getButtonState(btn: number | null): ButtonState {
         if (btn === null) return { pressed: false, consumed: false, presstime: null };
-
         const button = Input.INDEX2BUTTON[btn];
         const stateMap = this.gamepadButtonStates || {};
         const consumedStateMap = this.gamepadButtonPressedConsumedStates;
@@ -1218,9 +1217,15 @@ class OnscreenGamepad implements IInputHandler {
 
     public pollInput(): void {
         // Initialize new states with current values instead of resetting
-        const newGamepadButtonStates = { ...this.gamepadButtonStates };
-        const newGamepadButtonPressedConsumedStates = { ...this.gamepadButtonPressedConsumedStates };
-        const newGamepadButtonPressTimes = { ...this.gamepadButtonPressTimes };
+        const defaultState = { pressed: false, consumed: false, presstime: null };
+
+        let newGamepadButtonStates = {};
+        let newGamepadButtonPressedConsumedStates = { ...this.gamepadButtonPressedConsumedStates };
+        let newGamepadButtonPressTimes = { ...this.gamepadButtonPressTimes };
+
+        Object.keys(Input.BUTTON2INDEX).forEach(button => {
+            newGamepadButtonStates[button] = this.gamepadButtonStates[button] ?? defaultState.pressed;
+        });
 
         for (let i = 0; i < OnscreenGamepad.dpadlist.length; i++) {
             const d = document.getElementById(OnscreenGamepad.dpadlist[i]);
