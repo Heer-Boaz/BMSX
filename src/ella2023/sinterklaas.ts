@@ -25,7 +25,10 @@ export class Sinterklaas extends Fighter {
         super.onspawn(spawningPos);
         // Note: this is a hack to make sure the sinterklaasBT is initialized before the sinterklaasBT can be stopped.
         if (!this.isAIed) { // Only the player can control Sinterklaas
-            this.behaviortrees['sinterklaasBT'].stop();
+            this.behaviortrees['sinterklaasBT'].stop(); // BUG!!!!!! WILL NOT WORK, AS THIS WILL START/STOP THE BT FOR ALL OBJECTS THAT REFERENCE THIS BT!!!!111ONE
+        }
+        else {
+            this.behaviortrees['sinterklaasBT'].start(); // BUG!!!!!! WILL NOT WORK, AS THIS WILL START/STOP THE BT FOR ALL OBJECTS THAT REFERENCE THIS BT!!!!111ONE
         }
     }
 
