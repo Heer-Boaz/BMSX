@@ -238,6 +238,10 @@ export type BehaviorTreeID = string;
 export abstract class BTNode implements IIdentifiable {
     public id: BehaviorTreeID;
     public priority: number;
+    private running: boolean = true;
+    public get isRunning() { return this.running; } // NOTE: LOGIC FOR THIS IS IMPLEMENTED IN THE GAMEOBJECT CLASS!
+    public start() { this.running = true; }
+    public stop() { this.running = false; }
 
     /**
      * Retrieves the target object with the specified Identifier and casts it to the specified type.
