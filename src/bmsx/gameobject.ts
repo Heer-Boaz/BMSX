@@ -4,7 +4,7 @@ import { Component, ComponentTag, IComponentContainer, KeyToComponentMap, Compon
 import { BehaviorTrees, Blackboard, BTNode, BehaviorTreeID, ConstructorWithBTProperty } from "./behaviourtree";
 import { ObjectTracker } from "./objecttracker";
 import { onload } from "./gameserializer";
-import { new_area, new_vec3, new_vec2, AbstractConstructor } from "./game";
+import { new_area, new_vec3, new_vec2, AbstractConstructor, middlepoint_area } from "./game";
 import { vec2, vec3, Area, Vector } from "./rompack";
 import { Direction } from "./game";
 import { ZCOORD_MAX } from "./glview";
@@ -230,6 +230,10 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 	 */
 	public get hitbox(): Area {
 		return new_area(this.hitbox_left, this.hitbox_top, this.hitbox_right, this.hitbox_bottom);
+	}
+
+	public get middlepoint(): vec2 {
+		return middlepoint_area(this.hitbox);
 	}
 
 	public get hitbox_left(): number {
