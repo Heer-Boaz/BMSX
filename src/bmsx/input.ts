@@ -1217,7 +1217,7 @@ class OnscreenGamepad implements IInputHandler {
 
     public pollInput(): void {
         // Initialize new states with current values instead of resetting
-        const defaultState = { pressed: false, consumed: false, presstime: null };
+        const defaultState = { pressed: false, consumed: true, presstime: null };
 
         let newGamepadButtonStates = {};
         let newGamepadButtonPressedConsumedStates = { ...this.gamepadButtonPressedConsumedStates };
@@ -1227,8 +1227,8 @@ class OnscreenGamepad implements IInputHandler {
             newGamepadButtonStates[button] = this.gamepadButtonStates[button] ?? defaultState.pressed;
         });
 
-        for (let i = 0; i < OnscreenGamepad.dpadlist.length; i++) {
-            const d = document.getElementById(OnscreenGamepad.dpadlist[i]);
+        for (let i = 0; i < OnscreenGamepad.onscreenButtonElementNames.length; i++) {
+            const d = document.getElementById(OnscreenGamepad.onscreenButtonElementNames[i]);
             const buttonData = OnscreenGamepad.buttonMap[d.id];
             if (buttonData) {
                 buttonData.buttons.forEach(button => {
@@ -1236,6 +1236,7 @@ class OnscreenGamepad implements IInputHandler {
                         // Update the state only if the button is currently pressed
                         newGamepadButtonStates[button] = true;
                         newGamepadButtonPressTimes[button] = (newGamepadButtonPressTimes[button] ?? 0) + 1;
+                        newGamepadButtonPressedConsumedStates[button] ??= false;
                     } else {
                         // Set to false only if no other element is pressing this button
                         if (!this.isOtherElementPressingButton(button)) {
@@ -1256,7 +1257,7 @@ class OnscreenGamepad implements IInputHandler {
 
     // Helper function to determine if any other element is pressing the same button
     private isOtherElementPressingButton(button: string): boolean {
-        return OnscreenGamepad.dpadlist.some(dpadId => {
+        return OnscreenGamepad.onscreenButtonElementNames.some(dpadId => {
             const element = document.getElementById(dpadId);
             return element && element.classList.contains('druk') && OnscreenGamepad.buttonMap[element.id].buttons.includes(button);
         });
@@ -1266,8 +1267,9 @@ class OnscreenGamepad implements IInputHandler {
      * Consumes the given button press for the specified player index.
      * @param button The button to consume.
      */
-    public consumeButton(button: number) {
+    public consumeButton(buttonIndex: number) {
         if (this.gamepadButtonPressedConsumedStates) {
+            const button = Input.INDEX2BUTTON[buttonIndex];
             this.gamepadButtonPressedConsumedStates[button] = true;
         }
     }
@@ -1335,7 +1337,7 @@ class OnscreenGamepad implements IInputHandler {
         // },
     }
 
-    private static readonly dpadlist = Object.keys(OnscreenGamepad.buttonMap);
+    private static readonly onscreenButtonElementNames = Object.keys(OnscreenGamepad.buttonMap);
 
     public init(): void {
         // Reset gamepad button states
@@ -1348,8 +1350,8 @@ class OnscreenGamepad implements IInputHandler {
 
         controlsElement.addEventListener('touchmove', e => { preventActionAndPropagation(e); this.handleTouchStuff(e); return false; }, options);
         controlsElement.addEventListener('touchstart', e => { preventActionAndPropagation(e); this.handleTouchStuff(e); return false; }, options);
-        controlsElement.addEventListener('touchend', e => { preventActionAndPropagation(e); this.handleTouchStuff(e); return false; }, options);
-        controlsElement.addEventListener('touchcancel', e => { preventActionAndPropagation(e); this.handleTouchStuff(e); return false; }, options);
+        controlsElement.addEventListener('touchend', e => { preventActionAndPropagation(e); this.handleTouchEndStuff(e); return false; }, options);
+        controlsElement.addEventListener('touchcancel', e => { preventActionAndPropagation(e); this.handleTouchEndStuff(e); return false; }, options);
     }
 
     /**
@@ -1374,14 +1376,19 @@ class OnscreenGamepad implements IInputHandler {
      * This function is used to clear the state of all UI elements that represent the gamepad input buttons.
      * It is called once per frame to ensure that the UI is up-to-date with the current gamepad input state.
      */
-    public resetUI(): void {
-        let d: HTMLElement;
-        for (let i = 0; i < OnscreenGamepad.dpadlist.length; i++) {
-            d = document.getElementById(OnscreenGamepad.dpadlist[i]);
-            if (d.classList.contains('druk')) {
-                d.classList.remove('druk');
-                d.classList.add('los'); // WERKT NIET!!
+    public resetUI(elementsToFilter?: HTMLElement[]): void {
+        function resetElement(element: HTMLElement): void {
+            if (element.classList.contains('druk')) {
+                element.classList.remove('druk');
+                element.classList.add('los');
             }
+        }
+
+        if (elementsToFilter) {
+            elementsToFilter.forEach(element => !elementsToFilter.includes(element) && resetElement(element));
+        }
+        else {
+            OnscreenGamepad.onscreenButtonElementNames.forEach(buttonElementName => resetElement(document.getElementById(buttonElementName)));
         }
     }
 
@@ -1394,21 +1401,23 @@ class OnscreenGamepad implements IInputHandler {
     handleTouchStuff(e: TouchEvent): void {
         this.resetUI();
 
-        if (e.touches.length == 0 && e.type == 'touchstart') {
-            this.reset();
+        if (e.targetTouches.length === 0) {
+            // this.reset();
             return;
         }
 
-        let filterFromReset: string[] = [];
-        for (let i = 0; i < e.touches.length; i++) {
-            let pos = e.touches[i];
-            let elementTouched = document.elementFromPoint(pos.clientX, pos.clientY) as HTMLElement;
-            if (elementTouched) {
+        const filterFromReset: string[] = [];
+        const elementsToFilter = [];
+        for (let i = 0; i < e.targetTouches.length; i++) {
+            let pos = e.targetTouches[i];
+            const elementUnderTouch = document.elementFromPoint(pos.clientX, pos.clientY) as HTMLElement;
+            if (elementUnderTouch) {
+                elementsToFilter.push(elementUnderTouch);
                 // let buttonsTouched = this.handleElementUnderTouch(elementTouched);
-                let buttonsTouched = OnscreenGamepad.buttonMap[elementTouched.id]?.buttons;
+                const buttonsTouched = OnscreenGamepad.buttonMap[elementUnderTouch.id]?.buttons;
                 if (buttonsTouched?.length > 0) {
-                    elementTouched.classList.add('druk');
-                    elementTouched.classList.remove('los');
+                    elementUnderTouch.classList.add('druk');
+                    elementUnderTouch.classList.remove('los');
                     // elementTouched.dataset.touched = 'true';
 
                     buttonsTouched.forEach(b => filterFromReset.push(b));
@@ -1416,6 +1425,12 @@ class OnscreenGamepad implements IInputHandler {
             }
         }
         this.reset(filterFromReset);
+        this.resetUI(elementsToFilter);
+    }
+
+    handleTouchEndStuff(_e: TouchEvent): void {
+        this.resetUI();
+        this.reset();
     }
 
     /**
