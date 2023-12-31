@@ -1,6 +1,6 @@
 import { createOptimizedAtlas } from './atlasbuilder';
 import { createWriteStream, Stats } from 'fs';
-import { join, parse } from 'path';
+import { dirname, join, parse } from 'path';
 import { AudioMeta, RomAsset, RomMeta, ImgMeta, Area, vec2, AudioType, BoundingBoxesPrecalc, BoundingBoxPrecalc } from './rompacker.rompack';
 import { exec } from 'child_process';
 const Gauge = require('gauge');
@@ -1019,6 +1019,7 @@ async function buildRompack(rom_name: string, respath: string): Promise<void> {
 async function compileRomLoaderScriptIfNewer() {
 	const romTsPath = join(__dirname, '../scripts/rom.ts');
 	const romJsPath = join(__dirname, '../rom/rom.js');
+	const romTsDir = dirname(romTsPath);
 
 	try {
 		await access(romTsPath);
@@ -1039,7 +1040,7 @@ async function compileRomLoaderScriptIfNewer() {
 	if (!romJsStats || romTsStats.mtime > romJsStats.mtime) {
 		return new Promise<void>((resolve, reject) => {
 			try {
-				exec(`npx tsc ${romTsPath} --removeComments -m commonjs -t ES2017 --outDir ${join(__dirname, '../rom/')}`, (error, stdout, stderr) => {
+				exec(`npx tsc ${romTsPath} --removeComments -m commonjs -t ES2020 --rootDir "./" --outDir ${romJsPath})}`, { cwd: romTsDir }, (error, stdout, stderr) => {
 					if (error || stderr) {
 						throw new Error(`Error while compiling "rom.ts": ${error?.message ?? stderr}`);
 					} else {
