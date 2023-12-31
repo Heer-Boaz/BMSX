@@ -352,28 +352,24 @@ export class Sinterklaas extends Fighter {
 
         function jump(this: Fighter): BTStatus {
             if (this.isJumping) return 'RUNNING';
-            // if (isAttacking.apply(this)) return 'FAILED';
             this.sc.dispatch('go_jump', this, this.facing);
             return 'SUCCESS';
         }
 
         function straightJump(this: Fighter): BTStatus {
             if (this.isJumping) return 'RUNNING';
-            // if (isAttacking.apply(this)) return 'FAILED';
             this.sc.dispatch('go_jump', this, undefined);
             return 'SUCCESS';
         }
 
         function jumpkick(this: Fighter): BTStatus {
             if (isAttacking.apply(this)) return 'RUNNING';
-            // if (!isJumping.apply(this)) return 'FAILED';
             this.sc.dispatch('go_flyingkick', this, this.facing);
             return 'SUCCESS';
         }
 
         // @ts-ignore
         function idle(this: Fighter): BTStatus {
-            // if (isBusy.apply(this)) return 'FAILED';
             // Logic for idle behavior
             this.sc.dispatch('go_idle', this);
             return 'SUCCESS';
@@ -381,7 +377,6 @@ export class Sinterklaas extends Fighter {
 
         // @ts-ignore
         function walk(this: Fighter, blackboard: Blackboard): BTStatus {
-            // if (isBusy.apply(this)) return 'FAILED';
             // Logic for walk behavior
             this.sc.dispatch('go_walk', this, this.facing);
             this.x += this.facing === 'left' ? -Fighter.SPEED : Fighter.SPEED;
@@ -393,16 +388,8 @@ export class Sinterklaas extends Fighter {
             return this.isAttacking;
         }
 
-        function isNotAttacking(this: Fighter, _blackboard: Blackboard): boolean {
-            return !this.isAttacking;
-        }
-
         function isJumping(this: Fighter): boolean {
             return this.isJumping;
-        }
-
-        function isNotJumping(this: Fighter): boolean {
-            return !this.isJumping;
         }
 
         function isDucking(this: Fighter): boolean {
@@ -468,7 +455,7 @@ export class Sinterklaas extends Fighter {
                             type: 'Sequence',
                             children: [
                                 { type: 'Condition', condition: isNotBusy },
-                                { type: 'Condition', condition: isNotAttacking },
+                                { type: 'Condition', condition: isAttacking, modifier: 'NOT' },
                                 {
                                     type: 'Selector',
                                     children: [
@@ -482,7 +469,7 @@ export class Sinterklaas extends Fighter {
                                         },
                                         {
                                             type: 'Sequence', children: [
-                                                { type: 'Condition', condition: isNotJumping },
+                                                { type: 'Condition', condition: isJumping, modifier: 'NOT' },
                                                 { type: 'Action', action: faceYourFoe },
                                                 {
                                                     type: 'RandomSelector',
@@ -526,8 +513,8 @@ export class Sinterklaas extends Fighter {
                         {
                             type: 'Sequence',
                             children: [
-                                { type: 'Condition', condition: isNotAttacking },
-                                { type: 'Condition', condition: isNotJumping },
+                                { type: 'Condition', condition: isAttacking, modifier: 'NOT' },
+                                { type: 'Condition', condition: isJumping, modifier: 'NOT' },
                                 {
                                     type: 'RandomSelector',
                                     currentchild_propname: 'currentDefenseMove',
@@ -569,7 +556,7 @@ export class Sinterklaas extends Fighter {
                                             type: 'Sequence',
                                             children: [
                                                 { type: 'Condition', condition: isNotBusy },
-                                                { type: 'Condition', condition: isNotJumping },
+                                                { type: 'Condition', condition: isJumping, modifier: 'NOT' },
                                                 { type: 'Decorator', decorator: WaitForActionCompletionDecorator, child: { type: 'Action', action: faceYourFoe } },
                                                 { type: 'Decorator', decorator: WaitForActionCompletionDecorator, child: { type: 'Action', action: idle } },
                                             ]

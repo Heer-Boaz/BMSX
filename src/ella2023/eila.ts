@@ -137,12 +137,13 @@ export class Player extends Fighter {
                     ticks2move: 1,
                     tape: ['highkick', 'lowkick', 'duckkick', 'punch', 'punch'],
                     repetitions: 2,
+                    auto_rewind_tape_after_end: false,
                     enter(this: Fighter, state: sstate) {
+                        this.fighting = false;
                         state.reset();
                         this.resetVerticalPosition();
                         this.sc.to(`${statemachine}.${state.current_tape_value}`);
                         this.facing = (this.facing === 'left' ? 'right' : 'left');
-                        this.fighting = false;
                     },
                     run(this: Fighter, state: sstate) {
                         // Lelijk
@@ -150,7 +151,8 @@ export class Player extends Fighter {
                             ++state.ticks;
                         }
                     },
-                    next(this: Fighter, state: sstate) {
+                    next(this: Fighter, state: sstate, beyond_tape_end: boolean) {
+                        if (beyond_tape_end) return;
                         this.sc.to(`${statemachine}.${state.current_tape_value}`);
                         this.facing = (this.facing === 'left' ? 'right' : 'left');
                     },
