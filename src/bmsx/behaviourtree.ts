@@ -6,17 +6,18 @@ import type { IIdentifiable, Identifier } from "./game";
  * Represents the definition of a behavior tree.
  */
 export type BehaviorTreeDefinition =
-    | { type: 'Selector'; children: BehaviorTreeDefinition[] }
-    | { type: 'Sequence'; children: BehaviorTreeDefinition[] }
-    | { type: 'Parallel'; children: BehaviorTreeDefinition[]; successPolicy: 'ONE' | 'ALL' }
-    | { type: 'Decorator'; child: BehaviorTreeDefinition; decorator: NodeDecorator }
-    | { type: 'Condition'; condition: NodeCondition }
-    | { type: 'RandomSelector'; children: BehaviorTreeDefinition[], currentchild_propname: string }
+    | { type: 'Selector'; children: BehaviorTreeDefinition[]; priority?: number }
+    | { type: 'Sequence'; children: BehaviorTreeDefinition[]; priority?: number }
+    | { type: 'Parallel'; children: BehaviorTreeDefinition[]; successPolicy: 'ONE' | 'ALL'; priority?: number }
+    | { type: 'Decorator'; child: BehaviorTreeDefinition; decorator: NodeDecorator; priority?: number }
+    | { type: 'Condition'; condition: NodeCondition; modifier?: NodeConditionModifier; parameters?: any[]; priority?: number }
+    | { type: 'CompositeCondition'; conditions: NodeCondition[]; modifier: NodeCompositeConditionModifier; parameters?: any[]; priority?: number }
+    | { type: 'RandomSelector'; children: BehaviorTreeDefinition[], currentchild_propname: string; priority?: number }
     | { type: 'Limit'; child: BehaviorTreeDefinition; limit: number, count_propname: string, priority?: number }
-    | { type: 'PrioritySelector'; children: BehaviorTreeDefinition[] }
-    | { type: 'Wait'; wait_time: number, wait_propname: string }
-    | { type: 'Action'; action: NodeAction }
-    | { type: 'CompositeAction'; actions: BehaviorTreeDefinition[] };
+    | { type: 'PrioritySelector'; children: BehaviorTreeDefinition[]; priority?: number }
+    | { type: 'Wait'; wait_time: number, wait_propname: string; priority?: number }
+    | { type: 'Action'; action: NodeAction; parameters?: any[]; priority?: number }
+    | { type: 'CompositeAction'; actions: BehaviorTreeDefinition[]; parameters?: any[]; priority?: number };
 
 export var BehaviorTreeDefinitions: { [key: BehaviorTreeID]: BehaviorTreeDefinition } | null = null;
 export var BehaviorTrees: { [key: BehaviorTreeID]: BTNode } | null = null;
@@ -65,27 +66,29 @@ let behaviorTreeDefinitionsBuilders: { [key: BehaviorTreeID]: () => BehaviorTree
 function buildBehaviorTree(config: BehaviorTreeDefinition, id: BehaviorTreeID): BTNode {
     switch (config.type) {
         case 'Selector':
-            return new SelectorNode(id, config.children.map(childConfig => buildBehaviorTree(childConfig, id)));
+            return new SelectorNode(id, config.children.map(childConfig => buildBehaviorTree(childConfig, id)), config.priority);
         case 'Sequence':
-            return new SequenceNode(id, config.children.map(childConfig => buildBehaviorTree(childConfig, id)));
+            return new SequenceNode(id, config.children.map(childConfig => buildBehaviorTree(childConfig, id)), config.priority);
         case 'Parallel':
-            return new ParallelNode(id, config.children.map(childConfig => buildBehaviorTree(childConfig, id)), config.successPolicy);
+            return new ParallelNode(id, config.children.map(childConfig => buildBehaviorTree(childConfig, id)), config.successPolicy, config.priority);
         case 'Decorator':
-            return new DecoratorNode(id, buildBehaviorTree(config.child, id), config.decorator);
+            return new DecoratorNode(id, buildBehaviorTree(config.child, id), config.decorator, config.priority);
         case 'Condition':
-            return new ConditionNode(id, config.condition);
+            return new ConditionNode(id, config.condition, config.modifier, config.priority, config.parameters);
+        case 'CompositeCondition':
+            return new CompositeConditionNode(id, config.conditions, config.modifier, config.priority, config.parameters);
         case 'RandomSelector':
-            return new RandomSelectorNode(id, config.children.map(childConfig => buildBehaviorTree(childConfig, id)), config.currentchild_propname);
+            return new RandomSelectorNode(id, config.children.map(childConfig => buildBehaviorTree(childConfig, id)), config.currentchild_propname, config.priority);
         case 'Limit':
             return new LimitNode(id, config.limit, config.count_propname, buildBehaviorTree(config.child, id), config.priority);
         case 'PrioritySelector':
-            return new PrioritySelectorNode(id, config.children.map(childConfig => buildBehaviorTree(childConfig, id)));
+            return new PrioritySelectorNode(id, config.children.map(childConfig => buildBehaviorTree(childConfig, id)), config.priority);
         case 'Wait':
-            return new WaitNode(id, config.wait_time, config.wait_propname);
+            return new WaitNode(id, config.wait_time, config.wait_propname, config.priority);
         case 'Action':
-            return new ActionNode(id, config.action);
+            return new ActionNode(id, config.action, config.priority, config.parameters);
         case 'CompositeAction':
-            return new CompositeActionNode(id, config.actions.map(actionConfig => buildBehaviorTree(actionConfig, id) as ActionNode));
+            return new CompositeActionNode(id, config.actions.map(actionConfig => buildBehaviorTree(actionConfig, id) as ActionNode), config.priority, config.parameters);
     }
 }
 
@@ -260,6 +263,16 @@ export abstract class BTNode implements IIdentifiable {
     abstract tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback;
 }
 
+export abstract class ParametrizedBTNode extends BTNode {
+    public parameters: any[];
+
+    constructor(id: BehaviorTreeID, _priority = 0, parameters: any[] = []) {
+        super(id, _priority);
+        this.parameters = parameters;
+    }
+}
+
+
 /**
  * Represents a sequence node in a behavior tree.
  */
@@ -389,17 +402,21 @@ export let WaitForActionCompletionDecorator: NodeDecorator = (status: BTStatus, 
     return status;
 };
 
-type NodeCondition = (blackboard: Blackboard) => boolean;
+type NodeCondition = (blackboard: Blackboard, ...parameters: any[]) => boolean;
+type NodeConditionModifier = 'NOT' | null;
+type NodeCompositeConditionModifier = 'AND' | 'OR';
 
 /**
  * Represents a node in a behavior tree that evaluates a condition.
  */
-export class ConditionNode extends BTNode {
+export class ConditionNode extends ParametrizedBTNode {
     public condition: NodeCondition;
+    public modifier: NodeConditionModifier;
 
-    constructor(id: BehaviorTreeID, condition: (blackboard: Blackboard) => boolean, _priority = 0) {
-        super(id, _priority);
+    constructor(id: BehaviorTreeID, condition: (blackboard: Blackboard) => boolean, modifier: NodeConditionModifier, _priority = 0, parameters?: any[]) {
+        super(id, _priority, parameters);
         this.condition = condition;
+        this.modifier = modifier;
     }
 
     /**
@@ -407,12 +424,38 @@ export class ConditionNode extends BTNode {
      * @returns The feedback indicating the status of the condition node.
      */
     tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
-        // Check if an action is in progress
-        if (blackboard.actionInProgress) {
-            // Optionally, handle this case differently
-            return { status: 'FAILED' };
+        let conditionResult = this.condition.call(this.getTarget(targetid), blackboard, ...this.parameters);
+        if (this.modifier === 'NOT') {
+            conditionResult = !conditionResult;
         }
-        return this.condition.call(this.getTarget(targetid), blackboard) ? { status: 'SUCCESS' } : { status: 'FAILED' };
+        return conditionResult ? { status: 'SUCCESS' } : { status: 'FAILED' };
+    }
+}
+
+export class CompositeConditionNode extends ParametrizedBTNode {
+    public conditions: NodeCondition[];
+    public operator: NodeCompositeConditionModifier;
+
+    constructor(id: BehaviorTreeID, conditions: NodeCondition[], operator: NodeCompositeConditionModifier, _priority = 0, parameters?: any[]) {
+        super(id, _priority, parameters);
+        this.conditions = conditions;
+        this.operator = operator;
+    }
+
+    tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
+        const target = this.getTarget(targetid);
+        let combinedResult = (this.operator === 'AND');
+
+        for (const condition of this.conditions) {
+            const result = condition.call(target, blackboard, ...this.parameters);
+            if (this.operator === 'AND') {
+                combinedResult = combinedResult && result;
+            } else if (this.operator === 'OR') {
+                combinedResult = combinedResult || result;
+            }
+        }
+
+        return combinedResult ? { status: 'SUCCESS' } : { status: 'FAILED' };
     }
 }
 
@@ -565,16 +608,16 @@ export class WaitNode extends BTNode {
  * const healthActionNode = new ActionNode('enemy1', blackboard, changeHealthAction);
  */
 
-export type NodeAction = (blackboard: Blackboard) => BTStatus;
+export type NodeAction = (blackboard: Blackboard, ...parameters: any[]) => BTStatus;
 
 /**
  * Represents a node in a behavior tree that performs an action.
  */
-export class ActionNode extends BTNode {
+export class ActionNode extends ParametrizedBTNode {
     public action: NodeAction;
 
-    constructor(id: BehaviorTreeID, action: NodeAction, _priority = 0) {
-        super(id, _priority);
+    constructor(id: BehaviorTreeID, action: NodeAction, _priority = 0, parameters?: any[]) {
+        super(id, _priority, parameters);
         this.action = action;
     }
 
@@ -584,7 +627,7 @@ export class ActionNode extends BTNode {
      */
     tick(targetId: Identifier, blackboard: Blackboard): BTNodeFeedback {
         // Perform the action
-        const result = this.action.call(this.getTarget(targetId), blackboard);
+        const result = this.action.call(this.getTarget(targetId), blackboard, ...this.parameters);
         return { status: result };
     }
 }
@@ -594,11 +637,11 @@ export class ActionNode extends BTNode {
  * A composite action node is a type of node that contains multiple child action nodes.
  * When ticked, it executes all the child action nodes in sequence.
  */
-export class CompositeActionNode extends BTNode {
+export class CompositeActionNode extends ParametrizedBTNode {
     public actions: ActionNode[];
 
-    constructor(id: BehaviorTreeID, actions: ActionNode[], _priority = 0) {
-        super(id, _priority);
+    constructor(id: BehaviorTreeID, actions: ActionNode[], _priority = 0, parameters?: any[]) {
+        super(id, _priority, parameters);
         this.actions = actions;
     }
 
