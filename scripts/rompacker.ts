@@ -1040,7 +1040,8 @@ async function compileRomLoaderScriptIfNewer() {
 	if (!romJsStats || romTsStats.mtime > romJsStats.mtime) {
 		return new Promise<void>((resolve, reject) => {
 			try {
-				exec(`npx tsc ${romTsPath} --removeComments -m commonjs -t ES2020 --rootDir "./" --outDir ${romJsPath})}`, { cwd: romTsDir }, (error, stdout, stderr) => {
+				// exec(`npx tsc ${romTsPath} --removeComments -m commonjs -t ES2017 --outDir ${join(__dirname, '../rom/')}`, (error, stdout, stderr) => {
+				exec(`npx tsc ${romTsPath} --removeComments -m commonjs -t ES2020 --rootDir "." --outDir ${join(__dirname, '../rom/')}`, { cwd: romTsDir }, (error, stdout, stderr) => {
 					if (error || stderr) {
 						throw new Error(`Error while compiling "rom.ts": ${error?.message ?? stderr}`);
 					} else {
