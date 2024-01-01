@@ -342,7 +342,7 @@ svg.d-pad {
 }
 
 .dknop {
-	pointer-events: fill;
+	pointer-events: auto;
 	touch-action: auto;
 	-webkit-user-select: none;
 	-moz-user-select: none;

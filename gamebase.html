@@ -35,20 +35,24 @@
                         <!-- Left Side: LS and LT -->
                         <svg class="extrabuttons" style="width: 20vmax; height: 10vmax;">
                             <!-- LS Button -->
-                            <rect id="ls_knop" x="1vmax" y="1vmax" width="8vmax" height="2vmax" class="knop green los" />
+                            <rect id="ls_knop" x="1vmax" y="1vmax" width="8vmax" height="2vmax"
+                                class="knop green los" />
                             <text x="2vmax" y="2.5vmax" class="button-label">LS</text>
                             <!-- LT Trigger -->
-                            <rect id="lt_knop" x="1vmax" y="5vmax" width="8vmax" height="2vmax" class="knop green los" />
+                            <rect id="lt_knop" x="1vmax" y="5vmax" width="8vmax" height="2vmax"
+                                class="knop green los" />
                             <text x="2vmax" y="6.5vmax" class="button-label">LT</text>
                         </svg>
 
                         <!-- Right Side: RS and RT -->
                         <svg class="extrabuttons" style="width: 20vmax; height: 10vmax;">
                             <!-- RS Button -->
-                            <rect id="rs_knop" x="1vmax" y="1vmax" width="8vmax" height="2vmax" class="knop green los" />
+                            <rect id="rs_knop" x="1vmax" y="1vmax" width="8vmax" height="2vmax"
+                                class="knop green los" />
                             <text x="2vmax" y="2.5vmax" class="button-label">RS</text>
                             <!-- RT Trigger -->
-                            <rect id="rt_knop" x="1vmax" y="5vmax" width="8vmax" height="2vmax" class="knop green los" />
+                            <rect id="rt_knop" x="1vmax" y="5vmax" width="8vmax" height="2vmax"
+                                class="knop green los" />
                             <text x="2vmax" y="6.5vmax" class="button-label">RT</text>
                         </svg>
                     </div>
@@ -91,7 +95,27 @@
                     </svg>
                 </nav>
                 <!-- D-Pad controls -->
-                <svg class="d-pad">
+                <svg class="d-pad" viewBox="0 0 100 100">
+                    <g id="d-pad-buttons" transform="rotate(-45 50 50)">
+                        <!-- Up -->
+                        <path id="d-pad-u" class="dknop" d="M 50 0 L 100 50 L 50 50 Z" style="
+    fill: aliceblue;
+"></path>
+                        <!-- Right -->
+                        <path id="d-pad-r" class="dknop" d="M 100 50 L 50 100 L 50 50 Z" style="
+    fill: aquamarine;
+"></path>
+                        <!-- Down -->
+                        <path id="d-pad-d" class="dknop" d="M 50 100 L 0 50 L 50 50 Z" style="
+    fill: bisque;
+"></path>
+                        <!-- Left -->
+                        <path id="d-pad-l" class="dknop" d="M 0 50 L 50 0 L 50 50 Z" style="
+    fill: beige;
+"></path>
+                    </g>
+                </svg>
+                <!-- <svg class="d-pad">
                     <g id="d-pad-buttons">
                         <path id="d-pad-u" class="dknop los"
                             d="M 50 50 L 50 40 A 10 10, 0, 0, 1, 57.99 44.212 L 50 50 L 50 0 A 50 50, 0, 0, 1, 90 21 Z"
@@ -123,7 +147,7 @@
                         <circle class="d-pad-omheining" cx="50" cy="50" r="49" />
                         <circle id="dmid" class="dstick" cx="50" cy="50" r="10" />
                     </g>
-                </svg>
+                </svg> -->
             </div>
             <div id="gameContainer">
                 <canvas id="gamescreen" hidden></canvas>

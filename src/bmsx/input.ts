@@ -21,6 +21,7 @@ export type ActionStateQuery = {
  * or a custom Key value.
  */
 type ButtonId = 'BTN1' | 'BTN2' | 'BTN3' | 'BTN4' | Key;
+
 /**
  * Prevents the default action, propagation, and immediate propagation of an event.
  *
@@ -33,6 +34,17 @@ function preventActionAndPropagation(e: Event): boolean {
     e.stopImmediatePropagation();
     return false;
 }
+
+/**
+ * Prevents the default action, propagation, and immediate propagation of an event.
+ *
+ * @param e The event object.
+ * @returns Returns false.
+ */
+// function preventAction(e: Event): boolean {
+//     e.preventDefault();
+//     return false;
+// }
 
 function resetObject(obj: Index2State | Index2PressTime, except?: string[]) {
     Object.keys(obj).forEach(key => {
@@ -1281,27 +1293,27 @@ class OnscreenGamepad implements IInputHandler {
         'd-pad-u': {
             buttons: ['up' satisfies GamepadButton],
         },
-        'd-pad-ru': {
-            buttons: ['up' satisfies GamepadButton, 'right' satisfies GamepadButton],
-        },
+        // 'd-pad-ru': {
+        //     buttons: ['up' satisfies GamepadButton, 'right' satisfies GamepadButton],
+        // },
         'd-pad-r': {
             buttons: ['right' satisfies GamepadButton],
         },
-        'd-pad-rd': {
-            buttons: ['right' satisfies GamepadButton, 'down' satisfies GamepadButton],
-        },
+        // 'd-pad-rd': {
+        //     buttons: ['right' satisfies GamepadButton, 'down' satisfies GamepadButton],
+        // },
         'd-pad-d': {
             buttons: ['down' satisfies GamepadButton],
         },
-        'd-pad-ld': {
-            buttons: ['down' satisfies GamepadButton, 'left' satisfies GamepadButton],
-        },
+        // 'd-pad-ld': {
+        //     buttons: ['down' satisfies GamepadButton, 'left' satisfies GamepadButton],
+        // },
         'd-pad-l': {
             buttons: ['left' satisfies GamepadButton],
         },
-        'd-pad-lu': {
-            buttons: ['left' satisfies GamepadButton, 'up' satisfies GamepadButton],
-        },
+        // 'd-pad-lu': {
+        //     buttons: ['left' satisfies GamepadButton, 'up' satisfies GamepadButton],
+        // },
         'btn1_knop': {
             buttons: ['a' satisfies GamepadButton],
         },
@@ -1348,10 +1360,10 @@ class OnscreenGamepad implements IInputHandler {
         window.addEventListener('focus', e => this.focus(e), false); // Focus event will allow input to be registered again
         window.addEventListener('mouseout', () => this.reset(), options); // Reset input states when mouse leaves the window
 
-        controlsElement.addEventListener('touchmove', e => { preventActionAndPropagation(e); this.handleTouchStuff(e); return false; }, options);
-        controlsElement.addEventListener('touchstart', e => { preventActionAndPropagation(e); this.handleTouchStuff(e); return false; }, options);
-        controlsElement.addEventListener('touchend', e => { preventActionAndPropagation(e); this.handleTouchEndStuff(e); return false; }, options);
-        controlsElement.addEventListener('touchcancel', e => { preventActionAndPropagation(e); this.handleTouchEndStuff(e); return false; }, options);
+        controlsElement.addEventListener('touchmove', e => { this.handleTouchStuff(e); return true; }, options);
+        controlsElement.addEventListener('touchstart', e => { this.handleTouchStuff(e); return true; }, options);
+        controlsElement.addEventListener('touchend', e => { this.handleTouchEndStuff(e); return true; }, options);
+        controlsElement.addEventListener('touchcancel', e => { this.handleTouchEndStuff(e); return true; }, options);
     }
 
     /**
@@ -1401,26 +1413,29 @@ class OnscreenGamepad implements IInputHandler {
     handleTouchStuff(e: TouchEvent): void {
         this.resetUI();
 
-        if (e.targetTouches.length === 0) {
+        if (e.touches.length === 0) {
             // this.reset();
             return;
         }
 
         const filterFromReset: string[] = [];
         const elementsToFilter = [];
-        for (let i = 0; i < e.targetTouches.length; i++) {
-            let pos = e.targetTouches[i];
-            const elementUnderTouch = document.elementFromPoint(pos.clientX, pos.clientY) as HTMLElement;
-            if (elementUnderTouch) {
-                elementsToFilter.push(elementUnderTouch);
-                // let buttonsTouched = this.handleElementUnderTouch(elementTouched);
-                const buttonsTouched = OnscreenGamepad.buttonMap[elementUnderTouch.id]?.buttons;
-                if (buttonsTouched?.length > 0) {
-                    elementUnderTouch.classList.add('druk');
-                    elementUnderTouch.classList.remove('los');
-                    // elementTouched.dataset.touched = 'true';
+        for (let i = 0; i < e.touches.length; i++) {
+            let pos = e.touches[i];
+            const elementsUnderTouch = document.elementsFromPoint(pos.clientX, pos.clientY) as HTMLElement[];
+            if (elementsUnderTouch) {
+                for (let j = 0; j < elementsUnderTouch.length; j++) {
+                    const elementUnderTouch = elementsUnderTouch[j];
+                    elementsToFilter.push(elementUnderTouch);
+                    // let buttonsTouched = this.handleElementUnderTouch(elementTouched);
+                    const buttonsTouched = OnscreenGamepad.buttonMap[elementUnderTouch.id]?.buttons;
+                    if (buttonsTouched?.length > 0) {
+                        elementUnderTouch.classList.add('druk');
+                        elementUnderTouch.classList.remove('los');
+                        // elementTouched.dataset.touched = 'true';
 
-                    buttonsTouched.forEach(b => filterFromReset.push(b));
+                        buttonsTouched.forEach(b => filterFromReset.push(b));
+                    }
                 }
             }
         }
