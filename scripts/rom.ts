@@ -1,4 +1,4 @@
-import type { RomPack, RomAsset, RomMeta } from '../src/bmsx/rompack';
+import type { RomPack, RomAsset, RomMeta } from './rompacker.rompack';
 
 /**
  * Pako is a high-speed zlib port to JavaScript, which is used to compress and decompress data.
