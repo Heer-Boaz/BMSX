@@ -17,64 +17,65 @@ declare global {
 }
 
 /**
+ * The initial scale of the game.
+ */
+const INITIAL_SCALE = 1;
+
+/**
+ * The initial fullscreen mode of the game.
+ */
+const INITIAL_FULLSCREEN = false;
+
+const INITIAL_VOLUME = 1;
+
+const DEFAULT_CANVAS_OR_ONSCREENGAMEPAD_MUST_RESPECT_LEBENSRAUM: 'canvas' | 'gamepad' = 'canvas';
+
+/**
  * Represents the game options.
  */
-export class GameOptions {
-	/**
-	 * The initial scale of the game.
-	 */
-	public static readonly INITIAL_SCALE: number = 1;
-
-	/**
-	 * The initial fullscreen mode of the game.
-	 */
-	public static readonly INITIAL_FULLSCREEN: boolean = false;
+export const GameOptions = {
+	canvas_or_onscreengamepad_must_respect_lebensraum: DEFAULT_CANVAS_OR_ONSCREENGAMEPAD_MUST_RESPECT_LEBENSRAUM as 'canvas' | 'gamepad',
 
 	/**
 	 * The current scale of the game.
 	 */
-	public static Scale: number = GameOptions.INITIAL_SCALE;
+	Scale: INITIAL_SCALE,
 
 	/**
 	 * The current fullscreen mode of the game.
 	 */
-	public static Fullscreen: boolean = GameOptions.INITIAL_FULLSCREEN;
+	Fullscreen: INITIAL_FULLSCREEN,
 
 	/**
 	 * The volume percentage of the game.
 	 */
-	public static VolumePercentage: number = 50;
-
-	/**
-	 * The music volume percentage of the game.
-	 */
-	public static MusicVolumePercentage: number = 50;
+	VolumePercentage: INITIAL_VOLUME,
 
 	/**
 	 * Gets the width of the game window.
 	 */
-	public static get WindowWidth(): number {
+	get WindowWidth(): number {
 		return (MSX2ScreenWidth * GameOptions.Scale);
-	}
+	},
 
 	/**
 	 * Gets the height of the game window.
 	 */
-	public static get WindowHeight(): number {
+	get WindowHeight(): number {
 		return (MSX2ScreenHeight * GameOptions.Scale);
-	}
+	},
 
 	/**
 	 * Gets the width of the game buffer.
 	 */
-	public static get BufferWidth(): number {
+	get BufferWidth(): number {
 		return (MSX2ScreenWidth * GameOptions.Scale);
-	}
+	},
 
 	/**
 	 * Gets the height of the game buffer.
 	 */
-	public static get BufferHeight(): number {
+	get BufferHeight(): number {
 		return (MSX2ScreenHeight * GameOptions.Scale);
 	}
 }
@@ -1000,7 +1001,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 			$.input.enableOnscreenGamepad();
 		}
 		$.view.init(); // Init the view. Placed here to ensure that the Game object is available to the view and that the Input module is initialized
-		SM.init(rom['snd_assets'], sndcontext, 1, gainnode);
+		SM.init(rom['snd_assets'], sndcontext, GameOptions.VolumePercentage, gainnode);
 
 		if (this.debug) {
 			// @ts-ignore

@@ -1,5 +1,5 @@
 ﻿import type { Area, Size, Vector, id2htmlimg, vec2 } from './rompack';
-import { BFont, IRegisterable, Identifier } from "./game";
+import { BFont, GameOptions, IRegisterable, Identifier } from "./game";
 import { Registry } from './registry';
 import { Input } from './input';
 
@@ -95,7 +95,7 @@ export abstract class BaseView implements IRegisterable {
         self.windowSize = { x: w, y: h };
 
         // We need to respect the size of the onscreen gamepad, but only if the onscreen gamepad is visible and only in landscape mode
-        if (Input.instance.isOnscreenGamepadEnabled) {
+        if (Input.instance.isOnscreenGamepadEnabled && GameOptions.canvas_or_onscreengamepad_must_respect_lebensraum === 'canvas') {
             // Determine whether we are in landscape or portrait mode
             const isLandscape = window.innerWidth > window.innerHeight;
 
@@ -113,7 +113,7 @@ export abstract class BaseView implements IRegisterable {
             }
         }
 
-        self.availableWindowSize = { x: w, y: h };
+        self.availableWindowSize = { x: ~~w, y: ~~h };
         self.dx = self.availableWindowSize.x / self.viewportSize.x;
         self.dy = self.availableWindowSize.y / self.viewportSize.y;
         self.scale = Math.min(self.dx, self.dy);
@@ -126,12 +126,12 @@ export abstract class BaseView implements IRegisterable {
 
         let self = $.view || this;
         self.calculateSize();
-        self.canvas.style.width = `${self.viewportSize.x * self.scale}px`;
-        self.canvas.style.height = `${self.viewportSize.y * self.scale}px`;
-        self.canvas.style.left = `${(self.windowSize.x - self.canvas.width * self.scale) / 2}px`;
+        self.canvas.style.width = `${~~(self.viewportSize.x * self.scale)}px`;
+        self.canvas.style.height = `${~~(self.viewportSize.y * self.scale)}px`;
+        self.canvas.style.left = `${~~((self.windowSize.x - self.canvas.width * self.scale) / 2)}px`;
         let canvasTop: number;
         if (isLandscape) {
-            canvasTop = (self.windowSize.y - self.canvas.height * self.scale) / 2;
+            canvasTop = ~~((self.windowSize.y - self.canvas.height * self.scale) / 2);
         }
         else {
             canvasTop = 0;
@@ -161,18 +161,18 @@ export abstract class BaseView implements IRegisterable {
             let newScale = Math.max(window.innerWidth, window.innerHeight) * 0.20 / 100;
 
             // If in landscape mode, limit the scale so that the SVG element does not overlap with the canvas
-            if (isLandscape) {
-                // const canvasRect = self.canvas.getBoundingClientRect();
-                // let maxSvgWidth;
-                // if (isRightSide) {
-                //     maxSvgWidth = window.innerWidth - (canvasRect.left + canvasRect.width);
-                // } else {
-                //     maxSvgWidth = canvasRect.left;
-                // }
-                // const svgWidth = parseInt(element.getAttribute('width')!);
-                // if (svgWidth * newScale > maxSvgWidth) {
-                //     newScale = maxSvgWidth / svgWidth;
-                // }
+            if (isLandscape && GameOptions.canvas_or_onscreengamepad_must_respect_lebensraum === 'gamepad') {
+                const canvasRect = self.canvas.getBoundingClientRect();
+                let maxSvgWidth: number;
+                if (isRightSide) {
+                    maxSvgWidth = ~~(window.innerWidth - (canvasRect.left + canvasRect.width));
+                } else {
+                    maxSvgWidth = canvasRect.left;
+                }
+                const svgWidth = parseInt(element.getAttribute('width')!);
+                if (svgWidth * newScale > maxSvgWidth) {
+                    newScale = maxSvgWidth / svgWidth;
+                }
             }
 
             // Apply the new scale
