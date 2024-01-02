@@ -1231,8 +1231,11 @@ class OnscreenGamepad implements IInputHandler {
 			const elementId = OnscreenGamepad.ACTION_BUTTON_TO_ELEMENTID_MAP[b];
 			if (!elementId) throw new Error(`Error while attempting to hide your buttons - no HTML elementID found matching button '${b}'.`);
 			const element = document.getElementById(elementId);
+			const textElement = document.getElementById(`${elementId}_text`);
 			if (!element) throw new Error(`Error while attempting to hide your buttons - no HTML element found matching button '${b}' and elementID '${elementId}'.`);
+			if (!textElement) throw new Error(`Error while attempting to hide your buttons - no HTML *text* element found matching button '${b}' and elementID '${elementId}'.`);
 			element.classList.add('hidden');
+			textElement.classList.add('hidden');
 		});
 	}
 
