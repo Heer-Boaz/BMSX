@@ -1375,6 +1375,8 @@ class OnscreenGamepad implements IInputHandler {
 
         addTouchListeners(document.getElementById('d-pad-controls')!, 'dpad');
         addTouchListeners(document.getElementById('button-controls')!, 'action');
+        // Prevent default touch events for all other elements in the DOM
+        document.addEventListener('touchstart', e => { e.preventDefault(); return true; }, options);
 
         window.addEventListener('blur', e => this.blur(e), false); // Blur event will pause the game and prevent any input from being registered and reset the key states
         window.addEventListener('focus', e => this.focus(e), false); // Focus event will allow input to be registered again
