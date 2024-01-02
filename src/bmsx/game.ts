@@ -957,6 +957,10 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		this.input.getPlayerInput(playerIndex).consumeActions(...actionsToConsume);
 	}
 
+	public hideOnscreenGamepadButtons(gamepad_button_ids: string[]): void {
+		this.input.hideOnscreenGamepadButtons(gamepad_button_ids);
+	}
+
 	// public getKeyState(playerIndex: number, key: string) {
 	//     return this.input.getPlayerInput(playerIndex).getKeyState(key);
 	// }
