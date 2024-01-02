@@ -1241,7 +1241,7 @@ class OnscreenGamepad implements IInputHandler {
 
         for (let i = 0; i < OnscreenGamepad.onscreenButtonElementNames.length; i++) {
             const d = document.getElementById(OnscreenGamepad.onscreenButtonElementNames[i]);
-            const buttonData = OnscreenGamepad.buttonMap[d.id];
+            const buttonData = OnscreenGamepad.ALL_BUTTON_MAP[d.id];
             if (buttonData) {
                 buttonData.buttons.forEach(button => {
                     if (d.dataset.touched === 'true') {
@@ -1271,7 +1271,7 @@ class OnscreenGamepad implements IInputHandler {
     private isOtherElementPressingButton(button: string): boolean {
         return OnscreenGamepad.onscreenButtonElementNames.some(dpadId => {
             const element = document.getElementById(dpadId);
-            return element && element.classList.contains('druk') && OnscreenGamepad.buttonMap[element.id].buttons.includes(button);
+            return element && element.classList.contains('druk') && OnscreenGamepad.ALL_BUTTON_MAP[element.id].buttons.includes(button);
         });
     }
 
@@ -1286,10 +1286,7 @@ class OnscreenGamepad implements IInputHandler {
         }
     }
 
-    /**
-    * Mapping of button names to their corresponding key inputs.
-    */
-    private static readonly buttonMap: Record<string, { buttons: string[] }> = {
+    private static readonly DPAD_BUTTON_MAP: Record<string, { buttons: string[] }> = {
         'd-pad-u': {
             buttons: ['up' satisfies GamepadButton],
         },
@@ -1314,6 +1311,9 @@ class OnscreenGamepad implements IInputHandler {
         'd-pad-lu': {
             buttons: ['left' satisfies GamepadButton, 'up' satisfies GamepadButton],
         },
+    }
+
+    private static readonly ACTION_BUTTON_MAP: Record<string, { buttons: string[] }> = {
         'btn1_knop': {
             buttons: ['a' satisfies GamepadButton],
         },
@@ -1349,21 +1349,32 @@ class OnscreenGamepad implements IInputHandler {
         // },
     }
 
-    private static readonly onscreenButtonElementNames = Object.keys(OnscreenGamepad.buttonMap);
+    /**
+    * Mapping of button names to their corresponding key inputs.
+    */
+    private static readonly ALL_BUTTON_MAP: Record<string, { buttons: string[] }> = {
+        ...OnscreenGamepad.DPAD_BUTTON_MAP,
+        ...OnscreenGamepad.ACTION_BUTTON_MAP,
+    }
+
+    private static readonly dpadButtonElementIds = ['d-pad-u', 'd-pad-ru', 'd-pad-r', 'd-pad-rd', 'd-pad-d', 'd-pad-ld', 'd-pad-l', 'd-pad-lu'];
+    private static readonly actionButtonElementIds = ['btn1_knop', 'btn2_knop', 'btn3_knop', 'btn4_knop', 'ls_knop', 'rs_knop', 'lt_knop', 'rt_knop', 'select_knop', 'start_knop', 'home_knop'];
+
+    private static readonly onscreenButtonElementNames = Object.keys(OnscreenGamepad.ALL_BUTTON_MAP);
 
     public init(): void {
         // Reset gamepad button states
         this.reset();
         const self = this;
-        function addTouchListeners(controlsElement: HTMLElement) {
-            controlsElement.addEventListener('touchmove', e => { self.handleTouchStuff(e); return true; }, options);
-            controlsElement.addEventListener('touchstart', e => { self.handleTouchStuff(e); return true; }, options);
-            controlsElement.addEventListener('touchend', e => { self.handleTouchEndStuff(e); return true; }, options);
-            controlsElement.addEventListener('touchcancel', e => { self.handleTouchEndStuff(e); return true; }, options);
+        function addTouchListeners(controlsElement: HTMLElement, action_type: 'dpad' | 'action') {
+            controlsElement.addEventListener('touchmove', e => { self.handleTouchStuff(e, action_type); return true; }, options);
+            controlsElement.addEventListener('touchstart', e => { self.handleTouchStuff(e, action_type); return true; }, options);
+            controlsElement.addEventListener('touchend', e => { self.handleTouchEndStuff(e, action_type); return true; }, options);
+            controlsElement.addEventListener('touchcancel', e => { self.handleTouchEndStuff(e, action_type); return true; }, options);
         }
 
-        addTouchListeners(document.getElementById('d-pad-controls')!);
-        addTouchListeners(document.getElementById('button-controls')!);
+        addTouchListeners(document.getElementById('d-pad-controls')!, 'dpad');
+        addTouchListeners(document.getElementById('button-controls')!, 'action');
 
         window.addEventListener('blur', e => this.blur(e), false); // Blur event will pause the game and prevent any input from being registered and reset the key states
         window.addEventListener('focus', e => this.focus(e), false); // Focus event will allow input to be registered again
@@ -1392,20 +1403,30 @@ class OnscreenGamepad implements IInputHandler {
      * This function is used to clear the state of all UI elements that represent the gamepad input buttons.
      * It is called once per frame to ensure that the UI is up-to-date with the current gamepad input state.
      */
-    public resetUI(elementsToFilter?: HTMLElement[]): void {
-        function resetElement(element: HTMLElement): void {
+    public resetUI(elementsToFilterById?: string[]): void {
+        const self = this;
+        function resetElementAndButtonPress(element_id: string): void {
+            const element = document.getElementById(element_id);
             if (element.classList.contains('druk')) {
                 element.classList.remove('druk');
                 element.classList.add('los');
                 element.dataset.touched = 'false';
             }
+
+            // Also reset the state of the button
+            const buttonData = OnscreenGamepad.ALL_BUTTON_MAP[element_id];
+            if (buttonData) {
+                buttonData.buttons.forEach(button => {
+                    self.gamepadButtonStates[button] = false;
+                });
+            }
         }
 
-        if (elementsToFilter) {
-            elementsToFilter.forEach(element => !elementsToFilter.includes(element) && resetElement(element));
+        if (elementsToFilterById) {
+            OnscreenGamepad.onscreenButtonElementNames.forEach(element => !elementsToFilterById.includes(element) && resetElementAndButtonPress(element));
         }
         else {
-            OnscreenGamepad.onscreenButtonElementNames.forEach(buttonElementName => resetElement(document.getElementById(buttonElementName)));
+            OnscreenGamepad.onscreenButtonElementNames.forEach(resetElementAndButtonPress);
         }
     }
 
@@ -1415,8 +1436,15 @@ class OnscreenGamepad implements IInputHandler {
      * It also filters the touched buttons from the reset.
      * @param e The touch event to handle.
      */
-    handleTouchStuff(e: TouchEvent): void {
-        this.resetUI();
+    handleTouchStuff(e: TouchEvent, control_type: 'dpad' | 'action'): void {
+        switch (control_type) {
+            case 'action':
+                this.resetUI(OnscreenGamepad.dpadButtonElementIds);
+                break;
+            case 'dpad':
+                this.resetUI(OnscreenGamepad.actionButtonElementIds);
+                break;
+        }
 
         if (e.touches.length === 0) {
             // this.reset();
@@ -1424,44 +1452,52 @@ class OnscreenGamepad implements IInputHandler {
         }
 
         const filterFromReset: string[] = [];
-        const elementsToFilter = [];
+        const elementsToFilter: string[] = [];
         for (let i = 0; i < e.touches.length; i++) {
             let pos = e.touches[i];
             const elementsUnderTouch = document.elementsFromPoint(pos.clientX, pos.clientY) as HTMLElement[];
             if (elementsUnderTouch) {
                 for (let j = 0; j < elementsUnderTouch.length; j++) {
                     const elementUnderTouch = elementsUnderTouch[j];
-                    const buttonsTouched = OnscreenGamepad.buttonMap[elementUnderTouch.id]?.buttons;
+                    let buttonsTouched: string[];
+                    switch (control_type) {
+                        case 'action':
+                            buttonsTouched = OnscreenGamepad.ACTION_BUTTON_MAP[elementUnderTouch.id]?.buttons;
+                        break;
+                        case 'dpad':
+                            buttonsTouched = OnscreenGamepad.DPAD_BUTTON_MAP[elementUnderTouch.id]?.buttons;
+                        break;
+                    }
                     if (buttonsTouched?.length > 0) {
                         elementUnderTouch.dataset.touched = 'true';
-                        elementsToFilter.push(elementUnderTouch);
+                        elementsToFilter.push(elementUnderTouch.id);
 
                         buttonsTouched.forEach(b => filterFromReset.push(b));
 
                         switch (elementUnderTouch.id) {
                             case 'd-pad-lu':
-                                elementsToFilter.push(document.getElementById('d-pad-u'), document.getElementById('d-pad-l'));
+                                elementsToFilter.push('d-pad-u', 'd-pad-l');
                                 break;
                             case 'd-pad-u':
-                                elementsToFilter.push(document.getElementById('d-pad-lu'), document.getElementById('d-pad-ru'));
+                                elementsToFilter.push('d-pad-lu', 'd-pad-ru');
                                 break;
                             case 'd-pad-ru':
-                                elementsToFilter.push(document.getElementById('d-pad-u'), document.getElementById('d-pad-r'));
+                                elementsToFilter.push('d-pad-u', 'd-pad-r');
                                 break;
                             case 'd-pad-r':
-                                elementsToFilter.push(document.getElementById('d-pad-ru'), document.getElementById('d-pad-rd'));
+                                elementsToFilter.push('d-pad-ru', 'd-pad-rd');
                                 break;
                             case 'd-pad-ld':
-                                elementsToFilter.push(document.getElementById('d-pad-d'), document.getElementById('d-pad-l'));
+                                elementsToFilter.push('d-pad-d', 'd-pad-l');
                                 break;
                             case 'd-pad-d':
-                                elementsToFilter.push(document.getElementById('d-pad-ld'), document.getElementById('d-pad-rd'));
+                                elementsToFilter.push('d-pad-ld', 'd-pad-rd');
                                 break;
                             case 'd-pad-rd':
-                                elementsToFilter.push(document.getElementById('d-pad-d'), document.getElementById('d-pad-r'));
+                                elementsToFilter.push('d-pad-d', 'd-pad-r');
                                 break;
                             case 'd-pad-l':
-                                elementsToFilter.push(document.getElementById('d-pad-lu'), document.getElementById('d-pad-ld'));
+                                elementsToFilter.push('d-pad-lu', 'd-pad-ld');
                                 break;
                         }
                     }
@@ -1471,17 +1507,35 @@ class OnscreenGamepad implements IInputHandler {
 
         for (let i = 0; i < elementsToFilter.length; i++) {
             const elementToFilter = elementsToFilter[i];
-            elementToFilter.classList.add('druk');
-            elementToFilter.classList.remove('los');
+            const element = document.getElementById(elementToFilter) as HTMLElement;
+            element.classList.add('druk');
+            element.classList.remove('los');
         }
 
-        this.reset(filterFromReset);
+        switch (control_type) {
+            case 'action':
+                elementsToFilter.push(...OnscreenGamepad.dpadButtonElementIds);
+                break;
+            case 'dpad':
+                elementsToFilter.push(...OnscreenGamepad.actionButtonElementIds);
+                break;
+        }
+
+        // this.reset(filterFromReset);
         this.resetUI(elementsToFilter);
     }
 
-    handleTouchEndStuff(_e: TouchEvent): void {
-        this.resetUI();
-        this.reset();
+    handleTouchEndStuff(_e: TouchEvent, control_type: 'dpad' | 'action'): void {
+        switch (control_type) {
+            case 'action':
+                this.resetUI(OnscreenGamepad.dpadButtonElementIds);
+                break;
+            case 'dpad':
+                this.resetUI(OnscreenGamepad.actionButtonElementIds);
+                break;
+        }
+        // this.resetUI();
+        // this.reset();
     }
 
     /**
@@ -1490,7 +1544,7 @@ class OnscreenGamepad implements IInputHandler {
      * @returns An array of keys or buttons that were triggered by the touch event.
      */
     handleElementUnderTouch(e: Element): (ButtonId | string)[] {
-        const buttonData = OnscreenGamepad.buttonMap[e.id];
+        const buttonData = OnscreenGamepad.ALL_BUTTON_MAP[e.id];
         if (buttonData) {
             buttonData.buttons.forEach(button => {
                 if (this.gamepadButtonStates[button]) {
