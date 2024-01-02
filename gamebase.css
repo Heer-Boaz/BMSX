@@ -355,7 +355,7 @@ svg.d-pad {
 	pointer-events: auto;
 	touch-action: auto;
 	left: 0;
-	/* bottom: 25vh For landscape mode. For portrait mode, use bottom: 5vh. Handled in JavaScript. */
+	/* bottom: 25vh For landscape mode. For portrait mode, use bottom: 15vh. Handled in JavaScript. */
 }
 
 svg.action-buttons {
@@ -363,7 +363,7 @@ svg.action-buttons {
 	z-index: 2000;
 	pointer-events: auto;
 	touch-action: auto;
-	/* bottom: 25vh For landscape mode. For portrait mode, use bottom: 5vh. Handled in JavaScript. */
+	/* bottom: 25vh For landscape mode. For portrait mode, use bottom: 15vh. Handled in JavaScript. */
 	right: 0;
 }
 
