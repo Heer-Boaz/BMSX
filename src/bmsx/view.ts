@@ -111,7 +111,7 @@ export abstract class BaseView implements IRegisterable {
         // Function to update the scale
         function updateScale(element: HTMLElement) {
             // Calculate the new scale
-            let newScale = Math.max(window.innerWidth, window.innerHeight) * 0.15 / 100;
+            let newScale = Math.max(window.innerWidth, window.innerHeight) * 0.20 / 100;
 
             // Apply the new scale
             element.style.transform = `scale(${newScale})`;
