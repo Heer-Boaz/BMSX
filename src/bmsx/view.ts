@@ -117,9 +117,31 @@ export abstract class BaseView implements IRegisterable {
             element.style.transform = `scale(${newScale})`;
         }
 
-        // Update the scale initially
+        function updateBottomPosition(element: HTMLElement) {
+            // // Calculate the new bottom position
+            // let newBottom = Math.max(window.innerWidth, window.innerHeight) * 0.05;
+            // Determine whether we are in landscape or portrait mode
+            const isLandscape = window.innerWidth > window.innerHeight;
+            let newBottom: number;
+            if (isLandscape) {
+                newBottom = 25;
+            }
+            else {
+                newBottom = 5;
+            }
+
+            // Apply the new bottom position
+            element.style.bottom = `${newBottom}vh`;
+
+        }
+
+        // Update the scaling of the SVG elements
         updateScale(dpad_svg!);
         updateScale(actionbuttons_svg!);
+
+        // Update the bottom position of the SVG elements
+        updateBottomPosition(dpad_svg!);
+        updateBottomPosition(actionbuttons_svg!);
     }
 
     /**
