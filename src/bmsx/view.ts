@@ -98,12 +98,22 @@ export abstract class BaseView implements IRegisterable {
 
     public handleResize(): void {
         if (document.getElementById('gamescreen')!.style.visibility === 'hidden') return;
+        // Determine whether we are in landscape or portrait mode
+        const isLandscape = window.innerWidth > window.innerHeight;
+
         let self = $.view || this;
         self.calculateSize();
         self.canvas.style.width = `${self.viewportSize.x * self.scale}px`;
         self.canvas.style.height = `${self.viewportSize.y * self.scale}px`;
-        self.canvas.style.left = (self.windowSize.x - self.canvas.width * self.scale) / 2 + "px";
-        self.canvas.style.top = (self.windowSize.y - self.canvas.height * self.scale) / 2 + "px";
+        self.canvas.style.left = `${(self.windowSize.x - self.canvas.width * self.scale) / 2}px`;
+        let canvasTop: number;
+        if (isLandscape) {
+            canvasTop = (self.windowSize.y - self.canvas.height * self.scale) / 2;
+        }
+        else {
+            canvasTop = 0;
+        }
+        self.canvas.style.top = `${canvasTop}px`;
 
         // Get the SVG element
         const dpad_svg = document.querySelector<HTMLElement>('#d-pad-svg');
@@ -118,21 +128,24 @@ export abstract class BaseView implements IRegisterable {
         }
 
         function updateBottomPosition(element: HTMLElement) {
-            // // Calculate the new bottom position
-            // let newBottom = Math.max(window.innerWidth, window.innerHeight) * 0.05;
-            // Determine whether we are in landscape or portrait mode
-            const isLandscape = window.innerWidth > window.innerHeight;
             let newBottom: number;
             if (isLandscape) {
                 newBottom = 25;
             }
             else {
-                newBottom = 5;
+                newBottom = 15;
             }
 
             // Apply the new bottom position
             element.style.bottom = `${newBottom}vh`;
 
+            // Calculate whether the SVG element is overlapping with the game canvas based on the `vh` unit
+            const canvasBottom = canvasTop + self.canvas.height;
+            const svgTop = newBottom / 100 * window.innerHeight;
+            if (svgTop < canvasBottom) {
+                // Place the SVG element lower than the bottom of the game canvas
+                element.style.bottom = `${(canvasBottom / window.innerHeight * 100 + 1)}vh`;
+            }
         }
 
         // Update the scaling of the SVG elements
