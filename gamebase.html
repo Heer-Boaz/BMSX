@@ -27,10 +27,54 @@
             <div id="hidor"></div>
             <div id="loading" class="coloring" hidden>Loading...</div>
             <!-- Button controls -->
-            <div id="controls" hidden>
-                <nav class="buttons-container">
+            <div id="d-pad-controls" hidden>
+                <svg id="d-pad-svg" class="d-pad" viewBox="0 0 100 100" width="100px" height="100px">
+                    <g id="d-pad-buttons" viewBox="0 0 100 100">
+                        <path id="d-pad-u" class="dknop los"
+                            d="M 50 50 L 50 39 A 11 11, 0, 0, 1, 59.99 44.212 L 50 50 L 50 0 A 51 51, 0, 0, 1, 91 21 Z"
+                            fill-rule="evenodd" transform="rotate(-27 50 50)" />
+                        <path id="d-pad-ru" class="dknop los"
+                            d="M 50 50 L 50 39 A 11 11, 0, 0, 1, 57.72 41.91 L 50 50 L 50 0 A 51 51, 0, 0, 1, 80 9"
+                            fill-rule="evenodd" transform="rotate(27 50 50)" />
+                        <path id="d-pad-r" class="dknop los"
+                            d="M 50 50 L 50 39 A 11 11, 0, 0, 1, 59.99 44.212 L 50 50 L 50 0 A 51 51, 0, 0, 1, 91 21 Z"
+                            fill-rule="evenodd" transform="rotate(62.5 50 50)" />
+                        <path id="d-pad-rd" class="dknop los"
+                            d="M 50 50 L 50 39 A 11 11, 0, 0, 1, 57.72 41.91 L 50 50 L 50 0 A 51 51, 0, 0, 1, 80 9"
+                            fill-rule="evenodd" transform="rotate(117 50 50)" />
+                        <path id="d-pad-d" class="dknop los"
+                            d="M 50 50 L 50 39 A 11 11, 0, 0, 1, 59.99 44.212 L 50 50 L 50 0 A 51 51, 0, 0, 1, 91 21 Z"
+                            fill-rule="evenodd" transform="rotate(153 50 50)" />
+                        <path id="d-pad-ld" class="dknop los"
+                            d="M 50 50 L 50 39 A 11 11, 0, 0, 1, 57.72 41.91 L 50 50 L 50 0 A 51 51, 0, 0, 1, 80 9"
+                            fill-rule="evenodd" transform="rotate(207 50 50)" />
+                        <path id="d-pad-l" class="dknop los"
+                            d="M 50 50 L 50 39 A 11 11, 0, 0, 1, 59.99 44.212 L 50 50 L 50 0 A 51 51, 0, 0, 1, 91 21 Z"
+                            fill-rule="evenodd" transform="rotate(243 50 50)" />
+                        <path id="d-pad-lu" class="dknop los"
+                            d="M 50 50 L 50 39 A 11 11, 0, 0, 1, 57.72 41.91 L 50 50 L 50 0 A 51 51, 0, 0, 1, 80 9"
+                            fill-rule="evenodd" transform="rotate(297 50 50)" />
+                    </g>
+                    <g>
+                        <circle id="d-pad-omheining" class="dstick" cx="50" cy="50" r="50" />
+                        <circle id="d-pad-dmz" class="dstick" cx="50" cy="50" r="40" />
+                        <circle id="d-pad-innercircle" class="dstick" cx="50" cy="50" r="10" />
+                    </g>
+                </svg>
+            </div>
+            <div id="button-controls">
+                <svg id="action-buttons-svg" class="action-buttons" viewBox="0 0 100 100" width="100px" height="100px">
+                    <g class="buttons" id="btn1_svg" viewBox="0 0 100 100">
+                        <circle id="btn1_knop" class="knop red los" cx="50" cy="75" r="12.5" />
+                        <circle id="btn2_knop" class="knop blue los" cx="75" cy="50" r="12.5" />
+                        <circle id="btn3_knop" class="knop green los" cx="25" cy="50" r="12.5" />
+                        <circle id="btn4_knop" class="knop yellow los" cx="50" cy="25" r="12.5" />
+                    </g>
+                </svg>
+
+                <nav class="buttons-container" style="display: none;">
                     <!-- Shoulder Buttons and Triggers -->
-                    <div class="shoulder-container" hidden
+                    <div class="shoulder-container"
                         style="position: absolute; top: 0; width: 100%; display: flex; justify-content: space-between; padding: 1vmax;">
                         <!-- Left Side: LS and LT -->
                         <svg class="extrabuttons" style="width: 20vmax; height: 10vmax;">
@@ -72,82 +116,7 @@
                             <text x="1.5vmax" y="2.5vmax" class="button-label">Select</text>
                         </svg>
                     </div>
-
-                    <!-- Button 1 -->
-                    <svg class="buttons" id="btn1_svg">
-                        <circle id="btn1_knop" class="knop red los" cx="4vmax" cy="4vmax" r="4vmax"
-                            fill="transparent" />
-                    </svg>
-                    <!-- Button 2 -->
-                    <svg class="buttons" id="btn2_svg">
-                        <circle id="btn2_knop" class="knop blue los" cx="4vmax" cy="4vmax" r="4vmax"
-                            fill="transparent" />
-                    </svg>
-                    <!-- Button 3 -->
-                    <svg class="buttons" id="btn3_svg">
-                        <circle id="btn3_knop" class="knop green los" cx="4vmax" cy="4vmax" r="4vmax"
-                            fill="transparent" />
-                    </svg>
-                    <!-- Button 4 -->
-                    <svg class="buttons" id="btn4_svg">
-                        <circle id="btn4_knop" class="knop yellow los" cx="4vmax" cy="4vmax" r="4vmax"
-                            fill="transparent" />
-                    </svg>
                 </nav>
-                <!-- D-Pad controls -->
-                <svg class="d-pad" viewBox="0 0 100 100">
-                    <g id="d-pad-buttons" transform="rotate(-45 50 50)">
-                        <!-- Up -->
-                        <path id="d-pad-u" class="dknop" d="M 50 0 L 100 50 L 50 50 Z" style="
-    fill: aliceblue;
-"></path>
-                        <!-- Right -->
-                        <path id="d-pad-r" class="dknop" d="M 100 50 L 50 100 L 50 50 Z" style="
-    fill: aquamarine;
-"></path>
-                        <!-- Down -->
-                        <path id="d-pad-d" class="dknop" d="M 50 100 L 0 50 L 50 50 Z" style="
-    fill: bisque;
-"></path>
-                        <!-- Left -->
-                        <path id="d-pad-l" class="dknop" d="M 0 50 L 50 0 L 50 50 Z" style="
-    fill: beige;
-"></path>
-                    </g>
-                </svg>
-                <!-- <svg class="d-pad">
-                    <g id="d-pad-buttons">
-                        <path id="d-pad-u" class="dknop los"
-                            d="M 50 50 L 50 40 A 10 10, 0, 0, 1, 57.99 44.212 L 50 50 L 50 0 A 50 50, 0, 0, 1, 90 21 Z"
-                            fill-rule="evenodd" transform="rotate(-27 50 50)" />
-                        <path id="d-pad-ru" class="dknop los"
-                            d="M 50 50 L 50 40 A 10 10, 0, 0, 1, 55.72 41.91 L 50 50 L 50 0 A 50 50, 0, 0, 1, 79 9"
-                            fill-rule="evenodd" transform="rotate(27 50 50)" />
-                        <path id="d-pad-r" class="dknop los"
-                            d="M 50 50 L 50 40 A 10 10, 0, 0, 1, 57.99 44.212 L 50 50 L 50 0 A 50 50, 0, 0, 1, 90 21 Z"
-                            fill-rule="evenodd" transform="rotate(62.5 50 50)" />
-                        <path id="d-pad-rd" class="dknop los"
-                            d="M 50 50 L 50 40 A 10 10, 0, 0, 1, 55.72 41.91 L 50 50 L 50 0 A 50 50, 0, 0, 1, 79 9"
-                            fill-rule="evenodd" transform="rotate(117 50 50)" />
-                        <path id="d-pad-d" class="dknop los"
-                            d="M 50 50 L 50 40 A 10 10, 0, 0, 1, 57.99 44.212 L 50 50 L 50 0 A 50 50, 0, 0, 1, 90 21 Z"
-                            fill-rule="evenodd" transform="rotate(153 50 50)" />
-                        <path id="d-pad-ld" class="dknop los"
-                            d="M 50 50 L 50 40 A 10 10, 0, 0, 1, 55.72 41.91 L 50 50 L 50 0 A 50 50, 0, 0, 1, 79 9"
-                            fill-rule="evenodd" transform="rotate(207 50 50)" />
-                        <path id="d-pad-l" class="dknop los"
-                            d="M 50 50 L 50 40 A 10 10, 0, 0, 1, 57.99 44.212 L 50 50 L 50 0 A 50 50, 0, 0, 1, 90 21 Z"
-                            fill-rule="evenodd" transform="rotate(243 50 50)" />
-                        <path id="d-pad-lu" class="dknop los"
-                            d="M 50 50 L 50 40 A 10 10, 0, 0, 1, 55.72 41.91 L 50 50 L 50 0 A 50 50, 0, 0, 1, 79 9"
-                            fill-rule="evenodd" transform="rotate(297 50 50)" />
-                    </g>
-                    <g>
-                        <circle class="d-pad-omheining" cx="50" cy="50" r="10" />
-                        <circle class="d-pad-omheining" cx="50" cy="50" r="49" />
-                        <circle id="dmid" class="dstick" cx="50" cy="50" r="10" />
-                    </g>
-                </svg> -->
             </div>
             <div id="gameContainer">
                 <canvas id="gamescreen" hidden></canvas>

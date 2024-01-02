@@ -415,8 +415,8 @@ async function awaitPressedAnyKeyPromise(): Promise<void> {
 					return;
 				}
 				if (e.type == 'touchend') {
-					const controls = document.getElementById("controls");
-					controls!.hidden = false;
+					document.getElementById("d-pad-controls")!.hidden = false;
+					document.getElementById("button-controls")!.hidden = false;
 					document.documentElement.setAttribute("style", "touch-action: none;");
 					document.documentElement.setAttribute("style", "pointer-events: none;");
 				}

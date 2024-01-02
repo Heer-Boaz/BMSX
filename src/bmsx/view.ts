@@ -104,6 +104,22 @@ export abstract class BaseView implements IRegisterable {
         self.canvas.style.height = `${self.viewportSize.y * self.scale}px`;
         self.canvas.style.left = (self.windowSize.x - self.canvas.width * self.scale) / 2 + "px";
         self.canvas.style.top = (self.windowSize.y - self.canvas.height * self.scale) / 2 + "px";
+
+        // Get the SVG element
+        const dpad_svg = document.querySelector<HTMLElement>('#d-pad-svg');
+        const actionbuttons_svg = document.querySelector<HTMLElement>('#action-buttons-svg');
+        // Function to update the scale
+        function updateScale(element: HTMLElement) {
+            // Calculate the new scale
+            let newScale = Math.max(window.innerWidth, window.innerHeight) * 0.15 / 100;
+
+            // Apply the new scale
+            element.style.transform = `scale(${newScale})`;
+        }
+
+        // Update the scale initially
+        updateScale(dpad_svg!);
+        updateScale(actionbuttons_svg!);
     }
 
     /**

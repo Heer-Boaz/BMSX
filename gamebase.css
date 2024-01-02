@@ -229,37 +229,9 @@
 	cursor: pointer;
 }
 
-svg.buttons {
-	position: fixed;
-	z-index: 2000;
-	pointer-events: none;
-	touch-action: none;
-}
-
-svg.buttons#btn1_svg {
-	top: 40vh;
-	left: 85vw;
-}
-
-svg.buttons#btn2_svg {
-	top: 30vh;
-	left: 92vw;
-}
-
-svg.buttons#btn3_svg {
-	top: 30vh;
-	left: 78vw;
-}
-
-svg.buttons#btn4_svg {
-	top: 20vh;
-	left: 85vw;
-}
-
 .knop {
-	pointer-events: fill;
+	pointer-events: auto;
 	touch-action: auto;
-	stroke-width: 2px;
 	z-index: 2000;
 	opacity: .3;
 	transform: scale(1);
@@ -268,12 +240,13 @@ svg.buttons#btn4_svg {
 	-ms-user-select: none;
 	user-select: none;
 	-webkit-touch-callout: none;
+	fill: transparent;
 }
 
 .extrabuttons {
 	z-index: 2000;
-	pointer-events: none;
-	touch-action: none;
+	pointer-events: auto;
+	touch-action: auto;
 }
 
 .knop.red:not(.los) {
@@ -314,7 +287,7 @@ svg.buttons#btn4_svg {
 
 .knop.druk {
 	z-index: 2001;
-	transform: scale(.75 50% 50%);
+	/* transform: scale(.75 50% 50%); */
 }
 
 @keyframes button-los {
@@ -328,17 +301,30 @@ svg.buttons#btn4_svg {
 	}
 }
 
+#d-pad-svg {
+	transform-origin: left bottom;
+}
+
+#action-buttons-svg {
+	transform-origin: right bottom;
+}
+
 svg.d-pad {
-	position: fixed;
+	position: absolute;
 	z-index: 2000;
-	pointer-events: none;
-	touch-action: none;
-	top: 25vh;
-	left: 24px;
-	width: 100px;
-	height: 100px;
-	transform-box: fill-box;
-	transform: scale(1.5);
+	pointer-events: auto;
+	touch-action: auto;
+	left: 0;
+	bottom: 0;
+}
+
+svg.action-buttons {
+	position: absolute;
+	z-index: 2000;
+	pointer-events: auto;
+	touch-action: auto;
+	bottom: 0;
+	right: 0;
 }
 
 .dknop {
@@ -354,39 +340,32 @@ svg.d-pad {
 @keyframes dknop-los {
 	from {
 		fill: rgb(252, 172, 0);
-		opacity: .3;
+		opacity: 1;
 	}
 
 	to {
-		fill: transparent;
+		fill: black;
 		opacity: 1;
 	}
 }
 
 .dknop.los {
-	animation: dknop-los .5s forwards linear;
+	animation: dknop-los 1s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28)
 }
 
 .dknop.druk {
-	opacity: .3;
-	display: block;
-	fill: gainsboro;
-}
-
-.d-pad-omheining {
-	pointer-events: none;
-	fill: none;
-	opacity: .3;
-	stroke-width: 1px;
-	stroke: gainsboro;
-	z-index: 2001;
+	fill: rgb(252, 172, 0);
 }
 
 .dstick {
-	pointer-events: all;
-	fill: transparent;
-	opacity: 1;
+	fill: black;
+	stroke-width: .5px;
 	z-index: 2001;
+}
+
+#d-pad-omheining {
+	stroke: gainsboro;
+	fill: transparent;
 }
 
 body {
@@ -439,7 +418,7 @@ html {
 }
 
 #gamescreen {
-	position: absolute;
+	position: fixed;
 	transform-origin: 0 0;
 	-ms-interpolation-mode: nearest-neighbor;
 	image-rendering: pixelated;

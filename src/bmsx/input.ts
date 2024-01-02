@@ -416,7 +416,7 @@ export class Input implements IRegisterable {
     }
 
     public isOnscreenGamepadEnabled(): boolean {
-        const controls = document.getElementById('controls');
+        const controls = document.getElementById('d-pad-controls');
         return !controls!.hidden;
     }
 
@@ -1244,7 +1244,7 @@ class OnscreenGamepad implements IInputHandler {
             const buttonData = OnscreenGamepad.buttonMap[d.id];
             if (buttonData) {
                 buttonData.buttons.forEach(button => {
-                    if (d.classList.contains('druk')) {
+                    if (d.dataset.touched === 'true') {
                         // Update the state only if the button is currently pressed
                         newGamepadButtonStates[button] = true;
                         newGamepadButtonPressTimes[button] = (newGamepadButtonPressTimes[button] ?? 0) + 1;
@@ -1293,27 +1293,27 @@ class OnscreenGamepad implements IInputHandler {
         'd-pad-u': {
             buttons: ['up' satisfies GamepadButton],
         },
-        // 'd-pad-ru': {
-        //     buttons: ['up' satisfies GamepadButton, 'right' satisfies GamepadButton],
-        // },
+        'd-pad-ru': {
+            buttons: ['up' satisfies GamepadButton, 'right' satisfies GamepadButton],
+        },
         'd-pad-r': {
             buttons: ['right' satisfies GamepadButton],
         },
-        // 'd-pad-rd': {
-        //     buttons: ['right' satisfies GamepadButton, 'down' satisfies GamepadButton],
-        // },
+        'd-pad-rd': {
+            buttons: ['right' satisfies GamepadButton, 'down' satisfies GamepadButton],
+        },
         'd-pad-d': {
             buttons: ['down' satisfies GamepadButton],
         },
-        // 'd-pad-ld': {
-        //     buttons: ['down' satisfies GamepadButton, 'left' satisfies GamepadButton],
-        // },
+        'd-pad-ld': {
+            buttons: ['down' satisfies GamepadButton, 'left' satisfies GamepadButton],
+        },
         'd-pad-l': {
             buttons: ['left' satisfies GamepadButton],
         },
-        // 'd-pad-lu': {
-        //     buttons: ['left' satisfies GamepadButton, 'up' satisfies GamepadButton],
-        // },
+        'd-pad-lu': {
+            buttons: ['left' satisfies GamepadButton, 'up' satisfies GamepadButton],
+        },
         'btn1_knop': {
             buttons: ['a' satisfies GamepadButton],
         },
@@ -1354,16 +1354,20 @@ class OnscreenGamepad implements IInputHandler {
     public init(): void {
         // Reset gamepad button states
         this.reset();
+        const self = this;
+        function addTouchListeners(controlsElement: HTMLElement) {
+            controlsElement.addEventListener('touchmove', e => { self.handleTouchStuff(e); return true; }, options);
+            controlsElement.addEventListener('touchstart', e => { self.handleTouchStuff(e); return true; }, options);
+            controlsElement.addEventListener('touchend', e => { self.handleTouchEndStuff(e); return true; }, options);
+            controlsElement.addEventListener('touchcancel', e => { self.handleTouchEndStuff(e); return true; }, options);
+        }
 
-        const controlsElement = document.getElementById('controls');
+        addTouchListeners(document.getElementById('d-pad-controls')!);
+        addTouchListeners(document.getElementById('button-controls')!);
+
         window.addEventListener('blur', e => this.blur(e), false); // Blur event will pause the game and prevent any input from being registered and reset the key states
         window.addEventListener('focus', e => this.focus(e), false); // Focus event will allow input to be registered again
         window.addEventListener('mouseout', () => this.reset(), options); // Reset input states when mouse leaves the window
-
-        controlsElement.addEventListener('touchmove', e => { this.handleTouchStuff(e); return true; }, options);
-        controlsElement.addEventListener('touchstart', e => { this.handleTouchStuff(e); return true; }, options);
-        controlsElement.addEventListener('touchend', e => { this.handleTouchEndStuff(e); return true; }, options);
-        controlsElement.addEventListener('touchcancel', e => { this.handleTouchEndStuff(e); return true; }, options);
     }
 
     /**
@@ -1393,6 +1397,7 @@ class OnscreenGamepad implements IInputHandler {
             if (element.classList.contains('druk')) {
                 element.classList.remove('druk');
                 element.classList.add('los');
+                element.dataset.touched = 'false';
             }
         }
 
@@ -1426,19 +1431,50 @@ class OnscreenGamepad implements IInputHandler {
             if (elementsUnderTouch) {
                 for (let j = 0; j < elementsUnderTouch.length; j++) {
                     const elementUnderTouch = elementsUnderTouch[j];
-                    elementsToFilter.push(elementUnderTouch);
-                    // let buttonsTouched = this.handleElementUnderTouch(elementTouched);
                     const buttonsTouched = OnscreenGamepad.buttonMap[elementUnderTouch.id]?.buttons;
                     if (buttonsTouched?.length > 0) {
-                        elementUnderTouch.classList.add('druk');
-                        elementUnderTouch.classList.remove('los');
-                        // elementTouched.dataset.touched = 'true';
+                        elementUnderTouch.dataset.touched = 'true';
+                        elementsToFilter.push(elementUnderTouch);
 
                         buttonsTouched.forEach(b => filterFromReset.push(b));
+
+                        switch (elementUnderTouch.id) {
+                            case 'd-pad-lu':
+                                elementsToFilter.push(document.getElementById('d-pad-u'), document.getElementById('d-pad-l'));
+                                break;
+                            case 'd-pad-u':
+                                elementsToFilter.push(document.getElementById('d-pad-lu'), document.getElementById('d-pad-ru'));
+                                break;
+                            case 'd-pad-ru':
+                                elementsToFilter.push(document.getElementById('d-pad-u'), document.getElementById('d-pad-r'));
+                                break;
+                            case 'd-pad-r':
+                                elementsToFilter.push(document.getElementById('d-pad-ru'), document.getElementById('d-pad-rd'));
+                                break;
+                            case 'd-pad-ld':
+                                elementsToFilter.push(document.getElementById('d-pad-d'), document.getElementById('d-pad-l'));
+                                break;
+                            case 'd-pad-d':
+                                elementsToFilter.push(document.getElementById('d-pad-ld'), document.getElementById('d-pad-rd'));
+                                break;
+                            case 'd-pad-rd':
+                                elementsToFilter.push(document.getElementById('d-pad-d'), document.getElementById('d-pad-r'));
+                                break;
+                            case 'd-pad-l':
+                                elementsToFilter.push(document.getElementById('d-pad-lu'), document.getElementById('d-pad-ld'));
+                                break;
+                        }
                     }
                 }
             }
         }
+
+        for (let i = 0; i < elementsToFilter.length; i++) {
+            const elementToFilter = elementsToFilter[i];
+            elementToFilter.classList.add('druk');
+            elementToFilter.classList.remove('los');
+        }
+
         this.reset(filterFromReset);
         this.resetUI(elementsToFilter);
     }
