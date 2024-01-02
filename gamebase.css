@@ -233,8 +233,7 @@
 	pointer-events: auto;
 	touch-action: auto;
 	z-index: 2000;
-	opacity: .3;
-	transform: scale(1);
+	opacity: 1;
 	-webkit-user-select: none;
 	-moz-user-select: none;
 	-ms-user-select: none;
@@ -247,6 +246,16 @@
 	z-index: 2000;
 	pointer-events: auto;
 	touch-action: auto;
+}
+
+.button-controls {
+	pointer-events: none;
+	touch-action: none;
+}
+
+.d-pad-controls {
+	pointer-events: none;
+	touch-action: none;
 }
 
 .knop.red:not(.los) {
@@ -292,12 +301,12 @@
 
 @keyframes button-los {
 	from {
-		opacity: .6;
+		opacity: 1;
 	}
 
 	to {
 		fill: transparent;
-		opacity: .3;
+		opacity: 1;
 	}
 }
 
