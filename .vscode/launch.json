@@ -4,7 +4,6 @@
 		{
 			"type": "msedge",
 			"request": "launch",
-			"version": "stable",
 			"name": "Debug the game!",
 			"url": "${workspaceFolder}/dist/game_debug.html",
 			"runtimeArgs": [
@@ -27,7 +26,6 @@
 		{
 			"type": "msedge",
 			"request": "launch",
-			"version": "stable",
 			"name": "Debug the MSXSOUND!",
 			"url": "${workspaceFolder}/src/bmsx/bla.html",
 			"runtimeArgs": [
