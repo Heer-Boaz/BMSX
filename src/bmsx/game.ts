@@ -995,12 +995,12 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 
 		BaseView.images = rom.images;
 		EventEmitter.instance; // Init event emitter
-		$.view.init(); // Init the view. Placed here to ensure that the Game object is available to the view
-		SM.init(rom['snd_assets'], sndcontext, 1, gainnode);
 		Input.instance; // Init input module
-		if ($.input.isOnscreenGamepadEnabled()) {
+		if ($.input.isOnscreenGamepadEnabled) {
 			$.input.enableOnscreenGamepad();
 		}
+		$.view.init(); // Init the view. Placed here to ensure that the Game object is available to the view and that the Input module is initialized
+		SM.init(rom['snd_assets'], sndcontext, 1, gainnode);
 
 		if (this.debug) {
 			// @ts-ignore

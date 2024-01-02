@@ -1,6 +1,7 @@
 ﻿import type { Area, Size, Vector, id2htmlimg, vec2 } from './rompack';
 import { BFont, IRegisterable, Identifier } from "./game";
 import { Registry } from './registry';
+import { Input } from './input';
 
 export interface FlipOptions {
     flip_h: boolean;
@@ -50,6 +51,7 @@ export abstract class BaseView implements IRegisterable {
     public accessor default_font: BFont;
 
     public windowSize: Size;
+    public availableWindowSize: Size;
     public viewportSize: Size;
     public dx: number;
     public dy: number;
@@ -62,7 +64,6 @@ export abstract class BaseView implements IRegisterable {
     }
 
     public init(): void {
-
         this.calculateSize();
         this.canvas.width = this.viewportSize.x;
         this.canvas.height = this.viewportSize.y;
@@ -86,13 +87,35 @@ export abstract class BaseView implements IRegisterable {
      * The `scale` property represents the minimum of `dx` and `dy`.
      */
     public calculateSize(): void {
-        let self = $.view || this;
+        const self = $.view || this;
 
         let w = Math.max(document.documentElement.clientWidth, window.innerWidth || screen.width);
         let h = Math.max(document.documentElement.clientHeight, window.innerHeight || screen.height);
+
         self.windowSize = { x: w, y: h };
-        self.dx = self.windowSize.x / self.viewportSize.x;
-        self.dy = self.windowSize.y / self.viewportSize.y;
+
+        // We need to respect the size of the onscreen gamepad, but only if the onscreen gamepad is visible and only in landscape mode
+        if (Input.instance.isOnscreenGamepadEnabled) {
+            // Determine whether we are in landscape or portrait mode
+            const isLandscape = window.innerWidth > window.innerHeight;
+
+            if (isLandscape) {
+                const maxSvgScale = Math.max(window.innerWidth, window.innerHeight) * 0.20 / 100;
+                // Get the SVG element
+                const dpad_svg = document.querySelector<HTMLElement>('#d-pad-svg');
+                const actionbuttons_svg = document.querySelector<HTMLElement>('#action-buttons-svg');
+
+                const dpadWidth = parseInt(dpad_svg.getAttribute('width')!) * maxSvgScale;
+                const actionButtonsWidth = parseInt(actionbuttons_svg.getAttribute('width')!) * maxSvgScale;
+
+                // Calculate the maximum width of the windowSize based on the SVG elements
+                w -= dpadWidth + actionButtonsWidth;
+            }
+        }
+
+        self.availableWindowSize = { x: w, y: h };
+        self.dx = self.availableWindowSize.x / self.viewportSize.x;
+        self.dy = self.availableWindowSize.y / self.viewportSize.y;
         self.scale = Math.min(self.dx, self.dy);
     }
 
@@ -118,15 +141,6 @@ export abstract class BaseView implements IRegisterable {
         // Get the SVG element
         const dpad_svg = document.querySelector<HTMLElement>('#d-pad-svg');
         const actionbuttons_svg = document.querySelector<HTMLElement>('#action-buttons-svg');
-        // Function to update the scale
-        function updateScale(element: HTMLElement) {
-            // Calculate the new scale
-            let newScale = Math.max(window.innerWidth, window.innerHeight) * 0.20 / 100;
-
-            // Apply the new scale
-            element.style.transform = `scale(${newScale})`;
-        }
-
         function updateBottomPosition(element: HTMLElement) {
             let newBottom: number;
             if (isLandscape) {
@@ -138,19 +152,36 @@ export abstract class BaseView implements IRegisterable {
 
             // Apply the new bottom position
             element.style.bottom = `${newBottom}vh`;
+        }
 
-            // Calculate whether the SVG element is overlapping with the game canvas based on the `vh` unit
-            const canvasBottom = canvasTop + self.canvas.height;
-            const svgTop = newBottom / 100 * window.innerHeight;
-            if (svgTop < canvasBottom) {
-                // Place the SVG element lower than the bottom of the game canvas
-                element.style.bottom = `${(canvasBottom / window.innerHeight * 100 + 1)}vh`;
+        // Function to update the scale
+        // @ts-ignore
+        function updateScale(element: HTMLElement, isRightSide: boolean) {
+            // Calculate the new scale
+            let newScale = Math.max(window.innerWidth, window.innerHeight) * 0.20 / 100;
+
+            // If in landscape mode, limit the scale so that the SVG element does not overlap with the canvas
+            if (isLandscape) {
+                // const canvasRect = self.canvas.getBoundingClientRect();
+                // let maxSvgWidth;
+                // if (isRightSide) {
+                //     maxSvgWidth = window.innerWidth - (canvasRect.left + canvasRect.width);
+                // } else {
+                //     maxSvgWidth = canvasRect.left;
+                // }
+                // const svgWidth = parseInt(element.getAttribute('width')!);
+                // if (svgWidth * newScale > maxSvgWidth) {
+                //     newScale = maxSvgWidth / svgWidth;
+                // }
             }
+
+            // Apply the new scale
+            element.style.transform = `scale(${newScale})`;
         }
 
         // Update the scaling of the SVG elements
-        updateScale(dpad_svg!);
-        updateScale(actionbuttons_svg!);
+        updateScale(dpad_svg!, false);
+        updateScale(actionbuttons_svg!, true);
 
         // Update the bottom position of the SVG elements
         updateBottomPosition(dpad_svg!);

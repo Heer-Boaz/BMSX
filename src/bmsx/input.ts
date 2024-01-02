@@ -415,7 +415,7 @@ export class Input implements IRegisterable {
         this.getPlayerInput(1).keyboardInput = new KeyboardInput();
     }
 
-    public isOnscreenGamepadEnabled(): boolean {
+    public get isOnscreenGamepadEnabled(): boolean {
         const controls = document.getElementById('d-pad-controls');
         return !controls!.hidden;
     }
