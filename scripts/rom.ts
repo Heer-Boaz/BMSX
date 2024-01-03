@@ -174,6 +174,25 @@ const bootrom = {
 	}
 };
 
+function getRomFromUrlParameter(): string {
+	const rom = getParameterByName('rom');
+	return rom && rom !== '' ? rom : null;
+}
+
+function getRomNameFromUrlParameter(): string {
+    const rom_name = getParameterByName('romname');
+	return rom_name && rom_name !== '' ? rom_name : null;
+}
+
+function getParameterByName(name, url = window.location.href) {
+	name = name.replace(/[\[\]]/g, '\\$&');
+	var regex = new RegExp('[?&]' + name + '(=([^&#]*)|&|#|$)'),
+		results = regex.exec(url);
+	if (!results) return null;
+	if (!results[2]) return '';
+	return decodeURIComponent(results[2].replace(/\+/g, ' '));
+}
+
 /**
  * Asynchronously loads an image from the specified URL.
  * @param url - The URL of the image to load.

@@ -130,7 +130,7 @@ export abstract class BaseView implements IRegisterable {
 		self.canvas.style.height = `${~~(self.viewportSize.y * self.scale)}px`;
 		self.canvas.style.left = `${~~((self.windowSize.x - self.canvas.width * self.scale) / 2)}px`;
 		let canvasTop: number;
-		if (isLandscape) {
+		if (isLandscape || !Input.instance.isOnscreenGamepadEnabled) {
 			canvasTop = ~~((self.windowSize.y - self.canvas.height * self.scale) / 2);
 		}
 		else {
@@ -138,64 +138,66 @@ export abstract class BaseView implements IRegisterable {
 		}
 		self.canvas.style.top = `${canvasTop}px`;
 
-		// Get the SVG element
-		const dpad_svg = document.querySelector<HTMLElement>('#d-pad-svg');
-		const actionbuttons_svg = document.querySelector<HTMLElement>('#action-buttons-svg');
-		function updateBottomPosition(element: HTMLElement, isRightSide: boolean) {
-			let newBottom: number;
-			if (isLandscape) {
-				if (isRightSide) {
-					newBottom = 0;
+		if (Input.instance.isOnscreenGamepadEnabled) {
+			// Get the SVG element
+			const dpad_svg = document.querySelector<HTMLElement>('#d-pad-svg');
+			const actionbuttons_svg = document.querySelector<HTMLElement>('#action-buttons-svg');
+			function updateBottomPosition(element: HTMLElement, isRightSide: boolean) {
+				let newBottom: number;
+				if (isLandscape) {
+					if (isRightSide) {
+						newBottom = 0;
+					}
+					else {
+						newBottom = 25;
+					}
 				}
 				else {
-					newBottom = 25;
+					if (isRightSide) {
+						newBottom = 0;
+					}
+					else {
+						newBottom = 15;
+					}
 				}
-			}
-			else {
-				if (isRightSide) {
-					newBottom = 0;
-				}
-				else {
-					newBottom = 15;
-				}
+
+				// Apply the new bottom position
+				element.style.bottom = `${newBottom}vh`;
 			}
 
-			// Apply the new bottom position
-			element.style.bottom = `${newBottom}vh`;
+			// Function to update the scale
+			// @ts-ignore
+			function updateScale(element: HTMLElement, isRightSide: boolean) {
+				// Calculate the new scale
+				let newScale = Math.max(window.innerWidth, window.innerHeight) * 0.20 / 100;
+
+				// If in landscape mode, limit the scale so that the SVG element does not overlap with the canvas
+				if (isLandscape && GameOptions.canvas_or_onscreengamepad_must_respect_lebensraum === 'gamepad') {
+					const canvasRect = self.canvas.getBoundingClientRect();
+					let maxSvgWidth: number;
+					if (isRightSide) {
+						maxSvgWidth = ~~(window.innerWidth - (canvasRect.left + canvasRect.width));
+					} else {
+						maxSvgWidth = canvasRect.left;
+					}
+					const svgWidth = parseInt(element.getAttribute('width')!);
+					if (svgWidth * newScale > maxSvgWidth) {
+						newScale = maxSvgWidth / svgWidth;
+					}
+				}
+
+				// Apply the new scale
+				element.style.transform = `scale(${newScale})`;
+			}
+
+			// Update the scaling of the SVG elements
+			updateScale(dpad_svg!, false);
+			updateScale(actionbuttons_svg!, true);
+
+			// Update the bottom position of the SVG elements
+			updateBottomPosition(dpad_svg!, false);
+			updateBottomPosition(actionbuttons_svg!, true);
 		}
-
-		// Function to update the scale
-		// @ts-ignore
-		function updateScale(element: HTMLElement, isRightSide: boolean) {
-			// Calculate the new scale
-			let newScale = Math.max(window.innerWidth, window.innerHeight) * 0.20 / 100;
-
-			// If in landscape mode, limit the scale so that the SVG element does not overlap with the canvas
-			if (isLandscape && GameOptions.canvas_or_onscreengamepad_must_respect_lebensraum === 'gamepad') {
-				const canvasRect = self.canvas.getBoundingClientRect();
-				let maxSvgWidth: number;
-				if (isRightSide) {
-					maxSvgWidth = ~~(window.innerWidth - (canvasRect.left + canvasRect.width));
-				} else {
-					maxSvgWidth = canvasRect.left;
-				}
-				const svgWidth = parseInt(element.getAttribute('width')!);
-				if (svgWidth * newScale > maxSvgWidth) {
-					newScale = maxSvgWidth / svgWidth;
-				}
-			}
-
-			// Apply the new scale
-			element.style.transform = `scale(${newScale})`;
-		}
-
-		// Update the scaling of the SVG elements
-		updateScale(dpad_svg!, false);
-		updateScale(actionbuttons_svg!, true);
-
-		// Update the bottom position of the SVG elements
-		updateBottomPosition(dpad_svg!, false);
-		updateBottomPosition(actionbuttons_svg!, true);
 	}
 
 	/**

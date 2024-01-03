@@ -104,7 +104,7 @@ class bclass extends SpriteObject {
                 {
                     type: 'Sequence',
                     children: [
-                        { type: 'Wait', waitTime: 50, wait_propname: 'waiting' },
+                        { type: 'Wait', wait_time: 50, wait_propname: 'waiting' },
                         {
                             type: 'Decorator', decorator: WaitForActionCompletionDecorator,
                             child: {

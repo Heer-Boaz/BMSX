@@ -345,10 +345,10 @@ async function buildGameHtmlAndManifest(rom_name: string, title: string, short_n
 						.replace('//#zipjs', zipjs)
 						.replace('/*css*/', cssMinified)
 						.replace(/#title/g, title) // https://stackoverflow.com/questions/44324892/how-can-i-replace-multiple-characters-in-a-string
-						.replace('#romname', `${rom_name}`)
+						.replace('//#debug', `bootrom.debug = ${debug};\n\t\tbootrom.romname = getRomNameFromUrlParameter() ?? '#romname';\n`)
+						.replace('#romname', `${rom_name}`) // Note: this is the name of the ROM, not the title of the game and is used for getting the JS-file for debugging
 						.replace('#outfile', `${rom_name}.rom`)
 						.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed)
-						.replace('//#debug', `bootrom.debug = ${debug};\n`)
 				};
 				writeFile("./dist/game.html", await transformHtml(html, false));
 				writeFile("./dist/game_debug.html", await transformHtml(html, true));

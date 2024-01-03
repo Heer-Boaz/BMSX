@@ -1,6 +1,12 @@
 import { DrawRectOptions, GameObject, Msx1Colors, SpriteObject, StateMachineBlueprint, build_fsm, new_area3d, new_vec3, sstate } from '../bmsx/bmsx';
 import { BitmapId } from './resourceids';
 
+function wrapup(state: sstate) {
+	$.stopMusic();
+	$.model.sc.to('titlescreen');
+	state.reset(); // Make sure that the tick counter is reset.
+}
+
 export class GameOver extends SpriteObject {
 	@build_fsm()
 	static bouw(): StateMachineBlueprint {
@@ -8,7 +14,7 @@ export class GameOver extends SpriteObject {
 			states: {
 				_default: {
 					ticks2move: 500,
-					run(this: TitleScreen) {
+					process_input(this: TitleScreen, state: sstate) {
 						const priorityActions = $.getPressedActions(1, { pressed: true, consumed: false, filter: ['punch', 'highkick', 'lowkick', 'block'] });
 
 						// If no priority actions are pressed, do nothing.
@@ -16,13 +22,11 @@ export class GameOver extends SpriteObject {
 							return;
 						}
 						$.consumeActions(1, ...priorityActions);
-						$.stopMusic();
 
-						// If a priority action is pressed, go to the title screen.
-						$.model.sc.to('titlescreen');
+						wrapup(state);
 					},
-					end(this: GameOver) {
-						$.model.sc.to('titlescreen');
+					end(this: GameOver, state: sstate) {
+						wrapup(state);
 					},
 				}
 			}
@@ -46,15 +50,15 @@ export class GameOver extends SpriteObject {
 		this.imgid = BitmapId.gameover;
 	}
 }
-
 export class Hoera extends SpriteObject {
 	@build_fsm()
 	static bouw(): StateMachineBlueprint {
+
 		return {
 			states: {
 				_default: {
 					ticks2move: 500,
-					run(this: TitleScreen) {
+					process_input(this: TitleScreen, state: sstate) {
 						const priorityActions = $.input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['punch', 'highkick', 'lowkick', 'block'] });
 
 						// If no priority actions are pressed, do nothing.
@@ -62,12 +66,10 @@ export class Hoera extends SpriteObject {
 							return;
 						}
 						$.input.getPlayerInput(1).consumeActions(...priorityActions);
-						$.stopMusic();
-						// If a priority action is pressed, go to the title screen.
-						$.model.sc.to('titlescreen');
+						wrapup(state);
 					},
-					end(this: Hoera) {
-						$.model.sc.to('titlescreen');
+					end(this: Hoera, state: sstate) {
+						wrapup(state);
 					},
 				}
 			}
@@ -115,8 +117,6 @@ export class TitleScreen extends SpriteObject {
 							},
 						},
 					},
-					enter(this: TitleScreen) {
-					},
 					process_input(this: TitleScreen) {
 						const priorityActions = $.input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['up', 'down', 'punch', 'highkick', 'lowkick', 'block'] });
 
@@ -151,6 +151,7 @@ export class TitleScreen extends SpriteObject {
 						players_2: {
 							on: {
 								$switch: 'players_1',
+								$players_1: 'players_1', // For resetting the TitleScreen state.
 							},
 							enter(this: TitleScreen, state: sstate) {
 								this.cursorY = TitleScreen.SELECT_PLAYER_2_Y;
