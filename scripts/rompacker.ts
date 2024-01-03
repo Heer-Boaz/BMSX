@@ -905,7 +905,7 @@ async function buildRompack(rom_name: string, respath: string): Promise<void> {
 					const img = res.img;
 					const img_boundingbox = extractBoundingBox(img); // Extract the bounding box of the image (i.e. the smallest rectangle that contains all non-transparent pixels)
 					const img_boundingbox_precalc: BoundingBoxPrecalc = generateFlippedBoundingBox(img, img_boundingbox);
-					const img_boundingboxes = extractBoundingBoxes(img, img_boundingbox, 2); // Extract the bounding boxes of the image (i.e. the smallest rectangles that contain all non-transparent pixels)
+					const img_boundingboxes = extractBoundingBoxes(img, img_boundingbox, 4); // Extract the bounding boxes of the image (i.e. the smallest rectangles that contain all non-transparent pixels)
 					// const img_ascii_boundingbox_map = createAsciiBoundingBoxMap(img, img_boundingboxes);
 					const img_boundingboxes_precalc: BoundingBoxesPrecalc = {
 						original: img_boundingboxes,
@@ -1237,39 +1237,39 @@ async function main() {
 		if (!respath) throw new Error("Missing parameter for location of the resource folder ('respath', e.g. './src/testrom/res'.");
 
 		let rebuildRequired = true;
-
-		if (!force) {
-			rebuildRequired = await isRebuildRequired(rom_name, bootloader_path, respath);
-			if (!rebuildRequired) {
-				writeOut('Rebuild skipped: game rom was newer than code/assets (use --force option to ignore this check).');
-			}
+		if (force) {
+			writeOut(`Note: Recompilation and Building forced via ${_colors.brightRed.bold('--force')}\n`);
 		}
-		else writeOut(`Note: Recompilation and Building forced via ${_colors.brightRed.bold('--force')}\n`);
 		if (!deployToFtp) writeOut(`Note: Deploy to FTP server disabled via ${_colors.brightRed.bold('--nodeploy')}\n`);
-
 		writeOut(`Starting ROM packing and deployment process for ROM ${_colors.brightBlue.bold(`${rom_name}`)}...\n`);
-
-		if (!deployToFtp) takenlijst.pop();
-		if (!rebuildRequired) {
-			takenlijst.shift();
-			takenlijst.shift();
-			takenlijst.shift();
-			takenlijst.shift();
-		}
-
 		gauge.show(takenlijst.shift(), 0);
 		gauge.pulse();
-		// #endregion
+
 		try {
 			let romManifest: RomManifest;
 			let short_name: string = 'BMSX';
+			romManifest = await getRomManifest(respath);
+			taakAfgevinkt();
+			if (!romManifest) throw new Error(`Rom manifest not found at "${respath}"!`);
+			rom_name = romManifest?.rom_name ?? rom_name;
+			title = romManifest?.title ?? title;
+			short_name = romManifest?.short_name ?? short_name;
+
+			rebuildRequired = await isRebuildRequired(rom_name, bootloader_path, respath);
+			if (!rebuildRequired) {
+				writeOut('Rebuild skipped: game rom was newer than code/assets (use --force option to ignore this check).\n');
+			}
+
+			if (!deployToFtp) takenlijst.pop();
+			if (!rebuildRequired) {
+				takenlijst.shift();
+				takenlijst.shift();
+				takenlijst.shift();
+				takenlijst.shift();
+			}
+
+			// #endregion
 			if (rebuildRequired) {
-				romManifest = await getRomManifest(respath);
-				taakAfgevinkt();
-				if (!romManifest) throw new Error(`Rom manifest not found at "${respath}"!`);
-				rom_name = romManifest?.rom_name ?? rom_name;
-				title = romManifest?.title ?? title;
-				short_name = romManifest?.short_name ?? short_name;
 				await buildAndBundleRomSource(rom_name, bootloader_path);
 				await yaml2Json();
 				await buildRompack(rom_name, respath);
