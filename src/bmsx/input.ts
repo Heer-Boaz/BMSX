@@ -161,19 +161,20 @@ class SelectedPlayerIndexIcon extends SpriteObject {
 						state.reset();
 					},
 					next(this: SelectedPlayerIndexIcon, state: sstate) {
-						this.colorize = state.current_tape_value ? { r: 1, g: 1, b: 1, a: 1 } : { r: 0, g: 1, b: 0, a: 1 };
+						this.colorize = state.current_tape_value ? { r: 1, g: 1, b: 1, a: .5 } : { r: 0, g: 1, b: 0, a: .75 };
 					},
 					end(this: SelectedPlayerIndexIcon) {
 						this.sc.dispatch('animation_end', this);
 					},
 				},
 				cancelled: {
-					tape: [ 4 ],
-					repetitions: 8,
+					tape: [ 2 ],
+					repetitions: 16,
 					auto_rewind_tape_after_end: false,
-					ticks2move: 2,
+					ticks2move: 1,
 					enter: function (this: SelectedPlayerIndexIcon, state: sstate) {
 						state.reset();
+						this.colorize = { r: 1, g: 0, b: 0, a: .75 };
 					},
 					next(this: SelectedPlayerIndexIcon, state: sstate) {
 						this.y -= state.current_tape_value;
@@ -193,6 +194,7 @@ class SelectedPlayerIndexIcon extends SpriteObject {
 	constructor(public gamepadIndex: number) {
 		super(SelectedPlayerIndexIcon.getIconId(gamepadIndex));
 		this.z = ZCOORD_MAX;
+		this.colorize = { r: 1, g: 1, b: 1, a: .75 };
 	}
 
 	public set playerIndex(playerIndex: number) {
