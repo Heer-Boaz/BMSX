@@ -46,6 +46,14 @@ export abstract class SpriteObject extends GameObject {
         }
     }
 
+    public get colorize() {
+        return this.sprite.colorize;
+    }
+
+    public set colorize(c: Color) {
+        this.sprite.colorize = c;
+    }
+
     private updateBoundingBoxes() {
         if (!this.hitarea) return; // Only update the hitarea if it exists
         const imgmeta = global.rom['img_assets'][this.sprite.imgid]?.['imgmeta'];
