@@ -5,7 +5,7 @@ import { ZCOORD_MAX } from './glview';
 import { SpriteObject } from './sprite';
 import type { IRegisterable, Identifier } from "./game";
 import { Registry } from './registry';
-import { StateMachineBlueprint } from './bfsm';
+import { StateMachineBlueprint, build_fsm, sstate } from './bfsm';
 
 export type ActionStateQuery = {
 	filter?: string[];
@@ -133,6 +133,79 @@ const options = {
 	once: false,
 };
 
+
+class SelectedPlayerIndexIcon extends SpriteObject {
+	@build_fsm()
+	static bouw(): StateMachineBlueprint {
+		return {
+			on: {
+				$animation_end: {
+					do: function (this: SelectedPlayerIndexIcon) {
+						this.markForDisposal();
+					}
+				},
+			},
+			states: {
+				_default: {
+					on: {
+						controller_assigned: 'assigned',
+						controller_assigmment_cancelled: 'cancelled',
+					},
+				},
+				assigned: {
+					tape: [ true, false ],
+					repetitions: 5,
+					auto_rewind_tape_after_end: false,
+					ticks2move: 4,
+					enter: function (this: SelectedPlayerIndexIcon, state: sstate) {
+						state.reset();
+					},
+					next(this: SelectedPlayerIndexIcon, state: sstate) {
+						this.colorize = state.current_tape_value ? { r: 1, g: 1, b: 1, a: 1 } : { r: 0, g: 1, b: 0, a: 1 };
+					},
+					end(this: SelectedPlayerIndexIcon) {
+						this.sc.dispatch('animation_end', this);
+					},
+				},
+				cancelled: {
+					tape: [ 4 ],
+					repetitions: 8,
+					auto_rewind_tape_after_end: false,
+					ticks2move: 2,
+					enter: function (this: SelectedPlayerIndexIcon, state: sstate) {
+						state.reset();
+					},
+					next(this: SelectedPlayerIndexIcon, state: sstate) {
+						this.y -= state.current_tape_value;
+					},
+					end(this: SelectedPlayerIndexIcon) {
+						this.sc.dispatch('animation_end', this);
+					},
+				},
+			},
+		};
+	}
+
+	public static getIconId(gamepadIndex: number): Identifier {
+		return `joystick_icon_${gamepadIndex ?? 0}`;
+	}
+
+	constructor(public gamepadIndex: number) {
+		super(SelectedPlayerIndexIcon.getIconId(gamepadIndex));
+		this.z = ZCOORD_MAX;
+	}
+
+	public set playerIndex(playerIndex: number) {
+		if (playerIndex === null) {
+			this.imgid = 'joystick_none';
+			return;
+		}
+		else {
+			this.imgid = `joystick${playerIndex}`;
+		}
+	}
+}
+
 class PendingAssignmentProcessor {
 	private static readonly joystick_icon_start = { x: 0, y: 0 };
 	private static readonly joystick_icon_increment_x = 32;
@@ -235,12 +308,16 @@ class PendingAssignmentProcessor {
 				gamepadInput.consumeButton(Input.BUTTON2INDEX['a']);
 				inputMaestro.assignGamepadToPlayer(gamepadInput, this.proposedPlayerIndex);
 				inputMaestro.removePendingGamepadAssignment(this.gamepadInput.gamepadIndex);
+				$.emit('controller_assigned', Input.instance, this.proposedPlayerIndex);
+				this.icon = null;
 			}
 			else if (this.checkNonConsumedPressed('b', gamepadInput)) {
 				// Cancel assignment process for this gamepad and remove the joystick icon
 				gamepadInput.consumeButton(Input.BUTTON2INDEX['b']);
 				this.proposedPlayerIndex = null; // Set proposed player index to null to indicate that the gamepad is no longer proposed to be assigned to a player. Note that we keep the pending gamepad assignment object around, so that the gamepad can be assigned to a player again later.
-				this.removeIcon();
+				$.emit('controller_assigmment_cancelled', Input.instance, this.proposedPlayerIndex);
+				this.icon = null;
+				// this.removeIcon();
 			}
 			else {
 				// Handle joystick icon movement to change the proposed player index
@@ -533,9 +610,9 @@ export class Input implements IRegisterable {
 	public removePendingGamepadAssignment(gamepadIndex: number): void {
 		const index = this.pendingGamepadAssignments.findIndex(pending => pending.gamepadInput.gamepadIndex === gamepadIndex);
 		if (index !== -1) {
-			const pendingAssignmentProcessor = this.pendingGamepadAssignments[index];
+			// const pendingAssignmentProcessor = this.pendingGamepadAssignments[index];
 			this.pendingGamepadAssignments.splice(index, 1);
-			pendingAssignmentProcessor.removeIcon(); // Dispose the joystick icon
+			// pendingAssignmentProcessor.removeIcon(); // Dispose the joystick icon
 		}
 	}
 
@@ -1664,47 +1741,5 @@ class OnscreenGamepad implements IInputHandler {
 
 	focus(_e: FocusEvent): void {
 		this.reset();
-	}
-}
-
-class SelectedPlayerIndexIcon extends SpriteObject {
-	static bouw(): StateMachineBlueprint {
-		return {
-			states: {
-				_default: {
-				},
-				assigned: {
-					on: {
-						PLAYER_JOIN: 'assigned',
-						PLAYER_LEAVE: 'unassigned',
-					},
-				},
-				unassigned: {
-					on: {
-						PLAYER_JOIN: 'assigned',
-						PLAYER_LEAVE: 'unassigned',
-					},
-				},
-			},
-		};
-	}
-
-	public static getIconId(gamepadIndex: number): Identifier {
-		return `joystick_icon_${gamepadIndex ?? 0}`;
-	}
-
-	constructor(public gamepadIndex: number) {
-		super(SelectedPlayerIndexIcon.getIconId(gamepadIndex));
-		this.z = ZCOORD_MAX;
-	}
-
-	public set playerIndex(playerIndex: number) {
-		if (playerIndex === null) {
-			this.imgid = 'joystick_none';
-			return;
-		}
-		else {
-			this.imgid = `joystick${playerIndex}`;
-		}
 	}
 }
