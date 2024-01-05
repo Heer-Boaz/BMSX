@@ -163,14 +163,14 @@ export class TitleScreen extends SpriteObject {
 						blink: {
 							parallel: true,
 							ticks2move: 20,
-							tape: [true, false],
+							tape: [false, true],
 							auto_rewind_tape_after_end: true,
 							data: {
 								pause_blink: false,
 							},
 							enter(this: TitleScreen, state: sstate) {
 								state.reset();
-								this.cursorVisible = state.current_tape_value;
+								this.cursorVisible = true;
 							},
 							next(this: TitleScreen, state: sstate) {
 								if (state.data.pause_blink) return;
