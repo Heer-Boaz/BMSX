@@ -1230,13 +1230,16 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 				// to resort to any workarounds like duplicating the first entry
 				// of the tape or similar.
 				this._tapehead = 0; // Set the tapehead to the beginning of the tape, but not to TAPE_START_INDEX, as that is before the start of the tape and we are now properly triggering the tapemove event for the first element of the tape
+
+				// Trigger the event for moving the tape, after having set the tapehead to the correct position
+				this.tapemove(true);
 			}
 			else {
 				// Set the tapehead to the end of the tape (or 0 if there is no tape)
 				this._tapehead = this.tape.length > 0 ? this.tape.length - 1 : TAPE_START_INDEX;
+
+				// We do not trigger the tapemove event here, as the tapehead is not actually moving and we dont want to trigger the tapemove event twice in a row for the same tapehead position
 			}
-			// Trigger the event for moving the tape, after having set the tapehead to the correct position
-			this.tapemove(true);
 
 			// Trigger the event for reaching the end of the tape
 			this.tapeend();
@@ -1329,6 +1332,7 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 	}
 }
 
+const AUTO_REWIND_TAPE_AFTER_END = false;
 /**
  * Represents a state definition for a state machine.
  */
@@ -1375,7 +1379,7 @@ export class sdef {
 		this.ticks2move ??= 0; // Unless already defined, ticks2move is 0
 		this.repetitions = (this.tape ? (this.repetitions ?? 1) : 0);
 		this.auto_tick = this.auto_tick ?? (this.ticks2move !== 0 ? true : false); // If ticks2move is 0, auto_tick is false. Otherwise, auto_tick is true (unless it was already defined)
-		this.auto_rewind_tape_after_end = this.auto_rewind_tape_after_end ?? (this.tape ? true : false); // If there is a tape, auto_rewind_tape_after_end is true. Otherwise, it is false (unless it was already defined)
+		this.auto_rewind_tape_after_end = this.auto_rewind_tape_after_end ?? (this.tape ? AUTO_REWIND_TAPE_AFTER_END : false); // If there is a tape, auto_rewind_tape_after_end is AUTO_REWIND_TAPE_AFTER_END. Otherwise, it is false (unless it was already defined)
 		this.data ??= {}; // Unless already defined, data is an empty object
 
 		if (this.tape) {
