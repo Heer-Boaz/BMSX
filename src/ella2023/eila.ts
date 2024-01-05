@@ -143,8 +143,6 @@ export class Eila extends Fighter {
                         this.fighting = false;
                         state.reset();
                         this.resetVerticalPosition();
-                        this.sc.to(`${statemachine}.${state.current_tape_value}`);
-                        this.facing = (this.facing === 'left' ? 'right' : 'left');
                     },
                     run(this: Fighter, state: sstate) {
                         // Lelijk
