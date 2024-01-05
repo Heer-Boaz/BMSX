@@ -658,6 +658,7 @@ interface IStateController extends IRegisterable {
 	get start_state_id(): Identifier;
 }
 
+const TAPE_START_INDEX = -1; // The index of the tape that is *before* the start of the tape, so that the first index of the tape is considered when the `next`-event is triggered
 @insavegame
 /**
  * Represents a state in a state machine.
@@ -1141,22 +1142,30 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 	 * @returns The tape associated with the state machine definition, or undefined if not found.
 	 */
 	public get tape(): Tape { return this.definition?.tape; }
+
 	/**
 	 * Returns the current value of the tape at the position of the tape head.
 	 * If there is no tape or the tape head is beyond the end of the tape, returns undefined.
 	 */
-	public get current_tape_value(): any { return (this.tape && this.head < this.tape.length) ? this.tape[this.head] : undefined; };
+	public get current_tape_value(): any {
+		if (!this.tape || this.tape.length === 0) return undefined;
+		const current_index = Math.max(0, Math.min(this.head, this.tape.length - 1));
+		return this.tape[current_index];
+	}
+
 	public get at_tapeend(): boolean { return !this.tape || this.head >= this.tape.length - 1; } // Note that beyond end also returns true if there is no tape!
+
 	/**
 	 * Determines whether the tape head is currently beyond the end of the tape.
 	 * Returns true if the tape head is beyond the end of the tape or if there is no tape, false otherwise.
 	 * Note that this function assumes that the tape head is within the bounds of the tape.
 	 */
 	protected get beyond_tapeend(): boolean { return !this.tape || this.head >= this.tape.length; } // Note that beyond end also returns true if there is no tape!
+
 	// Determines whether the tape head is currently at the start of the tape.
 	// Returns true if the tape head is at the start of the tape, false otherwise.
 	// Note that this function assumes that the tape head is within the bounds of the tape.
-	public get at_tape_start(): boolean { return this.head === 0; }
+	public get at_tape_start(): boolean { return this.head === TAPE_START_INDEX; }
 
 	/**
 	 * Retrieves the target object as the specified type.
@@ -1203,7 +1212,7 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 
 		// Check if the tapehead is going out of bounds (or there is no tape at all)
 		if (!this.tape) {
-			this._tapehead = 0;
+			this._tapehead = TAPE_START_INDEX;
 
 			// Trigger the event for moving the tape, after having set the tapehead to the correct position
 			this.tapemove();
@@ -1220,11 +1229,11 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 				// including the first and last element of the tape, without having
 				// to resort to any workarounds like duplicating the first entry
 				// of the tape or similar.
-				this._tapehead = 0;
+				this._tapehead = 0; // Set the tapehead to the beginning of the tape, but not to TAPE_START_INDEX, as that is before the start of the tape and we are now properly triggering the tapemove event for the first element of the tape
 			}
 			else {
 				// Set the tapehead to the end of the tape (or 0 if there is no tape)
-				this._tapehead = this.tape.length - 1;
+				this._tapehead = this.tape.length > 0 ? this.tape.length - 1 : TAPE_START_INDEX;
 			}
 			// Trigger the event for moving the tape, after having set the tapehead to the correct position
 			this.tapemove(true);
@@ -1291,7 +1300,7 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 	 * Resets the state machine by setting the tapehead and ticks to 0 and the ticks2move to the value defined in the state machine definition.
 	 */
 	public reset(reset_tree: boolean = true): void {
-		this._tapehead = 0; // Reset the tapehead to the beginning of the tape
+		this._tapehead = TAPE_START_INDEX; // Reset the tapehead to the beginning of the tape
 		this._ticks = 0; // Reset the ticks
 		if (!this.definition) return; // No definition exists for the empty 'none'-state
 		this.data = { ...this.definition.data }; // Reset the state data by shallow copying the definition's data
