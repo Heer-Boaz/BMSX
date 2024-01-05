@@ -149,27 +149,26 @@ class PendingAssignmentProcessor {
 		if (this.checkNonConsumedPressed(button, gamepadInput)) {
 			gamepadInput.consumeButton(Input.BUTTON2INDEX[button]);
 
-			let newProposedPlayerIndex: number = this.proposedPlayerIndex;
-			let triedPlayerIndicesCount = 0;
-			do {
-				++triedPlayerIndicesCount;
-				newProposedPlayerIndex += increment;
-				if (newProposedPlayerIndex < 1) {
-					newProposedPlayerIndex = 1; // No wrap-around to avoid accidentally assigning a gamepad to the wrong player
-					break;
-				}
-				if (newProposedPlayerIndex > Input.PLAYERS_MAX) {
-					newProposedPlayerIndex = Input.PLAYERS_MAX; // No wrap-around to avoid accidentally assigning a gamepad to the wrong player
-					break;
-				}
-			} while (!Input.instance.isPlayerIndexAvailableForGamepadAssignment(newProposedPlayerIndex) && triedPlayerIndicesCount <= Input.PLAYERS_MAX);
-			if (triedPlayerIndicesCount > Input.PLAYERS_MAX) {
-				// No player index available for gamepad assignment found => abort assignment process for this gamepad
-				newProposedPlayerIndex = null;
+			let newProposedPlayerIndex: number = this.proposedPlayerIndex + increment;
+			if (newProposedPlayerIndex < 1) {
+				newProposedPlayerIndex = 1; // No wrap-around to avoid accidentally assigning a gamepad to the wrong player
+				return; // Don't do anything if the player index is already 1 and the user tries to decrement it
+			}
+			if (newProposedPlayerIndex > Input.PLAYERS_MAX) {
+				newProposedPlayerIndex = Input.PLAYERS_MAX; // No wrap-around to avoid accidentally assigning a gamepad to the wrong player
+				return; // Don't do anything if the player index is already the max and the user tries to increment it
 			}
 
-			this.proposedPlayerIndex = newProposedPlayerIndex;
-			this.icon.playerIndex = newProposedPlayerIndex;
+			// Find the next available player index for gamepad assignment
+			newProposedPlayerIndex = Input.instance.getFirstAvailablePlayerIndexForGamepadAssignment(newProposedPlayerIndex, increment < 0);
+
+			if (newProposedPlayerIndex !== null) {
+				this.proposedPlayerIndex = newProposedPlayerIndex;
+				this.icon.playerIndex = newProposedPlayerIndex;
+			}
+			else {
+				// No new player index available for gamepad assignment found => don't do anything!
+			}
 			console.info(`Gamepad ${gamepadInput.gamepadIndex} proposed to be assigned to player ${newProposedPlayerIndex ?? 'none (no free slots left)'}.`);
 		}
 	}
@@ -216,7 +215,7 @@ class PendingAssignmentProcessor {
 		if (this.proposedPlayerIndex === null) {
 			if (this.checkNonConsumedPressed('start', gamepadInput)) {
 				gamepadInput.consumeButton(Input.BUTTON2INDEX['start']);
-				const proposedPlayerIndex = inputMaestro.getNextAvailablePlayerIndexForGamepadAssignment();
+				const proposedPlayerIndex = inputMaestro.getFirstAvailablePlayerIndexForGamepadAssignment();
 
 				if (proposedPlayerIndex !== null) {
 					this.proposedPlayerIndex = proposedPlayerIndex;
@@ -278,6 +277,10 @@ export class Input implements IRegisterable {
 	private playerInputs: PlayerInput[] = [];
 	private pendingGamepadAssignments: PendingAssignmentProcessor[] = [];
 	private onscreenGamepad: OnscreenGamepad;
+
+	public getOnscreenGamepad(): OnscreenGamepad {
+		return this.onscreenGamepad;
+	}
 
 	public getPlayerInput(playerIndex: number): PlayerInput {
 		const index = playerIndex - 1;
@@ -430,7 +433,7 @@ export class Input implements IRegisterable {
 	}
 
 	public enableOnscreenGamepad(): void {
-		this.onscreenGamepad = new OnscreenGamepad();
+		this.onscreenGamepad ??= new OnscreenGamepad();
 		this.onscreenGamepad.init();
 		this.getPlayerInput(1).gamepadInput = this.onscreenGamepad;
 	}
@@ -487,13 +490,22 @@ export class Input implements IRegisterable {
 	}
 
 	/**
-	 * Returns the index of the next available player for gamepad input, or undefined if no player is available.
+	 * Returns the first available player index for gamepad assignment starting from a specified index.
 	 * A player is considered available if there is a connected gamepad that is not already assigned to a player.
-	 * @returns The index of the next available player, or undefined if no player is available.
+	 *
+	 * @param from The index to start searching from. Defaults to 1.
+	 * @returns The first available player index for gamepad assignment, or null if none is available.
 	 */
-	public getNextAvailablePlayerIndexForGamepadAssignment(): number | null {
-		for (let i = 1; i < Input.PLAYERS_MAX; i++) {
-			if (this.isPlayerIndexAvailableForGamepadAssignment(i)) return i;
+	public getFirstAvailablePlayerIndexForGamepadAssignment(from: number = 1, reverse: boolean = false): number | null {
+		if (reverse) {
+			for (let i = from; i >= 1; i--) {
+				if (this.isPlayerIndexAvailableForGamepadAssignment(i)) return i;
+			}
+		}
+		else {
+			for (let i = from; i <= Input.PLAYERS_MAX; i++) {
+				if (this.isPlayerIndexAvailableForGamepadAssignment(i)) return i;
+			}
 		}
 		return null;
 	}
@@ -724,6 +736,13 @@ export class PlayerInput {
 	public gamepadInput: IInputHandler;
 
 	/**
+	 * Indicates whether the player is the main player.
+	 * Currently used for determining whether to assign the on-screen gamepad automatically if any other assigned gamepad is disconnected.
+	 * @returns {boolean} True if the player is the main player, false otherwise.
+	 */
+	private get isMainPlayer(): boolean { return this.playerIndex === 1; }
+
+	/**
 	 * The input maps for each player.
 	 * @private
 	 * @param {number} playerIndex - The index of the player to set the input map for.
@@ -906,6 +925,12 @@ export class PlayerInput {
 	* @returns The player index the gamepad was assigned to, or null if no player index was available.
 	*/
 	assignGamepadToPlayer(gamepadInput: IInputHandler): void {
+		if (this.gamepadInput && this.gamepadInput !== gamepadInput) {
+			console.warn(`Replacing existing gamepad for player ${this.playerIndex} with gamepad ${gamepadInput.gamepadIndex}.`);
+			if (this.gamepadInput instanceof OnscreenGamepad) {
+
+			}
+		}
 		this.gamepadInput = gamepadInput;
 
 		console.info(`Gamepad ${gamepadInput.gamepadIndex} assigned to player ${this.playerIndex}.`);
@@ -930,7 +955,7 @@ export class PlayerInput {
 
 		window.addEventListener("gamepaddisconnected", function (e: GamepadEvent) {
 			const gamepad = e.gamepad;
-			if (!gamepad.id.toLowerCase().includes('gamepad')) return;
+			if (!gamepad.id.toLowerCase().includes('gamepad')) return; // Ignore devices that are not gamepads
 
 			if (!self.gamepadInput) return; // No gamepad was not assigned to this input-object, so ignore the event (this can happen if multiple gamepads are connected and one is disconnected)
 
@@ -938,6 +963,29 @@ export class PlayerInput {
 				if (self.playerIndex) {
 					console.info(`Gamepad ${gamepad.index}, that was assigned to player ${playerIndex}, disconnected.`);
 					self.gamepadInput = null; // Remove gamepad for this input-object
+
+					// If this is the main player, assign the on-screen gamepad to the main player, if the onscreen gamepad is enabled and that onscreen gamepad is not already assigned to another player
+					if (self.isMainPlayer && Input.instance.isOnscreenGamepadEnabled) {
+						// Check whether the onscreen gamepad is being used by another player
+						let isOnscreenGamepadAssignedToAnotherPlayer = false;
+						for (let i = 1; i < Input.PLAYERS_MAX; i++) {
+							if (i === self.playerIndex) continue;
+							const playerInput = Input.instance.getPlayerInput(i);
+							if (playerInput.gamepadInput instanceof OnscreenGamepad) {
+								isOnscreenGamepadAssignedToAnotherPlayer = true;
+								break;
+							}
+						}
+
+						if (!isOnscreenGamepadAssignedToAnotherPlayer) {
+							Input.instance.enableOnscreenGamepad();
+							self.gamepadInput = Input.instance.getOnscreenGamepad();
+							console.info(`On-screen gamepad assigned to player ${playerIndex}, which is the main player.`);
+						}
+						else {
+							console.info(`On-screen gamepad is already assigned to another player and will not be assigned to player ${playerIndex}, which is the main player.`);
+						}
+					}
 				}
 			}
 		});
@@ -1204,7 +1252,7 @@ class GamepadInput implements IInputHandler {
 }
 
 class OnscreenGamepad implements IInputHandler {
-	public readonly gamepadIndex = 0;
+	public readonly gamepadIndex = 9;
 
 	/**
 	 * The state of each gamepad button for each player.
