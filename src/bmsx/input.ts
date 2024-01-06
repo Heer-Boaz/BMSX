@@ -153,7 +153,7 @@ class SelectedPlayerIndexIcon extends SpriteObject {
 					},
 				},
 				assigned: {
-					tape: [ true, false ],
+					tape: [true, false],
 					repetitions: 5,
 					auto_rewind_tape_after_end: false,
 					ticks2move: 4,
@@ -168,7 +168,7 @@ class SelectedPlayerIndexIcon extends SpriteObject {
 					},
 				},
 				cancelled: {
-					tape: [ 2 ],
+					tape: [2],
 					repetitions: 16,
 					auto_rewind_tape_after_end: false,
 					ticks2move: 1,
@@ -1539,8 +1539,8 @@ class OnscreenGamepad implements IInputHandler {
 		this.reset();
 		const self = this;
 		function addTouchListeners(controlsElement: HTMLElement, action_type: 'dpad' | 'action') {
-			controlsElement.addEventListener('touchmove', e => { self.handleTouchStuff(e, action_type); return true; }, options);
-			controlsElement.addEventListener('touchstart', e => { self.handleTouchStuff(e, action_type); return true; }, options);
+			controlsElement.addEventListener('touchmove', e => { self.handleTouchMove(e, action_type); return true; }, options);
+			controlsElement.addEventListener('touchstart', e => { self.handleTouchStart(e, action_type); return true; }, options);
 			controlsElement.addEventListener('touchend', e => { self.handleTouchEndStuff(e, action_type); return true; }, options);
 			controlsElement.addEventListener('touchcancel', e => { self.handleTouchEndStuff(e, action_type); return true; }, options);
 		}
@@ -1604,13 +1604,42 @@ class OnscreenGamepad implements IInputHandler {
 		}
 	}
 
+	handleTouchMove(e: TouchEvent, control_type: 'dpad' | 'action'): void {
+		if (e.touches.length === 0) {
+			return;
+		}
+
+		switch (control_type) {
+			case 'action':
+				const target = e.target as HTMLElement;
+				let foundTarget = false;
+				for (let i = 0; i < e.touches.length; i++) {
+					let pos = e.touches[i];
+					const elementsUnderTouch = document.elementsFromPoint(pos.clientX, pos.clientY) as HTMLElement[];
+					if (elementsUnderTouch && elementsUnderTouch.length > 0) {
+						if (elementsUnderTouch.includes(target)) {
+							foundTarget = true;
+						}
+					}
+				}
+
+				if (!foundTarget) {
+					this.handleTouchEndStuff(e, control_type);
+				}
+				break;
+			case 'dpad':
+				this.handleTouchStart(e, control_type);
+				break;
+		}
+	}
+
 	/**
 	 * Handles touch events by resetting the UI and checking which elements were touched.
 	 * If an element is touched, it adds the 'druk' class to it and removes the 'los' class.
 	 * It also filters the touched buttons from the reset.
 	 * @param e The touch event to handle.
 	 */
-	handleTouchStuff(e: TouchEvent, control_type: 'dpad' | 'action'): void {
+	handleTouchStart(e: TouchEvent, control_type: 'dpad' | 'action'): void {
 		switch (control_type) {
 			case 'action':
 				this.resetUI(OnscreenGamepad.dpadButtonElementIds);
@@ -1621,7 +1650,6 @@ class OnscreenGamepad implements IInputHandler {
 		}
 
 		if (e.touches.length === 0) {
-			// this.reset();
 			return;
 		}
 
@@ -1695,7 +1723,6 @@ class OnscreenGamepad implements IInputHandler {
 				break;
 		}
 
-		// this.reset(filterFromReset);
 		this.resetUI(elementsToFilter);
 	}
 
@@ -1708,8 +1735,6 @@ class OnscreenGamepad implements IInputHandler {
 				this.resetUI(OnscreenGamepad.actionButtonElementIds);
 				break;
 		}
-		// this.resetUI();
-		// this.reset();
 	}
 
 	/**
