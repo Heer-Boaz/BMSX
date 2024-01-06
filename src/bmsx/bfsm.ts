@@ -279,9 +279,9 @@ export type StateMachineBlueprint = Partial<sdef>;
 /**
  * A type representing a mapping of state IDs to partial state definitions.
  */
-export type id2partial_sdef = Record<string, StateMachineBlueprint>;
+export type id2partial_sdef = Record<Identifier, StateMachineBlueprint>;
 
-export interface state_event_condition<T extends IStateful & IEventSubscriber = any> extends state_event_handler<T> {
+export interface state_event_condition<T extends IStateful & IEventSubscriber = any> extends IStateEventHandler<T> {
 	(state: sstate<T>, ...args: any[]): boolean;
 }
 
@@ -301,7 +301,7 @@ export type StateEventDefinition<T extends IStateful & IEventSubscriber = any> =
 	/**
 	 * The action that is executed when the transition occurs.
 	 */
-	do?: state_event_handler<T>,
+	do?: IStateEventHandler<T>,
 
 	/**
 	 * (Optional) The ID of the emitter scope. If provided, the listener will be added to the emitter scope listeners, otherwise it will be added to the global scope listeners.
@@ -315,8 +315,8 @@ export type StateEventDefinition<T extends IStateful & IEventSubscriber = any> =
  * @param type - The type of state event.
  * @returns The result of the state event handler.
  */
-export interface state_event_handler<T extends IStateful = any> { (state: sstate<T>, ...args: any[]); }
-export interface state_nextevent_handler<T extends IStateful = any> { (state: sstate<T>, beyond_tape_end: boolean, ...args: any[]); }
+export interface IStateEventHandler<T extends IStateful = any> { (state: sstate<T>, ...args: any[]); }
+export interface IStateNexteventHandler<T extends IStateful = any> extends IStateEventHandler { (state: sstate<T>, tape_rewound: boolean, ...args: any[]); }
 
 /**
  * Represents a tape used in the BFSM.
@@ -355,7 +355,7 @@ export class bfsm_controller {
 	 */
 	statemachines: Record<Identifier, sstate>;
 
-	public get machines(): Record<string, sstate> {
+	public get machines(): Record<Identifier, sstate> {
 		return new Proxy(this.statemachines, {
 			get: (target, prop: string) => {
 				if (target[prop]) {
@@ -702,7 +702,7 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 	/**
 	 * History of previous states.
 	 */
-	history!: Array<string>; // History of previous states
+	history!: Array<Identifier>; // History of previous state (as ids)
 
 	/**
 	 * Indicates whether the execution is paused.
@@ -849,16 +849,16 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 	/**
 	 * Transition to a new state identified by the given ID.
 	 * If no parts are provided, the ID will be split by '.' to determine the parts.
-	 * @param id - The ID of the state to transition to.
+	 * @param path - The ID of the state to transition to.
 	 * @param parts - Optional array of parts that make up the ID.
 	 * @throws Error if the state with the given ID does not exist.
 	 */
-	public to(id: string | string[], ...args: any[]): void {
+	public to(path: string | string[], ...args: any[]): void {
 		let parts: string[];
-		if (typeof id === 'string') {
-			parts = id.split('.');
+		if (typeof path === 'string') {
+			parts = path.split('.');
 		} else {
-			parts = id;
+			parts = path;
 		}
 
 		let currentPart = parts[0];
@@ -989,7 +989,7 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 		}
 	}
 
-	private transitionToState(stateId: string, ...args: any[]): void {
+	private transitionToState(stateId: Identifier, ...args: any[]): void {
 		// Perform exit actions for the current state
 		let stateDef = this.current_state_definition;
 		stateDef?.exit?.call(this.target, this.current, ...args);
@@ -1079,7 +1079,7 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 	 * If the history stack exceeds the maximum length, the oldest state is removed from the stack.
 	 * @param toPush - the state ID to add to the history stack
 	 */
-	protected pushHistory(toPush: string): void {
+	protected pushHistory(toPush: Identifier): void {
 		this.history.push(toPush);
 		if (this.history.length > BST_MAX_HISTORY)
 			this.history.shift(); // Remove the first element in the history-array
@@ -1166,14 +1166,6 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 	// Returns true if the tape head is at the start of the tape, false otherwise.
 	// Note that this function assumes that the tape head is within the bounds of the tape.
 	public get at_tape_start(): boolean { return this.head === TAPE_START_INDEX; }
-
-	/**
-	 * Retrieves the target object as the specified type.
-	 *
-	 * @returns The target object casted to the specified type.
-	 * @template T - The type to cast the target object to.
-	 */
-	public targetAs<T>(): T { return <T>$.registry.get(this.target_id); }
 
 	private make_id(): Identifier {
 		let id = `${this.parent_id ?? this.target_id}.${this.def_id}`; // The id is the parent_id + the target_id + the def_id (e.g. 'parent_id.target_id.def_id') to create a unique id
@@ -1287,16 +1279,19 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 		if (v >= this.definition.ticks2move) { ++this.head; }
 	}
 
-	// Triggers the `next` event of the state machine definition, passing this state and the `state_event_type.Next` event type as arguments.
-	protected tapemove(beyond_tape_end: boolean = false) {
-		this.definition.next?.call(this.target, this as sstate<T>, beyond_tape_end);
+	/**
+	 * Calls the next state's function.
+	 * @param tape_rewound Indicates whether the tape has been rewound. Only occurs when the tape is automatically rewound after reaching the end of the tape via @see {@link sdef.auto_rewind_tape_after_end}.
+	 */
+	protected tapemove(tape_rewound: boolean = false) {
+		this.definition.next?.call(this.target, this, tape_rewound);
 	}
 
 	/**
 	 * Triggers the `end` event of the state machine definition, passing this state and the `state_event_type.End` event type as arguments.
 	 */
 	protected tapeend() {
-		this.definition.end?.call(this.target, this as sstate<T>, undefined);
+		this.definition.end?.call(this.target, this, undefined);
 	}
 
 	/**
@@ -1426,12 +1421,12 @@ export class sdef {
 		}
 	}
 
-	public run?: state_event_handler;
-	public end?: state_event_handler;
-	public next?: state_nextevent_handler;
-	public enter?: state_event_handler;
-	public exit?: state_event_handler;
-	public process_input?: state_event_handler;
+	public run?: IStateEventHandler;
+	public end?: IStateEventHandler;
+	public next?: IStateNexteventHandler;
+	public enter?: IStateEventHandler;
+	public exit?: IStateEventHandler;
+	public process_input?: IStateEventHandler;
 
 	/**
 	 * Represents the mapping of event types to state IDs for transitions to other states based on events (e.g. 'click' => 'idle').
