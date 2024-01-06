@@ -150,8 +150,8 @@ export class Eila extends Fighter {
                             ++state.ticks;
                         }
                     },
-                    next(this: Fighter, state: sstate, beyond_tape_end: boolean) {
-                        if (beyond_tape_end) return;
+                    next(this: Fighter, state: sstate, tape_rewound: boolean) {
+                        if (tape_rewound) return;
                         this.sc.to(`${statemachine}.${state.current_tape_value}`);
                         this.facing = (this.facing === 'left' ? 'right' : 'left');
                     },
