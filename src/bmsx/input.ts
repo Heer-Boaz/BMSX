@@ -1331,7 +1331,7 @@ class GamepadInput implements IInputHandler {
 }
 
 class OnscreenGamepad implements IInputHandler {
-	public readonly gamepadIndex = 9;
+	public readonly gamepadIndex = 7;
 
 	/**
 	 * The state of each gamepad button for each player.
