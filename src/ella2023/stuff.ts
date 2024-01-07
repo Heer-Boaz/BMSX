@@ -168,8 +168,7 @@ export class TitleScreen extends SpriteObject {
 							data: {
 								pause_blink: false,
 							},
-							enter(this: TitleScreen, state: sstate) {
-								state.reset();
+							enter(this: TitleScreen) {
 								this.cursorVisible = true;
 							},
 							next(this: TitleScreen, state: sstate) {
@@ -239,9 +238,8 @@ export class Gordijn extends GameObject {
 					ticks2move: 2,
 					tape: [8],
 					repetitions: 256 / 8,
-					enter(this: Gordijn, state: sstate) {
+					enter(this: Gordijn) {
 						this.width = 0;
-						state.reset();
 					},
 					next(this: Gordijn, state: sstate) {
 						this.width += state.current_tape_value;

@@ -60,8 +60,7 @@ export abstract class Fighter extends SpriteObject {
                     tape: [-1, 1],
                     repetitions: 10,
                     auto_tick: true,
-                    enter(this: Fighter, state: sstate) {
-                        state.reset();
+                    enter(this: Fighter) {
                         this.sc.pause_all_except('hitanimation');
                     },
                     next(this: Fighter, state: sstate) {
