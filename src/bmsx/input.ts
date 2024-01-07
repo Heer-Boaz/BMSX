@@ -157,9 +157,6 @@ class SelectedPlayerIndexIcon extends SpriteObject {
 					repetitions: 5,
 					auto_rewind_tape_after_end: false,
 					ticks2move: 4,
-					enter: function (this: SelectedPlayerIndexIcon, state: sstate) {
-						state.reset();
-					},
 					next(this: SelectedPlayerIndexIcon, state: sstate) {
 						this.colorize = state.current_tape_value ? { r: 1, g: 1, b: 1, a: .5 } : { r: 0, g: 1, b: 0, a: .75 };
 					},
@@ -172,8 +169,7 @@ class SelectedPlayerIndexIcon extends SpriteObject {
 					repetitions: 16,
 					auto_rewind_tape_after_end: false,
 					ticks2move: 1,
-					enter: function (this: SelectedPlayerIndexIcon, state: sstate) {
-						state.reset();
+					enter: function (this: SelectedPlayerIndexIcon) {
 						this.colorize = { r: 1, g: 0, b: 0, a: .75 };
 					},
 					next(this: SelectedPlayerIndexIcon, state: sstate) {
