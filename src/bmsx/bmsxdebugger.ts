@@ -1,4 +1,4 @@
-import { StateDefinitions, bfsm_controller, sstate } from './bfsm';
+import { StateDefinitions, StateMachineController, sstate } from './bfsm';
 import { area2size, new_vec2, translate_vec2, trunc_vec3, div_vec2 } from './game';
 import { PositionUpdateAxisComponent } from './collisioncomponents';
 import { Component, ComponentUpdateParams, componenttags_postprocessing, componenttags_preprocessing } from './component';
@@ -35,7 +35,7 @@ export class DebugHighlightComponent extends PositionUpdateAxisComponent { // No
 @componenttags_postprocessing('render') // Postprocessing update to render the state machine
 export class StateMachineVisualizer extends Component {
 	private dialog: FloatingDialog;
-	private bfsmController: bfsm_controller;
+	private bfsmController: StateMachineController;
 	private machineElements: Map<string, HTMLElement>;
 	private stateElements: Map<string, HTMLElement>;
 
@@ -606,7 +606,7 @@ function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement
 	return table;
 }
 
-function visualizeStateMachine(dialogElement: HTMLElement, container: HTMLElement, bfsmController: bfsm_controller): [addContentTo: HTMLElement, machineElements: Map<string, HTMLElement>, stateElements: Map<string, HTMLElement>] {
+function visualizeStateMachine(dialogElement: HTMLElement, container: HTMLElement, bfsmController: StateMachineController): [addContentTo: HTMLElement, machineElements: Map<string, HTMLElement>, stateElements: Map<string, HTMLElement>] {
 	let baseTable = addContent(container, 'table', null) as HTMLTableElement;
 	let stateElements = new Map<string, HTMLElement>();
 	let machineElements = new Map<string, HTMLElement>();
@@ -649,7 +649,7 @@ function visualizeStateMachine(dialogElement: HTMLElement, container: HTMLElemen
 		parentElement.appendChild(table);
 	}
 
-	// Visualize each machine in the bfsm_controller
+	// Visualize each machine in the StateMachineController
 	for (let machineName in bfsmController.machines) {
 		let machine = bfsmController.machines[machineName];
 		let machineRow = addContent(baseTable, 'tr', null);
@@ -670,7 +670,7 @@ function visualizeStateMachine(dialogElement: HTMLElement, container: HTMLElemen
 }
 
 // Function to set the CSS classes for highlighting the current machines/states
-function highlightCurrentState(stateElements: Map<string, HTMLElement>, machineElements: Map<string, HTMLElement>, bfsmController: bfsm_controller): void {
+function highlightCurrentState(stateElements: Map<string, HTMLElement>, machineElements: Map<string, HTMLElement>, bfsmController: StateMachineController): void {
 	// Recursive function to update the classes of a state machine
 	function updateMachineClasses(machine: sstate, machineName: string, isActive: boolean, path: string): void {
 		// Remove the 'active-machine-or-state' and 'parallel-machine' classes from the machine element
@@ -709,7 +709,7 @@ function highlightCurrentState(stateElements: Map<string, HTMLElement>, machineE
 		}
 	}
 
-	// Update the classes of each machine in the bfsm_controller
+	// Update the classes of each machine in the StateMachineController
 	for (let machineName in bfsmController.machines) {
 		let machine = bfsmController.machines[machineName];
 		updateMachineClasses(machine, machineName, true, machineName);

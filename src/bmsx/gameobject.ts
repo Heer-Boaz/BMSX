@@ -1,4 +1,4 @@
-import { ConstructorWithFSMProperty, IStateful, bfsm_controller } from "./bfsm";
+import { ConstructorWithFSMProperty, IStateful, StateMachineController } from "./bfsm";
 import { insavegame } from "./gameserializer";
 import { Component, ComponentTag, IComponentContainer, KeyToComponentMap, ComponentConstructor, update_tagged_components } from "./component";
 import { BehaviorTrees, Blackboard, BTNode, BehaviorTreeID, ConstructorWithBTProperty } from "./behaviourtree";
@@ -133,7 +133,7 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 	/**
 	 * The StatemachineController of the game object.
 	 */
-	public sc: bfsm_controller;
+	public sc: StateMachineController;
 
 	/**
 	 * The mapping of behavior tree IDs to behavior tree IDs.
@@ -382,7 +382,7 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 		this.size = new_vec3(...DEFAULT_SIZE_VALUES);
 		this.disposeFlag = false;
 		// Create the state context that will be used to manage the state of the game object
-		this.sc = new bfsm_controller();
+		this.sc = new StateMachineController();
 		this.sc.add_statemachine(fsm_id ?? this.constructor.name, this.id);
 	}
 

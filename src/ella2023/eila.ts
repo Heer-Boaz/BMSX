@@ -35,10 +35,10 @@ export class Eila extends Fighter {
 
     @build_fsm()
     public static bouw_eila(): StateMachineBlueprint {
-        return Eila.bouw('player_animation', 'Eila');
+        return Eila.bouw('player_animation');
     }
 
-    public static bouw(animation_machine_name: Identifier, class_name: string): StateMachineBlueprint {
+    public static bouw(animation_machine_name: Identifier): StateMachineBlueprint {
         function default_input_processor(this: Fighter) {
             if (this.isAIed) return; // AIed fighters don't process input
 
@@ -103,14 +103,14 @@ export class Eila extends Fighter {
         const statemachine = animation_machine_name;
         return {
             on: {
-                $go_idle: '<this>.idle',
-                $go_walk: '<this>.walk',
-                $go_punch: '<this>.punch',
-                $go_highkick: '<this>.highkick',
-                $go_lowkick: '<this>.lowkick',
-                $go_duckkick: '<this>.duckkick',
-                $go_duck: '<this>.duck',
-                $go_jump: '<this>.jump',
+                $go_idle: '#this.idle',
+                $go_walk: '#this.walk',
+                $go_punch: '#this.punch',
+                $go_highkick: '#this.highkick',
+                $go_lowkick: '#this.lowkick',
+                $go_duckkick: '#this.duckkick',
+                $go_duck: '#this.duck',
+                $go_jump: '#this.jump',
             },
             states: {
                 _idle: {
@@ -268,8 +268,8 @@ export class Eila extends Fighter {
                 },
                 jump: {
                     auto_reset: 'tree',
-                    enter(this: Fighter, _state: sstate, directional: boolean = false) {
-                        this.sc.to(`${class_name}.jump.jump_up`, directional);
+                    enter(this: Fighter, state: sstate, directional: boolean = false) {
+                        state.to('#this.jump_up', directional);
                         this.sc.to(statemachine + '.jump');
                         this.getComponent(JumpingWhileLeavingScreenComponent).enabled = true;
                         this.jumping = true;
@@ -305,8 +305,8 @@ export class Eila extends Fighter {
                                     }
                                 }
                             },
-                            next(this: Fighter, state: sstate) {
-                                this.sc.switch(`${class_name}.jump.jump_down`, state.data.directional);
+                            next(state: sstate) {
+                                state.transition('jump_down', state.data.directional);
                             },
                         },
                         jump_down: {
@@ -325,8 +325,8 @@ export class Eila extends Fighter {
                                     }
                                 }
                             },
-                            next(this: Fighter) {
-                                this.sc.to('idle');
+                            next(this: Fighter, _state: sstate) {
+                                return '#root.idle';
                             },
                         },
                         flyingkick: {

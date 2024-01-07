@@ -1,5 +1,5 @@
 import { BehaviorTreeDefinition, BehaviorTreeDefinitions, BehaviorTreeID, setup_btdef_library, setup_bt_library } from "./behaviourtree";
-import { StateDefinitions, sdef, sstate, bfsm_controller, IStateful, setup_fssdef_library } from "./bfsm";
+import { StateDefinitions, sdef, sstate, StateMachineController, IStateful, setup_fssdef_library } from "./bfsm";
 import type { IRegisterable, Identifier } from "./game";
 import { GameObject } from "./gameobject";
 import { insavegame, onsave, Reviver, Savegame, Serializer } from "./gameserializer";
@@ -180,7 +180,7 @@ export abstract class BaseModel implements IStateful, IRegisterable {
     /**
      * The controller for the state machine.
      */
-    public sc: bfsm_controller;
+    public sc: StateMachineController;
 
     /**
      * An object that maps space IDs to their corresponding Space objects.
@@ -400,7 +400,7 @@ export abstract class BaseModel implements IStateful, IRegisterable {
     * @param {string} `derived_modelclass_constructor_name` - the constructor name of the derived modelclass (that derives from this BaseModel.
     */
     public init_model_state_machines(derived_modelclass_constructor_name: string): this {
-        this.sc = new bfsm_controller();
+        this.sc = new StateMachineController();
         this.sc.add_statemachine(derived_modelclass_constructor_name, this.id);
         this.sc.start(); // Start the state machine controller (this will start all state machines that are added to the controller) and transition to the default state of the model, and subscribe to all events that are defined in the state machine definitions
 

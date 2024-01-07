@@ -34,7 +34,7 @@ export class Sinterklaas extends Fighter {
 
     @build_fsm()
     public static bouw_sinterklaas(): StateMachineBlueprint {
-        return Eila.bouw('sint_animation', 'Sinterklaas');
+        return Eila.bouw('sint_animation');
     }
 
     @subscribesToSelfScopedEvent('animationEnd')
