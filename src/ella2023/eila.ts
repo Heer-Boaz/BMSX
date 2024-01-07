@@ -139,9 +139,8 @@ export class Eila extends Fighter {
                     tape: ['highkick', 'lowkick', 'duckkick', 'punch', 'punch'],
                     repetitions: 2,
                     auto_rewind_tape_after_end: false,
-                    enter(this: Fighter, state: sstate) {
+                    enter(this: Fighter) {
                         this.fighting = false;
-                        state.reset();
                         this.resetVerticalPosition();
                     },
                     run(this: Fighter, state: sstate) {
@@ -268,8 +267,8 @@ export class Eila extends Fighter {
                     },
                 },
                 jump: {
-                    enter(this: Fighter, state: sstate, directional: boolean = false) {
-                        state.reset(true);
+                    auto_reset: 'tree',
+                    enter(this: Fighter, _state: sstate, directional: boolean = false) {
                         this.sc.to(`${class_name}.jump.jump_up`, directional);
                         this.sc.to(statemachine + '.jump');
                         this.getComponent(JumpingWhileLeavingScreenComponent).enabled = true;
@@ -294,7 +293,6 @@ export class Eila extends Fighter {
                         _jump_up: {
                             ticks2move: Fighter.JUMP_DURATION / 2,
                             enter(this: Fighter, state: sstate, directional: boolean = false) {
-                                state.reset();
                                 state.data.directional = directional;
                             },
                             run(this: Fighter, state: sstate) {
@@ -314,7 +312,6 @@ export class Eila extends Fighter {
                         jump_down: {
                             ticks2move: Fighter.JUMP_DURATION / 2,
                             enter(this: Fighter, state: sstate, directional: boolean = false) {
-                                state.reset();
                                 state.data.directional = directional;
                             },
                             run(this: Fighter, state: sstate) {
@@ -418,17 +415,16 @@ export class Eila extends Fighter {
                     },
                 },
                 walk: {
+                    auto_reset: 'tree',
                     run(this: Eila) { },
-                    enter(this: Eila, state: sstate) {
-                        state.resetSubmachine();
+                    enter(this: Eila) {
                         this.imgid = BitmapId.eila_walk;
                     },
                     states: {
                         _walk1: {
                             ticks2move: 8,
-                            enter(this: Eila, state: sstate) {
+                            enter(this: Eila) {
                                 this.imgid = BitmapId.eila_walk;
-                                state.reset();
                             },
                             next(this: Eila) {
                                 this.sc.switch('player_animation.walk.walk2');
@@ -436,9 +432,8 @@ export class Eila extends Fighter {
                         },
                         walk2: {
                             ticks2move: 8,
-                            enter(this: Eila, state: sstate) {
+                            enter(this: Eila) {
                                 this.imgid = BitmapId.eila_idle;
-                                state.reset();
                             },
                             next(this: Eila) {
                                 this.sc.switch('player_animation.walk.walk1');
@@ -449,7 +444,6 @@ export class Eila extends Fighter {
                 highkick: {
                     ticks2move: Eila.ATTACK_DURATION,
                     enter(this: Eila, state: sstate, hit: boolean) {
-                        state.reset();
                         this.imgid = BitmapId.eila_highkick;
                         SM.play(AudioId.kick);
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
@@ -462,7 +456,6 @@ export class Eila extends Fighter {
                 lowkick: {
                     ticks2move: Eila.ATTACK_DURATION,
                     enter(this: Eila, state: sstate, hit: boolean) {
-                        state.reset();
                         SM.play(AudioId.kick);
                         this.imgid = BitmapId.eila_lowkick;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
@@ -475,7 +468,6 @@ export class Eila extends Fighter {
                 punch: {
                     ticks2move: Eila.ATTACK_DURATION,
                     enter(this: Eila, state: sstate, hit: boolean) {
-                        state.reset();
                         SM.play(AudioId.punch);
                         this.imgid = BitmapId.eila_punch;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
@@ -487,8 +479,7 @@ export class Eila extends Fighter {
                 },
                 duckkick: {
                     ticks2move: Eila.ATTACK_DURATION,
-                    enter(this: Eila, state: sstate) {
-                        state.reset();
+                    enter(this: Eila) {
                         SM.play(AudioId.kick);
                         this.imgid = BitmapId.eila_duckkick;
                     },
@@ -500,7 +491,6 @@ export class Eila extends Fighter {
                 flyingkick: {
                     ticks2move: Eila.ATTACK_DURATION,
                     enter(this: Eila, state: sstate, hit: boolean) {
-                        state.reset();
                         SM.play(AudioId.kick);
                         this.imgid = BitmapId.eila_flyingkick;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
@@ -520,8 +510,7 @@ export class Eila extends Fighter {
                 },
                 humiliated: {
                     ticks2move: 300,
-                    enter(this: Eila, state: sstate) {
-                        state.reset();
+                    enter(this: Eila) {
                         SM.play(AudioId.stuk);
                         this.imgid = BitmapId.eila_humiliated;
                     },
