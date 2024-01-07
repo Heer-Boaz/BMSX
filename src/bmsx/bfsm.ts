@@ -1001,6 +1001,11 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 
 		// Perform enter actions for the new current state
 		stateDef = this.current_state_definition;
+		if (!stateDef) return; // There is no definition for the none-state, so we don't trigger the enter event for that state.
+		if (stateDef.enter && stateDef.auto_reset) {
+			const reset_tree = stateDef.auto_reset === 'tree';
+			this.current.reset(reset_tree); // Reset the state if auto_reset is set to true. Note that this will only reset the substate machine if it is not running in parallel and if auto_reset is set to 'tree'
+		}
 		stateDef?.enter?.call(this.target, this.current, ...args);
 	}
 
@@ -1310,7 +1315,6 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 	// Otherwise, the current state is set to the 'none' state.
 	// The history of previous states is cleared and the state machine is unpaused.
 	public resetSubmachine(reset_tree: boolean = true): void {
-		this.reset(false);
 		// N.B. doesn't trigger the onenter-event!
 		const start = this.definition?.start_state_id; // Definition doesn't need to exist
 		this.currentid = start; // Set the current state to the start state (if it exists)
@@ -1321,7 +1325,7 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 		if (reset_tree) {
 			// Call the reset function for each state
 			for (let state in this.states) {
-				this.states[state].resetSubmachine(reset_tree);
+				this.states[state].reset(reset_tree);
 			}
 		}
 	}
@@ -1332,12 +1336,20 @@ const AUTO_REWIND_TAPE_AFTER_END = false;
  * Represents a state definition for a state machine.
  */
 export class sdef {
-	public data?: { [key: string]: any };
-
 	/**
 	 * The unique identifier for the bfsm.
 	 */
 	public id: Identifier;
+
+	/**
+	 * Optional data associated with the bfsm.
+	 */
+	public data?: { [key: string]: any };
+
+	/**
+	 * Indicates whether the state machine is running in parallel with the 'current' state machine as defined in {@link bfsm_controller.current_machine}.
+	 */
+	public parallel?: boolean;
 
 	/**
 	 * The tape used by the BFSM.
@@ -1351,11 +1363,30 @@ export class sdef {
 
 	/**
 	 * Specifies whether the tapehead should automatically rewind to index 0 when it reaches the end of the tape.
+	 * Defaults to true.
 	 * If set to true, the tapehead will be set to index 0 when it would go out of bounds.
 	 * If set to false, the tapehead will remain at the end of the tape.
 	 */
 	public auto_tick: boolean; // Automagically increase the ticks during run
+
+	/**
+	 * Indicates whether the state should be automatically reset when entered.
+	 * Defaults to true.
+	 * Note that this only applies to the state itself, not its substates.
+	 */
+	public auto_reset: boolean | 'tree'; // Automagically resets the state (not substates!) when the state is entered
+
+	/**
+	 * Indicates whether the tapehead should automatically rewind to index 0 when it would go out of bounds.
+	 * If set to true, the tapehead will be set to index 0 when it reaches the end of the tape.
+	 * If set to false, the tapehead will remain at the end of the tape.
+	 */
 	public auto_rewind_tape_after_end: boolean; // Automagically set the tapehead to index 0 when tapehead would go out of bound. Otherwise, will remain at end
+
+	/**
+	 * Number of times the tape should be repeated.
+	 * See {@link repeat_tape} for more information.
+	 */
 	public repetitions: number; // Number of times the tape should be repeated
 
 	@exclude_save
@@ -1375,6 +1406,7 @@ export class sdef {
 		this.repetitions = (this.tape ? (this.repetitions ?? 1) : 0);
 		this.auto_tick = this.auto_tick ?? (this.ticks2move !== 0 ? true : false); // If ticks2move is 0, auto_tick is false. Otherwise, auto_tick is true (unless it was already defined)
 		this.auto_rewind_tape_after_end = this.auto_rewind_tape_after_end ?? (this.tape ? AUTO_REWIND_TAPE_AFTER_END : false); // If there is a tape, auto_rewind_tape_after_end is AUTO_REWIND_TAPE_AFTER_END. Otherwise, it is false (unless it was already defined)
+		this.auto_reset = this.auto_reset ?? true; // Unless already defined, auto_reset is true
 		this.data ??= {}; // Unless already defined, data is an empty object
 
 		if (this.tape) {
@@ -1386,6 +1418,12 @@ export class sdef {
 		}
 	}
 
+	/**
+	 * Repeats the tape by appending it to itself multiple times.
+	 *
+	 * @param tape - The tape to be repeated.
+	 * @param repetitions - The number of times the tape should be repeated.
+	 */
 	private repeat_tape(tape: typeof this.tape, repetitions: typeof this.repetitions): void {
 		// Repeat the tape if necessary (and if it exists) by appending the tape to itself
 		if (tape && repetitions > 1) { // If there is a tape and the tape should be repeated at least once
@@ -1396,6 +1434,11 @@ export class sdef {
 		}
 	}
 
+	/**
+	 * Constructs the substate machine based on the provided substates.
+	 *
+	 * @param substates - The blueprint of the substates.
+	 */
 	private construct_substate_machine(substates: StateMachineBlueprint): void {
 		this.states ??= {};
 		const substate_ids = Object.keys(substates);
@@ -1447,11 +1490,6 @@ export class sdef {
 	 * The states defined for this state machine.
 	 */
 	public states?: id2partial_sdef;
-
-	/**
-	 * Indicates whether the state machine is running in parallel with the 'current' state machine as defined in {@link bfsm_controller.current_machine}.
-	 */
-	public parallel?: boolean;
 
 	/**
 	 * The identifier of the state that the state machine should start in.
