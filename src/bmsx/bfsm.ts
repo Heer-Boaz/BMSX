@@ -935,14 +935,7 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 		}
 	}
 
-	/**
-	 * Transition to a new state identified by the given ID.
-	 * If no parts are provided, the ID will be split by '.' to determine the parts.
-	 * @param path - The ID of the state to transition to.
-	 * @param parts - Optional array of parts that make up the ID.
-	 * @throws Error if the state with the given ID does not exist.
-	 */
-	public to(path: string | string[], ...args: any[]): void {
+	private handlePath(path: string | string[]): [string, string[], IStateController] {
 		let parts: string[];
 		if (typeof path === 'string') {
 			parts = path.split('.');
@@ -953,59 +946,93 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 		let currentPart = parts[0];
 		let restParts = parts.slice(1);
 
-		let currentContext: IStateController = this.states?.[currentPart]; // Get the state with the given ID from the state machine. Note that this can be undefined if the state machine doesn't have any states defined
-		if (!currentContext) {
-			if (currentPart === '#this') {
-				// If there are more parts, continue to the next state from this submachine
-				if (restParts.length > 0) {
-					this.to(restParts, ...args);
-					return;
-				} else {
-					// If '#this' is the only part, throw an error because the root state cannot be switched to
-					throw new Error(`Cannot switch to the '#this' state.`);
+		let currentContext: IStateController;
+		switch (currentPart) {
+			case '#this':
+				currentContext = this;
+				[currentPart, ...restParts] = restParts;
+				break;
+			case '#root':
+				currentContext = this.root;
+				[currentPart, ...restParts] = restParts;
+				break;
+			default:
+				currentContext = this.states?.[currentPart];
+				if (!currentContext) {
+					throw new Error(`No state with ID '${currentPart}'`);
 				}
-			}
-			else if (currentPart === '#root') {
-				// If there are more parts, continue to the next state from the root
-				if (restParts.length > 0) {
-					this.root.to(restParts, ...args);
-					return;
-				} else {
-					// If '#root' is the only part, then we switch directly to the root state
-					currentContext = this.root;
-					currentPart = this.root_id;
-				}
-			}
-			else {
-				if (!this.states) throw new Error(`No substates defined for state machine '${this.id}'`);
-				else throw new Error(`No state with ID '${currentPart}'`);
-			}
+				break;
 		}
 
-		if (this.currentid !== currentPart || restParts.length === 0) { // Don't switch to the same state, except if this is the final part of the id
+		return [currentPart, restParts, currentContext];
+	}
+
+	/**
+	 * Transition to a new state identified by the given ID.
+	 * If no parts are provided, the ID will be split by '.' to determine the parts.
+	 * @param path - The ID of the state to transition to.
+	 * @throws Error if the state with the given ID does not exist.
+	 */
+	public to(path: string | string[], ...args: any[]): void {
+		const [currentPart, restParts, currentContext] = this.handlePath(path);
+
+		if (this.currentid !== currentPart || restParts.length === 0) {
 			this.transitionToState(currentPart, ...args);
 		}
 
-		// If there are more parts, transition to the next state
 		if (restParts.length > 0) {
 			currentContext.to(restParts, ...args);
 		}
 	}
 
+	/**
+	 * Switches the state of the state machine to the specified ID.
+	 * If the ID contains multiple parts separated by '.', it traverses through the states accordingly and only switches the state of the last part.
+	 * Performs exit actions for the current state and enter actions for the new current state.
+	 * Throws an error if the state with the specified ID doesn't exist or if the target state is parallel.
+	 *
+	 * @param path - The ID of the state to switch to.
+	 * @returns void
+	 */
+	public switch(path: string | string[], ...args: any[]): void {
+		const [currentPart, restParts, currentContext] = this.handlePath(path);
+
+		if (restParts.length > 0) {
+			currentContext.switch(restParts, ...args);
+		} else if (this.currentid !== currentPart) {
+			this.transitionToState(currentPart, ...args);
+		}
+	}
+
+	/**
+	 * Transition to a new state.
+	 *
+	 * This method is responsible for transitioning the state machine to a new state.
+	 * It handles three types of state transitions:
+	 * 1. Transitions within the current state machine, identified by a state_id starting with '#this.'.
+	 * 2. Transitions from the root of the state machine hierarchy, identified by a state_id starting with '#root.'.
+	 * 3. Transitions within the parent state machine, for all other state_ids.
+	 *
+	 * @param state_id - The identifier of the state to transition to. This can be a local state (prefixed with '#this.'),
+	 * a state from the root (prefixed with '#root.'), or a state within the parent state machine.
+	 * @param args - Optional arguments to pass to the new state. These arguments are passed on to the 'to' or 'switch' methods.
+	 */
 	public transition(state_id: Identifier, ...args: any[]): void {
 		if (this.def_id === state_id) return; // Don't switch to the same state
 		if (state_id.startsWith('#this.')) {
 			// Remove the '#this.' prefix and continue to the next state from the substate
 			const restParts = state_id.slice('#this.'.length);
+			// If there are more parts, switch to the state in the current state machine
 			this.to(restParts, ...args);
 		}
 		else if (state_id.startsWith('#root.')) {
 			// Remove the '#root.' prefix and continue to the next state from the root
 			const restParts = state_id.slice('#root.'.length);
+			// If there are more parts, switch to the state in the root state machine
 			this.root.to(restParts, ...args);
 		}
 		else {
-			this.parent.switch(state_id, ...args);
+			this.parent.switch(state_id, ...args); // Switch to the state in the parent state machine
 		}
 	}
 
@@ -1040,73 +1067,12 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 	}
 
 	/**
-	 * Switches the state of the state machine to the specified ID.
-	 * If the ID contains multiple parts separated by '.', it traverses through the states accordingly and only switches the state of the last part.
-	 * If the state ID is '*', it switches all states and substates.
-	 * Performs exit actions for the current state and enter actions for the new current state.
-	 * Throws an error if the state with the specified ID doesn't exist.
+	 * Transition to the specified state.
 	 *
-	 * @param path - The ID of the state to switch to.
-	 * @returns void
-	 * @throws Error - If the state with the specified ID doesn't exist.
+	 * @param stateId - The identifier of the state to transition to.
+	 * @param args - Optional arguments to pass to the state's enter and exit actions.
+	 * @throws Error - If the state with the specified ID doesn't exist or if the target state is parallel.
 	 */
-	public switch(path: string | string[], ...args: any[]): void {
-		let parts: string[];
-		if (typeof path === 'string') {
-			parts = path.split('.');
-		} else {
-			parts = path;
-		}
-		const [currentPart, ...restParts] = parts;
-
-		if (currentPart === '#this') {
-			// If there are more parts, continue to the next state from the root
-			if (restParts.length > 0) {
-				this.switch(restParts, ...args);
-			} else {
-				// If '#this' is the only part, throw an error because the root state cannot be switched to
-				throw new Error(`Cannot switch to the root state`);
-			}
-		}
-		else if (currentPart === '#root') {
-			// If there are more parts, continue to the next state from the root
-			if (restParts.length > 0) {
-				this.root.switch(restParts, ...args);
-			} else {
-				// If '#root' is the only part, then we switch directly to the root state
-				throw new Error(`Cannot switch to the root state`);
-			}
-		}
-		else if (currentPart === '*') {
-			// Iterate over all states and substates
-			for (let stateid in this.states) {
-				const currentContext = this.states[stateid] as IStateController;
-				if (!currentContext) continue;
-
-				// Remove the '*' from the id and continue with the rest of the path
-				if (restParts.length > 1) {
-					currentContext.switch(restParts, ...args);
-				}
-				// If the wildcard is just before the final part, switch to the state
-				else if (restParts.length === 1) {
-					currentContext.switch(restParts[0], ...args);
-				}
-			}
-		} else {
-			let currentContext: IStateController = this.states[currentPart];
-			if (!currentContext) {
-				throw new Error(`No state with ID '${currentPart}'`);
-			}
-
-			// If there are more parts, continue to the next state
-			if (restParts.length > 0) {
-				currentContext.switch(restParts, ...args);
-			} else {
-				this.transitionToState(currentPart, ...args);
-			}
-		}
-	}
-
 	private transitionToState(stateId: Identifier, ...args: any[]): void {
 		// Perform exit actions for the current state
 		let stateDef = this.current_state_definition;
@@ -1120,6 +1086,8 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 		// Perform enter actions for the new current state
 		stateDef = this.current_state_definition;
 		if (!stateDef) return; // There is no definition for the none-state, so we don't trigger the enter event for that state.
+		if (stateDef.parallel) throw new Error(`Cannot transition to parallel state '${stateId}'!`);
+
 		if (stateDef.enter && stateDef.auto_reset) {
 			const reset_tree = stateDef.auto_reset === 'tree';
 			this.current.reset(reset_tree); // Reset the state if auto_reset is set to true. Note that this will only reset the substate machine if it is not running in parallel and if auto_reset is set to 'tree'
@@ -1545,6 +1513,7 @@ export class sdef {
 		this.auto_reset = this.auto_reset ?? true; // Unless already defined, auto_reset is true
 		this.data ??= {}; // Unless already defined, data is an empty object
 		this.root = root ?? this; // The root state machine is either the provided root or this state machine
+		this.parallel ??= false; // Unless already defined, parallel is false
 
 		if (this.tape) {
 			this.repeat_tape(this.tape, this.repetitions);
