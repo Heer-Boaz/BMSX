@@ -43,6 +43,11 @@ export type StateMachineBlueprint = Partial<sdef>;
  */
 export type id2partial_sdef = Record<Identifier, StateMachineBlueprint>;
 
+// export type StateIdentifierStart = 'a' | 'b' | 'c' | 'd' | 'e' | 'f' | 'g' | 'h' | 'i' | 'j' | 'k' | 'l' | 'm' | 'n' | 'o' | 'p' | 'q' | 'r' | 's' | 't' | 'u' | 'v' | 'w' | 'x' | 'y' | 'z' | '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H' | 'I' | 'J' | 'K' | 'L' | 'M' | 'N' | 'O' | 'P' | 'Q' | 'R' | 'S' | 'T' | 'U' | 'V' | 'W' | 'X' | 'Y' | 'Z';
+// export type StatePathPart = `${StateIdentifierStart}${Identifier}`;
+// export type StatePathSpecial = '#this' | '#parent' | '#root';
+// export type StatePath = `${StatePathSpecial}.${StatePathPart}` | `${StatePathPart}`;
+
 /**
  * Represents a state event handler.
  * @template T - The type of the stateful object.
@@ -368,7 +373,29 @@ function validateStateMachine(machinedef: sdef): void {
 					let currentContext = machinedef.states;
 
 					for (const part of targetStateParts) {
-						if (part === '#this') continue; // Skip '#this' parts
+						if (part === '#this') {
+							if (!currentContext.states) { // Check if the current context has states
+								throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the current context doesn't have substates.`);
+							}
+							continue; // Skip '#this' parts
+						}
+						if (part === '#parent') { // If the part is '#parent', move to the parent context
+							if (!currentContext.parent) { // Check if the parent context exists
+								throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the parent context doesn't exist.`);
+							}
+							if (!currentContext.parent.states) { // Check if the parent context has states
+								throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the parent context doesn't have substates.`);
+							}
+							currentContext = currentContext.parent.states;
+							continue;
+						}
+						if (part === '#root') { // If the part is '#root', move to the root context
+							if (!currentContext.root) { // Check if the root context exists
+								throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the root context doesn't exist. This might be because the root context is not defined in the machine definition.`);
+							}
+							currentContext = currentContext.root.states;
+							continue;
+						}
 
 						if (!currentContext[part]) { // Check if the part exists in the current context
 							throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}'.`);
@@ -668,10 +695,10 @@ export class StateMachineController {
 	/**
 	 * Sets the state of the state machine with the given ID to the state with the given ID.
 	 * @param id - The ID of the state machine.
-	 * @param stateid - The ID of the state.
+	 * @param path - The ID of the state.
 	 */
-	switch_state(id: Identifier, stateid: Identifier): void {
-		this.statemachines[id].to(stateid);
+	switch_state(id: Identifier, path: Identifier): void {
+		this.statemachines[id].to(path);
 	}
 
 	pause_statemachine(id: Identifier): void {
