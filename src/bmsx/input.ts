@@ -1581,6 +1581,12 @@ class OnscreenGamepad implements IInputHandler {
 				element.classList.remove('druk');
 				element.classList.add('los');
 				element.dataset.touched = 'false';
+
+				const textElement = document.getElementById(`${element_id}_text`);
+				if (textElement && textElement.classList.contains('druk')) {
+					textElement.classList.remove('druk');
+					textElement.classList.add('los');
+				}
 			}
 
 			// Also reset the state of the button
@@ -1708,6 +1714,11 @@ class OnscreenGamepad implements IInputHandler {
 			const element = document.getElementById(elementToFilter) as HTMLElement;
 			element.classList.add('druk');
 			element.classList.remove('los');
+			if (control_type === 'action') {
+				const textElement = document.getElementById(`${elementToFilter}_text`);
+				textElement.classList.add('druk');
+				textElement.classList.remove('los');
+			}
 		}
 
 		switch (control_type) {
