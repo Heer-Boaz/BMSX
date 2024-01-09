@@ -240,9 +240,11 @@
 	user-select: none;
 	-webkit-touch-callout: none;
 	fill: transparent;
-	font-family:'Press Start 2P'; /*, cursive; */
+	font-family: 'Press Start 2P';
+	/*, cursive; */
 	text-anchor: middle;
-	font-size: 12px;
+	font-size: 11px;
+	transform: perspective(5px) translateZ(2px);
 }
 
 /* Used for hiding buttons at game start, when these buttons are not needed for the game. */
@@ -253,172 +255,71 @@
 #button-controls {
 	pointer-events: none;
 	touch-action: none;
-	opacity: 1; /* Remember to set this to .5 when you want to have the canvas take priority over the buttons in relation to sizing. */
+	opacity: 1;
+	/* Remember to set this to .5 when you want to have the canvas take priority over the buttons in relation to sizing. */
 }
 
 #d-pad-controls {
 	pointer-events: none;
 	touch-action: none;
-	opacity: 1; /* Remember to set this to .5 when you want to have the canvas take priority over the buttons in relation to sizing. */
+	opacity: 1;
+	/* Remember to set this to .5 when you want to have the canvas take priority over the buttons in relation to sizing. */
+}
+
+.knoptext {
+	fill: gainsboro;
 }
 
 .knop:not(.los) {
 	transform: translateY(2px);
+	filter: url(#pressedButtonFilter);
 }
 
-.knop.red:not(.los) {
+.knop.los {
+	animation: button-los .5s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28);
+}
+
+.knop.red {
 	fill: #FF4E00;
 }
 
-.knop.red.los {
-	stroke: #FF4E00;
-	animation: button-red-los .5s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28)
-}
-
-.knop.blue:not(.los) {
+.knop.blue {
 	fill: #003791;
 }
 
-.knop.blue.los {
-	stroke: #003791;
-	animation: button-blue-los .5s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28)
-}
-
-.knop.green:not(.los) {
+.knop.green {
 	fill: #008740;
 }
 
-.knop.green.los {
-	stroke: #008740;
-	animation: button-green-los .5s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28)
-}
-
-.knop.pink:not(.los) {
+.knop.pink {
 	fill: #FF80C0;
 }
 
-.knop.pink.los {
-	stroke: #FF80C0;
-	animation: button-pink-los .5s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28)
+.knop.orange {
+	fill: #FFA500;
 }
 
-.knop.orange:not(.los) {
-    fill: #FFA500;
+.knop.purple {
+	fill: #800080;
 }
 
-.knop.orange.los {
-    stroke: #FFA500;
-    animation: button-orange-los .5s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28);
+.knop.light-blue {
+	fill: #00BFFF;
 }
 
-.knop.purple:not(.los) {
-    fill: #800080;
+.knop.yellow {
+	fill: #FFFF00;
 }
 
-.knop.purple.los {
-    stroke: #800080;
-    animation: button-purple-los .5s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28);
-}
-
-.knop.light-blue:not(.los) {
-    fill: #00BFFF;
-}
-
-.knop.light-blue.los {
-    stroke: #00BFFF;
-    animation: button-light-blue-los .5s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28);
-}
-
-.knop.yellow:not(.los) {
-    fill: #FFFF00;
-}
-
-.knop.yellow.los {
-    stroke: #FFFF00;
-    animation: button-yellow-los .5s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28);
-}
-
-.knop.druk {
-	z-index: 2001;
-}
-
-@keyframes button-red-los {
+@keyframes button-los {
 	from {
-		fill: #FF4E00;
+		transform: translateY(2px);
+		filter: url(#pressedButtonFilter);
 	}
 
 	to {
-		fill: transparent;
-	}
-}
-
-@keyframes button-blue-los {
-	from {
-		fill: #003791;
-	}
-
-	to {
-		fill: transparent;
-	}
-}
-
-@keyframes button-green-los {
-	from {
-		fill: #008740;
-	}
-
-	to {
-		fill: transparent;
-	}
-}
-
-@keyframes button-pink-los {
-	from {
-		fill: #FF80C0;
-	}
-
-	to {
-		fill: transparent;
-	}
-}
-
-@keyframes button-orange-los {
-	from {
-		fill: #FFA500;
-	}
-
-	to {
-		fill: transparent;
-	}
-}
-
-@keyframes button-purple-los {
-	from {
-		fill: #800080;
-	}
-
-	to {
-		fill: transparent;
-	}
-}
-
-@keyframes button-light-blue-los {
-	from {
-		fill: #00BFFF;
-	}
-
-	to {
-		fill: transparent;
-	}
-}
-
-@keyframes button-yellow-los {
-	from {
-		fill: #FFFF00;
-	}
-
-	to {
-		fill: transparent;
+		transform: none;
+		filter: url(#buttonFilter);
 	}
 }
 
@@ -542,7 +443,8 @@ html {
 	image-rendering: pixelated;
 	overflow: hidden;
 	display: none;
-	z-index: -1; /* Required for touch controls to show up even when opacity < 1.0 */
+	z-index: -1;
+	/* Required for touch controls to show up even when opacity < 1.0 */
 	background-color: #000000;
 }
 
