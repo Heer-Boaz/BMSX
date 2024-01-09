@@ -98,14 +98,14 @@ export class Sinterklaas extends Fighter {
                             enter(this: SpriteObject) {
                                 this.imgid = BitmapId.sint_walk;
                             },
-                            next: () => 'walk2',
+                            end: () => 'walk2',
                         },
                         walk2: {
                             ticks2move: 8,
                             enter(this: SpriteObject) {
                                 this.imgid = BitmapId.sint_idle;
                             },
-                            next: () => 'walk1',
+                            end: () => 'walk1',
                         },
                     }
                 },
