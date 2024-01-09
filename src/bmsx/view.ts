@@ -145,24 +145,22 @@ export abstract class BaseView implements IRegisterable {
 			function updateBottomPosition(element: HTMLElement, isRightSide: boolean) {
 				let newBottom: number;
 				if (isLandscape) {
-					if (isRightSide) {
-						newBottom = 0;
-					}
-					else {
-						newBottom = 25;
-					}
+					newBottom = (self.availableWindowSize.y - element.getBoundingClientRect().height) / 2;
 				}
 				else {
 					if (isRightSide) {
 						newBottom = 0;
 					}
 					else {
-						newBottom = 15;
+						// Place the left side element such that it's middle is aligned with the middle of the right side element (actionbuttons_svg)
+						const rightside_height = actionbuttons_svg.getBoundingClientRect().height
+						const leftside_height = element.getBoundingClientRect().height;
+						newBottom = (rightside_height - leftside_height) / 2;
 					}
 				}
 
 				// Apply the new bottom position
-				element.style.bottom = `${newBottom}vh`;
+				element.style.bottom = `${newBottom}`;
 			}
 
 			// Function to update the scale
