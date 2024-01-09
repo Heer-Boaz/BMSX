@@ -1,4 +1,4 @@
-import { BaseModel, Direction, GameObject, InputMap, MSX1ScreenHeight, MSX1ScreenWidth, SM, StateMachineBlueprint, build_fsm, insavegame, new_vec3, sstate, subscribesToGlobalEvent } from '../bmsx/bmsx';
+import { BaseModel, Direction, GameObject, InputMap, MSX1ScreenHeight, MSX1ScreenWidth, SM, StateMachineBlueprint, build_fsm, insavegame, new_vec3, State, subscribesToGlobalEvent } from '../bmsx/bmsx';
 import { RoomMgr } from './roommgr';
 import { Sinterklaas } from './sinterklaas';
 import { Eila } from './eila';
@@ -72,16 +72,14 @@ export class gamemodel extends BaseModel {
 		return {
 			states: {
 				_game_start: {
-					run(this: gamemodel, state: sstate) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
-						state.transition('titlescreen');
-						// state.transition('game.knokken');
+					run(this: gamemodel) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
+						return 'titlescreen';
 					}
 				},
 				game: {
-					enter(this: gamemodel, state: sstate, numOfPlayers: number) {
+					enter(this: gamemodel, _state: State, numOfPlayers: number) {
 						this.numOfPlayers = numOfPlayers;
-						state.reset();
-						state.to('ffwachten');
+						return '#this.ffwachten';
 					},
 					states: {
 						_ffwachten: {
@@ -90,9 +88,7 @@ export class gamemodel extends BaseModel {
 								SM.play(AudioId.start);
 								$.event_emitter.emit('its_curtains', this);
 							},
-							end(state: sstate) {
-								state.transition('oefenen');
-							},
+							end: () => 'oefenen',
 						},
 						oefenen: {
 							enter(this: gamemodel) {
@@ -104,10 +100,10 @@ export class gamemodel extends BaseModel {
 								this.spawn(new Hud(), new_vec3(0, 0, 100));
 								SM.play(AudioId.trainen);
 							},
-							run(this: gamemodel, state: sstate) {
+							run(this: gamemodel): string | void {
 								const player = this.getGameObject<Fighter>('player');
 								if (player.x < 16) {
-									state.transition('ffwachten2');
+									return 'ffwachten2';
 								}
 							},
 						},
@@ -116,9 +112,7 @@ export class gamemodel extends BaseModel {
 							enter(this: gamemodel) {
 								this.setSpace('niets');
 							},
-							end(state: sstate) {
-								state.transition('knokken');
-							},
+							end: () => 'knokken',
 						},
 						knokken: {
 							enter(this: gamemodel) {
@@ -161,11 +155,11 @@ export class gamemodel extends BaseModel {
 						if (!this.getGameObject('title')) {
 							this.spawn(new TitleScreen(), new_vec3(0, 0, 0));
 						}
-						this.getFromCurrentSpace('title').sc.dispatch('reset', this);
+						this.getFromCurrentSpace('title').sc.do('reset', this);
 						if (!this.getGameObject('gordijn')) {
 							this.spawn(new Gordijn(), new_vec3(0, 0, 100));
 						}
-						this.getFromCurrentSpace('gordijn').sc.dispatch('reset', this);
+						this.getFromCurrentSpace('gordijn').sc.do('reset', this);
 					},
 					run: BaseModel.defaultrun,
 					on: {
