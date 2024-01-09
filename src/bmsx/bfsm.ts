@@ -6,20 +6,20 @@ import { EventScope, IEventSubscriber } from './eventemitter';
 /**
  * Represents a type definition for mapping IDs to `sdef` objects.
  */
-export type id2sdef = Record<Identifier, sdef>;
+export type id2sdef = Record<Identifier, StateDefinition>;
 
 /**
  * Represents a mapping of IDs to state contexts.
  */
-export type id2mstate = Record<Identifier, sstate>;
+export type id2mstate = Record<Identifier, State>;
 
 /**
  * Represents a mapping of IDs to sstates.
  */
-export type id2sstate = Record<Identifier, sstate>;
+export type id2sstate = Record<Identifier, State>;
 
 /**
- * The states defined for this state machine (key = state id, value = partial state definition), their substate machines and their additional properties are defined in {@link sdef}.
+ * The states defined for this state machine (key = state id, value = partial state definition), their substate machines and their additional properties are defined in {@link StateDefinition}.
  * @example
  * {
  *		parellel: true,
@@ -36,7 +36,7 @@ export type id2sstate = Record<Identifier, sstate>;
  *		running: { ... },
  * }
  */
-export type StateMachineBlueprint = Partial<sdef>;
+export type StateMachineBlueprint = Partial<StateDefinition>;
 
 /**
  * A type representing a mapping of state IDs to partial state definitions.
@@ -55,10 +55,11 @@ export type id2partial_sdef = Record<Identifier, StateMachineBlueprint>;
  * @param args - Additional arguments for the event handler.
  * @returns A string denoting the next state to transition to (or undefined if no transition should occur).
  */
-export interface IStateEventHandler<T extends IStateful = any> { (state: sstate<T>, ...args: any[]): string | void; }
-export interface IStateNexteventHandler<T extends IStateful = any> extends IStateEventHandler { (state: sstate<T>, tape_rewound: boolean, ...args: any[]): string | void; }
+export interface IStateEventHandler<T extends IStateful = any> { (state: State<T>, ...args: any[]): string | void; }
+export interface IStateExitHandler<T extends IStateful = any> { (state: State<T>, ...args: any[]): void; }
+export interface IStateNextHandler<T extends IStateful = any> extends IStateEventHandler { (state: State<T>, tape_rewound: boolean, ...args: any[]): string | void; }
 export interface IStateEventCondition<T extends IStateful & IEventSubscriber = any> {
-	(state: sstate<T>, ...args: any[]): boolean;
+	(state: State<T>, ...args: any[]): boolean;
 }
 
 type listed_sdef_event = { name: string, scope: EventScope };
@@ -108,22 +109,6 @@ export interface IStateful extends IRegisterable, IEventSubscriber {
 }
 
 /**
- * Represents the context of a state in a finite state machine.
- * Contains information about the current state, the state machine it belongs to, and any substate machines.
- */
-interface IStateController extends IRegisterable {
-	run(): void;
-	switch(path: string | string[], ...args: any[]): void;
-	to(path: string | string[], ...args: any[]): void;
-	is(path: string): boolean;
-	pop(): void;
-	states: id2sstate;
-	current: sstate;
-	currentid: Identifier;
-	get start_state_id(): Identifier;
-}
-
-/**
  * Represents the name of a Finite State Machine (FSM).
  */
 export type FSMName = string;
@@ -142,7 +127,7 @@ export type ConstructorWithFSMProperty = Function & {
 /**
  * Represents the machine definitions.
  */
-export var StateDefinitions: Record<string, sdef>;
+export var StateDefinitions: Record<string, StateDefinition>;
 
 /**
  * A record that maps string keys to functions that build machine states.
@@ -223,9 +208,9 @@ export function setup_fssdef_library(): void {
  * @param machine_name - The name of the machine.
  * @param machine_definition - The definition of the machine, including its states and substates.
  */
-function createMachine(machine_name: Identifier, machine_definition: StateMachineBlueprint): sdef {
+function createMachine(machine_name: Identifier, machine_definition: StateMachineBlueprint): StateDefinition {
 	// If the machine has states defined, create a new machine definition for each state
-	return new sdef(machine_name, machine_definition, null);
+	return new StateDefinition(machine_name, machine_definition, null);
 }
 
 function addEventListToDefinition(machine: StateMachineBlueprint): void {
@@ -355,7 +340,7 @@ function getStateMachineEvents(machine: StateMachineBlueprint, eventNamesAndScop
  * @param machinedef - The state machine definition to validate.
  * @throws Error if the state machine definition is invalid.
  */
-function validateStateMachine(machinedef: sdef): void {
+function validateStateMachine(machinedef: StateDefinition): void {
 	if (!machinedef.states) return; // A class might choose not to create a new machine_definition
 
 	// Get all state names
@@ -373,35 +358,35 @@ function validateStateMachine(machinedef: sdef): void {
 					let currentContext = machinedef.states;
 
 					for (const part of targetStateParts) {
-						if (part === '#this') {
-							if (!currentContext.states) { // Check if the current context has states
-								throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the current context doesn't have substates.`);
-							}
-							continue; // Skip '#this' parts
-						}
-						if (part === '#parent') { // If the part is '#parent', move to the parent context
-							if (!currentContext.parent) { // Check if the parent context exists
-								throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the parent context doesn't exist.`);
-							}
-							if (!currentContext.parent.states) { // Check if the parent context has states
-								throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the parent context doesn't have substates.`);
-							}
-							currentContext = currentContext.parent.states;
-							continue;
-						}
-						if (part === '#root') { // If the part is '#root', move to the root context
-							if (!currentContext.root) { // Check if the root context exists
-								throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the root context doesn't exist. This might be because the root context is not defined in the machine definition.`);
-							}
-							currentContext = currentContext.root.states;
-							continue;
-						}
+						switch (part) {
+							case '#this': // If the part is '#this', move to the current subcontext
+								if (!currentContext.states) { // Check if the current context has states
+									throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the current context doesn't have substates.`);
+								}
+								continue; // Skip '#this' parts
+							case '#parent': // If the part is '#parent', move to the parent context
+								if (!currentContext.parent) { // Check if the parent context exists
+									throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the parent context doesn't exist.`);
+								}
+								if (!currentContext.parent.states) { // Check if the parent context has states
+									throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the parent context doesn't have substates.`);
+								}
+								currentContext = currentContext.parent.states;
+								continue; // Skip '#parent' parts
+							case '#root': // If the part is '#root', move to the root context
+								if (!currentContext.root) { // Check if the root context exists
+									throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the root context doesn't exist. This might be because the root context is not defined in the machine definition.`);
+								}
+								currentContext = currentContext.root.states;
+								continue; // Skip '#root' parts
+							default:
+								if (!currentContext[part]) { // Check if the part exists in the current context
+									throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}'.`);
+								}
 
-						if (!currentContext[part]) { // Check if the part exists in the current context
-							throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}'.`);
+								currentContext = currentContext[part].states; // Move to the next context
+								break;
 						}
-
-						currentContext = currentContext[part].states; // Move to the next context
 					}
 				}
 			}
@@ -440,9 +425,9 @@ export class StateMachineController {
 	/**
 	 * The substate object that holds the state context for each substate.
 	 */
-	statemachines: Record<Identifier, sstate>;
+	statemachines: Record<Identifier, State>;
 
-	public get machines(): Record<Identifier, sstate> {
+	public get machines(): Record<Identifier, State> {
 		return new Proxy(this.statemachines, {
 			get: (target, prop: string) => {
 				if (target[prop]) {
@@ -455,13 +440,13 @@ export class StateMachineController {
 
 	current_machine_id: Identifier;
 
-	get current_machine(): sstate { return this.statemachines[this.current_machine_id]; }
+	get current_machine(): State { return this.statemachines[this.current_machine_id]; }
 
-	get current_state(): sstate { return this.current_machine.current; }
+	get current_state(): State { return this.current_machine.current; }
 
 	get states(): id2sstate { return this.current_machine.states; }
 
-	get definition(): sdef { return this.current_machine.definition; }
+	get definition(): StateDefinition { return this.current_machine.definition; }
 
 	constructor() {
 		this.statemachines = {};
@@ -546,7 +531,7 @@ export class StateMachineController {
 		if (!machine.parallel) { // If the machine is not running in parallel, set it as the current machine
 			this.current_machine_id = machineid;
 		}
-		machine.to(stateids, ...args);
+		machine.to_boaz(stateids, ...args);
 	}
 
 	/**
@@ -573,10 +558,10 @@ export class StateMachineController {
 		const stateid = stateids.length > 0 ? stateids : machineid;
 
 		// Only switch the state in the specified machine, without changing the current machine
-		machine.switch(stateid, ...args);
+		machine.switch_boaz(stateid, ...args);
 	}
 
-	public dispatch(event_name: string, emitter: Identifier | IIdentifiable, ...args: any[]): void {
+	public do(event_name: string, emitter: Identifier | IIdentifiable, ...args: any[]): void {
 		const emitter_id = typeof emitter === 'string' ? emitter : emitter.id;
 
 		// Dispatch the event to the current machine
@@ -591,7 +576,7 @@ export class StateMachineController {
 	}
 
 	private auto_dispatch(this: IStateful, event_name: string, emitter: Identifier | IIdentifiable, ...args: any[]): void {
-		this.sc.dispatch(event_name, emitter, ...args);
+		this.sc.do(event_name, emitter, ...args);
 	}
 
 	/**
@@ -602,7 +587,7 @@ export class StateMachineController {
 	 * @param parent_id - The ID of the target object.
 	 */
 	add_statemachine(id: Identifier, target_id: Identifier): void {
-		this.statemachines[id] = sstate.create(id, target_id, target_id, null);
+		this.statemachines[id] = State.create(id, target_id, target_id, null);
 		// If this is the first id that was added, set it as the current machine
 		if (!this.current_machine_id) this.current_machine_id = id;
 	}
@@ -612,7 +597,7 @@ export class StateMachineController {
 	 * @param id - The ID of the state machine.
 	 * @returns The state machine with the given ID.
 	 */
-	get_statemachine(id: Identifier): sstate {
+	get_statemachine(id: Identifier): State {
 		return this.statemachines[id];
 	}
 
@@ -735,7 +720,7 @@ const TAPE_START_INDEX = -1; // The index of the tape that is *before* the start
  * Represents a state in a state machine.
  * @template T - The type of the game object or model associated with the state.
  */
-export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any> implements IStateController, IIdentifiable {
+export class State<T extends IStateful & IEventSubscriber & IRegisterable = any> implements IIdentifiable {
 	/**
 	 * The identifier of this specific instance of the state machine.
 	* @see {@link make_id}
@@ -807,7 +792,7 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 	/**
 	 * Returns the current state of the FSM
 	 */
-	public get current(): sstate { return this.states?.[this.currentid]; }
+	public get current(): State { return this.states?.[this.currentid]; }
 
 	/**
 	 * Gets the state with the given id from the state machine.
@@ -821,7 +806,7 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 	 * Gets the definition of the current state machine.
 	 * @returns The definition of the current state machine.
 	 */
-	public get definition(): sdef { return this.parent ? this.parent.definition.states[this.def_id] : StateDefinitions[this.def_id]; }
+	public get definition(): StateDefinition { return this.parent ? this.parent.definition.states[this.def_id] : StateDefinitions[this.def_id]; }
 
 	/**
 	 * Gets the id of the start state of the FSM.
@@ -833,7 +818,7 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 	 * Gets the definition of the current state of the FSM.
 	 * Note that the definition can be empty, as not all objects have a defined machine.
 	 */
-	public get current_state_definition(): sdef {
+	public get current_state_definition(): StateDefinition {
 		return this.current?.definition;
 	}
 
@@ -842,8 +827,8 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 	 * @param id - id of the FSM definition to use for this machine.
 	 * @param target_id - id of the object that is stated by this FSM. @see {@link BaseModel.getGameObject}.
 	 */
-	public static create(id: Identifier, target_id: Identifier, parent_id: Identifier, root_id: Identifier): sstate {
-		let result = new sstate(id, target_id, parent_id, root_id);
+	public static create(id: Identifier, target_id: Identifier, parent_id: Identifier, root_id: Identifier): State {
+		let result = new State(id, target_id, parent_id, root_id);
 		result.populateStates(); // Populate the states of the state machine with the states from the state machine definition (if any) and their substates
 		result.reset(true); // Reset the state machine to the start state to initialize the state machine and its substate machines
 
@@ -910,16 +895,19 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 		// First process any input
 		let next_state = definition.process_input?.call(this.target, this);
 		if (next_state) {
-			this.transition(next_state);
+			this.to(next_state);
+			// TODO: should we run the state here? Or should we wait until the next tick?
 		}
 
 		// Then, run the substate
 		next_state = definition.run?.call(this.target, this);
-		if (definition.auto_tick) ++this.ticks; // Auto-nudge the state if auto_nudge is set to true
-
-		// If the next state is not the current state, transition to the next state
-		if (next_state && next_state !== this.currentid) {
-			this.transition(next_state);
+		// If a next state is given, transition to the next state
+		if (next_state) {
+			this.to(next_state);
+			// TODO: should we run the state here? Or should we wait until the next tick?
+		}
+		else {
+			if (definition.auto_tick) ++this.ticks; // Auto-nudge the state if auto_nudge is set to true
 		}
 
 		// Then run the submachine for the state if it exists
@@ -935,7 +923,7 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 		}
 	}
 
-	private handlePath(path: string | string[]): [string, string[], IStateController] {
+	private handlePath(path: string | string[]): [string, string[], State] {
 		let parts: string[];
 		if (typeof path === 'string') {
 			parts = path.split('.');
@@ -946,10 +934,14 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 		let currentPart = parts[0];
 		let restParts = parts.slice(1);
 
-		let currentContext: IStateController;
+		let currentContext: State;
 		switch (currentPart) {
 			case '#this':
 				currentContext = this;
+				[currentPart, ...restParts] = restParts;
+				break;
+			case '#parent':
+				currentContext = this.parent;
 				[currentPart, ...restParts] = restParts;
 				break;
 			case '#root':
@@ -968,20 +960,22 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 	}
 
 	/**
-	 * Transition to a new state identified by the given ID.
+	 * Transition to a new state identified by the given ID. If the ID contains multiple parts separated by '.', it traverses through the states accordingly and switches the state of each part.
 	 * If no parts are provided, the ID will be split by '.' to determine the parts.
 	 * @param path - The ID of the state to transition to.
 	 * @throws Error if the state with the given ID does not exist.
 	 */
-	public to(path: string | string[], ...args: any[]): void {
+	public to_boaz(path: string | string[], ...args: any[]): void {
 		const [currentPart, restParts, currentContext] = this.handlePath(path);
 
-		if (this.currentid !== currentPart || restParts.length === 0) {
-			this.transitionToState(currentPart, ...args);
+		if (this.def_id !== currentPart || restParts.length === 0) {
+			if (!currentContext.parallel) { // If the state is not running in parallel, set it as the current state
+				this.transitionToState(currentPart, ...args);
+			}
 		}
 
 		if (restParts.length > 0) {
-			currentContext.to(restParts, ...args);
+			currentContext.to_boaz(restParts, ...args);
 		}
 	}
 
@@ -994,12 +988,12 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 	 * @param path - The ID of the state to switch to.
 	 * @returns void
 	 */
-	public switch(path: string | string[], ...args: any[]): void {
+	public switch_boaz(path: string | string[], ...args: any[]): void {
 		const [currentPart, restParts, currentContext] = this.handlePath(path);
 
 		if (restParts.length > 0) {
-			currentContext.switch(restParts, ...args);
-		} else if (this.currentid !== currentPart) {
+			currentContext.switch_boaz(restParts, ...args);
+		} else if (this.def_id !== currentPart) {
 			this.transitionToState(currentPart, ...args);
 		}
 	}
@@ -1008,6 +1002,7 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 	 * Transition to a new state.
 	 *
 	 * This method is responsible for transitioning the state machine to a new state.
+	 * If the ID contains multiple parts separated by '.', it traverses through the states accordingly and switches the state of each part.
 	 * It handles three types of state transitions:
 	 * 1. Transitions within the current state machine, identified by a state_id starting with '#this.'.
 	 * 2. Transitions from the root of the state machine hierarchy, identified by a state_id starting with '#root.'.
@@ -1017,22 +1012,72 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 	 * a state from the root (prefixed with '#root.'), or a state within the parent state machine.
 	 * @param args - Optional arguments to pass to the new state. These arguments are passed on to the 'to' or 'switch' methods.
 	 */
-	public transition(state_id: Identifier, ...args: any[]): void {
+	public to(state_id: Identifier, ...args: any[]): void {
+		if (this.def_id === state_id) return; // Don't switch to the same state
+		if (state_id.startsWith('#this.')) { // If the state is local, switch to the state in the current state machine
+			// Remove the '#this.' prefix and continue to the next state from the substate
+			const restParts = state_id.slice('#this.'.length);
+			// If there are more parts, switch to the state in the current state machine
+			this.to_boaz(restParts, ...args);
+		}
+		// else if (state_id.startsWith('#parent.')) {
+		// 	// Remove the '#parent.' prefix and continue to the next state from the parent
+		// 	const restParts = state_id.slice('#parent.'.length);
+		// 	// If there are more parts, switch to the state in the parent state machine
+		// 	this.parent.to_boaz(restParts, ...args);
+		// }
+		else if (state_id.startsWith('#root.')) { // If the state is in the root, switch to the state in the root state machine
+			// Remove the '#root.' prefix and continue to the next state from the root
+			const restParts = state_id.slice('#root.'.length);
+			// If there are more parts, switch to the state in the root state machine
+			this.root.to_boaz(restParts, ...args);
+		}
+		else { // If the state is not local, check if it is a state in the parent state machine or a state in the root state machine hierarchy
+			if (this.parent_id) { // If there is a parent, switch to the state in the parent state machine
+				this.parent.to_boaz(state_id, ...args); // Switch to the state in the parent state machine
+			}
+			else { // If there is no parent, this is the root state machine, so we can just switch to the state in the current state machine
+				this.to_boaz(state_id, ...args); // Switch to the state in the current state machine
+			}
+		}
+	}
+
+	/**
+	 * Transition to a new state.
+	 *
+	 * This method is responsible for transitioning the state machine to a new state.
+	 * If the ID contains multiple parts separated by '.', it traverses through the states accordingly and only switches the state of the last part.
+	 * It handles three types of state transitions:
+	 * 1. Transitions within the current state machine, identified by a state_id starting with '#this.'.
+	 * 2. Transitions from the root of the state machine hierarchy, identified by a state_id starting with '#root.'.
+	 * 3. Transitions within the parent state machine, for all other state_ids.
+	 *
+	 * @param state_id - The identifier of the state to transition to. This can be a local state (prefixed with '#this.'),
+	 * a state from the root (prefixed with '#root.'), or a state within the parent state machine.
+	 * @param args - Optional arguments to pass to the new state. These arguments are passed on to the 'to' or 'switch' methods.
+	 */
+	public switch(state_id: Identifier, ...args: any[]): void {
 		if (this.def_id === state_id) return; // Don't switch to the same state
 		if (state_id.startsWith('#this.')) {
 			// Remove the '#this.' prefix and continue to the next state from the substate
 			const restParts = state_id.slice('#this.'.length);
 			// If there are more parts, switch to the state in the current state machine
-			this.to(restParts, ...args);
+			this.switch_boaz(restParts, ...args);
+		}
+		else if (state_id.startsWith('#parent.')) {
+			// Remove the '#parent.' prefix and continue to the next state from the parent
+			const restParts = state_id.slice('#parent.'.length);
+			// If there are more parts, switch to the state in the parent state machine
+			this.parent.switch_boaz(restParts, ...args);
 		}
 		else if (state_id.startsWith('#root.')) {
 			// Remove the '#root.' prefix and continue to the next state from the root
 			const restParts = state_id.slice('#root.'.length);
 			// If there are more parts, switch to the state in the root state machine
-			this.root.to(restParts, ...args);
+			this.root.switch_boaz(restParts, ...args);
 		}
 		else {
-			this.parent.switch(state_id, ...args); // Switch to the state in the parent state machine
+			this.parent.switch_boaz(state_id, ...args); // Switch to the state in the parent state machine
 		}
 	}
 
@@ -1068,6 +1113,7 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 
 	/**
 	 * Transition to the specified state.
+	 * If the return value of the enter function is a string, it is assumed to be the ID of the next state to transition to.
 	 *
 	 * @param stateId - The identifier of the state to transition to.
 	 * @param args - Optional arguments to pass to the state's enter and exit actions.
@@ -1088,11 +1134,21 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 		if (!stateDef) return; // There is no definition for the none-state, so we don't trigger the enter event for that state.
 		if (stateDef.parallel) throw new Error(`Cannot transition to parallel state '${stateId}'!`);
 
-		if (stateDef.enter && stateDef.auto_reset) {
-			const reset_tree = stateDef.auto_reset === 'tree';
-			this.current.reset(reset_tree); // Reset the state if auto_reset is set to true. Note that this will only reset the substate machine if it is not running in parallel and if auto_reset is set to 'tree'
+		if (stateDef.auto_reset) {
+			switch (stateDef.auto_reset) {
+				case 'state': this.current.reset(false); break; //
+				case 'tree': this.current.reset(true); break;
+				case 'subtree': this.current.resetSubmachine(true); break;
+			}
 		}
-		stateDef?.enter?.call(this.target, this.current, ...args);
+		const next_state = stateDef?.enter?.call(this.target, this.current, ...args);
+		if (next_state) {
+			this.current.to(next_state);
+		}
+	}
+
+	public do(eventName: string, emitter: Identifier | IIdentifiable, ...args: any[]): void {
+		this.root.dispatch(eventName, emitter, ...args);
 	}
 
 	public dispatch(eventName: string, emitter_id: Identifier, ...args: any[]): void {
@@ -1134,7 +1190,7 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 				// If the handler is a string, treat it as a state ID and transition to that state
 				// If the string starts with a '#', it is a state ID relative to the parent state machine, otherwise it is a state ID relative to the current state machine
 				// const state_id = state_id_or_handler.startsWith('#') ? state_id_or_handler.slice(1) : state_id_or_handler;
-				this.transition(state_id_or_handler, ...args); // Transition to the state with the given ID and pass the arguments to the state transition function
+				this.to(state_id_or_handler, ...args); // Transition to the state with the given ID and pass the arguments to the state transition function
 				// Note: the state transition function will handle the enter and exit events for the states, but not if the state is the same as the current state
 			} else {
 				// If the handler is a StateTransition object (i.e., an object with an 'if' and 'do' handler), call the 'if' handler and if it returns true, call the 'do' handler and transition to the target state
@@ -1149,21 +1205,21 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 				}
 
 				// If the emitter ID is not provided or it is the same as the emitter ID of the event, call the if-handler
-				if (ifHandler && !ifHandler.call(this.target, this as sstate<T>, ...args)) {
+				if (ifHandler && !ifHandler.call(this.target, this as State<T>, ...args)) {
 					// If the if-handler exists and returns false, do nothing
 					return false; // Return false to indicate that the event was not handled
 				}
 
 				// If the if-handler does not exist or returns true, call the do-handler.
 				// The do-handler can return a state ID to transition to, otherwise it can return undefined to indicate that no transition should occur or to indicate that the target state should be used.
-				const next_state = doHandler?.call(this.target, this as sstate<T>, ...args);
+				const next_state = doHandler?.call(this.target, this as State<T>, ...args);
 
 				// If the next state is not the current state, transition to the next state
 				if (next_state && next_state !== this.currentid) {
-					this.transition(next_state);
+					this.to(next_state);
 				} else if (targetStateId) {
 					// Transition to the target state if it is defined and not the same as the current state ID (otherwise, do nothing)
-					targetStateId && this.transition(targetStateId, ...args);
+					targetStateId && this.to(targetStateId, ...args);
 				}
 			}
 			return true; // Return true to indicate that the event was handled
@@ -1212,7 +1268,7 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 
 		this.states = {}; // Initialize the states object to an empty object
 		for (let sdef_id in sdef.states) {
-			let state = new sstate(sdef_id, this.target_id, this.id, this.root_id);
+			let state = new State(sdef_id, this.target_id, this.id, this.root_id);
 			this.add(state);
 			state.populateStates(); // Populate the substates of the state
 		}
@@ -1226,7 +1282,7 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 	 * @param states - the states to add to the state machine
 	 * @throws Error if a state with the same ID already exists in the state machine
 	 */
-	private add(...states: sstate[]): void {
+	private add(...states: State[]): void {
 		for (let state of states) {
 			if (!state.def_id) throw new Error(`State is missing an id, while attempting to add it to this sstate '${this.def_id}'!`);
 			if (this.states[state.def_id]) throw new Error(`State ${state.def_id} already exists for sstate '${this.def_id}'!`);
@@ -1379,13 +1435,13 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 
 	/**
 	 * Calls the next state's function.
-	 * @param tape_rewound Indicates whether the tape has been rewound. Only occurs when the tape is automatically rewound after reaching the end of the tape via @see {@link sdef.auto_rewind_tape_after_end}.
+	 * @param tape_rewound Indicates whether the tape has been rewound. Only occurs when the tape is automatically rewound after reaching the end of the tape via @see {@link StateDefinition.auto_rewind_tape_after_end}.
 	 */
 	protected tapemove(tape_rewound: boolean = false) {
 		const next_state = this.definition.next?.call(this.target, this, tape_rewound);
 		// If the next state is not the current state, transition to the next state
 		if (next_state && next_state !== this.currentid) {
-			this.transition(next_state);
+			this.to(next_state);
 		}
 	}
 
@@ -1396,7 +1452,7 @@ export class sstate<T extends IStateful & IEventSubscriber & IRegisterable = any
 		const next_state = this.definition.end?.call(this.target, this, undefined);
 		// If the next state is not the current state, transition to the next state
 		if (next_state && next_state !== this.currentid) {
-			this.transition(next_state);
+			this.to(next_state);
 		}
 	}
 
@@ -1436,7 +1492,7 @@ const AUTO_REWIND_TAPE_AFTER_END = false;
 /**
  * Represents a state definition for a state machine.
  */
-export class sdef {
+export class StateDefinition {
 	/**
 	 * The unique identifier for the bfsm.
 	 */
@@ -1475,7 +1531,7 @@ export class sdef {
 	 * Defaults to true.
 	 * Note that this only applies to the state itself, not its substates.
 	 */
-	public auto_reset: boolean | 'tree'; // Automagically resets the state (not substates!) when the state is entered
+	public auto_reset: 'state' | 'tree' | 'subtree'; // Automagically reset the state when entered (and optionally also its substates) (defaults to 'state')
 
 	/**
 	 * Indicates whether the tapehead should automatically rewind to index 0 when it would go out of bounds.
@@ -1491,10 +1547,10 @@ export class sdef {
 	public repetitions: number; // Number of times the tape should be repeated
 
 	@exclude_save
-	public parent!: sdef; // The parent state machine definition
+	public parent!: StateDefinition; // The parent state machine definition
 
 	@exclude_save
-	public root!: sdef; // The root state machine definition
+	public root!: StateDefinition; // The root state machine definition
 
 	public event_list: { name: string, scope: EventScope }[];
 
@@ -1503,14 +1559,14 @@ export class sdef {
 	 * @param id - The ID of the `bfsm` instance.
 	 * @param partialdef - An optional partial definition to assign to the `bfsm` instance.
 	 */
-	public constructor(id: Identifier = '_', partialdef?: Partial<sdef>, root: sdef = null) {
+	public constructor(id: Identifier = '_', partialdef?: Partial<StateDefinition>, root: StateDefinition = null) {
 		this.id = id; //`${parent_id ? (parent_id + '.') : ''}${id ?? DEFAULT_BST_ID}`;
 		partialdef && Object.assign(this, partialdef); // Assign the partial definition to the instance
 		this.ticks2move ??= 0; // Unless already defined, ticks2move is 0
 		this.repetitions = (this.tape ? (this.repetitions ?? 1) : 0);
 		this.auto_tick = this.auto_tick ?? (this.ticks2move !== 0 ? true : false); // If ticks2move is 0, auto_tick is false. Otherwise, auto_tick is true (unless it was already defined)
 		this.auto_rewind_tape_after_end = this.auto_rewind_tape_after_end ?? (this.tape ? AUTO_REWIND_TAPE_AFTER_END : false); // If there is a tape, auto_rewind_tape_after_end is AUTO_REWIND_TAPE_AFTER_END. Otherwise, it is false (unless it was already defined)
-		this.auto_reset = this.auto_reset ?? true; // Unless already defined, auto_reset is true
+		this.auto_reset = this.auto_reset ?? 'state'; // Unless already defined, auto_reset is true
 		this.data ??= {}; // Unless already defined, data is an empty object
 		this.root = root ?? this; // The root state machine is either the provided root or this state machine
 		this.parallel ??= false; // Unless already defined, parallel is false
@@ -1545,12 +1601,12 @@ export class sdef {
 	 *
 	 * @param substates - The blueprint of the substates.
 	 */
-	private construct_substate_machine(substates: StateMachineBlueprint, root: sdef): void {
+	private construct_substate_machine(substates: StateMachineBlueprint, root: StateDefinition): void {
 		this.states ??= {};
 		const substate_ids = Object.keys(substates);
 		for (let state_id of substate_ids) {
 			const sub_sdef = this.#create_state(substates[state_id], state_id, root);
-			validateStateMachine(sub_sdef as sdef);
+			validateStateMachine(sub_sdef as StateDefinition);
 			this.replace_partialsdef_with_sdef(sub_sdef, root);
 		}
 		if (substate_ids.length > 0 && !this.start_state_id) { // Only look for a start state if we have at least one state in our definition
@@ -1561,7 +1617,7 @@ export class sdef {
 			// If the start state is defined, we need to change the key of the start state to exclude the start state prefix
 			const start_state = this.states[this.start_state_id]; // Get the start state
 			for (const state_id of substate_ids) {
-				if (sdef.START_STATE_PREFIXES.includes(state_id.charAt(0))) { // If the state id starts with a start state prefix
+				if (StateDefinition.START_STATE_PREFIXES.includes(state_id.charAt(0))) { // If the state id starts with a start state prefix
 					delete this.states[state_id]; // Delete the start state from the list of states (with the old key)
 					this.states[start_state.id] = start_state; // Add the start state to the list of states (with the new key)
 					break; // Stop iterating over the states
@@ -1572,9 +1628,9 @@ export class sdef {
 
 	public run?: IStateEventHandler;
 	public end?: IStateEventHandler;
-	public next?: IStateNexteventHandler;
+	public next?: IStateNextHandler;
 	public enter?: IStateEventHandler;
-	public exit?: IStateEventHandler;
+	public exit?: IStateExitHandler;
 	public process_input?: IStateEventHandler;
 
 	/**
@@ -1616,9 +1672,9 @@ export class sdef {
 	 * @returns The new state definition.
 	 * @throws An error if the state definition is missing.
 	 */
-	#create_state(partial: Partial<sdef>, state_id: Identifier, root: sdef): sdef {
+	#create_state(partial: Partial<StateDefinition>, state_id: Identifier, root: StateDefinition): StateDefinition {
 		if (!partial) throw new Error(`'sdef' with id '${state_id}' is missing definition while attempting to add it to this 'sdef'!`);
-		return new sdef(state_id, partial, root);
+		return new StateDefinition(state_id, partial, root);
 	}
 
 	/**
@@ -1626,15 +1682,15 @@ export class sdef {
 	 * @param state The state to check.
 	 * @returns True if the state is the start state, false otherwise.
 	 */
-	#is_start_state(state: sdef): boolean {
-		return sdef.START_STATE_PREFIXES.includes(state.id.charAt(0)); // Return true iff the first character of the state id is a start state prefix
+	#is_start_state(state: StateDefinition): boolean {
+		return StateDefinition.START_STATE_PREFIXES.includes(state.id.charAt(0)); // Return true iff the first character of the state id is a start state prefix
 	}
 
 	/**
 	 * Sets the start state of the state machine to the given state.
 	 * @param state The state to set as the start state.
 	 */
-	#set_start_state(state: sdef): void {
+	#set_start_state(state: StateDefinition): void {
 		this.start_state_id = state.id;
 	}
 
@@ -1643,7 +1699,7 @@ export class sdef {
 	 * @param state The state to append.
 	 * @throws An error if the state is missing an id or if a state with the same id already exists for this state machine.
 	 */
-	public replace_partialsdef_with_sdef(state: sdef, root: sdef): void {
+	public replace_partialsdef_with_sdef(state: StateDefinition, root: StateDefinition): void {
 		if (!state.id) throw new Error(`'sdef' is missing an id, while attempting to add it to this 'sdef'!`);
 		// if (this.states[state.id]) throw new Error(`'sdef' with id='${state.id}' already exists for this 'sdef'!`);
 		if (this.#is_start_state(state)) { // If the state is a start state, set it as the start state
