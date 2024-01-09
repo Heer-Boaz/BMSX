@@ -2,7 +2,7 @@ import { BFont, new_vec3, trunc_vec3 } from './../bmsx/game';
 import { MSX2ScreenHeight, MSX2ScreenWidth } from './../bmsx/msx';
 import type { Direction } from "../bmsx/game";
 import { Game, new_vec2, new_area, randomInt, copy_vector } from '../bmsx/game';
-import { sdef, sstate, Bla, build_fsm, StateMachineBlueprint } from '../bmsx/bfsm';
+import { StateDefinition, State, build_fsm, StateMachineBlueprint } from '../bmsx/bfsm';
 import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
 import { GLView } from '../bmsx/glview';
 import { BitmapId } from './resourceids';
@@ -18,7 +18,7 @@ import { RomPack, vec2 } from '../bmsx/bmsx';
 const TIME_TO_SHINE = 90;
 
 type model_spaces = base_model_spaces | 'uitleg' | 'evaluatie' | 'hoera!';
-type model_states = Bla<typeof gamemodel.states.states>;
+// type model_states = Bla<typeof gamemodel.states.states>;
 
 class gamemodel extends BaseModel {
     public time_to_shine!: number;
@@ -55,7 +55,7 @@ class gamemodel extends BaseModel {
             states: {
                 game_start: {
                     run(this: gamemodel) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
-                        this.sc.to('uitleg' satisfies model_states);
+                        this.sc.to('uitleg');
                     }
                 },
                 default: {
@@ -63,17 +63,17 @@ class gamemodel extends BaseModel {
                     enter(this: gamemodel) {
                         this.setSpace('default');
                         this.time_to_shine = TIME_TO_SHINE;
-                        // this.state.to('evaluatie' satisfies model_states);
+                        // this.state.to('evaluatie' );
                     },
                     next(this: gamemodel) {
                         --this.time_to_shine;
                         if (this.time_to_shine < 0) {
                             this.time_to_shine = 0;
                             this.score = this.tel_onvolmaaktheden();
-                            this.sc.to('evaluatie' satisfies model_states);
+                            this.sc.to('evaluatie');
                         }
                     },
-                    run(this: gamemodel, s: sstate<gamemodel>) {
+                    run(this: gamemodel, s: State<gamemodel>) {
                         BaseModel.defaultrun();
                         this.sc.machines.gamemenu.run();
                         if (!this.paused) ++s.ticks; // Laat timer lopen
@@ -90,10 +90,10 @@ class gamemodel extends BaseModel {
                         --this.time_to_shine;
                         if (this.time_to_shine < 0) {
                             this.time_to_shine = 0;
-                            this.sc.to('hoera' satisfies model_states);
+                            this.sc.to('hoera');
                         }
                     },
-                    run(s: sstate) {
+                    run(s: State) {
                         ++s.ticks;
                     },
                     process_input: BaseModel.default_input_handler,
@@ -175,7 +175,7 @@ class gamemodel extends BaseModel {
      * @returns This instance of the game model.
      */
     public do_one_time_game_init(): this {
-        // this.state.machines['gamemenu' satisfies model_machines].to('closed' satisfies model_states);
+        // this.state.machines['gamemenu' satisfies model_machines].to('closed' );
         $.input.getPlayerInput(1).setInputMap({
             keyboard: keyboardInputMapping,
             gamepad: gamepadInputMapping,
@@ -280,17 +280,17 @@ class uitlegStuff extends SpriteObject {
                         5,
                         6,
                     ],
-                    enter(this: uitlegStuff, s: sstate<uitlegStuff>) {
+                    enter(this: uitlegStuff, s: State<uitlegStuff>) {
                         s.reset();
                         if (_model)
                             _model.uitleg_tekst_dinges = s.current_tape_value;
                     },
-                    run(this: uitlegStuff, s: sstate<uitlegStuff>) {
+                    run(this: uitlegStuff, s: State<uitlegStuff>) {
                         if (Input.KC_BTN1) {
                             ++s.head; // Skip to next tape entry. Note that this will reset nudges and stuff
                         }
                     },
-                    next(this: uitlegStuff, s: sstate<uitlegStuff>) {
+                    next(this: uitlegStuff, s: State<uitlegStuff>) {
                         if (_model)
                             _model.uitleg_tekst_dinges = s.current_tape_value;
                     },
@@ -372,9 +372,9 @@ class hud extends GameObject {
     public static bouw() {
         return {
             states: {
-                default: new sdef('default', {
+                default: new StateDefinition('default', {
                     // ticks2move: 50,
-                    enter(this: hud, s: sstate<hud>) {
+                    enter(this: hud, s: State<hud>) {
                         s.reset();
                         this.visible = true;
                     },
@@ -406,7 +406,7 @@ class stoom extends SpriteObject {
     public static bouw() {
         return {
             states: {
-                doepluim: new sdef('doepluim', {
+                doepluim: new StateDefinition('doepluim', {
                     tape: [
                         BitmapId.pluim1,
                         BitmapId.pluim2,
@@ -421,14 +421,14 @@ class stoom extends SpriteObject {
                         BitmapId.pluimx,
                     ],
                     ticks2move: 2,
-                    enter(this: stoom, s: sstate<stoom>) {
+                    enter(this: stoom, s: State<stoom>) {
                         s.reset();
                         this.imgid = s.current_tape_value;
                     },
-                    run(this: stoom, s: sstate<stoom>) {
+                    run(this: stoom, s: State<stoom>) {
                         ++s.ticks;
                     },
-                    next(this: stoom, s: sstate<stoom>) {
+                    next(this: stoom, s: State<stoom>) {
                         this.imgid = s.current_tape_value;
                     },
                     end(this: stoom) {
@@ -520,8 +520,8 @@ class draaischijf extends SpriteObject {
     public static bouw() {
         return {
             states: {
-                idle: new sdef('idle', {
-                    enter(this: draaischijf, s: sstate<draaischijf>) {
+                idle: new StateDefinition('idle', {
+                    enter(this: draaischijf, s: State<draaischijf>) {
                         s.reset();
                         this.imgid = BitmapId.slijpschijf1;
                     },
@@ -530,7 +530,7 @@ class draaischijf extends SpriteObject {
                     },
                     process_input: draaischijf.handle_input_idle_state,
                 }),
-                slijpen_opstart: new sdef('slijpen_opstart', {
+                slijpen_opstart: new StateDefinition('slijpen_opstart', {
                     ticks2move: 5,
                     auto_rewind_tape_after_end: false,
                     tape: [
@@ -544,43 +544,43 @@ class draaischijf extends SpriteObject {
                         BitmapId.slijpschijf1,
                         BitmapId.slijpschijf2,
                     ],
-                    enter(this: draaischijf, s: sstate<draaischijf>) {
+                    enter(this: draaischijf, s: State<draaischijf>) {
                         s.reset();
                         this.imgid = s.current_tape_value;
                     },
                     process_input: draaischijf.handle_input_slijp_opstart_state,
-                    run(this: draaischijf, s: sstate<draaischijf>) {
+                    run(this: draaischijf, s: State<draaischijf>) {
                         ++s.ticks;
                     },
                     end(this: draaischijf) {
                         this.sc.to('slijpen');
                     },
-                    next(this: draaischijf, s: sstate<draaischijf>) {
+                    next(this: draaischijf, s: State<draaischijf>) {
                         this.imgid = s.current_tape_value;
                     },
                 }),
-                slijpen: new sdef('slijpen', {
+                slijpen: new StateDefinition('slijpen', {
                     ticks2move: 10,
                     tape: [
                         BitmapId.slijpschijf3,
                         BitmapId.slijpschijf4,
                     ],
-                    enter(this: draaischijf, s: sstate<draaischijf>) {
+                    enter(this: draaischijf, s: State<draaischijf>) {
                         s.reset();
                         this.imgid = s.current_tape_value;
                     },
                     process_input: draaischijf.handle_input_slijp_state,
-                    run(this: draaischijf, s: sstate<draaischijf>) {
+                    run(this: draaischijf, s: State<draaischijf>) {
                         ++s.ticks;
                     },
-                    next(this: draaischijf, s: sstate<draaischijf>) {
+                    next(this: draaischijf, s: State<draaischijf>) {
                         this.imgid = s.current_tape_value;
                         if (s.head === 0) ++this.pos.y;
                         else --this.pos.y;
                         _model.spawn(new stoom(), new_vec2(randomInt(this.pos.x, this.pos.x + this.size.x), randomInt(this.pos.y, this.pos.y + this.size.y)));
                     },
                 }),
-                slijpen_afkoel: new sdef('slijpen_afkoel', {
+                slijpen_afkoel: new StateDefinition('slijpen_afkoel', {
                     ticks2move: 5,
                     auto_rewind_tape_after_end: false,
                     tape: [
@@ -594,18 +594,18 @@ class draaischijf extends SpriteObject {
                         BitmapId.slijpschijf1,
                         BitmapId.slijpschijf2,
                     ],
-                    enter(this: draaischijf, s: sstate<draaischijf>) {
+                    enter(this: draaischijf, s: State<draaischijf>) {
                         s.reset();
                         this.imgid = s.current_tape_value;
                     },
                     process_input: draaischijf.handle_input_slijp_afkoel_state,
-                    run(this: draaischijf, s: sstate<draaischijf>) {
+                    run(this: draaischijf, s: State<draaischijf>) {
                         ++s.ticks;
                     },
                     end(this: draaischijf) {
                         this.sc.to('idle');
                     },
-                    next(this: draaischijf, s: sstate<draaischijf>) {
+                    next(this: draaischijf, s: State<draaischijf>) {
                         this.imgid = s.current_tape_value;
                     },
                 }),
@@ -745,7 +745,7 @@ class burn extends onvolmaaktheid {
                         BitmapId.burn4,
                         BitmapId.burn5,
                     ],
-                    onenter(this: burn, s: sstate<burn>) {
+                    onenter(this: burn, s: State<burn>) {
                         s.reset();
                         this.imgid = s.current_tape_value;
                         this.ben_ik_nog_onvolmaakt = true;
@@ -753,7 +753,7 @@ class burn extends onvolmaaktheid {
                     onend(this: burn) {
                         this.sc.to('gepolijst');
                     },
-                    onnext(this: burn, s: sstate<burn>) {
+                    onnext(this: burn, s: State<burn>) {
                         this.imgid = s.current_tape_value;
                     },
                 },
@@ -765,7 +765,7 @@ class burn extends onvolmaaktheid {
                         BitmapId.None,
                     ],
                     auto_tick: false,
-                    onenter(this: burn, s: sstate<burn>) {
+                    onenter(this: burn, s: State<burn>) {
                         s.reset();
                         this.imgid = s.current_tape_value;
                         this.ben_ik_nog_onvolmaakt = false;
@@ -807,7 +807,7 @@ class barst extends onvolmaaktheid {
                         BitmapId.break5,
                         BitmapId.break6,
                     ],
-                    enter(this: barst, s: sstate<barst>) {
+                    enter(this: barst, s: State<barst>) {
                         s.reset();
                         this.imgid = s.current_tape_value;
                         this.ben_ik_nog_onvolmaakt = true;
@@ -815,14 +815,14 @@ class barst extends onvolmaaktheid {
                     end(this: barst) {
                         this.sc.to('gepolijst');
                     },
-                    next(this: barst, s: sstate<barst>) {
+                    next(this: barst, s: State<barst>) {
                         this.imgid = s.current_tape_value;
                     },
                 },
                 gepolijst: {
                     ticks2move: 40,
                     auto_tick: false,
-                    enter(this: barst, s: sstate<barst>) {
+                    enter(this: barst, s: State<barst>) {
                         s.reset();
                         this.imgid = BitmapId.None;
                         this.ben_ik_nog_onvolmaakt = false;

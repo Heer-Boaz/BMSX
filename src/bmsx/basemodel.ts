@@ -1,5 +1,5 @@
 import { BehaviorTreeDefinition, BehaviorTreeDefinitions, BehaviorTreeID, setup_btdef_library, setup_bt_library } from "./behaviourtree";
-import { StateDefinitions, sdef, sstate, StateMachineController, IStateful, setup_fssdef_library } from "./bfsm";
+import { StateDefinitions, StateDefinition, State, StateMachineController, IStateful, setup_fssdef_library } from "./bfsm";
 import type { IRegisterable, Identifier } from "./game";
 import { GameObject } from "./gameobject";
 import { insavegame, onsave, Reviver, Savegame, Serializer } from "./gameserializer";
@@ -222,7 +222,7 @@ export abstract class BaseModel implements IStateful, IRegisterable {
 
     /**
      * Gets the game object with the given id across all spaces.
-     * If `id === 'model'`, returns the game model instead! This is used for {@link sstate} to make game model as target for callbacks.
+     * If `id === 'model'`, returns the game model instead! This is used for {@link State} to make game model as target for callbacks.
      * @param {Identifier} id - the id of the {@link GameObject}.
      * @returns {T | null} The object with the given id or the game model itself (when `id === 'model'`), or null if the object is not found.
      */
@@ -292,7 +292,7 @@ export abstract class BaseModel implements IStateful, IRegisterable {
      * @param {Identifier} machineid - The id of the machine to get the definition for.
      * @returns {mdef} The machine definition for the given machine id.
      */
-    public static getMachinedef(machineid: Identifier): sdef {
+    public static getMachinedef(machineid: Identifier): StateDefinition {
         return StateDefinitions[machineid];
     }
 
@@ -300,9 +300,9 @@ export abstract class BaseModel implements IStateful, IRegisterable {
      * Returns the state definition for the given machine and state id.
      * @param {Identifier} machineid - The id of the machine to get the state definition for.
      * @param {Identifier} stateid - The id of the state to get the definition for.
-     * @returns {sdef} The state definition for the given machine and state id.
+     * @returns {StateDefinition} The state definition for the given machine and state id.
      */
-    public static getMachineStatedef(machineid: Identifier): sdef {
+    public static getMachineStatedef(machineid: Identifier): StateDefinition {
         return StateDefinitions[machineid];
     }
 
@@ -451,7 +451,7 @@ export abstract class BaseModel implements IStateful, IRegisterable {
      * The default input handler for allowing the game menu to be opened.
      * If the F5 key is pressed, the game menu substate is set to 'open'.
      * @param {BaseModel} this - The current instance of the BaseModel.
-     * @param {sstate<BaseModel>} s - The current state of the BaseModel.
+     * @param {State<BaseModel>} s - The current state of the BaseModel.
      * @returns {void} Nothing.
      */
     static default_input_handler_for_allow_open_gamemenu(this: BaseModel): void {
@@ -464,7 +464,7 @@ export abstract class BaseModel implements IStateful, IRegisterable {
      * The default input handler for allowing the game menu to be closed.
      * If the F5 key is pressed, the game menu substate is set to 'closed'.
      * @param {BaseModel} this - The current instance of the BaseModel.
-     * @param {sstate<BaseModel>} s - The current state of the BaseModel.
+     * @param {State<BaseModel>} s - The current state of the BaseModel.
      * @returns {void} Nothing.
      */
     static default_input_handler_for_allow_close_gamemenu(this: BaseModel): void {

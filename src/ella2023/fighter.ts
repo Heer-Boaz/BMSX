@@ -1,4 +1,4 @@
-import { Identifier, ProhibitLeavingScreenComponent, SM, SpriteObject, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, insavegame, middlepoint_area, new_area, sstate, Area, vec3, Vector } from '../bmsx/bmsx';
+import { Identifier, ProhibitLeavingScreenComponent, SM, SpriteObject, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, insavegame, middlepoint_area, new_area, State, Area, vec3, Vector } from '../bmsx/bmsx';
 import { gamemodel } from './gamemodel';
 import { AudioId, BitmapId } from './resourceids';
 
@@ -63,7 +63,7 @@ export abstract class Fighter extends SpriteObject {
                     enter(this: Fighter) {
                         this.sc.pause_all_except('hitanimation');
                     },
-                    next(this: Fighter, state: sstate) {
+                    next(this: Fighter, state: State) {
                         this.moveXNoSweep(state.current_tape_value);
                     },
                     end(this: Fighter) {

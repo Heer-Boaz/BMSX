@@ -5,7 +5,7 @@ import { ZCOORD_MAX } from './glview';
 import { SpriteObject } from './sprite';
 import type { IRegisterable, Identifier } from "./game";
 import { Registry } from './registry';
-import { StateMachineBlueprint, build_fsm, sstate } from './bfsm';
+import { StateMachineBlueprint, build_fsm, State } from './bfsm';
 
 export type ActionStateQuery = {
 	filter?: string[];
@@ -157,11 +157,11 @@ class SelectedPlayerIndexIcon extends SpriteObject {
 					repetitions: 5,
 					auto_rewind_tape_after_end: false,
 					ticks2move: 4,
-					next(this: SelectedPlayerIndexIcon, state: sstate) {
+					next(this: SelectedPlayerIndexIcon, state: State) {
 						this.colorize = state.current_tape_value ? { r: 1, g: 1, b: 1, a: .5 } : { r: 0, g: 1, b: 0, a: .75 };
 					},
 					end(this: SelectedPlayerIndexIcon) {
-						this.sc.dispatch('animation_end', this);
+						this.sc.do('animation_end', this);
 					},
 				},
 				cancelled: {
@@ -172,11 +172,11 @@ class SelectedPlayerIndexIcon extends SpriteObject {
 					enter: function (this: SelectedPlayerIndexIcon) {
 						this.colorize = { r: 1, g: 0, b: 0, a: .75 };
 					},
-					next(this: SelectedPlayerIndexIcon, state: sstate) {
+					next(this: SelectedPlayerIndexIcon, state: State) {
 						this.y -= state.current_tape_value;
 					},
 					end(this: SelectedPlayerIndexIcon) {
-						this.sc.dispatch('animation_end', this);
+						this.sc.do('animation_end', this);
 					},
 				},
 			},

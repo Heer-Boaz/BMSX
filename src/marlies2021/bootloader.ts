@@ -6,7 +6,7 @@ import { Input } from '../bmsx/input';
 import { TextWriter } from '../bmsx/textwriter';
 import { DrawImgFlags, paintSprite } from '../bmsx/view';
 import { GameMenu } from './gamemenu';
-import { build_fsm, sdef, sstate } from '../bmsx/bfsm';
+import { build_fsm, sdef, State } from '../bmsx/bfsm';
 import { Direction, new_area, new_vec2, vec2, new_vec2, randomInt, Game, BFont } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
 import { BaseModel, Space } from '../bmsx/basemodel';
@@ -121,11 +121,11 @@ class fles extends SpriteObject {
                                 BitmapId.fles1,
                             ],
                             ticks2move: 4,
-                            enter: (s: sstate, ik: fles): void => {
+                            enter: (s: State, ik: fles): void => {
                                 s.reset();
                                 ik.imgid = s.current;
                             },
-                            run: (s: sstate, ik: fles): void => {
+                            run: (s: State, ik: fles): void => {
                                 ++s.nudges;
                                 ik.setx(ik.pos.x + 4);
                                 if (_model.monster) {
@@ -138,10 +138,10 @@ class fles extends SpriteObject {
                                 //     _model.monster.collide(ik);
                                 // }
                             },
-                            next: (s: sstate, ik: fles): void => {
+                            next: (s: State, ik: fles): void => {
                                 ik.imgid = s.current;
                             },
-                            end: (s: sstate, ik: fles): void => {
+                            end: (s: State, ik: fles): void => {
                                 s.reset();
                             }
                         }),
@@ -191,14 +191,14 @@ class stoom extends SpriteObject {
                                 BitmapId.pluimx,
                             ],
                             ticks2move: 4,
-                            enter: (s: sstate, ik: stoom): void => {
+                            enter: (s: State, ik: stoom): void => {
                                 s.reset();
                                 ik.imgid = s.current;
                             },
-                            run: (s: sstate, ik: stoom): void => {
+                            run: (s: State, ik: stoom): void => {
                                 ++s.nudges;
                             },
-                            next: (s: sstate, ik: stoom): void => {
+                            next: (s: State, ik: stoom): void => {
                                 ik.imgid = s.current;
                             },
                             end: (_, ik: stoom): void => {
@@ -254,7 +254,7 @@ class speler extends SpriteObject {
 
     @build_fsm()
     public static bouw(classname: string): cmdef {
-        let shared_switch_run = (_: sstate, ik: speler) => {
+        let shared_switch_run = (_: State, ik: speler) => {
             // if (Input.KC_BTN1 || Input.KC_SPACE) ik.zetBoelInDeHens();
             let switchToOld = (): void => {
                 ik.state.to('walk');
@@ -271,10 +271,10 @@ class speler extends SpriteObject {
 
         let down_up_state_def: Partial<sdef> = {
             ticks2move: 8,
-            enter: (s: sstate, ik: speler): void => (s.reset(), ik.imgid = s.current),
-            run: (s: sstate, ik: speler): void => { ++s.nudges; },
-            end: (s: sstate, ik: speler): void => s.reset(),
-            next: (s: sstate, ik: speler): void => ik.imgid = s.current,
+            enter: (s: State, ik: speler): void => (s.reset(), ik.imgid = s.current),
+            run: (s: State, ik: speler): void => { ++s.nudges; },
+            end: (s: State, ik: speler): void => s.reset(),
+            next: (s: State, ik: speler): void => ik.imgid = s.current,
         };
 
         return new cmdef(classname, {
@@ -283,14 +283,14 @@ class speler extends SpriteObject {
                     states: {
                         relax: new sdef('relax', {
                             ticks2move: 4,
-                            run: (s: sstate, ik: speler): void => {
+                            run: (s: State, ik: speler): void => {
                                 ++s.nudges;
                             },
                             enter: (_, ik: speler) => {
                                 ik.hittable = false;
                                 ik.imgid = BitmapId.p1;
                             },
-                            next: (s: sstate, ik: speler): void => {
+                            next: (s: State, ik: speler): void => {
                                 s.reset();
                                 --_model.stressLevel;
                                 if (_model.stressLevel <= 0) {
@@ -303,47 +303,47 @@ class speler extends SpriteObject {
                         }),
                         spot: new sdef('spot', {
                             ticks2move: 500,
-                            run: (s: sstate, ik: speler): void => {
+                            run: (s: State, ik: speler): void => {
                                 ++s.nudges;
                             },
                             enter: (_, ik: speler) => ik.imgid = BitmapId.p2,
-                            next: (s: sstate, ik: speler): void => {
+                            next: (s: State, ik: speler): void => {
                                 s.reset();
                                 ik.state.to('spot2');
                             }
                         }),
                         spot2: new sdef('spot2', {
                             ticks2move: 500,
-                            run: (s: sstate, ik: speler): void => {
+                            run: (s: State, ik: speler): void => {
                                 ++s.nudges;
                             },
                             enter: (_, ik: speler) => ik.imgid = BitmapId.p2,
-                            next: (s: sstate, ik: speler): void => {
+                            next: (s: State, ik: speler): void => {
                                 s.reset();
                                 ik.state.to('boos');
                             }
                         }),
                         naarrelax: new sdef('naarrelax', {
                             ticks2move: 100,
-                            run: (s: sstate, ik: speler): void => {
+                            run: (s: State, ik: speler): void => {
                                 ++s.nudges;
                             },
                             enter: (_, ik: speler) => ik.imgid = BitmapId.p2,
-                            next: (s: sstate, ik: speler): void => {
+                            next: (s: State, ik: speler): void => {
                                 s.reset();
                                 ik.state.to('relax2');
                             }
                         }),
                         relax2: new sdef('relax2', {
                             ticks2move: 4,
-                            run: (s: sstate, ik: speler): void => {
+                            run: (s: State, ik: speler): void => {
                                 ++s.nudges;
                             },
                             enter: (_, ik: speler) => {
                                 ik.hittable = false;
                                 ik.imgid = BitmapId.p1;
                             },
-                            next: (s: sstate, ik: speler): void => {
+                            next: (s: State, ik: speler): void => {
                                 s.reset();
                                 --_model.stressLevel;
                                 if (_model.stressLevel <= 0) {
@@ -354,23 +354,23 @@ class speler extends SpriteObject {
                         }),
                         waitforit: new sdef('waitforit', {
                             ticks2move: 100,
-                            run: (s: sstate, ik: speler): void => {
+                            run: (s: State, ik: speler): void => {
                                 ++s.nudges;
                             },
                             enter: (_, ik: speler) => {
                             },
-                            next: (s: sstate, ik: speler): void => {
+                            next: (s: State, ik: speler): void => {
                                 s.reset();
                                 _model.state.to('hoera!');
                             }
                         }),
                         boos: new sdef('boos', {
                             ticks2move: 40,
-                            run: (s: sstate, ik: speler): void => {
+                            run: (s: State, ik: speler): void => {
                                 ++s.nudges;
                             },
                             enter: (_, ik: speler) => ik.imgid = BitmapId.p3,
-                            next: (s: sstate, ik: speler): void => {
+                            next: (s: State, ik: speler): void => {
                                 s.reset();
                                 ik.state.to('fight');
                             }
@@ -418,7 +418,7 @@ class speler extends SpriteObject {
                         win: new sdef('win', {
                             ticks2move: 300,
                             enter: (_, ik: speler) => ik.state.to('win', 'anistate'),
-                            run: (s: sstate) => (++s.nudges, _model.objects.filter(o => (<any>o).isEng).forEach(o => o.disposeFlag = true)),
+                            run: (s: State) => (++s.nudges, _model.objects.filter(o => (<any>o).isEng).forEach(o => o.disposeFlag = true)),
                             next: () => _model.state.to('hoera!')
                         }),
                     }
@@ -427,10 +427,10 @@ class speler extends SpriteObject {
                     states: {
                         floating: new sdef('floating', {
                             ticks2move: 50,
-                            run: (s: sstate, ik: speler): void => {
+                            run: (s: State, ik: speler): void => {
                                 ++s.nudges;
                             },
-                            next: (s: sstate, ik: speler): void => {
+                            next: (s: State, ik: speler): void => {
                                 ik.floatbit && --ik.pos.y;
                                 (!ik.floatbit) && ++ik.pos.y;
                                 ik.floatbit = !ik.floatbit;
@@ -458,8 +458,8 @@ class speler extends SpriteObject {
                             ],
                             ticks2move: 4,
 
-                            run: (s: sstate): void => { ++s.nudges; },
-                            next: (s: sstate, ik: speler): void => {
+                            run: (s: State): void => { ++s.nudges; },
+                            next: (s: State, ik: speler): void => {
                                 ik.imgid = s.current;
                             },
                             end: (_, ik: speler): void => {
@@ -524,10 +524,10 @@ class yakuzi extends SpriteObject {
                     states: {
                         wees_een_yakuzi: new sdef('wees_een_yakuzi', {
                             ticks2move: 50,
-                            enter(s: sstate) {
+                            enter(s: State) {
                                 s.reset();
                             },
-                            run(s: sstate) {
+                            run(s: State) {
                                 ++s.nudges;
                             },
                             next() {

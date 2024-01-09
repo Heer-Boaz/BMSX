@@ -1,4 +1,4 @@
-import { StateDefinitions, StateMachineController, sstate } from './bfsm';
+import { StateDefinitions, StateMachineController, State } from './bfsm';
 import { area2size, new_vec2, translate_vec2, trunc_vec3, div_vec2 } from './game';
 import { PositionUpdateAxisComponent } from './collisioncomponents';
 import { Component, ComponentUpdateParams, componenttags_postprocessing, componenttags_preprocessing } from './component';
@@ -612,7 +612,7 @@ function visualizeStateMachine(dialogElement: HTMLElement, container: HTMLElemen
 	let machineElements = new Map<string, HTMLElement>();
 
 	// Recursive function to visualize a state machine
-	function visualizeMachine(machine: sstate, machineName: string, parentElement: HTMLElement, isActive: boolean, path: string): void {
+	function visualizeMachine(machine: State, machineName: string, parentElement: HTMLElement, isActive: boolean, path: string): void {
 		let table = addContent(parentElement, 'table', null);
 
 		// Add a row for the machine name
@@ -672,7 +672,7 @@ function visualizeStateMachine(dialogElement: HTMLElement, container: HTMLElemen
 // Function to set the CSS classes for highlighting the current machines/states
 function highlightCurrentState(stateElements: Map<string, HTMLElement>, machineElements: Map<string, HTMLElement>, bfsmController: StateMachineController): void {
 	// Recursive function to update the classes of a state machine
-	function updateMachineClasses(machine: sstate, machineName: string, isActive: boolean, path: string): void {
+	function updateMachineClasses(machine: State, machineName: string, isActive: boolean, path: string): void {
 		// Remove the 'active-machine-or-state' and 'parallel-machine' classes from the machine element
 		let machineElement = machineElements.get(machineName);
 		if (machineElement) {
