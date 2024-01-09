@@ -272,7 +272,7 @@
 
 .knop.red.los {
 	stroke: #FF4E00;
-	animation: button-red-los 1s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28)
+	animation: button-red-los .5s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28)
 }
 
 .knop.blue:not(.los) {
@@ -281,7 +281,7 @@
 
 .knop.blue.los {
 	stroke: #003791;
-	animation: button-blue-los 1s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28)
+	animation: button-blue-los .5s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28)
 }
 
 .knop.green:not(.los) {
@@ -290,7 +290,7 @@
 
 .knop.green.los {
 	stroke: #008740;
-	animation: button-green-los 1s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28)
+	animation: button-green-los .5s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28)
 }
 
 .knop.pink:not(.los) {
@@ -299,7 +299,7 @@
 
 .knop.pink.los {
 	stroke: #FF80C0;
-	animation: button-pink-los 1s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28)
+	animation: button-pink-los .5s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28)
 }
 
 .knop.orange:not(.los) {
@@ -308,7 +308,7 @@
 
 .knop.orange.los {
     stroke: #FFA500;
-    animation: button-orange-los 1s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28);
+    animation: button-orange-los .5s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28);
 }
 
 .knop.purple:not(.los) {
@@ -317,7 +317,7 @@
 
 .knop.purple.los {
     stroke: #800080;
-    animation: button-purple-los 1s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28);
+    animation: button-purple-los .5s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28);
 }
 
 .knop.light-blue:not(.los) {
@@ -326,7 +326,7 @@
 
 .knop.light-blue.los {
     stroke: #00BFFF;
-    animation: button-light-blue-los 1s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28);
+    animation: button-light-blue-los .5s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28);
 }
 
 .knop.yellow:not(.los) {
@@ -335,12 +335,11 @@
 
 .knop.yellow.los {
     stroke: #FFFF00;
-    animation: button-yellow-los 1s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28);
+    animation: button-yellow-los .5s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28);
 }
 
 .knop.druk {
 	z-index: 2001;
-	/* transform: scale(.75 50% 50%); */
 }
 
 @keyframes button-red-los {
