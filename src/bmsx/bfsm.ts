@@ -1513,7 +1513,7 @@ export class StateDefinition {
 
 	/**
 	 * Specifies whether the tapehead should automatically rewind to index 0 when it reaches the end of the tape.
-	 * Defaults to true.
+	 *	 Defaults to true.
 	 * If set to true, the tapehead will be set to index 0 when it would go out of bounds.
 	 * If set to false, the tapehead will remain at the end of the tape.
 	 */
