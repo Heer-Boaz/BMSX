@@ -1,4 +1,4 @@
-import { BTStatus, BTVisualizer, BehaviorTreeDefinition, Blackboard, SM, SpriteObject, StateMachineBlueprint, Vector, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, insavegame, sstate, subscribesToSelfScopedEvent } from '../bmsx/bmsx';
+import { BTStatus, BTVisualizer, BehaviorTreeDefinition, Blackboard, SM, SpriteObject, StateMachineBlueprint, Vector, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, insavegame, State, subscribesToSelfScopedEvent } from '../bmsx/bmsx';
 import { JumpingWhileLeavingScreenComponent, Eila } from "./eila";
 import { Fighter } from "./fighter";
 import { gamemodel } from "./gamemodel";
@@ -50,7 +50,7 @@ export class Sinterklaas extends Fighter {
                         }
                         break;
                     case 'flyingkick':
-                        this.sc.dispatch('flyingkick_end', this.id);
+                        this.sc.do('flyingkick_end', this.id);
                         break;
                     case 'duckkick':
                         if (!this.sc.is('stoerheidsdans')) {
@@ -72,128 +72,112 @@ export class Sinterklaas extends Fighter {
 
     @build_fsm('sint_animation')
     public static buildAnimationFsm(): StateMachineBlueprint {
-        const statemachine = 'sint_animation';
         return {
             parallel: true,
             on: {
                 i_hit_face: {
-                    do(state: sstate) {
+                    do(state: State) {
                         state.current.setTicksNoSideEffect(state.current.definition.ticks2move - 1);
                     }
                 }
             },
             states: {
                 _idle: {
-                    run: () => { },
                     enter(this: SpriteObject) {
                         this.imgid = BitmapId.sint_idle;
                     },
                 },
                 walk: {
-                    run(this: SpriteObject) { },
-                    enter(this: SpriteObject, state: sstate) {
-                        state.resetSubmachine();
+                    auto_reset: 'subtree', // Reset the submachine when the parent state is entered again, but do not reset the ticks2move counter of this state (the parent state)
+                    enter(this: SpriteObject) {
                         this.imgid = BitmapId.sint_walk;
                     },
                     states: {
                         _walk1: {
                             ticks2move: 8,
-                            enter(this: SpriteObject, state: sstate) {
+                            enter(this: SpriteObject) {
                                 this.imgid = BitmapId.sint_walk;
-                                state.reset();
                             },
-                            next(this: SpriteObject) {
-                                this.sc.switch(`${statemachine}.walk.walk2`);
-                            }
+                            next: () => 'walk2',
                         },
                         walk2: {
                             ticks2move: 8,
-                            enter(this: SpriteObject, state: sstate) {
+                            enter(this: SpriteObject) {
                                 this.imgid = BitmapId.sint_idle;
-                                state.reset();
                             },
-                            next(this: SpriteObject) {
-                                this.sc.switch(`${statemachine}.walk.walk1`);
-                            }
+                            next: () => 'walk1',
                         },
                     }
                 },
                 highkick: {
                     ticks2move: Sinterklaas.ATTACK_DURATION,
-                    enter(this: SpriteObject, state: sstate, hit: boolean) {
-                        state.reset();
+                    enter(this: SpriteObject, state: State, hit: boolean) {
                         SM.play(AudioId.kick);
                         this.imgid = BitmapId.sint_highkick;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: SpriteObject) {
-                        $.event_emitter.emit('animationEnd', this, 'highkick');
-                        this.sc.switch(`${statemachine}.idle`);
+                        $.emit('animationEnd', this, 'highkick');
+                        return 'idle';
                     }
                 },
                 lowkick: {
                     ticks2move: Sinterklaas.ATTACK_DURATION,
-                    enter(this: SpriteObject, state: sstate, hit: boolean) {
-                        state.reset();
+                    enter(this: SpriteObject, state: State, hit: boolean) {
                         SM.play(AudioId.kick);
                         this.imgid = BitmapId.sint_lowkick;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: SpriteObject) {
-                        $.event_emitter.emit('animationEnd', this, 'lowkick');
-                        this.sc.switch('sint_animation.idle');
+                        $.emit('animationEnd', this, 'lowkick');
+                        return 'idle';
                     }
                 },
                 punch: {
                     ticks2move: Sinterklaas.ATTACK_DURATION,
-                    enter(this: SpriteObject, state: sstate, hit: boolean) {
-                        state.reset();
+                    enter(this: SpriteObject, state: State, hit: boolean) {
                         SM.play(AudioId.punch);
                         this.imgid = BitmapId.sint_punch;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: SpriteObject) {
-                        $.event_emitter.emit('animationEnd', this, 'punch');
-                        this.sc.switch('sint_animation.idle');
+                        $.emit('animationEnd', this, 'punch');
+                        return 'idle';
                     }
                 },
                 duckkick: {
                     ticks2move: Sinterklaas.ATTACK_DURATION,
-                    enter(this: SpriteObject, state: sstate, hit: boolean) {
-                        state.reset();
+                    enter(this: SpriteObject, state: State, hit: boolean) {
                         SM.play(AudioId.kick);
                         this.imgid = BitmapId.sint_flyingkick;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: SpriteObject) {
-                        this.sc.switch('sint_animation.duck');
-                        $.event_emitter.emit('animationEnd', this, 'duckkick');
+                        $.emit('animationEnd', this, 'duckkick');
+                        return 'duck';
                     }
                 },
                 flyingkick: {
                     ticks2move: Sinterklaas.ATTACK_DURATION,
-                    enter(this: SpriteObject, state: sstate, hit: boolean) {
-                        state.reset();
+                    enter(this: SpriteObject, state: State, hit: boolean) {
                         SM.play(AudioId.kick);
                         this.imgid = BitmapId.sint_flyingkick;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: SpriteObject) {
-                        this.sc.switch('sint_animation.jump');
-                        $.event_emitter.emit('animationEnd', this, 'flyingkick');
+                        $.emit('animationEnd', this, 'flyingkick');
+                        return 'jump';
                     }
                 },
                 duck: {
-                    run: () => { },
                     enter(this: SpriteObject) { this.imgid = BitmapId.sint_duckorjump; },
                 },
                 jump: {
-                    run: () => { },
                     enter(this: SpriteObject) { this.imgid = BitmapId.sint_duckorjump; },
                 },
                 humiliated: {
                     ticks2move: 50,
-                    enter(this: SpriteObject, state: sstate) {
+                    enter(this: SpriteObject, state: State) {
                         state.reset();
                         SM.play(AudioId.stuk);
                         this.imgid = BitmapId.sint_humiliated_1;
@@ -203,7 +187,7 @@ export class Sinterklaas extends Fighter {
                             ticks2move: 50,
                             auto_tick: true,
                             enter(this: SpriteObject) { this.imgid = BitmapId.sint_humiliated_1; },
-                            next(this: SpriteObject, state: sstate) { state.transition('animation'); }
+                            next: () => 'animation',
                         },
                         animation: {
                             ticks2move: 10,
@@ -211,15 +195,8 @@ export class Sinterklaas extends Fighter {
                             repetitions: 8,
                             auto_rewind_tape_after_end: true,
                             auto_tick: true,
-                            enter(this: SpriteObject, state: sstate) {
-                                state.reset();
-                            },
-                            next(this: SpriteObject, state: sstate) {
-                                state.to(`${state.current_tape_value}`);
-                            },
-                            end(this: SpriteObject, state: sstate) {
-                                state.transition('waitEnd');
-                            },
+                            next: (state: State) => `#this.${state.current_tape_value}`,
+                            end: () => 'waitEnd',
                             states: {
                                 _humiliated1: {
                                     enter(this: SpriteObject) { this.imgid = BitmapId.sint_humiliated_1; },
@@ -234,11 +211,10 @@ export class Sinterklaas extends Fighter {
                             auto_tick: true,
                             enter(this: SpriteObject) { this.imgid = BitmapId.sint_humiliated_1; },
                             next(this: SpriteObject) {
-                                $.event_emitter.emit('humiliated_animation_end', this, 'sinterklaas');
+                                $.emit('humiliated_animation_end', this, 'sinterklaas');
                             }
                         },
                     },
-                    tape: ['wait', 'animation', 'waitEnd'],
                 },
             }
         };
@@ -337,59 +313,59 @@ export class Sinterklaas extends Fighter {
         function punch(this: Fighter): BTStatus {
             if (isAttacking.apply(this)) return 'RUNNING';
             // if (isBusy.apply(this)) return 'FAILED';
-            this.sc.dispatch('go_punch', this);
+            this.sc.do('go_punch', this);
             return 'SUCCESS';
         }
 
         function highkick(this: Fighter): BTStatus {
             if (isAttacking.apply(this)) return 'RUNNING';
             // if (isBusy.apply(this)) return 'FAILED';
-            this.sc.dispatch('go_highkick', this);
+            this.sc.do('go_highkick', this);
             return 'SUCCESS';
         }
 
         function duckkick(this: Fighter): BTStatus {
             if (isAttacking.apply(this)) return 'RUNNING';
             // if (isBusy.apply(this)) return 'FAILED';
-            this.sc.dispatch('go_duckkick', this);
+            this.sc.do('go_duckkick', this);
             return 'SUCCESS';
         }
 
         // @ts-ignore
         function duck(this: Fighter): BTStatus {
-            this.sc.dispatch('go_duck', this);
+            this.sc.do('go_duck', this);
             return 'SUCCESS';
         }
 
         function jump(this: Fighter): BTStatus {
             if (this.isJumping) return 'RUNNING';
-            this.sc.dispatch('go_jump', this, this.facing);
+            this.sc.do('go_jump', this, this.facing);
             return 'SUCCESS';
         }
 
         function straightJump(this: Fighter): BTStatus {
             if (this.isJumping) return 'RUNNING';
-            this.sc.dispatch('go_jump', this, undefined);
+            this.sc.do('go_jump', this, undefined);
             return 'SUCCESS';
         }
 
         function jumpkick(this: Fighter): BTStatus {
             if (isAttacking.apply(this)) return 'RUNNING';
-            this.sc.dispatch('go_flyingkick', this, this.facing);
+            this.sc.do('go_flyingkick', this, this.facing);
             return 'SUCCESS';
         }
 
         // @ts-ignore
         function idle(this: Fighter): BTStatus {
             // Logic for idle behavior
-            this.sc.dispatch('go_idle', this);
+            this.sc.do('go_idle', this);
             return 'SUCCESS';
         }
 
         // @ts-ignore
         function walk(this: Fighter, blackboard: Blackboard): BTStatus {
             // Logic for walk behavior
-            this.sc.dispatch('go_walk', this, this.facing);
+            this.sc.do('go_walk', this, this.facing);
             this.x += this.facing === 'left' ? -Fighter.SPEED : Fighter.SPEED;
             blackboard.set('walking', true);
             return 'SUCCESS';

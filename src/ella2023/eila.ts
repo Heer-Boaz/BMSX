@@ -1,4 +1,4 @@
-import { Direction, Identifier, SM, ScreenBoundaryComponent, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, insavegame, sstate, subscribesToParentScopedEvent, subscribesToSelfScopedEvent } from '../bmsx/bmsx';
+import { Direction, Identifier, SM, ScreenBoundaryComponent, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, insavegame, State, subscribesToParentScopedEvent, subscribesToSelfScopedEvent } from '../bmsx/bmsx';
 import { AudioId, BitmapId } from './resourceids';
 import { Fighter } from './fighter';
 import { gamemodel } from './gamemodel';
@@ -143,16 +143,16 @@ export class Eila extends Fighter {
                         this.fighting = false;
                         this.resetVerticalPosition();
                     },
-                    run(this: Fighter, state: sstate) {
+                    run(this: Fighter, state: State) {
                         // Lelijk
-                        if (this.sc.machines[statemachine].is(`idle`)) {
+                        if (this.sc.machines[statemachine].is(`idle`) || this.sc.machines[statemachine].is(`duck`)) {
                             ++state.ticks;
                         }
                     },
-                    next(this: Fighter, state: sstate, tape_rewound: boolean) {
+                    next(this: Fighter, state: State, tape_rewound: boolean) {
                         if (tape_rewound) return;
-                        this.sc.to(`${statemachine}.${state.current_tape_value}`);
                         this.facing = (this.facing === 'left' ? 'right' : 'left');
+                        this.sc.to(`${statemachine}.${state.current_tape_value}`);
                     },
                     end(this: Fighter) {
                         this.sc.to('nagenieten');
@@ -227,7 +227,6 @@ export class Eila extends Fighter {
                     },
                     exit(this: Fighter) {
                         attackExit.apply(this);
-                        this.ducking = false;
                     },
                 },
                 duck: {
@@ -241,12 +240,12 @@ export class Eila extends Fighter {
 
                         if (actionMap.get('lowkick')) {
                             $.consumeAction(this.playerIndex, 'lowkick');
-                            this.sc.dispatch('go_duckkick', this);
+                            this.sc.do('go_duckkick', this);
                             return;
                         }
                         // Search whether the `duck` action was NOT pressed
                         else if (!actionMap.get('duck')) {
-                            this.sc.dispatch('go_idle', this);
+                            this.sc.do('go_idle', this);
                             return;
                         }
                         else if (actionMap.get('left')) {
@@ -268,7 +267,7 @@ export class Eila extends Fighter {
                 },
                 jump: {
                     auto_reset: 'tree',
-                    enter(this: Fighter, state: sstate, directional: boolean = false) {
+                    enter(this: Fighter, state: State, directional: boolean = false) {
                         state.to('#this.jump_up', directional);
                         this.sc.to(statemachine + '.jump');
                         this.getComponent(JumpingWhileLeavingScreenComponent).enabled = true;
@@ -285,17 +284,17 @@ export class Eila extends Fighter {
                         if (kickActions.length > 0) {
                             // Consume all kick actions
                             kickActions.forEach(action => $.input.getPlayerInput(this.playerIndex).consumeAction(action));
-                            this.sc.dispatch('go_flyingkick', this.id);
+                            this.sc.do('go_flyingkick', this.id);
                         }
 
                     },
                     states: {
                         _jump_up: {
                             ticks2move: Fighter.JUMP_DURATION / 2,
-                            enter(this: Fighter, state: sstate, directional: boolean = false) {
+                            enter(this: Fighter, state: State, directional: boolean = false) {
                                 state.data.directional = directional;
                             },
-                            run(this: Fighter, state: sstate) {
+                            run(this: Fighter, state: State) {
                                 this.y -= Fighter.JUMP_SPEED;
                                 if (state.data.directional) {
                                     if (this.facing === 'left') {
@@ -305,16 +304,16 @@ export class Eila extends Fighter {
                                     }
                                 }
                             },
-                            next(state: sstate) {
-                                state.transition('jump_down', state.data.directional);
+                            next(state: State) {
+                                state.to('jump_down', state.data.directional);
                             },
                         },
                         jump_down: {
                             ticks2move: Fighter.JUMP_DURATION / 2,
-                            enter(this: Fighter, state: sstate, directional: boolean = false) {
+                            enter(this: Fighter, state: State, directional: boolean = false) {
                                 state.data.directional = directional;
                             },
-                            run(this: Fighter, state: sstate) {
+                            run(this: Fighter, state: State) {
                                 this.y += Fighter.JUMP_SPEED;
 
                                 if (state.data.directional) {
@@ -325,7 +324,7 @@ export class Eila extends Fighter {
                                     }
                                 }
                             },
-                            next(this: Fighter, _state: sstate) {
+                            next(this: Fighter, _state: State) {
                                 return '#root.idle';
                             },
                         },
@@ -344,7 +343,7 @@ export class Eila extends Fighter {
                                     on: {
                                         flyingkick_end: 'normal',
                                     },
-                                    enter(this: Fighter, _state: sstate) {
+                                    enter(this: Fighter, _state: State) {
                                         this.sc.machines[statemachine].to('flyingkick');
                                         this.doAttackFlow('flyingkick', $.modelAs<gamemodel>().theOtherFighter(this));
                                         this.attacking = true;
@@ -376,7 +375,7 @@ export class Eila extends Fighter {
                         }
                         break;
                     case 'flyingkick':
-                        this.sc.dispatch('flyingkick_end', this.id);
+                        this.sc.do('flyingkick_end', this.id);
                         break;
                     case 'duckkick':
                         if (!this.sc.is('stoerheidsdans')) {
@@ -402,7 +401,7 @@ export class Eila extends Fighter {
             parallel: true,
             on: {
                 $i_was_hit: {
-                    do(state: sstate) {
+                    do(state: State) {
                         state.current.setTicksNoSideEffect(state.current.definition.ticks2move - 1);
                     }
                 }
@@ -426,55 +425,51 @@ export class Eila extends Fighter {
                             enter(this: Eila) {
                                 this.imgid = BitmapId.eila_walk;
                             },
-                            next(this: Eila) {
-                                this.sc.switch('player_animation.walk.walk2');
-                            }
+                            next: () => 'walk2',
                         },
                         walk2: {
                             ticks2move: 8,
                             enter(this: Eila) {
                                 this.imgid = BitmapId.eila_idle;
                             },
-                            next(this: Eila) {
-                                this.sc.switch('player_animation.walk.walk1');
-                            }
+                            next: () => 'walk1',
                         },
                     }
                 },
                 highkick: {
                     ticks2move: Eila.ATTACK_DURATION,
-                    enter(this: Eila, state: sstate, hit: boolean) {
+                    enter(this: Eila, state: State, hit: boolean) {
                         this.imgid = BitmapId.eila_highkick;
                         SM.play(AudioId.kick);
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Eila) {
-                        $.event_emitter.emit('animationEnd', this, 'highkick');
-                        this.sc.switch('player_animation.idle');
+                        $.emit('animationEnd', this, 'highkick');
+                        return 'idle';
                     }
                 },
                 lowkick: {
                     ticks2move: Eila.ATTACK_DURATION,
-                    enter(this: Eila, state: sstate, hit: boolean) {
+                    enter(this: Eila, state: State, hit: boolean) {
                         SM.play(AudioId.kick);
                         this.imgid = BitmapId.eila_lowkick;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Eila) {
-                        $.event_emitter.emit('animationEnd', this, 'lowkick');
-                        this.sc.switch('player_animation.idle');
+                        $.emit('animationEnd', this, 'lowkick');
+                        return 'idle';
                     }
                 },
                 punch: {
                     ticks2move: Eila.ATTACK_DURATION,
-                    enter(this: Eila, state: sstate, hit: boolean) {
+                    enter(this: Eila, state: State, hit: boolean) {
                         SM.play(AudioId.punch);
                         this.imgid = BitmapId.eila_punch;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Eila) {
-                        $.event_emitter.emit('animationEnd', this, 'punch');
-                        this.sc.switch('player_animation.idle');
+                        $.emit('animationEnd', this, 'punch');
+                        return 'idle';
                     }
                 },
                 duckkick: {
@@ -484,20 +479,20 @@ export class Eila extends Fighter {
                         this.imgid = BitmapId.eila_duckkick;
                     },
                     next(this: Eila) {
-                        this.sc.switch('player_animation.duck');
-                        $.event_emitter.emit('animationEnd', this, 'duckkick');
+                        $.emit('animationEnd', this, 'duckkick');
+                        return 'duck';
                     }
                 },
                 flyingkick: {
                     ticks2move: Eila.ATTACK_DURATION,
-                    enter(this: Eila, state: sstate, hit: boolean) {
+                    enter(this: Eila, state: State, hit: boolean) {
                         SM.play(AudioId.kick);
                         this.imgid = BitmapId.eila_flyingkick;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Eila) {
-                        this.sc.switch('player_animation.jump');
-                        $.event_emitter.emit('animationEnd', this, 'flyingkick');
+                        $.emit('animationEnd', this, 'flyingkick');
+                        return 'jump';
                     }
                 },
                 duck: {
@@ -515,7 +510,7 @@ export class Eila extends Fighter {
                         this.imgid = BitmapId.eila_humiliated;
                     },
                     next(this: Eila) {
-                        $.event_emitter.emit('humiliated_animation_end', this, 'eila');
+                        $.emit('humiliated_animation_end', this, 'eila');
                     }
                 },
             }
