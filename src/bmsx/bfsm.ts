@@ -531,7 +531,7 @@ export class StateMachineController {
 		if (!machine.parallel) { // If the machine is not running in parallel, set it as the current machine
 			this.current_machine_id = machineid;
 		}
-		machine.to_boaz(stateids, ...args);
+		machine.to_path(stateids, ...args);
 	}
 
 	/**
@@ -558,7 +558,7 @@ export class StateMachineController {
 		const stateid = stateids.length > 0 ? stateids : machineid;
 
 		// Only switch the state in the specified machine, without changing the current machine
-		machine.switch_boaz(stateid, ...args);
+		machine.switch_path(stateid, ...args);
 	}
 
 	public do(event_name: string, emitter: Identifier | IIdentifiable, ...args: any[]): void {
@@ -861,8 +861,6 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	@onload
 	public onLoadSetup(): void {
 		$.registry.register(this);
-		// this.target.on('destroy', this.dispose, this.target.id);
-
 	}
 
 	public start(): void {
@@ -965,7 +963,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 * @param path - The ID of the state to transition to.
 	 * @throws Error if the state with the given ID does not exist.
 	 */
-	public to_boaz(path: string | string[], ...args: any[]): void {
+	public to_path(path: string | string[], ...args: any[]): void {
 		const [currentPart, restParts, currentContext] = this.handlePath(path);
 
 		if (this.def_id !== currentPart || restParts.length === 0) {
@@ -975,7 +973,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		}
 
 		if (restParts.length > 0) {
-			currentContext.to_boaz(restParts, ...args);
+			currentContext.to_path(restParts, ...args);
 		}
 	}
 
@@ -988,11 +986,11 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 * @param path - The ID of the state to switch to.
 	 * @returns void
 	 */
-	public switch_boaz(path: string | string[], ...args: any[]): void {
+	public switch_path(path: string | string[], ...args: any[]): void {
 		const [currentPart, restParts, currentContext] = this.handlePath(path);
 
 		if (restParts.length > 0) {
-			currentContext.switch_boaz(restParts, ...args);
+			currentContext.switch_path(restParts, ...args);
 		} else if (this.def_id !== currentPart) {
 			this.transitionToState(currentPart, ...args);
 		}
@@ -1018,7 +1016,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 			// Remove the '#this.' prefix and continue to the next state from the substate
 			const restParts = state_id.slice('#this.'.length);
 			// If there are more parts, switch to the state in the current state machine
-			this.to_boaz(restParts, ...args);
+			this.to_path(restParts, ...args);
 		}
 		// else if (state_id.startsWith('#parent.')) {
 		// 	// Remove the '#parent.' prefix and continue to the next state from the parent
@@ -1037,7 +1035,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 				this.parent.to_boaz(state_id, ...args); // Switch to the state in the parent state machine
 			}
 			else { // If there is no parent, this is the root state machine, so we can just switch to the state in the current state machine
-				this.to_boaz(state_id, ...args); // Switch to the state in the current state machine
+				this.to_path(state_id, ...args); // Switch to the state in the current state machine
 			}
 		}
 	}
@@ -1062,7 +1060,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 			// Remove the '#this.' prefix and continue to the next state from the substate
 			const restParts = state_id.slice('#this.'.length);
 			// If there are more parts, switch to the state in the current state machine
-			this.switch_boaz(restParts, ...args);
+			this.switch_path(restParts, ...args);
 		}
 		else if (state_id.startsWith('#parent.')) {
 			// Remove the '#parent.' prefix and continue to the next state from the parent
@@ -1136,9 +1134,10 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 
 		if (stateDef.auto_reset) {
 			switch (stateDef.auto_reset) {
-				case 'state': this.current.reset(false); break; //
-				case 'tree': this.current.reset(true); break;
-				case 'subtree': this.current.resetSubmachine(true); break;
+				case 'state': this.current.reset(false); break; // Reset the state machine of the current state (but not its substate machines)
+				case 'tree': this.current.reset(true); break; // Reset the state machine of the current state and all its substate machines
+				case 'subtree': this.current.resetSubmachine(true); break; // Reset the substate machine of the current state
+				case 'none': break; // Do nothing (i.e., don't reset any state machines)
 			}
 		}
 		const next_state = stateDef?.enter?.call(this.target, this.current, ...args);
@@ -1531,7 +1530,7 @@ export class StateDefinition {
 	 * Defaults to true.
 	 * Note that this only applies to the state itself, not its substates.
 	 */
-	public auto_reset: 'state' | 'tree' | 'subtree'; // Automagically reset the state when entered (and optionally also its substates) (defaults to 'state')
+	public auto_reset: 'state' | 'tree' | 'subtree' | 'none'; // Automagically reset the state when entered (and optionally also its substates) (defaults to 'state')
 
 	/**
 	 * Indicates whether the tapehead should automatically rewind to index 0 when it would go out of bounds.
