@@ -921,7 +921,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		}
 	}
 
-	private handlePath(path: string | string[]): [string, string[], State] {
+	private handle_path(path: string | string[]): [string, string[], State] {
 		let parts: string[];
 		if (typeof path === 'string') {
 			parts = path.split('.');
@@ -964,7 +964,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 * @throws Error if the state with the given ID does not exist.
 	 */
 	public to_path(path: string | string[], ...args: any[]): void {
-		const [currentPart, restParts, currentContext] = this.handlePath(path);
+		const [currentPart, restParts, currentContext] = this.handle_path(path);
 
 		if (this.def_id !== currentPart || restParts.length === 0) {
 			if (!currentContext.parallel) { // If the state is not running in parallel, set it as the current state
@@ -987,7 +987,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 * @returns void
 	 */
 	public switch_path(path: string | string[], ...args: any[]): void {
-		const [currentPart, restParts, currentContext] = this.handlePath(path);
+		const [currentPart, restParts, currentContext] = this.handle_path(path);
 
 		if (restParts.length > 0) {
 			currentContext.switch_path(restParts, ...args);
@@ -1018,21 +1018,15 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 			// If there are more parts, switch to the state in the current state machine
 			this.to_path(restParts, ...args);
 		}
-		// else if (state_id.startsWith('#parent.')) {
-		// 	// Remove the '#parent.' prefix and continue to the next state from the parent
-		// 	const restParts = state_id.slice('#parent.'.length);
-		// 	// If there are more parts, switch to the state in the parent state machine
-		// 	this.parent.to_boaz(restParts, ...args);
-		// }
 		else if (state_id.startsWith('#root.')) { // If the state is in the root, switch to the state in the root state machine
 			// Remove the '#root.' prefix and continue to the next state from the root
 			const restParts = state_id.slice('#root.'.length);
 			// If there are more parts, switch to the state in the root state machine
-			this.root.to_boaz(restParts, ...args);
+			this.root.to_path(restParts, ...args);
 		}
 		else { // If the state is not local, check if it is a state in the parent state machine or a state in the root state machine hierarchy
 			if (this.parent_id) { // If there is a parent, switch to the state in the parent state machine
-				this.parent.to_boaz(state_id, ...args); // Switch to the state in the parent state machine
+				this.parent.to_path(state_id, ...args); // Switch to the state in the parent state machine
 			}
 			else { // If there is no parent, this is the root state machine, so we can just switch to the state in the current state machine
 				this.to_path(state_id, ...args); // Switch to the state in the current state machine
@@ -1066,16 +1060,16 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 			// Remove the '#parent.' prefix and continue to the next state from the parent
 			const restParts = state_id.slice('#parent.'.length);
 			// If there are more parts, switch to the state in the parent state machine
-			this.parent.switch_boaz(restParts, ...args);
+			this.parent.switch_path(restParts, ...args);
 		}
 		else if (state_id.startsWith('#root.')) {
 			// Remove the '#root.' prefix and continue to the next state from the root
 			const restParts = state_id.slice('#root.'.length);
 			// If there are more parts, switch to the state in the root state machine
-			this.root.switch_boaz(restParts, ...args);
+			this.root.switch_path(restParts, ...args);
 		}
 		else {
-			this.parent.switch_boaz(state_id, ...args); // Switch to the state in the parent state machine
+			this.parent.switch_path(state_id, ...args); // Switch to the state in the parent state machine
 		}
 	}
 
