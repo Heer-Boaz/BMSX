@@ -177,15 +177,13 @@ export class Sinterklaas extends Fighter {
                 },
                 humiliated: {
                     ticks2move: 50,
-                    enter(this: SpriteObject, state: State) {
-                        state.reset();
+                    enter(this: SpriteObject) {
                         SM.play(AudioId.stuk);
                         this.imgid = BitmapId.sint_humiliated_1;
                     },
                     states: {
                         _wait: {
                             ticks2move: 50,
-                            auto_tick: true,
                             enter(this: SpriteObject) { this.imgid = BitmapId.sint_humiliated_1; },
                             next: () => 'animation',
                         },
@@ -194,7 +192,6 @@ export class Sinterklaas extends Fighter {
                             tape: ['humiliated1', 'humiliated2'],
                             repetitions: 8,
                             auto_rewind_tape_after_end: true,
-                            auto_tick: true,
                             next: (state: State) => `#this.${state.current_tape_value}`,
                             end: () => 'waitEnd',
                             states: {
@@ -208,7 +205,6 @@ export class Sinterklaas extends Fighter {
                         },
                         waitEnd: {
                             ticks2move: 100,
-                            auto_tick: true,
                             enter(this: SpriteObject) { this.imgid = BitmapId.sint_humiliated_1; },
                             next(this: SpriteObject) {
                                 $.emit('humiliated_animation_end', this, 'sinterklaas');

@@ -167,18 +167,18 @@ export class Eila extends Fighter {
                 },
                 au: {
                     enter(this: Fighter) {
-                        this.sc.pause_statemachine(statemachine + '');
+                        this.sc.pause_statemachine(statemachine);
                     },
                     exit(this: Fighter) {
-                        this.sc.resume_statemachine(statemachine + '');
+                        this.sc.resume_statemachine(statemachine);
                     }
                 },
                 doetau: {
                     enter(this: Fighter) {
-                        this.sc.pause_statemachine(statemachine + '');
+                        this.sc.pause_statemachine(statemachine);
                     },
                     exit(this: Fighter) {
-                        this.sc.resume_statemachine(statemachine + '');
+                        this.sc.resume_statemachine(statemachine);
                     }
                 },
                 walk: {
@@ -280,10 +280,10 @@ export class Eila extends Fighter {
                     },
                     process_input(this: Fighter) {
                         if (this.isAIed) return; // AIed fighters don't process input
-                        const kickActions = $.input.getPlayerInput(this.playerIndex).getPressedActions({ pressed: true, consumed: false, filter: ['lowkick', 'highkick'] });
+                        const kickActions = $.getPressedActions(this.playerIndex, { pressed: true, consumed: false, filter: ['lowkick', 'highkick'] });
                         if (kickActions.length > 0) {
                             // Consume all kick actions
-                            kickActions.forEach(action => $.input.getPlayerInput(this.playerIndex).consumeAction(action));
+                            kickActions.forEach(action => $.consumeAction(this.playerIndex, action));
                             this.sc.do('go_flyingkick', this.id);
                         }
 
@@ -408,14 +408,12 @@ export class Eila extends Fighter {
             },
             states: {
                 _idle: {
-                    run: () => { },
                     enter(this: Eila) {
                         this.imgid = BitmapId.eila_idle;
                     },
                 },
                 walk: {
-                    auto_reset: 'tree',
-                    run(this: Eila) { },
+                    auto_reset: 'subtree',
                     enter(this: Eila) {
                         this.imgid = BitmapId.eila_walk;
                     },
@@ -496,11 +494,9 @@ export class Eila extends Fighter {
                     }
                 },
                 duck: {
-                    run: () => { },
                     enter(this: Eila) { this.imgid = BitmapId.eila_duck; },
                 },
                 jump: {
-                    run: () => { },
                     enter(this: Eila) { this.imgid = BitmapId.eila_jump; },
                 },
                 humiliated: {
