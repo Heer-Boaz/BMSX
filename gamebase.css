@@ -383,8 +383,52 @@ svg.action-buttons {
 #d-pad-omheining {
 	/* stroke: gainsboro; */
 	/* fill: transparent; */
-	filter: url(#dPadFilter);
 	/* stroke-width: 1px; */
+	filter: url(#dPadFilter) !important;
+	z-index: 3000;
+}
+
+/* #d-pad-omheining.d-pad-none {
+} */
+
+#d-pad-omheining.d-pad-lu {
+	filter: url(#dPadFilterLeftUp) !important;
+	background-color: #000000;
+}
+
+#d-pad-omheining.d-pad-u {
+	filter: url(#dPadFilterUp) !important;
+	background-color: #000001;
+}
+
+#d-pad-omheining.d-pad-ru {
+	filter: url(#dPadFilterRightUp) !important;
+	background-color: #000002;
+}
+
+#d-pad-omheining.d-pad-r {
+	filter: url(#dPadFilterRight) !important;
+	background-color: #000003;
+}
+
+#d-pad-omheining.d-pad-ld {
+	filter: url(#dPadFilterLeftDown) !important;
+	background-color: #000004;
+}
+
+#d-pad-omheining.d-pad-d {
+	filter: url(#dPadFilterDown) !important;
+	background-color: #000005;
+}
+
+#d-pad-omheining.d-pad-rd {
+	filter: url(#dPadFilterRightDown) !important;
+	background-color: #000006;
+}
+
+#d-pad-omheining.d-pad-l {
+	filter: url(#dPadFilterLeft) !important;
+	background-color: #000007;
 }
 
 body {

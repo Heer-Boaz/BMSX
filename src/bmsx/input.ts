@@ -7,6 +7,46 @@ import type { IRegisterable, Identifier } from "./game";
 import { Registry } from './registry';
 import { StateMachineBlueprint, build_fsm, State } from './bfsm';
 
+function svgToPng(svgElement, filename) {
+	svgElement.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+	var svgData = new XMLSerializer().serializeToString(svgElement);
+
+	var canvas = document.createElement('canvas');
+	canvas.width = 100;
+	canvas.height = 100;
+	var ctx = canvas.getContext('2d');
+
+	var img = document.createElement('img');
+
+	var svgBlob = new Blob([svgData], {type: 'image/svg+xml;charset=utf-8'});
+	var svgUrl = URL.createObjectURL(svgBlob);
+
+	img.onload = function () {
+		ctx.drawImage(img, 0, 0);
+		URL.revokeObjectURL(svgUrl);
+
+		var imgsrc = canvas.toDataURL('image/png');
+
+		// Create a link element
+		var link = document.createElement('a');
+
+		// Set the href of the link to the data URL and the download attribute to the desired file name
+		link.href = imgsrc;
+		link.download = filename;
+
+		// Append the link to the body
+		document.body.appendChild(link);
+
+		// Programmatically click the link to start the download
+		link.click();
+
+		// Remove the link from the body
+		document.body.removeChild(link);
+	};
+
+	img.src = svgUrl;
+}
+
 export type ActionStateQuery = {
 	filter?: string[];
 	pressed?: boolean;
@@ -493,7 +533,7 @@ export class Input implements IRegisterable {
 			if (e.target === document.getElementById('gamescreen')) {
 				return true; // Allow context menu on gamescreen
 			} else {
-				e.preventDefault(); // Suppress context menu on rest of document
+				// e.preventDefault(); // Suppress context menu on rest of document
 				return false;
 			}
 		}, false);
@@ -1646,9 +1686,14 @@ class OnscreenGamepad implements IInputHandler {
 			case 'action':
 				this.resetUI(OnscreenGamepad.dpadButtonElementIds);
 				break;
-			case 'dpad':
+			case 'dpad': {
 				this.resetUI(OnscreenGamepad.actionButtonElementIds);
-				document.getElementById('d-pad-omheining').style.filter = `url(#dPadFilter)`;
+				const dpad_omheining = document.getElementById('d-pad-omheining') as HTMLElement;
+				// Remove all classes from dpad_omheining
+				dpad_omheining.classList.remove('d-pad-lu', 'd-pad-u', 'd-pad-ru', 'd-pad-r', 'd-pad-rd', 'd-pad-d', 'd-pad-ld', 'd-pad-l');
+				// Force a reflow of the SVG element
+				void dpad_omheining.offsetHeight;
+			}
 				break;
 		}
 
@@ -1678,42 +1723,47 @@ class OnscreenGamepad implements IInputHandler {
 						elementsToFilter.push(elementUnderTouch.id);
 
 						buttonsTouched.forEach(b => filterFromReset.push(b));
-						let filterId = null;
+						let dpad_class_name = null;
 						switch (elementUnderTouch.id) {
 							case 'd-pad-lu':
 								elementsToFilter.push('d-pad-u', 'd-pad-l');
-								filterId = 'dPadFilterLeftUp';
+								dpad_class_name = elementUnderTouch.id;
 								break;
 							case 'd-pad-u':
 								elementsToFilter.push('d-pad-lu', 'd-pad-ru');
-								filterId = 'dPadFilterUp';
+								dpad_class_name = elementUnderTouch.id;
 								break;
 							case 'd-pad-ru':
 								elementsToFilter.push('d-pad-u', 'd-pad-r');
-								filterId = 'dPadFilterRightUp';
+								dpad_class_name = elementUnderTouch.id;
 								break;
 							case 'd-pad-r':
 								elementsToFilter.push('d-pad-ru', 'd-pad-rd');
-								filterId = 'dPadFilterRight';
+								dpad_class_name = elementUnderTouch.id;
 								break;
 							case 'd-pad-ld':
 								elementsToFilter.push('d-pad-d', 'd-pad-l');
-								filterId = 'dPadFilterLeftDown';
+								dpad_class_name = elementUnderTouch.id;
 								break;
 							case 'd-pad-d':
 								elementsToFilter.push('d-pad-ld', 'd-pad-rd');
-								filterId = 'dPadFilterDown';
+								dpad_class_name = elementUnderTouch.id;
 								break;
 							case 'd-pad-rd':
 								elementsToFilter.push('d-pad-d', 'd-pad-r');
-								filterId = 'dPadFilterRightDown';
+								dpad_class_name = elementUnderTouch.id;
 								break;
 							case 'd-pad-l':
 								elementsToFilter.push('d-pad-lu', 'd-pad-ld');
-								filterId = 'dPadFilterLeft';
+								dpad_class_name = elementUnderTouch.id;
 								break;
 						}
-						if (filterId) document.getElementById('d-pad-omheining').style.filter = `url(#${filterId})`;
+						if (dpad_class_name) {
+							const dpad_omheining = document.getElementById('d-pad-omheining') as HTMLElement;
+							dpad_omheining.classList.add(dpad_class_name);
+							void dpad_omheining.offsetHeight;
+							svgToPng(dpad_omheining, dpad_class_name);
+						}
 					}
 				}
 			}
@@ -1749,7 +1799,10 @@ class OnscreenGamepad implements IInputHandler {
 				this.resetUI(OnscreenGamepad.dpadButtonElementIds);
 				break;
 			case 'dpad':
-				document.getElementById('d-pad-omheining').style.filter = `url(#dPadFilter)`;
+				const dpad_omheining = document.getElementById('d-pad-omheining') as HTMLElement;
+				// Remove all classes from dpad_omheining
+				dpad_omheining.classList.remove('d-pad-lu', 'd-pad-u', 'd-pad-ru', 'd-pad-r', 'd-pad-rd', 'd-pad-d', 'd-pad-ld', 'd-pad-l');
+				void dpad_omheining.offsetHeight;
 				this.resetUI(OnscreenGamepad.actionButtonElementIds);
 				break;
 		}
