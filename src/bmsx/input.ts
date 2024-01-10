@@ -1648,6 +1648,7 @@ class OnscreenGamepad implements IInputHandler {
 				break;
 			case 'dpad':
 				this.resetUI(OnscreenGamepad.actionButtonElementIds);
+				document.getElementById('d-pad-omheining').style.filter = `url(#dPadFilter)`;
 				break;
 		}
 
@@ -1677,33 +1678,42 @@ class OnscreenGamepad implements IInputHandler {
 						elementsToFilter.push(elementUnderTouch.id);
 
 						buttonsTouched.forEach(b => filterFromReset.push(b));
-
+						let filterId = null;
 						switch (elementUnderTouch.id) {
 							case 'd-pad-lu':
 								elementsToFilter.push('d-pad-u', 'd-pad-l');
+								filterId = 'dPadFilterLeftUp';
 								break;
 							case 'd-pad-u':
 								elementsToFilter.push('d-pad-lu', 'd-pad-ru');
+								filterId = 'dPadFilterUp';
 								break;
 							case 'd-pad-ru':
 								elementsToFilter.push('d-pad-u', 'd-pad-r');
+								filterId = 'dPadFilterRightUp';
 								break;
 							case 'd-pad-r':
 								elementsToFilter.push('d-pad-ru', 'd-pad-rd');
+								filterId = 'dPadFilterRight';
 								break;
 							case 'd-pad-ld':
 								elementsToFilter.push('d-pad-d', 'd-pad-l');
+								filterId = 'dPadFilterLeftDown';
 								break;
 							case 'd-pad-d':
 								elementsToFilter.push('d-pad-ld', 'd-pad-rd');
+								filterId = 'dPadFilterDown';
 								break;
 							case 'd-pad-rd':
 								elementsToFilter.push('d-pad-d', 'd-pad-r');
+								filterId = 'dPadFilterRightDown';
 								break;
 							case 'd-pad-l':
 								elementsToFilter.push('d-pad-lu', 'd-pad-ld');
+								filterId = 'dPadFilterLeft';
 								break;
 						}
+						if (filterId) document.getElementById('d-pad-omheining').style.filter = `url(#${filterId})`;
 					}
 				}
 			}
@@ -1739,6 +1749,7 @@ class OnscreenGamepad implements IInputHandler {
 				this.resetUI(OnscreenGamepad.dpadButtonElementIds);
 				break;
 			case 'dpad':
+				document.getElementById('d-pad-omheining').style.filter = `url(#dPadFilter)`;
 				this.resetUI(OnscreenGamepad.actionButtonElementIds);
 				break;
 		}

@@ -245,6 +245,7 @@
 	text-anchor: middle;
 	font-size: 11px;
 	transform: perspective(5px) translateZ(2px);
+	fill: #333333; /* Dark Gray */
 }
 
 /* Used for hiding buttons at game start, when these buttons are not needed for the game. */
@@ -266,9 +267,9 @@
 	/* Remember to set this to .5 when you want to have the canvas take priority over the buttons in relation to sizing. */
 }
 
-.knoptext {
-	fill: gainsboro;
-}
+/* .knoptext {
+	fill: #808080;
+} */
 
 .knop:not(.los) {
 	transform: translateY(2px);
@@ -276,39 +277,40 @@
 }
 
 .knop.los {
-	animation: button-los .5s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28);
+	/* animation: button-los .5s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28); */
+	animation: button-los .10s forwards cubic-bezier(0.42, 0, 0.58, 1);
 }
 
-.knop.red {
-	fill: #FF4E00;
+.knop.red + .knoptext {
+	fill: #FF0000; /* Red */
 }
 
-.knop.blue {
-	fill: #003791;
+.knop.blue + .knoptext {
+	fill: #0000FF; /* Blue */
 }
 
-.knop.green {
-	fill: #008740;
+.knop.green + .knoptext {
+	fill: #008000; /* Green */
 }
 
-.knop.pink {
-	fill: #FF80C0;
+.knop.pink + .knoptext {
+	fill: #FF00FF; /* Magenta */
 }
 
-.knop.orange {
-	fill: #FFA500;
+.knop.orange + .knoptext {
+	fill: #FFA500; /* Orange */
 }
 
-.knop.purple {
-	fill: #800080;
+.knop.purple + .knoptext {
+	fill: #800080; /* Purple */
 }
 
-.knop.light-blue {
-	fill: #00BFFF;
+.knop.light-blue + .knoptext {
+	fill: #00BFFF; /* Deep Sky Blue */
 }
 
-.knop.yellow {
-	fill: #FFFF00;
+.knop.yellow + .knoptext {
+	fill: #FFFF00; /* Yellow */
 }
 
 @keyframes button-los {
@@ -361,31 +363,28 @@ svg.action-buttons {
 
 @keyframes dknop-los {
 	from {
-		fill: rgb(252, 172, 0);
+		/* fill: rgb(252, 172, 0); */
 	}
 
 	to {
-		fill: black;
+		/* fill: black; */
 	}
 }
 
 .dknop.los {
-	animation: dknop-los 1s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28)
+	/* animation: dknop-los 1s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28); */
 }
 
 .dknop.druk {
-	fill: rgb(252, 172, 0);
-}
-
-.dstick {
-	/* fill: black; */
-	stroke-width: 1px;
-	z-index: 2001;
+	/* fill: rgb(252, 172, 0); */
+	filter: url(#pressedDPadFilter);
 }
 
 #d-pad-omheining {
-	stroke: gainsboro;
-	fill: transparent;
+	/* stroke: gainsboro; */
+	/* fill: transparent; */
+	filter: url(#dPadFilter);
+	/* stroke-width: 1px; */
 }
 
 body {

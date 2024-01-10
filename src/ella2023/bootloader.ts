@@ -13,7 +13,7 @@ _global['h406A'] = (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode, 
     _view = new gameview(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
     _view.default_font = new BFont(BitmapId);
     _game = new Game(rom, _model, _view, sndcontext, gainnode, debug);
-    _game.hideOnscreenGamepadButtons(['ls', 'rs', 'select', 'y']);
+    // _game.hideOnscreenGamepadButtons(['ls', 'rs', 'select', 'y']);
     _game.start();
 };
 

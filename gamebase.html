@@ -32,6 +32,111 @@
             <!-- Button controls -->
             <div id="d-pad-controls" hidden>
                 <svg id="d-pad-svg" class="d-pad" viewBox="0 0 100 100" width="100px" height="100px">
+                    <defs>
+                        <filter id="dPadFilter" x="-50%" y="-50%" width="200%" height="200%">
+                            <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="blur" />
+                            <feSpecularLighting in="blur" surfaceScale="5" specularConstant=".5" specularExponent="30"
+                                lighting-color="#888888" result="specOut">
+                                <fePointLight x="0" y="0" z="10000" />
+                            </feSpecularLighting>
+                            <feComposite in="specOut" in2="SourceAlpha" operator="in" result="specOut" />
+                            <feComposite in="SourceGraphic" in2="specOut" operator="arithmetic" k1="0" k2="1" k3="1"
+                                k4="0" />
+                        </filter>
+                        <filter id="dPadFilterUp" x="-50%" y="-50%" width="200%" height="200%">
+                            <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="blur" />
+                            <feSpecularLighting in="blur" surfaceScale="5" specularConstant=".5" specularExponent="30"
+                                lighting-color="#AAAAAA" result="specOut">
+                                <fePointLight x="0" y="-10000" z="20000" />
+                            </feSpecularLighting>
+                            <feComposite in="specOut" in2="SourceAlpha" operator="in" result="specOut" />
+                            <feComposite in="SourceGraphic" in2="specOut" operator="arithmetic" k1="0" k2="1" k3="1"
+                                k4="0" />
+                        </filter>
+
+                        <!-- Filter for down direction -->
+                        <filter id="dPadFilterDown" x="-50%" y="-50%" width="200%" height="200%">
+                            <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="blur" />
+                            <feSpecularLighting in="blur" surfaceScale="5" specularConstant=".5" specularExponent="30"
+                                lighting-color="#AAAAAA" result="specOut">
+                                <fePointLight x="0" y="10000" z="20000" />
+                            </feSpecularLighting>
+                            <feComposite in="specOut" in2="SourceAlpha" operator="in" result="specOut" />
+                            <feComposite in="SourceGraphic" in2="specOut" operator="arithmetic" k1="0" k2="1" k3="1"
+                                k4="0" />
+                        </filter>
+
+                        <!-- Filter for left direction -->
+                        <filter id="dPadFilterLeft" x="-50%" y="-50%" width="200%" height="200%">
+                            <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="blur" />
+                            <feSpecularLighting in="blur" surfaceScale="5" specularConstant=".5" specularExponent="30"
+                                lighting-color="#AAAAAA" result="specOut">
+                                <fePointLight x="-10000" y="0" z="20000" />
+                            </feSpecularLighting>
+                            <feComposite in="specOut" in2="SourceAlpha" operator="in" result="specOut" />
+                            <feComposite in="SourceGraphic" in2="specOut" operator="arithmetic" k1="0" k2="1" k3="1"
+                                k4="0" />
+                        </filter>
+
+                        <!-- Filter for right direction -->
+                        <filter id="dPadFilterRight" x="-50%" y="-50%" width="200%" height="200%">
+                            <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="blur" />
+                            <feSpecularLighting in="blur" surfaceScale="5" specularConstant=".5" specularExponent="30"
+                                lighting-color="#AAAAAA" result="specOut">
+                                <fePointLight x="10000" y="0" z="20000" />
+                            </feSpecularLighting>
+                            <feComposite in="specOut" in2="SourceAlpha" operator="in" result="specOut" />
+                            <feComposite in="SourceGraphic" in2="specOut" operator="arithmetic" k1="0" k2="1" k3="1"
+                                k4="0" />
+                        </filter>
+                        <!-- Filter for left-up direction -->
+                        <filter id="dPadFilterLeftUp" x="-50%" y="-50%" width="200%" height="200%">
+                            <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="blur" />
+                            <feSpecularLighting in="blur" surfaceScale="5" specularConstant=".5" specularExponent="30"
+                                lighting-color="#AAAAAA" result="specOut">
+                                <fePointLight x="-10000" y="-10000" z="30000" />
+                            </feSpecularLighting>
+                            <feComposite in="specOut" in2="SourceAlpha" operator="in" result="specOut" />
+                            <feComposite in="SourceGraphic" in2="specOut" operator="arithmetic" k1="0" k2="1" k3="1"
+                                k4="0" />
+                        </filter>
+
+                        <!-- Filter for right-up direction -->
+                        <filter id="dPadFilterRightUp" x="-50%" y="-50%" width="200%" height="200%">
+                            <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="blur" />
+                            <feSpecularLighting in="blur" surfaceScale="5" specularConstant=".5" specularExponent="30"
+                                lighting-color="#AAAAAA" result="specOut">
+                                <fePointLight x="10000" y="-10000" z="30000" />
+                            </feSpecularLighting>
+                            <feComposite in="specOut" in2="SourceAlpha" operator="in" result="specOut" />
+                            <feComposite in="SourceGraphic" in2="specOut" operator="arithmetic" k1="0" k2="1" k3="1"
+                                k4="0" />
+                        </filter>
+
+                        <!-- Filter for right-down direction -->
+                        <filter id="dPadFilterRightDown" x="-50%" y="-50%" width="200%" height="200%">
+                            <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="blur" />
+                            <feSpecularLighting in="blur" surfaceScale="5" specularConstant=".5" specularExponent="30"
+                                lighting-color="#AAAAAA" result="specOut">
+                                <fePointLight x="10000" y="10000" z="30000" />
+                            </feSpecularLighting>
+                            <feComposite in="specOut" in2="SourceAlpha" operator="in" result="specOut" />
+                            <feComposite in="SourceGraphic" in2="specOut" operator="arithmetic" k1="0" k2="1" k3="1"
+                                k4="0" />
+                        </filter>
+
+                        <!-- Filter for left-down direction -->
+                        <filter id="dPadFilterLeftDown" x="-50%" y="-50%" width="200%" height="200%">
+                            <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="blur" />
+                            <feSpecularLighting in="blur" surfaceScale="5" specularConstant=".5" specularExponent="30"
+                                lighting-color="#AAAAAA" result="specOut">
+                                <fePointLight x="-10000" y="10000" z="30000" />
+                            </feSpecularLighting>
+                            <feComposite in="specOut" in2="SourceAlpha" operator="in" result="specOut" />
+                            <feComposite in="SourceGraphic" in2="specOut" operator="arithmetic" k1="0" k2="1" k3="1"
+                                k4="0" />
+                        </filter>
+                    </defs>
                     <g id="d-pad-buttons">
                         <path id="d-pad-u" class="dknop los"
                             d="M 50 50 L 50 39 A 11 11, 0, 0, 1, 60 44 L 50 50 L 50 0 A 51 51, 0, 0, 1, 91 21 Z"
@@ -60,8 +165,6 @@
                     </g>
                     <g>
                         <circle id="d-pad-omheining" class="dstick" cx="50" cy="50" r="50" />
-                        <!-- <circle id="d-pad-dmz" class="dstick" cx="50" cy="50" r="40" />
-                        <circle id="d-pad-innercircle" class="dstick" cx="50" cy="50" r="10" /> -->
                     </g>
                 </svg>
             </div>
@@ -70,27 +173,25 @@
                     <defs>
                         <filter id="buttonFilter" x="-50%" y="-50%" width="200%" height="200%">
                             <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="blur" />
-                            <feOffset in="blur" dx="4" dy="4" result="offsetBlur" />
-                            <feSpecularLighting in="blur" surfaceScale="5" specularConstant=".75" specularExponent="30"
-                                lighting-color="#999999" result="specOut">
+                            <feSpecularLighting in="blur" surfaceScale="5" specularConstant=".5" specularExponent="30"
+                                lighting-color="#AAAAAA" result="specOut">
                                 <fePointLight x="-5000" y="-10000" z="20000" />
                             </feSpecularLighting>
                             <feComposite in="specOut" in2="SourceAlpha" operator="in" result="specOut" />
                             <feComposite in="SourceGraphic" in2="specOut" operator="arithmetic" k1="0" k2="1" k3="1"
                                 k4="0" />
                         </filter>
+                        <filter id="pressedButtonFilter" x="-50%" y="-50%" width="200%" height="200%">
+                            <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="blur" />
+                            <feSpecularLighting in="blur" surfaceScale="5" specularConstant=".5" specularExponent="30"
+                                lighting-color="#AAAAAA" result="specOut">
+                                <fePointLight x="-5000" y="-10000" z="5000" />
+                            </feSpecularLighting>
+                            <feComposite in="specOut" in2="SourceAlpha" operator="in" result="specOut" />
+                            <feComposite in="SourceGraphic" in2="specOut" operator="arithmetic" k1="0" k2="1" k3="1"
+                                k4="0" />
+                        </filter>
                     </defs>
-                    <filter id="pressedButtonFilter" x="-50%" y="-50%" width="200%" height="200%">
-                        <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="blur" />
-                        <feOffset in="blur" dx="2" dy="2" result="offsetBlur" />
-                        <feSpecularLighting in="blur" surfaceScale="5" specularConstant=".75" specularExponent="30"
-                            lighting-color="#999999" result="specOut">
-                            <fePointLight x="-5000" y="-10000" z="5000" />
-                        </feSpecularLighting>
-                        <feComposite in="specOut" in2="SourceAlpha" operator="in" result="specOut" />
-                        <feComposite in="SourceGraphic" in2="specOut" operator="arithmetic" k1="0" k2="1" k3="1"
-                            k4="0" />
-                    </filter>
                     <g class="buttons" id="action-buttons-container">
                         <circle id="start_knop" class="knop light-blue los" cx="50" cy="200" r="20"></circle>
                         <text id="start_knop_text" x="50" y="200" dominant-baseline="middle"
@@ -101,22 +202,28 @@
                             class="knop knoptext los">SE</text>
 
                         <circle id="ls_knop" class="knop orange los" cx="50" cy="20" r="20"></circle>
-                        <text id="ls_knop_text" x="50" y="20" dominant-baseline="middle" class="knop knoptext los">LS</text>
+                        <text id="ls_knop_text" x="50" y="20" dominant-baseline="middle"
+                            class="knop knoptext los">LS</text>
 
                         <circle id="rs_knop" class="knop purple los" cx="80" cy="50" r="20"></circle>
-                        <text id="rs_knop_text" x="80" y="50" dominant-baseline="middle" class="knop knoptext los">RS</text>
+                        <text id="rs_knop_text" x="80" y="50" dominant-baseline="middle"
+                            class="knop knoptext los">RS</text>
 
                         <circle id="a_knop" class="knop blue los" cx="50" cy="140" r="20"></circle>
-                        <text id="a_knop_text" x="50" y="140" dominant-baseline="middle" class="knop knoptext los">A</text>
+                        <text id="a_knop_text" x="50" y="140" dominant-baseline="middle"
+                            class="knop knoptext los">A</text>
 
                         <circle id="b_knop" class="knop red los" cx="80" cy="110" r="20"></circle>
-                        <text id="b_knop_text" x="80" y="110" dominant-baseline="middle" class="knop knoptext los">B</text>
+                        <text id="b_knop_text" x="80" y="110" dominant-baseline="middle"
+                            class="knop knoptext los">B</text>
 
                         <circle id="x_knop" class="knop pink los" cx="20" cy="110" r="20"></circle>
-                        <text id="x_knop_text" x="20" y="110" dominant-baseline="middle" class="knop knoptext los">X</text>
+                        <text id="x_knop_text" x="20" y="110" dominant-baseline="middle"
+                            class="knop knoptext los">X</text>
 
                         <circle id="y_knop" class="knop green los" cx="50" cy="80" r="20"></circle>
-                        <text id="y_knop_text" x="50" y="80" dominant-baseline="middle" class="knop knoptext los">Y</text>
+                        <text id="y_knop_text" x="50" y="80" dominant-baseline="middle"
+                            class="knop knoptext los">Y</text>
                     </g>
                 </svg>
             </div>
