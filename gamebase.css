@@ -4,8 +4,6 @@
 
 .minimized {
 	height: 30px;
-	/* Or whatever height you want for the title bar */
-	/* Add any other styles you want for the minimized dialog here */
 }
 
 .autosize {
@@ -43,7 +41,6 @@
 	border-bottom-style: solid;
 	border-bottom-width: thin;
 	border-bottom-color: gainsboro;
-	/* padding: 8px; */
 	font-size: 12px;
 	border: 1px solid #ddd;
 }
@@ -163,8 +160,6 @@
 }
 
 .modal-content table tr th {
-	/* border-bottom-style: solid;
-	border-bottom-color: black; */
 	text-align: left;
 	color: white;
 	background-color: rgba(0, 0, 0, 0.66);
@@ -241,11 +236,10 @@
 	-webkit-touch-callout: none;
 	fill: transparent;
 	font-family: 'Press Start 2P';
-	/*, cursive; */
 	text-anchor: middle;
 	font-size: 11px;
 	transform: perspective(5px) translateZ(2px);
-	fill: #333333; /* Dark Gray */
+	fill: #333333;
 }
 
 /* Used for hiding buttons at game start, when these buttons are not needed for the game. */
@@ -267,17 +261,12 @@
 	/* Remember to set this to .5 when you want to have the canvas take priority over the buttons in relation to sizing. */
 }
 
-/* .knoptext {
-	fill: #808080;
-} */
-
 .knop:not(.los) {
 	transform: translateY(2px);
 	filter: url(#pressedButtonFilter);
 }
 
 .knop.los {
-	/* animation: button-los .5s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28); */
 	animation: button-los .10s forwards cubic-bezier(0.42, 0, 0.58, 1);
 }
 
@@ -339,7 +328,7 @@ svg.d-pad {
 	pointer-events: auto;
 	touch-action: auto;
 	left: 0;
-	/* bottom: 25vh For landscape mode. For portrait mode, use bottom: 15vh. Handled in JavaScript. */
+	/* bottom: Handled in JavaScript. */
 }
 
 svg.action-buttons {
@@ -347,7 +336,7 @@ svg.action-buttons {
 	z-index: 2000;
 	pointer-events: auto;
 	touch-action: auto;
-	/* bottom: 25vh For landscape mode. For portrait mode, use bottom: 15vh. Handled in JavaScript. */
+	/* bottom: Handled in JavaScript. */
 	right: 0;
 }
 
@@ -477,22 +466,6 @@ html {
 	position: relative;
 }
 
-#debugPanel {
-	position: absolute;
-	top: 10px;
-	right: 10px;
-	background-color: transparent;
-	z-index: 1000;
-	fill-opacity: 0.25;
-}
-
-.debugIcon {
-	width: 40px;
-	height: 40px;
-	margin: 5px;
-	cursor: pointer;
-}
-
 #gamescreen {
 	position: fixed;
 	transform-origin: 0 0;
@@ -575,7 +548,7 @@ html {
 	top: 60vh;
 	color: #ffffff;
 	font-family: monospace;
-	font-size: x-large;
+	font-size: min(max(16px, 3vw), 64px);
 	text-align: center;
 }
 
@@ -585,10 +558,9 @@ html {
 	margin-right: auto;
 	width: 100vw;
 	position: absolute;
-	top: 65vh;
 	color: #ff0000;
 	font-family: monospace;
-	font-size: xx-large;
+	font-size: min(max(16px, 2vw), 32px);
 	text-align: center;
 	font-weight: bold;
 }

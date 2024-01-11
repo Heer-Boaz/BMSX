@@ -71,6 +71,7 @@ const bootrom = {
 
 		const wrapup = () => {
 			(document.querySelector('#loading') as HTMLElement).hidden = true;
+			window.removeEventListener('reize', bootrom.resizeHandler);
 			remove('#msx');
 			remove('#hidor');
 			remove('#bootrom');
@@ -82,7 +83,7 @@ const bootrom = {
 		};
 
 		try {
-			if (!h406A) throw new Error('h406A is not defined!');
+			if (!h406A) throw new Error(`h406A(${x}) is not defined!`);
 			document.getElementById('gamescreen')!.hidden = false;
 			document.getElementById('gamescreen')!.style.display = 'block';
 			h406A(bootrom.rom!, bootrom.sndcontext!, bootrom.gainnode!, this.debug);
@@ -115,9 +116,19 @@ const bootrom = {
 		createAudioContext();
 
 		if (!window.matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches) {
-			const extra_messageElement = document.querySelector<HTMLElement>('#extra-message');
-			extra_messageElement.innerText = 'Please add this page to your home screen to get the full experience of this game!';
-			extra_messageElement.hidden = false;
+			const extraMessageElement = document.querySelector<HTMLElement>('#extra-message');
+			const loadingElement = document.getElementById('loading');
+
+			if (loadingElement && extraMessageElement) {
+				loadingElement.style.display = "block";
+				const loadingRect = loadingElement.getBoundingClientRect();
+				const topInVh = (loadingRect.bottom / window.innerHeight) * 100;
+				extraMessageElement.style.top = topInVh + 'vh';
+				extraMessageElement.innerText = 'Please add this page to your home screen to get the full experience of this game!';
+				extraMessageElement.hidden = false;
+			}
+
+			window.addEventListener('resize', bootrom.resizeHandler);
 		}
 
 		const fetchRom = () => {
@@ -177,7 +188,15 @@ const bootrom = {
 		document.body.className = "showsover";
 		setClassForLoader('');
 		setLoaderText(errormsg);
-	}
+	},
+
+	resizeHandler() {
+		const loadingElement = document.querySelector<HTMLElement>('#loading');
+		const loadingRect = loadingElement.getBoundingClientRect();
+		const topInVh = (loadingRect.bottom / window.innerHeight) * 100;
+		const extraMessageElement = document.querySelector<HTMLElement>('#extra-message');
+		extraMessageElement.style.top = topInVh + 'vh';
+	},
 };
 
 function getRomFromUrlParameter(): string {
@@ -186,13 +205,13 @@ function getRomFromUrlParameter(): string {
 }
 
 function getRomNameFromUrlParameter(): string {
-    const rom_name = getParameterByName('romname');
+	const rom_name = getParameterByName('romname');
 	return rom_name && rom_name !== '' ? rom_name : null;
 }
 
 function getParameterByName(name, url = window.location.href) {
 	name = name.replace(/[\[\]]/g, '\\$&');
-	var regex = new RegExp('[?&]' + name + '(=([^&#]*)|&|#|$)'),
+	const regex = new RegExp('[?&]' + name + '(=([^&#]*)|&|#|$)'),
 		results = regex.exec(url);
 	if (!results) return null;
 	if (!results[2]) return '';
@@ -206,7 +225,7 @@ function getParameterByName(name, url = window.location.href) {
  */
 async function loadImage(url: string): Promise<HTMLImageElement> {
 	return new Promise((resolve, reject) => {
-		let img = new Image();
+		const img = new Image();
 		img.onload = e => resolve(img);
 		img.onerror = e => {
 			reject(`Failed to load image's URL: ${url}`);
@@ -221,9 +240,9 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
  * @returns The metadata of the ROM pack.
  */
 function parseMetaFromBuffer(to_parse: ArrayBuffer): RomMeta {
-	let bytearray = new Uint8Array(to_parse);
-	let sliced = bytearray.slice(bytearray.length - 100);
-	let metaJsonStr = decodeuint8arr(sliced);
+	const bytearray = new Uint8Array(to_parse);
+	const sliced = bytearray.slice(bytearray.length - 100);
+	const metaJsonStr = decodeuint8arr(sliced);
 	return JSON.parse(metaJsonStr);
 }
 
@@ -273,10 +292,9 @@ async function getZippedRomAndRomLabelFromBlob(blob_buffer: ArrayBuffer): Promis
  * @returns A Promise that resolves to an array of `RomAsset` objects representing the resources in the ROM.
  */
 async function loadResourceList(rom: ArrayBuffer): Promise<RomAsset[]> {
-	let sliced = new Uint8Array(getSubBufferFromBufferWithMeta(rom));
-
-	let resJsonStr = decodeuint8arr(sliced);
-	let resJson: RomAsset[] = JSON.parse(resJsonStr);
+	const sliced = new Uint8Array(getSubBufferFromBufferWithMeta(rom));
+	const resJsonStr = decodeuint8arr(sliced);
+	const resJson: RomAsset[] = JSON.parse(resJsonStr);
 
 	return Promise.resolve<RomAsset[]>(resJson);
 }
@@ -287,7 +305,7 @@ async function loadResourceList(rom: ArrayBuffer): Promise<RomAsset[]> {
  * @returns A Promise that resolves to a `RomPack` object containing the loaded resources.
  */
 async function loadResources(rom: ArrayBuffer): Promise<RomPack> {
-	let result: RomPack = {
+	const result: RomPack = {
 		images: {},
 		rom: rom,
 		img_assets: {},
@@ -295,7 +313,7 @@ async function loadResources(rom: ArrayBuffer): Promise<RomPack> {
 		code: null
 	};
 
-	let list = await loadResourceList(rom);
+	const list = await loadResourceList(rom);
 	for (let i = 0; i < list.length; i++) {
 		await load(rom, list[i], result);
 	}
@@ -308,12 +326,7 @@ async function loadResources(rom: ArrayBuffer): Promise<RomPack> {
  * @returns A URL for the given buffer as a PNG image.
  */
 function getImageURL(buffer: ArrayBuffer): string {
-	let mime: string;
-	let blub: Blob;
-
-	mime = 'image/png';
-	blub = new Blob([new Uint8Array(buffer)], { type: mime });
-	return URL.createObjectURL(blub);
+	return URL.createObjectURL(new Blob([new Uint8Array(buffer)], { type: 'image/png' }));
 }
 
 /**
@@ -322,8 +335,7 @@ function getImageURL(buffer: ArrayBuffer): string {
  * @returns A Promise that resolves to an HTMLImageElement created from the given buffer.
  */
 async function getImageFromBuffer(buffer: ArrayBuffer): Promise<HTMLImageElement> {
-	let url = getImageURL(buffer);
-	return loadImage(url);
+	return loadImage(getImageURL(buffer));
 }
 
 /**
@@ -338,7 +350,7 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack): Promis
 	switch (res.type) {
 		case 'image':
 			if (!res.imgmeta!.atlassed) {
-				let img = await getImageFromBuffer(rom.slice(res.start, res.end));
+				const img = await getImageFromBuffer(rom.slice(res.start, res.end));
 
 				romResult.images[res.resid] = img;
 				romResult.images[res.resname] = img;
@@ -348,8 +360,8 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack): Promis
 			break;
 		case 'source':
 			try {
-				let bytearray = new Uint8Array(rom);
-				let sliced = bytearray.slice(res.start, res.end);
+				const bytearray = new Uint8Array(rom);
+				const sliced = bytearray.slice(res.start, res.end);
 				romResult.code = decodeuint8arr(sliced);
 			} catch (err) {
 				throw new Error(`Failed to load 'source' from rom: ${err.message}.`);
@@ -369,15 +381,15 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack): Promis
  * @returns A Promise that resolves when the boot animation is complete.
  */
 async function awaitBootComplete(): Promise<void> {
-	let result: Promise<void> = new Promise((resolve, reject) => {
-		let msx = <HTMLElement>document.querySelector('#msx');
+	const result: Promise<void> = new Promise((resolve, reject) => {
+		const msx = <HTMLElement>document.querySelector('#msx');
 		msx.onanimationend = ev => {
-			let loading = <HTMLElement>document.querySelector('#loading');
-			loading.hidden = false;
+			// let loading = <HTMLElement>document.querySelector('#loading');
+			// loading.hidden = false;
 			bootrom.theshowsover = true;
 			resolve();
 		};
-		msx.className = "enter";
+		msx.className = 'enter';
 		msx.hidden = false;
 		if (bootrom.debug) resolve(); // Resolve immediately in debug-mode
 	});
@@ -403,11 +415,9 @@ async function loadScript(rom: RomPack, romname: string): Promise<void> {
 			// if (!response) throw new Error(`Failed to fetch file: ${romUrl}`);
 			scriptUrl = romUrl;
 			// scriptText = response; // TODO: Can only be done if we can somehow get the source maps to work in combination with Terser. Solution idea: have Terser be a Browserify transform instead of a seperate build step.
-			// Replace the source map's sources with the correct location of the source files - DOES NOT WORK
-			// scriptText = scriptText.replace(/\n\/\/# sourceMappingURL=.*$/, `//# sourceMappingURL=${romname}.js.map`);
 		}
 
-		let romcode = document.createElement('script');
+		const romcode = document.createElement('script');
 		romcode.async = false;
 		if (!bootrom.debug) {
 			romcode.textContent = scriptText;
@@ -467,7 +477,7 @@ async function awaitPressedAnyKeyPromise(): Promise<void> {
  * @param txt - The string to set as the text content of the loader element.
  */
 function setLoaderText(txt: string) {
-	let loading = <HTMLElement>document.querySelector('#loading');
+	const loading = <HTMLElement>document.querySelector('#loading');
 	loading.innerText = txt;
 }
 
@@ -476,7 +486,7 @@ function setLoaderText(txt: string) {
  * @param cls - The class name to set for the loader element.
  */
 function setClassForLoader(cls: string) {
-	let loading = <HTMLElement>document.querySelector('#loading');
+	const loading = <HTMLElement>document.querySelector('#loading');
 	loading.className = cls;
 }
 
@@ -558,7 +568,7 @@ function startAudioOnIos(): void {
 		removeEventListeners();
 		return;
 	}
-	var source = bootrom.sndcontext.createBufferSource();
+	const source = bootrom.sndcontext.createBufferSource();
 	source.buffer = bootrom.sndcontext.createBuffer(1, 1, 44100);
 	source.connect(bootrom.sndcontext.destination);
 	source.start(0, 0, 0);
@@ -594,7 +604,7 @@ function createAudioContext(): void {
 	// and only when you first boot the iPhone, or play a audio/video
 	// with a different sample rate
 	if (/(iPhone|iPad)/i.test(navigator.userAgent) && context.sampleRate !== 44100) {
-		var buffer = context.createBuffer(1, 1, 44100),
+		const buffer = context.createBuffer(1, 1, 44100),
 			dummy = context.createBufferSource();
 		dummy.buffer = buffer;
 		dummy.connect(context.destination);

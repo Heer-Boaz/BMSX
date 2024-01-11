@@ -27,7 +27,7 @@
 		<div>
 			<img id="msx" class="hidden" src="#bmsxurl" alt="MSX" hidden>
 			<div id="hidor"></div>
-			<div id="loading" class="coloring" hidden>Loading...</div>
+			<div id="loading" class="coloring">Loading...</div>
 			<div id="extra-message" class="coloring" hidden></div>
 			<div id="d-pad-controls" hidden>
 				<svg id="d-pad-svg" class="d-pad" viewBox="0 0 100 100" width="100px" height="100px">
@@ -59,15 +59,24 @@
 					</g>
 					<g>
 						<circle id="d-pad-omheining" class="" cx="50" cy="50" r="50" />
-						<image id="svgimg-d-pad-neutral" class="d-pad-image d-pad-none" x="0" y="0" height="100" width="100" href="#d-pad-neutral" />
-						<image id="svgimg-d-pad-u" class="d-pad-image d-pad-u" x="0" y="0" height="100" width="100" href="#d-pad-u" />
-						<image id="svgimg-d-pad-ru" class="d-pad-image d-pad-ru" x="0" y="0" height="100" width="100" href="#d-pad-ru" />
-						<image id="svgimg-d-pad-r" class="d-pad-image d-pad-r" x="0" y="0" height="100" width="100" href="#d-pad-r" />
-						<image id="svgimg-d-pad-rd" class="d-pad-image d-pad-rd" x="0" y="0" height="100" width="100" href="#d-pad-rd" />
-						<image id="svgimg-d-pad-d" class="d-pad-image d-pad-d" x="0" y="0" height="100" width="100" href="#d-pad-d" />
-						<image id="svgimg-d-pad-ld" class="d-pad-image d-pad-ld" x="0" y="0" height="100" width="100" href="#d-pad-ld" />
-						<image id="svgimg-d-pad-l" class="d-pad-image d-pad-l" x="0" y="0" height="100" width="100" href="#d-pad-l" />
-						<image id="svgimg-d-pad-lu" class="d-pad-image d-pad-lu" x="0" y="0" height="100" width="100" href="#d-pad-lu" />
+						<image id="svgimg-d-pad-neutral" class="d-pad-image d-pad-none" x="0" y="0" height="100"
+							width="100" href="#d-pad-neutral" />
+						<image id="svgimg-d-pad-u" class="d-pad-image d-pad-u" x="0" y="0" height="100" width="100"
+							href="#d-pad-u" />
+						<image id="svgimg-d-pad-ru" class="d-pad-image d-pad-ru" x="0" y="0" height="100" width="100"
+							href="#d-pad-ru" />
+						<image id="svgimg-d-pad-r" class="d-pad-image d-pad-r" x="0" y="0" height="100" width="100"
+							href="#d-pad-r" />
+						<image id="svgimg-d-pad-rd" class="d-pad-image d-pad-rd" x="0" y="0" height="100" width="100"
+							href="#d-pad-rd" />
+						<image id="svgimg-d-pad-d" class="d-pad-image d-pad-d" x="0" y="0" height="100" width="100"
+							href="#d-pad-d" />
+						<image id="svgimg-d-pad-ld" class="d-pad-image d-pad-ld" x="0" y="0" height="100" width="100"
+							href="#d-pad-ld" />
+						<image id="svgimg-d-pad-l" class="d-pad-image d-pad-l" x="0" y="0" height="100" width="100"
+							href="#d-pad-l" />
+						<image id="svgimg-d-pad-lu" class="d-pad-image d-pad-lu" x="0" y="0" height="100" width="100"
+							href="#d-pad-lu" />
 					</g>
 				</svg>
 			</div>
@@ -137,13 +146,15 @@
 	</body>
 	<script id="bload-script">
 		//#debug
-		const romurl = getRomFromUrlParameter() ?? '#outfile';
-		bootrom.bload(`./${romurl}`).then(function (h406A) {
-			bootrom.defusr = h406A;
-			bootrom.usr(0);
-		}).catch(function (err) {
-			bootrom.outputError(err?.message ?? err);
-		});
+		window.onload = function () {
+			const romurl = getRomFromUrlParameter() ?? '#outfile';
+			bootrom.bload(`./${romurl}`).then(function (h406A) {
+				bootrom.defusr = h406A;
+				bootrom.usr(0);
+			}).catch(function (err) {
+				bootrom.outputError(err?.message ?? err);
+			});
+		}
 	</script>
 
 </html>
