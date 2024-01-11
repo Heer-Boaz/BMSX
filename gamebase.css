@@ -361,74 +361,88 @@ svg.action-buttons {
 	-webkit-touch-callout: none;
 }
 
-@keyframes dknop-los {
-	from {
-		/* fill: rgb(252, 172, 0); */
-	}
-
-	to {
-		/* fill: black; */
-	}
-}
-
-.dknop.los {
-	/* animation: dknop-los 1s forwards cubic-bezier(0.18, 0.89, 0.32, 1.28); */
-}
-
-.dknop.druk {
-	/* fill: rgb(252, 172, 0); */
-	filter: url(#pressedDPadFilter);
-}
-
 #d-pad-omheining {
-	/* stroke: gainsboro; */
-	/* fill: transparent; */
-	/* stroke-width: 1px; */
-	filter: url(#dPadFilter) !important;
 	z-index: 3000;
 }
 
-/* #d-pad-omheining.d-pad-none {
-} */
-
 #d-pad-omheining.d-pad-lu {
-	filter: url(#dPadFilterLeftUp) !important;
+	/* filter: url(#dPadFilterLeftUp) !important; */
 	background-color: #000000;
 }
 
 #d-pad-omheining.d-pad-u {
-	filter: url(#dPadFilterUp) !important;
+	/* filter: url(#dPadFilterUp) !important; */
 	background-color: #000001;
 }
 
 #d-pad-omheining.d-pad-ru {
-	filter: url(#dPadFilterRightUp) !important;
+	/* filter: url(#dPadFilterRightUp) !important; */
 	background-color: #000002;
 }
 
 #d-pad-omheining.d-pad-r {
-	filter: url(#dPadFilterRight) !important;
+	/* filter: url(#dPadFilterRight) !important; */
 	background-color: #000003;
 }
 
 #d-pad-omheining.d-pad-ld {
-	filter: url(#dPadFilterLeftDown) !important;
+	/* filter: url(#dPadFilterLeftDown) !important; */
 	background-color: #000004;
 }
 
 #d-pad-omheining.d-pad-d {
-	filter: url(#dPadFilterDown) !important;
+	/* filter: url(#dPadFilterDown) !important; */
 	background-color: #000005;
 }
 
 #d-pad-omheining.d-pad-rd {
-	filter: url(#dPadFilterRightDown) !important;
+	/* filter: url(#dPadFilterRightDown) !important; */
 	background-color: #000006;
 }
 
 #d-pad-omheining.d-pad-l {
-	filter: url(#dPadFilterLeft) !important;
+	/* filter: url(#dPadFilterLeft) !important; */
 	background-color: #000007;
+}
+
+.d-pad-image {
+	display: none;
+}
+
+#d-pad-omheining:not([class]), #d-pad-omheining[class=""] ~ .d-pad-none {
+	display: block;
+}
+
+#d-pad-omheining.d-pad-u ~ .d-pad-u {
+	display: block;
+}
+
+#d-pad-omheining.d-pad-ru ~ .d-pad-ru {
+	display: block;
+}
+
+#d-pad-omheining.d-pad-r ~ .d-pad-r {
+	display: block;
+}
+
+#d-pad-omheining.d-pad-rd ~ .d-pad-rd {
+	display: block;
+}
+
+#d-pad-omheining.d-pad-d ~ .d-pad-d {
+	display: block;
+}
+
+#d-pad-omheining.d-pad-ld ~ .d-pad-ld {
+	display: block;
+}
+
+#d-pad-omheining.d-pad-l ~ .d-pad-l {
+	display: block;
+}
+
+#d-pad-omheining.d-pad-lu ~ .d-pad-lu {
+	display: block;
 }
 
 body {
@@ -509,8 +523,9 @@ html {
 	position: absolute;
 	margin-left: auto;
 	margin-right: auto;
-	width: 40%;
+	max-width: 90%;
 	left: 50%;
+	max-height: 55%;
 }
 
 #msx.hidden {
@@ -564,11 +579,25 @@ html {
 	text-align: center;
 }
 
-#loading.appear {
+#extra-message {
+	z-index: 1001;
+	margin-left: auto;
+	margin-right: auto;
+	width: 100vw;
+	position: absolute;
+	top: 65vh;
+	color: #ff0000;
+	font-family: monospace;
+	font-size: xx-large;
+	text-align: center;
+	font-weight: bold;
+}
+
+.appear {
 	animation: fade-in-partial 1.0s infinite linear alternate;
 }
 
-#loading.fadeout {
+.fadeout {
 	animation: fade-out 1.0s linear forwards;
 }
 
@@ -578,7 +607,6 @@ html {
 
 @keyframes coloring {
 	0% {
-		color: #ffffff;
 	}
 
 	50% {
@@ -586,7 +614,6 @@ html {
 	}
 
 	100% {
-		color: #ffffff;
 	}
 }
 
