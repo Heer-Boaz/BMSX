@@ -65,22 +65,22 @@ const bootrom = {
 	 */
 	usr(x: number): number {
 		const remove = (id: string) => {
-			let element = document.querySelector(id);
-			if (element) element.parentElement!.removeChild(element);
+			const element = document.querySelector(id);
+			element.parentElement!.removeChild(element);
 		};
 
 		const wrapup = () => {
 			(document.querySelector('#loading') as HTMLElement).hidden = true;
 			remove('#msx');
 			remove('#hidor');
-			remove('#romjs');
+			remove('#bootrom');
+			remove('#loading');
+			remove('#extra-message');
+			remove('#pacojs');
+			remove('#bload-script');
 			document.body.classList.add('game-started'); // Change background color of body
 		};
 
-		// if (this.debug) {
-		// 	document.getElementById('debugPanel')!.hidden = false;
-		// 	document.getElementById('debugPanel')!.style.display = 'block';
-		// }
 		try {
 			if (!h406A) throw new Error('h406A is not defined!');
 			document.getElementById('gamescreen')!.hidden = false;
@@ -114,6 +114,12 @@ const bootrom = {
 
 		createAudioContext();
 
+		if (!window.matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches) {
+			const extra_messageElement = document.querySelector<HTMLElement>('#extra-message');
+			extra_messageElement.innerText = 'Please add this page to your home screen to get the full experience of this game!';
+			extra_messageElement.hidden = false;
+		}
+
 		const fetchRom = () => {
 			return fetchBuffer(url).catch(err => {
 				throw new Error(`Error while fetching ROM: "${err.message}"`);
@@ -138,7 +144,7 @@ const bootrom = {
 				.then(() => loadScript(loadedRomPack, bootrom.romname))
 				.then(() => {
 					setLoaderText('Press any key or touch screen to start...');
-					setClassForLoader('');
+					// setClassForLoader('');
 					return awaitPressedAnyKeyPromise();
 				})
 				.then(() => resolve(loadedRomPack))
