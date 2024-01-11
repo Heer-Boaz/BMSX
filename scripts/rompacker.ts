@@ -298,6 +298,15 @@ async function minifyGamecode(infile: string): Promise<terser.MinifyOutput> {
  * @returns {Promise<any>} A promise that resolves when the game HTML and manifest files have been built.
  */
 async function buildGameHtmlAndManifest(rom_name: string, title: string, short_name: string): Promise<any> {
+	async function loadImgAndConvertToBase64String(filepath: string): Promise<string> {
+		try {
+			const image = await readFile(filepath);
+			return image.toString('base64');
+		} catch (error) {
+			throw new Error(`Error reading file "${__dirname}${filepath}": ${error.message}`);
+		}
+	}
+
 	let html, romjs, zipjs;
 	try {
 		html = await readFile("./gamebase.html", 'utf8');
@@ -321,14 +330,16 @@ async function buildGameHtmlAndManifest(rom_name: string, title: string, short_n
 		}
 	};
 	let romjsMinified = (await terser.minify(romjs, options)).code!;
-	let bmsx;
-	try {
-		bmsx = await readFile("./rom/bmsx.png");
-	}
-	catch (error) {
-		throw new Error(`Error reading file "${__dirname}/rom/bmsx.png": ${error.message}`);
-	}
-	let bmsx_base64ed = bmsx.toString('base64');
+	let bmsx_base64ed = await loadImgAndConvertToBase64String("./rom/bmsx.png");
+	let d_pad_neutral_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-neutral.png");
+	let d_pad_u_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-u.png");
+	let d_pad_ru_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-ru.png");
+	let d_pad_r_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-r.png");
+	let d_pad_rd_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-rd.png");
+	let d_pad_d_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-d.png");
+	let d_pad_ld_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-ld.png");
+	let d_pad_l_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-l.png");
+	let d_pad_lu_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-lu.png");
 
 	return new Promise<any>((resolve, reject) => {
 		minify({
@@ -343,12 +354,21 @@ async function buildGameHtmlAndManifest(rom_name: string, title: string, short_n
 				let transformHtml = async (htmlToTransform: string, debug: boolean) => {
 					return htmlToTransform.replace('//#romjs', debug ? romjs : romjsMinified)
 						.replace('//#zipjs', zipjs)
-						.replace('/*css*/', cssMinified)
+						.replace('/*#css*/', cssMinified)
 						.replace(/#title/g, title) // https://stackoverflow.com/questions/44324892/how-can-i-replace-multiple-characters-in-a-string
 						.replace('//#debug', `bootrom.debug = ${debug};\n\t\tbootrom.romname = getRomNameFromUrlParameter() ?? '#romname';\n`)
 						.replace('#romname', `${rom_name}`) // Note: this is the name of the ROM, not the title of the game and is used for getting the JS-file for debugging
 						.replace('#outfile', `${rom_name}.rom`)
 						.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed)
+						.replace('#d-pad-neutral', "data:image/png;base64," + d_pad_neutral_base64ed)
+						.replace('#d-pad-u', "data:image/png;base64," + d_pad_u_base64ed)
+						.replace('#d-pad-ru', "data:image/png;base64," + d_pad_ru_base64ed)
+						.replace('#d-pad-r', "data:image/png;base64," + d_pad_r_base64ed)
+						.replace('#d-pad-rd', "data:image/png;base64," + d_pad_rd_base64ed)
+						.replace('#d-pad-d', "data:image/png;base64," + d_pad_d_base64ed)
+						.replace('#d-pad-ld', "data:image/png;base64," + d_pad_ld_base64ed)
+						.replace('#d-pad-l', "data:image/png;base64," + d_pad_l_base64ed)
+						.replace('#d-pad-lu', "data:image/png;base64," + d_pad_lu_base64ed)
 				};
 				writeFile("./dist/game.html", await transformHtml(html, false));
 				writeFile("./dist/game_debug.html", await transformHtml(html, true));
