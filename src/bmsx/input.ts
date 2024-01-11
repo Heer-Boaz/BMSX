@@ -7,6 +7,7 @@ import type { IRegisterable, Identifier } from "./game";
 import { Registry } from './registry';
 import { StateMachineBlueprint, build_fsm, State } from './bfsm';
 
+// @ts-ignore
 function svgToPng(svgElement, filename) {
 	svgElement.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
 	var svgData = new XMLSerializer().serializeToString(svgElement);
@@ -18,7 +19,7 @@ function svgToPng(svgElement, filename) {
 
 	var img = document.createElement('img');
 
-	var svgBlob = new Blob([svgData], {type: 'image/svg+xml;charset=utf-8'});
+	var svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
 	var svgUrl = URL.createObjectURL(svgBlob);
 
 	img.onload = function () {
@@ -1461,7 +1462,7 @@ class OnscreenGamepad implements IInputHandler {
 	private isOtherElementPressingButton(button: string): boolean {
 		return OnscreenGamepad.onscreenButtonElementNames.some(dpadId => {
 			const element = document.getElementById(dpadId);
-			return element && element.classList.contains('druk') && OnscreenGamepad.ALL_BUTTON_MAP[element.id].buttons.includes(button);
+			return element && element.dataset.touched === 'true' && OnscreenGamepad.ALL_BUTTON_MAP[element.id].buttons.includes(button);
 		});
 	}
 
@@ -1682,18 +1683,15 @@ class OnscreenGamepad implements IInputHandler {
 	 * @param e The touch event to handle.
 	 */
 	handleTouchStart(e: TouchEvent, control_type: 'dpad' | 'action'): void {
+		const dpad_omheining = document.getElementById('d-pad-omheining') as HTMLElement;
 		switch (control_type) {
 			case 'action':
 				this.resetUI(OnscreenGamepad.dpadButtonElementIds);
 				break;
-			case 'dpad': {
+			case 'dpad':
 				this.resetUI(OnscreenGamepad.actionButtonElementIds);
-				const dpad_omheining = document.getElementById('d-pad-omheining') as HTMLElement;
 				// Remove all classes from dpad_omheining
 				dpad_omheining.classList.remove('d-pad-lu', 'd-pad-u', 'd-pad-ru', 'd-pad-r', 'd-pad-rd', 'd-pad-d', 'd-pad-ld', 'd-pad-l');
-				// Force a reflow of the SVG element
-				void dpad_omheining.offsetHeight;
-			}
 				break;
 		}
 
@@ -1759,10 +1757,7 @@ class OnscreenGamepad implements IInputHandler {
 								break;
 						}
 						if (dpad_class_name) {
-							const dpad_omheining = document.getElementById('d-pad-omheining') as HTMLElement;
 							dpad_omheining.classList.add(dpad_class_name);
-							void dpad_omheining.offsetHeight;
-							svgToPng(dpad_omheining, dpad_class_name);
 						}
 					}
 				}
@@ -1802,7 +1797,6 @@ class OnscreenGamepad implements IInputHandler {
 				const dpad_omheining = document.getElementById('d-pad-omheining') as HTMLElement;
 				// Remove all classes from dpad_omheining
 				dpad_omheining.classList.remove('d-pad-lu', 'd-pad-u', 'd-pad-ru', 'd-pad-r', 'd-pad-rd', 'd-pad-d', 'd-pad-ld', 'd-pad-l');
-				void dpad_omheining.offsetHeight;
 				this.resetUI(OnscreenGamepad.actionButtonElementIds);
 				break;
 		}
