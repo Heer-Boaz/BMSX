@@ -116,7 +116,7 @@ export class Eila extends Fighter {
                 _idle: {
                     process_input: default_input_processor,
                     enter(this: Fighter) {
-                        this.sc.to(statemachine + '.idle');
+                        this.sc.do('animate_idle', this);
                         this.attacking = false;
                         this.attacked_while_jumping = false;
                     },
@@ -126,7 +126,7 @@ export class Eila extends Fighter {
                         this.hittable = false;
                         this.fighting = false;
                         this.resetVerticalPosition();
-                        this.sc.to(statemachine + '.humiliated');
+                        this.sc.do('animate_humiliated', this);
                     },
                     exit(this: Fighter) {
                         this.hittable = true;
@@ -141,6 +141,8 @@ export class Eila extends Fighter {
                     auto_rewind_tape_after_end: false,
                     enter(this: Fighter) {
                         this.fighting = false;
+                        // Used to reset the animation to idle when the fighter is about to start the 'stoerheidsdans' (e.g. when the fighter was just jumping and the animation needs to be reset to make sure the stoerheidsdans actually starts).
+                        this.sc.do('animate_idle', this);
                         this.resetVerticalPosition();
                     },
                     run(this: Fighter, state: State) {
@@ -152,16 +154,16 @@ export class Eila extends Fighter {
                     next(this: Fighter, state: State, tape_rewound: boolean) {
                         if (tape_rewound) return;
                         this.facing = (this.facing === 'left' ? 'right' : 'left');
-                        this.sc.to(`${statemachine}.${state.current_tape_value}`);
+                        this.sc.do(`animate_${state.current_tape_value}`, this);
                     },
                     end(this: Fighter) {
-                        this.sc.to('nagenieten');
                         this.facing = (this.facing === 'left' ? 'right' : 'left');
+                        return 'nagenieten';
                     },
                 },
                 nagenieten: {
                     enter(this: Fighter) {
-                        this.sc.to(`${statemachine}.idle`);
+                        this.sc.do('animate_idle', this);
                         this.fighting = false;
                     },
                 },
@@ -185,14 +187,14 @@ export class Eila extends Fighter {
                     process_input: default_input_processor,
                     enter(this: Fighter) {
                         if (!this.sc.is(statemachine + '.walk')) {
-                            this.sc.to(statemachine + '.walk');
+                            this.sc.do('animate_walk', this);
                         }
                         this.attacking = false;
                     },
                 },
                 punch: {
                     enter(this: Fighter) {
-                        this.sc.to(statemachine + '.punch');
+                        this.sc.do('animate_punch', this);
                         this.doAttackFlow('punch', $.modelAs<gamemodel>().theOtherFighter(this));
                         this.attacking = true;
                         this.currentAttackType = 'punch';
@@ -201,7 +203,7 @@ export class Eila extends Fighter {
                 },
                 highkick: {
                     enter(this: Fighter) {
-                        this.sc.to(statemachine + '.highkick');
+                        this.sc.do('animate_highkick', this);
                         this.doAttackFlow('highkick', $.modelAs<gamemodel>().theOtherFighter(this));
                         this.attacking = true;
                         this.currentAttackType = 'highkick';
@@ -210,7 +212,7 @@ export class Eila extends Fighter {
                 },
                 lowkick: {
                     enter(this: Fighter) {
-                        this.sc.to(statemachine + '.lowkick');
+                        this.sc.do('animate_lowkick', this);
                         this.doAttackFlow('lowkick', $.modelAs<gamemodel>().theOtherFighter(this));
                         this.attacking = true;
                         this.currentAttackType = 'lowkick';
@@ -219,14 +221,15 @@ export class Eila extends Fighter {
                 },
                 duckkick: {
                     enter(this: Fighter) {
-                        this.sc.to(statemachine + '.duckkick');
-                        this.doAttackFlow('dickkick', $.modelAs<gamemodel>().theOtherFighter(this));
+                        this.sc.do('animate_duckkick', this);
+                        this.doAttackFlow('duckkick', $.modelAs<gamemodel>().theOtherFighter(this));
                         this.attacking = true;
                         this.ducking = true;
                         this.currentAttackType = 'duckkick';
                     },
                     exit(this: Fighter) {
                         attackExit.apply(this);
+                        this.ducking = false;
                     },
                 },
                 duck: {
@@ -258,7 +261,7 @@ export class Eila extends Fighter {
                         }
                     },
                     enter(this: Fighter) {
-                        this.sc.to(statemachine + '.duck');
+                        this.sc.do('animate_duck', this);
                         this.ducking = true;
                     },
                     exit(this: Fighter) {
@@ -269,7 +272,7 @@ export class Eila extends Fighter {
                     auto_reset: 'tree',
                     enter(this: Fighter, state: State, directional: boolean = false) {
                         state.to('#this.jump_up', directional);
-                        this.sc.to(statemachine + '.jump');
+                        this.sc.do('animate_jump', this);
                         this.getComponent(JumpingWhileLeavingScreenComponent).enabled = true;
                         this.jumping = true;
                         this.attacked_while_jumping = false;
@@ -344,13 +347,13 @@ export class Eila extends Fighter {
                                         flyingkick_end: 'normal',
                                     },
                                     enter(this: Fighter, _state: State) {
-                                        this.sc.machines[statemachine].to('flyingkick');
+                                        this.sc.do('animate_flyingkick', this);
                                         this.doAttackFlow('flyingkick', $.modelAs<gamemodel>().theOtherFighter(this));
                                         this.attacking = true;
                                         this.attacked_while_jumping = true;
                                     },
                                     exit(this: Fighter) {
-                                        this.sc.machines[statemachine].to('jump');
+                                        this.sc.do('animate_jump', this);
                                         attackExit.call(this);
                                     },
                                 },
@@ -404,7 +407,17 @@ export class Eila extends Fighter {
                     do(state: State) {
                         state.current.setTicksNoSideEffect(state.current.definition.ticks2move - 1);
                     }
-                }
+                },
+                // Used to reset the animation to idle when the fighter is about to start the 'stoerheidsdans' (e.g. when the fighter was just jumping and the animation needs to be reset to make sure the stoerheidsdans actually starts).
+                $animate_idle: '#this.idle',
+                $animate_humiliated: '#this.humiliated',
+                $animate_walk: '#this.walk',
+                $animate_punch: '#this.punch',
+                $animate_highkick: '#this.highkick',
+                $animate_lowkick: '#this.lowkick',
+                $animate_duckkick: '#this.duckkick',
+                $animate_duck: '#this.duck',
+                $animate_jump: '#this.jump',
             },
             states: {
                 _idle: {

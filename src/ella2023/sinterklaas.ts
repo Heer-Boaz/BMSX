@@ -79,7 +79,16 @@ export class Sinterklaas extends Fighter {
                     do(state: State) {
                         state.current.setTicksNoSideEffect(state.current.definition.ticks2move - 1);
                     }
-                }
+                },
+                $animate_idle: '#this.idle',
+                $animate_humiliated: '#this.humiliated',
+                $animate_walk: '#this.walk',
+                $animate_punch: '#this.punch',
+                $animate_highkick: '#this.highkick',
+                $animate_lowkick: '#this.lowkick',
+                $animate_duckkick: '#this.duckkick',
+                $animate_duck: '#this.duck',
+                $animate_jump: '#this.jump',
             },
             states: {
                 _idle: {
