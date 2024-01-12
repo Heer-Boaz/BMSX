@@ -71,7 +71,7 @@ const bootrom = {
 
 		const wrapup = () => {
 			(document.querySelector('#loading') as HTMLElement).hidden = true;
-			window.removeEventListener('reize', bootrom.resizeHandler);
+			window.removeEventListener('resize', bootrom.resizeHandler);
 			remove('#msx');
 			remove('#hidor');
 			remove('#bootrom');
