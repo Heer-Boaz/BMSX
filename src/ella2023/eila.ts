@@ -103,7 +103,10 @@ export class Eila extends Fighter {
         const statemachine = animation_machine_name;
         return {
             on: {
-                $go_idle: '#this.idle',
+                $go_idle: {
+                    if(this: Fighter, state: State) { return !state.is('stoerheidsdans') && !state.is('nagenieten'); },
+                    to: '#this.idle',
+                },
                 $go_walk: '#this.walk',
                 $go_punch: '#this.punch',
                 $go_highkick: '#this.highkick',
@@ -139,18 +142,25 @@ export class Eila extends Fighter {
                     tape: ['highkick', 'lowkick', 'duckkick', 'punch', 'punch'],
                     repetitions: 2,
                     auto_rewind_tape_after_end: false,
-                    enter(this: Fighter) {
+                    on: {
+                        $animationEnd: {
+                            do(state: State) {
+                                ++state.ticks;
+                            },
+                        },
+                    },
+                    enter(this: Fighter, state: State) {
                         this.fighting = false;
                         // Used to reset the animation to idle when the fighter is about to start the 'stoerheidsdans' (e.g. when the fighter was just jumping and the animation needs to be reset to make sure the stoerheidsdans actually starts).
                         this.sc.do('animate_idle', this);
                         this.resetVerticalPosition();
+                        ++state.ticks; // Perform the first attack immediately so that the 'animationEnd' event is fired after the first attack to make sure the next attack is performed via the 'animationEnd' event handler.
                     },
-                    run(this: Fighter, state: State) {
-                        // Lelijk
-                        if (this.sc.machines[statemachine].is(`idle`) || this.sc.machines[statemachine].is(`duck`)) {
-                            ++state.ticks;
-                        }
-                    },
+                    // run(this: Fighter, state: State) {
+                    //     // Lelijk
+                    //     if (this.sc.machines[statemachine].is(`idle`) || this.sc.machines[statemachine].is(`duck`)) {
+                    //     }
+                    // },
                     next(this: Fighter, state: State, tape_rewound: boolean) {
                         if (tape_rewound) return;
                         this.facing = (this.facing === 'left' ? 'right' : 'left');
@@ -373,19 +383,17 @@ export class Eila extends Fighter {
                     case 'highkick':
                     case 'punch':
                     case 'lowkick':
-                        if (!this.sc.is('stoerheidsdans')) {
-                            this.sc.to('idle');
-                        }
+                        this.sc.do('go_idle', this);
                         break;
                     case 'flyingkick':
                         this.sc.do('flyingkick_end', this.id);
                         break;
                     case 'duckkick':
                         if (!this.sc.is('stoerheidsdans')) {
-                            this.sc.to('duck');
+                            this.sc.do('go_duck', this);
                         }
                         else {
-                            this.sc.to('player_animation.idle');
+                            this.sc.do('animate_idle', this);
                         }
                         break;
                 }
@@ -408,12 +416,12 @@ export class Eila extends Fighter {
                         state.current.setTicksNoSideEffect(state.current.definition.ticks2move - 1);
                     }
                 },
-                // Used to reset the animation to idle when the fighter is about to start the 'stoerheidsdans' (e.g. when the fighter was just jumping and the animation needs to be reset to make sure the stoerheidsdans actually starts).
                 $animate_idle: '#this.idle',
                 $animate_humiliated: '#this.humiliated',
                 $animate_walk: '#this.walk',
                 $animate_punch: '#this.punch',
                 $animate_highkick: '#this.highkick',
+                $animate_flyingkick: '#this.flyingkick',
                 $animate_lowkick: '#this.lowkick',
                 $animate_duckkick: '#this.duckkick',
                 $animate_duck: '#this.duck',
@@ -454,10 +462,10 @@ export class Eila extends Fighter {
                         SM.play(AudioId.kick);
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
-                    next(this: Eila) {
+                    next(this: Fighter, state: State) {
+                        state.to('idle'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
                         $.emit('animationEnd', this, 'highkick');
-                        return 'idle';
-                    }
+                    },
                 },
                 lowkick: {
                     ticks2move: Eila.ATTACK_DURATION,
@@ -466,10 +474,10 @@ export class Eila extends Fighter {
                         this.imgid = BitmapId.eila_lowkick;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
-                    next(this: Eila) {
+                    next(this: Fighter, state: State) {
+                        state.to('idle'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
                         $.emit('animationEnd', this, 'lowkick');
-                        return 'idle';
-                    }
+                    },
                 },
                 punch: {
                     ticks2move: Eila.ATTACK_DURATION,
@@ -478,9 +486,9 @@ export class Eila extends Fighter {
                         this.imgid = BitmapId.eila_punch;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
-                    next(this: Eila) {
+                    next(this: Fighter, state: State) {
+                        state.to('idle'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
                         $.emit('animationEnd', this, 'punch');
-                        return 'idle';
                     }
                 },
                 duckkick: {
@@ -489,9 +497,9 @@ export class Eila extends Fighter {
                         SM.play(AudioId.kick);
                         this.imgid = BitmapId.eila_duckkick;
                     },
-                    next(this: Eila) {
+                    next(this: Fighter, state: State) {
+                        state.to('duck'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
                         $.emit('animationEnd', this, 'duckkick');
-                        return 'duck';
                     }
                 },
                 flyingkick: {
@@ -501,9 +509,9 @@ export class Eila extends Fighter {
                         this.imgid = BitmapId.eila_flyingkick;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
-                    next(this: Eila) {
+                    next(this: Fighter, state: State) {
+                        state.to('jump'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
                         $.emit('animationEnd', this, 'flyingkick');
-                        return 'jump';
                     }
                 },
                 duck: {
