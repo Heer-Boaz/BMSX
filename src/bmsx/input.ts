@@ -168,12 +168,10 @@ interface IInputHandler {
 	get gamepadIndex(): number;
 }
 
-
 const options = {
 	passive: false,
 	once: false,
 };
-
 
 class SelectedPlayerIndexIcon extends SpriteObject {
 	@build_fsm()
@@ -248,7 +246,7 @@ class SelectedPlayerIndexIcon extends SpriteObject {
 class PendingAssignmentProcessor {
 	private static readonly joystick_icon_start = { x: 0, y: 0 };
 	private static readonly joystick_icon_increment_x = 32;
-	private get pendingIndex() { return this.gamepadInput.gamepadIndex; } // DOESN'T WORK, AS THE GAMEPAD INDEX 0 WILL OVERLAP THE HARDCODED INDEX 0 OF ON-SCREEN GAMEPAD!
+	private get pendingIndex() { return this.gamepadInput.gamepadIndex; }
 
 	private icon: SelectedPlayerIndexIcon = null;
 
@@ -563,12 +561,6 @@ export class Input implements IRegisterable {
 		gamescreen.addEventListener('mouseout', this.handleDebugEvents, options);
 		gamescreen.addEventListener('contextmenu', e => this.handleDebugEvents(e), options);
 		window.addEventListener('keydown', e => this.handleDebugEvents(e), options);
-		// window.addEventListener('click', function (e) {
-		//     if ((e.target as Element).matches('ul.tree li:before')) {
-		//         const parentNode = (e.target as HTMLElement).parentNode as HTMLElement;
-		//         parentNode?.classList.toggle('open');
-		//     }
-		// });
 	}
 
 	public dispose(): void {
@@ -1825,7 +1817,6 @@ class OnscreenGamepad implements IInputHandler {
 		}
 		return [];
 	}
-
 
 	blur(_e: FocusEvent): void {
 		this.reset();
