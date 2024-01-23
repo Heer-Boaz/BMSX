@@ -179,7 +179,7 @@ class SelectedPlayerIndexIcon extends SpriteObject {
 		return {
 			on: {
 				$animation_end: {
-					do: function (this: SelectedPlayerIndexIcon) {
+					do(this: SelectedPlayerIndexIcon) {
 						this.markForDisposal();
 					}
 				},
@@ -208,7 +208,7 @@ class SelectedPlayerIndexIcon extends SpriteObject {
 					repetitions: 16,
 					auto_rewind_tape_after_end: false,
 					ticks2move: 1,
-					enter: function (this: SelectedPlayerIndexIcon) {
+					enter(this: SelectedPlayerIndexIcon) {
 						this.colorize = { r: 1, g: 0, b: 0, a: .75 };
 					},
 					next(this: SelectedPlayerIndexIcon, state: State) {
@@ -1683,7 +1683,7 @@ class OnscreenGamepad implements IInputHandler {
 			case 'dpad':
 				this.resetUI(OnscreenGamepad.actionButtonElementIds);
 				// Remove all classes from dpad_omheining
-				dpad_omheining.classList.remove('d-pad-lu', 'd-pad-u', 'd-pad-ru', 'd-pad-r', 'd-pad-rd', 'd-pad-d', 'd-pad-ld', 'd-pad-l');
+				dpad_omheining.classList.remove(...OnscreenGamepad.dpadButtonElementIds);
 				break;
 		}
 
@@ -1693,6 +1693,16 @@ class OnscreenGamepad implements IInputHandler {
 
 		const filterFromReset: string[] = [];
 		const elementsToFilter: string[] = [];
+		const dpadMappings = {
+			'd-pad-lu': ['d-pad-u', 'd-pad-l'],
+			'd-pad-u': ['d-pad-lu', 'd-pad-ru'],
+			'd-pad-ru': ['d-pad-u', 'd-pad-r'],
+			'd-pad-r': ['d-pad-ru', 'd-pad-rd'],
+			'd-pad-ld': ['d-pad-d', 'd-pad-l'],
+			'd-pad-d': ['d-pad-ld', 'd-pad-rd'],
+			'd-pad-rd': ['d-pad-d', 'd-pad-r'],
+			'd-pad-l': ['d-pad-lu', 'd-pad-ld'],
+		};
 		for (let i = 0; i < e.touches.length; i++) {
 			let pos = e.touches[i];
 			const elementsUnderTouch = document.elementsFromPoint(pos.clientX, pos.clientY) as HTMLElement[];
@@ -1713,43 +1723,9 @@ class OnscreenGamepad implements IInputHandler {
 						elementsToFilter.push(elementUnderTouch.id);
 
 						buttonsTouched.forEach(b => filterFromReset.push(b));
-						let dpad_class_name = null;
-						switch (elementUnderTouch.id) {
-							case 'd-pad-lu':
-								elementsToFilter.push('d-pad-u', 'd-pad-l');
-								dpad_class_name = elementUnderTouch.id;
-								break;
-							case 'd-pad-u':
-								elementsToFilter.push('d-pad-lu', 'd-pad-ru');
-								dpad_class_name = elementUnderTouch.id;
-								break;
-							case 'd-pad-ru':
-								elementsToFilter.push('d-pad-u', 'd-pad-r');
-								dpad_class_name = elementUnderTouch.id;
-								break;
-							case 'd-pad-r':
-								elementsToFilter.push('d-pad-ru', 'd-pad-rd');
-								dpad_class_name = elementUnderTouch.id;
-								break;
-							case 'd-pad-ld':
-								elementsToFilter.push('d-pad-d', 'd-pad-l');
-								dpad_class_name = elementUnderTouch.id;
-								break;
-							case 'd-pad-d':
-								elementsToFilter.push('d-pad-ld', 'd-pad-rd');
-								dpad_class_name = elementUnderTouch.id;
-								break;
-							case 'd-pad-rd':
-								elementsToFilter.push('d-pad-d', 'd-pad-r');
-								dpad_class_name = elementUnderTouch.id;
-								break;
-							case 'd-pad-l':
-								elementsToFilter.push('d-pad-lu', 'd-pad-ld');
-								dpad_class_name = elementUnderTouch.id;
-								break;
-						}
-						if (dpad_class_name) {
-							dpad_omheining.classList.add(dpad_class_name);
+						if (dpadMappings[elementUnderTouch.id]) {
+							elementsToFilter.push(...dpadMappings[elementUnderTouch.id]);
+							dpad_omheining.classList.add(elementUnderTouch.id);
 						}
 					}
 				}
@@ -1788,7 +1764,7 @@ class OnscreenGamepad implements IInputHandler {
 			case 'dpad':
 				const dpad_omheining = document.getElementById('d-pad-omheining') as HTMLElement;
 				// Remove all classes from dpad_omheining
-				dpad_omheining.classList.remove('d-pad-lu', 'd-pad-u', 'd-pad-ru', 'd-pad-r', 'd-pad-rd', 'd-pad-d', 'd-pad-ld', 'd-pad-l');
+				dpad_omheining.classList.remove(...OnscreenGamepad.dpadButtonElementIds);
 				this.resetUI(OnscreenGamepad.actionButtonElementIds);
 				break;
 		}
