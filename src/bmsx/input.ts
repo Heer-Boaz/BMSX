@@ -1036,7 +1036,7 @@ export class PlayerInput {
 		if (this.gamepadInput && this.gamepadInput !== gamepadInput) {
 			console.warn(`Replacing existing gamepad for player ${this.playerIndex} with gamepad ${gamepadInput.gamepadIndex}.`);
 			if (this.gamepadInput instanceof OnscreenGamepad) {
-
+				console.warn(`Existing gamepad ${gamepadInput.gamepadIndex} is an on-screen gamepad that will be reassigned.`);
 			}
 		}
 		this.gamepadInput = gamepadInput;
