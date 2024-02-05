@@ -282,7 +282,6 @@ class PendingAssignmentProcessor {
 			console.info(`Gamepad ${gamepadInput.gamepadIndex} proposed to be assigned to player ${newProposedPlayerIndex ?? 'none (no free slots left)'}.`);
 		}
 	}
-
 	private createSelectPlayerIconIfNeeded(gamepadInput: IInputHandler, positionIndex: number) {
 		const model = $.model;
 		if (!this.icon) { // If the joystick icon doesn't exist yet, create it
