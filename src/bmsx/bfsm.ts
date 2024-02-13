@@ -814,6 +814,31 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 */
 	public get start_state_id(): Identifier { return this.definition?.start_state_id; }
 
+	private critical_section_counter: number;
+	private transition_queue: Identifier[];
+
+	// @ts-ignore
+	private enterCriticalSection(): void {
+		++this.critical_section_counter;
+	}
+
+	// @ts-ignore
+	private leaveCriticalSection(): void {
+		--this.critical_section_counter;
+		if (this.critical_section_counter === 0) {
+			this.process_transition_queue();
+		}
+	}
+
+	private process_transition_queue(): void {
+		while (this.transition_queue.length > 0) {
+			const state_id = this.transition_queue.shift();
+			if (state_id) {
+				this.switch(state_id);
+			}
+		}
+	}
+
 	/**
 	 * Gets the definition of the current state of the FSM.
 	 * Note that the definition can be empty, as not all objects have a defined machine.
@@ -853,6 +878,8 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		// When parameters are undefined, this constructor was invoked without parameters. This happens when it is revived. In that situation, don't init this object
 		if (def_id && target_id) {
 			this.id = this.make_id();
+			this.transition_queue = [];
+			this.critical_section_counter = 0;
 			this.onLoadSetup();
 		}
 		this.root_id = root_id ?? this.id;
@@ -890,34 +917,39 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		if (!definition) return; // If there is no definition, there is nothing to run
 		if (this.paused) return;
 
-		// First process any input
-		let next_state = definition.process_input?.call(this.target, this);
-		if (next_state) {
-			this.to(next_state);
-			// TODO: should we run the state here? Or should we wait until the next tick?
-		}
+		this.enterCriticalSection();
+		try {
+			// First process any input
+			let next_state = definition.process_input?.call(this.target, this);
+			if (next_state) {
+				this.to(next_state);
+				// TODO: should we run the state here? Or should we wait until the next tick?
+			}
 
-		// Then, run the substate
-		next_state = definition.run?.call(this.target, this);
-		// If a next state is given, transition to the next state
-		if (next_state) {
-			this.to(next_state);
-			// TODO: should we run the state here? Or should we wait until the next tick?
-		}
-		else {
-			if (definition.auto_tick) ++this.ticks; // Auto-nudge the state if auto_nudge is set to true
-		}
+			// Then, run the state
+			next_state = definition.run?.call(this.target, this);
+			// If a next state is given, transition to the next state
+			if (next_state) {
+				this.to(next_state);
+				// TODO: should we run the state here? Or should we wait until the next tick?
+			}
+			else {
+				if (definition.auto_tick) ++this.ticks; // Auto-nudge the state if auto_nudge is set to true
+			}
 
-		// Then run the submachine for the state if it exists
-		if (!this.states) return; // If there are no states defined, there is no submachine to run and we can return early
+			// Then run the submachine for the state if it exists
+			if (!this.states) return; // If there are no states defined, there is no submachine to run and we can return early
 
-		this.current.run(); // Run the current state of the substate machine
+			this.current.run(); // Run the current state of the substate machine
 
-		// Run all substate machines that have 'parallel' set to true
-		for (const id in this.states) {
-			// Skip the current machine, as it has already been run
-			if (id === this.currentid) continue;
-			if (this.states[id].parallel) this.states[id].run();
+			// Run all substate machines that have 'parallel' set to true
+			for (const id in this.states) {
+				// Skip the current machine, as it has already been run
+				if (id === this.currentid) continue;
+				if (this.states[id].parallel) this.states[id].run();
+			}
+		} finally {
+			this.leaveCriticalSection();
 		}
 	}
 
@@ -1107,24 +1139,29 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 * Transition to the specified state.
 	 * If the return value of the enter function is a string, it is assumed to be the ID of the next state to transition to.
 	 *
-	 * @param stateId - The identifier of the state to transition to.
+	 * @param state_id - The identifier of the state to transition to.
 	 * @param args - Optional arguments to pass to the state's enter and exit actions.
 	 * @throws Error - If the state with the specified ID doesn't exist or if the target state is parallel.
 	 */
-	private transitionToState(stateId: Identifier, ...args: any[]): void {
+	private transitionToState(state_id: Identifier, ...args: any[]): void {
+		if (this.critical_section_counter > 0) {
+			this.transition_queue.push(state_id);
+			return;
+		}
+
 		// Perform exit actions for the current state
 		let stateDef = this.current_state_definition;
 		stateDef?.exit?.call(this.target, this.current, ...args);
 		stateDef && this.pushHistory(this.currentid);
 
 		// Update the current state
-		this.currentid = stateId;
-		if (!this.current) throw new Error(`State '${stateId}' doesn't exist for this state machine '${this.def_id}'!`);
+		this.currentid = state_id;
+		if (!this.current) throw new Error(`State '${state_id}' doesn't exist for this state machine '${this.def_id}'!`);
 
 		// Perform enter actions for the new current state
 		stateDef = this.current_state_definition;
 		if (!stateDef) return; // There is no definition for the none-state, so we don't trigger the enter event for that state.
-		if (stateDef.parallel) throw new Error(`Cannot transition to parallel state '${stateId}'!`);
+		if (stateDef.parallel) throw new Error(`Cannot transition to parallel state '${state_id}'!`);
 
 		if (stateDef.auto_reset) {
 			switch (stateDef.auto_reset) {
@@ -1176,49 +1213,54 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 			return false; // Return false to indicate that the event was not handled
 		}
 
+		this.enterCriticalSection();
 		// Check if the 'on' property of the state's definition contains a transition for the event
-		const state_id_or_handler = this.definition?.on?.[eventName];
-		if (state_id_or_handler) {
-			if (typeof state_id_or_handler === 'string') {
-				// If the handler is a string, treat it as a state ID and transition to that state
-				// If the string starts with a '#', it is a state ID relative to the parent state machine, otherwise it is a state ID relative to the current state machine
-				// const state_id = state_id_or_handler.startsWith('#') ? state_id_or_handler.slice(1) : state_id_or_handler;
-				this.to(state_id_or_handler, ...args); // Transition to the state with the given ID and pass the arguments to the state transition function
-				// Note: the state transition function will handle the enter and exit events for the states, but not if the state is the same as the current state
-			} else {
-				// If the handler is a StateTransition object (i.e., an object with an 'if' and 'do' handler), call the 'if' handler and if it returns true, call the 'do' handler and transition to the target state
-				const ifHandler = state_id_or_handler.if; // Get the if-handler from the state transition object
-				const doHandler = state_id_or_handler.do; // Get the do-handler from the state transition object
-				const emitterId = state_id_or_handler.scope; // (Optional) The ID of the emitter scope. If provided, the listener will be added to the emitter scope listeners, otherwise it will be added to the global scope listeners.
-				const targetStateId = state_id_or_handler.to; // Get the target state ID from the state transition object
+		try {
+			const state_id_or_handler = this.definition?.on?.[eventName];
+			if (state_id_or_handler) {
+				if (typeof state_id_or_handler === 'string') {
+					// If the handler is a string, treat it as a state ID and transition to that state
+					// If the string starts with a '#', it is a state ID relative to the parent state machine, otherwise it is a state ID relative to the current state machine
+					// const state_id = state_id_or_handler.startsWith('#') ? state_id_or_handler.slice(1) : state_id_or_handler;
+					this.to(state_id_or_handler, ...args); // Transition to the state with the given ID and pass the arguments to the state transition function
+					// Note: the state transition function will handle the enter and exit events for the states, but not if the state is the same as the current state
+				} else {
+					// If the handler is a StateTransition object (i.e., an object with an 'if' and 'do' handler), call the 'if' handler and if it returns true, call the 'do' handler and transition to the target state
+					const ifHandler = state_id_or_handler.if; // Get the if-handler from the state transition object
+					const doHandler = state_id_or_handler.do; // Get the do-handler from the state transition object
+					const emitterId = state_id_or_handler.scope; // (Optional) The ID of the emitter scope. If provided, the listener will be added to the emitter scope listeners, otherwise it will be added to the global scope listeners.
+					const targetStateId = state_id_or_handler.to; // Get the target state ID from the state transition object
 
-				// If the emitter ID is provided and it is not the same as the emitter ID of the event, do nothing
-				if (emitterId && emitterId !== 'all' && emitterId !== emitter_id) {
-					return false; // Return false to indicate that the event was not handled
+					// If the emitter ID is provided and it is not the same as the emitter ID of the event, do nothing
+					if (emitterId && emitterId !== 'all' && emitterId !== emitter_id) {
+						return false; // Return false to indicate that the event was not handled
+					}
+
+					// If the emitter ID is not provided or it is the same as the emitter ID of the event, call the if-handler
+					if (ifHandler && !ifHandler.call(this.target, this as State<T>, ...args)) {
+						// If the if-handler exists and returns false, do nothing
+						return false; // Return false to indicate that the event was not handled
+					}
+
+					// If the if-handler does not exist or returns true, call the do-handler.
+					// The do-handler can return a state ID to transition to, otherwise it can return undefined to indicate that no transition should occur or to indicate that the target state should be used.
+					const next_state = doHandler?.call(this.target, this as State<T>, ...args);
+
+					// If the next state is not the current state, transition to the next state
+					if (next_state && next_state !== this.currentid) {
+						this.to(next_state);
+					} else if (targetStateId) {
+						// Transition to the target state if it is defined and not the same as the current state ID (otherwise, do nothing)
+						targetStateId && this.to(targetStateId, ...args);
+					}
 				}
-
-				// If the emitter ID is not provided or it is the same as the emitter ID of the event, call the if-handler
-				if (ifHandler && !ifHandler.call(this.target, this as State<T>, ...args)) {
-					// If the if-handler exists and returns false, do nothing
-					return false; // Return false to indicate that the event was not handled
-				}
-
-				// If the if-handler does not exist or returns true, call the do-handler.
-				// The do-handler can return a state ID to transition to, otherwise it can return undefined to indicate that no transition should occur or to indicate that the target state should be used.
-				const next_state = doHandler?.call(this.target, this as State<T>, ...args);
-
-				// If the next state is not the current state, transition to the next state
-				if (next_state && next_state !== this.currentid) {
-					this.to(next_state);
-				} else if (targetStateId) {
-					// Transition to the target state if it is defined and not the same as the current state ID (otherwise, do nothing)
-					targetStateId && this.to(targetStateId, ...args);
-				}
+				return true; // Return true to indicate that the event was handled
 			}
-			return true; // Return true to indicate that the event was handled
-		}
 
-		return false; // Return false if the event was not handled (it will bubble up to the parent state)
+			return false; // Return false if the event was not handled (it will bubble up to the parent state)
+		} finally {
+			this.leaveCriticalSection();
+		}
 	}
 
 	/**
@@ -1346,48 +1388,52 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 * @param v - the new position of the tapehead
 	 */
 	public set head(v: number) {
-		this._ticks = 0; // Always reset tapehead ticks after moving tapehead
-		this._tapehead = v; // Move the tape to new position
+		this.enterCriticalSection();
+		try {
+			this._ticks = 0; // Always reset tapehead ticks after moving tapehead
+			this._tapehead = v; // Move the tape to new position
 
-		// Check if the tapehead is going out of bounds (or there is no tape at all)
-		if (!this.tape) {
-			this._tapehead = TAPE_START_INDEX;
-
-			// Trigger the event for moving the tape, after having set the tapehead to the correct position
-			this.tapemove();
-
-			// Trigger the event for reaching the end of the tape
-			this.tapeend();
-		}
-		// Check if the tape now is at the end
-		else if (this.beyond_tapeend) {
-			// Check whether we automagically rewind the tape
-			if (this.definition.auto_rewind_tape_after_end) {
-				// If so, rewind and move to the first element of the tapehead
-				// But why? (Yes... Why?) Because we then can loop an animation,
-				// including the first and last element of the tape, without having
-				// to resort to any workarounds like duplicating the first entry
-				// of the tape or similar.
-				this._tapehead = 0; // Set the tapehead to the beginning of the tape, but not to TAPE_START_INDEX, as that is before the start of the tape and we are now properly triggering the tapemove event for the first element of the tape
+			// Check if the tapehead is going out of bounds (or there is no tape at all)
+			if (!this.tape) {
+				this._tapehead = TAPE_START_INDEX;
 
 				// Trigger the event for moving the tape, after having set the tapehead to the correct position
-				this.tapemove(true);
+				this.tapemove();
+
+				// Trigger the event for reaching the end of the tape
+				this.tapeend();
+			}
+			// Check if the tape now is at the end
+			else if (this.beyond_tapeend) {
+				// Check whether we automagically rewind the tape
+				if (this.definition.auto_rewind_tape_after_end) {
+					// If so, rewind and move to the first element of the tapehead
+					// But why? (Yes... Why?) Because we then can loop an animation,
+					// including the first and last element of the tape, without having
+					// to resort to any workarounds like duplicating the first entry
+					// of the tape or similar.
+					this._tapehead = 0; // Set the tapehead to the beginning of the tape, but not to TAPE_START_INDEX, as that is before the start of the tape and we are now properly triggering the tapemove event for the first element of the tape
+
+					// Trigger the event for moving the tape, after having set the tapehead to the correct position
+					this.tapemove(true);
+				}
+				else {
+					// Set the tapehead to the end of the tape (or 0 if there is no tape)
+					this._tapehead = this.tape.length > 0 ? this.tape.length - 1 : TAPE_START_INDEX;
+
+					// We do not trigger the tapemove event here, as the tapehead is not actually moving and we dont want to trigger the tapemove event twice in a row for the same tapehead position
+				}
+
+				// Trigger the event for reaching the end of the tape
+				this.tapeend();
 			}
 			else {
-				// Set the tapehead to the end of the tape (or 0 if there is no tape)
-				this._tapehead = this.tape.length > 0 ? this.tape.length - 1 : TAPE_START_INDEX;
-
-				// We do not trigger the tapemove event here, as the tapehead is not actually moving and we dont want to trigger the tapemove event twice in a row for the same tapehead position
+				// Trigger the event for moving the tape. This is executed when no tapehead correction was required
+				this.tapemove();
 			}
-
-			// Trigger the event for reaching the end of the tape
-			this.tapeend();
+		} finally {
+			this.leaveCriticalSection();
 		}
-		else {
-			// Trigger the event for moving the tape. This is executed when no tapehead correction was required
-			this.tapemove();
-		}
-
 	}
 
 	// Sets the current position of the tapehead to the given value without triggering any events or side effects.
@@ -1431,10 +1477,15 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 * @param tape_rewound Indicates whether the tape has been rewound. Only occurs when the tape is automatically rewound after reaching the end of the tape via @see {@link StateDefinition.auto_rewind_tape_after_end}.
 	 */
 	protected tapemove(tape_rewound: boolean = false) {
-		const next_state = this.definition.next?.call(this.target, this, tape_rewound);
-		// If the next state is not the current state, transition to the next state
-		if (next_state && next_state !== this.currentid) {
-			this.to(next_state);
+		this.enterCriticalSection();
+		try {
+			const next_state = this.definition.next?.call(this.target, this, tape_rewound);
+			// If the next state is not the current state, transition to the next state
+			if (next_state && next_state !== this.currentid) {
+				this.to(next_state);
+			}
+		} finally {
+			this.leaveCriticalSection();
 		}
 	}
 
@@ -1442,10 +1493,15 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 * Triggers the `end` event of the state machine definition, passing this state and the `state_event_type.End` event type as arguments.
 	 */
 	protected tapeend() {
-		const next_state = this.definition.end?.call(this.target, this, undefined);
-		// If the next state is not the current state, transition to the next state
-		if (next_state && next_state !== this.currentid) {
-			this.to(next_state);
+		this.enterCriticalSection();
+		try {
+			const next_state = this.definition.end?.call(this.target, this, undefined);
+			// If the next state is not the current state, transition to the next state
+			if (next_state && next_state !== this.currentid) {
+				this.to(next_state);
+			}
+		} finally {
+			this.leaveCriticalSection();
 		}
 	}
 
