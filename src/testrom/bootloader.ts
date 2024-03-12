@@ -1,4 +1,4 @@
-import { BaseModel, BehaviorTreeDefinition, Component, Direction, GLView, Game, GameObject, GamepadInputMapping, InputMap, GamepadButton, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, ProhibitLeavingScreenComponent, RomPack, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, insavegame, new_area, new_vec2, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components } from '../bmsx/bmsx';
+import { BaseModel, BehaviorTreeDefinition, Component, Direction, GLView, Game, GameObject, GamepadInputMapping, InputMap, GamepadButton, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, ProhibitLeavingScreenComponent, RomPack, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, insavegame, new_area, new_vec2, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/bmsx';
 import { BitmapId } from './resourceids';
 
 var _game: Game;
@@ -342,8 +342,8 @@ class gamemodel extends BaseModel {
         return {
             states: {
                 '#game_start': {
-                    run(this: gamemodel) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
-                        this.sc.to('default');
+                    run(this: gamemodel, s: State) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
+                        s.to('default');
                     }
                 },
                 default: {
