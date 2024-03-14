@@ -39,15 +39,15 @@ export class Eila extends Fighter {
     }
 
     public static bouw(animation_machine_name: Identifier): StateMachineBlueprint {
-        function default_input_processor(this: Fighter) {
+        function default_input_processor(this: Fighter): string | void {
             if (this.isAIed) return; // AIed fighters don't process input
 
             const priorityActions = $.input.getPlayerInput(this.playerIndex).getPressedActions({ pressed: true, consumed: false, actionsByPriority: ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick'] });
 
             // If no actions are pressed, switch to idle
             if (priorityActions.length === 0) {
-                this.sc.to('idle');
-                return;
+                // this.sc.to('idle');
+                return 'idle';
             }
 
             let higherPrioActionProcessed = false;
@@ -70,18 +70,21 @@ export class Eila extends Fighter {
                         }
                         else {
                             this.x += action === 'right' ? Fighter.SPEED : -Fighter.SPEED;
-                            this.sc.to('walk');
+                            return 'walk';
+                            // this.sc.to('walk');
                         }
                         break;
                     case 'duck':
-                        this.sc.to('duck');
-                        higherPrioActionProcessed = true;
+                        // this.sc.to('duck');
+                        // higherPrioActionProcessed = true;
+                        return 'duck';
                         break;
                     case 'punch':
                     case 'highkick':
                     case 'lowkick':
                         $.input.getPlayerInput(this.playerIndex).consumeAction(action);
-                        this.sc.to(action);
+                        // this.sc.to(action);
+                        return action;
                         break;
                     case 'jump':
                         $.input.getPlayerInput(this.playerIndex).consumeAction(action);

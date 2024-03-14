@@ -815,7 +815,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	public get start_state_id(): Identifier { return this.definition?.start_state_id; }
 
 	private critical_section_counter: number;
-	private transition_queue: Identifier[];
+	private transition_queue: { state_id: Identifier, args: any[] }[];
 
 	// @ts-ignore
 	private enterCriticalSection(): void {
@@ -828,14 +828,16 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		if (this.critical_section_counter === 0) {
 			this.process_transition_queue();
 		}
+		else if (this.critical_section_counter < 0) {
+			throw new Error(`Critical section counter was lower than 0, which is obviously a bug. State: "${this.id}, StateDefId: "${this.def_id}.`);
+		}
 	}
 
 	private process_transition_queue(): void {
 		while (this.transition_queue.length > 0) {
-			const state_id = this.transition_queue.shift();
-			if (state_id) {
-				this.switch(state_id);
-			}
+			const state_transition = this.transition_queue.shift();
+			console.debug(`Shifting '${state_transition.state_id}'`);
+			this.transitionToState(state_transition.state_id, ...state_transition.args);
 		}
 	}
 
@@ -1145,7 +1147,8 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 */
 	private transitionToState(state_id: Identifier, ...args: any[]): void {
 		if (this.critical_section_counter > 0) {
-			this.transition_queue.push(state_id);
+			console.debug(`Pushing '${state_id}'`);
+			this.transition_queue.push({ state_id: state_id, args: args });
 			return;
 		}
 
