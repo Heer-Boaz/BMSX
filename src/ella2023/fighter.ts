@@ -2,6 +2,39 @@ import { Identifier, ProhibitLeavingScreenComponent, SM, SpriteObject, StateMach
 import { gamemodel } from './gamemodel';
 import { AudioId, BitmapId } from './resourceids';
 
+// return {
+//     on: {
+//         $go_idle: {
+//             if: (this: Fighter, state: State) => !state.is('stoerheidsdans') && !state.is('nagenieten'),
+//             to: '#this.idle',
+//         },
+//         // ...
+//     },
+//     states: {
+//         _idle: {
+//             process_input: default_input_processor,
+//             enter(this: Fighter) {
+//                 // ...
+//             },
+//             guards: {
+//                 canEnter: (this: Fighter) => !this.attacking && !this.attacked_while_jumping,
+//             },
+//         },
+//         humiliated: {
+//             enter(this: Fighter) {
+//                 // ...
+//             },
+//             exit(this: Fighter) {
+//                 // ...
+//             },
+//             guards: {
+//                 canEnter: (this: Fighter) => !this.hittable && !this.fighting,
+//             },
+//         },
+//         // ...
+//     },
+// };
+
 export type AttackType = string;
 
 export type HitMarkerType = 'player_hit' | 'enemy_hit' | 'poef';
