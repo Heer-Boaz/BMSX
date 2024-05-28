@@ -146,7 +146,7 @@ export function assign_fsm(...fsms: FSMName[]) {
 			constructor.linkedFSMs = new Set<FSMName>();
 		}
 		fsms.forEach(fsm => constructor.linkedFSMs.add(fsm));
-		updateAllAssignedFSMs(constructor);
+		updateAssignedFSMs(constructor);
 	};
 }
 
@@ -155,7 +155,7 @@ export function assign_fsm(...fsms: FSMName[]) {
  *
  * @param constructor - The constructor function.
  */
-function updateAllAssignedFSMs(constructor: any) {
+function updateAssignedFSMs(constructor: any) {
 	const linkedFSMs = new Set<FSMName>();
 	let currentClass: any = constructor;
 
@@ -187,7 +187,7 @@ export function build_fsm(fsm_name?: Identifier) {
  * If a definition is returned, it creates a new `sdef` object with the machine name and definition.
  * If the `sdef` object is created successfully, it sets the machine definition in the `MachineDefinitions` object.
  */
-export function setup_fssdef_library(): void {
+export function setupFSMlibrary(): void {
 	StateDefinitions = {};
 	for (let machine_name in StateDefinitionBuilders) {
 		let machine_definition = StateDefinitionBuilders[machine_name]();
@@ -195,7 +195,7 @@ export function setup_fssdef_library(): void {
 			const machineBuilt = createMachine(machine_name, machine_definition);
 			validateStateMachine(machineBuilt); // Check if the machine definition is valid before adding it to the library of machine definitions
 			StateDefinitions[machine_name] = machineBuilt; // Add the machine definition to the library of machine definitions
-			addEventListToDefinition(machineBuilt); // Add the events to the event list of the machine definition
+			addEventsToDef(machineBuilt); // Add the events to the event list of the machine definition
 		}
 	}
 }
@@ -213,9 +213,9 @@ function createMachine(machine_name: Identifier, machine_definition: StateMachin
 	return new StateDefinition(machine_name, machine_definition, null);
 }
 
-function addEventListToDefinition(machine: StateMachineBlueprint): void {
+function addEventsToDef(machine: StateMachineBlueprint): void {
 	// If the machine has events defined, add them to the event list of the machine definition
-	const eventMap = getStateMachineEvents(machine); // Get the events from the machine definition
+	const eventMap = getMachineEvents(machine); // Get the events from the machine definition
 	if (eventMap && eventMap.size > 0) {
 		machine.event_list = []; // Create a new event list for the machine definition
 		eventMap.forEach(event_entry => { // Add the events to the event list of the
@@ -236,7 +236,7 @@ function addEventListToDefinition(machine: StateMachineBlueprint): void {
  * @param eventNamesAndScopes - Optional set of event names and scopes to filter the events.
  * @returns A set of events from the state machine blueprint.
  */
-function getStateMachineEvents(machine: StateMachineBlueprint, eventNamesAndScopes?: Set<listed_sdef_event>) {
+function getMachineEvents(machine: StateMachineBlueprint, eventNamesAndScopes?: Set<listed_sdef_event>) {
 	/**
 	 * Adds a state event to the list of events, where the name of the event is the key and the scope is the value.
 	 * Note that the scope is 'all' if the event is not prefixed with '$', otherwise it is 'self'.
@@ -248,10 +248,10 @@ function getStateMachineEvents(machine: StateMachineBlueprint, eventNamesAndScop
 	 */
 	function add(name: string, definition: string | StateEventDefinition): void {
 		if (typeof definition === 'string') {
-			addAndReplace(removeScopeFromEventName(name), parseScopeFromEventName(name));
+			addAndReplace(removeScopeFromEventName(name), parseEventScope(name));
 		}
 		else {
-			addAndReplace(removeScopeFromEventName(name), definition.scope ?? parseScopeFromEventName(name));
+			addAndReplace(removeScopeFromEventName(name), definition.scope ?? parseEventScope(name));
 		}
 	}
 
@@ -269,13 +269,21 @@ function getStateMachineEvents(machine: StateMachineBlueprint, eventNamesAndScop
 	}
 
 	/**
+	 * Checks if the event name has a scope.
+	 * @param name The event name.
+	 * @returns True if the event name has a scope, false otherwise.
+	 */
+	function hasScope(name: string): boolean {
+		return name.startsWith('$');
+	}
+
+	/**
 	 * Parses the event scope from the event name.
 	 * @param name The event name.
 	 * @returns The event scope ('self' or 'all').
 	 */
-	function parseScopeFromEventName(name: string): EventScope {
-		if (name.startsWith('$')) return 'self';
-		return 'all';
+	function parseEventScope(name: string): EventScope {
+		return hasScope(name) ? 'self' : 'all';
 	}
 
 	/**
@@ -287,8 +295,7 @@ function getStateMachineEvents(machine: StateMachineBlueprint, eventNamesAndScop
 	 * @returns The event name without the scope.
 	 */
 	function removeScopeFromEventName(name: string): string {
-		if (name.startsWith('$')) return name.slice(1);
-		return name;
+		return hasScope(name) ? name.slice(1) : name;
 	}
 
 	// Get the events from the machine definition
@@ -327,7 +334,7 @@ function getStateMachineEvents(machine: StateMachineBlueprint, eventNamesAndScop
 
 		// If the state has a submachine, recursively subscribe to its events
 		if (state_def.states) {
-			getStateMachineEvents(state, events);
+			getMachineEvents(state, events);
 		}
 	}
 

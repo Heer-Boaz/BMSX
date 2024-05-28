@@ -1,5 +1,5 @@
 import { BehaviorTreeDefinition, BehaviorTreeDefinitions, BehaviorTreeID, setup_btdef_library, setup_bt_library } from "./behaviourtree";
-import { StateDefinitions, StateDefinition, State, StateMachineController, IStateful, setup_fssdef_library } from "./bfsm";
+import { StateDefinitions, StateDefinition, State, StateMachineController, IStateful, setupFSMlibrary } from "./bfsm";
 import type { IRegisterable, Identifier } from "./game";
 import { GameObject } from "./gameobject";
 import { insavegame, onsave, Reviver, Savegame, Serializer } from "./gameserializer";
@@ -377,7 +377,7 @@ export abstract class BaseModel implements IStateful, IRegisterable {
      * @returns {void} Nothing.
      */
     private static setup_fsmdef_library(): void {
-        setup_fssdef_library();
+        setupFSMlibrary();
     }
 
     private static setup_bt_library(): void {
