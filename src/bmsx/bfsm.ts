@@ -86,6 +86,11 @@ export type StateEventDefinition<T extends IStateful & IEventSubscriber = any> =
 	scope?: EventScope,
 };
 
+interface IStateGuard<T extends IStateful & IEventSubscriber = any> {
+	canEnter?: (this: T) => boolean;
+	canExit?: (this: T) => boolean;
+}
+
 /**
  * Represents a tape used in the BFSM.
  */
@@ -1145,6 +1150,33 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	}
 
 	/**
+	 * Checks the state guards of the current state and the target state.
+	 * If the current state has a canExit guard and it returns false, the transition is prevented.
+	 * If the target state has a canEnter guard and it returns false, the transition is prevented.
+	 * If all guards pass, the transition is allowed.
+	 * @param target_state_id - The identifier of the target state.
+	 * @returns true if the transition is allowed, false otherwise.
+	 */
+	private checkStateGuardConditions(target_state_id: Identifier): boolean {
+		const currentStateDefinition = this.current_state_definition;
+		const targetStateDefinition = this.definition.states[target_state_id];
+
+		// Check if the current state has a canExit guard and if it returns false, prevent the transition
+		if (currentStateDefinition.guards?.canExit && !currentStateDefinition.guards.canExit.call(this)) {
+			console.debug(`Cannot exit state: ${currentStateDefinition.id}`);
+			return false;
+		}
+
+		// Check if the target state has a canEnter guard and if it returns false, prevent the transition
+		if (targetStateDefinition.guards?.canEnter && !targetStateDefinition.guards.canEnter.call(this)) {
+			console.debug(`Cannot enter state: ${target_state_id}`);
+			return false;
+		}
+
+		return true; // All guards passed, allow the transition
+	}
+
+	/**
 	 * Transition to the specified state.
 	 * If the return value of the enter function is a string, it is assumed to be the ID of the next state to transition to.
 	 *
@@ -1158,6 +1190,9 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 			this.transition_queue.push({ state_id: state_id, args: args });
 			return;
 		}
+
+		// If any state guard conditions fail, prevent the transition
+		if (!this.checkStateGuardConditions(state_id)) return;
 
 		// Perform exit actions for the current state
 		let stateDef = this.current_state_definition;
@@ -1708,6 +1743,8 @@ export class StateDefinition {
 	public on?: {
 		[key: string]: Identifier | StateEventDefinition
 	};
+
+	public guards?: IStateGuard;
 
 	/**
 	 * The states defined for this state machine.
