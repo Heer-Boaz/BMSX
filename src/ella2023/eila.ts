@@ -159,11 +159,6 @@ export class Eila extends Fighter {
                         this.resetVerticalPosition();
                         ++state.ticks; // Perform the first attack immediately so that the 'animationEnd' event is fired after the first attack to make sure the next attack is performed via the 'animationEnd' event handler.
                     },
-                    // run(this: Fighter, state: State) {
-                    //     // Lelijk
-                    //     if (this.sc.machines[statemachine].is(`idle`) || this.sc.machines[statemachine].is(`duck`)) {
-                    //     }
-                    // },
                     next(this: Fighter, state: State, tape_rewound: boolean) {
                         if (tape_rewound) return;
                         this.facing = (this.facing === 'left' ? 'right' : 'left');
@@ -465,8 +460,8 @@ export class Eila extends Fighter {
                         SM.play(AudioId.kick);
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
-                    next(this: Fighter, state: State) {
-                        state.to('idle'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
+                    next(this: Fighter, _state: State) {
+                        // state.to('idle'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
                         $.emit('animationEnd', this, 'highkick');
                     },
                 },
@@ -477,8 +472,8 @@ export class Eila extends Fighter {
                         this.imgid = BitmapId.eila_lowkick;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
-                    next(this: Fighter, state: State) {
-                        state.to('idle'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
+                    next(this: Fighter, _state: State) {
+                        // state.to('idle'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
                         $.emit('animationEnd', this, 'lowkick');
                     },
                 },
@@ -489,8 +484,8 @@ export class Eila extends Fighter {
                         this.imgid = BitmapId.eila_punch;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
-                    next(this: Fighter, state: State) {
-                        state.to('idle'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
+                    next(this: Fighter, _state: State) {
+                        // state.to('idle'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
                         $.emit('animationEnd', this, 'punch');
                     }
                 },
@@ -500,8 +495,8 @@ export class Eila extends Fighter {
                         SM.play(AudioId.kick);
                         this.imgid = BitmapId.eila_duckkick;
                     },
-                    next(this: Fighter, state: State) {
-                        state.to('duck'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
+                    next(this: Fighter, _state: State) {
+                        // state.to('duck'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
                         $.emit('animationEnd', this, 'duckkick');
                     }
                 },
@@ -512,8 +507,8 @@ export class Eila extends Fighter {
                         this.imgid = BitmapId.eila_flyingkick;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
-                    next(this: Fighter, state: State) {
-                        state.to('jump'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
+                    next(this: Fighter, _state: State) {
+                        // state.to('jump'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
                         $.emit('animationEnd', this, 'flyingkick');
                     }
                 },
