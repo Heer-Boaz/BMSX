@@ -643,8 +643,8 @@ export class StateMachineController {
 	 * Runs all state machines.
 	 */
 	run_all_statemachines(): void {
-		for (let id in this.statemachines) {
-			this.statemachines[id].run();
+		for (const id in this.statemachines) {
+			this.run_statemachine(id);
 		}
 	}
 
@@ -660,8 +660,8 @@ export class StateMachineController {
 	 * Resets all state machines.
 	 */
 	reset_all_statemachines(): void {
-		for (let id in this.statemachines) {
-			this.statemachines[id].reset();
+		for (const id in this.statemachines) {
+			this.reset_statemachine(id);
 		}
 	}
 
@@ -684,8 +684,8 @@ export class StateMachineController {
 	 * Goes back to the previous state of all state machines.
 	 */
 	pop_all_statemachines(): void {
-		for (let id in this.statemachines) {
-			this.statemachines[id].pop();
+		for (const id in this.statemachines) {
+			this.pop_statemachine(id);
 		}
 	}
 
@@ -702,26 +702,26 @@ export class StateMachineController {
 		this.statemachines[id].paused = true;
 	}
 
-	pause_all_statemachines(): void {
-		for (let id in this.statemachines) {
-			this.statemachines[id].paused = true;
-		}
-	}
-
-	pause_all_except(id: Identifier): void {
-		for (let _id in this.statemachines) {
-			if (_id === id) continue;
-			this.statemachines[_id].paused = true;
-		}
-	}
-
 	resume_statemachine(id: Identifier): void {
 		this.statemachines[id].paused = false;
 	}
 
+	pause_all_statemachines(): void {
+		for (const id in this.statemachines) {
+			this.pause_statemachine(id);
+		}
+	}
+
+	pause_all_except(to_exclude_id: Identifier): void {
+		for (const id in this.statemachines) {
+			if (id === to_exclude_id) continue;
+			this.pause_statemachine(id);
+		}
+	}
+
 	resume_all_statemachines(): void {
-		for (let id in this.statemachines) {
-			this.statemachines[id].paused = false;
+		for (const id in this.statemachines) {
+			this.resume_statemachine(id);
 		}
 	}
 }
@@ -848,7 +848,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	private process_transition_queue(): void {
 		while (this.transition_queue.length > 0) {
 			const state_transition = this.transition_queue.shift();
-			console.debug(`Shifting '${state_transition.state_id}'`);
+			console.debug(`<< '${this.id}.${state_transition.state_id}'`);
 			this.transitionToState(state_transition.state_id, ...state_transition.args);
 		}
 	}
@@ -927,43 +927,41 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 * Calls the run function of the current state, if it exists, with the state_event_type.Run event type.
 	 */
 	run(): void {
-		const definition = this.definition;
-		if (!definition) return; // If there is no definition, there is nothing to run
-		if (this.paused) return;
+		if (!this.definition || this.paused) return;
 
 		this.enterCriticalSection();
 		try {
-			// First process any input
-			let next_state = definition.process_input?.call(this.target, this);
-			if (next_state) {
-				this.to(next_state);
-				// TODO: should we run the state here? Or should we wait until the next tick?
-			}
-
-			// Then, run the state
-			next_state = definition.run?.call(this.target, this);
-			// If a next state is given, transition to the next state
-			if (next_state) {
-				this.to(next_state);
-				// TODO: should we run the state here? Or should we wait until the next tick?
-			}
-			else {
-				if (definition.auto_tick) ++this.ticks; // Auto-nudge the state if auto_nudge is set to true
-			}
-
-			// Then run the submachine for the state if it exists
-			if (!this.states) return; // If there are no states defined, there is no submachine to run and we can return early
-
-			this.current.run(); // Run the current state of the substate machine
-
-			// Run all substate machines that have 'parallel' set to true
-			for (const id in this.states) {
-				// Skip the current machine, as it has already been run
-				if (id === this.currentid) continue;
-				if (this.states[id].parallel) this.states[id].run();
-			}
+			this.processInput();
+			this.runCurrentState();
+			this.runSubstateMachines();
 		} finally {
 			this.leaveCriticalSection();
+		}
+	}
+
+	processInput(): void {
+		const nextState = this.definition.process_input?.call(this.target, this);
+		if (nextState) {
+			this.to(nextState);
+		}
+	}
+
+	runCurrentState(): void {
+		const nextState = this.definition.run?.call(this.target, this);
+		if (nextState) {
+			this.to(nextState);
+		} else if (this.definition.auto_tick) {
+			++this.ticks;
+		}
+	}
+
+	runSubstateMachines(): void {
+		if (!this.states) return;
+
+		this.current.run();
+		for (const id in this.states) {
+			if (id === this.currentid) continue;
+			if (this.states[id].parallel) this.states[id].run();
 		}
 	}
 
@@ -1186,7 +1184,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 */
 	private transitionToState(state_id: Identifier, ...args: any[]): void {
 		if (this.critical_section_counter > 0) {
-			console.debug(`Pushing '${state_id}'`);
+			console.debug(`>> '${this.id}.${state_id}'`);
 			this.transition_queue.push({ state_id: state_id, args: args });
 			return;
 		}
@@ -1256,6 +1254,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		// If the state machine is paused, do not process the event
 		if (this.paused) {
 			return false; // Return false to indicate that the event was not handled
+			// TODO: BUG!!!! SHOULD EITHER HANDLE EVENT OR QUEUE THE EVENT IN AN EVENT QUEUE!!!
 		}
 
 		this.enterCriticalSection();
@@ -1294,7 +1293,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 					// If the next state is not the current state, transition to the next state
 					if (next_state && next_state !== this.currentid) {
 						this.to(next_state);
-					} else if (targetStateId) {
+					} else if (targetStateId && targetStateId !== this.currentid) {
 						// Transition to the target state if it is defined and not the same as the current state ID (otherwise, do nothing)
 						targetStateId && this.to(targetStateId, ...args);
 					}

@@ -63,11 +63,6 @@ export class Sinterklaas extends Fighter {
         }
     }
 
-    override handleFighterStukEvent(this: Fighter, _event_name: string, emitter: Fighter): void {
-        this.sc.to('humiliated');
-        $.modelAs<gamemodel>().theOtherFighter(emitter).sc.to('stoerheidsdans');
-    }
-
     @build_fsm('sint_animation')
     public static buildAnimationFsm(): StateMachineBlueprint {
         return {
@@ -124,8 +119,8 @@ export class Sinterklaas extends Fighter {
                         this.imgid = BitmapId.sint_highkick;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
-                    next(this: Fighter, state: State) {
-                        state.to('idle'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
+                    next(this: Fighter, _state: State) {
+                        // state.to('idle'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
                         $.emit('animationEnd', this, 'highkick');
                     }
                 },
@@ -136,8 +131,8 @@ export class Sinterklaas extends Fighter {
                         this.imgid = BitmapId.sint_lowkick;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
-                    next(this: Fighter, state: State) {
-                        state.to('idle'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
+                    next(this: Fighter, _state: State) {
+                        // state.to('idle'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
                         $.emit('animationEnd', this, 'lowkick');
                     }
                 },
@@ -148,8 +143,8 @@ export class Sinterklaas extends Fighter {
                         this.imgid = BitmapId.sint_punch;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
-                    next(this: Fighter, state: State) {
-                        state.to('idle'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
+                    next(this: Fighter, _state: State) {
+                        // state.to('idle'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
                         $.emit('animationEnd', this, 'punch');
                     }
                 },
@@ -172,8 +167,8 @@ export class Sinterklaas extends Fighter {
                         this.imgid = BitmapId.sint_flyingkick;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
-                    next(this: Fighter, state: State) {
-                        state.to('jump'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
+                    next(this: Fighter, _state: State) {
+                        // state.to('jump'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
                         $.emit('animationEnd', this, 'flyingkick');
                     }
                 },

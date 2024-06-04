@@ -107,7 +107,7 @@ export class Eila extends Fighter {
         return {
             on: {
                 $go_idle: {
-                    if(this: Fighter, state: State) { return !state.is('stoerheidsdans') && !state.is('nagenieten'); },
+                    if(this: Fighter, state: State) { return !state.is('stoerheidsdans') && !state.is('nagenieten') && !state.is('humiliated'); },
                     to: '#this.idle',
                 },
                 $go_walk: '#this.walk',
@@ -117,6 +117,8 @@ export class Eila extends Fighter {
                 $go_duckkick: '#this.duckkick',
                 $go_duck: '#this.duck',
                 $go_jump: '#this.jump',
+                $go_stoerheidsdans: '#this.stoerheidsdans',
+                $go_humiliated: '#this.humiliated',
             },
             states: {
                 _idle: {
@@ -137,7 +139,12 @@ export class Eila extends Fighter {
                     exit(this: Fighter) {
                         this.hittable = true;
                         this.fighting = true;
-                    }
+                    },
+                    guards: {
+                        canExit(this: Fighter) {
+                            return this.hp > 0;
+                        }
+                    },
                 },
                 stoerheidsdans: {
                     auto_tick: false,
@@ -397,11 +404,6 @@ export class Eila extends Fighter {
                 }
                 break;
         }
-    }
-
-    override handleFighterStukEvent(this: Fighter, _event_name: string, emitter: Fighter): void {
-        this.sc.to('humiliated');
-        $.modelAs<gamemodel>().theOtherFighter(emitter).sc.to('stoerheidsdans');
     }
 
     @build_fsm('player_animation')

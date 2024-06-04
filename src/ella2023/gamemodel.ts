@@ -16,8 +16,8 @@ export class gamemodel extends BaseModel {
 	public room_mgr: RoomMgr;
 	public numOfPlayers: number;
 
-	public static readonly SINT_START_HP = 100;
-	public static readonly EILA_START_HP = 100;
+	public static readonly SINT_START_HP = 1;
+	public static readonly EILA_START_HP = 1;
 	public static readonly VERTICAL_POSITION_FIGHTERS = 176;
 
 	public theOtherFighter(fighterAskingForTheOther: Fighter): Fighter {
@@ -26,7 +26,7 @@ export class gamemodel extends BaseModel {
 	}
 
 	@subscribesToGlobalEvent('hit_animation_end')
-	public handleHitAnimationEndEvent(event_name: string, emitter: Fighter): void {
+	public handleHitAnimationEndEvent(_event_name: string, emitter: Fighter): void {
 		const model = $.modelAs<gamemodel>();
 		const otherFighter = model.theOtherFighter(emitter);
 		if (otherFighter) {
@@ -37,7 +37,12 @@ export class gamemodel extends BaseModel {
 		if (emitter.hp <= 0) {
 			emitter.hp = 0;
 			SM.stopMusic();
-			emitter.handleFighterStukEvent(event_name, emitter);
+
+			// Handle that fighter is down
+			emitter.sc.do('go_humiliated', emitter);
+			if (otherFighter) {
+				otherFighter.sc.do('go_stoerheidsdans', otherFighter);
+			}
 		}
 	}
 

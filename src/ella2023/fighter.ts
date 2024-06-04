@@ -102,8 +102,6 @@ export abstract class Fighter extends SpriteObject {
         this.playerIndex = playerIndex;
     }
 
-    public abstract handleFighterStukEvent(event_name: string, emitter: Fighter): void;
-
     public doAttackFlow(attackType: AttackType, opponent: Fighter): boolean {
         if (!opponent) return false;
         const hitArea = this.attackHitsOpponent(attackType, opponent);
