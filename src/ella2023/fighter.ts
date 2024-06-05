@@ -14,7 +14,7 @@ export type HitMarkerInfo = {
 function getDamage(attackType: AttackType): number {
     switch (attackType) {
         default:
-            return 5;
+            return 10;
     }
 }
 

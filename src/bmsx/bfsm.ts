@@ -878,7 +878,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	private process_transition_queue(): void {
 		while (this.transition_queue.length > 0) {
 			const state_transition = this.transition_queue.shift();
-			console.debug(`<< '${this.id}.${state_transition.state_id}'`);
+			// console.debug(`<< '${this.id}.${state_transition.state_id}'`);
 			this.transitionToState(state_transition.state_id, ...state_transition.args);
 		}
 	}
@@ -1189,13 +1189,13 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 
 		// Check if the current state has a canExit guard and if it returns false, prevent the transition
 		if (currentStateDefinition.guards?.canExit && !currentStateDefinition.guards.canExit.call(this)) {
-			console.debug(`Cannot exit state: ${currentStateDefinition.id}`);
+			// console.debug(`Cannot exit state: ${currentStateDefinition.id}`);
 			return false;
 		}
 
 		// Check if the target state has a canEnter guard and if it returns false, prevent the transition
 		if (targetStateDefinition.guards?.canEnter && !targetStateDefinition.guards.canEnter.call(this)) {
-			console.debug(`Cannot enter state: ${target_state_id}`);
+			// console.debug(`Cannot enter state: ${target_state_id}`);
 			return false;
 		}
 
@@ -1212,7 +1212,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 */
 	private transitionToState(state_id: Identifier, ...args: any[]): void {
 		if (this.critical_section_counter > 0) {
-			console.debug(`>> '${this.id}.${state_id}'`);
+			// console.debug(`>> '${this.id}.${state_id}'`);
 			this.transition_queue.push({ state_id: state_id, args: args });
 			return;
 		}
