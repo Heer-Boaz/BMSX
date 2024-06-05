@@ -1,4 +1,4 @@
-import { Direction, Identifier, SM, ScreenBoundaryComponent, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, insavegame, State, subscribesToParentScopedEvent, subscribesToSelfScopedEvent } from '../bmsx/bmsx';
+import { Direction, Identifier, SM, ScreenBoundaryComponent, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, insavegame, State, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, type StateTransition } from '../bmsx/bmsx';
 import { AudioId, BitmapId } from './resourceids';
 import { Fighter } from './fighter';
 import { gamemodel } from './gamemodel';
@@ -39,60 +39,40 @@ export class Eila extends Fighter {
     }
 
     public static bouw(animation_machine_name: Identifier): StateMachineBlueprint {
-        function default_input_processor(this: Fighter): string | void {
+        function default_input_processor(this: Fighter): StateTransition | string | void {
             if (this.isAIed) return; // AIed fighters don't process input
 
-            const priorityActions = $.input.getPlayerInput(this.playerIndex).getPressedActions({ pressed: true, consumed: false, actionsByPriority: ['duck', 'right', 'left', 'jump', 'punch', 'highkick', 'lowkick'] });
+            const priorityActions = $.input.getPlayerInput(this.playerIndex).getPressedActions({ pressed: true, consumed: false, actionsByPriority: ['duck', 'punch', 'highkick', 'lowkick', 'right', 'left', 'jump', ] });
 
             // If no actions are pressed, switch to idle
             if (priorityActions.length === 0) {
-                // this.sc.to('idle');
                 return 'idle';
             }
 
-            let higherPrioActionProcessed = false;
-            let leftOrRightPressed = false;
             for (const actionObject of priorityActions) {
                 const { action } = actionObject;
-                if (higherPrioActionProcessed) break;
 
                 switch (action as Action) {
                     case 'right':
                     case 'left':
-                        if (leftOrRightPressed) break;
-                        leftOrRightPressed = true;
                         this.facing = action as typeof this.facing;
 
                         // Check for combined jump left/right action
                         if (priorityActions.some(action => action.action === 'jump')) {
-                            this.sc.to('jump', true);
-                            higherPrioActionProcessed = true;
+                            return { next_state: 'jump', args: true };
                         }
                         else {
                             this.x += action === 'right' ? Fighter.SPEED : -Fighter.SPEED;
                             return 'walk';
-                            // this.sc.to('walk');
                         }
-                        break;
                     case 'duck':
-                        // this.sc.to('duck');
-                        // higherPrioActionProcessed = true;
-                        return 'duck';
-                        break;
+                        return action; // Do not consume the duck action, as it would immediately make the fighter stand up again
                     case 'punch':
                     case 'highkick':
                     case 'lowkick':
-                        $.input.getPlayerInput(this.playerIndex).consumeAction(action);
-                        // this.sc.to(action);
-                        return action;
-                        break;
                     case 'jump':
                         $.input.getPlayerInput(this.playerIndex).consumeAction(action);
-                        this.sc.to('jump', false); // Actions 'left' and 'right' have higher priority than 'jump' and thus directonal jumps are handled in the 'left' and 'right' cases
-                        break;
-                    // case 'stoer':
-                    //     this.state.to('stoerheidsdans');
-                    //     break;
+                        return action;
                 }
             }
         }
@@ -285,12 +265,13 @@ export class Eila extends Fighter {
                 },
                 jump: {
                     auto_reset: 'tree',
-                    enter(this: Fighter, state: State, directional: boolean = false) {
-                        state.to('#this.jump_up', directional);
+                    enter(this: Fighter, _state: State, directional: boolean = false) {
+                        // state.to('#this.jump_up', directional);
                         this.sc.do('animate_jump', this);
                         this.getComponent(JumpingWhileLeavingScreenComponent).enabled = true;
                         this.jumping = true;
                         this.attacked_while_jumping = false;
+                        return { next_state: '#this.jump_up', args: directional };
                     },
                     exit(this: Fighter) {
                         this.getComponent(JumpingWhileLeavingScreenComponent).enabled = false;
@@ -323,7 +304,8 @@ export class Eila extends Fighter {
                                 }
                             },
                             next(state: State) {
-                                state.to('jump_down', state.data.directional);
+                                return { next_state: 'jump_down', args: state.data.directional };
+                                // state.to('jump_down', state.data.directional);
                             },
                         },
                         jump_down: {
@@ -413,6 +395,9 @@ export class Eila extends Fighter {
             on: {
                 $i_was_hit: {
                     do(state: State) {
+                        // This is needed to quickly end the animation of the attack action.
+                        // Must be done after the state machine is resumed, otherwise the event will not be handled.
+                        // It will allow the player to recuperate first, before the next attack can be done by the opponent.
                         state.current.setTicksNoSideEffect(state.current.definition.ticks2move - 1);
                     }
                 },
@@ -463,7 +448,6 @@ export class Eila extends Fighter {
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Fighter, _state: State) {
-                        // state.to('idle'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
                         $.emit('animationEnd', this, 'highkick');
                     },
                 },
@@ -475,7 +459,6 @@ export class Eila extends Fighter {
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Fighter, _state: State) {
-                        // state.to('idle'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
                         $.emit('animationEnd', this, 'lowkick');
                     },
                 },
@@ -487,7 +470,6 @@ export class Eila extends Fighter {
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Fighter, _state: State) {
-                        // state.to('idle'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
                         $.emit('animationEnd', this, 'punch');
                     }
                 },
@@ -498,7 +480,6 @@ export class Eila extends Fighter {
                         this.imgid = BitmapId.eila_duckkick;
                     },
                     next(this: Fighter, _state: State) {
-                        // state.to('duck'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
                         $.emit('animationEnd', this, 'duckkick');
                     }
                 },
@@ -510,7 +491,6 @@ export class Eila extends Fighter {
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Fighter, _state: State) {
-                        // state.to('jump'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
                         $.emit('animationEnd', this, 'flyingkick');
                     }
                 },

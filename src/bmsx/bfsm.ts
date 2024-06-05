@@ -55,20 +55,35 @@ export type id2partial_sdef = Record<Identifier, StateMachineBlueprint>;
  * @param args - Additional arguments for the event handler.
  * @returns A string denoting the next state to transition to (or undefined if no transition should occur).
  */
-export interface IStateEventHandler<T extends IStateful = any> { (state: State<T>, ...args: any[]): string | void; }
+export interface IStateEventHandler<T extends IStateful = any> { (state: State<T>, ...args: any[]): StateTransition | Identifier | void; }
 export interface IStateExitHandler<T extends IStateful = any> { (state: State<T>, ...args: any[]): void; }
-export interface IStateNextHandler<T extends IStateful = any> extends IStateEventHandler { (state: State<T>, tape_rewound: boolean, ...args: any[]): string | void; }
+export interface IStateNextHandler<T extends IStateful = any> extends IStateEventHandler { (state: State<T>, tape_rewound: boolean, ...args: any[]): StateTransition | Identifier | void; }
 export interface IStateEventCondition<T extends IStateful & IEventSubscriber = any> {
 	(state: State<T>, ...args: any[]): boolean;
 }
 
 type listed_sdef_event = { name: string, scope: EventScope };
 
+/**
+ * Represents a state transition.
+ */
+export type StateTransition = {
+	/**
+	 * The next state to transition to.
+	 */
+	next_state: Identifier;
+
+	/**
+	 * The arguments for the state transition.
+	 */
+	args: any;
+};
+
 export type StateEventDefinition<T extends IStateful & IEventSubscriber = any> = {
 	/**
 	 * The state ID to transition to. If not provided, the state will not transition. This is useful for defining a "transition" that only executes an action.
 	 */
-	to?: Identifier,
+	to?: StateTransition | Identifier,
 
 	/**
 	 * The condition that must be met for the transition to occur.
@@ -86,8 +101,23 @@ export type StateEventDefinition<T extends IStateful & IEventSubscriber = any> =
 	scope?: EventScope,
 };
 
+/**
+ * Represents a state guard that defines conditions for entering or exiting a state.
+ * @template T - The type of the stateful object that implements `IStateful` and `IEventSubscriber`.
+ */
 interface IStateGuard<T extends IStateful & IEventSubscriber = any> {
+	/**
+	 * Checks if the state can be entered.
+	 * @this {T} - The stateful object.
+	 * @returns {boolean} - Returns `true` if the state can be entered, otherwise `false`.
+	 */
 	canEnter?: (this: T) => boolean;
+
+	/**
+	 * Checks if the state can be exited.
+	 * @this {T} - The stateful object.
+	 * @returns {boolean} - Returns `true` if the state can be exited, otherwise `false`.
+	 */
 	canExit?: (this: T) => boolean;
 }
 
@@ -940,16 +970,14 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	}
 
 	processInput(): void {
-		const nextState = this.definition.process_input?.call(this.target, this);
-		if (nextState) {
-			this.to(nextState);
-		}
+		const next_state = this.definition.process_input?.call(this.target, this);
+		this.transitionToNextStateIfProvided(next_state);
 	}
 
 	runCurrentState(): void {
-		const nextState = this.definition.run?.call(this.target, this);
-		if (nextState) {
-			this.to(nextState);
+		const next_state = this.definition.run?.call(this.target, this);
+		if (next_state) {
+			this.transitionToNextStateIfProvided(next_state);
 		} else if (this.definition.auto_tick) {
 			++this.ticks;
 		}
@@ -1215,9 +1243,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 			}
 		}
 		const next_state = stateDef?.enter?.call(this.target, this.current, ...args);
-		if (next_state) {
-			this.current.to(next_state);
-		}
+		this.current.transitionToNextStateIfProvided(next_state);
 	}
 
 	public do(eventName: string, emitter: Identifier | IIdentifiable, ...args: any[]): void {
@@ -1250,11 +1276,55 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		}
 	}
 
+	/**
+	 * Retrieves the next state based on the provided `next_state` parameter.
+	 *
+	 * @param next_state - The next state to transition to. Can be a `StateTransition` object, a string representing the next state, or `undefined` if no transition is needed.
+	 * @returns The next state transition object or `undefined` if no transition is needed.
+	 * @throws Error if the `next_state` parameter is not a valid type.
+	 */
+	private getNextState(next_state: StateTransition | string | void): StateTransition | void {
+		if (!next_state) {
+			return;
+		}
+
+		if (typeof next_state === 'string') {
+			return { next_state: next_state, args: [] };
+		}
+
+		if (typeof next_state === 'object') {
+			const args = Array.isArray(next_state.args) ? next_state.args : [next_state.args];
+			return { ...next_state, args: args };
+		}
+
+		throw new Error(`Invalid type for next state: ${next_state}, expected string or object`);
+	}
+
+	/**
+	 * Transitions to the next state if provided.
+	 *
+	 * @param next_state - The next state to transition to.
+	 */
+	private transitionToNextStateIfProvided(next_state: StateTransition | string | void): void {
+		const next_state_transition = this.getNextState(next_state);
+
+		// If the next state is not the current state, transition to the next state
+		if (next_state_transition && next_state_transition.next_state !== this.currentid) {
+			this.to(next_state_transition.next_state, ...next_state_transition.args);
+		}
+	}
+
+	/**
+	 * Handles an event in the state.
+	 * @param eventName - The name of the event.
+	 * @param emitter_id - The identifier of the event emitter.
+	 * @param args - Additional arguments for the event.
+	 * @returns A boolean indicating whether the event was handled.
+	 */
 	private handleEvent(eventName: string, emitter_id: Identifier, ...args: any[]): boolean {
 		// If the state machine is paused, do not process the event
 		if (this.paused) {
 			return false; // Return false to indicate that the event was not handled
-			// TODO: BUG!!!! SHOULD EITHER HANDLE EVENT OR QUEUE THE EVENT IN AN EVENT QUEUE!!!
 		}
 
 		this.enterCriticalSection();
@@ -1273,7 +1343,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 					const ifHandler = state_id_or_handler.if; // Get the if-handler from the state transition object
 					const doHandler = state_id_or_handler.do; // Get the do-handler from the state transition object
 					const emitterId = state_id_or_handler.scope; // (Optional) The ID of the emitter scope. If provided, the listener will be added to the emitter scope listeners, otherwise it will be added to the global scope listeners.
-					const targetStateId = state_id_or_handler.to; // Get the target state ID from the state transition object
+					const to_state = state_id_or_handler.to; // Get the target state ID from the state transition object
 
 					// If the emitter ID is provided and it is not the same as the emitter ID of the event, do nothing
 					if (emitterId && emitterId !== 'all' && emitterId !== emitter_id) {
@@ -1289,13 +1359,18 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 					// If the if-handler does not exist or returns true, call the do-handler.
 					// The do-handler can return a state ID to transition to, otherwise it can return undefined to indicate that no transition should occur or to indicate that the target state should be used.
 					const next_state = doHandler?.call(this.target, this as State<T>, ...args);
+					const next_state_transition = this.getNextState(next_state); // Get the state transition object from the next state
 
 					// If the next state is not the current state, transition to the next state
-					if (next_state && next_state !== this.currentid) {
-						this.to(next_state);
-					} else if (targetStateId && targetStateId !== this.currentid) {
-						// Transition to the target state if it is defined and not the same as the current state ID (otherwise, do nothing)
-						targetStateId && this.to(targetStateId, ...args);
+					if (next_state_transition && next_state_transition.next_state !== this.currentid) {
+						this.to(next_state_transition.next_state, ...next_state_transition.args, ...args);
+					} else if (to_state) {
+						// If the next state is not defined, check if the target state is defined and transition to the target state if it is not the same as the current state (otherwise, do nothing)
+						const to_state_transition = this.getNextState(to_state); // Get the state transition object from the target state
+						if (to_state_transition) {
+							// Transition to the target state if it is defined and not the same as the current state ID (otherwise, do nothing)
+							this.to(to_state_transition.next_state, ...to_state_transition.args, ...args);
+						}
 					}
 				}
 				return true; // Return true to indicate that the event was handled
@@ -1400,11 +1475,20 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	// Note that this function assumes that the tape head is within the bounds of the tape.
 	public get at_tape_start(): boolean { return this.head === TAPE_START_INDEX; }
 
+	/**
+	 * Generates a unique identifier for the current instance.
+	 * The identifier is created by concatenating the `parent_id`, `target_id`, and `def_id`.
+	 * @returns The generated identifier.
+	 */
 	private make_id(): Identifier {
 		let id = `${this.parent_id ?? this.target_id}.${this.def_id}`; // The id is the parent_id + the target_id + the def_id (e.g. 'parent_id.target_id.def_id') to create a unique id
 		return id;
 	}
 
+	/**
+	 * Disposes the current state machine and deregisters it from the registry.
+	 * Also deregisters all substates.
+	 */
 	public dispose(): void {
 		$.registry.deregister(this);
 		// Also deregister all substates
@@ -1524,10 +1608,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		this.enterCriticalSection();
 		try {
 			const next_state = this.definition.next?.call(this.target, this, tape_rewound);
-			// If the next state is not the current state, transition to the next state
-			if (next_state && next_state !== this.currentid) {
-				this.to(next_state);
-			}
+			this.transitionToNextStateIfProvided(next_state);
 		} finally {
 			this.leaveCriticalSection();
 		}
@@ -1540,10 +1621,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		this.enterCriticalSection();
 		try {
 			const next_state = this.definition.end?.call(this.target, this, undefined);
-			// If the next state is not the current state, transition to the next state
-			if (next_state && next_state !== this.currentid) {
-				this.to(next_state);
-			}
+			this.transitionToNextStateIfProvided(next_state);
 		} finally {
 			this.leaveCriticalSection();
 		}
@@ -1581,6 +1659,10 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	}
 }
 
+/**
+ * Determines whether the tape should automatically rewind to the beginning
+ * after reaching the end.
+ */
 const AUTO_REWIND_TAPE_AFTER_END = false;
 /**
  * Represents a state definition for a state machine.
@@ -1743,6 +1825,9 @@ export class StateDefinition {
 		[key: string]: Identifier | StateEventDefinition
 	};
 
+	/**
+	 * The guards for the state.
+	 */
 	public guards?: IStateGuard;
 
 	/**

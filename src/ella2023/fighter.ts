@@ -68,14 +68,11 @@ export abstract class Fighter extends SpriteObject {
                     },
                     end(this: Fighter) {
                         this.sc.to('hitanimation.geen_au');
-                        $.emit('hit_animation_end', this);
                     },
                     exit(this: Fighter) {
                         this.sc.resume_all_statemachines();
-                        // This is needed to quickly end the animation of the attack action.
-                        // Must be done after the state machine is resumed, otherwise the event will not be handled.
-                        // It will allow the player to recuperate first, before the next attack can be done by the opponent.
-                        $.emit('i_was_hit', this);
+                        $.emit('i_was_hit', this); // Allow the player to recuperate from the hit quickly.
+                        $.emit('hit_animation_end', this); // The Game Model will handle the hit animation end event, which will hide the hit marker and determine if the fighter is down.
                     },
                 },
             }

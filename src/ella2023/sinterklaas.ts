@@ -120,7 +120,6 @@ export class Sinterklaas extends Fighter {
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Fighter, _state: State) {
-                        // state.to('idle'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
                         $.emit('animationEnd', this, 'highkick');
                     }
                 },
@@ -132,7 +131,6 @@ export class Sinterklaas extends Fighter {
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Fighter, _state: State) {
-                        // state.to('idle'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
                         $.emit('animationEnd', this, 'lowkick');
                     }
                 },
@@ -144,7 +142,6 @@ export class Sinterklaas extends Fighter {
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Fighter, _state: State) {
-                        // state.to('idle'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
                         $.emit('animationEnd', this, 'punch');
                     }
                 },
@@ -155,8 +152,7 @@ export class Sinterklaas extends Fighter {
                         this.imgid = BitmapId.sint_flyingkick;
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
-                    next(this: Fighter, state: State) {
-                        state.to('duck'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
+                    next(this: Fighter, _state: State) {
                         $.emit('animationEnd', this, 'duckkick');
                     }
                 },
@@ -168,7 +164,6 @@ export class Sinterklaas extends Fighter {
                         if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
                     },
                     next(this: Fighter, _state: State) {
-                        // state.to('jump'); // TODO: This is a hack to make sure the animationEnd event is fired before the next attack is performed. This is needed to make sure the next attack is performed via the 'animationEnd' event handler.
                         $.emit('animationEnd', this, 'flyingkick');
                     }
                 },

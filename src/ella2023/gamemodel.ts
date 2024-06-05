@@ -16,8 +16,8 @@ export class gamemodel extends BaseModel {
 	public room_mgr: RoomMgr;
 	public numOfPlayers: number;
 
-	public static readonly SINT_START_HP = 1;
-	public static readonly EILA_START_HP = 1;
+	public static readonly SINT_START_HP = 100;
+	public static readonly EILA_START_HP = 100;
 	public static readonly VERTICAL_POSITION_FIGHTERS = 176;
 
 	public theOtherFighter(fighterAskingForTheOther: Fighter): Fighter {
