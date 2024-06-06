@@ -165,7 +165,6 @@ export type ConstructorWithFSMProperty = Function & {
 	linkedFSMs?: Set<FSMName>;
 };
 
-
 /**
  * Represents the machine definitions.
  */
@@ -175,7 +174,6 @@ export var StateDefinitions: Record<string, StateDefinition>;
  * A record that maps string keys to functions that build machine states.
  */
 var StateDefinitionBuilders: Record<string, () => StateMachineBlueprint>;
-
 
 /**
  * Decorator function that assigns FSMs to a class constructor.
@@ -475,6 +473,9 @@ function validateStateMachine(machinedef: StateDefinition): void {
 }
 
 @insavegame
+/**
+ * Represents a state machine controller that manages multiple state machines.
+ */
 export class StateMachineController {
 	/**
 	 * The substate object that holds the state context for each substate.
@@ -955,18 +956,25 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 * Represents the counter for the critical section.
 	 */
 	private critical_section_counter: number;
+
 	/**
 	 * Represents the transition queue of the state machine.
 	 * @property {Array<{ state_id: Identifier, args: any[] }>} transition_queue - The array of transition objects.
 	 */
 	private transition_queue: StateTransition[];
 
-	// @ts-ignore
+	/**
+	 * Enters the critical section.
+	 * Increments the critical section counter.
+	 */
 	private enterCriticalSection(): void {
 		++this.critical_section_counter;
 	}
 
-	// @ts-ignore
+	/**
+	 * Decreases the critical section counter by 1 and processes the transition queue if the counter reaches 0.
+	 * Throws an error if the counter becomes negative.
+	 */
 	private leaveCriticalSection(): void {
 		--this.critical_section_counter;
 		if (this.critical_section_counter === 0) {
@@ -977,6 +985,10 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		}
 	}
 
+	/**
+	 * Processes the transition queue by transitioning to the next state in the queue.
+	 * This method dequeues each state transition from the transition queue and transitions to the corresponding state.
+	 */
 	private process_transition_queue(): void {
 		while (this.transition_queue.length > 0) {
 			const state_transition = this.transition_queue.shift();
@@ -1032,10 +1044,19 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	}
 
 	@onload
+	/**
+	 * Performs the setup logic when the component is loaded.
+	 * Registers the state machine with the registry.
+	 */
 	public onLoadSetup(): void {
 		$.registry.register(this);
 	}
 
+	/**
+	 * Starts the state machine by transitioning to the start state and triggering the enter event for that state.
+	 * If there are no states defined, the state machine will not start and the method will return early.
+	 * If there are states defined but no start state, an error will be thrown as the state machine cannot start without a start state.
+	 */
 	public start(): void {
 		const startStateId = this.start_state_id;
 		if (!startStateId) {
@@ -1597,6 +1618,11 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		return this.tape[current_index];
 	}
 
+	/**
+	 * Indicates whether the head of the finite state machine is at the end of the tape.
+	 * If there is no tape, it also returns true.
+	 * @returns A boolean value indicating whether the head is at the end of the tape.
+	 */
 	public get at_tapeend(): boolean { return !this.tape || this.head >= this.tape.length - 1; } // Note that beyond end also returns true if there is no tape!
 
 	/**
@@ -1771,8 +1797,8 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 * Resets the state machine by setting the tapehead and ticks to 0 and the ticks2move to the value defined in the state machine definition.
 	 */
 	public reset(reset_tree: boolean = true): void {
-		this._tapehead = TAPE_START_INDEX; // Reset the tapehead to the beginning of the tape
-		this._ticks = 0; // Reset the ticks
+		this.setHeadNoSideEffect(TAPE_START_INDEX); // Reset the tapehead to the beginning of the tape
+		this.setTicksNoSideEffect(0); // Reset the ticks
 		if (!this.definition) return; // No definition exists for the empty 'none'-state
 		this.data = { ...this.definition.data }; // Reset the state data by shallow copying the definition's data
 		if (reset_tree) this.resetSubmachine(); // Reset the substate machine if it exists
