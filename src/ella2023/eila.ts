@@ -42,7 +42,7 @@ export class Eila extends Fighter {
         function default_input_processor(this: Fighter): StateTransition | string | void {
             if (this.isAIed) return; // AIed fighters don't process input
 
-            const priorityActions = $.input.getPlayerInput(this.playerIndex).getPressedActions({ pressed: true, consumed: false, actionsByPriority: ['duck', 'punch', 'highkick', 'lowkick', 'right', 'left', 'jump', ] });
+            const priorityActions = $.input.getPlayerInput(this.playerIndex).getPressedActions({ pressed: true, consumed: false, actionsByPriority: ['duck', 'punch', 'highkick', 'lowkick', 'right', 'left', 'jump',] });
 
             // If no actions are pressed, switch to idle
             if (priorityActions.length === 0) {
@@ -59,7 +59,7 @@ export class Eila extends Fighter {
 
                         // Check for combined jump left/right action
                         if (priorityActions.some(action => action.action === 'jump')) {
-                            return { next_state: 'jump', args: true };
+                            return { state_id: 'jump', args: true };
                         }
                         else {
                             this.x += action === 'right' ? Fighter.SPEED : -Fighter.SPEED;
@@ -76,6 +76,38 @@ export class Eila extends Fighter {
                 }
             }
         }
+
+        function attack(this: Fighter, attackType: string, ducking: boolean = false) {
+            this.sc.do(`animate_${attackType}`, this);
+            this.doAttackFlow(attackType, $.modelAs<gamemodel>().theOtherFighter(this));
+            this.attacking = true;
+            this.currentAttackType = attackType;
+            if (ducking) {
+                this.ducking = true;
+            }
+        }
+
+        const attacks = {
+            punch: {
+                enter: function (this: Fighter) { attack.call(this, 'punch'); },
+                exit: attackExit,
+            },
+            highkick: {
+                enter: function (this: Fighter) { attack.call(this, 'highkick'); },
+                exit: attackExit,
+            },
+            lowkick: {
+                enter: function (this: Fighter) { attack.call(this, 'lowkick'); },
+                exit: attackExit,
+            },
+            duckkick: {
+                enter: function (this: Fighter) { attack.call(this, 'duckkick', true); },
+                exit(this: Fighter) {
+                    attackExit.apply(this);
+                    this.ducking = false;
+                },
+            },
+        };
 
         function attackExit(this: Fighter) {
             this.attacking = false;
@@ -187,46 +219,7 @@ export class Eila extends Fighter {
                         this.attacking = false;
                     },
                 },
-                punch: {
-                    enter(this: Fighter) {
-                        this.sc.do('animate_punch', this);
-                        this.doAttackFlow('punch', $.modelAs<gamemodel>().theOtherFighter(this));
-                        this.attacking = true;
-                        this.currentAttackType = 'punch';
-                    },
-                    exit: attackExit,
-                },
-                highkick: {
-                    enter(this: Fighter) {
-                        this.sc.do('animate_highkick', this);
-                        this.doAttackFlow('highkick', $.modelAs<gamemodel>().theOtherFighter(this));
-                        this.attacking = true;
-                        this.currentAttackType = 'highkick';
-                    },
-                    exit: attackExit,
-                },
-                lowkick: {
-                    enter(this: Fighter) {
-                        this.sc.do('animate_lowkick', this);
-                        this.doAttackFlow('lowkick', $.modelAs<gamemodel>().theOtherFighter(this));
-                        this.attacking = true;
-                        this.currentAttackType = 'lowkick';
-                    },
-                    exit: attackExit,
-                },
-                duckkick: {
-                    enter(this: Fighter) {
-                        this.sc.do('animate_duckkick', this);
-                        this.doAttackFlow('duckkick', $.modelAs<gamemodel>().theOtherFighter(this));
-                        this.attacking = true;
-                        this.ducking = true;
-                        this.currentAttackType = 'duckkick';
-                    },
-                    exit(this: Fighter) {
-                        attackExit.apply(this);
-                        this.ducking = false;
-                    },
-                },
+                ...attacks,
                 duck: {
                     process_input(this: Fighter) {
                         if (this.isAIed) return; // AIed fighters don't process input
@@ -265,13 +258,12 @@ export class Eila extends Fighter {
                 },
                 jump: {
                     auto_reset: 'tree',
-                    enter(this: Fighter, _state: State, directional: boolean = false) {
-                        // state.to('#this.jump_up', directional);
+                    enter(this: Fighter, _state: State, directional: boolean = false): StateTransition {
                         this.sc.do('animate_jump', this);
                         this.getComponent(JumpingWhileLeavingScreenComponent).enabled = true;
                         this.jumping = true;
                         this.attacked_while_jumping = false;
-                        return { next_state: '#this.jump_up', args: directional };
+                        return { state_id: '#this.jump_up', args: directional };
                     },
                     exit(this: Fighter) {
                         this.getComponent(JumpingWhileLeavingScreenComponent).enabled = false;
@@ -304,8 +296,7 @@ export class Eila extends Fighter {
                                 }
                             },
                             next(state: State) {
-                                return { next_state: 'jump_down', args: state.data.directional };
-                                // state.to('jump_down', state.data.directional);
+                                return { state_id: 'jump_down', args: state.data.directional };
                             },
                         },
                         jump_down: {
