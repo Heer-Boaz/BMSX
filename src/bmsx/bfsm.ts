@@ -71,7 +71,7 @@ export type StateTransition = {
 	/**
 	 * The next state to transition to.
 	 */
-	next_state: Identifier;
+	state_id: Identifier;
 
 	/**
 	 * The arguments for the state transition.
@@ -79,6 +79,10 @@ export type StateTransition = {
 	args: any;
 };
 
+/**
+ * Represents the definition of a state event in a state machine.
+ * @template T - The type of the stateful object that the event is associated with.
+ */
 export type StateEventDefinition<T extends IStateful & IEventSubscriber = any> = {
 	/**
 	 * The state ID to transition to. If not provided, the state will not transition. This is useful for defining a "transition" that only executes an action.
@@ -136,6 +140,9 @@ const BST_MAX_HISTORY = 10;
  */
 export const DEFAULT_BST_ID = 'master';
 
+/**
+ * Represents an object that is stateful and can be registered, and subscribes to events.
+ */
 export interface IStateful extends IRegisterable, IEventSubscriber {
 	/**
 	 * The StatemachineController of the object.
@@ -248,6 +255,11 @@ function createMachine(machine_name: Identifier, machine_definition: StateMachin
 	return new StateDefinition(machine_name, machine_definition, null);
 }
 
+/**
+ * Adds events to the machine definition.
+ * If the machine has events defined, this function adds them to the event list of the machine definition.
+ * @param machine - The StateMachineBlueprint object representing the machine definition.
+ */
 function addEventsToDef(machine: StateMachineBlueprint): void {
 	// If the machine has events defined, add them to the event list of the machine definition
 	const eventMap = getMachineEvents(machine); // Get the events from the machine definition
@@ -469,6 +481,11 @@ export class StateMachineController {
 	 */
 	statemachines: Record<Identifier, State>;
 
+	/**
+	 * Gets the state machines.
+	 * @returns An object representing the state machines, where the keys are the machine IDs and the values are the corresponding states.
+	 * @throws {Error} If no machine with the specified ID is found.
+	 */
 	public get machines(): Record<Identifier, State> {
 		return new Proxy(this.statemachines, {
 			get: (target, prop: string) => {
@@ -480,20 +497,41 @@ export class StateMachineController {
 		});
 	}
 
+	/**
+	 * The identifier of the current machine.
+	 */
 	current_machine_id: Identifier;
 
+	/**
+	 * Gets the current state machine.
+	 * @returns The current state machine.
+	 */
 	get current_machine(): State { return this.statemachines[this.current_machine_id]; }
 
+	/**
+	 * Gets the current state of the current state machine.
+	 * @returns The current state of the current state machine.
+	 */
 	get current_state(): State { return this.current_machine.current; }
 
+	/**
+	 * Gets the states of the current machine.
+	 * @returns The states of the current machine.
+	 */
 	get states(): id2sstate { return this.current_machine.states; }
 
+	/**
+	 * Gets the state definition of the current machine.
+	 */
 	get definition(): StateDefinition { return this.current_machine.definition; }
 
 	constructor() {
 		this.statemachines = {};
 	}
 
+	/**
+	 * Disposes the BFStateMachine and deregisters all machines.
+	 */
 	public dispose(): void {
 		// Deregister all machines
 		for (let id in this.statemachines) {
@@ -501,6 +539,9 @@ export class StateMachineController {
 		}
 	}
 
+	/**
+	 * Starts the state machine by initializing and starting all state machines.
+	 */
 	start(): void {
 		this.initLoadSetup();
 
@@ -511,6 +552,9 @@ export class StateMachineController {
 	}
 
 	@onload
+	/**
+	 * Initializes all statemachines by subscribing to events defined in the machine definition and allowing dispatching events to the appropriate machines.
+	 */
 	initLoadSetup(): void {
 		for (const id in this.statemachines) {
 			const machine = this.statemachines[id];
@@ -536,6 +580,10 @@ export class StateMachineController {
 		}
 	}
 
+	/**
+	 * Runs the current state of the current state machine.
+	 * Also runs all state machines that have 'parallel' set to true.
+	 */
 	run(): void {
 		// Runs the current state of the current state machine
 		this.current_machine.run();
@@ -603,6 +651,13 @@ export class StateMachineController {
 		machine.switch_path(stateid, ...args);
 	}
 
+	/**
+	 * Dispatches an event to the current state machine and other parallel running state machines.
+	 *
+	 * @param event_name - The name of the event to be dispatched.
+	 * @param emitter - The identifier or identifiable object that triggered the event.
+	 * @param args - Additional arguments to be passed to the event handlers.
+	 */
 	public do(event_name: string, emitter: Identifier | IIdentifiable, ...args: any[]): void {
 		const emitter_id = typeof emitter === 'string' ? emitter : emitter.id;
 
@@ -617,6 +672,13 @@ export class StateMachineController {
 		}
 	}
 
+	/**
+	 * Dispatches an event to the state machine.
+	 *
+	 * @param event_name - The name of the event to dispatch.
+	 * @param emitter - The identifier or identifiable object that emitted the event.
+	 * @param args - Additional arguments to pass to the event handler.
+	 */
 	private auto_dispatch(this: IStateful, event_name: string, emitter: Identifier | IIdentifiable, ...args: any[]): void {
 		this.sc.do(event_name, emitter, ...args);
 	}
@@ -643,6 +705,12 @@ export class StateMachineController {
 		return this.statemachines[id];
 	}
 
+	/**
+	 * Checks if the specified ID matches the current state of the state machine.
+	 * @param id - The ID to check.
+	 * @returns `true` if the ID matches the current state, `false` otherwise.
+	 * @throws Error if the machine with the specified ID does not exist.
+	 */
 	is(id: string): boolean {
 		// const [_targetid, machineid, ...stateids] = id.split(/[:.]/);
 		const [machineid, ...stateids] = id.split('.');
@@ -728,20 +796,37 @@ export class StateMachineController {
 		this.statemachines[id].to(path);
 	}
 
+	/**
+	 * Pauses the specified state machine.
+	 * @param id - The identifier of the state machine to pause.
+	 */
 	pause_statemachine(id: Identifier): void {
 		this.statemachines[id].paused = true;
 	}
 
+	/**
+	 * Resumes the execution of a paused state machine.
+	 *
+	 * @param id - The identifier of the state machine to resume.
+	 */
 	resume_statemachine(id: Identifier): void {
 		this.statemachines[id].paused = false;
 	}
 
+	/**
+	 * Pauses all the state machines.
+	 */
 	pause_all_statemachines(): void {
 		for (const id in this.statemachines) {
 			this.pause_statemachine(id);
 		}
 	}
 
+	/**
+	 * Pauses all state machines except for the specified one.
+	 *
+	 * @param to_exclude_id - The identifier of the state machine to exclude from pausing.
+	 */
 	pause_all_except(to_exclude_id: Identifier): void {
 		for (const id in this.statemachines) {
 			if (id === to_exclude_id) continue;
@@ -749,6 +834,9 @@ export class StateMachineController {
 		}
 	}
 
+	/**
+	 * Resumes all the statemachines that have been paused.
+	 */
 	resume_all_statemachines(): void {
 		for (const id in this.statemachines) {
 			this.resume_statemachine(id);
@@ -757,6 +845,7 @@ export class StateMachineController {
 }
 
 const TAPE_START_INDEX = -1; // The index of the tape that is *before* the start of the tape, so that the first index of the tape is considered when the `next`-event is triggered
+
 @insavegame
 /**
  * Represents a state in a state machine.
@@ -775,6 +864,9 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 */
 	parent_id: Identifier;
 
+	/**
+	 * The parent state of the state (machine).
+	 */
 	public get parent() { return $.registry.get(this.parent_id); }
 
 	/**
@@ -783,6 +875,9 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 */
 	root_id: Identifier;
 
+	/**
+	 * The root state of the state (machine).
+	 */
 	public get root() { return $.registry.get(this.root_id); }
 
 	/**
@@ -856,8 +951,15 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 */
 	public get start_state_id(): Identifier { return this.definition?.start_state_id; }
 
+	/**
+	 * Represents the counter for the critical section.
+	 */
 	private critical_section_counter: number;
-	private transition_queue: { state_id: Identifier, args: any[] }[];
+	/**
+	 * Represents the transition queue of the state machine.
+	 * @property {Array<{ state_id: Identifier, args: any[] }>} transition_queue - The array of transition objects.
+	 */
+	private transition_queue: StateTransition[];
 
 	// @ts-ignore
 	private enterCriticalSection(): void {
@@ -969,11 +1071,20 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		}
 	}
 
+	/**
+	 * Processes the input for the current state and transitions to the next state if provided.
+	 */
 	processInput(): void {
 		const next_state = this.definition.process_input?.call(this.target, this);
 		this.transitionToNextStateIfProvided(next_state);
 	}
 
+	/**
+	 * Runs the current state of the state machine.
+	 * If the state has a `run` function defined in its definition, it calls that function.
+	 * If the `run` function returns a next state, it transitions to that state.
+	 * If the `run` function does not return a next state and `auto_tick` is enabled in the state definition, it increments the `ticks` counter.
+	 */
 	runCurrentState(): void {
 		const next_state = this.definition.run?.call(this.target, this);
 		if (next_state) {
@@ -983,6 +1094,9 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		}
 	}
 
+	/**
+	 * Runs the substate machines.
+	 */
 	runSubstateMachines(): void {
 		if (!this.states) return;
 
@@ -993,6 +1107,12 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		}
 	}
 
+	/**
+	 * Handles the given path and returns the current part, remaining parts, and current context.
+	 * @param path - The path to handle, can be a string or an array of strings.
+	 * @returns An array containing the current part, remaining parts, and current context.
+	 * @throws {Error} If no state with the given ID is found.
+	 */
 	private handle_path(path: string | string[]): [string, string[], State] {
 		let parts: string[];
 		if (typeof path === 'string') {
@@ -1246,10 +1366,26 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		this.current.transitionToNextStateIfProvided(next_state);
 	}
 
+	/**
+	 * Executes the specified event on the state machine.
+	 *
+	 * @param eventName - The name of the event to execute.
+	 * @param emitter - The identifier or identifiable object that triggered the event.
+	 * @param args - Additional arguments to pass to the event handler.
+	 */
 	public do(eventName: string, emitter: Identifier | IIdentifiable, ...args: any[]): void {
 		this.root.dispatch(eventName, emitter, ...args);
 	}
 
+	/**
+	 * Dispatches an event to the state machine.
+	 * If the state machine is paused, the event will not be processed.
+	 * If the current state has child states, the event will be dispatched to the child states.
+	 * If the current state does not have child states, the event will be dispatched to the parent states.
+	 * @param eventName - The name of the event to dispatch.
+	 * @param emitter_id - The identifier of the event emitter.
+	 * @param args - Additional arguments to pass to the event handlers.
+	 */
 	public dispatch(eventName: string, emitter_id: Identifier, ...args: any[]): void {
 		// If the state machine is paused, do not process the event
 		if (this.paused) {
@@ -1289,7 +1425,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		}
 
 		if (typeof next_state === 'string') {
-			return { next_state: next_state, args: [] };
+			return { state_id: next_state, args: [] };
 		}
 
 		if (typeof next_state === 'object') {
@@ -1309,8 +1445,8 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		const next_state_transition = this.getNextState(next_state);
 
 		// If the next state is not the current state, transition to the next state
-		if (next_state_transition && next_state_transition.next_state !== this.currentid) {
-			this.to(next_state_transition.next_state, ...next_state_transition.args);
+		if (next_state_transition && next_state_transition.state_id !== this.currentid) {
+			this.to(next_state_transition.state_id, ...next_state_transition.args);
 		}
 	}
 
@@ -1362,14 +1498,14 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 					const next_state_transition = this.getNextState(next_state); // Get the state transition object from the next state
 
 					// If the next state is not the current state, transition to the next state
-					if (next_state_transition && next_state_transition.next_state !== this.currentid) {
-						this.to(next_state_transition.next_state, ...next_state_transition.args, ...args);
+					if (next_state_transition && next_state_transition.state_id !== this.currentid) {
+						this.to(next_state_transition.state_id, ...next_state_transition.args, ...args);
 					} else if (to_state) {
 						// If the next state is not defined, check if the target state is defined and transition to the target state if it is not the same as the current state (otherwise, do nothing)
 						const to_state_transition = this.getNextState(to_state); // Get the state transition object from the target state
 						if (to_state_transition) {
 							// Transition to the target state if it is defined and not the same as the current state ID (otherwise, do nothing)
-							this.to(to_state_transition.next_state, ...to_state_transition.args, ...args);
+							this.to(to_state_transition.state_id, ...to_state_transition.args, ...args);
 						}
 					}
 				}
@@ -1501,13 +1637,17 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 * The position of the tape head.
 	 */
 	protected _tapehead!: number;
+
 	/**
 	 * Gets the current position of the tapehead.
 	 * @returns The current position of the tapehead.
+
 	 */
+
 	public get head(): number {
 		return this._tapehead;
 	}
+
 	/**
 	 * Sets the current position of the tapehead to the given value.
 	 * If the tapehead is going out of bounds, the tapehead is moved to the beginning or end of the tape, depending on the state machine definition.
@@ -1722,9 +1862,15 @@ export class StateDefinition {
 	public repetitions: number; // Number of times the tape should be repeated
 
 	@exclude_save
+	/**
+	 * The parent state machine definition.
+	 */
 	public parent!: StateDefinition; // The parent state machine definition
 
 	@exclude_save
+	/**
+	 * The root state machine definition.
+	 */
 	public root!: StateDefinition; // The root state machine definition
 
 	public event_list: { name: string, scope: EventScope }[];
