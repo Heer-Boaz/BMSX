@@ -76,8 +76,10 @@ export type StateTransition = {
 	/**
 	 * The arguments for the state transition.
 	 */
-	args: any;
+	args?: any;
 };
+
+type StateTransitionWithType = StateTransition & { transition_type: TransitionType };
 
 /**
  * Represents the definition of a state event in a state machine.
@@ -88,6 +90,11 @@ export type StateEventDefinition<T extends IStateful & IEventSubscriber = any> =
 	 * The state ID to transition to. If not provided, the state will not transition. This is useful for defining a "transition" that only executes an action.
 	 */
 	to?: StateTransition | Identifier,
+
+	/**
+	 * The state ID to transition to.(as switch-type)  If not provided, the state will not transition. This is useful for defining a "transition" that only executes an action.
+	 */
+	switch?: StateTransition | Identifier,
 
 	/**
 	 * The condition that must be met for the transition to occur.
@@ -115,15 +122,24 @@ interface IStateGuard<T extends IStateful & IEventSubscriber = any> {
 	 * @this {T} - The stateful object.
 	 * @returns {boolean} - Returns `true` if the state can be entered, otherwise `false`.
 	 */
-	canEnter?: (this: T) => boolean;
+	canEnter?: (this: T, current_state: State) => boolean;
 
 	/**
 	 * Checks if the state can be exited.
 	 * @this {T} - The stateful object.
 	 * @returns {boolean} - Returns `true` if the state can be exited, otherwise `false`.
 	 */
-	canExit?: (this: T) => boolean;
+	canExit?: (this: T, current_state: State) => boolean;
 }
+
+interface IConditionalStateTransition<T extends IStateful & IEventSubscriber = any> {
+	to?: StateTransition | Identifier,
+	switch?: StateTransition | Identifier,
+
+	condition?: IStateEventCondition<T>;
+}
+
+type TransitionType = 'to' | 'switch';
 
 /**
  * Represents a tape used in the BFSM.
@@ -961,7 +977,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 * Represents the transition queue of the state machine.
 	 * @property {Array<{ state_id: Identifier, args: any[] }>} transition_queue - The array of transition objects.
 	 */
-	private transition_queue: StateTransition[];
+	private transition_queue: StateTransitionWithType[];
 
 	/**
 	 * Enters the critical section.
@@ -993,7 +1009,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		while (this.transition_queue.length > 0) {
 			const state_transition = this.transition_queue.shift();
 			// console.debug(`<< '${this.id}.${state_transition.state_id}'`);
-			this.transitionToState(state_transition.state_id, ...state_transition.args);
+			this.transitionToState(state_transition.state_id, state_transition.transition_type, ...state_transition.args);
 		}
 	}
 
@@ -1087,6 +1103,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 			this.processInput();
 			this.runCurrentState();
 			this.runSubstateMachines();
+			this.checkTransitions();
 		} finally {
 			this.leaveCriticalSection();
 		}
@@ -1128,6 +1145,19 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		}
 	}
 
+	checkTransitions(): void {
+		const transitions = this.definition.on?.conditions;
+		if (!transitions) return;
+
+		for (const transition of transitions) {
+			// Transition to the new state if the transition condition is met
+			if (transition.condition.call(this.target, this)) {
+				this.transitionToNextStateIfProvided(transition.to);
+				this.transitionToNextStateIfProvided(transition.switch, true);
+				break;
+			}
+		}
+	}
 	/**
 	 * Handles the given path and returns the current part, remaining parts, and current context.
 	 * @param path - The path to handle, can be a string or an array of strings.
@@ -1181,7 +1211,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 
 		if (this.def_id !== currentPart || restParts.length === 0) {
 			if (!currentContext.parallel) { // If the state is not running in parallel, set it as the current state
-				this.transitionToState(currentPart, ...args);
+				this.transitionToState(currentPart, 'to', ...args);
 			}
 		}
 
@@ -1205,7 +1235,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		if (restParts.length > 0) {
 			currentContext.switch_path(restParts, ...args);
 		} else if (this.def_id !== currentPart) {
-			this.transitionToState(currentPart, ...args);
+			this.transitionToState(currentPart, 'switch', ...args);
 		}
 	}
 
@@ -1329,13 +1359,13 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		const targetStateDefinition = this.definition.states[target_state_id];
 
 		// Check if the current state has a canExit guard and if it returns false, prevent the transition
-		if (currentStateDefinition.guards?.canExit && !currentStateDefinition.guards.canExit.call(this)) {
+		if (currentStateDefinition.guards?.canExit && !currentStateDefinition.guards.canExit.call(this.target, this)) {
 			// console.debug(`Cannot exit state: ${currentStateDefinition.id}`);
 			return false;
 		}
 
 		// Check if the target state has a canEnter guard and if it returns false, prevent the transition
-		if (targetStateDefinition.guards?.canEnter && !targetStateDefinition.guards.canEnter.call(this)) {
+		if (targetStateDefinition.guards?.canEnter && !targetStateDefinition.guards.canEnter.call(this.target, this)) {
 			// console.debug(`Cannot enter state: ${target_state_id}`);
 			return false;
 		}
@@ -1351,11 +1381,16 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 * @param args - Optional arguments to pass to the state's enter and exit actions.
 	 * @throws Error - If the state with the specified ID doesn't exist or if the target state is parallel.
 	 */
-	private transitionToState(state_id: Identifier, ...args: any[]): void {
+	private transitionToState(state_id: Identifier, transition_type: TransitionType, ...args: any[]): void {
 		if (this.critical_section_counter > 0) {
 			// console.debug(`>> '${this.id}.${state_id}'`);
-			this.transition_queue.push({ state_id: state_id, args: args });
+			this.transition_queue.push({ state_id: state_id, args: args, transition_type: transition_type ?? 'to' });
 			return;
+		}
+
+		if (transition_type === 'switch') {
+			// The switch transition type is used to switch to a new state, expect if the state is already the current state
+			if (this.currentid === state_id) return;
 		}
 
 		// If any state guard conditions fail, prevent the transition
@@ -1450,8 +1485,8 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		}
 
 		if (typeof next_state === 'object') {
-			const args = Array.isArray(next_state.args) ? next_state.args : [next_state.args];
-			return { ...next_state, args: args };
+			const args = Array.isArray(next_state.args) ? next_state.args : next_state.args ? [next_state.args] : [];
+			return { ...next_state, args };
 		}
 
 		throw new Error(`Invalid type for next state: ${next_state}, expected string or object`);
@@ -1462,12 +1497,17 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 *
 	 * @param next_state - The next state to transition to.
 	 */
-	private transitionToNextStateIfProvided(next_state: StateTransition | string | void): void {
+	private transitionToNextStateIfProvided(next_state: StateTransition | string | void, do_switch: boolean = false): void {
 		const next_state_transition = this.getNextState(next_state);
 
 		// If the next state is not the current state, transition to the next state
-		if (next_state_transition && next_state_transition.state_id !== this.currentid) {
-			this.to(next_state_transition.state_id, ...next_state_transition.args);
+		if (next_state_transition) {
+			if (do_switch) {
+				this.switch(next_state_transition.state_id, ...next_state_transition.args);
+			}
+			else {
+				this.to(next_state_transition.state_id, ...next_state_transition.args);
+			}
 		}
 	}
 
@@ -1501,6 +1541,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 					const doHandler = state_id_or_handler.do; // Get the do-handler from the state transition object
 					const emitterId = state_id_or_handler.scope; // (Optional) The ID of the emitter scope. If provided, the listener will be added to the emitter scope listeners, otherwise it will be added to the global scope listeners.
 					const to_state = state_id_or_handler.to; // Get the target state ID from the state transition object
+					const switch_state = state_id_or_handler.switch; // Get the target state ID from the state transition object
 
 					// If the emitter ID is provided and it is not the same as the emitter ID of the event, do nothing
 					if (emitterId && emitterId !== 'all' && emitterId !== emitter_id) {
@@ -1527,6 +1568,13 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 						if (to_state_transition) {
 							// Transition to the target state if it is defined and not the same as the current state ID (otherwise, do nothing)
 							this.to(to_state_transition.state_id, ...to_state_transition.args, ...args);
+						}
+					}
+					else if (switch_state) {
+						const switch_state_transition = this.getNextState(switch_state);
+						if (switch_state_transition) {
+							// Transition to the target state if it is defined and not the same as the current state ID (otherwise, do nothing)
+							this.switch(switch_state_transition.state_id, ...switch_state_transition.args, ...args);
 						}
 					}
 				}
@@ -1994,7 +2042,9 @@ export class StateDefinition {
 	 * ```
 	 */
 	public on?: {
-		[key: string]: Identifier | StateEventDefinition
+		[key: string]: Identifier | StateEventDefinition;
+	} & {
+		conditions?: IConditionalStateTransition[];
 	};
 
 	/**
