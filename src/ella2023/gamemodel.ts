@@ -56,8 +56,8 @@ export class gamemodel extends BaseModel {
 		const hp_sinterklaas = sinterklaas?.hp ?? 0;
 
 		if (hp_player > 0 && hp_sinterklaas > 0) {
-			sinterklaas.sc.to('idle');
-			player.sc.to('idle');
+			sinterklaas.sc.do('go_idle', sinterklaas);
+			player.sc.do('go_idle', player);
 			return;
 		}
 
