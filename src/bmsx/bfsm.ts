@@ -77,6 +77,11 @@ export type StateTransition = {
 	 * The arguments for the state transition.
 	 */
 	args?: any;
+
+	/**
+	 * The transition type: 'to' or 'switch', where 'to' is the default.
+	 */
+	transition_type?: TransitionType;
 };
 
 type StateTransitionWithType = StateTransition & { transition_type: TransitionType };
@@ -132,12 +137,13 @@ interface IStateGuard<T extends IStateful & IEventSubscriber = any> {
 	canExit?: (this: T, current_state: State) => boolean;
 }
 
-interface IConditionalStateTransition<T extends IStateful & IEventSubscriber = any> {
-	to?: StateTransition | Identifier,
-	switch?: StateTransition | Identifier,
-
-	condition?: IStateEventCondition<T>;
-}
+/**
+ * Represents the definition of a tick check for a stateful object.
+ * It defines conditions that are checked on each tick to determine if the state should transition to another state or another action should be executed.
+ *
+ * @template T - The type of the stateful object.
+ */
+type TickCheckDefinition<T extends IStateful = any> = Omit<StateEventDefinition<T>, 'scope'>;
 
 type TransitionType = 'to' | 'switch';
 
@@ -1103,7 +1109,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 			this.processInput();
 			this.runCurrentState();
 			this.runSubstateMachines();
-			this.checkTransitions();
+			this.doRunChecks();
 		} finally {
 			this.leaveCriticalSection();
 		}
@@ -1145,16 +1151,40 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		}
 	}
 
-	checkTransitions(): void {
-		const transitions = this.definition.on?.conditions;
-		if (!transitions) return;
+	/**
+	 * Executes the run checks defined in the state machine definition.
+	 * If a run check condition is met, it might transition to the next state based on the provided logic.
+	 */
+	doRunChecks(): void {
+		const run_checks = this.definition.run_checks;
+		if (!run_checks) return;
 
-		for (const transition of transitions) {
-			// Transition to the new state if the transition condition is met
-			if (transition.condition.call(this.target, this)) {
-				this.transitionToNextStateIfProvided(transition.to);
-				this.transitionToNextStateIfProvided(transition.switch, true);
-				break;
+		for (const run_check of run_checks) {
+			// Check if the check condition is met
+			if (run_check.if.call(this.target, this)) {
+				// The do-handler can return a state ID to transition to, otherwise it can return undefined to indicate that no transition should occur or to indicate that the target state should be used.
+				const next_state_from_do = run_check.do?.call(this.target, this as State<T>);
+				const next_state_transition_from_do = this.getNextState(next_state_from_do); // Get the state transition object from the next state
+
+				// Transition to the state that was returned from the `do` handler, if it is not the current state
+				if (next_state_transition_from_do && next_state_transition_from_do.state_id !== this.currentid) {// If the next state is not the current state, transition to the next state
+					if (next_state_transition_from_do.transition_type === 'to') {
+						this.to(next_state_transition_from_do.state_id, ...next_state_transition_from_do.args);
+					} else if (next_state_transition_from_do.transition_type === 'switch') {
+						this.switch(next_state_transition_from_do.state_id, ...next_state_transition_from_do.args);
+					}
+				}
+				// If the `do` handler did not exist or returns undefined, the transition should be handled by the `to` or `switch` property of the tick check
+				else if (run_check.to) {
+					// Transition to the new state if the transition condition is met
+					this.transitionToNextStateIfProvided(run_check.to);
+				}
+				// If the `do` handler did not exist or returns undefined, the transition should be handled by the `to` or `switch` property of the tick check
+				else if (run_check.switch) {
+					// Switch to the new state if the transition condition is met
+					this.transitionToNextStateIfProvided(run_check.switch, true);
+				}
+				break; // Only one transition should be executed per tick check
 			}
 		}
 	}
@@ -1253,7 +1283,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 * a state from the root (prefixed with '#root.'), or a state within the parent state machine.
 	 * @param args - Optional arguments to pass to the new state. These arguments are passed on to the 'to' or 'switch' methods.
 	 */
-	public to(state_id: Identifier, ...args: any[]): void {
+	to(state_id: Identifier, ...args: any[]): void {
 		if (this.def_id === state_id) return; // Don't switch to the same state
 		if (state_id.startsWith('#this.')) { // If the state is local, switch to the state in the current state machine
 			// Remove the '#this.' prefix and continue to the next state from the substate
@@ -1291,7 +1321,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 * a state from the root (prefixed with '#root.'), or a state within the parent state machine.
 	 * @param args - Optional arguments to pass to the new state. These arguments are passed on to the 'to' or 'switch' methods.
 	 */
-	public switch(state_id: Identifier, ...args: any[]): void {
+	switch(state_id: Identifier, ...args: any[]): void {
 		if (this.def_id === state_id) return; // Don't switch to the same state
 		if (state_id.startsWith('#this.')) {
 			// Remove the '#this.' prefix and continue to the next state from the substate
@@ -1561,7 +1591,11 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 
 					// If the next state is not the current state, transition to the next state
 					if (next_state_transition && next_state_transition.state_id !== this.currentid) {
-						this.to(next_state_transition.state_id, ...next_state_transition.args, ...args);
+						if (next_state_transition.transition_type === 'to') {
+							this.to(next_state_transition.state_id, ...next_state_transition.args, ...args);
+						} else if (next_state_transition.transition_type === 'switch') {
+							this.switch(next_state_transition.state_id, ...next_state_transition.args, ...args);
+						}
 					} else if (to_state) {
 						// If the next state is not defined, check if the target state is defined and transition to the target state if it is not the same as the current state (otherwise, do nothing)
 						const to_state_transition = this.getNextState(to_state); // Get the state transition object from the target state
@@ -2043,9 +2077,9 @@ export class StateDefinition {
 	 */
 	public on?: {
 		[key: string]: Identifier | StateEventDefinition;
-	} & {
-		conditions?: IConditionalStateTransition[];
 	};
+
+	public run_checks?: TickCheckDefinition[];
 
 	/**
 	 * The guards for the state.
