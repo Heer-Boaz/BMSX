@@ -120,7 +120,6 @@ export class Eila extends Fighter {
             on: {
                 $go_idle: {
                     if(this: Fighter, state: State) { return !state.is('stoerheidsdans') && !state.is('nagenieten') && !state.is('humiliated'); },
-                    // to: '#this.idle',
                     switch: '#this.idle',
                 },
                 $go_walk: '#this.walk',
@@ -132,9 +131,6 @@ export class Eila extends Fighter {
                 $go_jump: '#this.jump',
                 $go_stoerheidsdans: '#this.stoerheidsdans',
                 $go_humiliated: '#this.humiliated',
-                conditions: [
-                    { switch: { state_id: '#this.humiliated' }, condition(this: Fighter) { return this.hp <= 90; } },
-                ],
             },
             states: {
                 _idle: {
@@ -156,14 +152,6 @@ export class Eila extends Fighter {
                         this.hittable = true;
                         this.fighting = true;
                     },
-                    // guards: {
-                    // canEnter(this: Fighter) {
-                    //     return this.hp <= 80;
-                    // },
-                    // canExit(this: Fighter) {
-                    //     return this.hp > 90;
-                    // }
-                    // },
                 },
                 stoerheidsdans: {
                     auto_tick: false,
