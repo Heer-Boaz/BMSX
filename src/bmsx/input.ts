@@ -48,11 +48,36 @@ function svgToPng(svgElement, filename) {
 	img.src = svgUrl;
 }
 
+/**
+ * Represents a query to retrieve the state of one or more actions.
+ * Used to query the state of actions in the input system, such as whether a button is pressed or consumed or whether there is a long-press.
+ * @see ActionState for the structure of the query result.
+ * @see PlayerInput.getPressedActions for how this query is used.
+ */
 export type ActionStateQuery = {
+	/**
+	 * An optional array of filters to apply when querying for action states.
+	 */
 	filter?: string[];
+
+	/**
+	 * Specifies whether the action is currently pressed.
+	 */
 	pressed?: boolean;
+
+	/**
+	 * Specifies whether the action has been consumed.
+	 */
 	consumed?: boolean;
+
+	/**
+	 * The time at which the action was pressed, in milliseconds.
+	 */
 	pressTime?: number;
+
+	/**
+	 * An optional array of action names, ordered by priority, to use when querying for action states.
+	 */
 	actionsByPriority?: string[];
 };
 
@@ -77,16 +102,13 @@ function preventActionAndPropagation(e: Event): boolean {
 }
 
 /**
- * Prevents the default action, propagation, and immediate propagation of an event.
+ * Resets the properties of an object by deleting all keys except for the ones specified in the `except` array.
+ * If no `except` array is provided, all keys will be deleted.
+ * Used for resetting the UI of the onscreen gamepad for events such as button releases.
  *
- * @param e The event object.
- * @returns Returns false.
+ * @param obj - The object to reset.
+ * @param except - An optional array of keys to exclude from deletion.
  */
-// function preventAction(e: Event): boolean {
-//     e.preventDefault();
-//     return false;
-// }
-
 function resetObject(obj: Index2State | Index2PressTime, except?: string[]) {
 	Object.keys(obj).forEach(key => {
 		if (!except || !except.includes(key)) {
@@ -112,11 +134,15 @@ function getPressedState(
 }
 
 /**
- * Represents the state of an index in the Index2State type.
+ * Represents the state of an button-press-index in the Index2State type. Used for tracking the state of a button.
  */
 type Index2State = { [index: string | number]: boolean; }
 
+/**
+ * Represents a mapping of button-press-index to press time. Used for tracking how long a button has been pressed.
+ */
 type Index2PressTime = { [index: string | number]: number | null; }
+
 /**
  * Represents a mapping of keyboard inputs to actions.
  */
@@ -144,6 +170,7 @@ export interface InputMap {
  * It can be one of the predefined keys or a custom string.
  */
 export type KeyboardButton = keyof typeof Key | string;
+
 /**
  * Represents a gamepad button.
  * @typedef {keyof typeof Input.BUTTON2INDEX } GamepadButton
@@ -154,17 +181,44 @@ export type GamepadButton = keyof typeof Input.BUTTON2INDEX;
  * Represents the state of a button.
  */
 export type ButtonState = { pressed: boolean; consumed: boolean; presstime: number | null; };
+
 /**
  * Represents the state of an action, including the action name and button state.
  */
 export type ActionState = { action: string } & ButtonState;
 
-// Abstract Input Handler Interface
+/**
+ * Represents an input handler that provides methods for polling input, getting button states,
+ * consuming buttons, resetting input, and getting the gamepad index.
+ */
 interface IInputHandler {
+	/**
+	 * Polls the input to update the button states.
+	 */
 	pollInput(): void;
+
+	/**
+	 * Gets the state of the specified button.
+	 * @param btn - The button number or null to get the state of all buttons.
+	 * @returns The state of the button.
+	 */
 	getButtonState(btn: number | null): ButtonState;
+
+	/**
+	 * Consumes the specified button, marking it as processed.
+	 * @param button - The button number to consume.
+	 */
 	consumeButton(button: number): void;
+
+	/**
+	 * Resets the input, optionally excluding specified buttons.
+	 * @param except - An optional array of button names to exclude from the reset.
+	 */
 	reset(except?: string[]): void;
+
+	/**
+	 * Gets the index of the gamepad.
+	 */
 	get gamepadIndex(): number;
 }
 
@@ -173,6 +227,10 @@ const options = {
 	once: false,
 };
 
+/**
+ * Represents a selected player index icon that is shown when a new input device has been detected and not yet been assigned to a player.
+ * The icon is also shown when an input devices is being reassigned to a player.
+ */
 class SelectedPlayerIndexIcon extends SpriteObject {
 	@build_fsm()
 	static bouw(): StateMachineBlueprint {
@@ -222,6 +280,13 @@ class SelectedPlayerIndexIcon extends SpriteObject {
 		};
 	}
 
+	/**
+	 * Returns the icon identifier for the specified gamepad index.
+	 * If the gamepad index is not provided, it defaults to 0.
+	 *
+	 * @param gamepadIndex - The index of the gamepad.
+	 * @returns The icon identifier.
+	 */
 	public static getIconId(gamepadIndex: number): Identifier {
 		return `joystick_icon_${gamepadIndex ?? 0}`;
 	}
@@ -232,6 +297,10 @@ class SelectedPlayerIndexIcon extends SpriteObject {
 		this.colorize = { r: 1, g: 1, b: 1, a: .75 };
 	}
 
+	/**
+	 * Sets the player index, which updates the icon image to represent a particular player by number.
+	 * @param playerIndex - The index of the player.
+	 */
 	public set playerIndex(playerIndex: number) {
 		if (playerIndex === null) {
 			this.imgid = 'joystick_none';
@@ -243,18 +312,56 @@ class SelectedPlayerIndexIcon extends SpriteObject {
 	}
 }
 
+/**
+ * Represents a processor for handling pending gamepad assignments.
+ * This class manages the selection of player indexes for gamepad assignments and the placement of the joystick icon.
+ */
 class PendingAssignmentProcessor {
+	/**
+	 * The starting position of the joystick icon in pixels.
+	 */
 	private static readonly joystick_icon_start = { x: 0, y: 0 };
+
+	/**
+	 * The amount of increment in the x-axis for the joystick icon in pixels.
+	 */
 	private static readonly joystick_icon_increment_x = 32;
+
+	/**
+	 * Gets the pending index of the gamepad input.
+	 * @returns The pending index of the gamepad input.
+	 */
 	private get pendingIndex() { return this.gamepadInput.gamepadIndex; }
 
+	/**
+	 * The icon representing the selected player index.
+	 */
 	private icon: SelectedPlayerIndexIcon = null;
 
+	/**
+	 * Checks if a specific gamepad button is pressed and not consumed.
+	 *
+	 * @param button - The gamepad button to check.
+	 * @param gamepadInput - The gamepad input handler.
+	 * @returns A boolean value indicating whether the button is pressed and not consumed.
+	 */
 	private checkNonConsumedPressed(button: GamepadButton, gamepadInput: IInputHandler) {
 		return gamepadInput.getButtonState(Input.BUTTON2INDEX[button]).pressed && !gamepadInput.getButtonState(Input.BUTTON2INDEX[button]).consumed;
 	}
 
+	/**
+	 * Calculates the X position of the assignment-icon based on the given position index.
+	 * @param positionIndex The index of the position.
+	 * @returns The calculated X position of the icon.
+	 */
 	private calcIconPositionX(positionIndex: number) { return PendingAssignmentProcessor.joystick_icon_start.x + (PendingAssignmentProcessor.joystick_icon_increment_x * (positionIndex ?? 0)) };
+
+	/**
+	 * Handles the button press event for selecting the player index.
+	 * @param button - The gamepad button that was pressed.
+	 * @param increment - The amount by which to increment or decrement the player index.
+	 * @param gamepadInput - The gamepad input handler.
+	 */
 	private handleSelectPlayerIndexButtonPress(button: GamepadButton, increment: number, gamepadInput: IInputHandler) {
 		if (this.checkNonConsumedPressed(button, gamepadInput)) {
 			gamepadInput.consumeButton(Input.BUTTON2INDEX[button]);
@@ -282,6 +389,13 @@ class PendingAssignmentProcessor {
 			console.info(`Gamepad ${gamepadInput.gamepadIndex} proposed to be assigned to player ${newProposedPlayerIndex ?? 'none (no free slots left)'}.`);
 		}
 	}
+
+	/**
+	 * Creates a select player icon if it doesn't exist yet and handles its placement in the scene.
+	 *
+	 * @param gamepadInput - The gamepad input handler.
+	 * @param positionIndex - The position index of the icon.
+	 */
 	private createSelectPlayerIconIfNeeded(gamepadInput: IInputHandler, positionIndex: number) {
 		const model = $.model;
 		if (!this.icon) { // If the joystick icon doesn't exist yet, create it
@@ -299,6 +413,9 @@ class PendingAssignmentProcessor {
 		}
 	}
 
+	/**
+	 * Represents an Input object that handles gamepad input and a proposed player index.
+	 */
 	constructor(public gamepadInput: IInputHandler, public proposedPlayerIndex: number | null) {
 		const self = this;
 		window.addEventListener("gamepaddisconnected", function (e: GamepadEvent) {
@@ -315,6 +432,12 @@ class PendingAssignmentProcessor {
 		});
 	}
 
+	/**
+	 * Runs the gamepad assignment process.
+	 * If a gamepad is proposed to be assigned to a player, handles the assignment and removal of the joystick icon.
+	 * If no gamepad is proposed, checks for the start button press to propose a gamepad for assignment.
+	 * Handles the movement of the joystick icon to change the proposed player index.
+	 */
 	run(): void {
 		const inputMaestro = Input.instance;
 		const gamepadInput = this.gamepadInput
@@ -365,6 +488,9 @@ class PendingAssignmentProcessor {
 		}
 	}
 
+	/**
+	 * Removes the icon from the input.
+	 */
 	removeIcon(): void {
 		if (this.icon) {
 			$.model.exile(this.icon);
@@ -373,12 +499,30 @@ class PendingAssignmentProcessor {
 	}
 }
 
+/**
+ * Represents the Input class that manages player inputs and gamepad assignments.
+ */
 export class Input implements IRegisterable {
+	/**
+	 * Represents the singleton instance of the Input class.
+	 */
 	private static _instance: Input;
 
+	/**
+	 * The maximum number of players allowed.
+	 */
 	public static PLAYERS_MAX = 4;
+
+	/**
+	 * The maximum index value for the player, which is the maximum number of players minus 1 as the index is zero-based.
+	 */
 	public static PLAYER_MAX_INDEX = Input.PLAYERS_MAX - 1;
 
+	/**
+	 * Gets the singleton instance of the Input class.
+	 * If the instance does not exist, it creates a new one.
+	 * @returns The singleton instance of the Input class.
+	 */
 	public static get instance(): Input {
 		if (!Input._instance) {
 			Input._instance = new Input();
@@ -387,14 +531,39 @@ export class Input implements IRegisterable {
 		return Input._instance;
 	}
 
+	/**
+	 * An array of player inputs for each player.
+	 * The Player 1 input is at index 0, Player 2 input is at index 1, and so on.
+	 * @see PlayerInput
+	 */
 	private playerInputs: PlayerInput[] = [];
+
+	/**
+	 * Represents an array of pending gamepad assignments.
+	 * @see PendingAssignmentProcessor
+	 */
 	private pendingGamepadAssignments: PendingAssignmentProcessor[] = [];
+
+	/**
+	 * Represents the onscreen gamepad.
+	 * @see OnscreenGamepad
+	 */
 	private onscreenGamepad: OnscreenGamepad;
 
+	/**
+	 * Gets the onscreen gamepad.
+	 * @returns The onscreen gamepad.
+	 */
 	public getOnscreenGamepad(): OnscreenGamepad {
 		return this.onscreenGamepad;
 	}
 
+	/**
+	 * Retrieves the player input for the specified player index.
+	 * @param playerIndex - The index of the player.
+	 * @returns The player input object for the specified player index.
+	 * @throws Error if the player index is out of range.
+	 */
 	public getPlayerInput(playerIndex: number): PlayerInput {
 		const index = playerIndex - 1;
 		if (index < 0 || index > Input.PLAYER_MAX_INDEX) throw new Error(`Player index ${playerIndex} is out of range, should be between 1 and ${Input.PLAYERS_MAX}.`);
@@ -407,7 +576,7 @@ export class Input implements IRegisterable {
 	/**
 	 * Hides the specified buttons.
 	 * @param gamepad_button_ids An array of button names to hide.
-	 * @throws Error if no HTML element is found matching a button name.
+	 * @throws Error if no HTML element is found matching a button name in the array of buttons.
 	 */
 	public hideOnscreenGamepadButtons(gamepad_button_ids: string[]): void {
 		OnscreenGamepad.hideButtons(gamepad_button_ids);
@@ -492,6 +661,10 @@ export class Input implements IRegisterable {
 		}
 	}
 
+	/**
+	 * Gets the unique identifier of the input, which is a static id.
+	 * @returns 'input'.
+	 */
 	public get id(): Identifier { return 'input'; }
 
 	/**
@@ -540,17 +713,28 @@ export class Input implements IRegisterable {
 		this.getPlayerInput(1).keyboardInput = new KeyboardInput();
 	}
 
+	/**
+	 * Checks if the onscreen gamepad is enabled.
+	 * @returns {boolean} True if the onscreen gamepad is enabled, false otherwise.
+	 */
 	public get isOnscreenGamepadEnabled(): boolean {
 		const controls = document.getElementById('d-pad-controls');
 		return !controls!.hidden;
 	}
 
+	/**
+	 * Enables the onscreen gamepad and assigns it as the gamepad input for player 1.
+	 */
 	public enableOnscreenGamepad(): void {
 		this.onscreenGamepad ??= new OnscreenGamepad();
 		this.onscreenGamepad.init();
 		this.getPlayerInput(1).gamepadInput = this.onscreenGamepad;
 	}
 
+	/**
+	 * Enables the debug mode for the game screen.
+	 * Attaches event listeners to the game screen element to handle debug events.
+	 */
 	public enableDebugMode(): void {
 		const gamescreen = document.getElementById('gamescreen');
 		gamescreen.addEventListener('click', this.handleDebugEvents, options);
@@ -562,6 +746,11 @@ export class Input implements IRegisterable {
 		window.addEventListener('keydown', e => this.handleDebugEvents(e), options);
 	}
 
+	/**
+	 * Disposes the input system by removing all pending gamepad assignments,
+	 * player inputs, event subscriptions, and deregistering the input system.
+	 * Also removes the input instance.
+	 */
 	public dispose(): void {
 		// Remove all pending gamepad assignments
 		this.pendingGamepadAssignments.forEach(pending => pending.removeIcon());
@@ -580,6 +769,9 @@ export class Input implements IRegisterable {
 		Input._instance = undefined;
 	}
 
+	/**
+	 * Polls the input for each player and processes gamepad assignments.
+	 */
 	public pollInput(): void {
 		this.playerInputs.forEach(player => {
 			player.pollInput();
@@ -617,6 +809,11 @@ export class Input implements IRegisterable {
 		return null;
 	}
 
+	/**
+	 * Checks if the specified player index is available for gamepad assignment.
+	 * @param playerIndex - The player index to check.
+	 * @returns `true` if the player index is available for gamepad assignment, `false` otherwise.
+	 */
 	public isPlayerIndexAvailableForGamepadAssignment(playerIndex: number): boolean {
 		const playerInput = this.getPlayerInput(playerIndex);
 		return (!playerInput.gamepadInput && !this.pendingGamepadAssignments.some(pending => pending.proposedPlayerIndex === playerInput.playerIndex));
@@ -835,11 +1032,22 @@ export class Input implements IRegisterable {
 }
 
 /**
- * Represents the Input class responsible for handling user this.
+ * Represents the Input class responsible for handling user input.
  */
 export class PlayerInput {
+	/**
+	 * The index of the player whose input is being handled.
+	 */
 	public playerIndex: number;
+
+	/**
+	 * The keyboard input handler for the player, if any.
+	 */
 	public keyboardInput: KeyboardInput;
+
+	/**
+	 * The gamepad input handler for the player, if any.
+	 */
 	public gamepadInput: IInputHandler;
 
 	/**
@@ -877,8 +1085,6 @@ export class PlayerInput {
 	 * });
 	 */
 	private inputMap: InputMap;
-
-	preventInput: boolean; // Prevents input from being registered. For instance, when the game loses focus.
 
 	/**
 	 * Sets the input map for a specific player.
@@ -968,6 +1174,11 @@ export class PlayerInput {
 		}
 	}
 
+	/**
+	 * Consumes a list of actions.
+	 *
+	 * @param actions - The actions to consume.
+	 */
 	public consumeActions(...actions: (ActionState | string)[]) {
 		actions.forEach(action => this.consumeAction(action));
 	}
@@ -982,6 +1193,11 @@ export class PlayerInput {
 		return this.keyboardInput.getKeyState(key);
 	}
 
+	/**
+	 * Consumes the specified key from the keyboard input.
+	 *
+	 * @param key - The key to consume.
+	 */
 	public consumeKey(key: string): void {
 		this.keyboardInput.consumeKey(key);
 	}
@@ -1006,6 +1222,12 @@ export class PlayerInput {
 		return buttonState.pressed;
 	}
 
+	/**
+	 * Checks if a key or gamepad button is pressed and consumes the input if it is.
+	 * @param key - The key to check.
+	 * @param button - The gamepad button to check (optional).
+	 * @returns `true` if the input was consumed, `false` otherwise.
+	 */
 	public checkAndConsume(key: string, button?: number): boolean {
 		const keyState = this.keyboardInput.getKeyState(key);
 
@@ -1126,6 +1348,9 @@ export class PlayerInput {
 }
 
 class KeyboardInput implements IInputHandler {
+	/**
+	 * The index of the input device, which defaults to 0 (the main player).
+	 */
 	public readonly gamepadIndex = 0;
 
 	constructor() {
@@ -1154,7 +1379,6 @@ class KeyboardInput implements IInputHandler {
 		resetObject(this.KeyPressedTimes, except);
 	}
 
-
 	/**
 	 * The state of each keyboard key.
 	 */
@@ -1165,6 +1389,10 @@ class KeyboardInput implements IInputHandler {
 	 */
 	public KeyPressedConsumedState: Index2State = {};
 
+	/**
+	 * Represents the mapping of key codes to the corresponding pressed times.
+	 * Used for tracking how long a key has been pressed.
+	 */
 	public KeyPressedTimes: Index2PressTime = {};
 
 	/**
@@ -1175,9 +1403,24 @@ class KeyboardInput implements IInputHandler {
 		this.KeyPressedConsumedState[key] = true;
 	}
 
+	/**
+	 * Consumes a button press event, but has not been implemented for keyboard input as the keyboard
+	 * uses DOM events to handle key presses instead of polling.
+	 * However, this method is required to implement the IInputHandler interface.
+	 *
+	 * @param _button - The button number.
+	 */
 	public consumeButton(_button: number): void {
 	}
 
+	/**
+	 * Retrieves the state of a button, but has not been implemented for keyboard input as the keyboard
+	 * uses DOM events to handle key presses instead of polling.
+	 * However, this method is required to implement the IInputHandler interface.
+	 *
+	 * @param _button - The button number.
+	 * @returns null
+	 */
 	public getButtonState(_button: number): ButtonState {
 		return null;
 	}
@@ -1192,6 +1435,10 @@ class KeyboardInput implements IInputHandler {
 		return getPressedState(this.KeyState, this.KeyPressedConsumedState, this.KeyPressedTimes, key);
 	}
 
+	/**
+	 * Polls the input for any changes, but has not been implemented for keyboard input as the keyboard
+	 * uses DOM events to handle key presses instead of polling.
+	 */
 	pollInput(): void {
 	}
 
@@ -1213,11 +1460,20 @@ class KeyboardInput implements IInputHandler {
 		this.KeyPressedTimes[key_code] = null;
 	}
 
+	/**
+	 * Handles the blur event of the input element by resetting the input state.
+	 * @param _e - The blur event object.
+	 */
 	blur(_e: FocusEvent): void {
 		// this.preventInput = true; // Prevent input when the window loses focus
 		this.reset();
 	}
 
+	/**
+	 * Handles the focus event for the input element by resetting the input state.
+	 * Resets the input state.
+	 * @param _e - The focus event object.
+	 */
 	focus(_e: FocusEvent): void {
 		this.reset();
 		// this.preventInput = false; // Allow input when the window regains focus
@@ -1225,6 +1481,10 @@ class KeyboardInput implements IInputHandler {
 }
 
 class GamepadInput implements IInputHandler {
+	/**
+	 * Gets the index of the gamepad.
+	 * @returns The index of the gamepad, or `null` if no gamepad is connected.
+	 */
 	public get gamepadIndex(): number | null {
 		return this.gamepad?.index ?? null;
 	}
@@ -1358,6 +1618,10 @@ class GamepadInput implements IInputHandler {
 	}
 }
 
+/**
+ * Represents an on-screen gamepad for handling input.
+ * It is used to simulate gamepad input on touch devices, and is intended to be used in conjunction with the {@link Input} class.
+ */
 class OnscreenGamepad implements IInputHandler {
 	public readonly gamepadIndex = 7;
 
@@ -1409,6 +1673,11 @@ class OnscreenGamepad implements IInputHandler {
 		return getPressedState(stateMap, consumedStateMap, pressTimes, button);
 	}
 
+	/**
+	 * Polls the input to update the button states and press times.
+	 * This method should be called once per frame to ensure that gamepad input is up-to-date.
+	 * It uses the `touched` attribute (in the dataset) of the on-screen buttons to determine if they are currently being pressed.
+	 */
 	public pollInput(): void {
 		// Initialize new states with current values instead of resetting
 		const defaultState = { pressed: false, consumed: true, presstime: null };
@@ -1562,6 +1831,11 @@ class OnscreenGamepad implements IInputHandler {
 
 	private static readonly onscreenButtonElementNames = Object.keys(OnscreenGamepad.ALL_BUTTON_MAP);
 
+	/**
+	 * Initializes the input system.
+	 * Sets up event listeners for touch and mouse input,
+	 * and resets the gamepad button states.
+	 */
 	public init(): void {
 		// Reset gamepad button states
 		this.reset();
@@ -1569,8 +1843,8 @@ class OnscreenGamepad implements IInputHandler {
 		function addTouchListeners(controlsElement: HTMLElement, action_type: 'dpad' | 'action') {
 			controlsElement.addEventListener('touchmove', e => { self.handleTouchMove(e, action_type); return true; }, options);
 			controlsElement.addEventListener('touchstart', e => { self.handleTouchStart(e, action_type); return true; }, options);
-			controlsElement.addEventListener('touchend', e => { self.handleTouchEndStuff(e, action_type); return true; }, options);
-			controlsElement.addEventListener('touchcancel', e => { self.handleTouchEndStuff(e, action_type); return true; }, options);
+			controlsElement.addEventListener('touchend', e => { self.handleTouchEnd(e, action_type); return true; }, options);
+			controlsElement.addEventListener('touchcancel', e => { self.handleTouchEnd(e, action_type); return true; }, options);
 		}
 
 		addTouchListeners(document.getElementById('d-pad-controls')!, 'dpad');
@@ -1638,6 +1912,17 @@ class OnscreenGamepad implements IInputHandler {
 		}
 	}
 
+	/**
+	 * Handles the touch move event for a specific control type on the on-screen gamepad.
+	 * This function is used to handle touch move events for the on-screen gamepad controls.
+	 * It is called when the user moves their finger across the screen while touching the on-screen gamepad.
+	 * The function checks which elements are being touched and updates the UI accordingly.
+	 * If an element is touched, it adds the 'druk' class to it and removes the 'los' class.
+	 * If an element is not touched, it adds the 'los' class to it and removes the 'druk' class.
+	 * It considers the control-type to determine which elements to filter from the reset.
+	 * @param e - The touch event.
+	 * @param control_type - The type of control ('dpad' or 'action').
+	 */
 	handleTouchMove(e: TouchEvent, control_type: 'dpad' | 'action'): void {
 		if (e.touches.length === 0) {
 			return;
@@ -1658,7 +1943,7 @@ class OnscreenGamepad implements IInputHandler {
 				}
 
 				if (!foundTarget) {
-					this.handleTouchEndStuff(e, control_type);
+					this.handleTouchEnd(e, control_type);
 				}
 				break;
 			case 'dpad':
@@ -1755,7 +2040,17 @@ class OnscreenGamepad implements IInputHandler {
 		this.resetUI(elementsToFilter);
 	}
 
-	handleTouchEndStuff(_e: TouchEvent, control_type: 'dpad' | 'action'): void {
+	/**
+	 * Handles the touch end event for the specified control type.
+	 * This function is used to handle touch end events for the on-screen gamepad controls.
+	 * It is called when the user lifts their finger off the screen after touching the on-screen gamepad.
+	 * The function checks which controls where touched before the user lifted their finger
+	 * and resets the UI for those controls and leaves the rest as they are.
+	 *
+	 * @param _e - The touch event object.
+	 * @param control_type - The type of control ('dpad' or 'action').
+	 */
+	handleTouchEnd(_e: TouchEvent, control_type: 'dpad' | 'action'): void {
 		switch (control_type) {
 			case 'action':
 				this.resetUI(OnscreenGamepad.dpadButtonElementIds);
@@ -1774,29 +2069,38 @@ class OnscreenGamepad implements IInputHandler {
 	 * @param e The element under touch.
 	 * @returns An array of keys or buttons that were triggered by the touch event.
 	 */
-	handleElementUnderTouch(e: Element): (ButtonId | string)[] {
-		const buttonData = OnscreenGamepad.ALL_BUTTON_MAP[e.id];
-		if (buttonData) {
-			buttonData.buttons.forEach(button => {
-				if (this.gamepadButtonStates[button]) {
-					this.gamepadButtonPressTimes[button] = (this.gamepadButtonPressTimes[button] ?? 0) + 1;
-				}
-				else {
-					this.gamepadButtonStates[button] = true;
-					this.gamepadButtonPressedConsumedStates[button] = false;
-					this.gamepadButtonPressTimes[button] = 0;
-				}
-			});
-			document.getElementById(e.id).classList.add('druk');
-			return buttonData.buttons;
-		}
-		return [];
-	}
+	// handleElementUnderTouch(e: Element): (ButtonId | string)[] {
+	// 	const buttonData = OnscreenGamepad.ALL_BUTTON_MAP[e.id];
+	// 	if (buttonData) {
+	// 		buttonData.buttons.forEach(button => {
+	// 			if (this.gamepadButtonStates[button]) {
+	// 				this.gamepadButtonPressTimes[button] = (this.gamepadButtonPressTimes[button] ?? 0) + 1;
+	// 			}
+	// 			else {
+	// 				this.gamepadButtonStates[button] = true;
+	// 				this.gamepadButtonPressedConsumedStates[button] = false;
+	// 				this.gamepadButtonPressTimes[button] = 0;
+	// 			}
+	// 		});
+	// 		document.getElementById(e.id).classList.add('druk');
+	// 		return buttonData.buttons;
+	// 	}
+	// 	return [];
+	// }
 
+	/**
+	 * Handles the blur event for the input element.
+	 * Resets the input state.
+	 * @param _e - The blur event object.
+	 */
 	blur(_e: FocusEvent): void {
 		this.reset();
 	}
 
+	/**
+	 * Sets the focus on the element and resets its state.
+	 * @param _e - The focus event.
+	 */
 	focus(_e: FocusEvent): void {
 		this.reset();
 	}
