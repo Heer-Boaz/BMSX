@@ -147,14 +147,14 @@ type Index2PressTime = { [index: string | number]: number | null; }
  * Represents a mapping of keyboard inputs to actions.
  */
 export type KeyboardInputMapping = {
-	[action: string]: KeyboardButton;
+	[action: string]: KeyboardButton[];
 }
 
 /**
  * Represents a mapping of gamepad inputs to gamepad buttons.
  */
 export type GamepadInputMapping = {
-	[action: string]: GamepadButton;
+	[action: string]: GamepadButton[];
 }
 
 /**
@@ -1094,25 +1094,51 @@ export class PlayerInput {
 		this.inputMap = inputMap;
 	}
 
-	/**
-	 * Returns whether a specific action is currently pressed for a given player index, and optionally checks if it was clicked.
-	 * @param action - The name of the action to check.
-	 * @returns Whether the action is currently pressed for the given player index.
-	 */
 	public getActionState(action: string): ActionState {
 		const inputMap = this.inputMap;
 		if (!inputMap) return { action, pressed: false, consumed: false, presstime: null };
 
-		const keyboardKey = inputMap.keyboard ? inputMap.keyboard[action] : null;
-		const gamepadButton = inputMap.gamepad ? Input.BUTTON2INDEX[inputMap.gamepad[action]] : null;
+		const keyboardKeys = inputMap.keyboard ? inputMap.keyboard[action] : null;
+		const gamepadButtons = inputMap.gamepad ? inputMap.gamepad[action].map(button => Input.BUTTON2INDEX[button]) : null;
 
-		const keyboardButtonState = this.getKeyState(keyboardKey);
-		const gamepadButtonState = this.getGamepadButtonState(gamepadButton);
+		let allKeyboardButtonsPressed = true;
+		let allGamepadButtonsPressed = true;
+		let allKeyboardButtonsConsumed = true;
+		let allGamepadButtonsConsumed = true;
+		let leastKeyboardButtonsPressTime = Infinity;
+		let leastGamepadButtonsPressTime = Infinity;
+
+		if (keyboardKeys) {
+			keyboardKeys.forEach(key => {
+				const state = this.getKeyState(key);
+				if (state) {
+					allKeyboardButtonsPressed = allKeyboardButtonsPressed && state.pressed;
+					allKeyboardButtonsConsumed = allKeyboardButtonsConsumed && state.consumed;
+					if (state.presstime !== null) {
+						leastKeyboardButtonsPressTime = Math.min(leastKeyboardButtonsPressTime, state.presstime);
+					}
+				}
+			});
+		}
+
+		if (gamepadButtons) {
+			gamepadButtons.forEach(button => {
+				const state = this.getGamepadButtonState(button);
+				if (state) {
+					allGamepadButtonsPressed = allGamepadButtonsPressed && state.pressed;
+					allGamepadButtonsConsumed = allGamepadButtonsConsumed && state.consumed;
+					if (state.presstime !== null) {
+						leastGamepadButtonsPressTime = Math.min(leastGamepadButtonsPressTime, state.presstime);
+					}
+				}
+			});
+		}
+
 		return {
 			action: action,
-			pressed: (keyboardButtonState?.pressed ?? false) || (gamepadButtonState?.pressed ?? false),
-			consumed: (keyboardButtonState?.consumed ?? false) || (gamepadButtonState?.consumed ?? false),
-			presstime: (keyboardButtonState?.presstime ?? null) ?? (gamepadButtonState?.presstime ?? null),
+			pressed: allKeyboardButtonsPressed && allGamepadButtonsPressed,
+			consumed: allKeyboardButtonsConsumed && allGamepadButtonsConsumed,
+			presstime: Math.min(leastKeyboardButtonsPressTime, leastGamepadButtonsPressTime) === Infinity ? null : Math.min(leastKeyboardButtonsPressTime, leastGamepadButtonsPressTime),
 		};
 	}
 
@@ -1165,12 +1191,16 @@ export class PlayerInput {
 
 		const action: string = (typeof actionToConsume === 'string') ? actionToConsume : actionToConsume.action;
 
-		const keyboardKey = inputMap.keyboard?.[action];
-		if (keyboardKey && this.keyboardInput.KeyState[keyboardKey]) this.keyboardInput?.consumeKey(keyboardKey);
+		const keyboardKeys = inputMap.keyboard?.[action];
+		if (keyboardKeys) {
+			keyboardKeys.filter(key => this.keyboardInput.KeyState[key]).forEach(key => this.keyboardInput?.consumeKey(key));
+		}
 
 		if (this.gamepadInput) {
-			const gamepadButton = inputMap.gamepad[action] ? Input.BUTTON2INDEX[inputMap.gamepad[action]] : null;
-			(gamepadButton !== null) && this.gamepadInput.consumeButton(gamepadButton);
+			const gamepadButtons = inputMap.gamepad[action]?.map(button => Input.BUTTON2INDEX[button]);
+			if (gamepadButtons) {
+				gamepadButtons.filter(button => this.gamepadInput.getButtonState[button]).forEach(button => this.gamepadInput?.consumeButton(button));
+			}
 		}
 	}
 
