@@ -16,7 +16,7 @@ export const keyboardInputMapping1: MyKeyboardInputMapping = {
     'right': ['ArrowRight'],
     'duck': ['ArrowDown'],
     'left': ['ArrowLeft'],
-    'punch': ['KeyX'],
+    'punch': ['KeyX', 'KeyD'],
     'highkick': ['KeyA'],
     'lowkick': ['KeyZ'],
     'stoer': ['ShiftLeft'],
