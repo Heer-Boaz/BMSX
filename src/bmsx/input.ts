@@ -1103,20 +1103,18 @@ export class PlayerInput {
 
 		let allKeyboardButtonsPressed = true;
 		let allGamepadButtonsPressed = true;
-		let allKeyboardButtonsConsumed = true;
-		let allGamepadButtonsConsumed = true;
+		let anyKeyboardButtonsConsumed = false;
+		let anyGamepadButtonsConsumed = false;
 		let leastKeyboardButtonsPressTime = Infinity;
 		let leastGamepadButtonsPressTime = Infinity;
 
 		if (keyboardKeys) {
 			keyboardKeys.forEach(key => {
 				const state = this.getKeyState(key);
-				if (state) {
-					allKeyboardButtonsPressed = allKeyboardButtonsPressed && state.pressed;
-					allKeyboardButtonsConsumed = allKeyboardButtonsConsumed && state.consumed;
-					if (state.presstime !== null) {
-						leastKeyboardButtonsPressTime = Math.min(leastKeyboardButtonsPressTime, state.presstime);
-					}
+				allKeyboardButtonsPressed = allKeyboardButtonsPressed && (state?.pressed ?? false);
+				anyKeyboardButtonsConsumed = anyKeyboardButtonsConsumed || (state?.consumed ?? false);
+				if (state?.presstime) {
+					leastKeyboardButtonsPressTime = Math.min(leastKeyboardButtonsPressTime, state.presstime);
 				}
 			});
 		}
@@ -1124,20 +1122,18 @@ export class PlayerInput {
 		if (gamepadButtons) {
 			gamepadButtons.forEach(button => {
 				const state = this.getGamepadButtonState(button);
-				if (state) {
-					allGamepadButtonsPressed = allGamepadButtonsPressed && state.pressed;
-					allGamepadButtonsConsumed = allGamepadButtonsConsumed && state.consumed;
-					if (state.presstime !== null) {
-						leastGamepadButtonsPressTime = Math.min(leastGamepadButtonsPressTime, state.presstime);
-					}
+				allGamepadButtonsPressed = allGamepadButtonsPressed && (state?.pressed ?? false);
+				anyGamepadButtonsConsumed = anyGamepadButtonsConsumed || (state?.consumed ?? false);
+				if (state?.presstime) {
+					leastGamepadButtonsPressTime = Math.min(leastGamepadButtonsPressTime, state.presstime);
 				}
 			});
 		}
 
 		return {
 			action: action,
-			pressed: allKeyboardButtonsPressed && allGamepadButtonsPressed,
-			consumed: allKeyboardButtonsConsumed && allGamepadButtonsConsumed,
+			pressed: allKeyboardButtonsPressed || allGamepadButtonsPressed,
+			consumed: anyKeyboardButtonsConsumed || anyGamepadButtonsConsumed,
 			presstime: Math.min(leastKeyboardButtonsPressTime, leastGamepadButtonsPressTime) === Infinity ? null : Math.min(leastKeyboardButtonsPressTime, leastGamepadButtonsPressTime),
 		};
 	}
@@ -1192,14 +1188,14 @@ export class PlayerInput {
 		const action: string = (typeof actionToConsume === 'string') ? actionToConsume : actionToConsume.action;
 
 		const keyboardKeys = inputMap.keyboard?.[action];
-		if (keyboardKeys) {
-			keyboardKeys.filter(key => this.keyboardInput.KeyState[key]).forEach(key => this.keyboardInput?.consumeKey(key));
+		if (keyboardKeys && this.keyboardInput) {
+			keyboardKeys.filter(key => this.keyboardInput.getKeyState(key).pressed).forEach(key => this.keyboardInput.consumeKey(key));
 		}
 
 		if (this.gamepadInput) {
 			const gamepadButtons = inputMap.gamepad[action]?.map(button => Input.BUTTON2INDEX[button]);
-			if (gamepadButtons) {
-				gamepadButtons.filter(button => this.gamepadInput.getButtonState[button]).forEach(button => this.gamepadInput?.consumeButton(button));
+			if (gamepadButtons && this.gamepadInput) {
+				gamepadButtons.filter(button => this.gamepadInput.getButtonState(button).pressed).forEach(button => this.gamepadInput.consumeButton(button));
 			}
 		}
 	}
@@ -1304,7 +1300,6 @@ export class PlayerInput {
 
 	/**
 	 * Initializes the input system.
-	 * @param debug Whether to enable debug mode. Default is true.
 	 */
 	public constructor(playerIndex: number) {
 		const self = this;
@@ -1384,8 +1379,8 @@ class KeyboardInput implements IInputHandler {
 	public readonly gamepadIndex = 0;
 
 	constructor() {
-		this.KeyState = {};
-		this.KeyPressedConsumedState = {};
+		this.keyState = {};
+		this.keyPressedConsumedState = {};
 		this.reset();
 
 		window.addEventListener('keydown', e => { this.keydown(e.code); }, options);
@@ -1398,39 +1393,39 @@ class KeyboardInput implements IInputHandler {
 	 */
 	public reset(except?: string[]): void {
 		if (!except) {
-			this.KeyState = {};
-			this.KeyPressedConsumedState = {};
-			this.KeyPressedTimes = {};
+			this.keyState = {};
+			this.keyPressedConsumedState = {};
+			this.keyPressedTimes = {};
 			return;
 		}
 
-		resetObject(this.KeyState, except);
-		resetObject(this.KeyPressedConsumedState, except);
-		resetObject(this.KeyPressedTimes, except);
+		resetObject(this.keyState, except);
+		resetObject(this.keyPressedConsumedState, except);
+		resetObject(this.keyPressedTimes, except);
 	}
 
 	/**
 	 * The state of each keyboard key.
 	 */
-	public KeyState: Index2State = {};
+	public keyState: Index2State = {};
 
 	/**
 	 * The state of each keyboard key click request.
 	 */
-	public KeyPressedConsumedState: Index2State = {};
+	public keyPressedConsumedState: Index2State = {};
 
 	/**
 	 * Represents the mapping of key codes to the corresponding pressed times.
 	 * Used for tracking how long a key has been pressed.
 	 */
-	public KeyPressedTimes: Index2PressTime = {};
+	public keyPressedTimes: Index2PressTime = {};
 
 	/**
 	 * Consumes the given key by setting its key state to "consumed".
 	 * @param key The key to consume.
 	 */
 	public consumeKey(key: string) {
-		this.KeyPressedConsumedState[key] = true;
+		this.keyPressedConsumedState[key] = true;
 	}
 
 	/**
@@ -1462,7 +1457,7 @@ class KeyboardInput implements IInputHandler {
 	 */
 	public getKeyState(key: string): ButtonState {
 		if (key === null) return { pressed: false, consumed: false, presstime: null };
-		return getPressedState(this.KeyState, this.KeyPressedConsumedState, this.KeyPressedTimes, key);
+		return getPressedState(this.keyState, this.keyPressedConsumedState, this.keyPressedTimes, key);
 	}
 
 	/**
@@ -1477,8 +1472,8 @@ class KeyboardInput implements IInputHandler {
 	 * @param key_code - The button ID or string representing the key.
 	 */
 	keydown(key_code: ButtonId | string): void {
-		this.KeyState[key_code] = true;
-		this.KeyPressedTimes[key_code] = 0;
+		this.keyState[key_code] = true;
+		this.keyPressedTimes[key_code] = 0;
 	}
 
 	/**
@@ -1486,8 +1481,8 @@ class KeyboardInput implements IInputHandler {
 	 * @param key_code - The key identifier or name.
 	 */
 	keyup(key_code: ButtonId | string): void {
-		this.KeyState[key_code] = this.KeyPressedConsumedState[key_code] = false;
-		this.KeyPressedTimes[key_code] = null;
+		this.keyState[key_code] = this.keyPressedConsumedState[key_code] = false;
+		this.keyPressedTimes[key_code] = null;
 	}
 
 	/**
