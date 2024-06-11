@@ -42,7 +42,7 @@ export class Eila extends Fighter {
         function default_input_processor(this: Fighter): StateTransition | string | void {
             if (this.isAIed) return; // AIed fighters don't process input
 
-            const priorityActions = $.input.getPlayerInput(this.playerIndex).getPressedActions({ pressed: true, consumed: false, actionsByPriority: ['duck', 'punch', 'highkick', 'lowkick', 'right', 'left', 'jump',] });
+            const priorityActions = $.getPressedActions(this.playerIndex,{ pressed: true, consumed: false, actionsByPriority: ['duck', 'punch', 'highkick', 'lowkick', 'jump_right', 'jump_left', 'right', 'left', 'jump',] });
 
             // If no actions are pressed, switch to idle
             if (priorityActions.length === 0) {
@@ -58,13 +58,21 @@ export class Eila extends Fighter {
                         this.facing = action as typeof this.facing;
 
                         // Check for combined jump left/right action
-                        if (priorityActions.some(action => action.action === 'jump')) {
-                            return { state_id: 'jump', args: true };
-                        }
-                        else {
+                        // if (priorityActions.some(action => action.action === 'jump')) {
+                        //     return { state_id: 'jump', args: true };
+                        // }
+                        // else {
                             this.x += action === 'right' ? Fighter.SPEED : -Fighter.SPEED;
                             return 'walk';
-                        }
+                        // }
+                    case 'jump_left':
+                        this.facing = 'left';
+                        $.consumeAction(this.playerIndex, 'jump')
+                        return { state_id: 'jump', args: true };
+                    case 'jump_right':
+                        this.facing = 'right';
+                        $.consumeAction(this.playerIndex, 'jump')
+                        return { state_id: 'jump', args: true };
                     case 'duck':
                         return action; // Do not consume the duck action, as it would immediately make the fighter stand up again
                     case 'punch':
