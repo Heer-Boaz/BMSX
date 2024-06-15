@@ -109,7 +109,7 @@ function preventActionAndPropagation(e: Event): boolean {
  * @param obj - The object to reset.
  * @param except - An optional array of keys to exclude from deletion.
  */
-function resetObject(obj: Index2State | Index2PressTime, except?: string[]) {
+function resetObject(obj: any, except?: string[]) {
 	Object.keys(obj).forEach(key => {
 		if (!except || !except.includes(key)) {
 			delete obj[key];
@@ -126,22 +126,15 @@ function resetObject(obj: Index2State | Index2PressTime, except?: string[]) {
  */
 function getPressedState(
 	stateMap: Index2State,
-	consumedStateMap: Index2State,
-	pressTimeMap: Index2PressTime,
 	key: string | number
 ): ButtonState {
-	return { pressed: stateMap[key] ?? false, consumed: consumedStateMap[key] ?? false, presstime: pressTimeMap[key] ?? null };
+	return { pressed: stateMap[key]?.pressed ?? false, consumed: stateMap[key]?.consumed ?? false, presstime: stateMap[key]?.presstime ?? null, timestamp: stateMap[key]?.timestamp ?? null };
 }
 
 /**
  * Represents the state of an button-press-index in the Index2State type. Used for tracking the state of a button.
  */
-type Index2State = { [index: string | number]: boolean; }
-
-/**
- * Represents a mapping of button-press-index to press time. Used for tracking how long a button has been pressed.
- */
-type Index2PressTime = { [index: string | number]: number | null; }
+type Index2State = { [index: string | number]: ButtonState; }
 
 /**
  * Represents a mapping of keyboard inputs to actions.
@@ -180,7 +173,7 @@ export type GamepadButton = keyof typeof Input.BUTTON2INDEX;
 /**
  * Represents the state of a button.
  */
-export type ButtonState = { pressed: boolean; consumed: boolean; presstime: number | null; };
+export type ButtonState = { pressed: boolean; consumed: boolean; presstime: number | null; timestamp: number; };
 
 /**
  * Represents the state of an action, including the action name and button state.
@@ -496,6 +489,35 @@ class PendingAssignmentProcessor {
 			$.model.exile(this.icon);
 			this.icon = undefined;
 		}
+	}
+}
+
+// @ts-ignore
+class InputBuffer {
+	private buffer: ButtonState[] = [];
+	private bufferSize: number;
+
+	constructor(bufferSize: number = 10) {
+		this.bufferSize = bufferSize;
+	}
+
+	// Add a button state or key state to the buffer
+	add(state: ButtonState) {
+		this.buffer.unshift(state);
+		if (this.buffer.length > this.bufferSize) {
+			this.buffer.pop();
+		}
+	}
+
+	// Remove states that are older than the given timeframe
+	removeOld(timeframe: number) {
+		const now = Date.now();
+		this.buffer = this.buffer.filter(state => now - state.timestamp <= timeframe);
+	}
+
+	// Get the buffer
+	getBuffer(): (ButtonState)[] {
+		return this.buffer;
 	}
 }
 
@@ -1096,7 +1118,7 @@ export class PlayerInput {
 
 	public getActionState(action: string): ActionState {
 		const inputMap = this.inputMap;
-		if (!inputMap) return { action, pressed: false, consumed: false, presstime: null };
+		if (!inputMap) return { action, pressed: false, consumed: false, presstime: null, timestamp: undefined };
 
 		const keyboardKeys = inputMap.keyboard ? inputMap.keyboard[action] : null;
 		const gamepadButtons = inputMap.gamepad ? inputMap.gamepad[action].map(button => Input.BUTTON2INDEX[button]) : null;
@@ -1107,6 +1129,8 @@ export class PlayerInput {
 		let anyGamepadButtonsConsumed = false;
 		let leastKeyboardButtonsPressTime = Infinity;
 		let leastGamepadButtonsPressTime = Infinity;
+		let recentestKeyboardButtonsTimestamp = -Infinity;
+		let recentestGamepadButtonsTimestamp = -Infinity;
 
 		if (keyboardKeys) {
 			keyboardKeys.forEach(key => {
@@ -1115,6 +1139,9 @@ export class PlayerInput {
 				anyKeyboardButtonsConsumed = anyKeyboardButtonsConsumed || (state?.consumed ?? false);
 				if (state?.presstime) {
 					leastKeyboardButtonsPressTime = Math.min(leastKeyboardButtonsPressTime, state.presstime);
+				}
+				if (state?.timestamp) {
+					recentestKeyboardButtonsTimestamp = Math.max(recentestKeyboardButtonsTimestamp, state.timestamp);
 				}
 			});
 		}
@@ -1127,6 +1154,9 @@ export class PlayerInput {
 				if (state?.presstime) {
 					leastGamepadButtonsPressTime = Math.min(leastGamepadButtonsPressTime, state.presstime);
 				}
+				if (state?.timestamp) {
+					recentestGamepadButtonsTimestamp = Math.max(recentestGamepadButtonsTimestamp, state.timestamp);
+				}
 			});
 		}
 
@@ -1135,6 +1165,7 @@ export class PlayerInput {
 			pressed: allKeyboardButtonsPressed || allGamepadButtonsPressed,
 			consumed: anyKeyboardButtonsConsumed || anyGamepadButtonsConsumed,
 			presstime: Math.min(leastKeyboardButtonsPressTime, leastGamepadButtonsPressTime) === Infinity ? null : Math.min(leastKeyboardButtonsPressTime, leastGamepadButtonsPressTime),
+			timestamp: Math.max(recentestKeyboardButtonsTimestamp, recentestGamepadButtonsTimestamp) === -Infinity ? undefined : Math.max(recentestKeyboardButtonsTimestamp, recentestGamepadButtonsTimestamp),
 		};
 	}
 
@@ -1380,7 +1411,6 @@ class KeyboardInput implements IInputHandler {
 
 	constructor() {
 		this.keyState = {};
-		this.keyPressedConsumedState = {};
 		this.reset();
 
 		window.addEventListener('keydown', e => { this.keydown(e.code); }, options);
@@ -1394,14 +1424,10 @@ class KeyboardInput implements IInputHandler {
 	public reset(except?: string[]): void {
 		if (!except) {
 			this.keyState = {};
-			this.keyPressedConsumedState = {};
-			this.keyPressedTimes = {};
 			return;
 		}
 
 		resetObject(this.keyState, except);
-		resetObject(this.keyPressedConsumedState, except);
-		resetObject(this.keyPressedTimes, except);
 	}
 
 	/**
@@ -1410,22 +1436,11 @@ class KeyboardInput implements IInputHandler {
 	public keyState: Index2State = {};
 
 	/**
-	 * The state of each keyboard key click request.
-	 */
-	public keyPressedConsumedState: Index2State = {};
-
-	/**
-	 * Represents the mapping of key codes to the corresponding pressed times.
-	 * Used for tracking how long a key has been pressed.
-	 */
-	public keyPressedTimes: Index2PressTime = {};
-
-	/**
 	 * Consumes the given key by setting its key state to "consumed".
 	 * @param key The key to consume.
 	 */
 	public consumeKey(key: string) {
-		this.keyPressedConsumedState[key] = true;
+		this.keyState[key].consumed = true;
 	}
 
 	/**
@@ -1456,8 +1471,8 @@ class KeyboardInput implements IInputHandler {
 	 * @returns The pressed state of the key.
 	 */
 	public getKeyState(key: string): ButtonState {
-		if (key === null) return { pressed: false, consumed: false, presstime: null };
-		return getPressedState(this.keyState, this.keyPressedConsumedState, this.keyPressedTimes, key);
+		if (key === null) return { pressed: false, consumed: false, presstime: null, timestamp: null };
+		return getPressedState(this.keyState, key);
 	}
 
 	/**
@@ -1472,8 +1487,14 @@ class KeyboardInput implements IInputHandler {
 	 * @param key_code - The button ID or string representing the key.
 	 */
 	keydown(key_code: ButtonId | string): void {
-		this.keyState[key_code] = true;
-		this.keyPressedTimes[key_code] = 0;
+		if (!this.keyState[key_code]) {
+			this.keyState[key_code] = { pressed: true, consumed: false, presstime: 0, timestamp: performance.now() };
+		}
+		else {
+			this.keyState[key_code].pressed = true;
+			this.keyState[key_code].presstime = 0;
+			this.keyState[key_code].timestamp = performance.now();
+		}
 	}
 
 	/**
@@ -1481,8 +1502,10 @@ class KeyboardInput implements IInputHandler {
 	 * @param key_code - The key identifier or name.
 	 */
 	keyup(key_code: ButtonId | string): void {
-		this.keyState[key_code] = this.keyPressedConsumedState[key_code] = false;
-		this.keyPressedTimes[key_code] = null;
+		if (!this.keyState[key_code]) return;
+
+		this.keyState[key_code].pressed = this.keyState[key_code].consumed = false;
+		this.keyState[key_code].presstime = this.keyState[key_code].timestamp = null;
 	}
 
 	/**
@@ -1522,16 +1545,6 @@ class GamepadInput implements IInputHandler {
 	 */
 	private gamepadButtonStates: Index2State = {};
 
-	/**
-	 * The state of each gamepad button click request for each player.
-	 */
-	private gamepadButtonPressedConsumedStates: Index2State = {};
-
-	/**
-	 * The state of each gamepad button click request for each player.
-	 */
-	private gamepadButtonPressTimes: Index2PressTime = {};
-
 	constructor(gamepad: Gamepad) {
 		this._gamepad = gamepad;
 
@@ -1570,10 +1583,10 @@ class GamepadInput implements IInputHandler {
 	private pollGamepadAxes(gamepad: Gamepad): void {
 		if (!gamepad) return; // Will be null if the gamepad was disconnected
 		const [xAxis, yAxis] = gamepad.axes;
-		this.gamepadButtonStates[Input.BUTTON2INDEX.left] = xAxis < -0.5;
-		this.gamepadButtonStates[Input.BUTTON2INDEX.right] = xAxis > 0.5;
-		this.gamepadButtonStates[Input.BUTTON2INDEX.up] = yAxis < -0.5;
-		this.gamepadButtonStates[Input.BUTTON2INDEX.down] = yAxis > 0.5;
+		this.gamepadButtonStates[Input.BUTTON2INDEX.left].pressed = xAxis < -0.5;
+		this.gamepadButtonStates[Input.BUTTON2INDEX.right].pressed = xAxis > 0.5;
+		this.gamepadButtonStates[Input.BUTTON2INDEX.up].pressed = yAxis < -0.5;
+		this.gamepadButtonStates[Input.BUTTON2INDEX.down].pressed = yAxis > 0.5;
 	}
 
 	/**
@@ -1588,14 +1601,14 @@ class GamepadInput implements IInputHandler {
 			const btn = buttons[btnIndex];
 			const pressed = typeof btn === "object" ? btn.pressed : btn === 1.0;
 			// Consider that the button can already be regarded as pressed if it was pressed as part of another action, like an axis
-			this.gamepadButtonStates[btnIndex] = this.gamepadButtonStates[btnIndex] || pressed;
+			this.gamepadButtonStates[btnIndex].pressed = this.gamepadButtonStates[btnIndex].pressed || pressed;
 			if (!pressed) {
-				this.gamepadButtonPressedConsumedStates[btnIndex] = false;
-				this.gamepadButtonPressTimes[btnIndex] = null;
+				this.gamepadButtonStates[btnIndex].consumed = false;
+				this.gamepadButtonStates[btnIndex].presstime = null;
 			}
 			else {
 				// If the button is pressed, increment the press time counter for detecting hold actions
-				this.gamepadButtonPressTimes[btnIndex] = (this.gamepadButtonPressTimes[btnIndex] ?? 0) + 1;
+				this.gamepadButtonStates[btnIndex].presstime = (this.gamepadButtonStates[btnIndex].presstime ?? 0) + 1;
 			}
 		}
 	}
@@ -1606,13 +1619,10 @@ class GamepadInput implements IInputHandler {
 	 * @returns The pressed state of the button.
 	 */
 	public getButtonState(btn: number | null): ButtonState {
-		if (btn === null) return { pressed: false, consumed: false, presstime: null };
+		if (btn === null) return { pressed: false, consumed: false, presstime: null, timestamp: undefined };
 
 		const stateMap = this.gamepadButtonStates || {};
-		const consumedStateMap = this.gamepadButtonPressedConsumedStates;
-		const pressTimes = this.gamepadButtonPressTimes;
-		if (!consumedStateMap) return null;
-		return getPressedState(stateMap, consumedStateMap, pressTimes, btn);
+		return getPressedState(stateMap, btn);
 	}
 
 	/**
@@ -1620,9 +1630,7 @@ class GamepadInput implements IInputHandler {
 	 * @param button The button to consume.
 	 */
 	public consumeButton(button: number) {
-		if (this.gamepadButtonPressedConsumedStates) {
-			this.gamepadButtonPressedConsumedStates[button] = true;
-		}
+		this.gamepadButtonStates[button].consumed = true;
 	}
 
 	/**
@@ -1631,14 +1639,13 @@ class GamepadInput implements IInputHandler {
 	 */
 	public reset(except?: string[]): void {
 		if (!except) {
-			this.gamepadButtonStates = {};
-			this.gamepadButtonPressedConsumedStates = {};
-			this.gamepadButtonPressTimes = {};
+			// Initialize the states of all gamepad buttons and axes
+			for (const button_state in Input.BUTTON2INDEX) {
+				this.gamepadButtonStates[Input.BUTTON2INDEX[button_state]] = <ButtonState>{ pressed: false, consumed: false, presstime: null, timestamp: null };
+			}
 		}
 		else {
 			resetObject(this.gamepadButtonStates, except);
-			resetObject(this.gamepadButtonPressedConsumedStates, except);
-			resetObject(this.gamepadButtonPressTimes, except);
 		}
 	}
 }
@@ -1654,16 +1661,6 @@ class OnscreenGamepad implements IInputHandler {
 	 * The state of each gamepad button for each player.
 	 */
 	private gamepadButtonStates: Index2State = {};
-
-	/**
-	 * The state of each gamepad button click request for each player.
-	 */
-	private gamepadButtonPressedConsumedStates: Index2State = {};
-
-	/**
-	 * The state of each gamepad button click request for each player.
-	 */
-	private gamepadButtonPressTimes: Index2PressTime = {};
 
 	/**
 	 * Hides the specified buttons.
@@ -1689,13 +1686,10 @@ class OnscreenGamepad implements IInputHandler {
 	 * @returns The pressed state of the button.
 	 */
 	public getButtonState(btn: number | null): ButtonState {
-		if (btn === null) return { pressed: false, consumed: false, presstime: null };
+		if (btn === null) return { pressed: false, consumed: false, presstime: null, timestamp: undefined };
 		const button = Input.INDEX2BUTTON[btn];
 		const stateMap = this.gamepadButtonStates || {};
-		const consumedStateMap = this.gamepadButtonPressedConsumedStates;
-		const pressTimes = this.gamepadButtonPressTimes;
-		if (!consumedStateMap) return null;
-		return getPressedState(stateMap, consumedStateMap, pressTimes, button);
+		return getPressedState(stateMap, button);
 	}
 
 	/**
@@ -1705,14 +1699,12 @@ class OnscreenGamepad implements IInputHandler {
 	 */
 	public pollInput(): void {
 		// Initialize new states with current values instead of resetting
-		const defaultState = { pressed: false, consumed: true, presstime: null };
+		const defaultState = { pressed: false, consumed: true, presstime: null, timestamp: null };
 
-		let newGamepadButtonStates = {};
-		let newGamepadButtonPressedConsumedStates = { ...this.gamepadButtonPressedConsumedStates };
-		let newGamepadButtonPressTimes = { ...this.gamepadButtonPressTimes };
+		let newGamepadButtonStates: Index2State = {};
 
 		Object.keys(Input.BUTTON2INDEX).forEach(button => {
-			newGamepadButtonStates[button] = this.gamepadButtonStates[button] ?? defaultState.pressed;
+			newGamepadButtonStates[button] = this.gamepadButtonStates[button] ?? defaultState;
 		});
 
 		for (let i = 0; i < OnscreenGamepad.onscreenButtonElementNames.length; i++) {
@@ -1722,15 +1714,17 @@ class OnscreenGamepad implements IInputHandler {
 				buttonData.buttons.forEach(button => {
 					if (d.dataset.touched === 'true') {
 						// Update the state only if the button is currently pressed
-						newGamepadButtonStates[button] = true;
-						newGamepadButtonPressTimes[button] = (newGamepadButtonPressTimes[button] ?? 0) + 1;
-						newGamepadButtonPressedConsumedStates[button] ??= false;
+						newGamepadButtonStates[button].pressed = true;
+						newGamepadButtonStates[button].presstime = (newGamepadButtonStates[button].presstime ?? 0) + 1;
+						newGamepadButtonStates[button].consumed ??= false;
+						newGamepadButtonStates[button].timestamp ??= performance.now();
 					} else {
 						// Set to false only if no other element is pressing this button
 						if (!this.isOtherElementPressingButton(button)) {
-							newGamepadButtonStates[button] = false;
-							newGamepadButtonPressTimes[button] = null;
-							newGamepadButtonPressedConsumedStates[button] = false;
+							newGamepadButtonStates[button].pressed = false;
+							newGamepadButtonStates[button].presstime = null;
+							newGamepadButtonStates[button].consumed = false;
+							newGamepadButtonStates[button].timestamp = null;
 						}
 					}
 				});
@@ -1739,8 +1733,6 @@ class OnscreenGamepad implements IInputHandler {
 
 		// Update the button states with the new states
 		this.gamepadButtonStates = newGamepadButtonStates;
-		this.gamepadButtonPressedConsumedStates = newGamepadButtonPressedConsumedStates;
-		this.gamepadButtonPressTimes = newGamepadButtonPressTimes;
 	}
 
 	// Helper function to determine if any other element is pressing the same button
@@ -1756,10 +1748,8 @@ class OnscreenGamepad implements IInputHandler {
 	 * @param button The button to consume.
 	 */
 	public consumeButton(buttonIndex: number) {
-		if (this.gamepadButtonPressedConsumedStates) {
-			const button = Input.INDEX2BUTTON[buttonIndex];
-			this.gamepadButtonPressedConsumedStates[button] = true;
-		}
+		const button = Input.INDEX2BUTTON[buttonIndex];
+		if (this.gamepadButtonStates[button]) this.gamepadButtonStates[button].consumed = true;
 	}
 
 	private static readonly DPAD_BUTTON_MAP: Record<string, { buttons: string[] }> = {
@@ -1888,14 +1878,13 @@ class OnscreenGamepad implements IInputHandler {
 	 */
 	public reset(except?: string[]): void {
 		if (!except) {
-			this.gamepadButtonStates = {};
-			this.gamepadButtonPressedConsumedStates = {};
-			this.gamepadButtonPressTimes = {};
+			// Initialize the states of all gamepad buttons and axes
+			for (const button_state in Input.BUTTON2INDEX) {
+				this.gamepadButtonStates[Input.BUTTON2INDEX[button_state]] = <ButtonState>{ pressed: false, consumed: false, presstime: null, timestamp: null };
+			}
 		}
 		else {
 			resetObject(this.gamepadButtonStates, except);
-			resetObject(this.gamepadButtonPressedConsumedStates, except);
-			resetObject(this.gamepadButtonPressTimes, except);
 		}
 	}
 
@@ -1924,7 +1913,7 @@ class OnscreenGamepad implements IInputHandler {
 			const buttonData = OnscreenGamepad.ALL_BUTTON_MAP[element_id];
 			if (buttonData) {
 				buttonData.buttons.forEach(button => {
-					self.gamepadButtonStates[button] = false;
+					self.gamepadButtonStates[button].pressed = false;
 				});
 			}
 		}
