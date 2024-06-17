@@ -625,6 +625,7 @@ export class Input implements IRegisterable {
 		'left': 14, // D-pad left
 		'right': 15, // D-pad right
 		'home': 16, // Xbox button
+		'touch': 17, // Touchpad button
 	} as const;
 
 	/**
@@ -647,7 +648,8 @@ export class Input implements IRegisterable {
 		13: 'down', // D-pad down
 		14: 'left', // D-pad left
 		15: 'right', // D-pad right
-		16: 'home', // Xbox button
+		16: 'home', // Xbox button,
+		17: 'touch', // Touchpad button
 	} as const;
 
 	/**
@@ -1567,7 +1569,12 @@ class GamepadInput implements IInputHandler {
 		this._gamepad = gamepads[this.gamepadIndex]; // Update gamepad reference
 
 		// Reset gamepad button states
-		this.gamepadButtonStates = {};
+		const defaultState = { pressed: false, consumed: false, presstime: null, timestamp: null };
+		Object.keys(Input.INDEX2BUTTON).forEach(button => {
+			if (!this.gamepadButtonStates[button]) {
+				this.gamepadButtonStates[button] = { ...defaultState };
+			}
+		});
 
 		// Check whether any axes have been triggered
 		this.pollGamepadAxes(this.gamepad);
@@ -1600,15 +1607,20 @@ class GamepadInput implements IInputHandler {
 		for (let btnIndex = 0; btnIndex < buttons.length; btnIndex++) {
 			const btn = buttons[btnIndex];
 			const pressed = typeof btn === "object" ? btn.pressed : btn === 1.0;
-			// Consider that the button can already be regarded as pressed if it was pressed as part of another action, like an axis
-			this.gamepadButtonStates[btnIndex].pressed = this.gamepadButtonStates[btnIndex].pressed || pressed;
+			// Consider that the button can already be regarded as pressed if it was pressed as part of an axis (which is also regarded as a button press)
+			this.gamepadButtonStates[btnIndex].pressed = btnIndex === Input.BUTTON2INDEX.left || btnIndex === Input.BUTTON2INDEX.right || btnIndex === Input.BUTTON2INDEX.up || btnIndex === Input.BUTTON2INDEX.down
+				? this.gamepadButtonStates[btnIndex].pressed || pressed
+				: pressed;
+
 			if (!pressed) {
 				this.gamepadButtonStates[btnIndex].consumed = false;
 				this.gamepadButtonStates[btnIndex].presstime = null;
-			}
-			else {
+				this.gamepadButtonStates[btnIndex].timestamp = null;
+			} else {
 				// If the button is pressed, increment the press time counter for detecting hold actions
 				this.gamepadButtonStates[btnIndex].presstime = (this.gamepadButtonStates[btnIndex].presstime ?? 0) + 1;
+				// Set the timestamp only if it was not set before
+				this.gamepadButtonStates[btnIndex].timestamp ||= performance.now();
 			}
 		}
 	}
@@ -1619,7 +1631,7 @@ class GamepadInput implements IInputHandler {
 	 * @returns The pressed state of the button.
 	 */
 	public getButtonState(btn: number | null): ButtonState {
-		if (btn === null) return { pressed: false, consumed: false, presstime: null, timestamp: undefined };
+		if (btn === null) return { pressed: false, consumed: false, presstime: null, timestamp: null };
 
 		const stateMap = this.gamepadButtonStates || {};
 		return getPressedState(stateMap, btn);
@@ -1640,9 +1652,12 @@ class GamepadInput implements IInputHandler {
 	public reset(except?: string[]): void {
 		if (!except) {
 			// Initialize the states of all gamepad buttons and axes
-			for (const button_state in Input.BUTTON2INDEX) {
-				this.gamepadButtonStates[Input.BUTTON2INDEX[button_state]] = <ButtonState>{ pressed: false, consumed: false, presstime: null, timestamp: null };
-			}
+			Object.values(this.gamepadButtonStates).forEach(state => {
+				state.pressed = false;
+				state.consumed = false;
+				state.presstime = null;
+				state.timestamp = null;
+			});
 		}
 		else {
 			resetObject(this.gamepadButtonStates, except);
@@ -1703,8 +1718,8 @@ class OnscreenGamepad implements IInputHandler {
 
 		let newGamepadButtonStates: Index2State = {};
 
-		Object.keys(Input.BUTTON2INDEX).forEach(button => {
-			newGamepadButtonStates[button] = this.gamepadButtonStates[button] ?? defaultState;
+		Object.keys(Input.INDEX2BUTTON).forEach(button => {
+			newGamepadButtonStates[button] = this.gamepadButtonStates[button] ?? { ...defaultState };
 		});
 
 		for (let i = 0; i < OnscreenGamepad.onscreenButtonElementNames.length; i++) {
