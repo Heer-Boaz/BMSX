@@ -1147,6 +1147,12 @@ export class PlayerInput {
 				}
 			});
 		}
+		else {
+			allKeyboardButtonsPressed = false;
+			anyKeyboardButtonsConsumed = false;
+			leastKeyboardButtonsPressTime = null;
+			recentestKeyboardButtonsTimestamp = null;
+		}
 
 		if (gamepadButtons) {
 			gamepadButtons.forEach(button => {
@@ -1160,6 +1166,12 @@ export class PlayerInput {
 					recentestGamepadButtonsTimestamp = Math.max(recentestGamepadButtonsTimestamp, state.timestamp);
 				}
 			});
+		}
+		else {
+			allGamepadButtonsPressed = false;
+			anyGamepadButtonsConsumed = false;
+			leastGamepadButtonsPressTime =  null;
+			recentestGamepadButtonsTimestamp = null;
 		}
 
 		return {
@@ -1188,6 +1200,7 @@ export class PlayerInput {
 		for (const action in inputMap.keyboard ?? inputMap.gamepad) {
 			if (query?.filter && !query.filter.includes(action)) continue; // Skip actions that are not in the filter
 			const actionState = this.getActionState(action);
+			// Check if the action state matches the query
 			if (actionState.pressed === (query?.pressed ?? true) &&
 				actionState.consumed === (query?.consumed ?? false) &&
 				actionState.presstime >= (query?.pressTime ?? 0)) {
@@ -1718,7 +1731,7 @@ class OnscreenGamepad implements IInputHandler {
 
 		let newGamepadButtonStates: Index2State = {};
 
-		Object.keys(Input.INDEX2BUTTON).forEach(button => {
+		Object.keys(Input.BUTTON2INDEX).forEach(button => {
 			newGamepadButtonStates[button] = this.gamepadButtonStates[button] ?? { ...defaultState };
 		});
 
