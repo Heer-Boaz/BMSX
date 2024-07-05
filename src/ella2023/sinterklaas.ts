@@ -212,7 +212,6 @@ export class Sinterklaas extends Fighter {
                 },
             }
         };
-
     }
 
     @build_bt('sinterklaasBT')
