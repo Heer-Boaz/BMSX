@@ -1123,7 +1123,7 @@ export class PlayerInput {
 		if (!inputMap) return { action, pressed: false, consumed: false, presstime: null, timestamp: undefined };
 
 		const keyboardKeys = inputMap.keyboard ? inputMap.keyboard[action] : null;
-		const gamepadButtons = inputMap.gamepad ? inputMap.gamepad[action].map(button => Input.BUTTON2INDEX[button]) : null;
+		const gamepadButtons = inputMap.gamepad ? inputMap.gamepad[action]?.map(button => Input.BUTTON2INDEX[button]) : null;
 
 		let allKeyboardButtonsPressed = true;
 		let allGamepadButtonsPressed = true;
@@ -1135,7 +1135,7 @@ export class PlayerInput {
 		let recentestGamepadButtonsTimestamp = -Infinity;
 
 		if (keyboardKeys) {
-			keyboardKeys.forEach(key => {
+			for (const key of keyboardKeys) {
 				const state = this.getKeyState(key);
 				allKeyboardButtonsPressed = allKeyboardButtonsPressed && (state?.pressed ?? false);
 				anyKeyboardButtonsConsumed = anyKeyboardButtonsConsumed || (state?.consumed ?? false);
@@ -1145,7 +1145,7 @@ export class PlayerInput {
 				if (state?.timestamp) {
 					recentestKeyboardButtonsTimestamp = Math.max(recentestKeyboardButtonsTimestamp, state.timestamp);
 				}
-			});
+			}
 		}
 		else {
 			allKeyboardButtonsPressed = false;
@@ -1155,7 +1155,7 @@ export class PlayerInput {
 		}
 
 		if (gamepadButtons) {
-			gamepadButtons.forEach(button => {
+			for (const button of gamepadButtons) {
 				const state = this.getGamepadButtonState(button);
 				allGamepadButtonsPressed = allGamepadButtonsPressed && (state?.pressed ?? false);
 				anyGamepadButtonsConsumed = anyGamepadButtonsConsumed || (state?.consumed ?? false);
@@ -1165,7 +1165,7 @@ export class PlayerInput {
 				if (state?.timestamp) {
 					recentestGamepadButtonsTimestamp = Math.max(recentestGamepadButtonsTimestamp, state.timestamp);
 				}
-			});
+			}
 		}
 		else {
 			allGamepadButtonsPressed = false;
@@ -1735,8 +1735,8 @@ class OnscreenGamepad implements IInputHandler {
 			newGamepadButtonStates[button] = this.gamepadButtonStates[button] ?? { ...defaultState };
 		});
 
-		for (let i = 0; i < OnscreenGamepad.onscreenButtonElementNames.length; i++) {
-			const d = document.getElementById(OnscreenGamepad.onscreenButtonElementNames[i]);
+		for (let i = 0; i < OnscreenGamepad.ONSCREEN_BUTTON_ELEMENT_NAMES.length; i++) {
+			const d = document.getElementById(OnscreenGamepad.ONSCREEN_BUTTON_ELEMENT_NAMES[i]);
 			const buttonData = OnscreenGamepad.ALL_BUTTON_MAP[d.id];
 			if (buttonData) {
 				buttonData.buttons.forEach(button => {
@@ -1765,7 +1765,7 @@ class OnscreenGamepad implements IInputHandler {
 
 	// Helper function to determine if any other element is pressing the same button
 	private isOtherElementPressingButton(button: string): boolean {
-		return OnscreenGamepad.onscreenButtonElementNames.some(dpadId => {
+		return OnscreenGamepad.ONSCREEN_BUTTON_ELEMENT_NAMES.some(dpadId => {
 			const element = document.getElementById(dpadId);
 			return element && element.dataset.touched === 'true' && OnscreenGamepad.ALL_BUTTON_MAP[element.id].buttons.includes(button);
 		});
@@ -1869,10 +1869,10 @@ class OnscreenGamepad implements IInputHandler {
 		...OnscreenGamepad.ACTION_BUTTON_MAP,
 	}
 
-	private static readonly dpadButtonElementIds = ['d-pad-u', 'd-pad-ru', 'd-pad-r', 'd-pad-rd', 'd-pad-d', 'd-pad-ld', 'd-pad-l', 'd-pad-lu'];
-	private static readonly actionButtonElementIds = ['btn1_knop', 'btn2_knop', 'btn3_knop', 'btn4_knop', 'ls_knop', 'rs_knop', 'lt_knop', 'rt_knop', 'select_knop', 'start_knop', 'home_knop'];
+	private static readonly DPAD_BUTTON_ELEMENT_IDS = ['d-pad-u', 'd-pad-ru', 'd-pad-r', 'd-pad-rd', 'd-pad-d', 'd-pad-ld', 'd-pad-l', 'd-pad-lu'];
+	private static readonly ACTION_BUTTON_ELEMENT_IDS = ['btn1_knop', 'btn2_knop', 'btn3_knop', 'btn4_knop', 'ls_knop', 'rs_knop', 'lt_knop', 'rt_knop', 'select_knop', 'start_knop', 'home_knop'];
 
-	private static readonly onscreenButtonElementNames = Object.keys(OnscreenGamepad.ALL_BUTTON_MAP);
+	private static readonly ONSCREEN_BUTTON_ELEMENT_NAMES = Object.keys(OnscreenGamepad.ALL_BUTTON_MAP);
 
 	/**
 	 * Initializes the input system.
@@ -1947,10 +1947,10 @@ class OnscreenGamepad implements IInputHandler {
 		}
 
 		if (elementsToFilterById) {
-			OnscreenGamepad.onscreenButtonElementNames.forEach(element => !elementsToFilterById.includes(element) && resetElementAndButtonPress(element));
+			OnscreenGamepad.ONSCREEN_BUTTON_ELEMENT_NAMES.forEach(element => !elementsToFilterById.includes(element) && resetElementAndButtonPress(element));
 		}
 		else {
-			OnscreenGamepad.onscreenButtonElementNames.forEach(resetElementAndButtonPress);
+			OnscreenGamepad.ONSCREEN_BUTTON_ELEMENT_NAMES.forEach(resetElementAndButtonPress);
 		}
 	}
 
@@ -2004,12 +2004,12 @@ class OnscreenGamepad implements IInputHandler {
 		const dpad_omheining = document.getElementById('d-pad-omheining') as HTMLElement;
 		switch (control_type) {
 			case 'action':
-				this.resetUI(OnscreenGamepad.dpadButtonElementIds);
+				this.resetUI(OnscreenGamepad.DPAD_BUTTON_ELEMENT_IDS);
 				break;
 			case 'dpad':
-				this.resetUI(OnscreenGamepad.actionButtonElementIds);
+				this.resetUI(OnscreenGamepad.ACTION_BUTTON_ELEMENT_IDS);
 				// Remove all classes from dpad_omheining
-				dpad_omheining.classList.remove(...OnscreenGamepad.dpadButtonElementIds);
+				dpad_omheining.classList.remove(...OnscreenGamepad.DPAD_BUTTON_ELEMENT_IDS);
 				break;
 		}
 
@@ -2072,10 +2072,10 @@ class OnscreenGamepad implements IInputHandler {
 
 		switch (control_type) {
 			case 'action':
-				elementsToFilter.push(...OnscreenGamepad.dpadButtonElementIds);
+				elementsToFilter.push(...OnscreenGamepad.DPAD_BUTTON_ELEMENT_IDS);
 				break;
 			case 'dpad':
-				elementsToFilter.push(...OnscreenGamepad.actionButtonElementIds);
+				elementsToFilter.push(...OnscreenGamepad.ACTION_BUTTON_ELEMENT_IDS);
 				break;
 		}
 
@@ -2095,13 +2095,13 @@ class OnscreenGamepad implements IInputHandler {
 	handleTouchEnd(_e: TouchEvent, control_type: 'dpad' | 'action'): void {
 		switch (control_type) {
 			case 'action':
-				this.resetUI(OnscreenGamepad.dpadButtonElementIds);
+				this.resetUI(OnscreenGamepad.DPAD_BUTTON_ELEMENT_IDS);
 				break;
 			case 'dpad':
 				const dpad_omheining = document.getElementById('d-pad-omheining') as HTMLElement;
 				// Remove all classes from dpad_omheining
-				dpad_omheining.classList.remove(...OnscreenGamepad.dpadButtonElementIds);
-				this.resetUI(OnscreenGamepad.actionButtonElementIds);
+				dpad_omheining.classList.remove(...OnscreenGamepad.DPAD_BUTTON_ELEMENT_IDS);
+				this.resetUI(OnscreenGamepad.ACTION_BUTTON_ELEMENT_IDS);
 				break;
 		}
 	}
