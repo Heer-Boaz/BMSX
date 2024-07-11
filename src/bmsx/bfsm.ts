@@ -1188,6 +1188,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 			}
 		}
 	}
+
 	/**
 	 * Handles the given path and returns the current part, remaining parts, and current context.
 	 * @param path - The path to handle, can be a string or an array of strings.
