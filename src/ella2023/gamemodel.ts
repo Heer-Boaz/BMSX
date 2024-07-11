@@ -4,7 +4,7 @@ import { Sinterklaas } from './sinterklaas';
 import { Eila } from './eila';
 import { Fighter } from './fighter';
 import { Hud } from './hud';
-import { keyboardInputMapping1, gamepadInputMapping } from './inputmapping';
+import { keyboardInputMapping, gamepadInputMapping } from './inputmapping';
 import { GameOver, Gordijn, Hoera, TitleScreen } from './stuff';
 import { AudioId } from './resourceids';
 
@@ -195,7 +195,7 @@ export class gamemodel extends BaseModel {
 		_model.addSpace('niets');
 
 		$.input.getPlayerInput(1).setInputMap({
-			keyboard: keyboardInputMapping1,
+			keyboard: keyboardInputMapping,
 			gamepad: gamepadInputMapping,
 		} as InputMap);
 		$.input.getPlayerInput(2).setInputMap({

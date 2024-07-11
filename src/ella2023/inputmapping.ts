@@ -11,7 +11,7 @@ export type MyGamepadInputMapping = {
     [key in keyof GamepadInputMapping & Action]: GamepadButton[];
 };
 
-export const keyboardInputMapping1: MyKeyboardInputMapping = {
+export const keyboardInputMapping: MyKeyboardInputMapping = {
     'jump': ['ArrowUp'],
     'jump_left': ['ArrowUp', 'ArrowLeft'],
     'jump_right': ['ArrowUp', 'ArrowRight'],
