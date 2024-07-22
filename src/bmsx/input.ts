@@ -218,7 +218,7 @@ interface IInputHandler {
 const options = {
 	passive: false,
 	once: false,
-};
+}
 
 /**
  * Represents a selected player index icon that is shown when a new input device has been detected and not yet been assigned to a player.
