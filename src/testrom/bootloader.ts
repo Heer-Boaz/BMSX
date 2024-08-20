@@ -18,33 +18,33 @@ const actions = ['up', 'right', 'down', 'left', 'load', 'save', 'bla', 'blap'] a
 type Action = typeof actions[number];
 
 type MyKeyboardInputMapping = {
-    [key in keyof KeyboardInputMapping & Action]: KeyboardButton;
+    [key in keyof KeyboardInputMapping & Action]: KeyboardButton[];
 };
 
 type MyGamepadInputMapping = {
-    [key in keyof GamepadInputMapping & Action]: GamepadButton;
+    [key in keyof GamepadInputMapping & Action]: GamepadButton[];
 };
 
 const keyboardInputMapping: MyKeyboardInputMapping = {
-    'up': 'ArrowUp',
-    'right': 'ArrowRight',
-    'down': 'ArrowDown',
-    'left': 'ArrowLeft',
-    'load': 'ShiftLeft',
-    'save': 'KeyZ',
-    'bla': 'KeyA',
-    'blap': 'KeyS',
+    'up': ['ArrowUp'],
+    'right': ['ArrowRight'],
+    'down': ['ArrowDown'],
+    'left': ['ArrowLeft'],
+    'load': ['ShiftLeft'],
+    'save': ['KeyZ'],
+    'bla': ['KeyA'],
+    'blap': ['KeyS'],
 };
 
 const gamepadInputMapping: MyGamepadInputMapping = {
-    'up': 'up',
-    'right': 'right',
-    'down': 'down',
-    'left': 'left',
-    'load': 'a',
-    'save': 'b',
-    'bla': 'x',
-    'blap': 'y',
+    'up': ['up'],
+    'right': ['right'],
+    'down': ['down'],
+    'left': ['left'],
+    'load': ['a'],
+    'save': ['b'],
+    'bla': ['x'],
+    'blap': ['y'],
 };
 
 @insavegame
