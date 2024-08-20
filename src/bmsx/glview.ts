@@ -287,8 +287,7 @@ vec3 applyBlur(vec2 uv) {
     for (int y = -2; y <= 2; y++) {
         for (int x = -2; x <= 2; x++) {
             vec2 offset = vec2(x, y) / u_resolution;
-            vec3 color = textureLod(u_texture, uv + offset, 0.0).rgb;
-            blurredColor += color * kernel[(y + 2) * 5 + (x + 2)];
+            blurredColor += texture(u_texture, uv + offset).rgb * kernel[(y + 2) * 5 + (x + 2)];
         }
     }
     return blurredColor;
@@ -301,20 +300,17 @@ float noise(vec2 uv) {
 
 void main() {
     vec2 uv = v_texcoord;
-    vec3 texColor = textureLod(u_texture, uv, 0.0).rgb;
+    vec3 texColor = texture(u_texture, uv, 0.0).rgb;
 
     // Improved noise
     float n = noise(uv * u_resolution + vec2(u_random));
-    // texColor += vec3(n) * 0.03; // Adjust noise intensity as needed
     texColor += vec3(n) * 0.04; // Adjust noise intensity as needed
 
     // Apply subtle color bleed
-    vec3 bleed = vec3(0.02, 0.0, 0.0); // Adjust bleed intensity and color
-    texColor += bleed;
+    texColor += vec3(0.02, 0.0, 0.0); // Adjust bleed intensity and color
 
     // Apply blur
     vec3 blurredColor = applyBlur(uv);
-    // texColor = mix(texColor, blurredColor, 0.4); // Adjust blur intensity
     texColor = mix(texColor, blurredColor, 0.5); // Adjust blur intensity
 
     // Apply selective phosphor glow
@@ -322,8 +318,15 @@ void main() {
     float brightness = dot(texColor, vec3(0.299, 0.587, 0.114)); // Luminance
     texColor += glow * clamp(brightness, 0.0, 1.0); // Glow only affects brighter areas
 
-    // Calculate scaled UV coordinates based on the original resolution
-    // vec2 scaledUV = vec2(uv.x * originalResolution.x / u_resolution.x, uv.y * originalResolution.y / u_resolution.y);
+    // Apply chromatic aberration
+    float aberrationAmount = 0.001 * (256.0 / min(u_resolution.x, u_resolution.y)); // Adjust the amount of chromatic aberration based on resolution
+    vec3 color;
+    color.r = texture(u_texture, uv + vec2(aberrationAmount, 0.0)).r;
+    color.g = texture(u_texture, uv).g;
+    color.b = texture(u_texture, uv - vec2(aberrationAmount, 0.0)).b;
+
+    // Combine the color with the effects
+    texColor = mix(texColor, color, 0.5); // Adjust the mix intensity
 
     outputColor = vec4(texColor, 1.0);
 }`
