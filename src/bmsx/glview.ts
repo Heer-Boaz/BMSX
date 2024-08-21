@@ -260,8 +260,8 @@ export abstract class GLView extends BaseView {
         //     return blurredColor;
         // }
 
-    public static readonly fragmentShaderCRTCode: string =
-        `#version 300 es
+public static readonly fragmentShaderCRTCode: string =
+    `#version 300 es
 precision highp float;
 
 uniform sampler2D u_texture;
@@ -273,36 +273,99 @@ in vec2 v_texcoord;
 out vec4 outputColor;
 const vec2 originalResolution = vec2(256.0, 192.0);
 
-// Define a 5x5 blur kernel
+// Define a 5x5 Gaussian blur kernel
+// The kernel is used to apply a weighted average to the surrounding pixels
+// to produce a blur effect. The weights are based on a Gaussian distribution.
 const float kernel[25] = float[](
-    1.0/256.0, 4.0/256.0, 6.0/256.0, 4.0/256.0, 1.0/256.0,
-    4.0/256.0, 16.0/256.0, 24.0/256.0, 16.0/256.0, 4.0/256.0,
-    6.0/256.0, 24.0/256.0, 36.0/256.0, 24.0/256.0, 6.0/256.0,
-    4.0/256.0, 16.0/256.0, 24.0/256.0, 16.0/256.0, 4.0/256.0,
-    1.0/256.0, 4.0/256.0, 6.0/256.0, 4.0/256.0, 1.0/256.0
+    1.0/256.0, 4.0/256.0, 6.0/256.0, 4.0/256.0, 1.0/256.0,  // First row
+    4.0/256.0, 16.0/256.0, 24.0/256.0, 16.0/256.0, 4.0/256.0, // Second row
+    6.0/256.0, 24.0/256.0, 36.0/256.0, 24.0/256.0, 6.0/256.0, // Third row (center)
+    4.0/256.0, 16.0/256.0, 24.0/256.0, 16.0/256.0, 4.0/256.0, // Fourth row
+    1.0/256.0, 4.0/256.0, 6.0/256.0, 4.0/256.0, 1.0/256.0  // Fifth row
 );
 
+/**
+ * Applies a blur effect to the given texture coordinates.
+ *
+ * This function uses a 5x5 kernel to sample the surrounding pixels
+ * and accumulate a weighted color to produce a blurred effect.
+ *
+ * @param uv - The texture coordinates to which the blur effect is applied.
+ * @return The blurred color as a vec3.
+ */
 vec3 applyBlur(vec2 uv) {
+    // Initialize the blurred color vector to zero
     vec3 blurredColor = vec3(0.0);
+
+    // Loop through a 5x5 kernel
     for (int y = -2; y <= 2; y++) {
         for (int x = -2; x <= 2; x++) {
+            // Calculate the offset for the current kernel position
             vec2 offset = vec2(x, y) / u_resolution;
+
+            // Sample the texture at the current offset and accumulate the weighted color
             blurredColor += texture(u_texture, uv + offset).rgb * kernel[(y + 2) * 5 + (x + 2)];
         }
     }
+
+    // Return the accumulated blurred color
     return blurredColor;
 }
 
-// Function to generate noise
+/**
+ * Calculates the noise value for the given 2D vector.
+ *
+ * @param uv - The 2D vector representing the texture coordinates.
+ * @returns The noise value calculated for the given texture coordinates.
+ */
 float noise(vec2 uv) {
     return fract(sin(dot(uv, vec2(12.9898,78.233))) * 43758.5453);
+}
+
+/**
+ * Applies a selective phosphor glow effect to the given color.
+ *
+ * This function adds a glow effect to the brighter areas of the color.
+ *
+ * @param color - The original color to which the glow effect is applied.
+ * @return The color with the glow effect applied.
+ */
+vec3 applyPhosphorGlow(vec3 color) {
+    vec3 glow = vec3(0.05, 0.02, 0.02);
+    float brightness = dot(color, vec3(0.299, 0.587, 0.114)); // Luminance
+    return color + glow * clamp(brightness, 0.0, 1.0); // Glow only affects brighter areas
+}
+
+/**
+ * Applies chromatic aberration to the given texture coordinates.
+ *
+ * This function simulates the dispersion of light into its constituent colors
+ * (red, green, blue) by offsetting the texture coordinates for each color channel.
+ *
+ * @param uv - The texture coordinates to which the chromatic aberration effect is applied.
+ * @return The color with the chromatic aberration effect applied.
+ */
+vec3 applyChromaticAberration(vec2 uv) {
+    // Calculate the amount of chromatic aberration based on the original (MSX) resolution
+    float aberrationAmount = 0.002 * (256.0 / min(u_resolution.x, u_resolution.y));
+
+    // Initialize the color vector
+    vec3 color;
+
+    // Apply the chromatic aberration effect by offsetting the texture coordinates
+    // for each color channel (red, green, blue).
+    color.r = texture(u_texture, uv + vec2(aberrationAmount, 0.0)).r; // Offset red channel
+    color.g = texture(u_texture, uv).g; // Green channel remains unchanged
+    color.b = texture(u_texture, uv - vec2(aberrationAmount, 0.0)).b; // Offset blue channel
+
+    return color;
 }
 
 void main() {
     vec2 uv = v_texcoord;
     vec3 texColor = texture(u_texture, uv, 0.0).rgb;
 
-    // Improved noise
+    // Apply noise
     float n = noise(uv * u_resolution + vec2(u_random));
     texColor += vec3(n) * 0.04; // Adjust noise intensity as needed
 
@@ -314,19 +377,13 @@ void main() {
     texColor = mix(texColor, blurredColor, 0.5); // Adjust blur intensity
 
     // Apply selective phosphor glow
-    vec3 glow = vec3(0.05, 0.02, 0.02);
-    float brightness = dot(texColor, vec3(0.299, 0.587, 0.114)); // Luminance
-    texColor += glow * clamp(brightness, 0.0, 1.0); // Glow only affects brighter areas
+    texColor = applyPhosphorGlow(texColor);
 
     // Apply chromatic aberration
-    float aberrationAmount = 0.002 * (256.0 / min(u_resolution.x, u_resolution.y)); // Adjust the amount of chromatic aberration based on resolution
-    vec3 color;
-    color.r = texture(u_texture, uv + vec2(aberrationAmount, 0.0)).r;
-    color.g = texture(u_texture, uv).g;
-    color.b = texture(u_texture, uv - vec2(aberrationAmount, 0.0)).b;
+    vec3 aberratedColor = applyChromaticAberration(uv);
 
     // Combine the color with the effects
-    texColor = mix(texColor, color, 0.5); // Adjust the mix intensity
+    texColor = mix(texColor, aberratedColor, 0.5); // Adjust the mix intensity
 
     outputColor = vec4(texColor, 1.0);
 }`
