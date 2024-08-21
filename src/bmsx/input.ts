@@ -1125,61 +1125,43 @@ export class PlayerInput {
 		const keyboardKeys = inputMap.keyboard ? inputMap.keyboard[action] : null;
 		const gamepadButtons = inputMap.gamepad ? inputMap.gamepad[action]?.map(button => Input.BUTTON2INDEX[button]) : null;
 
-		let allKeyboardButtonsPressed = true;
-		let allGamepadButtonsPressed = true;
-		let anyKeyboardButtonsConsumed = false;
-		let anyGamepadButtonsConsumed = false;
-		let leastKeyboardButtonsPressTime = Infinity;
-		let leastGamepadButtonsPressTime = Infinity;
-		let recentestKeyboardButtonsTimestamp = -Infinity;
-		let recentestGamepadButtonsTimestamp = -Infinity;
+		const getState = (keys_or_buttons: string[] | number[], getStateFunc: (key: string | number) => any) => {
+			let allPressed = true;
+			let anyConsumed = false;
+			let leastPressTime = Infinity;
+			let recentestTimestamp = -Infinity;
 
-		if (keyboardKeys) {
-			for (const key of keyboardKeys) {
-				const state = this.getKeyState(key);
-				allKeyboardButtonsPressed = allKeyboardButtonsPressed && (state?.pressed ?? false);
-				anyKeyboardButtonsConsumed = anyKeyboardButtonsConsumed || (state?.consumed ?? false);
-				if (state?.presstime) {
-					leastKeyboardButtonsPressTime = Math.min(leastKeyboardButtonsPressTime, state.presstime);
+			if (keys_or_buttons) {
+				for (const key of keys_or_buttons) {
+					const state = getStateFunc(key);
+					allPressed = allPressed && (state?.pressed ?? false);
+					anyConsumed = anyConsumed || (state?.consumed ?? false);
+					if (state?.presstime) {
+						leastPressTime = Math.min(leastPressTime, state.presstime);
+					}
+					if (state?.timestamp) {
+						recentestTimestamp = Math.max(recentestTimestamp, state.timestamp);
+					}
 				}
-				if (state?.timestamp) {
-					recentestKeyboardButtonsTimestamp = Math.max(recentestKeyboardButtonsTimestamp, state.timestamp);
-				}
+			} else {
+				allPressed = false;
+				anyConsumed = false;
+				leastPressTime = null;
+				recentestTimestamp = null;
 			}
-		}
-		else {
-			allKeyboardButtonsPressed = false;
-			anyKeyboardButtonsConsumed = false;
-			leastKeyboardButtonsPressTime = null;
-			recentestKeyboardButtonsTimestamp = null;
-		}
 
-		if (gamepadButtons) {
-			for (const button of gamepadButtons) {
-				const state = this.getGamepadButtonState(button);
-				allGamepadButtonsPressed = allGamepadButtonsPressed && (state?.pressed ?? false);
-				anyGamepadButtonsConsumed = anyGamepadButtonsConsumed || (state?.consumed ?? false);
-				if (state?.presstime) {
-					leastGamepadButtonsPressTime = Math.min(leastGamepadButtonsPressTime, state.presstime);
-				}
-				if (state?.timestamp) {
-					recentestGamepadButtonsTimestamp = Math.max(recentestGamepadButtonsTimestamp, state.timestamp);
-				}
-			}
-		}
-		else {
-			allGamepadButtonsPressed = false;
-			anyGamepadButtonsConsumed = false;
-			leastGamepadButtonsPressTime =  null;
-			recentestGamepadButtonsTimestamp = null;
-		}
+			return { allPressed, anyConsumed, leastPressTime, recentestTimestamp };
+		};
+
+		const keyboardState = getState(keyboardKeys, (key: string | number) => this.getKeyState(key as string));
+		const gamepadState = getState(gamepadButtons, (button: string | number) => this.getGamepadButtonState(button as number));
 
 		return {
 			action: action,
-			pressed: allKeyboardButtonsPressed || allGamepadButtonsPressed,
-			consumed: anyKeyboardButtonsConsumed || anyGamepadButtonsConsumed,
-			presstime: Math.min(leastKeyboardButtonsPressTime, leastGamepadButtonsPressTime) === Infinity ? null : Math.min(leastKeyboardButtonsPressTime, leastGamepadButtonsPressTime),
-			timestamp: Math.max(recentestKeyboardButtonsTimestamp, recentestGamepadButtonsTimestamp) === -Infinity ? undefined : Math.max(recentestKeyboardButtonsTimestamp, recentestGamepadButtonsTimestamp),
+			pressed: keyboardState.allPressed || gamepadState.allPressed,
+			consumed: keyboardState.anyConsumed || gamepadState.anyConsumed,
+			presstime: Math.min(keyboardState.leastPressTime, gamepadState.leastPressTime) === Infinity ? null : Math.min(keyboardState.leastPressTime, gamepadState.leastPressTime),
+			timestamp: Math.max(keyboardState.recentestTimestamp, gamepadState.recentestTimestamp) === -Infinity ? undefined : Math.max(keyboardState.recentestTimestamp, gamepadState.recentestTimestamp),
 		};
 	}
 
