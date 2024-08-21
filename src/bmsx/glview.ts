@@ -319,7 +319,7 @@ void main() {
     texColor += glow * clamp(brightness, 0.0, 1.0); // Glow only affects brighter areas
 
     // Apply chromatic aberration
-    float aberrationAmount = 0.001 * (256.0 / min(u_resolution.x, u_resolution.y)); // Adjust the amount of chromatic aberration based on resolution
+    float aberrationAmount = 0.002 * (256.0 / min(u_resolution.x, u_resolution.y)); // Adjust the amount of chromatic aberration based on resolution
     vec3 color;
     color.r = texture(u_texture, uv + vec2(aberrationAmount, 0.0)).r;
     color.g = texture(u_texture, uv).g;
