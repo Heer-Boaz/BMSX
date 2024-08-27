@@ -536,6 +536,22 @@ export function trunc_vec3(p: vec3): vec3 {
 }
 
 /**
+ * Multiplies a vec2 or vec3 by a factor.
+ * @param toMult The vec2 or vec3 to multiply.
+ * @param factor The factor to multiply by.
+ * @returns The multiplied vec2 or vec3.
+ */
+export function multiply_vec(toMult: Vector, factor: number): Vector {
+	if ('z' in toMult) {
+		const { x, y, z } = toMult as vec3;
+		return { x: x * factor, y: y * factor, z: z * factor };
+	} else {
+		const { x, y } = toMult as vec2;
+		return { x: x * factor, y: y * factor };
+	}
+}
+
+/**
  * Multiplies a vec2 by a factor.
  * @param toMult The vec2 to multiply.
  * @param factor The factor to multiply by.
