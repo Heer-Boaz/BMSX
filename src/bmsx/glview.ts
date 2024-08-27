@@ -1,4 +1,4 @@
-import { new_vec2, new_vec3 } from './game';
+import { multiply_vec, new_vec2, new_vec3 } from './game';
 import type { ImgMeta, Size } from './rompack';
 import { BaseView, Color, DrawImgOptions, DrawRectOptions } from './view';
 
@@ -170,98 +170,48 @@ export abstract class GLView extends BaseView {
 
     public static readonly vertexShaderCode: string =
         `#version 300 es
-        precision highp float;
+precision highp float;
 
-        in vec2 a_position;
-        in vec2 a_texcoord;
-        in vec4 a_color_override;
-        in float a_pos_z;
+in vec2 a_position;
+in vec2 a_texcoord;
+in vec4 a_color_override;
+in float a_pos_z;
 
-        uniform vec2 u_resolution;
+uniform vec2 u_resolution;
 
-        out vec2 v_texcoord;
-        out vec4 v_color_override;
+out vec2 v_texcoord;
+out vec4 v_color_override;
 
-        void main() {
-            // Convert the rectangle from pixels to clipspace coordinates and invert Y-axis
-            vec2 clipSpace = ((a_position / u_resolution) * 2.0 - 1.0) * vec2(1, -1); // Flip Y-axis to match WebGL coordinates (0,0 is bottom-left) and convert to clipspace coordinates (-1 to 1)
+void main() {
+    // Scale the position to double the size of the sprites
+    vec2 scaledPosition = a_position * 2.0;
 
-            gl_Position = vec4(clipSpace, a_pos_z, 1); // Set the vertex position (z is used for depth sorting) and w to 1.0 (required for clipping)
+    // Convert the rectangle from pixels to clipspace coordinates and invert Y-axis
+    vec2 clipSpace = ((scaledPosition / u_resolution) * 2.0 - 1.0) * vec2(1, -1); // Flip Y-axis to match WebGL coordinates (0,0 is bottom-left) and convert to clipspace coordinates (-1 to 1)
 
-            // Pass the texCoord and color_override to the fragment shader
-            v_texcoord = a_texcoord;
-            v_color_override = a_color_override;
-    	}`;
+    gl_Position = vec4(clipSpace, a_pos_z, 1); // Set the vertex position (z is used for depth sorting) and w to 1.0 (required for clipping)
+
+    // Pass the texCoord and color_override to the fragment shader
+    v_texcoord = a_texcoord;
+    v_color_override = a_color_override;
+}`;
 
     public static readonly fragmentShaderTextureCode: string =
         `#version 300 es
-		precision highp float;
- 		uniform sampler2D u_texture;
- 		in vec2 v_texcoord;
-		in vec4 v_color_override;
-		out vec4 outputColor;
+precision highp float;
+uniform sampler2D u_texture;
+in vec2 v_texcoord;
+in vec4 v_color_override;
+out vec4 outputColor;
 
-        // MSX1 color palette
-        const vec3 palette[16] = vec3[](
-            vec3(0.0, 0.0, 0.0), // Transparent
-            vec3(0.0, 0.0, 0.0), // Black
-            vec3(0.0, 241.0/255.0, 20.0/255.0), // Medium Green
-            vec3(68.0/255.0, 249.0/255.0, 86.0/255.0), // Light Green
-            vec3(85.0/255.0, 79.0/255.0, 255.0/255.0), // Dark Blue
-            vec3(128.0/255.0, 111.0/255.0, 255.0/255.0), // Light Blue
-            vec3(250.0/255.0, 80.0/255.0, 51.0/255.0), // Dark Red
-            vec3(12.0/255.0, 255.0/255.0, 255.0/255.0), // Cyan
-            vec3(255.0/255.0, 81.0/255.0, 52.0/255.0), // Medium Red
-            vec3(255.0/255.0, 115.0/255.0, 86.0/255.0), // Light Red
-            vec3(226.0/255.0, 210.0/255.0, 4.0/255.0), // Dark Yellow
-            vec3(242.0/255.0, 217.0/255.0, 71.0/255.0), // Light Yellow
-            vec3(4.0/255.0, 212.0/255.0, 19.0/255.0), // Dark Green
-            vec3(231.0/255.0, 80.0/255.0, 229.0/255.0), // Magenta
-            vec3(208.0/255.0, 208.0/255.0, 208.0/255.0), // Gray
-            vec3(255.0/255.0, 255.0/255.0, 255.0/255.0) // White
-        );
+void main() {
+    vec4 texColor = texture(u_texture, v_texcoord) * v_color_override; // Sample the texture and multiply by the color_override
 
-        // Function to find the closest color in the palette
-        vec3 findClosestColor(vec3 color) {
-            highp float minDistance = distance(color, palette[0]);
-            vec3 closestColor = palette[0]; for (int i = 1; i < 16; i++) {
-                float currentDistance = distance(color, palette[i]);
-                if (currentDistance < minDistance) {
-                    minDistance = currentDistance;
-                    closestColor = palette[i];
-                }
-            } return closestColor;
-        }
+    outputColor = texColor;
+}`;
 
-		void main() {
-			vec4 texColor = texture(u_texture, v_texcoord) * v_color_override; // Sample the texture and multiply by the color_override
-            // vec3 msxColor = findClosestColor(texColor.rgb); // Apply MSX1 color palette emulation
-            // outputColor = vec4(msxColor, texColor.a); // Set the output color
-
-			outputColor = texColor;
-		}`;
-
-        // // Define a 3x3 blur kernel
-        // const float kernel[9] = float[](
-        //     0.0, 1.0/4.0, 0.0,
-        //     1.0/4.0, 1.0/2.0, 1.0/4.0,
-        //     0.0, 1.0/4.0, 0.0
-        // );
-
-        // vec3 applyBlur(vec2 uv) {
-        //     vec3 blurredColor = vec3(0.0);
-        //     for (int y = -1; y <= 1; y++) {
-        //         for (int x = -1; x <= 1; x++) {
-        //             vec2 offset = vec2(x, y) / u_resolution;
-        //             vec3 color = textureLod(u_texture, uv + offset, 0.0).rgb;
-        //             blurredColor += color * kernel[(y + 1) * 3 + (x + 1)];
-        //         }
-        //     }
-        //     return blurredColor;
-        // }
-
-public static readonly fragmentShaderCRTCode: string =
-    `#version 300 es
+    public static readonly fragmentShaderCRTCode: string =
+        `#version 300 es
 precision highp float;
 
 uniform sampler2D u_texture;
@@ -271,125 +221,67 @@ uniform float u_time;
 
 in vec2 v_texcoord;
 out vec4 outputColor;
-const vec2 originalResolution = vec2(256.0, 192.0);
 
-// Define a 5x5 Gaussian blur kernel
-// The kernel is used to apply a weighted average to the surrounding pixels
-// to produce a blur effect. The weights are based on a Gaussian distribution.
+// Define a 5x5 blur kernel
 const float kernel[25] = float[](
-    1.0/256.0, 4.0/256.0, 6.0/256.0, 4.0/256.0, 1.0/256.0,  // First row
-    4.0/256.0, 16.0/256.0, 24.0/256.0, 16.0/256.0, 4.0/256.0, // Second row
-    6.0/256.0, 24.0/256.0, 36.0/256.0, 24.0/256.0, 6.0/256.0, // Third row (center)
-    4.0/256.0, 16.0/256.0, 24.0/256.0, 16.0/256.0, 4.0/256.0, // Fourth row
-    1.0/256.0, 4.0/256.0, 6.0/256.0, 4.0/256.0, 1.0/256.0  // Fifth row
+    1.0/256.0, 4.0/256.0, 6.0/256.0, 4.0/256.0, 1.0/256.0,
+    4.0/256.0, 16.0/256.0, 24.0/256.0, 16.0/256.0, 4.0/256.0,
+    6.0/256.0, 24.0/256.0, 36.0/256.0, 24.0/256.0, 6.0/256.0,
+    4.0/256.0, 16.0/256.0, 24.0/256.0, 16.0/256.0, 4.0/256.0,
+    1.0/256.0, 4.0/256.0, 6.0/256.0, 4.0/256.0, 1.0/256.0
 );
 
-/**
- * Applies a blur effect to the given texture coordinates.
- *
- * This function uses a 5x5 kernel to sample the surrounding pixels
- * and accumulate a weighted color to produce a blurred effect.
- *
- * @param uv - The texture coordinates to which the blur effect is applied.
- * @return The blurred color as a vec3.
- */
 vec3 applyBlur(vec2 uv) {
-    // Initialize the blurred color vector to zero
     vec3 blurredColor = vec3(0.0);
-
-    // Loop through a 5x5 kernel
     for (int y = -2; y <= 2; y++) {
         for (int x = -2; x <= 2; x++) {
-            // Calculate the offset for the current kernel position
             vec2 offset = vec2(x, y) / u_resolution;
-
-            // Sample the texture at the current offset and accumulate the weighted color
             blurredColor += texture(u_texture, uv + offset).rgb * kernel[(y + 2) * 5 + (x + 2)];
         }
     }
-
-    // Return the accumulated blurred color
     return blurredColor;
 }
 
-/**
- * Calculates the noise value for the given 2D vector.
- *
- * @param uv - The 2D vector representing the texture coordinates.
- * @returns The noise value calculated for the given texture coordinates.
- */
+// Function to generate noise
 float noise(vec2 uv) {
     return fract(sin(dot(uv, vec2(12.9898,78.233))) * 43758.5453);
-}
-
-/**
- * Applies a selective phosphor glow effect to the given color.
- *
- * This function adds a glow effect to the brighter areas of the color.
- *
- * @param color - The original color to which the glow effect is applied.
- * @return The color with the glow effect applied.
- */
-vec3 applyPhosphorGlow(vec3 color) {
-    vec3 glow = vec3(0.05, 0.02, 0.02);
-    float brightness = dot(color, vec3(0.299, 0.587, 0.114)); // Luminance
-    return color + glow * clamp(brightness, 0.0, 1.0); // Glow only affects brighter areas
-}
-
-/**
- * Applies chromatic aberration to the given texture coordinates.
- *
- * This function simulates the dispersion of light into its constituent colors
- * (red, green, blue) by offsetting the texture coordinates for each color channel.
- *
- * @param uv - The texture coordinates to which the chromatic aberration effect is applied.
- * @return The color with the chromatic aberration effect applied.
- */
-vec3 applyChromaticAberration(vec2 uv) {
-    // Calculate the amount of chromatic aberration based on the original (MSX) resolution
-    float aberrationAmount = 0.002 * (256.0 / min(u_resolution.x, u_resolution.y));
-
-    // Initialize the color vector
-    vec3 color;
-
-    // Apply the chromatic aberration effect by offsetting the texture coordinates
-    // for each color channel (red, green, blue).
-    color.r = texture(u_texture, uv + vec2(aberrationAmount, 0.0)).r; // Offset red channel
-    color.g = texture(u_texture, uv).g; // Green channel remains unchanged
-    color.b = texture(u_texture, uv - vec2(aberrationAmount, 0.0)).b; // Offset blue channel
-
-    return color;
 }
 
 void main() {
     vec2 uv = v_texcoord;
     vec3 texColor = texture(u_texture, uv, 0.0).rgb;
 
-    // Apply noise
+    // Improved noise
     float n = noise(uv * u_resolution + vec2(u_random));
-    texColor += vec3(n) * 0.04; // Adjust noise intensity as needed
+    texColor += vec3(n) * 0.4; // Adjust noise intensity as needed
 
     // Apply subtle color bleed
     texColor += vec3(0.02, 0.0, 0.0); // Adjust bleed intensity and color
 
     // Apply blur
     vec3 blurredColor = applyBlur(uv);
-    texColor = mix(texColor, blurredColor, 0.5); // Adjust blur intensity
+    texColor = mix(texColor, blurredColor, .7); // Adjust blur intensity
 
     // Apply selective phosphor glow
-    texColor = applyPhosphorGlow(texColor);
+    vec3 glow = vec3(0.05, 0.02, 0.02);
+    float brightness = dot(texColor, vec3(0.299, 0.587, 0.114)); // Luminance
+    texColor += glow * clamp(brightness, 0.0, .5); // Glow only affects brighter areas
 
     // Apply chromatic aberration
-    vec3 aberratedColor = applyChromaticAberration(uv);
+    float aberrationAmount = 0.0015;
+    vec3 color;
+    color.r = texture(u_texture, uv + vec2(aberrationAmount, 0.0)).r;
+    color.g = texture(u_texture, uv).g;
+    color.b = texture(u_texture, uv - vec2(aberrationAmount, 0.0)).b;
 
     // Combine the color with the effects
-    texColor = mix(texColor, aberratedColor, 0.5); // Adjust the mix intensity
+    texColor = mix(texColor, color, 0.5); // Adjust the mix intensity
 
     outputColor = vec4(texColor, 1.0);
 }`
 
     constructor(viewportsize: Size) {
-        super(viewportsize);
+        super(multiply_vec(viewportsize, 4));
         this.glctx = this.canvas.getContext('webgl2', {
             alpha: true,
             desynchronized: false,
@@ -1035,7 +927,7 @@ void main() {
         // Use the white pixel image and color it with the desired color
         const imgid = 'whitepixel';
 
-        [ x, y, ex, ey ] = this.correctAreaStartEnd(x, y, ex, ey);
+        [x, y, ex, ey] = this.correctAreaStartEnd(x, y, ex, ey);
 
         // Draw the top border
         this.drawImg({ pos: new_vec3(x, y, z), imgid: imgid, scale: new_vec2(ex - x, 1), colorize: c });
@@ -1053,7 +945,7 @@ void main() {
 
         // Use the white pixel image and color it with the desired color
         const imgid = 'whitepixel';
-        [ x, y, ex, ey ] = this.correctAreaStartEnd(x, y, ex, ey);
+        [x, y, ex, ey] = this.correctAreaStartEnd(x, y, ex, ey);
 
         // Draw and stretch the image to fill the rectangle
         this.drawImg({ pos: new_vec3(x, y, z), imgid: imgid, scale: new_vec2(ex - x, ey - y), colorize: c });
