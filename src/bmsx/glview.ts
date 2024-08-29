@@ -247,13 +247,44 @@ float noise(vec2 uv) {
     return fract(sin(dot(uv, vec2(12.9898,78.233))) * 43758.5453);
 }
 
+float getContrast(vec2 uv) {
+    // Get the color of the current pixel
+    vec3 centerColor = texture(u_texture, uv).rgb;
+
+    // Calculate luminance of the current pixel
+    float centerLuminance = dot(centerColor, vec3(0.299, 0.587, 0.114));
+
+    // Average luminance of surrounding pixels (3x3 grid)
+    float surroundingLuminance = 0.0;
+    float totalWeight = 0.0;
+
+    // Iterate over a small neighborhood of pixels
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            vec2 offset = vec2(x, y) / u_resolution;
+            vec3 neighborColor = texture(u_texture, uv + offset).rgb;
+            float neighborLuminance = dot(neighborColor, vec3(0.299, 0.587, 0.114));
+            surroundingLuminance += neighborLuminance;
+            totalWeight += 1.0;
+        }
+    }
+
+    // Calculate the average luminance of surrounding pixels
+    surroundingLuminance /= totalWeight;
+
+    // Calculate contrast as the absolute difference between the center and surrounding luminance
+    float contrast = abs(centerLuminance - surroundingLuminance);
+
+    return contrast;
+}
+
 void main() {
     vec2 uv = v_texcoord;
     vec3 texColor = texture(u_texture, uv, 0.0).rgb;
 
     // Improved noise
     float n = noise(uv * u_resolution + vec2(u_random));
-    texColor += vec3(n) * 0.4; // Adjust noise intensity as needed
+    texColor += vec3(n) * 0.3; // Adjust noise intensity as needed
 
     // Apply subtle color bleed
     texColor += vec3(0.02, 0.0, 0.0); // Adjust bleed intensity and color
@@ -267,15 +298,24 @@ void main() {
     float brightness = dot(texColor, vec3(0.299, 0.587, 0.114)); // Luminance
     texColor += glow * clamp(brightness, 0.0, .5); // Glow only affects brighter areas
 
-    // Apply chromatic aberration
-    float aberrationAmount = 0.0015;
+    // Calculate distance from the center (to simulate screen curvature effect)
+    vec2 center = u_resolution * 0.5;
+    float distanceFromCenter = length((uv * u_resolution) - center) / length(center);
+
+    // Calculate contrast at the current pixel
+    float contrast = getContrast(uv);
+
+    // Determine the fringing amount based on distance from the center and contrast
+    float fringingAmount = 0.0005 + 0.0010 * distanceFromCenter + 0.0005 * contrast;
+
+    // Apply color fringing
     vec3 color;
-    color.r = texture(u_texture, uv + vec2(aberrationAmount, 0.0)).r;
+    color.r = texture(u_texture, uv + vec2(fringingAmount, 0.0)).r;
     color.g = texture(u_texture, uv).g;
-    color.b = texture(u_texture, uv - vec2(aberrationAmount, 0.0)).b;
+    color.b = texture(u_texture, uv - vec2(fringingAmount, 0.0)).b;
 
     // Combine the color with the effects
-    texColor = mix(texColor, color, 0.5); // Adjust the mix intensity
+    texColor = mix(texColor, color, 0.3); // Adjust the mix intensity
 
     outputColor = vec4(texColor, 1.0);
 }`
