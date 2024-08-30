@@ -145,8 +145,8 @@ export abstract class GLView extends BaseView {
     private vertexBuffer: WebGLBuffer;
     private texcoordBuffer: WebGLBuffer;
     private zBuffer: WebGLBuffer;
-    private additionalVertexBuffer: WebGLBuffer;
-    private additionalTexcoordBuffer: WebGLBuffer;
+    private CRTShaderVertexBuffer: WebGLBuffer;
+    private CRTShaderTexcoordBuffer: WebGLBuffer;
     private depthBuffer: WebGLBuffer;
     private color_overrideBuffer: WebGLBuffer;
     private readonly vertex_shader_data = {
@@ -163,7 +163,13 @@ export abstract class GLView extends BaseView {
     private additionalTimeLocation: WebGLUniformLocation;
     private additionalRandomLocation: WebGLUniformLocation;
     private additionalVertexLocation: GLint;
-    private additionalProgram: WebGLProgram; a
+    private CRTShaderApplyNoiseLocation: WebGLUniformLocation;
+    private CRTShaderApplyColorBleedLocation: WebGLUniformLocation;
+    private CRTShaderApplyBlurLocation: WebGLUniformLocation;
+    private CRTShaderApplyGlowLocation: WebGLUniformLocation;
+    private CRTShaderApplyFringingLocation: WebGLUniformLocation;
+
+    private CRTShaderProgram: WebGLProgram;
     private framebuffer: WebGLFramebuffer;
     private isRendering: boolean = false;
     private needsResize: boolean = false;
@@ -219,6 +225,13 @@ uniform vec2 u_resolution;
 uniform float u_random;
 uniform float u_time;
 
+// Uniforms to control each effect
+uniform bool u_applyNoise;
+uniform bool u_applyColorBleed;
+uniform bool u_applyBlur;
+uniform bool u_applyGlow;
+uniform bool u_applyFringing;
+
 in vec2 v_texcoord;
 out vec4 outputColor;
 
@@ -231,15 +244,39 @@ const float kernel[25] = float[](
     1.0/256.0, 4.0/256.0, 6.0/256.0, 4.0/256.0, 1.0/256.0
 );
 
-vec3 applyBlur(vec2 uv) {
+struct BlurContrastResult {
+    vec3 blurredColor;
+    float contrast;
+};
+
+BlurContrastResult applyBlurAndContrast(vec2 uv) {
     vec3 blurredColor = vec3(0.0);
+    float centerLuminance = 0.0;
+    float surroundingLuminance = 0.0;
+    float totalWeight = 0.0;
+
     for (int y = -2; y <= 2; y++) {
         for (int x = -2; x <= 2; x++) {
             vec2 offset = vec2(x, y) / u_resolution;
-            blurredColor += texture(u_texture, uv + offset).rgb * kernel[(y + 2) * 5 + (x + 2)];
+            vec3 color = texture(u_texture, uv + offset).rgb;
+            blurredColor += color * kernel[(y + 2) * 5 + (x + 2)];
+
+            if (abs(x) <= 1 && abs(y) <= 1) {
+                float luminance = dot(color, vec3(0.299, 0.587, 0.114));
+                if (x == 0 && y == 0) {
+                    centerLuminance = luminance;
+                } else {
+                    surroundingLuminance += luminance;
+                    totalWeight += 1.0;
+                }
+            }
         }
     }
-    return blurredColor;
+
+    surroundingLuminance /= totalWeight;
+    float contrast = abs(centerLuminance - surroundingLuminance);
+
+    return BlurContrastResult(blurredColor, contrast);
 }
 
 // Function to generate noise
@@ -247,78 +284,63 @@ float noise(vec2 uv) {
     return fract(sin(dot(uv, vec2(12.9898,78.233))) * 43758.5453);
 }
 
-float getContrast(vec2 uv) {
-    // Get the color of the current pixel
-    vec3 centerColor = texture(u_texture, uv).rgb;
-
-    // Calculate luminance of the current pixel
-    float centerLuminance = dot(centerColor, vec3(0.299, 0.587, 0.114));
-
-    // Average luminance of surrounding pixels (3x3 grid)
-    float surroundingLuminance = 0.0;
-    float totalWeight = 0.0;
-
-    // Iterate over a small neighborhood of pixels
-    for (int y = -1; y <= 1; y++) {
-        for (int x = -1; x <= 1; x++) {
-            vec2 offset = vec2(x, y) / u_resolution;
-            vec3 neighborColor = texture(u_texture, uv + offset).rgb;
-            float neighborLuminance = dot(neighborColor, vec3(0.299, 0.587, 0.114));
-            surroundingLuminance += neighborLuminance;
-            totalWeight += 1.0;
-        }
-    }
-
-    // Calculate the average luminance of surrounding pixels
-    surroundingLuminance /= totalWeight;
-
-    // Calculate contrast as the absolute difference between the center and surrounding luminance
-    float contrast = abs(centerLuminance - surroundingLuminance);
-
-    return contrast;
-}
-
 void main() {
     vec2 uv = v_texcoord;
     vec3 texColor = texture(u_texture, uv, 0.0).rgb;
 
-    // Improved noise
-    float n = noise(uv * u_resolution + vec2(u_random));
-    texColor += vec3(n) * 0.3; // Adjust noise intensity as needed
+    // Apply noise if enabled
+    if (u_applyNoise) {
+        float n = noise(uv * u_resolution + vec2(u_random));
+        texColor += vec3(n) * 0.3; // Adjust noise intensity as needed
+    }
 
-    // Apply subtle color bleed
-    texColor += vec3(0.02, 0.0, 0.0); // Adjust bleed intensity and color
+    // Apply color bleed if enabled
+    if (u_applyColorBleed) {
+        texColor += vec3(0.02, 0.0, 0.0); // Adjust bleed intensity and color
+    }
 
-    // Apply blur
-    vec3 blurredColor = applyBlur(uv);
-    texColor = mix(texColor, blurredColor, .7); // Adjust blur intensity
+    // Apply blur and calculate contrast if enabled
+    BlurContrastResult result;
+    if (u_applyBlur) {
+        result = applyBlurAndContrast(uv);
+        texColor = mix(texColor, result.blurredColor, .7); // Adjust blur intensity
+    } else {
+        result.contrast = 0.0; // Default contrast if blur is not applied
+    }
 
-    // Apply selective phosphor glow
-    vec3 glow = vec3(0.05, 0.02, 0.02);
-    float brightness = dot(texColor, vec3(0.299, 0.587, 0.114)); // Luminance
-    texColor += glow * clamp(brightness, 0.0, .5); // Glow only affects brighter areas
+    // Apply selective phosphor glow if enabled
+    if (u_applyGlow) {
+        vec3 glow = vec3(0.05, 0.02, 0.02);
+        float brightness = dot(texColor, vec3(0.299, 0.587, 0.114)); // Luminance
+        texColor += glow * clamp(brightness, 0.0, .5); // Glow only affects brighter areas
+    }
 
-    // Calculate distance from the center (to simulate screen curvature effect)
-    vec2 center = u_resolution * 0.5;
-    float distanceFromCenter = length((uv * u_resolution) - center) / length(center);
+    // Apply color fringing if enabled
+    if (u_applyFringing) {
+        // Calculate distance from the center (to simulate screen curvature effect)
+        vec2 center = u_resolution * 0.5;
+        float distanceFromCenter = length((uv * u_resolution) - center) / length(center);
 
-    // Calculate contrast at the current pixel
-    float contrast = getContrast(uv);
+        // Determine the fringing amount based on distance from the center and contrast
+        float fringingAmount = 0.0005 + 0.0010 * distanceFromCenter + 0.0005 * result.contrast;
 
-    // Determine the fringing amount based on distance from the center and contrast
-    float fringingAmount = 0.0005 + 0.0010 * distanceFromCenter + 0.0005 * contrast;
+        // Apply color fringing
+        vec3 color;
+        color.r = texture(u_texture, uv + vec2(fringingAmount, 0.0)).r;
+        color.g = texture(u_texture, uv).g;
+        color.b = texture(u_texture, uv - vec2(fringingAmount, 0.0)).b;
 
-    // Apply color fringing
-    vec3 color;
-    color.r = texture(u_texture, uv + vec2(fringingAmount, 0.0)).r;
-    color.g = texture(u_texture, uv).g;
-    color.b = texture(u_texture, uv - vec2(fringingAmount, 0.0)).b;
-
-    // Combine the color with the effects
-    texColor = mix(texColor, color, 0.3); // Adjust the mix intensity
+        // Combine the color with the effects
+        texColor = mix(texColor, color, 0.3); // Adjust the mix intensity
+    }
 
     outputColor = vec4(texColor, 1.0);
-}`
+}`;
+    private applyNoise: boolean = true;
+    private applyColorBleed: boolean = true;
+    private applyBlur: boolean = true;
+    private applyGlow: boolean = true;
+    private applyFringing: boolean = true;
 
     constructor(viewportsize: Size) {
         super(multiply_vec(viewportsize, 4));
@@ -333,21 +355,30 @@ void main() {
     override init(): void {
         super.init();
         this.setupGLContext();
-        this.createProgram();
-        this.setupLocations();
+        this.createGameShaderPrograms();
+        this.setupVertexShaderLocations();
         this.setupBuffers();
-        this.setupAttributes();
-        this.setupUniforms();
+        this.setupGameShaderLocations();
         this.setupTextures();
-        this.createAdditionalProgram();
-        this.setupAdditionalLocations();
-        this.createAdditionalVertexBuffer();
-        this.createAdditionalTexcoordBuffer();
+        this.createCRTShaderPrograms();
+        this.setupCRTShaderLocations();
+        this.createCRTVertexBuffer();
+        this.createCRTShaderTexcoordBuffer();
         this.handleResize(); // This is needed to set the viewport size and create the framebuffer and texture
+        this.setDefaultUniformValues();
+    }
+
+    private setDefaultUniformValues() {
+        const gl = this.glctx;
+        gl.uniform1i(this.CRTShaderApplyNoiseLocation, this.applyNoise ? 1 : 0);
+        gl.uniform1i(this.CRTShaderApplyColorBleedLocation, this.applyColorBleed ? 1 : 0);
+        gl.uniform1i(this.CRTShaderApplyBlurLocation, this.applyBlur ? 1 : 0);
+        gl.uniform1i(this.CRTShaderApplyGlowLocation, this.applyGlow ? 1 : 0);
+        gl.uniform1i(this.CRTShaderApplyFringingLocation, this.applyFringing ? 1 : 0);
     }
 
     @catchWebGLError
-    private createAdditionalVertexBuffer(): void {
+    private createCRTVertexBuffer(): void {
         const gl = this.glctx;
         // Define the vertex positions for a full-screen quad (in clip space)
         const vertices = new Float32Array([
@@ -361,13 +392,13 @@ void main() {
 
         // Create a new buffer and bind the vertex position data to it
         bvec.set(vertices, 0, 0, 0, this.canvas.width, this.canvas.height, 1, 1);
-        this.additionalVertexBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.additionalVertexBuffer);
+        this.CRTShaderVertexBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.CRTShaderVertexBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
     }
 
     @catchWebGLError
-    private createAdditionalTexcoordBuffer(): void {
+    private createCRTShaderTexcoordBuffer(): void {
         const gl = this.glctx;
         // Define the texture coordinates for a full-screen quad
         const texcoords = new Float32Array([
@@ -380,8 +411,8 @@ void main() {
         ]);
 
         // Create a new buffer and bind the texture coordinate data to it
-        this.additionalTexcoordBuffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.additionalTexcoordBuffer);
+        this.CRTShaderTexcoordBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.CRTShaderTexcoordBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, texcoords, gl.STATIC_DRAW);
     }
 
@@ -391,11 +422,18 @@ void main() {
     }
 
     @catchWebGLError
-    private createAdditionalProgram(): void {
+    /**
+     * Creates the CRT shader programs.
+     *
+     * @remarks
+     * This method creates the additional GLSL program for the CRT shader effect. It loads the vertex and fragment shaders,
+     * attaches them to the program, and links the program. If the program fails to link, an error is thrown.
+     */
+    private createCRTShaderPrograms(): void {
         const gl = this.glctx;
         const program = gl.createProgram();
         if (!program) throw Error(`Failed to create the additional GLSL program! Aborting as we cannot create the GLView for the game!`);
-        this.additionalProgram = program;
+        this.CRTShaderProgram = program;
 
         const vertShader = this.loadShader(gl.VERTEX_SHADER, GLView.vertexShaderCode);
         const fragShader = this.loadShader(gl.FRAGMENT_SHADER, GLView.fragmentShaderCRTCode);
@@ -410,21 +448,32 @@ void main() {
     }
 
     @catchWebGLError
-    private setupAdditionalLocations(): void {
+    /**
+     * Sets up the CRT shader locations.
+     * This method initializes the necessary shader locations for the additional program used in the GL view.
+     * It sets the resolution vector, retrieves the attribute and uniform locations,
+     * and enables the position and texcoord attributes for the shader.
+     */
+    private setupCRTShaderLocations(): void {
         const gl = this.glctx;
         this.vertex_shader_data.resolutionVector.set([this.viewportSize.x, this.viewportSize.y]);
         const locations = {
-            vertex: gl.getAttribLocation(this.additionalProgram, "a_position"),
-            texturecoord: gl.getAttribLocation(this.additionalProgram, "a_texcoord"),
-            resolution: gl.getUniformLocation(this.additionalProgram, "u_resolution"),
-            random: gl.getUniformLocation(this.additionalProgram, "u_random"),
-            time: gl.getUniformLocation(this.additionalProgram, "u_time")
+            vertex: gl.getAttribLocation(this.CRTShaderProgram, "a_position"),
+            texturecoord: gl.getAttribLocation(this.CRTShaderProgram, "a_texcoord"),
+            resolution: gl.getUniformLocation(this.CRTShaderProgram, "u_resolution"),
+            random: gl.getUniformLocation(this.CRTShaderProgram, "u_random"),
+            time: gl.getUniformLocation(this.CRTShaderProgram, "u_time")
         };
         this.additionalVertexLocation = locations.vertex;
         this.additionalTexcoordLocation = locations.texturecoord;
         this.additionalResolutionLocation = locations.resolution;
         this.additionalTimeLocation = locations.time;
         this.additionalRandomLocation = locations.random;
+        this.CRTShaderApplyNoiseLocation = gl.getUniformLocation(this.CRTShaderProgram, "u_applyNoise");
+        this.CRTShaderApplyColorBleedLocation = gl.getUniformLocation(this.CRTShaderProgram, "u_applyColorBleed");
+        this.CRTShaderApplyBlurLocation = gl.getUniformLocation(this.CRTShaderProgram, "u_applyBlur");
+        this.CRTShaderApplyGlowLocation = gl.getUniformLocation(this.CRTShaderProgram, "u_applyGlow");
+        this.CRTShaderApplyFringingLocation = gl.getUniformLocation(this.CRTShaderProgram, "u_applyFringing");
 
         // Enable the position attribute for the shader
         gl.enableVertexAttribArray(this.additionalVertexLocation);
@@ -449,16 +498,14 @@ void main() {
     }
 
     @catchWebGLError
-    private setupAttributes(): void {
+    private setupGameShaderLocations(): void {
         this.glctx.useProgram(this.program);
 
         this.setupAttribute(this.vertexBuffer, this.vertexLocation, VERTEX_ATTRIBUTE_SIZE);
         this.setupAttribute(this.texcoordBuffer, this.texcoordLocation, TEXTURECOORD_ATTRIBUTE_SIZE);
         this.setupAttribute(this.zBuffer, this.zcoordLocation, ZCOORD_ATTRIBUTE_SIZE);
         this.setupAttribute(this.color_overrideBuffer, this.color_overrideLocation, COLOR_OVERRIDE_ATTRIBUTE_SIZE);
-    }
 
-    private setupUniforms(): void {
         this.vertex_shader_data.resolutionVector.set([this.canvas.width, this.canvas.height]);
         this.glctx.uniform2fv(this.resolutionLocation, this.vertex_shader_data.resolutionVector);
         this.glctx.uniform1i(this.textureLocation, 0);
@@ -466,8 +513,14 @@ void main() {
 
     @catchWebGLError
     private setupTextures(): void {
+        // Initialize the textures object as an empty object.
+        // The object will contain all the textures used in the game and are accessed by their keys.
+        // Note that this will remain mostly empty if the game uses the default texture atlas.
         this.textures = {};
-        this.textures['_atlas'] = this.createTexture(BaseView.images['_atlas']);
+
+        // Link the atlas texture to the '_atlas' key for easy access
+        // The atlas is created from the '_atlas' image in the ROM pack, which is loaded before the GLView is created (during loading of the ROM pack)
+        this.textures['_atlas'] = this.createTexture(BaseView.images['_atlas']); // Create the texture from the atlas image
 
         // The 'additional' texture is created in createFramebufferAndTexture
     }
@@ -484,7 +537,7 @@ void main() {
     }
 
     @catchWebGLError
-    private createProgram(): void {
+    private createGameShaderPrograms(): void {
         const gl = this.glctx;
         const program = gl.createProgram();
         if (!program) throw Error(`Failed to create the GLSL program! Aborting as we cannot create the GLView for the game!`);
@@ -501,7 +554,7 @@ void main() {
     }
 
     @catchWebGLError
-    private setupLocations(): void {
+    private setupVertexShaderLocations(): void {
         const gl = this.glctx;
         this.vertex_shader_data.resolutionVector.set([this.viewportSize.x, this.viewportSize.y]);
         const locations = {
@@ -666,7 +719,7 @@ void main() {
 
             // Set the resolution uniform
             if (this.additionalResolutionLocation) { // This is only set if the additional shader is being used
-                gl.useProgram(this.additionalProgram);
+                gl.useProgram(this.CRTShaderProgram);
                 gl.uniform2fv(this.additionalResolutionLocation, new Float32Array([this.canvas.width, this.canvas.height]));
                 gl.useProgram(this.program);
             }
@@ -780,18 +833,18 @@ void main() {
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
         // Switch to the post-processing shader
-        this.switchProgram(this.additionalProgram);
+        this.switchProgram(this.CRTShaderProgram);
 
         // Bind the texture as the input to the post-processing shader
         gl.bindTexture(gl.TEXTURE_2D, this.textures['additional']);
 
         // Bind the vertex position buffer
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.additionalVertexBuffer);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.CRTShaderVertexBuffer);
         gl.vertexAttribPointer(this.additionalVertexLocation, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(this.additionalVertexLocation);
 
         // Bind the texcoord buffer
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.additionalTexcoordBuffer);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.CRTShaderTexcoordBuffer);
         gl.vertexAttribPointer(this.additionalTexcoordLocation, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(this.additionalTexcoordLocation);
 
