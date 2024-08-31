@@ -306,8 +306,8 @@ export function handleDebugMouseMove(e: MouseEvent): void {
 
 	if (draggedObj) {
 		// Otherwise, continue dragging the object that is already being dragged
-		let x = e.offsetX / $.view.scale;
-		let y = e.offsetY / $.view.scale;
+		let x = e.offsetX / $.view.viewportScale;
+		let y = e.offsetY / $.view.viewportScale;
 
 		if (draggedObj.pos) {
 			draggedObj.x = ~~x - draggedObjCursorOffset.x;
@@ -1049,7 +1049,7 @@ function openObjectDetailMenu(obj: any, title: string, previous?: HTMLElement): 
 
 export function handleDebugClick(e: MouseEvent): void {
 	if (!e.shiftKey && e.ctrlKey && !draggedObj) { // Only open when main or middle button is clicked and shift is not pressed and ctrl is pressed and no object is being dragged
-		let { objUnderCursor } = getGameObjectAtCursor(e);
+		const { objUnderCursor } = getGameObjectAtCursor(e);
 		if (objUnderCursor) {
 			openObjectDetailMenu(objUnderCursor, objUnderCursor.id);
 		}
@@ -1057,17 +1057,17 @@ export function handleDebugClick(e: MouseEvent): void {
 }
 
 function getGameObjectAtCursor(e: MouseEvent): { objUnderCursor: GameObject | null; offsetToCursor: vec2 | null; } {
-	let x = e.offsetX;
-	let y = e.offsetY;
+	const x = e.offsetX;
+	const y = e.offsetY;
 	/* Handling mouse events on game objects requires
 	 * transforming the game coordinates to canvas coordinates and that requires scaling
 	 * to be taken into account.
 	 */
-	let p = div_vec2(new_vec2(x, y), $.view.scale);
-	let objsUnderCursor: GameObject[] = $.model.objects.filter(o => o.id !== 'debug_highlighter' && o.overlaps_point(p));
+	const p = div_vec2(new_vec2(x, y), $.view.viewportScale);
+	const objsUnderCursor: GameObject[] = $.model.objects.filter(o => o.id !== 'debug_highlighter' && o.overlaps_point(p));
 	if (objsUnderCursor && objsUnderCursor.length > 0) {
 		// Choose obj with highest z-value
-		let objUnderCursorWithHighestZ = objsUnderCursor.reduce((o1, o2) => o1.z > o2.z ? o1 : o2);
+		const objUnderCursorWithHighestZ = objsUnderCursor.reduce((o1, o2) => o1.z > o2.z ? o1 : o2);
 		return { objUnderCursor: objUnderCursorWithHighestZ, offsetToCursor: objUnderCursorWithHighestZ.overlaps_point(p) };
 	}
 	return { objUnderCursor: null, offsetToCursor: null };;
