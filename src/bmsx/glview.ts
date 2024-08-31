@@ -1,5 +1,5 @@
 import { multiply_vec, new_vec2, new_vec3 } from './game';
-import type { ImgMeta, Size } from './rompack';
+import type { ImgMeta, Size, vec2 } from './rompack';
 import { BaseView, Color, DrawImgOptions, DrawRectOptions } from './view';
 
 function catchWebGLError(_target: any, propertyKey: string, descriptor: PropertyDescriptor): PropertyDescriptor {
@@ -10,7 +10,7 @@ function catchWebGLError(_target: any, propertyKey: string, descriptor: Property
         if (gl) {
             const error = gl.getError();
             if (error != gl.NO_ERROR) {
-                throw new Error(`WebGL error in ${propertyKey}: ${getWebGLErrorString(gl, error)}`);
+                throw new Error(`WebGL error in function '${propertyKey}': '${getWebGLErrorString(gl, error)}' ('${error}').`);
             }
         }
         return returnValue;
@@ -135,7 +135,7 @@ const COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER = 96;
 export abstract class GLView extends BaseView {
     public glctx: WebGL2RenderingContext;
     private textures: { [key: number]: WebGLTexture; };
-    private program: WebGLProgram;
+    private gameShaderProgram: WebGLProgram;
     private vertexLocation: number;
     private texcoordLocation: number;
     private zcoordLocation: number;
@@ -158,11 +158,11 @@ export abstract class GLView extends BaseView {
     }
     private imagesToDraw: { options: DrawImgOptions, imgmeta: any }[] = [];
 
-    private additionalTexcoordLocation: GLint;
-    private additionalResolutionLocation: WebGLUniformLocation;
-    private additionalTimeLocation: WebGLUniformLocation;
-    private additionalRandomLocation: WebGLUniformLocation;
-    private additionalVertexLocation: GLint;
+    private CRTShaderTexcoordLocation: GLint;
+    private CRTShaderResolutionLocation: WebGLUniformLocation;
+    private CRTShaderTimeLocation: WebGLUniformLocation;
+    private CRTShaderRandomLocation: WebGLUniformLocation;
+    private CRTShaderVertexLocation: GLint;
     private CRTShaderApplyNoiseLocation: WebGLUniformLocation;
     private CRTShaderApplyColorBleedLocation: WebGLUniformLocation;
     private CRTShaderApplyBlurLocation: WebGLUniformLocation;
@@ -184,13 +184,14 @@ in vec4 a_color_override;
 in float a_pos_z;
 
 uniform vec2 u_resolution;
+uniform float u_scale;
 
 out vec2 v_texcoord;
 out vec4 v_color_override;
 
 void main() {
-    // Scale the position to double the size of the sprites
-    vec2 scaledPosition = a_position * 2.0;
+    // Scale the position by the scaling factor
+    vec2 scaledPosition = a_position * u_scale;
 
     // Convert the rectangle from pixels to clipspace coordinates and invert Y-axis
     vec2 clipSpace = ((scaledPosition / u_resolution) * 2.0 - 1.0) * vec2(1, -1); // Flip Y-axis to match WebGL coordinates (0,0 is bottom-left) and convert to clipspace coordinates (-1 to 1)
@@ -224,6 +225,7 @@ uniform sampler2D u_texture;
 uniform vec2 u_resolution;
 uniform float u_random;
 uniform float u_time;
+uniform float u_fragscale;
 
 // Uniforms to control each effect
 uniform bool u_applyNoise;
@@ -257,7 +259,7 @@ BlurContrastResult applyBlurAndContrast(vec2 uv) {
 
     for (int y = -2; y <= 2; y++) {
         for (int x = -2; x <= 2; x++) {
-            vec2 offset = vec2(x, y) / u_resolution;
+            vec2 offset = vec2(x, y) / u_resolution * u_fragscale;
             vec3 color = texture(u_texture, uv + offset).rgb;
             blurredColor += color * kernel[(y + 2) * 5 + (x + 2)];
 
@@ -286,12 +288,13 @@ float noise(vec2 uv) {
 
 void main() {
     vec2 uv = v_texcoord;
+
     vec3 texColor = texture(u_texture, uv, 0.0).rgb;
 
     // Apply noise if enabled
     if (u_applyNoise) {
-        float n = noise(uv * u_resolution + vec2(u_random));
-        texColor += vec3(n) * 0.3; // Adjust noise intensity as needed
+        float n = noise(uv * u_resolution * u_fragscale + vec2(u_random));
+        texColor += vec3(n) * 0.2; // Adjust noise intensity as needed
     }
 
     // Apply color bleed if enabled
@@ -319,7 +322,7 @@ void main() {
     if (u_applyFringing) {
         // Calculate distance from the center (to simulate screen curvature effect)
         vec2 center = u_resolution * 0.5;
-        float distanceFromCenter = length((uv * u_resolution) - center) / length(center);
+        float distanceFromCenter = length((uv * u_resolution * u_fragscale ) - center) / length(center);
 
         // Determine the fringing amount based on distance from the center and contrast
         float fringingAmount = 0.0005 + 0.0010 * distanceFromCenter + 0.0005 * result.contrast;
@@ -331,7 +334,7 @@ void main() {
         color.b = texture(u_texture, uv - vec2(fringingAmount, 0.0)).b;
 
         // Combine the color with the effects
-        texColor = mix(texColor, color, 0.3); // Adjust the mix intensity
+        texColor = mix(texColor, color, 0.2); // Adjust the mix intensity
     }
 
     outputColor = vec4(texColor, 1.0);
@@ -341,9 +344,14 @@ void main() {
     private applyBlur: boolean = true;
     private applyGlow: boolean = true;
     private applyFringing: boolean = true;
+    private gameShaderScaleLocation: WebGLUniformLocation;
+    private CRTVertexShaderScaleLocation: WebGLUniformLocation;
+    private offscreenCanvasSize: vec2;
+    CRTFragmentShaderScaleLocation: WebGLUniformLocation;
 
     constructor(viewportsize: Size) {
-        super(multiply_vec(viewportsize, 4));
+        super(viewportsize, multiply_vec(viewportsize, 2));
+        this.offscreenCanvasSize = multiply_vec(viewportsize, 2); // The offscreen canvas size is twice the viewport size
         this.glctx = this.canvas.getContext('webgl2', {
             alpha: true,
             desynchronized: false,
@@ -364,17 +372,28 @@ void main() {
         this.setupCRTShaderLocations();
         this.createCRTVertexBuffer();
         this.createCRTShaderTexcoordBuffer();
-        this.handleResize(); // This is needed to set the viewport size and create the framebuffer and texture
         this.setDefaultUniformValues();
+        this.createFramebufferAndTexture(); // This also binds the framebuffer
+        this.handleResize(); // This is needed to set the viewport size and create the framebuffer and texture
     }
 
     private setDefaultUniformValues() {
         const gl = this.glctx;
+        gl.useProgram(this.gameShaderProgram);
+        gl.uniform1f(this.gameShaderScaleLocation, 2.0);
+        this.vertex_shader_data.resolutionVector.set([this.offscreenCanvasSize.x, this.offscreenCanvasSize.y]); // Set the resolution vector for the game shader, which uses a different resolution than the CRT shader
+        gl.uniform2fv(this.resolutionLocation, this.vertex_shader_data.resolutionVector);
+        gl.uniform1i(this.textureLocation, 0);
+
+        gl.useProgram(this.CRTShaderProgram);
+        gl.uniform1f(this.CRTVertexShaderScaleLocation, 1.0);
+        gl.uniform1f(this.CRTFragmentShaderScaleLocation, 1.0);
         gl.uniform1i(this.CRTShaderApplyNoiseLocation, this.applyNoise ? 1 : 0);
         gl.uniform1i(this.CRTShaderApplyColorBleedLocation, this.applyColorBleed ? 1 : 0);
         gl.uniform1i(this.CRTShaderApplyBlurLocation, this.applyBlur ? 1 : 0);
         gl.uniform1i(this.CRTShaderApplyGlowLocation, this.applyGlow ? 1 : 0);
         gl.uniform1i(this.CRTShaderApplyFringingLocation, this.applyFringing ? 1 : 0);
+        // Note that the resolution vector is set in the handleResize method for the CRT shader
     }
 
     @catchWebGLError
@@ -432,7 +451,7 @@ void main() {
     private createCRTShaderPrograms(): void {
         const gl = this.glctx;
         const program = gl.createProgram();
-        if (!program) throw Error(`Failed to create the additional GLSL program! Aborting as we cannot create the GLView for the game!`);
+        if (!program) throw Error(`Failed to create the CRT Shader GLSL program! Aborting as we cannot create the GLView for the game!`);
         this.CRTShaderProgram = program;
 
         const vertShader = this.loadShader(gl.VERTEX_SHADER, GLView.vertexShaderCode);
@@ -443,20 +462,19 @@ void main() {
         gl.linkProgram(program);
 
         if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-            throw Error(`Unable to initialize the additional shader program: ${gl.getProgramInfoLog(program)}.`);
+            throw Error(`Unable to initialize the crt shader shader program: ${gl.getProgramInfoLog(program)}.`);
         }
     }
 
     @catchWebGLError
     /**
      * Sets up the CRT shader locations.
-     * This method initializes the necessary shader locations for the additional program used in the GL view.
+     * This method initializes the necessary shader locations for the crt shader program used in the GL view.
      * It sets the resolution vector, retrieves the attribute and uniform locations,
      * and enables the position and texcoord attributes for the shader.
      */
     private setupCRTShaderLocations(): void {
         const gl = this.glctx;
-        this.vertex_shader_data.resolutionVector.set([this.viewportSize.x, this.viewportSize.y]);
         const locations = {
             vertex: gl.getAttribLocation(this.CRTShaderProgram, "a_position"),
             texturecoord: gl.getAttribLocation(this.CRTShaderProgram, "a_texcoord"),
@@ -464,22 +482,24 @@ void main() {
             random: gl.getUniformLocation(this.CRTShaderProgram, "u_random"),
             time: gl.getUniformLocation(this.CRTShaderProgram, "u_time")
         };
-        this.additionalVertexLocation = locations.vertex;
-        this.additionalTexcoordLocation = locations.texturecoord;
-        this.additionalResolutionLocation = locations.resolution;
-        this.additionalTimeLocation = locations.time;
-        this.additionalRandomLocation = locations.random;
+        this.CRTShaderVertexLocation = locations.vertex;
+        this.CRTShaderTexcoordLocation = locations.texturecoord;
+        this.CRTShaderResolutionLocation = locations.resolution;
+        this.CRTShaderTimeLocation = locations.time;
+        this.CRTShaderRandomLocation = locations.random;
         this.CRTShaderApplyNoiseLocation = gl.getUniformLocation(this.CRTShaderProgram, "u_applyNoise");
         this.CRTShaderApplyColorBleedLocation = gl.getUniformLocation(this.CRTShaderProgram, "u_applyColorBleed");
         this.CRTShaderApplyBlurLocation = gl.getUniformLocation(this.CRTShaderProgram, "u_applyBlur");
         this.CRTShaderApplyGlowLocation = gl.getUniformLocation(this.CRTShaderProgram, "u_applyGlow");
         this.CRTShaderApplyFringingLocation = gl.getUniformLocation(this.CRTShaderProgram, "u_applyFringing");
+        this.CRTVertexShaderScaleLocation = gl.getUniformLocation(this.CRTShaderProgram, "u_scale");
+        this.CRTFragmentShaderScaleLocation = gl.getUniformLocation(this.CRTShaderProgram, "u_fragscale");
 
         // Enable the position attribute for the shader
-        gl.enableVertexAttribArray(this.additionalVertexLocation);
+        gl.enableVertexAttribArray(this.CRTShaderVertexLocation);
 
         // Enable the texcoord attribute for the shader
-        gl.enableVertexAttribArray(this.additionalTexcoordLocation);
+        gl.enableVertexAttribArray(this.CRTShaderTexcoordLocation);
     }
 
     @catchWebGLError
@@ -499,16 +519,12 @@ void main() {
 
     @catchWebGLError
     private setupGameShaderLocations(): void {
-        this.glctx.useProgram(this.program);
+        this.glctx.useProgram(this.gameShaderProgram);
 
         this.setupAttribute(this.vertexBuffer, this.vertexLocation, VERTEX_ATTRIBUTE_SIZE);
         this.setupAttribute(this.texcoordBuffer, this.texcoordLocation, TEXTURECOORD_ATTRIBUTE_SIZE);
         this.setupAttribute(this.zBuffer, this.zcoordLocation, ZCOORD_ATTRIBUTE_SIZE);
         this.setupAttribute(this.color_overrideBuffer, this.color_overrideLocation, COLOR_OVERRIDE_ATTRIBUTE_SIZE);
-
-        this.vertex_shader_data.resolutionVector.set([this.canvas.width, this.canvas.height]);
-        this.glctx.uniform2fv(this.resolutionLocation, this.vertex_shader_data.resolutionVector);
-        this.glctx.uniform1i(this.textureLocation, 0);
     }
 
     @catchWebGLError
@@ -541,7 +557,7 @@ void main() {
         const gl = this.glctx;
         const program = gl.createProgram();
         if (!program) throw Error(`Failed to create the GLSL program! Aborting as we cannot create the GLView for the game!`);
-        this.program = program;
+        this.gameShaderProgram = program;
         const vertShader = this.loadShader(gl.VERTEX_SHADER, GLView.vertexShaderCode);
         const fragShader = this.loadShader(gl.FRAGMENT_SHADER, GLView.fragmentShaderTextureCode);
 
@@ -556,19 +572,19 @@ void main() {
     @catchWebGLError
     private setupVertexShaderLocations(): void {
         const gl = this.glctx;
-        this.vertex_shader_data.resolutionVector.set([this.viewportSize.x, this.viewportSize.y]);
         const locations = {
-            vertex: gl.getAttribLocation(this.program, "a_position"),
-            texcoord: gl.getAttribLocation(this.program, "a_texcoord"),
-            zcoord: gl.getAttribLocation(this.program, "a_pos_z"),
-            color_override: gl.getAttribLocation(this.program, "a_color_override")
+            vertex: gl.getAttribLocation(this.gameShaderProgram, "a_position"),
+            texcoord: gl.getAttribLocation(this.gameShaderProgram, "a_texcoord"),
+            zcoord: gl.getAttribLocation(this.gameShaderProgram, "a_pos_z"),
+            color_override: gl.getAttribLocation(this.gameShaderProgram, "a_color_override")
         };
         this.vertexLocation = locations.vertex;
         this.texcoordLocation = locations.texcoord;
         this.zcoordLocation = locations.zcoord;
         this.color_overrideLocation = locations.color_override;
-        this.resolutionLocation = gl.getUniformLocation(this.program, "u_resolution")!;
-        this.textureLocation = gl.getUniformLocation(this.program, "u_texture")!;
+        this.resolutionLocation = gl.getUniformLocation(this.gameShaderProgram, "u_resolution")!;
+        this.textureLocation = gl.getUniformLocation(this.gameShaderProgram, "u_texture")!;
+        this.gameShaderScaleLocation = gl.getUniformLocation(this.gameShaderProgram, "u_scale");
     }
 
     @catchWebGLError
@@ -659,6 +675,7 @@ void main() {
     }
 
     @catchWebGLError
+    // TODO - WHY AM I RECREATING THE FRAMEBUFFER AND TEXTURE FOR A RESIZE EVENT?
     private createFramebufferAndTexture(): void {
         const gl = this.glctx;
 
@@ -672,8 +689,8 @@ void main() {
             gl.deleteTexture(this.textures['additional']);
         }
 
-        const width = this.canvas.width;
-        const height = this.canvas.height;
+        const width = this.offscreenCanvasSize.x;
+        const height = this.offscreenCanvasSize.y;
 
         // Create a new texture
         this.textures['additional'] = this.createTexture(undefined, { width, height });
@@ -712,16 +729,16 @@ void main() {
         super.handleResize();
         const gl = this.glctx;
         if (gl) {
-            gl.viewport(0, 0, this.canvas.width, this.canvas.height); // Set the viewport to the new size
+            // gl.viewport(0, 0, this.canvas.width, this.canvas.height); // Set the viewport to the new size
 
             // Recreate the framebuffer and texture to match the new size
-            this.createFramebufferAndTexture(); // This also binds the framebuffer
+            // this.createFramebufferAndTexture(); // This also binds the framebuffer
 
             // Set the resolution uniform
-            if (this.additionalResolutionLocation) { // This is only set if the additional shader is being used
+            if (this.CRTShaderResolutionLocation) { // This is only set if the additional shader is being used
                 gl.useProgram(this.CRTShaderProgram);
-                gl.uniform2fv(this.additionalResolutionLocation, new Float32Array([this.canvas.width, this.canvas.height]));
-                gl.useProgram(this.program);
+                gl.uniform2fv(this.CRTShaderResolutionLocation, new Float32Array([this.canvas.width, this.canvas.height]));
+                gl.useProgram(this.gameShaderProgram);
             }
         }
 
@@ -741,7 +758,7 @@ void main() {
         // Draw a full-screen quad using the post-processing shader
         this.drawFullScreenQuad();
 
-        this.switchProgram(this.program); // Switch back to the main shader
+        this.switchProgram(this.gameShaderProgram); // Switch back to the main shader
 
         this.isRendering = false;
 
@@ -831,6 +848,8 @@ void main() {
         const gl = this.glctx;
         // Bind the default framebuffer so that the rendering output goes to the screen
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        // Set the viewport to match the size of the offscreen framebuffer
+        gl.viewport(0, 0, this.canvas.width, this.canvas.height);
 
         // Switch to the post-processing shader
         this.switchProgram(this.CRTShaderProgram);
@@ -840,18 +859,18 @@ void main() {
 
         // Bind the vertex position buffer
         gl.bindBuffer(gl.ARRAY_BUFFER, this.CRTShaderVertexBuffer);
-        gl.vertexAttribPointer(this.additionalVertexLocation, 2, gl.FLOAT, false, 0, 0);
-        gl.enableVertexAttribArray(this.additionalVertexLocation);
+        gl.vertexAttribPointer(this.CRTShaderVertexLocation, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(this.CRTShaderVertexLocation);
 
         // Bind the texcoord buffer
         gl.bindBuffer(gl.ARRAY_BUFFER, this.CRTShaderTexcoordBuffer);
-        gl.vertexAttribPointer(this.additionalTexcoordLocation, 2, gl.FLOAT, false, 0, 0);
-        gl.enableVertexAttribArray(this.additionalTexcoordLocation);
+        gl.vertexAttribPointer(this.CRTShaderTexcoordLocation, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(this.CRTShaderTexcoordLocation);
 
         // Update the time uniform
         let currentTime = Date.now() / 1000; // Get the current time in seconds
-        gl.uniform1f(this.additionalTimeLocation, currentTime); // Add this line
-        gl.uniform1f(this.additionalRandomLocation, Math.random()); // Add this line
+        gl.uniform1f(this.CRTShaderTimeLocation, currentTime); // Add this line
+        gl.uniform1f(this.CRTShaderRandomLocation, Math.random()); // Add this line
 
         // Draw the full-screen quad
         gl.drawArrays(gl.TRIANGLES, 0, 6);
@@ -885,8 +904,10 @@ void main() {
 
         // Bind the framebuffer so that the rendering output goes to the texture
         this.glctx.bindFramebuffer(this.glctx.FRAMEBUFFER, this.framebuffer);
+        // Set the viewport to match the size of the offscreen framebuffer
+        gl.viewport(0, 0, this.offscreenCanvasSize.x, this.offscreenCanvasSize.y);
         // Set the viewport to the dimensions of the 'additional' texture
-        this.switchProgram(this.program);
+        this.switchProgram(this.gameShaderProgram);
         gl.bindTexture(gl.TEXTURE_2D, this.textures['_atlas']);
 
         // Bind the position buffer and set the position attribute
