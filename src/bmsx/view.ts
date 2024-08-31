@@ -1,5 +1,5 @@
 ﻿import type { Area, Size, Vector, id2htmlimg, vec2 } from './rompack';
-import { BFont, GameOptions, IRegisterable, Identifier } from "./game";
+import { BFont, GameOptions, IRegisterable, Identifier, copy_vector } from "./game";
 import { Registry } from './registry';
 import { Input } from './input';
 
@@ -52,21 +52,27 @@ export abstract class BaseView implements IRegisterable {
 
 	public windowSize: Size;
 	public availableWindowSize: Size;
-	public viewportSize: Size;
+	public viewportSize: Size; // The size of the viewport, which is the size of the game buffer (e.g. 256x212 for the MSX2)
+	public canvasSize: Size; // The size of the canvas, which may be different from the viewport size (e.g. when the GLView renders the game buffer to a larger canvas so that it can have more granular control over applying effects)
 	public dx: number;
 	public dy: number;
-	public scale: number;
+	public viewportScale: number;
 
-	constructor(viewportsize: Size) {
+	public canvas_dx: number;
+	public canvas_dy: number;
+	public canvasScale: number;
+
+	constructor(viewportSize: Size, canvasSize?: Size) {
 		Registry.instance.register(this);
-		this.viewportSize = viewportsize;
+		this.viewportSize = copy_vector(viewportSize);
+		this.canvasSize = copy_vector(canvasSize) ?? copy_vector(viewportSize);
 		this.canvas = document.getElementById('gamescreen') as HTMLCanvasElement;
 	}
 
 	public init(): void {
 		this.calculateSize();
-		this.canvas.width = this.viewportSize.x;
-		this.canvas.height = this.viewportSize.y;
+		this.canvas.width = this.canvasSize.x;
+		this.canvas.height = this.canvasSize.y;
 		this.handleResize();
 		this.listenToMediaEvents();
 	}
@@ -116,7 +122,11 @@ export abstract class BaseView implements IRegisterable {
 		self.availableWindowSize = { x: ~~w, y: ~~h };
 		self.dx = self.availableWindowSize.x / self.viewportSize.x;
 		self.dy = self.availableWindowSize.y / self.viewportSize.y;
-		self.scale = Math.min(self.dx, self.dy);
+		self.viewportScale = Math.min(self.dx, self.dy);
+
+		self.canvas_dx = self.availableWindowSize.x / self.canvasSize.x;
+		self.canvas_dy = self.availableWindowSize.y / self.canvasSize.y;
+		self.canvasScale = Math.min(self.canvas_dx, self.canvas_dy);
 	}
 
 	public handleResize(): void {
@@ -126,12 +136,12 @@ export abstract class BaseView implements IRegisterable {
 
 		let self = $.view || this;
 		self.calculateSize();
-		self.canvas.style.width = `${~~(self.viewportSize.x * self.scale)}px`;
-		self.canvas.style.height = `${~~(self.viewportSize.y * self.scale)}px`;
-		self.canvas.style.left = `${~~((self.windowSize.x - self.canvas.width * self.scale) / 2)}px`;
+		self.canvas.style.width = `${~~(self.canvasSize.x * self.canvasScale)}px`;
+		self.canvas.style.height = `${~~(self.canvasSize.y * self.canvasScale)}px`;
+		self.canvas.style.left = `${~~((self.windowSize.x - self.canvas.width * self.canvasScale) / 2)}px`;
 		let canvasTop: number;
 		if (isLandscape || !Input.instance.isOnscreenGamepadEnabled) {
-			canvasTop = ~~((self.windowSize.y - self.canvas.height * self.scale) / 2);
+			canvasTop = ~~((self.windowSize.y - self.canvas.height * self.canvasScale) / 2);
 		}
 		else {
 			canvasTop = 0;
