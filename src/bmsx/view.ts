@@ -323,19 +323,6 @@ export abstract class BaseView implements IRegisterable {
 		$.view.context.translate(-0.5, -0.5);
 	}
 
-	/**
-	 * Draws the "Press any key to start" message on the canvas.
-	 */
-	public drawPressKey(): void {
-		$.view.context.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-		$.view.context.font = '12pt Monaco';
-		$.view.context.fillStyle = 'white';
-		$.view.context.save();
-		$.view.context.fillText('Press any key to start', 56, 80);
-		$.view.context.restore();
-	}
-
 	public drawImg(options: DrawImgOptions): void {
 		const { pos, imgid, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 } } = options;
 
