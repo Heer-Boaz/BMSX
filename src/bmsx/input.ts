@@ -410,14 +410,13 @@ class PendingAssignmentProcessor {
 	 * Represents an Input object that handles gamepad input and a proposed player index.
 	 */
 	constructor(public gamepadInput: IInputHandler, public proposedPlayerIndex: number | null) {
-		const self = this;
-		window.addEventListener("gamepaddisconnected", function (e: GamepadEvent) {
+		window.addEventListener("gamepaddisconnected", (e: GamepadEvent) => {
 			const gamepad = e.gamepad;
 			if (!gamepad.id.toLowerCase().includes('gamepad')) return;
 
-			if (!self.gamepadInput) return; // No gamepad was not assigned to this object, so ignore the event (should not happen).
+			if (!this.gamepadInput) return; // No gamepad was not assigned to this object, so ignore the event (should not happen).
 			const gamepadIndex = e.gamepad.index;
-			if (gamepadIndex === self.gamepadInput.gamepadIndex) {
+			if (gamepadIndex === this.gamepadInput.gamepadIndex) {
 				// No player was assigned to this gamepad yet, but this input object was used for polling input from the gamepad
 				console.info(`Gamepad ${gamepad.index} disconnected while pending assignment.`);
 				Input.instance.removePendingGamepadAssignment(gamepadIndex); // Remove pending gamepad assignment
@@ -533,12 +532,21 @@ export class Input implements IRegisterable {
 	/**
 	 * The maximum number of players allowed.
 	 */
-	public static PLAYERS_MAX = 4;
+	public static readonly PLAYERS_MAX = 4;
 
 	/**
 	 * The maximum index value for the player, which is the maximum number of players minus 1 as the index is zero-based.
 	 */
-	public static PLAYER_MAX_INDEX = Input.PLAYERS_MAX - 1;
+	public static readonly PLAYER_MAX_INDEX = Input.PLAYERS_MAX - 1;
+
+	/**
+	 * The default player index for the keyboard controls. Maps to player 1.
+	 */
+	public static readonly DEFAULT_KEYBOARD_PLAYER_INDEX = 1;
+	/**
+	 * The default player index for the on-screen gamepad. Maps to player 1.
+	 */
+	public static readonly DEFAULT_ONSCREENGAMEPAD_PLAYER_INDEX = 1;
 
 	/**
 	 * Gets the singleton instance of the Input class.
@@ -696,7 +704,6 @@ export class Input implements IRegisterable {
 	 * @param debug Whether to enable debug mode. Default is true.
 	 */
 	constructor() {
-		const self = this;
 		// Register the input system
 		Registry.instance.register(this);
 
@@ -713,11 +720,11 @@ export class Input implements IRegisterable {
 		 * Event listener for when a gamepad is connected. Assigns the gamepad to a player and dispatches a player join event.
 		 * @param e The gamepad event.
 		 */
-		window.addEventListener("gamepadconnected", function (e: GamepadEvent) {
+		window.addEventListener("gamepadconnected", (e: GamepadEvent) =>{
 			const gamepad = e.gamepad;
 			if (!gamepad || !gamepad.id.toLowerCase().includes('gamepad')) return;
 			console.info(`Gamepad ${gamepad.index} connected.`);
-			self.addPendingGamepadAssignment(gamepad)
+			this.addPendingGamepadAssignment(gamepad)
 		});
 
 		document.addEventListener('webkitmouseforcewillbegin', e => preventActionAndPropagation(e), options);
@@ -734,7 +741,7 @@ export class Input implements IRegisterable {
 		}, false);
 		document.addEventListener('touchforcechange', e => preventActionAndPropagation(e), options);// iOS -- https://stackoverflow.com/questions/58159526/draggable-element-in-iframe-on-mobile-is-buggy && iOS -- https://stackoverflow.com/questions/50980876/can-you-prevent-3d-touch-on-an-img-but-not-tap-and-hold-to-save
 
-		this.getPlayerInput(1).keyboardInput = new KeyboardInput();
+		this.getPlayerInput(Input.DEFAULT_KEYBOARD_PLAYER_INDEX).keyboardInput = new KeyboardInput();
 	}
 
 	/**
@@ -752,7 +759,7 @@ export class Input implements IRegisterable {
 	public enableOnscreenGamepad(): void {
 		this.onscreenGamepad ??= new OnscreenGamepad();
 		this.onscreenGamepad.init();
-		this.getPlayerInput(1).gamepadInput = this.onscreenGamepad;
+		this.getPlayerInput(Input.DEFAULT_ONSCREENGAMEPAD_PLAYER_INDEX).gamepadInput = this.onscreenGamepad;
 	}
 
 	/**
@@ -1118,6 +1125,12 @@ export class PlayerInput {
 		this.inputMap = inputMap;
 	}
 
+	/**
+	 * Retrieves the state of an action.
+	 *
+	 * @param action - The name of the action.
+	 * @returns The state of the action, including whether it is pressed, consumed, the press time, and the timestamp.
+	 */
 	public getActionState(action: string): ActionState {
 		const inputMap = this.inputMap;
 		if (!inputMap) return { action, pressed: false, consumed: false, presstime: null, timestamp: undefined };
@@ -1330,28 +1343,27 @@ export class PlayerInput {
 	 * Initializes the input system.
 	 */
 	public constructor(playerIndex: number) {
-		const self = this;
 		this.playerIndex = playerIndex;
 		this.gamepadInput = null; // Gamepad should be null by default, and set to a value when a gamepad is connected and assigned to this player
 		this.reset();
 
-		window.addEventListener("gamepaddisconnected", function (e: GamepadEvent) {
+		window.addEventListener("gamepaddisconnected", (e: GamepadEvent) => {
 			const gamepad = e.gamepad;
 			if (!gamepad.id.toLowerCase().includes('gamepad')) return; // Ignore devices that are not gamepads
 
-			if (!self.gamepadInput) return; // No gamepad was not assigned to this input-object, so ignore the event (this can happen if multiple gamepads are connected and one is disconnected)
+			if (!this.gamepadInput) return; // No gamepad was not assigned to this input-object, so ignore the event (this can happen if multiple gamepads are connected and one is disconnected)
 
-			if (e.gamepad.index === self.gamepadInput.gamepadIndex) {
-				if (self.playerIndex) {
+			if (e.gamepad.index === this.gamepadInput.gamepadIndex) {
+				if (this.playerIndex) {
 					console.info(`Gamepad ${gamepad.index}, that was assigned to player ${playerIndex}, disconnected.`);
-					self.gamepadInput = null; // Remove gamepad for this input-object
+					this.gamepadInput = null; // Remove gamepad for this input-object
 
 					// If this is the main player, assign the on-screen gamepad to the main player, if the onscreen gamepad is enabled and that onscreen gamepad is not already assigned to another player
-					if (self.isMainPlayer && Input.instance.isOnscreenGamepadEnabled) {
+					if (this.isMainPlayer && Input.instance.isOnscreenGamepadEnabled) {
 						// Check whether the onscreen gamepad is being used by another player
 						let isOnscreenGamepadAssignedToAnotherPlayer = false;
 						for (let i = 1; i < Input.PLAYERS_MAX; i++) {
-							if (i === self.playerIndex) continue;
+							if (i === this.playerIndex) continue;
 							const playerInput = Input.instance.getPlayerInput(i);
 							if (playerInput.gamepadInput instanceof OnscreenGamepad) {
 								isOnscreenGamepadAssignedToAnotherPlayer = true;
@@ -1361,7 +1373,7 @@ export class PlayerInput {
 
 						if (!isOnscreenGamepadAssignedToAnotherPlayer) {
 							Input.instance.enableOnscreenGamepad();
-							self.gamepadInput = Input.instance.getOnscreenGamepad();
+							this.gamepadInput = Input.instance.getOnscreenGamepad();
 							console.info(`On-screen gamepad assigned to player ${playerIndex}, which is the main player.`);
 						}
 						else {
@@ -1864,12 +1876,11 @@ class OnscreenGamepad implements IInputHandler {
 	public init(): void {
 		// Reset gamepad button states
 		this.reset();
-		const self = this;
-		function addTouchListeners(controlsElement: HTMLElement, action_type: 'dpad' | 'action') {
-			controlsElement.addEventListener('touchmove', e => { self.handleTouchMove(e, action_type); return true; }, options);
-			controlsElement.addEventListener('touchstart', e => { self.handleTouchStart(e, action_type); return true; }, options);
-			controlsElement.addEventListener('touchend', e => { self.handleTouchEnd(e, action_type); return true; }, options);
-			controlsElement.addEventListener('touchcancel', e => { self.handleTouchEnd(e, action_type); return true; }, options);
+		const addTouchListeners = (controlsElement: HTMLElement, action_type: 'dpad' | 'action') => {
+			controlsElement.addEventListener('touchmove', e => { this.handleTouchMove(e, action_type); return true; }, options);
+			controlsElement.addEventListener('touchstart', e => { this.handleTouchStart(e, action_type); return true; }, options);
+			controlsElement.addEventListener('touchend', e => { this.handleTouchEnd(e, action_type); return true; }, options);
+			controlsElement.addEventListener('touchcancel', e => { this.handleTouchEnd(e, action_type); return true; }, options);
 		}
 
 		addTouchListeners(document.getElementById('d-pad-controls')!, 'dpad');
@@ -1904,8 +1915,7 @@ class OnscreenGamepad implements IInputHandler {
 	 * It is called once per frame to ensure that the UI is up-to-date with the current gamepad input state.
 	 */
 	public resetUI(elementsToFilterById?: string[]): void {
-		const self = this;
-		function resetElementAndButtonPress(element_id: string): void {
+		const resetElementAndButtonPress = (element_id: string): void => {
 			const element = document.getElementById(element_id);
 			if (element.classList.contains('druk')) {
 				element.classList.remove('druk');
@@ -1923,7 +1933,7 @@ class OnscreenGamepad implements IInputHandler {
 			const buttonData = OnscreenGamepad.ALL_BUTTON_MAP[element_id];
 			if (buttonData) {
 				buttonData.buttons.forEach(button => {
-					self.gamepadButtonStates[button].pressed = false;
+					this.gamepadButtonStates[button].pressed = false;
 				});
 			}
 		}
@@ -2087,30 +2097,6 @@ class OnscreenGamepad implements IInputHandler {
 				break;
 		}
 	}
-
-	/**
-	 * Handles the element under touch by triggering the corresponding keydown event and adding the 'druk' class to the element.
-	 * @param e The element under touch.
-	 * @returns An array of keys or buttons that were triggered by the touch event.
-	 */
-	// handleElementUnderTouch(e: Element): (ButtonId | string)[] {
-	// 	const buttonData = OnscreenGamepad.ALL_BUTTON_MAP[e.id];
-	// 	if (buttonData) {
-	// 		buttonData.buttons.forEach(button => {
-	// 			if (this.gamepadButtonStates[button]) {
-	// 				this.gamepadButtonPressTimes[button] = (this.gamepadButtonPressTimes[button] ?? 0) + 1;
-	// 			}
-	// 			else {
-	// 				this.gamepadButtonStates[button] = true;
-	// 				this.gamepadButtonPressedConsumedStates[button] = false;
-	// 				this.gamepadButtonPressTimes[button] = 0;
-	// 			}
-	// 		});
-	// 		document.getElementById(e.id).classList.add('druk');
-	// 		return buttonData.buttons;
-	// 	}
-	// 	return [];
-	// }
 
 	/**
 	 * Handles the blur event for the input element.

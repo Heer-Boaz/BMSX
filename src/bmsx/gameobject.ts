@@ -263,27 +263,27 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 	}
 
 	public get hitarea_left(): number {
-		return this.pos.x + this.hitarea?.start.x ?? 0;
+		return this.pos.x + (this.hitarea?.start.x ?? 0);
 	}
 
 	public get hitarea_top(): number {
-		return this.pos.y + this.hitarea?.start.y ?? 0;
+		return this.pos.y + (this.hitarea?.start.y ?? 0);
 	}
 
 	public get hitarea_right(): number {
-		return this.pos.x + this.hitarea?.end.x ?? 0;
+		return this.pos.x + (this.hitarea?.end.x ?? 0);
 	}
 
 	public get hitarea_bottom(): number {
-		return this.pos.y + this.hitarea?.end.y ?? 0;
+		return this.pos.y + (this.hitarea?.end.y ?? 0);
 	}
 
 	public get x_plus_width(): number {
-		return this.pos.x + this.size?.x ?? 0;
+		return this.pos.x + (this.size?.x ?? 0);
 	}
 
 	public get y_plus_height(): number {
-		return this.pos.y + this.size?.y ?? 0;
+		return this.pos.y + (this.size?.y ?? 0);
 	}
 
 	/**
