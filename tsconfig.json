@@ -47,15 +47,6 @@
     "noUnusedParameters": true, /* Report errors on unused parameters. */
     "noImplicitReturns": true, /* Report error when not all code paths in function return a value. */
     // "noFallthroughCasesInSwitch": true,    /* Report errors for fallthrough cases in switch statement. */
-    /* Module Resolution Options */
-    // "moduleResolution": "node",            /* Specify module resolution strategy: 'node' (Node.js) or 'classic' (TypeScript pre-1.6). */
-    // "baseUrl": "./BoazEngineJS",           /* Base directory to resolve non-absolute module names. */
-    // "paths": {},                           /* A series of entries which re-map imports to lookup locations relative to the 'baseUrl'. */
-    // "rootDirs": [
-    //   "src",
-    //   "src/bmsx"
-    // ], /* List of root folders whose combined content represents the structure of the project at runtime. */
-    /* List of folders to include type definitions from. */
     "useDefineForClassFields": true,
     "noImplicitOverride": true,
     "typeRoots": [
@@ -64,13 +55,10 @@
     /* Type declaration files to be included in compilation. */
     // "types": [],
     // "allowSyntheticDefaultImports": true,  /* Allow default imports from modules with no default export. This does not affect code emit, just typechecking. */
-    "esModuleInterop": false, /* Enables emit interoperability between CommonJS and ES Modules via creation of namespace objects for all imports. Implies 'allowSyntheticDefaultImports'. */
+    "esModuleInterop": true, // Enables emit interoperability between CommonJS and ES Modules via creation of namespace objects for all imports. Implies 'allowSyntheticDefaultImports'. [True] required for importing .glsl-files as strings (otherwise, the import will return `undefined` during runtime)!
+    "allowSyntheticDefaultImports": true,
     // "preserveSymlinks": true,              /* Do not resolve the real path of symlinks. */
     "allowUmdGlobalAccess": false, /* Allow accessing UMD globals from modules. */
-    /* Source Map Options */
-    // "sourceRoot": "A:/src/Sintervania/", /* Specify the location where debugger should locate TypeScript files instead of source locations. */
-    // "sourceRoot": "http://127.0.0.1:8887/", /* Specify the location where debugger should locate TypeScript files instead of source locations. */
-    // "mapRoot": "rom/", /* Specify the location where debugger should locate map files instead of generated locations. */
     "inlineSourceMap": true, /* Emit a single file with source maps instead of having a separate file. */
     "inlineSources": true, /* Emit the source alongside the sourcemaps within a single file; requires '--inlineSourceMap' or '--sourceMap' to be set. */
     /* Experimental Options */
@@ -92,7 +80,7 @@
   "include": [
     "scripts/rom.ts",
     "scripts/rompacker.ts",
-    "scripts/atlasbuilder.ts"
+    "scripts/atlasbuilder.ts",
   ],
   "watchOptions": {
     // Use native file system events for files and directories
