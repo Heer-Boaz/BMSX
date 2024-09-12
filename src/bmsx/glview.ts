@@ -473,10 +473,6 @@ export abstract class GLView extends BaseView {
         const gl = this.glctx;
         const shader = gl.createShader(type)!;
 
-        // Normalize line endings to Unix-style (\n)
-        // source = source.replace(/\r\n/g, '\n');
-        // source = source.replace(/\n/g, '\n');
-
         // Send the source to the shader object
         gl.shaderSource(shader, source);
 
