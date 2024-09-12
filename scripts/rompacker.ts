@@ -101,11 +101,21 @@ function addFile(dirPath: string, filePath: string, arrayOfFiles: string[]): voi
  * @param {string} [filterExtension] - An optional file extension to filter by.
  * @returns {string[]} An array of file paths.
  */
-async function getFiles(dirPath: string, arrayOfFiles?: string[], filterExtension?: string) {
+async function getFiles(dirPath: string, arrayOfFiles?: string[], filterExtension?: string): Promise<string[]> {
 	return getAllNonRootDirs(dirPath, arrayOfFiles, filterExtension);
 }
 
-async function getAllNonRootDirs(dirPath: string, arrayOfFiles: string[] = [], filterExtension?: string) {
+/**
+ * Retrieves all non-root directories within a given directory path.
+ * This function is used to recursively retrieve all subdirectories within a directory.
+ * It also filters out directories with the name "_ignore".
+ *
+ * @param dirPath - The path of the directory to search in.
+ * @param arrayOfFiles - An array to store the paths of the non-root directories.
+ * @param filterExtension - Optional filter for file extensions.
+ * @returns A promise that resolves to an array of non-root directory paths.
+ */
+async function getAllNonRootDirs(dirPath: string, arrayOfFiles: string[] = [], filterExtension?: string): Promise<string[]> {
 	let entries = await readdir(dirPath);
 
 	for (let entry of entries) {
@@ -119,8 +129,18 @@ async function getAllNonRootDirs(dirPath: string, arrayOfFiles: string[] = [], f
 	return arrayOfFiles;
 }
 
-async function getAllFiles(dirPath: string, _arrayOfFiles?: string[], filterExtension?: string) {
-	let files = await readdir(dirPath);
+/**
+ * Recursively retrieves all files in a directory.
+ * If no filterExtension is provided, the function will filter out .rom, .js, .ts, .map, and .tsbuildinfo files.
+ * If a filterExtension is provided, the function will filter out all files that do not have the specified extension.
+ *
+ * @param dirPath - The path of the directory to search in.
+ * @param _arrayOfFiles - An optional array to store the file paths. If not provided, a new array will be created.
+ * @param filterExtension - An optional file extension to filter the files by.
+ * @returns An array of file paths.
+ */
+async function getAllFiles(dirPath: string, _arrayOfFiles?: string[], filterExtension?: string): Promise<string[]> {
+	const files = await readdir(dirPath);
 
 	let arrayOfFiles = _arrayOfFiles || [];
 
@@ -148,13 +168,13 @@ async function getAllFiles(dirPath: string, _arrayOfFiles?: string[], filterExte
 }
 
 async function getRomManifest(dirPath: string): Promise<RomManifest> {
-	let files = await getAllFiles(dirPath, [], '.rommanifest');
+	const files = await getAllFiles(dirPath, [], '.rommanifest');
 
 	if (files.length > 1) {
 		throw new Error(`More than one rommanifest found in ${dirPath}.`);
 	}
 	else if (files.length === 1) {
-		let res = await readFile(files[0]);
+		const res = await readFile(files[0]);
 		// Read the rommanifest file
 		JSON.parse(res.toString()) as RomManifest;
 
@@ -165,16 +185,16 @@ async function getRomManifest(dirPath: string): Promise<RomManifest> {
 
 async function yaml2Json(): Promise<void> {
 	try {
-		let yamlfiles = await getAllFiles('./src', [], '.yaml');
-		for (let file of yamlfiles) {
-			let doc = yaml.load(await readFile(file, 'utf8'));
-			let outfilename = file.replace('.yaml', '.json');
+		const yamlfiles = await getAllFiles('./src', [], '.yaml');
+		for (const file of yamlfiles) {
+			const doc = yaml.load(await readFile(file, 'utf8'));
+			const outfilename = file.replace('.yaml', '.json');
 			await writeFile(outfilename, Buffer.from(encodeuint8arr(JSON.stringify(doc))));
 		}
 		taakAfgevinkt();
 	}
 	catch (err) {
-		console.error(err);
+		throw new Error(`Error converting YAML to JSON: ${err.message}`);
 	}
 }
 
@@ -188,7 +208,7 @@ async function buildAndBundleRomSource(romname: string, bootloader_path: string)
 	const bootloader_ts_path = `${bootloader_path}/bootloader.ts`;
 	return new Promise((resolve, reject) => {
 		try {
-			let writeOutput = createWriteStream(`./rom/${romname}.js`);
+			const writeOutput = createWriteStream(`./rom/${romname}.js`);
 			browserify({
 				debug: true,
 				basedir: '.',
@@ -201,7 +221,7 @@ async function buildAndBundleRomSource(romname: string, bootloader_path: string)
 				// standalone: 'bootrom',
 				entries: [bootloader_ts_path], // Note: this is the entry point for the bundler
 				// Use the stringify transform to include raw files in the bundle, such as GLSL shaders
-				transform: [ ['stringify', { appliesTo: { includeExtensions: ['.glsl'] }, minify: true }] ],
+				transform: [['stringify', { appliesTo: { includeExtensions: ['.glsl'] }, minify: true }]],
 			})
 				.add(bootloader_ts_path)
 				.plugin(tsify, {
@@ -227,6 +247,13 @@ async function buildAndBundleRomSource(romname: string, bootloader_path: string)
 	});
 }
 
+/**
+ * Minifies the game code.
+ * It uses terser to minify the game code and returns the minified output.
+ *
+ * @param infile - The path of the input file.
+ * @returns A promise that resolves to the minified output.
+ */
 async function minifyGamecode(infile: string): Promise<terser.MinifyOutput> {
 	try {
 		let options = <terser.MinifyOptions>{
@@ -288,12 +315,12 @@ async function minifyGamecode(infile: string): Promise<terser.MinifyOutput> {
 			},
 		};
 
-		let gamejs = await readFile(infile, 'utf8');
-		let gamejsMinifiedResult = terser.minify(gamejs, options);
+		const gamejs = await readFile(infile, 'utf8');
+		const gamejsMinifiedResult = terser.minify(gamejs, options);
 		return gamejsMinifiedResult;
 	}
 	catch (err) {
-		return err;
+		throw new Error(`Error minifying game code: ${err.message}`);
 	}
 }
 
@@ -304,6 +331,13 @@ async function minifyGamecode(infile: string): Promise<terser.MinifyOutput> {
  * @returns {Promise<any>} A promise that resolves when the game HTML and manifest files have been built.
  */
 async function buildGameHtmlAndManifest(rom_name: string, title: string, short_name: string): Promise<any> {
+	/**
+	 * Loads an image from the specified file path and converts it to a base64 string.
+	 *
+	 * @param filepath - The path of the image file to load.
+	 * @returns A promise that resolves to the base64 string representation of the image.
+	 * @throws An error if there is an issue reading the file.
+	 */
 	async function loadImgAndConvertToBase64String(filepath: string): Promise<string> {
 		try {
 			const image = await readFile(filepath);
@@ -313,7 +347,7 @@ async function buildGameHtmlAndManifest(rom_name: string, title: string, short_n
 		}
 	}
 
-	let html, romjs, zipjs;
+	let html: string, romjs: string, zipjs: string;
 	try {
 		html = await readFile("./gamebase.html", 'utf8');
 		romjs = (await readFile("./rom/rom.js", 'utf8')).replace('Object.defineProperty(exports, "__esModule", { value: true });', '');
@@ -321,7 +355,7 @@ async function buildGameHtmlAndManifest(rom_name: string, title: string, short_n
 	} catch (error) {
 		throw new Error(`Error reading files while building HTML and Manifest files: ${error.message}`);
 	}
-	let options = {
+	const options = {
 		compress: {
 			arrows: false
 		},
@@ -335,17 +369,17 @@ async function buildGameHtmlAndManifest(rom_name: string, title: string, short_n
 			webkit: true,
 		}
 	};
-	let romjsMinified = (await terser.minify(romjs, options)).code!;
-	let bmsx_base64ed = await loadImgAndConvertToBase64String("./rom/bmsx.png");
-	let d_pad_neutral_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-neutral.png");
-	let d_pad_u_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-u.png");
-	let d_pad_ru_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-ru.png");
-	let d_pad_r_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-r.png");
-	let d_pad_rd_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-rd.png");
-	let d_pad_d_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-d.png");
-	let d_pad_ld_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-ld.png");
-	let d_pad_l_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-l.png");
-	let d_pad_lu_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-lu.png");
+	const romjsMinified = (await terser.minify(romjs, options)).code!;
+	const bmsx_base64ed = await loadImgAndConvertToBase64String("./rom/bmsx.png");
+	const d_pad_neutral_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-neutral.png");
+	const d_pad_u_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-u.png");
+	const d_pad_ru_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-ru.png");
+	const d_pad_r_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-r.png");
+	const d_pad_rd_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-rd.png");
+	const d_pad_d_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-d.png");
+	const d_pad_ld_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-ld.png");
+	const d_pad_l_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-l.png");
+	const d_pad_lu_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-lu.png");
 
 	return new Promise<any>((resolve, reject) => {
 		minify({
@@ -380,7 +414,7 @@ async function buildGameHtmlAndManifest(rom_name: string, title: string, short_n
 				writeFile("./dist/game_debug.html", await transformHtml(html, true));
 
 				// Update the manifest.json-file that is used for app-versions of the webpage
-				let manifest = (await readFile("./rom/manifest.json", 'utf8')).replace('#title', title).replace('#short_name', short_name);
+				const manifest = (await readFile("./rom/manifest.json", 'utf8')).replace('#title', title).replace('#short_name', short_name);
 
 				// Write updated manifest to dist-folder
 				await writeFile("./dist/manifest.webmanifest", manifest);
@@ -398,17 +432,17 @@ async function buildGameHtmlAndManifest(rom_name: string, title: string, short_n
  * @returns {Object} An object containing the sanitized name of the audio file and its metadata.
  */
 function parseAudioMeta(filename: string): { sanitizedName: string, meta: AudioMeta; } {
-	let priorityregex = /@p\=\d+/;
-	let priorityresult = priorityregex.exec(filename);
-	let prioritystr = priorityresult ? priorityresult[0] : undefined;
-	let priority = prioritystr ? parseInt(prioritystr.slice(3)) : 0;
+	const priorityregex = /@p\=\d+/;
+	const priorityresult = priorityregex.exec(filename);
+	const prioritystr = priorityresult ? priorityresult[0] : undefined;
+	const priority = prioritystr ? parseInt(prioritystr.slice(3)) : 0;
 
-	let loopregex = /@l\=\d+(,\d+)?/;
-	let loopresult = loopregex.exec(filename);
-	let loopstr = loopresult ? loopresult[0] : undefined;
-	let loop = loopstr ? parseFloat(loopstr.replace(',', '.').slice(3)) : null;
+	const loopregex = /@l\=\d+(,\d+)?/;
+	const loopresult = loopregex.exec(filename);
+	const loopstr = loopresult ? loopresult[0] : undefined;
+	const loop = loopstr ? parseFloat(loopstr.replace(',', '.').slice(3)) : null;
 
-	let sanitized = filename.replace(priorityregex, '').replace(loopregex, '').replace('@m', '');
+	const sanitized = filename.replace(priorityregex, '').replace(loopregex, '').replace('@m', '');
 	return {
 		sanitizedName: sanitized,
 		meta:
@@ -420,11 +454,25 @@ function parseAudioMeta(filename: string): { sanitizedName: string, meta: AudioM
 	};
 }
 
+/**
+ * Compresses the given content using the zip algorithm and returns the compressed content as a Uint8Array.
+ *
+ * @param content - The content to be compressed.
+ * @returns The compressed content as a Uint8Array.
+ */
 function zip(content: Buffer): Uint8Array {
-	let toCompress = new Uint8Array(content);
+	const toCompress = new Uint8Array(content);
 	return pako.deflate(toCompress);
 }
 
+/**
+ * Deploys a ROM file to a remote server using FTP.
+ * Currently is not used, but can be used to deploy ROMs to a remote server.
+ *
+ * @param romname - The name of the ROM file.
+ * @param title - The title of the ROM.
+ * @returns A Promise that resolves when the deployment is successful, or rejects with an error if the deployment fails.
+ */
 async function deploy(romname: string, title: string): Promise<any> {
 	return new Promise<any>((resolve, reject) => {
 		const outfile = romname.concat('.rom');
@@ -492,8 +540,8 @@ async function deploy(romname: string, title: string): Promise<any> {
  * @returns An object containing the name, extension, and type of the resource file.
  */
 function getResMetaByFilename(filepath: string): { name: string, ext: string, type: string; } {
-	let name = parse(filepath).name.replace(' ', '').toLowerCase();
-	let ext = parse(filepath).ext.toLowerCase();
+	const name = parse(filepath).name.replace(' ', '').toLowerCase();
+	const ext = parse(filepath).ext.toLowerCase();
 	let type: string;
 
 	switch (name) {
@@ -527,21 +575,21 @@ function getResMetaByFilename(filepath: string): { name: string, ext: string, ty
  * @returns An array of `ResourceMeta` objects.
  */
 async function getResMetaList(respath: string, romname: string) {
-	let arrayOfFiles = await getFiles(respath) ?? []; // Also handle corner case where we don't have any resources by adding "?? []"
+	const arrayOfFiles = await getFiles(respath) ?? []; // Also handle corner case where we don't have any resources by adding "?? []"
 	const megarom_filename = `${romname}.min.js`;
 	addFile("./rom", megarom_filename, arrayOfFiles); // Add source at the end
 
-	let result: Array<ResourceMeta> = [];
+	const result: Array<ResourceMeta> = [];
 
 	let imgid = 1;
 	let sndid = 1;
 	for (let i = 0; i < arrayOfFiles.length; i++) {
-		let filepath = arrayOfFiles[i];
-		let meta = getResMetaByFilename(filepath);
+		const filepath = arrayOfFiles[i];
+		const meta = getResMetaByFilename(filepath);
 
-		let type = meta.type;
+		const type = meta.type;
 		let name = meta.name;
-		let ext = meta.ext;
+		const ext = meta.ext;
 		switch (type) {
 			case 'image':
 				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: imgid });
@@ -610,19 +658,6 @@ function extractBoundingBox(image: Image): Area {
 		}
 	}
 
-	// const weightedCenterX = totalAlpha ? totalWeightX / totalAlpha : 0;
-	// const weightedCenterY = totalAlpha ? totalWeightY / totalAlpha : 0;
-
-	// // Adjust bounding box based on weighted average
-	// const width = endx - startx;
-	// const height = endy - starty;
-
-	// const adjustedStartX = Math.max(startx, weightedCenterX - width / 2);
-	// const adjustedEndX = Math.min(endx, weightedCenterX + width / 2);
-	// const adjustedStartY = Math.max(starty, weightedCenterY - height / 2);
-	// const adjustedEndY = Math.min(endy, weightedCenterY + height / 2);
-
-	// return { start: { x: ~~adjustedStartX, y: ~~adjustedStartY }, end: { x: ~~adjustedEndX, y: ~~adjustedEndY } };
 	return { start: { x: ~~startx, y: ~~starty }, end: { x: ~~endx, y: ~~endy } };
 }
 
@@ -773,16 +808,16 @@ function calculateCenterPoint(boundingBox: Area): vec2 {
  * @returns An array of loaded resources.
  */
 async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>, rom_name: string): Promise<ILoadedResource[]> {
-	let resMetaList = await getResMetaList(respath, rom_name);
+	const resMetaList = await getResMetaList(respath, rom_name);
 	let loadedResources: Array<ILoadedResource> = [];
 	for (let i = 0; i < resMetaList.length; i++) {
-		let meta = resMetaList[i];
+		const meta = resMetaList[i];
 
-		let name = meta.name;
-		let ext = meta.ext;
-		let type = meta.type;
-		let id = meta.id;
-		let buffer = meta.filepath ? await readFile(meta.filepath) : null;
+		const name = meta.name;
+		const ext = meta.ext;
+		const type = meta.type;
+		const id = meta.id;
+		const buffer = meta.filepath ? await readFile(meta.filepath) : null;
 
 		let img: any = undefined;
 
@@ -834,27 +869,26 @@ async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>, r
  * @param romname The name of the ROM pack to build the list for.
  */
 async function buildResourceList(respath: string, romname: string) {
-	let tsimgout = new Array<string>();
-	let tssndout = new Array<string>();
-
-	let metalist = await getResMetaList(respath, romname);
+	const tsimgout = new Array<string>();
+	const tssndout = new Array<string>();
+	const metalist = await getResMetaList(respath, romname);
 
 	tsimgout.push(BOILERPLATE_RESOURCE_ID_BITMAP);
 	tssndout.push(BOILERPLATE_RESOURCE_ID_AUDIO);
 
 	for (let i = 0; i < metalist.length; i++) {
-		let current = metalist[i];
+		const current = metalist[i];
 
-		let type = current.type;
-		let name = current.name;
+		const type = current.type;
+		const name = current.name;
 		switch (type) {
 			case 'image':
 			case 'atlas':
-				let property_to_add = `\t${name} = '${name}',`;
+				const property_to_add = `\t${name} = '${name}',`;
 				tsimgout.push(`${property_to_add}`);
 				break;
 			case 'audio':
-				let enummember_to_add = `\t${name} = '${name}',`;
+				const enummember_to_add = `\t${name} = '${name}',`;
 				tssndout.push(`${enummember_to_add}`);
 				break;
 			case 'romlabel':
@@ -866,9 +900,9 @@ async function buildResourceList(respath: string, romname: string) {
 	tsimgout.push("}\n");
 	tssndout.push("}\n");
 
-	let total_output: string = tsimgout.concat(tssndout).join('\n');
+	const total_output: string = tsimgout.concat(tssndout).join('\n');
 
-	let targetPath = respath.replace('/res', '/resourceids.ts');
+	const targetPath = respath.replace('/res', '/resourceids.ts');
 	await writeFile(targetPath, total_output);
 }
 
@@ -913,14 +947,14 @@ async function buildRompack(rom_name: string, respath: string): Promise<void> {
 		}
 		taakAfgevinkt();
 
-		let jsonout = new Array<RomAsset>();
+		const jsonout = new Array<RomAsset>();
 		let bufferPointer = 0;
 		let romlabel_buffer: Buffer = undefined;
 		for (let i = 0; i < loadedResources.length; i++) {
-			let res: ILoadedResource = loadedResources[i];
-			let type = res.type;
+			const res: ILoadedResource = loadedResources[i];
+			const type = res.type;
 			let name = res.name;
-			let resid = res.id;
+			const resid = res.id;
 			switch (type) {
 				case 'romlabel':
 					if (i > 0) throw '"romlabel.png" must appear at start of the ResourceMeta-list, while building the rompack ("romresources.json")! Thus, this is a bug and a fix is required!';
@@ -984,7 +1018,7 @@ async function buildRompack(rom_name: string, respath: string): Promise<void> {
 					break;
 				case 'audio':
 					{
-						let parsedMeta = parseAudioMeta(res.filepath);
+						const parsedMeta = parseAudioMeta(res.filepath);
 						jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: undefined, audiometa: parsedMeta.meta });
 					}
 					bufferPointer += res.buffer.length;
@@ -1004,7 +1038,7 @@ async function buildRompack(rom_name: string, respath: string): Promise<void> {
 		}
 
 		if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-			let i = loadedResources.findIndex(x => x.type === 'atlas');
+			const i = loadedResources.findIndex(x => x.type === 'atlas');
 			const atlasSize = { x: generated_atlas.width, y: generated_atlas.height };
 			const atlasbuffer: Buffer = (<any>generated_atlas).toBuffer('image/png');
 			buffers.push(atlasbuffer);
@@ -1084,6 +1118,11 @@ async function compileRomLoaderScriptIfNewer() {
 	taakAfgevinkt();
 }
 
+const codeFileExtensions = ['.ts', '.glsl', '.js', '.jsx', '.tsx', '.html', '.css', '.json', '.xml'];
+
+const isCodeFile = (filename: string) => codeFileExtensions.some(extension => filename.endsWith(extension));
+const shouldCheckFile = (filename: string, checkCodeFiles: boolean, checkAssets: boolean) => (checkCodeFiles && isCodeFile(filename)) || checkAssets;
+
 /**
  * Determines whether a rebuild of the ROM is required based on the modification times of the bootloader and resource files.
  * @param {string} romname - The name of the ROM.
@@ -1092,13 +1131,13 @@ async function compileRomLoaderScriptIfNewer() {
  * @returns {Promise<boolean>} A Promise that resolves with a boolean indicating whether a rebuild is required.
  */
 async function isRebuildRequired(romname: string, bootloaderPath: string, resPath: string): Promise<boolean> {
-	const distPath = `./dist/${romname}.rom`;
-	const distPath2 = `./rom/${romname}.min.js`; // TODO: LELIJK! PROBLEEM IS DAT NORMALE .JS WORDT VERPLAATST NAAR ROOT-FOLDER (EN DAT IS OOK LELIJK!)
+	const romFilePath = `./dist/${romname}.rom`;
+	const minifiedJsFilePath = `./rom/${romname}.min.js`; // TODO: LELIJK! PROBLEEM IS DAT NORMALE .JS WORDT VERPLAATST NAAR ROOT-FOLDER (EN DAT IS OOK LELIJK!)
 
 	async function checkPaths() {
 		try {
-			await access(distPath);
-			await access(distPath2);
+			await access(romFilePath);
+			await access(minifiedJsFilePath);
 			return false;
 		} catch {
 			return true;
@@ -1108,10 +1147,10 @@ async function isRebuildRequired(romname: string, bootloaderPath: string, resPat
 		return true;
 	}
 
-	const romStats = await stat(distPath);
+	const romStats = await stat(romFilePath);
 	const romMtime = romStats.mtime;
 
-	const shouldRebuild = async (dir: string, checkTsFiles: boolean, checkAssets: boolean): Promise<boolean> => {
+	const shouldRebuild = async (dir: string, checkCodeFiles: boolean, checkAssets: boolean): Promise<boolean> => {
 		try {
 			await access(dir);
 		} catch {
@@ -1119,22 +1158,19 @@ async function isRebuildRequired(romname: string, bootloaderPath: string, resPat
 		}
 		const entries = await readdir(dir, { withFileTypes: true });
 
-		for (const entry of entries) {
+		for (let entry of entries) {
 			const entryPath = join(dir, entry.name);
 
 			if (entry.isDirectory()) {
 				if (entry.name === '_ignore') {
 					continue;
 				}
-				const rebuild = await shouldRebuild(entryPath, checkTsFiles, checkAssets);
+				const rebuild = await shouldRebuild(entryPath, checkCodeFiles, checkAssets);
 				if (rebuild) {
 					return true;
 				}
 			} else {
-				if (
-					(checkTsFiles && entry.name.endsWith('.ts')) ||
-					(checkAssets)
-				) {
+				if (shouldCheckFile(entry.name, checkCodeFiles, checkAssets)) {
 					try {
 						await access(entryPath);
 						const entryStats = await stat(entryPath);
@@ -1153,11 +1189,11 @@ async function isRebuildRequired(romname: string, bootloaderPath: string, resPat
 		return false;
 	};
 
-	const shouldCheckTsFiles = dir => dir.startsWith(bootloaderPath);
+	const shouldCheckCodeFiles = dir => dir.startsWith(bootloaderPath);
 	const shouldCheckAssets = dir => dir.startsWith(resPath);
 
-	return await shouldRebuild(bootloaderPath, shouldCheckTsFiles(bootloaderPath), shouldCheckAssets(bootloaderPath)) ||
-		await shouldRebuild(resPath, shouldCheckTsFiles(resPath), shouldCheckAssets(resPath)) ||
+	return await shouldRebuild(bootloaderPath, shouldCheckCodeFiles(bootloaderPath), shouldCheckAssets(bootloaderPath)) ||
+		await shouldRebuild(resPath, shouldCheckCodeFiles(resPath), shouldCheckAssets(resPath)) ||
 		await shouldRebuild('src/bmsx', true, false);
 }
 
