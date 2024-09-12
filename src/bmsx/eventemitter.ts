@@ -19,13 +19,31 @@ type EventSubscriberType = IEventSubscriber | (IEventSubscriber & IParentable) |
  * A generic event dispatcher that can be used to manage listeners and dispatch events.
  */
 export class EventEmitter implements IRegisterable {
+    /**
+     * Gets the identifier of the event emitter.
+     * Hardcoded to 'event_emitter'.
+     *
+     * @returns The identifier of the event emitter.
+     */
     public get id(): Identifier { return 'event_emitter'; }
+    /**
+     * Disposes the object and deregisters it from the registry.
+     */
     public dispose(): void {
         Registry.instance.deregister(this);
     }
 
+    /**
+     * Map of listeners for each emitter scope.
+     */
     private emitterScopeListeners: EmitterScopeListenerMap = {};
+    /**
+     * Map of event listeners registered on the global scope.
+     */
     private globalScopeListeners: EventListenerMap = {};
+    /**
+     * The singleton instance of the EventEmitter class.
+     */
     private static _instance: EventEmitter;
 
     public static get instance(): EventEmitter {
@@ -35,6 +53,9 @@ export class EventEmitter implements IRegisterable {
         return EventEmitter._instance;
     }
 
+    /**
+     * Constructs a new instance of the EventEmitter class.
+     */
     constructor() {
         Registry.instance.register(this);
     }
@@ -97,6 +118,13 @@ export class EventEmitter implements IRegisterable {
         }
     }
 
+    /**
+     * Emits an event to its listeners.
+     *
+     * @param event_name - The name of the event.
+     * @param emitter - The emitter object.
+     * @param args - Additional arguments to pass to the listeners.
+     */
     emit(event_name: string, emitter: IIdentifiable, ...args: any[]): void {
         this.emitterScopeListeners[event_name]?.[emitter.id]?.forEach(({ listener, subscriber }) => {
             listener.call(subscriber, event_name, emitter, ...args);
@@ -106,6 +134,13 @@ export class EventEmitter implements IRegisterable {
         });
     }
 
+    /**
+     * Removes a listener function from the specified event and emitter.
+     *
+     * @param event_name - The name of the event.
+     * @param listener - The listener function to remove.
+     * @param emitter - Optional. The emitter name. If not provided, 'all' is used as the default emitter.
+     */
     off(event_name: string, listener: Function, emitter?: string): void {
         const key = emitter || 'all';
         const emitterListeners = this.emitterScopeListeners[event_name]?.[key];
@@ -120,6 +155,11 @@ export class EventEmitter implements IRegisterable {
         }
     }
 
+    /**
+     * Removes a subscriber from the event emitter.
+     *
+     * @param subscriber - The subscriber to be removed.
+     */
     removeSubscriber(subscriber: any): void {
         for (const event in this.emitterScopeListeners) {
             for (const key in this.emitterScopeListeners[event]) {
@@ -139,6 +179,9 @@ export class EventEmitter implements IRegisterable {
         }
     }
 
+    /**
+     * Clears all the listeners from the event emitter.
+     */
     clear(): void {
         this.emitterScopeListeners = {};
         this.globalScopeListeners = {};
@@ -178,11 +221,10 @@ export type EventSubscription = {
 };
 
 /**
- * Represents a constructor function that supports event subscriptions.
+ * Represents an event subscriber.
  */
 export interface IEventSubscriber {
     eventSubscriptions?: EventSubscription[]
-    // on?(event_name: string, handler: Function, emitter_id: Identifier): void;
 }
 
 /**
