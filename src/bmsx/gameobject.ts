@@ -52,7 +52,6 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 		this.components[component.constructor.name] = component;
 	}
 
-
 	/**
 	 * Removes a component from the game object.
 	 *
@@ -108,15 +107,16 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 	 */
 	public disposeFlag: boolean;
 
+	protected _pos: vec3;
+	public get pos(): vec3 { return this._pos; }
 	/**
 	 * The position of the game object. The position is represented as a 3D vector with x, y, and z coordinates.
 	 * The z-coordinate is used for layering objects in the game world.
 	 * see {@link setPosZ} for setting the z-coordinate, as it handles the z-coordinate bounds.
 	 */
-	protected _pos: vec3;
-	public get pos(): vec3 { return this._pos; }
 	public set pos(pos: vec3) { this._pos = pos; }
 	public get x(): number { return this.pos.x; }
+
 	/**
 	 * Sets the x-coordinate of the object's position and handles collisions with tiles and screen edges.
 	 * @param newx The new x-coordinate to set.
@@ -137,9 +137,10 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 	}
 
 	public get y(): number { return this.pos.y; }
+
 	/**
-	 * Sets the x-coordinate of the object's position and handles collisions with tiles and screen edges.
-	 * @param newx The new x-coordinate to set.
+	 * Sets the y-coordinate of the object's position and handles collisions with tiles and screen edges.
+	 * @param y The new y-coordinate to set.
 	 */
 	public set y(y: number) {
 		this.setPosY(y);
