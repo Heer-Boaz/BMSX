@@ -21,27 +21,71 @@ const DEFAULT_SIZE_VALUES: [number, number, number] = [0, 0, 0];
  */
 @insavegame
 export class GameObject implements vec3, IComponentContainer, IStateful {
+	/**
+	 * Represents a map of components associated with their respective keys.
+	 */
 	public components: KeyToComponentMap = {};
+	/**
+	 * The object tracker for the game object.
+	 */
 	public objectTracker?: ObjectTracker;
 
+	/**
+	 * Retrieves a component of the specified type from the game object.
+	 *
+	 * @template T - The type of the component to retrieve.
+	 * @param constructor - The constructor function of the component.
+	 * @returns The component of the specified type if found, otherwise undefined.
+	 */
 	getComponent<T extends Component>(constructor: ComponentConstructor<T>): T | undefined {
 		return this.components[constructor.name] as T | undefined;
 	}
 
+	/**
+	 * Adds a component to the game object.
+	 *
+	 * @template T - The type of the component.
+	 * @param {T} component - The component to be added.
+	 * @returns {void}
+	 */
 	addComponent<T extends Component>(component: T): void {
 		this.components[component.constructor.name] = component;
 	}
 
-	removeComponent<T extends Component>(constructor: ComponentConstructor<T>): void {
+
+	/**
+	 * Removes a component from the game object.
+	 *
+	 * @template T - The type of the component to remove.
+	 * @param constructor - The constructor of the component to remove.
+	 * @returns void
+	 */
+	 removeComponent<T extends Component>(constructor: ComponentConstructor<T>): void {
 		const component = this.components[constructor.name];
 		if (!component) return;
 		component.dispose();
 		delete this.components[constructor.name];
 	}
 
+	/**
+	 * Updates the components with the given tag.
+	 * The components are updated in two phases: preprocessing and postprocessing.
+	 * The preprocessing update is performed first, followed by the postprocessing update
+	 * with the given arguments.
+	 * The components are filtered based on the specified tag. Only components with the
+	 * specified tags will be updated.
+	 * Note that the tags are different for preprocessing and postprocessing updates, allowing
+	 * for more fine-grained control over the update process.
+	 *
+	 * @param {ComponentTag} tag - The tag to filter components.
+	 * @param {...any} args - Additional arguments to pass to the component update methods.
+	 * @returns {void}
+	 */
 	updateComponentsWithTag(tag: ComponentTag, ...args: any[]): void {
 		// Update components with the given tag (preprocessing)
 		Object.values(this.components).filter(component => component.hasPreprocessingTag(tag)).forEach(component => component.enabled && component.preprocessingUpdate(...args));
+
+		// TODO: I BELIEVE THIS IS A BUG. THE IS NO DISTINGUISHING BETWEEN PREPROCESSING AND POSTPROCESSING IF CALLING THIS METHOD DIRECTLY.
 		// Update components with the given tag (postprocessing)
 		Object.values(this.components).filter(component => component.hasPostprocessingTag(tag)).forEach(component => component.enabled && component.postprocessingUpdate({ params: args }));
 	}
@@ -54,9 +98,21 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 		return this.id;
 	}
 
+	/**
+	 * The identifier of the game object, which is a unique string that is generated based on the class name and a unique number.
+	 */
 	public id: Identifier;
+	/**
+	 * Indicates whether the object is flagged for disposal.
+	 * If true, the object will be disposed of at the end of the game's current update cycle.
+	 */
 	public disposeFlag: boolean;
 
+	/**
+	 * The position of the game object. The position is represented as a 3D vector with x, y, and z coordinates.
+	 * The z-coordinate is used for layering objects in the game world.
+	 * see {@link setPosZ} for setting the z-coordinate, as it handles the z-coordinate bounds.
+	 */
 	protected _pos: vec3;
 	public get pos(): vec3 { return this._pos; }
 	public set pos(pos: vec3) { this._pos = pos; }
@@ -70,6 +126,12 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 	}
 
 	@update_tagged_components('position_update_axis')
+	/**
+	 * Sets the X position of the game object.
+	 * This method is called by the setter for the related property to allow for decorating the method with the `update_tagged_components` decorator, as accessors cannot be decorated directly.
+	 *
+	 * @param x - The new X position value.
+	 */
 	protected setPosX(x: number) {
 		this.pos.x = x; // Set position here, as accessors cannot be decorated with update_tagged_components
 	}
@@ -84,11 +146,23 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 	}
 
 	@update_tagged_components('position_update_axis')
+	/**
+	 * Sets the Y position of the game object.
+	 * This method is called by the setter for the related property to allow for decorating the method with the `update_tagged_components` decorator, as accessors cannot be decorated directly.
+	 *
+	 * @param y - The new Y position value.
+	 */
 	protected setPosY(y: number) {
 		this.pos.y = y; // Set position here, as accessors cannot be decorated with update_tagged_components
 	}
 
 	public get z(): number { return this.pos.z; }
+	/**
+	 * Sets the z-coordinate of the game object. The z-coordinate is used for layering objects in the game world.
+	 * The z-coordinate is clamped between 0 and ZCOORD_MAX.
+	 *
+	 * @param z - The new z-coordinate value.
+	 */
 	public set z(z: number) {
 		if (z < 0) z = 0;
 		else if (z > ZCOORD_MAX) z = ZCOORD_MAX;
@@ -96,10 +170,21 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 	}
 
 	@update_tagged_components('position_update_axis')
+	/**
+	 * Sets the Z position of the game object.
+	 * This method is called by the setter for the related property to allow for decorating the method with the `update_tagged_components` decorator, as accessors cannot be decorated directly.
+	 *
+	 * @param z - The new Z position value.
+	 */
 	protected setPosZ(z: number) {
 		this.pos.z = z; // Set position here, as accessors cannot be decorated with update_tagged_components
 	}
 
+	/**
+	 * The size of the game object. The size is represented as a 3D vector with x, y, and z coordinates.
+	 * Note that the size is only used for collision detection if the game object has no collision area and
+	 * no bounding boxes. If the game object has a collision area or bounding boxes, the size is not used for collision detection.
+	 */
 	protected _size: vec3;
 	public get size(): vec3 { return this._size; }
 	public set size(value: vec3) { this._size = value; }
@@ -240,6 +325,7 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 	/**
 	 * Gets the hitbox area of the game object.
 	 * If the hitbox is not initialized, it creates a new area using the provided coordinates.
+	 * If there is no hitbox and no bounding boxes, it returns an area based on the position and size of the game object.
 	 * @returns The hitbox area of the game object.
 	 */
 	public get hitbox(): Area {
@@ -348,8 +434,16 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 		$.registry.deregister(this);
 	}
 
+	/**
+	 * Abstract method that is called when the game object should be painted as part of the game loop.
+	 */
 	public paint?(): void;
+	/**
+	 * Abstract method that is called after the game object has been painted as part of the game loop.
+	 * This method is used for post-processing effects such as lighting effects.
+	 */
 	public postpaint?(): void; // Post-processing such as lighting effects or the characters of an ASCII-buffer in case of an ASCII-sprite
+
 	/**
 	 * A callback function that is called when the object is loaded.
 	 */
