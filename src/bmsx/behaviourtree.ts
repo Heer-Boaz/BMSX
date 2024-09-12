@@ -103,6 +103,7 @@ function buildBehaviorTree(config: BehaviorTreeDefinition, id: BehaviorTreeID): 
             return new ActionNode(id, config.action, config.priority, config.parameters);
         case 'CompositeAction':
             return new CompositeActionNode(id, config.actions.map(actionConfig => buildBehaviorTree(actionConfig, id) as ActionNode), config.priority, config.parameters);
+        default: throw new Error(`Unknown behavior tree node type: ${(config as any).type}`);
     }
 }
 
