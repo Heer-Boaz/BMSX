@@ -11,6 +11,7 @@
     },
     "include": [
         ".",
-        "rompack.ts"
+        "rompack.ts",
+        // "glsl.d.ts"
     ]
 }

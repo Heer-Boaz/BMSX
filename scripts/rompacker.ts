@@ -6,6 +6,7 @@ import { exec } from 'child_process';
 const Gauge = require('gauge');
 import * as browserify from 'browserify';
 const tsify = require('tsify');
+const stringify = require('stringify');
 
 import * as terser from 'terser';
 import * as term from 'terminal-kit';
@@ -199,8 +200,15 @@ async function buildAndBundleRomSource(romname: string, bootloader_path: string)
 				ignore: ['node_modules', 'dist', 'rom'],
 				// standalone: 'bootrom',
 				entries: [bootloader_ts_path], // Note: this is the entry point for the bundler
+				transform: [ ['stringify', { appliesTo: { includeExtensions: ['.glsl'] }, minify: true }] ],
 			})
 				.add(bootloader_ts_path)
+				// Use the stringify transform to include raw files in the bundle, such as GLSL shaders
+				// .transform(rawify, { extensions: ['.glsl'] }) // Apply rawify transform correctly
+				// .transform(stringify, {
+				// 	appliesTo: { includeExtensions: ['.glsl'] },
+				// 	minify: true,  // Optional: Minify the GLSL source
+				// })
 				.plugin(tsify, {
 					noImplicitAny: false,
 					files: [bootloader_ts_path],
@@ -247,6 +255,9 @@ async function minifyGamecode(infile: string): Promise<terser.MinifyOutput> {
 						"exports",
 						"global",
 						"factory",
+						"vertexShaderCode",
+						"fragmentShaderTextureCode",
+						"fragmentShaderCRTCode",
 						"__extends",
 						"__assign",
 						"__rest",
@@ -1275,10 +1286,13 @@ async function main() {
 			title = romManifest?.title ?? title;
 			short_name = romManifest?.short_name ?? short_name;
 
-			rebuildRequired = await isRebuildRequired(rom_name, bootloader_path, respath);
-			if (!rebuildRequired) {
-				writeOut('Rebuild skipped: game rom was newer than code/assets (use --force option to ignore this check).\n');
+			if (!force) {
+				rebuildRequired = await isRebuildRequired(rom_name, bootloader_path, respath);
+				if (!rebuildRequired) {
+					writeOut('Rebuild skipped: game rom was newer than code/assets (use --force option to ignore this check).\n');
+				}
 			}
+			else rebuildRequired = true;
 
 			if (!deployToFtp) takenlijst.pop();
 			if (!rebuildRequired) {
