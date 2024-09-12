@@ -2,7 +2,9 @@ import { GameObject } from "./gameobject";
 import type { Identifier } from "./game";
 
 /**
- * Class representing an ObjectTracker.
+ * Class representing an ObjectTracker, which tracks the properties of game objects.
+ * It can be used to determine which properties have changed since the last update, based on
+ * a list of tracked properties that are specified when tracking an object.
  */
 export class ObjectTracker {
     /**

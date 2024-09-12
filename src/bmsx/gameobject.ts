@@ -262,7 +262,7 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 
 		// Get the updates from the ObjectTracker
 		if (this.objectTracker) {
-			let updates = this.objectTracker.getUpdates();
+			const updates = this.objectTracker.getUpdates();
 
 			// Apply the updates to the Blackboard
 			blackboard.applyUpdates(updates);

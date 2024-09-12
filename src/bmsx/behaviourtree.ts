@@ -19,11 +19,24 @@ export type BehaviorTreeDefinition =
     | { type: 'Action'; action: NodeAction; parameters?: any[]; priority?: number }
     | { type: 'CompositeAction'; actions: BehaviorTreeDefinition[]; parameters?: any[]; priority?: number };
 
+/**
+ * Represents the definitions of behavior trees that are stored in the library to be constructed later.
+ * It allows for the definition of behavior trees in a more declarative way, similar to how state machines
+ * are defined in a declarative way.
+ * @type { { [key: BehaviorTreeID]: BehaviorTreeDefinition } | null }
+ */
 export var BehaviorTreeDefinitions: { [key: BehaviorTreeID]: BehaviorTreeDefinition } | null = null;
+
+/**
+ * Represents the collection of behavior trees that are constructed based on the definitions.
+ * This happens when the game is initialized and is similar to how the state machines are constructed
+ * from their definitions that are defined in a declarative way.
+ * @type {Object.<BehaviorTreeID, BTNode> | null}
+ */
 export var BehaviorTrees: { [key: BehaviorTreeID]: BTNode } | null = null;
 
 /**
- * Sets up the behavior tree definition library.
+ * Sets up the behavior tree definition library.This function should be called during the game initialization.
  */
 export function setup_bt_library(): void {
     BehaviorTrees = {};
@@ -34,7 +47,7 @@ export function setup_bt_library(): void {
 }
 
 /**
- * Sets up the behavior tree definition library.
+ * Sets up the behavior tree definition library.This function should be called during the game initialization.
  */
 export function setup_btdef_library(): void {
     BehaviorTreeDefinitions = {};
@@ -57,11 +70,12 @@ let behaviorTreeDefinitionsBuilders: { [key: BehaviorTreeID]: () => BehaviorTree
 
 /**
  * Builds a behavior tree based on the provided configuration.
+ * Note the recursive nature of this function, which allows for the construction of complex behavior trees,
+ * where each node represents a tree or sub tree.
  *
  * @param config - The behavior tree definition.
- * @param blackboard - The blackboard object used for storing data during the execution of the behavior tree.
- * @param targetId - The ID of the target game object.
- * @returns The root node of the built behavior tree.
+ * @param id - The identifier of the behavior tree.
+ * @returns The root node of the built behavior tree, which can consist of multiple nodes (sub trees).
  */
 function buildBehaviorTree(config: BehaviorTreeDefinition, id: BehaviorTreeID): BTNode {
     switch (config.type) {
@@ -170,8 +184,8 @@ export type BTStatus = 'RUNNING' | 'SUCCESS' | 'FAILED';
  * Represents the feedback of a behavior tree node.
  */
 export type BTNodeFeedback = {
-    status: BTStatus,
-    updates?: (blackboard: Blackboard) => void;  // Detailed information about the action taken or decision made
+    status: BTStatus, // The status of the node after the tick operation
+    updates?: (blackboard: Blackboard) => void; // The updates to apply to the blackboard
 };
 
 /**
@@ -179,36 +193,58 @@ export type BTNodeFeedback = {
  */
 @insavegame
 export class Blackboard implements IIdentifiable {
+    // The identifier of the blackboard
     public id: string;
+    // The data stored in the blackboard
     public data: { [key: string]: any } = {};
+    // The node data stored in the blackboard (used for storing node-specific data, such as wait times))
     public nodedata: { [key: string]: any } = {};
+    // The execution path of the behavior tree (used for debugging)
     public executionPath: { node: BTNode, result: BTNodeFeedback }[] = [];
 
+    // The constructor for the blackboard, which initializes the blackboard with the specified identifier
     constructor(_id: string) {
         this.id = _id;
     }
 
+    // The method for setting a value in the blackboard with the specified key
     set<T>(key: string, value: T): void {
         this.data[key] = value;
     }
 
+    // The method for getting a value from the blackboard with the specified key
     get<T>(key: string): T | undefined {
         return this.data[key] as T;
     }
 
+    // The method for clearing all the data in the blackboard that is node-specific
     public clearAllNodeData(): void {
         delete this.nodedata;
         this.nodedata = {};
     }
 
+    // Returns whether an action is currently in progress
     public get actionInProgress(): boolean {
         return this.nodedata['actionInProgress'] ?? false;
     }
 
+    // Sets whether an action is currently in progress
     public set actionInProgress(inProgress: boolean) {
         this.nodedata['actionInProgress'] = inProgress;
     }
 
+    /**
+     * Applies updates to the behaviour tree.
+     * It is used in combination with the ObjectTracker, which tracks changes of given properties in game objects.
+     * The updates are applied to the blackboard, which is used by the behaviour tree to determine the next action.
+     * This allows for easily updating the blackboard with the changes that have occurred in the game objects.
+     *
+     * @param updates - An object containing updates for the behaviour tree.
+     * @param updates.id - The ID of the update.
+     * @param updates.id[].property - The property to update.
+     * @param updates.id[].value - The new value for the property.
+     * @param updates.id[].key - The key associated with the property (optional).
+     */
     applyUpdates(updates: { [id: string]: Array<{ property: string, value: any, key?: string }> }): void {
         for (let properties of Object.values(updates)) {
             for (let { value, key } of properties) {
@@ -216,13 +252,24 @@ export class Blackboard implements IIdentifiable {
             }
         }
     }
+
+    /**
+     * Copies the specified properties from the given target object to the blackboard.
+     * This is useful for copying properties from a game object to the blackboard for use in the behavior tree,
+     * such as copying the position of an enemy to the blackboard for use in pathfinding.
+     *
+     * @template T - The type of the target object.
+     * @param {T} target - The target object from which to copy the properties.
+     * @param {Array<{ property: keyof T, key?: string }>} properties - The properties to copy, along with optional custom keys.
+     * @returns {void}
+     */
     public copyPropertiesToBlackboard<T extends GameObject>(target: T, properties: Array<{ property: keyof T, key?: string }>): void {
         for (let { property, key } of properties) {
             // If no key is given, use the property name as the key
             key = key ?? (property as string);
 
             // Get the property value from the target
-            let value = target[property];
+            const value = target[property];
 
             // Set the blackboard entry
             this.set(key as string, value);
@@ -235,6 +282,12 @@ export class Blackboard implements IIdentifiable {
  */
 export type BehaviorTreeID = string;
 
+/**
+ * Represents a base class for behavior tree nodes.
+ * @remarks
+ * This class provides common properties and methods for behavior tree nodes.
+ * @typeparam T - The type of the target object.
+ */
 export abstract class BTNode implements IIdentifiable {
     public id: BehaviorTreeID;
     public priority: number;
@@ -254,6 +307,7 @@ export abstract class BTNode implements IIdentifiable {
         this.id = id;
         this.priority = _priority;
     }
+
     debug_tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback {
         // Call the actual tick method
         const result = this.tick(targetid, blackboard);
@@ -267,6 +321,9 @@ export abstract class BTNode implements IIdentifiable {
     abstract tick(targetid: Identifier, blackboard: Blackboard): BTNodeFeedback;
 }
 
+/**
+ * Represents an abstract class for a parametrized behavior tree node.
+ */
 export abstract class ParametrizedBTNode extends BTNode {
     public parameters: any[];
 
@@ -371,7 +428,18 @@ export class ParallelNode extends BTNode {
     }
 }
 
+/**
+ * Represents a decorator function for a behavior tree node.
+ *
+ * @param status - The current status of the node.
+ * @param targetid - The identifier of the target node.
+ * @param blackboard - The blackboard object used by the behavior tree.
+ * @returns The updated status of the node.
+ */
 type NodeDecorator = (status: BTStatus, targetid: Identifier, blackboard: Blackboard) => BTStatus;
+/**
+ * Represents a decorator node in a behavior tree.
+ */
 export class DecoratorNode extends BTNode {
     public child: BTNode;
     public decorator: (status: BTStatus, targetid: Identifier, blackboard: Blackboard) => BTStatus;
@@ -389,13 +457,30 @@ export class DecoratorNode extends BTNode {
     }
 }
 
-export let InvertorDecorator: NodeDecorator = (status: BTStatus, _targetid: Identifier, _blackboard: Blackboard) => {
+/**
+ * InvertorDecorator is a decorator function that inverts the status of a node.
+ *
+ * @param status - The current status of the node.
+ * @param _targetid - The identifier of the target node.
+ * @param _blackboard - The blackboard object.
+ * @returns The inverted status of the node.
+ */
+export const InvertorDecorator: NodeDecorator = (status: BTStatus, _targetid: Identifier, _blackboard: Blackboard) => {
     if (status === 'SUCCESS') return 'FAILED';
     if (status === 'FAILED') return 'SUCCESS';
     return status;
 };
 
-export let WaitForActionCompletionDecorator: NodeDecorator = (status: BTStatus, _targetid: Identifier, blackboard: Blackboard, actionName?: string) => {
+/**
+ * Decorator that waits for the completion of an action.
+ *
+ * @param status - The current status of the action.
+ * @param _targetid - The identifier of the target.
+ * @param blackboard - The blackboard object.
+ * @param actionName - The name of the action.
+ * @returns The updated status of the action.
+ */
+export const WaitForActionCompletionDecorator: NodeDecorator = (status: BTStatus, _targetid: Identifier, blackboard: Blackboard, actionName?: string) => {
     if (status === 'RUNNING') {
         if (actionName) { blackboard.set(actionName, true); }
         else { blackboard.actionInProgress = true; }
@@ -406,8 +491,27 @@ export let WaitForActionCompletionDecorator: NodeDecorator = (status: BTStatus, 
     return status;
 };
 
+/**
+ * Represents a condition function for a node in a behavior tree.
+ *
+ * @param blackboard - The blackboard object used for storing and retrieving data.
+ * @param parameters - Additional parameters that can be passed to the condition function.
+ * @returns A boolean value indicating whether the condition is met or not.
+ */
 type NodeCondition = (blackboard: Blackboard, ...parameters: any[]) => boolean;
+/**
+ * Represents a modifier for a node condition.
+ *
+ * The modifier can be one of the following:
+ * - 'NOT': Negates the condition.
+ * - null: No modifier applied.
+ */
 type NodeConditionModifier = 'NOT' | null;
+/**
+ * Represents a modifier for composite conditions in a node.
+ *
+ * The modifier can be either 'AND' or 'OR'.
+ */
 type NodeCompositeConditionModifier = 'AND' | 'OR';
 
 /**
@@ -436,6 +540,10 @@ export class ConditionNode extends ParametrizedBTNode {
     }
 }
 
+/**
+ * Represents a composite condition node in a behavior tree.
+ * This node evaluates a set of conditions and returns a feedback based on the operator.
+ */
 export class CompositeConditionNode extends ParametrizedBTNode {
     public conditions: NodeCondition[];
     public operator: NodeCompositeConditionModifier;
