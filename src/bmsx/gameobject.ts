@@ -16,13 +16,6 @@ const DEFAULT_POSITION_VALUES: [number, number, number] = [0, 0, 0];
 const DEFAULT_SIZE_VALUES: [number, number, number] = [0, 0, 0];
 
 /**
- * Represents a static GameObject.
- */
-interface IGameObjectStatic {
-	autoAddComponents?: ComponentConstructor<Component>[];
-}
-
-/**
  * Represents a game object with a position, size, state, and hitbox.
  * Implements both vec2 and vec3 interfaces.
  */
@@ -218,15 +211,30 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 		this._boundingBoxes = boundingBoxes;
 	}
 
+	/**
+	 * Checks if the game object has any bounding boxes.
+	 *
+	 * @returns {boolean} True if the game object has bounding boxes, false otherwise.
+	 */
 	public hasBoundingBoxes(): boolean {
 		return this._boundingBoxes && this._boundingBoxes.length > 0;
 	}
 
+	/**
+	 * Retrieves the bounding boxes of the game object.
+	 * @returns An array of Area objects representing the bounding boxes.
+	 */
 	public get boundingBoxes(): Area[] {
 		return this._boundingBoxes.map(box => new_area(box.start.x + this.x, box.start.y + this.y, box.end.x + this.x, box.end.y + this.y));
 	}
 
+	/**
+	 * Indicates whether the object is hittable. If false, collision detection will be skipped and always return false.
+	 */
 	public hittable: boolean;
+	/**
+	 * Indicates whether the game object should be rendered or not.
+	 */
 	public visible: boolean;
 
 	/**
@@ -238,6 +246,11 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 		return new_area(this.hitbox_left, this.hitbox_top, this.hitbox_right, this.hitbox_bottom);
 	}
 
+	/**
+	 * Returns the middle point of the game object's hitbox.
+	 *
+	 * @returns The middle point as a `vec2` object.
+	 */
 	public get middlepoint(): vec2 {
 		return middlepoint_area(this.hitbox);
 	}
@@ -311,6 +324,15 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 		this.sc.start();
 	}
 
+	/**
+	 * Dispose method for the game object.
+	 *
+	 * This method performs the following actions:
+	 * 1. Unsubscribes from events.
+	 * 2. Disposes of all components attached to the game object.
+	 * 3. Disposes all state machines.
+	 * 4. Deregisters the object from the entity registry.
+	 */
 	public dispose(): void {
 		// Unsubscribe from events
 		$.event_emitter.removeSubscriber(this);
@@ -328,6 +350,9 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 
 	public paint?(): void;
 	public postpaint?(): void; // Post-processing such as lighting effects or the characters of an ASCII-buffer in case of an ASCII-sprite
+	/**
+	 * A callback function that is called when the object is loaded.
+	 */
 	public onloaded?: () => void;
 
 	/**
@@ -337,18 +362,51 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 		this.disposeFlag = true;
 	}
 
+	/**
+	 * Represents a callback function that is triggered when a collision occurs with another GameObject.
+	 *
+	 * @param src - The GameObject that triggered the collision.
+	 */
 	public oncollide?: (src: GameObject) => void;
+	/**
+	 * Callback function that is triggered when the game object collides with a wall.
+	 * @param dir - The direction of the collision.
+	 */
 	public onWallcollide?: (dir: Direction) => void;
+	/**
+	 * Callback function that is called when the GameObject leaves the screen.
+	 *
+	 * @param ik - The GameObject that is leaving the screen.
+	 * @param dir - The direction in which the GameObject is leaving the screen.
+	 * @param old_x_or_y - The previous x or y coordinate of the GameObject before leaving the screen.
+	 */
 	public onLeaveScreen?: (ik: GameObject, dir: Direction, old_x_or_y: number) => void;
+	/**
+	 * Callback function that is triggered when the game object is leaving the screen.
+	 *
+	 * @param ik - The game object that is leaving the screen.
+	 * @param dir - The direction in which the game object is leaving the screen.
+	 * @param old_x_or_y - The previous x or y coordinate of the game object before leaving the screen.
+	 */
 	public onLeavingScreen?: (ik: GameObject, dir: Direction, old_x_or_y: number) => void;
 
 	private _direction: Direction;
 	public oldDirection: Direction;
 
+	/**
+	 * Gets the direction of the game object.
+	 *
+	 * @returns The direction of the game object.
+	 */
 	public get direction(): Direction {
 		return this._direction;
 	}
 
+	/**
+	 * Sets the direction of the game object.
+	 *
+	 * @param value - The new direction to set.
+	 */
 	public set direction(value: Direction) {
 		this.oldDirection = this._direction;
 		this._direction = value;
@@ -398,11 +456,20 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 		}
 	}
 
+	/**
+	 * Initializes the setup for the onLoad event.
+	 */
 	@onload
 	onLoadSetup() {
 		$.event_emitter.initClassBoundEventSubscriptions(this);
 	}
 
+	/**
+	 * Initializes the linked finite state machines (FSMs) for the current instance.
+	 *
+	 * This method retrieves the constructor of the current instance and checks if it has the 'linkedFSMs' property.
+	 * If the property exists, it iterates over the FSM names and creates the state machines using the 'add_statemachine' method of the 'sc' object.
+	 */
 	protected initializeLinkedFSMs() {
 		// Get the constructor of the current instance
 		const constructor = this.constructor as ConstructorWithFSMProperty;
@@ -416,6 +483,15 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 		}
 	}
 
+	/**
+	 * Initializes the behavior trees for the game object.
+	 *
+	 * This method creates behavior trees based on the 'linkedBTs' property of the constructor.
+	 * It iterates over the behavior tree names and creates the behavior trees along with their associated blackboards.
+	 *
+	 * @remarks
+	 * This method should be called during the initialization of the game object.
+	 */
 	protected initializeBehaviorTrees() {
 		// Get the constructor of the current instance
 		const constructor = this.constructor as ConstructorWithBTProperty;
@@ -531,6 +607,12 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 		return new_area(startX, startY, endX, endY);
 	}
 
+	/**
+	 * Detects AABB collision between two areas.
+	 * @param a1 The first area.
+	 * @param a2 The second area.
+	 * @returns True if there is a collision, false otherwise.
+	 */
 	public static detect_aabb_collision_areas(a1: Area, a2: Area): boolean {
 		return !(a1.start.x > a2.end.x || a1.end.x < a2.start.x || a1.end.y < a2.start.y || a1.start.y > a2.end.y);
 	}
@@ -619,11 +701,9 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 	}
 }
 
+// A type representing a constructor for GameObject instances.
+// It takes optional parameters _id and _fsm_id, and any additional arguments.
 export type GameObjectConstructorBase = new (_id?: Identifier, _fsm_id?: string, ...args: any[]) => GameObject;
-export type GameObjectConstructorBaseOrAbstract = GameObjectConstructorBase | AbstractConstructor<GameObject>;
 
-/**
- * Represents a constructor for the GameObject.
- * @typeparam T - The type of the GameObject.
- */
-export type GameObjectConstructorWithComponentList = GameObjectConstructorBaseOrAbstract & IGameObjectStatic;
+// A type representing either a concrete GameObject constructor or an abstract constructor for GameObject.
+export type GameObjectConstructorBaseOrAbstract = GameObjectConstructorBase | AbstractConstructor<GameObject>;

@@ -1,11 +1,52 @@
 import { onload, insavegame } from './gameserializer';
 import { EventEmitter, EventSubscription } from './eventemitter';
-import { GameObjectConstructorWithComponentList } from './gameobject';
+import { type GameObjectConstructorBaseOrAbstract } from './gameobject';
 import { AbstractConstructor } from './game';
 import type { IDisposable, IIdentifiable, Identifier } from "./game";
 import { Registry } from './registry';
 
+/**
+ * Represents a constructor that includes the autoAddComponents property.
+ * This interface ensures that the constructor has the necessary static property
+ * required by decorators or other functions that need to automatically add components.
+ *
+ * The autoAddComponents property is an array of Component constructors that should be
+ * automatically added to instances of the class.
+ */
+interface IConstructorWithAutoAddComponents {
+	autoAddComponents?: ComponentConstructor<Component>[];
+}
+
+/**
+ * Represents a constructor for the GameObject that includes additional static properties or methods.
+ * This constructor can be either a base constructor or an abstract constructor.
+ * It ensures that the constructor has the necessary static properties or methods required by decorators or other functions.
+ *
+ * This type can be extended to include specific properties required by decorators.
+ * For example, the Component decorator requires the constructor to be (derived from) GameObject, is allowed to be abstract, and to have an autoAddComponents property as well.
+ *
+ * @typeparam T - The type of the GameObject.
+ */
+export type GameObjectConstructorWithComponentList = GameObjectConstructorBaseOrAbstract & IConstructorWithAutoAddComponents;
+
+/**
+ * Represents a mapping of keys to components.
+ */
 export type KeyToComponentMap = { [key: string]: Component };
+/**
+ * Represents a constructor for a component.
+ *
+ * @typeparam T - The type of the component.
+ * @param args - The arguments to be passed to the component constructor.
+ * @returns An instance of the component or an abstract constructor.
+ *
+ * @remarks
+ * This type allows abstract component classes to be used as component constructors.
+ * It is useful when using abstract component classes as component types in other components.
+ * For example, it allows a collision component to have a list of collision components as a property.
+ *
+ * @notImplementedYet
+ */
 export type ComponentConstructor<T extends Component> = new (...args: any[]) => T | AbstractConstructor<new (...args: any[]) => T>; // Allows abstract Component classes to be used as component constructors. This is necessary to allow abstract Component classes to be used as component types in other components (e.g. to allow a collision component to have a list of collision components as a property). NOT IMPLEMENTED YET.
 export type ComponentId = string;
 
@@ -45,23 +86,60 @@ export interface IComponentContainer extends IIdentifiable, IDisposable {
     updateComponentsWithTag(tag: ComponentTag, ...args: any[]): void;
 }
 
+/**
+ * Represents the parameters for updating a component as part of the postprocessing update.
+ * Note that the preprocessing update does not require additional parameters for the `returnvalue` (as it has not be invoked yet)
+ * and thus does not need a separate type.
+ */
 export type ComponentUpdateParams = {
-    params: any[];
-    returnvalue?: any;
+    params: any[]; // The parameters of the original method
+    returnvalue?: any; //  The return value of the original method
 };
 
 @insavegame
+/**
+ * Represents an abstract component that can be added to a game object.
+ * @abstract
+ * @class
+ * @implements IIdentifiable
+ */
 export abstract class Component implements IIdentifiable {
+    /**
+     * The identifier of the parent component.
+     */
     public parentid: Identifier;
+    /**
+     * The component id is the parent id plus the component name.
+     */
     public id: ComponentId; // The component id is the parent id + the component name
     public static tagsPre: Set<ComponentTag>;
     public static tagsPost: Set<ComponentTag>;
     public static eventSubscriptions: EventSubscription[]; // Note: This property is only used by the event emitter
+    /**
+     * Gets the parent of the component.
+     *
+     * @returns The parent component.
+     */
     public get parent() { return Registry.instance.get(this.parentid); }
     protected _enabled: boolean;
+    /**
+     * Sets the enabled state of the component. If the component is disabled, it will not be updated.
+     *
+     * @param value - The new value for the enabled state.
+     */
     public set enabled(value: boolean) { this._enabled = value; }
+    /**
+     * Gets the value indicating whether the component is enabled. If the component is disabled, it will not be updated.
+     *
+     * @returns {boolean} The value indicating whether the component is enabled.
+     */
     public get enabled() { return this._enabled; }
 
+    /**
+     * Constructs a new component with the specified parent id.
+     *
+     * @param parentid - The identifier of the parent.
+     */
     constructor(parentid: Identifier) {
         this.parentid ??= parentid; // Store the parent id for later use
         this.id ??= this.parentid + '_' + this.constructor.name; // Note: A component can be added once per game object
@@ -69,6 +147,9 @@ export abstract class Component implements IIdentifiable {
         parentid && this.onloadSetup(); // Initialize the component if parent id is specified. If not, then the component was constructed as part of deserialization and will be initialized later.
     }
 
+    /**
+     * Disposes the component by disabling it, removing event subscriptions, and deregistering it from the entity registry.
+     */
     public dispose() {
         this.enabled = false;
         // Remove event subscriptions
@@ -118,24 +199,6 @@ export abstract class Component implements IIdentifiable {
             if (this.enabled) handler(...args);
         };
         $.event_emitter.initClassBoundEventSubscriptions(this, wrappedHandler);
-        // const constr = this.constructor as IEventSubscriber;
-        // if (!constr.eventSubscriptions) return; // No event subscriptions
-
-        // const eventEmitter = EventEmitter.instance;
-        // constr.eventSubscriptions.forEach(subscription => { // Iterate over all event subscriptions
-        //     const handler = this[subscription.handlerName].bind(this); // Bind the handler to the component instance
-        //     let emitterFilter: string;
-        //     switch (subscription.scope) {
-        //         case 'all': emitterFilter = undefined; break;
-        //         case 'parent':
-        //             emitterFilter = (this as Component & { parentid?: string }).parentid;
-        //             if (!emitterFilter) throw Error(`Cannot subscribe Component ${this.id} to event ${subscription.eventName} with scope ${subscription.scope} as the class (instance) ${this.constructor.name} does not have a "parentid".`);
-        //             break;
-        //         case 'self': emitterFilter = this.id; break;
-        //     }
-        //     eventEmitter.on(subscription.eventName, wrappedHandler, this, emitterFilter); // Subscribe to the event
-        // });
-
     }
 
     // Implement this method to handle preprocessing updates
