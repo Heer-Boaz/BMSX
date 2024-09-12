@@ -325,12 +325,41 @@ async function minifyGamecode(infile: string): Promise<terser.MinifyOutput> {
 }
 
 /**
+ * Applies a set of replacements to a given string.
+ *
+ * @param str - The string to apply replacements to.
+ * @param replacements - An object mapping placeholders to their replacement values.
+ * @returns The string with replacements applied.
+ */
+function applyStringReplacements(str: string, replacements: { [key: string]: string }): string {
+    let result = str;
+    for (const [key, value] of Object.entries(replacements)) {
+        result = result.replace(new RegExp(key, 'g'), value);
+    }
+    return result;
+}
+
+/**
  * Builds the game HTML and manifest files for the specified ROM.
  * @param {string} rom_name - The name of the ROM.
  * @param {string} title - The title of the game.
+ * @param {string} short_name - The short name of the game.
  * @returns {Promise<any>} A promise that resolves when the game HTML and manifest files have been built.
  */
 async function buildGameHtmlAndManifest(rom_name: string, title: string, short_name: string): Promise<any> {
+	const IMAGE_PATHS = [
+		"./rom/bmsx.png",
+		"./rom/d-pad-neutral.png",
+		"./rom/d-pad-u.png",
+		"./rom/d-pad-ru.png",
+		"./rom/d-pad-r.png",
+		"./rom/d-pad-rd.png",
+		"./rom/d-pad-d.png",
+		"./rom/d-pad-ld.png",
+		"./rom/d-pad-l.png",
+		"./rom/d-pad-lu.png"
+	];
+
 	/**
 	 * Loads an image from the specified file path and converts it to a base64 string.
 	 *
@@ -347,6 +376,52 @@ async function buildGameHtmlAndManifest(rom_name: string, title: string, short_n
 		}
 	}
 
+	/**
+	 * Loads multiple images and converts them to base64 strings.
+	 *
+	 * @param paths - An array of image file paths to load.
+	 * @returns A promise that resolves to an object mapping file paths to base64 strings.
+	 */
+	async function loadImages(paths: string[]): Promise<{ [key: string]: string }> {
+		const images: { [key: string]: string } = {};
+		for (const path of paths) {
+			images[path] = await loadImgAndConvertToBase64String(path);
+		}
+		return images;
+	}
+
+	/**
+	 * Transforms the HTML template by replacing placeholders with actual values.
+	 *
+	 * @param htmlToTransform - The HTML template to transform.
+	 * @param cssMinified - The minified CSS string.
+	 * @param debug - A boolean indicating whether to include debug information.
+	 * @returns A promise that resolves to the transformed HTML string.
+	 */
+	async function transformHtml(htmlToTransform: string, cssMinified: string, debug: boolean): Promise<string> {
+		const replacements = {
+			'//#romjs': debug ? romjs : romjsMinified,
+			'//#zipjs': zipjs,
+			'/\\*#css\\*/': cssMinified,
+			'#title': title,
+			'//#debug': `bootrom.debug = ${debug};\n\t\tbootrom.romname = getRomNameFromUrlParameter() ?? '${rom_name}';\n`,
+			'#romname': rom_name,
+			'#outfile': `${rom_name}.rom`,
+			'#bmsxurl': `data:image/png;base64,${images["./rom/bmsx.png"]}`,
+			'#d-pad-neutral': `data:image/png;base64,${images["./rom/d-pad-neutral.png"]}`,
+			'#d-pad-u': `data:image/png;base64,${images["./rom/d-pad-u.png"]}`,
+			'#d-pad-ru': `data:image/png;base64,${images["./rom/d-pad-ru.png"]}`,
+			'#d-pad-r': `data:image/png;base64,${images["./rom/d-pad-r.png"]}`,
+			'#d-pad-rd': `data:image/png;base64,${images["./rom/d-pad-rd.png"]}`,
+			'#d-pad-d': `data:image/png;base64,${images["./rom/d-pad-d.png"]}`,
+			'#d-pad-ld': `data:image/png;base64,${images["./rom/d-pad-ld.png"]}`,
+			'#d-pad-l': `data:image/png;base64,${images["./rom/d-pad-l.png"]}`,
+			'#d-pad-lu': `data:image/png;base64,${images["./rom/d-pad-lu.png"]}`
+		};
+
+		return applyStringReplacements(htmlToTransform, replacements);
+	}
+
 	let html: string, romjs: string, zipjs: string;
 	try {
 		html = await readFile("./gamebase.html", 'utf8');
@@ -355,6 +430,7 @@ async function buildGameHtmlAndManifest(rom_name: string, title: string, short_n
 	} catch (error) {
 		throw new Error(`Error reading files while building HTML and Manifest files: ${error.message}`);
 	}
+
 	const options = {
 		compress: {
 			arrows: false
@@ -369,17 +445,9 @@ async function buildGameHtmlAndManifest(rom_name: string, title: string, short_n
 			webkit: true,
 		}
 	};
+
 	const romjsMinified = (await terser.minify(romjs, options)).code!;
-	const bmsx_base64ed = await loadImgAndConvertToBase64String("./rom/bmsx.png");
-	const d_pad_neutral_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-neutral.png");
-	const d_pad_u_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-u.png");
-	const d_pad_ru_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-ru.png");
-	const d_pad_r_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-r.png");
-	const d_pad_rd_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-rd.png");
-	const d_pad_d_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-d.png");
-	const d_pad_ld_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-ld.png");
-	const d_pad_l_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-l.png");
-	const d_pad_lu_base64ed = await loadImgAndConvertToBase64String("./rom/d-pad-lu.png");
+	const images = await loadImages(IMAGE_PATHS);
 
 	return new Promise<any>((resolve, reject) => {
 		minify({
@@ -388,39 +456,27 @@ async function buildGameHtmlAndManifest(rom_name: string, title: string, short_n
 			output: "./gamebase.min.css",
 			callback: async (err, cssMinified: string) => {
 				if (!cssMinified) {
-					reject(err);
+					return reject(err);
 				}
 
-				let transformHtml = async (htmlToTransform: string, debug: boolean) => {
-					return htmlToTransform.replace('//#romjs', debug ? romjs : romjsMinified)
-						.replace('//#zipjs', zipjs)
-						.replace('/*#css*/', cssMinified)
-						.replace(/#title/g, title) // https://stackoverflow.com/questions/44324892/how-can-i-replace-multiple-characters-in-a-string
-						.replace('//#debug', `bootrom.debug = ${debug};\n\t\tbootrom.romname = getRomNameFromUrlParameter() ?? '#romname';\n`)
-						.replace('#romname', `${rom_name}`) // Note: this is the name of the ROM, not the title of the game and is used for getting the JS-file for debugging
-						.replace('#outfile', `${rom_name}.rom`)
-						.replace('#bmsxurl', "data:image/png;base64," + bmsx_base64ed)
-						.replace('#d-pad-neutral', "data:image/png;base64," + d_pad_neutral_base64ed)
-						.replace('#d-pad-u', "data:image/png;base64," + d_pad_u_base64ed)
-						.replace('#d-pad-ru', "data:image/png;base64," + d_pad_ru_base64ed)
-						.replace('#d-pad-r', "data:image/png;base64," + d_pad_r_base64ed)
-						.replace('#d-pad-rd', "data:image/png;base64," + d_pad_rd_base64ed)
-						.replace('#d-pad-d', "data:image/png;base64," + d_pad_d_base64ed)
-						.replace('#d-pad-ld', "data:image/png;base64," + d_pad_ld_base64ed)
-						.replace('#d-pad-l', "data:image/png;base64," + d_pad_l_base64ed)
-						.replace('#d-pad-lu', "data:image/png;base64," + d_pad_lu_base64ed)
-				};
-				writeFile("./dist/game.html", await transformHtml(html, false));
-				writeFile("./dist/game_debug.html", await transformHtml(html, true));
+				try {
+					const transformedHtml = await transformHtml(html, cssMinified, false);
+					const transformedDebugHtml = await transformHtml(html, cssMinified, true);
 
-				// Update the manifest.json-file that is used for app-versions of the webpage
-				const manifest = (await readFile("./rom/manifest.json", 'utf8')).replace('#title', title).replace('#short_name', short_name);
+					await writeFile("./dist/game.html", transformedHtml);
+					await writeFile("./dist/game_debug.html", transformedDebugHtml);
 
-				// Write updated manifest to dist-folder
-				await writeFile("./dist/manifest.webmanifest", manifest);
+					// Update the manifest.json-file that is used for app-versions of the webpage
+					const manifest = (await readFile("./rom/manifest.json", 'utf8')).replace('#title', title).replace('#short_name', short_name);
 
-				taakAfgevinkt();
-				resolve(null);
+					// Write updated manifest to dist-folder
+					await writeFile("./dist/manifest.webmanifest", manifest);
+
+					taakAfgevinkt();
+					resolve(null);
+				} catch (error) {
+					reject(error);
+				}
 			}
 		});
 	});
@@ -480,8 +536,6 @@ async function deploy(romname: string, title: string): Promise<any> {
 
 		ftpDeploy.on("upload-error", function (data) {
 			// Error already handled through catch.
-			// This handler will remove default handler that outputs error message
-			// reject(data.err); // data will also include filename, relativePath, and other goodies
 		});
 
 		const config = {
@@ -511,27 +565,6 @@ async function deploy(romname: string, title: string): Promise<any> {
 				reject(err);
 			});
 	});
-	// import simpleGit, { SimpleGit } from 'simple-git';
-
-	// async function deploy(romname: string, title: string): Promise<any> {
-	//     return new Promise<any>((resolve, reject) => {
-	//         log("Deploying... ");
-	//         const outfile = romname.concat('.rom');
-	//         const localRoot = "./dist";
-	//         const git: SimpleGit = simpleGit();
-
-	//         git.init()
-	//             .then(() => git.addConfig('user.name', 'Your Name'))
-	//             .then(() => git.addConfig('user.email', 'Your Email'))
-	//             .then(() => git.add('./*'))
-	//             .then(() => git.commit('Auto-deploy commit'))
-	//             .then(() => git.addRemote('origin', 'https://username:password@github.com/username/repo.git'))
-	//             .then(() => git.push('origin', 'master'))
-	//             .then(() => resolve(null))
-	//             .catch((err: any) => reject(err));
-	//     });
-	// }
-
 }
 
 /**
