@@ -778,7 +778,6 @@ export abstract class GLView extends BaseView {
         // Update the buffers with the new data and draw the images to the texture using the main shader
         const { vertexcoords, texcoords, zcoords, color_override } = this.vertex_shader_data;
         let i = 0;
-        // let totalAwesomeness = 0;
         for (const { options, imgmeta } of this.imagesToDraw) {
             const { pos, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 }, colorize = DEFAULT_VERTEX_COLOR } = options;
             const { width, height } = imgmeta;
@@ -789,7 +788,6 @@ export abstract class GLView extends BaseView {
             bvec.set_color(color_override, i, colorize);
 
             ++i;
-            // ++totalAwesomeness;
             if (i >= MAX_SPRITES) {
                 this.updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, 0);
                 gl.drawArrays(gl.TRIANGLES, 0, 6 * i);
@@ -801,7 +799,6 @@ export abstract class GLView extends BaseView {
             this.updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, 0);
             gl.drawArrays(gl.TRIANGLES, 0, 6 * i);
         }
-        // console.log(`Total awesomeness: ${totalAwesomeness}`);
         // Clear the list of images to draw for the next frame
         this.imagesToDraw = [];
     }
