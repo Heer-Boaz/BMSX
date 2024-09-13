@@ -1,4 +1,4 @@
-import { BaseModel, BehaviorTreeDefinition, Component, Direction, GLView, Game, GameObject, GamepadInputMapping, InputMap, GamepadButton, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, ProhibitLeavingScreenComponent, RomPack, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, insavegame, new_area, new_vec2, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/bmsx';
+import { BaseModel, BehaviorTreeDefinition, Component, Direction, GLView, Game, GameObject, GamepadInputMapping, InputMap, GamepadButton, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, ProhibitLeavingScreenComponent, RomPack, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, insavegame, new_area, new_vec2, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State, SM, snareInstrument } from '../bmsx/bmsx';
 import { BitmapId } from './resourceids';
 
 var _game: Game;
@@ -342,6 +342,37 @@ class gamemodel extends BaseModel {
         return {
             states: {
                 '#game_start': {
+                    enter(this: gamemodel) {
+                        const sequences = [
+                            {
+                                channel: 0,
+                                sequence: [
+                                    { note: 'C4', duration: 1 },
+                                    { note: 'E4', duration: 1 },
+                                    { note: 'G4', duration: 1 },
+                                ]
+                            },
+                            {
+                                channel: 1,
+                                sequence: [
+                                    { note: 'E3', duration: 1 },
+                                    { note: 'G3', duration: 1 },
+                                    { note: 'B3', duration: 1 },
+                                ]
+                            },
+                        ];
+
+
+                        // Play the snare drum at specific intervals
+                        const startTime = 0.0;
+                        SM.playInstrument(snareInstrument, startTime);
+                        SM.playInstrument(snareInstrument, startTime + .5);
+                        SM.playInstrument(snareInstrument, startTime + 1.0);
+                        SM.playInstrument(snareInstrument, startTime + 1.5);
+                        SM.playInstrument(snareInstrument, startTime + 2.0);
+
+                        SM.playSequences(sequences);
+                    },
                     run(this: gamemodel, s: State) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
                         s.to('default');
                     }
