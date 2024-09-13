@@ -745,11 +745,11 @@ export abstract class GLView extends BaseView {
         const _this = $.view as GLView;
         const gl = _this.glctx;
 
-        // Bind the framebuffer so that the rendering output goes to the texture
+        // Bind the framebuffer so that the rendering output goes to the offscreen texture
         this.glctx.bindFramebuffer(this.glctx.FRAMEBUFFER, this.framebuffer);
         // Set the viewport to match the size of the offscreen framebuffer
         gl.viewport(0, 0, this.offscreenCanvasSize.x, this.offscreenCanvasSize.y);
-        // Set the viewport to the dimensions of the 'additional' texture
+        // Set the viewport to the dimensions of the offscreen texture
         this.switchProgram(this.gameShaderProgram);
         gl.bindTexture(gl.TEXTURE_2D, this.textures['_atlas']);
 
@@ -763,7 +763,7 @@ export abstract class GLView extends BaseView {
         gl.vertexAttribPointer(_this.texcoordLocation, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(_this.texcoordLocation);
 
-        // Bind the texcoord buffer and set the texcoord attribute
+        // Bind the z buffer and set the z attribute
         gl.bindBuffer(gl.ARRAY_BUFFER, _this.zBuffer);
         gl.vertexAttribPointer(_this.zcoordLocation, 1, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(_this.zcoordLocation);
