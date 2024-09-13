@@ -1008,7 +1008,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	 * @param gainnode - The gain node used for controlling the volume of sounds.
 	 * @param debug - Whether to enable debug mode. Defaults to false.
 	 */
-	private init_on_boot(rom: RomPack, model: BaseModel, view: BaseView, sndcontext: AudioContext, gainnode: GainNode, debug: boolean = false): Game {
+	private async init_on_boot(rom: RomPack, model: BaseModel, view: BaseView, sndcontext: AudioContext, gainnode: GainNode, debug: boolean = false): Promise<Game> {
 		this._debug = debug ?? this._debug;
 
 		global['debug'] = this.debug;
@@ -1021,7 +1021,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 			$.input.enableOnscreenGamepad();
 		}
 		$.view.init(); // Init the view. Placed here to ensure that the Game object is available to the view and that the Input module is initialized
-		SM.init(rom['snd_assets'], sndcontext, GameOptions.VolumePercentage, gainnode);
+		await SM.init(rom['snd_assets'], sndcontext, GameOptions.VolumePercentage, gainnode);
 
 		if (this.debug) {
 			// @ts-ignore
