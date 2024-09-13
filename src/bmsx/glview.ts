@@ -5,6 +5,14 @@ import vertexShaderCode from './shaders/vertexshader.glsl';
 import gameShaderCode from './shaders/gameshader.glsl';
 import crtShaderCode from './shaders/crtshader.glsl';
 
+/**
+ * Decorator function that catches WebGL errors thrown by the decorated method and throws an error with the error message.
+ *
+ * @param _target - The target object.
+ * @param propertyKey - The name of the decorated method.
+ * @param descriptor - The property descriptor of the decorated method.
+ * @returns The modified property descriptor.
+ */
 function catchWebGLError(_target: any, propertyKey: string, descriptor: PropertyDescriptor): PropertyDescriptor {
     const originalMethod = descriptor.value;
     descriptor.value = function (...args: any[]) {
@@ -21,6 +29,13 @@ function catchWebGLError(_target: any, propertyKey: string, descriptor: Property
     return descriptor;
 }
 
+/**
+ * Retrieves the string representation of a WebGL error code.
+ *
+ * @param gl - The WebGL rendering context.
+ * @param error - The WebGL error code.
+ * @returns The string representation of the WebGL error code.
+ */
 function getWebGLErrorString(gl: WebGLRenderingContext, error: number): string {
     switch (error) {
         case gl.NO_ERROR: return "NO_ERROR";
@@ -39,6 +54,8 @@ function getWebGLErrorString(gl: WebGLRenderingContext, error: number): string {
 const bvec = {
     /**
      * Sets the vertices of a rectangle in a Float32Array, using the given parameters.
+     * It is used to define the geometry of a rectangle in a vertex buffer,
+     * which can then be used for rendering in a WebGL.
      * @param v - The Float32Array to set the vertices in.
      * @param i - The offset in the Float32Array to start setting the vertices, in terms of rectangles.
      * @param x - The x-coordinate of the top-left corner of the rectangle.
@@ -49,18 +66,22 @@ const bvec = {
      * @param sy - The vertical scaling factor.
      */
     set: function (v: Float32Array, i: number, x: number, y: number, w: number, h: number, sx: number, sy: number): void {
+        // This math defines two triangles that form a rectangle. The vertices are stored in a specific order to ensure that the rectangle is rendered correctly.
+
+        // Calculate the opposite corner coordinates
         const x2 = x + w * sx;
         const y2 = y + h * sy;
 
         // Convert the rectangle index to the vertex index
         const offset = i * 12;
 
+        // Set the vertices of the rectangle in the Float32Array
         v[offset] = x, v[offset + 1] = y,
-            v[offset + 2] = x2, v[offset + 3] = y,
-            v[offset + 4] = x, v[offset + 5] = y2,
-            v[offset + 6] = x, v[offset + 7] = y2,
-            v[offset + 8] = x2, v[offset + 9] = y,
-            v[offset + 10] = x2, v[offset + 11] = y2;
+        v[offset + 2] = x2, v[offset + 3] = y,
+        v[offset + 4] = x, v[offset + 5] = y2,
+        v[offset + 6] = x, v[offset + 7] = y2,
+        v[offset + 8] = x2, v[offset + 9] = y,
+        v[offset + 10] = x2, v[offset + 11] = y2;
     },
 
     /**
@@ -202,6 +223,12 @@ export abstract class GLView extends BaseView {
         }) as WebGL2RenderingContext;
     }
 
+    /**
+     * Initializes the GLView by setting up the WebGL context, creating the game and CRT shader programs, setting up the vertex shader locations,
+     * creating the buffers, setting up the game shader locations, setting up the textures, creating the CRT shader programs, setting up the CRT shader locations, creating the CRT vertex buffer, creating the CRT shader texcoord buffer, setting the default uniform values, and creating the framebuffer and texture.
+     * @private
+     * @returns void
+     */
     override init(): void {
         super.init();
         this.setupGLContext();
@@ -219,7 +246,14 @@ export abstract class GLView extends BaseView {
         this.handleResize(); // This is needed to set the viewport size and create the framebuffer and texture
     }
 
-    private setDefaultUniformValues() {
+    /**
+     * Sets the default uniform values for the game and CRT shaders.
+     * These values include the scale, resolution vector, and texture location for the game shader,
+     * and the scale, resolution vector, and noise, color bleed, blur, glow, and fringing flags for the CRT shader.
+     * @private
+     * @returns void
+     */
+    private setDefaultUniformValues(): void {
         const gl = this.glctx;
         gl.useProgram(this.gameShaderProgram);
         gl.uniform1f(this.gameShaderScaleLocation, 2.0);
@@ -344,6 +378,11 @@ export abstract class GLView extends BaseView {
         gl.enableVertexAttribArray(this.CRTShaderTexcoordLocation);
     }
 
+    /**
+     * Sets up the buffers for the game shader.
+     * This method initializes the vertex, texture coordinate, z-coordinate, and color override buffers for the game shader.
+     * The buffers are created and bound to the respective attributes in the shader program.
+     */
     @catchWebGLError
     private setupBuffers(): void {
         const buffers = {
@@ -359,6 +398,10 @@ export abstract class GLView extends BaseView {
         this.color_overrideBuffer = buffers.color_override;
     }
 
+    /**
+     * Sets up the attribute locations for the game shader program.
+     * This method initializes the attribute locations for the vertex, texture coordinate, z-coordinate, and color override attributes.
+     */
     @catchWebGLError
     private setupGameShaderLocations(): void {
         this.glctx.useProgram(this.gameShaderProgram);
@@ -369,6 +412,10 @@ export abstract class GLView extends BaseView {
         this.setupAttribute(this.color_overrideBuffer, this.color_overrideLocation, COLOR_OVERRIDE_ATTRIBUTE_SIZE);
     }
 
+    /**
+     * Sets up the textures used in the game.
+     * This method initializes the textures object and creates the atlas texture from the '_atlas' image in the ROM pack.
+     */
     @catchWebGLError
     private setupTextures(): void {
         // Initialize the textures object as an empty object.
@@ -380,9 +427,15 @@ export abstract class GLView extends BaseView {
         // The atlas is created from the '_atlas' image in the ROM pack, which is loaded before the GLView is created (during loading of the ROM pack)
         this.textures['_atlas'] = this.createTexture(BaseView.images['_atlas']); // Create the texture from the atlas image
 
-        // The 'additional' texture is created in createFramebufferAndTexture
+        // The 'post_processing_source_texture' texture is created in createFramebufferAndTexture
     }
 
+    /**
+     * Setups the WebGL context for rendering the game.
+     * This method sets the blend function, depth function, and enables blending, depth testing, and face culling.
+     * @private
+     * @returns void
+     */
     @catchWebGLError
     private setupGLContext(): void {
         const gl = this.glctx;
@@ -518,7 +571,16 @@ export abstract class GLView extends BaseView {
     }
 
     @catchWebGLError
-    // TODO - WHY AM I RECREATING THE FRAMEBUFFER AND TEXTURE FOR A RESIZE EVENT?
+    /**
+     * Creates a new framebuffer and texture.
+     *
+     * @remarks
+     * This method creates a new texture and framebuffer in the WebGL context.
+     * It also attaches the texture to the framebuffer and sets up a depth buffer.
+     *
+     * @private
+     * @returns void
+     */
     private createFramebufferAndTexture(): void {
         const gl = this.glctx;
 
@@ -528,22 +590,22 @@ export abstract class GLView extends BaseView {
         }
         if (!this.textures) {
             this.textures = {};
-        } else if (this.textures['additional']) {
-            gl.deleteTexture(this.textures['additional']);
+        } else if (this.textures['post_processing_source_texture']) {
+            gl.deleteTexture(this.textures['post_processing_source_texture']);
         }
 
         const width = this.offscreenCanvasSize.x;
         const height = this.offscreenCanvasSize.y;
 
         // Create a new texture
-        this.textures['additional'] = this.createTexture(undefined, { width, height });
+        this.textures['post_processing_source_texture'] = this.createTexture(undefined, { width, height });
 
         // Create a new framebuffer
         this.framebuffer = gl.createFramebuffer();
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
 
         // Attach the texture to the framebuffer
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.textures['additional'], 0);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.textures['post_processing_source_texture'], 0);
 
         this.depthBuffer = gl.createRenderbuffer();
         gl.bindRenderbuffer(gl.RENDERBUFFER, this.depthBuffer);
@@ -698,7 +760,7 @@ export abstract class GLView extends BaseView {
         this.switchProgram(this.CRTShaderProgram);
 
         // Bind the texture as the input to the post-processing shader
-        gl.bindTexture(gl.TEXTURE_2D, this.textures['additional']);
+        gl.bindTexture(gl.TEXTURE_2D, this.textures['post_processing_source_texture']);
 
         // Bind the vertex position buffer
         gl.bindBuffer(gl.ARRAY_BUFFER, this.CRTShaderVertexBuffer);
@@ -745,11 +807,11 @@ export abstract class GLView extends BaseView {
         const _this = $.view as GLView;
         const gl = _this.glctx;
 
-        // Bind the framebuffer so that the rendering output goes to the offscreen texture
+        // Bind the framebuffer so that the rendering output goes to the texture
         this.glctx.bindFramebuffer(this.glctx.FRAMEBUFFER, this.framebuffer);
         // Set the viewport to match the size of the offscreen framebuffer
         gl.viewport(0, 0, this.offscreenCanvasSize.x, this.offscreenCanvasSize.y);
-        // Set the viewport to the dimensions of the offscreen texture
+        // Set the viewport to the dimensions of the 'post_processing_source_texture' texture
         this.switchProgram(this.gameShaderProgram);
         gl.bindTexture(gl.TEXTURE_2D, this.textures['_atlas']);
 
@@ -763,7 +825,7 @@ export abstract class GLView extends BaseView {
         gl.vertexAttribPointer(_this.texcoordLocation, 2, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(_this.texcoordLocation);
 
-        // Bind the z buffer and set the z attribute
+        // Bind the texcoord buffer and set the texcoord attribute
         gl.bindBuffer(gl.ARRAY_BUFFER, _this.zBuffer);
         gl.vertexAttribPointer(_this.zcoordLocation, 1, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(_this.zcoordLocation);
@@ -778,6 +840,7 @@ export abstract class GLView extends BaseView {
         // Update the buffers with the new data and draw the images to the texture using the main shader
         const { vertexcoords, texcoords, zcoords, color_override } = this.vertex_shader_data;
         let i = 0;
+        // let totalAwesomeness = 0;
         for (const { options, imgmeta } of this.imagesToDraw) {
             const { pos, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 }, colorize = DEFAULT_VERTEX_COLOR } = options;
             const { width, height } = imgmeta;
@@ -788,6 +851,7 @@ export abstract class GLView extends BaseView {
             bvec.set_color(color_override, i, colorize);
 
             ++i;
+            // ++totalAwesomeness;
             if (i >= MAX_SPRITES) {
                 this.updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, 0);
                 gl.drawArrays(gl.TRIANGLES, 0, 6 * i);
@@ -799,6 +863,7 @@ export abstract class GLView extends BaseView {
             this.updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, 0);
             gl.drawArrays(gl.TRIANGLES, 0, 6 * i);
         }
+        // console.log(`Total awesomeness: ${totalAwesomeness}`);
         // Clear the list of images to draw for the next frame
         this.imagesToDraw = [];
     }
