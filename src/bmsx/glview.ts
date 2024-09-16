@@ -189,6 +189,7 @@ export abstract class GLView extends BaseView {
     private CRTShaderVertexLocation: GLint;
     private CRTShaderApplyNoiseLocation: WebGLUniformLocation;
     private CRTShaderApplyColorBleedLocation: WebGLUniformLocation;
+    private CRTShaderApplyScanlinesLocation: WebGLUniformLocation;
     private CRTShaderApplyBlurLocation: WebGLUniformLocation;
     private CRTShaderApplyGlowLocation: WebGLUniformLocation;
     private CRTShaderApplyFringingLocation: WebGLUniformLocation;
@@ -204,6 +205,7 @@ export abstract class GLView extends BaseView {
 
     private applyNoise: boolean = true;
     private applyColorBleed: boolean = true;
+    private applyScanlines: boolean = true;
     private applyBlur: boolean = true;
     private applyGlow: boolean = true;
     private applyFringing: boolean = true;
@@ -266,6 +268,7 @@ export abstract class GLView extends BaseView {
         gl.uniform1f(this.CRTFragmentShaderScaleLocation, 1.0);
         gl.uniform1i(this.CRTShaderApplyNoiseLocation, this.applyNoise ? 1 : 0);
         gl.uniform1i(this.CRTShaderApplyColorBleedLocation, this.applyColorBleed ? 1 : 0);
+        gl.uniform1i(this.CRTShaderApplyScanlinesLocation, this.applyScanlines ? 1 : 0);
         gl.uniform1i(this.CRTShaderApplyBlurLocation, this.applyBlur ? 1 : 0);
         gl.uniform1i(this.CRTShaderApplyGlowLocation, this.applyGlow ? 1 : 0);
         gl.uniform1i(this.CRTShaderApplyFringingLocation, this.applyFringing ? 1 : 0);
@@ -365,6 +368,7 @@ export abstract class GLView extends BaseView {
         this.CRTShaderRandomLocation = locations.random;
         this.CRTShaderApplyNoiseLocation = gl.getUniformLocation(this.CRTShaderProgram, "u_applyNoise");
         this.CRTShaderApplyColorBleedLocation = gl.getUniformLocation(this.CRTShaderProgram, "u_applyColorBleed");
+        this.CRTShaderApplyScanlinesLocation = gl.getUniformLocation(this.CRTShaderProgram, "u_applyScanlines");
         this.CRTShaderApplyBlurLocation = gl.getUniformLocation(this.CRTShaderProgram, "u_applyBlur");
         this.CRTShaderApplyGlowLocation = gl.getUniformLocation(this.CRTShaderProgram, "u_applyGlow");
         this.CRTShaderApplyFringingLocation = gl.getUniformLocation(this.CRTShaderProgram, "u_applyFringing");
@@ -773,7 +777,7 @@ export abstract class GLView extends BaseView {
         gl.enableVertexAttribArray(this.CRTShaderTexcoordLocation);
 
         // Update the time uniform
-        let currentTime = Date.now() / 1000; // Get the current time in seconds
+        const currentTime = Date.now() / 1000; // Get the current time in seconds
         gl.uniform1f(this.CRTShaderTimeLocation, currentTime); // Add this line
         gl.uniform1f(this.CRTShaderRandomLocation, Math.random()); // Add this line
 

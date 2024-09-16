@@ -11,6 +11,7 @@ uniform float u_fragscale;
 // Uniforms to control each effect
 uniform bool u_applyNoise;
 uniform bool u_applyColorBleed;
+uniform bool u_applyScanlines;
 uniform bool u_applyBlur;
 uniform bool u_applyGlow;
 uniform bool u_applyFringing;
@@ -95,24 +96,29 @@ BlurContrastResult applyBlurAndContrast(vec2 uv) {
 #define NOISE_MULTIPLIER 43758.5453
 #define NOISE_OFFSET 19.19
 
-// Function to generate noise based on UV coordinates using a hash function
-float noise(vec2 uv) {
-    vec2 seed = vec2(NOISE_SEED_X, NOISE_SEED_Y);
-    return fract(sin(dot(uv, seed)) * NOISE_MULTIPLIER);
-}
-
-// Optimized hash-based noise function
-float hashNoise(vec2 uv) {
-    vec3 p = vec3(uv, 0.0);
+// Optimized hash-based noise function with temporal variation
+float hashNoise(vec2 uv, float time) {
+    vec3 p = vec3(uv * 0.1, time * 0.1); // Scale down UV and time for better variation
     p = fract(p * vec3(NOISE_SEED_X, NOISE_SEED_Y, NOISE_MULTIPLIER));
     p += dot(p, p.yzx + NOISE_OFFSET);
     return fract((p.x + p.y) * p.z);
 }
 
+#define SCANLINE_INTERVAL 2.0
+#define SCANLINE_DARKEN_FACTOR 0.8
+
+// Function to apply scanlines
+vec3 applyScanlines(vec3 color, vec2 fragCoord) {
+    if (mod(fragCoord.y, SCANLINE_INTERVAL) < 1.0) {
+        color *= SCANLINE_DARKEN_FACTOR; // Darken every other row
+    }
+    return color;
+}
+
 // Define constants for noise, color bleed, blur, glow, and fringing
 #define NOISE_INTENSITY 0.2
 #define COLOR_BLEED vec3(0.02, 0.0, 0.0)
-#define BLUR_INTENSITY 0.7
+#define BLUR_INTENSITY 0.6
 #define GLOW_COLOR vec3(0.05, 0.02, 0.02)
 #define GLOW_BRIGHTNESS_CLAMP 0.5
 #define FRINGING_BASE_AMOUNT 0.0010
@@ -129,13 +135,24 @@ void main() {
 
     // Apply noise if enabled
     if (u_applyNoise) {
-        float n = hashNoise(uv * u_resolution * u_fragscale + vec2(u_random));
-        texColor += vec3(n) * NOISE_INTENSITY; // Adjust noise intensity as needed
+        // Generate noise once
+        float noise = hashNoise(uv * u_resolution * u_fragscale + vec2(u_random), u_time);
+
+        // Vary noise intensity
+        float noiseIntensity = NOISE_INTENSITY * (0.5 + 0.5 * hashNoise(vec2(u_random), u_time));
+
+        // Apply the same noise to all channels
+        texColor.rgb += vec3(noise) * noiseIntensity;
     }
 
     // Apply color bleed if enabled
     if (u_applyColorBleed) {
         texColor += COLOR_BLEED; // Adjust bleed intensity and color
+    }
+
+    // Apply scanlines
+    if (u_applyScanlines) {
+        texColor = applyScanlines(texColor, gl_FragCoord.xy);
     }
 
     // Apply blur and calculate contrast if enabled
