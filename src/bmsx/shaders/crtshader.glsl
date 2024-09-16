@@ -19,13 +19,22 @@ uniform bool u_applyFringing;
 in vec2 v_texcoord;
 out vec4 outputColor;
 
+// Define constants for the Gaussian blur kernel
+#define KERNEL_DIVISOR 256.0
+#define KERNEL_WEIGHT_1 1.0
+#define KERNEL_WEIGHT_4 4.0
+#define KERNEL_WEIGHT_6 6.0
+#define KERNEL_WEIGHT_16 16.0
+#define KERNEL_WEIGHT_24 24.0
+#define KERNEL_WEIGHT_36 36.0
+
 // Define a 5x5 blur kernel
 const float kernel[25] = float[](
-    1.0/256.0, 4.0/256.0, 6.0/256.0, 4.0/256.0, 1.0/256.0,
-    4.0/256.0, 16.0/256.0, 24.0/256.0, 16.0/256.0, 4.0/256.0,
-    6.0/256.0, 24.0/256.0, 36.0/256.0, 24.0/256.0, 6.0/256.0,
-    4.0/256.0, 16.0/256.0, 24.0/256.0, 16.0/256.0, 4.0/256.0,
-    1.0/256.0, 4.0/256.0, 6.0/256.0, 4.0/256.0, 1.0/256.0
+    KERNEL_WEIGHT_1 / KERNEL_DIVISOR, KERNEL_WEIGHT_4 / KERNEL_DIVISOR, KERNEL_WEIGHT_6 / KERNEL_DIVISOR, KERNEL_WEIGHT_4 / KERNEL_DIVISOR, KERNEL_WEIGHT_1 / KERNEL_DIVISOR,
+    KERNEL_WEIGHT_4 / KERNEL_DIVISOR, KERNEL_WEIGHT_16 / KERNEL_DIVISOR, KERNEL_WEIGHT_24 / KERNEL_DIVISOR, KERNEL_WEIGHT_16 / KERNEL_DIVISOR, KERNEL_WEIGHT_4 / KERNEL_DIVISOR,
+    KERNEL_WEIGHT_6 / KERNEL_DIVISOR, KERNEL_WEIGHT_24 / KERNEL_DIVISOR, KERNEL_WEIGHT_36 / KERNEL_DIVISOR, KERNEL_WEIGHT_24 / KERNEL_DIVISOR, KERNEL_WEIGHT_6 / KERNEL_DIVISOR,
+    KERNEL_WEIGHT_4 / KERNEL_DIVISOR, KERNEL_WEIGHT_16 / KERNEL_DIVISOR, KERNEL_WEIGHT_24 / KERNEL_DIVISOR, KERNEL_WEIGHT_16 / KERNEL_DIVISOR, KERNEL_WEIGHT_4 / KERNEL_DIVISOR,
+    KERNEL_WEIGHT_1 / KERNEL_DIVISOR, KERNEL_WEIGHT_4 / KERNEL_DIVISOR, KERNEL_WEIGHT_6 / KERNEL_DIVISOR, KERNEL_WEIGHT_4 / KERNEL_DIVISOR, KERNEL_WEIGHT_1 / KERNEL_DIVISOR
 );
 
 // Struct to hold the result of blur and contrast calculation
@@ -34,6 +43,14 @@ struct BlurContrastResult {
     float contrast;
 };
 
+// Define constants for kernel size, luminance weights, and luminance calculation
+#define KERNEL_SIZE 5
+#define KERNEL_RADIUS 2
+#define LUMINANCE_WEIGHTS vec3(0.299, 0.587, 0.114)
+#define LUMINANCE_THRESHOLD 1
+#define CENTER_INDEX 0
+#define WEIGHT_INCREMENT 1.0
+
 // Function to apply blur and calculate contrast
 BlurContrastResult applyBlurAndContrast(vec2 uv) {
     vec3 blurredColor = vec3(0.0);
@@ -41,24 +58,24 @@ BlurContrastResult applyBlurAndContrast(vec2 uv) {
     float surroundingLuminance = 0.0;
     float totalWeight = 0.0;
 
-    // Loop through the 5x5 kernel
-    for (int y = -2; y <= 2; y++) {
-        for (int x = -2; x <= 2; x++) {
+    // Loop through the KERNEL_SIZE x KERNEL_SIZE kernel
+    for (int y = -KERNEL_RADIUS; y <= KERNEL_RADIUS; y++) {
+        for (int x = -KERNEL_RADIUS; x <= KERNEL_RADIUS; x++) {
             // Calculate the offset for the current kernel element
             vec2 offset = vec2(x, y) / u_resolution * u_fragscale;
             // Sample the texture at the offset position
             vec3 color = texture(u_texture, uv + offset).rgb;
             // Accumulate the weighted color
-            blurredColor += color * kernel[(y + 2) * 5 + (x + 2)];
+            blurredColor += color * kernel[(y + KERNEL_RADIUS) * KERNEL_SIZE + (x + KERNEL_RADIUS)];
 
             // Calculate luminance for contrast calculation
-            if (abs(x) <= 1 && abs(y) <= 1) {
-                float luminance = dot(color, vec3(0.299, 0.587, 0.114));
-                if (x == 0 && y == 0) {
+            if (abs(x) <= LUMINANCE_THRESHOLD && abs(y) <= LUMINANCE_THRESHOLD) {
+                float luminance = dot(color, LUMINANCE_WEIGHTS);
+                if (x == CENTER_INDEX && y == CENTER_INDEX) {
                     centerLuminance = luminance;
                 } else {
                     surroundingLuminance += luminance;
-                    totalWeight += 1.0;
+                    totalWeight += WEIGHT_INCREMENT;
                 }
             }
         }
@@ -72,10 +89,36 @@ BlurContrastResult applyBlurAndContrast(vec2 uv) {
     return BlurContrastResult(blurredColor, contrast);
 }
 
-// Function to generate noise based on UV coordinates
+// Define constants for noise generation
+#define NOISE_SEED_X 12.9898
+#define NOISE_SEED_Y 78.233
+#define NOISE_MULTIPLIER 43758.5453
+#define NOISE_OFFSET 19.19
+
+// Function to generate noise based on UV coordinates using a hash function
 float noise(vec2 uv) {
-    return fract(sin(dot(uv, vec2(12.9898,78.233))) * 43758.5453);
+    vec2 seed = vec2(NOISE_SEED_X, NOISE_SEED_Y);
+    return fract(sin(dot(uv, seed)) * NOISE_MULTIPLIER);
 }
+
+// Optimized hash-based noise function
+float hashNoise(vec2 uv) {
+    vec3 p = vec3(uv, 0.0);
+    p = fract(p * vec3(NOISE_SEED_X, NOISE_SEED_Y, NOISE_MULTIPLIER));
+    p += dot(p, p.yzx + NOISE_OFFSET);
+    return fract((p.x + p.y) * p.z);
+}
+
+// Define constants for noise, color bleed, blur, glow, and fringing
+#define NOISE_INTENSITY 0.2
+#define COLOR_BLEED vec3(0.02, 0.0, 0.0)
+#define BLUR_INTENSITY 0.7
+#define GLOW_COLOR vec3(0.05, 0.02, 0.02)
+#define GLOW_BRIGHTNESS_CLAMP 0.5
+#define FRINGING_BASE_AMOUNT 0.0010
+#define FRINGING_DISTANCE_MULTIPLIER 0.0010
+#define FRINGING_CONTRAST_MULTIPLIER 0.0005
+#define FRINGING_MIX_INTENSITY 0.2
 
 void main() {
     // Get the UV coordinates
@@ -86,39 +129,39 @@ void main() {
 
     // Apply noise if enabled
     if (u_applyNoise) {
-        float n = noise(uv * u_resolution * u_fragscale + vec2(u_random));
-        texColor += vec3(n) * 0.1; // Adjust noise intensity as needed
+        float n = hashNoise(uv * u_resolution * u_fragscale + vec2(u_random));
+        texColor += vec3(n) * NOISE_INTENSITY; // Adjust noise intensity as needed
     }
 
     // Apply color bleed if enabled
     if (u_applyColorBleed) {
-        texColor += vec3(0.02, 0.0, 0.0); // Adjust bleed intensity and color
+        texColor += COLOR_BLEED; // Adjust bleed intensity and color
     }
 
     // Apply blur and calculate contrast if enabled
     BlurContrastResult result;
     if (u_applyBlur) {
         result = applyBlurAndContrast(uv);
-        texColor = mix(texColor, result.blurredColor, .7); // Adjust blur intensity
+        texColor = mix(texColor, result.blurredColor, BLUR_INTENSITY); // Adjust blur intensity
     } else {
         result.contrast = 0.0; // Default contrast if blur is not applied
     }
 
     // Apply selective phosphor glow if enabled
     if (u_applyGlow) {
-        vec3 glow = vec3(0.05, 0.02, 0.02);
-        float brightness = dot(texColor, vec3(0.299, 0.587, 0.114)); // Luminance
-        texColor += glow * clamp(brightness, 0.0, .5); // Glow only affects brighter areas
+        vec3 glow = GLOW_COLOR;
+        float brightness = dot(texColor, LUMINANCE_WEIGHTS); // Luminance
+        texColor += glow * clamp(brightness, 0.0, GLOW_BRIGHTNESS_CLAMP); // Glow only affects brighter areas
     }
 
     // Apply color fringing if enabled
     if (u_applyFringing) {
         // Calculate distance from the center (to simulate screen curvature effect)
         vec2 center = u_resolution * 0.5;
-        float distanceFromCenter = length((uv * u_resolution * u_fragscale ) - center) / length(center);
+        float distanceFromCenter = length((uv * u_resolution * u_fragscale) - center) / length(center);
 
         // Determine the fringing amount based on distance from the center and contrast
-        float fringingAmount = 0.0010 + 0.0010 * distanceFromCenter + 0.0005 * result.contrast;
+        float fringingAmount = FRINGING_BASE_AMOUNT + FRINGING_DISTANCE_MULTIPLIER * distanceFromCenter + FRINGING_CONTRAST_MULTIPLIER * result.contrast;
 
         // Apply color fringing
         vec3 color;
@@ -127,7 +170,7 @@ void main() {
         color.b = texture(u_texture, uv - vec2(fringingAmount, 0.0)).b;
 
         // Combine the color with the effects
-        texColor = mix(texColor, color, 0.2); // Adjust the mix intensity
+        texColor = mix(texColor, color, FRINGING_MIX_INTENSITY); // Adjust the mix intensity
     }
 
     // Set the final output color
