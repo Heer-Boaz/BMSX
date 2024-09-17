@@ -77,11 +77,11 @@ const bvec = {
 
         // Set the vertices of the rectangle in the Float32Array
         v[offset] = x, v[offset + 1] = y,
-        v[offset + 2] = x2, v[offset + 3] = y,
-        v[offset + 4] = x, v[offset + 5] = y2,
-        v[offset + 6] = x, v[offset + 7] = y2,
-        v[offset + 8] = x2, v[offset + 9] = y,
-        v[offset + 10] = x2, v[offset + 11] = y2;
+            v[offset + 2] = x2, v[offset + 3] = y,
+            v[offset + 4] = x, v[offset + 5] = y2,
+            v[offset + 6] = x, v[offset + 7] = y2,
+            v[offset + 8] = x2, v[offset + 9] = y,
+            v[offset + 10] = x2, v[offset + 11] = y2;
     },
 
     /**
@@ -203,17 +203,95 @@ export abstract class GLView extends BaseView {
     public static readonly fragmentShaderTextureCode: string = gameShaderCode;
     public static readonly fragmentShaderCRTCode: string = crtShaderCode;
 
-    private applyNoise: boolean = true;
-    private applyColorBleed: boolean = true;
-    private applyScanlines: boolean = true;
-    private applyBlur: boolean = true;
-    private applyGlow: boolean = true;
-    private applyFringing: boolean = true;
+    private _applyNoise: boolean = true;
+    private _applyColorBleed: boolean = true;
+    private _applyScanlines: boolean = true;
+    private _applyBlur: boolean = true;
+    private _applyGlow: boolean = true;
+    private _applyFringing: boolean = true;
+
+    /**
+     * Gets or sets a value indicating whether the CRT shader should apply noise.
+     */
+    public get applyNoise(): boolean {
+        return this._applyNoise;
+    }
+
+    public set applyNoise(value: boolean) {
+        this._applyNoise = value;
+        this.glctx.uniform1i(this.CRTShaderApplyNoiseLocation, value ? 1 : 0);
+    }
+
+    /**
+     * Gets or sets a value indicating whether the CRT shader should apply color bleed.
+     */
+    public get applyColorBleed(): boolean {
+        return this._applyColorBleed;
+    }
+
+    public set applyColorBleed(value: boolean) {
+        this._applyColorBleed = value;
+        this.glctx.uniform1i(this.CRTShaderApplyColorBleedLocation, value ? 1 : 0);
+    }
+
+    /**
+     * Gets or sets a value indicating whether the CRT shader should apply scanlines.
+     */
+    public get applyScanlines(): boolean {
+        return this._applyScanlines;
+    }
+
+    public set applyScanlines(value: boolean) {
+        this._applyScanlines = value;
+        this.glctx.uniform1i(this.CRTShaderApplyScanlinesLocation, value ? 1 : 0);
+    }
+
+    /**
+     * Gets or sets a value indicating whether the CRT shader should apply blur.
+     */
+    public get applyBlur(): boolean {
+        return this._applyBlur;
+    }
+
+    public set applyBlur(value: boolean) {
+        this._applyBlur = value;
+        this.glctx.uniform1i(this.CRTShaderApplyBlurLocation, value ? 1 : 0);
+    }
+
+    /**
+     * Gets or sets a value indicating whether the CRT shader should apply glow.
+     */
+    public get applyGlow(): boolean {
+        return this._applyGlow;
+    }
+
+    public set applyGlow(value: boolean) {
+        this._applyGlow = value;
+        this.glctx.uniform1i(this.CRTShaderApplyGlowLocation, value ? 1 : 0);
+    }
+
+    /**
+     * Gets or sets a value indicating whether the CRT shader should apply fringing.
+     */
+    public get applyFringing(): boolean {
+        return this._applyFringing;
+    }
+
+    public set applyFringing(value: boolean) {
+        this._applyFringing = value;
+        this.glctx.uniform1i(this.CRTShaderApplyFringingLocation, value ? 1 : 0);
+    }
+
     private gameShaderScaleLocation: WebGLUniformLocation;
     private CRTVertexShaderScaleLocation: WebGLUniformLocation;
     private offscreenCanvasSize: vec2;
     CRTFragmentShaderScaleLocation: WebGLUniformLocation;
 
+    /**
+     * Initializes a new instance of the GLView class with the specified viewport size.
+     * Note that the offscreen canvas size is twice the viewport size to allow for the CRT shader effect to be more granular.
+     * @param viewportsize
+     */
     constructor(viewportsize: Size) {
         super(viewportsize, multiply_vec(viewportsize, 2));
         this.offscreenCanvasSize = multiply_vec(viewportsize, 2); // The offscreen canvas size is twice the viewport size
@@ -227,7 +305,9 @@ export abstract class GLView extends BaseView {
 
     /**
      * Initializes the GLView by setting up the WebGL context, creating the game and CRT shader programs, setting up the vertex shader locations,
-     * creating the buffers, setting up the game shader locations, setting up the textures, creating the CRT shader programs, setting up the CRT shader locations, creating the CRT vertex buffer, creating the CRT shader texcoord buffer, setting the default uniform values, and creating the framebuffer and texture.
+     * creating the buffers, setting up the game shader locations, setting up the textures, creating the CRT shader programs,
+     * setting up the CRT shader locations, creating the CRT vertex buffer, creating the CRT shader texcoord buffer,
+     * setting the default uniform values, and creating the framebuffer and texture.
      * @private
      * @returns void
      */
@@ -276,6 +356,9 @@ export abstract class GLView extends BaseView {
     }
 
     @catchWebGLError
+    /**
+     * Creates the CRT shader vertex buffer for the full-screen quad used in the CRT fragment shader.
+     */
     private createCRTVertexBuffer(): void {
         const gl = this.glctx;
         // Define the vertex positions for a full-screen quad (in clip space)
@@ -296,6 +379,9 @@ export abstract class GLView extends BaseView {
     }
 
     @catchWebGLError
+    /**
+     * Creates the CRT shader texture coordinate buffer for the full-screen quad used in the CRT fragment shader.
+     */
     private createCRTShaderTexcoordBuffer(): void {
         const gl = this.glctx;
         // Define the texture coordinates for a full-screen quad
@@ -315,6 +401,9 @@ export abstract class GLView extends BaseView {
     }
 
     @catchWebGLError
+    /**
+     * Switches the current GLSL program to the specified program.
+     */
     private switchProgram(program: WebGLProgram): void {
         this.glctx.useProgram(program);
     }
@@ -452,6 +541,9 @@ export abstract class GLView extends BaseView {
     }
 
     @catchWebGLError
+    /**
+     * Creates the game shader programs (vertex and fragment shaders).
+     */
     private createGameShaderPrograms(): void {
         const gl = this.glctx;
         const program = gl.createProgram();
@@ -469,6 +561,9 @@ export abstract class GLView extends BaseView {
     }
 
     @catchWebGLError
+    /**
+     * Sets up the vertex shader locations for the game shader program.
+     */
     private setupVertexShaderLocations(): void {
         const gl = this.glctx;
         const locations = {
@@ -487,6 +582,9 @@ export abstract class GLView extends BaseView {
     }
 
     @catchWebGLError
+    /**
+     * Creates and returns a new WebGL buffer with the provided data (if any).
+     */
     private createBuffer(data?: Float32Array): WebGLBuffer {
         const gl = this.glctx;
         const buffer = gl.createBuffer()!;
@@ -496,6 +594,11 @@ export abstract class GLView extends BaseView {
     }
 
     @catchWebGLError
+    /**
+     * Sets up the attribute for the specified buffer, location, and size.
+     * This method binds the buffer to the ARRAY_BUFFER target,
+     * enables the vertex attribute array at the specified location, and sets the vertex attribute pointer.
+     */
     private setupAttribute(buffer: WebGLBuffer, location: number, size: number): void {
         const gl = this.glctx;
         gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
@@ -503,6 +606,11 @@ export abstract class GLView extends BaseView {
         gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0);
     }
 
+    /**
+     * Gets the texture coordinates for the vertices of the rectangles.
+     * The texture coordinates are used both for the game shader (sprites) and the CRT shader (full-screen quad).
+     * @returns
+     */
     private static getTextureCoordinates(): Float32Array {
         const textureCoordinates = new Float32Array(VERTEXCOORDS_SIZE * MAX_SPRITES);
         for (let i = 0; i < VERTEXCOORDS_SIZE * MAX_SPRITES - VERTEXCOORDS_SIZE; i += VERTEXCOORDS_SIZE) {
@@ -753,6 +861,9 @@ export abstract class GLView extends BaseView {
     }
 
     @catchWebGLError
+    /**
+     * Draws a full-screen quad using the CRT shader.
+     */
     private drawFullScreenQuad(): void {
         const gl = this.glctx;
         // Bind the default framebuffer so that the rendering output goes to the screen
@@ -924,6 +1035,9 @@ export abstract class GLView extends BaseView {
     }
 
     @catchWebGLError
+    /**
+      * Updates the buffers for the game shader with new data.
+     */
     private updateBuffers(gl: WebGLRenderingContext, vertexcoords: Float32Array, texcoords: Float32Array, zcoords: Float32Array, color_override: Float32Array, index: number): void {
         GLView.updateBuffer(gl, this.vertexBuffer, gl.ARRAY_BUFFER, BUFFER_OFFSET_MULTIPLIER * index, vertexcoords);
         GLView.updateBuffer(gl, this.texcoordBuffer, gl.ARRAY_BUFFER, BUFFER_OFFSET_MULTIPLIER * index, texcoords);
@@ -931,6 +1045,14 @@ export abstract class GLView extends BaseView {
         GLView.updateBuffer(gl, this.color_overrideBuffer, gl.ARRAY_BUFFER, COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER * index, color_override);
     }
 
+    /**
+     * Corrects the start and end coordinates of an area to ensure that the start coordinates are less than the end coordinates.
+     * @param x The x-coordinate of the start of the area.
+     * @param y The y-coordinate of the start of the area.
+     * @param ex The x-coordinate of the end of the area.
+     * @param ey The y-coordinate of the end of the area.
+     * @returns An array containing the corrected start and end coordinates.
+     */
     private correctAreaStartEnd(x: number, y: number, ex: number, ey: number) {
         if (ex < x) {
             [x, ex] = [ex, x];
@@ -943,6 +1065,10 @@ export abstract class GLView extends BaseView {
         return [x, y, ex, ey];
     }
 
+    /**
+     * Draws a rectangle on the canvas by drawing the borders of the rectangle using the white pixel image with the desired color.
+     * @param options
+     */
     override drawRectangle(options: DrawRectOptions): void {
         let { start: { x, y, z }, end: { x: ex, y: ey } } = options.area; // Note that DrawImg will handle z = undefined
         const c = options.color;
@@ -962,6 +1088,10 @@ export abstract class GLView extends BaseView {
         this.drawImg({ pos: new_vec3(ex, y, z), imgid: imgid, scale: new_vec2(1, ey - y), colorize: c });
     }
 
+    /**
+     * Fills a rectangle on the canvas by drawing a stretched white pixel image with the desired color.
+     * @param options
+     */
     override fillRectangle(options: DrawRectOptions): void {
         let { start: { x, y, z }, end: { x: ex, y: ey } } = options.area;
         const c = options.color;
