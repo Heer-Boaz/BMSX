@@ -119,8 +119,10 @@ vec3 applyScanlines(vec3 color, vec2 fragCoord) {
 #define NOISE_INTENSITY 0.2
 #define COLOR_BLEED vec3(0.02, 0.0, 0.0)
 #define BLUR_INTENSITY 0.6
+#define BLUR_DEFAULT_CONTRAST_IF_NOT_APPLIED 0.0
 #define GLOW_COLOR vec3(0.05, 0.02, 0.02)
 #define GLOW_BRIGHTNESS_CLAMP 0.5
+#define CENTER_SCALE 0.5
 #define FRINGING_BASE_AMOUNT 0.0010
 #define FRINGING_DISTANCE_MULTIPLIER 0.0010
 #define FRINGING_CONTRAST_MULTIPLIER 0.0005
@@ -138,11 +140,8 @@ void main() {
         // Generate noise once
         float noise = hashNoise(uv * u_resolution * u_fragscale + vec2(u_random), u_time);
 
-        // Vary noise intensity
-        float noiseIntensity = NOISE_INTENSITY * (0.5 + 0.5 * hashNoise(vec2(u_random), u_time));
-
         // Apply the same noise to all channels
-        texColor.rgb += vec3(noise) * noiseIntensity;
+        texColor.rgb += vec3(noise) * NOISE_INTENSITY;
     }
 
     // Apply color bleed if enabled
@@ -161,7 +160,7 @@ void main() {
         result = applyBlurAndContrast(uv);
         texColor = mix(texColor, result.blurredColor, BLUR_INTENSITY); // Adjust blur intensity
     } else {
-        result.contrast = 0.0; // Default contrast if blur is not applied
+        result.contrast = BLUR_DEFAULT_CONTRAST_IF_NOT_APPLIED; // Default contrast if blur is not applied
     }
 
     // Apply selective phosphor glow if enabled
@@ -174,7 +173,7 @@ void main() {
     // Apply color fringing if enabled
     if (u_applyFringing) {
         // Calculate distance from the center (to simulate screen curvature effect)
-        vec2 center = u_resolution * 0.5;
+        vec2 center = u_resolution * CENTER_SCALE;
         float distanceFromCenter = length((uv * u_resolution * u_fragscale) - center) / length(center);
 
         // Determine the fringing amount based on distance from the center and contrast
