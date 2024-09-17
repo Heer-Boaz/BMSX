@@ -38,13 +38,13 @@ function catchWebGLError(_target: any, propertyKey: string, descriptor: Property
  */
 function getWebGLErrorString(gl: WebGLRenderingContext, error: number): string {
     switch (error) {
-        case gl.NO_ERROR: return "NO_ERROR";
-        case gl.INVALID_ENUM: return "INVALID_ENUM";
-        case gl.INVALID_VALUE: return "INVALID_VALUE";
-        case gl.INVALID_OPERATION: return "INVALID_OPERATION";
-        case gl.OUT_OF_MEMORY: return "OUT_OF_MEMORY";
-        case gl.CONTEXT_LOST_WEBGL: return "CONTEXT_LOST_WEBGL";
-        default: return "UNKNOWN_ERROR";
+        case gl.NO_ERROR: return 'NO_ERROR';
+        case gl.INVALID_ENUM: return 'INVALID_ENUM';
+        case gl.INVALID_VALUE: return 'INVALID_VALUE';
+        case gl.INVALID_OPERATION: return 'INVALID_OPERATION';
+        case gl.OUT_OF_MEMORY: return 'OUT_OF_MEMORY';
+        case gl.CONTEXT_LOST_WEBGL: return 'CONTEXT_LOST_WEBGL';
+        default: return 'UNKNOWN_ERROR';
     }
 }
 
@@ -150,14 +150,27 @@ const COLOR_OVERRIDE_ATTRIBUTE_SIZE = 4;
 
 const BUFFER_OFFSET_MULTIPLIER = 48;
 export const ZCOORD_MAX = 10000;
+const DEFAULT_ZCOORD = 0;
 const ZCOORD_BUFFER_OFFSET_MULTIPLIER = 24;
 const COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER = 96;
+// Constants for vertex attribute configuration
+const POSITION_COMPONENTS = 2;
+const TEXCOORD_COMPONENTS = 2;
+const ZCOORD_COMPONENTS = 1;
+const SPRITE_DRAW_OFFSET = 0;
+
+// Constants for drawing
+const VERTICES_PER_SPRITE = 6;
+
 
 /**
  * Represents a view that renders graphics using WebGL.
  */
 export abstract class GLView extends BaseView {
-    public glctx: WebGL2RenderingContext;
+    /**
+     * The WebGL rendering context used for rendering the game.
+     */
+    public glctx: WebGL2RenderingContext; // TODO: Remove public access, which is only used for catching WebGL errors
     private textures: { [key: number]: WebGLTexture; };
     private gameShaderProgram: WebGLProgram;
     private vertexLocation: number;
@@ -312,19 +325,19 @@ export abstract class GLView extends BaseView {
      * @returns void
      */
     override init(): void {
-        super.init();
-        this.setupGLContext();
-        this.createGameShaderPrograms();
-        this.setupVertexShaderLocations();
-        this.setupBuffers();
-        this.setupGameShaderLocations();
-        this.setupTextures();
-        this.createCRTShaderPrograms();
-        this.setupCRTShaderLocations();
-        this.createCRTVertexBuffer();
-        this.createCRTShaderTexcoordBuffer();
-        this.setDefaultUniformValues();
-        this.createFramebufferAndTexture(); // This also binds the framebuffer
+        super.init(); // Call the base init method to set up the canvas
+        this.setupGLContext(); // Set up the WebGL context
+        this.createGameShaderPrograms(); // Create the game shader programs
+        this.setupVertexShaderLocations(); // Set up the vertex shader locations for the game shader program
+        this.setupBuffers(); // Set up the buffers for the game shader
+        this.setupGameShaderLocations(); // Set up the game shader locations
+        this.setupTextures(); // Set up the textures used by the shaders (such as the atlas texture and the post-processing shader texture)
+        this.createCRTShaderPrograms(); // Create the CRT shader programs
+        this.setupCRTShaderLocations(); // Set up the CRT shader locations
+        this.createCRTVertexBuffer(); // Create the CRT shader vertex buffer for the CRT fragment shader
+        this.createCRTShaderTexcoordBuffer(); // Create the CRT shader texture coordinate buffer for the CRT fragment shader
+        this.setDefaultUniformValues(); // Set the default uniform values for the game and CRT shaders, such as the scale, resolution vector, and texture location and flags (noise, color bleed, scanlines, blur, glow, fringing, etc.)
+        this.createFramebufferAndTexture(); // Create the framebuffer and texture for the post-processing shader, note that this also binds the framebuffer
         this.handleResize(); // This is needed to set the viewport size and create the framebuffer and texture
     }
 
@@ -444,25 +457,25 @@ export abstract class GLView extends BaseView {
     private setupCRTShaderLocations(): void {
         const gl = this.glctx;
         const locations = {
-            vertex: gl.getAttribLocation(this.CRTShaderProgram, "a_position"),
-            texturecoord: gl.getAttribLocation(this.CRTShaderProgram, "a_texcoord"),
-            resolution: gl.getUniformLocation(this.CRTShaderProgram, "u_resolution"),
-            random: gl.getUniformLocation(this.CRTShaderProgram, "u_random"),
-            time: gl.getUniformLocation(this.CRTShaderProgram, "u_time")
+            vertex: gl.getAttribLocation(this.CRTShaderProgram, 'a_position'),
+            texturecoord: gl.getAttribLocation(this.CRTShaderProgram, 'a_texcoord'),
+            resolution: gl.getUniformLocation(this.CRTShaderProgram, 'u_resolution'),
+            random: gl.getUniformLocation(this.CRTShaderProgram, 'u_random'),
+            time: gl.getUniformLocation(this.CRTShaderProgram, 'u_time')
         };
         this.CRTShaderVertexLocation = locations.vertex;
         this.CRTShaderTexcoordLocation = locations.texturecoord;
         this.CRTShaderResolutionLocation = locations.resolution;
         this.CRTShaderTimeLocation = locations.time;
         this.CRTShaderRandomLocation = locations.random;
-        this.CRTShaderApplyNoiseLocation = gl.getUniformLocation(this.CRTShaderProgram, "u_applyNoise");
-        this.CRTShaderApplyColorBleedLocation = gl.getUniformLocation(this.CRTShaderProgram, "u_applyColorBleed");
-        this.CRTShaderApplyScanlinesLocation = gl.getUniformLocation(this.CRTShaderProgram, "u_applyScanlines");
-        this.CRTShaderApplyBlurLocation = gl.getUniformLocation(this.CRTShaderProgram, "u_applyBlur");
-        this.CRTShaderApplyGlowLocation = gl.getUniformLocation(this.CRTShaderProgram, "u_applyGlow");
-        this.CRTShaderApplyFringingLocation = gl.getUniformLocation(this.CRTShaderProgram, "u_applyFringing");
-        this.CRTVertexShaderScaleLocation = gl.getUniformLocation(this.CRTShaderProgram, "u_scale");
-        this.CRTFragmentShaderScaleLocation = gl.getUniformLocation(this.CRTShaderProgram, "u_fragscale");
+        this.CRTShaderApplyNoiseLocation = gl.getUniformLocation(this.CRTShaderProgram, 'u_applyNoise');
+        this.CRTShaderApplyColorBleedLocation = gl.getUniformLocation(this.CRTShaderProgram, 'u_applyColorBleed');
+        this.CRTShaderApplyScanlinesLocation = gl.getUniformLocation(this.CRTShaderProgram, 'u_applyScanlines');
+        this.CRTShaderApplyBlurLocation = gl.getUniformLocation(this.CRTShaderProgram, 'u_applyBlur');
+        this.CRTShaderApplyGlowLocation = gl.getUniformLocation(this.CRTShaderProgram, 'u_applyGlow');
+        this.CRTShaderApplyFringingLocation = gl.getUniformLocation(this.CRTShaderProgram, 'u_applyFringing');
+        this.CRTVertexShaderScaleLocation = gl.getUniformLocation(this.CRTShaderProgram, 'u_scale');
+        this.CRTFragmentShaderScaleLocation = gl.getUniformLocation(this.CRTShaderProgram, 'u_fragscale');
 
         // Enable the position attribute for the shader
         gl.enableVertexAttribArray(this.CRTShaderVertexLocation);
@@ -497,7 +510,7 @@ export abstract class GLView extends BaseView {
      */
     @catchWebGLError
     private setupGameShaderLocations(): void {
-        this.glctx.useProgram(this.gameShaderProgram);
+        this.switchProgram(this.gameShaderProgram);
 
         this.setupAttribute(this.vertexBuffer, this.vertexLocation, VERTEX_ATTRIBUTE_SIZE);
         this.setupAttribute(this.texcoordBuffer, this.texcoordLocation, TEXTURECOORD_ATTRIBUTE_SIZE);
@@ -567,18 +580,18 @@ export abstract class GLView extends BaseView {
     private setupVertexShaderLocations(): void {
         const gl = this.glctx;
         const locations = {
-            vertex: gl.getAttribLocation(this.gameShaderProgram, "a_position"),
-            texcoord: gl.getAttribLocation(this.gameShaderProgram, "a_texcoord"),
-            zcoord: gl.getAttribLocation(this.gameShaderProgram, "a_pos_z"),
-            color_override: gl.getAttribLocation(this.gameShaderProgram, "a_color_override")
+            vertex: gl.getAttribLocation(this.gameShaderProgram, 'a_position'),
+            texcoord: gl.getAttribLocation(this.gameShaderProgram, 'a_texcoord'),
+            zcoord: gl.getAttribLocation(this.gameShaderProgram, 'a_pos_z'),
+            color_override: gl.getAttribLocation(this.gameShaderProgram, 'a_color_override')
         };
         this.vertexLocation = locations.vertex;
         this.texcoordLocation = locations.texcoord;
         this.zcoordLocation = locations.zcoord;
         this.color_overrideLocation = locations.color_override;
-        this.resolutionLocation = gl.getUniformLocation(this.gameShaderProgram, "u_resolution")!;
-        this.textureLocation = gl.getUniformLocation(this.gameShaderProgram, "u_texture")!;
-        this.gameShaderScaleLocation = gl.getUniformLocation(this.gameShaderProgram, "u_scale");
+        this.resolutionLocation = gl.getUniformLocation(this.gameShaderProgram, 'u_resolution')!;
+        this.textureLocation = gl.getUniformLocation(this.gameShaderProgram, 'u_texture')!;
+        this.gameShaderScaleLocation = gl.getUniformLocation(this.gameShaderProgram, 'u_scale');
     }
 
     @catchWebGLError
@@ -746,11 +759,6 @@ export abstract class GLView extends BaseView {
         super.handleResize();
         const gl = this.glctx;
         if (gl) {
-            // gl.viewport(0, 0, this.canvas.width, this.canvas.height); // Set the viewport to the new size
-
-            // Recreate the framebuffer and texture to match the new size
-            // this.createFramebufferAndTexture(); // This also binds the framebuffer
-
             // Set the resolution uniform
             if (this.CRTShaderResolutionLocation) { // This is only set if the additional shader is being used
                 gl.useProgram(this.CRTShaderProgram);
@@ -879,12 +887,12 @@ export abstract class GLView extends BaseView {
 
         // Bind the vertex position buffer
         gl.bindBuffer(gl.ARRAY_BUFFER, this.CRTShaderVertexBuffer);
-        gl.vertexAttribPointer(this.CRTShaderVertexLocation, 2, gl.FLOAT, false, 0, 0);
+        gl.vertexAttribPointer(this.CRTShaderVertexLocation, POSITION_COMPONENTS, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(this.CRTShaderVertexLocation);
 
         // Bind the texcoord buffer
         gl.bindBuffer(gl.ARRAY_BUFFER, this.CRTShaderTexcoordBuffer);
-        gl.vertexAttribPointer(this.CRTShaderTexcoordLocation, 2, gl.FLOAT, false, 0, 0);
+        gl.vertexAttribPointer(this.CRTShaderTexcoordLocation, TEXCOORD_COMPONENTS, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(this.CRTShaderTexcoordLocation);
 
         // Update the time uniform
@@ -893,7 +901,7 @@ export abstract class GLView extends BaseView {
         gl.uniform1f(this.CRTShaderRandomLocation, Math.random()); // Add this line
 
         // Draw the full-screen quad
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        gl.drawArrays(gl.TRIANGLES, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE);
     }
 
     /**
@@ -932,17 +940,17 @@ export abstract class GLView extends BaseView {
 
         // Bind the position buffer and set the position attribute
         gl.bindBuffer(gl.ARRAY_BUFFER, _this.vertexBuffer);
-        gl.vertexAttribPointer(_this.vertexLocation, 2, gl.FLOAT, false, 0, 0);
+        gl.vertexAttribPointer(_this.vertexLocation, POSITION_COMPONENTS, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(_this.vertexLocation);
 
         // Bind the texcoord buffer and set the texcoord attribute
         gl.bindBuffer(gl.ARRAY_BUFFER, _this.texcoordBuffer);
-        gl.vertexAttribPointer(_this.texcoordLocation, 2, gl.FLOAT, false, 0, 0);
+        gl.vertexAttribPointer(_this.texcoordLocation, TEXCOORD_COMPONENTS, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(_this.texcoordLocation);
 
         // Bind the texcoord buffer and set the texcoord attribute
         gl.bindBuffer(gl.ARRAY_BUFFER, _this.zBuffer);
-        gl.vertexAttribPointer(_this.zcoordLocation, 1, gl.FLOAT, false, 0, 0);
+        gl.vertexAttribPointer(_this.zcoordLocation, ZCOORD_COMPONENTS, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(_this.zcoordLocation);
 
         /**
@@ -955,30 +963,37 @@ export abstract class GLView extends BaseView {
         // Update the buffers with the new data and draw the images to the texture using the main shader
         const { vertexcoords, texcoords, zcoords, color_override } = this.vertex_shader_data;
         let i = 0;
-        // let totalAwesomeness = 0;
         for (const { options, imgmeta } of this.imagesToDraw) {
             const { pos, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 }, colorize = DEFAULT_VERTEX_COLOR } = options;
             const { width, height } = imgmeta;
 
+            // Set the vertex coordinates, texture coordinates, z-coordinates, and color override for the image
+            // The vertex coordinates are set based on the position, width, height, and scale of the image
+            // The texture coordinates are set based on the flip flags and the image metadata
+            // The z-coordinate is set based on the z-coordinate of the image (if any)
+            // The color override is set based on the colorize option (if any)
+            // The index is used to set the data in the correct position in the buffers that are used for batch rendering
             bvec.set(vertexcoords, i, pos.x, pos.y, width, height, scale.x, scale.y);
             bvec.set_texturecoords(texcoords, i, this.getTexCoords(flip.flip_h, flip.flip_v, imgmeta));
-            bvec.set_zcoord(zcoords, i, (pos.z ?? 0) / ZCOORD_MAX);
+            bvec.set_zcoord(zcoords, i, (pos.z ?? DEFAULT_ZCOORD) / ZCOORD_MAX);
             bvec.set_color(color_override, i, colorize);
 
             ++i;
-            // ++totalAwesomeness;
+            // Draw the images in batches of MAX_SPRITES
+            // This is done to avoid having to create a huge buffer for all the images
             if (i >= MAX_SPRITES) {
                 this.updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, 0);
-                gl.drawArrays(gl.TRIANGLES, 0, 6 * i);
-                i = 0;
+                gl.drawArrays(gl.TRIANGLES, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i);
+                i = 0; // Reset the counter for the next batch of images to draw
             }
         }
 
+        // Draw the remaining images if any are remaining
         if (i > 0) {
             this.updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, 0);
-            gl.drawArrays(gl.TRIANGLES, 0, 6 * i);
+            gl.drawArrays(gl.TRIANGLES, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i);
         }
-        // console.log(`Total awesomeness: ${totalAwesomeness}`);
+
         // Clear the list of images to draw for the next frame
         this.imagesToDraw = [];
     }
@@ -1022,6 +1037,15 @@ export abstract class GLView extends BaseView {
         this.imagesToDraw.push({ options: distinct_options_object, imgmeta });
     }
 
+    /**
+     * Gets the texture coordinates for the image based on the flip flags.
+     * These texture coordinates are used to flip the image horizontally or vertically.
+     * The texture coordinates are stored in the image metadata and are pre-calculated for each image by the rompacker.
+     * @param flip_h Whether to flip the image horizontally.
+     * @param flip_v Whether to flip the image vertically.
+     * @param imgmeta The metadata for the image.
+     * @returns The texture coordinates for the image.
+     */
     private getTexCoords(flip_h: boolean, flip_v: boolean, imgmeta: ImgMeta): number[] {
         if (flip_h && flip_v) {
             return imgmeta['texcoords_fliphv'];
@@ -1037,9 +1061,15 @@ export abstract class GLView extends BaseView {
     @catchWebGLError
     /**
       * Updates the buffers for the game shader with new data.
+      * @param gl The WebGL rendering context.
+      * @param vertexcoords The new vertex coordinates data.
+      * @param texcoords The new texture coordinates data.
+      * @param zcoords The new z-coordinate data.
+      * @param color_override The new color override data.
+      * @param index The offset into the buffer to start
      */
     private updateBuffers(gl: WebGLRenderingContext, vertexcoords: Float32Array, texcoords: Float32Array, zcoords: Float32Array, color_override: Float32Array, index: number): void {
-        GLView.updateBuffer(gl, this.vertexBuffer, gl.ARRAY_BUFFER, BUFFER_OFFSET_MULTIPLIER * index, vertexcoords);
+        GLView.updateBuffer(gl, this.vertexBuffer, gl.ARRAY_BUFFER, BUFFER_OFFSET_MULTIPLIER * index, vertexcoords); //
         GLView.updateBuffer(gl, this.texcoordBuffer, gl.ARRAY_BUFFER, BUFFER_OFFSET_MULTIPLIER * index, texcoords);
         GLView.updateBuffer(gl, this.zBuffer, gl.ARRAY_BUFFER, ZCOORD_BUFFER_OFFSET_MULTIPLIER * index, zcoords);
         GLView.updateBuffer(gl, this.color_overrideBuffer, gl.ARRAY_BUFFER, COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER * index, color_override);
@@ -1054,6 +1084,7 @@ export abstract class GLView extends BaseView {
      * @returns An array containing the corrected start and end coordinates.
      */
     private correctAreaStartEnd(x: number, y: number, ex: number, ey: number) {
+        // Reverse x and ex if ex < x
         if (ex < x) {
             [x, ex] = [ex, x];
         }
@@ -1062,6 +1093,7 @@ export abstract class GLView extends BaseView {
             [y, ey] = [ey, y];
         }
 
+        // Return the corrected start and end coordinates
         return [x, y, ex, ey];
     }
 
