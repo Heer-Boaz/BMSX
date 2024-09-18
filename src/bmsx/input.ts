@@ -7,6 +7,18 @@ import type { IRegisterable, Identifier } from "./game";
 import { Registry } from './registry';
 import { StateMachineBlueprint, build_fsm, State } from './bfsm';
 
+/**
+ * Type definition for a single parsed action.
+ * A tuple containing the action name and an array of modifiers.
+ */
+type ParsedAction = [string, string[]];
+
+/**
+ * Type definition for a group of parsed actions.
+ * Can be a single action, an AND group, or an OR group.
+ */
+type ParsedActionGroup = (ParsedAction | ParsedActionGroup)[];
+
 // @ts-ignore
 function svgToPng(svgElement, filename) {
 	svgElement.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
@@ -66,6 +78,11 @@ export type ActionStateQuery = {
 	pressed?: boolean;
 
 	/**
+	 * Specifies whether the action was not pressed before (i.e., it was just pressed).
+	 */
+	justPressed?: boolean;
+
+	/**
 	 * Specifies whether the action has been consumed.
 	 */
 	consumed?: boolean;
@@ -79,7 +96,7 @@ export type ActionStateQuery = {
 	 * An optional array of action names, ordered by priority, to use when querying for action states.
 	 */
 	actionsByPriority?: string[];
-};
+}
 
 /**
  * Represents the ID of a button.
@@ -128,7 +145,8 @@ function getPressedState(
 	stateMap: Index2State,
 	key: string | number
 ): ButtonState {
-	return { pressed: stateMap[key]?.pressed ?? false, consumed: stateMap[key]?.consumed ?? false, presstime: stateMap[key]?.presstime ?? null, timestamp: stateMap[key]?.timestamp ?? null };
+	// TODO: IMPLEMENT!
+	return { pressed: stateMap[key]?.pressed ?? false, justpressed: false, consumed: stateMap[key]?.consumed ?? false, presstime: stateMap[key]?.presstime ?? null, timestamp: stateMap[key]?.timestamp ?? null };
 }
 
 /**
@@ -173,7 +191,7 @@ export type GamepadButton = keyof typeof Input.BUTTON2INDEX;
 /**
  * Represents the state of a button.
  */
-export type ButtonState = { pressed: boolean; consumed: boolean; presstime: number | null; timestamp: number; };
+export type ButtonState = { pressed: boolean; justpressed: boolean; consumed: boolean; presstime: number | null; timestamp: number; };
 
 /**
  * Represents the state of an action, including the action name and button state.
@@ -720,7 +738,7 @@ export class Input implements IRegisterable {
 		 * Event listener for when a gamepad is connected. Assigns the gamepad to a player and dispatches a player join event.
 		 * @param e The gamepad event.
 		 */
-		window.addEventListener("gamepadconnected", (e: GamepadEvent) =>{
+		window.addEventListener("gamepadconnected", (e: GamepadEvent) => {
 			const gamepad = e.gamepad;
 			if (!gamepad || !gamepad.id.toLowerCase().includes('gamepad')) return;
 			console.info(`Gamepad ${gamepad.index} connected.`);
@@ -1118,6 +1136,181 @@ export class PlayerInput {
 	private inputMap: InputMap;
 
 	/**
+	 * Cache for parsed action definitions to avoid repeated parsing.
+	 */
+	private parsedActions: Map<string, ParsedActionGroup> = new Map();
+
+	/**
+	 * Precomputes the parsed actions for a given action definition and stores them in the cache.
+	 * @param actionDefinition The action definition string to parse.
+	 */
+	private precomputeParsedActions(actionDefinition: string): void {
+		if (!this.parsedActions.has(actionDefinition)) {
+			const actions = this.parseActionDefinition(actionDefinition);
+			this.parsedActions.set(actionDefinition, actions);
+		}
+	}
+
+	/**
+	 * Parses a single action segment into its name and modifiers.
+	 * @example "jump[pressed|justPressed]" => ["jump", ["pressed", "justPressed"]]
+	 * @param action The action segment to parse.
+	 * @returns A tuple containing the action name and an array of modifiers.
+	 */
+	private parseAction(action: string): ParsedAction {
+		// Match action name and modifiers inside square brackets
+		const actionMatch = action.match(/([a-zA-Z_]+)\[([^\]]*)\]?/); // Modified: match modifiers within []
+		if (!actionMatch) return [action, []];
+
+		const actionName = actionMatch[1];   // Capture the action name
+		// Split modifiers by commas (e.g., "pressed,justPressed" => ["pressed", "justPressed"])
+		const modifiers = actionMatch[2] ? actionMatch[2].split(',') : [];
+		return [actionName, modifiers];      // Return the action name and its modifiers
+	}
+
+	/**
+	 * Parses an action definition string into a nested structure of actions and operators.
+	 * Supports both AND (+) and OR (|) operators with parenthesis support.
+	 * @param actionDefinition The action definition string to parse.
+	 * @returns A nested array representing the parsed actions and operators.
+	 */
+	private parseActionDefinition(actionDefinition: string): ParsedActionGroup {
+		// Process the string, splitting on parentheses, +, and |
+		const stack = [];
+		let currentGroup = [];
+		let currentString = '';
+		let depth = 0;
+
+		for (const char of actionDefinition) {
+			if (char === '(') {
+				if (depth === 0 && currentString) {
+					currentGroup.push(currentString.trim());
+					currentString = '';
+				}
+				stack.push(currentGroup);
+				currentGroup = [];
+				depth++;
+			} else if (char === ')') {
+				depth--;
+				if (currentString) {
+					currentGroup.push(this.parseAction(currentString.trim()));
+					currentString = '';
+				}
+				const completedGroup = currentGroup;
+				currentGroup = stack.pop();
+				currentGroup.push(completedGroup);
+			} else if (char === '+') {
+				if (currentString) {
+					currentGroup.push(this.parseAction(currentString.trim()));
+					currentString = '';
+				}
+			} else if (char === '|') {
+				if (currentString) {
+					currentGroup.push(this.parseAction(currentString.trim()));
+					currentString = '';
+				}
+				stack.push(currentGroup);
+				currentGroup = [];
+			} else {
+				currentString += char;
+			}
+		}
+
+		if (currentString) {
+			currentGroup.push(this.parseAction(currentString.trim()));
+		}
+
+		return currentGroup;
+	}
+
+	/**
+	 * Retrieves the parsed actions for a given action definition, using the cache if available.
+	 * If not cached, it parses the action definition and stores the result in the cache.
+	 * @param actionDefinition The action definition string to retrieve parsed actions for.
+	 * @returns A nested array representing the parsed actions and operators, or undefined if none are found.
+	 */
+	private getParsedActions(actionDefinition: string): ParsedActionGroup | undefined {
+		if (!this.parsedActions.has(actionDefinition)) {
+			this.precomputeParsedActions(actionDefinition);
+		}
+		return this.parsedActions.get(actionDefinition);
+	}
+
+	/**
+	 * Checks if the specified action is triggered based on its name and modifiers.
+	 * @param actionName The name of the action to check.
+	 * @param modifiers An array of modifiers to apply to the action check.
+	 * @returns True if the action is triggered, false otherwise.
+	 */
+	private isActionTriggered(actionName: string, modifiers: string[]): boolean {
+		const actionState = this.getActionState(actionName); // Use internal getActionState method
+
+		for (const modifier of modifiers) {
+			const isNegated = modifier.startsWith('!');
+			const modifierName = isNegated ? modifier.substring(1) : modifier;
+
+			switch (modifierName) {
+				case 'pressed':
+					if (isNegated ? actionState.pressed : !actionState.pressed) return false;
+					break;
+				case 'justPressed':
+					if (isNegated ? actionState.justpressed : !actionState.justpressed) return false;
+					break;
+				case 'consumed':
+					if (isNegated ? actionState.consumed : !actionState.consumed) return false;
+					break;
+				case 'pressTime':
+					if (isNegated ? !!actionState.presstime : !actionState.presstime) return false;
+					break;
+				default:
+					break;
+			}
+		}
+
+		return true; // All conditions are satisfied, action is triggered
+	}
+
+	/**
+	 * Checks if all actions defined in the action definition string have been triggered.
+	 * Supports both AND (+) and OR (|) operators.
+	 * @param actionDefinition The action definition string to check.
+	 * @returns True if the action definition is satisfied, false otherwise.
+	 */
+	public checkActionTriggered(actionDefinition: string): boolean {
+		const parsedActions = this.getParsedActions(actionDefinition);
+		if (!parsedActions) return false;
+
+		// Recursively evaluate the parsed actions
+		const evaluateActions = (actions: any[]): boolean => {
+			let andGroup = true;
+			let orGroup = false;
+
+			for (const action of actions) {
+				if (Array.isArray(action)) {
+					// Nested group (AND by default)
+					if (!evaluateActions(action)) {
+						andGroup = false;
+					}
+				} else if (typeof action === 'string') {
+					// OR operator
+					orGroup = orGroup || andGroup;
+					andGroup = true;  // Reset andGroup for the next OR condition
+				} else {
+					// Evaluate action name and modifiers
+					const [actionName, modifiers] = action;
+					if (!this.isActionTriggered(actionName, modifiers)) {
+						andGroup = false;
+					}
+				}
+			}
+
+			return andGroup || orGroup;
+		};
+
+		return evaluateActions(parsedActions);
+	}
+
+	/**
 	 * Sets the input map for a specific player.
 	 * @param inputMap - The input map to set.
 	 */
@@ -1133,7 +1326,7 @@ export class PlayerInput {
 	 */
 	public getActionState(action: string): ActionState {
 		const inputMap = this.inputMap;
-		if (!inputMap) return { action, pressed: false, consumed: false, presstime: null, timestamp: undefined };
+		if (!inputMap) return { action, pressed: false, justpressed: false, consumed: false, presstime: null, timestamp: undefined };
 
 		const keyboardKeys = inputMap.keyboard ? inputMap.keyboard[action] : null;
 		const gamepadButtons = inputMap.gamepad ? inputMap.gamepad[action]?.map(button => Input.BUTTON2INDEX[button]) : null;
@@ -1172,6 +1365,7 @@ export class PlayerInput {
 		return {
 			action: action,
 			pressed: keyboardState.allPressed || gamepadState.allPressed,
+			justpressed: keyboardState.allPressed || gamepadState.allPressed, // TODO: Implement!
 			consumed: keyboardState.anyConsumed || gamepadState.anyConsumed,
 			presstime: Math.min(keyboardState.leastPressTime, gamepadState.leastPressTime) === Infinity ? null : Math.min(keyboardState.leastPressTime, gamepadState.leastPressTime),
 			timestamp: Math.max(keyboardState.recentestTimestamp, gamepadState.recentestTimestamp) === -Infinity ? undefined : Math.max(keyboardState.recentestTimestamp, gamepadState.recentestTimestamp),
@@ -1480,7 +1674,7 @@ class KeyboardInput implements IInputHandler {
 	 * @returns The pressed state of the key.
 	 */
 	public getKeyState(key: string): ButtonState {
-		if (key === null) return { pressed: false, consumed: false, presstime: null, timestamp: null };
+		if (key === null) return { pressed: false, justpressed: false, consumed: false, presstime: null, timestamp: null };
 		return getPressedState(this.keyState, key);
 	}
 
@@ -1497,7 +1691,7 @@ class KeyboardInput implements IInputHandler {
 	 */
 	keydown(key_code: ButtonId | string): void {
 		if (!this.keyState[key_code]) {
-			this.keyState[key_code] = { pressed: true, consumed: false, presstime: 0, timestamp: performance.now() };
+			this.keyState[key_code] = { pressed: true, justpressed: false, consumed: false, presstime: 0, timestamp: performance.now() };
 		}
 		else {
 			this.keyState[key_code].pressed = true;
@@ -1576,7 +1770,7 @@ class GamepadInput implements IInputHandler {
 		this._gamepad = gamepads[this.gamepadIndex]; // Update gamepad reference
 
 		// Reset gamepad button states
-		const defaultState = { pressed: false, consumed: false, presstime: null, timestamp: null };
+		const defaultState = { pressed: false, justpressed: false, consumed: false, presstime: null, timestamp: null };
 		Object.keys(Input.INDEX2BUTTON).forEach(button => {
 			if (!this.gamepadButtonStates[button]) {
 				this.gamepadButtonStates[button] = { ...defaultState };
@@ -1638,7 +1832,7 @@ class GamepadInput implements IInputHandler {
 	 * @returns The pressed state of the button.
 	 */
 	public getButtonState(btn: number | null): ButtonState {
-		if (btn === null) return { pressed: false, consumed: false, presstime: null, timestamp: null };
+		if (btn === null) return { pressed: false, justpressed: false, consumed: false, presstime: null, timestamp: null };
 
 		const stateMap = this.gamepadButtonStates || {};
 		return getPressedState(stateMap, btn);
@@ -1708,7 +1902,7 @@ class OnscreenGamepad implements IInputHandler {
 	 * @returns The pressed state of the button.
 	 */
 	public getButtonState(btn: number | null): ButtonState {
-		if (btn === null) return { pressed: false, consumed: false, presstime: null, timestamp: undefined };
+		if (btn === null) return { pressed: false, justpressed: false, consumed: false, presstime: null, timestamp: undefined };
 		const button = Input.INDEX2BUTTON[btn];
 		const stateMap = this.gamepadButtonStates || {};
 		return getPressedState(stateMap, button);
@@ -1721,7 +1915,7 @@ class OnscreenGamepad implements IInputHandler {
 	 */
 	public pollInput(): void {
 		// Initialize new states with current values instead of resetting
-		const defaultState = { pressed: false, consumed: true, presstime: null, timestamp: null };
+		const defaultState = { pressed: false, justpressed: false, consumed: true, presstime: null, timestamp: null };
 
 		let newGamepadButtonStates: Index2State = {};
 
