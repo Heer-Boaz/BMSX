@@ -11,13 +11,37 @@ import { StateMachineBlueprint, build_fsm, State } from './bfsm';
  * Type definition for a single parsed action.
  * A tuple containing the action name and an array of modifiers.
  */
-type ParsedAction = [string, string[]];
+// type ParsedAction = [string, Modifier[]];
+type ParsedAction = [string, ((actionState: ActionState) => boolean)[]];
 
-/**
- * Type definition for a group of parsed actions.
- * Can be a single action, an AND group, or an OR group.
- */
-type ParsedActionGroup = (ParsedAction | ParsedActionGroup)[];
+// Define the allowed modifiers as a union of string literals
+type StandardModifier = 'pressed' | 'justPressed' | 'consumed' | 'ignoreConsumed' | 'pressTime';
+type NegatedModifier = `!${StandardModifier}`;
+type Modifier = StandardModifier | NegatedModifier;
+
+// Define an ActionNode with stricter modifier typing
+interface ActionNode {
+	type: 'action';
+	action: string;
+	modifierFunctions: ((actionState: ActionState) => boolean)[];
+}
+// type ActionNode = {
+// 	type: 'action';
+// 	action: string;
+// 	modifiers: Modifier[];  // Now using the stricter Modifier type
+// };
+
+type OperatorNode = {
+	type: 'operator';
+	operator: '+' | '|';
+	children: ASTNode[];
+};
+type NotNode = {
+	type: 'not';
+	child: ASTNode;
+}
+
+type ASTNode = ActionNode | OperatorNode | NotNode;
 
 // @ts-ignore
 function svgToPng(svgElement, filename) {
@@ -1138,7 +1162,7 @@ export class PlayerInput {
 	/**
 	 * Cache for parsed action definitions to avoid repeated parsing.
 	 */
-	private parsedActions: Map<string, ParsedActionGroup> = new Map();
+	private parsedActions: Map<string, ASTNode> = new Map();
 
 	/**
 	 * Precomputes the parsed actions for a given action definition and stores them in the cache.
@@ -1152,84 +1176,313 @@ export class PlayerInput {
 	}
 
 	/**
-	 * Parses a single action segment into its name and modifiers.
-	 * @example "jump[pressed|justPressed]" => ["jump", ["pressed", "justPressed"]]
+	 * Parses a single action segment into its name and compiled modifier functions.
 	 * @param action The action segment to parse.
-	 * @returns A tuple containing the action name and an array of modifiers.
+	 * @returns A tuple containing the action name and an array of compiled modifier functions.
 	 */
 	private parseAction(action: string): ParsedAction {
-		// Match action name and modifiers inside square brackets
-		const actionMatch = action.match(/([a-zA-Z_]+)\[([^\]]*)\]?/); // Modified: match modifiers within []
-		if (!actionMatch) return [action, []];
+		let isNegated = false;
 
-		const actionName = actionMatch[1];   // Capture the action name
-		// Split modifiers by commas (e.g., "pressed,justPressed" => ["pressed", "justPressed"])
-		const modifiers = actionMatch[2] ? actionMatch[2].split(',') : [];
-		return [actionName, modifiers];      // Return the action name and its modifiers
+		if (action.startsWith('!')) {
+			isNegated = true;
+			action = action.substring(1);
+		}
+
+		const actionMatch = action.match(/^([a-zA-Z_]+)(?:\[(.*?)\])?$/);
+		if (!actionMatch) {
+			throw new Error(`Invalid action format: '${action}'`);
+		}
+
+		const actionName = actionMatch[1];
+		const modifierString = actionMatch[2] || '';
+
+		const modifiers = modifierString.split(',').filter(Boolean) as Modifier[];
+
+		// Ensure 'pressed' modifier is included unless specified
+		const hasPressedModifier = modifiers.some(
+			(modifier) => modifier === 'pressed' || modifier === '!pressed'
+		);
+		if (!hasPressedModifier) {
+			modifiers.push('pressed');
+		}
+
+		// Ensure '!consumed' modifier is included unless 'consumed', '!consumed', or 'ignoreConsumed' is specified
+		const hasConsumedModifier = modifiers.some(
+			(modifier) =>
+				modifier === 'consumed' ||
+				modifier === '!consumed' ||
+				modifier === 'ignoreConsumed' ||
+				modifier === '!ignoreConsumed'
+		);
+		if (!hasConsumedModifier) {
+			modifiers.push('!consumed');
+		}
+
+		// If the action was negated, adjust the 'pressed' and 'consumed' modifiers
+		if (isNegated) {
+			modifiers.forEach((modifier, index) => {
+				if (modifier === 'pressed') {
+					modifiers[index] = '!pressed';
+				} else if (modifier === '!pressed') {
+					modifiers[index] = 'pressed';
+				} else if (modifier === 'consumed') {
+					modifiers[index] = '!consumed';
+				} else if (modifier === '!consumed') {
+					modifiers[index] = 'consumed';
+				}
+				// Other modifiers remain unchanged
+			});
+		}
+
+		modifiers.forEach((modifier) => {
+			if (!this.isValidModifier(modifier)) {
+				throw new Error(`Invalid modifier: '${modifier}' in action '${actionName}'`);
+			}
+		});
+
+		// Compile modifiers into functions
+		const modifierFunctions = modifiers.map((modifier) => this.compileModifier(modifier));
+
+		return [actionName, modifierFunctions];
+	}
+
+	/**
+	* Compiles a modifier string into a function that evaluates the modifier.
+	* @param modifier The modifier string to compile.
+	* @returns A function that takes an ActionState and returns a boolean.
+	*/
+	private compileModifier(modifier: string): (actionState: ActionState) => boolean {
+		const isNegated = modifier.startsWith('!');
+		const modifierName = isNegated ? modifier.substring(1) : modifier;
+
+		if (modifierName.startsWith('pressTime')) {
+			const timeConditionMatch = modifierName.match(/^pressTime\{(<|>)(\d+)}$/);
+			if (timeConditionMatch) {
+				const operator = timeConditionMatch[1];
+				const timeThreshold = parseInt(timeConditionMatch[2], 10);
+				return (actionState: ActionState) => {
+					const pressTime = actionState.presstime || 0;
+					let conditionMet = false;
+					switch (operator) {
+						case '>':
+							conditionMet = pressTime > timeThreshold;
+							break;
+						case '<':
+							conditionMet = pressTime < timeThreshold;
+							break;
+					}
+					return isNegated ? !conditionMet : conditionMet;
+				};
+			} else {
+				throw new Error(`Invalid 'pressTime' format in modifier: '${modifierName}'`);
+			}
+		} else {
+			switch (modifierName) {
+				case 'pressed':
+					return (actionState: ActionState) =>
+						isNegated ? !actionState.pressed : actionState.pressed;
+				case 'justPressed':
+					return (actionState: ActionState) =>
+						isNegated ? !actionState.justpressed : actionState.justpressed;
+				case 'consumed':
+					return (actionState: ActionState) =>
+						isNegated ? !actionState.consumed : actionState.consumed;
+				case 'ignoreConsumed':
+					return (actionState: ActionState) => isNegated ? !actionState.consumed : true; // If not negated, always returns true, effectively ignoring the consumed status
+				default:
+					throw new Error(`Unknown modifier: '${modifierName}'`);
+			}
+		}
+	}
+
+	/**
+	 * Validates that the modifier is either a StandardModifier, NegatedModifier, or a valid pressTime condition.
+	 * @param modifier The modifier to validate.
+	 * @returns True if valid, otherwise false.
+	 */
+	private isValidModifier(modifier: string): boolean {
+		const standardModifiers: StandardModifier[] = [
+			'pressed',
+			'justPressed',
+			'consumed',
+			'ignoreConsumed',
+			'pressTime',
+		];
+		const negatedModifiers: NegatedModifier[] = standardModifiers
+			.filter((m) => m !== 'ignoreConsumed') // We don't allow negation of 'ignoreConsumed'
+			.map((m) => `!${m}` as NegatedModifier);
+
+		// Check if it's a standard or negated modifier
+		if (
+			standardModifiers.includes(modifier as StandardModifier) ||
+			negatedModifiers.includes(modifier as NegatedModifier)
+		) {
+			return true;
+		}
+
+		// Check for valid pressTime condition
+		const pressTimeMatch = modifier.match(/^pressTime\{(<|>)(\d+)}$/);
+		if (pressTimeMatch) {
+			return true;
+		}
+
+		// If none of the conditions are met, it's an invalid modifier
+		return false;
 	}
 
 	/**
 	 * Parses an action definition string into a nested structure of actions and operators.
 	 * Supports both AND (+) and OR (|) operators with parenthesis support.
+	 * Includes error handling for invalid syntax.
 	 * @param actionDefinition The action definition string to parse.
-	 * @returns A nested array representing the parsed actions and operators.
+	 * @returns The parsed ASTNode.
 	 */
-	private parseActionDefinition(actionDefinition: string): ParsedActionGroup {
-		// Process the string, splitting on parentheses, +, and |
-		const stack = [];
-		let currentGroup = [];
-		let currentString = '';
-		let depth = 0;
+	private parseActionDefinition(actionDefinition: string): ASTNode {
+		let index = 0;
+		const tokens = this.tokenize(actionDefinition);
 
-		for (const char of actionDefinition) {
-			if (char === '(') {
-				if (depth === 0 && currentString) {
-					currentGroup.push(currentString.trim());
-					currentString = '';
+		const parseExpression = (): ASTNode => {
+			let node = parseTerm();
+
+			while (index < tokens.length && tokens[index] === '|') {
+				index++; // Consume '|'
+				const right = parseTerm();
+				node = {
+					type: 'operator',
+					operator: '|',
+					children: [node, right],
+				};
+			}
+
+			return node;
+		};
+
+		const parseTerm = (): ASTNode => {
+			let node = parseFactor();
+
+			while (index < tokens.length && tokens[index] === '+') {
+				index++; // Consume '+'
+				const right = parseFactor();
+				node = {
+					type: 'operator',
+					operator: '+',
+					children: [node, right],
+				};
+			}
+
+			return node;
+		};
+
+		const parseFactor = (): ASTNode => {
+			if (tokens[index] === '!') {
+				index++; // Consume '!'
+				const node = parseFactor();
+				return {
+					type: 'not',
+					child: node,
+				};
+			} else if (tokens[index] === '(') {
+				index++; // Consume '('
+				const node = parseExpression();
+				if (tokens[index] !== ')') {
+					throw new Error(`Expected ')' at position ${index}`);
 				}
-				stack.push(currentGroup);
-				currentGroup = [];
-				depth++;
-			} else if (char === ')') {
-				depth--;
-				if (currentString) {
-					currentGroup.push(this.parseAction(currentString.trim()));
-					currentString = '';
-				}
-				const completedGroup = currentGroup;
-				currentGroup = stack.pop();
-				currentGroup.push(completedGroup);
-			} else if (char === '+') {
-				if (currentString) {
-					currentGroup.push(this.parseAction(currentString.trim()));
-					currentString = '';
-				}
-			} else if (char === '|') {
-				if (currentString) {
-					currentGroup.push(this.parseAction(currentString.trim()));
-					currentString = '';
-				}
-				stack.push(currentGroup);
-				currentGroup = [];
+				index++; // Consume ')'
+				return node;
 			} else {
-				currentString += char;
+				const actionToken = tokens[index++];
+				const [actionName, modifierFunctions] = this.parseAction(actionToken);
+				return {
+					type: 'action',
+					action: actionName,
+					modifierFunctions: modifierFunctions,
+				};
+			}
+		};
+
+		return parseExpression();
+	}
+
+	/**
+	 * Tokenizes the input action definition string into an array of tokens.
+	 * @param input The action definition string to tokenize.
+	 * @returns An array of tokens.
+	 */
+	private tokenize(input: string): string[] {
+		const tokens: string[] = [];
+		let current = '';
+		let i = 0;
+
+		while (i < input.length) {
+			const char = input[i];
+
+			if (char === ' ' || char === '\t' || char === '\n') {
+				i++; // Skip whitespace
+				continue;
+			}
+
+			if (char === '+' || char === '|' || char === '(' || char === ')') {
+				if (current.length > 0) {
+					tokens.push(current);
+					current = '';
+				}
+				tokens.push(char);
+				i++;
+			} else if (char === '!') {
+				if (current.length > 0) {
+					tokens.push(current);
+					current = '';
+				}
+				tokens.push('!');
+				i++;
+			} else if (char === '[') {
+				// Handle action with modifiers
+				current += char;
+				i++;
+				while (i < input.length && input[i] !== ']') {
+					current += input[i];
+					i++;
+				}
+				if (i < input.length) {
+					current += ']';
+					i++; // Consume ']'
+				} else {
+					throw new Error(`Unmatched '[' at position ${i}`);
+				}
+			} else if (char === '{') {
+				// Handle pressTime with curly braces
+				current += char;
+				i++;
+				while (i < input.length && input[i] !== '}') {
+					current += input[i];
+					i++;
+				}
+				if (i < input.length) {
+					current += '}';
+					i++; // Consume '}'
+				} else {
+					throw new Error(`Unmatched '{' at position ${i}`);
+				}
+			} else {
+				current += char;
+				i++;
 			}
 		}
 
-		if (currentString) {
-			currentGroup.push(this.parseAction(currentString.trim()));
+		if (current.length > 0) {
+			tokens.push(current);
 		}
 
-		return currentGroup;
+		return tokens;
 	}
 
 	/**
 	 * Retrieves the parsed actions for a given action definition, using the cache if available.
 	 * If not cached, it parses the action definition and stores the result in the cache.
 	 * @param actionDefinition The action definition string to retrieve parsed actions for.
-	 * @returns A nested array representing the parsed actions and operators, or undefined if none are found.
+	 * @returns The parsed ASTNode, or undefined if none are found.
 	 */
-	private getParsedActions(actionDefinition: string): ParsedActionGroup | undefined {
+	private getParsedActions(actionDefinition: string): ASTNode | undefined {
 		if (!this.parsedActions.has(actionDefinition)) {
 			this.precomputeParsedActions(actionDefinition);
 		}
@@ -1237,37 +1490,46 @@ export class PlayerInput {
 	}
 
 	/**
-	 * Checks if the specified action is triggered based on its name and modifiers.
+	 * Checks if a given action is triggered based on its compiled modifier functions.
 	 * @param actionName The name of the action to check.
-	 * @param modifiers An array of modifiers to apply to the action check.
+	 * @param modifierFunctions An array of compiled modifier functions.
 	 * @returns True if the action is triggered, false otherwise.
 	 */
-	private isActionTriggered(actionName: string, modifiers: string[]): boolean {
+	private isActionTriggered(actionName: string, modifierFunctions: ((actionState: ActionState) => boolean)[]): boolean {
 		const actionState = this.getActionState(actionName); // Use internal getActionState method
 
-		for (const modifier of modifiers) {
-			const isNegated = modifier.startsWith('!');
-			const modifierName = isNegated ? modifier.substring(1) : modifier;
-
-			switch (modifierName) {
-				case 'pressed':
-					if (isNegated ? actionState.pressed : !actionState.pressed) return false;
-					break;
-				case 'justPressed':
-					if (isNegated ? actionState.justpressed : !actionState.justpressed) return false;
-					break;
-				case 'consumed':
-					if (isNegated ? actionState.consumed : !actionState.consumed) return false;
-					break;
-				case 'pressTime':
-					if (isNegated ? !!actionState.presstime : !actionState.presstime) return false;
-					break;
-				default:
-					break;
+		for (const modifierFunction of modifierFunctions) {
+			if (!modifierFunction(actionState)) {
+				return false; // Early exit if any condition is not met
 			}
 		}
 
-		return true; // All conditions are satisfied, action is triggered
+		return true; // All conditions met
+	}
+
+	/**
+	 * Evaluates the parsed ASTNode to determine if the action definition is satisfied.
+	 * @param node The ASTNode to evaluate.
+	 * @returns True if the action definition is satisfied, false otherwise.
+	 */
+	private evaluateActions(node: ASTNode): boolean {
+		if (node.type === 'action') {
+			return this.isActionTriggered(node.action, node.modifierFunctions);
+		}
+
+		if (node.type === 'not') {
+			return !this.evaluateActions(node.child);
+		}
+
+		if (node.operator === '+') {
+			// AND operator: All children must return true
+			return node.children.every(child => this.evaluateActions(child));
+		} else if (node.operator === '|') {
+			// OR operator: At least one child must return true
+			return node.children.some(child => this.evaluateActions(child));
+		}
+
+		throw new Error(`Unknown operator: ${node.operator}`);
 	}
 
 	/**
@@ -1280,34 +1542,7 @@ export class PlayerInput {
 		const parsedActions = this.getParsedActions(actionDefinition);
 		if (!parsedActions) return false;
 
-		// Recursively evaluate the parsed actions
-		const evaluateActions = (actions: any[]): boolean => {
-			let andGroup = true;
-			let orGroup = false;
-
-			for (const action of actions) {
-				if (Array.isArray(action)) {
-					// Nested group (AND by default)
-					if (!evaluateActions(action)) {
-						andGroup = false;
-					}
-				} else if (typeof action === 'string') {
-					// OR operator
-					orGroup = orGroup || andGroup;
-					andGroup = true;  // Reset andGroup for the next OR condition
-				} else {
-					// Evaluate action name and modifiers
-					const [actionName, modifiers] = action;
-					if (!this.isActionTriggered(actionName, modifiers)) {
-						andGroup = false;
-					}
-				}
-			}
-
-			return andGroup || orGroup;
-		};
-
-		return evaluateActions(parsedActions);
+		return this.evaluateActions(parsedActions);
 	}
 
 	/**
@@ -1361,14 +1596,16 @@ export class PlayerInput {
 
 		const keyboardState = getState(keyboardKeys, (key: string | number) => this.getKeyState(key as string));
 		const gamepadState = getState(gamepadButtons, (button: string | number) => this.getGamepadButtonState(button as number));
+		const minPresstime = Math.min(keyboardState.leastPressTime, gamepadState.leastPressTime);
+		const maxTimestamp = Math.max(keyboardState.recentestTimestamp, gamepadState.recentestTimestamp);
 
 		return {
 			action: action,
 			pressed: keyboardState.allPressed || gamepadState.allPressed,
 			justpressed: keyboardState.allPressed || gamepadState.allPressed, // TODO: Implement!
 			consumed: keyboardState.anyConsumed || gamepadState.anyConsumed,
-			presstime: Math.min(keyboardState.leastPressTime, gamepadState.leastPressTime) === Infinity ? null : Math.min(keyboardState.leastPressTime, gamepadState.leastPressTime),
-			timestamp: Math.max(keyboardState.recentestTimestamp, gamepadState.recentestTimestamp) === -Infinity ? undefined : Math.max(keyboardState.recentestTimestamp, gamepadState.recentestTimestamp),
+			presstime: minPresstime === Infinity ? null : minPresstime,
+			timestamp: maxTimestamp === -Infinity ? undefined : maxTimestamp,
 		};
 	}
 
