@@ -1414,23 +1414,30 @@ export class PlayerInput {
 
 	/**
 	 * Consumes the input action for the specified player index.
-	 * @param action The name of the input action to consume.
+	 * @param actionToConsume The name of the input action to consume.
 	 */
 	public consumeAction(actionToConsume: ActionState | string) {
 		const inputMap = this.inputMap;
 		if (!inputMap) return;
 
+		// Determine the action string
 		const action: string = (typeof actionToConsume === 'string') ? actionToConsume : actionToConsume.action;
 
+		// Consume keyboard input
 		const keyboardKeys = inputMap.keyboard?.[action];
 		if (keyboardKeys && this.keyboardInput) {
-			keyboardKeys.filter(key => this.keyboardInput.getKeyState(key).pressed).forEach(key => this.keyboardInput.consumeKey(key));
+			keyboardKeys
+				.filter(key => this.keyboardInput.getKeyState(key).pressed)
+				.forEach(key => this.keyboardInput.consumeKey(key));
 		}
 
+		// Consume gamepad input
 		if (this.gamepadInput) {
-			const gamepadButtons = inputMap.gamepad[action]?.map(button => Input.BUTTON2INDEX[button]);
-			if (gamepadButtons && this.gamepadInput) {
-				gamepadButtons.filter(button => this.gamepadInput.getButtonState(button).pressed).forEach(button => this.gamepadInput.consumeButton(button));
+			const gamepadButtons = inputMap.gamepad?.[action]?.map(button => Input.BUTTON2INDEX[button]);
+			if (gamepadButtons) {
+				gamepadButtons
+					.filter(button => this.gamepadInput.getButtonState(button).pressed)
+					.forEach(button => this.gamepadInput.consumeButton(button));
 			}
 		}
 	}
@@ -1807,13 +1814,13 @@ class GamepadInput implements IInputHandler {
 		if (!buttons) return;
 		for (let btnIndex = 0; btnIndex < buttons.length; btnIndex++) {
 			const btn = buttons[btnIndex];
-			const pressed = typeof btn === "object" ? btn.pressed : btn === 1.0;
+			const pressed = typeof btn === 'object' ? btn.pressed : btn === 1.0;
 			// Consider that the button can already be regarded as pressed if it was pressed as part of an axis (which is also regarded as a button press)
 			this.gamepadButtonStates[btnIndex].pressed = btnIndex === Input.BUTTON2INDEX.left || btnIndex === Input.BUTTON2INDEX.right || btnIndex === Input.BUTTON2INDEX.up || btnIndex === Input.BUTTON2INDEX.down
 				? this.gamepadButtonStates[btnIndex].pressed || pressed
 				: pressed;
 
-			if (!pressed) {
+			if (!this.gamepadButtonStates[btnIndex].pressed) {
 				this.gamepadButtonStates[btnIndex].consumed = false;
 				this.gamepadButtonStates[btnIndex].presstime = null;
 				this.gamepadButtonStates[btnIndex].timestamp = null;
@@ -1834,7 +1841,7 @@ class GamepadInput implements IInputHandler {
 	public getButtonState(btn: number | null): ButtonState {
 		if (btn === null) return { pressed: false, justpressed: false, consumed: false, presstime: null, timestamp: null };
 
-		const stateMap = this.gamepadButtonStates || {};
+		const stateMap = this.gamepadButtonStates;
 		return getPressedState(stateMap, btn);
 	}
 
