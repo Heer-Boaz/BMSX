@@ -165,12 +165,19 @@ export const DEFAULT_BST_ID = 'master';
 
 /**
  * Represents an object that is stateful and can be registered, and subscribes to events.
+ * It also has a player index, that is used to identify the player that the stateful object belongs to, which is used to determine which player's input to process.
  */
 export interface IStateful extends IRegisterable, IEventSubscriber {
 	/**
 	 * The StatemachineController of the object.
 	 */
 	sc: StateMachineController;
+
+	/**
+	 * The player index of the stateful object.
+	 * If the player index is not set, it defaults to 1 (the first/main player).
+	 */
+	player_index?: number;
 }
 
 /**
@@ -1130,26 +1137,32 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		if (this.paused) return;
 
 		// Process inputs in substates first
-		if (this.states) {
-			for (const id in this.states) {
-				const substate = this.states[id];
-				substate.processInput();
-			}
-		}
+		// if (this.states) {
+		// 	for (const id in this.states) {
+		// 		const substate = this.states[id];
+		// 		substate.processInput();
+		// 	}
+		// }
 		// Process input for the current state if inputs haven't been consumed
+
+		// Note that the input procesing is run first in the lowest substate, then in the parent state, and then in the parent of the parent state, and so on.
+		// That is because the `runSubstateMachines` function is called before the `processInput` function, which means that the input processing is run in the substates first.
 		this.processInputForCurrentState();
 
 		const next_state = this.definition.process_input?.call(this.target, this);
 		this.transitionToNextStateIfProvided(next_state);
 	}
 
+	// @ts-ignore
 	private processInputForCurrentState(): void {
 		const inputHandlers = this.definition.on_input;
 		if (!inputHandlers) return;
 
+		const playerIndex = this.target.player_index ?? 1;
+
 		for (const inputPattern in inputHandlers) {
 			const handler = inputHandlers[inputPattern];
-			if (Input.instance.getPlayerInput(1).checkActionTriggered(inputPattern)) {
+			if (Input.instance.getPlayerInput(playerIndex).checkActionTriggered(inputPattern)) {
 				// Input matches the pattern
 
 				// // Check if the input has been consumed
@@ -1158,7 +1171,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 				// }
 
 				// Consume the input
-				Input.instance.getPlayerInput(1).consumeAction(inputPattern);
+				Input.instance.getPlayerInput(playerIndex).consumeAction(inputPattern);
 
 				// Execute the handler
 				// Check if the check condition is met
@@ -1177,8 +1190,8 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 						const to_state = state_id_or_handler.to; // Get the target state ID from the state transition object
 						const switch_state = state_id_or_handler.switch; // Get the target state ID from the state transition object
 
-						// If the emitter ID is not provided or it is the same as the emitter ID of the event, call the if-handler
-						if (!ifHandler.call(this.target, this as State<T>)) {
+						// Call the if-handler to check if the input should be processed, if the if-handler exists (otherwise, process the input)
+						if (ifHandler && !ifHandler.call(this.target, this as State<T>)) {
 							// If the if-handler exists and returns false, do nothing
 							return;
 						}
@@ -1247,15 +1260,15 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	doRunChecks(): void {
 		if (this.paused) return;
 
-		// Run checks in substates first
-		if (this.states) {
-			for (const id in this.states) {
-				const substate = this.states[id];
-				substate.doRunChecks();
-			}
-		}
+		// // Run checks in substates first
+		// for (const id in this.states) {
+		// 	if (id === this.currentid) continue;
+		// 	if (this.states[id].parallel) this.states[id].doRunChecks();
+		// }
 
-		// Run checks in the current state
+		// Run checks in the current state.
+		// Note that the run checks are run first in the lowest substate, then in the parent state, and then in the parent of the parent state, and so on.
+		// That is because the `runSubstateMachines` function is called before the `doRunChecks` function, which means that the run checks are run in the substates first.
 		this.runChecksForCurrentState();
 	}
 
