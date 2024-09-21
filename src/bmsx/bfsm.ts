@@ -2,6 +2,7 @@ import { exclude_save, insavegame, onload } from './gameserializer';
 import { IIdentifiable, IRegisterable, Identifier } from './game';
 import { BaseModel } from './basemodel';
 import { EventScope, IEventSubscriber } from './eventemitter';
+import { Input } from './input';
 
 /**
  * Represents a type definition for mapping IDs to `sdef` objects.
@@ -1106,9 +1107,16 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 
 		this.enterCriticalSection();
 		try {
-			this.processInput();
-			this.runCurrentState();
+			// Run substates first
 			this.runSubstateMachines();
+
+			// Process input for the current state
+			this.processInput();
+
+			// Run the current state's logic
+			this.runCurrentState();
+
+			// Execute run checks
 			this.doRunChecks();
 		} finally {
 			this.leaveCriticalSection();
@@ -1119,8 +1127,93 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 * Processes the input for the current state and transitions to the next state if provided.
 	 */
 	processInput(): void {
+		if (this.paused) return;
+
+		// Process inputs in substates first
+		if (this.states) {
+			for (const id in this.states) {
+				const substate = this.states[id];
+				substate.processInput();
+			}
+		}
+		// Process input for the current state if inputs haven't been consumed
+		this.processInputForCurrentState();
+
 		const next_state = this.definition.process_input?.call(this.target, this);
 		this.transitionToNextStateIfProvided(next_state);
+	}
+
+	private processInputForCurrentState(): void {
+		const inputHandlers = this.definition.on_input;
+		if (!inputHandlers) return;
+
+		for (const inputPattern in inputHandlers) {
+			const handler = inputHandlers[inputPattern];
+			if (Input.instance.getPlayerInput(1).checkActionTriggered(inputPattern)) {
+				// Input matches the pattern
+
+				// // Check if the input has been consumed
+				// if (this.inputManager.isActionConsumed(inputPattern)) {
+				// 	continue; // Skip if input is consumed
+				// }
+
+				// Consume the input
+				Input.instance.getPlayerInput(1).consumeAction(inputPattern);
+
+				// Execute the handler
+				// Check if the check condition is met
+				const state_id_or_handler = handler;
+				if (state_id_or_handler) {
+					if (typeof state_id_or_handler === 'string') {
+						// If the handler is a string, treat it as a state ID and transition to that state
+						// If the string starts with a '#', it is a state ID relative to the parent state machine, otherwise it is a state ID relative to the current state machine
+						// const state_id = state_id_or_handler.startsWith('#') ? state_id_or_handler.slice(1) : state_id_or_handler;
+						this.to(state_id_or_handler); // Transition to the state with the given ID and pass the arguments to the state transition function
+						// Note: the state transition function will handle the enter and exit events for the states, but not if the state is the same as the current state
+					} else {
+						// If the handler is a StateTransition object (i.e., an object with an 'if' and 'do' handler), call the 'if' handler and if it returns true, call the 'do' handler and transition to the target state
+						const ifHandler = state_id_or_handler.if; // Get the if-handler from the state transition object
+						const doHandler = state_id_or_handler.do; // Get the do-handler from the state transition object
+						const to_state = state_id_or_handler.to; // Get the target state ID from the state transition object
+						const switch_state = state_id_or_handler.switch; // Get the target state ID from the state transition object
+
+						// If the emitter ID is not provided or it is the same as the emitter ID of the event, call the if-handler
+						if (!ifHandler.call(this.target, this as State<T>)) {
+							// If the if-handler exists and returns false, do nothing
+							return;
+						}
+
+						// If the if-handler does not exist or returns true, call the do-handler.
+						// The do-handler can return a state ID to transition to, otherwise it can return undefined to indicate that no transition should occur or to indicate that the target state should be used.
+						const next_state = doHandler?.call(this.target, this as State<T>);
+						const next_state_transition = this.getNextState(next_state); // Get the state transition object from the next state
+
+						// If the next state is not the current state, transition to the next state
+						if (next_state_transition && next_state_transition.state_id !== this.currentid) {
+							if (next_state_transition.transition_type === 'to') {
+								this.to(next_state_transition.state_id, ...next_state_transition.args);
+							} else if (next_state_transition.transition_type === 'switch') {
+								this.switch(next_state_transition.state_id, ...next_state_transition.args);
+							}
+						} else if (to_state) {
+							// If the next state is not defined, check if the target state is defined and transition to the target state if it is not the same as the current state (otherwise, do nothing)
+							const to_state_transition = this.getNextState(to_state); // Get the state transition object from the target state
+							if (to_state_transition) {
+								// Transition to the target state if it is defined and not the same as the current state ID (otherwise, do nothing)
+								this.to(to_state_transition.state_id, ...to_state_transition.args);
+							}
+						}
+						else if (switch_state) {
+							const switch_state_transition = this.getNextState(switch_state);
+							if (switch_state_transition) {
+								// Transition to the target state if it is defined and not the same as the current state ID (otherwise, do nothing)
+								this.switch(switch_state_transition.state_id, ...switch_state_transition.args);
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 
 	/**
@@ -1129,7 +1222,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 * If the `run` function returns a next state, it transitions to that state.
 	 * If the `run` function does not return a next state and `auto_tick` is enabled in the state definition, it increments the `ticks` counter.
 	 */
-	runCurrentState(): void {
+	private runCurrentState(): void {
 		const next_state = this.definition.run?.call(this.target, this);
 		if (next_state) {
 			this.transitionToNextStateIfProvided(next_state);
@@ -1151,11 +1244,26 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		}
 	}
 
+	doRunChecks(): void {
+		if (this.paused) return;
+
+		// Run checks in substates first
+		if (this.states) {
+			for (const id in this.states) {
+				const substate = this.states[id];
+				substate.doRunChecks();
+			}
+		}
+
+		// Run checks in the current state
+		this.runChecksForCurrentState();
+	}
+
 	/**
 	 * Executes the run checks defined in the state machine definition.
 	 * If a run check condition is met, it might transition to the next state based on the provided logic.
 	 */
-	doRunChecks(): void {
+	runChecksForCurrentState(): void {
 		const run_checks = this.definition.run_checks;
 		if (!run_checks) return;
 
@@ -2077,6 +2185,10 @@ export class StateDefinition {
 	 * ```
 	 */
 	public on?: {
+		[key: string]: Identifier | StateEventDefinition;
+	};
+
+	public on_input?: {
 		[key: string]: Identifier | StateEventDefinition;
 	};
 
