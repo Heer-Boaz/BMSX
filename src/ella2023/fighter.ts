@@ -89,14 +89,14 @@ export abstract class Fighter extends SpriteObject {
      * 3 = player 3
      * 4 = player 4
      */
-    public playerIndex: number;
+    public player_index: number;
 
     constructor(id: Identifier, fsm_id: string, facing: 'left' | 'right' = 'right', playerIndex: number) {
         super(id, fsm_id);
         this.hitarea = new_area(0, 0, 0, 0); // Populate the hitarea with a default value. It is updated in the imgid setter.
         this.facing = facing;
         this.currentHitMarker = null;
-        this.playerIndex = playerIndex;
+        this.player_index = playerIndex;
     }
 
     public doAttackFlow(attackType: AttackType, opponent: Fighter): boolean {
