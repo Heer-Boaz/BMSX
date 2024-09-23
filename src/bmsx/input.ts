@@ -581,12 +581,34 @@ export type GamepadButton = keyof typeof Input.BUTTON2INDEX;
 /**
  * Represents the state of a button.
  */
-export type ButtonState = { pressed: boolean; justpressed: boolean; consumed: boolean; presstime: number | null; timestamp: number; };
+export type ButtonState = {
+	pressed: boolean;
+	justpressed: boolean;
+	consumed: boolean;
+	presstime: number | null;
+	timestamp: number;
+};
+
+/**
+ * Represents the input event that is stored when a key or button is pressed or released.
+ */
+type InputEvent = {
+	eventType: 'press' | 'release';
+	identifier: string | number; // Key code or button index
+	timestamp: number;
+	source: 'keyboard' | 'gamepad' | 'onscreen';
+	playerIndex: number;
+};
 
 /**
  * Represents the state of an action, including the action name and button state.
  */
 export type ActionState = { action: string } & ButtonState;
+
+function makeButtonState(partialState?: Partial<ButtonState>): ButtonState {
+	const { pressed = false, justpressed = false, consumed = false, presstime = null, timestamp = null } = partialState ?? {};
+	return { pressed, justpressed, consumed, presstime, timestamp };
+}
 
 /**
  * Represents an input handler that provides methods for polling input, getting button states,
@@ -900,31 +922,114 @@ class PendingAssignmentProcessor {
 }
 
 // @ts-ignore
-class InputBuffer {
-	private buffer: ButtonState[] = [];
-	private bufferSize: number;
+class InputStateManager {
+	private inputBuffer: InputBuffer;
+	private buttonStates: Map<string | number, ButtonState> = new Map();
 
-	constructor(bufferSize: number = 10) {
-		this.bufferSize = bufferSize;
+	constructor(private playerIndex: number) {
+		this.inputBuffer = new InputBuffer();
 	}
 
-	// Add a button state or key state to the buffer
-	add(state: ButtonState) {
-		this.buffer.unshift(state);
-		if (this.buffer.length > this.bufferSize) {
-			this.buffer.pop();
+	// Call this method each frame to update states
+	update(currentTime: number): void {
+		// Process input events
+		this.processInputEvents(currentTime);
+
+		// Update presstime for pressed buttons
+		this.buttonStates.forEach((state) => {
+			if (state.pressed) {
+				state.presstime = currentTime - (state.timestamp ?? currentTime);
+			} else {
+				state.presstime = null;
+			}
+		});
+
+		// Clean up old events from the buffer if needed
+		this.inputBuffer.cleanup(currentTime);
+	}
+
+	private processInputEvents(_currentTime: number): void {
+		const events = this.inputBuffer.getEventsForPlayer(this.playerIndex);
+
+		events.forEach(event => {
+			let state = this.buttonStates.get(event.identifier);
+			if (!state) {
+				state = {
+					pressed: false,
+					justpressed: false,
+					consumed: false,
+					presstime: null,
+					timestamp: null,
+				};
+				this.buttonStates.set(event.identifier, state);
+			}
+
+			if (event.eventType === 'press') {
+				if (!state.pressed) {
+					state.pressed = true;
+					state.justpressed = true;
+					state.timestamp = event.timestamp;
+				} else {
+					state.justpressed = false;
+				}
+			} else if (event.eventType === 'release') {
+				state.pressed = false;
+				state.justpressed = false;
+				state.timestamp = null;
+				state.presstime = null;
+			}
+		});
+
+		// Clear events after processing
+		this.inputBuffer.clearEventsForPlayer(this.playerIndex);
+	}
+
+	// Methods to interact with the input buffer
+	addInputEvent(event: InputEvent): void {
+		this.inputBuffer.addEvent(event);
+	}
+
+	getButtonState(identifier: string | number): ButtonState {
+		return this.buttonStates.get(identifier) || {
+			pressed: false,
+			justpressed: false,
+			consumed: false,
+			presstime: null,
+			timestamp: null,
+		};
+	}
+
+	consumeButton(identifier: string | number): void {
+		const state = this.buttonStates.get(identifier);
+		if (state) {
+			state.consumed = true;
 		}
 	}
+}
 
-	// Remove states that are older than the given timeframe
-	removeOld(timeframe: number) {
-		const now = Date.now();
-		this.buffer = this.buffer.filter(state => now - state.timestamp <= timeframe);
+// @ts-ignore
+class InputBuffer {
+	private events: InputEvent[] = [];
+	private bufferDuration: number; // e.g., 200ms
+
+	constructor(bufferDuration: number = 200) {
+		this.bufferDuration = bufferDuration;
 	}
 
-	// Get the buffer
-	getBuffer(): (ButtonState)[] {
-		return this.buffer;
+	addEvent(event: InputEvent): void {
+		this.events.push(event);
+	}
+
+	getEventsForPlayer(playerIndex: number): InputEvent[] {
+		return this.events.filter(event => event.playerIndex === playerIndex);
+	}
+
+	clearEventsForPlayer(playerIndex: number): void {
+		this.events = this.events.filter(event => event.playerIndex !== playerIndex);
+	}
+
+	cleanup(currentTime: number): void {
+		this.events = this.events.filter(event => currentTime - event.timestamp <= this.bufferDuration);
 	}
 }
 
@@ -1482,7 +1587,7 @@ export class PlayerInput {
 	/**
 	 * The keyboard input handler for the player, if any.
 	 */
-	public keyboardInput: KeyboardInput;
+	public keyboardInput: IInputHandler & { getKeyState(key: string): ButtonState; consumeKey(key: string): void; };
 
 	/**
 	 * The gamepad input handler for the player, if any.
@@ -1911,7 +2016,7 @@ class KeyboardInput implements IInputHandler {
 	 * @returns The pressed state of the key.
 	 */
 	public getKeyState(key: string): ButtonState {
-		if (key === null) return { pressed: false, justpressed: false, consumed: false, presstime: null, timestamp: null };
+		if (key === null) return makeButtonState();
 		return getPressedState(this.keyState, key);
 	}
 
@@ -1928,7 +2033,7 @@ class KeyboardInput implements IInputHandler {
 	 */
 	keydown(key_code: ButtonId | string): void {
 		if (!this.keyState[key_code]) {
-			this.keyState[key_code] = { pressed: true, justpressed: false, consumed: false, presstime: 0, timestamp: performance.now() };
+			this.keyState[key_code] = makeButtonState( { pressed: true, presstime: 0, timestamp: performance.now() });
 		}
 		else {
 			this.keyState[key_code].pressed = true;
@@ -2007,7 +2112,7 @@ class GamepadInput implements IInputHandler {
 		this._gamepad = gamepads[this.gamepadIndex]; // Update gamepad reference
 
 		// Reset gamepad button states
-		const defaultState = { pressed: false, justpressed: false, consumed: false, presstime: null, timestamp: null };
+		const defaultState = makeButtonState();
 		Object.keys(Input.INDEX2BUTTON).forEach(button => {
 			if (!this.gamepadButtonStates[button]) {
 				this.gamepadButtonStates[button] = { ...defaultState };
@@ -2069,7 +2174,7 @@ class GamepadInput implements IInputHandler {
 	 * @returns The pressed state of the button.
 	 */
 	public getButtonState(btn: number | null): ButtonState {
-		if (btn === null) return { pressed: false, justpressed: false, consumed: false, presstime: null, timestamp: null };
+		if (btn === null) return makeButtonState();
 
 		const stateMap = this.gamepadButtonStates;
 		return getPressedState(stateMap, btn);
@@ -2139,7 +2244,7 @@ class OnscreenGamepad implements IInputHandler {
 	 * @returns The pressed state of the button.
 	 */
 	public getButtonState(btn: number | null): ButtonState {
-		if (btn === null) return { pressed: false, justpressed: false, consumed: false, presstime: null, timestamp: undefined };
+		if (btn === null) return makeButtonState();
 		const button = Input.INDEX2BUTTON[btn];
 		const stateMap = this.gamepadButtonStates || {};
 		return getPressedState(stateMap, button);
@@ -2152,7 +2257,7 @@ class OnscreenGamepad implements IInputHandler {
 	 */
 	public pollInput(): void {
 		// Initialize new states with current values instead of resetting
-		const defaultState = { pressed: false, justpressed: false, consumed: true, presstime: null, timestamp: null };
+		const defaultState = makeButtonState();
 
 		let newGamepadButtonStates: Index2State = {};
 
@@ -2332,7 +2437,7 @@ class OnscreenGamepad implements IInputHandler {
 		if (!except) {
 			// Initialize the states of all gamepad buttons and axes
 			for (const button_state in Input.BUTTON2INDEX) {
-				this.gamepadButtonStates[Input.BUTTON2INDEX[button_state]] = <ButtonState>{ pressed: false, consumed: false, presstime: null, timestamp: null };
+				this.gamepadButtonStates[Input.BUTTON2INDEX[button_state]] = <ButtonState>makeButtonState();
 			}
 		}
 		else {
