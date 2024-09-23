@@ -85,6 +85,9 @@ export type StateTransition = {
 	transition_type?: TransitionType;
 };
 
+/**
+ * Represents a state transition with a type (either 'to' or 'switch').
+ */
 type StateTransitionWithType = StateTransition & { transition_type: TransitionType };
 
 /**
@@ -146,6 +149,11 @@ interface IStateGuard<T extends IStateful & IEventSubscriber = any> {
  */
 type TickCheckDefinition<T extends IStateful = any> = Omit<StateEventDefinition<T>, 'scope'>;
 
+/**
+ * Represents the type of a state transition (either 'to' or 'switch').
+ * - 'to': The default transition type, which transitions the whole state machine tree to the new state.
+ * - 'switch': A transition type that switches only the lowest level state to the new state.
+ */
 type TransitionType = 'to' | 'switch';
 
 /**
@@ -1136,15 +1144,6 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	processInput(): void {
 		if (this.paused) return;
 
-		// Process inputs in substates first
-		// if (this.states) {
-		// 	for (const id in this.states) {
-		// 		const substate = this.states[id];
-		// 		substate.processInput();
-		// 	}
-		// }
-		// Process input for the current state if inputs haven't been consumed
-
 		// Note that the input procesing is run first in the lowest substate, then in the parent state, and then in the parent of the parent state, and so on.
 		// That is because the `runSubstateMachines` function is called before the `processInput` function, which means that the input processing is run in the substates first.
 		this.processInputForCurrentState();
@@ -1153,7 +1152,11 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		this.transitionToNextStateIfProvided(next_state);
 	}
 
-	// @ts-ignore
+	/**
+	 * Processes the player input 'events' for the current state.
+	 * If the current state has an 'on_input' property, it checks if the input matches any of the input patterns and executes the corresponding handler.
+	 * @returns {void}
+	 */
 	private processInputForCurrentState(): void {
 		const inputHandlers = this.definition.on_input;
 		if (!inputHandlers) return;
@@ -1164,12 +1167,6 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 			const handler = inputHandlers[inputPattern];
 			if (Input.instance.getPlayerInput(playerIndex).checkActionTriggered(inputPattern)) {
 				// Input matches the pattern
-
-				// // Check if the input has been consumed
-				// if (this.inputManager.isActionConsumed(inputPattern)) {
-				// 	continue; // Skip if input is consumed
-				// }
-
 				// Consume the input
 				Input.instance.getPlayerInput(playerIndex).consumeAction(inputPattern);
 
@@ -1257,14 +1254,12 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		}
 	}
 
+	/**
+	 * Perform the run checks for the current state.
+	 * @returns {void}
+	 */
 	doRunChecks(): void {
 		if (this.paused) return;
-
-		// // Run checks in substates first
-		// for (const id in this.states) {
-		// 	if (id === this.currentid) continue;
-		// 	if (this.states[id].parallel) this.states[id].doRunChecks();
-		// }
 
 		// Run checks in the current state.
 		// Note that the run checks are run first in the lowest substate, then in the parent state, and then in the parent of the parent state, and so on.
