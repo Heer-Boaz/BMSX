@@ -195,7 +195,7 @@ export type ButtonState = {
  */
 type InputEvent = {
 	eventType: 'press' | 'release';
-	identifier: ButtonId; // Key code or button index
+	identifier: ButtonId; // Key code or button name
 	timestamp: number;
 	source: 'keyboard' | 'gamepad' | 'onscreen';
 	playerIndex: number;
@@ -223,14 +223,14 @@ interface IInputHandler {
 
 	/**
 	 * Gets the state of the specified button.
-	 * @param btn - The button number or null to get the state of all buttons.
+	 * @param btn - The button name or null to get the state of all buttons.
 	 * @returns The state of the button.
 	 */
 	getButtonState(btn: ButtonId): ButtonState;
 
 	/**
 	 * Consumes the specified button, marking it as processed.
-	 * @param button - The button number to consume.
+	 * @param button - The button name to consume.
 	 */
 	consumeButton(button: ButtonId): void;
 
@@ -1686,10 +1686,10 @@ class KeyboardInput implements IInputHandler {
 	 * uses DOM events to handle key presses instead of polling.
 	 * However, this method is required to implement the IInputHandler interface.
 	 *
-	 * @param btn - The button number.
+	 * @param key - The key name.
 	 */
-	public consumeButton(btn: string): void {
-		this.consumeKey(btn)
+	public consumeButton(key: string): void {
+		this.consumeKey(key)
 	}
 
 	/**
@@ -1697,19 +1697,10 @@ class KeyboardInput implements IInputHandler {
 	 * uses DOM events to handle key presses instead of polling.
 	 * However, this method is required to implement the IInputHandler interface.
 	 *
-	 * @param btn - The button number.
+	 * @param key - The key name.
 	 * @returns null
 	 */
-	public getButtonState(btn: string): ButtonState {
-		return this.getKeyState(btn);
-	}
-
-	/**
-	 * Returns the pressed state of a key, and optionally checks if it was clicked.
-	 * @param key - The key to check the state of.
-	 * @returns The pressed state of the key.
-	 */
-	private getKeyState(key: string): ButtonState {
+	public getButtonState(key: string): ButtonState {
 		if (key === null) return makeButtonState();
 		return getPressedState(this.keyState, key);
 	}
