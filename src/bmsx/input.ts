@@ -94,7 +94,7 @@ export type ActionStateQuery = {
  */
 type KeyboardButtonId = 'BTN1' | 'BTN2' | 'BTN3' | 'BTN4' | Key;
 
-type ButtonId = number | string;
+type ButtonId = string;
 
 /**
  * Prevents the default action, propagation, and immediate propagation of an event.
@@ -133,7 +133,7 @@ function resetObject(obj: any, except?: string[]) {
  * @returns The pressed state of the key or button.
  */
 function getPressedState(
-	stateMap: Index2State,
+	stateMap: Key2ButtonState,
 	key: ButtonId
 ): ButtonState {
 	// TODO: IMPLEMENT!
@@ -143,7 +143,7 @@ function getPressedState(
 /**
  * Represents the state of an button-press-index in the Index2State type. Used for tracking the state of a button.
  */
-type Index2State = { [index: ButtonId]: ButtonState; }
+type Key2ButtonState = { [index: ButtonId]: ButtonState; }
 
 /**
  * Represents a mapping of keyboard inputs to actions.
@@ -177,7 +177,7 @@ export type KeyboardButton = keyof typeof Key | string;
  * Represents a gamepad button.
  * @typedef {keyof typeof Input.BUTTON2INDEX } GamepadButton
  */
-export type GamepadButton = keyof typeof Input.BUTTON2INDEX;
+export type GamepadButton = keyof typeof Input.BUTTON_IDS;
 
 /**
  * Represents the state of a button.
@@ -376,7 +376,7 @@ class PendingAssignmentProcessor {
 	 * @returns A boolean value indicating whether the button is pressed and not consumed.
 	 */
 	private checkNonConsumedPressed(button: GamepadButton, gamepadInput: IInputHandler) {
-		return gamepadInput.getButtonState(Input.BUTTON2INDEX[button]).pressed && !gamepadInput.getButtonState(Input.BUTTON2INDEX[button]).consumed;
+		return gamepadInput.getButtonState(button).pressed && !gamepadInput.getButtonState(button).consumed;
 	}
 
 	/**
@@ -394,7 +394,7 @@ class PendingAssignmentProcessor {
 	 */
 	private handleSelectPlayerIndexButtonPress(button: GamepadButton, increment: number, gamepadInput: IInputHandler) {
 		if (this.checkNonConsumedPressed(button, gamepadInput)) {
-			gamepadInput.consumeButton(Input.BUTTON2INDEX[button]);
+			gamepadInput.consumeButton(button);
 
 			let newProposedPlayerIndex: number = this.proposedPlayerIndex + increment;
 			if (newProposedPlayerIndex < 1) {
@@ -481,7 +481,7 @@ class PendingAssignmentProcessor {
 		// Check whether the start button was pressed and not consumed yet to assign the gamepad to a player
 		if (this.proposedPlayerIndex === null) {
 			if (this.checkNonConsumedPressed('start', gamepadInput)) {
-				gamepadInput.consumeButton(Input.BUTTON2INDEX['start']);
+				gamepadInput.consumeButton('start');
 				const proposedPlayerIndex = inputMaestro.getFirstAvailablePlayerIndexForGamepadAssignment();
 
 				if (proposedPlayerIndex !== null) {
@@ -499,7 +499,7 @@ class PendingAssignmentProcessor {
 			this.icon.x = this.calcIconPositionX(this.pendingIndex);
 			if (this.checkNonConsumedPressed('a', gamepadInput)) {
 				// Assign gamepad to player and remove the joystick icon
-				gamepadInput.consumeButton(Input.BUTTON2INDEX['a']);
+				gamepadInput.consumeButton('a');
 				inputMaestro.assignGamepadToPlayer(gamepadInput, this.proposedPlayerIndex);
 				inputMaestro.removePendingGamepadAssignment(this.inputHandler.gamepadIndex);
 				$.emit('controller_assigned', Input.instance, this.proposedPlayerIndex);
@@ -507,7 +507,7 @@ class PendingAssignmentProcessor {
 			}
 			else if (this.checkNonConsumedPressed('b', gamepadInput)) {
 				// Cancel assignment process for this gamepad and remove the joystick icon
-				gamepadInput.consumeButton(Input.BUTTON2INDEX['b']);
+				gamepadInput.consumeButton('b');
 				this.proposedPlayerIndex = null; // Set proposed player index to null to indicate that the gamepad is no longer proposed to be assigned to a player. Note that we keep the pending gamepad assignment object around, so that the gamepad can be assigned to a player again later.
 				$.emit('controller_assigmment_cancelled', Input.instance, this.proposedPlayerIndex);
 				this.icon = null;
@@ -809,28 +809,51 @@ export class Input implements IRegisterable {
 		OnscreenGamepad.hideButtons(gamepad_button_ids);
 	}
 
+	// /**
+	// * The mapping of gamepad button names to their corresponding indices.
+	// */
+	// public static readonly BUTTON2INDEX = {
+	// 	'a': 0, // Bottom face button
+	// 	'b': 1, // Right face button
+	// 	'x': 2, // Left face button
+	// 	'y': 3, // Top face button
+	// 	'lb': 4, // Left shoulder button
+	// 	'rb': 5, // Right shoulder button
+	// 	'lt': 6, // Left trigger button
+	// 	'rt': 7, // Right trigger button
+	// 	'select': 8, // Select button
+	// 	'start': 9, // Start button
+	// 	'ls': 10, // Left stick button
+	// 	'rs': 11, // Right stick button
+	// 	'up': 12, // D-pad up
+	// 	'down': 13, // D-pad down
+	// 	'left': 14, // D-pad left
+	// 	'right': 15, // D-pad right
+	// 	'home': 16, // Xbox button
+	// 	'touch': 17, // Touchpad button
+	// } as const;
 	/**
 	* The mapping of gamepad button names to their corresponding indices.
 	*/
-	public static readonly BUTTON2INDEX = {
-		'a': 0, // Bottom face button
-		'b': 1, // Right face button
-		'x': 2, // Left face button
-		'y': 3, // Top face button
-		'lb': 4, // Left shoulder button
-		'rb': 5, // Right shoulder button
-		'lt': 6, // Left trigger button
-		'rt': 7, // Right trigger button
-		'select': 8, // Select button
-		'start': 9, // Start button
-		'ls': 10, // Left stick button
-		'rs': 11, // Right stick button
-		'up': 12, // D-pad up
-		'down': 13, // D-pad down
-		'left': 14, // D-pad left
-		'right': 15, // D-pad right
-		'home': 16, // Xbox button
-		'touch': 17, // Touchpad button
+	public static readonly BUTTON_IDS = {
+		'a': 'a', // Bottom face button
+		'b': 'b', // Right face button
+		'x': 'x', // Left face button
+		'y': 'y', // Top face button
+		'lb': 'lb', // Left shoulder button
+		'rb': 'rb', // Right shoulder button
+		'lt': 'lt', // Left trigger button
+		'rt': 'rt', // Right trigger button
+		'select': 'select', // Select button
+		'start': 'start', // Start button
+		'ls': 'ls', // Left stick button
+		'rs': 'rs', // Right stick button
+		'up': 'up', // D-pad up
+		'down': 'down', // D-pad down
+		'left': 'left', // D-pad left
+		'right': 'right', // D-pad right
+		'home': 'home', // Xbox button
+		'touch': 'touch', // Touchpad button
 	} as const;
 
 	/**
@@ -1005,7 +1028,7 @@ export class Input implements IRegisterable {
 			player.pollInput();
 			const gamepadInput = player.inputHandlers['gamepad'];
 			if (gamepadInput) {
-				const buttonState = gamepadInput.getButtonState(Input.BUTTON2INDEX['start']);
+				const buttonState = gamepadInput.getButtonState('start');
 				if (buttonState.pressed && buttonState.presstime >= 50) {
 					gamepadInput.reset();
 					player.inputHandlers['gamepad'] = null;
@@ -1113,35 +1136,35 @@ export class Input implements IRegisterable {
 	}
 
 	public static get KC_UP(): boolean {
-		return Input.instance.getPlayerInput(1).checkAndConsume('ArrowUp', Input.BUTTON2INDEX.up);
+		return Input.instance.getPlayerInput(1).checkAndConsume('ArrowUp', 'up');
 	}
 
 	public static get KC_RIGHT(): boolean {
-		return Input.instance.getPlayerInput(1).checkAndConsume('ArrowRight', Input.BUTTON2INDEX.right);
+		return Input.instance.getPlayerInput(1).checkAndConsume('ArrowRight', 'right');
 	}
 
 	public static get KC_DOWN(): boolean {
-		return Input.instance.getPlayerInput(1).checkAndConsume('ArrowDown', Input.BUTTON2INDEX.down);
+		return Input.instance.getPlayerInput(1).checkAndConsume('ArrowDown', 'down');
 	}
 
 	public static get KC_LEFT(): boolean {
-		return Input.instance.getPlayerInput(1).checkAndConsume('ArrowLeft', Input.BUTTON2INDEX.left);
+		return Input.instance.getPlayerInput(1).checkAndConsume('ArrowLeft', 'left');
 	}
 
 	public static get KC_BTN1(): boolean {
-		return Input.instance.getPlayerInput(1).checkAndConsume('ShiftLeft', Input.BUTTON2INDEX.a);
+		return Input.instance.getPlayerInput(1).checkAndConsume('ShiftLeft', 'a');
 	}
 
 	public static get KC_BTN2(): boolean {
-		return Input.instance.getPlayerInput(1).checkAndConsume('KeyZ', Input.BUTTON2INDEX.b);
+		return Input.instance.getPlayerInput(1).checkAndConsume('KeyZ', 'b');
 	}
 
 	public static get KC_BTN3(): boolean {
-		return Input.instance.getPlayerInput(1).checkAndConsume('F1', Input.BUTTON2INDEX.x);
+		return Input.instance.getPlayerInput(1).checkAndConsume('F1', 'x');
 	}
 
 	public static get KC_BTN4(): boolean {
-		return Input.instance.getPlayerInput(1).checkAndConsume('F5', Input.BUTTON2INDEX.y);
+		return Input.instance.getPlayerInput(1).checkAndConsume('F5', 'y');
 	}
 
 	public static get KD_F1(): boolean {
@@ -1169,28 +1192,28 @@ export class Input implements IRegisterable {
 		return Input.instance.getPlayerInput(1).getKeyState('Space').pressed;
 	}
 	public static get KD_UP(): boolean {
-		return Input.instance.getPlayerInput(1).getKeyState('ArrowUp').pressed || Input.instance.getPlayerInput(1).getGamepadButtonState(Input.BUTTON2INDEX.up).pressed;
+		return Input.instance.getPlayerInput(1).getKeyState('ArrowUp').pressed || Input.instance.getPlayerInput(1).getGamepadButtonState('up').pressed;
 	}
 	public static get KD_RIGHT(): boolean {
-		return Input.instance.getPlayerInput(1).getKeyState('ArrowRight').pressed || Input.instance.getPlayerInput(1).getGamepadButtonState(Input.BUTTON2INDEX.right).pressed;
+		return Input.instance.getPlayerInput(1).getKeyState('ArrowRight').pressed || Input.instance.getPlayerInput(1).getGamepadButtonState('right').pressed;
 	}
 	public static get KD_DOWN(): boolean {
-		return Input.instance.getPlayerInput(1).getKeyState('ArrowDown').pressed || Input.instance.getPlayerInput(1).getGamepadButtonState(Input.BUTTON2INDEX.down).pressed;
+		return Input.instance.getPlayerInput(1).getKeyState('ArrowDown').pressed || Input.instance.getPlayerInput(1).getGamepadButtonState('down').pressed;
 	}
 	public static get KD_LEFT(): boolean {
-		return Input.instance.getPlayerInput(1).getKeyState('ArrowLeft').pressed || Input.instance.getPlayerInput(1).getGamepadButtonState(Input.BUTTON2INDEX.left).pressed;
+		return Input.instance.getPlayerInput(1).getKeyState('ArrowLeft').pressed || Input.instance.getPlayerInput(1).getGamepadButtonState('left').pressed;
 	}
 	public static get KD_BTN1(): boolean {
-		return Input.instance.getPlayerInput(1).getKeyState('ShiftLeft').pressed || Input.instance.getPlayerInput(1).getGamepadButtonState(Input.BUTTON2INDEX.a).pressed;
+		return Input.instance.getPlayerInput(1).getKeyState('ShiftLeft').pressed || Input.instance.getPlayerInput(1).getGamepadButtonState('a').pressed;
 	}
 	public static get KD_BTN2(): boolean {
-		return Input.instance.getPlayerInput(1).getKeyState('KeyZ').pressed || Input.instance.getPlayerInput(1).getGamepadButtonState(Input.BUTTON2INDEX.b).pressed;
+		return Input.instance.getPlayerInput(1).getKeyState('KeyZ').pressed || Input.instance.getPlayerInput(1).getGamepadButtonState('b').pressed;
 	}
 	public static get KD_BTN3(): boolean {
-		return Input.instance.getPlayerInput(1).getKeyState('F1').pressed || Input.instance.getPlayerInput(1).getGamepadButtonState(Input.BUTTON2INDEX.x).pressed;
+		return Input.instance.getPlayerInput(1).getKeyState('F1').pressed || Input.instance.getPlayerInput(1).getGamepadButtonState('x').pressed;
 	}
 	public static get KD_BTN4(): boolean {
-		return Input.instance.getPlayerInput(1).getKeyState('F5').pressed || Input.instance.getPlayerInput(1).getGamepadButtonState(Input.BUTTON2INDEX.y).pressed;
+		return Input.instance.getPlayerInput(1).getKeyState('F5').pressed || Input.instance.getPlayerInput(1).getGamepadButtonState('y').pressed;
 	}
 
 	/**
@@ -1338,8 +1361,8 @@ export class PlayerInput {
 		const inputMap = this.inputMap;
 		if (!inputMap) return { action, pressed: false, justpressed: false, consumed: false, presstime: null, timestamp: undefined };
 
-		const keyboardKeys = inputMap.keyboard ? inputMap.keyboard[action] : null;
-		const gamepadButtons = inputMap.gamepad ? inputMap.gamepad[action]?.map(button => Input.BUTTON2INDEX[button]) : null;
+		const keyboardKeys = inputMap.keyboard?.[action];
+		const gamepadButtons = inputMap.gamepad?.[action];
 
 		/**
 		 * Retrieves the state of the specified keys or buttons.
@@ -1352,7 +1375,7 @@ export class PlayerInput {
 		 *  - `leastPressTime`: The minimum press time among the specified keys/buttons, or `null` if none are pressed.
 		 *  - `recentestTimestamp`: The maximum timestamp among the specified keys/buttons, or `null` if none are pressed.
 		 */
-		const getState = (keys_or_buttons: string[] | number[], getStateFunc: (key: ButtonId) => any) => {
+		const getState = (keys_or_buttons: ButtonId[], getStateFunc: (key: ButtonId) => any) => {
 			let allPressed = true;
 			let anyConsumed = false;
 			let leastPressTime = Infinity;
@@ -1380,8 +1403,8 @@ export class PlayerInput {
 			return { allPressed, anyConsumed, leastPressTime, recentestTimestamp };
 		};
 
-		const keyboardState = getState(keyboardKeys, (key: ButtonId) => this.getKeyState(key as string));
-		const gamepadState = getState(gamepadButtons, (button: ButtonId) => this.getGamepadButtonState(button as number));
+		const keyboardState = getState(keyboardKeys, (key: ButtonId) => this.getKeyState(key));
+		const gamepadState = getState(gamepadButtons, (button: ButtonId) => this.getGamepadButtonState(button));
 		const minPresstime = Math.min(keyboardState.leastPressTime, gamepadState.leastPressTime);
 		const maxTimestamp = Math.max(keyboardState.recentestTimestamp, gamepadState.recentestTimestamp);
 
@@ -1448,7 +1471,7 @@ export class PlayerInput {
 
 		for (const source in this.inputHandlers) {
 			if (!this.inputHandlers[source] || !inputMap[source]) continue;
-			const keysOrButtons = inputMap[source][action]?.map((button: ButtonId) => source === 'keyboard' ? button : Input.BUTTON2INDEX[button]); // Convert button names to indices for gamepad input, or use the key as is for keyboard input
+			const keysOrButtons: KeyboardButton[] | GamepadButton[] = inputMap[source][action];
 			if (!keysOrButtons) continue;
 			keysOrButtons
 				.filter(key => this.inputHandlers[source].getButtonState(key).pressed)
@@ -1486,21 +1509,21 @@ export class PlayerInput {
 
 	/**
 	 * Retrieves the state of a gamepad button.
-	 * @param button - The button index.
+	 * @param button - The gamepad button identifier.
 	 * @returns The state of the button.
 	 */
-	public getGamepadButtonState(button: number): ButtonState {
+	public getGamepadButtonState(button: string): ButtonState {
 		if (!this.isGamepadConnected()) return null;
 		return this.inputHandlers['gamepad'].getButtonState(button);
 	}
 
 	/**
 	 * Checks if a specific button on a gamepad is currently being pressed down.
-	 * @param btn - The button code of the gamepad button to check.
+	 * @param button - The gamepad button to check.
 	 * @returns A boolean indicating whether the button is currently pressed down.
 	 */
-	public isGamepadButtonDown(btn: number): boolean {
-		const buttonState = this.getGamepadButtonState(btn);
+	public isGamepadButtonDown(button: string): boolean {
+		const buttonState = this.getGamepadButtonState(button);
 		return buttonState.pressed;
 	}
 
@@ -1510,7 +1533,7 @@ export class PlayerInput {
 	 * @param button - The gamepad button to check (optional).
 	 * @returns `true` if the input was consumed, `false` otherwise.
 	 */
-	public checkAndConsume(key: string, button?: number): boolean {
+	public checkAndConsume(key: string, button?: string): boolean {
 		const keyState = this.inputHandlers['keyboard']?.getButtonState(key) ?? makeButtonState();
 
 		if (keyState.pressed && !keyState.consumed) {
@@ -1666,7 +1689,7 @@ class KeyboardInput implements IInputHandler {
 	/**
 	 * The state of each keyboard key.
 	 */
-	public keyState: Index2State = {};
+	public keyState: Key2ButtonState = {};
 
 	/**
 	 * Consumes the given key by setting its key state to "consumed".
@@ -1788,7 +1811,7 @@ class GamepadInput implements IInputHandler {
 	/**
 	 * The state of each gamepad button for each player.
 	 */
-	private gamepadButtonStates: Index2State = {};
+	private gamepadButtonStates: Key2ButtonState = {};
 
 	/**
 	 * Creates an instance of the class and initializes the gamepad.
@@ -1820,7 +1843,7 @@ class GamepadInput implements IInputHandler {
 
 		// Reset gamepad button states
 		const defaultState = makeButtonState();
-		Object.keys(Input.INDEX2BUTTON).forEach(button => {
+		Object.keys(Input.BUTTON_IDS).forEach(button => {
 			if (!this.gamepadButtonStates[button]) {
 				this.gamepadButtonStates[button] = { ...defaultState };
 			}
@@ -1839,11 +1862,12 @@ class GamepadInput implements IInputHandler {
 	 */
 	private pollGamepadAxes(gamepad: Gamepad): void {
 		if (!gamepad) return; // Will be null if the gamepad was disconnected
+		// TODO: IMPLEMENT DPAD SUPPORT
 		const [xAxis, yAxis] = gamepad.axes;
-		this.gamepadButtonStates[Input.BUTTON2INDEX.left].pressed = xAxis < -0.5;
-		this.gamepadButtonStates[Input.BUTTON2INDEX.right].pressed = xAxis > 0.5;
-		this.gamepadButtonStates[Input.BUTTON2INDEX.up].pressed = yAxis < -0.5;
-		this.gamepadButtonStates[Input.BUTTON2INDEX.down].pressed = yAxis > 0.5;
+		this.gamepadButtonStates['left'].pressed = xAxis < -0.5;
+		this.gamepadButtonStates['right'].pressed = xAxis > 0.5;
+		this.gamepadButtonStates['up'].pressed = yAxis < -0.5;
+		this.gamepadButtonStates['down'].pressed = yAxis > 0.5;
 	}
 
 	/**
@@ -1855,22 +1879,23 @@ class GamepadInput implements IInputHandler {
 		const buttons = gamepad.buttons;
 		if (!buttons) return;
 		for (let btnIndex = 0; btnIndex < buttons.length; btnIndex++) {
-			const btn = buttons[btnIndex];
-			const pressed = typeof btn === 'object' ? btn.pressed : btn === 1.0;
+			const gamepadButton = buttons[btnIndex];
+			const pressed = typeof gamepadButton === 'object' ? gamepadButton.pressed : gamepadButton === 1.0;
 			// Consider that the button can already be regarded as pressed if it was pressed as part of an axis (which is also regarded as a button press)
-			this.gamepadButtonStates[btnIndex].pressed = btnIndex === Input.BUTTON2INDEX.left || btnIndex === Input.BUTTON2INDEX.right || btnIndex === Input.BUTTON2INDEX.up || btnIndex === Input.BUTTON2INDEX.down
-				? this.gamepadButtonStates[btnIndex].pressed || pressed
+			const buttonId = Input.INDEX2BUTTON[btnIndex];
+			this.gamepadButtonStates[buttonId].pressed = buttonId === 'left' || buttonId === 'right' || buttonId === 'up' || buttonId === 'down'
+				? this.gamepadButtonStates[buttonId].pressed || pressed
 				: pressed;
 
-			if (!this.gamepadButtonStates[btnIndex].pressed) {
-				this.gamepadButtonStates[btnIndex].consumed = false;
-				this.gamepadButtonStates[btnIndex].presstime = null;
-				this.gamepadButtonStates[btnIndex].timestamp = null;
+			if (!this.gamepadButtonStates[buttonId].pressed) {
+				this.gamepadButtonStates[buttonId].consumed = false;
+				this.gamepadButtonStates[buttonId].presstime = null;
+				this.gamepadButtonStates[buttonId].timestamp = null;
 			} else {
 				// If the button is pressed, increment the press time counter for detecting hold actions
-				this.gamepadButtonStates[btnIndex].presstime = (this.gamepadButtonStates[btnIndex].presstime ?? 0) + 1;
+				this.gamepadButtonStates[buttonId].presstime = (this.gamepadButtonStates[buttonId].presstime ?? 0) + 1;
 				// Set the timestamp only if it was not set before
-				this.gamepadButtonStates[btnIndex].timestamp ||= performance.now();
+				this.gamepadButtonStates[buttonId].timestamp ||= performance.now();
 			}
 		}
 	}
@@ -1880,9 +1905,7 @@ class GamepadInput implements IInputHandler {
 	 * @param btn - The index of the button to check the state of.
 	 * @returns The pressed state of the button.
 	 */
-	public getButtonState(btn: number): ButtonState {
-		// if (btn === null) return makeButtonState();
-
+	public getButtonState(btn: string): ButtonState {
 		const stateMap = this.gamepadButtonStates;
 		return getPressedState(stateMap, btn);
 	}
@@ -1891,7 +1914,7 @@ class GamepadInput implements IInputHandler {
 	 * Consumes the given button press for the specified player index.
 	 * @param button The button to consume.
 	 */
-	public consumeButton(button: number) {
+	public consumeButton(button: string) {
 		this.gamepadButtonStates[button].consumed = true;
 	}
 
@@ -1935,7 +1958,7 @@ class OnscreenGamepad implements IInputHandler {
 	/**
 	 * The state of each gamepad button for each player.
 	 */
-	private gamepadButtonStates: Index2State = {};
+	private gamepadButtonStates: Key2ButtonState = {};
 
 	/**
 	 * Hides the specified buttons.
@@ -1960,11 +1983,9 @@ class OnscreenGamepad implements IInputHandler {
 	 * @param btn - The index of the button to check the state of.
 	 * @returns The pressed state of the button.
 	 */
-	public getButtonState(btn: number): ButtonState {
-		// if (btn === null) return makeButtonState();
-		const buttonName = Input.INDEX2BUTTON[btn];
+	public getButtonState(btn: string): ButtonState {
 		const stateMap = this.gamepadButtonStates || {};
-		return getPressedState(stateMap, buttonName);
+		return getPressedState(stateMap, btn);
 	}
 
 	/**
@@ -1976,9 +1997,9 @@ class OnscreenGamepad implements IInputHandler {
 		// Initialize new states with current values instead of resetting
 		const defaultState = makeButtonState();
 
-		let newGamepadButtonStates: Index2State = {};
+		let newGamepadButtonStates: Key2ButtonState = {};
 
-		Object.keys(Input.BUTTON2INDEX).forEach(button => {
+		Object.keys(Input.BUTTON_IDS).forEach(button => {
 			newGamepadButtonStates[button] = this.gamepadButtonStates[button] ?? { ...defaultState };
 		});
 
@@ -2027,8 +2048,7 @@ class OnscreenGamepad implements IInputHandler {
 	 * Consumes the given button press for the specified player index.
 	 * @param button The button to consume.
 	 */
-	public consumeButton(buttonIndex: number) {
-		const button = Input.INDEX2BUTTON[buttonIndex];
+	public consumeButton(button: string) {
 		if (this.gamepadButtonStates[button]) this.gamepadButtonStates[button].consumed = true;
 	}
 
@@ -2176,8 +2196,8 @@ class OnscreenGamepad implements IInputHandler {
 	public reset(except?: string[]): void {
 		if (!except) {
 			// Initialize the states of all gamepad buttons and axes
-			for (const button_state in Input.BUTTON2INDEX) {
-				this.gamepadButtonStates[Input.BUTTON2INDEX[button_state]] = <ButtonState>makeButtonState();
+			for (const buttonId in Input.BUTTON_IDS) {
+				this.gamepadButtonStates[buttonId] = makeButtonState();
 			}
 		}
 		else {
