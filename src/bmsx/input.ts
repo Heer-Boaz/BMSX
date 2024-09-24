@@ -6,408 +6,7 @@ import { SpriteObject } from './sprite';
 import type { IRegisterable, Identifier } from "./game";
 import { Registry } from './registry';
 import { StateMachineBlueprint, build_fsm, State } from './bfsm';
-
-/**
- * Type definition for a single parsed action.
- * A tuple containing the action name and an array of modifiers.
- */
-type ParsedAction = [string, ((actionState: ActionState) => boolean)[]];
-
-/**
- * Helper class for parsing and evaluating input action definitions.
- * This class is used to parse action definitions and evaluate them against the current input state.
- * It also caches parsed action definitions to avoid repeated parsing.
- * @see ActionState for the structure of the input state.
- * @see ActionParser.getParsedActions for how to retrieve parsed actions.
- * @see ActionParser.evaluateActions for how to evaluate parsed actions.
- * @see ActionParser.parseActionDefinition for how to parse action definitions.
- * @see ActionParser.parseAction for how to parse a single action.
- * @see ActionParser.compileModifier for how to compile a modifier into a function.
- * @see ActionParser.isValidModifier for how to check if a modifier is valid.
- * @see ActionParser.tokenize for how to tokenize an action definition.
- * @see ActionParser.precomputeParsedActions for how to precompute parsed actions.
- * @see ActionParser.parsedActions for the cache of parsed actions.
- * @see ASTNode for the abstract syntax tree structure.
- * @see ActionNode for the action node structure.
- * @see OperatorNode for the operator node structure.
- * @see NotNode for the not node structure.
- * @see StandardModifier for the standard modifier type.
- * @see NegatedModifier for the negated modifier type.
- * @see Modifier for the modifier type.
- * @see KeyboardButton for the keyboard button type.
- * @see GamepadButton for the gamepad button type.
- * @see KeyboardInputMapping for the keyboard input mapping type.
- * @see GamepadInputMapping for the gamepad input mapping type.
- * @see InputMap for the input map type.
- * @see ButtonState for the button state type.
- * @see ActionState for the action state type.
- *
- */
-class ActionParser {
-	/**
-	 * Cache for parsed action definitions to avoid repeated parsing.
-	 */
-	private static parsedActions: Map<string, ASTNode> = new Map();
-
-	/**
-	 * Precomputes the parsed actions for a given action definition and stores them in the cache.
-	 * @param actionDefinition The action definition string to parse.
-	 */
-	private static precomputeParsedActions(actionDefinition: string): void {
-		if (!this.parsedActions.has(actionDefinition)) {
-			const actions = ActionParser.parseActionDefinition(actionDefinition);
-			this.parsedActions.set(actionDefinition, actions);
-		}
-	}
-
-	/**
-	 * Retrieves the parsed actions for a given action definition, using the cache if available.
-	 * If not cached, it parses the action definition and stores the result in the cache.
-	 * @param actionDefinition The action definition string to retrieve parsed actions for.
-	 * @returns The parsed ASTNode, or undefined if none are found.
-	 */
-	public static getParsedActions(actionDefinition: string): ASTNode | undefined {
-		if (!this.parsedActions.has(actionDefinition)) {
-			this.precomputeParsedActions(actionDefinition);
-		}
-		return this.parsedActions.get(actionDefinition);
-	}
-
-	static parseAction(action: string): ParsedAction {
-		let isNegated = false;
-
-		if (action.startsWith('!')) {
-			isNegated = true;
-			action = action.substring(1);
-		}
-
-		const actionMatch = action.match(/^([a-zA-Z_]+)(?:\[(.*?)\])?$/);
-		if (!actionMatch) {
-			throw new Error(`Invalid action format: '${action}'`);
-		}
-
-		const actionName = actionMatch[1];
-		const modifierString = actionMatch[2] || '';
-
-		const modifiers = modifierString.split(',').filter(Boolean) as Modifier[];
-
-		// Ensure 'pressed' modifier is included unless specified
-		const hasPressedModifier = modifiers.some(
-			(modifier) => modifier === 'pressed' || modifier === '!pressed'
-		);
-		if (!hasPressedModifier) {
-			modifiers.push('pressed');
-		}
-
-		// Ensure '!consumed' modifier is included unless 'consumed', '!consumed', or 'ignoreConsumed' is specified
-		const hasConsumedModifier = modifiers.some(
-			(modifier) =>
-				modifier === 'consumed' ||
-				modifier === '!consumed' ||
-				modifier === 'ignoreConsumed' ||
-				modifier === '!ignoreConsumed'
-		);
-		if (!hasConsumedModifier) {
-			modifiers.push('!consumed');
-		}
-
-		// If the action was negated, adjust the 'pressed' and 'consumed' modifiers
-		if (isNegated) {
-			modifiers.forEach((modifier, index) => {
-				if (modifier === 'pressed') {
-					modifiers[index] = '!pressed';
-				} else if (modifier === '!pressed') {
-					modifiers[index] = 'pressed';
-				} else if (modifier === 'consumed') {
-					modifiers[index] = '!consumed';
-				} else if (modifier === '!consumed') {
-					modifiers[index] = 'consumed';
-				}
-				// Other modifiers remain unchanged
-			});
-		}
-
-		modifiers.forEach((modifier) => {
-			if (!this.isValidModifier(modifier)) {
-				throw new Error(`Invalid modifier: '${modifier}' in action '${actionName}'`);
-			}
-		});
-
-		// Compile modifiers into functions
-		const modifierFunctions = modifiers.map((modifier) => this.compileModifier(modifier));
-
-		return [actionName, modifierFunctions];
-	}
-
-	static compileModifier(modifier: string): (actionState: ActionState) => boolean {
-		const isNegated = modifier.startsWith('!');
-		const modifierName = isNegated ? modifier.substring(1) : modifier;
-
-		if (modifierName.startsWith('pressTime')) {
-			const timeConditionMatch = modifierName.match(/^pressTime\{(<|>)(\d+)}$/);
-			if (timeConditionMatch) {
-				const operator = timeConditionMatch[1];
-				const timeThreshold = parseInt(timeConditionMatch[2], 10);
-				return (actionState: ActionState) => {
-					const pressTime = actionState.presstime || 0;
-					let conditionMet = false;
-					switch (operator) {
-						case '>':
-							conditionMet = pressTime > timeThreshold;
-							break;
-						case '<':
-							conditionMet = pressTime < timeThreshold;
-							break;
-					}
-					return isNegated ? !conditionMet : conditionMet;
-				};
-			} else {
-				throw new Error(`Invalid 'pressTime' format in modifier: '${modifierName}'`);
-			}
-		} else {
-			switch (modifierName) {
-				case 'pressed':
-					return (actionState: ActionState) =>
-						isNegated ? !actionState.pressed : actionState.pressed;
-				case 'justPressed':
-					return (actionState: ActionState) =>
-						isNegated ? !actionState.justpressed : actionState.justpressed;
-				case 'consumed':
-					return (actionState: ActionState) =>
-						isNegated ? !actionState.consumed : actionState.consumed;
-				case 'ignoreConsumed':
-					return (actionState: ActionState) => isNegated ? !actionState.consumed : true; // If not negated, always returns true, effectively ignoring the consumed status
-				default:
-					throw new Error(`Unknown modifier: '${modifierName}'`);
-			}
-		}
-	}
-
-	static isValidModifier(modifier: string): boolean {
-		const standardModifiers: StandardModifier[] = [
-			'pressed',
-			'justPressed',
-			'consumed',
-			'ignoreConsumed',
-			'pressTime',
-		];
-		const negatedModifiers: NegatedModifier[] = standardModifiers
-			.filter((m) => m !== 'ignoreConsumed') // We don't allow negation of 'ignoreConsumed'
-			.map((m) => `!${m}` as NegatedModifier);
-
-		// Check if it's a standard or negated modifier
-		if (
-			standardModifiers.includes(modifier as StandardModifier) ||
-			negatedModifiers.includes(modifier as NegatedModifier)
-		) {
-			return true;
-		}
-
-		// Check for valid pressTime condition
-		const pressTimeMatch = modifier.match(/^pressTime\{(<|>)(\d+)}$/);
-		if (pressTimeMatch) {
-			return true;
-		}
-
-		// If none of the conditions are met, it's an invalid modifier
-		return false;
-	}
-
-	static parseActionDefinition(actionDefinition: string): ASTNode {
-		let index = 0;
-		const tokens = this.tokenize(actionDefinition);
-
-		const parseExpression = (): ASTNode => {
-			let node = parseTerm();
-
-			while (index < tokens.length && tokens[index] === '|') {
-				index++; // Consume '|'
-				const right = parseTerm();
-				node = {
-					type: 'operator',
-					operator: '|',
-					children: [node, right],
-				};
-			}
-
-			return node;
-		};
-
-		const parseTerm = (): ASTNode => {
-			let node = parseFactor();
-
-			while (index < tokens.length && tokens[index] === '+') {
-				index++; // Consume '+'
-				const right = parseFactor();
-				node = {
-					type: 'operator',
-					operator: '+',
-					children: [node, right],
-				};
-			}
-
-			return node;
-		};
-
-		const parseFactor = (): ASTNode => {
-			if (tokens[index] === '!') {
-				index++; // Consume '!'
-				const node = parseFactor();
-				return {
-					type: 'not',
-					child: node,
-				};
-			} else if (tokens[index] === '(') {
-				index++; // Consume '('
-				const node = parseExpression();
-				if (tokens[index] !== ')') {
-					throw new Error(`Expected ')' at position ${index}`);
-				}
-				index++; // Consume ')'
-				return node;
-			} else {
-				const actionToken = tokens[index++];
-				const [actionName, modifierFunctions] = this.parseAction(actionToken);
-				return {
-					type: 'action',
-					action: actionName,
-					modifierFunctions: modifierFunctions,
-				};
-			}
-		};
-
-		return parseExpression();
-	}
-
-	static tokenize(input: string): string[] {
-		const tokens: string[] = [];
-		let current = '';
-		let i = 0;
-
-		while (i < input.length) {
-			const char = input[i];
-
-			if (char === ' ' || char === '\t' || char === '\n') {
-				i++; // Skip whitespace
-				continue;
-			}
-
-			if (char === '+' || char === '|' || char === '(' || char === ')') {
-				if (current.length > 0) {
-					tokens.push(current);
-					current = '';
-				}
-				tokens.push(char);
-				i++;
-			} else if (char === '!') {
-				if (current.length > 0) {
-					tokens.push(current);
-					current = '';
-				}
-				tokens.push('!');
-				i++;
-			} else if (char === '[') {
-				// Handle action with modifiers
-				current += char;
-				i++;
-				while (i < input.length && input[i] !== ']') {
-					current += input[i];
-					i++;
-				}
-				if (i < input.length) {
-					current += ']';
-					i++; // Consume ']'
-				} else {
-					throw new Error(`Unmatched '[' at position ${i}`);
-				}
-			} else if (char === '{') {
-				// Handle pressTime with curly braces
-				current += char;
-				i++;
-				while (i < input.length && input[i] !== '}') {
-					current += input[i];
-					i++;
-				}
-				if (i < input.length) {
-					current += '}';
-					i++; // Consume '}'
-				} else {
-					throw new Error(`Unmatched '{' at position ${i}`);
-				}
-			} else {
-				current += char;
-				i++;
-			}
-		}
-
-		if (current.length > 0) {
-			tokens.push(current);
-		}
-
-		return tokens;
-	}
-
-	static evaluateActions(node: ASTNode, getActionState: (actionName: string) => ActionState): boolean {
-		if (node.type === 'action') {
-			return this.isActionTriggered(node.action, node.modifierFunctions, getActionState);
-		}
-
-		if (node.type === 'not') {
-			return !this.evaluateActions(node.child, getActionState);
-		}
-
-		if (node.operator === '+') {
-			// AND operator: All children must return true
-			return node.children.every(child => this.evaluateActions(child, getActionState));
-		} else if (node.operator === '|') {
-			// OR operator: At least one child must return true
-			return node.children.some(child => this.evaluateActions(child, getActionState));
-		}
-
-		throw new Error(`Unknown operator: ${node.operator}`);
-	}
-
-	static isActionTriggered(actionName: string, modifierFunctions: ((actionState: ActionState) => boolean)[], getActionState: (actionName: string) => ActionState): boolean {
-		const actionState = getActionState(actionName); // Use internal getActionState method
-
-		for (const modifierFunction of modifierFunctions) {
-			if (!modifierFunction(actionState)) {
-				return false; // Early exit if any condition is not met
-			}
-		}
-
-		return true; // All conditions met
-	}
-}
-
-// Define the allowed modifiers as a union of string literals
-type StandardModifier = 'pressed' | 'justPressed' | 'consumed' | 'ignoreConsumed' | 'pressTime';
-type NegatedModifier = `!${StandardModifier}`;
-type Modifier = StandardModifier | NegatedModifier;
-
-// Define an ActionNode with stricter modifier typing
-interface ActionNode {
-	type: 'action';
-	action: string;
-	modifierFunctions: ((actionState: ActionState) => boolean)[];
-}
-// type ActionNode = {
-// 	type: 'action';
-// 	action: string;
-// 	modifiers: Modifier[];  // Now using the stricter Modifier type
-// };
-
-type OperatorNode = {
-	type: 'operator';
-	operator: '+' | '|';
-	children: ASTNode[];
-};
-type NotNode = {
-	type: 'not';
-	child: ASTNode;
-}
-
-type ASTNode = ActionNode | OperatorNode | NotNode;
+import { ActionParser } from './actionparser';
 
 // @ts-ignore
 function svgToPng(svgElement, filename) {
@@ -837,7 +436,13 @@ class PendingAssignmentProcessor {
 	}
 
 	/**
-	 * Represents an Input object that handles gamepad input and a proposed player index.
+	 * Constructs a new instance of the class.
+	 *
+	 * @param gamepadInput - An object that handles input from the gamepad.
+	 * @param proposedPlayerIndex - The index of the player that is proposed to be assigned to the gamepad, or null if no player is proposed.
+	 *
+	 * This constructor sets up an event listener for the "gamepaddisconnected" event,
+	 * which handles the disconnection of gamepads and manages pending assignments.
 	 */
 	constructor(public gamepadInput: IInputHandler, public proposedPlayerIndex: number | null) {
 		window.addEventListener("gamepaddisconnected", (e: GamepadEvent) => {
@@ -911,7 +516,9 @@ class PendingAssignmentProcessor {
 	}
 
 	/**
-	 * Removes the icon from the input.
+	 * Removes the icon from the model if it exists.
+	 * If the icon is present, it will be exiled from the model
+	 * and the reference to the icon will be set to undefined.
 	 */
 	removeIcon(): void {
 		if (this.icon) {
@@ -921,16 +528,49 @@ class PendingAssignmentProcessor {
 	}
 }
 
+/**
+ * Manages the input state for a player, including button states and input events.
+ *
+ * The `InputStateManager` class is responsible for tracking the state of input buttons,
+ * processing input events, and maintaining an input buffer. It provides methods to update
+ * the state based on current time, retrieve button states, and consume button presses.
+ */
 // @ts-ignore
 class InputStateManager {
+	/**
+	 * Represents the input buffer used for processing input data.
+	 * @type {InputBuffer}
+	 */
 	private inputBuffer: InputBuffer;
+	/**
+	 * A map that holds the states of buttons.
+	 *
+	 * The keys can be either a string or a number, representing the identifier of the button.
+	 * The values are of type `ButtonState`, which encapsulates the current state of the button.
+	 *
+	 * @type {Map<string | number, ButtonState>}
+	 */
 	private buttonStates: Map<string | number, ButtonState> = new Map();
 
+	/**
+	 * Creates an instance of the class.
+	 * @param playerIndex - The index of the player.
+	 */
 	constructor(private playerIndex: number) {
 		this.inputBuffer = new InputBuffer();
 	}
 
-	// Call this method each frame to update states
+	/**
+	 * Updates the input state based on the current time.
+	 *
+	 * This method processes input events, updates the press time for
+	 * each button based on whether it is pressed, and cleans up old
+	 * events from the input buffer.
+	 *
+	 * @param currentTime - The current time in milliseconds used to
+	 *                      calculate the press time and manage input
+	 *                      events.
+	 */
 	update(currentTime: number): void {
 		// Process input events
 		this.processInputEvents(currentTime);
@@ -948,6 +588,20 @@ class InputStateManager {
 		this.inputBuffer.cleanup(currentTime);
 	}
 
+	/**
+	 * Processes input events for the current player.
+	 *
+	 * This method retrieves events from the input buffer for the specified player index,
+	 * updates the button states based on the event type (press or release), and manages
+	 * the state properties such as pressed, justpressed, and timestamps.
+	 *
+	 * After processing the events, it clears the events from the input buffer to prepare
+	 * for the next set of input events.
+	 *
+	 * @param _currentTime - The current time in milliseconds, used for timestamping events.
+	 *
+	 * @returns void
+	 */
 	private processInputEvents(_currentTime: number): void {
 		const events = this.inputBuffer.getEventsForPlayer(this.playerIndex);
 
@@ -984,11 +638,26 @@ class InputStateManager {
 		this.inputBuffer.clearEventsForPlayer(this.playerIndex);
 	}
 
-	// Methods to interact with the input buffer
+	/**
+	 * Adds an input event to the input buffer.
+	 *
+	 * @param event - The input event to be added.
+	 */
 	addInputEvent(event: InputEvent): void {
 		this.inputBuffer.addEvent(event);
 	}
 
+	/**
+	 * Retrieves the current state of a button based on its identifier.
+	 *
+	 * @param identifier - The unique identifier for the button, which can be a string or a number.
+	 * @returns The current state of the button, including properties such as:
+	 *  - `pressed`: Indicates if the button is currently pressed.
+	 *  - `justpressed`: Indicates if the button was just pressed in the current frame.
+	 *  - `consumed`: Indicates if the button's press has been consumed.
+	 *  - `presstime`: The duration for which the button has been pressed, or null if not applicable.
+	 *  - `timestamp`: The time at which the button state was last updated, or null if not applicable.
+	 */
 	getButtonState(identifier: string | number): ButtonState {
 		return this.buttonStates.get(identifier) || {
 			pressed: false,
@@ -999,6 +668,12 @@ class InputStateManager {
 		};
 	}
 
+	/**
+	 * Marks the specified button as consumed, preventing further interactions.
+	 *
+	 * @param identifier - The unique identifier of the button, which can be a string or a number.
+	 * If the button state exists, it will be marked as consumed.
+	 */
 	consumeButton(identifier: string | number): void {
 		const state = this.buttonStates.get(identifier);
 		if (state) {
@@ -1034,7 +709,8 @@ class InputBuffer {
 }
 
 /**
- * Represents the Input class that manages player inputs and gamepad assignments.
+ * Represents the Input class, which manages player inputs and gamepad assignments.
+ * Implements the singleton pattern to ensure only one instance exists.
  */
 export class Input implements IRegisterable {
 	/**
@@ -1948,6 +1624,15 @@ export class PlayerInput {
 
 }
 
+/**
+ * Represents a keyboard input handler that implements the IInputHandler interface.
+ *
+ * This class manages the state of keyboard keys, allowing for key press detection,
+ * consumption of key events, and resetting of input states. It listens for keydown
+ * and keyup events to update the state of keys accordingly.
+ *
+ * @implements {IInputHandler}
+ */
 class KeyboardInput implements IInputHandler {
 	/**
 	 * The index of the input device, which defaults to 0 (the main player).
@@ -2073,6 +1758,13 @@ class KeyboardInput implements IInputHandler {
 	}
 }
 
+/**
+ * Represents a handler for gamepad input.
+ * Implements the IInputHandler interface to manage and poll the state of a gamepad.
+ *
+ * @class GamepadInput
+ * @implements {IInputHandler}
+ */
 class GamepadInput implements IInputHandler {
 	/**
 	 * Gets the index of the gamepad.
@@ -2083,6 +1775,10 @@ class GamepadInput implements IInputHandler {
 	}
 
 	private _gamepad: Gamepad;
+	/**
+	 * Gets the current gamepad instance.
+	 * @returns The current Gamepad object.
+	 */
 	public get gamepad(): Gamepad { return this._gamepad; }
 
 	/**
@@ -2090,6 +1786,13 @@ class GamepadInput implements IInputHandler {
 	 */
 	private gamepadButtonStates: Index2State = {};
 
+	/**
+	 * Creates an instance of the class and initializes the gamepad.
+	 *
+	 * @param gamepad - The Gamepad object to be associated with this instance.
+	 *
+	 * This constructor also resets the gamepad button states upon initialization.
+	 */
 	constructor(gamepad: Gamepad) {
 		this._gamepad = gamepad;
 
@@ -2209,10 +1912,20 @@ class GamepadInput implements IInputHandler {
 }
 
 /**
- * Represents an on-screen gamepad for handling input.
+ * Represents an on-screen gamepad for handling input in a game.
+ * Implements the IInputHandler interface to manage gamepad button states,
+ * including touch events for both directional and action buttons.
  * It is used to simulate gamepad input on touch devices, and is intended to be used in conjunction with the {@link Input} class.
+ *
+ * @class OnscreenGamepad
+ * @implements {IInputHandler}
  */
 class OnscreenGamepad implements IInputHandler {
+	/**
+	 * The index of the gamepad used for input.
+	 * @remarks
+	 * This value is set to 7 by default.
+	 */
 	public readonly gamepadIndex = 7;
 
 	/**
@@ -2293,7 +2006,12 @@ class OnscreenGamepad implements IInputHandler {
 		this.gamepadButtonStates = newGamepadButtonStates;
 	}
 
-	// Helper function to determine if any other element is pressing the same button
+	/**
+	 * Checks if any other on-screen gamepad element is currently pressing the specified button.
+	 *
+	 * @param button - The identifier of the button to check for.
+	 * @returns True if any element is pressing the button; otherwise, false.
+	 */
 	private isOtherElementPressingButton(button: string): boolean {
 		return OnscreenGamepad.ONSCREEN_BUTTON_ELEMENT_NAMES.some(dpadId => {
 			const element = document.getElementById(dpadId);
@@ -2310,6 +2028,13 @@ class OnscreenGamepad implements IInputHandler {
 		if (this.gamepadButtonStates[button]) this.gamepadButtonStates[button].consumed = true;
 	}
 
+	/**
+	 * A mapping of directional pad (D-Pad) button combinations to their corresponding button arrays.
+	 *
+	 * Each key represents a specific D-Pad direction or combination, and the value is an object containing
+	 * an array of buttons that are associated with that direction. The buttons are validated to be of type
+	 * `GamepadButton`.
+	 */
 	private static readonly DPAD_BUTTON_MAP: Record<string, { buttons: string[] }> = {
 		'd-pad-u': {
 			buttons: ['up' satisfies GamepadButton],
@@ -2337,6 +2062,14 @@ class OnscreenGamepad implements IInputHandler {
 		},
 	}
 
+	/**
+	 * A mapping of action buttons to their corresponding GamepadButton representations.
+	 *
+	 * Each key in the ACTION_BUTTON_MAP represents a specific action button, and the value
+	 * is an object containing an array of button identifiers that satisfy the GamepadButton type.
+	 *
+	 * Note: Some buttons like 'lt_knop', 'rt_knop', and 'home_knop' are commented out and not currently in use.
+	 */
 	private static readonly ACTION_BUTTON_MAP: Record<string, { buttons: string[] }> = {
 		'a_knop': {
 			buttons: ['a' satisfies GamepadButton],
@@ -2399,6 +2132,9 @@ class OnscreenGamepad implements IInputHandler {
 		...OnscreenGamepad.ACTION_BUTTON_MAP,
 	}
 
+	/**
+	 * A list of element IDs representing the directional pad (D-Pad) buttons.
+	 */
 	private static readonly DPAD_BUTTON_ELEMENT_IDS = ['d-pad-u', 'd-pad-ru', 'd-pad-r', 'd-pad-rd', 'd-pad-d', 'd-pad-ld', 'd-pad-l', 'd-pad-lu'];
 	private static readonly ACTION_BUTTON_ELEMENT_IDS = ['btn1_knop', 'btn2_knop', 'btn3_knop', 'btn4_knop', 'ls_knop', 'rs_knop', 'lt_knop', 'rt_knop', 'select_knop', 'start_knop', 'home_knop'];
 
