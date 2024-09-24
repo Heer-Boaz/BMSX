@@ -332,11 +332,11 @@ async function minifyGamecode(infile: string): Promise<terser.MinifyOutput> {
  * @returns The string with replacements applied.
  */
 function applyStringReplacements(str: string, replacements: { [key: string]: string }): string {
-    let result = str;
-    for (const [key, value] of Object.entries(replacements)) {
-        result = result.replace(new RegExp(key, 'g'), value);
-    }
-    return result;
+	let result = str;
+	for (const [key, value] of Object.entries(replacements)) {
+		result = result.replace(new RegExp(key, 'g'), value);
+	}
+	return result;
 }
 
 /**
@@ -348,16 +348,16 @@ function applyStringReplacements(str: string, replacements: { [key: string]: str
  */
 async function buildGameHtmlAndManifest(rom_name: string, title: string, short_name: string): Promise<any> {
 	const IMAGE_PATHS = [
-		"./rom/bmsx.png",
-		"./rom/d-pad-neutral.png",
-		"./rom/d-pad-u.png",
-		"./rom/d-pad-ru.png",
-		"./rom/d-pad-r.png",
-		"./rom/d-pad-rd.png",
-		"./rom/d-pad-d.png",
-		"./rom/d-pad-ld.png",
-		"./rom/d-pad-l.png",
-		"./rom/d-pad-lu.png"
+		'./rom/bmsx.png',
+		'./rom/d-pad-neutral.png',
+		'./rom/d-pad-u.png',
+		'./rom/d-pad-ru.png',
+		'./rom/d-pad-r.png',
+		'./rom/d-pad-rd.png',
+		'./rom/d-pad-d.png',
+		'./rom/d-pad-ld.png',
+		'./rom/d-pad-l.png',
+		'./rom/d-pad-lu.png'
 	];
 
 	/**
@@ -399,6 +399,7 @@ async function buildGameHtmlAndManifest(rom_name: string, title: string, short_n
 	 * @returns A promise that resolves to the transformed HTML string.
 	 */
 	async function transformHtml(htmlToTransform: string, cssMinified: string, debug: boolean): Promise<string> {
+		const imgPrefix = 'data:image/png;base64,';
 		const replacements = {
 			'//#romjs': debug ? romjs : romjsMinified,
 			'//#zipjs': zipjs,
@@ -407,16 +408,16 @@ async function buildGameHtmlAndManifest(rom_name: string, title: string, short_n
 			'//#debug': `bootrom.debug = ${debug};\n\t\tbootrom.romname = getRomNameFromUrlParameter() ?? '${rom_name}';\n`,
 			'#romname': rom_name,
 			'#outfile': `${rom_name}.rom`,
-			'#bmsxurl': `data:image/png;base64,${images["./rom/bmsx.png"]}`,
-			'#d-pad-neutral': `data:image/png;base64,${images["./rom/d-pad-neutral.png"]}`,
-			'#d-pad-u': `data:image/png;base64,${images["./rom/d-pad-u.png"]}`,
-			'#d-pad-ru': `data:image/png;base64,${images["./rom/d-pad-ru.png"]}`,
-			'#d-pad-r': `data:image/png;base64,${images["./rom/d-pad-r.png"]}`,
-			'#d-pad-rd': `data:image/png;base64,${images["./rom/d-pad-rd.png"]}`,
-			'#d-pad-d': `data:image/png;base64,${images["./rom/d-pad-d.png"]}`,
-			'#d-pad-ld': `data:image/png;base64,${images["./rom/d-pad-ld.png"]}`,
-			'#d-pad-l': `data:image/png;base64,${images["./rom/d-pad-l.png"]}`,
-			'#d-pad-lu': `data:image/png;base64,${images["./rom/d-pad-lu.png"]}`
+			'#bmsxurl': `${imgPrefix}${images['./rom/bmsx.png']}`,
+			'#d-pad-d_': `${imgPrefix}${images['./rom/d-pad-d.png']}`, // Note: the trailing underscore is used to prevent the replacement of other placeholders
+			'#d-pad-l_': `${imgPrefix}${images['./rom/d-pad-l.png']}`, // Note: the trailing underscore is used to prevent the replacement of other placeholders
+			'#d-pad-ld': `${imgPrefix}${images['./rom/d-pad-ld.png']}`,
+			'#d-pad-lu': `${imgPrefix}${images['./rom/d-pad-lu.png']}`,
+			'#d-pad-neutral': `${imgPrefix}${images['./rom/d-pad-neutral.png']}`,
+			'#d-pad-r_': `${imgPrefix}${images['./rom/d-pad-r.png']}`, // Note: the trailing underscore is used to prevent the replacement of other placeholders
+			'#d-pad-rd': `${imgPrefix}${images['./rom/d-pad-rd.png']}`,
+			'#d-pad-ru': `${imgPrefix}${images['./rom/d-pad-ru.png']}`,
+			'#d-pad-u_': `${imgPrefix}${images['./rom/d-pad-u.png']}`, // Note: the trailing underscore is used to prevent the replacement of other placeholders
 		};
 
 		return applyStringReplacements(htmlToTransform, replacements);
