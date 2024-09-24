@@ -42,7 +42,7 @@ export class Eila extends Fighter {
         function default_input_processor(this: Fighter): StateTransition | string | void {
             if (this.isAIed) return; // AIed fighters don't process input
 
-            const priorityActions = $.getPressedActions(this.playerIndex,{ pressed: true, consumed: false, actionsByPriority: ['duck', 'punch', 'highkick', 'lowkick', 'jump_right', 'jump_left', 'right', 'left', 'jump',] });
+            const priorityActions = $.getPressedActions(this.player_index,{ pressed: true, consumed: false, actionsByPriority: ['duck', 'punch', 'highkick', 'lowkick', 'jump_right', 'jump_left', 'right', 'left', 'jump',] });
 
             // If no actions are pressed, switch to idle
             if (priorityActions.length === 0) {
@@ -67,11 +67,11 @@ export class Eila extends Fighter {
                         // }
                     case 'jump_left':
                         this.facing = 'left';
-                        $.consumeAction(this.playerIndex, 'jump')
+                        $.consumeAction(this.player_index, 'jump')
                         return { state_id: 'jump', args: true };
                     case 'jump_right':
                         this.facing = 'right';
-                        $.consumeAction(this.playerIndex, 'jump')
+                        $.consumeAction(this.player_index, 'jump')
                         return { state_id: 'jump', args: true };
                     case 'duck':
                         return action; // Do not consume the duck action, as it would immediately make the fighter stand up again
@@ -79,7 +79,7 @@ export class Eila extends Fighter {
                     case 'highkick':
                     case 'lowkick':
                     case 'jump':
-                        $.input.getPlayerInput(this.playerIndex).consumeAction(action);
+                        $.input.getPlayerInput(this.player_index).consumeAction(action);
                         return action;
                 }
             }
@@ -226,14 +226,14 @@ export class Eila extends Fighter {
                 duck: {
                     process_input(this: Fighter) {
                         if (this.isAIed) return; // AIed fighters don't process input
-                        const pressedActions = $.getPressedActions(this.playerIndex);
+                        const pressedActions = $.getPressedActions(this.player_index);
                         const actionMap = new Map();
 
                         // Create a map of actions for efficient lookup
                         pressedActions.forEach(action => actionMap.set(action.action, true));
 
                         if (actionMap.get('lowkick')) {
-                            $.consumeAction(this.playerIndex, 'lowkick');
+                            $.consumeAction(this.player_index, 'lowkick');
                             this.sc.do('go_duckkick', this);
                             return;
                         }
@@ -274,10 +274,10 @@ export class Eila extends Fighter {
                     },
                     process_input(this: Fighter) {
                         if (this.isAIed) return; // AIed fighters don't process input
-                        const kickActions = $.getPressedActions(this.playerIndex, { pressed: true, consumed: false, filter: ['lowkick', 'highkick'] });
+                        const kickActions = $.getPressedActions(this.player_index, { pressed: true, consumed: false, filter: ['lowkick', 'highkick'] });
                         if (kickActions.length > 0) {
                             // Consume all kick actions
-                            kickActions.forEach(action => $.consumeAction(this.playerIndex, action));
+                            kickActions.forEach(action => $.consumeAction(this.player_index, action));
                             this.sc.do('go_flyingkick', this.id);
                         }
 
