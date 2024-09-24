@@ -361,7 +361,7 @@ class PendingAssignmentProcessor {
 	 * Gets the pending index of the gamepad input.
 	 * @returns The pending index of the gamepad input.
 	 */
-	private get pendingIndex() { return this.gamepadInput.gamepadIndex; }
+	private get pendingIndex() { return this.inputHandler.gamepadIndex; }
 
 	/**
 	 * The icon representing the selected player index.
@@ -446,20 +446,20 @@ class PendingAssignmentProcessor {
 	/**
 	 * Constructs a new instance of the class.
 	 *
-	 * @param gamepadInput - An object that handles input from the gamepad.
+	 * @param inputHandler - An object that handles input from the gamepad.
 	 * @param proposedPlayerIndex - The index of the player that is proposed to be assigned to the gamepad, or null if no player is proposed.
 	 *
 	 * This constructor sets up an event listener for the "gamepaddisconnected" event,
 	 * which handles the disconnection of gamepads and manages pending assignments.
 	 */
-	constructor(public gamepadInput: IInputHandler, public proposedPlayerIndex: number | null) {
+	constructor(public inputHandler: IInputHandler, public proposedPlayerIndex: number | null) {
 		window.addEventListener("gamepaddisconnected", (e: GamepadEvent) => {
 			const gamepad = e.gamepad;
 			if (!gamepad.id.toLowerCase().includes('gamepad')) return;
 
-			if (!this.gamepadInput) return; // No gamepad was not assigned to this object, so ignore the event (should not happen).
+			if (!this.inputHandler) return; // No gamepad was not assigned to this object, so ignore the event (should not happen).
 			const gamepadIndex = e.gamepad.index;
-			if (gamepadIndex === this.gamepadInput.gamepadIndex) {
+			if (gamepadIndex === this.inputHandler.gamepadIndex) {
 				// No player was assigned to this gamepad yet, but this input object was used for polling input from the gamepad
 				console.info(`Gamepad ${gamepad.index} disconnected while pending assignment.`);
 				Input.instance.removePendingGamepadAssignment(gamepadIndex); // Remove pending gamepad assignment
@@ -475,7 +475,7 @@ class PendingAssignmentProcessor {
 	 */
 	run(): void {
 		const inputMaestro = Input.instance;
-		const gamepadInput = this.gamepadInput
+		const gamepadInput = this.inputHandler;
 		gamepadInput.pollInput();
 
 		// Check whether the start button was pressed and not consumed yet to assign the gamepad to a player
@@ -486,7 +486,7 @@ class PendingAssignmentProcessor {
 
 				if (proposedPlayerIndex !== null) {
 					this.proposedPlayerIndex = proposedPlayerIndex;
-					this.createSelectPlayerIconIfNeeded(this.gamepadInput, this.pendingIndex);
+					this.createSelectPlayerIconIfNeeded(this.inputHandler, this.pendingIndex);
 					this.icon.playerIndex = proposedPlayerIndex;
 					console.info(`Gamepad ${gamepadInput.gamepadIndex} proposed to be assigned to player ${proposedPlayerIndex}.`);
 				}
@@ -501,7 +501,7 @@ class PendingAssignmentProcessor {
 				// Assign gamepad to player and remove the joystick icon
 				gamepadInput.consumeButton(Input.BUTTON2INDEX['a']);
 				inputMaestro.assignGamepadToPlayer(gamepadInput, this.proposedPlayerIndex);
-				inputMaestro.removePendingGamepadAssignment(this.gamepadInput.gamepadIndex);
+				inputMaestro.removePendingGamepadAssignment(this.inputHandler.gamepadIndex);
 				$.emit('controller_assigned', Input.instance, this.proposedPlayerIndex);
 				this.icon = null;
 			}
@@ -938,7 +938,7 @@ export class Input implements IRegisterable {
 		}, false);
 		document.addEventListener('touchforcechange', e => preventActionAndPropagation(e), options);// iOS -- https://stackoverflow.com/questions/58159526/draggable-element-in-iframe-on-mobile-is-buggy && iOS -- https://stackoverflow.com/questions/50980876/can-you-prevent-3d-touch-on-an-img-but-not-tap-and-hold-to-save
 
-		this.getPlayerInput(Input.DEFAULT_KEYBOARD_PLAYER_INDEX).keyboardInput = new KeyboardInput();
+		this.getPlayerInput(Input.DEFAULT_KEYBOARD_PLAYER_INDEX).inputHandlers['keyboard'] = new KeyboardInput();
 	}
 
 	/**
@@ -956,7 +956,7 @@ export class Input implements IRegisterable {
 	public enableOnscreenGamepad(): void {
 		this.onscreenGamepad ??= new OnscreenGamepad();
 		this.onscreenGamepad.init();
-		this.getPlayerInput(Input.DEFAULT_ONSCREENGAMEPAD_PLAYER_INDEX).gamepadInput = this.onscreenGamepad;
+		this.getPlayerInput(Input.DEFAULT_ONSCREENGAMEPAD_PLAYER_INDEX).inputHandlers['gamepad'] = this.onscreenGamepad;
 	}
 
 	/**
@@ -1003,12 +1003,12 @@ export class Input implements IRegisterable {
 	public pollInput(): void {
 		this.playerInputs.forEach(player => {
 			player.pollInput();
-			const gamepadInput = player.gamepadInput;
+			const gamepadInput = player.inputHandlers['gamepad'];
 			if (gamepadInput) {
 				const buttonState = gamepadInput.getButtonState(Input.BUTTON2INDEX['start']);
 				if (buttonState.pressed && buttonState.presstime >= 50) {
 					gamepadInput.reset();
-					player.gamepadInput = null;
+					player.inputHandlers['gamepad'] = null;
 					this.pendingGamepadAssignments.push(new PendingAssignmentProcessor(gamepadInput, null));
 				}
 			}
@@ -1044,7 +1044,7 @@ export class Input implements IRegisterable {
 	 */
 	public isPlayerIndexAvailableForGamepadAssignment(playerIndex: number): boolean {
 		const playerInput = this.getPlayerInput(playerIndex);
-		return (!playerInput.gamepadInput && !this.pendingGamepadAssignments.some(pending => pending.proposedPlayerIndex === playerInput.playerIndex));
+		return (!playerInput.inputHandlers['gamepad'] && !this.pendingGamepadAssignments.some(pending => pending.proposedPlayerIndex === playerInput.playerIndex));
 	}
 
 	/**
@@ -1063,7 +1063,7 @@ export class Input implements IRegisterable {
 	 * @param gamepad - The gamepad waiting to be assigned.
 	 */
 	public removePendingGamepadAssignment(gamepadIndex: number): void {
-		const index = this.pendingGamepadAssignments.findIndex(pending => pending.gamepadInput.gamepadIndex === gamepadIndex);
+		const index = this.pendingGamepadAssignments.findIndex(pending => pending.inputHandler.gamepadIndex === gamepadIndex);
 		if (index !== -1) {
 			this.pendingGamepadAssignments.splice(index, 1);
 		}
@@ -1266,15 +1266,10 @@ export class PlayerInput {
 	 */
 	public playerIndex: number;
 
-	/**
-	 * The keyboard input handler for the player, if any.
-	 */
-	public keyboardInput: IInputHandler;// & { getKeyState(key: string): ButtonState; consumeKey(key: string): void; };
-
-	/**
-	 * The gamepad input handler for the player, if any.
-	 */
-	public gamepadInput: IInputHandler;
+	public inputHandlers: { [key in 'keyboard' | 'gamepad']: IInputHandler | null } = {
+		keyboard: null,
+		gamepad: null,
+	};
 
 	/**
 	 * Indicates whether the player is the main player.
@@ -1346,6 +1341,17 @@ export class PlayerInput {
 		const keyboardKeys = inputMap.keyboard ? inputMap.keyboard[action] : null;
 		const gamepadButtons = inputMap.gamepad ? inputMap.gamepad[action]?.map(button => Input.BUTTON2INDEX[button]) : null;
 
+		/**
+		 * Retrieves the state of the specified keys or buttons.
+		 *
+		 * @param keys_or_buttons - An array of keys or button identifiers, which can be either strings or numbers.
+		 * @param getStateFunc - A function that takes a button identifier and returns its state, which includes properties such as `pressed`, `consumed`, `presstime`, and `timestamp`.
+		 * @returns An object containing:
+		 *  - `allPressed`: A boolean indicating if all specified keys/buttons are currently pressed.
+		 *  - `anyConsumed`: A boolean indicating if any of the specified keys/buttons have been consumed.
+		 *  - `leastPressTime`: The minimum press time among the specified keys/buttons, or `null` if none are pressed.
+		 *  - `recentestTimestamp`: The maximum timestamp among the specified keys/buttons, or `null` if none are pressed.
+		 */
 		const getState = (keys_or_buttons: string[] | number[], getStateFunc: (key: ButtonId) => any) => {
 			let allPressed = true;
 			let anyConsumed = false;
@@ -1440,22 +1446,13 @@ export class PlayerInput {
 		// Determine the action string
 		const action: string = (typeof actionToConsume === 'string') ? actionToConsume : actionToConsume.action;
 
-		// Consume keyboard input
-		const keyboardKeys = inputMap.keyboard?.[action];
-		if (keyboardKeys && this.keyboardInput) {
-			keyboardKeys
-				.filter(key => this.keyboardInput.getButtonState(key).pressed)
-				.forEach(key => this.keyboardInput.consumeButton(key));
-		}
-
-		// Consume gamepad input
-		if (this.gamepadInput) {
-			const gamepadButtons = inputMap.gamepad?.[action]?.map(button => Input.BUTTON2INDEX[button]);
-			if (gamepadButtons) {
-				gamepadButtons
-					.filter(button => this.gamepadInput.getButtonState(button).pressed)
-					.forEach(button => this.gamepadInput.consumeButton(button));
-			}
+		for (const source in this.inputHandlers) {
+			if (!this.inputHandlers[source] || !inputMap[source]) continue;
+			const keysOrButtons = inputMap[source][action]?.map((button: ButtonId) => source === 'keyboard' ? button : Input.BUTTON2INDEX[button]); // Convert button names to indices for gamepad input, or use the key as is for keyboard input
+			if (!keysOrButtons) continue;
+			keysOrButtons
+				.filter(key => this.inputHandlers[source].getButtonState(key).pressed)
+				.forEach(key => this.inputHandlers[source].consumeButton(key));
 		}
 	}
 
@@ -1475,7 +1472,7 @@ export class PlayerInput {
 	 */
 	public getKeyState(key: string): ButtonState {
 		if (!this.isKeyboardConnected()) return null;
-		return this.keyboardInput.getButtonState(key);
+		return this.inputHandlers['keyboard'].getButtonState(key);
 	}
 
 	/**
@@ -1484,7 +1481,7 @@ export class PlayerInput {
 	 * @param key - The key to consume.
 	 */
 	public consumeKey(key: string): void {
-		this.keyboardInput.consumeButton(key);
+		this.inputHandlers['keyboard'].consumeButton(key);
 	}
 
 	/**
@@ -1494,7 +1491,7 @@ export class PlayerInput {
 	 */
 	public getGamepadButtonState(button: number): ButtonState {
 		if (!this.isGamepadConnected()) return null;
-		return this.gamepadInput.getButtonState(button);
+		return this.inputHandlers['gamepad'].getButtonState(button);
 	}
 
 	/**
@@ -1514,17 +1511,17 @@ export class PlayerInput {
 	 * @returns `true` if the input was consumed, `false` otherwise.
 	 */
 	public checkAndConsume(key: string, button?: number): boolean {
-		const keyState = this.keyboardInput.getButtonState(key);
+		const keyState = this.inputHandlers['keyboard']?.getButtonState(key) ?? makeButtonState();
 
 		if (keyState.pressed && !keyState.consumed) {
-			this.keyboardInput.consumeButton(key);
+			this.inputHandlers['keyboard'].consumeButton(key);
 			return true;
 		}
 
 		if (button !== undefined && this.isGamepadConnected()) {
 			const buttonState = this.getGamepadButtonState(button);
 			if (buttonState.pressed && !buttonState.consumed) {
-				this.gamepadInput.consumeButton(button);
+				this.inputHandlers['gamepad'].consumeButton(button);
 				return true;
 			}
 		}
@@ -1539,13 +1536,13 @@ export class PlayerInput {
 	* @returns The player index the gamepad was assigned to, or null if no player index was available.
 	*/
 	assignGamepadToPlayer(gamepadInput: IInputHandler): void {
-		if (this.gamepadInput && this.gamepadInput !== gamepadInput) {
+		if (this.inputHandlers['gamepad'] && this.inputHandlers['gamepad'] !== gamepadInput) {
 			console.warn(`Replacing existing gamepad for player ${this.playerIndex} with gamepad ${gamepadInput.gamepadIndex}.`);
-			if (this.gamepadInput instanceof OnscreenGamepad) {
+			if (this.inputHandlers['gamepad'] instanceof OnscreenGamepad) {
 				console.warn(`Existing gamepad ${gamepadInput.gamepadIndex} is an on-screen gamepad that will be reassigned.`);
 			}
 		}
-		this.gamepadInput = gamepadInput;
+		this.inputHandlers['gamepad'] = gamepadInput;
 
 		console.info(`Gamepad ${gamepadInput.gamepadIndex} assigned to player ${this.playerIndex}.`);
 	}
@@ -1554,7 +1551,7 @@ export class PlayerInput {
 	 * Polls the input from the gamepad.
 	 */
 	pollInput(): void {
-		this.gamepadInput?.pollInput();
+		this.inputHandlers['gamepad']?.pollInput();
 	}
 
 	/**
@@ -1562,19 +1559,19 @@ export class PlayerInput {
 	 */
 	public constructor(playerIndex: number) {
 		this.playerIndex = playerIndex;
-		this.gamepadInput = null; // Gamepad should be null by default, and set to a value when a gamepad is connected and assigned to this player
+		this.inputHandlers['gamepad'] = null; // Gamepad should be null by default, and set to a value when a gamepad is connected and assigned to this player
 		this.reset();
 
 		window.addEventListener("gamepaddisconnected", (e: GamepadEvent) => {
 			const gamepad = e.gamepad;
 			if (!gamepad.id.toLowerCase().includes('gamepad')) return; // Ignore devices that are not gamepads
 
-			if (!this.gamepadInput) return; // No gamepad was not assigned to this input-object, so ignore the event (this can happen if multiple gamepads are connected and one is disconnected)
+			if (!this.inputHandlers['gamepad']) return; // No gamepad was not assigned to this input-object, so ignore the event (this can happen if multiple gamepads are connected and one is disconnected)
 
-			if (e.gamepad.index === this.gamepadInput.gamepadIndex) {
+			if (e.gamepad.index === this.inputHandlers['gamepad'].gamepadIndex) {
 				if (this.playerIndex) {
 					console.info(`Gamepad ${gamepad.index}, that was assigned to player ${playerIndex}, disconnected.`);
-					this.gamepadInput = null; // Remove gamepad for this input-object
+					this.inputHandlers['gamepad'] = null; // Remove gamepad for this input-object
 
 					// If this is the main player, assign the on-screen gamepad to the main player, if the onscreen gamepad is enabled and that onscreen gamepad is not already assigned to another player
 					if (this.isMainPlayer && Input.instance.isOnscreenGamepadEnabled) {
@@ -1583,7 +1580,7 @@ export class PlayerInput {
 						for (let i = 1; i < Input.PLAYERS_MAX; i++) {
 							if (i === this.playerIndex) continue;
 							const playerInput = Input.instance.getPlayerInput(i);
-							if (playerInput.gamepadInput instanceof OnscreenGamepad) {
+							if (playerInput.inputHandlers['gamepad'] instanceof OnscreenGamepad) {
 								isOnscreenGamepadAssignedToAnotherPlayer = true;
 								break;
 							}
@@ -1591,7 +1588,7 @@ export class PlayerInput {
 
 						if (!isOnscreenGamepadAssignedToAnotherPlayer) {
 							Input.instance.enableOnscreenGamepad();
-							this.gamepadInput = Input.instance.getOnscreenGamepad();
+							this.inputHandlers['gamepad'] = Input.instance.getOnscreenGamepad();
 							console.info(`On-screen gamepad assigned to player ${playerIndex}, which is the main player.`);
 						}
 						else {
@@ -1608,7 +1605,7 @@ export class PlayerInput {
 	 * @returns True if a ketboard is connected for the specified player index, false otherwise.
 	 */
 	private isKeyboardConnected(): boolean {
-		return !(!this.keyboardInput);
+		return !(!this.inputHandlers['keyboard']);
 	}
 
 	/**
@@ -1616,7 +1613,7 @@ export class PlayerInput {
 	 * @returns True if a gamepad is connected for the specified player index, false otherwise.
 	 */
 	private isGamepadConnected(): boolean {
-		return !(!this.gamepadInput);
+		return !(!this.inputHandlers['gamepad']);
 	}
 
 	/**
@@ -1624,8 +1621,8 @@ export class PlayerInput {
 	 * @param except An optional array of keys or buttons to exclude from the reset.
 	 */
 	public reset(except?: string[]): void {
-		this.gamepadInput?.reset(except);
-		this.keyboardInput?.reset(except);
+		this.inputHandlers['gamepad']?.reset(except);
+		this.inputHandlers['keyboard']?.reset(except);
 	}
 
 }
@@ -1725,7 +1722,7 @@ class KeyboardInput implements IInputHandler {
 	 */
 	keydown(key_code: KeyboardButtonId | string): void {
 		if (!this.keyState[key_code]) {
-			this.keyState[key_code] = makeButtonState( { pressed: true, presstime: 0, timestamp: performance.now() });
+			this.keyState[key_code] = makeButtonState({ pressed: true, presstime: 0, timestamp: performance.now() });
 		}
 		else {
 			this.keyState[key_code].pressed = true;
