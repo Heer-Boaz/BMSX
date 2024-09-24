@@ -119,11 +119,18 @@ export class TitleScreen extends SpriteObject {
 					},
 					process_input(this: TitleScreen) {
 						const priorityActions = $.input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['up', 'down', 'punch', 'highkick', 'lowkick', 'block'] });
+						let bla = [$.input.getPlayerInput(1).checkActionTriggered('up|down|left|right'), $.input.getPlayerInput(1).checkActionTriggered('!up+!down+!left+!right'), $.input.getPlayerInput(1).checkActionTriggered('down[ignoreConsumed]+up[ignoreConsumed]+!(left|right)')];
+						console.info(`${bla}`);
+						if (bla[2]) {
+							$.consumeActions(1, 'down', 'up')
+						}
 
 						// If no priority actions are pressed, do nothing.
 						if (!priorityActions || priorityActions.length === 0) {
 							return;
 						}
+
+
 						$.consumeActions(1, ...priorityActions);
 
 						if (priorityActions.some(action => action.action === 'up' || action.action === 'down')) {

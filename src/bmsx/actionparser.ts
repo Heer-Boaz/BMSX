@@ -1,7 +1,23 @@
 import type { ActionState } from "./input";
 
+/**
+ * Represents an action evaluator, which is a tuple containing:
+ * - A string identifier for the action.
+ * - A function that takes an `ActionState` and returns a boolean indicating
+ *   whether the action is valid or applicable in the given state.
+ *
+ * @type ActionEvaluator
+ */
 type ActionEvaluator = [string, (actionState: ActionState) => boolean];
 
+/**
+ * Represents an array of functions that take an `ActionState` as an argument
+ * and return a boolean value. Each function in the array is a modifier that
+ * can be applied to the action state to determine specific conditions or
+ * behaviors.
+ *
+ * @type {Array<function(ActionState): boolean>}
+ */
 type CompiledModifiers = ((actionState: ActionState) => boolean)[];
 
 /**
@@ -101,31 +117,6 @@ type ASTNode = ActionNode | OperatorNode | NotNode;
  * Helper class for parsing and evaluating input action definitions.
  * This class is used to parse action definitions and evaluate them against the current input state.
  * It also caches parsed action definitions to avoid repeated parsing.
- * @see ActionState for the structure of the input state.
- * @see ActionParser.getParsedActions for how to retrieve parsed actions.
- * @see ActionParser.evaluateActions for how to evaluate parsed actions.
- * @see ActionParser.parseActionDefinition for how to parse action definitions.
- * @see ActionParser.parseAction for how to parse a single action.
- * @see ActionParser.compileModifier for how to compile a modifier into a function.
- * @see ActionParser.isValidModifier for how to check if a modifier is valid.
- * @see ActionParser.tokenize for how to tokenize an action definition.
- * @see ActionParser.precomputeParsedActions for how to precompute parsed actions.
- * @see ActionParser.parsedActions for the cache of parsed actions.
- * @see ASTNode for the abstract syntax tree structure.
- * @see ActionNode for the action node structure.
- * @see OperatorNode for the operator node structure.
- * @see NotNode for the not node structure.
- * @see StandardModifier for the standard modifier type.
- * @see NegatedModifier for the negated modifier type.
- * @see Modifier for the modifier type.
- * @see KeyboardButton for the keyboard button type.
- * @see GamepadButton for the gamepad button type.
- * @see KeyboardInputMapping for the keyboard input mapping type.
- * @see GamepadInputMapping for the gamepad input mapping type.
- * @see InputMap for the input map type.
- * @see ButtonState for the button state type.
- * @see ActionState for the action state type.
- *
  */
 export class ActionParser {
 	/**
@@ -158,23 +149,25 @@ export class ActionParser {
 	}
 
 	/**
-	 * Parses an action string into its name and associated modifiers.
+	 * Parses an action string and returns an ActionEvaluator.
 	 *
-	 * The action string can be negated by prefixing it with '!', and it may include
-	 * modifiers enclosed in square brackets, separated by commas. The function ensures
-	 * that certain default modifiers are included unless explicitly specified.
+	 * The action string can be in the format of:
+	 * - `actionName`
+	 * - `actionName[modifier1,modifier2,...]`
 	 *
-	 * @param action - The action string to parse, which may include modifiers.
-	 * @returns A tuple containing the action name and an array of compiled modifier functions.
-	 * @throws Error if the action format is invalid or if any modifiers are invalid.
+	 * Modifiers can include:
+	 * - `pressed`
+	 * - `consumed`
+	 * - `ignoreConsumed`
+	 * - 'pressTime{<|>value}'
 	 *
-	 * @example
-	 * // Returns: ['jump', [modifierFunction1, modifierFunction2]]
-	 * parseAction('jump[pressed,consumed]');
+	 * If the action string starts with '!', the resulting modifiers will be negated.
+	 * The function ensures that the 'pressed' and '!consumed' modifiers are included
+	 * unless specified otherwise.
 	 *
-	 * @example
-	 * // Returns: ['jump', [modifierFunction1, modifierFunction2]]
-	 * parseAction('!jump[!pressed]');
+	 * @param action - The action string to parse.
+	 * @returns An array containing the action name and the corresponding evaluator function.
+	 * @throws Error if the action format is invalid or if any modifier is invalid.
 	 */
 	static parseAction(action: string): ActionEvaluator {
 		let isNegated = false;
@@ -245,6 +238,15 @@ export class ActionParser {
 		return [actionName, evaluatorFunction];
 	}
 
+	/**
+	 * Creates an action evaluator function that checks if all modifier functions
+	 * return true for a given action state.
+	 *
+	 * @param modifierFunctions - An array of compiled modifier functions that take
+	 *                            an ActionState and return a boolean.
+	 * @returns A function that takes an ActionState and returns true if all
+	 *          modifier functions evaluate to true; otherwise, returns false.
+	 */
 	private static createActionEvaluator(modifierFunctions: CompiledModifiers): (actionState: ActionState) => boolean {
 		return (actionState: ActionState) => {
 			for (const modifierFunction of modifierFunctions) {
@@ -322,7 +324,7 @@ export class ActionParser {
 	 * - 'justPressed'
 	 * - 'consumed'
 	 * - 'ignoreConsumed'
-	 * - 'pressTime'
+	 * - 'pressTime{<|>value}'
 	 *
 	 * Additionally, negated versions of standard modifiers (except 'ignoreConsumed')
 	 * are also considered valid. A valid negated modifier is prefixed with '!' (e.g., '!pressed').
@@ -431,12 +433,13 @@ export class ActionParser {
 
 		/**
 		 * Parses a factor in the expression.
-		 * A factor can be a negation (indicated by '!'), a parenthesized expression,
-		 * or an action token. The function recursively processes nested factors
-		 * and returns an ASTNode representing the parsed factor.
+		 * A factor can be:
+		 * - A negation (unary 'not') of another factor.
+		 * - A parenthesized expression, which is parsed as a complete expression.
+		 * - An action token, which is parsed into an action node.
 		 *
-		 * @returns {ASTNode} The parsed factor as an Abstract Syntax Tree (AST) node.
 		 * @throws {Error} Throws an error if a closing parenthesis is expected but not found.
+		 * @returns {ASTNode} The parsed AST node representing the factor.
 		 */
         const parseFactor = (): ASTNode => {
             if (tokens[index] === '!') {
@@ -556,15 +559,11 @@ export class ActionParser {
 	 *
 	 * @param node - The ASTNode representing the action structure to evaluate.
 	 * @param getActionState - A function that retrieves the current state of an action by its name.
-	 * @returns A boolean indicating whether the actions defined in the node are triggered based on the evaluation.
+	 * @returns A boolean indicating the result of the evaluation:
+	 *          - `true` if the action evaluation is successful based on the node type and structure,
+	 *          - `false` if the evaluation fails or if the node type is 'not' and its child evaluates to false.
 	 *
 	 * @throws Error if an unknown operator is encountered in the node.
-	 *
-	 * The function supports the following node types:
-	 * - 'action': Evaluates if the specified action is triggered.
-	 * - 'not': Negates the result of evaluating its child node.
-	 * - '+': Represents a logical AND operation, requiring all child nodes to return true.
-	 * - '|': Represents a logical OR operation, requiring at least one child node to return true.
 	 */
 	static evaluateActions(node: ASTNode, getActionState: (actionName: string) => ActionState): boolean {
 		if (node.type === 'action') {
@@ -587,20 +586,4 @@ export class ActionParser {
 		throw new Error(`Unknown operator: ${node.operator}`);
 	}
 
-	/**
-	 * Determines if an action is triggered based on the provided action name,
-	 * a list of modifier functions, and a method to retrieve the current action state.
-	 *
-	 * @param actionName - The name of the action to check.
-	 * @param modifierFunctions - An array of functions that take the action state
-	 *                            and return a boolean indicating if the condition is met.
-	 * @param getActionState - A function that retrieves the current state of the action
-	 *                         based on the action name.
-	 * @returns True if all modifier functions return true for the current action state,
-	 *          otherwise false.
-	 */
-	static isActionTriggered(actionEvaluator: ActionEvaluator, getActionState: (actionName: string) => ActionState): boolean {
-		const [actionName, evaluatorFunction] = actionEvaluator;
-		return evaluatorFunction(getActionState(actionName));
-	}
 }

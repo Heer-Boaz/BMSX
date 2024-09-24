@@ -413,7 +413,7 @@ export class Eila extends Fighter {
                     },
                 },
                 walk: {
-                    auto_reset: 'subtree',
+                    auto_reset: 'subtree', // Reset to the first state of the subtree when the state is entered and reset the states in the subtree
                     enter(this: Eila) {
                         this.imgid = BitmapId.eila_walk;
                     },

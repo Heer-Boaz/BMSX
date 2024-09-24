@@ -313,6 +313,12 @@ class SelectedPlayerIndexIcon extends SpriteObject {
 		return `joystick_icon_${gamepadIndex ?? 0}`;
 	}
 
+	/**
+	 * Constructs an instance of the class.
+	 *
+	 * @param gamepadIndex - The index of the gamepad associated with the player.
+	 * This value is used to retrieve the icon ID for the selected player.
+	 */
 	constructor(public gamepadIndex: number) {
 		super(SelectedPlayerIndexIcon.getIconId(gamepadIndex));
 		this.z = ZCOORD_MAX;
@@ -1057,9 +1063,7 @@ export class Input implements IRegisterable {
 	public removePendingGamepadAssignment(gamepadIndex: number): void {
 		const index = this.pendingGamepadAssignments.findIndex(pending => pending.gamepadInput.gamepadIndex === gamepadIndex);
 		if (index !== -1) {
-			// const pendingAssignmentProcessor = this.pendingGamepadAssignments[index];
 			this.pendingGamepadAssignments.splice(index, 1);
-			// pendingAssignmentProcessor.removeIcon(); // Dispose the joystick icon
 		}
 	}
 

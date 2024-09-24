@@ -2035,8 +2035,13 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
  * after reaching the end.
  */
 const AUTO_REWIND_TAPE_AFTER_END = false;
+
 /**
- * Represents a state definition for a state machine.
+ * Represents the definition of a state in a behavior finite state machine (BFSM).
+ *
+ * @remarks
+ * This class encapsulates the properties and behaviors of a state within a state machine,
+ * including its unique identifier, associated data, tape management, and event handling.
  */
 export class StateDefinition {
 	/**
@@ -2065,24 +2070,23 @@ export class StateDefinition {
 	public ticks2move: number; // Number of runs before tapehead moves to next statedata
 
 	/**
-	 * Specifies whether the tapehead should automatically rewind to index 0 when it reaches the end of the tape.
-	 *	 Defaults to true.
-	 * If set to true, the tapehead will be set to index 0 when it would go out of bounds.
-	 * If set to false, the tapehead will remain at the end of the tape.
+	 * Specifies whether the tapehead should automatically rewind to index `0` when it reaches the end of the tape.
+	 * Defaults to `true`.
+	 * - If set to `true`, the tapehead will be set to index `0` when it would go out of bounds.
+	 * - If set to `false`, the tapehead will remain at the end of the tape.
 	 */
 	public auto_tick: boolean; // Automagically increase the ticks during run
 
 	/**
-	 * Indicates whether the state should be automatically reset when entered and how.
-	 * If the auto_reset propert is set to 'state', reset the state machine of the current state.
-	 * If the auto_reset propert is set to 'tree', reset the state machine of the current state and all its substate machines.
-	 * If the auto_reset propert is set to 'subtree', reset the substate machine of the current state, but not the current state itself.
-	 * If the auto_reset property is set to 'none', do not reset any state machines.
-	 * @example
-	 * - A reason to use 'subtree' is when you want to reset the substate machine of the current state, but not the current state itself, e.g. when you want to keep the current state data but reset the substate machine.
-	 * - A reason to use 'none' is when you want to keep the current state and substate machine as is, e.g. when you want to keep the current state and substate machine data as is.
-	 * - A reason to use 'state' is when you want to reset the state machine of the current state, but not its substate machines, e.g. when you want to reset the current state data, but not reset the state machine.
-	 * - A reason to use 'tree' is when you want to reset the state machine of the current state and all its substate machines, e.g. when you want to reset the current state and substate machine data..
+	 * Specifies the behavior for automatic state resetting.
+	 *
+	 * @remarks
+	 * When set to 'state', the state will be automatically reset upon entry.
+	 * If set to 'tree', the state and all its substates will be reset.
+	 * Choosing 'subtree' will reset only the substates, while 'none' disables automatic resetting.
+	 * The default value is 'state'.
+	 *
+	 * @type {'state' | 'tree' | 'subtree' | 'none'}
 	 */
 	public auto_reset: 'state' | 'tree' | 'subtree' | 'none'; // Automagically reset the state when entered (and optionally also its substates) (defaults to 'state')
 
