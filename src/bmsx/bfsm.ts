@@ -1557,6 +1557,12 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		if (!stateDef) return; // There is no definition for the none-state, so we don't trigger the enter event for that state.
 		if (stateDef.parallel) throw new Error(`Cannot transition to parallel state '${state_id}'!`);
 
+		/**
+		 * If the auto_reset propert is set to 'state', reset the state machine of the current state.
+		 * If the auto_reset propert is set to 'tree', reset the state machine of the current state and all its substate machines.
+		 * If the auto_reset propert is set to 'subtree', reset the substate machine of the current state, but not the current state itself.
+		 * If the auto_reset property is set to 'none', do not reset any state machines.
+		 */
 		if (stateDef.auto_reset) {
 			switch (stateDef.auto_reset) {
 				case 'state': this.current.reset(false); break; // Reset the state machine of the current state (but not its substate machines)
@@ -2067,9 +2073,16 @@ export class StateDefinition {
 	public auto_tick: boolean; // Automagically increase the ticks during run
 
 	/**
-	 * Indicates whether the state should be automatically reset when entered.
-	 * Defaults to true.
-	 * Note that this only applies to the state itself, not its substates.
+	 * Indicates whether the state should be automatically reset when entered and how.
+	 * If the auto_reset propert is set to 'state', reset the state machine of the current state.
+	 * If the auto_reset propert is set to 'tree', reset the state machine of the current state and all its substate machines.
+	 * If the auto_reset propert is set to 'subtree', reset the substate machine of the current state, but not the current state itself.
+	 * If the auto_reset property is set to 'none', do not reset any state machines.
+	 * @example
+	 * - A reason to use 'subtree' is when you want to reset the substate machine of the current state, but not the current state itself, e.g. when you want to keep the current state data but reset the substate machine.
+	 * - A reason to use 'none' is when you want to keep the current state and substate machine as is, e.g. when you want to keep the current state and substate machine data as is.
+	 * - A reason to use 'state' is when you want to reset the state machine of the current state, but not its substate machines, e.g. when you want to reset the current state data, but not reset the state machine.
+	 * - A reason to use 'tree' is when you want to reset the state machine of the current state and all its substate machines, e.g. when you want to reset the current state and substate machine data..
 	 */
 	public auto_reset: 'state' | 'tree' | 'subtree' | 'none'; // Automagically reset the state when entered (and optionally also its substates) (defaults to 'state')
 
