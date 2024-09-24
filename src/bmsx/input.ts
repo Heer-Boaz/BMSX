@@ -1168,52 +1168,52 @@ export class Input implements IRegisterable {
 	}
 
 	public static get KD_F1(): boolean {
-		return Input.instance.getPlayerInput(1).getKeyState('F1').pressed;
+		return Input.instance.getPlayerInput(1).getButtonState('F1', 'keyboard').pressed;
 	}
 	public static get KD_F12(): boolean {
-		return Input.instance.getPlayerInput(1).getKeyState('F12').pressed;
+		return Input.instance.getPlayerInput(1).getButtonState('F12', 'keyboard').pressed;
 	}
 	public static get KD_F2(): boolean {
-		return Input.instance.getPlayerInput(1).getKeyState('F2').pressed;
+		return Input.instance.getPlayerInput(1).getButtonState('F2', 'keyboard').pressed;
 	}
 	public static get KD_F3(): boolean {
-		return Input.instance.getPlayerInput(1).getKeyState('F3').pressed;
+		return Input.instance.getPlayerInput(1).getButtonState('F3', 'keyboard').pressed;
 	}
 	public static get KD_F4(): boolean {
-		return Input.instance.getPlayerInput(1).getKeyState('F4').pressed;
+		return Input.instance.getPlayerInput(1).getButtonState('F4', 'keyboard').pressed;
 	}
 	public static get KD_F5(): boolean {
-		return Input.instance.getPlayerInput(1).getKeyState('F5').pressed;
+		return Input.instance.getPlayerInput(1).getButtonState('F5', 'keyboard').pressed;
 	}
 	public static get KD_M(): boolean {
-		return Input.instance.getPlayerInput(1).getKeyState('KeyM').pressed;
+		return Input.instance.getPlayerInput(1).getButtonState('KeyM', 'keyboard').pressed;
 	}
 	public static get KD_SPACE(): boolean {
-		return Input.instance.getPlayerInput(1).getKeyState('Space').pressed;
+		return Input.instance.getPlayerInput(1).getButtonState('Space', 'keyboard').pressed;
 	}
 	public static get KD_UP(): boolean {
-		return Input.instance.getPlayerInput(1).getKeyState('ArrowUp').pressed || Input.instance.getPlayerInput(1).getGamepadButtonState('up').pressed;
+		return Input.instance.getPlayerInput(1).getButtonState('ArrowUp', 'keyboard').pressed || Input.instance.getPlayerInput(1).getButtonState('up', 'gamepad').pressed;
 	}
 	public static get KD_RIGHT(): boolean {
-		return Input.instance.getPlayerInput(1).getKeyState('ArrowRight').pressed || Input.instance.getPlayerInput(1).getGamepadButtonState('right').pressed;
+		return Input.instance.getPlayerInput(1).getButtonState('ArrowRight', 'keyboard').pressed || Input.instance.getPlayerInput(1).getButtonState('right', 'gamepad').pressed;
 	}
 	public static get KD_DOWN(): boolean {
-		return Input.instance.getPlayerInput(1).getKeyState('ArrowDown').pressed || Input.instance.getPlayerInput(1).getGamepadButtonState('down').pressed;
+		return Input.instance.getPlayerInput(1).getButtonState('ArrowDown', 'keyboard').pressed || Input.instance.getPlayerInput(1).getButtonState('down', 'gamepad').pressed;
 	}
 	public static get KD_LEFT(): boolean {
-		return Input.instance.getPlayerInput(1).getKeyState('ArrowLeft').pressed || Input.instance.getPlayerInput(1).getGamepadButtonState('left').pressed;
+		return Input.instance.getPlayerInput(1).getButtonState('ArrowLeft', 'keyboard').pressed || Input.instance.getPlayerInput(1).getButtonState('left', 'gamepad').pressed;
 	}
 	public static get KD_BTN1(): boolean {
-		return Input.instance.getPlayerInput(1).getKeyState('ShiftLeft').pressed || Input.instance.getPlayerInput(1).getGamepadButtonState('a').pressed;
+		return Input.instance.getPlayerInput(1).getButtonState('ShiftLeft', 'keyboard').pressed || Input.instance.getPlayerInput(1).getButtonState('a', 'gamepad').pressed;
 	}
 	public static get KD_BTN2(): boolean {
-		return Input.instance.getPlayerInput(1).getKeyState('KeyZ').pressed || Input.instance.getPlayerInput(1).getGamepadButtonState('b').pressed;
+		return Input.instance.getPlayerInput(1).getButtonState('KeyZ', 'keyboard').pressed || Input.instance.getPlayerInput(1).getButtonState('b', 'gamepad').pressed;
 	}
 	public static get KD_BTN3(): boolean {
-		return Input.instance.getPlayerInput(1).getKeyState('F1').pressed || Input.instance.getPlayerInput(1).getGamepadButtonState('x').pressed;
+		return Input.instance.getPlayerInput(1).getButtonState('F1', 'keyboard').pressed || Input.instance.getPlayerInput(1).getButtonState('x', 'gamepad').pressed;
 	}
 	public static get KD_BTN4(): boolean {
-		return Input.instance.getPlayerInput(1).getKeyState('F5').pressed || Input.instance.getPlayerInput(1).getGamepadButtonState('y').pressed;
+		return Input.instance.getPlayerInput(1).getButtonState('F5', 'keyboard').pressed || Input.instance.getPlayerInput(1).getButtonState('y', 'gamepad').pressed;
 	}
 
 	/**
@@ -1226,15 +1226,15 @@ export class Input implements IRegisterable {
 			Input.preventDefaultEventAction(e, e.code);
 			switch (e.code) {
 				case 'Space':
-					if (this.getPlayerInput(1).getKeyState(e.code).consumed) break;
-					else this.getPlayerInput(1).consumeKey(e.code);
+					if (this.getPlayerInput(1).getButtonState(e.code, 'keyboard').consumed) break;
+					else this.getPlayerInput(1).getButtonState(e.code, 'keyboard');
 					if (!global.$.paused) {
 						global.$.paused = true;
 						global.$.debug_runSingleFrameAndPause = false;
 					}
 					else {
 						global.$.paused = false;
-						global.$.debug_runSingleFrameAndPause = this.getPlayerInput(1).getKeyState('ShiftLeft').pressed;
+						global.$.debug_runSingleFrameAndPause = this.getPlayerInput(1).getButtonState('ShiftLeft', 'keyboard').pressed;
 					}
 					break;
 			}
@@ -1403,8 +1403,8 @@ export class PlayerInput {
 			return { allPressed, anyConsumed, leastPressTime, recentestTimestamp };
 		};
 
-		const keyboardState = getState(keyboardKeys, (key: ButtonId) => this.getKeyState(key));
-		const gamepadState = getState(gamepadButtons, (button: ButtonId) => this.getGamepadButtonState(button));
+		const keyboardState = getState(keyboardKeys, (key: ButtonId) => this.getButtonState(key,'keyboard'));
+		const gamepadState = getState(gamepadButtons, (button: ButtonId) => this.getButtonState(button,'gamepad'));
 		const minPresstime = Math.min(keyboardState.leastPressTime, gamepadState.leastPressTime);
 		const maxTimestamp = Math.max(keyboardState.recentestTimestamp, gamepadState.recentestTimestamp);
 
@@ -1489,32 +1489,14 @@ export class PlayerInput {
 	}
 
 	/**
-	 * Retrieves the state of a keyboard button.
-	 * @param key - The button index.
-	 * @returns The state of the button.
-	 */
-	public getKeyState(key: string): ButtonState {
-		if (!this.isKeyboardConnected()) return null;
-		return this.inputHandlers['keyboard'].getButtonState(key);
-	}
-
-	/**
-	 * Consumes the specified key from the keyboard input.
-	 *
-	 * @param key - The key to consume.
-	 */
-	public consumeKey(key: string): void {
-		this.inputHandlers['keyboard'].consumeButton(key);
-	}
-
-	/**
 	 * Retrieves the state of a gamepad button.
 	 * @param button - The gamepad button identifier.
 	 * @returns The state of the button.
 	 */
-	public getGamepadButtonState(button: string): ButtonState {
-		if (!this.isGamepadConnected()) return null;
-		return this.inputHandlers['gamepad'].getButtonState(button);
+	public getButtonState(button: string, source: 'keyboard' | 'gamepad'): ButtonState {
+		if (source === 'keyboard' && !this.isKeyboardConnected()) return null;
+		if (source === 'gamepad' && !this.isGamepadConnected()) return null;
+		return this.inputHandlers[source].getButtonState(button);
 	}
 
 	/**
@@ -1522,8 +1504,8 @@ export class PlayerInput {
 	 * @param button - The gamepad button to check.
 	 * @returns A boolean indicating whether the button is currently pressed down.
 	 */
-	public isGamepadButtonDown(button: string): boolean {
-		const buttonState = this.getGamepadButtonState(button);
+	public isButtonDown(button: string, source: 'keyboard' | 'gamepad'): boolean {
+		const buttonState = this.getButtonState(button, source);
 		return buttonState.pressed;
 	}
 
@@ -1542,7 +1524,7 @@ export class PlayerInput {
 		}
 
 		if (button !== undefined && this.isGamepadConnected()) {
-			const buttonState = this.getGamepadButtonState(button);
+			const buttonState = this.getButtonState(button, 'gamepad');
 			if (buttonState.pressed && !buttonState.consumed) {
 				this.inputHandlers['gamepad'].consumeButton(button);
 				return true;
