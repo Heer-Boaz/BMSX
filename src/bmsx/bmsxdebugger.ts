@@ -277,7 +277,7 @@ export function handleDebugMouseDown(e: MouseEvent): void {
 		return; // Only start dragging when primary button is pressed
 	}
 
-	if (!$.input.getPlayerInput(1).getKeyState('ShiftLeft').pressed) { // Only start or continue dragging when shift is pressed. Note that the shift key is not updated after the mouse is pressed down
+	if (!$.input.getPlayerInput(1).getButtonState('ShiftLeft', 'keyboard').pressed) { // Only start or continue dragging when shift is pressed. Note that the shift key is not updated after the mouse is pressed down
 		draggedObj = null; // Stop dragging object
 		return;
 	}
@@ -296,7 +296,7 @@ export function handleDebugMouseDown(e: MouseEvent): void {
 
 export function handleDebugMouseMove(e: MouseEvent): void {
 	const { objUnderCursor } = getGameObjectAtCursor(e);
-	if ($.input.getPlayerInput(1).getKeyState('ControlLeft').pressed) { // Ctrl + mouse move = allow for selecting objects in the game world (for debugging)
+	if ($.input.getPlayerInput(1).getButtonState('ControlLeft', 'keyboard').pressed) { // Ctrl + mouse move = allow for selecting objects in the game world (for debugging)
 		// Highlight mouse-overed objects
 		highlight_object(objUnderCursor);
 	}
@@ -313,7 +313,7 @@ export function handleDebugMouseMove(e: MouseEvent): void {
 			draggedObj.x = ~~x - draggedObjCursorOffset.x;
 			draggedObj.y = ~~y - draggedObjCursorOffset.y;
 		}
-		if (!$.input.getPlayerInput(1).getKeyState('ShiftLeft').pressed) {
+		if (!$.input.getPlayerInput(1).getButtonState('ShiftLeft', 'keyboard').pressed) {
 			draggedObj = null; // Stop dragging object when shift is released
 		}
 		return;
@@ -359,7 +359,7 @@ function startDragGameObject(gameobject_at_cursor: GameObject, offsetToCursor: v
 export function handleContextMenu(e: MouseEvent): void {
 	e.preventDefault();
 	const { objUnderCursor } = getGameObjectAtCursor(e);
-	// if (game.input.getPlayerInput(1).getKeyState('ControlLeft').pressed) { // Ctrl + mouse move = allow for selecting objects in the game world (for debugging)
+	// if (game.input.getPlayerInput(1).getButtonState('ControlLeft', 'keyboard'.pressed) { // Ctrl + mouse move = allow for selecting objects in the game world (for debugging)
 	// Highlight mouse-overed objects
 	// highlight_object(objUnderCursor);
 	// Add state visualiser component to the object
