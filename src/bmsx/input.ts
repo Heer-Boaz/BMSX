@@ -1629,7 +1629,6 @@ export class PlayerInput {
 		this.inputHandlers['gamepad']?.reset(except);
 		this.inputHandlers['keyboard']?.reset(except);
 	}
-
 }
 
 /**
