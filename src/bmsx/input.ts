@@ -1367,7 +1367,7 @@ export class PlayerInput {
 		/**
 		 * Retrieves the state of the specified keys or buttons.
 		 *
-		 * @param keys_or_buttons - An array of keys or button identifiers, which can be either strings or numbers.
+		 * @param keys_or_buttons - An array of keys or button identifiers
 		 * @param getStateFunc - A function that takes a button identifier and returns its state, which includes properties such as `pressed`, `consumed`, `presstime`, and `timestamp`.
 		 * @returns An object containing:
 		 *  - `allPressed`: A boolean indicating if all specified keys/buttons are currently pressed.
@@ -1403,8 +1403,8 @@ export class PlayerInput {
 			return { allPressed, anyConsumed, leastPressTime, recentestTimestamp };
 		};
 
-		const keyboardState = getState(keyboardKeys, (key: ButtonId) => this.getButtonState(key,'keyboard'));
-		const gamepadState = getState(gamepadButtons, (button: ButtonId) => this.getButtonState(button,'gamepad'));
+		const keyboardState = getState(keyboardKeys, (key: ButtonId) => this.getButtonState(key, 'keyboard'));
+		const gamepadState = getState(gamepadButtons, (button: ButtonId) => this.getButtonState(button, 'gamepad'));
 		const minPresstime = Math.min(keyboardState.leastPressTime, gamepadState.leastPressTime);
 		const maxTimestamp = Math.max(keyboardState.recentestTimestamp, gamepadState.recentestTimestamp);
 
@@ -1493,7 +1493,7 @@ export class PlayerInput {
 	 * @param button - The gamepad button identifier.
 	 * @returns The state of the button.
 	 */
-	public getButtonState(button: string, source: 'keyboard' | 'gamepad'): ButtonState {
+	public getButtonState(button: ButtonId, source: 'keyboard' | 'gamepad'): ButtonState {
 		if (source === 'keyboard' && !this.isKeyboardConnected()) return null;
 		if (source === 'gamepad' && !this.isGamepadConnected()) return null;
 		return this.inputHandlers[source].getButtonState(button);
@@ -1504,7 +1504,7 @@ export class PlayerInput {
 	 * @param button - The gamepad button to check.
 	 * @returns A boolean indicating whether the button is currently pressed down.
 	 */
-	public isButtonDown(button: string, source: 'keyboard' | 'gamepad'): boolean {
+	public isButtonDown(button: ButtonId, source: 'keyboard' | 'gamepad'): boolean {
 		const buttonState = this.getButtonState(button, source);
 		return buttonState.pressed;
 	}
@@ -1515,7 +1515,7 @@ export class PlayerInput {
 	 * @param button - The gamepad button to check (optional).
 	 * @returns `true` if the input was consumed, `false` otherwise.
 	 */
-	public checkAndConsume(key: string, button?: string): boolean {
+	public checkAndConsume(key: ButtonId, button?: ButtonId): boolean {
 		const keyState = this.inputHandlers['keyboard']?.getButtonState(key) ?? makeButtonState();
 
 		if (keyState.pressed && !keyState.consumed) {
@@ -1643,12 +1643,19 @@ export class PlayerInput {
  */
 class KeyboardInput implements IInputHandler {
 	/**
+	 * The state of each keyboard key.
+	 */
+	public keyStates: Key2ButtonState = {};
+
+	public gamepadButtonStates: Key2ButtonState = {}; // TODO: START USING THIS!!
+
+	/**
 	 * The index of the input device, which defaults to 0 (the main player).
 	 */
 	public readonly gamepadIndex = 0;
 
 	constructor() {
-		this.keyState = {};
+		this.keyStates = {};
 		this.reset();
 
 		window.addEventListener('keydown', e => { this.keydown(e.code); }, options);
@@ -1661,48 +1668,33 @@ class KeyboardInput implements IInputHandler {
 	 */
 	public reset(except?: string[]): void {
 		if (!except) {
-			this.keyState = {};
+			this.keyStates = {};
 			return;
 		}
 
-		resetObject(this.keyState, except);
+		resetObject(this.keyStates, except);
 	}
 
 	/**
-	 * The state of each keyboard key.
-	 */
-	public keyState: Key2ButtonState = {};
-
-	/**
-	 * Consumes the given key by setting its key state to "consumed".
-	 * @param key The key to consume.
-	 */
-	private consumeKey(key: string) {
-		this.keyState[key].consumed = true;
-	}
-
-	/**
-	 * Consumes a button press event, but has not been implemented for keyboard input as the keyboard
-	 * uses DOM events to handle key presses instead of polling.
-	 * However, this method is required to implement the IInputHandler interface.
+	 * Marks the specified key as consumed, preventing further processing of its state.
 	 *
-	 * @param key - The key name.
+	 * @param key - The identifier of the key to be consumed.
+	 * @returns void
 	 */
 	public consumeButton(key: string): void {
-		this.consumeKey(key)
+		this.keyStates[key].consumed = true;
 	}
 
 	/**
-	 * Retrieves the state of a button, but has not been implemented for keyboard input as the keyboard
-	 * uses DOM events to handle key presses instead of polling.
-	 * However, this method is required to implement the IInputHandler interface.
+	 * Retrieves the current state of a specified button.
 	 *
-	 * @param key - The key name.
-	 * @returns null
+	 * @param key - The identifier for the button whose state is to be retrieved.
+	 * @returns The current state of the button as a ButtonState object.
+	 *          If the provided key is null, a default ButtonState is returned.
 	 */
 	public getButtonState(key: string): ButtonState {
 		if (key === null) return makeButtonState();
-		return getPressedState(this.keyState, key);
+		return getPressedState(this.keyStates, key);
 	}
 
 	/**
@@ -1710,6 +1702,7 @@ class KeyboardInput implements IInputHandler {
 	 * uses DOM events to handle key presses instead of polling.
 	 */
 	pollInput(): void {
+		// TODO: START IMPLEMENTING THIS!!
 	}
 
 	/**
@@ -1717,13 +1710,13 @@ class KeyboardInput implements IInputHandler {
 	 * @param key_code - The button ID or string representing the key.
 	 */
 	keydown(key_code: KeyboardButtonId | string): void {
-		if (!this.keyState[key_code]) {
-			this.keyState[key_code] = makeButtonState({ pressed: true, presstime: 0, timestamp: performance.now() });
+		if (!this.keyStates[key_code]) {
+			this.keyStates[key_code] = makeButtonState({ pressed: true, presstime: 0, timestamp: performance.now() });
 		}
 		else {
-			this.keyState[key_code].pressed = true;
-			this.keyState[key_code].presstime = 0;
-			this.keyState[key_code].timestamp = performance.now();
+			this.keyStates[key_code].pressed = true;
+			this.keyStates[key_code].presstime = 0;
+			this.keyStates[key_code].timestamp = performance.now();
 		}
 	}
 
@@ -1732,10 +1725,10 @@ class KeyboardInput implements IInputHandler {
 	 * @param key_code - The key identifier or name.
 	 */
 	keyup(key_code: KeyboardButtonId | string): void {
-		if (!this.keyState[key_code]) return;
+		if (!this.keyStates[key_code]) return;
 
-		this.keyState[key_code].pressed = this.keyState[key_code].consumed = false;
-		this.keyState[key_code].presstime = this.keyState[key_code].timestamp = null;
+		this.keyStates[key_code].pressed = this.keyStates[key_code].consumed = false;
+		this.keyStates[key_code].presstime = this.keyStates[key_code].timestamp = null;
 	}
 
 	/**
