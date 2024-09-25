@@ -177,7 +177,7 @@ export type KeyboardButton = keyof typeof Key | string;
  * Represents a gamepad button.
  * @typedef {keyof typeof Input.BUTTON2INDEX } GamepadButton
  */
-export type GamepadButton = keyof typeof Input.BUTTON_IDS;
+export type GamepadButton = typeof Input.BUTTON_IDS[number];
 
 /**
  * Represents the state of a button.
@@ -814,32 +814,32 @@ export class Input implements IRegisterable {
 	* We use this mapping to get a list of all gamepad buttons.
 	* @see GamepadButton
 	*/
-	public static readonly BUTTON_IDS = {
-		'a': 'a', // Bottom face button
-		'b': 'b', // Right face button
-		'x': 'x', // Left face button
-		'y': 'y', // Top face button
-		'lb': 'lb', // Left shoulder button
-		'rb': 'rb', // Right shoulder button
-		'lt': 'lt', // Left trigger button
-		'rt': 'rt', // Right trigger button
-		'select': 'select', // Select button
-		'start': 'start', // Start button
-		'ls': 'ls', // Left stick button
-		'rs': 'rs', // Right stick button
-		'up': 'up', // D-pad up
-		'down': 'down', // D-pad down
-		'left': 'left', // D-pad left
-		'right': 'right', // D-pad right
-		'home': 'home', // Xbox button
-		'touch': 'touch', // Touchpad button
-	} as const;
+	public static readonly BUTTON_IDS = [
+		'a', // Bottom face button
+		'b', // Right face button
+		'x', // Left face button
+		'y', // Top face button
+		'lb', // Left shoulder button
+		'rb', // Right shoulder button
+		'lt', // Left trigger button
+		'rt', // Right trigger button
+		'select', // Select button
+		'start', // Start button
+		'ls', // Left stick button
+		'rs', // Right stick button
+		'up', // D-pad up
+		'down', // D-pad down
+		'left', // D-pad left
+		'right', // D-pad right
+		'home', // Xbox button
+		'touch', // Touchpad button
+	] as const;
 
 	/**
-	* The mapping of keyboard key names to their corresponding gamepad button names.
-	* We use this mapping to map keyboard keys to gamepad buttons during the polling of keyboard input and conversion to gamepad input.
-	* @see GamepadButton
-	*/
+		* The mapping of keyboard key names to their corresponding gamepad button names.
+		* We use this mapping to map keyboard keys to gamepad buttons during the polling of keyboard input and conversion to gamepad input.
+		* @see GamepadButton
+		*/
 	public static readonly KEYBOARDKEY2GAMEPADBUTTON = {
 		'ArrowUp': 'up',
 		'ArrowLeft': 'left',
@@ -848,7 +848,17 @@ export class Input implements IRegisterable {
 		'KeyX': 'b',
 		'KeyA': 'x',
 		'KeyZ': 'a',
-		'ShiftLeft': 'y'
+		'ShiftLeft': 'y',
+		'KeyQ': 'lb',
+		'KeyW': 'rb',
+		'Digit1': 'lt',
+		'Digit3': 'rt',
+		'ShiftRight': 'select',
+		'Enter': 'start',
+		'KeyF': 'ls',
+		'KeyG': 'rs',
+		'KeyH': 'home',
+		'KeyT': 'touch'
 	} as const;
 
 	/**
@@ -1548,10 +1558,12 @@ export class PlayerInput {
 	}
 
 	/**
-	 * Polls the input from the gamepad.
+	 * Polls the input for the player for each input source (e.g., keyboard, gamepad, ...)
 	 */
 	pollInput(): void {
-		this.inputHandlers['gamepad']?.pollInput();
+		for (const source in this.inputHandlers) {
+			this.inputHandlers[source]?.pollInput();
+		}
 	}
 
 	/**
@@ -1621,8 +1633,9 @@ export class PlayerInput {
 	 * @param except An optional array of keys or buttons to exclude from the reset.
 	 */
 	public reset(except?: string[]): void {
-		this.inputHandlers['gamepad']?.reset(except);
-		this.inputHandlers['keyboard']?.reset(except);
+		for (const source in this.inputHandlers) {
+			this.inputHandlers[source]?.reset(except);
+		}
 	}
 }
 
@@ -1650,6 +1663,7 @@ class KeyboardInput implements IInputHandler {
 
 	constructor() {
 		this.keyStates = {};
+		this.gamepadButtonStates = {};
 		this.reset();
 
 		window.addEventListener('keydown', e => { this.keydown(e.code); }, options);
@@ -1663,10 +1677,12 @@ class KeyboardInput implements IInputHandler {
 	public reset(except?: string[]): void {
 		if (!except) {
 			this.keyStates = {};
-			return;
+			this.gamepadButtonStates = {};
 		}
-
-		resetObject(this.keyStates, except);
+		else {
+			resetObject(this.keyStates, except);
+			resetObject(this.gamepadButtonStates, except);
+		}
 	}
 
 	/**
@@ -1676,7 +1692,8 @@ class KeyboardInput implements IInputHandler {
 	 * @returns void
 	 */
 	public consumeButton(key: string): void {
-		this.keyStates[key].consumed = true;
+		this.gamepadButtonStates[key].consumed = true;
+		// this.keyStates[key].consumed = true;
 	}
 
 	/**
@@ -1688,73 +1705,38 @@ class KeyboardInput implements IInputHandler {
 	 */
 	public getButtonState(key: string): ButtonState {
 		if (key === null) return makeButtonState();
-		return getPressedState(this.keyStates, key);
+		return getPressedState(this.gamepadButtonStates, key);
+		// return getPressedState(this.keyStates, key);
 	}
 
 	/**
-	 * Polls the input for any changes, but has not been implemented for keyboard input as the keyboard
-	 * uses DOM events to handle key presses instead of polling.
+	 * Polls the input from the keyboard.
+	 * This function should be called once per frame to ensure that keyboard input is up-to-date.
+	 * It updates the state of each key based on the current keydown and keyup events.
+	 * @returns void
 	 */
 	pollInput(): void {
-		// TODO: START IMPLEMENTING THIS!!
 		// Reset gamepad button states
 		const defaultState = makeButtonState();
-		Object.keys(this.keyStates).forEach(key => {
-			let buttonId: string | undefined;
 
-			// Manually map keyboard keys to gamepad buttons
-			switch (key) {
-				case 'ArrowUp':
-					buttonId = 'up';
-					break;
-				case 'ArrowLeft':
-					buttonId = 'left';
-					break;
-				case 'ArrowRight':
-					buttonId = 'right';
-					break;
-				case 'ArrowDown':
-					buttonId = 'down';
-					break;
-				case 'KeyX':
-					buttonId = 'b';
-					break;
-				case 'KeyA':
-					buttonId = 'x';
-					break;
-				case 'KeyZ':
-					buttonId = 'a';
-					break;
-				case 'ShiftLeft':
-					buttonId = 'y';
-					break;
-				default:
-					buttonId = undefined;
+		const newGamepadButtonStates: Key2ButtonState = {};
+		Object.keys(this.keyStates).forEach(buttonId => {
+			if (this.keyStates[buttonId].pressed) {
+				// Update the state only if the button is currently pressed
+				newGamepadButtonStates[buttonId] = { pressed: true, presstime: this.gamepadButtonStates[buttonId]?.presstime ?? 0 + 1, consumed: this.gamepadButtonStates[buttonId]?.consumed ?? false, timestamp: this.gamepadButtonStates[buttonId]?.timestamp ?? performance.now(), justpressed: this.gamepadButtonStates[buttonId]?.justpressed ?? false };
+			} else {
+				newGamepadButtonStates[buttonId] = { ...defaultState };
 			}
 
-			if (buttonId) {
-				if (!this.gamepadButtonStates[buttonId]) {
-					this.gamepadButtonStates[buttonId] = { ...defaultState };
-				}
-
-				const pressed = this.keyStates[key].pressed;
-
-				this.gamepadButtonStates[buttonId].pressed = buttonId === 'left' || buttonId === 'right' || buttonId === 'up' || buttonId === 'down'
-					? this.gamepadButtonStates[buttonId].pressed || pressed
-					: pressed;
-
-				if (!this.gamepadButtonStates[buttonId].pressed) {
-					this.gamepadButtonStates[buttonId].consumed = false;
-					this.gamepadButtonStates[buttonId].presstime = null;
-					this.gamepadButtonStates[buttonId].timestamp = null;
-				} else {
-					// If the button is pressed, increment the press time counter for detecting hold actions
-					this.gamepadButtonStates[buttonId].presstime = (this.gamepadButtonStates[buttonId].presstime ?? 0) + 1;
-					// Set the timestamp only if it was not set before
-					this.gamepadButtonStates[buttonId].timestamp ||= performance.now();
-				}
+			// Use the constant to map keyboard keys to gamepad buttons
+			const keyMappedToCorrespondingGamepadButtonId = Input.KEYBOARDKEY2GAMEPADBUTTON[buttonId];
+			if (keyMappedToCorrespondingGamepadButtonId) {
+				newGamepadButtonStates[keyMappedToCorrespondingGamepadButtonId] = { ...newGamepadButtonStates[buttonId] };
 			}
 		});
+
+		// Update the button states with the new states
+		this.gamepadButtonStates = newGamepadButtonStates;
 	}
 
 	/**
@@ -1861,7 +1843,7 @@ class GamepadInput implements IInputHandler {
 
 		// Reset gamepad button states
 		const defaultState = makeButtonState();
-		Object.keys(Input.BUTTON_IDS).forEach(button => {
+		Input.BUTTON_IDS.forEach(button => {
 			if (!this.gamepadButtonStates[button]) {
 				this.gamepadButtonStates[button] = { ...defaultState };
 			}
@@ -1906,14 +1888,14 @@ class GamepadInput implements IInputHandler {
 				: pressed;
 
 			if (!this.gamepadButtonStates[buttonId].pressed) {
-				this.gamepadButtonStates[buttonId].consumed = false;
-				this.gamepadButtonStates[buttonId].presstime = null;
-				this.gamepadButtonStates[buttonId].timestamp = null;
+				this.gamepadButtonStates[buttonId] = makeButtonState();
 			} else {
 				// If the button is pressed, increment the press time counter for detecting hold actions
 				this.gamepadButtonStates[buttonId].presstime = (this.gamepadButtonStates[buttonId].presstime ?? 0) + 1;
 				// Set the timestamp only if it was not set before
 				this.gamepadButtonStates[buttonId].timestamp ||= performance.now();
+				// Set the justpressed flag if the button was not pressed before
+				this.gamepadButtonStates[buttonId].justpressed ||= !this.gamepadButtonStates[buttonId].pressed;
 			}
 		}
 	}
@@ -2015,9 +1997,9 @@ class OnscreenGamepad implements IInputHandler {
 		// Initialize new states with current values instead of resetting
 		const defaultState = makeButtonState();
 
-		let newGamepadButtonStates: Key2ButtonState = {};
+		const newGamepadButtonStates: Key2ButtonState = {};
 
-		Object.keys(Input.BUTTON_IDS).forEach(button => {
+		Input.BUTTON_IDS.forEach(button => {
 			newGamepadButtonStates[button] = this.gamepadButtonStates[button] ?? { ...defaultState };
 		});
 
@@ -2032,13 +2014,11 @@ class OnscreenGamepad implements IInputHandler {
 						newGamepadButtonStates[button].presstime = (newGamepadButtonStates[button].presstime ?? 0) + 1;
 						newGamepadButtonStates[button].consumed ??= false;
 						newGamepadButtonStates[button].timestamp ??= performance.now();
+						newGamepadButtonStates[button].justpressed ??= !this.gamepadButtonStates[button].pressed;
 					} else {
 						// Set to false only if no other element is pressing this button
 						if (!this.isOtherElementPressingButton(button)) {
-							newGamepadButtonStates[button].pressed = false;
-							newGamepadButtonStates[button].presstime = null;
-							newGamepadButtonStates[button].consumed = false;
-							newGamepadButtonStates[button].timestamp = null;
+							newGamepadButtonStates[button] = { ...defaultState }; // TODO: IS THIS REQUIRED AS WE ARE SETTING THE STATE TO DEFAULT BEFORE THE LOOP?
 						}
 					}
 				});
@@ -2214,9 +2194,7 @@ class OnscreenGamepad implements IInputHandler {
 	public reset(except?: string[]): void {
 		if (!except) {
 			// Initialize the states of all gamepad buttons and axes
-			for (const buttonId in Input.BUTTON_IDS) {
-				this.gamepadButtonStates[buttonId] = makeButtonState();
-			}
+			Input.BUTTON_IDS.forEach(buttonId => this.gamepadButtonStates[buttonId] = makeButtonState());
 		}
 		else {
 			resetObject(this.gamepadButtonStates, except);
