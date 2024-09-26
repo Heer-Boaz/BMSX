@@ -1318,18 +1318,22 @@ export class PlayerInput {
 	 * @example
 	 * this.setInputMap(0, {
 	 *     keyboard: {
-	 *         'jump': 'Space',
-	 *         'left': 'ArrowLeft',
-	 *         'right': 'ArrowRight',
-	 *         'up': 'ArrowUp',
-	 *         'down': 'ArrowDown',
+	 *         'jump': ['Space'],
+	 *         'left': ['ArrowLeft'],
+	 *         'right': ['ArrowRight'],
+	 *         'up': ['ArrowUp'],
+	 *         'down': ['ArrowDown'],
+	 *    	   'jumpleft': ['ArrowLeft', 'Space'],
+	 *	       'jumpright': ['ArrowRight', 'Space'],
 	 *     },
 	 *     gamepad: {
-	 *         'jump': 'a',
-	 *         'left': 'left',
-	 *         'right': 'right',
-	 *         'up': 'up',
-	 *         'down': 'down',
+	 *         'jump': ['a'],
+	 *         'left': ['left'],
+	 *         'right': ['right'],
+	 *         'up': ['up'],
+	 *         'down': ['down'],
+	 *		   'jumpleft': ['left', 'a'],
+	 *		   'jumpright': ['right', 'a'],
 	 *     },
 	 * });
 	 */

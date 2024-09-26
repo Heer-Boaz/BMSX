@@ -233,7 +233,7 @@ export class ActionParser {
 		const modifierFunctions = modifiers.map((modifier) => this.compileModifier(modifier));
 
 		// Create the evaluator function
-        const evaluatorFunction = this.createActionEvaluator(modifierFunctions);
+		const evaluatorFunction = this.createActionEvaluator(modifierFunctions);
 
 		return [actionName, evaluatorFunction];
 	}
@@ -441,32 +441,32 @@ export class ActionParser {
 		 * @throws {Error} Throws an error if a closing parenthesis is expected but not found.
 		 * @returns {ASTNode} The parsed AST node representing the factor.
 		 */
-        const parseFactor = (): ASTNode => {
-            if (tokens[index] === '!') {
-                index++;
-                const node = parseFactor();
-                return {
-                    type: 'not',
-                    child: node,
-                };
-            } else if (tokens[index] === '(') {
-                index++;
-                const node = parseExpression();
-                if (tokens[index] !== ')') {
-                    throw new Error(`Expected ')' at position ${index}`);
-                }
-                index++;
-                return node;
-            } else {
-                const actionToken = tokens[index++];
-                const [actionName, evaluatorFunction] = this.parseAction(actionToken);
-                return {
-                    type: 'action',
-                    action: actionName,
-                    evaluatorFunction: [evaluatorFunction],
-                };
-            }
-        };
+		const parseFactor = (): ASTNode => {
+			if (tokens[index] === '!') {
+				index++;
+				const node = parseFactor();
+				return {
+					type: 'not',
+					child: node,
+				};
+			} else if (tokens[index] === '(') {
+				index++;
+				const node = parseExpression();
+				if (tokens[index] !== ')') {
+					throw new Error(`Expected ')' at position ${index}`);
+				}
+				index++;
+				return node;
+			} else {
+				const actionToken = tokens[index++];
+				const [actionName, evaluatorFunction] = this.parseAction(actionToken);
+				return {
+					type: 'action',
+					action: actionName,
+					evaluatorFunction: [evaluatorFunction],
+				};
+			}
+		};
 
 		return parseExpression();
 	}
@@ -566,24 +566,22 @@ export class ActionParser {
 	 * @throws Error if an unknown operator is encountered in the node.
 	 */
 	static evaluateActions(node: ASTNode, getActionState: (actionName: string) => ActionState): boolean {
-		if (node.type === 'action') {
-			const [actionName, evaluatorFunction] = this.parseAction(node.action);
-			return evaluatorFunction(getActionState(actionName));
-		}
+		switch (node.type) {
+			case 'action':
+				return node.evaluatorFunction.every((evaluatorFunction) => evaluatorFunction(getActionState(node.action)));
+			case 'not':
+				return !this.evaluateActions(node.child, getActionState);
+			case 'operator':
+				switch (node.operator) {
+					case '+':
+						return node.children.every((child) => this.evaluateActions(child, getActionState));
+					case '|':
 
-		if (node.type === 'not') {
-			return !this.evaluateActions(node.child, getActionState);
+						return node.children.some((child) => this.evaluateActions(child, getActionState));
+					default:
+						throw new Error(`Unknown operator: ${node.operator}`);
+				}
 		}
-
-		if (node.operator === '+') {
-			// AND operator: All children must return true
-			return node.children.every(child => this.evaluateActions(child, getActionState));
-		} else if (node.operator === '|') {
-			// OR operator: At least one child must return true
-			return node.children.some(child => this.evaluateActions(child, getActionState));
-		}
-
-		throw new Error(`Unknown operator: ${node.operator}`);
 	}
 
 }
