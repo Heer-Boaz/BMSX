@@ -129,25 +129,24 @@ function resetObject(obj: any, except?: string[]) {
  * Returns the pressed state of a key or button, and optionally checks if it was clicked.
  * @param stateMap - The state map to check for the key or button.
  * @param consumedStateMap - The click state map to check for the key or button.
- * @param key - The key or button to check the state of.
+ * @param keyOrButtonId - The key or button to check the state of.
  * @returns The pressed state of the key or button.
  */
 function getPressedState(
-	stateMap: Key2ButtonState,
-	key: ButtonId
+	stateMap: KeyOrButtonId2ButtonState,
+	keyOrButtonId: ButtonId
 ): ButtonState {
-	// TODO: IMPLEMENT!
-	return { pressed: stateMap[key]?.pressed ?? false, justpressed: false, consumed: stateMap[key]?.consumed ?? false, presstime: stateMap[key]?.presstime ?? null, timestamp: stateMap[key]?.timestamp ?? null };
+	return { pressed: stateMap[keyOrButtonId]?.pressed ?? false, justpressed: stateMap[keyOrButtonId]?.justpressed ?? false, consumed: stateMap[keyOrButtonId]?.consumed ?? false, presstime: stateMap[keyOrButtonId]?.presstime ?? null, timestamp: stateMap[keyOrButtonId]?.timestamp ?? null };
 }
 
 /**
  * Represents the state of an button-press-index in the Index2State type. Used for tracking the state of a button.
  */
-type Key2ButtonState = { [index: ButtonId]: ButtonState; }
+type KeyOrButtonId2ButtonState = { [index: ButtonId]: ButtonState; }
 
 /**
  * Represents a mapping of keyboard inputs to actions.
- */
+ */5
 export type KeyboardInputMapping = {
 	[action: string]: KeyboardButton[];
 }
@@ -187,7 +186,7 @@ export type ButtonState = {
 	justpressed: boolean;
 	consumed: boolean;
 	presstime: number | null;
-	timestamp: number;
+	timestamp: number | null;
 };
 
 /**
@@ -1294,6 +1293,12 @@ export class PlayerInput {
 	 */
 	public playerIndex: number;
 
+	/**
+	 * Represents the input handlers for the player.
+	 *
+	 * @property {IInputHandler | null} keyboard - The handler for keyboard input, or null if not set.
+	 * @property {IInputHandler | null} gamepad - The handler for gamepad input, or null if not set.
+	 */
 	public inputHandlers: { [key in 'keyboard' | 'gamepad']: IInputHandler | null } = {
 		keyboard: null,
 		gamepad: null,
@@ -1656,9 +1661,9 @@ class KeyboardInput implements IInputHandler {
 	/**
 	 * The state of each keyboard key.
 	 */
-	public keyStates: Key2ButtonState = {};
+	public keyStates: KeyOrButtonId2ButtonState = {};
 
-	public gamepadButtonStates: Key2ButtonState = {}; // TODO: START USING THIS!!
+	public gamepadButtonStates: KeyOrButtonId2ButtonState = {};
 
 	/**
 	 * The index of the input device, which defaults to 0 (the main player).
@@ -1723,7 +1728,7 @@ class KeyboardInput implements IInputHandler {
 		// Reset gamepad button states
 		const defaultState = makeButtonState();
 
-		const newGamepadButtonStates: Key2ButtonState = {};
+		const newGamepadButtonStates: KeyOrButtonId2ButtonState = {};
 		Object.keys(this.keyStates).forEach(buttonId => {
 			if (this.keyStates[buttonId].pressed) {
 				// Update the state only if the button is currently pressed
@@ -1815,7 +1820,7 @@ class GamepadInput implements IInputHandler {
 	/**
 	 * The state of each gamepad button for each player.
 	 */
-	private gamepadButtonStates: Key2ButtonState = {};
+	private gamepadButtonStates: KeyOrButtonId2ButtonState = {};
 
 	/**
 	 * Creates an instance of the class and initializes the gamepad.
@@ -1962,7 +1967,7 @@ class OnscreenGamepad implements IInputHandler {
 	/**
 	 * The state of each gamepad button for each player.
 	 */
-	private gamepadButtonStates: Key2ButtonState = {};
+	private gamepadButtonStates: KeyOrButtonId2ButtonState = {};
 
 	/**
 	 * Hides the specified buttons.
@@ -2001,7 +2006,7 @@ class OnscreenGamepad implements IInputHandler {
 		// Initialize new states with current values instead of resetting
 		const defaultState = makeButtonState();
 
-		const newGamepadButtonStates: Key2ButtonState = {};
+		const newGamepadButtonStates: KeyOrButtonId2ButtonState = {};
 
 		Input.BUTTON_IDS.forEach(button => {
 			newGamepadButtonStates[button] = this.gamepadButtonStates[button] ?? { ...defaultState };
