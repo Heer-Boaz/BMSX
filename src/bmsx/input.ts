@@ -203,7 +203,7 @@ type InputEvent = {
 /**
  * Represents the state of an action, including the action name and button state.
  */
-export type ActionState = { action: string } & ButtonState;
+export type ActionState = { action: string, alljustpressed: boolean } & ButtonState;
 
 function makeButtonState(partialState?: Partial<ButtonState>): ButtonState {
 	const { pressed = false, justpressed = false, consumed = false, presstime = null, timestamp = null } = partialState ?? {};
@@ -1373,7 +1373,7 @@ export class PlayerInput {
 	 */
 	public getActionState(action: string): ActionState {
 		const inputMap = this.inputMap;
-		if (!inputMap) return { action, pressed: false, justpressed: false, consumed: false, presstime: null, timestamp: undefined };
+		if (!inputMap) return { action, pressed: false, justpressed: false, alljustpressed: false, consumed: false, presstime: null, timestamp: undefined };
 
 		const keyboardKeys = inputMap.keyboard?.[action];
 		const gamepadButtons = inputMap.gamepad?.[action];
@@ -1426,6 +1426,7 @@ export class PlayerInput {
 			action: action,
 			pressed: keyboardState.allPressed || gamepadState.allPressed,
 			justpressed: keyboardState.allPressed || gamepadState.allPressed, // TODO: Implement!
+			alljustpressed: keyboardState.allPressed || gamepadState.allPressed, // TODO: Implement!
 			consumed: keyboardState.anyConsumed || gamepadState.anyConsumed,
 			presstime: minPresstime === Infinity ? null : minPresstime,
 			timestamp: maxTimestamp === -Infinity ? undefined : maxTimestamp,
@@ -1451,6 +1452,7 @@ export class PlayerInput {
 			const actionState = this.getActionState(action);
 			// Check if the action state matches the query
 			if (actionState.pressed === (query?.pressed ?? true) &&
+				actionState.justpressed === (query?.justPressed ?? false) &&
 				actionState.consumed === (query?.consumed ?? false) &&
 				actionState.presstime >= (query?.pressTime ?? 0)) {
 				pressedActions.push(actionState);

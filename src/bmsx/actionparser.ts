@@ -27,6 +27,7 @@ type CompiledModifiers = ((actionState: ActionState) => boolean)[];
  * The modifiers include:
  * - `pressed`: Indicates the action is currently pressed.
  * - `justPressed`: Indicates the action was just pressed.
+ * - `allJustPressed`: Indicates that all buttons in the action were just pressed.
  * - `consumed`: Indicates the action has been consumed.
  * - `ignoreConsumed`: Indicates to ignore consumed actions.
  * - `pressTime`: Represents the duration the action has been pressed.
@@ -34,6 +35,7 @@ type CompiledModifiers = ((actionState: ActionState) => boolean)[];
 const standardModifiers = [
 	'pressed',
 	'justPressed',
+	'allJustPressed',
 	'consumed',
 	'ignoreConsumed',
 	'pressTime',
