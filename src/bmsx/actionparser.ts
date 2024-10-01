@@ -90,7 +90,7 @@ interface ActionNode {
  */
 type OperatorNode = {
 	type: 'operator';
-	operator: '+' | '|';
+	operator: 'and' | 'or';
 	children: ASTNode[];
 };
 
@@ -389,7 +389,7 @@ export class ActionParser {
 		/**
 		 * Parses an expression from the current token stream.
 		 *
-		 * This function processes terms and combines them using the '|' operator.
+		 * This function processes terms and combines them using the '+' operator.
 		 * It constructs an Abstract Syntax Tree (AST) node representing the
 		 * expression, where each node can be an operator or a term.
 		 *
@@ -398,12 +398,12 @@ export class ActionParser {
 		const parseExpression = (): ASTNode => {
 			let node = parseTerm();
 
-			while (index < tokens.length && tokens[index] === '|') {
+			while (index < tokens.length && tokens[index] === '+') {
 				index++; // Consume '|'
 				const right = parseTerm();
 				node = {
 					type: 'operator',
-					operator: '|',
+					operator: 'or',
 					children: [node, right],
 				};
 			}
@@ -414,7 +414,7 @@ export class ActionParser {
 		/**
 		 * Parses a term in the expression.
 		 *
-		 * A term consists of one or more factors connected by the '+' operator.
+		 * A term consists of one or more factors connected by the '•' operator.
 		 * This function processes the current token and constructs an Abstract Syntax Tree (AST)
 		 * node representing the term.
 		 *
@@ -423,12 +423,12 @@ export class ActionParser {
 		const parseTerm = (): ASTNode => {
 			let node = parseFactor();
 
-			while (index < tokens.length && tokens[index] === '+') {
+			while (index < tokens.length && tokens[index] === '•') {
 				index++; // Consume '+'
 				const right = parseFactor();
 				node = {
 					type: 'operator',
-					operator: '+',
+					operator: 'and',
 					children: [node, right],
 				};
 			}
@@ -504,7 +504,7 @@ export class ActionParser {
 				continue;
 			}
 
-			if (char === '+' || char === '|' || char === '(' || char === ')') {
+			if (char === '+' || char === '•' || char === '(' || char === ')') {
 				if (current.length > 0) {
 					tokens.push(current);
 					current = '';
@@ -578,10 +578,9 @@ export class ActionParser {
 				return !this.evaluateActions(node.child, getActionState);
 			case 'operator':
 				switch (node.operator) {
-					case '+':
+					case 'and':
 						return node.children.every((child) => this.evaluateActions(child, getActionState));
-					case '|':
-
+					case 'or':
 						return node.children.some((child) => this.evaluateActions(child, getActionState));
 					default:
 						throw new Error(`Unknown operator: ${node.operator}`);
