@@ -307,6 +307,9 @@ export class ActionParser {
 				case 'justPressed':
 					return (actionState: ActionState) =>
 						isNegated ? !actionState.justpressed : actionState.justpressed;
+				case 'allJustPressed':
+					return (actionState: ActionState) =>
+						isNegated ? !actionState.alljustpressed : actionState.alljustpressed;
 				case 'consumed':
 					return (actionState: ActionState) =>
 						isNegated ? !actionState.consumed : actionState.consumed;
