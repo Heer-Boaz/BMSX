@@ -1741,8 +1741,7 @@ class KeyboardInput implements IInputHandler {
 		Object.keys(this.keyStates).forEach(buttonId => {
 			if (this.keyStates[buttonId].pressed) {
 				// Update the state only if the button is currently pressed
-				newGamepadButtonStates[buttonId] = { pressed: true, presstime: this.gamepadButtonStates[buttonId]?.presstime ?? 0 + 1, consumed: this.gamepadButtonStates[buttonId]?.consumed ?? false, timestamp: this.gamepadButtonStates[buttonId]?.timestamp ?? performance.now(), justpressed: this.keyStates[buttonId]?.justpressed ?? true };
-				this.keyStates[buttonId].justpressed = false; // Reset the justpressed flag after the first poll
+				newGamepadButtonStates[buttonId] = { pressed: true, presstime: (this.gamepadButtonStates[buttonId]?.presstime ?? 0) + 1, consumed: this.gamepadButtonStates[buttonId]?.consumed ?? false, timestamp: this.gamepadButtonStates[buttonId]?.timestamp ?? performance.now(), justpressed: (this.gamepadButtonStates[buttonId]?.presstime ?? 0) === 0 };
 			} else {
 				newGamepadButtonStates[buttonId] = { ...defaultState };
 			}
@@ -1768,9 +1767,6 @@ class KeyboardInput implements IInputHandler {
 		}
 		else {
 			this.keyStates[key_code].pressed = true;
-			this.keyStates[key_code].justpressed = true;
-			this.keyStates[key_code].presstime = 0;
-			this.keyStates[key_code].timestamp = performance.now();
 		}
 	}
 
@@ -1903,20 +1899,21 @@ class GamepadInput implements IInputHandler {
 			const pressed = typeof gamepadButton === 'object' ? gamepadButton.pressed : gamepadButton === 1.0;
 			// Consider that the button can already be regarded as pressed if it was pressed as part of an axis (which is also regarded as a button press)
 			const buttonId = Input.INDEX2BUTTON[btnIndex];
-			const wasPressed = this.gamepadButtonStates[buttonId].pressed; // Check if the button was already pressed before this poll to allow for checking the justpressed state
+			const oldPressTime = this.gamepadButtonStates[buttonId].presstime ?? 0;
 			this.gamepadButtonStates[buttonId].pressed = buttonId === 'left' || buttonId === 'right' || buttonId === 'up' || buttonId === 'down'
 				? this.gamepadButtonStates[buttonId].pressed || pressed
 				: pressed;
 
-			if (!this.gamepadButtonStates[buttonId].pressed) {
-				this.gamepadButtonStates[buttonId] = makeButtonState();
-			} else {
+			if (this.gamepadButtonStates[buttonId].pressed) {
 				// If the button is pressed, increment the press time counter for detecting hold actions
-				this.gamepadButtonStates[buttonId].presstime = (this.gamepadButtonStates[buttonId].presstime ?? 0) + 1;
+				this.gamepadButtonStates[buttonId].presstime = oldPressTime + 1;
 				// Set the timestamp only if it was not set before
 				this.gamepadButtonStates[buttonId].timestamp ||= performance.now();
 				// Set the justpressed flag if the button was not pressed before this poll
-				this.gamepadButtonStates[buttonId].justpressed ||= !wasPressed;
+				this.gamepadButtonStates[buttonId].justpressed = oldPressTime === 0;
+			} else {
+				// Reset the button state if it is not pressed
+				this.gamepadButtonStates[buttonId] = makeButtonState();
 			}
 		}
 	}
@@ -2030,12 +2027,13 @@ class OnscreenGamepad implements IInputHandler {
 			if (buttonData) {
 				buttonData.buttons.forEach(button => {
 					if (d.dataset.touched === 'true') {
+						const oldPressTime = this.gamepadButtonStates[button].presstime ?? 0;
 						// Update the state only if the button is currently pressed
 						newGamepadButtonStates[button].pressed = true;
-						newGamepadButtonStates[button].presstime = (newGamepadButtonStates[button].presstime ?? 0) + 1;
+						newGamepadButtonStates[button].presstime = oldPressTime + 1;
 						newGamepadButtonStates[button].consumed ??= false;
 						newGamepadButtonStates[button].timestamp ??= performance.now();
-						newGamepadButtonStates[button].justpressed ||= this.gamepadButtonStates[button].pressed !== undefined ? (!this.gamepadButtonStates[button].pressed) : true; // Set the justpressed flag if the button was not pressed before this poll
+						newGamepadButtonStates[button].justpressed = oldPressTime === 0;
 					} else {
 						// Set to false only if no other element is pressing this button
 						if (!this.isOtherElementPressingButton(button)) {
