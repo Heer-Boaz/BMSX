@@ -90,7 +90,7 @@ interface ActionNode {
  *
  * @type {OperatorNode}
  * @property {string} type - The type of the node, which is always 'operator'.
- * @property {('+' | '|')} operator - The operator represented by this node, which can be either '+' or '|'.
+ * @property {('and' | 'or')} operator - The operator represented by this node, which can be either '+' or '|'.
  * @property {ASTNode[]} children - An array of child nodes that this operator applies to.
  */
 type OperatorNode = {
@@ -158,16 +158,6 @@ export class ActionParser {
 
 	/**
 	 * Parses an action string and returns an ActionEvaluator.
-	 *
-	 * The action string can be in the format of:
-	 * - `actionName`
-	 * - `actionName[modifier1,modifier2,...]`
-	 *
-	 * Modifiers can include:
-	 * - `pressed`
-	 * - `consumed`
-	 * - `ignoreConsumed`
-	 * - 'pressTime{<|>value}'
 	 *
 	 * If the action string starts with '!', the resulting modifiers will be negated.
 	 * The function ensures that the 'pressed' and '!consumed' modifiers are included
@@ -251,13 +241,6 @@ export class ActionParser {
 
 	/**
 	 * Compiles a modifier string into a function that evaluates an action state.
-	 *
-	 * The modifier can be negated (prefixed with '!') and can represent various conditions:
-	 * - `pressTime{<|>value}`: Checks if the press time is less than or greater than the specified value.
-	 * - `pressed`: Evaluates if the action has been pressed.
-	 * - `justPressed`: Evaluates if the action was just pressed.
-	 * - `consumed`: Evaluates if the action has been consumed.
-	 * - `ignoreConsumed`: Always returns true unless negated, effectively ignoring the consumed status.
 	 *
 	 * @param modifier - The modifier string to compile.
 	 * @returns A function that takes an ActionState and returns a boolean indicating if the condition is met.
@@ -459,21 +442,6 @@ export class ActionParser {
 		}
 	}
 
-	/**
-	 * Tokenizes the input string into an array of tokens.
-	 *
-	 * This function processes the input string character by character,
-	 * skipping whitespace and identifying specific characters and patterns
-	 * such as operators ('+', '|', '(', ')'), negation ('!'),
-	 * action modifiers (enclosed in brackets '[...]'), and press time
-	 * (enclosed in curly braces '{...}').
-	 *
-	 * If an unmatched opening bracket or brace is found, an error is thrown.
-	 *
-	 * @param input - The string to be tokenized.
-	 * @returns An array of tokens extracted from the input string.
-	 * @throws Error if there is an unmatched '[' or '{' in the input.
-	 */
 	static tokenize(input: string): string[] {
 		const tokens: string[] = [];
 		let current = '';
@@ -607,13 +575,16 @@ export class ActionParser {
 			case 'not':
 				return !this.evaluateActions(node.child, getActionState);
 			case 'operator':
-				let result;
-				if (node.operator === 'and') {
-					result = node.children.every((child) => this.evaluateActions(child, getActionState));
-				} else if (node.operator === 'or') {
-					result = node.children.some((child) => this.evaluateActions(child, getActionState));
-				} else {
-					throw new Error(`Unknown operator: ${node.operator}`);
+				let result: boolean;
+				switch (node.operator) {
+					case 'and':
+						result = node.children.every((child) => this.evaluateActions(child, getActionState));
+						break;
+					case 'or':
+						result = node.children.some((child) => this.evaluateActions(child, getActionState));
+						break;
+					default:
+						throw new Error(`Unknown operator: ${node.operator}`);
 				}
 
 				if (node.modifiers && node.modifiers.length > 0) {
@@ -628,8 +599,6 @@ export class ActionParser {
 				}
 
 				return result;
-			// default:
-			// throw new Error(`Unknown node type: ${node.type}`);
 		}
 	}
 
