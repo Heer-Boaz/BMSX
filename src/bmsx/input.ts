@@ -1346,7 +1346,7 @@ export class PlayerInput {
 
 	/**
 	 * Checks if all actions defined in the action definition string have been triggered.
-	 * Supports both AND (+) and OR (|) operators.
+	 * Supports both AND (•) and OR (+) operators.
 	 * @param actionDefinition The action definition string to check.
 	 * @returns True if the action definition is satisfied, false otherwise.
 	 */
@@ -1711,7 +1711,6 @@ class KeyboardInput implements IInputHandler {
 	 */
 	public consumeButton(key: string): void {
 		this.gamepadButtonStates[key].consumed = true;
-		// this.keyStates[key].consumed = true;
 	}
 
 	/**
@@ -1724,7 +1723,6 @@ class KeyboardInput implements IInputHandler {
 	public getButtonState(key: string): ButtonState {
 		if (key === null) return makeButtonState();
 		return getPressedState(this.gamepadButtonStates, key);
-		// return getPressedState(this.keyStates, key);
 	}
 
 	/**

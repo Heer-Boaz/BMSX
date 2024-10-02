@@ -120,7 +120,8 @@ export class TitleScreen extends SpriteObject {
 					process_input(this: TitleScreen) {
 						const priorityActions = $.input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['up', 'down', 'punch', 'highkick', 'lowkick', 'block'] });
 						// const actionmeuk = [`up|down|left|right`, `!up+!down+!left+!right`, `down[ignoreConsumed]+up[ignoreConsumed]+!(left|right)`];
-						const actionmeuk: string[] = [`(up[!pressed]•right[!pressed])`, `(up[ignoreConsumed]•right[ignoreConsumed])`, `up[ignoreConsumed,justPressed]+right[ignoreConsumed,justPressed]`];
+						// const actionmeuk: string[] = [`(up[!pressed]•right[!pressed])`, `(up[ignoreConsumed]•right[ignoreConsumed])`, `up[ignoreConsumed,justPressed]+right[ignoreConsumed,justPressed]`];
+						const actionmeuk: string[] = [`(up•right)[ignoreConsumed,justPressed]`];
 						const bla = actionmeuk.map(meuk => $.input.getPlayerInput(1).checkActionTriggered(meuk));
 						const meuk_and_bla = actionmeuk.map((meuk, i) => `${meuk} => ${bla[i]}`);
 						console.info(`${meuk_and_bla}`);

@@ -10,6 +10,11 @@ import type { ActionState } from "./input";
  */
 type ActionEvaluator = [string, (actionState: ActionState) => boolean];
 
+interface ParserState {
+	tokens: string[];
+	index: number;
+}
+
 /**
  * Represents an array of functions that take an `ActionState` as an argument
  * and return a boolean value. Each function in the array is a modifier that
@@ -92,6 +97,7 @@ type OperatorNode = {
 	type: 'operator';
 	operator: 'and' | 'or';
 	children: ASTNode[];
+	modifiers?: Modifier[];
 };
 
 /**
@@ -171,24 +177,7 @@ export class ActionParser {
 	 * @returns An array containing the action name and the corresponding evaluator function.
 	 * @throws Error if the action format is invalid or if any modifier is invalid.
 	 */
-	static parseAction(action: string): ActionEvaluator {
-		let isNegated = false;
-
-		if (action.startsWith('!')) {
-			isNegated = true;
-			action = action.substring(1);
-		}
-
-		const actionMatch = action.match(/^([a-zA-Z_]+)(?:\[(.*?)\])?$/);
-		if (!actionMatch) {
-			throw new Error(`Invalid action format: '${action}'`);
-		}
-
-		const actionName = actionMatch[1];
-		const modifierString = actionMatch[2] || '';
-
-		const modifiers = modifierString.split(',').filter(Boolean) as Modifier[];
-
+	static parseAction(actionName: string, modifiers: Modifier[]): ActionEvaluator {
 		// Ensure 'pressed' modifier is included unless specified
 		const hasPressedModifier = modifiers.some(
 			(modifier) => modifier === 'pressed' || modifier === '!pressed'
@@ -209,22 +198,6 @@ export class ActionParser {
 			modifiers.push('!consumed');
 		}
 
-		// If the action was negated, adjust the 'pressed' and 'consumed' modifiers
-		if (isNegated) {
-			modifiers.forEach((modifier, index) => {
-				if (modifier === 'pressed') {
-					modifiers[index] = '!pressed';
-				} else if (modifier === '!pressed') {
-					modifiers[index] = 'pressed';
-				} else if (modifier === 'consumed') {
-					modifiers[index] = '!consumed';
-				} else if (modifier === '!consumed') {
-					modifiers[index] = 'consumed';
-				}
-				// Other modifiers remain unchanged
-			});
-		}
-
 		modifiers.forEach((modifier) => {
 			if (!this.isValidModifier(modifier)) {
 				throw new Error(`Invalid modifier: '${modifier}' in action '${actionName}'`);
@@ -239,6 +212,7 @@ export class ActionParser {
 
 		return [actionName, evaluatorFunction];
 	}
+
 
 	/**
 	 * Creates an action evaluator function that checks if all modifier functions
@@ -258,6 +232,21 @@ export class ActionParser {
 			}
 			return true; // All conditions met
 		};
+	}
+
+	private static extractModifiers(modifierToken: string): Modifier[] {
+		const modifierMatch = modifierToken.match(/^\[(.*)\]$/);
+		if (!modifierMatch) {
+			throw new Error(`Invalid modifier format: '${modifierToken}'`);
+		}
+		const modifierString = modifierMatch[1];
+		const modifiers = modifierString.split(',').filter(Boolean) as Modifier[];
+		modifiers.forEach((modifier) => {
+			if (!this.isValidModifier(modifier)) {
+				throw new Error(`Invalid modifier: '${modifier}'`);
+			}
+		});
+		return modifiers;
 	}
 
 	/**
@@ -376,104 +365,98 @@ export class ActionParser {
 	 * @throws Error if there is a mismatched parenthesis in the action definition.
 	 */
 	static parseActionDefinition(actionDefinition: string): ASTNode {
-		let index = 0;
-
-		/**
-		 * Tokenizes the provided action definition string into an array of tokens.
-		 *
-		 * @param actionDefinition - The string representation of the action definition to be tokenized.
-		 * @returns An array of tokens extracted from the action definition.
-		 */
 		const tokens = this.tokenize(actionDefinition);
+		const state: ParserState = { tokens, index: 0 };
+		const node = this.parseExpression(state);
 
-		/**
-		 * Parses an expression from the current token stream.
-		 *
-		 * This function processes terms and combines them using the '+' operator.
-		 * It constructs an Abstract Syntax Tree (AST) node representing the
-		 * expression, where each node can be an operator or a term.
-		 *
-		 * @returns {ASTNode} The root node of the parsed expression.
-		 */
-		const parseExpression = (): ASTNode => {
-			let node = parseTerm();
+		if (state.index < tokens.length) {
+			throw new Error(`Unexpected token '${tokens[state.index]}' at position ${state.index}`);
+		}
 
-			while (index < tokens.length && tokens[index] === '+') {
-				index++; // Consume '|'
-				const right = parseTerm();
-				node = {
-					type: 'operator',
-					operator: 'or',
-					children: [node, right],
-				};
+		return node;
+	}
+
+	private static parseExpression(state: ParserState): ASTNode {
+		let node = this.parseTerm(state);
+
+		while (this.currentToken(state) === '+') {
+			this.nextToken(state); // Consume '+'
+			const right = this.parseTerm(state);
+			node = {
+				type: 'operator',
+				operator: 'or',
+				children: [node, right],
+			};
+		}
+
+		return node;
+	}
+
+	private static parseTerm(state: ParserState): ASTNode {
+		let node = this.parseFactor(state);
+
+		while (this.currentToken(state) === '•') {
+			this.nextToken(state); // Consume '•'
+			const right = this.parseFactor(state);
+			node = {
+				type: 'operator',
+				operator: 'and',
+				children: [node, right],
+			};
+		}
+
+		return node;
+	}
+
+	private static parseFactor(state: ParserState): ASTNode {
+		const token = this.currentToken(state);
+
+		if (token === '!') {
+			this.nextToken(state); // Consume '!'
+			const node = this.parseFactor(state);
+			return {
+				type: 'not',
+				child: node,
+			};
+		} else if (token === '(') {
+			this.nextToken(state); // Consume '('
+			const node = this.parseExpression(state);
+
+			if (this.currentToken(state) !== ')') {
+				throw new Error(`Expected ')' at position ${state.index}, found '${this.currentToken(state)}'`);
+			}
+			this.nextToken(state); // Consume ')'
+
+			// Check for modifiers after the group
+			if (this.currentToken(state) && this.currentToken(state).startsWith('[')) {
+				const modifierToken = this.currentToken(state);
+				this.nextToken(state);
+				const modifiers = this.extractModifiers(modifierToken);
+				(node as OperatorNode).modifiers = modifiers;
 			}
 
 			return node;
-		};
+		} else if (token && /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(token)) {
+			// Action identifier
+			this.nextToken(state); // Consume identifier
+			let modifiers: Modifier[] = [];
 
-		/**
-		 * Parses a term in the expression.
-		 *
-		 * A term consists of one or more factors connected by the '•' operator.
-		 * This function processes the current token and constructs an Abstract Syntax Tree (AST)
-		 * node representing the term.
-		 *
-		 * @returns {ASTNode} The AST node representing the parsed term.
-		 */
-		const parseTerm = (): ASTNode => {
-			let node = parseFactor();
-
-			while (index < tokens.length && tokens[index] === '•') {
-				index++; // Consume '+'
-				const right = parseFactor();
-				node = {
-					type: 'operator',
-					operator: 'and',
-					children: [node, right],
-				};
+			// Check for modifiers after the action
+			if (this.currentToken(state) && this.currentToken(state).startsWith('[')) {
+				const modifierToken = this.currentToken(state);
+				this.nextToken(state);
+				modifiers = this.extractModifiers(modifierToken);
 			}
 
-			return node;
-		};
-
-		/**
-		 * Parses a factor in the expression.
-		 * A factor can be:
-		 * - A negation (unary 'not') of another factor.
-		 * - A parenthesized expression, which is parsed as a complete expression.
-		 * - An action token, which is parsed into an action node.
-		 *
-		 * @throws {Error} Throws an error if a closing parenthesis is expected but not found.
-		 * @returns {ASTNode} The parsed AST node representing the factor.
-		 */
-		const parseFactor = (): ASTNode => {
-			if (tokens[index] === '!') {
-				index++;
-				const node = parseFactor();
-				return {
-					type: 'not',
-					child: node,
-				};
-			} else if (tokens[index] === '(') {
-				index++;
-				const node = parseExpression();
-				if (tokens[index] !== ')') {
-					throw new Error(`Expected ')' at position ${index}`);
-				}
-				index++;
-				return node;
-			} else {
-				const actionToken = tokens[index++];
-				const [actionName, evaluatorFunction] = this.parseAction(actionToken);
-				return {
-					type: 'action',
-					action: actionName,
-					evaluatorFunction: [evaluatorFunction],
-				};
-			}
-		};
-
-		return parseExpression();
+			const [actionName, evaluatorFunction] = this.parseAction(token, modifiers);
+			return {
+				type: 'action',
+				action: actionName,
+				evaluatorFunction: [evaluatorFunction],
+			};
+		} else {
+			throw new Error(`Unexpected token '${token}' at position ${state.index}`);
+		}
 	}
 
 	/**
@@ -504,48 +487,51 @@ export class ActionParser {
 				continue;
 			}
 
-			if (char === '+' || char === '•' || char === '(' || char === ')') {
+			if ('+•(),!'.includes(char)) {
 				if (current.length > 0) {
 					tokens.push(current);
 					current = '';
 				}
 				tokens.push(char);
 				i++;
-			} else if (char === '!') {
+			} else if (char === '[') {
 				if (current.length > 0) {
 					tokens.push(current);
 					current = '';
 				}
-				tokens.push('!');
+				let modifierToken = char;
 				i++;
-			} else if (char === '[') {
-				// Handle action with modifiers
-				current += char;
-				i++;
-				while (i < input.length && input[i] !== ']') {
-					current += input[i];
+				let bracketCount = 1;
+				while (i < input.length && bracketCount > 0) {
+					const c = input[i];
+					modifierToken += c;
+					if (c === '[') bracketCount++;
+					else if (c === ']') bracketCount--;
 					i++;
 				}
-				if (i < input.length) {
-					current += ']';
-					i++; // Consume ']'
-				} else {
-					throw new Error(`Unmatched '[' at position ${i}`);
+				if (bracketCount !== 0) {
+					throw new Error(`Unmatched '[' at position ${i - modifierToken.length}`);
 				}
+				tokens.push(modifierToken);
 			} else if (char === '{') {
-				// Handle pressTime with curly braces
-				current += char;
+				if (current.length > 0) {
+					tokens.push(current);
+					current = '';
+				}
+				let braceToken = char;
 				i++;
-				while (i < input.length && input[i] !== '}') {
-					current += input[i];
+				let braceCount = 1;
+				while (i < input.length && braceCount > 0) {
+					const c = input[i];
+					braceToken += c;
+					if (c === '{') braceCount++;
+					else if (c === '}') braceCount--;
 					i++;
 				}
-				if (i < input.length) {
-					current += '}';
-					i++; // Consume '}'
-				} else {
-					throw new Error(`Unmatched '{' at position ${i}`);
+				if (braceCount !== 0) {
+					throw new Error(`Unmatched '{' at position ${i - braceToken.length}`);
 				}
+				tokens.push(braceToken);
 			} else {
 				current += char;
 				i++;
@@ -557,6 +543,49 @@ export class ActionParser {
 		}
 
 		return tokens;
+	}
+
+	static currentToken(state: ParserState): string | undefined {
+		return state.tokens[state.index];
+	}
+
+	static nextToken(state: ParserState): void {
+		state.index++;
+	}
+
+	private static combineActionStates(node: OperatorNode, getActionState: (actionName: string) => ActionState): ActionState {
+		const actionStates = node.children.map(child => {
+			if (child.type === 'action') {
+				return getActionState(child.action);
+			} else {
+				// For operator nodes, recursively combine their child states
+				return this.combineActionStates(child as OperatorNode, getActionState);
+			}
+		});
+
+		const combinedState: ActionState = {
+			action: '', // Placeholder
+			pressed: false,
+			justpressed: false,
+			alljustpressed: false,
+			consumed: false,
+			presstime: undefined,
+			timestamp: undefined,
+		};
+
+		if (node.operator === 'and') {
+			combinedState.pressed = actionStates.every(s => s.pressed);
+			combinedState.justpressed = actionStates.some(s => s.justpressed);
+			combinedState.alljustpressed = actionStates.every(s => s.alljustpressed);
+			combinedState.consumed = actionStates.some(s => s.consumed);
+		} else if (node.operator === 'or') {
+			combinedState.pressed = actionStates.some(s => s.pressed);
+			combinedState.justpressed = actionStates.some(s => s.justpressed);
+			combinedState.alljustpressed = actionStates.every(s => s.alljustpressed);
+			combinedState.consumed = actionStates.some(s => s.consumed);
+		}
+
+		return combinedState;
 	}
 
 	/**
@@ -573,18 +602,34 @@ export class ActionParser {
 	static evaluateActions(node: ASTNode, getActionState: (actionName: string) => ActionState): boolean {
 		switch (node.type) {
 			case 'action':
-				return node.evaluatorFunction.every((evaluatorFunction) => evaluatorFunction(getActionState(node.action)));
+				const actionState = getActionState(node.action);
+				return node.evaluatorFunction.every((evaluatorFunction) => evaluatorFunction(actionState));
 			case 'not':
 				return !this.evaluateActions(node.child, getActionState);
 			case 'operator':
-				switch (node.operator) {
-					case 'and':
-						return node.children.every((child) => this.evaluateActions(child, getActionState));
-					case 'or':
-						return node.children.some((child) => this.evaluateActions(child, getActionState));
-					default:
-						throw new Error(`Unknown operator: ${node.operator}`);
+				let result;
+				if (node.operator === 'and') {
+					result = node.children.every((child) => this.evaluateActions(child, getActionState));
+				} else if (node.operator === 'or') {
+					result = node.children.some((child) => this.evaluateActions(child, getActionState));
+				} else {
+					throw new Error(`Unknown operator: ${node.operator}`);
 				}
+
+				if (node.modifiers && node.modifiers.length > 0) {
+					// Combine the action states of the children
+					const combinedState = this.combineActionStates(node, getActionState);
+
+					// Compile the modifier functions
+					const modifierFunctions = node.modifiers.map((modifier) => this.compileModifier(modifier));
+
+					// Apply the modifiers to the combined state
+					result = result && modifierFunctions.every((evaluatorFunction) => evaluatorFunction(combinedState));
+				}
+
+				return result;
+			// default:
+			// throw new Error(`Unknown node type: ${node.type}`);
 		}
 	}
 
