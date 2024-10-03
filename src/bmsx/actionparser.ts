@@ -83,6 +83,7 @@ interface ActionNode {
 	type: 'action';
 	action: string;
 	evaluatorFunction: CompiledModifiers;
+	modifiers?: Modifier[];
 }
 
 /**
@@ -110,6 +111,7 @@ type OperatorNode = {
 type NotNode = {
 	type: 'not';
 	child: ASTNode;
+	modifiers?: Modifier[];
 }
 
 /**
@@ -127,15 +129,8 @@ type ASTNode = ActionNode | OperatorNode | NotNode;
  * It also caches parsed action definitions to avoid repeated parsing.
  */
 export class ActionParser {
-	/**
-	 * Cache for parsed action definitions to avoid repeated parsing.
-	 */
 	private static parsedActions: Map<string, ASTNode> = new Map();
 
-	/**
-	 * Precomputes the parsed actions for a given action definition and stores them in the cache.
-	 * @param actionDefinition The action definition string to parse.
-	 */
 	private static precomputeParsedActions(actionDefinition: string): void {
 		if (!this.parsedActions.has(actionDefinition)) {
 			const actions = ActionParser.parseActionDefinition(actionDefinition);
@@ -143,12 +138,6 @@ export class ActionParser {
 		}
 	}
 
-	/**
-	 * Retrieves the parsed actions for a given action definition, using the cache if available.
-	 * If not cached, it parses the action definition and stores the result in the cache.
-	 * @param actionDefinition The action definition string to retrieve parsed actions for.
-	 * @returns The parsed ASTNode, or undefined if none are found.
-	 */
 	public static getParsedActions(actionDefinition: string): ASTNode | undefined {
 		if (!this.parsedActions.has(actionDefinition)) {
 			this.precomputeParsedActions(actionDefinition);
@@ -156,38 +145,8 @@ export class ActionParser {
 		return this.parsedActions.get(actionDefinition);
 	}
 
-	/**
-	 * Parses an action string and returns an ActionEvaluator.
-	 *
-	 * If the action string starts with '!', the resulting modifiers will be negated.
-	 * The function ensures that the 'pressed' and '!consumed' modifiers are included
-	 * unless specified otherwise.
-	 *
-	 * @param action - The action string to parse.
-	 * @returns An array containing the action name and the corresponding evaluator function.
-	 * @throws Error if the action format is invalid or if any modifier is invalid.
-	 */
 	static parseAction(actionName: string, modifiers: Modifier[]): ActionEvaluator {
-		// Ensure 'pressed' modifier is included unless specified
-		const hasPressedModifier = modifiers.some(
-			(modifier) => modifier === 'pressed' || modifier === '!pressed'
-		);
-		if (!hasPressedModifier) {
-			modifiers.push('pressed');
-		}
-
-		// Ensure '!consumed' modifier is included unless 'consumed', '!consumed', or 'ignoreConsumed' is specified
-		const hasConsumedModifier = modifiers.some(
-			(modifier) =>
-				modifier === 'consumed' ||
-				modifier === '!consumed' ||
-				modifier === 'ignoreConsumed' ||
-				modifier === '!ignoreConsumed'
-		);
-		if (!hasConsumedModifier) {
-			modifiers.push('!consumed');
-		}
-
+		// Validate modifiers
 		modifiers.forEach((modifier) => {
 			if (!this.isValidModifier(modifier)) {
 				throw new Error(`Invalid modifier: '${modifier}' in action '${actionName}'`);
@@ -203,16 +162,6 @@ export class ActionParser {
 		return [actionName, evaluatorFunction];
 	}
 
-
-	/**
-	 * Creates an action evaluator function that checks if all modifier functions
-	 * return true for a given action state.
-	 *
-	 * @param modifierFunctions - An array of compiled modifier functions that take
-	 *                            an ActionState and return a boolean.
-	 * @returns A function that takes an ActionState and returns true if all
-	 *          modifier functions evaluate to true; otherwise, returns false.
-	 */
 	private static createActionEvaluator(modifierFunctions: CompiledModifiers): (actionState: ActionState) => boolean {
 		return (actionState: ActionState) => {
 			for (const modifierFunction of modifierFunctions) {
@@ -239,13 +188,6 @@ export class ActionParser {
 		return modifiers;
 	}
 
-	/**
-	 * Compiles a modifier string into a function that evaluates an action state.
-	 *
-	 * @param modifier - The modifier string to compile.
-	 * @returns A function that takes an ActionState and returns a boolean indicating if the condition is met.
-	 * @throws Error if the modifier format is invalid or if an unknown modifier is provided.
-	 */
 	static compileModifier(modifier: string): (actionState: ActionState) => boolean {
 		const isNegated = modifier.startsWith('!');
 		const modifierName = isNegated ? modifier.substring(1) : modifier;
@@ -286,39 +228,18 @@ export class ActionParser {
 					return (actionState: ActionState) =>
 						isNegated ? !actionState.consumed : actionState.consumed;
 				case 'ignoreConsumed':
-					return (actionState: ActionState) => isNegated ? !actionState.consumed : true; // If not negated, always returns true, effectively ignoring the consumed status
+					return (actionState: ActionState) => isNegated ? !actionState.consumed : true;
 				default:
 					throw new Error(`Unknown modifier: '${modifierName}'`);
 			}
 		}
 	}
 
-	/**
-	 * Checks if the provided modifier string is valid.
-	 *
-	 * A valid modifier can be one of the standard modifiers:
-	 * - 'pressed'
-	 * - 'justPressed'
-	 * - 'consumed'
-	 * - 'ignoreConsumed'
-	 * - 'pressTime{<|>value}'
-	 *
-	 * Additionally, negated versions of standard modifiers (except 'ignoreConsumed')
-	 * are also considered valid. A valid negated modifier is prefixed with '!' (e.g., '!pressed').
-	 *
-	 * The function also supports a specific format for 'pressTime', which must match
-	 * the pattern `pressTime{(<|>)(\d+)}` where `<` or `>` indicates the comparison
-	 * and `\d+` represents a numeric value.
-	 *
-	 * @param modifier - The modifier string to validate.
-	 * @returns True if the modifier is valid, false otherwise.
-	 */
 	static isValidModifier(modifier: string): boolean {
 		const negatedModifiers: NegatedModifier[] = standardModifiers
 			.filter((m) => m !== 'ignoreConsumed') // We don't allow negation of 'ignoreConsumed'
 			.map((m) => `!${m}` as NegatedModifier);
 
-		// Check if it's a standard or negated modifier
 		if (
 			standardModifiers.includes(modifier as StandardModifier) ||
 			negatedModifiers.includes(modifier as NegatedModifier)
@@ -326,27 +247,14 @@ export class ActionParser {
 			return true;
 		}
 
-		// Check for valid pressTime condition
 		const pressTimeMatch = modifier.match(/^pressTime\{(<|>)(\d+)}$/);
 		if (pressTimeMatch) {
 			return true;
 		}
 
-		// If none of the conditions are met, it's an invalid modifier
 		return false;
 	}
 
-	/**
-	 * Parses a string representation of an action definition into an Abstract Syntax Tree (AST).
-	 *
-	 * The action definition can include operators such as '|', '+', and '!' for logical operations,
-	 * as well as parentheses for grouping expressions. The resulting ASTNode structure represents
-	 * the hierarchy and relationships of the parsed actions and operators.
-	 *
-	 * @param actionDefinition - A string containing the action definition to be parsed.
-	 * @returns An ASTNode representing the parsed action definition.
-	 * @throws Error if there is a mismatched parenthesis in the action definition.
-	 */
 	static parseActionDefinition(actionDefinition: string): ASTNode {
 		const tokens = this.tokenize(actionDefinition);
 		const state: ParserState = { tokens, index: 0 };
@@ -411,35 +319,42 @@ export class ActionParser {
 			this.nextToken(state); // Consume ')'
 
 			// Check for modifiers after the group
+			let modifiers: Modifier[] = [];
 			if (this.currentToken(state) && this.currentToken(state).startsWith('[')) {
 				const modifierToken = this.currentToken(state);
 				this.nextToken(state);
-				const modifiers = this.extractModifiers(modifierToken);
+				modifiers = this.extractModifiers(modifierToken);
 				(node as OperatorNode).modifiers = modifiers;
 			}
 
 			return node;
 		} else if (token && /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(token)) {
-			// Action identifier
-			this.nextToken(state); // Consume identifier
-			let modifiers: Modifier[] = [];
-
-			// Check for modifiers after the action
-			if (this.currentToken(state) && this.currentToken(state).startsWith('[')) {
-				const modifierToken = this.currentToken(state);
-				this.nextToken(state);
-				modifiers = this.extractModifiers(modifierToken);
-			}
-
-			const [actionName, evaluatorFunction] = this.parseAction(token, modifiers);
-			return {
-				type: 'action',
-				action: actionName,
-				evaluatorFunction: [evaluatorFunction],
-			};
+			return this.parseActionNode(state);
 		} else {
 			throw new Error(`Unexpected token '${token}' at position ${state.index}`);
 		}
+	}
+
+	private static parseActionNode(state: ParserState): ActionNode {
+		const token = this.currentToken(state);
+		this.nextToken(state); // Consume identifier
+		let modifiers: Modifier[] = [];
+
+		// Check for modifiers after the action
+		if (this.currentToken(state) && this.currentToken(state).startsWith('[')) {
+			const modifierToken = this.currentToken(state);
+			this.nextToken(state);
+			modifiers = this.extractModifiers(modifierToken);
+		}
+
+		const [actionName, evaluatorFunction] = this.parseAction(token, modifiers);
+
+		return {
+			type: 'action',
+			action: actionName,
+			evaluatorFunction: [evaluatorFunction],
+			modifiers,
+		};
 	}
 
 	static tokenize(input: string): string[] {
@@ -521,85 +436,117 @@ export class ActionParser {
 		state.index++;
 	}
 
-	private static combineActionStates(node: OperatorNode, getActionState: (actionName: string) => ActionState): ActionState {
-		const actionStates = node.children.map(child => {
-			if (child.type === 'action') {
-				return getActionState(child.action);
-			} else {
-				// For operator nodes, recursively combine their child states
-				return this.combineActionStates(child as OperatorNode, getActionState);
-			}
-		});
+	static evaluateActions(
+		node: ASTNode,
+		getActionState: (actionName: string) => ActionState,
+		inheritedModifiers: Modifier[] = []
+	): boolean {
+		const nodeModifiers = node.modifiers || [];
+		const childModifiers = inheritedModifiers.concat(nodeModifiers);
 
-		const combinedState: ActionState = {
-			action: '', // Placeholder
-			pressed: false,
-			justpressed: false,
-			alljustpressed: false,
-			consumed: false,
-			presstime: undefined,
-			timestamp: undefined,
-		};
-
-		if (node.operator === 'and') {
-			combinedState.pressed = actionStates.every(s => s.pressed);
-			combinedState.justpressed = actionStates.some(s => s.justpressed);
-			combinedState.alljustpressed = actionStates.every(s => s.alljustpressed);
-			combinedState.consumed = actionStates.some(s => s.consumed);
-		} else if (node.operator === 'or') {
-			combinedState.pressed = actionStates.some(s => s.pressed);
-			combinedState.justpressed = actionStates.some(s => s.justpressed);
-			combinedState.alljustpressed = actionStates.every(s => s.alljustpressed);
-			combinedState.consumed = actionStates.some(s => s.consumed);
-		}
-
-		return combinedState;
-	}
-
-	/**
-	 * Evaluates a set of actions based on the provided AST node.
-	 *
-	 * @param node - The ASTNode representing the action structure to evaluate.
-	 * @param getActionState - A function that retrieves the current state of an action by its name.
-	 * @returns A boolean indicating the result of the evaluation:
-	 *          - `true` if the action evaluation is successful based on the node type and structure,
-	 *          - `false` if the evaluation fails or if the node type is 'not' and its child evaluates to false.
-	 *
-	 * @throws Error if an unknown operator is encountered in the node.
-	 */
-	static evaluateActions(node: ASTNode, getActionState: (actionName: string) => ActionState): boolean {
 		switch (node.type) {
 			case 'action':
 				const actionState = getActionState(node.action);
-				return node.evaluatorFunction.every((evaluatorFunction) => evaluatorFunction(actionState));
+				const modifiers = childModifiers.length > 0 ? childModifiers : ['pressed', '!consumed'];
+				const modifierFunctions = modifiers.map((modifier) => this.compileModifier(modifier));
+				return modifierFunctions.every((func) => func(actionState));
+
 			case 'not':
-				return !this.evaluateActions(node.child, getActionState);
+				return !this.evaluateActions(node.child, getActionState, childModifiers);
+
 			case 'operator':
+				// Evaluate children with inherited modifiers (childModifiers)
 				let result: boolean;
 				switch (node.operator) {
 					case 'and':
-						result = node.children.every((child) => this.evaluateActions(child, getActionState));
+						result = node.children.every((child) => this.evaluateActions(child, getActionState, childModifiers));
 						break;
 					case 'or':
-						result = node.children.some((child) => this.evaluateActions(child, getActionState));
+						result = node.children.some((child) => this.evaluateActions(child, getActionState, childModifiers));
 						break;
 					default:
 						throw new Error(`Unknown operator: ${node.operator}`);
 				}
 
+				// If the operator node has modifiers, apply them to the combined state
 				if (node.modifiers && node.modifiers.length > 0) {
-					// Combine the action states of the children
 					const combinedState = this.combineActionStates(node, getActionState);
-
-					// Compile the modifier functions
 					const modifierFunctions = node.modifiers.map((modifier) => this.compileModifier(modifier));
-
-					// Apply the modifiers to the combined state
-					result = result && modifierFunctions.every((evaluatorFunction) => evaluatorFunction(combinedState));
+					const modifiersResult = modifierFunctions.every((func) => func(combinedState));
+					result = result && modifiersResult;
 				}
 
 				return result;
 		}
+	}
+
+	private static combineActionStates(
+		node: OperatorNode,
+		getActionState: (actionName: string) => ActionState,
+		inheritedModifiers: Modifier[] = []
+	): ActionState {
+		const nodeModifiers = node.modifiers || [];
+		const combinedModifiers = inheritedModifiers.concat(nodeModifiers);
+
+		const actionStates = node.children.map((child) => {
+			if (child.type === 'action') {
+				const actionState = getActionState(child.action);
+				const modifiers = combinedModifiers.concat(child.modifiers || []);
+				const modifierFunctions = modifiers.map((modifier) => this.compileModifier(modifier));
+				const isValid = modifierFunctions.every((func) => func(actionState));
+				return isValid ? actionState : null;
+			} else {
+				// For operator nodes, recursively combine their child states
+				return this.combineActionStates(child as OperatorNode, getActionState, combinedModifiers);
+			}
+		}).filter((state): state is ActionState => state !== null);
+
+		if (actionStates.length === 0) {
+			return {
+				action: '',
+				pressed: false,
+				justpressed: false,
+				alljustpressed: false,
+				consumed: false,
+				presstime: undefined,
+				timestamp: undefined,
+			};
+		}
+
+		// Compute combined properties based on operator and intended semantics
+		let pressed: boolean;
+		let justpressed: boolean;
+		let alljustpressed: boolean;
+
+		if (node.operator === 'and') {
+			// For 'and' operator:
+			// - 'pressed' is true if all children are pressed.
+			// - 'justpressed' is true if all children were just pressed (group-level 'allJustPressed').
+			pressed = actionStates.every(s => s.pressed);
+			justpressed = actionStates.every(s => s.justpressed);
+			alljustpressed = justpressed;
+		} else if (node.operator === 'or') {
+			// For 'or' operator:
+			// - 'pressed' is true if any child is pressed.
+			// - 'justpressed' is true if any child was just pressed (group-level 'justPressed').
+			pressed = actionStates.some(s => s.pressed);
+			justpressed = actionStates.some(s => s.justpressed);
+			alljustpressed = actionStates.every(s => s.justpressed);
+		} else {
+			throw new Error(`Unknown operator: ${node.operator}`);
+		}
+
+		const combinedState: ActionState = {
+			action: '', // Placeholder
+			pressed,
+			justpressed,
+			alljustpressed,
+			consumed: actionStates.some(s => s.consumed),
+			presstime: undefined,
+			timestamp: undefined,
+		};
+
+		return combinedState;
 	}
 
 }
