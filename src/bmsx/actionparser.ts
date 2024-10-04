@@ -96,16 +96,49 @@ export class ActionParser {
 		node: FunctionNode,
 		getActionState: (actionName: string) => ActionState
 	): boolean {
-		const args = node.arguments.map((arg) => this.evaluate(arg, getActionState));
-
 		switch (node.functionName) {
 			case 'all':
-				return args.every((arg) => arg === true);
+				return node.arguments.every((arg) => this.evaluate(arg, getActionState));
 			case 'any':
-				return args.some((arg) => arg === true);
+				return node.arguments.some((arg) => this.evaluate(arg, getActionState));
+			case 'anyJustPressed':
+				return this.evaluateanyJustPressedFunction(node.arguments, getActionState);
 			default:
 				throw new Error(`Unknown function: '${node.functionName}'`);
 		}
+	}
+
+	private static evaluateanyJustPressedFunction(
+		args: ASTNode[],
+		getActionState: (actionName: string) => ActionState
+	): boolean {
+		const actionResults = args.map((arg) => {
+			if (arg.type !== 'action') {
+				throw new Error(`'anyJustPressed' function expects action nodes as arguments.`);
+			}
+			const actionState = getActionState(arg.name);
+
+			// Apply the action's compiledModifierFunctions
+			const modifierFunctions = arg.compiledModifierFunctions.length > 0
+				? arg.compiledModifierFunctions
+				: [this.defaultPressedModifier, this.defaultNotConsumedModifier];
+
+			const result = modifierFunctions.every((func) => func(actionState));
+
+			return { actionState, result };
+		});
+
+		// Check that all actions passed their modifiers
+		const allActionsPassed = actionResults.every((ar) => ar.result);
+
+		if (!allActionsPassed) {
+			return false;
+		}
+
+		// Check if any action was just pressed
+		const anyJustPressed = actionResults.some((ar) => ar.actionState.justpressed);
+
+		return anyJustPressed;
 	}
 
 	private static evaluateOperatorNode(
