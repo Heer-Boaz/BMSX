@@ -1421,7 +1421,7 @@ export class PlayerInput {
 			// Only consider anyJustPressed if all buttons are pressed, because if any button is not pressed then the action is not just pressed
 			anyJustPressed = anyJustPressed && allPressed;
 
-			return { allPressed,  anyJustPressed, allJustPressed, anyConsumed, leastPressTime, recentestTimestamp };
+			return { allPressed, anyJustPressed, allJustPressed, anyConsumed, leastPressTime, recentestTimestamp };
 		};
 
 		const keyboardState = getActionState(keyboardKeys, (key: ButtonId) => this.getButtonState(key, 'keyboard'));
