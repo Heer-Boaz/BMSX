@@ -1351,10 +1351,7 @@ export class PlayerInput {
 	 * @returns True if the action definition is satisfied, false otherwise.
 	 */
 	public checkActionTriggered(actionDefinition: string): boolean {
-		const parsedActions = ActionParser.getParsedActions(actionDefinition);
-		if (!parsedActions) return false;
-
-		return ActionParser.evaluateActions(parsedActions, this.getActionState.bind(this));
+		return ActionParser.checkActionTriggered(actionDefinition, this.getActionState.bind(this));
 	}
 
 	/**
