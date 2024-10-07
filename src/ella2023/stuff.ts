@@ -122,7 +122,7 @@ export class TitleScreen extends SpriteObject {
 						// const actionmeuk = [`up|down|left|right`, `!up+!down+!left+!right`, `down[ignoreConsumed]+up[ignoreConsumed]+!(left|right)`];
 						// const actionmeuk: string[] = [`(up[!pressed]•right[!pressed])`, `(up[ignoreConsumed]•right[ignoreConsumed])`, `up[ignoreConsumed,justPressed]+right[ignoreConsumed,justPressed]`];
 						// const actionmeuk: string[] = [`(up[ignoreConsumed]•right+left)[anyJustPressed]`, `((up[ignoreConsumed,pressed]•right[ignoreConsumed,pressed])•(up[justPressed]+right[justPressed]))+left[ignoreConsumed,justPressed]`];
-						const actionmeuk = [`jp(up[ic], right) || &(down[ic], left)`, `|(left[j], right[j]) OR &(up[ic], down[ic])`];
+						const actionmeuk = [`jp(up[ic], right) || &(down[ic], left)`, `|(left[j], right[j]) OR &(up[ic], down[ic])`, `right[ajj]`];
 
 						const bla = actionmeuk.map(meuk => $.input.getPlayerInput(1).checkActionTriggered(meuk));
 						const meuk_and_bla = actionmeuk.map((meuk, i) => `${meuk} => ${bla[i]}`);

@@ -1,5 +1,8 @@
 import type { ActionState } from "./input";
 
+// Refactored version
+const TOKEN_REGEX = /\s*(\|\||&&|[&|]|jp|![pjc]|ic|[pjc]|[a-zA-Z_][a-zA-Z0-9_]*|[!\(\)\[\],]|!|\S)\s*/g;
+
 /**
  * Represents a node in the Abstract Syntax Tree (AST).
  * This can be one of the following types:
@@ -316,12 +319,10 @@ export class ActionParser {
 	 * @returns An array of tokens extracted from the input string.
 	 */
 	private static tokenize(input: string): string[] {
-		const regex =
-			/\s*(\|\||&&|[&|]|jp|![pjc]|ic|[pjc]|[a-zA-Z_][a-zA-Z0-9_]*|[!\(\)\[\],]|!|\S)\s*/g;
 		const tokens: string[] = [];
 		let match: RegExpExecArray | null;
 
-		while ((match = regex.exec(input)) !== null) {
+		while ((match = TOKEN_REGEX.exec(input)) !== null) {
 			tokens.push(match[1]);
 		}
 
@@ -547,6 +548,9 @@ export class ActionParser {
 				break;
 			case 'j':
 				func = (actionState) => actionState.justpressed;
+				break;
+			case 'aj':
+				func = (actionState) => actionState.alljustpressed;
 				break;
 			case 'c':
 				func = (actionState) => actionState.consumed;
