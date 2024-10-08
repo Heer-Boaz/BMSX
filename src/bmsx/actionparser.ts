@@ -1,7 +1,8 @@
 import type { ActionState } from "./input";
 
 // Refactored version
-const TOKEN_REGEX = /\s*(\|\||&&|[&|]|jp|![pjc]|ic|[pjc]|[a-zA-Z_][a-zA-Z0-9_]*|[!\(\)\[\],]|!|\S)\s*/g;
+const TOKEN_REGEX = /\s*(\|\||&&|\?j|[&?]|![pjc]|ic|t\{[^}]*\}|[pjc]|[a-zA-Z_][a-zA-Z0-9_]*|[<>=!]=?|[!\(\)\[\]\{\},]|!|\S)\s*/g
+const PRESSTIME_REGEX = /^t\{([^}]+)\}$/;
 
 /**
  * Represents a node in the Abstract Syntax Tree (AST).
@@ -203,9 +204,9 @@ export class ActionParser {
 		switch (node.functionName) {
 			case '&':
 				return node.arguments.every((arg) => this.evaluate(arg, getActionState));
-			case '|':
+			case '?':
 				return node.arguments.some((arg) => this.evaluate(arg, getActionState));
-			case 'jp':
+			case '?j':
 				return this.evaluateAnyJustPressedFunction(node.arguments, getActionState);
 			default:
 				throw new Error(`Unknown function: '${node.functionName}'`);
@@ -228,7 +229,7 @@ export class ActionParser {
 		// Evaluate each argument as an action node
 		const actionResults = args.map((arg) => {
 			if (arg.type !== 'action') {
-				throw new Error(`'jp' function expects action nodes as arguments.`);
+				throw new Error(`'?j' function expects action nodes as arguments.`);
 			}
 			const actionPassed = arg.evaluate(getActionState);
 			const actionState = getActionState(arg.name);
@@ -313,7 +314,7 @@ export class ActionParser {
 	 *
 	 * The function uses a regular expression to match and extract tokens from the input string.
 	 * The tokens can include logical operators (||, &&), single characters (&, |, !, etc.),
-	 * keywords (jp, ic, etc.), and identifiers (alphanumeric strings starting with a letter or underscore).
+	 * keywords (?j, ic, etc.), and identifiers (alphanumeric strings starting with a letter or underscore).
 	 *
 	 * @param input - The string to be tokenized.
 	 * @returns An array of tokens extracted from the input string.
@@ -509,7 +510,16 @@ export class ActionParser {
 		const modifiers: string[] = [];
 
 		while (!this.match(']')) {
-			const modifier = this.consume();
+			let modifier = this.consume();
+
+			// Check if the modifier has parameters enclosed in '{}'
+			if (modifier.startsWith('t') && this.match('{')) {
+				// Modifier is 't' and is followed by '{'
+				while (!modifier.endsWith('}')) {
+					modifier += this.consume(); // Consume next token
+				}
+			}
+
 			modifiers.push(modifier);
 
 			if (this.match(',')) {
@@ -542,24 +552,65 @@ export class ActionParser {
 
 		let func: (actionState: ActionState) => boolean;
 
-		switch (modifierName) {
-			case 'p':
-				func = (actionState) => actionState.pressed;
-				break;
-			case 'j':
-				func = (actionState) => actionState.justpressed;
-				break;
-			case 'aj':
-				func = (actionState) => actionState.alljustpressed;
-				break;
-			case 'c':
-				func = (actionState) => actionState.consumed;
-				break;
-			default:
-				throw new Error(`Unknown modifier: '${modifierName}'`);
+		if (modifierName.startsWith('t')) {
+			// Handle 't' modifier with parameters
+			const match = modifierName.match(PRESSTIME_REGEX);
+			if (!match) {
+				throw new Error(`Invalid 't' modifier syntax: '${modifierName}'`);
+			}
+
+			const condition = match[1]; // e.g., '<50' or '>2'
+
+			// Compile the condition into a function
+			func = this.compilePressTimeCondition(condition);
+		} else {
+			switch (modifierName) {
+				case 'p':
+					func = (actionState) => actionState.pressed;
+					break;
+				case 'j':
+					func = (actionState) => actionState.justpressed;
+					break;
+				case 'aj':
+					func = (actionState) => actionState.alljustpressed;
+					break;
+				case 'c':
+					func = (actionState) => actionState.consumed;
+					break;
+				default:
+					throw new Error(`Unknown modifier: '${modifierName}'`);
+			}
+
+		}
+		return isNegated ? (actionState) => !func(actionState) : func;
+	}
+
+	private static compilePressTimeCondition(condition: string): (actionState: ActionState) => boolean {
+		// Supported operators: <, >, <=, >=, ==, !=
+		const match = condition.match(/^(<|>|<=|>=|==|!=)\s*(\d+(\.\d+)?)$/);
+		if (!match) {
+			throw new Error(`Invalid pressTime condition: '${condition}'`);
 		}
 
-		return isNegated ? (actionState) => !func(actionState) : func;
+		const operator = match[1];
+		const value = parseFloat(match[2]);
+
+		switch (operator) {
+			case '<':
+				return (actionState) => actionState.presstime < value;
+			case '>':
+				return (actionState) => actionState.presstime > value;
+			case '<=':
+				return (actionState) => actionState.presstime <= value;
+			case '>=':
+				return (actionState) => actionState.presstime >= value;
+			case '==':
+				return (actionState) => actionState.presstime === value;
+			case '!=':
+				return (actionState) => actionState.presstime !== value;
+			default:
+				throw new Error(`Unsupported operator in pressTime condition: '${operator}'`);
+		}
 	}
 
 	// Utility methods
@@ -599,10 +650,10 @@ export class ActionParser {
 	/**
 	 * Checks if the current token is a function operator and the next token is an opening parenthesis.
 	 *
-	 * @returns {boolean} - Returns `true` if the current token is '&', '|', or 'jp' and the next token is '(', otherwise `false`.
+	 * @returns {boolean} - Returns `true` if the current token is '&', '?', or '?j' and the next token is '(', otherwise `false`.
 	 */
 	private static matchFunction(): boolean {
 		const token = this.tokens[this.actionParserIndex];
-		return (token === '&' || token === '|' || token === 'jp') && this.tokens[this.actionParserIndex + 1] === '(';
+		return (token === '&' || token === '?' || token === '?j') && this.tokens[this.actionParserIndex + 1] === '(';
 	}
 }
