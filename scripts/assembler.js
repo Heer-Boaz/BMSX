@@ -979,7 +979,17 @@ ${TO_HEX ? toHexBoilerPlate : toDecBoilerPlate}
 2040 X=USR(0)`
 }
 
-// Assemble the code
+/**
+ * Main entry point for the assembler script.
+ * This function reads the assembly code from a file, assembles it into machine code,
+ * and writes the machine code to an output file.
+ * The input file path can be provided as a command line argument.
+ * The output file path can be provided using the -o flag.
+ * If no output file path is provided, the output file will be written to the same directory as the input file.
+ * If no input file path is provided, the default assembly code file will be used.
+ * @param {string[]} args - The command line arguments.
+ * @returns {void}
+ */
 try {
     const assemblyFilePath = process.argv[2] || path.join(__dirname, 'assemblycode.asm');
     let outputFilePathIndex = process.argv.indexOf('-o') + 1;
