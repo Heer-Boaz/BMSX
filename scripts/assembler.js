@@ -1,340 +1,170 @@
+const fs = require('fs');
+const path = require('path');
+
 const TO_HEX = false;
 const DATA_LINE_NUMBER_START = 10000;
 const DATA_LINE_NUMBER_INCREMENT = 1;
 const DATA_BYTES_PER_LINE = TO_HEX ? 64 : 16;
 
-const assemblyCode = `
-ORG 0xD000				; Start address for our routine in RAM
-
-KEYS:					EQU #FBE5	; Memory location for the input matrix
-RETURN_VALUE:			EQU #F7F8	; Memory location to store the return value for BASIC
-CLS:					EQU #00C3	; BIOS call to CLS
-INITXT:					EQU #050E	; BIOS call to set text mode (screen 0)
-INIT32:					EQU #006F	; BIOS call to set screen mode 32 (screen 1)
-INIGRP:					EQU #05D2	; BIOS call to set graphics mode (screen 2)
-INIMLT:					EQU #061F	; BIOS call to set multicolor mode (screen 3)
-POSIT:					EQU #00C6	; BIOS call to set cursor position (LOCATE X, Y)
-CHGMOD:    				EQU #005F	; BIOS call to change screen mode
-CHPUT:					EQU #00A2	; BIOS call to print a character on screen
-CHGCLR:					EQU #0062	; BIOS call to change screen colors
-FORCLR:					EQU #F3E9	; Foreground colour memory location
-ERAFNK:					EQU #00CC	; Erase function key display
-CLIKSW:					EQU #F3DB	; Key Press Click Switch: 0=Off 1=On
-COORD:					EQU #E001	; Memory address to store XY coordinates
-MAX_X:					EQU 29		; Maximum X-coordinate (1-based, 40 columns for text mode)
-MAX_Y:					EQU 24		; Maximum Y-coordinate (1-based)
-MIN_X:					EQU 1		; Minimum X-coordinate
-MIN_Y:					EQU 1		; Minimum Y-coordinate
-PLAYER_CHAR:			EQU 175		; Character to represent the player on screen
-
-START:
-    ; Disable key click sound
-    XOR A							; Faster than LD A, 0
-    LD (CLIKSW), A					; 0 = Click sound off
-
-    CALL ERAFNK						; Disable function key display
-
-    XOR A                           ; Clear A register
-    CALL INIT32						; Set screen mode 32 (SCREEN 1)
-
-    ; Change colours
-    LD HL,FORCLR					; Load the address of the foreground colour memory location
-    LD (HL), 15						; Set the foreground colour to white
-    INC HL							; Move to the background colour memory location
-    LD (HL), 1						; Set the background colour to black
-    INC HL							; Move to the border colour memory location
-    LD (HL), 4						; Set the border colour to blue
-    CALL CHGCLR						; Call the BIOS to change the screen colours
-
-    LD A, MIN_X                     ; Set the initial X-coordinate
-    LD (COORD), A                   ; Store the X-coordinate in memory
-    LD A, MIN_Y                     ; Set the initial Y-coordinate
-    LD (COORD+1), A                 ; Store the Y-coordinate in memory
-
-GAME_LOOP:
-    ; Read X and Y coordinates from BASIC
-    LD A, (COORD)					; Load X-coordinate from memory location 0xE001
-    LD H, A							; H = Column
-    LD A, (COORD+1)					; Load Y-coordinate from memory location 0xE002
-    LD L, A							; L = Row
-
-    CALL POSIT						; Call BIOS to set the cursor position
-    LD A, ' '						; Character to print at the cursor position
-    CALL CHPUT
-
-    ; Handle directional input
-    LD C, 0
-    LD A, (KEYS+8)					; Get the input matrix
-    LD B, 0							; Clear register B to store direction
-
-    BIT 6, A						; Check if Down key is pressed (row 8, bit 6)
-    JR NZ, SKIP_DOWN				; If Down key is pressed, skip the next instruction
-    INC L							; Move down (increase Y coordinate)
-    SET 1, B						; Set bit 1 for Down direction
-SKIP_DOWN:
-
-    BIT 5, A						; Check if Up key is pressed (row 8, bit 5)
-    JR NZ, SKIP_UP					; If Up key is pressed, skip the next instruction
-    DEC L							; Move up (decrease Y coordinate)
-    SET 0, B						; Set bit 0 for Up direction
-SKIP_UP:
-
-    BIT 4, A						; Check if Left key is pressed (row 8, bit 4)
-    JR NZ, SKIP_LEFT				; If Left key is pressed, skip the next instruction
-    DEC H							; Move left (decrease X coordinate)
-    SET 2, B						; Set bit 2 for Left direction
-SKIP_LEFT:
-
-    BIT 7, A						; Check if Right key is pressed (row 8, bit 7)
-    JR NZ, SKIP_RIGHT				; If Right key is pressed, skip the next instruction
-    INC H							; Move right (increase X coordinate)
-    SET 3, B						; Set bit 3 for Right direction
-SKIP_RIGHT:
-
-    BIT 0, A						; Check if Space key is pressed (row 8, bit 0)
-    JR NZ, SKIP_SPACE				; If Space key is pressed, skip the next instruction
-    SET 4, B						; Set bit 3 for Space
-    LD C, 1
-SKIP_SPACE:
-
-    ; Ensure X and Y are within screen bounds
-    LD A, H							; Store X-coordinate in A
-    CP MAX_X						; Check if X >= MAX_X
-    JR NC, SET_X_MAX				; If X is out of bounds, set to maximum
-    CP 1							; Check if X < MIN_X
-    JR C, SET_X_MIN					; If X is less than MIN_X, set to minimum
-    JR CONTINUE_X					; If X is within bounds, continue
-
-SET_X_MIN:
-    LD H, 1							; Set X to minimum
-    JR CONTINUE_X					; Continue to check Y
-SET_X_MAX:
-    LD H, MAX_X						; Set X to maximum
-CONTINUE_X:
-    LD A, L							; Store Y-coordinate in A
-    CP MAX_Y						; Check if Y >= MAX_Y
-    JR NC, SET_Y_MAX				; If Y is out of bounds, set to maximum
-    CP 1							; Check if Y < MIN_Y
-    JR C, SET_Y_MIN					; If Y is less than MIN_Y, set to minimum
-    JR CONTINUE_Y					; If Y is within bounds, continue
-
-SET_Y_MIN:
-    LD L, 1							; Set Y to minimum
-    JR CONTINUE_Y					; Continue to update coordinates
-SET_Y_MAX:
-    LD L, MAX_Y						; Set Y to maximum
-CONTINUE_Y:
-
-    ; Update coordinates in memory
-    LD A, H							; Store updated X-coordinate
-    LD (COORD), A					; Store the updated X-coordinate in memory
-    LD A, L							; Store updated Y-coordinate
-    LD (COORD+1), A					; Store the updated Y-coordinate in memory
-
-    CALL POSIT						; Call BIOS to set the cursor position
-    LD A, PLAYER_CHAR				; Character to print at the cursor position
-    CALL CHPUT						; Print the player character
-
-    LD A, C							; Store the return value in A
-    CP 1							; Check if the Space key was pressed
-    JR Z, GA_TERUG					; If the Space key was pressed, return to BASIC
-
-    ; Wait for V-Sync
-WAIT_VSYNC:
-    EI								; Enable interrupts
-    HALT							; Wait for VSync interrupt
-
-    JP GAME_LOOP					; Loop back to the beginning of the game loop
-GA_TERUG:
-    ; Set return value for BASIC
-    LD A, B							; Move the value from B to A to return the result
-    LD (RETURN_VALUE), A			; Store the return value
-    RET								; Return to BASIC
-
-END START							; End of the program and define the entry point
-`;
-
+/**
+ * An array of 8-bit register names used in the assembler.
+ *
+ * @type {string[]}
+ * @constant
+ */
 const eightBitRegisters = ['A', 'B', 'C', 'D', 'E', 'H', 'L'];
+
+/**
+ * An array of 16-bit register names used in the assembler.
+ *
+ * @type {string[]}
+ * @constant
+ */
 const sixteenBitRegisters = ['BC', 'DE', 'HL', 'SP', 'IX', 'IY'];
+
+/**
+ * An array containing all the registers, including both 8-bit and 16-bit registers.
+ *
+ * @constant {Array} allRegisters
+ */
 const allRegisters = [...eightBitRegisters, ...sixteenBitRegisters];
-const conditionCodes = ['NZ', 'Z', 'NC', 'C']; // Not Zero, Zero, No Carry, Carry
+
+/**
+ * An array of condition codes used in assembly language.
+ *
+ * The condition codes are:
+ * - 'NZ': Not Zero
+ * - 'Z': Zero
+ * - 'NC': No Carry
+ * - 'C': Carry
+ *
+ * @type {string[]}
+ */
+const conditionCodes = ['NZ', 'Z', 'NC', 'C'];
+
+/**
+ * A mapping of condition codes to their corresponding hexadecimal values.
+ *
+ * The condition codes are used in assembly language to represent different
+ * conditions for branching or other conditional operations.
+ *
+ * The map includes the following condition codes:
+ * - ''  : 0x18 (No condition)
+ * - 'NZ': 0x20 (Not Zero)
+ * - 'Z' : 0x28 (Zero)
+ * - 'NC': 0x30 (Not Carry)
+ * - 'C' : 0x38 (Carry)
+ *
+ * @type {Object.<string, number>}
+ */
+const conditionCodesMap = {
+    '': 0x18,
+    'NZ': 0x20,
+    'Z': 0x28,
+    'NC': 0x30,
+    'C': 0x38
+};
+
+/**
+ * An array of assembler directives.
+ *
+ * @constant {string[]}
+ * @default
+ */
+const directives = ['EQU', 'ORG', 'END', 'DB', 'DW'];
+
+/**
+ * An array of valid mnemonics for the assembler.
+ * These mnemonics represent various assembly instructions.
+ *
+ * @constant {string[]}
+ * @default
+ */
 const validMnemonic = ['LD', 'INC', 'DEC', 'ADD', 'SUB', 'CP', 'AND', 'OR', 'XOR', 'RLCA', 'RRCA', 'RLA', 'RRA', 'RLC', 'RRC', 'RL', 'RR', 'NOP', 'SCF', 'CCF', 'CPL', 'DAA', 'NEG', 'EI', 'DI', 'HALT', 'RET', 'JP', 'JR', 'CALL', 'SET', 'RES', 'BIT', 'PUSH', 'POP'];
+
+/**
+ * Regular expression to match different components in an assembler code.
+ *
+ * The regex captures the following groups:
+ * 1. Labels: Identifiers followed by a colon (e.g., `label:`).
+ * 2. Identifiers: Alphanumeric strings starting with a letter or underscore (e.g., `variable`).
+ * 3. Literals: Hexadecimal numbers, characters, strings, or decimal numbers (e.g., `$1F`, `#1F`, `'A'`, `"string"`, `123`).
+ * 4. Punctuation: Commas, parentheses (e.g., `,`, `(`, `)`).
+ * 5. Any other non-whitespace character.
+ *
+ * @type {RegExp}
+ */
 const regex = /([A-Za-z_][A-Za-z0-9_]*:)|([A-Za-z_][A-Za-z0-9_]*\b)|(\$?[#]?[0-9A-Fa-f]+[Hh]?|\'.\'|\".*?\"|\d+)|([,\(\)])|(\S)/g;
+// Define ANSI escape codes for colors
+const colors = {
+    reset: "\x1b[0m",
+    red: "\x1b[31m",
+    green: "\x1b[32m",
+    yellow: "\x1b[33m",
+    blue: "\x1b[34m",
+    magenta: "\x1b[35m",
+    cyan: "\x1b[36m",
+    white: "\x1b[37m"
+};
 
-// 1. Lexical Analysis: Tokenize Assembly Code
-function tokenize(line) {
-    // Remove comments
-    line = line.split(';')[0].trim();
-    if (line === '') return [];
-
-    // Regular expressions for different token types
-    const tokens = [];
-    let match;
-
-    while ((match = regex.exec(line)) !== null) {
-        tokens.push(match[0]);
-    }
-
-    return tokens;
-}
-
-// 2. Parsing: Parse Tokens to Build Instruction Representation
-function parse(tokens) {
-    const instruction = {
-        label: null,
-        mnemonic: null,
-        operands: [],
-        directive: null,
-        args: []
-    };
-
-    let index = 0;
-
-    const directives = ['EQU', 'ORG', 'END', 'DB', 'DW'];
-    const mnemonics = Object.keys(opcodeMap);
-
-    // Check for a label
-    if (tokens[index].endsWith(':')) {
-        instruction.label = tokens[index].slice(0, -1);
-        index++;
-    } else if (tokens[index + 1] && (directives.includes(tokens[index + 1].toUpperCase()) || mnemonics.includes(tokens[index + 1].toUpperCase()))) {
-        // Label without colon
-        instruction.label = tokens[index];
-        index++;
-    }
-
-    if (tokens[index] && directives.includes(tokens[index].toUpperCase())) {
-        instruction.directive = tokens[index].toUpperCase();
-        index++;
-        const result = parseOperands(tokens, index);
-        instruction.operands = result.operands;
-    } else if (tokens[index]) {
-        // It's an instruction
-        instruction.mnemonic = tokens[index].toUpperCase();
-        index++;
-        const result = parseOperands(tokens, index);
-        instruction.operands = result.operands;
-    }
-
-    return instruction;
-}
-
-function parseOperands(tokens, index) {
-    const operands = [];
-    while (index < tokens.length) {
-        let operandTokens = [];
-        while (index < tokens.length && tokens[index] !== ',') {
-            operandTokens.push(tokens[index]);
-            index++;
-        }
-        let operand = operandTokens.join('').trim();
-        if (operand) {
-            operands.push(operand);
-        }
-        if (index < tokens.length && tokens[index] === ',') {
-            index++; // Skip comma
-        }
-    }
-    return { operands, index };
-}
-
-// 3. Symbol Table Management: Handle Labels and Constants
+/**
+ * An object representing the symbol table used in the assembler.
+ * The symbol table is used to store and retrieve symbols and their corresponding values.
+ *
+ * @type {Object.<string, any>}
+ */
 const symbolTable = {};
 
-function handleDirective(instruction, locationCounter, lineNumber, line) {
-    const { directive, operands } = instruction;
-    if (directive === 'EQU') {
-        const symbol = instruction.label;
-        const value = operands[0];
-        if (symbol && value) {
-            symbolTable[symbol] = evaluateExpression(value, lineNumber, line);
-        } else {
-            throw new Error(`Line ${lineNumber}: Missing value for EQU directive\n"${line}"`);
-        }
-    } else if (directive === 'ORG') {
-        const [value] = operands;
-        if (value) {
-            const newLocationCounter = evaluateExpression(value, lineNumber, line);
-            return newLocationCounter;
-        } else {
-            throw new Error(`Line ${lineNumber}: Missing value for ORG directive\n"${line}"`);
-        }
-    }
-    return locationCounter;
-}
-
-function evaluateExpression(expr, lineNumber, line) {
-    if (!expr) {
-        throw new Error('Empty expression in evaluateExpression');
-    }
-
-    // Handle character literals
-    expr = expr.replace(/'(\\.|[^'])'/g, (match, p1) => {
-        if (p1.length === 1) {
-            //console.debug(`Character: "${p1.charCodeAt(0)}"`);
-            return p1.charCodeAt(0);
-        } else if (p1.startsWith('\\')) {
-            // Handle escape sequences
-            const escapeChars = {
-                'n': '\n',
-                'r': '\r',
-                't': '\t',
-                '\\': '\\',
-                "'": "'",
-                '"': '"',
-                '0': '\0',
-            };
-            const unescapedChar = escapeChars[p1[1]] || p1[1];
-            //console.debug(`Character: "${unescapedChar.charCodeAt(0)}"`);
-            return unescapedChar.charCodeAt(0);
-        } else {
-            throw new Error(`Line ${lineNumber}: Invalid character literal: ${match}\n"${line}"`);
-        }
-    });
-
-    // Remove spaces
-    expr = expr.replace(/\s+/g, '');
-
-    // Handle hexadecimal numbers starting with '#' or ending with 'H'/'h' or starting with '$' or starting with '0x'
-    expr = expr.replace(/0x([0-9A-Fa-f]+)/g, (match, p1) => {
-        return `0x${p1}`;
-    });
-    expr = expr.replace(/\$([0-9A-Fa-f]+)/g, (match, p1) => {
-        return `0x${p1}`;
-    });
-    expr = expr.replace(/#([0-9A-Fa-f]+)/g, (match, p1) => {
-        return `0x${p1}`;
-    });
-    expr = expr.replace(/([0-9A-Fa-f]+)[Hh]/g, (match, p1) => {
-        return `0x${p1}`;
-    });
-
-    // Recognize registers and replace them with their values
-    if (allRegisters.includes(expr)) {
-        // console.debug(`Register: ${expr}`);
-        return expr;
-    };
-
-    // Replace symbols with their values
-    expr = expr.replace(/\b[A-Za-z_][A-Za-z0-9_]*\b/g, match => { // Match valid symbol names as whole words
-        if (symbolTable[match] !== undefined) { // Check if the symbol is defined in the symbol table already
-            // console.debug(`Symbol: ${expr} = ${symbolTable[match]}`);
-            return symbolTable[match]; // Return the symbol's value
-        } else {
-            throw new Error(`Line ${lineNumber}: Undefined symbol: ${match}\n"${line}"`);
-        }
-    });
-
-    try {
-        // Evaluate the expression
-        // console.debug(`Expression: ${expr} = "${eval(expr)}"`);
-        return eval(expr);
-    } catch (e) {
-        throw new Error(`Line ${lineNumber}: Invalid expression: ${expr}\n"${line}"`);
-    }
-}
-
-// 4. Instruction Encoding: Convert Assembly Instructions to Machine Code
+/**
+ * A mapping of assembly instructions to their corresponding opcodes and operands.
+ *
+ * The `opcodeMap` object contains key-value pairs where the key is a string representing
+ * an assembly instruction and the value is an array representing the opcode and its operands.
+ *
+ * The operands are represented as strings ('n', 'nn_low', 'nn_high', 'addr_low', 'addr_high', 'e')
+ * which are placeholders for actual values that will be substituted during the assembly process.
+ * The assembler will replace these placeholders with the correct values based on the instruction.
+ * The placeholders correspond to the following types of operands:
+ * - 'n': 8-bit immediate value
+ * - 'nn': 16-bit immediate value
+ * - '(addr)': Memory address (indirect)
+ * - '(HL)': Memory address stored in HL register pair
+ * - 'nn_low': Low byte of a 16-bit immediate value
+ * - 'nn_high': High byte of a 16-bit immediate value
+ * - 'addr_low': Low byte of a memory address
+ * - 'addr_high': High byte of a memory address
+ * - 'E': 8-bit signed offset for relative jumps
+ * - 'A': 8-bit accumulator register (A)
+ * - 'B': 8-bit B register
+ * - 'C': 8-bit C register
+ * - 'D': 8-bit D register
+ * - 'E': 8-bit E register
+ * - 'H': 8-bit H register
+ * - 'L': 8-bit L register
+ * - 'BC': 16-bit BC register pair
+ * - 'DE': 16-bit DE register pair
+ * - 'HL': 16-bit HL register pair
+ * - 'SP': 16-bit stack pointer register
+ * - 'IX': 16-bit IX index register
+ * - 'IY': 16-bit IY index register
+ *
+ * Example:
+ * - 'LD A,n': [0x3E, 'n'] - Load immediate value 'n' into register A.
+ * - 'JP nn': [0xC3, 'nn_low', 'nn_high'] - Jump to address 'nn'.
+ *
+ * Categories of instructions included:
+ * - Data Transfer Instructions
+ * - Arithmetic and Logical Instructions
+ * - Bit Operations
+ * - Jump and Call Instructions
+ * - CPU Control Instructions
+ * - Rotate and Shift Instructions
+ * - Miscellaneous Instructions
+ * - Stack Operations
+ * - Input/Output Instructions
+ *
+ * @type {Object.<string, Array.<number|string>>}
+ */
 const opcodeMap = {
     // Data Transfer Instructions
     'LD A,n': [0x3E, 'n'],
@@ -445,7 +275,6 @@ const opcodeMap = {
     'SET 7,B': [0xCB, 0xF8],
     'SET 0,C': [0xCB, 0xC1],
     'SET 1,C': [0xCB, 0xC9],
-    // Add more SET instructions as needed
     'BIT 0,A': [0xCB, 0x47],
     'BIT 1,A': [0xCB, 0x4F],
     'BIT 2,A': [0xCB, 0x57],
@@ -454,7 +283,6 @@ const opcodeMap = {
     'BIT 5,A': [0xCB, 0x6F],
     'BIT 6,A': [0xCB, 0x77],
     'BIT 7,A': [0xCB, 0x7F],
-    // Add more BIT instructions as needed
     // Stack Operations
     'PUSH AF': [0xF5],
     'POP AF': [0xF1],
@@ -464,11 +292,232 @@ const opcodeMap = {
     'POP DE': [0xD1],
     'PUSH HL': [0xE5],
     'POP HL': [0xE1],
-    // Input/Output Instructions (Not used in your code but included for completeness)
-    // ...
-    // Add any other instructions required by your assembly code
+    // Input/Output Instructions
 };
 
+/**
+ * Tokenizes a given line of assembly code by removing comments and splitting it into tokens.
+ *
+ * @param {string} line - The line of assembly code to tokenize.
+ * @returns {string[]} An array of tokens extracted from the line.
+ */
+function tokenize(line) {
+    // Remove comments
+    line = line.split(';')[0].trim();
+    if (line === '') return [];
+
+    // Regular expressions for different token types
+    const tokens = [];
+    let match;
+
+    while ((match = regex.exec(line)) !== null) {
+        tokens.push(match[0]);
+    }
+
+    return tokens;
+}
+
+/**
+ * Parses an array of tokens into an instruction object.
+ *
+ * @param {string[]} tokens - The array of tokens to parse.
+ * @returns {Object} The parsed instruction object.
+ * @returns {string|null} return.label - The label of the instruction, if any.
+ * @returns {string|null} return.mnemonic - The mnemonic of the instruction, if any.
+ * @returns {string[]} return.operands - The operands of the instruction.
+ * @returns {string|null} return.directive - The directive of the instruction, if any.
+ * @returns {string[]} return.args - The arguments of the instruction.
+ */
+function parse(tokens) {
+    const instruction = {
+        label: null,
+        mnemonic: null,
+        operands: [],
+        directive: null,
+        args: []
+    };
+
+    let index = 0;
+
+    const mnemonics = Object.keys(opcodeMap);
+
+    // Check for a label
+    if (tokens[index].endsWith(':')) {
+        instruction.label = tokens[index].slice(0, -1);
+        index++;
+    } else if (tokens[index + 1] && (directives.includes(tokens[index + 1].toUpperCase()) || mnemonics.includes(tokens[index + 1].toUpperCase()))) {
+        // Label without colon
+        instruction.label = tokens[index];
+        index++;
+    }
+
+    if (tokens[index] && directives.includes(tokens[index].toUpperCase())) {
+        instruction.directive = tokens[index].toUpperCase();
+        index++;
+        const result = parseOperands(tokens, index);
+        instruction.operands = result.operands;
+    } else if (tokens[index]) {
+        // It's an instruction
+        instruction.mnemonic = tokens[index].toUpperCase();
+        index++;
+        const result = parseOperands(tokens, index);
+        instruction.operands = result.operands;
+    }
+
+    return instruction;
+}
+
+/**
+ * Parses a list of operands from the given tokens starting at the specified index.
+ *
+ * @param {string[]} tokens - The array of token strings to parse.
+ * @param {number} index - The starting index in the tokens array.
+ * @returns {{ operands: string[], index: number }} An object containing the parsed operands and the updated index.
+ */
+function parseOperands(tokens, index) {
+    const operands = [];
+    while (index < tokens.length) {
+        let operandTokens = [];
+        while (index < tokens.length && tokens[index] !== ',') {
+            operandTokens.push(tokens[index]);
+            index++;
+        }
+        let operand = operandTokens.join('').trim();
+        if (operand) {
+            operands.push(operand);
+        }
+        if (index < tokens.length && tokens[index] === ',') {
+            index++; // Skip comma
+        }
+    }
+    return { operands, index };
+}
+
+/**
+ * Handles assembler directives such as EQU and ORG.
+ *
+ * @param {Object} instruction - The instruction object containing the directive and operands.
+ * @param {number} locationCounter - The current location counter.
+ * @param {number} lineNumber - The line number of the instruction in the source code.
+ * @param {string} line - The full line of the source code.
+ * @returns {number} - The updated location counter.
+ * @throws {Error} - Throws an error if the directive is missing required values.
+ */
+function handleDirective(instruction, locationCounter, lineNumber, line) {
+    const { directive, operands } = instruction;
+    if (directive === 'EQU') {
+        const symbol = instruction.label;
+        const value = operands[0];
+        if (symbol && value) {
+            symbolTable[symbol] = evaluateExpression(value, lineNumber, line);
+        } else {
+            throw new Error(`Line ${lineNumber}: Missing value for EQU directive\n"${line}"`);
+        }
+    } else if (directive === 'ORG') {
+        const [value] = operands;
+        if (value) {
+            const newLocationCounter = evaluateExpression(value, lineNumber, line);
+            return newLocationCounter;
+        } else {
+            throw new Error(`Line ${lineNumber}: Missing value for ORG directive\n"${line}"`);
+        }
+    }
+    return locationCounter;
+}
+
+/**
+ * Evaluates an assembly-like expression, handling character literals, hexadecimal numbers, registers, and symbols.
+ *
+ * @param {string} expr - The expression to evaluate.
+ * @param {number} lineNumber - The line number where the expression is located, used for error reporting.
+ * @param {string} line - The entire line of code containing the expression, used for error reporting.
+ * @throws {Error} If the expression is empty, contains invalid character literals, or contains undefined symbols.
+ * @returns {number|string} The evaluated result of the expression.
+ */
+function evaluateExpression(expr, lineNumber, line) {
+    if (!expr) {
+        throw new Error('Empty expression in evaluateExpression');
+    }
+
+    // Handle character literals
+    expr = expr.replace(/'(\\.|[^'])'/g, (match, p1) => {
+        if (p1.length === 1) {
+            //console.debug(`Character: "${p1.charCodeAt(0)}"`);
+            return p1.charCodeAt(0);
+        } else if (p1.startsWith('\\')) {
+            // Handle escape sequences
+            const escapeChars = {
+                'n': '\n',
+                'r': '\r',
+                't': '\t',
+                '\\': '\\',
+                "'": "'",
+                '"': '"',
+                '0': '\0',
+            };
+            const unescapedChar = escapeChars[p1[1]] || p1[1];
+            //console.debug(`Character: "${unescapedChar.charCodeAt(0)}"`);
+            return unescapedChar.charCodeAt(0);
+        } else {
+            throw new Error(`Line ${lineNumber}: Invalid character literal: ${match}\n"${line}"`);
+        }
+    });
+
+    // Remove spaces
+    expr = expr.replace(/\s+/g, '');
+
+    // Handle hexadecimal numbers starting with '#' or ending with 'H'/'h' or starting with '$' or starting with '0x'
+    expr = expr.replace(/0x([0-9A-Fa-f]+)/g, (match, p1) => {
+        return `0x${p1}`;
+    });
+    expr = expr.replace(/\$([0-9A-Fa-f]+)/g, (match, p1) => {
+        return `0x${p1}`;
+    });
+    expr = expr.replace(/#([0-9A-Fa-f]+)/g, (match, p1) => {
+        return `0x${p1}`;
+    });
+    expr = expr.replace(/([0-9A-Fa-f]+)[Hh]/g, (match, p1) => {
+        return `0x${p1}`;
+    });
+
+    // Recognize registers and replace them with their values
+    if (allRegisters.includes(expr)) {
+        // console.debug(`Register: ${expr}`);
+        return expr;
+    };
+
+    // Replace symbols with their values
+    expr = expr.replace(/\b[A-Za-z_][A-Za-z0-9_]*\b/g, match => { // Match valid symbol names as whole words
+        if (symbolTable[match] !== undefined) { // Check if the symbol is defined in the symbol table already
+            // console.debug(`Symbol: ${expr} = ${symbolTable[match]}`);
+            return symbolTable[match]; // Return the symbol's value
+        } else {
+            throw new Error(`Line ${lineNumber}: Undefined symbol: ${match}\n"${line}"`);
+        }
+    });
+
+    try {
+        // Evaluate the expression
+        // console.debug(`Expression: ${expr} = "${eval(expr)}"`);
+        return eval(expr);
+    } catch (e) {
+        throw new Error(`Line ${lineNumber}: Invalid expression: ${expr}\n"${line}"`);
+    }
+}
+
+/**
+ * Encodes an assembly instruction into its corresponding opcode bytes.
+ *
+ * @param {Object} instruction - The instruction object containing mnemonic, operands, and directive.
+ * @param {string} instruction.mnemonic - The mnemonic of the instruction.
+ * @param {Array<string>} instruction.operands - The operands of the instruction.
+ * @param {string} instruction.directive - The directive of the instruction (e.g., 'DB', 'DW').
+ * @param {number} locationCounter - The current location counter in the assembly code.
+ * @param {number} lineNumber - The line number of the instruction in the source code.
+ * @param {string} line - The full line of the instruction in the source code.
+ * @returns {Array<number>} The encoded opcode bytes.
+ * @throws {Error} If the instruction is invalid or contains undefined symbols.
+ */
 function encodeInstruction(instruction, locationCounter, lineNumber, line) {
     const { mnemonic, operands, directive } = instruction;
     let opcodeBytes = [];
@@ -497,7 +546,19 @@ function encodeInstruction(instruction, locationCounter, lineNumber, line) {
         return opcodeBytes;
     }
 
-    // Normalize the operands to form the correct key
+    /**
+     * Normalizes the operands for assembly instructions.
+     *
+     * This function processes an array of operands and normalizes them based on the following rules:
+     * - If the operand is a 16-bit or 8-bit register, it converts it to uppercase.
+     * - If the operand is a memory address dereferenced by a register, it converts the register to uppercase and wraps it in parentheses.
+     * - If the operand is a character literal, it replaces it with 'n'.
+     * - If the operand is a numeric value, it replaces it with 'n'.
+     * - Otherwise, it returns the operand as is.
+     *
+     * @param {string[]} operands - The array of operands to normalize.
+     * @returns {string[]} The array of normalized operands.
+     */
     const normalizedOperands = operands.map(op => {
         // Check if the operand is a 16-bit register
         if (sixteenBitRegisters.includes(op.toUpperCase())) {
@@ -524,6 +585,17 @@ function encodeInstruction(instruction, locationCounter, lineNumber, line) {
     key += ' ' + normalizedOperands.join(',');
 
     // Replace known symbols in operands with their values
+    /**
+     * Resolves the operands for an assembly instruction.
+     *
+     * This function processes each operand to determine its type and resolve its value.
+     * It handles various cases such as symbols referencing 16-bit addresses, register references,
+     * memory addresses, numeric literals, character literals, and condition codes.
+     *
+     * @param {Array<string>} operands - The list of operands to resolve.
+     * @returns {Array<string|number>} - The list of resolved operands.
+     * @throws {Error} - Throws an error if an undefined symbol is encountered.
+     */
     const resolvedOperands = operands.map(op => {
         // Check if the operand is a symbol that references a 16-bit address
         if (op.startsWith('(') && op.endsWith(')')) {
@@ -639,13 +711,6 @@ function encodeInstruction(instruction, locationCounter, lineNumber, line) {
         if (offset < -128 || offset > 127) {
             throw new Error(`Line ${lineNumber}: Jump offset out of range: ${offset}\n"${line}"`);
         }
-        const conditionCodesMap = {
-            '': 0x18,
-            'NZ': 0x20,
-            'Z': 0x28,
-            'NC': 0x30,
-            'C': 0x38
-        };
         const opcode = conditionCodesMap[condition];
         opcodeBytes.push(opcode, offset & 0xFF);
         return opcodeBytes;
@@ -723,7 +788,19 @@ function encodeInstruction(instruction, locationCounter, lineNumber, line) {
     return opcodeBytes;
 }
 
-// 5. Assembling the Entire Code: Assemble Function
+/**
+ * Assembles assembly code into machine code.
+ *
+ * This function takes a string of assembly code, parses it, and converts it into
+ * machine code. It performs two passes over the code: the first pass builds a symbol
+ * table and estimates instruction sizes, while the second pass encodes the instructions
+ * into machine code.
+ *
+ * @param {string} assemblyCode - The assembly code to be assembled.
+ * @returns {number[]} An array of bytes representing the machine code.
+ *
+ * @throws {Error} If an invalid instruction or operand is encountered during the first pass.
+ */
 function assemble(assemblyCode) {
     const lines = assemblyCode.split('\n');
     let locationCounter = 0;
@@ -845,7 +922,17 @@ function assemble(assemblyCode) {
     return machineCode;
 }
 
-// 6. Generating MSX BASIC DATA Statements
+/**
+ * Generates data statements from machine code.
+ *
+ * @param {Uint8Array} machineCode - The machine code to be converted into data statements.
+ * @returns {string[]} An array of data statements.
+ *
+ * @constant {number} DATA_LINE_NUMBER_START - The starting line number for the data statements.
+ * @constant {number} DATA_BYTES_PER_LINE - The number of bytes per line in the data statements.
+ * @constant {boolean} TO_HEX - Flag indicating whether to format the data as hexadecimal.
+ * @constant {number} DATA_LINE_NUMBER_INCREMENT - The increment for the line numbers.
+ */
 function generateDataStatements(machineCode) {
     let dataLines = [];
     let lineNumber = DATA_LINE_NUMBER_START;
@@ -868,6 +955,12 @@ function generateDataStatements(machineCode) {
     return dataLines;
 }
 
+/**
+ * Generates a boilerplate code for loading and running a program in memory.
+ *
+ * @param {number} datalineCount - The number of data lines to be included in the boilerplate.
+ * @returns {string} The generated boilerplate code as a string.
+ */
 function generateBoilerPlate(datalineCount) {
     // const toHexBoilerPlate = `1030 READ A$: POKE AD,VAL("&H"+A$):AD=AD+1: PRINT ".";: IF A$ <> "C9" THEN 1030`
     const toHexBoilerPlate = `1040 READ A$: FOR I = 1 TO LEN(A$) STEP 2: B$ = MID$(A$, I, 2): POKE AD, VAL("&H" + B$): AD = AD + 1: NEXT I: PRINT ".";: IF B$ <> "C9" THEN 1040`
@@ -886,26 +979,39 @@ ${TO_HEX ? toHexBoilerPlate : toDecBoilerPlate}
 2040 X=USR(0)`
 }
 
-// Define ANSI escape codes for colors
-const colors = {
-    reset: "\x1b[0m",
-    red: "\x1b[31m",
-    green: "\x1b[32m",
-    yellow: "\x1b[33m",
-    blue: "\x1b[34m",
-    magenta: "\x1b[35m",
-    cyan: "\x1b[36m",
-    white: "\x1b[37m"
-};
-
 // Assemble the code
 try {
-    const machineCode = assemble(assemblyCode);
+    const assemblyFilePath = process.argv[2] || path.join(__dirname, 'assemblycode.asm');
+    let outputFilePathIndex = process.argv.indexOf('-o') + 1;
+    let outputFilePath;
+    if (outputFilePathIndex >= process.argv.length) {
+        throw new Error('Output file path not provided, while -o flag is used. I am very disappointed in you');
+    }
+    if (outputFilePathIndex === 0) {
+        outputFilePath = assemblyFilePath.replace('.asm', '.bas');
+    } else {
+        outputFilePath = process.argv[outputFilePathIndex];
+    }
+    let assemblyCode;
+    let machineCode;
+    try {
+        assemblyCode = fs.readFileSync(assemblyFilePath, 'utf8');
+    }
+    catch (error) {
+        throw new Error(`Error reading assembly file: ${error.message}`);
+    }
+    try {
+        machineCode = assemble(assemblyCode);
+    } catch (error) {
+        throw new Error(`Assembly error: ${error.message}`);
+    }
     const dataStatements = generateDataStatements(machineCode);
     const boilerPlate = generateBoilerPlate(dataStatements.length);
     console.log(colors.blue + boilerPlate + colors.reset);
     console.log(colors.green + dataStatements.join('\n') + colors.reset);
+    const outputContent = boilerPlate + '\n' + dataStatements.join('\n');
+    fs.writeFileSync(outputFilePath, outputContent, 'utf8');
+    console.log(colors.yellow + `Assembly output written to ${outputFilePath}` + colors.reset);
 } catch (error) {
-
-    console.error(colors.red + 'Assembly error:', error.message + colors.reset);
+    console.error(colors.red + error.message + colors.reset);
 }
