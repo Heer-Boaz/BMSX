@@ -4,7 +4,7 @@ const path = require('path');
 const TO_HEX = false;
 const DATA_LINE_NUMBER_START = 10000;
 const DATA_LINE_NUMBER_INCREMENT = 1;
-const DATA_BYTES_PER_LINE = TO_HEX ? 64 : 16;
+const DATA_BYTES_PER_LINE = TO_HEX ? 64 : 32;
 
 /**
  * An array of 8-bit register names used in the assembler.
@@ -946,7 +946,7 @@ function generateDataStatements(machineCode) {
             dataLines.push(`${lineNumber} DATA "${hexBytes}"`);
         }
         else {
-            const decBytes = bytes.join(', ');
+            const decBytes = bytes.join(',');
             dataLines.push(`${lineNumber} DATA ${decBytes}`);
         }
         lineNumber += DATA_LINE_NUMBER_INCREMENT;
@@ -963,19 +963,18 @@ function generateDataStatements(machineCode) {
  */
 function generateBoilerPlate(datalineCount) {
     // const toHexBoilerPlate = `1030 READ A$: POKE AD,VAL("&H"+A$):AD=AD+1: PRINT ".";: IF A$ <> "C9" THEN 1030`
-    const toHexBoilerPlate = `1040 READ A$: FOR I = 1 TO LEN(A$) STEP 2: B$ = MID$(A$, I, 2): POKE AD, VAL("&H" + B$): AD = AD + 1: NEXT I: PRINT ".";: IF B$ <> "C9" THEN 1040`
-    const toDecBoilerPlate = `1040 READ A: POKE AD, A: AD = AD + 1: IF AD MOD 16 = 0 THEN PRINT ".";
-1050 IF A <> 201 THEN 1040 ELSE IF AD MOD 16 <> 0 THEN PRINT ".";`;
+    const toHexBoilerPlate = `1040 READA$:FORI=1TOLEN(A$)STEP2:B$=MID$(A$,I,2):POKED,VAL("&H"+B$):D=D+1:NEXTI:PRINT".";:IFB$<>"C9"GOTO1040`
+    const toDecBoilerPlate = `1040 READA:POKED,A:D=D+1:IFDMOD${DATA_BYTES_PER_LINE}=0THENPRINT".";
+1050 IFA<>201GOTO1040ELSEIFDMOD${DATA_BYTES_PER_LINE}<>0THENPRINT".";`;
     return `1000 ' Put program to memory
-1010 DEFINT A-Z:AD=&HD000
-1020 PRINT "Laderen:"
-1030 PRINT "[";: LOCATE ${datalineCount + 1}: PRINT "]";: LOCATE 1
+1010 DEFINTA-Z:D=&HD000
+1020 PRINT"Laderen:":PRINT"[";:LOCATE${datalineCount + 1}:PRINT"]";:LOCATE1
 ${TO_HEX ? toHexBoilerPlate : toDecBoilerPlate}
-1100 PRINT ""
+1100 PRINT""
 2000 ' Run da program!!
-2010 PRINT "Ik heb de boel geladen, nu starten we de boel! Klaar?"
-2020 DEFUSR=&HD000 ' This defines USR() start address
-2030 PRINT "KABOEMMMM!!!"
+2010 PRINT"Ik heb de boel geladen, nu starten we de boel! Klaar?"
+2020 DEFUSR=&HD000' This defines USR() start address
+2030 PRINT"KABOEMMMM!!!"
 2040 X=USR(0)`
 }
 
