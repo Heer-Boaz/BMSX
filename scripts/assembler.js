@@ -991,23 +991,25 @@ ${TO_HEX ? toHexBoilerPlate : toDecBoilerPlate}
  * @returns {void}
  */
 try {
-    const assemblyFilePath = process.argv[2] || path.join(__dirname, 'assemblycode.asm');
-    let outputFilePathIndex = process.argv.indexOf('-o') + 1;
-    let outputFilePath;
-    if (outputFilePathIndex >= process.argv.length) {
-        throw new Error('Output file path not provided, while -o flag is used. I am very disappointed in you');
+    const assemblyFilePath = process.argv[2] && !process.argv[2].startsWith('-') ? process.argv[2] : path.join(__dirname, 'assemblycode.asm');
+    let outputFilePathIndex = process.argv.indexOf('-o');
+    let outputFilePath = null;
+    let writeToFile = false;
+
+    if (outputFilePathIndex > 0) {
+        if (outputFilePathIndex + 1 < process.argv.length && !process.argv[outputFilePathIndex + 1].startsWith('-')) {
+            outputFilePath = process.argv[outputFilePathIndex + 1];
+        } else {
+            outputFilePath = assemblyFilePath.replace('.asm', '.bas');
+        }
+        writeToFile = true;
     }
-    if (outputFilePathIndex === 0) {
-        outputFilePath = assemblyFilePath.replace('.asm', '.bas');
-    } else {
-        outputFilePath = process.argv[outputFilePathIndex];
-    }
+
     let assemblyCode;
     let machineCode;
     try {
         assemblyCode = fs.readFileSync(assemblyFilePath, 'utf8');
-    }
-    catch (error) {
+    } catch (error) {
         throw new Error(`Error reading assembly file: ${error.message}`);
     }
     try {
@@ -1020,8 +1022,11 @@ try {
     console.log(colors.blue + boilerPlate + colors.reset);
     console.log(colors.green + dataStatements.join('\n') + colors.reset);
     const outputContent = boilerPlate + '\n' + dataStatements.join('\n');
-    fs.writeFileSync(outputFilePath, outputContent, 'utf8');
-    console.log(colors.yellow + `Assembly output written to ${outputFilePath}` + colors.reset);
+
+    if (writeToFile && outputFilePath) {
+        fs.writeFileSync(outputFilePath, outputContent, 'utf8');
+        console.log(colors.yellow + `Assembly output written to ${outputFilePath}` + colors.reset);
+    }
 } catch (error) {
     console.error(colors.red + error.message + colors.reset);
 }

@@ -33,7 +33,7 @@
     "midi-file": "*",
     "minify-stream": "*",
     "pako": "*",
-    "stringify": "^5.2.0",
+    "stringify": "^2.2.0",
     "terminal-kit": "*",
     "terser": "*",
     "ts-key-enum": "*",
