@@ -963,7 +963,7 @@ function generateDataStatements(machineCode) {
  */
 function generateBoilerPlate(datalineCount) {
     // const toHexBoilerPlate = `1030 READ A$: POKE AD,VAL("&H"+A$):AD=AD+1: PRINT ".";: IF A$ <> "C9" THEN 1030`
-    const toHexBoilerPlate = `1040 READA$:FORI=1TOLEN(A$)STEP2:B$=MID$(A$,I,2):POKED,VAL("&H"+B$):D=D+1:NEXTI:PRINT".";:IFB$<>"C9"GOTO1040`
+    const toHexBoilerPlate = `1040 READA$:FORI=1TOLEN(A$)STEP2:B$=MID$(A$,I,2):POKED,VAL("&H"+B$):D=D+1:NEXT:PRINT".";:IFB$<>"C9"GOTO1040`
     const toDecBoilerPlate = `1040 READA:POKED,A:D=D+1:IFDMOD${DATA_BYTES_PER_LINE}=0THENPRINT".";
 1050 IFA<>201GOTO1040ELSEIFDMOD${DATA_BYTES_PER_LINE}<>0THENPRINT".";`;
     return `1000 ' Put program to memory
