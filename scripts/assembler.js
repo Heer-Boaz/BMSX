@@ -2,9 +2,10 @@ const fs = require('fs');
 const path = require('path');
 
 const TO_HEX = false;
+const TO_BASE64 = false;
 const DATA_LINE_NUMBER_START = 10000;
 const DATA_LINE_NUMBER_INCREMENT = 1;
-const DATA_BYTES_PER_LINE = TO_HEX ? 64 : 32;
+const DATA_BYTES_PER_LINE = TO_HEX ? 64 : (TO_BASE64 ? 128 : 32);
 
 /**
  * An array of 8-bit register names used in the assembler.
@@ -944,6 +945,10 @@ function generateDataStatements(machineCode) {
             // dataLines.push(`${lineNumber} DATA ${hexBytes}`);
             const hexBytes = bytes.map(byte => `${byte.toString(16).toUpperCase().padStart(2, '0')}`).join('');
             dataLines.push(`${lineNumber} DATA "${hexBytes}"`);
+        }
+        else if (TO_BASE64) {
+            const base64Bytes = Buffer.from(bytes).toString('base64');
+            dataLines.push(`${lineNumber} DATA "${base64Bytes}"`);
         }
         else {
             const decBytes = bytes.join(',');
