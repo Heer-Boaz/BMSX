@@ -3,7 +3,7 @@ ORG 0xD000				; Start address for our routine in RAM
 KEYS:					EQU #FBE5	; Memory location for the input matrix
 RETURN_VALUE:			EQU #F7F8	; Memory location to store the return value for BASIC
 CLS:					EQU #00C3	; BIOS call to CLS
-INITXT:					EQU #050E	; BIOS call to set text mode (screen 0)
+INITXT:					EQU #006C	; BIOS call to set text mode (screen 0)
 INIT32:					EQU #006F	; BIOS call to set screen mode 32 (screen 1)
 INIGRP:					EQU #05D2	; BIOS call to set graphics mode (screen 2)
 INIMLT:					EQU #061F	; BIOS call to set multicolor mode (screen 3)
@@ -28,7 +28,6 @@ START:
 
     CALL ERAFNK						; Disable function key display
 
-    XOR A                           ; Clear A register
     CALL INIT32						; Set screen mode 32 (SCREEN 1)
 
     ; Change colours
@@ -44,6 +43,7 @@ START:
     LD (COORD), A                   ; Store the X-coordinate in memory
     LD A, MIN_Y                     ; Set the initial Y-coordinate
     LD (COORD+1), A                 ; Store the Y-coordinate in memory
+    EI								; Enable interrupts
 
 GAME_LOOP:
     ; Read X and Y coordinates from BASIC
@@ -135,7 +135,6 @@ CONTINUE_Y:
 
     ; Wait for V-Sync
 WAIT_VSYNC:
-    EI								; Enable interrupts
     HALT							; Wait for VSync interrupt
 
     JP GAME_LOOP					; Loop back to the beginning of the game loop
@@ -143,6 +142,8 @@ GA_TERUG:
     ; Set return value for BASIC
     LD A, B							; Move the value from B to A to return the result
     LD (RETURN_VALUE), A			; Store the return value
+    DI
+    CALL INITXT					    ; Set text mode
     RET								; Return to BASIC
 
 END START							; End of the program and define the entry point
