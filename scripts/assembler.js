@@ -1,11 +1,12 @@
 const fs = require('fs');
 const path = require('path');
 
-const TO_HEX = false;
-const TO_BASE64 = false;
 const DATA_LINE_NUMBER_START = 10000;
 const DATA_LINE_NUMBER_INCREMENT = 1;
-const DATA_BYTES_PER_LINE = TO_HEX ? 64 : (TO_BASE64 ? 128 : 32);
+const DATA_BYTES_PER_LINE_DECIMAL = 32;
+const DATA_BYTES_PER_LINE_HEX = 64;
+const DATA_BYTES_PER_LINE_BASE64 = 32;
+const DEFAULT_DATA_FORMAT = 'dec';
 
 /**
  * An array of 8-bit register names used in the assembler.
@@ -923,6 +924,20 @@ function assemble(assemblyCode) {
     return machineCode;
 }
 
+function getDataBytesPerLine(dataFormat) {
+    switch (dataFormat) {
+        case 'hex':
+            return DATA_BYTES_PER_LINE_HEX;
+        case 'dec':
+            return DATA_BYTES_PER_LINE_DECIMAL;
+            break;
+        case 'b64':
+            return DATA_BYTES_PER_LINE_BASE64;
+        default:
+            throw new Error(`Invalid data format for BASIC statements: ${dataFormat}`);
+    }
+}
+
 /**
  * Generates data statements from machine code.
  *
@@ -930,29 +945,30 @@ function assemble(assemblyCode) {
  * @returns {string[]} An array of data statements.
  *
  * @constant {number} DATA_LINE_NUMBER_START - The starting line number for the data statements.
- * @constant {number} DATA_BYTES_PER_LINE - The number of bytes per line in the data statements.
- * @constant {boolean} TO_HEX - Flag indicating whether to format the data as hexadecimal.
  * @constant {number} DATA_LINE_NUMBER_INCREMENT - The increment for the line numbers.
  */
-function generateDataStatements(machineCode) {
+function generateDataStatements(machineCode, dataFormat) {
     let dataLines = [];
     let lineNumber = DATA_LINE_NUMBER_START;
+    let dataBytesPerLine = getDataBytesPerLine(dataFormat);
 
-    for (let i = 0; i < machineCode.length; i += DATA_BYTES_PER_LINE) {
-        const bytes = machineCode.slice(i, i + DATA_BYTES_PER_LINE);
-        if (TO_HEX) {
-            // const hexBytes = bytes.map(byte => byte.toString(16).toUpperCase().padStart(2, '0')).join(', ');
-            // dataLines.push(`${lineNumber} DATA ${hexBytes}`);
-            const hexBytes = bytes.map(byte => `${byte.toString(16).toUpperCase().padStart(2, '0')}`).join('');
-            dataLines.push(`${lineNumber} DATA "${hexBytes}"`);
-        }
-        else if (TO_BASE64) {
-            const base64Bytes = Buffer.from(bytes).toString('base64');
-            dataLines.push(`${lineNumber} DATA "${base64Bytes}"`);
-        }
-        else {
-            const decBytes = bytes.join(',');
-            dataLines.push(`${lineNumber} DATA ${decBytes}`);
+    for (let i = 0; i < machineCode.length; i += dataBytesPerLine) {
+        const bytes = machineCode.slice(i, i + dataBytesPerLine);
+        switch (dataFormat) {
+            case 'hex':
+                const hexBytes = bytes.map(byte => `${byte.toString(16).toUpperCase().padStart(2, '0')}`).join('');
+                dataLines.push(`${lineNumber} DATA "${hexBytes}"`);
+                break;
+            case 'dec':
+                const decBytes = bytes.join(',');
+                dataLines.push(`${lineNumber} DATA ${decBytes}`);
+                break;
+            case 'b64':
+                const base64Bytes = Buffer.from(bytes).toString('base64');
+                dataLines.push(`${lineNumber} DATA "${base64Bytes}"`);
+                break;
+            default:
+                throw new Error(`Invalid data format for BASIC statements: ${dataFormat}`);
         }
         lineNumber += DATA_LINE_NUMBER_INCREMENT;
     }
@@ -966,21 +982,208 @@ function generateDataStatements(machineCode) {
  * @param {number} datalineCount - The number of data lines to be included in the boilerplate.
  * @returns {string} The generated boilerplate code as a string.
  */
-function generateBoilerPlate(datalineCount) {
-    // const toHexBoilerPlate = `1030 READ A$: POKE AD,VAL("&H"+A$):AD=AD+1: PRINT ".";: IF A$ <> "C9" THEN 1030`
-    const toHexBoilerPlate = `1040 READA$:FORI=1TOLEN(A$)STEP2:B$=MID$(A$,I,2):POKED,VAL("&H"+B$):D=D+1:NEXT:PRINT".";:IFB$<>"C9"GOTO1040`
-    const toDecBoilerPlate = `1040 READA:POKED,A:D=D+1:IFDMOD${DATA_BYTES_PER_LINE}=0THENPRINT".";
-1050 IFA<>201GOTO1040ELSEIFDMOD${DATA_BYTES_PER_LINE}<>0THENPRINT".";`;
+function generateBoilerPlate(datalineCount, dataFormat) {
+    let dataBytesPerLine = getDataBytesPerLine(dataFormat);
+    const toDecBoilerPlate = `1040 READA:POKED,A:D=D+1:IFDMOD${dataBytesPerLine}=0THEN?".";
+1050 IFA<>201GOTO1040ELSEIFDMOD${dataBytesPerLine}<>0THEN?".";`;
+    const toHexBoilerPlate = `1040 READA$:FORI=1TOLEN(A$)STEP2:B$=MID$(A$,I,2):POKED,VAL("&H"+B$):D=D+1:NEXT:?".";:IFB$<>"C9"GOTO1040`
+    const toBase64BoilerPlate = `1040 DIM B$(63)
+1041 B$ = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+1042 ' Read the Base64-encoded DATA
+1043 A = D: ?"Laderen:"
+1044 READ B64$
+1045 FOR I = 1 TO LEN(B64$) STEP 4
+1046  C1$ = MID$(B64$, I, 1)
+1047  C2$ = MID$(B64$, I + 1, 1)
+1048  C3$ = MID$(B64$, I + 2, 1)
+1049   C4$ = MID$(B64$, I + 3, 1)
+1050   B1 = INSTR(B$, C1$) - 1
+1051   B2 = INSTR(B$, C2$) - 1
+1052   B3 = INSTR(B$, C3$) - 1
+1053   B4 = INSTR(B$, C4$) - 1
+1054   Y1 = (B1 * 4) + (B2 \\ 16)
+1055   Y2 = ((B2 AND 15) * 16) + (B3 \\ 4)
+1056   Y3 = ((B3 AND 3) * 64) + B4
+1057   POKE A, Y1
+1058   A = A + 1
+1059   IF C3$ <> "=" THEN POKE A, Y2: A = A + 1
+1060   IF C4$ <> "=" THEN POKE A, Y3: A = A + 1
+1061 NEXT: ? ".";:READ B64$: IF B64$<>"!" GOTO 1045
+`
+    let dataFormatSpecificBoilerPlate;
+    switch (dataFormat) {
+        case 'hex':
+            dataFormatSpecificBoilerPlate = toHexBoilerPlate;
+            break;
+        case 'dec':
+            dataFormatSpecificBoilerPlate = toDecBoilerPlate;
+            break;
+        case 'b64':
+            dataFormatSpecificBoilerPlate = toBase64BoilerPlate;
+            break;
+        default:
+            throw new Error(`Invalid data format for BASIC statements: ${dataFormat}`);
+    }
+
     return `1000 ' Put program to memory
 1010 DEFINTA-Z:D=&HD000
-1020 PRINT"Laderen:":PRINT"[";:LOCATE${datalineCount + 1}:PRINT"]";:LOCATE1
-${TO_HEX ? toHexBoilerPlate : toDecBoilerPlate}
-1100 PRINT""
+1020 ?"Laderen:":?"[";:LOCATE${datalineCount + 1}:?"]";:LOCATE1
+${dataFormatSpecificBoilerPlate}
+1100 ?""
 2000 ' Run da program!!
-2010 PRINT"Ik heb de boel geladen, nu starten we de boel! Klaar?"
+2010 ?"Ik heb de boel geladen, nu starten we de boel! Klaar?"
 2020 DEFUSR=&HD000' This defines USR() start address
-2030 PRINT"KABOEMMMM!!!"
+2030 ?"KABOEMMMM!!!"
 2040 X=USR(0)`
+}
+
+function bla() {
+    // Generate LD r,r' instructions
+    const registers = ['B', 'C', 'D', 'E', 'H', 'L', '(HL)', 'A'];
+    registers.forEach((dest, destIndex) => {
+        registers.forEach((src, srcIndex) => {
+            const key = `LD ${dest},${src}`;
+            const opcode = 0x40 + destIndex * 8 + srcIndex;
+            opcodeMap[key] = [opcode];
+        });
+    });
+
+    // LD r,n instructions
+    ['B', 'C', 'D', 'E', 'H', 'L', 'A'].forEach((reg, index) => {
+        const key = `LD ${reg},n`;
+        const opcode = 0x06 + index * 8;
+        opcodeMap[key] = [opcode, 'n'];
+    });
+
+    // LD (IX+d),r
+    ['B', 'C', 'D', 'E', 'H', 'L', 'A'].forEach((reg, regCode) => {
+        const key = `LD (IX+d),${reg}`;
+        opcodeMap[key] = [0xDD, 0x70 + regCode, 'd'];
+    });
+
+    // LD r,(IX+d)
+    ['B', 'C', 'D', 'E', 'H', 'L', 'A'].forEach((reg, regCode) => {
+        const key = `LD ${reg},(IX+d)`;
+        opcodeMap[key] = [0xDD, 0x46 + regCode * 8, 'd'];
+    });
+
+    // Similar for IY
+    // LD (IY+d),r
+    ['B', 'C', 'D', 'E', 'H', 'L', 'A'].forEach((reg, regCode) => {
+        const key = `LD (IY+d),${reg}`;
+        opcodeMap[key] = [0xFD, 0x70 + regCode, 'd'];
+    });
+
+    // LD r,(IY+d)
+    ['B', 'C', 'D', 'E', 'H', 'L', 'A'].forEach((reg, regCode) => {
+        const key = `LD ${reg},(IY+d)`;
+        opcodeMap[key] = [0xFD, 0x46 + regCode * 8, 'd'];
+    });
+
+    // CP r
+    ['A', 'B', 'C', 'D', 'E', 'H', 'L', '(HL)'].forEach((reg, regCode) => {
+        const key = `CP ${reg}`;
+        const opcode = 0xB8 + regCode;
+        opcodeMap[key] = [opcode];
+    });
+
+    // CP n
+    opcodeMap['CP n'] = [0xFE, 'n'];
+
+    // CP (IX+d)
+    opcodeMap['CP (IX+d)'] = [0xDD, 0xBE, 'd'];
+
+    // CP (IY+d)
+    opcodeMap['CP (IY+d)'] = [0xFD, 0xBE, 'd'];
+
+    // ADD A,r
+    ['A', 'B', 'C', 'D', 'E', 'H', 'L', '(HL)'].forEach((reg, regCode) => {
+        const key = `ADD A,${reg}`;
+        const opcode = 0x80 + regCode;
+        opcodeMap[key] = [opcode];
+    });
+
+    // ADD A,n
+    opcodeMap['ADD A,n'] = [0xC6, 'n'];
+
+    // ADD A,(IX+d)
+    opcodeMap['ADD A,(IX+d)'] = [0xDD, 0x86, 'd'];
+
+    // ADD A,(IY+d)
+    opcodeMap['ADD A,(IY+d)'] = [0xFD, 0x86, 'd'];
+
+    // ADD HL,ss
+    const registerPairs = { 'BC': 0x00, 'DE': 0x01, 'HL': 0x02, 'SP': 0x03 };
+    Object.entries(registerPairs).forEach(([reg, code]) => {
+        const key = `ADD HL,${reg}`;
+        const opcode = 0x09 + code * 0x10;
+        opcodeMap[key] = [opcode];
+    });
+
+    // ADD IX,pp
+    const ixPairs = { 'BC': 0xDD09, 'DE': 0xDD19, 'IX': 0xDD29, 'SP': 0xDD39 };
+    Object.entries(ixPairs).forEach(([reg, opcode]) => {
+        const key = `ADD IX,${reg}`;
+        opcodeMap[key] = [(opcode >> 8) & 0xFF, opcode & 0xFF];
+    });
+
+    // Similar for IY
+    const iyPairs = { 'BC': 0xFD09, 'DE': 0xFD19, 'IY': 0xFD29, 'SP': 0xFD39 };
+    Object.entries(iyPairs).forEach(([reg, opcode]) => {
+        const key = `ADD IY,${reg}`;
+        opcodeMap[key] = [(opcode >> 8) & 0xFF, opcode & 0xFF];
+    });
+
+    // AND r
+    ['A', 'B', 'C', 'D', 'E', 'H', 'L', '(HL)'].forEach((reg, regCode) => {
+        const key = `AND ${reg}`;
+        const opcode = 0xA0 + regCode;
+        opcodeMap[key] = [opcode];
+    });
+
+    // AND n
+    opcodeMap['AND n'] = [0xE6, 'n'];
+
+    // AND (IX+d)
+    opcodeMap['AND (IX+d)'] = [0xDD, 0xA6, 'd'];
+
+    // AND (IY+d)
+    opcodeMap['AND (IY+d)'] = [0xFD, 0xA6, 'd'];
+
+    // JP nn
+    opcodeMap['JP nn'] = [0xC3, 'nn_low', 'nn_high'];
+
+    // JP cc,nn
+    ['NZ', 'Z', 'NC', 'C', 'PO', 'PE', 'P', 'M'].forEach((cc, index) => {
+        const opcode = 0xC2 + index * 8;
+        const key = `JP ${cc},nn`;
+        opcodeMap[key] = [opcode, 'nn_low', 'nn_high'];
+    });
+
+    // JP (HL)
+    opcodeMap['JP (HL)'] = [0xE9];
+
+    // JP (IX)
+    opcodeMap['JP (IX)'] = [0xDD, 0xE9];
+
+    // JP (IY)
+    opcodeMap['JP (IY)'] = [0xFD, 0xE9];
+
+    // JR e
+    opcodeMap['JR e'] = [0x18, 'e'];
+
+    // JR cc,e
+    ['NZ', 'Z', 'NC', 'C'].forEach((cc, index) => {
+        const opcode = 0x20 + index * 8;
+        const key = `JR ${cc},e`;
+        opcodeMap[key] = [opcode, 'e'];
+    });
+
+    for (const [key, value] of Object.entries(opcodeMap)) {
+        // Convert decimal values to hexadecimal
+        const hexValues = value.map(val => typeof val === 'number' ? `0x${val.toString(16).toUpperCase().padStart(2, '0')}` : val);
+        console.log(key, hexValues);
+    }
 }
 
 /**
@@ -995,6 +1198,9 @@ ${TO_HEX ? toHexBoilerPlate : toDecBoilerPlate}
  * @returns {void}
  */
 try {
+    bla();
+    return;
+
     const assemblyFilePath = process.argv[2] && !process.argv[2].startsWith('-') ? process.argv[2] : path.join(__dirname, 'assemblycode.asm');
     let outputFilePathIndex = process.argv.indexOf('-o');
     let outputFilePath = null;
@@ -1009,6 +1215,15 @@ try {
         writeToFile = true;
     }
 
+    let dataFormatIndex = process.argv.indexOf('-f');
+    let dataFormat = DEFAULT_DATA_FORMAT;
+
+    if (dataFormatIndex > 0) {
+        if (dataFormatIndex + 1 < process.argv.length && !process.argv[dataFormatIndex + 1].startsWith('-')) {
+            dataFormat = process.argv[dataFormatIndex + 1];
+        }
+    }
+
     let assemblyCode;
     let machineCode;
     try {
@@ -1021,8 +1236,8 @@ try {
     } catch (error) {
         throw new Error(`Assembly error: ${error.message}`);
     }
-    const dataStatements = generateDataStatements(machineCode);
-    const boilerPlate = generateBoilerPlate(dataStatements.length);
+    const dataStatements = generateDataStatements(machineCode, dataFormat);
+    const boilerPlate = generateBoilerPlate(dataStatements.length, dataFormat);
     console.log(colors.blue + boilerPlate + colors.reset);
     console.log(colors.green + dataStatements.join('\n') + colors.reset);
     const outputContent = boilerPlate + '\n' + dataStatements.join('\n');

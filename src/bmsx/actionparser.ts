@@ -382,7 +382,6 @@ export class ActionParser {
   }
 
   // Utility methods
-
   private static match(token: string): boolean {
     return this.tokens[this.actionParserIndex] === token;
   }
