@@ -21,6 +21,82 @@ MIN_X:					EQU 1		; Minimum X-coordinate
 MIN_Y:					EQU 1		; Minimum Y-coordinate
 PLAYER_CHAR:			EQU 175		; Character to represent the player on screen
 
+TESTMEUK:
+    LD HL, 0x4000
+    LD DE, 0x4000
+    LD BC, 0x4000
+    LDIR
+    INC IX
+    DEC IX
+    INC IY
+    DEC IY
+    ADD A,B
+    ADD A,C
+    ADD A,D
+    ADD A,E
+    ADD A,H
+    ADD A,L
+    ADD A,(COORD)
+    ADD A,A
+    ADC A,B
+    ADC A,C
+    ADC A,D
+    ADC A,E
+    ADC A,H
+    ADC A,L
+    ADC A,(COORD)
+    ADC A,A
+    SUB B
+    SUB C
+    SUB D
+    SUB E
+    SUB H
+    SUB L
+    SUB (COORD)
+    SUB A
+    SBC A,B
+    SBC A,C
+    SBC A,D
+    SBC A,E
+    SBC A,H
+    SBC A,L
+    SBC A,(COORD)
+    SBC A,A
+    AND B
+    AND C
+    AND D
+    AND E
+    AND H
+    AND L
+    AND (COORD)
+    AND A
+    XOR B
+    XOR C
+    XOR D
+    XOR E
+    XOR H
+    XOR L
+    XOR (COORD)
+    XOR A
+    OR B
+    OR C
+    OR D
+    OR E
+    OR H
+    OR L
+    OR (COORD)
+    OR A
+    CP B
+    CP C
+    CP D
+    CP E
+    CP H
+    CP L
+    CP (COORD)
+    CP A
+    RET NZ
+    POP BC
+
 START:
     ; Disable key click sound
     XOR A							; Faster than LD A, 0

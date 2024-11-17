@@ -168,105 +168,279 @@ const symbolTable = {};
  * @type {Object.<string, Array.<number|string>>}
  */
 const opcodeMap = {
-    // Data Transfer Instructions
-    'LD A,n': [0x3E, 'n'],
-    'LD B,n': [0x06, 'n'],
-    'LD C,n': [0x0E, 'n'],
-    'LD D,n': [0x16, 'n'],
-    'LD E,n': [0x1E, 'n'],
-    'LD H,n': [0x26, 'n'],
-    'LD L,n': [0x2E, 'n'],
-    'LD HL,nn': [0x21, 'nn_low', 'nn_high'],
-    'LD DE,nn': [0x11, 'nn_low', 'nn_high'],
-    'LD SP,nn': [0x31, 'nn_low', 'nn_high'],
+    'NOP': [0x00],
     'LD BC,nn': [0x01, 'nn_low', 'nn_high'],
-    'LD (addr),A': [0x32, 'addr_low', 'addr_high'],
-    'LD A,(addr)': [0x3A, 'addr_low', 'addr_high'],
-    'LD (addr),HL': [0x22, 'addr_low', 'addr_high'],
-    'LD HL,(addr)': [0x2A, 'addr_low', 'addr_high'],
+    'LD (BC),A': [0x02],
+    'INC BC': [0x03],
+    'INC B': [0x04],
+    'DEC B': [0x05],
+    'LD B,n': [0x06, 'n'],
+    'RLCA': [0x07],
+    'EX AF,AF\'': [0x08],
+    'ADD HL,BC': [0x09],
+    'LD A,(BC)': [0x0A],
+    'DEC BC': [0x0B],
+    'INC C': [0x0C],
+    'DEC C': [0x0D],
+    'LD C,n': [0x0E, 'n'],
+    'RRCA': [0x0F],
+
+    'DJNZ e': [0x10, 'e'],
+    'LD DE,nn': [0x11, 'nn_low', 'nn_high'],
+    'LD (DE),A': [0x12],
+    'INC DE': [0x13],
+    'INC D': [0x14],
+    'DEC D': [0x15],
+    'LD D,n': [0x16, 'n'],
+    'RLA': [0x17],
+    'JR e': [0x18, 'e'],
+    'ADD HL,DE': [0x19],
+    'LD A,(DE)': [0x1A],
+    'DEC DE': [0x1B],
+    'INC E': [0x1C],
+    'DEC E': [0x1D],
+    'LD E,n': [0x1E, 'n'],
+    'RRA': [0x1F],
+
+    'JR NZ,e': [0x20, 'e'],
+    'LD HL,nn': [0x21, 'nn_low', 'nn_high'],
+    'LD (nn),HL': [0x22, 'addr_low', 'addr_high'],
+    'INC HL': [0x23],
+    'INC H': [0x24],
+    'DEC H': [0x25],
+    'LD H,n': [0x26, 'n'],
+    'DAA': [0x27],
+    'JR Z,e': [0x28, 'e'],
+    'ADD HL,HL': [0x29],
+    'LD HL,(nn)': [0x2A, 'addr_low', 'addr_high'],
+    'DEC HL': [0x2B],
+    'INC L': [0x2C],
+    'DEC L': [0x2D],
+    'LD L,n': [0x2E, 'n'],
+    'CPL': [0x2F],
+
+    'JR NC,e': [0x30, 'e'],
+    'LD SP,nn': [0x31, 'nn_low', 'nn_high'],
+    'LD (nn),A': [0x32, 'addr_low', 'addr_high'],
+    'INC SP': [0x33],
+    'INC (HL)': [0x34],
+    'DEC (HL)': [0x35],
     'LD (HL),n': [0x36, 'n'],
-    'LD A,(HL)': [0x7E],
-    'LD (HL),A': [0x77],
-    'LD H,A': [0x67],
-    'LD L,A': [0x6F],
-    'LD A,H': [0x7C],
-    'LD A,L': [0x7D],
+    'SCF': [0x37],
+    'JR C,e': [0x38, 'e'],
+    'ADD HL,SP': [0x39],
+    'LD A,(nn)': [0x3A, 'addr_low', 'addr_high'],
+    'DEC SP': [0x3B],
+    'INC A': [0x3C],
+    'DEC A': [0x3D],
+    'LD A,n': [0x3E, 'n'],
+    'CCF': [0x3F],
+
+    'LD B,B': [0x40],
+    'LD B,C': [0x41],
+    'LD B,D': [0x42],
+    'LD B,E': [0x43],
+    'LD B,H': [0x44],
+    'LD B,L': [0x45],
+    'LD B,(HL)': [0x46],
     'LD B,A': [0x47],
+    'LD C,B': [0x48],
+    'LD C,C': [0x49],
+    'LD C,D': [0x4A],
+    'LD C,E': [0x4B],
+    'LD C,H': [0x4C],
+    'LD C,L': [0x4D],
+    'LD C,(HL)': [0x4E],
     'LD C,A': [0x4F],
+    'LD D,B': [0x50],
+    'LD D,C': [0x51],
+    'LD D,D': [0x52],
+    'LD D,E': [0x53],
+    'LD D,H': [0x54],
+    'LD D,L': [0x55],
+    'LD D,(HL)': [0x56],
     'LD D,A': [0x57],
+    'LD E,B': [0x58],
+    'LD E,C': [0x59],
+    'LD E,D': [0x5A],
+    'LD E,E': [0x5B],
+    'LD E,H': [0x5C],
+    'LD E,L': [0x5D],
+    'LD E,(HL)': [0x5E],
     'LD E,A': [0x5F],
+    'LD H,B': [0x60],
+    'LD H,C': [0x61],
+    'LD H,D': [0x62],
+    'LD H,E': [0x63],
+    'LD H,H': [0x64],
+    'LD H,L': [0x65],
+    'LD H,(HL)': [0x66],
+    'LD H,A': [0x67],
+    'LD L,B': [0x68],
+    'LD L,C': [0x69],
+    'LD L,D': [0x6A],
+    'LD L,E': [0x6B],
+    'LD L,H': [0x6C],
+    'LD L,L': [0x6D],
+    'LD L,(HL)': [0x6E],
+    'LD L,A': [0x6F],
+    'LD (HL),B': [0x70],
+    'LD (HL),C': [0x71],
+    'LD (HL),D': [0x72],
+    'LD (HL),E': [0x73],
+    'LD (HL),H': [0x74],
+    'LD (HL),L': [0x75],
+    'HALT': [0x76],
+    'LD (HL),A': [0x77],
     'LD A,B': [0x78],
     'LD A,C': [0x79],
     'LD A,D': [0x7A],
     'LD A,E': [0x7B],
-    'LD SP,HL': [0xF9],
-    'LD C,0': [0x0E, 0x00],
-    'LD B,0': [0x06, 0x00],
-    // Arithmetic and Logical Instructions
-    'INC A': [0x3C],
-    'INC B': [0x04],
-    'INC C': [0x0C],
-    'INC D': [0x14],
-    'INC E': [0x1C],
-    'INC H': [0x24],
-    'INC L': [0x2C],
-    'INC HL': [0x23],
-    'INC DE': [0x13],
-    'DEC A': [0x3D],
-    'DEC B': [0x05],
-    'DEC C': [0x0D],
-    'DEC D': [0x15],
-    'DEC E': [0x1D],
-    'DEC H': [0x25],
-    'DEC L': [0x2D],
-    'DEC HL': [0x2B],
-    'DEC DE': [0x1B],
-    'ADD A,n': [0xC6, 'n'],
-    'SUB n': [0xD6, 'n'],
-    'CP n': [0xFE, 'n'],
-    'AND n': [0xE6, 'n'],
-    'OR n': [0xF6, 'n'],
+    'LD A,H': [0x7C],
+    'LD A,L': [0x7D],
+    'LD A,(HL)': [0x7E],
+    'LD A,A': [0x7F],
+
+    'ADD A,B': [0x80],
+    'ADD A,C': [0x81],
+    'ADD A,D': [0x82],
+    'ADD A,E': [0x83],
+    'ADD A,H': [0x84],
+    'ADD A,L': [0x85],
+    'ADD A,(HL)': [0x86],
+    'ADD A,A': [0x87],
+    'ADC A,B': [0x88],
+    'ADC A,C': [0x89],
+    'ADC A,D': [0x8A],
+    'ADC A,E': [0x8B],
+    'ADC A,H': [0x8C],
+    'ADC A,L': [0x8D],
+    'ADC A,(HL)': [0x8E],
+    'ADC A,A': [0x8F],
+    'SUB B': [0x90],
+    'SUB C': [0x91],
+    'SUB D': [0x92],
+    'SUB E': [0x93],
+    'SUB H': [0x94],
+    'SUB L': [0x95],
+    'SUB (HL)': [0x96],
+    'SUB A': [0x97],
+    'SBC A,B': [0x98],
+    'SBC A,C': [0x99],
+    'SBC A,D': [0x9A],
+    'SBC A,E': [0x9B],
+    'SBC A,H': [0x9C],
+    'SBC A,L': [0x9D],
+    'SBC A,(HL)': [0x9E],
+    'SBC A,A': [0x9F],
+    'AND B': [0xA0],
+    'AND C': [0xA1],
+    'AND D': [0xA2],
+    'AND E': [0xA3],
+    'AND H': [0xA4],
+    'AND L': [0xA5],
+    'AND (HL)': [0xA6],
+    'AND A': [0xA7],
+    'XOR B': [0xA8],
+    'XOR C': [0xA9],
+    'XOR D': [0xAA],
+    'XOR E': [0xAB],
+    'XOR H': [0xAC],
+    'XOR L': [0xAD],
+    'XOR (HL)': [0xAE],
     'XOR A': [0xAF],
+    'OR B': [0xB0],
+    'OR C': [0xB1],
+    'OR D': [0xB2],
+    'OR E': [0xB3],
+    'OR H': [0xB4],
+    'OR L': [0xB5],
+    'OR (HL)': [0xB6],
     'OR A': [0xB7],
-    'CP 1': [0xFE, 0x01],
-    'CP MAX_X': [0xFE, 'n'],
-    'CP MAX_Y': [0xFE, 'n'],
-    'CP 0': [0xFE, 0x00],
-    // Bit Operations
-    // These are handled specially in the encodeInstruction function
-    // Jump and Call Instructions
-    'CALL nn': [0xCD, 'nn_low', 'nn_high'],
-    'JP nn': [0xC3, 'nn_low', 'nn_high'],
+    'CP B': [0xB8],
+    'CP C': [0xB9],
+    'CP D': [0xBA],
+    'CP E': [0xBB],
+    'CP H': [0xBC],
+    'CP L': [0xBD],
+    'CP (HL)': [0xBE],
+    'CP A': [0xBF],
+
+    'RET NZ': [0xC0],
+    'POP BC': [0xC1],
     'JP NZ,nn': [0xC2, 'nn_low', 'nn_high'],
-    'JP Z,nn': [0xCA, 'nn_low', 'nn_high'],
-    'JP NC,nn': [0xD2, 'nn_low', 'nn_high'],
-    'JP C,nn': [0xDA, 'nn_low', 'nn_high'],
-    'JR e': [0x18, 'e'],
-    'JR NZ,e': [0x20, 'e'],
-    'JR Z,e': [0x28, 'e'],
-    'JR NC,e': [0x30, 'e'],
-    'JR C,e': [0x38, 'e'],
+    'JP nn': [0xC3, 'nn_low', 'nn_high'],
+    'CALL NZ,nn': [0xC4, 'nn_low', 'nn_high'],
+    'PUSH BC': [0xC5],
+    'ADD A,n': [0xC6, 'n'],
+    'RST 0': [0xC7],
+    'RET Z': [0xC8],
     'RET': [0xC9],
-    // CPU Control Instructions
-    'EI': [0xFB],
+    'JP Z,nn': [0xCA, 'nn_low', 'nn_high'],
+    // 'Prefix CB': [0xCB], // Handled separately
+    'CALL Z,nn': [0xCC, 'nn_low', 'nn_high'],
+    'CALL nn': [0xCD, 'nn_low', 'nn_high'],
+    'ADC A,n': [0xCE, 'n'],
+    'RST 8': [0xCF],
+
+    'RET NC': [0xD0],
+    'POP DE': [0xD1],
+    'JP NC,nn': [0xD2, 'nn_low', 'nn_high'],
+    'OUT (n),A': [0xD3, 'n'],
+    'CALL NC,nn': [0xD4, 'nn_low', 'nn_high'],
+    'PUSH DE': [0xD5],
+    'SUB n': [0xD6, 'n'],
+    'RST 10': [0xD7],
+    'RET C': [0xD8],
+    'EXX': [0xD9],
+    'JP C,nn': [0xDA, 'nn_low', 'nn_high'],
+    'IN A,(n)': [0xDB, 'n'],
+    'CALL C,nn': [0xDC, 'nn_low', 'nn_high'],
+    // 'Prefix DD': [0xDD], // Handled separately
+    'SBC A,n': [0xDE, 'n'],
+    'RST 18': [0xDF],
+
+    'RET PO': [0xE0],
+    'POP HL': [0xE1],
+    'JP PO,nn': [0xE2, 'nn_low', 'nn_high'],
+    'EX (SP),HL': [0xE3],
+    'CALL PO,nn': [0xE4, 'nn_low', 'nn_high'],
+    'PUSH HL': [0xE5],
+    'AND n': [0xE6, 'n'],
+    'RST 20': [0xE7],
+    'RET PE': [0xE8],
+    'JP (HL)': [0xE9],
+    'JP PE,nn': [0xEA, 'nn_low', 'nn_high'],
+    'EX DE,HL': [0xEB],
+    'CALL PE,nn': [0xEC, 'nn_low', 'nn_high'],
+    // 'Prefix ED': [0xED], // Handled separately
+    'XOR n': [0xEE, 'n'],
+    'RST 28': [0xEF],
+
+    'RET P': [0xF0],
+    'POP AF': [0xF1],
+    'JP P,nn': [0xF2, 'nn_low', 'nn_high'],
     'DI': [0xF3],
-    'HALT': [0x76],
-    // Rotate and Shift Instructions
-    'RLCA': [0x07],
-    'RRCA': [0x0F],
-    'RLA': [0x17],
-    'RRA': [0x1F],
+    'CALL P,nn': [0xF4, 'nn_low', 'nn_high'],
+    'PUSH AF': [0xF5],
+    'OR n': [0xF6, 'n'],
+    'RST 30': [0xF7],
+    'RET M': [0xF8],
+    'LD SP,HL': [0xF9],
+    'JP M,nn': [0xFA, 'nn_low', 'nn_high'],
+    'EI': [0xFB],
+    'CALL M,nn': [0xFC, 'nn_low', 'nn_high'],
+    // 'Prefix FD': [0xFD], // Handled separately
+    'CP n': [0xFE, 'n'],
+    'RST 38': [0xFF],
+
     'RLC A': [0xCB, 0x07],
     'RRC A': [0xCB, 0x0F],
     'RL A': [0xCB, 0x17],
     'RR A': [0xCB, 0x1F],
-    // Miscellaneous Instructions
-    'NOP': [0x00],
-    'SCF': [0x37],
-    'CCF': [0x3F],
-    'CPL': [0x2F],
-    'DAA': [0x27],
+
     'NEG': [0xED, 0x44],
+
     'SET 0,B': [0xCB, 0xC0],
     'SET 1,B': [0xCB, 0xC8],
     'SET 2,B': [0xCB, 0xD0],
@@ -285,16 +459,24 @@ const opcodeMap = {
     'BIT 5,A': [0xCB, 0x6F],
     'BIT 6,A': [0xCB, 0x77],
     'BIT 7,A': [0xCB, 0x7F],
-    // Stack Operations
-    'PUSH AF': [0xF5],
-    'POP AF': [0xF1],
-    'PUSH BC': [0xC5],
-    'POP BC': [0xC1],
-    'PUSH DE': [0xD5],
-    'POP DE': [0xD1],
-    'PUSH HL': [0xE5],
-    'POP HL': [0xE1],
-    // Input/Output Instructions
+
+    'LD A,(addr)': [0x3A, 'addr_low', 'addr_high'],
+    'LD (addr),A': [0x32, 'addr_low', 'addr_high'],
+    'LD HL,(addr)': [0x2A, 'addr_low', 'addr_high'],
+    'LD (addr),HL': [0x22, 'addr_low', 'addr_high'],
+    'LD (addr),nn': [0x32, 'addr_low', 'addr_high'], // Note: Adjust as needed
+
+    'LD (addr),BC': [0xED, 0x43, 'addr_low', 'addr_high'],
+    'LD (addr),DE': [0xED, 0x53, 'addr_low', 'addr_high'],
+    'LD (addr),SP': [0xED, 0x73, 'addr_low', 'addr_high'],
+    'LD BC,(addr)': [0xED, 0x4B, 'addr_low', 'addr_high'],
+    'LD DE,(addr)': [0xED, 0x5B, 'addr_low', 'addr_high'],
+    'LD SP,(addr)': [0xED, 0x7B, 'addr_low', 'addr_high'],
+
+    'INC IX': [0xDD, 0x23],
+    'DEC IX': [0xDD, 0x2B],
+    'INC IY': [0xFD, 0x23],
+    'DEC IY': [0xFD, 0x2B],
 };
 
 /**
@@ -470,15 +652,21 @@ function evaluateExpression(expr, lineNumber, line) {
 
     // Handle hexadecimal numbers starting with '#' or ending with 'H'/'h' or starting with '$' or starting with '0x'
     expr = expr.replace(/0x([0-9A-Fa-f]+)/g, (match, p1) => {
+        // Return decimal evaluation of hexidecimal number
+        return parseInt(p1, 16);
+
         return `0x${p1}`;
     });
     expr = expr.replace(/\$([0-9A-Fa-f]+)/g, (match, p1) => {
+        return parseInt(p1, 16);
         return `0x${p1}`;
     });
     expr = expr.replace(/#([0-9A-Fa-f]+)/g, (match, p1) => {
+        return parseInt(p1, 16);
         return `0x${p1}`;
     });
     expr = expr.replace(/([0-9A-Fa-f]+)[Hh]/g, (match, p1) => {
+        return parseInt(p1, 16);
         return `0x${p1}`;
     });
 
@@ -504,6 +692,66 @@ function evaluateExpression(expr, lineNumber, line) {
         return eval(expr);
     } catch (e) {
         throw new Error(`Line ${lineNumber}: Invalid expression: ${expr}\n"${line}"`);
+    }
+}
+
+function normalizeOperand(op, idx, instruction) {
+    const upperOp = op.toUpperCase();
+    console.log(`normalizeOperand: op=${op}, idx=${idx}, instruction=${instruction.mnemonic}`);
+
+    if (sixteenBitRegisters.includes(upperOp)) {
+        console.log(`normalizeOperand: ${op} is a 16-bit register`);
+        return upperOp;
+    } else if (eightBitRegisters.includes(upperOp)) {
+        console.log(`normalizeOperand: ${op} is an 8-bit register`);
+        return upperOp;
+    } else if (conditionCodes.includes(upperOp)) {
+        console.log(`normalizeOperand: ${op} is a condition code`);
+        return upperOp;
+    } else if (op.startsWith('(') && op.endsWith(')')) {
+        const inner = op.slice(1, -1);
+        const upperInner = inner.toUpperCase();
+        if (allRegisters.includes(upperInner)) {
+            console.log(`normalizeOperand: ${op} is a register indirect`);
+            return `(${upperInner})`;
+        } else {
+            console.log(`normalizeOperand: ${op} is an address`);
+            return '(addr)';
+        }
+    } else if (/^'.'$/s.test(op) || !isNaN(parseInt(op))) {
+        console.log(`normalizeOperand: ${op} is a numeric value`);
+        return 'n';
+    } else {
+        // Decide based on instruction and operand index
+        if (['JP', 'CALL'].includes(instruction.mnemonic)) {
+            console.log(`normalizeOperand: ${op} is a 16-bit immediate value for JP or CALL`);
+            return 'nn';
+        } else if (instruction.mnemonic === 'JR') {
+            if (idx === 0 && conditionCodes.includes(upperOp)) {
+                console.log(`normalizeOperand: ${op} is a condition code for JR`);
+                return upperOp;
+            } else {
+                console.log(`normalizeOperand: ${op} is an 8-bit offset for JR`);
+                return 'e';
+            }
+        } else if (instruction.mnemonic === 'LD') {
+            if (idx === 1 && sixteenBitRegisters.includes(instruction.operands[0].toUpperCase())) {
+                console.log(`normalizeOperand: ${op} is a 16-bit immediate value for LD`);
+                return 'nn';
+            } else if (idx === 1 && !isNaN(parseInt(op))) {
+                console.log(`normalizeOperand: ${op} is a 16-bit immediate value for LD`);
+                return 'nn';
+            } else if (idx === 1 && /^0x[0-9A-Fa-f]+$/.test(op)) {
+                console.log(`normalizeOperand: ${op} is a 16-bit immediate value for LD`);
+                return 'nn';
+            } else {
+                console.log(`normalizeOperand: ${op} is an 8-bit immediate value for LD`);
+                return 'n';
+            }
+        } else {
+            console.log(`normalizeOperand: ${op} is an 8-bit immediate value`);
+            return 'n';
+        }
     }
 }
 
@@ -561,29 +809,7 @@ function encodeInstruction(instruction, locationCounter, lineNumber, line) {
      * @param {string[]} operands - The array of operands to normalize.
      * @returns {string[]} The array of normalized operands.
      */
-    const normalizedOperands = operands.map(op => {
-        // Check if the operand is a 16-bit register
-        if (sixteenBitRegisters.includes(op.toUpperCase())) {
-            return op.toUpperCase();
-        } else if (eightBitRegisters.includes(op.toUpperCase())) {
-            return op.toUpperCase();
-        } else if (op.startsWith('(') && op.endsWith(')')) {
-            // Check if the operand is a memory address that is dereferenced by a register
-            const addr = op.slice(1, -1);
-            if (allRegisters.includes(addr.toUpperCase())) {
-                return `(${addr.toUpperCase()})`;
-            } else {
-                return '(addr)';
-            }
-        } else if (/^'.'$/s.test(op)) {
-            // Character literal
-            return 'n';
-        } else if (!isNaN(parseInt(op))) {
-            return 'n';
-        } else {
-            return op;
-        }
-    });
+    const normalizedOperands = operands.map((op, idx) => normalizeOperand(op, idx, instruction));
     key += ' ' + normalizedOperands.join(',');
 
     // Replace known symbols in operands with their values
@@ -641,6 +867,10 @@ function encodeInstruction(instruction, locationCounter, lineNumber, line) {
                     // Check if the first operand is a 16-bit register
                     const firstOperand = operands[0].slice(1, -1);
                     if (sixteenBitRegisters.includes(firstOperand)) {
+                        return 'nn';
+                    }
+                    // Check if the first operand is a 8-bit register
+                    else if (eightBitRegisters.includes(firstOperand)) {
                         return 'n';
                     }
                     // If not, it's an invalid instruction
@@ -847,46 +1077,9 @@ function assemble(assemblyCode) {
             // Estimate size based on opcode template
             let key = instruction.mnemonic;
             let operands = instruction.operands;
-            // Updated operand normalization
-            const normalizedOperands = operands.map((op, idx) => {
-                const upperOp = op.toUpperCase();
-                if (sixteenBitRegisters.includes(upperOp)) {
-                    return upperOp;
-                } else if (eightBitRegisters.includes(upperOp)) {
-                    return upperOp;
-                } else if (conditionCodes.includes(upperOp)) {
-                    return upperOp;
-                } else if (op.startsWith('(') && op.endsWith(')')) {
-                    const inner = op.slice(1, -1);
-                    const upperInner = inner.toUpperCase();
-                    if (allRegisters.includes(upperInner)) {
-                        return `(${upperInner})`;
-                    } else {
-                        return '(addr)';
-                    }
-                } else if (/^'.'$/s.test(op) || !isNaN(parseInt(op))) {
-                    return 'n';
-                } else {
-                    // Decide based on instruction and operand index
-                    if (['JP', 'CALL'].includes(instruction.mnemonic)) {
-                        return 'nn';
-                    } else if (instruction.mnemonic === 'JR') {
-                        if (idx === 0 && conditionCodes.includes(upperOp)) {
-                            return upperOp;
-                        } else {
-                            return 'e';
-                        }
-                    } else if (instruction.mnemonic === 'LD') {
-                        if (idx === 1 && sixteenBitRegisters.includes(operands[0].toUpperCase())) {
-                            return 'nn';
-                        } else {
-                            return 'n';
-                        }
-                    } else {
-                        return 'n';
-                    }
-                }
-            });
+            // Operand normalization
+            const normalizedOperands = operands.map((op, idx) => normalizeOperand(op, idx, instruction));
+
             if (normalizedOperands.length > 0) {
                 key += ' ' + normalizedOperands.join(',');
             }
@@ -1037,155 +1230,6 @@ ${dataFormatSpecificBoilerPlate}
 2040 X=USR(0)`
 }
 
-function bla() {
-    // Generate LD r,r' instructions
-    const registers = ['B', 'C', 'D', 'E', 'H', 'L', '(HL)', 'A'];
-    registers.forEach((dest, destIndex) => {
-        registers.forEach((src, srcIndex) => {
-            const key = `LD ${dest},${src}`;
-            const opcode = 0x40 + destIndex * 8 + srcIndex;
-            opcodeMap[key] = [opcode];
-        });
-    });
-
-    // LD r,n instructions
-    ['B', 'C', 'D', 'E', 'H', 'L', 'A'].forEach((reg, index) => {
-        const key = `LD ${reg},n`;
-        const opcode = 0x06 + index * 8;
-        opcodeMap[key] = [opcode, 'n'];
-    });
-
-    // LD (IX+d),r
-    ['B', 'C', 'D', 'E', 'H', 'L', 'A'].forEach((reg, regCode) => {
-        const key = `LD (IX+d),${reg}`;
-        opcodeMap[key] = [0xDD, 0x70 + regCode, 'd'];
-    });
-
-    // LD r,(IX+d)
-    ['B', 'C', 'D', 'E', 'H', 'L', 'A'].forEach((reg, regCode) => {
-        const key = `LD ${reg},(IX+d)`;
-        opcodeMap[key] = [0xDD, 0x46 + regCode * 8, 'd'];
-    });
-
-    // Similar for IY
-    // LD (IY+d),r
-    ['B', 'C', 'D', 'E', 'H', 'L', 'A'].forEach((reg, regCode) => {
-        const key = `LD (IY+d),${reg}`;
-        opcodeMap[key] = [0xFD, 0x70 + regCode, 'd'];
-    });
-
-    // LD r,(IY+d)
-    ['B', 'C', 'D', 'E', 'H', 'L', 'A'].forEach((reg, regCode) => {
-        const key = `LD ${reg},(IY+d)`;
-        opcodeMap[key] = [0xFD, 0x46 + regCode * 8, 'd'];
-    });
-
-    // CP r
-    ['A', 'B', 'C', 'D', 'E', 'H', 'L', '(HL)'].forEach((reg, regCode) => {
-        const key = `CP ${reg}`;
-        const opcode = 0xB8 + regCode;
-        opcodeMap[key] = [opcode];
-    });
-
-    // CP n
-    opcodeMap['CP n'] = [0xFE, 'n'];
-
-    // CP (IX+d)
-    opcodeMap['CP (IX+d)'] = [0xDD, 0xBE, 'd'];
-
-    // CP (IY+d)
-    opcodeMap['CP (IY+d)'] = [0xFD, 0xBE, 'd'];
-
-    // ADD A,r
-    ['A', 'B', 'C', 'D', 'E', 'H', 'L', '(HL)'].forEach((reg, regCode) => {
-        const key = `ADD A,${reg}`;
-        const opcode = 0x80 + regCode;
-        opcodeMap[key] = [opcode];
-    });
-
-    // ADD A,n
-    opcodeMap['ADD A,n'] = [0xC6, 'n'];
-
-    // ADD A,(IX+d)
-    opcodeMap['ADD A,(IX+d)'] = [0xDD, 0x86, 'd'];
-
-    // ADD A,(IY+d)
-    opcodeMap['ADD A,(IY+d)'] = [0xFD, 0x86, 'd'];
-
-    // ADD HL,ss
-    const registerPairs = { 'BC': 0x00, 'DE': 0x01, 'HL': 0x02, 'SP': 0x03 };
-    Object.entries(registerPairs).forEach(([reg, code]) => {
-        const key = `ADD HL,${reg}`;
-        const opcode = 0x09 + code * 0x10;
-        opcodeMap[key] = [opcode];
-    });
-
-    // ADD IX,pp
-    const ixPairs = { 'BC': 0xDD09, 'DE': 0xDD19, 'IX': 0xDD29, 'SP': 0xDD39 };
-    Object.entries(ixPairs).forEach(([reg, opcode]) => {
-        const key = `ADD IX,${reg}`;
-        opcodeMap[key] = [(opcode >> 8) & 0xFF, opcode & 0xFF];
-    });
-
-    // Similar for IY
-    const iyPairs = { 'BC': 0xFD09, 'DE': 0xFD19, 'IY': 0xFD29, 'SP': 0xFD39 };
-    Object.entries(iyPairs).forEach(([reg, opcode]) => {
-        const key = `ADD IY,${reg}`;
-        opcodeMap[key] = [(opcode >> 8) & 0xFF, opcode & 0xFF];
-    });
-
-    // AND r
-    ['A', 'B', 'C', 'D', 'E', 'H', 'L', '(HL)'].forEach((reg, regCode) => {
-        const key = `AND ${reg}`;
-        const opcode = 0xA0 + regCode;
-        opcodeMap[key] = [opcode];
-    });
-
-    // AND n
-    opcodeMap['AND n'] = [0xE6, 'n'];
-
-    // AND (IX+d)
-    opcodeMap['AND (IX+d)'] = [0xDD, 0xA6, 'd'];
-
-    // AND (IY+d)
-    opcodeMap['AND (IY+d)'] = [0xFD, 0xA6, 'd'];
-
-    // JP nn
-    opcodeMap['JP nn'] = [0xC3, 'nn_low', 'nn_high'];
-
-    // JP cc,nn
-    ['NZ', 'Z', 'NC', 'C', 'PO', 'PE', 'P', 'M'].forEach((cc, index) => {
-        const opcode = 0xC2 + index * 8;
-        const key = `JP ${cc},nn`;
-        opcodeMap[key] = [opcode, 'nn_low', 'nn_high'];
-    });
-
-    // JP (HL)
-    opcodeMap['JP (HL)'] = [0xE9];
-
-    // JP (IX)
-    opcodeMap['JP (IX)'] = [0xDD, 0xE9];
-
-    // JP (IY)
-    opcodeMap['JP (IY)'] = [0xFD, 0xE9];
-
-    // JR e
-    opcodeMap['JR e'] = [0x18, 'e'];
-
-    // JR cc,e
-    ['NZ', 'Z', 'NC', 'C'].forEach((cc, index) => {
-        const opcode = 0x20 + index * 8;
-        const key = `JR ${cc},e`;
-        opcodeMap[key] = [opcode, 'e'];
-    });
-
-    for (const [key, value] of Object.entries(opcodeMap)) {
-        // Convert decimal values to hexadecimal
-        const hexValues = value.map(val => typeof val === 'number' ? `0x${val.toString(16).toUpperCase().padStart(2, '0')}` : val);
-        console.log(key, hexValues);
-    }
-}
-
 /**
  * Main entry point for the assembler script.
  * This function reads the assembly code from a file, assembles it into machine code,
@@ -1198,9 +1242,6 @@ function bla() {
  * @returns {void}
  */
 try {
-    bla();
-    return;
-
     const assemblyFilePath = process.argv[2] && !process.argv[2].startsWith('-') ? process.argv[2] : path.join(__dirname, 'assemblycode.asm');
     let outputFilePathIndex = process.argv.indexOf('-o');
     let outputFilePath = null;
