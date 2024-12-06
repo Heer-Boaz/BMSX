@@ -27,7 +27,7 @@
     "dagre": "*",
     "flatted": "*",
     "ftp-deploy": "*",
-    "gauge": "^5.0.1",
+    "gauge": "^5.0.1", // s
     "js-yaml": "*",
     "libkss-js": "*",
     "midi-file": "*",
