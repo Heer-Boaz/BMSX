@@ -120,14 +120,12 @@ export class TitleScreen extends SpriteObject {
 					process_input(this: TitleScreen) {
 						const priorityActions = $.input.getPlayerInput(1).getPressedActions({ pressed: true, consumed: false, filter: ['up', 'down', 'punch', 'highkick', 'lowkick', 'block'] });
 						// const actionmeuk = [`?j(up[ic], right) || &(down[ic], left)`, `?(left[j], right[j]) OR &(up[ic], down[ic])`, `right[aj]`];
-						const actionmeuk = [`right[t{>10}]`, `?(right[t{<=10}], ?j(left, down))`, `right[t{==5}]`];
+						const actionmeuk = [`right[t{>10}]`, `?(right[t{<=10}], ?j(left, down))`, `?j(right, left)`, `right[t{==5}]`];
 
 						const bla = actionmeuk.map(meuk => $.input.getPlayerInput(1).checkActionTriggered(meuk));
 						const meuk_and_bla = actionmeuk.map((meuk, i) => `${meuk} => ${bla[i]}`);
 						console.info(`${meuk_and_bla}`);
-						if (bla[2]) {
-							// $.consumeActions(1, 'down', 'up')
-						}
+						$.consumeActions(1, 'down', 'up')
 
 						// If no priority actions are pressed, do nothing.
 						if (!priorityActions || priorityActions.length === 0) {
