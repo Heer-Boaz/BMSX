@@ -1,0 +1,19 @@
+{
+    "extends": "../../tsconfig.json", // path to the main tsconfig.json file
+    "compilerOptions": {
+        "composite": true, /* Enable project compilation */
+        "declaration": true,
+        "rootDir": "../",
+        "tsBuildInfoFile": "./tsconfig.buildinfo",
+        "paths": {
+            "bmsx": [
+                "../bmsx/bmsx.ts"
+            ]
+        }
+    },
+    "include": [
+        ".",
+        "../bmsx/bmsx.ts",
+        "../bmsx/**/*"
+    ]
+}
