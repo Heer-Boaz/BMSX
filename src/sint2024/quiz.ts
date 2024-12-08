@@ -23,7 +23,7 @@ const vragen = [
 ];
 
 const antwoordA = [
-    "Precies! Bobby Charlton was een legende bij Manchester United!", //0
+    "Hmm, Liverpool is een geweldige club, maar niet de juiste hier. Bobby Charlton was een legende bij Manchester United!", //0
     "Helemaal goed! Johan Cruijff was in 1974 dé ster in Europa!", //1
     "Helemaal goed! Pelé bleef altijd trouw aan Brazilië.", //2
     "Haha, precies! Dat zou Oranje tenminste wat opleveren. Als Sinterklaas coach was, zou ik het ook zo doen!", //3 aangepast
@@ -45,7 +45,7 @@ const antwoordA = [
 ];
 
 const antwoordB = [
-    "Hmm, Liverpool is een geweldige club, maar niet de juiste hier. Bobby Charlton was een legende bij Manchester United!", //0
+    "Precies! Bobby Charlton was een legende bij Manchester United!", //0
     "In 1974 won Cruijff Europees voetballer van het jaar, niet de wereldbeker beste speler.", //1
     "Pelé had de Europese competities zeker aankunnen! Hij bleef echter trouw aan zijn thuisland.", //2
     "Oh nee, naar de keeper, zonder te kijken? Dat is precies waar jij je altijd aan ergert – en gelijk heb je! Zelfs Amerigo zou dat beter doen!", //3 aangepast
