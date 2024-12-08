@@ -54,6 +54,15 @@
         "reactionB": "Beethoven is prachtig,dat geef ik toe.\nMaar Larry Adler speelde Het Zwanenmeer,zoals mijn klassieke muziekpiet weet."
     },
     {
+        "question": "Wat delen de smurfen, \ndie altijd samen werken in harmonie?",
+        "options": [
+            "A) Alles",
+            "B) Royalties"
+        ],
+        "reactionA": "Juist![De smurfen delen...alles!]\nTot ergenis van de moeder van Gargamel.",
+        "reactionB": "Neen!Royalties?De smurfen ontbreekt het aan een financiensmurf.\nDe moeder van Gargamel weet te vertellen dat de smurfen alles delen."
+    },
+    {
         "question": "De hex Agatha kan Gargamel's naam niet goed onthouden.\nHoe noemt ze Gargamel in haar verwarring?",
         "options": [
             "A) Gaatnogwel",
@@ -153,13 +162,22 @@
         "reactionB": "Haha,kleiduivenschieten!Wat een fantasie!\nMaar nee,mijn spitspiet weet dat het echt te maken heeft met de beweging van het been."
     },
     {
-        "question": "Als een voetballer slechte techniek heeft,\nligt dat dan aan zijn benen,of toch aan de hersenen?",
+        "question": "Als een voetballer slechte techniek heeft,\nligt dat dan aan zijn benen,of toch aan het hoofd?",
         "options": [
             "A) De benen.",
-            "B) De hersenen."
+            "B) Het hoofd."
         ],
-        "reactionA": "Neen!De benen doen wat de hersenen bevelen.\nZelfs mijn bewegingswetenschapperpiet weet dat zonder twijfel.",
-        "reactionB": "Juist!De hersenen sturen de benen aan,\nen mijn sportpsychologiepiet zegt dat daar de basis moet staan."
+        "reactionA": "Neen!De benen doen wat het hoofd beveelt.\nZelfs mijn bewegingswetenschapperpiet weet dat zonder twijfel.",
+        "reactionB": "Juist!Het hoofd stuurt de benen aan,\nen mijn sportpsychologiepiet zegt dat daar de basis moet staan."
+    },
+    {
+        "question": "Wat is volgens de FIFA de juiste term voor het schieten van de bal, \nzoals het hoort op het hoogste niveau?",
+        "options": [
+            "A) Schieten",
+            "B) Schieeesssssss!!"
+        ],
+        "reactionA": "Neen!'Schieten' is niet de officiele term.\nMijn FIFA-piet weet dat de officiele term 'Schieeesssssss!!' is!",
+        "reactionB": "Juist!'Schieeesssssss!!' is de formele term voor het schieten van de bal.\nDaarnaast roept mijn voetbalcommentator-piet het bij elke keer dat we hopen dat iemand eens op doel gaat schieten!"
     },
     {
         "question": "Wat moet er op doelen komen te staan,\nzodat voetballers eindelijk weten waar ze moeten mikken?",
