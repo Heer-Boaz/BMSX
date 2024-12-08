@@ -4,6 +4,7 @@
         "composite": true, /* Enable project compilation */
         "declaration": true,
         "rootDir": "../",
+        "resolveJsonModule": true,
         "tsBuildInfoFile": "./tsconfig.buildinfo",
         "paths": {
             "bmsx": [
@@ -14,6 +15,7 @@
     "include": [
         ".",
         "../bmsx/bmsx.ts",
-        "../bmsx/**/*"
+        "../bmsx/**/*",
+        "./**/*.json"
     ]
 }
