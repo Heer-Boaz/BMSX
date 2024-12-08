@@ -1,6 +1,6 @@
 import { BFont, GameOptions as GO } from "./game";
 import { vec2, vec3 } from "./rompack";
-import { Color } from './view';
+import { Color, type DrawRectOptions } from './view';
 
 /**
  * A utility class for drawing text on the screen.
@@ -15,7 +15,7 @@ export class TextWriter {
      * @param _font The font to use for the text. If not specified, the default font will be used.
      * @param color The color to use for the text. If not specified, the default color will be used.
      */
-    public static drawText(x: number, y: number, textToWrite: string | string[], z: number = 950, _font?: BFont, color?: Color): void {
+    public static drawText(x: number, y: number, textToWrite: string | string[], z: number = 950, _font?: BFont, color?: Color, backgroundColor?: Color): void {
         let font = _font ?? $.view.default_font;
         let startPos: vec2 = { x: x, y: y };
         let stepX: number = font.char_width;
@@ -29,6 +29,12 @@ export class TextWriter {
         */
         const draw_string = function (text): boolean {
             for (let i: number = 0; i < text.length; i++) {
+                if (backgroundColor) {
+                    // Fill rectangle behind the character
+                    const rectoptions: DrawRectOptions = { area: { start: { x: pos.x, y: pos.y }, end: { x: pos.x + stepX, y: pos.y + stepY } }, color: backgroundColor };
+                    $.view.fillRectangle(rectoptions);
+                }
+
                 $.view.drawImg({ imgid: font.char_to_img(text[i]), pos, colorize: color });
                 pos.x += stepX;
             }
