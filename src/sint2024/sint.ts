@@ -5,10 +5,9 @@ import { SpriteObject, StateMachineBlueprint, build_fsm, insavegame } from '../b
 export class sint extends SpriteObject {
     constructor() {
         super('sint');
-        this.setimg('hmm');
     }
 
-    private setimg(imgid: string) {
+    public setimg(imgid: string) {
         this.imgid = imgid; // Set the image to be displayed to 'hmm' so that the size properties are calculated
         if (this.imgid !== 'none') {
             const gamescreenSize = $.getViewportSize();
@@ -21,7 +20,18 @@ export class sint extends SpriteObject {
     static bouw(): StateMachineBlueprint {
         return {
             states: {
-                _weg: {
+                _start: {
+                    on: {
+                        vraag: 'vraag',
+                        antwoord: 'antwoord',
+                        klaar: 'klaar',
+                        weg: 'weg',
+                    },
+                    enter(this: sint) {
+                        this.setimg('quiz');
+                    },
+                },
+                weg: {
                     on: {
                         vraag: 'vraag',
                         antwoord: 'antwoord',

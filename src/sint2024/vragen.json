@@ -1,6 +1,7 @@
 [
     {
         "question": "Welke film kwam eerder uit,\neen episch verhaal dat kijkers betoverde?",
+        "imgid": "film",
         "options": [
             "A) Samson en Delilah",
             "B) Ben-Hur"
@@ -100,6 +101,7 @@
     },
     {
         "question": "Welke aanval maakte Big Daddy legendarisch,\neen worstelaar die zijn tegenstanders deed sidderen?",
+        "imgid": "sport",
         "options": [
             "A) De 'belly splash'.",
             "B) De 'flying elbow smash'."
@@ -196,6 +198,15 @@
         ],
         "reactionA": "Juist!Als je schiet,kan de bal abgefalscht worden en alsnog het net raken.\nMijn aanvalspieten zeggen altijd: wie niet waagt,die niet scoort!",
         "reactionB": "Neen!Bang zijn voor een counter is wat mijn tactiekpiet 'doelloos' noemt.\nHet doel is om te scoren,en dat doe je alleen als je durft te schieten!"
+    },
+    {
+        "question": "Voetbal ontwikkelt zich constant,\nen nieuwe ideeën over tactiek veranderen het spel.\nWat zijn de nieuwste inzichten over het krijgen van tegendoelpunten?",
+        "options": [
+            "A) Moderne coaches focussen op een goede verdediging als basis.",
+            "B) Moderne coaches weten dat je gewoon meer moet scoren dan de tegenstander."
+        ],
+        "reactionA": "Neen!Een goede verdediging is belangrijk,dat geef ik toe,\nmaar mijn Arno-Slot-piet zegt altijd:als de tegenstander 9 keer scoort en jij scoort er 10,dan win je!",
+        "reactionB": "Juist!Moderne coaches weten dat scoren de sleutel is.\nMijn Arno-Slot-piet zegt altijd:als de tegenstander 9 keer scoort en jij scoort er 10,dan win je!"
     },
     {
         "question": "Naar wie spelen de voetballers van Ajax en Oranje altijd de bal,\nzonder te kijken en tot ergernis van velen?",

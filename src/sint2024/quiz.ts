@@ -1,8 +1,10 @@
 import { GameObject, StateMachineBlueprint, build_fsm, insavegame, type State } from '../bmsx/bmsx';
+import type { sint } from './sint';
 import quizItemsData from './vragen.json';
 
 interface QuizItem {
     question: string;
+    imgid?: string;
     options: string[];
     reactionA: string;
     reactionB: string;
@@ -184,6 +186,9 @@ export class quiz extends GameObject {
 
                         const idx = state.current_tape_value;
                         const currentQ = quizItems[idx];
+                        if (currentQ.imgid) {
+                            $.getGameObject<sint>('sint').setimg(currentQ.imgid);
+                        }
                         this.setTextFromLines([
                             `Vraag ${idx + 1}/${quizItems.length}: ${currentQ.question}`,
                             ...currentQ.options
