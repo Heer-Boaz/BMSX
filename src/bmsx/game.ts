@@ -388,7 +388,7 @@ export class BFont {
 			case ':':
 				letter = _font_res_map.letter_colon;
 				break;
-			case '-':
+			case '-': case '–':
 				letter = _font_res_map.letter_streep;
 				break;
 			case '/':
@@ -947,8 +947,8 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		this.view.fillRectangle(options);
 	}
 
-	public drawText(x: number, y: number, textToWrite: string | string[], z: number = 950, _font?: BFont, color?: Color): void {
-		TextWriter.drawText(x, y, textToWrite, z, _font, color);
+	public drawText(x: number, y: number, textToWrite: string | string[], z: number = 950, font?: BFont, color?: Color, backgroundColor?: Color): void {
+		TextWriter.drawText(x, y, textToWrite, z, font, color, backgroundColor);
 	}
 
 	public playAudio(id: string): void {

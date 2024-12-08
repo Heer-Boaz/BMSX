@@ -83,6 +83,11 @@ export type StateTransition = {
 	 * The transition type: 'to' or 'switch', where 'to' is the default.
 	 */
 	transition_type?: TransitionType;
+
+	/**
+	 * If set to `true`, the state will transition to the same state, even if the state is already the current state.
+	 */
+	force_transition_to_same_state?: boolean;
 };
 
 /**
@@ -1197,9 +1202,12 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 						// The do-handler can return a state ID to transition to, otherwise it can return undefined to indicate that no transition should occur or to indicate that the target state should be used.
 						const next_state = doHandler?.call(this.target, this as State<T>);
 						const next_state_transition = this.getNextState(next_state); // Get the state transition object from the next state
+						if (next_state_transition && (next_state_transition.force_transition_to_same_state && next_state_transition.transition_type != 'to')) {
+							throw new Error(`The 'force_transition_to_same_state' property is only allowed for 'to' transitions, not for 'switch' transitions!`);
+						}
 
 						// If the next state is not the current state, transition to the next state
-						if (next_state_transition && next_state_transition.state_id !== this.currentid) {
+						if (next_state_transition && (next_state_transition.state_id !== this.currentid || next_state_transition.force_transition_to_same_state)) {
 							if (next_state_transition.transition_type === 'to' || !next_state_transition.transition_type) {
 								this.to(next_state_transition.state_id, ...next_state_transition.args);
 							} else if (next_state_transition.transition_type === 'switch') {
@@ -1281,9 +1289,12 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 				// The do-handler can return a state ID to transition to, otherwise it can return undefined to indicate that no transition should occur or to indicate that the target state should be used.
 				const next_state_from_do = run_check.do?.call(this.target, this as State<T>);
 				const next_state_transition_from_do = this.getNextState(next_state_from_do); // Get the state transition object from the next state
+				if (next_state_transition_from_do && (next_state_transition_from_do.force_transition_to_same_state && next_state_transition_from_do.transition_type != 'to')) {
+					throw new Error(`The 'force_transition_to_same_state' property is only allowed for 'to' transitions, not for 'switch' transitions!`);
+				}
 
 				// Transition to the state that was returned from the `do` handler, if it is not the current state
-				if (next_state_transition_from_do && next_state_transition_from_do.state_id !== this.currentid) {// If the next state is not the current state, transition to the next state
+				if (next_state_transition_from_do && (next_state_transition_from_do.state_id !== this.currentid || next_state_transition_from_do.force_transition_to_same_state)) {// If the next state is not the current state, transition to the next state
 					if (next_state_transition_from_do.transition_type === 'to' || !next_state_transition_from_do.transition_type) {
 						this.to(next_state_transition_from_do.state_id, ...next_state_transition_from_do.args);
 					} else if (next_state_transition_from_do.transition_type === 'switch') {
@@ -1401,7 +1412,6 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 * @param args - Optional arguments to pass to the new state. These arguments are passed on to the 'to' or 'switch' methods.
 	 */
 	to(state_id: Identifier, ...args: any[]): void {
-		if (this.def_id === state_id) return; // Don't switch to the same state
 		if (state_id.startsWith('#this.')) { // If the state is local, switch to the state in the current state machine
 			// Remove the '#this.' prefix and continue to the next state from the substate
 			const restParts = state_id.slice('#this.'.length);
@@ -1439,7 +1449,6 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 * @param args - Optional arguments to pass to the new state. These arguments are passed on to the 'to' or 'switch' methods.
 	 */
 	switch(state_id: Identifier, ...args: any[]): void {
-		if (this.def_id === state_id) return; // Don't switch to the same state
 		if (state_id.startsWith('#this.')) {
 			// Remove the '#this.' prefix and continue to the next state from the substate
 			const restParts = state_id.slice('#this.'.length);
@@ -1710,9 +1719,12 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 					// The do-handler can return a state ID to transition to, otherwise it can return undefined to indicate that no transition should occur or to indicate that the target state should be used.
 					const next_state = doHandler?.call(this.target, this as State<T>, ...args);
 					const next_state_transition = this.getNextState(next_state); // Get the state transition object from the next state
+					if (next_state_transition && (next_state_transition.force_transition_to_same_state && next_state_transition.transition_type != 'to')) {
+						throw new Error(`The 'force_transition_to_same_state' property is only allowed for 'to' transitions, not for 'switch' transitions!`);
+					}
 
 					// If the next state is not the current state, transition to the next state
-					if (next_state_transition && next_state_transition.state_id !== this.currentid) {
+					if (next_state_transition && (next_state_transition.state_id !== this.currentid || next_state_transition.force_transition_to_same_state)) {
 						if (next_state_transition.transition_type === 'to' || !next_state_transition.transition_type) {
 							this.to(next_state_transition.state_id, ...next_state_transition.args, ...args);
 						} else if (next_state_transition.transition_type === 'switch') {
@@ -2001,11 +2013,25 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	}
 
 	/**
+	 * Resets the tape to its initial state by rewinding the tapehead to the beginning
+	 * and resetting the tick counter.
+	 *
+	 * This method performs the following actions:
+	 * - Sets the tapehead position to the start index.
+	 * - Resets the tick counter to zero.
+	 *
+	 * @public
+	 */
+	public rewind_tape() {
+		this.setHeadNoSideEffect(TAPE_START_INDEX); // Reset the tapehead to the beginning of the tape
+		this.setTicksNoSideEffect(0); // Reset the ticks
+	}
+
+	/**
 	 * Resets the state machine by setting the tapehead and ticks to 0 and the ticks2move to the value defined in the state machine definition.
 	 */
 	public reset(reset_tree: boolean = true): void {
-		this.setHeadNoSideEffect(TAPE_START_INDEX); // Reset the tapehead to the beginning of the tape
-		this.setTicksNoSideEffect(0); // Reset the ticks
+		this.rewind_tape(); // Rewind the tape
 		if (!this.definition) return; // No definition exists for the empty 'none'-state
 		this.data = { ...this.definition.data }; // Reset the state data by shallow copying the definition's data
 		if (reset_tree) this.resetSubmachine(); // Reset the substate machine if it exists
