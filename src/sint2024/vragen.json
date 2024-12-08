@@ -6,7 +6,7 @@
             "A) Samson en Delilah",
             "B) Ben-Hur"
         ],
-        "reactionA": "Juist!Samson en Delilah was eerder.\nMijn IMDB-pieter hebben dat allang in de archieven vastgelegd.",
+        "reactionA": "Juist! Samson en Delilah was eerder.\nMijn IMDB-pieter hebben dat allang in de archieven vastgelegd.",
         "reactionB": "Nee,Ben-Hur kwam later uit.\nMaar beide films blijven meesterwerken,zoals mijn IMDB-piet altijd zegt."
     },
     {
@@ -15,7 +15,7 @@
             "A) Victor Mature",
             "B) Kirk Douglas"
         ],
-        "reactionA": "Juist!Victor Mature was de ster in deze klassieker.\nMijn filmrecensiepiet noemt hem een van de groten uit die tijd.",
+        "reactionA": "Juist! Victor Mature was de ster in deze klassieker.\nMijn filmrecensiepiet noemt hem een van de groten uit die tijd.",
         "reactionB": "Nee,Kirk Douglas is groots,dat weet ik wel.\nMaar in deze film speelde Victor Mature de hoofdrol."
     },
     {
@@ -24,7 +24,7 @@
             "A) Ben-Hur en The Ten Commandments",
             "B) Cleopatra en Spartacus"
         ],
-        "reactionA": "Juist!Heston speelde groots in Ben-Hur en The Ten Commandments.\nMijn retro-pieten hebben dit vastgelegd in mijn grote boek der klassiekers.",
+        "reactionA": "Juist! Heston speelde groots in Ben-Hur en The Ten Commandments.\nMijn retro-pieten hebben dit vastgelegd in mijn grote boek der klassiekers.",
         "reactionB": "Een logische keuze,maar helaas niet correct.\nMijn retro-piet kan bevestigen dat Heston juist in Ben-Hur en The Ten Commandments schitterde."
     },
     {
@@ -33,7 +33,7 @@
             "A) Specht",
             "B) Eekhoorn"
         ],
-        "reactionA": "Juist!Pivert betekent 'specht',passend bij zijn scherpe karakter!",
+        "reactionA": "Juist! Pivert betekent 'specht',passend bij zijn scherpe karakter!",
         "reactionB": "Eekhoorns zijn leuke dieren (zolang ze geen hondsdolheid hebben)!Toch betekent Pivert 'specht',wat passend is bij zijn scherpe karakter!"
     },
     {
@@ -42,7 +42,7 @@
             "A) Een massale vloot aan schepen.",
             "B) Een luchtmacht vol vliegtuigen."
         ],
-        "reactionA": "Juist!De massale vloot aan schepen is een indrukwekkend moment in de film.\nMijn kunsthistoriepiet noemt het een meesterlijke weergave van D-Day,die nooit vergeten mag worden.",
+        "reactionA": "Juist! De massale vloot aan schepen is een indrukwekkend moment in de film.\nMijn kunsthistoriepiet noemt het een meesterlijke weergave van D-Day,die nooit vergeten mag worden.",
         "reactionB": "Nee,een luchtmacht vol vliegtuigen was ook indrukwekkend,\nmaar in deze scene draait het om de schepen die plots de horizon vullen.Bovendien zou het te duur zijn geweest om zo'n scene te maken."
     },
     {
@@ -133,7 +133,7 @@
             "A) Europees voetballer van het jaar.",
             "B) Wereldbeker beste speler."
         ],
-        "reactionA": "Juist!In 1974 werd Johan Cruijff gekroond tot de beste van Europa.\nMijn voetbalpieten herinneren zich zijn briljante acties nog goed,alsof het gisteren was!",
+        "reactionA": "Juist! In 1974 werd Johan Cruijff gekroond tot de beste van Europa.\nMijn voetbalpieten herinneren zich zijn briljante acties nog goed,alsof het gisteren was!",
         "reactionB": "Neen,helaas!Cruijff heeft nooit de wereldbeker beste speler gewonnen,maar het was zeker wel terecht geweest!\nMaar in Europa stond hij dat jaar wel bovenaan!"
     },
     {
@@ -142,7 +142,7 @@
             "A) Hij bleef trouw aan Brazilie.",
             "B) Hij vond Europese competities te moeilijk."
         ],
-        "reactionA": "Juist!Pele bleef trouw aan zijn thuisland.\nMijn voetbalpieten piekeren nog steeds over hoe Pele zou hebben gevaren in het Europese voetbalspel.",
+        "reactionA": "Juist! Pele bleef trouw aan zijn thuisland.\nMijn voetbalpieten piekeren nog steeds over hoe Pele zou hebben gevaren in het Europese voetbalspel.",
         "reactionB": "Nee,moeilijk vond hij het zeker niet!\nZelfs mijn voetbalanalysepiet denkt dat Pele de Europese competities had kunnen domineren,maar zijn hart lag in Brazilie."
     },
     {
@@ -200,7 +200,7 @@
         "reactionB": "Neen!Bang zijn voor een counter is wat mijn tactiekpiet 'doelloos' noemt.\nHet doel is om te scoren,en dat doe je alleen als je durft te schieten!"
     },
     {
-        "question": "Voetbal ontwikkelt zich constant,\nen nieuwe ideeën over tactiek veranderen het spel.\nWat zijn de nieuwste inzichten over het krijgen van tegendoelpunten?",
+        "question": "Voetbal ontwikkelt zich constant,\nen nieuwe ideeen over tactiek veranderen het spel.\nWat zijn de nieuwste inzichten over het krijgen van tegendoelpunten?",
         "options": [
             "A) Moderne coaches focussen op een goede verdediging als basis.",
             "B) Moderne coaches weten dat je gewoon meer moet scoren dan de tegenstander."
