@@ -1,4 +1,7 @@
-import { BaseModel, Direction, GLView, Game, GameObject, GamepadInputMapping, GamepadButton, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, RomPack, StateMachineBlueprint, build_fsm, insavegame, new_vec2, type State } from '../bmsx/bmsx';
+import { BaseModel, Direction, GLView, Game, GameObject, GamepadInputMapping, GamepadButton, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, RomPack, StateMachineBlueprint, build_fsm, insavegame, new_vec2, type State, BFont } from '../bmsx/bmsx';
+import { quiz } from './quiz';
+import { sint } from './sint';
+import { BitmapId } from './resourceids';
 
 var _game: Game;
 let _model: gamemodel;
@@ -9,6 +12,7 @@ const _global = window || global;
 _global['h406A'] = (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode, debug: boolean = false): void => {
     _model = new gamemodel();
     _view = new gameview(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
+    _view.default_font = new BFont(BitmapId);
     _game = new Game(rom, _model, _view, sndcontext, gainnode, debug);
     _game.start();
 };
@@ -61,6 +65,12 @@ class gamemodel extends BaseModel {
                     }
                 },
                 default: {
+                    enter(this: gamemodel) {
+                        let q = new quiz();
+                        $.spawn(q);
+                        let s = new sint();
+                        $.spawn(s);
+                    },
                     run: BaseModel.defaultrun,
                 },
             }
@@ -80,7 +90,7 @@ class gamemodel extends BaseModel {
     }
 
     public override do_one_time_game_init(): this {
-
+        $.setInputMap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping });
         return this;
     }
 

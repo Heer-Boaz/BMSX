@@ -27,6 +27,8 @@ export enum BitmapId {
 	letter_f = 'letter_f',
 	letter_g = 'letter_g',
 	letter_h = 'letter_h',
+	letter_haakjeopen = 'letter_haakjeopen',
+	letter_haakjesluit = 'letter_haakjesluit',
 	letter_i = 'letter_i',
 	letter_ij = 'letter_ij',
 	letter_j = 'letter_j',

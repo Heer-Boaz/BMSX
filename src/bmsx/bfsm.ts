@@ -131,14 +131,14 @@ interface IStateGuard<T extends IStateful & IEventSubscriber = any> {
 	 * @this {T} - The stateful object.
 	 * @returns {boolean} - Returns `true` if the state can be entered, otherwise `false`.
 	 */
-	canEnter?: (this: T, current_state: State) => boolean;
+	canEnter?: (this: T, state: State) => boolean;
 
 	/**
 	 * Checks if the state can be exited.
 	 * @this {T} - The stateful object.
 	 * @returns {boolean} - Returns `true` if the state can be exited, otherwise `false`.
 	 */
-	canExit?: (this: T, current_state: State) => boolean;
+	canExit?: (this: T, state: State) => boolean;
 }
 
 /**
@@ -1200,7 +1200,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 
 						// If the next state is not the current state, transition to the next state
 						if (next_state_transition && next_state_transition.state_id !== this.currentid) {
-							if (next_state_transition.transition_type === 'to') {
+							if (next_state_transition.transition_type === 'to' || !next_state_transition.transition_type) {
 								this.to(next_state_transition.state_id, ...next_state_transition.args);
 							} else if (next_state_transition.transition_type === 'switch') {
 								this.switch(next_state_transition.state_id, ...next_state_transition.args);
@@ -1284,7 +1284,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 
 				// Transition to the state that was returned from the `do` handler, if it is not the current state
 				if (next_state_transition_from_do && next_state_transition_from_do.state_id !== this.currentid) {// If the next state is not the current state, transition to the next state
-					if (next_state_transition_from_do.transition_type === 'to') {
+					if (next_state_transition_from_do.transition_type === 'to' || !next_state_transition_from_do.transition_type) {
 						this.to(next_state_transition_from_do.state_id, ...next_state_transition_from_do.args);
 					} else if (next_state_transition_from_do.transition_type === 'switch') {
 						this.switch(next_state_transition_from_do.state_id, ...next_state_transition_from_do.args);
@@ -1507,13 +1507,13 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 
 		// Check if the current state has a canExit guard and if it returns false, prevent the transition
 		if (currentStateDefinition.guards?.canExit && !currentStateDefinition.guards.canExit.call(this.target, this)) {
-			// console.debug(`Cannot exit state: ${currentStateDefinition.id}`);
 			return false;
 		}
 
+		// Get the target state itself (and not the definition) to check the canEnter guard
+		const target_state = this.states[target_state_id];
 		// Check if the target state has a canEnter guard and if it returns false, prevent the transition
-		if (targetStateDefinition.guards?.canEnter && !targetStateDefinition.guards.canEnter.call(this.target, this)) {
-			// console.debug(`Cannot enter state: ${target_state_id}`);
+		if (targetStateDefinition.guards?.canEnter && !targetStateDefinition.guards.canEnter.call(this.target, target_state)) {
 			return false;
 		}
 
@@ -1530,7 +1530,6 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 */
 	private transitionToState(state_id: Identifier, transition_type: TransitionType, ...args: any[]): void {
 		if (this.critical_section_counter > 0) {
-			// console.debug(`>> '${this.id}.${state_id}'`);
 			this.transition_queue.push({ state_id: state_id, args: args, transition_type: transition_type ?? 'to' });
 			return;
 		}
@@ -1714,7 +1713,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 
 					// If the next state is not the current state, transition to the next state
 					if (next_state_transition && next_state_transition.state_id !== this.currentid) {
-						if (next_state_transition.transition_type === 'to') {
+						if (next_state_transition.transition_type === 'to' || !next_state_transition.transition_type) {
 							this.to(next_state_transition.state_id, ...next_state_transition.args, ...args);
 						} else if (next_state_transition.transition_type === 'switch') {
 							this.switch(next_state_transition.state_id, ...next_state_transition.args, ...args);
@@ -1837,10 +1836,13 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 */
 	protected get beyond_tapeend(): boolean { return !this.tape || this.head >= this.tape.length; } // Note that beyond end also returns true if there is no tape!
 
-	// Determines whether the tape head is currently at the start of the tape.
-	// Returns true if the tape head is at the start of the tape, false otherwise.
-	// Note that this function assumes that the tape head is within the bounds of the tape.
-	public get at_tape_start(): boolean { return this.head === TAPE_START_INDEX; }
+	/**
+	 * Returns whether the tape head is currently before the start of the tape,
+	 * which is given by index `-1`.
+	 * If there is no tape, it also returns true.
+	 * @returns A boolean value indicating whether the tape head is before the start of the tape.
+	 */
+	public get tape_rewound(): boolean { return this.head === TAPE_START_INDEX; }
 
 	/**
 	 * Generates a unique identifier for the current instance.

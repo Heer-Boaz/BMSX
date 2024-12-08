@@ -1,4 +1,4 @@
-﻿import { BaseModel, GameObject, TextWriter } from "./bmsx";
+﻿import { BaseModel, GameObject, TextWriter, type InputMap } from "./bmsx";
 import { EventEmitter } from "./eventemitter";
 import { ActionState, ActionStateQuery, Input } from "./input";
 import { MSX2ScreenWidth, MSX2ScreenHeight } from "./msx";
@@ -402,6 +402,12 @@ export class BFont {
 				break;
 			case ']':
 				letter = _font_res_map.letter_speakend;
+				break;
+			case '(':
+				letter = _font_res_map.letter_haakjeopen;
+				break;
+			case ')':
+				letter = _font_res_map.letter_haakjesluit;
 				break;
 			default:
 				letter = _font_res_map.letter_question;
@@ -957,6 +963,14 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		SM.stopMusic();
 	}
 
+	public setInputMap(playerIndex: number, map: InputMap): void {
+		this.input.getPlayerInput(playerIndex).setInputMap(map);
+	}
+
+	public checkActionTriggered(playerIndex: number, action: string): boolean {
+		return this.input.getPlayerInput(playerIndex).checkActionTriggered(action);
+	}
+
 	public getActionState(playerIndex: number, action: string) {
 		return this.input.getPlayerInput(playerIndex).getActionState(action);
 	}
@@ -975,6 +989,10 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 
 	public hideOnscreenGamepadButtons(gamepad_button_ids: string[]): void {
 		this.input.hideOnscreenGamepadButtons(gamepad_button_ids);
+	}
+
+	public getViewportSize(): Size {
+		return this.view.viewportSize;
 	}
 
 	// public getKeyState(playerIndex: number, key: string) {
