@@ -29,11 +29,8 @@ export class RoomMgr {
     }
 
     public transitionToRoom(_room_id: string) {
-        // Handle the logic to move to an adjacent room
-        // Update currentRoom and adjacent rooms
+        // Do nothing for now
     }
-
-    // Other methods for room management...
 }
 
 export class Room extends SpriteObject {
@@ -51,11 +48,6 @@ export class Room extends SpriteObject {
 
     @build_fsm()
     public static bouw(): StateMachineBlueprint {
-        // function handlePlayerLeavingScreenEvent(this: Room) {
-            // Check if player is leaving the screen
-            // If so, transition to the adjacent room
-        // }
-
         function defaultrun(this: Room) {
         }
 

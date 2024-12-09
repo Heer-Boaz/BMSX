@@ -1,7 +1,7 @@
 {
-    "extends": "../../tsconfig.json", // path to the main tsconfig.json file
+    "extends": "../../tsconfig.json", // Path to the main tsconfig.json file
     "compilerOptions": {
-        "composite": true, /* Enable project compilation */
+        "composite": true, // Enable project compilation
         "declaration": true,
         "rootDir": "./",
         "tsBuildInfoFile": "./tsconfig.buildinfo",
@@ -12,6 +12,5 @@
     "include": [
         ".",
         "rompack.ts",
-        // "glsl.d.ts"
     ]
 }
