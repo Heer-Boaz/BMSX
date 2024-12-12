@@ -28,7 +28,6 @@ type MyGamepadInputMapping = {
     [key in keyof GamepadInputMapping & Action]: GamepadButton[];
 };
 
-// @ts-ignore
 const keyboardInputMapping: MyKeyboardInputMapping = {
     'up': ['ArrowUp'],
     'right': ['ArrowRight'],
@@ -38,7 +37,6 @@ const keyboardInputMapping: MyKeyboardInputMapping = {
     'b': ['KeyB'],
 };
 
-// @ts-ignore
 const gamepadInputMapping: MyGamepadInputMapping = {
     'up': ['up'],
     'right': ['right'],
@@ -50,10 +48,33 @@ const gamepadInputMapping: MyGamepadInputMapping = {
 
 const savestring = Symbol('savestring');
 @insavegame
+/**
+ * Represents the game model which extends the BaseModel.
+ * This class is responsible for handling the game state and initialization.
+ */
 class gamemodel extends BaseModel {
+    /**
+     * A string property that is saved in the game.
+     */
     public [savestring]: string;
 
     @build_fsm()
+    /**
+     * Constructs and returns a StateMachineBlueprint object.
+     *
+     * The blueprint defines the states and their behaviors for the state machine.
+     *
+     * @returns {StateMachineBlueprint} The blueprint for the state machine.
+     *
+     * The blueprint contains the following states:
+     * - `#game_start`: The initial state of the game.
+     *   - `enter`: A function that is called when entering the `#game_start` state.
+     *   - `run`: A function that is called to run the `#game_start` state. Returns the next state as 'default'.
+     *
+     * - `default`: The default state of the game.
+     *   - `enter`: A function that is called when entering the `default` state. It spawns a new quiz and a new sint.
+     *   - `run`: A function that is called to run the `default` state. Uses `BaseModel.defaultrun`.
+     */
     public static bouw(): StateMachineBlueprint {
         return {
             states: {
@@ -77,39 +98,73 @@ class gamemodel extends BaseModel {
         };
     }
 
-    // DO NOT CHANGE THIS CODE! PLEASE USE STATE DEFS TO HANDLE GAME STARTUP LOGIC!
-    // Trying to add logic here will most often result in runtime errors.
-    // These runtime errors usually occur because the model was not created and initialized (with states),
-    // while creating new game objects that reference the model or the model states
+    /**
+     * Constructor for the gamemodel class.
+     * Initializes the base model.
+     */
     constructor() {
         super();
     }
 
+    /**
+     * Gets the name of the constructor.
+     *
+     * @returns {string} The name of the constructor.
+     */
     public get constructor_name(): string {
         return this.constructor.name;
     }
 
+    /**
+     * Performs one-time game initialization.
+     *
+     * @returns {this} The instance of the game model.
+     */
     public override do_one_time_game_init(): this {
         $.setInputMap(1, { keyboard: keyboardInputMapping, gamepad: gamepadInputMapping });
         return this;
     }
 
+    /**
+     * Gets the width of the game screen.
+     *
+     * @returns {number} The width of the game screen.
+     */
     public get gamewidth(): number {
         return MSX1ScreenWidth;
     }
 
+    /**
+     * Gets the height of the game screen.
+     *
+     * @returns {number} The height of the game screen.
+     */
     public get gameheight(): number {
         return MSX1ScreenHeight;
     }
 
+    /**
+     * Determines if the given game object collides with a tile in the specified direction.
+     *
+     * @param {GameObject} _o - The game object.
+     * @param {Direction} _dir - The direction of the collision.
+     * @returns {boolean} False, indicating no collision.
+     */
     public collidesWithTile(_o: GameObject, _dir: Direction): boolean {
         return false;
     }
 
+    /**
+     * Determines if the specified coordinates correspond to a collision tile.
+     *
+     * @param {number} _x - The x-coordinate.
+     * @param {number} _y - The y-coordinate.
+     * @returns {boolean} False, indicating no collision tile.
+     */
     public isCollisionTile(_x: number, _y: number): boolean {
         return false;
     }
-};
+}
 
 class gameview extends GLView {
     override drawgame() {

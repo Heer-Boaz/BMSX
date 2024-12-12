@@ -2,43 +2,115 @@ import { GameObject, StateMachineBlueprint, build_fsm, insavegame, type State } 
 import type { sint } from './sint';
 import quizItemsData from './vragen.json';
 
+/**
+ * Represents a quiz item with a question, optional image, multiple options, and reactions.
+ */
 interface QuizItem {
+    /**
+     * The question text for the quiz item.
+     */
     question: string;
+
+    /**
+     * Optional image ID associated with the quiz item.
+     */
     imgid?: string;
+
+    /**
+     * The list of options for the quiz item.
+     */
     options: string[];
+
+    /**
+     * The reaction text for the first option.
+     */
     reactionA: string;
+
+    /**
+     * The reaction text for the second option.
+     */
     reactionB: string;
 }
 
+/**
+ * An array of quiz items.
+ *
+ * This array is populated with data from `quizItemsData`.
+ *
+ * @type {QuizItem[]}
+ */
 const quizItems: QuizItem[] = quizItemsData;
+/**
+ * The maximum number of characters allowed per line in a question.
+ */
 const maximum_characters_per_line_question = 28;
-// const maximum_characters_per_line_end = 20;
 
 @insavegame
 export class quiz extends GameObject {
+    /**
+     * An array of strings used to store text data.
+     */
     text: string[] = [];
+    /**
+     * The index of the current question being displayed.
+     * Initialized to 0, indicating the first question.
+     */
     currentQuestionIndex = 0;
+    /**
+     * Represents the currently chosen answer option.
+     */
     currentAnswerOptionChosen: 'a' | 'b' = 'a';
 
+    /**
+     * An array of strings representing the full text lines.
+     */
     fullTextLines: string[] = [];
+    /**
+     * An array of strings representing the lines that are currently displayed.
+     */
     displayedLines: string[] = [];
+    /**
+     * The index of the current line being shown as the text is being printed on screen character by character.
+     */
     currentLineIndex = 0;
+    /**
+     * Index of the current character being shown as the text is being printed on screen character by character.
+     */
     currentCharIndex = 0;
+
+    /**
+     * A boolean flag indicating that the text is being printed on screen character by character.
+     */
     isTyping = false;
+    /**
+     * Sets the maximum number of characters allowed per line for text being printed to screen.
+     *
+     * @param maximum_characters_per_line - The maximum number of characters allowed per line.
+     */
     maximum_characters_per_line = maximum_characters_per_line_question;
 
-    // Nieuwe veld om de uitlijning stabiel te houden
     private centeredBlockX = 0;
 
+    /**
+     * Creates an instance of the quiz class.
+     */
     constructor() {
         super('quiz');
     }
 
+    /**
+     * Paints the text on the screen.
+     *
+     * This method overrides the base class's paint method. It calculates the starting
+     * Y position based on the character width and iterates over each line of text,
+     * drawing it on the screen at the specified X and Y coordinates.
+     *
+     * @override
+     */
     public override paint(): void {
         const charWidth = 8;
         const startY = 2 * charWidth;
 
-        // Gebruik 'this.centeredBlockX' i.p.v. opnieuw berekenen
         const xOffset = this.centeredBlockX;
 
         this.text.forEach((line, index) => {
@@ -46,6 +118,21 @@ export class quiz extends GameObject {
         });
     }
 
+    /**
+     * Sets the text from an array of lines, wraps the text, and initializes the display properties.
+     *
+     * @param lines - An array of strings where each string represents a line of text.
+     *
+     * This method performs the following steps:
+     * 1. Combines the lines into a single string with newline characters.
+     * 2. Wraps the combined text.
+     * 3. Initializes the `fullTextLines` with the wrapped lines.
+     * 4. Initializes the `displayedLines` as an array of empty strings with the same length as `fullTextLines`.
+     * 5. Resets the `currentLineIndex` and `currentCharIndex` to 0.
+     * 6. Sets the `isTyping` flag to true.
+     * 7. Calculates the centered block X position.
+     * 8. Updates the displayed text.
+     */
     private setTextFromLines(lines: string[]) {
         const combined = lines.join('\n');
         const wrappedLines = this.wrapText(combined);
@@ -56,12 +143,20 @@ export class quiz extends GameObject {
         this.currentCharIndex = 0;
         this.isTyping = true;
 
-        // Bepaal hier de uitlijning op basis van fullTextLines
         this.calculateCenteredBlockX();
 
         this.updateDisplayedText();
     }
 
+    /**
+     * Calculates the X coordinate for centering a block of text on the screen.
+     *
+     * This method determines the longest line of text from `this.fullTextLines`,
+     * calculates its width in pixels, and then computes the X coordinate needed
+     * to center this line on a screen with a fixed width of 256 pixels.
+     *
+     * @private
+     */
     private calculateCenteredBlockX() {
         const charWidth = 8;
         const screenWidth = 256;
@@ -71,6 +166,14 @@ export class quiz extends GameObject {
         this.centeredBlockX = (screenWidth - longestLineWidth) / 2;
     }
 
+    /**
+     * Splits a given text into an array of strings, where each string represents a line of text
+     * that does not exceed the maximum number of characters per line. The method also respects
+     * newline characters in the input text.
+     *
+     * @param text - The input text to be wrapped into lines.
+     * @returns An array of strings, where each string is a line of text.
+     */
     private wrapText(text: string): string[] {
         const words = text.match(/(\S+|\n)/g) || [];
         const lines: string[] = [];
@@ -104,6 +207,15 @@ export class quiz extends GameObject {
         return lines;
     }
 
+    /**
+     * Handles the typing effect by adding the next character from the current line
+     * to the displayed text. If the end of the current line is reached, it moves
+     * to the next line. If all lines have been processed, it stops the typing effect.
+     *
+     * @private
+     * @method
+     * @returns {void}
+     */
     private typeNextCharacter() {
         if (!this.isTyping) return;
 
@@ -128,26 +240,57 @@ export class quiz extends GameObject {
         this.updateDisplayedText();
     }
 
+    /**
+     * Updates the displayed text by copying the contents of `displayedLines` to `text`.
+     * This method ensures that the `text` property reflects the current state of `displayedLines`.
+     */
     private updateDisplayedText() {
         this.text = [...this.displayedLines];
     }
 
+    /**
+     * Switches the current Sint game object to a question state.
+     *
+     * @param this - The current quiz instance.
+     */
     switchSintToQuestion(this: quiz) {
         const sint = $.getGameObject('sint');
         sint.sc.do('vraag', sint);
     }
 
+    /**
+     * Switches the Sint game object to the answer state.
+     *
+     * @param this - The current quiz instance.
+     */
     switchSintToAnswer(this: quiz) {
         const sint = $.getGameObject('sint');
         sint.sc.do('antwoord', sint);
     }
 
+    /**
+     * Switches the state of the 'sint' game object to 'klaar'.
+     *
+     * @param this - The current instance of the quiz class.
+     */
     switchSintToKlaar(this: quiz) {
         const sint = $.getGameObject('sint');
         sint.sc.do('klaar', sint);
     }
 
     @build_fsm()
+    /**
+     * Constructs and returns a StateMachineBlueprint for the quiz.
+     *
+     * The state machine consists of the following states:
+     *
+     * - `_start`: The initial state where the quiz introduction text is set and displayed.
+     * - `vraag`: The state where a quiz question is presented to the user.
+     * - `antwoord`: The state where the feedback is given to the user's answer.
+     * - `end`: The final state where the quiz completion message is displayed.
+     *
+     * @returns {StateMachineBlueprint} The blueprint of the state machine for the quiz.
+     */
     public static bouw(): StateMachineBlueprint {
         return {
             states: {
