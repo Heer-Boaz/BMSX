@@ -873,6 +873,7 @@ function highlightCurrentState(stateElements: Map<string, HTMLElement>, machineE
 		updateMachineClasses(machine, machineName, true, machineName);
 	}
 }
+
 function visualizeBehaviorTree(container: HTMLElement, btController: GameObject): [addContentTo: HTMLElement, nodeElements: Map<string, HTMLElement>] {
 	let baseTable = addContent(container, 'table', null) as HTMLTableElement;
 	let nodeElements = new Map<string, HTMLElement>();
