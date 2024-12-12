@@ -17,7 +17,6 @@ const DEBUG_ELEMENT_ID = 'debug_element_id';
 
 let draggedObj: GameObject | null;
 let draggedObjCursorOffset: vec2;
-let dragSrcEl: HTMLElement;
 let shiftX: number;
 let shiftY: number;
 let prevPausedState: boolean; // Remember the paused-state before a dialog was opened. This allows to return to the original "paused" state after closing debug dialogs
@@ -84,7 +83,7 @@ export class BTVisualizer extends Component {
 
 	override postprocessingUpdate(): void {
 		this.openDialog();
-		[, this.machineElements ] = visualizeBehaviorTree(this.dialog.getContentElement(), $.get<GameObject>(this.parentid));
+		[, this.machineElements] = visualizeBehaviorTree(this.dialog.getContentElement(), $.get<GameObject>(this.parentid));
 	}
 
 	public closeDialog(): void {
@@ -98,7 +97,7 @@ export class BTVisualizer extends Component {
 			this.dialog = new FloatingDialog(`BT: [${this.parentid}]`);
 		}
 		if (!this.machineElements) {
-			[, this.machineElements ] = visualizeBehaviorTree(this.dialog.getContentElement(), $.get<GameObject>(this.parentid));
+			[, this.machineElements] = visualizeBehaviorTree(this.dialog.getContentElement(), $.get<GameObject>(this.parentid));
 			this.dialog.updateSize();
 		}
 
@@ -215,7 +214,14 @@ class FloatingDialog {
 	}
 
 	private createDialog(title?: string, previousDialog?: HTMLElement): [HTMLDivElement, HTMLDivElement, HTMLSpanElement, HTMLDivElement, HTMLSpanElement] {
-		return createDebugDialog(title, previousDialog);
+		const dialogDiv = createDialogDiv(previousDialog);
+		const wrapperDiv = createWrapperDiv(title, dialogDiv, previousDialog);
+		const contentDiv = createContentDiv(dialogDiv, previousDialog);
+
+		dialogDiv.insertBefore(wrapperDiv, null);
+		dialogDiv.insertBefore(contentDiv, null);
+
+		return [dialogDiv, contentDiv, wrapperDiv.querySelector('.modal-title'), wrapperDiv, wrapperDiv.querySelector('.modal-dialog-button.minimize')];
 	}
 
 	public clear(): void {
@@ -243,16 +249,12 @@ class FloatingDialog {
 		// Force a reflow to ensure the automatic size is applied
 		void this.dialogDiv.offsetHeight;
 
-		// Get the automatic size
-		const autoHeight = this.dialogDiv.offsetHeight;
-		const autoWidth = this.dialogDiv.offsetWidth;
-
 		// Remove the autosize class
 		this.dialogDiv.classList.remove('autosize');
 
 		// Set the size manually to the automatic size
-		this.dialogDiv.style.height = `${autoHeight}px`;
-		this.dialogDiv.style.width = `${autoWidth}px`;
+		this.dialogDiv.style.height = 'auto'; // Ensure the dialog height is adjusted to fit the content
+		this.dialogDiv.style.width = 'auto'; // Ensure the dialog width is adjusted to fit the content
 	}
 
 	public getDialogElement(): HTMLDivElement {
@@ -264,128 +266,200 @@ class FloatingDialog {
 	}
 }
 
-export function handleDebugMouseDown(e: MouseEvent): void {
-	if (e.button === 1) {
-		const { objUnderCursor } = getGameObjectAtCursor(e);
-		if (objUnderCursor) {
-			HitBoxVisualizer.toggle(objUnderCursor);
-		}
-	}
-
-	if (e.button !== 0) {
-		draggedObj = null; // Stop dragging object
-		return; // Only start dragging when primary button is pressed
-	}
-
-	if (!$.input.getPlayerInput(1).getButtonState('ShiftLeft', 'keyboard').pressed) { // Only start or continue dragging when shift is pressed. Note that the shift key is not updated after the mouse is pressed down
-		draggedObj = null; // Stop dragging object
-		return;
-	}
-
-	if (!draggedObj) { // Only start dragging when no object is currently being dragged
-		let { objUnderCursor, offsetToCursor } = getGameObjectAtCursor(e); // Get the object under the cursor and the offset from the cursor to the object's position
-		if (objUnderCursor && offsetToCursor) { // Only start dragging when an object is under the cursor and the offset is valid (i.e. the object has a position)
-			e.preventDefault();
-			startDragGameObject(objUnderCursor!, offsetToCursor!); // Start dragging the object under the cursor around
-		}
-	}
-	else { // Otherwise, continue dragging the object that is already being dragged
-		handleDebugMouseMove(e); // Update the dragged object's position when the mouse is pressed down and moved
-	}
-}
-
-export function handleDebugMouseMove(e: MouseEvent): void {
-	const { objUnderCursor } = getGameObjectAtCursor(e);
-	if ($.input.getPlayerInput(1).getButtonState('ControlLeft', 'keyboard').pressed) { // Ctrl + mouse move = allow for selecting objects in the game world (for debugging)
-		// Highlight mouse-overed objects
-		highlight_object(objUnderCursor);
+function toggleFullscreenOnElement(el: HTMLElement) {
+	if (!el.classList.contains('fullscreen')) {
+		el.dataset.left = el.style.left;
+		el.dataset.top = el.style.top;
+		el.style.removeProperty('left');
+		el.style.removeProperty('top');
+		el.draggable = false;
 	}
 	else {
-		highlight_object(null); // Remove highlight when Ctrl is not pressed or when no object is under the cursor
+		el.dataset.left && (el.style.left = el.dataset.left);
+		el.dataset.top && (el.style.top = el.dataset.top);
+		el.draggable = true;
 	}
-
-	if (draggedObj) {
-		// Otherwise, continue dragging the object that is already being dragged
-		let x = e.offsetX / $.view.viewportScale;
-		let y = e.offsetY / $.view.viewportScale;
-
-		if (draggedObj.pos) {
-			draggedObj.x = ~~x - draggedObjCursorOffset.x;
-			draggedObj.y = ~~y - draggedObjCursorOffset.y;
-		}
-		if (!$.input.getPlayerInput(1).getButtonState('ShiftLeft', 'keyboard').pressed) {
-			draggedObj = null; // Stop dragging object when shift is released
-		}
-		return;
-	}
+	el.classList.toggle('fullscreen');
 }
 
-function highlight_object(o: GameObject) {
-	const model = $.model;
-	let highlighter = $.model.getGameObject<ObjectHighlighter>('debug_highlighter');
+function createDialogDiv(previousDialog?: HTMLElement): HTMLDivElement {
+	const dialogDiv = document.createElement('div');
+	dialogDiv.className = 'modal-dialog';
+	dialogDiv.id = DEBUG_ELEMENT_ID;
 
-	if (!o) {
-		highlighter && (highlighter.target = null);
+	if (previousDialog) {
+		previousDialog.style.display = 'none';
+		(dialogDiv as any).previous = previousDialog;
 	}
-	else {
-		if (!highlighter) {
-			highlighter = new ObjectHighlighter();
-			model.spawn(highlighter);
+
+	return dialogDiv;
+}
+
+// Update the createDebugDialog function to handle dragging via the title span
+function createDebugDialog(title?: string, previousDialog?: HTMLElement): [HTMLDivElement, HTMLDivElement, HTMLSpanElement, HTMLDivElement, HTMLSpanElement] {
+	const dialogDiv = createDialogDiv(previousDialog);
+	const wrapperDiv = createWrapperDiv(title, dialogDiv, previousDialog);
+	const contentDiv = createContentDiv(dialogDiv, previousDialog);
+
+	dialogDiv.insertBefore(wrapperDiv, null);
+	dialogDiv.insertBefore(contentDiv, null);
+
+	// Make the dialog draggable only via the top menu span
+	const titleSpan = wrapperDiv.querySelector('.modal-title') as HTMLSpanElement;
+	titleSpan.style.cursor = 'move';
+	titleSpan.onmousedown = (ev: MouseEvent) => {
+		shiftX = ev.clientX - dialogDiv.getBoundingClientRect().left;
+		shiftY = ev.clientY - dialogDiv.getBoundingClientRect().top;
+
+		document.onmousemove = (moveEvent: MouseEvent) => {
+			dialogDiv.style.left = moveEvent.pageX - shiftX + 'px';
+			dialogDiv.style.top = moveEvent.pageY - shiftY + 'px';
+		};
+
+		document.onmouseup = () => {
+			document.onmousemove = null;
+			document.onmouseup = null;
+		};
+	};
+
+	return [dialogDiv, contentDiv, titleSpan, wrapperDiv, wrapperDiv.querySelector('.modal-dialog-button.minimize')];
+}
+
+function createWrapperDiv(title: string, dialogDiv: HTMLDivElement, previousDialog?: HTMLElement): HTMLDivElement {
+	const wrapperDiv = document.createElement('div');
+	wrapperDiv.className = 'modal-title-wrapper';
+
+	const titleSpan = document.createElement('span');
+	titleSpan.className = 'modal-title';
+	title && (titleSpan.innerHTML = title);
+
+	const backSpan = createBackSpan(dialogDiv, previousDialog);
+	const closeSpan = createCloseSpan(dialogDiv, previousDialog);
+	const maximizeSpan = createMaximizeSpan(dialogDiv);
+	const minimizeSpan = createMinimizeSpan(dialogDiv, titleSpan);
+
+	backSpan && wrapperDiv.insertBefore(backSpan, null);
+	wrapperDiv.insertBefore(titleSpan, null);
+	wrapperDiv.insertBefore(closeSpan, null);
+	wrapperDiv.insertBefore(maximizeSpan, null);
+	wrapperDiv.insertBefore(minimizeSpan, null);
+
+	// Make the dialog draggable via the entire top menu span/div
+	wrapperDiv.style.cursor = 'move';
+	wrapperDiv.onmousedown = (ev: MouseEvent) => {
+		shiftX = ev.clientX - dialogDiv.getBoundingClientRect().left;
+		shiftY = ev.clientY - dialogDiv.getBoundingClientRect().top;
+		document.onmousemove = (moveEvent: MouseEvent) => {
+			dialogDiv.style.left = moveEvent.pageX - shiftX + 'px';
+			dialogDiv.style.top = moveEvent.pageY - shiftY + 'px';
+		};
+		document.onmouseup = () => {
+			document.onmousemove = null;
+			document.onmouseup = null;
+		};
+	};
+
+	return wrapperDiv;
+}
+
+function createContentDiv(dialogDiv: HTMLDivElement, previousDialog?: HTMLElement): HTMLDivElement {
+	const contentDiv = document.createElement('div');
+	contentDiv.className = 'modal-content';
+
+	if (previousDialog) {
+		dialogDiv.style.left = previousDialog.style.left;
+		dialogDiv.style.top = previousDialog.style.top;
+		dialogDiv.style.width = previousDialog.style.width;
+		dialogDiv.style.height = previousDialog.style.height;
+
+		let newDivFullscreen = dialogDiv.classList.contains('fullscreen');
+		let previousDialogFullscreen = previousDialog.classList.contains('fullscreen');
+		if (newDivFullscreen != previousDialogFullscreen) {
+			toggleFullscreenOnElement(dialogDiv);
 		}
-		else if (!model.is_obj_in_current_space('debug_highlighter')) {
-			model.move_obj_to_space('debug_highlighter', model.current_space_id);
-		}
-		highlighter.target = o;
 	}
-	$.view.drawgame();
+
+	return contentDiv;
 }
 
-export function handleDebugMouseUp(_e: MouseEvent): void {
-	if (draggedObj) {
-		draggedObj = null;
-	}
-}
+function createBackSpan(dialogDiv: HTMLDivElement, previousDialog?: HTMLElement): HTMLSpanElement | undefined {
+	if (!previousDialog) return undefined;
 
-export function handleDebugMouseOut(_e: MouseEvent): void {
-	highlight_object(null);
-	draggedObj = null;
-}
-
-function startDragGameObject(gameobject_at_cursor: GameObject, offsetToCursor: vec2): void {
-	draggedObj = gameobject_at_cursor;
-	draggedObjCursorOffset = new_vec2(~~offsetToCursor.x, ~~offsetToCursor.y);
-}
-
-export function handleContextMenu(e: MouseEvent): void {
-	e.preventDefault();
-	const { objUnderCursor } = getGameObjectAtCursor(e);
-	// if (game.input.getPlayerInput(1).getButtonState('ControlLeft', 'keyboard'.pressed) { // Ctrl + mouse move = allow for selecting objects in the game world (for debugging)
-	// Highlight mouse-overed objects
-	// highlight_object(objUnderCursor);
-	// Add state visualiser component to the object
-	if (objUnderCursor) {
-		// Verify that the object does not already have a state visualiser component
-		const existingVisualiser = objUnderCursor.getComponent(StateMachineVisualizer);
-		if (!objUnderCursor.getComponent(StateMachineVisualizer)) {
-			const visualiser = new StateMachineVisualizer(objUnderCursor.id);
-			objUnderCursor.addComponent(visualiser);
-			visualiser.enabled = true;
+	const backSpan = document.createElement('span');
+	backSpan.className = 'modal-back';
+	backSpan.innerHTML = '&larr;';
+	backSpan.onclick = (e) => {
+		e.preventDefault();
+		document.body.removeChild(dialogDiv);
+		previousDialog.style.display = 'flex';
+		let newDivFullscreen = dialogDiv.classList.contains('fullscreen');
+		let previousDialogFullscreen = previousDialog.classList.contains('fullscreen');
+		if (newDivFullscreen != previousDialogFullscreen) {
+			toggleFullscreenOnElement(previousDialog);
 		}
-		else {
-			existingVisualiser.enabled = !existingVisualiser.enabled;
-			if (!existingVisualiser.enabled) {
-				existingVisualiser.closeDialog();
+	};
+
+	return backSpan;
+}
+
+function createCloseSpan(dialogDiv: HTMLDivElement, previousDialog?: HTMLElement): HTMLSpanElement {
+	const closeSpan = document.createElement('span');
+	closeSpan.className = 'modal-dialog-button';
+	closeSpan.innerHTML = '&times;';
+	closeSpan.onclick = (e) => {
+		e.preventDefault();
+		document.body.removeChild(dialogDiv);
+
+		let previous = previousDialog;
+		while (previous) {
+			document.body.removeChild(previous);
+			previous = (previous as any).previous;
+		}
+		global.$.paused = prevPausedState;
+	};
+
+	return closeSpan;
+}
+
+function createMaximizeSpan(dialogDiv: HTMLDivElement): HTMLSpanElement {
+	const maximizeSpan = document.createElement('span');
+	maximizeSpan.className = 'modal-dialog-button';
+	maximizeSpan.innerHTML = '&#x1F5D6;';
+	maximizeSpan.onclick = (e) => {
+		e.preventDefault();
+		toggleFullscreenOnElement(dialogDiv);
+	};
+
+	return maximizeSpan;
+}
+
+function createMinimizeSpan(dialogDiv: HTMLDivElement, titleSpan: HTMLSpanElement): HTMLSpanElement {
+	const minimizeSpan = document.createElement('span');
+	minimizeSpan.className = 'modal-dialog-button';
+	minimizeSpan.innerHTML = '&#x1F5D5;';
+
+	minimizeSpan.onclick = (e) => {
+		e.preventDefault();
+		if (dialogDiv.classList.contains('minimized')) {
+			dialogDiv.classList.remove('minimized');
+			(dialogDiv.querySelector('.modal-content') as HTMLElement).style.display = 'block';
+			minimizeSpan.innerHTML = '&#x1F5D5;';
+			if (dialogDiv.classList.contains('fullscreen')) {
+				toggleFullscreenOnElement(dialogDiv);
 			}
-			else {
-				existingVisualiser.openDialog();
-			}
+			dialogDiv.style.height = dialogDiv.dataset.oldHeight;
+			dialogDiv.style.width = dialogDiv.dataset.oldWidth;
+		} else {
+			dialogDiv.classList.add('minimized');
+			(dialogDiv.querySelector('.modal-content') as HTMLElement).style.display = 'none';
+			minimizeSpan.innerHTML = '&#x25B2;';
+			dialogDiv.dataset.oldHeight = dialogDiv.style.height;
+			dialogDiv.dataset.oldWidth = dialogDiv.style.width;
+			dialogDiv.style.height = window.getComputedStyle(titleSpan).height;
 		}
-	}
-	// }
-	else {
-		highlight_object(null); // Remove highlight when Ctrl is not pressed or when no object is under the cursor
-	}
+	};
 
+	return minimizeSpan;
 }
 
 function addContent(parent: HTMLElement, type: string, content: string | null, depth: number = 0): HTMLElement {
@@ -416,96 +490,8 @@ function shouldPropertyBeExcluded(propName: string, parent_obj: Object): boolean
 	return exclude ?? false;
 }
 
-function shouldPropertyValueBeRedirectedToSubDialog(propName: string, propValue: any): boolean {
-	if (OBJECT_TABLE_REDIRECT_BY_INNER_OBJECT) {
-		let valuesInSubobject = Object.values(propValue);
-		return valuesInSubobject.some((v: any) => typeof v === 'object');
-	}
-	else {
-		return OBJECT_TABLE_PROPS_TO_REDIRECT_NAMES.some(p => p == propName);
-	}
-}
-
-function customPrompt(title, initialValue, type) {
-	return new Promise((resolve) => {
-		const dialog = new FloatingDialog(title);
-		const [, dialogContentElement] = [dialog.getDialogElement(), dialog.getContentElement()];
-		const promptDialog = document.createElement('div');
-		promptDialog.className = 'custom-prompt-dialog';
-
-		const titleLabel = document.createElement('label');
-		titleLabel.innerHTML = title;
-		titleLabel.className = 'custom-prompt-title';
-		promptDialog.appendChild(titleLabel);
-
-		let inputElement: HTMLInputElement | HTMLSelectElement;
-		// 'text': A simple text box.
-		// 'password': A text box that masks the user's input.
-		// 'number': A text box that only accepts numerical input.
-		// 'email': A text box that validates the input for a valid email format.
-		// 'date': A control for entering a date (year, month, and day, with no time).
-		// 'datetime-local': A control for entering a date and time, with no time zone.
-		// 'time': A control for entering a time value with no time zone.
-		// 'url': A text box that validates the input for a valid URL format.
-		// 'search': A text box for entering search strings. The behavior of this type is similar to text but varies in some contexts, like styling in some browsers.
-		// 'tel': A text box for entering a telephone number. Note that this type does not enforce any syntax or pattern checking.
-		// 'color': A control for specifying a color.
-		// 'range': A control for entering a number whose exact value is not important.
-		// 'checkbox': A check box.
-		// 'radio': A radio button.
-		// 'file': A control that lets the user select a file to upload.
-		// 'submit': A button that submits the form.
-		// 'reset': A button that resets the form to its initial values.
-		// 'button': A clickable button.
-		switch (type) {
-			case 'boolean':
-				inputElement = document.createElement('select');
-				inputElement.innerHTML = `<option value="true">True</option><option value="false">False</option>`;
-				inputElement.value = initialValue ?? 'true';
-				break;
-			case 'number':
-				inputElement = document.createElement('input') as HTMLInputElement;
-				inputElement.value = initialValue;
-				break;
-			default:
-				inputElement = document.createElement('input');
-				inputElement.value = initialValue;
-				inputElement.type = type;
-				break;
-		}
-		inputElement.className = 'custom-prompt-input';
-		inputElement.ariaReadOnly = 'false';
-		inputElement.disabled = false;
-		promptDialog.appendChild(inputElement);
-
-		const buttonsDiv = document.createElement('div');
-		buttonsDiv.className = 'custom-prompt-buttons';
-
-		const cancelButton = document.createElement('button');
-		cancelButton.innerHTML = 'Cancel';
-		cancelButton.onclick = () => {
-			dialog.close();
-			resolve(null);
-		};
-		buttonsDiv.appendChild(cancelButton);
-
-		const confirmButton = document.createElement('button');
-		confirmButton.innerHTML = 'OK';
-		confirmButton.onclick = () => {
-			dialog.close();
-			resolve(inputElement.value);
-		};
-		buttonsDiv.appendChild(confirmButton);
-
-		promptDialog.appendChild(buttonsDiv);
-		dialogContentElement.appendChild(promptDialog);
-		dialog.updateSize();
-	});
-}
-
 function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement, obj: Object, objName: string, ignoreProps?: string[]): HTMLElement {
 	let table = addContent(addContentTo, 'table', null) as HTMLTableElement;
-	// let headerRow = addContent(table, 'tr', null);
 
 	function addTableRowForProperty(key: string, value: any, parent_obj: Object): void {
 		let row = addContent(table, 'tr', null);
@@ -523,7 +509,7 @@ function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement
 			}
 			else if (shouldPropertyValueBeRedirectedToSubDialog(key, value)) {
 				let valueCell = addContent(row, 'td', `< ... >`);
-				valueCell.classList.add('propvalue');
+				valueCell.classList.add('redirected-propvalue');
 				valueCell.onclick = (_e) => {
 					const [objDialogDiv, objDialogContentDiv] = createDebugDialog(newObjName, dialog);
 					createObjectTableElement(objDialogDiv, objDialogContentDiv, value, newObjName, ignoreProps);
@@ -542,49 +528,81 @@ function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement
 		}
 		else {
 			let currentValueAsString = String(value);
-			let valueCell = addContent(row, 'td', `${currentValueAsString}`);
-			switch (type) {
-				case 'string':
-				case 'boolean':
-				case 'bigint':
-				case 'number':
-				case 'undefined':
-					if (type === 'undefined') {
-						valueCell.classList.add('undefined-propvalue');
+			let valueCell: HTMLElement;
+
+			if (type === 'boolean') {
+				valueCell = document.createElement('td');
+				valueCell.classList.add('propvalue');
+
+				const selectElement = document.createElement('select');
+
+				const trueOption = document.createElement('option');
+				trueOption.value = 'true';
+				trueOption.textContent = 'true';
+
+				const falseOption = document.createElement('option');
+				falseOption.value = 'false';
+				falseOption.textContent = 'false';
+
+				selectElement.appendChild(trueOption);
+				selectElement.appendChild(falseOption);
+
+				selectElement.value = currentValueAsString;
+				selectElement.onchange = () => {
+					const newValue = selectElement.value;
+					if (newValue !== currentValueAsString) {
+						obj[key] = newValue === 'true';
+						valueCell.classList.remove('propvalue');
+						valueCell.classList.add('mutated-propvalue');
 					}
 					else {
+						obj[key] = value; // Set the value back to the original value to force a re-render
+						valueCell.classList.remove('mutated-propvalue');
 						valueCell.classList.add('propvalue');
 					}
-					valueCell.onclick = (_e) => {
-						let currentValueAsStringInHandlerScope = String(obj[key]);
-						customPrompt(`Edit value for "${key}":`, currentValueAsStringInHandlerScope, type).then((newValue: any) => {
-							if (newValue && newValue != currentValueAsStringInHandlerScope) {
-								try {
-									let convertedNewValue: any = null;
-									switch (type) {
-										case 'string': convertedNewValue = newValue; break;
-										case 'boolean': convertedNewValue = (newValue.toLowerCase() === 'true' || newValue === '1' || newValue.toLowerCase() === 'y'); break;
-										case 'bigint': convertedNewValue = BigInt(newValue); break;
-										case 'number': convertedNewValue = Number(newValue); break;
-										default: console.warn(`Property ${key} cannot be updated, because Boaz still needs to develop an update solution for type '${type}'.`);
-									}
-									if (convertedNewValue !== null) {
-										obj[key] = convertedNewValue;
-										valueCell.classList.remove('propvalue');
-										valueCell.classList.add('mutated-propvalue');
-										valueCell.innerHTML = newValue;
-									}
-								} catch (e) {
-									console.warn(`Updating property ${key} to value '${newValue}' (type '${type}') failed.`);
+				};
+
+				valueCell.appendChild(selectElement);
+				row.appendChild(valueCell);
+			} else if (type === 'string' || type === 'number' || type === 'bigint') {
+				valueCell = addContent(row, 'td', `${currentValueAsString}`);
+				valueCell.contentEditable = 'true';
+				valueCell.classList.add('propvalue');
+				valueCell.onblur = () => {
+					let newValue = valueCell.innerText;
+					if (newValue !== currentValueAsString) {
+						try {
+							let convertedNewValue: any = null;
+							switch (type) {
+								case 'string': convertedNewValue = newValue; break;
+								case 'bigint': convertedNewValue = BigInt(newValue); break;
+								case 'number': convertedNewValue = Number(newValue); break;
+								default: console.warn(`Property ${key} cannot be updated, because Boaz still needs to develop an update solution for type '${type}'.`);
+							}
+							if (convertedNewValue !== null) {
+								if (convertedNewValue !== value) {
+									obj[key] = convertedNewValue;
+									valueCell.classList.remove('propvalue');
+									valueCell.classList.add('mutated-propvalue');
+									currentValueAsString = newValue;
+								}
+								else {
+									obj[key] = value; // Set the value back to the original value to force a re-render
+									valueCell.classList.remove('mutated-propvalue');
+									valueCell.classList.add('propvalue');
 								}
 							}
-						});
+						} catch (e) {
+							console.warn(`Updating property ${key} to value '${newValue}' (type '${type}') failed.`);
+						}
 					}
-					break;
-				default:
-					valueCell.classList.add('immutable-propvalue');
-					break;
+				};
+			} else {
+				valueCell = addContent(row, 'td', `${currentValueAsString}`);
+				valueCell.classList.add('immutable-propvalue');
 			}
+
+			row.appendChild(valueCell);
 		}
 	}
 
@@ -604,6 +622,146 @@ function createObjectTableElement(dialog: HTMLElement, addContentTo: HTMLElement
 		}
 	}
 	return table;
+}
+
+export function handleOpenObjectMenu(e: UIEvent | null, previous?: HTMLElement): void {
+	if (e && e.type !== 'keydown') return;
+	if (!previous) {
+		prevPausedState = global.$.paused; // Remember the original paused-state so that we can return to that state
+		global.$.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
+	}
+
+	const [dialogDiv, contentDiv] = createDebugDialog('Objects', previous);
+
+	let table = addContent(contentDiv, 'table', null);
+	let headerRow = addContent(table, 'tr', null);
+	addContent(headerRow, 'th', 'Type');
+	addContent(headerRow, 'th', 'ID');
+
+	$.model.objects.forEach(o => {
+		let row = addContent(table, 'tr', null);
+		row.classList.add('selectableoption');
+		addContent(row, 'td', `${o.constructor.name}`);
+		addContent(row, 'td', `${o.id}`);
+
+		row.onclick = (_) => {
+			openObjectDetailMenu(o, o.id, dialogDiv);
+		};
+		row.onmouseenter = (_) => {
+			highlight_object(o);
+		};
+		row.onmouseleave = (_) => {
+			highlight_object(null);
+		};
+	});
+
+	document.body.insertBefore(dialogDiv, null);
+}
+
+export function handleOpenDebugMenu(e: UIEvent): void {
+	if (e && e.type !== 'keydown') return;
+	prevPausedState = global.$.paused; // Remember the original paused-state so that we can return to that state
+	global.$.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
+
+	const [dialogDiv, contentDiv] = createDebugDialog();
+
+	let table = addContent(contentDiv, 'table', null);
+	let headerRow = addContent(table, 'tr', null);
+	let headerElement = addContent(headerRow, 'th', '- Debug menu option - ');
+	headerElement.style.textAlign = 'center';
+
+	let row = addContent(table, 'tr', null);
+	row.classList.add('selectableoption', 'centered-text');
+	addContent(row, 'td', `List model properties`);
+	row.onclick = (_) => handleOpenModelMenu(null, dialogDiv);
+
+	row = addContent(table, 'tr', null);
+	row.classList.add('selectableoption', 'centered-text');
+	addContent(row, 'td', `List all objects in current scene`);
+	row.onclick = (_) => handleOpenObjectMenu(null, dialogDiv);
+
+	row = addContent(table, 'tr', null);
+	row.classList.add('selectableoption', 'centered-text');
+	addContent(row, 'td', `List all statemachine definitions`);
+	row.onclick = (_) => openObjectDetailMenu(StateDefinitions, 'Statemachine definitions', dialogDiv);
+
+	row = addContent(table, 'tr', null);
+	row.classList.add('selectableoption', 'centered-text');
+	addContent(row, 'td', `List all behavior tree definitions`);
+	row.onclick = (_) => openObjectDetailMenu(BehaviorTreeDefinitions, 'BT definitions', dialogDiv);
+
+	row = addContent(table, 'tr', null);
+	row.classList.add('selectableoption', 'centered-text');
+	addContent(row, 'td', `See the Event Emitter`);
+	row.onclick = (_) => openObjectDetailMenu(EventEmitter.instance, 'Event Emitter', dialogDiv);
+
+	row = addContent(table, 'tr', null);
+	row.classList.add('selectableoption', 'centered-text');
+	addContent(row, 'td', `See da Registry`);
+	row.onclick = (_) => openObjectDetailMenu(Registry.instance, 'Da Registry', dialogDiv);
+
+	document.body.insertBefore(dialogDiv, null);
+}
+
+export function handleOpenModelMenu(e: UIEvent | null, previous: HTMLElement): void {
+	if (e && e.type !== 'keydown') return;
+	if (!previous) {
+		prevPausedState = global.$.paused; // Remember the original paused-state so that we can return to that state
+		global.$.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
+		draggedObj = null; // Make sure that we stop dragging any object
+	}
+
+	openObjectDetailMenu($.model, 'The Model', previous);
+}
+
+function openObjectDetailMenu(obj: any, title: string, previous?: HTMLElement): void {
+	if (!previous) {
+		prevPausedState = global.$.paused; // Remember the original paused-state so that we can return to that state
+		global.$.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
+	}
+
+	const [dialogDiv, contentDiv] = createDebugDialog(title, previous);
+
+	createObjectTableElement(dialogDiv, contentDiv, obj, title, ['objects']);
+	document.body.insertBefore(dialogDiv, null);
+
+}
+
+export function handleDebugClick(e: MouseEvent): void {
+	if (!e.shiftKey && e.ctrlKey && !draggedObj) { // Only open when main or middle button is clicked and shift is not pressed and ctrl is pressed and no object is being dragged
+		const { objUnderCursor } = getGameObjectAtCursor(e);
+		if (objUnderCursor) {
+			openObjectDetailMenu(objUnderCursor, objUnderCursor.id);
+		}
+	}
+}
+
+function getGameObjectAtCursor(e: MouseEvent): { objUnderCursor: GameObject | null; offsetToCursor: vec2 | null; } {
+	const x = e.offsetX;
+	const y = e.offsetY;
+	/**
+	 * Handling mouse events on game objects requires
+	 * transforming the game coordinates to canvas coordinates and that requires scaling
+	 * to be taken into account.
+	 */
+	const p = div_vec2(new_vec2(x, y), $.view.viewportScale);
+	const objsUnderCursor: GameObject[] = $.model.objects.filter(o => o.id !== 'debug_highlighter' && o.overlaps_point(p));
+	if (objsUnderCursor && objsUnderCursor.length > 0) {
+		// Choose obj with highest z-value
+		const objUnderCursorWithHighestZ = objsUnderCursor.reduce((o1, o2) => o1.z > o2.z ? o1 : o2);
+		return { objUnderCursor: objUnderCursorWithHighestZ, offsetToCursor: objUnderCursorWithHighestZ.overlaps_point(p) };
+	}
+	return { objUnderCursor: null, offsetToCursor: null };;
+}
+
+function shouldPropertyValueBeRedirectedToSubDialog(propName: string, propValue: any): boolean {
+	if (OBJECT_TABLE_REDIRECT_BY_INNER_OBJECT) {
+		let valuesInSubobject = Object.values(propValue);
+		return valuesInSubobject.some((v: any) => typeof v === 'object');
+	}
+	else {
+		return OBJECT_TABLE_PROPS_TO_REDIRECT_NAMES.some(p => p == propName);
+	}
 }
 
 function visualizeStateMachine(dialogElement: HTMLElement, container: HTMLElement, bfsmController: StateMachineController): [addContentTo: HTMLElement, machineElements: Map<string, HTMLElement>, stateElements: Map<string, HTMLElement>] {
@@ -767,7 +925,6 @@ function visualizeBehaviorTree(container: HTMLElement, btController: GameObject)
 	for (let treeName in btController.behaviortreeIds) {
 		let tree = btController.behaviortrees[treeName];
 		let treeRow = addContent(baseTable, 'tr', null);
-		// let treeCell = addContent(treeRow, 'td', treeName);
 
 		let subTableCell = addContent(treeRow, 'td', null) as HTMLTableCellElement;
 
@@ -777,298 +934,122 @@ function visualizeBehaviorTree(container: HTMLElement, btController: GameObject)
 	return [container, nodeElements];
 }
 
-function toggleFullscreenOnElement(el: HTMLElement) {
-	if (!el.classList.contains('fullscreen')) {
-		el.dataset.left = el.style.left;
-		el.dataset.top = el.style.top;
-		el.style.removeProperty('left');
-		el.style.removeProperty('top');
-		el.draggable = false;
-	}
-	else {
-		el.dataset.left && (el.style.left = el.dataset.left);
-		el.dataset.top && (el.style.top = el.dataset.top);
-		el.draggable = true;
-	}
-	el.classList.toggle('fullscreen');
-}
-
-function createDebugDialog(title?: string, previousDialog?: HTMLElement): [dialogDiv: HTMLDivElement, contentDiv: HTMLDivElement, titleElement: HTMLSpanElement, wrapperElelement: HTMLDivElement, minimizeSpam: HTMLSpanElement] {
-	const theDialogDiv = document.createElement('div');
-	theDialogDiv.className = 'modal-dialog';
-	theDialogDiv.id = DEBUG_ELEMENT_ID;
-	theDialogDiv.draggable = true;
-	if (previousDialog) {
-		previousDialog.style.display = 'none';
-		(theDialogDiv as any).previous = previousDialog;
-	}
-
-	function dialogMouseDownHandler(this: typeof theDialogDiv, ev: MouseEvent) {
-		shiftX = ev.clientX - this.getBoundingClientRect().left;
-		shiftY = ev.clientY - this.getBoundingClientRect().top;
-	};
-
-	function dialogDragStartHandler(this: typeof theDialogDiv, ev: DragEvent) {
-		dragSrcEl = this;
-
-		ev.dataTransfer!.effectAllowed = 'move';
-		ev.dataTransfer!.setData('text/html', this.innerHTML);
-	};
-
-	function dialogDragEndHandler(this: typeof theDialogDiv, ev: DragEvent) {
-		this.style.left = ev.pageX - shiftX + 'px';
-		this.style.top = ev.pageY - shiftY + 'px';
-	};
-
-	function dialogDropHandler(this: typeof theDialogDiv, ev: DragEvent) {
-		ev.stopPropagation();
-
-		if (dragSrcEl !== this) {
-			dragSrcEl.innerHTML = this.innerHTML;
-			this.innerHTML = ev.dataTransfer!.getData('text/html');
-		}
-
-		return false;
-	};
-
-	theDialogDiv.onmousedown = dialogMouseDownHandler as (this: GlobalEventHandlers, ev: MouseEvent) => any;
-	theDialogDiv.ondragstart = dialogDragStartHandler as (this: GlobalEventHandlers, ev: DragEvent) => any;
-	theDialogDiv.ondragend = dialogDragEndHandler as (this: GlobalEventHandlers, ev: DragEvent) => any;
-	theDialogDiv.ondrop = dialogDropHandler as (this: GlobalEventHandlers, ev: DragEvent) => any;
-
-	const wrapperDiv = document.createElement('div');
-	wrapperDiv.className = 'modal-title-wrapper';
-	// wrapperDiv.ondblclick = (e) => {
-	//     toggleFullscreenOnElement(theDialogDiv);
-	// };
-
-	const titleSpan = document.createElement('span');
-	titleSpan.className = 'modal-title';
-	title && (titleSpan.innerHTML = title);
-
-	let backSpan: HTMLSpanElement | undefined = undefined;
-	if (previousDialog) {
-		backSpan = document.createElement('span');
-		backSpan.className = 'modal-back';
-		backSpan.innerHTML = '&larr;';
-		backSpan.onclick = (e) => {
-			e.preventDefault();
-			document.body.removeChild(theDialogDiv);
-			// previousDialog.style.left = theDialogDiv.style.left;
-			// previousDialog.style.top = theDialogDiv.style.top;
-			// previousDialog.style.width = theDialogDiv.style.width;
-			// previousDialog.style.height = theDialogDiv.style.height;
-			previousDialog.style.display = 'flex';
-			let newDivFullscreen = theDialogDiv.classList.contains('fullscreen');
-			let previousDialogFullscreen = previousDialog.classList.contains('fullscreen');
-			if (newDivFullscreen != previousDialogFullscreen) {
-				toggleFullscreenOnElement(previousDialog);
-			}
-		};
-	}
-
-	const closeSpan = document.createElement('span');
-	closeSpan.className = 'modal-dialog-button';
-	closeSpan.innerHTML = '&times;';
-	closeSpan.onclick = (e) => { // TODO: SHOULD ALSO BE HANDLED BY STATE VISUALISER COMPONENT SO THAT IT CAN BE REMOVED WHEN THE DIALOG IS CLOSED
-		e.preventDefault();
-		document.body.removeChild(theDialogDiv);
-
-		let previous = previousDialog;
-		while (previous) {
-			document.body.removeChild(previous);
-			previous = (previous as any).previous;
-		}
-		global.$.paused = prevPausedState; // Return to the original paused state
-	};
-
-	const contentDiv = document.createElement('div');
-	contentDiv.className = 'modal-content';
-
-	if (previousDialog) {
-		theDialogDiv.style.left = previousDialog.style.left;
-		theDialogDiv.style.top = previousDialog.style.top;
-		theDialogDiv.style.width = previousDialog.style.width;
-		theDialogDiv.style.height = previousDialog.style.height;
-
-		let newDivFullscreen = theDialogDiv.classList.contains('fullscreen');
-		let previousDialogFullscreen = previousDialog.classList.contains('fullscreen');
-		if (newDivFullscreen != previousDialogFullscreen) {
-			toggleFullscreenOnElement(theDialogDiv);
-		}
-	}
-
-	const maximizeSpan = document.createElement('span');
-	maximizeSpan.className = 'modal-dialog-button';
-	maximizeSpan.innerHTML = '&#x1F5D6;'; // Unicode for maximize dialog icon
-	maximizeSpan.onclick = (e) => {
-		e.preventDefault();
-		toggleFullscreenOnElement(theDialogDiv);
-	};
-
-	const minimizeSpan = document.createElement('span');
-	minimizeSpan.className = 'modal-dialog-button';
-	minimizeSpan.innerHTML = '&#x1F5D5;'; // Unicode for minimize icon
-
-	minimizeSpan.onclick = (e) => {
-		e.preventDefault();
-		if (theDialogDiv.classList.contains('minimized')) {
-			theDialogDiv.classList.remove('minimized');
-			contentDiv.style.display = 'block';
-			minimizeSpan.innerHTML = '&#x1F5D5;'; // Unicode for horizontal bar
-			if (theDialogDiv.classList.contains('fullscreen')) {
-				toggleFullscreenOnElement(theDialogDiv);
-			}
-			// Restore the original size of the dialog
-			theDialogDiv.style.height = theDialogDiv.dataset.oldHeight;
-			theDialogDiv.style.width = theDialogDiv.dataset.oldWidth;
-		} else {
-			theDialogDiv.classList.add('minimized');
-			contentDiv.style.display = 'none';
-			minimizeSpan.innerHTML = '&#x25B2;'; // Unicode for up arrow
-			// Save the original size of the dialog and set its size to fit the title bar
-			theDialogDiv.dataset.oldHeight = theDialogDiv.style.height;
-			theDialogDiv.dataset.oldWidth = theDialogDiv.style.width;
-			theDialogDiv.style.height = window.getComputedStyle(titleSpan).height;
-		}
-	};
-
-	backSpan && wrapperDiv.insertBefore(backSpan, null);
-	wrapperDiv.insertBefore(titleSpan, null);
-	wrapperDiv.insertBefore(closeSpan, null);
-	wrapperDiv.insertBefore(maximizeSpan, null);
-	wrapperDiv.insertBefore(minimizeSpan, null);
-	theDialogDiv.insertBefore(wrapperDiv, null);
-	theDialogDiv.insertBefore(contentDiv, null);
-
-	return [theDialogDiv, contentDiv, titleSpan, wrapperDiv, minimizeSpan];
-}
-
-export function handleOpenObjectMenu(e: UIEvent | null, previous?: HTMLElement): void {
-	if (e && e.type !== 'keydown') return;
-	if (!previous) {
-		prevPausedState = global.$.paused; // Remember the original paused-state so that we can return to that state
-		global.$.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
-	}
-
-	const [dialogDiv, contentDiv] = createDebugDialog('Objects', previous);
-
-	let table = addContent(contentDiv, 'table', null);
-	let headerRow = addContent(table, 'tr', null);
-	addContent(headerRow, 'th', 'Type');
-	addContent(headerRow, 'th', 'ID');
-
-	$.model.objects.forEach(o => {
-		let row = addContent(table, 'tr', null);
-		row.classList.add('selectableoption');
-		addContent(row, 'td', `${o.constructor.name}`);
-		addContent(row, 'td', `${o.id}`);
-
-		row.onclick = (_) => {
-			openObjectDetailMenu(o, o.id, dialogDiv);
-		};
-		row.onmouseenter = (_) => {
-			highlight_object(o);
-		};
-		row.onmouseleave = (_) => {
-			highlight_object(null);
-		};
-	});
-
-	document.body.insertBefore(dialogDiv, null);
-}
-
-export function handleOpenDebugMenu(e: UIEvent): void {
-	if (e && e.type !== 'keydown') return;
-	prevPausedState = global.$.paused; // Remember the original paused-state so that we can return to that state
-	global.$.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
-
-	const [dialogDiv, contentDiv] = createDebugDialog();
-
-	let table = addContent(contentDiv, 'table', null);
-	let headerRow = addContent(table, 'tr', null);
-	let headerElement = addContent(headerRow, 'th', '- Debug menu option - ');
-	headerElement.style.textAlign = 'center';
-
-	let row = addContent(table, 'tr', null);
-	row.classList.add('selectableoption', 'centered-text');
-	addContent(row, 'td', `List model properties`);
-	row.onclick = (_) => handleOpenModelMenu(null, dialogDiv);
-
-	row = addContent(table, 'tr', null);
-	row.classList.add('selectableoption', 'centered-text');
-	addContent(row, 'td', `List all objects in current scene`);
-	row.onclick = (_) => handleOpenObjectMenu(null, dialogDiv);
-
-	row = addContent(table, 'tr', null);
-	row.classList.add('selectableoption', 'centered-text');
-	addContent(row, 'td', `List all statemachine definitions`);
-	row.onclick = (_) => openObjectDetailMenu(StateDefinitions, 'Statemachine definitions', dialogDiv);
-
-	row = addContent(table, 'tr', null);
-	row.classList.add('selectableoption', 'centered-text');
-	addContent(row, 'td', `List all behavior tree definitions`);
-	row.onclick = (_) => openObjectDetailMenu(BehaviorTreeDefinitions, 'BT definitions', dialogDiv);
-
-	row = addContent(table, 'tr', null);
-	row.classList.add('selectableoption', 'centered-text');
-	addContent(row, 'td', `See the Event Emitter`);
-	row.onclick = (_) => openObjectDetailMenu(EventEmitter.instance, 'Event Emitter', dialogDiv);
-
-	row = addContent(table, 'tr', null);
-	row.classList.add('selectableoption', 'centered-text');
-	addContent(row, 'td', `See da Registry`);
-	row.onclick = (_) => openObjectDetailMenu(Registry.instance, 'Da Registry', dialogDiv);
-
-	document.body.insertBefore(dialogDiv, null);
-}
-
-export function handleOpenModelMenu(e: UIEvent | null, previous: HTMLElement): void {
-	if (e && e.type !== 'keydown') return;
-	if (!previous) {
-		prevPausedState = global.$.paused; // Remember the original paused-state so that we can return to that state
-		global.$.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
-		draggedObj = null; // Make sure that we stop dragging any object
-	}
-
-	openObjectDetailMenu($.model, 'The Model', previous);
-}
-
-function openObjectDetailMenu(obj: any, title: string, previous?: HTMLElement): void {
-	if (!previous) {
-		prevPausedState = global.$.paused; // Remember the original paused-state so that we can return to that state
-		global.$.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
-	}
-
-	const [dialogDiv, contentDiv] = createDebugDialog(title, previous);
-
-	createObjectTableElement(dialogDiv, contentDiv, obj, title, ['objects']);
-	document.body.insertBefore(dialogDiv, null);
-
-}
-
-export function handleDebugClick(e: MouseEvent): void {
-	if (!e.shiftKey && e.ctrlKey && !draggedObj) { // Only open when main or middle button is clicked and shift is not pressed and ctrl is pressed and no object is being dragged
+export function handleDebugMouseDown(e: MouseEvent): void {
+	if (e.button === 1) {
 		const { objUnderCursor } = getGameObjectAtCursor(e);
 		if (objUnderCursor) {
-			openObjectDetailMenu(objUnderCursor, objUnderCursor.id);
+			HitBoxVisualizer.toggle(objUnderCursor);
 		}
+	}
+
+	if (e.button !== 0) {
+		draggedObj = null; // Stop dragging object
+		return; // Only start dragging when primary button is pressed
+	}
+
+	if (!$.input.getPlayerInput(1).getButtonState('ShiftLeft', 'keyboard').pressed) { // Only start or continue dragging when shift is pressed. Note that the shift key is not updated after the mouse is pressed down
+		draggedObj = null; // Stop dragging object
+		return;
+	}
+
+	if (!draggedObj) { // Only start dragging when no object is currently being dragged
+		let { objUnderCursor, offsetToCursor } = getGameObjectAtCursor(e); // Get the object under the cursor and the offset from the cursor to the object's position
+		if (objUnderCursor && offsetToCursor) { // Only start dragging when an object is under the cursor and the offset is valid (i.e. the object has a position)
+			e.preventDefault();
+			startDragGameObject(objUnderCursor!, offsetToCursor!); // Start dragging the object under the cursor around
+		}
+	}
+	else { // Otherwise, continue dragging the object that is already being dragged
+		handleDebugMouseMove(e); // Update the dragged object's position when the mouse is pressed down and moved
 	}
 }
 
-function getGameObjectAtCursor(e: MouseEvent): { objUnderCursor: GameObject | null; offsetToCursor: vec2 | null; } {
-	const x = e.offsetX;
-	const y = e.offsetY;
-	/* Handling mouse events on game objects requires
-	 * transforming the game coordinates to canvas coordinates and that requires scaling
-	 * to be taken into account.
-	 */
-	const p = div_vec2(new_vec2(x, y), $.view.viewportScale);
-	const objsUnderCursor: GameObject[] = $.model.objects.filter(o => o.id !== 'debug_highlighter' && o.overlaps_point(p));
-	if (objsUnderCursor && objsUnderCursor.length > 0) {
-		// Choose obj with highest z-value
-		const objUnderCursorWithHighestZ = objsUnderCursor.reduce((o1, o2) => o1.z > o2.z ? o1 : o2);
-		return { objUnderCursor: objUnderCursorWithHighestZ, offsetToCursor: objUnderCursorWithHighestZ.overlaps_point(p) };
+export function handleDebugMouseMove(e: MouseEvent): void {
+	const { objUnderCursor } = getGameObjectAtCursor(e);
+	if ($.input.getPlayerInput(1).getButtonState('ControlLeft', 'keyboard').pressed) { // Ctrl + mouse move = allow for selecting objects in the game world (for debugging)
+		// Highlight mouse-overed objects
+		highlight_object(objUnderCursor);
 	}
-	return { objUnderCursor: null, offsetToCursor: null };;
+	else {
+		highlight_object(null); // Remove highlight when Ctrl is not pressed or when no object is under the cursor
+	}
+
+	if (draggedObj) {
+		// Otherwise, continue dragging the object that is already being dragged
+		let x = e.offsetX / $.view.viewportScale;
+		let y = e.offsetY / $.view.viewportScale;
+
+		if (draggedObj.pos) {
+			draggedObj.x = ~~x - draggedObjCursorOffset.x;
+			draggedObj.y = ~~y - draggedObjCursorOffset.y;
+		}
+		if (!$.input.getPlayerInput(1).getButtonState('ShiftLeft', 'keyboard').pressed) {
+			draggedObj = null; // Stop dragging object when shift is released
+		}
+		return;
+	}
+}
+
+function highlight_object(o: GameObject) {
+	const model = $.model;
+	let highlighter = $.model.getGameObject<ObjectHighlighter>('debug_highlighter');
+
+	if (!o) {
+		highlighter && (highlighter.target = null);
+	}
+	else {
+		if (!highlighter) {
+			highlighter = new ObjectHighlighter();
+			model.spawn(highlighter);
+		}
+		else if (!model.is_obj_in_current_space('debug_highlighter')) {
+			model.move_obj_to_space('debug_highlighter', model.current_space_id);
+		}
+		highlighter.target = o;
+	}
+	$.view.drawgame();
+}
+
+export function handleDebugMouseUp(_e: MouseEvent): void {
+	if (draggedObj) {
+		draggedObj = null;
+	}
+}
+
+export function handleDebugMouseOut(_e: MouseEvent): void {
+	highlight_object(null);
+	draggedObj = null;
+}
+
+function startDragGameObject(gameobject_at_cursor: GameObject, offsetToCursor: vec2): void {
+	draggedObj = gameobject_at_cursor;
+	draggedObjCursorOffset = new_vec2(~~offsetToCursor.x, ~~offsetToCursor.y);
+}
+
+export function handleContextMenu(e: MouseEvent): void {
+	e.preventDefault();
+	const { objUnderCursor } = getGameObjectAtCursor(e);
+	// Add state visualiser component to the object
+	if (objUnderCursor) {
+		// Verify that the object does not already have a state visualiser component
+		const existingVisualiser = objUnderCursor.getComponent(StateMachineVisualizer);
+		if (!objUnderCursor.getComponent(StateMachineVisualizer)) {
+			const visualiser = new StateMachineVisualizer(objUnderCursor.id);
+			objUnderCursor.addComponent(visualiser);
+			visualiser.enabled = true;
+		}
+		else {
+			existingVisualiser.enabled = !existingVisualiser.enabled;
+			if (!existingVisualiser.enabled) {
+				existingVisualiser.closeDialog();
+			}
+			else {
+				existingVisualiser.openDialog();
+			}
+		}
+	}
+	else {
+		highlight_object(null); // Remove highlight when Ctrl is not pressed or when no object is under the cursor
+	}
+
 }
