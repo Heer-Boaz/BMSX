@@ -1171,65 +1171,8 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		for (const inputPattern in inputHandlers) {
 			const handler = inputHandlers[inputPattern];
 			if (Input.instance.getPlayerInput(playerIndex).checkActionTriggered(inputPattern)) {
-				// Input matches the pattern
-				// Consume the input
 				Input.instance.getPlayerInput(playerIndex).consumeAction(inputPattern);
-
-				// Execute the handler
-				// Check if the check condition is met
-				const state_id_or_handler = handler;
-				if (state_id_or_handler) {
-					if (typeof state_id_or_handler === 'string') {
-						// If the handler is a string, treat it as a state ID and transition to that state
-						// If the string starts with a '#', it is a state ID relative to the parent state machine, otherwise it is a state ID relative to the current state machine
-						// const state_id = state_id_or_handler.startsWith('#') ? state_id_or_handler.slice(1) : state_id_or_handler;
-						this.to(state_id_or_handler); // Transition to the state with the given ID and pass the arguments to the state transition function
-						// Note: the state transition function will handle the enter and exit events for the states, but not if the state is the same as the current state
-					} else {
-						// If the handler is a StateTransition object (i.e., an object with an 'if' and 'do' handler), call the 'if' handler and if it returns true, call the 'do' handler and transition to the target state
-						const ifHandler = state_id_or_handler.if; // Get the if-handler from the state transition object
-						const doHandler = state_id_or_handler.do; // Get the do-handler from the state transition object
-						const to_state = state_id_or_handler.to; // Get the target state ID from the state transition object
-						const switch_state = state_id_or_handler.switch; // Get the target state ID from the state transition object
-
-						// Call the if-handler to check if the input should be processed, if the if-handler exists (otherwise, process the input)
-						if (ifHandler && !ifHandler.call(this.target, this as State<T>)) {
-							// If the if-handler exists and returns false, do nothing
-							return;
-						}
-
-						// If the if-handler does not exist or returns true, call the do-handler.
-						// The do-handler can return a state ID to transition to, otherwise it can return undefined to indicate that no transition should occur or to indicate that the target state should be used.
-						const next_state = doHandler?.call(this.target, this as State<T>);
-						const next_state_transition = this.getNextState(next_state); // Get the state transition object from the next state
-						if (next_state_transition && (next_state_transition.force_transition_to_same_state && next_state_transition.transition_type != 'to')) {
-							throw new Error(`The 'force_transition_to_same_state' property is only allowed for 'to' transitions, not for 'switch' transitions!`);
-						}
-
-						// If the next state is not the current state, transition to the next state
-						if (next_state_transition && (next_state_transition.state_id !== this.currentid || next_state_transition.force_transition_to_same_state)) {
-							if (next_state_transition.transition_type === 'to' || !next_state_transition.transition_type) {
-								this.to(next_state_transition.state_id, ...next_state_transition.args);
-							} else if (next_state_transition.transition_type === 'switch') {
-								this.switch(next_state_transition.state_id, ...next_state_transition.args);
-							}
-						} else if (to_state) {
-							// If the next state is not defined, check if the target state is defined and transition to the target state if it is not the same as the current state (otherwise, do nothing)
-							const to_state_transition = this.getNextState(to_state); // Get the state transition object from the target state
-							if (to_state_transition) {
-								// Transition to the target state if it is defined and not the same as the current state ID (otherwise, do nothing)
-								this.to(to_state_transition.state_id, ...to_state_transition.args);
-							}
-						}
-						else if (switch_state) {
-							const switch_state_transition = this.getNextState(switch_state);
-							if (switch_state_transition) {
-								// Transition to the target state if it is defined and not the same as the current state ID (otherwise, do nothing)
-								this.switch(switch_state_transition.state_id, ...switch_state_transition.args);
-							}
-						}
-					}
-				}
+				this.handleStateTransition(handler);
 			}
 		}
 	}
@@ -1284,34 +1227,17 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 		if (!run_checks) return;
 
 		for (const run_check of run_checks) {
-			// Check if the check condition is met
 			if (run_check.if.call(this.target, this)) {
-				// The do-handler can return a state ID to transition to, otherwise it can return undefined to indicate that no transition should occur or to indicate that the target state should be used.
-				const next_state_from_do = run_check.do?.call(this.target, this as State<T>);
-				const next_state_transition_from_do = this.getNextState(next_state_from_do); // Get the state transition object from the next state
-				if (next_state_transition_from_do && (next_state_transition_from_do.force_transition_to_same_state && next_state_transition_from_do.transition_type != 'to')) {
-					throw new Error(`The 'force_transition_to_same_state' property is only allowed for 'to' transitions, not for 'switch' transitions!`);
+				const handled = this.handleStateTransition(run_check.do);
+				if (handled) {
+					break;
 				}
-
-				// Transition to the state that was returned from the `do` handler, if it is not the current state
-				if (next_state_transition_from_do && (next_state_transition_from_do.state_id !== this.currentid || next_state_transition_from_do.force_transition_to_same_state)) {// If the next state is not the current state, transition to the next state
-					if (next_state_transition_from_do.transition_type === 'to' || !next_state_transition_from_do.transition_type) {
-						this.to(next_state_transition_from_do.state_id, ...next_state_transition_from_do.args);
-					} else if (next_state_transition_from_do.transition_type === 'switch') {
-						this.switch(next_state_transition_from_do.state_id, ...next_state_transition_from_do.args);
-					}
-				}
-				// If the `do` handler did not exist or returns undefined, the transition should be handled by the `to` or `switch` property of the tick check
-				else if (run_check.to) {
-					// Transition to the new state if the transition condition is met
+				if (run_check.to) {
 					this.transitionToNextStateIfProvided(run_check.to);
-				}
-				// If the `do` handler did not exist or returns undefined, the transition should be handled by the `to` or `switch` property of the tick check
-				else if (run_check.switch) {
-					// Switch to the new state if the transition condition is met
+				} else if (run_check.switch) {
 					this.transitionToNextStateIfProvided(run_check.switch, true);
 				}
-				break; // Only one transition should be executed per tick check
+				break;
 			}
 		}
 	}
@@ -1680,79 +1606,68 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 * @returns A boolean indicating whether the event was handled.
 	 */
 	private handleEvent(eventName: string, emitter_id: Identifier, ...args: any[]): boolean {
-		// If the state machine is paused, do not process the event
 		if (this.paused) {
-			return false; // Return false to indicate that the event was not handled
+			return false;
 		}
 
 		this.enterCriticalSection();
-		// Check if the 'on' property of the state's definition contains a transition for the event
 		try {
 			const state_id_or_handler = this.definition?.on?.[eventName];
 			if (state_id_or_handler) {
-				if (typeof state_id_or_handler === 'string') {
-					// If the handler is a string, treat it as a state ID and transition to that state
-					// If the string starts with a '#', it is a state ID relative to the parent state machine, otherwise it is a state ID relative to the current state machine
-					// const state_id = state_id_or_handler.startsWith('#') ? state_id_or_handler.slice(1) : state_id_or_handler;
-					this.to(state_id_or_handler, ...args); // Transition to the state with the given ID and pass the arguments to the state transition function
-					// Note: the state transition function will handle the enter and exit events for the states, but not if the state is the same as the current state
-				} else {
-					// If the handler is a StateTransition object (i.e., an object with an 'if' and 'do' handler), call the 'if' handler and if it returns true, call the 'do' handler and transition to the target state
-					const ifHandler = state_id_or_handler.if; // Get the if-handler from the state transition object
-					const doHandler = state_id_or_handler.do; // Get the do-handler from the state transition object
-					const emitterId = state_id_or_handler.scope; // (Optional) The ID of the emitter scope. If provided, the listener will be added to the emitter scope listeners, otherwise it will be added to the global scope listeners.
-					const to_state = state_id_or_handler.to; // Get the target state ID from the state transition object
-					const switch_state = state_id_or_handler.switch; // Get the target state ID from the state transition object
-
-					// If the emitter ID is provided and it is not the same as the emitter ID of the event, do nothing
+				if (typeof state_id_or_handler !== 'string') {
+					const emitterId = state_id_or_handler.scope;
 					if (emitterId && emitterId !== 'all' && emitterId !== emitter_id) {
-						return false; // Return false to indicate that the event was not handled
-					}
-
-					// If the emitter ID is not provided or it is the same as the emitter ID of the event, call the if-handler
-					if (ifHandler && !ifHandler.call(this.target, this as State<T>, ...args)) {
-						// If the if-handler exists and returns false, do nothing
-						return false; // Return false to indicate that the event was not handled
-					}
-
-					// If the if-handler does not exist or returns true, call the do-handler.
-					// The do-handler can return a state ID to transition to, otherwise it can return undefined to indicate that no transition should occur or to indicate that the target state should be used.
-					const next_state = doHandler?.call(this.target, this as State<T>, ...args);
-					const next_state_transition = this.getNextState(next_state); // Get the state transition object from the next state
-					if (next_state_transition && (next_state_transition.force_transition_to_same_state && next_state_transition.transition_type != 'to')) {
-						throw new Error(`The 'force_transition_to_same_state' property is only allowed for 'to' transitions, not for 'switch' transitions!`);
-					}
-
-					// If the next state is not the current state, transition to the next state
-					if (next_state_transition && (next_state_transition.state_id !== this.currentid || next_state_transition.force_transition_to_same_state)) {
-						if (next_state_transition.transition_type === 'to' || !next_state_transition.transition_type) {
-							this.to(next_state_transition.state_id, ...next_state_transition.args, ...args);
-						} else if (next_state_transition.transition_type === 'switch') {
-							this.switch(next_state_transition.state_id, ...next_state_transition.args, ...args);
-						}
-					} else if (to_state) {
-						// If the next state is not defined, check if the target state is defined and transition to the target state if it is not the same as the current state (otherwise, do nothing)
-						const to_state_transition = this.getNextState(to_state); // Get the state transition object from the target state
-						if (to_state_transition) {
-							// Transition to the target state if it is defined and not the same as the current state ID (otherwise, do nothing)
-							this.to(to_state_transition.state_id, ...to_state_transition.args, ...args);
-						}
-					}
-					else if (switch_state) {
-						const switch_state_transition = this.getNextState(switch_state);
-						if (switch_state_transition) {
-							// Transition to the target state if it is defined and not the same as the current state ID (otherwise, do nothing)
-							this.switch(switch_state_transition.state_id, ...switch_state_transition.args, ...args);
-						}
+						return false;
 					}
 				}
-				return true; // Return true to indicate that the event was handled
+				if (this.handleStateTransition(state_id_or_handler, ...args)) {
+					return true;
+				}
 			}
-
-			return false; // Return false if the event was not handled (it will bubble up to the parent state)
+			return false;
 		} finally {
 			this.leaveCriticalSection();
 		}
+	}
+
+	private handleStateTransition(state_id_or_handler: any, ...args: any[]): boolean {
+		if (typeof state_id_or_handler === 'string') {
+			this.to(state_id_or_handler, ...args);
+		} else {
+			const ifHandler = state_id_or_handler.if;
+			const doHandler = state_id_or_handler.do;
+			const to_state = state_id_or_handler.to;
+			const switch_state = state_id_or_handler.switch;
+
+			if (ifHandler && !ifHandler.call(this.target, this as State<T>, ...args)) {
+				return false;
+			}
+
+			const next_state = doHandler?.call(this.target, this as State<T>, ...args);
+			const next_state_transition = this.getNextState(next_state);
+			if (next_state_transition && (next_state_transition.force_transition_to_same_state && next_state_transition.transition_type != 'to')) {
+				throw new Error(`The 'force_transition_to_same_state' property is only allowed for 'to' transitions, not for 'switch' transitions!`);
+			}
+
+			if (next_state_transition && (next_state_transition.state_id !== this.currentid || next_state_transition.force_transition_to_same_state)) {
+				if (next_state_transition.transition_type === 'to' || !next_state_transition.transition_type) {
+					this.to(next_state_transition.state_id, ...next_state_transition.args, ...args);
+				} else if (next_state_transition.transition_type === 'switch') {
+					this.switch(next_state_transition.state_id, ...next_state_transition.args, ...args);
+				}
+			} else if (to_state) {
+				const to_state_transition = this.getNextState(to_state);
+				if (to_state_transition) {
+					this.to(to_state_transition.state_id, ...to_state_transition.args, ...args);
+				}
+			} else if (switch_state) {
+				const switch_state_transition = this.getNextState(switch_state);
+				if (switch_state_transition) {
+					this.switch(switch_state_transition.state_id, ...switch_state_transition.args, ...args);
+				}
+			}
+		}
+		return true;
 	}
 
 	/**
