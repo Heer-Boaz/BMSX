@@ -88,6 +88,18 @@
 	cursor: text;
 }
 
+.modal-content table tr td.propvalue select,
+.modal-content table tr td.mutated-propvalue select {
+	font-family: monospace;
+	font-size: 12px;
+}
+
+.modal-content table tr td.propvalue:hover select,
+.modal-content table tr td.propvalue:focus select {
+	color: white;
+	background-color: rgba(0, 0, 255, 0.66);
+}
+
 .modal-content table tr td.state:hover,
 .modal-content table tr td.state:focus {
 	color: white;
@@ -103,6 +115,17 @@
 
 .modal-content table tr td.mutated-propvalue:hover,
 .modal-content table tr td.mutated-propvalue:focus {
+	color: white;
+	background-color: rgba(255, 0, 0, 0.66);
+}
+
+.modal-content table tr td.mutated-propvalue select {
+	color: white;
+	background-color: rgba(140, 0, 0, 0.66);
+}
+
+.modal-content table tr td.mutated-propvalue select option:hover,
+.modal-content table tr td.mutated-propvalue select option:focus {
 	color: white;
 	background-color: rgba(255, 0, 0, 0.66);
 }
@@ -149,6 +172,17 @@
 .modal-content table tr td.excluded-propvalue:focus {
 	background-color: rgba(128, 128, 128, 0.66);
 	cursor: not-allowed;
+}
+
+.modal-content table tr td.redirected-propvalue {
+	color: darkslategray;
+}
+
+.modal-content table tr td.redirected-propvalue:hover,
+.modal-content table tr td.redirected-propvalue:focus {
+	background-color: rgba(0, 140, 0, 0.66);
+	color: white;
+	cursor: zoom-in;
 }
 
 .modal-content table tr td:first-of-type {
@@ -270,36 +304,44 @@
 	animation: button-los .10s forwards cubic-bezier(0.42, 0, 0.58, 1);
 }
 
-.knop.red + .knoptext {
-	fill: #FF0000; /* Red */
+.knop.red+.knoptext {
+	fill: #FF0000;
+	/* Red */
 }
 
-.knop.blue + .knoptext {
-	fill: #0000FF; /* Blue */
+.knop.blue+.knoptext {
+	fill: #0000FF;
+	/* Blue */
 }
 
-.knop.green + .knoptext {
-	fill: #008000; /* Green */
+.knop.green+.knoptext {
+	fill: #008000;
+	/* Green */
 }
 
-.knop.pink + .knoptext {
-	fill: #FF00FF; /* Magenta */
+.knop.pink+.knoptext {
+	fill: #FF00FF;
+	/* Magenta */
 }
 
-.knop.orange + .knoptext {
-	fill: #FFA500; /* Orange */
+.knop.orange+.knoptext {
+	fill: #FFA500;
+	/* Orange */
 }
 
-.knop.purple + .knoptext {
-	fill: #800080; /* Purple */
+.knop.purple+.knoptext {
+	fill: #800080;
+	/* Purple */
 }
 
-.knop.light-blue + .knoptext {
-	fill: #00BFFF; /* Deep Sky Blue */
+.knop.light-blue+.knoptext {
+	fill: #00BFFF;
+	/* Deep Sky Blue */
 }
 
-.knop.yellow + .knoptext {
-	fill: #FFFF00; /* Yellow */
+.knop.yellow+.knoptext {
+	fill: #FFFF00;
+	/* Yellow */
 }
 
 @keyframes button-los {
@@ -398,39 +440,40 @@ svg.action-buttons {
 	display: none;
 }
 
-#d-pad-omheining:not([class]), #d-pad-omheining[class=""] ~ .d-pad-none {
+#d-pad-omheining:not([class]),
+#d-pad-omheining[class=""]~.d-pad-none {
 	display: block;
 }
 
-#d-pad-omheining.d-pad-u ~ .d-pad-u {
+#d-pad-omheining.d-pad-u~.d-pad-u {
 	display: block;
 }
 
-#d-pad-omheining.d-pad-ru ~ .d-pad-ru {
+#d-pad-omheining.d-pad-ru~.d-pad-ru {
 	display: block;
 }
 
-#d-pad-omheining.d-pad-r ~ .d-pad-r {
+#d-pad-omheining.d-pad-r~.d-pad-r {
 	display: block;
 }
 
-#d-pad-omheining.d-pad-rd ~ .d-pad-rd {
+#d-pad-omheining.d-pad-rd~.d-pad-rd {
 	display: block;
 }
 
-#d-pad-omheining.d-pad-d ~ .d-pad-d {
+#d-pad-omheining.d-pad-d~.d-pad-d {
 	display: block;
 }
 
-#d-pad-omheining.d-pad-ld ~ .d-pad-ld {
+#d-pad-omheining.d-pad-ld~.d-pad-ld {
 	display: block;
 }
 
-#d-pad-omheining.d-pad-l ~ .d-pad-l {
+#d-pad-omheining.d-pad-l~.d-pad-l {
 	display: block;
 }
 
-#d-pad-omheining.d-pad-lu ~ .d-pad-lu {
+#d-pad-omheining.d-pad-lu~.d-pad-lu {
 	display: block;
 }
 
@@ -550,7 +593,7 @@ html {
 	font-family: monospace;
 	/* font-family: 'Press Start 2P'; */
 	/* font-size: min(max(16px, 3vw), 64px); */
-    font-size: clamp(16px, 2vw, 64px);
+	font-size: clamp(16px, 2vw, 64px);
 	text-align: center;
 	font-weight: normal;
 }
@@ -565,7 +608,7 @@ html {
 	font-family: monospace;
 	/* font-family: 'Press Start 2P'; */
 	/* font-size: min(max(16px, 2vw), 32px); */
-    font-size: clamp(16px, 2vw, 64px);
+	font-size: clamp(16px, 2vw, 64px);
 	text-align: center;
 	font-weight: normal;
 }
@@ -583,15 +626,13 @@ html {
 }
 
 @keyframes coloring {
-	0% {
-	}
+	0% {}
 
 	50% {
 		color: #2020ff;
 	}
 
-	100% {
-	}
+	100% {}
 }
 
 @keyframes fade-in-partial {
