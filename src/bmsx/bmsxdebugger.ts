@@ -10,7 +10,7 @@ import type { Identifier } from "./game";
 import type { vec2 } from './rompack';
 import { SpriteObject } from './sprite';
 import { Color } from './view';
-import { EventEmitter } from './eventemitter';
+import { EventEmitter, type ListenerSet } from './eventemitter';
 import { BehaviorTreeDefinitions, BTNode } from './behaviourtree';
 import { Registry } from './registry';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
@@ -658,6 +658,71 @@ export function handleOpenObjectMenu(e: UIEvent | null, previous?: HTMLElement):
 	document.body.insertBefore(dialogDiv, null);
 }
 
+export function handleOpenEventEmitterMenu(previous?: HTMLElement): void {
+    const [dialogDiv, contentDiv] = createDebugDialog('Event Emitter Debugger', previous);
+
+    const eventEmitter = EventEmitter.instance;
+    const container = document.createElement('div');
+    container.className = 'event-emitter-container';
+    contentDiv.appendChild(container);
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'event-emitter-wrapper';
+    container.appendChild(wrapper);
+
+    const header = document.createElement('div');
+    header.className = 'event-emitter-header';
+    header.textContent = 'Event Emitter Debugger';
+    wrapper.appendChild(header);
+
+    const table = addContent(wrapper, 'table', null);
+    table.className = 'event-emitter-table';
+    const headerRow = addContent(table, 'tr', null);
+    addContent(headerRow, 'th', 'Event Name');
+    addContent(headerRow, 'th', 'Scope');
+    addContent(headerRow, 'th', 'Listeners');
+
+    for (const eventName in eventEmitter.globalScopeListeners) {
+        const row = addContent(table, 'tr', null);
+        addContent(row, 'td', eventName);
+        addContent(row, 'td', 'global');
+        const listenersCell = addContent(row, 'td', `${eventEmitter.globalScopeListeners[eventName].size}`);
+        listenersCell.classList.add('clickable');
+        listenersCell.onclick = () => handleOpenListenersDialog(eventName, 'global', eventEmitter.globalScopeListeners[eventName], dialogDiv);
+    }
+
+    for (const eventName in eventEmitter.emitterScopeListeners) {
+        for (const scope in eventEmitter.emitterScopeListeners[eventName]) {
+            const row = addContent(table, 'tr', null);
+            addContent(row, 'td', eventName);
+            addContent(row, 'td', scope);
+            const listenersCell = addContent(row, 'td', `${eventEmitter.emitterScopeListeners[eventName][scope].size}`);
+            listenersCell.classList.add('clickable');
+            listenersCell.onclick = () => handleOpenListenersDialog(eventName, scope, eventEmitter.emitterScopeListeners[eventName][scope], dialogDiv);
+        }
+    }
+
+    document.body.insertBefore(dialogDiv, null);
+}
+
+function handleOpenListenersDialog(eventName: string, scope: string, listeners: ListenerSet, previous?: HTMLElement): void {
+    const [dialogDiv, contentDiv] = createDebugDialog(`Listeners for ${eventName} (${scope})`, previous);
+
+    const table = addContent(contentDiv, 'table', null);
+    table.className = 'event-emitter-listeners-table';
+    const headerRow = addContent(table, 'tr', null);
+    addContent(headerRow, 'th', 'Listener');
+    addContent(headerRow, 'th', 'Subscriber');
+
+    listeners.forEach(({ listener, subscriber }) => {
+        const row = addContent(table, 'tr', null);
+        addContent(row, 'td', listener.name || 'anonymous');
+        addContent(row, 'td', subscriber.constructor.name);
+    });
+
+    document.body.insertBefore(dialogDiv, null);
+}
+
 export function handleOpenDebugMenu(e: UIEvent): void {
 	if (e && e.type !== 'keydown') return;
 	prevPausedState = global.$.paused; // Remember the original paused-state so that we can return to that state
@@ -694,6 +759,11 @@ export function handleOpenDebugMenu(e: UIEvent): void {
 	row.classList.add('selectableoption', 'centered-text');
 	addContent(row, 'td', `See the Event Emitter`);
 	row.onclick = (_) => openObjectDetailMenu(EventEmitter.instance, 'Event Emitter', dialogDiv);
+
+	row = addContent(table, 'tr', null);
+	row.classList.add('selectableoption', 'centered-text');
+	addContent(row, 'td', `See the Event Emitter???`);
+	row.onclick = (_) => handleOpenEventEmitterMenu(dialogDiv);
 
 	row = addContent(table, 'tr', null);
 	row.classList.add('selectableoption', 'centered-text');

@@ -2,7 +2,7 @@ import { IIdentifiable, IParentable, IRegisterable, Identifier } from "./game";
 import { Registry } from "./registry";
 
 type Listener = { listener: Function, subscriber: any };
-type ListenerSet = Set<Listener>;
+export type ListenerSet = Set<Listener>;
 type EventListenerMap = Record<string, ListenerSet>;
 type EmitterScopeListenerMap = Record<string, EventListenerMap>;
 
@@ -36,11 +36,11 @@ export class EventEmitter implements IRegisterable {
     /**
      * Map of listeners for each emitter scope.
      */
-    private emitterScopeListeners: EmitterScopeListenerMap = {};
+    public emitterScopeListeners: EmitterScopeListenerMap = {};
     /**
      * Map of event listeners registered on the global scope.
      */
-    private globalScopeListeners: EventListenerMap = {};
+    public globalScopeListeners: EventListenerMap = {};
     /**
      * The singleton instance of the EventEmitter class.
      */
