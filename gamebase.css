@@ -241,6 +241,47 @@
 	display: inline-block;
 }
 
+.event-emitter-container {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.event-emitter-wrapper {
+	border: 1px solid #ccc;
+	padding: 10px;
+	border-radius: 5px;
+	background-color: #f9f9f9;
+}
+
+.event-emitter-header {
+	font-weight: bold;
+	font-size: 1.2em;
+	margin-bottom: 5px;
+}
+
+.event-emitter-table {
+	width: 100%;
+	border-collapse: collapse;
+}
+
+.event-emitter-table th,
+.event-emitter-table td {
+	border: 1px solid #ccc;
+	padding: 5px;
+	text-align: left;
+}
+
+.event-emitter-table th {
+	background-color: #f0f0f0;
+}
+
+.clickable {
+    cursor: pointer;
+    color: blue;
+    text-decoration: underline;
+}
+
 .fullscreen {
 	top: 0px;
 	left: 0px;
