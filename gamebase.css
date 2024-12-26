@@ -2,10 +2,6 @@
 	touch-action: none;
 }
 
-.minimized {
-	height: 30px;
-}
-
 .autosize {
 	width: auto !important;
 	height: auto !important;
@@ -20,12 +16,16 @@
 	color: black;
 	width: 800px;
 	height: 600px;
-	resize: both;
 	font-family: monospace;
 	z-index: 5000;
 	display: flex;
 	flex-direction: column;
 	overflow: hidden;
+	resize: both;
+}
+
+.minimized {
+	resize: none !important; /* Disable resizing */
 }
 
 .modal-content table {
@@ -287,6 +287,7 @@
 	left: 0px;
 	width: 100%;
 	min-height: 100%;
+	resize: none; /* Disable resizing */
 }
 
 .modal-dialog-button:hover,
@@ -297,6 +298,7 @@
 	background: rgba(10, 7, 7, 0.66);
 	text-decoration: none;
 	cursor: pointer;
+	cursor: initial;
 }
 
 #pause-overlay {
@@ -313,6 +315,14 @@
 	opacity: 0;
 }
 
+#pause-overlay.visible {
+	opacity: 1;
+}
+
+#pause-overlay.fade-out {
+	animation: fade-out .5s ease;
+}
+
 @keyframes fade-out {
 	from {
 		opacity: 1;
@@ -321,10 +331,6 @@
 	to {
 		opacity: 0;
 	}
-}
-
-#pause-overlay.fade-out {
-	animation: fade-out 1s ease;
 }
 
 .knop {
