@@ -6,7 +6,6 @@ import { exec } from 'child_process';
 const Gauge = require('gauge');
 import * as browserify from 'browserify';
 const tsify = require('tsify');
-const stringify = require('stringify');
 
 import * as terser from 'terser';
 import * as term from 'terminal-kit';
@@ -60,14 +59,13 @@ interface RomManifest {
 type logentryType = undefined | 'error' | 'warning';
 
 function writeOut(_tolog: string, type?: logentryType): void {
-	let d = new Date();
 	let tolog: string;
 	switch (type) {
 		case 'error': tolog = _colors.red(_tolog); break;
 		case 'warning': tolog = _colors.yellow(_tolog); break;
 		default: tolog = _tolog; break;
 	}
-	term.terminal(`${tolog}`);
+	term.terminal(tolog);
 }
 
 function timer(ms: number) {
@@ -1382,8 +1380,6 @@ async function main() {
 			gauge.show('ALLES DONUT', 1);
 			gauge.pulse();
 			await timer(100);
-
-			// writeOut(`\n${_colors.brightWhite.bold('[ALLES DONUT]')}\n`);
 		} catch (e) {
 			gauge.pulse();
 			outputError(e);
