@@ -317,6 +317,47 @@ export abstract class BaseView implements IRegisterable {
 	}
 
 
+	public showFadingOverlay(text: string) {
+		let pauseOverlay = document.getElementById('pause-overlay');
+		if (!pauseOverlay) {
+			pauseOverlay = document.createElement('div');
+			pauseOverlay.id = 'pause-overlay';
+			document.body.appendChild(pauseOverlay);
+		}
+		pauseOverlay.textContent = text;
+
+		// Remove the fade-out class to reset the animation
+		pauseOverlay.classList.remove('fade-out');
+
+		// Add the visible class to show the overlay by setting the opacity to 1
+		pauseOverlay.classList.add('visible');
+	}
+
+	public hideFadingOverlay() {
+		let pauseOverlay = document.getElementById('pause-overlay');
+		if (pauseOverlay) {
+			// Add the fade-out class to start the animation
+			pauseOverlay.classList.add('fade-out');
+			// Remove the visible class to hide the overlay by setting the opacity to 0
+			pauseOverlay.classList.remove('visible');
+			// Force a reflow to restart the animation
+			void pauseOverlay.offsetWidth;
+
+			pauseOverlay.onanimationend = () => {
+				pauseOverlay?.remove();
+			}
+		}
+	}
+
+	public showPauseOverlay() {
+		$.view.showFadingOverlay('⏸️');
+	}
+
+	public showResumeOverlay() {
+		$.view.hideFadingOverlay();
+		// $.view.showFadingOverlay('▶️');
+	}
+
 	public clear(): void {
 		$.view.context.translate(0.5, 0.5);
 		$.view.context.clearRect(0, 0, this.canvas.width, this.canvas.height);

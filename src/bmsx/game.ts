@@ -1,4 +1,4 @@
-﻿import { BaseModel, GameObject, showPauseOverlay, showResumeOverlay, TextWriter, type InputMap } from "./bmsx";
+﻿import { BaseModel, GameObject, TextWriter, type InputMap } from "./bmsx";
 import { EventEmitter } from "./eventemitter";
 import { ActionState, ActionStateQuery, Input } from "./input";
 import { MSX2ScreenWidth, MSX2ScreenHeight } from "./msx";
@@ -874,10 +874,10 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	public set paused(value: boolean) {
 		this._paused = value;
 		if (this._paused === true) {
-			showPauseOverlay();
+			this.view.showPauseOverlay();
 		}
 		else if (this._paused === false) {
-			showResumeOverlay();
+			this.view.showResumeOverlay();
 		}
 	}
 

@@ -1124,30 +1124,3 @@ export function handleContextMenu(e: MouseEvent): void {
 	}
 
 }
-
-function showFadingOverlay(text: string) {
-	let pauseOverlay = document.getElementById('pause-overlay');
-	if (!pauseOverlay) {
-		pauseOverlay = document.createElement('div');
-		pauseOverlay.id = 'pause-overlay';
-		document.body.appendChild(pauseOverlay);
-	}
-	pauseOverlay.textContent = text;
-
-	// Remove the fade-out class to reset the animation
-	pauseOverlay.classList.remove('fade-out');
-
-	// Force a reflow to restart the animation
-	void pauseOverlay.offsetWidth;
-
-	// Add the fade-out class to start the animation
-	pauseOverlay.classList.add('fade-out');
-}
-
-export function showPauseOverlay() {
-	showFadingOverlay('⏸️');
-}
-
-export function showResumeOverlay() {
-	showFadingOverlay('▶️');
-}
