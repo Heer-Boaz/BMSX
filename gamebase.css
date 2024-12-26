@@ -277,9 +277,9 @@
 }
 
 .clickable {
-    cursor: pointer;
-    color: blue;
-    text-decoration: underline;
+	cursor: pointer;
+	color: blue;
+	text-decoration: underline;
 }
 
 .fullscreen {
@@ -297,6 +297,34 @@
 	background: rgba(10, 7, 7, 0.66);
 	text-decoration: none;
 	cursor: pointer;
+}
+
+#pause-overlay {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    padding: 8px 16px;
+    font-size: 2em;
+    border-radius: 4px;
+    z-index: 9999;
+	opacity: 0;
+}
+
+@keyframes fade-out {
+	from {
+		opacity: 1;
+	}
+
+	to {
+		opacity: 0;
+	}
+}
+
+#pause-overlay.fade-out {
+	animation: fade-out 1s ease;
 }
 
 .knop {

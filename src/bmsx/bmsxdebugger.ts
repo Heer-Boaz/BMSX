@@ -659,68 +659,68 @@ export function handleOpenObjectMenu(e: UIEvent | null, previous?: HTMLElement):
 }
 
 export function handleOpenEventEmitterMenu(previous?: HTMLElement): void {
-    const [dialogDiv, contentDiv] = createDebugDialog('Event Emitter Debugger', previous);
+	const [dialogDiv, contentDiv] = createDebugDialog('Event Emitter Debugger', previous);
 
-    const eventEmitter = EventEmitter.instance;
-    const container = document.createElement('div');
-    container.className = 'event-emitter-container';
-    contentDiv.appendChild(container);
+	const eventEmitter = EventEmitter.instance;
+	const container = document.createElement('div');
+	container.className = 'event-emitter-container';
+	contentDiv.appendChild(container);
 
-    const wrapper = document.createElement('div');
-    wrapper.className = 'event-emitter-wrapper';
-    container.appendChild(wrapper);
+	const wrapper = document.createElement('div');
+	wrapper.className = 'event-emitter-wrapper';
+	container.appendChild(wrapper);
 
-    const header = document.createElement('div');
-    header.className = 'event-emitter-header';
-    header.textContent = 'Event Emitter Debugger';
-    wrapper.appendChild(header);
+	const header = document.createElement('div');
+	header.className = 'event-emitter-header';
+	header.textContent = 'Event Emitter Debugger';
+	wrapper.appendChild(header);
 
-    const table = addContent(wrapper, 'table', null);
-    table.className = 'event-emitter-table';
-    const headerRow = addContent(table, 'tr', null);
-    addContent(headerRow, 'th', 'Event Name');
-    addContent(headerRow, 'th', 'Scope');
-    addContent(headerRow, 'th', 'Listeners');
+	const table = addContent(wrapper, 'table', null);
+	table.className = 'event-emitter-table';
+	const headerRow = addContent(table, 'tr', null);
+	addContent(headerRow, 'th', 'Event Name');
+	addContent(headerRow, 'th', 'Scope');
+	addContent(headerRow, 'th', 'Listeners');
 
-    for (const eventName in eventEmitter.globalScopeListeners) {
-        const row = addContent(table, 'tr', null);
-        addContent(row, 'td', eventName);
-        addContent(row, 'td', 'global');
-        const listenersCell = addContent(row, 'td', `${eventEmitter.globalScopeListeners[eventName].size}`);
-        listenersCell.classList.add('clickable');
-        listenersCell.onclick = () => handleOpenListenersDialog(eventName, 'global', eventEmitter.globalScopeListeners[eventName], dialogDiv);
-    }
+	for (const eventName in eventEmitter.globalScopeListeners) {
+		const row = addContent(table, 'tr', null);
+		addContent(row, 'td', eventName);
+		addContent(row, 'td', 'global');
+		const listenersCell = addContent(row, 'td', `${eventEmitter.globalScopeListeners[eventName].size}`);
+		listenersCell.classList.add('clickable');
+		listenersCell.onclick = () => handleOpenListenersDialog(eventName, 'global', eventEmitter.globalScopeListeners[eventName], dialogDiv);
+	}
 
-    for (const eventName in eventEmitter.emitterScopeListeners) {
-        for (const scope in eventEmitter.emitterScopeListeners[eventName]) {
-            const row = addContent(table, 'tr', null);
-            addContent(row, 'td', eventName);
-            addContent(row, 'td', scope);
-            const listenersCell = addContent(row, 'td', `${eventEmitter.emitterScopeListeners[eventName][scope].size}`);
-            listenersCell.classList.add('clickable');
-            listenersCell.onclick = () => handleOpenListenersDialog(eventName, scope, eventEmitter.emitterScopeListeners[eventName][scope], dialogDiv);
-        }
-    }
+	for (const eventName in eventEmitter.emitterScopeListeners) {
+		for (const scope in eventEmitter.emitterScopeListeners[eventName]) {
+			const row = addContent(table, 'tr', null);
+			addContent(row, 'td', eventName);
+			addContent(row, 'td', scope);
+			const listenersCell = addContent(row, 'td', `${eventEmitter.emitterScopeListeners[eventName][scope].size}`);
+			listenersCell.classList.add('clickable');
+			listenersCell.onclick = () => handleOpenListenersDialog(eventName, scope, eventEmitter.emitterScopeListeners[eventName][scope], dialogDiv);
+		}
+	}
 
-    document.body.insertBefore(dialogDiv, null);
+	document.body.insertBefore(dialogDiv, null);
 }
 
 function handleOpenListenersDialog(eventName: string, scope: string, listeners: ListenerSet, previous?: HTMLElement): void {
-    const [dialogDiv, contentDiv] = createDebugDialog(`Listeners for ${eventName} (${scope})`, previous);
+	const [dialogDiv, contentDiv] = createDebugDialog(`Listeners for ${eventName} (${scope})`, previous);
 
-    const table = addContent(contentDiv, 'table', null);
-    table.className = 'event-emitter-listeners-table';
-    const headerRow = addContent(table, 'tr', null);
-    addContent(headerRow, 'th', 'Listener');
-    addContent(headerRow, 'th', 'Subscriber');
+	const table = addContent(contentDiv, 'table', null);
+	table.className = 'event-emitter-listeners-table';
+	const headerRow = addContent(table, 'tr', null);
+	addContent(headerRow, 'th', 'Listener');
+	addContent(headerRow, 'th', 'Subscriber');
 
-    listeners.forEach(({ listener, subscriber }) => {
-        const row = addContent(table, 'tr', null);
-        addContent(row, 'td', listener.name || 'anonymous');
-        addContent(row, 'td', subscriber.constructor.name);
-    });
+	listeners.forEach(({ listener, subscriber }) => {
+		const row = addContent(table, 'tr', null);
+		addContent(row, 'td', listener.name || 'anonymous');
+		addContent(row, 'td', subscriber.constructor.name);
+	});
 
-    document.body.insertBefore(dialogDiv, null);
+	document.body.insertBefore(dialogDiv, null);
 }
 
 export function handleOpenDebugMenu(e: UIEvent): void {
@@ -1123,4 +1123,31 @@ export function handleContextMenu(e: MouseEvent): void {
 		highlight_object(null); // Remove highlight when Ctrl is not pressed or when no object is under the cursor
 	}
 
+}
+
+function showFadingOverlay(text: string) {
+	let pauseOverlay = document.getElementById('pause-overlay');
+	if (!pauseOverlay) {
+		pauseOverlay = document.createElement('div');
+		pauseOverlay.id = 'pause-overlay';
+		document.body.appendChild(pauseOverlay);
+	}
+	pauseOverlay.textContent = text;
+
+	// Remove the fade-out class to reset the animation
+	pauseOverlay.classList.remove('fade-out');
+
+	// Force a reflow to restart the animation
+	void pauseOverlay.offsetWidth;
+
+	// Add the fade-out class to start the animation
+	pauseOverlay.classList.add('fade-out');
+}
+
+export function showPauseOverlay() {
+	showFadingOverlay('⏸️');
+}
+
+export function showResumeOverlay() {
+	showFadingOverlay('▶️');
 }

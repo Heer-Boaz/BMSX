@@ -1,4 +1,4 @@
-﻿import { BaseModel, GameObject, TextWriter, type InputMap } from "./bmsx";
+﻿import { BaseModel, GameObject, showPauseOverlay, showResumeOverlay, TextWriter, type InputMap } from "./bmsx";
 import { EventEmitter } from "./eventemitter";
 import { ActionState, ActionStateQuery, Input } from "./input";
 import { MSX2ScreenWidth, MSX2ScreenHeight } from "./msx";
@@ -866,9 +866,20 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	public running: boolean;
 
 	/**
-	 * Indicates whether the game is currently paused.
+	 * Indicates whether the game is currently paused (by the debugger).
 	 */
-	public paused: boolean;
+	private _paused: boolean;
+
+	public get paused(): boolean { return this._paused; }
+	public set paused(value: boolean) {
+		this._paused = value;
+		if (this._paused === true) {
+			showPauseOverlay();
+		}
+		else if (this._paused === false) {
+			showResumeOverlay();
+		}
+	}
 
 	/**
 	 * Indicates whether the game was updated.
