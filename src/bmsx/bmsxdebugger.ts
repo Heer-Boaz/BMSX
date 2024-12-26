@@ -272,12 +272,10 @@ function toggleFullscreenOnElement(el: HTMLElement) {
 		el.dataset.top = el.style.top;
 		el.style.removeProperty('left');
 		el.style.removeProperty('top');
-		el.draggable = false;
 	}
 	else {
 		el.dataset.left && (el.style.left = el.dataset.left);
 		el.dataset.top && (el.style.top = el.dataset.top);
-		el.draggable = true;
 	}
 	el.classList.toggle('fullscreen');
 }
@@ -295,7 +293,6 @@ function createDialogDiv(previousDialog?: HTMLElement): HTMLDivElement {
 	return dialogDiv;
 }
 
-// Update the createDebugDialog function to handle dragging via the title span
 function createDebugDialog(title?: string, previousDialog?: HTMLElement): [HTMLDivElement, HTMLDivElement, HTMLSpanElement, HTMLDivElement, HTMLSpanElement] {
 	const dialogDiv = createDialogDiv(previousDialog);
 	const wrapperDiv = createWrapperDiv(title, dialogDiv, previousDialog);
@@ -304,24 +301,7 @@ function createDebugDialog(title?: string, previousDialog?: HTMLElement): [HTMLD
 	dialogDiv.insertBefore(wrapperDiv, null);
 	dialogDiv.insertBefore(contentDiv, null);
 
-	// Make the dialog draggable only via the top menu span
 	const titleSpan = wrapperDiv.querySelector('.modal-title') as HTMLSpanElement;
-	titleSpan.style.cursor = 'move';
-	titleSpan.onmousedown = (ev: MouseEvent) => {
-		shiftX = ev.clientX - dialogDiv.getBoundingClientRect().left;
-		shiftY = ev.clientY - dialogDiv.getBoundingClientRect().top;
-
-		document.onmousemove = (moveEvent: MouseEvent) => {
-			dialogDiv.style.left = moveEvent.pageX - shiftX + 'px';
-			dialogDiv.style.top = moveEvent.pageY - shiftY + 'px';
-		};
-
-		document.onmouseup = () => {
-			document.onmousemove = null;
-			document.onmouseup = null;
-		};
-	};
-
 	return [dialogDiv, contentDiv, titleSpan, wrapperDiv, wrapperDiv.querySelector('.modal-dialog-button.minimize')];
 }
 
@@ -345,8 +325,9 @@ function createWrapperDiv(title: string, dialogDiv: HTMLDivElement, previousDial
 	wrapperDiv.insertBefore(minimizeSpan, null);
 
 	// Make the dialog draggable via the entire top menu span/div
-	wrapperDiv.style.cursor = 'move';
 	wrapperDiv.onmousedown = (ev: MouseEvent) => {
+		if (dialogDiv.classList.contains('fullscreen')) return; // Prevent dragging when the dialog is in fullscreen mode
+
 		shiftX = ev.clientX - dialogDiv.getBoundingClientRect().left;
 		shiftY = ev.clientY - dialogDiv.getBoundingClientRect().top;
 		document.onmousemove = (moveEvent: MouseEvent) => {
