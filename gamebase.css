@@ -666,8 +666,6 @@ html {
 	top: 60vh;
 	color: #ffffff;
 	font-family: monospace;
-	/* font-family: 'Press Start 2P'; */
-	/* font-size: min(max(16px, 3vw), 64px); */
 	font-size: clamp(16px, 2vw, 64px);
 	text-align: center;
 	font-weight: normal;
@@ -681,8 +679,6 @@ html {
 	position: absolute;
 	color: #ff0000;
 	font-family: monospace;
-	/* font-family: 'Press Start 2P'; */
-	/* font-size: min(max(16px, 2vw), 32px); */
 	font-size: clamp(16px, 2vw, 64px);
 	text-align: center;
 	font-weight: normal;
