@@ -454,8 +454,8 @@ async function buildGameHtmlAndManifest(rom_name: string, title: string, short_n
 		minify({
 			compressor: cleanCSS,
 			input: "./gamebase.css",
-			output: "./gamebase.min.css",
-			callback: async (err, cssMinified: string) => {
+			output: "./rom/gamebase.min.css",
+			callback: async (err: any, cssMinified: string) => {
 				if (!cssMinified) {
 					return reject(err);
 				}
