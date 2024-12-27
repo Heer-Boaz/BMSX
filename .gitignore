@@ -9,6 +9,8 @@
 **.gif
 **.mp3
 **.js.map
+# Ignore all minimised CSS files
+**.min.css
 # Ignore all .js files except those in the "scripts" folder
 **.js
 !scripts/*.js
