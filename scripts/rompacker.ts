@@ -260,7 +260,7 @@ async function minifyGamecode(infile: string): Promise<terser.MinifyOutput> {
 			keep_fnames: /^_/,
 			keep_classnames: true,
 			compress: <terser.CompressOptions>{
-				passes: 3, // The maximum number of times to run compress. In some cases more than one pass leads to further compressed code. Keep in mind more passes will take more time
+				passes: 2, // The maximum number of times to run compress. In some cases more than one pass leads to further compressed code. Keep in mind more passes will take more time
 				ecma: 2020,
 				collapse_vars: true,
 				join_vars: true,
@@ -310,6 +310,9 @@ async function minifyGamecode(infile: string): Promise<terser.MinifyOutput> {
 				keep_numbers: true,
 				source_map: null,
 				comments: false,
+				quote_style: 3,
+				ascii_only: true,
+				braces: true,
 			},
 		};
 
