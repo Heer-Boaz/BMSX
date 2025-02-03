@@ -1,4 +1,4 @@
-import { ConstructorWithFSMProperty, IStateful, StateMachineController } from "./bfsm";
+import { StateMachineController } from "./fsm";
 import { insavegame } from "./gameserializer";
 import { Component, ComponentTag, IComponentContainer, KeyToComponentMap, ComponentConstructor, update_tagged_components } from "./component";
 import { BehaviorTrees, Blackboard, BTNode, BehaviorTreeID, ConstructorWithBTProperty } from "./behaviourtree";
@@ -9,6 +9,7 @@ import { vec2, vec3, Area, Vector } from "./rompack";
 import { Direction } from "./game";
 import { ZCOORD_MAX } from "./glview";
 import type { Identifier } from "./game";
+import type { ConstructorWithFSMProperty, IStateful } from "./fsmtypes";
 
 const DEFAULT_HITTABLE = true;
 const DEFAULT_VISIBLE = true;

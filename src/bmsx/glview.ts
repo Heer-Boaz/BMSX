@@ -52,84 +52,25 @@ function getWebGLErrorString(gl: WebGLRenderingContext, error: number): string {
  * Represents a utility object for setting vertices, texture coordinates, z-coordinates, and colors of rectangles in a Float32Array.
  */
 const bvec = {
-    /**
-     * Sets the vertices of a rectangle in a Float32Array, using the given parameters.
-     * It is used to define the geometry of a rectangle in a vertex buffer,
-     * which can then be used for rendering in a WebGL.
-     * @param v - The Float32Array to set the vertices in.
-     * @param i - The offset in the Float32Array to start setting the vertices, in terms of rectangles.
-     * @param x - The x-coordinate of the top-left corner of the rectangle.
-     * @param y - The y-coordinate of the top-left corner of the rectangle.
-     * @param w - The width of the rectangle.
-     * @param h - The height of the rectangle.
-     * @param sx - The horizontal scaling factor.
-     * @param sy - The vertical scaling factor.
-     */
-    set: function (v: Float32Array, i: number, x: number, y: number, w: number, h: number, sx: number, sy: number): void {
-        // This math defines two triangles that form a rectangle. The vertices are stored in a specific order to ensure that the rectangle is rendered correctly.
-
-        // Calculate the opposite corner coordinates
-        const x2 = x + w * sx;
-        const y2 = y + h * sy;
-
-        // Convert the rectangle index to the vertex index
-        const offset = i * 12;
-
-        // Set the vertices of the rectangle in the Float32Array
-        v[offset] = x, v[offset + 1] = y,
-            v[offset + 2] = x2, v[offset + 3] = y,
-            v[offset + 4] = x, v[offset + 5] = y2,
-            v[offset + 6] = x, v[offset + 7] = y2,
-            v[offset + 8] = x2, v[offset + 9] = y,
-            v[offset + 10] = x2, v[offset + 11] = y2;
+    set(v: Float32Array, i: number, x: number, y: number, w: number, h: number, sx: number, sy: number): void {
+        const x2 = x + w * sx, y2 = y + h * sy, offset = i * 12;
+        v.set([x, y, x2, y, x, y2, x, y2, x2, y, x2, y2], offset);
     },
-
-    /**
-     * Sets the texcture coords of a rectangle in a Float32Array, using the given parameters.
-     * @param v - The Float32Array to set the vertices in.
-     * @param i - The offset in the Float32Array to start setting the vertices, in terms of rectangles.
-     * @param coords - The coordinates of the rectangle, in the format [ x, y, w, h, sx, sy ].
-     */
-    set_texturecoords: function (v: Float32Array, i: number, coords: number[]): void {
-        // Convert the rectangle index to the texture coords index
+    set_texturecoords(v: Float32Array, i: number, coords: number[]): void {
         const offset = i * 12;
-
-        for (let j = 0; j < 12; j++) {
-            v[offset + j] = coords[j];
-        }
+        v.set(coords, offset);
     },
-
-    /**
-     * Sets the z-coordinates of a rectangle in a Float32Array, using the given parameters.
-     * @param v - The Float32Array to set the z-coordinates in.
-     * @param i - The offset in the Float32Array to start setting the z-coordinates, in terms of rectangles.
-     * @param z - The z-coordinate of the rectangle.
-     */
-    set_zcoord: function (v: Float32Array, i: number, z: number): void {
-        // Convert the rectangle index to the vertex index
+    set_zcoord(v: Float32Array, i: number, z: number): void {
         const offset = i * 6;
-
-        for (let j = 0; j < 6; j++) {
-            v[offset + j] = z;
-        }
+        for (let j = offset; j < offset + 6; j++) v[j] = z;
     },
-
-    /**
-     * Sets the color of a rectangle in a Float32Array, using the given Color object.
-     * @param v - The Float32Array to set the color in.
-     * @param i - The offset in the Float32Array to start setting the color, in terms of rectangles.
-     * @param color - The Color object to use for the rectangle's color.
-     */
-    set_color: function (v: Float32Array, i: number, color: Color): void {
-        const { r, g, b, a } = color;
-
-        // Convert the rectangle index to the color index
+    set_color(v: Float32Array, i: number, color: Color): void {
         const offset = i * 24;
-
-        for (let j = 0; j < 24; j += 4) {
-            v[offset + j] = r, v[offset + j + 1] = g, v[offset + j + 2] = b, v[offset + j + 3] = a;
+        const colorArray = [color.r, color.g, color.b, color.a];
+        for (let j = offset; j < offset + 24; j += 4) {
+            v.set(colorArray, j);
         }
-    },
+    }
 };
 
 export const DEFAULT_VERTEX_COLOR: Color = { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };

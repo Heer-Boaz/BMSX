@@ -3,168 +3,8 @@ import { IIdentifiable, IRegisterable, Identifier } from './game';
 import { BaseModel } from './basemodel';
 import { EventScope, IEventSubscriber } from './eventemitter';
 import { Input } from './input';
-
-/**
- * Represents a type definition for mapping IDs to `sdef` objects.
- */
-export type id2sdef = Record<Identifier, StateDefinition>;
-
-/**
- * Represents a mapping of IDs to state contexts.
- */
-export type id2mstate = Record<Identifier, State>;
-
-/**
- * Represents a mapping of IDs to sstates.
- */
-export type id2sstate = Record<Identifier, State>;
-
-/**
- * The states defined for this state machine (key = state id, value = partial state definition), their substate machines and their additional properties are defined in {@link StateDefinition}.
- * @example
- * {
- *		parellel: true,
- *		data: { ... },
- *		on: { ... }, // Note: defines the state transitions at the *current* level (thus, not for submachines)
- *		// (Note: the state id is the key of the state in the states object)
- *		_idle: { // The state definition for the idle state which is the start state of this machine, given the prefix '_' (or '#')
- *			auto_tick: false, // `true` by default
- *			on: { ... }, // Note: defines the state transitions at the *current* level (thus, not for submachines)
- *			enter(this: TargetClass, state: sstate): { state.reset(); ... },
- *			run(this: TargetClass, state: sstate): { ++state.ticks; },
- *			next(this: TargetClass, state: sstate): { let bla = state.current_tape_value; ... },
- *		},
- *		running: { ... },
- * }
- */
-export type StateMachineBlueprint = Partial<StateDefinition>;
-
-/**
- * A type representing a mapping of state IDs to partial state definitions.
- */
-export type id2partial_sdef = Record<Identifier, StateMachineBlueprint>;
-
-// export type StateIdentifierStart = 'a' | 'b' | 'c' | 'd' | 'e' | 'f' | 'g' | 'h' | 'i' | 'j' | 'k' | 'l' | 'm' | 'n' | 'o' | 'p' | 'q' | 'r' | 's' | 't' | 'u' | 'v' | 'w' | 'x' | 'y' | 'z' | '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H' | 'I' | 'J' | 'K' | 'L' | 'M' | 'N' | 'O' | 'P' | 'Q' | 'R' | 'S' | 'T' | 'U' | 'V' | 'W' | 'X' | 'Y' | 'Z';
-// export type StatePathPart = `${StateIdentifierStart}${Identifier}`;
-// export type StatePathSpecial = '#this' | '#parent' | '#root';
-// export type StatePath = `${StatePathSpecial}.${StatePathPart}` | `${StatePathPart}`;
-
-/**
- * Represents a state event handler.
- * @template T - The type of the stateful object.
- * @param state - The state object.
- * @param args - Additional arguments for the event handler.
- * @returns A string denoting the next state to transition to (or undefined if no transition should occur).
- */
-export interface IStateEventHandler<T extends IStateful = any> { (state: State<T>, ...args: any[]): StateTransition | Identifier | void; }
-export interface IStateExitHandler<T extends IStateful = any> { (state: State<T>, ...args: any[]): void; }
-export interface IStateNextHandler<T extends IStateful = any> extends IStateEventHandler { (state: State<T>, tape_rewound: boolean, ...args: any[]): StateTransition | Identifier | void; }
-export interface IStateEventCondition<T extends IStateful & IEventSubscriber = any> {
-	(state: State<T>, ...args: any[]): boolean;
-}
-
-type listed_sdef_event = { name: string, scope: EventScope };
-
-/**
- * Represents a state transition.
- */
-export type StateTransition = {
-	/**
-	 * The next state to transition to.
-	 */
-	state_id: Identifier;
-
-	/**
-	 * The arguments for the state transition.
-	 */
-	args?: any;
-
-	/**
-	 * The transition type: 'to' or 'switch', where 'to' is the default.
-	 */
-	transition_type?: TransitionType;
-
-	/**
-	 * If set to `true`, the state will transition to the same state, even if the state is already the current state.
-	 */
-	force_transition_to_same_state?: boolean;
-};
-
-/**
- * Represents a state transition with a type (either 'to' or 'switch').
- */
-type StateTransitionWithType = StateTransition & { transition_type: TransitionType };
-
-/**
- * Represents the definition of a state event in a state machine.
- * @template T - The type of the stateful object that the event is associated with.
- */
-export type StateEventDefinition<T extends IStateful & IEventSubscriber = any> = {
-	/**
-	 * The state ID to transition to. If not provided, the state will not transition. This is useful for defining a "transition" that only executes an action.
-	 */
-	to?: StateTransition | Identifier,
-
-	/**
-	 * The state ID to transition to.(as switch-type)  If not provided, the state will not transition. This is useful for defining a "transition" that only executes an action.
-	 */
-	switch?: StateTransition | Identifier,
-
-	/**
-	 * The condition that must be met for the transition to occur.
-	 */
-	if?: IStateEventCondition<T>,
-
-	/**
-	 * The action that is executed when the transition occurs.
-	 */
-	do?: IStateEventHandler<T>,
-
-	/**
-	 * (Optional) The ID of the emitter scope. If provided, the listener will be added to the emitter scope listeners, otherwise it will be added to the global scope listeners.
-	 */
-	scope?: EventScope,
-};
-
-/**
- * Represents a state guard that defines conditions for entering or exiting a state.
- * @template T - The type of the stateful object that implements `IStateful` and `IEventSubscriber`.
- */
-interface IStateGuard<T extends IStateful & IEventSubscriber = any> {
-	/**
-	 * Checks if the state can be entered.
-	 * @this {T} - The stateful object.
-	 * @returns {boolean} - Returns `true` if the state can be entered, otherwise `false`.
-	 */
-	canEnter?: (this: T, state: State) => boolean;
-
-	/**
-	 * Checks if the state can be exited.
-	 * @this {T} - The stateful object.
-	 * @returns {boolean} - Returns `true` if the state can be exited, otherwise `false`.
-	 */
-	canExit?: (this: T, state: State) => boolean;
-}
-
-/**
- * Represents the definition of a tick check for a stateful object.
- * It defines conditions that are checked on each tick to determine if the state should transition to another state or another action should be executed.
- *
- * @template T - The type of the stateful object.
- */
-type TickCheckDefinition<T extends IStateful = any> = Omit<StateEventDefinition<T>, 'scope'>;
-
-/**
- * Represents the type of a state transition (either 'to' or 'switch').
- * - 'to': The default transition type, which transitions the whole state machine tree to the new state.
- * - 'switch': A transition type that switches only the lowest level state to the new state.
- */
-type TransitionType = 'to' | 'switch';
-
-/**
- * Represents a tape used in the BFSM.
- */
-export type Tape = any[];
+import type { StateMachineBlueprint, StateEventDefinition, id2sstate, IStateful, TransitionType, StateTransition, Tape, IStateEventHandler, IStateNextHandler, IStateExitHandler, TickCheckDefinition, id2partial_sdef, IStateGuard, StateTransitionWithType } from './fsmtypes';
+import { StateDefinitions } from './fsmlibrary';
 
 /**
  * Maximum history size for the state transition stack.
@@ -176,344 +16,6 @@ const BST_MAX_HISTORY = 10;
  */
 export const DEFAULT_BST_ID = 'master';
 
-/**
- * Represents an object that is stateful and can be registered, and subscribes to events.
- * It also has a player index, that is used to identify the player that the stateful object belongs to, which is used to determine which player's input to process.
- */
-export interface IStateful extends IRegisterable, IEventSubscriber {
-	/**
-	 * The StatemachineController of the object.
-	 */
-	sc: StateMachineController;
-
-	/**
-	 * The player index of the stateful object.
-	 * If the player index is not set, it defaults to 1 (the first/main player).
-	 */
-	player_index?: number;
-}
-
-/**
- * Represents the name of a Finite State Machine (FSM).
- */
-export type FSMName = string;
-
-/**
- * Represents a constructor function with an optional property for linked FSMs.
- */
-export type ConstructorWithFSMProperty = Function & {
-	/**
-	 * A set of FSM names that are linked to this constructor.
-	 */
-	linkedFSMs?: Set<FSMName>;
-};
-
-/**
- * Represents the machine definitions.
- */
-export var StateDefinitions: Record<string, StateDefinition>;
-
-/**
- * A record that maps string keys to functions that build machine states.
- */
-var StateDefinitionBuilders: Record<string, () => StateMachineBlueprint>;
-
-/**
- * Decorator function that assigns FSMs to a class constructor.
- * @param fsms The FSMs to assign.
- * @returns A decorator function.
- */
-export function assign_fsm(...fsms: FSMName[]) {
-	return function (constructor: ConstructorWithFSMProperty) {
-		if (!constructor.hasOwnProperty('linkedFSMs')) {
-			constructor.linkedFSMs = new Set<FSMName>();
-		}
-		fsms.forEach(fsm => constructor.linkedFSMs.add(fsm));
-		updateAssignedFSMs(constructor);
-	};
-}
-
-/**
- * Updates all assigned FSMs for the given constructor.
- *
- * @param constructor - The constructor function.
- */
-function updateAssignedFSMs(constructor: any) {
-	const linkedFSMs = new Set<FSMName>();
-	let currentClass: any = constructor;
-
-	while (currentClass && currentClass !== Object) {
-		if (currentClass.linkedFSMs) {
-			currentClass.linkedFSMs.forEach((fsm: FSMName) => linkedFSMs.add(fsm));
-		}
-		currentClass = Object.getPrototypeOf(currentClass);
-	}
-
-	constructor.linkedFSMs = linkedFSMs;
-}
-
-/**
- * Returns a function that can be used as a decorator to build a finite state machine definition.
- * @param fsm_name - Optional name of the finite state machine. If not provided, the name of the decorated class will be used.
- * @returns A decorator function that can be used to build a finite state machine definition.
- */
-export function build_fsm(fsm_name?: Identifier) {
-	return function statedef_builder(target: any, _name: any, descriptor: PropertyDescriptor): any {
-		StateDefinitionBuilders ??= {};
-		StateDefinitionBuilders[fsm_name ?? target.name] = descriptor.value;
-	};
-}
-
-/**
- * Builds the state machine definitions and sets them in the `MachineDefinitions` object.
- * Loops through all the `MachineDefinitionBuilders` and calls them to get the state machine definition.
- * If a definition is returned, it creates a new `sdef` object with the machine name and definition.
- * If the `sdef` object is created successfully, it sets the machine definition in the `MachineDefinitions` object.
- */
-export function setupFSMlibrary(): void {
-	StateDefinitions = {};
-	for (let machine_name in StateDefinitionBuilders) {
-		let machine_definition = StateDefinitionBuilders[machine_name]();
-		if (machine_definition) {
-			const machineBuilt = createMachine(machine_name, machine_definition);
-			validateStateMachine(machineBuilt); // Check if the machine definition is valid before adding it to the library of machine definitions
-			StateDefinitions[machine_name] = machineBuilt; // Add the machine definition to the library of machine definitions
-			addEventsToDef(machineBuilt); // Add the events to the event list of the machine definition
-		}
-	}
-}
-
-/**
- * Creates a new machine with the given machine name and machine definition.
- * If the machine definition has states, it creates a new machine definition for each state.
- * If a state has substates, it creates a new machine definition for each substate.
- *
- * @param machine_name - The name of the machine.
- * @param machine_definition - The definition of the machine, including its states and substates.
- */
-function createMachine(machine_name: Identifier, machine_definition: StateMachineBlueprint): StateDefinition {
-	// If the machine has states defined, create a new machine definition for each state
-	return new StateDefinition(machine_name, machine_definition, null);
-}
-
-/**
- * Adds events to the machine definition.
- * If the machine has events defined, this function adds them to the event list of the machine definition.
- * @param machine - The StateMachineBlueprint object representing the machine definition.
- */
-function addEventsToDef(machine: StateMachineBlueprint): void {
-	// If the machine has events defined, add them to the event list of the machine definition
-	const eventMap = getMachineEvents(machine); // Get the events from the machine definition
-	if (eventMap && eventMap.size > 0) {
-		machine.event_list = []; // Create a new event list for the machine definition
-		eventMap.forEach(event_entry => { // Add the events to the event list of the
-			machine.event_list.push({ name: event_entry.name, scope: event_entry.scope }); // Add the event to the event list of the machine definition
-		});
-	}
-}
-
-/**
- * Retrieves the events from a state machine blueprint.
- * The events are retrieved from the machine definition and its submachines. The events are returned as a set of event names and scopes.
- * The reason for using a set is to prevent duplicate events from being added to the set.
- * The reason for creating the set itself is so that the {@link StateMachineController} can subscribe to all the events that are defined in the machine definition and its submachines.
- * Note that the events are returned as a set of event names and scopes, where the scope is 'all' if the event is not prefixed with '$', otherwise it is 'self'.
- * Also note that any existing events with the same name and scope will be replaced if the scope is 'all', otherwise it will not be replaced.
- *
- * @param machine - The state machine blueprint.
- * @param eventNamesAndScopes - Optional set of event names and scopes to filter the events.
- * @returns A set of events from the state machine blueprint.
- */
-function getMachineEvents(machine: StateMachineBlueprint, eventNamesAndScopes?: Set<listed_sdef_event>) {
-	/**
-	 * Adds a state event to the list of events, where the name of the event is the key and the scope is the value.
-	 * Note that the scope is 'all' if the event is not prefixed with '$', otherwise it is 'self'.
-	 * Also note that any existing events with the same name and scope will be replaced if the scope is 'all', otherwise it will not be replaced.
-	 * See {@link addAndReplace} for more information.
-	 *
-	 * @param name - The name of the state event.
-	 * @param definition - The definition of the state event.
-	 */
-	function add(name: string, definition: string | StateEventDefinition): void {
-		if (typeof definition === 'string') {
-			addAndReplace(removeScopeFromEventName(name), parseEventScope(name));
-		}
-		else {
-			addAndReplace(removeScopeFromEventName(name), definition.scope ?? parseEventScope(name));
-		}
-	}
-
-	/**
-	 * Adds an event to the set if it doesn't already exist.
-	 * If the event is already in the set with the same scope, it won't be added again.
-	 * If the event is already in the set with a global scope, it won't be added again.
-	 * @param name - The name of the event.
-	 * @param scope - The scope of the event.
-	 */
-	function addAndReplace(name: string, scope: string): void {
-		if (events.has({ name: name, scope: 'all' })) return; // If the event is already in the set, and the scope is global, don't add it again
-		if (events.has({ name: name, scope: scope })) return; // If the event is already in the set, and the scope is the same, don't add it again
-		events.add({ name: name, scope: scope });
-	}
-
-	/**
-	 * Checks if the event name has a scope.
-	 * @param name The event name.
-	 * @returns True if the event name has a scope, false otherwise.
-	 */
-	function hasScope(name: string): boolean {
-		return name.startsWith('$');
-	}
-
-	/**
-	 * Parses the event scope from the event name.
-	 * @param name The event name.
-	 * @returns The event scope ('self' or 'all').
-	 */
-	function parseEventScope(name: string): EventScope {
-		return hasScope(name) ? 'self' : 'all';
-	}
-
-	/**
-	 * Removes the scope from an event name.
-	 * If the event name starts with '$', the scope is removed by slicing the first character.
-	 * Otherwise, the event name is returned as is.
-	 *
-	 * @param name - The event name to remove the scope from.
-	 * @returns The event name without the scope.
-	 */
-	function removeScopeFromEventName(name: string): string {
-		return hasScope(name) ? name.slice(1) : name;
-	}
-
-	// Get the events from the machine definition
-	const events = eventNamesAndScopes ?? new Set<listed_sdef_event>();
-	// Start with the events defined in the machine definition
-	if (machine.on) {
-		// Add all events from the machine definition
-		for (const name in machine.on) {
-			// Get the event definition
-			const definition = machine.on[name];
-			// Add the event to the list of events
-			add(name, definition);
-		}
-		// Remove all '$' prefixes from the event names
-		machine.on = Object.fromEntries(Object.entries(machine.on).map(([name, value]) => [removeScopeFromEventName(name), value]));
-	}
-
-	// Get the events from the submachines
-	for (const stateId in machine.states) {
-		// Get the state definition
-		const state = machine.states[stateId];
-		// Skip the state if it doesn't have a definition
-		const state_def = state;
-		if (!state_def) continue;
-		if (state_def.on) {
-			// Add all events from the state definition
-			for (const name in state_def.on) {
-				// Get the event definition
-				const definition = state_def.on[name];
-				// Add the event to the list of events
-				add(name, definition);
-			}
-			// Remove all '$' prefixes from the event names
-			state_def.on = Object.fromEntries(Object.entries(state_def.on).map(([name, value]) => [removeScopeFromEventName(name), value]));
-		}
-
-		// If the state has a submachine, recursively subscribe to its events
-		if (state_def.states) {
-			getMachineEvents(state, events);
-		}
-	}
-
-	return events;
-}
-
-/**
- * Validates the state machine definition.
- *
- * @param machinedef - The state machine definition to validate.
- * @throws Error if the state machine definition is invalid.
- */
-function validateStateMachine(machinedef: StateDefinition): void {
-	if (!machinedef.states) return; // A class might choose not to create a new machine_definition
-
-	// Get all state names
-	const stateNames = Object.keys(machinedef.states);
-
-	// Check the defined event state transitions for each state in the machine definition to see if they are valid
-	for (const state of stateNames) {
-		const transitions = machinedef.states[state].on; // Get the transitions for the state if they exist
-
-		// If there are transitions, check each target state
-		if (transitions) {
-			for (const targetState of Object.values(transitions)) { // Get the target state for each transition
-				if (typeof targetState === 'string') { // If the target state is a string, check if it exists
-					let targetStateParts = targetState.split('.');
-					let currentContext = machinedef.states;
-
-					for (const part of targetStateParts) {
-						switch (part) {
-							case '#this': // If the part is '#this', move to the current subcontext
-								if (!currentContext.states) { // Check if the current context has states
-									throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the current context doesn't have substates.`);
-								}
-								continue; // Skip '#this' parts
-							case '#parent': // If the part is '#parent', move to the parent context
-								if (!currentContext.parent) { // Check if the parent context exists
-									throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the parent context doesn't exist.`);
-								}
-								if (!currentContext.parent.states) { // Check if the parent context has states
-									throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the parent context doesn't have substates.`);
-								}
-								currentContext = currentContext.parent.states;
-								continue; // Skip '#parent' parts
-							case '#root': // If the part is '#root', move to the root context
-								if (!currentContext.root) { // Check if the root context exists
-									throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the root context doesn't exist. This might be because the root context is not defined in the machine definition.`);
-								}
-								currentContext = currentContext.root.states;
-								continue; // Skip '#root' parts
-							default:
-								if (!currentContext[part]) { // Check if the part exists in the current context
-									throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}'.`);
-								}
-
-								currentContext = currentContext[part].states; // Move to the next context
-								break;
-						}
-					}
-				}
-			}
-		}
-	}
-
-	// Check the defined event state transitions for each state in the machine definition to see if they are valid
-	for (const state of stateNames) {
-		const transitions = machinedef.states[state].on; // Get the transitions for the state if they exist
-
-		// If there are transitions, check each target state
-		if (transitions) {
-			for (const targetState of Object.values(transitions)) { // Get the target state for each transition
-				if (typeof targetState === 'string') { // If the target state is a string, check if it exists
-					if (!stateNames.includes(targetState)) { // Check if the target state exists
-						throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}'.`);
-					}
-				}
-			}
-		}
-	}
-
-	// Check if the start state is defined
-	if (!machinedef.start_state_id) {
-		throw new Error(`No start state defined for state machine '${machinedef.id}'`);
-	}
-
-	// Check if the start state exists
-	if (machinedef.start_state_id && !stateNames.includes(machinedef.start_state_id)) {
-		throw new Error(`Invalid start state '${machinedef.start_state_id}', as that state doesn't exist in the machine '${machinedef.id}'.`);
-	}
-}
 
 @insavegame
 /**
@@ -2227,4 +1729,90 @@ export class StateDefinition {
 		state.parent = this;
 		state.root = root;
 	}
+}
+
+/**
+ * Validates the state machine definition.
+ *
+ * @param machinedef - The state machine definition to validate.
+ * @throws Error if the state machine definition is invalid.
+ */
+export function validateStateMachine(machinedef: StateDefinition): void {
+    if (!machinedef.states) return; // A class might choose not to create a new machine_definition
+
+    // Get all state names
+    const stateNames = Object.keys(machinedef.states);
+
+    // Check the defined event state transitions for each state in the machine definition to see if they are valid
+    for (const state of stateNames) {
+        const transitions = machinedef.states[state].on; // Get the transitions for the state if they exist
+
+        // If there are transitions, check each target state
+        if (transitions) {
+            for (const targetState of Object.values(transitions)) { // Get the target state for each transition
+                if (typeof targetState === 'string') { // If the target state is a string, check if it exists
+                    let targetStateParts = targetState.split('.');
+                    let currentContext = machinedef.states;
+
+                    for (const part of targetStateParts) {
+                        switch (part) {
+                            case '#this': // If the part is '#this', move to the current subcontext
+                                if (!currentContext.states) { // Check if the current context has states
+                                    throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the current context doesn't have substates.`);
+                                }
+                                continue; // Skip '#this' parts
+                            case '#parent': // If the part is '#parent', move to the parent context
+                                if (!currentContext.parent) { // Check if the parent context exists
+                                    throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the parent context doesn't exist.`);
+                                }
+                                if (!currentContext.parent.states) { // Check if the parent context has states
+                                    throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the parent context doesn't have substates.`);
+                                }
+                                currentContext = currentContext.parent.states;
+                                continue; // Skip '#parent' parts
+                            case '#root': // If the part is '#root', move to the root context
+                                if (!currentContext.root) { // Check if the root context exists
+                                    throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the root context doesn't exist. This might be because the root context is not defined in the machine definition.`);
+                                }
+                                currentContext = currentContext.root.states;
+                                continue; // Skip '#root' parts
+                            default:
+                                if (!currentContext[part]) { // Check if the part exists in the current context
+                                    throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}'.`);
+                                }
+
+                                currentContext = currentContext[part].states; // Move to the next context
+                                break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Check the defined event state transitions for each state in the machine definition to see if they are valid
+    for (const state of stateNames) {
+        const transitions = machinedef.states[state].on; // Get the transitions for the state if they exist
+
+        // If there are transitions, check each target state
+        if (transitions) {
+            for (const targetState of Object.values(transitions)) { // Get the target state for each transition
+                if (typeof targetState === 'string') { // If the target state is a string, check if it exists
+                    if (!stateNames.includes(targetState)) { // Check if the target state exists
+                        throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}'.`);
+                    }
+                }
+            }
+        }
+    }
+
+    // Check if the start state is defined
+    if (!machinedef.start_state_id) {
+        throw new Error(`No start state defined for state machine '${machinedef.id}'`);
+    }
+
+    // Check if the start state exists
+    if (machinedef.start_state_id && !stateNames.includes(machinedef.start_state_id)) {
+        throw new Error(`Invalid start state '${machinedef.start_state_id}', as that state doesn't exist in the machine '${machinedef.id}'.`);
+    }
 }

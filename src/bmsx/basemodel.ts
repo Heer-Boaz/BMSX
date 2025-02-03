@@ -1,5 +1,6 @@
 import { BehaviorTreeDefinition, BehaviorTreeDefinitions, BehaviorTreeID, setup_btdef_library, setup_bt_library } from "./behaviourtree";
-import { StateDefinitions, StateDefinition, State, StateMachineController, IStateful, setupFSMlibrary } from "./bfsm";
+import { StateDefinition, State, StateMachineController } from "./fsm";
+import { IStateful } from "./fsmtypes";
 import type { IRegisterable, Identifier } from "./game";
 import { GameObject } from "./gameobject";
 import { insavegame, onsave, Reviver, Savegame, Serializer } from "./gameserializer";
@@ -8,6 +9,7 @@ import { Direction } from "./game";
 import { EventEmitter } from "./eventemitter";
 import { Registry } from "./registry";
 import { Vector } from "./bmsx";
+import { StateDefinitions, setupFSMlibrary } from "./fsmlibrary";
 
 export interface ISpaceObject {
     spaceid: Identifier;

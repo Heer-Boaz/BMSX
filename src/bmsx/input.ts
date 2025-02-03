@@ -5,8 +5,10 @@ import { ZCOORD_MAX } from './glview';
 import { SpriteObject } from './sprite';
 import type { IRegisterable, Identifier } from "./game";
 import { Registry } from './registry';
-import { StateMachineBlueprint, build_fsm, State } from './bfsm';
+import { State } from './fsm';
 import { ActionParser } from './actionparser';
+import type { StateMachineBlueprint } from './fsmtypes';
+import { build_fsm } from './fsmdecorators';
 
 // @ts-ignore
 function svgToPng(svgElement, filename) {

@@ -1,4 +1,4 @@
-import { StateDefinitions, StateMachineController, State } from './bfsm';
+import { StateMachineController, State } from './fsm';
 import { area2size, new_vec2, translate_vec2, trunc_vec3, div_vec2 } from './game';
 import { PositionUpdateAxisComponent } from './collisioncomponents';
 import { Component, ComponentUpdateParams, componenttags_postprocessing, componenttags_preprocessing } from './component';
@@ -13,6 +13,7 @@ import { Color } from './view';
 import { EventEmitter, type ListenerSet } from './eventemitter';
 import { BehaviorTreeDefinitions, BTNode } from './behaviourtree';
 import { Registry } from './registry';
+import { StateDefinitions } from './fsmlibrary';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
 
 let draggedObj: GameObject | null;
