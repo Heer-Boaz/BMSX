@@ -20,16 +20,23 @@ uniform bool u_applyFringing;
 in vec2 v_texcoord;
 out vec4 outputColor;
 
-// Define constants for the Gaussian blur kernel
-#define KERNEL_DIVISOR 256.0
-#define KERNEL_WEIGHT_1 1.0
-#define KERNEL_WEIGHT_4 4.0
-#define KERNEL_WEIGHT_6 6.0
-#define KERNEL_WEIGHT_16 16.0
-#define KERNEL_WEIGHT_24 24.0
-#define KERNEL_WEIGHT_36 36.0
+// Replace macros with constants
+const float KERNEL_DIVISOR = 256.0;
+const float KERNEL_WEIGHT_1 = 1.0;
+const float KERNEL_WEIGHT_4 = 4.0;
+const float KERNEL_WEIGHT_6 = 6.0;
+const float KERNEL_WEIGHT_16 = 16.0;
+const float KERNEL_WEIGHT_24 = 24.0;
+const float KERNEL_WEIGHT_36 = 36.0;
+const int KERNEL_SIZE = 5;
+const int KERNEL_RADIUS = 2;
 
-// Define a 5x5 blur kernel
+const vec3 LUMINANCE_WEIGHTS = vec3(0.299, 0.587, 0.114);
+const int LUMINANCE_THRESHOLD = 1;
+const int CENTER_INDEX = 0;
+const float WEIGHT_INCREMENT = 1.0;
+
+// Define a 5x5 blur kernel using the new constants
 const float kernel[25] = float[](
     KERNEL_WEIGHT_1 / KERNEL_DIVISOR, KERNEL_WEIGHT_4 / KERNEL_DIVISOR, KERNEL_WEIGHT_6 / KERNEL_DIVISOR, KERNEL_WEIGHT_4 / KERNEL_DIVISOR, KERNEL_WEIGHT_1 / KERNEL_DIVISOR,
     KERNEL_WEIGHT_4 / KERNEL_DIVISOR, KERNEL_WEIGHT_16 / KERNEL_DIVISOR, KERNEL_WEIGHT_24 / KERNEL_DIVISOR, KERNEL_WEIGHT_16 / KERNEL_DIVISOR, KERNEL_WEIGHT_4 / KERNEL_DIVISOR,
@@ -44,13 +51,26 @@ struct BlurContrastResult {
     float contrast;
 };
 
-// Define constants for kernel size, luminance weights, and luminance calculation
-#define KERNEL_SIZE 5
-#define KERNEL_RADIUS 2
-#define LUMINANCE_WEIGHTS vec3(0.299, 0.587, 0.114)
-#define LUMINANCE_THRESHOLD 1
-#define CENTER_INDEX 0
-#define WEIGHT_INCREMENT 1.0
+// Define constants for noise generation
+const float NOISE_SEED_X = 12.9898;
+const float NOISE_SEED_Y = 78.233;
+const float NOISE_MULTIPLIER = 43758.5453;
+const float NOISE_OFFSET = 19.19;
+
+const float SCANLINE_INTERVAL = 2.0;
+const float SCANLINE_DARKEN_FACTOR = 0.8;
+
+const float NOISE_INTENSITY = 0.2;
+const vec3 COLOR_BLEED = vec3(0.02, 0.0, 0.0);
+const float BLUR_INTENSITY = 0.6;
+const float BLUR_DEFAULT_CONTRAST_IF_NOT_APPLIED = 0.0;
+const vec3 GLOW_COLOR = vec3(0.05, 0.02, 0.02);
+const float GLOW_BRIGHTNESS_CLAMP = 0.5;
+const float CENTER_SCALE = 0.5;
+const float FRINGING_BASE_AMOUNT = 0.0010;
+const float FRINGING_DISTANCE_MULTIPLIER = 0.0010;
+const float FRINGING_CONTRAST_MULTIPLIER = 0.0005;
+const float FRINGING_MIX_INTENSITY = 0.2;
 
 // Function to apply blur and calculate contrast
 BlurContrastResult applyBlurAndContrast(vec2 uv) {
@@ -90,12 +110,6 @@ BlurContrastResult applyBlurAndContrast(vec2 uv) {
     return BlurContrastResult(blurredColor, contrast);
 }
 
-// Define constants for noise generation
-#define NOISE_SEED_X 12.9898
-#define NOISE_SEED_Y 78.233
-#define NOISE_MULTIPLIER 43758.5453
-#define NOISE_OFFSET 19.19
-
 // Optimized hash-based noise function with temporal variation
 float hashNoise(vec2 uv, float time) {
     vec3 p = vec3(uv * 0.1, time * 0.1); // Scale down UV and time for better variation
@@ -104,9 +118,6 @@ float hashNoise(vec2 uv, float time) {
     return fract((p.x + p.y) * p.z);
 }
 
-#define SCANLINE_INTERVAL 2.0
-#define SCANLINE_DARKEN_FACTOR 0.8
-
 // Function to apply scanlines
 vec3 applyScanlines(vec3 color, vec2 fragCoord) {
     if (mod(fragCoord.y, SCANLINE_INTERVAL) < 1.0) {
@@ -114,19 +125,6 @@ vec3 applyScanlines(vec3 color, vec2 fragCoord) {
     }
     return color;
 }
-
-// Define constants for noise, color bleed, blur, glow, and fringing
-#define NOISE_INTENSITY 0.2
-#define COLOR_BLEED vec3(0.02, 0.0, 0.0)
-#define BLUR_INTENSITY 0.6
-#define BLUR_DEFAULT_CONTRAST_IF_NOT_APPLIED 0.0
-#define GLOW_COLOR vec3(0.05, 0.02, 0.02)
-#define GLOW_BRIGHTNESS_CLAMP 0.5
-#define CENTER_SCALE 0.5
-#define FRINGING_BASE_AMOUNT 0.0010
-#define FRINGING_DISTANCE_MULTIPLIER 0.0010
-#define FRINGING_CONTRAST_MULTIPLIER 0.0005
-#define FRINGING_MIX_INTENSITY 0.2
 
 void main() {
     // Get the UV coordinates
