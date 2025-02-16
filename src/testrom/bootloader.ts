@@ -365,11 +365,18 @@ class gamemodel extends BaseModel {
 
                         // Play the snare drum at specific intervals
                         const startTime = 0.0;
-                        SM.playInstrument(snareInstrument, startTime);
-                        SM.playInstrument(snareInstrument, startTime + .5);
-                        SM.playInstrument(snareInstrument, startTime + 1.0);
-                        SM.playInstrument(snareInstrument, startTime + 1.5);
-                        SM.playInstrument(snareInstrument, startTime + 2.0);
+                        // Use the custom snareInstrument defined above.SM.setAYNoiseRegister(6);  // Set noise register to a desired value.
+                        SM.setAYNoiseRegister(6);  // Set noise register to a desired value.
+                        SM.playCustomInstrument(snareInstrument, 0 /*base frequency ignored for noise-only*/, startTime);
+                        SM.playCustomInstrument(snareInstrument, 0 /*base frequency ignored for noise-only*/, startTime + .5);
+                        SM.playCustomInstrument(snareInstrument, 0 /*base frequency ignored for noise-only*/, startTime + 1.0);
+                        SM.playCustomInstrument(snareInstrument, 0 /*base frequency ignored for noise-only*/, startTime + 1.5);
+                        SM.playCustomInstrument(snareInstrument, 0 /*base frequency ignored for noise-only*/, startTime + 2.0);
+                        // SM.playInstrument(snareInstrument, startTime);
+                        // SM.playInstrument(snareInstrument, startTime + .5);
+                        // SM.playInstrument(snareInstrument, startTime + 1.0);
+                        // SM.playInstrument(snareInstrument, startTime + 1.5);
+                        // SM.playInstrument(snareInstrument, startTime + 2.0);
 
                         SM.playSequences(sequences);
                     },
