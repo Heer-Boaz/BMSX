@@ -305,15 +305,15 @@
 			"id": "romtobuild",
 			"description": "Choose ROM to build",
 			"options": [
-				"Sint2024",
-				"Ella2023",
-				"Testrom",
-				"Joanneke2022",
-				"Marlies2021",
-				"Marlies2020",
-				"Sintervania",
+				"sint2024",
+				"ella2023",
+				"testrom",
+				"joanneke2022",
+				"marlies2021",
+				"marlies2020",
+				"sintervania",
 			],
-			"default": "Sint2024"
+			"default": "testrom"
 		}
 	]
 }
