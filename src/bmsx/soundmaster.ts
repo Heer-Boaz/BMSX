@@ -19,6 +19,11 @@ export interface PitchSlideParams {
     duration: number;        // in seconds, how long the slide lasts
 }
 
+/**
+ * The Instrument interface now includes an optional noiseRegister field.
+ * This value (0-31) is used to automatically set the noise period
+ * (via setAYNoiseRegister) when playing an instrument that uses noise.
+ */
 export interface Instrument {
     id: number;
     name: string;
@@ -27,7 +32,7 @@ export interface Instrument {
     envelope?: Envelope;
     vibrato?: VibratoParams;
     pitchSlide?: PitchSlideParams;
-    // Optionally, you can also include step–based modulations:
+    noiseRegister?: number;  // Optional noise register (0..31)
     steps?: InstrumentStep[];
 }
 
@@ -43,8 +48,9 @@ export interface InstrumentStep {
     targetChannel?: number;
 }
 
-/* Example snare instrument definition using the Instrument interface.
-   In this case we produce only a noise burst on channel 2.
+/* Revised snare instrument defined as a custom instrument.
+   Here we use only noise on channel 2 with a very short burst,
+   and we set the noiseRegister to 6 (for example).
 */
 export const snareInstrument: Instrument = {
     id: 1,
@@ -52,13 +58,12 @@ export const snareInstrument: Instrument = {
     toneEnabled: false,
     noiseEnabled: true,
     envelope: { attack: 0.005, decay: 0.03, sustain: 0, release: 0.005 },
+    noiseRegister: 6,  // This value will be used to set the noise update rate.
     steps: [
         { time: 0, channel: 'noise', targetChannel: 2, volume: 1.0, noiseFrequency: 4000 },
         { time: 0.05, channel: 'noise', targetChannel: 2, volume: 0, noiseFrequency: 4000 }
     ]
 };
-
-/* --- SM Class with Expanded PSG Emulation Using AudioWorklet Noise --- */
 
 export class SM {
     private static limitToOneEffect: boolean = true;
@@ -162,11 +167,12 @@ export class SM {
     public static async initPSGWithLFSRNoise() {
         await SM.sndContext.audioWorklet.addModule('AYNoiseProcessor.js');
         const noiseWorklet = new AudioWorkletNode(SM.sndContext, 'ay-noise-processor');
-        noiseWorklet.connect(SM.gainNode); // In case no channel uses noise.
+        // noiseWorklet.connect(SM.gainNode); // In case no channel uses noise.
         // Now, connect the worklet output to each channel’s noiseGain:
         SM.psgChannels.forEach(ch => {
             noiseWorklet.connect(ch.noiseGain);
         });
+
         SM.lfsrNode = noiseWorklet;
     }
 
@@ -386,34 +392,48 @@ export class SM {
      * @param startTime Optional start time.
      * @param noteDuration Duration of the note.
      */
-    public static playCustomInstrument(instrument: Instrument, baseFrequency: number, startTime?: number, noteDuration?: number) {
+    public static playCustomInstrument(
+        instrument: Instrument,
+        baseFrequency: number,
+        startTime?: number,
+        noteDuration?: number
+    ) {
         if (!SM.psgInitialized) SM.initPSG();
         const t0 = startTime !== undefined ? startTime : SM.sndContext.currentTime;
-        const duration = noteDuration !== undefined ? noteDuration : 1;
-        const channel = 0; // For tone events, use channel 0 (this is an arbitrary choice)
+        const duration = noteDuration !== undefined ? noteDuration : 1; // default 1 second
+        const toneChannel = 0; // Use channel 0 for tone events (this is arbitrary)
+
+        // If tone is enabled, play tone with envelope, vibrato, etc.
         if (instrument.toneEnabled) {
-            SM.psgChannels[channel].oscillator.frequency.setValueAtTime(baseFrequency, t0);
+            SM.psgChannels[toneChannel].oscillator.frequency.setValueAtTime(baseFrequency, t0);
             if (instrument.envelope) {
-                SM.applyEnvelopeCustom(SM.psgChannels[channel].toneGain, t0, duration, instrument.envelope);
+                SM.applyEnvelopeCustom(SM.psgChannels[toneChannel].toneGain, t0, duration, instrument.envelope);
             } else {
-                SM.applyEnvelope(SM.psgChannels[channel].toneGain, t0, duration);
+                SM.applyEnvelope(SM.psgChannels[toneChannel].toneGain, t0, duration);
             }
             if (instrument.vibrato) {
-                SM.applyVibratoToChannel(SM.psgChannels[channel].oscillator, t0, duration, instrument.vibrato, baseFrequency);
+                SM.applyVibratoToChannel(SM.psgChannels[toneChannel].oscillator, t0, duration, instrument.vibrato, baseFrequency);
             }
             if (instrument.pitchSlide) {
-                SM.psgChannels[channel].oscillator.frequency.linearRampToValueAtTime(
+                SM.psgChannels[toneChannel].oscillator.frequency.linearRampToValueAtTime(
                     instrument.pitchSlide.targetFrequency,
                     t0 + instrument.pitchSlide.duration
                 );
             }
         } else {
-            SM.psgChannels[channel].toneGain.gain.setValueAtTime(0, t0);
+            SM.psgChannels[toneChannel].toneGain.gain.setValueAtTime(0, t0);
         }
+
+        // If noise is enabled, update the noise register automatically.
         if (instrument.noiseEnabled) {
-            // Use channel 2 for noise (as an example).
+            // Use instrument.noiseRegister if provided; otherwise, use a default (e.g., 6).
+            const noiseReg = instrument.noiseRegister !== undefined ? instrument.noiseRegister : 6;
+            SM.setAYNoiseRegister(noiseReg);
+
+            // Choose a noise channel – here, we use channel 2 as an example.
             const noiseChannel = 2;
-            SM.lfsrNode.port.postMessage({ param: 'setNoisePeriod', value: 800 }); // example period
+            // Optionally, you can also update the noise filter's frequency if the instrument defines steps.
+            // For a percussive instrument, we simply gate noise briefly.
             SM.psgChannels[noiseChannel].noiseGain.gain.setValueAtTime(1.0, t0);
             SM.psgChannels[noiseChannel].noiseGain.gain.linearRampToValueAtTime(0, t0 + 0.05);
         } else {
