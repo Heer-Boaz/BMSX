@@ -1,4 +1,4 @@
-import { BaseModel, BehaviorTreeDefinition, Component, Direction, GLView, Game, GameObject, GamepadInputMapping, InputMap, GamepadButton, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, ProhibitLeavingScreenComponent, RomPack, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, insavegame, new_area, new_vec2, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State, SM, snareInstrument } from '../bmsx/bmsx';
+import { BaseModel, BehaviorTreeDefinition, Component, Direction, GLView, Game, GameObject, GamepadButton, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, ProhibitLeavingScreenComponent, RomPack, SM, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, insavegame, new_area, new_vec2, snareInstrument, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/bmsx';
 import { BitmapId } from './resourceids';
 
 var _game: Game;
@@ -306,6 +306,13 @@ class bclass extends SpriteObject {
             parallel: true,
             states: {
                 bla: {
+                    on_input: {
+                        'bla[j]': {
+                            do(this: bclass) {
+                                SM.playCustomInstrument(snareInstrument, 10000);
+                            }
+                        },
+                    },
                     run: blarun,
                 },
                 '#blap': {
@@ -343,6 +350,7 @@ class gamemodel extends BaseModel {
             states: {
                 '#game_start': {
                     enter(this: gamemodel) {
+                        // @ts-ignore
                         const sequences = [
                             {
                                 channel: 0,
@@ -366,7 +374,7 @@ class gamemodel extends BaseModel {
                         // Play the snare drum at specific intervals
                         const startTime = 0.0;
                         // Use the custom snareInstrument defined above.SM.setAYNoiseRegister(6);  // Set noise register to a desired value.
-                        SM.setAYNoiseRegister(6);  // Set noise register to a desired value.
+                        // SM.setAYNoiseRegister(6);  // Set noise register to a desired value.
                         SM.playCustomInstrument(snareInstrument, 0 /*base frequency ignored for noise-only*/, startTime);
                         SM.playCustomInstrument(snareInstrument, 0 /*base frequency ignored for noise-only*/, startTime + .5);
                         SM.playCustomInstrument(snareInstrument, 0 /*base frequency ignored for noise-only*/, startTime + 1.0);
@@ -378,7 +386,7 @@ class gamemodel extends BaseModel {
                         // SM.playInstrument(snareInstrument, startTime + 1.5);
                         // SM.playInstrument(snareInstrument, startTime + 2.0);
 
-                        SM.playSequences(sequences);
+                        // SM.playSequences(sequences);
                     },
                     run(this: gamemodel, s: State) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
                         s.to('default');
