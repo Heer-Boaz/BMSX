@@ -1,5 +1,5 @@
 {
-  "name": "sintervania",
+  "name": "bmsx",
   "version": "1.0.0",
   "description": "",
   "main": "gulpfile.js",
@@ -22,7 +22,7 @@
     "@types/systemjs": "*",
     "@types/terminal-kit": "*",
     "browserify": "*",
-    "canvas": "*",
+    "canvas": "^3.1.0",
     "colors": "*",
     "dagre": "*",
     "flatted": "*",
