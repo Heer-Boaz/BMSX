@@ -1,4 +1,4 @@
-import { BaseModel, BehaviorTreeDefinition, Component, Direction, GLView, Game, GameObject, GamepadButton, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, ProhibitLeavingScreenComponent, RomPack, SM, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, insavegame, new_area, new_vec2, snareInstrument, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/bmsx';
+import { BaseModel, BehaviorTreeDefinition, Component, Direction, GLView, Game, GameObject, GamepadButton, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, PSG, ProhibitLeavingScreenComponent, RomPack, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, insavegame, new_area, new_vec2, pianoInstrument, snareInstrument, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/bmsx';
 import { BitmapId } from './resourceids';
 
 var _game: Game;
@@ -309,7 +309,7 @@ class bclass extends SpriteObject {
                     on_input: {
                         'bla[j]': {
                             do(this: bclass) {
-                                SM.playCustomInstrument(snareInstrument, 10000);
+                                PSG.playCustomInstrument(snareInstrument, 10000);
                             }
                         },
                     },
@@ -350,43 +350,16 @@ class gamemodel extends BaseModel {
             states: {
                 '#game_start': {
                     enter(this: gamemodel) {
-                        // @ts-ignore
-                        const sequences = [
-                            {
-                                channel: 0,
-                                sequence: [
-                                    { note: 'C4', duration: 1 },
-                                    { note: 'E4', duration: 1 },
-                                    { note: 'G4', duration: 1 },
-                                ]
-                            },
-                            {
-                                channel: 1,
-                                sequence: [
-                                    { note: 'E3', duration: 1 },
-                                    { note: 'G3', duration: 1 },
-                                    { note: 'B3', duration: 1 },
-                                ]
-                            },
+                        // Define a simple song as an array of note events.
+                        const simpleSong = [
+                            { note: "C4", duration: 0.5 },
+                            { note: "E4", duration: 0.5 },
+                            { note: "G4", duration: 0.5 },
+                            { note: "C5", duration: 1.0 }
                         ];
 
-
-                        // Play the snare drum at specific intervals
-                        const startTime = 0.0;
-                        // Use the custom snareInstrument defined above.SM.setAYNoiseRegister(6);  // Set noise register to a desired value.
-                        // SM.setAYNoiseRegister(6);  // Set noise register to a desired value.
-                        SM.playCustomInstrument(snareInstrument, 0 /*base frequency ignored for noise-only*/, startTime);
-                        SM.playCustomInstrument(snareInstrument, 0 /*base frequency ignored for noise-only*/, startTime + .5);
-                        SM.playCustomInstrument(snareInstrument, 0 /*base frequency ignored for noise-only*/, startTime + 1.0);
-                        SM.playCustomInstrument(snareInstrument, 0 /*base frequency ignored for noise-only*/, startTime + 1.5);
-                        SM.playCustomInstrument(snareInstrument, 0 /*base frequency ignored for noise-only*/, startTime + 2.0);
-                        // SM.playInstrument(snareInstrument, startTime);
-                        // SM.playInstrument(snareInstrument, startTime + .5);
-                        // SM.playInstrument(snareInstrument, startTime + 1.0);
-                        // SM.playInstrument(snareInstrument, startTime + 1.5);
-                        // SM.playInstrument(snareInstrument, startTime + 2.0);
-
-                        // SM.playSequences(sequences);
+                        // Play the song using the piano instrument.
+                        PSG.playSong(simpleSong, pianoInstrument);
                     },
                     run(this: gamemodel, s: State) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
                         s.to('default');

@@ -1,9 +1,9 @@
-﻿import { BaseModel, GameObject, TextWriter, type InputMap } from "./bmsx";
+﻿import { BaseModel, GameObject, PSG, TextWriter, type InputMap } from "./bmsx";
 import { EventEmitter } from "./eventemitter";
 import { ActionState, ActionStateQuery, Input } from "./input";
-import { MSX2ScreenWidth, MSX2ScreenHeight } from "./msx";
+import { MSX2ScreenHeight, MSX2ScreenWidth } from "./msx";
 import { Registry } from "./registry";
-import { RomPack, Area, vec3, vec2, Vector, Size } from "./rompack";
+import { Area, RomPack, Size, vec2, vec3, Vector } from "./rompack";
 import { SM } from "./soundmaster";
 import { BaseView, Color, DrawImgOptions, DrawRectOptions } from "./view";
 
@@ -1051,6 +1051,12 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		}
 		$.view.init(); // Init the view. Placed here to ensure that the Game object is available to the view and that the Input module is initialized
 		await SM.init(rom['snd_assets'], sndcontext, GameOptions.VolumePercentage, gainnode);
+		try {
+			await PSG.init(sndcontext, GameOptions.VolumePercentage, gainnode);
+		} catch (error) {
+			console.error("Failed to initialize PSG:", error);
+			// Optionally, provide fallback behavior or notify the user
+		}
 
 		if (this.debug) {
 			// @ts-ignore
