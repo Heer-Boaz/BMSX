@@ -1,10 +1,10 @@
-import { exclude_save, insavegame, onload } from './gameserializer';
-import { IIdentifiable, IRegisterable, Identifier } from './game';
 import { BaseModel } from './basemodel';
 import { EventScope, IEventSubscriber } from './eventemitter';
-import { Input } from './input';
-import type { StateMachineBlueprint, StateEventDefinition, id2sstate, IStateful, TransitionType, StateTransition, Tape, IStateEventHandler, IStateNextHandler, IStateExitHandler, TickCheckDefinition, id2partial_sdef, IStateGuard, StateTransitionWithType } from './fsmtypes';
 import { StateDefinitions } from './fsmlibrary';
+import { type IStateEventHandler, type IStateExitHandler, type IStateGuard, type IStateNextHandler, type IStateful, type StateEventDefinition, type StateMachineBlueprint, type StateTransition, type StateTransitionWithType, type Tape, type TickCheckDefinition, type TransitionType, type id2partial_sdef, type id2sstate, STATE_PARENT_PREFIX, STATE_ROOT_PREFIX, STATE_THIS_PREFIX } from './fsmtypes';
+import { IIdentifiable, IRegisterable, Identifier } from './game';
+import { exclude_save, insavegame, onload } from './gameserializer';
+import { Input } from './input';
 
 /**
  * Maximum history size for the state transition stack.
@@ -763,15 +763,15 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 
 		let currentContext: State;
 		switch (currentPart) {
-			case '#this':
+			case STATE_THIS_PREFIX:
 				currentContext = this;
 				[currentPart, ...restParts] = restParts;
 				break;
-			case '#parent':
+			case STATE_PARENT_PREFIX:
 				currentContext = this.parent;
 				[currentPart, ...restParts] = restParts;
 				break;
-			case '#root':
+			case STATE_ROOT_PREFIX:
 				currentContext = this.root;
 				[currentPart, ...restParts] = restParts;
 				break;
@@ -831,24 +831,24 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 * This method is responsible for transitioning the state machine to a new state.
 	 * If the ID contains multiple parts separated by '.', it traverses through the states accordingly and switches the state of each part.
 	 * It handles three types of state transitions:
-	 * 1. Transitions within the current state machine, identified by a state_id starting with '#this.'.
-	 * 2. Transitions from the root of the state machine hierarchy, identified by a state_id starting with '#root.'.
+	 * 1. Transitions within the current state machine, identified by a state_id starting with `${STATE_THIS_PREFIX}.`.
+	 * 2. Transitions from the root of the state machine hierarchy, identified by a state_id starting with `${STATE_ROOT_PREFIX}.`.
 	 * 3. Transitions within the parent state machine, for all other state_ids.
 	 *
-	 * @param state_id - The identifier of the state to transition to. This can be a local state (prefixed with '#this.'),
-	 * a state from the root (prefixed with '#root.'), or a state within the parent state machine.
+	 * @param state_id - The identifier of the state to transition to. This can be a local state (prefixed with `${STATE_THIS_PREFIX}.`),
+	 * a state from the root (prefixed with `${STATE_ROOT_PREFIX}.`), or a state within the parent state machine.
 	 * @param args - Optional arguments to pass to the new state. These arguments are passed on to the 'to' or 'switch' methods.
 	 */
 	to(state_id: Identifier, ...args: any[]): void {
-		if (state_id.startsWith('#this.')) { // If the state is local, switch to the state in the current state machine
-			// Remove the '#this.' prefix and continue to the next state from the substate
-			const restParts = state_id.slice('#this.'.length);
+		if (state_id.startsWith(`${STATE_THIS_PREFIX}.`)) { // If the state is local, switch to the state in the current state machine
+			// Remove the `${STATE_THIS_PREFIX}.` prefix and continue to the next state from the substate
+			const restParts = state_id.slice(`${STATE_THIS_PREFIX}.`.length);
 			// If there are more parts, switch to the state in the current state machine
 			this.to_path(restParts, ...args);
 		}
-		else if (state_id.startsWith('#root.')) { // If the state is in the root, switch to the state in the root state machine
-			// Remove the '#root.' prefix and continue to the next state from the root
-			const restParts = state_id.slice('#root.'.length);
+		else if (state_id.startsWith(`${STATE_ROOT_PREFIX}.`)) { // If the state is in the root, switch to the state in the root state machine
+			// Remove the `${STATE_ROOT_PREFIX}.` prefix and continue to the next state from the root
+			const restParts = state_id.slice(`${STATE_ROOT_PREFIX}.`.length);
 			// If there are more parts, switch to the state in the root state machine
 			this.root.to_path(restParts, ...args);
 		}
@@ -868,30 +868,30 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 * This method is responsible for transitioning the state machine to a new state.
 	 * If the ID contains multiple parts separated by '.', it traverses through the states accordingly and only switches the state of the last part.
 	 * It handles three types of state transitions:
-	 * 1. Transitions within the current state machine, identified by a state_id starting with '#this.'.
-	 * 2. Transitions from the root of the state machine hierarchy, identified by a state_id starting with '#root.'.
+	 * 1. Transitions within the current state machine, identified by a state_id starting with `${STATE_THIS_PREFIX}.`.
+	 * 2. Transitions from the root of the state machine hierarchy, identified by a state_id starting with `${STATE_ROOT_PREFIX}.`.
 	 * 3. Transitions within the parent state machine, for all other state_ids.
 	 *
-	 * @param state_id - The identifier of the state to transition to. This can be a local state (prefixed with '#this.'),
-	 * a state from the root (prefixed with '#root.'), or a state within the parent state machine.
+	 * @param state_id - The identifier of the state to transition to. This can be a local state (prefixed with `${STATE_THIS_PREFIX}.`),
+	 * a state from the root (prefixed with `${STATE_ROOT_PREFIX}.`), or a state within the parent state machine.
 	 * @param args - Optional arguments to pass to the new state. These arguments are passed on to the 'to' or 'switch' methods.
 	 */
 	switch(state_id: Identifier, ...args: any[]): void {
-		if (state_id.startsWith('#this.')) {
-			// Remove the '#this.' prefix and continue to the next state from the substate
-			const restParts = state_id.slice('#this.'.length);
+		if (state_id.startsWith(`${STATE_THIS_PREFIX}.`)) {
+			// Remove the `${STATE_THIS_PREFIX}.` prefix and continue to the next state from the substate
+			const restParts = state_id.slice(`${STATE_THIS_PREFIX}.`.length);
 			// If there are more parts, switch to the state in the current state machine
 			this.switch_path(restParts, ...args);
 		}
-		else if (state_id.startsWith('#parent.')) {
-			// Remove the '#parent.' prefix and continue to the next state from the parent
-			const restParts = state_id.slice('#parent.'.length);
+		else if (state_id.startsWith(`${STATE_PARENT_PREFIX}.`)) {
+			// Remove the `${STATE_PARENT_PREFIX}.` prefix and continue to the next state from the parent
+			const restParts = state_id.slice(`${STATE_PARENT_PREFIX}.`.length);
 			// If there are more parts, switch to the state in the parent state machine
 			this.parent.switch_path(restParts, ...args);
 		}
-		else if (state_id.startsWith('#root.')) {
-			// Remove the '#root.' prefix and continue to the next state from the root
-			const restParts = state_id.slice('#root.'.length);
+		else if (state_id.startsWith(`${STATE_ROOT_PREFIX}.`)) {
+			// Remove the `${STATE_ROOT_PREFIX}.` prefix and continue to the next state from the root
+			const restParts = state_id.slice(`${STATE_ROOT_PREFIX}.`.length);
 			// If there are more parts, switch to the state in the root state machine
 			this.root.switch_path(restParts, ...args);
 		}
@@ -1738,81 +1738,81 @@ export class StateDefinition {
  * @throws Error if the state machine definition is invalid.
  */
 export function validateStateMachine(machinedef: StateDefinition): void {
-    if (!machinedef.states) return; // A class might choose not to create a new machine_definition
+	if (!machinedef.states) return; // A class might choose not to create a new machine_definition
 
-    // Get all state names
-    const stateNames = Object.keys(machinedef.states);
+	// Get all state names
+	const stateNames = Object.keys(machinedef.states);
 
-    // Check the defined event state transitions for each state in the machine definition to see if they are valid
-    for (const state of stateNames) {
-        const transitions = machinedef.states[state].on; // Get the transitions for the state if they exist
+	// Check the defined event state transitions for each state in the machine definition to see if they are valid
+	for (const state of stateNames) {
+		const transitions = machinedef.states[state].on; // Get the transitions for the state if they exist
 
-        // If there are transitions, check each target state
-        if (transitions) {
-            for (const targetState of Object.values(transitions)) { // Get the target state for each transition
-                if (typeof targetState === 'string') { // If the target state is a string, check if it exists
-                    let targetStateParts = targetState.split('.');
-                    let currentContext = machinedef.states;
+		// If there are transitions, check each target state
+		if (transitions) {
+			for (const targetState of Object.values(transitions)) { // Get the target state for each transition
+				if (typeof targetState === 'string') { // If the target state is a string, check if it exists
+					let targetStateParts = targetState.split('.');
+					let currentContext = machinedef.states;
 
-                    for (const part of targetStateParts) {
-                        switch (part) {
-                            case '#this': // If the part is '#this', move to the current subcontext
-                                if (!currentContext.states) { // Check if the current context has states
-                                    throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the current context doesn't have substates.`);
-                                }
-                                continue; // Skip '#this' parts
-                            case '#parent': // If the part is '#parent', move to the parent context
-                                if (!currentContext.parent) { // Check if the parent context exists
-                                    throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the parent context doesn't exist.`);
-                                }
-                                if (!currentContext.parent.states) { // Check if the parent context has states
-                                    throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the parent context doesn't have substates.`);
-                                }
-                                currentContext = currentContext.parent.states;
-                                continue; // Skip '#parent' parts
-                            case '#root': // If the part is '#root', move to the root context
-                                if (!currentContext.root) { // Check if the root context exists
-                                    throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the root context doesn't exist. This might be because the root context is not defined in the machine definition.`);
-                                }
-                                currentContext = currentContext.root.states;
-                                continue; // Skip '#root' parts
-                            default:
-                                if (!currentContext[part]) { // Check if the part exists in the current context
-                                    throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}'.`);
-                                }
+					for (const part of targetStateParts) {
+						switch (part) {
+							case STATE_THIS_PREFIX: // If the part is STATE_THIS_PREFIX, move to the current subcontext
+								if (!currentContext.states) { // Check if the current context has states
+									throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the current context doesn't have substates.`);
+								}
+								continue; // Skip STATE_THIS_PREFIX parts
+							case STATE_PARENT_PREFIX: // If the part is STATE_PARENT_PREFIX, move to the parent context
+								if (!currentContext.parent) { // Check if the parent context exists
+									throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the parent context doesn't exist.`);
+								}
+								if (!currentContext.parent.states) { // Check if the parent context has states
+									throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the parent context doesn't have substates.`);
+								}
+								currentContext = currentContext.parent.states;
+								continue; // Skip STATE_PARENT_PREFIX parts
+							case STATE_ROOT_PREFIX: // If the part is STATE_ROOT_PREFIX, move to the root context
+								if (!currentContext.root) { // Check if the root context exists
+									throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the root context doesn't exist. This might be because the root context is not defined in the machine definition.`);
+								}
+								currentContext = currentContext.root.states;
+								continue; // Skip STATE_ROOT_PREFIX parts
+							default:
+								if (!currentContext[part]) { // Check if the part exists in the current context
+									throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}'.`);
+								}
 
-                                currentContext = currentContext[part].states; // Move to the next context
-                                break;
-                        }
-                    }
-                }
-            }
-        }
-    }
+								currentContext = currentContext[part].states; // Move to the next context
+								break;
+						}
+					}
+				}
+			}
+		}
+	}
 
-    // Check the defined event state transitions for each state in the machine definition to see if they are valid
-    for (const state of stateNames) {
-        const transitions = machinedef.states[state].on; // Get the transitions for the state if they exist
+	// Check the defined event state transitions for each state in the machine definition to see if they are valid
+	for (const state of stateNames) {
+		const transitions = machinedef.states[state].on; // Get the transitions for the state if they exist
 
-        // If there are transitions, check each target state
-        if (transitions) {
-            for (const targetState of Object.values(transitions)) { // Get the target state for each transition
-                if (typeof targetState === 'string') { // If the target state is a string, check if it exists
-                    if (!stateNames.includes(targetState)) { // Check if the target state exists
-                        throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}'.`);
-                    }
-                }
-            }
-        }
-    }
+		// If there are transitions, check each target state
+		if (transitions) {
+			for (const targetState of Object.values(transitions)) { // Get the target state for each transition
+				if (typeof targetState === 'string') { // If the target state is a string, check if it exists
+					if (!stateNames.includes(targetState)) { // Check if the target state exists
+						throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}'.`);
+					}
+				}
+			}
+		}
+	}
 
-    // Check if the start state is defined
-    if (!machinedef.start_state_id) {
-        throw new Error(`No start state defined for state machine '${machinedef.id}'`);
-    }
+	// Check if the start state is defined
+	if (!machinedef.start_state_id) {
+		throw new Error(`No start state defined for state machine '${machinedef.id}'`);
+	}
 
-    // Check if the start state exists
-    if (machinedef.start_state_id && !stateNames.includes(machinedef.start_state_id)) {
-        throw new Error(`Invalid start state '${machinedef.start_state_id}', as that state doesn't exist in the machine '${machinedef.id}'.`);
-    }
+	// Check if the start state exists
+	if (machinedef.start_state_id && !stateNames.includes(machinedef.start_state_id)) {
+		throw new Error(`Invalid start state '${machinedef.start_state_id}', as that state doesn't exist in the machine '${machinedef.id}'.`);
+	}
 }

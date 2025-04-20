@@ -1,4 +1,8 @@
-import type { Identifier, StateDefinition, IEventSubscriber, EventScope, IRegisterable, StateMachineController, State } from "./bmsx";
+import type { EventScope, Identifier, IEventSubscriber, IRegisterable, State, StateDefinition, StateMachineController } from "./bmsx";
+
+export const STATE_THIS_PREFIX = '#this.';
+export const STATE_PARENT_PREFIX = '#parent.';
+export const STATE_ROOT_PREFIX = '#root.';
 
 /**
  * Represents a type definition for mapping IDs to `sdef` objects.
