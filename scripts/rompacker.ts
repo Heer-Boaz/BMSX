@@ -35,7 +35,7 @@ interface RomPackerOptions {
 	respath: string;
 	force: boolean;
 	buildreslist: boolean;
-	deployToFtp: boolean;
+	deploy: boolean;
 }
 
 function getParamOrEnv(args: string[], flag: string, envVar: string, fallback: string): string {
@@ -63,7 +63,7 @@ function parseOptions(args: string[]): RomPackerOptions {
 		writeOut(`  -respath <path>        Resource path`, 'warning');
 		writeOut(`  --force                Force the compilation and build of the rompack`, 'warning');
 		writeOut(`  --buildreslist         Build resource list`, 'warning');
-		writeOut(`  --nodeploy         Skip deployment via FTP`, 'warning');
+		writeOut(`  --nodeploy         Skip deployment`, 'warning');
 		process.exit(0);
 	}
 
@@ -75,7 +75,7 @@ function parseOptions(args: string[]): RomPackerOptions {
 		respath: getParamOrEnv(args, '-respath', 'RES_PATH', null),
 		force: args.includes('--force'),
 		buildreslist: args.includes('--buildreslist'),
-		deployToFtp: !args.includes('--nodeploy')
+		deploy: !args.includes('--nodeploy')
 	};
 }
 
@@ -457,52 +457,6 @@ function parseAudioMeta(filename: string): { sanitizedName: string, meta: AudioM
 function zip(content: Buffer): Uint8Array {
 	const toCompress = new Uint8Array(content);
 	return pako.deflate(toCompress);
-}
-
-/**
- * Deploys a ROM file to a remote server using FTP.
- * Currently is not used, but can be used to deploy ROMs to a remote server.
- *
- * @param romname - The name of the ROM file.
- * @param title - The title of the ROM.
- * @returns A Promise that resolves when the deployment is successful, or rejects with an error if the deployment fails.
- */
-async function deploy(romname: string, title: string): Promise<any> {
-	return new Promise<any>((resolve, reject) => {
-		const outfile = romname.concat('.rom');
-		const ftpDeploy = new FtpDeploy();
-
-		ftpDeploy.on("upload-error", function (data) {
-			// Error already handled through catch.
-		});
-
-		const config = {
-			user: "boazpat_el@ziggo.nl",
-			password: "lars18th",
-			host: "homedrive.ziggo.nl",
-			port: 21,
-			localRoot: "./dist",
-			remoteRoot: `/${title.toLowerCase()}/`,
-			// include: ["*", "**/*"],      // this would upload everything except dot files
-			include: [outfile, "*.html", "manifest.*"],
-			// e.g. exclude sourcemaps, and ALL files in node_modules (including dot files)
-			exclude: [],//"dist/**/*.map", "node_modules/**", "node_modules/**/.*", ".git/**"],
-			// delete ALL existing files at destination before uploading, if true
-			deleteRemote: false,
-			// Passive mode is forced (EPSV command is not sent)
-			forcePasv: true
-		};
-
-		ftpDeploy
-			.deploy(config)
-			.then(res => {
-				taakAfgevinkt();
-				resolve(null);
-			})
-			.catch(err => {
-				reject(err);
-			});
-	});
 }
 
 /**
@@ -1028,6 +982,10 @@ async function buildRompack(rom_name: string, respath: string): Promise<void> {
 	});
 }
 
+async function deployToServer(rom_name: string, title: string) {
+	throw new Error('Deploy is not implemented yet!');
+}
+
 async function compileRomLoaderScriptIfNewer() {
 	const romTsPath = join(__dirname, '../scripts/rom.ts');
 	const romJsPath = join(__dirname, '../rom/rom.js');
@@ -1181,7 +1139,6 @@ const taakAfgevinkt = () => {
 	}
 };
 
-
 /**
  * The main function that runs the ROM packing and deployment process.
  * @returns {Promise<void>} A Promise that resolves when the process is complete.
@@ -1195,7 +1152,7 @@ async function main() {
 		writeOut(_colors.brightGreen.bold('|                          BMSX ROMPACKER DOOR BOAZ©®™                           |\n'));
 		writeOut(_colors.brightGreen.bold('┗————————————————————————————————————————————————————————————————————————————————┛\n'));
 		const args = process.argv.slice(2);
-		let { title, rom_name, bootloader_path, respath, force, buildreslist, deployToFtp } = parseOptions(args);
+		let { title, rom_name, bootloader_path, respath, force, buildreslist, deploy } = parseOptions(args);
 
 
 		if (buildreslist) {
@@ -1225,7 +1182,7 @@ async function main() {
 		if (force) {
 			writeOut(`Note: Recompilation and Building forced via ${_colors.brightRed.bold('--force')}\n`);
 		}
-		if (!deployToFtp) writeOut(`Note: Deploy to FTP server disabled via ${_colors.brightRed.bold('--nodeploy')}\n`);
+		if (!deploy) writeOut(`Note: Deploy to FTP server disabled via ${_colors.brightRed.bold('--nodeploy')}\n`);
 		writeOut(`Starting ROM packing and deployment process for ROM ${_colors.brightBlue.bold(`${rom_name}`)}...\n`);
 		gauge.show(takenlijst.shift(), 0);
 		gauge.pulse();
@@ -1248,7 +1205,7 @@ async function main() {
 			}
 			else rebuildRequired = true;
 
-			if (!deployToFtp) takenlijst.pop();
+			if (!deploy) takenlijst.pop();
 			if (!rebuildRequired) {
 				takenlijst.shift();
 				takenlijst.shift();
@@ -1265,8 +1222,8 @@ async function main() {
 			await compileRomLoaderScriptIfNewer();
 
 			await buildGameHtmlAndManifest(rom_name, title, short_name);
-			if (deployToFtp) {
-				await deploy(rom_name, title);
+			if (deploy) {
+				await deployToServer(rom_name, title);
 			}
 			gauge.show('ALLES DONUT', 1);
 			gauge.pulse();
