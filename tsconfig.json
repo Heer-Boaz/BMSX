@@ -95,6 +95,7 @@
     // files to track work from these directories
     "excludeFiles": [
       "**/node_modules",
+      "**/node_modules/**",
       "dist",
       "scripts",
       "_ignore"

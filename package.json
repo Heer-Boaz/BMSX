@@ -12,6 +12,7 @@
   "devDependencies": {
     "@node-minify/clean-css": "*",
     "@node-minify/core": "*",
+    "@node-minify/types": "^9.0.0",
     "@types/bin-pack": "*",
     "@types/cli-progress": "*",
     "@types/js-yaml": "*",
