@@ -831,155 +831,156 @@ async function buildResourceList(respath: string, romname: string) {
 	await writeFile(targetPath, total_output);
 }
 
-/**
- * Builds a ROM pack for the specified `romname` using the resources located at `respath`.
- * @param rom_name The name of the ROM pack to build.
- * @param respath The path to the resources to include in the ROM pack.
- * @returns A Promise that resolves when the ROM pack has been successfully built.
- */
 async function buildRompack(rom_name: string, respath: string): Promise<void> {
-	return new Promise<any>(async (resolve, reject) => {
-		const outfile = rom_name.concat('.rom');
-		const megarom_filename = `${rom_name}.js`;
-		const megarom_filepath = `./rom/${megarom_filename}`;
+	const outfile = rom_name.concat('.rom');
+	const megarom_filename = `${rom_name}.js`;
+	const megarom_filepath = `./rom/${megarom_filename}`;
 
-		const buffers = new Array<Buffer>();
-		const loadedResources: ILoadedResource[] = await getLoadedResourcesList(respath, buffers, rom_name).catch(err => reject(err)) as ILoadedResource[];
-		taakAfgevinkt();
-		let generated_atlas: HTMLCanvasElement = undefined;
-		if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-			// Use algorithm to optimize atlas
-			generated_atlas = createOptimizedAtlas(loadedResources);
-		}
-		taakAfgevinkt();
+	const buffers: Buffer[] = [];
+	const loadedResources = await getLoadedResourcesList(respath, buffers, rom_name);
+	taakAfgevinkt();
 
-		const jsonout = new Array<RomAsset>();
-		let bufferPointer = 0;
-		let romlabel_buffer: Buffer = undefined;
-		for (let i = 0; i < loadedResources.length; i++) {
-			const res: ILoadedResource = loadedResources[i];
-			const type = res.type;
-			let name = res.name;
-			const resid = res.id;
-			switch (type) {
-				case 'romlabel':
-					if (i > 0) throw '"romlabel.png" must appear at start of the ResourceMeta-list, while building the rompack ("romresources.json")! Thus, this is a bug and a fix is required!';
-					// Ignore this part. Don't even increase the buffer pointer (all other buffers will be zipped)!
-					romlabel_buffer = res.buffer;
-					break;
-				case 'image':
-					const img = res.img;
-					const img_boundingbox = extractBoundingBox(img); // Extract the bounding box of the image (i.e. the smallest rectangle that contains all non-transparent pixels)
-					const img_boundingbox_precalc: BoundingBoxPrecalc = generateFlippedBoundingBox(img, img_boundingbox);
-					const img_boundingboxes = extractBoundingBoxes(img, img_boundingbox, 4); // Extract the bounding boxes of the image (i.e. the smallest rectangles that contain all non-transparent pixels)
-					// const img_ascii_boundingbox_map = createAsciiBoundingBoxMap(img, img_boundingboxes);
-					const img_boundingboxes_precalc: BoundingBoxesPrecalc = {
-						original: img_boundingboxes,
-						...generateFlippedBoundingBoxes(img, img_boundingboxes),
-					};
-					const img_centerpoint = calculateCenterPoint(img_boundingbox);
+	let generated_atlas: HTMLCanvasElement | undefined;
+	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
+		generated_atlas = createOptimizedAtlas(loadedResources);
+	}
+	taakAfgevinkt();
 
-					let imgmeta: ImgMeta = {
-						atlassed: false,
-						width: img.width,
-						height: img.height,
-						boundingbox: img_boundingbox_precalc,
-						boundingboxes: img_boundingboxes_precalc,
-						centerpoint: img_centerpoint,
-						// ascii_boundingbox_map: img_ascii_boundingbox_map,
-					};
+	const { jsonout, bufferPointer, romlabel_buffer } = processResources(loadedResources, generated_atlas);
 
-					if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-						imgmeta = {
-							...imgmeta,
-							atlassed: res.imgmeta.atlassed,
-							texcoords: res.imgmeta.texcoords,
-							texcoords_fliph: res.imgmeta.texcoords_fliph,
-							texcoords_flipv: res.imgmeta.texcoords_flipv,
-							texcoords_fliphv: res.imgmeta.texcoords_fliphv,
-						};
-					}
+	if (GENERATE_AND_USE_TEXTURE_ATLAS && generated_atlas) {
+		await handleAtlas(loadedResources, generated_atlas, jsonout, bufferPointer, buffers);
+	}
 
-					const baseJson = {
-						resid: resid,
-						resname: name,
-						type: type,
-						imgmeta: imgmeta
-					};
+	await finalizeRompack(jsonout, buffers, romlabel_buffer, outfile);
+}
 
-					if (GENERATE_AND_USE_TEXTURE_ATLAS && !DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
-						jsonout.push({
-							...baseJson,
-							start: bufferPointer,
-							end: bufferPointer + res.buffer.length,
-						});
-						bufferPointer += res.buffer.length;
-					} else {
-						jsonout.push({
-							...baseJson,
-							start: 0,
-							end: 0,
-						});
-					}
-					break;
-				case 'audio':
-					{
-						const parsedMeta = parseAudioMeta(res.filepath);
-						jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: undefined, audiometa: parsedMeta.meta });
-					}
+function processResources(loadedResources: ILoadedResource[], generated_atlas?: HTMLCanvasElement) {
+	const jsonout: RomAsset[] = [];
+	let bufferPointer = 0;
+	let romlabel_buffer: Buffer | undefined;
+
+	for (let i = 0; i < loadedResources.length; i++) {
+		const res = loadedResources[i];
+		const type = res.type;
+		let name = res.name;
+		const resid = res.id;
+
+		switch (type) {
+			case 'romlabel':
+				if (i > 0) throw new Error('"romlabel.png" must appear at start of the ResourceMeta-list!');
+				romlabel_buffer = res.buffer;
+				break;
+			case 'image':
+				const imgmeta = buildImgMeta(res, generated_atlas);
+				const baseJson = { resid, resname: name, type, imgmeta };
+				if (GENERATE_AND_USE_TEXTURE_ATLAS && !DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
+					jsonout.push({ ...baseJson, start: bufferPointer, end: bufferPointer + res.buffer.length });
 					bufferPointer += res.buffer.length;
-					break;
-				case 'source':
-					name = name.replace('.min', '');
-					jsonout.push({ resid: resid, resname: name, type: type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: undefined, audiometa: undefined });
-					bufferPointer += res.buffer.length;
-					break;
-				case 'atlas':
-					// Ignore this part - don't increase the buffer pointer.
-					break;
-				case 'rommanifest':
-					// Ignore this part - don't increase the buffer pointer.
-					break;
-			}
+				} else {
+					jsonout.push({ ...baseJson, start: 0, end: 0 });
+				}
+				break;
+			case 'audio':
+				const parsedMeta = parseAudioMeta(res.filepath);
+				jsonout.push({ resid, resname: name, type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: undefined, audiometa: parsedMeta.meta });
+				bufferPointer += res.buffer.length;
+				break;
+			case 'source':
+				name = name.replace('.min', '');
+				jsonout.push({ resid, resname: name, type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: undefined, audiometa: undefined });
+				bufferPointer += res.buffer.length;
+				break;
+			case 'atlas':
+			case 'rommanifest':
+				break;
 		}
+	}
+	return { jsonout, bufferPointer, romlabel_buffer };
+}
 
-		if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-			const i = loadedResources.findIndex(x => x.type === 'atlas');
-			const atlasSize = { x: generated_atlas.width, y: generated_atlas.height };
-			const atlasbuffer: Buffer = (<any>generated_atlas).toBuffer('image/png');
-			buffers.push(atlasbuffer);
+function buildImgMeta(res: ILoadedResource, generated_atlas?: HTMLCanvasElement): ImgMeta {
+	const img = res.img;
+	const img_boundingbox = extractBoundingBox(img);
+	const img_boundingbox_precalc = generateFlippedBoundingBox(img, img_boundingbox);
+	const img_boundingboxes = extractBoundingBoxes(img, img_boundingbox, 4);
+	const img_boundingboxes_precalc = {
+		original: img_boundingboxes,
+		...generateFlippedBoundingBoxes(img, img_boundingboxes),
+	};
+	const img_centerpoint = calculateCenterPoint(img_boundingbox);
 
-			jsonout.push({ resid: loadedResources[i].id, resname: loadedResources[i].name, type: 'image', start: bufferPointer, end: bufferPointer + atlasbuffer.length, imgmeta: { atlassed: false, width: atlasSize.x, height: atlasSize.y }, audiometa: undefined });
-			bufferPointer += atlasbuffer.length;
-			await writeFile("./rom/_ignore/atlas.png", atlasbuffer);
-		}
-
-		const jsonbuffer = Buffer.from(encodeuint8arr(JSON.stringify(jsonout)));
-		buffers.push(jsonbuffer);
-
-		const rommeta = <RomMeta>{
-			start: bufferPointer,
-			end: bufferPointer + jsonbuffer.length
+	let imgmeta: ImgMeta = {
+		atlassed: false,
+		width: img.width,
+		height: img.height,
+		boundingbox: img_boundingbox_precalc,
+		boundingboxes: img_boundingboxes_precalc,
+		centerpoint: img_centerpoint,
+	};
+	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
+		imgmeta = {
+			...imgmeta,
+			atlassed: res.imgmeta.atlassed,
+			texcoords: res.imgmeta.texcoords,
+			texcoords_fliph: res.imgmeta.texcoords_fliph,
+			texcoords_flipv: res.imgmeta.texcoords_flipv,
+			texcoords_fliphv: res.imgmeta.texcoords_fliphv,
 		};
-		const rom_meta_string = JSON.stringify(rommeta).padStart(100, ' ');
-		buffers.push(Buffer.from(encodeuint8arr(rom_meta_string)));
-		const all_buffers = Buffer.concat(buffers);
-		const zipped = zip(all_buffers);
-		const blobmeta = <RomMeta>{
-			start: romlabel_buffer?.length ?? 0,
-			end: zipped.length + (romlabel_buffer?.length ?? 0)
-		};
-		const blob_meta_string = JSON.stringify(blobmeta).padStart(100, ' ');
-		const blob_meta_as_buffer = Buffer.from(encodeuint8arr(blob_meta_string));
-		// log(`\tSize: ${_colors.red(`${(Buffer.concat(buffers).length / (1024 * 1024)).toFixed(2)} mB`)} ⇒  Deflated: ${_colors.blue(`${(zipped.length / (1024 * 1024)).toFixed(2)} mB (${((zipped.length / Buffer.concat(buffers).length) * 100).toFixed(0)}%)`)}\n`);
+	}
+	return imgmeta;
+}
 
-		taakAfgevinkt();
-		await writeFile(`./dist/${outfile}`, Buffer.concat([romlabel_buffer ?? Buffer.alloc(0), zipped, blob_meta_as_buffer]));
-		await writeFile("./rom/_ignore/romresources.json", jsonbuffer);
-		taakAfgevinkt();
+async function handleAtlas(
+	loadedResources: ILoadedResource[],
+	generated_atlas: HTMLCanvasElement,
+	jsonout: RomAsset[],
+	bufferPointer: number,
+	buffers: Buffer[]
+) {
+	const i = loadedResources.findIndex(x => x.type === 'atlas');
+	const atlasSize = { x: generated_atlas.width, y: generated_atlas.height };
+	const atlasbuffer: Buffer = (<any>generated_atlas).toBuffer('image/png');
+	buffers.push(atlasbuffer);
 
-		resolve(null);
+	jsonout.push({
+		resid: loadedResources[i].id,
+		resname: loadedResources[i].name,
+		type: 'image',
+		start: bufferPointer,
+		end: bufferPointer + atlasbuffer.length,
+		imgmeta: { atlassed: false, width: atlasSize.x, height: atlasSize.y },
+		audiometa: undefined
 	});
+	await writeFile("./rom/_ignore/atlas.png", atlasbuffer);
+}
+
+async function finalizeRompack(
+	jsonout: RomAsset[],
+	buffers: Buffer[],
+	romlabel_buffer: Buffer | undefined,
+	outfile: string
+) {
+	const jsonbuffer = Buffer.from(encodeuint8arr(JSON.stringify(jsonout)));
+	buffers.push(jsonbuffer);
+
+	const bufferPointer = buffers.reduce((acc, buf) => acc + buf.length, 0) - jsonbuffer.length;
+	const rommeta: RomMeta = { start: bufferPointer, end: bufferPointer + jsonbuffer.length };
+	const rom_meta_string = JSON.stringify(rommeta).padStart(100, ' ');
+	buffers.push(Buffer.from(encodeuint8arr(rom_meta_string)));
+	const all_buffers = Buffer.concat(buffers);
+	const zipped = zip(all_buffers);
+	const blobmeta: RomMeta = {
+		start: romlabel_buffer?.length ?? 0,
+		end: zipped.length + (romlabel_buffer?.length ?? 0)
+	};
+	const blob_meta_string = JSON.stringify(blobmeta).padStart(100, ' ');
+	const blob_meta_as_buffer = Buffer.from(encodeuint8arr(blob_meta_string));
+
+	taakAfgevinkt();
+	await writeFile(`./dist/${outfile}`, Buffer.concat([romlabel_buffer ?? Buffer.alloc(0), zipped, blob_meta_as_buffer]));
+	await writeFile("./rom/_ignore/romresources.json", jsonbuffer);
+	taakAfgevinkt();
 }
 
 async function deployToServer(rom_name: string, title: string) {
@@ -1010,7 +1011,6 @@ async function compileRomLoaderScriptIfNewer() {
 	if (!romJsStats || romTsStats.mtime > romJsStats.mtime) {
 		return new Promise<void>((resolve, reject) => {
 			try {
-				// exec(`npx tsc ${romTsPath} --removeComments -m commonjs -t ES2017 --outDir ${join(__dirname, '../rom/')}`, (error, stdout, stderr) => {
 				exec(`npx tsc ${romTsPath} --removeComments -m commonjs -t ES2020 --rootDir "." --outDir ${join(__dirname, '../rom/')}`, { cwd: romTsDir }, (error, stdout, stderr) => {
 					if (error || stderr) {
 						throw new Error(`Error while compiling "rom.ts": ${error?.message ?? stderr}`);
