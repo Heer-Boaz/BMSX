@@ -1,14 +1,13 @@
-﻿import { Key } from 'ts-key-enum';
-import { handleDebugClick, handleDebugMouseDown, handleDebugMouseUp, handleDebugMouseMove, handleDebugMouseOut, handleContextMenu as handleDebugContextMenu, handleOpenObjectMenu, handleOpenDebugMenu as handleOpenDebugMenu } from './bmsxdebugger';
+﻿import { ActionParser } from './actionparser';
+import { handleDebugClick, handleContextMenu as handleDebugContextMenu, handleDebugMouseDown, handleDebugMouseMove, handleDebugMouseOut, handleDebugMouseUp, handleOpenDebugMenu, handleOpenObjectMenu } from './bmsxdebugger';
 import { EventEmitter } from './eventemitter';
-import { ZCOORD_MAX } from './glview';
-import { SpriteObject } from './sprite';
-import type { IRegisterable, Identifier } from "./game";
-import { Registry } from './registry';
 import { State } from './fsm';
-import { ActionParser } from './actionparser';
-import type { StateMachineBlueprint } from './fsmtypes';
 import { build_fsm } from './fsmdecorators';
+import type { StateMachineBlueprint } from './fsmtypes';
+import type { IRegisterable, Identifier } from "./game";
+import { ZCOORD_MAX } from './glview';
+import { Registry } from './registry';
+import { SpriteObject } from './sprite';
 
 // @ts-ignore
 function svgToPng(svgElement, filename) {
@@ -94,7 +93,7 @@ export type ActionStateQuery = {
  * It can be one of the predefined values 'BTN1', 'BTN2', 'BTN3', 'BTN4',
  * or a custom Key value.
  */
-type KeyboardButtonId = 'BTN1' | 'BTN2' | 'BTN3' | 'BTN4' | Key;
+type KeyboardButtonId = 'BTN1' | 'BTN2' | 'BTN3' | 'BTN4';
 
 type ButtonId = string;
 
@@ -172,7 +171,7 @@ export interface InputMap {
  * Represents a keyboard button.
  * It can be one of the predefined keys or a custom string.
  */
-export type KeyboardButton = keyof typeof Key | string;
+export type KeyboardButton = string;
 
 /**
  * Represents a gamepad button.
@@ -1110,7 +1109,7 @@ export class Input implements IRegisterable {
 	}
 
 	public static get KC_F1(): boolean {
-		return Input.instance.getPlayerInput(1).checkAndConsume(Key.F1);
+		return Input.instance.getPlayerInput(1).checkAndConsume('F1');
 	}
 
 	public static get KC_F12(): boolean {

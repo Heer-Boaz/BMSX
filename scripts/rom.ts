@@ -1,4 +1,8 @@
-import type { RomPack, RomAsset, RomMeta } from './rompacker.rompack';
+import type { RomAsset, RomMeta, RomPack } from './rompacker.rompack';
+
+if (typeof global === "undefined") {
+	var global = window;
+}
 
 /**
  * Pako is a high-speed zlib port to JavaScript, which is used to compress and decompress data.
@@ -406,30 +410,12 @@ async function awaitBootComplete(): Promise<void> {
 async function loadScript(rom: RomPack, romname: string): Promise<void> {
 	try {
 		let scriptText: string;
-		let scriptUrl: string; // Only used for debug mode
-		if (!bootrom.debug) { // If not in debug mode, load the script from the ROM pack
-			scriptText = rom.code;
-		} else {
-			const romUrl = `../${romname}.js`; // Fetch the script from the the root of the server for the source maps to work correctly
-			// const response = await fetchText(romUrl);
-			// if (!response) throw new Error(`Failed to fetch file: ${romUrl}`);
-			scriptUrl = romUrl;
-			// scriptText = response; // TODO: Can only be done if we can somehow get the source maps to work in combination with Terser. Solution idea: have Terser be a Browserify transform instead of a seperate build step.
-		}
+		scriptText = rom.code;
 
 		const romcode = document.createElement('script');
 		romcode.async = false;
-		if (!bootrom.debug) {
-			romcode.textContent = scriptText;
-			document.head.appendChild(romcode); // Add the script to the document head
-		}
-		else {
-			romcode.onload = () => {
-				Promise.resolve(); // Resolve the Promise when the script has been loaded
-			}
-			romcode.src = scriptUrl; // Load the script from the given URL
-			document.head.appendChild(romcode); // Add the script to the document head - this will start loading the script
-		}
+		romcode.textContent = scriptText;
+		document.head.appendChild(romcode); // Add the script to the document head
 	} catch (err) {
 		throw new Error(`Error in loadScript: ${err.message}`);
 	}

@@ -13,7 +13,6 @@
     "@node-minify/clean-css": "*",
     "@node-minify/core": "*",
     "@types/bin-pack": "*",
-    "@types/browserify": "*",
     "@types/cli-progress": "*",
     "@types/js-yaml": "*",
     "@types/node": "*",
@@ -21,10 +20,10 @@
     "@types/pako": "*",
     "@types/systemjs": "*",
     "@types/terminal-kit": "*",
-    "browserify": "*",
     "canvas": "^3.1.0",
     "colors": "*",
     "dagre": "*",
+    "esbuild": "^0.25.3",
     "flatted": "*",
     "ftp-deploy": "*",
     "gauge": "^5.0.1",
@@ -35,12 +34,8 @@
     "pako": "*",
     "stringify": "^5.2.0",
     "terminal-kit": "*",
-    "terser": "*",
-    "ts-key-enum": "*",
-    "tsify": "*",
     "tslib": "*",
-    "typescript": "*",
-    "typescript-bundle": "*"
+    "typescript": "*"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

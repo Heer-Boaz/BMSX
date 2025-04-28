@@ -1,15 +1,14 @@
-import { createOptimizedAtlas } from './atlasbuilder';
-import { createWriteStream, Stats } from 'fs';
-import { dirname, join, parse } from 'path';
-import { AudioMeta, RomAsset, RomMeta, ImgMeta, Area, vec2, AudioType, BoundingBoxesPrecalc, BoundingBoxPrecalc } from './rompacker.rompack';
 import { exec } from 'child_process';
+import { build } from 'esbuild';
+import { Stats } from 'fs';
+import { dirname, join, parse } from 'path';
+import { createOptimizedAtlas } from './atlasbuilder';
+import { Area, AudioMeta, BoundingBoxesPrecalc, BoundingBoxPrecalc, ImgMeta, RomAsset, RomMeta, vec2 } from './rompacker.rompack';
 const Gauge = require('gauge');
-import * as browserify from 'browserify';
-const tsify = require('tsify');
 
-import * as terser from 'terser';
+import { createCanvas, Image } from 'canvas';
+import { access, readdir, readFile, stat, writeFile } from 'fs/promises';
 import * as term from 'terminal-kit';
-import { access, copyFile, readFile, writeFile, readdir, stat, rm } from 'fs/promises';
 const _colors = require('colors');
 const pako = require('pako');
 const minify = require('@node-minify/core');
@@ -17,7 +16,6 @@ const cleanCSS = require('@node-minify/clean-css');
 const FtpDeploy = require('ftp-deploy');
 const { loadImage } = require('canvas');
 const yaml = require('js-yaml');
-import { Image, createCanvas } from 'canvas';
 
 const GENERATE_AND_USE_TEXTURE_ATLAS = true;
 const DONT_PACK_IMAGES_WHEN_USING_ATLAS = true;
@@ -197,131 +195,34 @@ async function yaml2Json(): Promise<void> {
 }
 
 /**
- * Builds and bundles the source code for a ROM.
+ * Builds and bundles the source code for a ROM using esbuild.
  * @param {string} romname - The name of the ROM.
  * @param {string} bootloader_path - The path to the bootloader file.
  * @returns {Promise<any>} A promise that resolves when the ROM source code has been built and bundled.
  */
-async function buildAndBundleRomSource(romname: string, bootloader_path: string): Promise<any> {
+async function esbuild(romname: string, bootloader_path: string): Promise<void> {
 	const bootloader_ts_path = `${bootloader_path}/bootloader.ts`;
-	return new Promise((resolve, reject) => {
-		try {
-			const writeOutput = createWriteStream(`./rom/${romname}.js`);
-			browserify({
-				debug: true,
-				basedir: '.',
-				// project: true,
-				cache: {},
-				packageCache: {},
-				exposeAll: true,
-				exclude: [],
-				ignore: ['node_modules', 'dist', 'rom'],
-				// standalone: 'bootrom',
-				entries: [bootloader_ts_path], // Note: this is the entry point for the bundler
-				// Use the stringify transform to include raw files in the bundle, such as GLSL shaders
-				transform: [['stringify', { appliesTo: { includeExtensions: ['.glsl'] }, minify: true }]],
-			})
-				.add(bootloader_ts_path)
-				.plugin(tsify, {
-					noImplicitAny: false,
-					files: [bootloader_ts_path],
-					project: bootloader_path,
-				})
-				.bundle()
-				.on('error', e => {
-					reject(e);
-				})
-				.pipe(writeOutput);
-			writeOutput.on('finish', () => {
-				taakAfgevinkt();
-				resolve(null);
-			});
-			writeOutput.on('error', e => {
-				reject(e);
-			});
-		} catch (err) {
-			reject(err);
-		}
-	});
-}
-
-/**
- * Minifies the game code.
- * It uses terser to minify the game code and returns the minified output.
- *
- * @param infile - The path of the input file.
- * @returns A promise that resolves to the minified output.
- */
-async function minifyGamecode(infile: string): Promise<terser.MinifyOutput> {
 	try {
-		let options = <terser.MinifyOptions>{
-			ecma: 2020,
-			sourceMap: false,
-			keep_fnames: /^_/,
-			keep_classnames: true,
-			compress: <terser.CompressOptions>{
-				passes: 2, // The maximum number of times to run compress. In some cases more than one pass leads to further compressed code. Keep in mind more passes will take more time
-				ecma: 2020,
-				collapse_vars: true,
-				join_vars: true,
-				loops: true,
-				sequences: true,
-				switches: true,
-				drop_console: true,
-			},
-			mangle: <terser.MangleOptions>{
-				reserved:
-					[
-						"exports",
-						"global",
-						"factory",
-						"vertexShaderCode",
-						"fragmentShaderTextureCode",
-						"fragmentShaderCRTCode",
-						"__extends",
-						"__assign",
-						"__rest",
-						"__decorate",
-						"__param",
-						"__metadata",
-						"__awaiter",
-						"__generator",
-						"__exportStar",
-						"__values",
-						"__read",
-						"__spread",
-						"__spreadArrays",
-						"__await",
-						"__asyncGenerator",
-						"__asyncDelegator",
-						"__asyncValues",
-						"__makeTemplateObject",
-						"__importStar",
-						"__importDefault",
-					],
-				properties: false,
-			},
-			output: <terser.FormatOptions>{
-				ecma: 2020,
-				safari10: false,
-				webkit: true,
-				semicolons: true, // Must be true for Safari support (on iOS)! Otherwise, only black screen shows
-				keep_quoted_props: true,
-				keep_numbers: true,
-				source_map: null,
-				comments: false,
-				quote_style: 3,
-				ascii_only: true,
-				braces: true,
-			},
-		};
-
-		const gamejs = await readFile(infile, 'utf8');
-		const gamejsMinifiedResult = terser.minify(gamejs, options);
-		return gamejsMinifiedResult;
-	}
-	catch (err) {
-		throw new Error(`Error minifying game code: ${err.message}`);
+		await build({
+			entryPoints: [bootloader_ts_path],
+			bundle: true,
+			sourcemap: 'inline',
+			outfile: `./rom/${romname}.js`,
+			platform: 'browser',
+			target: ['es2020'],
+			loader: { '.glsl': 'text' }, // Handles GLSL files as text
+			define: { 'process.env.NODE_ENV': '"production"' },
+			// minify: true,
+			minifyWhitespace: true,
+			minifySyntax: true,
+			mangleQuoted: false,
+			external: ['node_modules', 'dist', 'rom', 'ts-key-enum'],
+			treeShaking: true,
+		});
+		taakAfgevinkt();
+		return null;
+	} catch (err) {
+		throw err;
 	}
 }
 
@@ -402,7 +303,7 @@ async function buildGameHtmlAndManifest(rom_name: string, title: string, short_n
 	async function transformHtml(htmlToTransform: string, cssMinified: string, debug: boolean): Promise<string> {
 		const imgPrefix = 'data:image/png;base64,';
 		const replacements = {
-			'//#romjs': debug ? romjs : romjsMinified,
+			'//#romjs': romjs,
 			'//#zipjs': zipjs,
 			'/\\*#css\\*/': cssMinified,
 			'#title': title,
@@ -448,7 +349,6 @@ async function buildGameHtmlAndManifest(rom_name: string, title: string, short_n
 		}
 	};
 
-	const romjsMinified = (await terser.minify(romjs, options)).code!;
 	const images = await loadImages(IMAGE_PATHS);
 
 	return new Promise<any>((resolve, reject) => {
@@ -611,7 +511,7 @@ function getResMetaByFilename(filepath: string): { name: string, ext: string, ty
  */
 async function getResMetaList(respath: string, romname: string) {
 	const arrayOfFiles = await getFiles(respath) ?? []; // Also handle corner case where we don't have any resources by adding "?? []"
-	const megarom_filename = `${romname}.min.js`;
+	const megarom_filename = `${romname}.js`;
 	addFile("./rom", megarom_filename, arrayOfFiles); // Add source at the end
 
 	const result: Array<ResourceMeta> = [];
@@ -870,7 +770,7 @@ async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>, r
 		loadedResources.push({ buffer: buffer!, filepath: meta.filepath, name: name, ext: ext, type: type, img: img, id: id });
 	}
 
-	const megarom_filename = `${rom_name}.min.js`;
+	const megarom_filename = `${rom_name}.js`;
 	const filepath = `./rom/${megarom_filename}`;
 	// Manually add the ROM source code to the list
 	loadedResources.push({
@@ -951,26 +851,7 @@ async function buildRompack(rom_name: string, respath: string): Promise<void> {
 	return new Promise<any>(async (resolve, reject) => {
 		const outfile = rom_name.concat('.rom');
 		const megarom_filename = `${rom_name}.js`;
-		const megarom_min_filename = `${rom_name}.min.js`;
-		const megarom_min_map_filename = `${rom_name}.min.map`;
 		const megarom_filepath = `./rom/${megarom_filename}`;
-		const megarom_min_filepath = `./rom/${megarom_min_filename}`;
-		const megarom_min_map_filepath = `./rom/${megarom_min_map_filename}`;
-
-		const minifyGamecodeResult = await minifyGamecode(megarom_filepath);
-		taakAfgevinkt();
-
-		await writeFile(megarom_min_filepath, minifyGamecodeResult.code!);
-		if (minifyGamecodeResult.map) {
-			await writeFile(megarom_min_map_filepath, minifyGamecodeResult.map as string);
-		}
-		taakAfgevinkt();
-
-		// Copy the minified file to the root folder and remove the original file
-		// This is required for the source map to work correctly
-		await copyFile(megarom_filepath, `./${megarom_filename}`);
-		await rm(megarom_filepath);
-		taakAfgevinkt();
 
 		const buffers = new Array<Buffer>();
 		const loadedResources: ILoadedResource[] = await getLoadedResourcesList(respath, buffers, rom_name).catch(err => reject(err)) as ILoadedResource[];
@@ -1167,7 +1048,7 @@ const shouldCheckFile = (filename: string, checkCodeFiles: boolean, checkAssets:
  */
 async function isRebuildRequired(romname: string, bootloaderPath: string, resPath: string): Promise<boolean> {
 	const romFilePath = `./dist/${romname}.rom`;
-	const minifiedJsFilePath = `./rom/${romname}.min.js`; // TODO: LELIJK! PROBLEEM IS DAT NORMALE .JS WORDT VERPLAATST NAAR ROOT-FOLDER (EN DAT IS OOK LELIJK!)
+	const minifiedJsFilePath = `./rom/${romname}.js`;
 
 	async function checkPaths() {
 		try {
@@ -1232,7 +1113,7 @@ async function isRebuildRequired(romname: string, bootloaderPath: string, resPat
 		await shouldRebuild('src/bmsx', true, false);
 }
 
-const takenlijst = ['Rom manifest zoekeren en parseren', 'Game compileren en bundleren', 'YAML bestanden omzetten in JSON voor importatie', 'Minifieëren', 'MiniJS wegschrijveren', 'Uitvoer kopieëren en plakken naar wortel-folder', 'Resource bestanden inladen en bufferen', 'Textuuratlas bouwen die optimaal klein is', 'Resource bibliotheek bouwen for in rompack', 'Totale rompack wegschrijven', 'Check "rom.ts" vereist recompilatie', '"rom.ts" compileren (als nodig)', 'game.html en game_debug.html bouwen', 'Deployeren'];
+const takenlijst = ['Rom manifest zoekeren en parseren', 'Game compileren+bundleren', 'YAML bestanden omzetten in JSON voor importatie', 'Resource bestanden inladen en bufferen', 'Textuuratlas bouwen die gierig-optimaal klein is', 'Resource bibliotheek bouwen for in rompakket', 'Totale rompakket wegschrijven', 'Check "rom.ts" vereist recompilatie', '"rom.ts" compileren (als nodig)', 'game.html en game_debug.html bouwen', 'Deployeren'];
 
 const totaalTaken = takenlijst.length;
 let afgevinkteTaken = 0;
@@ -1370,7 +1251,7 @@ async function main() {
 
 			// #endregion
 			if (rebuildRequired) {
-				await buildAndBundleRomSource(rom_name, bootloader_path);
+				await esbuild(rom_name, bootloader_path);
 				await yaml2Json();
 				await buildRompack(rom_name, respath);
 			}
