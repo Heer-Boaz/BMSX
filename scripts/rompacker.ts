@@ -28,6 +28,57 @@ const BOILERPLATE_RESOURCE_ID_AUDIO = `export enum AudioId {
 	none = 'none',
 `;
 
+interface RomPackerOptions {
+	rom_name: string;
+	title: string;
+	bootloader_path: string;
+	respath: string;
+	force: boolean;
+	buildreslist: boolean;
+	deployToFtp: boolean;
+}
+
+function getParamOrEnv(args: string[], flag: string, envVar: string, fallback: string): string {
+	const idx = args.indexOf(flag);
+	if (idx !== -1 && args[idx + 1]) return args[idx + 1];
+	if (process.env[envVar]) return process.env[envVar]!;
+	return fallback;
+}
+
+function parseOptions(args: string[]): RomPackerOptions {
+	// Check for unrecognized arguments
+	const knownArgs = ['-romname', '-title', '-bootloaderpath', '-respath', '--force', '--buildreslist', '--nodeploy'];
+	const unrecognizedArgs = args.filter(arg => arg.startsWith('-') && !knownArgs.includes(arg));
+	if (unrecognizedArgs.length > 0) {
+		throw new Error(`Unrecognized argument(s): ${unrecognizedArgs.join(', ')}`);
+	}
+
+	// Handle the case for -h or --help
+	if (args.includes('-h') || args.includes('--help')) {
+		writeOut(`Usage: <command> [options]`, 'warning');
+		writeOut(`Options:`, 'warning');
+		writeOut(`  -romname <name>         Name of the ROM`, 'warning');
+		writeOut(`  -title <title>         Title of the ROM`, 'warning');
+		writeOut(`  -bootloaderpath <path> Path to the bootloader`, 'warning');
+		writeOut(`  -respath <path>        Resource path`, 'warning');
+		writeOut(`  --force                Force the compilation and build of the rompack`, 'warning');
+		writeOut(`  --buildreslist         Build resource list`, 'warning');
+		writeOut(`  --nodeploy         Skip deployment via FTP`, 'warning');
+		process.exit(0);
+	}
+
+	// Parse options
+	return {
+		rom_name: getParamOrEnv(args, '-romname', 'ROM_NAME', null)?.toLowerCase(),
+		title: getParamOrEnv(args, '-title', 'TITLE', null),
+		bootloader_path: getParamOrEnv(args, '-bootloaderpath', 'BOOTLOADER_PATH', null),
+		respath: getParamOrEnv(args, '-respath', 'RES_PATH', null),
+		force: args.includes('--force'),
+		buildreslist: args.includes('--buildreslist'),
+		deployToFtp: !args.includes('--nodeploy')
+	};
+}
+
 /**
  * Interface for a loaded resource, which includes metadata about the resource.
  */
@@ -333,21 +384,6 @@ async function buildGameHtmlAndManifest(rom_name: string, title: string, short_n
 	} catch (error) {
 		throw new Error(`Error reading files while building HTML and Manifest files: ${error.message}`);
 	}
-
-	const options = {
-		compress: {
-			arrows: false
-		},
-		mangle: {
-			toplevel: false,
-			reserved: ["bootrom", "h406A", "rom"],
-			safari10: true,
-		},
-		output: {
-			safari10: true,
-			webkit: true,
-		}
-	};
 
 	const images = await loadImages(IMAGE_PATHS);
 
@@ -1145,6 +1181,7 @@ const taakAfgevinkt = () => {
 	}
 };
 
+
 /**
  * The main function that runs the ROM packing and deployment process.
  * @returns {Promise<void>} A Promise that resolves when the process is complete.
@@ -1158,59 +1195,29 @@ async function main() {
 		writeOut(_colors.brightGreen.bold('|                          BMSX ROMPACKER DOOR BOAZ©®™                           |\n'));
 		writeOut(_colors.brightGreen.bold('┗————————————————————————————————————————————————————————————————————————————————┛\n'));
 		const args = process.argv.slice(2);
-		let rom_name: string = 'not-parsed!';
-		let title: string = 'not-parsed!';
-		let bootloader_path: string = 'not-parsed!';
-		let respath: string = 'not-parsed!';
-		let force: boolean = false;
-		let unrecognizedParam: boolean = false;
-		let buildreslist: boolean = false;
-		let deployToFtp: boolean = true;
+		let { title, rom_name, bootloader_path, respath, force, buildreslist, deployToFtp } = parseOptions(args);
 
-		for (let i = 0; i < args.length; i++) {
-			switch (args[i]) {
-				case '-title':
-					title = args[++i];
-					break;
-				case '-romname':
-					rom_name = args[++i].toLowerCase();
-					if (rom_name.includes('.')) {
-						throw new Error(`'-romname' should not contain any extensions! The given romname was ${rom_name}. Example of good '-romname': 'testrom'.`);
-					}
-					break;
-				case '-bootloaderpath':
-					bootloader_path = args[++i];
-					break;
-				case '-respath':
-					respath = args[++i];
-					break;
-				case '--force':
-					force = true;
-					break;
-				case '--buildreslist':
-					buildreslist = true;
-					break;
-				case '--nodeploy':
-					deployToFtp = false;
-					break;
-				default:
-					writeOut(_colors.red(`Unrecognized argument: ${args[i]}.\n`));
-					unrecognizedParam = true;
-					break;
-			}
-		}
-		if (unrecognizedParam) throw new Error("Unrecognized parameter(s) passed. Exiting rompacker...");
 
 		if (buildreslist) {
-			writeOut('Building resource list and writing output to "./src/bmsx/resourceids.ts"...\n');
-			writeOut('Note: ROM packing and deployement are skipped.\n');
+			writeOut(`Building resource list and writing output to "./src/${rom_name}/resourceids.ts"...\n`);
+			writeOut('Note: ROM packing and deployment are skipped.\n');
 			await buildResourceList(respath, rom_name);
 			writeOut(`\n${_colors.brightWhite.bold('[Resource list bouwen ge-DONUT]')}\n`);
 			return;
 		}
+		else {
+			// Check for required arguments
+			if (!rom_name) {
+				throw new Error('Missing required argument: --romname or ROM_NAME environment variable, or --buildreslist (to build resource list only).');
+			}
+
+			if (rom_name.includes('.')) {
+				throw new Error(`'-romname' should not contain any extensions! The given romname was ${rom_name}. Example of good '-romname': 'testrom'.`);
+			}
+			rom_name = rom_name.toLowerCase();
+		}
 
 		if (!title) throw new Error("Missing parameter for title ('title', e.g. 'Sintervania'.");
-		if (!rom_name) throw new Error("Missing parameter for output file ('outfile', e.g. 'sintervania.rom'.");
 		if (!bootloader_path) throw new Error("Missing parameter for location of the bootloader.ts-file ('bootloader_path', e.g. 'src/testrom'.");
 		if (!respath) throw new Error("Missing parameter for location of the resource folder ('respath', e.g. './src/testrom/res'.");
 
