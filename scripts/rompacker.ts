@@ -831,6 +831,14 @@ async function buildResourceList(respath: string, romname: string) {
 	await writeFile(targetPath, total_output);
 }
 
+/**
+ * Builds a ROM pack for a given title, loading required resources, optionally generating
+ * a texture atlas, and finalizing the packed output.
+ *
+ * @param rom_name - The name of the ROM, used when creating the output file.
+ * @param respath - The base path to the resource files used in the ROM pack.
+ * @returns A promise that resolves when the ROM pack creation is complete.
+ */
 async function buildRompack(rom_name: string, respath: string): Promise<void> {
 	const outfile = rom_name.concat('.rom');
 	const megarom_filename = `${rom_name}.js`;
@@ -855,6 +863,22 @@ async function buildRompack(rom_name: string, respath: string): Promise<void> {
 	await finalizeRompack(jsonout, buffers, romlabel_buffer, outfile);
 }
 
+/**
+ * Processes an array of loaded resources to produce metadata and allocate buffer ranges.
+ *
+ * @remarks
+ * This function iterates over the given resources and creates corresponding entries in
+ * a metadata array. Depending on the resource type, the function may parse additional data
+ * (such as audio metadata) or adjust resource names (e.g., `.min` filenames). An optional
+ * texture atlas can be used to bundle image data.
+ *
+ * @param loadedResources - The array of loaded resources to process.
+ * @param generated_atlas - An optional canvas element used for generating texture atlas data.
+ * @returns An object with three properties:
+ * - `jsonout` - The array of generated metadata objects.
+ * - `bufferPointer` - The current offset in the resource buffer after processing.
+ * - `romlabel_buffer` - The buffer data for the "romlabel.png" resource if present.
+ */
 function processResources(loadedResources: ILoadedResource[], generated_atlas?: HTMLCanvasElement) {
 	const jsonout: RomAsset[] = [];
 	let bufferPointer = 0;
@@ -899,6 +923,13 @@ function processResources(loadedResources: ILoadedResource[], generated_atlas?: 
 	return { jsonout, bufferPointer, romlabel_buffer };
 }
 
+/**
+ * Generates metadata for an image resource, optionally integrating texture atlas data.
+ *
+ * @param res - The loaded resource containing the image and any existing metadata.
+ * @param generated_atlas - An optional canvas element where an atlas has been generated.
+ * @returns An object containing image dimensions, bounding boxes, center point, and (if atlas usage is enabled) texture coordinates.
+ */
 function buildImgMeta(res: ILoadedResource, generated_atlas?: HTMLCanvasElement): ImgMeta {
 	const img = res.img;
 	const img_boundingbox = extractBoundingBox(img);
@@ -931,6 +962,16 @@ function buildImgMeta(res: ILoadedResource, generated_atlas?: HTMLCanvasElement)
 	return imgmeta;
 }
 
+/**
+ * Asynchronously processes the loaded atlas resource and updates the JSON output with metadata.
+ *
+ * @param loadedResources - An array of loaded resources, including the atlas to be processed.
+ * @param generated_atlas - The HTMLCanvasElement representing the generated atlas image.
+ * @param jsonout - An array of RomAsset objects to be updated with image metadata.
+ * @param bufferPointer - The starting position where atlas data should be written in the output buffers.
+ * @param buffers - An array of Buffers where the atlas image data will be appended.
+ * @returns A Promise that resolves once the atlas image is written to disk and metadata is updated.
+ */
 async function handleAtlas(
 	loadedResources: ILoadedResource[],
 	generated_atlas: HTMLCanvasElement,
@@ -955,6 +996,18 @@ async function handleAtlas(
 	await writeFile("./rom/_ignore/atlas.png", atlasbuffer);
 }
 
+/**
+ * Finalizes a ROM pack by concatenating buffers, generating metadata,
+ * writing zipped output to disk, and exporting a JSON file that
+ * references the assets used in the ROM pack.
+ *
+ * @param jsonout - An array of ROM assets describing the mappings to be finalized.
+ * @param buffers - The buffers that will be concatenated and zipped.
+ * @param romlabel_buffer - An optional buffer representing any additional
+ *                          ROM label or header information.
+ * @param outfile - The name of the output file to which the ROM pack is written.
+ * @returns A promise that resolves when all files have been successfully written.
+ */
 async function finalizeRompack(
 	jsonout: RomAsset[],
 	buffers: Buffer[],
@@ -987,6 +1040,14 @@ async function deployToServer(rom_name: string, title: string) {
 	throw new Error('Deploy is not implemented yet!');
 }
 
+/**
+ * Checks if the TypeScript file for the ROM loader is newer than its compiled output
+ * and compiles it if needed. This function ensures that the output is always up to date.
+ *
+ * @throws {Error} Will throw if the rom.ts file does not exist or if compilation fails.
+ * @returns {Promise<void>} A promise that resolves once the compilation process is complete
+ *                         or if no action is needed.
+ */
 async function compileRomLoaderScriptIfNewer() {
 	const romTsPath = join(__dirname, '../scripts/rom.ts');
 	const romJsPath = join(__dirname, '../rom/rom.js');
