@@ -1,8 +1,6 @@
 export enum BitmapId {
 	none = 'none',
 
-	b = 'b',
-	b2 = 'b2',
 	film = 'film',
 	letter_0 = 'letter_0',
 	letter_1 = 'letter_1',

@@ -135,14 +135,9 @@ export class HitBoxVisualizer extends Component {
 
 	override preprocessingUpdate(): void {
 		const parent = this.parent as SpriteObject;
-		// if (parent.hasBoundingBoxes?.()) {
-		// 	parent.boundingBoxes.forEach(box => {
-		// 		($.view as GLView).drawRectangle({ area: { ...box, start: { ...box.start, z: parent.z } }, color: { ...Msx1Colors[6], a: .5 } });
-		// 	});
-		// }
-		// if (parent.hitbox) {
-		// 	($.view as GLView).drawRectangle({ area: { ...parent.hitbox, start: { ...parent.hitbox.start, z: parent.z } }, color: { ...Msx1Colors[5], a: .5 } });
-		// }
+		if (parent.hitbox) {
+			$.view.drawRectangle({ area: { ...parent.hitbox, start: { ...parent.hitbox.start, z: parent.z } }, color: { ...Msx1Colors[5], a: 0.7 } });
+		}
 
 		// Draw polygons if available on the GameObject
 		if (parent.hitpolygon && parent.hitpolygon.length > 0) {
