@@ -311,6 +311,7 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 
 	/**
 	 * Checks if the game object has a hit polygon defined.
+	 * The reason to have this check is to avoid unnecessary calculations before translating the hit polygon to account for the current position of the game object.
 	 * @returns True if the game object has a hit polygon, false otherwise.
 	 */
 	public get hasHitPolygon(): boolean {
