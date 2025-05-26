@@ -28,6 +28,10 @@ interface OperatorNode extends ASTNode {
 	right?: ASTNode;
 }
 
+/**
+ * Parser and evaluator for action definitions.
+ * Supports logical operators, functions, and modifiers.
+ */
 export class ActionParser {
 	private static parsedActions: Map<string, ASTNode> = new Map();
 
@@ -37,6 +41,30 @@ export class ActionParser {
 	private static defaultPressedModifier = (actionState: ActionState) => actionState.pressed;
 	private static defaultNotConsumedModifier = (actionState: ActionState) => !actionState.consumed;
 
+	/**
+	 * Map of modifier handlers for extensibility.
+	 */
+	private static modifierHandlers: Record<string, (actionState: ActionState) => boolean> = {
+		p: (a) => a.pressed,
+		j: (a) => a.justpressed,
+		aj: (a) => a.alljustpressed,
+		c: (a) => a.consumed,
+	};
+
+	/**
+	 * Map of function handlers for extensibility.
+	 */
+	private static functionHandlers: Record<string, (args: ASTNode[]) => (getActionState: (actionName: string) => ActionState) => boolean> = {
+		'&': (args) => (getActionState) => args.every((arg) => arg.evaluate(getActionState)),
+		'?': (args) => (getActionState) => args.some((arg) => arg.evaluate(getActionState)),
+		'?j': (args) => this.compileAnyJustPressedFunction(args),
+	};
+
+	/**
+	 * Checks if an action definition is triggered.
+	 * @param actionDefinition The action definition string.
+	 * @param getActionState Function to get the state of an action.
+	 */
 	public static checkActionTriggered(
 		actionDefinition: string,
 		getActionState: (actionName: string) => ActionState
@@ -44,6 +72,13 @@ export class ActionParser {
 		const parsedAction = this.getParsedAction(actionDefinition);
 		if (!parsedAction) return false;
 		return parsedAction.evaluate(getActionState);
+	}
+
+	/**
+	 * Clears the parsed action cache.
+	 */
+	public static clearCache(): void {
+		this.parsedActions.clear();
 	}
 
 	private static getParsedAction(actionDefinition: string): ASTNode | undefined {
@@ -66,7 +101,7 @@ export class ActionParser {
 		const result = this.parseExpression();
 		if (this.actionParserIndex < this.tokens.length) {
 			throw new Error(
-				`Unexpected token '${this.tokens[this.actionParserIndex]}' at position ${this.actionParserIndex}`
+				`Unexpected token '${this.tokens[this.actionParserIndex]}' at position ${this.actionParserIndex} in input '${input}'`
 			);
 		}
 		return result;
@@ -184,21 +219,11 @@ export class ActionParser {
 		this.expect(')');
 		this.consume();
 
-		let evaluate: (getActionState: (actionName: string) => ActionState) => boolean;
-
-		switch (functionName) {
-			case '&':
-				evaluate = (getActionState) => args.every((arg) => arg.evaluate(getActionState));
-				break;
-			case '?':
-				evaluate = (getActionState) => args.some((arg) => arg.evaluate(getActionState));
-				break;
-			case '?j':
-				evaluate = this.compileAnyJustPressedFunction(args);
-				break;
-			default:
-				throw new Error(`Unknown function: '${functionName}'`);
+		const handler = this.functionHandlers[functionName];
+		if (!handler) {
+			throw new Error(`Unknown function: '${functionName}'`);
 		}
+		const evaluate = handler.call(this, args);
 
 		return {
 			type: 'function',
@@ -212,13 +237,13 @@ export class ActionParser {
 		args: ASTNode[]
 	): (getActionState: (actionName: string) => ActionState) => boolean {
 		return (getActionState) => {
-			const actionResults = args.map((arg) => {
-				if (arg.type !== 'action') {
-					throw new Error(`'?j' function expects action nodes as arguments.`);
+			const actionResults = args.map((arg, idx) => {
+				if (!this.isActionNode(arg)) {
+					throw new Error(`'?j' function expects action nodes as arguments (argument #${idx + 1}).`);
 				}
 				const actionPassed = arg.evaluate(getActionState);
-				const actionState = getActionState((arg as ActionNode).name);
-				return { actionState, actionPassed, actionNode: arg as ActionNode };
+				const actionState = getActionState(arg.name);
+				return { actionState, actionPassed, actionNode: arg };
 			});
 
 			const allActionsPassed = actionResults.every((ar) => ar.actionPassed);
@@ -331,23 +356,10 @@ export class ActionParser {
 
 			// Compile the condition into a function
 			func = this.compilePressTimeCondition(condition);
+		} else if (this.modifierHandlers[modifierName]) {
+			func = this.modifierHandlers[modifierName];
 		} else {
-			switch (modifierName) {
-				case 'p':
-					func = (actionState) => actionState.pressed;
-					break;
-				case 'j':
-					func = (actionState) => actionState.justpressed;
-					break;
-				case 'aj':
-					func = (actionState) => actionState.alljustpressed;
-					break;
-				case 'c':
-					func = (actionState) => actionState.consumed;
-					break;
-				default:
-					throw new Error(`Unknown modifier: '${modifierName}'`);
-			}
+			throw new Error(`Unknown modifier: '${modifierName}'`);
 		}
 		return isNegated ? (actionState) => !func(actionState) : func;
 	}
@@ -393,7 +405,7 @@ export class ActionParser {
 	private static expect(token: string): void {
 		if (this.tokens[this.actionParserIndex] !== token) {
 			throw new Error(
-				`Expected '${token}', found '${this.tokens[this.actionParserIndex]}'`
+				`Expected '${token}', found '${this.tokens[this.actionParserIndex]}' at position ${this.actionParserIndex}`
 			);
 		}
 	}
@@ -404,5 +416,9 @@ export class ActionParser {
 			(token === '&' || token === '?' || token === '?j') &&
 			this.tokens[this.actionParserIndex + 1] === '('
 		);
+	}
+
+	private static isActionNode(node: ASTNode): node is ActionNode {
+		return node.type === 'action';
 	}
 }
