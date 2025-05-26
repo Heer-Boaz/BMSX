@@ -791,21 +791,31 @@ export function handleDebugClick(e: MouseEvent): void {
 }
 
 function getGameObjectAtCursor(e: MouseEvent): { objUnderCursor: GameObject | null; offsetToCursor: vec2 | null; } {
-	const x = e.offsetX;
-	const y = e.offsetY;
-	/**
-	 * Handling mouse events on game objects requires
-	 * transforming the game coordinates to canvas coordinates and that requires scaling
-	 * to be taken into account.
-	 */
-	const p = div_vec2(new_vec2(x, y), $.view.viewportScale);
-	const objsUnderCursor: GameObject[] = $.model.objects.filter(o => o.id !== 'debug_highlighter' && o.overlaps_point(p));
-	if (objsUnderCursor && objsUnderCursor.length > 0) {
-		// Choose obj with highest z-value
-		const objUnderCursorWithHighestZ = objsUnderCursor.reduce((o1, o2) => o1.z > o2.z ? o1 : o2);
-		return { objUnderCursor: objUnderCursorWithHighestZ, offsetToCursor: objUnderCursorWithHighestZ.overlaps_point(p) };
-	}
-	return { objUnderCursor: null, offsetToCursor: null };;
+    const x = e.offsetX;
+    const y = e.offsetY;
+    const p = div_vec2(new_vec2(x, y), $.view.viewportScale);
+
+    const pointArea = { start: { x: p.x, y: p.y }, end: { x: p.x, y: p.y } };
+
+    const objsUnderCursor: GameObject[] = $.model.objects.filter(o =>
+        o.id !== 'debug_highlighter' &&
+        o.hittable &&
+        (
+            (o.hasHitPolygon && o.collides(pointArea)) ||
+            (!o.hasHitPolygon && o.overlaps_point && o.overlaps_point(p))
+        )
+    );
+
+    if (objsUnderCursor && objsUnderCursor.length > 0) {
+        const objUnderCursorWithHighestZ = objsUnderCursor.reduce((o1, o2) => o1.z > o2.z ? o1 : o2);
+        return {
+            objUnderCursor: objUnderCursorWithHighestZ,
+            offsetToCursor: objUnderCursorWithHighestZ.overlaps_point
+                ? objUnderCursorWithHighestZ.overlaps_point(p)
+                : { x: 0, y: 0 }
+        };
+    }
+    return { objUnderCursor: null, offsetToCursor: null };
 }
 
 function shouldPropertyValueBeRedirectedToSubDialog(propName: string, propValue: any): boolean {
