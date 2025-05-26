@@ -1,19 +1,18 @@
-import { StateMachineController, State } from './fsm';
-import { area2size, new_vec2, translate_vec2, trunc_vec3, div_vec2 } from './game';
+import { BehaviorTreeDefinitions, BTNode } from './behaviourtree';
 import { PositionUpdateAxisComponent } from './collisioncomponents';
-import { Component, ComponentUpdateParams, componenttags_postprocessing, componenttags_preprocessing } from './component';
+import { Component, componenttags_postprocessing, componenttags_preprocessing, ComponentUpdateParams } from './component';
+import { EventEmitter, type ListenerSet } from './eventemitter';
+import { State, StateMachineController } from './fsm';
+import { StateDefinitions } from './fsmlibrary';
+import type { Identifier } from "./game";
+import { area2size, div_vec2, new_vec2, translate_vec2, trunc_vec3 } from './game';
 import { GameObject } from './gameobject';
 import { Serializer } from './gameserializer';
-import { GLView } from './glview';
 import { Msx1Colors } from './msx';
-import type { Identifier } from "./game";
+import { Registry } from './registry';
 import type { vec2 } from './rompack';
 import { SpriteObject } from './sprite';
 import { Color } from './view';
-import { EventEmitter, type ListenerSet } from './eventemitter';
-import { BehaviorTreeDefinitions, BTNode } from './behaviourtree';
-import { Registry } from './registry';
-import { StateDefinitions } from './fsmlibrary';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
 
 let draggedObj: GameObject | null;
@@ -136,13 +135,21 @@ export class HitBoxVisualizer extends Component {
 
 	override preprocessingUpdate(): void {
 		const parent = this.parent as SpriteObject;
-		if (parent.hasBoundingBoxes?.()) {
-			parent.boundingBoxes.forEach(box => {
-				($.view as GLView).drawRectangle({ area: { ...box, start: { ...box.start, z: parent.z } }, color: { ...Msx1Colors[6], a: .5 } });
-			});
-		}
-		if (parent.hitbox) {
-			($.view as GLView).drawRectangle({ area: { ...parent.hitbox, start: { ...parent.hitbox.start, z: parent.z } }, color: { ...Msx1Colors[5], a: .5 } });
+		// if (parent.hasBoundingBoxes?.()) {
+		// 	parent.boundingBoxes.forEach(box => {
+		// 		($.view as GLView).drawRectangle({ area: { ...box, start: { ...box.start, z: parent.z } }, color: { ...Msx1Colors[6], a: .5 } });
+		// 	});
+		// }
+		// if (parent.hitbox) {
+		// 	($.view as GLView).drawRectangle({ area: { ...parent.hitbox, start: { ...parent.hitbox.start, z: parent.z } }, color: { ...Msx1Colors[5], a: .5 } });
+		// }
+
+		// Draw polygons if available on the GameObject
+		if (parent.hitpolygon && parent.hitpolygon.length > 0) {
+			for (const poly of parent.hitpolygon) {
+				// Offset polygon by parent position and z
+				$.view.drawPolygon(poly, { ...Msx1Colors[2], a: 0.7 }, 2);
+			}
 		}
 
 	}
@@ -1011,9 +1018,9 @@ export function handleDebugMouseDown(e: MouseEvent): void {
 			e.preventDefault();
 			startDragGameObject(objUnderCursor!, offsetToCursor!); // Start dragging the object under the cursor around
 		}
-	}
-	else { // Otherwise, continue dragging the object that is already being dragged
-		handleDebugMouseMove(e); // Update the dragged object's position when the mouse is pressed down and moved
+		else { // Otherwise, continue dragging the object that is already being dragged
+			handleDebugMouseMove(e); // Update the dragged object's position when the mouse is pressed down and moved
+		}
 	}
 }
 

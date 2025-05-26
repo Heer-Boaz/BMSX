@@ -1,8 +1,8 @@
-import { translate_vec3, set_inplace_vec3, set_inplace_area, new_vec3, new_vec2 } from "./game";
+import { new_vec2, new_vec3, set_inplace_area, set_inplace_vec3, translate_vec3 } from "./game";
 import { GameObject } from "./gameobject";
 import { insavegame } from "./gameserializer";
 import { DEFAULT_VERTEX_COLOR } from "./glview";
-import { Area, BoundingBoxPrecalc, BoundingBoxesPrecalc, vec3 } from "./rompack";
+import { Area, BoundingBoxPrecalc, vec3, type ConcavePolygonsPrecalc, type Polygon } from "./rompack";
 import { Color, DrawImgOptions, paintImage } from "./view";
 
 @insavegame
@@ -16,7 +16,7 @@ export abstract class SpriteObject extends GameObject {
     }
     public set flip_h(fh: boolean) {
         this.sprite.flip_h = fh;
-        this.updateBoundingBoxes();
+        this.updateHitareas();
     }
 
     public get flip_v() {
@@ -24,7 +24,7 @@ export abstract class SpriteObject extends GameObject {
     }
     public set flip_v(fv: boolean) {
         this.sprite.flip_v = fv;
-        this.updateBoundingBoxes();
+        this.updateHitareas();
     }
 
     public get imgid() {
@@ -42,7 +42,7 @@ export abstract class SpriteObject extends GameObject {
             this.sx = imgmeta['width'];
             this.sy = imgmeta['height'];
 
-            this.updateBoundingBoxes();
+            this.updateHitareas();
         }
     }
 
@@ -54,16 +54,17 @@ export abstract class SpriteObject extends GameObject {
         this.sprite.colorize = c;
     }
 
-    private updateBoundingBoxes() {
+    private updateHitareas() {
         if (!this.hitarea) return; // Only update the hitarea if it exists
         const imgmeta = global.rom['img_assets'][this.sprite.imgid]?.['imgmeta'];
         const boundingbox = imgmeta['boundingbox']; // Get the bounding box of the image
         if (boundingbox) { // Only update the hitarea if the bounding box exists
             set_inplace_area(this.hitarea, SpriteObject.selectBoundingBox(this.flip_h, this.flip_v, boundingbox)); // Update the hitarea to match the bounding box of the image (used for collision detection)
         }
-        const boundingboxes = imgmeta['boundingboxes']; // Get the bounding boxes of the image
-        if (boundingboxes) { // Only update the hitarea if the bounding boxes exist
-            this.boundingBoxes = SpriteObject.selectBoundingBoxes(this.flip_h, this.flip_v, boundingboxes); // Update the hitarea to match the bounding boxes of the image (used for collision detection)
+
+        const polygonsMeta = imgmeta['concavepolygons'];
+        if (polygonsMeta) {
+            this.hitpolygon = SpriteObject.selectConcavePolygon(this.flip_h, this.flip_v, polygonsMeta);
         }
     }
 
@@ -79,15 +80,15 @@ export abstract class SpriteObject extends GameObject {
         }
     }
 
-    private static selectBoundingBoxes(flip_h: boolean, flip_v: boolean, boxes: BoundingBoxesPrecalc): Area[] {
+    private static selectConcavePolygon(flip_h: boolean, flip_v: boolean, polys: ConcavePolygonsPrecalc): Polygon {
         if (flip_h && flip_v) {
-            return boxes.fliphv;
+            return polys.fliphv;
         } else if (flip_h) {
-            return boxes.fliph;
+            return polys.fliph;
         } else if (flip_v) {
-            return boxes.flipv;
+            return polys.flipv;
         } else {
-            return boxes.original;
+            return polys.original;
         }
     }
 

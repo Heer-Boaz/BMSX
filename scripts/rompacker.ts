@@ -3,17 +3,16 @@ import { build } from 'esbuild';
 import { Stats } from 'fs';
 import { dirname, join, parse } from 'path';
 import { createOptimizedAtlas } from './atlasbuilder';
-import { Area, AudioMeta, BoundingBoxesPrecalc, BoundingBoxPrecalc, ImgMeta, RomAsset, RomMeta, vec2 } from './rompacker.rompack';
+import { BoundingBoxExtractor } from './boundingbox_extractor';
+import { AudioMeta, ImgMeta, RomAsset, RomMeta, vec2 } from './rompacker.rompack';
 const Gauge = require('gauge');
 
-import { createCanvas, Image } from 'canvas';
 import { access, readdir, readFile, stat, writeFile } from 'fs/promises';
 import * as term from 'terminal-kit';
 const _colors = require('colors');
 const pako = require('pako');
 const minify = require('@node-minify/core');
 const cleanCSS = require('@node-minify/clean-css');
-const FtpDeploy = require('ftp-deploy');
 const { loadImage } = require('canvas');
 const yaml = require('js-yaml');
 
@@ -230,15 +229,15 @@ async function getRomManifest(dirPath: string): Promise<RomManifest> {
 	else return null;
 }
 
-async function yaml2Json(): Promise<void> {
+async function yaml2Json(progress?: ProgressReporter): Promise<void> {
 	try {
 		const yamlfiles = await getAllFiles('./src', [], '.yaml');
-		for (const file of yamlfiles) {
+		await Promise.all(yamlfiles.map(async (file) => {
 			const doc = yaml.load(await readFile(file, 'utf8'));
 			const outfilename = file.replace('.yaml', '.json');
 			await writeFile(outfilename, Buffer.from(encodeuint8arr(JSON.stringify(doc))));
-		}
-		taakAfgevinkt();
+		}));
+		if (progress) progress.taskCompleted();
 	}
 	catch (err) {
 		throw new Error(`Error converting YAML to JSON: ${err.message}`);
@@ -251,7 +250,7 @@ async function yaml2Json(): Promise<void> {
  * @param {string} bootloader_path - The path to the bootloader file.
  * @returns {Promise<any>} A promise that resolves when the ROM source code has been built and bundled.
  */
-async function esbuild(romname: string, bootloader_path: string): Promise<void> {
+async function esbuild(romname: string, bootloader_path: string, progress?: ProgressReporter): Promise<void> {
 	const bootloader_ts_path = `${bootloader_path}/bootloader.ts`;
 	try {
 		await build({
@@ -270,7 +269,7 @@ async function esbuild(romname: string, bootloader_path: string): Promise<void> 
 			external: ['node_modules', 'dist', 'rom', 'ts-key-enum'],
 			treeShaking: true,
 		});
-		taakAfgevinkt();
+		if (progress) progress.taskCompleted();
 		return null;
 	} catch (err) {
 		throw err;
@@ -299,7 +298,7 @@ function applyStringReplacements(str: string, replacements: { [key: string]: str
  * @param {string} short_name - The short name of the game.
  * @returns {Promise<any>} A promise that resolves when the game HTML and manifest files have been built.
  */
-async function buildGameHtmlAndManifest(rom_name: string, title: string, short_name: string): Promise<any> {
+async function buildGameHtmlAndManifest(rom_name: string, title: string, short_name: string, progress?: ProgressReporter): Promise<any> {
 	const IMAGE_PATHS = [
 		'./rom/bmsx.png',
 		'./rom/d-pad-neutral.png',
@@ -337,8 +336,11 @@ async function buildGameHtmlAndManifest(rom_name: string, title: string, short_n
 	 */
 	async function loadImages(paths: string[]): Promise<{ [key: string]: string }> {
 		const images: { [key: string]: string } = {};
-		for (const path of paths) {
-			images[path] = await loadImgAndConvertToBase64String(path);
+		const results = await Promise.all(paths.map(async (path) => {
+			return [path, await loadImgAndConvertToBase64String(path)] as [string, string];
+		}));
+		for (const [path, base64] of results) {
+			images[path] = base64;
 		}
 		return images;
 	}
@@ -410,7 +412,7 @@ async function buildGameHtmlAndManifest(rom_name: string, title: string, short_n
 					// Write updated manifest to dist-folder
 					await writeFile("./dist/manifest.webmanifest", manifest);
 
-					taakAfgevinkt();
+					if (progress) progress.taskCompleted();
 					resolve(null);
 				} catch (error) {
 					reject(error);
@@ -538,6 +540,23 @@ async function getResMetaList(respath: string, romname: string) {
 		result.push({ filepath: undefined, name: '_atlas', ext: undefined, type: 'atlas', id: imgid }); // Note that 'atlas' is an internal type, used only for this script
 	}
 
+	// Validation: ensure no duplicate IDs within the same resource type (image or audio)
+	const checkDuplicateIds = (type: string) => {
+		const filtered = result.filter(r => r.type === type && typeof r.id === 'number');
+		const idMap = new Map<number, string[]>();
+		for (const r of filtered) {
+			if (!idMap.has(r.id)) idMap.set(r.id, []);
+			idMap.get(r.id)!.push(r.name);
+		}
+		const dups = Array.from(idMap.entries()).filter(([id, names]) => names.length > 1);
+		if (dups.length > 0) {
+			const msg = dups.map(([id, names]) => `ID ${id} used by: ${names.join(', ')}`).join('\n');
+			throw new Error(`Duplicate ${type} resource IDs found!\n${msg}`);
+		}
+	};
+	checkDuplicateIds('image');
+	checkDuplicateIds('audio');
+
 	return result;
 }
 
@@ -552,178 +571,6 @@ async function load_img(_meta: ResourceMeta) {
 	return await loadImage(dataURL);
 }
 
-function extractBoundingBox(image: Image): Area {
-	const canvas = createCanvas(image.width, image.height);
-	const context = canvas.getContext('2d');
-
-	context.drawImage(image, 0, 0, image.width, image.height);
-
-	const imageData = context.getImageData(0, 0, image.width, image.height);
-	const data = imageData.data;
-
-	let startx = image.width, starty = image.height, endx = 0, endy = 0;
-	let totalWeightX = 0, totalWeightY = 0;
-	let totalAlpha = 0;
-
-	for (let y = 0; y < image.height; y++) {
-		for (let x = 0; x < image.width; x++) {
-			const index = (y * image.width + x) * 4;
-			const alpha = data[index + 3];
-
-			if (alpha !== 0) {
-				startx = Math.min(startx, x);
-				starty = Math.min(starty, y);
-				endx = Math.max(endx, x);
-				endy = Math.max(endy, y);
-
-				totalWeightX += x * alpha;
-				totalWeightY += y * alpha;
-				totalAlpha += alpha;
-			}
-		}
-	}
-
-	return { start: { x: ~~startx, y: ~~starty }, end: { x: ~~endx, y: ~~endy } };
-}
-
-function extractBoundingBoxes(image: Image, extractedBoundingBox: Area, boxsize: number = 8): Area[] {
-	function adjustBoundingBoxes(image: Image, boundingBoxes: Area[]): Area[] {
-		const imageBoundingBox = extractedBoundingBox;
-
-		return boundingBoxes.map(box => ({
-			start: {
-				x: Math.max(imageBoundingBox.start.x, box.start.x),
-				y: Math.max(imageBoundingBox.start.y, box.start.y),
-			},
-			end: {
-				x: Math.min(imageBoundingBox.end.x, box.end.x),
-				y: Math.min(imageBoundingBox.end.y, box.end.y),
-			},
-		}));
-	}
-	const canvas = createCanvas(image.width, image.height);
-	const context = canvas.getContext('2d');
-	context.drawImage(image, 0, 0);
-	const imageData = context.getImageData(0, 0, image.width, image.height);
-	const data = imageData.data;
-
-	const boundingBoxes: Area[] = [];
-
-	// Split the image into boxsize x boxsize pixel blocks
-	for (let y = 0; y < image.height; y += boxsize) {
-		for (let x = 0; x < image.width; x += boxsize) {
-			let blockHasAlpha = false;
-
-			// Check each pixel in the block
-			blockLoop:
-			for (let blockY = y; blockY < y + boxsize && blockY < image.height; blockY++) {
-				for (let blockX = x; blockX < x + boxsize && blockX < image.width; blockX++) {
-					const index = (blockY * image.width + blockX) * 4;
-					if (data[index + 3] !== 0) {
-						blockHasAlpha = true;
-						break blockLoop;
-					}
-				}
-			}
-
-			// If the block has at least one non-transparent pixel, add it to the list of bounding boxes
-			if (blockHasAlpha) {
-				let merged = false;
-				// Try to merge this block with an existing bounding box if they are adjacent and the block has non-transparent pixels
-				for (let box of boundingBoxes) {
-					if (y >= box.start.y && y <= box.end.y + boxsize && x >= box.start.x && x <= box.end.x + boxsize) {
-						const index = (y * image.width + x) * 4;
-						if (data[index + 3] !== 0) {
-							box.end.x = Math.max(box.end.x, x + (boxsize - 1));
-							box.end.y = Math.max(box.end.y, y + (boxsize - 1));
-							merged = true;
-							break;
-						}
-					}
-				}
-				// If no merge happened, add as a new bounding box
-				if (!merged) {
-					boundingBoxes.push({
-						start: { x, y },
-						end: { x: x + (boxsize - 1), y: y + (boxsize - 1) },
-					});
-				}
-			}
-		}
-	}
-
-	return adjustBoundingBoxes(image, boundingBoxes);
-}
-
-function flipBoundingBoxHorizontally(box: Area, width: number): Area {
-	return {
-		start: { x: width - box.end.x, y: box.start.y },
-		end: { x: width - box.start.x, y: box.end.y }
-	};
-}
-
-function flipBoundingBoxVertically(box: Area, height: number): Area {
-	return {
-		start: { x: box.start.x, y: height - box.end.y },
-		end: { x: box.end.x, y: height - box.start.y }
-	};
-}
-
-function generateFlippedBoundingBox(image: Image, extractedBoundingBox: Area): BoundingBoxPrecalc {
-	const originalBoundingBox = extractedBoundingBox;
-
-	const horizontalFlipped = flipBoundingBoxHorizontally(originalBoundingBox, image.width);
-	const verticalFlipped = flipBoundingBoxVertically(originalBoundingBox, image.height);
-	const bothFlipped = flipBoundingBoxHorizontally(flipBoundingBoxVertically(originalBoundingBox, image.height), image.width);
-
-	return {
-		original: originalBoundingBox,
-		fliph: horizontalFlipped,
-		flipv: verticalFlipped,
-		fliphv: bothFlipped
-	};
-}
-
-function generateFlippedBoundingBoxes(image: Image, extractedBoundingBoxes: Area[]): BoundingBoxesPrecalc {
-	const originalBoundingBoxes = extractedBoundingBoxes;
-
-	const horizontalFlipped = originalBoundingBoxes.map(box => flipBoundingBoxHorizontally(box, image.width));
-	const verticalFlipped = originalBoundingBoxes.map(box => flipBoundingBoxVertically(box, image.height));
-	const bothFlipped = originalBoundingBoxes.map(box => flipBoundingBoxHorizontally(flipBoundingBoxVertically(box, image.height), image.width));
-
-	return {
-		original: originalBoundingBoxes,
-		fliph: horizontalFlipped,
-		flipv: verticalFlipped,
-		fliphv: bothFlipped
-	};
-}
-
-function calculateCenterPoint(boundingBox: Area): vec2 {
-	const middlex = (boundingBox.start.x + boundingBox.end.x) / 2;
-	const middley = (boundingBox.start.y + boundingBox.end.y) / 2;
-
-	return { x: ~~middlex, y: ~~middley };
-}
-
-// function createAsciiBoundingBoxMap(image: Image, boundingBoxes: Area[], boxsize: number = boxsize) {
-//     const asciiMap: string[][] = Array.from({ length: ~~Math.ceil(image.height / boxsize) }, () => Array(~~Math.ceil(image.width / boxsize)).fill(' '));
-
-//     for (const box of boundingBoxes) {
-//         const startX = ~~Math.floor(box.start.x / boxsize);
-//         const startY = ~~Math.floor(box.start.y / boxsize);
-//         const endX = ~~Math.ceil(box.end.x / boxsize);
-//         const endY = ~~Math.ceil(box.end.y / boxsize);
-
-//         for (let y = startY; y < endY; y++) {
-//             for (let x = startX; x < endX; x++) {
-//                 asciiMap[y][x] = '#';
-//             }
-//         }
-//     }
-
-//     return asciiMap.map(row => row.join(''));
-// }
 
 /**
  * Builds a list of loaded resources located at `respath` for the specified `romname`.
@@ -735,30 +582,21 @@ function calculateCenterPoint(boundingBox: Area): vec2 {
 async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>, rom_name: string): Promise<ILoadedResource[]> {
 	const resMetaList = await getResMetaList(respath, rom_name);
 	let loadedResources: Array<ILoadedResource> = [];
-	for (let i = 0; i < resMetaList.length; i++) {
-		const meta = resMetaList[i];
 
+	// Parallelize buffer and image loading
+	const resourcePromises = resMetaList.map(async (meta) => {
 		const name = meta.name;
 		const ext = meta.ext;
 		const type = meta.type;
 		const id = meta.id;
 		const buffer = meta.filepath ? await readFile(meta.filepath) : null;
-
 		let img: any = undefined;
-
-		switch (type) {
-			case 'romlabel':
-				break;
-			case 'image':
-				if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-					// We only load the actual image when we need to place it in an atlas. Otherwise, we already have the buffer loaded from the resource URI
-					img = await load_img(meta);
-				}
-				break;
+		if (type === 'image' && GENERATE_AND_USE_TEXTURE_ATLAS) {
+			img = await load_img(meta);
 		}
-
-		loadedResources.push({ buffer: buffer!, filepath: meta.filepath, name: name, ext: ext, type: type, img: img, id: id });
-	}
+		return { buffer: buffer!, filepath: meta.filepath, name: name, ext: ext, type: type, img: img, id: id };
+	});
+	loadedResources = await Promise.all(resourcePromises);
 
 	const megarom_filename = `${rom_name}.js`;
 	const filepath = `./rom/${megarom_filename}`;
@@ -839,28 +677,28 @@ async function buildResourceList(respath: string, romname: string) {
  * @param respath - The base path to the resource files used in the ROM pack.
  * @returns A promise that resolves when the ROM pack creation is complete.
  */
-async function buildRompack(rom_name: string, respath: string): Promise<void> {
+async function buildRompack(rom_name: string, respath: string, progress?: ProgressReporter): Promise<void> {
 	const outfile = rom_name.concat('.rom');
 	const megarom_filename = `${rom_name}.js`;
 	const megarom_filepath = `./rom/${megarom_filename}`;
 
 	const buffers: Buffer[] = [];
 	const loadedResources = await getLoadedResourcesList(respath, buffers, rom_name);
-	taakAfgevinkt();
+	if (progress) progress.taskCompleted();
 
 	let generated_atlas: HTMLCanvasElement | undefined;
 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
 		generated_atlas = createOptimizedAtlas(loadedResources);
 	}
-	taakAfgevinkt();
+	if (progress) progress.taskCompleted();
 
 	const { jsonout, bufferPointer, romlabel_buffer } = processResources(loadedResources, generated_atlas);
 
 	if (GENERATE_AND_USE_TEXTURE_ATLAS && generated_atlas) {
-		await handleAtlas(loadedResources, generated_atlas, jsonout, bufferPointer, buffers);
+		await handleAtlas(loadedResources, generated_atlas, jsonout, bufferPointer, buffers, progress);
 	}
 
-	await finalizeRompack(jsonout, buffers, romlabel_buffer, outfile);
+	await finalizeRompack(jsonout, buffers, romlabel_buffer, outfile, progress);
 }
 
 /**
@@ -932,22 +770,38 @@ function processResources(loadedResources: ILoadedResource[], generated_atlas?: 
  */
 function buildImgMeta(res: ILoadedResource, generated_atlas?: HTMLCanvasElement): ImgMeta {
 	const img = res.img;
-	const img_boundingbox = extractBoundingBox(img);
-	const img_boundingbox_precalc = generateFlippedBoundingBox(img, img_boundingbox);
-	const img_boundingboxes = extractBoundingBoxes(img, img_boundingbox, 4);
-	const img_boundingboxes_precalc = {
-		original: img_boundingboxes,
-		...generateFlippedBoundingBoxes(img, img_boundingboxes),
+	const img_boundingbox = BoundingBoxExtractor.extractBoundingBox(img);
+	const img_boundingbox_precalc = BoundingBoxExtractor.generateFlippedBoundingBox(img, img_boundingbox);
+	// const img_boundingboxes = BoundingBoxExtractor.extractBoundingBoxes(img, img_boundingbox);
+	// const img_boundingboxes_precalc = {
+	// original: img_boundingboxes,
+	// ...BoundingBoxExtractor.generateFlippedBoundingBoxes(img, img_boundingboxes),
+	// };
+	const img_centerpoint = BoundingBoxExtractor.calculateCenterPoint(img_boundingbox);
+
+	// Extract original polygons
+	const img_polygon = BoundingBoxExtractor.extractConcavePolygon(img);
+	// Generate flipped variants for polygons
+	function flipPolygons(polys: vec2[][], flipH: boolean, flipV: boolean): vec2[][] {
+		return polys.map(poly => poly.map(pt => ({
+			x: flipH ? img.width - 1 - pt.x : pt.x,
+			y: flipV ? img.height - 1 - pt.y : pt.y
+		})));
+	}
+	const polygon = {
+		original: img_polygon,
+		fliph: flipPolygons(img_polygon, true, false),
+		flipv: flipPolygons(img_polygon, false, true),
+		fliphv: flipPolygons(img_polygon, true, true)
 	};
-	const img_centerpoint = calculateCenterPoint(img_boundingbox);
 
 	let imgmeta: ImgMeta = {
 		atlassed: false,
 		width: img.width,
 		height: img.height,
 		boundingbox: img_boundingbox_precalc,
-		boundingboxes: img_boundingboxes_precalc,
 		centerpoint: img_centerpoint,
+		concavepolygons: polygon
 	};
 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
 		imgmeta = {
@@ -977,7 +831,8 @@ async function handleAtlas(
 	generated_atlas: HTMLCanvasElement,
 	jsonout: RomAsset[],
 	bufferPointer: number,
-	buffers: Buffer[]
+	buffers: Buffer[],
+	progress?: ProgressReporter
 ) {
 	const i = loadedResources.findIndex(x => x.type === 'atlas');
 	const atlasSize = { x: generated_atlas.width, y: generated_atlas.height };
@@ -994,6 +849,7 @@ async function handleAtlas(
 		audiometa: undefined
 	});
 	await writeFile("./rom/_ignore/atlas.png", atlasbuffer);
+	if (progress) progress.taskCompleted();
 }
 
 /**
@@ -1012,7 +868,8 @@ async function finalizeRompack(
 	jsonout: RomAsset[],
 	buffers: Buffer[],
 	romlabel_buffer: Buffer | undefined,
-	outfile: string
+	outfile: string,
+	progress?: ProgressReporter
 ) {
 	const jsonbuffer = Buffer.from(encodeuint8arr(JSON.stringify(jsonout)));
 	buffers.push(jsonbuffer);
@@ -1030,10 +887,10 @@ async function finalizeRompack(
 	const blob_meta_string = JSON.stringify(blobmeta).padStart(100, ' ');
 	const blob_meta_as_buffer = Buffer.from(encodeuint8arr(blob_meta_string));
 
-	taakAfgevinkt();
+	if (progress) progress.taskCompleted();
 	await writeFile(`./dist/${outfile}`, Buffer.concat([romlabel_buffer ?? Buffer.alloc(0), zipped, blob_meta_as_buffer]));
 	await writeFile("./rom/_ignore/romresources.json", jsonbuffer);
-	taakAfgevinkt();
+	if (progress) progress.taskCompleted();
 }
 
 async function deployToServer(rom_name: string, title: string) {
@@ -1048,7 +905,7 @@ async function deployToServer(rom_name: string, title: string) {
  * @returns {Promise<void>} A promise that resolves once the compilation process is complete
  *                         or if no action is needed.
  */
-async function compileRomLoaderScriptIfNewer() {
+async function compileRomLoaderScriptIfNewer(progress?: ProgressReporter) {
 	const romTsPath = join(__dirname, '../scripts/rom.ts');
 	const romJsPath = join(__dirname, '../rom/rom.js');
 	const romTsDir = dirname(romTsPath);
@@ -1067,26 +924,27 @@ async function compileRomLoaderScriptIfNewer() {
 		romJsStats = await stat(romJsPath);
 	}
 	catch { } // Ignore error if rom.js does not exist yet
-	taakAfgevinkt();
+	if (progress) progress.taskCompleted();
 
 	if (!romJsStats || romTsStats.mtime > romJsStats.mtime) {
 		return new Promise<void>((resolve, reject) => {
 			try {
-				exec(`npx tsc ${romTsPath} --removeComments -m commonjs -t ES2020 --rootDir "." --outDir ${join(__dirname, '../rom/')}`, { cwd: romTsDir }, (error, stdout, stderr) => {
-					if (error || stderr) {
-						throw new Error(`Error while compiling "rom.ts": ${error?.message ?? stderr}`);
-					} else {
-						taakAfgevinkt();
-						resolve();
-					}
-				});
+				exec(`npx tsc ${romTsPath} --removeComments -m commonjs -t ES2020 --rootDir "." --outDir ${join(__dirname, '../rom/')}`,
+					{ cwd: romTsDir }, (error, stdout, stderr) => {
+						if (error || stderr) {
+							throw new Error(`Error while compiling "rom.ts": ${error?.message ?? stderr}`);
+						} else {
+							if (progress) progress.taskCompleted();
+							resolve();
+						}
+					});
 			} catch (e) {
 				throw new Error(`Error while compiling "rom.ts": ${e?.message ?? e}`);
 			}
 		});
 	}
 	// rom.js is newer or up to date. No need to compile
-	taakAfgevinkt();
+	if (progress) progress.taskCompleted();
 }
 
 const codeFileExtensions = ['.ts', '.glsl', '.js', '.jsx', '.tsx', '.html', '.css', '.json', '.xml'];
@@ -1168,44 +1026,88 @@ async function isRebuildRequired(romname: string, bootloaderPath: string, resPat
 		await shouldRebuild('src/bmsx', true, false);
 }
 
-const takenlijst = ['Rom manifest zoekeren en parseren', 'Game compileren+bundleren', 'YAML bestanden omzetten in JSON voor importatie', 'Resource bestanden inladen en bufferen', 'Textuuratlas bouwen die gierig-optimaal klein is', 'Resource bibliotheek bouwen for in rompakket', 'Totale rompakket wegschrijven', 'Check "rom.ts" vereist recompilatie', '"rom.ts" compileren (als nodig)', 'game.html en game_debug.html bouwen', 'Deployeren'];
+class ProgressReporter {
+	private gauge: any;
+	private tasks: string[];
+	private totalTasks: number;
+	private completedTasks: number = 0;
 
-const totaalTaken = takenlijst.length;
-let afgevinkteTaken = 0;
-
-const gauge = new Gauge(process.stdout, {
-	updateInterval: 20,
-	cleanupOnExit: false,
-	autoSize: false,
-});
-gauge.setTemplate([
-	{ type: 'progressbar', length: 50 },
-	{ type: 'activityIndicator', kerning: 1, length: 1 },
-	{ type: 'section', kerning: 1, default: '' },
-	{ type: 'subsection', kerning: 1, default: '' },
-]);
-
-const taakAfgevinkt = () => {
-	afgevinkteTaken++;
-	const progressPercentage = afgevinkteTaken / totaalTaken;
-	if (takenlijst.length) {
-
-		const huidigeTaak = takenlijst.shift()!;
-		gauge.show(huidigeTaak, progressPercentage);
-		gauge.pulse();
+	constructor(tasks: string[]) {
+		const Gauge = require('gauge');
+		this.gauge = new Gauge(process.stdout, {
+			updateInterval: 20,
+			cleanupOnExit: false,
+			autoSize: false,
+		});
+		this.gauge.setTemplate([
+			{ type: 'progressbar', length: 50 },
+			{ type: 'activityIndicator', kerning: 1, length: 1 },
+			{ type: 'section', kerning: 1, default: '' },
+			{ type: 'subsection', kerning: 1, default: '' },
+		]);
+		this.tasks = [...tasks];
+		this.totalTasks = tasks.length;
 	}
-	else {
-		gauge.show('ALLES DONUT', 1);
-		gauge.pulse();
-	}
-};
 
-/**
- * The main function that runs the ROM packing and deployment process.
- * @returns {Promise<void>} A Promise that resolves when the process is complete.
- */
+	public taskCompleted() {
+		this.completedTasks++;
+		const progressPercentage = this.completedTasks / this.totalTasks;
+		if (this.tasks.length) {
+			const currentTask = this.tasks.shift()!;
+			this.gauge.show(currentTask, progressPercentage);
+			this.gauge.pulse();
+		} else {
+			this.showDone();
+		}
+	}
+
+	public showInitial() {
+		if (this.tasks.length) {
+			this.gauge.show(this.tasks[0], 0);
+			this.gauge.pulse();
+		}
+	}
+
+	public skipTasks(count: number) {
+		for (let i = 0; i < count && this.tasks.length; i++) {
+			this.tasks.shift();
+			this.completedTasks++;
+		}
+	}
+
+	public removeLastTask() {
+		if (this.tasks.length) {
+			this.tasks.pop();
+			this.totalTasks--;
+		}
+	}
+
+	public showDone() {
+		this.gauge.show('ALLES DONUT', 1);
+		this.gauge.pulse();
+	}
+
+	public pulse() {
+		this.gauge.pulse();
+	}
+}
+
 async function main() {
 	const outputError = (e: any) => writeOut(`\n[GEFAALD]\nEr ging iets niet goed:\n${e?.message ?? e ?? 'Geen error message'};\n${e?.stack ?? 'Geen stacktrace.'}\n`, 'error');
+	const taskList = [
+		'Rom manifest zoekeren en parseren',
+		'Game compileren+bundleren',
+		'YAML bestanden omzetten in JSON voor importatie',
+		'Resource bestanden inladen en bufferen',
+		'Textuuratlas bouwen die gierig-optimaal klein is',
+		'Resource bibliotheek bouwen for in rompakket',
+		'Totale rompakket wegschrijven',
+		'Check "rom.ts" vereist recompilatie',
+		'"rom.ts" compileren (als nodig)',
+		'game.html en game_debug.html bouwen',
+		'Deployeren'
+	];
+	const progress = new ProgressReporter(taskList);
 	try {
 		// #region stuff
 		term.terminal.clear();
@@ -1215,15 +1117,13 @@ async function main() {
 		const args = process.argv.slice(2);
 		let { title, rom_name, bootloader_path, respath, force, buildreslist, deploy } = parseOptions(args);
 
-
 		if (buildreslist) {
 			writeOut(`Building resource list and writing output to "./src/${rom_name}/resourceids.ts"...\n`);
 			writeOut('Note: ROM packing and deployment are skipped.\n');
 			await buildResourceList(respath, rom_name);
 			writeOut(`\n${_colors.brightWhite.bold('[Resource list bouwen ge-DONUT]')}\n`);
 			return;
-		}
-		else {
+		} else {
 			// Check for required arguments
 			if (!rom_name) {
 				throw new Error('Missing required argument: --romname or ROM_NAME environment variable, or --buildreslist (to build resource list only).');
@@ -1245,14 +1145,13 @@ async function main() {
 		}
 		if (!deploy) writeOut(`Note: Deploy to FTP server disabled via ${_colors.brightRed.bold('--nodeploy')}\n`);
 		writeOut(`Starting ROM packing and deployment process for ROM ${_colors.brightBlue.bold(`${rom_name}`)}...\n`);
-		gauge.show(takenlijst.shift(), 0);
-		gauge.pulse();
+		progress.showInitial();
 
 		try {
 			let romManifest: RomManifest;
 			let short_name: string = 'BMSX';
 			romManifest = await getRomManifest(respath);
-			taakAfgevinkt();
+			progress.taskCompleted();
 			if (!romManifest) throw new Error(`Rom manifest not found at "${respath}"!`);
 			rom_name = romManifest?.rom_name ?? rom_name;
 			title = romManifest?.title ?? title;
@@ -1263,34 +1162,28 @@ async function main() {
 				if (!rebuildRequired) {
 					writeOut('Rebuild skipped: game rom was newer than code/assets (use --force option to ignore this check).\n');
 				}
-			}
-			else rebuildRequired = true;
+			} else rebuildRequired = true;
 
-			if (!deploy) takenlijst.pop();
+			if (!deploy) progress.removeLastTask();
 			if (!rebuildRequired) {
-				takenlijst.shift();
-				takenlijst.shift();
-				takenlijst.shift();
-				takenlijst.shift();
+				progress.skipTasks(4);
 			}
 
 			// #endregion
 			if (rebuildRequired) {
-				await esbuild(rom_name, bootloader_path);
-				await yaml2Json();
-				await buildRompack(rom_name, respath);
+				await esbuild(rom_name, bootloader_path, progress);
+				await yaml2Json(progress);
+				await buildRompack(rom_name, respath, progress);
 			}
-			await compileRomLoaderScriptIfNewer();
-
-			await buildGameHtmlAndManifest(rom_name, title, short_name);
+			await compileRomLoaderScriptIfNewer(progress);
+			await buildGameHtmlAndManifest(rom_name, title, short_name, progress);
 			if (deploy) {
-				await deployToServer(rom_name, title);
+				await deployToServer(rom_name, title); progress.taskCompleted();
 			}
-			gauge.show('ALLES DONUT', 1);
-			gauge.pulse();
+			progress.showDone();
 			await timer(100);
 		} catch (e) {
-			gauge.pulse();
+			progress.pulse();
 			outputError(e);
 		}
 	} catch (e) {

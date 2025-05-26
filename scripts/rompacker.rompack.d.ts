@@ -42,6 +42,8 @@ export interface Area {
 	end: Vector;
 }
 
+export type Polygon = vec2[][];
+
 /**
  * Metadata for an audio asset.
  */
@@ -58,11 +60,11 @@ export interface BoundingBoxPrecalc {
 	fliphv: Area, // The bounding box of the image, when flipped both horizontally and vertically. Used for collision detection.
 }
 
-export interface BoundingBoxesPrecalc {
-	original: Area[], // The bounding boxes of the image. Used for collision detection.
-	fliph: Area[], // The bounding boxes of the image, when flipped horizontally. Used for collision detection.
-	flipv: Area[], // The bounding boxes of the image, when flipped vertically. Used for collision detection.
-	fliphv: Area[], // The bounding boxes of the image, when flipped both horizontally and vertically. Used for collision detection.
+export interface ConcavePolygonsPrecalc {
+	original: Polygon; // The concave hull polygon of the image, used for collision detection.
+	fliph: Polygon; // The concave hull polygon of the image, when flipped horizontally.
+	flipv: Polygon; // The concave hull polygon of the image, when flipped vertically.
+	fliphv: Polygon; // The concave hull polygon of the image, when flipped both horizontally and vertically.
 }
 
 /**
@@ -77,9 +79,8 @@ export interface ImgMeta {
 	texcoords_flipv?: number[]; // The texture coordinates for the image, when flipped vertically.
 	texcoords_fliphv?: number[]; // The texture coordinates for the image, when flipped both horizontally and vertically.
 	boundingbox?: BoundingBoxPrecalc; // The bounding box of the image. Used for collision detection.
-	boundingboxes?: BoundingBoxesPrecalc; // The bounding boxes of the image. Used for collision detection.
 	centerpoint?: vec2; // The center point of the image, based on the bounding box.
-	// ascii_boundingbox_map?: string[]; // The ASCII bounding box map of the image. Used for collision detection.
+	concavepolygons?: ConcavePolygonsPrecalc; // The concave hull polygons for collision detection, with flipped variants.
 }
 
 /**

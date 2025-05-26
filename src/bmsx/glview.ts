@@ -1,9 +1,9 @@
 import { multiply_vec, new_vec2, new_vec3 } from './game';
 import type { ImgMeta, Size, vec2 } from './rompack';
-import { BaseView, Color, DrawImgOptions, DrawRectOptions } from './view';
-import vertexShaderCode from './shaders/vertexshader.glsl';
-import gameShaderCode from './shaders/gameshader.glsl';
 import crtShaderCode from './shaders/crtshader.glsl';
+import gameShaderCode from './shaders/gameshader.glsl';
+import vertexShaderCode from './shaders/vertexshader.glsl';
+import { BaseView, Color, DrawImgOptions, DrawRectOptions } from './view';
 
 /**
  * Decorator function that catches WebGL errors thrown by the decorated method and throws an error with the error message.
@@ -1075,5 +1075,38 @@ export abstract class GLView extends BaseView {
 
         // Draw and stretch the image to fill the rectangle
         this.drawImg({ pos: new_vec3(x, y, z), imgid: imgid, scale: new_vec2(ex - x, ey - y), colorize: c });
+    }
+
+    /**
+     * Draws the outline of a polygon by drawing lines between its vertices using the white pixel image.
+     * @param points Array of {x, y, z} points (polygon vertices, in order)
+     * @param color Color to use for the outline
+     * @param thickness Line thickness in pixels (default 1)
+     */
+    public override drawPolygon(points: { x: number, y: number, z?: number }[], color: Color, thickness: number = 1): void {
+        if (!points || points.length < 2) return;
+        const imgid = 'whitepixel';
+        for (let i = 0; i < points.length; ++i) {
+            const a = points[i], b = points[(i + 1) % points.length];
+            // Bresenham's line algorithm for pixel stepping
+            let x0 = Math.round(a.x), y0 = Math.round(a.y), z = a.z;
+            let x1 = Math.round(b.x), y1 = Math.round(b.y);
+            const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
+            const sx = x0 < x1 ? 1 : -1;
+            const sy = y0 < y1 ? 1 : -1;
+            let err = dx - dy;
+            while (true) {
+                this.drawImg({
+                    pos: new_vec3(x0, y0, z),
+                    imgid,
+                    scale: new_vec2(1, 1),
+                    colorize: color,
+                });
+                if (x0 === x1 && y0 === y1) break;
+                const e2 = 2 * err;
+                if (e2 > -dy) { err -= dy; x0 += sx; }
+                if (e2 < dx) { err += dx; y0 += sy; }
+            }
+        }
     }
 }

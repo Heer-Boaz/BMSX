@@ -1,7 +1,7 @@
-﻿import type { Area, Size, Vector, id2htmlimg, vec2 } from './rompack';
-import { BFont, GameOptions, IRegisterable, Identifier, copy_vector } from "./game";
-import { Registry } from './registry';
+﻿import { BFont, GameOptions, IRegisterable, Identifier, copy_vector } from "./game";
 import { Input } from './input';
+import { Registry } from './registry';
+import type { Area, Size, Vector, id2htmlimg, vec2 } from './rompack';
 
 export interface FlipOptions {
 	flip_h: boolean;
@@ -408,6 +408,28 @@ export abstract class BaseView implements IRegisterable {
 		$.view.context.fillRect(~~x, ~~y, ~~(ex - x), ~~(ey - y));
 		$.view.context.stroke();
 		$.view.context.restore();
+	}
+
+	/**
+	 * Draws the outline of a polygon by drawing lines between its vertices.
+	 * @param points Array of {x, y, z?} points (polygon vertices, in order)
+	 * @param color Color to use for the outline
+	 * @param thickness Line thickness in pixels (default 1)
+	 */
+	public drawPolygon(points: { x: number, y: number, z?: number }[], color: Color, thickness: number = 1): void {
+		if (!points || points.length < 2) return;
+		const ctx = this.context;
+		ctx.save();
+		ctx.beginPath();
+		ctx.lineWidth = thickness;
+		ctx.strokeStyle = this.toRgb(color);
+		ctx.moveTo(points[0].x + 0.5, points[0].y + 0.5);
+		for (let i = 1; i < points.length; ++i) {
+			ctx.lineTo(points[i].x + 0.5, points[i].y + 0.5);
+		}
+		ctx.closePath();
+		ctx.stroke();
+		ctx.restore();
 	}
 
 	private toRgb(c: Color): string {
