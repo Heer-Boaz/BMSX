@@ -772,11 +772,6 @@ function buildImgMeta(res: ILoadedResource, generated_atlas?: HTMLCanvasElement)
 	const img = res.img;
 	const img_boundingbox = BoundingBoxExtractor.extractBoundingBox(img);
 	const img_boundingbox_precalc = BoundingBoxExtractor.generateFlippedBoundingBox(img, img_boundingbox);
-	// const img_boundingboxes = BoundingBoxExtractor.extractBoundingBoxes(img, img_boundingbox);
-	// const img_boundingboxes_precalc = {
-	// original: img_boundingboxes,
-	// ...BoundingBoxExtractor.generateFlippedBoundingBoxes(img, img_boundingboxes),
-	// };
 	const img_centerpoint = BoundingBoxExtractor.calculateCenterPoint(img_boundingbox);
 
 	// Extract original polygons

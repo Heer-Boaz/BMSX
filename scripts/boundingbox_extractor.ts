@@ -128,7 +128,7 @@ export class BoundingBoxExtractor {
      * Computes the concave hull of a set of points using Andrew's monotone chain algorithm.
      * Returns the hull as an array of points in counterclockwise order.
      */
-    static concaveHull(points: vec2[]): vec2[] {
+    static convexHull(points: vec2[]): vec2[] {
         if (points.length <= 1) return points.slice();
         // Sort points lexicographically by x, then y
         const sorted = points.slice().sort((a, b) => a.x - b.x || a.y - b.y);
