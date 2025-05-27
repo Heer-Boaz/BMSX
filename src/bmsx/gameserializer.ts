@@ -1,580 +1,368 @@
 import { ISpaceObject, Space } from "./basemodel";
 
 /**
- * Interface for a reviver function used in JSON.parse to deserialize objects.
- */
-interface IReviver {
-    /**
-     * The reviver function that will be called for each key-value pair in the parsed JSON object.
-     * @param key - The key of the current key-value pair being processed.
-     * @param value - The value of the current key-value pair being processed.
-     * @returns The deserialized value for the current key-value pair.
-     */
-    (key: any, value: any): any;
-    /**
-     * A dictionary of constructors for each type that can be deserialized.
-     */
-    constructors: Record<string, new () => any>;
-    /**
-     * A dictionary of onLoad functions for each type that can be deserialized.
-     */
-    onLoads: Record<string, ((result: any) => any)[]>;
-    /**
-     * A function that removes any helper-properties that were added during serialization.
-     * @param obj - The object to remove the helper-property from.
-     */
-    removeSerializerProps: (obj: { typename: string; }) => void;
-    /**
-     * A function that returns the constructor for a given type name.
-     * @param typename - The name of the type to get the constructor for.
-     * @returns The constructor for the given type name.
-     */
-    get_constructor_for_type: (typename: string) => new () => any;
-    /**
-     * Deserializes a string produced by serializeWithRefs, restoring object references.
-     * @param str - The serialized string.
-     * @returns The deserialized object with references restored.
-     */
-    deserializeWithRefs?: (str: string) => any;
-    /**
-     * Deserializes a binary buffer produced by serializeWithRefsBinary, restoring object references.
-     * @param buf - The binary buffer.
-     * @returns The deserialized object with references restored.
-     */
-    deserializeWithRefsBinary?: (buf: Uint8Array) => any;
-}
-
-/**
- * Interface for a serializer function used to serialize objects to a string.
- */
-interface ISerializer {
-    /**
-     * The serializer function that will be called to serialize the input object to a string.
-     * @param obj - The object to serialize.
-     * @returns The serialized string representation of the input object.
-     */
-    (obj: any): string;
-    /**
-     * A dictionary of excluded properties for each type that can be serialized.
-     */
-    excludedProperties: Record<string, Record<string, boolean>>;
-
-    /**
-     * A set of object type names that should be completely excluded from serialization.
-     */
-    excludedObjectTypes: Set<string>;
-
-    /**
-     * Returns whether the given key-value pair should be excluded from serialization,
-     * based on @see {@link excludedProperties} and value type (e.g. `function`).
-     * @param key - The key of the current key-value pair being processed.
-     * @param value - The value of the current key-value pair being processed.
-     * @param cache - An array of objects that have already been serialized, used to handle circular references.
-     * @returns Whether the current key-value pair should be excluded from serialization.
-     */
-    shouldExcludeFromSerialization: (key: any, value: any, cache: any[]) => boolean;
-
-    /**
-     * Serializes the given object to a plain object, recursively serializing its properties.
-     * @param value - The object to serialize.
-     * @param cache - An array of objects that have already been serialized, used to handle circular references.
-     * @returns The serialized plain object representation of the input object.
-     */
-    serializeObject: (value: any, cache: any[]) => {};
-
-    /**
-     * Returns the typename of the given value, used to handle serialization of class instances.
-     * @param value - The value to get the typename for.
-     * @returns The typename of the given value.
-     */
-    get_typename: (value: any) => string;
-
-    /**
-     * Serializes the input object to a string using an object map to preserve references and handle circular/cross references.
-     * @param obj - The object to serialize.
-     * @returns The serialized string representation of the input object.
-     */
-    serializeWithRefs?: (obj: any) => string;
-
-    /**
-     * Serializes the input object to a binary format using an object map to preserve references and handle circular/cross references.
-     * @param obj - The object to serialize.
-     * @returns The serialized binary representation of the input object.
-     */
-    serializeWithRefsBinary?: (obj: any) => Uint8Array;
-}
-
-export type { IReviver, ISerializer };
-
-/**
  * Serializes the input object to a string using JSON.stringify, excluding any properties that should not be serialized.
  * @param obj - The object to serialize.
  * @returns The serialized string representation of the input object.
  */
-export const Serializer: ISerializer = (obj: any): string => {
-    let cache = [];
-    return JSON.stringify(obj, function (key, value) {
-        if (Serializer.shouldExcludeFromSerialization(key, value, cache))
-            return undefined;
-        if (typeof value === 'object')
-            return Serializer.serializeObject(value, cache);
-        return value;
-    });
-};
-
 /**
- * Returns the typename of the given value, used to handle serialization of class instances.
- * @param value - The value to get the typename for.
- * @returns The typename of the given value.
+ * Provides serialization utilities for objects, supporting both reference-tracking and non-reference-tracking modes,
+ * as well as optional binary serialization.
+ *
+ * The `Serializer` class allows objects to be serialized to JSON strings or binary formats, with support for handling
+ * object references, custom exclusion rules, and type metadata. It is designed to work with custom class types and
+ * supports extensibility via static properties and helper methods.
+ *
+ * @remarks
+ * - Reference-tracking mode enables correct serialization of object graphs with cycles or shared references.
+ * - Binary serialization is only supported when reference tracking is enabled.
+ * - Exclusion rules can be customized via `excludedProperties` and `excludedObjectTypes`.
+ * - Custom serialization logic can be provided via static `onsave` methods on constructors.
+ *
+ * @example
+ * ```typescript
+ * const obj = { foo: "bar" };
+ * const json = Serializer.serialize(obj, { refs: false, binary: false });
+ * const binary = Serializer.serialize(obj, { refs: true, binary: true });
+ * ```
  */
-Serializer.get_typename = (value: any): string => {
-    return value?.constructor?.name ?? value?.prototype?.name;
-};
-
-/**
- * Initializes the `excludedProperties` property of the `Serializer` object if it is not already initialized.
- * This property is a dictionary of excluded properties for each type that can be serialized.
- */
-Serializer.excludedProperties = Serializer.excludedProperties ?? {};
-
-/**
- * A set of object type names that should be completely excluded from serialization.
- * If an object's type name is in this set, it will not be serialized at all.
- */
-Serializer.excludedObjectTypes = Serializer.excludedObjectTypes ?? new Set<string>();
-
-/**
- * Overrides the `shouldExcludeFromSerialization` method of the `Serializer` object to handle custom logic for excluding properties from serialization.
- * @param key - The key of the current key-value pair being processed.
- * @param value - The value of the current key-value pair being processed.
- * @param cache - An array of objects that have already been serialized, used to handle circular references.
- * @returns Whether the current key-value pair should be excluded from serialization.
- */
-Serializer.shouldExcludeFromSerialization = (key: any, value: any, cache: any[]): boolean => {
-    if (value === null || value === undefined) return true; // We don't serialize undefined stuff
-
-    let typename = Serializer.get_typename(value);
-    if (typename && key) {
-        if (Serializer.excludedProperties[typename]?.[key])
-            return true; // Exclude property from serialization
+export class Serializer {
+    /**
+     * Main parameterized serialization entry point.
+     *
+     * @param obj - The object to serialize.
+     * @param options - Serialization options.
+     * @param options.binary - If true, serializes to a binary format. Defaults to true.
+     * @returns The serialized representation of the object, either as a JSON string or a Uint8Array for binary serialization.
+     */
+    static serialize(obj: any, options: { binary?: boolean } = { binary: true }): string | Uint8Array {
+        return Serializer.serializeAnyWithRefs(obj, options);
     }
-    let type = typeof value;
-    switch (type) {
-        case 'function':
-            return true; // We don't serialize functions
-        case 'undefined':
-            return true; // We don't serialize undefined stuff, but should already be handled
-        case 'object':
-            if (Array.isArray(value)) return false;
-            if (typename !== 'Object' && typename !== 'object' && !Reviver.get_constructor_for_type(typename))
-                return true; // Don't save objects whose classes are not included in the savegame!
-            return cache.includes(value);
-        default:
-            return false;
-    }
-};
 
-/**
- * Overrides the `serializeObject` method of the `Serializer` object to handle custom serialization logic for objects.
- * @param value - The object to serialize.
- * @param cache - An array of objects that have already been serialized, used to handle circular references.
- * @returns The serialized plain object representation of the input object.
- * @throws An error if there is no constructor known for an object of a certain type.
- */
-Serializer.serializeObject = (value: any, cache: any[]): {} => {
-    if (Array.isArray(value)) return value.filter(x => x !== null && x !== undefined);
-    cache.push(value); // We already checked whether object should be excluded in Serializer.shouldExcludeFromSerialization
-
-    let typename = Serializer.get_typename(value); // TODO: Twee keer bepalen :-(
-    if (typename !== 'Object' && typename !== 'object') {
-        // Check whether we have a constructor for the given object type
-        let theConstructor = Reviver.get_constructor_for_type(typename);
-        if (!theConstructor) throw Error(`No constructor known for object of type '${typename}'. Did you forget to add '@insavegame' to the class definition?`);
-
-        value.typename = typename;
-        if (value.prototype?.onsave) return value.prototype.onsave(value);
-        if (value.constructor?.onsave) return value.constructor.onsave(value);
-    }
-    return value;
-};
-
-/**
- * Shared helper to build the { root, objects } structure for reference-tracking serialization.
- * Returns: { root, objects }
- */
-function buildReferenceGraph(obj: any): { root: any, objects: Record<string, any> } {
-    const objectMap = new Map<any, string>();
-    const objects: Record<string, any> = {};
-    let idCounter = 1;
-    function getIdForObject(o: any): string {
-        if (objectMap.has(o)) return objectMap.get(o)!;
-        const id = `#${idCounter++}`;
-        objectMap.set(o, id);
-        return id;
-    }
-    function serializeObjectWithRefs(value: any): any {
-        if (value === null || value === undefined) return value;
-        if (typeof value !== 'object') return value;
-        if (Array.isArray(value)) {
-            return value.map(serializeObjectWithRefs).filter(v => v !== undefined);
+    /**
+     * Serializes an object with reference tracking, supporting both JSON and binary formats.
+     *
+     * This method constructs a reference graph from the input object to handle circular references
+     * and shared objects. It then serializes the graph either as a JSON string or as a binary
+     * `Uint8Array`, depending on the provided options.
+     *
+     * @param obj - The object to serialize, which may contain circular references.
+     * @param opts - Optional serialization options.
+     * @param opts.binary - If `true`, serializes to a binary format (`Uint8Array`); otherwise, serializes to a JSON string.
+     * @returns The serialized representation of the object, either as a JSON string or a `Uint8Array`.
+     */
+    private static serializeAnyWithRefs(obj: any, opts: { binary?: boolean } = {}): string | Uint8Array {
+        const { root, objects } = Serializer.buildReferenceGraph(obj);
+        if (opts.binary) {
+            return Serializer.encodeBinary({ root, objects });
+        } else {
+            return JSON.stringify({ root, objects });
         }
-        if (objectMap.has(value)) {
-            return { $ref: objectMap.get(value) };
-        }
-        const id = getIdForObject(value);
+    }
+
+    static excludedProperties: Record<string, Record<string, boolean>> = {};
+    static excludedObjectTypes: Set<string> = new Set<string>();
+    static get_typename(value: any): string {
+        return value?.constructor?.name ?? value?.prototype?.name;
+    }
+    static shouldExcludeFromSerialization(key: any, value: any, cache: any[]): boolean {
+        if (value === null || value === undefined) return true;
         let typename = Serializer.get_typename(value);
-        if (Serializer.excludedObjectTypes.has(typename)) return undefined;
-        let theConstructor = Reviver.get_constructor_for_type(typename);
-        let plain: any = {};
-        if (typename !== 'Object' && typename !== 'object') {
-            if (!theConstructor) throw Error(`No constructor known for object of type '${typename}'. Did you forget to add '@insavegame' to the class definition?`);
-            else plain.typename = typename;
+        if (typename && key) {
+            if (Serializer.excludedProperties[typename]?.[key])
+                return true;
         }
-        for (let key of Object.keys(value)) {
-            if (Serializer.shouldExcludeFromSerialization(key, value[key], [])) continue;
-            const serializedValue = serializeObjectWithRefs(value[key]);
-            if (serializedValue !== undefined) plain[key] = serializedValue;
+        let type = typeof value;
+        switch (type) {
+            case 'function':
+                return true;
+            case 'undefined':
+                return true;
+            case 'object':
+                if (Array.isArray(value)) return false;
+                if (typename !== 'Object' && typename !== 'object' && !Reviver.get_constructor_for_type(typename))
+                    return true;
+                return cache.includes(value);
+            default:
+                return false;
         }
-        if (value.constructor?.onsave) {
-            plain = value.constructor.onsave(value) || plain;
-            plain.typename = typename;
-        }
-        objects[id] = plain;
-        return { $ref: id };
     }
-    const root = serializeObjectWithRefs(obj);
-    return { root, objects };
-}
-
-// Refactored: Use shared helper for both JSON and binary
-Serializer.serializeWithRefs = (obj: any): string => {
-    const { root, objects } = buildReferenceGraph(obj);
-    return JSON.stringify({ root, objects });
-};
-
-Serializer.serializeWithRefsBinary = (obj: any): Uint8Array => {
-    const { root, objects } = buildReferenceGraph(obj);
-    return encodeBinary({ root, objects });
-};
-
-/**
- * A function that is used to revive serialized objects. It is passed as the second argument to `JSON.parse`.
- * @param key - The key of the current property being parsed.
- * @param value - The value of the current property being parsed.
- * @returns The parsed value, with any serialized objects revived.
- * @throws An error if there is no constructor known for an object of a certain type.
- */
-export const Reviver: IReviver = (_key: any, value: any) => {
-    // A helper function that finds and executes any onLoad functions on the given value (if any) and returns the result of those functions (if any) or the original value if there were no onLoad functions.
-    function findAndFireOnLoads(value: any) {
-        // Collect all reviver functions in the prototype chain
-        let reviverFunctions = [];
-        let proto = value;
-
-        while (proto) {
-            // Add any reviver functions on the prototype to the list. If there are none, this will be an empty array.
-            const revivers = Reviver.onLoads[proto.constructor.name];
-            revivers && reviverFunctions.push(...revivers);
-            // Move up the prototype chain to the next prototype in the chain (if any) and repeat the process until we reach the end of the prototype chain.
-            proto = Object.getPrototypeOf(proto);
+    /**
+     * Serializes an object for game state saving, handling arrays, custom types, and caching.
+     *
+     * - If the value is an array, returns a filtered array excluding `null` and `undefined` elements.
+     * - For non-array objects, determines the type name and attempts to retrieve a registered constructor.
+     * - Throws an error if no constructor is found for a custom type.
+     * - Invokes custom `onsave` hooks if defined on the object's prototype or constructor.
+     * - Adds the object to the serialization cache to handle circular references.
+     *
+     * @param value - The value to serialize, which can be an object or array.
+     * @param cache - An array used to track already serialized objects to prevent circular references.
+     * @returns The serialized representation of the input value.
+     * @throws Error if a custom type is encountered without a known constructor.
+     */
+    private static serializeObject(value: any, cache: any[]): {} {
+        if (Array.isArray(value)) return value.filter(x => x !== null && x !== undefined);
+        cache.push(value);
+        let typename = Serializer.get_typename(value);
+        if (typename !== 'Object' && typename !== 'object') {
+            let theConstructor = Reviver.get_constructor_for_type(typename);
+            if (!theConstructor) throw Error(`No constructor known for object of type '${typename}'. Did you forget to add '@insavegame' to the class definition?`);
+            value.typename = typename;
+            if (value.prototype?.onsave) return value.prototype.onsave(value);
+            if (value.constructor?.onsave) return value.constructor.onsave(value);
         }
-
-        // Execute all reviver functions in descending order
-        for (let i = reviverFunctions.length - 1; i >= 0; i--) {
-            value = reviverFunctions[i].call(value) ?? value;
-        }
-
-        // Return the result of the reviver functions (if any) or the original value if there were no reviver functions.
         return value;
     }
 
-    // If the value is null or undefined, return it as-is (no need to revive it)
-    if (value === null || value === undefined) return value;
-
-    // If the value is an array, filter out any null or undefined values and return the resulting array (no need to revive it)
-    if (Array.isArray(value)) {
-        // Remove any empty values
-        return value.filter(x => x !== null && x !== undefined);
-    }
-
-    // If the value is an object, check whether it has a typename property. If so, we need to revive it. Otherwise, return it as-is (no need to revive it)
-    if (typeof value === "object" && typeof value.typename === "string") {
-        // Check whether we have a constructor for the given object type (typename) and throw an error if we don't have one (we can't revive the object if we don't have a constructor for it)
-        const theConstructor = Reviver.get_constructor_for_type(value.typename);
-        if (!theConstructor) throw Error(`No constructor known for object of type '${value.typename}'. Did you forget to add '@insavegame' to the class definition?`);
-        // Create a new instance of the object using the constructor for the given typename and assign the properties of the serialized object to it (except for the typename property)
-        let result = Object.assign(new theConstructor(), value);
-        // Call any onLoad functions on the object (if any) and return the result of those functions (if any) or the original object if there were no onLoad functions.
-        result = findAndFireOnLoads(result);
-        // Remove the typename property from the object (it was only used for serialization)
-        Reviver.removeSerializerProps(result);
-        // Return the revived object (with any onLoad functions called)
-        return result;
-    }
-    // If the value is an object, but it does not have a typename property, return it as-is (no need to revive it)
-    return value;
-}
-
-/**
- * Deserializes a string produced by serializeWithRefs, restoring object references.
- * @param str - The serialized string.
- * @returns The deserialized object with references restored.
- */
-Reviver.deserializeWithRefs = (str: string): any => {
-    const { root, objects } = JSON.parse(str);
-    const idToObject: Record<string, any> = {};
-
-    // First pass: create all objects (empty shells)
-    for (const id of Object.keys(objects)) {
-        const data = objects[id];
-        if (typeof data === 'object' && typeof data.typename === 'string' && data.typename !== 'Object' && data.typename !== 'object') {
-            const ctor = Reviver.get_constructor_for_type(data.typename);
-            if (!ctor) throw Error(`No constructor known for object of type '${data.typename}'. Did you forget to add '@insavegame' to the class definition?`);
-            idToObject[id] = new ctor();
-        } else {
-            idToObject[id] = Array.isArray(data) ? [] : {};
+    /**
+     * Builds a reference graph for the given object, serializing it into a structure that preserves object references.
+     *
+     * This method traverses the input object, assigning unique IDs to each encountered object and replacing references
+     * with `$ref` objects to handle circular references and shared instances. It also serializes arrays and handles
+     * custom type information using `Serializer` and `Reviver` utilities.
+     *
+     * @param obj - The root object to serialize and build the reference graph from.
+     * @returns An object containing:
+     *   - `root`: The serialized root object, with references replaced by `$ref` objects.
+     *   - `objects`: A mapping from unique object IDs to their serialized representations.
+     *
+     * @throws Error if a non-plain object is encountered without a known constructor (missing `@insavegame`).
+     */
+    private static buildReferenceGraph(obj: any): { root: any, objects: Record<string, any> } {
+        const objectMap = new Map<any, string>();
+        const objects: Record<string, any> = {};
+        let idCounter = 1;
+        function getIdForObject(o: any): string {
+            if (objectMap.has(o)) return objectMap.get(o)!;
+            const id = `#${idCounter++}`;
+            objectMap.set(o, id);
+            return id;
         }
-    }
-    // Second pass: assign properties
-    for (const id of Object.keys(objects)) {
-        const data = objects[id];
-        const target = idToObject[id];
-        for (const key of Object.keys(data)) {
-            if (key === 'typename') continue;
-            const val = data[key];
-            if (val && typeof val === 'object' && '$ref' in val) {
-                target[key] = idToObject[val.$ref];
-            } else if (Array.isArray(val)) {
-                target[key] = val.map(v => (v && typeof v === 'object' && '$ref' in v) ? idToObject[v.$ref] : v);
-            } else {
-                target[key] = val;
+        function serializeObjectWithRefs(value: any): any {
+            if (value === null || value === undefined) return value;
+            if (typeof value !== 'object') return value;
+            if (Array.isArray(value)) {
+                return value.map(serializeObjectWithRefs).filter(v => v !== undefined);
             }
+            if (objectMap.has(value)) {
+                return { $ref: objectMap.get(value) };
+            }
+            const id = getIdForObject(value);
+            let typename = Serializer.get_typename(value);
+            if (Serializer.excludedObjectTypes.has(typename)) return undefined;
+            let theConstructor = Reviver.get_constructor_for_type(typename);
+            let plain: any = {};
+            if (typename !== 'Object' && typename !== 'object') {
+                if (!theConstructor) throw Error(`No constructor known for object of type '${typename}'. Did you forget to add '@insavegame' to the class definition?`);
+                else plain.typename = typename;
+            }
+            for (let key of Object.keys(value)) {
+                if (Serializer.shouldExcludeFromSerialization(key, value[key], [])) continue;
+                const serializedValue = serializeObjectWithRefs(value[key]);
+                if (serializedValue !== undefined) plain[key] = serializedValue;
+            }
+            if (value.constructor?.onsave) {
+                plain = value.constructor.onsave(value) || plain;
+                plain.typename = typename;
+            }
+            objects[id] = plain;
+            return { $ref: id };
         }
-        // Call onLoad hooks
-        if (typeof data.typename === 'string') {
-            let result = target;
-            let proto = target;
-            let reviverFunctions = [];
-            while (proto) {
-                const revivers = Reviver.onLoads[proto.constructor.name];
-                revivers && reviverFunctions.push(...revivers);
-                proto = Object.getPrototypeOf(proto);
-            }
-            for (let i = reviverFunctions.length - 1; i >= 0; i--) {
-                result = reviverFunctions[i].call(result) ?? result;
-            }
-            Reviver.removeSerializerProps(result);
-            idToObject[id] = result;
-        }
+        const root = serializeObjectWithRefs(obj);
+        return { root, objects };
     }
-    // Return the root object
-    return (root && root.$ref) ? idToObject[root.$ref] : root;
-};
 
-/**
- * Deserializes a binary buffer produced by serializeWithRefsBinary, restoring object references.
- * @param buf - The serialized binary buffer.
- * @returns The deserialized object with references restored.
- */
-Reviver.deserializeWithRefsBinary = (buf: Uint8Array): any => {
-    const { root, objects } = decodeBinary(buf);
-    const idToObject: Record<string, any> = {};
-    for (const id of Object.keys(objects)) {
-        const data = objects[id];
-        if (typeof data === 'object' && typeof data.typename === 'string' && data.typename !== 'Object' && data.typename !== 'object') {
-            const ctor = Reviver.get_constructor_for_type(data.typename);
-            if (!ctor) throw Error(`No constructor known for object of type '${data.typename}'. Did you forget to add '@insavegame' to the class definition?`);
-            idToObject[id] = new ctor();
-        } else {
-            idToObject[id] = Array.isArray(data) ? [] : {};
-        }
-    }
-    for (const id of Object.keys(objects)) {
-        const data = objects[id];
-        const target = idToObject[id];
-        for (const key of Object.keys(data)) {
-            if (key === 'typename') continue;
-            const val = data[key];
-            if (val && typeof val === 'object' && '$ref' in val) {
-                target[key] = idToObject[val.$ref];
-            } else if (Array.isArray(val)) {
-                target[key] = val.map(v => (v && typeof v === 'object' && '$ref' in v) ? idToObject[v.$ref] : v);
-            } else {
-                target[key] = val;
+    /**
+     * Serializes a JavaScript object into a compact binary format.
+     *
+     * The encoding supports the following types:
+     * - `undefined` and `null` (encoded as 0)
+     * - `boolean` (encoded as 1 for `true`, 2 for `false`)
+     * - `number` (encoded as 3, followed by 64-bit float)
+     * - `string` (encoded as 4, followed by UTF-8 string)
+     * - `Array` (encoded as 5, followed by length and recursively encoded elements)
+     * - Object references with a single `$ref` property (encoded as 6, followed by reference string)
+     * - Generic objects (encoded as 7, followed by key-value pairs)
+     *
+     * @param obj - The object to serialize.
+     * @returns A `Uint8Array` containing the binary representation of the object.
+     * @throws {Error} If an unsupported type is encountered during serialization.
+     */
+    static encodeBinary(obj: any): Uint8Array {
+        const w = new BinWriter();
+        function write(val: any) {
+            if (val === undefined) { w.u8(0); return; }
+            if (val === null) { w.u8(0); return; }
+            if (typeof val === 'boolean') { w.u8(val ? 1 : 2); return; }
+            if (typeof val === 'number') { w.u8(3); w.f64(val); return; }
+            if (typeof val === 'string') { w.u8(4); w.str(val); return; }
+            if (Array.isArray(val)) {
+                w.u8(5); w.varuint(val.length);
+                for (const v of val) write(v);
+                return;
             }
-        }
-        if (typeof data.typename === 'string' && data.typename !== 'Object' && data.typename !== 'object') {
-            let result = target;
-            let proto = target;
-            let reviverFunctions = [];
-            while (proto) {
-                const revivers = Reviver.onLoads[proto.constructor.name];
-                revivers && reviverFunctions.push(...revivers);
-                proto = Object.getPrototypeOf(proto);
-            }
-            for (let i = reviverFunctions.length - 1; i >= 0; i--) {
-                result = reviverFunctions[i].call(result) ?? result;
-            }
-            Reviver.removeSerializerProps(result);
-            idToObject[id] = result;
-        }
-    }
-    return (root && root.$ref) ? idToObject[root.$ref] : root;
-};
-
-/**
- * Returns the constructor function for the given typename.
- * @param typename - The typename to get the constructor for.
- * @returns The constructor function for the given typename.
- */
-Reviver.get_constructor_for_type = (typename: string): new () => any => {
-    return Reviver.constructors[typename];
-}
-
-/**
- * A dictionary of constructors for each type that can be deserialized.
- */
-Reviver.constructors = Reviver.constructors ?? {};
-
-// Ensure Reviver.onLoad is not null or undefined. If it is, initialize it as an empty object.
-Reviver.onLoads = Reviver.onLoads ?? {};
-
-/**
- * Removes the helper-property that was added during serialization from the given object.
- * @param obj - The object to remove the helper-property from.
- * @returns void
- */
-Reviver.removeSerializerProps = (obj: { typename: string; }): void => {
-    // Remove the helper-property that was added during serialization
-    obj.typename = undefined;
-    delete obj.typename;
-}
-
-class BinWriter {
-    buf = new Uint8Array(64 * 1024);
-    pos = 0;
-    ensure(n: number) {
-        if (this.pos + n > this.buf.length)
-            this.buf = Uint8Array.from([...this.buf, ...new Uint8Array(this.buf.length)]);
-    }
-    u8(v: number) { this.ensure(1); this.buf[this.pos++] = v; }
-    f64(v: number) { this.ensure(8); new DataView(this.buf.buffer).setFloat64(this.pos, v, true); this.pos += 8; }
-    varuint(v: number) {
-        // Write a variable-length unsigned integer
-        do {
-            let b = v & 0x7F;
-            v >>>= 7;
-            if (v !== 0) b |= 0x80;
-            this.u8(b);
-        } while (v !== 0);
-    }
-    str(s: string) {
-        const enc = new TextEncoder();
-        const bytes = enc.encode(s);
-        this.varuint(bytes.length);
-        this.ensure(bytes.length);
-        this.buf.set(bytes, this.pos);
-        this.pos += bytes.length;
-    }
-    finish() { return this.buf.subarray(0, this.pos); }
-}
-
-// --- Simple Binary Encode/Decode Helpers ---
-// Supports: null, boolean, number, string, arrays, objects, $ref objects
-// Not optimized for size, but robust and extensible
-function encodeBinary(obj: any): Uint8Array {
-    const w = new BinWriter();
-    function write(val: any) {
-        if (val === undefined) { w.u8(0); return; } // Treat undefined as null
-        if (val === null) { w.u8(0); return; }
-        if (typeof val === 'boolean') { w.u8(val ? 1 : 2); return; }
-        if (typeof val === 'number') { w.u8(3); w.f64(val); return; }
-        if (typeof val === 'string') { w.u8(4); w.str(val); return; }
-        if (Array.isArray(val)) {
-            w.u8(5); w.varuint(val.length);
-            for (const v of val) write(v);
-            return;
-        }
-        if (typeof val === 'object') {
-            // $ref object
-            if (Object.keys(val).length === 1 && val.$ref) {
-                w.u8(6); w.str(val.$ref); return;
-            }
-            // General object
-            w.u8(7);
-            const keys = Object.keys(val);
-            w.varuint(keys.length);
-            for (const k of keys) {
-                w.str(k);
-                write(val[k]);
-            }
-            return;
-        }
-        throw new Error('Unsupported type in encodeBinary');
-    }
-    write(obj);
-    return w.finish();
-}
-
-function decodeBinary(buf: Uint8Array): any {
-    const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-    let offset = 0;
-    function readUint8() { return dv.getUint8(offset++); }
-    function readVarUint(): number {
-        let val = 0, shift = 0, b;
-        do {
-            b = buf[offset++];
-            val |= (b & 0x7F) << shift;
-            shift += 7;
-        } while (b & 0x80);
-        return val;
-    }
-    function readString() {
-        const len = readVarUint();
-        const arr = buf.subarray(offset, offset + len);
-        offset += len;
-        return new TextDecoder().decode(arr);
-    }
-    function read(): any {
-        const tag = readUint8();
-        switch (tag) {
-            case 0: // null or undefined
-                return null;
-            case 1: // boolean true
-                return true;
-            case 2: // boolean false
-                return false;
-            case 3: { // number
-                const v = dv.getFloat64(offset, true);
-                offset += 8;
-                return v;
-            }
-            case 4: // string
-                return readString();
-            case 5: { // array
-                const len = readVarUint();
-                const arr = [];
-                for (let i = 0; i < len; ++i) arr.push(read());
-                return arr;
-            }
-            case 6: { // $ref object
-                const ref = readString();
-                return { $ref: ref };
-            }
-            case 7: { // general object
-                const len = readVarUint();
-                const obj: any = {};
-                for (let i = 0; i < len; ++i) {
-                    const k = readString();
-                    obj[k] = read();
+            if (typeof val === 'object') {
+                if (Object.keys(val).length === 1 && val.$ref) {
+                    w.u8(6); w.str(val.$ref); return;
                 }
-                return obj;
+                w.u8(7);
+                const keys = Object.keys(val);
+                w.varuint(keys.length);
+                for (const k of keys) {
+                    w.str(k);
+                    write(val[k]);
+                }
+                return;
             }
-            default:
-                throw new Error('Unknown tag in decodeBinary: ' + tag);
+            throw new Error('Unsupported type in encodeBinary');
         }
+        write(obj);
+        return w.finish();
     }
-    return read();
+}
+
+/**
+ * The `Reviver` class provides static methods and registries for deserializing objects with type information,
+ * supporting both JSON and custom binary formats, and handling object references and post-deserialization hooks.
+ *
+ * ## Features
+ * - Maintains registries for constructors (`constructors`) and post-load callbacks (`onLoads`) by type name.
+ * - Supports deserialization from JSON strings and custom binary formats, including reference resolution.
+ * - Handles custom object instantiation based on a `typename` property.
+ * - Invokes registered `onLoad` hooks after object creation for additional initialization.
+ * - Removes serialization-specific properties after deserialization.
+ *
+ * ## Usage
+ * 1. Register constructors for types using `Reviver.constructors`.
+ * 2. Optionally register post-load hooks in `Reviver.onLoads`.
+ * 3. Use `deserializeWithRefs` or `deserializeWithRefsBinary` to deserialize data.
+ *
+ * @example
+ * // Register a class for deserialization
+ * Reviver.constructors["MyClass"] = MyClass;
+ *
+ * // Deserialize JSON with references
+ * const obj = Reviver.deserializeWithRefs(jsonString);
+ *
+ * // Deserialize binary data
+ * const obj = Reviver.deserializeWithRefsBinary(binaryData);
+ */
+export class Reviver {
+    static constructors: Record<string, new () => any> = {};
+    static onLoads: Record<string, ((result: any) => any)[]> = {};
+
+    static removeSerializerProps(obj: { typename: string; }): void {
+        obj.typename = undefined;
+        delete obj.typename;
+    }
+    static get_constructor_for_type(typename: string): new () => any {
+        return Reviver.constructors[typename];
+    }
+    static decodeBinary(buf: Uint8Array): any {
+        const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+        let offset = 0;
+        function readUint8() { return dv.getUint8(offset++); }
+        function readVarUint(): number {
+            let val = 0, shift = 0, b;
+            do {
+                b = buf[offset++];
+                val |= (b & 0x7F) << shift;
+                shift += 7;
+            } while (b & 0x80);
+            return val;
+        }
+        function readString() {
+            const len = readVarUint();
+            const arr = buf.subarray(offset, offset + len);
+            offset += len;
+            return new TextDecoder().decode(arr);
+        }
+        function read(): any {
+            const tag = readUint8();
+            switch (tag) {
+                case 0: return null;
+                case 1: return true;
+                case 2: return false;
+                case 3: {
+                    const v = dv.getFloat64(offset, true);
+                    offset += 8;
+                    return v;
+                }
+                case 4: return readString();
+                case 5: {
+                    const len = readVarUint();
+                    const arr = [];
+                    for (let i = 0; i < len; ++i) arr.push(read());
+                    return arr;
+                }
+                case 6: {
+                    const ref = readString();
+                    return { $ref: ref };
+                }
+                case 7: {
+                    const len = readVarUint();
+                    const obj: any = {};
+                    for (let i = 0; i < len; ++i) {
+                        const k = readString();
+                        obj[k] = read();
+                    }
+                    return obj;
+                }
+                default:
+                    throw new Error('Unknown tag in decodeBinary: ' + tag);
+            }
+        }
+        return read();
+    }
+
+    static deserialize(input: string | Uint8Array, options: { isBinary?: boolean } = { isBinary: true }): any {
+        const { root, objects } = options.isBinary ? Reviver.decodeBinary(input as Uint8Array) : JSON.parse(input as string);
+        const idToObject: Record<string, any> = {};
+        // First pass: create all objects (empty shells)
+        for (const id of Object.keys(objects)) {
+            const data = objects[id];
+            if (typeof data === 'object' && typeof data.typename === 'string' && data.typename !== 'Object' && data.typename !== 'object') {
+                const ctor = Reviver.get_constructor_for_type(data.typename);
+                if (!ctor) throw Error(`No constructor known for object of type '${data.typename}'. Did you forget to add '@insavegame' to the class definition?`);
+                idToObject[id] = new ctor();
+            } else {
+                idToObject[id] = Array.isArray(data) ? [] : {};
+            }
+        }
+        // Second pass: assign properties
+        for (const id of Object.keys(objects)) {
+            const data = objects[id];
+            const target = idToObject[id];
+            for (const key of Object.keys(data)) {
+                if (key === 'typename') continue;
+                const val = data[key];
+                if (val && typeof val === 'object' && '$ref' in val) {
+                    target[key] = idToObject[val.$ref];
+                } else if (Array.isArray(val)) {
+                    target[key] = val.map(v => (v && typeof v === 'object' && '$ref' in v) ? idToObject[v.$ref] : v);
+                } else {
+                    target[key] = val;
+                }
+            }
+            if (typeof data.typename === 'string' && data.typename !== 'Object' && data.typename !== 'object') {
+                let result = target;
+                let proto = target;
+                let reviverFunctions = [];
+                while (proto) {
+                    const revivers = Reviver.onLoads[proto.constructor.name];
+                    revivers && reviverFunctions.push(...revivers);
+                    proto = Object.getPrototypeOf(proto);
+                }
+                for (let i = reviverFunctions.length - 1; i >= 0; i--) {
+                    result = reviverFunctions[i].call(result) ?? result;
+                }
+                Reviver.removeSerializerProps(result);
+                idToObject[id] = result;
+            }
+        }
+        return (root && root.$ref) ? idToObject[root.$ref] : root;
+    }
 }
 
 // target: the class that the member is on.
@@ -663,7 +451,7 @@ export class Savegame {
  */
 export function debugPrintBinarySnapshot(buf: Uint8Array): string {
     try {
-        const obj = decodeBinary(buf);
+        const obj = Reviver.decodeBinary(buf);
         return JSON.stringify(obj, null, 2);
     } catch (e) {
         return `Failed to decode binary snapshot: ${e}`;
@@ -774,4 +562,32 @@ export function decompressBinary(input: Uint8Array): Uint8Array {
         }
     }
     return new Uint8Array(out);
+}
+
+class BinWriter {
+    buf = new Uint8Array(64 * 1024);
+    pos = 0;
+    ensure(n: number) {
+        if (this.pos + n > this.buf.length)
+            this.buf = Uint8Array.from([...this.buf, ...new Uint8Array(this.buf.length)]);
+    }
+    u8(v: number) { this.ensure(1); this.buf[this.pos++] = v; }
+    f64(v: number) { this.ensure(8); new DataView(this.buf.buffer).setFloat64(this.pos, v, true); this.pos += 8; }
+    varuint(v: number) {
+        do {
+            let b = v & 0x7F;
+            v >>>= 7;
+            if (v !== 0) b |= 0x80;
+            this.u8(b);
+        } while (v !== 0);
+    }
+    str(s: string) {
+        const enc = new TextEncoder();
+        const bytes = enc.encode(s);
+        this.varuint(bytes.length);
+        this.ensure(bytes.length);
+        this.buf.set(bytes, this.pos);
+        this.pos += bytes.length;
+    }
+    finish() { return this.buf.subarray(0, this.pos); }
 }

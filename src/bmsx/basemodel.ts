@@ -491,7 +491,7 @@ export abstract class BaseModel implements IStateful, IRegisterable {
         temp_array.forEach(s => this.removeSpace(s)); // Remove all spaces from the model instance before loading the new state (otherwise, spaces from the previous state will still be present)
         // const savegame = JSON.parse(serialized, Reviver) as Savegame; // Deserialize the savegame and apply it to the current model instance (this)
         const serializedState = decompressBinary(serialized); // Decompress the serialized state
-        const savegame = Reviver.deserializeWithRefsBinary(serializedState) as Savegame;
+        const savegame = Reviver.deserialize(serializedState) as Savegame;
         Object.assign(this, savegame.modelprops);
         this.onloaded(savegame); // Call the onloaded method to apply the savegame to the current model instance. Note that the Model is not saved in the savegame, so it is not deserialized and needs to be applied manually, including the onloaded methods of the BaseModel
     }
@@ -544,9 +544,9 @@ export abstract class BaseModel implements IStateful, IRegisterable {
 
         const savegame = createSavegame();
         global.$.paused = false;
-        const serializedState = Serializer.serializeWithRefsBinary(savegame);
+        const serializedState = Serializer.serialize(savegame) as Uint8Array; // Serialize the savegame to a binary format
         const compressedState = compressBinary(serializedState);
-        console.warn('Serialized savegame size: ' + serializedState.length + ' bytes');
+        console.warn(`Serialized savegame size: ${serializedState.length} bytes`);
         console.warn(`Compressed savegame size: ${compressedState.length} bytes, ratio: ${Math.round((compressedState.length / serializedState.length) * 100)}%`);
         return compressedState;
     }
