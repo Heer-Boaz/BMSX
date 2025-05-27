@@ -1874,7 +1874,6 @@ class GamepadInput implements IInputHandler {
 	 */
 	private pollGamepadAxes(gamepad: Gamepad): void {
 		if (!gamepad) return; // Will be null if the gamepad was disconnected
-		// TODO: IMPLEMENT DPAD SUPPORT
 		const [xAxis, yAxis] = gamepad.axes;
 		this.gamepadButtonStates['left'].pressed = xAxis < -0.5;
 		this.gamepadButtonStates['right'].pressed = xAxis > 0.5;
