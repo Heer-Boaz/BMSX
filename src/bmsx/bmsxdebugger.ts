@@ -7,7 +7,7 @@ import { StateDefinitions } from './fsmlibrary';
 import type { Identifier } from "./game";
 import { area2size, div_vec2, new_vec2, translate_vec2, trunc_vec3 } from './game';
 import { GameObject } from './gameobject';
-import { Serializer } from './gameserializer';
+import { not_insavegame, Serializer } from './gameserializer';
 import { Msx1Colors } from './msx';
 import { Registry } from './registry';
 import type { vec2 } from './rompack';
@@ -150,9 +150,10 @@ export class HitBoxVisualizer extends Component {
 	}
 }
 
+@not_insavegame
 class ObjectHighlighter extends SpriteObject {
 	#highlighted_obj: GameObject;
-	static readonly #mijnkleur: Color = { r: 0, g: 0, b: 1, a: .5 };
+	static readonly mijnkleur: Color = { r: 0, g: 0, b: 1, a: .5 };
 
 	public constructor() {
 		super('debug_highlighter');
@@ -160,7 +161,7 @@ class ObjectHighlighter extends SpriteObject {
 		this.visible = false;
 		this.#highlighted_obj = null;
 		this.z = Math.pow(10, 9);
-		this.sprite.colorize = ObjectHighlighter.#mijnkleur;
+		this.sprite.colorize = ObjectHighlighter.mijnkleur;
 	}
 
 	public setHighlightPos(o: GameObject) {
@@ -791,31 +792,31 @@ export function handleDebugClick(e: MouseEvent): void {
 }
 
 function getGameObjectAtCursor(e: MouseEvent): { objUnderCursor: GameObject | null; offsetToCursor: vec2 | null; } {
-    const x = e.offsetX;
-    const y = e.offsetY;
-    const p = div_vec2(new_vec2(x, y), $.view.viewportScale);
+	const x = e.offsetX;
+	const y = e.offsetY;
+	const p = div_vec2(new_vec2(x, y), $.view.viewportScale);
 
-    const pointArea = { start: { x: p.x, y: p.y }, end: { x: p.x, y: p.y } };
+	const pointArea = { start: { x: p.x, y: p.y }, end: { x: p.x, y: p.y } };
 
-    const objsUnderCursor: GameObject[] = $.model.objects.filter(o =>
-        o.id !== 'debug_highlighter' &&
-        o.hittable &&
-        (
-            (o.hasHitPolygon && o.collides(pointArea)) ||
-            (!o.hasHitPolygon && o.overlaps_point && o.overlaps_point(p))
-        )
-    );
+	const objsUnderCursor: GameObject[] = $.model.objects.filter(o =>
+		o.id !== 'debug_highlighter' &&
+		o.hittable && //o.overlaps_point && o.overlaps_point(p)
+		(
+			(o.hasHitPolygon && o.collides(pointArea))// ||
+			// (!o.hasHitPolygon && o.overlaps_point && o.overlaps_point(p))
+		)
+	);
 
-    if (objsUnderCursor && objsUnderCursor.length > 0) {
-        const objUnderCursorWithHighestZ = objsUnderCursor.reduce((o1, o2) => o1.z > o2.z ? o1 : o2);
-        return {
-            objUnderCursor: objUnderCursorWithHighestZ,
-            offsetToCursor: objUnderCursorWithHighestZ.overlaps_point
-                ? objUnderCursorWithHighestZ.overlaps_point(p)
-                : { x: 0, y: 0 }
-        };
-    }
-    return { objUnderCursor: null, offsetToCursor: null };
+	if (objsUnderCursor && objsUnderCursor.length > 0) {
+		const objUnderCursorWithHighestZ = objsUnderCursor.reduce((o1, o2) => o1.z > o2.z ? o1 : o2);
+		return {
+			objUnderCursor: objUnderCursorWithHighestZ,
+			offsetToCursor: objUnderCursorWithHighestZ.overlaps_point
+				? objUnderCursorWithHighestZ.overlaps_point(p)
+				: { x: 0, y: 0 }
+		};
+	}
+	return { objUnderCursor: null, offsetToCursor: null };
 }
 
 function shouldPropertyValueBeRedirectedToSubDialog(propName: string, propValue: any): boolean {
