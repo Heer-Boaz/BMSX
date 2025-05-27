@@ -1,4 +1,4 @@
-﻿import { BaseModel, GameObject, PSG, TextWriter, type InputMap } from "./bmsx";
+﻿import { BaseModel, GameObject, gamePaused, gameResumed, PSG, TextWriter, type InputMap } from "./bmsx";
 import { EventEmitter } from "./eventemitter";
 import { ActionState, ActionStateQuery, Input } from "./input";
 import { MSX2ScreenHeight, MSX2ScreenWidth } from "./msx";
@@ -818,6 +818,72 @@ export function getOppositeDirection(dir: Direction): Direction {
 	}
 }
 
+// --- Rewind Buffer for Per-Frame Rewind System ---
+interface RewindFrame {
+	timestamp: number; // ms
+	frame: number;
+	state: Uint8Array; // compressed snapshot
+}
+
+class RewindBuffer {
+	private buffer: RewindFrame[] = [];
+	private maxFrames: number;
+	private frameInterval: number; // ms per frame
+	private windowMs: number;
+	private currentIdx: number = -1; // -1 = latest
+
+	constructor(targetFPS: number, windowSeconds: number = 10) {
+		this.frameInterval = 1000 / targetFPS;
+		this.windowMs = windowSeconds * 1000;
+		this.maxFrames = Math.ceil(windowSeconds * targetFPS) + 2;
+	}
+
+	push(frame: number, state: Uint8Array) {
+		const now = performance.now();
+		this.buffer.push({ timestamp: now, frame, state });
+		// Remove old frames outside window
+		const cutoff = now - this.windowMs;
+		while (this.buffer.length > this.maxFrames || (this.buffer.length && this.buffer[0].timestamp < cutoff)) {
+			this.buffer.shift();
+		}
+		this.currentIdx = -1;
+	}
+
+	canRewind(): boolean {
+		return this.buffer.length > 1 && (this.currentIdx < this.buffer.length - 1);
+	}
+	canForward(): boolean {
+		return this.currentIdx > 0;
+	}
+	rewind(): RewindFrame | null {
+		if (!this.canRewind()) return null;
+		if (this.currentIdx === -1) this.currentIdx = this.buffer.length - 1;
+		if (this.currentIdx < this.buffer.length - 1) this.currentIdx++;
+		return this.buffer[this.buffer.length - 1 - this.currentIdx];
+	}
+	forward(): RewindFrame | null {
+		if (!this.canForward()) return null;
+		this.currentIdx--;
+		return this.buffer[this.buffer.length - 1 - this.currentIdx];
+	}
+	jumpTo(idx: number): RewindFrame | null {
+		if (idx < 0 || idx >= this.buffer.length) return null;
+		this.currentIdx = this.buffer.length - 1 - idx;
+		return this.buffer[idx];
+	}
+	getCurrent(): RewindFrame | null {
+		if (this.currentIdx === -1) return this.buffer[this.buffer.length - 1];
+		return this.buffer[this.buffer.length - 1 - this.currentIdx];
+	}
+	getFrames(): RewindFrame[] {
+		return this.buffer.slice();
+	}
+	reset() {
+		this.currentIdx = -1;
+	}
+	public getCurrentIdx(): number { return this.currentIdx; }
+}
+
 /**
  * Represents the main game loop and manages the game state.
  */
@@ -875,9 +941,14 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		this._paused = value;
 		if (this._paused === true) {
 			this.view.showPauseOverlay();
+			if (this.debug) {
+				// Show debug information
+				gamePaused();
+			}
 		}
 		else if (this._paused === false) {
 			this.view.showResumeOverlay();
+			gameResumed();
 		}
 	}
 
@@ -1014,6 +1085,8 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	//     return this.input.getPlayerInput(playerIndex).getGamepadButtonState(button);
 	// }
 
+	private rewindBuffer: RewindBuffer;
+
 	/**
 	 * Constructs a new instance of the BMSX class.
 	 */
@@ -1024,6 +1097,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		this.paused = false;
 		this.wasupdated = true;
 		this.updateInterval = 1000 / this.targetFPS;
+		this.rewindBuffer = new RewindBuffer(this.targetFPS, 10);
 
 		this.init_on_boot(rom, model, view, sndcontext, gainnode, debug);
 	}
@@ -1115,6 +1189,13 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		const game = global.$;
 		const model = game.model;
 		model.run(deltaTime);
+		// --- Rewind snapshot logic ---
+		try {
+			const snapshot = model.save(false);
+			this.rewindBuffer.push(this.turnCounter, snapshot);
+		} catch (e) {
+			console.warn('Rewind snapshot failed:', e);
+		}
 		if (game.debug_runSingleFrameAndPause) {
 			game.debug_runSingleFrameAndPause = false;
 			game.paused = true;
@@ -1145,7 +1226,10 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 			game.accumulatedTime -= game.updateInterval;
 		}
 
-		if (game.wasupdated) game.view.drawgame();
+		if (game.wasupdated) {
+			game.view.drawgame();
+			window.dispatchEvent(new Event('frame'));
+		}
 
 		game.animationFrameRequestid = window.requestAnimationFrame(game.run);
 	}
@@ -1163,5 +1247,49 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 			SM.stopEffect();
 			SM.stopMusic();
 		});
+	}
+
+	// --- Rewind API ---
+	public canRewind() { return this.rewindBuffer.canRewind(); }
+	public canForward() { return this.rewindBuffer.canForward(); }
+
+	public rewindFrame(): boolean {
+		const frame = this.rewindBuffer.rewind();
+		if (frame) {
+			this.model.load(frame.state, false);
+			window.dispatchEvent(new Event('frame'));
+			return true;
+		}
+		return false;
+	}
+	public forwardFrame(): boolean {
+		const frame = this.rewindBuffer.forward();
+		if (frame) {
+			this.model.load(frame.state, false);
+			window.dispatchEvent(new Event('frame'));
+			return true;
+		}
+		return false;
+	}
+	public jumpToFrame(idx: number): boolean {
+		const frame = this.rewindBuffer.jumpTo(idx);
+		if (frame) {
+			this.model.load(frame.state, false);
+			window.dispatchEvent(new Event('frame'));
+			return true;
+		}
+		return false;
+	}
+	public getRewindFrames(): RewindFrame[] {
+		return this.rewindBuffer.getFrames();
+	}
+	public resetRewind() {
+		this.rewindBuffer.reset();
+	}
+	public getCurrentRewindFrameIndex(): number {
+		const frames = this.rewindBuffer.getFrames();
+		const idx = this.rewindBuffer.getCurrentIdx();
+		if (idx === -1) return frames.length - 1;
+		return frames.length - 1 - idx;
 	}
 }

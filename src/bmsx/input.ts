@@ -1,5 +1,5 @@
 ﻿import { ActionParser } from './actionparser';
-import { handleDebugClick, handleContextMenu as handleDebugContextMenu, handleDebugMouseDown, handleDebugMouseMove, handleDebugMouseOut, handleDebugMouseUp, handleOpenDebugMenu, handleOpenObjectMenu } from './bmsxdebugger';
+import { handleDebugClick, handleContextMenu as handleDebugContextMenu, handleDebugMouseDown, handleDebugMouseMove, handleDebugMouseOut, handleDebugMouseUp, handleOpenDebugMenu, handleOpenObjectMenu, showRewindDialog } from './bmsxdebugger';
 import { EventEmitter } from './eventemitter';
 import { State } from './fsm';
 import { build_fsm } from './fsmdecorators';
@@ -1236,6 +1236,7 @@ export class Input implements IRegisterable {
 					if (!global.$.paused) {
 						global.$.paused = true;
 						global.$.debug_runSingleFrameAndPause = false;
+						showRewindDialog();
 					}
 					else {
 						global.$.paused = false;
