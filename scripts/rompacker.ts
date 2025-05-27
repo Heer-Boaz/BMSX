@@ -501,10 +501,13 @@ function getResMetaByFilename(filepath: string): { name: string, ext: string, ty
  * @param romname The name of the ROM pack to build the list for.
  * @returns An array of `ResourceMeta` objects.
  */
-async function getResMetaList(respath: string, romname: string) {
+async function getResMetaList(respath: string, romname?: string) {
 	const arrayOfFiles = await getFiles(respath) ?? []; // Also handle corner case where we don't have any resources by adding "?? []"
 	const megarom_filename = `${romname}.js`;
-	addFile("./rom", megarom_filename, arrayOfFiles); // Add source at the end
+	// Note that romname can be undefined when building the resource enum file, so we only add the file if romname is defined
+	if (romname) {
+		addFile("./rom", megarom_filename, arrayOfFiles); // Add source at the end
+	}
 
 	const result: Array<ResourceMeta> = [];
 
@@ -631,7 +634,7 @@ async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>, r
  * @param respath The path to the resources to include in the list.
  * @param romname The name of the ROM pack to build the list for.
  */
-async function buildResourceList(respath: string, romname: string) {
+async function buildResourceList(respath: string, romname?: string) {
 	const tsimgout = new Array<string>();
 	const tssndout = new Array<string>();
 	const metalist = await getResMetaList(respath, romname);
@@ -1113,9 +1116,12 @@ async function main() {
 		let { title, rom_name, bootloader_path, respath, force, buildreslist, deploy } = parseOptions(args);
 
 		if (buildreslist) {
-			writeOut(`Building resource list and writing output to "./src/${rom_name}/resourceids.ts"...\n`);
+			if (!respath) {
+				throw new Error("Missing parameter for location of the resource folder ('respath', e.g. './src/testrom/res'.");
+			}
+			writeOut(`Building resource list and writing output to "${respath}"...\n`);
 			writeOut('Note: ROM packing and deployment are skipped.\n');
-			await buildResourceList(respath, rom_name);
+			await buildResourceList(respath);
 			writeOut(`\n${_colors.brightWhite.bold('[Resource list bouwen ge-DONUT]')}\n`);
 			return;
 		} else {
