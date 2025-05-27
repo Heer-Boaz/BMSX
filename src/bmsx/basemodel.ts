@@ -484,13 +484,19 @@ export abstract class BaseModel implements IStateful, IRegisterable {
      * @param {string} serialized - The serialized game state to load.
      * @returns {void} Nothing.
      */
-    public load(serialized: Uint8Array): void {
+    public load(serialized: Uint8Array, compressed: boolean = true): void {
         this.clearAllSpaces(); // Clear all spaces and objects before loading the new state (otherwise, objects from the previous state will still be present)
         EventEmitter.instance.clear(); // Clear the event emitter before loading the new state (otherwise, event handlers from the previous state will still be present)
         const temp_array = this.spaces.slice(); // Create a copy of the spaces array to prevent the spaces from being cleared when clearing the model instance
         temp_array.forEach(s => this.removeSpace(s)); // Remove all spaces from the model instance before loading the new state (otherwise, spaces from the previous state will still be present)
-        // const savegame = JSON.parse(serialized, Reviver) as Savegame; // Deserialize the savegame and apply it to the current model instance (this)
-        const serializedState = decompressBinary(serialized); // Decompress the serialized state
+
+        let serializedState: Uint8Array;
+        if (compressed) {
+            serializedState = decompressBinary(serialized); // Decompress the serialized state
+        } else {
+            serializedState = serialized; // Use the serialized state as is
+        }
+
         const savegame = Reviver.deserialize(serializedState) as Savegame;
         Object.assign(this, savegame.modelprops);
         this.onloaded(savegame); // Call the onloaded method to apply the savegame to the current model instance. Note that the Model is not saved in the savegame, so it is not deserialized and needs to be applied manually, including the onloaded methods of the BaseModel
@@ -516,8 +522,7 @@ export abstract class BaseModel implements IStateful, IRegisterable {
      * Excludes keys listed in `BaseModel.keys_to_exclude_from_save` from the saved data.
      * @returns {string} The serialized `Savegame` object.
      */
-    public save(): Uint8Array {
-        global.$.paused = true;
+    public save(compress: boolean = true): Uint8Array {
         const createSavegame = () => {
             const keys = Object.keys(this);
             const data = {};
@@ -543,12 +548,17 @@ export abstract class BaseModel implements IStateful, IRegisterable {
         };
 
         const savegame = createSavegame();
-        global.$.paused = false;
         const serializedState = Serializer.serialize(savegame) as Uint8Array; // Serialize the savegame to a binary format
-        const compressedState = compressBinary(serializedState);
-        console.warn(`Serialized savegame size: ${serializedState.length} bytes`);
-        console.warn(`Compressed savegame size: ${compressedState.length} bytes, ratio: ${Math.round((compressedState.length / serializedState.length) * 100)}%`);
-        return compressedState;
+        let returnedState: Uint8Array;
+        if (compress) {
+            returnedState = compressBinary(serializedState); // Compress the serialized state if requested
+        } else {
+            returnedState = serializedState; // Use the serialized state as is if compression is not requested
+        }
+
+        // console.debug(`Serialized savegame size: ${serializedState.length} bytes`);
+        // console.debug(`Compressed savegame size: ${compressedState.length} bytes, ratio: ${Math.round((compressedState.length / serializedState.length) * 100)}%`);
+        return returnedState;
     }
 
     /**
