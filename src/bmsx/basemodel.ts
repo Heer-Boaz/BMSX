@@ -65,8 +65,6 @@ export class Space {
         Object.assign(result, o);
         result.objects = undefined;
         delete result.objects;
-
-        console.info(`Ik ga dit nu opslaan als Space: ${result.id}, ${result.objects}`);
         return result;
     }
 
