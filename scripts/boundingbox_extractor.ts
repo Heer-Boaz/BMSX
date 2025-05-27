@@ -61,41 +61,54 @@ export class BoundingBoxExtractor {
         function alphaAt(x: number, y: number): number {
             return data[(y * width + x) * 4 + 3];
         }
+
+        function isBorder(x: number, y: number): boolean {
+            if (alphaAt(x, y) === 0) return false;        // transparant → geen contour
+            if (x === 0 || y === 0 || x === width - 1 || y === height - 1) return true;
+            return (
+                alphaAt(x - 1, y) === 0 || alphaAt(x + 1, y) === 0 ||
+                alphaAt(x, y - 1) === 0 || alphaAt(x, y + 1) === 0
+            );
+        }
+
         // Moore-Neighbor tracing (border following)
         function traceBorder(sx: number, sy: number): vec2[] {
-            // Directions: E, SE, S, SW, W, NW, N, NE
             const dirs = [
                 [1, 0], [1, 1], [0, 1], [-1, 1],
                 [-1, 0], [-1, -1], [0, -1], [1, -1]
-            ];
-            let px = sx, py = sy;
-            let dir = 0; // Start looking east
+            ] as const;
+
             const border: vec2[] = [];
-            let first = true;
-            let looped = false;
+            let px = sx, py = sy;
+            let dir = 0;                         // uitgangsrichting
+            const start = { x: sx, y: sy };
+
             do {
+                // ------ 1. bewaar + markeer ----------------------------------------
                 border.push({ x: px, y: py });
+                visited[py * width + px] = 1;    // <-- nu meteen
+
+                // ------ 2. zoek volgende on-bezochte rand­pixel --------------------
                 let found = false;
-                for (let i = 0; i < 8; ++i) {
-                    // Start search from (dir+6)%8 (left of previous move)
-                    const ndir = (dir + 6 + i) % 8;
+                for (let k = 0; k < 8; k++) {
+                    const ndir = (dir + 6 + k) & 7;      // (dir+6) = ‘links van inkomende’
                     const [dx, dy] = dirs[ndir];
                     const nx = px + dx, ny = py + dy;
+
                     if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-                    if (alphaAt(nx, ny) !== 0) {
+                    if (!visited[ny * width + nx] && isBorder(nx, ny)) {
                         px = nx; py = ny; dir = ndir;
                         found = true;
                         break;
                     }
                 }
-                if (!found) break; // Isolated pixel or end of border
-                if (!first && px === sx && py === sy) {
-                    looped = true;
-                }
-                first = false;
-            } while (!looped && border.length < 10000); // Safety limit
+                if (!found) break;               // geïsoleerde pixel
+
+            } while (!(px === start.x && py === start.y));
+
             return border;
         }
+
         for (let y = 0; y < height; y++) {
             for (let x = 0; x < width; x++) {
                 const idx = y * width + x;
