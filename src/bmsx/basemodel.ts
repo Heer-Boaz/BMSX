@@ -1,15 +1,15 @@
-import { BehaviorTreeDefinition, BehaviorTreeDefinitions, BehaviorTreeID, setup_btdef_library, setup_bt_library } from "./behaviourtree";
-import { StateDefinition, State, StateMachineController } from "./fsm";
+import { BehaviorTreeDefinition, BehaviorTreeDefinitions, BehaviorTreeID, setup_bt_library, setup_btdef_library } from "./behaviourtree";
+import { Vector, compressBinary, decompressBinary } from "./bmsx";
+import { EventEmitter } from "./eventemitter";
+import { State, StateDefinition, StateMachineController } from "./fsm";
+import { StateDefinitions, setupFSMlibrary } from "./fsmlibrary";
 import { IStateful } from "./fsmtypes";
 import type { IRegisterable, Identifier } from "./game";
-import { GameObject } from "./gameobject";
-import { insavegame, onsave, Reviver, Savegame, Serializer } from "./gameserializer";
-import { Input } from "./input";
 import { Direction } from "./game";
-import { EventEmitter } from "./eventemitter";
+import { GameObject } from "./gameobject";
+import { Reviver, Savegame, Serializer, insavegame, onsave } from "./gameserializer";
+import { Input } from "./input";
 import { Registry } from "./registry";
-import { Vector } from "./bmsx";
-import { StateDefinitions, setupFSMlibrary } from "./fsmlibrary";
 
 export interface ISpaceObject {
     spaceid: Identifier;
@@ -484,12 +484,14 @@ export abstract class BaseModel implements IStateful, IRegisterable {
      * @param {string} serialized - The serialized game state to load.
      * @returns {void} Nothing.
      */
-    public load(serialized: string): void {
+    public load(serialized: Uint8Array): void {
         this.clearAllSpaces(); // Clear all spaces and objects before loading the new state (otherwise, objects from the previous state will still be present)
         EventEmitter.instance.clear(); // Clear the event emitter before loading the new state (otherwise, event handlers from the previous state will still be present)
         const temp_array = this.spaces.slice(); // Create a copy of the spaces array to prevent the spaces from being cleared when clearing the model instance
         temp_array.forEach(s => this.removeSpace(s)); // Remove all spaces from the model instance before loading the new state (otherwise, spaces from the previous state will still be present)
-        const savegame = JSON.parse(serialized, Reviver) as Savegame; // Deserialize the savegame and apply it to the current model instance (this)
+        // const savegame = JSON.parse(serialized, Reviver) as Savegame; // Deserialize the savegame and apply it to the current model instance (this)
+        const serializedState = decompressBinary(serialized); // Decompress the serialized state
+        const savegame = Reviver.deserializeWithRefsBinary(serializedState) as Savegame;
         Object.assign(this, savegame.modelprops);
         this.onloaded(savegame); // Call the onloaded method to apply the savegame to the current model instance. Note that the Model is not saved in the savegame, so it is not deserialized and needs to be applied manually, including the onloaded methods of the BaseModel
     }
@@ -514,7 +516,7 @@ export abstract class BaseModel implements IStateful, IRegisterable {
      * Excludes keys listed in `BaseModel.keys_to_exclude_from_save` from the saved data.
      * @returns {string} The serialized `Savegame` object.
      */
-    public save(): string {
+    public save(): Uint8Array {
         global.$.paused = true;
         const createSavegame = () => {
             const keys = Object.keys(this);
@@ -542,7 +544,11 @@ export abstract class BaseModel implements IStateful, IRegisterable {
 
         const savegame = createSavegame();
         global.$.paused = false;
-        return Serializer(savegame);
+        const serializedState = Serializer.serializeWithRefsBinary(savegame);
+        const compressedState = compressBinary(serializedState);
+        console.warn('Serialized savegame size: ' + serializedState.length + ' bytes');
+        console.warn(`Compressed savegame size: ${compressedState.length} bytes, ratio: ${Math.round((compressedState.length / serializedState.length) * 100)}%`);
+        return compressedState;
     }
 
     /**
