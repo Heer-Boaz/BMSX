@@ -1,4 +1,4 @@
-import { BaseModel, BehaviorTreeDefinition, Component, Direction, GLView, Game, GameObject, GamepadButton, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, PSG, ProhibitLeavingScreenComponent, RomPack, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, insavegame, new_area, new_vec2, pianoInstrument, snareInstrument, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/bmsx';
+import { BaseModel, BehaviorTreeDefinition, Component, Direction, GLView, Game, GameObject, GamepadButton, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, PSG, ProhibitLeavingScreenComponent, RomPack, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, debugPrintBinarySnapshot, decompressBinary, insavegame, new_area, new_vec2, pianoInstrument, snareInstrument, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/bmsx';
 import { BitmapId } from './resourceids';
 
 var _game: Game;
@@ -258,10 +258,26 @@ class bclass extends SpriteObject {
                         $.input.getPlayerInput(1).consumeAction(action);
 
                         if (_model[savestring]) {
-                            _model.load(_model[savestring]);
+                            // If the save data is a string, convert it to Uint8Array before loading
+                            const saveData = _model[savestring];
+                            let saveDataUint8: Uint8Array;
+                            if (typeof saveData === 'string') {
+                                // Convert base64 string to Uint8Array
+                                const binaryString = atob(saveData);
+                                const len = binaryString.length;
+                                const bytes = new Uint8Array(len);
+                                for (let i = 0; i < len; i++) {
+                                    bytes[i] = binaryString.charCodeAt(i);
+                                }
+                                saveDataUint8 = bytes;
+                            } else {
+                                saveDataUint8 = saveData;
+                            }
+                            _model.load(saveDataUint8);
                             _model[savestring] = undefined;
                             delete _model[savestring];
                             console.info(`${new Date().toTimeString()} Game loaded!`);
+                            console.info(`${debugPrintBinarySnapshot(decompressBinary(saveDataUint8))}`);
                         }
                         // show_load_savestate_dialog();
                         break;
@@ -269,9 +285,21 @@ class bclass extends SpriteObject {
                         if (consumed) break;
                         $.input.getPlayerInput(1).consumeAction(action);
 
-                        $.model[savestring] = $.model.save();
+                        const savestuff = $.model.save();
+                        $.model[savestring] = savestuff;
                         console.info(`${new Date().toTimeString()} Game saved!`);
-                        console.info(`${_model[savestring]}`);
+                        // Convert the Uint8Array to a hexadecimal string and log it
+                        if ($.model[savestring] instanceof Uint8Array) {
+                            const hexString = Array.from($.model[savestring] as Uint8Array)
+                                .map(b => b.toString(16).padStart(2, '0'))
+                                .join('');
+                            console.info(`Hexadecimal save: ${hexString}`);
+                            // Or, to log as base64:
+                            const base64String = btoa(String.fromCharCode(...($.model[savestring] as Uint8Array)));
+                            console.info(`Base64 save: ${base64String}`);
+                        } else {
+                            console.info(`${$.model[savestring]}`);
+                        }
                         // show_download_savestate_dialog();
                         break;
                     case 'bla':
