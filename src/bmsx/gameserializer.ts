@@ -337,10 +337,25 @@ export class Reviver {
             for (const key of Object.keys(data)) {
                 if (key === 'typename') continue;
                 const val = data[key];
-                if (val && typeof val === 'object' && '$ref' in val) {
+                // --- PATCH: Fix for arrays of $ref objects (e.g. hitpolygon) ---
+                if (Array.isArray(val)) {
+                    // If every element is a $ref, resolve all
+                    if (val.every(v => v && typeof v === 'object' && '$ref' in v)) {
+                        target[key] = val.map(v => idToObject[v.$ref]);
+                    } else {
+                        // For nested arrays (e.g. hitpolygon: vec2[][]), resolve recursively
+                        target[key] = val.map(v => {
+                            if (Array.isArray(v)) {
+                                return v.map(w => (w && typeof w === 'object' && '$ref' in w) ? idToObject[w.$ref] : w);
+                            } else if (v && typeof v === 'object' && '$ref' in v) {
+                                return idToObject[v.$ref];
+                            } else {
+                                return v;
+                            }
+                        });
+                    }
+                } else if (val && typeof val === 'object' && '$ref' in val) {
                     target[key] = idToObject[val.$ref];
-                } else if (Array.isArray(val)) {
-                    target[key] = val.map(v => (v && typeof v === 'object' && '$ref' in v) ? idToObject[v.$ref] : v);
                 } else {
                     target[key] = val;
                 }
@@ -464,7 +479,6 @@ const MIN_MATCH = 4;
 const MAX_MATCH = 255;      // wordt als (len-MIN_MATCH) opgeslagen
 const MAX_RUN = 255;      // 1-byte RLE-veld
 const RLE_THRESHOLD = 4; // RLE wordt alleen gebruikt voor runs van 4 of meer bytes
-
 
 // ---------- compressor ----------
 let COMPRESS_SCRATCH = new Uint8Array(9000); // initial size, will grow as needed
