@@ -1,4 +1,4 @@
-import { BaseModel, BehaviorTreeDefinition, Component, Direction, GLView, Game, GameObject, GamepadButton, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, PSG, ProhibitLeavingScreenComponent, RomPack, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, debugPrintBinarySnapshot, decompressBinary, insavegame, new_area, new_vec2, pianoInstrument, snareInstrument, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/bmsx';
+import { BaseModel, BehaviorTreeDefinition, Component, Direction, GLView, Game, GameObject, GamepadButton, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, PSG, ProhibitLeavingScreenComponent, RomPack, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, debugPrintBinarySnapshot, decompressBinary, insavegame, new_area, new_vec2, snareInstrument, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/bmsx';
 import { BitmapId } from './resourceids';
 
 var _game: Game;
@@ -379,15 +379,15 @@ class gamemodel extends BaseModel {
                 '#game_start': {
                     enter(this: gamemodel) {
                         // Define a simple song as an array of note events.
-                        const simpleSong = [
-                            { note: "C4", duration: 0.5 },
-                            { note: "E4", duration: 0.5 },
-                            { note: "G4", duration: 0.5 },
-                            { note: "C5", duration: 1.0 }
-                        ];
+                        // const simpleSong = [
+                        //     { note: "C4", duration: 0.5 },
+                        //     { note: "E4", duration: 0.5 },
+                        //     { note: "G4", duration: 0.5 },
+                        //     { note: "C5", duration: 1.0 }
+                        // ];
 
                         // Play the song using the piano instrument.
-                        PSG.playSong(simpleSong, pianoInstrument);
+                        // PSG.playSong(simpleSong, pianoInstrument);
                     },
                     run(this: gamemodel, s: State) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
                         s.to('default');
