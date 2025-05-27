@@ -820,19 +820,6 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 		return new_area(minX, minY, maxX, maxY);
 	}
 
-	// Compute the union AABB for multiple polygons
-	static polygonsAABB(polys: vec2[][]): Area {
-		let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-		for (const poly of polys) {
-			const aabb = GameObject.polygonAABB(poly);
-			if (aabb.start.x < minX) minX = aabb.start.x;
-			if (aabb.start.y < minY) minY = aabb.start.y;
-			if (aabb.end.x > maxX) maxX = aabb.end.x;
-			if (aabb.end.y > maxY) maxY = aabb.end.y;
-		}
-		return new_area(minX, minY, maxX, maxY);
-	}
-
 	/**
 	 * Detects whether this object overlaps the given 2D point.
 	 * @param {vec2} p 2D vector; The points for which the overlap is checked.
