@@ -13,6 +13,7 @@ import type { vec2 } from '../rompack';
 import { SpriteObject } from '../sprite';
 import { Color } from '../view';
 import { createObjectTableElement } from './objectpropertydialog';
+import { ObjectPropertyDialog, refreshAllObjectPropertyDialogs } from './objectpropertydialogimproved';
 import { showRewindDialog } from './rewindui';
 import { StateMachineVisualizer } from './statemachinevisualizer';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
@@ -558,17 +559,15 @@ function openObjectDetailMenu(obj: any, title: string, previous?: HTMLElement): 
         global.$.paused = true; // TODO: DOES NOT WORK. WE NEED TO MAKE SURE THAT THIS FUNCTION ONLY WORKS WHEN NO DIALOGS ARE OPEN!
     }
 
-    const [dialogDiv, contentDiv] = createDebugDialog(title, previous);
-
-    // build table for initial object state
-    createObjectTableElement(dialogDiv, contentDiv, obj, title, ['objects']);
-    // register for live-refresh using object ID
+    // Use ObjectPropertyDialog for live-refresh
     if (obj && obj.id != null) {
-        registerObjectDialog(dialogDiv, contentDiv, obj.id.toString(), title, ['objects']);
+        const dlg = ObjectPropertyDialog.openDialogById(obj.id.toString(), title, ['objects']);
+        // Optionally, position or focus dialog if needed
+    } else {
+        const [dialogDiv, contentDiv] = createDebugDialog(title, previous);
+        createObjectTableElement(dialogDiv, contentDiv, obj, title, ['objects']);
+        document.body.insertBefore(dialogDiv, null);
     }
-
-    document.body.insertBefore(dialogDiv, null);
-
 }
 
 export function handleDebugClick(e: MouseEvent): void {
@@ -731,32 +730,22 @@ export function handleContextMenu(e: MouseEvent): void {
 
 }
 
-// Live-refresh registry for object detail dialogs
-interface ObjectDialogDescriptor { dialogDiv: HTMLDivElement; contentDiv: HTMLDivElement; objId: string; title: string; excludeProps?: string[]; }
-let openObjectDialogs: ObjectDialogDescriptor[] = [];
-
-function registerObjectDialog(dialogDiv: HTMLDivElement, contentDiv: HTMLDivElement, objId: string, title: string, excludeProps?: string[]) {
-    openObjectDialogs.push({ dialogDiv, contentDiv, objId, title, excludeProps });
-}
-
-function refreshAllObjectDialogs() {
-    // Remove closed dialogs
-    openObjectDialogs = openObjectDialogs.filter(d => d.dialogDiv.parentElement);
-    for (const d of openObjectDialogs) {
-        const obj = ($.get as any)(d.objId) as GameObject; // retrieve current instance by ID
-        if (!obj) continue;
-        // rebuild content
-        d.contentDiv.innerHTML = '';
-        createObjectTableElement(d.dialogDiv, d.contentDiv, obj, d.title, d.excludeProps);
-    }
-
+function refreshDialogs() {
+    // Refresh all object property dialogs
+    refreshAllObjectPropertyDialogs();
     // Refresh all state machine visualizers
-    for (const visualiser of Object.values(stateMachineVisualisers)) {
-        visualiser.frameUpdate();
+    if (typeof stateMachineVisualisers === 'object') {
+        for (const visualiser of Object.values(stateMachineVisualisers)) {
+            if (visualiser && typeof visualiser.frameUpdate === 'function') {
+                visualiser.frameUpdate();
+            }
+        }
     }
 }
 
-window.addEventListener('frame', refreshAllObjectDialogs);
+// Attach to frame event for live-refresh of property dialogs and state machine visualizers
+window.addEventListener('frame', refreshDialogs);
+window.addEventListener('rewind', refreshDialogs);
 
 export function gamePaused() {
     showRewindDialog();
