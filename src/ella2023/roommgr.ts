@@ -1,7 +1,8 @@
-import { BitmapId } from './resourceids';
+import { Direction, SpriteObject, StateMachineBlueprint, build_fsm, insavegame } from '../bmsx/bmsx';
 import { gamemodel } from "./gamemodel";
-import { Direction, SpriteObject, StateMachineBlueprint, build_fsm } from '../bmsx/bmsx';
+import { BitmapId } from './resourceids';
 
+@insavegame
 export class RoomMgr {
     constructor() {
         this.rooms = {};
@@ -33,6 +34,7 @@ export class RoomMgr {
     }
 }
 
+@insavegame
 export class Room extends SpriteObject {
     constructor(room_id: string) {
         super(room_id);

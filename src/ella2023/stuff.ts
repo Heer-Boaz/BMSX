@@ -1,4 +1,4 @@
-import { DrawRectOptions, GameObject, Msx1Colors, SpriteObject, StateMachineBlueprint, build_fsm, new_area3d, new_vec3, State } from '../bmsx/bmsx';
+import { DrawRectOptions, GameObject, Msx1Colors, SpriteObject, State, StateMachineBlueprint, build_fsm, insavegame, new_area3d, new_vec3 } from '../bmsx/bmsx';
 import { BitmapId } from './resourceids';
 
 function wrapup(state: State) {
@@ -7,6 +7,7 @@ function wrapup(state: State) {
 	state.reset(); // Make sure that the tick counter is reset.
 }
 
+@insavegame
 export class GameOver extends SpriteObject {
 	@build_fsm()
 	static bouw(): StateMachineBlueprint {
@@ -50,6 +51,8 @@ export class GameOver extends SpriteObject {
 		this.imgid = BitmapId.gameover;
 	}
 }
+
+@insavegame
 export class Hoera extends SpriteObject {
 	@build_fsm()
 	static bouw(): StateMachineBlueprint {
@@ -94,6 +97,7 @@ export class Hoera extends SpriteObject {
 	}
 }
 
+@insavegame
 export class TitleScreen extends SpriteObject {
 	private static readonly SELECT_PLAYER_1_Y = 160 - 16;
 	private static readonly SELECT_PLAYER_2_Y = 160;
@@ -222,6 +226,7 @@ export class TitleScreen extends SpriteObject {
 	}
 }
 
+@insavegame
 export class Gordijn extends GameObject {
 	private width: number;
 

@@ -1,7 +1,8 @@
-import { GLView, Msx1Colors, SpriteObject, StateMachineBlueprint, TextWriter, build_fsm, new_area3d } from '../bmsx/bmsx';
-import { BitmapId } from './resourceids';
+import { GLView, Msx1Colors, SpriteObject, StateMachineBlueprint, TextWriter, build_fsm, insavegame, new_area3d } from '../bmsx/bmsx';
 import { Fighter } from './fighter';
+import { BitmapId } from './resourceids';
 
+@insavegame
 export class Hud extends SpriteObject {
     @build_fsm()
     static bouw(): StateMachineBlueprint {
