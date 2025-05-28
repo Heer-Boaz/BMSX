@@ -107,7 +107,10 @@ export class Serializer {
         let typename = Serializer.get_typename(value);
         if (typename !== 'Object' && typename !== 'object') {
             let theConstructor = Reviver.get_constructor_for_type(typename);
-            if (!theConstructor) throw Error(`No constructor known for object of type '${typename}'. Did you forget to add '@insavegame' to the class definition?`);
+            if (!theConstructor) {
+                console.error(`No constructor known for object of type '${typename}'. Did you forget to add '@insavegame' to the class definition?`);
+                return undefined;
+            }
             value.typename = typename;
             if (value.prototype?.onsave) return value.prototype.onsave(value);
             if (value.constructor?.onsave) return value.constructor.onsave(value);
@@ -154,7 +157,7 @@ export class Serializer {
             let theConstructor = Reviver.get_constructor_for_type(typename);
             let plain: any = {};
             if (typename !== 'Object' && typename !== 'object') {
-                if (!theConstructor) throw Error(`No constructor known for object of type '${typename}'. Did you forget to add '@insavegame' to the class definition?`);
+                if (!theConstructor) console.error(`No constructor known for object of type '${typename}'. Did you forget to add '@insavegame' to the class definition?`);
                 else plain.typename = typename;
             }
             for (let key of Object.keys(value)) {
@@ -361,19 +364,22 @@ export class Reviver {
                 }
             }
             if (typeof data.typename === 'string' && data.typename !== 'Object' && data.typename !== 'object') {
-                let result = target;
-                let proto = target;
-                let reviverFunctions = [];
-                while (proto) {
-                    const revivers = Reviver.onLoads[proto.constructor.name];
-                    revivers && reviverFunctions.push(...revivers);
-                    proto = Object.getPrototypeOf(proto);
-                }
-                for (let i = reviverFunctions.length - 1; i >= 0; i--) {
-                    result = reviverFunctions[i].call(result) ?? result;
-                }
-                Reviver.removeSerializerProps(result);
-                idToObject[id] = result;
+                Reviver.removeSerializerProps(target);
+                idToObject[id] = target;
+            }
+        }
+        // --- Third pass: call all registered @onload methods if present ---
+        for (const id of Object.keys(idToObject)) {
+            const obj = idToObject[id];
+            let proto = obj;
+            let reviverFunctions = [];
+            while (proto) {
+                const revivers = Reviver.onLoads[proto.constructor.name];
+                revivers && reviverFunctions.push(...revivers);
+                proto = Object.getPrototypeOf(proto);
+            }
+            for (let i = reviverFunctions.length - 1; i >= 0; i--) {
+                reviverFunctions[i].call(obj);
             }
         }
         return (root && root.$ref) ? idToObject[root.$ref] : root;

@@ -1,6 +1,5 @@
 import { BehaviorTreeDefinition, BehaviorTreeDefinitions, BehaviorTreeID, setup_bt_library, setup_btdef_library } from "./behaviourtree";
 import { Vector, compressBinary, decompressBinary } from "./bmsx";
-import { EventEmitter } from "./eventemitter";
 import { State, StateDefinition, StateMachineController } from "./fsm";
 import { StateDefinitions, setupFSMlibrary } from "./fsmlibrary";
 import { IStateful } from "./fsmtypes";
@@ -484,7 +483,7 @@ export abstract class BaseModel implements IStateful, IRegisterable {
      */
     public load(serialized: Uint8Array, compressed: boolean = true): void {
         this.clearAllSpaces(); // Clear all spaces and objects before loading the new state (otherwise, objects from the previous state will still be present)
-        EventEmitter.instance.clear(); // Clear the event emitter before loading the new state (otherwise, event handlers from the previous state will still be present)
+        $.event_emitter.dispose(); // Dispose the event emitter before loading the new state (otherwise, event handlers from the previous state will still be present)
         const temp_array = this.spaces.slice(); // Create a copy of the spaces array to prevent the spaces from being cleared when clearing the model instance
         temp_array.forEach(s => this.removeSpace(s)); // Remove all spaces from the model instance before loading the new state (otherwise, spaces from the previous state will still be present)
 

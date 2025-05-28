@@ -26,10 +26,12 @@ export class EventEmitter implements IRegisterable {
      * @returns The identifier of the event emitter.
      */
     public get id(): Identifier { return 'event_emitter'; }
+
     /**
      * Disposes the object and deregisters it from the registry.
      */
     public dispose(): void {
+        this.clear();
         Registry.instance.deregister(this);
     }
 

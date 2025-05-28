@@ -968,7 +968,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	 * @returns The model instance of type T.
 	 * @template T - The type of the model.
 	 */
-	public modelAs<T extends BaseModel = BaseModel>(): T { return Registry.instance.get<T>('model'); }
+	public modelAs<T extends BaseModel = BaseModel>(): T { return this.registry.get<T>('model'); }
 
 	public get model(): M { return this.modelAs<M>(); }
 
@@ -976,13 +976,13 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	 * Retrieves the global view of type T.
 	 * @returns The global view of type T.
 	 */
-	public viewAs<T extends BaseView = BaseView>(): T { return Registry.instance.get<T>('view'); }
+	public viewAs<T extends BaseView = BaseView>(): T { return this.registry.get<T>('view'); }
 
 	public get view(): V { return this.viewAs<V>(); }
 
-	public get event_emitter(): EventEmitter { return Registry.instance.get<EventEmitter>('event_emitter'); }
+	public get event_emitter(): EventEmitter { return EventEmitter.instance; }
 
-	public get input(): Input { return Registry.instance.get<Input>('input'); }
+	public get input(): Input { return Input.instance; }
 	public get registry(): Registry { return Registry.instance; }
 
 	public emit(event_name: string, emitter: IIdentifiable, ...args: any[]) {
