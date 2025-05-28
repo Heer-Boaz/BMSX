@@ -5,6 +5,7 @@ export * from './component';
 export * from './debugger/behaviourtreevisualizer';
 export * from './debugger/bmsxdebugger';
 export * from './debugger/objectpropertydialog';
+export * from './debugger/objectpropertydialogimproved';
 export * from './debugger/rewindui';
 export * from './debugger/statemachinevisualizer';
 export * from './eventemitter';
