@@ -252,11 +252,13 @@ async function yaml2Json(progress?: ProgressReporter): Promise<void> {
  */
 async function esbuild(romname: string, bootloader_path: string, progress?: ProgressReporter): Promise<void> {
 	const bootloader_ts_path = `${bootloader_path}/bootloader.ts`;
+	console.log(`Building bootloader from ${bootloader_ts_path}...`);
 	try {
 		await build({
 			entryPoints: [bootloader_ts_path],
 			bundle: true,
 			sourcemap: 'inline',
+			// sourceRoot: resolve(bootloader_ts_path, 'src'),
 			outfile: `./rom/${romname}.js`,
 			platform: 'browser',
 			target: ['es2020'],
