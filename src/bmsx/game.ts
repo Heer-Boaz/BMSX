@@ -835,11 +835,11 @@ class RewindBuffer {
 	constructor(targetFPS: number, windowSeconds: number = 10) {
 		this.frameInterval = 1000 / targetFPS;
 		this.windowMs = windowSeconds * 1000;
-		this.maxFrames = Math.ceil(windowSeconds * targetFPS) + 2;
+		this.maxFrames = Math.ceil(windowSeconds * targetFPS) + 1; // Include an additional frame for the current frame
 	}
 
 	push(frame: number, state: Uint8Array) {
-		const now = performance.now();
+		const now = frame * this.frameInterval; // Use frame-based timestamp
 		this.buffer.push({ timestamp: now, frame, state });
 		// Remove old frames outside window
 		const cutoff = now - this.windowMs;
