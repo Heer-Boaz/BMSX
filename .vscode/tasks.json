@@ -12,7 +12,7 @@
 				"build rom.js",
 				"build rompacker.js",
 				"pack rom resources (resourceids.ts)",
-				"build the game"
+				"Forcefully build the game"
 			],
 			"problemMatcher": [
 				"$node-sass",
