@@ -252,24 +252,22 @@ async function yaml2Json(progress?: ProgressReporter): Promise<void> {
  */
 async function esbuild(romname: string, bootloader_path: string, progress?: ProgressReporter): Promise<void> {
 	const bootloader_ts_path = `${bootloader_path}/bootloader.ts`;
-	console.log(`Building bootloader from ${bootloader_ts_path}...`);
 	try {
 		await build({
-			entryPoints: [bootloader_ts_path],
-			bundle: true,
-			sourcemap: 'inline',
-			// sourceRoot: resolve(bootloader_ts_path, 'src'),
-			outfile: `./rom/${romname}.js`,
-			platform: 'browser',
-			target: ['es2020'],
+			entryPoints: [bootloader_ts_path], // Entry point for the rompack
+			bundle: true, // Bundle all dependencies into a single file
+			sourcemap: 'inline', // Include inline source maps for debugging
+			sourcesContent: false, // Do not include source content in the output
+			outfile: `./rom/${romname}.js`, // Output file for the bundled code
+			platform: 'browser', // Target platform for the bundle
+			target: ['es2020'], // Specify the ECMAScript version to target
 			loader: { '.glsl': 'text' }, // Handles GLSL files as text
-			define: { 'process.env.NODE_ENV': '"production"' },
-			// minify: true,
-			minifyWhitespace: true,
-			minifySyntax: true,
-			mangleQuoted: false,
-			external: ['node_modules', 'dist', 'rom', 'ts-key-enum'],
-			treeShaking: true,
+			define: { 'process.env.NODE_ENV': '"production"' }, // Define environment variables for the build
+			minifyWhitespace: true, // Minify whitespace in the output
+			minifySyntax: true, // Minify syntax in the output
+			mangleQuoted: false, // Do not mangle quoted identifiers (required to fetch rompack resources correctly)
+			external: ['node_modules', 'dist', 'rom', 'ts-key-enum'], // Exclude these directories from the bundle
+			treeShaking: true, // Enable tree shaking to remove unused code
 		});
 		if (progress) progress.taskCompleted();
 		return null;
