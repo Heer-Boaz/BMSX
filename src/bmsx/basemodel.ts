@@ -506,7 +506,7 @@ export abstract class BaseModel implements IStateful, IRegisterablePersistent {
         savegame.allSpacesObjects.forEach(space_and_objects => {
             const space = this[spaceid_2_space][space_and_objects.spaceid];
             const objects = space_and_objects.objects;
-            objects.forEach(o => (space.spawn(o, null, true)));
+            objects.forEach(o => space.spawn(o, null, true));
         });
 
         const persistentEntities = $.registry.getPersistentEntities();

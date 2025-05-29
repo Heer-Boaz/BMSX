@@ -537,7 +537,6 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	private process_transition_queue(): void {
 		while (this.transition_queue.length > 0) {
 			const state_transition = this.transition_queue.shift();
-			// console.debug(`<< '${this.id}.${state_transition.state_id}'`);
 			this.transitionToState(state_transition.state_id, state_transition.transition_type, ...state_transition.args);
 		}
 	}
