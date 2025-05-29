@@ -1,4 +1,4 @@
-import { BaseModel, BehaviorTreeDefinition, Component, Direction, GLView, Game, GameObject, GamepadButton, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, PSG, ProhibitLeavingScreenComponent, RomPack, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, debugPrintBinarySnapshot, decompressBinary, insavegame, new_area, new_vec2, snareInstrument, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/bmsx';
+import { BaseModel, BehaviorTreeDefinition, BinaryCompressor, Component, Direction, GLView, Game, GameObject, GamepadButton, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, PSG, ProhibitLeavingScreenComponent, RomPack, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, debugPrintBinarySnapshot, insavegame, new_area, new_vec2, snareInstrument, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/bmsx';
 import { BitmapId } from './resourceids';
 
 var _game: Game;
@@ -277,7 +277,7 @@ class bclass extends SpriteObject {
                             _model[savestring] = undefined;
                             delete _model[savestring];
                             console.info(`${new Date().toTimeString()} Game loaded!`);
-                            console.info(`${debugPrintBinarySnapshot(decompressBinary(saveDataUint8))}`);
+                            console.info(`${debugPrintBinarySnapshot(BinaryCompressor.decompressBinary(saveDataUint8))}`);
                         }
                         // show_load_savestate_dialog();
                         break;
