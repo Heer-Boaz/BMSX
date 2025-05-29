@@ -563,7 +563,7 @@ body {
 	-ms-user-select: none;
 	user-select: none;
 	-webkit-touch-callout: none;
-	-webkit-user-drag: none;
+	/* -webkit-user-drag: none; */
 	overflow: hidden;
 	background-color: #2020ff;
 
@@ -739,7 +739,9 @@ html {
 }
 
 /* Accordion (object property dialog) modern harmonica UI */
-.object-dialog-scrollable {}
+.object-dialog-scrollable {
+	overflow: scroll
+}
 
 .object-accordion {
 	display: flex;
@@ -779,7 +781,6 @@ html {
 .accordion-toggle {
 	font-weight: bold;
 	cursor: pointer;
-	user-select: none;
 	margin-right: 4px;
 	width: 18px;
 	text-align: center;
@@ -908,4 +909,93 @@ html {
 	word-break: break-all;
 	flex: 1 1 0;
 	padding: 2px 0 2px 4px;
+}
+
+/* Modern rewinder progress bar */
+.rewind-bar-container {
+	position: relative;
+	width: min(600px, 80vw);
+	height: 1.5em;
+	background: #222;
+	border-radius: 0.75em;
+	margin: 18px 0 0 0;
+	display: flex;
+	align-items: center;
+	cursor: pointer;
+	box-shadow: 0 2px 8px #0006;
+}
+
+.rewind-bar-fill {
+	height: 100%;
+	background: linear-gradient(90deg, rgb(0, 0, 255), rgb(0, 255, 255));
+	transition: width;
+	border-radius: 0.75em 0 0 0.75em;
+}
+
+.rewind-bar-handle {
+	position: absolute;
+	top: 50%;
+	transform: translateY(-50%);
+	width: 1.5em;
+	height: 1.5em;
+	background: #fff;
+	border: 0.2em solid #000;
+	box-shadow: 0 2px 8px #0006;
+	cursor: grab;
+	transition: border 0s, background 0s;
+}
+
+.rewind-bar-handle.dragging {
+	background: #000;
+	border: 0.2em solid #fff;
+}
+
+#rewind-overlay {
+	position: fixed;
+	left: 50%;
+	bottom: 5%;
+	transform: translateX(-50%);
+	z-index: 9999;
+	background: rgba(30, 30, 40, 0.5);
+	color: #fff;
+	border-radius: 1em;
+	/* box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35); */
+	padding: 2em;
+	min-width: 50%;
+	max-width: 90%;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	font-family: monospace;
+	font-size: 1em;
+	gap: 1em;
+	transition: opacity 1s;
+}
+
+.rewind-title {
+	font-weight: bold;
+	font-size: 1.2em;
+	margin-bottom: 0.5em;
+	text-align: center;
+}
+
+.rewind-info {
+	margin-bottom: 0.5em;
+	text-align: center;
+}
+
+.rewind-close-btn {
+	position: absolute;
+	top: 0.5em;
+	right: 0.5em;
+	background: transparent;
+	border: none;
+	color: #fff;
+	font-size: 1.2em;
+	cursor: pointer;
+	transition: color 0.3s;
+}
+
+.rewind-close-btn:hover {
+	color: #f66;
 }
