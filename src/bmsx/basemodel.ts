@@ -1,12 +1,12 @@
 import { BehaviorTreeDefinition, BehaviorTreeDefinitions, BehaviorTreeID, setup_bt_library, setup_btdef_library } from "./behaviourtree";
-import { Vector, compressBinary, decompressBinary } from "./bmsx";
+import { Vector } from "./bmsx";
 import { State, StateDefinition, StateMachineController } from "./fsm";
 import { StateDefinitions, setupFSMlibrary } from "./fsmlibrary";
 import { IStateful } from "./fsmtypes";
-import type { IRegisterable, Identifier } from "./game";
+import type { IRegisterable, IRegisterablePersistent, Identifier } from "./game";
 import { Direction } from "./game";
 import { GameObject } from "./gameobject";
-import { Reviver, Savegame, Serializer, insavegame, onsave } from "./gameserializer";
+import { BinaryCompressor, Reviver, Savegame, Serializer, insavegame, onsave } from "./gameserializer";
 import { Input } from "./input";
 import { Registry } from "./registry";
 
@@ -103,7 +103,6 @@ export class Space {
 
         this[id2obj][o.id] = o; // Register the object in the `id2object`-object, so we can retrieve the object by id
         $.model[objid_2_objspaceid][o.id] = this.id; // Register the object in the `obj_id2obj_space_id`-object, so we can retrieve the space id for the object id
-        $.registry.register(o); // Register the object in the registry so it can be retrieved by id. Note that we do not register the object in the `o.onspawn`-method, as that won't trigger when the object is revived from a savegame
         !skip_onspawn_event && o.onspawn?.(pos); // Trigger onspawn event after adding the object to the space. `onspawn` subscribes the object to events and starts the object's state machine
 
         this.sort_by_depth(); // Sort after spawn-event, just to be sure
@@ -154,7 +153,11 @@ export type base_model_spaces = 'game_start' | 'default';
  * The base model class for the game. Contains all the spaces and objects in the game world.
  * Provides methods to add, remove, and manipulate game objects and spaces.
  */
-export abstract class BaseModel implements IStateful, IRegisterable {
+export abstract class BaseModel implements IStateful, IRegisterablePersistent {
+    get registrypersistent(): true {
+        return true;
+    }
+
     /**
      * Retrieves an entity from the registry based on its identifier.
      * @param id The identifier of the entity to retrieve.
@@ -484,32 +487,31 @@ export abstract class BaseModel implements IStateful, IRegisterable {
     public load(serialized: Uint8Array, compressed: boolean = true): void {
         this.clearAllSpaces(); // Clear all spaces and objects before loading the new state (otherwise, objects from the previous state will still be present)
         $.event_emitter.dispose(); // Dispose the event emitter before loading the new state (otherwise, event handlers from the previous state will still be present)
+
         const temp_array = this.spaces.slice(); // Create a copy of the spaces array to prevent the spaces from being cleared when clearing the model instance
         temp_array.forEach(s => this.removeSpace(s)); // Remove all spaces from the model instance before loading the new state (otherwise, spaces from the previous state will still be present)
 
         let serializedState: Uint8Array;
         if (compressed) {
-            serializedState = decompressBinary(serialized); // Decompress the serialized state
+            serializedState = BinaryCompressor.decompressBinary(serialized); // Decompress the serialized state
         } else {
             serializedState = serialized; // Use the serialized state as is
         }
 
+        $.registry.clear(); // Clear the registry before loading the new state (otherwise, registered objects from the previous state will still be present). Note that this will not clear the model instance itself, as the model instance has the property `registrypersistent: true` and will not be cleared. The same applies to Input, View, and other persistent objects.
         const savegame = Reviver.deserialize(serializedState) as Savegame;
         Object.assign(this, savegame.modelprops);
-        this.onloaded(savegame); // Call the onloaded method to apply the savegame to the current model instance. Note that the Model is not saved in the savegame, so it is not deserialized and needs to be applied manually, including the onloaded methods of the BaseModel
-    }
 
-    /**
-     * Adds spaces and objects from a loaded savegame to the current model instance.
-     * @param {Savegame} savegame - The savegame to load.
-     * @returns {void} Nothing.
-     */
-    public onloaded(savegame: Savegame): void {
         savegame.spaces.forEach(space => this.addSpace(space));
         savegame.allSpacesObjects.forEach(space_and_objects => {
             const space = this[spaceid_2_space][space_and_objects.spaceid];
             const objects = space_and_objects.objects;
-            objects.forEach(o => (o.onloaded?.(), space.spawn(o, null, true)));
+            objects.forEach(o => (space.spawn(o, null, true)));
+        });
+
+        const persistentEntities = $.registry.getPersistentEntities();
+        persistentEntities.forEach(entity => {
+            $.event_emitter.initClassBoundEventSubscriptions(entity); // Reinitialize event subscriptions for persistent entities, including the model instance itself
         });
     }
 
@@ -548,7 +550,7 @@ export abstract class BaseModel implements IStateful, IRegisterable {
         const serializedState = Serializer.serialize(savegame) as Uint8Array; // Serialize the savegame to a binary format
         let returnedState: Uint8Array;
         if (compress) {
-            returnedState = compressBinary(serializedState); // Compress the serialized state if requested
+            returnedState = BinaryCompressor.compressBinary(serializedState); // Compress the serialized state if requested
         } else {
             returnedState = serializedState; // Use the serialized state as is if compression is not requested
         }
