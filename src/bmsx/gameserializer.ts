@@ -1,4 +1,5 @@
 import { ISpaceObject, Space } from "./basemodel";
+import { Registry } from "./registry";
 
 /**
  * Serializes the input object to a string using JSON.stringify, excluding any properties that should not be serialized.
@@ -87,36 +88,6 @@ export class Serializer {
                 return false;
         }
     }
-    /**
-     * Serializes an object for game state saving, handling arrays, custom types, and caching.
-     *
-     * - If the value is an array, returns a filtered array excluding `null` and `undefined` elements.
-     * - For non-array objects, determines the type name and attempts to retrieve a registered constructor.
-     * - Throws an error if no constructor is found for a custom type.
-     * - Invokes custom `onsave` hooks if defined on the object's prototype or constructor.
-     * - Adds the object to the serialization cache to handle circular references.
-     *
-     * @param value - The value to serialize, which can be an object or array.
-     * @param cache - An array used to track already serialized objects to prevent circular references.
-     * @returns The serialized representation of the input value.
-     * @throws Error if a custom type is encountered without a known constructor.
-     */
-    private static serializeObject(value: any, cache: any[]): {} {
-        if (Array.isArray(value)) return value.filter(x => x !== null && x !== undefined);
-        cache.push(value);
-        let typename = Serializer.get_typename(value);
-        if (typename !== 'Object' && typename !== 'object') {
-            let theConstructor = Reviver.get_constructor_for_type(typename);
-            if (!theConstructor) {
-                console.error(`No constructor known for object of type '${typename}'. Did you forget to add '@insavegame' to the class definition?`);
-                return undefined;
-            }
-            value.typename = typename;
-            if (value.prototype?.onsave) return value.prototype.onsave(value);
-            if (value.constructor?.onsave) return value.constructor.onsave(value);
-        }
-        return value;
-    }
 
     /**
      * Builds a reference graph for the given object, serializing it into a structure that preserves object references.
@@ -194,33 +165,7 @@ export class Serializer {
      */
     static encodeBinary(obj: any): Uint8Array {
         const w = new BinWriter();
-        function write(val: any) {
-            if (val === undefined) { w.u8(0); return; }
-            if (val === null) { w.u8(0); return; }
-            if (typeof val === 'boolean') { w.u8(val ? 1 : 2); return; }
-            if (typeof val === 'number') { w.u8(3); w.f64(val); return; }
-            if (typeof val === 'string') { w.u8(4); w.str(val); return; }
-            if (Array.isArray(val)) {
-                w.u8(5); w.varuint(val.length);
-                for (const v of val) write(v);
-                return;
-            }
-            if (typeof val === 'object') {
-                if (Object.keys(val).length === 1 && val.$ref) {
-                    w.u8(6); w.str(val.$ref); return;
-                }
-                w.u8(7);
-                const keys = Object.keys(val);
-                w.varuint(keys.length);
-                for (const k of keys) {
-                    w.str(k);
-                    write(val[k]);
-                }
-                return;
-            }
-            throw new Error('Unsupported type in encodeBinary');
-        }
-        write(obj);
+        w.write(obj);
         return w.finish();
     }
 }
@@ -327,8 +272,12 @@ export class Reviver {
             const data = objects[id];
             if (typeof data === 'object' && typeof data.typename === 'string' && data.typename !== 'Object' && data.typename !== 'object') {
                 const ctor = Reviver.get_constructor_for_type(data.typename);
-                if (!ctor) throw Error(`No constructor known for object of type '${data.typename}'. Did you forget to add '@insavegame' to the class definition?`);
-                idToObject[id] = new ctor();
+                if (!ctor) {
+                    console.error(`No constructor known for object of type '${data.typename}'. Did you forget to add '@insavegame' to the class definition?`);
+                    idToObject[id] = null; // Mark as null to avoid further processing
+                    continue;
+                }
+                else idToObject[id] = new ctor();
             } else {
                 idToObject[id] = Array.isArray(data) ? [] : {};
             }
@@ -365,7 +314,11 @@ export class Reviver {
             }
             if (typeof data.typename === 'string' && data.typename !== 'Object' && data.typename !== 'object') {
                 Reviver.removeSerializerProps(target);
-                idToObject[id] = target;
+                idToObject[id] = target; // Update the object in the map
+                // If the object has an `id` property, register it in the global registry
+                if (target.id && !target.registrypersistent) { // Only register if not persistent
+                    Registry.instance.register(target);
+                }
             }
         }
         // --- Third pass: call all registered @onload methods if present ---
@@ -386,9 +339,6 @@ export class Reviver {
     }
 }
 
-// target: the class that the member is on.
-// propertyKey: the name of the member in the class.
-// descriptor: the member descriptor; This is essentially the object that would have been passed to Object.defineProperty.
 /**
  * Sets the `onsave` property of the target object to the provided function.
  * This function will be called during serialization to allow the object to perform any custom serialization logic.
@@ -428,10 +378,8 @@ export function onload(target: any, _name: any, descriptor: PropertyDescriptor):
 }
 
 /**
- * **Note: Does not work with `accessor`'s!**
- */
-/**
  * A decorator function that registers a class as a serializable object for use with the game's save system.
+ * * Note: Does not work with `accessor`'s!*
  * @param constructor - The constructor function of the class to register.
  * @param toJSON - An optional function that converts the object to a JSON-serializable format.
  * @param fromJSON - An optional function that converts a JSON-serialized object back into an instance of the class.
@@ -479,120 +427,28 @@ export function debugPrintBinarySnapshot(buf: Uint8Array): string {
     }
 }
 
-// ---------- parameters (gedeeld) ----------
-const WINDOW_SIZE = 2048;
-const MIN_MATCH = 4;
-const MAX_MATCH = 255;      // wordt als (len-MIN_MATCH) opgeslagen
-const MAX_RUN = 255;      // 1-byte RLE-veld
-const RLE_THRESHOLD = 4; // RLE wordt alleen gebruikt voor runs van 4 of meer bytes
-
-// ---------- compressor ----------
-let COMPRESS_SCRATCH = new Uint8Array(9000); // initial size, will grow as needed
-export function compressBinary(input: Uint8Array): Uint8Array {
-    // Grow the scratch buffer if needed
-    if (COMPRESS_SCRATCH.length < input.length * 2) {
-        COMPRESS_SCRATCH = new Uint8Array(input.length * 2);
-    }
-    let rp = 0; // read pointer for input
-    let wp = 0; // write pointer for output (COMPRESS_SCRATCH)
-
-    while (rp < input.length) {
-        /* ---- RLE -------------------------------------------------------- */
-        let run = 1;
-        while (rp + run < input.length &&
-            input[rp + run] === input[rp] &&
-            run < MAX_RUN) run++;
-
-        if (run >= RLE_THRESHOLD) {
-            COMPRESS_SCRATCH[wp++] = 0xFF;
-            COMPRESS_SCRATCH[wp++] = run;
-            COMPRESS_SCRATCH[wp++] = input[rp];
-            rp += run;
-            continue;
-        }
-
-        /* ---- LZ77 ------------------------------------------------------- */
-        let bestLen = 0, bestOff = 0;
-        const winStart = Math.max(0, rp - WINDOW_SIZE);
-
-        for (let w = winStart; w < rp; ++w) {
-            let ml = 0;
-            while (ml < MAX_MATCH &&
-                rp + ml < input.length &&
-                input[w + ml] === input[rp + ml]) ml++;
-
-            if (ml >= MIN_MATCH && ml > bestLen) {
-                bestLen = ml;
-                bestOff = rp - w;
-                if (ml === MAX_MATCH) break;   // meer kan toch niet
-            }
-        }
-
-        if (bestLen >= MIN_MATCH) {
-            if (bestOff > 0xFFFF) {
-                throw new Error("Offset too large for LZ77 compression");
-            }
-            // LZ77 match gevonden, schrijf het weg
-            COMPRESS_SCRATCH[wp++] = 0xFE; // LZ77 tag
-            COMPRESS_SCRATCH[wp++] = bestOff & 0xFF; // offset low byte
-            COMPRESS_SCRATCH[wp++] = bestOff >> 8; // offset high byte
-            COMPRESS_SCRATCH[wp++] = bestLen - MIN_MATCH; // length - MIN_MATCH
-            rp += bestLen;
-            continue;
-        }
-
-        /* ---- literal / escape ------------------------------------------ */
-        const byte = input[rp++];
-        if (byte >= 0xFD) {                    // escapen: FD, FE, FF
-            // Escape special bytes
-            COMPRESS_SCRATCH[wp++] = 0xFD; // escape tag
-            COMPRESS_SCRATCH[wp++] = byte;
-        } else {
-            // Normale byte, schrijf direct weg
-            COMPRESS_SCRATCH[wp++] = byte;
-        }
-    }
-    return new Uint8Array(COMPRESS_SCRATCH.slice(0, wp));
-}
-
-/* ---------- decompressor ---------------------------------------------- */
-export function decompressBinary(input: Uint8Array): Uint8Array {
-    const out: number[] = [];
-    let pos = 0;
-
-    while (pos < input.length) {
-        const tag = input[pos++];
-
-        if (tag === 0xFF) {                         // RLE
-            const run = input[pos++];
-            const val = input[pos++];
-            for (let i = 0; i < run; ++i) out.push(val);
-
-        } else if (tag === 0xFE) {                  // LZ77
-            const off = input[pos++] | (input[pos++] << 8);
-            const len = input[pos++] + MIN_MATCH;
-            const start = out.length - off;
-            for (let i = 0; i < len; ++i) out.push(out[start + i]);
-
-        } else if (tag === 0xFD) {                  // escaped literal
-            out.push(input[pos++]);
-
-        } else {                                    // gewone literal
-            out.push(tag);
-        }
-    }
-    return new Uint8Array(out);
-}
-
 class BinWriter {
     buf = new Uint8Array(64 * 1024);
     pos = 0;
+    private dv = new DataView(this.buf.buffer);
+    textEncoder = new TextEncoder();
+    // Static cache for encoded string bytes to avoid re-encoding
+    static stringEncodeCache: Map<string, Uint8Array> = new Map();
+
+    // Aggressively grow buffer: 2x + n
     ensure(n: number) {
-        if (this.pos + n > this.buf.length)
-            this.buf = Uint8Array.from([...this.buf, ...new Uint8Array(this.buf.length)]);
+        if (this.pos + n > this.buf.length) {
+            let newLen = this.buf.length * 2;
+            while (newLen < this.pos + n) newLen = newLen * 2;
+            const newBuf = new Uint8Array(newLen);
+            newBuf.set(this.buf, 0);
+            this.buf = newBuf;
+            // Update DataView to new buffer
+            this.dv = new DataView(this.buf.buffer);
+        }
     }
     u8(v: number) { this.ensure(1); this.buf[this.pos++] = v; }
-    f64(v: number) { this.ensure(8); new DataView(this.buf.buffer).setFloat64(this.pos, v, true); this.pos += 8; }
+    f64(v: number) { this.ensure(8); this.dv.setFloat64(this.pos, v, true); this.pos += 8; }
     varuint(v: number) {
         do {
             let b = v & 0x7F;
@@ -601,13 +457,161 @@ class BinWriter {
             this.u8(b);
         } while (v !== 0);
     }
+    /**
+     * Encodes a UTF-8 string, caching the result to avoid repeated TextEncoder work.
+     */
     str(s: string) {
-        const enc = new TextEncoder();
-        const bytes = enc.encode(s);
+        if (!s || s.length === 0) {
+            this.varuint(0);
+            return;
+        }
+        let bytes = BinWriter.stringEncodeCache.get(s);
+        if (!bytes) {
+            bytes = this.textEncoder.encode(s);
+            BinWriter.stringEncodeCache.set(s, bytes);
+        }
         this.varuint(bytes.length);
         this.ensure(bytes.length);
         this.buf.set(bytes, this.pos);
         this.pos += bytes.length;
     }
     finish() { return this.buf.subarray(0, this.pos); }
+    /**
+     * Recursively writes any supported value into the binary stream.
+     */
+    write(val: any): void {
+        if (val === undefined || val === null) { this.u8(0); return; }
+        const typeoff = typeof val;
+        if (typeoff === 'boolean') { this.u8(val ? 1 : 2); return; }
+        if (typeoff === 'number') { this.u8(3); this.f64(val); return; }
+        if (typeoff === 'string') { this.u8(4); this.str(val); return; }
+        if (Array.isArray(val)) {
+            this.u8(5);
+            this.varuint(val.length);
+            for (let i = 0, len = val.length; i < len; i++) this.write(val[i]);
+            return;
+        }
+        if (typeoff === 'object') {
+            const keys = Object.keys(val);
+            if (keys.length === 1 && ('$ref' in val)) {
+                this.u8(6);
+                this.str((val as any).$ref);
+                return;
+            }
+            this.u8(7);
+            this.varuint(keys.length);
+            for (let i = 0, klen = keys.length; i < klen; i++) {
+                const k = keys[i];
+                this.str(k);
+                this.write((val as any)[k]);
+            }
+            return;
+        }
+        throw new Error('Unsupported type in encodeBinary');
+    }
+}
+
+export class BinaryCompressor {
+    static readonly WINDOW_SIZE = 2048; // Size of the LZ77 window
+    static readonly MIN_MATCH = 4; // Minimum match length
+    static readonly MAX_MATCH = 255; // Maximum match length
+    static readonly MAX_RUN = 255; // Maximum run length
+    static readonly RLE_THRESHOLD = 4; // RLE threshold
+    static COMPRESS_SCRATCH = new Uint8Array(9000); // initial size, will grow as needed
+
+    static compressBinary(input: Uint8Array): Uint8Array {
+        // Grow the scratch buffer if needed
+        if (this.COMPRESS_SCRATCH.length < input.length * 2) {
+            this.COMPRESS_SCRATCH = new Uint8Array(input.length * 2);
+        }
+        let rp = 0; // read pointer for input
+        let wp = 0; // write pointer for output (COMPRESS_SCRATCH)
+
+        while (rp < input.length) {
+            /* ---- RLE -------------------------------------------------------- */
+            let run = 1;
+            while (rp + run < input.length &&
+                input[rp + run] === input[rp] &&
+                run < this.MAX_RUN) run++;
+
+            if (run >= this.RLE_THRESHOLD) {
+                this.COMPRESS_SCRATCH[wp++] = 0xFF;
+                this.COMPRESS_SCRATCH[wp++] = run;
+                this.COMPRESS_SCRATCH[wp++] = input[rp];
+                rp += run;
+                continue;
+            }
+
+            /* ---- LZ77 ------------------------------------------------------- */
+            let bestLen = 0, bestOff = 0;
+            const winStart = Math.max(0, rp - this.WINDOW_SIZE);
+
+            for (let w = winStart; w < rp; ++w) {
+                let ml = 0;
+                while (ml < this.MAX_MATCH &&
+                    rp + ml < input.length &&
+                    input[w + ml] === input[rp + ml]) ml++;
+
+                if (ml >= this.MIN_MATCH && ml > bestLen) {
+                    bestLen = ml;
+                    bestOff = rp - w;
+                    if (ml === this.MAX_MATCH) break;   // meer kan toch niet
+                }
+            }
+
+            if (bestLen >= this.MIN_MATCH) {
+                if (bestOff > 0xFFFF) {
+                    throw new Error("Offset too large for LZ77 compression");
+                }
+                // LZ77 match gevonden, schrijf het weg
+                this.COMPRESS_SCRATCH[wp++] = 0xFE; // LZ77 tag
+                this.COMPRESS_SCRATCH[wp++] = bestOff & 0xFF; // offset low byte
+                this.COMPRESS_SCRATCH[wp++] = bestOff >> 8; // offset high byte
+                this.COMPRESS_SCRATCH[wp++] = bestLen - this.MIN_MATCH; // length - MIN_MATCH
+                rp += bestLen;
+                continue;
+            }
+
+            /* ---- literal / escape ------------------------------------------ */
+            const byte = input[rp++];
+            if (byte >= 0xFD) {                    // escapen: FD, FE, FF
+                // Escape special bytes
+                this.COMPRESS_SCRATCH[wp++] = 0xFD; // escape tag
+                this.COMPRESS_SCRATCH[wp++] = byte;
+            } else {
+                // Normale byte, schrijf direct weg
+                this.COMPRESS_SCRATCH[wp++] = byte;
+            }
+        }
+        return new Uint8Array(this.COMPRESS_SCRATCH.slice(0, wp));
+    }
+
+    static decompressBinary(input: Uint8Array): Uint8Array {
+        const out: number[] = [];
+        let pos = 0;
+
+        while (pos < input.length) {
+            const tag = input[pos++];
+
+            if (tag === 0xFF) {                         // RLE
+                const run = input[pos++];
+                const val = input[pos++];
+                for (let i = 0; i < run; ++i) out.push(val);
+
+            } else if (tag === 0xFE) {                  // LZ77
+                const off = input[pos++] | (input[pos++] << 8);
+                const len = input[pos++] + this.MIN_MATCH;
+                const start = out.length - off;
+                for (let i = 0; i < len; ++i) out.push(out[start + i]);
+
+            } else if (tag === 0xFD) {                  // escaped literal
+                out.push(input[pos++]);
+
+            } else {                                    // gewone literal
+                out.push(tag);
+            }
+        }
+        return new Uint8Array(out);
+    }
+
 }
