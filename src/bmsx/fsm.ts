@@ -3,7 +3,7 @@ import { EventScope, IEventSubscriber } from './eventemitter';
 import { StateDefinitions } from './fsmlibrary';
 import { type IStateEventHandler, type IStateExitHandler, type IStateGuard, type IStateNextHandler, type IStateful, type StateEventDefinition, type StateMachineBlueprint, type StateTransition, type StateTransitionWithType, type Tape, type TickCheckDefinition, type TransitionType, type id2partial_sdef, type id2sstate, STATE_PARENT_PREFIX, STATE_ROOT_PREFIX, STATE_THIS_PREFIX } from './fsmtypes';
 import { IIdentifiable, IRegisterable, Identifier } from './game';
-import { exclude_save, insavegame, onload } from './gameserializer';
+import { excludepropfromsavegame, insavegame, onload } from './gameserializer';
 import { Input } from './input';
 
 /**
@@ -1545,13 +1545,13 @@ export class StateDefinition {
 	 */
 	public repetitions: number; // Number of times the tape should be repeated
 
-	@exclude_save
+	@excludepropfromsavegame
 	/**
 	 * The parent state machine definition.
 	 */
 	public parent!: StateDefinition; // The parent state machine definition
 
-	@exclude_save
+	@excludepropfromsavegame
 	/**
 	 * The root state machine definition.
 	 */

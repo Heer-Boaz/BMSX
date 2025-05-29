@@ -1,5 +1,8 @@
 import { ISpaceObject, Space } from "./basemodel";
 import { Registry } from "./registry";
+import { SM } from "./soundmaster";
+
+// Decorators onload/onsave are defined locally in this file
 
 /**
  * Serializes the input object to a string using JSON.stringify, excluding any properties that should not be serialized.
@@ -28,6 +31,9 @@ import { Registry } from "./registry";
  * ```
  */
 export class Serializer {
+    // ← add a place to collect all @onsave hooks by class name
+    static onSaves: Record<string, ((v: any) => Record<string, any>)[]> = {};
+
     /**
      * Main parameterized serialization entry point.
      *
@@ -66,14 +72,17 @@ export class Serializer {
     static get_typename(value: any): string {
         return value?.constructor?.name ?? value?.prototype?.name;
     }
-    static shouldExcludeFromSerialization(key: any, value: any, cache: any[]): boolean {
+    // Determines if a property should be excluded, checking decorators on the owning object's class
+    static shouldExcludeFromSerialization(owner: any, key: any, value: any, cache: any[]): boolean {
         if (value === null || value === undefined) return true;
-        let typename = Serializer.get_typename(value);
-        if (typename && key) {
-            if (Serializer.excludedProperties[typename]?.[key])
+        // Exclude based on @excludepropfromsavegame on the owner class
+        if (owner && key) {
+            const ownerType = Serializer.get_typename(owner);
+            if (Serializer.excludedProperties[ownerType]?.[key]) {
                 return true;
+            }
         }
-        let type = typeof value;
+        const type = typeof value;
         switch (type) {
             case 'function':
                 return true;
@@ -81,7 +90,8 @@ export class Serializer {
                 return true;
             case 'object':
                 if (Array.isArray(value)) return false;
-                if (typename !== 'Object' && typename !== 'object' && !Reviver.get_constructor_for_type(typename))
+                const valType = Serializer.get_typename(value);
+                if (valType !== 'Object' && valType !== 'object' && !Reviver.get_constructor_for_type(valType))
                     return true;
                 return cache.includes(value);
             default:
@@ -113,7 +123,7 @@ export class Serializer {
             objectMap.set(o, id);
             return id;
         }
-        function serializeObjectWithRefs(value: any): any {
+        function serializeObjectWithRefs(value: any) {
             if (value === null || value === undefined) return value;
             if (typeof value !== 'object') return value;
             if (Array.isArray(value)) {
@@ -132,13 +142,21 @@ export class Serializer {
                 else plain.typename = typename;
             }
             for (let key of Object.keys(value)) {
-                if (Serializer.shouldExcludeFromSerialization(key, value[key], [])) continue;
+                if (Serializer.shouldExcludeFromSerialization(value, key, value[key], [])) continue;
                 const serializedValue = serializeObjectWithRefs(value[key]);
                 if (serializedValue !== undefined) plain[key] = serializedValue;
             }
-            if (value.constructor?.onsave) {
-                plain = value.constructor.onsave(value) || plain;
-                plain.typename = typename;
+
+            // after you’ve built `plain` but before `objects[id] = plain`
+            // only run the hooks registered for *this* class:
+            const saves = Serializer.onSaves[typename];
+            if (saves) {
+                for (const fn of saves) {
+                    const extras = fn(value) || {};
+                    for (const k of Object.keys(extras)) {
+                        plain[k] = extras[k];
+                    }
+                }
             }
             objects[id] = plain;
             return { $ref: id };
@@ -207,12 +225,12 @@ export class Reviver {
     static get_constructor_for_type(typename: string): new () => any {
         return Reviver.constructors[typename];
     }
-    static decodeBinary(buf: Uint8Array): any {
+    static decodeBinary(buf: Uint8Array) {
         const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
         let offset = 0;
-        function readUint8() { return dv.getUint8(offset++); }
+        function readUint8(): number { return dv.getUint8(offset++); }
         function readVarUint(): number {
-            let val = 0, shift = 0, b;
+            let val = 0, shift = 0, b: number;
             do {
                 b = buf[offset++];
                 val |= (b & 0x7F) << shift;
@@ -220,53 +238,57 @@ export class Reviver {
             } while (b & 0x80);
             return val;
         }
-        function readString() {
+        function readString(): string {
             const len = readVarUint();
             const arr = buf.subarray(offset, offset + len);
             offset += len;
             return new TextDecoder().decode(arr);
         }
-        function read(): any {
+        function read(): null | true | false | number | string | any[] | { $ref: string } | Record<string, any> {
             const tag = readUint8();
             switch (tag) {
-                case 0: return null;
-                case 1: return true;
-                case 2: return false;
-                case 3: {
+                case 0: return null; // undefined or null
+                case 1: return true; // boolean true
+                case 2: return false; // boolean false
+                case 3: { // number
                     const v = dv.getFloat64(offset, true);
                     offset += 8;
                     return v;
                 }
-                case 4: return readString();
-                case 5: {
+                case 4: return readString(); // string
+                case 5: { // array
                     const len = readVarUint();
-                    const arr = [];
-                    for (let i = 0; i < len; ++i) arr.push(read());
+                    const arr = new Array(len);
+                    for (let i = 0; i < len; ++i) arr[i] = read();
                     return arr;
                 }
-                case 6: {
+                case 6: { // object reference
                     const ref = readString();
                     return { $ref: ref };
                 }
-                case 7: {
+                case 7: { // generic object
                     const len = readVarUint();
-                    const obj: any = {};
+                    const obj = {};
                     for (let i = 0; i < len; ++i) {
                         const k = readString();
                         obj[k] = read();
                     }
                     return obj;
                 }
-                default:
-                    throw new Error('Unknown tag in decodeBinary: ' + tag);
+                default: // unknown tag
+                    throw new Error(`Unknown tag in decodeBinary: ${tag}`);
             }
         }
         return read();
     }
 
-    static deserialize(input: string | Uint8Array, options: { isBinary?: boolean } = { isBinary: true }): any {
+    static deserialize(input: string | Uint8Array, options: { isBinary?: boolean } = { isBinary: true }) {
         const { root, objects } = options.isBinary ? Reviver.decodeBinary(input as Uint8Array) : JSON.parse(input as string);
         const idToObject: Record<string, any> = {};
+        if (!objects || Object.keys(objects).length === 0 || !root) {
+            console.error('Gamestate to deserialize is invalid!');
+            return null;
+        }
         // First pass: create all objects (empty shells)
         for (const id of Object.keys(objects)) {
             const data = objects[id];
@@ -324,17 +346,22 @@ export class Reviver {
         // --- Third pass: call all registered @onload methods if present ---
         for (const id of Object.keys(idToObject)) {
             const obj = idToObject[id];
-            // Start at the prototype to avoid duplicate entries (skip the instance itself)
             let proto = Object.getPrototypeOf(obj);
             let reviverFunctions = [];
-            // Walk up the prototype chain and collect onload callbacks
             while (proto && proto.constructor && proto.constructor.name !== 'Object') {
                 const revivers = Reviver.onLoads[proto.constructor.name];
                 revivers && reviverFunctions.push(...revivers);
                 proto = Object.getPrototypeOf(proto);
             }
             for (let i = reviverFunctions.length - 1; i >= 0; i--) {
-                reviverFunctions[i].call(obj);
+                // Detect static method: if the function's 'length' is 1, assume it's static and expects the object as argument
+                if (reviverFunctions[i].length === 1) {
+                    // Static: call with the revived object as argument, and 'this' as the constructor
+                    reviverFunctions[i].call(obj.constructor, obj);
+                } else {
+                    // Instance: call with the object as 'this'
+                    reviverFunctions[i].call(obj);
+                }
             }
         }
         return (root && root.$ref) ? idToObject[root.$ref] : root;
@@ -342,15 +369,18 @@ export class Reviver {
 }
 
 /**
- * Sets the `onsave` property of the target object to the provided function.
- * This function will be called during serialization to allow the object to perform any custom serialization logic.
- * @param target - The target object to set the `onsave` property on.
- * @param propertyKey - The name of the property to set the `onsave` property on.
- * @param descriptor - The property descriptor for the property to set the `onsave` property on.
- * @returns The modified property descriptor.
+ * Marks a static method as an `@onsave` hook.  The function must
+ * return an object of extra props to merge into the serialized form.
  */
-export function onsave(target: Object & { onsave?: any; }, _propertyKey: string | symbol, descriptor: PropertyDescriptor): any {
-    target.onsave = descriptor.value;
+export function onsave(
+    target: any,
+    _propertyKey: string | symbol,
+    descriptor: PropertyDescriptor
+): any {
+    const className = target.constructor.name;
+    Serializer.onSaves[className] ??= [];
+    Serializer.onSaves[className].push(descriptor.value);
+    return descriptor;
 }
 
 /**
@@ -360,7 +390,7 @@ export function onsave(target: Object & { onsave?: any; }, _propertyKey: string 
  * @param descriptor - The property descriptor for the property to mark as excluded.
  * @returns The modified property descriptor.
  */
-export function exclude_save(target: Object, propertyKey: string, _descriptor?: PropertyDescriptor): any {
+export function excludepropfromsavegame(target: Object, propertyKey: string, _descriptor?: PropertyDescriptor): any {
     Serializer.excludedProperties[target.constructor.name] ??= {};
     Serializer.excludedProperties[target.constructor.name][propertyKey] = true;
 }
@@ -399,11 +429,18 @@ export function insavegame(constructor: InstanceType<any>, _toJSON?: () => any, 
  * @param constructor - The constructor function of the class to exclude.
  * @returns The original constructor function.
  */
-export function not_insavegame(constructor: InstanceType<any>): any {
+export function excludeclassfromsavegame(constructor: InstanceType<any>): any {
     Serializer.excludedObjectTypes ??= new Set<string>();
     Serializer.excludedObjectTypes.add(constructor.name);
     return constructor;
 }
+
+type SoundMasterState = {
+    sfxTrackId?: string;
+    sfxOffset?: number;
+    musicTrackId?: string;
+    musicOffset?: number;
+};
 
 @insavegame
 /**
@@ -413,6 +450,33 @@ export class Savegame {
     modelprops: {};
     allSpacesObjects: ISpaceObject[];
     spaces: Space[];
+    SMState: SoundMasterState;
+
+    @onsave
+    saveSoundState(o: Savegame) {
+        // Capture current sound master playback state
+        const SMState = {
+            sfxTrackId: SM.currentEffect?.id,
+            sfxOffset: SM.currentEffectTime,
+            musicTrackId: SM.currentMusic?.id,
+            musicOffset: SM.currentMusicTime
+        };
+
+        return { SMState };
+    }
+
+    @onload
+    restoreSoundState() {
+        // Restore sound master playback state
+        if (this.SMState) {
+            if (this.SMState.sfxTrackId) {
+                SM.play(this.SMState.sfxTrackId, this.SMState.sfxOffset);
+            }
+            if (this.SMState.musicTrackId) {
+                SM.play(this.SMState.musicTrackId, this.SMState.musicOffset);
+            }
+        }
+    }
 }
 
 /**

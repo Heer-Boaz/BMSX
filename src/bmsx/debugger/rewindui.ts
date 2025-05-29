@@ -36,7 +36,13 @@ export function showRewindDialog() {
 
     // Drag logic
     let dragging = false;
+    // Throttle rapid frame jumps to avoid overlapping model loads
+    let lastJumpTime = 0;
+    const JUMP_INTERVAL = 50; // ms
     function setFrameFromBar(x: number) {
+        const now = performance.now();
+        if (now - lastJumpTime < JUMP_INTERVAL) return;
+        lastJumpTime = now;
         if (!$) return;
         const rect = barContainer.getBoundingClientRect();
         const percent = Math.max(0, Math.min(1, (x - rect.left) / rect.width));

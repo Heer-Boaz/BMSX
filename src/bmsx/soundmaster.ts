@@ -1,13 +1,19 @@
 import { AudioMeta, AudioType, id2res } from "./rompack";
 
+export interface AudioMeta2 extends AudioMeta {
+    id: string; // The ID of the audio asset.
+}
+
 export class SM {
     private static limitToOneEffect: boolean = true;
     private static tracks: id2res;
     private static buffers: Record<string, AudioBuffer>;
     private static sndContext: AudioContext;
     private static currentAudioNodeByType: Record<AudioType, AudioBufferSourceNode>;
-    public static currentAudioByType: Record<AudioType, AudioMeta | null>;
+    public static currentAudioByType: Record<AudioType, AudioMeta2 | null>;
     private static gainNode: GainNode;
+    private static nodeStartTime: Record<AudioType, number> = { sfx: 0, music: 0 };
+    private static nodeStartOffset: Record<AudioType, number> = { sfx: 0, music: 0 };
 
     public static async init(
         _audioResources: id2res,
@@ -60,20 +66,41 @@ export class SM {
     }
 
     private static nodeEndedHandler(node: AudioBufferSourceNode, type: AudioType) {
-        SM.currentAudioByType[type] = null;
-        SM.releaseNode(node);
+        // Only clear if this node is still the current one for this type
+        if (SM.currentAudioNodeByType[type] === node) {
+            SM.currentAudioByType[type] = null;
+            SM.releaseNode(node);
+            SM.currentAudioNodeByType[type] = null;
+        } else {
+            // Node is stale, just release it
+            SM.releaseNode(node);
+        }
     }
 
-    private static playNode(_track: AudioMeta, node: AudioBufferSourceNode): void {
+    private static playNode(_track: AudioMeta, node: AudioBufferSourceNode, offset?: number): void {
         try {
             node.connect(SM.gainNode);
+            const buffer = node.buffer;
+            let startOffset = 0;
             if (_track['loop'] !== null) {
                 node.loop = true;
                 node.loopStart = _track['loop']!;
             } else {
                 node.loop = false;
             }
-            node.start();
+            if (typeof offset === 'number' && buffer) {
+                if (node.loop) {
+                    // For looping, wrap offset
+                    startOffset = ((offset % buffer.duration) + buffer.duration) % buffer.duration;
+                } else {
+                    // For non-looping, clamp
+                    startOffset = Math.max(0, Math.min(offset, buffer.duration - 0.001));
+                }
+            }
+            // Track when and at what offset this node started
+            SM.nodeStartTime[_track['audiotype']] = SM.sndContext.currentTime;
+            SM.nodeStartOffset[_track['audiotype']] = startOffset;
+            node.start(0, startOffset);
             node.onended = () => SM.nodeEndedHandler(node, _track['audiotype']);
         } catch (error) {
             console.warn(error);
@@ -90,7 +117,7 @@ export class SM {
         node.buffer = null;
     }
 
-    public static play(id: string): void {
+    public static play(id: string, offset?: number): void {
         const track = SM.tracks[id]?.['audiometa'];
         if (!track) {
             console.warn(`SoundMaster: Attempted to play unknown track with id = "${id}". Skipping.`);
@@ -99,11 +126,11 @@ export class SM {
         const audiotype = track['audiotype'];
         if (audiotype === 'sfx' && SM.limitToOneEffect && SM.currentAudioByType[audiotype] && track['priority'] < SM.currentAudioByType[audiotype]['priority'])
             return;
-        SM.currentAudioByType[audiotype] = track;
+        SM.currentAudioByType[audiotype] = { ...track, id: id };
+        SM.stop(id); // Stop previous node before creating a new one
         const playCallback = (node: AudioBufferSourceNode) => {
-            SM.stop(id);
-            SM.playNode(track, node);
-            SM.currentAudioNodeByType[audiotype] = node;
+            SM.currentAudioNodeByType[audiotype] = node; // Track the node before playback
+            SM.playNode(track, node, offset);
         };
         SM.createNode(id)
             .then(playCallback)
@@ -153,4 +180,31 @@ export class SM {
         let v = parseFloat(_v.toFixed(1));
         SM.gainNode.gain.value = SM.gainNode.gain.defaultValue * v;
     }
+
+    public static get currentEffectTime(): number | null {
+        const node = SM.currentAudioNodeByType['sfx'];
+        if (node) {
+            // Calculate true playback position
+            return (node.context.currentTime - SM.nodeStartTime['sfx']) + SM.nodeStartOffset['sfx'];
+        }
+        return null;
+    }
+
+    public static get currentMusicTime(): number | null {
+        const node = SM.currentAudioNodeByType['music'];
+        if (node) {
+            // Calculate true playback position
+            return (node.context.currentTime - SM.nodeStartTime['music']) + SM.nodeStartOffset['music'];
+        }
+        return null;
+    }
+
+    public static get currentEffect(): AudioMeta2 | null {
+        return SM.currentAudioByType['sfx'];
+    }
+
+    public static get currentMusic(): AudioMeta2 | null {
+        return SM.currentAudioByType['music'];
+    }
+
 }

@@ -6,7 +6,7 @@ import { IStateful } from "./fsmtypes";
 import type { IRegisterable, IRegisterablePersistent, Identifier } from "./game";
 import { Direction } from "./game";
 import { GameObject } from "./gameobject";
-import { BinaryCompressor, Reviver, Savegame, Serializer, insavegame, onsave } from "./gameserializer";
+import { BinaryCompressor, Reviver, Savegame, Serializer, excludepropfromsavegame, insavegame } from "./gameserializer";
 import { Input } from "./input";
 import { Registry } from "./registry";
 
@@ -45,6 +45,8 @@ export class Space {
     }
 
     public id: Identifier;
+
+    @excludepropfromsavegame
     public objects: GameObject[];
 
     /**
@@ -53,19 +55,19 @@ export class Space {
      */
     public ondispose?: () => void;
 
-    @onsave
-    /**
-     * Creates a new Space object that can be safely serialized for saving the game.
-     * @param {Space} o - The Space object to be serialized.
-     * @returns {Space} A new Space object that can be safely serialized for saving the game.
-     */
-    public static tosaved(o: Space): Space {
-        const result = new Space(o.id);
-        Object.assign(result, o);
-        result.objects = undefined;
-        delete result.objects;
-        return result;
-    }
+    // @onsave
+    // /**
+    //  * Creates a new Space object that can be safely serialized for saving the game.
+    //  * @param {Space} o - The Space object to be serialized.
+    //  * @returns {Space} A new Space object that can be safely serialized for saving the game.
+    //  */
+    // public static tosaved(o: Space): Space {
+    //     const result = new Space(o.id);
+    //     Object.assign(result, o);
+    //     result.objects = undefined;
+    //     delete result.objects;
+    //     return result;
+    // }
 
     /**
      * Represents a space in the game world, which contains a collection of game objects.
@@ -502,6 +504,11 @@ export abstract class BaseModel implements IStateful, IRegisterablePersistent {
         const savegame = Reviver.deserialize(serializedState) as Savegame;
         Object.assign(this, savegame.modelprops);
 
+        const persistentEntities = $.registry.getPersistentEntities();
+        persistentEntities.forEach(entity => {
+            $.event_emitter.initClassBoundEventSubscriptions(entity); // Reinitialize event subscriptions for persistent entities, including the model instance itself
+        });
+
         savegame.spaces.forEach(space => this.addSpace(space));
         savegame.allSpacesObjects.forEach(space_and_objects => {
             const space = this[spaceid_2_space][space_and_objects.spaceid];
@@ -509,10 +516,6 @@ export abstract class BaseModel implements IStateful, IRegisterablePersistent {
             objects.forEach(o => space.spawn(o, null, true));
         });
 
-        const persistentEntities = $.registry.getPersistentEntities();
-        persistentEntities.forEach(entity => {
-            $.event_emitter.initClassBoundEventSubscriptions(entity); // Reinitialize event subscriptions for persistent entities, including the model instance itself
-        });
     }
 
     /**

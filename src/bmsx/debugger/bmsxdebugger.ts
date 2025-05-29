@@ -6,7 +6,7 @@ import { StateDefinitions } from '../fsmlibrary';
 import type { Identifier } from "../game";
 import { area2size, div_vec2, new_vec2, translate_vec2, trunc_vec3 } from '../game';
 import { GameObject } from '../gameobject';
-import { not_insavegame } from '../gameserializer';
+import { excludeclassfromsavegame } from '../gameserializer';
 import { Msx1Colors } from '../msx';
 import { Registry } from '../registry';
 import type { vec2 } from '../rompack';
@@ -80,7 +80,7 @@ export class HitBoxVisualizer extends Component {
     }
 }
 
-@not_insavegame
+@excludeclassfromsavegame
 class ObjectHighlighter extends SpriteObject {
     #highlighted_obj: GameObject;
     static readonly mijnkleur: Color = { r: 0, g: 0, b: 1, a: .5 };

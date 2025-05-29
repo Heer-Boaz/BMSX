@@ -945,6 +945,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	public set paused(value: boolean) {
 		this._paused = value;
 		if (this._paused === true) {
+			SM.pause();
 			this.view.showPauseOverlay();
 			if (this.debug) {
 				// Show debug information
@@ -954,6 +955,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		else if (this._paused === false) {
 			this.view.showResumeOverlay();
 			gameResumed();
+			SM.resume();
 		}
 	}
 
@@ -989,6 +991,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 
 	public get input(): Input { return this.registry.get<Input>('input'); }
 	public get registry(): Registry { return Registry.instance; }
+	public get sndmaster(): SM { return SM; }
 
 	public emit(event_name: string, emitter: IIdentifiable, ...args: any[]) {
 		this.event_emitter.emit(event_name, emitter, ...args);
@@ -1091,6 +1094,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	// }
 
 	private rewindBuffer: RewindBuffer;
+	private readonly REWINDBUFFER_LENGTH_SECONDS: number = 60; // Length of the rewind buffer in seconds
 
 	/**
 	 * Constructs a new instance of the BMSX class.
@@ -1099,10 +1103,10 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		global['$'] = this;
 		window['$'] = this;
 		this.running = false;
-		this.paused = false;
+		this._paused = false;
 		this.wasupdated = true;
 		this.updateInterval = 1000 / this.targetFPS;
-		this.rewindBuffer = new RewindBuffer(this.targetFPS, 10);
+		this.rewindBuffer = new RewindBuffer(this.targetFPS, this.REWINDBUFFER_LENGTH_SECONDS);
 
 		this.init_on_boot(rom, model, view, sndcontext, gainnode, debug);
 	}
