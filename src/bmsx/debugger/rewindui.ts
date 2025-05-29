@@ -37,13 +37,14 @@ export function showRewindDialog() {
     // Drag logic
     let dragging = false;
     function setFrameFromBar(x: number) {
+        if (!$) return;
         const rect = barContainer.getBoundingClientRect();
         const percent = Math.max(0, Math.min(1, (x - rect.left) / rect.width));
-        const frames = (window as any).$?.getRewindFrames() || [];
+        const frames = $.getRewindFrames() || [];
         const idx = Math.round(percent * (frames.length - 1));
-        if ((window as any).$ && (window as any).$.jumpToFrame(idx)) {
+        if ($.jumpToFrame(idx)) {
             updateInfo();
-            (window as any).$.view.drawgame();
+            $.view.drawgame();
         }
     }
     barContainer.addEventListener('mousedown', e => {
@@ -71,9 +72,9 @@ export function showRewindDialog() {
 
     // --- Update bar fill/handle on frame change ---
     function updateInfo() {
-        if (!(window as any).$) return;
-        const frames = (window as any).$.getRewindFrames();
-        let idx = (window as any).$.getCurrentRewindFrameIndex();
+        if (!$) return;
+        const frames = $.getRewindFrames();
+        let idx = $.getCurrentRewindFrameIndex();
         const totalFrames = frames.length - 1; // Exclude the current frame
         const windowSeconds = (totalFrames / 50).toFixed(2); // 50fps = 0.02s per frame
         title.textContent = `Rewind (${windowSeconds}s, frames: ${totalFrames})`;
