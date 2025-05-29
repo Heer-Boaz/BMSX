@@ -1,6 +1,6 @@
 import { BehaviorTreeDefinitions } from '../behaviourtree';
 import { PositionUpdateAxisComponent } from '../collisioncomponents';
-import { Component, componenttags_postprocessing, ComponentUpdateParams } from '../component';
+import { Component, componenttags_preprocessing, ComponentUpdateParams } from '../component';
 import { EventEmitter, type ListenerSet } from '../eventemitter';
 import { StateDefinitions } from '../fsmlibrary';
 import type { Identifier } from "../game";
@@ -34,7 +34,7 @@ export class DebugHighlightComponent extends PositionUpdateAxisComponent { // No
     }
 }
 
-@componenttags_postprocessing('render') // Postprocessing update to render the state machine
+@componenttags_preprocessing('render')
 export class HitBoxVisualizer extends Component {
     static toggle(obj: GameObject) {
         if (HitBoxVisualizer.attachedToObject(obj)) {
@@ -187,8 +187,8 @@ export class FloatingDialog {
         this.dialogDiv.classList.remove('autosize');
 
         // Set the size manually to the automatic size
-        this.dialogDiv.style.height = 'auto'; // Ensure the dialog height is adjusted to fit the content
-        this.dialogDiv.style.width = 'auto'; // Ensure the dialog width is adjusted to fit the content
+        // this.dialogDiv.style.height = 'auto'; // Ensure the dialog height is adjusted to fit the content
+        // this.dialogDiv.style.width = 'auto'; // Ensure the dialog width is adjusted to fit the content
     }
 
     public getDialogElement(): HTMLDivElement {
