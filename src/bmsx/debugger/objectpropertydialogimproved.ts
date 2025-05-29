@@ -1,40 +1,5 @@
 import { FloatingDialog } from './bmsxdebugger';
 
-// Accordion state
-const harmonicaExpandedStateById: Map<string, Set<string>> = new Map();
-const harmonicaExpandedState = new WeakMap<object, Set<string>>();
-function getAccordionKey(obj: any, objName: string): string {
-    return (obj && obj.id != null) ? String(obj.id) : objName;
-}
-function getAccordionSet(obj: any, objName: string): Set<string> {
-    let set = harmonicaExpandedState.get(obj);
-    if (!set) {
-        const key = getAccordionKey(obj, objName);
-        set = harmonicaExpandedStateById.get(key);
-        if (!set) set = new Set();
-        harmonicaExpandedState.set(obj, set);
-    }
-    return set;
-}
-function isExpanded(obj: any, objName: string, path: string, depth: number): boolean {
-    const set = getAccordionSet(obj, objName);
-    if (set.has(path)) return true;
-    if (depth <= 1 && !set.has('!' + path)) return true;
-    return false;
-}
-function setExpanded(obj: any, objName: string, path: string, expanded: boolean, depth: number) {
-    const set = getAccordionSet(obj, objName);
-    if (expanded) {
-        set.add(path);
-        set.delete('!' + path);
-    } else {
-        set.delete(path);
-        set.add('!' + path);
-    }
-    const key = getAccordionKey(obj, objName);
-    harmonicaExpandedStateById.set(key, set);
-}
-
 // Track expanded/collapsed state per dialog instance
 class PropertyTreeState {
     expanded: Set<string> = new Set();
@@ -144,10 +109,10 @@ export class ObjectPropertyDialog {
         this.contentDiv = this.dialog.getContentElement();
         this.treeState = new PropertyTreeState();
         // Build tree once
-        const obj = ($.model.objects || []).find((o: any) => String(o.id) === this.objectId);
+        const obj = $.getGameObject(this.objectId);
         if (!obj) {
             this.contentDiv.textContent = 'Object not found.';
-            return;
+            return; // Object might have been deleted or not available yet
         }
         this.contentDiv.innerHTML = '';
         this.contentDiv.classList.add('object-dialog-scrollable');
@@ -158,10 +123,11 @@ export class ObjectPropertyDialog {
     }
     private renderTable(): void {
         // Only update values, not structure or expanded/collapsed state
-        const obj = ($.model.objects || []).find((o: any) => String(o.id) === this.objectId);
+        const obj = $.getGameObject(this.objectId);
         if (!obj) {
-            this.contentDiv.textContent = 'Object not found.';
-            return;
+            // this.contentDiv.textContent = 'Object not found.';
+            // TODO: Update the dialog titleSpan to indicate that the object is currently not available
+            return; // Object might have been deleted or not available yet
         }
         updateObjectTreeValues(this.treeRoot, obj);
         // this.dialog.updateSize();
