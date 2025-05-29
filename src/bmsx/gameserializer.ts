@@ -324,9 +324,11 @@ export class Reviver {
         // --- Third pass: call all registered @onload methods if present ---
         for (const id of Object.keys(idToObject)) {
             const obj = idToObject[id];
-            let proto = obj;
+            // Start at the prototype to avoid duplicate entries (skip the instance itself)
+            let proto = Object.getPrototypeOf(obj);
             let reviverFunctions = [];
-            while (proto) {
+            // Walk up the prototype chain and collect onload callbacks
+            while (proto && proto.constructor && proto.constructor.name !== 'Object') {
                 const revivers = Reviver.onLoads[proto.constructor.name];
                 revivers && reviverFunctions.push(...revivers);
                 proto = Object.getPrototypeOf(proto);
