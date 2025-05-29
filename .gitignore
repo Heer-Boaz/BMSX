@@ -29,3 +29,4 @@ dist/game_debug.html
 dist/game.html
 dist/manifest.json
 !src/bmsx/**.d.ts
+src/testrom/res/_ignore/detective_piet/**
