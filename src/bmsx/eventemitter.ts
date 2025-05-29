@@ -98,6 +98,29 @@ export class EventEmitter implements IRegisterablePersistent {
         });
     }
 
+    private checkIfListenerExists(event_name: string, listener: Function, subscriber: any, filtered_on_emitter_id?: Identifier): boolean {
+        if (filtered_on_emitter_id) {
+            const emitterListeners = this.emitterScopeListeners[event_name]?.[filtered_on_emitter_id];
+            if (emitterListeners) {
+                for (let item of emitterListeners) {
+                    if (item.listener === listener && item.subscriber === subscriber) {
+                        return true; // Listener already exists
+                    }
+                }
+            }
+        } else {
+            const globalListeners = this.globalScopeListeners[event_name];
+            if (globalListeners) {
+                for (let item of globalListeners) {
+                    if (item.listener === listener && item.subscriber === subscriber) {
+                        return true; // Listener already exists
+                    }
+                }
+            }
+        }
+        return false; // Listener does not exist
+    }
+
     /**
      * Adds a listener function to the specified event name.
      *
@@ -114,10 +137,20 @@ export class EventEmitter implements IRegisterablePersistent {
             if (!this.emitterScopeListeners[event_name][filtered_on_emitter_id]) {
                 this.emitterScopeListeners[event_name][filtered_on_emitter_id] = new Set();
             }
+            if (this.checkIfListenerExists(event_name, listener, subscriber)) {
+                console.warn(`Listener for event "${event_name}" already exists for emitter "${filtered_on_emitter_id}".`);
+                debugger;
+                return; // Prevent adding the same listener multiple times
+            }
             this.emitterScopeListeners[event_name][filtered_on_emitter_id].add({ listener, subscriber });
         } else {
             if (!this.globalScopeListeners[event_name]) {
                 this.globalScopeListeners[event_name] = new Set();
+            }
+            if (this.checkIfListenerExists(event_name, listener, subscriber)) {
+                console.warn(`Listener for event "${event_name}", listener "${listener}", subscriber: "${subscriber}" already exists in global scope.`);
+                debugger;
+                return; // Prevent adding the same listener multiple times
             }
             this.globalScopeListeners[event_name].add({ listener, subscriber });
         }
