@@ -1,7 +1,7 @@
 import type { EventScope } from "./eventemitter";
 import { StateDefinition, validateStateMachine } from "./fsm";
 import { StateDefinitionBuilders } from "./fsmdecorators";
-import type { StateMachineBlueprint, listed_sdef_event, StateEventDefinition } from "./fsmtypes";
+import type { listed_sdef_event, StateEventDefinition, StateMachineBlueprint } from "./fsmtypes";
 import type { Identifier } from "./game";
 
 /**
@@ -51,7 +51,12 @@ function addEventsToDef(machine: StateMachineBlueprint): void {
     const eventMap = getMachineEvents(machine); // Get the events from the machine definition
     if (eventMap && eventMap.size > 0) {
         machine.event_list = []; // Create a new event list for the machine definition
-        eventMap.forEach(event_entry => { // Add the events to the event list of the
+        eventMap.forEach(event_entry => { // Add the events to the event list of the machine definition
+            // Check for duplicate events and raise a warning if found
+            if (machine.event_list.some(e => e.name === event_entry.name && e.scope === event_entry.scope)) {
+                console.warn(`Duplicate event found in machine ${machine.id}: ${event_entry.name} with scope ${event_entry.scope}`);
+                debugger;
+            }
             machine.event_list.push({ name: event_entry.name, scope: event_entry.scope }); // Add the event to the event list of the machine definition
         });
     }
@@ -69,7 +74,7 @@ function addEventsToDef(machine: StateMachineBlueprint): void {
  * @param eventNamesAndScopes - Optional set of event names and scopes to filter the events.
  * @returns A set of events from the state machine blueprint.
  */
-function getMachineEvents(machine: StateMachineBlueprint, eventNamesAndScopes?: Set<listed_sdef_event>) {
+function getMachineEvents(machine: StateMachineBlueprint, eventNamesAndScopes?: Set<listed_sdef_event>, eventMap?: Map<string, boolean>) {
     /**
      * Adds a state event to the list of events, where the name of the event is the key and the scope is the value.
      * Note that the scope is 'all' if the event is not prefixed with '$', otherwise it is 'self'.
@@ -89,16 +94,28 @@ function getMachineEvents(machine: StateMachineBlueprint, eventNamesAndScopes?: 
     }
 
     /**
-     * Adds an event to the set if it doesn't already exist.
-     * If the event is already in the set with the same scope, it won't be added again.
-     * If the event is already in the set with a global scope, it won't be added again.
-     * @param name - The name of the event.
-     * @param scope - The scope of the event.
+     * Adds an event to the `events` set and marks it as added in the `addedEvents` map.
+     * Ensures that duplicate events are not added based on their name and scope.
+     *
+     * @param name - The name of the event to be added.
+     * @param scope - The scope of the event, which can be a specific scope or 'all' for global scope.
+     *
+     * The function follows these rules:
+     * - If the event is already marked as added in `addedEvents`, it will not be added again.
+     * - If a global-scoped event (`scope: 'all'`) is already added, it prevents adding a specific-scoped event with the same name.
+     * - If the event is not already added, it is added to the `events` set and marked in `addedEvents`.
      */
     function addAndReplace(name: string, scope: string): void {
-        if (events.has({ name: name, scope: 'all' })) return; // If the event is already in the set, and the scope is global, don't add it again
-        if (events.has({ name: name, scope: scope })) return; // If the event is already in the set, and the scope is the same, don't add it again
+        const key = `${name}-${scope}`; // Create a unique key for the event based on its name and scope
+
+        if (addedEvents.has(key)) return; // If the event is already added, don't add it again
+        if (addedEvents.has(`${name}-all`)) return; // If the event is already in the set, and the scope is global, don't replace it with a specific scoped event
+
+        // If the event is not in the set, add it
         events.add({ name: name, scope: scope });
+
+        // Mark the event as added in the map to prevent duplicates
+        addedEvents.set(key, true);
     }
 
     /**
@@ -133,6 +150,7 @@ function getMachineEvents(machine: StateMachineBlueprint, eventNamesAndScopes?: 
 
     // Get the events from the machine definition
     const events = eventNamesAndScopes ?? new Set<listed_sdef_event>();
+    const addedEvents = eventMap ?? new Map<string, boolean>(); // Map to track added events to prevent duplicates
     // Start with the events defined in the machine definition
     if (machine.on) {
         // Add all events from the machine definition
@@ -167,7 +185,7 @@ function getMachineEvents(machine: StateMachineBlueprint, eventNamesAndScopes?: 
 
         // If the state has a submachine, recursively subscribe to its events
         if (state_def.states) {
-            getMachineEvents(state, events);
+            getMachineEvents(state, events, addedEvents);
         }
     }
 
