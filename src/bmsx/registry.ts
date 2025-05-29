@@ -50,8 +50,23 @@ export class Registry {
         return delete this._registry[entity_id];
     }
 
+    /**
+     * Retrieves all entities from the registry that are marked as persistent.
+     * Used to get entities for which we should reregister event subscriptions on loading gamestate.
+     * TODO: Find a better way to handle this.
+     * @returns {IRegisterable[]} An array of entities that have the `registrypersistent` property set to true.
+     */
+    public getPersistentEntities(): IRegisterable[] {
+        return Object.values(this._registry).filter(e => e.registrypersistent);
+    }
+
     public clear() {
-        this._registry = {};
+        for (const id in this._registry) {
+            const entity = this._registry[id];
+            if (!entity.registrypersistent) { // If the entity is persistent, we don't delete it
+                delete this._registry[id];
+            }
+        }
     }
 
     public getRegisteredEntities(): IRegisterable[] {

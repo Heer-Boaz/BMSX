@@ -146,6 +146,11 @@ export interface IDisposable {
 }
 
 export interface IRegisterable extends IIdentifiable, IDisposable {
+	registrypersistent?: boolean;
+}
+
+export interface IRegisterablePersistent extends IRegisterable {
+	registrypersistent: true;
 }
 
 /**
@@ -980,9 +985,9 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 
 	public get view(): V { return this.viewAs<V>(); }
 
-	public get event_emitter(): EventEmitter { return EventEmitter.instance; }
+	public get event_emitter(): EventEmitter { return this.registry.get<EventEmitter>('event_emitter'); }
 
-	public get input(): Input { return Input.instance; }
+	public get input(): Input { return this.registry.get<Input>('input'); }
 	public get registry(): Registry { return Registry.instance; }
 
 	public emit(event_name: string, emitter: IIdentifiable, ...args: any[]) {

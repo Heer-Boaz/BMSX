@@ -1,8 +1,8 @@
-import { onload, insavegame } from './gameserializer';
 import { EventEmitter, EventSubscription } from './eventemitter';
-import { type GameObjectConstructorBaseOrAbstract } from './gameobject';
-import { AbstractConstructor } from './game';
 import type { IDisposable, IIdentifiable, Identifier } from "./game";
+import { AbstractConstructor } from './game';
+import { type GameObjectConstructorBaseOrAbstract } from './gameobject';
+import { insavegame, onload } from './gameserializer';
 import { Registry } from './registry';
 
 /**
@@ -14,7 +14,7 @@ import { Registry } from './registry';
  * automatically added to instances of the class.
  */
 interface IConstructorWithAutoAddComponents {
-	autoAddComponents?: ComponentConstructor<Component>[];
+    autoAddComponents?: ComponentConstructor<Component>[];
 }
 
 /**

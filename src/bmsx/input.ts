@@ -4,7 +4,7 @@ import { EventEmitter } from './eventemitter';
 import { State } from './fsm';
 import { build_fsm } from './fsmdecorators';
 import type { StateMachineBlueprint } from './fsmtypes';
-import type { IRegisterable, Identifier } from "./game";
+import type { Identifier, IRegisterablePersistent } from "./game";
 import { ZCOORD_MAX } from './glview';
 import { Registry } from './registry';
 import { SpriteObject } from './sprite';
@@ -720,7 +720,11 @@ class InputBuffer {
  * Represents the Input class, which manages player inputs and gamepad assignments.
  * Implements the singleton pattern to ensure only one instance exists.
  */
-export class Input implements IRegisterable {
+export class Input implements IRegisterablePersistent {
+	get registrypersistent(): true {
+		return true;
+	}
+
 	/**
 	 * Represents the singleton instance of the Input class.
 	 */

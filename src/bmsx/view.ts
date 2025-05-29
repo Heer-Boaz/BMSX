@@ -1,4 +1,4 @@
-﻿import { BFont, GameOptions, IRegisterable, Identifier, copy_vector } from "./game";
+﻿import { BFont, GameOptions, Identifier, copy_vector, type IRegisterablePersistent } from "./game";
 import { Input } from './input';
 import { Registry } from './registry';
 import type { Area, Size, Vector, id2htmlimg, vec2 } from './rompack';
@@ -38,7 +38,11 @@ export class PixelData {
  * The `BaseView` class is an abstract class that serves as the base for all views in the application.
  * It provides common functionality and properties that are shared across all views.
  */
-export abstract class BaseView implements IRegisterable {
+export abstract class BaseView implements IRegisterablePersistent {
+	get registrypersistent(): true {
+		return true;
+	}
+
 	public get id(): Identifier { return 'view'; }
 	public dispose(): void {
 		// Deregister from registry

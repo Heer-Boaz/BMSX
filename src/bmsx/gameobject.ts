@@ -402,6 +402,8 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 			this.setZNoSweep((spawningPos as vec3).z ?? this.z);
 		}
 
+		$.registry.register(this); // Register the object in the registry so it can be retrieved by id.
+
 		// Call the method to initialize event subscriptions
 		this.onLoadSetup();
 		// Call the method to initialize linked state machines
@@ -448,11 +450,6 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 	 * This method is used for post-processing effects such as lighting effects.
 	 */
 	public postpaint?(): void; // Post-processing such as lighting effects or the characters of an ASCII-buffer in case of an ASCII-sprite
-
-	/**
-	 * A callback function that is called when the object is loaded.
-	 */
-	public onloaded?: () => void;
 
 	/**
 	* Gebruik ik als event handler voor e.g. onLeaveScreen
@@ -560,7 +557,7 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 	 */
 	@onload
 	onLoadSetup() {
-		$.event_emitter.initClassBoundEventSubscriptions(this);
+		$.event_emitter.initClassBoundEventSubscriptions(this); // Initialize event subscriptions for the class.
 	}
 
 	/**

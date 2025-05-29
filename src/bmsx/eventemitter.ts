@@ -1,4 +1,4 @@
-import { IIdentifiable, IParentable, IRegisterable, Identifier } from "./game";
+import { IIdentifiable, IParentable, Identifier, type IRegisterablePersistent } from "./game";
 import { Registry } from "./registry";
 
 type Listener = { listener: Function, subscriber: any };
@@ -18,7 +18,11 @@ type EventSubscriberType = IEventSubscriber | (IEventSubscriber & IParentable) |
 /**
  * A generic event dispatcher that can be used to manage listeners and dispatch events.
  */
-export class EventEmitter implements IRegisterable {
+export class EventEmitter implements IRegisterablePersistent {
+    get registrypersistent(): true {
+        return true;
+    }
+
     /**
      * Gets the identifier of the event emitter.
      * Hardcoded to 'event_emitter'.
@@ -32,7 +36,6 @@ export class EventEmitter implements IRegisterable {
      */
     public dispose(): void {
         this.clear();
-        Registry.instance.deregister(this);
     }
 
     /**

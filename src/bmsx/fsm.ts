@@ -583,7 +583,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 			this.id = this.make_id();
 			this.transition_queue = [];
 			this.critical_section_counter = 0;
-			this.onLoadSetup();
+			$.registry.register(this);
 		}
 		this.root_id = root_id ?? this.id;
 	}
@@ -591,10 +591,8 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	@onload
 	/**
 	 * Performs the setup logic when the component is loaded.
-	 * Registers the state machine with the registry.
 	 */
 	public onLoadSetup(): void {
-		$.registry.register(this);
 	}
 
 	/**

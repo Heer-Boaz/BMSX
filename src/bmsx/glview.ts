@@ -5,6 +5,8 @@ import gameShaderCode from './shaders/gameshader.glsl';
 import vertexShaderCode from './shaders/vertexshader.glsl';
 import { BaseView, Color, DrawImgOptions, DrawRectOptions } from './view';
 
+const CATCH_WEBGL_ERROR = false; // Set to false to disable WebGL error catching
+
 /**
  * Decorator function that catches WebGL errors thrown by the decorated method and throws an error with the error message.
  *
@@ -14,6 +16,10 @@ import { BaseView, Color, DrawImgOptions, DrawRectOptions } from './view';
  * @returns The modified property descriptor.
  */
 function catchWebGLError(_target: any, propertyKey: string, descriptor: PropertyDescriptor): PropertyDescriptor {
+    if (!CATCH_WEBGL_ERROR) {
+        return descriptor; // If error catching is disabled, return the original descriptor
+    }
+
     const originalMethod = descriptor.value;
     descriptor.value = function (...args: any[]) {
         const returnValue = originalMethod.apply(this, args);
