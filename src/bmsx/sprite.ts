@@ -2,7 +2,7 @@ import { new_vec2, new_vec3, set_inplace_area, set_inplace_vec3, translate_vec3 
 import { GameObject } from "./gameobject";
 import { insavegame } from "./gameserializer";
 import { DEFAULT_VERTEX_COLOR } from "./glview";
-import { Area, BoundingBoxPrecalc, vec3, type ConcavePolygonsPrecalc, type Polygon } from "./rompack";
+import { Area, BoundingBoxPrecalc, vec3, type HitPolygonsPrecalc, type Polygon } from "./rompack";
 import { Color, DrawImgOptions, paintImage } from "./view";
 
 @insavegame
@@ -62,9 +62,12 @@ export abstract class SpriteObject extends GameObject {
             set_inplace_area(this.hitarea, SpriteObject.selectBoundingBox(this.flip_h, this.flip_v, boundingbox)); // Update the hitarea to match the bounding box of the image (used for collision detection)
         }
 
-        const polygonsMeta = imgmeta['concavepolygons'];
+        const polygonsMeta = imgmeta['hitpolygons'];
         if (polygonsMeta) {
             this.hitpolygon = SpriteObject.selectConcavePolygon(this.flip_h, this.flip_v, polygonsMeta);
+        }
+        else {
+            this.hitpolygon = null; // No polygons available, set to null
         }
     }
 
@@ -80,7 +83,7 @@ export abstract class SpriteObject extends GameObject {
         }
     }
 
-    private static selectConcavePolygon(flip_h: boolean, flip_v: boolean, polys: ConcavePolygonsPrecalc): Polygon {
+    private static selectConcavePolygon(flip_h: boolean, flip_v: boolean, polys: HitPolygonsPrecalc): Polygon {
         if (flip_h && flip_v) {
             return polys.fliphv;
         } else if (flip_h) {
