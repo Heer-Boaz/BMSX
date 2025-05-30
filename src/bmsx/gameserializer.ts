@@ -135,7 +135,7 @@ export class Serializer {
             const id = getIdForObject(value);
             const typename = Serializer.get_typename(value);
             if (Serializer.excludedObjectTypes.has(typename)) {
-                if (parent && key !== undefined) parent[key] = undefined;
+                // Skip completely: do not include this property in serialized output
                 continue;
             }
             const theConstructor = Reviver.get_constructor_for_type(typename);
@@ -501,12 +501,8 @@ export class Savegame {
             if (this.SMState.sfxTrackId) {
                 SM.play(this.SMState.sfxTrackId, this.SMState.sfxOffset);
             }
-            else {
-            }
             if (this.SMState.musicTrackId) {
                 SM.play(this.SMState.musicTrackId, this.SMState.musicOffset);
-            }
-            else {
             }
         }
     }
