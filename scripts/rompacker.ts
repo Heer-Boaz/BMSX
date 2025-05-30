@@ -13,7 +13,7 @@ const _colors = require('colors');
 const pako = require('pako');
 const minify = require('@node-minify/core');
 const cleanCSS = require('@node-minify/clean-css');
-const { loadImage } = require('canvas');
+const { loadImage, Image } = require('canvas');
 const yaml = require('js-yaml');
 
 const GENERATE_AND_USE_TEXTURE_ATLAS = true;
@@ -96,6 +96,7 @@ export interface ResourceMeta {
 	ext?: string;
 	type: string;
 	id: number;
+	collisionType?: 'concave' | 'convex' | 'aabb';
 }
 
 interface RomManifest {
@@ -262,12 +263,13 @@ async function esbuild(romname: string, bootloader_path: string, progress?: Prog
 			platform: 'browser', // Target platform for the bundle
 			target: ['es2020'], // Specify the ECMAScript version to target
 			loader: { '.glsl': 'text' }, // Handles GLSL files as text
-			define: { 'process.env.NODE_ENV': '"production"' }, // Define environment variables for the build
-			minifyWhitespace: true, // Minify whitespace in the output
-			minifySyntax: true, // Minify syntax in the output
-			mangleQuoted: false, // Do not mangle quoted identifiers (required to fetch rompack resources correctly)
-			external: ['node_modules', 'dist', 'rom', 'ts-key-enum'], // Exclude these directories from the bundle
-			treeShaking: true, // Enable tree shaking to remove unused code
+			define: { 'process.env.NODE_ENV': '"production"' },
+			// minify: true,
+			minifyWhitespace: true,
+			minifySyntax: true,
+			mangleQuoted: false,
+			external: ['node_modules', 'dist', 'rom', 'ts-key-enum'],
+			treeShaking: true,
 		});
 		if (progress) progress.taskCompleted();
 		return null;
@@ -450,6 +452,18 @@ function parseAudioMeta(filename: string): { sanitizedName: string, meta: AudioM
 	};
 }
 
+// --- Image filename collision-type suffix parser ---
+function parseImageMeta(filenameWithoutExt: string): { sanitizedName: string, collisionType: 'concave' | 'convex' | 'aabb' } {
+	const match = filenameWithoutExt.match(/@(cc|cx)$/i);
+	let collisionType: 'concave' | 'convex' | 'aabb' = 'aabb';
+	if (match) {
+		const code = match[1].toLowerCase();
+		collisionType = code === 'cc' ? 'concave' : code === 'cx' ? 'convex' : 'aabb';
+	}
+	const sanitizedName = filenameWithoutExt.replace(/@(cc|cx)$/i, '');
+	return { sanitizedName, collisionType };
+}
+
 /**
  * Compresses the given content using the zip algorithm and returns the compressed content as a Uint8Array.
  *
@@ -466,10 +480,17 @@ function zip(content: Buffer): Uint8Array {
  * @param filepath The path of the resource file.
  * @returns An object containing the name, extension, and type of the resource file.
  */
-function getResMetaByFilename(filepath: string): { name: string, ext: string, type: string; } {
-	const name = parse(filepath).name.replace(' ', '').toLowerCase();
+function getResMetaByFilename(filepath: string): { name: string, ext: string, type: string, collisionType?: 'concave' | 'convex' | 'aabb' } {
+	let name = parse(filepath).name.replace(' ', '').toLowerCase();
 	const ext = parse(filepath).ext.toLowerCase();
 	let type: string;
+	let collisionType: 'concave' | 'convex' | 'aabb' = 'aabb';
+
+	if (ext === '.png') {
+		const imgMeta = parseImageMeta(name);
+		name = imgMeta.sanitizedName;
+		collisionType = imgMeta.collisionType;
+	}
 
 	switch (name) {
 		case 'romlabel':
@@ -492,7 +513,7 @@ function getResMetaByFilename(filepath: string): { name: string, ext: string, ty
 			type = 'image';
 			break;
 	}
-	return { name: name, ext: ext, type: type };
+	return { name: name, ext: ext, type: type, collisionType: collisionType };
 }
 
 /**
@@ -522,7 +543,7 @@ async function getResMetaList(respath: string, romname?: string) {
 		const ext = meta.ext;
 		switch (type) {
 			case 'image':
-				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: imgid });
+				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: imgid, collisionType: meta.collisionType });
 				++imgid;
 				break;
 			case 'audio':
@@ -597,7 +618,7 @@ async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>, r
 		if (type === 'image' && GENERATE_AND_USE_TEXTURE_ATLAS) {
 			img = await load_img(meta);
 		}
-		return { buffer: buffer!, filepath: meta.filepath, name: name, ext: ext, type: type, img: img, id: id };
+		return { buffer: buffer!, filepath: meta.filepath, name: name, ext: ext, type: type, img: img, id: id, collisionType: meta.collisionType };
 	});
 	loadedResources = await Promise.all(resourcePromises);
 
@@ -682,20 +703,18 @@ async function buildResourceList(respath: string, romname?: string) {
  */
 async function buildRompack(rom_name: string, respath: string, progress?: ProgressReporter): Promise<void> {
 	const outfile = rom_name.concat('.rom');
-	const megarom_filename = `${rom_name}.js`;
-	const megarom_filepath = `./rom/${megarom_filename}`;
 
 	const buffers: Buffer[] = [];
 	const loadedResources = await getLoadedResourcesList(respath, buffers, rom_name);
-	if (progress) progress.taskCompleted();
+	progress?.taskCompleted();
 
 	let generated_atlas: HTMLCanvasElement | undefined;
 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
 		generated_atlas = createOptimizedAtlas(loadedResources);
 	}
-	if (progress) progress.taskCompleted();
+	progress?.taskCompleted();
 
-	const { jsonout, bufferPointer, romlabel_buffer } = processResources(loadedResources, generated_atlas);
+	const { jsonout, bufferPointer, romlabel_buffer } = processResources(loadedResources);
 
 	if (GENERATE_AND_USE_TEXTURE_ATLAS && generated_atlas) {
 		await handleAtlas(loadedResources, generated_atlas, jsonout, bufferPointer, buffers, progress);
@@ -720,7 +739,7 @@ async function buildRompack(rom_name: string, respath: string, progress?: Progre
  * - `bufferPointer` - The current offset in the resource buffer after processing.
  * - `romlabel_buffer` - The buffer data for the "romlabel.png" resource if present.
  */
-function processResources(loadedResources: ILoadedResource[], generated_atlas?: HTMLCanvasElement) {
+function processResources(loadedResources: ILoadedResource[]) {
 	const jsonout: RomAsset[] = [];
 	let bufferPointer = 0;
 	let romlabel_buffer: Buffer | undefined;
@@ -737,7 +756,7 @@ function processResources(loadedResources: ILoadedResource[], generated_atlas?: 
 				romlabel_buffer = res.buffer;
 				break;
 			case 'image':
-				const imgmeta = buildImgMeta(res, generated_atlas);
+				const imgmeta = buildImgMeta(res);
 				const baseJson = { resid, resname: name, type, imgmeta };
 				if (GENERATE_AND_USE_TEXTURE_ATLAS && !DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
 					jsonout.push({ ...baseJson, start: bufferPointer, end: bufferPointer + res.buffer.length });
@@ -771,14 +790,42 @@ function processResources(loadedResources: ILoadedResource[], generated_atlas?: 
  * @param generated_atlas - An optional canvas element where an atlas has been generated.
  * @returns An object containing image dimensions, bounding boxes, center point, and (if atlas usage is enabled) texture coordinates.
  */
-function buildImgMeta(res: ILoadedResource, generated_atlas?: HTMLCanvasElement): ImgMeta {
+function buildImgMeta(res: ILoadedResource): ImgMeta {
 	const img = res.img;
 	const img_boundingbox = BoundingBoxExtractor.extractBoundingBox(img);
+	let extracted_hitpolygon: vec2[][] | vec2[] = undefined;
+	let hitpolygons: {
+		original: vec2[][],
+		fliph: vec2[][],
+		flipv: vec2[][],
+		fliphv: vec2[][]
+	} = undefined;
+	switch (res.collisionType) {
+		case 'concave':
+			extracted_hitpolygon = BoundingBoxExtractor.extractConcaveHull(img);
+			hitpolygons = {
+				original: extracted_hitpolygon,
+				fliph: flipPolygons(extracted_hitpolygon, true, false),
+				flipv: flipPolygons(extracted_hitpolygon, false, true),
+				fliphv: flipPolygons(extracted_hitpolygon, true, true)
+			};
+			break;
+		case 'convex':
+			extracted_hitpolygon = BoundingBoxExtractor.extractConvexHull(img);
+			hitpolygons = {
+				original: [extracted_hitpolygon],
+				fliph: flipPolygons([extracted_hitpolygon], true, false),
+				flipv: flipPolygons([extracted_hitpolygon], false, true),
+				fliphv: flipPolygons([extracted_hitpolygon], true, true)
+			};
+			break;
+		case 'aabb':
+			// No hit polygon, use bounding box instead
+			break;
+	}
 	const img_boundingbox_precalc = BoundingBoxExtractor.generateFlippedBoundingBox(img, img_boundingbox);
 	const img_centerpoint = BoundingBoxExtractor.calculateCenterPoint(img_boundingbox);
 
-	// Extract original polygons
-	const img_polygon = BoundingBoxExtractor.extractConcavePolygon(img);
 	// Generate flipped variants for polygons
 	function flipPolygons(polys: vec2[][], flipH: boolean, flipV: boolean): vec2[][] {
 		return polys.map(poly => poly.map(pt => ({
@@ -786,12 +833,6 @@ function buildImgMeta(res: ILoadedResource, generated_atlas?: HTMLCanvasElement)
 			y: flipV ? img.height - 1 - pt.y : pt.y
 		})));
 	}
-	const polygon = {
-		original: img_polygon,
-		fliph: flipPolygons(img_polygon, true, false),
-		flipv: flipPolygons(img_polygon, false, true),
-		fliphv: flipPolygons(img_polygon, true, true)
-	};
 
 	let imgmeta: ImgMeta = {
 		atlassed: false,
@@ -799,7 +840,7 @@ function buildImgMeta(res: ILoadedResource, generated_atlas?: HTMLCanvasElement)
 		height: img.height,
 		boundingbox: img_boundingbox_precalc,
 		centerpoint: img_centerpoint,
-		concavepolygons: polygon
+		hitpolygons: hitpolygons
 	};
 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
 		imgmeta = {

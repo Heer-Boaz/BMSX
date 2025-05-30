@@ -60,7 +60,7 @@ export interface BoundingBoxPrecalc {
 	fliphv: Area, // The bounding box of the image, when flipped both horizontally and vertically. Used for collision detection.
 }
 
-export interface ConcavePolygonsPrecalc {
+export interface HitPolygonsPrecalc {
 	original: Polygon; // The concave hull polygon of the image, used for collision detection.
 	fliph: Polygon; // The concave hull polygon of the image, when flipped horizontally.
 	flipv: Polygon; // The concave hull polygon of the image, when flipped vertically.
@@ -80,7 +80,7 @@ export interface ImgMeta {
 	texcoords_fliphv?: number[]; // The texture coordinates for the image, when flipped both horizontally and vertically.
 	boundingbox?: BoundingBoxPrecalc; // The bounding box of the image. Used for collision detection.
 	centerpoint?: vec2; // The center point of the image, based on the bounding box.
-	concavepolygons?: ConcavePolygonsPrecalc; // The concave hull polygons for collision detection, with flipped variants.
+	hitpolygons?: HitPolygonsPrecalc; // The concave hull polygons for collision detection, with flipped variants.
 }
 
 /**
