@@ -1,4 +1,4 @@
-import { Identifier, ProhibitLeavingScreenComponent, SM, SpriteObject, StateMachineBlueprint, assign_fsm, attach_components, build_fsm, insavegame, middlepoint_area, new_area, State, Area, vec3, Vector } from '../bmsx/bmsx';
+import { assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SM, SpriteObject, State, StateMachineBlueprint, vec3, Vector, type vec2 } from '../bmsx/bmsx';
 import { gamemodel } from './gamemodel';
 import { AudioId, BitmapId } from './resourceids';
 
@@ -101,21 +101,21 @@ export abstract class Fighter extends SpriteObject {
 
     public doAttackFlow(attackType: AttackType, opponent: Fighter): boolean {
         if (!opponent) return false;
-        const hitArea = this.attackHitsOpponent(attackType, opponent);
+        const hitVec2 = this.attackHitsOpponent(attackType, opponent);
         let hit: boolean = false;
-        if (hitArea) {
-            this.handleHittingOpponent(attackType, opponent, hitArea);
+        if (hitVec2) {
+            this.handleHittingOpponent(attackType, opponent, hitVec2);
             opponent.handleBeingHit(attackType, this);
             hit = true;
         }
         return hit;
     }
 
-    public attackHitsOpponent(attackType: AttackType, opponent: Fighter): Area | null {
+    public attackHitsOpponent(attackType: AttackType, opponent: Fighter): vec2 | null {
         // Check if the fighter is facing the opponent
         const middlepoint = this.middlepoint;
         const opponentMiddlepoint = opponent.middlepoint;
-        if (this.facing === 'left' && middlepoint.x< opponentMiddlepoint.x) { return null; }
+        if (this.facing === 'left' && middlepoint.x < opponentMiddlepoint.x) { return null; }
         if (this.facing === 'right' && middlepoint.x > opponentMiddlepoint.x) { return null; }
 
         // Check if the attack is allowed to hit the opponent
@@ -129,13 +129,11 @@ export abstract class Fighter extends SpriteObject {
                 break;
         }
 
-        // Check if the opponent is hit by the attack
-        const overlappingAreaOrFalse = this.collides(opponent);
-        return overlappingAreaOrFalse ? overlappingAreaOrFalse : null;
+        return this.getCollisionCentroid(opponent);
     }
 
-    public handleHittingOpponent(attackType: AttackType, _opponent: Fighter, hitArea: Area) {
-        const hitMarkerInfo = this.determineHitMarker(attackType, hitArea);
+    public handleHittingOpponent(attackType: AttackType, _opponent: Fighter, hitVec2: vec2) {
+        const hitMarkerInfo = this.determineHitMarker(attackType, hitVec2);
         this.showHitMarker(hitMarkerInfo);
     }
 
@@ -189,8 +187,8 @@ export abstract class Fighter extends SpriteObject {
         }
     }
 
-    determineHitMarker(_attackType: AttackType, hitArea: Area): HitMarkerInfo {
-        return { type: (this.id === 'player') ? 'enemy_hit' : 'player_hit', pos: { ...middlepoint_area(hitArea), z: this.z + 100 } };
+    determineHitMarker(_attackType: AttackType, hitVec2: vec2): HitMarkerInfo {
+        return { type: (this.id === 'player') ? 'enemy_hit' : 'player_hit', pos: { ...hitVec2, z: this.z + 100 } };
     }
 
     showHitMarker(hitMarkerInfo: HitMarkerInfo) {

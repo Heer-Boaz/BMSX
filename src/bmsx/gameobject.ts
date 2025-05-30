@@ -620,7 +620,7 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 	 * @param o The GameObject or Area to check collision with.
 	 * @returns True if a collision occurs, false otherwise.
 	 */
-	public collides(o: GameObject | Area): false | Area {
+	public collides(o: GameObject | Area): boolean {
 		if (!this.hittable) return false;
 		const isGameObject = (obj: any): obj is GameObject => typeof obj === 'object' && 'id' in obj;
 		const areaToPoly = (area: Area) => [
@@ -633,69 +633,82 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 		if (isGameObject(o)) {
 			const other = o as GameObject;
 			if (!other.hittable) return false;
-			// Quick AABB reject
 			// Quick hitbox reject using precomputed bounding boxes
 			if (!GameObject.detect_aabb_collision_areas(this.hitbox, other.hitbox)) return false;
 
-			if (this.hasHitPolygon && other.hasHitPolygon) {
-				for (const poly1 of this.hitpolygon) {
-					for (const poly2 of other.hitpolygon) {
-						if (GameObject.polygonsIntersect(poly1, poly2)) {
-							// Return the overlap AABB of the two polygons
-							const aabb1 = GameObject.polygonAABB(poly1);
-							const aabb2 = GameObject.polygonAABB(poly2);
-							return GameObject.get_overlap_area(aabb1, aabb2);
-						}
+			// If one of the objects has polygons, check polygon collision
+			if (this.hasHitPolygon || other.hasHitPolygon) {
+				// If this object has polygons, use them; otherwise convert its hitbox to a polygon
+				const thisPoly = this.hasHitPolygon ? this.hitpolygon : [areaToPoly(this.hitbox)];
+				// If the other object has polygons, use them; otherwise convert its hitbox to a polygon
+				const otherPoly = other.hasHitPolygon ? other.hitpolygon : [areaToPoly(other.hitbox)];
+
+				// Check for polygon intersection
+				for (const poly1 of thisPoly) {
+					for (const poly2 of otherPoly) {
+						if (GameObject.polygonsIntersect([poly1], [poly2])) return true;
 					}
 				}
+				// If no polygons intersect, return false
 				return false;
 			}
-			// If only one has polygons, convert the other's hitbox to a polygon
-			else if (this.hasHitPolygon) {
-				const otherPoly = areaToPoly(other.hitbox);
-				for (const poly1 of this.hitpolygon) {
-					if (GameObject.polygonsIntersect(poly1, otherPoly)) {
-						const aabb1 = GameObject.polygonAABB(poly1);
-						const aabb2 = GameObject.polygonAABB(otherPoly);
-						return GameObject.get_overlap_area(aabb1, aabb2);
-					}
-				}
-				return false;
-			} else if (other.hasHitPolygon) {
-				const thisPoly = areaToPoly(this.hitbox);
-				for (const poly2 of other.hitpolygon) {
-					if (GameObject.polygonsIntersect(thisPoly, poly2)) {
-						const aabb1 = GameObject.polygonAABB(thisPoly);
-						const aabb2 = GameObject.polygonAABB(poly2);
-						return GameObject.get_overlap_area(aabb1, aabb2);
-					}
-				}
-				return false;
-			}
-			// Fallback: both are rectangles, do simple AABB overlap check
-			else return GameObject.get_overlap_area(this.hitbox, other.hitbox);
+			else return true; // AABB collision already checked above
 		} else {
 			// o is Area
 
-			// Quick AABB reject
+			// Quick hitbox reject using precomputed bounding boxes
 			if (!GameObject.detect_aabb_collision_areas(this.hitbox, o as Area)) return false;
 
 			// If this has polygons and the other is an area, convert the area to a polygon
 			if (this.hasHitPolygon) {
 				const areaPoly = areaToPoly(o as Area);
 				for (const poly of this.hitpolygon) {
-					if (GameObject.polygonsIntersect(poly, areaPoly)) {
-						const aabb1 = GameObject.polygonAABB(poly);
-						const aabb2 = GameObject.polygonAABB(areaPoly);
-						return GameObject.get_overlap_area(aabb1, aabb2);
+					if (GameObject.polygonsIntersect([poly], [areaPoly])) {
+						return true;
 					}
 				}
 				return false;
 			}
-			// Fallback: both are rectangles, do simple AABB overlap check
-			else return GameObject.get_overlap_area(this.hitbox, o as Area);
+			// Fallback: both are rectangles, do simple AABB overlap check, which is already done above
+			return true; // AABB collision already checked above
 		}
 	}
+
+	public getCollisionCentroid(o: GameObject): vec2 | null {
+		if (!this.hittable || !o.hittable) return null;
+		const isGameObject = (obj: any): obj is GameObject => typeof obj === 'object' && 'id' in obj;
+		const areaToPoly = (area: Area) => [
+			{ x: area.start.x, y: area.start.y },
+			{ x: area.end.x, y: area.start.y },
+			{ x: area.end.x, y: area.end.y },
+			{ x: area.start.x, y: area.end.y }
+		];
+
+		if (isGameObject(o)) {
+			const other = o as GameObject;
+			// Quick hitbox reject using precomputed bounding boxes
+			if (!GameObject.detect_aabb_collision_areas(this.hitbox, other.hitbox)) return null;
+
+			// If one of the objects has polygons, check polygon collision
+			if (this.hasHitPolygon || other.hasHitPolygon) {
+				// If this object has polygons, use them; otherwise convert its hitbox to a polygon
+				const thisPoly = this.hasHitPolygon ? this.hitpolygon : [areaToPoly(this.hitbox)];
+				// If the other object has polygons, use them; otherwise convert its hitbox to a polygon
+				const otherPoly = other.hasHitPolygon ? other.hitpolygon : [areaToPoly(other.hitbox)];
+
+				// Check for polygon intersection
+				const points = GameObject.polygonsIntersectionPoints(thisPoly, otherPoly);
+				if (points) {
+					return GameObject.getCentroidFromListOfIntersectionPoints(points);
+				}
+				return null; // No intersection points found
+			}
+		}
+
+		console.warn(`'getCollisionCentroid' called by or with a GameObject that doesn't have hitpolygons, which is not supported yet. this='${this.id}', o='${o.id}'.`);
+		return null; // No polygons to check, so no centroid can be calculated
+	}
+
 
 	/**
 	 * Determines if the current `GameObject` instance collides with another `GameObject` instance.
@@ -743,64 +756,160 @@ export class GameObject implements vec3, IComponentContainer, IStateful {
 	}
 
 	/**
-	 * Polygon-polygon intersection for arbitrary (concave) simple polygons using edge intersection and point-in-polygon tests.
+	 * Determines whether two sets of polygons intersect.
+	 *
+	 * This function checks for intersection between two sets of polygons (arrays of polygons),
+	 * using edge intersection and point-in-polygon tests.
+	 *
+	 * @param polys1 - An array of polygons (each polygon is an array of vec2 points).
+	 * @param polys2 - An array of polygons (each polygon is an array of vec2 points).
+	 * @returns `true` if any polygons intersect or one is inside the other, otherwise `false`.
 	 */
-	static polygonsIntersect(poly1: vec2[], poly2: vec2[]): boolean {
-		// Helper to test segment intersection
-		const segmentsIntersect = (p1: vec2, p2: vec2, q1: vec2, q2: vec2): boolean => {
-			const orient = (a: vec2, b: vec2, c: vec2) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-			const o1 = orient(p1, p2, q1);
-			const o2 = orient(p1, p2, q2);
-			const o3 = orient(q1, q2, p1);
-			const o4 = orient(q1, q2, p2);
-			if (o1 * o2 < 0 && o3 * o4 < 0) return true;
-			// Colinearity checks
-			const onSegment = (a: vec2, b: vec2, c: vec2) => c.x >= Math.min(a.x, b.x) && c.x <= Math.max(a.x, b.x)
-				&& c.y >= Math.min(a.y, b.y) && c.y <= Math.max(a.y, b.y);
-			if (o1 === 0 && onSegment(p1, p2, q1)) return true;
-			if (o2 === 0 && onSegment(p1, p2, q2)) return true;
-			if (o3 === 0 && onSegment(q1, q2, p1)) return true;
-			if (o4 === 0 && onSegment(q1, q2, p2)) return true;
-			return false;
-		};
-		// Check edge intersections
-		for (let i = 0; i < poly1.length; i++) {
-			const a1 = poly1[i], a2 = poly1[(i + 1) % poly1.length];
-			for (let j = 0; j < poly2.length; j++) {
-				const b1 = poly2[j], b2 = poly2[(j + 1) % poly2.length];
-				if (segmentsIntersect(a1, a2, b1, b2)) return true;
+	static polygonsIntersect(polys1: vec2[][], polys2: vec2[][]): boolean {
+		for (const poly1 of polys1) {
+			for (const poly2 of polys2) {
+				if (GameObject.singlePolygonsIntersect(poly1, poly2)) return true;
 			}
 		}
-		// Ray-casting point-in-polygon
-		const pointInPoly = (pt: vec2, poly: vec2[]): boolean => {
+		return false;
+	}
+
+	/**
+	 * Determines whether two single polygons intersect (internal helper).
+	 */
+	private static singlePolygonsIntersect(poly1: vec2[], poly2: vec2[]): boolean {
+		function orient(a: vec2, b: vec2, c: vec2) {
+			return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+		}
+		function onSegment(a: vec2, b: vec2, c: vec2) {
+			return c.x >= Math.min(a.x, b.x) && c.x <= Math.max(a.x, b.x)
+				&& c.y >= Math.min(a.y, b.y) && c.y <= Math.max(a.y, b.y);
+		}
+		const n1 = poly1.length, n2 = poly2.length;
+		for (let i = 0; i < n1; ++i) {
+			const a1 = poly1[i], a2 = poly1[(i + 1 === n1) ? 0 : i + 1];
+			for (let j = 0; j < n2; ++j) {
+				const b1 = poly2[j], b2 = poly2[(j + 1 === n2) ? 0 : j + 1];
+				const o1 = orient(a1, a2, b1);
+				const o2 = orient(a1, a2, b2);
+				const o3 = orient(b1, b2, a1);
+				const o4 = orient(b1, b2, a2);
+				if (o1 * o2 < 0 && o3 * o4 < 0) return true;
+				if (o1 === 0 && onSegment(a1, a2, b1)) return true;
+				if (o2 === 0 && onSegment(a1, a2, b2)) return true;
+				if (o3 === 0 && onSegment(b1, b2, a1)) return true;
+				if (o4 === 0 && onSegment(b1, b2, a2)) return true;
+			}
+		}
+		function pointInPoly(pt: vec2, poly: vec2[]): boolean {
 			let inside = false;
 			for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
 				const xi = poly[i].x, yi = poly[i].y;
 				const xj = poly[j].x, yj = poly[j].y;
-				const intersect = ((yi > pt.y) !== (yj > pt.y)) &&
-					pt.x < (xj - xi) * (pt.y - yi) / (yj - yi) + xi;
-				if (intersect) inside = !inside;
+				if (((yi > pt.y) !== (yj > pt.y)) &&
+					(pt.x < (xj - xi) * (pt.y - yi) / ((yj - yi) || 1e-12) + xi)) {
+					inside = !inside;
+				}
 			}
 			return inside;
-		};
-		// One polygon inside the other
+		}
 		if (pointInPoly(poly1[0], poly2)) return true;
 		if (pointInPoly(poly2[0], poly1)) return true;
 		return false;
 	}
 
 	/**
-	 * Polygon-AABB intersection using SAT.
+	 * Returns all intersection points between two sets of polygons (arrays of polygons).
+	 *
+	 * @param polys1 - An array of polygons (each polygon is an array of vec2 points).
+	 * @param polys2 - An array of polygons (each polygon is an array of vec2 points).
+	 * @returns Array of intersection points (vec2).
 	 */
-	static polygonAABBIntersect(poly: vec2[], box: Area): boolean {
-		// Convert box to polygon
-		const boxPoly = [
-			{ x: box.start.x, y: box.start.y },
-			{ x: box.end.x, y: box.start.y },
-			{ x: box.end.x, y: box.end.y },
-			{ x: box.start.x, y: box.end.y }
-		];
-		return GameObject.polygonsIntersect(poly, boxPoly);
+	static polygonsIntersectionPoints(polys1: vec2[][], polys2: vec2[][]): vec2[] | null {
+		const intersections: vec2[] = [];
+		for (const poly1 of polys1) {
+			for (const poly2 of polys2) {
+				intersections.push(...GameObject.singlePolygonsIntersectionPoints(poly1, poly2));
+			}
+		}
+		return intersections.length > 0 ? intersections : null;
+	}
+
+	/**
+	 * Returns all intersection points between two single polygons (internal helper).
+	 */
+	private static singlePolygonsIntersectionPoints(poly1: vec2[], poly2: vec2[]): vec2[] {
+		function edgeIntersection(p1: vec2, p2: vec2, q1: vec2, q2: vec2): vec2 | null {
+			const a1 = p2.y - p1.y;
+			const b1 = p1.x - p2.x;
+			const c1 = a1 * p1.x + b1 * p1.y;
+			const a2 = q2.y - q1.y;
+			const b2 = q1.x - q2.x;
+			const c2 = a2 * q1.x + b2 * q1.y;
+			const det = a1 * b2 - a2 * b1;
+			if (Math.abs(det) < 1e-12) return null; // Parallel
+			const x = (b2 * c1 - b1 * c2) / det;
+			const y = (a1 * c2 - a2 * c1) / det;
+			if (
+				Math.min(p1.x, p2.x) - 1e-8 <= x && x <= Math.max(p1.x, p2.x) + 1e-8 &&
+				Math.min(p1.y, p2.y) - 1e-8 <= y && y <= Math.max(p1.y, p2.y) + 1e-8 &&
+				Math.min(q1.x, q2.x) - 1e-8 <= x && x <= Math.max(q1.x, q2.x) + 1e-8 &&
+				Math.min(q1.y, q2.y) - 1e-8 <= y && y <= Math.max(q1.y, q2.y) + 1e-8
+			) {
+				return { x, y };
+			}
+			return null;
+		}
+		function pointInPoly(pt: vec2, poly: vec2[]): boolean {
+			let inside = false;
+			for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+				const xi = poly[i].x, yi = poly[i].y;
+				const xj = poly[j].x, yj = poly[j].y;
+				if (((yi > pt.y) !== (yj > pt.y)) &&
+					(pt.x < (xj - xi) * (pt.y - yi) / ((yj - yi) || 1e-12) + xi)) {
+					inside = !inside;
+				}
+			}
+			return inside;
+		}
+		const n1 = poly1.length, n2 = poly2.length;
+		const intersections: vec2[] = [];
+		for (let i = 0; i < n1; ++i) {
+			const a1 = poly1[i], a2 = poly1[(i + 1 === n1) ? 0 : i + 1];
+			for (let j = 0; j < n2; ++j) {
+				const b1 = poly2[j], b2 = poly2[(j + 1 === n2) ? 0 : j + 1];
+				const pt = edgeIntersection(a1, a2, b1, b2);
+				if (pt) intersections.push(pt);
+			}
+		}
+		for (let i = 0; i < n1; ++i) {
+			if (pointInPoly(poly1[i], poly2)) intersections.push(poly1[i]);
+		}
+		for (let j = 0; j < n2; ++j) {
+			if (pointInPoly(poly2[j], poly1)) intersections.push(poly2[j]);
+		}
+		return intersections;
+	}
+
+	/**
+	 * Returns the centroid from all intersection points between two sets of polygons.
+	 */
+	static getCentroidFromIntersectionPoints(polys1: vec2[][], polys2: vec2[][]): vec2 {
+		const intersectionPoints = GameObject.polygonsIntersectionPoints(polys1, polys2);
+		return GameObject.getCentroidFromListOfIntersectionPoints(intersectionPoints);
+	}
+
+	/**
+	 * Returns the centroid from a list of intersection points.
+	 */
+	static getCentroidFromListOfIntersectionPoints(points: vec2[]): vec2 {
+		if (points.length === 0) return { x: 0, y: 0 };
+		let sumX = 0, sumY = 0;
+		for (const pt of points) {
+			sumX += pt.x;
+			sumY += pt.y;
+		}
+		return { x: sumX / points.length, y: sumY / points.length };
 	}
 
 	/**
