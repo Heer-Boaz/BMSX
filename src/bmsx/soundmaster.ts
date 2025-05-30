@@ -69,12 +69,9 @@ export class SM {
         // Only clear if this node is still the current one for this type
         if (SM.currentAudioNodeByType[type] === node) {
             SM.currentAudioByType[type] = null;
-            SM.releaseNode(node);
             SM.currentAudioNodeByType[type] = null;
-        } else {
-            // Node is stale, just release it
-            SM.releaseNode(node);
         }
+        SM.releaseNode(node);
     }
 
     private static playNode(_track: AudioMeta, node: AudioBufferSourceNode, offset?: number): void {
@@ -126,10 +123,10 @@ export class SM {
         const audiotype = track['audiotype'];
         if (audiotype === 'sfx' && SM.limitToOneEffect && SM.currentAudioByType[audiotype] && track['priority'] < SM.currentAudioByType[audiotype]['priority'])
             return;
-        SM.currentAudioByType[audiotype] = { ...track, id: id };
-        SM.stop(id); // Stop previous node before creating a new one
         const playCallback = (node: AudioBufferSourceNode) => {
+            SM.stop(id); // Stop previous node before attaching a new one
             SM.currentAudioNodeByType[audiotype] = node; // Track the node before playback
+            SM.currentAudioByType[audiotype] = { ...track, id: id };
             SM.playNode(track, node, offset);
         };
         SM.createNode(id)

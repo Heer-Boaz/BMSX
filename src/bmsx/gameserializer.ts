@@ -495,18 +495,18 @@ export class Savegame {
     @onload
     restoreSoundState() {
         // Restore sound master playback state
+        SM.stopEffect(); // Stop any currently playing sound effect
+        SM.stopMusic(); // Stop any currently playing music
         if (this.SMState) {
             if (this.SMState.sfxTrackId) {
                 SM.play(this.SMState.sfxTrackId, this.SMState.sfxOffset);
             }
             else {
-                SM.stopEffect(); // Stop any currently playing sound effect
             }
             if (this.SMState.musicTrackId) {
                 SM.play(this.SMState.musicTrackId, this.SMState.musicOffset);
             }
             else {
-                SM.stopMusic(); // Stop any currently playing music
             }
         }
     }
