@@ -98,7 +98,7 @@ export class Serializer {
             return id;
         }
 
-        // Optimized iterative stack-based traversal
+        // Iterative stack-based traversal
         const stack: Array<{ value: any; parent: any; key: string | number | undefined; plain?: any; typename?: string; theConstructor?: any }> = [];
         let rootRef: any = undefined;
         stack.push({ value: obj, parent: null, key: undefined });
@@ -254,6 +254,7 @@ export class Reviver {
     static decodeBinary(buf: Uint8Array) {
         const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
         let offset = 0;
+        const textDecoder = new TextDecoder();
         function readUint8(): number { return dv.getUint8(offset++); }
         function readVarUint(): number {
             let val = 0, shift = 0, b: number;
@@ -268,7 +269,7 @@ export class Reviver {
             const len = readVarUint();
             const arr = buf.subarray(offset, offset + len);
             offset += len;
-            return new TextDecoder().decode(arr);
+            return textDecoder.decode(arr);
         }
         function read(): null | true | false | number | string | any[] | { r: number } | Record<string, any> {
             const tag = readUint8();
@@ -337,7 +338,6 @@ export class Reviver {
             for (const key of Object.keys(data)) {
                 if (key === 'typename') continue;
                 const val = data[key];
-                // --- PATCH: Fix for arrays of r objects (e.g. hitpolygon) ---
                 if (Array.isArray(val)) {
                     // If every element is a { r: ... }, resolve all
                     if (val.every(v => v && typeof v === 'object' && 'r' in v)) {
@@ -573,35 +573,41 @@ class BinWriter {
      * Recursively writes any supported value into the binary stream.
      */
     write(val: any): void {
-        if (val === undefined || val === null) { this.u8(0); return; }
-        const typeoff = typeof val;
-        if (typeoff === 'boolean') { this.u8(val ? 1 : 2); return; }
-        if (typeoff === 'number') { this.u8(3); this.f64(val); return; }
-        if (typeoff === 'string') { this.u8(4); this.str(val); return; }
-        if (Array.isArray(val)) {
-            this.u8(5);
-            this.varuint(val.length);
-            for (let i = 0, len = val.length; i < len; i++) this.write(val[i]);
-            return;
-        }
-        if (typeoff === 'object') {
-            const keys = Object.keys(val);
-            // Detect { r: id } reference (id is a number)
-            if (keys.length === 1 && ('r' in val)) {
-                this.u8(6);
-                this.varuint((val as any).r);
+        switch (typeof val) {
+            case 'undefined':
+                this.u8(0); return;
+            case 'boolean':
+                this.u8(val ? 1 : 2); return;
+            case 'number':
+                this.u8(3); this.f64(val); return;
+            case 'string':
+                this.u8(4); this.str(val); return;
+            case 'object':
+                if (val === null) { this.u8(0); return; }
+                if (Array.isArray(val)) {
+                    this.u8(5);
+                    this.varuint(val.length);
+                    for (let i = 0, len = val.length; i < len; i++) this.write(val[i]);
+                    return;
+                }
+                const keys = Object.keys(val);
+                // Detect { r: id } reference (id is a number)
+                if (keys.length === 1 && ('r' in val)) {
+                    this.u8(6);
+                    this.varuint(val.r);
+                    return;
+                }
+                this.u8(7);
+                this.varuint(keys.length);
+                for (let i = 0, klen = keys.length; i < klen; i++) {
+                    const k = keys[i];
+                    this.str(k);
+                    this.write(val[k]);
+                }
                 return;
-            }
-            this.u8(7);
-            this.varuint(keys.length);
-            for (let i = 0, klen = keys.length; i < klen; i++) {
-                const k = keys[i];
-                this.str(k);
-                this.write((val as any)[k]);
-            }
-            return;
+            default:
+                throw new Error('Unsupported type in encodeBinary');
         }
-        throw new Error('Unsupported type in encodeBinary');
     }
 }
 
