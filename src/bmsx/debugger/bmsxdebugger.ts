@@ -70,7 +70,7 @@ export class HitBoxVisualizer extends Component {
         }
 
         // Draw polygons if available on the GameObject
-        if (parent.hitpolygon && parent.hitpolygon.length > 0) {
+        if (parent.hasHitPolygon) {
             for (const poly of parent.hitpolygon) {
                 // Offset polygon by parent position and z
                 $.view.drawPolygon(poly, { ...Msx1Colors[2], a: 0.7 }, 2);
@@ -588,10 +588,10 @@ function getGameObjectAtCursor(e: MouseEvent): { objUnderCursor: GameObject | nu
 
     const objsUnderCursor: GameObject[] = $.model.objects.filter(o =>
         o.id !== 'debug_highlighter' &&
-        o.hittable && //o.overlaps_point && o.overlaps_point(p)
+        o.hittable &&
         (
-            (o.hasHitPolygon && o.collides(pointArea))// ||
-            // (!o.hasHitPolygon && o.overlaps_point && o.overlaps_point(p))
+            (o.hasHitPolygon && o.collides(pointArea)) ||
+            (!o.hasHitPolygon && o.overlaps_point && o.overlaps_point(p))
         )
     );
 
