@@ -46,7 +46,7 @@ export class BoundingBoxExtractor {
      * @param image The image to analyze.
      * @returns Array of concave hull polygons, one per detected shape.
      */
-    static extractConcavePolygon(image: Image): vec2[][] {
+    static extractConcaveHull(image: Image): vec2[][] {
         const width = image.width;
         const height = image.height;
         const canvas = createCanvas(width, height);
@@ -137,13 +137,41 @@ export class BoundingBoxExtractor {
         return polygons;
     }
 
-    /**
-     * Computes the concave hull of a set of points using Andrew's monotone chain algorithm.
-     * Returns the hull as an array of points in counterclockwise order.
-     */
-    static convexHull(points: vec2[]): vec2[] {
+    static extractConvexHull(image: Image): vec2[] {
+        const { width, height } = image;
+        const canvas = createCanvas(width, height);
+        const context = canvas.getContext('2d');
+        context.drawImage(image, 0, 0);
+        const imageData = context.getImageData(0, 0, width, height);
+        const data = imageData.data;
+
+        // Check opacity
+        const isOpaque = (x: number, y: number) => data[(y * width + x) * 4 + 3] !== 0;
+
+        // Check if pixel is on boundary
+        const isBoundary = (x: number, y: number) => {
+            if (!isOpaque(x, y)) return false;
+            for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+                const nx = x + dx, ny = y + dy;
+                if (nx < 0 || ny < 0 || nx >= width || ny >= height || !isOpaque(nx, ny)) return true;
+            }
+            return false;
+        };
+
+        const points: vec2[] = [];
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                if (isBoundary(x, y)) {
+                    points.push({ x, y });
+                }
+            }
+        }
+
+        return this.computeConvexPolygon(points);
+    }
+
+    private static computeConvexPolygon(points: vec2[]): vec2[] {
         if (points.length <= 1) return points.slice();
-        // Sort points lexicographically by x, then y
         const sorted = points.slice().sort((a, b) => a.x - b.x || a.y - b.y);
         const lower: vec2[] = [];
         for (const p of sorted) {
@@ -160,7 +188,6 @@ export class BoundingBoxExtractor {
             }
             upper.push(p);
         }
-        // Remove last point of each half (repeats start/end)
         upper.pop();
         lower.pop();
         return lower.concat(upper);
