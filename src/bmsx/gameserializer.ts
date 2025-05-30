@@ -87,14 +87,13 @@ export class Serializer {
      *
      * @throws Error if a non-plain object is encountered without a known constructor (missing `@insavegame`).
      */
-    private static buildReferenceGraph(obj: any): { root: any, objects: Record<string, any> } {
-        const objectMap = new Map<any, string>();
-        const objects: Record<string, any> = {};
+    private static buildReferenceGraph(obj: any): { root: any, objects: Record<number, any> } {
+        const objectMap = new Map<any, number>();
+        const objects: Record<number, any> = {};
         let idCounter = 1;
-        function getIdForObject(o: any): string {
+        function getIdForObject(o: any): number {
             if (objectMap.has(o)) return objectMap.get(o)!;
-            // Remove '#' prefix: use stringified number only
-            const id = `${idCounter++}`;
+            const id = idCounter++;
             objectMap.set(o, id);
             return id;
         }
@@ -271,7 +270,7 @@ export class Reviver {
             offset += len;
             return new TextDecoder().decode(arr);
         }
-        function read(): null | true | false | number | string | any[] | { r: string } | Record<string, any> {
+        function read(): null | true | false | number | string | any[] | { r: number } | Record<string, any> {
             const tag = readUint8();
             switch (tag) {
                 case 0: return null; // undefined or null
@@ -290,7 +289,7 @@ export class Reviver {
                     return arr;
                 }
                 case 6: { // object reference
-                    const ref = readString();
+                    const ref = readVarUint();
                     return { r: ref };
                 }
                 case 7: { // generic object
@@ -311,7 +310,7 @@ export class Reviver {
 
     static deserialize(input: string | Uint8Array, options: { isBinary?: boolean } = { isBinary: true }) {
         const { root, objects } = options.isBinary ? Reviver.decodeBinary(input as Uint8Array) : JSON.parse(input as string);
-        const idToObject: Record<string, any> = {};
+        const idToObject: Record<number, any> = {};
         if (!objects || Object.keys(objects).length === 0 || !root) {
             console.error('Gamestate to deserialize is invalid!');
             return null;
@@ -392,7 +391,7 @@ export class Reviver {
             }
         }
         // Return root object (resolve { r: id })
-        return (root && root.r) ? idToObject[root.r] : root;
+        return (root && root.r !== undefined) ? idToObject[root.r] : root;
     }
 }
 
@@ -587,10 +586,10 @@ class BinWriter {
         }
         if (typeoff === 'object') {
             const keys = Object.keys(val);
-            // Detect { r: id } reference
+            // Detect { r: id } reference (id is a number)
             if (keys.length === 1 && ('r' in val)) {
                 this.u8(6);
-                this.str((val as any).r);
+                this.varuint((val as any).r);
                 return;
             }
             this.u8(7);
