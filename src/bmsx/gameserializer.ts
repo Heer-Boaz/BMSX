@@ -72,32 +72,6 @@ export class Serializer {
     static get_typename(value: any): string {
         return value?.constructor?.name ?? value?.prototype?.name;
     }
-    // Determines if a property should be excluded, checking decorators on the owning object's class
-    static shouldExcludeFromSerialization(owner: any, key: any, value: any, cache: any[]): boolean {
-        if (value === null || value === undefined) return true;
-        // Exclude based on @excludepropfromsavegame on the owner class
-        if (owner && key) {
-            const ownerType = Serializer.get_typename(owner);
-            if (Serializer.excludedProperties[ownerType]?.[key]) {
-                return true;
-            }
-        }
-        const type = typeof value;
-        switch (type) {
-            case 'function':
-                return true;
-            case 'undefined':
-                return true;
-            case 'object':
-                if (Array.isArray(value)) return false;
-                const valType = Serializer.get_typename(value);
-                if (valType !== 'Object' && valType !== 'object' && !Reviver.get_constructor_for_type(valType))
-                    return true;
-                return cache.includes(value);
-            default:
-                return false;
-        }
-    }
 
     /**
      * Builds a reference graph for the given object, serializing it into a structure that preserves object references.
@@ -119,36 +93,91 @@ export class Serializer {
         let idCounter = 1;
         function getIdForObject(o: any): string {
             if (objectMap.has(o)) return objectMap.get(o)!;
-            const id = `#${idCounter++}`;
+            // Remove '#' prefix: use stringified number only
+            const id = `${idCounter++}`;
             objectMap.set(o, id);
             return id;
         }
-        function serializeObjectWithRefs(value: any) {
-            if (value === null || value === undefined) return value;
-            if (typeof value !== 'object') return value;
+
+        // Optimized iterative stack-based traversal
+        const stack: Array<{ value: any; parent: any; key: string | number | undefined; plain?: any; typename?: string; theConstructor?: any }> = [];
+        let rootRef: any = undefined;
+        stack.push({ value: obj, parent: null, key: undefined });
+        while (stack.length > 0) {
+            const frame = stack.pop()!;
+            const { value, parent, key } = frame;
+            if (value === null || value === undefined) {
+                if (parent && key !== undefined) parent[key] = value;
+                else rootRef = value;
+                continue;
+            }
+            const typeoff = typeof value;
+            if (typeoff !== 'object') {
+                if (parent && key !== undefined) parent[key] = value;
+                else rootRef = value;
+                continue;
+            }
             if (Array.isArray(value)) {
-                return value.map(serializeObjectWithRefs).filter(v => v !== undefined);
+                const arr = value.length > 0 ? new Array(value.length) : [];
+                if (parent && key !== undefined) parent[key] = arr;
+                else rootRef = arr;
+                for (let i = value.length - 1; i >= 0; --i) {
+                    stack.push({ value: value[i], parent: arr, key: i });
+                }
+                continue;
             }
             if (objectMap.has(value)) {
-                return { $ref: objectMap.get(value) };
+                // Use { r: id } instead of { $ref: id }
+                const ref = { r: objectMap.get(value) };
+                if (parent && key !== undefined) parent[key] = ref;
+                else rootRef = ref;
+                continue;
             }
             const id = getIdForObject(value);
-            let typename = Serializer.get_typename(value);
-            if (Serializer.excludedObjectTypes.has(typename)) return undefined;
-            let theConstructor = Reviver.get_constructor_for_type(typename);
-            let plain: any = {};
-            if (typename !== 'Object' && typename !== 'object') {
-                if (!theConstructor) console.error(`No constructor known for object of type '${typename}'. Did you forget to add '@insavegame' to the class definition?`);
-                else plain.typename = typename;
+            const typename = Serializer.get_typename(value);
+            if (Serializer.excludedObjectTypes.has(typename)) {
+                if (parent && key !== undefined) parent[key] = undefined;
+                continue;
             }
-            for (let key of Object.keys(value)) {
-                if (Serializer.shouldExcludeFromSerialization(value, key, value[key], [])) continue;
-                const serializedValue = serializeObjectWithRefs(value[key]);
-                if (serializedValue !== undefined) plain[key] = serializedValue;
+            const theConstructor = Reviver.get_constructor_for_type(typename);
+            // Only add typename if needed
+            const plain: any = (typename !== 'Object' && typename !== 'object' && theConstructor)
+                ? { typename }
+                : {};
+            // Use { r: id } for references
+            if (parent && key !== undefined) parent[key] = { r: id };
+            else rootRef = { r: id };
+            // Only enumerate own properties
+            const keys = Object.keys(value);
+            for (let i = keys.length - 1; i >= 0; --i) {
+                const k = keys[i];
+                // Inline exclusion logic for performance
+                const v = value[k];
+                if (v === null || v === undefined) continue;
+                if (k) {
+                    const ownerType = typename;
+                    if (Serializer.excludedProperties[ownerType]?.[k]) {
+                        continue;
+                    }
+                }
+                const vType = typeof v;
+                switch (vType) {
+                    case 'function':
+                    case 'undefined':
+                        continue;
+                    case 'object':
+                        if (Array.isArray(v)) break;
+                        const valType = Serializer.get_typename(v);
+                        if (valType !== 'Object' && valType !== 'object' && !Reviver.get_constructor_for_type(valType)) {
+                            continue;
+                        }
+                        // Avoid cycles
+                        if (objectMap.has(v)) break;
+                        break;
+                }
+                stack.push({ value: v, parent: plain, key: k });
             }
-
-            // after you’ve built `plain` but before `objects[id] = plain`
-            // only run the hooks registered for *this* class:
+            // Run @onsave hooks
             const saves = Serializer.onSaves[typename];
             if (saves) {
                 for (const fn of saves) {
@@ -159,10 +188,8 @@ export class Serializer {
                 }
             }
             objects[id] = plain;
-            return { $ref: id };
         }
-        const root = serializeObjectWithRefs(obj);
-        return { root, objects };
+        return { root: rootRef, objects };
     }
 
     /**
@@ -244,7 +271,7 @@ export class Reviver {
             offset += len;
             return new TextDecoder().decode(arr);
         }
-        function read(): null | true | false | number | string | any[] | { $ref: string } | Record<string, any> {
+        function read(): null | true | false | number | string | any[] | { r: string } | Record<string, any> {
             const tag = readUint8();
             switch (tag) {
                 case 0: return null; // undefined or null
@@ -264,7 +291,7 @@ export class Reviver {
                 }
                 case 6: { // object reference
                     const ref = readString();
-                    return { $ref: ref };
+                    return { r: ref };
                 }
                 case 7: { // generic object
                     const len = readVarUint();
@@ -311,25 +338,25 @@ export class Reviver {
             for (const key of Object.keys(data)) {
                 if (key === 'typename') continue;
                 const val = data[key];
-                // --- PATCH: Fix for arrays of $ref objects (e.g. hitpolygon) ---
+                // --- PATCH: Fix for arrays of r objects (e.g. hitpolygon) ---
                 if (Array.isArray(val)) {
-                    // If every element is a $ref, resolve all
-                    if (val.every(v => v && typeof v === 'object' && '$ref' in v)) {
-                        target[key] = val.map(v => idToObject[v.$ref]);
+                    // If every element is a { r: ... }, resolve all
+                    if (val.every(v => v && typeof v === 'object' && 'r' in v)) {
+                        target[key] = val.map(v => idToObject[v.r]);
                     } else {
                         // For nested arrays (e.g. hitpolygon: vec2[][]), resolve recursively
                         target[key] = val.map(v => {
                             if (Array.isArray(v)) {
-                                return v.map(w => (w && typeof w === 'object' && '$ref' in w) ? idToObject[w.$ref] : w);
-                            } else if (v && typeof v === 'object' && '$ref' in v) {
-                                return idToObject[v.$ref];
+                                return v.map(w => (w && typeof w === 'object' && 'r' in w) ? idToObject[w.r] : w);
+                            } else if (v && typeof v === 'object' && 'r' in v) {
+                                return idToObject[v.r];
                             } else {
                                 return v;
                             }
                         });
                     }
-                } else if (val && typeof val === 'object' && '$ref' in val) {
-                    target[key] = idToObject[val.$ref];
+                } else if (val && typeof val === 'object' && 'r' in val) {
+                    target[key] = idToObject[val.r];
                 } else {
                     target[key] = val;
                 }
@@ -364,7 +391,8 @@ export class Reviver {
                 }
             }
         }
-        return (root && root.$ref) ? idToObject[root.$ref] : root;
+        // Return root object (resolve { r: id })
+        return (root && root.r) ? idToObject[root.r] : root;
     }
 }
 
@@ -559,9 +587,10 @@ class BinWriter {
         }
         if (typeoff === 'object') {
             const keys = Object.keys(val);
-            if (keys.length === 1 && ('$ref' in val)) {
+            // Detect { r: id } reference
+            if (keys.length === 1 && ('r' in val)) {
                 this.u8(6);
-                this.str((val as any).$ref);
+                this.str((val as any).r);
                 return;
             }
             this.u8(7);
