@@ -483,10 +483,10 @@ export class Savegame {
     saveSoundState(o: Savegame) {
         // Capture current sound master playback state
         const SMState = {
-            sfxTrackId: SM.currentEffect?.id,
-            sfxOffset: SM.currentEffectTime,
-            musicTrackId: SM.currentMusic?.id,
-            musicOffset: SM.currentMusicTime
+            sfxTrackId: SM.currentTrackByType('sfx'),
+            sfxOffset: SM.currentTimeByType('sfx'),
+            musicTrackId: SM.currentTrackByType('music'),
+            musicOffset: SM.currentTimeByType('music')
         };
 
         return { SMState };
@@ -499,8 +499,14 @@ export class Savegame {
             if (this.SMState.sfxTrackId) {
                 SM.play(this.SMState.sfxTrackId, this.SMState.sfxOffset);
             }
+            else {
+                SM.stopEffect(); // Stop any currently playing sound effect
+            }
             if (this.SMState.musicTrackId) {
                 SM.play(this.SMState.musicTrackId, this.SMState.musicOffset);
+            }
+            else {
+                SM.stopMusic(); // Stop any currently playing music
             }
         }
     }

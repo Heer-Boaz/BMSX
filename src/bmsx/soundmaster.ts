@@ -10,7 +10,7 @@ export class SM {
     private static buffers: Record<string, AudioBuffer>;
     private static sndContext: AudioContext;
     private static currentAudioNodeByType: Record<AudioType, AudioBufferSourceNode>;
-    public static currentAudioByType: Record<AudioType, AudioMeta2 | null>;
+    public static currentAudioByType: Record<AudioType, AudioMeta2 | null> = { sfx: null, music: null };
     private static gainNode: GainNode;
     private static nodeStartTime: Record<AudioType, number> = { sfx: 0, music: 0 };
     private static nodeStartOffset: Record<AudioType, number> = { sfx: 0, music: 0 };
@@ -150,6 +150,7 @@ export class SM {
             }
         } catch (e) { console.warn(e); }
         SM.currentAudioNodeByType[type] = null;
+        SM.currentAudioByType[type] = null;
     }
 
     public static stopEffect(): void {
@@ -181,30 +182,21 @@ export class SM {
         SM.gainNode.gain.value = SM.gainNode.gain.defaultValue * v;
     }
 
-    public static get currentEffectTime(): number | null {
-        const node = SM.currentAudioNodeByType['sfx'];
+    public static currentTimeByType(type: AudioType): number | null {
+        if (SM.currentAudioByType[type] === null) {
+            return null; // No audio is currently playing for this type
+        }
+        const node = SM.currentAudioNodeByType[type];
         if (node) {
             // Calculate true playback position
-            return (node.context.currentTime - SM.nodeStartTime['sfx']) + SM.nodeStartOffset['sfx'];
+            return (node.context.currentTime - SM.nodeStartTime[type]) + SM.nodeStartOffset[type];
         }
         return null;
     }
 
-    public static get currentMusicTime(): number | null {
-        const node = SM.currentAudioNodeByType['music'];
-        if (node) {
-            // Calculate true playback position
-            return (node.context.currentTime - SM.nodeStartTime['music']) + SM.nodeStartOffset['music'];
-        }
-        return null;
-    }
-
-    public static get currentEffect(): AudioMeta2 | null {
-        return SM.currentAudioByType['sfx'];
-    }
-
-    public static get currentMusic(): AudioMeta2 | null {
-        return SM.currentAudioByType['music'];
+    public static currentTrackByType(type: AudioType): string | null {
+        const audioMeta = SM.currentAudioByType[type];
+        return audioMeta ? audioMeta.id : null;
     }
 
 }
