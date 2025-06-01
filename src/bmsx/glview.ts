@@ -762,12 +762,12 @@ export abstract class GLView extends BaseView {
         super.drawgame(clearCanvas);
 
         // Draw all the sprites to a texture using the main shader
-        this.drawSprites();
+        this.renderSpriteBatch();
         // this.saveTextureToFile();
         // debugger;
 
         // Draw a full-screen quad using the post-processing shader
-        this.drawFullScreenQuad();
+        this.applyCrtPostProcess();
 
         this.switchProgram(this.gameShaderProgram); // Switch back to the main shader
 
@@ -858,7 +858,7 @@ export abstract class GLView extends BaseView {
     /**
      * Draws a full-screen quad using the CRT shader.
      */
-    private drawFullScreenQuad(): void {
+    private applyCrtPostProcess(): void {
         const gl = this.glctx;
         // Bind the default framebuffer so that the rendering output goes to the screen
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -909,7 +909,7 @@ export abstract class GLView extends BaseView {
      * This method should be called once per frame after all sprites have been queued.
      */
     @catchWebGLError
-    public drawSprites(): void {
+    public renderSpriteBatch(): void {
         const _this = $.view as GLView;
         const gl = _this.glctx;
 
