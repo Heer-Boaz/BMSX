@@ -6,6 +6,7 @@ in vec2 a_position;         // Vertex position
 in vec2 a_texcoord;         // Texture coordinates
 in vec4 a_color_override;   // Color override
 in float a_pos_z;           // Z position for depth sorting
+in uint a_atlas_id;           // Atlas ID for texture mapping
 
 // Uniforms for resolution and scaling factor
 uniform vec2 u_resolution;  // Resolution of the screen
@@ -14,6 +15,7 @@ uniform float u_scale;      // Scaling factor for the position
 // Output variables to pass to the fragment shader
 out vec2 v_texcoord;        // Texture coordinates to pass to the fragment shader
 out vec4 v_color_override;  // Color override to pass to the fragment shader
+flat out uint v_atlas_id;      // Atlas ID to pass to the fragment shader
 
 void main() {
     // Scale the position by the scaling factor
@@ -27,6 +29,7 @@ void main() {
     gl_Position = vec4(clipSpace, a_pos_z, 1);
 
     // Pass the texture coordinates and color override to the fragment shader
-    v_texcoord = a_texcoord;
-    v_color_override = a_color_override;
+    v_texcoord = a_texcoord; // Texture coordinates for the fragment shader
+    v_color_override = a_color_override; // Color override for the fragment shader
+    v_atlas_id = a_atlas_id; // Atlas ID for texture mapping
 }

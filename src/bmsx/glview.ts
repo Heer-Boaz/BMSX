@@ -5,7 +5,7 @@ import gameShaderCode from './shaders/gameshader.glsl';
 import vertexShaderCode from './shaders/vertexshader.glsl';
 import { BaseView, Color, DrawImgOptions, DrawRectOptions } from './view';
 
-const CATCH_WEBGL_ERROR = false; // Set to false to disable WebGL error catching
+const CATCH_WEBGL_ERROR = true; // Set to false to disable WebGL error catching
 
 /**
  * Decorator function that catches WebGL errors thrown by the decorated method and throws an error with the error message.
@@ -59,23 +59,29 @@ function getWebGLErrorString(gl: WebGLRenderingContext, error: number): string {
  */
 const bvec = {
     set(v: Float32Array, i: number, x: number, y: number, w: number, h: number, sx: number, sy: number): void {
-        const x2 = x + w * sx, y2 = y + h * sy, offset = i * 12;
+        const x2 = x + w * sx, y2 = y + h * sy, offset = i * VERTEXCOORDS_SIZE;
         v.set([x, y, x2, y, x, y2, x, y2, x2, y, x2, y2], offset);
     },
     set_texturecoords(v: Float32Array, i: number, coords: number[]): void {
-        const offset = i * 12;
+        const offset = i * TEXTURECOORDS_SIZE;
         v.set(coords, offset);
     },
     set_zcoord(v: Float32Array, i: number, z: number): void {
-        const offset = i * 6;
-        for (let j = offset; j < offset + 6; j++) v[j] = z;
+        const offset = i * ZCOORDS_SIZE;
+        for (let j = offset; j < offset + ZCOORDS_SIZE; j += ZCOORD_ATTRIBUTE_SIZE) v[j] = z;
     },
     set_color(v: Float32Array, i: number, color: Color): void {
-        const offset = i * 24;
+        const offset = i * COLOR_OVERRIDE_SIZE;
         const colorArray = [color.r, color.g, color.b, color.a];
-        for (let j = offset; j < offset + 24; j += 4) {
-            v.set(colorArray, j);
-        }
+        for (let j = offset; j < offset + COLOR_OVERRIDE_SIZE; j += COLOR_OVERRIDE_ATTRIBUTE_SIZE) v.set(colorArray, j);
+    },
+    set_atlas_id(v: Uint8Array, i: number, atlas_id: number): void {
+        // Set the atlas ID for all 6 vertices of the sprite
+        const offset = i * ATLAS_ID_SIZE;
+        // Set the atlas ID for each vertex
+        // Note that the atlas ID is a single byte, so we can use Uint8Array to store it in the buffer
+        // This is used to identify which atlas the sprite belongs to
+        for (let j = offset; j < offset + ATLAS_ID_SIZE; j += ATLAS_ID_ATTRIBUTE_SIZE) v[j] = atlas_id;
     }
 };
 
@@ -84,31 +90,35 @@ export const VERTEX_COLOR_COLORIZED_RED: Color = { r: 1.0, g: 0.0, b: 0.0, a: 1.
 export const VERTEX_COLOR_COLORIZED_GREEN: Color = { r: 0.0, g: 1.0, b: 0.0, a: 1.0 };
 export const VERTEX_COLOR_COLORIZED_BLUE: Color = { r: 0.0, g: 0.0, b: 1.0, a: 1.0 };
 export const MAX_SPRITES = 256;
-const RESOLUTION_VECTOR_SIZE = 2;
-const VERTEXCOORDS_SIZE = 12;
-const TEXTURECOORDS_SIZE = 12;
-const ZCOORDS_SIZE = 6;
-const COLOR_OVERRIDE_SIZE = 24;
+const VERTICES_PER_SPRITE = 6; // Number of vertices per sprite (2 triangles, 3 vertices each)
 
 const VERTEX_ATTRIBUTE_SIZE = 2;
 const TEXTURECOORD_ATTRIBUTE_SIZE = 2;
 const ZCOORD_ATTRIBUTE_SIZE = 1;
 const COLOR_OVERRIDE_ATTRIBUTE_SIZE = 4;
+const ATLAS_ID_ATTRIBUTE_SIZE = 1;
 
-const BUFFER_OFFSET_MULTIPLIER = 48;
+const RESOLUTION_VECTOR_SIZE = 2;
+const VERTEXCOORDS_SIZE = VERTEX_ATTRIBUTE_SIZE * VERTICES_PER_SPRITE; // 2D coordinates for each vertex
+const TEXTURECOORDS_SIZE = TEXTURECOORD_ATTRIBUTE_SIZE * VERTICES_PER_SPRITE; // 2D texture coordinates for each vertex
+const ZCOORDS_SIZE = ZCOORD_ATTRIBUTE_SIZE * VERTICES_PER_SPRITE; // Z-coordinates for each vertex
+const COLOR_OVERRIDE_SIZE = COLOR_OVERRIDE_ATTRIBUTE_SIZE * VERTICES_PER_SPRITE; // Color overrides for each vertex
+const ATLAS_ID_SIZE = ATLAS_ID_ATTRIBUTE_SIZE * VERTICES_PER_SPRITE; // Atlas IDs for each vertex
+
 export const ZCOORD_MAX = 10000;
 const DEFAULT_ZCOORD = 0;
+const VERTEX_BUFFER_OFFSET_MULTIPLIER = 48;
 const ZCOORD_BUFFER_OFFSET_MULTIPLIER = 24;
 const COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER = 96;
+const ATLAS_ID_BUFFER_OFFSET_MULTIPLIER = ATLAS_ID_SIZE;
 // Constants for vertex attribute configuration
 const POSITION_COMPONENTS = 2;
 const TEXCOORD_COMPONENTS = 2;
 const ZCOORD_COMPONENTS = 1;
+const COLOR_OVERRIDE_COMPONENTS = 4;
+const ATLAS_ID_COMPONENTS = 1;
+
 const SPRITE_DRAW_OFFSET = 0;
-
-// Constants for drawing
-const VERTICES_PER_SPRITE = 6;
-
 
 /**
  * Represents a view that renders graphics using WebGL.
@@ -124,8 +134,10 @@ export abstract class GLView extends BaseView {
     private texcoordLocation: number;
     private zcoordLocation: number;
     private color_overrideLocation: number;
+    private atlas_idLocation: number;
     private resolutionLocation: WebGLUniformLocation;
-    private textureLocation: WebGLUniformLocation;
+    private texture0Location: WebGLUniformLocation;
+    private texture1Location: WebGLUniformLocation;
     private vertexBuffer: WebGLBuffer;
     private texcoordBuffer: WebGLBuffer;
     private zBuffer: WebGLBuffer;
@@ -133,14 +145,16 @@ export abstract class GLView extends BaseView {
     private CRTShaderTexcoordBuffer: WebGLBuffer;
     private depthBuffer: WebGLBuffer;
     private color_overrideBuffer: WebGLBuffer;
+    private atlas_idBuffer: WebGLBuffer;
     private readonly vertex_shader_data = {
         resolutionVector: new Float32Array(RESOLUTION_VECTOR_SIZE),
         vertexcoords: GLView.getTextureCoordinates(),
         texcoords: new Float32Array(TEXTURECOORDS_SIZE * MAX_SPRITES),
         zcoords: new Float32Array(ZCOORDS_SIZE * MAX_SPRITES),
         color_override: new Float32Array(COLOR_OVERRIDE_SIZE * MAX_SPRITES),
+        atlas_id: new Uint8Array(ATLAS_ID_SIZE * MAX_SPRITES),
     }
-    private imagesToDraw: { options: DrawImgOptions, imgmeta: any }[] = [];
+    private imagesToDraw: { options: DrawImgOptions, imgmeta: ImgMeta }[] = [];
 
     private CRTShaderTexcoordLocation: GLint;
     private CRTShaderResolutionLocation: WebGLUniformLocation;
@@ -153,6 +167,7 @@ export abstract class GLView extends BaseView {
     private CRTShaderApplyBlurLocation: WebGLUniformLocation;
     private CRTShaderApplyGlowLocation: WebGLUniformLocation;
     private CRTShaderApplyFringingLocation: WebGLUniformLocation;
+    private CRTFragmentShaderTextureLocation: WebGLUniformLocation;
 
     private CRTShaderProgram: WebGLProgram;
     private framebuffer: WebGLFramebuffer;
@@ -301,7 +316,8 @@ export abstract class GLView extends BaseView {
         gl.uniform1f(this.gameShaderScaleLocation, 2.0);
         this.vertex_shader_data.resolutionVector.set([this.offscreenCanvasSize.x, this.offscreenCanvasSize.y]); // Set the resolution vector for the game shader, which uses a different resolution than the CRT shader
         gl.uniform2fv(this.resolutionLocation, this.vertex_shader_data.resolutionVector);
-        gl.uniform1i(this.textureLocation, 0);
+        gl.uniform1i(this.texture0Location, 0); // Texture unit 0 is typically used for the main texture
+        gl.uniform1i(this.texture1Location, 1); // Texture unit 1 can be used for additional textures or effects
 
         gl.useProgram(this.CRTShaderProgram);
         gl.uniform1f(this.CRTVertexShaderScaleLocation, 1.0);
@@ -312,6 +328,9 @@ export abstract class GLView extends BaseView {
         gl.uniform1i(this.CRTShaderApplyBlurLocation, this.applyBlur ? 1 : 0);
         gl.uniform1i(this.CRTShaderApplyGlowLocation, this.applyGlow ? 1 : 0);
         gl.uniform1i(this.CRTShaderApplyFringingLocation, this.applyFringing ? 1 : 0);
+        const POST_UNIT = gl.TEXTURE8; // Use a texture unit that is not used by the game shader
+        const CRTFRAGMENT_SHADER_TEXTURE_UNIT_INDEX = POST_UNIT - gl.TEXTURE0; // Calculate the texture unit index for the CRT fragment shader
+        gl.uniform1i(this.CRTFragmentShaderTextureLocation, CRTFRAGMENT_SHADER_TEXTURE_UNIT_INDEX); // Set the texture unit for the post-processing shader texture. Note that the uniform expects an index instead of a WebGLTexture object, so we subtract gl.TEXTURE0 to get the index of the texture unit.
         // Note that the resolution vector is set in the handleResize method for the CRT shader
     }
 
@@ -423,6 +442,7 @@ export abstract class GLView extends BaseView {
         this.CRTShaderApplyFringingLocation = gl.getUniformLocation(this.CRTShaderProgram, 'u_applyFringing');
         this.CRTVertexShaderScaleLocation = gl.getUniformLocation(this.CRTShaderProgram, 'u_scale');
         this.CRTFragmentShaderScaleLocation = gl.getUniformLocation(this.CRTShaderProgram, 'u_fragscale');
+        this.CRTFragmentShaderTextureLocation = gl.getUniformLocation(this.CRTShaderProgram, 'u_texture');
 
         // Enable the position attribute for the shader
         gl.enableVertexAttribArray(this.CRTShaderVertexLocation);
@@ -443,12 +463,14 @@ export abstract class GLView extends BaseView {
             texturecoord: this.createBuffer(this.vertex_shader_data.texcoords),
             z: this.createBuffer(this.vertex_shader_data.zcoords),
             color_override: this.createBuffer(this.vertex_shader_data.color_override),
+            atlas_id: this.createBuffer(this.vertex_shader_data.atlas_id),
         };
 
         this.vertexBuffer = buffers.vertex;
         this.texcoordBuffer = buffers.texturecoord;
         this.zBuffer = buffers.z;
         this.color_overrideBuffer = buffers.color_override;
+        this.atlas_idBuffer = buffers.atlas_id;
     }
 
     /**
@@ -459,10 +481,11 @@ export abstract class GLView extends BaseView {
     private setupGameShaderLocations(): void {
         this.switchProgram(this.gameShaderProgram);
 
-        this.setupAttribute(this.vertexBuffer, this.vertexLocation, VERTEX_ATTRIBUTE_SIZE);
-        this.setupAttribute(this.texcoordBuffer, this.texcoordLocation, TEXTURECOORD_ATTRIBUTE_SIZE);
-        this.setupAttribute(this.zBuffer, this.zcoordLocation, ZCOORD_ATTRIBUTE_SIZE);
-        this.setupAttribute(this.color_overrideBuffer, this.color_overrideLocation, COLOR_OVERRIDE_ATTRIBUTE_SIZE);
+        this.setupAttributeFloat(this.vertexBuffer, this.vertexLocation, VERTEX_ATTRIBUTE_SIZE);
+        this.setupAttributeFloat(this.texcoordBuffer, this.texcoordLocation, TEXTURECOORD_ATTRIBUTE_SIZE);
+        this.setupAttributeFloat(this.zBuffer, this.zcoordLocation, ZCOORD_ATTRIBUTE_SIZE);
+        this.setupAttributeFloat(this.color_overrideBuffer, this.color_overrideLocation, COLOR_OVERRIDE_ATTRIBUTE_SIZE);
+        this.setupAttributeInt(this.atlas_idBuffer, this.atlas_idLocation, ATLAS_ID_ATTRIBUTE_SIZE);
     }
 
     /**
@@ -474,12 +497,14 @@ export abstract class GLView extends BaseView {
         // Initialize the textures object as an empty object.
         // The object will contain all the textures used in the game and are accessed by their keys.
         // Note that this will remain mostly empty if the game uses the default texture atlas.
+        const gl = this.glctx;
         this.textures = {};
 
         // Link the atlas texture to the '_atlas' key for easy access
         // The atlas is created from the '_atlas' image in the ROM pack, which is loaded before the GLView is created (during loading of the ROM pack)
-        this.textures['_atlas'] = this.createTexture(BaseView.images['_atlas']); // Create the texture from the atlas image
-
+        this.textures['_atlas'] = this.createTexture(BaseView.images['_atlas'], undefined, gl.TEXTURE0); // Create the texture from the atlas image
+        // Create the texture with the same size as the atlas image
+        this.textures['_atlas_dynamic'] = this.createTexture(null, { width: BaseView.images['_atlas'].width, height: BaseView.images['_atlas'].height }, gl.TEXTURE1); // Create a dynamic texture for the atlas, which can be updated at runtime
         // The 'post_processing_source_texture' texture is created in createFramebufferAndTexture
     }
 
@@ -530,14 +555,17 @@ export abstract class GLView extends BaseView {
             vertex: gl.getAttribLocation(this.gameShaderProgram, 'a_position'),
             texcoord: gl.getAttribLocation(this.gameShaderProgram, 'a_texcoord'),
             zcoord: gl.getAttribLocation(this.gameShaderProgram, 'a_pos_z'),
-            color_override: gl.getAttribLocation(this.gameShaderProgram, 'a_color_override')
+            color_override: gl.getAttribLocation(this.gameShaderProgram, 'a_color_override'),
+            atlas_id: gl.getAttribLocation(this.gameShaderProgram, 'a_atlas_id'),
         };
         this.vertexLocation = locations.vertex;
         this.texcoordLocation = locations.texcoord;
         this.zcoordLocation = locations.zcoord;
         this.color_overrideLocation = locations.color_override;
+        this.atlas_idLocation = locations.atlas_id;
         this.resolutionLocation = gl.getUniformLocation(this.gameShaderProgram, 'u_resolution')!;
-        this.textureLocation = gl.getUniformLocation(this.gameShaderProgram, 'u_texture')!;
+        this.texture0Location = gl.getUniformLocation(this.gameShaderProgram, 'u_texture0')!;
+        this.texture1Location = gl.getUniformLocation(this.gameShaderProgram, 'u_texture1')!;
         this.gameShaderScaleLocation = gl.getUniformLocation(this.gameShaderProgram, 'u_scale');
     }
 
@@ -545,7 +573,7 @@ export abstract class GLView extends BaseView {
     /**
      * Creates and returns a new WebGL buffer with the provided data (if any).
      */
-    private createBuffer(data?: Float32Array): WebGLBuffer {
+    private createBuffer(data?: Float32Array | Uint8Array): WebGLBuffer {
         const gl = this.glctx;
         const buffer = gl.createBuffer()!;
         gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
@@ -559,11 +587,24 @@ export abstract class GLView extends BaseView {
      * This method binds the buffer to the ARRAY_BUFFER target,
      * enables the vertex attribute array at the specified location, and sets the vertex attribute pointer.
      */
-    private setupAttribute(buffer: WebGLBuffer, location: number, size: number): void {
+    private setupAttributeFloat(buffer: WebGLBuffer, location: number, size: number): void {
         const gl = this.glctx;
         gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
         gl.enableVertexAttribArray(location);
         gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0);
+    }
+
+    @catchWebGLError
+    /**
+     * Sets up the attribute for the specified buffer, location, and size.
+     * This method binds the buffer to the ARRAY_BUFFER target,
+     * enables the vertex attribute array at the specified location, and sets the vertex attribute pointer.
+     */
+    private setupAttributeInt(buffer: WebGLBuffer, location: number, size: number): void {
+        const gl = this.glctx;
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.enableVertexAttribArray(location);
+        gl.vertexAttribIPointer(location, size, gl.UNSIGNED_BYTE, 0, 0);
     }
 
     /**
@@ -619,10 +660,11 @@ export abstract class GLView extends BaseView {
      * @returns The created WebGL texture.
      */
     @catchWebGLError
-    private createTexture(img?: HTMLImageElement, size?: { width: number, height: number }): WebGLTexture {
+    private createTexture(img?: HTMLImageElement, size?: { width: number, height: number }, glTextureToBind?: number): WebGLTexture {
         const gl = this.glctx;
 
         const result = gl.createTexture()!;
+        gl.activeTexture(glTextureToBind || gl.TEXTURE0); // Use the provided texture unit or default to TEXTURE0
         gl.bindTexture(gl.TEXTURE_2D, result);
 
         if (img) {
@@ -670,7 +712,7 @@ export abstract class GLView extends BaseView {
         const height = this.offscreenCanvasSize.y;
 
         // Create a new texture
-        this.textures['post_processing_source_texture'] = this.createTexture(undefined, { width, height });
+        this.textures['post_processing_source_texture'] = this.createTexture(undefined, { width, height }, gl.TEXTURE8); // Use TEXTURE8 for the post-processing shader texture
 
         // Create a new framebuffer
         this.framebuffer = gl.createFramebuffer();
@@ -686,9 +728,6 @@ export abstract class GLView extends BaseView {
 
         // Unbind the framebuffer
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-
-        // Unbind the texture
-        gl.bindTexture(gl.TEXTURE_2D, null);
     }
 
     /**
@@ -829,9 +868,6 @@ export abstract class GLView extends BaseView {
         // Switch to the post-processing shader
         this.switchProgram(this.CRTShaderProgram);
 
-        // Bind the texture as the input to the post-processing shader
-        gl.bindTexture(gl.TEXTURE_2D, this.textures['post_processing_source_texture']);
-
         // Bind the vertex position buffer
         gl.bindBuffer(gl.ARRAY_BUFFER, this.CRTShaderVertexBuffer);
         gl.vertexAttribPointer(this.CRTShaderVertexLocation, POSITION_COMPONENTS, gl.FLOAT, false, 0, 0);
@@ -883,7 +919,6 @@ export abstract class GLView extends BaseView {
         gl.viewport(0, 0, this.offscreenCanvasSize.x, this.offscreenCanvasSize.y);
         // Set the viewport to the dimensions of the 'post_processing_source_texture' texture
         this.switchProgram(this.gameShaderProgram);
-        gl.bindTexture(gl.TEXTURE_2D, this.textures['_atlas']);
 
         // Bind the position buffer and set the position attribute
         gl.bindBuffer(gl.ARRAY_BUFFER, _this.vertexBuffer);
@@ -900,6 +935,16 @@ export abstract class GLView extends BaseView {
         gl.vertexAttribPointer(_this.zcoordLocation, ZCOORD_COMPONENTS, gl.FLOAT, false, 0, 0);
         gl.enableVertexAttribArray(_this.zcoordLocation);
 
+        // Bind the color override buffer and set the color override attribute
+        gl.bindBuffer(gl.ARRAY_BUFFER, _this.color_overrideBuffer);
+        gl.vertexAttribPointer(_this.color_overrideLocation, COLOR_OVERRIDE_COMPONENTS, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(_this.color_overrideLocation);
+
+        // Bind the atlas ID buffer and set the atlas ID attribute
+        gl.bindBuffer(gl.ARRAY_BUFFER, _this.atlas_idBuffer);
+        gl.vertexAttribIPointer(_this.atlas_idLocation, ATLAS_ID_COMPONENTS, gl.UNSIGNED_BYTE, 0, 0);
+        gl.enableVertexAttribArray(_this.atlas_idLocation);
+
         /**
          * Sort the images by depth.
          * This is done here instead of in drawgame so that the images are sorted based on their depth at the
@@ -908,7 +953,7 @@ export abstract class GLView extends BaseView {
         this.imagesToDraw.sort((i1, i2) => (i1.options.pos.z ?? 0) - (i2.options.pos.z ?? 0));
 
         // Update the buffers with the new data and draw the images to the texture using the main shader
-        const { vertexcoords, texcoords, zcoords, color_override } = this.vertex_shader_data;
+        const { vertexcoords, texcoords, zcoords, color_override, atlas_id } = this.vertex_shader_data;
         let i = 0;
         for (const { options, imgmeta } of this.imagesToDraw) {
             const { pos, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 }, colorize = DEFAULT_VERTEX_COLOR } = options;
@@ -924,12 +969,15 @@ export abstract class GLView extends BaseView {
             bvec.set_texturecoords(texcoords, i, this.getTexCoords(flip.flip_h, flip.flip_v, imgmeta));
             bvec.set_zcoord(zcoords, i, (pos.z ?? DEFAULT_ZCOORD) / ZCOORD_MAX);
             bvec.set_color(color_override, i, colorize);
+            bvec.set_atlas_id(atlas_id, i, imgmeta.atlasid);
+            console.error(`${i}: Drawing image from atlas '${imgmeta.atlasid}' at position (${pos.x}, ${pos.y}) with size (${width}, ${height}) and scale (${scale.x}, ${scale.y})`);
 
             ++i;
             // Draw the images in batches of MAX_SPRITES
             // This is done to avoid having to create a huge buffer for all the images
             if (i >= MAX_SPRITES) {
-                this.updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, 0);
+                this.updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, atlas_id, 0);
+                console.error(`i >= MAX_SPRITES: Calling drawArrays.`);
                 gl.drawArrays(gl.TRIANGLES, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i);
                 i = 0; // Reset the counter for the next batch of images to draw
             }
@@ -937,7 +985,8 @@ export abstract class GLView extends BaseView {
 
         // Draw the remaining images if any are remaining
         if (i > 0) {
-            this.updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, 0);
+            console.error(`Remaining images: Calling drawArrays.`);
+            this.updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, atlas_id, 0);
             gl.drawArrays(gl.TRIANGLES, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i);
         }
 
@@ -1015,11 +1064,12 @@ export abstract class GLView extends BaseView {
       * @param color_override The new color override data.
       * @param index The offset into the buffer to start
      */
-    private updateBuffers(gl: WebGLRenderingContext, vertexcoords: Float32Array, texcoords: Float32Array, zcoords: Float32Array, color_override: Float32Array, index: number): void {
-        GLView.updateBuffer(gl, this.vertexBuffer, gl.ARRAY_BUFFER, BUFFER_OFFSET_MULTIPLIER * index, vertexcoords); //
-        GLView.updateBuffer(gl, this.texcoordBuffer, gl.ARRAY_BUFFER, BUFFER_OFFSET_MULTIPLIER * index, texcoords);
+    private updateBuffers(gl: WebGLRenderingContext, vertexcoords: Float32Array, texcoords: Float32Array, zcoords: Float32Array, color_override: Float32Array, atlasid: Uint8Array, index: number): void {
+        GLView.updateBuffer(gl, this.vertexBuffer, gl.ARRAY_BUFFER, VERTEX_BUFFER_OFFSET_MULTIPLIER * index, vertexcoords);
+        GLView.updateBuffer(gl, this.texcoordBuffer, gl.ARRAY_BUFFER, VERTEX_BUFFER_OFFSET_MULTIPLIER * index, texcoords);
         GLView.updateBuffer(gl, this.zBuffer, gl.ARRAY_BUFFER, ZCOORD_BUFFER_OFFSET_MULTIPLIER * index, zcoords);
         GLView.updateBuffer(gl, this.color_overrideBuffer, gl.ARRAY_BUFFER, COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER * index, color_override);
+        GLView.updateBuffer(gl, this.atlas_idBuffer, gl.ARRAY_BUFFER, ATLAS_ID_BUFFER_OFFSET_MULTIPLIER * index, atlasid);
     }
 
     /**
