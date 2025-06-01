@@ -72,6 +72,7 @@ export interface HitPolygonsPrecalc {
  */
 export interface ImgMeta {
 	atlassed: boolean; // Whether the image is part of an atlas.
+	atlasid: number; // The ID of the atlas the image is part of, if applicable.
 	width: number; // The width of the image.
 	height: number; // The height of the image.
 	texcoords?: number[]; // The texture coordinates for the image, used for rendering.

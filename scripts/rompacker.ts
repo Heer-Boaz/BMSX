@@ -710,7 +710,7 @@ async function buildRompack(rom_name: string, respath: string, progress?: Progre
 
 	let generated_atlas: HTMLCanvasElement | undefined;
 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-		generated_atlas = createOptimizedAtlas(loadedResources);
+		generated_atlas = createOptimizedAtlas(loadedResources, 0);
 	}
 	progress?.taskCompleted();
 
@@ -836,6 +836,7 @@ function buildImgMeta(res: ILoadedResource): ImgMeta {
 
 	let imgmeta: ImgMeta = {
 		atlassed: false,
+		atlasid: null,
 		width: img.width,
 		height: img.height,
 		boundingbox: img_boundingbox_precalc,
@@ -846,6 +847,7 @@ function buildImgMeta(res: ILoadedResource): ImgMeta {
 		imgmeta = {
 			...imgmeta,
 			atlassed: res.imgmeta.atlassed,
+			atlasid: res.imgmeta.atlasid,
 			texcoords: res.imgmeta.texcoords,
 			texcoords_fliph: res.imgmeta.texcoords_fliph,
 			texcoords_flipv: res.imgmeta.texcoords_flipv,
@@ -884,7 +886,7 @@ async function handleAtlas(
 		type: 'image',
 		start: bufferPointer,
 		end: bufferPointer + atlasbuffer.length,
-		imgmeta: { atlassed: false, width: atlasSize.x, height: atlasSize.y },
+		imgmeta: { atlassed: false, atlasid: null, width: atlasSize.x, height: atlasSize.y },
 		audiometa: undefined
 	});
 	await writeFile("./rom/_ignore/atlas.png", atlasbuffer);
