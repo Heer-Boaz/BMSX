@@ -5,7 +5,7 @@ import gameShaderCode from './shaders/gameshader.glsl';
 import vertexShaderCode from './shaders/vertexshader.glsl';
 import { BaseView, Color, DrawImgOptions, DrawRectOptions } from './view';
 
-const CATCH_WEBGL_ERROR = true; // Set to false to disable WebGL error catching
+const CATCH_WEBGL_ERROR = false; // Set to false to disable WebGL error catching
 
 /**
  * Decorator function that catches WebGL errors thrown by the decorated method and throws an error with the error message.
@@ -970,14 +970,12 @@ export abstract class GLView extends BaseView {
             bvec.set_zcoord(zcoords, i, (pos.z ?? DEFAULT_ZCOORD) / ZCOORD_MAX);
             bvec.set_color(color_override, i, colorize);
             bvec.set_atlas_id(atlas_id, i, imgmeta.atlasid);
-            console.error(`${i}: Drawing image from atlas '${imgmeta.atlasid}' at position (${pos.x}, ${pos.y}) with size (${width}, ${height}) and scale (${scale.x}, ${scale.y})`);
 
             ++i;
             // Draw the images in batches of MAX_SPRITES
             // This is done to avoid having to create a huge buffer for all the images
             if (i >= MAX_SPRITES) {
                 this.updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, atlas_id, 0);
-                console.error(`i >= MAX_SPRITES: Calling drawArrays.`);
                 gl.drawArrays(gl.TRIANGLES, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i);
                 i = 0; // Reset the counter for the next batch of images to draw
             }
@@ -985,7 +983,6 @@ export abstract class GLView extends BaseView {
 
         // Draw the remaining images if any are remaining
         if (i > 0) {
-            console.error(`Remaining images: Calling drawArrays.`);
             this.updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, atlas_id, 0);
             gl.drawArrays(gl.TRIANGLES, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i);
         }
