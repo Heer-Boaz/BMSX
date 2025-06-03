@@ -437,6 +437,5 @@ class gamemodel extends BaseModel {
 class gameview extends GLView {
     override drawgame() {
         super.drawgame();
-        super.drawSprites();
     }
 }
