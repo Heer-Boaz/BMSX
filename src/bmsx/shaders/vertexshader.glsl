@@ -1,5 +1,5 @@
 #version 300 es
-precision highp float;
+precision mediump float;
 
 // Input attributes from the vertex buffer
 in vec2 a_position;         // Vertex position
