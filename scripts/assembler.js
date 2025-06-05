@@ -1123,7 +1123,6 @@ function getDataBytesPerLine(dataFormat) {
             return DATA_BYTES_PER_LINE_HEX;
         case 'dec':
             return DATA_BYTES_PER_LINE_DECIMAL;
-            break;
         case 'b64':
             return DATA_BYTES_PER_LINE_BASE64;
         default:
