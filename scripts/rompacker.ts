@@ -956,7 +956,7 @@ async function deployToServer(rom_name: string, title: string) {
  * @returns {Promise<void>} A promise that resolves once the compilation process is complete
  *                         or if no action is needed.
  */
-async function compileRomLoaderScriptIfNewer(progress?: ProgressReporter) {
+async function compileRomLoaderScriptIfNewer(progress?: ProgressReporter): Promise<void> {
 	const romTsPath = join(__dirname, '../scripts/rom.ts');
 	const romJsPath = join(__dirname, '../rom/rom.js');
 	const romTsDir = dirname(romTsPath);
