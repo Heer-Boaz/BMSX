@@ -16,7 +16,8 @@ const cleanCSS = require('@node-minify/clean-css');
 const { loadImage, Image } = require('canvas');
 const yaml = require('js-yaml');
 
-const GENERATE_AND_USE_TEXTURE_ATLAS = true;
+// Command line parameter for texture atlas usage
+let GENERATE_AND_USE_TEXTURE_ATLAS = true;
 const DONT_PACK_IMAGES_WHEN_USING_ATLAS = true;
 
 const BOILERPLATE_RESOURCE_ID_BITMAP = `export enum BitmapId {
@@ -44,9 +45,9 @@ function getParamOrEnv(args: string[], flag: string, envVar: string, fallback: s
 	return fallback;
 }
 
-function parseOptions(args: string[]): RomPackerOptions {
+function parseOptions(args: string[]): RomPackerOptions & { useTextureAtlas: boolean } {
 	// Check for unrecognized arguments
-	const knownArgs = ['-romname', '-title', '-bootloaderpath', '-respath', '--force', '--buildreslist', '--nodeploy'];
+	const knownArgs = ['-romname', '-title', '-bootloaderpath', '-respath', '--force', '--buildreslist', '--nodeploy', '--textureatlas'];
 	const unrecognizedArgs = args.filter(arg => arg.startsWith('-') && !knownArgs.includes(arg));
 	if (unrecognizedArgs.length > 0) {
 		throw new Error(`Unrecognized argument(s): ${unrecognizedArgs.join(', ')}`);
@@ -63,10 +64,18 @@ function parseOptions(args: string[]): RomPackerOptions {
 		writeOut(`  --force                Force the compilation and build of the rompack`, 'warning');
 		writeOut(`  --buildreslist         Build resource list`, 'warning');
 		writeOut(`  --nodeploy         Skip deployment`, 'warning');
+		writeOut(`  --textureatlas <yes|no>  Enable or disable texture atlas (default: yes)`, 'warning');
 		process.exit(0);
 	}
 
 	// Parse options
+	const useTextureAtlasArgIdx = args.indexOf('--textureatlas');
+	let useTextureAtlas = true;
+	if (useTextureAtlasArgIdx !== -1 && args[useTextureAtlasArgIdx + 1]) {
+		const val = args[useTextureAtlasArgIdx + 1].toLowerCase();
+		useTextureAtlas = val === 'yes' || val === 'true' || val === '1';
+	}
+
 	return {
 		rom_name: getParamOrEnv(args, '-romname', 'ROM_NAME', null)?.toLowerCase(),
 		title: getParamOrEnv(args, '-title', 'TITLE', null),
@@ -74,7 +83,8 @@ function parseOptions(args: string[]): RomPackerOptions {
 		respath: getParamOrEnv(args, '-respath', 'RES_PATH', null),
 		force: args.includes('--force'),
 		buildreslist: args.includes('--buildreslist'),
-		deploy: !args.includes('--nodeploy')
+		deploy: !args.includes('--nodeploy'),
+		useTextureAtlas
 	};
 }
 
@@ -181,9 +191,9 @@ async function getAllNonRootDirs(dirPath: string, arrayOfFiles: string[] = [], f
  * If no filterExtension is provided, the function will filter out .rom, .js, .ts, .map, and .tsbuildinfo files.
  * If a filterExtension is provided, the function will filter out all files that do not have the specified extension.
  *
- * @param dirPath - The path of the directory to search in.
- * @param _arrayOfFiles - An optional array to store the file paths. If not provided, a new array will be created.
- * @param filterExtension - An optional file extension to filter the files by.
+ * @param dirPath: string - The path of the directory to search in.
+ * @param _arrayOfFiles: string[] - An optional array to store the file paths. If not provided, a new array will be created.
+ * @param filterExtension: string - An optional file extension to filter the files by.
  * @returns An array of file paths.
  */
 async function getAllFiles(dirPath: string, _arrayOfFiles?: string[], filterExtension?: string): Promise<string[]> {
@@ -1156,7 +1166,8 @@ async function main() {
 		writeOut(_colors.brightGreen.bold('|                          BMSX ROMPACKER DOOR BOAZ©®™                           |\n'));
 		writeOut(_colors.brightGreen.bold('┗————————————————————————————————————————————————————————————————————————————————┛\n'));
 		const args = process.argv.slice(2);
-		let { title, rom_name, bootloader_path, respath, force, buildreslist, deploy } = parseOptions(args);
+		let { title, rom_name, bootloader_path, respath, force, buildreslist, deploy, useTextureAtlas } = parseOptions(args);
+		GENERATE_AND_USE_TEXTURE_ATLAS = useTextureAtlas;
 
 		if (buildreslist) {
 			if (!respath) {
@@ -1185,7 +1196,16 @@ async function main() {
 
 		let rebuildRequired = true;
 		if (force) {
-			writeOut(`Note: Recompilation and Building forced via ${_colors.brightRed.bold('--force')}\n`);
+			writeOut(`Note: Recompilation and building forced via ${_colors.yellow.bold('--force')}\n`);
+		}
+		else {
+			writeOut(`Note: Recompilation and building only if required (based on file modification times).\n`);
+		}
+		if (useTextureAtlas) {
+			writeOut(`Note: Texture atlas generation enabled via ${_colors.brightGreen.bold('--textureatlas yes')}\n`);
+		}
+		else {
+			writeOut(`Note: Texture atlas generation disabled via ${_colors.brightRed.bold('--textureatlas no')}\n`);
 		}
 		if (!deploy) writeOut(`Note: Deploy to FTP server disabled via ${_colors.brightRed.bold('--nodeploy')}\n`);
 		writeOut(`Starting ROM packing and deployment process for ROM ${_colors.brightBlue.bold(`${rom_name}`)}...\n`);
