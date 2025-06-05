@@ -137,9 +137,8 @@ export class EventEmitter implements IRegisterablePersistent {
             if (!this.emitterScopeListeners[event_name][filtered_on_emitter_id]) {
                 this.emitterScopeListeners[event_name][filtered_on_emitter_id] = new Set();
             }
-            if (this.checkIfListenerExists(event_name, listener, subscriber)) {
+            if (this.checkIfListenerExists(event_name, listener, subscriber, filtered_on_emitter_id)) {
                 console.warn(`Listener for event "${event_name}" already exists for emitter "${filtered_on_emitter_id}".`);
-                debugger;
                 return; // Prevent adding the same listener multiple times
             }
             this.emitterScopeListeners[event_name][filtered_on_emitter_id].add({ listener, subscriber });
@@ -149,7 +148,6 @@ export class EventEmitter implements IRegisterablePersistent {
             }
             if (this.checkIfListenerExists(event_name, listener, subscriber)) {
                 console.warn(`Listener for event "${event_name}", listener "${listener}", subscriber: "${subscriber}" already exists in global scope.`);
-                debugger;
                 return; // Prevent adding the same listener multiple times
             }
             this.globalScopeListeners[event_name].add({ listener, subscriber });
