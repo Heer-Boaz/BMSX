@@ -21,6 +21,7 @@
     "@types/pako": "*",
     "@types/systemjs": "*",
     "@types/terminal-kit": "*",
+    "@typescript/native-preview": "^7.0.0-dev.20250604.1",
     "canvas": "^3.1.0",
     "colors": "*",
     "dagre": "*",
@@ -35,8 +36,7 @@
     "pako": "*",
     "stringify": "^2.2.0",
     "terminal-kit": "*",
-    "tslib": "*",
-    "typescript": "*"
+    "tslib": "*"
   },
   "scripts": {
     "build:rom": "npx tsc scripts/rom.ts --removeComments -m commonjs -t ES2017 --outDir rom",

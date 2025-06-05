@@ -93,6 +93,8 @@
 				"-title",
 				"${input:romtobuild}",
 				"--nodeploy",
+				"--textureatlas",
+				"no",
 				"--force",
 			],
 			"problemMatcher": [
@@ -162,7 +164,7 @@
 			"type": "shell",
 			"command": "npx",
 			"args": [
-				"tsc",
+				"tsgo",
 				"${workspaceFolder}/scripts/rom.ts",
 				"--removeComments",
 				"-m",
@@ -197,7 +199,7 @@
 			"type": "shell",
 			"command": "npx",
 			"args": [
-				"tsc",
+				"tsgo",
 				"${workspaceFolder}/scripts/rompacker.ts",
 				"--removeComments",
 				"--target",
@@ -230,7 +232,7 @@
 			"type": "shell",
 			"command": "npx",
 			"args": [
-				"tsc",
+				"tsgo",
 				"${workspaceFolder}/src/bmsx/msxsound2.ts",
 				"--removeComments",
 				"--target",
