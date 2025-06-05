@@ -232,9 +232,7 @@ async function getRomManifest(dirPath: string): Promise<RomManifest> {
 	}
 	else if (files.length === 1) {
 		const res = await readFile(files[0]);
-		// Read the rommanifest file
-		JSON.parse(res.toString()) as RomManifest;
-
+		// Read and return the rommanifest file
 		return JSON.parse(res.toString()) as RomManifest;
 	}
 	else return null;
