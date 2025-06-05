@@ -9,6 +9,7 @@ const Gauge = require('gauge');
 
 import { access, readdir, readFile, stat, writeFile } from 'fs/promises';
 import * as term from 'terminal-kit';
+import { encodeBinary } from '../src/bmsx/binencoder';
 const _colors = require('colors');
 const pako = require('pako');
 const minify = require('@node-minify/core');
@@ -922,6 +923,7 @@ async function finalizeRompack(
 ) {
 	const jsonbuffer = Buffer.from(encodeuint8arr(JSON.stringify(jsonout)));
 	buffers.push(jsonbuffer);
+	const bladieblap = Buffer.from(encodeBinary(JSON.stringify(jsonout)));
 
 	const bufferPointer = buffers.reduce((acc, buf) => acc + buf.length, 0) - jsonbuffer.length;
 	const rommeta: RomMeta = { start: bufferPointer, end: bufferPointer + jsonbuffer.length };

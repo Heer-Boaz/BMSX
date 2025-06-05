@@ -1,4 +1,5 @@
 import { ISpaceObject, Space } from "./basemodel";
+import { decodeBinary, encodeBinary } from "./binencoder";
 import { Registry } from "./registry";
 import { SM } from "./soundmaster";
 
@@ -61,7 +62,7 @@ export class Serializer {
     private static serializeAnyWithRefs(obj: any, opts: { binary?: boolean } = {}): string | Uint8Array {
         const { root, objects } = Serializer.buildReferenceGraph(obj);
         if (opts.binary) {
-            return Serializer.encodeBinary({ root, objects });
+            return encodeBinary({ root, objects });
         } else {
             return JSON.stringify({ root, objects });
         }
@@ -191,27 +192,6 @@ export class Serializer {
         return { root: rootRef, objects };
     }
 
-    /**
-     * Serializes a JavaScript object into a compact binary format.
-     *
-     * The encoding supports the following types:
-     * - `undefined` and `null` (encoded as 0)
-     * - `boolean` (encoded as 1 for `true`, 2 for `false`)
-     * - `number` (encoded as 3, followed by 64-bit float)
-     * - `string` (encoded as 4, followed by UTF-8 string)
-     * - `Array` (encoded as 5, followed by length and recursively encoded elements)
-     * - Object references with a single `$ref` property (encoded as 6, followed by reference string)
-     * - Generic objects (encoded as 7, followed by key-value pairs)
-     *
-     * @param obj - The object to serialize.
-     * @returns A `Uint8Array` containing the binary representation of the object.
-     * @throws {Error} If an unsupported type is encountered during serialization.
-     */
-    static encodeBinary(obj: any): Uint8Array {
-        const w = new BinWriter();
-        w.write(obj);
-        return w.finish();
-    }
 }
 
 /**
@@ -251,66 +231,9 @@ export class Reviver {
     static get_constructor_for_type(typename: string): new () => any {
         return Reviver.constructors[typename];
     }
-    static decodeBinary(buf: Uint8Array) {
-        const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-        let offset = 0;
-        const textDecoder = new TextDecoder();
-        function readUint8(): number { return dv.getUint8(offset++); }
-        function readVarUint(): number {
-            let val = 0, shift = 0, b: number;
-            do {
-                b = buf[offset++];
-                val |= (b & 0x7F) << shift;
-                shift += 7;
-            } while (b & 0x80);
-            return val;
-        }
-        function readString(): string {
-            const len = readVarUint();
-            const arr = buf.subarray(offset, offset + len);
-            offset += len;
-            return textDecoder.decode(arr);
-        }
-        function read(): null | true | false | number | string | any[] | { r: number } | Record<string, any> {
-            const tag = readUint8();
-            switch (tag) {
-                case 0: return null; // undefined or null
-                case 1: return true; // boolean true
-                case 2: return false; // boolean false
-                case 3: { // number
-                    const v = dv.getFloat64(offset, true);
-                    offset += 8;
-                    return v;
-                }
-                case 4: return readString(); // string
-                case 5: { // array
-                    const len = readVarUint();
-                    const arr = new Array(len);
-                    for (let i = 0; i < len; ++i) arr[i] = read();
-                    return arr;
-                }
-                case 6: { // object reference
-                    const ref = readVarUint();
-                    return { r: ref };
-                }
-                case 7: { // generic object
-                    const len = readVarUint();
-                    const obj = {};
-                    for (let i = 0; i < len; ++i) {
-                        const k = readString();
-                        obj[k] = read();
-                    }
-                    return obj;
-                }
-                default: // unknown tag
-                    throw new Error(`Unknown tag in decodeBinary: ${tag}`);
-            }
-        }
-        return read();
-    }
 
     static deserialize(input: string | Uint8Array, options: { isBinary?: boolean } = { isBinary: true }) {
-        const { root, objects } = options.isBinary ? Reviver.decodeBinary(input as Uint8Array) : JSON.parse(input as string);
+        const { root, objects } = options.isBinary ? decodeBinary(input as Uint8Array) : JSON.parse(input as string);
         const idToObject: Record<number, any> = {};
         if (!objects || Object.keys(objects).length === 0 || !root) {
             console.error('Gamestate to deserialize is invalid!');
@@ -515,101 +438,10 @@ export class Savegame {
  */
 export function debugPrintBinarySnapshot(buf: Uint8Array): string {
     try {
-        const obj = Reviver.decodeBinary(buf);
+        const obj = decodeBinary(buf);
         return JSON.stringify(obj, null, 2);
     } catch (e) {
         return `Failed to decode binary snapshot: ${e}`;
-    }
-}
-
-class BinWriter {
-    buf = new Uint8Array(64 * 1024);
-    pos = 0;
-    private dv = new DataView(this.buf.buffer);
-    textEncoder = new TextEncoder();
-    // Static cache for encoded string bytes to avoid re-encoding
-    static stringEncodeCache: Map<string, Uint8Array> = new Map();
-
-    // Aggressively grow buffer: 2x + n
-    ensure(n: number) {
-        if (this.pos + n > this.buf.length) {
-            let newLen = this.buf.length * 2;
-            while (newLen < this.pos + n) newLen = newLen * 2;
-            const newBuf = new Uint8Array(newLen);
-            newBuf.set(this.buf, 0);
-            this.buf = newBuf;
-            // Update DataView to new buffer
-            this.dv = new DataView(this.buf.buffer);
-        }
-    }
-    u8(v: number) { this.ensure(1); this.buf[this.pos++] = v; }
-    f64(v: number) { this.ensure(8); this.dv.setFloat64(this.pos, v, true); this.pos += 8; }
-    varuint(v: number) {
-        do {
-            let b = v & 0x7F;
-            v >>>= 7;
-            if (v !== 0) b |= 0x80;
-            this.u8(b);
-        } while (v !== 0);
-    }
-    /**
-     * Encodes a UTF-8 string, caching the result to avoid repeated TextEncoder work.
-     */
-    str(s: string) {
-        if (!s || s.length === 0) {
-            this.varuint(0);
-            return;
-        }
-        let bytes = BinWriter.stringEncodeCache.get(s);
-        if (!bytes) {
-            bytes = this.textEncoder.encode(s);
-            BinWriter.stringEncodeCache.set(s, bytes);
-        }
-        this.varuint(bytes.length);
-        this.ensure(bytes.length);
-        this.buf.set(bytes, this.pos);
-        this.pos += bytes.length;
-    }
-    finish() { return this.buf.subarray(0, this.pos); }
-    /**
-     * Recursively writes any supported value into the binary stream.
-     */
-    write(val: any): void {
-        switch (typeof val) {
-            case 'undefined':
-                this.u8(0); return;
-            case 'boolean':
-                this.u8(val ? 1 : 2); return;
-            case 'number':
-                this.u8(3); this.f64(val); return;
-            case 'string':
-                this.u8(4); this.str(val); return;
-            case 'object':
-                if (val === null) { this.u8(0); return; }
-                if (Array.isArray(val)) {
-                    this.u8(5);
-                    this.varuint(val.length);
-                    for (let i = 0, len = val.length; i < len; i++) this.write(val[i]);
-                    return;
-                }
-                const keys = Object.keys(val);
-                // Detect { r: id } reference (id is a number)
-                if (keys.length === 1 && ('r' in val)) {
-                    this.u8(6);
-                    this.varuint(val.r);
-                    return;
-                }
-                this.u8(7);
-                this.varuint(keys.length);
-                for (let i = 0, klen = keys.length; i < klen; i++) {
-                    const k = keys[i];
-                    this.str(k);
-                    this.write(val[k]);
-                }
-                return;
-            default:
-                throw new Error('Unsupported type in encodeBinary');
-        }
     }
 }
 

@@ -93,8 +93,8 @@
 				"-title",
 				"${input:romtobuild}",
 				"--nodeploy",
-				"--textureatlas",
-				"no",
+				// "--textureatlas",
+				// "no",
 				"--force",
 			],
 			"problemMatcher": [
