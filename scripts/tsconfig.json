@@ -8,7 +8,7 @@
         "moduleResolution": "Node"
     },
     "include": [
-        ".",
+        "./**/*.ts",
         ".rompacker.rompack.d.ts"
     ]
 }

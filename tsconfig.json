@@ -74,7 +74,7 @@
     "node_modules",
     "_ignore",
     "dist",
-    "scripts"
+    // "scripts"
   ],
   "files": [], // No files are included in the compilation, only references
   "include": [

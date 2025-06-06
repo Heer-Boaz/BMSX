@@ -36,7 +36,8 @@
     "pako": "*",
     "stringify": "^2.2.0",
     "terminal-kit": "*",
-    "tslib": "*"
+    "tslib": "*",
+    "typescript": "^5.8.3"
   },
   "scripts": {
     "build:rom": "npx tsc scripts/rom.ts --removeComments -m commonjs -t ES2017 --outDir rom",
