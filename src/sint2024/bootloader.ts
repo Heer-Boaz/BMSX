@@ -1,7 +1,7 @@
-import { BaseModel, Direction, GLView, Game, GameObject, GamepadInputMapping, GamepadButton, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, RomPack, StateMachineBlueprint, build_fsm, insavegame, new_vec2, type State, BFont } from '../bmsx/bmsx';
+import { BFont, BaseModel, Direction, GLView, Game, GameObject, GamepadButton, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, RomPack, StateMachineBlueprint, build_fsm, insavegame, new_vec2, type State } from '../bmsx/bmsx';
 import { quiz } from './quiz';
-import { sint } from './sint';
 import { BitmapId } from './resourceids';
+import { sint } from './sint';
 
 var _game: Game;
 let _model: gamemodel;
@@ -167,8 +167,4 @@ class gamemodel extends BaseModel {
 }
 
 class gameview extends GLView {
-    override drawgame() {
-        super.drawgame();
-        super.drawSprites();
-    }
 }
