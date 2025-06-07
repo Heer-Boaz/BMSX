@@ -1,11 +1,11 @@
 const { createCanvas } = require('canvas');
-import { Image } from 'canvas';
-import { Area, BoundingBoxPrecalc, vec2 } from './rompacker.rompack';
+import type { Image } from 'canvas';
+import type { Area, BoundingBoxPrecalc, vec2 } from './rompacker.rompack';
 
 /**
  * Dedicated class for extracting bounding boxes and related operations from images.
  */
-export class BoundingBoxExtractor {
+class BoundingBoxExtractor {
     /**
      * Extracts the tightest bounding box around non-transparent pixels in an image.
      */
@@ -233,3 +233,7 @@ export class BoundingBoxExtractor {
         return { x: ~~middlex, y: ~~middley };
     }
 }
+
+module.exports = {
+    BoundingBoxExtractor
+};

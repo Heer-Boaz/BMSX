@@ -10,7 +10,7 @@
 			"dependsOn": [
 				"output romtobuild",
 				"build rom.js",
-				"build rompacker.js",
+				// "build rompacker.js",
 				"pack rom resources (resourceids.ts)",
 				"Forcefully build the game"
 			],
@@ -37,9 +37,10 @@
 			"label": "build the game",
 			"detail": "Runs rompacker.js to create the ROM + resources. Doesn't run dependent tasks for building rom.js & rompacker.js!",
 			"type": "shell",
-			"command": "node",
+			"command": "npx",
 			"args": [
-				"${workspaceFolder}/rom/rompacker.js",
+				"tsx",
+				"${workspaceFolder}/scripts/rompacker.ts",
 				"-romname",
 				"${input:romtobuild}",
 				"-bootloaderpath",
@@ -81,9 +82,10 @@
 			"label": "Forcefully build the game",
 			"detail": "Runs rompacker.js to create the ROM + resources. Doesn't run dependent tasks for building rom.js & rompacker.js!",
 			"type": "shell",
-			"command": "node",
+			"command": "npx",
 			"args": [
-				"${workspaceFolder}/rom/rompacker.js",
+				"tsx",
+				"${workspaceFolder}/scripts/rompacker.ts",
 				"-romname",
 				"${input:romtobuild}",
 				"-bootloaderpath",
@@ -128,9 +130,10 @@
 			"label": "pack rom resources (resourceids.ts)",
 			"detail": "Runs rompacker.js to create resourceids.ts + texture atlas",
 			"type": "shell",
-			"command": "node",
+			"command": "npx",
 			"args": [
-				"${workspaceFolder}/rom/rompacker.js",
+				"tsx",
+				"${workspaceFolder}/scripts/rompacker.ts",
 				"-respath",
 				"./src/${input:romtobuild}/res",
 				"--buildreslist"
@@ -193,39 +196,39 @@
 			},
 			"group": "build"
 		},
-		{
-			"label": "build rompacker.js",
-			"detail": "Generates script used for creating & deploying the ROM image",
-			"type": "shell",
-			"command": "npx",
-			"args": [
-				"tsgo",
-				"${workspaceFolder}/scripts/rompacker.ts",
-				"--removeComments",
-				"--target",
-				"ES5",
-				"--outDir",
-				"${workspaceFolder}/rom"
-			],
-			"problemMatcher": [
-				"$tsc"
-			],
-			"group": "build",
-			"icon": {
-				"id": "symbol-property",
-				"color": "terminal.ansiMagenta"
-			},
-			"presentation": {
-				"echo": true,
-				"reveal": "always",
-				"focus": false,
-				"panel": "shared",
-				"showReuseMessage": false,
-				"close": false,
-				"clear": false,
-				"group": "ROMPACKER"
-			}
-		},
+		// {
+		// 	"label": "build rompacker.js",
+		// 	"detail": "Generates script used for creating & deploying the ROM image",
+		// 	"type": "shell",
+		// 	"command": "npx",
+		// 	"args": [
+		// 		"tsgo",
+		// 		"${workspaceFolder}/scripts/rompacker.ts",
+		// 		"--removeComments",
+		// 		"--target",
+		// 		"ES5",
+		// 		"--outDir",
+		// 		"${workspaceFolder}/rom"
+		// 	],
+		// 	"problemMatcher": [
+		// 		"$tsc"
+		// 	],
+		// 	"group": "build",
+		// 	"icon": {
+		// 		"id": "symbol-property",
+		// 		"color": "terminal.ansiMagenta"
+		// 	},
+		// 	"presentation": {
+		// 		"echo": true,
+		// 		"reveal": "always",
+		// 		"focus": false,
+		// 		"panel": "shared",
+		// 		"showReuseMessage": false,
+		// 		"close": false,
+		// 		"clear": false,
+		// 		"group": "ROMPACKER"
+		// 	}
+		// },
 		{
 			"label": "build msxsound.js",
 			"detail": "Generates script used for PSG emulator",

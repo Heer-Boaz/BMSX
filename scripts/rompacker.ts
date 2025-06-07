@@ -1,20 +1,22 @@
-import { exec } from 'child_process';
-import { build } from 'esbuild';
-import { Stats } from 'fs';
-import { dirname, join, parse } from 'path';
+const { exec } = require('child_process');
+const { build } = require('esbuild');
+import type { Stats } from 'fs';
+// @ts-ignore
 import { createOptimizedAtlas } from './atlasbuilder';
+// @ts-ignore
 import { BoundingBoxExtractor } from './boundingbox_extractor';
-import { AudioMeta, ImgMeta, RomAsset, RomMeta, vec2 } from './rompacker.rompack';
-const Gauge = require('gauge');
+import type { AudioMeta, ImgMeta, RomAsset, RomMeta, vec2 } from './rompacker.rompack';
+const { dirname, join, parse } = require('path');
 
-import { access, readdir, readFile, stat, writeFile } from 'fs/promises';
-import * as term from 'terminal-kit';
-import { encodeBinary } from '../src/bmsx/binencoder';
+const { access, readdir, readFile, stat, writeFile } = require('fs/promises');
+// import { term as terminal } from 'terminal-kit';
+const term = require('terminal-kit').terminal;
+const { encodeBinary } = require('../src/bmsx/binencoder');
 const _colors = require('colors');
 const pako = require('pako');
 const minify = require('@node-minify/core');
 const cleanCSS = require('@node-minify/clean-css');
-const { loadImage, Image } = require('canvas');
+const { loadImage } = require('canvas');
 const yaml = require('js-yaml');
 
 // Command line parameter for texture atlas usage
@@ -125,7 +127,7 @@ function writeOut(_tolog: string, type?: logentryType): void {
 		case 'warning': tolog = _colors.yellow(_tolog); break;
 		default: tolog = _tolog; break;
 	}
-	term.terminal(tolog);
+	term(tolog);
 }
 
 function timer(ms: number) {
@@ -811,7 +813,7 @@ function buildImgMeta(res: ILoadedResource): ImgMeta {
 	} = undefined;
 	switch (res.collisionType) {
 		case 'concave':
-			extracted_hitpolygon = BoundingBoxExtractor.extractConcaveHull(img);
+			extracted_hitpolygon = BoundingBoxExtractor.extractConcaveHull(img) as vec2[][];
 			hitpolygons = {
 				original: extracted_hitpolygon,
 				fliph: flipPolygons(extracted_hitpolygon, true, false),
@@ -820,7 +822,7 @@ function buildImgMeta(res: ILoadedResource): ImgMeta {
 			};
 			break;
 		case 'convex':
-			extracted_hitpolygon = BoundingBoxExtractor.extractConvexHull(img);
+			extracted_hitpolygon = BoundingBoxExtractor.extractConvexHull(img) as vec2[];
 			hitpolygons = {
 				original: [extracted_hitpolygon],
 				fliph: flipPolygons([extracted_hitpolygon], true, false),
@@ -886,7 +888,7 @@ async function handleAtlas(
 ) {
 	const i = loadedResources.findIndex(x => x.type === 'atlas');
 	const atlasSize = { x: generated_atlas.width, y: generated_atlas.height };
-	const atlasbuffer: Buffer = (<any>generated_atlas).toBuffer('image/png');
+	const atlasbuffer: Buffer = (generated_atlas as any).toBuffer('image/png');
 	buffers.push(atlasbuffer);
 
 	jsonout.push({
@@ -1161,7 +1163,7 @@ async function main() {
 	const progress = new ProgressReporter(taskList);
 	try {
 		// #region stuff
-		term.terminal.clear();
+		term.clear();
 		writeOut(_colors.brightGreen.bold('┏————————————————————————————————————————————————————————————————————————————————┓\n'));
 		writeOut(_colors.brightGreen.bold('|                          BMSX ROMPACKER DOOR BOAZ©®™                           |\n'));
 		writeOut(_colors.brightGreen.bold('┗————————————————————————————————————————————————————————————————————————————————┛\n'));

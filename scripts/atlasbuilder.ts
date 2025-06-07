@@ -1,4 +1,4 @@
-import { ILoadedResource } from './rompacker';
+import type { ILoadedResource } from './rompacker';
 const { createCanvas } = require('canvas');
 
 const ATLAS_MAX_SIZE_IN_PIXELS = 2048;
@@ -13,7 +13,7 @@ export type Bin = { x: number; y: number; width: number; height: number; };
  * @param usedRect The used rectangle to use as a reference for splitting the free rectangle.
  * @returns An array of new free rectangles created by splitting the original free rectangle.
  */
-export function splitFreeRectangle(freeRect: Bin, usedRect: Bin): Bin[] {
+function splitFreeRectangle(freeRect: Bin, usedRect: Bin): Bin[] {
 	const newFreeRects: Bin[] = [];
 
 	// Check for overlap on the horizontal axis
@@ -95,7 +95,7 @@ function pruneFreeRectangles(newFreeRectangles: Bin[], freeRectangles: Bin[]): v
  * @param rect2 The second rectangle to check.
  * @returns True if rect1 is fully contained within rect2, false otherwise.
  */
-export function isContained(rect1: Bin, rect2: Bin): boolean {
+function isContained(rect1: Bin, rect2: Bin): boolean {
 	return rect1.x >= rect2.x && rect1.y >= rect2.y &&
 		rect1.x + rect1.width <= rect2.x + rect2.width &&
 		rect1.y + rect1.height <= rect2.y + rect2.height;
@@ -107,7 +107,7 @@ export function isContained(rect1: Bin, rect2: Bin): boolean {
  * @param bin2 The second bin to check.
  * @returns True if bin1 overlaps with bin2, false otherwise.
  */
-export function overlaps(bin1: Bin, bin2: Bin): boolean {
+function overlaps(bin1: Bin, bin2: Bin): boolean {
 	return bin1.x < bin2.x + bin2.width && bin1.x + bin1.width > bin2.x && bin1.y < bin2.y + bin2.height && bin1.y + bin1.height > bin2.y;
 }
 
@@ -118,7 +118,7 @@ export function overlaps(bin1: Bin, bin2: Bin): boolean {
  * @param binHeight The maximum height of the texture atlas.
  * @returns An object containing the packed rectangles, their positions in the texture atlas, and the dimensions of the texture atlas.
  */
-export function maximalRectanglesPacker(rects: Rect[], binWidth: number, binHeight: number): { items: { item: Rect, x: number, y: number; }[], width: number, height: number; } {
+function maximalRectanglesPacker(rects: Rect[], binWidth: number, binHeight: number): { items: { item: Rect, x: number, y: number; }[], width: number, height: number; } {
 	// Sort the rectangles by area in descending order
 	const sortedRects = rects.slice().sort((a, b) => b.width * b.height - a.width * a.height);
 
@@ -194,7 +194,7 @@ type Shelf = {
  * @param binHeight The maximum height of the texture atlas.
  * @returns An object containing the packed rectangles, their positions in the texture atlas, and the dimensions of the texture atlas.
  */
-export function shelfBinPacker(rects: Rect[], binWidth: number, binHeight: number): { items: { item: Rect, x: number, y: number; }[], width: number, height: number; } {
+function shelfBinPacker(rects: Rect[], binWidth: number, binHeight: number): { items: { item: Rect, x: number, y: number; }[], width: number, height: number; } {
 	// Sort the rectangles by height in descending order
 	const sortedRects = rects.slice().sort((a, b) => b.height - a.height);
 
@@ -256,7 +256,7 @@ type Node = {
  * @param binHeight The maximum height of the texture atlas.
  * @returns An object containing the packed rectangles, their positions in the texture atlas, and the dimensions of the texture atlas.
  */
-export function tprfPacker(rects: Rect[], binWidth: number, binHeight: number): { items: { item: Rect, x: number, y: number; }[], width: number, height: number; } {
+function tprfPacker(rects: Rect[], binWidth: number, binHeight: number): { items: { item: Rect, x: number, y: number; }[], width: number, height: number; } {
 	// Sort the rectangles by area in descending order
 	const sortedRects = rects.slice().sort((a, b) => b.width * b.height - a.width * a.height);
 
@@ -342,7 +342,7 @@ export function tprfPacker(rects: Rect[], binWidth: number, binHeight: number): 
 	return { items: items, width: width, height: height };
 }
 
-export function createOptimizedAtlas(loadedResources: ILoadedResource[], atlasId: number): HTMLCanvasElement {
+function createOptimizedAtlas(loadedResources: ILoadedResource[], atlasId: number): HTMLCanvasElement {
 	const image_assets = loadedResources.filter(resource => resource.type === "image");
 	const rects = image_assets.map(img_resource => ({ x: undefined, y: undefined, width: img_resource.img?.width, height: img_resource.img?.height, id: img_resource.id }));
 
@@ -360,7 +360,7 @@ export function createOptimizedAtlas(loadedResources: ILoadedResource[], atlasId
 
 	const atlas_width = CROP_ATLAS ? smallest_result.width : ATLAS_MAX_SIZE_IN_PIXELS, atlas_height = CROP_ATLAS ? smallest_result.height : ATLAS_MAX_SIZE_IN_PIXELS;
 
-	const atlasCanvas: HTMLCanvasElement = <any>createCanvas(atlas_width, atlas_height);
+	const atlasCanvas: HTMLCanvasElement = createCanvas(atlas_width, atlas_height);
 	const ctx: CanvasRenderingContext2D = atlasCanvas.getContext('2d')!;
 
 	// Draw images onto the atlas canvas
@@ -383,7 +383,7 @@ export function createOptimizedAtlas(loadedResources: ILoadedResource[], atlasId
  * @param imageHeight The height of the image.
  * @returns An object containing the UV coordinates of the image in the texture atlas.
  */
-export function uvcoords(x: number, y: number, width: number, height: number, imageWidth: number, imageHeight: number) {
+function uvcoords(x: number, y: number, width: number, height: number, imageWidth: number, imageHeight: number) {
 	const result = {
 		width: imageWidth, height: imageHeight, atlassed: true, texcoords: [] as number[], texcoords_fliph: [] as number[], texcoords_flipv: [] as number[], texcoords_fliphv: [] as number[]
 	};
@@ -398,3 +398,7 @@ export function uvcoords(x: number, y: number, width: number, height: number, im
 	result.texcoords_fliphv.push(right, bottom, left, bottom, right, top, right, top, left, bottom, left, top);
 	return result;
 }
+
+module.exports = {
+	createOptimizedAtlas
+};
