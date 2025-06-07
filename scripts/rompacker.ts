@@ -249,7 +249,7 @@ async function yaml2Json(progress?: ProgressReporter): Promise<void> {
 			const outfilename = file.replace('.yaml', '.json');
 			await writeFile(outfilename, Buffer.from(encodeuint8arr(JSON.stringify(doc))));
 		}));
-		if (progress) progress.taskCompleted();
+		await progress?.taskCompleted();
 	}
 	catch (err) {
 		throw new Error(`Error converting YAML to JSON: ${err.message}`);
@@ -282,7 +282,7 @@ async function esbuild(romname: string, bootloader_path: string, progress?: Prog
 			external: ['node_modules', 'dist', 'rom', 'ts-key-enum'],
 			treeShaking: true,
 		});
-		if (progress) progress.taskCompleted();
+		await progress?.taskCompleted();
 		return null;
 	} catch (err) {
 		throw err;
@@ -425,7 +425,7 @@ async function buildGameHtmlAndManifest(rom_name: string, title: string, short_n
 					// Write updated manifest to dist-folder
 					await writeFile("./dist/manifest.webmanifest", manifest);
 
-					if (progress) progress.taskCompleted();
+					await progress?.taskCompleted();
 					resolve(null);
 				} catch (error) {
 					reject(error);
@@ -717,13 +717,13 @@ async function buildRompack(rom_name: string, respath: string, progress?: Progre
 
 	const buffers: Buffer[] = [];
 	const loadedResources = await getLoadedResourcesList(respath, buffers, rom_name);
-	progress?.taskCompleted();
+	await progress?.taskCompleted();
 
 	let generated_atlas: HTMLCanvasElement | undefined;
 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
 		generated_atlas = createOptimizedAtlas(loadedResources, 0);
 	}
-	progress?.taskCompleted();
+	await progress?.taskCompleted();
 
 	const { jsonout, bufferPointer, romlabel_buffer } = processResources(loadedResources);
 
@@ -901,7 +901,7 @@ async function handleAtlas(
 		audiometa: undefined
 	});
 	await writeFile("./rom/_ignore/atlas.png", atlasbuffer);
-	if (progress) progress.taskCompleted();
+	await progress?.taskCompleted();
 }
 
 /**
@@ -940,10 +940,10 @@ async function finalizeRompack(
 	const blob_meta_string = JSON.stringify(blobmeta).padStart(100, ' ');
 	const blob_meta_as_buffer = Buffer.from(encodeuint8arr(blob_meta_string));
 
-	if (progress) progress.taskCompleted();
+	await progress?.taskCompleted();
 	await writeFile(`./dist/${outfile}`, Buffer.concat([romlabel_buffer ?? Buffer.alloc(0), zipped, blob_meta_as_buffer]));
 	await writeFile("./rom/_ignore/romresources.json", jsonbuffer);
-	if (progress) progress.taskCompleted();
+	await progress?.taskCompleted();
 }
 
 async function deployToServer(rom_name: string, title: string) {
@@ -977,17 +977,17 @@ async function compileRomLoaderScriptIfNewer(progress?: ProgressReporter): Promi
 		romJsStats = await stat(romJsPath);
 	}
 	catch { } // Ignore error if rom.js does not exist yet
-	if (progress) progress.taskCompleted();
+	await progress?.taskCompleted();
 
 	if (!romJsStats || romTsStats.mtime > romJsStats.mtime) {
 		return new Promise<void>((resolve, reject) => {
 			try {
 				exec(`npx tsc ${romTsPath} --removeComments -m commonjs -t ES2020 --rootDir "." --outDir ${join(__dirname, '../rom/')}`,
-					{ cwd: romTsDir }, (error, stdout, stderr) => {
+					{ cwd: romTsDir }, async (error, stdout, stderr) => {
 						if (error || stderr) {
 							throw new Error(`Error while compiling "rom.ts": ${error?.message ?? stderr}`);
 						} else {
-							if (progress) progress.taskCompleted();
+							await progress?.taskCompleted();
 							resolve();
 						}
 					});
@@ -997,7 +997,7 @@ async function compileRomLoaderScriptIfNewer(progress?: ProgressReporter): Promi
 		});
 	}
 	// rom.js is newer or up to date. No need to compile
-	if (progress) progress.taskCompleted();
+	await progress?.taskCompleted();
 }
 
 const codeFileExtensions = ['.ts', '.glsl', '.js', '.jsx', '.tsx', '.html', '.css', '.json', '.xml'];
@@ -1094,7 +1094,7 @@ class ProgressReporter {
 		});
 		this.gauge.setTemplate([
 			{ type: 'progressbar', length: 50 },
-			{ type: 'activityIndicator', kerning: 1, length: 1 },
+			// { type: 'activityIndicator', kerning: 1, length: 1 },
 			{ type: 'section', kerning: 1, default: '' },
 			{ type: 'subsection', kerning: 1, default: '' },
 		]);
@@ -1102,15 +1102,15 @@ class ProgressReporter {
 		this.totalTasks = tasks.length;
 	}
 
-	public taskCompleted() {
+	public async taskCompleted() {
 		this.completedTasks++;
 		const progressPercentage = this.completedTasks / this.totalTasks;
 		if (this.tasks.length) {
 			const currentTask = this.tasks.shift()!;
 			this.gauge.show(currentTask, progressPercentage);
-			this.gauge.pulse();
+			await this.pulse();
 		} else {
-			this.showDone();
+			await this.showDone();
 		}
 	}
 
@@ -1135,13 +1135,14 @@ class ProgressReporter {
 		}
 	}
 
-	public showDone() {
-		this.gauge.show('ALLES DONUT', 1);
-		this.gauge.pulse();
+	public async showDone() {
+		this.gauge.show('ROM PACKING GE-DONUT!! :-)', 1);
+		await this.pulse();
 	}
 
-	public pulse() {
+	public async pulse() {
 		this.gauge.pulse();
+		await timer(10);
 	}
 }
 
@@ -1246,10 +1247,10 @@ async function main() {
 			if (deploy) {
 				await deployToServer(rom_name, title); progress.taskCompleted();
 			}
-			progress.showDone();
-			await timer(100);
+			await progress.showDone();
+			writeOut(`\n`);
 		} catch (e) {
-			progress.pulse();
+			await progress.pulse();
 			outputError(e);
 		}
 	} catch (e) {
