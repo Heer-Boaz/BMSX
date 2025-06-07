@@ -342,7 +342,7 @@ function tprfPacker(rects: Rect[], binWidth: number, binHeight: number): { items
 	return { items: items, width: width, height: height };
 }
 
-function createOptimizedAtlas(loadedResources: ILoadedResource[], atlasId: number): HTMLCanvasElement {
+export function createOptimizedAtlas(loadedResources: ILoadedResource[], atlasId: number): HTMLCanvasElement {
 	const image_assets = loadedResources.filter(resource => resource.type === "image");
 	const rects = image_assets.map(img_resource => ({ x: undefined, y: undefined, width: img_resource.img?.width, height: img_resource.img?.height, id: img_resource.id }));
 
@@ -398,7 +398,3 @@ function uvcoords(x: number, y: number, width: number, height: number, imageWidt
 	result.texcoords_fliphv.push(right, bottom, left, bottom, right, top, right, top, left, bottom, left, top);
 	return result;
 }
-
-module.exports = {
-	createOptimizedAtlas
-};

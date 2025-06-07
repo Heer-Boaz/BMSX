@@ -1,15 +1,12 @@
 const { exec } = require('child_process');
 const { build } = require('esbuild');
 import type { Stats } from 'fs';
-// @ts-ignore
 import { createOptimizedAtlas } from './atlasbuilder';
-// @ts-ignore
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import type { AudioMeta, ImgMeta, RomAsset, RomMeta, vec2 } from './rompacker.rompack';
 const { dirname, join, parse } = require('path');
 
 const { access, readdir, readFile, stat, writeFile } = require('fs/promises');
-// import { term as terminal } from 'terminal-kit';
 const term = require('terminal-kit').terminal;
 const { encodeBinary } = require('../src/bmsx/binencoder');
 const _colors = require('colors');
@@ -1094,7 +1091,6 @@ class ProgressReporter {
 		});
 		this.gauge.setTemplate([
 			{ type: 'progressbar', length: 50 },
-			// { type: 'activityIndicator', kerning: 1, length: 1 },
 			{ type: 'section', kerning: 1, default: '' },
 			{ type: 'subsection', kerning: 1, default: '' },
 		]);

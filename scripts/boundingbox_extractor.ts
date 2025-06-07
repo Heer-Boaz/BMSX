@@ -5,7 +5,7 @@ import type { Area, BoundingBoxPrecalc, vec2 } from './rompacker.rompack';
 /**
  * Dedicated class for extracting bounding boxes and related operations from images.
  */
-class BoundingBoxExtractor {
+export class BoundingBoxExtractor {
     /**
      * Extracts the tightest bounding box around non-transparent pixels in an image.
      */
@@ -233,7 +233,3 @@ class BoundingBoxExtractor {
         return { x: ~~middlex, y: ~~middley };
     }
 }
-
-module.exports = {
-    BoundingBoxExtractor
-};
