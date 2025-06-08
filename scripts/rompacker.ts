@@ -1,9 +1,10 @@
-const { exec } = require('child_process');
-const { build } = require('esbuild');
+import { glsl } from "esbuild-plugin-glsl";
 import type { Stats } from 'fs';
 import { createOptimizedAtlas } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import type { AudioMeta, ImgMeta, RomAsset, RomMeta, vec2 } from './rompacker.rompack';
+const { exec } = require('child_process');
+const { build } = require('esbuild');
 const { dirname, join, parse } = require('path');
 
 const { access, readdir, readFile, stat, writeFile } = require('fs/promises');
@@ -266,16 +267,18 @@ async function esbuild(romname: string, bootloader_path: string, progress?: Prog
 			entryPoints: [bootloader_ts_path], // Entry point for the rompack
 			bundle: true, // Bundle all dependencies into a single file
 			sourcemap: 'inline', // Include inline source maps for debugging
-			sourcesContent: false, // Do not include source content in the output
+			sourcesContent: false,
 			outfile: `./rom/${romname}.js`, // Output file for the bundled code
 			platform: 'browser', // Target platform for the bundle
-			target: ['es2020'], // Specify the ECMAScript version to target
+			target: 'es2020', // Specify the ECMAScript version to target
+			// Specify the ECMAScript version to target
 			loader: { '.glsl': 'text' }, // Handles GLSL files as text
+			plugins: [glsl({
+				minify: true
+			})],
 			define: { 'process.env.NODE_ENV': '"production"' },
-			// minify: true,
-			minifyWhitespace: true,
-			minifySyntax: true,
-			mangleQuoted: false,
+			minify: true,
+			keepNames: true,
 			external: ['node_modules', 'dist', 'rom', 'ts-key-enum'],
 			treeShaking: true,
 		});

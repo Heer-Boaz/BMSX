@@ -26,6 +26,7 @@
     "colors": "*",
     "dagre": "*",
     "esbuild": "^0.25.3",
+    "esbuild-plugin-glsl": "^1.4.0",
     "flatted": "*",
     "ftp-deploy": "*",
     "gauge": "^5.0.1",
