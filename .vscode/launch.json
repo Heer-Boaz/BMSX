@@ -10,7 +10,9 @@
 				"--nolazy",
 				"--allow-file-access-from-files",
 				"--disable-session-crashed-bubble",
-				// "-inprivate",
+				"--disable-features=IsolateOrigins,site-per-process",
+				"--inprivate",
+				"--user-data-dir=${workspaceFolder}/.vscode/msedge",
 				"--remote-debugging-port=9222"
 			],
 			"sourceMaps": true,
