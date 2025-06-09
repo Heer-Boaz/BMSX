@@ -1,5 +1,6 @@
 export * from './basemodel';
 export * from './behaviourtree';
+export * from './bincompressor';
 export * from './binencoder';
 export * from './collisioncomponents';
 export * from './component';

@@ -149,7 +149,8 @@ const bootrom = {
 				.then((response_array: ArrayBuffer) => getZippedRomAndRomLabelFromBlob(response_array))
 				.then((ziprom_and_label: { zipped_rom: ArrayBuffer, romlabel: string }) => {
 					romlabel_bloburl = ziprom_and_label.romlabel;
-					return pako.inflate(ziprom_and_label.zipped_rom).buffer;
+					return decompress(ziprom_and_label.zipped_rom);
+					// return pako.inflate(ziprom_and_label.zipped_rom).buffer;
 				})
 				.then(rom => loadResources(rom))
 				.then((loadResult: any) => {
@@ -164,6 +165,7 @@ const bootrom = {
 				})
 				.then(() => resolve(loadedRomPack))
 				.catch(err => {
+					console.error('[bload] Top-level error:', err);
 					reject(err);
 				});
 		});
@@ -298,7 +300,30 @@ async function getZippedRomAndRomLabelFromBlob(blob_buffer: ArrayBuffer): Promis
 async function loadResourceList(rom: ArrayBuffer): Promise<RomAsset[]> {
 	const sliced = new Uint8Array(getSubBufferFromBufferWithMeta(rom));
 	const resJsonStr = decodeuint8arr(sliced);
-	const resJson: RomAsset[] = JSON.parse(resJsonStr);
+
+	// Debug logging for JSON parse errors
+	console.log('[loadResourceList] Decoded JSON string length:', resJsonStr.length);
+	console.log('[loadResourceList] First 512 chars:', resJsonStr.slice(0, 512));
+	console.log('[loadResourceList] Last 128 chars:', resJsonStr.slice(-128));
+	console.log('[loadResourceList] Sliced buffer length:', sliced.length);
+	console.log('[loadResourceList] Last 32 bytes:', Array.from(sliced.slice(-32)));
+	console.log('[loadResourceList] First 8 char codes:', Array.from(resJsonStr.slice(0, 8)).map(c => c.charCodeAt(0)));
+	console.log('[loadResourceList] Last 8 char codes:', Array.from(resJsonStr.slice(-8)).map(c => c.charCodeAt(0)));
+
+	let resJson: RomAsset[];
+	try {
+		resJson = JSON.parse(resJsonStr);
+	} catch (e: any) {
+		console.error('[loadResourceList] JSON.parse error:', e);
+		let pos = 0;
+		if (e && e.message) {
+			const match = e.message.match(/at position (\d+)/);
+			if (match) pos = parseInt(match[1], 10);
+		}
+		console.error(`[loadResourceList] Error context (pos ${pos}):`, resJsonStr.slice(Math.max(0, pos - 32), pos + 32));
+		console.error(`[loadResourceList] Error context char codes (pos ${pos}):`, Array.from(resJsonStr.slice(Math.max(0, pos - 8), pos + 8)).map(c => c.charCodeAt(0)));
+		throw e;
+	}
 
 	return Promise.resolve<RomAsset[]>(resJson);
 }
@@ -602,4 +627,63 @@ function createAudioContext(): void {
 	}
 
 	bootrom.sndcontext = context;
+}
+
+const CURRENT_COMPRESSOR_VERSION = 0x01;
+const MAGIC_HEADER = new Uint8Array([0x42, 0x43, CURRENT_COMPRESSOR_VERSION]); // "BC" v1
+const MIN_MATCH = 4;
+
+function decompress(input: ArrayBuffer): ArrayBuffer {
+	// Check magic header
+	if (input.byteLength < MAGIC_HEADER.length) throw new Error("Input too short for magic header");
+	const inputView = new Uint8Array(input);
+	for (let i = 0; i < MAGIC_HEADER.length; ++i) {
+		if (inputView[i] !== MAGIC_HEADER[i]) throw new Error("Missing or invalid magic header/version");
+	}
+	let pos = MAGIC_HEADER.length;
+	// Preallocate output buffer (input.length * 3 is a safe upper bound for most data)
+	let out = new Uint8Array(input.byteLength * 3);
+	let outPos = 0;
+	while (pos < input.byteLength) {
+		const tag = inputView[pos++];
+		if (tag === 0xFF) { // RLE
+			if (pos + 2 > inputView.length) throw new Error("Malformed RLE tag");
+			const run = inputView[pos++];
+			const val = inputView[pos++];
+			if (outPos + run > out.length) {
+				// Grow output buffer
+				const newOut = new Uint8Array(out.length * 2);
+				newOut.set(out, 0);
+				out = newOut;
+			}
+			// Fast fill for RLE
+			out.fill(val, outPos, outPos + run);
+			outPos += run;
+		} else if (tag === 0xFE) { // LZ77
+			if (pos + 3 > inputView.length) throw new Error("Malformed LZ77 tag");
+			const off = inputView[pos++] | (inputView[pos++] << 8);
+			const len = inputView[pos++] + MIN_MATCH;
+			const start = outPos - off;
+			if (start < 0 || outPos + len > out.length) {
+				// Grow output buffer if needed
+				if (outPos + len > out.length) {
+					const newOut = new Uint8Array((out.length + len) * 2);
+					newOut.set(out, 0);
+					out = newOut;
+				}
+				if (start < 0) throw new Error("LZ77 offset out of bounds");
+			}
+			// Correct copy for overlapping regions
+			for (let i = 0; i < len; ++i) {
+				out[outPos + i] = out[start + i];
+			}
+			outPos += len;
+		} else if (tag === 0xFD) { // escaped literal
+			if (pos >= inputView.length) throw new Error("Malformed escape tag");
+			out[outPos++] = inputView[pos++];
+		} else { // literal
+			out[outPos++] = tag;
+		}
+	}
+	return out.buffer.slice(out.byteOffset, out.byteOffset + outPos);
 }

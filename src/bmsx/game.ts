@@ -1,4 +1,4 @@
-﻿import { BaseModel, GameObject, gamePaused, gameResumed, PSG, TextWriter, type InputMap } from "./bmsx";
+﻿import { BaseModel, BinaryCompressor, GameObject, gamePaused, gameResumed, PSG, TextWriter, type InputMap } from "./bmsx";
 import { EventEmitter } from "./eventemitter";
 import { ActionState, ActionStateQuery, Input } from "./input";
 import { MSX2ScreenHeight, MSX2ScreenWidth } from "./msx";
@@ -837,9 +837,9 @@ class RewindBuffer {
 	private windowMs: number;
 	private currentIdx: number = -1; // -1 = latest
 
-	constructor(targetFPS: number, windowSeconds: number = 10) {
-		this.frameInterval = 1000 / targetFPS;
-		this.windowMs = windowSeconds * 1000;
+	constructor(targetFPS: number, windowSeconds: number) {
+		this.frameInterval = 1000 / targetFPS; // ms per frame
+		this.windowMs = windowSeconds * 1000; // Convert seconds to milliseconds
 		this.maxFrames = Math.ceil(windowSeconds * targetFPS) + 1; // Include an additional frame for the current frame
 	}
 
@@ -1201,7 +1201,8 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		// --- Rewind snapshot logic ---
 		try {
 			const snapshot = model.save(false);
-			this.rewindBuffer.push(this.turnCounter, snapshot);
+			const compressedSnapshot = BinaryCompressor.compressBinary(snapshot, { disableLZ77: false, disableRLE: false });
+			this.rewindBuffer.push(this.turnCounter, compressedSnapshot);
 		} catch (e) {
 			console.warn('Rewind snapshot failed:', e);
 		}
@@ -1262,11 +1263,15 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	public canRewind() { return this.rewindBuffer.canRewind(); }
 	public canForward() { return this.rewindBuffer.canForward(); }
 
+	private loadRewindFrame(frame: RewindFrame): void {
+		this.model.load(frame.state, true);
+		window.dispatchEvent(new Event('frame'));
+	}
+
 	public rewindFrame(): boolean {
 		const frame = this.rewindBuffer.rewind();
 		if (frame) {
-			this.model.load(frame.state, false);
-			window.dispatchEvent(new Event('frame'));
+			this.loadRewindFrame(frame);
 			return true;
 		}
 		return false;
@@ -1274,8 +1279,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	public forwardFrame(): boolean {
 		const frame = this.rewindBuffer.forward();
 		if (frame) {
-			this.model.load(frame.state, false);
-			window.dispatchEvent(new Event('frame'));
+			this.loadRewindFrame(frame);
 			return true;
 		}
 		return false;
@@ -1283,8 +1287,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	public jumpToFrame(idx: number): boolean {
 		const frame = this.rewindBuffer.jumpTo(idx);
 		if (frame) {
-			this.model.load(frame.state, false);
-			window.dispatchEvent(new Event('frame'));
+			this.loadRewindFrame(frame);
 			return true;
 		}
 		return false;

@@ -1,5 +1,6 @@
 import { glsl } from "esbuild-plugin-glsl";
 import type { Stats } from 'fs';
+import { BinaryCompressor, optimalRompakCompressorOptions } from "../src/bmsx/bincompressor";
 import type { AudioMeta, ImgMeta, RomAsset, RomMeta, vec2 } from '../src/bmsx/rompack';
 import { createOptimizedAtlas } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
@@ -450,7 +451,12 @@ function parseImageMeta(filenameWithoutExt: string): { sanitizedName: string, co
  */
 function zip(content: Buffer): Uint8Array {
 	const toCompress = new Uint8Array(content);
-	return pako.deflate(toCompress);
+	const ownCompressedContent = BinaryCompressor.compressBinary(content, optimalRompakCompressorOptions);
+	const pakoCompressedContent = pako.deflate(toCompress);
+	console.log(`Compressed content size: original=${toCompress.length} bytes, own compressed=${ownCompressedContent.length} bytes, pako compressed=${pakoCompressedContent.length} bytes`);
+	console.log(`Compression ratio: original=${(toCompress.length / 1024).toFixed(2)} KB, own compressed=${(ownCompressedContent.length / 1024).toFixed(2)} KB, pako compressed=${(pakoCompressedContent.length / 1024).toFixed(2)} KB`);
+	console.log(`Compression ratio: original=${(toCompress.length / ownCompressedContent.length).toFixed(2)}x, pako=${(toCompress.length / pakoCompressedContent.length).toFixed(2)}x`);
+	return ownCompressedContent;
 }
 
 /**

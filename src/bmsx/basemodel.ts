@@ -1,4 +1,5 @@
 import { BehaviorTreeDefinition, BehaviorTreeDefinitions, BehaviorTreeID, setup_bt_library, setup_btdef_library } from "./behaviourtree";
+import { BinaryCompressor } from "./bincompressor";
 import { Vector } from "./bmsx";
 import { State, StateDefinition, StateMachineController } from "./fsm";
 import { StateDefinitions, setupFSMlibrary } from "./fsmlibrary";
@@ -6,7 +7,7 @@ import { Stateful } from "./fsmtypes";
 import type { Identifier, Registerable, RegisterablePersistent } from "./game";
 import { Direction } from "./game";
 import { GameObject } from "./gameobject";
-import { BinaryCompressor, Reviver, Savegame, Serializer, excludepropfromsavegame, insavegame } from "./gameserializer";
+import { Reviver, Savegame, Serializer, excludepropfromsavegame, insavegame } from "./gameserializer";
 import { Input } from "./input";
 import { Registry } from "./registry";
 
