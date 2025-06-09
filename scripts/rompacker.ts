@@ -3,9 +3,8 @@ import type { Stats } from 'fs';
 import { createOptimizedAtlas } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import type { AudioMeta, ImgMeta, RomAsset, RomMeta, vec2 } from './rompacker.rompack';
-const { exec } = require('child_process');
 const { build } = require('esbuild');
-const { dirname, join, parse } = require('path');
+const { join, parse } = require('path');
 
 const { access, readdir, readFile, stat, writeFile } = require('fs/promises');
 const term = require('terminal-kit').terminal;
@@ -20,6 +19,10 @@ const yaml = require('js-yaml');
 // Command line parameter for texture atlas usage
 let GENERATE_AND_USE_TEXTURE_ATLAS = true;
 const DONT_PACK_IMAGES_WHEN_USING_ATLAS = true;
+const BOOTROM_TS_FILENAME = 'bootrom.ts';
+const BOOTROM_JS_FILENAME = 'bootrom.js';
+const ROM_TS_RELATIVE_PATH = `../scripts/${BOOTROM_TS_FILENAME}`;
+const ROM_JS_RELATIVE_PATH = `../rom/${BOOTROM_JS_FILENAME}`;
 
 const BOILERPLATE_RESOURCE_ID_BITMAP = `export enum BitmapId {
 	none = 'none',
@@ -394,7 +397,7 @@ async function buildGameHtmlAndManifest(rom_name: string, title: string, short_n
 	let html: string, romjs: string, zipjs: string;
 	try {
 		html = await readFile("./gamebase.html", 'utf8');
-		romjs = (await readFile("./rom/rom.js", 'utf8')).replace('Object.defineProperty(exports, "__esModule", { value: true });', '');
+		romjs = (await readFile(`./rom/${BOOTROM_JS_FILENAME}`, 'utf8')).replace('Object.defineProperty(exports, "__esModule", { value: true });', '');
 		zipjs = await readFile("./scripts/pako_inflate.min.js", 'utf8');
 	} catch (error) {
 		throw new Error(`Error reading files while building HTML and Manifest files: ${error.message}`);
@@ -954,19 +957,18 @@ async function deployToServer(rom_name: string, title: string) {
  * Checks if the TypeScript file for the ROM loader is newer than its compiled output
  * and compiles it if needed. This function ensures that the output is always up to date.
  *
- * @throws {Error} Will throw if the rom.ts file does not exist or if compilation fails.
+ * @throws {Error} Will throw if the romloader file does not exist or if compilation fails.
  * @returns {Promise<void>} A promise that resolves once the compilation process is complete
  *                         or if no action is needed.
  */
-async function compileRomLoaderScriptIfNewer(progress?: ProgressReporter): Promise<void> {
-	const romTsPath = join(__dirname, '../scripts/rom.ts');
-	const romJsPath = join(__dirname, '../rom/rom.js');
-	const romTsDir = dirname(romTsPath);
+async function buildBootromScriptIfNewer(progress?: ProgressReporter): Promise<void> {
+	const romTsPath = join(__dirname, ROM_TS_RELATIVE_PATH);
+	const romJsPath = join(__dirname, ROM_JS_RELATIVE_PATH);
 
 	try {
 		await access(romTsPath);
 	} catch {
-		throw new Error(`rom.ts could not be found at "${romTsPath}"`);
+		throw new Error(`"${BOOTROM_TS_FILENAME}" could not be found at "${romTsPath}"`);
 	}
 
 	const romTsStats = await stat(romTsPath);
@@ -980,21 +982,22 @@ async function compileRomLoaderScriptIfNewer(progress?: ProgressReporter): Promi
 	await progress?.taskCompleted();
 
 	if (!romJsStats || romTsStats.mtime > romJsStats.mtime) {
-		return new Promise<void>((resolve, reject) => {
-			try {
-				exec(`npx tsc ${romTsPath} --removeComments -m commonjs -t ES2020 --rootDir "." --outDir ${join(__dirname, '../rom/')}`,
-					{ cwd: romTsDir }, async (error, stdout, stderr) => {
-						if (error || stderr) {
-							throw new Error(`Error while compiling "rom.ts": ${error?.message ?? stderr}`);
-						} else {
-							await progress?.taskCompleted();
-							resolve();
-						}
-					});
-			} catch (e) {
-				throw new Error(`Error while compiling "rom.ts": ${e?.message ?? e}`);
-			}
-		});
+		try {
+			await build({
+				entryPoints: [romTsPath],
+				bundle: false, // Set to true if you want to bundle dependencies
+				minify: true,
+				sourcemap: false,
+				platform: 'browser', // or 'node' if you want node output
+				target: 'es2020',
+				outfile: romJsPath,
+				// loader: { '.ts': 'ts' }
+			});
+			await progress?.taskCompleted();
+		} catch (e) {
+			throw new Error(`Error while compiling "${BOOTROM_TS_FILENAME}" with esbuild: ${e?.message ?? e}`);
+		}
+		return;
 	}
 	// rom.js is newer or up to date. No need to compile
 	await progress?.taskCompleted();
@@ -1155,8 +1158,8 @@ async function main() {
 		'Textuuratlas bouwen die gierig-optimaal klein is',
 		'Resource bibliotheek bouwen for in rompakket',
 		'Totale rompakket wegschrijven',
-		'Check "rom.ts" vereist recompilatie',
-		'"rom.ts" compileren (als nodig)',
+		`Check "${BOOTROM_TS_FILENAME}" vereist recompilatie`,
+		`"${BOOTROM_TS_FILENAME}" compileren (als nodig)`,
 		'game.html en game_debug.html bouwen',
 		'Deployeren'
 	];
@@ -1241,7 +1244,7 @@ async function main() {
 				await yaml2Json(progress);
 				await buildRompack(rom_name, respath, progress);
 			}
-			await compileRomLoaderScriptIfNewer(progress);
+			await buildBootromScriptIfNewer(progress);
 			await buildGameHtmlAndManifest(rom_name, title, short_name, progress);
 			if (deploy) {
 				await deployToServer(rom_name, title); progress.taskCompleted();

@@ -12,7 +12,7 @@
 				"--disable-session-crashed-bubble",
 				"--disable-features=IsolateOrigins,site-per-process",
 				"--inprivate",
-				"--user-data-dir=${workspaceFolder}/.vscode/msedge",
+				// "--user-data-dir=${workspaceFolder}/.vscode/msedge",
 				"--remote-debugging-port=9222"
 			],
 			"sourceMaps": true,

@@ -78,7 +78,7 @@
   ],
   "files": [], // No files are included in the compilation, only references
   "include": [
-    "scripts/rom.ts",
+    "scripts/bootrom.ts",
     "scripts/rompacker.ts",
     "scripts/atlasbuilder.ts",
     "scripts/boundingbox_extractor.ts",
