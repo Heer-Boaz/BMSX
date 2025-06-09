@@ -2,15 +2,15 @@ import { BehaviorTreeDefinition, BehaviorTreeDefinitions, BehaviorTreeID, setup_
 import { Vector } from "./bmsx";
 import { State, StateDefinition, StateMachineController } from "./fsm";
 import { StateDefinitions, setupFSMlibrary } from "./fsmlibrary";
-import { IStateful } from "./fsmtypes";
-import type { IRegisterable, IRegisterablePersistent, Identifier } from "./game";
+import { Stateful } from "./fsmtypes";
+import type { Identifier, Registerable, RegisterablePersistent } from "./game";
 import { Direction } from "./game";
 import { GameObject } from "./gameobject";
 import { BinaryCompressor, Reviver, Savegame, Serializer, excludepropfromsavegame, insavegame } from "./gameserializer";
 import { Input } from "./input";
 import { Registry } from "./registry";
 
-export interface ISpaceObject {
+export interface SpaceObject {
     spaceid: Identifier;
     objects: GameObject[];
 }
@@ -155,7 +155,7 @@ export type base_model_spaces = 'game_start' | 'default';
  * The base model class for the game. Contains all the spaces and objects in the game world.
  * Provides methods to add, remove, and manipulate game objects and spaces.
  */
-export abstract class BaseModel implements IStateful, IRegisterablePersistent {
+export abstract class BaseModel implements Stateful, RegisterablePersistent {
     get registrypersistent(): true {
         return true;
     }
@@ -165,7 +165,7 @@ export abstract class BaseModel implements IStateful, IRegisterablePersistent {
      * @param id The identifier of the entity to retrieve.
      * @returns The retrieved entity if found, otherwise null.
      */
-    public get<T extends IRegisterable = any>(id: Identifier): T | null {
+    public get<T extends Registerable = any>(id: Identifier): T | null {
         return $.registry.get(id);
     }
 

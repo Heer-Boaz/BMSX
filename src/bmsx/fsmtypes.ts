@@ -1,4 +1,4 @@
-import type { EventScope, Identifier, IEventSubscriber, IRegisterable, State, StateDefinition, StateMachineController } from "./bmsx";
+import type { EventScope, EventSubscriber, Identifier, Registerable, State, StateDefinition, StateMachineController } from "./bmsx";
 
 export const STATE_THIS_PREFIX = '#this';
 export const STATE_PARENT_PREFIX = '#parent';
@@ -56,10 +56,10 @@ export type id2partial_sdef = Record<Identifier, StateMachineBlueprint>;
  * @param args - Additional arguments for the event handler.
  * @returns A string denoting the next state to transition to (or undefined if no transition should occur).
  */
-export interface IStateEventHandler<T extends IStateful = any> { (state: State<T>, ...args: any[]): StateTransition | Identifier | void; }
-export interface IStateExitHandler<T extends IStateful = any> { (state: State<T>, ...args: any[]): void; }
-export interface IStateNextHandler<T extends IStateful = any> extends IStateEventHandler { (state: State<T>, tape_rewound: boolean, ...args: any[]): StateTransition | Identifier | void; }
-export interface IStateEventCondition<T extends IStateful & IEventSubscriber = any> {
+export interface StateEventHandler<T extends Stateful = any> { (state: State<T>, ...args: any[]): StateTransition | Identifier | void; }
+export interface StateExitHandler<T extends Stateful = any> { (state: State<T>, ...args: any[]): void; }
+export interface StateNextHandler<T extends Stateful = any> extends StateEventHandler { (state: State<T>, tape_rewound: boolean, ...args: any[]): StateTransition | Identifier | void; }
+export interface StateEventCondition<T extends Stateful & EventSubscriber = any> {
     (state: State<T>, ...args: any[]): boolean;
 }
 
@@ -99,7 +99,7 @@ export type StateTransitionWithType = StateTransition & { transition_type: Trans
  * Represents the definition of a state event in a state machine.
  * @template T - The type of the stateful object that the event is associated with.
  */
-export type StateEventDefinition<T extends IStateful & IEventSubscriber = any> = {
+export type StateEventDefinition<T extends Stateful & EventSubscriber = any> = {
     /**
      * The state ID to transition to. If not provided, the state will not transition. This is useful for defining a "transition" that only executes an action.
      */
@@ -113,12 +113,12 @@ export type StateEventDefinition<T extends IStateful & IEventSubscriber = any> =
     /**
      * The condition that must be met for the transition to occur.
      */
-    if?: IStateEventCondition<T>,
+    if?: StateEventCondition<T>,
 
     /**
      * The action that is executed when the transition occurs.
      */
-    do?: IStateEventHandler<T>,
+    do?: StateEventHandler<T>,
 
     /**
      * (Optional) The ID of the emitter scope. If provided, the listener will be added to the emitter scope listeners, otherwise it will be added to the global scope listeners.
@@ -130,7 +130,7 @@ export type StateEventDefinition<T extends IStateful & IEventSubscriber = any> =
  * Represents a state guard that defines conditions for entering or exiting a state.
  * @template T - The type of the stateful object that implements `IStateful` and `IEventSubscriber`.
  */
-export interface IStateGuard<T extends IStateful & IEventSubscriber = any> {
+export interface StateGuard<T extends Stateful & EventSubscriber = any> {
     /**
      * Checks if the state can be entered.
      * @this {T} - The stateful object.
@@ -152,7 +152,7 @@ export interface IStateGuard<T extends IStateful & IEventSubscriber = any> {
  *
  * @template T - The type of the stateful object.
  */
-export type TickCheckDefinition<T extends IStateful = any> = Omit<StateEventDefinition<T>, 'scope'>;
+export type TickCheckDefinition<T extends Stateful = any> = Omit<StateEventDefinition<T>, 'scope'>;
 
 /**
  * Represents the type of a state transition (either 'to' or 'switch').
@@ -170,7 +170,7 @@ export type Tape = any[];
  * Represents an object that is stateful and can be registered, and subscribes to events.
  * It also has a player index, that is used to identify the player that the stateful object belongs to, which is used to determine which player's input to process.
  */
-export interface IStateful extends IRegisterable, IEventSubscriber {
+export interface Stateful extends Registerable, EventSubscriber {
     /**
      * The StatemachineController of the object.
      */

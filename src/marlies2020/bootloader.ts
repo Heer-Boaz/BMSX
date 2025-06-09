@@ -1,17 +1,17 @@
-import type { RomPack } from '../bmsx/rompack';
-import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
+import { mdef, sdef, sstate } from '../bmsx/bfsm';
+import { copy_vec2, Direction, Game, getOppositeDirection, new_area, new_vec2, randomInt, set_vec2, vec2 } from '../bmsx/bmsx';
+import { GameObject } from '../bmsx/gameobject';
 import { GLView } from '../bmsx/glview';
-import { BitmapId } from './resourceids';
 import { Input } from '../bmsx/input';
+import { BaseModel, Space } from '../bmsx/model';
+import { MSX1ScreenHeight, MSX1ScreenWidth } from '../bmsx/msx';
+import type { RomPack } from '../bmsx/rompack';
+import { SpriteObject } from '../bmsx/sprite';
 import { TextWriter } from '../bmsx/textwriter';
 import { paintSprite } from '../bmsx/view';
 import { GameMenu } from './gamemenu';
 import { KonamiFont } from './konamifont';
-import { statedef_builder, mdef, sdef, sstate } from '../bmsx/bfsm';
-import { vec2, Direction, set_vec2, new_area, randomInt, getOppositeDirection, copy_vec2, new_vec2, new_vec2, Game } from '../bmsx/bmsx';
-import { GameObject } from '../bmsx/gameobject';
-import { BaseModel, Space } from '../bmsx/model';
-import { SpriteObject } from '../bmsx/sprite';
+import { BitmapId } from './resourceids';
 
 const COLUMN_X = <Array<number>>[36, 48, 80, 160, 200];
 const START_COLUMN = 1;
@@ -40,38 +40,38 @@ class modelclass extends BaseModel {
             machines: {
                 master: new mdef('default', {
                     states: {
-                       default: new sdef('default', {
-                           run() {
-                               BaseModel.defaultrun();
-                               if (Input.KC_F5) {
-                                   game.model.state.to('gamemenu');
-                               }
-                           },
-                       }),
-                       'gamemenu': new sdef('gamemenu', {
-                           enter() {
-                               let menu = new GameMenu();
-                               game.model.spawn(menu);
-                               menu.Open();
-                           },
-                           run() {
-                               let menu = game.model.get('gamemenu') as GameMenu;
-                               menu.run();
-                               if (Input.KC_F5) {
-                                   game.model.state.to('default');
-                               }
-                           },
-                           exit() {
-                               let menu = game.model.get('gamemenu') as GameMenu;
-                               menu.Close();
-                               game.model.exile(menu);
-                           },
-                       }),
-                       'hoera!': new sdef('hoera!', {
-                           enter() {
-                               game.model.setSpace('hoera!');
-                           }
-                       }),
+                        default: new sdef('default', {
+                            run() {
+                                BaseModel.defaultrun();
+                                if (Input.KC_F5) {
+                                    game.model.state.to('gamemenu');
+                                }
+                            },
+                        }),
+                        'gamemenu': new sdef('gamemenu', {
+                            enter() {
+                                let menu = new GameMenu();
+                                game.model.spawn(menu);
+                                menu.Open();
+                            },
+                            run() {
+                                let menu = game.model.get('gamemenu') as GameMenu;
+                                menu.run();
+                                if (Input.KC_F5) {
+                                    game.model.state.to('default');
+                                }
+                            },
+                            exit() {
+                                let menu = game.model.get('gamemenu') as GameMenu;
+                                menu.Close();
+                                game.model.exile(menu);
+                            },
+                        }),
+                        'hoera!': new sdef('hoera!', {
+                            enter() {
+                                game.model.setSpace('hoera!');
+                            }
+                        }),
                     }
                 }),
             }

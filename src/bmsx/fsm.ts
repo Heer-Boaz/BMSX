@@ -1,8 +1,8 @@
 import { BaseModel } from './basemodel';
-import { EventScope, IEventSubscriber } from './eventemitter';
+import { EventScope, EventSubscriber } from './eventemitter';
 import { StateDefinitions } from './fsmlibrary';
-import { type IStateEventHandler, type IStateExitHandler, type IStateGuard, type IStateNextHandler, type IStateful, type StateEventDefinition, type StateMachineBlueprint, type StateTransition, type StateTransitionWithType, type Tape, type TickCheckDefinition, type TransitionType, type id2partial_sdef, type id2sstate, STATE_PARENT_PREFIX, STATE_ROOT_PREFIX, STATE_THIS_PREFIX } from './fsmtypes';
-import { IIdentifiable, IRegisterable, Identifier } from './game';
+import { type StateEventDefinition, type StateEventHandler, type StateExitHandler, type StateGuard, type StateMachineBlueprint, type StateNextHandler, type StateTransition, type StateTransitionWithType, type Stateful, type Tape, type TickCheckDefinition, type TransitionType, type id2partial_sdef, type id2sstate, STATE_PARENT_PREFIX, STATE_ROOT_PREFIX, STATE_THIS_PREFIX } from './fsmtypes';
+import { Identifiable, Identifier, Registerable } from './game';
 import { excludepropfromsavegame, insavegame, onload } from './gameserializer';
 import { Input } from './input';
 
@@ -204,7 +204,7 @@ export class StateMachineController {
 	 * @param emitter - The identifier or identifiable object that triggered the event.
 	 * @param args - Additional arguments to be passed to the event handlers.
 	 */
-	public do(event_name: string, emitter: Identifier | IIdentifiable, ...args: any[]): void {
+	public do(event_name: string, emitter: Identifier | Identifiable, ...args: any[]): void {
 		const emitter_id = typeof emitter === 'string' ? emitter : emitter.id;
 
 		// Dispatch the event to the current machine
@@ -225,7 +225,7 @@ export class StateMachineController {
 	 * @param emitter - The identifier or identifiable object that emitted the event.
 	 * @param args - Additional arguments to pass to the event handler.
 	 */
-	private auto_dispatch(this: IStateful, event_name: string, emitter: Identifier | IIdentifiable, ...args: any[]): void {
+	private auto_dispatch(this: Stateful, event_name: string, emitter: Identifier | Identifiable, ...args: any[]): void {
 		this.sc.do(event_name, emitter, ...args);
 	}
 
@@ -397,7 +397,7 @@ const TAPE_START_INDEX = -1; // The index of the tape that is *before* the start
  * Represents a state in a state machine.
  * @template T - The type of the game object or model associated with the state.
  */
-export class State<T extends IStateful & IEventSubscriber & IRegisterable = any> implements IIdentifiable {
+export class State<T extends Stateful & EventSubscriber & Registerable = any> implements Identifiable {
 	/**
 	 * The identifier of this specific instance of the state machine.
 	* @see {@link make_id}
@@ -1015,7 +1015,7 @@ export class State<T extends IStateful & IEventSubscriber & IRegisterable = any>
 	 * @param emitter - The identifier or identifiable object that triggered the event.
 	 * @param args - Additional arguments to pass to the event handler.
 	 */
-	public do(eventName: string, emitter: Identifier | IIdentifiable, ...args: any[]): void {
+	public do(eventName: string, emitter: Identifier | Identifiable, ...args: any[]): void {
 		this.root.dispatch(eventName, emitter, ...args);
 	}
 
@@ -1631,12 +1631,12 @@ export class StateDefinition {
 		}
 	}
 
-	public run?: IStateEventHandler;
-	public end?: IStateEventHandler;
-	public next?: IStateNextHandler;
-	public enter?: IStateEventHandler;
-	public exit?: IStateExitHandler;
-	public process_input?: IStateEventHandler;
+	public run?: StateEventHandler;
+	public end?: StateEventHandler;
+	public next?: StateNextHandler;
+	public enter?: StateEventHandler;
+	public exit?: StateExitHandler;
+	public process_input?: StateEventHandler;
 
 	/**
 	 * Represents the mapping of event types to state IDs for transitions to other states based on events (e.g. 'click' => 'idle').
@@ -1664,7 +1664,7 @@ export class StateDefinition {
 	/**
 	 * The guards for the state.
 	 */
-	public guards?: IStateGuard;
+	public guards?: StateGuard;
 
 	/**
 	 * The states defined for this state machine.

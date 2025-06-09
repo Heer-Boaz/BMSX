@@ -1,5 +1,5 @@
 import { EventEmitter, EventSubscription } from './eventemitter';
-import type { IDisposable, IIdentifiable, Identifier } from "./game";
+import type { Disposable, Identifiable, Identifier } from "./game";
 import { AbstractConstructor } from './game';
 import { type GameObjectConstructorBaseOrAbstract } from './gameobject';
 import { insavegame, onload } from './gameserializer';
@@ -13,7 +13,7 @@ import { Registry } from './registry';
  * The autoAddComponents property is an array of Component constructors that should be
  * automatically added to instances of the class.
  */
-interface IConstructorWithAutoAddComponents {
+interface ConstructorWithAutoAddComponents {
     autoAddComponents?: ComponentConstructor<Component>[];
 }
 
@@ -27,7 +27,7 @@ interface IConstructorWithAutoAddComponents {
  *
  * @typeparam T - The type of the GameObject.
  */
-export type GameObjectConstructorWithComponentList = GameObjectConstructorBaseOrAbstract & IConstructorWithAutoAddComponents;
+export type GameObjectConstructorWithComponentList = GameObjectConstructorBaseOrAbstract & ConstructorWithAutoAddComponents;
 
 /**
  * Represents a mapping of keys to components.
@@ -53,7 +53,7 @@ export type ComponentId = string;
 /**
  * Represents a container for components.
  */
-export interface IComponentContainer extends IIdentifiable, IDisposable {
+export interface ComponentContainer extends Identifiable, Disposable {
     /**
      * A map of components, where the key is the component name and the value is the component instance.
      */
@@ -103,7 +103,7 @@ export type ComponentUpdateParams = {
  * @class
  * @implements IIdentifiable
  */
-export abstract class Component implements IIdentifiable {
+export abstract class Component implements Identifiable {
     /**
      * The identifier of the parent component.
      */
@@ -306,7 +306,7 @@ function updateAllPostprocessingTags(constructor: ConstructorWithTagsProperty) {
  * @param tags - The tags to filter the components.
  * @returns A decorator function that wraps the original method and updates the tagged components.
  */
-export function update_tagged_components<T extends IComponentContainer>(...tags: ComponentTag[]) {
+export function update_tagged_components<T extends ComponentContainer>(...tags: ComponentTag[]) {
     return function (_target: any, _propertyKey: string, descriptor: PropertyDescriptor) {
         // Store the original method in a variable to be able to call it later
         const originalMethod = descriptor.value;

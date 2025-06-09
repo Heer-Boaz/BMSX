@@ -1,4 +1,4 @@
-import { IIdentifiable, IParentable, Identifier, type IRegisterablePersistent } from "./game";
+import { Identifiable, Identifier, Parentable, type RegisterablePersistent } from "./game";
 import { Registry } from "./registry";
 
 type Listener = { listener: Function, subscriber: any };
@@ -9,16 +9,16 @@ type EmitterScopeListenerMap = Record<string, EventListenerMap>;
 /**
  * Represents an object that can subscribe to events.
  * @remarks
- * The object must implement the IIdentifiable interface if it subscribes to self-scoped events.
- * The object must implement the IParentable interface if it subscribes to parent-scoped events.
- * The object must implement the IEventSubscriber interface if it subscribes to events.
+ * The object must implement the Identifiable interface if it subscribes to self-scoped events.
+ * The object must implement the Parentable interface if it subscribes to parent-scoped events.
+ * The object must implement the EventSubscriber interface if it subscribes to events.
  */
-type EventSubscriberType = IEventSubscriber | (IEventSubscriber & IParentable) | (IEventSubscriber & IIdentifiable);
+type EventSubscriberType = EventSubscriber | (EventSubscriber & Parentable) | (EventSubscriber & Identifiable);
 
 /**
  * A generic event dispatcher that can be used to manage listeners and dispatch events.
  */
-export class EventEmitter implements IRegisterablePersistent {
+export class EventEmitter implements RegisterablePersistent {
     get registrypersistent(): true {
         return true;
     }
@@ -70,7 +70,7 @@ export class EventEmitter implements IRegisterablePersistent {
      * @param subscriber - The event subscriber.
      */
     public initClassBoundEventSubscriptions(subscriber: EventSubscriberType, wrapper?: (...args: any[]) => any) {
-        const constr = subscriber.constructor as IEventSubscriber;
+        const constr = subscriber.constructor as EventSubscriber;
         if (!constr?.eventSubscriptions) return;
 
         const eventEmitter = EventEmitter.instance;
@@ -86,12 +86,12 @@ export class EventEmitter implements IRegisterablePersistent {
             switch (subscription.scope) {
                 case 'all': emitterFilter = undefined; break;
                 case 'parent':
-                    emitterFilter = (subscriber as IParentable).parentid;
-                    if (!emitterFilter) throw Error(`Cannot subscribe '${(subscriber as IIdentifiable).id}' to event '${subscription.eventName}' with scope '${subscription.scope}' as the class (instance) '${subscriber.constructor.name}' does not have a 'parentid'.`);
+                    emitterFilter = (subscriber as Parentable).parentid;
+                    if (!emitterFilter) throw Error(`Cannot subscribe '${(subscriber as Identifiable).id}' to event '${subscription.eventName}' with scope '${subscription.scope}' as the class (instance) '${subscriber.constructor.name}' does not have a 'parentid'.`);
                     break;
                 case 'self':
-                    emitterFilter = (subscriber as IIdentifiable).id;
-                    if (!emitterFilter) throw Error(`Cannot subscribe '${(subscriber as IIdentifiable).id}' to event '${subscription.eventName}' with scope '${subscription.scope}' as the class (instance) '${subscriber.constructor.name}' does not have an 'id'.`);
+                    emitterFilter = (subscriber as Identifiable).id;
+                    if (!emitterFilter) throw Error(`Cannot subscribe '${(subscriber as Identifiable).id}' to event '${subscription.eventName}' with scope '${subscription.scope}' as the class (instance) '${subscriber.constructor.name}' does not have an 'id'.`);
                     break;
             }
             eventEmitter.on(subscription.eventName, handler, subscriber, emitterFilter);
@@ -161,7 +161,7 @@ export class EventEmitter implements IRegisterablePersistent {
      * @param emitter - The emitter object.
      * @param args - Additional arguments to pass to the listeners.
      */
-    emit(event_name: string, emitter: IIdentifiable, ...args: any[]): void {
+    emit(event_name: string, emitter: Identifiable, ...args: any[]): void {
         this.emitterScopeListeners[event_name]?.[emitter.id]?.forEach(({ listener, subscriber }) => {
             listener.call(subscriber, event_name, emitter, ...args);
         });
@@ -259,7 +259,7 @@ export type EventSubscription = {
 /**
  * Represents an event subscriber.
  */
-export interface IEventSubscriber {
+export interface EventSubscriber {
     eventSubscriptions?: EventSubscription[]
 }
 
@@ -357,7 +357,7 @@ export function emits_event(eventName: string) {
         descriptor.value = function (...args: any[]) {
             originalMethod.apply(this, args);
             // Logic to emit the event
-            EventEmitter.instance.emit(eventName, this as IIdentifiable, ...args);
+            EventEmitter.instance.emit(eventName, this as Identifiable, ...args);
         };
     };
 }

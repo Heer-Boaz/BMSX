@@ -133,23 +133,23 @@ export type AbstractConstructor<T> = Function & { prototype: T };
 export type Direction = 'none' | 'up' | 'right' | 'down' | 'left';
 
 export type Identifier = string | 'model';
-export interface IIdentifiable {
+export interface Identifiable {
 	id: Identifier;
 }
 
-export interface IParentable {
+export interface Parentable {
 	parentid?: Identifier;
 }
 
-export interface IDisposable {
+export interface Disposable {
 	dispose(): void;
 }
 
-export interface IRegisterable extends IIdentifiable, IDisposable {
+export interface Registerable extends Identifiable, Disposable {
 	registrypersistent?: boolean;
 }
 
-export interface IRegisterablePersistent extends IRegisterable {
+export interface RegisterablePersistent extends Registerable {
 	registrypersistent: true;
 }
 
@@ -993,11 +993,11 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	public get registry(): Registry { return Registry.instance; }
 	public get sndmaster(): SM { return SM; }
 
-	public emit(event_name: string, emitter: IIdentifiable, ...args: any[]) {
+	public emit(event_name: string, emitter: Identifiable, ...args: any[]) {
 		this.event_emitter.emit(event_name, emitter, ...args);
 	}
 
-	public get<T extends IRegisterable>(id: Identifier): T {
+	public get<T extends Registerable>(id: Identifier): T {
 		return this.registry.get<T>(id);
 	}
 
@@ -1009,11 +1009,11 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		return this.registry.has(id);
 	}
 
-	public register(value: IRegisterable): void {
+	public register(value: Registerable): void {
 		this.registry.register(value);
 	}
 
-	public deregister(id: Identifier | IRegisterable): void {
+	public deregister(id: Identifier | Registerable): void {
 		this.registry.deregister(id);
 	}
 

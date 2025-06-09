@@ -1,8 +1,9 @@
 import { glsl } from "esbuild-plugin-glsl";
 import type { Stats } from 'fs';
+import type { AudioMeta, ImgMeta, RomAsset, RomMeta, vec2 } from '../src/bmsx/rompack';
 import { createOptimizedAtlas } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
-import type { AudioMeta, ImgMeta, RomAsset, RomMeta, vec2 } from './rompacker.rompack';
+import { LoadedResource, ResourceMeta, RomManifest, RomPackerOptions } from './rompacker.rompack';
 const { build } = require('esbuild');
 const { join, parse } = require('path');
 
@@ -32,15 +33,7 @@ const BOILERPLATE_RESOURCE_ID_AUDIO = `export enum AudioId {
 	none = 'none',
 `;
 
-interface RomPackerOptions {
-	rom_name: string;
-	title: string;
-	bootloader_path: string;
-	respath: string;
-	force: boolean;
-	buildreslist: boolean;
-	deploy: boolean;
-}
+type logentryType = undefined | 'error' | 'warning';
 
 function getParamOrEnv(args: string[], flag: string, envVar: string, fallback: string): string {
 	const idx = args.indexOf(flag);
@@ -91,35 +84,6 @@ function parseOptions(args: string[]): RomPackerOptions & { useTextureAtlas: boo
 		useTextureAtlas
 	};
 }
-
-/**
- * Interface for a loaded resource, which includes metadata about the resource.
- */
-export interface ILoadedResource extends ResourceMeta {
-	buffer: Buffer;
-	img?: any;
-	imgmeta?: ImgMeta;
-}
-
-/**
- * Interface for metadata about a resource.
- */
-export interface ResourceMeta {
-	filepath?: string;
-	name: string;
-	ext?: string;
-	type: string;
-	id: number;
-	collisionType?: 'concave' | 'convex' | 'aabb';
-}
-
-interface RomManifest {
-	title?: string;
-	short_name?: string;
-	rom_name?: string;
-}
-
-type logentryType = undefined | 'error' | 'warning';
 
 function writeOut(_tolog: string, type?: logentryType): void {
 	let tolog: string;
@@ -617,9 +581,9 @@ async function load_img(_meta: ResourceMeta) {
  * @param rom_name The name of the ROM pack to build the list for.
  * @returns An array of loaded resources.
  */
-async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>, rom_name: string): Promise<ILoadedResource[]> {
+async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>, rom_name: string): Promise<LoadedResource[]> {
 	const resMetaList = await getResMetaList(respath, rom_name);
-	let loadedResources: Array<ILoadedResource> = [];
+	let loadedResources: Array<LoadedResource> = [];
 
 	// Parallelize buffer and image loading
 	const resourcePromises = resMetaList.map(async (meta) => {
@@ -753,7 +717,7 @@ async function buildRompack(rom_name: string, respath: string, progress?: Progre
  * - `bufferPointer` - The current offset in the resource buffer after processing.
  * - `romlabel_buffer` - The buffer data for the "romlabel.png" resource if present.
  */
-function processResources(loadedResources: ILoadedResource[]) {
+function processResources(loadedResources: LoadedResource[]) {
 	const jsonout: RomAsset[] = [];
 	let bufferPointer = 0;
 	let romlabel_buffer: Buffer | undefined;
@@ -804,7 +768,7 @@ function processResources(loadedResources: ILoadedResource[]) {
  * @param generated_atlas - An optional canvas element where an atlas has been generated.
  * @returns An object containing image dimensions, bounding boxes, center point, and (if atlas usage is enabled) texture coordinates.
  */
-function buildImgMeta(res: ILoadedResource): ImgMeta {
+function buildImgMeta(res: LoadedResource): ImgMeta {
 	const img = res.img;
 	const img_boundingbox = BoundingBoxExtractor.extractBoundingBox(img);
 	let extracted_hitpolygon: vec2[][] | vec2[] = undefined;
@@ -882,7 +846,7 @@ function buildImgMeta(res: ILoadedResource): ImgMeta {
  * @returns A Promise that resolves once the atlas image is written to disk and metadata is updated.
  */
 async function handleAtlas(
-	loadedResources: ILoadedResource[],
+	loadedResources: LoadedResource[],
 	generated_atlas: HTMLCanvasElement,
 	jsonout: RomAsset[],
 	bufferPointer: number,

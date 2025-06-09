@@ -1,7 +1,7 @@
 import { BehaviorTreeID, BehaviorTrees, Blackboard, BTNode, ConstructorWithBTProperty } from "./behaviourtree";
-import { Component, ComponentConstructor, ComponentTag, IComponentContainer, KeyToComponentMap, update_tagged_components } from "./component";
+import { Component, ComponentConstructor, ComponentContainer, ComponentTag, KeyToComponentMap, update_tagged_components } from "./component";
 import { StateMachineController } from "./fsm";
-import type { ConstructorWithFSMProperty, IStateful } from "./fsmtypes";
+import type { ConstructorWithFSMProperty, Stateful } from "./fsmtypes";
 import type { Identifier } from "./game";
 import { AbstractConstructor, Direction, middlepoint_area, new_area, new_vec2, new_vec3 } from "./game";
 import { insavegame, onload } from "./gameserializer";
@@ -19,7 +19,7 @@ const DEFAULT_SIZE_VALUES: [number, number, number] = [0, 0, 0];
  * Implements both vec2 and vec3 interfaces.
  */
 @insavegame
-export class GameObject implements vec3, IComponentContainer, IStateful {
+export class GameObject implements vec3, ComponentContainer, Stateful {
 	/**
 	 * Represents a map of components associated with their respective keys.
 	 */

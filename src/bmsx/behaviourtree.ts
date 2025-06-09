@@ -1,4 +1,4 @@
-import type { IIdentifiable, Identifier } from "./game";
+import type { Identifiable, Identifier } from "./game";
 import { GameObject } from './gameobject';
 import { insavegame } from './gameserializer';
 
@@ -193,7 +193,7 @@ export type BTNodeFeedback = {
  * Represents a blackboard that stores key-value bindings.
  */
 @insavegame
-export class Blackboard implements IIdentifiable {
+export class Blackboard implements Identifiable {
     // The identifier of the blackboard
     public id: string;
     // The data stored in the blackboard
@@ -289,7 +289,7 @@ export type BehaviorTreeID = string;
  * This class provides common properties and methods for behavior tree nodes.
  * @typeparam T - The type of the target object.
  */
-export abstract class BTNode implements IIdentifiable {
+export abstract class BTNode implements Identifiable {
     public id: BehaviorTreeID;
     public priority: number;
     private running: boolean = true;

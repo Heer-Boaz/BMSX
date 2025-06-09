@@ -1,4 +1,4 @@
-import type { RomAsset, RomMeta, RomPack } from './rompacker.rompack';
+import type { RomAsset, RomMeta, RomPack } from '../src/bmsx/rompack';
 
 if (typeof global === "undefined") {
 	var global = window;

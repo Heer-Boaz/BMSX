@@ -4,7 +4,7 @@ import { EventEmitter } from './eventemitter';
 import { State } from './fsm';
 import { build_fsm } from './fsmdecorators';
 import type { StateMachineBlueprint } from './fsmtypes';
-import type { Identifier, IRegisterablePersistent } from "./game";
+import type { Identifier, RegisterablePersistent } from "./game";
 import { ZCOORD_MAX } from './glview';
 import { Registry } from './registry';
 import { SpriteObject } from './sprite';
@@ -215,7 +215,7 @@ function makeButtonState(partialState?: Partial<ButtonState>): ButtonState {
  * Represents an input handler that provides methods for polling input, getting button states,
  * consuming buttons, resetting input, and getting the gamepad index.
  */
-interface IInputHandler {
+interface InputHandler {
 	/**
 	 * Polls the input to update the button states.
 	 */
@@ -375,7 +375,7 @@ class PendingAssignmentProcessor {
 	 * @param gamepadInput - The gamepad input handler.
 	 * @returns A boolean value indicating whether the button is pressed and not consumed.
 	 */
-	private checkNonConsumedPressed(button: GamepadButton, gamepadInput: IInputHandler) {
+	private checkNonConsumedPressed(button: GamepadButton, gamepadInput: InputHandler) {
 		return gamepadInput.getButtonState(button).pressed && !gamepadInput.getButtonState(button).consumed;
 	}
 
@@ -392,7 +392,7 @@ class PendingAssignmentProcessor {
 	 * @param increment - The amount by which to increment or decrement the player index.
 	 * @param gamepadInput - The gamepad input handler.
 	 */
-	private handleSelectPlayerIndexButtonPress(button: GamepadButton, increment: number, gamepadInput: IInputHandler) {
+	private handleSelectPlayerIndexButtonPress(button: GamepadButton, increment: number, gamepadInput: InputHandler) {
 		if (this.checkNonConsumedPressed(button, gamepadInput)) {
 			gamepadInput.consumeButton(button);
 
@@ -426,7 +426,7 @@ class PendingAssignmentProcessor {
 	 * @param gamepadInput - The gamepad input handler.
 	 * @param positionIndex - The position index of the icon.
 	 */
-	private createSelectPlayerIconIfNeeded(gamepadInput: IInputHandler, positionIndex: number) {
+	private createSelectPlayerIconIfNeeded(gamepadInput: InputHandler, positionIndex: number) {
 		const model = $.model;
 		if (!this.icon) { // If the joystick icon doesn't exist yet, create it
 			const joystick_icon = new SelectedPlayerIndexIcon(gamepadInput.gamepadIndex);
@@ -452,7 +452,7 @@ class PendingAssignmentProcessor {
 	 * This constructor sets up an event listener for the "gamepaddisconnected" event,
 	 * which handles the disconnection of gamepads and manages pending assignments.
 	 */
-	constructor(public inputHandler: IInputHandler, public proposedPlayerIndex: number | null) {
+	constructor(public inputHandler: InputHandler, public proposedPlayerIndex: number | null) {
 		window.addEventListener("gamepaddisconnected", (e: GamepadEvent) => {
 			const gamepad = e.gamepad;
 			if (!gamepad.id.toLowerCase().includes('gamepad')) return;
@@ -720,7 +720,7 @@ class InputBuffer {
  * Represents the Input class, which manages player inputs and gamepad assignments.
  * Implements the singleton pattern to ensure only one instance exists.
  */
-export class Input implements IRegisterablePersistent {
+export class Input implements RegisterablePersistent {
 	get registrypersistent(): true {
 		return true;
 	}
@@ -1107,7 +1107,7 @@ export class Input implements IRegisterablePersistent {
 	 * @param gamepad The gamepad to assign.
 	 * @param playerIndex The index of the player.
 	 */
-	public assignGamepadToPlayer(gamepad: IInputHandler, playerIndex: number): void {
+	public assignGamepadToPlayer(gamepad: InputHandler, playerIndex: number): void {
 		this.getPlayerInput(playerIndex).assignGamepadToPlayer(gamepad);
 		EventEmitter.instance.emit('playerjoin', this, playerIndex);
 	}
@@ -1304,7 +1304,7 @@ export class PlayerInput {
 	 * @property {IInputHandler | null} keyboard - The handler for keyboard input, or null if not set.
 	 * @property {IInputHandler | null} gamepad - The handler for gamepad input, or null if not set.
 	 */
-	public inputHandlers: { [key in 'keyboard' | 'gamepad']: IInputHandler | null } = {
+	public inputHandlers: { [key in 'keyboard' | 'gamepad']: InputHandler | null } = {
 		keyboard: null,
 		gamepad: null,
 	};
@@ -1565,7 +1565,7 @@ export class PlayerInput {
 	* @param gamepad The gamepad to assign to a player.
 	* @returns The player index the gamepad was assigned to, or null if no player index was available.
 	*/
-	assignGamepadToPlayer(gamepadInput: IInputHandler): void {
+	assignGamepadToPlayer(gamepadInput: InputHandler): void {
 		if (this.inputHandlers['gamepad'] && this.inputHandlers['gamepad'] !== gamepadInput) {
 			console.warn(`Replacing existing gamepad for player ${this.playerIndex} with gamepad ${gamepadInput.gamepadIndex}.`);
 			if (this.inputHandlers['gamepad'] instanceof OnscreenGamepad) {
@@ -1666,9 +1666,9 @@ export class PlayerInput {
  * consumption of key events, and resetting of input states. It listens for keydown
  * and keyup events to update the state of keys accordingly.
  *
- * @implements {IInputHandler}
+ * @implements {InputHandler}
  */
-class KeyboardInput implements IInputHandler {
+class KeyboardInput implements InputHandler {
 	/**
 	 * The state of each keyboard key.
 	 */
@@ -1806,9 +1806,9 @@ class KeyboardInput implements IInputHandler {
  * Implements the IInputHandler interface to manage and poll the state of a gamepad.
  *
  * @class GamepadInput
- * @implements {IInputHandler}
+ * @implements {InputHandler}
  */
-class GamepadInput implements IInputHandler {
+class GamepadInput implements InputHandler {
 	/**
 	 * Gets the index of the gamepad.
 	 * @returns The index of the gamepad, or `null` if no gamepad is connected.
@@ -1962,9 +1962,9 @@ class GamepadInput implements IInputHandler {
  * It is used to simulate gamepad input on touch devices, and is intended to be used in conjunction with the {@link Input} class.
  *
  * @class OnscreenGamepad
- * @implements {IInputHandler}
+ * @implements {InputHandler}
  */
-class OnscreenGamepad implements IInputHandler {
+class OnscreenGamepad implements InputHandler {
 	/**
 	 * The index of the gamepad used for input.
 	 * @remarks

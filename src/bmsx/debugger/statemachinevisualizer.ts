@@ -1,5 +1,5 @@
 import { State } from '../fsm';
-import type { IStateful } from '../fsmtypes';
+import type { Stateful } from '../fsmtypes';
 import type { Identifier } from '../game';
 import { FloatingDialog, removeStateMachineVisualizer } from './bmsxdebugger';
 import { createObjectTableElement } from './objectpropertydialog';
@@ -59,7 +59,7 @@ export function visualizeStateMachine(dialogElement: HTMLElement, container: HTM
     }
 
     function visualizeMachine(machine: State, machineName: string, parentElement: HTMLElement, isActive: boolean, path: string): void {
-        const bfsmController = $.get<IStateful>(bfsmControllerId).sc;
+        const bfsmController = $.get<Stateful>(bfsmControllerId).sc;
         let table = document.createElement('table');
         parentElement.appendChild(table);
         let machineNameRow = document.createElement('tr');
@@ -95,7 +95,7 @@ export function visualizeStateMachine(dialogElement: HTMLElement, container: HTM
         }
     }
 
-    const bfsmController = $.get<IStateful>(bfsmControllerId).sc;
+    const bfsmController = $.get<Stateful>(bfsmControllerId).sc;
     for (let machineName in bfsmController.machines) {
         let machine = bfsmController.machines[machineName];
         let machineRow = document.createElement('tr');
@@ -117,7 +117,7 @@ export function visualizeStateMachine(dialogElement: HTMLElement, container: HTM
 }
 
 export function highlightCurrentState(stateElements: Map<string, HTMLElement>, machineElements: Map<string, HTMLElement>, bfsmControllerId: Identifier): void {
-    const bfsmController = $.get<IStateful>(bfsmControllerId).sc;
+    const bfsmController = $.get<Stateful>(bfsmControllerId).sc;
     function updateMachineClasses(machine: State, machineName: string, isActive: boolean, path: string): void {
         let machineElement = machineElements.get(machineName);
         if (machineElement) {

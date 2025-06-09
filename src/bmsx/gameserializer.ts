@@ -1,4 +1,4 @@
-import { ISpaceObject, Space } from "./basemodel";
+import { Space, SpaceObject } from "./basemodel";
 import { decodeBinary, encodeBinary } from "./binencoder";
 import { Registry } from "./registry";
 import { SM } from "./soundmaster";
@@ -398,7 +398,7 @@ type SoundMasterState = {
  */
 export class Savegame {
     modelprops: {};
-    allSpacesObjects: ISpaceObject[];
+    allSpacesObjects: SpaceObject[];
     spaces: Space[];
     SMState: SoundMasterState;
 

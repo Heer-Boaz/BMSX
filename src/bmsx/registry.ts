@@ -1,8 +1,8 @@
-import { Identifier, IRegisterable } from "./game";
+import { Identifier, Registerable } from "./game";
 
 export class Registry {
     private static _instance: Registry;
-    private _registry: Record<Identifier, IRegisterable>;
+    private _registry: Record<Identifier, Registerable>;
     public static get instance(): Registry {
         if (!Registry._instance) {
             Registry._instance = new Registry();
@@ -28,7 +28,7 @@ export class Registry {
      * @param id The identifier of the entity to retrieve.
      * @returns The retrieved entity if found, otherwise null.
      */
-    public get<T extends IRegisterable = any>(id: Identifier): T | null {
+    public get<T extends Registerable = any>(id: Identifier): T | null {
         return this._registry[id] as T || null;
     }
 
@@ -41,11 +41,11 @@ export class Registry {
         return this._registry[id] !== undefined;
     }
 
-    public register(entity: IRegisterable) {
+    public register(entity: Registerable) {
         this._registry[entity.id] = entity;
     }
 
-    public deregister(id: IRegisterable | Identifier): boolean {
+    public deregister(id: Registerable | Identifier): boolean {
         const entity_id = typeof id === 'string' ? id : id.id;
         return delete this._registry[entity_id];
     }
@@ -54,9 +54,9 @@ export class Registry {
      * Retrieves all entities from the registry that are marked as persistent.
      * Used to get entities for which we should reregister event subscriptions on loading gamestate.
      * TODO: Find a better way to handle this.
-     * @returns {IRegisterable[]} An array of entities that have the `registrypersistent` property set to true.
+     * @returns {Registerable[]} An array of entities that have the `registrypersistent` property set to true.
      */
-    public getPersistentEntities(): IRegisterable[] {
+    public getPersistentEntities(): Registerable[] {
         return Object.values(this._registry).filter(e => e.registrypersistent);
     }
 
@@ -69,7 +69,7 @@ export class Registry {
         }
     }
 
-    public getRegisteredEntities(): IRegisterable[] {
+    public getRegisteredEntities(): Registerable[] {
         return Object.values(this._registry);
     }
 
@@ -81,7 +81,7 @@ export class Registry {
         return this.getRegisteredEntities().filter(e => e.constructor.name === type).map(e => e.id);
     }
 
-    public getRegisteredEntitiesByType(type: string): IRegisterable[] {
+    public getRegisteredEntitiesByType(type: string): Registerable[] {
         return this.getRegisteredEntities().filter(e => e.constructor.name === type);
     }
 }
