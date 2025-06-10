@@ -1202,6 +1202,11 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		try {
 			const snapshot = model.save(false);
 			const compressedSnapshot = BinaryCompressor.compressBinary(snapshot, { disableLZ77: false, disableRLE: false });
+			// Write the compress % to the console
+			// if (game.debug) {
+			// 	const compressionRatio = (compressedSnapshot.length / snapshot.length) * 100;
+			// 	console.log(`Rewind snapshot compressed from ${snapshot.length} bytes to ${compressedSnapshot.length} bytes (${compressionRatio.toFixed(2)}% of original size)`);
+			// }
 			this.rewindBuffer.push(this.turnCounter, compressedSnapshot);
 		} catch (e) {
 			console.warn('Rewind snapshot failed:', e);

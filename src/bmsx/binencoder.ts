@@ -15,8 +15,36 @@
  * @throws {Error} If an unsupported type is encountered during serialization.
  */
 export function encodeBinary(obj: any): Uint8Array {
+    // --- Property name interning table ---
+    const propNameToId = new Map<string, number>();
+    const propNames: string[] = [];
+    // First pass: collect all property names (excluding reference objects)
+    function collectProps(val: any) {
+        if (val && typeof val === 'object') {
+            if (Array.isArray(val)) {
+                for (const v of val) collectProps(v);
+                return;
+            }
+            // Special case: { r: id } reference object
+            const keys = Object.keys(val);
+            if (keys.length === 1 && keys[0] === 'r') return;
+            for (const k of keys) {
+                if (!propNameToId.has(k)) {
+                    propNameToId.set(k, propNames.length);
+                    propNames.push(k);
+                }
+                collectProps(val[k]);
+            }
+        }
+    }
+    collectProps(obj);
+
+    // --- Write property table and data ---
     const w = new BinWriter();
-    w.write(obj);
+    w.u8(0xA1); // version tag for future-proofing
+    w.varuint(propNames.length);
+    for (const name of propNames) w.str(name);
+    w.writeWithPropTable(obj, propNameToId);
     return w.finish();
 }
 
@@ -119,6 +147,47 @@ class BinWriter {
                 throw new Error(`Unsupported type in encodeBinary: ${typeof val}`);
         }
     }
+
+    /**
+     * Recursively writes any supported value into the binary stream, using property name table.
+     */
+    writeWithPropTable(val: any, propNameToId: Map<string, number>): void {
+        switch (typeof val) {
+            case 'undefined':
+                this.u8(0); return;
+            case 'boolean':
+                this.u8(val ? 1 : 2); return;
+            case 'number':
+                this.u8(3); this.f64(val); return;
+            case 'string':
+                this.u8(4); this.str(val); return;
+            case 'object':
+                if (val === null) { this.u8(0); return; }
+                if (Array.isArray(val)) {
+                    this.u8(5);
+                    this.varuint(val.length);
+                    for (let i = 0, len = val.length; i < len; i++) this.writeWithPropTable(val[i], propNameToId);
+                    return;
+                }
+                // Special case: { r: id } reference object
+                const keys = Object.keys(val);
+                if (keys.length === 1 && keys[0] === 'r') {
+                    this.u8(6);
+                    this.varuint(val.r);
+                    return;
+                }
+                this.u8(7); // Generic object
+                this.varuint(keys.length);
+                for (let i = 0, klen = keys.length; i < klen; i++) {
+                    const k = keys[i];
+                    this.varuint(propNameToId.get(k)!); // Write property id
+                    this.writeWithPropTable(val[k], propNameToId);
+                }
+                return;
+            default:
+                throw new Error(`Unsupported type in encodeBinary: ${typeof val}`);
+        }
+    }
 }
 
 export function decodeBinary(buf: Uint8Array) {
@@ -141,45 +210,52 @@ export function decodeBinary(buf: Uint8Array) {
         offset += len;
         return textDecoder.decode(arr);
     }
-    function read(): null | true | false | number | string | any[] | { r: number } | Record<string, any> {
+    // --- Read property table ---
+    const version = readUint8();
+    if (version !== 0xA1) throw new Error('decodeBinary: unknown version');
+    const propCount = readVarUint();
+    const propNames: string[] = [];
+    for (let i = 0; i < propCount; ++i) propNames.push(readString());
+    function read(): any {
         const tag = readUint8();
         switch (tag) {
-            case 0: return null; // undefined or null
-            case 1: return true; // boolean true
-            case 2: return false; // boolean false
-            case 3: { // number
+            case 0: return null;
+            case 1: return true;
+            case 2: return false;
+            case 3: {
                 const v = dv.getFloat64(offset, true);
                 offset += 8;
                 return v;
             }
-            case 4: return readString(); // string
-            case 5: { // array
+            case 4: return readString();
+            case 5: {
                 const len = readVarUint();
                 const arr = new Array(len);
                 for (let i = 0; i < len; ++i) arr[i] = read();
                 return arr;
             }
-            case 6: { // object reference
+            case 6: {
                 const ref = readVarUint();
                 return { r: ref };
             }
-            case 7: { // generic object
+            case 7: {
                 const len = readVarUint();
-                const obj = {};
+                const obj: Record<string, any> = {};
                 for (let i = 0; i < len; ++i) {
-                    const k = readString();
+                    const propId = readVarUint();
+                    const k = propNames[propId];
                     obj[k] = read();
                 }
                 return obj;
             }
-            case 8: { // Uint8Array (binary data)
+            case 8: {
                 const len = readVarUint();
                 const arr = new Uint8Array(len);
                 arr.set(buf.subarray(offset, offset + len));
                 offset += len;
-                return arr; // r
+                return arr;
             }
-            default: // unknown tag
+            default:
                 throw new Error(`Unknown tag in decodeBinary: ${tag}`);
         }
     }

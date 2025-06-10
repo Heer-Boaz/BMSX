@@ -68,7 +68,7 @@ export class BinaryCompressor {
             return ((a * 31 + b * 17 + c * 13 + d) & (HASH_SIZE - 1));
         }
 
-        console.debug(`[COMPRESS START] input.length=${input.length}`);
+        // console.debug(`[COMPRESS START] input.length=${input.length}`);
         let lastRp = -1;
         let iterations = 0;
         const maxIterations = input.length * 2 + 10000;
@@ -139,7 +139,7 @@ export class BinaryCompressor {
                 throw new Error(`compressBinary: rp did not advance at rp=${rp}, possible infinite loop.`);
             }
         }
-        console.debug(`[COMPRESS END] final rp=${rp}, output.length=${wp}`);
+        // console.debug(`[COMPRESS END] final rp=${rp}, output.length=${wp}`);
         return new Uint8Array(this.COMPRESS_SCRATCH.slice(0, wp));
     }
 
