@@ -2,10 +2,10 @@
 // ROM Pack Inspector CLI
 // Usage: npx tsx scripts/rominspector.ts <romfile>
 
+import * as blessed from 'blessed';
 import * as fs from 'fs/promises';
 import * as pako from 'pako';
-import * as path from 'path';
-const term = require('terminal-kit').terminal;
+import { PNG } from 'pngjs';
 
 // Minimal decodeBinary (copy from bootrom, no import)
 function decodeBinary(buf: Uint8Array): any {
@@ -83,24 +83,19 @@ function decodeBinary(buf: Uint8Array): any {
 async function main() {
     const romfile = process.argv[2];
     if (!romfile) {
-        term.red('Usage: npx tsx scripts/rominspector.ts <romfile>\n');
+        console.error('Usage: npx tsx scripts/rominspector.ts <romfile>');
         process.exit(1);
     }
     const raw = await fs.readFile(romfile);
-    // If the ROM has a label, skip it (try to find the start of the zipped buffer)
-    // For now, assume no label.
     let zipped = raw;
-    // Decompress
     let decompressed: Uint8Array;
     try {
         decompressed = pako.inflate(zipped);
-    } catch (e) {
-        term.red('Failed to decompress ROM: ' + e.message + '\n');
+    } catch (e: any) {
+        console.error('Failed to decompress ROM: ' + e.message);
         process.exit(1);
     }
-    // Read 16-byte footer
     const footer = decompressed.slice(decompressed.length - 16);
-    // Use BigInt for bitwise operations to avoid TS errors
     function readLE64(buf: Uint8Array, offset: number): bigint {
         return (BigInt(buf[offset]) |
             (BigInt(buf[offset + 1]) << BigInt(8)) |
@@ -114,75 +109,158 @@ async function main() {
     const metadataOffset = Number(readLE64(footer, 0));
     const metadataLength = Number(readLE64(footer, 8));
     const metaBuf = decompressed.slice(metadataOffset, metadataOffset + metadataLength);
-    // Parse metadata
     let assets: any[];
     try {
         assets = decodeBinary(metaBuf);
-    } catch (e) {
-        term.red('Failed to decode metadata: ' + e.message + '\n');
+    } catch (e: any) {
+        console.error('Failed to decode metadata: ' + e.message);
         process.exit(1);
     }
-    // Summary of assets
     const imageAssets = assets.filter(a => a.type === 'image');
     const audioCount = assets.filter(a => a.type === 'audio').length;
     const codeCount = assets.filter(a => a.type !== 'image' && a.type !== 'audio').length;
-    function showSummary() {
-        term.green(`Total assets: ${assets.length} (images: ${imageAssets.length}, audio: ${audioCount}, code: ${codeCount})\n`);
-        if (imageAssets.length === 0) {
-            term.yellow('No images found in ROM.\n');
-            process.exit(0);
+    if (imageAssets.length === 0) {
+        console.log('No images found in ROM.');
+        process.exit(0);
+    }
+    // --- Blessed UI ---
+    const screen = blessed.screen({
+        smartCSR: true,
+        title: 'ROM Inspector',
+    });
+    const summaryBox = blessed.box({
+        top: 0,
+        left: 'center',
+        width: '100%',
+        height: 3,
+        content: `Total assets: ${assets.length} (images: ${imageAssets.length}, audio: ${audioCount}, code: ${codeCount})`,
+        tags: true,
+        style: { fg: 'green', bg: 'black' },
+    });
+    const list = blessed.list({
+        top: 3,
+        left: 'center',
+        width: '100%',
+        height: '100%-3',
+        items: imageAssets.map(a => a.resname),
+        keys: true,
+        mouse: true,
+        border: 'line',
+        style: {
+            selected: { bg: 'blue', fg: 'white' },
+            item: { fg: 'white', bg: 'black' },
+            border: { fg: 'cyan' },
+        },
+        label: 'Select image asset (Enter to view details, q to quit)',
+        scrollbar: { ch: ' ', track: { bg: 'grey' }, style: { bg: 'blue' } },
+    });
+    screen.append(summaryBox);
+    screen.append(list);
+    list.focus();
+    list.on('select', async (item, idx) => {
+        const selected = imageAssets[idx];
+        const meta = selected.imgmeta!;
+        let width = meta.width || 0;
+        let height = meta.height || 0;
+        let atlasid: number | undefined = meta.atlasid;
+        if (atlasid === undefined) atlasid = 0; // Default atlas ID if not specified
+        let asciiArt = '';
+
+        if (meta.atlassed && meta.texcoords) {
+            // Atlas sub-image: extract region from the correct atlas asset by name suffix
+            const atlasName = meta.atlasid === 0 ? '_atlas' : `_atlas${meta.atlasid}`;
+            const atlasAsset = assets.find(a => a.resname === atlasName && a.type === 'image');
+            if (atlasAsset) {
+                const atlasBuf = atlasAsset.buffer instanceof Uint8Array
+                    ? Buffer.from(atlasAsset.buffer)
+                    : Buffer.from(decompressed.slice(atlasAsset.start, atlasAsset.end));
+                try {
+                    const atlasPng = PNG.sync.read(atlasBuf);
+                    // texcoords: [x, y, w, h]
+                    const [sx, sy, sw, sh] = meta.texcoords as number[];
+                    width = sw;
+                    height = sh;
+                    const asciiChars = ' .:-=+*#%@';
+                    const outW = Math.min(48, sw);
+                    const outH = Math.floor(sh * (outW / sw));
+                    for (let y = 0; y < outH; y++) {
+                        let line = '';
+                        for (let x = 0; x < outW; x++) {
+                            const px = Math.floor(sx + x * sw / outW);
+                            const py = Math.floor(sy + y * sh / outH);
+                            const idx4 = (py * atlasPng.width + px) << 2;
+                            const r = atlasPng.data[idx4], g = atlasPng.data[idx4 + 1], b = atlasPng.data[idx4 + 2], a = atlasPng.data[idx4 + 3];
+                            const lum = a === 0 ? 255 : (r * 0.299 + g * 0.587 + b * 0.114);
+                            const ch = asciiChars[Math.floor(lum / 256 * asciiChars.length)] || ' ';
+                            line += ch;
+                        }
+                        asciiArt += line + '\n';
+                    }
+                } catch {
+                    asciiArt = '[Failed to decode atlas PNG]';
+                }
+            } else {
+                asciiArt = '[Atlas asset not found]';
+            }
+        } else {
+            // Non-atlas image: decode its own PNG buffer
+            const imgBuf = selected.buffer instanceof Uint8Array
+                ? Buffer.from(selected.buffer)
+                : Buffer.from(decompressed.slice(selected.start, selected.end));
+            try {
+                const png = PNG.sync.read(imgBuf);
+                width = width || png.width;
+                height = height || png.height;
+                const asciiChars = ' .:-=+*#%@';
+                const outW = Math.min(48, width);
+                const outH = Math.floor(height * (outW / width));
+                for (let y = 0; y < outH; y++) {
+                    let line = '';
+                    for (let x = 0; x < outW; x++) {
+                        const px = Math.floor(x * width / outW);
+                        const py = Math.floor(y * height / outH);
+                        const idx4 = (py * width + px) << 2;
+                        const r = png.data[idx4], g = png.data[idx4 + 1], b = png.data[idx4 + 2], a = png.data[idx4 + 3];
+                        const lum = a === 0 ? 255 : (r * 0.299 + g * 0.587 + b * 0.114);
+                        const ch = asciiChars[Math.floor(lum / 256 * asciiChars.length)] || ' ';
+                        line += ch;
+                    }
+                    asciiArt += line + '\n';
+                }
+            } catch {
+                asciiArt = '[Unable to generate ASCII preview]';
+            }
         }
-    }
-    // Prepare menu dimensions (subtract header lines: summary + blank + prompt = 3)
-    const termWidth = term.width || 80;
-    const termHeight = 6;//term.height || 24;
-    const headerLines = 3;
-    const menuHeight = Math.max(3, termHeight - headerLines);
-    const maxNameLen = Math.max(...imageAssets.map(a => a.resname.length));
-    const menuWidth = Math.min(termWidth - 4, maxNameLen + 6);
-    // Image selection menu using gridLayout
-    term('\nSelect image to preview (arrow keys, Enter to select):\n');
-    const names = imageAssets.map(a => a.resname);
-    // Calculate grid dimensions
-    const cellWidth = Math.min(menuWidth, Math.max(...names.map(n => n.length)) + 4);
-    const columns = Math.max(1, Math.floor(term.width / cellWidth));
-    const rows = Math.ceil(names.length / columns);
-    // Show the grid menu, allowing return after image view
-    function showGridMenu() {
-        term.gridMenu(names, {
-            columns,
-            rows,
-            exitOnUnexpectedKey: true,
-            cellWidth
-        }, async (error: any, response: { selectedIndex: number }) => {
-            if (error) process.exit(1);
-            const selected = imageAssets[response.selectedIndex];
-            // Extract and display image
-            const imgBuf = decompressed.slice(selected.start, selected.end);
-            const tmpPath = path.join(process.cwd(), '__rominspector_tmp.png');
-            await fs.writeFile(tmpPath, imgBuf);
-            term.clear();
-            await new Promise(resolve => {
-                term.drawImage(tmpPath, { shrink: { width: 64, height: 32 } }, () => {
-                    fs.unlink(tmpPath);
-                    resolve(undefined);
-                });
-            });
-            term(
-                '\nPress any key to return to menu...'
-            );
-            term.grabInput(true);
-            term.once('key', () => {
-                term.grabInput(false);
-                term.clear();
-                showSummary();
-                showGridMenu();
-            });
+
+        // Show metadata details, including texcoords, boundingbox, etc.
+        const metadataLines = [];
+        metadataLines.push(`Type: ${selected.type}`);
+        metadataLines.push(`Start: ${selected.start}`);
+        metadataLines.push(`End: ${selected.end}`);
+        metadataLines.push(`Size: ${selected.end - selected.start} bytes`);
+        metadataLines.push(`Width: ${width}`);
+        metadataLines.push(`Height: ${height}`)
+        metadataLines.push(`Atlas ID: ${atlasid ?? 'None'}`);
+        if (meta.texcoords) metadataLines.push(`Texcoords: [${meta.texcoords.join(', ')}]`);
+        if (meta.boundingbox) metadataLines.push(`BoundingBox: ${JSON.stringify(meta.boundingbox)}`);
+        if (meta.hitpolygons) metadataLines.push(`Hitpolygons: ${JSON.stringify(meta.hitpolygons)}`);
+        metadataLines.push('');
+
+        const modal = blessed.box({
+            parent: screen,
+            top: 'center', left: 'center',
+            width: '80%', height: 'shrink',
+            border: 'line', style: { border: { fg: 'yellow' }, bg: 'black' },
+            label: `Image: ${selected.resname}`,
+            content: metadataLines.join('\n') + '\n' + asciiArt + '\nPress any key to close...',
+            tags: true, scrollable: true, alwaysScroll: true, keys: true, mouse: true,
+            scrollbar: { ch: ' ', track: { bg: 'grey' }, style: { bg: 'yellow' } }
         });
-    }
-    // Initial show
-    showSummary();
-    showGridMenu();
+        screen.render();
+        screen.onceKey([], () => { modal.destroy(); screen.render(); });
+    });
+    screen.key(['q', 'C-c'], () => process.exit(0));
+    screen.render();
 }
 
 main();

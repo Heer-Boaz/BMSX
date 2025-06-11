@@ -1,4 +1,3 @@
-
 /**
  * Interface for a loaded resource, which includes metadata about the resource.
  */
@@ -18,6 +17,7 @@ export interface LoadedResource extends ResourceMeta {
 	buffer: Buffer;
 	img?: any;
 	imgmeta?: ImgMeta;
+	atlasIndex?: number;
 }
 
 /**
@@ -30,6 +30,7 @@ export interface ResourceMeta {
 	type: string;
 	id: number;
 	collisionType?: 'concave' | 'convex' | 'aabb';
+	atlasIndex?: number; // index of atlas this image belongs to
 }
 
 export interface RomManifest {

@@ -342,8 +342,12 @@ function tprfPacker(rects: Rect[], binWidth: number, binHeight: number): { items
 	return { items: items, width: width, height: height };
 }
 
-export function createOptimizedAtlas(loadedResources: LoadedResource[], atlasId: number): HTMLCanvasElement {
-	const image_assets = loadedResources.filter(resource => resource.type === "image");
+export function createOptimizedAtlas(loadedResources: LoadedResource[], atlasId: number): HTMLCanvasElement | null {
+	// Only pack images assigned to this atlas index
+	const image_assets = loadedResources.filter(resource => resource.type === "image" && (resource as any).atlasIndex === atlasId);
+	if (image_assets.length === 0) {
+		return null;
+	}
 	const rects = image_assets.map(img_resource => ({ x: undefined, y: undefined, width: img_resource.img?.width, height: img_resource.img?.height, id: img_resource.id }));
 
 	const maxrect_result = maximalRectanglesPacker(rects, ATLAS_MAX_SIZE_IN_PIXELS, ATLAS_MAX_SIZE_IN_PIXELS);

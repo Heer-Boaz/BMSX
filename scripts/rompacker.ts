@@ -430,16 +430,25 @@ function parseAudioMeta(filename: string): { sanitizedName: string, meta: AudioM
 	};
 }
 
-// --- Image filename collision-type suffix parser ---
-function parseImageMeta(filenameWithoutExt: string): { sanitizedName: string, collisionType: 'concave' | 'convex' | 'aabb' } {
-	const match = filenameWithoutExt.match(/@(cc|cx)$/i);
+// --- Image filename collision-type (and atlas index) parser ---
+function parseImageMeta(filenameWithoutExt: string): { sanitizedName: string, collisionType: 'concave' | 'convex' | 'aabb', atlasIndex?: number } {
+	// collision suffix @cc or @cx
+	const colMatch = filenameWithoutExt.match(/@(cc|cx)$/i);
 	let collisionType: 'concave' | 'convex' | 'aabb' = 'aabb';
-	if (match) {
-		const code = match[1].toLowerCase();
-		collisionType = code === 'cc' ? 'concave' : code === 'cx' ? 'convex' : 'aabb';
+	let nameNoCol = filenameWithoutExt;
+	if (colMatch) {
+		collisionType = colMatch[1].toLowerCase() === 'cc' ? 'concave' : 'convex';
+		nameNoCol = nameNoCol.replace(/@(cc|cx)$/i, '');
 	}
-	const sanitizedName = filenameWithoutExt.replace(/@(cc|cx)$/i, '');
-	return { sanitizedName, collisionType };
+	// atlas index suffix @atlas=N
+	const atlasMatch = nameNoCol.match(/@atlas=(\d+)$/i);
+	let atlasIndex: number | undefined;
+	let sanitizedName = nameNoCol;
+	if (atlasMatch) {
+		atlasIndex = parseInt(atlasMatch[1], 10);
+		sanitizedName = sanitizedName.replace(/@atlas=\d+$/i, '');
+	}
+	return { sanitizedName, collisionType, atlasIndex };
 }
 
 /**
@@ -458,16 +467,18 @@ function zip(content: Buffer): Uint8Array {
  * @param filepath The path of the resource file.
  * @returns An object containing the name, extension, and type of the resource file.
  */
-function getResMetaByFilename(filepath: string): { name: string, ext: string, type: string, collisionType?: 'concave' | 'convex' | 'aabb' } {
+function getResMetaByFilename(filepath: string): { name: string, ext: string, type: string, collisionType?: 'concave' | 'convex' | 'aabb', atlasIndex?: number } {
 	let name = parse(filepath).name.replace(' ', '').toLowerCase();
 	const ext = parse(filepath).ext.toLowerCase();
 	let type: string;
 	let collisionType: 'concave' | 'convex' | 'aabb' = 'aabb';
+	let atlasIndex: number | undefined;
 
 	if (ext === '.png') {
 		const imgMeta = parseImageMeta(name);
 		name = imgMeta.sanitizedName;
 		collisionType = imgMeta.collisionType;
+		atlasIndex = imgMeta.atlasIndex;
 	}
 
 	switch (name) {
@@ -491,7 +502,7 @@ function getResMetaByFilename(filepath: string): { name: string, ext: string, ty
 			type = 'image';
 			break;
 	}
-	return { name: name, ext: ext, type: type, collisionType: collisionType };
+	return { name: name, ext: ext, type: type, collisionType: collisionType, atlasIndex: atlasIndex };
 }
 
 /**
@@ -521,7 +532,17 @@ async function getResMetaList(respath: string, romname?: string) {
 		const ext = meta.ext;
 		switch (type) {
 			case 'image':
-				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: imgid, collisionType: meta.collisionType });
+				// extract collision and atlas metadata
+				const imgMetaInfo = parseImageMeta(name);
+				result.push({
+					filepath,
+					name: imgMetaInfo.sanitizedName,
+					ext,
+					type,
+					id: imgid,
+					collisionType: imgMetaInfo.collisionType,
+					atlasIndex: imgMetaInfo.atlasIndex ?? 0
+				});
 				++imgid;
 				break;
 			case 'audio':
@@ -539,7 +560,15 @@ async function getResMetaList(respath: string, romname?: string) {
 		}
 	}
 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-		result.push({ filepath: undefined, name: '_atlas', ext: undefined, type: 'atlas', id: imgid }); // Note that 'atlas' is an internal type, used only for this script
+		// Determine how many atlases are required based on image atlasIndex
+		const atlasIndices = result.filter(r => r.type === 'image').map(r => (r.atlasIndex ?? 0));
+		const maxAtlas = atlasIndices.length ? Math.max(...atlasIndices) : 0;
+		// Add an atlas entry for each index [0..maxAtlas]
+		for (let ai = 0; ai <= maxAtlas; ai++) {
+			const atlasName = ai === 0 ? '_atlas' : `_atlas${ai}`;
+			result.push({ filepath: undefined, name: atlasName, ext: undefined, type: 'atlas', id: imgid });
+			imgid++;
+		}
 	}
 
 	// Validation: ensure no duplicate IDs within the same resource type (image or audio)
@@ -587,16 +616,19 @@ async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>, r
 
 	// Parallelize buffer and image loading
 	const resourcePromises = resMetaList.map(async (meta) => {
-		const name = meta.name;
-		const ext = meta.ext;
-		const type = meta.type;
-		const id = meta.id;
 		const buffer = meta.filepath ? await readFile(meta.filepath) : null;
-		let img: any = undefined;
-		if (type === 'image' && GENERATE_AND_USE_TEXTURE_ATLAS) {
-			img = await load_img(meta);
+		const base: any = {
+			buffer: buffer!, filepath: meta.filepath,
+			name: meta.name, ext: meta.ext, type: meta.type,
+			id: meta.id, collisionType: meta.collisionType,
+			atlasIndex: (meta as any).atlasIndex ?? 0
+		};
+		if (meta.type === 'image' && GENERATE_AND_USE_TEXTURE_ATLAS) {
+			// Load image only once per resource
+			const img = await load_img(meta);
+			base.img = img;
 		}
-		return { buffer: buffer!, filepath: meta.filepath, name: name, ext: ext, type: type, img: img, id: id, collisionType: meta.collisionType };
+		return base as LoadedResource & { atlasIndex: number };
 	});
 	loadedResources = await Promise.all(resourcePromises);
 
@@ -686,16 +718,11 @@ async function buildRompack(rom_name: string, respath: string, progress?: Progre
 	const loadedResources = await getLoadedResourcesList(respath, buffers, rom_name);
 	await progress?.taskCompleted();
 
-	let generated_atlas: HTMLCanvasElement | undefined;
-	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-		generated_atlas = createOptimizedAtlas(loadedResources, 0);
-	}
-	await progress?.taskCompleted();
-
-	const { jsonout, bufferPointer, romlabel_buffer } = processResources(loadedResources);
-
-	if (GENERATE_AND_USE_TEXTURE_ATLAS && generated_atlas) {
-		await handleAtlas(loadedResources, generated_atlas, jsonout, bufferPointer, buffers, progress);
+	// Process resources and append buffers including multi-atlas if enabled
+	const { jsonout, bufferPointer, romlabel_buffer } = await processResources(loadedResources, buffers, progress);
+	// Advance progress for texture atlas generation stage when atlasing is disabled
+	if (!GENERATE_AND_USE_TEXTURE_ATLAS) {
+		await progress?.taskCompleted();
 	}
 
 	await finalizeRompack(jsonout, buffers, romlabel_buffer, outfile, progress);
@@ -717,7 +744,17 @@ async function buildRompack(rom_name: string, respath: string, progress?: Progre
  * - `bufferPointer` - The current offset in the resource buffer after processing.
  * - `romlabel_buffer` - The buffer data for the "romlabel.png" resource if present.
  */
-function processResources(loadedResources: LoadedResource[]) {
+async function processResources(loadedResources: LoadedResource[], buffers: Buffer[], progress?: ProgressReporter) {
+	// Generate multiple atlases
+	const atlases: HTMLCanvasElement[] = [];
+	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
+		let idx = 0, atlasCanvas: HTMLCanvasElement | null;
+		do {
+			atlasCanvas = createOptimizedAtlas(loadedResources, idx);
+			if (atlasCanvas) atlases.push(atlasCanvas);
+			idx++;
+		} while (atlasCanvas);
+	}
 	const jsonout: RomAsset[] = [];
 	let bufferPointer = 0;
 	let romlabel_buffer: Buffer | undefined;
@@ -734,7 +771,7 @@ function processResources(loadedResources: LoadedResource[]) {
 				romlabel_buffer = res.buffer;
 				break;
 			case 'image':
-				const imgmeta = buildImgMeta(res);
+				const imgmeta = buildImgMeta(res, (res as any).atlasIndex);
 				const baseJson = { resid, resname: name, type, imgmeta };
 				if (GENERATE_AND_USE_TEXTURE_ATLAS && !DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
 					jsonout.push({ ...baseJson, start: bufferPointer, end: bufferPointer + res.buffer.length });
@@ -758,17 +795,27 @@ function processResources(loadedResources: LoadedResource[]) {
 				break;
 		}
 	}
+	// Append each atlas with its index suffix
+	for (let atlasIndex = 0; atlasIndex < atlases.length; atlasIndex++) {
+		bufferPointer = await handleAtlas(
+			loadedResources,
+			atlases[atlasIndex],
+			jsonout,
+			bufferPointer,
+			buffers,
+			progress,
+			atlasIndex
+		);
+	}
 	return { jsonout, bufferPointer, romlabel_buffer };
 }
 
 /**
- * Generates metadata for an image resource, optionally integrating texture atlas data.
- *
- * @param res - The loaded resource containing the image and any existing metadata.
- * @param generated_atlas - An optional canvas element where an atlas has been generated.
- * @returns An object containing image dimensions, bounding boxes, center point, and (if atlas usage is enabled) texture coordinates.
+ * Generates metadata for an image resource, with support for multiple atlases.
+ * @param res - The loaded resource.
+ * @param atlasIndex - Index of the atlas this resource belongs to.
  */
-function buildImgMeta(res: LoadedResource): ImgMeta {
+function buildImgMeta(res: LoadedResource, atlasIndex: number = 0): ImgMeta {
 	const img = res.img;
 	const img_boundingbox = BoundingBoxExtractor.extractBoundingBox(img);
 	let extracted_hitpolygon: vec2[][] | vec2[] = undefined;
@@ -821,15 +868,15 @@ function buildImgMeta(res: LoadedResource): ImgMeta {
 		centerpoint: img_centerpoint,
 		hitpolygons: hitpolygons
 	};
-	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
+	if (GENERATE_AND_USE_TEXTURE_ATLAS && atlasIndex >= 0) {
 		imgmeta = {
 			...imgmeta,
-			atlassed: res.imgmeta.atlassed,
-			atlasid: res.imgmeta.atlasid,
-			texcoords: res.imgmeta.texcoords,
-			texcoords_fliph: res.imgmeta.texcoords_fliph,
-			texcoords_flipv: res.imgmeta.texcoords_flipv,
-			texcoords_fliphv: res.imgmeta.texcoords_fliphv,
+			atlassed: true,
+			atlasid: atlasIndex,
+			texcoords: res.imgmeta?.texcoords,
+			texcoords_fliph: res.imgmeta?.texcoords_fliph,
+			texcoords_flipv: res.imgmeta?.texcoords_flipv,
+			texcoords_fliphv: res.imgmeta?.texcoords_fliphv,
 		};
 	}
 	return imgmeta;
@@ -851,16 +898,22 @@ async function handleAtlas(
 	jsonout: RomAsset[],
 	bufferPointer: number,
 	buffers: Buffer[],
-	progress?: ProgressReporter
-) {
-	const i = loadedResources.findIndex(x => x.type === 'atlas');
+	progress?: ProgressReporter,
+	atlasIndex: number = 0
+): Promise<number> {
+	// Find the matching atlas meta entry by name suffix
+	const atlasName = atlasIndex === 0 ? '_atlas' : `_atlas${atlasIndex}`;
+	const i = loadedResources.findIndex(x => x.type === 'atlas' && x.name === atlasName);
 	const atlasSize = { x: generated_atlas.width, y: generated_atlas.height };
 	const atlasbuffer: Buffer = (generated_atlas as any).toBuffer('image/png');
 	buffers.push(atlasbuffer);
 
+	// Name atlas resource with index suffix (_atlas, _atlas1, _atlas2, ...)
+	const baseName = loadedResources[i].name;
+	const resname = atlasIndex === 0 ? baseName : `${baseName}${atlasIndex}`;
 	jsonout.push({
 		resid: loadedResources[i].id,
-		resname: loadedResources[i].name,
+		resname: resname,
 		type: 'image',
 		start: bufferPointer,
 		end: bufferPointer + atlasbuffer.length,
@@ -869,6 +922,8 @@ async function handleAtlas(
 	});
 	await writeFile("./rom/_ignore/atlas.png", atlasbuffer);
 	await progress?.taskCompleted();
+	// Return new pointer after atlas buffer
+	return bufferPointer + atlasbuffer.length;
 }
 
 /**
@@ -1124,7 +1179,7 @@ class ProgressReporter {
 
 	public async pulse() {
 		this.gauge.pulse();
-		await timer(10);
+		await timer(50);
 	}
 }
 
