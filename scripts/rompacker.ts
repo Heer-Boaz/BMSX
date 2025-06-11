@@ -1,6 +1,6 @@
 import { glsl } from "esbuild-plugin-glsl";
 import type { Stats } from 'fs';
-import type { AudioMeta, ImgMeta, RomAsset, RomMeta, vec2 } from '../src/bmsx/rompack';
+import type { AudioMeta, ImgMeta, RomAsset, vec2 } from '../src/bmsx/rompack';
 import { createOptimizedAtlas } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { LoadedResource, ResourceMeta, RomManifest, RomPackerOptions } from './rompacker.rompack';
@@ -876,6 +876,14 @@ async function handleAtlas(
  * writing zipped output to disk, and exporting a JSON file that
  * references the assets used in the ROM pack.
  *
+ * IMPORTANT: The 16-byte footer (metadata offset/length) is appended to the end of the uncompressed buffer
+ * BEFORE zipping. This means that after decompression, the footer is always present at the end of the buffer.
+ *
+ * The loader uses this footer to find the metadata (resource list), but all asset/code offsets in the metadata
+ * are relative to the start of the decompressed buffer and never include the footer. The footer is ignored for
+ * all other purposes. This is a common pattern in file formats and is robust as long as the packer and loader agree.
+ * The great thing is that I came up with this before ChatGPT/Copilot did, but now I can use it to explain it better! :D
+ *
  * @param jsonout - An array of ROM assets describing the mappings to be finalized.
  * @param buffers - The buffers that will be concatenated and zipped.
  * @param romlabel_buffer - An optional buffer representing any additional
@@ -890,25 +898,34 @@ async function finalizeRompack(
 	outfile: string,
 	progress?: ProgressReporter
 ) {
-	const jsonbuffer = Buffer.from(encodeuint8arr(JSON.stringify(jsonout)));
+	// Use encodeBinary for binary metadata encoding
+	const jsonbuffer = Buffer.from(encodeBinary(jsonout));
 	buffers.push(jsonbuffer);
 
+	// Calculate metadata offset and length (before footer)
 	const bufferPointer = buffers.reduce((acc, buf) => acc + buf.length, 0) - jsonbuffer.length;
-	const rommeta: RomMeta = { start: bufferPointer, end: bufferPointer + jsonbuffer.length };
-	const rom_meta_string = JSON.stringify(rommeta).padStart(100, ' ');
-	buffers.push(Buffer.from(encodeuint8arr(rom_meta_string)));
-	const all_buffers = Buffer.concat(buffers);
-	const zipped = zip(all_buffers);
-	const blobmeta: RomMeta = {
-		start: romlabel_buffer?.length ?? 0,
-		end: zipped.length + (romlabel_buffer?.length ?? 0)
-	};
-	const blob_meta_string = JSON.stringify(blobmeta).padStart(100, ' ');
-	const blob_meta_as_buffer = Buffer.from(encodeuint8arr(blob_meta_string));
+	const metadataOffset = bufferPointer;
+	const metadataLength = jsonbuffer.length;
 
+	// Prepare the 16-byte binary footer: 8 bytes for offset, 8 bytes for length (both little-endian)
+	const footer = Buffer.alloc(16);
+	footer.writeBigUInt64LE(BigInt(metadataOffset), 0);
+	footer.writeBigUInt64LE(BigInt(metadataLength), 8);
+
+	// Concatenate all buffers (resource data + metadata + footer)
+	const all_buffers = Buffer.concat([...buffers, footer]);
+	const zipped = zip(all_buffers);
+
+	// Write the final ROM file: [romlabel][zipped_with_footer]
 	await progress?.taskCompleted();
-	await writeFile(`./dist/${outfile}`, Buffer.concat([romlabel_buffer ?? Buffer.alloc(0), zipped, blob_meta_as_buffer]));
-	await writeFile("./rom/_ignore/romresources.json", jsonbuffer);
+	await writeFile(`./dist/${outfile}`,
+		Buffer.concat([
+			romlabel_buffer ?? Buffer.alloc(0),
+			zipped
+		])
+	);
+	// Optionally, export the resource metadata as human-readable JSON for debugging
+	await writeFile("./rom/_ignore/romresources.json", JSON.stringify(jsonout, null, 2));
 	await progress?.taskCompleted();
 }
 

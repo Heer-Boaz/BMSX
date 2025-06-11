@@ -248,9 +248,14 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
  */
 function parseMetaFromBuffer(to_parse: ArrayBuffer): RomMeta {
 	const bytearray = new Uint8Array(to_parse);
-	const sliced = bytearray.slice(bytearray.length - 100);
-	const metaJsonStr = decodeuint8arr(sliced);
-	return JSON.parse(metaJsonStr);
+	const footerOffset = bytearray.length - 16;
+	if (footerOffset < 0) throw new Error('ROM file too small for footer');
+	const dv = new DataView(to_parse, footerOffset, 16);
+	const metaOffset = Number(dv.getBigUint64(0, true)); // little-endian
+	const metaLength = Number(dv.getBigUint64(8, true)); // little-endian
+	if (metaOffset < 0 || metaLength <= 0 || metaOffset + metaLength > bytearray.length)
+		throw new Error('Invalid ROM metadata footer');
+	return { start: metaOffset, end: metaOffset + metaLength };
 }
 
 /**
@@ -287,7 +292,8 @@ async function getZippedRomAndRomLabelFromBlob(blob_buffer: ArrayBuffer): Promis
 
 	// return Promise.resolve({ zipped_rom: getSubBufferAsPerMeta(blob_buffer, blob_meta), romlabel: romlabel_htmlimg });
 	try {
-		return { zipped_rom: getSubBufferFromBufferWithMeta(blob_buffer), romlabel: undefined };
+		// return { zipped_rom: getSubBufferFromBufferWithMeta(blob_buffer), romlabel: undefined };
+		return { zipped_rom: blob_buffer, romlabel: undefined };
 	} catch (err) {
 		throw new Error(`Error in getZippedRomAndRomLabelFromBlob: "${err.message}"`);
 	}
@@ -300,23 +306,14 @@ async function getZippedRomAndRomLabelFromBlob(blob_buffer: ArrayBuffer): Promis
  */
 async function loadResourceList(rom: ArrayBuffer): Promise<RomAsset[]> {
 	const sliced = new Uint8Array(getSubBufferFromBufferWithMeta(rom));
-	const resJsonStr = decodeuint8arr(sliced);
-
+	// Use decodeBinary instead of JSON.parse
 	let resJson: RomAsset[];
 	try {
-		resJson = JSON.parse(resJsonStr);
+		resJson = decodeBinary(sliced) as RomAsset[];
 	} catch (e: any) {
-		console.error('[loadResourceList] JSON.parse error:', e);
-		let pos = 0;
-		if (e && e.message) {
-			const match = e.message.match(/at position (\d+)/);
-			if (match) pos = parseInt(match[1], 10);
-		}
-		console.error(`[loadResourceList] Error context (pos ${pos}):`, resJsonStr.slice(Math.max(0, pos - 32), pos + 32));
-		console.error(`[loadResourceList] Error context char codes (pos ${pos}):`, Array.from(resJsonStr.slice(Math.max(0, pos - 8), pos + 8)).map(c => c.charCodeAt(0)));
+		console.error('[loadResourceList] decodeBinary error:', e);
 		throw e;
 	}
-
 	return Promise.resolve<RomAsset[]>(resJson);
 }
 
@@ -621,61 +618,75 @@ function createAudioContext(): void {
 	bootrom.sndcontext = context;
 }
 
-// const CURRENT_COMPRESSOR_VERSION = 0x01;
-// const MAGIC_HEADER = new Uint8Array([0x42, 0x43, CURRENT_COMPRESSOR_VERSION]); // "BC" v1
-// const MIN_MATCH = 4;
-
-// function decompress(input: ArrayBuffer): ArrayBuffer {
-// 	// Check magic header
-// 	if (input.byteLength < MAGIC_HEADER.length) throw new Error("Input too short for magic header");
-// 	const inputView = new Uint8Array(input);
-// 	for (let i = 0; i < MAGIC_HEADER.length; ++i) {
-// 		if (inputView[i] !== MAGIC_HEADER[i]) throw new Error("Missing or invalid magic header/version");
-// 	}
-// 	let pos = MAGIC_HEADER.length;
-// 	// Preallocate output buffer (input.length * 3 is a safe upper bound for most data)
-// 	let out = new Uint8Array(input.byteLength * 3);
-// 	let outPos = 0;
-// 	while (pos < input.byteLength) {
-// 		const tag = inputView[pos++];
-// 		if (tag === 0xFF) { // RLE
-// 			if (pos + 2 > inputView.length) throw new Error("Malformed RLE tag");
-// 			const run = inputView[pos++];
-// 			const val = inputView[pos++];
-// 			if (outPos + run > out.length) {
-// 				// Grow output buffer
-// 				const newOut = new Uint8Array(out.length * 2);
-// 				newOut.set(out, 0);
-// 				out = newOut;
-// 			}
-// 			// Fast fill for RLE
-// 			out.fill(val, outPos, outPos + run);
-// 			outPos += run;
-// 		} else if (tag === 0xFE) { // LZ77
-// 			if (pos + 3 > inputView.length) throw new Error("Malformed LZ77 tag");
-// 			const off = inputView[pos++] | (inputView[pos++] << 8);
-// 			const len = inputView[pos++] + MIN_MATCH;
-// 			const start = outPos - off;
-// 			if (start < 0 || outPos + len > out.length) {
-// 				// Grow output buffer if needed
-// 				if (outPos + len > out.length) {
-// 					const newOut = new Uint8Array((out.length + len) * 2);
-// 					newOut.set(out, 0);
-// 					out = newOut;
-// 				}
-// 				if (start < 0) throw new Error("LZ77 offset out of bounds");
-// 			}
-// 			// Correct copy for overlapping regions
-// 			for (let i = 0; i < len; ++i) {
-// 				out[outPos + i] = out[start + i];
-// 			}
-// 			outPos += len;
-// 		} else if (tag === 0xFD) { // escaped literal
-// 			if (pos >= inputView.length) throw new Error("Malformed escape tag");
-// 			out[outPos++] = inputView[pos++];
-// 		} else { // literal
-// 			out[outPos++] = tag;
-// 		}
-// 	}
-// 	return out.buffer.slice(out.byteOffset, out.byteOffset + outPos);
-// }
+// Standalone minimal decodeBinary for bootrom (property table version)
+function decodeBinary(buf) {
+	const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+	let offset = 0;
+	const textDecoder = new TextDecoder();
+	function readUint8() { return dv.getUint8(offset++); }
+	function readVarUint() {
+		let val = 0, shift = 0, b;
+		do {
+			b = buf[offset++];
+			val |= (b & 0x7F) << shift;
+			shift += 7;
+		} while (b & 0x80);
+		return val;
+	}
+	function readString() {
+		const len = readVarUint();
+		const arr = buf.subarray(offset, offset + len);
+		offset += len;
+		return textDecoder.decode(arr);
+	}
+	// --- Read property table ---
+	const version = readUint8();
+	if (version !== 0xA1) throw new Error('decodeBinary: unknown version');
+	const propCount = readVarUint();
+	const propNames = [];
+	for (let i = 0; i < propCount; ++i) propNames.push(readString());
+	function read() {
+		const tag = readUint8();
+		switch (tag) {
+			case 0: return null;
+			case 1: return true;
+			case 2: return false;
+			case 3: {
+				const v = dv.getFloat64(offset, true);
+				offset += 8;
+				return v;
+			}
+			case 4: return readString();
+			case 5: {
+				const len = readVarUint();
+				const arr = new Array(len);
+				for (let i = 0; i < len; ++i) arr[i] = read();
+				return arr;
+			}
+			case 6: {
+				const ref = readVarUint();
+				return { r: ref };
+			}
+			case 7: {
+				const len = readVarUint();
+				const obj = {};
+				for (let i = 0; i < len; ++i) {
+					const propId = readVarUint();
+					const k = propNames[propId];
+					obj[k] = read();
+				}
+				return obj;
+			}
+			case 8: {
+				const len = readVarUint();
+				const arr = new Uint8Array(len);
+				arr.set(buf.subarray(offset, offset + len));
+				offset += len;
+				return arr;
+			}
+			default:
+				throw new Error(`Unknown tag in decodeBinary: ${tag}`);
+		}
+	}
+	return read();
+}
