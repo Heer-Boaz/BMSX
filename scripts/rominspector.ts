@@ -86,16 +86,35 @@ async function main() {
         console.error('Usage: npx tsx scripts/rominspector.ts <romfile>');
         process.exit(1);
     }
-    const raw = await fs.readFile(romfile);
-    let zipped = raw;
-    let decompressed: Uint8Array;
+    let raw: Buffer<ArrayBufferLike>;
     try {
-        decompressed = pako.inflate(zipped);
-    } catch (e: any) {
-        console.error('Failed to decompress ROM: ' + e.message);
+        raw = await fs.readFile(romfile);
+    }
+    catch {
+    }
+    // Check whether the file exists
+    if (!raw) {
+        console.error(`Failed to read ROM file at "${romfile}"`);
         process.exit(1);
     }
-    const footer = decompressed.slice(decompressed.length - 16);
+    // Check if the ROM is compressed
+    const isCompressed = raw[0] === 0x1F && raw[1] === 0x8B;
+    let rompack = null;
+    if (isCompressed) {
+        let zipped = raw;
+        let decompressed: Uint8Array;
+        try {
+            decompressed = pako.inflate(zipped);
+        } catch (e: any) {
+            console.error('Failed to decompress ROM: ' + e.message);
+            process.exit(1);
+        }
+        rompack = decompressed;
+    }
+    else {
+        rompack = raw;
+    }
+    const footer = rompack.slice(rompack.length - 16);
     function readLE64(buf: Uint8Array, offset: number): bigint {
         return (BigInt(buf[offset]) |
             (BigInt(buf[offset + 1]) << BigInt(8)) |
@@ -108,12 +127,12 @@ async function main() {
     }
     const metadataOffset = Number(readLE64(footer, 0));
     const metadataLength = Number(readLE64(footer, 8));
-    const metaBuf = decompressed.slice(metadataOffset, metadataOffset + metadataLength);
+    const metaBuf = rompack.slice(metadataOffset, metadataOffset + metadataLength);
     let assets: any[];
     try {
         assets = decodeBinary(metaBuf);
     } catch (e: any) {
-        console.error('Failed to decode metadata: ' + e.message);
+        console.error(`Failed to decode metadata: ${e.message}`);
         process.exit(1);
     }
     const imageAssets = assets.filter(a => a.type === 'image');
@@ -173,7 +192,7 @@ async function main() {
             if (atlasAsset) {
                 const atlasBuf = atlasAsset.buffer instanceof Uint8Array
                     ? Buffer.from(atlasAsset.buffer)
-                    : Buffer.from(decompressed.slice(atlasAsset.start, atlasAsset.end));
+                    : Buffer.from(rompack.slice(atlasAsset.start, atlasAsset.end));
                 try {
                     const atlasPng = PNG.sync.read(atlasBuf);
                     // texcoords: [x, y, w, h]
@@ -206,7 +225,7 @@ async function main() {
             // Non-atlas image: decode its own PNG buffer
             const imgBuf = selected.buffer instanceof Uint8Array
                 ? Buffer.from(selected.buffer)
-                : Buffer.from(decompressed.slice(selected.start, selected.end));
+                : Buffer.from(rompack.slice(selected.start, selected.end));
             try {
                 const png = PNG.sync.read(imgBuf);
                 width = width || png.width;
