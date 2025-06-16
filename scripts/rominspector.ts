@@ -203,70 +203,265 @@ async function main() {
         warnings: true,
     });
 
+    /**
+     * Renders a simple summary bar with only full blocks.
+     * No partial blocks are used; each region cell is either fully filled or empty.
+     * Overlapping regions are handled by priority (first region in the array is shown).
+     */
+    function renderSummaryBar(
+        regions: Array<{ start: number, end: number, colorTag: string }>,
+        totalSize: number,
+        barLength: number
+    ): string {
+        let bar = '';
+
+        // Initialize all cells as blank.
+        const cellColors = new Array(barLength).fill('');
+        const cellChars = new Array(barLength).fill(' ');
+
+        // Process regions in priority order:
+        for (const region of regions) {
+            const regionStartCell = Math.floor((region.start / totalSize) * barLength);
+            const regionEndCell = Math.ceil((region.end / totalSize) * barLength) - 1;
+
+            // Clamp to valid cell indices.
+            const startCell = Math.max(0, regionStartCell);
+            const endCell = Math.min(barLength - 1, regionEndCell);
+
+            // Fill each cell within the region with a full block, unless it's already set by a higher-priority region.
+            for (let i = startCell; i <= endCell; i++) {
+                // If not already covered, fill with this region.
+                if (cellChars[i] === ' ') {
+                    cellChars[i] = '█';
+                    cellColors[i] = region.colorTag;
+                }
+            }
+        }
+
+        for (let i = 0; i < barLength; i++) {
+            bar += cellColors[i] + cellChars[i] + '{/}';
+        }
+
+        return bar;
+    }
+
+    // --- Buffer Bar Rendering Utility ---
+    /**
+     * Renders a buffer bar with Unicode fractional blocks and color tags.
+     * Each region is rendered as a contiguous run of full blocks, with fractional blocks only at the start/end if needed.
+     * Overlapping regions are handled by priority (first in array wins).
+     */
+    function renderDetailedBufferBar(regions: Array<{ start: number, end: number, colorTag: string, label?: string }>, totalSize: number, barLength: number): string {
+        // Unicode fractional blocks (8 levels + space for 0)
+        // blocks[0] = ' ' (0/8), blocks[1] = '▏' (1/8), ..., blocks[8] = '█' (8/8)
+        const blocks = [' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
+        const cellSize = totalSize / barLength;
+        let bar = '';
+
+        for (let i = 0; i < barLength; i++) {
+            const cellStart = i * cellSize;
+            const cellEnd = (i + 1) * cellSize;
+
+            let charForCell = ' '; // Default to space
+            let colorTagForCell = '';
+
+            // Iterate through regions by priority (first in array has highest priority)
+            for (const region of regions) {
+                const regionStart = region.start;
+                const regionEnd = region.end;
+
+                // Calculate the actual start and end of the overlap between the current region and the current cell
+                const overlapStart = Math.max(cellStart, regionStart);
+                const overlapEnd = Math.min(cellEnd, regionEnd);
+
+                if (overlapEnd > overlapStart) { // If there is any overlap
+                    const overlapWidth = overlapEnd - overlapStart;
+                    const fractionOfCell = overlapWidth / cellSize;
+
+                    colorTagForCell = region.colorTag;
+
+                    if (fractionOfCell >= (1.0 - 1e-9)) { // If overlap is full or very close to full cell
+                        charForCell = '█'; // Use full block
+                    } else {
+                        // For partial overlap (fractionOfCell is > 0 and < 1.0)
+                        // Use Math.ceil to make partials more visible.
+                        // Math.ceil(fractionOfCell * 8) will result in an index from 1 (for smallest overlap) to 8.
+                        const blockIndex = Math.ceil(fractionOfCell * 8);
+                        charForCell = blocks[blockIndex]; // blocks[1] is '▏', blocks[8] is '█'
+                    }
+                    break; // Found the highest-priority overlapping region for this cell, so stop.
+                }
+            }
+            bar += colorTagForCell + charForCell + '{/}';
+        }
+        return bar;
+    }
+
+    /**
+     * Renders a buffer bar where we only do detailed (fractional) rendering
+     * at the very first and last cell of each region, and full blocks (█)
+     * in between. Overlapping regions are handled by priority (first in array wins).
+     */
+    function renderBufferBar(
+        regions: Array<{ start: number; end: number; colorTag: string }>,
+        totalSize: number,
+        barLength: number
+    ): string {
+        const blocks = [' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
+        const cellSize = totalSize / barLength;
+        const cellChars = new Array(barLength).fill(' ');
+        const cellColors = new Array(barLength).fill('');
+
+        for (const region of regions) {
+            const startFloat = region.start / cellSize;
+            const endFloat = region.end / cellSize;
+            const regionStartCell = Math.floor(startFloat);
+            const regionEndCell = Math.floor(endFloat);
+            const leftFrac = startFloat - regionStartCell;
+            const rightFrac = endFloat - regionEndCell;
+            const startCell = Math.max(0, Math.min(barLength - 1, regionStartCell));
+            const endCell = Math.max(0, Math.min(barLength - 1, regionEndCell));
+
+            // fill full interior
+            for (let i = startCell + 1; i < endCell; i++) {
+                if (cellChars[i] === ' ') {
+                    cellChars[i] = '█';
+                    cellColors[i] = region.colorTag;
+                }
+            }
+            // left boundary
+            if (cellChars[startCell] === ' ') {
+                if (startCell === endCell) {
+                    // Region fits entirely within one cell
+                    const regionStart = region.start;
+                    const regionEnd = region.end;
+                    const cellStart = startCell * cellSize;
+                    const cellEnd = (startCell + 1) * cellSize;
+                    const overlapStart = Math.max(cellStart, regionStart);
+                    const overlapEnd = Math.min(cellEnd, regionEnd);
+                    const overlap = Math.max(0, overlapEnd - overlapStart);
+                    const coverage = overlap / cellSize;
+                    const idx = Math.round(coverage * 8);
+                    if (idx >= 8) {
+                        cellChars[startCell] = '█';
+                        cellColors[startCell] = region.colorTag;
+                    } else if (idx > 0) {
+                        cellChars[startCell] = blocks[idx];
+                        // Find the highest-priority overlapping region's colorTag for fg
+                        let fgColor = '{black-fg}';
+                        for (const r of regions) {
+                            // Only check other regions, not the current one
+                            if (r === region) continue;
+                            // Check if this region overlaps with the current cell
+                            if (r.start < cellEnd && r.end > cellStart) {
+                                fgColor = r.colorTag;
+                                break;
+                            }
+                        }
+                        cellColors[startCell] = region.colorTag.replace('-fg}', '-bg}') + fgColor;
+                    }
+                } else {
+                    const coverage = 1 - leftFrac;
+                    const idx = Math.round(coverage * 8);
+                    if (idx >= 8) {
+                        cellChars[startCell] = '█';
+                        cellColors[startCell] = region.colorTag;
+                    } else if (idx > 0) {
+                        // fractional: invert color background
+                        cellChars[startCell] = blocks[idx];
+                        // Find the highest-priority overlapping region's colorTag for fg
+                        let fgColor = '{black-fg}';
+                        for (const r of regions) {
+                            // Only check other regions, not the current one
+                            if (r === region) continue;
+                            // Check if this region overlaps with the current cell
+                            if (r.start < (startCell + 1) * cellSize && r.end > startCell * cellSize) {
+                                fgColor = r.colorTag;
+                                break;
+                            }
+                        }
+                        cellColors[startCell] = region.colorTag.replace('-fg}', '-bg}') + fgColor;
+                    }
+                }
+            }
+            // right boundary
+            if (endCell !== startCell && cellChars[endCell] === ' ') {
+                const coverage = rightFrac;
+                const idx = Math.round(coverage * 8);
+                if (idx >= 8) {
+                    cellChars[endCell] = '█';
+                    cellColors[endCell] = region.colorTag;
+                } else if (idx > 0) {
+                    cellChars[endCell] = blocks[idx];
+                    cellColors[endCell] = region.colorTag;
+                }
+            }
+        }
+
+        let bar = '';
+        for (let i = 0; i < barLength; i++) {
+            bar += cellColors[i] + cellChars[i] + '{/}';
+        }
+        return bar;
+    }
+
     // Dynamically determine bar length based on window width
-    function getBarLength() {
+    function getBarLength(containerWidth: number) {
         // Use screen.width minus some padding for brackets and label
-        const minBar = 16, maxBar = 120;
-        let w = (typeof screen.width === 'number' ? screen.width : 80) - 16;
+        const minBar = 16, maxBar = containerWidth;
+        let w = maxBar - 16;
         if (w < minBar) w = minBar;
         if (w > maxBar) w = maxBar;
         return Math.floor(w);
     }
 
-    let barLength = getBarLength();
-    // Generate summary buffer bar for metadata region
-    const totalSize = rompack.length;
-    const metaStartPos = Math.floor((metadataOffset / totalSize) * barLength);
-    const metaEndPos = Math.ceil(((metadataOffset + metadataLength) / totalSize) * barLength);
-    // Compute asset regions for summary bar with type coloring (now includes metabuffer)
-    let summaryBar = '';
-    for (let i = 0; i < barLength; i++) {
-        const cellStart = Math.floor((i / barLength) * totalSize);
-        const cellEnd = Math.floor(((i + 1) / barLength) * totalSize);
-        let color = '';
-        // Priority: code > audio > image > metadata
-        let found = false;
-        for (const asset of assetList) {
-            // Main buffer region
-            if (typeof asset.start === 'number' && typeof asset.end === 'number') {
-                if (cellEnd > asset.start && cellStart < asset.end) {
-                    if (asset.type !== 'image' && asset.type !== 'audio') { color = '{white-fg}█{/white-fg}'; found = true; break; }
-                    if (asset.type === 'audio') { color = '{magenta-fg}█{/magenta-fg}'; found = true; }
-                    if (asset.type === 'image' && !found) { color = '{yellow-fg}█{/yellow-fg}'; }
-                }
-            }
-            // Metabuffer region (draw as cyan if not already colored)
-            if (!color && typeof asset.metabuffer_start === 'number' && typeof asset.metabuffer_end === 'number') {
-                if (cellEnd > asset.metabuffer_start && cellStart < asset.metabuffer_end) {
-                    color = '{cyan-fg}█{/cyan-fg}';
-                }
-            }
-        }
-        if (!color && i >= metaStartPos && i < metaEndPos) color = '{blue-fg}█{/blue-fg}';
-        if (!color) color = ' ';
-        summaryBar += color;
+    function generateSummaryContent() {
+        return `Total assets: ${assetList?.length ?? 0} (images: ${imageAssets?.length ?? 0
+            }, audio: ${audioCount}, code: ${codeCount}) \n` +
+            `Buffer: [${renderSummaryBar(summaryRegions, totalSize, barLength)}]\n` +
+            `{yellow-fg}█{/yellow-fg} image  {magenta-fg}█{/magenta-fg} audio  {white-fg}█{/white-fg} code  {cyan-fg}█{/cyan-fg} metabuffer  {blue-fg}█{/blue-fg} global metadata\n` +
+            `Images size: ${imageAssets.reduce((sum, a) => sum + (a.end - a.start), 0)} bytes (${(imageAssets.reduce((sum, a) => sum + (a.end - a.start), 0) / 1024).toFixed(1)} KB)\n` +
+            `Audio size: ${assetList.reduce((sum, a) => a.type === 'audio' ? sum + (a.end - a.start) : sum, 0)} bytes (${(assetList.reduce((sum, a) => a.type === 'audio' ? sum + (a.end - a.start) : sum, 0) / 1024).toFixed(1)} KB)\n` +
+            `Code size: ${assetList.reduce((sum, a) => a.type === 'source' ? sum + (a.end - a.start) : sum, 0)} bytes (${(assetList.reduce((sum, a) => a.type === 'source' ? sum + (a.end - a.start) : sum, 0) / 1024).toFixed(1)} KB)\n` +
+            `Metadata size: ${metaBuf.length} bytes (${(metaBuf.length / 1024).toFixed(1)} KB)\n`;
     }
 
-    // Compute total bytes used by atlassed images (approximate via atlas occupancy)
-    let atlassedBytesTotal = 0;
+    let barLength = getBarLength(typeof screen.width === 'number' ? screen.width : 120);
+    const totalSize = rompack.length;
+
+    // --- Compute regions for summary bar ---
+    const summaryRegions: Array<{ start: number, end: number, colorTag: string, label?: string }> = [];
     for (const asset of assetList) {
-        const meta = asset.imgmeta || {};
-        if (asset.type === 'image' && meta.atlassed && meta.texcoords) {
-            const [sx, sy, sw, sh] = meta.texcoords as number[];
-            const atlasName = meta.atlasid === 0 ? '_atlas' : `_atlas${meta.atlasid}`;
-            const atlasAsset = assetList.find(a => a.resname === atlasName && a.type === 'image');
-            if (atlasAsset) {
-                const atlasSize = atlasAsset.end - atlasAsset.start;
-                const atlasMeta = atlasAsset.imgmeta || {};
-                const aw = atlasMeta.width || 1;
-                const ah = atlasMeta.height || 1;
-                // Coordinates are normalized (0-1), compute area ratio directly
-                const areaRatio = sw * sh;
-                atlassedBytesTotal += areaRatio * atlasSize;
-            }
+        if (asset.type !== 'image' && asset.type !== 'audio' && asset.start != null && asset.end != null) {
+            summaryRegions.push({ start: asset.start, end: asset.end, colorTag: '{white-fg}', label: 'code' });
         }
     }
-    const atlassedKB = (atlassedBytesTotal / 1024).toFixed(2);
+    for (const asset of assetList) {
+        if (asset.type === 'audio' && asset.start != null && asset.end != null) {
+            summaryRegions.push({ start: asset.start, end: asset.end, colorTag: '{magenta-fg}', label: 'audio' });
+        }
+    }
+    for (const asset of assetList) {
+        if (asset.type === 'image' && asset.start != null && asset.end != null) {
+            summaryRegions.push({ start: asset.start, end: asset.end, colorTag: '{yellow-fg}', label: 'image' });
+        }
+    }
+    for (const asset of assetList) {
+        if (asset.metabuffer_start != null && asset.metabuffer_end != null) {
+            summaryRegions.push({ start: asset.metabuffer_start, end: asset.metabuffer_end, colorTag: '{cyan-fg}', label: 'metabuffer' });
+        }
+    }
+    // Global metadata region
+    summaryRegions.push({ start: metadataOffset, end: metadataOffset + metadataLength, colorTag: '{blue-fg}', label: 'global metadata' });
+
+    // Calculate atlassed image sizes
+    let atlassedBytesTotal = 0;
+    for (const asset of assetList) {
+        if (asset.type === 'image' && asset.atlassed && asset.start != null && asset.end != null) {
+            atlassedBytesTotal += asset.end - asset.start;
+        }
+    }
+    const atlassedKB = (atlassedBytesTotal / 1024).toFixed(1);
 
     const summaryBox = blessed.box({
         top: 0,
@@ -275,22 +470,16 @@ async function main() {
         height: 8,
         tags: true,
         style: { fg: 'green', bg: 'black' },
-        content:
-            `Total assets: ${assetList?.length ?? 0} (images: ${imageAssets?.length ?? 0}, audio: ${audioCount}, code: ${codeCount})\n` +
-            `Buffer: [${summaryBar}]\n` +
-            `{yellow-fg}█{/yellow-fg} image  {magenta-fg}█{/magenta-fg} audio  {white-fg}█{/white-fg} code  {cyan-fg}█{/cyan-fg} metabuffer  {blue-fg}█{/blue-fg} global metadata\n` +
-            `Legend: {yellow-fg}image{/}, {magenta-fg}audio{/}, {white-fg}code{/}, {cyan-fg}per-asset metabuffer{/}, {blue-fg}global metadata{/}\n` +
-            `metadata: offset ${metadataOffset}, length ${metadataLength} bytes\n` +
-            `Atlassed images: ${Math.round(atlassedBytesTotal)} bytes (${atlassedKB} KB)`
+        content: generateSummaryContent()
     });
     const table = contrib.table({
-        top: 3,
+        top: 7,
         left: 'center',
         width: '100%',
-        height: '100%-3',
+        height: '100%-7',
         border: { type: 'line', fg: 'cyan' },
         columnSpacing: 2,
-        columnWidth: [30, 10], // Adjust as needed
+        columnWidth: [30, 10, 10], // Adjust as needed
         keys: true,
         interactive: 'true',
         label: 'Select asset (Enter to view details, q to quit)',
@@ -305,10 +494,21 @@ async function main() {
 
     const tableRows = assetList.map(asset => [
         asset.resname ? String(asset.resname) : '',
-        asset.type ? String(asset.type) : ''
+        asset.type ? String(asset.type) : '',
+        // Include both the buffer and the metabuffer for each asset and add it to the total size
+        (() => {
+            let size = 0;
+            if (asset.start != null && asset.end != null) {
+                size += asset.end - asset.start;
+            }
+            if (asset.metabuffer_start != null && asset.metabuffer_end != null) {
+                size += asset.metabuffer_end - asset.metabuffer_start;
+            }
+            return `${(size / 1024).toFixed(2)} KB`;
+        })()
     ]);
     table.setData({
-        headers: ['Name', 'Type'],
+        headers: ['Name', 'Type', 'Size'],
         data: tableRows
     });
 
@@ -349,7 +549,7 @@ async function main() {
         let asciiArt = '';
         if (selected.type === 'image') {
             if (meta.atlassed && meta.texcoords) {
-                const atlasName = meta.atlasid === 0 ? '_atlas' : `_atlas${meta.atlasid}`;
+                const atlasName = meta.atlasid === 0 ? '_atlas' : `_atlas${meta.atlasid} `;
                 const atlasAsset = assetList.find(a => a.resname === atlasName && a.type === 'image');
                 if (atlasAsset) {
                     const atlasBuf = atlasAsset.buffer instanceof Uint8Array
@@ -414,13 +614,13 @@ async function main() {
         }
         // Show metadata details, including texcoords, boundingbox, etc.
         const metadataLines = [];
-        metadataLines.push(`Type: ${selected.type}`);
-        metadataLines.push(`Name: ${selected.resname}`);
-        if (selected.start !== undefined) metadataLines.push(`Start: ${selected.start} ( ${(selected.start / 1024).toFixed(2)} KB )`);
-        if (selected.end !== undefined) metadataLines.push(`End: ${selected.end} ( ${(selected.end / 1024).toFixed(2)} KB )`);
+        metadataLines.push(`Type: ${selected.type} `);
+        metadataLines.push(`Name: ${selected.resname} `);
+        if (selected.start !== undefined) metadataLines.push(`Start: ${selected.start} (${(selected.start / 1024).toFixed(2)} KB )`);
+        if (selected.end !== undefined) metadataLines.push(`End: ${selected.end} (${(selected.end / 1024).toFixed(2)} KB )`);
         if (selected.start !== undefined && selected.end !== undefined) {
             const sizeBytes = selected.end - selected.start;
-            metadataLines.push(`Size: ${sizeBytes} bytes ( ${(sizeBytes / 1024).toFixed(2)} KB )`);
+            metadataLines.push(`Size: ${sizeBytes} bytes(${(sizeBytes / 1024).toFixed(2)} KB)`);
         }
         // Metabuffer region info
         if (selected.metabuffer_start !== undefined && selected.metabuffer_end !== undefined) {
@@ -429,46 +629,33 @@ async function main() {
         }
         // Enhanced ASCII bar showing asset and metabuffer regions within total ROM
         if (selected.start !== undefined && selected.end !== undefined) {
-            const barLength = getBarLength();
+            const termWidth = typeof screen.width === 'number' ? screen.width : 120;
+            const barLength = getBarLength(termWidth * 0.8);
             const total = rompack.length;
-            const startPos = Math.floor((selected.start / total) * barLength);
-            const endPos = Math.ceil((selected.end / total) * barLength);
-            let metaStartPos = -1, metaEndPos = -1;
+            // Compose regions for this asset: asset, metabuffer, global metadata
+            const regions = [];
+            regions.push({ start: selected.start, end: selected.end, colorTag: '{yellow-fg}' });
             if (selected.metabuffer_start !== undefined && selected.metabuffer_end !== undefined) {
-                metaStartPos = Math.floor((selected.metabuffer_start / total) * barLength);
-                metaEndPos = Math.ceil((selected.metabuffer_end / total) * barLength);
+                regions.push({ start: selected.metabuffer_start, end: selected.metabuffer_end, colorTag: '{cyan-fg}' });
             }
-            let bar = '';
-            for (let i = 0; i < barLength; i++) {
-                if (i === startPos) {
-                    bar += '{green-fg}|{/}';
-                } else if (i === endPos - 1) {
-                    bar += '{red-fg}|{/}';
-                } else if (i >= startPos && i < endPos) {
-                    bar += '{yellow-fg}█{/yellow-fg}';
-                } else if (metaStartPos !== -1 && i >= metaStartPos && i < metaEndPos) {
-                    bar += '{cyan-fg}█{/cyan-fg}';
-                } else {
-                    bar += ' ';
-                }
-            }
+            const bar = renderBufferBar(regions, total, barLength);
             metadataLines.push(`Buffer: [${bar}]`);
-            metadataLines.push(`        {green-fg}|{/} start (${selected.start}), {red-fg}|{/} end (${selected.end})` + (metaStartPos !== -1 ? `, {cyan-fg}█{/cyan-fg} metabuffer` : ''));
+            metadataLines.push(`        {yellow-fg}█{/yellow-fg} asset, {cyan-fg}█{/cyan-fg} metabuffer`);
         }
-        if (width) metadataLines.push(`Width: ${width}`);
-        if (height) metadataLines.push(`Height: ${height}`);
+        if (width) metadataLines.push(`Width: ${width} `);
+        if (height) metadataLines.push(`Height: ${height} `);
         // Only show Atlas ID for images
-        if (atlasid !== undefined && selected.type === 'image') metadataLines.push(`Atlas ID: ${atlasid}`);
+        if (atlasid !== undefined && selected.type === 'image') metadataLines.push(`Atlas ID: ${atlasid} `);
         if (meta.texcoords) metadataLines.push(`Texcoords: [${meta.texcoords.join(', ')}]`);
-        if (meta.boundingbox) metadataLines.push(`BoundingBox: ${JSON.stringify(meta.boundingbox)}`);
-        if (meta.hitpolygons) metadataLines.push(`Hitpolygons: ${JSON.stringify(meta.hitpolygons)}`);
+        if (meta.boundingbox) metadataLines.push(`BoundingBox: ${JSON.stringify(meta.boundingbox)} `);
+        if (meta.hitpolygons) metadataLines.push(`Hitpolygons: ${JSON.stringify(meta.hitpolygons)} `);
         metadataLines.push('');
         const modal = blessed.box({
             parent: screen,
             top: 'center', left: 'center',
             width: '80%', height: 'shrink',
             border: 'line', style: { border: { fg: 'yellow' }, bg: 'black' },
-            label: `Asset: ${selected.resname}`,
+            label: `Asset: ${selected.resname} `,
             content: metadataLines.join('\n') + (asciiArt ? ('\n' + asciiArt) : '') + '\nPress any key to close...',
             tags: true, scrollable: true, alwaysScroll: true, keys: true, mouse: true,
             scrollbar: { ch: ' ', track: { bg: 'grey' }, style: { bg: 'yellow' } }
@@ -493,36 +680,8 @@ async function main() {
 
     // Redraw summary bar on resize
     screen.on('resize', () => {
-        barLength = getBarLength();
-        const metaStartPos = Math.floor((metadataOffset / totalSize) * barLength);
-        const metaEndPos = Math.ceil(((metadataOffset + metadataLength) / totalSize) * barLength);
-        let summaryBar = '';
-        for (let i = 0; i < barLength; i++) {
-            const cellStart = Math.floor((i / barLength) * totalSize);
-            const cellEnd = Math.floor(((i + 1) / barLength) * totalSize);
-            let color = '';
-            let found = false;
-            for (const asset of assetList) {
-                if (typeof asset.start === 'number' && typeof asset.end === 'number') {
-                    if (cellEnd > asset.start && cellStart < asset.end) {
-                        if (asset.type !== 'image' && asset.type !== 'audio') { color = '{white-fg}█{/white-fg}'; found = true; break; }
-                        if (asset.type === 'audio') { color = '{magenta-fg}█{/magenta-fg}'; found = true; }
-                        if (asset.type === 'image' && !found) { color = '{yellow-fg}█{/yellow-fg}'; }
-                    }
-                }
-            }
-            if (!color && i >= metaStartPos && i < metaEndPos) color = '{blue-fg}█{/blue-fg}';
-            if (!color) color = ' ';
-            summaryBar += color;
-        }
-        summaryBox.setContent(
-            `Total assets: ${assetList?.length ?? 0} (images: ${imageAssets?.length ?? 0}, audio: ${audioCount}, code: ${codeCount})\n` +
-            `Buffer: [${summaryBar}]\n` +
-            `{yellow-fg}█{/yellow-fg} image  {magenta-fg}█{/magenta-fg} audio  {white-fg}█{/white-fg} code  {cyan-fg}█{/cyan-fg} metabuffer  {blue-fg}█{/blue-fg} global metadata\n` +
-            `Legend: {yellow-fg}image{/}, {magenta-fg}audio{/}, {white-fg}code{/}, {cyan-fg}per-asset metabuffer{/}, {blue-fg}global metadata{/}\n` +
-            `metadata: offset ${metadataOffset}, length ${metadataLength} bytes\n` +
-            `Atlassed images: ${Math.round(atlassedBytesTotal)} bytes (${atlassedKB} KB)`
-        );
+        barLength = getBarLength(typeof screen.width === 'number' ? screen.width : 120);
+        summaryBox.setContent(generateSummaryContent());
         screen.render();
     });
 }
