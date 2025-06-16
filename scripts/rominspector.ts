@@ -200,7 +200,7 @@ async function main() {
         smartCSR: true,
         title: 'ROM Inspector',
         mouse: true,
-        warnings: true,
+        warnings: false,
     });
 
     /**
@@ -416,18 +416,44 @@ async function main() {
     }
 
     function generateSummaryContent() {
+        const imagesSize = imageAssets.reduce((sum, a) => {
+            let size = 0;
+            if (a.start != null && a.end != null) size += a.end - a.start;
+            if (a.metabuffer_start != null && a.metabuffer_end != null) size += a.metabuffer_end - a.metabuffer_start;
+            return sum + size;
+        }, 0);
+        const audioSize = assetList.filter(a => a.type === 'audio').reduce((sum, a) => {
+            let size = 0;
+            if (a.start != null && a.end != null) size += a.end - a.start;
+            if (a.metabuffer_start != null && a.metabuffer_end != null) size += a.metabuffer_end - a.metabuffer_start;
+            return sum + size;
+        }, 0);
+        const codeSize = assetList.reduce((sum, a) => a.type === 'source' ? sum + (a.end - a.start) : sum, 0);
+        const totalSize = rompack.length;
+        const summaryRegions = [
+            ...imageAssets.map(a => ({ start: a.start, end: a.end, colorTag: '{yellow-fg}', label: 'image' })),
+            ...assetList.filter(a => a.type === 'audio').map(a => ({ start: a.start, end: a.end, colorTag: '{magenta-fg}', label: 'audio' })),
+            ...assetList.filter(a => a.type !== 'image' && a.type !== 'audio' && a.start != null && a.end != null).map(a => ({ start: a.start, end: a.end, colorTag: '{white-fg}', label: 'code' })),
+            ...assetList.filter(a => a.metabuffer_start != null && a.metabuffer_end != null).map(a => ({ start: a.metabuffer_start, end: a.metabuffer_end, colorTag: '{cyan-fg}', label: 'metabuffer' })),
+            { start: metadataOffset, end: metadataOffset + metadataLength, colorTag: '{blue-fg}', label: 'global metadata' }
+        ];
+        const imageSizePercent = (imagesSize / totalSize * 100).toFixed(1);
+        const audioSizePercent = (audioSize / totalSize * 100).toFixed(1);
+        const codeSizePercent = (codeSize / totalSize * 100).toFixed(1);
+        const metaSizePercent = (metaBuf.length / totalSize * 100).toFixed(1);
+
         return `Total assets: ${assetList?.length ?? 0} (images: ${imageAssets?.length ?? 0
             }, audio: ${audioCount}, code: ${codeCount}) \n` +
             `Buffer: [${renderSummaryBar(summaryRegions, totalSize, barLength)}]\n` +
             `{yellow-fg}█{/yellow-fg} image  {magenta-fg}█{/magenta-fg} audio  {white-fg}█{/white-fg} code  {cyan-fg}█{/cyan-fg} metabuffer  {blue-fg}█{/blue-fg} global metadata\n` +
-            `Images size: ${imageAssets.reduce((sum, a) => sum + (a.end - a.start), 0)} bytes (${(imageAssets.reduce((sum, a) => sum + (a.end - a.start), 0) / 1024).toFixed(1)} KB)\n` +
-            `Audio size: ${assetList.reduce((sum, a) => a.type === 'audio' ? sum + (a.end - a.start) : sum, 0)} bytes (${(assetList.reduce((sum, a) => a.type === 'audio' ? sum + (a.end - a.start) : sum, 0) / 1024).toFixed(1)} KB)\n` +
-            `Code size: ${assetList.reduce((sum, a) => a.type === 'source' ? sum + (a.end - a.start) : sum, 0)} bytes (${(assetList.reduce((sum, a) => a.type === 'source' ? sum + (a.end - a.start) : sum, 0) / 1024).toFixed(1)} KB)\n` +
-            `Metadata size: ${metaBuf.length} bytes (${(metaBuf.length / 1024).toFixed(1)} KB)\n`;
+            `Images size: ${imagesSize} bytes (${(imagesSize / 1024).toFixed(1)} KB) (${imageSizePercent}%)\n` +
+            `Audio size: ${audioSize} bytes (${(audioSize / 1024).toFixed(1)} KB) (${audioSizePercent}%)\n` +
+            `Code size: ${codeSize} bytes (${(codeSize / 1024).toFixed(1)} KB) (${codeSizePercent}%)\n` +
+            `Metadata size: ${metaBuf.length} bytes (${(metaBuf.length / 1024).toFixed(1)} KB) (${metaSizePercent}%)\n` +
+            `Total size: ${totalSize} bytes (${(totalSize / 1024).toFixed(1)} KB)\n`;
     }
 
     let barLength = getBarLength(typeof screen.width === 'number' ? screen.width : 120);
-    const totalSize = rompack.length;
 
     // --- Compute regions for summary bar ---
     const summaryRegions: Array<{ start: number, end: number, colorTag: string, label?: string }> = [];
@@ -473,10 +499,10 @@ async function main() {
         content: generateSummaryContent()
     });
     const table = contrib.table({
-        top: 7,
+        top: 8,
         left: 'center',
         width: '100%',
-        height: '100%-7',
+        height: '100%-8',
         border: { type: 'line', fg: 'cyan' },
         columnSpacing: 2,
         columnWidth: [30, 10, 10], // Adjust as needed
