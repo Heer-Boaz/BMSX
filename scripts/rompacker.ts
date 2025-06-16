@@ -915,60 +915,60 @@ async function handleAtlas(
  * @returns A promise that resolves when all files have been successfully written.
  */
 async function finalizeRompack(
-	jsonout: RomAsset[],
+	assetList: RomAsset[],
 	buffers: Buffer[],
 	romlabel_buffer: Buffer | undefined,
 	outfile: string,
 	progress?: ProgressReporter
 ) {
-	// After resources, write per-asset metadata blobs and set metabuffer offsets
-	const resourceSectionLength = buffers.reduce((acc, buf) => acc + buf.length, 0);
-	let metaOffsetAccumulator = resourceSectionLength;
-	for (const asset of jsonout) {
-		// choose ImgMeta or AudioMeta
+	// Capture resource buffers in original order
+	const resourceBuffers = [...buffers];
+	buffers.length = 0;
+	let offset = 0;
+	let rbIndex = 0;
+
+	for (const asset of assetList) {
+		// Main buffer (if nonzero length)
+		const hasBuffer = (asset.start ?? 0) < (asset.end ?? 0);
+		if (hasBuffer) {
+			const resBuf = resourceBuffers[rbIndex++];
+			// Update asset offsets
+			asset.start = offset;
+			asset.end = offset + resBuf.length;
+			buffers.push(resBuf);
+			offset += resBuf.length;
+		}
+		// Per-asset metadata
 		const perMeta = asset.imgmeta ?? asset.audiometa;
 		if (perMeta) {
 			const metaBuf = Buffer.from(encodeBinary(perMeta));
-			asset.metabuffer_start = metaOffsetAccumulator;
-			asset.metabuffer_end = metaOffsetAccumulator + metaBuf.length;
+			asset.metabuffer_start = offset;
+			asset.metabuffer_end = offset + metaBuf.length;
 			buffers.push(metaBuf);
-			metaOffsetAccumulator += metaBuf.length;
+			offset += metaBuf.length;
 		}
-	}
-
-	// Remove redundant per-asset metadata from global index
-	for (const asset of jsonout) {
+		// Remove per-asset fields
 		delete asset.imgmeta;
 		delete asset.audiometa;
 	}
 
-	// Now encode global JSON metadata
-	const jsonbuffer = Buffer.from(encodeBinary(jsonout));
+	// Global metadata
+	const jsonbuffer = Buffer.from(encodeBinary(assetList));
+	const metadataOffset = offset;
+	const metadataLength = jsonbuffer.length;
 	buffers.push(jsonbuffer);
 
-	// Calculate metadata offset and length (before footer)
-	const metadataOffset = metaOffsetAccumulator;
-	const metadataLength = jsonbuffer.length;
-
-	// Prepare the 16-byte binary footer: 8 bytes for offset, 8 bytes for length (both little-endian)
+	// Footer
 	const footer = Buffer.alloc(16);
 	footer.writeBigUInt64LE(BigInt(metadataOffset), 0);
 	footer.writeBigUInt64LE(BigInt(metadataLength), 8);
+	buffers.push(footer);
 
-	// Concatenate all buffers (resource data + per-asset metas + global metadata + footer)
-	const all_buffers = Buffer.concat([...buffers, footer]);
-	const zipped = zip(all_buffers);
-
-	// Write the final ROM file: [romlabel][zipped_with_footer]
-	await progress?.taskCompleted();
-	await writeFile(`./dist/${outfile}`,
-		Buffer.concat([
-			romlabel_buffer ?? Buffer.alloc(0),
-			zipped
-		])
-	);
-	// Optionally, export the resource metadata as human-readable JSON for debugging
-	await writeFile("./rom/_ignore/romresources.json", JSON.stringify(jsonout, null, 2));
+	// Write final output
+	const all = Buffer.concat(buffers);
+	const zipped = zip(all);
+	await writeFile(`./dist/${outfile}`, Buffer.concat([romlabel_buffer ?? Buffer.alloc(0), zipped]));
+	await writeFile("./rom/_ignore/romresources.json", JSON.stringify(assetList, null, 2));
 	await progress?.taskCompleted();
 }
 
