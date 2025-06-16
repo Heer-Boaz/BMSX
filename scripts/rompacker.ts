@@ -431,15 +431,23 @@ function parseAudioMeta(filename: string): { sanitizedName: string, meta: AudioM
 }
 
 // --- Image filename collision-type suffix parser ---
-function parseImageMeta(filenameWithoutExt: string): { sanitizedName: string, collisionType: 'concave' | 'convex' | 'aabb' } {
-	const match = filenameWithoutExt.match(/@(cc|cx)$/i);
+function parseImageMeta(filenameWithoutExt: string): { sanitizedName: string, collisionType: 'concave' | 'convex' | 'aabb', targetAtlas?: number } {
+	// Match @cc or @cx for collision type, and @atlas=n for atlas assignment (order-insensitive)
+	const collisionMatch = filenameWithoutExt.match(/@(cc|cx)/i);
 	let collisionType: 'concave' | 'convex' | 'aabb' = 'aabb';
-	if (match) {
-		const code = match[1].toLowerCase();
+	if (collisionMatch) {
+		const code = collisionMatch[1].toLowerCase();
 		collisionType = code === 'cc' ? 'concave' : code === 'cx' ? 'convex' : 'aabb';
 	}
-	const sanitizedName = filenameWithoutExt.replace(/@(cc|cx)$/i, '');
-	return { sanitizedName, collisionType };
+	const atlasMatch = filenameWithoutExt.match(/@atlas=(\d+)/i);
+	const targetAtlas = atlasMatch ? parseInt(atlasMatch[1], 10) : undefined;
+
+	// Remove all @cc, @cx, and @atlas=n (in any order)
+	const sanitizedName = filenameWithoutExt
+		.replace(/@(cc|cx)/ig, '')
+		.replace(/@atlas=\d+/ig, '');
+
+	return { sanitizedName, collisionType, targetAtlas };
 }
 
 /**
@@ -458,23 +466,11 @@ function zip(content: Buffer): Uint8Array {
  * @param filepath The path of the resource file.
  * @returns An object containing the name, extension, and type of the resource file.
  */
-function getResMetaByFilename(filepath: string): { name: string, ext: string, type: string, collisionType?: 'concave' | 'convex' | 'aabb' } {
+function getResMetaByFilename(filepath: string): { name: string, ext: string, type: string, collisionType?: 'concave' | 'convex' | 'aabb' | undefined } {
 	let name = parse(filepath).name.replace(' ', '').toLowerCase();
 	const ext = parse(filepath).ext.toLowerCase();
 	let type: string;
-	let collisionType: 'concave' | 'convex' | 'aabb' = 'aabb';
-
-	if (ext === '.png') {
-		const imgMeta = parseImageMeta(name);
-		name = imgMeta.sanitizedName;
-		collisionType = imgMeta.collisionType;
-	}
-
-	switch (name) {
-		case 'romlabel':
-			if (ext === '.png')
-				return { name: name, ext: ext, type: 'romlabel' };
-	}
+	let collisionType: 'concave' | 'convex' | 'aabb' | undefined = undefined;
 
 	switch (ext) {
 		case '.wav':
@@ -488,7 +484,13 @@ function getResMetaByFilename(filepath: string): { name: string, ext: string, ty
 			break;
 		case '.png':
 		default:
-			type = 'image';
+			if (name === 'romlabel') {
+				// Special case for romlabel, which is a PNG file with a specific name
+				type = 'romlabel';
+			}
+			else {
+				type = 'image';
+			}
 			break;
 	}
 	return { name: name, ext: ext, type: type, collisionType: collisionType };
@@ -521,12 +523,14 @@ async function getResMetaList(respath: string, romname?: string) {
 		const ext = meta.ext;
 		switch (type) {
 			case 'image':
-				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: imgid, collisionType: meta.collisionType });
+				const imgMeta = parseImageMeta(name);
+				name = imgMeta.sanitizedName; // Remove metadata from the name
+				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: imgid, collisionType: imgMeta.collisionType });
 				++imgid;
 				break;
 			case 'audio':
 				let parsedMeta = parseAudioMeta(name);
-				name = parsedMeta.sanitizedName;
+				name = parsedMeta.sanitizedName; // Remove metadata from the name
 				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: sndid });
 				++sndid;
 				break;
@@ -556,8 +560,27 @@ async function getResMetaList(respath: string, romname?: string) {
 			throw new Error(`Duplicate ${type} resource IDs found!\n${msg}`);
 		}
 	};
+
+	const checkDuplicateNames = (type: string) => {
+		const filtered = result.filter(r => r.type === type && typeof r.name === 'string');
+		const nameMap = new Map<string, string[]>();
+		for (const r of filtered) {
+			// Only consider exact matches for names
+			const key = r.name;
+			if (!nameMap.has(key)) nameMap.set(key, []);
+			nameMap.get(key)!.push(r.filepath);
+		}
+		const dups = Array.from(nameMap.entries()).filter(([name, paths]) => paths.length > 1);
+		if (dups.length > 0) {
+			const msg = dups.map(([name, paths]) => `Name "${name}" used by: ${paths.join(', ')}`).join('\n');
+			throw new Error(`Duplicate ${type} resource names found!\n${msg}`);
+		}
+	};
+
 	checkDuplicateIds('image');
 	checkDuplicateIds('audio');
+	checkDuplicateNames('image');
+	checkDuplicateNames('audio');
 
 	return result;
 }
@@ -692,33 +715,33 @@ async function buildRompack(rom_name: string, respath: string, progress?: Progre
 	}
 	await progress?.taskCompleted();
 
-	const { jsonout, bufferPointer, romlabel_buffer } = processResources(loadedResources);
+	const { assetList, bufferPointer, romlabel_buffer } = processResources(loadedResources);
 
 	if (GENERATE_AND_USE_TEXTURE_ATLAS && generated_atlas) {
-		await handleAtlas(loadedResources, generated_atlas, jsonout, bufferPointer, buffers, progress);
+		await handleAtlas(loadedResources, generated_atlas, assetList, bufferPointer, buffers, progress);
 	}
 
-	await finalizeRompack(jsonout, buffers, romlabel_buffer, outfile, progress);
+	await finalizeRompack(assetList, buffers, romlabel_buffer, outfile, progress);
 }
 
 /**
- * Processes an array of loaded resources to produce metadata and allocate buffer ranges.
+ * Processes an array of loaded resources to produce asset metadata and allocate buffer ranges.
  *
  * @remarks
  * This function iterates over the given resources and creates corresponding entries in
- * a metadata array. Depending on the resource type, the function may parse additional data
+ * a binary-encoded asset metadata array. Depending on the resource type, the function may parse additional data
  * (such as audio metadata) or adjust resource names (e.g., `.min` filenames). An optional
  * texture atlas can be used to bundle image data.
  *
  * @param loadedResources - The array of loaded resources to process.
  * @param generated_atlas - An optional canvas element used for generating texture atlas data.
  * @returns An object with three properties:
- * - `jsonout` - The array of generated metadata objects.
+ * - `assetList` - The array of generated asset metadata objects (to be binary-encoded).
  * - `bufferPointer` - The current offset in the resource buffer after processing.
  * - `romlabel_buffer` - The buffer data for the "romlabel.png" resource if present.
  */
 function processResources(loadedResources: LoadedResource[]) {
-	const jsonout: RomAsset[] = [];
+	const assetList: RomAsset[] = [];
 	let bufferPointer = 0;
 	let romlabel_buffer: Buffer | undefined;
 
@@ -735,22 +758,22 @@ function processResources(loadedResources: LoadedResource[]) {
 				break;
 			case 'image':
 				const imgmeta = buildImgMeta(res);
-				const baseJson = { resid, resname: name, type, imgmeta };
+				const baseAsset = { resid, resname: name, type, imgmeta };
 				if (GENERATE_AND_USE_TEXTURE_ATLAS && !DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
-					jsonout.push({ ...baseJson, start: bufferPointer, end: bufferPointer + res.buffer.length });
+					assetList.push({ ...baseAsset, start: bufferPointer, end: bufferPointer + res.buffer.length });
 					bufferPointer += res.buffer.length;
 				} else {
-					jsonout.push({ ...baseJson, start: 0, end: 0 });
+					assetList.push({ ...baseAsset, start: 0, end: 0 });
 				}
 				break;
 			case 'audio':
 				const parsedMeta = parseAudioMeta(res.filepath);
-				jsonout.push({ resid, resname: name, type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: undefined, audiometa: parsedMeta.meta });
+				assetList.push({ resid, resname: name, type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: undefined, audiometa: parsedMeta.meta });
 				bufferPointer += res.buffer.length;
 				break;
 			case 'source':
 				name = name.replace('.min', '');
-				jsonout.push({ resid, resname: name, type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: undefined, audiometa: undefined });
+				assetList.push({ resid, resname: name, type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: undefined, audiometa: undefined });
 				bufferPointer += res.buffer.length;
 				break;
 			case 'atlas':
@@ -758,7 +781,7 @@ function processResources(loadedResources: LoadedResource[]) {
 				break;
 		}
 	}
-	return { jsonout, bufferPointer, romlabel_buffer };
+	return { assetList, bufferPointer, romlabel_buffer };
 }
 
 /**
@@ -836,11 +859,11 @@ function buildImgMeta(res: LoadedResource): ImgMeta {
 }
 
 /**
- * Asynchronously processes the loaded atlas resource and updates the JSON output with metadata.
+ * Asynchronously processes the loaded atlas resource and updates the asset metadata array with image metadata.
  *
  * @param loadedResources - An array of loaded resources, including the atlas to be processed.
  * @param generated_atlas - The HTMLCanvasElement representing the generated atlas image.
- * @param jsonout - An array of RomAsset objects to be updated with image metadata.
+ * @param assetList - An array of RomAsset objects to be updated with image metadata.
  * @param bufferPointer - The starting position where atlas data should be written in the output buffers.
  * @param buffers - An array of Buffers where the atlas image data will be appended.
  * @returns A Promise that resolves once the atlas image is written to disk and metadata is updated.
@@ -848,7 +871,7 @@ function buildImgMeta(res: LoadedResource): ImgMeta {
 async function handleAtlas(
 	loadedResources: LoadedResource[],
 	generated_atlas: HTMLCanvasElement,
-	jsonout: RomAsset[],
+	assetList: RomAsset[],
 	bufferPointer: number,
 	buffers: Buffer[],
 	progress?: ProgressReporter
@@ -858,7 +881,7 @@ async function handleAtlas(
 	const atlasbuffer: Buffer = (generated_atlas as any).toBuffer('image/png');
 	buffers.push(atlasbuffer);
 
-	jsonout.push({
+	assetList.push({
 		resid: loadedResources[i].id,
 		resname: loadedResources[i].name,
 		type: 'image',
@@ -898,13 +921,33 @@ async function finalizeRompack(
 	outfile: string,
 	progress?: ProgressReporter
 ) {
-	// Use encodeBinary for binary metadata encoding
+	// After resources, write per-asset metadata blobs and set metabuffer offsets
+	const resourceSectionLength = buffers.reduce((acc, buf) => acc + buf.length, 0);
+	let metaOffsetAccumulator = resourceSectionLength;
+	for (const asset of jsonout) {
+		// choose ImgMeta or AudioMeta
+		const perMeta = asset.imgmeta ?? asset.audiometa;
+		if (perMeta) {
+			const metaBuf = Buffer.from(encodeBinary(perMeta));
+			asset.metabuffer_start = metaOffsetAccumulator;
+			asset.metabuffer_end = metaOffsetAccumulator + metaBuf.length;
+			buffers.push(metaBuf);
+			metaOffsetAccumulator += metaBuf.length;
+		}
+	}
+
+	// Remove redundant per-asset metadata from global index
+	for (const asset of jsonout) {
+		delete asset.imgmeta;
+		delete asset.audiometa;
+	}
+
+	// Now encode global JSON metadata
 	const jsonbuffer = Buffer.from(encodeBinary(jsonout));
 	buffers.push(jsonbuffer);
 
 	// Calculate metadata offset and length (before footer)
-	const bufferPointer = buffers.reduce((acc, buf) => acc + buf.length, 0) - jsonbuffer.length;
-	const metadataOffset = bufferPointer;
+	const metadataOffset = metaOffsetAccumulator;
 	const metadataLength = jsonbuffer.length;
 
 	// Prepare the 16-byte binary footer: 8 bytes for offset, 8 bytes for length (both little-endian)
@@ -912,7 +955,7 @@ async function finalizeRompack(
 	footer.writeBigUInt64LE(BigInt(metadataOffset), 0);
 	footer.writeBigUInt64LE(BigInt(metadataLength), 8);
 
-	// Concatenate all buffers (resource data + metadata + footer)
+	// Concatenate all buffers (resource data + per-asset metas + global metadata + footer)
 	const all_buffers = Buffer.concat([...buffers, footer]);
 	const zipped = zip(all_buffers);
 

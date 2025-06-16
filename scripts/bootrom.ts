@@ -1,4 +1,4 @@
-import type { RomAsset, RomMeta, RomPack } from '../src/bmsx/rompack';
+import type { AudioMeta, ImgMeta, RomAsset, RomMeta, RomPack } from '../src/bmsx/rompack';
 
 if (typeof global === "undefined") {
 	var global = window;
@@ -300,21 +300,41 @@ async function getZippedRomAndRomLabelFromBlob(blob_buffer: ArrayBuffer): Promis
 }
 
 /**
- * Parses the resource list from the given ROM buffer and returns it as an array of `RomAsset` objects.
+ * Parses the asset list from the given ROM buffer and returns it as an array of `RomAsset` objects.
  * @param rom - The buffer containing the ROM data.
  * @returns A Promise that resolves to an array of `RomAsset` objects representing the resources in the ROM.
  */
-async function loadResourceList(rom: ArrayBuffer): Promise<RomAsset[]> {
+async function loadAssetList(rom: ArrayBuffer): Promise<RomAsset[]> {
 	const sliced = new Uint8Array(getSubBufferFromBufferWithMeta(rom));
-	// Use decodeBinary instead of JSON.parse
-	let resJson: RomAsset[];
+	// Use decodeBinary to decode the binary-encoded asset list
+	let assetList: RomAsset[];
 	try {
-		resJson = decodeBinary(sliced) as RomAsset[];
+		assetList = decodeBinary(sliced) as RomAsset[];
 	} catch (e: any) {
-		console.error('[loadResourceList] decodeBinary error:', e);
+		console.error('[loadAssetList] decodeBinary error:', e);
 		throw e;
 	}
-	return Promise.resolve<RomAsset[]>(resJson);
+
+	// For each asset, if it has per-asset metabuffer, decode and assign metadata
+	for (const asset of assetList) {
+		if (asset.metabuffer_start != null && asset.metabuffer_end != null) {
+			const metaSlice = rom.slice(asset.metabuffer_start, asset.metabuffer_end);
+			const decodedMeta = decodeBinary(new Uint8Array(metaSlice));
+			// Assign per-asset metadata based on resource type
+			switch (asset.type) {
+				case 'image':
+					asset.imgmeta = decodedMeta as ImgMeta;
+					break;
+				case 'audio':
+					asset.audiometa = decodedMeta as AudioMeta;
+					break;
+				default:
+					// unsupported metadata type
+					break;
+			}
+		}
+	}
+	return Promise.resolve<RomAsset[]>(assetList);
 }
 
 /**
@@ -331,9 +351,9 @@ async function loadResources(rom: ArrayBuffer): Promise<RomPack> {
 		code: null
 	};
 
-	const list = await loadResourceList(rom);
-	for (let i = 0; i < list.length; i++) {
-		await load(rom, list[i], result);
+	const assetList = await loadAssetList(rom);
+	for (let i = 0; i < assetList.length; i++) {
+		await load(rom, assetList[i], result);
 	}
 	return Promise.resolve<RomPack>(result);
 }

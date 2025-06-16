@@ -93,6 +93,8 @@ export interface RomAsset {
 	type: string; // The type of the asset.
 	start: number; // The start offset of the asset in the ROM.
 	end: number; // The end offset of the asset in the ROM.
+	metabuffer_start?: number; // Optional start offset of binary-encoded per-asset metadata in the buffer
+	metabuffer_end?: number; // Optional end offset of binary-encoded per-asset metadata in the buffer
 	buffer?: ArrayBuffer; // The binary buffer of the asset, used for all assets, including images and audio.
 	imgmeta?: ImgMeta; // The metadata of the asset, if it is an image.
 	audiometa?: AudioMeta; // The metadata of the asset, if it is an audio asset.

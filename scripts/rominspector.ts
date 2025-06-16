@@ -162,10 +162,10 @@ async function main() {
         console.error(`Metadata length mismatch: expected ${metadataLength} bytes, got ${metaBuf.length} bytes`);
         process.exit(1);
     }
-    let assets: any[];
+    let assetList: any[];
     try {
-        assets = decodeBinary(metaBuf);
-        if (!assets || !Array.isArray(assets)) {
+        assetList = decodeBinary(metaBuf);
+        if (!assetList || !Array.isArray(assetList)) {
             console.error('Invalid metadata format: expected an array of assets');
             process.exit(1);
         }
@@ -173,9 +173,27 @@ async function main() {
         console.error(`Failed to decode metadata: ${e.message}`);
         process.exit(1);
     }
-    const imageAssets = assets.filter(a => a.type === 'image') ?? [];
-    const audioCount = assets.filter(a => a.type === 'audio')?.length ?? 0;
-    const codeCount = assets.filter(a => a.type !== 'image' && a.type !== 'audio')?.length ?? 0;
+    // Parse per-asset metabuffer and assign to asset
+    for (const asset of assetList) {
+        if (asset.metabuffer_start != null && asset.metabuffer_end != null) {
+            const metaSlice = rompack.slice(asset.metabuffer_start, asset.metabuffer_end);
+            const decodedMeta = decodeBinary(new Uint8Array(metaSlice));
+            switch (asset.type) {
+                case 'image':
+                    asset.imgmeta = decodedMeta;
+                    break;
+                case 'audio':
+                    asset.audiometa = decodedMeta;
+                    break;
+                default:
+                    // unsupported metadata type
+                    break;
+            }
+        }
+    }
+    const imageAssets = assetList.filter(a => a.type === 'image') ?? [];
+    const audioCount = assetList.filter(a => a.type === 'audio')?.length ?? 0;
+    const codeCount = assetList.filter(a => a.type !== 'image' && a.type !== 'audio')?.length ?? 0;
 
     // --- Blessed UI ---
     const screen = blessed.screen({
@@ -200,7 +218,7 @@ async function main() {
     const totalSize = rompack.length;
     const metaStartPos = Math.floor((metadataOffset / totalSize) * barLength);
     const metaEndPos = Math.ceil(((metadataOffset + metadataLength) / totalSize) * barLength);
-    // Compute asset regions for summary bar with type coloring
+    // Compute asset regions for summary bar with type coloring (now includes metabuffer)
     let summaryBar = '';
     for (let i = 0; i < barLength; i++) {
         const cellStart = Math.floor((i / barLength) * totalSize);
@@ -208,12 +226,19 @@ async function main() {
         let color = '';
         // Priority: code > audio > image > metadata
         let found = false;
-        for (const asset of assets) {
+        for (const asset of assetList) {
+            // Main buffer region
             if (typeof asset.start === 'number' && typeof asset.end === 'number') {
                 if (cellEnd > asset.start && cellStart < asset.end) {
                     if (asset.type !== 'image' && asset.type !== 'audio') { color = '{white-fg}█{/white-fg}'; found = true; break; }
                     if (asset.type === 'audio') { color = '{magenta-fg}█{/magenta-fg}'; found = true; }
                     if (asset.type === 'image' && !found) { color = '{yellow-fg}█{/yellow-fg}'; }
+                }
+            }
+            // Metabuffer region (draw as cyan if not already colored)
+            if (!color && typeof asset.metabuffer_start === 'number' && typeof asset.metabuffer_end === 'number') {
+                if (cellEnd > asset.metabuffer_start && cellStart < asset.metabuffer_end) {
+                    color = '{cyan-fg}█{/cyan-fg}';
                 }
             }
         }
@@ -224,24 +249,19 @@ async function main() {
 
     // Compute total bytes used by atlassed images (approximate via atlas occupancy)
     let atlassedBytesTotal = 0;
-    for (const asset of assets) {
+    for (const asset of assetList) {
         const meta = asset.imgmeta || {};
         if (asset.type === 'image' && meta.atlassed && meta.texcoords) {
             const [sx, sy, sw, sh] = meta.texcoords as number[];
             const atlasName = meta.atlasid === 0 ? '_atlas' : `_atlas${meta.atlasid}`;
-            const atlasAsset = assets.find(a => a.resname === atlasName && a.type === 'image');
+            const atlasAsset = assetList.find(a => a.resname === atlasName && a.type === 'image');
             if (atlasAsset) {
                 const atlasSize = atlasAsset.end - atlasAsset.start;
                 const atlasMeta = atlasAsset.imgmeta || {};
                 const aw = atlasMeta.width || 1;
                 const ah = atlasMeta.height || 1;
-                let areaRatio: number;
-                // If texcoords are normalized (0-1), use direct ratio; otherwise assume pixel coords
-                if (sw <= 1 && sh <= 1) {
-                    areaRatio = sw * sh;
-                } else {
-                    areaRatio = (sw * sh) / (aw * ah);
-                }
+                // Coordinates are normalized (0-1), compute area ratio directly
+                const areaRatio = sw * sh;
                 atlassedBytesTotal += areaRatio * atlasSize;
             }
         }
@@ -252,13 +272,14 @@ async function main() {
         top: 0,
         left: 'center',
         width: '100%',
-        height: 7,
+        height: 8,
         tags: true,
         style: { fg: 'green', bg: 'black' },
         content:
-            `Total assets: ${assets?.length ?? 0} (images: ${imageAssets?.length ?? 0}, audio: ${audioCount}, code: ${codeCount})\n` +
+            `Total assets: ${assetList?.length ?? 0} (images: ${imageAssets?.length ?? 0}, audio: ${audioCount}, code: ${codeCount})\n` +
             `Buffer: [${summaryBar}]\n` +
-            `{yellow-fg}█{/yellow-fg} image  {magenta-fg}█{/magenta-fg} audio  {white-fg}█{/white-fg} code  {blue-fg}█{/blue-fg} metadata\n` +
+            `{yellow-fg}█{/yellow-fg} image  {magenta-fg}█{/magenta-fg} audio  {white-fg}█{/white-fg} code  {cyan-fg}█{/cyan-fg} metabuffer  {blue-fg}█{/blue-fg} global metadata\n` +
+            `Legend: {yellow-fg}image{/}, {magenta-fg}audio{/}, {white-fg}code{/}, {cyan-fg}per-asset metabuffer{/}, {blue-fg}global metadata{/}\n` +
             `metadata: offset ${metadataOffset}, length ${metadataLength} bytes\n` +
             `Atlassed images: ${Math.round(atlassedBytesTotal)} bytes (${atlassedKB} KB)`
     });
@@ -282,7 +303,7 @@ async function main() {
         mouse: true,
     });
 
-    const tableRows = assets.map(asset => [
+    const tableRows = assetList.map(asset => [
         asset.resname ? String(asset.resname) : '',
         asset.type ? String(asset.type) : ''
     ]);
@@ -319,7 +340,7 @@ async function main() {
 
     // Use table.rows for selection events (works for both mouse and keyboard)
     (table as any).rows.on('select', (item, idx) => {
-        const selected = assets[idx];
+        const selected = assetList[idx];
         const meta = selected.imgmeta || {};
         let width = meta.width || 0;
         let height = meta.height || 0;
@@ -329,7 +350,7 @@ async function main() {
         if (selected.type === 'image') {
             if (meta.atlassed && meta.texcoords) {
                 const atlasName = meta.atlasid === 0 ? '_atlas' : `_atlas${meta.atlasid}`;
-                const atlasAsset = assets.find(a => a.resname === atlasName && a.type === 'image');
+                const atlasAsset = assetList.find(a => a.resname === atlasName && a.type === 'image');
                 if (atlasAsset) {
                     const atlasBuf = atlasAsset.buffer instanceof Uint8Array
                         ? Buffer.from(atlasAsset.buffer)
@@ -337,8 +358,9 @@ async function main() {
                     try {
                         const atlasPng = PNG.sync.read(atlasBuf);
                         const [sx, sy, sw, sh] = meta.texcoords as number[];
-                        width = sw;
-                        height = sh;
+                        // Convert normalized texcoords to pixel dimensions
+                        width = Math.floor(sw * atlasPng.width);
+                        height = Math.floor(sh * atlasPng.height);
                         const asciiChars = ' .:-=+*#%@';
                         const outW = Math.min(48, sw);
                         const outH = Math.floor(sh * (outW / sw));
@@ -399,11 +421,23 @@ async function main() {
         if (selected.start !== undefined && selected.end !== undefined) {
             const sizeBytes = selected.end - selected.start;
             metadataLines.push(`Size: ${sizeBytes} bytes ( ${(sizeBytes / 1024).toFixed(2)} KB )`);
-            // Enhanced ASCII bar showing asset and metadata regions within total ROM
+        }
+        // Metabuffer region info
+        if (selected.metabuffer_start !== undefined && selected.metabuffer_end !== undefined) {
+            const metaSize = selected.metabuffer_end - selected.metabuffer_start;
+            metadataLines.push(`Metabuffer: ${selected.metabuffer_start} - ${selected.metabuffer_end} (${metaSize} bytes, ${(metaSize / 1024).toFixed(2)} KB)`);
+        }
+        // Enhanced ASCII bar showing asset and metabuffer regions within total ROM
+        if (selected.start !== undefined && selected.end !== undefined) {
             const barLength = getBarLength();
             const total = rompack.length;
             const startPos = Math.floor((selected.start / total) * barLength);
             const endPos = Math.ceil((selected.end / total) * barLength);
+            let metaStartPos = -1, metaEndPos = -1;
+            if (selected.metabuffer_start !== undefined && selected.metabuffer_end !== undefined) {
+                metaStartPos = Math.floor((selected.metabuffer_start / total) * barLength);
+                metaEndPos = Math.ceil((selected.metabuffer_end / total) * barLength);
+            }
             let bar = '';
             for (let i = 0; i < barLength; i++) {
                 if (i === startPos) {
@@ -412,12 +446,14 @@ async function main() {
                     bar += '{red-fg}|{/}';
                 } else if (i >= startPos && i < endPos) {
                     bar += '{yellow-fg}█{/yellow-fg}';
+                } else if (metaStartPos !== -1 && i >= metaStartPos && i < metaEndPos) {
+                    bar += '{cyan-fg}█{/cyan-fg}';
                 } else {
                     bar += ' ';
                 }
             }
             metadataLines.push(`Buffer: [${bar}]`);
-            metadataLines.push(`        {green-fg}|{/} start (${selected.start}), {red-fg}|{/} end (${selected.end})`);
+            metadataLines.push(`        {green-fg}|{/} start (${selected.start}), {red-fg}|{/} end (${selected.end})` + (metaStartPos !== -1 ? `, {cyan-fg}█{/cyan-fg} metabuffer` : ''));
         }
         if (width) metadataLines.push(`Width: ${width}`);
         if (height) metadataLines.push(`Height: ${height}`);
@@ -466,7 +502,7 @@ async function main() {
             const cellEnd = Math.floor(((i + 1) / barLength) * totalSize);
             let color = '';
             let found = false;
-            for (const asset of assets) {
+            for (const asset of assetList) {
                 if (typeof asset.start === 'number' && typeof asset.end === 'number') {
                     if (cellEnd > asset.start && cellStart < asset.end) {
                         if (asset.type !== 'image' && asset.type !== 'audio') { color = '{white-fg}█{/white-fg}'; found = true; break; }
@@ -480,9 +516,10 @@ async function main() {
             summaryBar += color;
         }
         summaryBox.setContent(
-            `Total assets: ${assets?.length ?? 0} (images: ${imageAssets?.length ?? 0}, audio: ${audioCount}, code: ${codeCount})\n` +
+            `Total assets: ${assetList?.length ?? 0} (images: ${imageAssets?.length ?? 0}, audio: ${audioCount}, code: ${codeCount})\n` +
             `Buffer: [${summaryBar}]\n` +
-            `{yellow-fg}█{/yellow-fg} image  {magenta-fg}█{/magenta-fg} audio  {white-fg}█{/white-fg} code  {blue-fg}█{/blue-fg} metadata\n` +
+            `{yellow-fg}█{/yellow-fg} image  {magenta-fg}█{/magenta-fg} audio  {white-fg}█{/white-fg} code  {cyan-fg}█{/cyan-fg} metabuffer  {blue-fg}█{/blue-fg} global metadata\n` +
+            `Legend: {yellow-fg}image{/}, {magenta-fg}audio{/}, {white-fg}code{/}, {cyan-fg}per-asset metabuffer{/}, {blue-fg}global metadata{/}\n` +
             `metadata: offset ${metadataOffset}, length ${metadataLength} bytes\n` +
             `Atlassed images: ${Math.round(atlassedBytesTotal)} bytes (${atlassedKB} KB)`
         );
