@@ -7,6 +7,14 @@ import * as contrib from 'blessed-contrib';
 import * as fs from 'fs/promises';
 import * as pako from 'pako';
 import { PNG } from 'pngjs';
+import type { AudioMeta, ImgMeta, RomAsset } from '../src/bmsx/rompack';
+
+function byteSizeToString(size: number): string {
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(2)} KB`;
+    if (size < 1024 * 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(2)} MB`;
+    return `${(size / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
 
 // Minimal decodeBinary (copy from bootrom, no import)
 function decodeBinary(buf: Uint8Array): any {
@@ -245,58 +253,6 @@ async function main() {
         return bar;
     }
 
-    // --- Buffer Bar Rendering Utility ---
-    /**
-     * Renders a buffer bar with Unicode fractional blocks and color tags.
-     * Each region is rendered as a contiguous run of full blocks, with fractional blocks only at the start/end if needed.
-     * Overlapping regions are handled by priority (first in array wins).
-     */
-    function renderDetailedBufferBar(regions: Array<{ start: number, end: number, colorTag: string, label?: string }>, totalSize: number, barLength: number): string {
-        // Unicode fractional blocks (8 levels + space for 0)
-        // blocks[0] = ' ' (0/8), blocks[1] = '▏' (1/8), ..., blocks[8] = '█' (8/8)
-        const blocks = [' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
-        const cellSize = totalSize / barLength;
-        let bar = '';
-
-        for (let i = 0; i < barLength; i++) {
-            const cellStart = i * cellSize;
-            const cellEnd = (i + 1) * cellSize;
-
-            let charForCell = ' '; // Default to space
-            let colorTagForCell = '';
-
-            // Iterate through regions by priority (first in array has highest priority)
-            for (const region of regions) {
-                const regionStart = region.start;
-                const regionEnd = region.end;
-
-                // Calculate the actual start and end of the overlap between the current region and the current cell
-                const overlapStart = Math.max(cellStart, regionStart);
-                const overlapEnd = Math.min(cellEnd, regionEnd);
-
-                if (overlapEnd > overlapStart) { // If there is any overlap
-                    const overlapWidth = overlapEnd - overlapStart;
-                    const fractionOfCell = overlapWidth / cellSize;
-
-                    colorTagForCell = region.colorTag;
-
-                    if (fractionOfCell >= (1.0 - 1e-9)) { // If overlap is full or very close to full cell
-                        charForCell = '█'; // Use full block
-                    } else {
-                        // For partial overlap (fractionOfCell is > 0 and < 1.0)
-                        // Use Math.ceil to make partials more visible.
-                        // Math.ceil(fractionOfCell * 8) will result in an index from 1 (for smallest overlap) to 8.
-                        const blockIndex = Math.ceil(fractionOfCell * 8);
-                        charForCell = blocks[blockIndex]; // blocks[1] is '▏', blocks[8] is '█'
-                    }
-                    break; // Found the highest-priority overlapping region for this cell, so stop.
-                }
-            }
-            bar += colorTagForCell + charForCell + '{/}';
-        }
-        return bar;
-    }
-
     /**
      * Renders a buffer bar where we only do detailed (fractional) rendering
      * at the very first and last cell of each region, and full blocks (█)
@@ -307,9 +263,10 @@ async function main() {
         totalSize: number,
         barLength: number
     ): string {
-        const blocks = [' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
+        const blocks = ['▏', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
         const cellSize = totalSize / barLength;
-        const cellChars = new Array(barLength).fill(' ');
+        const defaultCellChar = '░';
+        const cellChars = new Array(barLength).fill(defaultCellChar);
         const cellColors = new Array(barLength).fill('');
 
         for (const region of regions) {
@@ -324,13 +281,13 @@ async function main() {
 
             // fill full interior
             for (let i = startCell + 1; i < endCell; i++) {
-                if (cellChars[i] === ' ') {
+                if (cellChars[i] === defaultCellChar) {
                     cellChars[i] = '█';
                     cellColors[i] = region.colorTag;
                 }
             }
             // left boundary
-            if (cellChars[startCell] === ' ') {
+            if (cellChars[startCell] === defaultCellChar) {
                 if (startCell === endCell) {
                     // Region fits entirely within one cell
                     const regionStart = region.start;
@@ -446,11 +403,11 @@ async function main() {
             }, audio: ${audioCount}, code: ${codeCount}) \n` +
             `Buffer: [${renderSummaryBar(summaryRegions, totalSize, barLength)}]\n` +
             `{yellow-fg}█{/yellow-fg} image  {magenta-fg}█{/magenta-fg} audio  {white-fg}█{/white-fg} code  {cyan-fg}█{/cyan-fg} metabuffer  {blue-fg}█{/blue-fg} global metadata\n` +
-            `Images size: ${imagesSize} bytes (${(imagesSize / 1024).toFixed(1)} KB) (${imageSizePercent}%)\n` +
-            `Audio size: ${audioSize} bytes (${(audioSize / 1024).toFixed(1)} KB) (${audioSizePercent}%)\n` +
-            `Code size: ${codeSize} bytes (${(codeSize / 1024).toFixed(1)} KB) (${codeSizePercent}%)\n` +
-            `Metadata size: ${metaBuf.length} bytes (${(metaBuf.length / 1024).toFixed(1)} KB) (${metaSizePercent}%)\n` +
-            `Total size: ${totalSize} bytes (${(totalSize / 1024).toFixed(1)} KB)\n`;
+            `Images size: ${byteSizeToString(imagesSize)} (${imageSizePercent}%)\n` +
+            `Audio size: ${byteSizeToString(audioSize)} (${audioSizePercent}%)\n` +
+            `Code size: ${byteSizeToString(codeSize)} (${codeSizePercent}%)\n` +
+            `Metadata size: ${byteSizeToString(metaBuf.length)} (${metaSizePercent}%)\n` +
+            `Total size: ${byteSizeToString(totalSize)}\n`;
     }
 
     let barLength = getBarLength(typeof screen.width === 'number' ? screen.width : 120);
@@ -483,7 +440,7 @@ async function main() {
     // Calculate atlassed image sizes
     let atlassedBytesTotal = 0;
     for (const asset of assetList) {
-        if (asset.type === 'image' && asset.atlassed && asset.start != null && asset.end != null) {
+        if (asset.type === 'image' && asset.imgmeta.atlassed && asset.start != null && asset.end != null) {
             atlassedBytesTotal += asset.end - asset.start;
         }
     }
@@ -505,7 +462,7 @@ async function main() {
         height: '100%-8',
         border: { type: 'line', fg: 'cyan' },
         columnSpacing: 2,
-        columnWidth: [30, 10, 10], // Adjust as needed
+        columnWidth: [30, 5, 10, 10],
         keys: true,
         interactive: 'true',
         label: 'Select asset (Enter to view details, q to quit)',
@@ -518,25 +475,7 @@ async function main() {
         mouse: true,
     });
 
-    const tableRows = assetList.map(asset => [
-        asset.resname ? String(asset.resname) : '',
-        asset.type ? String(asset.type) : '',
-        // Include both the buffer and the metabuffer for each asset and add it to the total size
-        (() => {
-            let size = 0;
-            if (asset.start != null && asset.end != null) {
-                size += asset.end - asset.start;
-            }
-            if (asset.metabuffer_start != null && asset.metabuffer_end != null) {
-                size += asset.metabuffer_end - asset.metabuffer_start;
-            }
-            return `${(size / 1024).toFixed(2)} KB`;
-        })()
-    ]);
-    table.setData({
-        headers: ['Name', 'Type', 'Size'],
-        data: tableRows
-    });
+    updateTable();
 
     screen.append(summaryBox);
     screen.append(table);
@@ -566,95 +505,28 @@ async function main() {
 
     // Use table.rows for selection events (works for both mouse and keyboard)
     (table as any).rows.on('select', (item, idx) => {
-        const selected = assetList[idx];
-        const meta = selected.imgmeta || {};
-        let width = meta.width || 0;
-        let height = meta.height || 0;
-        let atlasid = meta.atlasid;
-        if (atlasid === undefined) atlasid = 0;
+        const selected = assetList[idx] as RomAsset;
+        const imgmeta = selected.imgmeta || {} as ImgMeta;
+        const audiometa = selected.audiometa || {} as AudioMeta;
+        const bufferSize = selected.end - selected.start;
         let asciiArt = '';
-        if (selected.type === 'image') {
-            if (meta.atlassed && meta.texcoords) {
-                const atlasName = meta.atlasid === 0 ? '_atlas' : `_atlas${meta.atlasid} `;
-                const atlasAsset = assetList.find(a => a.resname === atlasName && a.type === 'image');
-                if (atlasAsset) {
-                    const atlasBuf = atlasAsset.buffer instanceof Uint8Array
-                        ? Buffer.from(atlasAsset.buffer)
-                        : Buffer.from(rompack.slice(atlasAsset.start, atlasAsset.end));
-                    try {
-                        const atlasPng = PNG.sync.read(atlasBuf);
-                        const [sx, sy, sw, sh] = meta.texcoords as number[];
-                        // Convert normalized texcoords to pixel dimensions
-                        width = Math.floor(sw * atlasPng.width);
-                        height = Math.floor(sh * atlasPng.height);
-                        const asciiChars = ' .:-=+*#%@';
-                        const outW = Math.min(48, sw);
-                        const outH = Math.floor(sh * (outW / sw));
-                        for (let y = 0; y < outH; y++) {
-                            let line = '';
-                            for (let x = 0; x < outW; x++) {
-                                const px = Math.floor(sx + x * sw / outW);
-                                const py = Math.floor(sy + y * sh / outH);
-                                const idx4 = (py * atlasPng.width + px) << 2;
-                                const r = atlasPng.data[idx4], g = atlasPng.data[idx4 + 1], b = atlasPng.data[idx4 + 2], a = atlasPng.data[idx4 + 3];
-                                const lum = a === 0 ? 255 : (r * 0.299 + g * 0.587 + b * 0.114);
-                                const ch = asciiChars[Math.floor(lum / 256 * (asciiChars?.length ?? 0))] || ' ';
-                                line += ch;
-                            }
-                            asciiArt += line + '\n';
-                        }
-                    } catch {
-                        asciiArt = '[Failed to decode atlas PNG]';
-                    }
-                } else {
-                    asciiArt = '[Atlas asset not found]';
-                }
-            } else {
-                const imgBuf = selected.buffer instanceof Uint8Array
-                    ? Buffer.from(selected.buffer)
-                    : Buffer.from(rompack.slice(selected.start, selected.end));
-                try {
-                    const png = PNG.sync.read(imgBuf);
-                    width = width || png.width;
-                    height = height || png.height;
-                    const asciiChars = ' .:-=+*#%@';
-                    const outW = Math.min(48, width);
-                    const outH = Math.floor(height * (outW / width));
-                    for (let y = 0; y < outH; y++) {
-                        let line = '';
-                        for (let x = 0; x < outW; x++) {
-                            const px = Math.floor(x * width / outW);
-                            const py = Math.floor(y * height / outH);
-                            const idx4 = (py * width + px) << 2;
-                            const r = png.data[idx4], g = png.data[idx4 + 1], b = png.data[idx4 + 2], a = png.data[idx4 + 3];
-                            const lum = a === 0 ? 255 : (r * 0.299 + g * 0.587 + b * 0.114);
-                            const ch = asciiChars[Math.floor(lum / 256 * (asciiChars?.length ?? 0))] || ' ';
-                            line += ch;
-                        }
-                        asciiArt += line + '\n';
-                    }
-                } catch {
-                    asciiArt = '[Unable to generate ASCII preview]';
-                }
-            }
-        }
-        // Show metadata details, including texcoords, boundingbox, etc.
         const metadataLines = [];
-        metadataLines.push(`Type: ${selected.type} `);
-        metadataLines.push(`Name: ${selected.resname} `);
-        if (selected.start !== undefined) metadataLines.push(`Start: ${selected.start} (${(selected.start / 1024).toFixed(2)} KB )`);
-        if (selected.end !== undefined) metadataLines.push(`End: ${selected.end} (${(selected.end / 1024).toFixed(2)} KB )`);
-        if (selected.start !== undefined && selected.end !== undefined) {
-            const sizeBytes = selected.end - selected.start;
-            metadataLines.push(`Size: ${sizeBytes} bytes(${(sizeBytes / 1024).toFixed(2)} KB)`);
-        }
+
+        // Show generic metadata details
+        metadataLines.push(`Name: ${selected.resname} # ID: ${selected.resid} # Type: ${selected.type}`);
+        if (bufferSize !== undefined) metadataLines.push(`Buffer: ${selected.start} - ${selected.end} (${byteSizeToString(bufferSize)})`);
         // Metabuffer region info
-        if (selected.metabuffer_start !== undefined && selected.metabuffer_end !== undefined) {
-            const metaSize = selected.metabuffer_end - selected.metabuffer_start;
-            metadataLines.push(`Metabuffer: ${selected.metabuffer_start} - ${selected.metabuffer_end} (${metaSize} bytes, ${(metaSize / 1024).toFixed(2)} KB)`);
+        const metabufferSize = selected.metabuffer_end - selected.metabuffer_start;
+        if (metabufferSize !== undefined) metadataLines.push(`Metabuffer: ${selected.metabuffer_start} - ${selected.metabuffer_end} (${byteSizeToString(metabufferSize)})`);
+        if (bufferSize !== undefined && metabufferSize !== undefined) {
+            const totalSize = bufferSize + metabufferSize;
+            metadataLines.push(`Total size: ${byteSizeToString(totalSize)}`);
         }
+
+        metadataLines.push('---------------------------------');
+
         // Enhanced ASCII bar showing asset and metabuffer regions within total ROM
-        if (selected.start !== undefined && selected.end !== undefined) {
+        if (bufferSize !== undefined) {
             const termWidth = typeof screen.width === 'number' ? screen.width : 120;
             const barLength = getBarLength(termWidth * 0.8);
             const total = rompack.length;
@@ -668,13 +540,110 @@ async function main() {
             metadataLines.push(`Buffer: [${bar}]`);
             metadataLines.push(`        {yellow-fg}█{/yellow-fg} asset, {cyan-fg}█{/cyan-fg} metabuffer`);
         }
-        if (width) metadataLines.push(`Width: ${width} `);
-        if (height) metadataLines.push(`Height: ${height} `);
-        // Only show Atlas ID for images
-        if (atlasid !== undefined && selected.type === 'image') metadataLines.push(`Atlas ID: ${atlasid} `);
-        if (meta.texcoords) metadataLines.push(`Texcoords: [${meta.texcoords.join(', ')}]`);
-        if (meta.boundingbox) metadataLines.push(`BoundingBox: ${JSON.stringify(meta.boundingbox)} `);
-        if (meta.hitpolygons) metadataLines.push(`Hitpolygons: ${JSON.stringify(meta.hitpolygons)} `);
+
+        metadataLines.push('---------------------------------');
+
+        // Show image/audio specific metadata
+        switch (selected.type) {
+            case 'image':
+                if (imgmeta.atlassed) metadataLines.push(`Atlassed: Yes (${imgmeta.atlasid})`);
+                else metadataLines.push(`Atlassed: No`);
+                if (imgmeta.width) metadataLines.push(`Width: ${imgmeta.width} `);
+                if (imgmeta.height) metadataLines.push(`Height: ${imgmeta.height} `);
+                // Only show Atlas ID for images
+                if (imgmeta.atlasid !== undefined && selected.type === 'image') metadataLines.push(`Atlas ID: ${imgmeta.atlasid} `);
+                for (const [key, value] of Object.entries(imgmeta)) {
+                    metadataLines.push(`${key}: ${JSON.stringify(value)}`);
+                }
+                if (imgmeta.atlassed && imgmeta.texcoords) {
+                    const atlasName = imgmeta.atlasid === 0 ? '_atlas' : `_atlas${imgmeta.atlasid} `;
+                    const atlasAsset = assetList.find(a => a.resname === atlasName && a.type === 'image');
+                    if (atlasAsset) {
+                        const atlasBuf = atlasAsset.buffer instanceof Uint8Array
+                            ? Buffer.from(atlasAsset.buffer)
+                            : Buffer.from(rompack.slice(atlasAsset.start, atlasAsset.end));
+                        try {
+                            const atlasPng = PNG.sync.read(atlasBuf);
+                            const [sx, sy, sw, sh] = imgmeta.texcoords as number[];
+                            // Convert normalized texcoords to pixel dimensions
+                            let width = Math.floor(sw * atlasPng.width);
+                            let height = Math.floor(sh * atlasPng.height);
+                            const asciiChars = ' .:-=+*#%@';
+                            const outW = Math.min(48, sw);
+                            const outH = Math.floor(sh * (outW / sw));
+                            for (let y = 0; y < outH; y++) {
+                                let line = '';
+                                for (let x = 0; x < outW; x++) {
+                                    const px = Math.floor(sx + x * sw / outW);
+                                    const py = Math.floor(sy + y * sh / outH);
+                                    const idx4 = (py * atlasPng.width + px) << 2;
+                                    const r = atlasPng.data[idx4], g = atlasPng.data[idx4 + 1], b = atlasPng.data[idx4 + 2], a = atlasPng.data[idx4 + 3];
+                                    const lum = a === 0 ? 255 : (r * 0.299 + g * 0.587 + b * 0.114);
+                                    const ch = asciiChars[Math.floor(lum / 256 * (asciiChars?.length ?? 0))] || ' ';
+                                    line += ch;
+                                }
+                                asciiArt += line + '\n';
+                            }
+                        } catch {
+                            asciiArt = '[Failed to decode atlas PNG]';
+                        }
+                    } else {
+                        asciiArt = '[Atlas asset not found]';
+                    }
+                } else {
+                    try {
+                        const png = PNG.sync.read(
+                            Buffer.isBuffer(selected.buffer)
+                                ? selected.buffer
+                                : Buffer.from(selected.buffer)
+                        );
+                        let width = imgmeta.width || png.width;
+                        let height = imgmeta.height || png.height;
+                        const asciiChars = ' .:-=+*#%@';
+                        const outW = Math.min(48, width);
+                        const outH = Math.floor(height * (outW / width));
+                        for (let y = 0; y < outH; y++) {
+                            let line = '';
+                            for (let x = 0; x < outW; x++) {
+                                const px = Math.floor(x * width / outW);
+                                const py = Math.floor(y * height / outH);
+                                const idx4 = (py * width + px) << 2;
+                                const r = png.data[idx4], g = png.data[idx4 + 1], b = png.data[idx4 + 2], a = png.data[idx4 + 3];
+                                const lum = a === 0 ? 255 : (r * 0.299 + g * 0.587 + b * 0.114);
+                                const ch = asciiChars[Math.floor(lum / 256 * (asciiChars?.length ?? 0))] || ' ';
+                                line += ch;
+                            }
+                            asciiArt += line + '\n';
+                        }
+                    } catch {
+                        asciiArt = '[Unable to generate ASCII preview]';
+                    }
+                }
+                break;
+            case 'audio':
+                // For audio, we don't generate ASCII art, just show the name
+                // asciiArt = '[Audio asset, no ASCII preview]';
+
+                if (audiometa.audiotype === 'music') {
+                    metadataLines.push(`Audio type: Music`);
+                    if (audiometa.loop !== undefined && audiometa.loop !== null) {
+                        metadataLines.push(`Loop position: ${audiometa.loop}`);
+                    }
+                    else {
+                        metadataLines.push(`Loop: Nein`);
+                    }
+                }
+                else if (audiometa.audiotype === 'sfx') {
+                    metadataLines.push(`Audio type: SFX`);
+                    break;
+                }
+                metadataLines.push(`Priority: ${audiometa.priority ?? 'Unset!'}`);
+            case 'source':
+            case 'code':
+                // For code, we don't generate ASCII art, just show the name
+                // asciiArt = '[Code asset, no ASCII preview]';
+                break;
+        }
         metadataLines.push('');
         const modal = blessed.box({
             parent: screen,
@@ -701,8 +670,82 @@ async function main() {
         });
         screen.render();
     });
-    screen.key(['q', 'C-c'], () => process.exit(0));
-    screen.render();
+
+    // Add this after creating the screen:
+    const filterBox = blessed.textbox({
+        parent: screen,
+        top: 'center', left: 'center',
+        width: '50%', height: 'shrink',
+        inputOnFocus: true,
+        style: { fg: 'white', bg: 'blue' },
+        label: 'Filter (press f to focus, Enter to apply, Esc to clear)',
+        tags: true,
+        border: 'line',
+        value: '',
+        visible: false,
+    });
+
+    // Helper to filter assets
+    function getFilteredAssets(assetList, filter: string) {
+        if (!filter) return assetList;
+        const f = filter.toLowerCase();
+        return assetList.filter(a =>
+            (a.resname && a.resname.toLowerCase().includes(f)) ||
+            (a.type && a.type.toLowerCase().includes(f))
+        );
+    }
+
+    // Function to update the table based on filter
+    function updateTable(filter: string = undefined) {
+        const filtered = getFilteredAssets(assetList, filter);
+        const tableRows = filtered.map(asset => [
+            asset.resname ? String(asset.resname) : '',
+            asset.resid ? String(asset.resid) : '',
+            asset.type ? String(asset.type) : '',
+            (() => {
+                let size = 0;
+                if (asset.start != null && asset.end != null) size += asset.end - asset.start;
+                if (asset.metabuffer_start != null && asset.metabuffer_end != null) size += asset.metabuffer_end - asset.metabuffer_start;
+                // Compute percentage of total rompack size
+                if (size < 1024) return `${size} B`;
+                if (size < 1024 * 1024) return `${(size / 1024).toFixed(2)} KB`;
+                if (size < 1024 * 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(2)} MB`;
+            })()
+        ]);
+        table.setData({
+            headers: ['Name', 'ID', 'Type', 'Size'],
+            data: tableRows
+        });
+        screen.render();
+    }
+
+    // Focus filter box on `/ `
+    screen.key('f', () => {
+        filterBox.show();
+        filterBox.focus();
+        screen.render();
+    });
+
+    // Apply filter on Enter
+    filterBox.on('submit', (filterValue) => {
+        updateTable(filterValue);
+        filterBox.hide();
+        table.focus();
+        screen.render();
+    });
+
+    // Clear filter on Esc
+    filterBox.on('cancel', () => {
+        filterBox.setValue('');
+        updateTable('');
+        filterBox.hide();
+        table.focus();
+        screen.render();
+    });
+
+    // Initialize table with all assets
+    updateTable('');
+    filterBox.hide(); // Hide filter box initially
 
     // Redraw summary bar on resize
     screen.on('resize', () => {
@@ -710,6 +753,9 @@ async function main() {
         summaryBox.setContent(generateSummaryContent());
         screen.render();
     });
+
+    screen.key(['q', 'C-c'], () => process.exit(0));
+    screen.render();
 }
 
 main();
