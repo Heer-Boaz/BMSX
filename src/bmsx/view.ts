@@ -1,7 +1,7 @@
 ﻿import { BFont, GameOptions, Identifier, copy_vector, type RegisterablePersistent } from "./game";
 import { Input } from './input';
 import { Registry } from './registry';
-import type { Area, Size, Vector, id2htmlimg, vec2 } from './rompack';
+import type { Area, Size, Vector, id2htmlimg, vec2, vec3arr } from './rompack';
 
 export interface FlipOptions {
 	flip_h: boolean;
@@ -420,16 +420,16 @@ export abstract class BaseView implements RegisterablePersistent {
 	 * @param color Color to use for the outline
 	 * @param thickness Line thickness in pixels (default 1)
 	 */
-	public drawPolygon(points: { x: number, y: number, z?: number }[], color: Color, thickness: number = 1): void {
+	public drawPolygon(points: vec3arr[], color: Color, thickness: number = 1): void {
 		if (!points || points.length < 2) return;
 		const ctx = this.context;
 		ctx.save();
 		ctx.beginPath();
 		ctx.lineWidth = thickness;
 		ctx.strokeStyle = this.toRgb(color);
-		ctx.moveTo(points[0].x + 0.5, points[0].y + 0.5);
+		ctx.moveTo(points[0][0] + 0.5, points[0][1] + 0.5);
 		for (let i = 1; i < points.length; ++i) {
-			ctx.lineTo(points[i].x + 0.5, points[i].y + 0.5);
+			ctx.lineTo(points[i][0] + 0.5, points[i][1] + 0.5);
 		}
 		ctx.closePath();
 		ctx.stroke();

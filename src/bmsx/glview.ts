@@ -1,5 +1,5 @@
 import { multiply_vec, new_vec2, new_vec3 } from './game';
-import type { ImgMeta, Size, vec2 } from './rompack';
+import type { ImgMeta, Size, vec2, vec3arr } from './rompack';
 import crtShaderCode from './shaders/crtshader.glsl';
 import gameShaderCode from './shaders/gameshader.glsl';
 import vertexShaderCode from './shaders/vertexshader.glsl';
@@ -1136,29 +1136,62 @@ export abstract class GLView extends BaseView {
      * @param color Color to use for the outline
      * @param thickness Line thickness in pixels (default 1)
      */
-    public override drawPolygon(points: { x: number, y: number, z?: number }[], color: Color, thickness: number = 1): void {
+    public override drawPolygon(points: vec3arr[], color: Color, thickness: number = 1): void {
         if (!points || points.length < 2) return;
         const imgid = 'whitepixel';
         for (let i = 0; i < points.length; ++i) {
             const a = points[i], b = points[(i + 1) % points.length];
-            // Bresenham's line algorithm for pixel stepping
-            let x0 = Math.round(a.x), y0 = Math.round(a.y), z = a.z;
-            let x1 = Math.round(b.x), y1 = Math.round(b.y);
+            let x0 = Math.round(a[0]), y0 = Math.round(a[1]), z = a[2] ?? 0;
+            let x1 = Math.round(b[0]), y1 = Math.round(b[1]);
             const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
             const sx = x0 < x1 ? 1 : -1;
             const sy = y0 < y1 ? 1 : -1;
             let err = dx - dy;
-            while (true) {
-                this.drawImg({
-                    pos: new_vec3(x0, y0, z),
-                    imgid,
-                    scale: new_vec2(1, 1),
-                    colorize: color,
-                });
-                if (x0 === x1 && y0 === y1) break;
-                const e2 = 2 * err;
-                if (e2 > -dy) { err -= dy; x0 += sx; }
-                if (e2 < dx) { err += dx; y0 += sy; }
+            // Correct Bresenham's for all octants
+            if (dx > dy) {
+                while (true) {
+                    this.drawImg({
+                        pos: new_vec3(x0, y0, z),
+                        imgid,
+                        scale: new_vec2(thickness, thickness),
+                        colorize: color,
+                    });
+                    if (x0 === x1 && y0 === y1) break;
+                    const e2 = 2 * err;
+                    if (e2 > -dy) { err -= dy; x0 += sx; }
+                    if (x0 === x1 && y0 === y1) {
+                        this.drawImg({
+                            pos: new_vec3(x0, y0, z),
+                            imgid,
+                            scale: new_vec2(thickness, thickness),
+                            colorize: color,
+                        });
+                        break;
+                    }
+                    if (e2 < dx) { err += dx; y0 += sy; }
+                }
+            } else {
+                while (true) {
+                    this.drawImg({
+                        pos: new_vec3(x0, y0, z),
+                        imgid,
+                        scale: new_vec2(thickness, thickness),
+                        colorize: color,
+                    });
+                    if (x0 === x1 && y0 === y1) break;
+                    const e2 = 2 * err;
+                    if (e2 > -dy) { err -= dy; x0 += sx; }
+                    if (x0 === x1 && y0 === y1) {
+                        this.drawImg({
+                            pos: new_vec3(x0, y0, z),
+                            imgid,
+                            scale: new_vec2(thickness, thickness),
+                            colorize: color,
+                        });
+                        break;
+                    }
+                    if (e2 < dx) { err += dx; y0 += sy; }
+                }
             }
         }
     }

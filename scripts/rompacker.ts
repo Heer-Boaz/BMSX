@@ -1,6 +1,6 @@
 import { glsl } from "esbuild-plugin-glsl";
 import type { Stats } from 'fs';
-import type { AudioMeta, ImgMeta, RomAsset, vec2 } from '../src/bmsx/rompack';
+import type { AudioMeta, ImgMeta, RomAsset, vec2arr } from '../src/bmsx/rompack';
 import { createOptimizedAtlas } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { LoadedResource, ResourceMeta, RomManifest, RomPackerOptions } from './rompacker.rompack';
@@ -794,16 +794,16 @@ function processResources(loadedResources: LoadedResource[]) {
 function buildImgMeta(res: LoadedResource): ImgMeta {
 	const img = res.img;
 	const img_boundingbox = BoundingBoxExtractor.extractBoundingBox(img);
-	let extracted_hitpolygon: vec2[][] | vec2[] = undefined;
+	let extracted_hitpolygon: vec2arr[][] | vec2arr[] = undefined;
 	let hitpolygons: {
-		original: vec2[][],
-		fliph: vec2[][],
-		flipv: vec2[][],
-		fliphv: vec2[][]
+		original: vec2arr[][],
+		fliph: vec2arr[][],
+		flipv: vec2arr[][],
+		fliphv: vec2arr[][]
 	} = undefined;
 	switch (res.collisionType) {
 		case 'concave':
-			extracted_hitpolygon = BoundingBoxExtractor.extractConcaveHull(img) as vec2[][];
+			extracted_hitpolygon = BoundingBoxExtractor.extractConcaveHull(img) as vec2arr[][];
 			hitpolygons = {
 				original: extracted_hitpolygon,
 				fliph: flipPolygons(extracted_hitpolygon, true, false),
@@ -812,7 +812,7 @@ function buildImgMeta(res: LoadedResource): ImgMeta {
 			};
 			break;
 		case 'convex':
-			extracted_hitpolygon = BoundingBoxExtractor.extractConvexHull(img) as vec2[];
+			extracted_hitpolygon = BoundingBoxExtractor.extractConvexHull(img) as vec2arr[];
 			hitpolygons = {
 				original: [extracted_hitpolygon],
 				fliph: flipPolygons([extracted_hitpolygon], true, false),
@@ -828,11 +828,11 @@ function buildImgMeta(res: LoadedResource): ImgMeta {
 	const img_centerpoint = BoundingBoxExtractor.calculateCenterPoint(img_boundingbox);
 
 	// Generate flipped variants for polygons
-	function flipPolygons(polys: vec2[][], flipH: boolean, flipV: boolean): vec2[][] {
-		return polys.map(poly => poly.map(pt => ({
-			x: flipH ? img.width - 1 - pt.x : pt.x,
-			y: flipV ? img.height - 1 - pt.y : pt.y
-		})));
+	function flipPolygons(polys: vec2arr[][], flipH: boolean, flipV: boolean): vec2arr[][] {
+		return polys.map(poly => poly.map(pt => ([
+			flipH ? img.width - 1 - pt[0] : pt[0],
+			flipV ? img.height - 1 - pt[1] : pt[1]
+		])));
 	}
 
 	let imgmeta: ImgMeta = {

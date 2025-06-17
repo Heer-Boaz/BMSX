@@ -1,6 +1,6 @@
 const { createCanvas } = require('canvas');
 import type { Image } from 'canvas';
-import type { Area, BoundingBoxPrecalc, vec2 } from '../src/bmsx/rompack';
+import type { Area, BoundingBoxPrecalc, vec2arr } from '../src/bmsx/rompack';
 
 /**
  * Dedicated class for extracting bounding boxes and related operations from images.
@@ -46,7 +46,7 @@ export class BoundingBoxExtractor {
      * @param image The image to analyze.
      * @returns Array of concave hull polygons, one per detected shape.
      */
-    static extractConcaveHull(image: Image): vec2[][] {
+    static extractConcaveHull(image: Image): vec2arr[][] {
         const width = image.width;
         const height = image.height;
         const canvas = createCanvas(width, height);
@@ -56,7 +56,7 @@ export class BoundingBoxExtractor {
         const data = imageData.data;
         // Visited map: 1D array for performance
         const visited = new Uint8Array(width * height);
-        const polygons: vec2[][] = [];
+        const polygons: vec2arr[][] = [];
         // Helper to get alpha at (x, y)
         function alphaAt(x: number, y: number): number {
             return data[(y * width + x) * 4 + 3];
@@ -72,20 +72,20 @@ export class BoundingBoxExtractor {
         }
 
         // Moore-Neighbor tracing (border following)
-        function traceBorder(sx: number, sy: number): vec2[] {
+        function traceBorder(sx: number, sy: number): vec2arr[] {
             const dirs = [
                 [1, 0], [1, 1], [0, 1], [-1, 1],
                 [-1, 0], [-1, -1], [0, -1], [1, -1]
             ] as const;
 
-            const border: vec2[] = [];
+            const border: vec2arr[] = [];
             let px = sx, py = sy;
             let dir = 0;                         // uitgangsrichting
             const start = { x: sx, y: sy };
 
             do {
                 // ------ 1. bewaar + markeer ----------------------------------------
-                border.push({ x: px, y: py });
+                border.push([px, py]);
                 visited[py * width + px] = 1;    // <-- nu meteen
 
                 // ------ 2. zoek volgende on-bezochte rand­pixel --------------------
@@ -127,7 +127,7 @@ export class BoundingBoxExtractor {
                 const border = traceBorder(x, y);
                 // Mark all border pixels as visited
                 for (const pt of border) {
-                    visited[pt.y * width + pt.x] = 1;
+                    visited[pt[1] * width + pt[0]] = 1;
                 }
                 if (border.length > 2) {
                     polygons.push(border);
@@ -137,7 +137,7 @@ export class BoundingBoxExtractor {
         return polygons;
     }
 
-    static extractConvexHull(image: Image): vec2[] {
+    static extractConvexHull(image: Image): vec2arr[] {
         const { width, height } = image;
         const canvas = createCanvas(width, height);
         const context = canvas.getContext('2d');
@@ -158,11 +158,11 @@ export class BoundingBoxExtractor {
             return false;
         };
 
-        const points: vec2[] = [];
+        const points: vec2arr[] = [];
         for (let y = 0; y < height; y++) {
             for (let x = 0; x < width; x++) {
                 if (isBoundary(x, y)) {
-                    points.push({ x, y });
+                    points.push([x, y]);
                 }
             }
         }
@@ -170,17 +170,17 @@ export class BoundingBoxExtractor {
         return this.computeConvexPolygon(points);
     }
 
-    private static computeConvexPolygon(points: vec2[]): vec2[] {
+    private static computeConvexPolygon(points: vec2arr[]): vec2arr[] {
         if (points.length <= 1) return points.slice();
-        const sorted = points.slice().sort((a, b) => a.x - b.x || a.y - b.y);
-        const lower: vec2[] = [];
+        const sorted = points.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+        const lower: vec2arr[] = [];
         for (const p of sorted) {
             while (lower.length >= 2 && this.cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
                 lower.pop();
             }
             lower.push(p);
         }
-        const upper: vec2[] = [];
+        const upper: vec2arr[] = [];
         for (let i = sorted.length - 1; i >= 0; i--) {
             const p = sorted[i];
             while (upper.length >= 2 && this.cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
@@ -196,8 +196,8 @@ export class BoundingBoxExtractor {
     /**
      * Cross product of OA and OB vectors (for concave hull orientation test).
      */
-    static cross(o: vec2, a: vec2, b: vec2): number {
-        return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+    static cross(o: vec2arr, a: vec2arr, b: vec2arr): number {
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
     }
 
     static flipBoundingBoxHorizontally(box: Area, width: number): Area {
@@ -227,9 +227,9 @@ export class BoundingBoxExtractor {
         };
     }
 
-    static calculateCenterPoint(boundingBox: Area): vec2 {
+    static calculateCenterPoint(boundingBox: Area): vec2arr {
         const middlex = (boundingBox.start.x + boundingBox.end.x) / 2;
         const middley = (boundingBox.start.y + boundingBox.end.y) / 2;
-        return { x: ~~middlex, y: ~~middley };
+        return [~~middlex, ~~middley];
     }
 }

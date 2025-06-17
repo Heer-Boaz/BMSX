@@ -9,7 +9,7 @@ import { GameObject } from '../gameobject';
 import { excludeclassfromsavegame } from '../gameserializer';
 import { Msx1Colors } from '../msx';
 import { Registry } from '../registry';
-import type { vec2 } from '../rompack';
+import type { vec2, vec3arr } from '../rompack';
 import { SpriteObject } from '../sprite';
 import { Color } from '../view';
 import { createObjectTableElement } from './objectpropertydialog';
@@ -66,14 +66,15 @@ export class HitBoxVisualizer extends Component {
     override preprocessingUpdate(): void {
         const parent = this.parent as SpriteObject;
         if (parent.hitbox) {
-            $.view.drawRectangle({ area: { ...parent.hitbox, start: { ...parent.hitbox.start, z: parent.z } }, color: { ...Msx1Colors[5], a: 0.7 } });
+            $.view.drawRectangle({ area: { ...parent.hitbox, start: { ...parent.hitbox.start, z: parent.z } }, color: { ...Msx1Colors[5], a: 0.5 } });
         }
 
         // Draw polygons if available on the GameObject
         if (parent.hasHitPolygon) {
             for (const poly of parent.hitpolygon) {
                 // Offset polygon by parent position and z
-                $.view.drawPolygon(poly, { ...Msx1Colors[2], a: 0.7 }, 2);
+                const poly3: vec3arr[] = poly.map(p => [p[0], p[1], parent.z]);
+                $.view.drawPolygon(poly3, { ...Msx1Colors[2], a: 0.5 }, 1);
             }
         }
 
@@ -389,9 +390,6 @@ function addContent(parent: HTMLElement, type: string, content: string | null, d
     parent.appendChild(element);
     return element;
 }
-
-const OBJECT_TABLE_PROPS_TO_REDIRECT_NAMES = ['state', 'objects', 'spaces'];
-const OBJECT_TABLE_REDIRECT_BY_INNER_OBJECT = true;
 
 export function handleOpenObjectMenu(e: UIEvent | null, previous?: HTMLElement): void {
     if (e && e.type !== 'keydown') return;

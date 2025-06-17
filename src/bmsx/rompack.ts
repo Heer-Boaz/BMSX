@@ -4,6 +4,18 @@
 export type AudioType = 'sfx' | 'music';
 
 /**
+ * Alternative representation of a 2D vector as an array.
+ * Example: [x, y]
+ */
+export type vec2arr = [number, number] | [number, number, number];
+
+/**
+ * Alternative representation of a 2D vector as an array.
+ * Example: [x, y, z]
+ */
+export type vec3arr = [number, number, number];
+
+/**
  * Represents a 2D vector.
  */
 export interface vec2 {
@@ -42,7 +54,7 @@ export interface Area {
 	end: Vector;
 }
 
-export type Polygon = vec2[][];
+export type Polygon = vec2arr[][];
 
 /**
  * Metadata for an audio asset.
@@ -80,7 +92,7 @@ export interface ImgMeta {
 	texcoords_flipv?: number[]; // The texture coordinates for the image, when flipped vertically.
 	texcoords_fliphv?: number[]; // The texture coordinates for the image, when flipped both horizontally and vertically.
 	boundingbox?: BoundingBoxPrecalc; // The bounding box of the image. Used for collision detection.
-	centerpoint?: vec2; // The center point of the image, based on the bounding box.
+	centerpoint?: vec2arr; // The center point of the image, based on the bounding box.
 	hitpolygons?: HitPolygonsPrecalc; // The concave hull polygons for collision detection, with flipped variants.
 }
 

@@ -128,8 +128,9 @@ export abstract class Fighter extends SpriteObject {
                 if (opponent.isJumping) { return null; }
                 break;
         }
-
-        return this.getCollisionCentroid(opponent);
+        const centroid = this.getCollisionCentroid(opponent);
+        if (!centroid) return null;
+        return { x: centroid[0], y: centroid[1] };
     }
 
     public handleHittingOpponent(attackType: AttackType, _opponent: Fighter, hitVec2: vec2) {
