@@ -7,7 +7,7 @@ import * as contrib from 'blessed-contrib';
 import * as fs from 'fs/promises';
 import * as pako from 'pako';
 import { PNG } from 'pngjs';
-import type { AudioMeta, ImgMeta, RomAsset } from '../src/bmsx/rompack';
+import type { AudioMeta, ImgMeta } from '../src/bmsx/rompack';
 
 function byteSizeToString(size: number): string {
     if (size < 1024) return `${size} B`;
@@ -507,7 +507,7 @@ async function main() {
 
     // Use table.rows for selection events (works for both mouse and keyboard)
     (table as any).rows.on('select', (item, idx) => {
-        const selected = assetList[idx] as RomAsset;
+        const selected = assetList[idx];
         const imgmeta = selected.imgmeta || {} as ImgMeta;
         const audiometa = selected.audiometa || {} as AudioMeta;
         const bufferSize = selected.end - selected.start;
@@ -548,15 +548,6 @@ async function main() {
         // Show image/audio specific metadata
         switch (selected.type) {
             case 'image':
-                if (imgmeta.atlassed) metadataLines.push(`Atlassed: Yes (${imgmeta.atlasid})`);
-                else metadataLines.push(`Atlassed: No`);
-                if (imgmeta.width) metadataLines.push(`Width: ${imgmeta.width} `);
-                if (imgmeta.height) metadataLines.push(`Height: ${imgmeta.height} `);
-                // Only show Atlas ID for images
-                if (imgmeta.atlasid !== undefined && selected.type === 'image') metadataLines.push(`Atlas ID: ${imgmeta.atlasid} `);
-                for (const [key, value] of Object.entries(imgmeta)) {
-                    metadataLines.push(`${key}: ${JSON.stringify(value)}`);
-                }
                 if (imgmeta.atlassed && imgmeta.texcoords) {
                     const atlasName = imgmeta.atlasid === 0 ? '_atlas' : `_atlas${imgmeta.atlasid} `;
                     const atlasAsset = assetList.find(a => a.resname === atlasName && a.type === 'image');
@@ -565,35 +556,96 @@ async function main() {
                             ? Buffer.from(atlasAsset.buffer)
                             : Buffer.from(rompack.slice(atlasAsset.start, atlasAsset.end));
                         try {
-                            const atlasPng = PNG.sync.read(atlasBuf);
-                            const [sx, sy, sw, sh] = imgmeta.texcoords as number[];
-                            // Convert normalized texcoords to pixel dimensions
-                            let width = Math.floor(sw * atlasPng.width);
-                            let height = Math.floor(sh * atlasPng.height);
-                            const asciiChars = ' .:-=+*#%@';
+                            const atlasPng = PNG.sync.read(atlasBuf); // TODO: handle png not part of atlas
+
                             // const modalWidth = typeof modal.width === 'number' ? modal.width : 80;
-                            const modalWidth = 80;
-                            const outW = Math.min(80, modalWidth - 8, width); // Clamp to modal width
-                            const outH = Math.floor(height * (outW / width));
-                            for (let y = 0; y < outH; y++) {
-                                let line = '';
-                                for (let x = 0; x < outW; x++) {
-                                    const px = Math.floor(x * width / outW);
-                                    const py = Math.floor(y * height / outH);
-                                    const idx4 = (py * width + px) << 2;
-                                    const r = atlasPng.data[idx4], g = atlasPng.data[idx4 + 1], b = atlasPng.data[idx4 + 2], a = atlasPng.data[idx4 + 3];
-                                    const lum = a === 0 ? 255 : (r * 0.299 + g * 0.587 + b * 0.114);
-                                    const ch = asciiChars[Math.floor(lum / 256 * asciiChars.length)] || ' ';
-                                    // Use blessed color tag for foreground
-                                    line += `{#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}-fg}${ch}{/}`;
+                            // ASCII-art generator with correct scoping
+                            const asciiRamp = "$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/\\|()1{}[]?-_+~<>i!lI;:,\"^`'. ";
+                            const rampLen = asciiRamp.length;
+                            // const modalWidth = typeof modal.width === 'number' ? modal.width : 80;
+                            const modalWidth = 80; // Fixed width for simplicity
+                            let imgBuf, imgW, imgH, offsetX = 0, offsetY = 0;
+                            imgBuf = atlasPng.data;
+                            if (imgmeta.atlassed && imgmeta.texcoords) {
+                                // Suppose imgmeta.texcoords has 12 floats: 6 vertices in clip space (x,y).
+                                const coords = imgmeta.texcoords as number[]; // e.g. [-1, -1, 1, -1, …]
+                                const xs = [coords[0], coords[2], coords[4], coords[6], coords[8], coords[10]];
+                                const ys = [coords[1], coords[3], coords[5], coords[7], coords[9], coords[11]];
+
+                                const minX = Math.min(...xs), maxX = Math.max(...xs);
+                                const minY = Math.min(...ys), maxY = Math.max(...ys);
+
+                                // Convert from clip space (−1..1) to 0..1 space:
+                                const sx = minX;
+                                const sy = minY;
+                                const rx = maxX;
+                                const by = maxY;
+
+                                // Then compute your region for ASCII art:
+                                offsetX = Math.floor(sx * atlasPng.width);
+                                offsetY = Math.floor(sy * atlasPng.height);
+                                imgW = Math.ceil((rx - sx) * atlasPng.width);
+                                imgH = Math.ceil((by - sy) * atlasPng.height);
+                                asciiArt += `${offsetX},${offsetY} (${imgW}x${imgH}), ${sx},${sy} to ${rx},${by}\n`;
+                            }
+                            else if (atlasPng) { // If not atlassed, use the full PNG
+                                imgW = atlasPng.width;
+                                imgH = atlasPng.height;
+                            }
+                            if (imgBuf && imgW && imgH) {
+                                const aspect = imgH / imgW;
+                                const outW = Math.min(80, modalWidth - 8, Math.floor(imgW / 2));
+                                const outH = Math.floor(outW * aspect);
+                                for (let y = 0; y < outH; y++) {
+                                    let line = '';
+                                    for (let x = 0; x < outW; x++) {
+                                        let sum = 0, count = 0, rsum = 0, gsum = 0, bsum = 0;
+                                        let bitmask = 0;
+                                        for (let dy = 0; dy < 2; dy++) {
+                                            for (let dx = 0; dx < 2; dx++) {
+                                                const px = Math.min(atlasPng.width - 1, offsetX + x * 2 + dx);
+                                                const py = Math.min(atlasPng.height - 1, offsetY + y * 2 + dy);
+                                                if (px < 0 || py < 0 || px >= atlasPng.width || py >= atlasPng.height) continue;
+
+                                                const idx4 = (py * atlasPng.width + px) << 2;
+                                                const r = imgBuf[idx4], g = imgBuf[idx4 + 1], b = imgBuf[idx4 + 2], a = imgBuf[idx4 + 3];
+                                                const lum = a === 0 ? 255 : (r * 0.299 + g * 0.587 + b * 0.114);
+                                                sum += lum; rsum += r; gsum += g; bsum += b; count++;
+                                                if (lum < 128) bitmask |= (1 << (dy * 2 + dx));
+                                            }
+                                        }
+                                        const avgLum = sum / count;
+                                        const rampIdx = Math.floor((avgLum / 255) * (rampLen - 1));
+                                        let ch = asciiRamp[rampIdx];
+                                        // Override by shape if desired
+                                        switch (bitmask) {
+                                            case 3: ch = '\u2584'; break; // lower half
+                                            case 12: ch = '\u2580'; break; // upper half
+                                            case 5: ch = '\u2590'; break; // right half
+                                            case 10: ch = '\u258C'; break; // left half
+                                            case 15: ch = '\u2588'; break; // full block
+                                            // add more shape cases if wanted
+                                        }
+                                        const r = Math.round(rsum / count), g = Math.round(gsum / count), b = Math.round(bsum / count);
+                                        line += `{#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}-fg}${ch}{/}`;
+                                    }
+                                    asciiArt += line + '\n';
                                 }
-                                asciiArt += line + '\n';
                             }
                         } catch {
                             asciiArt = '[Failed to decode atlas PNG]';
                         }
                     } else {
                         asciiArt = '[Atlas asset not found]';
+                    }
+                    if (imgmeta.atlassed) metadataLines.push(`Atlassed: Yes (${imgmeta.atlasid})`);
+                    else metadataLines.push(`Atlassed: No`);
+                    if (imgmeta.width) metadataLines.push(`Width: ${imgmeta.width} `);
+                    if (imgmeta.height) metadataLines.push(`Height: ${imgmeta.height} `);
+                    // Only show Atlas ID for images
+                    if (imgmeta.atlasid !== undefined && selected.type === 'image') metadataLines.push(`Atlas ID: ${imgmeta.atlasid} `);
+                    for (const [key, value] of Object.entries(imgmeta)) {
+                        metadataLines.push(`${key}: ${JSON.stringify(value)}`);
                     }
                 } else {
                     try {
@@ -656,7 +708,7 @@ async function main() {
             width: '80%', height: 'shrink',
             border: 'line', style: { border: { fg: 'yellow' }, bg: 'black' },
             label: `Asset: ${selected.resname} `,
-            content: metadataLines.join('\n') + (asciiArt ? ('\n' + asciiArt) : '') + '\nPress any key to close...',
+            content: asciiArt + metadataLines.join('\n') + '\n' + '\nPress any key to close...',
             tags: true, scrollable: true, alwaysScroll: true, keys: true, mouse: true,
             scrollbar: { ch: ' ', track: { bg: 'grey' }, style: { bg: 'yellow' } }
         });
