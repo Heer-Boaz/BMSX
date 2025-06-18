@@ -560,10 +560,7 @@ async function main() {
 
                             // const modalWidth = typeof modal.width === 'number' ? modal.width : 80;
                             // ASCII-art generator with correct scoping
-                            const asciiRamp = "$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/\\|()1{}[]?-_+~<>i!lI;:,\"^`'. ";
-                            const rampLen = asciiRamp.length;
-                            // const modalWidth = typeof modal.width === 'number' ? modal.width : 80;
-                            const modalWidth = 80; // Fixed width for simplicity
+                            const modalWidth = 120; // Fixed width for simplicity
                             let imgBuf, imgW, imgH, offsetX = 0, offsetY = 0;
                             imgBuf = atlasPng.data;
                             if (imgmeta.atlassed && imgmeta.texcoords) {
@@ -593,43 +590,84 @@ async function main() {
                                 imgH = atlasPng.height;
                             }
                             if (imgBuf && imgW && imgH) {
-                                const aspect = imgH / imgW;
-                                const outW = Math.min(80, modalWidth - 8, Math.floor(imgW / 2));
-                                const outH = Math.floor(outW * aspect);
-                                for (let y = 0; y < outH; y++) {
-                                    let line = '';
-                                    for (let x = 0; x < outW; x++) {
-                                        let sum = 0, count = 0, rsum = 0, gsum = 0, bsum = 0;
-                                        let bitmask = 0;
-                                        for (let dy = 0; dy < 2; dy++) {
-                                            for (let dx = 0; dx < 2; dx++) {
-                                                const px = Math.min(atlasPng.width - 1, offsetX + x * 2 + dx);
-                                                const py = Math.min(atlasPng.height - 1, offsetY + y * 2 + dy);
-                                                if (px < 0 || py < 0 || px >= atlasPng.width || py >= atlasPng.height) continue;
+                                // … inside your image‐case, after imgW,imgH,offsetX,offsetY are set …
 
+                                const smallThreshold = 64;    // sprites ≤64×64 get per-pixel rendering
+
+                                if (imgBuf && imgW && imgH) {
+                                    if (imgW <= smallThreshold && imgH <= smallThreshold) {
+                                        // pixel-perfect: each image pixel = one cell with background color
+                                        for (let y = 0; y < imgH; y++) {
+                                            let line = '';
+                                            for (let x = 0; x < imgW; x++) {
+                                                const px = offsetX + x;
+                                                const py = offsetY + y;
                                                 const idx4 = (py * atlasPng.width + px) << 2;
-                                                const r = imgBuf[idx4], g = imgBuf[idx4 + 1], b = imgBuf[idx4 + 2], a = imgBuf[idx4 + 3];
-                                                const lum = a === 0 ? 255 : (r * 0.299 + g * 0.587 + b * 0.114);
-                                                sum += lum; rsum += r; gsum += g; bsum += b; count++;
-                                                if (lum < 128) bitmask |= (1 << (dy * 2 + dx));
+                                                const r = imgBuf[idx4], g = imgBuf[idx4 + 1], b = imgBuf[idx4 + 2];
+                                                // render a space with that background
+                                                line += `{#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}-bg} {/}`;
                                             }
+                                            asciiArt += line + '\n';
                                         }
-                                        const avgLum = sum / count;
-                                        const rampIdx = Math.floor((avgLum / 255) * (rampLen - 1));
-                                        let ch = asciiRamp[rampIdx];
-                                        // Override by shape if desired
-                                        switch (bitmask) {
-                                            case 3: ch = '\u2584'; break; // lower half
-                                            case 12: ch = '\u2580'; break; // upper half
-                                            case 5: ch = '\u2590'; break; // right half
-                                            case 10: ch = '\u258C'; break; // left half
-                                            case 15: ch = '\u2588'; break; // full block
-                                            // add more shape cases if wanted
+                                    } else {
+                                        // braille 2×4 subpixel rendering
+                                        // … inside your “else { // braille 2×4 subpixel rendering” branch …
+
+                                        const outW = Math.min(modalWidth - 8, Math.floor(imgW / 2));
+                                        const outH = Math.min(Math.floor(imgH / 4), Math.floor(outW * (imgH / imgW) / 2));
+                                        const BRAILLE_BASE = 0x2800;
+
+                                        for (let y = 0; y < outH; y++) {
+                                            let line = '';
+                                            for (let x = 0; x < outW; x++) {
+                                                let bitmask = 0;
+                                                let darkR = 0, darkG = 0, darkB = 0, darkCount = 0;
+                                                let brightR = 0, brightG = 0, brightB = 0, brightCount = 0;
+
+                                                // sample a 2×4 block
+                                                for (let dy = 0; dy < 4; dy++) {
+                                                    for (let dx = 0; dx < 2; dx++) {
+                                                        const relX = Math.min(imgW - 1, x * 2 + dx);
+                                                        const relY = Math.min(imgH - 1, y * 4 + dy);
+                                                        const px = offsetX + relX;
+                                                        const py = offsetY + relY;
+                                                        const idx4 = (py * atlasPng.width + px) << 2;
+                                                        const r = imgBuf[idx4], g = imgBuf[idx4 + 1], b = imgBuf[idx4 + 2], a = imgBuf[idx4 + 3];
+                                                        const lum = a === 0 ? 255 : (0.299 * r + 0.587 * g + 0.114 * b);
+
+                                                        if (lum < 128) {
+                                                            // dot
+                                                            bitmask |= 1 << (dx * 4 + dy);
+                                                            darkR += r; darkG += g; darkB += b; darkCount++;
+                                                        } else {
+                                                            // background
+                                                            brightR += r; brightG += g; brightB += b; brightCount++;
+                                                        }
+                                                    }
+                                                }
+
+                                                // compute avg colors (fallback to black/white)
+                                                // … inside your “braille 2×4 subpixel rendering” loop …
+
+                                                // compute avg colors (omit white-bg fallback)
+                                                const fgTag = darkCount
+                                                    ? `#${Math.round(darkR / darkCount).toString(16).padStart(2, '0')}` +
+                                                    `${Math.round(darkG / darkCount).toString(16).padStart(2, '0')}` +
+                                                    `${Math.round(darkB / darkCount).toString(16).padStart(2, '0')}-fg`
+                                                    : 'black-fg';
+
+                                                const bgTag = brightCount
+                                                    ? `#${Math.round(brightR / brightCount).toString(16).padStart(2, '0')}` +
+                                                    `${Math.round(brightG / brightCount).toString(16).padStart(2, '0')}` +
+                                                    `${Math.round(brightB / brightCount).toString(16).padStart(2, '0')}-bg`
+                                                    : '';  // <<< no white-bg fallback
+
+                                                const ch = String.fromCharCode(BRAILLE_BASE + bitmask);
+                                                line += `${bgTag ? `{${bgTag}}` : ''}{${fgTag}}${ch}{/}`;
+                                            }
+                                            asciiArt += line + '\n';
                                         }
-                                        const r = Math.round(rsum / count), g = Math.round(gsum / count), b = Math.round(bsum / count);
-                                        line += `{#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}-fg}${ch}{/}`;
                                     }
-                                    asciiArt += line + '\n';
                                 }
                             }
                         } catch {
