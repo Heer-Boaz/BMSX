@@ -569,18 +569,21 @@ async function main() {
                             let width = Math.floor(sw * atlasPng.width);
                             let height = Math.floor(sh * atlasPng.height);
                             const asciiChars = ' .:-=+*#%@';
-                            const outW = Math.min(48, sw);
-                            const outH = Math.floor(sh * (outW / sw));
+                            // const modalWidth = typeof modal.width === 'number' ? modal.width : 80;
+                            const modalWidth = 80;
+                            const outW = Math.min(80, modalWidth - 8, width); // Clamp to modal width
+                            const outH = Math.floor(height * (outW / width));
                             for (let y = 0; y < outH; y++) {
                                 let line = '';
                                 for (let x = 0; x < outW; x++) {
-                                    const px = Math.floor(sx + x * sw / outW);
-                                    const py = Math.floor(sy + y * sh / outH);
-                                    const idx4 = (py * atlasPng.width + px) << 2;
+                                    const px = Math.floor(x * width / outW);
+                                    const py = Math.floor(y * height / outH);
+                                    const idx4 = (py * width + px) << 2;
                                     const r = atlasPng.data[idx4], g = atlasPng.data[idx4 + 1], b = atlasPng.data[idx4 + 2], a = atlasPng.data[idx4 + 3];
                                     const lum = a === 0 ? 255 : (r * 0.299 + g * 0.587 + b * 0.114);
-                                    const ch = asciiChars[Math.floor(lum / 256 * (asciiChars?.length ?? 0))] || ' ';
-                                    line += ch;
+                                    const ch = asciiChars[Math.floor(lum / 256 * asciiChars.length)] || ' ';
+                                    // Use blessed color tag for foreground
+                                    line += `{#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}-fg}${ch}{/}`;
                                 }
                                 asciiArt += line + '\n';
                             }
