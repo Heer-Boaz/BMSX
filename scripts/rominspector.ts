@@ -9,6 +9,8 @@ import * as pako from 'pako';
 import { PNG } from 'pngjs';
 import type { AudioMeta, ImgMeta } from '../src/bmsx/rompack';
 
+let modal: blessed.Widgets.BoxElement | null = null;
+
 function byteSizeToString(size: number): string {
     if (size < 1024) return `${size} B`;
     if (size < 1024 * 1024) return `${(size / 1024).toFixed(2)} KB`;
@@ -514,6 +516,17 @@ async function main() {
         let asciiArt = '';
         const metadataLines = [];
 
+        modal = blessed.box({
+            parent: screen,
+            top: 'center', left: 'center',
+            width: '80%', height: '80%',
+            border: 'line', style: { border: { fg: 'yellow' }, bg: 'black' },
+            label: `Asset: ${selected.resname} `,
+            tags: true, scrollable: true, alwaysScroll: true, keys: true, mouse: true, draggable: true,
+            vi: true, input: true, // Enable vi-style keybindings
+            scrollbar: { ch: '|', track: { bg: 'grey' }, style: { bg: 'yellow' } }
+        });
+
         // Show generic metadata details
         metadataLines.push(`Name: ${selected.resname} # ID: ${selected.resid} # Type: ${selected.type}`);
         if (bufferSize !== undefined) metadataLines.push(`Buffer: ${selected.start} - ${selected.end} (${byteSizeToString(bufferSize)})`);
@@ -529,8 +542,8 @@ async function main() {
 
         // Enhanced ASCII bar showing asset and metabuffer regions within total ROM
         if (bufferSize !== undefined) {
-            const termWidth = typeof screen.width === 'number' ? screen.width : 120;
-            const barLength = getBarLength(termWidth * 0.8);
+            // const termWidth = typeof screen.width === 'number' ? screen.width : 120;
+            const barLength = getBarLength(modal?.width as number);
             const total = rompack.length;
             // Compose regions for this asset: asset, metabuffer, global metadata
             const regions = [];
@@ -555,12 +568,12 @@ async function main() {
                         const atlasBuf = atlasAsset.buffer instanceof Uint8Array
                             ? Buffer.from(atlasAsset.buffer)
                             : Buffer.from(rompack.slice(atlasAsset.start, atlasAsset.end));
+                        const modalWidth = (modal?.width ?? 80) as number;
+
                         try {
                             const atlasPng = PNG.sync.read(atlasBuf); // TODO: handle png not part of atlas
-
                             // const modalWidth = typeof modal.width === 'number' ? modal.width : 80;
                             // ASCII-art generator with correct scoping
-                            const modalWidth = 120; // Fixed width for simplicity
                             let imgBuf, imgW, imgH, offsetX = 0, offsetY = 0;
                             imgBuf = atlasPng.data;
                             if (imgmeta.atlassed && imgmeta.texcoords) {
@@ -602,9 +615,14 @@ async function main() {
                                                 const px = offsetX + x;
                                                 const py = offsetY + y;
                                                 const idx4 = (py * atlasPng.width + px) << 2;
-                                                const r = imgBuf[idx4], g = imgBuf[idx4 + 1], b = imgBuf[idx4 + 2];
-                                                // render a space with that background
-                                                line += `{#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}-bg} {/}`;
+                                                const r = imgBuf[idx4], g = imgBuf[idx4 + 1], b = imgBuf[idx4 + 2], a = imgBuf[idx4 + 3];
+                                                if (a < 64) {
+                                                    // transparent pixel, render as space
+                                                    line += ' ';
+                                                }
+                                                else {
+                                                    line += `{#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}-bg} {/}`;
+                                                }
                                             }
                                             asciiArt += line + '\n';
                                         }
@@ -615,6 +633,10 @@ async function main() {
                                         const outW = Math.min(modalWidth - 8, Math.floor(imgW / 2));
                                         const outH = Math.min(Math.floor(imgH / 4), Math.floor(outW * (imgH / imgW) / 2));
                                         const BRAILLE_BASE = 0x2800;
+                                        const brailleMap = [
+                                            [0, 1, 2, 5], // col=0 => bits for rows 0..3
+                                            [3, 4, 6, 7]  // col=1 => bits for rows 0..3
+                                        ];
 
                                         for (let y = 0; y < outH; y++) {
                                             let line = '';
@@ -634,13 +656,13 @@ async function main() {
                                                         const r = imgBuf[idx4], g = imgBuf[idx4 + 1], b = imgBuf[idx4 + 2], a = imgBuf[idx4 + 3];
                                                         const lum = a === 0 ? 255 : (0.299 * r + 0.587 * g + 0.114 * b);
 
-                                                        if (lum < 128) {
-                                                            // dot
-                                                            bitmask |= 1 << (dx * 4 + dy);
-                                                            darkR += r; darkG += g; darkB += b; darkCount++;
-                                                        } else {
-                                                            // background
+                                                        if (lum < 32) {
+                                                            // Force these pixels to be treated as background => no braille dot (space)
                                                             brightR += r; brightG += g; brightB += b; brightCount++;
+                                                        }
+                                                        else {
+                                                            bitmask |= 1 << brailleMap[dx][dy];
+                                                            darkR += r; darkG += g; darkB += b; darkCount++;
                                                         }
                                                     }
                                                 }
@@ -669,8 +691,8 @@ async function main() {
                                     }
                                 }
                             }
-                        } catch {
-                            asciiArt = '[Failed to decode atlas PNG]';
+                        } catch (e: any) {
+                            asciiArt = `Failed to decode atlas PNG: ${e.message}\n`;
                         }
                     } else {
                         asciiArt = '[Atlas asset not found]';
@@ -735,16 +757,7 @@ async function main() {
                 break;
         }
         metadataLines.push('');
-        const modal = blessed.box({
-            parent: screen,
-            top: 'center', left: 'center',
-            width: '80%', height: 'shrink',
-            border: 'line', style: { border: { fg: 'yellow' }, bg: 'black' },
-            label: `Asset: ${selected.resname} `,
-            content: asciiArt + metadataLines.join('\n') + '\n' + '\nPress any key to close...',
-            tags: true, scrollable: true, alwaysScroll: true, keys: true, mouse: true,
-            scrollbar: { ch: ' ', track: { bg: 'grey' }, style: { bg: 'yellow' } }
-        });
+        modal.content = asciiArt + metadataLines.join('\n') + '\n' + '\nPress any key to close...';
         modal.focus();
         let ignoreFirstKeypress = true;
         modal.on('keypress', (ch, key) => {
@@ -756,6 +769,7 @@ async function main() {
                 return;
             }
             modal.destroy();
+            modal = null; // Clear modal reference
             screen.render();
         });
         screen.render();
