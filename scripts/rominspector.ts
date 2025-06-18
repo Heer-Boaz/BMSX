@@ -96,14 +96,16 @@ async function main() {
         process.exit(1);
     }
     let raw: Buffer
+    let error: any;
     try {
         raw = await fs.readFile(romfile);
     }
-    catch {
+    catch (e: any) {
+        error = e;
     }
     // Check whether the file exists
     if (!raw) {
-        console.error(`Failed to read ROM file at "${romfile}"`);
+        console.error(`Failed to read ROM file at "${romfile}": ${error?.message || 'Unknown error'}`);
         process.exit(1);
     }
     function isPakoCompressed(raw: Uint8Array): boolean {
