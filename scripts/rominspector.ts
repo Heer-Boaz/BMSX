@@ -581,9 +581,8 @@ async function main() {
                                 // Then compute your region for ASCII art:
                                 offsetX = Math.floor(sx * atlasPng.width);
                                 offsetY = Math.floor(sy * atlasPng.height);
-                                imgW = Math.ceil((rx - sx) * atlasPng.width);
-                                imgH = Math.ceil((by - sy) * atlasPng.height);
-                                asciiArt += `${offsetX},${offsetY} (${imgW}x${imgH}), ${sx},${sy} to ${rx},${by}\n`;
+                                imgW = Math.floor((rx - sx) * atlasPng.width);
+                                imgH = Math.floor((by - sy) * atlasPng.height);
                             }
                             else if (atlasPng) { // If not atlassed, use the full PNG
                                 imgW = atlasPng.width;
@@ -676,12 +675,8 @@ async function main() {
                     } else {
                         asciiArt = '[Atlas asset not found]';
                     }
-                    if (imgmeta.atlassed) metadataLines.push(`Atlassed: Yes (${imgmeta.atlasid})`);
-                    else metadataLines.push(`Atlassed: No`);
-                    if (imgmeta.width) metadataLines.push(`Width: ${imgmeta.width} `);
-                    if (imgmeta.height) metadataLines.push(`Height: ${imgmeta.height} `);
+                    if (imgmeta.width) metadataLines.push(`Size: ${imgmeta.width}x${imgmeta.height} `);
                     // Only show Atlas ID for images
-                    if (imgmeta.atlasid !== undefined && selected.type === 'image') metadataLines.push(`Atlas ID: ${imgmeta.atlasid} `);
                     for (const [key, value] of Object.entries(imgmeta)) {
                         metadataLines.push(`${key}: ${JSON.stringify(value)}`);
                     }
