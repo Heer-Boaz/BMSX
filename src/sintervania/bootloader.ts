@@ -1,13 +1,13 @@
-import type { RomPack } from '../bmsx/rompack';
-import { Game, game, model, controller } from '../bmsx/bmsx';
-import { GameConstants } from './gameconstants';
-import { Model, Chapter } from './gamemodel';
-import { Controller } from './gamecontroller';
-import { GameView } from './gameview';
+import { controller, Game, game, model } from '../bmsx/bmsx';
 import { setPoint } from '../bmsx/common';
 import { Tile } from '../bmsx/msx';
+import type { RomPack } from '../bmsx/rompack';
+import { GameConstants } from './gameconstants';
+import { Controller } from './gamecontroller';
+import { Chapter, Model } from './gamemodel';
+import { GameView } from './gameview';
 
-var _global = window || global;
+var _global = window || globalThis;
 _global['h406A'] = (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode): void => {
     let _model = new Model();
     let _view = new GameView({ x: GameConstants.ViewportWidth, y: GameConstants.ViewportHeight });

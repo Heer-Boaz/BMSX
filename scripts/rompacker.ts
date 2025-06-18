@@ -1008,13 +1008,13 @@ async function buildBootromScriptIfNewer(progress?: ProgressReporter): Promise<v
 		try {
 			await build({
 				entryPoints: [romTsPath],
-				bundle: false, // Set to true if you want to bundle dependencies
+				bundle: true,
 				minify: true,
 				sourcemap: false,
-				platform: 'browser', // or 'node' if you want node output
+				platform: 'browser',
 				target: 'es2020',
+				format: 'iife',
 				outfile: romJsPath,
-				// loader: { '.ts': 'ts' }
 			});
 			await progress?.taskCompleted();
 		} catch (e) {

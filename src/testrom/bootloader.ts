@@ -5,7 +5,7 @@ var _game: Game;
 let _model: gamemodel;
 var _view: gameview;
 
-const _global = window || global;
+const _global = window || globalThis;
 
 _global['h406A'] = (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode, debug: boolean = false): void => {
     _model = new gamemodel();

@@ -850,7 +850,7 @@ class viewclass extends GLView {
 
 let _model: modelclass;
 
-var _global = window || global;
+var _global = window || globalThis;
 _global['h406A'] = (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode): void => {
     let _view = new viewclass(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
     _model = new modelclass();

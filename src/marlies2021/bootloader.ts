@@ -1,16 +1,16 @@
-import type { RomPack } from '../bmsx/rompack';
-import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
+import { BaseModel, Space } from '../bmsx/basemodel';
+import { build_fsm, sdef, State } from '../bmsx/bfsm';
+import { BFont, Direction, Game, new_area, new_vec2, randomInt, vec2 } from '../bmsx/bmsx';
+import { GameObject } from '../bmsx/gameobject';
 import { GLView } from '../bmsx/glview';
-import { BitmapId } from './resourceids';
 import { Input } from '../bmsx/input';
+import { MSX1ScreenHeight, MSX1ScreenWidth } from '../bmsx/msx';
+import type { RomPack } from '../bmsx/rompack';
+import { SpriteObject } from '../bmsx/sprite';
 import { TextWriter } from '../bmsx/textwriter';
 import { DrawImgFlags, paintSprite } from '../bmsx/view';
 import { GameMenu } from './gamemenu';
-import { build_fsm, sdef, State } from '../bmsx/bfsm';
-import { Direction, new_area, new_vec2, vec2, new_vec2, randomInt, Game, BFont } from '../bmsx/bmsx';
-import { GameObject } from '../bmsx/gameobject';
-import { BaseModel, Space } from '../bmsx/basemodel';
-import { SpriteObject } from '../bmsx/sprite';
+import { BitmapId } from './resourceids';
 
 // https://drive.google.com/file/d/1vyCxVBeMr89pQdUBCUcDjW6W2ImA6q2j/view?usp=sharing
 
@@ -587,7 +587,7 @@ class viewclass extends GLView {
 
 let _model: modelclass;
 
-var _global = window || global;
+var _global = window || globalThis;
 _global['h406A'] = (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode): void => {
     let _view = new viewclass(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
     _model = new modelclass();

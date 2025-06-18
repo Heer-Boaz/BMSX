@@ -1,7 +1,25 @@
+import { decodeBinary } from '../src/bmsx/binencoder';
 import type { AudioMeta, ImgMeta, RomAsset, RomMeta, RomPack } from '../src/bmsx/rompack';
 
-if (typeof global === "undefined") {
-	var global = window;
+declare global {
+	interface Window {
+		getRomNameFromUrlParameter: () => string;
+		getRomFromUrlParameter: () => string;
+		bootrom: {
+			rom: RomPack | null;
+			debug: boolean;
+			romname: string | undefined;
+			sndcontext: AudioContext | null;
+			snd_unlocked: boolean;
+			gainnode: GainNode | null;
+			theshowsover: boolean;
+			set defusr(rom: RomPack);
+			usr: (x: number) => number;
+			bload: (url: string) => Promise<RomPack | null>;
+			outputError: (errormsg: string) => void;
+			resizeHandler: () => void;
+		};
+	}
 }
 
 /**
@@ -56,7 +74,6 @@ const bootrom = {
 	/**
 	 * Sets the boot ROM pack.
 	 * @param {RomPack} rom - The boot ROM pack.
-	 * @returns {void}
 	 */
 	set defusr(rom: RomPack) {
 		bootrom.rom = rom;
@@ -206,14 +223,17 @@ const bootrom = {
 	},
 };
 
-function getRomFromUrlParameter(): string {
-	const rom = getParameterByName('rom');
-	return rom && rom !== '' ? rom : null;
-}
+if (typeof globalThis !== 'undefined') {
+	globalThis.bootrom = bootrom;
+	globalThis.getRomFromUrlParameter = (): string => {
+		const rom = getParameterByName('rom');
+		return rom && rom !== '' ? rom : null;
+	}
 
-function getRomNameFromUrlParameter(): string {
-	const rom_name = getParameterByName('romname');
-	return rom_name && rom_name !== '' ? rom_name : null;
+	globalThis.getRomNameFromUrlParameter = (): string => {
+		const rom_name = getParameterByName('romname');
+		return rom_name && rom_name !== '' ? rom_name : null;
+	}
 }
 
 function getParameterByName(name, url = window.location.href) {
@@ -530,7 +550,7 @@ function decodeuint8arr(to_decode: Uint8Array): string {
  * @returns A promise that resolves to the fetched text content.
  * @throws If there is an error while fetching the text.
  */
-async function fetchText(url: string): Promise<string> {
+export async function fetchText(url: string): Promise<string> {
 	try {
 		const response = await fetch(url, {
 			headers: {
@@ -636,77 +656,4 @@ function createAudioContext(): void {
 	}
 
 	bootrom.sndcontext = context;
-}
-
-// Standalone minimal decodeBinary for bootrom (property table version)
-function decodeBinary(buf) {
-	const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-	let offset = 0;
-	const textDecoder = new TextDecoder();
-	function readUint8() { return dv.getUint8(offset++); }
-	function readVarUint() {
-		let val = 0, shift = 0, b;
-		do {
-			b = buf[offset++];
-			val |= (b & 0x7F) << shift;
-			shift += 7;
-		} while (b & 0x80);
-		return val;
-	}
-	function readString() {
-		const len = readVarUint();
-		const arr = buf.subarray(offset, offset + len);
-		offset += len;
-		return textDecoder.decode(arr);
-	}
-	// --- Read property table ---
-	const version = readUint8();
-	if (version !== 0xA1) throw new Error('decodeBinary: unknown version');
-	const propCount = readVarUint();
-	const propNames = [];
-	for (let i = 0; i < propCount; ++i) propNames.push(readString());
-	function read() {
-		const tag = readUint8();
-		switch (tag) {
-			case 0: return null;
-			case 1: return true;
-			case 2: return false;
-			case 3: {
-				const v = dv.getFloat64(offset, true);
-				offset += 8;
-				return v;
-			}
-			case 4: return readString();
-			case 5: {
-				const len = readVarUint();
-				const arr = new Array(len);
-				for (let i = 0; i < len; ++i) arr[i] = read();
-				return arr;
-			}
-			case 6: {
-				const ref = readVarUint();
-				return { r: ref };
-			}
-			case 7: {
-				const len = readVarUint();
-				const obj = {};
-				for (let i = 0; i < len; ++i) {
-					const propId = readVarUint();
-					const k = propNames[propId];
-					obj[k] = read();
-				}
-				return obj;
-			}
-			case 8: {
-				const len = readVarUint();
-				const arr = new Uint8Array(len);
-				arr.set(buf.subarray(offset, offset + len));
-				offset += len;
-				return arr;
-			}
-			default:
-				throw new Error(`Unknown tag in decodeBinary: ${tag}`);
-		}
-	}
-	return read();
 }

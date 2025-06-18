@@ -16,6 +16,8 @@ declare global {
 	var debug: boolean;
 }
 
+global = globalThis || window; // Ensure global is defined
+
 /**
  * The initial scale of the game.
  */
@@ -1100,6 +1102,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	 * Constructs a new instance of the BMSX class.
 	 */
 	constructor(rom: RomPack, model: BaseModel, view: BaseView, sndcontext: AudioContext, gainnode: GainNode, debug: boolean = false) {
+		global = globalThis;
 		global['$'] = this;
 		window['$'] = this;
 		this.running = false;

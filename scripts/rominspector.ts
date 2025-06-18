@@ -7,6 +7,7 @@ import * as contrib from 'blessed-contrib';
 import * as fs from 'fs/promises';
 import * as pako from 'pako';
 import { PNG } from 'pngjs';
+import { decodeBinary } from '../src/bmsx/binencoder';
 import type { AudioMeta, ImgMeta } from '../src/bmsx/rompack';
 
 let modal: blessed.Widgets.BoxElement | null = null;
@@ -16,79 +17,6 @@ function byteSizeToString(size: number): string {
     if (size < 1024 * 1024) return `${(size / 1024).toFixed(2)} KB`;
     if (size < 1024 * 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(2)} MB`;
     return `${(size / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
-
-// Minimal decodeBinary (copy from bootrom, no import)
-function decodeBinary(buf: Uint8Array): any {
-    const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-    let offset = 0;
-    const textDecoder = new TextDecoder();
-    function readUint8(): number { return dv.getUint8(offset++); }
-    function readVarUint(): number {
-        let val = 0, shift = 0, b: number;
-        do {
-            b = buf[offset++];
-            val |= (b & 0x7F) << shift;
-            shift += 7;
-        } while (b & 0x80);
-        return val;
-    }
-    function readString(): string {
-        const len = readVarUint();
-        const arr = buf.subarray(offset, offset + len);
-        offset += len;
-        return textDecoder.decode(arr);
-    }
-    // --- Read property table ---
-    const version = readUint8();
-    if (version !== 0xA1) throw new Error('decodeBinary: unknown version');
-    const propCount = readVarUint();
-    const propNames: string[] = [];
-    for (let i = 0; i < propCount; ++i) propNames.push(readString());
-    function read(): any {
-        const tag = readUint8();
-        switch (tag) {
-            case 0: return null;
-            case 1: return true;
-            case 2: return false;
-            case 3: {
-                const v = dv.getFloat64(offset, true);
-                offset += 8;
-                return v;
-            }
-            case 4: return readString();
-            case 5: {
-                const len = readVarUint();
-                const arr = new Array(len);
-                for (let i = 0; i < len; ++i) arr[i] = read();
-                return arr;
-            }
-            case 6: {
-                const ref = readVarUint();
-                return { r: ref };
-            }
-            case 7: {
-                const len = readVarUint();
-                const obj: Record<string, any> = {};
-                for (let i = 0; i < len; ++i) {
-                    const propId = readVarUint();
-                    const k = propNames[propId];
-                    obj[k] = read();
-                }
-                return obj;
-            }
-            case 8: {
-                const len = readVarUint();
-                const arr = new Uint8Array(len);
-                arr.set(buf.subarray(offset, offset + len));
-                offset += len;
-                return arr;
-            }
-            default:
-                throw new Error(`Unknown tag in decodeBinary: ${tag}`);
-        }
-    }
-    return read();
 }
 
 async function main() {
