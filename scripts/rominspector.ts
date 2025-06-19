@@ -13,15 +13,14 @@ import type { AudioMeta, ImgMeta } from '../src/bmsx/rompack';
 let modal: blessed.Widgets.BoxElement | null = null;
 
 function byteSizeToString(size: number): string {
-    if (size < 1024) return `${size} B`;
-    if (size < 1024 * 1024) return `${(size / 1024).toFixed(2)} KB`;
-    if (size < 1024 * 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(2)} MB`;
-    if (size < 1024 * 1024 * 1024 * 1024) return `${(size / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-    if (size < 1024 * 1024 * 1024 * 1024 * 1024) return `${(size / (1024 * 1024 * 1024 * 1024)).toFixed(2)} TB`;
-    if (size < 1024 * 1024 * 1024 * 1024 * 1024 * 1024) return `${(size / (1024 * 1024 * 1024 * 1024 * 1024)).toFixed(2)} PB`;
-    if (size < 1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024) return `${(size / (1024 * 1024 * 1024 * 1024 * 1024 * 1024)).toFixed(2)} EB`;
-    if (size < 1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024) return `${(size / (1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024)).toFixed(2)} ZB`;
-    return `${(size / (1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024)).toFixed(2)} YB`;
+    const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+    let i = 0;
+    let n = size;
+    while (n >= 1024 && i < units.length - 1) {
+        n /= 1024;
+        i++;
+    }
+    return i === 0 ? `${size} ${units[0]}` : `${n.toFixed(2)} ${units[i]}`;
 }
 
 async function main() {
@@ -542,93 +541,184 @@ async function main() {
                                 imgH = atlasPng.height;
                             }
 
+                            const smallThreshold = 16;    // sprites ≤64×64 get per-pixel rendering
+
                             if (imgBuf && imgW && imgH) {
-                                // … inside your image‐case, after imgW,imgH,offsetX,offsetY are set …
-
-                                const smallThreshold = 64;    // sprites ≤64×64 get per-pixel rendering
-
-                                if (imgBuf && imgW && imgH) {
-                                    if (imgW <= smallThreshold && imgH <= smallThreshold) {
-                                        // pixel-perfect: each image pixel = one cell with background color
-                                        for (let y = 0; y < imgH; y++) {
-                                            let line = '';
-                                            for (let x = 0; x < imgW; x++) {
-                                                const px = offsetX + x;
-                                                const py = offsetY + y;
-                                                const idx4 = (py * atlasPng.width + px) << 2;
-                                                const r = imgBuf[idx4], g = imgBuf[idx4 + 1], b = imgBuf[idx4 + 2], a = imgBuf[idx4 + 3];
-                                                if (a < 64) {
-                                                    // transparent pixel, render as space
-                                                    line += ' ';
-                                                }
-                                                else {
-                                                    line += `{#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}-bg} {/}`;
-                                                }
+                                if (imgW <= smallThreshold && imgH <= smallThreshold) {
+                                    // pixel-perfect: each image pixel = one cell with background color
+                                    for (let y = 0; y < imgH; y++) {
+                                        let line = '';
+                                        for (let x = 0; x < imgW; x++) {
+                                            const px = offsetX + x;
+                                            const py = offsetY + y;
+                                            const idx4 = (py * atlasPng.width + px) << 2;
+                                            const r = imgBuf[idx4], g = imgBuf[idx4 + 1], b = imgBuf[idx4 + 2], a = imgBuf[idx4 + 3];
+                                            if (a < 64) {
+                                                // transparent pixel, render as space
+                                                line += ' ';
                                             }
-                                            asciiArt += line + '\n';
+                                            else {
+                                                line += `{#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}-bg} {/}`;
+                                            }
                                         }
-                                    } else {
-                                        // braille 2×4 subpixel rendering
-                                        // … inside your “else { // braille 2×4 subpixel rendering” branch …
+                                        asciiArt += line + '\n';
+                                    }
+                                } else {
+                                    // Advanced braille 2×4 subpixel rendering with dynamic thresholding and optional edge detection
+                                    const outW = Math.min(modalWidth - 8, Math.floor(imgW / 2));
+                                    const outH = Math.min(Math.floor(imgH / 4), Math.floor(outW * (imgH / imgW) / 2));
+                                    const BRAILLE_BASE = 0x2800;
+                                    const brailleMap = [
+                                        [0, 1, 2, 5], // col=0 => bits for rows 0..3
+                                        [3, 4, 6, 7]  // col=1 => bits for rows 0..3
+                                    ];
+                                    const useEdgeDetection = true; // Set to false to disable Sobel edge enhancement
+                                    // 1. Compute dominant color for the whole image region (histogram)
+                                    const globalColorCounts = new Map();
+                                    for (let y = 0; y < imgH; y++) {
+                                        for (let x = 0; x < imgW; x++) {
+                                            const px = offsetX + x;
+                                            const py = offsetY + y;
+                                            const idx4 = (py * atlasPng.width + px) << 2;
+                                            const r = imgBuf[idx4], g = imgBuf[idx4 + 1], b = imgBuf[idx4 + 2], a = imgBuf[idx4 + 3];
+                                            if (a === 0) continue;
+                                            const key = rgbToKey(r, g, b);
+                                            globalColorCounts.set(key, (globalColorCounts.get(key) || 0) + 1);
+                                        }
+                                    }
+                                    let globalDominantKey = 0x808080, globalMaxCount = 0;
+                                    for (const [key, count] of Array.from(globalColorCounts.entries())) {
+                                        if (count > globalMaxCount) {
+                                            globalMaxCount = count;
+                                            globalDominantKey = key;
+                                        }
+                                    }
+                                    const globalDomR = (globalDominantKey >> 16) & 0xff;
+                                    const globalDomG = (globalDominantKey >> 8) & 0xff;
+                                    const globalDomB = globalDominantKey & 0xff;
 
-                                        const outW = Math.min(modalWidth - 8, Math.floor(imgW / 2));
-                                        const outH = Math.min(Math.floor(imgH / 4), Math.floor(outW * (imgH / imgW) / 2));
-                                        const BRAILLE_BASE = 0x2800;
-                                        const brailleMap = [
-                                            [0, 1, 2, 5], // col=0 => bits for rows 0..3
-                                            [3, 4, 6, 7]  // col=1 => bits for rows 0..3
-                                        ];
-
-                                        for (let y = 0; y < outH; y++) {
-                                            let line = '';
-                                            for (let x = 0; x < outW; x++) {
-                                                let bitmask = 0;
-                                                let darkR = 0, darkG = 0, darkB = 0, darkCount = 0;
-                                                let brightR = 0, brightG = 0, brightB = 0, brightCount = 0;
-
-                                                // sample a 2×4 block
-                                                for (let dy = 0; dy < 4; dy++) {
-                                                    for (let dx = 0; dx < 2; dx++) {
-                                                        const relX = Math.min(imgW - 1, x * 2 + dx);
-                                                        const relY = Math.min(imgH - 1, y * 4 + dy);
-                                                        const px = offsetX + relX;
-                                                        const py = offsetY + relY;
-                                                        const idx4 = (py * atlasPng.width + px) << 2;
-                                                        const r = imgBuf[idx4], g = imgBuf[idx4 + 1], b = imgBuf[idx4 + 2], a = imgBuf[idx4 + 3];
-                                                        const lum = a === 0 ? 255 : (0.299 * r + 0.587 * g + 0.114 * b);
-
-                                                        if (lum < 32) {
-                                                            // Force these pixels to be treated as background => no braille dot (space)
-                                                            brightR += r; brightG += g; brightB += b; brightCount++;
-                                                        }
-                                                        else {
-                                                            bitmask |= 1 << brailleMap[dx][dy];
-                                                            darkR += r; darkG += g; darkB += b; darkCount++;
-                                                        }
+                                    for (let y = 0; y < outH; y++) {
+                                        let line = '';
+                                        for (let x = 0; x < outW; x++) {
+                                            let bitmask = 0;
+                                            // For dominant color
+                                            const colorCounts = new Map();
+                                            let bgR = 0, bgG = 0, bgB = 0, bgCount = 0;
+                                            let fgCount = 0;
+                                            // Build a 2x4 luminance matrix for this braille cell
+                                            const lumMatrix: number[][] = [[0, 0, 0, 0], [0, 0, 0, 0]];
+                                            const lumList: number[] = [];
+                                            for (let dy = 0; dy < 4; dy++) {
+                                                for (let dx = 0; dx < 2; dx++) {
+                                                    const relX = Math.min(imgW - 1, x * 2 + dx);
+                                                    const relY = Math.min(imgH - 1, y * 4 + dy);
+                                                    const px = offsetX + relX;
+                                                    const py = offsetY + relY;
+                                                    const idx4 = (py * atlasPng.width + px) << 2;
+                                                    const r = imgBuf[idx4], g = imgBuf[idx4 + 1], b = imgBuf[idx4 + 2], a = imgBuf[idx4 + 3];
+                                                    const lum = a === 0 ? 255 : (0.299 * r + 0.587 * g + 0.114 * b);
+                                                    lumMatrix[dx][dy] = lum;
+                                                    lumList.push(lum);
+                                                    // Classify as background if close to global dominant color
+                                                    if (colorDistSq(r, g, b, globalDomR, globalDomG, globalDomB) < 32 * 32) {
+                                                        bgR += r; bgG += g; bgB += b; bgCount++;
+                                                    } else {
+                                                        // Count color for dominant color detection
+                                                        const key = rgbToKey(r, g, b);
+                                                        colorCounts.set(key, (colorCounts.get(key) || 0) + 1);
+                                                        fgCount++;
                                                     }
                                                 }
+                                            }
+                                            // Local contrast for this cell
+                                            const minLum = Math.min(...lumList);
+                                            const maxLum = Math.max(...lumList);
+                                            const localContrast = maxLum - minLum;
+                                            const meanLum = lumList.reduce((a, b) => a + b, 0) / lumList.length;
+                                            const baseThresh = 0.75;
+                                            const contrastFactor = 1 - Math.min(1, localContrast / 255);
+                                            const modThresh = baseThresh + contrastFactor * 0.15;
+                                            // Sobel edge detection (optional)
+                                            let edgeMatrix: number[][] = [[0, 0, 0, 0], [0, 0, 0, 0]];
+                                            if (useEdgeDetection) {
+                                                // Pad with neighbors or clamp for 3x3 window
+                                                const getLum = (dx, dy) => {
+                                                    const x_ = Math.max(0, Math.min(1, dx));
+                                                    const y_ = Math.max(0, Math.min(3, dy));
+                                                    return lumMatrix[x_][y_];
+                                                };
+                                                // For each pixel in 2x4, compute Sobel magnitude using 3x3 window
+                                                for (let dx = 0; dx < 2; dx++) {
+                                                    for (let dy = 0; dy < 4; dy++) {
+                                                        // 3x3 Sobel kernels
+                                                        const sobelX = [
+                                                            [-1, 0, 1],
+                                                            [-2, 0, 2],
+                                                            [-1, 0, 1]
+                                                        ];
+                                                        const sobelY = [
+                                                            [1, 2, 1],
+                                                            [0, 0, 0],
+                                                            [-1, -2, -1]
+                                                        ];
+                                                        let sumX = 0, sumY = 0;
+                                                        for (let i = -1; i <= 1; i++) {
+                                                            for (let j = -1; j <= 1; j++) {
+                                                                const val = getLum(dx + i, dy + j);
+                                                                sumX += val * sobelX[i + 1][j + 1];
+                                                                sumY += val * sobelY[i + 1][j + 1];
+                                                            }
+                                                        }
+                                                        edgeMatrix[dx][dy] = Math.sqrt(sumX * sumX + sumY * sumY);
+                                                    }
+                                                }
+                                            }
+                                            // --- Spatial-pattern-based bitmask ---
+                                            // For each dot, set if it is foreground (not background)
+                                            for (let dy = 0; dy < 4; dy++) {
+                                                for (let dx = 0; dx < 2; dx++) {
+                                                    // Use the same background/foreground classification as above
+                                                    const relX = Math.min(imgW - 1, x * 2 + dx);
+                                                    const relY = Math.min(imgH - 1, y * 4 + dy);
+                                                    const px = offsetX + relX;
+                                                    const py = offsetY + relY;
+                                                    const idx4 = (py * atlasPng.width + px) << 2;
+                                                    const r = imgBuf[idx4], g = imgBuf[idx4 + 1], b = imgBuf[idx4 + 2], a = imgBuf[idx4 + 3];
+                                                    // If not close to global background, set the dot
+                                                    if (colorDistSq(r, g, b, globalDomR, globalDomG, globalDomB) >= 32 * 32) {
+                                                        bitmask |= 1 << brailleMap[dx][dy];
+                                                    }
+                                                }
+                                            }
 
-                                                // compute avg colors (fallback to black/white)
-                                                // … inside your “braille 2×4 subpixel rendering” loop …
-
-                                                // compute avg colors (omit white-bg fallback)
-                                                const fgTag = darkCount
-                                                    ? `#${Math.round(darkR / darkCount).toString(16).padStart(2, '0')}` +
-                                                    `${Math.round(darkG / darkCount).toString(16).padStart(2, '0')}` +
-                                                    `${Math.round(darkB / darkCount).toString(16).padStart(2, '0')}-fg`
-                                                    : 'black-fg';
-
-                                                const bgTag = brightCount
-                                                    ? `#${Math.round(brightR / brightCount).toString(16).padStart(2, '0')}` +
-                                                    `${Math.round(brightG / brightCount).toString(16).padStart(2, '0')}` +
-                                                    `${Math.round(brightB / brightCount).toString(16).padStart(2, '0')}-bg`
-                                                    : '';  // <<< no white-bg fallback
-
-                                                const ch = String.fromCharCode(BRAILLE_BASE + bitmask);
+                                            // Find dominant color for foreground
+                                            let dominantKey = 0x808080, maxCount = 0;
+                                            for (const [key, count] of Array.from(colorCounts.entries())) {
+                                                if (count > maxCount) {
+                                                    maxCount = count;
+                                                    dominantKey = key;
+                                                }
+                                            }
+                                            const fgTag = `${keyToHex(dominantKey)}-fg`;
+                                            const bgTag = bgCount
+                                                ? `#${Math.round(bgR / bgCount).toString(16).padStart(2, '0')}` +
+                                                `${Math.round(bgG / bgCount).toString(16).padStart(2, '0')}` +
+                                                `${Math.round(bgB / bgCount).toString(16).padStart(2, '0')}-bg`
+                                                : '';
+                                            // Special case: all background or all foreground
+                                            let ch;
+                                            if (fgCount === 0 && bgCount > 0) {
+                                                ch = ' ';
+                                                line += `{${bgTag}} ${bgTag ? '{/}' : ''}`;
+                                            } else if (bgCount === 0 && fgCount > 0) {
+                                                ch = '█';
+                                                line += `{${fgTag}}█{/}`;
+                                            } else {
+                                                ch = String.fromCharCode(BRAILLE_BASE + bitmask);
                                                 line += `${bgTag ? `{${bgTag}}` : ''}{${fgTag}}${ch}{/}`;
                                             }
-                                            asciiArt += line + '\n';
                                         }
+                                        asciiArt += line + '\n';
                                     }
                                 }
                             }
@@ -694,7 +784,6 @@ async function main() {
             case 'source':
             case 'code':
                 // For code, we don't generate ASCII art, just show the name
-                // asciiArt = '[Code asset, no ASCII preview]';
                 break;
         }
 
@@ -708,7 +797,6 @@ async function main() {
             const totalSize = (bufferSize ?? 0) + (metabufferSize ?? 0);
             metadataLines.push(`Total size: ${byteSizeToString(totalSize)}`);
 
-            // const termWidth = typeof screen.width === 'number' ? screen.width : 120;
             const barLength = getBarLength(modal?.width as number);
             const total = rompack.length;
             // Compose regions for this asset: asset, metabuffer, global metadata
@@ -828,6 +916,20 @@ async function main() {
 
     screen.key(['q', 'C-c'], () => process.exit(0));
     screen.render();
+}
+
+// Helper functions for dominant color detection
+function rgbToKey(r, g, b) {
+    return ((r & 0xff) << 16) | ((g & 0xff) << 8) | (b & 0xff);
+}
+function keyToHex(key) {
+    return '#' + ((key >> 16) & 0xff).toString(16).padStart(2, '0') +
+        ((key >> 8) & 0xff).toString(16).padStart(2, '0') +
+        (key & 0xff).toString(16).padStart(2, '0');
+}
+// Helper for color distance
+function colorDistSq(r1, g1, b1, r2, g2, b2) {
+    return (r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2;
 }
 
 main();
