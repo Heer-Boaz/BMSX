@@ -295,7 +295,7 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
     /**
      * Returns the machine definition for the given machine id.
      * @param {Identifier} machineid - The id of the machine to get the definition for.
-     * @returns {mdef} The machine definition for the given machine id.
+     * @returns {StateDefinition} The machine definition for the given machine id.
      */
     public static getMachinedef(machineid: Identifier): StateDefinition {
         return StateDefinitions[machineid];

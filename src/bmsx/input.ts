@@ -1634,7 +1634,7 @@ export class PlayerInput {
 
 	/**
 	 * Checks if a keyboard is connected for the specified player index.
-	 * @returns True if a ketboard is connected for the specified player index, false otherwise.
+	 * @returns True if a keyboard is connected for the specified player index, false otherwise.
 	 */
 	private isKeyboardConnected(): boolean {
 		return !(!this.inputHandlers['keyboard']);
