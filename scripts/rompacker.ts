@@ -1243,7 +1243,7 @@ async function main() {
 			let romManifest: RomManifest;
 			let short_name: string = 'BMSX';
 			romManifest = await getRomManifest(respath);
-			progress.taskCompleted();
+			await progress.taskCompleted();
 			if (!romManifest) throw new Error(`Rom manifest not found at "${respath}"!`);
 			rom_name = romManifest?.rom_name ?? rom_name;
 			title = romManifest?.title ?? title;
