@@ -524,7 +524,7 @@ async function main() {
             top: 'center', left: 'center',
             width: '80%', height: '80%',
             border: 'line', style: { border: { fg: 'yellow' }, bg: 'black' },
-            label: `Asset: ${selected.resname} `,
+            label: `Asset - Name: ${selected.resname} | ID: ${selected.resid} | Type: ${selected.type}`,
             tags: true, scrollable: true, alwaysScroll: true, keys: true, mouse: true, draggable: true,
             vi: true, input: true, // Enable vi-style keybindings
             scrollbar: { ch: '|', track: { bg: 'grey' }, style: { bg: 'yellow' } }
@@ -610,15 +610,9 @@ async function main() {
         }
 
         // Show generic metadata details
-        metadataLines.push(`Name: ${selected.resname} # ID: ${selected.resid} # Type: ${selected.type}`);
-        if (bufferSize) metadataLines.push(`Buffer: ${selected.start} - ${selected.end} (${byteSizeToString(bufferSize)})`);
-        // Metabuffer region info
+        const bufferLines = [];
         const metabufferSize = selected.metabuffer_end - selected.metabuffer_start;
-        if (metabufferSize) metadataLines.push(`Metabuffer: ${selected.metabuffer_start} - ${selected.metabuffer_end} (${byteSizeToString(metabufferSize)})`);
         if (bufferSize || metabufferSize) {
-            const totalSize = (bufferSize ?? 0) + (metabufferSize ?? 0);
-            metadataLines.push(`Total size: ${byteSizeToString(totalSize)}`);
-
             const barLength = getBarLength(modal?.width as number);
             const total = rompack.length;
             // Compose regions for this asset: asset, metabuffer, global metadata
@@ -628,14 +622,19 @@ async function main() {
                 regions.push({ start: selected.metabuffer_start, end: selected.metabuffer_end, colorTag: '{cyan-fg}' });
             }
             const bar = renderBufferBar(regions, total, barLength);
-            metadataLines.push(`Buffer: [${bar}]`);
-            metadataLines.push(`        {yellow-fg}█{/yellow-fg} asset, {cyan-fg}█{/cyan-fg} metabuffer`);
+            bufferLines.push(`Buffer: [${bar}]`);
+            bufferLines.push(`        {yellow-fg}█{/yellow-fg} asset, {cyan-fg}█{/cyan-fg} metabuffer`);
+            if (bufferSize) bufferLines.push(`Buffer: ${selected.start} - ${selected.end} (${byteSizeToString(bufferSize)})`);
+            // Metabuffer region info
+            if (metabufferSize) bufferLines.push(`Metabuffer: ${selected.metabuffer_start} - ${selected.metabuffer_end} (${byteSizeToString(metabufferSize)})`);
+            if (bufferSize && metabufferSize) {
+                const totalSize = (bufferSize ?? 0) + (metabufferSize ?? 0);
+                bufferLines.push(`Total size: ${byteSizeToString(totalSize)}`);
+            }
         }
 
-        metadataLines.push('---------------------------------');
-
         metadataLines.push('');
-        modal.content = asciiArt + metadataLines.join('\n') + '\n' + '\nPress any key to close...';
+        modal.content = `${bufferLines.join('\n')}\n${asciiArt}\n${metadataLines.join('\n')}\n`;
         modal.focus();
         let ignoreFirstKeypress = true;
         let currentIdx = idx;
