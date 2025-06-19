@@ -16,7 +16,12 @@ function byteSizeToString(size: number): string {
     if (size < 1024) return `${size} B`;
     if (size < 1024 * 1024) return `${(size / 1024).toFixed(2)} KB`;
     if (size < 1024 * 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(2)} MB`;
-    return `${(size / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+    if (size < 1024 * 1024 * 1024 * 1024) return `${(size / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+    if (size < 1024 * 1024 * 1024 * 1024 * 1024) return `${(size / (1024 * 1024 * 1024 * 1024)).toFixed(2)} TB`;
+    if (size < 1024 * 1024 * 1024 * 1024 * 1024 * 1024) return `${(size / (1024 * 1024 * 1024 * 1024 * 1024)).toFixed(2)} PB`;
+    if (size < 1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024) return `${(size / (1024 * 1024 * 1024 * 1024 * 1024 * 1024)).toFixed(2)} EB`;
+    if (size < 1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024) return `${(size / (1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024)).toFixed(2)} ZB`;
+    return `${(size / (1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024)).toFixed(2)} YB`;
 }
 
 async function main() {
@@ -38,11 +43,19 @@ async function main() {
         console.error(`Failed to read ROM file at "${romfile}": ${error?.message || 'Unknown error'}`);
         process.exit(1);
     }
+
     function isPakoCompressed(raw: Uint8Array): boolean {
         // Gzip: 1F 8B
-        if (raw[0] === 0x1F && raw[1] === 0x8B) return true;
-        // Zlib: 78 01 / 78 9C / 78 DA
-        if (raw[0] === 0x78 && (raw[1] === 0x01 || raw[1] === 0x9C || raw[1] === 0xDA)) return true;
+        if (raw && raw.length >= 2 && raw[0] === 0x1F && raw[1] === 0x8B) {
+            return true;
+        }
+        // Zlib: 78 01 / 78 9C / 78 DA (common), but also check CMF/FLG validity
+        if (raw && raw.length >= 2 && raw[0] === 0x78) {
+            const cmf = raw[0], flg = raw[1];
+            if ((cmf * 256 + flg) % 31 === 0) {
+                return true;
+            }
+        }
         return false;
     }
 
@@ -55,10 +68,13 @@ async function main() {
         try {
             decompressed = pako.inflate(zipped);
         } catch (e: any) {
-            console.error('Failed to decompress ROM: ' + e.message);
-            process.exit(1);
+            const msg = e && typeof e.message === 'string' ? e.message : String(e);
+            console.error(`Failed to decompress ROM: ${msg}`);
+            console.error(e?.stack ?? 'No stack trace available');
+            // process.exit(1);
+            decompressed = null; // fallback to null if decompression fails
         }
-        rompack = decompressed;
+        rompack = decompressed ?? raw; // Use decompressed data if available, otherwise fallback to raw
     } else {
         console.log('ROM is uncompressed, using as-is.');
         rompack = raw;
@@ -72,12 +88,21 @@ async function main() {
         console.error('ROM file is empty or too short, invalid ROM file.');
         process.exit(1);
     }
+    // ROM must be at least 16 bytes and not suspiciously huge
+    if (rompack.length > 1024 * 1024 * 1024) {
+        console.error('ROM file is suspiciously large (>1GB), aborting.');
+        process.exit(1);
+    }
     const footer = rompack.slice(rompack.length - 16);
     if (footer.length < 16) {
         console.error('ROM footer is too short, invalid ROM file.');
         process.exit(1);
     }
     function readLE64(buf: Uint8Array, offset: number): bigint {
+        // Validate offset
+        if (offset < 0 || offset + 8 > buf.length) {
+            throw new Error('Invalid offset for LE64 read');
+        }
         return (BigInt(buf[offset]) |
             (BigInt(buf[offset + 1]) << BigInt(8)) |
             (BigInt(buf[offset + 2]) << BigInt(16)) |
@@ -89,13 +114,21 @@ async function main() {
     }
     const metadataOffset = Number(readLE64(footer, 0));
     const metadataLength = Number(readLE64(footer, 8));
+    // Validate metadataOffset and metadataLength
+    if (
+        !Number.isFinite(metadataOffset) ||
+        !Number.isFinite(metadataLength) ||
+        metadataOffset < 0 ||
+        metadataLength < 0 ||
+        metadataOffset + metadataLength > rompack.length ||
+        metadataOffset > rompack.length - 16
+    ) {
+        console.error(`Invalid metadata offset or length: offset=${metadataOffset} (${byteSizeToString(metadataOffset)}), length=${metadataLength} (${byteSizeToString(metadataLength)})`);
+        process.exit(1);
+    }
     const metaBuf = rompack.slice(metadataOffset, metadataOffset + metadataLength);
     if (!metaBuf || metaBuf.length === 0) {
         console.error('No metadata found in ROM file, invalid ROM file.');
-        process.exit(1);
-    }
-    if (metadataOffset < 0 || metadataOffset + metadataLength > rompack.length) {
-        console.error(`Invalid metadata offset or length: offset=${metadataOffset}, length=${metadataLength}`);
         process.exit(1);
     }
     if (metaBuf.length !== metadataLength) {
@@ -133,7 +166,8 @@ async function main() {
     }
     const imageAssets = assetList.filter(a => a.type === 'image') ?? [];
     const audioCount = assetList.filter(a => a.type === 'audio')?.length ?? 0;
-    const codeCount = assetList.filter(a => a.type !== 'image' && a.type !== 'audio')?.length ?? 0;
+    const codeCount = assetList.filter(a => a.type === 'source')?.length ?? 0;
+    const otherCount = assetList.filter(a => a.type !== 'image' && a.type !== 'audio' && a.type !== 'source')?.length ?? 0;
 
     // --- Blessed UI ---
     const screen = blessed.screen({
@@ -332,7 +366,7 @@ async function main() {
         const metaSizePercent = (metaBuf.length / totalSize * 100).toFixed(1);
 
         return `Total assets: ${assetList?.length ?? 0} (images: ${imageAssets?.length ?? 0
-            }, audio: ${audioCount}, code: ${codeCount}) \n` +
+            }, audio: ${audioCount}, code: ${codeCount}, other: ${otherCount}) \n` +
             `Buffer: [${renderSummaryBar(summaryRegions, totalSize, barLength)}]\n` +
             `{yellow-fg}█{/yellow-fg} image  {magenta-fg}█{/magenta-fg} audio  {white-fg}█{/white-fg} code  {cyan-fg}█{/cyan-fg} metabuffer  {blue-fg}█{/blue-fg} global metadata\n` +
             `Images size: ${byteSizeToString(imagesSize)} (${imageSizePercent}%)\n` +
@@ -376,8 +410,6 @@ async function main() {
             atlassedBytesTotal += asset.end - asset.start;
         }
     }
-    const atlassedKB = (atlassedBytesTotal / 1024).toFixed(1);
-
     const summaryBox = blessed.box({
         top: 0,
         left: 'center',
@@ -440,7 +472,7 @@ async function main() {
         const selected = assetList[idx];
         const imgmeta = selected.imgmeta || {} as ImgMeta;
         const audiometa = selected.audiometa || {} as AudioMeta;
-        const bufferSize = selected.end - selected.start;
+        let bufferSize = selected.end - selected.start;
         let asciiArt = '';
         const metadataLines = [];
 
@@ -454,37 +486,6 @@ async function main() {
             vi: true, input: true, // Enable vi-style keybindings
             scrollbar: { ch: '|', track: { bg: 'grey' }, style: { bg: 'yellow' } }
         });
-
-        // Show generic metadata details
-        metadataLines.push(`Name: ${selected.resname} # ID: ${selected.resid} # Type: ${selected.type}`);
-        if (bufferSize !== undefined) metadataLines.push(`Buffer: ${selected.start} - ${selected.end} (${byteSizeToString(bufferSize)})`);
-        // Metabuffer region info
-        const metabufferSize = selected.metabuffer_end - selected.metabuffer_start;
-        if (metabufferSize !== undefined) metadataLines.push(`Metabuffer: ${selected.metabuffer_start} - ${selected.metabuffer_end} (${byteSizeToString(metabufferSize)})`);
-        if (bufferSize !== undefined && metabufferSize !== undefined) {
-            const totalSize = bufferSize + metabufferSize;
-            metadataLines.push(`Total size: ${byteSizeToString(totalSize)}`);
-        }
-
-        metadataLines.push('---------------------------------');
-
-        // Enhanced ASCII bar showing asset and metabuffer regions within total ROM
-        if (bufferSize !== undefined) {
-            // const termWidth = typeof screen.width === 'number' ? screen.width : 120;
-            const barLength = getBarLength(modal?.width as number);
-            const total = rompack.length;
-            // Compose regions for this asset: asset, metabuffer, global metadata
-            const regions = [];
-            regions.push({ start: selected.start, end: selected.end, colorTag: '{yellow-fg}' });
-            if (selected.metabuffer_start !== undefined && selected.metabuffer_end !== undefined) {
-                regions.push({ start: selected.metabuffer_start, end: selected.metabuffer_end, colorTag: '{cyan-fg}' });
-            }
-            const bar = renderBufferBar(regions, total, barLength);
-            metadataLines.push(`Buffer: [${bar}]`);
-            metadataLines.push(`        {yellow-fg}█{/yellow-fg} asset, {cyan-fg}█{/cyan-fg} metabuffer`);
-        }
-
-        metadataLines.push('---------------------------------');
 
         // Show image/audio specific metadata
         switch (selected.type) {
@@ -524,11 +525,23 @@ async function main() {
                                 offsetY = Math.floor(sy * atlasPng.height);
                                 imgW = Math.floor((rx - sx) * atlasPng.width);
                                 imgH = Math.floor((by - sy) * atlasPng.height);
+
+                                if (!bufferSize) {
+                                    // Compute the size of the image by looking at the image's texcoords in relation to the atlas buffer size which is in PNG format
+
+                                    bufferSize = imgW * imgH * 4; // 4 bytes per pixel (RGBA)
+                                    // But PNGs are also compressed
+                                    bufferSize = Math.floor(bufferSize * 0.8); // Assume 80% compression
+                                    if (bufferSize < 1) {
+                                        bufferSize = 1; // Ensure at least 1 byte
+                                    }
+                                }
                             }
                             else if (atlasPng) { // If not atlassed, use the full PNG
                                 imgW = atlasPng.width;
                                 imgH = atlasPng.height;
                             }
+
                             if (imgBuf && imgW && imgH) {
                                 // … inside your image‐case, after imgW,imgH,offsetX,offsetY are set …
 
@@ -684,6 +697,33 @@ async function main() {
                 // asciiArt = '[Code asset, no ASCII preview]';
                 break;
         }
+
+        // Show generic metadata details
+        metadataLines.push(`Name: ${selected.resname} # ID: ${selected.resid} # Type: ${selected.type}`);
+        if (bufferSize) metadataLines.push(`Buffer: ${selected.start} - ${selected.end} (${byteSizeToString(bufferSize)})`);
+        // Metabuffer region info
+        const metabufferSize = selected.metabuffer_end - selected.metabuffer_start;
+        if (metabufferSize) metadataLines.push(`Metabuffer: ${selected.metabuffer_start} - ${selected.metabuffer_end} (${byteSizeToString(metabufferSize)})`);
+        if (bufferSize || metabufferSize) {
+            const totalSize = (bufferSize ?? 0) + (metabufferSize ?? 0);
+            metadataLines.push(`Total size: ${byteSizeToString(totalSize)}`);
+
+            // const termWidth = typeof screen.width === 'number' ? screen.width : 120;
+            const barLength = getBarLength(modal?.width as number);
+            const total = rompack.length;
+            // Compose regions for this asset: asset, metabuffer, global metadata
+            const regions = [];
+            regions.push({ start: selected.start, end: selected.end, colorTag: '{yellow-fg}' });
+            if (selected.metabuffer_start !== undefined && selected.metabuffer_end !== undefined) {
+                regions.push({ start: selected.metabuffer_start, end: selected.metabuffer_end, colorTag: '{cyan-fg}' });
+            }
+            const bar = renderBufferBar(regions, total, barLength);
+            metadataLines.push(`Buffer: [${bar}]`);
+            metadataLines.push(`        {yellow-fg}█{/yellow-fg} asset, {cyan-fg}█{/cyan-fg} metabuffer`);
+        }
+
+        metadataLines.push('---------------------------------');
+
         metadataLines.push('');
         modal.content = asciiArt + metadataLines.join('\n') + '\n' + '\nPress any key to close...';
         modal.focus();
