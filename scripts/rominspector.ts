@@ -277,7 +277,6 @@ async function main() {
                     const idx = Math.round(coverage * 8);
                     if (idx <= 1) {
                         // Fill the one character by computing the whether the region is more left, middle, or right
-
                         const leftFrac = (regionStart - cellStart) / cellSize;
                         const rightFrac = (cellEnd - regionEnd) / cellSize;
 
@@ -308,7 +307,6 @@ async function main() {
                     }
                     else if (idx >= 8) {
                         cellChars[startCell] = blocks[idx];
-                        // cellChars[startCell] = '█';
                         cellColors[startCell] = region.colorTag;
                     }
                     else {
