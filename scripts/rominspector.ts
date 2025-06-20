@@ -232,7 +232,6 @@ async function main() {
         barLength: number
     ): string {
         const blocks = ['?', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
-        const rightBlocks = ['▕', '▐', '█'];
         const cellSize = totalSize / barLength;
         const defaultCellChar = ' ';
         const cellChars = new Array(barLength).fill(defaultCellChar);
@@ -240,6 +239,11 @@ async function main() {
 
         // Filter out empty regions (start === end === 0)
         const regions = unfilteredRegions.filter(region => region.start !== 0 || region.end !== 0);
+
+        const toBackground = (colorTag: string) => {
+            // Convert color tag to background color by replacing -fg with -bg
+            return colorTag.replace('-fg}', '-bg}');
+        }
 
         for (const region of regions) {
             const startFloat = region.start / cellSize;
@@ -271,7 +275,7 @@ async function main() {
                     const overlap = Math.max(0, overlapEnd - overlapStart);
                     const coverage = overlap / cellSize;
                     const idx = Math.round(coverage * 8);
-                    if (idx === 0) {
+                    if (idx <= 1) {
                         // Fill the one character by computing the whether the region is more left, middle, or right
 
                         const leftFrac = (regionStart - cellStart) / cellSize;
@@ -292,9 +296,9 @@ async function main() {
                         if (fgColor !== '{black-fg}') continue;
 
                         // Determine whether to use left, right, or middle character
-                        if (leftFrac < rightFrac - 0.25) {
+                        if (leftFrac < rightFrac - 0.20) {
                             cellChars[startCell] = '▏'; // left
-                        } else if (leftFrac > rightFrac + 0.25) {
+                        } else if (leftFrac > rightFrac + 0.20) {
                             cellChars[startCell] = '▕'; // right
                         } else {
                             cellChars[startCell] = '│'; // true middle (vertical bar)
@@ -303,10 +307,11 @@ async function main() {
                         cellColors[startCell] = region.colorTag;
                     }
                     else if (idx >= 8) {
-                        cellChars[startCell] = '█';
+                        cellChars[startCell] = blocks[idx];
+                        // cellChars[startCell] = '█';
                         cellColors[startCell] = region.colorTag;
                     }
-                    else if (idx > 0) {
+                    else {
                         cellChars[startCell] = blocks[idx];
                         let overlappingRegion = null;
                         // Find the highest-priority overlapping region's colorTag for fg
@@ -323,53 +328,58 @@ async function main() {
                         }
                         // Invert colors **only** if the overlapping region starts before the current region ends (not the cell!)
                         if (overlappingRegion && overlappingRegion.start < region.end) {
-                            cellColors[startCell] = region.colorTag.replace('-fg}', '-bg}') + fgColor;
+                            cellColors[startCell] = toBackground(region.colorTag) + fgColor;
                         }
                         else {
-                            // Inverse character by using rightBlocks
-                            const rightIdx = Math.max(0, 2 - idx); // 0 -> 2, 1 -> 1, 2 -> 0
-
-                            cellChars[startCell] = rightBlocks[rightIdx];
-
-                            cellColors[startCell] = region.colorTag.replace('-fg}', '-bg}') + fgColor;
+                            // No overlapping region, use the region's colorTag
+                            cellColors[startCell] = region.colorTag;
                         }
                     }
-                } else {
+                }/* ── left boundary (multi-cell branch) ─────────────────────────────── */
+                else {                                    // we are inside:  if (startCell !== endCell)
                     const coverage = 1 - leftFrac;
                     const idx = Math.round(coverage * 8);
-                    if (idx >= 8) {
-                        cellChars[startCell] = '█';
-                        cellColors[startCell] = region.colorTag;
-                    }
-                    else {
-                        // fractional: invert color background
+
+                    /* ← NEW: handle ultra-thin sliver */
+                    let needsInvert = false;
+                    if (idx <= 1) {
+                        cellChars[startCell] = '▕';       // thin right-hand bar
+                    } else if (idx <= 3) {
+                        cellChars[startCell] = '▐';       // slightly less thin right-hand bar
+                    } else {
                         cellChars[startCell] = blocks[idx];
-                        // Find the highest-priority overlapping region's colorTag for fg
-                        let fgColor = '{black-fg}';
-                        for (const r of regions) {
-                            // Only check other regions, not the current one
-                            if (r === region) continue;
-                            // Check if this region overlaps with the current cell
-                            if (r.start < (startCell + 1) * cellSize && r.end > startCell * cellSize) {
-                                fgColor = r.colorTag;
-                                break;
-                            }
-                        }
-                        cellColors[startCell] += fgColor;
+                        needsInvert = true;
+                    }
+
+                    /* same-cell overlap, but restrict search to HIGHER-priority regions */
+                    const cellStart = startCell * cellSize;
+                    const cellEnd = cellStart + cellSize;
+                    const higher = regions
+                        .slice(0, regions.indexOf(region))          // only earlier (higher-priority) regions
+                        .find(r => r.start < cellEnd && r.end > cellStart);
+
+                    if (needsInvert) {
+                        const fg = higher ? higher.colorTag : '{black-fg}';
+                        cellColors[startCell] = toBackground(region.colorTag) + fg;   // bg = region, fg = higher/black
+                    } else {
+                        cellColors[startCell] = region.colorTag;
                     }
                 }
             }
-            // right boundary
-            if (endCell !== startCell && cellChars[endCell] === ' ') {
-                const coverage = rightFrac;
-                const idx = Math.round(coverage * 8);
-                if (idx >= 8) {
-                    cellChars[endCell] = '█';
-                    cellColors[endCell] = region.colorTag;
-                } else if (idx > 0) {
+            /* ── right boundary ────────────────────────────────────────────────── */
+            if (endCell !== startCell && cellChars[endCell] === defaultCellChar) {
+                const idx = Math.round(rightFrac * 8);
+
+                /* The region occupies the **left** side of this cell, so the glyph
+                   already points the correct way.  No inversion is needed. */
+                if (idx === 0) {
+                    cellChars[endCell] = '▏'; // 1/8 left block
+                } else {
                     cellChars[endCell] = blocks[idx];
-                    cellColors[endCell] = region.colorTag;
                 }
+
+                /* Plain colouring: foreground = region colour, background untouched. */
+                cellColors[endCell] = region.colorTag;
             }
         }
 
