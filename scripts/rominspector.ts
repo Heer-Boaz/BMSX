@@ -768,20 +768,6 @@ async function main() {
     screen.render();
 }
 
-// Helper functions for dominant color detection
-function rgbToKey(r, g, b) {
-    return ((r & 0xff) << 16) | ((g & 0xff) << 8) | (b & 0xff);
-}
-function keyToHex(key) {
-    return '#' + ((key >> 16) & 0xff).toString(16).padStart(2, '0') +
-        ((key >> 8) & 0xff).toString(16).padStart(2, '0') +
-        (key & 0xff).toString(16).padStart(2, '0');
-}
-// Helper for color distance
-function colorDistSq(r1, g1, b1, r2, g2, b2) {
-    return (r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2;
-}
-
 main();
 
 function generateAsciiArtFromImageInCanvas(atlasBuf: Buffer, imgmeta: ImgMeta, modalWidth: number): string {
@@ -822,7 +808,6 @@ function generateAsciiArtFromImageInCanvas(atlasBuf: Buffer, imgmeta: ImgMeta, m
         return generatePixelPerfectAsciiArt(imgBuf, imgW, imgH, offsetX, offsetY, atlasPng.width);
     }
 
-    // Advanced braille 2×4 subpixel rendering with dynamic thresholding and optional edge detection
     return generateBrailleAsciiArt(imgBuf, imgW, imgH, offsetX, offsetY, atlasPng, modalWidth);
 }
 
@@ -856,172 +841,150 @@ function generatePixelPerfectAsciiArt(
     return asciiArt;
 }
 
-function generateBrailleAsciiArt(
+export function generateBrailleAsciiArt(
     imgBuf: Buffer | Uint8Array,
     imgW: number,
     imgH: number,
     offsetX: number,
     offsetY: number,
     atlasPng: PNG,
-    modalWidth: number
+    modalWidth: number,
+    opts: {
+        useEdgeDetection?: boolean;   // default true
+        useDithering?: boolean;       // default false
+        strictBgDist?: number;        // sq-dist voor BG (default 32²)
+        deltaLum?: number;            // |Ydiff| drempel (default 30)
+    } = {}
 ): string {
-    let asciiArt = '';
+
+    const useEdge = opts.useEdgeDetection ?? true;
+    const useDith = opts.useDithering ?? true;
+    const BG_DIST = opts.strictBgDist ?? 32 * 32;
+    const DELTA = opts.deltaLum ?? 30; // luminantie 0-255
+
+    const BRAILLE_BASE = 0x2800;
+    const brailleMap = [[0, 1, 2, 5], [3, 4, 6, 7]];
     const outW = Math.min(modalWidth - 8, Math.floor(imgW / 2));
     const outH = Math.min(Math.ceil(imgH / 4), Math.floor(outW * (imgH / imgW) / 2)) + 1;
-    const BRAILLE_BASE = 0x2800;
-    const brailleMap = [
-        [0, 1, 2, 5], // col=0 => bits for rows 0..3
-        [3, 4, 6, 7],  // col=1 => bits for rows 0..3
-    ];
-    const useEdgeDetection = true; // Set to false to disable Sobel edge enhancement
-    // 1. Compute dominant color for the whole image region (histogram)
-    const globalColorCounts = new Map();
-    for (let y = 0; y < imgH; y++) {
-        for (let x = 0; x < imgW; x++) {
-            const px = offsetX + x;
-            const py = offsetY + y;
-            const idx4 = (py * atlasPng.width + px) << 2;
-            const r = imgBuf[idx4], g = imgBuf[idx4 + 1], b = imgBuf[idx4 + 2], a = imgBuf[idx4 + 3];
-            if (a === 0) continue;
-            const key = rgbToKey(r, g, b);
-            globalColorCounts.set(key, (globalColorCounts.get(key) || 0) + 1);
-        }
-    }
-    let globalDominantKey = 0x808080, globalMaxCount = 0;
-    for (const [key, count] of Array.from(globalColorCounts.entries())) {
-        if (count > globalMaxCount) {
-            globalMaxCount = count;
-            globalDominantKey = key;
-        }
-    }
-    const globalDomR = (globalDominantKey >> 16) & 0xff;
-    const globalDomG = (globalDominantKey >> 8) & 0xff;
-    const globalDomB = globalDominantKey & 0xff;
 
-    for (let y = 0; y < outH; y++) {
+    /* ---------- gamma-correcte luminantie-buffer ---------- */
+    const linY = new Float32Array(imgW * imgH);
+    {
+        let p = 0;
+        for (let y = 0; y < imgH; ++y) {
+            for (let x = 0; x < imgW; ++x, ++p) {
+                const i4 = ((offsetY + y) * atlasPng.width + (offsetX + x)) << 2;
+                const r = imgBuf[i4], g = imgBuf[i4 + 1], b = imgBuf[i4 + 2];
+                linY[p] = 255 * (0.2126 * srgb2lin(r) + 0.7152 * srgb2lin(g) + 0.0722 * srgb2lin(b));
+            }
+        }
+    }
+
+    /* ---------- global dominant kleur ---------- */
+    const hist = new Map<number, number>();
+    for (let p = 0; p < imgW * imgH; ++p) {
+        const i4 = (((offsetY + (p / imgW | 0)) * atlasPng.width) + offsetX + (p % imgW)) << 2;
+        if (!imgBuf[i4 + 3]) continue;                       // transparant
+        const key = rgbToKey(imgBuf[i4], imgBuf[i4 + 1], imgBuf[i4 + 2]);
+        hist.set(key, (hist.get(key) ?? 0) + 1);
+    }
+    let bgKey = 0, bgCnt = 0;
+    // @ts-ignore
+    for (const [k, c] of hist) if (c > bgCnt) { bgCnt = c; bgKey = k; }
+    const bgR = bgKey >>> 16 & 255, bgG = bgKey >>> 8 & 255, bgB = bgKey & 255;
+    const bgLum = 255 * (0.2126 * srgb2lin(bgR) + 0.7152 * srgb2lin(bgG) + 0.0722 * srgb2lin(bgB));
+
+    /* ---------- dither buffer ---------- */
+    const err = useDith ? new Float32Array(imgW * imgH) : null;
+
+    /* ---------- render loop ---------- */
+    let asciiArt = '';
+
+    for (let cy = 0; cy < outH; ++cy) {
         let line = '';
-        for (let x = 0; x < outW; x++) {
+        for (let cx = 0; cx < outW; ++cx) {
+
+            const fgVotes = new Map<number, number>();     // stemt alleen als dot gezet
+            let cellBgR = 0, cellBgG = 0, cellBgB = 0, cellBgCnt = 0;
             let bitmask = 0;
-            // For dominant color
-            const colorCounts = new Map();
-            let bgR = 0, bgG = 0, bgB = 0, bgCount = 0;
-            let fgCount = 0;
-            // Build a 2x4 luminance matrix for this braille cell
-            const lumMatrix: number[][] = [[0, 0, 0, 0], [0, 0, 0, 0]];
-            const lumList: number[] = [];
-            for (let dy = 0; dy < 4; dy++) {
-                for (let dx = 0; dx < 2; dx++) {
-                    const relX = Math.min(imgW - 1, x * 2 + dx);
-                    const relY = Math.min(imgH - 1, y * 4 + dy);
-                    const px = offsetX + relX;
-                    const py = offsetY + relY;
-                    const idx4 = (py * atlasPng.width + px) << 2;
-                    const r = imgBuf[idx4], g = imgBuf[idx4 + 1], b = imgBuf[idx4 + 2], a = imgBuf[idx4 + 3];
-                    const lum = a === 0 ? 255 : (0.299 * r + 0.587 * g + 0.114 * b);
-                    lumMatrix[dx][dy] = lum;
-                    lumList.push(lum);
-                    // Classify as background if close to global dominant color
-                    if (colorDistSq(r, g, b, globalDomR, globalDomG, globalDomB) < 32 * 32) {
-                        bgR += r; bgG += g; bgB += b; bgCount++;
-                    } else {
-                        // Count color for dominant color detection
-                        const key = rgbToKey(r, g, b);
-                        colorCounts.set(key, (colorCounts.get(key) || 0) + 1);
-                        fgCount++;
-                    }
-                }
-            }
-            // Local contrast for this cell
-            const minLum = Math.min(...lumList);
-            const maxLum = Math.max(...lumList);
-            const localContrast = maxLum - minLum;
-            const meanLum = lumList.reduce((a, b) => a + b, 0) / lumList.length;
-            const baseThresh = 0.75;
-            const contrastFactor = 1 - Math.min(1, localContrast / 255);
-            const modThresh = baseThresh + contrastFactor * 0.15;
-            // Sobel edge detection (optional)
-            let edgeMatrix: number[][] = [[0, 0, 0, 0], [0, 0, 0, 0]];
-            if (useEdgeDetection) {
-                // Pad with neighbors or clamp for 3x3 window
-                const getLum = (dx, dy) => {
-                    const x_ = Math.max(0, Math.min(1, dx));
-                    const y_ = Math.max(0, Math.min(3, dy));
-                    return lumMatrix[x_][y_];
-                };
-                // For each pixel in 2x4, compute Sobel magnitude using 3x3 window
-                for (let dx = 0; dx < 2; dx++) {
-                    for (let dy = 0; dy < 4; dy++) {
-                        // 3x3 Sobel kernels
-                        const sobelX = [
-                            [-1, 0, 1],
-                            [-2, 0, 2],
-                            [-1, 0, 1]
-                        ];
-                        const sobelY = [
-                            [1, 2, 1],
-                            [0, 0, 0],
-                            [-1, -2, -1]
-                        ];
-                        let sumX = 0, sumY = 0;
-                        for (let i = -1; i <= 1; i++) {
-                            for (let j = -1; j <= 1; j++) {
-                                const val = getLum(dx + i, dy + j);
-                                sumX += val * sobelX[i + 1][j + 1];
-                                sumY += val * sobelY[i + 1][j + 1];
-                            }
-                        }
-                        edgeMatrix[dx][dy] = Math.sqrt(sumX * sumX + sumY * sumY);
-                    }
-                }
-            }
-            // --- Spatial-pattern-based bitmask ---
-            // For each dot, set if it is foreground (not background)
-            for (let dy = 0; dy < 4; dy++) {
-                for (let dx = 0; dx < 2; dx++) {
-                    // Use adaptive luminance thresholding for dot activation
-                    const relX = Math.min(imgW - 1, x * 2 + dx);
-                    const relY = Math.min(imgH - 1, y * 4 + dy);
-                    const px = offsetX + relX;
-                    const py = offsetY + relY;
-                    const idx4 = (py * atlasPng.width + px) << 2;
-                    const r = imgBuf[idx4], g = imgBuf[idx4 + 1], b = imgBuf[idx4 + 2], a = imgBuf[idx4 + 3];
-                    const lum = a === 0 ? 255 : (0.299 * r + 0.587 * g + 0.114 * b);
-                    // If not close to global background, set the dot
-                    // Now also use adaptive thresholding: if luminance is below modThresh * 255, set dot
-                    if (
-                        colorDistSq(r, g, b, globalDomR, globalDomG, globalDomB) >= 32 * 32 ||
-                        (colorDistSq(r, g, b, globalDomR, globalDomG, globalDomB) >= 16 * 16 && lum < modThresh * 255)
-                    ) {
+
+            for (let dy = 0; dy < 4; ++dy) {
+                for (let dx = 0; dx < 2; ++dx) {
+                    const px = Math.min(imgW - 1, cx * 2 + dx);
+                    const py = Math.min(imgH - 1, cy * 4 + dy);
+                    const p = py * imgW + px;
+                    const idx4 = ((py + offsetY) * atlasPng.width + (px + offsetX)) << 2;
+                    const r = imgBuf[idx4], g = imgBuf[idx4 + 1], b = imgBuf[idx4 + 2];
+
+                    let yLin = linY[p];
+                    const nearBg = colorDistSq(r, g, b, bgR, bgG, bgB) < BG_DIST;
+                    const ditherThisPixel = useDith && !nearBg;   // BG nooit diffusen
+                    if (ditherThisPixel && err) yLin = clamp(yLin + err[p], 0, 255);
+
+                    /* edge-aware Δ-drempel (trekt Δ iets naar beneden op randen) */
+                    let deltaThr = DELTA;
+                    if (useEdge) deltaThr = Math.max(10, DELTA - 0.2 * sobelAt(linY, imgW, imgH, px, py));
+
+                    const lumDiff = Math.abs(yLin - bgLum);
+                    const dotSet = !nearBg && lumDiff >= deltaThr;
+
+                    if (dotSet) {
                         bitmask |= 1 << brailleMap[dx][dy];
+                        const key = rgbToKey(r, g, b);
+                        fgVotes.set(key, (fgVotes.get(key) ?? 0) + 1);
+                    }
+
+                    if (nearBg) { cellBgR += r; cellBgG += g; cellBgB += b; ++cellBgCnt; }
+
+                    if (ditherThisPixel && err) {
+                        const target = dotSet ? 0 : 255;
+                        distributeError(err, yLin - target, p, imgW, imgH);
                     }
                 }
             }
 
-            // Find dominant color for foreground
-            let dominantKey = 0x808080, maxCount = 0;
-            for (const [key, count] of Array.from(colorCounts.entries())) {
-                if (count > maxCount) {
-                    maxCount = count;
-                    dominantKey = key;
-                }
-            }
-            const fgTag = `${keyToHex(dominantKey)}-fg`;
-            const bgTag = bgCount
-                ? `#${Math.round(bgR / bgCount).toString(16).padStart(2, '0')}` +
-                `${Math.round(bgG / bgCount).toString(16).padStart(2, '0')}` +
-                `${Math.round(bgB / bgCount).toString(16).padStart(2, '0')}-bg`
+            /* dominante FG-kleur o.b.v. gezette dots */
+            let domKey = 0x808080, domCnt = 0;
+            // @ts-ignore
+            for (const [k, c] of fgVotes) if (c > domCnt) { domCnt = c; domKey = k; }
+
+            const fgTag = `{${keyToHex(domKey)}-fg}`;
+            const bgTag = cellBgCnt
+                ? `{#${hex(cellBgR / cellBgCnt)}${hex(cellBgG / cellBgCnt)}${hex(cellBgB / cellBgCnt)}-bg}`
                 : '';
 
-            let ch: string;;
-            if (fgCount >= 8) {
-                // If all pixels are foreground, use full block
-                ch = '▒';
-            } else {
-                ch = String.fromCharCode(BRAILLE_BASE + bitmask);
-            }
-            line += `${bgTag ? `{${bgTag}}` : ''}${fgTag ? `{${fgTag}}` : ''}${ch}{/}`;
+            line += bgTag + fgTag + String.fromCharCode(BRAILLE_BASE + bitmask) + '{/}';
         }
         asciiArt += line + '\n';
     }
     return asciiArt;
+}
+
+function srgb2lin(v: number) { const s = v / 255; return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; }
+function hex(v: number) { return Math.round(clamp(v, 0, 255)).toString(16).padStart(2, '0'); }
+function clamp(x: number, l: number, h: number) { return x < l ? l : x > h ? h : x; }
+function rgbToKey(r: number, g: number, b: number) { return (r << 16) | (g << 8) | b; }
+function keyToHex(k: number) { return `#${(k >>> 16 & 0xff).toString(16).padStart(2, '0')}${(k >>> 8 & 0xff).toString(16).padStart(2, '0')}${(k & 0xff).toString(16).padStart(2, '0')}`; }
+function colorDistSq(r1: number, g1: number, b1: number, r2: number, g2: number, b2: number) {
+    const dr = r1 - r2, dg = g1 - g2, db = b1 - b2;
+    return dr * dr + dg * dg + db * db;
+}
+
+function sobelAt(buf: Float32Array, w: number, h: number, x: number, y: number): number {
+    const xm1 = Math.max(0, x - 1), xp1 = Math.min(w - 1, x + 1);
+    const ym1 = Math.max(0, y - 1), yp1 = Math.min(h - 1, y + 1);
+    const i = y * w + x;
+    const gx = buf[ym1 * w + xp1] + 2 * buf[i + 1] + buf[yp1 * w + xp1]
+        - buf[ym1 * w + xm1] - 2 * buf[i - 1] - buf[yp1 * w + xm1];
+    const gy = buf[yp1 * w + xm1] + 2 * buf[yp1 * w + x] + buf[yp1 * w + xp1]
+        - buf[ym1 * w + xm1] - 2 * buf[ym1 * w + x] - buf[ym1 * w + xp1];
+    return Math.sqrt(gx * gx + gy * gy);
+}
+
+function distributeError(buf: Float32Array, e: number, idx: number, w: number, h: number) {
+    const x = idx % w, y = Math.floor(idx / w);
+    if (x + 1 < w) buf[idx + 1] += e * 7 / 16;
+    if (x > 0 && y + 1 < h) buf[idx + w - 1] += e * 3 / 16;
+    if (y + 1 < h) buf[idx + w] += e * 5 / 16;
+    if (x + 1 < w && y + 1 < h) buf[idx + w + 1] += e * 1 / 16;
 }
