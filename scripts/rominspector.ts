@@ -231,7 +231,7 @@ async function main() {
         totalSize: number,
         barLength: number
     ): string {
-        const blocks = [' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
+        const blocks = ['?', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
         const rightBlocks = ['▕', '▐', '█'];
         const cellSize = totalSize / barLength;
         const defaultCellChar = ' ';
@@ -859,7 +859,7 @@ function generateBrailleAsciiArt(
 ): string {
     let asciiArt = '';
     const outW = Math.min(modalWidth - 8, Math.floor(imgW / 2));
-    const outH = Math.min(Math.ceil(imgH / 4), Math.floor(outW * (imgH / imgW) / 2));
+    const outH = Math.min(Math.ceil(imgH / 4), Math.floor(outW * (imgH / imgW) / 2)) + 1;
     const BRAILLE_BASE = 0x2800;
     const brailleMap = [
         [0, 1, 2, 5], // col=0 => bits for rows 0..3
@@ -1003,7 +1003,14 @@ function generateBrailleAsciiArt(
                 `${Math.round(bgG / bgCount).toString(16).padStart(2, '0')}` +
                 `${Math.round(bgB / bgCount).toString(16).padStart(2, '0')}-bg`
                 : '';
-            const ch = String.fromCharCode(BRAILLE_BASE + bitmask);
+
+            let ch: string;;
+            if (fgCount >= 8) {
+                // If all pixels are foreground, use full block
+                ch = '▒';
+            } else {
+                ch = String.fromCharCode(BRAILLE_BASE + bitmask);
+            }
             line += `${bgTag ? `{${bgTag}}` : ''}${fgTag ? `{${fgTag}}` : ''}${ch}{/}`;
         }
         asciiArt += line + '\n';
