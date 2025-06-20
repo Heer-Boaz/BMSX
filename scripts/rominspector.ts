@@ -227,15 +227,19 @@ async function main() {
      * in between. Overlapping regions are handled by priority (first in array wins).
      */
     function renderBufferBar(
-        regions: Array<{ start: number; end: number; colorTag: string }>,
+        unfilteredRegions: Array<{ start: number; end: number; colorTag: string }>,
         totalSize: number,
         barLength: number
     ): string {
-        const blocks = ['▏', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
+        const blocks = [' ', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
+        const rightBlocks = ['▕', '▐', '█'];
         const cellSize = totalSize / barLength;
-        const defaultCellChar = '░';
+        const defaultCellChar = ' ';
         const cellChars = new Array(barLength).fill(defaultCellChar);
         const cellColors = new Array(barLength).fill('');
+
+        // Filter out empty regions (start === end === 0)
+        const regions = unfilteredRegions.filter(region => region.start !== 0 || region.end !== 0);
 
         for (const region of regions) {
             const startFloat = region.start / cellSize;
@@ -267,11 +271,12 @@ async function main() {
                     const overlap = Math.max(0, overlapEnd - overlapStart);
                     const coverage = overlap / cellSize;
                     const idx = Math.round(coverage * 8);
-                    if (idx >= 8) {
-                        cellChars[startCell] = '█';
-                        cellColors[startCell] = region.colorTag;
-                    } else if (idx > 0) {
-                        cellChars[startCell] = blocks[idx];
+                    if (idx === 0) {
+                        // Fill the one character by computing the whether the region is more left, middle, or right
+
+                        const leftFrac = (regionStart - cellStart) / cellSize;
+                        const rightFrac = (cellEnd - regionEnd) / cellSize;
+
                         // Find the highest-priority overlapping region's colorTag for fg
                         let fgColor = '{black-fg}';
                         for (const r of regions) {
@@ -283,7 +288,51 @@ async function main() {
                                 break;
                             }
                         }
-                        cellColors[startCell] = region.colorTag.replace('-fg}', '-bg}') + fgColor;
+                        // If there is any overlapping region, we ignore this region
+                        if (fgColor !== '{black-fg}') continue;
+
+                        // Determine whether to use left, right, or middle character
+                        if (leftFrac < rightFrac - 0.25) {
+                            cellChars[startCell] = '▏'; // left
+                        } else if (leftFrac > rightFrac + 0.25) {
+                            cellChars[startCell] = '▕'; // right
+                        } else {
+                            cellChars[startCell] = '│'; // true middle (vertical bar)
+                        }
+
+                        cellColors[startCell] = region.colorTag;
+                    }
+                    else if (idx >= 8) {
+                        cellChars[startCell] = '█';
+                        cellColors[startCell] = region.colorTag;
+                    }
+                    else if (idx > 0) {
+                        cellChars[startCell] = blocks[idx];
+                        let overlappingRegion = null;
+                        // Find the highest-priority overlapping region's colorTag for fg
+                        let fgColor = '{black-fg}';
+                        for (const r of regions) {
+                            // Only check other regions, not the current one
+                            if (r === region) continue;
+                            // Check if this region overlaps with the current cell
+                            if (r.start < cellEnd && r.end > cellStart) {
+                                fgColor = r.colorTag;
+                                overlappingRegion = r;
+                                break;
+                            }
+                        }
+                        // Invert colors **only** if the overlapping region starts before the current region ends (not the cell!)
+                        if (overlappingRegion && overlappingRegion.start < region.end) {
+                            cellColors[startCell] = region.colorTag.replace('-fg}', '-bg}') + fgColor;
+                        }
+                        else {
+                            // Inverse character by using rightBlocks
+                            const rightIdx = Math.max(0, 2 - idx); // 0 -> 2, 1 -> 1, 2 -> 0
+
+                            cellChars[startCell] = rightBlocks[rightIdx];
+
+                            cellColors[startCell] = region.colorTag.replace('-fg}', '-bg}') + fgColor;
+                        }
                     }
                 } else {
                     const coverage = 1 - leftFrac;
@@ -291,7 +340,8 @@ async function main() {
                     if (idx >= 8) {
                         cellChars[startCell] = '█';
                         cellColors[startCell] = region.colorTag;
-                    } else if (idx > 0) {
+                    }
+                    else {
                         // fractional: invert color background
                         cellChars[startCell] = blocks[idx];
                         // Find the highest-priority overlapping region's colorTag for fg
@@ -305,7 +355,7 @@ async function main() {
                                 break;
                             }
                         }
-                        cellColors[startCell] = region.colorTag.replace('-fg}', '-bg}') + fgColor;
+                        cellColors[startCell] += fgColor;
                     }
                 }
             }
@@ -324,6 +374,7 @@ async function main() {
         }
 
         let bar = '';
+
         for (let i = 0; i < barLength; i++) {
             bar += cellColors[i] + cellChars[i] + '{/}';
         }
@@ -556,33 +607,7 @@ async function main() {
                         metadataLines.push(`${key}: ${JSON.stringify(value)}`);
                     }
                 } else {
-                    try {
-                        const png = PNG.sync.read(
-                            Buffer.isBuffer(selected.buffer)
-                                ? selected.buffer
-                                : Buffer.from(selected.buffer)
-                        );
-                        let width = imgmeta.width || png.width;
-                        let height = imgmeta.height || png.height;
-                        const asciiChars = ' .:-=+*#%@';
-                        const outW = Math.min(48, width);
-                        const outH = Math.floor(height * (outW / width));
-                        for (let y = 0; y < outH; y++) {
-                            let line = '';
-                            for (let x = 0; x < outW; x++) {
-                                const px = Math.floor(x * width / outW);
-                                const py = Math.floor(y * height / outH);
-                                const idx4 = (py * width + px) << 2;
-                                const r = png.data[idx4], g = png.data[idx4 + 1], b = png.data[idx4 + 2], a = png.data[idx4 + 3];
-                                const lum = a === 0 ? 255 : (r * 0.299 + g * 0.587 + b * 0.114);
-                                const ch = asciiChars[Math.floor(lum / 256 * (asciiChars?.length ?? 0))] || ' ';
-                                line += ch;
-                            }
-                            asciiArt += line + '\n';
-                        }
-                    } catch {
-                        asciiArt = '[Unable to generate ASCII preview]';
-                    }
+                    asciiArt = '[Unable to generate ASCII preview]';
                 }
                 break;
             case 'audio':
@@ -617,13 +642,19 @@ async function main() {
             const total = rompack.length;
             // Compose regions for this asset: asset, metabuffer, global metadata
             const regions = [];
-            regions.push({ start: selected.start, end: selected.end, colorTag: '{yellow-fg}' });
+            const bufferRegionColor = '{red-fg}';
+            const bufferRegionColorCloseTag = bufferRegionColor.replace('{', '{/');
+            const metabufferRegionColor = '{blue-fg}';
+            const metabufferRegionColorCloseTag = bufferRegionColor.replace('{', '{/');
+            if (selected.start !== undefined && selected.end !== undefined) {
+                regions.push({ start: selected.start, end: selected.end, colorTag: bufferRegionColor });
+            }
             if (selected.metabuffer_start !== undefined && selected.metabuffer_end !== undefined) {
-                regions.push({ start: selected.metabuffer_start, end: selected.metabuffer_end, colorTag: '{cyan-fg}' });
+                regions.push({ start: selected.metabuffer_start, end: selected.metabuffer_end, colorTag: metabufferRegionColor });
             }
             const bar = renderBufferBar(regions, total, barLength);
             bufferLines.push(`Buffer: [${bar}]`);
-            bufferLines.push(`        {yellow-fg}█{/yellow-fg} asset, {cyan-fg}█{/cyan-fg} metabuffer`);
+            bufferLines.push(`        ${bufferRegionColor}█${bufferRegionColorCloseTag} buffer, ${metabufferRegionColor}█${metabufferRegionColorCloseTag} metabuffer`);
             if (bufferSize) bufferLines.push(`Buffer: ${selected.start} - ${selected.end} (${byteSizeToString(bufferSize)})`);
             // Metabuffer region info
             if (metabufferSize) bufferLines.push(`Metabuffer: ${selected.metabuffer_start} - ${selected.metabuffer_end} (${byteSizeToString(metabufferSize)})`);
@@ -828,11 +859,11 @@ function generateBrailleAsciiArt(
 ): string {
     let asciiArt = '';
     const outW = Math.min(modalWidth - 8, Math.floor(imgW / 2));
-    const outH = Math.min(Math.floor(imgH / 4), Math.floor(outW * (imgH / imgW) / 2));
+    const outH = Math.min(Math.ceil(imgH / 4), Math.floor(outW * (imgH / imgW) / 2));
     const BRAILLE_BASE = 0x2800;
     const brailleMap = [
         [0, 1, 2, 5], // col=0 => bits for rows 0..3
-        [3, 4, 6, 7]  // col=1 => bits for rows 0..3
+        [3, 4, 6, 7],  // col=1 => bits for rows 0..3
     ];
     const useEdgeDetection = true; // Set to false to disable Sobel edge enhancement
     // 1. Compute dominant color for the whole image region (histogram)
@@ -939,15 +970,20 @@ function generateBrailleAsciiArt(
             // For each dot, set if it is foreground (not background)
             for (let dy = 0; dy < 4; dy++) {
                 for (let dx = 0; dx < 2; dx++) {
-                    // Use the same background/foreground classification as above
+                    // Use adaptive luminance thresholding for dot activation
                     const relX = Math.min(imgW - 1, x * 2 + dx);
                     const relY = Math.min(imgH - 1, y * 4 + dy);
                     const px = offsetX + relX;
                     const py = offsetY + relY;
                     const idx4 = (py * atlasPng.width + px) << 2;
                     const r = imgBuf[idx4], g = imgBuf[idx4 + 1], b = imgBuf[idx4 + 2], a = imgBuf[idx4 + 3];
+                    const lum = a === 0 ? 255 : (0.299 * r + 0.587 * g + 0.114 * b);
                     // If not close to global background, set the dot
-                    if (colorDistSq(r, g, b, globalDomR, globalDomG, globalDomB) >= 32 * 32) {
+                    // Now also use adaptive thresholding: if luminance is below modThresh * 255, set dot
+                    if (
+                        colorDistSq(r, g, b, globalDomR, globalDomG, globalDomB) >= 32 * 32 ||
+                        (colorDistSq(r, g, b, globalDomR, globalDomG, globalDomB) >= 16 * 16 && lum < modThresh * 255)
+                    ) {
                         bitmask |= 1 << brailleMap[dx][dy];
                     }
                 }
@@ -967,18 +1003,8 @@ function generateBrailleAsciiArt(
                 `${Math.round(bgG / bgCount).toString(16).padStart(2, '0')}` +
                 `${Math.round(bgB / bgCount).toString(16).padStart(2, '0')}-bg`
                 : '';
-            // Special case: all background or all foreground
-            let ch;
-            if (fgCount === 0 && bgCount > 0) {
-                ch = ' ';
-                line += `{${bgTag}} ${bgTag ? '{/}' : ''}`;
-            } else if (bgCount === 0 && fgCount > 0) {
-                ch = '█';
-                line += `{${fgTag}}█{/}`;
-            } else {
-                ch = String.fromCharCode(BRAILLE_BASE + bitmask);
-                line += `${bgTag ? `{${bgTag}}` : ''}{${fgTag}}${ch}{/}`;
-            }
+            const ch = String.fromCharCode(BRAILLE_BASE + bitmask);
+            line += `${bgTag ? `{${bgTag}}` : ''}${fgTag ? `{${fgTag}}` : ''}${ch}{/}`;
         }
         asciiArt += line + '\n';
     }
