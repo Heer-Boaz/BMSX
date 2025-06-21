@@ -365,7 +365,7 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<RomAsset[]> {
  * @param rom - The buffer containing the ROM data.
  * @returns A Promise that resolves to a `RomPack` object containing the loaded resources.
  */
-export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>, loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any> }): Promise<RomPack> {
+export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>, loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>, loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any> }): Promise<RomPack> {
 	const result: RomPack = {
 		images: {},
 		rom: rom,
@@ -405,7 +405,7 @@ async function getImageFromBuffer(buffer: ArrayBuffer): Promise<HTMLImageElement
  * @returns A Promise that resolves when the resource has been loaded and added to the `RomPack` object.
  * If an error occurs during loading, the Promise is rejected with an error message.
  */
-async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>, loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any> }): Promise<void> {
+async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>, loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>, loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any> }): Promise<void> {
 	switch (res.type) {
 		case 'image':
 			if (!res.imgmeta!.atlassed) {
@@ -436,8 +436,17 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 			}
 			break;
 		case 'audio':
-			romResult.snd_assets[res.resid] = res;
-			romResult.snd_assets[res.resname] = res;
+			try {
+				if (opts && opts.loadAudioFromBuffer) {
+					romResult.snd_assets[res.resid] = await opts.loadAudioFromBuffer(rom.slice(res.start, res.end));
+				} else {
+					// By default we do not load the audio, but load it later in the SoundMaster
+					romResult.snd_assets[res.resid] = res;
+					romResult.snd_assets[res.resname] = res;
+				}
+			} catch (err) {
+				throw new Error(`Failed to load 'audio' from rom: ${err.message}.`);
+			}
 			break;
 		default:
 			throw new Error(`Unrecognised resource type in rom: ${res.type}, while processing rompack!`);

@@ -7,13 +7,14 @@ import * as contrib from 'blessed-contrib';
 import * as fs from 'fs/promises';
 import * as pako from 'pako';
 import { PNG } from 'pngjs';
-import type { AudioMeta, ImgMeta, RomAsset } from '../src/bmsx/rompack';
+import type { AudioMeta, ImgMeta, RomAsset, RomMeta } from '../src/bmsx/rompack';
 import { loadAssetList, parseMetaFromBuffer } from './bootrom';
 
 const PER_PIXEL_RENDERING_THRESHOLD = 64; // sprites ≤64×64 get per-pixel rendering
 
 let modal: blessed.Widgets.BoxElement | null = null;
 let filteredAssetList: RomAsset[] = [];
+let assetList: RomAsset[] = [];
 
 function byteSizeToString(size: number): string {
     const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
@@ -26,12 +27,113 @@ function byteSizeToString(size: number): string {
     return i === 0 ? `${size} ${units[0]}` : `${n.toFixed(2)} ${units[i]}`;
 }
 
-async function main() {
-    const romfile = process.argv[2];
-    if (!romfile) {
-        console.error('Usage: npx tsx scripts/rominspector.ts <romfile>');
+function decodeuint8arr(buf: Uint8Array): string {
+    return new TextDecoder().decode(buf);
+}
+
+async function nodeImageLoader(buffer: ArrayBuffer) {
+    // In Node, you might want to return a Buffer, or just the raw data, or a stub object
+    console.log(`Loading image from buffer... (${buffer.byteLength} bytes)`);
+    let copyBuffer = new ArrayBuffer(buffer.byteLength);
+    copyBuffer = buffer.slice(0);
+    return PNG.sync.read(Buffer.from(copyBuffer));
+}
+
+async function loadSourceFromBuffer(buf: ArrayBuffer): Promise<string> {
+    if (!(buf instanceof ArrayBuffer)) {
+        console.error('loadSourceFromBuffer expects an ArrayBuffer, got:', buf);
+        throw new Error('Invalid buffer type');
+    }
+    if (buf.byteLength === 0) {
+        console.error('loadSourceFromBuffer received an empty buffer');
+        return '';
+    }
+    // If the buffer is already a string, return it directly
+    if (typeof buf === 'string') {
+        return buf;
+    }
+
+    // First create a copy of the ArrayBuffer to avoid issues with shared memory
+    console.info(`Creating a copy of the ArrayBuffer for decoding... (${byteSizeToString(buf.byteLength)} bytes)`);
+    let copyBuffer = new ArrayBuffer(buf.byteLength);
+    copyBuffer = buf.slice(0);
+
+    console.info(`Decoding ArrayBuffer of size ${byteSizeToString(copyBuffer.byteLength)} bytes...`);
+
+    // Use TextDecoder to decode the ArrayBuffer directly
+    const decoded = decodeuint8arr(new Uint8Array(copyBuffer));
+
+    console.info(`Decoded ArrayBuffer to string of length ${decoded.length} characters.`);
+    return decoded;
+}
+
+async function loadAssets(rompack: Buffer | ArrayBuffer) {
+    let assets: RomAsset[] = [];
+    try {
+        const arrayBuffer = rompack instanceof ArrayBuffer ? rompack : rompack.buffer.slice(rompack.byteOffset, rompack.byteOffset + rompack.byteLength);
+        // Load the ROM pack metadata using the loadResources function
+        console.log('Loading ROM pack metadata...');
+        if (!arrayBuffer || !(arrayBuffer instanceof ArrayBuffer)) {
+            console.error('Invalid metadata format: expected an ArrayBuffer');
+            process.exit(1);
+        }
+        if (arrayBuffer.byteLength < 16) {
+            console.error('Metadata buffer is too short, expected at least 16 bytes');
+            process.exit(1);
+        }
+        // Load the ROM pack metadata using the loadResources function
+        console.log('Extracting ROM pack metadata...');
+        // Use the nodeImageLoader to load images from the buffer
+        // Note: loadResources will handle the image loading using the provided nodeImageLoader
+        console.log('Loading resources from metadata buffer...');
+        // Ensure nodeImageLoader is a function that can handle ArrayBuffer input
+        if (typeof nodeImageLoader !== 'function') {
+            console.error('nodeImageLoader must be a function that accepts an ArrayBuffer');
+            process.exit(1);
+        }
+        assets = await loadAssetList(rompack);
+
+        console.log('ROM pack metadata and resources loaded successfully.');
+
+        console.log(`Extracted ${assets.length} assets from ROM pack.`);
+    } catch (e: any) {
+        console.error(`Failed to decode metadata: ${e.message}`);
+        console.error(e?.stack ?? 'No stack trace available');
         process.exit(1);
     }
+    return assets;
+}
+
+function getMetadataBuffer(rompack: Buffer | ArrayBuffer, rommeta: RomMeta) {
+    const metadataOffset = rommeta.start;
+    const metadataLength = rommeta.end - rommeta.start;
+    // Validate metadataOffset and metadataLength
+    if (
+        !Number.isFinite(metadataOffset) ||
+        !Number.isFinite(metadataLength) ||
+        metadataOffset < 0 ||
+        metadataLength < 0 ||
+        metadataOffset + metadataLength > rompack.byteLength ||
+        metadataOffset > rompack.byteLength - 16
+    ) {
+        console.error(`Invalid metadata offset or length: offset=${metadataOffset} (${byteSizeToString(metadataOffset)}), length=${metadataLength} (${byteSizeToString(metadataLength)})`);
+        process.exit(1);
+    }
+
+    const metaBuf = rompack.slice(metadataOffset, metadataOffset + metadataLength);
+    if (!metaBuf || metaBuf.byteLength === 0) {
+        console.error('No metadata found in ROM file, invalid ROM file.');
+        process.exit(1);
+    }
+    if (metaBuf.byteLength !== metadataLength) {
+        console.error(`Metadata length mismatch: expected ${metadataLength} bytes, got ${metaBuf.byteLength} bytes`);
+        process.exit(1);
+    }
+    console.log(`Metadata buffer loaded: offset=${metadataOffset} (${byteSizeToString(metadataOffset)}), length=${metadataLength} (${byteSizeToString(metadataLength)})`);
+    return { metaBuf, metadataOffset, metadataLength };
+}
+
+async function loadRompackFromFile(romfile: string): Promise<Buffer> {
     let raw: Buffer
     let error: any;
     try {
@@ -42,8 +144,7 @@ async function main() {
     }
     // Check whether the file exists
     if (!raw) {
-        console.error(`Failed to read ROM file at "${romfile}": ${error?.message || 'Unknown error'}`);
-        process.exit(1);
+        throw new Error(`Failed to read ROM file at "${romfile}": ${error?.message || 'Unknown error'}`);
     }
 
     function isPakoCompressed(raw: Uint8Array): boolean {
@@ -83,7 +184,25 @@ async function main() {
         rompack = raw;
     }
     if (!rompack) {
-        console.error('Failed to read or decompress ROM file, invalid ROM file.');
+        throw new Error('ROM pack is empty or invalid after decompression.');
+    }
+    return rompack;
+}
+
+async function main() {
+    const romfile = process.argv[2];
+    if (!romfile) {
+        console.error('Usage: npx tsx scripts/rominspector.ts <romfile>');
+        process.exit(1);
+    }
+
+    // Load the ROM pack from the specified file
+    let rompack: Buffer | ArrayBuffer;
+    try {
+        rompack = await loadRompackFromFile(romfile);
+    } catch (e: any) {
+        console.error(`Failed to load ROM file "${romfile}": ${e.message}`);
+        console.error(e?.stack ?? 'No stack trace available');
         process.exit(1);
     }
 
@@ -94,120 +213,8 @@ async function main() {
     }
     console.log(`ROM metadata: start=${rommeta.start} (${byteSizeToString(rommeta.start)}), end=${rommeta.end} (${byteSizeToString(rommeta.end)}, length=${rommeta.end - rommeta.start} (${byteSizeToString(rommeta.end - rommeta.start)}))`);
 
-    // if (!rompack.length || rompack.length < 16) {
-    //     console.error('ROM file is empty or too short, invalid ROM file.');
-    //     process.exit(1);
-    // }
-    // // ROM must be at least 16 bytes and not suspiciously huge
-    // if (rompack.length > 1024 * 1024 * 1024) {
-    //     console.error('ROM file is suspiciously large (>1GB), aborting.');
-    //     process.exit(1);
-    // }
-
-    function decodeuint8arr(buf: Uint8Array): string {
-        return new TextDecoder().decode(buf);
-    }
-
-    async function nodeImageLoader(buffer: ArrayBuffer) {
-        // In Node, you might want to return a Buffer, or just the raw data, or a stub object
-        console.log(`Loading image from buffer... (${buffer.byteLength} bytes)`);
-        let copyBuffer = new ArrayBuffer(buffer.byteLength);
-        copyBuffer = buffer.slice(0);
-        return PNG.sync.read(Buffer.from(copyBuffer));
-    }
-
-    async function loadSourceFromBuffer(buf: ArrayBuffer): Promise<string> {
-        if (!(buf instanceof ArrayBuffer)) {
-            console.error('loadSourceFromBuffer expects an ArrayBuffer, got:', buf);
-            throw new Error('Invalid buffer type');
-        }
-        if (buf.byteLength === 0) {
-            console.error('loadSourceFromBuffer received an empty buffer');
-            return '';
-        }
-        // If the buffer is already a string, return it directly
-        if (typeof buf === 'string') {
-            return buf;
-        }
-
-        // First create a copy of the ArrayBuffer to avoid issues with shared memory
-        console.info(`Creating a copy of the ArrayBuffer for decoding... (${byteSizeToString(buf.byteLength)} bytes)`);
-        let copyBuffer = new ArrayBuffer(buf.byteLength);
-        copyBuffer = buf.slice(0);
-
-        console.info(`Decoding ArrayBuffer of size ${byteSizeToString(copyBuffer.byteLength)} bytes...`);
-
-        // Use TextDecoder to decode the ArrayBuffer directly
-        const decoded = decodeuint8arr(new Uint8Array(copyBuffer));
-
-        console.info(`Decoded ArrayBuffer to string of length ${decoded.length} characters.`);
-        return decoded;
-    }
-
-    const metadataOffset = rommeta.start
-    const metadataLength = rommeta.end - rommeta.start;
-    // Validate metadataOffset and metadataLength
-    if (
-        !Number.isFinite(metadataOffset) ||
-        !Number.isFinite(metadataLength) ||
-        metadataOffset < 0 ||
-        metadataLength < 0 ||
-        metadataOffset + metadataLength > rompack.length ||
-        metadataOffset > rompack.length - 16
-    ) {
-        console.error(`Invalid metadata offset or length: offset=${metadataOffset} (${byteSizeToString(metadataOffset)}), length=${metadataLength} (${byteSizeToString(metadataLength)})`);
-        process.exit(1);
-    }
-    const metaBuf = rompack.slice(metadataOffset, metadataOffset + metadataLength);
-    if (!metaBuf || metaBuf.length === 0) {
-        console.error('No metadata found in ROM file, invalid ROM file.');
-        process.exit(1);
-    }
-    if (metaBuf.byteLength !== metadataLength) {
-        console.error(`Metadata length mismatch: expected ${metadataLength} bytes, got ${metaBuf.byteLength} bytes`);
-        process.exit(1);
-    }
-    let assetList: any[] = [];
-    try {
-        const arrayBuffer = rompack instanceof ArrayBuffer ? rompack : rompack.buffer.slice(rompack.byteOffset, rompack.byteOffset + rompack.byteLength);
-        // Load the ROM pack metadata using the loadResources function
-        console.log('Loading ROM pack metadata...');
-        if (!arrayBuffer || !(arrayBuffer instanceof ArrayBuffer)) {
-            console.error('Invalid metadata format: expected an ArrayBuffer');
-            process.exit(1);
-        }
-        if (arrayBuffer.byteLength < 16) {
-            console.error('Metadata buffer is too short, expected at least 16 bytes');
-            process.exit(1);
-        }
-        // Load the ROM pack metadata using the loadResources function
-        console.log('Extracting ROM pack metadata...');
-        // Use the nodeImageLoader to load images from the buffer
-        // Note: loadResources will handle the image loading using the provided nodeImageLoader
-        console.log('Loading resources from metadata buffer...');
-        // Ensure nodeImageLoader is a function that can handle ArrayBuffer input
-        if (typeof nodeImageLoader !== 'function') {
-            console.error('nodeImageLoader must be a function that accepts an ArrayBuffer');
-            process.exit(1);
-        }
-        assetList = await loadAssetList(rompack);
-
-        // const extractedRompack: RomPack = await loadResources(arrayBuffer, {
-        //     loadImageFromBuffer: nodeImageLoader,
-        //     loadSourceFromBuffer: loadSourceFromBuffer
-        // });
-        console.log('ROM pack metadata and resources loaded successfully.');
-
-        console.log(`Extracted ${assetList.length} assets from ROM pack.`);
-        // if (!extractedRompack || assetList.length === 0) {
-        //     console.error('Invalid metadata format: expected an array of assets');
-        //     process.exit(1);
-        // }
-    } catch (e: any) {
-        console.error(`Failed to decode metadata: ${e.message}`);
-        console.error(e?.stack ?? 'No stack trace available');
-        process.exit(1);
-    }
+    const { metaBuf, metadataOffset, metadataLength } = getMetadataBuffer(rompack, rommeta);
+    assetList = await loadAssets(rompack);
 
     const imageAssets = assetList.filter(a => a.type === 'image') ?? [];
     const audioCount = assetList.filter(a => a.type === 'audio')?.length ?? 0;
