@@ -7,13 +7,13 @@ import * as contrib from 'blessed-contrib';
 import * as fs from 'fs/promises';
 import * as pako from 'pako';
 import { PNG } from 'pngjs';
-import { decodeBinary } from '../src/bmsx/binencoder';
-import type { AudioMeta, ImgMeta } from '../src/bmsx/rompack';
+import type { AudioMeta, ImgMeta, RomAsset } from '../src/bmsx/rompack';
+import { loadAssetList, parseMetaFromBuffer } from './bootrom';
 
 const PER_PIXEL_RENDERING_THRESHOLD = 64; // sprites ≤64×64 get per-pixel rendering
 
 let modal: blessed.Widgets.BoxElement | null = null;
-let filteredAssetList: any[] = [];
+let filteredAssetList: RomAsset[] = [];
 
 function byteSizeToString(size: number): string {
     const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
@@ -76,7 +76,8 @@ async function main() {
             // process.exit(1);
             decompressed = null; // fallback to null if decompression fails
         }
-        rompack = decompressed ?? raw; // Use decompressed data if available, otherwise fallback to raw
+        rompack = decompressed.buffer ?? raw; // Use decompressed data if available, otherwise fallback to raw
+        console.log(`Decompressed ROM size: ${byteSizeToString(rompack.byteLength)}`);
     } else {
         console.log('ROM is uncompressed, using as-is.');
         rompack = raw;
@@ -86,36 +87,65 @@ async function main() {
         process.exit(1);
     }
 
-    if (!rompack.length || rompack.length < 16) {
-        console.error('ROM file is empty or too short, invalid ROM file.');
+    const rommeta = parseMetaFromBuffer(rompack);
+    if (!rommeta || !rommeta.start || !rommeta.end) {
+        console.error('Invalid ROM metadata, unable to parse ROM file.');
         process.exit(1);
     }
-    // ROM must be at least 16 bytes and not suspiciously huge
-    if (rompack.length > 1024 * 1024 * 1024) {
-        console.error('ROM file is suspiciously large (>1GB), aborting.');
-        process.exit(1);
+    console.log(`ROM metadata: start=${rommeta.start} (${byteSizeToString(rommeta.start)}), end=${rommeta.end} (${byteSizeToString(rommeta.end)}, length=${rommeta.end - rommeta.start} (${byteSizeToString(rommeta.end - rommeta.start)}))`);
+
+    // if (!rompack.length || rompack.length < 16) {
+    //     console.error('ROM file is empty or too short, invalid ROM file.');
+    //     process.exit(1);
+    // }
+    // // ROM must be at least 16 bytes and not suspiciously huge
+    // if (rompack.length > 1024 * 1024 * 1024) {
+    //     console.error('ROM file is suspiciously large (>1GB), aborting.');
+    //     process.exit(1);
+    // }
+
+    function decodeuint8arr(buf: Uint8Array): string {
+        return new TextDecoder().decode(buf);
     }
-    const footer = rompack.slice(rompack.length - 16);
-    if (footer.length < 16) {
-        console.error('ROM footer is too short, invalid ROM file.');
-        process.exit(1);
+
+    async function nodeImageLoader(buffer: ArrayBuffer) {
+        // In Node, you might want to return a Buffer, or just the raw data, or a stub object
+        console.log(`Loading image from buffer... (${buffer.byteLength} bytes)`);
+        let copyBuffer = new ArrayBuffer(buffer.byteLength);
+        copyBuffer = buffer.slice(0);
+        return PNG.sync.read(Buffer.from(copyBuffer));
     }
-    function readLE64(buf: Uint8Array, offset: number): bigint {
-        // Validate offset
-        if (offset < 0 || offset + 8 > buf.length) {
-            throw new Error('Invalid offset for LE64 read');
+
+    async function loadSourceFromBuffer(buf: ArrayBuffer): Promise<string> {
+        if (!(buf instanceof ArrayBuffer)) {
+            console.error('loadSourceFromBuffer expects an ArrayBuffer, got:', buf);
+            throw new Error('Invalid buffer type');
         }
-        return (BigInt(buf[offset]) |
-            (BigInt(buf[offset + 1]) << BigInt(8)) |
-            (BigInt(buf[offset + 2]) << BigInt(16)) |
-            (BigInt(buf[offset + 3]) << BigInt(24)) |
-            (BigInt(buf[offset + 4]) << BigInt(32)) |
-            (BigInt(buf[offset + 5]) << BigInt(40)) |
-            (BigInt(buf[offset + 6]) << BigInt(48)) |
-            (BigInt(buf[offset + 7]) << BigInt(56)));
+        if (buf.byteLength === 0) {
+            console.error('loadSourceFromBuffer received an empty buffer');
+            return '';
+        }
+        // If the buffer is already a string, return it directly
+        if (typeof buf === 'string') {
+            return buf;
+        }
+
+        // First create a copy of the ArrayBuffer to avoid issues with shared memory
+        console.info(`Creating a copy of the ArrayBuffer for decoding... (${byteSizeToString(buf.byteLength)} bytes)`);
+        let copyBuffer = new ArrayBuffer(buf.byteLength);
+        copyBuffer = buf.slice(0);
+
+        console.info(`Decoding ArrayBuffer of size ${byteSizeToString(copyBuffer.byteLength)} bytes...`);
+
+        // Use TextDecoder to decode the ArrayBuffer directly
+        const decoded = decodeuint8arr(new Uint8Array(copyBuffer));
+
+        console.info(`Decoded ArrayBuffer to string of length ${decoded.length} characters.`);
+        return decoded;
     }
-    const metadataOffset = Number(readLE64(footer, 0));
-    const metadataLength = Number(readLE64(footer, 8));
+
+    const metadataOffset = rommeta.start
+    const metadataLength = rommeta.end - rommeta.start;
     // Validate metadataOffset and metadataLength
     if (
         !Number.isFinite(metadataOffset) ||
@@ -133,39 +163,52 @@ async function main() {
         console.error('No metadata found in ROM file, invalid ROM file.');
         process.exit(1);
     }
-    if (metaBuf.length !== metadataLength) {
-        console.error(`Metadata length mismatch: expected ${metadataLength} bytes, got ${metaBuf.length} bytes`);
+    if (metaBuf.byteLength !== metadataLength) {
+        console.error(`Metadata length mismatch: expected ${metadataLength} bytes, got ${metaBuf.byteLength} bytes`);
         process.exit(1);
     }
-    let assetList: any[];
+    let assetList: any[] = [];
     try {
-        assetList = decodeBinary(metaBuf);
-        if (!assetList || !Array.isArray(assetList)) {
-            console.error('Invalid metadata format: expected an array of assets');
+        const arrayBuffer = rompack instanceof ArrayBuffer ? rompack : rompack.buffer.slice(rompack.byteOffset, rompack.byteOffset + rompack.byteLength);
+        // Load the ROM pack metadata using the loadResources function
+        console.log('Loading ROM pack metadata...');
+        if (!arrayBuffer || !(arrayBuffer instanceof ArrayBuffer)) {
+            console.error('Invalid metadata format: expected an ArrayBuffer');
             process.exit(1);
         }
+        if (arrayBuffer.byteLength < 16) {
+            console.error('Metadata buffer is too short, expected at least 16 bytes');
+            process.exit(1);
+        }
+        // Load the ROM pack metadata using the loadResources function
+        console.log('Extracting ROM pack metadata...');
+        // Use the nodeImageLoader to load images from the buffer
+        // Note: loadResources will handle the image loading using the provided nodeImageLoader
+        console.log('Loading resources from metadata buffer...');
+        // Ensure nodeImageLoader is a function that can handle ArrayBuffer input
+        if (typeof nodeImageLoader !== 'function') {
+            console.error('nodeImageLoader must be a function that accepts an ArrayBuffer');
+            process.exit(1);
+        }
+        assetList = await loadAssetList(rompack);
+
+        // const extractedRompack: RomPack = await loadResources(arrayBuffer, {
+        //     loadImageFromBuffer: nodeImageLoader,
+        //     loadSourceFromBuffer: loadSourceFromBuffer
+        // });
+        console.log('ROM pack metadata and resources loaded successfully.');
+
+        console.log(`Extracted ${assetList.length} assets from ROM pack.`);
+        // if (!extractedRompack || assetList.length === 0) {
+        //     console.error('Invalid metadata format: expected an array of assets');
+        //     process.exit(1);
+        // }
     } catch (e: any) {
         console.error(`Failed to decode metadata: ${e.message}`);
+        console.error(e?.stack ?? 'No stack trace available');
         process.exit(1);
     }
-    // Parse per-asset metabuffer and assign to asset
-    for (const asset of assetList) {
-        if (asset.metabuffer_start != null && asset.metabuffer_end != null) {
-            const metaSlice = rompack.slice(asset.metabuffer_start, asset.metabuffer_end);
-            const decodedMeta = decodeBinary(new Uint8Array(metaSlice));
-            switch (asset.type) {
-                case 'image':
-                    asset.imgmeta = decodedMeta;
-                    break;
-                case 'audio':
-                    asset.audiometa = decodedMeta;
-                    break;
-                default:
-                    // unsupported metadata type
-                    break;
-            }
-        }
-    }
+
     const imageAssets = assetList.filter(a => a.type === 'image') ?? [];
     const audioCount = assetList.filter(a => a.type === 'audio')?.length ?? 0;
     const codeCount = assetList.filter(a => a.type === 'source')?.length ?? 0;
@@ -413,7 +456,7 @@ async function main() {
             return sum + size;
         }, 0);
         const codeSize = assetList.reduce((sum, a) => a.type === 'source' ? sum + (a.end - a.start) : sum, 0);
-        const totalSize = rompack.length;
+        const totalSize = rompack.byteLength;
         const summaryRegions = [
             ...imageAssets.map(a => ({ start: a.start, end: a.end, colorTag: '{yellow-fg}', label: 'image' })),
             ...assetList.filter(a => a.type === 'audio').map(a => ({ start: a.start, end: a.end, colorTag: '{magenta-fg}', label: 'audio' })),
@@ -424,7 +467,7 @@ async function main() {
         const imageSizePercent = (imagesSize / totalSize * 100).toFixed(1);
         const audioSizePercent = (audioSize / totalSize * 100).toFixed(1);
         const codeSizePercent = (codeSize / totalSize * 100).toFixed(1);
-        const metaSizePercent = (metaBuf.length / totalSize * 100).toFixed(1);
+        const metaSizePercent = (metaBuf.byteLength / totalSize * 100).toFixed(1);
 
         return `Total assets: ${assetList?.length ?? 0} (images: ${imageAssets?.length ?? 0
             }, audio: ${audioCount}, code: ${codeCount}, other: ${otherCount}) \n` +
@@ -433,7 +476,7 @@ async function main() {
             `Images size: ${byteSizeToString(imagesSize)} (${imageSizePercent}%)\n` +
             `Audio size: ${byteSizeToString(audioSize)} (${audioSizePercent}%)\n` +
             `Code size: ${byteSizeToString(codeSize)} (${codeSizePercent}%)\n` +
-            `Metadata size: ${byteSizeToString(metaBuf.length)} (${metaSizePercent}%)\n` +
+            `Metadata size: ${byteSizeToString(metaBuf.byteLength)} (${metaSizePercent}%)\n` +
             `Total size: ${byteSizeToString(totalSize)}\n`;
     }
 
@@ -567,7 +610,7 @@ async function main() {
 
     // Helper to show asset modal by index
     function showAssetModal(idx: number) {
-        const selected = filteredAssetList[idx];
+        const selected = filteredAssetList[idx] as RomAsset;
         const imgmeta = selected.imgmeta || {} as ImgMeta;
         const audiometa = selected.audiometa || {} as AudioMeta;
         let bufferSize = selected.end - selected.start;
@@ -636,6 +679,29 @@ async function main() {
                     break;
                 }
                 metadataLines.push(`Priority: ${audiometa.priority ?? 'Unset!'}`);
+                // ------ ASCII-preview toevoegen ------
+                try {
+                    if (!selected.buffer || !(selected.buffer instanceof ArrayBuffer)) {
+                        asciiArt = '[No audio buffer available]';
+                        break;
+                    }
+                    const info = parseWav(selected.buffer as Uint8Array);
+                    if (!info || !info.dataOff || !info.dataLen || !info.bits || !info.channels) {
+                        asciiArt = '[Invalid WAV data]';
+                        break;
+                    }
+                    // Fix: create a Uint8Array view for subarray
+                    const pcm = new Uint8Array(selected.buffer).subarray(info.dataOff, info.dataOff + info.dataLen);
+
+                    const scope = asciiWave(
+                        pcm, info.bits, info.channels,
+            /* cols */ 76, /* rows */ 12, /* useBlocks */ true
+                    );
+                    asciiArt = scope;                          // getoond in je modal
+                } catch (e) {
+                    asciiArt = `(Preview failed: ${e}\n${e.stack})`;
+                }
+                break;
             case 'source':
             case 'code':
                 // For code, we don't generate ASCII art, just show the name
@@ -647,7 +713,7 @@ async function main() {
         const metabufferSize = selected.metabuffer_end - selected.metabuffer_start;
         if (bufferSize || metabufferSize) {
             const barLength = getBarLength(modal?.width as number);
-            const total = rompack.length;
+            const total = rompack.byteLength;
             // Compose regions for this asset: asset, metabuffer, global metadata
             const regions = [];
             const bufferRegionColor = '{red-fg}';
@@ -987,4 +1053,89 @@ function distributeError(buf: Float32Array, e: number, idx: number, w: number, h
     if (x > 0 && y + 1 < h) buf[idx + w - 1] += e * 3 / 16;
     if (y + 1 < h) buf[idx + w] += e * 5 / 16;
     if (x + 1 < w && y + 1 < h) buf[idx + w + 1] += e * 1 / 16;
+}
+
+interface WavInfo {
+    bits: 8 | 16 | 24 | 32;
+    channels: 1 | 2 | 3 | 4;
+    sampleRate: number;
+    dataOff: number;
+    dataLen: number;
+}
+
+/* Parseert de RIFF-WAVE header en retourneert metadata + offset */
+function parseWav(buf: Uint8Array): WavInfo {
+    const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+
+    if (dv.getUint32(0, false) !== 0x52494646) throw new Error('No RIFF');
+    if (dv.getUint32(8, false) !== 0x57415645) throw new Error('No WAVE');
+
+    let ptr = 12, fmt: WavInfo | null = null, dataOff = 0, dataLen = 0;
+
+    while (ptr + 8 <= buf.length) {
+        const id = dv.getUint32(ptr, false);
+        const size = dv.getUint32(ptr + 4, true);
+        if (id === 0x666d7420) {                    // "fmt "
+            const audioFmt = dv.getUint16(ptr + 8, true);
+            if (audioFmt !== 1) throw new Error('Only PCM supported');
+            fmt = {
+                channels: dv.getUint16(ptr + 10, true) as 1 | 2 | 3 | 4,
+                sampleRate: dv.getUint32(ptr + 12, true),
+                bits: dv.getUint16(ptr + 22, true) as 8 | 16 | 24 | 32,
+                dataOff: 0,
+                dataLen: 0,
+            };
+        } else if (id === 0x64617461) {             // "data"
+            dataOff = ptr + 8;
+            dataLen = size;
+        }
+        ptr += 8 + size + (size & 1);               // pad-byte
+    }
+    if (!fmt || !dataLen) throw new Error('Invalid WAV: missing fmt or data');
+    return { ...fmt, dataOff, dataLen };
+}
+
+/* Eenvoudige waveform-ASCII (monomix) – 1 regel = één frame */
+function asciiWave(
+    pcm: Uint8Array, bits: number, channels: number,
+    cols = 76, rows = 12, block = true
+): string {
+
+    const toFloat = (i: number): number => {
+        if (bits === 8) return ((pcm[i] - 128) / 128);
+        if (bits === 16) return ((pcm[i] | (pcm[i + 1] << 8)) << 16 >> 16) / 32768;
+        if (bits === 24) return ((pcm[i] | (pcm[i + 1] << 8) | (pcm[i + 2] << 16)) << 8 >> 8) / 8388608;
+        return (pcm[i] | (pcm[i + 1] << 8) | (pcm[i + 2] << 16) | (pcm[i + 3] << 24)) / 2147483648;
+    };
+
+    const sampCnt = pcm.length / (bits >> 3) / channels;
+    const step = sampCnt / cols;
+    const peaks: [number, number][] = Array(cols).fill([0, 0]);
+
+    for (let c = 0; c < cols; ++c) {
+        let min = 1, max = -1;
+        const s0 = Math.floor(c * step), s1 = Math.floor((c + 1) * step);
+        for (let s = s0; s < s1; ++s) {
+            let acc = 0;
+            for (let ch = 0; ch < channels; ++ch)
+                acc += toFloat((s * channels + ch) * (bits >> 3));
+            const v = acc / channels;
+            if (v < min) min = v; if (v > max) max = v;
+        }
+        peaks[c] = [min, max];
+    }
+
+    const mid = rows >> 1;
+    const lvl = block ? ' ▁▂▃▄▅▆▇█' : ' |||||||';
+    const canvas = Array.from({ length: rows }, () => Array(cols).fill(' '));
+
+    for (let x = 0; x < cols; ++x) {
+        const [mn, mx] = peaks[x];
+        const y0 = Math.round(mid - mx * mid), y1 = Math.round(mid - mn * mid);
+        for (let y = y0; y <= y1; ++y) {
+            const l = Math.floor((1 - Math.abs((y - mid) / mid)) * 8);
+            canvas[y][x] = lvl[l];
+        }
+    }
+    return canvas.map(r => r.join('')).join('\n');
 }

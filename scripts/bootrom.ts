@@ -266,7 +266,7 @@ async function loadImage(url: string): Promise<HTMLImageElement> {
  * @param to_parse - The buffer to parse the metadata from.
  * @returns The metadata of the ROM pack.
  */
-function parseMetaFromBuffer(to_parse: ArrayBuffer): RomMeta {
+export function parseMetaFromBuffer(to_parse: ArrayBuffer): RomMeta {
 	const bytearray = new Uint8Array(to_parse);
 	const footerOffset = bytearray.length - 16;
 	if (footerOffset < 0) throw new Error('ROM file too small for footer');
@@ -293,7 +293,7 @@ function getSubBufferAsPerMeta(buffer: ArrayBuffer, meta: RomMeta): ArrayBuffer 
  * @param buffer - The buffer to extract the sub-buffer from.
  * @returns The sub-buffer of the given buffer as per the start and end positions specified in the metadata of the buffer.
  */
-function getSubBufferFromBufferWithMeta(buffer: ArrayBuffer): ArrayBuffer {
+export function getSubBufferFromBufferWithMeta(buffer: ArrayBuffer): ArrayBuffer {
 	let buffer_meta: RomMeta = parseMetaFromBuffer(buffer);
 	return getSubBufferAsPerMeta(buffer, buffer_meta);
 }
@@ -324,7 +324,7 @@ async function getZippedRomAndRomLabelFromBlob(blob_buffer: ArrayBuffer): Promis
  * @param rom - The buffer containing the ROM data.
  * @returns A Promise that resolves to an array of `RomAsset` objects representing the resources in the ROM.
  */
-async function loadAssetList(rom: ArrayBuffer): Promise<RomAsset[]> {
+export async function loadAssetList(rom: ArrayBuffer): Promise<RomAsset[]> {
 	const sliced = new Uint8Array(getSubBufferFromBufferWithMeta(rom));
 	// Use decodeBinary to decode the binary-encoded asset list
 	let assetList: RomAsset[];
@@ -348,6 +348,9 @@ async function loadAssetList(rom: ArrayBuffer): Promise<RomAsset[]> {
 				case 'audio':
 					asset.audiometa = decodedMeta as AudioMeta;
 					break;
+				case 'source':
+					// No specific metadata for source type, but we can still assign the decoded metadata
+					break;
 				default:
 					// unsupported metadata type
 					break;
@@ -362,7 +365,7 @@ async function loadAssetList(rom: ArrayBuffer): Promise<RomAsset[]> {
  * @param rom - The buffer containing the ROM data.
  * @returns A Promise that resolves to a `RomPack` object containing the loaded resources.
  */
-async function loadResources(rom: ArrayBuffer): Promise<RomPack> {
+export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>, loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any> }): Promise<RomPack> {
 	const result: RomPack = {
 		images: {},
 		rom: rom,
@@ -372,9 +375,7 @@ async function loadResources(rom: ArrayBuffer): Promise<RomPack> {
 	};
 
 	const assetList = await loadAssetList(rom);
-	for (let i = 0; i < assetList.length; i++) {
-		await load(rom, assetList[i], result);
-	}
+	await Promise.all(assetList.map(a => load(rom, a, result, opts)));
 	return Promise.resolve<RomPack>(result);
 }
 
@@ -404,11 +405,16 @@ async function getImageFromBuffer(buffer: ArrayBuffer): Promise<HTMLImageElement
  * @returns A Promise that resolves when the resource has been loaded and added to the `RomPack` object.
  * If an error occurs during loading, the Promise is rejected with an error message.
  */
-async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack): Promise<void> {
+async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>, loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any> }): Promise<void> {
 	switch (res.type) {
 		case 'image':
 			if (!res.imgmeta!.atlassed) {
-				const img = await getImageFromBuffer(rom.slice(res.start, res.end));
+				let img: HTMLImageElement;
+				if (opts && opts.loadImageFromBuffer) {
+					img = await opts.loadImageFromBuffer(rom.slice(res.start, res.end));
+				} else {
+					img = await getImageFromBuffer(rom.slice(res.start, res.end));
+				}
 
 				romResult.images[res.resid] = img;
 				romResult.images[res.resname] = img;
@@ -418,9 +424,13 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack): Promis
 			break;
 		case 'source':
 			try {
-				const bytearray = new Uint8Array(rom);
-				const sliced = bytearray.slice(res.start, res.end);
-				romResult.code = decodeuint8arr(sliced);
+				// const bytearray = new Uint8Array(rom);
+				if (opts && opts.loadSourceFromBuffer) {
+					romResult.code = await opts.loadSourceFromBuffer(rom.slice(res.start, res.end));
+				} else {
+					const sliced = new Uint8Array(rom, res.start, res.end - res.start);
+					romResult.code = decodeuint8arr(sliced);
+				}
 			} catch (err) {
 				throw new Error(`Failed to load 'source' from rom: ${err.message}.`);
 			}
@@ -540,7 +550,7 @@ function decodeuint8arr(to_decode: Uint8Array): string {
 	try {
 		return decoder.decode(to_decode);
 	} catch (err) {
-		throw err;//new Error('Invalid UTF-8 input');
+		throw err;
 	}
 }
 
