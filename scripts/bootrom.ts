@@ -348,7 +348,7 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<RomAsset[]> {
 				case 'audio':
 					asset.audiometa = decodedMeta as AudioMeta;
 					break;
-				case 'source':
+				case 'code':
 					// No specific metadata for source type, but we can still assign the decoded metadata
 					break;
 				default:
@@ -408,7 +408,8 @@ async function getImageFromBuffer(buffer: ArrayBuffer): Promise<HTMLImageElement
 async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>, loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>, loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any> }): Promise<void> {
 	switch (res.type) {
 		case 'image':
-			if (!res.imgmeta!.atlassed) {
+		case 'atlas':
+			if (!res.imgmeta?.atlassed) {
 				let img: HTMLImageElement;
 				if (opts && opts.loadImageFromBuffer) {
 					img = await opts.loadImageFromBuffer(rom.slice(res.start, res.end));
@@ -422,7 +423,7 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 			romResult.img_assets[res.resid] = res;
 			romResult.img_assets[res.resname] = res;
 			break;
-		case 'source':
+		case 'code':
 			try {
 				// const bytearray = new Uint8Array(rom);
 				if (opts && opts.loadSourceFromBuffer) {
@@ -438,7 +439,7 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 		case 'audio':
 			try {
 				if (opts && opts.loadAudioFromBuffer) {
-					romResult.snd_assets[res.resid] = await opts.loadAudioFromBuffer(rom.slice(res.start, res.end));
+				romResult.snd_assets[res.resid] = await opts.loadAudioFromBuffer(rom.slice(res.start, res.end));
 				} else {
 					// By default we do not load the audio, but load it later in the SoundMaster
 					romResult.snd_assets[res.resid] = res;

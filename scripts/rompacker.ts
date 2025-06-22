@@ -1,6 +1,6 @@
 import { glsl } from "esbuild-plugin-glsl";
 import type { Stats } from 'fs';
-import type { AudioMeta, ImgMeta, RomAsset, vec2arr } from '../src/bmsx/rompack';
+import type { asset_type, AudioMeta, ImgMeta, RomAsset, vec2arr } from '../src/bmsx/rompack';
 import { createOptimizedAtlas } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import { LoadedResource, ResourceMeta, RomManifest, RomPackerOptions } from './rompacker.rompack';
@@ -469,7 +469,7 @@ function zip(content: Buffer): Uint8Array {
 function getResMetaByFilename(filepath: string): { name: string, ext: string, type: string, collisionType?: 'concave' | 'convex' | 'aabb' | undefined } {
 	let name = parse(filepath).name.replace(' ', '').toLowerCase();
 	const ext = parse(filepath).ext.toLowerCase();
-	let type: string;
+	let type: asset_type | 'rommanifest' | 'romlabel';
 	let collisionType: 'concave' | 'convex' | 'aabb' | undefined = undefined;
 
 	switch (ext) {
@@ -477,13 +477,15 @@ function getResMetaByFilename(filepath: string): { name: string, ext: string, ty
 			type = 'audio';
 			break;
 		case '.js':
-			type = 'source';
+			type = 'code';
 			break;
 		case '.rommanifest':
 			type = 'rommanifest';
 			break;
+		case '.atlas': // `.atlas`-files don't exist. We use this to add the atlas to the resource list
+			type = 'atlas';
+			break;
 		case '.png':
-		default:
 			if (name === 'romlabel') {
 				// Special case for romlabel, which is a PNG file with a specific name
 				type = 'romlabel';
@@ -491,6 +493,8 @@ function getResMetaByFilename(filepath: string): { name: string, ext: string, ty
 			else {
 				type = 'image';
 			}
+			break;
+		default:
 			break;
 	}
 	return { name: name, ext: ext, type: type, collisionType: collisionType };
@@ -508,6 +512,12 @@ async function getResMetaList(respath: string, romname?: string) {
 	// Note that romname can be undefined when building the resource enum file, so we only add the file if romname is defined
 	if (romname) {
 		addFile("./rom", megarom_filename, arrayOfFiles); // Add source at the end
+	}
+
+	// Add atlasses to the array of files, if we are generating and using texture atlases
+	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
+		// BUG: WE NEED TO SEE HOW MANY ATLASSES ARE USED!
+		arrayOfFiles.push('_atlas.atlas');
 	}
 
 	const result: Array<ResourceMeta> = [];
@@ -528,6 +538,11 @@ async function getResMetaList(respath: string, romname?: string) {
 				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: imgid, collisionType: imgMeta.collisionType });
 				++imgid;
 				break;
+			case 'atlas':
+				// The atlas is pushed as part of the images
+				result.push({ filepath: undefined, name: name, ext: ext, type: type, id: imgid, collisionType: undefined });
+				++imgid;
+				break;
 			case 'audio':
 				let parsedMeta = parseAudioMeta(name);
 				name = parsedMeta.sanitizedName; // Remove metadata from the name
@@ -541,9 +556,6 @@ async function getResMetaList(respath: string, romname?: string) {
 				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: undefined });
 				break;
 		}
-	}
-	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-		result.push({ filepath: undefined, name: '_atlas', ext: undefined, type: 'atlas', id: imgid }); // Note that 'atlas' is an internal type, used only for this script
 	}
 
 	// Validation: ensure no duplicate IDs within the same resource type (image or audio)
@@ -596,7 +608,6 @@ async function load_img(_meta: ResourceMeta) {
 	return await loadImage(dataURL);
 }
 
-
 /**
  * Builds a list of loaded resources located at `respath` for the specified `romname`.
  * @param respath The path to the resources to include in the list.
@@ -631,7 +642,7 @@ async function getLoadedResourcesList(respath: string, buffers: Array<Buffer>, r
 		filepath: filepath,
 		name: megarom_filename,
 		ext: '.js',
-		type: 'source',
+		type: 'code',
 		id: 1
 	});
 
@@ -671,13 +682,13 @@ async function buildResourceList(respath: string, romname?: string) {
 		const name = current.name;
 		switch (type) {
 			case 'image':
-			case 'atlas':
+			case 'atlas': // Atlas is also an image and thus is added to the image enum
 				const property_to_add = `\t${name} = '${name}',`;
 				tsimgout.push(`${property_to_add}`);
 				break;
 			case 'audio':
-				const enummember_to_add = `\t${name} = '${name}',`;
-				tssndout.push(`${enummember_to_add}`);
+				const enum_member_to_add = `\t${name} = '${name}',`;
+				tssndout.push(`${enum_member_to_add}`);
 				break;
 			case 'romlabel':
 				// Ignore this part
@@ -734,7 +745,6 @@ async function buildRompack(rom_name: string, respath: string, progress?: Progre
  * texture atlas can be used to bundle image data.
  *
  * @param loadedResources - The array of loaded resources to process.
- * @param generated_atlas - An optional canvas element used for generating texture atlas data.
  * @returns An object with three properties:
  * - `assetList` - The array of generated asset metadata objects (to be binary-encoded).
  * - `bufferPointer` - The current offset in the resource buffer after processing.
@@ -771,7 +781,7 @@ function processResources(loadedResources: LoadedResource[]) {
 				assetList.push({ resid, resname: name, type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: undefined, audiometa: parsedMeta.meta });
 				bufferPointer += res.buffer.length;
 				break;
-			case 'source':
+			case 'code':
 				name = name.replace('.min', '');
 				assetList.push({ resid, resname: name, type, start: bufferPointer, end: bufferPointer + res.buffer.length, imgmeta: undefined, audiometa: undefined });
 				bufferPointer += res.buffer.length;
@@ -884,7 +894,7 @@ async function handleAtlas(
 	assetList.push({
 		resid: loadedResources[i].id,
 		resname: loadedResources[i].name,
-		type: 'image',
+		type: 'atlas',
 		start: bufferPointer,
 		end: bufferPointer + atlasbuffer.length,
 		imgmeta: { atlassed: false, atlasid: null, width: atlasSize.x, height: atlasSize.y },

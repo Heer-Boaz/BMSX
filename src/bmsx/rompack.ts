@@ -96,13 +96,37 @@ export interface ImgMeta {
 	hitpolygons?: HitPolygonsPrecalc; // The concave hull polygons for collision detection, with flipped variants.
 }
 
+export interface AtlasMeta {
+	/**
+	 * The ID of the atlas.
+	 */
+	id: number;
+
+	/**
+	 * The width of the atlas.
+	 */
+	width: number;
+
+	/**
+	 * The height of the atlas.
+	 */
+	height: number;
+
+	/**
+	 * The list of image assets in the atlas.
+	 */
+	// img_assets: RomAsset[];
+}
+
+export type asset_type = 'image' | 'audio' | 'code' | 'atlas';
+
 /**
  * Represents an asset in a ROM pack.
  */
 export interface RomAsset {
 	resid: number; // The resource ID of the asset.
 	resname: string; // The name of the asset.
-	type: string; // The type of the asset.
+	type: asset_type; // The type of the asset.
 	start: number; // The start offset of the asset in the ROM.
 	end: number; // The end offset of the asset in the ROM.
 	metabuffer_start?: number; // Optional start offset of binary-encoded per-asset metadata in the buffer

@@ -1,7 +1,7 @@
 /**
  * Interface for a loaded resource, which includes metadata about the resource.
  */
-import type { ImgMeta } from '../src/bmsx/rompack';
+import type { asset_type, ImgMeta } from '../src/bmsx/rompack';
 
 interface RomPackerOptions {
 	rom_name: string;
@@ -27,7 +27,7 @@ export interface ResourceMeta {
 	filepath?: string;
 	name: string;
 	ext?: string;
-	type: string;
+	type: asset_type | 'romlabel' | 'rommanifest';
 	id: number;
 	collisionType?: 'concave' | 'convex' | 'aabb';
 	atlasIndex?: number; // index of atlas this image belongs to
