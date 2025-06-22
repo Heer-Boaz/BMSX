@@ -8,6 +8,7 @@ import * as fs from 'fs/promises';
 import * as pako from 'pako';
 import { PNG } from 'pngjs';
 import type { AudioMeta, ImgMeta, RomAsset, RomMeta } from '../src/bmsx/rompack';
+import { asciiWaveBraille, generateBrailleAsciiArt, generatePixelPerfectAsciiArt, parseWav, renderBufferBar, renderSummaryBar } from './asciiart';
 import { loadAssetList, parseMetaFromBuffer } from './bootrom';
 
 const PER_PIXEL_RENDERING_THRESHOLD = 64; // sprites ≤64×64 get per-pixel rendering
@@ -32,11 +33,11 @@ function decodeuint8arr(buf: Uint8Array): string {
 }
 
 async function nodeImageLoader(buffer: ArrayBuffer) {
-    // In Node, you might want to return a Buffer, or just the raw data, or a stub object
-    console.log(`Loading image from buffer... (${buffer.byteLength} bytes)`);
-    let copyBuffer = new ArrayBuffer(buffer.byteLength);
-    copyBuffer = buffer.slice(0);
-    return PNG.sync.read(Buffer.from(copyBuffer));
+    return PNG.sync.read(Buffer.from(buffer.slice(0)));
+}
+
+async function loadAudio(buffer: ArrayBuffer) {
+    return buffer.slice(0);
 }
 
 async function loadSourceFromBuffer(buf: ArrayBuffer): Promise<string> {
@@ -229,216 +230,6 @@ async function main() {
         warnings: false,
     });
 
-    /**
-     * Renders a simple summary bar with only full blocks.
-     * No partial blocks are used; each region cell is either fully filled or empty.
-     * Overlapping regions are handled by priority (first region in the array is shown).
-     */
-    function renderSummaryBar(
-        regions: Array<{ start: number, end: number, colorTag: string }>,
-        totalSize: number,
-        barLength: number
-    ): string {
-        let bar = '';
-
-        // Initialize all cells as blank.
-        const cellColors = new Array(barLength).fill('');
-        const cellChars = new Array(barLength).fill(' ');
-
-        // Process regions in priority order:
-        for (const region of regions) {
-            const regionStartCell = Math.floor((region.start / totalSize) * barLength);
-            const regionEndCell = Math.ceil((region.end / totalSize) * barLength) - 1;
-
-            // Clamp to valid cell indices.
-            const startCell = Math.max(0, regionStartCell);
-            const endCell = Math.min(barLength - 1, regionEndCell);
-
-            // Fill each cell within the region with a full block, unless it's already set by a higher-priority region.
-            for (let i = startCell; i <= endCell; i++) {
-                // If not already covered, fill with this region.
-                if (cellChars[i] === ' ') {
-                    cellChars[i] = '█';
-                    cellColors[i] = region.colorTag;
-                }
-            }
-        }
-
-        for (let i = 0; i < barLength; i++) {
-            bar += cellColors[i] + cellChars[i] + '{/}';
-        }
-
-        return bar;
-    }
-
-    /**
-     * Renders a buffer bar where we only do detailed (fractional) rendering
-     * at the very first and last cell of each region, and full blocks (█)
-     * in between. Overlapping regions are handled by priority (first in array wins).
-     */
-    function renderBufferBar(
-        unfilteredRegions: Array<{ start: number; end: number; colorTag: string }>,
-        totalSize: number,
-        barLength: number
-    ): string {
-        const blocks = ['?', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
-        const cellSize = totalSize / barLength;
-        const defaultCellChar = ' ';
-        const cellChars = new Array(barLength).fill(defaultCellChar);
-        const cellColors = new Array(barLength).fill('');
-
-        // Filter out empty regions (start === end === 0)
-        const regions = unfilteredRegions.filter(region => region.start !== 0 || region.end !== 0);
-
-        const toBackground = (colorTag: string) => {
-            // Convert color tag to background color by replacing -fg with -bg
-            return colorTag.replace('-fg}', '-bg}');
-        }
-
-        for (const region of regions) {
-            const startFloat = region.start / cellSize;
-            const endFloat = region.end / cellSize;
-            const regionStartCell = Math.floor(startFloat);
-            const regionEndCell = Math.floor(endFloat);
-            const leftFrac = startFloat - regionStartCell;
-            const rightFrac = endFloat - regionEndCell;
-            const startCell = Math.max(0, Math.min(barLength - 1, regionStartCell));
-            const endCell = Math.max(0, Math.min(barLength - 1, regionEndCell));
-
-            // fill full interior
-            for (let i = startCell + 1; i < endCell; i++) {
-                if (cellChars[i] === defaultCellChar) {
-                    cellChars[i] = '█';
-                    cellColors[i] = region.colorTag;
-                }
-            }
-            // left boundary
-            if (cellChars[startCell] === defaultCellChar) {
-                if (startCell === endCell) {
-                    // Region fits entirely within one cell
-                    const regionStart = region.start;
-                    const regionEnd = region.end;
-                    const cellStart = startCell * cellSize;
-                    const cellEnd = (startCell + 1) * cellSize;
-                    const overlapStart = Math.max(cellStart, regionStart);
-                    const overlapEnd = Math.min(cellEnd, regionEnd);
-                    const overlap = Math.max(0, overlapEnd - overlapStart);
-                    const coverage = overlap / cellSize;
-                    const idx = Math.round(coverage * 8);
-                    if (idx <= 1) {
-                        // Fill the one character by computing the whether the region is more left, middle, or right
-                        const leftFrac = (regionStart - cellStart) / cellSize;
-                        const rightFrac = (cellEnd - regionEnd) / cellSize;
-
-                        // Find the highest-priority overlapping region's colorTag for fg
-                        let fgColor = '{black-fg}';
-                        for (const r of regions) {
-                            // Only check other regions, not the current one
-                            if (r === region) continue;
-                            // Check if this region overlaps with the current cell
-                            if (r.start < cellEnd && r.end > cellStart) {
-                                fgColor = r.colorTag;
-                                break;
-                            }
-                        }
-                        // If there is any overlapping region, we ignore this region
-                        if (fgColor !== '{black-fg}') continue;
-
-                        // Determine whether to use left, right, or middle character
-                        if (leftFrac < rightFrac - 0.20) {
-                            cellChars[startCell] = '▏'; // left
-                        } else if (leftFrac > rightFrac + 0.20) {
-                            cellChars[startCell] = '▕'; // right
-                        } else {
-                            cellChars[startCell] = '│'; // true middle (vertical bar)
-                        }
-
-                        cellColors[startCell] = region.colorTag;
-                    }
-                    else if (idx >= 8) {
-                        cellChars[startCell] = blocks[idx];
-                        cellColors[startCell] = region.colorTag;
-                    }
-                    else {
-                        cellChars[startCell] = blocks[idx];
-                        let overlappingRegion = null;
-                        // Find the highest-priority overlapping region's colorTag for fg
-                        let fgColor = '{black-fg}';
-                        for (const r of regions) {
-                            // Only check other regions, not the current one
-                            if (r === region) continue;
-                            // Check if this region overlaps with the current cell
-                            if (r.start < cellEnd && r.end > cellStart) {
-                                fgColor = r.colorTag;
-                                overlappingRegion = r;
-                                break;
-                            }
-                        }
-                        // Invert colors **only** if the overlapping region starts before the current region ends (not the cell!)
-                        if (overlappingRegion && overlappingRegion.start < region.end) {
-                            cellColors[startCell] = toBackground(region.colorTag) + fgColor;
-                        }
-                        else {
-                            // No overlapping region, use the region's colorTag
-                            cellColors[startCell] = region.colorTag;
-                        }
-                    }
-                }/* ── left boundary (multi-cell branch) ─────────────────────────────── */
-                else {                                    // we are inside:  if (startCell !== endCell)
-                    const coverage = 1 - leftFrac;
-                    const idx = Math.round(coverage * 8);
-
-                    /* ← NEW: handle ultra-thin sliver */
-                    let needsInvert = false;
-                    if (idx <= 1) {
-                        cellChars[startCell] = '▕';       // thin right-hand bar
-                    } else if (idx <= 3) {
-                        cellChars[startCell] = '▐';       // slightly less thin right-hand bar
-                    } else {
-                        cellChars[startCell] = blocks[idx];
-                        needsInvert = true;
-                    }
-
-                    /* same-cell overlap, but restrict search to HIGHER-priority regions */
-                    const cellStart = startCell * cellSize;
-                    const cellEnd = cellStart + cellSize;
-                    const higher = regions
-                        .slice(0, regions.indexOf(region))          // only earlier (higher-priority) regions
-                        .find(r => r.start < cellEnd && r.end > cellStart);
-
-                    if (needsInvert) {
-                        const fg = higher ? higher.colorTag : '{black-fg}';
-                        cellColors[startCell] = toBackground(region.colorTag) + fg;   // bg = region, fg = higher/black
-                    } else {
-                        cellColors[startCell] = region.colorTag;
-                    }
-                }
-            }
-            /* ── right boundary ────────────────────────────────────────────────── */
-            if (endCell !== startCell && cellChars[endCell] === defaultCellChar) {
-                const idx = Math.round(rightFrac * 8);
-
-                /* The region occupies the **left** side of this cell, so the glyph
-                   already points the correct way.  No inversion is needed. */
-                if (idx === 0) {
-                    cellChars[endCell] = '▏'; // 1/8 left block
-                } else {
-                    cellChars[endCell] = blocks[idx];
-                }
-
-                /* Plain colouring: foreground = region colour, background untouched. */
-                cellColors[endCell] = region.colorTag;
-            }
-        }
-
-        let bar = '';
-
-        for (let i = 0; i < barLength; i++) {
-            bar += cellColors[i] + cellChars[i] + '{/}';
-        }
-        return bar;
-    }
-
     // Dynamically determine bar length based on window width
     function getBarLength(containerWidth: number) {
         // Use screen.width minus some padding for brackets and label
@@ -587,7 +378,7 @@ async function main() {
     filteredAssetList = assetList;
 
     // Function to update the table based on filter
-    function updateTable(filter: string = undefined) {
+    async function updateTable(filter: string = undefined) {
         filteredAssetList = getFilteredAssets(assetList, filter);
         const tableRows = filteredAssetList.map(asset => [
             asset.resname ? String(asset.resname) : '',
@@ -611,12 +402,12 @@ async function main() {
     }
 
     // Use table.rows for selection events (works for both mouse and keyboard)
-    (table as any).rows.on('select', (item, idx) => {
-        showAssetModal(idx);
+    (table as any).rows.on('select', async (item, idx) => {
+        await showAssetModal(idx);
     });
 
     // Helper to show asset modal by index
-    function showAssetModal(idx: number) {
+    async function showAssetModal(idx: number) {
         const selected = filteredAssetList[idx] as RomAsset;
         const imgmeta = selected.imgmeta || {} as ImgMeta;
         const audiometa = selected.audiometa || {} as AudioMeta;
@@ -639,6 +430,8 @@ async function main() {
             scrollbar: { ch: '|', track: { bg: 'grey' }, style: { bg: 'yellow' } }
         });
 
+        const modalWidth = (modal?.width ?? 80) as number;
+
         // Show image/audio specific metadata
         switch (selected.type) {
             case 'image':
@@ -649,10 +442,9 @@ async function main() {
                         const atlasBuf = atlasAsset.buffer instanceof Uint8Array
                             ? Buffer.from(atlasAsset.buffer)
                             : Buffer.from(rompack.slice(atlasAsset.start, atlasAsset.end));
-                        const modalWidth = (modal?.width ?? 80) as number;
 
                         try {
-                            asciiArt = generateAsciiArtFromImageInCanvas(atlasBuf, imgmeta, modalWidth);
+                            asciiArt = generateAsciiArtFromImageInAtlas(atlasBuf, imgmeta, modalWidth);
                         } catch (e: any) {
                             asciiArt = `Failed to decode atlas PNG: ${e.message}\n`;
                         }
@@ -669,9 +461,6 @@ async function main() {
                 }
                 break;
             case 'audio':
-                // For audio, we don't generate ASCII art, just show the name
-                // asciiArt = '[Audio asset, no ASCII preview]';
-
                 if (audiometa.audiotype === 'music') {
                     metadataLines.push(`Audio type: Music`);
                     if (audiometa.loop !== undefined && audiometa.loop !== null) {
@@ -683,26 +472,26 @@ async function main() {
                 }
                 else if (audiometa.audiotype === 'sfx') {
                     metadataLines.push(`Audio type: SFX`);
-                    break;
                 }
                 metadataLines.push(`Priority: ${audiometa.priority ?? 'Unset!'}`);
                 // ------ ASCII-preview toevoegen ------
                 try {
-                    if (!selected.buffer || !(selected.buffer instanceof ArrayBuffer)) {
+                    if (!selected.buffer || !(selected.buffer instanceof ArrayBuffer) || selected.buffer.byteLength === 0) {
+                        // Load the audio buffer from the ROM pack
+                        selected.buffer = await loadAudio(rompack.slice(selected.start, selected.end));
                         asciiArt = '[No audio buffer available]';
-                        break;
                     }
                     const info = parseWav(selected.buffer as Uint8Array);
                     if (!info || !info.dataOff || !info.dataLen || !info.bits || !info.channels) {
                         asciiArt = '[Invalid WAV data]';
                         break;
                     }
+                    else asciiArt = `${info.dataOff} ${info.dataLen} ${info.bits} ${info.channels}`;
                     // Fix: create a Uint8Array view for subarray
                     const pcm = new Uint8Array(selected.buffer).subarray(info.dataOff, info.dataOff + info.dataLen);
 
-                    const scope = asciiWave(
-                        pcm, info.bits, info.channels,
-            /* cols */ 76, /* rows */ 12, /* useBlocks */ true
+                    const scope = asciiWaveBraille(
+                        pcm, info.bits, modalWidth - 10, undefined, info.channels,
                     );
                     asciiArt = scope;                          // getoond in je modal
                 } catch (e) {
@@ -843,306 +632,57 @@ async function main() {
 
 main();
 
-function generateAsciiArtFromImageInCanvas(atlasBuf: Buffer, imgmeta: ImgMeta, modalWidth: number): string {
-    let asciiArt = '';
+function extractSubimageAndSizeFromAtlassedImage(imgToExtract: Buffer, imgmeta: ImgMeta): { subimage: Buffer | null, width: number, height: number } {
+    try {
+        const imageToExtractPNG = PNG.sync.read(imgToExtract);
+        if (!imageToExtractPNG || !imageToExtractPNG.data) return { subimage: null, width: 0, height: 0 };
 
-    const atlasPng = PNG.sync.read(atlasBuf); // TODO: handle png not part of atlas
-    // ASCII-art generator with correct scoping
-    let imgBuf, imgW, imgH, offsetX = 0, offsetY = 0;
-    imgBuf = atlasPng.data;
-    if (imgmeta.atlassed && imgmeta.texcoords) {
-        // Suppose imgmeta.texcoords has 12 floats: 6 vertices in clip space (x,y).
-        const coords = imgmeta.texcoords as number[]; // e.g. [-1, -1, 1, -1, …]
-        const xs = [coords[0], coords[2], coords[4], coords[6], coords[8], coords[10]];
-        const ys = [coords[1], coords[3], coords[5], coords[7], coords[9], coords[11]];
+        let imgW = imageToExtractPNG.width, imgH = imageToExtractPNG.height;
+        let offsetX = 0, offsetY = 0;
 
-        const minX = Math.min(...xs), maxX = Math.max(...xs);
-        const minY = Math.min(...ys), maxY = Math.max(...ys);
+        if (imgmeta.atlassed && imgmeta.texcoords) {
+            // imgmeta.texcoords has 12 floats: 6 vertices in clip space (x,y).
+            const coords = imgmeta.texcoords as number[];
+            const xs = [coords[0], coords[2], coords[4], coords[6], coords[8], coords[10]];
+            const ys = [coords[1], coords[3], coords[5], coords[7], coords[9], coords[11]];
 
-        // Convert from clip space (−1..1) to 0..1 space:
-        const sx = minX;
-        const sy = minY;
-        const rx = maxX;
-        const by = maxY;
+            const minX = Math.min(...xs), maxX = Math.max(...xs);
+            const minY = Math.min(...ys), maxY = Math.max(...ys);
 
-        // Then compute your region for ASCII art:
-        offsetX = Math.floor(sx * atlasPng.width);
-        offsetY = Math.floor(sy * atlasPng.height);
-        imgW = Math.floor((rx - sx) * atlasPng.width);
-        imgH = Math.floor((by - sy) * atlasPng.height);
-    } else if (atlasPng) { // If not atlassed, use the full PNG
-        imgW = atlasPng.width;
-        imgH = atlasPng.height;
+            // Then compute your region for ASCII art:
+            offsetX = Math.floor(minX * imageToExtractPNG.width);
+            offsetY = Math.floor(minY * imageToExtractPNG.height);
+            imgW = Math.floor((maxX - minX) * imageToExtractPNG.width);
+            imgH = Math.floor((maxY - minY) * imageToExtractPNG.height);
+        }
+
+        if (imgW <= 0 || imgH <= 0) return { subimage: null, width: 0, height: 0 };
+
+        // Extract the subimage from the atlas
+        const subimageData = new Uint8Array(imgW * imgH * 4); // RGBA
+        for (let y = 0; y < imgH; y++) {
+            for (let x = 0; x < imgW; x++) {
+                const srcIndex = ((offsetY + y) * imageToExtractPNG.width + (offsetX + x)) * 4;
+                const destIndex = (y * imgW + x) * 4;
+                subimageData.set(imageToExtractPNG.data.subarray(srcIndex, srcIndex + 4), destIndex);
+            }
+        }
+
+        return { subimage: Buffer.from(subimageData), width: imgW, height: imgH };
+    } catch (e) {
+        console.error('Error extracting subimage:', e);
+        return { subimage: null, width: 0, height: 0 };
     }
+}
 
-    if (!imgBuf || !imgW || !imgH) return '[Invalid image data]';
+function generateAsciiArtFromImageInAtlas(atlasBuf: Buffer, imgmeta: ImgMeta, modalWidth: number): string {
+    const { subimage, width, height } = extractSubimageAndSizeFromAtlassedImage(atlasBuf, imgmeta);
+    if (!subimage) return '[Unable to extract subimage]';
+
     // If the image is too large, we will not render it pixel-perfect
-    if (imgW <= PER_PIXEL_RENDERING_THRESHOLD && imgH <= PER_PIXEL_RENDERING_THRESHOLD) {
-        return generatePixelPerfectAsciiArt(imgBuf, imgW, imgH, offsetX, offsetY, atlasPng.width);
+    if (width <= PER_PIXEL_RENDERING_THRESHOLD && height <= PER_PIXEL_RENDERING_THRESHOLD) {
+        return generatePixelPerfectAsciiArt(subimage, width, height);
     }
 
-    return generateBrailleAsciiArt(imgBuf, imgW, imgH, offsetX, offsetY, atlasPng, modalWidth);
-}
-
-// Extracted function for pixel-perfect ASCII art rendering
-function generatePixelPerfectAsciiArt(
-    imgBuf: Buffer | Uint8Array,
-    imgW: number,
-    imgH: number,
-    offsetX: number,
-    offsetY: number,
-    atlasWidth: number
-): string {
-    let asciiArt = '';
-    for (let y = 0; y < imgH; y++) {
-        let line = '';
-        for (let x = 0; x < imgW; x++) {
-            const px = offsetX + x;
-            const py = offsetY + y;
-            const idx4 = (py * atlasWidth + px) << 2;
-            const r = imgBuf[idx4], g = imgBuf[idx4 + 1], b = imgBuf[idx4 + 2], a = imgBuf[idx4 + 3];
-            if (a < 64) {
-                // transparent pixel, render as space
-                line += ' ';
-            }
-            else {
-                line += `{#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}-bg} {/}`;
-            }
-        }
-        asciiArt += line + '\n';
-    }
-    return asciiArt;
-}
-
-export function generateBrailleAsciiArt(
-    imgBuf: Buffer | Uint8Array,
-    imgW: number,
-    imgH: number,
-    offsetX: number,
-    offsetY: number,
-    atlasPng: PNG,
-    modalWidth: number,
-    opts: {
-        useEdgeDetection?: boolean;   // default true
-        useDithering?: boolean;       // default false
-        strictBgDist?: number;        // sq-dist voor BG (default 32²)
-        deltaLum?: number;            // |Ydiff| drempel (default 30)
-    } = {}
-): string {
-
-    const useEdge = opts.useEdgeDetection ?? true;
-    const useDith = opts.useDithering ?? true;
-    const BG_DIST = opts.strictBgDist ?? 32 * 32;
-    const DELTA = opts.deltaLum ?? 30; // luminantie 0-255
-
-    const BRAILLE_BASE = 0x2800;
-    const brailleMap = [[0, 1, 2, 5], [3, 4, 6, 7]];
-    const outW = Math.min(modalWidth - 8, Math.floor(imgW / 2));
-    const outH = Math.min(Math.ceil(imgH / 4), Math.floor(outW * (imgH / imgW) / 2)) + 1;
-
-    /* ---------- gamma-correcte luminantie-buffer ---------- */
-    const linY = new Float32Array(imgW * imgH);
-    {
-        let p = 0;
-        for (let y = 0; y < imgH; ++y) {
-            for (let x = 0; x < imgW; ++x, ++p) {
-                const i4 = ((offsetY + y) * atlasPng.width + (offsetX + x)) << 2;
-                const r = imgBuf[i4], g = imgBuf[i4 + 1], b = imgBuf[i4 + 2];
-                linY[p] = 255 * (0.2126 * srgb2lin(r) + 0.7152 * srgb2lin(g) + 0.0722 * srgb2lin(b));
-            }
-        }
-    }
-
-    /* ---------- global dominant kleur ---------- */
-    const hist = new Map<number, number>();
-    for (let p = 0; p < imgW * imgH; ++p) {
-        const i4 = (((offsetY + (p / imgW | 0)) * atlasPng.width) + offsetX + (p % imgW)) << 2;
-        if (!imgBuf[i4 + 3]) continue;                       // transparant
-        const key = rgbToKey(imgBuf[i4], imgBuf[i4 + 1], imgBuf[i4 + 2]);
-        hist.set(key, (hist.get(key) ?? 0) + 1);
-    }
-    let bgKey = 0, bgCnt = 0;
-    // @ts-ignore
-    for (const [k, c] of hist) if (c > bgCnt) { bgCnt = c; bgKey = k; }
-    const bgR = bgKey >>> 16 & 255, bgG = bgKey >>> 8 & 255, bgB = bgKey & 255;
-    const bgLum = 255 * (0.2126 * srgb2lin(bgR) + 0.7152 * srgb2lin(bgG) + 0.0722 * srgb2lin(bgB));
-
-    /* ---------- dither buffer ---------- */
-    const err = useDith ? new Float32Array(imgW * imgH) : null;
-
-    /* ---------- render loop ---------- */
-    let asciiArt = '';
-
-    for (let cy = 0; cy < outH; ++cy) {
-        let line = '';
-        for (let cx = 0; cx < outW; ++cx) {
-
-            const fgVotes = new Map<number, number>();     // stemt alleen als dot gezet
-            let cellBgR = 0, cellBgG = 0, cellBgB = 0, cellBgCnt = 0;
-            let bitmask = 0;
-
-            for (let dy = 0; dy < 4; ++dy) {
-                for (let dx = 0; dx < 2; ++dx) {
-                    const px = Math.min(imgW - 1, cx * 2 + dx);
-                    const py = Math.min(imgH - 1, cy * 4 + dy);
-                    const p = py * imgW + px;
-                    const idx4 = ((py + offsetY) * atlasPng.width + (px + offsetX)) << 2;
-                    const r = imgBuf[idx4], g = imgBuf[idx4 + 1], b = imgBuf[idx4 + 2];
-
-                    let yLin = linY[p];
-                    const nearBg = colorDistSq(r, g, b, bgR, bgG, bgB) < BG_DIST;
-                    const ditherThisPixel = useDith && !nearBg;   // BG nooit diffusen
-                    if (ditherThisPixel && err) yLin = clamp(yLin + err[p], 0, 255);
-
-                    /* edge-aware Δ-drempel (trekt Δ iets naar beneden op randen) */
-                    let deltaThr = DELTA;
-                    if (useEdge) deltaThr = Math.max(10, DELTA - 0.2 * sobelAt(linY, imgW, imgH, px, py));
-
-                    const lumDiff = Math.abs(yLin - bgLum);
-                    const dotSet = !nearBg && lumDiff >= deltaThr;
-
-                    if (dotSet) {
-                        bitmask |= 1 << brailleMap[dx][dy];
-                        const key = rgbToKey(r, g, b);
-                        fgVotes.set(key, (fgVotes.get(key) ?? 0) + 1);
-                    }
-
-                    if (nearBg) { cellBgR += r; cellBgG += g; cellBgB += b; ++cellBgCnt; }
-
-                    if (ditherThisPixel && err) {
-                        const target = dotSet ? 0 : 255;
-                        distributeError(err, yLin - target, p, imgW, imgH);
-                    }
-                }
-            }
-
-            /* dominante FG-kleur o.b.v. gezette dots */
-            let domKey = 0x808080, domCnt = 0;
-            // @ts-ignore
-            for (const [k, c] of fgVotes) if (c > domCnt) { domCnt = c; domKey = k; }
-
-            const fgTag = `{${keyToHex(domKey)}-fg}`;
-            const bgTag = cellBgCnt
-                ? `{#${hex(cellBgR / cellBgCnt)}${hex(cellBgG / cellBgCnt)}${hex(cellBgB / cellBgCnt)}-bg}`
-                : '';
-
-            line += bgTag + fgTag + String.fromCharCode(BRAILLE_BASE + bitmask) + '{/}';
-        }
-        asciiArt += line + '\n';
-    }
-    return asciiArt;
-}
-
-function srgb2lin(v: number) { const s = v / 255; return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; }
-function hex(v: number) { return Math.round(clamp(v, 0, 255)).toString(16).padStart(2, '0'); }
-function clamp(x: number, l: number, h: number) { return x < l ? l : x > h ? h : x; }
-function rgbToKey(r: number, g: number, b: number) { return (r << 16) | (g << 8) | b; }
-function keyToHex(k: number) { return `#${(k >>> 16 & 0xff).toString(16).padStart(2, '0')}${(k >>> 8 & 0xff).toString(16).padStart(2, '0')}${(k & 0xff).toString(16).padStart(2, '0')}`; }
-function colorDistSq(r1: number, g1: number, b1: number, r2: number, g2: number, b2: number) {
-    const dr = r1 - r2, dg = g1 - g2, db = b1 - b2;
-    return dr * dr + dg * dg + db * db;
-}
-
-function sobelAt(buf: Float32Array, w: number, h: number, x: number, y: number): number {
-    const xm1 = Math.max(0, x - 1), xp1 = Math.min(w - 1, x + 1);
-    const ym1 = Math.max(0, y - 1), yp1 = Math.min(h - 1, y + 1);
-    const i = y * w + x;
-    const gx = buf[ym1 * w + xp1] + 2 * buf[i + 1] + buf[yp1 * w + xp1]
-        - buf[ym1 * w + xm1] - 2 * buf[i - 1] - buf[yp1 * w + xm1];
-    const gy = buf[yp1 * w + xm1] + 2 * buf[yp1 * w + x] + buf[yp1 * w + xp1]
-        - buf[ym1 * w + xm1] - 2 * buf[ym1 * w + x] - buf[ym1 * w + xp1];
-    return Math.sqrt(gx * gx + gy * gy);
-}
-
-function distributeError(buf: Float32Array, e: number, idx: number, w: number, h: number) {
-    const x = idx % w, y = Math.floor(idx / w);
-    if (x + 1 < w) buf[idx + 1] += e * 7 / 16;
-    if (x > 0 && y + 1 < h) buf[idx + w - 1] += e * 3 / 16;
-    if (y + 1 < h) buf[idx + w] += e * 5 / 16;
-    if (x + 1 < w && y + 1 < h) buf[idx + w + 1] += e * 1 / 16;
-}
-
-interface WavInfo {
-    bits: 8 | 16 | 24 | 32;
-    channels: 1 | 2 | 3 | 4;
-    sampleRate: number;
-    dataOff: number;
-    dataLen: number;
-}
-
-/* Parseert de RIFF-WAVE header en retourneert metadata + offset */
-function parseWav(buf: Uint8Array): WavInfo {
-    const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-
-    if (dv.getUint32(0, false) !== 0x52494646) throw new Error('No RIFF');
-    if (dv.getUint32(8, false) !== 0x57415645) throw new Error('No WAVE');
-
-    let ptr = 12, fmt: WavInfo | null = null, dataOff = 0, dataLen = 0;
-
-    while (ptr + 8 <= buf.length) {
-        const id = dv.getUint32(ptr, false);
-        const size = dv.getUint32(ptr + 4, true);
-        if (id === 0x666d7420) {                    // "fmt "
-            const audioFmt = dv.getUint16(ptr + 8, true);
-            if (audioFmt !== 1) throw new Error('Only PCM supported');
-            fmt = {
-                channels: dv.getUint16(ptr + 10, true) as 1 | 2 | 3 | 4,
-                sampleRate: dv.getUint32(ptr + 12, true),
-                bits: dv.getUint16(ptr + 22, true) as 8 | 16 | 24 | 32,
-                dataOff: 0,
-                dataLen: 0,
-            };
-        } else if (id === 0x64617461) {             // "data"
-            dataOff = ptr + 8;
-            dataLen = size;
-        }
-        ptr += 8 + size + (size & 1);               // pad-byte
-    }
-    if (!fmt || !dataLen) throw new Error('Invalid WAV: missing fmt or data');
-    return { ...fmt, dataOff, dataLen };
-}
-
-/* Eenvoudige waveform-ASCII (monomix) – 1 regel = één frame */
-function asciiWave(
-    pcm: Uint8Array, bits: number, channels: number,
-    cols = 76, rows = 12, block = true
-): string {
-
-    const toFloat = (i: number): number => {
-        if (bits === 8) return ((pcm[i] - 128) / 128);
-        if (bits === 16) return ((pcm[i] | (pcm[i + 1] << 8)) << 16 >> 16) / 32768;
-        if (bits === 24) return ((pcm[i] | (pcm[i + 1] << 8) | (pcm[i + 2] << 16)) << 8 >> 8) / 8388608;
-        return (pcm[i] | (pcm[i + 1] << 8) | (pcm[i + 2] << 16) | (pcm[i + 3] << 24)) / 2147483648;
-    };
-
-    const sampCnt = pcm.length / (bits >> 3) / channels;
-    const step = sampCnt / cols;
-    const peaks: [number, number][] = Array(cols).fill([0, 0]);
-
-    for (let c = 0; c < cols; ++c) {
-        let min = 1, max = -1;
-        const s0 = Math.floor(c * step), s1 = Math.floor((c + 1) * step);
-        for (let s = s0; s < s1; ++s) {
-            let acc = 0;
-            for (let ch = 0; ch < channels; ++ch)
-                acc += toFloat((s * channels + ch) * (bits >> 3));
-            const v = acc / channels;
-            if (v < min) min = v; if (v > max) max = v;
-        }
-        peaks[c] = [min, max];
-    }
-
-    const mid = rows >> 1;
-    const lvl = block ? ' ▁▂▃▄▅▆▇█' : ' |||||||';
-    const canvas = Array.from({ length: rows }, () => Array(cols).fill(' '));
-
-    for (let x = 0; x < cols; ++x) {
-        const [mn, mx] = peaks[x];
-        const y0 = Math.round(mid - mx * mid), y1 = Math.round(mid - mn * mid);
-        for (let y = y0; y <= y1; ++y) {
-            const l = Math.floor((1 - Math.abs((y - mid) / mid)) * 8);
-            canvas[y][x] = lvl[l];
-        }
-    }
-    return canvas.map(r => r.join('')).join('\n');
+    return generateBrailleAsciiArt(subimage, width, height, modalWidth);
 }
