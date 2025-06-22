@@ -7,7 +7,7 @@ import * as contrib from 'blessed-contrib';
 import * as fs from 'fs/promises';
 import * as pako from 'pako';
 import { PNG } from 'pngjs';
-import type { AudioMeta, ImgMeta, RomAsset, RomMeta } from '../src/bmsx/rompack';
+import type { AudioMeta, ImgMeta, RomAsset, RomMeta, asset_type } from '../src/bmsx/rompack';
 import { asciiWaveBraille, generateBrailleAsciiArt, generatePixelPerfectAsciiArt, parseWav, renderBufferBar, renderSummaryBar } from './asciiart';
 import { loadAssetList, parseMetaFromBuffer } from './bootrom';
 
@@ -219,8 +219,8 @@ async function main() {
 
     const imageAssets = assetList.filter(a => a.type === 'image') ?? [];
     const audioCount = assetList.filter(a => a.type === 'audio')?.length ?? 0;
-    const codeCount = assetList.filter(a => a.type === 'source')?.length ?? 0;
-    const otherCount = assetList.filter(a => a.type !== 'image' && a.type !== 'audio' && a.type !== 'source')?.length ?? 0;
+    const codeCount = assetList.filter(a => a.type === 'code')?.length ?? 0;
+    const otherCount = assetList.filter(a => a.type !== 'image' && a.type !== 'audio' && a.type !== 'code')?.length ?? 0;
 
     // --- Blessed UI ---
     const screen = blessed.screen({
@@ -253,81 +253,81 @@ async function main() {
             if (a.metabuffer_start != null && a.metabuffer_end != null) size += a.metabuffer_end - a.metabuffer_start;
             return sum + size;
         }, 0);
-        const codeSize = assetList.reduce((sum, a) => a.type === 'source' ? sum + (a.end - a.start) : sum, 0);
+        const atlasSize = assetList.filter(a => a.type === 'atlas').reduce((sum, a) => {
+            let size = 0;
+            if (a.start != null && a.end != null) size += a.end - a.start;
+            if (a.metabuffer_start != null && a.metabuffer_end != null) size += a.metabuffer_end - a.metabuffer_start;
+            return sum + size;
+        }, 0);
+        const codeSize = assetList.reduce((sum, a) => a.type === 'code' ? sum + (a.end - a.start) : sum, 0);
         const totalSize = rompack.byteLength;
-        const summaryRegions = [
-            ...imageAssets.map(a => ({ start: a.start, end: a.end, colorTag: '{yellow-fg}', label: 'image' })),
-            ...assetList.filter(a => a.type === 'audio').map(a => ({ start: a.start, end: a.end, colorTag: '{magenta-fg}', label: 'audio' })),
-            ...assetList.filter(a => a.type !== 'image' && a.type !== 'audio' && a.start != null && a.end != null).map(a => ({ start: a.start, end: a.end, colorTag: '{white-fg}', label: 'code' })),
-            ...assetList.filter(a => a.metabuffer_start != null && a.metabuffer_end != null).map(a => ({ start: a.metabuffer_start, end: a.metabuffer_end, colorTag: '{cyan-fg}', label: 'metabuffer' })),
-            { start: metadataOffset, end: metadataOffset + metadataLength, colorTag: '{blue-fg}', label: 'global metadata' }
-        ];
+
+        const barLength = getBarLength(typeof screen.width === 'number' ? screen.width : 120);
+
+        // --- Compute regions for summary bar ---
+        const summaryRegions: Array<{ start: number, end: number, colorTag: string, label: string }> = [];
+        for (const asset of assetList) {
+            let colorTag: string;
+            const label: asset_type = asset.type;
+            switch (asset.type) {
+                case 'image':
+                    colorTag = '{light-yellow-fg}';
+                    break;
+                case 'atlas':
+                    colorTag = '{light-cyan-fg}';
+                    break;
+                case 'audio':
+                    colorTag = '{light-blue-fg}';
+                    break;
+                case 'code':
+                    colorTag = '{light-white-fg}';
+                    break;
+                default:
+                    colorTag = '{light-magenta-fg}'; // Default for other types
+                    break;
+            }
+
+            if (asset.start || asset.end || asset.metabuffer_start || asset.metabuffer_end) {
+                const start = (asset.start === 0 && asset.end === 0) ? asset.metabuffer_start ?? 0 : asset.start;
+                const end = (asset.end === 0 && asset.start === 0) ? asset.metabuffer_end ?? 0 : asset.end;
+                summaryRegions.push({ start, end, colorTag, label });
+            }
+        }
+        // Global metadata region
+        summaryRegions.push({ start: metadataOffset, end: metadataOffset + metadataLength, colorTag: '{light-red-fg}', label: 'global metadata' });
+
         const imageSizePercent = (imagesSize / totalSize * 100).toFixed(1);
         const audioSizePercent = (audioSize / totalSize * 100).toFixed(1);
         const codeSizePercent = (codeSize / totalSize * 100).toFixed(1);
+        const atlasSizePercent = (atlasSize / totalSize * 100).toFixed(1);
         const metaSizePercent = (metaBuf.byteLength / totalSize * 100).toFixed(1);
 
         return `Total assets: ${assetList?.length ?? 0} (images: ${imageAssets?.length ?? 0
             }, audio: ${audioCount}, code: ${codeCount}, other: ${otherCount}) \n` +
-            `Buffer: [${renderSummaryBar(summaryRegions, totalSize, barLength)}]\n` +
-            `{yellow-fg}█{/yellow-fg} image  {magenta-fg}█{/magenta-fg} audio  {white-fg}█{/white-fg} code  {cyan-fg}█{/cyan-fg} metabuffer  {blue-fg}█{/blue-fg} global metadata\n` +
-            `Images size: ${byteSizeToString(imagesSize)} (${imageSizePercent}%)\n` +
-            `Audio size: ${byteSizeToString(audioSize)} (${audioSizePercent}%)\n` +
-            `Code size: ${byteSizeToString(codeSize)} (${codeSizePercent}%)\n` +
-            `Metadata size: ${byteSizeToString(metaBuf.byteLength)} (${metaSizePercent}%)\n` +
-            `Total size: ${byteSizeToString(totalSize)}\n`;
-    }
-
-    let barLength = getBarLength(typeof screen.width === 'number' ? screen.width : 120);
-
-    // --- Compute regions for summary bar ---
-    const summaryRegions: Array<{ start: number, end: number, colorTag: string, label?: string }> = [];
-    for (const asset of assetList) {
-        if (asset.type !== 'image' && asset.type !== 'audio' && asset.start != null && asset.end != null) {
-            summaryRegions.push({ start: asset.start, end: asset.end, colorTag: '{white-fg}', label: 'code' });
-        }
-    }
-    for (const asset of assetList) {
-        if (asset.type === 'audio' && asset.start != null && asset.end != null) {
-            summaryRegions.push({ start: asset.start, end: asset.end, colorTag: '{magenta-fg}', label: 'audio' });
-        }
-    }
-    for (const asset of assetList) {
-        if (asset.type === 'image' && asset.start != null && asset.end != null) {
-            summaryRegions.push({ start: asset.start, end: asset.end, colorTag: '{yellow-fg}', label: 'image' });
-        }
-    }
-    for (const asset of assetList) {
-        if (asset.metabuffer_start != null && asset.metabuffer_end != null) {
-            summaryRegions.push({ start: asset.metabuffer_start, end: asset.metabuffer_end, colorTag: '{cyan-fg}', label: 'metabuffer' });
-        }
-    }
-    // Global metadata region
-    summaryRegions.push({ start: metadataOffset, end: metadataOffset + metadataLength, colorTag: '{blue-fg}', label: 'global metadata' });
-
-    // Calculate atlassed image sizes
-    let atlassedBytesTotal = 0;
-    for (const asset of assetList) {
-        if (asset.type === 'image' && asset.imgmeta.atlassed && asset.start != null && asset.end != null) {
-            atlassedBytesTotal += asset.end - asset.start;
-        }
+            `Buffer: ${renderSummaryBar(summaryRegions, totalSize, barLength)}\n` +
+            `Total size: ${byteSizeToString(totalSize)} | ` +
+            `Images: ${byteSizeToString(imagesSize)} (${imageSizePercent}%) | ` +
+            `Audio: ${byteSizeToString(audioSize)} (${audioSizePercent}%) | ` +
+            `Code: ${byteSizeToString(codeSize)} (${codeSizePercent}%) | ` +
+            `Atlas: ${byteSizeToString(atlasSize)} (${atlasSizePercent}%) | ` +
+            `Metadata: ${byteSizeToString(metaBuf.byteLength)} (${metaSizePercent}%)`;
     }
 
     const summaryBox = blessed.box({
         top: 0,
         left: 'center',
         width: '100%',
-        height: 8,
+        height: 5,
         tags: true,
         style: { fg: 'green', bg: 'black' },
         content: generateSummaryContent()
     });
 
     const table = contrib.table({
-        top: 8,
+        top: 5,
         left: 'center',
         width: '100%',
-        height: '100%-8',
+        height: '100%-5',
         columnSpacing: 2,
         columnWidth: [30, 5, 10, 10],
         keys: true,
@@ -388,10 +388,7 @@ async function main() {
                 let size = 0;
                 if (asset.start != null && asset.end != null) size += asset.end - asset.start;
                 if (asset.metabuffer_start != null && asset.metabuffer_end != null) size += asset.metabuffer_end - asset.metabuffer_start;
-                // Compute percentage of total rompack size
-                if (size < 1024) return `${size} B`;
-                if (size < 1024 * 1024) return `${(size / 1024).toFixed(2)} KB`;
-                if (size < 1024 * 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(2)} MB`;
+                return byteSizeToString(size); // Convert size to human-readable format
             })()
         ]);
         table.setData({
@@ -437,7 +434,7 @@ async function main() {
             case 'image':
                 if (imgmeta.atlassed && imgmeta.texcoords) {
                     const atlasName = imgmeta.atlasid === 0 ? '_atlas' : `_atlas${imgmeta.atlasid} `;
-                    const atlasAsset = assetList.find(a => a.resname === atlasName && a.type === 'image');
+                    const atlasAsset = assetList.find(a => a.resname === atlasName && a.type === 'atlas');
                     if (atlasAsset) {
                         const atlasBuf = atlasAsset.buffer instanceof Uint8Array
                             ? Buffer.from(atlasAsset.buffer)
@@ -498,7 +495,6 @@ async function main() {
                     asciiArt = `(Preview failed: ${e}\n${e.stack})`;
                 }
                 break;
-            case 'source':
             case 'code':
                 // For code, we don't generate ASCII art, just show the name
                 break;
@@ -512,19 +508,16 @@ async function main() {
             const total = rompack.byteLength;
             // Compose regions for this asset: asset, metabuffer, global metadata
             const regions = [];
-            const bufferRegionColor = '{red-fg}';
-            const bufferRegionColorCloseTag = bufferRegionColor.replace('{', '{/');
-            const metabufferRegionColor = '{blue-fg}';
-            const metabufferRegionColorCloseTag = bufferRegionColor.replace('{', '{/');
+            const bufferRegionColor = '{light-red-fg}';
+            const metabufferRegionColor = '{light-blue-fg}';
             if (selected.start !== undefined && selected.end !== undefined) {
-                regions.push({ start: selected.start, end: selected.end, colorTag: bufferRegionColor });
+                regions.push({ start: selected.start, end: selected.end, colorTag: bufferRegionColor, label: 'buffer' });
             }
             if (selected.metabuffer_start !== undefined && selected.metabuffer_end !== undefined) {
-                regions.push({ start: selected.metabuffer_start, end: selected.metabuffer_end, colorTag: metabufferRegionColor });
+                regions.push({ start: selected.metabuffer_start, end: selected.metabuffer_end, colorTag: metabufferRegionColor, label: 'metabuffer' });
             }
             const bar = renderBufferBar(regions, total, barLength);
-            bufferLines.push(`Buffer: [${bar}]`);
-            bufferLines.push(`        ${bufferRegionColor}█${bufferRegionColorCloseTag} buffer, ${metabufferRegionColor}█${metabufferRegionColorCloseTag} metabuffer`);
+            bufferLines.push(`Buffer: ${bar}`);
             if (bufferSize) bufferLines.push(`Buffer: ${selected.start} - ${selected.end} (${byteSizeToString(bufferSize)})`);
             // Metabuffer region info
             if (metabufferSize) bufferLines.push(`Metabuffer: ${selected.metabuffer_start} - ${selected.metabuffer_end} (${byteSizeToString(metabufferSize)})`);
@@ -621,7 +614,6 @@ async function main() {
 
     // Redraw summary bar on resize
     screen.on('resize', () => {
-        barLength = getBarLength(typeof screen.width === 'number' ? screen.width : 120);
         summaryBox.setContent(generateSummaryContent());
         screen.render();
     });
