@@ -4,7 +4,7 @@
  * in between. Overlapping regions are handled by priority (first in array wins).
  */
 export function renderBufferBar(
-    unfilteredRegions: Array<{ start: number; end: number; colorTag: string }>,
+    unfilteredRegions: Array<{ start: number; end: number; colorTag: string, label: string }>,
     totalSize: number,
     barLength: number
 ): string {
@@ -15,7 +15,26 @@ export function renderBufferBar(
     const cellColors = new Array(barLength).fill('');
 
     // Filter out empty regions (start === end === 0)
-    const regions = unfilteredRegions.filter(region => region.start !== 0 || region.end !== 0);
+    let regions = unfilteredRegions.filter(region => region.start !== 0 || region.end !== 0);
+    // Concatenate all neighbouring regions with the same colorTag
+    // Note that this is actually not strictly necessary for the rendering,
+    // but it simplifies the rendering logic and avoids unnecessary complexity.
+    {
+        const mergedRegions: Array<{ start: number, end: number, colorTag: string, label: string }> = [];
+        for (const region of regions) {
+            if (mergedRegions.length > 0 && mergedRegions[mergedRegions.length - 1].colorTag === region.colorTag) {
+                // Merge with the last region if it has the same colorTag
+                mergedRegions[mergedRegions.length - 1].end = Math.max(mergedRegions[mergedRegions.length - 1].end, region.end);
+            } else {
+                // Otherwise, add a new region
+                mergedRegions.push({ start: region.start, end: region.end, colorTag: region.colorTag, label: region.label });
+            }
+        }
+        regions = mergedRegions;
+    }
+
+    // Sort regions by end
+    regions = regions.sort((a, b) => b.end - a.end);
 
     const toBackground = (colorTag: string) => {
         // Convert color tag to background color by replacing -fg with -bg
@@ -58,29 +77,36 @@ export function renderBufferBar(
                     const rightFrac = (cellEnd - regionEnd) / cellSize;
 
                     // Find the highest-priority overlapping region's colorTag for fg
-                    let fgColor = '{black-fg}';
+                    let overlappingRegion = null;
                     for (const r of regions) {
                         // Only check other regions, not the current one
                         if (r === region) continue;
                         // Check if this region overlaps with the current cell
                         if (r.start < cellEnd && r.end > cellStart) {
-                            fgColor = r.colorTag;
+                            overlappingRegion = r;
                             break;
                         }
                     }
-                    // If there is any overlapping region, we ignore this region
-                    if (fgColor !== '{black-fg}') continue;
+                    cellColors[startCell] = region.colorTag;
 
                     // Determine whether to use left, right, or middle character
-                    if (leftFrac < rightFrac - 0.20) {
+                    if (leftFrac < rightFrac && leftFrac < 0.5) {
+                        if (overlappingRegion) {
+                            // If there is an overlapping region, we do not draw the sliver as it is too hard to handle in combination with the overlapping region.
+                            continue;
+                        }
                         cellChars[startCell] = '▏'; // left
-                    } else if (leftFrac > rightFrac + 0.20) {
+                    } else if (leftFrac > rightFrac && rightFrac < 0.5) {
+                        if (overlappingRegion) {
+                            // Invert colors if there is an overlapping region
+                            cellColors[startCell] = toBackground(overlappingRegion.colorTag) + region.colorTag;
+                        }
                         cellChars[startCell] = '▕'; // right
                     } else {
-                        cellChars[startCell] = '│'; // true middle (vertical bar)
+                        // Should not happen
+                        cellChars[startCell] = '?';
                     }
 
-                    cellColors[startCell] = region.colorTag;
                 }
                 else if (idx >= 8) {
                     cellChars[startCell] = blocks[idx];
@@ -90,20 +116,18 @@ export function renderBufferBar(
                     cellChars[startCell] = blocks[idx];
                     let overlappingRegion = null;
                     // Find the highest-priority overlapping region's colorTag for fg
-                    let fgColor = '{black-fg}';
                     for (const r of regions) {
                         // Only check other regions, not the current one
                         if (r === region) continue;
                         // Check if this region overlaps with the current cell
                         if (r.start < cellEnd && r.end > cellStart) {
-                            fgColor = r.colorTag;
                             overlappingRegion = r;
                             break;
                         }
                     }
                     // Invert colors **only** if the overlapping region starts before the current region ends (not the cell!)
                     if (overlappingRegion && overlappingRegion.start < region.end) {
-                        cellColors[startCell] = toBackground(region.colorTag) + fgColor;
+                        cellColors[startCell] = toBackground(region.colorTag) + overlappingRegion.colorTag;
                     }
                     else {
                         // No overlapping region, use the region's colorTag
@@ -123,7 +147,7 @@ export function renderBufferBar(
                     cellChars[startCell] = '▐';       // slightly less thin right-hand bar
                 } else {
                     cellChars[startCell] = blocks[idx];
-                    needsInvert = true;
+                    needsInvert = true; // We need to invert because we do not have the same amount of ASCII-characters to represent right-aligned blocks as there are ASCII-characters to represent left-aligned blocks.
                 }
 
                 /* same-cell overlap, but restrict search to HIGHER-priority regions */
@@ -132,12 +156,16 @@ export function renderBufferBar(
                 const higher = regions
                     .slice(0, regions.indexOf(region))          // only earlier (higher-priority) regions
                     .find(r => r.start < cellEnd && r.end > cellStart);
+                const other = regions
+                    // .slice(regions.indexOf(region) + 1)          // only later (lower-priority) regions
+                    .find(r => r !== region && r.start < cellEnd && r.end > cellStart);
 
                 if (needsInvert) {
-                    const fg = higher ? higher.colorTag : '{black-fg}';
+                    const fg = higher ? higher.colorTag : region.colorTag;
                     cellColors[startCell] = toBackground(region.colorTag) + fg;   // bg = region, fg = higher/black
                 } else {
-                    cellColors[startCell] = region.colorTag;
+                    const bg = other ? toBackground(other.colorTag) : '{black-bg}';
+                    cellColors[startCell] = region.colorTag + bg;
                 }
             }
         }
@@ -163,7 +191,29 @@ export function renderBufferBar(
     for (let i = 0; i < barLength; i++) {
         bar += cellColors[i] + cellChars[i] + '{/}';
     }
-    return bar;
+
+    // --- Generate legend from summaryRegions ---
+    // Collect unique colorTag/label pairs, preserving order of first appearance
+    const legendMap = new Map<string, string>();
+    for (const region of regions) {
+        if (region.colorTag && region.label && !legendMap.has(region.label)) {
+            legendMap.set(region.label, region.colorTag);
+        }
+    }
+    // Sort legend as per the order of appearance in the regions array
+    const sortedLegend = Array.from(legendMap.keys()).sort((a, b) => {
+        const aIndex = regions.findIndex(r => r.label === a);
+        const bIndex = regions.findIndex(r => r.label === b);
+        return bIndex - aIndex;
+    });
+
+    // Compose legend string
+    const legend = sortedLegend
+        .map(label => `${legendMap.get(label)}█{/${legendMap.get(label).replace('{', '').replace('-fg}', '')}-fg} ${label}`)
+        .join('  ');
+
+
+    return `[${bar}]\n${legend}`;
 }
 
 /**
@@ -172,40 +222,11 @@ export function renderBufferBar(
  * Overlapping regions are handled by priority (first region in the array is shown).
  */
 export function renderSummaryBar(
-    regions: Array<{ start: number, end: number, colorTag: string }>,
+    regions: Array<{ start: number, end: number, colorTag: string, label: string }>,
     totalSize: number,
-    barLength: number
+    barLength: number,
 ): string {
-    let bar = '';
-
-    // Initialize all cells as blank.
-    const cellColors = new Array(barLength).fill('');
-    const cellChars = new Array(barLength).fill(' ');
-
-    // Process regions in priority order:
-    for (const region of regions) {
-        const regionStartCell = Math.floor((region.start / totalSize) * barLength);
-        const regionEndCell = Math.ceil((region.end / totalSize) * barLength) - 1;
-
-        // Clamp to valid cell indices.
-        const startCell = Math.max(0, regionStartCell);
-        const endCell = Math.min(barLength - 1, regionEndCell);
-
-        // Fill each cell within the region with a full block, unless it's already set by a higher-priority region.
-        for (let i = startCell; i <= endCell; i++) {
-            // If not already covered, fill with this region.
-            if (cellChars[i] === ' ') {
-                cellChars[i] = '█';
-                cellColors[i] = region.colorTag;
-            }
-        }
-    }
-
-    for (let i = 0; i < barLength; i++) {
-        bar += cellColors[i] + cellChars[i] + '{/}';
-    }
-
-    return bar;
+    return renderBufferBar(regions, totalSize, barLength);
 }
 
 // Extracted function for pixel-perfect ASCII art rendering
@@ -225,7 +246,7 @@ export function generatePixelPerfectAsciiArt(
                 line += ' ';
             }
             else {
-                line += `{#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}-bg} {/}`;
+                line += `{#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}-fg}█{/}`;
             }
         }
         asciiArt += line + '\n';
@@ -503,9 +524,9 @@ export function asciiWaveBraille(
                 // Color logic: red for negative, green for positive, yellow for near zero
                 const [mn, mx] = peaks[colIdx];
                 let colorTag = '';
-                if (mn < -0.2 || mx > 0.2) colorTag = '{red-fg}';
-                else if (mn < -0.1 || mx > 0.1) colorTag = '{yellow-fg}';
-                else if (mn < 0.1 && mx > -0.1) colorTag = '{blue-fg}';
+                if (mn < -0.2 || mx > 0.2) colorTag = '{light-red-fg}';
+                else if (mn < -0.1 || mx > 0.1) colorTag = '{light-yellow-fg}';
+                else if (mn < 0.1 && mx > -0.1) colorTag = '{light-blue-fg}';
                 return colorTag + String.fromCharCode(BRAILLE + code) + '{/}';
             })
             .join(''))
