@@ -127,11 +127,11 @@ export interface RomAsset {
 	resid: number; // The resource ID of the asset.
 	resname: string; // The name of the asset.
 	type: asset_type; // The type of the asset.
-	start: number; // The start offset of the asset in the ROM.
-	end: number; // The end offset of the asset in the ROM.
+	start?: number; // The optional start offset of the asset in the ROM. (e.g., atlassed images don't have a start offset, as they are part of an atlas)
+	end?: number; // The optional end offset of the asset in the ROM. (e.g., atlassed images don't have an end offset, as they are part of an atlas)
 	metabuffer_start?: number; // Optional start offset of binary-encoded per-asset metadata in the buffer
 	metabuffer_end?: number; // Optional end offset of binary-encoded per-asset metadata in the buffer
-	buffer?: ArrayBuffer; // The binary buffer of the asset, used for all assets, including images and audio.
+	buffer?: Buffer; // The binary buffer of the asset, used for all assets, including images and audio.
 	imgmeta?: ImgMeta; // The metadata of the asset, if it is an image.
 	audiometa?: AudioMeta; // The metadata of the asset, if it is an audio asset.
 }

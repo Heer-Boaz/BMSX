@@ -17,8 +17,9 @@ export interface LoadedResource extends ResourceMeta {
 	buffer: Buffer;
 	img?: any;
 	imgmeta?: ImgMeta;
-	atlasIndex?: number;
 }
+
+export type resourcetype = asset_type | 'rommanifest' | 'romlabel';
 
 /**
  * Interface for metadata about a resource.
@@ -27,10 +28,11 @@ export interface ResourceMeta {
 	filepath?: string;
 	name: string;
 	ext?: string;
-	type: asset_type | 'romlabel' | 'rommanifest';
+	type: resourcetype;
 	id: number;
 	collisionType?: 'concave' | 'convex' | 'aabb';
-	atlasIndex?: number; // index of atlas this image belongs to
+	targetAtlasIndex?: number; // If this is not an atlas image, index of atlas this image belongs to
+	atlasid?: number; // If this is an atlas image, id (=index) of the atlas
 }
 
 export interface RomManifest {
