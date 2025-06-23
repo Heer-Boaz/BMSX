@@ -711,29 +711,6 @@ async function buildResourceList(respath: string, rom_name?: string) {
 }
 
 /**
- * Builds a ROM pack for a given title, loading required resources, optionally generating
- * a texture atlas, and finalizing the packed output.
- *
- * @param rom_name - The name of the ROM, used when creating the output file.
- * @param respath - The base path to the resource files used in the ROM pack.
- * @returns A promise that resolves when the ROM pack creation is complete.
- */
-async function buildRompack(rom_name: string, respath: string): Promise<void> {
-	const outfile = rom_name.concat('.rom');
-
-	const resMetaList = await getResMetaList(respath, rom_name);
-	const loadedResources = await getLoadedResourcesList(resMetaList, rom_name);
-
-	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-		await createAtlasses(loadedResources);
-	}
-
-	const { assetList, romlabel_buffer } = generateRomAssets(loadedResources);
-
-	await finalizeRompack(assetList, romlabel_buffer, outfile);
-}
-
-/**
  * Processes an array of loaded resources to produce asset metadata and allocate buffer ranges.
  *
  * @remarks
@@ -933,10 +910,11 @@ async function createAtlasses(loadedResources: LoadedResource[]) {
 async function finalizeRompack(
 	assetList: RomAsset[],
 	romlabel_buffer: Buffer | undefined,
-	outfile: string,
+	rom_name: string,
 ) {
 	// Capture resource buffers in the order as given by the assetList
 	const buffers: Buffer[] = [];
+	const outfile = `${rom_name}.rom`; // Use the provided rom_name as the output file name
 	let offset = 0; // Offset for the next buffer to be added
 
 	for (const asset of assetList) {
@@ -1164,9 +1142,10 @@ class ProgressReporter {
 		}
 	}
 
-	public removeLastTask() {
-		if (this.tasks.length) {
-			this.tasks.pop();
+	public removeTask(task: string) {
+		const index = this.tasks.indexOf(task);
+		if (index !== -1) {
+			this.tasks.splice(index, 1);
 			this.totalTasks--;
 		}
 	}
@@ -1178,7 +1157,7 @@ class ProgressReporter {
 
 	public async pulse() {
 		this.gauge.pulse();
-		await timer(10);
+		await timer(500);
 	}
 }
 
@@ -1188,10 +1167,15 @@ async function main() {
 		'Rom manifest zoekeren en parseren',
 		'Game compileren+bundleren',
 		'YAML bestanden omzetten in JSON voor importatie',
-		'Totale rompakket bouwen',
+		'Resource lijst bouwen',
+		'Resources laden en metadata genereren',
+		'Atlassen puzellen (indien nodig)',
+		'Rom-assets genereren',
+		'Rompakket finaliseren',
 		`"${BOOTROM_TS_FILENAME}" compileren(als nodig)`,
 		'"game.html" en "game_debug.html" bouwen',
-		'Deployeren'
+		'Deployeren',
+		'ROM PACKING GE-DONUT!! :-)',
 	];
 	const progress = new ProgressReporter(taskList);
 	try {
@@ -1264,9 +1248,9 @@ async function main() {
 				}
 			} else rebuildRequired = true;
 
-			if (!deploy) progress.removeLastTask();
+			if (!deploy) progress.removeTask('Deployeren');
 			if (!rebuildRequired) {
-				progress.skipTasks(4);
+				progress.skipTasks(7);
 			}
 
 			// #endregion
@@ -1275,7 +1259,20 @@ async function main() {
 				await progress?.taskCompleted();
 				await yaml2Json();
 				await progress?.taskCompleted();
-				await buildRompack(rom_name, respath);
+				const resMetaList = await getResMetaList(respath, rom_name);
+				await progress?.taskCompleted();
+				const loadedResources = await getLoadedResourcesList(resMetaList, rom_name);
+				await progress?.taskCompleted();
+
+				if (GENERATE_AND_USE_TEXTURE_ATLAS) {
+					await createAtlasses(loadedResources);
+				}
+				await progress?.taskCompleted();
+
+				const { assetList, romlabel_buffer } = generateRomAssets(loadedResources);
+				await progress?.taskCompleted();
+
+				await finalizeRompack(assetList, romlabel_buffer, rom_name);
 				await progress?.taskCompleted();
 			}
 			await buildBootromScriptIfNewer();
