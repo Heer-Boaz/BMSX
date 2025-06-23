@@ -9,6 +9,7 @@ import * as pako from 'pako';
 import { PNG } from 'pngjs';
 import type { AudioMeta, ImgMeta, RomAsset, RomMeta, asset_type } from '../src/bmsx/rompack';
 import { asciiWaveBraille, generateBrailleAsciiArt, generatePixelPerfectAsciiArt, parseWav, renderBufferBar, renderSummaryBar } from './asciiart';
+import { generateAtlasName } from './atlasbuilder';
 import { loadAssetList, parseMetaFromBuffer } from './bootrom';
 
 const PER_PIXEL_RENDERING_THRESHOLD = 64; // sprites ≤64×64 get per-pixel rendering
@@ -243,20 +244,20 @@ async function main() {
     function generateSummaryContent() {
         const imagesSize = imageAssets.reduce((sum, a) => {
             let size = 0;
-            if (a.start != null && a.end != null) size += a.end - a.start;
-            if (a.metabuffer_start != null && a.metabuffer_end != null) size += a.metabuffer_end - a.metabuffer_start;
+            if (typeof a.start === 'number' && typeof a.end === 'number') size += a.end - a.start;
+            if (typeof a.metabuffer_start === 'number' && typeof a.metabuffer_end === 'number') size += a.metabuffer_end - a.metabuffer_start;
             return sum + size;
         }, 0);
         const audioSize = assetList.filter(a => a.type === 'audio').reduce((sum, a) => {
             let size = 0;
-            if (a.start != null && a.end != null) size += a.end - a.start;
-            if (a.metabuffer_start != null && a.metabuffer_end != null) size += a.metabuffer_end - a.metabuffer_start;
+            if (typeof a.start === 'number' && typeof a.end === 'number') size += a.end - a.start;
+            if (typeof a.metabuffer_start === 'number' && typeof a.metabuffer_end === 'number') size += a.metabuffer_end - a.metabuffer_start;
             return sum + size;
         }, 0);
         const atlasSize = assetList.filter(a => a.type === 'atlas').reduce((sum, a) => {
             let size = 0;
-            if (a.start != null && a.end != null) size += a.end - a.start;
-            if (a.metabuffer_start != null && a.metabuffer_end != null) size += a.metabuffer_end - a.metabuffer_start;
+            if (typeof a.start === 'number' && typeof a.end === 'number') size += a.end - a.start;
+            if (typeof a.metabuffer_start === 'number' && typeof a.metabuffer_end === 'number') size += a.metabuffer_end - a.metabuffer_start;
             return sum + size;
         }, 0);
         const codeSize = assetList.reduce((sum, a) => a.type === 'code' ? sum + (a.end - a.start) : sum, 0);
@@ -288,8 +289,8 @@ async function main() {
             }
 
             if (asset.start || asset.end || asset.metabuffer_start || asset.metabuffer_end) {
-                const start = (asset.start === 0 && asset.end === 0) ? asset.metabuffer_start ?? 0 : asset.start;
-                const end = (asset.end === 0 && asset.start === 0) ? asset.metabuffer_end ?? 0 : asset.end;
+                const start = (asset.start == asset.end) ? asset.metabuffer_start ?? 0 : asset.start;
+                const end = (asset.end == asset.start) ? asset.metabuffer_end ?? 0 : asset.end;
                 summaryRegions.push({ start, end, colorTag, label });
             }
         }
@@ -433,7 +434,7 @@ async function main() {
         switch (selected.type) {
             case 'image':
                 if (imgmeta.atlassed && imgmeta.texcoords) {
-                    const atlasName = imgmeta.atlasid === 0 ? '_atlas' : `_atlas${imgmeta.atlasid} `;
+                    const atlasName = generateAtlasName(imgmeta.atlasid ?? 0);
                     const atlasAsset = assetList.find(a => a.resname === atlasName && a.type === 'atlas');
                     if (atlasAsset) {
                         const atlasBuf = atlasAsset.buffer instanceof Uint8Array
@@ -475,7 +476,7 @@ async function main() {
                 try {
                     if (!selected.buffer || !(selected.buffer instanceof ArrayBuffer) || selected.buffer.byteLength === 0) {
                         // Load the audio buffer from the ROM pack
-                        selected.buffer = await loadAudio(rompack.slice(selected.start, selected.end));
+                        (selected.buffer as ArrayBuffer) = await loadAudio(rompack.slice(selected.start, selected.end));
                         asciiArt = '[No audio buffer available]';
                     }
                     const info = parseWav(selected.buffer as Uint8Array);
