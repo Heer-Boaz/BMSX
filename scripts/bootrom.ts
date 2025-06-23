@@ -439,7 +439,7 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 		case 'audio':
 			try {
 				if (opts && opts.loadAudioFromBuffer) {
-				romResult.snd_assets[res.resid] = await opts.loadAudioFromBuffer(rom.slice(res.start, res.end));
+					romResult.snd_assets[res.resid] = await opts.loadAudioFromBuffer(rom.slice(res.start, res.end));
 				} else {
 					// By default we do not load the audio, but load it later in the SoundMaster
 					romResult.snd_assets[res.resid] = res;
