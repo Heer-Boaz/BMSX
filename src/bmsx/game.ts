@@ -12,7 +12,7 @@ import { BaseView, Color, DrawImgOptions, DrawRectOptions } from "./view";
  */
 declare global {
 	var $: Game;
-	var rom: RomPack;
+	var $rom: RomPack;
 	var debug: boolean;
 }
 
@@ -1105,6 +1105,8 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		global = globalThis;
 		global['$'] = this;
 		window['$'] = this;
+		global['$rom'] = rom;
+		window['$rom'] = rom;
 		this.running = false;
 		this._paused = false;
 		this.wasupdated = true;
@@ -1115,7 +1117,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	}
 
 	/**
-	 * Inits the game object.
+	 * Inits the game on boot.
 	 * @param rom - The ROM pack containing game assets.
 	 * @param model - The model object that manages the game state.
 	 * @param view - The view object that manages the game display.
@@ -1127,9 +1129,13 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		this._debug = debug ?? this._debug;
 
 		global['debug'] = this.debug;
-		global['rom'] = rom;
+		global['$rom'] = rom;
 
 		BaseView.images = rom.images;
+		Object.keys(rom.img_assets).forEach((key => {
+			const imgAsset = rom.img_assets[key];
+			BaseView.imagesMeta[key] = imgAsset.imgmeta;
+		}));
 		EventEmitter.instance; // Init event emitter
 		Input.instance; // Init input module
 		if ($.input.isOnscreenGamepadEnabled) {
@@ -1150,7 +1156,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 			// @ts-ignore
 			window['view'] = view;
 			// @ts-ignore
-			window['rom'] = global.rom;
+			window['$rom'] = global.$rom;
 			// @ts-ignore
 			window['$'] = global.$;
 			// @ts-ignore

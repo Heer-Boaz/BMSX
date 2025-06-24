@@ -1,7 +1,7 @@
 ﻿import { BFont, GameOptions, Identifier, copy_vector, type RegisterablePersistent } from "./game";
 import { Input } from './input';
 import { Registry } from './registry';
-import type { Area, Size, Vector, id2htmlimg, vec2, vec3arr } from './rompack';
+import type { Area, ImgMeta, Size, Vector, id2htmlimg, vec2, vec3arr } from './rompack';
 
 export interface FlipOptions {
 	flip_h: boolean;
@@ -52,6 +52,7 @@ export abstract class BaseView implements RegisterablePersistent {
 	public canvas: HTMLCanvasElement;
 	public context: CanvasRenderingContext2D;
 	public static images: id2htmlimg;
+	public static imagesMeta: Record<string, ImgMeta> = {};
 	public accessor default_font: BFont;
 
 	public windowSize: Size;

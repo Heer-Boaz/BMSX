@@ -42,7 +42,7 @@ export class SM {
     private static predecodeTracks() {
         SM.buffers = {};
         Object.keys(SM.tracks).forEach(id => {
-            SM.decode(global.rom['rom'].slice(SM.tracks[id]['start'], SM.tracks[id]['end']))
+            SM.decode(global.$rom['rom'].slice(SM.tracks[id]['start'], SM.tracks[id]['end']))
                 .then(decoded => SM.buffers[id] = decoded);
         });
     }

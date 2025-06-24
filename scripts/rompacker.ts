@@ -1157,7 +1157,7 @@ class ProgressReporter {
 
 	public async pulse() {
 		this.gauge.pulse();
-		await timer(500);
+		await timer(10);
 	}
 }
 

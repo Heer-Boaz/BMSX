@@ -37,7 +37,7 @@ export abstract class SpriteObject extends GameObject {
      */
     public set imgid(id: string) {
         this.sprite.imgid = id;
-        const imgmeta = global.rom['img_assets'][id]?.['imgmeta'];
+        const imgmeta = global.$rom['img_assets'][id]?.['imgmeta'];
         if (imgmeta) {
             this.sx = imgmeta['width'];
             this.sy = imgmeta['height'];
@@ -56,7 +56,7 @@ export abstract class SpriteObject extends GameObject {
 
     private updateHitareas() {
         if (!this.hitarea) return; // Only update the hitarea if it exists
-        const imgmeta = global.rom['img_assets'][this.sprite.imgid]?.['imgmeta'];
+        const imgmeta = global.$rom['img_assets'][this.sprite.imgid]?.['imgmeta'];
         const boundingbox = imgmeta['boundingbox']; // Get the bounding box of the image
         if (boundingbox) { // Only update the hitarea if the bounding box exists
             set_inplace_area(this.hitarea, SpriteObject.selectBoundingBox(this.flip_h, this.flip_v, boundingbox)); // Update the hitarea to match the bounding box of the image (used for collision detection)

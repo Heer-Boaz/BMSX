@@ -19,8 +19,8 @@ void main() {
         case 1u: // Use the second texture if atlas ID is 1
             texColor = texture(u_texture1, v_texcoord);
             break;
-        default: // Default to the first texture for any other atlas ID
-            texColor = texture(u_texture0, v_texcoord);
+        default: // Default to the dynamic atlas for any other atlas ID
+            texColor = texture(u_texture1, v_texcoord);
             break;
     }
     texColor *= v_color_override;

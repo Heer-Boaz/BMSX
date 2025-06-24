@@ -6,6 +6,7 @@ import vertexShaderCode from './shaders/vertexshader.glsl';
 import { BaseView, Color, DrawImgOptions, DrawRectOptions } from './view';
 
 const CATCH_WEBGL_ERROR = false; // Set to false to disable WebGL error catching
+type texturetype = '_atlas' | '_atlas_dynamic' | 'post_processing_source_texture';
 
 /**
  * Decorator function that catches WebGL errors thrown by the decorated method and throws an error with the error message.
@@ -128,7 +129,7 @@ export abstract class GLView extends BaseView {
      * The WebGL rendering context used for rendering the game.
      */
     public glctx: WebGL2RenderingContext; // TODO: Remove public access, which is only used for catching WebGL errors
-    private textures: { [key: number]: WebGLTexture; };
+    private textures: { [key in texturetype]: WebGLTexture; };
     private gameShaderProgram: WebGLProgram;
     private vertexLocation: number;
     private texcoordLocation: number;
@@ -498,14 +499,14 @@ export abstract class GLView extends BaseView {
         // The object will contain all the textures used in the game and are accessed by their keys.
         // Note that this will remain mostly empty if the game uses the default texture atlas.
         const gl = this.glctx;
-        this.textures = {};
-
-        // Link the atlas texture to the '_atlas' key for easy access
-        // The atlas is created from the '_atlas' image in the ROM pack, which is loaded before the GLView is created (during loading of the ROM pack)
-        this.textures['_atlas'] = this.createTexture(BaseView.images['_atlas'], undefined, gl.TEXTURE0); // Create the texture from the atlas image
-        // Create the texture with the same size as the atlas image
-        this.textures['_atlas_dynamic'] = this.createTexture(null, { width: BaseView.images['_atlas'].width, height: BaseView.images['_atlas'].height }, gl.TEXTURE1); // Create a dynamic texture for the atlas, which can be updated at runtime
-        // The 'post_processing_source_texture' texture is created in createFramebufferAndTexture
+        this.textures = {
+            // Link the atlas texture to the '_atlas' key for easy access
+            // The atlas is created from the '_atlas' image in the ROM pack, which is loaded before the GLView is created (during loading of the ROM pack)
+            _atlas: this.createTexture(BaseView.images['_atlas'], undefined, gl.TEXTURE0),
+            // Create the texture with dummy width and height, which will be updated later
+            _atlas_dynamic: this.createTexture(null, { width: 1, height: 1 }, gl.TEXTURE1),
+            post_processing_source_texture: null, // This will be created later in createFramebufferAndTexture
+        };
     }
 
     /**
@@ -702,9 +703,7 @@ export abstract class GLView extends BaseView {
         if (this.framebuffer) {
             gl.deleteFramebuffer(this.framebuffer);
         }
-        if (!this.textures) {
-            this.textures = {};
-        } else if (this.textures['post_processing_source_texture']) {
+        if (this.textures['post_processing_source_texture']) {
             gl.deleteTexture(this.textures['post_processing_source_texture']);
         }
 
@@ -1012,7 +1011,7 @@ export abstract class GLView extends BaseView {
      */
     override drawImg(options: DrawImgOptions): void {
         const { imgid } = options;
-        const imgmeta = global.rom['img_assets'][imgid]?.['imgmeta'];
+        const imgmeta = BaseView.imagesMeta[imgid];
 
         if (!imgmeta) {
             throw Error(`Image with id '${imgid}' not found while trying to retrieve image metadata!`);
@@ -1194,5 +1193,33 @@ export abstract class GLView extends BaseView {
                 }
             }
         }
+    }
+
+    private _dynamicAtlasIndex: number | null = null;
+
+    public get dynamicAtlas(): number | null {
+        return this._dynamicAtlasIndex;
+    }
+
+    public set dynamicAtlas(index: number) {
+        function generateAtlasName(atlasIndex: number): string {
+            const idxStr = atlasIndex.toString().padStart(2, '0');
+            return atlasIndex === 0 ? '_atlas' : `_atlas_${idxStr}`;
+        }
+
+        const atlasName = generateAtlasName(index);
+        const atlasImage = BaseView.images[atlasName];
+        if (!atlasImage) {
+            throw Error(`Atlas image with name '${atlasName}' not found!`);
+        }
+        this._dynamicAtlasIndex = index;
+
+        const gl = this.glctx;
+        // Create the dynamic atlas texture if it doesn't exist
+        this.textures['_atlas_dynamic'] = this.createTexture(atlasImage, { width: atlasImage.width, height: atlasImage.height }, gl.TEXTURE1);
+
+        // Update the dynamic atlas texture with the new image
+        gl.bindTexture(gl.TEXTURE_2D, this.textures['_atlas_dynamic']);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, atlasImage.width, atlasImage.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, atlasImage);
     }
 }
