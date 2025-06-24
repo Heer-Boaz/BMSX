@@ -392,6 +392,9 @@ type SoundMasterState = {
     musicOffset?: number;
 };
 
+type ViewState = {
+    dynamicAtlasIndex: number; // Index of the dynamic atlas used for rendering
+};
 @insavegame
 /**
  * Represents a savegame object that contains all the necessary data to save and load the game state.
@@ -401,6 +404,30 @@ export class Savegame {
     allSpacesObjects: SpaceObject[];
     spaces: Space[];
     SMState: SoundMasterState;
+    viewState: ViewState;
+
+
+    @onsave
+    saveViewState(o: Savegame) {
+        // Capture current view state
+        const view = $.view as any;
+        if (view.dynamicAtlasIndex) {
+            const viewState = {
+                dynamicAtlasIndex: view.dynamicAtlasIndex, // Index of the dynamic atlas used for rendering
+            };
+            return { viewState };
+        }
+        return undefined;
+    }
+
+    @onload
+    restoreViewState() {
+        const view = $.view as any;
+        // Restore view state
+        if (view.dynamicAtlasIndex && this.viewState) {
+            view.dynamicAtlas = this.viewState.dynamicAtlasIndex; // Restore the dynamic atlas index
+        }
+    }
 
     @onsave
     saveSoundState(o: Savegame) {
