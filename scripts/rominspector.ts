@@ -18,6 +18,17 @@ let modal: blessed.Widgets.BoxElement | null = null;
 let filteredAssetList: RomAsset[] = [];
 let assetList: RomAsset[] = [];
 
+function numberToStuff(n: number): string {
+    const units = ['', 'K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y'];
+    let i = 0;
+    let num = n;
+    while (num >= 1000 && i < units.length - 1) {
+        num /= 1000;
+        i++;
+    }
+    return i === 0 ? `${n}` : `${num.toFixed(2)}${units[i]}`;
+}
+
 function byteSizeToString(size: number): string {
     const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
     let i = 0;
@@ -56,16 +67,12 @@ async function loadSourceFromBuffer(buf: ArrayBuffer): Promise<string> {
     }
 
     // First create a copy of the ArrayBuffer to avoid issues with shared memory
-    console.info(`Creating a copy of the ArrayBuffer for decoding... (${byteSizeToString(buf.byteLength)} bytes)`);
     let copyBuffer = new ArrayBuffer(buf.byteLength);
     copyBuffer = buf.slice(0);
-
-    console.info(`Decoding ArrayBuffer of size ${byteSizeToString(copyBuffer.byteLength)} bytes...`);
 
     // Use TextDecoder to decode the ArrayBuffer directly
     const decoded = decodeuint8arr(new Uint8Array(copyBuffer));
 
-    console.info(`Decoded ArrayBuffer to string of length ${decoded.length} characters.`);
     return decoded;
 }
 
@@ -483,10 +490,10 @@ async function main() {
                 metadataLines.push(`Priority: ${audiometa.priority ?? 'Unset!'}`);
                 // ------ ASCII-preview toevoegen ------
                 try {
+                    asciiArt = '[No audio buffer available]';
                     if (!selected.buffer || !(selected.buffer instanceof ArrayBuffer) || selected.buffer.byteLength === 0) {
                         // Load the audio buffer from the ROM pack
                         (selected.buffer as ArrayBuffer) = await loadAudio(rompack.slice(selected.start, selected.end));
-                        asciiArt = '[No audio buffer available]';
                     }
                     const info = parseWav(selected.buffer as Uint8Array);
                     if (!info || !info.dataOff || !info.dataLen || !info.bits || !info.channels) {
@@ -505,8 +512,25 @@ async function main() {
                     asciiArt = `(Preview failed: ${e}\n${e.stack})`;
                 }
                 break;
-            case 'code':
-                // For code, we don't generate ASCII art, just show the name
+            case 'code': {
+                let code = '';
+                // Load the code buffer from the ROM pack
+                code = await loadSourceFromBuffer(rompack.slice(selected.start, selected.end));
+                const sourceMapUrlIndex = code.indexOf('sourceMappingURL=');
+                metadataLines.push(`Characters in code: ${numberToStuff(code.length - (sourceMapUrlIndex !== -1 ? code.length - sourceMapUrlIndex : 0))}`);
+                metadataLines.push(`Sourcemap: ${sourceMapUrlIndex !== -1 ? 'Yes' : 'No'}`);
+
+                if (!code || code.length === 0) {
+                    code = '[No code buffer available]';
+                } else {
+                    // Show the first 1000 characters of the code
+                    code = code.slice(0, 1000);
+                    if (code.length >= 1000) {
+                        code += ' ... (truncated)';
+                    }
+                }
+                asciiArt = `{gray-fg}###########################################\n${code}\n###########################################{/gray-fg}`;
+            }
                 break;
         }
 
@@ -527,18 +551,18 @@ async function main() {
                 regions.push({ start: selected.metabuffer_start, end: selected.metabuffer_end, colorTag: metabufferRegionColor, label: 'metabuffer' });
             }
             const bar = renderBufferBar(regions, total, barLength);
-            bufferLines.push(`Buffer: ${bar}`);
+            bufferLines.push(`Buffer: ${bar} `);
             if (bufferSize) bufferLines.push(`Buffer: ${selected.start} - ${selected.end} (${byteSizeToString(bufferSize)})`);
             // Metabuffer region info
             if (metabufferSize) bufferLines.push(`Metabuffer: ${selected.metabuffer_start} - ${selected.metabuffer_end} (${byteSizeToString(metabufferSize)})`);
             if (bufferSize && metabufferSize) {
                 const totalSize = (bufferSize ?? 0) + (metabufferSize ?? 0);
-                bufferLines.push(`Total size: ${byteSizeToString(totalSize)}`);
+                bufferLines.push(`Total size: ${byteSizeToString(totalSize)} `);
             }
         }
 
         metadataLines.push('');
-        modal.content = `${bufferLines.join('\n')}\n${asciiArt}\n${metadataLines.join('\n')}\n`;
+        modal.content = `${bufferLines.join('\n')} \n${asciiArt} \n${metadataLines.join('\n')} \n`;
         modal.focus();
         let ignoreFirstKeypress = true;
         let currentIdx = idx;
