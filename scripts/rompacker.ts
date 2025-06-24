@@ -657,13 +657,6 @@ async function getLoadedResourcesList(resMetaList: ResourceMeta[], rom_name: str
 
 	loadedResources = await Promise.all(resourcePromises);
 
-	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-		// Sort the files on buffer size for atlassing
-		// Also: place the atlas in the back, so that we can correctly use the bufferpointer to point to the atlas
-		loadedResources = loadedResources.sort((b1, b2) => ((b1.type === 'atlas' ? 1 : 0) - (b2.type === 'atlas' ? 1 : 0)));
-		// Also: place the romlabel in front, so that it is put at the start of the rom and will be recognized as a proper image
-		loadedResources = loadedResources.sort((b1, b2) => ((b1.type === 'romlabel' ? 0 : 1) - (b2.type === 'romlabel' ? 0 : 1)));
-	}
 	return loadedResources;
 }
 
@@ -728,8 +721,7 @@ function generateRomAssets(loadedResources: LoadedResource[]) {
 	const romAssets: RomAsset[] = [];
 	let romlabel_buffer: Buffer | undefined;
 
-	for (let i = 0; i < loadedResources.length; i++) {
-		const res = loadedResources[i];
+	for (const res of loadedResources) {
 		const type = res.type;
 		let resname = res.name;
 		const resid = res.id;
@@ -737,8 +729,8 @@ function generateRomAssets(loadedResources: LoadedResource[]) {
 
 		switch (type) {
 			case 'romlabel':
-				if (i > 0) throw new Error('"romlabel.png" must appear at start of the ResourceMeta-list!');
 				romlabel_buffer = res.buffer;
+				romAssets.push({ resid, resname, type, imgmeta: undefined, buffer: romlabel_buffer });
 				break;
 			case 'image': {
 				const imgmeta = buildImgMeta(res);
@@ -771,7 +763,7 @@ function generateRomAssets(loadedResources: LoadedResource[]) {
 				break;
 		}
 	}
-	return { assetList: romAssets, romlabel_buffer };
+	return romAssets;
 }
 
 /**
@@ -909,13 +901,23 @@ async function createAtlasses(loadedResources: LoadedResource[]) {
  */
 async function finalizeRompack(
 	assetList: RomAsset[],
-	romlabel_buffer: Buffer | undefined,
 	rom_name: string,
 ) {
 	// Capture resource buffers in the order as given by the assetList
 	const buffers: Buffer[] = [];
 	const outfile = `${rom_name}.rom`; // Use the provided rom_name as the output file name
 	let offset = 0; // Offset for the next buffer to be added
+
+	// First write the romlabel buffer if it exists and remove it from the assetList
+	// Note that we will use the romlabel buffer to prepend the ROM label to the final output
+	// This is useful when changing the extension of the ROM file to .PNG, which will then be recognized as a PNG file by the browser.
+	let romlabel_buffer: Buffer | undefined = undefined;
+	let romlabel_index = assetList.findIndex(asset => asset.type === 'romlabel');
+	if (romlabel_index >= 0) {
+		romlabel_buffer = assetList[romlabel_index].buffer;
+		// Remove the romlabel from the assetList
+		assetList.splice(romlabel_index, 1);
+	}
 
 	for (const asset of assetList) {
 		// Main buffer (if nonzero length)
@@ -1269,10 +1271,10 @@ async function main() {
 				}
 				await progress?.taskCompleted();
 
-				const { assetList, romlabel_buffer } = generateRomAssets(loadedResources);
+				const romAssets = generateRomAssets(loadedResources);
 				await progress?.taskCompleted();
 
-				await finalizeRompack(assetList, romlabel_buffer, rom_name);
+				await finalizeRompack(romAssets, rom_name);
 				await progress?.taskCompleted();
 			}
 			await buildBootromScriptIfNewer();

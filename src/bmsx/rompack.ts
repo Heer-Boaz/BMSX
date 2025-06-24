@@ -118,7 +118,7 @@ export interface AtlasMeta {
 	// img_assets: RomAsset[];
 }
 
-export type asset_type = 'image' | 'audio' | 'code' | 'atlas';
+export type asset_type = 'image' | 'audio' | 'code' | 'atlas' | 'romlabel';
 
 /**
  * Represents an asset in a ROM pack.
