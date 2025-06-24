@@ -3,7 +3,7 @@ import type { Stats } from 'fs';
 import type { AudioMeta, ImgMeta, RomAsset, vec2arr } from '../src/bmsx/rompack';
 import { createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
-import { LoadedResource, ResourceMeta, RomManifest, RomPackerOptions, type resourcetype } from './rompacker.rompack';
+import type { Resource, RomManifest, RomPackerOptions, resourcetype } from './rompacker.rompack';
 const { build } = require('esbuild');
 const { join, parse } = require('path');
 
@@ -503,12 +503,12 @@ function getResMetaByFilename(filepath: string): { name: string, ext: string, ty
 }
 
 /**
- * Builds a list of `ResourceMeta` objects located at `respath` for the specified `romname`.
+ * Builds a list of resource objects located at `respath` for the specified `romname`.
  * @param respath The path to the resources to include in the list.
  * @param romname The name of the ROM pack to build the list for.
- * @returns An array of `ResourceMeta` objects.
+ * @returns An array of resources with basic metadata.
  */
-async function getResMetaList(respath: string, romname?: string) {
+async function getResMetaList(respath: string, romname?: string): Promise<Resource[]> {
 	const arrayOfFiles = await getFiles(respath) ?? []; // Also handle corner case where we don't have any resources by adding "?? []"
 	const megarom_filename = `${romname}.js`;
 	// Note that romname can be undefined when building the resource enum file, so we only add the file if romname is defined
@@ -516,7 +516,7 @@ async function getResMetaList(respath: string, romname?: string) {
 		addFile("./rom", megarom_filename, arrayOfFiles); // Add source at the end
 	}
 
-	const result: Array<ResourceMeta> = [];
+	const result: Array<Resource> = [];
 	const targetAtlasIdSet = new Set<number>();
 
 	let imgid = 1;
@@ -607,23 +607,18 @@ async function getResMetaList(respath: string, romname?: string) {
 }
 
 /**
-* Loads resources specified by the given resource metadata list and returns an array of LoadedResource objects.
-*
-* For each resource in the metadata list, this function reads the file buffer and, if the resource is an image,
-* loads it as an image object. It also manually adds the ROM source code as a resource.
-*
-* @param resMetaList - Array of ResourceMeta objects describing the resources to load.
-* @param rom_name - The name of the ROM, used to locate the ROM source code file.
-* @returns Promise resolving to an array of LoadedResource objects, each containing the loaded buffer and image (if applicable).
-*/
-async function getLoadedResourcesList(resMetaList: ResourceMeta[], rom_name: string): Promise<LoadedResource[]> {
-	let loadedResources: Array<LoadedResource> = [];
+ * Builds a list of resources located at `respath` for the specified `romname`.
+ * @param rom_name The name of the ROM pack to build the list for.
+ * @returns An array of resources.
+ */
+async function getResourcesList(resMetaList: Resource[], rom_name: string): Promise<Resource[]> {
+	let resources: Array<Resource> = [];
 
 	/**
-	 * Loads an image from the specified `ResourceMeta` object.
-	 * @param _meta The `ResourceMeta` object containing information about the image to load.
-	 * @returns A Promise that resolves with the loaded image.
-	 */
+	 * Loads an image from the specified resource object.
+	 * @param _meta The resource object containing information about the image to load.
+ * @returns A Promise that resolves with the loaded image.
+ */
 	async function getImageFromBuffer(buffer: Buffer) {
 		const base64Encoded = buffer.toString('base64');
 		const dataURL = `data:images/png;base64,${base64Encoded}`;
@@ -636,7 +631,7 @@ async function getLoadedResourcesList(resMetaList: ResourceMeta[], rom_name: str
 		const buffer = meta.filepath ? await readFile(meta.filepath) : null;
 		let img: any = undefined;
 		if (type === 'image') img = await getImageFromBuffer(buffer);
-		const toAdd: LoadedResource = {
+		const toAdd: Resource = {
 			...meta,
 			buffer: buffer,
 			img: img,
@@ -654,15 +649,15 @@ async function getLoadedResourcesList(resMetaList: ResourceMeta[], rom_name: str
 			name: megarom_filename,
 			ext: '.js',
 			type: 'code',
-			img: undefined, // Add missing fields to match LoadedResource
+			img: undefined, // Add missing fields to match Resource
 			id: 1,
-			collisionType: undefined // Add missing fields to match LoadedResource
+			collisionType: undefined // Add missing fields to match Resource
 		};
 	})());
 
-	loadedResources = await Promise.all(resourcePromises);
+	resources = await Promise.all(resourcePromises);
 
-	return loadedResources;
+	return resources;
 }
 
 /**
@@ -709,7 +704,7 @@ async function buildResourceList(respath: string, rom_name?: string) {
 }
 
 /**
- * Generates an array of RomAsset objects from the provided loaded resources.
+ * Processes an array of resources to produce asset metadata and allocate buffer ranges.
  *
  * This function processes each loaded resource, extracting relevant metadata and buffer data,
  * and constructs a RomAsset for each. It handles different resource types such as images,
@@ -717,14 +712,16 @@ async function buildResourceList(respath: string, rom_name?: string) {
  * For images and atlases, it generates image metadata; for audio, it parses audio metadata.
  * The resulting RomAsset array is used for ROM packing and serialization.
  *
- * @param loadedResources - The array of loaded resources to convert into RomAssets.
- * @returns An array of RomAsset objects, each representing a packed resource with metadata.
+ * @param resources - The array of resources to process.
+ * @returns An object with three properties:
+ * - `assetList` - The array of generated asset metadata objects (to be binary-encoded).
+ * - `romlabel_buffer` - The buffer data for the "romlabel.png" resource if present.
  */
-function generateRomAssets(loadedResources: LoadedResource[]) {
+function generateRomAssets(resources: Resource[]) {
 	const romAssets: RomAsset[] = [];
 	let romlabel_buffer: Buffer | undefined;
 
-	for (const res of loadedResources) {
+	for (const res of resources) {
 		const type = res.type;
 		let resname = res.name;
 		const resid = res.id;
@@ -772,11 +769,11 @@ function generateRomAssets(loadedResources: LoadedResource[]) {
 /**
  * Generates metadata for an image resource, optionally integrating texture atlas data.
  *
- * @param res - The loaded resource containing the image and any existing metadata.
+ * @param res - The resource containing the image and any existing metadata.
  * @param generated_atlas - An optional canvas element where an atlas has been generated.
  * @returns An object containing image dimensions, bounding boxes, center point, and (if atlas usage is enabled) texture coordinates.
  */
-function buildImgMeta(res: LoadedResource): ImgMeta {
+function buildImgMeta(res: Resource): ImgMeta {
 	const img = res.img;
 	const img_boundingbox = BoundingBoxExtractor.extractBoundingBox(img);
 	let extracted_hitpolygon: vec2arr[][] | vec2arr[] = undefined;
@@ -843,16 +840,10 @@ function buildImgMeta(res: LoadedResource): ImgMeta {
 	return imgmeta;
 }
 
-/**
- * Generates image metadata for an atlas resource.
- *
- * @param res - The loaded resource representing the atlas.
- * @returns An ImgMeta object containing atlas metadata such as dimensions and atlas ID.
- */
-function buildImgMetaForAtlas(res: LoadedResource): ImgMeta {
+function buildImgMetaForAtlas(res: Resource): ImgMeta {
 	return {
 		atlassed: false,
-		atlasid: res.atlasid, // Use the atlas ID from the base ResourceMeta
+		atlasid: res.atlasid, // Use the atlas ID from the base resource
 		width: res.img.width,
 		height: res.img.height,
 	};
@@ -861,20 +852,20 @@ function buildImgMetaForAtlas(res: LoadedResource): ImgMeta {
 /**
  * Generates texture atlases from the loaded image resources and updates the corresponding atlas resources.
  *
- * @param loadedResources - The array of loaded resources, including images and atlas placeholders.
- * @throws Will throw an error if no atlas resources are found or if atlas generation fails.
- * @remarks
- * This function finds all resources of type 'atlas', collects the images assigned to each atlas,
- * generates an optimized texture atlas for each, and writes the resulting PNG buffer to disk.
- * The generated atlas image and buffer are stored in the corresponding atlas resource.
+ * @param resources - An array of resources, including the atlas to be processed.
+ * @param generated_atlas - The HTMLCanvasElement representing the generated atlas image.
+ * @param assetList - An array of RomAsset objects to be updated with image metadata.
+ * @param bufferPointer - The starting position where atlas data should be written in the output buffers.
+ * @param buffers - An array of Buffers where the atlas image data will be appended.
+ * @returns A Promise that resolves once the atlas image is written to disk and metadata is updated.
  */
-async function createAtlasses(loadedResources: LoadedResource[]) {
+async function createAtlasses(resources: Resource[]) {
 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-		const atlasses = loadedResources.filter(res => res.type === 'atlas');
-		if (atlasses.length === 0) throw new Error('No atlas resources found in the "loaded resources"-list. The process of preparing the list of all resources (assets) should also add any atlasses that are to be generated. Thus, this is a bug in the code that prepares the list of resources :-(');
+		const atlasses = resources.filter(res => res.type === 'atlas');
+		if (atlasses.length === 0) throw new Error('No atlas resources found in the "resources"-list. The process of preparing the list of all resources (assets) should also add any atlasses that are to be generated. Thus, this is a bug in the code that prepares the list of resources :-(');
 		// Determine the indexes of atlasses to be generated
 		for (const atlas of atlasses) {
-			const image_assets = loadedResources.filter(resource => resource.type === 'image');
+			const image_assets = resources.filter(resource => resource.type === 'image');
 			const filteredImages = image_assets.filter(resource => resource.targetAtlasIndex === atlas.atlasid);
 			const atlasCanvas = createOptimizedAtlas(filteredImages);
 			if (!atlasCanvas) throw new Error(`Failed to create texture atlas for ${atlas.name}.`);
@@ -1264,15 +1255,15 @@ async function main() {
 				await progress?.taskCompleted();
 				const resMetaList = await getResMetaList(respath, rom_name);
 				await progress?.taskCompleted();
-				const loadedResources = await getLoadedResourcesList(resMetaList, rom_name);
+				const resources = await getResourcesList(resMetaList, rom_name);
 				await progress?.taskCompleted();
 
 				if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-					await createAtlasses(loadedResources);
+					await createAtlasses(resources);
 				}
 				await progress?.taskCompleted();
 
-				const romAssets = generateRomAssets(loadedResources);
+				const romAssets = generateRomAssets(resources);
 				await progress?.taskCompleted();
 
 				await finalizeRompack(romAssets, rom_name);
