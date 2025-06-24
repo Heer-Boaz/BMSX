@@ -343,13 +343,14 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<RomAsset[]> {
 			// Assign per-asset metadata based on resource type
 			switch (asset.type) {
 				case 'image':
+				case 'atlas':
 					asset.imgmeta = decodedMeta as ImgMeta;
 					break;
 				case 'audio':
 					asset.audiometa = decodedMeta as AudioMeta;
 					break;
 				case 'code':
-					// No specific metadata for source type, but we can still assign the decoded metadata
+					// No specific metadata for code type, but we can still assign the decoded metadata
 					break;
 				default:
 					// unsupported metadata type
