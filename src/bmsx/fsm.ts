@@ -1734,82 +1734,85 @@ export class StateDefinition {
  * @param machinedef - The state machine definition to validate.
  * @throws Error if the state machine definition is invalid.
  */
-export function validateStateMachine(machinedef: StateDefinition): void {
-	if (!machinedef.states) return; // A class might choose not to create a new machine_definition
+export function validateStateMachine(machinedef: StateDefinition, path: string = machinedef.id): void {
+	if (!machinedef.states) return;
 
-	// Get all state names
-	const stateNames = Object.keys(machinedef.states);
+	try {
+		const stateIds = Object.keys(machinedef.states);
 
-	// Check the defined event state transitions for each state in the machine definition to see if they are valid
-	for (const state of stateNames) {
-		const transitions = machinedef.states[state].on; // Get the transitions for the state if they exist
+		if (!machinedef.start_state_id)
+			throw new Error(`No start state defined for state machine '${path}'`);
 
-		// If there are transitions, check each target state
-		if (transitions) {
-			for (const targetState of Object.values(transitions)) { // Get the target state for each transition
-				if (typeof targetState === 'string') { // If the target state is a string, check if it exists
-					let targetStateParts = targetState.split('.');
-					let currentContext = machinedef.states;
+		if (!stateIds.includes(machinedef.start_state_id))
+			throw new Error(`Invalid start state '${machinedef.start_state_id}', as that state doesn't exist in the machine '${path}'.`);
 
-					for (const part of targetStateParts) {
-						switch (part) {
-							case STATE_THIS_PREFIX: // If the part is STATE_THIS_PREFIX, move to the current subcontext
-								if (!currentContext.states) { // Check if the current context has states
-									throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the current context doesn't have substates.`);
-								}
-								continue; // Skip STATE_THIS_PREFIX parts
-							case STATE_PARENT_PREFIX: // If the part is STATE_PARENT_PREFIX, move to the parent context
-								if (!currentContext.parent) { // Check if the parent context exists
-									throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the parent context doesn't exist.`);
-								}
-								if (!currentContext.parent.states) { // Check if the parent context has states
-									throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the parent context doesn't have substates.`);
-								}
-								currentContext = currentContext.parent.states;
-								continue; // Skip STATE_PARENT_PREFIX parts
-							case STATE_ROOT_PREFIX: // If the part is STATE_ROOT_PREFIX, move to the root context
-								if (!currentContext.root) { // Check if the root context exists
-									throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}': the root context doesn't exist. This might be because the root context is not defined in the machine definition.`);
-								}
-								currentContext = currentContext.root.states;
-								continue; // Skip STATE_ROOT_PREFIX parts
-							default:
-								if (!currentContext[part]) { // Check if the part exists in the current context
-									throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}'.`);
-								}
+		for (const id of stateIds) {
+			const stateDef = machinedef.states[id] as StateDefinition;
+			const statePath = `${path}.${stateDef.id}`;
 
-								currentContext = currentContext[part].states; // Move to the next context
-								break;
+			const checkTransitions = (transitions?: { [key: string]: Identifier | StateEventDefinition }) => {
+				if (!transitions) return;
+				for (const t of Object.values(transitions)) {
+					if (typeof t === 'string') {
+						resolveStateDefPath(stateDef, t, statePath);
+					} else {
+						if (typeof t.to === 'string') resolveStateDefPath(stateDef, t.to, statePath);
+						if (typeof t.switch === 'string') resolveStateDefPath(stateDef, t.switch, statePath);
+						if (typeof t.do === 'string') {
+							console.warn(`Handler '${t.do}' referenced in '${statePath}' is missing`);
 						}
 					}
 				}
-			}
-		}
-	}
+			};
 
-	// Check the defined event state transitions for each state in the machine definition to see if they are valid
-	for (const state of stateNames) {
-		const transitions = machinedef.states[state].on; // Get the transitions for the state if they exist
+			checkTransitions(stateDef.on);
+			checkTransitions(stateDef.on_input);
 
-		// If there are transitions, check each target state
-		if (transitions) {
-			for (const targetState of Object.values(transitions)) { // Get the target state for each transition
-				if (typeof targetState === 'string') { // If the target state is a string, check if it exists
-					if (!stateNames.includes(targetState)) { // Check if the target state exists
-						throw new Error(`Invalid event transition target '${targetState}' in state '${state}' of machine '${machinedef.id}'.`);
-					}
+			const handlers = [stateDef.run, stateDef.enter, stateDef.exit, stateDef.next, stateDef.end, stateDef.process_input];
+			const handlerNames = ['run', 'enter', 'exit', 'next', 'end', 'process_input'];
+			handlers.forEach((h, idx) => {
+				if (typeof h === 'string') {
+					console.warn(`Handler '${h}' referenced in '${statePath}' for '${handlerNames[idx]}' is missing`);
 				}
-			}
+			});
+
+			validateStateMachine(stateDef, statePath);
 		}
+	} catch (e) {
+		console.error(`${e.stack || e.message || e}`);
+	}
+}
+
+function resolveStateDefPath(from: StateDefinition, target: string, origin: string): void {
+	const parts = target.split('.');
+	let ctx: StateDefinition | undefined;
+	let startIndex = 0;
+
+	switch (parts[0]) {
+		case STATE_THIS_PREFIX:
+			ctx = from;
+			startIndex = 1;
+			break;
+		case STATE_PARENT_PREFIX:
+			ctx = from.parent;
+			if (!ctx) throw new Error(`Invalid state path '${target}' referenced from '${origin}': no parent context`);
+			startIndex = 1;
+			break;
+		case STATE_ROOT_PREFIX:
+			ctx = from.root;
+			if (!ctx) throw new Error(`Invalid state path '${target}' referenced from '${origin}': no root context`);
+			startIndex = 1;
+			break;
+		default:
+			ctx = from.parent ?? from;
+			break;
 	}
 
-	// Check if the start state is defined
-	if (!machinedef.start_state_id) {
-		throw new Error(`No start state defined for state machine '${machinedef.id}'`);
-	}
-
-	// Check if the start state exists
-	if (machinedef.start_state_id && !stateNames.includes(machinedef.start_state_id)) {
-		throw new Error(`Invalid start state '${machinedef.start_state_id}', as that state doesn't exist in the machine '${machinedef.id}'.`);
+	for (let i = startIndex; i < parts.length; i++) {
+		const part = parts[i];
+		if (!ctx.states?.[part]) {
+			throw new Error(`Invalid state path '${target}' referenced from '${origin}': state '${part}' not found`);
+		}
+		ctx = ctx.states[part] as StateDefinition;
 	}
 }
