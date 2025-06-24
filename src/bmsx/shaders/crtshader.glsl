@@ -15,6 +15,10 @@ uniform bool u_applyScanlines;
 uniform bool u_applyBlur;
 uniform bool u_applyGlow;
 uniform bool u_applyFringing;
+uniform float u_noiseIntensity;
+uniform vec3 u_colorBleed;
+uniform float u_blurIntensity;
+uniform vec3 u_glowColor;
 
 // Input texture coordinates and output color
 in vec2 v_texcoord;
@@ -60,11 +64,7 @@ const float NOISE_OFFSET = 19.19;
 const float SCANLINE_INTERVAL = 2.0;
 const float SCANLINE_DARKEN_FACTOR = 0.8;
 
-const float NOISE_INTENSITY = 0.2;
-const vec3 COLOR_BLEED = vec3(0.02, 0.0, 0.0);
-const float BLUR_INTENSITY = 0.6;
 const float BLUR_DEFAULT_CONTRAST_IF_NOT_APPLIED = 0.0;
-const vec3 GLOW_COLOR = vec3(0.05, 0.02, 0.02);
 const float GLOW_BRIGHTNESS_CLAMP = 0.5;
 const float CENTER_SCALE = 0.5;
 const float FRINGING_BASE_AMOUNT = 0.0010;
@@ -139,12 +139,12 @@ void main() {
         float noise = hashNoise(uv * u_resolution * u_fragscale + vec2(u_random), u_time);
 
         // Apply the same noise to all channels
-        texColor.rgb += vec3(noise) * NOISE_INTENSITY;
+        texColor.rgb += vec3(noise) * u_noiseIntensity;
     }
 
     // Apply color bleed if enabled
     if (u_applyColorBleed) {
-        texColor += COLOR_BLEED; // Adjust bleed intensity and color
+        texColor += u_colorBleed; // Adjust bleed intensity and color
     }
 
     // Apply scanlines
@@ -156,14 +156,14 @@ void main() {
     BlurContrastResult result;
     if (u_applyBlur) {
         result = applyBlurAndContrast(uv);
-        texColor = mix(texColor, result.blurredColor, BLUR_INTENSITY); // Adjust blur intensity
+        texColor = mix(texColor, result.blurredColor, u_blurIntensity); // Adjust blur intensity
     } else {
         result.contrast = BLUR_DEFAULT_CONTRAST_IF_NOT_APPLIED; // Default contrast if blur is not applied
     }
 
     // Apply selective phosphor glow if enabled
     if (u_applyGlow) {
-        vec3 glow = GLOW_COLOR;
+        vec3 glow = u_glowColor;
         float brightness = dot(texColor, LUMINANCE_WEIGHTS); // Luminance
         texColor += glow * clamp(brightness, 0.0, GLOW_BRIGHTNESS_CLAMP); // Glow only affects brighter areas
     }
