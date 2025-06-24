@@ -607,10 +607,15 @@ async function getResMetaList(respath: string, romname?: string) {
 }
 
 /**
- * Builds a list of loaded resources located at `respath` for the specified `romname`.
- * @param rom_name The name of the ROM pack to build the list for.
- * @returns An array of loaded resources.
- */
+* Loads resources specified by the given resource metadata list and returns an array of LoadedResource objects.
+*
+* For each resource in the metadata list, this function reads the file buffer and, if the resource is an image,
+* loads it as an image object. It also manually adds the ROM source code as a resource.
+*
+* @param resMetaList - Array of ResourceMeta objects describing the resources to load.
+* @param rom_name - The name of the ROM, used to locate the ROM source code file.
+* @returns Promise resolving to an array of LoadedResource objects, each containing the loaded buffer and image (if applicable).
+*/
 async function getLoadedResourcesList(resMetaList: ResourceMeta[], rom_name: string): Promise<LoadedResource[]> {
 	let loadedResources: Array<LoadedResource> = [];
 
@@ -704,18 +709,16 @@ async function buildResourceList(respath: string, rom_name?: string) {
 }
 
 /**
- * Processes an array of loaded resources to produce asset metadata and allocate buffer ranges.
+ * Generates an array of RomAsset objects from the provided loaded resources.
  *
- * @remarks
- * This function iterates over the given resources and creates corresponding entries in
- * a binary-encoded asset metadata array. Depending on the resource type, the function may parse additional data
- * (such as audio metadata) or adjust resource names (e.g., `.min` filenames). An optional
- * texture atlas can be used to bundle image data.
+ * This function processes each loaded resource, extracting relevant metadata and buffer data,
+ * and constructs a RomAsset for each. It handles different resource types such as images,
+ * audio, code, atlases, and romlabels, and attaches the appropriate metadata to each asset.
+ * For images and atlases, it generates image metadata; for audio, it parses audio metadata.
+ * The resulting RomAsset array is used for ROM packing and serialization.
  *
- * @param loadedResources - The array of loaded resources to process.
- * @returns An object with three properties:
- * - `assetList` - The array of generated asset metadata objects (to be binary-encoded).
- * - `romlabel_buffer` - The buffer data for the "romlabel.png" resource if present.
+ * @param loadedResources - The array of loaded resources to convert into RomAssets.
+ * @returns An array of RomAsset objects, each representing a packed resource with metadata.
  */
 function generateRomAssets(loadedResources: LoadedResource[]) {
 	const romAssets: RomAsset[] = [];
@@ -840,6 +843,12 @@ function buildImgMeta(res: LoadedResource): ImgMeta {
 	return imgmeta;
 }
 
+/**
+ * Generates image metadata for an atlas resource.
+ *
+ * @param res - The loaded resource representing the atlas.
+ * @returns An ImgMeta object containing atlas metadata such as dimensions and atlas ID.
+ */
 function buildImgMetaForAtlas(res: LoadedResource): ImgMeta {
 	return {
 		atlassed: false,
@@ -850,14 +859,14 @@ function buildImgMetaForAtlas(res: LoadedResource): ImgMeta {
 }
 
 /**
- * Asynchronously processes the loaded atlas resource and updates the asset metadata array with image metadata.
+ * Generates texture atlases from the loaded image resources and updates the corresponding atlas resources.
  *
- * @param loadedResources - An array of loaded resources, including the atlas to be processed.
- * @param generated_atlas - The HTMLCanvasElement representing the generated atlas image.
- * @param assetList - An array of RomAsset objects to be updated with image metadata.
- * @param bufferPointer - The starting position where atlas data should be written in the output buffers.
- * @param buffers - An array of Buffers where the atlas image data will be appended.
- * @returns A Promise that resolves once the atlas image is written to disk and metadata is updated.
+ * @param loadedResources - The array of loaded resources, including images and atlas placeholders.
+ * @throws Will throw an error if no atlas resources are found or if atlas generation fails.
+ * @remarks
+ * This function finds all resources of type 'atlas', collects the images assigned to each atlas,
+ * generates an optimized texture atlas for each, and writes the resulting PNG buffer to disk.
+ * The generated atlas image and buffer are stored in the corresponding atlas resource.
  */
 async function createAtlasses(loadedResources: LoadedResource[]) {
 	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
@@ -880,24 +889,16 @@ async function createAtlasses(loadedResources: LoadedResource[]) {
 }
 
 /**
- * Finalizes a ROM pack by concatenating buffers, generating metadata,
- * writing zipped output to disk, and exporting a JSON file that
- * references the assets used in the ROM pack.
+ * Finalizes the ROM pack by concatenating all asset buffers, encoding metadata, and writing the packed ROM file.
  *
- * IMPORTANT: The 16-byte footer (metadata offset/length) is appended to the end of the uncompressed buffer
- * BEFORE zipping. This means that after decompression, the footer is always present at the end of the buffer.
+ * This function processes the provided asset list, removes per-asset metadata and buffers,
+ * encodes the global asset metadata, and writes the final ROM file to disk. If a "romlabel" image is present,
+ * it is prepended to the ROM file to allow the ROM to be recognized as a PNG image.
+ * The function also writes a JSON file with the asset list for debugging purposes.
  *
- * The loader uses this footer to find the metadata (resource list), but all asset/code offsets in the metadata
- * are relative to the start of the decompressed buffer and never include the footer. The footer is ignored for
- * all other purposes. This is a common pattern in file formats and is robust as long as the packer and loader agree.
- * The great thing is that I came up with this before ChatGPT/Copilot did, but now I can use it to explain it better! :D
- *
- * @param jsonout - An array of ROM assets describing the mappings to be finalized.
- * @param buffers - The buffers that will be concatenated and zipped.
- * @param romlabel_buffer - An optional buffer representing any additional
- *                          ROM label or header information.
- * @param outfile - The name of the output file to which the ROM pack is written.
- * @returns A promise that resolves when all files have been successfully written.
+ * @param assetList - The list of ROM assets to include in the pack.
+ * @param rom_name - The name of the ROM, used for output file naming.
+ * @returns A Promise that resolves when the ROM file and metadata have been written.
  */
 async function finalizeRompack(
 	assetList: RomAsset[],
