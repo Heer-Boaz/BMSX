@@ -275,7 +275,7 @@ export function generateBrailleAsciiArt(
     const BRAILLE_BASE = 0x2800;
     const brailleMap = [[0, 1, 2, 5], [3, 4, 6, 7]];
     const outW = Math.min(maxArtWidth - 8, Math.floor(imgW / 2));
-    const outH = Math.min(Math.ceil(imgH / 4), Math.floor(outW * (imgH / imgW) / 2)) + 1;
+    const outH = Math.max(Math.ceil(imgH / 4), Math.floor(outW * (imgH / imgW) / 2)) + 1;
 
     /* ---------- gamma-correcte luminantie-buffer ---------- */
     const linY = new Float32Array(imgW * imgH);

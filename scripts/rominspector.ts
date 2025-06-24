@@ -450,13 +450,22 @@ async function main() {
                         asciiArt = '[Atlas asset not found]';
                     }
                     if (imgmeta.width) metadataLines.push(`Size: ${imgmeta.width}x${imgmeta.height} `);
-                    // Only show Atlas ID for images
                     for (const [key, value] of Object.entries(imgmeta)) {
                         metadataLines.push(`${key}: ${JSON.stringify(value)}`);
                     }
                 } else {
-                    asciiArt = '[Unable to generate ASCII preview]';
+                    asciiArt = generateAsciiArtFromImage(selected.buffer, imgmeta, modalWidth)
                 }
+                break;
+            case 'atlas': {
+                for (const [key, value] of Object.entries(imgmeta)) {
+                    metadataLines.push(`${key}: ${JSON.stringify(value)}`);
+                }
+                const bufferData = selected.buffer instanceof Uint8Array
+                    ? Buffer.from(selected.buffer)
+                    : Buffer.from(rompack.slice(selected.start, selected.end));
+                asciiArt = generateAsciiArtFromImage(bufferData, imgmeta, modalWidth)
+            }
                 break;
             case 'audio':
                 if (audiometa.audiotype === 'music') {
@@ -671,11 +680,30 @@ function extractSubimageAndSizeFromAtlassedImage(imgToExtract: Buffer, imgmeta: 
 function generateAsciiArtFromImageInAtlas(atlasBuf: Buffer, imgmeta: ImgMeta, modalWidth: number): string {
     const { subimage, width, height } = extractSubimageAndSizeFromAtlassedImage(atlasBuf, imgmeta);
     if (!subimage) return '[Unable to extract subimage]';
+    try {
+        // If the image is too large, we will not render it pixel-perfect
+        if (width <= PER_PIXEL_RENDERING_THRESHOLD && height <= PER_PIXEL_RENDERING_THRESHOLD) {
+            return generatePixelPerfectAsciiArt(subimage, width, height);
+        }
 
-    // If the image is too large, we will not render it pixel-perfect
-    if (width <= PER_PIXEL_RENDERING_THRESHOLD && height <= PER_PIXEL_RENDERING_THRESHOLD) {
-        return generatePixelPerfectAsciiArt(subimage, width, height);
+        return generateBrailleAsciiArt(subimage, width, height, modalWidth);
+    } catch (e) {
+        return `[Error generating ASCII art from image: ${e.stack || e.message}]`;
     }
+}
 
-    return generateBrailleAsciiArt(subimage, width, height, modalWidth);
+function generateAsciiArtFromImage(img: Buffer, imgmeta: ImgMeta, modalWidth: number): string {
+    try {
+        const imagePNG = PNG.sync.read(img);
+        if (!imagePNG || !imagePNG.data) return '[Invalid image data]';
+
+        // If the image is too large, we will not render it pixel-perfect
+        if (imagePNG.width <= PER_PIXEL_RENDERING_THRESHOLD && imagePNG.height <= PER_PIXEL_RENDERING_THRESHOLD) {
+            return generatePixelPerfectAsciiArt(imagePNG.data, imagePNG.width, imagePNG.height);
+        }
+
+        return generateBrailleAsciiArt(imagePNG.data, imagePNG.width, imagePNG.height, modalWidth);
+    } catch (e) {
+        return `[Error generating ASCII art from image: ${e.stack || e.message}]`;
+    }
 }
