@@ -19,11 +19,17 @@ BMSX is a lightweight TypeScript game engine and toolchain used to build small r
 
 ## Building
 
-1. Install dependencies with `npm install`.
+1. Install dependencies with `npm install`. Note that this project uses `tsx` for running TypeScript scripts directly, so you don't need to compile them to JavaScript first.
+   If you want to use `tsc` instead, you can run `npm run build` to compile the `rompacker.ts` TypeScript file (and imports) in `scripts/` and run the resulting JavaScript file instead.
 2. Run `npx tsx scripts/rompacker.ts -romname <game>` where `<game>` is a folder inside `src/`.
    The "build the game" task in `.vscode/tasks.json` executes this command for you.
 
 During the build the bootloader is bundled with `esbuild`, a texture atlas is generated, resources are packaged and `<game>.rom` plus `game.html`/`game_debug.html` are produced in `dist/`.
+
+Example for building the example game `testrom` which is located in `src/testrom`:
+```bash
+npx tsx scripts/rompacker.ts -romname testrom
+```
 
 ## Running
 
