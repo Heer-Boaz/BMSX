@@ -1,4 +1,4 @@
-import type { LoadedResource } from './rompacker.rompack';
+import type { Resource } from './rompacker.rompack';
 const { createCanvas } = require('canvas');
 
 const ATLAS_MAX_SIZE_IN_PIXELS = 2048;
@@ -347,7 +347,7 @@ function tprfPacker(rects: Rect[], binWidth: number, binHeight: number): { items
 	return { items: items, width: width, height: height };
 }
 
-export function createOptimizedAtlas(imageResources: LoadedResource[]): HTMLCanvasElement {
+export function createOptimizedAtlas(imageResources: Resource[]): HTMLCanvasElement {
 	const rects = imageResources.map(img_resource => ({ x: undefined, y: undefined, width: img_resource.img?.width, height: img_resource.img?.height, id: img_resource.id }));
 
 	const maxrect_result = maximalRectanglesPacker(rects, ATLAS_MAX_SIZE_IN_PIXELS, ATLAS_MAX_SIZE_IN_PIXELS);

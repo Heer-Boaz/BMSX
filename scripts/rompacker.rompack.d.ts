@@ -13,27 +13,24 @@ interface RomPackerOptions {
 	deploy: boolean;
 }
 
-export interface LoadedResource extends ResourceMeta {
-	buffer: Buffer;
-	img?: any;
-	imgmeta?: ImgMeta;
+export interface Resource {
+        filepath?: string;
+        name: string;
+        ext?: string;
+        type: resourcetype;
+        id: number;
+        collisionType?: 'concave' | 'convex' | 'aabb';
+        targetAtlasIndex?: number; // If this is not an atlas image, index of atlas this image belongs to
+        atlasid?: number; // If this is an atlas image, id (=index) of the atlas
+        buffer?: Buffer;
+        img?: any;
+        imgmeta?: ImgMeta;
 }
+
+export type LoadedResource = Resource;
+export type ResourceMeta = Resource;
 
 export type resourcetype = asset_type | 'rommanifest' | 'romlabel';
-
-/**
- * Interface for metadata about a resource.
- */
-export interface ResourceMeta {
-	filepath?: string;
-	name: string;
-	ext?: string;
-	type: resourcetype;
-	id: number;
-	collisionType?: 'concave' | 'convex' | 'aabb';
-	targetAtlasIndex?: number; // If this is not an atlas image, index of atlas this image belongs to
-	atlasid?: number; // If this is an atlas image, id (=index) of the atlas
-}
 
 export interface RomManifest {
 	title?: string;
