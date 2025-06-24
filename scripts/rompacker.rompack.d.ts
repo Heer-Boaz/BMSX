@@ -14,17 +14,17 @@ interface RomPackerOptions {
 }
 
 export interface Resource {
-        filepath?: string;
-        name: string;
-        ext?: string;
-        type: resourcetype;
-        id: number;
-        collisionType?: 'concave' | 'convex' | 'aabb';
-        targetAtlasIndex?: number; // If this is not an atlas image, index of atlas this image belongs to
-        atlasid?: number; // If this is an atlas image, id (=index) of the atlas
-        buffer?: Buffer;
-        img?: any;
-        imgmeta?: ImgMeta;
+	filepath?: string;
+	name: string;
+	ext?: string;
+	type: resourcetype;
+	id: number;
+	collisionType?: 'concave' | 'convex' | 'aabb';
+	targetAtlasIndex?: number; // If this is not an atlas image, index of atlas this image belongs to
+	atlasid?: number; // If this is an atlas image, id (=index) of the atlas
+	buffer?: Buffer;
+	img?: any;
+	imgmeta?: ImgMeta;
 }
 
 export type LoadedResource = Resource;
