@@ -1207,15 +1207,34 @@ export abstract class GLView extends BaseView {
             return atlasIndex === 0 ? '_atlas' : `_atlas_${idxStr}`;
         }
 
+        if (this._dynamicAtlasIndex === index) {
+            // No change in the dynamic atlas index, no need to update
+            return;
+        }
+
+        // Remove the texture from the textures map and free up memory
+        if (this.textures['_atlas_dynamic']) {
+            this.glctx.deleteTexture(this.textures['_atlas_dynamic']);
+            delete this.textures['_atlas_dynamic'];
+        }
+
+        this._dynamicAtlasIndex = index ?? null;
+        if (index === null) {
+            // If the index is null, we reset the dynamic atlas texture and ensure it is deleted from memory
+            this.glctx.activeTexture(this.glctx.TEXTURE1);
+            this.glctx.bindTexture(this.glctx.TEXTURE_2D, null);
+            return;
+        }
+
         const atlasName = generateAtlasName(index);
         const atlasImage = BaseView.images[atlasName];
         if (!atlasImage) {
-            throw Error(`Atlas image with name '${atlasName}' not found!`);
+            console.error(`Atlas image with name '${atlasName}' not found!`);
+            return;
         }
-        this._dynamicAtlasIndex = index;
 
         const gl = this.glctx;
-        // Create the dynamic atlas texture if it doesn't exist
+        // Create the dynamic atlas texture
         this.textures['_atlas_dynamic'] = this.createTexture(atlasImage, { width: atlasImage.width, height: atlasImage.height }, gl.TEXTURE1);
 
         // Update the dynamic atlas texture with the new image
