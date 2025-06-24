@@ -13,7 +13,7 @@ _global['h406A'] = (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode, 
 	_view = new gameview(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
 	_game = new Game(rom, _model, _view, sndcontext, gainnode, debug);
 	_game.hideOnscreenGamepadButtons(['ls', 'rs', 'select', 'y']);
-	_view.dynamicAtlas = 1; // Must set this after creating the Game, otherwise GameView.images will not be initialized properly.
+	_view.dynamicAtlas = null; // Must set this after creating the Game, otherwise GameView.images will not be initialized properly.
 	_game.start();
 };
 
