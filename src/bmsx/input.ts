@@ -549,12 +549,19 @@ class InputStateManager {
 	 * Represents the input buffer used for processing input data.
 	 * @type {InputBuffer}
 	 */
-    private inputBuffer: InputBuffer;
-    /**
-     * Buffer holding queued actions. Actions are ordered by priority so that
-     * high priority actions can override previously queued ones.
-     */
-    private actionBuffer: ActionBuffer;
+	private inputBuffer: InputBuffer;
+	/**
+	 * Buffer holding queued actions. Actions are ordered by priority so that
+	 * high priority actions can override previously queued ones.
+	 */
+	private actionBuffer: ActionBuffer;
+	/**
+	private inputBuffer: InputBuffer;
+	/**
+	 * Buffer holding queued actions. Actions are ordered by priority so that
+	 * high priority actions can override previously queued ones.
+	 */
+	private actionBuffer: ActionBuffer;
 	/**
 	 * A map that holds the states of buttons.
 	 *
@@ -569,10 +576,10 @@ class InputStateManager {
 	 * Creates an instance of the class.
 	 * @param playerIndex - The index of the player.
 	 */
-    constructor(private playerIndex: number) {
-            this.inputBuffer = new InputBuffer();
-            this.actionBuffer = new ActionBuffer();
-    }
+	constructor(private playerIndex: number) {
+		this.inputBuffer = new InputBuffer();
+		this.actionBuffer = new ActionBuffer();
+	}
 
 	/**
 	 * Updates the input state based on the current time.
@@ -598,10 +605,10 @@ class InputStateManager {
 			}
 		});
 
-                // Clean up old events from the buffers if needed
-                this.inputBuffer.cleanup(currentTime);
-                this.actionBuffer.cleanup(currentTime);
-        }
+		// Clean up old events from the buffers if needed
+		this.inputBuffer.cleanup(currentTime);
+		this.actionBuffer.cleanup(currentTime);
+	}
 
 	/**
 	 * Processes input events for the current player.
@@ -689,49 +696,49 @@ class InputStateManager {
 	 * @param identifier - The unique identifier of the button, which can be a string or a number.
 	 * If the button state exists, it will be marked as consumed.
 	 */
-        consumeButton(identifier: ButtonId): void {
-                const state = this.buttonStates.get(identifier);
-                if (state) {
-                        state.consumed = true;
-                }
-        }
+	consumeButton(identifier: ButtonId): void {
+		const state = this.buttonStates.get(identifier);
+		if (state) {
+			state.consumed = true;
+		}
+	}
 
-        /**
-         * Queues an action for this player. Higher priority actions are placed
-         * before lower priority ones, allowing important actions such as dodges
-         * to override queued attacks.
-         *
-         * @param action - The name of the action to queue.
-         * @param priority - Optional priority value, higher means more important.
-         * @param timestamp - Timestamp of the queue event, defaults to now.
-         */
-        queueAction(action: string, priority = 0, timestamp = performance.now()): void {
-                this.actionBuffer.queueAction(action, priority, timestamp);
-        }
+	/**
+	 * Queues an action for this player. Higher priority actions are placed
+	 * before lower priority ones, allowing important actions such as dodges
+	 * to override queued attacks.
+	 *
+	 * @param action - The name of the action to queue.
+	 * @param priority - Optional priority value, higher means more important.
+	 * @param timestamp - Timestamp of the queue event, defaults to now.
+	 */
+	queueAction(action: string, priority = 0, timestamp = performance.now()): void {
+		this.actionBuffer.queueAction(action, priority, timestamp);
+	}
 
-        /**
-         * Returns the highest priority queued action without removing it from
-         * the buffer.
-         */
-        peekQueuedAction(): QueuedAction | null {
-                return this.actionBuffer.peek();
-        }
+	/**
+	 * Returns the highest priority queued action without removing it from
+	 * the buffer.
+	 */
+	peekQueuedAction(): QueuedAction | null {
+		return this.actionBuffer.peek();
+	}
 
-        /**
-         * Retrieves and removes the highest priority action from the buffer.
-         */
-        consumeQueuedAction(): QueuedAction | null {
-                return this.actionBuffer.consume();
-        }
+	/**
+	 * Retrieves and removes the highest priority action from the buffer.
+	 */
+	consumeQueuedAction(): QueuedAction | null {
+		return this.actionBuffer.consume();
+	}
 
-        /**
-         * Clears all buffered state including pending events and actions.
-         */
-        reset(): void {
-                this.buttonStates.clear();
-                this.inputBuffer.clearEventsForPlayer(this.playerIndex);
-                this.actionBuffer.clear();
-        }
+	/**
+	 * Clears all buffered state including pending events and actions.
+	 */
+	reset(): void {
+		this.buttonStates.clear();
+		this.inputBuffer.clearEventsForPlayer(this.playerIndex);
+		this.actionBuffer.clear();
+	}
 }
 
 // @ts-ignore
@@ -755,9 +762,9 @@ class InputBuffer {
 		this.events = this.events.filter(event => event.playerIndex !== playerIndex);
 	}
 
-        cleanup(currentTime: number): void {
-                this.events = this.events.filter(event => currentTime - event.timestamp <= this.bufferDuration);
-        }
+	cleanup(currentTime: number): void {
+		this.events = this.events.filter(event => currentTime - event.timestamp <= this.bufferDuration);
+	}
 }
 
 /**
@@ -765,56 +772,56 @@ class InputBuffer {
  * associated priority; higher priority actions will be processed first.
  */
 type QueuedAction = {
-        action: string;
-        priority: number;
-        timestamp: number;
+	action: string;
+	priority: number;
+	timestamp: number;
 };
 
 // @ts-ignore
 class ActionBuffer {
-        private actions: QueuedAction[] = [];
-        private bufferDuration: number;
+	private actions: QueuedAction[] = [];
+	private bufferDuration: number;
 
-        constructor(bufferDuration: number = 200) {
-                this.bufferDuration = bufferDuration;
-        }
+	constructor(bufferDuration: number = 200) {
+		this.bufferDuration = bufferDuration;
+	}
 
-        /**
-         * Adds an action to the buffer. Actions are sorted so that higher
-         * priority actions appear first, with older actions of the same
-         * priority processed before newer ones.
-         */
-        queueAction(action: string, priority = 0, timestamp = performance.now()): void {
-                this.actions.push({ action, priority, timestamp });
-                this.actions.sort((a, b) => {
-                        if (b.priority === a.priority) {
-                                return a.timestamp - b.timestamp;
-                        }
-                        return b.priority - a.priority;
-                });
-        }
+	/**
+	 * Adds an action to the buffer. Actions are sorted so that higher
+	 * priority actions appear first, with older actions of the same
+	 * priority processed before newer ones.
+	 */
+	queueAction(action: string, priority = 0, timestamp = performance.now()): void {
+		this.actions.push({ action, priority, timestamp });
+		this.actions.sort((a, b) => {
+			if (b.priority === a.priority) {
+				return a.timestamp - b.timestamp;
+			}
+			return b.priority - a.priority;
+		});
+	}
 
-        /** Returns the highest priority action without removing it. */
-        peek(): QueuedAction | null {
-                return this.actions.length > 0 ? this.actions[0] : null;
-        }
+	/** Returns the highest priority action without removing it. */
+	peek(): QueuedAction | null {
+		return this.actions.length > 0 ? this.actions[0] : null;
+	}
 
-        /**
-         * Removes and returns the highest priority action from the buffer.
-         */
-        consume(): QueuedAction | null {
-                return this.actions.shift() ?? null;
-        }
+	/**
+	 * Removes and returns the highest priority action from the buffer.
+	 */
+	consume(): QueuedAction | null {
+		return this.actions.shift() ?? null;
+	}
 
-        /** Removes old actions from the buffer based on the duration. */
-        cleanup(currentTime: number): void {
-                this.actions = this.actions.filter(a => currentTime - a.timestamp <= this.bufferDuration);
-        }
+	/** Removes old actions from the buffer based on the duration. */
+	cleanup(currentTime: number): void {
+		this.actions = this.actions.filter(a => currentTime - a.timestamp <= this.bufferDuration);
+	}
 
-        /** Clears all queued actions. */
-        clear(): void {
-                this.actions.length = 0;
-        }
+	/** Clears all queued actions. */
+	clear(): void {
+		this.actions.length = 0;
+	}
 }
 
 /**
@@ -1397,12 +1404,12 @@ export class PlayerInput {
 	/**
 	 * The index of the player whose input is being handled.
 	 */
-        public playerIndex: number;
+	public playerIndex: number;
 
-        /**
-         * Manages debounced button states and action buffering for this player.
-         */
-        private stateManager: InputStateManager;
+	/**
+	 * Manages debounced button states and action buffering for this player.
+	 */
+	private stateManager: InputStateManager;
 
 	/**
 	 * Represents the input handlers for the player.
@@ -1615,49 +1622,49 @@ export class PlayerInput {
 	 *
 	 * @param actions - The actions to consume.
 	 */
-        public consumeActions(...actions: (ActionState | string)[]) {
-                actions.forEach(action => this.consumeAction(action));
-        }
+	public consumeActions(...actions: (ActionState | string)[]) {
+		actions.forEach(action => this.consumeAction(action));
+	}
 
-        /**
-         * Queues an action for buffered processing.
-         */
-        public queueAction(action: string, priority = 0): void {
-                this.stateManager.queueAction(action, priority);
-        }
+	/**
+	 * Queues an action for buffered processing.
+	 */
+	public queueAction(action: string, priority = 0): void {
+		this.stateManager.queueAction(action, priority);
+	}
 
-        /**
-         * Peek at the next queued action for this player.
-         */
-        public peekQueuedAction(): QueuedAction | null {
-                return this.stateManager.peekQueuedAction();
-        }
+	/**
+	 * Peek at the next queued action for this player.
+	 */
+	public peekQueuedAction(): QueuedAction | null {
+		return this.stateManager.peekQueuedAction();
+	}
 
-        /**
-         * Retrieve and remove the next queued action.
-         */
-        public consumeQueuedAction(): QueuedAction | null {
-                return this.stateManager.consumeQueuedAction();
-        }
+	/**
+	 * Retrieve and remove the next queued action.
+	 */
+	public consumeQueuedAction(): QueuedAction | null {
+		return this.stateManager.consumeQueuedAction();
+	}
 
 	/**
 	 * Retrieves the state of a gamepad button.
 	 * @param button - The gamepad button identifier.
 	 * @returns The state of the button.
 	 */
-        public getButtonState(button: ButtonId, _source: 'keyboard' | 'gamepad'): ButtonState {
-                return this.stateManager.getButtonState(button);
-        }
+	public getButtonState(button: ButtonId, _source: 'keyboard' | 'gamepad'): ButtonState {
+		return this.stateManager.getButtonState(button);
+	}
 
 	/**
 	 * Checks if a specific button on a gamepad is currently being pressed down.
 	 * @param button - The gamepad button to check.
 	 * @returns A boolean indicating whether the button is currently pressed down.
 	 */
-        public isButtonDown(button: ButtonId, _source: 'keyboard' | 'gamepad'): boolean {
-                const buttonState = this.getButtonState(button, _source);
-                return buttonState.pressed;
-        }
+	public isButtonDown(button: ButtonId, _source: 'keyboard' | 'gamepad'): boolean {
+		const buttonState = this.getButtonState(button, _source);
+		return buttonState.pressed;
+	}
 
 	/**
 	 * Checks if a key or gamepad button is pressed and consumes the input if it is.
@@ -1705,97 +1712,97 @@ export class PlayerInput {
 	/**
 	 * Polls the input for the player for each input source (e.g., keyboard, gamepad, ...)
 	 */
-        pollInput(): void {
-                for (const source in this.inputHandlers) {
-                        this.inputHandlers[source]?.pollInput();
-                }
-                this.updateInputState();
-        }
+	pollInput(): void {
+		for (const source in this.inputHandlers) {
+			this.inputHandlers[source]?.pollInput();
+		}
+		this.updateInputState();
+	}
 
-        /**
-         * Synchronizes raw input handler states with the InputStateManager so
-         * buffered queries operate on stable data.
-         */
-        private updateInputState(): void {
-                const currentTime = performance.now();
-                const buttons = this.getMappedButtons();
+	/**
+	 * Synchronizes raw input handler states with the InputStateManager so
+	 * buffered queries operate on stable data.
+	 */
+	private updateInputState(): void {
+		const currentTime = performance.now();
+		const buttons = this.getMappedButtons();
 
-                buttons.forEach(btn => {
-                        const prev = this.stateManager.getButtonState(btn);
-                        let pressed = false;
-                        let justPressed = false;
-                        for (const source in this.inputHandlers) {
-                                const handler = this.inputHandlers[source];
-                                if (!handler) continue;
-                                const state = handler.getButtonState(btn);
-                                if (state.pressed) {
-                                        pressed = true;
-                                        justPressed = justPressed || state.justpressed;
-                                }
-                        }
+		buttons.forEach(btn => {
+			const prev = this.stateManager.getButtonState(btn);
+			let pressed = false;
+			let justPressed = false;
+			for (const source in this.inputHandlers) {
+				const handler = this.inputHandlers[source];
+				if (!handler) continue;
+				const state = handler.getButtonState(btn);
+				if (state.pressed) {
+					pressed = true;
+					justPressed = justPressed || state.justpressed;
+				}
+			}
 
-                        if (justPressed && !prev.pressed) {
-                                this.stateManager.addInputEvent({
-                                        eventType: 'press',
-                                        identifier: btn,
-                                        timestamp: currentTime,
-                                        source: 'gamepad',
-                                        playerIndex: this.playerIndex,
-                                });
-                        } else if (!pressed && prev.pressed) {
-                                this.stateManager.addInputEvent({
-                                        eventType: 'release',
-                                        identifier: btn,
-                                        timestamp: currentTime,
-                                        source: 'gamepad',
-                                        playerIndex: this.playerIndex,
-                                });
-                        }
-                });
+			if (justPressed && !prev.pressed) {
+				this.stateManager.addInputEvent({
+					eventType: 'press',
+					identifier: btn,
+					timestamp: currentTime,
+					source: 'gamepad',
+					playerIndex: this.playerIndex,
+				});
+			} else if (!pressed && prev.pressed) {
+				this.stateManager.addInputEvent({
+					eventType: 'release',
+					identifier: btn,
+					timestamp: currentTime,
+					source: 'gamepad',
+					playerIndex: this.playerIndex,
+				});
+			}
+		});
 
-                this.stateManager.update(currentTime);
-        }
+		this.stateManager.update(currentTime);
+	}
 
-        /**
-         * Returns the unique set of all buttons referenced in the current input map.
-         */
-        private getMappedButtons(): string[] {
-                const set = new Set<string>();
+	/**
+	 * Returns the unique set of all buttons referenced in the current input map.
+	 */
+	private getMappedButtons(): string[] {
+		const set = new Set<string>();
 
-                // Include all buttons referenced in the current input map
-                if (this.inputMap) {
-                        for (const src of ['keyboard', 'gamepad'] as const) {
-                                const map = this.inputMap[src];
-                                if (!map) continue;
-                                Object.values(map).forEach(list => list?.forEach(b => set.add(b)));
-                        }
-                }
+		// Include all buttons referenced in the current input map
+		if (this.inputMap) {
+			for (const src of ['keyboard', 'gamepad'] as const) {
+				const map = this.inputMap[src];
+				if (!map) continue;
+				Object.values(map).forEach(list => list?.forEach(b => set.add(b)));
+			}
+		}
 
-                const keyboard = this.inputHandlers['keyboard'] as any;
-                if (keyboard) {
-                        Object.keys(keyboard.keyStates ?? {}).forEach(k => set.add(k));
-                        Object.keys(keyboard.gamepadButtonStates ?? {}).forEach(k => set.add(k));
-                }
+		const keyboard = this.inputHandlers['keyboard'] as any;
+		if (keyboard) {
+			Object.keys(keyboard.keyStates ?? {}).forEach(k => set.add(k));
+			Object.keys(keyboard.gamepadButtonStates ?? {}).forEach(k => set.add(k));
+		}
 
-                const gamepad = this.inputHandlers['gamepad'] as any;
-                if (gamepad && gamepad.gamepadButtonStates) {
-                        Object.keys(gamepad.gamepadButtonStates).forEach(k => set.add(k));
-                }
+		const gamepad = this.inputHandlers['gamepad'] as any;
+		if (gamepad && gamepad.gamepadButtonStates) {
+			Object.keys(gamepad.gamepadButtonStates).forEach(k => set.add(k));
+		}
 
-                // Include all known gamepad buttons to ensure transitions are captured
-                Input.BUTTON_IDS.forEach(b => set.add(b));
+		// Include all known gamepad buttons to ensure transitions are captured
+		Input.BUTTON_IDS.forEach(b => set.add(b));
 
-                return Array.from(set);
-        }
+		return Array.from(set);
+	}
 
 	/**
 	 * Initializes the input system.
 	 */
-        public constructor(playerIndex: number) {
-                this.playerIndex = playerIndex;
-                this.stateManager = new InputStateManager(playerIndex);
-                this.inputHandlers['gamepad'] = null; // Gamepad should be null by default, and set to a value when a gamepad is connected and assigned to this player
-                this.reset();
+	public constructor(playerIndex: number) {
+		this.playerIndex = playerIndex;
+		this.stateManager = new InputStateManager(playerIndex);
+		this.inputHandlers['gamepad'] = null; // Gamepad should be null by default, and set to a value when a gamepad is connected and assigned to this player
+		this.reset();
 
 		window.addEventListener("gamepaddisconnected", (e: GamepadEvent) => {
 			const gamepad = e.gamepad;
@@ -1855,12 +1862,12 @@ export class PlayerInput {
 	 * Resets the state of all input keys and gamepad buttons.
 	 * @param except An optional array of keys or buttons to exclude from the reset.
 	 */
-        public reset(except?: string[]): void {
-                for (const source in this.inputHandlers) {
-                        this.inputHandlers[source]?.reset(except);
-                }
-                this.stateManager.reset();
-        }
+	public reset(except?: string[]): void {
+		for (const source in this.inputHandlers) {
+			this.inputHandlers[source]?.reset(except);
+		}
+		this.stateManager.reset();
+	}
 }
 
 /**
@@ -2239,10 +2246,10 @@ class OnscreenGamepad implements InputHandler {
 						newGamepadButtonStates[button].justpressed = oldPressTime === 0;
 					} else {
 						// Set to false only if no other element is pressing this button
-                                                if (!this.isOtherElementPressingButton(button)) {
-                                                        // Reset the button state when no UI element is pressing it
-                                                        newGamepadButtonStates[button] = { ...defaultState };
-                                                }
+						if (!this.isOtherElementPressingButton(button)) {
+							// Reset the button state when no UI element is pressing it
+							newGamepadButtonStates[button] = { ...defaultState };
+						}
 					}
 				});
 			}

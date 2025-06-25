@@ -168,6 +168,10 @@ export abstract class GLView extends BaseView {
     private CRTShaderApplyBlurLocation: WebGLUniformLocation;
     private CRTShaderApplyGlowLocation: WebGLUniformLocation;
     private CRTShaderApplyFringingLocation: WebGLUniformLocation;
+    private CRTShaderNoiseIntensityLocation: WebGLUniformLocation;
+    private CRTShaderColorBleedLocation: WebGLUniformLocation;
+    private CRTShaderBlurIntensityLocation: WebGLUniformLocation;
+    private CRTShaderGlowColorLocation: WebGLUniformLocation;
     private CRTFragmentShaderTextureLocation: WebGLUniformLocation;
 
     private CRTShaderProgram: WebGLProgram;
@@ -185,6 +189,10 @@ export abstract class GLView extends BaseView {
     private _applyBlur: boolean = true;
     private _applyGlow: boolean = true;
     private _applyFringing: boolean = true;
+    private _noiseIntensity: number = 0.2;
+    private _colorBleed: vec3arr = [0.02, 0.0, 0.0];
+    private _blurIntensity: number = 0.6;
+    private _glowColor: vec3arr = [0.05, 0.02, 0.02];
 
     /**
      * Gets or sets a value indicating whether the CRT shader should apply noise.
@@ -258,6 +266,42 @@ export abstract class GLView extends BaseView {
         this.glctx.uniform1i(this.CRTShaderApplyFringingLocation, value ? 1 : 0);
     }
 
+    public get noiseIntensity(): number {
+        return this._noiseIntensity;
+    }
+
+    public set noiseIntensity(value: number) {
+        this._noiseIntensity = value;
+        this.glctx.uniform1f(this.CRTShaderNoiseIntensityLocation, value);
+    }
+
+    public get colorBleed(): vec3arr {
+        return this._colorBleed;
+    }
+
+    public set colorBleed(value: vec3arr) {
+        this._colorBleed = value;
+        this.glctx.uniform3fv(this.CRTShaderColorBleedLocation, new Float32Array(value));
+    }
+
+    public get blurIntensity(): number {
+        return this._blurIntensity;
+    }
+
+    public set blurIntensity(value: number) {
+        this._blurIntensity = value;
+        this.glctx.uniform1f(this.CRTShaderBlurIntensityLocation, value);
+    }
+
+    public get glowColor(): vec3arr {
+        return this._glowColor;
+    }
+
+    public set glowColor(value: vec3arr) {
+        this._glowColor = value;
+        this.glctx.uniform3fv(this.CRTShaderGlowColorLocation, new Float32Array(value));
+    }
+
     private gameShaderScaleLocation: WebGLUniformLocation;
     private CRTVertexShaderScaleLocation: WebGLUniformLocation;
     private offscreenCanvasSize: vec2;
@@ -268,9 +312,15 @@ export abstract class GLView extends BaseView {
      * Note that the offscreen canvas size is twice the viewport size to allow for the CRT shader effect to be more granular.
      * @param viewportsize
      */
-    constructor(viewportsize: Size) {
+    constructor(viewportsize: Size, crtOptions?: { noiseIntensity?: number; colorBleed?: vec3arr; blurIntensity?: number; glowColor?: vec3arr }) {
         super(viewportsize, multiply_vec(viewportsize, 2));
         this.offscreenCanvasSize = multiply_vec(viewportsize, 2); // The offscreen canvas size is twice the viewport size
+        if (crtOptions) {
+            this._noiseIntensity = crtOptions.noiseIntensity ?? this._noiseIntensity;
+            this._colorBleed = crtOptions.colorBleed ?? this._colorBleed;
+            this._blurIntensity = crtOptions.blurIntensity ?? this._blurIntensity;
+            this._glowColor = crtOptions.glowColor ?? this._glowColor;
+        }
         this.glctx = this.canvas.getContext('webgl2', {
             alpha: true,
             desynchronized: false,
@@ -329,6 +379,10 @@ export abstract class GLView extends BaseView {
         gl.uniform1i(this.CRTShaderApplyBlurLocation, this.applyBlur ? 1 : 0);
         gl.uniform1i(this.CRTShaderApplyGlowLocation, this.applyGlow ? 1 : 0);
         gl.uniform1i(this.CRTShaderApplyFringingLocation, this.applyFringing ? 1 : 0);
+        gl.uniform1f(this.CRTShaderNoiseIntensityLocation, this._noiseIntensity);
+        gl.uniform3fv(this.CRTShaderColorBleedLocation, new Float32Array(this._colorBleed));
+        gl.uniform1f(this.CRTShaderBlurIntensityLocation, this._blurIntensity);
+        gl.uniform3fv(this.CRTShaderGlowColorLocation, new Float32Array(this._glowColor));
         const POST_UNIT = gl.TEXTURE8; // Use a texture unit that is not used by the game shader
         const CRTFRAGMENT_SHADER_TEXTURE_UNIT_INDEX = POST_UNIT - gl.TEXTURE0; // Calculate the texture unit index for the CRT fragment shader
         gl.uniform1i(this.CRTFragmentShaderTextureLocation, CRTFRAGMENT_SHADER_TEXTURE_UNIT_INDEX); // Set the texture unit for the post-processing shader texture. Note that the uniform expects an index instead of a WebGLTexture object, so we subtract gl.TEXTURE0 to get the index of the texture unit.
@@ -441,6 +495,10 @@ export abstract class GLView extends BaseView {
         this.CRTShaderApplyBlurLocation = gl.getUniformLocation(this.CRTShaderProgram, 'u_applyBlur');
         this.CRTShaderApplyGlowLocation = gl.getUniformLocation(this.CRTShaderProgram, 'u_applyGlow');
         this.CRTShaderApplyFringingLocation = gl.getUniformLocation(this.CRTShaderProgram, 'u_applyFringing');
+        this.CRTShaderNoiseIntensityLocation = gl.getUniformLocation(this.CRTShaderProgram, 'u_noiseIntensity');
+        this.CRTShaderColorBleedLocation = gl.getUniformLocation(this.CRTShaderProgram, 'u_colorBleed');
+        this.CRTShaderBlurIntensityLocation = gl.getUniformLocation(this.CRTShaderProgram, 'u_blurIntensity');
+        this.CRTShaderGlowColorLocation = gl.getUniformLocation(this.CRTShaderProgram, 'u_glowColor');
         this.CRTVertexShaderScaleLocation = gl.getUniformLocation(this.CRTShaderProgram, 'u_scale');
         this.CRTFragmentShaderScaleLocation = gl.getUniformLocation(this.CRTShaderProgram, 'u_fragscale');
         this.CRTFragmentShaderTextureLocation = gl.getUniformLocation(this.CRTShaderProgram, 'u_texture');
