@@ -45,12 +45,60 @@ npx tsx scripts/rominspector.ts <file.rom>
 
 ## Input State Manager
 
-The `InputStateManager` keeps a short history of button events so actions can be
-buffered for a few frames. Actions can specify a priority using the `[pr{n}]`
-modifier and a sliding time window with `[w{ms}]` when defining combos. Higher
-priority actions override earlier queued ones, while the window modifier lets you
-chain inputs within a specific time span. Queued actions are exposed through
-`PlayerInput.peekQueuedAction()` and `PlayerInput.consumeQueuedAction()`.
+The `InputStateManager` tracks a short, rolling history of button events for each player, enabling features like input buffering, combo detection, and action prioritization. This system is central to responsive gameplay, especially for fighting games or platformers where precise input timing is critical.
+
+### Key Features
+
+- **Input Buffering:**
+  Button presses and releases are stored for a few frames, allowing the game to "see" inputs that happen just before an action becomes available (e.g., buffering a jump or attack during an animation).
+
+- **Action Queuing and Priority:**
+  Actions can be queued with a `[pr{n}]` modifier, where higher `n` means higher priority. Higher-priority actions will override or preempt lower-priority ones in the buffer. This is useful for handling complex move sequences or interrupts.
+
+- **Combo and Window Modifiers:**
+  The `[w{ms}]` modifier allows you to define a sliding time window (in milliseconds) for chaining actions, enabling combos or multi-step moves that require rapid input.
+
+- **Action Parsing and Modifiers:**
+  Action definitions support logical operators (`&&`, `||`), grouping, and modifiers such as:
+  - `[p]` for pressed
+  - `[j]` for just pressed
+  - `[aj]` for all just pressed (multi-button)
+  - `[c]` for consumed
+  - `[!c]` for not consumed
+  - `[t{<50}]` for press time conditions (e.g., short tap)
+  - `[ic]` to ignore the consumed state
+  - Custom combos and conditions using functions like `?()` and `?j()`
+
+- **Flexible Action Definitions:**
+  Actions can be defined as simple button presses or as complex expressions, e.g.:
+  - `jump[p] && attack[j]`
+  - `?j(a[j!c], b[j!c])` (any just-pressed and not-consumed)
+  - `special[w{200}]` (within a 200ms window)
+
+- **APIs for Consuming and Peeking Actions:**
+  - `PlayerInput.peekQueuedAction()` returns the highest-priority queued action without removing it.
+  - `PlayerInput.consumeQueuedAction()` removes and returns the highest-priority action.
+  - `PlayerInput.consumeAction(action)` and `PlayerInput.consumeActions(...actions)` mark actions as handled, preventing them from being processed again.
+
+- **Action State Querying:**
+  The `getActionState(action)` method returns a rich object with `pressed`, `justpressed`, `consumed`, `presstime`, and `timestamp` fields, supporting advanced gameplay logic.
+
+- **Multiple Input Sources:**
+  Supports keyboard, gamepad, and on-screen controls, with seamless mapping and aggregation.
+
+### Example Usage
+
+```typescript
+// Check if a combo is triggered
+if (playerInput.checkActionTriggered('down[p] && punch[j]')) {
+    // Execute special move
+}
+
+// Peek at the next queued action
+const nextAction = playerInput.peekQueuedAction();
+if (nextAction?.action === 'jump') {
+    // Prepare to jump
+}
 
 ---
 
