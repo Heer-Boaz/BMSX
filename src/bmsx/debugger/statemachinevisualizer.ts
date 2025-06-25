@@ -117,7 +117,12 @@ export function visualizeStateMachine(dialogElement: HTMLElement, container: HTM
 }
 
 export function highlightCurrentState(stateElements: Map<string, HTMLElement>, machineElements: Map<string, HTMLElement>, bfsmControllerId: Identifier): void {
-    const bfsmController = $.get<Stateful>(bfsmControllerId).sc;
+    const bfsmController = $.get<Stateful>(bfsmControllerId)?.sc;
+    if (!bfsmController) {
+        // If the bfsmController is not available, we cannot highlight the states.
+        // This might happen if the associated game object has been destroyed or is not initialized yet (e.g. when rewinding the game state)
+        return;
+    }
     function updateMachineClasses(machine: State, machineName: string, isActive: boolean, path: string): void {
         let machineElement = machineElements.get(machineName);
         if (machineElement) {

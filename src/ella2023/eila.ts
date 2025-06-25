@@ -374,9 +374,6 @@ export class Eila extends Fighter {
 						if (!this.sc.is('stoerheidsdans')) {
 							this.sc.do('go_duck', this);
 						}
-						else {
-							this.sc.do('animate_idle', this);
-						}
 						break;
 				}
 				break;

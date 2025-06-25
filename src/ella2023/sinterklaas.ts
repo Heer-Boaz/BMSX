@@ -1,5 +1,5 @@
-import { BTStatus, BTVisualizer, BehaviorTreeDefinition, Blackboard, SM, SpriteObject, StateMachineBlueprint, Vector, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, insavegame, State, subscribesToSelfScopedEvent } from '../bmsx/bmsx';
-import { JumpingWhileLeavingScreenComponent, Eila } from "./eila";
+import { BTStatus, BTVisualizer, BehaviorTreeDefinition, Blackboard, SM, SpriteObject, State, StateMachineBlueprint, Vector, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, insavegame, subscribesToSelfScopedEvent } from '../bmsx/bmsx';
+import { Eila, JumpingWhileLeavingScreenComponent } from "./eila";
 import { Fighter } from "./fighter";
 import { gamemodel } from "./gamemodel";
 import { AudioId, BitmapId } from "./resourceids";
@@ -53,9 +53,6 @@ export class Sinterklaas extends Fighter {
                     case 'duckkick':
                         if (!this.sc.is('stoerheidsdans')) {
                             this.sc.do('go_duck', this);
-                        }
-                        else {
-                            this.sc.do('animate_idle', this);
                         }
                         break;
                 }
