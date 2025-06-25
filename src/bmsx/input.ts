@@ -549,12 +549,12 @@ class InputStateManager {
 	 * Represents the input buffer used for processing input data.
 	 * @type {InputBuffer}
 	 */
-    private inputBuffer: InputBuffer;
-    /**
-     * Buffer holding queued actions. Actions are ordered by priority so that
-     * high priority actions can override previously queued ones.
-     */
-    private actionBuffer: ActionBuffer;
+	private inputBuffer: InputBuffer;
+	/**
+	 * Buffer holding queued actions. Actions are ordered by priority so that
+	 * high priority actions can override previously queued ones.
+	 */
+	private actionBuffer: ActionBuffer;
 	/**
 	 * A map that holds the states of buttons.
 	 *
@@ -569,10 +569,10 @@ class InputStateManager {
 	 * Creates an instance of the class.
 	 * @param playerIndex - The index of the player.
 	 */
-    constructor(private playerIndex: number) {
-            this.inputBuffer = new InputBuffer();
-            this.actionBuffer = new ActionBuffer();
-    }
+	constructor(private playerIndex: number) {
+		this.inputBuffer = new InputBuffer();
+		this.actionBuffer = new ActionBuffer();
+	}
 
 	/**
 	 * Updates the input state based on the current time.
@@ -598,10 +598,10 @@ class InputStateManager {
 			}
 		});
 
-                // Clean up old events from the buffers if needed
-                this.inputBuffer.cleanup(currentTime);
-                this.actionBuffer.cleanup(currentTime);
-        }
+		// Clean up old events from the buffers if needed
+		this.inputBuffer.cleanup(currentTime);
+		this.actionBuffer.cleanup(currentTime);
+	}
 
 	/**
 	 * Processes input events for the current player.
@@ -689,40 +689,40 @@ class InputStateManager {
 	 * @param identifier - The unique identifier of the button, which can be a string or a number.
 	 * If the button state exists, it will be marked as consumed.
 	 */
-        consumeButton(identifier: ButtonId): void {
-                const state = this.buttonStates.get(identifier);
-                if (state) {
-                        state.consumed = true;
-                }
-        }
+	consumeButton(identifier: ButtonId): void {
+		const state = this.buttonStates.get(identifier);
+		if (state) {
+			state.consumed = true;
+		}
+	}
 
-        /**
-         * Queues an action for this player. Higher priority actions are placed
-         * before lower priority ones, allowing important actions such as dodges
-         * to override queued attacks.
-         *
-         * @param action - The name of the action to queue.
-         * @param priority - Optional priority value, higher means more important.
-         * @param timestamp - Timestamp of the queue event, defaults to now.
-         */
-        queueAction(action: string, priority = 0, timestamp = performance.now()): void {
-                this.actionBuffer.queueAction(action, priority, timestamp);
-        }
+	/**
+	 * Queues an action for this player. Higher priority actions are placed
+	 * before lower priority ones, allowing important actions such as dodges
+	 * to override queued attacks.
+	 *
+	 * @param action - The name of the action to queue.
+	 * @param priority - Optional priority value, higher means more important.
+	 * @param timestamp - Timestamp of the queue event, defaults to now.
+	 */
+	queueAction(action: string, priority = 0, timestamp = performance.now()): void {
+		this.actionBuffer.queueAction(action, priority, timestamp);
+	}
 
-        /**
-         * Returns the highest priority queued action without removing it from
-         * the buffer.
-         */
-        peekQueuedAction(): QueuedAction | null {
-                return this.actionBuffer.peek();
-        }
+	/**
+	 * Returns the highest priority queued action without removing it from
+	 * the buffer.
+	 */
+	peekQueuedAction(): QueuedAction | null {
+		return this.actionBuffer.peek();
+	}
 
-        /**
-         * Retrieves and removes the highest priority action from the buffer.
-         */
-        consumeQueuedAction(): QueuedAction | null {
-                return this.actionBuffer.consume();
-        }
+	/**
+	 * Retrieves and removes the highest priority action from the buffer.
+	 */
+	consumeQueuedAction(): QueuedAction | null {
+		return this.actionBuffer.consume();
+	}
 }
 
 // @ts-ignore
@@ -746,9 +746,9 @@ class InputBuffer {
 		this.events = this.events.filter(event => event.playerIndex !== playerIndex);
 	}
 
-        cleanup(currentTime: number): void {
-                this.events = this.events.filter(event => currentTime - event.timestamp <= this.bufferDuration);
-        }
+	cleanup(currentTime: number): void {
+		this.events = this.events.filter(event => currentTime - event.timestamp <= this.bufferDuration);
+	}
 }
 
 /**
@@ -756,56 +756,56 @@ class InputBuffer {
  * associated priority; higher priority actions will be processed first.
  */
 type QueuedAction = {
-        action: string;
-        priority: number;
-        timestamp: number;
+	action: string;
+	priority: number;
+	timestamp: number;
 };
 
 // @ts-ignore
 class ActionBuffer {
-        private actions: QueuedAction[] = [];
-        private bufferDuration: number;
+	private actions: QueuedAction[] = [];
+	private bufferDuration: number;
 
-        constructor(bufferDuration: number = 200) {
-                this.bufferDuration = bufferDuration;
-        }
+	constructor(bufferDuration: number = 200) {
+		this.bufferDuration = bufferDuration;
+	}
 
-        /**
-         * Adds an action to the buffer. Actions are sorted so that higher
-         * priority actions appear first, with older actions of the same
-         * priority processed before newer ones.
-         */
-        queueAction(action: string, priority = 0, timestamp = performance.now()): void {
-                this.actions.push({ action, priority, timestamp });
-                this.actions.sort((a, b) => {
-                        if (b.priority === a.priority) {
-                                return a.timestamp - b.timestamp;
-                        }
-                        return b.priority - a.priority;
-                });
-        }
+	/**
+	 * Adds an action to the buffer. Actions are sorted so that higher
+	 * priority actions appear first, with older actions of the same
+	 * priority processed before newer ones.
+	 */
+	queueAction(action: string, priority = 0, timestamp = performance.now()): void {
+		this.actions.push({ action, priority, timestamp });
+		this.actions.sort((a, b) => {
+			if (b.priority === a.priority) {
+				return a.timestamp - b.timestamp;
+			}
+			return b.priority - a.priority;
+		});
+	}
 
-        /** Returns the highest priority action without removing it. */
-        peek(): QueuedAction | null {
-                return this.actions.length > 0 ? this.actions[0] : null;
-        }
+	/** Returns the highest priority action without removing it. */
+	peek(): QueuedAction | null {
+		return this.actions.length > 0 ? this.actions[0] : null;
+	}
 
-        /**
-         * Removes and returns the highest priority action from the buffer.
-         */
-        consume(): QueuedAction | null {
-                return this.actions.shift() ?? null;
-        }
+	/**
+	 * Removes and returns the highest priority action from the buffer.
+	 */
+	consume(): QueuedAction | null {
+		return this.actions.shift() ?? null;
+	}
 
-        /** Removes old actions from the buffer based on the duration. */
-        cleanup(currentTime: number): void {
-                this.actions = this.actions.filter(a => currentTime - a.timestamp <= this.bufferDuration);
-        }
+	/** Removes old actions from the buffer based on the duration. */
+	cleanup(currentTime: number): void {
+		this.actions = this.actions.filter(a => currentTime - a.timestamp <= this.bufferDuration);
+	}
 
-        /** Clears all queued actions. */
-        clear(): void {
-                this.actions.length = 0;
-        }
+	/** Clears all queued actions. */
+	clear(): void {
+		this.actions.length = 0;
+	}
 }
 
 /**
