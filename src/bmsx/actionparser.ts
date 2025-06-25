@@ -1,7 +1,7 @@
 import type { ActionState } from "./input";
 
 // Updated TOKEN_REGEX to include 'aj' modifier
-const TOKEN_REGEX = /\s*(\|\||&&|\?j|[&?]|!?(aj|ic|p|j|c)|t\{[^}]*\}|[a-zA-Z_][a-zA-Z0-9_]*|[<>=!]=?|[!\(\)\[\]\{\},]|!|\S)\s*/g;
+const TOKEN_REGEX = /\s*(\|\||&&|\?j|[&?]|!?(aj|ic|p|j|c)|(?:t|w|pr)\{[^}]*\}|[a-zA-Z_][a-zA-Z0-9_]*|[<>=!]=?|[!\(\)\[\]\{\},]|!|\S)\s*/g;
 const PRESSTIME_REGEX = /^t\{([^}]+)\}$/;
 const NUMERIC_CONDITION_REGEX = /^(<|>|<=|>=|==|!=)\s*(\d+(\.\d+)?)$/;
 
@@ -14,6 +14,7 @@ interface ActionNode extends ASTNode {
 	type: 'action';
 	name: string;
 	modifiers?: string[];
+	priority?: number;
 }
 
 interface FunctionNode extends ASTNode {
@@ -280,6 +281,7 @@ export class ActionParser {
 		const name = this.consume();
 		let modifiers: string[] = [];
 		let ignoreConsumed = false;
+		let priority: number | undefined;
 
 		if (this.match('[')) {
 			modifiers = this.parseModifiers();
@@ -297,6 +299,9 @@ export class ActionParser {
 		for (const modifier of modifiers) {
 			if (modifier === 'ic') {
 				ignoreConsumed = true;
+			} else if (modifier.startsWith('pr{')) {
+				const num = parseInt(modifier.slice(3, -1), 10);
+				if (!Number.isNaN(num)) priority = num;
 			} else {
 				compiledModifierFunctions.push(this.compileModifier(modifier));
 			}
@@ -324,6 +329,7 @@ export class ActionParser {
 			type: 'action',
 			name,
 			modifiers,
+			priority,
 			evaluate,
 		};
 	}
@@ -371,6 +377,12 @@ export class ActionParser {
 
 			// Compile the condition into a function
 			func = this.compilePressTimeCondition(condition);
+		} else if (modifierName.startsWith('w')) {
+			const ms = parseInt(modifierName.slice(2, -1), 10);
+			if (Number.isNaN(ms)) {
+				throw new Error(`Invalid 'w' modifier syntax: '${modifierName}'`);
+			}
+			func = (a) => a.timestamp !== undefined && performance.now() - a.timestamp <= ms;
 		} else if (this.modifierHandlers[modifierName]) {
 			func = this.modifierHandlers[modifierName];
 		} else {
