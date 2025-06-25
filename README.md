@@ -43,6 +43,15 @@ ROM packs are created by `finalizeRompack` in `rompacker.ts`. All resources are 
 npx tsx scripts/rominspector.ts <file.rom>
 ```
 
+## Input State Manager
+
+The `InputStateManager` keeps a short history of button events so actions can be
+buffered for a few frames. Actions can specify a priority using the `[pr{n}]`
+modifier and a sliding time window with `[w{ms}]` when defining combos. Higher
+priority actions override earlier queued ones, while the window modifier lets you
+chain inputs within a specific time span. Queued actions are exposed through
+`PlayerInput.peekQueuedAction()` and `PlayerInput.consumeQueuedAction()`.
+
 ---
 
 Building the TypeScript project alone will not produce a playable game. Always run the rompacker script (or the provided tasks) to generate the `.rom` file and HTML loader.
