@@ -3,6 +3,7 @@ import type { ActionState } from "./input";
 // Updated TOKEN_REGEX to include 'aj' modifier
 const TOKEN_REGEX = /\s*(\|\||&&|\?j|[&?]|!?(aj|ic|p|j|c)|t\{[^}]*\}|[a-zA-Z_][a-zA-Z0-9_]*|[<>=!]=?|[!\(\)\[\]\{\},]|!|\S)\s*/g;
 const PRESSTIME_REGEX = /^t\{([^}]+)\}$/;
+const NUMERIC_CONDITION_REGEX = /^(<|>|<=|>=|==|!=)\s*(\d+(\.\d+)?)$/;
 
 interface ASTNode {
 	type: string;
@@ -59,6 +60,13 @@ export class ActionParser {
 		'?': (args) => (getActionState) => args.some((arg) => arg.evaluate(getActionState)),
 		'?j': (args) => this.compileAnyJustPressedFunction(args),
 	};
+
+	private static readonly FUNCTION_TOKENS = Object.keys(this.functionHandlers);
+	private static readonly MODIFIER_TOKENS = [
+		...Object.keys(this.modifierHandlers),
+		...Object.keys(this.modifierHandlers).map(m => '!' + m),
+		'ic', '!ic'
+	];
 
 	/**
 	 * Checks if an action definition is triggered.
@@ -277,6 +285,13 @@ export class ActionParser {
 			modifiers = this.parseModifiers();
 		}
 
+		// Check whether there are any modifiers that are not supported
+		for (const modifier of modifiers) {
+			if (!this.MODIFIER_TOKENS.includes(modifier)) {
+				throw new Error(`Unknown modifier: '${modifier}' in action '${name}'.`);
+			}
+		}
+
 		const compiledModifierFunctions: ((actionState: ActionState) => boolean)[] = [];
 
 		for (const modifier of modifiers) {
@@ -367,7 +382,7 @@ export class ActionParser {
 	private static compilePressTimeCondition(
 		condition: string
 	): (actionState: ActionState) => boolean {
-		const match = condition.match(/^(<|>|<=|>=|==|!=)\s*(\d+(\.\d+)?)$/);
+		const match = condition.match(NUMERIC_CONDITION_REGEX);
 		if (!match) {
 			throw new Error(`Invalid pressTime condition: '${condition}'`);
 		}
@@ -375,21 +390,35 @@ export class ActionParser {
 		const operator = match[1];
 		const value = parseFloat(match[2]);
 
+		if (isNaN(value)) {
+			throw new Error(`Invalid numeric value in pressTime condition: '${value}'`);
+		}
+
+		return this.compileNumericCondition(operator, value, 'presstime');
+	}
+
+	private static compileNumericCondition(
+		operator: string,
+		testValue: number,
+		actionStateProperty: {
+			[K in keyof ActionState]: ActionState[K] extends number | null ? K : never
+		}[keyof ActionState]
+	): (actionState: ActionState) => boolean {
 		switch (operator) {
 			case '<':
-				return (actionState) => actionState.presstime < value;
+				return (actionState) => actionState[actionStateProperty] < testValue;
 			case '>':
-				return (actionState) => actionState.presstime > value;
+				return (actionState) => actionState[actionStateProperty] > testValue;
 			case '<=':
-				return (actionState) => actionState.presstime <= value;
+				return (actionState) => actionState[actionStateProperty] <= testValue;
 			case '>=':
-				return (actionState) => actionState.presstime >= value;
+				return (actionState) => actionState[actionStateProperty] >= testValue;
 			case '==':
-				return (actionState) => actionState.presstime === value;
+				return (actionState) => actionState[actionStateProperty] === testValue;
 			case '!=':
-				return (actionState) => actionState.presstime !== value;
+				return (actionState) => actionState[actionStateProperty] !== testValue;
 			default:
-				throw new Error(`Unsupported operator in pressTime condition: '${operator}'`);
+				throw new Error(`Unsupported operator in numeric condition: '${operator}'`);
 		}
 	}
 
@@ -404,16 +433,14 @@ export class ActionParser {
 
 	private static expect(token: string): void {
 		if (this.tokens[this.actionParserIndex] !== token) {
-			throw new Error(
-				`Expected '${token}', found '${this.tokens[this.actionParserIndex]}' at position ${this.actionParserIndex}`
-			);
+			throw new Error(`Expected '${token}', found '${this.tokens[this.actionParserIndex]}' at position ${this.actionParserIndex}`);
 		}
 	}
 
 	private static matchFunction(): boolean {
 		const token = this.tokens[this.actionParserIndex];
 		return (
-			(token === '&' || token === '?' || token === '?j') &&
+			this.FUNCTION_TOKENS.includes(token) &&
 			this.tokens[this.actionParserIndex + 1] === '('
 		);
 	}
