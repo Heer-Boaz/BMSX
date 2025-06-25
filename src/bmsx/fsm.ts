@@ -609,7 +609,9 @@ export class State<T extends Stateful & EventSubscriber & Registerable = any> im
 		const startStateDef = this.get_sstate(startStateId)?.definition; // Get the start state definition from the state machine definition
 
 		// Trigger the enter event for the start state. Note that there is no definition for the none-state, so we don't trigger the enter event for that state.
+		this.enterCriticalSection();
 		startStateDef?.enter?.call(this.target, this.get_sstate(startStateId));
+		this.leaveCriticalSection();
 
 		// Start the state machine for the current active state
 		this.states[startStateId].start();
@@ -978,7 +980,9 @@ export class State<T extends Stateful & EventSubscriber & Registerable = any> im
 
 		// Perform exit actions for the current state
 		let stateDef = this.current_state_definition;
+		this.enterCriticalSection();
 		stateDef?.exit?.call(this.target, this.current, ...args);
+		this.leaveCriticalSection();
 		stateDef && this.pushHistory(this.currentid);
 
 		// Update the current state
@@ -1004,7 +1008,9 @@ export class State<T extends Stateful & EventSubscriber & Registerable = any> im
 				case 'none': break; // Do nothing (i.e., don't reset any state machines)
 			}
 		}
+		this.enterCriticalSection();
 		const next_state = stateDef?.enter?.call(this.target, this.current, ...args);
+		this.leaveCriticalSection();
 		this.current.transitionToNextStateIfProvided(next_state);
 	}
 

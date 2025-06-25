@@ -297,7 +297,7 @@ export class quiz extends GameObject {
                 _start: {
                     enter(this: quiz) {
                         this.maximum_characters_per_line = maximum_characters_per_line_question;
-                        this.setTextFromLines(['Beste Eli,', 'Welkom bij deze quiz,', 'Een speelse uitdaging,dat is wat dit is.', 'Met vragen over films,sport en spel,', 'Ben je klaar?','Dan beginnen we snel!']);
+                        this.setTextFromLines(['Beste Eli,', 'Welkom bij deze quiz,', 'Een speelse uitdaging,dat is wat dit is.', 'Met vragen over films,sport en spel,', 'Ben je klaar?', 'Dan beginnen we snel!']);
                     },
                     run(this: quiz, _state: State) {
                         this.typeNextCharacter();
