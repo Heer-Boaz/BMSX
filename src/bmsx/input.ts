@@ -1125,9 +1125,11 @@ export class Input implements RegisterablePersistent {
 	 * Polls the input for each player and processes gamepad assignments.
 	 */
 	public pollInput(): void {
-		this.playerInputs.forEach(player => {
-			player.pollInput();
-			const gamepadInput = player.inputHandlers['gamepad'];
+                const now = performance.now();
+                this.playerInputs.forEach(player => {
+                        player.pollInput();
+                        player.update(now);
+                        const gamepadInput = player.inputHandlers['gamepad'];
 			if (gamepadInput) {
 				const buttonState = gamepadInput.getButtonState('start');
 				if (buttonState.pressed && buttonState.presstime >= 50) {
@@ -1396,10 +1398,19 @@ export class PlayerInput {
 	 * @property {IInputHandler | null} keyboard - The handler for keyboard input, or null if not set.
 	 * @property {IInputHandler | null} gamepad - The handler for gamepad input, or null if not set.
 	 */
-	public inputHandlers: { [key in 'keyboard' | 'gamepad']: InputHandler | null } = {
-		keyboard: null,
-		gamepad: null,
-	};
+        public inputHandlers: { [key in 'keyboard' | 'gamepad']: InputHandler | null } = {
+                keyboard: null,
+                gamepad: null,
+        };
+
+        /** Holds button press states from the previous frame for each handler. */
+        private previousStates: { [key in 'keyboard' | 'gamepad']: Record<string, boolean> } = {
+                keyboard: {},
+                gamepad: {},
+        };
+
+        /** Manages buffered input events and button state aggregation. */
+        private stateManager: InputStateManager;
 
 	/**
 	 * Indicates whether the player is the main player.
@@ -1672,19 +1683,55 @@ export class PlayerInput {
 	/**
 	 * Polls the input for the player for each input source (e.g., keyboard, gamepad, ...)
 	 */
-	pollInput(): void {
-		for (const source in this.inputHandlers) {
-			this.inputHandlers[source]?.pollInput();
-		}
-	}
+        pollInput(): void {
+                for (const source in this.inputHandlers) {
+                        const handler = this.inputHandlers[source];
+                        if (!handler) continue;
+                        handler.pollInput();
+
+                        for (const button of Input.BUTTON_IDS) {
+                                const state = handler.getButtonState(button);
+                                const prev = this.previousStates[source][button] ?? false;
+                                const timestamp = performance.now();
+
+                                if (state.justpressed) {
+                                        this.stateManager.addInputEvent({
+                                                eventType: 'press',
+                                                identifier: button,
+                                                timestamp,
+                                                source: source as 'keyboard' | 'gamepad',
+                                                playerIndex: this.playerIndex,
+                                        });
+                                }
+
+                                if (!state.pressed && prev) {
+                                        this.stateManager.addInputEvent({
+                                                eventType: 'release',
+                                                identifier: button,
+                                                timestamp,
+                                                source: source as 'keyboard' | 'gamepad',
+                                                playerIndex: this.playerIndex,
+                                        });
+                                }
+
+                                this.previousStates[source][button] = state.pressed;
+                        }
+                }
+        }
+
+        /** Updates aggregated button states and cleans up stale events. */
+        update(currentTime: number): void {
+                this.stateManager.update(currentTime);
+        }
 
 	/**
 	 * Initializes the input system.
 	 */
-	public constructor(playerIndex: number) {
-		this.playerIndex = playerIndex;
-		this.inputHandlers['gamepad'] = null; // Gamepad should be null by default, and set to a value when a gamepad is connected and assigned to this player
-		this.reset();
+        public constructor(playerIndex: number) {
+                this.playerIndex = playerIndex;
+                this.stateManager = new InputStateManager(playerIndex);
+                this.inputHandlers['gamepad'] = null; // Gamepad should be null by default, and set to a value when a gamepad is connected and assigned to this player
+                this.reset();
 
 		window.addEventListener("gamepaddisconnected", (e: GamepadEvent) => {
 			const gamepad = e.gamepad;
