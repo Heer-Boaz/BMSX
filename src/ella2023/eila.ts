@@ -57,14 +57,8 @@ export class Eila extends Fighter {
 					case 'left':
 						this.facing = action as typeof this.facing;
 
-						// Check for combined jump left/right action
-						// if (priorityActions.some(action => action.action === 'jump')) {
-						//     return { state_id: 'jump', args: true };
-						// }
-						// else {
 						this.x += action === 'right' ? Fighter.SPEED : -Fighter.SPEED;
 						return 'walk';
-					// }
 					case 'jump_left':
 						this.facing = 'left';
 						$.consumeAction(this.player_index, 'jump')

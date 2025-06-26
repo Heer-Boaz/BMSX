@@ -17,11 +17,17 @@ BMSX is a lightweight TypeScript game engine and toolchain used to build small r
 - `scripts/` – build utilities such as `rompacker.ts` and `bootrom.ts`.
 - `dist/` – output directory for the `.rom` file and generated HTML pages.
 
+> **NOTE**: The TypeScript project is not a standalone game, but rather a collection of modules that are used by the rompacker script to create a final game package. That also implies that multiple games can be built from the same TypeScript project, as long as they have their own `bootloader.ts` and `src/`-folder that also includes a `res/`-folder.
+
 ## Building
 
 1. Install dependencies with `npm install`. Note that this project uses `tsx` for running TypeScript scripts directly, so you don't need to compile them to JavaScript first.
    If you want to use `tsc` instead, you can run `npm run build` to compile the `rompacker.ts` TypeScript file (and imports) in `scripts/` and run the resulting JavaScript file instead.
-2. Run `npx tsx scripts/rompacker.ts -romname <game>` where `<game>` is a folder inside `src/`.
+2. Ensure you have `tslib` installed globally, as it is required for the TypeScript runtime. You can install it with:
+   ```bash
+   npm install -g tslib
+   ```
+3. Run `npx tsx scripts/rompacker.ts -romname <game>` where `<game>` is a folder inside `src/`.
    The "build the game" task in `.vscode/tasks.json` executes this command for you.
 
 During the build the bootloader is bundled with `esbuild`, a texture atlas is generated, resources are packaged and `<game>.rom` plus `game.html`/`game_debug.html` are produced in `dist/`.
@@ -30,6 +36,7 @@ Example for building the example game `testrom` which is located in `src/testrom
 ```bash
 npx tsx scripts/rompacker.ts -romname testrom
 ```
+> **WARNING**: Any other attempt at building the TypeScript project (e.g. `tsc` or `npm run build`) will **FAIL**! Always run the rompacker script to generate the `.rom` file and HTML loader.
 
 ## Running
 
@@ -52,8 +59,81 @@ The `InputStateManager` tracks a short, rolling history of button events for eac
 - **Input Buffering:**
   Button presses and releases are stored for a few frames, allowing the game to "see" inputs that happen just before an action becomes available (e.g., buffering a jump or attack during an animation).
 
-- **Action Queuing and Priority:**
-  Actions can be queued with a `[pr{n}]` modifier, where higher `n` means higher priority. Higher-priority actions will override or preempt lower-priority ones in the buffer. This is useful for handling complex move sequences or interrupts.
+- **Action Queuing:**
+  Not implemented yet, but planned for future versions. This would allow actions to be queued up and executed in sequence, enabling complex move sets and combos.
+
+- **Action Priority:**
+  Actions can be prioritized in the following ways:
+  - Using `getPressedActions(query?: ActionStateQuery)` to retrieve actions based on their state, where the `ActionStateQuery` includes the property `actionsByPriority: string[]` to specify the order of action processing. Example:
+      ```typescript
+               const priorityActions = $.getPressedActions(this.player_index, { pressed: true, consumed: false, actionsByPriority: ['duck', 'punch', 'highkick', 'lowkick', 'jump_right', 'jump_left', 'right', 'left', 'jump',] });
+
+               // If no actions are pressed, switch to idle
+               if (priorityActions.length === 0) {
+                  return 'idle';
+               }
+
+               for (const actionObject of priorityActions) {
+                  const { action } = actionObject;
+
+                  switch (action as Action) {
+                     case 'right':
+                     case 'left':
+                        this.facing = action as typeof this.facing;
+
+                        this.x += action === 'right' ? Fighter.SPEED : -Fighter.SPEED;
+                        return 'walk';
+                     case 'jump_left':
+                        this.facing = 'left';
+                        $.consumeAction(this.player_index, 'jump')
+                        return { state_id: 'jump', args: true };
+                     case 'jump_right':
+                        this.facing = 'right';
+                        $.consumeAction(this.player_index, 'jump')
+                        return { state_id: 'jump', args: true };
+                     case 'duck':
+                        return action; // Do not consume the duck action, as it would immediately make the fighter stand up again
+                     case 'punch':
+                     case 'highkick':
+                     case 'lowkick':
+                     case 'jump':
+                        $.input.getPlayerInput(this.player_index).consumeAction(action);
+                        return action;
+                  }
+               }
+            }
+      ```
+  - Using `State.on_input` to register input handlers that can specify their own priority, allowing for flexible action resolution based on game state. The `State.on_input` property accepts multiple handlers, which are processed in the order they were registered, allowing for prioritization of certain actions over others. Example:
+      ```typescript
+            on_input: {
+               'a[j!c]': {
+                     do(this: quiz) {
+                        $.consumeAction(1, 'a');
+                        this.currentAnswerOptionChosen = 'a';
+                        return { state_id: 'antwoord', args: this.currentAnswerOptionChosen };
+                     },
+               },
+               'b[j!c]': {
+                     do(this: quiz) {
+                        $.consumeAction(1, 'b');
+                        this.currentAnswerOptionChosen = 'b';
+                        return { state_id: 'antwoord', args: this.currentAnswerOptionChosen };
+                     },
+               },
+               'left[j!c]': {
+                     do(this: quiz) {
+                        $.consumeAction(1, 'left');
+                        return { state_id: 'vraag', args: 'prev', force_transition_to_same_state: true, transition_type: 'to' };
+                     },
+               },
+               'right[j!c]': {
+                     do(this: quiz) {
+                        $.consumeAction(1, 'right');
+                        return { state_id: 'vraag', args: 'next', force_transition_to_same_state: true, transition_type: 'to' };
+                     },
+               },
+            },
+      ```
 
 - **Combo and Window Modifiers:**
   The `[w{ms}]` modifier allows you to define a sliding time window (in milliseconds) for chaining actions, enabling combos or multi-step moves that require rapid input.
@@ -75,9 +155,7 @@ The `InputStateManager` tracks a short, rolling history of button events for eac
   - `?j(a[j!c], b[j!c])` (any just-pressed and not-consumed)
   - `special[w{200}]` (within a 200ms window)
 
-- **APIs for Consuming and Peeking Actions:**
-  - `PlayerInput.peekQueuedAction()` returns the highest-priority queued action without removing it.
-  - `PlayerInput.consumeQueuedAction()` removes and returns the highest-priority action.
+- **APIs for Consuming Actions:**
   - `PlayerInput.consumeAction(action)` and `PlayerInput.consumeActions(...actions)` mark actions as handled, preventing them from being processed again.
 
 - **Action State Querying:**
@@ -99,7 +177,5 @@ const nextAction = playerInput.peekQueuedAction();
 if (nextAction?.action === 'jump') {
     // Prepare to jump
 }
-
+```
 ---
-
-Building the TypeScript project alone will not produce a playable game. Always run the rompacker script (or the provided tasks) to generate the `.rom` file and HTML loader.
