@@ -216,7 +216,7 @@ export class quiz extends GameObject {
      * @method
      * @returns {void}
      */
-    private typeNextCharacter() {
+    private typeNextCharacter(): void {
         if (!this.isTyping) return;
 
         if (this.currentLineIndex >= this.fullTextLines.length) {
@@ -244,7 +244,7 @@ export class quiz extends GameObject {
      * Updates the displayed text by copying the contents of `displayedLines` to `text`.
      * This method ensures that the `text` property reflects the current state of `displayedLines`.
      */
-    private updateDisplayedText() {
+    private updateDisplayedText(): void {
         this.text = [...this.displayedLines];
     }
 
