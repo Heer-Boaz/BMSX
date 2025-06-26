@@ -12,7 +12,7 @@ BMSX is a lightweight TypeScript game engine and toolchain used to build small r
 
 ## Project Layout
 
-The BMSX project is organized to support modular engine development, multiple games per repository, and a robust build pipeline. Here’s a detailed breakdown of the directory structure and its purpose:
+The BMSX project is organized to support modular engine development, multiple games per repository, and a simple build pipeline. Here’s a detailed breakdown of the directory structure and its purpose:
 
 - **`src/bmsx/`**
   The core engine source code. This folder contains all reusable engine modules, including:
@@ -404,7 +404,7 @@ player.oncollide = (src) => { /* custom logic */ };
 
 ### Collision and Movement
 
-BMSX provides a robust and extensible system for collision detection and movement, supporting both simple bounding box (AABB) and advanced polygon-based collision. The system is designed for flexibility, allowing you to choose the right level of precision and performance for your game objects.
+BMSX provides a simple and extensible system for collision detection and movement, supporting both simple bounding box (AABB) and advanced polygon-based collision. The system is designed for flexibility, allowing you to choose the right level of precision and performance for your game objects.
 
 #### Position and Movement
 
@@ -536,7 +536,7 @@ if (player.overlaps_point({ x: mouseX, y: mouseY })) {
 
 ## Component System
 
-The BMSX Component System provides a flexible, extensible way to add modular behavior to game objects. Components encapsulate logic such as movement, collision, AI, and more, and can be attached, removed, or updated independently of the main object class. This enables powerful composition and code reuse.
+The BMSX Component System provides a flexible, extensible way to add modular behavior to game objects. Components encapsulate logic such as movement, collision, AI, and more, and can be attached, removed, or updated independently of the main object class. This enables composition and code reuse.
 
 ### Key Features
 
@@ -612,7 +612,7 @@ protected setPosX(x: number) { ... }
 ---
 
 ## Graphics and Rendering
-BMSX features a modern, efficient graphics and rendering system designed for retro-style games, with support for both 2D canvas and advanced WebGL rendering. The system is highly extensible, supporting texture atlases, sprite batching, post-processing effects, and flexible view management.
+BMSX features a simple, modern, efficient graphics and rendering system designed for retro-style games, with support for both 2D canvas and advanced WebGL rendering. The system supports texture atlases, sprite batching, post-processing effects, and basic view management.
 
 ### Key Features
 
@@ -928,7 +928,7 @@ The BMSX engine includes a simple state machine system that allows you to define
 
 ### Advanced FSM Features
 
-The BMSX FSM system provides a rich set of features for building complex, robust game logic. In addition to the basics, the following advanced features are available:
+The BMSX FSM system provides a set of features for building simple game logic. In addition to the basics, the following advanced features are available:
 
 - **Parallel State Machines**: Multiple state machines can run in parallel within a controller. States or machines with `parallel: true` will execute alongside the current machine, allowing for independent animation, AI, or effect logic.
 - **State Machine Controllers**: The `StateMachineController` class manages multiple state machines, supports switching between them, and can dispatch events to all or selected machines.
@@ -1496,7 +1496,7 @@ class MyObject {
 
 ## Event Registry and Emitting
 
-BMSX features a robust event system that enables decoupled communication between game objects, systems, and engine components. The event registry is managed by the `EventEmitter` singleton (see `src/bmsx/eventemitter.ts`), which supports flexible event subscription, emission, and deregistration patterns.
+BMSX features a simple event system that enables decoupled communication between game objects, systems, and engine components. The event registry is managed by the `EventEmitter` singleton (see `src/bmsx/eventemitter.ts`), which supports event subscription, emission, and deregistration patterns.
 
 ### Core Concepts
 
