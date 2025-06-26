@@ -332,6 +332,63 @@ public static bouw(): StateMachineBlueprint {
 
 ## Player Input
 
+### Device Support, Multi-Player, and Controller Assignment
+
+BMSX supports flexible input from multiple sources and players, with robust runtime device management:
+
+- **Keyboard Support:**
+  - The keyboard can be mapped to any player (default: Player 1).
+  - Multiple players can use different keyboard layouts if desired (see `InputMap`).
+  - Keyboard keys are mapped to gamepad-style actions (see `Input.KEYBOARDKEY2GAMEPADBUTTON`).
+
+- **Gamepad Support:**
+  - Up to four players are supported, each with their own gamepad.
+  - Gamepads can be connected/disconnected at runtime. The engine detects new controllers and can assign them to available player slots automatically or via user selection.
+  - Gamepad button mapping is handled via `InputMap` and can be customized per player.
+  - The API allows querying and consuming actions per player, regardless of input device.
+
+- **On-Screen Gamepad:**
+  - The on-screen gamepad is automatically shown on touch devices.
+  - The on-screen gamepad can be enabled/disabled at runtime via `Input.enableOnscreenGamepad()`.
+  - You can programmatically hide specific on-screen buttons using `Input.hideOnscreenGamepadButtons([...buttonIds])`.
+  > TL;DR: The on-screen gamepad is shown by default when the game is started by a touch action, but can be hidden or shown programmatically.
+
+- **Automatic Device Detection and Assignment:**
+  - The engine listens for gamepad connection/disconnection events and can prompt the user to assign a new device to a player slot.
+  - If a new controller is connected, a player index selection UI is shown, allowing the user to choose which player the device should control.
+  - Devices can be reassigned at runtime, and the on-screen gamepad can be reassigned to any player as needed.
+
+- **Multi-Player Input Access:**
+  - Use the main game API to access input for any player:
+    - `$.getPressedActions(playerIndex, query)`
+    - `$.checkActionTriggered(playerIndex, action)`
+    - `$.consumeAction(playerIndex, action)`
+    - `$.setInputMap(playerIndex, inputMap)`
+  - The `Input` singleton also provides `getPlayerInput(playerIndex)` to access the `PlayerInput` instance for a given player (1–4).
+  - Example: Get the state of the 'jump' action for Player 1:
+    ```typescript
+    const jumpState = $.getActionState(1, 'jump[t{>50}]'); // playerIndex is 1-based
+    if (jumpState.pressed && !jumpState.consumed) {
+        // Player 2 is holding jump
+    }
+    ```
+  - Example: Check if Player 2 triggered a low kick action:
+    ```typescript
+    if ($.getActionState(2, 'down && kick[j]')) {
+        // Player 2 performed a low kick
+    }
+    ```
+
+- **Player Indexing:**
+  - Player indices are 1-based (Player 1 = 1, Player 2 = 2, etc.).
+  - All input APIs accept a `playerIndex` parameter to specify which player's input to query or consume.
+
+- **Runtime Controller Reassignment:**
+  - Controllers (including the on-screen gamepad) can be reassigned to any player at runtime.
+  - The engine provides UI and API support for reassigning devices, and will automatically update mappings if a device is disconnected or reconnected.
+
+For more details, see the `Input` and `PlayerInput` classes in `src/bmsx/input.ts`, and the main game API in `src/bmsx/game.ts`.
+
 The `InputStateManager` tracks a short, rolling history of button events for each player, enabling features like input buffering, combo detection, and action prioritization. This system is central to responsive gameplay, especially for fighting games or platformers where precise input timing is critical.
 
 ### Key Features
@@ -462,3 +519,244 @@ if (nextAction?.action === 'jump') {
     // Prepare to jump
 }
 ```
+
+## Serializing & Deserializing Game State
+
+BMSX provides a robust, extensible system for saving and loading the entire game state, supporting features like rewind, save slots, and debugging. The system is designed to handle complex object graphs, circular references, and custom serialization logic.
+
+### Key Features
+
+- **Full Model Serialization:**
+  The entire game model (including all spaces, objects, and state machines) can be serialized and restored, preserving the exact state of the game world.
+- **Reference Tracking:**
+  The serializer tracks object references, allowing for correct handling of shared objects and cycles in the object graph.
+- **Binary & JSON Formats:**
+  Game state can be saved as a compact binary format (for efficiency and rewind) or as JSON (for debugging and inspection).
+- **Compression:**
+  Binary game state snapshots are compressed using a custom LZ77+RLE compressor (`bincompressor.ts`) for efficient storage and fast rewind.
+- **Custom Exclusion & Hooks:**
+  Use the `@onsave`, `@onload`, `@insavegame`, and `@excludepropfromsavegame` decorators to customize what gets saved/loaded and to run custom logic during serialization/deserialization.
+- **Rewind Support:**
+  The engine maintains a rolling buffer of compressed game state snapshots, enabling frame-accurate rewind and replay via the debugger UI (`rewindui.ts`).
+- **Savegame Class:**
+  The `Savegame` class (see `gameserializer.ts`) encapsulates all persistent state, including model properties, spaces, objects, sound state, and view state.
+
+### How It Works
+
+#### Saving
+
+1. **Create Savegame Object:**
+   The model's `save()` method creates a `Savegame` instance, collecting all relevant properties, spaces, and objects.
+   Properties and classes can be excluded from serialization using decorators.
+2. **Serialize:**
+   The `Serializer` class serializes the `Savegame` object, using reference tracking to handle cycles and shared objects.
+   Serialization can be to JSON or to a compact binary format (`binencoder.ts`).
+3. **Compress:**
+   The binary snapshot is compressed using the `BinaryCompressor` (LZ77+RLE) for efficient storage and fast rewind.
+4. **Store:**
+   The compressed snapshot can be stored in memory (for rewind), in localStorage, or in a file (for save slots).
+
+#### Loading
+
+1. **Decompress:**
+   The binary snapshot is decompressed using the `BinaryCompressor`.
+2. **Deserialize:**
+   The `Reviver` class reconstructs the object graph, restoring all objects, references, and types.
+   Registered constructors and `@onload` hooks are used to re-initialize objects as needed.
+3. **Restore State:**
+   The model's `load()` method applies the deserialized state, re-populating spaces, objects, and properties.
+   Persistent entities and event subscriptions are re-initialized.
+
+#### Example: Saving and Loading
+
+```typescript
+// Save the current game state (compressed binary)
+const snapshot: Uint8Array = $.model.save(true);
+
+// Load a previously saved state
+$.model.load(snapshot, true);
+```
+
+#### Example: Using Decorators
+
+```typescript
+@insavegame
+class MyObject {
+    @excludepropfromsavegame
+    private tempData: any;
+
+    @onsave
+    static saveExtras(obj: MyObject) {
+        return { extra: obj.computeExtra() };
+    }
+
+    @onload
+    restoreExtras() {
+        // Custom logic after loading
+    }
+}
+```
+
+#### Rewind System
+
+- The engine maintains a buffer of compressed game state snapshots for the last N seconds (default: 60s).
+- The rewind UI (`rewindui.ts`) allows the player or developer to scrub through previous frames and restore any previous state instantly.
+- Snapshots are taken automatically each frame and are compressed (using a simple compression algorithm) for efficiency.
+
+#### Debugging and Inspection
+
+- Use `debugPrintBinarySnapshot(buf)` to pretty-print a binary snapshot for debugging.
+- The ROM inspector and debugger tools can display and manipulate saved game states.
+   > Kidding, that is something that Copilot hallucinated, there is no such function yet :-)
+
+#### Advanced Features
+
+- **Selective Serialization:**
+  Exclude properties or entire classes from serialization using `@excludepropfromsavegame` and `@excludeclassfromsavegame`.
+- **Custom Save/Load Logic:**
+  Use `@onsave` and `@onload` to add custom logic for saving and restoring derived or computed properties.
+- **Type Registration:**
+  Register custom classes with `@insavegame` to ensure correct serialization and deserialization.
+  > **Note**: The `@insavegame` decorator is used to mark classes that should be included in the savegame serialization process, allowing the serializer to recognize and handle them correctly. **If a class is not marked with `@insavegame` and it was not omitted from serialization using `@excludeclassfromsavegame`, you will get an error when trying to save or load the game state!**
+
+#### References
+
+- See [`src/bmsx/gameserializer.ts`](src/bmsx/gameserializer.ts) for the main serialization logic and decorators.
+- See [`src/bmsx/binencoder.ts`](src/bmsx/binencoder.ts) and [`src/bmsx/bincompressor.ts`](src/bmsx/bincompressor.ts) for binary encoding and compression.
+- See [`src/bmsx/basemodel.ts`](src/bmsx/basemodel.ts) and [`src/bmsx/game.ts`](src/bmsx/game.ts) for integration with the game model and rewind system.
+- See [`src/bmsx/debugger/rewindui.ts`](src/bmsx/debugger/rewindui.ts) for the rewind debugger UI.
+
+---
+## Graphics and Rendering
+BMSX features a modern, efficient graphics and rendering system designed for retro-style games, with support for both 2D canvas and advanced WebGL rendering. The system is highly extensible, supporting texture atlases, sprite batching, post-processing effects, and flexible view management.
+
+### Key Features
+
+- **WebGL Renderer:**
+  - The `GLView` class provides a high-performance WebGL2 renderer with support for batched sprite rendering, texture atlases, and advanced effects.
+  - Optional CRT-style post-processing effects (scanlines, color bleed, blur, glow, fringing, noise) can be enabled for authentic retro visuals.
+  - Efficient sprite batching and atlas management allow for hundreds of objects to be drawn per frame with minimal overhead.
+
+- **Canvas Renderer:**
+  - The `BaseView` class provides a fallback 2D canvas renderer, supporting all core drawing operations and view management.
+
+- **Texture Atlases:**
+  - All game graphics are packed into one or more texture atlases for efficient GPU usage and fast rendering.
+  - The atlas system supports both static and dynamic atlases, with metadata for each sprite.
+
+- **Flexible Drawing API:**
+  - Draw images, rectangles, polygons, and custom shapes using a unified API (`drawImg`, `drawRectangle`, `drawPolygon`, etc.).
+  - Support for flipping, scaling, colorizing, and layering sprites.
+
+- **View Management:**
+  - The view system automatically handles resizing, fullscreen, and aspect ratio management.
+  - The game can run in windowed or fullscreen mode, with automatic scaling to fit the display.
+  - The view tracks viewport, canvas, and window sizes, and recalculates layout on resize or orientation change.
+
+- **Depth Sorting:**
+  - Objects in each space are sorted by their z-coordinate before drawing, ensuring correct layering and overlap.
+
+- **Component-Based Rendering:**
+  - Each `GameObject` can implement a `paint()` method for custom rendering, and can update render components before drawing.
+
+- **Screen Overlays and UI:**
+  - Built-in support for overlays (pause, resume, fading text) and on-screen gamepad.
+  - Utility functions for adding/removing DOM elements to/from the game screen.
+
+### Example: Drawing a Sprite
+
+```typescript
+$.view.drawImg({
+  imgid: 'player',
+  pos: { x: 100, y: 50 },
+  scale: { x: 2, y: 2 },
+  flip: { flip_h: false, flip_v: false },
+  colorize: { r: 1, g: 1, b: 1, a: 1 },
+});
+```
+
+### Example: Custom Paint Method
+
+```typescript
+class MyObject extends GameObject {
+  paint() {
+    $.view.drawRectangle({
+      area: { start: { x: this.x, y: this.y }, end: { x: this.x + 16, y: this.y + 16 } },
+      color: { r: 1, g: 0, b: 0, a: 1 },
+    });
+  }
+}
+```
+
+### CRT and Post-Processing Effects
+
+- Enable or disable CRT effects via properties on `GLView`:
+  - `applyScanlines`, `applyColorBleed`, `applyBlur`, `applyGlow`, `applyFringing`, `applyNoise`, etc.
+  - Adjust effect intensity and color via properties like `noiseIntensity`, `colorBleed`, `blurIntensity`, `glowColor`.
+- Effects are applied in a post-processing pass after all sprites are drawn.
+
+### Fullscreen and Responsive Layout
+
+- The view system automatically handles window resizing, orientation changes, and fullscreen toggling.
+- The canvas is scaled to fit the available window or device screen, maintaining aspect ratio and pixel-perfect rendering.
+
+### Integration with Game Model
+
+- The view draws all objects in the current space, sorted by depth, and calls their `paint()` methods if visible.
+- The view is tightly integrated with the game model and input system, supporting overlays, on-screen controls, and UI.
+
+### References
+
+- See [`src/bmsx/glview.ts`](src/bmsx/glview.ts) for the WebGL renderer and CRT effects.
+- See [`src/bmsx/view.ts`](src/bmsx/view.ts) for the base view, drawing API, and layout management.
+- See [`src/bmsx/game.ts`](src/bmsx/game.ts) and [`src/bmsx/basemodel.ts`](src/bmsx/basemodel.ts) for integration with the game model and object system.
+
+### Sprites and the `drawImg` API
+
+BMSX uses a flexible sprite system for rendering game objects. Sprites are described by the `Sprite` and `SpriteObject` classes, which encapsulate image, position, scale, flipping, color, and more. The main rendering method for sprites is `drawImg`, which is used by both the engine and user code.
+
+#### Sprite System
+- **SpriteObject**: An abstract base class for game objects that are rendered as sprites. It manages flipping, colorizing, and image assignment, and automatically updates hitboxes and polygons based on the current image and flip state.
+- **Sprite**: Encapsulates all rendering options for a sprite, including position (`x`, `y`, `z`), scale, flip, color, and image ID. The `paint()` method draws the sprite at its current position, while `paint_offset(offset)` draws it at an offset.
+- **Integration**: Most game objects that appear on screen inherit from `SpriteObject` and use a `Sprite` for their visual representation.
+- **Hitboxes and Polygons**: Sprites automatically update their hitboxes and polygons based on the current image and flip state, allowing for accurate collision detection and interaction.
+   > The sprite will automatically update its image, flip state, and color when the `Sprite` properties change, ensuring that the visual representation is always in sync with the game logic.
+
+#### `drawImg` Options
+> **Note**: The `Sprite` will automatically draw itself when its `paint()` method is called, which is typically done by the view system during the rendering loop. Therefore, you do not need to call `drawImg` directly for sprites; instead, the game engine handles this for you (via the loop in the `BaseModel`).
+
+The `drawImg` method (see `GLView` and `BaseView`) is the core API for drawing images and sprites. It accepts a `DrawImgOptions` object with the following properties:
+
+- `imgid`: **(string, required)** – The image asset ID to draw (must exist in the texture atlas).
+- `pos`: **({ x, y, z? })** – The position to draw the image. `z` is optional and used for depth sorting.
+- `scale`: **({ x, y })** – The scale factor for the image (default: `{ x: 1, y: 1 }`).
+- `flip`: **({ flip_h, flip_v })** – Whether to flip the image horizontally or vertically (default: both false).
+- `colorize`: **({ r, g, b, a })** – RGBA color multiplier for tinting the sprite (default: white, fully opaque).
+
+Example:
+```typescript
+$.view.drawImg({
+  imgid: 'enemy',
+  pos: { x: 200, y: 120, z: 5 },
+  scale: { x: 1.5, y: 1.5 },
+  flip: { flip_h: true, flip_v: false },
+  colorize: { r: 1, g: 0.5, b: 0.5, a: 1 },
+});
+```
+
+- All options are deeply cloned internally to avoid side effects.
+- If the image ID is not found, an error is thrown.
+- The `z` value is used for depth sorting in the WebGL renderer.
+
+#### Sprite Rendering Flow
+- Sprites are queued for drawing each frame via `drawImg`.
+- The renderer sorts sprites by `z` (depth) and batches them for efficient GPU rendering.
+- Flipping, scaling, and colorizing are handled in the shader using the options provided.
+- Sprite hitboxes and polygons are automatically updated when the image or flip state changes.
+
+#### See Also
+- [`src/bmsx/sprite.ts`](src/bmsx/sprite.ts) for the sprite and sprite object classes.
+- [`src/bmsx/glview.ts`](src/bmsx/glview.ts) for the `drawImg` implementation and batching.
+- [`src/bmsx/view.ts`](src/bmsx/view.ts) for the drawing API and 2D fallback.
+
+---
