@@ -73,14 +73,22 @@ function parseOptions(args: string[]): RomPackerOptions & { useTextureAtlas: boo
 		useTextureAtlas = val === 'yes' || val === 'true' || val === '1';
 	}
 
+	const rom_name = getParamOrEnv(args, '-romname', 'ROM_NAME', null);
+	const title = getParamOrEnv(args, '-title', 'TITLE', rom_name);
+	const bootloader_path = getParamOrEnv(args, '-bootloaderpath', 'BOOTLOADER_PATH', rom_name ? `./src/${rom_name}` : null);
+	const respath = getParamOrEnv(args, '-respath', 'RES_PATH', rom_name ? `./src/${rom_name}/res` : null);
+	const force = args.includes('--force');
+	const buildreslist = args.includes('--buildreslist');
+	const deploy = !args.includes('--nodeploy');
+
 	return {
-		rom_name: getParamOrEnv(args, '-romname', 'ROM_NAME', null)?.toLowerCase(),
-		title: getParamOrEnv(args, '-title', 'TITLE', null),
-		bootloader_path: getParamOrEnv(args, '-bootloaderpath', 'BOOTLOADER_PATH', null),
-		respath: getParamOrEnv(args, '-respath', 'RES_PATH', null),
-		force: args.includes('--force'),
-		buildreslist: args.includes('--buildreslist'),
-		deploy: !args.includes('--nodeploy'),
+		rom_name,
+		title,
+		bootloader_path,
+		respath,
+		force,
+		buildreslist,
+		deploy,
 		useTextureAtlas
 	};
 }

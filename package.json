@@ -2,7 +2,6 @@
   "name": "bmsx",
   "version": "1.0.0",
   "description": "",
-  "main": "gulpfile.js",
   "dependencies": {
     "blob": "*",
     "node-fetch": "*",
@@ -47,12 +46,12 @@
     "typescript": "^5.8.3"
   },
   "scripts": {
-    "build:rom": "npx tsc scripts/rom.ts --removeComments -m commonjs -t ES2017 --outDir rom",
-    "build:rompacker": "npx tsc scripts/rompacker.ts --removeComments --target ES5 --outDir rom",
-    "pack:resources": "node rom/rompacker.js --buildreslist",
-    "build:game": "node rom/rompacker.js -romname $ROMTOBUILD -bootloaderpath src/$ROMTOBUILD -respath ./src/$ROMTOBUILD/res -title $ROMTOBUILD --nodeploy",
-    "build:force": "node rom/rompacker.js -romname $ROMTOBUILD -bootloaderpath src/$ROMTOBUILD -respath ./src/$ROMTOBUILD/res -title $ROMTOBUILD --nodeploy --force",
-    "build:all": "npm run build:rom && npm run build:rompacker && npm run pack:resources && npm run build:game"
+    "build:game": "npx tsx scripts/rompacker.ts --nodeploy -romname testrom",
+    "build:all": "npm run pack:resources && npm run build:force",
+    "build:force": "npx tsx scripts/rompacker.ts --nodeploy --force -romname testrom",
+    "pack:resources": "npx tsx scripts/rompacker.ts --buildreslist -respath ./src/testrom/res",
+    "build:msxsound": "npx tsgo src/bmsx/msxsound2.ts --removeComments --target ES5",
+    "Watch!": "npx tsc --watch --project tsconfig.json"
   },
   "repository": {
     "type": "git",
