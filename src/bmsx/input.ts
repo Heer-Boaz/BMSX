@@ -1474,12 +1474,12 @@ export class PlayerInput {
 	 * @param action - The name of the action.
 	 * @returns The state of the action, including whether it is pressed, consumed, the press time, and the timestamp.
 	 */
-	public getActionState(action: string): ActionState {
-		const inputMap = this.inputMap;
-		if (!inputMap) return { action, pressed: false, justpressed: false, alljustpressed: false, consumed: false, presstime: null, timestamp: undefined };
+       public getActionState(action: string, window?: number): ActionState {
+               const inputMap = this.inputMap;
+               if (!inputMap) return { action, pressed: false, justpressed: false, alljustpressed: false, consumed: false, presstime: null, timestamp: undefined };
 
-		const keyboardKeys = inputMap.keyboard?.[action];
-		const gamepadButtons = inputMap.gamepad?.[action];
+               const keyboardKeys = inputMap.keyboard?.[action];
+               const gamepadButtons = inputMap.gamepad?.[action];
 
 		/**
 		 * Retrieves the state of the specified action, which can be a combination of keyboard keys or gamepad buttons or a single key/button.
@@ -1527,8 +1527,18 @@ export class PlayerInput {
 			return { allPressed, anyJustPressed, allJustPressed, anyConsumed, leastPressTime, recentestTimestamp };
 		};
 
-		const keyboardState = getActionState(keyboardKeys, (key: ButtonId) => this.getButtonState(key, 'keyboard'));
-		const gamepadState = getActionState(gamepadButtons, (button: ButtonId) => this.getButtonState(button, 'gamepad'));
+               const keyboardState = getActionState(
+                       keyboardKeys,
+                       (key: ButtonId) => window !== undefined
+                               ? this.stateManager.getButtonState(key)
+                               : this.getButtonState(key, 'keyboard')
+               );
+               const gamepadState = getActionState(
+                       gamepadButtons,
+                       (button: ButtonId) => window !== undefined
+                               ? this.stateManager.getButtonState(button)
+                               : this.getButtonState(button, 'gamepad')
+               );
 		const minPresstime = Math.min(keyboardState.leastPressTime, gamepadState.leastPressTime);
 		const maxTimestamp = Math.max(keyboardState.recentestTimestamp, gamepadState.recentestTimestamp);
 

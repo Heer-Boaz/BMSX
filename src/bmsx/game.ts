@@ -1063,9 +1063,9 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		return this.input.getPlayerInput(playerIndex).checkActionTriggered(action);
 	}
 
-	public getActionState(playerIndex: number, action: string) {
-		return this.input.getPlayerInput(playerIndex).getActionState(action);
-	}
+       public getActionState(playerIndex: number, action: string, window?: number) {
+               return this.input.getPlayerInput(playerIndex).getActionState(action, window);
+       }
 
 	public getPressedActions(playerIndex: number, query?: ActionStateQuery) {
 		return this.input.getPlayerInput(playerIndex).getPressedActions(query);
