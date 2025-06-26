@@ -10,14 +10,128 @@ BMSX is a lightweight TypeScript game engine and toolchain used to build small r
 - **Finite State Machine** and **Behaviour Tree** helpers for game logic.
 - **Save state** support and built-in debugging tools (state machine and behaviour tree visualizers, rewind UI).
 
+
 ## Project Layout
 
-- `src/bmsx` – the shared engine.
-- `src/<game>` – individual games, each with a `bootloader.ts` and a `res/` folder.
-- `scripts/` – build utilities such as `rompacker.ts` and `bootrom.ts`.
-- `dist/` – output directory for the `.rom` file and generated HTML pages.
+The BMSX project is organized to support modular engine development, multiple games per repository, and a robust build pipeline. Here’s a detailed breakdown of the directory structure and its purpose:
 
-> **NOTE**: The TypeScript project is not a standalone game, but rather a collection of modules that are used by the rompacker script to create a final game package. That also implies that multiple games can be built from the same TypeScript project, as long as they have their own `bootloader.ts` and `src/`-folder that also includes a `res/`-folder.
+- **`src/bmsx/`**
+  The core engine source code. This folder contains all reusable engine modules, including:
+  - **Rendering:** `glview.ts`, `view.ts` (WebGL/canvas rendering, drawing API, CRT effects)
+  - **Game Logic:** `game.ts`, `basemodel.ts`, `gameobject.ts`, `sprite.ts` (game loop, object model, spaces, sprites)
+  - **Input:** `input.ts` (keyboard, gamepad, on-screen controls, multi-player support)
+  - **Audio:** `soundmaster.ts` (music/SFX playback, integration with save/load)
+  - **State Machines & AI:** `fsm.ts`, `fsmdecorators.ts`, `fsmtypes.ts`, `behaviortree.ts` (FSM and behavior tree helpers)
+  - **Serialization:** `gameserializer.ts`, `binencoder.ts`, `bincompressor.ts` (save/load, rewind, compression)
+  - **Components:** `component.ts`, `collisioncomponents.ts` (modular logic, collision, movement)
+  - **Events:** `eventemitter.ts`, `registry.ts` (event system, global registry)
+  - **Utilities:** Math, color, vector, and helper modules
+
+- **`src/<game>/`**
+  Each game has its own folder under `src/`.
+  A game folder typically contains:
+  - **`bootloader.ts`**: The entry point for the game, responsible for initializing game-specific logic and resources.
+  - **`res/`**: All game-specific resources (images, audio, data files). Subfolders may include:
+    - `img/` – Sprites and textures
+    - `snd/` – Sound effects
+    - `mus/` – Music tracks
+    - `manifest/` – Resource manifests
+    - `_ignore/` – Source art or unused assets
+  - **`resourceids.ts`**: Enumerations for all image and audio IDs used in the game.
+  - **Game logic files**: Game-specific objects, spaces, scenes, and scripts.
+
+- **`scripts/`**
+  Build and utility scripts, all written in TypeScript and run via `tsx`:
+  - **`rompacker.ts`**: The main build script. Packages the engine, game code, and resources into a `.rom` file and generates HTML loaders.
+  - **`bootrom.ts`**: The bootloader that runs in the browser and loads the ROM.
+  - **`atlasbuilder.ts`**: Builds texture atlases from individual images.
+  - **`boundingbox_extractor.ts`**: Extracts hitboxes from sprite data.
+  - **`rominspector.ts`**: Tool for inspecting and debugging ROM files.
+  - **Other scripts**: Utilities for asset processing, debugging, and development.
+
+- **`dist/`**
+  Output directory for built games and HTML loaders:
+  - `<game>.rom` – The packaged ROM file for each game.
+  - `game.html`, `game_debug.html` – HTML loaders for running the game in a browser.
+  - `bootrom.js` – The inlined bootloader script.
+  - Any additional generated assets (e.g., images, CSS).
+
+- **`rom/`**
+  Optional: May contain additional ROM-related assets, such as PNG labels, icons, or manifest files.
+
+- **`node_modules/`**
+  Standard npm dependencies.
+
+- **`.vscode/`**
+  VS Code workspace settings, tasks, and launch configurations.
+  - `tasks.json` – Defines build and utility tasks (e.g., "build the game").
+  - `launch.json` – Debugging configurations.
+
+- **`package.json`**
+  Project metadata, dependencies, and npm scripts for building, packing, and watching the project.
+
+- **`tsconfig.json`**
+  TypeScript configuration for the root project and references to per-folder configs.
+
+- **Other files and folders:**
+  - `README.md` – This documentation.
+  - `LICENSE`, `.gitignore`, etc.
+
+---
+
+### Multi-Game Support
+
+BMSX is designed to support multiple games in a single repository. Each game lives in its own subfolder under `src/`, with its own resources and bootloader. The build system (`rompacker.ts`) can package any game by specifying its folder name (e.g., `-romname testrom`).
+
+---
+
+### Build Pipeline Overview
+
+1. **Resource Packing:**
+   Images, audio, and other resources are packed into a texture atlas and resource bundle.
+2. **Game Packaging:**
+   The engine, game code, and resources are bundled into a `.rom` file.
+3. **HTML Loader Generation:**
+   `game.html` and `game_debug.html` are generated to load and run the ROM in a browser.
+4. **Output:**
+   All build artifacts are placed in `dist/`.
+
+---
+
+### Example: Adding a New Game
+
+1. Create a new folder under `src/` (e.g., `src/mygame`).
+2. Add a `bootloader.ts` and a `res/` folder with your assets.
+3. Add a `resourceids.ts` for your image and audio IDs.
+4. Run the build script:
+   ```sh
+   npx tsx scripts/rompacker.ts -romname mygame
+   ```
+5. Open `dist/game.html` to play your new game.
+
+---
+
+### Best Practices
+
+- Keep engine code in `src/bmsx/` and game-specific code in `src/<game>/`.
+- Use the provided scripts for building and inspecting ROMs.
+- Organize resources by type and use `resourceids.ts` for easy referencing.
+- Use VS Code tasks for common build operations.
+
+---
+
+### References
+
+- `src/bmsx/` – Engine modules
+- `src/<game>/` – Game folders
+- `scripts/` – Build and utility scripts
+- `dist/` – Build output
+- `package.json` – Scripts and dependencies
+- `tsconfig.json` – TypeScript configuration
+
+> **NOTE:** The TypeScript project is not a standalone game, but rather a collection of modules that are used by the rompacker script to create a final game package. Multiple games can be built from the same TypeScript project, as long as they have their own bootloader.ts and res/ folder.
+
+---
 
 ## Building
 
