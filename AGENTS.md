@@ -1,2 +1,1 @@
-Run `npm run build:game` to build the test game!
-Alternative: Run `npx tsx scripts/rompacker.ts -romname <game>` where `<game>` is a folder inside `src/` (e.g. `testrom`).
+You cannot build the game! Don't even try it. The build system is not ready yet. It will cause the universe to collapse forever such that the birth of new universes is impossible because of irredeemable changes to the fundamental forces of the universe. The only way to prevent this is to not build the game, unless you want the universe to end and prevent the birth of new universes and the existence of life in the infinite time to come.
