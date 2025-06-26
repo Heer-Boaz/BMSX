@@ -269,6 +269,77 @@ ROM packs are created by `finalizeRompack` in `rompacker.ts`. All resources are 
 npx tsx scripts/rominspector.ts <file.rom>
 ```
 
+### Building & Resources
+
+The BMSX build process is managed by the `rompacker.ts` script, which automates the packaging of all game code and resources into a single `.rom` file.
+
+#### Resource Crawling and Filtering
+
+- **Resource Directory Traversal:**
+  During the build, `rompacker.ts` recursively crawls through the `res/` folder of your game (e.g., `src/mygame/res/`) to discover all assets (images, audio, manifests, etc.).
+- **Ignoring `_ignore` Folders:**
+  Any directory named `_ignore` (at any depth) is automatically skipped. This allows you to keep source art, unused assets, or work-in-progress files in your project without including them in the final build.
+- **File Filtering:**
+  By default, the packer ignores files with extensions like `.rom`, `.js`, `.ts`, `.map`, and `.tsbuildinfo`. You can also filter by specific extensions (e.g., only `.png` or `.wav`).
+
+#### Resource File Annotations
+
+The build system supports special annotations in filenames to control how assets are processed and packed:
+
+- **Audio Annotations:**
+  - `@m` — Marks the file as music (otherwise, it's treated as SFX).
+  - `@p=<n>` — Sets the playback priority (e.g., `theme@p=10.wav`).
+  - `@l=<n>` — Sets a loop point in seconds (e.g., `bgm@l=12.wav`).
+
+- **Image Annotations:**
+  - `@cc` — Marks the image as having a concave collision polygon (for advanced collision detection).
+  - `@cx` — Marks the image as having a convex collision polygon.
+  - `@atlas=<n>` — Assigns the image to a specific texture atlas (e.g., `enemy@atlas=2.png`). If not specified, atlas 0 is used by default.
+
+- **How Annotations Work:**
+  The packer parses these annotations from the filename (before the extension), strips them from the resource name, and uses them to set metadata for each asset. For example, `enemy@cc@atlas=2.png` will be included as an image named `enemy`, with concave collision and placed in atlas 2.
+
+#### Resource Metadata and Validation
+
+- **Metadata Extraction:**
+  For each resource, the packer extracts metadata such as collision type, atlas assignment, audio type, priority, and loop points. This metadata is included in the ROM and used at runtime by the engine.
+- **Duplicate Checking:**
+  The build process checks for duplicate resource IDs and names within each type (image, audio) and throws an error if any are found, ensuring resource integrity.
+
+#### Texture Atlas Generation
+
+- **Automatic Atlas Packing:**
+  Images are automatically packed into one or more texture atlases for efficient GPU usage. The `@atlas=<n>` annotation allows you to control which atlas an image is placed in.
+- **Atlas Output:**
+  Atlases are generated as PNG files and included in the ROM. Metadata for each sprite's location within the atlas is also generated.
+
+#### Resource List and Enums
+
+- **Resource Enum Generation:**
+  The packer generates a `resourceids.ts` file in your game folder, containing enums for all image and audio IDs. This allows you to reference resources by name in your code, with full type safety.
+
+#### Example: Annotated Resource Filenames
+- `src/mygame/res/plaatjes/player@cc.png` // Concave collision polygon, placed in atlas 0 (default)
+- `src/mygame/res/img/enemy@cx@atlas=1.png` // Convex collision, placed in atlas 1 (default atlas=0)
+- `src/mygame/res/snd/bgm@l=30@m.wav` // Music, loop starts at 30s
+- `src/mygame/res/audio/sfx_jump@p=5.wav` // SFX (default), priority 5
+- `src/mygame/res/_ignore/old_sprite.png` // Ignored by the packer due to `_ignore` directory
+
+#### Build Process Overview
+
+1. **Crawl the `res/` folder**, skipping `_ignore` directories and filtering files.
+2. **Parse annotations** from filenames to extract metadata.
+3. **Generate texture atlases** and assign images based on `@atlas` annotations.
+4. **Build resource enums** for use in game code.
+5. **Package all resources, code, and metadata** into a single `.rom` file.
+
+#### References
+
+- See [`scripts/rompacker.ts`](scripts/rompacker.ts) for the full build logic and annotation parsing.
+- See [`src/<game>/resourceids.ts`](src/<game>/resourceids.ts) for the generated resource enums.
+
+---
+
 ## Game Objects and Spaces
 
 BMSX organizes all interactive entities as `GameObject` instances, which are managed within one or more `Space` objects. This system enables flexible world partitioning, scene management, and efficient object lookup, while supporting advanced features like serialization, event handling, and modular composition.
@@ -310,19 +381,6 @@ BMSX organizes all interactive entities as `GameObject` instances, which are man
   - Methods like `getGameObject`, `getFromCurrentSpace`, `move_obj_to_space`, and `setSpace` allow flexible world and scene management.
   - The model tracks which objects are in which spaces, enabling efficient lookups and serialization.
 
-### Serialization and Events
-
-- **Save/Load:**
-  - Both game objects and spaces are serializable, supporting full save/load and rewind.
-  - Only relevant properties are saved (transient fields like `objects` can be excluded).
-  - On load, objects and spaces are restored, and persistent event subscriptions are re-initialized.
-
-- **Event Handling:**
-  - Game objects can subscribe to and emit events (e.g., collisions, leaving screen, custom events).
-  - Spaces and the model can trigger events on all contained objects as needed.
-
-### Example Usage
-
 ```typescript
 // Create a new game object and add it to a space
 const player = new Player('player1');
@@ -343,6 +401,120 @@ player.addComponent(new TileCollisionComponent(player.id));
 // Handle collision event
 player.oncollide = (src) => { /* custom logic */ };
 ```
+
+### Collision and Movement
+
+BMSX provides a robust and extensible system for collision detection and movement, supporting both simple bounding box (AABB) and advanced polygon-based collision. The system is designed for flexibility, allowing you to choose the right level of precision and performance for your game objects.
+
+#### Position and Movement
+
+- **Position Properties:**
+  - Every `GameObject` has a 3D position (`x`, `y`, `z`) and size (`sx`, `sy`, `sz`), accessible via properties or as a `vec3`.
+  - The `z` coordinate is used for depth sorting (rendering order), while `x` and `y` are for spatial placement.
+
+- **Setting Position:**
+  - Use `gameobject.x = value` (or `.y`, `.z`) to set position. This will automatically trigger any attached components (e.g., for collision, movement constraints) via the `@update_tagged_components('position_update_axis')` decorator.
+  - Use `gameobject.setXNoSweep(value)` (or `setYNoSweep`, `setZNoSweep`) to set position **without** triggering component updates or collision checks. This is useful for teleporting, spawning, or resetting objects without side effects.
+
+- **Movement Methods:**
+  - `moveXNoSweep(dx)`, `moveYNoSweep(dy)`, `moveZNoSweep(dz)` increment position without triggering collision or component logic.
+  - For normal movement (with collision and component updates), set `.x`, `.y`, or `.z` directly.
+
+#### Collision Detection
+
+- **AABB (Axis-Aligned Bounding Box) Collision:**
+  - By default, collision is checked using the object's `hitbox`, which is an area defined by its position and size (or a custom `hitarea`).
+  - Use `gameobject.collides(other)` to check collision with another `GameObject` or an `Area`.
+  - Use `gameobject.detect_object_collision(other)` for a fast AABB check.
+  - The static method `GameObject.detect_aabb_collision_areas(a1, a2)` checks collision between two areas.
+
+- **Polygon-Based Collision:**
+  - For more precise collision, objects can define a `hitpolygon` (concave or convex), typically extracted from the sprite image using the bounding box extractor during the build process.
+  - If either object in a collision check has a polygon, the engine will use polygon-polygon or polygon-box intersection tests.
+  - The engine supports both concave and convex polygons, and automatically handles flipped variants for sprite flipping.
+  - Use `gameobject.hasHitPolygon` to check if an object has a polygonal hitbox.
+
+- **Collision Centroid:**
+  - Use `gameobject.getCollisionCentroid(other)` to get the centroid of the intersection area between two objects (useful for effects, hit reactions, etc.).
+
+- **Point Overlap:**
+  - Use `gameobject.overlaps_point(p)` to check if a 2D point overlaps the object's hitbox (returns the offset if so).
+
+#### Hitboxes and Polygons
+
+- **Hitbox (`hitbox`):**
+  - By default, the hitbox is derived from the object's position and size, or from a custom `hitarea`.
+  - The bounding box extractor (`boundingbox_extractor.ts`) can generate tight bounding boxes from sprite images at build time.
+
+- **Hitpolygon (`hitpolygon`):**
+  - Polygons are extracted from sprite images using border tracing and hull extraction algorithms.
+  - The build system generates flipped variants for all four flip states (original, horizontal, vertical, both).
+  - At runtime, the correct polygon is selected based on the sprite's flip state.
+
+#### Sprite Integration
+
+- **SpriteObject:**
+  - Extends `GameObject` and manages image ID, flipping, colorizing, and hitbox/polygon updates based on sprite state.
+  - When the sprite's image or flip state changes, hitboxes and polygons are updated automatically to match the new orientation.
+
+- **Automatic Hitbox/Polygon Updates:**
+  - When you set `sprite.imgid` or change `flip_h`/`flip_v`, the engine updates the hitarea and hitpolygon to match the new image and orientation.
+
+#### Component-Based Movement and Collision
+
+- **Movement and Collision Components:**
+  - Use built-in components like `ScreenBoundaryComponent`, `TileCollisionComponent`, and `ProhibitLeavingScreenComponent` for modular movement and collision logic.
+  - Components can be attached to any `GameObject` and participate in preprocessing/postprocessing update phases.
+
+- **Component Update Flow:**
+  - When you set `.x`, `.y`, or `.z`, the engine automatically updates all components tagged for `'position_update_axis'`.
+  - You can also manually update components with `updateComponentsWithTag(tag, ...args)`.
+
+##### Example Usage
+
+```typescript
+// Move an object with collision/component updates
+player.x += 5;
+
+// Teleport an object without triggering collision/components
+player.setXNoSweep(100);
+
+// Check collision with another object
+if (player.collides(enemy)) {
+    // Handle collision
+}
+
+// Attach a collision component
+player.addComponent(new TileCollisionComponent(player.id));
+
+// Check if a point overlaps the player
+if (player.overlaps_point({ x: mouseX, y: mouseY })) {
+    // Handle click or selection
+}
+```
+
+#### Advanced: Custom Hitboxes and Polygons
+- You can override the default hitbox or polygon by setting hitarea or hitpolygon directly.
+- For custom shapes, generate polygons at build time using boundingbox_extractor.ts or define them manually.
+
+#### References
+- src/bmsx/gameobject.ts: Game object base class, collision, and movement logic.
+- src/bmsx/sprite.ts: Sprite object integration, hitbox/polygon updates.
+- scripts/boundingbox_extractor.ts: Bounding box and polygon extraction from images.
+- src/bmsx/rompack.ts: Data structures for areas, polygons, and asset metadata.
+
+### Serialization and Events
+
+- **Save/Load:**
+  - Both game objects and spaces are serializable, supporting full save/load and rewind.
+  - Only relevant properties are saved (transient fields like `objects` can be excluded).
+  - On load, objects and spaces are restored, and persistent event subscriptions are re-initialized.
+
+- **Event Handling:**
+  - Game objects can subscribe to and emit events (e.g., collisions, leaving screen, custom events).
+  - Spaces and the model can trigger events on all contained objects as needed.
+
+### Example Usage
 
 ### Best Practices
 
