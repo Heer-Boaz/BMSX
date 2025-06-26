@@ -21,6 +21,8 @@ BMSX is a lightweight TypeScript game engine and toolchain used to build small r
 
 ## Building
 
+> **NOTE**: You can run `npm run build:game` to build the test game!
+
 1. Install dependencies with `npm install`. Note that this project uses `tsx` for running TypeScript scripts directly, so you don't need to compile them to JavaScript first.
    If you want to use `tsc` instead, you can run `npm run build` to compile the `rompacker.ts` TypeScript file (and imports) in `scripts/` and run the resulting JavaScript file instead.
 2. Ensure you have `tslib` installed globally, as it is required for the TypeScript runtime. You can install it with:
@@ -36,7 +38,7 @@ Example for building the example game `testrom` which is located in `src/testrom
 ```bash
 npx tsx scripts/rompacker.ts -romname testrom
 ```
-> **WARNING**: Any other attempt at building the TypeScript project (e.g. `tsc` or `npm run build`) will **FAIL**! Always run the rompacker script to generate the `.rom` file and HTML loader.
+> **WARNING**: Any other attempt at building the TypeScript project (e.g. `tsc`) will **FAIL**! Always run the rompacker script to generate the `.rom` file and HTML loader.
 
 ## Running
 
@@ -50,9 +52,484 @@ ROM packs are created by `finalizeRompack` in `rompacker.ts`. All resources are 
 npx tsx scripts/rominspector.ts <file.rom>
 ```
 
+## Game Objects and Spaces
+
+BMSX organizes all interactive entities as `GameObject` instances, which are managed within one or more `Space` objects. This system enables flexible world partitioning, scene management, and efficient object lookup, while supporting advanced features like serialization, event handling, and modular composition.
+
+### Game Objects
+
+- **GameObject Class:**
+  - The core entity type in BMSX, representing anything with a position, size, state, and behavior.
+  - Implements position (`x`, `y`, `z`), size, hitbox, hit polygons, direction, and more.
+  - Supports attaching components for modular behavior (see Component System).
+  - Provides event hooks for collision, leaving screen, spawning, disposal, and more.
+  - Can be extended for custom logic, AI, or rendering (e.g., `SpriteObject`).
+
+- **Properties and Methods:**
+  - `id`: Unique identifier for each object.
+  - `pos`, `size`, `direction`: Spatial properties for movement and collision.
+  - `components`: Map of attached components for modular logic.
+  - `addComponent`, `removeComponent`, `getComponent`: Manage components at runtime.
+  - `onspawn`, `dispose`, `paint`, `collide`, `oncollide`, `onWallcollide`, `onLeaveScreen`, etc.: Lifecycle and event hooks.
+  - `collides`, `detect_object_collision`, `overlaps_point`: Collision detection utilities.
+  - `updateComponentsWithTag(tag, ...)`: Update all components with a given tag (used for preprocessing/postprocessing logic).
+
+- **SpriteObject:**
+  - Extends `GameObject` for entities with visual representation.
+  - Manages image ID, flipping, colorizing, and hitbox/polygon updates based on sprite state.
+  - Integrates with the rendering system for efficient drawing.
+
+### Spaces
+
+- **Space Class:**
+  - Represents a collection of game objects (e.g., a level, room, or scene).
+  - Each space has a unique `id` and manages its own set of objects.
+  - Provides methods to add (`spawn`), remove (`exile`), and clear objects.
+  - Supports sorting objects by depth (`z`) for correct rendering order.
+  - Spaces can be dynamically created, removed, or switched at runtime.
+
+- **BaseModel and World Management:**
+  - The `BaseModel` class manages all spaces and provides APIs to get, move, and query objects across spaces.
+  - Methods like `getGameObject`, `getFromCurrentSpace`, `move_obj_to_space`, and `setSpace` allow flexible world and scene management.
+  - The model tracks which objects are in which spaces, enabling efficient lookups and serialization.
+
+### Serialization and Events
+
+- **Save/Load:**
+  - Both game objects and spaces are serializable, supporting full save/load and rewind.
+  - Only relevant properties are saved (transient fields like `objects` can be excluded).
+  - On load, objects and spaces are restored, and persistent event subscriptions are re-initialized.
+
+- **Event Handling:**
+  - Game objects can subscribe to and emit events (e.g., collisions, leaving screen, custom events).
+  - Spaces and the model can trigger events on all contained objects as needed.
+
+### Example Usage
+
+```typescript
+// Create a new game object and add it to a space
+const player = new Player('player1');
+model.currentSpace.spawn(player, { x: 100, y: 50 });
+
+// Move an object to another space
+model.move_obj_to_space('player1', 'level2');
+
+// Remove an object from the current space
+model.currentSpace.exile(player);
+
+// Get an object by ID (from any space)
+const enemy = model.getGameObject('enemy42');
+
+// Attach a component for collision
+player.addComponent(new TileCollisionComponent(player.id));
+
+// Handle collision event
+player.oncollide = (src) => { /* custom logic */ };
+```
+
+### Best Practices
+
+- Use spaces to partition your world into logical areas (levels, rooms, scenes) for efficient management.
+- Extend `GameObject` or `SpriteObject` for custom entities, and use components for modular behavior.
+- Use the model's APIs to move, spawn, or remove objects as gameplay requires.
+- Leverage event hooks and the registry for decoupled, flexible logic.
+- Ensure each object has a unique `id` and is properly registered for serialization and event handling.
+
+### References
+
+- See [`src/bmsx/gameobject.ts`](src/bmsx/gameobject.ts) for the `GameObject` and `SpriteObject` classes.
+- See [`src/bmsx/basemodel.ts`](src/bmsx/basemodel.ts) for the model, space management, and world APIs.
+- See [`src/bmsx/sprite.ts`](src/bmsx/sprite.ts) for sprite rendering and hitbox logic.
+- See [`src/bmsx/glview.ts`](src/bmsx/glview.ts) for rendering integration.
+- See [`src/bmsx/game.ts`](src/bmsx/game.ts) for overall game loop and object management.
+
+---
+
+## Component System
+
+The BMSX Component System provides a flexible, extensible way to add modular behavior to game objects. Components encapsulate logic such as movement, collision, AI, and more, and can be attached, removed, or updated independently of the main object class. This enables powerful composition and code reuse.
+
+### Key Features
+
+- **Component Architecture:**
+  - All components extend the abstract `Component` class, which provides lifecycle hooks, event subscription, and integration with the registry and serialization.
+  - Components are attached to game objects (which implement `ComponentContainer`) and can be added or removed at runtime.
+  - Each component has a unique `id` (derived from its parent and class name) and a reference to its parent object.
+
+- **Preprocessing and Postprocessing Tags:**
+  - Components can be tagged for specific update phases using the `componenttags_preprocessing` and `componenttags_postprocessing` decorators.
+  - Preprocessing tags allow components to run logic before the main update (e.g., storing old positions).
+  - Postprocessing tags allow components to run logic after the main update (e.g., collision checks, boundary enforcement).
+  - The `update_tagged_components` decorator on game object methods ensures that all components with the relevant tag are updated at the correct time.
+
+- **Auto-Attach and Decorators:**
+  - Use the `attach_components` decorator to automatically add components to all instances of a game object class.
+  - Components can also be added manually at runtime using `addComponent`.
+  - Decorators make it easy to compose objects with common behaviors (e.g., collision, movement, AI) without inheritance.
+
+- **Component API:**
+  - `addComponent(component)` – Attach a component to a game object.
+  - `removeComponent(constructor)` – Remove a component by its class.
+  - `getComponent(constructor)` – Retrieve a component by its class.
+  - `updateComponentsWithTag(tag, ...args)` – Update all components with a given tag.
+
+- **Integration with Serialization and Registry:**
+  - Components are registered in the global registry and are serializable by default (using the `@insavegame` decorator).
+  - On deserialization, components are re-registered and event subscriptions are restored.
+  - Components can be marked as persistent if needed.
+
+- **Collision and Movement Example:**
+  - The engine provides built-in components for collision detection and screen boundaries (see `collisioncomponents.ts`).
+  - Example: `ScreenBoundaryComponent`, `TileCollisionComponent`, and `ProhibitLeavingScreenComponent` handle movement, collision, and boundary enforcement using preprocessing/postprocessing tags and event handlers.
+
+### Example Usage
+
+```typescript
+// Define a custom component
+@insavegame
+class MyComponent extends Component {
+  postprocessingUpdate({ params, returnvalue }) {
+    // Custom logic after main update
+  }
+}
+
+// Attach components to a game object
+const obj = new GameObject('player');
+obj.addComponent(new ScreenBoundaryComponent(obj.id));
+obj.addComponent(new MyComponent(obj.id));
+
+// Use auto-attach decorator
+@attach_components(ScreenBoundaryComponent, TileCollisionComponent)
+class Enemy extends GameObject { ... }
+
+// Update tagged components in your object's update method
+@update_tagged_components('position_update_axis')
+protected setPosX(x: number) { ... }
+```
+
+### Best Practices
+
+- Use components to encapsulate reusable logic (movement, collision, AI, etc.) and avoid deep inheritance hierarchies.
+- Tag components for preprocessing/postprocessing to control update order and dependencies.
+- Use the registry and serialization decorators to ensure components are tracked and saved correctly.
+- Compose game objects with multiple components for rich, modular behavior.
+
+### References
+
+- See [`src/bmsx/component.ts`](src/bmsx/component.ts) for the component base class, decorators, and tagging system.
+- See [`src/bmsx/gameobject.ts`](src/bmsx/gameobject.ts) for how components are managed by game objects.
+- See [`src/bmsx/collisioncomponents.ts`](src/bmsx/collisioncomponents.ts) for built-in movement and collision components.
+
+---
+
+## Graphics and Rendering
+BMSX features a modern, efficient graphics and rendering system designed for retro-style games, with support for both 2D canvas and advanced WebGL rendering. The system is highly extensible, supporting texture atlases, sprite batching, post-processing effects, and flexible view management.
+
+### Key Features
+
+- **WebGL Renderer:**
+  - The `GLView` class provides a high-performance WebGL2 renderer with support for batched sprite rendering, texture atlases, and advanced effects.
+  - Optional CRT-style post-processing effects (scanlines, color bleed, blur, glow, fringing, noise) can be enabled for authentic retro visuals.
+  - Efficient sprite batching and atlas management allow for hundreds of objects to be drawn per frame with minimal overhead.
+
+- **Canvas Renderer:**
+  - The `BaseView` class provides a fallback 2D canvas renderer, supporting all core drawing operations and view management.
+
+- **Texture Atlases:**
+  - All game graphics are packed into one or more texture atlases for efficient GPU usage and fast rendering.
+  - The atlas system supports both static and dynamic atlases, with metadata for each sprite.
+
+- **Flexible Drawing API:**
+  - Draw images, rectangles, polygons, and custom shapes using a unified API (`drawImg`, `drawRectangle`, `drawPolygon`, etc.).
+  - Support for flipping, scaling, colorizing, and layering sprites.
+
+- **View Management:**
+  - The view system automatically handles resizing, fullscreen, and aspect ratio management.
+  - The game can run in windowed or fullscreen mode, with automatic scaling to fit the display.
+  - The view tracks viewport, canvas, and window sizes, and recalculates layout on resize or orientation change.
+
+- **Depth Sorting:**
+  - Objects in each space are sorted by their z-coordinate before drawing, ensuring correct layering and overlap.
+
+- **Component-Based Rendering:**
+  - Each `GameObject` can implement a `paint()` method for custom rendering, and can update render components before drawing.
+
+- **Screen Overlays and UI:**
+  - Built-in support for overlays (pause, resume, fading text) and on-screen gamepad.
+  - Utility functions for adding/removing DOM elements to/from the game screen.
+
+### Example: Drawing a Sprite
+
+```typescript
+$.view.drawImg({
+  imgid: 'player',
+  pos: { x: 100, y: 50 },
+  scale: { x: 2, y: 2 },
+  flip: { flip_h: false, flip_v: false },
+  colorize: { r: 1, g: 1, b: 1, a: 1 },
+});
+```
+
+### Example: Custom Paint Method
+
+```typescript
+class MyObject extends GameObject {
+  paint() {
+    $.view.drawRectangle({
+      area: { start: { x: this.x, y: this.y }, end: { x: this.x + 16, y: this.y + 16 } },
+      color: { r: 1, g: 0, b: 0, a: 1 },
+    });
+  }
+}
+```
+
+### CRT and Post-Processing Effects
+
+- Enable or disable CRT effects via properties on `GLView`:
+  - `applyScanlines`, `applyColorBleed`, `applyBlur`, `applyGlow`, `applyFringing`, `applyNoise`, etc.
+  - Adjust effect intensity and color via properties like `noiseIntensity`, `colorBleed`, `blurIntensity`, `glowColor`.
+- Effects are applied in a post-processing pass after all sprites are drawn.
+
+### Fullscreen and Responsive Layout
+
+- The view system automatically handles window resizing, orientation changes, and fullscreen toggling.
+- The canvas is scaled to fit the available window or device screen, maintaining aspect ratio and pixel-perfect rendering.
+
+### Integration with Game Model
+
+- The view draws all objects in the current space, sorted by depth, and calls their `paint()` methods if visible.
+- The view is tightly integrated with the game model and input system, supporting overlays, on-screen controls, and UI.
+
+### References
+
+- See [`src/bmsx/glview.ts`](src/bmsx/glview.ts) for the WebGL renderer and CRT effects.
+- See [`src/bmsx/view.ts`](src/bmsx/view.ts) for the base view, drawing API, and layout management.
+- See [`src/bmsx/game.ts`](src/bmsx/game.ts) and [`src/bmsx/basemodel.ts`](src/bmsx/basemodel.ts) for integration with the game model and object system.
+
+### Sprites and the `drawImg` API
+
+BMSX uses a simple sprite system for rendering game objects. Sprites are described by the `Sprite` and `SpriteObject` classes, which encapsulate image, position, scale, flipping, color, and more. The main rendering method for sprites is `drawImg`, which is used by both the engine and user code.
+
+#### Sprite System
+- **SpriteObject**: An abstract base class for game objects that are rendered as sprites. It manages flipping, colorizing, and image assignment, and automatically updates hitboxes and polygons based on the current image and flip state.
+- **Sprite**: Encapsulates all rendering options for a sprite, including position (`x`, `y`, `z`), scale, flip, color, and image ID. The `paint()` method draws the sprite at its current position, while `paint_offset(offset)` draws it at an offset.
+- **Integration**: Most game objects that appear on screen inherit from `SpriteObject` and use a `Sprite` for their visual representation.
+- **Hitboxes and Polygons**: Sprites automatically update their hitboxes and polygons based on the current image and flip state, allowing for accurate collision detection and interaction.
+   > The sprite will automatically update its image, flip state, and color when the `Sprite` properties change, ensuring that the visual representation is always in sync with the game logic.
+
+#### `drawImg` Options
+> **Note**: The `Sprite` will automatically draw itself when its `paint()` method is called, which is typically done by the view system during the rendering loop. Therefore, you do not need to call `drawImg` directly for sprites; instead, the game engine handles this for you (via the loop in the `BaseModel`).
+
+The `drawImg` method (see `GLView` and `BaseView`) is the core API for drawing images and sprites. It accepts a `DrawImgOptions` object with the following properties:
+
+- `imgid`: **(string, required)** – The image asset ID to draw (must exist in the texture atlas).
+- `pos`: **({ x, y, z? })** – The position to draw the image. `z` is optional and used for depth sorting.
+- `scale`: **({ x, y })** – The scale factor for the image (default: `{ x: 1, y: 1 }`).
+- `flip`: **({ flip_h, flip_v })** – Whether to flip the image horizontally or vertically (default: both false).
+- `colorize`: **({ r, g, b, a })** – RGBA color multiplier for tinting the sprite (default: white, fully opaque).
+
+Example:
+```typescript
+$.view.drawImg({
+  imgid: 'enemy',
+  pos: { x: 200, y: 120, z: 5 },
+  scale: { x: 1.5, y: 1.5 },
+  flip: { flip_h: true, flip_v: false },
+  colorize: { r: 1, g: 0.5, b: 0.5, a: 1 },
+});
+```
+
+- All options are deeply cloned internally to avoid side effects.
+- If the image ID is not found, an error is thrown.
+- The `z` value is used for depth sorting in the WebGL renderer.
+
+#### Sprite Rendering Flow
+- Sprites are queued for drawing each frame via `drawImg`.
+- The renderer sorts sprites by `z` (depth) and batches them for efficient GPU rendering.
+- Flipping, scaling, and colorizing are handled in the shader using the options provided.
+- Sprite hitboxes and polygons are automatically updated when the image or flip state changes.
+
+#### See Also
+- [`src/bmsx/sprite.ts`](src/bmsx/sprite.ts) for the sprite and sprite object classes.
+- [`src/bmsx/glview.ts`](src/bmsx/glview.ts) for the `drawImg` implementation and batching.
+- [`src/bmsx/view.ts`](src/bmsx/view.ts) for the drawing API and 2D fallback.
+
+---
+
+## Sound and Music
+
+BMSX provides a simple audio system for music and sound effects, supporting playback, pausing, rewinding, and integration with the save/load system. All audio is managed by the `SM` (SoundMaster) class, which handles decoding, playback, and resource management for both music and sound effects (SFX).
+
+### Key Features
+
+- **Audio Resource Management:**
+  - All audio assets are referenced by string IDs, defined in the `AudioId` enum (see `src/ella2023/resourceids.ts` or your game's resourceids file).
+  - Audio resources are packed into the ROM and decoded at runtime.
+  - Both music and SFX are supported, with separate channels and controls.
+
+- **Playback API:**
+  - Use `SM.play(id: string, offset?: number)` to play a sound or music track by its ID. The `offset` parameter (in seconds) allows starting playback from a specific position.
+  - Use `SM.stopEffect()` to stop all SFX, and `SM.stopMusic()` to stop music playback.
+  - The engine ensures only one SFX and one music track play at a time (by default), but this can be customized.
+  - Looping is supported for music tracks with loop points defined in the audio metadata.
+
+- **Volume and Audio Context:**
+  - The global volume can be set via `SM.volume = 0.5` (range: 0.0–1.0).
+  - The audio context is automatically managed and resumed as needed.
+
+- **Playback State and Queries:**
+  - Use `SM.currentTrackByType('music' | 'sfx')` to get the currently playing track ID.
+  - Use `SM.currentTimeByType('music' | 'sfx')` to get the current playback position (in seconds).
+  - Pause and resume all audio with `SM.pause()` and `SM.resume()`.
+
+- **Integration with Save/Load and Rewind:**
+  - The current music/SFX track and playback position are saved as part of the game state (see `Savegame` in `gameserializer.ts`).
+  - When loading or rewinding, the correct track and position are restored automatically.
+
+- **Adding New Audio Resources:**
+  - Add your audio files to the appropriate resource folder and update your game's `resourceids.ts` to include new IDs in the `AudioId` enum.
+  - Reference these IDs in your game logic when calling `SM.play()`.
+
+### Example Usage
+
+```typescript
+// Play a sound effect
+SM.play(AudioId.punch);
+
+// Play background music from the start
+SM.play(AudioId.trainen);
+
+// Stop all sound effects
+SM.stopEffect();
+
+// Stop music
+SM.stopMusic();
+
+// Set volume to 50%
+SM.volume = 0.5;
+
+// Query current music track and position
+const currentTrack = SM.currentTrackByType('music');
+const currentTime = SM.currentTimeByType('music');
+```
+
+### Audio Resource IDs
+
+All audio and music tracks are referenced by string IDs, defined in your game's `resourceids.ts`:
+
+```typescript
+export enum AudioId {
+  none = 'none',
+  gameover = 'gameover',
+  knokken = 'knokken',
+  oei = 'oei',
+  start = 'start',
+  trainen = 'trainen',
+  vernederdans = 'vernederdans',
+  hit1 = 'hit1',
+  hit2 = 'hit2',
+  kick = 'kick',
+  punch = 'punch',
+  stuk = 'stuk',
+}
+```
+
+Use these IDs with the `SM` API to play or stop audio.
+
+### Advanced Features
+
+- **Looping and Offsets:**
+  - Music tracks can define loop points in their metadata for seamless looping.
+  - You can start playback from any offset (in seconds) for advanced effects or resume.
+
+- **Audio in Savegames and Rewind:**
+  - The current audio state (track, offset) is saved and restored with the game state, ensuring seamless audio continuity when loading or rewinding.
+
+- **Error Handling:**
+  - If you attempt to play an unknown audio ID, a warning is logged and playback is skipped.
+
+### References
+
+- See [`src/bmsx/soundmaster.ts`](src/bmsx/soundmaster.ts) for the audio engine implementation.
+- See [`src/ella2023/resourceids.ts`](src/ella2023/resourceids.ts) (or your game's resourceids) for audio IDs.
+- See [`src/bmsx/gameserializer.ts`](src/bmsx/gameserializer.ts) for save/load integration.
+- See [`src/bmsx/game.ts`](src/bmsx/game.ts) for how the audio system is integrated with the main game loop.
+
+---
+
+## Registry
+
+The BMSX `Registry` is a global, type-safe object registry that tracks all game entities (objects, components, systems) by unique identifier. It provides fast lookup, registration, and management of game objects, and is essential for serialization, deserialization, and event management.
+
+### Key Features
+
+- **Centralized Object Management:**
+  - All objects that implement the `Registerable` interface can be registered in the `Registry`.
+  - Each object must have a unique `id` (string or `'model'`).
+  - The registry allows you to look up, register, and deregister objects at runtime.
+
+- **Persistent vs. Non-Persistent Entities:**
+  - Objects can be marked as persistent (`registrypersistent: true`), meaning they survive across save/load cycles and are re-registered after deserialization.
+  - Non-persistent objects are removed from the registry when the game state is cleared or reloaded.
+  - This distinction is important for event subscriptions and systems that must remain active across loads (e.g., input, sound, global managers).
+
+- **API Overview:**
+  - `Registry.instance.get(id)` – Retrieve an object by its identifier.
+  - `Registry.instance.has(id)` – Check if an object is registered.
+  - `Registry.instance.register(entity)` – Register a new object.
+  - `Registry.instance.deregister(id)` – Remove an object by ID or instance.
+  - `Registry.instance.getPersistentEntities()` – Get all persistent entities (for re-registering after load).
+  - `Registry.instance.clear()` – Remove all non-persistent entities from the registry.
+  - `Registry.instance.getRegisteredEntities()` – Get all currently registered entities.
+  - `Registry.instance.getRegisteredEntityIds()` – Get all registered IDs.
+  - `Registry.instance.getRegisteredEntitiesByType(type)` – Get all entities of a given class name.
+  - `Registry.instance.getRegisteredEntityIdsByType(type)` – Get all IDs of a given class name.
+
+- **Integration with Game Model and Serialization:**
+  - The registry is used by the game model to track all active objects.
+  - During save/load, persistent entities are re-registered to ensure event subscriptions and global systems remain functional.
+  - The registry is also used for dependency injection and global lookups (e.g., finding the player, input system, or sound manager).
+
+### Example Usage
+
+```typescript
+// Register a new object
+Registry.instance.register(myObject);
+
+// Retrieve an object by ID
+const obj = Registry.instance.get('player1');
+
+// Check if an object exists
+if (Registry.instance.has('enemy42')) { ... }
+
+// Remove an object
+Registry.instance.deregister('enemy42');
+
+// Get all persistent entities (for re-registering after load)
+const persistent = Registry.instance.getPersistentEntities();
+
+// Clear all non-persistent entities
+Registry.instance.clear();
+```
+
+### Best Practices
+
+- Always assign a unique `id` to each `Registerable` object.
+- Mark global systems and managers as `registrypersistent: true` to ensure they survive save/load cycles.
+- Use the registry for fast lookups and to avoid passing references throughout your codebase.
+- When creating custom systems, consider registering them for easy access and event management.
+
+### References
+
+- See [`src/bmsx/registry.ts`](src/bmsx/registry.ts) for the full implementation and API.
+- See [`src/bmsx/game.ts`](src/bmsx/game.ts) for how the registry is used in the game loop and model.
+- See [`src/bmsx/gameserializer.ts`](src/bmsx/gameserializer.ts) for how persistent entities are handled during save/load.
+
+---
+
 ## State Machine
 
-The BMSX engine includes a powerful state machine system that allows you to define game logic in a structured way. The `State` class provides a base for creating states, while the `StateMachine` class manages transitions and state execution.
+The BMSX engine includes a simple state machine system that allows you to define game logic in a structured way. The `State` class provides a base for creating states, while the `StateMachine` class manages transitions and state execution.
 
 ### Key Features
 - **State Definition**: States can be defined with properties like `on_enter`, `on_exit`, and `on_input` to handle transitions and input processing.
@@ -334,7 +811,7 @@ public static bouw(): StateMachineBlueprint {
 
 ### Device Support, Multi-Player, and Controller Assignment
 
-BMSX supports flexible input from multiple sources and players, with robust runtime device management:
+BMSX supports flexible input from multiple sources and players, with runtime device management:
 
 - **Keyboard Support:**
   - The keyboard can be mapped to any player (default: Player 1).
@@ -522,7 +999,7 @@ if (nextAction?.action === 'jump') {
 
 ## Serializing & Deserializing Game State
 
-BMSX provides a robust, extensible system for saving and loading the entire game state, supporting features like rewind, save slots, and debugging. The system is designed to handle complex object graphs, circular references, and custom serialization logic.
+BMSX provides a simple, extensible system for saving and loading the entire game state, supporting features like rewind, save slots, and debugging. The system is designed to handle complex object graphs, circular references, and custom serialization logic.
 
 ### Key Features
 
@@ -627,136 +1104,106 @@ class MyObject {
 - See [`src/bmsx/debugger/rewindui.ts`](src/bmsx/debugger/rewindui.ts) for the rewind debugger UI.
 
 ---
-## Graphics and Rendering
-BMSX features a modern, efficient graphics and rendering system designed for retro-style games, with support for both 2D canvas and advanced WebGL rendering. The system is highly extensible, supporting texture atlases, sprite batching, post-processing effects, and flexible view management.
 
-### Key Features
+## Event Registry and Emitting
 
-- **WebGL Renderer:**
-  - The `GLView` class provides a high-performance WebGL2 renderer with support for batched sprite rendering, texture atlases, and advanced effects.
-  - Optional CRT-style post-processing effects (scanlines, color bleed, blur, glow, fringing, noise) can be enabled for authentic retro visuals.
-  - Efficient sprite batching and atlas management allow for hundreds of objects to be drawn per frame with minimal overhead.
+BMSX features a robust event system that enables decoupled communication between game objects, systems, and engine components. The event registry is managed by the `EventEmitter` singleton (see `src/bmsx/eventemitter.ts`), which supports flexible event subscription, emission, and deregistration patterns.
 
-- **Canvas Renderer:**
-  - The `BaseView` class provides a fallback 2D canvas renderer, supporting all core drawing operations and view management.
+### Core Concepts
 
-- **Texture Atlases:**
-  - All game graphics are packed into one or more texture atlases for efficient GPU usage and fast rendering.
-  - The atlas system supports both static and dynamic atlases, with metadata for each sprite.
+- **EventEmitter**: Central dispatcher for all events. Registered as a persistent singleton (`id = 'event_emitter'`) in the global registry.
+- **Event Registry**: All event listeners and subscribers are tracked, allowing for efficient event emission and cleanup.
+- **Event Scopes**: Events can be scoped to global, self, parent, or specific emitter IDs, supporting fine-grained control over event delivery.
+- **Subscription Decorators**: Use decorators to declaratively subscribe methods to events with specific scopes (see below).
+- **Automatic Subscription/Unsubscription**: Game objects and components can automatically register and deregister event handlers during their lifecycle (e.g., on spawn/dispose).
 
-- **Flexible Drawing API:**
-  - Draw images, rectangles, polygons, and custom shapes using a unified API (`drawImg`, `drawRectangle`, `drawPolygon`, etc.).
-  - Support for flipping, scaling, colorizing, and layering sprites.
+### Subscribing to Events
 
-- **View Management:**
-  - The view system automatically handles resizing, fullscreen, and aspect ratio management.
-  - The game can run in windowed or fullscreen mode, with automatic scaling to fit the display.
-  - The view tracks viewport, canvas, and window sizes, and recalculates layout on resize or orientation change.
+You can subscribe to events using decorators provided in `eventemitter.ts`:
 
-- **Depth Sorting:**
-  - Objects in each space are sorted by their z-coordinate before drawing, ensuring correct layering and overlap.
+- `@subscribesToGlobalEvent(eventName)`: Listen to an event globally (all emitters).
+- `@subscribesToSelfScopedEvent(eventName)`: Listen to events emitted by the object itself.
+- `@subscribesToParentScopedEvent(eventName)`: Listen to events emitted by the object's parent.
+- `@subscribesToEmitterScopedEvent(eventName, emitter_id)`: Listen to events from a specific emitter by ID.
 
-- **Component-Based Rendering:**
-  - Each `GameObject` can implement a `paint()` method for custom rendering, and can update render components before drawing.
-
-- **Screen Overlays and UI:**
-  - Built-in support for overlays (pause, resume, fading text) and on-screen gamepad.
-  - Utility functions for adding/removing DOM elements to/from the game screen.
-
-### Example: Drawing a Sprite
+Example:
 
 ```typescript
-$.view.drawImg({
-  imgid: 'player',
-  pos: { x: 100, y: 50 },
-  scale: { x: 2, y: 2 },
-  flip: { flip_h: false, flip_v: false },
-  colorize: { r: 1, g: 1, b: 1, a: 1 },
-});
-```
+@subscribesToGlobalEvent('playerDied')
+onPlayerDied(event) {
+    // Handle player death globally
+}
 
-### Example: Custom Paint Method
-
-```typescript
-class MyObject extends GameObject {
-  paint() {
-    $.view.drawRectangle({
-      area: { start: { x: this.x, y: this.y }, end: { x: this.x + 16, y: this.y + 16 } },
-      color: { r: 1, g: 0, b: 0, a: 1 },
-    });
-  }
+@subscribesToSelfScopedEvent('damaged')
+onDamaged(event) {
+    // Handle when this object is damaged
 }
 ```
 
-### CRT and Post-Processing Effects
+### Emitting Events
 
-- Enable or disable CRT effects via properties on `GLView`:
-  - `applyScanlines`, `applyColorBleed`, `applyBlur`, `applyGlow`, `applyFringing`, `applyNoise`, etc.
-  - Adjust effect intensity and color via properties like `noiseIntensity`, `colorBleed`, `blurIntensity`, `glowColor`.
-- Effects are applied in a post-processing pass after all sprites are drawn.
+To emit an event, use the `emit` method on the global game object (`$`):
 
-### Fullscreen and Responsive Layout
+```typescript
+$.emit('eventName', emitter, ...args);
+```
+- `eventName`: The name of the event.
+- `emitter`: The object emitting the event (must implement `Identifiable`).
+- `...args`: Additional arguments passed to listeners.
 
-- The view system automatically handles window resizing, orientation changes, and fullscreen toggling.
-- The canvas is scaled to fit the available window or device screen, maintaining aspect ratio and pixel-perfect rendering.
+Example:
 
-### Integration with Game Model
+```typescript
+$.emit('damaged', this, damageAmount);
+```
 
-- The view draws all objects in the current space, sorted by depth, and calls their `paint()` methods if visible.
-- The view is tightly integrated with the game model and input system, supporting overlays, on-screen controls, and UI.
+You can also use the `@emits_event(eventName)` decorator to automatically emit an event when a method is called.
+
+### Registering and Deregistering Objects
+
+All event subscribers and game objects are registered in the global registry for lookup and event routing. Use the following methods (see `src/bmsx/game.ts`):
+
+- `$.register(obj)`: Register an object (must implement `Registerable`).
+- `$.deregister(objOrId)`: Deregister an object by instance or ID.
+
+Game objects are automatically registered when spawned (see `onspawn` in `gameobject.ts`):
+
+```typescript
+public onspawn(spawningPos?: Vector): void {
+    // ...
+    $.registry.register(this); // Registers the object for event routing
+    this.onLoadSetup();        // Sets up event subscriptions
+    // ...
+}
+```
+
+When disposed, objects should deregister themselves and remove event subscriptions:
+
+```typescript
+public dispose(): void {
+    $.event_emitter.removeSubscriber(this); // Unsubscribe from all events
+    // ...
+}
+```
+
+### Event Handler Lifecycle
+
+- **onspawn**: Registers the object and sets up event subscriptions.
+- **dispose**: Removes all event subscriptions and deregisters the object.
+
+This ensures that event handlers are always up-to-date and that no memory leaks occur from lingering subscriptions.
+
+### Best Practices
+
+- Use decorators to declare event subscriptions for clarity and maintainability.
+- Always deregister objects and remove event subscriptions when disposing of game objects or components.
+- Use event scopes to control which objects receive which events, reducing unnecessary event traffic.
+- Prefer emitting events via `$.emit` for consistency and integration with the registry.
 
 ### References
 
-- See [`src/bmsx/glview.ts`](src/bmsx/glview.ts) for the WebGL renderer and CRT effects.
-- See [`src/bmsx/view.ts`](src/bmsx/view.ts) for the base view, drawing API, and layout management.
-- See [`src/bmsx/game.ts`](src/bmsx/game.ts) and [`src/bmsx/basemodel.ts`](src/bmsx/basemodel.ts) for integration with the game model and object system.
-
-### Sprites and the `drawImg` API
-
-BMSX uses a flexible sprite system for rendering game objects. Sprites are described by the `Sprite` and `SpriteObject` classes, which encapsulate image, position, scale, flipping, color, and more. The main rendering method for sprites is `drawImg`, which is used by both the engine and user code.
-
-#### Sprite System
-- **SpriteObject**: An abstract base class for game objects that are rendered as sprites. It manages flipping, colorizing, and image assignment, and automatically updates hitboxes and polygons based on the current image and flip state.
-- **Sprite**: Encapsulates all rendering options for a sprite, including position (`x`, `y`, `z`), scale, flip, color, and image ID. The `paint()` method draws the sprite at its current position, while `paint_offset(offset)` draws it at an offset.
-- **Integration**: Most game objects that appear on screen inherit from `SpriteObject` and use a `Sprite` for their visual representation.
-- **Hitboxes and Polygons**: Sprites automatically update their hitboxes and polygons based on the current image and flip state, allowing for accurate collision detection and interaction.
-   > The sprite will automatically update its image, flip state, and color when the `Sprite` properties change, ensuring that the visual representation is always in sync with the game logic.
-
-#### `drawImg` Options
-> **Note**: The `Sprite` will automatically draw itself when its `paint()` method is called, which is typically done by the view system during the rendering loop. Therefore, you do not need to call `drawImg` directly for sprites; instead, the game engine handles this for you (via the loop in the `BaseModel`).
-
-The `drawImg` method (see `GLView` and `BaseView`) is the core API for drawing images and sprites. It accepts a `DrawImgOptions` object with the following properties:
-
-- `imgid`: **(string, required)** – The image asset ID to draw (must exist in the texture atlas).
-- `pos`: **({ x, y, z? })** – The position to draw the image. `z` is optional and used for depth sorting.
-- `scale`: **({ x, y })** – The scale factor for the image (default: `{ x: 1, y: 1 }`).
-- `flip`: **({ flip_h, flip_v })** – Whether to flip the image horizontally or vertically (default: both false).
-- `colorize`: **({ r, g, b, a })** – RGBA color multiplier for tinting the sprite (default: white, fully opaque).
-
-Example:
-```typescript
-$.view.drawImg({
-  imgid: 'enemy',
-  pos: { x: 200, y: 120, z: 5 },
-  scale: { x: 1.5, y: 1.5 },
-  flip: { flip_h: true, flip_v: false },
-  colorize: { r: 1, g: 0.5, b: 0.5, a: 1 },
-});
-```
-
-- All options are deeply cloned internally to avoid side effects.
-- If the image ID is not found, an error is thrown.
-- The `z` value is used for depth sorting in the WebGL renderer.
-
-#### Sprite Rendering Flow
-- Sprites are queued for drawing each frame via `drawImg`.
-- The renderer sorts sprites by `z` (depth) and batches them for efficient GPU rendering.
-- Flipping, scaling, and colorizing are handled in the shader using the options provided.
-- Sprite hitboxes and polygons are automatically updated when the image or flip state changes.
-
-#### See Also
-- [`src/bmsx/sprite.ts`](src/bmsx/sprite.ts) for the sprite and sprite object classes.
-- [`src/bmsx/glview.ts`](src/bmsx/glview.ts) for the `drawImg` implementation and batching.
-- [`src/bmsx/view.ts`](src/bmsx/view.ts) for the drawing API and 2D fallback.
+- [`src/bmsx/eventemitter.ts`](src/bmsx/eventemitter.ts): Event system implementation, decorators, and API.
+- [`src/bmsx/game.ts`](src/bmsx/game.ts): Game API for registering, deregistering, and emitting events.
+- [`src/bmsx/gameobject.ts`](src/bmsx/gameobject.ts): Game object lifecycle, including `onspawn` and `dispose`.
 
 ---
