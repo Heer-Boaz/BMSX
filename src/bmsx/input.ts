@@ -171,7 +171,7 @@ export interface InputMap {
  * Represents a keyboard button.
  * It can be one of the predefined keys or a custom string.
  */
-export type KeyboardButton = string;
+export type KeyboardButton = string | GamepadButton;
 
 /**
  * Represents a gamepad button.
@@ -197,8 +197,7 @@ type InputEvent = {
 	eventType: 'press' | 'release';
 	identifier: ButtonId; // Key code or button name
 	timestamp: number;
-	source: 'keyboard' | 'gamepad' | 'onscreen';
-	playerIndex: number;
+	consumed: boolean;
 };
 
 /**
@@ -548,29 +547,10 @@ class InputStateManager {
 	 * Represents the input buffer used for processing input data.
 	 * @type {InputBuffer}
 	 */
-	private inputBuffer: InputBuffer;
-	/**
-	 * Buffer holding queued actions. Actions are ordered by priority so that
-	 * high priority actions can override previously queued ones.
-	 */
-	private actionBuffer: ActionBuffer;
-	/**
-	 * A map that holds the states of buttons.
-	 *
-	 * The keys can be either a string or a number, representing the identifier of the button.
-	 * The values are of type `ButtonState`, which encapsulates the current state of the button.
-	 *
-	 * @type {Map<ButtonId, ButtonState>}
-	 */
-	private buttonStates: Map<ButtonId, ButtonState> = new Map();
+	private inputBuffer: InputEvent[];
 
-	/**
-	 * Creates an instance of the class.
-	 * @param playerIndex - The index of the player.
-	 */
-	constructor(private playerIndex: number) {
-		this.inputBuffer = new InputBuffer();
-		this.actionBuffer = new ActionBuffer();
+	constructor(public bufferDuration: number = 1000) {
+		this.inputBuffer = [];
 	}
 
 	/**
@@ -585,71 +565,8 @@ class InputStateManager {
 	 *                      events.
 	 */
 	update(currentTime: number): void {
-		// Process input events
-		this.processInputEvents(currentTime);
-
-		// Update presstime for pressed buttons
-		this.buttonStates.forEach((state) => {
-			if (state.pressed) {
-				state.presstime = currentTime - (state.timestamp ?? currentTime);
-			} else {
-				state.presstime = null;
-			}
-		});
-
 		// Clean up old events from the buffers if needed
-		this.inputBuffer.cleanup(currentTime);
-		this.actionBuffer.cleanup(currentTime);
-	}
-
-	/**
-	 * Processes input events for the current player.
-	 *
-	 * This method retrieves events from the input buffer for the specified player index,
-	 * updates the button states based on the event type (press or release), and manages
-	 * the state properties such as pressed, justpressed, and timestamps.
-	 *
-	 * After processing the events, it clears the events from the input buffer to prepare
-	 * for the next set of input events.
-	 *
-	 * @param _currentTime - The current time in milliseconds, used for timestamping events.
-	 *
-	 * @returns void
-	 */
-	private processInputEvents(_currentTime: number): void {
-		const events = this.inputBuffer.getEventsForPlayer(this.playerIndex);
-
-		events.forEach(event => {
-			let state = this.buttonStates.get(event.identifier);
-			if (!state) {
-				state = {
-					pressed: false,
-					justpressed: false,
-					consumed: false,
-					presstime: null,
-					timestamp: null,
-				};
-				this.buttonStates.set(event.identifier, state);
-			}
-
-			if (event.eventType === 'press') {
-				if (!state.pressed) {
-					state.pressed = true;
-					state.justpressed = true;
-					state.timestamp = event.timestamp;
-				} else {
-					state.justpressed = false;
-				}
-			} else if (event.eventType === 'release') {
-				state.pressed = false;
-				state.justpressed = false;
-				state.timestamp = null;
-				state.presstime = null;
-			}
-		});
-
-		// Clear events after processing
-		this.inputBuffer.clearEventsForPlayer(this.playerIndex);
+		this.inputBuffer = this.inputBuffer.filter(event => currentTime - event.timestamp <= this.bufferDuration);
 	}
 
 	/**
@@ -658,7 +575,7 @@ class InputStateManager {
 	 * @param event - The input event to be added.
 	 */
 	addInputEvent(event: InputEvent): void {
-		this.inputBuffer.addEvent(event);
+		this.inputBuffer.push(event);
 	}
 
 	/**
@@ -672,14 +589,30 @@ class InputStateManager {
 	 *  - `presstime`: The duration for which the button has been pressed, or null if not applicable.
 	 *  - `timestamp`: The time at which the button state was last updated, or null if not applicable.
 	 */
-	getButtonState(identifier: ButtonId): ButtonState {
-		return this.buttonStates.get(identifier) || {
-			pressed: false,
-			justpressed: false,
-			consumed: false,
-			presstime: null,
-			timestamp: null,
-		};
+	getButtonState(identifier: ButtonId, timeWindow?: number): ButtonState {
+		const window = timeWindow ?? this.bufferDuration;
+		const currentTime = performance.now();
+
+		// Get the input events from the input buffer so that we can determine the state of the button
+		const inputEvents = this.inputBuffer.filter(event => event.identifier === identifier && (currentTime - event.timestamp <= window));
+		if (inputEvents.length === 0) {
+			return makeButtonState();
+		}
+		const lastEvent = inputEvents[inputEvents.length - 1];
+		const isPressed = lastEvent.eventType === 'press';
+		const isJustPressed = isPressed && (inputEvents.length === 1 || inputEvents[inputEvents.length - 2].eventType === 'release');
+		const pressTime = isPressed ? currentTime - lastEvent.timestamp : null;
+		const timestamp = isPressed ? lastEvent.timestamp : null;
+		const consumed = lastEvent.consumed;
+
+		// Return the button state based on the last event
+		return makeButtonState({
+			pressed: isPressed,
+			justpressed: isJustPressed,
+			consumed: consumed,
+			presstime: pressTime,
+			timestamp: timestamp
+		});
 	}
 
 	/**
@@ -688,121 +621,13 @@ class InputStateManager {
 	 * @param identifier - The unique identifier of the button, which can be a string or a number.
 	 * If the button state exists, it will be marked as consumed.
 	 */
-	consumeButton(identifier: ButtonId): void {
-		const state = this.buttonStates.get(identifier);
-		if (state) {
-			state.consumed = true;
+	consumeBufferedEvent(identifier: ButtonId): void {
+		const inputEvents = this.inputBuffer.filter(event => event.identifier === identifier);
+		if (inputEvents.length > 0) {
+			inputEvents.forEach(event => {
+				event.consumed = true;
+			});
 		}
-	}
-
-	/**
-	 * Queues an action for this player. Higher priority actions are placed
-	 * before lower priority ones, allowing important actions such as dodges
-	 * to override queued attacks.
-	 *
-	 * @param action - The name of the action to queue.
-	 * @param priority - Optional priority value, higher means more important.
-	 * @param timestamp - Timestamp of the queue event, defaults to now.
-	 */
-	queueAction(action: string, priority = 0, timestamp = performance.now()): void {
-		this.actionBuffer.queueAction(action, priority, timestamp);
-	}
-
-	/**
-	 * Returns the highest priority queued action without removing it from
-	 * the buffer.
-	 */
-	peekQueuedAction(): QueuedAction | null {
-		return this.actionBuffer.peek();
-	}
-
-	/**
-	 * Retrieves and removes the highest priority action from the buffer.
-	 */
-	consumeQueuedAction(): QueuedAction | null {
-		return this.actionBuffer.consume();
-	}
-}
-
-class InputBuffer {
-	private events: InputEvent[] = [];
-	private bufferDuration: number; // e.g., 200ms
-
-	constructor(bufferDuration: number = 200) {
-		this.bufferDuration = bufferDuration;
-	}
-
-	addEvent(event: InputEvent): void {
-		this.events.push(event);
-	}
-
-	getEventsForPlayer(playerIndex: number): InputEvent[] {
-		return this.events.filter(event => event.playerIndex === playerIndex);
-	}
-
-	clearEventsForPlayer(playerIndex: number): void {
-		this.events = this.events.filter(event => event.playerIndex !== playerIndex);
-	}
-
-	cleanup(currentTime: number): void {
-		this.events = this.events.filter(event => currentTime - event.timestamp <= this.bufferDuration);
-	}
-}
-
-/**
- * Represents an action queued by the player. Each action can have an
- * associated priority; higher priority actions will be processed first.
- */
-type QueuedAction = {
-	action: string;
-	priority: number;
-	timestamp: number;
-};
-
-// @ts-ignore
-class ActionBuffer {
-	private actions: QueuedAction[] = [];
-	private bufferDuration: number;
-
-	constructor(bufferDuration: number = 200) {
-		this.bufferDuration = bufferDuration;
-	}
-
-	/**
-	 * Adds an action to the buffer. Actions are sorted so that higher
-	 * priority actions appear first, with older actions of the same
-	 * priority processed before newer ones.
-	 */
-	queueAction(action: string, priority = 0, timestamp = performance.now()): void {
-		this.actions.push({ action, priority, timestamp });
-		this.actions.sort((a, b) => {
-			if (b.priority === a.priority) {
-				return a.timestamp - b.timestamp;
-			}
-			return b.priority - a.priority;
-		});
-	}
-
-	/** Returns the highest priority action without removing it. */
-	peek(): QueuedAction | null {
-		return this.actions.length > 0 ? this.actions[0] : null;
-	}
-
-	/**
-	 * Removes and returns the highest priority action from the buffer.
-	 */
-	consume(): QueuedAction | null {
-		return this.actions.shift() ?? null;
-	}
-
-	/** Removes old actions from the buffer based on the duration. */
-	cleanup(currentTime: number): void {
-		this.actions = this.actions.filter(a => currentTime - a.timestamp <= this.bufferDuration);
-	}
-
-	/** Clears all queued actions. */
-	clear(): void {
-		this.actions.length = 0;
 	}
 }
 
@@ -1386,11 +1211,6 @@ export class Input implements RegisterablePersistent {
  */
 export class PlayerInput {
 	/**
-	 * The index of the player whose input is being handled.
-	 */
-	public playerIndex: number;
-
-	/**
 	 * Represents the input handlers for the player.
 	 *
 	 * @property {IInputHandler | null} keyboard - The handler for keyboard input, or null if not set.
@@ -1494,7 +1314,7 @@ export class PlayerInput {
 		 *  - `leastPressTime`: The minimum press time among the specified keys/buttons, or `null` if none are pressed.
 		 *  - `recentestTimestamp`: The maximum timestamp among the specified keys/buttons, or `null` if none are pressed.
 		 */
-		const getActionState = (keys_or_buttons: ButtonId[], getStateFunc: (key: ButtonId) => ButtonState) => {
+		const getStates = (keys_or_buttons: ButtonId[], getStateFunc: (key: ButtonId) => ButtonState) => {
 			let allPressed = true;
 			let allJustPressed = true;
 			let anyJustPressed = false;
@@ -1527,13 +1347,13 @@ export class PlayerInput {
 			return { allPressed, anyJustPressed, allJustPressed, anyConsumed, leastPressTime, recentestTimestamp };
 		};
 
-		const keyboardState = getActionState(
+		const keyboardState = getStates(
 			keyboardKeys,
 			(key: ButtonId) => window !== undefined
 				? this.stateManager.getButtonState(key)
 				: this.getButtonState(key, 'keyboard')
 		);
-		const gamepadState = getActionState(
+		const gamepadState = getStates(
 			gamepadButtons,
 			(button: ButtonId) => window !== undefined
 				? this.stateManager.getButtonState(button)
@@ -1570,11 +1390,20 @@ export class PlayerInput {
 		for (const action in inputMap.keyboard ?? inputMap.gamepad) {
 			if (query?.filter && !query.filter.includes(action)) continue; // Skip actions that are not in the filter
 			const actionState = this.getActionState(action);
-			// Check if the action state matches the query
-			if (actionState.pressed === (query?.pressed ?? true) &&
-				actionState.justpressed === (query?.justPressed ?? false) &&
-				actionState.consumed === (query?.consumed ?? false) &&
-				actionState.presstime >= (query?.pressTime ?? 0)) {
+			// Check if the just pressed state matches the query, but only if the query explicitly specifies that justPressed should be true
+			const justPressedMatches = (query?.justPressed === true)
+				? actionState.justpressed === true
+				: true;
+			// Check if the consumed state matches the query, but only if the query explicitly specifies that consumed should be false
+			const consumedMatches = (query?.consumed === false)
+				? actionState.consumed === false
+				: true;
+			if (
+				actionState.pressed === (query?.pressed ?? true) &&
+				justPressedMatches &&
+				consumedMatches &&
+				actionState.presstime >= (query?.pressTime ?? 0)
+			) {
 				pressedActions.push(actionState);
 			}
 		}
@@ -1611,8 +1440,12 @@ export class PlayerInput {
 			if (!keysOrButtons) continue;
 			keysOrButtons
 				.filter(key => this.inputHandlers[source].getButtonState(key).pressed)
-				.forEach(key => this.inputHandlers[source].consumeButton(key));
+				.forEach(key => {
+					this.inputHandlers[source].consumeButton(key);
+					this.stateManager.consumeBufferedEvent(key);
+				});
 		}
+
 	}
 
 	/**
@@ -1693,36 +1526,61 @@ export class PlayerInput {
 	 */
 	pollInput(): void {
 		for (const source in this.inputHandlers) {
-			const handler = this.inputHandlers[source];
+			const handler: InputHandler = this.inputHandlers[source];
 			if (!handler) continue;
 			handler.pollInput();
 
-			for (const button of Input.BUTTON_IDS) {
-				const state = handler.getButtonState(button);
-				const prev = this.previousStates[source][button] ?? false;
-				const timestamp = performance.now();
+			if (source === 'gamepad' || source === 'onscreengamepad') {
+				for (const button of Input.BUTTON_IDS) {
+					const state = handler.getButtonState(button);
+					const prev = this.previousStates[source][button] ?? false;
 
-				if (state.justpressed) {
-					this.stateManager.addInputEvent({
-						eventType: 'press',
-						identifier: button,
-						timestamp,
-						source: source as 'keyboard' | 'gamepad',
-						playerIndex: this.playerIndex,
-					});
+					if (state.justpressed) {
+						this.stateManager.addInputEvent({
+							eventType: 'press',
+							identifier: button,
+							timestamp: state.timestamp,
+							consumed: false,
+						});
+					}
+
+					if (!state.pressed && prev) {
+						this.stateManager.addInputEvent({
+							eventType: 'release',
+							identifier: button,
+							timestamp: state.timestamp,
+							consumed: false,
+						});
+					}
+
+					this.previousStates[source][button] = state.pressed;
 				}
+			}
+			else if (source === 'keyboard') {
+				for (const key of Object.keys((handler as KeyboardInput).keyStates)) {
+					const state = handler.getButtonState(key);
+					const prev = this.previousStates[source][key] ?? false;
 
-				if (!state.pressed && prev) {
-					this.stateManager.addInputEvent({
-						eventType: 'release',
-						identifier: button,
-						timestamp,
-						source: source as 'keyboard' | 'gamepad',
-						playerIndex: this.playerIndex,
-					});
+					if (state.justpressed) {
+						this.stateManager.addInputEvent({
+							eventType: 'press',
+							identifier: key,
+							timestamp: state.timestamp,
+							consumed: false,
+						});
+					}
+
+					if (!state.pressed && prev) {
+						this.stateManager.addInputEvent({
+							eventType: 'release',
+							identifier: key,
+							timestamp: state.timestamp,
+							consumed: false,
+						});
+					}
+
+					this.previousStates[source][key] = state.pressed;
 				}
-
-				this.previousStates[source][button] = state.pressed;
 			}
 		}
 	}
@@ -1735,9 +1593,9 @@ export class PlayerInput {
 	/**
 	 * Initializes the input system.
 	 */
-	public constructor(playerIndex: number) {
+	public constructor(public playerIndex: number) {
 		this.playerIndex = playerIndex;
-		this.stateManager = new InputStateManager(playerIndex);
+		this.stateManager = new InputStateManager();
 		this.inputHandlers['gamepad'] = null; // Gamepad should be null by default, and set to a value when a gamepad is connected and assigned to this player
 		this.reset();
 
@@ -1860,6 +1718,11 @@ class KeyboardInput implements InputHandler {
 	 */
 	public consumeButton(key: string): void {
 		this.gamepadButtonStates[key].consumed = true;
+		// Use the constant to map keyboard keys to gamepad buttons
+		const keyMappedToCorrespondingGamepadButtonId = Input.KEYBOARDKEY2GAMEPADBUTTON[key];
+		if (keyMappedToCorrespondingGamepadButtonId) {
+			this.gamepadButtonStates[keyMappedToCorrespondingGamepadButtonId].consumed = true;
+		}
 	}
 
 	/**
@@ -1872,6 +1735,9 @@ class KeyboardInput implements InputHandler {
 	public getButtonState(key: string): ButtonState {
 		if (key === null) return makeButtonState();
 		return getPressedState(this.gamepadButtonStates, key);
+		// const convertedKey = Input.KEYBOARDKEY2GAMEPADBUTTON[key] ? Input.KEYBOARDKEY2GAMEPADBUTTON[key] : key;
+
+		// return getPressedState(this.gamepadButtonStates, convertedKey);
 	}
 
 	/**

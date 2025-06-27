@@ -1327,8 +1327,8 @@ BMSX supports flexible input from multiple sources and players, with runtime dev
 
 - **Multi-Player Input Access:**
   - Use the main game API to access input for any player:
+    - `$.getActionState(playerIndex, action)`
     - `$.getPressedActions(playerIndex, query)`
-    - `$.checkActionTriggered(playerIndex, action)`
     - `$.consumeAction(playerIndex, action)`
     - `$.setInputMap(playerIndex, inputMap)`
   - The `Input` singleton also provides `getPlayerInput(playerIndex)` to access the `PlayerInput` instance for a given player (1–4).
@@ -1362,10 +1362,7 @@ The `InputStateManager` tracks a short, rolling history of button events for eac
 
 - **Input Buffering:**
   Button presses and releases are stored for a few frames, allowing the game to "see" inputs that happen just before an action becomes available (e.g., buffering a jump or attack during an animation).
-  However, the implementation does not yet support leveraging this feature, as the `PlayerInput`-class does not currently make use of the `InputStateManager`'s buffering capabilities. This is planned for future versions.
-
-- **Action Queuing:**
-  Not implemented yet, but planned for future versions. This would allow actions to be queued up and executed in sequence, enabling complex move sets and combos.
+  > However, the implementation is crappy and unuseful and awful and makes babies cry.
 
 - **Action Priority:**
   Actions can be prioritized in the following ways:
