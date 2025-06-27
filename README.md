@@ -1077,6 +1077,82 @@ run_checks: [
 
 See `src/bmsx/fsmtypes.ts` for the full type definition and advanced usage patterns.
 
+### The `is` Method in BMSX State Machines
+
+BMSX allows checking the current state of a state machine using the `is` method, which is useful for implementing conditional logic, branching behaviors, and debugging.
+
+#### The `is` Method: Evaluation and Semantics
+
+- The `is` method is available on both the `StateMachineController` (usually as `object.sc`) and on individual `State` instances.
+- It checks whether the current state (or substate) matches a given path or identifier.
+- The method supports both simple state IDs and hierarchical dot-separated paths (e.g., `jump._jump_up`, `main.attack.combo`).
+- The check is always performed against the **current state path** of the state machine or substate machine, traversing the hierarchy as needed.
+- Returns `true` if the current state path matches the provided path, `false` otherwise.
+- If the path is ambiguous or the state/machine does not exist, an error is thrown (helping catch typos or invalid checks during development).
+
+##### How `is` is Evaluated
+
+- If you pass a simple state ID (e.g., `'idle'`), it checks if the current state of the current machine matches `'idle'`.
+- If you pass a hierarchical path (e.g., `'jump.jump_up'`), it checks if the current state and all substates match the path from the root down.
+- If you call `is` on a specific state machine (e.g., `object.sc.get_statemachine('player_animation').is('walk')`), it checks the state of that machine only.
+- The method supports relative and absolute paths, including prefixes like `this.`, `parent.`, and `root.` for advanced checks (see FSM docs for details).
+
+##### Usage Examples (Reflecting Actual Evaluation)
+
+```typescript
+// Check if the current state of the main (default) machine is 'idle'
+if (object.sc.is('idle')) {
+    // The current state is exactly 'idle' in the current machine
+}
+
+// Check if the current state is a specific substate (e.g., during a jump phase)
+if (object.sc.is('jump.jump_up')) {
+    // The current state is 'jump', and its substate is 'jump_up'
+}
+
+// Check if the current state is any substate of 'jump'
+if (object.sc.is('jump')) {
+    // The current state is 'jump' (regardless of substate)
+}
+
+// Check on a specific state machine by ID (e.g., for animation FSM)
+if (object.sc.get_statemachine('player_animation').is('walk')) {
+    // The animation FSM is currently in the 'walk' state
+}
+
+// Example from Eila's FSM: check if not in certain states before switching
+if (!this.sc.is('stoerheidsdans') && !this.sc.is('nagenieten') && !this.sc.is('humiliated')) {
+    // Only perform action if not in any of these states
+}
+```
+
+#### Features and Capabilities
+
+- **Hierarchical State Paths:**
+  - Supports dot notation for nested substates (e.g., `jump.jump_up`).
+  - Can check for any depth in the state hierarchy.
+- **Multiple State Machines:**
+  - If you have multiple state machines attached to an object, you can check the state of any machine by ID using `get_statemachine(id).is(...)`.
+- **Flexible Context:**
+  - The `is` method can be called on the controller (`sc`) or directly on a `State` instance for fine-grained checks.
+- **Error Handling:**
+  - Throws an error if the specified machine or state does not exist, helping catch typos or invalid checks during development.
+- **Integration with FSM Decorators:**
+  - Works seamlessly with FSMs defined and assigned via decorators, supporting both single and multiple FSMs per object.
+
+#### Advanced: Relative and Absolute Paths
+
+- You can use relative or absolute paths to check for states in different machines or substates.
+- Special prefixes (e.g., `this.`, `parent.`, `root.`) can be used for more advanced checks, matching the transition path syntax.
+
+#### Best Practices
+
+- Use the `is` method in your game logic, AI, and animation code to branch behavior based on the current state.
+- Combine with event handlers and transitions for robust, state-driven systems.
+- Use hierarchical paths for fine-grained control in complex FSMs.
+- See [`src/bmsx/fsm.ts`](src/bmsx/fsm.ts) for the implementation of the `is` method and advanced usage patterns.
+- See the FSM section above for more on state machine structure and transitions.
+
 ### Example Usage
 
 ```typescript
