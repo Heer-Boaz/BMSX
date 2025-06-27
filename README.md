@@ -1,5 +1,32 @@
 # BMSX
 
+## Table of Contents
+- [Features](#features)
+- [Project Layout](#project-layout)
+- [game.html](#gamehtml)
+- [Multi-Game Support](#multi-game-support)
+- [Build Pipeline Overview](#build-pipeline-overview)
+- [Example: Adding a New Game](#example-adding-a-new-game)
+- [Best Practices](#best-practices)
+- [References](#references)
+- [Building](#building)
+- [Running](#running)
+- [ROM Pack Structure](#rom-pack-structure)
+- [Building & Resources](#building--resources)
+- [Game Objects and Spaces](#game-objects-and-spaces)
+- [Component System](#component-system)
+- [Graphics and Rendering](#graphics-and-rendering)
+- [Sound and Music](#sound-and-music)
+- [Registry](#registry)
+- [State Machine](#state-machine)
+- [Player Input](#player-input)
+- [Serializing & Deserializing Game State](#serializing--deserializing-game-state)
+- [Event Registry and Emitting](#event-registry-and-emitting)
+
+---
+
+# BMSX
+
 BMSX is a lightweight TypeScript game engine and toolchain used to build small retro-style browser games. Instead of loading assets directly from the web, each game is packaged into a single `.rom` file that contains the engine, game code and resources.
 
 ## Features
@@ -1074,8 +1101,6 @@ run_checks: [
   },
 ],
 ```
-
-See `src/bmsx/fsmtypes.ts` for the full type definition and advanced usage patterns.
 
 ### The `is` Method in BMSX State Machines
 
