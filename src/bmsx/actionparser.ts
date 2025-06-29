@@ -1,13 +1,30 @@
+// CONTEXT
+// In this ActionParser, '?j' and 'aj' mean "any/all just pressed (single frame)".
+// I want to add ONLY the windowed versions '?w{N}' and 'aw{N}'.
+// No zero-argument variant ('?w', 'aw') should exist. Parsing '?w()' or 'aw()' without {N} must throw or fail.
+// The {N} parameter denotes #frames (int), so internally window_ms = N * 1000 / 60.
+
+// TODO:
+// 1. Extend TOKEN_REGEX to match '?w{N}' and 'aw{N}' (where N is a positive integer).
+// 2. Update FUNCTION_TOKENS/parseFunction() to recognize these only with {N}.
+// 3. Parsing '?w(...)' or 'aw(...)' without {N} must throw an error.
+// 4. Implement compileAnyWasPressedFunction(args, N) and compileAllWasPressedFunction(args, N) analogous to '?j' and 'aj'.
+// 5. Existing '?j', 'aj' behavior must not change.
+
+// Example usage:
+// ActionParser.checkActionTriggered("?w{5}(punch, kick)", getActionState) // checks "any punch/kick was pressed within last 5 frames"
+// ActionParser.checkActionTriggered("aw{12}(dodge, special)", getActionState) // checks "all actions were pressed within last 12 frames"
+
 import type { ActionState } from "./input";
 
 // Updated TOKEN_REGEX to include 'aj' modifier
-const TOKEN_REGEX = /\s*(\|\||&&|\?j|[&?]|!?(aj|ic|p|j|c)|(?:t|w|pr)\{[^}]*\}|[a-zA-Z_][a-zA-Z0-9_]*|[<>=!]=?|[!\(\)\[\]\{\},]|!|\S)\s*/g;
+const TOKEN_REGEX = /\s*(\|\||&&|\?j|[&?]|!?(aj|ic|p|j|c)|(?:t|wp|pr)\{[^}]*\}|[a-zA-Z_][a-zA-Z0-9_]*|[<>=!]=?|[!\(\)\[\]\{\},]|!|\S)\s*/g;
 const PRESSTIME_REGEX = /^t\{([^}]+)\}$/;
 const NUMERIC_CONDITION_REGEX = /^(<|>|<=|>=|==|!=)\s*(\d+(\.\d+)?)$/;
 
 interface ASTNode {
 	type: string;
-	evaluate: (getActionState: (actionName: string) => ActionState) => boolean;
+	evaluate: (getActionState: (actionName: string, framewindow?: number) => ActionState) => boolean;
 }
 
 interface ActionNode extends ASTNode {
@@ -76,7 +93,7 @@ export class ActionParser {
 	 */
 	public static checkActionTriggered(
 		actionDefinition: string,
-		getActionState: (actionName: string) => ActionState
+		getActionState: (actionName: string, framewindow?: number) => ActionState
 	): boolean {
 		const parsedAction = this.getParsedAction(actionDefinition);
 		if (!parsedAction) return false;

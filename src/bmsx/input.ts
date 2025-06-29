@@ -137,7 +137,7 @@ function getPressedState(
 	stateMap: KeyOrButtonId2ButtonState,
 	keyOrButtonId: ButtonId
 ): ButtonState {
-	return { pressed: stateMap[keyOrButtonId]?.pressed ?? false, justpressed: stateMap[keyOrButtonId]?.justpressed ?? false, consumed: stateMap[keyOrButtonId]?.consumed ?? false, presstime: stateMap[keyOrButtonId]?.presstime ?? null, timestamp: stateMap[keyOrButtonId]?.timestamp ?? null };
+	return { pressed: stateMap[keyOrButtonId]?.pressed ?? false, justpressed: stateMap[keyOrButtonId]?.justpressed ?? false, consumed: stateMap[keyOrButtonId]?.consumed ?? false, presstime: stateMap[keyOrButtonId]?.presstime ?? null, timestamp: stateMap[keyOrButtonId]?.timestamp ?? null, waspressed: stateMap[keyOrButtonId]?.waspressed ?? false };
 }
 
 /**
@@ -185,6 +185,7 @@ export type GamepadButton = typeof Input.BUTTON_IDS[number];
 export type ButtonState = {
 	pressed: boolean;
 	justpressed: boolean;
+	waspressed: boolean;
 	consumed: boolean;
 	presstime: number | null;
 	timestamp: number | null;
@@ -203,11 +204,16 @@ type InputEvent = {
 /**
  * Represents the state of an action, including the action name and button state.
  */
-export type ActionState = { action: string, alljustpressed: boolean } & ButtonState;
+export type ActionState = { action: string, alljustpressed: boolean, allwaspressed: boolean } & ButtonState;
 
 function makeButtonState(partialState?: Partial<ButtonState>): ButtonState {
-	const { pressed = false, justpressed = false, consumed = false, presstime = null, timestamp = null } = partialState ?? {};
-	return { pressed, justpressed, consumed, presstime, timestamp };
+	const { pressed = false, justpressed = false, waspressed = false, consumed = false, presstime = null, timestamp = performance.now() } = partialState ?? {};
+	return { pressed, justpressed, waspressed, consumed, presstime, timestamp };
+}
+
+function makeActionState(actionname: string, partialState?: Partial<ActionState>): ActionState {
+	const { action = actionname, alljustpressed = false, allwaspressed = false, ...buttonState } = partialState ?? {};
+	return { action, alljustpressed, allwaspressed, ...makeButtonState(buttonState) };
 }
 
 /**
@@ -549,7 +555,19 @@ class InputStateManager {
 	 */
 	private inputBuffer: InputEvent[];
 
-	constructor(public bufferDuration: number = 1000) {
+	public get bufferWindowDuration(): number {
+		return this.toMs(this.bufferframeDuration);
+	}
+
+	private toMs(frames: number) { return frames * 1000 / $.targetFPS; }
+
+	/**
+	 * Constructs an instance of the InputStateManager.
+	 *
+	 * @param bufferframeDuration - The duration in milliseconds for which input events are buffered.
+	 * This value determines how long input events are retained in the buffer before being cleaned up.
+	 */
+	constructor(public bufferframeDuration: number = 6) {
 		this.inputBuffer = [];
 	}
 
@@ -566,7 +584,7 @@ class InputStateManager {
 	 */
 	update(currentTime: number): void {
 		// Clean up old events from the buffers if needed
-		this.inputBuffer = this.inputBuffer.filter(event => currentTime - event.timestamp <= this.bufferDuration);
+		this.inputBuffer = this.inputBuffer.filter(event => currentTime - event.timestamp <= this.bufferWindowDuration);
 	}
 
 	/**
@@ -589,8 +607,10 @@ class InputStateManager {
 	 *  - `presstime`: The duration for which the button has been pressed, or null if not applicable.
 	 *  - `timestamp`: The time at which the button state was last updated, or null if not applicable.
 	 */
-	getButtonState(identifier: ButtonId, timeWindow?: number): ButtonState {
-		const window = timeWindow ?? this.bufferDuration;
+	getButtonState(identifier: ButtonId, framewindow?: number): ButtonState {
+		const window = framewindow !== undefined
+			? this.toMs(framewindow)
+			: this.bufferWindowDuration;
 		const currentTime = performance.now();
 
 		// Get the input events from the input buffer so that we can determine the state of the button
@@ -599,19 +619,24 @@ class InputStateManager {
 			return makeButtonState();
 		}
 		const lastEvent = inputEvents[inputEvents.length - 1];
-		const isPressed = lastEvent.eventType === 'press';
-		const isJustPressed = isPressed && (inputEvents.length === 1 || inputEvents[inputEvents.length - 2].eventType === 'release');
-		const pressTime = isPressed ? currentTime - lastEvent.timestamp : null;
-		const timestamp = isPressed ? lastEvent.timestamp : null;
+		const pressed = lastEvent.eventType === 'press'; // isPressed is true if the last event was a press event, otherwise it is false (i.e. the button was released)
+		// Just pressed is true if the last event was of type `press` and it happened in the current frame
+		const isInCurrentFrame = currentTime - lastEvent.timestamp <= (1000 / $.targetFPS);
+		const justpressed = pressed && isInCurrentFrame;
+		// Was pressed is true of the button was pressed within the window duration, even if it is not pressed anymore
+		const waspressed = inputEvents.some(event => event.eventType === 'press' && (currentTime - event.timestamp <= window));
+		const presstime = pressed ? currentTime - lastEvent.timestamp : null;
+		const timestamp = pressed ? lastEvent.timestamp : null;
 		const consumed = lastEvent.consumed;
 
 		// Return the button state based on the last event
 		return makeButtonState({
-			pressed: isPressed,
-			justpressed: isJustPressed,
-			consumed: consumed,
-			presstime: pressTime,
-			timestamp: timestamp
+			pressed,
+			justpressed,
+			waspressed,
+			consumed,
+			presstime,
+			timestamp
 		});
 	}
 
@@ -1297,7 +1322,7 @@ export class PlayerInput {
 	 */
 	public getActionState(action: string, window?: number): ActionState {
 		const inputMap = this.inputMap;
-		if (!inputMap) return { action, pressed: false, justpressed: false, alljustpressed: false, consumed: false, presstime: null, timestamp: undefined };
+		if (!inputMap) return makeActionState(action);
 
 		const keyboardKeys = inputMap.keyboard?.[action];
 		const gamepadButtons = inputMap.gamepad?.[action];
@@ -1315,10 +1340,12 @@ export class PlayerInput {
 		 *  - `leastPressTime`: The minimum press time among the specified keys/buttons, or `null` if none are pressed.
 		 *  - `recentestTimestamp`: The maximum timestamp among the specified keys/buttons, or `null` if none are pressed.
 		 */
-		const getStates = (keys_or_buttons: ButtonId[], getStateFunc: (key: ButtonId) => ButtonState) => {
+		const getStates = (keys_or_buttons: ButtonId[], getStateFunc: (key: ButtonId, framewindow?: number) => ButtonState) => {
 			let allPressed = true;
 			let allJustPressed = true;
 			let anyJustPressed = false;
+			let allWasPressed = true;
+			let anyWasPressed = false;
 			let anyConsumed = false;
 			let leastPressTime = Infinity;
 			let recentestTimestamp = -Infinity;
@@ -1329,6 +1356,8 @@ export class PlayerInput {
 					allPressed = allPressed && (state?.pressed ?? false);
 					allJustPressed = allJustPressed && (state?.justpressed ?? false);
 					anyJustPressed = anyJustPressed || (state?.justpressed ?? false);
+					allWasPressed = allWasPressed && (state?.waspressed ?? false);
+					anyWasPressed = anyWasPressed || (state?.waspressed ?? false);
 					anyConsumed = anyConsumed || (state?.consumed ?? false);
 					if (state?.presstime) {
 						leastPressTime = Math.min(leastPressTime, state.presstime);
@@ -1338,26 +1367,26 @@ export class PlayerInput {
 					}
 				}
 			} else {
-				allPressed = allJustPressed = false;
+				allPressed = allJustPressed = allWasPressed = false;
 				leastPressTime = recentestTimestamp = null;
 			}
 
 			// Only consider anyJustPressed if all buttons are pressed, because if any button is not pressed then the action is not just pressed
 			anyJustPressed = anyJustPressed && allPressed;
 
-			return { allPressed, anyJustPressed, allJustPressed, anyConsumed, leastPressTime, recentestTimestamp };
+			return { allPressed, anyJustPressed, allJustPressed, anyWasPressed, allWasPressed, anyConsumed, leastPressTime, recentestTimestamp };
 		};
 
 		const keyboardState = getStates(
 			keyboardKeys,
-			(key: ButtonId) => window !== undefined
-				? this.stateManager.getButtonState(key)
+			(key: ButtonId, framewindow?: number) => window !== undefined
+				? this.stateManager.getButtonState(key, framewindow)
 				: this.getButtonState(key, 'keyboard')
 		);
 		const gamepadState = getStates(
 			gamepadButtons,
-			(button: ButtonId) => window !== undefined
-				? this.stateManager.getButtonState(button)
+			(button: ButtonId, framewindow?: number) => window !== undefined
+				? this.stateManager.getButtonState(button, framewindow)
 				: this.getButtonState(button, 'gamepad')
 		);
 		const minPresstime = Math.min(keyboardState.leastPressTime, gamepadState.leastPressTime);
@@ -1368,6 +1397,8 @@ export class PlayerInput {
 			pressed: keyboardState.allPressed || gamepadState.allPressed,
 			justpressed: keyboardState.anyJustPressed || gamepadState.anyJustPressed,
 			alljustpressed: keyboardState.allJustPressed || gamepadState.allJustPressed,
+			waspressed: keyboardState.anyWasPressed || gamepadState.anyWasPressed,
+			allwaspressed: keyboardState.allWasPressed || gamepadState.allWasPressed,
 			consumed: keyboardState.anyConsumed || gamepadState.anyConsumed,
 			presstime: minPresstime === Infinity ? null : minPresstime,
 			timestamp: maxTimestamp === -Infinity ? undefined : maxTimestamp,
@@ -1399,12 +1430,10 @@ export class PlayerInput {
 			const consumedMatches = (query?.consumed === false)
 				? actionState.consumed === false
 				: true;
-			if (
-				actionState.pressed === (query?.pressed ?? true) &&
+			if (actionState.pressed === (query?.pressed ?? true) &&
 				justPressedMatches &&
 				consumedMatches &&
-				actionState.presstime >= (query?.pressTime ?? 0)
-			) {
+				actionState.presstime >= (query?.pressTime ?? 0)) {
 				pressedActions.push(actionState);
 			}
 		}
@@ -1755,7 +1784,7 @@ class KeyboardInput implements InputHandler {
 		Object.keys(this.keyStates).forEach(buttonId => {
 			if (this.keyStates[buttonId].pressed) {
 				// Update the state only if the button is currently pressed
-				newGamepadButtonStates[buttonId] = { pressed: true, presstime: (this.gamepadButtonStates[buttonId]?.presstime ?? 0) + 1, consumed: this.gamepadButtonStates[buttonId]?.consumed ?? false, timestamp: this.gamepadButtonStates[buttonId]?.timestamp ?? performance.now(), justpressed: (this.gamepadButtonStates[buttonId]?.presstime ?? 0) === 0 };
+				newGamepadButtonStates[buttonId] = makeButtonState({ pressed: true, presstime: (this.gamepadButtonStates[buttonId]?.presstime ?? 0) + 1, consumed: this.gamepadButtonStates[buttonId]?.consumed ?? false, timestamp: this.gamepadButtonStates[buttonId]?.timestamp ?? performance.now(), justpressed: (this.gamepadButtonStates[buttonId]?.presstime ?? 0) === 0 });
 			} else {
 				newGamepadButtonStates[buttonId] = { ...defaultState };
 			}
@@ -1791,8 +1820,7 @@ class KeyboardInput implements InputHandler {
 	keyup(key_code: KeyboardButtonId | string): void {
 		if (!this.keyStates[key_code]) return;
 
-		this.keyStates[key_code].pressed = this.keyStates[key_code].consumed = this.keyStates[key_code].justpressed = false;
-		this.keyStates[key_code].presstime = this.keyStates[key_code].timestamp = null;
+		this.keyStates[key_code] = makeButtonState();
 	}
 
 	/**
@@ -1927,6 +1955,7 @@ class GamepadInput implements InputHandler {
 			} else {
 				// Reset the button state if it is not pressed
 				this.gamepadButtonStates[buttonId] = makeButtonState();
+				this.gamepadButtonStates[buttonId].timestamp = performance.now(); // Update the timestamp to the current time
 			}
 		}
 	}
@@ -1960,7 +1989,7 @@ class GamepadInput implements InputHandler {
 				state.pressed = false;
 				state.consumed = false;
 				state.presstime = null;
-				state.timestamp = null;
+				state.timestamp = performance.now();
 			});
 		}
 		else {
