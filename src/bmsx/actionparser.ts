@@ -1,24 +1,7 @@
-// CONTEXT
-// In this ActionParser, '?j' and 'aj' mean "any/all just pressed (single frame)".
-// I want to add ONLY the windowed versions '?w{N}' and 'aw{N}'.
-// No zero-argument variant ('?w', 'aw') should exist. Parsing '?w()' or 'aw()' without {N} must throw or fail.
-// The {N} parameter denotes #frames (int), so internally window_ms = N * 1000 / 60.
-
-// TODO:
-// 1. Extend TOKEN_REGEX to match '?w{N}' and 'aw{N}' (where N is a positive integer).
-// 2. Update FUNCTION_TOKENS/parseFunction() to recognize these only with {N}.
-// 3. Parsing '?w(...)' or 'aw(...)' without {N} must throw an error.
-// 4. Implement compileAnyWasPressedFunction(args, N) and compileAllWasPressedFunction(args, N) analogous to '?j' and 'aj'.
-// 5. Existing '?j', 'aj' behavior must not change.
-
-// Example usage:
-// ActionParser.checkActionTriggered("?w{5}(punch, kick)", getActionState) // checks "any punch/kick was pressed within last 5 frames"
-// ActionParser.checkActionTriggered("aw{12}(dodge, special)", getActionState) // checks "all actions were pressed within last 12 frames"
-
 import type { ActionState } from "./input";
 
-// Updated TOKEN_REGEX to include 'aj' modifier
-const TOKEN_REGEX = /\s*(\|\||&&|\?j|[&?]|!?(aj|ic|p|j|c)|(?:t|wp|pr)\{[^}]*\}|[a-zA-Z_][a-zA-Z0-9_]*|[<>=!]=?|[!\(\)\[\]\{\},]|!|\S)\s*/g;
+// Updated TOKEN_REGEX to ensure action names like 'punch' and 'kick' are not split into single-letter tokens
+const TOKEN_REGEX = /\s*(\|\||&&|\?j|\?w\{\d+\}|aw\{\d+\}|(?:t|wp|pr)\{[^}]*\}|[a-zA-Z_][a-zA-Z0-9_]*|[&?]|!?(aj|ic|p|j|c)|[<>=!]=?|[!\(\)\[\]\{\},]|!|\S)\s*/g;
 const PRESSTIME_REGEX = /^t\{([^}]+)\}$/;
 const NUMERIC_CONDITION_REGEX = /^(<|>|<=|>=|==|!=)\s*(\d+(\.\d+)?)$/;
 
@@ -73,13 +56,13 @@ export class ActionParser {
 	/**
 	 * Map of function handlers for extensibility.
 	 */
-	private static functionHandlers: Record<string, (args: ASTNode[]) => (getActionState: (actionName: string) => ActionState) => boolean> = {
+	private static functionHandlers: Record<string, (args: ASTNode[]) => (getActionState: (actionName: string, framewindow?: number) => ActionState) => boolean> = {
 		'&': (args) => (getActionState) => args.every((arg) => arg.evaluate(getActionState)),
 		'?': (args) => (getActionState) => args.some((arg) => arg.evaluate(getActionState)),
 		'?j': (args) => this.compileAnyJustPressedFunction(args),
 	};
 
-	private static readonly FUNCTION_TOKENS = Object.keys(this.functionHandlers);
+	private static readonly FUNCTION_TOKENS = [...Object.keys(this.functionHandlers), '?w', 'aw'];
 	private static readonly MODIFIER_TOKENS = [
 		...Object.keys(this.modifierHandlers),
 		...Object.keys(this.modifierHandlers).map(m => '!' + m),
@@ -154,7 +137,7 @@ export class ActionParser {
 			const leftNode = node;
 			const rightNode = right;
 
-			const evaluate = (getActionState: (actionName: string) => ActionState): boolean => {
+			const evaluate = (getActionState: (actionName: string, framewindow?: number) => ActionState): boolean => {
 				return leftNode.evaluate(getActionState) || rightNode.evaluate(getActionState);
 			};
 
@@ -180,7 +163,7 @@ export class ActionParser {
 			const leftNode = node;
 			const rightNode = right;
 
-			const evaluate = (getActionState: (actionName: string) => ActionState): boolean => {
+			const evaluate = (getActionState: (actionName: string, framewindow?: number) => ActionState): boolean => {
 				return leftNode.evaluate(getActionState) && rightNode.evaluate(getActionState);
 			};
 
@@ -201,7 +184,7 @@ export class ActionParser {
 			this.consume();
 			const operand = this.parseFactor();
 
-			const evaluate = (getActionState: (actionName: string) => ActionState): boolean => {
+			const evaluate = (getActionState: (actionName: string, framewindow?: number) => ActionState): boolean => {
 				return !operand.evaluate(getActionState);
 			};
 
@@ -229,7 +212,27 @@ export class ActionParser {
 	}
 
 	private static parseFunction(): FunctionNode {
-		const functionName = this.consume();
+		const rawName = this.consume();
+		let baseName = rawName;
+		let windowFrames: number | undefined;
+
+		let match = rawName.match(/^\?w\{(\d+)\}$/);
+		if (match) {
+			baseName = '?w';
+			windowFrames = parseInt(match[1], 10);
+		} else if (rawName === '?w') {
+			throw new Error("'?w' requires a window parameter, e.g. '?w{5}'.");
+		}
+
+		if (!windowFrames) {
+			match = rawName.match(/^aw\{(\d+)\}$/);
+			if (match) {
+				baseName = 'aw';
+				windowFrames = parseInt(match[1], 10);
+			} else if (rawName === 'aw') {
+				throw new Error("'aw' requires a window parameter, e.g. 'aw{5}'.");
+			}
+		}
 
 		this.expect('(');
 		this.consume();
@@ -245,15 +248,28 @@ export class ActionParser {
 		this.expect(')');
 		this.consume();
 
-		const handler = this.functionHandlers[functionName];
-		if (!handler) {
-			throw new Error(`Unknown function: '${functionName}'`);
+		let evaluate: (getActionState: (actionName: string, framewindow?: number) => ActionState) => boolean;
+		if (baseName === '?w') {
+			if (windowFrames === undefined) {
+				throw new Error("'?w' requires a window parameter.");
+			}
+			evaluate = this.compileAnyWasPressedFunction(args, windowFrames);
+		} else if (baseName === 'aw') {
+			if (windowFrames === undefined) {
+				throw new Error("'aw' requires a window parameter.");
+			}
+			evaluate = this.compileAllWasPressedFunction(args, windowFrames);
+		} else {
+			const handler = this.functionHandlers[baseName];
+			if (!handler) {
+				throw new Error(`Unknown function: '${rawName}'`);
+			}
+			evaluate = handler.call(this, args);
 		}
-		const evaluate = handler.call(this, args);
 
 		return {
 			type: 'function',
-			functionName,
+			functionName: rawName,
 			arguments: args,
 			evaluate,
 		};
@@ -261,15 +277,12 @@ export class ActionParser {
 
 	private static compileAnyJustPressedFunction(
 		args: ASTNode[]
-	): (getActionState: (actionName: string) => ActionState) => boolean {
+	): (getActionState: (actionName: string, framewindow?: number) => ActionState) => boolean {
 		return (getActionState) => {
 			const actionResults = args.map((arg, idx) => {
-				if (!this.isActionNode(arg)) {
-					throw new Error(`'?j' function expects action nodes as arguments (argument #${idx + 1}).`);
-				}
 				const actionPassed = arg.evaluate(getActionState);
-				const actionState = getActionState(arg.name);
-				return { actionState, actionPassed, actionNode: arg };
+				const actionState = getActionState((arg as ActionNode).name);
+				return { actionState, actionPassed, actionNode: arg as ActionNode };
 			});
 
 			const allActionsPassed = actionResults.every((ar) => ar.actionPassed);
@@ -291,6 +304,40 @@ export class ActionParser {
 			});
 
 			return anyJustPressed;
+		};
+	}
+
+	private static compileAnyWasPressedFunction(args: ASTNode[], windowFrames: number): (getActionState: (actionName: string, framewindow?: number) => ActionState) => boolean {
+		return (getActionState) => {
+			const actionResults = args.map((arg, idx) => {
+				const actionPassed = arg.evaluate(getActionState);
+				const actionState = getActionState((arg as ActionNode).name, windowFrames);
+				return { actionState, actionPassed };
+			});
+
+			const allActionsPassed = actionResults.every((ar) => ar.actionPassed);
+			if (!allActionsPassed) {
+				return false;
+			}
+
+			return actionResults.some((ar) => ar.actionState.waspressed);
+		};
+	}
+
+	private static compileAllWasPressedFunction(args: ASTNode[], windowFrames: number): (getActionState: (actionName: string, framewindow?: number) => ActionState) => boolean {
+		return (getActionState) => {
+			const actionResults = args.map((arg, idx) => {
+				const actionPassed = arg.evaluate(getActionState);
+				const actionState = getActionState((arg as ActionNode).name, windowFrames);
+				return { actionState, actionPassed };
+			});
+
+			const allActionsPassed = actionResults.every((ar) => ar.actionPassed);
+			if (!allActionsPassed) {
+				return false;
+			}
+
+			return actionResults.every((ar) => ar.actionState.waspressed);
 		};
 	}
 
@@ -337,7 +384,7 @@ export class ActionParser {
 			modifierFunctions.push(this.defaultNotConsumedModifier);
 		}
 
-		const evaluate = (getActionState: (actionName: string) => ActionState): boolean => {
+		const evaluate = (getActionState: (actionName: string, framewindow?: number) => ActionState): boolean => {
 			const actionState = getActionState(name);
 			return modifierFunctions.every((func) => func(actionState));
 		};
@@ -468,6 +515,9 @@ export class ActionParser {
 
 	private static matchFunction(): boolean {
 		const token = this.tokens[this.actionParserIndex];
+		if (/^(\?w|aw)\{\d+\}$/.test(token)) {
+			return this.tokens[this.actionParserIndex + 1] === '(';
+		}
 		return (
 			this.FUNCTION_TOKENS.includes(token) &&
 			this.tokens[this.actionParserIndex + 1] === '('

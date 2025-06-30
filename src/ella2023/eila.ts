@@ -42,16 +42,26 @@ export class Eila extends Fighter {
 		function default_input_processor(this: Fighter): StateTransition | string | void {
 			if (this.isAIed) return; // AIed fighters don't process input
 
-			const priorityActions = $.getPressedActions(this.player_index, { pressed: true, consumed: false, actionsByPriority: ['duck', 'punch', 'highkick', 'lowkick', 'jump_right', 'jump_left', 'right', 'left', 'jump',] });
+			// const priorityActions = $.getPressedActions(this.player_index, { pressed: true, consumed: false, actionsByPriority: ['duck', 'punch', 'highkick', 'lowkick', 'jump_right', 'jump_left', 'right', 'left', 'jump',] });
+
+			const priorityActions = $.checkActionsTriggered(this.player_index,
+				'duck',
+				'?w{50}(punch)',
+				'?w{50}(highkick)',
+				'?w{50}(lowkick)',
+				'?w{50}(jump_right)',
+				'?w{50}(jump_left)',
+				'right',
+				'left',
+				'?w{50}(jump)',
+			);
 
 			// If no actions are pressed, switch to idle
 			if (priorityActions.length === 0) {
 				return 'idle';
 			}
 
-			for (const actionObject of priorityActions) {
-				const { action } = actionObject;
-
+			for (const action of priorityActions) {
 				switch (action as Action) {
 					case 'right':
 					case 'left':

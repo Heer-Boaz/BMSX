@@ -1055,6 +1055,14 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		SM.stopMusic();
 	}
 
+	public set volume(volume: number) {
+		SM.volume = volume;
+	}
+
+	public get volume(): number {
+		return SM.volume;
+	}
+
 	public setInputMap(playerIndex: number, map: InputMap): void {
 		this.input.getPlayerInput(playerIndex).setInputMap(map);
 	}
@@ -1063,9 +1071,13 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		return this.input.getPlayerInput(playerIndex).checkActionTriggered(action);
 	}
 
-       public getActionState(playerIndex: number, action: string, window?: number) {
-               return this.input.getPlayerInput(playerIndex).getActionState(action, window);
-       }
+	public checkActionsTriggered(playerIndex: number, ...actions: string[]): string[] {
+		return this.input.getPlayerInput(playerIndex).checkActionsTriggered(...actions);
+	}
+
+	public getActionState(playerIndex: number, action: string, window?: number) {
+		return this.input.getPlayerInput(playerIndex).getActionState(action, window);
+	}
 
 	public getPressedActions(playerIndex: number, query?: ActionStateQuery) {
 		return this.input.getPlayerInput(playerIndex).getPressedActions(query);
@@ -1149,6 +1161,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 			console.error("Failed to initialize PSG:", error);
 			// Optionally, provide fallback behavior or notify the user
 		}
+		SM.volume = 0;
 
 		if (this.debug) {
 			// @ts-ignore

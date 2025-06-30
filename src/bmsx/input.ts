@@ -567,7 +567,7 @@ class InputStateManager {
 	 * @param bufferframeDuration - The duration in milliseconds for which input events are buffered.
 	 * This value determines how long input events are retained in the buffer before being cleaned up.
 	 */
-	constructor(public bufferframeDuration: number = 6) {
+	constructor(public bufferframeDuration: number = 150) {
 		this.inputBuffer = [];
 	}
 
@@ -1305,6 +1305,10 @@ export class PlayerInput {
 		return ActionParser.checkActionTriggered(actionDefinition, this.getActionState.bind(this));
 	}
 
+	public checkActionsTriggered(...actions: string[]): string[] {
+		return actions.filter(action => this.checkActionTriggered(action));
+	}
+
 	/**
 	 * Sets the input map for a specific player.
 	 * @param inputMap - The input map to set.
@@ -1415,7 +1419,6 @@ export class PlayerInput {
 	 */
 	public getPressedActions(query?: ActionStateQuery): ActionState[] {
 		const inputMap = this.inputMap;
-		if (!inputMap) return [];
 
 		const pressedActions: ActionState[] = [];
 
