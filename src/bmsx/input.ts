@@ -623,8 +623,27 @@ class InputStateManager {
 		// Just pressed is true if the last event was of type `press` and it happened in the current frame
 		const isInCurrentFrame = currentTime - lastEvent.timestamp <= (1000 / $.targetFPS);
 		const justpressed = pressed && isInCurrentFrame;
-		// Was pressed is true of the button was pressed within the window duration, even if it is not pressed anymore
-		const waspressed = inputEvents.some(event => event.eventType === 'press' && (currentTime - event.timestamp <= window));
+
+		// Improved waspressed logic: true if any 'press' event in window has not been followed by a 'release' in window, or if a press-release pair both occurred in window
+		let waspressed = false;
+		for (let i = 0; i < inputEvents.length; ++i) {
+			if (inputEvents[i].eventType === 'press') {
+				// Look for a release after this press
+				let released = false;
+				for (let j = i + 1; j < inputEvents.length; ++j) {
+					if (inputEvents[j].eventType === 'release') {
+						released = true;
+						break;
+					}
+				}
+				// If not released, or if both press and release are in window, count as waspressed
+				if (!released || (released && (currentTime - inputEvents[i].timestamp <= window))) {
+					waspressed = true;
+					break;
+				}
+			}
+		}
+
 		const presstime = pressed ? currentTime - lastEvent.timestamp : null;
 		const timestamp = pressed ? lastEvent.timestamp : null;
 		const consumed = lastEvent.consumed;
@@ -1321,10 +1340,10 @@ export class PlayerInput {
 	 * Retrieves the state of an action.
 	 *
 	 * @param action - The name of the action.
-	 * @param window - An optional time window in milliseconds to consider for the action state. **Note: This doesn't really work as it should! For instance, if you press the directional button to move left, it will make the action state for 'left' always pressed, even if you release the button, until the time window expires. This sucks and should be fixed, but I don't know how to do it yet because of laziness. Another problem is that I also have not been able to really make use of prioritization to allow for buffered input to be overruled by other inputs (e.g. dodge > punch)**
+	 * @param framewindow - An optional time window in milliseconds to consider for the action state. **Note: This doesn't really work as it should! For instance, if you press the directional button to move left, it will make the action state for 'left' always pressed, even if you release the button, until the time window expires. This sucks and should be fixed, but I don't know how to do it yet because of laziness. Another problem is that I also have not been able to really make use of prioritization to allow for buffered input to be overruled by other inputs (e.g. dodge > punch)**
 	 * @returns The state of the action, including whether it is pressed, consumed, the press time, and the timestamp.
 	 */
-	public getActionState(action: string, window?: number): ActionState {
+	public getActionState(action: string, framewindow: number = null): ActionState {
 		const inputMap = this.inputMap;
 		if (!inputMap) return makeActionState(action);
 
@@ -1356,7 +1375,7 @@ export class PlayerInput {
 
 			if (keys_or_buttons) {
 				for (const key of keys_or_buttons) {
-					const state = getStateFunc(key);
+					const state = getStateFunc(key, framewindow);
 					allPressed = allPressed && (state?.pressed ?? false);
 					allJustPressed = allJustPressed && (state?.justpressed ?? false);
 					anyJustPressed = anyJustPressed || (state?.justpressed ?? false);
@@ -1383,13 +1402,13 @@ export class PlayerInput {
 
 		const keyboardState = getStates(
 			keyboardKeys,
-			(key: ButtonId, framewindow?: number) => window !== undefined
+			(key: ButtonId, framewindow?: number) => framewindow !== null
 				? this.stateManager.getButtonState(key, framewindow)
 				: this.getButtonState(key, 'keyboard')
 		);
 		const gamepadState = getStates(
 			gamepadButtons,
-			(button: ButtonId, framewindow?: number) => window !== undefined
+			(button: ButtonId, framewindow?: number) => framewindow !== null
 				? this.stateManager.getButtonState(button, framewindow)
 				: this.getButtonState(button, 'gamepad')
 		);
@@ -1405,7 +1424,7 @@ export class PlayerInput {
 			allwaspressed: keyboardState.allWasPressed || gamepadState.allWasPressed,
 			consumed: keyboardState.anyConsumed || gamepadState.anyConsumed,
 			presstime: minPresstime === Infinity ? null : minPresstime,
-			timestamp: maxTimestamp === -Infinity ? undefined : maxTimestamp,
+			timestamp: maxTimestamp === -Infinity ? null : maxTimestamp,
 		};
 	}
 

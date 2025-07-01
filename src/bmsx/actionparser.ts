@@ -310,7 +310,8 @@ export class ActionParser {
 	private static compileAnyWasPressedFunction(args: ASTNode[], windowFrames: number): (getActionState: (actionName: string, framewindow?: number) => ActionState) => boolean {
 		return (getActionState) => {
 			const actionResults = args.map((arg, idx) => {
-				const actionPassed = arg.evaluate(getActionState);
+				// Pass windowFrames to arg.evaluate so that nested actions/modifiers get the correct window
+				const actionPassed = arg.evaluate((name, framewindow) => getActionState(name, windowFrames));
 				const actionState = getActionState((arg as ActionNode).name, windowFrames);
 				return { actionState, actionPassed };
 			});
@@ -327,7 +328,8 @@ export class ActionParser {
 	private static compileAllWasPressedFunction(args: ASTNode[], windowFrames: number): (getActionState: (actionName: string, framewindow?: number) => ActionState) => boolean {
 		return (getActionState) => {
 			const actionResults = args.map((arg, idx) => {
-				const actionPassed = arg.evaluate(getActionState);
+				// Pass windowFrames to arg.evaluate so that nested actions/modifiers get the correct window
+				const actionPassed = arg.evaluate((name, framewindow) => getActionState(name, windowFrames));
 				const actionState = getActionState((arg as ActionNode).name, windowFrames);
 				return { actionState, actionPassed };
 			});
