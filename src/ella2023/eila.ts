@@ -45,15 +45,15 @@ export class Eila extends Fighter {
 			// const priorityActions = $.getPressedActions(this.player_index, { pressed: true, consumed: false, actionsByPriority: ['duck', 'punch', 'highkick', 'lowkick', 'jump_right', 'jump_left', 'right', 'left', 'jump',] });
 
 			const priorityActions = $.checkActionsTriggered(this.player_index,
-				'duck',
-				'?w{50}(punch)',
-				'?w{50}(highkick)',
-				'?w{50}(lowkick)',
-				'?w{50}(jump_right)',
-				'?w{50}(jump_left)',
-				'right',
-				'left',
-				'?w{50}(jump)',
+				{ def: 'duck[p]', id: 'duck' },
+				{ def: 'punch[wp{6}]', id: 'punch' },
+				{ def: '?wp{6}(highkick)', id: 'highkick' },
+				{ def: '?wp{6}(lowkick)', id: 'lowkick' },
+				{ def: 'jump_right[j]', id: 'jump_right' },
+				{ def: 'jump_left[j]', id: 'jump_left' },
+				{ def: 'right[p]', id: 'right' },
+				{ def: 'left[p]', id: 'left' },
+				{ def: 'jump[j]', id: 'jump' },
 			);
 
 			// If no actions are pressed, switch to idle
@@ -122,6 +122,35 @@ export class Eila extends Fighter {
 				},
 			},
 		};
+
+		function duck_input_processor(this: Fighter): StateTransition | string | void {
+			if (this.isAIed) return; // AIed fighters don't process input
+
+			const priorityActions = $.checkActionsTriggered(this.player_index,
+				{ def: 'duck[p]', id: 'duck' },
+				{ def: 'lowkick[wp{6}]', id: 'lowkick' },
+				{ def: 'left[p]', id: 'left' },
+				{ def: 'right[p]', id: 'right' },
+			);
+
+			if (priorityActions.includes('lowkick')) {
+				$.consumeAction(this.player_index, 'lowkick');
+				this.sc.do('go_duckkick', this);
+				return;
+			}
+			else if (!priorityActions.includes('duck')) {
+				this.sc.do('go_idle', this);
+				return;
+			}
+			else if (priorityActions.includes('left')) {
+				this.facing = 'left';
+				return;
+			}
+			else if (priorityActions.includes('right')) {
+				this.facing = 'right';
+				return;
+			}
+		}
 
 		function attackExit(this: Fighter) {
 			this.attacking = false;
@@ -230,33 +259,7 @@ export class Eila extends Fighter {
 				},
 				...attacks,
 				duck: {
-					process_input(this: Fighter) {
-						if (this.isAIed) return; // AIed fighters don't process input
-						const pressedActions = $.getPressedActions(this.player_index);
-						const actionMap = new Map();
-
-						// Create a map of actions for efficient lookup
-						pressedActions.forEach(action => actionMap.set(action.action, true));
-
-						if (actionMap.get('lowkick')) {
-							$.consumeAction(this.player_index, 'lowkick');
-							this.sc.do('go_duckkick', this);
-							return;
-						}
-						// Search whether the `duck` action was NOT pressed
-						else if (!actionMap.get('duck')) {
-							this.sc.do('go_idle', this);
-							return;
-						}
-						else if (actionMap.get('left')) {
-							this.facing = 'left';
-							return;
-						}
-						else if (actionMap.get('right')) {
-							this.facing = 'right';
-							return;
-						}
-					},
+					process_input: duck_input_processor,
 					enter(this: Fighter) {
 						this.sc.do('animate_duck', this);
 						this.ducking = true;
