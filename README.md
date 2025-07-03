@@ -1341,7 +1341,7 @@ BMSX supports flexible input from multiple sources and players, with runtime dev
     ```
   - Example: Check if Player 2 triggered a low kick action:
     ```typescript
-    if ($.getActionState(2, 'down && kick[j]')) {
+    if ($.getActionState(2, 'down[p] && kick[j]')) {
         // Player 2 performed a low kick
     }
     ```
@@ -1458,37 +1458,65 @@ These modifiers are parsed as special function nodes in the action parser, allow
     '?((up[!p] && down[p]), left[!p], right[p])' // triggers if up is not pressed and down is pressed, or left is not pressed, or right is pressed
     ```
     This triggers if any of the conditions are true in the current frame.
-  - `?j(...)`: **Any Just Pressed**
+  - `?jp(...)`: **Any Just Pressed**
     Returns `true` if **any** of the actions inside the parentheses were just pressed in the current frame.
     Example:
     ```typescript
-    '?j(a[j], b[j])'
+    '?jp(a[j], b[j])'
     ```
     This triggers if either action [a](http://_vscodecontentref_/0) or `b` was just pressed and not consumed.
 
-  - [&j(...)](http://_vscodecontentref_/1): **All Just Pressed**
+  - [&jp(...)](http://_vscodecontentref_/1): **All Just Pressed**
     Returns `true` if **all** of the actions inside the parentheses were just pressed in the current frame.
     Example:
     ```typescript
-    '&j(up[j], down[j])'
+    '&jp(up[j], down[j])'
     ```
     This triggers only if both `up` and `down` were just pressed simultaneously.
+  - `?jr(...)`: **Any Just Released**
+    Returns `true` if **any** of the actions inside the parentheses were just released in the current frame.
+    Example:
+    ```typescript
+    '?jr(a, b)'
+    ```
+    This triggers if either action [a](http://_vscodecontentref_/0) or `b` was just released.
+  - `&jr(...)`: **All Just Released**
+    Returns `true` if **all** of the actions inside the parentheses were just released in the current frame.
+    Example:
+    ```typescript
+    '&jr(up, down)'
+    ```
+    This triggers only if both `up` and `down` were just released simultaneously.
 
-  - `?w{n}(...)`: **Any Was Pressed in Window**
+  - `?wp{n}(...)`: **Any Was Pressed in Window**
     Returns `true` if **any** of the actions inside the parentheses was pressed at any time within the last `n` frames (input buffer window).
     Example:
     ```typescript
-    '?w{10}(punch, kick)'
+    '?wp{10}(punch, kick)'
     ```
     This triggers if either `punch` or `kick` was pressed at any point in the last 10 frames, regardless of whether it is still held.
 
-  - `&w{n}(...)`: **All Were Pressed in Window**
+  - `&wp{n}(...)`: **All Were Pressed in Window**
     Returns `true` if **all** of the actions inside the parentheses were pressed at least once within the last `n` frames.
     Example:
     ```typescript
     '&w{20}(left, right, jump)'
     ```
     This triggers only if all three actions ([left](http://_vscodecontentref_/2), [right](http://_vscodecontentref_/3), and `jump`) were pressed at least once in the last 20 frames.
+  - `?wr{n}(...)`: **Any Was Released in Window**
+    Returns `true` if **any** of the actions inside the parentheses was released at any time within the last `n` frames.
+    Example:
+    ```typescript
+    '?wr{10}(punch, kick)'
+    ```
+    This triggers if either `punch` or `kick` was released at any point in the last 10 frames.
+  - `&wr{n}(...)`: **All Were Released in Window**
+    Returns `true` if **all** of the actions inside the parentheses were released at least once within the last `n` frames.
+    Example:
+    ```typescript
+    '&wr{10}(punch, kick)'
+    ```
+    This triggers only if both `punch` and `kick` were released at least once in the last 10 frames.
 
   **How it works:**
   - These modifiers are parsed as special function nodes in the action parser (see [ActionParser](http://_vscodecontentref_/4) in [actionparser.ts](http://_vscodecontentref_/5)).
@@ -1496,30 +1524,28 @@ These modifiers are parsed as special function nodes in the action parser, allow
   - The logic for `?w{n}` and `aw{n}` is implemented in [compileAnyWasPressedFunction](http://_vscodecontentref_/6) and [compileAllWasPressedFunction](http://_vscodecontentref_/7), respectively, ensuring correct evaluation even for nested or complex expressions.
 
   **Usage Tips:**
-  - Use `?j(...)` and [&j(...)](http://_vscodecontentref_/8) for frame-accurate combos (e.g., simultaneous button presses).
-  - Use `?w{n}(...)` and `&w{n}(...)` for buffered or sequence-based combos (e.g., "press A then B within 10 frames").
+  - Use `?jp(...)` and [&j(...)](http://_vscodecontentref_/8) for frame-accurate combos (e.g., simultaneous button presses).
+  - Use `?wp{n}(...)` and `&wp{n}(...)` for buffered or sequence-based combos (e.g., "press A then B within 10 frames").
   - Combine with other modifiers (like `[!c]` for not consumed) for even more precise control.
-
-  **Example:**
-  ```typescript
-  // Trigger a special move if either punch or kick was pressed in the last 8 frames
-  if (ActionParser.checkActionTriggered('?w{8}(punch, kick)', getActionState)) {
-      // Execute special move
-  }
 
 - **Action Parsing and Modifiers:**
 The action parsing system is designed to be flexible and extensible, allowing for complex action definitions that can adapt to various gameplay mechanics.
 
   Action definitions support logical operators (`&&`, `||`), grouping, and modifiers such as:
   - `[p]` for pressed
+  - `[!p]` for not pressed
   - `[j]` for just pressed
   - `[&j]` for all just pressed (multi-button)
+  - `[?j]` for any just pressed (multi-button)
+  - `[jr]` for just released
+  - `[&jr]` for all just released (multi-button)
   - `[c]` for consumed
   - `[!c]` for not consumed
   - `[t{^x}]`, where `^` = `<`, `>`, `<=`, etc. and `x` = <duration> for press time conditions (e.g., short tap, or long press)
   - `[wp{x}]`, where `x` = <duration> for was-pressed condition (input was pressed at any time in the last x frames, useful for combos)
+  - `[wr{x}]`, where `x` = <duration> for was-released condition (input was released at any time in the last x frames)
   - `[ic]` to ignore the consumed state
-  - Custom combos and conditions using functions like `?()` and `?j()`
+  - Custom combos and conditions using functions like `?()` and `?jp()`
 > **Note**: The `[!c]` modifier is implicitly applied to all actions, so it is not necessary to include it in every action definition. It is primarily used for clarity in complex expressions and to make the action definition consistent. Use the `[ic]` modifier to ignore the consumed state if you want to check for actions that were triggered regardless of their consumed state.
 
 - **Flexible Action Definitions:**
@@ -1536,15 +1562,6 @@ The action parsing system is designed to be flexible and extensible, allowing fo
 
 - **Multiple Input Sources:**
   Supports keyboard, gamepad, and on-screen controls, with seamless mapping and aggregation.
-
-## Example Usage
-
-```typescript
-// Check if a combo is triggered
-if (playerInput.checkActionTriggered('down[p] && punch[j]')) {
-    // Execute special move
-}
-```
 
 # Serializing & Deserializing Game State
 
