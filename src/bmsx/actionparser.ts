@@ -1,6 +1,10 @@
 import type { ActionState } from './input';
 
-const enum T {
+/**
+ * Represents the different types of tokens that can be identified
+ * during the lexical analysis of an action definition string.
+ */
+const enum Tokens {
 	/** Represents symbols such as `&&`, `||`, `!`, `(`, `)`, `[`, `]`, and `,`. */
 	Sym,
 	/** Represents action identifiers, e.g., `actionName`. */
@@ -14,7 +18,11 @@ const enum T {
 	/** Represents comparison operators, e.g., `<`, `>`, `<=`, `>=`, `==`, `!=`. */
 	Cmp,
 }
-interface Tok { kind: T; value: string; }
+
+/**
+ * Represents a token in the action definition string.
+ */
+interface Token { kind: Tokens; value: string; }
 
 /**
  * Tokenizes the input source string into a list of tokens.
@@ -26,27 +34,37 @@ interface Tok { kind: T; value: string; }
  * @param src - The source string to tokenize.
  * @returns An array of tokens representing the parsed components of the input string.
  */
-function lex(src: string): Tok[] {
-	const R = /\s*(\|\||&&|!|\(|\)|\[|]|,|\?jp|&jp|\?wp\{\d+}|&wp\{\d+}|[&?]|(?:t|wp|pr)\{[^}]*}|[a-zA-Z_][a-zA-Z0-9_]*|[<>!=]=?)/gy;
-	const out: Tok[] = [];
-	let m: RegExpExecArray | null;
+function lex(src: string): Token[] {
+	// Regular expression to match various tokens in the input string
+	const R = /\s*(\|\||&&|!|\(|\)|\[|]|,|\?jp|&jp|\?wp\{\d+}|&wp\{\d+}|\?jr|&jr|\?wr\{\d+}|&wr\{\d+}|[&?]|(?:t|wp|wr|pr)\{[^}]*}|[a-zA-Z_][a-zA-Z0-9_]*|[<>!=]=?)/gy;
+	const out: Token[] = []; // Array to hold the parsed tokens
+	let m: RegExpExecArray | null; // Regular expression to match tokens in the input string
 	while ((m = R.exec(src)) !== null) {
-		const v = m[1];
+		const v = m[1]; // Extract the matched token value
+		// If the token value is undefined, skip to the next iteration
 		if (v === undefined) continue;
+		// Classify the token based on its value and add it to the output array
 		if (v === '||' || v === '&&' || v === '!' || v === '(' || v === ')' || v === '[' || v === ']' || v === ',') {
-			out.push({ kind: T.Sym, value: v });
-		} else if (/^[?&]wp\{\d+}$/.test(v)) {
-			out.push({ kind: T.FuncWin, value: v });
-		} else if (v === '&' || v === '?' || v === '?jp' || v === '&jp') {
-			out.push({ kind: T.Func, value: v });
+			// These are symbols used in logical expressions and function calls
+			out.push({ kind: Tokens.Sym, value: v });
+		} else if (/^[?&]wp\{\d+}$/.test(v) || /^[?&]wr\{\d+}$/.test(v)) {
+			// Windowed function tokens, e.g., `?wp{6}`, `&wp{12}`, `?wr{6}`, `&wr{12}`
+			out.push({ kind: Tokens.FuncWin, value: v });
+		} else if (v === '&' || v === '?' || v === '?jp' || v === '&jp' || v === '?jr' || v === '&jr') {
+			// Function tokens, e.g., `&`, `?`, `?jp`, `&jp`, `?jr`, `&jr`
+			out.push({ kind: Tokens.Func, value: v });
 		} else if (/^[<>!=]=?$/.test(v)) {
-			out.push({ kind: T.Cmp, value: v });
+			// Comparison operators, e.g., `<`, `>`, `<=`, `>=`, `==`, `!=`
+			out.push({ kind: Tokens.Cmp, value: v });
 		} else if (/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(v)) {
-			out.push({ kind: T.Ident, value: v });
+			// Action identifiers, e.g., `actionName`
+			out.push({ kind: Tokens.Ident, value: v });
 		} else {
-			out.push({ kind: T.ModTok, value: v });
+			// Raw tokens inside `[ ... ]`, e.g., `t{…}`, `wp{…}`, `wr{…}`, `pr{…}`
+			out.push({ kind: Tokens.ModTok, value: v });
 		}
 	}
+	// Return the array of tokens representing the parsed components of the input string
 	return out;
 }
 
@@ -87,7 +105,7 @@ interface NodeBase { eval: EvalFn; }
 /**
  * Represents a logical operation node in the AST.
  *
- * @property op - The logical operator ('AND', 'OR', or 'NOT').
+ * @property op - The logical operator ('AND', 'OR' | 'NOT').
  * @property left - The left operand node (optional for 'NOT').
  * @property right - The right operand node (optional for 'NOT').
  */
@@ -120,13 +138,17 @@ type Node = OpNode | ActNode | FunNode;
  * Converts a tokenized input string into an abstract syntax tree (AST).
  */
 class Parser {
-	private i = 0;
+	/**
+	 * The current index in the token stream.
+	 * Used to track the position of the parser in the input tokens.
+	 */
+	private currentIndex = 0;
 
 	/**
 	 * Constructs a new `Parser` instance.
-	 * @param t - The list of tokens to parse.
+	 * @param tokens - The list of tokens to parse.
 	 */
-	constructor(private readonly t: Tok[]) { }
+	constructor(private readonly tokens: Token[]) { }
 
 	/**
 	 * Parses a source string into an AST.
@@ -135,9 +157,9 @@ class Parser {
 	 * @throws If the input contains unexpected tokens or is invalid.
 	 */
 	static parse(src: string): Node {
-		const p = new Parser(lex(src));
-		const ast = p.expr();
-		if (p.cur()) throw new Error(`Unexpected token '${p.cur()!.value}'`);
+		const parser = new Parser(lex(src));
+		const ast = parser.expr();
+		if (parser.current()) throw new Error(`Unexpected token '${parser.current()!.value}'`);
 		enforceRootModifiers(ast);
 		return ast;
 	}
@@ -147,14 +169,14 @@ class Parser {
 	 *
 	 * @returns The current token, or `undefined` if the end of the stream is reached.
 	 */
-	private cur() { return this.t[this.i]; }
+	private current() { return this.tokens[this.currentIndex]; }
 
 	/**
 	 * Advances the cursor in the token stream and returns the current token.
 	 *
 	 * @returns The token at the current cursor position before advancing.
 	 */
-	private eat() { return this.t[this.i++]; }
+	private eat() { return this.tokens[this.currentIndex++]; }
 
 	/**
 	 * Consumes the current token if it matches the specified kind and optional value.
@@ -164,8 +186,8 @@ class Parser {
 	 * @returns The consumed token.
 	 * @throws If the current token does not match the expected kind or value.
 	 */
-	private take(kind: T, v?: string) {
-		const c = this.cur();
+	private take(kind: Tokens, v?: string) {
+		const c = this.current();
 		if (!c || c.kind !== kind || (v && c.value !== v)) throw new Error(`Unexpected token ${c?.value ?? '<eos>'}`);
 		return this.eat();
 	}
@@ -179,14 +201,15 @@ class Parser {
 	 * @returns A `Node` representing the parsed expression.
 	 */
 	private expr(): Node {
-		let n = this.term();
-		while (this.cur()?.value === '||') {
+		let n = this.term(); // Start parsing a term node
+		while (this.current()?.value === '||') {
 			this.eat();
-			const r = this.term();
-			const l = n;
+			const r = this.term(); // Parse the right-hand side of the OR operation
+			const l = n; // Store the left-hand side of the OR operation
+			// Create a new OpNode for the OR operation
 			n = { op: 'OR', left: l, right: r, eval: g => l.eval(g) || r.eval(g) };
 		}
-		return n;
+		return n; // Return the constructed expression node
 	}
 
 	/**
@@ -198,14 +221,15 @@ class Parser {
 	 * @returns A `Node` representing the parsed term.
 	 */
 	private term(): Node {
-		let n = this.factor();
-		while (this.cur()?.value === '&&') {
+		let n = this.factor(); // Start parsing a factor node
+		while (this.current()?.value === '&&') {
 			this.eat();
-			const r = this.factor();
-			const l = n;
+			const r = this.factor(); // Parse the right-hand side of the AND operation
+			const l = n; // Store the left-hand side of the AND operation
+			// Create a new OpNode for the AND operation
 			n = { op: 'AND', left: l, right: r, eval: g => l.eval(g) && r.eval(g) };
 		}
-		return n;
+		return n; // Return the constructed term node
 	}
 
 	/**
@@ -219,22 +243,29 @@ class Parser {
 	 * @throws If the token stream is invalid or unexpected tokens are encountered.
 	 */
 	private factor(): Node {
-		const c = this.cur();
+		const c = this.current(); // Get the current token without advancing the cursor
 		if (!c) throw new Error('Unexpected end of input');
-		if (c.value === '!') {
+		if (c.value === '!') { // Handle negation
 			this.eat();
-			const o = this.factor();
+			const o = this.factor(); // Parse the operand of the negation
+			// Create a new OpNode for the NOT operation
 			return { op: 'NOT', left: o, eval: g => !o.eval(g) };
 		}
-		if (c.value === '(') {
+		if (c.value === '(') { // Handle grouped expressions
 			this.eat();
+			// Parse the expression inside the parentheses
 			const e = this.expr();
-			this.take(T.Sym, ')');
+			// Ensure the closing parenthesis is present
+			this.take(Tokens.Sym, ')');
+			// Return the parsed expression node
 			return e;
 		}
-		if (c.kind === T.Func || c.kind === T.FuncWin) return this.func();
+		// Check if the current token is a function or action
+		if (c.kind === Tokens.Func || c.kind === Tokens.FuncWin) return this.func();
+		// If it's not a function, it must be an action
 		return this.action();
 	}
+
 	/**
 	 * Parses a function node from the token stream.
 	 *
@@ -246,26 +277,32 @@ class Parser {
 	 * @throws If the token stream is invalid or unexpected tokens are encountered.
 	 */
 	private func(): Node {
+		// Extract the function token and its base name
 		const tok = this.eat();
 		let base = tok.value;
+		// If the token is a windowed function, extract the base name and window size
 		let win: number | undefined;
 
-		if (tok.kind === T.FuncWin) {
+		// Check if the token is a windowed function
+		if (tok.kind === Tokens.FuncWin) {
+			// Extract the windowed function base and size
 			const m = tok.value.match(/^([?&]wp)\{(\d+)}/)!;
-			base = m[1];
-			win = +m[2];
+			base = m[1]; // Set the base name to the function type (e.g., `?wp`, `&wp`)
+			win = +m[2]; // Set the window size to the parsed number
 		}
 
-		this.take(T.Sym, '(');
-		const args: Node[] = [];
-		if (this.cur()?.value !== ')') {
-			args.push(this.expr());
-			while (this.cur()?.value === ',') { this.eat(); args.push(this.expr()); }
+		this.take(Tokens.Sym, '('); // Ensure the opening parenthesis is present
+		const args: Node[] = []; // Array to hold the function arguments
+		if (this.current()?.value !== ')') { // Check if there are arguments
+			args.push(this.expr()); // Parse the first argument
+			while (this.current()?.value === ',') { this.eat(); args.push(this.expr()); } // Parse subsequent arguments
 		}
-		this.take(T.Sym, ')');
+		this.take(Tokens.Sym, ')'); // Ensure the closing parenthesis is present
 
+		// Return a FunNode representing the parsed function
 		return { fname: base, args, window: win, eval: compileFunction(base as any, args, win) };
 	}
+
 	/**
 	 * Parses an action node from the token stream.
 	 *
@@ -278,17 +315,19 @@ class Parser {
 	 * @throws If the token stream is invalid or unexpected tokens are encountered.
 	 */
 	private action(): Node {
-		const name = this.take(T.Ident).value;
-		const mods: string[] = [];
-		if (this.cur()?.value === '[') {
-			this.eat();
-			while (this.cur() && this.cur()!.value !== ']') {
-				const t = this.eat();
-				if (t.value === '!') mods.push('!' + this.take(this.cur()!.kind).value);
-				else mods.push(t.value);
+		// Ensure the current token is an identifier
+		const name = this.take(Tokens.Ident).value;
+		const mods: string[] = []; // Array to hold the action modifiers
+		if (this.current()?.value === '[') { // Check if there are modifiers
+			this.eat(); // Consume the opening square bracket
+			while (this.current() && this.current()!.value !== ']') { // Parse modifiers until the closing bracket
+				const t = this.eat(); // Get the current token
+				if (t.value === '!') mods.push('!' + this.take(this.current()!.kind).value); // Handle negation
+				else mods.push(t.value); // Add the modifier token to the list
 			}
-			this.take(T.Sym, ']');
+			this.take(Tokens.Sym, ']'); // Ensure the closing square bracket is present
 		}
+		// Return an ActNode representing the parsed action
 		return { name, mods, eval: compileAction(name, mods) };
 	}
 }
@@ -304,29 +343,72 @@ class Parser {
  * @throws If a root-level action lacks a modifier.
  */
 function enforceRootModifiers(n: Node) {
+	// Recursive function to walk through the AST nodes
 	const walk = (node: Node, inFun: boolean) => {
+		// If the node is a function, recursively walk through its arguments
 		if ((node as FunNode).fname) { (node as FunNode).args.forEach(a => walk(a, true)); return; }
+		// If the node is an operation, recursively walk through its left and right operands
 		if ((node as OpNode).op) {
-			const o = node as OpNode;
-			if (o.left) walk(o.left, inFun);
-			if (o.right) walk(o.right, inFun);
-			return;
+			const o = node as OpNode; // Cast the node to OpNode to access its properties
+			if (o.left) walk(o.left, inFun); // Recursively walk the left operand
+			if (o.right) walk(o.right, inFun); // Recursively walk the right operand
+			return; // Exit after processing both operands
 		}
-		const a = node as ActNode;
-		if (!inFun && a.mods.length === 0)
+		const a = node as ActNode; // Cast the node to ActNode to access its properties
+		if (!inFun && a.mods.length === 0) // If this is a root-level action with no modifiers
+			// throw an error indicating the missing modifier
 			throw new Error(`Root‑level action '${a.name}' must specify a modifier like '[p]'`);
 	};
+	// Start walking the AST from the root node
 	walk(n, false);
 }
 
+/**
+ * A mapping of static modifiers to their corresponding evaluation functions.
+ *
+ * This object defines the behavior of static modifiers used in action definitions,
+ * such as `p` (pressed), `j` (just-pressed), `&j` (all-just-pressed), and `c` (consumed).
+ * Each modifier is associated with a function that evaluates the modifier condition
+ * for a given action state.
+ *
+ * @property p - Evaluates to true if the action is currently pressed.
+ * @property j - Evaluates to true if the action was just pressed.
+ * @property &j - Evaluates to true if all actions are just pressed.
+ * @property c - Evaluates to true if the action is consumed.
+ */
 const STATIC: Record<string, ModFn> = {
 	'p': (get, n, win) => get(n, win).pressed,
 	'j': (get, n, win) => get(n, win).justpressed,
 	'&j': (get, n, win) => get(n, win).alljustpressed,
 	'c': (get, n, win) => get(n, win).consumed,
 };
+
+/**
+ * A regular expression to match comparison operators followed by a numeric value.
+ *
+ * Examples:
+ * - `< 10`
+ * - `>= 5.5`
+ * - `== 42`
+ */
 const NUM_RE = /^(<|>|<=|>=|==|!=)\s*(\d+(?:\.\d+)?)/;
+
+/**
+ * A regular expression to match windowed press tokens in the format `wp{number}`.
+ *
+ * Examples:
+ * - `wp{6}`
+ * - `wp{12}`
+ */
 const R_WP = /^wp\{(\d+)}/;
+
+/**
+ * A regular expression to match time-based comparison tokens in the format `t{comparator}`.
+ *
+ * Examples:
+ * - `t{<10}`
+ * - `t{>=5}`
+ */
 const R_T = /^t\{([^}]+)}/;
 
 /**
@@ -341,21 +423,22 @@ const R_T = /^t\{([^}]+)}/;
 * @throws If the token is invalid or represents an unknown modifier.
 */
 function makeModPred(tok: string): ModFn {
-	const neg = tok.startsWith('!');
-	const raw = neg ? tok.slice(1) : tok;
-	let fn: ModFn;
+	const neg = tok.startsWith('!'); // Check if the token is negated (starts with `!`)
+	const raw = neg ? tok.slice(1) : tok; // Remove the negation prefix if present
+	let fn: ModFn; // Function to evaluate the modifier condition
 
-	if (STATIC[raw]) fn = STATIC[raw];
-	else if (R_WP.test(raw)) {
-		const ms = +raw.match(R_WP)![1];
-		fn = (get, n, _) => get(n, ms).waspressed;
+	if (STATIC[raw]) fn = STATIC[raw]; // Check if the token is a static modifier
+	else if (R_WP.test(raw)) { // Check if the token is a windowed press modifier
+		const ms = +raw.match(R_WP)![1]; // Extract the window size from the token
+		fn = (get, n, _) => get(n, ms).waspressed; // Return a function that checks if the action was pressed within the window
 	}
-	else if (R_T.test(raw)) {
-		const cmp = raw.match(R_T)![1];
-		const m = cmp.match(NUM_RE);
-		if (!m) throw new Error(`Invalid t{…} comparator '${cmp}'`);
-		const op = m[1];
-		const val = +m[2];
+	else if (R_T.test(raw)) { // Check if the token is a time-based comparison modifier
+		const cmp = raw.match(R_T)![1]; // Extract the comparator from the token
+		const m = cmp.match(NUM_RE); // Match the comparator against the numeric regular expression
+		if (!m) throw new Error(`Invalid t{…} comparator '${cmp}'`); // Throw an error for invalid comparators
+		const op = m[1]; // Extract the operator from the match
+		const val = +m[2]; // Extract the numeric value from the match
+		// Return a function that evaluates the time-based comparison
 		fn = (get, n, win) => {
 			const pt = get(n, win).presstime ?? 0;
 			switch (op) {
@@ -368,14 +451,15 @@ function makeModPred(tok: string): ModFn {
 			}
 		};
 	}
-	else if (/^pr\{\d+}/.test(raw)) {
+	else if (/^pr\{\d+}/.test(raw)) { // Check if the token is a priority modifier
 		fn = _ => true; // priority placeholder
 	}
-	else throw new Error(`Unknown modifier '${raw}'`);
+	else throw new Error(`Unknown modifier '${raw}'`); // Throw an error for unknown modifiers
 
-	return neg
-		? (get, n, win) => !fn(get, n, win)
-		: fn;
+	// Return a function that evaluates the modifier condition,
+	return neg // if the modifier is negated
+		? (get, n, win) => !fn(get, n, win) // negate the result of the modifier function
+		: fn; // otherwise return the modifier function as is
 }
 
 /**
@@ -400,24 +484,42 @@ function compileAction(name: string, mods: string[]): EvalFn {
 	return get => modPreds.every(p => p(get, name));
 }
 
-/* -------------------------------- Function helpers ------------------------ */
-
+/**
+ * A mapping of function helpers to their corresponding evaluation logic.
+ *
+ * This object defines the behavior of various function helpers used in
+ * action definitions, such as logical operators (`&`, `?`) and windowed
+ * functions (`&wp`, `?wp`). Each helper is associated with a function
+ * that takes arguments (AST nodes) and an optional window parameter,
+ * returning an evaluation function.
+ *
+ * @property & - Logical AND helper that evaluates to true if all arguments are true.
+ * @property ? - Logical OR helper that evaluates to true if any argument is true.
+ * @property &jp - Evaluates to true if all arguments are just-pressed.
+ * @property ?jp - Evaluates to true if any argument is just-pressed.
+ * @property ?wp - Evaluates to true if any argument was pressed within the specified window.
+ * @property &wp - Evaluates to true if all arguments were pressed within the specified window.
+ */
 const FUN: Record<string, (args: Node[], win?: number) => EvalFn> = {
-	// Generic ALL / ANY helpers – these keep their original semantics
-	'&': args => gs => args.every(a => a.eval(gs)),
-	'?': args => gs => args.some(a => a.eval(gs)),
+	'&': args => gs => args.every(a => a.eval(gs)), // evaluates to true if all arguments are true
+	'?': args => gs => args.some(a => a.eval(gs)), // evaluates to true if any argument is true
 
-	/* ──────────────── just‑pressed helpers ──────────────── */
 	'&jp': args => gs => {
 		if (!args.every(a => a.eval(gs))) return false;                 // all predicates true
-		return args.every(a => gs((a as ActNode).name).justpressed);   // *** all just‑pressed ***
+		return args.every(a => gs((a as ActNode).name).justpressed);   // all just‑pressed
 	},
 	'?jp': args => gs => {
-		if (!args.every(a => a.eval(gs))) return false;                 // gate: all must pass modifiers first
+		if (!args.every(a => a.eval(gs))) return false;            // gate: all must pass modifiers first
 		return args.some(a => gs((a as ActNode).name).justpressed);    // any just‑pressed
 	},
-
-	/* ──────────────── was‑pressed‑within‑window helpers ──────────────── */
+	'&jr': args => gs => {
+		if (!args.every(predicate => predicate.eval(gs))) return false; // gate: all pass their modifiers
+		return args.every(a => gs((a as ActNode).name).justreleased);
+	},
+	'?jr': args => gs => {
+		if (!args.every(predicate => predicate.eval(gs))) return false; // gate: all pass their modifiers
+		return args.some(a => gs((a as ActNode).name).justreleased);
+	},
 	'?wp': (args, win) => gs => {
 		if (!args.every(a => a.eval((n, _) => gs(n, win)))) return false; // gate: all pass their modifiers within window
 		return args.some(a => gs((a as ActNode).name, win).waspressed);  // any was‑pressed
@@ -425,6 +527,14 @@ const FUN: Record<string, (args: Node[], win?: number) => EvalFn> = {
 	'&wp': (args, win) => gs => {
 		if (!args.every(a => a.eval((n, _) => gs(n, win)))) return false; // gate: all pass modifiers
 		return args.every(a => gs((a as ActNode).name, win).waspressed); // all were‑pressed
+	},
+	'?wr': (args, win) => gs => {
+		if (!args.every(a => a.eval((n, _) => gs(n, win)))) return false; // gate: all pass modifiers
+		return args.some(a => gs((a as ActNode).name, win).wasreleased); // any was‑released
+	},
+	'&wr': (args, win) => gs => {
+		if (!args.every(a => a.eval((n, _) => gs(n, win)))) return false; // gate: all pass modifiers
+		return args.every(a => gs((a as ActNode).name, win).wasreleased); // all were‑released
 	},
 };
 
@@ -443,9 +553,12 @@ const FUN: Record<string, (args: Node[], win?: number) => EvalFn> = {
 * @throws If the base function name is unknown or unsupported.
 */
 function compileFunction(base: string, args: Node[], win?: number): EvalFn {
-	const h = FUN[base];
-	if (!h) throw new Error(`Unknown function helper '${base}', expected one of: ${Object.keys(FUN).join(', ')}`);
-	return h(args, win);
+	// Check if the base function is a valid helper
+	const helper = FUN[base];
+	// If not, throw an error with a list of valid function names
+	if (!helper) throw new Error(`Unknown function helper '${base}', expected one of: ${Object.keys(FUN).join(', ')}`);
+	// Return the evaluation function for the helper
+	return helper(args, win);
 }
 
 /**
@@ -456,13 +569,39 @@ function compileFunction(base: string, args: Node[], win?: number): EvalFn {
  * the provided action definition and state getter.
  */
 export class ActionParser {
+	/**
+	 * A static cache to store parsed action definitions.
+	 * This cache improves performance by avoiding repeated parsing
+	 * of the same action definition string.
+	 */
 	private static cache = new Map<string, Node>();
+
+	/**
+	 * Clears the static cache of parsed action definitions.
+	 *
+	 * This method can be called to reset the cache, which is useful
+	 * when action definitions change or need to be re-evaluated.
+	 */
 	static clearCache() { this.cache.clear(); }
 
+	/**
+	 * Checks if an action is triggered based on the provided action definition and state getter.
+	 *
+	 * This method first checks the cache for a parsed AST representation of the action definition.
+	 * If not found in the cache, it parses the definition and stores it in the cache.
+	 * Finally, it evaluates the action definition using the provided state getter.
+	 *
+	 * @param def - The action definition string to check.
+	 * @param get - A function that retrieves the current action state for a given input name.
+	 * @returns True if the action is triggered, false otherwise.
+	 */
 	static checkActionTriggered(def: string,
 		get: (n: string, w?: number) => ActionState): boolean {
-		let ast = this.cache.get(def);
+		let ast = this.cache.get(def); // Check if the action definition is already cached
+		// If not cached, parse the definition and store it in the cache
 		if (!ast) { ast = Parser.parse(def); this.cache.set(def, ast); }
+		// Evaluate the action definition using the provided state getter
+		// This will return true if the action is triggered based on the current state (or the windowed state if applicable)
 		return ast.eval(get);
 	}
 }
