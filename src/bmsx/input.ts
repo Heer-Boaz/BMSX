@@ -621,7 +621,7 @@ class InputStateManager {
 		const lastEvent = inputEvents[inputEvents.length - 1];
 		const pressed = lastEvent.eventType === 'press'; // isPressed is true if the last event was a press event, otherwise it is false (i.e. the button was released)
 		// Just pressed is true if the last event was of type `press` and it happened in the current frame
-		const isInCurrentFrame = currentTime - lastEvent.timestamp <= (1000 / $.targetFPS);
+		const isInCurrentFrame = currentTime - lastEvent.timestamp <= this.toMs(1); // Check if the last event happened in the current frame
 		const justpressed = pressed && isInCurrentFrame;
 
 		// Improved waspressed logic: true if any 'press' event in window has not been followed by a 'release' in window, or if a press-release pair both occurred in window
@@ -646,7 +646,15 @@ class InputStateManager {
 
 		const presstime = pressed ? currentTime - lastEvent.timestamp : null;
 		const timestamp = pressed ? lastEvent.timestamp : null;
-		const consumed = lastEvent.consumed;
+
+		// If any event in the input buffer for this button was consumed, we consider the button as consumed
+		// This means that the button press has been processed and should not trigger any further actions
+		// This is useful for preventing multiple actions from being triggered by a single button press
+		// For example, if a button is pressed and then released, we can mark it as consumed to prevent further actions
+		// from being triggered by the same button press.
+		const consumed = inputEvents.some(event => event.consumed);
+
+		// const consumed = lastEvent.consumed;
 
 		// Return the button state based on the last event
 		return makeButtonState({
@@ -1324,8 +1332,8 @@ export class PlayerInput {
 		return ActionParser.checkActionTriggered(actionDefinition, this.getActionState.bind(this));
 	}
 
-	public checkActionsTriggered(...actions: string[]): string[] {
-		return actions.filter(action => this.checkActionTriggered(action));
+	public checkActionsTriggered(...actions: { id: string, def: string }[]): string[] {
+		return actions.filter(action => this.checkActionTriggered(action.def)).map(action => action.id);
 	}
 
 	/**
@@ -1490,14 +1498,14 @@ export class PlayerInput {
 			if (!this.inputHandlers[source] || !inputMap[source]) continue;
 			const keysOrButtons: KeyboardButton[] | GamepadButton[] = inputMap[source][action];
 			if (!keysOrButtons) continue;
-			keysOrButtons
-				.filter(key => this.inputHandlers[source].getButtonState(key).pressed)
-				.forEach(key => {
+			for (const key of keysOrButtons) {
+				const buttonState = this.inputHandlers[source].getButtonState(key);
+				if (buttonState.pressed && !buttonState.consumed) {
 					this.inputHandlers[source].consumeButton(key);
-					this.stateManager.consumeBufferedEvent(key);
-				});
+				}
+				this.stateManager.consumeBufferedEvent(key);
+			}
 		}
-
 	}
 
 	/**

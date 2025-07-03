@@ -1071,7 +1071,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		return this.input.getPlayerInput(playerIndex).checkActionTriggered(action);
 	}
 
-	public checkActionsTriggered(playerIndex: number, ...actions: string[]): string[] {
+	public checkActionsTriggered(playerIndex: number, ...actions: { id: string, def: string }[]): string[] {
 		return this.input.getPlayerInput(playerIndex).checkActionsTriggered(...actions);
 	}
 
