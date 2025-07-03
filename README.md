@@ -1442,20 +1442,35 @@ The `InputStateManager` tracks a short, rolling history of button events for eac
   The BMSX action parser supports advanced combo and windowed action detection using special function-like modifiers. These allow you to define complex input patterns such as "any of these buttons just pressed", "all of these buttons just pressed", or "any/all of these actions were pressed within a time window". This is especially useful for fighting games, rhythm games, or any scenario where input timing and combos matter.
 
   **Supported Modifiers:**
+These modifiers are parsed as special function nodes in the action parser, allowing for complex expressions and combinations.
 
+  - `&`: **All true**
+    Returns `true` if **all** actions inside the parentheses are true in the current frame.
+    Example:
+    ```typescript
+    '&(up[!p], down[p], left[!p], right[p])' // triggers if up is not pressed, down is pressed, left is not pressed, and right is pressed
+    ```
+    This triggers only if all four actions are true in the current frame.
+  - `?`: **Any true**
+    Returns `true` if **any** of the actions inside the parentheses are true in the current frame.
+    Example:
+    ```typescript
+    '?((up[!p] && down[p]), left[!p], right[p])' // triggers if up is not pressed and down is pressed, or left is not pressed, or right is pressed
+    ```
+    This triggers if any of the conditions are true in the current frame.
   - `?j(...)`: **Any Just Pressed**
     Returns `true` if **any** of the actions inside the parentheses were just pressed in the current frame.
     Example:
     ```typescript
-    '?j(a[j!c], b[j!c])'
+    '?j(a[j], b[j])'
     ```
     This triggers if either action [a](http://_vscodecontentref_/0) or `b` was just pressed and not consumed.
 
-  - [aj(...)](http://_vscodecontentref_/1): **All Just Pressed**
+  - [&j(...)](http://_vscodecontentref_/1): **All Just Pressed**
     Returns `true` if **all** of the actions inside the parentheses were just pressed in the current frame.
     Example:
     ```typescript
-    'aj(up[j], down[j])'
+    '&j(up[j], down[j])'
     ```
     This triggers only if both `up` and `down` were just pressed simultaneously.
 
@@ -1467,11 +1482,11 @@ The `InputStateManager` tracks a short, rolling history of button events for eac
     ```
     This triggers if either `punch` or `kick` was pressed at any point in the last 10 frames, regardless of whether it is still held.
 
-  - `aw{n}(...)`: **All Were Pressed in Window**
+  - `&w{n}(...)`: **All Were Pressed in Window**
     Returns `true` if **all** of the actions inside the parentheses were pressed at least once within the last `n` frames.
     Example:
     ```typescript
-    'aw{20}(left, right, jump)'
+    '&w{20}(left, right, jump)'
     ```
     This triggers only if all three actions ([left](http://_vscodecontentref_/2), [right](http://_vscodecontentref_/3), and `jump`) were pressed at least once in the last 20 frames.
 
@@ -1481,8 +1496,8 @@ The `InputStateManager` tracks a short, rolling history of button events for eac
   - The logic for `?w{n}` and `aw{n}` is implemented in [compileAnyWasPressedFunction](http://_vscodecontentref_/6) and [compileAllWasPressedFunction](http://_vscodecontentref_/7), respectively, ensuring correct evaluation even for nested or complex expressions.
 
   **Usage Tips:**
-  - Use `?j(...)` and [aj(...)](http://_vscodecontentref_/8) for frame-accurate combos (e.g., simultaneous button presses).
-  - Use `?w{n}(...)` and `aw{n}(...)` for buffered or sequence-based combos (e.g., "press A then B within 10 frames").
+  - Use `?j(...)` and [&j(...)](http://_vscodecontentref_/8) for frame-accurate combos (e.g., simultaneous button presses).
+  - Use `?w{n}(...)` and `&w{n}(...)` for buffered or sequence-based combos (e.g., "press A then B within 10 frames").
   - Combine with other modifiers (like `[!c]` for not consumed) for even more precise control.
 
   **Example:**
@@ -1498,18 +1513,19 @@ The action parsing system is designed to be flexible and extensible, allowing fo
   Action definitions support logical operators (`&&`, `||`), grouping, and modifiers such as:
   - `[p]` for pressed
   - `[j]` for just pressed
-  - `[aj]` for all just pressed (multi-button)
+  - `[&j]` for all just pressed (multi-button)
   - `[c]` for consumed
   - `[!c]` for not consumed
   - `[t{^x}]`, where `^` = `<`, `>`, `<=`, etc. and `x` = <duration> for press time conditions (e.g., short tap, or long press)
+  - `[wp{x}]`, where `x` = <duration> for was-pressed condition (input was pressed at any time in the last x frames, useful for combos)
   - `[ic]` to ignore the consumed state
   - Custom combos and conditions using functions like `?()` and `?j()`
-> **Note**: The `[p]` and `[!c]` modifiers are implicitly applied to all actions, so it is not necessary to include it in every action definition. It is primarily used for clarity in complex expressions and to make the action definition consistent.
+> **Note**: The `[!c]` modifier is implicitly applied to all actions, so it is not necessary to include it in every action definition. It is primarily used for clarity in complex expressions and to make the action definition consistent. Use the `[ic]` modifier to ignore the consumed state if you want to check for actions that were triggered regardless of their consumed state.
 
 - **Flexible Action Definitions:**
   Actions can be defined as simple button presses or as complex expressions, e.g.:
-  - `jump && attack[j]` (pressed jump and just-pressed attack)
-  - `?j(a[j!c], b[j!c])` (any just-pressed and not-consumed)
+  - `jump[p] && attack[j]` (pressed jump and just-pressed attack)
+  - `?j(a[jic], b[jic])` (any just-pressed and consumed state is ignored for `a` and `b`)
   - `special[t{>=50}]` (pressed for or longer than 50ms)
 
 - **APIs for Consuming Actions:**
@@ -1527,12 +1543,6 @@ The action parsing system is designed to be flexible and extensible, allowing fo
 // Check if a combo is triggered
 if (playerInput.checkActionTriggered('down[p] && punch[j]')) {
     // Execute special move
-}
-
-// Peek at the next queued action
-const nextAction = playerInput.peekQueuedAction();
-if (nextAction?.action === 'jump') {
-    // Prepare to jump
 }
 ```
 
