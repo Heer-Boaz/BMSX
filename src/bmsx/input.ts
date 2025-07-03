@@ -68,6 +68,11 @@ export type ActionStateQuery = {
 	pressed?: boolean;
 
 	/**
+	 * Specifies whether the action was just released
+	 */
+	justReleased: boolean;
+
+	/**
 	 * Specifies whether the action was not pressed before (i.e., it was just pressed).
 	 */
 	justPressed?: boolean;
