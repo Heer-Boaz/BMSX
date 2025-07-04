@@ -367,20 +367,25 @@ function enforceRootModifiers(n: Node) {
  * A mapping of static modifiers to their corresponding evaluation functions.
  *
  * This object defines the behavior of static modifiers used in action definitions,
- * such as `p` (pressed), `j` (just-pressed), `&j` (all-just-pressed), and `c` (consumed).
+ * such as `p` (pressed), `j` (just-pressed), `jr` (just-released),
+ * `&j` (all-just-pressed), `&jr` (all-just-released), and `c` (consumed).
  * Each modifier is associated with a function that evaluates the modifier condition
  * for a given action state.
  *
  * @property p - Evaluates to true if the action is currently pressed.
  * @property j - Evaluates to true if the action was just pressed.
  * @property &j - Evaluates to true if all actions are just pressed.
+ * @property jr - Evaluates to true if the action was just released.
+ * @property &jr - Evaluates to true if all actions are just released.
  * @property c - Evaluates to true if the action is consumed.
  */
 const STATIC: Record<string, ModFn> = {
-	'p': (get, n, win) => get(n, win).pressed,
-	'j': (get, n, win) => get(n, win).justpressed,
-	'&j': (get, n, win) => get(n, win).alljustpressed,
-	'c': (get, n, win) => get(n, win).consumed,
+        'p': (get, n, win) => get(n, win).pressed,
+        'j': (get, n, win) => get(n, win).justpressed,
+        '&j': (get, n, win) => get(n, win).alljustpressed,
+        'jr': (get, n, win) => get(n, win).justreleased,
+        '&jr': (get, n, win) => get(n, win).alljustreleased,
+        'c': (get, n, win) => get(n, win).consumed,
 };
 
 /**
@@ -401,6 +406,15 @@ const NUM_RE = /^(<|>|<=|>=|==|!=)\s*(\d+(?:\.\d+)?)/;
  * - `wp{12}`
  */
 const R_WP = /^wp\{(\d+)}/;
+
+/**
+ * A regular expression to match windowed release tokens in the format `wr{number}`.
+ *
+ * Examples:
+ * - `wr{6}`
+ * - `wr{12}`
+ */
+const R_WR = /^wr\{(\d+)}/;
 
 /**
  * A regular expression to match time-based comparison tokens in the format `t{comparator}`.
@@ -428,11 +442,15 @@ function makeModPred(tok: string): ModFn {
 	let fn: ModFn; // Function to evaluate the modifier condition
 
 	if (STATIC[raw]) fn = STATIC[raw]; // Check if the token is a static modifier
-	else if (R_WP.test(raw)) { // Check if the token is a windowed press modifier
-		const ms = +raw.match(R_WP)![1]; // Extract the window size from the token
-		fn = (get, n, _) => get(n, ms).waspressed; // Return a function that checks if the action was pressed within the window
-	}
-	else if (R_T.test(raw)) { // Check if the token is a time-based comparison modifier
+        else if (R_WP.test(raw)) { // Check if the token is a windowed press modifier
+                const ms = +raw.match(R_WP)![1]; // Extract the window size from the token
+                fn = (get, n, _) => get(n, ms).waspressed; // Return a function that checks if the action was pressed within the window
+        }
+        else if (R_WR.test(raw)) { // Check if the token is a windowed release modifier
+                const ms = +raw.match(R_WR)![1]; // Extract the window size from the token
+                fn = (get, n, _) => get(n, ms).wasreleased; // Return a function that checks if the action was released within the window
+        }
+        else if (R_T.test(raw)) { // Check if the token is a time-based comparison modifier
 		const cmp = raw.match(R_T)![1]; // Extract the comparator from the token
 		const m = cmp.match(NUM_RE); // Match the comparator against the numeric regular expression
 		if (!m) throw new Error(`Invalid t{…} comparator '${cmp}'`); // Throw an error for invalid comparators
