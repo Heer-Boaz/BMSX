@@ -1378,7 +1378,7 @@ export class PlayerInput {
 	 * Retrieves the state of an action.
 	 *
 	 * @param action - The name of the action.
-	 * @param framewindow - An optional time window in milliseconds to consider for the action state. **Note: This doesn't really work as it should! For instance, if you press the directional button to move left, it will make the action state for 'left' always pressed, even if you release the button, until the time window expires. This sucks and should be fixed, but I don't know how to do it yet because of laziness. Another problem is that I also have not been able to really make use of prioritization to allow for buffered input to be overruled by other inputs (e.g. dodge > punch)**
+	 * @param framewindow - An optional time window in milliseconds to consider for the action state. **Note: This doesn't really work as it should! For instance, if you press the directional button to move left, it will make the action state for 'left' always pressed, even if you release the button, until the time window expires.
 	 * @returns The state of the action, including whether it is pressed, consumed, the press time, and the timestamp.
 	 */
 	public getActionState(action: string, framewindow: number = null): ActionState {
