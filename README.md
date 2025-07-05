@@ -1362,7 +1362,6 @@ The `InputStateManager` tracks a short, rolling history of button events for eac
 
 - **Input Buffering:**
   Button presses and releases are stored for a few frames, allowing the game to "see" inputs that happen just before an action becomes available (e.g., buffering a jump or attack during an animation).
-  > However, the implementation is crappy and unuseful and awful and makes babies cry.
 
 - **Action Priority:**
   Actions can be prioritized in the following ways:
