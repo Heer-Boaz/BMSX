@@ -1408,27 +1408,27 @@ The `InputStateManager` tracks a short, rolling history of button events for eac
   - Using `State.on_input` to register input handlers that can specify their own priority, allowing for flexible action resolution based on game state. The `State.on_input` property accepts multiple handlers, which are processed in the order they were registered, allowing for prioritization of certain actions over others. Example:
       ```typescript
             on_input: {
-               'a[j!c]': {
+               'a[j]': {
                      do(this: quiz) {
                         $.consumeAction(1, 'a');
                         this.currentAnswerOptionChosen = 'a';
                         return { state_id: 'antwoord', args: this.currentAnswerOptionChosen };
                      },
                },
-               'b[j!c]': {
+               'b[j]': {
                      do(this: quiz) {
                         $.consumeAction(1, 'b');
                         this.currentAnswerOptionChosen = 'b';
                         return { state_id: 'antwoord', args: this.currentAnswerOptionChosen };
                      },
                },
-               'left[j!c]': {
+               'left[j]': {
                      do(this: quiz) {
                         $.consumeAction(1, 'left');
                         return { state_id: 'vraag', args: 'prev', force_transition_to_same_state: true, transition_type: 'to' };
                      },
                },
-               'right[j!c]': {
+               'right[j]': {
                      do(this: quiz) {
                         $.consumeAction(1, 'right');
                         return { state_id: 'vraag', args: 'next', force_transition_to_same_state: true, transition_type: 'to' };
@@ -1437,12 +1437,12 @@ The `InputStateManager` tracks a short, rolling history of button events for eac
             },
       ```
 
-- **Combo and Window Modifiers:**
+- **Combo and Window Functions:**
 
   The BMSX action parser supports advanced combo and windowed action detection using special function-like modifiers. These allow you to define complex input patterns such as "any of these buttons just pressed", "all of these buttons just pressed", or "any/all of these actions were pressed within a time window". This is especially useful for fighting games, rhythm games, or any scenario where input timing and combos matter.
 
-  **Supported Modifiers:**
-These modifiers are parsed as special function nodes in the action parser, allowing for complex expressions and combinations.
+  **Supported Functions:**
+There are multiple function nodes in the action parser, allowing for complex expressions and combinations.
 
   - `&`: **All true**
     Returns `true` if **all** actions inside the parentheses are true in the current frame.
@@ -1462,7 +1462,7 @@ These modifiers are parsed as special function nodes in the action parser, allow
     Returns `true` if **any** of the actions inside the parentheses were just pressed in the current frame.
     Example:
     ```typescript
-    '?jp(a[j], b[j])'
+    '?jp(a, b)'
     ```
     This triggers if either action [a](http://_vscodecontentref_/0) or `b` was just pressed and not consumed.
 
@@ -1519,19 +1519,19 @@ These modifiers are parsed as special function nodes in the action parser, allow
     This triggers only if both `punch` and `kick` were released at least once in the last 10 frames.
 
   **How it works:**
-  - These modifiers are parsed as special function nodes in the action parser (see [ActionParser](http://_vscodecontentref_/4) in [actionparser.ts](http://_vscodecontentref_/5)).
+  - These special functions are parsed in the action parser (see [ActionParser](http://_vscodecontentref_/4) in [actionparser.ts](http://_vscodecontentref_/5)).
   - For windowed combos, the parser ensures the correct time window is passed down to all nested actions, so the input buffer is queried for the relevant period.
-  - The logic for `?w{n}` and `aw{n}` is implemented in [compileAnyWasPressedFunction](http://_vscodecontentref_/6) and [compileAllWasPressedFunction](http://_vscodecontentref_/7), respectively, ensuring correct evaluation even for nested or complex expressions.
+  - The logic for `?wp{n}` and `&wp{n}` is implemented in [compileAnyWasPressedFunction](http://_vscodecontentref_/6) and [compileAllWasPressedFunction](http://_vscodecontentref_/7), respectively, ensuring correct evaluation even for nested or complex expressions.
 
   **Usage Tips:**
   - Use `?jp(...)` and [&j(...)](http://_vscodecontentref_/8) for frame-accurate combos (e.g., simultaneous button presses).
   - Use `?wp{n}(...)` and `&wp{n}(...)` for buffered or sequence-based combos (e.g., "press A then B within 10 frames").
   - Combine with other modifiers (like `[!c]` for not consumed) for even more precise control.
 
-- **Action Parsing and Modifiers:**
+- **Action Modifiers:**
 The action parsing system is designed to be flexible and extensible, allowing for complex action definitions that can adapt to various gameplay mechanics.
 
-  Action definitions support logical operators (`&&`, `||`), grouping, and modifiers such as:
+  Action definitions support logical operators (`&&`, `||`), grouping (`(`, `)`), and modifiers such as:
   - `[p]` for pressed
   - `[!p]` for not pressed
   - `[j]` for just pressed
@@ -1544,15 +1544,15 @@ The action parsing system is designed to be flexible and extensible, allowing fo
   - `[t{^x}]`, where `^` = `<`, `>`, `<=`, etc. and `x` = <duration> for press time conditions (e.g., short tap, or long press)
   - `[wp{x}]`, where `x` = <duration> for was-pressed condition (input was pressed at any time in the last x frames, useful for combos)
   - `[wr{x}]`, where `x` = <duration> for was-released condition (input was released at any time in the last x frames)
-  - `[ic]` to ignore the consumed state
   - Custom combos and conditions using functions like `?()` and `?jp()`
-> **Note**: The `[!c]` modifier is implicitly applied to all actions, so it is not necessary to include it in every action definition. It is primarily used for clarity in complex expressions and to make the action definition consistent. Use the `[ic]` modifier to ignore the consumed state if you want to check for actions that were triggered regardless of their consumed state.
+> **Note**: The modifiers **can** be separated by a comma (`,`), which is **optional** (e.g. `[j!c]` is equivalent to `[j,!c]`).
+> **Note**: The `[!c]` modifier is implicitly applied to all actions, so it is not necessary to include it in every action definition. It is primarily used for clarity in complex expressions and to make the action definition consistent.
 
 - **Flexible Action Definitions:**
   Actions can be defined as simple button presses or as complex expressions, e.g.:
-  - `jump[p] && attack[j]` (pressed jump and just-pressed attack)
-  - `?j(a[jic], b[jic])` (any just-pressed and consumed state is ignored for `a` and `b`)
-  - `special[t{>=50}]` (pressed for or longer than 50ms)
+  - `jump[p] && attack[j]`: pressed jump and just-pressed attack.
+  - `?j(a[j], b[j])`: any just-pressed for `a` and `b`.
+  - `special[t{>=50}]`: pressed for or longer than 50ms.
 
 - **APIs for Consuming Actions:**
   - `PlayerInput.consumeAction(action)` and `PlayerInput.consumeActions(...actions)` mark actions as handled, preventing them from being processed again.

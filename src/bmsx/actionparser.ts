@@ -137,7 +137,7 @@ type Node = OpNode | ActNode | FunNode;
  * A recursive descent parser for action definitions.
  * Converts a tokenized input string into an abstract syntax tree (AST).
  */
-class Parser {
+class InputActionParser {
 	/**
 	 * The current index in the token stream.
 	 * Used to track the position of the parser in the input tokens.
@@ -157,7 +157,7 @@ class Parser {
 	 * @throws If the input contains unexpected tokens or is invalid.
 	 */
 	static parse(src: string): Node {
-		const parser = new Parser(lex(src));
+		const parser = new InputActionParser(lex(src));
 		const ast = parser.expr();
 		if (parser.current()) throw new Error(`Unexpected token '${parser.current()!.value}'`);
 		enforceRootModifiers(ast);
@@ -322,6 +322,7 @@ class Parser {
 			this.eat(); // Consume the opening square bracket
 			while (this.current() && this.current()!.value !== ']') { // Parse modifiers until the closing bracket
 				const t = this.eat(); // Get the current token
+				if (t.value === ',') continue; // Allow comma as a separator, but not required
 				if (t.value === '!') mods.push('!' + this.take(this.current()!.kind).value); // Handle negation
 				else mods.push(t.value); // Add the modifier token to the list
 			}
@@ -380,12 +381,12 @@ function enforceRootModifiers(n: Node) {
  * @property c - Evaluates to true if the action is consumed.
  */
 const STATIC: Record<string, ModFn> = {
-        'p': (get, n, win) => get(n, win).pressed,
-        'j': (get, n, win) => get(n, win).justpressed,
-        '&j': (get, n, win) => get(n, win).alljustpressed,
-        'jr': (get, n, win) => get(n, win).justreleased,
-        '&jr': (get, n, win) => get(n, win).alljustreleased,
-        'c': (get, n, win) => get(n, win).consumed,
+	'p': (get, n, win) => get(n, win).pressed,
+	'j': (get, n, win) => get(n, win).justpressed,
+	'&j': (get, n, win) => get(n, win).alljustpressed,
+	'jr': (get, n, win) => get(n, win).justreleased,
+	'&jr': (get, n, win) => get(n, win).alljustreleased,
+	'c': (get, n, win) => get(n, win).consumed,
 };
 
 /**
@@ -442,15 +443,15 @@ function makeModPred(tok: string): ModFn {
 	let fn: ModFn; // Function to evaluate the modifier condition
 
 	if (STATIC[raw]) fn = STATIC[raw]; // Check if the token is a static modifier
-        else if (R_WP.test(raw)) { // Check if the token is a windowed press modifier
-                const ms = +raw.match(R_WP)![1]; // Extract the window size from the token
-                fn = (get, n, _) => get(n, ms).waspressed; // Return a function that checks if the action was pressed within the window
-        }
-        else if (R_WR.test(raw)) { // Check if the token is a windowed release modifier
-                const ms = +raw.match(R_WR)![1]; // Extract the window size from the token
-                fn = (get, n, _) => get(n, ms).wasreleased; // Return a function that checks if the action was released within the window
-        }
-        else if (R_T.test(raw)) { // Check if the token is a time-based comparison modifier
+	else if (R_WP.test(raw)) { // Check if the token is a windowed press modifier
+		const ms = +raw.match(R_WP)![1]; // Extract the window size from the token
+		fn = (get, n, _) => get(n, ms).waspressed; // Return a function that checks if the action was pressed within the window
+	}
+	else if (R_WR.test(raw)) { // Check if the token is a windowed release modifier
+		const ms = +raw.match(R_WR)![1]; // Extract the window size from the token
+		fn = (get, n, _) => get(n, ms).wasreleased; // Return a function that checks if the action was released within the window
+	}
+	else if (R_T.test(raw)) { // Check if the token is a time-based comparison modifier
 		const cmp = raw.match(R_T)![1]; // Extract the comparator from the token
 		const m = cmp.match(NUM_RE); // Match the comparator against the numeric regular expression
 		if (!m) throw new Error(`Invalid t{…} comparator '${cmp}'`); // Throw an error for invalid comparators
@@ -586,7 +587,7 @@ function compileFunction(base: string, args: Node[], win?: number): EvalFn {
  * to clear the cache and check if an action is triggered based on
  * the provided action definition and state getter.
  */
-export class ActionParser {
+export class ActionDefinitionEvaluator {
 	/**
 	 * A static cache to store parsed action definitions.
 	 * This cache improves performance by avoiding repeated parsing
@@ -617,7 +618,7 @@ export class ActionParser {
 		get: (n: string, w?: number) => ActionState): boolean {
 		let ast = this.cache.get(def); // Check if the action definition is already cached
 		// If not cached, parse the definition and store it in the cache
-		if (!ast) { ast = Parser.parse(def); this.cache.set(def, ast); }
+		if (!ast) { ast = InputActionParser.parse(def); this.cache.set(def, ast); }
 		// Evaluate the action definition using the provided state getter
 		// This will return true if the action is triggered based on the current state (or the windowed state if applicable)
 		return ast.eval(get);

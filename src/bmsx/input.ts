@@ -1,4 +1,4 @@
-﻿import { ActionParser } from './actionparser';
+﻿import { ActionDefinitionEvaluator } from './actionparser';
 import { handleDebugClick, handleContextMenu as handleDebugContextMenu, handleDebugMouseDown, handleDebugMouseMove, handleDebugMouseOut, handleDebugMouseUp, handleOpenDebugMenu, handleOpenObjectMenu } from './debugger/bmsxdebugger';
 import { EventEmitter } from './eventemitter';
 import { State } from './fsm';
@@ -1359,7 +1359,7 @@ export class PlayerInput {
 	 * @returns True if the action definition is satisfied, false otherwise.
 	 */
 	public checkActionTriggered(actionDefinition: string): boolean {
-		return ActionParser.checkActionTriggered(actionDefinition, this.getActionState.bind(this));
+		return ActionDefinitionEvaluator.checkActionTriggered(actionDefinition, this.getActionState.bind(this));
 	}
 
 	public checkActionsTriggered(...actions: { id: string, def: string }[]): string[] {
