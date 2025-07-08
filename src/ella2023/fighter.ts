@@ -64,7 +64,7 @@ export abstract class Fighter extends SpriteObject {
                         this.sc.pause_all_except('hitanimation');
                     },
                     next(this: Fighter, state: State) {
-                        this.moveXNoSweep(state.current_tape_value);
+                        this.x_nonotify += state.current_tape_value;
                     },
                     end(this: Fighter) {
                         this.sc.to('hitanimation.geen_au');
@@ -162,7 +162,7 @@ export abstract class Fighter extends SpriteObject {
     }
 
     public resetVerticalPosition(): void {
-        this.setYNoSweep(gamemodel.VERTICAL_POSITION_FIGHTERS - this.sy);
+        this.y_nonotify = gamemodel.VERTICAL_POSITION_FIGHTERS - this.sy;
     }
 
     protected paintHitMarker(hitMarker: HitMarkerInfo) {

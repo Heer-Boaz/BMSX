@@ -1,14 +1,6 @@
-import { mdef, sdef, sstate } from '../bmsx/bfsm';
-import { copy_vec2, Direction, Game, getOppositeDirection, new_area, new_vec2, randomInt, set_vec2, vec2 } from '../bmsx/bmsx';
-import { GameObject } from '../bmsx/gameobject';
-import { GLView } from '../bmsx/glview';
-import { Input } from '../bmsx/input';
-import { BaseModel, Space } from '../bmsx/model';
-import { MSX1ScreenHeight, MSX1ScreenWidth } from '../bmsx/msx';
-import type { RomPack } from '../bmsx/rompack';
-import { SpriteObject } from '../bmsx/sprite';
-import { TextWriter } from '../bmsx/textwriter';
-import { paintSprite } from '../bmsx/view';
+import type { randomInt } from 'crypto';
+import type { Direction } from 'readline';
+import { BaseModel, build_fsm, Game, GameObject, getOppositeDirection, GLView, Input, MSX1ScreenHeight, MSX1ScreenWidth, new_area, new_vec2, RomPack, set_vec2, Space, SpriteObject, TextWriter, vec2 } from '../bmsx/bmsx';
 import { GameMenu } from './gamemenu';
 import { KonamiFont } from './konamifont';
 import { BitmapId } from './resourceids';
@@ -35,8 +27,8 @@ class modelclass extends BaseModel {
     public pitasOpBord: number;
 
     @build_fsm()
-    public static buildModelStates(classname: string): cmdef {
-        return new cmdef(classname, {
+    public static buildModelStates() {
+        return {
             machines: {
                 master: new mdef('default', {
                     states: {

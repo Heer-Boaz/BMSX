@@ -180,6 +180,20 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 		this.pos.z = z; // Set position here, as accessors cannot be decorated with update_tagged_components
 	}
 
+	// This setter is used to set the x position without sweeping, e.g., without checking for collisions.
+	// It is used in cases where the game object is being moved without any side effects, such as when the game object is being teleported or when the position is being set directly without any physics calculations.
+	public set x_nonotify(x: number) {
+		this.pos.x = ~~x;
+	}
+
+	public set y_nonotify(y: number) {
+		this.pos.y = ~~y;
+	}
+
+	public set z_nonotify(z: number) {
+		this.pos.z = ~~z;
+	}
+
 	/**
 	 * The size of the game object. The size is represented as a 3D vector with x, y, and z coordinates.
 	 * Note that the size is only used for collision detection if the game object has no collision area and
@@ -397,9 +411,9 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	 */
 	public onspawn(spawningPos?: Vector): void {
 		if (spawningPos) {
-			this.setXNoSweep(spawningPos.x ?? this.x);
-			this.setYNoSweep(spawningPos.y ?? this.y);
-			this.setZNoSweep((spawningPos as vec3).z ?? this.z);
+			this.x_nonotify = spawningPos.x ?? this.x;
+			this.y_nonotify = spawningPos.y ?? this.y;
+			this.z_nonotify = (spawningPos as vec3).z ?? this.z;
 		}
 
 		$.registry.register(this); // Register the object in the registry so it can be retrieved by id.
@@ -942,57 +956,6 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 		if (!(this.hitbox_left >= p.x || this.hitbox_right <= p.x || this.hitbox_bottom <= p.y || this.hitbox_top >= p.y))
 			return new_vec2(p.x - this.hitbox_left, p.y - this.hitbox_top);
 		return null;
-	}
-
-	/**
-	 * Sets the x-coordinate of the object's position without triggering component updates (sweeping).
-	 *
-	 * @param newx - The new x-coordinate value.
-	 */
-	public setXNoSweep(newx: number) {
-		this.pos.x = ~~newx;
-	}
-
-	/**
-	 * Sets the y-coordinate of the object's position without triggering component updates (sweeping).
-	 *
-	 * @param newy - The new y-coordinate value.
-	 */
-	public setYNoSweep(newy: number) {
-		this.pos.y = ~~newy;
-	}
-
-	/**
-	 * Sets the z-coordinate of the object's position without triggering component updates (sweeping).
-	 *
-	 * @param newz - The new z-coordinate value.
-	 */
-	public setZNoSweep(newz: number) {
-		this.pos.z = ~~newz;
-	}
-
-	/**
-	 * Moves the game object horizontally without performing any collision detection or resolution.
-	 * @param dx - The amount to move the game object along the x-axis.
-	 */
-	public moveXNoSweep(dx: number) {
-		this.setXNoSweep(this.x + dx);
-	}
-
-	/**
-	 * Moves the game object vertically without sweeping.
-	 * @param dy - The amount to move along the Y-axis.
-	 */
-	public moveYNoSweep(dy: number) {
-		this.setYNoSweep(this.y + dy);
-	}
-
-	/**
-	 * Moves the game object along the Z-axis without performing any collision checks.
-	 * @param dz - The amount to move along the Z-axis.
-	 */
-	public moveZNoSweep(dz: number) {
-		this.setZNoSweep(this.z + dz);
 	}
 
 	/**

@@ -1,19 +1,7 @@
-import { BFont, new_vec3, trunc_vec3 } from './../bmsx/game';
-import { MSX2ScreenHeight, MSX2ScreenWidth } from './../bmsx/msx';
-import type { Direction } from "../bmsx/game";
-import { Game, new_vec2, new_area, randomInt, copy_vector } from '../bmsx/game';
-import { StateDefinition, State, build_fsm, StateMachineBlueprint } from '../bmsx/bfsm';
-import { MSX1ScreenWidth, MSX1ScreenHeight } from '../bmsx/msx';
-import { GLView } from '../bmsx/glview';
-import { BitmapId } from './resourceids';
-import { GamepadInputMapping, Input, KeyboardButton, GamepadButton, KeyboardInputMapping, InputMap } from '../bmsx/input';
-import { TextWriter } from '../bmsx/textwriter';
-import { GameMenu } from './gamemenu';
-import { GameObject } from '../bmsx/gameobject';
-import { base_model_spaces, BaseModel, spaceid_2_space } from '../bmsx/basemodel';
-import { SpriteObject } from '../bmsx/sprite';
-import { leavingScreenHandler_prohibit } from '../bmsx/collisioncomponents';
-import { RomPack, vec2 } from '../bmsx/bmsx';
+import { base_model_spaces, BaseModel, BFont, build_fsm, copy_vector, Game, GameObject, GLView, Input, InputMap, leavingScreenHandler_prohibit, MSX1ScreenHeight, MSX1ScreenWidth, MSX2ScreenHeight, MSX2ScreenWidth, new_area, new_vec2, new_vec3, randomInt, RomPack, spaceid_2_space, SpriteObject, State, StateDefinition, StateMachineBlueprint, TextWriter, trunc_vec3, vec2, type Direction } from "bmsx";
+import { GamepadButton, GamepadInputMapping, KeyboardButton, KeyboardInputMapping } from '../bmsx/bmsx';
+import { GameMenu } from "./gamemenu";
+import { BitmapId } from "./resourceids";
 
 const TIME_TO_SHINE = 90;
 
@@ -442,7 +430,7 @@ class stoom extends SpriteObject {
     constructor() {
         super();
         this.z = 1010;
-        this.imgid = BitmapId.None;
+        this.imgid = BitmapId.none;
     }
 
     override onspawn(spawningPos?: vec2): void {
@@ -490,29 +478,29 @@ const actions = ['up', 'right', 'down', 'left', 'btn1', 'btn2'] as const;
 type Action = typeof actions[number];
 
 type MyKeyboardInputMapping = {
-    [key in keyof KeyboardInputMapping & Action]: KeyboardButton;
+    [key in keyof KeyboardInputMapping & Action]: KeyboardButton[];
 };
 
 type MyGamepadInputMapping = {
-    [key in keyof GamepadInputMapping & Action]: GamepadButton;
+    [key in keyof GamepadInputMapping & Action]: GamepadButton[];
 };
 
 const keyboardInputMapping: MyKeyboardInputMapping = {
-    'up': 'ArrowUp',
-    'right': 'ArrowRight',
-    'down': 'ArrowDown',
-    'left': 'ArrowLeft',
-    'btn1': 'ShiftLeft',
-    'btn2': 'KeyZ',
+    'up': ['ArrowUp'],
+    'right': ['ArrowRight'],
+    'down': ['ArrowDown'],
+    'left': ['ArrowLeft'],
+    'btn1': ['ShiftLeft'],
+    'btn2': ['KeyZ'],
 };
 
 const gamepadInputMapping: MyGamepadInputMapping = {
-    'up': 'up',
-    'right': 'right',
-    'down': 'down',
-    'left': 'left',
-    'btn1': 'a',
-    'btn2': 'b',
+    'up': ['up'],
+    'right': ['right'],
+    'down': ['down'],
+    'left': ['left'],
+    'btn1': ['a'],
+    'btn2': ['b'],
 };
 
 class draaischijf extends SpriteObject {
@@ -615,7 +603,7 @@ class draaischijf extends SpriteObject {
 
     constructor() {
         super('draaischijf');
-        this.imgid = BitmapId.None; // Wordt goed gezet bij ingang start state
+        this.imgid = BitmapId.none; // Wordt goed gezet bij ingang start state
         this.onLeavingScreen = (ik, d, old_x_or_y) => leavingScreenHandler_prohibit(ik, d, old_x_or_y);
         this.size = { x: 64, y: 64, z: undefined };
         this.hitarea = new_area(24, 24, 64 - 24, 64 - 24);
@@ -760,9 +748,9 @@ class burn extends onvolmaaktheid {
                 gepolijst: {
                     ticks2move: 20,
                     tape: [
-                        BitmapId.None,
-                        BitmapId.None,
-                        BitmapId.None,
+                        BitmapId.none,
+                        BitmapId.none,
+                        BitmapId.none,
                     ],
                     auto_tick: false,
                     onenter(this: burn, s: State<burn>) {
@@ -786,7 +774,7 @@ class burn extends onvolmaaktheid {
 
     constructor(_zijde: zijde, _plek: vec2, __ernst?: number) {
         super(onvolmaaktheid_soort.Burn, _zijde, _plek, __ernst);
-        this.imgid = BitmapId.None;
+        this.imgid = BitmapId.none;
         this.hitarea = new_area(0, 0, this.sx, this.sy);
         // this.size = new_vec2(40, 31);
     }
@@ -824,7 +812,7 @@ class barst extends onvolmaaktheid {
                     auto_tick: false,
                     enter(this: barst, s: State<barst>) {
                         s.reset();
-                        this.imgid = BitmapId.None;
+                        this.imgid = BitmapId.none;
                         this.ben_ik_nog_onvolmaakt = false;
                     },
                     next(this: barst) {

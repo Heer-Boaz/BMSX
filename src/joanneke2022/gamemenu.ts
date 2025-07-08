@@ -1,4 +1,4 @@
-import { Constants, Direction, GameObject, Input, Msx1Colors, Msx1ExtColors, SM, Size, TextWriter, new_vec2, set_vec2, vec2, vec3, GameOptions as GO } from '../bmsx/bmsx';
+import { Constants, Direction, GameOptions as GO, GameObject, Input, Msx1Colors, Msx1ExtColors, SM, Size, TextWriter, new_vec2, set_vec2, vec2, vec3 } from '../bmsx/bmsx';
 import { AudioId, BitmapId } from './resourceids';
 
 interface MenuOption {
@@ -82,9 +82,9 @@ export class GameMenu extends GameObject {
         this.size.x = GameMenu.menuEndX - GameMenu.menuPosX, this.size.y = GameMenu.menuEndY - GameMenu.menuPosY;
         this.selectedItemIndex = 0;
         this.CurrentScreen = MenuItem.Main;
-        GameMenu.fullscreenOptionsOffsets = [$.view.default_font.char_width * 12 - 1, $.view.default_font.char_height * 14 - 1];
+        GameMenu.fullscreenOptionsOffsets = [$.view.default_font.char_width('a') * 12 - 1, $.view.default_font.char_height('a') * 14 - 1];
         GameMenu.fullscreenOptionsOffsetY = -1;
-        GameMenu.fullscreenOptionsRectangleSize = new_vec2($.view.default_font.char_width + 2, $.view.default_font.char_height + 2);
+        GameMenu.fullscreenOptionsRectangleSize = new_vec2($.view.default_font.char_width('a') + 2, $.view.default_font.char_height('a') + 2);
     }
 
     public Open(currentscreen: MenuItem = MenuItem.Main): void {
@@ -463,13 +463,13 @@ export class GameMenu extends GameObject {
                             case MenuItem.Scale:
                                 if (!GO.Fullscreen) {
                                     TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
-                                    offsetX += GameMenu.scaleText.length * $.view.default_font.char_width;
-                                    TextWriter.drawText(offsetX, y, `${$.view.scale.toPrecision(2)}X`);
+                                    offsetX += GameMenu.scaleText.length * $.view.default_font.char_width('a');
+                                    TextWriter.drawText(offsetX, y, `${$.view.canvasScale.toPrecision(2)}X`);
                                 }
                                 else {
                                     TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label, undefined, undefined, Msx1ExtColors[0]);
-                                    offsetX += GameMenu.scaleText.length * $.view.default_font.char_height;
-                                    TextWriter.drawText(offsetX, y, `${$.view.scale.toPrecision(2)}X`);
+                                    offsetX += GameMenu.scaleText.length * $.view.default_font.char_height('a');
+                                    TextWriter.drawText(offsetX, y, `${$.view.canvasScale.toPrecision(2)}X`);
                                 }
                                 break;
                             case MenuItem.Fullscreen:
@@ -479,7 +479,7 @@ export class GameMenu extends GameObject {
                             case MenuItem.SoundVolume:
                                 {
                                     TextWriter.drawText(GameMenu.menuPosX + GameMenu.mainItemsOffsetX, y, item.label);
-                                    offsetX += GameMenu.soundVolumeText.length * $.view.default_font.char_width;
+                                    offsetX += GameMenu.soundVolumeText.length * $.view.default_font.char_width('a');
                                     GO.VolumePercentage = ~~(SM.volume * 100); // TODO: LELIJK!!!!
                                     let text = GO.VolumePercentage > 0 ? GO.VolumePercentage + "%" : "Off";
                                     TextWriter.drawText(offsetX, y, text);

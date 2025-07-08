@@ -270,12 +270,21 @@ export function parseMetaFromBuffer(to_parse: ArrayBuffer): RomMeta {
 	const bytearray = new Uint8Array(to_parse);
 	const footerOffset = bytearray.length - 16;
 	if (footerOffset < 0) throw new Error('ROM file too small for footer');
-	const dv = new DataView(to_parse, footerOffset, 16);
-	const metaOffset = Number(dv.getBigUint64(0, true)); // little-endian
-	const metaLength = Number(dv.getBigUint64(8, true)); // little-endian
-	if (metaOffset < 0 || metaLength <= 0 || metaOffset + metaLength > bytearray.length)
-		throw new Error('Invalid ROM metadata footer');
-	return { start: metaOffset, end: metaOffset + metaLength };
+	let metaOffset = -1;
+	let metaLength = -1;
+	if (footerOffset < 16) {
+		throw new Error('ROM file too small for metadata footer');
+	}
+	try {
+		const dv = new DataView(to_parse, footerOffset, 16);
+		metaOffset = Number(dv.getBigUint64(0, true)); // little-endian
+		metaLength = Number(dv.getBigUint64(8, true)); // little-endian
+		if (metaOffset < 0 || metaLength <= 0 || metaOffset + metaLength > bytearray.length)
+			throw new Error('Invalid ROM metadata footer');
+		return { start: metaOffset, end: metaOffset + metaLength };
+	} catch (error) {
+		throw new Error(`Failed to parse ROM metadata: ${error.message}\n${to_parse.byteLength} bytes, footerOffset: ${footerOffset}, metaOffset: ${metaOffset === -1 ? '<unknown>' : metaOffset}, metaLength: ${metaLength === -1 ? '<unknown>' : metaLength}.`);
+	}
 }
 
 /**
@@ -303,20 +312,38 @@ export function getSubBufferFromBufferWithMeta(buffer: ArrayBuffer): ArrayBuffer
  * @param blob_buffer - The buffer containing the blob data.
  * @returns A Promise that resolves to an object containing the zipped ROM and the ROM label.
  */
-async function getZippedRomAndRomLabelFromBlob(blob_buffer: ArrayBuffer): Promise<{ zipped_rom: ArrayBuffer, romlabel: string }> {
-	// let blob_meta = parseMetaFromBuffer(blob_buffer);
-	// let romlabel_htmlimg: string = undefined;
-	// if (blob_meta.start > 0) {
-	// 	romlabel_htmlimg = getImageURL(blob_buffer.slice(0, blob_meta.start));
-	// }
-
-	// return Promise.resolve({ zipped_rom: getSubBufferAsPerMeta(blob_buffer, blob_meta), romlabel: romlabel_htmlimg });
-	try {
-		// return { zipped_rom: getSubBufferFromBufferWithMeta(blob_buffer), romlabel: undefined };
-		return { zipped_rom: blob_buffer, romlabel: undefined };
-	} catch (err) {
-		throw new Error(`Error in getZippedRomAndRomLabelFromBlob: "${err.message}"`);
+export async function getZippedRomAndRomLabelFromBlob(blob_buffer: ArrayBuffer): Promise<{ zipped_rom: ArrayBuffer, romlabel: string }> {
+	const u8 = new Uint8Array(blob_buffer);
+	// Check PNG-header
+	if (
+		u8[0] === 0x89 && u8[1] === 0x50 && u8[2] === 0x4E && u8[3] === 0x47 &&
+		u8[4] === 0x0D && u8[5] === 0x0A && u8[6] === 0x1A && u8[7] === 0x0A
+	) {
+		// Find IEND-chunk (last PNG-chunk)
+		const IEND = [0x49, 0x45, 0x4E, 0x44];
+		let idx = 8;
+		while (idx < u8.length - 12) {
+			if (
+				u8[idx + 4] === IEND[0] &&
+				u8[idx + 5] === IEND[1] &&
+				u8[idx + 6] === IEND[2] &&
+				u8[idx + 7] === IEND[3]
+			) {
+				// PNG-chunk: 4 bytes length, 4 bytes type, ... , 4 bytes CRC
+				const chunkLen = (u8[idx] << 24) | (u8[idx + 1] << 16) | (u8[idx + 2] << 8) | u8[idx + 3];
+				idx += 8 + chunkLen + 4; // type+data+crc
+				// The zipped ROM starts here
+				return {
+					zipped_rom: blob_buffer.slice(idx),
+					romlabel: getImageURL(blob_buffer.slice(0, idx))
+				};
+			}
+			idx++;
+		}
+		throw new Error('Could not find end of PNG header!');
 	}
+	// No PNG header
+	return { zipped_rom: blob_buffer, romlabel: undefined };
 }
 
 /**

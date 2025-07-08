@@ -10,7 +10,7 @@ import { PNG } from 'pngjs';
 import type { AudioMeta, ImgMeta, RomAsset, RomMeta, asset_type } from '../src/bmsx/rompack/rompack';
 import { asciiWaveBraille, generateBrailleAsciiArt, generatePixelPerfectAsciiArt, parseWav, renderBufferBar, renderSummaryBar } from './asciiart';
 import { generateAtlasName } from './atlasbuilder';
-import { loadAssetList, parseMetaFromBuffer } from './bootrom';
+import { getZippedRomAndRomLabelFromBlob, loadAssetList, parseMetaFromBuffer } from './bootrom';
 
 const PER_PIXEL_RENDERING_THRESHOLD = 64; // sprites ≤64×64 get per-pixel rendering
 
@@ -156,6 +156,15 @@ async function loadRompackFromFile(romfile: string): Promise<Buffer> {
         throw new Error(`Failed to read ROM file at "${romfile}": ${error?.message || 'Unknown error'}`);
     }
 
+    // Gebruik nu de PNG-header-detectie uit bootrom.ts
+    const { zipped_rom, romlabel } = await getZippedRomAndRomLabelFromBlob(
+        raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength)
+    );
+    if (!zipped_rom || zipped_rom.byteLength === 0) {
+        throw new Error(`ROM file "${romfile}" is empty or invalid.`);
+    }
+    console.log(`Loaded ROM file "${romfile}" with label: ${romlabel || 'No label'}`);
+
     function isPakoCompressed(raw: Uint8Array): boolean {
         // Gzip: 1F 8B
         if (raw && raw.length >= 2 && raw[0] === 0x1F && raw[1] === 0x8B) {
@@ -171,11 +180,12 @@ async function loadRompackFromFile(romfile: string): Promise<Buffer> {
         return false;
     }
 
-    const isCompressed = isPakoCompressed(raw);
+    const zippedView = new Uint8Array(zipped_rom);
+    const isCompressed = isPakoCompressed(zippedView);
     let rompack = null;
     if (isCompressed) {
         console.log('ROM is compressed, decompressing...');
-        let zipped = raw;
+        let zipped = zippedView;
         let decompressed: Uint8Array;
         try {
             decompressed = pako.inflate(zipped);
