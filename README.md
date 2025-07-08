@@ -36,22 +36,67 @@ BMSX is a lightweight TypeScript game engine and toolchain used to build small r
 - **Input handling** for keyboard, gamepad and on-screen touch controls.
 - **Finite State Machine** and **Behaviour Tree** helpers for game logic.
 - **Save state** support and built-in debugging tools (state machine and behaviour tree visualizers, rewind UI).
+- **Component system** for modular game object behavior.
+- **Game object management** with spaces for scene organization.
+- **Resource management** with texture atlases, audio packs, and metadata.
+- **TypeScript** for type safety and modular code organization.
+- **Multi-game support**: Easily add new games to the same repository.
+- **Build pipeline** that packages the engine, game code, and resources into a single `.rom` file.
+- **Progressive Web App (PWA)** features for mobile support, including home screen installation.
+- **Debugging tools**: In-browser debugger, rewind UI, and object property dialogs.
+- **Cross-platform**: Runs in modern web browsers on desktop and mobile devices.
+- **Built-in utilities**: Includes tools for building texture atlases, extracting hitboxes, and inspecting ROM files.
 
 # Project Layout
 
 The BMSX project is organized to support modular engine development, multiple games per repository, and a simple build pipeline. Here’s a detailed breakdown of the directory structure and its purpose:
 
 - **`src/bmsx/`**
-  The core engine source code. This folder contains all reusable engine modules and folders, including:
-  - **Rendering:** `glview.ts`, `view.ts` (WebGL/canvas rendering, drawing API, CRT effects)
-  - **Game Logic:** `game.ts`, `basemodel.ts`, `gameobject.ts`, `sprite.ts` (game loop, object model, spaces, sprites)
-  - **Input:** `input.ts`, `actionparser.ts`, `inputtypes.ts`, `keyboardinput.ts`, `onscreengamepad.ts`, `playerinput.ts` (keyboard, gamepad, on-screen controls, multi-player support)
-  - **Audio:** `soundmaster.ts` (music/SFX playback, integration with save/load)
-  - **State Machines & AI:** `fsm.ts`, `fsmdecorators.ts`, `fsmtypes.ts`, `behaviortree.ts` (FSM and behavior tree helpers)
-  - **Serialization:** `gameserializer.ts`, `binencoder.ts`, `bincompressor.ts` (save/load, rewind, compression)
-  - **Components:** `component.ts`, `collisioncomponents.ts` (modular logic, collision, movement)
-  - **Events:** `eventemitter.ts`, `registry.ts` (event system, global registry)
-  - **Utilities:** Math, color, vector, and helper modules
+  - `bmsx.ts`: Exports the main engine modules and types for easy access.
+  - `glsl.d.ts`: Required for WebGL shader definitions, allowing TypeScript to use GLSL code files.
+  - `tsconfig.json`: TypeScript configuration for the BMSX engine code. References the main `tsconfig.json` in the root directory and includes all engine modules.
+
+  - The core engine source code, organized into subfolders by concern. Each folder contains reusable engine modules:
+
+    - **`ai/`**: AI-specific logic and helpers.
+      - `behaviourtree.ts`, AI controllers, planners
+
+    - **`audio/`**: Sound and music engine code.
+      - `soundmaster.ts`, `psg.ts`
+
+    - **`component/`**: Component system and modular logic.
+      - `component.ts`, `collisioncomponents.ts`
+
+    - **`core/`**: Core engine functionality, including game objects, spaces, and the base model. Also event system and global registry.
+      - `game.ts`, `gameobject.ts`, `sprite.ts`, `basemodel.ts`, `eventemitter.ts`, `registry.ts`, `objecttracker.ts`
+
+    - **`debugger/`**: Debugging and visualization tools.
+      - `bmsxdebugger.ts`, `behaviourtreevisualizer.ts`, `rewindui.ts`, `objectpropertydialog.ts`, `objectpropertydialogimproved.ts`
+
+    - **`fsm/`**: General-purpose finite state machine system.
+      - `fsm.ts`, `fsmdecorators.ts`, `fsmtypes.ts`, `fsmlibrary.ts`
+
+    - **`input/`**: Input handling for keyboard, gamepad, and touch.
+      - `input.ts`, `actionparser.ts`, `inputtypes.ts`, `keyboardinput.ts`, `onscreengamepad.ts`, `playerinput.ts`, `pendingassignmentprocessor.ts`
+
+    - **`render/`**: Rendering, view, and graphics-related code.
+      - `glview.ts`, `view.ts`, `textwriter.ts`
+      - **`shaders/`**: WebGL shaders for rendering effects.
+        - `crtshader.ts`, `gameshader.ts`, `vertexshader.ts`
+
+    - **`rompack/`**: ROM packaging and resource management.
+      - `rompack.ts`
+
+    - **`serializer/`**: Save/load, compression, and serialization logic.
+      - `gameserializer.ts`, `binencoder.ts`, `bincompressor.ts`
+
+    - **`systems/`**: Platform simulation for retro systems.
+      - `msx.ts` (and similar files for other simulated platforms)
+
+    - **`ui/`**: User interface and dialog systems.
+      - `gamestatedialog.ts`, overlays, on-screen controls
+
+    > See each folder for more details on its contents and responsibilities.
 
 - **`src/<game>/`**
   Each game has its own folder under `src/`.
@@ -73,7 +118,6 @@ The BMSX project is organized to support modular engine development, multiple ga
   - **`atlasbuilder.ts`**: Builds texture atlases from individual images.
   - **`boundingbox_extractor.ts`**: Extracts hitboxes from sprite data.
   - **`rominspector.ts`**: Tool for inspecting and debugging ROM files.
-  - **Other scripts**: Utilities for asset processing, debugging, and development.
 
 - **`dist/`**
   Output directory for built games and HTML loaders:
@@ -83,7 +127,7 @@ The BMSX project is organized to support modular engine development, multiple ga
   - Any additional generated assets (e.g., images, CSS).
 
 - **`rom/`**
-  Optional: May contain additional ROM-related assets, such as PNG labels, icons, or manifest files.
+  Contains universal ROM-related assets, such as PNG labels, icons, or manifest files.
 
 - **`node_modules/`**
   Standard npm dependencies.
@@ -104,7 +148,6 @@ The BMSX project is organized to support modular engine development, multiple ga
   - `LICENSE`, `.gitignore`, etc.
 
 ---
-
 ## game.html
 
 The `game.html` file is the main entry point for running the game in a web browser. It is generated by the build process and includes the necessary scripts and assets to load and run the game. This file is designed for both desktop and mobile browsers, with support for touch controls, fullscreen, and progressive web app (PWA) features.
