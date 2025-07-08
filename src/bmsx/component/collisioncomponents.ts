@@ -5,7 +5,7 @@ import { GameObject } from "../core/gameobject";
 import { vec2 } from "../rompack/rompack";
 import { insavegame } from "../serializer/gameserializer";
 import { TileSize } from "../systems/msx";
-import { Component, componenttags_postprocessing, componenttags_preprocessing, ComponentUpdateParams } from "./component";
+import { Component, componenttags_postprocessing, componenttags_preprocessing, ComponentUpdateParams } from "./basecomponent";
 
 /**
  * Represents a component responsible for updating the position of a game object along a specific axis.

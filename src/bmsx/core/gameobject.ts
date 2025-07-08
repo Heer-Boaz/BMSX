@@ -1,5 +1,5 @@
 import { BehaviorTreeID, BehaviorTrees, Blackboard, BTNode, ConstructorWithBTProperty } from "../ai/behaviourtree";
-import { Component, ComponentConstructor, ComponentContainer, ComponentTag, KeyToComponentMap, update_tagged_components } from "../component/component";
+import { Component, ComponentConstructor, ComponentContainer, ComponentTag, KeyToComponentMap, update_tagged_components } from "../component/basecomponent";
 import { StateMachineController } from "../fsm/fsm";
 import type { ConstructorWithFSMProperty, Stateful } from "../fsm/fsmtypes";
 import { ZCOORD_MAX } from "../render/glview";

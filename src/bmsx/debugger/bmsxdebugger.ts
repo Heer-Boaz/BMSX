@@ -1,9 +1,8 @@
 import { BehaviorTreeDefinitions } from '../ai/behaviourtree';
-import { PositionUpdateAxisComponent } from '../component/collisioncomponents';
-import { Component, componenttags_preprocessing, ComponentUpdateParams } from '../component/component';
+import { Component, componenttags_postprocessing, componenttags_preprocessing, ComponentUpdateParams } from '../component/basecomponent';
 import { EventEmitter, type ListenerSet } from '../core/eventemitter';
 import type { Identifier } from "../core/game";
-import { area2size, div_vec2, new_vec2, translate_vec2, trunc_vec3 } from '../core/game';
+import { area2size, div_vec2, new_vec2, set_inplace_vec2, translate_vec2, trunc_vec3 } from '../core/game';
 import { GameObject } from '../core/gameobject';
 import { Registry } from '../core/registry';
 import { SpriteObject } from '../core/sprite';
@@ -23,7 +22,26 @@ let shiftX: number;
 let shiftY: number;
 let prevPausedState: boolean; // Remember the paused-state before a dialog was opened. This allows to return to the original "paused" state after closing debug dialogs
 
-export class DebugHighlightComponent extends PositionUpdateAxisComponent { // Note: MUST export this class, otherwise decorator will cause it to be undefined
+@componenttags_preprocessing('position_update_axis') // Preprocessing update to store the old position so that it can be used in the postprocessing update to place the object back to its old position if it collides with a wall or leaves the screen, etc.
+@componenttags_postprocessing('position_update_axis') // Postprocessing update to check for, and handle, collisions or leaving the screen, etc.
+/**
+ * Represents a component that highlights a game object in the debug view.
+ * *NOTE: DOES NOT EXTEND PositionUpdateAxisComponent, because it causes circular dependency problems in combination with the decorators, causing module-load to fail!*
+ */
+export class DebugHighlightComponent extends Component {
+    /**
+     * The previous position of the game object.
+     */
+    protected oldPos: vec2;
+
+    constructor(_id: Identifier) {
+        super(_id);
+        this.oldPos = new_vec2(0, 0)
+    }
+
+    override preprocessingUpdate(): void {
+        set_inplace_vec2(this.oldPos, (this.parent as GameObject).pos); // Store the old position
+    }
     override postprocessingUpdate({ params, returnvalue }: ComponentUpdateParams): void {
         super.postprocessingUpdate({ params, returnvalue });
         const highlighter = $.model.getGameObject<ObjectHighlighter>('debug_highlighter');
