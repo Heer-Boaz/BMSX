@@ -1,7 +1,7 @@
-﻿import { BFont, GameOptions, Identifier, copy_vector, type RegisterablePersistent } from "./game";
-import { Input } from './input/input';
-import { Registry } from './registry';
-import type { Area, ImgMeta, Size, Vector, id2htmlimg, vec2, vec3arr } from './rompack';
+﻿import { BFont, GameOptions, Identifier, copy_vector, type RegisterablePersistent } from "../core/game";
+import { Registry } from '../core/registry';
+import { Input } from '../input/input';
+import type { Area, ImgMeta, Size, Vector, id2htmlimg, vec2, vec3arr } from '../rompack/rompack';
 
 export interface FlipOptions {
 	flip_h: boolean;

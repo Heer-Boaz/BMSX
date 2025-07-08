@@ -10,7 +10,7 @@
     },
     "include": [
         ".",
-        "rompack.ts",
+        "rompack/rompack.ts",
         // "../../dist/aynoiseprocessor.js",
     ]
 }

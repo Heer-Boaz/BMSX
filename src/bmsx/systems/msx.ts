@@ -1,5 +1,5 @@
-import { vec2 } from "./rompack";
-import { Color } from "./view";
+import { Color } from "../render/view";
+import { vec2 } from "../rompack/rompack";
 
 export const TileSize: number = 16;
 export class Tile {

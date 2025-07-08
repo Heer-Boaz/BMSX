@@ -1,5 +1,5 @@
-import { GameObject } from "./gameobject";
 import type { Identifier } from "./game";
+import { GameObject } from "./gameobject";
 
 /**
  * Class representing an ObjectTracker, which tracks the properties of game objects.

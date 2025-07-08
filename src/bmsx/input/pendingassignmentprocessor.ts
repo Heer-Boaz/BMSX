@@ -1,6 +1,6 @@
 import { build_fsm, type Identifier, type State, type StateMachineBlueprint } from '../bmsx';
-import { ZCOORD_MAX } from '../glview';
-import { SpriteObject } from '../sprite';
+import { SpriteObject } from '../core/sprite';
+import { ZCOORD_MAX } from '../render/glview';
 import { Input } from './input';
 import type { GamepadButton, InputHandler } from './inputtypes';
 

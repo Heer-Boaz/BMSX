@@ -1,5 +1,5 @@
-import { BFont, GameOptions as GO } from "./game";
-import { vec2, vec3 } from "./rompack";
+import { BFont, GameOptions as GO } from "../core/game";
+import { vec2, vec3 } from "../rompack/rompack";
 import { Color, type DrawRectOptions } from './view';
 
 /**

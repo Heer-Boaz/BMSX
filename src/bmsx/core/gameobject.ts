@@ -1,13 +1,13 @@
-import { BehaviorTreeID, BehaviorTrees, Blackboard, BTNode, ConstructorWithBTProperty } from "./behaviourtree";
-import { Component, ComponentConstructor, ComponentContainer, ComponentTag, KeyToComponentMap, update_tagged_components } from "./component";
-import { StateMachineController } from "./fsm/fsm";
-import type { ConstructorWithFSMProperty, Stateful } from "./fsm/fsmtypes";
+import { BehaviorTreeID, BehaviorTrees, Blackboard, BTNode, ConstructorWithBTProperty } from "../ai/behaviourtree";
+import { Component, ComponentConstructor, ComponentContainer, ComponentTag, KeyToComponentMap, update_tagged_components } from "../component/component";
+import { StateMachineController } from "../fsm/fsm";
+import type { ConstructorWithFSMProperty, Stateful } from "../fsm/fsmtypes";
+import { ZCOORD_MAX } from "../render/glview";
+import { Area, vec2, vec3, Vector, type vec2arr } from "../rompack/rompack";
+import { insavegame, onload } from "../serializer/gameserializer";
 import type { Identifier } from "./game";
 import { AbstractConstructor, Direction, middlepoint_area, new_area, new_vec2, new_vec3 } from "./game";
-import { ZCOORD_MAX } from "./glview";
 import { ObjectTracker } from "./objecttracker";
-import { Area, vec2, vec3, Vector, type vec2arr } from "./rompack";
-import { insavegame, onload } from "./serializer/gameserializer";
 
 const DEFAULT_HITTABLE = true;
 const DEFAULT_VISIBLE = true;

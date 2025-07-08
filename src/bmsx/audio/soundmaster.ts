@@ -1,4 +1,4 @@
-import { AudioMeta, AudioType, id2res } from "./rompack";
+import { AudioMeta, AudioType, id2res } from "../rompack/rompack";
 
 export interface AudioMeta2 extends AudioMeta {
     id: string; // The ID of the audio asset.

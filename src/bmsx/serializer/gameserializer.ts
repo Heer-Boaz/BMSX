@@ -1,6 +1,6 @@
-import { Space, SpaceObject } from "../basemodel";
-import { Registry } from "../registry";
-import { SM } from "../soundmaster";
+import { SM } from "../audio/soundmaster";
+import { Space, SpaceObject } from "../core/basemodel";
+import { Registry } from "../core/registry";
 import { decodeBinary, encodeBinary } from "./binencoder";
 
 // Decorators onload/onsave are defined locally in this file

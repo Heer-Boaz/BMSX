@@ -1,7 +1,7 @@
-﻿import { handleDebugClick, handleContextMenu as handleDebugContextMenu, handleDebugMouseDown, handleDebugMouseMove, handleDebugMouseOut, handleDebugMouseUp, handleOpenDebugMenu, handleOpenObjectMenu } from '../debugger/bmsxdebugger';
-import { EventEmitter } from '../eventemitter';
-import type { Identifier, RegisterablePersistent } from "../game";
-import { Registry } from '../registry';
+﻿import { EventEmitter } from '../core/eventemitter';
+import type { Identifier, RegisterablePersistent } from "../core/game";
+import { Registry } from '../core/registry';
+import { handleDebugClick, handleContextMenu as handleDebugContextMenu, handleDebugMouseDown, handleDebugMouseMove, handleDebugMouseOut, handleDebugMouseUp, handleOpenDebugMenu, handleOpenObjectMenu } from '../debugger/bmsxdebugger';
 import type { ActionState, ButtonId, ButtonState, InputEvent, InputHandler, KeyOrButtonId2ButtonState } from './inputtypes';
 import { KeyboardInput } from './keyboardinput';
 import { GamepadInput, OnscreenGamepad } from './onscreengamepad';

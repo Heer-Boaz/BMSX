@@ -1,6 +1,6 @@
 import { glsl } from "esbuild-plugin-glsl";
 import type { Stats } from 'fs';
-import type { AudioMeta, ImgMeta, RomAsset, vec2arr } from '../src/bmsx/rompack';
+import type { AudioMeta, ImgMeta, RomAsset, vec2arr } from '../src/bmsx/rompack/rompack';
 import { createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import type { Resource, RomManifest, RomPackerOptions, resourcetype } from './rompacker.rompack';

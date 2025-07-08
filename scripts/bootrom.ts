@@ -1,4 +1,4 @@
-import type { AudioMeta, ImgMeta, RomAsset, RomMeta, RomPack } from '../src/bmsx/rompack';
+import type { AudioMeta, ImgMeta, RomAsset, RomMeta, RomPack } from '../src/bmsx/rompack/rompack';
 import { decodeBinary } from '../src/bmsx/serializer/binencoder';
 
 declare global {

@@ -1,6 +1,6 @@
+import type { Identifier } from '../core/game';
 import { State } from '../fsm/fsm';
 import type { Stateful } from '../fsm/fsmtypes';
-import type { Identifier } from '../game';
 import { FloatingDialog, removeStateMachineVisualizer } from './bmsxdebugger';
 import { createObjectTableElement } from './objectpropertydialog';
 

@@ -1,11 +1,11 @@
+import { EventEmitter, subscribesToParentScopedEvent } from "../core/eventemitter";
+import type { Identifier } from "../core/game";
+import { Direction, mod, new_vec2, set_inplace_vec2 } from "../core/game";
+import { GameObject } from "../core/gameobject";
+import { vec2 } from "../rompack/rompack";
+import { insavegame } from "../serializer/gameserializer";
+import { TileSize } from "../systems/msx";
 import { Component, componenttags_postprocessing, componenttags_preprocessing, ComponentUpdateParams } from "./component";
-import { EventEmitter, subscribesToParentScopedEvent } from "./eventemitter";
-import type { Identifier } from "./game";
-import { Direction, mod, new_vec2, set_inplace_vec2 } from "./game";
-import { GameObject } from "./gameobject";
-import { TileSize } from "./msx";
-import { vec2 } from "./rompack";
-import { insavegame } from "./serializer/gameserializer";
 
 /**
  * Represents a component responsible for updating the position of a game object along a specific axis.

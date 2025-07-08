@@ -1,12 +1,12 @@
-﻿import { BaseModel, BinaryCompressor, GameObject, gamePaused, gameResumed, PSG, TextWriter, type InputMap } from "./bmsx";
+﻿import { SM } from "../audio/soundmaster";
+import { BaseModel, BinaryCompressor, GameObject, gamePaused, gameResumed, PSG, TextWriter, type InputMap } from "../bmsx";
+import { Input } from "../input/input";
+import { ActionState, ActionStateQuery } from '../input/inputtypes';
+import { BaseView, Color, DrawImgOptions, DrawRectOptions } from "../render/view";
+import { Area, RomPack, Size, vec2, vec3, Vector } from "../rompack/rompack";
+import { MSX2ScreenHeight, MSX2ScreenWidth } from "../systems/msx";
 import { EventEmitter } from "./eventemitter";
-import { Input } from "./input/input";
-import { ActionState, ActionStateQuery } from './input/inputtypes';
-import { MSX2ScreenHeight, MSX2ScreenWidth } from "./msx";
 import { Registry } from "./registry";
-import { Area, RomPack, Size, vec2, vec3, Vector } from "./rompack";
-import { SM } from "./soundmaster";
-import { BaseView, Color, DrawImgOptions, DrawRectOptions } from "./view";
 
 /**
  * Declare global variables and types.

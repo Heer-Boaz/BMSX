@@ -1,6 +1,6 @@
-import { BaseModel } from '../basemodel';
-import { EventScope, EventSubscriber } from '../eventemitter';
-import { Identifiable, Identifier, Registerable } from '../game';
+import { BaseModel } from '../core/basemodel';
+import { EventScope, EventSubscriber } from '../core/eventemitter';
+import { Identifiable, Identifier, Registerable } from '../core/game';
 import { Input } from '../input/input';
 import { excludepropfromsavegame, insavegame, onload } from '../serializer/gameserializer';
 import { StateDefinitions } from './fsmlibrary';

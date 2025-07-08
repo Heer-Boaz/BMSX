@@ -1,4 +1,4 @@
-import type { Identifier } from "../game";
+import type { Identifier } from "../core/game";
 import type { ConstructorWithFSMProperty, FSMName, StateMachineBlueprint } from "./fsmtypes";
 
 /**
