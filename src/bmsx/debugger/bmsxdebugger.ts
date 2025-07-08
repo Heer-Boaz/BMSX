@@ -744,12 +744,3 @@ function refreshDialogs() {
 // Attach to frame event for live-refresh of property dialogs and state machine visualizers
 window.addEventListener('frame', refreshDialogs);
 window.addEventListener('rewind', refreshDialogs);
-
-export function gamePaused() {
-    showRewindDialog();
-}
-
-export function gameResumed() {
-    let rewindOverlay = document.getElementById('rewind-overlay');
-    if (rewindOverlay) rewindOverlay.remove();
-}

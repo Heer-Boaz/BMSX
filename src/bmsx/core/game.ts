@@ -1,11 +1,17 @@
-﻿import { SM } from "../audio/soundmaster";
-import { BaseModel, BinaryCompressor, GameObject, gamePaused, gameResumed, PSG, TextWriter, type InputMap } from "../bmsx";
+﻿import { PSG } from "../audio/psg";
+import { SM } from "../audio/soundmaster";
+import { gamePaused, gameResumed } from '../debugger/rewindui';
 import { Input } from "../input/input";
+import type { InputMap } from "../input/inputtypes";
 import { ActionState, ActionStateQuery } from '../input/inputtypes';
+import { TextWriter } from "../render/textwriter";
 import { BaseView, Color, DrawImgOptions, DrawRectOptions } from "../render/view";
 import { Area, RomPack, Size, vec2, vec3, Vector } from "../rompack/rompack";
+import { BinaryCompressor } from "../serializer/bincompressor";
 import { MSX2ScreenHeight, MSX2ScreenWidth } from "../systems/msx";
+import { BaseModel } from "./basemodel";
 import { EventEmitter } from "./eventemitter";
+import { GameObject } from "./gameobject";
 import { Registry } from "./registry";
 
 /**

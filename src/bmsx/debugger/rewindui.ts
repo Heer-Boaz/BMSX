@@ -94,3 +94,12 @@ export function showRewindDialog() {
     updateInfo();
     document.body.appendChild(rewindOverlay);
 }
+
+export function gamePaused() {
+    showRewindDialog();
+}
+
+export function gameResumed() {
+    let rewindOverlay = document.getElementById('rewind-overlay');
+    if (rewindOverlay) rewindOverlay.remove();
+}

@@ -1,4 +1,6 @@
-import { build_fsm, type Identifier, type State, type StateMachineBlueprint } from '../bmsx';
+import { build_fsm } from '../fsm/fsmdecorators';
+import type { Identifier } from '../core/game';
+import type { State, StateMachineBlueprint } from '../fsm/fsm';
 import { SpriteObject } from '../core/sprite';
 import { ZCOORD_MAX } from '../render/glview';
 import { Input } from './input';

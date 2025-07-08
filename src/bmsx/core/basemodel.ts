@@ -1,5 +1,5 @@
 import { BehaviorTreeDefinition, BehaviorTreeDefinitions, BehaviorTreeID, setup_bt_library, setup_btdef_library } from "../ai/behaviourtree";
-import { Vector } from "../bmsx";
+import { Vector } from "../rompack/rompack";
 import { State, StateDefinition, StateMachineController } from "../fsm/fsm";
 import { StateDefinitions, setupFSMlibrary } from "../fsm/fsmlibrary";
 import { Stateful } from "../fsm/fsmtypes";
