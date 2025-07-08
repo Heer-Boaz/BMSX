@@ -163,10 +163,88 @@ export class BFont {
 	 * The map of font resources.
 	 */
 	protected accessor font_res_map: Record<string, string>;
-	// TODO: Make this a property of the font resource map
-	get char_width(): number { return 8; }
-	// TODO: Make this a property of the font resource map
-	get char_height(): number { return 8; }
+	public char_width(letter: string): number { return global.$rom.img_assets[this.letter_to_img[letter]].imgmeta.width; }
+	public char_height(letter: string): number { return global.$rom.img_assets[this.letter_to_img[letter]].imgmeta.height; }
+	readonly letter_to_img: Record<string, string> = {
+		'0': 'letter_0',
+		'1': 'letter_1',
+		'2': 'letter_2',
+		'3': 'letter_3',
+		'4': 'letter_4',
+		'5': 'letter_5',
+		'6': 'letter_6',
+		'7': 'letter_7',
+		'8': 'letter_8',
+		'9': 'letter_9',
+		'a': 'letter_a',
+		'b': 'letter_b',
+		'c': 'letter_c',
+		'd': 'letter_d',
+		'e': 'letter_e',
+		'f': 'letter_f',
+		'g': 'letter_g',
+		'h': 'letter_h',
+		'i': 'letter_i',
+		'j': 'letter_j',
+		'k': 'letter_k',
+		'l': 'letter_l',
+		'm': 'letter_m',
+		'n': 'letter_n',
+		'o': 'letter_o',
+		'p': 'letter_p',
+		'q': 'letter_q',
+		'r': 'letter_r',
+		's': 'letter_s',
+		't': 'letter_t',
+		'u': 'letter_u',
+		'v': 'letter_v',
+		'w': 'letter_w', // lowercase w
+		'x': 'letter_x', // lowercase x
+		'y': 'letter_y', // lowercase y
+		'z': 'letter_z', // lowercase z
+		'A': 'letter_a', // uppercase a
+		'B': 'letter_b', // uppercase b
+		'C': 'letter_c', // uppercase c
+		'D': 'letter_d', // uppercase d
+		'E': 'letter_e', // uppercase e
+		'F': 'letter_f', // uppercase f
+		'G': 'letter_g', // uppercase g
+		'H': 'letter_h', // uppercase h
+		'I': 'letter_i', // uppercase i
+		'J': 'letter_j', // uppercase j
+		'K': 'letter_k', // uppercase k
+		'L': 'letter_l', // uppercase l
+		'M': 'letter_m', // uppercase m
+		'N': 'letter_n', // uppercase n
+		'O': 'letter_o', // uppercase o
+		'P': 'letter_p', // uppercase p
+		'Q': 'letter_q', // uppercase q
+		'R': 'letter_r', // uppercase r
+		'S': 'letter_s', // uppercase s
+		'T': 'letter_t', // uppercase t
+		'U': 'letter_u', // uppercase u
+		'V': 'letter_v', // uppercase v
+		'W': 'letter_w', // uppercase w
+		'X': 'letter_x', // uppercase x
+		'Y': 'letter_y', // uppercase y
+		'Z': 'letter_z', // uppercase z
+		'¡': 'letter_ij', // inverted exclamation mark
+		',': 'letter_comma',
+		'.': 'letter_dot',
+		'!': 'letter_exclamation',
+		'?': 'letter_question',
+		'\'': 'letter_apostroph',
+		' ': 'letter_space',
+		':': 'letter_colon',
+		'-': 'letter_streep', // hyphen or dash
+		'–': 'letter_streep', // en dash
+		'/': 'letter_slash',
+		'%': 'letter_percent',
+		'[': 'letter_speakstart', // opening square bracket
+		']': 'letter_speakend',   // closing square bracket
+		'(': 'letter_haakjeopen', // opening parenthesis
+		')': 'letter_haakjesluit' // closing parenthesis
+	};
 
 	/**
 	 * Creates a new instance of the `BFont` class.
@@ -183,245 +261,14 @@ export class BFont {
 	 */
 	public char_to_img(c: string): string {
 		let letter: string;
-		let _font_res_map = this.font_res_map;
-		switch (c) {
-			case '0':
-				letter = _font_res_map.letter_0;
-				break;
-			case '1':
-				letter = _font_res_map.letter_1;
-				break;
-			case '2':
-				letter = _font_res_map.letter_2;
-				break;
-			case '3':
-				letter = _font_res_map.letter_3;
-				break;
-			case '4':
-				letter = _font_res_map.letter_4;
-				break;
-			case '5':
-				letter = _font_res_map.letter_5;
-				break;
-			case '6':
-				letter = _font_res_map.letter_6;
-				break;
-			case '7':
-				letter = _font_res_map.letter_7;
-				break;
-			case '8':
-				letter = _font_res_map.letter_8;
-				break;
-			case '9':
-				letter = _font_res_map.letter_9;
-				break;
-			case 'a':
-				letter = _font_res_map.letter_a;
-				break;
-			case 'b':
-				letter = _font_res_map.letter_b;
-				break;
-			case 'c':
-				letter = _font_res_map.letter_c;
-				break;
-			case 'd':
-				letter = _font_res_map.letter_d;
-				break;
-			case 'e':
-				letter = _font_res_map.letter_e;
-				break;
-			case 'f':
-				letter = _font_res_map.letter_f;
-				break;
-			case 'g':
-				letter = _font_res_map.letter_g;
-				break;
-			case 'h':
-				letter = _font_res_map.letter_h;
-				break;
-			case 'i':
-				letter = _font_res_map.letter_i;
-				break;
-			case 'j':
-				letter = _font_res_map.letter_j;
-				break;
-			case 'k':
-				letter = _font_res_map.letter_k;
-				break;
-			case 'l':
-				letter = _font_res_map.letter_l;
-				break;
-			case 'm':
-				letter = _font_res_map.letter_m;
-				break;
-			case 'n':
-				letter = _font_res_map.letter_n;
-				break;
-			case 'o':
-				letter = _font_res_map.letter_o;
-				break;
-			case 'p':
-				letter = _font_res_map.letter_p;
-				break;
-			case 'q':
-				letter = _font_res_map.letter_q;
-				break;
-			case 'r':
-				letter = _font_res_map.letter_r;
-				break;
-			case 's':
-				letter = _font_res_map.letter_s;
-				break;
-			case 't':
-				letter = _font_res_map.letter_t;
-				break;
-			case 'u':
-				letter = _font_res_map.letter_u;
-				break;
-			case 'v':
-				letter = _font_res_map.letter_v;
-				break;
-			case 'w':
-				letter = _font_res_map.letter_w;
-				break;
-			case 'x':
-				letter = _font_res_map.letter_x;
-				break;
-			case 'y':
-				letter = _font_res_map.letter_y;
-				break;
-			case 'z':
-				letter = _font_res_map.letter_z;
-				break;
-			case 'A':
-				letter = _font_res_map.letter_a;
-				break;
-			case 'B':
-				letter = _font_res_map.letter_b;
-				break;
-			case 'C':
-				letter = _font_res_map.letter_c;
-				break;
-			case 'D':
-				letter = _font_res_map.letter_d;
-				break;
-			case 'E':
-				letter = _font_res_map.letter_e;
-				break;
-			case 'F':
-				letter = _font_res_map.letter_f;
-				break;
-			case 'G':
-				letter = _font_res_map.letter_g;
-				break;
-			case 'H':
-				letter = _font_res_map.letter_h;
-				break;
-			case 'I':
-				letter = _font_res_map.letter_i;
-				break;
-			case 'J':
-				letter = _font_res_map.letter_j;
-				break;
-			case 'K':
-				letter = _font_res_map.letter_k;
-				break;
-			case 'L':
-				letter = _font_res_map.letter_l;
-				break;
-			case 'M':
-				letter = _font_res_map.letter_m;
-				break;
-			case 'N':
-				letter = _font_res_map.letter_n;
-				break;
-			case 'O':
-				letter = _font_res_map.letter_o;
-				break;
-			case 'P':
-				letter = _font_res_map.letter_p;
-				break;
-			case 'Q':
-				letter = _font_res_map.letter_q;
-				break;
-			case 'R':
-				letter = _font_res_map.letter_r;
-				break;
-			case 'S':
-				letter = _font_res_map.letter_s;
-				break;
-			case 'T':
-				letter = _font_res_map.letter_t;
-				break;
-			case 'U':
-				letter = _font_res_map.letter_u;
-				break;
-			case 'V':
-				letter = _font_res_map.letter_v;
-				break;
-			case 'W':
-				letter = _font_res_map.letter_w;
-				break;
-			case 'X':
-				letter = _font_res_map.letter_x;
-				break;
-			case '¡':
-				letter = _font_res_map.letter_ij;
-				break;
-			case 'Y':
-				letter = _font_res_map.letter_y;
-				break;
-			case 'Z':
-				letter = _font_res_map.letter_z;
-				break;
-			case ',':
-				letter = _font_res_map.letter_comma;
-				break;
-			case '.':
-				letter = _font_res_map.letter_dot;
-				break;
-			case '!':
-				letter = _font_res_map.letter_exclamation;
-				break;
-			case '?':
-				letter = _font_res_map.letter_question;
-				break;
-			case '\'':
-				letter = _font_res_map.letter_apostroph;
-				break;
-			case ' ':
-				letter = _font_res_map.letter_space;
-				break;
-			case ':':
-				letter = _font_res_map.letter_colon;
-				break;
-			case '-': case '–':
-				letter = _font_res_map.letter_streep;
-				break;
-			case '/':
-				letter = _font_res_map.letter_slash;
-				break;
-			case '%':
-				letter = _font_res_map.letter_percent;
-				break;
-			case '[':
-				letter = _font_res_map.letter_speakstart;
-				break;
-			case ']':
-				letter = _font_res_map.letter_speakend;
-				break;
-			case '(':
-				letter = _font_res_map.letter_haakjeopen;
-				break;
-			case ')':
-				letter = _font_res_map.letter_haakjesluit;
-				break;
-			default:
-				letter = _font_res_map.letter_question;
-				break;
+		if (c in this.letter_to_img) {
+			letter = this.letter_to_img[c];
+		} else {
+			letter = 'letter_question'; // Default to question mark if character is not found
 		}
 		return letter;
 	}
+
 }
 
 /**
@@ -1098,14 +945,6 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	public getViewportSize(): Size {
 		return this.view.viewportSize;
 	}
-
-	// public getKeyState(playerIndex: number, key: string) {
-	//     return this.input.getPlayerInput(playerIndex).getKeyState(key);
-	// }
-
-	// public getGamepadButtonState(playerIndex: number, button: number) {
-	//     return this.input.getPlayerInput(playerIndex).getGamepadButtonState(button);
-	// }
 
 	private rewindBuffer: RewindBuffer;
 	private readonly REWINDBUFFER_LENGTH_SECONDS: number = 60; // Length of the rewind buffer in seconds
