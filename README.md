@@ -42,10 +42,10 @@ BMSX is a lightweight TypeScript game engine and toolchain used to build small r
 The BMSX project is organized to support modular engine development, multiple games per repository, and a simple build pipeline. Here’s a detailed breakdown of the directory structure and its purpose:
 
 - **`src/bmsx/`**
-  The core engine source code. This folder contains all reusable engine modules, including:
+  The core engine source code. This folder contains all reusable engine modules and folders, including:
   - **Rendering:** `glview.ts`, `view.ts` (WebGL/canvas rendering, drawing API, CRT effects)
   - **Game Logic:** `game.ts`, `basemodel.ts`, `gameobject.ts`, `sprite.ts` (game loop, object model, spaces, sprites)
-  - **Input:** `input.ts` (keyboard, gamepad, on-screen controls, multi-player support)
+  - **Input:** `input.ts`, `actionparser.ts`, `inputtypes.ts`, `keyboardinput.ts`, `onscreengamepad.ts`, `playerinput.ts` (keyboard, gamepad, on-screen controls, multi-player support)
   - **Audio:** `soundmaster.ts` (music/SFX playback, integration with save/load)
   - **State Machines & AI:** `fsm.ts`, `fsmdecorators.ts`, `fsmtypes.ts`, `behaviortree.ts` (FSM and behavior tree helpers)
   - **Serialization:** `gameserializer.ts`, `binencoder.ts`, `bincompressor.ts` (save/load, rewind, compression)
@@ -1562,11 +1562,27 @@ The action parsing system is designed to be flexible and extensible, allowing fo
 - **Multiple Input Sources:**
   Supports keyboard, gamepad, and on-screen controls, with seamless mapping and aggregation.
 
-# Serializing & Deserializing Game State
+
+## Example Usage
+
+```typescript
+// Check if a combo is triggered
+if (playerInput.checkActionTriggered('down[p] && punch[j]')) {
+    // Execute special move
+}
+
+// Peek at the next queued action
+const nextAction = playerInput.peekQueuedAction();
+if (nextAction?.action === 'jump') {
+    // Prepae to jump
+}
+```
+
+## Serializing & Deserializing Game State
 
 BMSX provides a simple, extensible system for saving and loading the entire game state, supporting features like rewind, save slots, and debugging. The system is designed to handle complex object graphs, circular references, and custom serialization logic.
 
-## Key Features
+### Key Features
 
 - **Full Model Serialization:**
   The entire game model (including all spaces, objects, and state machines) can be serialized and restored, preserving the exact state of the game world.
@@ -1579,37 +1595,37 @@ BMSX provides a simple, extensible system for saving and loading the entire game
 - **Custom Exclusion & Hooks:**
   Use the `@onsave`, `@onload`, `@insavegame`, and `@excludepropfromsavegame` decorators to customize what gets saved/loaded and to run custom logic during serialization/deserialization.
 - **Rewind Support:**
-  The engine maintains a rolling buffer of compressed game state snapshots, enabling frame-accurate rewind and replay via the debugger UI (`rewindui.ts`).
+  The engine aintains a rolling uffer of compressed game state snapshots, enabling frame-accurate rewind and replay via the debugger UI (`rewindui.ts`).
 - **Savegame Class:**
   The `Savegame` class (see `gameserializer.ts`) encapsulates all persistent state, including model properties, spaces, objects, sound state, and view state.
 
-## How It Works
+### How It Works
 
-### Saving
+#### Saving
 
 1. **Create Savegame Object:**
    The model's `save()` method creates a `Savegame` instance, collecting all relevant properties, spaces, and objects.
    Properties and classes can be excluded from serialization using decorators.
 2. **Serialize:**
    The `Serializer` class serializes the `Savegame` object, using reference tracking to handle cycles and shared objects.
-   Serialization can be to JSON or to a compact binary format (`binencoder.ts`).
+   Serialization can b to JSON or to a compact binary format (`binencoder.ts`).
 3. **Compress:**
    The binary snapshot is compressed using the `BinaryCompressor` (LZ77+RLE) for efficient storage and fast rewind.
 4. **Store:**
    The compressed snapshot can be stored in memory (for rewind), in localStorage, or in a file (for save slots).
 
-### Loading
+#### Loading
 
 1. **Decompress:**
    The binary snapshot is decompressed using the `BinaryCompressor`.
 2. **Deserialize:**
-   The `Reviver` class reconstructs the object graph, restoring all objects, references, and types.
+   The `Reviver` class reconstructs the object graph, restoring all objets, references, and types.
    Registered constructors and `@onload` hooks are used to re-initialize objects as needed.
 3. **Restore State:**
-   The model's `load()` method applies the deserialized state, re-populating spaces, objects, and properties.
+   The model's `load()` method applies the deserialized state, re-populating space, objects, and properties.
    Persistent entities and event subscriptions are re-initialized.
 
-### Example: Saving and Loading
+#### Example: Saving and Loading
 
 ```typescript
 // Save the current game state (compressed binary)
@@ -1619,7 +1635,7 @@ const snapshot: Uint8Array = $.model.save(true);
 $.model.load(snapshot, true);
 ```
 
-### Example: Using Decorators
+#### Example: sing Decorators
 
 ```typescript
 @insavegame
@@ -1639,19 +1655,19 @@ class MyObject {
 }
 ```
 
-### Rewind System
+#### Rewind System
 
-- The engine maintains a buffer of compressed game state snapshots for the last N seconds (default: 60s).
+- The engine maintains a buffer of compressd game state snapshots for the last N seconds (default: 60s).
 - The rewind UI (`rewindui.ts`) allows the player or developer to scrub through previous frames and restore any previous state instantly.
-- Snapshots are taken automatically each frame and are compressed (using a simple compression algorithm) for efficiency.
+- Snapshots are taken automatically each frame and are compressed (using a simple compression algoritm) for efficiency.
 
-### Debugging and Inspection
+#### Debugging and Inspection
 
 - Use `debugPrintBinarySnapshot(buf)` to pretty-print a binary snapshot for debugging.
 - The ROM inspector and debugger tools can display and manipulate saved game states.
    > Kidding, that is something that Copilot hallucinated, there is no such function yet :-)
 
-### Advanced Features
+#### Advanced Features
 
 - **Selective Serialization:**
   Exclude properties or entire classes from serialization using `@excludepropfromsavegame` and `@excludeclassfromsavegame`.
@@ -1659,39 +1675,40 @@ class MyObject {
   Use `@onsave` and `@onload` to add custom logic for saving and restoring derived or computed properties.
 - **Type Registration:**
   Register custom classes with `@insavegame` to ensure correct serialization and deserialization.
-  > **Note**: The `@insavegame` decorator is used to mark classes that should be included in the savegame serialization process, allowing the serializer to recognize and handle them correctly. **If a class is not marked with `@insavegame` and it was not omitted from serialization using `@excludeclassfromsavegame`, you will get an error when trying to save or load the game state!**
+  > **Note**: The `@insavegame` decorator is used to mark clases that should be included in the savegame serialization process, allowing the serializer to recognize and handle them correctly. **If a class is not marked with `@insavegame` and it was not omitted from serialization using `@excludeclassfromsavegame`, you will get an error when trying to save or load the game state!**
 
-### References
+#### References
 
 - See [`src/bmsx/gameserializer.ts`](src/bmsx/gameserializer.ts) for the main serialization logic and decorators.
-- See [`src/bmsx/binencoder.ts`](src/bmsx/binencoder.ts) and [`src/bmsx/bincompressor.ts`](src/bmsx/bincompressor.ts) for binary encoding and compression.
+- See [`src/bmsx/binencoder.ts`](src/bmsx/binencoder.ts) and [`src/bmsx/bincompressor.ts`](sc/bmsx/bincompressor.ts) for binary encoding and compression.
 - See [`src/bmsx/basemodel.ts`](src/bmsx/basemodel.ts) and [`src/bmsx/game.ts`](src/bmsx/game.ts) for integration with the game model and rewind system.
 - See [`src/bmsx/debugger/rewindui.ts`](src/bmsx/debugger/rewindui.ts) for the rewind debugger UI.
 
 ---
 
-# Event Registry and Emitting
+## Even Registry and Emitting
 
 BMSX features a simple event system that enables decoupled communication between game objects, systems, and engine components. The event registry is managed by the `EventEmitter` singleton (see `src/bmsx/eventemitter.ts`), which supports event subscription, emission, and deregistration patterns.
 
-## Core Concepts
+### Core Concepts
 
 - **EventEmitter**: Central dispatcher for all events. Registered as a persistent singleton (`id = 'event_emitter'`) in the global registry.
 - **Event Registry**: All event listeners and subscribers are tracked, allowing for efficient event emission and cleanup.
-- **Event Scopes**: Events can be scoped to global, self, parent, or specific emitter IDs, supporting fine-grained control over event delivery.
+- **Event Scopes**: Events can be scoped to global, self, parent, or specific emitter IDs, supporting fine-grained control overevent delivery.
 - **Subscription Decorators**: Use decorators to declaratively subscribe methods to events with specific scopes (see below).
 - **Automatic Subscription/Unsubscription**: Game objects and components can automatically register and deregister event handlers during their lifecycle (e.g., on spawn/dispose).
 
-## Subscribing to Events
+### Subscribing to Events
 
 You can subscribe to events using decorators provided in `eventemitter.ts`:
 
-- `@subscribesToGlobalEvent(eventName)`: Listen to an event globally (all emitters).
+- `@subscribesToGlobalEvent(eventName)`: Listen to an event globally ll emitters).
 - `@subscribesToSelfScopedEvent(eventName)`: Listen to events emitted by the object itself.
 - `@subscribesToParentScopedEvent(eventName)`: Listen to events emitted by the object's parent.
-- `@subscribesToEmitterScopedEvent(eventName, emitter_id)`: Listen to events from a specific emitter by ID.
+- `@subscribesToEmitterScopedEent(eventName, emitter_id)`: Listen to events from a specific emitter by ID.
 
 Example:
+
 ```typescript
 @subscribesToGlobalEvent('playerDied')
 onPlayerDied(event) {
@@ -1704,7 +1721,7 @@ onDamaged(event) {
 }
 ```
 
-## Emitting Events
+### Emitting Events
 
 To emit an event, use the `emit` method on the global game object (`$`):
 
@@ -1723,7 +1740,7 @@ $.emit('damaged', this, damageAmount);
 
 You can also use the `@emits_event(eventName)` decorator to automatically emit an event when a method is called.
 
-## Registering and Deregistering Objects
+### Registering and Deregistering Objects
 
 All event subscribers and game objects are registered in the global registry for lookup and event routing. Use the following methods (see `src/bmsx/game.ts`):
 
@@ -1735,7 +1752,7 @@ Game objects are automatically registered when spawned (see `onspawn` in `gameob
 ```typescript
 public onspawn(spawningPos?: Vector): void {
     // ...
-    $.registry.register(this); // Registers the object for event routing
+    $.registry.register(this); // Registers the object fo event routing
     this.onLoadSetup();        // Sets up event subscriptions
     // ...
 }
@@ -1745,26 +1762,26 @@ When disposed, objects should deregister themselves and remove event subscriptio
 
 ```typescript
 public dispose(): void {
-    $.event_emitter.removeSubscriber(this); // Unsubscribe from all events
+    $.event_emitter.removeSubscriber(this); // Unsubscribe from all eents
     // ...
 }
 ```
 
-## Event Handler Lifecycle
+### Event Handler Lifecycle
 
 - **onspawn**: Registers the object and sets up event subscriptions.
 - **dispose**: Removes all event subscriptions and deregisters the object.
 
 This ensures that event handlers are always up-to-date and that no memory leaks occur from lingering subscriptions.
 
-## Best Practices
+### Best Practices
 
-- Use decorators to declare event subscriptions for clarity and maintainability.
+- Use decorators to declare event subscriptions for claity and maintainability.
 - Always deregister objects and remove event subscriptions when disposing of game objects or components.
 - Use event scopes to control which objects receive which events, reducing unnecessary event traffic.
 - Prefer emitting events via `$.emit` for consistency and integration with the registry.
 
-## References
+### References
 
 - [`src/bmsx/eventemitter.ts`](src/bmsx/eventemitter.ts): Event system implementation, decorators, and API.
 - [`src/bmsx/game.ts`](src/bmsx/game.ts): Game API for registering, deregistering, and emitting events.

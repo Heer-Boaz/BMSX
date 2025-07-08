@@ -1,5 +1,5 @@
-import { decodeBinary } from '../src/bmsx/binencoder';
 import type { AudioMeta, ImgMeta, RomAsset, RomMeta, RomPack } from '../src/bmsx/rompack';
+import { decodeBinary } from '../src/bmsx/serializer/binencoder';
 
 declare global {
 	interface Window {

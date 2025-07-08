@@ -1,4 +1,4 @@
-import type { ActionState } from './input';
+import type { ActionState } from './inputtypes';
 
 /**
  * Represents the different types of tokens that can be identified

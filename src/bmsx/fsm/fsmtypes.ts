@@ -1,4 +1,4 @@
-import type { EventScope, EventSubscriber, Identifier, Registerable, State, StateDefinition, StateMachineController } from "./bmsx";
+import type { EventScope, EventSubscriber, Identifier, Registerable, State, StateDefinition, StateMachineController } from "../bmsx";
 
 export const STATE_THIS_PREFIX = '#this';
 export const STATE_PARENT_PREFIX = '#parent';

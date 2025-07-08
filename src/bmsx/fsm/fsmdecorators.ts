@@ -1,5 +1,5 @@
-import type { FSMName, ConstructorWithFSMProperty, StateMachineBlueprint } from "./fsmtypes";
-import type { Identifier } from "./game";
+import type { Identifier } from "../game";
+import type { ConstructorWithFSMProperty, FSMName, StateMachineBlueprint } from "./fsmtypes";
 
 /**
  * A record that maps string keys to functions that build machine states.

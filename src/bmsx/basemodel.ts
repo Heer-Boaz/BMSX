@@ -1,15 +1,15 @@
 import { BehaviorTreeDefinition, BehaviorTreeDefinitions, BehaviorTreeID, setup_bt_library, setup_btdef_library } from "./behaviourtree";
-import { BinaryCompressor } from "./bincompressor";
 import { Vector } from "./bmsx";
-import { State, StateDefinition, StateMachineController } from "./fsm";
-import { StateDefinitions, setupFSMlibrary } from "./fsmlibrary";
-import { Stateful } from "./fsmtypes";
+import { State, StateDefinition, StateMachineController } from "./fsm/fsm";
+import { StateDefinitions, setupFSMlibrary } from "./fsm/fsmlibrary";
+import { Stateful } from "./fsm/fsmtypes";
 import type { Identifier, Registerable, RegisterablePersistent } from "./game";
 import { Direction } from "./game";
 import { GameObject } from "./gameobject";
-import { Reviver, Savegame, Serializer, excludepropfromsavegame, insavegame } from "./gameserializer";
-import { Input } from "./input";
+import { Input } from "./input/input";
 import { Registry } from "./registry";
+import { BinaryCompressor } from "./serializer/bincompressor";
+import { Reviver, Savegame, Serializer, excludepropfromsavegame, insavegame } from "./serializer/gameserializer";
 
 export interface SpaceObject {
     spaceid: Identifier;

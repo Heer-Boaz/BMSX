@@ -1,8 +1,8 @@
-import type { EventScope } from "./eventemitter";
+import type { EventScope } from "../eventemitter";
+import type { Identifier } from "../game";
 import { StateDefinition, validateStateMachine } from "./fsm";
 import { StateDefinitionBuilders } from "./fsmdecorators";
 import type { listed_sdef_event, StateEventDefinition, StateMachineBlueprint } from "./fsmtypes";
-import type { Identifier } from "./game";
 
 /**
  * Represents the machine definitions.

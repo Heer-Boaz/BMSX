@@ -1,6 +1,6 @@
 import type { Identifiable, Identifier } from "./game";
 import { GameObject } from './gameobject';
-import { insavegame } from './gameserializer';
+import { insavegame } from './serializer/gameserializer';
 
 /**
  * Represents the definition of a behavior tree.

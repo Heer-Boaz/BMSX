@@ -1,5 +1,5 @@
 ﻿import { BFont, GameOptions, Identifier, copy_vector, type RegisterablePersistent } from "./game";
-import { Input } from './input';
+import { Input } from './input/input';
 import { Registry } from './registry';
 import type { Area, ImgMeta, Size, Vector, id2htmlimg, vec2, vec3arr } from './rompack';
 

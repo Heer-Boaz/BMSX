@@ -1,4 +1,4 @@
-import { Serializer } from '../gameserializer';
+import { Serializer } from '../serializer/gameserializer';
 import { FloatingDialog } from './bmsxdebugger';
 
 // --- Accordion/Harmonica state for property expansion ---

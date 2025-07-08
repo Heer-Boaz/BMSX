@@ -1,10 +1,10 @@
-import { BaseModel } from './basemodel';
-import { EventScope, EventSubscriber } from './eventemitter';
+import { BaseModel } from '../basemodel';
+import { EventScope, EventSubscriber } from '../eventemitter';
+import { Identifiable, Identifier, Registerable } from '../game';
+import { Input } from '../input/input';
+import { excludepropfromsavegame, insavegame, onload } from '../serializer/gameserializer';
 import { StateDefinitions } from './fsmlibrary';
 import { type StateEventDefinition, type StateEventHandler, type StateExitHandler, type StateGuard, type StateMachineBlueprint, type StateNextHandler, type StateTransition, type StateTransitionWithType, type Stateful, type Tape, type TickCheckDefinition, type TransitionType, type id2partial_sdef, type id2sstate, STATE_PARENT_PREFIX, STATE_ROOT_PREFIX, STATE_THIS_PREFIX } from './fsmtypes';
-import { Identifiable, Identifier, Registerable } from './game';
-import { excludepropfromsavegame, insavegame, onload } from './gameserializer';
-import { Input } from './input';
 
 /**
  * Maximum history size for the state transition stack.

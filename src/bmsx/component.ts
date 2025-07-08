@@ -2,8 +2,8 @@ import { EventEmitter, EventSubscription } from './eventemitter';
 import type { Disposable, Identifiable, Identifier } from "./game";
 import { AbstractConstructor } from './game';
 import { type GameObjectConstructorBaseOrAbstract } from './gameobject';
-import { insavegame, onload } from './gameserializer';
 import { Registry } from './registry';
+import { insavegame, onload } from './serializer/gameserializer';
 
 /**
  * Represents a constructor that includes the autoAddComponents property.
