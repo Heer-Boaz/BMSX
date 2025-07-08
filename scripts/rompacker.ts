@@ -9,7 +9,7 @@ const { join, parse } = require('path');
 
 const { access, readdir, readFile, stat, writeFile } = require('fs/promises');
 const term = require('terminal-kit').terminal;
-const { encodeBinary } = require('../src/bmsx/binencoder');
+const { encodeBinary } = require('../src/bmsx/serializer/binencoder');
 const _colors = require('colors');
 const pako = require('pako');
 const minify = require('@node-minify/core');

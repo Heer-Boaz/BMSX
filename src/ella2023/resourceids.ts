@@ -98,8 +98,6 @@ export enum BitmapId {
 	whitepixel = 'whitepixel',  
 	wuguan = 'wuguan',  
 	_atlas = '_atlas',  
-	_atlas_01 = '_atlas_01',  
-	_atlas_02 = '_atlas_02',  
 }
 
 export enum AudioId {
