@@ -198,37 +198,37 @@ export class BFont {
 		't': 'letter_t',
 		'u': 'letter_u',
 		'v': 'letter_v',
-		'w': 'letter_w', // lowercase w
-		'x': 'letter_x', // lowercase x
-		'y': 'letter_y', // lowercase y
-		'z': 'letter_z', // lowercase z
-		'A': 'letter_a', // uppercase a
-		'B': 'letter_b', // uppercase b
-		'C': 'letter_c', // uppercase c
-		'D': 'letter_d', // uppercase d
-		'E': 'letter_e', // uppercase e
-		'F': 'letter_f', // uppercase f
-		'G': 'letter_g', // uppercase g
-		'H': 'letter_h', // uppercase h
-		'I': 'letter_i', // uppercase i
-		'J': 'letter_j', // uppercase j
-		'K': 'letter_k', // uppercase k
-		'L': 'letter_l', // uppercase l
-		'M': 'letter_m', // uppercase m
-		'N': 'letter_n', // uppercase n
-		'O': 'letter_o', // uppercase o
-		'P': 'letter_p', // uppercase p
-		'Q': 'letter_q', // uppercase q
-		'R': 'letter_r', // uppercase r
-		'S': 'letter_s', // uppercase s
-		'T': 'letter_t', // uppercase t
-		'U': 'letter_u', // uppercase u
-		'V': 'letter_v', // uppercase v
-		'W': 'letter_w', // uppercase w
-		'X': 'letter_x', // uppercase x
-		'Y': 'letter_y', // uppercase y
-		'Z': 'letter_z', // uppercase z
-		'¡': 'letter_ij', // inverted exclamation mark
+		'w': 'letter_w',
+		'x': 'letter_x',
+		'y': 'letter_y',
+		'z': 'letter_z',
+		'A': 'letter_a',
+		'B': 'letter_b',
+		'C': 'letter_c',
+		'D': 'letter_d',
+		'E': 'letter_e',
+		'F': 'letter_f',
+		'G': 'letter_g',
+		'H': 'letter_h',
+		'I': 'letter_i',
+		'J': 'letter_j',
+		'K': 'letter_k',
+		'L': 'letter_l',
+		'M': 'letter_m',
+		'N': 'letter_n',
+		'O': 'letter_o',
+		'P': 'letter_p',
+		'Q': 'letter_q',
+		'R': 'letter_r',
+		'S': 'letter_s',
+		'T': 'letter_t',
+		'U': 'letter_u',
+		'V': 'letter_v',
+		'W': 'letter_w',
+		'X': 'letter_x',
+		'Y': 'letter_y',
+		'Z': 'letter_z',
+		'¡': 'letter_ij', // Dutch letter 'IJ'
 		',': 'letter_comma',
 		'.': 'letter_dot',
 		'!': 'letter_exclamation',
@@ -236,8 +236,8 @@ export class BFont {
 		'\'': 'letter_apostroph',
 		' ': 'letter_space',
 		':': 'letter_colon',
-		'-': 'letter_streep', // hyphen or dash
-		'–': 'letter_streep', // en dash
+		'-': 'letter_streep',
+		'–': 'letter_streep',
 		'/': 'letter_slash',
 		'%': 'letter_percent',
 		'[': 'letter_speakstart', // opening square bracket
