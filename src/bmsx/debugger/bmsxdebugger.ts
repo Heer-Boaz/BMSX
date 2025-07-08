@@ -14,7 +14,6 @@ import { excludeclassfromsavegame } from '../serializer/gameserializer';
 import { Msx1Colors } from '../systems/msx';
 import { createObjectTableElement } from './objectpropertydialog';
 import { ObjectPropertyDialog, refreshAllObjectPropertyDialogs } from './objectpropertydialogimproved';
-import { showRewindDialog } from './rewindui';
 import { StateMachineVisualizer } from './statemachinevisualizer';
 const DEBUG_ELEMENT_ID = 'debug_element_id';
 

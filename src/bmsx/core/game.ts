@@ -1,6 +1,6 @@
 ﻿import { PSG } from "../audio/psg";
 import { SM } from "../audio/soundmaster";
-import { gamePaused, gameResumed } from '../debugger/rewindui';
+import { gamePaused, gameResumed } from "../debugger/rewindui";
 import { Input } from "../input/input";
 import type { InputMap } from "../input/inputtypes";
 import { ActionState, ActionStateQuery } from '../input/inputtypes';
