@@ -143,9 +143,9 @@ export abstract class Fighter extends SpriteObject {
         opponent.sc.to('hitanimation.doet_au');
         this.hp -= getDamage(attackType);
         if (attackType === 'punch') {
-            SM.play(AudioId.hit2);
+            SM.play(AudioId.hit2, { pitchRandom: 0.05, startOffsetRandom: 0.00, volumeRandom: 3, playbackRate: 1 });
         } else {
-            SM.play(AudioId.hit1);
+            SM.play(AudioId.hit1, { pitchRandom: 0.05, startOffsetRandom: 0.00, volumeRandom: 3, playbackRate: 1 });
         }
     }
 

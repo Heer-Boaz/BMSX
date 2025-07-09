@@ -443,7 +443,7 @@ export class Eila extends Fighter {
 					ticks2move: Eila.ATTACK_DURATION,
 					enter(this: Eila, state: State, hit: boolean) {
 						this.imgid = BitmapId.eila_highkick;
-						SM.play(AudioId.kick);
+						$.playAudio(AudioId.kick, { pitchRandom: 0.01, startOffsetRandom: 0.05, volumeRandom: 1, playbackRate: 1 });
 						if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
 					},
 					next(this: Fighter, _state: State) {
@@ -453,7 +453,7 @@ export class Eila extends Fighter {
 				lowkick: {
 					ticks2move: Eila.ATTACK_DURATION,
 					enter(this: Eila, state: State, hit: boolean) {
-						SM.play(AudioId.kick);
+						$.playAudio(AudioId.kick, { pitchRandom: 0.01, startOffsetRandom: 0.05, volumeRandom: 1, playbackRate: 1 });
 						this.imgid = BitmapId.eila_lowkick;
 						if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
 					},
@@ -464,7 +464,7 @@ export class Eila extends Fighter {
 				punch: {
 					ticks2move: Eila.ATTACK_DURATION,
 					enter(this: Eila, state: State, hit: boolean) {
-						SM.play(AudioId.punch);
+						$.playAudio(AudioId.punch, { pitchRandom: 0.01, startOffsetRandom: 0.05, volumeRandom: 1, playbackRate: 1 });
 						this.imgid = BitmapId.eila_punch;
 						if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
 					},
@@ -485,7 +485,7 @@ export class Eila extends Fighter {
 				flyingkick: {
 					ticks2move: Eila.ATTACK_DURATION,
 					enter(this: Eila, state: State, hit: boolean) {
-						SM.play(AudioId.kick);
+						$.playAudio(AudioId.kick, { pitchRandom: 0.01, startOffsetRandom: 0.05, volumeRandom: 1, playbackRate: 1 });
 						this.imgid = BitmapId.eila_flyingkick;
 						if (hit) state.setTicksNoSideEffect(state.definition.ticks2move - 1);
 					},
@@ -502,7 +502,7 @@ export class Eila extends Fighter {
 				humiliated: {
 					ticks2move: 300,
 					enter(this: Eila) {
-						SM.play(AudioId.stuk);
+						$.playAudio(AudioId.stuk, { pitchRandom: 0.01, startOffsetRandom: 0.05, volumeRandom: 1, playbackRate: 1 });
 						this.imgid = BitmapId.eila_humiliated;
 					},
 					next(this: Eila) {

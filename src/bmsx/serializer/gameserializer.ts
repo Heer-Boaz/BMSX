@@ -449,10 +449,10 @@ export class Savegame {
         SM.stopMusic(); // Stop any currently playing music
         if (this.SMState) {
             if (this.SMState.sfxTrackId) {
-                SM.play(this.SMState.sfxTrackId, this.SMState.sfxOffset);
+                SM.play(this.SMState.sfxTrackId, { offset: this.SMState.sfxOffset });
             }
             if (this.SMState.musicTrackId) {
-                SM.play(this.SMState.musicTrackId, this.SMState.musicOffset);
+                SM.play(this.SMState.musicTrackId, { offset: this.SMState.musicOffset });
             }
         }
     }

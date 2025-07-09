@@ -1,5 +1,5 @@
 ﻿import { PSG } from "../audio/psg";
-import { SM } from "../audio/soundmaster";
+import { PlayParamOptions, SM } from "../audio/soundmaster";
 import { gamePaused, gameResumed } from "../debugger/rewindui";
 import { Input } from "../input/input";
 import type { InputMap } from "../input/inputtypes";
@@ -897,8 +897,8 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		TextWriter.drawText(x, y, textToWrite, z, font, color, backgroundColor);
 	}
 
-	public playAudio(id: string): void {
-		SM.play(id);
+	public playAudio(id: string, options: PlayParamOptions = {}): void {
+		SM.play(id, options);
 	}
 
 	public stopEffect(): void {
@@ -1007,7 +1007,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 			console.error("Failed to initialize PSG:", error);
 			// Optionally, provide fallback behavior or notify the user
 		}
-		SM.volume = 0;
+		// SM.volume = 0;
 
 		if (this.debug) {
 			// @ts-ignore

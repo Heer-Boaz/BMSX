@@ -1,8 +1,30 @@
 import { AudioMeta, AudioType, id2res } from "../rompack/rompack";
 
-export interface AudioMeta2 extends AudioMeta {
+export interface AudioMetadataWithID extends AudioMeta {
     id: string; // The ID of the audio asset.
 }
+
+export interface PlayParamOptions {
+    /** Offset in seconds to start playback from (not random!) */
+    offset?: number;
+    /** Random pitch variation expressed as a fraction (0.05 = ±5%) */
+    pitchRandom?: number;
+    /** Random extra offset in seconds added to the starting position */
+    startOffsetRandom?: number;
+    /** Random volume variation in decibels (0.0–3.0 is typical) */
+    volumeRandom?: number;
+    /** Base playback rate (used for velocity-based stretching) */
+    playbackRate?: number;
+    /** Optional filter to apply to the sound */
+    filter?: {
+        type?: BiquadFilterType;
+        frequency?: number;
+        q?: number;
+        gain?: number;
+    };
+}
+
+// TODO: ALSO ADD FUNCTIONALITY TO STORE THE CURRENT PLAYPARAMOPTIONS (e.g. volume, pitch, etc.) FOR EACH AUDIO TYPE FOR SERIALIZATION AND DESERIALIZATION! THAT MEANS THAT THE RESULTING OPTIONS NEED TO BE STORED AND NOT THE GIVEN OPTIONS, AS THEY CONTAIN RANGES FOR RANDOM VALUES AND NOT THE ACTUAL VALUES USED DURING PLAYBACK!
 
 export class SM {
     private static limitToOneEffect: boolean = true;
@@ -10,7 +32,8 @@ export class SM {
     private static buffers: Record<string, AudioBuffer>;
     private static sndContext: AudioContext;
     private static currentAudioNodeByType: Record<AudioType, AudioBufferSourceNode>;
-    public static currentAudioByType: Record<AudioType, AudioMeta2 | null> = { sfx: null, music: null };
+    private static nodeExtras: WeakMap<AudioBufferSourceNode, { gain?: GainNode; filter?: BiquadFilterNode }> = new WeakMap();
+    public static currentAudioByType: Record<AudioType, AudioMetadataWithID | null> = { sfx: null, music: null };
     private static gainNode: GainNode;
     private static nodeStartTime: Record<AudioType, number> = { sfx: 0, music: 0 };
     private static nodeStartOffset: Record<AudioType, number> = { sfx: 0, music: 0 };
@@ -74,33 +97,70 @@ export class SM {
         SM.releaseNode(node);
     }
 
-    private static playNode(_track: AudioMeta, node: AudioBufferSourceNode, offset?: number): void {
+    private static playNode(_track: AudioMeta, node: AudioBufferSourceNode, options: PlayParamOptions = {}): void {
         try {
-            node.connect(SM.gainNode);
+            let destination: AudioNode = SM.gainNode;
+            const extras: { gain?: GainNode; filter?: BiquadFilterNode } = {};
+
+            if (options.filter) {
+                const filter = SM.sndContext.createBiquadFilter();
+                if (options.filter.type) filter.type = options.filter.type;
+                if (options.filter.frequency !== undefined) filter.frequency.value = options.filter.frequency;
+                if (options.filter.q !== undefined) filter.Q.value = options.filter.q;
+                if (options.filter.gain !== undefined) filter.gain.value = options.filter.gain;
+                filter.connect(destination);
+                destination = filter;
+                extras.filter = filter;
+            }
+
+            if (options.volumeRandom !== undefined) {
+                const gain = SM.sndContext.createGain();
+                const dB = (Math.random() * 2 - 1) * options.volumeRandom;
+                gain.gain.value = Math.pow(10, dB / 20);
+                gain.connect(destination);
+                destination = gain;
+                extras.gain = gain;
+            }
+
+            node.connect(destination);
+            SM.nodeExtras.set(node, extras);
+
             const buffer = node.buffer;
-            let startOffset = 0;
-            if (_track['loop'] !== null) {
+            let startOffset = (options.offset ?? 0) + (options.startOffsetRandom ? Math.random() * options.startOffsetRandom : 0);
+            if (startOffset < 0) {
+                startOffset = 0;
+            } else if (buffer && startOffset > buffer.duration) {
+                startOffset = buffer.duration - 0.001; // Avoid issues with very small durations
+            }
+
+            if (_track['loop'] !== null && _track['loop'] !== undefined) {
                 node.loop = true;
                 node.loopStart = _track['loop']!;
             } else {
                 node.loop = false;
             }
-            if (typeof offset === 'number' && buffer) {
+
+            if (buffer) {
                 if (node.loop) {
-                    // For looping, wrap offset
-                    startOffset = ((offset % buffer.duration) + buffer.duration) % buffer.duration;
+                    startOffset = ((startOffset % buffer.duration) + buffer.duration) % buffer.duration;
                 } else {
-                    // For non-looping, clamp
-                    startOffset = Math.max(0, Math.min(offset, buffer.duration - 0.001));
+                    startOffset = Math.max(0, Math.min(startOffset, buffer.duration - 0.001));
                 }
             }
-            // Track when and at what offset this node started
+
+            const baseRate = options.playbackRate ?? 1;
+            let randFactor = 1;
+            if (options.pitchRandom) {
+                randFactor += (Math.random() * 2 - 1) * options.pitchRandom;
+            }
+            node.playbackRate.value = baseRate * randFactor;
+
             SM.nodeStartTime[_track['audiotype']] = SM.sndContext.currentTime;
             SM.nodeStartOffset[_track['audiotype']] = startOffset;
             node.start(0, startOffset);
             node.onended = () => SM.nodeEndedHandler(node, _track['audiotype']);
         } catch (error) {
-            console.warn(error);
+            console.error(error);
         }
     }
 
@@ -109,15 +169,21 @@ export class SM {
             console.warn(`SoundMaster: Attempted to release null node. Skipping.`);
             return;
         }
-        node.stop();
+        const extra = SM.nodeExtras.get(node);
+        try {
+            node.stop();
+        } catch { /* ignored */ }
         node.disconnect();
-        node.buffer = null;
+        if (extra?.gain) extra.gain.disconnect();
+        if (extra?.filter) extra.filter.disconnect();
+        SM.nodeExtras.delete(node);
+        try { node.buffer = null; } catch { } // Some browsers may not allow setting buffer to null, and we can safely ignore this error
     }
 
-    public static play(id: string, offset?: number): void {
+    public static play(id: string, options: PlayParamOptions = {}): void {
         const track = SM.tracks[id]?.['audiometa'];
         if (!track) {
-            console.warn(`SoundMaster: Attempted to play unknown track with id = "${id}". Skipping.`);
+            console.error(`SoundMaster: Attempted to play unknown track with id = "${id}". Skipping.`);
             return;
         }
         const audiotype = track['audiotype'];
@@ -127,7 +193,7 @@ export class SM {
             SM.stop(id); // Stop previous node before attaching a new one
             SM.currentAudioNodeByType[audiotype] = node; // Track the node before playback
             SM.currentAudioByType[audiotype] = { ...track, id: id };
-            SM.playNode(track, node, offset);
+            SM.playNode(track, node, options);
         };
         SM.createNode(id)
             .then(playCallback)
