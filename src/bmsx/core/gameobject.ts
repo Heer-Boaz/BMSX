@@ -99,6 +99,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	 * The identifier of the game object, which is a unique string that is generated based on the class name and a unique number.
 	 */
 	public id: Identifier;
+
 	/**
 	 * Indicates whether the object is flagged for disposal.
 	 * If true, the object will be disposed of at the end of the game's current update cycle.
@@ -106,13 +107,21 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	public disposeFlag: boolean;
 
 	protected _pos: vec3;
+	/**
+	 * The position of the game object. The position is represented as a 3D vector with x, y, and z coordinates.
+	 */
 	public get pos(): vec3 { return this._pos; }
+
 	/**
 	 * The position of the game object. The position is represented as a 3D vector with x, y, and z coordinates.
 	 * The z-coordinate is used for layering objects in the game world.
 	 * see {@link setPosZ} for setting the z-coordinate, as it handles the z-coordinate bounds.
 	 */
 	public set pos(pos: vec3) { this._pos = pos; }
+
+	/**
+	 * Gets the x-coordinate of the game object.
+	 */
 	public get x(): number { return this.pos.x; }
 
 	/**
@@ -134,6 +143,9 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 		this.pos.x = x; // Set position here, as accessors cannot be decorated with update_tagged_components
 	}
 
+	/**
+	 * Gets the y-coordinate of the game object.
+	 */
 	public get y(): number { return this.pos.y; }
 
 	/**
@@ -155,6 +167,11 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 		this.pos.y = y; // Set position here, as accessors cannot be decorated with update_tagged_components
 	}
 
+	/**
+	 * Gets the z-coordinate of the game object.
+	 * The z-coordinate is used for layering objects in the game world.
+	 * The z-coordinate is clamped between 0 and ZCOORD_MAX.
+	 */
 	public get z(): number { return this.pos.z; }
 	/**
 	 * Sets the z-coordinate of the game object. The z-coordinate is used for layering objects in the game world.
@@ -179,18 +196,55 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 		this.pos.z = z; // Set position here, as accessors cannot be decorated with update_tagged_components
 	}
 
-	// This setter is used to set the x position without sweeping, e.g., without checking for collisions.
-	// It is used in cases where the game object is being moved without any side effects, such as when the game object is being teleported or when the position is being set directly without any physics calculations.
+	/**
+	 * Gets the x coordinate of the game object.
+	 * We need this accessor to allow the `x_nonotify += value` to work; Otherwise, the result is `NaN` as the `x_nonotify += value` is syntactically sugar for `x_nonotify = x_nonotify + value`.
+	 */
+	get x_nonotify(): number {
+		return this.pos.x;
+	}
+
+	/**
+	 * Gets the y coordinate of the game object.
+	 * We need this accessor to allow the `y_nonotify += value` to work; Otherwise, the result is `NaN` as the `y_nonotify += value` is syntactically sugar for `y_nonotify = y_nonotify + value`.
+	 */
+	get y_nonotify(): number {
+		return this.pos.y;
+	}
+
+	/**
+	 * Gets the z coordinate of the game object.
+	 * We need this accessor to allow the `z_nonotify += value` to work; Otherwise, the result is `NaN` as the `z_nonotify += value` is syntactically sugar for `z_nonotify = z_nonotify + value`.
+	 */
+	get z_nonotify(): number {
+		return this.pos.z;
+	}
+
+	/**
+	 * This setter is used to set the x coordinate without sweeping, e.g., without checking for collisions.
+	 * It is used in cases where the game object is being moved without any side effects, such as when the game object is being teleported or when the position is being set directly without any physics calculations.
+	 * @param x The new x-coordinate to set.
+	 */
 	public set x_nonotify(x: number) {
-		this.pos.x = ~~x;
+		this.pos.x = x;
 	}
 
+	/**
+	 * This setter is used to set the y coordinate without sweeping, e.g., without checking for collisions.
+	 * It is used in cases where the game object is being moved without any side effects, such as when the game object is being teleported or when the position is being set directly without any physics calculations.
+	 * @param y The new y-coordinate to set.
+	 */
 	public set y_nonotify(y: number) {
-		this.pos.y = ~~y;
+		this.pos.y = y;
 	}
 
+	/**
+	 * This setter is used to set the z coordinate without sweeping, e.g., without checking for collisions.
+	 * It is used in cases where the game object is being moved without any side effects, such as when the game object is being teleported or when the position is being set directly without any physics calculations.
+	 * @param z The new z-coordinate to set.
+	 */
 	public set z_nonotify(z: number) {
-		this.pos.z = ~~z;
+		this.pos.z = z;
 	}
 
 	/**
@@ -302,6 +356,11 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 		this.blackboards[bt_id].clearAllNodeData();
 	}
 
+	/**
+	 * The hit area of the game object, which is used for collision detection.
+	 * The hit area is an instance of the Area class, which represents a rectangular area in the game world.
+	 * If the hit area is not defined, it will be created based on the position and size of the game object.
+	 */
 	public hitarea: Area;
 
 	protected _hitpolygon: vec2arr[][];
