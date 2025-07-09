@@ -16,7 +16,7 @@ export * from './debugger/objectpropertydialog';
 export * from './debugger/objectpropertydialogimproved';
 export * from './debugger/rewindui';
 export * from './debugger/statemachinevisualizer';
-export * from './fsm/fsm';
+export * from './fsm/fsmcontroller';
 export * from './fsm/fsmdecorators';
 export * from './fsm/fsmtypes';
 export * from './input/actionparser';

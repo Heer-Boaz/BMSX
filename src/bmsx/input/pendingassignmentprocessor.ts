@@ -1,8 +1,8 @@
 import type { Identifier } from '../core/game';
 import { SpriteObject } from '../core/sprite';
-import type { State } from '../fsm/fsm';
 import { build_fsm } from '../fsm/fsmdecorators';
 import type { StateMachineBlueprint } from '../fsm/fsmtypes';
+import type { State } from '../fsm/state';
 import { ZCOORD_MAX } from '../render/glview';
 import { Input } from './input';
 import type { GamepadButton, InputHandler } from './inputtypes';

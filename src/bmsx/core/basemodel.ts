@@ -1,9 +1,11 @@
 import { BehaviorTreeDefinition, BehaviorTreeDefinitions, BehaviorTreeID, setup_bt_library, setup_btdef_library } from "../ai/behaviourtree";
-import { Vector } from "../rompack/rompack";
-import { State, StateDefinition, StateMachineController } from "../fsm/fsm";
+import { StateMachineController } from "../fsm/fsmcontroller";
 import { StateDefinitions, setupFSMlibrary } from "../fsm/fsmlibrary";
 import { Stateful } from "../fsm/fsmtypes";
+import { State } from '../fsm/state';
+import { StateDefinition } from '../fsm/statedefinition';
 import { Input } from "../input/input";
+import { Vector } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { Reviver, Savegame, Serializer, excludepropfromsavegame, insavegame } from "../serializer/gameserializer";
 import type { Identifier, Registerable, RegisterablePersistent } from "./game";
