@@ -1,5 +1,5 @@
 ﻿import { PSG } from "../audio/psg";
-import { PlayParamOptions, SM } from "../audio/soundmaster";
+import { RandomModulationParams, SM } from "../audio/soundmaster";
 import { gamePaused, gameResumed } from "../debugger/rewindui";
 import { Input } from "../input/input";
 import type { InputMap } from "../input/inputtypes";
@@ -897,7 +897,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		TextWriter.drawText(x, y, textToWrite, z, font, color, backgroundColor);
 	}
 
-	public playAudio(id: string, options: PlayParamOptions = {}): void {
+	public playAudio(id: string, options: RandomModulationParams = {}): void {
 		SM.play(id, options);
 	}
 
