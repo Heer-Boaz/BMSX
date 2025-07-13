@@ -436,7 +436,8 @@ export class Savegame {
             sfxTrackId: SM.currentTrackByType('sfx'),
             sfxOffset: SM.currentTimeByType('sfx'),
             musicTrackId: SM.currentTrackByType('music'),
-            musicOffset: SM.currentTimeByType('music')
+            musicOffset: SM.currentTimeByType('music'),
+            sfxModParams: SM.currentModParamsByType['sfx'],
         };
 
         return { SMState };

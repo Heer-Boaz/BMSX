@@ -279,5 +279,4 @@ export class SM {
 		const audioMeta = SM.currentAudioByType[type];
 		return audioMeta ? audioMeta.id : null;
 	}
-
 }
