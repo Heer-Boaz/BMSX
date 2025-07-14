@@ -38,8 +38,6 @@ export interface ModulationParams {
 	};
 }
 
-// TODO: ALSO ADD FUNCTIONALITY TO STORE THE CURRENT PLAYPARAMOPTIONS (e.g. volume, pitch, etc.) FOR EACH AUDIO TYPE FOR SERIALIZATION AND DESERIALIZATION! THAT MEANS THAT THE RESULTING OPTIONS NEED TO BE STORED AND NOT THE GIVEN OPTIONS, AS THEY CONTAIN RANGES FOR RANDOM VALUES AND NOT THE ACTUAL VALUES USED DURING PLAYBACK!
-
 export class SM {
 	private static limitToOneEffect: boolean = true;
 	private static tracks: id2res;
@@ -278,5 +276,9 @@ export class SM {
 	public static currentTrackByType(type: AudioType): string | null {
 		const audioMeta = SM.currentAudioByType[type];
 		return audioMeta ? audioMeta.id : null;
+	}
+
+	public static currentModulationParamsByType(type: AudioType): ModulationParams | null {
+		return SM.currentPlayParamsByType[type] || null;
 	}
 }

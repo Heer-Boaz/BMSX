@@ -1,4 +1,4 @@
-import { SM } from "../audio/soundmaster";
+import { type ModulationParams, SM } from "../audio/soundmaster";
 import { Space, SpaceObject } from "../core/basemodel";
 import { Registry } from "../core/registry";
 import { decodeBinary, encodeBinary } from "./binencoder";
@@ -390,6 +390,8 @@ type SoundMasterState = {
     sfxOffset?: number;
     musicTrackId?: string;
     musicOffset?: number;
+    sfxModParams?: ModulationParams;
+    musicModParams?: ModulationParams;
 };
 
 type ViewState = {
@@ -437,7 +439,8 @@ export class Savegame {
             sfxOffset: SM.currentTimeByType('sfx'),
             musicTrackId: SM.currentTrackByType('music'),
             musicOffset: SM.currentTimeByType('music'),
-            sfxModParams: SM.currentModParamsByType['sfx'],
+            sfxModParams: SM.currentModulationParamsByType('sfx'),
+            musicModParams: SM.currentModulationParamsByType('music'),
         };
 
         return { SMState };
@@ -450,10 +453,10 @@ export class Savegame {
         SM.stopMusic(); // Stop any currently playing music
         if (this.SMState) {
             if (this.SMState.sfxTrackId) {
-                SM.play(this.SMState.sfxTrackId, { offset: this.SMState.sfxOffset });
+                SM.play(this.SMState.sfxTrackId, { offset: this.SMState.sfxOffset, ...(this.SMState.sfxModParams || {}) });
             }
             if (this.SMState.musicTrackId) {
-                SM.play(this.SMState.musicTrackId, { offset: this.SMState.musicOffset });
+                SM.play(this.SMState.musicTrackId, { offset: this.SMState.musicOffset, ...this.SMState.musicModParams || {} });
             }
         }
     }
