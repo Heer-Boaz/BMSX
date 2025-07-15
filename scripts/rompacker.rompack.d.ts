@@ -20,15 +20,13 @@ export interface Resource {
 	type: resourcetype;
 	id: number;
 	collisionType?: 'concave' | 'convex' | 'aabb';
+	datatype?: 'json' | 'yaml' | 'bin'; // If the resource is a data file, this indicates the type of data it contains
 	targetAtlasIndex?: number; // If this is not an atlas image, index of atlas this image belongs to
 	atlasid?: number; // If this is an atlas image, id (=index) of the atlas
 	buffer?: Buffer;
 	img?: any;
 	imgmeta?: ImgMeta;
 }
-
-export type LoadedResource = Resource;
-export type ResourceMeta = Resource;
 
 export type resourcetype = asset_type | 'rommanifest' | 'romlabel';
 

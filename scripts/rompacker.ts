@@ -436,11 +436,12 @@ function zip(content: Buffer): Uint8Array {
  * @param filepath The path of the resource file.
  * @returns An object containing the name, extension, and type of the resource file.
  */
-function getResMetaByFilename(filepath: string): { name: string, ext: string, type: resourcetype, collisionType?: 'concave' | 'convex' | 'aabb' | undefined } {
+function getResMetaByFilename(filepath: string): { name: string, ext: string, type: resourcetype, collisionType?: 'concave' | 'convex' | 'aabb' | undefined, datatype?: 'json' | 'yaml' | 'bin' | undefined } {
 	let name = parse(filepath).name.replace(' ', '').toLowerCase();
 	const ext = parse(filepath).ext.toLowerCase();
 	let type: resourcetype;
 	let collisionType: 'concave' | 'convex' | 'aabb' | undefined = undefined;
+	let datatype: 'json' | 'yaml' | 'bin' | undefined = undefined;
 
 	switch (ext) {
 		case '.wav':
@@ -465,14 +466,17 @@ function getResMetaByFilename(filepath: string): { name: string, ext: string, ty
 			}
 			break;
 		case '.json':
+			datatype = 'json';
 		case '.yaml':
+			datatype = 'yaml';
 		case '.bin':
+			datatype = 'bin';
 			type = 'data';
 			break;
 		default:
 			break;
 	}
-	return { name: name, ext: ext, type: type, collisionType: collisionType };
+	return { name: name, ext: ext, type: type, collisionType: collisionType, datatype: datatype };
 }
 
 /**
@@ -530,7 +534,7 @@ async function getResMetaList(respath: string, romname?: string): Promise<Resour
 				break;
 			case 'data':
 				// For data files, we use the name as is
-				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: dataid });
+				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: dataid, datatype: meta.datatype });
 				++dataid;
 				break;
 			case 'atlas':
@@ -713,7 +717,7 @@ function generateRomAssets(resources: Resource[]) {
 		const type = res.type;
 		let resname = res.name;
 		const resid = res.id;
-		const buffer = res.buffer; // NOTE that we will remove the buffer during the finalization of the ROM pack. To do proper finalization, we need to store the buffer here right now. N.B. the bootrom will also add the buffer to the RomAsset, so that's why the property is relevant in the first place and we are now using it to temporarily hold the buffer per asset.
+		let buffer = res.buffer; // NOTE that we will remove the buffer during the finalization of the ROM pack. To do proper finalization, we need to store the buffer here right now. N.B. the bootrom will also add the buffer to the RomAsset, so that's why the property is relevant in the first place and we are now using it to temporarily hold the buffer per asset.
 
 		switch (type) {
 			case 'romlabel':
@@ -743,16 +747,29 @@ function generateRomAssets(resources: Resource[]) {
 			case 'data':
 				// Encode the JSON-data via the binencoder
 				// Convert the buffer to a JSON string and then encode it
-				if (resname.endsWith('.yaml')) {
-					// If the data is a YAML file, we need to convert it to JSON first
-					const yamlContent = res.buffer.toString('utf8');
-					const jsonContent = yaml.load(yamlContent);
-					res.buffer = Buffer.from(JSON.stringify(jsonContent));
-					resname = resname.replace('.yaml', '.json'); // Change the name to .json
+				switch (res.datatype) {
+					case 'json':
+						// If the data is a JSON file, we need to convert it to a string first
+						const json = JSON.parse(res.buffer.toString('utf8'));
+						const encodedData = Buffer.from(encodeBinary(json));
+
+						buffer = encodedData;
+						break;
+					case 'yaml':
+						// If the data is a YAML file, we need to convert it to JSON first
+						const yamlContent = res.buffer.toString('utf8');
+						const jsonContent = yaml.load(yamlContent);
+						const encodedJsonData = Buffer.from(encodeBinary(jsonContent));
+
+						buffer = encodedJsonData;
+						break;
+					case 'bin':
+						// If the data is a binary file, we can use it as is
+						break;
+					default:
+						throw new Error(`Unknown data type "${res.datatype}" for resource "${resname}"`);
 				}
-				// Encode the buffer to a binary format
-				const encodedData = Buffer.from(encodeBinary(res.buffer.toString('utf8')));
-				romAssets.push({ resid, resname, type, buffer: encodedData });
+				romAssets.push({ resid, resname, type, buffer });
 				break;
 			case 'atlas': {
 				// Atlas resources are handled similarly to images but with a twist

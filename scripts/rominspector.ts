@@ -80,24 +80,22 @@ async function loadSourceFromBuffer(buf: ArrayBuffer): Promise<string> {
 async function loadDataFromBuffer(buf: ArrayBuffer): Promise<any> {
     if (!(buf instanceof ArrayBuffer)) {
         console.error('loadDataFromBuffer expects an ArrayBuffer, got:', buf);
-        throw new Error('Invalid buffer type');
+        throw new Error('Invalid buffer type, expected ArrayBuffer, please check the ROM file.');
     }
     if (buf.byteLength === 0) {
-        console.error('loadDataFromBuffer received an empty buffer');
-        return null;
+        throw new Error(`loadDataFromBuffer received an empty buffer, please check the ROM file.`);
     }
     // First create a copy of the ArrayBuffer to avoid issues with shared memory
     let copyBuffer = new ArrayBuffer(buf.byteLength);
     copyBuffer = buf.slice(0);
 
     // Use TextDecoder to decode the ArrayBuffer directly
-    const decoded = Buffer.from(decodeuint8arr(new Uint8Array(copyBuffer)));
+    // const decoded = Buffer.from(decodeuint8arr(new Uint8Array(copyBuffer)));
 
     try {
-        return decodeBinary(decoded);
+        return decodeBinary(new Uint8Array(copyBuffer));
     } catch (e) {
-        console.error('Failed to parse data from buffer:', e);
-        return null;
+        throw new Error(`Failed to parse data from buffer: ${e}`);
     }
 }
 
@@ -538,7 +536,7 @@ async function main() {
                 // ------ ASCII-preview toevoegen ------
                 try {
                     asciiArt = '[No audio buffer available]';
-                    if (!selected.buffer || !(selected.buffer instanceof ArrayBuffer) || selected.buffer.byteLength === 0) {
+                    if (!selected.buffer || !(selected.buffer instanceof ArrayBuffer) || selected.buffer?.byteLength === 0) {
                         // Load the audio buffer from the ROM pack
                         (selected.buffer as ArrayBuffer) = await loadAudio(rompack.slice(selected.start, selected.end));
                     }
@@ -561,12 +559,12 @@ async function main() {
                 break;
             case 'data':
                 // Show data as JSON if available, but we need to decode it first using the bindecoder
-                if (!selected.buffer || !(selected.buffer instanceof ArrayBuffer) || selected.buffer.byteLength === 0) {
+                if (!selected.buffer || !(selected.buffer instanceof ArrayBuffer) || selected.buffer?.byteLength === 0) {
                     // Load the data buffer from the ROM pack
-                    const dataBuffer = rompack.slice(selected.start, selected.end);
-                    metadataLines.push(`Data size: ${byteSizeToString(dataBuffer.byteLength)}`);
-                    asciiArt = decodeuint8arr(new Uint8Array(dataBuffer));
+                    selected.buffer = await loadDataFromBuffer(rompack.slice(selected.start, selected.end));
                 }
+                metadataLines.push(`Data size: ${byteSizeToString(selected.buffer.byteLength)}`);
+                asciiArt = decodeuint8arr(new Uint8Array(selected.buffer));
                 break;
             case 'code': {
                 let code = '';
