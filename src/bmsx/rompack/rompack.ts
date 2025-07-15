@@ -96,29 +96,7 @@ export interface ImgMeta {
 	hitpolygons?: HitPolygonsPrecalc; // The concave hull polygons for collision detection, with flipped variants.
 }
 
-export interface AtlasMeta {
-	/**
-	 * The ID of the atlas.
-	 */
-	id: number;
-
-	/**
-	 * The width of the atlas.
-	 */
-	width: number;
-
-	/**
-	 * The height of the atlas.
-	 */
-	height: number;
-
-	/**
-	 * The list of image assets in the atlas.
-	 */
-	// img_assets: RomAsset[];
-}
-
-export type asset_type = 'image' | 'audio' | 'code' | 'atlas' | 'romlabel';
+export type asset_type = 'image' | 'audio' | 'code' | 'data' | 'atlas' | 'romlabel';
 
 /**
  * Represents an asset in a ROM pack.
@@ -142,11 +120,13 @@ export interface RomMeta {
 }
 
 export type id2res = Record<number | string, RomAsset>;
+export type id2data = Record<number | string, any>;
 export type id2htmlimg = Record<number | string, HTMLImageElement>;
 export interface RomPack {
 	rom: ArrayBuffer, // The binary buffer of the ROM pack, containing all assets, including images, audio and code.
 	images: id2htmlimg; // The HTML images of the loaded image assets in the ROM pack, used for the Canvas renderer (not the WebGL renderer).
 	img_assets: id2res; // Reference to the loaded image assets in the ROM pack, including metadata.
 	snd_assets: id2res; // Reference to the loaded audio assets in the ROM pack, including metadata.
+	data_assets: id2data; // Reference to the loaded data assets in the ROM pack, including metadata.
 	code: string; // The loaded game code in the ROM pack.
 }

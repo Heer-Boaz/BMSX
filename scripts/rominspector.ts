@@ -8,6 +8,7 @@ import * as fs from 'fs/promises';
 import * as pako from 'pako';
 import { PNG } from 'pngjs';
 import type { AudioMeta, ImgMeta, RomAsset, RomMeta, asset_type } from '../src/bmsx/rompack/rompack';
+import { decodeBinary } from '../src/bmsx/serializer/binencoder';
 import { asciiWaveBraille, generateBrailleAsciiArt, generatePixelPerfectAsciiArt, parseWav, renderBufferBar, renderSummaryBar } from './asciiart';
 import { generateAtlasName } from './atlasbuilder';
 import { getZippedRomAndRomLabelFromBlob, loadAssetList, parseMetaFromBuffer } from './bootrom';
@@ -74,6 +75,30 @@ async function loadSourceFromBuffer(buf: ArrayBuffer): Promise<string> {
     const decoded = decodeuint8arr(new Uint8Array(copyBuffer));
 
     return decoded;
+}
+
+async function loadDataFromBuffer(buf: ArrayBuffer): Promise<any> {
+    if (!(buf instanceof ArrayBuffer)) {
+        console.error('loadDataFromBuffer expects an ArrayBuffer, got:', buf);
+        throw new Error('Invalid buffer type');
+    }
+    if (buf.byteLength === 0) {
+        console.error('loadDataFromBuffer received an empty buffer');
+        return null;
+    }
+    // First create a copy of the ArrayBuffer to avoid issues with shared memory
+    let copyBuffer = new ArrayBuffer(buf.byteLength);
+    copyBuffer = buf.slice(0);
+
+    // Use TextDecoder to decode the ArrayBuffer directly
+    const decoded = Buffer.from(decodeuint8arr(new Uint8Array(copyBuffer)));
+
+    try {
+        return decodeBinary(decoded);
+    } catch (e) {
+        console.error('Failed to parse data from buffer:', e);
+        return null;
+    }
 }
 
 async function loadAssets(rompack: Buffer | ArrayBuffer) {
@@ -237,6 +262,7 @@ async function main() {
 
     const imageAssets = assetList.filter(a => a.type === 'image') ?? [];
     const audioCount = assetList.filter(a => a.type === 'audio')?.length ?? 0;
+    const dataCount = assetList.filter(a => a.type === 'data')?.length ?? 0;
     const codeCount = assetList.filter(a => a.type === 'code')?.length ?? 0;
     const otherCount = assetList.filter(a => a.type !== 'image' && a.type !== 'audio' && a.type !== 'code')?.length ?? 0;
 
@@ -277,6 +303,12 @@ async function main() {
             if (typeof a.metabuffer_start === 'number' && typeof a.metabuffer_end === 'number') size += a.metabuffer_end - a.metabuffer_start;
             return sum + size;
         }, 0);
+        const dataSize = assetList.filter(a => a.type === 'data').reduce((sum, a) => {
+            let size = 0;
+            if (typeof a.start === 'number' && typeof a.end === 'number') size += a.end - a.start;
+            if (typeof a.metabuffer_start === 'number' && typeof a.metabuffer_end === 'number') size += a.metabuffer_end - a.metabuffer_start;
+            return sum + size;
+        }, 0);
         const codeSize = assetList.reduce((sum, a) => a.type === 'code' ? sum + (a.end - a.start) : sum, 0);
         const totalSize = rompack.byteLength;
 
@@ -300,6 +332,9 @@ async function main() {
                 case 'code':
                     colorTag = '{light-white-fg}';
                     break;
+                case 'data':
+                    colorTag = '{light-green-fg}';
+                    break;
                 default:
                     colorTag = '{light-magenta-fg}'; // Default for other types
                     break;
@@ -316,16 +351,18 @@ async function main() {
 
         const imageSizePercent = (imagesSize / totalSize * 100).toFixed(1);
         const audioSizePercent = (audioSize / totalSize * 100).toFixed(1);
+        const dataSizePercent = (dataSize / totalSize * 100).toFixed(1);
         const codeSizePercent = (codeSize / totalSize * 100).toFixed(1);
         const atlasSizePercent = (atlasSize / totalSize * 100).toFixed(1);
         const metaSizePercent = (metaBuf.byteLength / totalSize * 100).toFixed(1);
 
         return `Total assets: ${assetList?.length ?? 0} (images: ${imageAssets?.length ?? 0
-            }, audio: ${audioCount}, code: ${codeCount}, other: ${otherCount}) \n` +
+            }, audio: ${audioCount}, data: ${dataCount}, code: ${codeCount}, other: ${otherCount}) \n` +
             `Buffer: ${renderSummaryBar(summaryRegions, totalSize, barLength)}\n` +
             `Total size: ${byteSizeToString(totalSize)} | ` +
             `Images: ${byteSizeToString(imagesSize)} (${imageSizePercent}%) | ` +
             `Audio: ${byteSizeToString(audioSize)} (${audioSizePercent}%) | ` +
+            `Data: ${byteSizeToString(dataSize)} (${dataSizePercent}%) | ` +
             `Code: ${byteSizeToString(codeSize)} (${codeSizePercent}%) | ` +
             `Atlas: ${byteSizeToString(atlasSize)} (${atlasSizePercent}%) | ` +
             `Metadata: ${byteSizeToString(metaBuf.byteLength)} (${metaSizePercent}%)`;
@@ -520,6 +557,15 @@ async function main() {
                     asciiArt = scope;                          // getoond in je modal
                 } catch (e) {
                     asciiArt = `(Preview failed: ${e}\n${e.stack})`;
+                }
+                break;
+            case 'data':
+                // Show data as JSON if available, but we need to decode it first using the bindecoder
+                if (!selected.buffer || !(selected.buffer instanceof ArrayBuffer) || selected.buffer.byteLength === 0) {
+                    // Load the data buffer from the ROM pack
+                    const dataBuffer = rompack.slice(selected.start, selected.end);
+                    metadataLines.push(`Data size: ${byteSizeToString(dataBuffer.byteLength)}`);
+                    asciiArt = decodeuint8arr(new Uint8Array(dataBuffer));
                 }
                 break;
             case 'code': {

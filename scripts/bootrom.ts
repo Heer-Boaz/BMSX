@@ -399,6 +399,7 @@ export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuff
 		rom: rom,
 		img_assets: {},
 		snd_assets: {},
+		data_assets: {},
 		code: null
 	};
 
@@ -425,6 +426,10 @@ async function getImageFromBuffer(buffer: ArrayBuffer): Promise<HTMLImageElement
 	return loadImage(getImageURL(buffer));
 }
 
+async function loadDataFromBuffer(buffer: ArrayBuffer): Promise<any> {
+	return decodeBinary(new Uint8Array(buffer));
+}
+
 /**
  * Asynchronously loads the given resource from the ROM buffer and adds it to the given `RomPack` object.
  * @param rom - The buffer containing the ROM data.
@@ -433,7 +438,7 @@ async function getImageFromBuffer(buffer: ArrayBuffer): Promise<HTMLImageElement
  * @returns A Promise that resolves when the resource has been loaded and added to the `RomPack` object.
  * If an error occurs during loading, the Promise is rejected with an error message.
  */
-async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>, loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>, loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any> }): Promise<void> {
+async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>, loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>, loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>, loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any> }): Promise<void> {
 	switch (res.type) {
 		case 'image':
 		case 'atlas':
@@ -451,19 +456,6 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 			romResult.img_assets[res.resid] = res;
 			romResult.img_assets[res.resname] = res;
 			break;
-		case 'code':
-			try {
-				// const bytearray = new Uint8Array(rom);
-				if (opts && opts.loadSourceFromBuffer) {
-					romResult.code = await opts.loadSourceFromBuffer(rom.slice(res.start, res.end));
-				} else {
-					const sliced = new Uint8Array(rom, res.start, res.end - res.start);
-					romResult.code = decodeuint8arr(sliced);
-				}
-			} catch (err) {
-				throw new Error(`Failed to load 'source' from rom: ${err.message}.`);
-			}
-			break;
 		case 'audio':
 			try {
 				if (opts && opts.loadAudioFromBuffer) {
@@ -475,6 +467,31 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 				}
 			} catch (err) {
 				throw new Error(`Failed to load 'audio' from rom: ${err.message}.`);
+			}
+			break;
+		case 'code':
+			try {
+				if (opts && opts.loadSourceFromBuffer) {
+					romResult.code = await opts.loadSourceFromBuffer(rom.slice(res.start, res.end));
+				} else {
+					const sliced = new Uint8Array(rom, res.start, res.end - res.start);
+					romResult.code = decodeuint8arr(sliced);
+				}
+			} catch (err) {
+				throw new Error(`Failed to load 'source' from rom: ${err.message}.`);
+			}
+			break;
+		case 'data':
+			try {
+				if (opts && opts.loadDataFromBuffer) {
+					romResult.data_assets[res.resid] = await opts.loadDataFromBuffer(rom.slice(res.start, res.end));
+				} else {
+					const data = await loadDataFromBuffer(rom.slice(res.start, res.end));
+					romResult.data_assets[res.resid] = data;
+					romResult.data_assets[res.resname] = data;
+				}
+			} catch (err) {
+				throw new Error(`Failed to load 'data' from rom: ${err.message}.`);
 			}
 			break;
 		default:

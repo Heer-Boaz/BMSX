@@ -26,12 +26,13 @@ const ROM_TS_RELATIVE_PATH = `../scripts/${BOOTROM_TS_FILENAME}`;
 const ROM_JS_RELATIVE_PATH = `../rom/${BOOTROM_JS_FILENAME}`;
 
 const BOILERPLATE_RESOURCE_ID_BITMAP = `export enum BitmapId {
-	none = 'none',
-`; // Note: cannot use const enums here, because BFont uses BitmapId as a type (and const enums are not available at runtime)
+	none = 'none',`; // Note: cannot use const enums here, because BFont uses BitmapId as a type (and const enums are not available at runtime)
 
 const BOILERPLATE_RESOURCE_ID_AUDIO = `export enum AudioId {
-	none = 'none',
-`;
+	none = 'none',`;
+
+const BOILERPLATE_RESOURCE_ID_DATA = `export enum DataId {
+	none = 'none',`;
 
 type logentryType = undefined | 'error' | 'warning';
 
@@ -135,73 +136,32 @@ function addFile(dirPath: string, filePath: string, arrayOfFiles: string[]): voi
  * @returns {string[]} An array of file paths.
  */
 async function getFiles(dirPath: string, arrayOfFiles?: string[], filterExtension?: string): Promise<string[]> {
-	return getAllNonRootDirs(dirPath, arrayOfFiles, filterExtension);
-}
-
-/**
- * Retrieves all non-root directories within a given directory path.
- * This function is used to recursively retrieve all subdirectories within a directory.
- * It also filters out directories with the name "_ignore".
- *
- * @param dirPath - The path of the directory to search in.
- * @param arrayOfFiles - An array to store the paths of the non-root directories.
- * @param filterExtension - Optional filter for file extensions.
- * @returns A promise that resolves to an array of non-root directory paths.
- */
-async function getAllNonRootDirs(dirPath: string, arrayOfFiles: string[] = [], filterExtension?: string): Promise<string[]> {
-	let entries = await readdir(dirPath);
-
-	for (let entry of entries) {
-		let fullPath = `${dirPath}/${entry}`;
-		let stats = await stat(fullPath);
-		if (stats.isDirectory() && fullPath.indexOf("_ignore") === -1) {
-			arrayOfFiles = await getAllFiles(fullPath, arrayOfFiles, filterExtension);
-		}
-	}
-
-	return arrayOfFiles;
-}
-
-/**
- * Recursively retrieves all files in a directory.
- * If no filterExtension is provided, the function will filter out .rom, .js, .ts, .map, and .tsbuildinfo files.
- * If a filterExtension is provided, the function will filter out all files that do not have the specified extension.
- *
- * @param dirPath: string - The path of the directory to search in.
- * @param _arrayOfFiles: string[] - An optional array to store the file paths. If not provided, a new array will be created.
- * @param filterExtension: string - An optional file extension to filter the files by.
- * @returns An array of file paths.
- */
-async function getAllFiles(dirPath: string, _arrayOfFiles?: string[], filterExtension?: string): Promise<string[]> {
 	const files = await readdir(dirPath);
-
-	let arrayOfFiles = _arrayOfFiles || [];
-
+	let array = arrayOfFiles || [];
 	for (let file of files) {
-		if (file.indexOf("_ignore") === -1) {
-			let fullpath = `${dirPath}/${file}`;
-			let stats = await stat(fullpath);
-			if (stats.isDirectory()) {
-				arrayOfFiles = await getAllFiles(fullpath, arrayOfFiles, filterExtension);
-			} else {
-				let ext = parse(file).ext;
-				if (filterExtension) {
-					if (ext === filterExtension) {
-						arrayOfFiles.push(fullpath);
-					}
+		if (file.indexOf('_ignore') > -1) continue;
+
+		let fullpath = `${dirPath}/${file}`;
+		let stats = await stat(fullpath);
+		if (stats.isDirectory()) {
+			array = await getFiles(fullpath, array, filterExtension);
+		} else {
+			let ext = parse(file).ext;
+			if (filterExtension) {
+				if (ext === filterExtension) {
+					array.push(fullpath);
 				}
-				else if (ext != ".rom" && ext != ".js" && ext != ".ts" && ext != ".map" && ext != ".tsbuildinfo" && ext != ".rommanifest") {
-					arrayOfFiles.push(fullpath);
-				}
+			}
+			else if (ext !== ".rom" && ext !== ".js" && ext !== ".ts" && ext !== ".map" && ext !== ".tsbuildinfo" && ext !== ".rommanifest") {
+				array.push(fullpath);
 			}
 		}
 	}
-
-	return arrayOfFiles;
+	return array;
 }
 
 async function getRomManifest(dirPath: string): Promise<RomManifest> {
-	const files = await getAllFiles(dirPath, [], '.rommanifest');
+	const files = await getFiles(dirPath, [], '.rommanifest');
 
 	if (files.length > 1) {
 		throw new Error(`More than one rommanifest found in ${dirPath}.`);
@@ -216,7 +176,7 @@ async function getRomManifest(dirPath: string): Promise<RomManifest> {
 
 async function yaml2Json(): Promise<void> {
 	try {
-		const yamlfiles = await getAllFiles('./src', [], '.yaml');
+		const yamlfiles = await getFiles('./src', [], '.yaml');
 		await Promise.all(yamlfiles.map(async (file) => {
 			const doc = yaml.load(await readFile(file, 'utf8'));
 			const outfilename = file.replace('.yaml', '.json');
@@ -504,6 +464,11 @@ function getResMetaByFilename(filepath: string): { name: string, ext: string, ty
 				type = 'image';
 			}
 			break;
+		case '.json':
+		case '.yaml':
+		case '.bin':
+			type = 'data';
+			break;
 		default:
 			break;
 	}
@@ -529,6 +494,7 @@ async function getResMetaList(respath: string, romname?: string): Promise<Resour
 
 	let imgid = 1;
 	let sndid = 1;
+	let dataid = 1;
 	for (let i = 0; i < arrayOfFiles.length; i++) {
 		const filepath = arrayOfFiles[i];
 		const meta = getResMetaByFilename(filepath);
@@ -561,6 +527,11 @@ async function getResMetaList(respath: string, romname?: string): Promise<Resour
 				break;
 			case 'code':
 				// For code files, we use the romname as the name
+				break;
+			case 'data':
+				// For data files, we use the name as is
+				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: dataid });
+				++dataid;
 				break;
 			case 'atlas':
 				// Atlas files are not real files, but we add them to the resource list in the next step
@@ -608,8 +579,10 @@ async function getResMetaList(respath: string, romname?: string): Promise<Resour
 
 	checkDuplicateIds('image');
 	checkDuplicateIds('audio');
+	checkDuplicateNames('data');
 	checkDuplicateNames('image');
 	checkDuplicateNames('audio');
+	checkDuplicateNames('data');
 
 	return result;
 }
@@ -676,36 +649,43 @@ async function getResourcesList(resMetaList: Resource[], rom_name: string): Prom
 async function buildResourceList(respath: string, rom_name?: string) {
 	const tsimgout = new Array<string>();
 	const tssndout = new Array<string>();
+	const tsdataout = new Array<string>();
 	const metalist = await getResMetaList(respath, rom_name);
 
 	tsimgout.push(BOILERPLATE_RESOURCE_ID_BITMAP);
 	tssndout.push(BOILERPLATE_RESOURCE_ID_AUDIO);
+	tsdataout.push(BOILERPLATE_RESOURCE_ID_DATA);
 
 	for (let i = 0; i < metalist.length; i++) {
 		const current = metalist[i];
 
 		const type = current.type;
 		const name = current.name;
+		const enum_member_to_add = `\t${name} = '${name}', `;
 		switch (type) {
 			case 'image':
 			case 'atlas': // Atlas is also an image and thus is added to the image enum
-				const property_to_add = `\t${name} = '${name}', `;
-				tsimgout.push(`${property_to_add} `);
+				tsimgout.push(`${enum_member_to_add} `);
 				break;
 			case 'audio':
-				const enum_member_to_add = `\t${name} = '${name}', `;
 				tssndout.push(`${enum_member_to_add} `);
+				break;
+			case 'data':
+				tsdataout.push(`${enum_member_to_add} `);
 				break;
 			case 'romlabel':
 				// Ignore this part
 				break;
+			default:
+				throw new Error(`Unknown resource type "${type}" for resource "${name}"`);
 		}
 	}
 
 	tsimgout.push("}\n");
 	tssndout.push("}\n");
+	tsdataout.push("}\n");
 
-	const total_output: string = tsimgout.concat(tssndout).join('\n');
+	const total_output: string = tsimgout.concat(tssndout, tsdataout).join('\n');
 
 	const targetPath = respath.replace('/res', '/resourceids.ts');
 	await writeFile(targetPath, total_output);
@@ -759,6 +739,20 @@ function generateRomAssets(resources: Resource[]) {
 			case 'code':
 				resname = resname.replace('.min', '');
 				romAssets.push({ resid, resname, type, buffer });
+				break;
+			case 'data':
+				// Encode the JSON-data via the binencoder
+				// Convert the buffer to a JSON string and then encode it
+				if (resname.endsWith('.yaml')) {
+					// If the data is a YAML file, we need to convert it to JSON first
+					const yamlContent = res.buffer.toString('utf8');
+					const jsonContent = yaml.load(yamlContent);
+					res.buffer = Buffer.from(JSON.stringify(jsonContent));
+					resname = resname.replace('.yaml', '.json'); // Change the name to .json
+				}
+				// Encode the buffer to a binary format
+				const encodedData = Buffer.from(encodeBinary(res.buffer.toString('utf8')));
+				romAssets.push({ resid, resname, type, buffer: encodedData });
 				break;
 			case 'atlas': {
 				// Atlas resources are handled similarly to images but with a twist

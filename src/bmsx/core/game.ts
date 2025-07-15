@@ -826,6 +826,8 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	 */
 	public debug_runSingleFrameAndPause!: boolean;
 
+	public get rom(): RomPack { return global.$rom; }
+
 	/**
 	 * Retrieves the model instance of type T.
 	 * @returns The model instance of type T.

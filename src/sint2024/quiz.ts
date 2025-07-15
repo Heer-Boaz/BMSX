@@ -1,6 +1,6 @@
 import { GameObject, StateMachineBlueprint, build_fsm, insavegame, type State } from '../bmsx/bmsx';
 import type { sint } from './sint';
-import quizItemsData from './vragen.json';
+// import quizItemsData from './vragen.json';
 
 /**
  * Represents a quiz item with a question, optional image, multiple options, and reactions.
@@ -39,7 +39,7 @@ interface QuizItem {
  *
  * @type {QuizItem[]}
  */
-const quizItems: QuizItem[] = quizItemsData;
+let quizItems: QuizItem[] = null;
 /**
  * The maximum number of characters allowed per line in a question.
  */
@@ -292,6 +292,12 @@ export class quiz extends GameObject {
      * @returns {StateMachineBlueprint} The blueprint of the state machine for the quiz.
      */
     public static bouw(): StateMachineBlueprint {
+        // Load quiz items from the rompack data
+        quizItems = JSON.parse($.rom.data_assets['vragen']) as QuizItem[];
+        if (!quizItems) {
+            throw new Error('Quiz items not loaded. Please ensure the rompack data is available.');
+        }
+
         return {
             states: {
                 _start: {
