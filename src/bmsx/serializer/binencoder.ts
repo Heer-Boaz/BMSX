@@ -1,3 +1,5 @@
+const VERSION = 0xA1; // Version tag for future-proofing
+
 /**
  * Serializes a JavaScript object into a compact binary format.
  *
@@ -41,7 +43,7 @@ export function encodeBinary(obj: any): Uint8Array {
 
     // --- Write property table and data ---
     const w = new BinWriter();
-    w.u8(0xA1); // version tag for future-proofing
+    w.u8(VERSION); // version tag for future-proofing
     w.varuint(propNames.length);
     for (const name of propNames) w.str(name);
     w.writeWithPropTable(obj, propNameToId);
@@ -144,7 +146,7 @@ class BinWriter {
                 }
                 return; // End of object
             default:
-                throw new Error(`Unsupported type in encodeBinary: ${typeof val}`);
+                throw new Error(`encodeBinary.write: Unsupported type in encodeBinary: ${typeof val}`);
         }
     }
 
@@ -185,7 +187,7 @@ class BinWriter {
                 }
                 return;
             default:
-                throw new Error(`Unsupported type in encodeBinary: ${typeof val}`);
+                throw new Error(`encodeBinary.writeWithPropTable: Unsupported type in encodeBinary: ${typeof val}`);
         }
     }
 }
@@ -212,7 +214,7 @@ export function decodeBinary(buf: Uint8Array) {
     }
     // --- Read property table ---
     const version = readUint8();
-    if (version !== 0xA1) throw new Error('decodeBinary: unknown version');
+    if (version !== VERSION) throw new Error(`decodeBinary: unknown version "0x${version.toString(16)}" (expected "0x${VERSION.toString(16)}")`);
     const propCount = readVarUint();
     const propNames: string[] = [];
     for (let i = 0; i < propCount; ++i) propNames.push(readString());
