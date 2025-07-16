@@ -89,9 +89,7 @@ async function loadDataFromBuffer(buf: ArrayBuffer): Promise<any> {
     let copyBuffer = new ArrayBuffer(buf.byteLength);
     copyBuffer = buf.slice(0);
 
-    // Use TextDecoder to decode the ArrayBuffer directly
-    // const decoded = Buffer.from(decodeuint8arr(new Uint8Array(copyBuffer)));
-
+    // Use decodeBinary to parse the binary data
     try {
         return decodeBinary(new Uint8Array(copyBuffer));
     } catch (e) {
@@ -179,7 +177,6 @@ async function loadRompackFromFile(romfile: string): Promise<Buffer> {
         throw new Error(`Failed to read ROM file at "${romfile}": ${error?.message || 'Unknown error'}`);
     }
 
-    // Gebruik nu de PNG-header-detectie uit bootrom.ts
     const { zipped_rom, romlabel } = await getZippedRomAndRomLabelFromBlob(
         raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength)
     );
@@ -216,7 +213,6 @@ async function loadRompackFromFile(romfile: string): Promise<Buffer> {
             const msg = e && typeof e.message === 'string' ? e.message : String(e);
             console.error(`Failed to decompress ROM: ${msg}`);
             console.error(e?.stack ?? 'No stack trace available');
-            // process.exit(1);
             decompressed = null; // fallback to null if decompression fails
         }
         rompack = decompressed.buffer ?? raw; // Use decompressed data if available, otherwise fallback to raw
@@ -546,25 +542,24 @@ async function main() {
                         break;
                     }
                     else asciiArt = `${info.dataOff} ${info.dataLen} ${info.bits} ${info.channels}`;
-                    // Fix: create a Uint8Array view for subarray
                     const pcm = new Uint8Array(selected.buffer).subarray(info.dataOff, info.dataOff + info.dataLen);
 
                     const scope = asciiWaveBraille(
                         pcm, info.bits, modalWidth - 10, undefined, info.channels,
                     );
-                    asciiArt = scope;                          // getoond in je modal
+                    asciiArt = scope;
                 } catch (e) {
                     asciiArt = `(Preview failed: ${e}\n${e.stack})`;
                 }
                 break;
             case 'data':
-                // Show data as JSON if available, but we need to decode it first using the bindecoder
-                if (!selected.buffer || !(selected.buffer instanceof ArrayBuffer) || selected.buffer?.byteLength === 0) {
-                    // Load the data buffer from the ROM pack
+                if (!selected.buffer || typeof selected.buffer !== 'object') {
                     selected.buffer = await loadDataFromBuffer(rompack.slice(selected.start, selected.end));
                 }
-                metadataLines.push(`Data size: ${byteSizeToString(selected.buffer.byteLength)}`);
-                asciiArt = decodeuint8arr(new Uint8Array(selected.buffer));
+                metadataLines.push(`Data size: ${byteSizeToString(selected.end - selected.start)}`);
+                asciiArt = JSON.stringify(selected.buffer, null, 2);
+                asciiArt += '\n\nHex preview:\n';
+                asciiArt += asciiHexDump(rompack.slice(selected.start, selected.end));
                 break;
             case 'code': {
                 let code = '';
@@ -784,4 +779,31 @@ function generateAsciiArtFromImage(img: Buffer, imgmeta: ImgMeta, modalWidth: nu
     } catch (e) {
         return `[Error generating ASCII art from image: ${e.stack || e.message}]`;
     }
+}
+
+function asciiHexDump(buf: Uint8Array | ArrayBuffer): string {
+    // Ensure buf is a Uint8Array for subarray support
+    if (!(buf instanceof Uint8Array)) {
+        buf = new Uint8Array(buf);
+    }
+
+    const bytesPerLine = 16;
+    let result = '';
+    for (let i = 0; i < buf.byteLength; i += bytesPerLine) {
+        const slice = (buf as Uint8Array).subarray(i, i + bytesPerLine);
+        // Offset
+        let line = i.toString(16).padStart(8, '0') + '  ';
+        // Hex bytes
+        line += Array.from(slice)
+            .map(b => b.toString(16).padStart(2, '0'))
+            .join(' ')
+            .padEnd(bytesPerLine * 3 - 1, ' ');
+        // ASCII representation
+        line += '  ';
+        line += Array.from(slice)
+            .map(b => (b >= 32 && b <= 126 ? String.fromCharCode(b) : '.'))
+            .join('');
+        result += line + '\n';
+    }
+    return result;
 }
