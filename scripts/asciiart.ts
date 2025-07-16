@@ -10,7 +10,7 @@ export function renderBufferBar(
 ): string {
     const blocks = ['?', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
     const cellSize = totalSize / barLength;
-    const defaultCellChar = ' ';
+    const defaultCellChar = '·';
     const cellChars = new Array(barLength).fill(defaultCellChar);
     const cellColors = new Array(barLength).fill('');
 
