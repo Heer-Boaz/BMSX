@@ -1,6 +1,6 @@
 const { createCanvas } = require('canvas');
 import type { Image } from 'canvas';
-import type { Area, BoundingBoxPrecalc, vec2arr } from '../src/bmsx/rompack/rompack';
+import type { Area, vec2arr } from '../src/bmsx/rompack/rompack';
 
 /**
  * Dedicated class for extracting bounding boxes and related operations from images.
@@ -198,33 +198,6 @@ export class BoundingBoxExtractor {
      */
     static cross(o: vec2arr, a: vec2arr, b: vec2arr): number {
         return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
-    }
-
-    static flipBoundingBoxHorizontally(box: Area, width: number): Area {
-        return {
-            start: { x: width - box.end.x, y: box.start.y },
-            end: { x: width - box.start.x, y: box.end.y }
-        };
-    }
-
-    static flipBoundingBoxVertically(box: Area, height: number): Area {
-        return {
-            start: { x: box.start.x, y: height - box.end.y },
-            end: { x: box.end.x, y: height - box.start.y }
-        };
-    }
-
-    static generateFlippedBoundingBox(image: Image, extractedBoundingBox: Area): BoundingBoxPrecalc {
-        const originalBoundingBox = extractedBoundingBox;
-        const horizontalFlipped = this.flipBoundingBoxHorizontally(originalBoundingBox, image.width);
-        const verticalFlipped = this.flipBoundingBoxVertically(originalBoundingBox, image.height);
-        const bothFlipped = this.flipBoundingBoxHorizontally(this.flipBoundingBoxVertically(originalBoundingBox, image.height), image.width);
-        return {
-            original: originalBoundingBox,
-            fliph: horizontalFlipped,
-            flipv: verticalFlipped,
-            fliphv: bothFlipped
-        };
     }
 
     static calculateCenterPoint(boundingBox: Area): vec2arr {

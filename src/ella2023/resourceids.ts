@@ -1,6 +1,5 @@
 export enum BitmapId {
 	none = 'none',
-
 	au_p1 = 'au_p1',  
 	au_p2 = 'au_p2',  
 	eila_duck = 'eila_duck',  
@@ -102,7 +101,6 @@ export enum BitmapId {
 
 export enum AudioId {
 	none = 'none',
-
 	gameover = 'gameover',  
 	knokken = 'knokken',  
 	oei = 'oei',  
@@ -114,4 +112,8 @@ export enum AudioId {
 	kick = 'kick',  
 	punch = 'punch',  
 	stuk = 'stuk',  
+}
+
+export enum DataId {
+	none = 'none',
 }

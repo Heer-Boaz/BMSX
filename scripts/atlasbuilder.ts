@@ -388,17 +388,12 @@ export function createOptimizedAtlas(imageResources: Resource[]): HTMLCanvasElem
  * @returns An object containing the UV coordinates of the image in the texture atlas.
  */
 function uvcoords(x: number, y: number, width: number, height: number, imageWidth: number, imageHeight: number) {
-	const result = {
-		width: imageWidth, height: imageHeight, atlassed: true, texcoords: [] as number[], texcoords_fliph: [] as number[], texcoords_flipv: [] as number[], texcoords_fliphv: [] as number[]
-	};
+	const result = { width: imageWidth, height: imageHeight, atlassed: true, texcoords: [] as number[] };
 	const left = x / width;
 	const top = y / height;
 	const right = (x + imageWidth) / width;
 	const bottom = (y + imageHeight) / height;
 
 	result.texcoords.push(left, top, right, top, left, bottom, left, bottom, right, top, right, bottom);
-	result.texcoords_fliph.push(right, top, left, top, right, bottom, right, bottom, left, top, left, bottom);
-	result.texcoords_flipv.push(left, bottom, right, bottom, left, top, left, top, right, bottom, right, top);
-	result.texcoords_fliphv.push(right, bottom, left, bottom, right, top, right, top, left, bottom, left, top);
 	return result;
 }

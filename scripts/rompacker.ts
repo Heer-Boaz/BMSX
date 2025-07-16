@@ -809,41 +809,33 @@ function buildImgMeta(res: Resource): ImgMeta {
 			extracted_hitpolygon = BoundingBoxExtractor.extractConcaveHull(img) as vec2arr[][];
 			hitpolygons = {
 				original: extracted_hitpolygon,
-				fliph: flipPolygons(extracted_hitpolygon, true, false),
-				flipv: flipPolygons(extracted_hitpolygon, false, true),
-				fliphv: flipPolygons(extracted_hitpolygon, true, true)
+				fliph: null,
+				flipv: null,
+				fliphv: null
 			};
 			break;
 		case 'convex':
 			extracted_hitpolygon = BoundingBoxExtractor.extractConvexHull(img) as vec2arr[];
 			hitpolygons = {
 				original: [extracted_hitpolygon],
-				fliph: flipPolygons([extracted_hitpolygon], true, false),
-				flipv: flipPolygons([extracted_hitpolygon], false, true),
-				fliphv: flipPolygons([extracted_hitpolygon], true, true)
+				fliph: null,
+				flipv: null,
+				fliphv: null
 			};
 			break;
 		case 'aabb':
 			// No hit polygon, use bounding box instead
 			break;
 	}
-	const img_boundingbox_precalc = BoundingBoxExtractor.generateFlippedBoundingBox(img, img_boundingbox);
+	// const img_boundingbox_precalc = BoundingBoxExtractor.generateFlippedBoundingBox(img, img_boundingbox);
 	const img_centerpoint = BoundingBoxExtractor.calculateCenterPoint(img_boundingbox);
-
-	// Generate flipped variants for polygons
-	function flipPolygons(polys: vec2arr[][], flipH: boolean, flipV: boolean): vec2arr[][] {
-		return polys.map(poly => poly.map(pt => ([
-			flipH ? img.width - 1 - pt[0] : pt[0],
-			flipV ? img.height - 1 - pt[1] : pt[1]
-		])));
-	}
 
 	let imgmeta: ImgMeta = {
 		atlassed: false,
 		atlasid: null,
 		width: img.width,
 		height: img.height,
-		boundingbox: img_boundingbox_precalc,
+		boundingbox: { original: img_boundingbox, fliph: null, flipv: null, fliphv: null },
 		centerpoint: img_centerpoint,
 		hitpolygons: hitpolygons
 	};
@@ -853,9 +845,6 @@ function buildImgMeta(res: Resource): ImgMeta {
 			atlassed: res.targetAtlasIndex !== undefined,
 			atlasid: res.targetAtlasIndex,
 			texcoords: res.imgmeta.texcoords,
-			texcoords_fliph: res.imgmeta.texcoords_fliph,
-			texcoords_flipv: res.imgmeta.texcoords_flipv,
-			texcoords_fliphv: res.imgmeta.texcoords_fliphv,
 		};
 	}
 	return imgmeta;

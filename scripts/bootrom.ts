@@ -1,4 +1,4 @@
-import type { AudioMeta, ImgMeta, RomAsset, RomMeta, RomPack } from '../src/bmsx/rompack/rompack';
+import type { Area, AudioMeta, ImgMeta, RomAsset, RomMeta, RomPack, vec2arr } from '../src/bmsx/rompack/rompack';
 import { decodeBinary } from '../src/bmsx/serializer/binencoder';
 
 declare global {
@@ -362,6 +362,65 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<RomAsset[]> {
 		throw e;
 	}
 
+
+	// Generate flipped variants for polygons
+	function flipPolygons(polys: vec2arr[][], flipH: boolean, flipV: boolean, imgW: number, imgH: number): vec2arr[][] {
+		return polys.map(poly => poly.map(pt => ([
+			flipH ? imgW - 1 - pt[0] : pt[0],
+			flipV ? imgH - 1 - pt[1] : pt[1]
+		])));
+	}
+
+	function flipBoundingBoxHorizontally(box: Area, width: number): Area {
+		return {
+			start: { x: width - box.end.x, y: box.start.y },
+			end: { x: width - box.start.x, y: box.end.y }
+		};
+	}
+
+	function flipBoundingBoxVertically(box: Area, height: number): Area {
+		return {
+			start: { x: box.start.x, y: height - box.end.y },
+			end: { x: box.end.x, y: height - box.start.y }
+		};
+	}
+
+	function generateFlippedBoundingBox(extractedBoundingBox: Area, imgW: number, imgH: number) {
+		const originalBoundingBox = extractedBoundingBox;
+		const horizontalFlipped = flipBoundingBoxHorizontally(originalBoundingBox, imgW);
+		const verticalFlipped = flipBoundingBoxVertically(originalBoundingBox, imgH);
+		const bothFlipped = flipBoundingBoxHorizontally(flipBoundingBoxVertically(originalBoundingBox, imgH), imgW);
+		return {
+			original: originalBoundingBox,
+			fliph: horizontalFlipped,
+			flipv: verticalFlipped,
+			fliphv: bothFlipped
+		};
+	}
+
+	function generateFlippedTexCoords(texcoords: number[]): {
+		original: number[],
+		fliph: number[],
+		flipv: number[],
+		fliphv: number[]
+	} {
+		const result = {
+			original: [...texcoords],
+			fliph: [],
+			flipv: [],
+			fliphv: []
+		};
+
+		// left, top, right, top, left, bottom, left, bottom, right, top, right, bottom
+		const [left, top, right, , , bottom] = texcoords;
+
+		result.fliph.push(right, top, left, top, right, bottom, right, bottom, left, top, left, bottom);
+		result.flipv.push(left, bottom, right, bottom, left, top, left, top, right, bottom, right, top);
+		result.fliphv.push(right, bottom, left, bottom, right, top, right, top, left, bottom, left, top);
+
+		return result;
+	}
+
 	// For each asset, if it has per-asset metabuffer, decode and assign metadata
 	for (const asset of assetList) {
 		if (asset.metabuffer_start != null && asset.metabuffer_end != null) {
@@ -372,6 +431,33 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<RomAsset[]> {
 				case 'image':
 				case 'atlas':
 					asset.imgmeta = decodedMeta as ImgMeta;
+					if (asset.imgmeta.atlassed) {
+						// Generate flipped variants for hitpolygons
+						if (asset.imgmeta.width && asset.imgmeta.height) {
+							if (asset.imgmeta.hitpolygons?.original) {
+								const extracted_hitpolygon = asset.imgmeta.hitpolygons.original;
+								asset.imgmeta.hitpolygons = {
+									original: extracted_hitpolygon,
+									fliph: flipPolygons(extracted_hitpolygon, true, false, asset.imgmeta.width, asset.imgmeta.height),
+									flipv: flipPolygons(extracted_hitpolygon, false, true, asset.imgmeta.width, asset.imgmeta.height),
+									fliphv: flipPolygons(extracted_hitpolygon, true, true, asset.imgmeta.width, asset.imgmeta.height)
+								};
+							}
+							// Generate flipped variants for bounding boxes
+							if (asset.imgmeta.boundingbox) {
+								// Generate flipped bounding boxes
+								asset.imgmeta.boundingbox = generateFlippedBoundingBox(asset.imgmeta.boundingbox.original, asset.imgmeta.width, asset.imgmeta.height);
+							}
+							// Generate flipped variants of the texcoords
+							if (asset.imgmeta.texcoords) {
+								const { original, fliph, flipv, fliphv } = generateFlippedTexCoords(asset.imgmeta.texcoords);
+								asset.imgmeta.texcoords = original;
+								asset.imgmeta.texcoords_fliph = fliph;
+								asset.imgmeta.texcoords_flipv = flipv;
+								asset.imgmeta.texcoords_fliphv = fliphv;
+							}
+						}
+					}
 					break;
 				case 'audio':
 					asset.audiometa = decodedMeta as AudioMeta;
