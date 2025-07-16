@@ -379,6 +379,9 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<RomAsset[]> {
 				case 'code':
 					// No specific metadata for code type, but we can still assign the decoded metadata
 					break;
+				case 'data':
+					// No specific metadata for data type, but we can still assign the decoded metadata
+					break;
 				default:
 					// unsupported metadata type
 					break;
@@ -427,6 +430,7 @@ async function getImageFromBuffer(buffer: ArrayBuffer): Promise<HTMLImageElement
 }
 
 async function loadDataFromBuffer(buffer: ArrayBuffer): Promise<any> {
+	// return decodeuint8arr(new Uint8Array(buffer));
 	return decodeBinary(new Uint8Array(buffer));
 }
 

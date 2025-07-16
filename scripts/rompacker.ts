@@ -467,13 +467,15 @@ function getResMetaByFilename(filepath: string): { name: string, ext: string, ty
 			break;
 		case '.json':
 			datatype = 'json';
+			type = 'data';
+			break;
 		case '.yaml':
 			datatype = 'yaml';
+			type = 'data';
+			break;
 		case '.bin':
 			datatype = 'bin';
 			type = 'data';
-			break;
-		default:
 			break;
 	}
 	return { name: name, ext: ext, type: type, collisionType: collisionType, datatype: datatype };
@@ -748,20 +750,18 @@ function generateRomAssets(resources: Resource[]) {
 				// Encode the JSON-data via the binencoder
 				// Convert the buffer to a JSON string and then encode it
 				switch (res.datatype) {
-					case 'json':
-						// If the data is a JSON file, we need to convert it to a string first
-						const json = JSON.parse(res.buffer.toString('utf8'));
-						const encodedData = Buffer.from(encodeBinary(json));
-
-						buffer = encodedData;
-						break;
 					case 'yaml':
 						// If the data is a YAML file, we need to convert it to JSON first
 						const yamlContent = res.buffer.toString('utf8');
 						const jsonContent = yaml.load(yamlContent);
-						const encodedJsonData = Buffer.from(encodeBinary(jsonContent));
+						res.buffer = jsonContent;
+					// Encode the JSON content
+					case 'json':
+						// If the data is a JSON file, we need to convert it to a string first
+						const json = JSON.parse(res.buffer.toString('utf8'));
+						const encodedData = encodeBinary(json);
 
-						buffer = encodedJsonData;
+						buffer = encodedData;
 						break;
 					case 'bin':
 						// If the data is a binary file, we can use it as is
@@ -780,6 +780,8 @@ function generateRomAssets(resources: Resource[]) {
 				break;
 			case 'rommanifest':
 				break;
+			default:
+				throw new Error(`Unknown resource type "${type}" for resource "${resname}"`);
 		}
 	}
 	return romAssets;
