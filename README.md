@@ -106,6 +106,7 @@ The BMSX project is organized to support modular engine development, multiple ga
     - `img/` – Sprites and textures
     - `snd/` – Sound effects
     - `mus/` – Music tracks
+    - `data/` – Game-specific data files (JSON, level definitions, etc.)
     - `manifest/` – Resource manifests
     - `_ignore/` – Source art or unused assets
   - **`resourceids.ts`**: Enumerations for all image and audio IDs used in the game.
@@ -113,6 +114,7 @@ The BMSX project is organized to support modular engine development, multiple ga
 
 - **`scripts/`**
   Build and utility scripts, all written in TypeScript and run via `tsx`:
+  - **`rompacker-core.ts`**: Core packer utilities and shared logic used by `rompacker.ts`.
   - **`rompacker.ts`**: The main build script. Packages the engine, game code, and resources into a `.rom` file and generates HTML loaders.
   - **`bootrom.ts`**: The bootloader that runs in the browser and loads the ROM.
   - **`atlasbuilder.ts`**: Builds texture atlases from individual images.
@@ -1381,6 +1383,7 @@ BMSX supports flexible input from multiple sources and players, with runtime dev
     if (jumpState.pressed && !jumpState.consumed) {
         // Player 2 is holding jump
     }
+
     ```
   - Example: Check if Player 2 triggered a low kick action:
     ```typescript
