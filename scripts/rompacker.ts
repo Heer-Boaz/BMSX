@@ -174,20 +174,6 @@ async function getRomManifest(dirPath: string): Promise<RomManifest> {
 	else return null;
 }
 
-async function yaml2Json(): Promise<void> {
-	try {
-		const yamlfiles = await getFiles('./src', [], '.yaml');
-		await Promise.all(yamlfiles.map(async (file) => {
-			const doc = yaml.load(await readFile(file, 'utf8'));
-			const outfilename = file.replace('.yaml', '.json');
-			await writeFile(outfilename, Buffer.from(encodeuint8arr(JSON.stringify(doc))));
-		}));
-	}
-	catch (err) {
-		throw new Error(`Error converting YAML to JSON: ${err.message}`);
-	}
-}
-
 /**
  * Builds and bundles the source code for a ROM using esbuild.
  * @param {string} romname - The name of the ROM.
@@ -478,7 +464,7 @@ function getResMetaByFilename(filepath: string): { name: string, ext: string, ty
 			type = 'data';
 			break;
 	}
-	return { name: name, ext: ext, type: type, collisionType: collisionType, datatype: datatype };
+	return { name: name, ext, type, collisionType, datatype };
 }
 
 /**
@@ -754,8 +740,10 @@ function generateRomAssets(resources: Resource[]) {
 						// If the data is a YAML file, we need to convert it to JSON first
 						const yamlContent = res.buffer.toString('utf8');
 						const jsonContent = yaml.load(yamlContent);
-						res.buffer = jsonContent;
-					// Encode the JSON content
+						// res.buffer = jsonContent;
+						const encodedYamlData = encodeBinary(jsonContent);
+						buffer = encodedYamlData;
+						break;
 					case 'json':
 						// If the data is a JSON file, we need to convert it to a string first
 						const json = JSON.parse(res.buffer.toString('utf8'));
@@ -1170,7 +1158,6 @@ async function main() {
 	const taskList = [
 		'Rom manifest zoekeren en parseren',
 		'Game compileren+bundleren',
-		'YAML bestanden omzetten in JSON voor importatie',
 		'Resource lijst bouwen',
 		'Resources laden en metadata genereren',
 		'Atlassen puzellen (indien nodig)',
@@ -1254,14 +1241,12 @@ async function main() {
 
 			if (!deploy) progress.removeTask('Deployeren');
 			if (!rebuildRequired) {
-				progress.skipTasks(7);
+				progress.skipTasks(6);
 			}
 
 			// #endregion
 			if (rebuildRequired) {
 				await esbuild(rom_name, bootloader_path);
-				await progress?.taskCompleted();
-				await yaml2Json();
 				await progress?.taskCompleted();
 				const resMetaList = await getResMetaList(respath, rom_name);
 				await progress?.taskCompleted();
