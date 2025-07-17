@@ -1,6 +1,6 @@
 import { glsl } from "esbuild-plugin-glsl";
 import type { Stats } from 'fs';
-import type { AudioMeta, ImgMeta, RomAsset, vec2arr } from '../src/bmsx/rompack/rompack';
+import type { AudioMeta, ImgMeta, RomAsset, vec2arr, Polygon } from '../src/bmsx/rompack/rompack';
 import { createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import type { Resource, RomManifest, resourcetype } from './rompacker.rompack';
@@ -700,16 +700,16 @@ export function generateRomAssets(resources: Resource[]) {
 export function buildImgMeta(res: Resource): ImgMeta {
     const img = res.img;
     const img_boundingbox = BoundingBoxExtractor.extractBoundingBox(img);
-    let extracted_hitpolygon: vec2arr[][] | vec2arr[] = undefined;
+    let extracted_hitpolygon: Polygon[] = undefined;
     let hitpolygons: {
-        original: vec2arr[][],
-        fliph: vec2arr[][],
-        flipv: vec2arr[][],
-        fliphv: vec2arr[][]
+        original: Polygon[],
+        fliph: Polygon[],
+        flipv: Polygon[],
+        fliphv: Polygon[]
     } = undefined;
     switch (res.collisionType) {
         case 'concave':
-            extracted_hitpolygon = BoundingBoxExtractor.extractConcaveHull(img) as vec2arr[][];
+            extracted_hitpolygon = BoundingBoxExtractor.extractConcaveHull(img) as Polygon[];
             hitpolygons = {
                 original: extracted_hitpolygon,
                 fliph: null,
@@ -718,9 +718,9 @@ export function buildImgMeta(res: Resource): ImgMeta {
             };
             break;
         case 'convex':
-            extracted_hitpolygon = BoundingBoxExtractor.extractConvexHull(img) as vec2arr[];
+            extracted_hitpolygon = [BoundingBoxExtractor.extractConvexHull(img) as Polygon];
             hitpolygons = {
-                original: [extracted_hitpolygon],
+                original: extracted_hitpolygon,
                 fliph: null,
                 flipv: null,
                 fliphv: null

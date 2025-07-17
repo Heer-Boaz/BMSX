@@ -1,4 +1,4 @@
-import type { Area, AudioMeta, ImgMeta, RomAsset, RomImgAsset, RomMeta, RomPack, vec2arr } from '../src/bmsx/rompack/rompack';
+import type { Area, AudioMeta, ImgMeta, RomAsset, RomImgAsset, RomMeta, RomPack, vec2arr, Polygon } from '../src/bmsx/rompack/rompack';
 import { decodeBinary } from '../src/bmsx/serializer/binencoder';
 
 declare global {
@@ -364,12 +364,17 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<RomAsset[]> {
 
 
 	// Generate flipped variants for polygons
-	function flipPolygons(polys: vec2arr[][], flipH: boolean, flipV: boolean, imgW: number, imgH: number): vec2arr[][] {
-		return polys.map(poly => poly.map(pt => ([
-			flipH ? imgW - 1 - pt[0] : pt[0],
-			flipV ? imgH - 1 - pt[1] : pt[1]
-		])));
-	}
+        function flipPolygons(polys: Polygon[], flipH: boolean, flipV: boolean, imgW: number, imgH: number): Polygon[] {
+                return polys.map(poly => {
+                        const res: number[] = [];
+                        for (let i = 0; i < poly.length; i += 2) {
+                                const x = poly[i];
+                                const y = poly[i + 1];
+                                res.push(flipH ? imgW - 1 - x : x, flipV ? imgH - 1 - y : y);
+                        }
+                        return res;
+                });
+        }
 
 	function flipBoundingBoxHorizontally(box: Area, width: number): Area {
 		return {

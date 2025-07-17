@@ -54,7 +54,7 @@ export interface Area {
 	end: Vector;
 }
 
-export type Polygon = vec2arr[][];
+export type Polygon = number[];
 
 /**
  * Metadata for an audio asset.
@@ -73,10 +73,10 @@ export interface BoundingBoxPrecalc {
 }
 
 export interface HitPolygonsPrecalc {
-	original: Polygon; // The concave hull polygon of the image, used for collision detection.
-	fliph: Polygon; // The concave hull polygon of the image, when flipped horizontally.
-	flipv: Polygon; // The concave hull polygon of the image, when flipped vertically.
-	fliphv: Polygon; // The concave hull polygon of the image, when flipped both horizontally and vertically.
+        original: Polygon[]; // The concave hull polygons of the image, used for collision detection.
+        fliph: Polygon[]; // The concave hull polygons of the image, when flipped horizontally.
+        flipv: Polygon[]; // The concave hull polygons of the image, when flipped vertically.
+        fliphv: Polygon[]; // The concave hull polygons of the image, when flipped both horizontally and vertically.
 }
 
 /**

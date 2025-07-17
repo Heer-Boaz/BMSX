@@ -1,6 +1,6 @@
 const { createCanvas } = require('canvas');
 import type { Image } from 'canvas';
-import type { Area, vec2arr } from '../src/bmsx/rompack/rompack';
+import type { Area, vec2arr, Polygon } from '../src/bmsx/rompack/rompack';
 
 /**
  * Dedicated class for extracting bounding boxes and related operations from images.
@@ -46,7 +46,7 @@ export class BoundingBoxExtractor {
      * @param image The image to analyze.
      * @returns Array of concave hull polygons, one per detected shape.
      */
-    static extractConcaveHull(image: Image): vec2arr[][] {
+    static extractConcaveHull(image: Image): Polygon[] {
         const width = image.width;
         const height = image.height;
         const canvas = createCanvas(width, height);
@@ -56,7 +56,7 @@ export class BoundingBoxExtractor {
         const data = imageData.data;
         // Visited map: 1D array for performance
         const visited = new Uint8Array(width * height);
-        const polygons: vec2arr[][] = [];
+        const polygons: Polygon[] = [];
         // Helper to get alpha at (x, y)
         function alphaAt(x: number, y: number): number {
             return data[(y * width + x) * 4 + 3];
@@ -130,14 +130,14 @@ export class BoundingBoxExtractor {
                     visited[pt[1] * width + pt[0]] = 1;
                 }
                 if (border.length > 2) {
-                    polygons.push(border);
+                    polygons.push(border.flat());
                 }
             }
         }
         return polygons;
     }
 
-    static extractConvexHull(image: Image): vec2arr[] {
+    static extractConvexHull(image: Image): Polygon {
         const { width, height } = image;
         const canvas = createCanvas(width, height);
         const context = canvas.getContext('2d');
@@ -167,7 +167,7 @@ export class BoundingBoxExtractor {
             }
         }
 
-        return this.computeConvexPolygon(points);
+        return this.computeConvexPolygon(points).flat();
     }
 
     private static computeConvexPolygon(points: vec2arr[]): vec2arr[] {

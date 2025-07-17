@@ -83,7 +83,7 @@ export abstract class SpriteObject extends GameObject {
         }
     }
 
-    private static selectConcavePolygon(flip_h: boolean, flip_v: boolean, polys: HitPolygonsPrecalc): Polygon {
+    private static selectConcavePolygon(flip_h: boolean, flip_v: boolean, polys: HitPolygonsPrecalc): Polygon[] {
         if (flip_h && flip_v) {
             return polys.fliphv;
         } else if (flip_h) {
