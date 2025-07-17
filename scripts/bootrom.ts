@@ -1,4 +1,4 @@
-import type { Area, AudioMeta, ImgMeta, RomAsset, RomMeta, RomPack, vec2arr } from '../src/bmsx/rompack/rompack';
+import type { Area, AudioMeta, ImgMeta, RomAsset, RomImgAsset, RomMeta, RomPack, vec2arr } from '../src/bmsx/rompack/rompack';
 import { decodeBinary } from '../src/bmsx/serializer/binencoder';
 
 declare global {
@@ -484,7 +484,6 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<RomAsset[]> {
  */
 export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>, loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>, loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any> }): Promise<RomPack> {
 	const result: RomPack = {
-		imgbin: {},
 		rom: rom,
 		img: {},
 		audio: {},
@@ -532,19 +531,20 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 	switch (res.type) {
 		case 'image':
 		case 'atlas':
+			let img: HTMLImageElement = undefined;
 			if (!res.imgmeta?.atlassed) {
-				let img: HTMLImageElement;
 				if (opts && opts.loadImageFromBuffer) {
 					img = await opts.loadImageFromBuffer(rom.slice(res.start, res.end));
 				} else {
 					img = await getImageFromBuffer(rom.slice(res.start, res.end));
 				}
-
-				romResult.imgbin[res.resid] = img;
-				romResult.imgbin[res.resname] = img;
 			}
-			romResult.img[res.resid] = res;
-			romResult.img[res.resname] = res;
+			const imgAsset: RomImgAsset = {
+				...res,
+				imgbin: img
+			};
+			romResult.img[res.resid] = imgAsset;
+			romResult.img[res.resname] = imgAsset;
 			break;
 		case 'audio':
 			try {

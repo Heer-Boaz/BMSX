@@ -991,11 +991,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		global['debug'] = this.debug;
 		global['$rom'] = rom;
 
-		BaseView.images = rom.imgbin;
-		Object.keys(rom.img).forEach((key => {
-			const imgAsset = rom.img[key];
-			BaseView.imagesMeta[key] = imgAsset.imgmeta;
-		}));
+		BaseView.imgassets = rom.img;
 		EventEmitter.instance; // Init event emitter
 		Input.instance; // Init input module
 		if ($.input.isOnscreenGamepadEnabled) {

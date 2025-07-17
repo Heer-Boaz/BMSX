@@ -1,7 +1,7 @@
 ﻿import { BFont, GameOptions, Identifier, copy_vector, type RegisterablePersistent } from "../core/game";
 import { Registry } from '../core/registry';
 import { Input } from '../input/input';
-import type { Area, ImgMeta, Size, Vector, id2htmlimg, vec2, vec3arr } from '../rompack/rompack';
+import type { Area, Size, Vector, id2imgres, vec2, vec3arr } from '../rompack/rompack';
 
 export interface FlipOptions {
 	flip_h: boolean;
@@ -51,8 +51,7 @@ export abstract class BaseView implements RegisterablePersistent {
 
 	public canvas: HTMLCanvasElement;
 	public context: CanvasRenderingContext2D;
-	public static images: id2htmlimg;
-	public static imagesMeta: Record<string, ImgMeta> = {};
+	public static imgassets: id2imgres = {};
 	public accessor default_font: BFont;
 
 	public windowSize: Size;
@@ -372,7 +371,10 @@ export abstract class BaseView implements RegisterablePersistent {
 	public drawImg(options: DrawImgOptions): void {
 		const { pos, imgid, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 } } = options;
 
-		let img = BaseView.images[imgid];
+		let img = BaseView.imgassets[imgid]?.imgbin;
+		if (!img) {
+			throw new Error(`Image with id '${imgid}' not found!`);
+		}
 		$.view.context.save();
 		$.view.context.translate(~~pos.x, ~~pos.y);
 		if (flip.flip_h) {

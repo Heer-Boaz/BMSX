@@ -114,18 +114,22 @@ export interface RomAsset {
 	audiometa?: AudioMeta; // The metadata of the asset, if it is an audio asset.
 }
 
+export interface RomImgAsset extends RomAsset {
+	imgbin: HTMLImageElement; // The HTML image element of the image asset
+}
+
 export interface RomMeta {
 	start: number; // The start offset of the RomPack metadata in the ROM (file) buffer itself.
 	end: number; // The end offset of the RomPack metadata in the ROM (file) buffer itself.
 }
 
 export type id2res = Record<number | string, RomAsset>;
+export type id2imgres = Record<number | string, RomImgAsset>;
 export type id2data = Record<number | string, any>;
 export type id2htmlimg = Record<number | string, HTMLImageElement>;
 export interface RomPack {
 	rom: ArrayBuffer, // The binary buffer of the ROM pack, containing all assets, including images, audio and code.
-	imgbin: id2htmlimg; // The HTML images of the loaded image assets in the ROM pack, used for the Canvas renderer (not the WebGL renderer???)
-	img: id2res; // Reference to the loaded image assets in the ROM pack, including metadata.
+	img: id2imgres; // Reference to the loaded image assets in the ROM pack, including metadata and the loaded image (HTMLImageElement).
 	audio: id2res; // Reference to the loaded audio assets in the ROM pack, including metadata.
 	data: id2data; // Reference to the loaded data assets in the ROM pack, including metadata.
 	code: string; // The loaded game code in the ROM pack.

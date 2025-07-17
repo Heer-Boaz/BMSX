@@ -560,7 +560,7 @@ export abstract class GLView extends BaseView {
         this.textures = {
             // Link the atlas texture to the '_atlas' key for easy access
             // The atlas is created from the '_atlas' image in the ROM pack, which is loaded before the GLView is created (during loading of the ROM pack)
-            _atlas: this.createTexture(BaseView.images['_atlas'], undefined, gl.TEXTURE0),
+            _atlas: this.createTexture(BaseView.imgassets['_atlas']?.imgbin, undefined, gl.TEXTURE0),
             // Create the texture with dummy width and height, which will be updated later
             _atlas_dynamic: this.createTexture(null, { width: 1, height: 1 }, gl.TEXTURE1),
             post_processing_source_texture: null, // This will be created later in createFramebufferAndTexture
@@ -1069,7 +1069,7 @@ export abstract class GLView extends BaseView {
      */
     override drawImg(options: DrawImgOptions): void {
         const { imgid } = options;
-        const imgmeta = BaseView.imagesMeta[imgid];
+        const imgmeta = BaseView.imgassets[imgid]?.imgmeta;
 
         if (!imgmeta) {
             throw Error(`Image with id '${imgid}' not found while trying to retrieve image metadata!`);
@@ -1285,7 +1285,7 @@ export abstract class GLView extends BaseView {
         }
 
         const atlasName = generateAtlasName(index);
-        const atlasImage = BaseView.images[atlasName];
+        const atlasImage = BaseView.imgassets[atlasName]?.imgbin;
         if (!atlasImage) {
             console.error(`Atlas image with name '${atlasName}' not found!`);
             return;
