@@ -11,6 +11,7 @@ interface RomPackerOptions {
 	force: boolean;
 	buildreslist: boolean;
 	deploy: boolean;
+	useTextureAtlas: boolean;
 }
 
 export interface Resource {

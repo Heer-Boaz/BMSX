@@ -80,6 +80,7 @@
   "include": [
     "scripts/bootrom.ts",
     "scripts/rompacker.ts",
+    "scripts/rompacker-core.ts",
     "scripts/atlasbuilder.ts",
     "scripts/boundingbox_extractor.ts",
   ],
