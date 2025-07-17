@@ -170,8 +170,8 @@ export class BFont {
 	 * The map of font resources.
 	 */
 	protected accessor font_res_map: Record<string, string>;
-	public char_width(letter: string): number { return global.$rom.img_assets[this.letter_to_img[letter]].imgmeta.width; }
-	public char_height(letter: string): number { return global.$rom.img_assets[this.letter_to_img[letter]].imgmeta.height; }
+	public char_width(letter: string): number { return global.$rom.img[this.letter_to_img[letter]].imgmeta.width; }
+	public char_height(letter: string): number { return global.$rom.img[this.letter_to_img[letter]].imgmeta.height; }
 	readonly letter_to_img: Record<string, string> = {
 		'0': 'letter_0',
 		'1': 'letter_1',
@@ -991,9 +991,9 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		global['debug'] = this.debug;
 		global['$rom'] = rom;
 
-		BaseView.images = rom.images;
-		Object.keys(rom.img_assets).forEach((key => {
-			const imgAsset = rom.img_assets[key];
+		BaseView.images = rom.imgbin;
+		Object.keys(rom.img).forEach((key => {
+			const imgAsset = rom.img[key];
 			BaseView.imagesMeta[key] = imgAsset.imgmeta;
 		}));
 		EventEmitter.instance; // Init event emitter
@@ -1002,7 +1002,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 			$.input.enableOnscreenGamepad();
 		}
 		$.view.init(); // Init the view. Placed here to ensure that the Game object is available to the view and that the Input module is initialized
-		await SM.init(rom['snd_assets'], sndcontext, GameOptions.VolumePercentage, gainnode);
+		await SM.init(rom['audio'], sndcontext, GameOptions.VolumePercentage, gainnode);
 		try {
 			await PSG.init(sndcontext, GameOptions.VolumePercentage, gainnode);
 		} catch (error) {

@@ -124,9 +124,9 @@ export type id2data = Record<number | string, any>;
 export type id2htmlimg = Record<number | string, HTMLImageElement>;
 export interface RomPack {
 	rom: ArrayBuffer, // The binary buffer of the ROM pack, containing all assets, including images, audio and code.
-	images: id2htmlimg; // The HTML images of the loaded image assets in the ROM pack, used for the Canvas renderer (not the WebGL renderer).
-	img_assets: id2res; // Reference to the loaded image assets in the ROM pack, including metadata.
-	snd_assets: id2res; // Reference to the loaded audio assets in the ROM pack, including metadata.
-	data_assets: id2data; // Reference to the loaded data assets in the ROM pack, including metadata.
+	imgbin: id2htmlimg; // The HTML images of the loaded image assets in the ROM pack, used for the Canvas renderer (not the WebGL renderer???)
+	img: id2res; // Reference to the loaded image assets in the ROM pack, including metadata.
+	audio: id2res; // Reference to the loaded audio assets in the ROM pack, including metadata.
+	data: id2data; // Reference to the loaded data assets in the ROM pack, including metadata.
 	code: string; // The loaded game code in the ROM pack.
 }

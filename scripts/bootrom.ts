@@ -484,11 +484,11 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<RomAsset[]> {
  */
 export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>, loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>, loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any> }): Promise<RomPack> {
 	const result: RomPack = {
-		images: {},
+		imgbin: {},
 		rom: rom,
-		img_assets: {},
-		snd_assets: {},
-		data_assets: {},
+		img: {},
+		audio: {},
+		data: {},
 		code: null
 	};
 
@@ -540,20 +540,20 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 					img = await getImageFromBuffer(rom.slice(res.start, res.end));
 				}
 
-				romResult.images[res.resid] = img;
-				romResult.images[res.resname] = img;
+				romResult.imgbin[res.resid] = img;
+				romResult.imgbin[res.resname] = img;
 			}
-			romResult.img_assets[res.resid] = res;
-			romResult.img_assets[res.resname] = res;
+			romResult.img[res.resid] = res;
+			romResult.img[res.resname] = res;
 			break;
 		case 'audio':
 			try {
 				if (opts && opts.loadAudioFromBuffer) {
-					romResult.snd_assets[res.resid] = await opts.loadAudioFromBuffer(rom.slice(res.start, res.end));
+					romResult.audio[res.resid] = await opts.loadAudioFromBuffer(rom.slice(res.start, res.end));
 				} else {
 					// By default we do not load the audio, but load it later in the SoundMaster
-					romResult.snd_assets[res.resid] = res;
-					romResult.snd_assets[res.resname] = res;
+					romResult.audio[res.resid] = res;
+					romResult.audio[res.resname] = res;
 				}
 			} catch (err) {
 				throw new Error(`Failed to load 'audio' from rom: ${err.message}.`);
@@ -574,11 +574,11 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
 		case 'data':
 			try {
 				if (opts && opts.loadDataFromBuffer) {
-					romResult.data_assets[res.resid] = await opts.loadDataFromBuffer(rom.slice(res.start, res.end));
+					romResult.data[res.resid] = await opts.loadDataFromBuffer(rom.slice(res.start, res.end));
 				} else {
 					const data = await loadDataFromBuffer(rom.slice(res.start, res.end));
-					romResult.data_assets[res.resid] = data;
-					romResult.data_assets[res.resname] = data;
+					romResult.data[res.resid] = data;
+					romResult.data[res.resname] = data;
 				}
 			} catch (err) {
 				throw new Error(`Failed to load 'data' from rom: ${err.message}.`);
