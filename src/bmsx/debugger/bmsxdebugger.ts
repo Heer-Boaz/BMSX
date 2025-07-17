@@ -8,7 +8,7 @@ import { Registry } from '../core/registry';
 import { SpriteObject } from '../core/sprite';
 import { StateDefinitions } from '../fsm/fsmlibrary';
 import { Color } from '../render/view';
-import type { vec2, vec3arr } from '../rompack/rompack';
+import type { vec2 } from '../rompack/rompack';
 import { excludeclassfromsavegame } from '../serializer/gameserializer';
 import { Msx1Colors } from '../systems/msx';
 import { createObjectTableElement } from './objectpropertydialog';
@@ -90,8 +90,7 @@ export class HitBoxVisualizer extends Component {
         if (parent.hasHitPolygon) {
             for (const poly of parent.hitpolygon) {
                 // Offset polygon by parent position and z
-                const poly3: vec3arr[] = poly.map(p => [p[0], p[1], parent.z]);
-                $.view.drawPolygon(poly3, { ...Msx1Colors[2], a: 0.5 }, 1);
+                $.view.drawPolygon(poly, parent.z, { ...Msx1Colors[2], a: 0.5 }, 1);
             }
         }
 

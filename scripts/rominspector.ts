@@ -476,6 +476,8 @@ async function main() {
 			// scrollbar: { ch: '|', track: { bg: 'grey' }, style: { bg: 'yellow' } }
 		});
 
+
+
 		// If modal.height is a string like '80%', parse it to a number
 		const heightNum = typeof modal.height === 'string'
 			? Math.floor((parseInt(modal.height) / 100) * (screen.height as number))
@@ -617,7 +619,7 @@ async function main() {
 		// modal.content = `${bufferLines.join('\n')}\n${metadataLines.join('\n')}\n${asciiArt}\n`;
 		// In showAssetModal:
 		let currentTab = tabIndex || 0; // Default to 0 if not provided
-		const tabLabels = ['Preview', 'Details', 'Hex'];
+		const tabLabels = ['Preview', 'Details', 'Hex', '×']; // Voeg sluit-tab toe
 
 		// Maak een aparte box voor de tabbar
 		const tabbarBox = blessed.box({
@@ -625,7 +627,7 @@ async function main() {
 			top: 0,
 			left: 0,
 			width: '100%-2',
-			height: 4,
+			height: 6,
 			tags: true,
 			style: { fg: 'white', bg: 'black' },
 			content: '', // wordt gezet door renderTabBar()
@@ -634,7 +636,7 @@ async function main() {
 
 		const contentBox = blessed.box({
 			parent: modal,
-			top: 4,
+			top: 6,
 			left: 0,
 			width: '100%-2',
 			height: '100%-6',
@@ -646,15 +648,63 @@ async function main() {
 			scrollbar: { ch: '|', track: { bg: 'grey' }, style: { bg: 'yellow' } }
 		});
 
+		// Voeg deze variabele toe boven renderTabBar:
+		let tabBoxes: blessed.Widgets.BoxElement[] = [];
+
 		function renderTabBar() {
-			let content = tabLabels.map((label, i) =>
-				i === currentTab
-					? `{yellow-bg}{black-fg}[ ${label} ]{/black-fg}{/yellow-bg}`
-					: `{white-fg}[ ${label} ]{/white-fg}`
-			).join(' ');
-			content += '\n{white-fg}[←/→] Tab | [q] Quit{/white-fg}';
-			content += `\n${bufferLines.join('\n')}\n`;
-			tabbarBox.setContent(content);
+			// Verwijder oude tabBoxes als ze bestaan
+			if (tabBoxes.length) {
+				tabBoxes.forEach(tb => tb.destroy());
+				tabBoxes = [];
+			}
+
+			let x = 0;
+			tabLabels.forEach((label, i) => {
+				const tabText = ` ${label}   `;
+				const isCloseTab = i === tabLabels.length - 1;
+				const tabBox = blessed.box({
+					parent: tabbarBox,
+					top: 0,
+					left: x,
+					// left: !isCloseTab ? x : undefined,
+					// right: isCloseTab ? 0 : undefined,
+					width: tabText.length,
+					height: 3,
+					align: isCloseTab ? 'right' : 'center',
+					focusable: false,
+					tags: true,
+					// @ts-ignore
+					border: { type: 'line', fg: isCloseTab ? 'red' : (i === currentTab ? 'yellow' : 'blue') },
+					mouse: true,
+					content: `${tabText}`,
+					style: {
+						bg: isCloseTab ? 'red' : (i === currentTab ? 'yellow' : 'black'),
+						fg: isCloseTab ? 'white' : (i === currentTab ? 'black' : 'white'),
+						hover: isCloseTab ? { bg: 'magenta' } : { bg: 'blue' }
+					}
+				});
+				if (isCloseTab) {
+					tabBox.on('click', () => {
+						if (modal) {
+							modal.destroy();
+							modal = null;
+							table.focus();
+							screen.render();
+						}
+					});
+				} else {
+					tabBox.on('click', () => {
+						currentTab = i;
+						renderModalContent();
+					});
+				}
+				tabBoxes.push(tabBox);
+				x += tabText.length;
+			});
+
+			let helpLine = '{white-fg}[←/→] Tab | [q] Quit{/white-fg}';
+			let bufferInfo = `${bufferLines.join('\n')}\n`;
+			tabbarBox.setContent(`\n${helpLine}\n\n${bufferInfo}`);
 		}
 
 		function renderModalContent(asset: RomAsset = selected) {
@@ -732,6 +782,7 @@ async function main() {
 				case 'right':
 					if (currentTab < tabLabels.length - 1) {
 						currentTab++;
+						if (currentTab === tabLabels.length - 1) currentTab--; // skip sluit-tab
 						renderModalContent();
 					}
 					break;

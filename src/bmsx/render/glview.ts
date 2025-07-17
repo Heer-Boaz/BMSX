@@ -1,5 +1,5 @@
 import { multiply_vec, new_vec2, new_vec3 } from '../core/game';
-import type { ImgMeta, Size, vec2, vec3arr } from '../rompack/rompack';
+import type { ImgMeta, Polygon, Size, vec2, vec3arr } from '../rompack/rompack';
 import crtShaderCode from './shaders/crtshader.glsl';
 import gameShaderCode from './shaders/gameshader.glsl';
 import vertexShaderCode from './shaders/vertexshader.glsl';
@@ -1189,17 +1189,18 @@ export abstract class GLView extends BaseView {
 
     /**
      * Draws the outline of a polygon by drawing lines between its vertices using the white pixel image.
-     * @param points Array of {x, y, z} points (polygon vertices, in order)
+     * @param coords Array of {x, y, z} points (polygon vertices, in order)
      * @param color Color to use for the outline
      * @param thickness Line thickness in pixels (default 1)
      */
-    public override drawPolygon(points: vec3arr[], color: Color, thickness: number = 1): void {
-        if (!points || points.length < 2) return;
+    public override drawPolygon(coords: Polygon, z: number, color: Color, thickness: number = 1): void {
+        if (!coords || coords.length < 4) return;
         const imgid = 'whitepixel';
-        for (let i = 0; i < points.length; ++i) {
-            const a = points[i], b = points[(i + 1) % points.length];
-            let x0 = Math.round(a[0]), y0 = Math.round(a[1]), z = a[2] ?? 0;
-            let x1 = Math.round(b[0]), y1 = Math.round(b[1]);
+        for (let i = 0; i < coords.length; i += 2) {
+            let x0 = Math.round(coords[i]), y0 = Math.round(coords[i + 1]);
+            let next = (i + 2) % coords.length;
+            let x1 = Math.round(coords[next]), y1 = Math.round(coords[next + 1]);
+
             const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
             const sx = x0 < x1 ? 1 : -1;
             const sy = y0 < y1 ? 1 : -1;
