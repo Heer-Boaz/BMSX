@@ -1,4 +1,4 @@
-import { assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SM, SpriteObject, State, StateMachineBlueprint, vec3, Vector, type vec2 } from '../bmsx/bmsx';
+import { assign_fsm, attach_components, build_fsm, Identifier, insavegame, new_area, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, vec3, Vector, type RandomModulationParams, type vec2 } from '../bmsx/bmsx';
 import { gamemodel } from './gamemodel';
 import { AudioId, BitmapId } from './resourceids';
 
@@ -143,9 +143,9 @@ export abstract class Fighter extends SpriteObject {
         opponent.sc.to('hitanimation.doet_au');
         this.hp -= getDamage(attackType);
         if (attackType === 'punch') {
-            SM.play(AudioId.hit2, { pitchRandom: 0.05, startOffsetRandom: 0.00, volumeRandom: 3, playbackRate: 1 });
+            $.playAudio(AudioId.hit2, $.rom.data['modulationparams'].hitsfx as RandomModulationParams);
         } else {
-            SM.play(AudioId.hit1, { pitchRandom: 0.05, startOffsetRandom: 0.00, volumeRandom: 3, playbackRate: 1 });
+            $.playAudio(AudioId.hit1, $.rom.data['modulationparams'].hitsfx as RandomModulationParams);
         }
     }
 

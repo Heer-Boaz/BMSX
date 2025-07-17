@@ -116,4 +116,5 @@ export enum AudioId {
 
 export enum DataId {
 	none = 'none',
+	modulationparams = 'modulationparams',  
 }

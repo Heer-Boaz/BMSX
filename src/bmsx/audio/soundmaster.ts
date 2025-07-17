@@ -4,38 +4,99 @@ export interface AudioMetadataWithID extends AudioMeta {
 	id: string; // The ID of the audio asset.
 }
 
-export interface RandomModulationParams {
-	// pitch tussen pitchMin en pitchMax
-	pitchMin?: number;
-	pitchMax?: number;
-	// volume (dB) tussen volumeMin en volumeMax
-	volumeMin?: number;
-	volumeMax?: number;
-	// offset (s) tussen offsetMin en offsetMax
-	offsetMin?: number;
-	offsetMax?: number;
-	// playback rate vaste waarde (geen range)
-	playbackRate?: number;
-	// filter-settings (exact gelijk aan resolved variant)
-	filter?: {
-		type?: BiquadFilterType;
-		frequency?: number;
-		q?: number;
-		gain?: number;
-	};
+export type ModulationRange = [number, number];
+
+export interface FilterModulationParams {
+	/**
+	 * The type of the biquad filter (e.g., "lowpass", "highpass").
+	 */
+	type?: BiquadFilterType;
+
+	/**
+	 * The frequency of the filter in Hz.
+	 */
+	frequency?: number;
+
+	/**
+	 * The quality factor (Q) of the filter.
+	 */
+	q?: number;
+
+	/**
+	 * The gain of the filter in dB.
+	 */
+	gain?: number;
 }
 
+/**
+ * Parameters for random modulation of audio playback.
+ * These parameters allow for randomized variations in pitch, volume, offset, playback rate, and filtering.
+ */
+export interface RandomModulationParams {
+	/**
+	 * Range of pitch variation, specified as an array of two numbers [min, max].
+	 * The pitch will be randomly adjusted within this range.
+	 */
+	pitchRange?: ModulationRange;
+
+	/**
+	 * Range of volume variation, specified as an array of two numbers [min, max].
+	 * The volume will be randomly adjusted within this range.
+	 */
+	volumeRange?: ModulationRange;
+
+	/**
+	 * Range of offset variation, specified as an array of two numbers [min, max].
+	 * The playback offset will be randomly adjusted within this range.
+	 */
+	offsetRange?: ModulationRange;
+
+	/**
+	 * Range of playback rate variation, specified as an array of two numbers [min, max].
+	 * The playback rate will be randomly adjusted within this range.
+	 */
+	playbackRateRange?: ModulationRange;
+
+	/**
+	 * Filter parameters for applying a biquad filter to the audio.
+	 */
+	filter?: FilterModulationParams;
+}
+
+/**
+ * Parameters for modulating audio playback.
+ * These parameters allow for precise control over pitch, volume, offset, playback rate, and filtering.
+ */
 export interface ModulationParams {
+	/**
+	 * The change in pitch, specified as a delta value.
+	 * Positive values increase the pitch, while negative values decrease it.
+	 */
 	pitchDelta?: number;
+
+	/**
+	 * The change in volume, specified as a delta value in decibels (dB).
+	 * Positive values increase the volume, while negative values decrease it.
+	 */
 	volumeDelta?: number;
+
+	/**
+	 * The playback offset in seconds.
+	 * Specifies the starting point of the audio playback.
+	 */
 	offset?: number;
+
+	/**
+	 * The playback rate multiplier.
+	 * A value of 1 plays the audio at normal speed, values greater than 1 speed it up, and values less than 1 slow it down.
+	 */
 	playbackRate?: number;
-	filter?: {
-		type?: BiquadFilterType;
-		frequency?: number;
-		q?: number;
-		gain?: number;
-	};
+
+	/**
+	 * Filter parameters for applying a biquad filter to the audio.
+	 * Allows for advanced audio effects such as low-pass or high-pass filtering.
+	 */
+	filter?: FilterModulationParams;
 }
 
 export class SM {
@@ -112,13 +173,19 @@ export class SM {
 
 	private static resolvePlayParams(options: RandomModulationParams | ModulationParams): ModulationParams {
 		if (!options) return {};
-		const anyOptions = options as any;
+		const anyOptions = options as RandomModulationParams | ModulationParams;
+
+		function getRandomInRange(range?: ModulationRange): number {
+			if (!range) return 0;
+			return Math.random() * (range[1] - range[0]) + range[0];
+		}
+
 		return {
-			offset: (anyOptions.offset ?? 0) + (anyOptions.startOffsetRandom ? Math.random() * anyOptions.startOffsetRandom : 0),
-			pitchDelta: (anyOptions.pitchRandom ? (Math.random() * 2 - 1) * anyOptions.pitchRandom : 0),
-			volumeDelta: (anyOptions.volumeRandom ? (Math.random() * 2 - 1) * anyOptions.volumeRandom : 0),
-			playbackRate: anyOptions.playbackRate ?? 1,
-			filter: anyOptions.filter ? { ...anyOptions.filter } : undefined,
+			offset: ((anyOptions as ModulationParams).offset ?? 0) + getRandomInRange((anyOptions as RandomModulationParams).offsetRange),
+			pitchDelta: ((anyOptions as ModulationParams).pitchDelta ?? 0) + getRandomInRange((anyOptions as RandomModulationParams).pitchRange),
+			volumeDelta: ((anyOptions as ModulationParams).volumeDelta ?? 0) + getRandomInRange((anyOptions as RandomModulationParams).volumeRange),
+			playbackRate: ((anyOptions as ModulationParams).playbackRate ?? 1) + getRandomInRange((anyOptions as RandomModulationParams).playbackRateRange),
+			filter: anyOptions.filter ? { ...anyOptions.filter } as FilterModulationParams : undefined,
 		};
 	}
 
