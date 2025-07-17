@@ -19,7 +19,7 @@ let modal: blessed.Widgets.BoxElement | null = null;
 let filteredAssetList: RomAsset[] = [];
 let assetList: RomAsset[] = [];
 
-function numberToStuff(n: number): string {
+function formatNumber(n: number): string {
 	const units = ['', 'K', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y'];
 	let i = 0;
 	let num = n;
@@ -30,7 +30,7 @@ function numberToStuff(n: number): string {
 	return i === 0 ? `${n}` : `${num.toFixed(2)}${units[i]}`;
 }
 
-function byteSizeToString(size: number): string {
+function formatByteSize(size: number): string {
 	const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
 	let i = 0;
 	let n = size;
@@ -146,7 +146,7 @@ function getMetadataBuffer(rompack: Buffer | ArrayBuffer, rommeta: RomMeta) {
 		metadataOffset + metadataLength > rompack.byteLength ||
 		metadataOffset > rompack.byteLength - 16
 	) {
-		console.error(`Invalid metadata offset or length: offset=${metadataOffset} (${byteSizeToString(metadataOffset)}), length=${metadataLength} (${byteSizeToString(metadataLength)})`);
+		console.error(`Invalid metadata offset or length: offset=${metadataOffset} (${formatByteSize(metadataOffset)}), length=${metadataLength} (${formatByteSize(metadataLength)})`);
 		process.exit(1);
 	}
 
@@ -159,7 +159,7 @@ function getMetadataBuffer(rompack: Buffer | ArrayBuffer, rommeta: RomMeta) {
 		console.error(`Metadata length mismatch: expected ${metadataLength} bytes, got ${metaBuf.byteLength} bytes`);
 		process.exit(1);
 	}
-	console.log(`Metadata buffer loaded: offset=${metadataOffset} (${byteSizeToString(metadataOffset)}), length=${metadataLength} (${byteSizeToString(metadataLength)})`);
+	console.log(`Metadata buffer loaded: offset=${metadataOffset} (${formatByteSize(metadataOffset)}), length=${metadataLength} (${formatByteSize(metadataLength)})`);
 	return { metaBuf, metadataOffset, metadataLength };
 }
 
@@ -216,7 +216,7 @@ async function loadRompackFromFile(romfile: string): Promise<Buffer> {
 			decompressed = null; // fallback to null if decompression fails
 		}
 		rompack = decompressed.buffer ?? raw; // Use decompressed data if available, otherwise fallback to raw
-		console.log(`Decompressed ROM size: ${byteSizeToString(rompack.byteLength)}`);
+		console.log(`Decompressed ROM size: ${formatByteSize(rompack.byteLength)}`);
 	} else {
 		console.log('ROM is uncompressed, using as-is.');
 		rompack = raw;
@@ -249,7 +249,7 @@ async function main() {
 		console.error('Invalid ROM metadata, unable to parse ROM file.');
 		process.exit(1);
 	}
-	console.log(`ROM metadata: start=${rommeta.start} (${byteSizeToString(rommeta.start)}), end=${rommeta.end} (${byteSizeToString(rommeta.end)}, length=${rommeta.end - rommeta.start} (${byteSizeToString(rommeta.end - rommeta.start)}))`);
+	console.log(`ROM metadata: start=${rommeta.start} (${formatByteSize(rommeta.start)}), end=${rommeta.end} (${formatByteSize(rommeta.end)}, length=${rommeta.end - rommeta.start} (${formatByteSize(rommeta.end - rommeta.start)}))`);
 
 	const { metaBuf, metadataOffset, metadataLength } = getMetadataBuffer(rompack, rommeta);
 	assetList = await loadAssets(rompack);
@@ -353,13 +353,13 @@ async function main() {
 		return `Total assets: ${assetList?.length ?? 0} (images: ${imageAssets?.length ?? 0
 			}, audio: ${audioCount}, data: ${dataCount}, code: ${codeCount}, other: ${otherCount}) \n` +
 			`Buffer: ${renderSummaryBar(summaryRegions, totalSize, barLength)}\n` +
-			`Total size: ${byteSizeToString(totalSize)} | ` +
-			`Images: ${byteSizeToString(imagesSize)} (${imageSizePercent}%) | ` +
-			`Audio: ${byteSizeToString(audioSize)} (${audioSizePercent}%) | ` +
-			`Data: ${byteSizeToString(dataSize)} (${dataSizePercent}%) | ` +
-			`Code: ${byteSizeToString(codeSize)} (${codeSizePercent}%) | ` +
-			`Atlas: ${byteSizeToString(atlasSize)} (${atlasSizePercent}%) | ` +
-			`Metadata: ${byteSizeToString(metaBuf.byteLength)} (${metaSizePercent}%)`;
+			`Total size: ${formatByteSize(totalSize)} | ` +
+			`Images: ${formatByteSize(imagesSize)} (${imageSizePercent}%) | ` +
+			`Audio: ${formatByteSize(audioSize)} (${audioSizePercent}%) | ` +
+			`Data: ${formatByteSize(dataSize)} (${dataSizePercent}%) | ` +
+			`Code: ${formatByteSize(codeSize)} (${codeSizePercent}%) | ` +
+			`Atlas: ${formatByteSize(atlasSize)} (${atlasSizePercent}%) | ` +
+			`Metadata: ${formatByteSize(metaBuf.byteLength)} (${metaSizePercent}%)`;
 	}
 
 	const summaryBox = blessed.box({
@@ -437,7 +437,7 @@ async function main() {
 				let size = 0;
 				if (asset.start != null && asset.end != null) size += asset.end - asset.start;
 				if (asset.metabuffer_start != null && asset.metabuffer_end != null) size += asset.metabuffer_end - asset.metabuffer_start;
-				return byteSizeToString(size); // Convert size to human-readable format
+				return formatByteSize(size); // Convert size to human-readable format
 			})()
 		]);
 		table.setData({
@@ -561,7 +561,7 @@ async function main() {
 				if (!selected.buffer || typeof selected.buffer !== 'object') {
 					selected.buffer = await loadDataFromBuffer(rompack.slice(selected.start, selected.end));
 				}
-				metadataLines.push(`Data size: ${byteSizeToString(selected.end - selected.start)}`);
+				metadataLines.push(`Data size: ${formatByteSize(selected.end - selected.start)}`);
 				asciiArt = JSON.stringify(selected.buffer, null, 2);
 				break;
 			case 'code': {
@@ -569,7 +569,7 @@ async function main() {
 				// Load the code buffer from the ROM pack
 				code = await loadSourceFromBuffer(rompack.slice(selected.start, selected.end));
 				const sourceMapUrlIndex = code.indexOf('sourceMappingURL=');
-				metadataLines.push(`Characters in code: ${numberToStuff(code.length - (sourceMapUrlIndex !== -1 ? code.length - sourceMapUrlIndex : 0))}`);
+				metadataLines.push(`Characters in code: ${formatNumber(code.length - (sourceMapUrlIndex !== -1 ? code.length - sourceMapUrlIndex : 0))}`);
 				metadataLines.push(`Sourcemap: ${sourceMapUrlIndex !== -1 ? 'Yes' : 'No'}`);
 
 				if (!code || code.length === 0) {
@@ -604,12 +604,12 @@ async function main() {
 			}
 			const bar = renderBufferBar(regions, total, barLength);
 			bufferLines.push(`Buffer: ${bar} `);
-			if (bufferSize) bufferLines.push(`Buffer: ${selected.start} - ${selected.end} (${byteSizeToString(bufferSize)})`);
+			if (bufferSize) bufferLines.push(`Buffer: ${selected.start} - ${selected.end} (${formatByteSize(bufferSize)})`);
 			// Metabuffer region info
-			if (metabufferSize) bufferLines.push(`Metabuffer: ${selected.metabuffer_start} - ${selected.metabuffer_end} (${byteSizeToString(metabufferSize)})`);
+			if (metabufferSize) bufferLines.push(`Metabuffer: ${selected.metabuffer_start} - ${selected.metabuffer_end} (${formatByteSize(metabufferSize)})`);
 			if (bufferSize && metabufferSize) {
 				const totalSize = (bufferSize ?? 0) + (metabufferSize ?? 0);
-				bufferLines.push(`Total size: ${byteSizeToString(totalSize)} `);
+				bufferLines.push(`Total size: ${formatByteSize(totalSize)} `);
 			}
 		}
 
