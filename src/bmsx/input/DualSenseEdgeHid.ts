@@ -2,10 +2,17 @@
 /**
  * Sony DualSense Edge – vendor‑ & product‑IDs (USB‑modus)
  * 0x054C = Sony Interactive Entertainment
+ * 0x0CE6 = DualSense standard
  * 0x0DF2 = DualSense Edge
  */
-const DUALSENSE_USB = { vendorId: 0x054c, productId: 0x0df2 } as const;
+const SONY_VID = 0x054C;
+const DUALSENSE_EDGE_PID = 0x0DF2; // DualSense Edge
+const DUALSENSE_STANDARD_PID = 0x0CE6; // DualSense standard
 
+const ACCEPTED_VENDORS_PRODUCTS = [
+    { vendorId: SONY_VID, productId: DUALSENSE_EDGE_PID },
+    { vendorId: SONY_VID, productId: DUALSENSE_STANDARD_PID }
+] as const;
 
 export interface HidRumbleParams {
     /** 0 – 255, left (strong) motor */
@@ -32,14 +39,13 @@ export class DualSenseEdgeHID {
         }
 
         // Devices already known?
-        const known = navigator.hid.getDevices
-            ? await navigator.hid.getDevices()
-            : [];
+        const known = await navigator.hid.getDevices?.() ?? [];
+
         this.device =
-            known.find(d => d.vendorId === DUALSENSE_USB.vendorId &&
-                d.productId === DUALSENSE_USB.productId) ??
+            known.find(d => d.vendorId === SONY_VID &&
+                ACCEPTED_VENDORS_PRODUCTS.some(p => p.productId === d.productId)) ??
             (await navigator.hid.requestDevice({
-                filters: [DUALSENSE_USB]
+                filters: ACCEPTED_VENDORS_PRODUCTS.map(p => ({ vendorId: p.vendorId, productId: p.productId }))
             }))[0];
 
         if (!this.device) {
