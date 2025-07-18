@@ -63,25 +63,15 @@ export class State<T extends Stateful & EventSubscriber & Registerable = any> im
      */
     currentid!: Identifier; // Identifier of current state
 
-
-
-
     /**
      * History of previous states.
      */
     history!: Array<Identifier>; // History of previous state (as ids)
 
-
-
-
     /**
      * Indicates whether the execution is paused.
      */
     paused: boolean; // Iff paused, skip 'onrun'
-
-
-
-
 
     /**
      * This state machine reflects the (partial) state of the game object with the given id
@@ -888,23 +878,12 @@ export class State<T extends Stateful & EventSubscriber & Registerable = any> im
      */
     public get at_tapeend(): boolean { return !this.tape || this.head >= this.tape.length - 1; } // Note that beyond end also returns true if there is no tape!
 
-
-
-
-
-
     /**
      * Determines whether the tape head is currently beyond the end of the tape.
      * Returns true if the tape head is beyond the end of the tape or if there is no tape, false otherwise.
      * Note that this function assumes that the tape head is within the bounds of the tape.
      */
     protected get beyond_tapeend(): boolean { return !this.tape || this.head >= this.tape.length; } // Note that beyond end also returns true if there is no tape!
-
-
-
-
-
-
 
     /**
      * Returns whether the tape head is currently before the start of the tape,

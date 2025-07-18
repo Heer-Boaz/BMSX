@@ -8,6 +8,7 @@ import { type StateEventDefinition, type StateEventHandler, type StateExitHandle
  * after reaching the end.
  */
 const AUTO_REWIND_TAPE_AFTER_END = false;
+
 /**
  * Represents the definition of a state in a behavior finite state machine (BFSM).
  *
@@ -15,7 +16,6 @@ const AUTO_REWIND_TAPE_AFTER_END = false;
  * This class encapsulates the properties and behaviors of a state within a state machine,
  * including its unique identifier, associated data, tape management, and event handling.
  */
-
 export class StateDefinition {
     /**
      * The unique identifier for the bfsm.
@@ -42,12 +42,6 @@ export class StateDefinition {
      */
     public ticks2move: number; // Number of runs before tapehead moves to next statedata
 
-
-
-
-
-
-
     /**
      * Specifies whether the tapehead should automatically rewind to index `0` when it reaches the end of the tape.
      * Defaults to `true`.
@@ -55,17 +49,6 @@ export class StateDefinition {
      * - If set to `false`, the tapehead will remain at the end of the tape.
      */
     public auto_tick: boolean; // Automagically increase the ticks during run
-
-
-
-
-
-
-
-
-
-
-
 
     /**
      * Specifies the behavior for automatic state resetting.
@@ -80,21 +63,12 @@ export class StateDefinition {
      */
     public auto_reset: 'state' | 'tree' | 'subtree' | 'none'; // Automagically reset the state when entered (and optionally also its substates) (defaults to 'state')
 
-
-
-
-
-
     /**
      * Indicates whether the tapehead should automatically rewind to index 0 when it would go out of bounds.
      * If set to true, the tapehead will be set to index 0 when it reaches the end of the tape.
      * If set to false, the tapehead will remain at the end of the tape.
      */
     public auto_rewind_tape_after_end: boolean; // Automagically set the tapehead to index 0 when tapehead would go out of bound. Otherwise, will remain at end
-
-
-
-
 
     /**
      * Number of times the tape should be repeated.
@@ -287,6 +261,7 @@ export class StateDefinition {
         state.root = root;
     }
 }
+
 /**
  * Validates the state machine definition.
  *
@@ -342,6 +317,7 @@ export function validateStateMachine(machinedef: StateDefinition, path: string =
         console.error(`${e.stack || e.message || e}`);
     }
 }
+
 function resolveStateDefPath(from: StateDefinition, target: string, origin: string): void {
     const parts = target.split('.');
     let ctx: StateDefinition | undefined;
