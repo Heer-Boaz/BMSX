@@ -335,7 +335,7 @@ export class SM {
 		const node = SM.currentAudioNodeByType[type];
 		if (node) {
 			// Calculate true playback position
-			return (node.context.currentTime - SM.nodeStartTime[type]) + SM.nodeStartOffset[type];
+			return (node.context.currentTime - SM.nodeStartTime[type]) + (SM.nodeStartOffset[type] ?? 0);
 		}
 		return null;
 	}
