@@ -442,8 +442,9 @@ async function main() {
 		]);
 		table.setData({
 			headers: ['Name', 'ID', 'Type', 'Size'],
-			data: tableRows
+			data: tableRows,
 		});
+
 		screen.render();
 	}
 
@@ -475,8 +476,6 @@ async function main() {
 			vi: true, input: true, // Enable vi-style keybindings
 			// scrollbar: { ch: '|', track: { bg: 'grey' }, style: { bg: 'yellow' } }
 		});
-
-
 
 		// If modal.height is a string like '80%', parse it to a number
 		const heightNum = typeof modal.height === 'string'
@@ -594,7 +593,6 @@ async function main() {
 		if (bufferSize || metabufferSize) {
 			const barLength = getBarLength(modal?.width as number);
 			const total = rompack.byteLength;
-			// Compose regions for this asset: asset, metabuffer, global metadata
 			const regions = [];
 			const bufferRegionColor = '{light-red-fg}';
 			const metabufferRegionColor = '{light-blue-fg}';
@@ -616,8 +614,6 @@ async function main() {
 		}
 
 		metadataLines.push('');
-		// modal.content = `${bufferLines.join('\n')}\n${metadataLines.join('\n')}\n${asciiArt}\n`;
-		// In showAssetModal:
 		let currentTab = tabIndex || 0; // Default to 0 if not provided
 		const tabLabels = ['Preview', 'Details', 'Hex', '×']; // Voeg sluit-tab toe
 
@@ -639,7 +635,7 @@ async function main() {
 			top: 6,
 			left: 0,
 			width: '100%-2',
-			height: '100%-6',
+			height: '100%-8',
 			tags: true,
 			scrollable: true,
 			alwaysScroll: true,
