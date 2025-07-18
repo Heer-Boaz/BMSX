@@ -1,9 +1,9 @@
 import { getPressedState, Input, makeButtonState, resetObject } from './input';
 import type { ButtonState, InputHandler, KeyOrButtonId2ButtonState, VibrationParams } from './inputtypes';
 // In je InputManager.ts (pseudo)
-import { DualSenseEdgeHID } from "./DualSenseEdgeHid";
+import { DualSenseHID } from "./dualsensehid";
 
-const hidPad = new DualSenseEdgeHID();
+const hidPad = new DualSenseHID();
 
 /**
  * Represents a handler for gamepad input.

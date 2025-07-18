@@ -23,7 +23,7 @@ export interface HidRumbleParams {
     duration: number;
 }
 
-export class DualSenseEdgeHID {
+export class DualSenseHID {
     private device: HIDDevice | null = null;
     private rumbleTimer: number | null = null;
 
