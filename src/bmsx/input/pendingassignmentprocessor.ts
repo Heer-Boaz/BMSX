@@ -5,7 +5,7 @@ import type { StateMachineBlueprint } from '../fsm/fsmtypes';
 import type { State } from '../fsm/state';
 import { ZCOORD_MAX } from '../render/glview';
 import { Input } from './input';
-import type { GamepadButton, InputHandler } from './inputtypes';
+import type { BGamepadButton, InputHandler } from './inputtypes';
 
 /**
  * Represents a selected player index icon that is shown when a new input device has been detected and not yet been assigned to a player.
@@ -130,7 +130,7 @@ export class PendingAssignmentProcessor {
      * @param gamepadInput - The gamepad input handler.
      * @returns A boolean value indicating whether the button is pressed and not consumed.
      */
-    private checkNonConsumedPressed(button: GamepadButton, gamepadInput: InputHandler) {
+    private checkNonConsumedPressed(button: BGamepadButton, gamepadInput: InputHandler) {
         return gamepadInput.getButtonState(button).pressed && !gamepadInput.getButtonState(button).consumed;
     }
 
@@ -147,7 +147,7 @@ export class PendingAssignmentProcessor {
      * @param increment - The amount by which to increment or decrement the player index.
      * @param gamepadInput - The gamepad input handler.
      */
-    private handleSelectPlayerIndexButtonPress(button: GamepadButton, increment: number, gamepadInput: InputHandler) {
+    private handleSelectPlayerIndexButtonPress(button: BGamepadButton, increment: number, gamepadInput: InputHandler) {
         if (this.checkNonConsumedPressed(button, gamepadInput)) {
             gamepadInput.consumeButton(button);
 

@@ -294,7 +294,7 @@ export class quiz extends GameObject {
      */
     public static bouw(): StateMachineBlueprint {
         // Load quiz items from the rompack data
-        quizItems = $.rom.data_assets[DataId.vragen] as QuizItem[];
+        quizItems = $.rom.data[DataId.vragen] as QuizItem[];
         if (!quizItems) {
             throw new Error('Quiz items not loaded. Please ensure the rompack data is available.');
         }

@@ -88,7 +88,7 @@ export abstract class BaseView implements RegisterablePersistent {
 	public drawgame(clearCanvas: boolean = true): void {
 		if (clearCanvas) $.view.clear();
 		$.model.currentSpace.sort_by_depth(); // Required for each frame as objects can change depth during the flow of the game
-		$.model.currentSpace.objects.forEach(o => !o.disposeFlag && o.visible && (o.updateComponentsWithTag('render'), o.paint?.()));
+		$.model.currentSpace.objects.forEach(o => !o.disposeFlag && o.visible && (o.updateComponentsWithTag?.('render'), o.paint?.()));
 	}
 
 	/**

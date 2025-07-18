@@ -1,4 +1,4 @@
-import { BaseModel, BehaviorTreeDefinition, BinaryCompressor, Component, Direction, GLView, Game, GameObject, GamepadButton, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, PSG, ProhibitLeavingScreenComponent, RomPack, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, debugPrintBinarySnapshot, insavegame, new_area, new_vec2, snareInstrument, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/bmsx';
+import { BGamepadButton, BaseModel, BehaviorTreeDefinition, BinaryCompressor, Component, Direction, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, PSG, ProhibitLeavingScreenComponent, RomPack, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, debugPrintBinarySnapshot, insavegame, new_area, new_vec2, snareInstrument, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/bmsx';
 import { BitmapId } from './resourceids';
 
 var _game: Game;
@@ -22,7 +22,7 @@ type MyKeyboardInputMapping = {
 };
 
 type MyGamepadInputMapping = {
-    [key in keyof GamepadInputMapping & Action]: GamepadButton[];
+    [key in keyof GamepadInputMapping & Action]: BGamepadButton[];
 };
 
 const keyboardInputMapping: MyKeyboardInputMapping = {

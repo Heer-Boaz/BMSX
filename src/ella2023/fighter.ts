@@ -100,13 +100,21 @@ export abstract class Fighter extends SpriteObject {
     }
 
     public doAttackFlow(attackType: AttackType, opponent: Fighter): boolean {
-        if (!opponent) return false;
+        if (!opponent) {
+            $.applyVibrationEffect(this.player_index, { effect: 'dual-rumble', duration: 50, intensity: 0.5 });
+            return false;
+        }
         const hitVec2 = this.attackHitsOpponent(attackType, opponent);
         let hit: boolean = false;
         if (hitVec2) {
             this.handleHittingOpponent(attackType, opponent, hitVec2);
             opponent.handleBeingHit(attackType, this);
+            $.applyVibrationEffect(this.player_index, { effect: 'dual-rumble', duration: 50, intensity: .6 });
+            $.applyVibrationEffect(opponent.player_index, { effect: 'dual-rumble', duration: 100, intensity: 1 });
             hit = true;
+        }
+        else {
+            $.applyVibrationEffect(this.player_index, { effect: 'dual-rumble', duration: 50, intensity: 0.5 });
         }
         return hit;
     }

@@ -1,13 +1,12 @@
 import { ActionDefinitionEvaluator } from './actionparser';
 import { Input, InputStateManager, makeActionState, makeButtonState } from './input';
-import type { ActionState, ActionStateQuery, ButtonId, ButtonState, GamepadButton, InputHandler, InputMap, KeyboardButton } from './inputtypes';
+import type { ActionState, ActionStateQuery, BGamepadButton, ButtonId, ButtonState, InputHandler, InputMap, KeyboardButton, VibrationParams } from './inputtypes';
 import type { KeyboardInput } from './keyboardinput';
 import { OnscreenGamepad } from './onscreengamepad';
 
 /**
  * Represents the Input class responsible for handling user input.
  */
-
 export class PlayerInput {
     /**
      * Represents the input handlers for the player.
@@ -93,6 +92,22 @@ export class PlayerInput {
      */
     public setInputMap(inputMap: InputMap): void {
         this.inputMap = inputMap;
+    }
+
+    public get supportsVibrationEffect(): boolean {
+        for (const source in this.inputHandlers) {
+            if (this.inputHandlers[source]?.supportsVibrationEffect) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public applyVibrationEffect(params: VibrationParams): void {
+        for (const source in this.inputHandlers) {
+            if (!this.inputHandlers[source]?.supportsVibrationEffect) continue;
+            this.inputHandlers[source].applyVibrationEffect(params);
+        }
     }
 
     /**
@@ -262,7 +277,7 @@ export class PlayerInput {
 
         for (const source in this.inputHandlers) {
             if (!this.inputHandlers[source] || !inputMap[source]) continue;
-            const keysOrButtons: KeyboardButton[] | GamepadButton[] = inputMap[source][action];
+            const keysOrButtons: KeyboardButton[] | BGamepadButton[] = inputMap[source][action];
             if (!keysOrButtons) continue;
             for (const key of keysOrButtons) {
                 const buttonState = this.inputHandlers[source].getButtonState(key);

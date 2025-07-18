@@ -1,5 +1,5 @@
-import { base_model_spaces, BaseModel, BFont, build_fsm, copy_vector, Game, GameObject, GLView, Input, InputMap, leavingScreenHandler_prohibit, MSX1ScreenHeight, MSX1ScreenWidth, MSX2ScreenHeight, MSX2ScreenWidth, new_area, new_vec2, new_vec3, randomInt, RomPack, spaceid_2_space, SpriteObject, State, StateDefinition, StateMachineBlueprint, TextWriter, trunc_vec3, vec2, type Direction } from "bmsx";
-import { GamepadButton, GamepadInputMapping, KeyboardButton, KeyboardInputMapping } from '../bmsx/bmsx';
+import { base_model_spaces, BaseModel, BFont, BGamepadButton, build_fsm, copy_vector, Game, GameObject, GLView, Input, InputMap, leavingScreenHandler_prohibit, MSX1ScreenHeight, MSX1ScreenWidth, MSX2ScreenHeight, MSX2ScreenWidth, new_area, new_vec2, new_vec3, randomInt, RomPack, spaceid_2_space, SpriteObject, State, StateDefinition, StateMachineBlueprint, TextWriter, trunc_vec3, vec2, type Direction } from "bmsx";
+import { GamepadInputMapping, KeyboardButton, KeyboardInputMapping } from '../bmsx/bmsx';
 import { GameMenu } from "./gamemenu";
 import { BitmapId } from "./resourceids";
 
@@ -482,7 +482,7 @@ type MyKeyboardInputMapping = {
 };
 
 type MyGamepadInputMapping = {
-    [key in keyof GamepadInputMapping & Action]: GamepadButton[];
+    [key in keyof GamepadInputMapping & Action]: BGamepadButton[];
 };
 
 const keyboardInputMapping: MyKeyboardInputMapping = {

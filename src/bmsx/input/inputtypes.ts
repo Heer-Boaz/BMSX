@@ -64,7 +64,7 @@ export type KeyboardInputMapping = {
  */
 
 export type GamepadInputMapping = {
-    [action: string]: GamepadButton[];
+    [action: string]: BGamepadButton[];
 };
 /**
  * Represents the input mapping for a game.
@@ -79,13 +79,13 @@ export interface InputMap {
  * It can be one of the predefined keys or a custom string.
  */
 
-export type KeyboardButton = string | GamepadButton;
+export type KeyboardButton = string | BGamepadButton;
 /**
  * Represents a gamepad button.
- * @typedef {keyof typeof Input.BUTTON2INDEX } GamepadButton
+ * @typedef {keyof typeof Input.BUTTON2INDEX } BGamepadButton
  */
 
-export type GamepadButton = (typeof Input.BUTTON_IDS)[number];
+export type BGamepadButton = (typeof Input.BUTTON_IDS)[number];
 /**
  * Represents the state of a button.
  */
@@ -113,11 +113,21 @@ export type InputEvent = {
  * Represents the state of an action, including the action name and button state.
  */
 
-export type ActionState = { action: string; alljustpressed: boolean; allwaspressed: boolean; alljustreleased: boolean; } & ButtonState;/**
+export type ActionState = { action: string; alljustpressed: boolean; allwaspressed: boolean; alljustreleased: boolean; } & ButtonState;
+
+/**
+ * Represents the parameters for a vibration effect on the gamepad.
+ */
+export interface VibrationParams {
+    effect: GamepadHapticEffectType;
+    duration: number;
+    intensity: number;
+};
+
+/**
  * Represents an input handler that provides methods for polling input, getting button states,
  * consuming buttons, resetting input, and getting the gamepad index.
  */
-
 export interface InputHandler {
     /**
      * Polls the input to update the button states.
@@ -147,4 +157,15 @@ export interface InputHandler {
      * Gets the index of the gamepad.
      */
     get gamepadIndex(): number;
+
+    /**
+     * Provides haptic feedback on the input device.
+     * @param effect - The type of haptic feedback to provide.
+     */
+    applyVibrationEffect: (params: VibrationParams) => void;
+
+    /**
+     * Checks if the gamepad has haptic feedback capabilities.
+     */
+    get supportsVibrationEffect(): boolean;
 }

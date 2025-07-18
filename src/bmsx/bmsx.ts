@@ -23,6 +23,7 @@ export * from './fsm/fsmtypes';
 export * from './fsm/state';
 export * from './fsm/statedefinition';
 export * from './input/actionparser';
+export * from './input/gamepad';
 export * from './input/input';
 export * from './input/inputtypes';
 export * from './input/keyboardinput';

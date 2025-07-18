@@ -22,6 +22,7 @@
     "@types/pngjs": "^6.0.5",
     "@types/systemjs": "*",
     "@types/terminal-kit": "*",
+    "@types/w3c-web-hid": "^1.0.6",
     "@typescript/native-preview": "^7.0.0-dev.20250604.1",
     "blessed": "^0.1.81",
     "blessed-contrib": "^4.11.0",

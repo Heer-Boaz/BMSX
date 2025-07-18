@@ -1,4 +1,4 @@
-import { BFont, BaseModel, Direction, GLView, Game, GameObject, GamepadButton, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, RomPack, StateMachineBlueprint, build_fsm, insavegame, new_vec2, type State } from '../bmsx/bmsx';
+import { BFont, BGamepadButton, BaseModel, Direction, GLView, Game, GameObject, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, RomPack, StateMachineBlueprint, build_fsm, insavegame, new_vec2, type State } from '../bmsx/bmsx';
 import { quiz } from './quiz';
 import { BitmapId } from './resourceids';
 import { sint } from './sint';
@@ -25,7 +25,7 @@ type MyKeyboardInputMapping = {
 };
 
 type MyGamepadInputMapping = {
-    [key in keyof GamepadInputMapping & Action]: GamepadButton[];
+    [key in keyof GamepadInputMapping & Action]: BGamepadButton[];
 };
 
 const keyboardInputMapping: MyKeyboardInputMapping = {

@@ -1,5 +1,5 @@
 import { getPressedState, Input, makeButtonState, options, resetObject } from './input';
-import type { ButtonState, InputHandler, KeyboardButtonId, KeyOrButtonId2ButtonState } from './inputtypes';
+import type { ButtonState, InputHandler, KeyboardButtonId, KeyOrButtonId2ButtonState, VibrationParams } from './inputtypes';
 
 /**
  * Represents a keyboard input handler that implements the IInputHandler interface.
@@ -17,6 +17,14 @@ export class KeyboardInput implements InputHandler {
     public keyStates: KeyOrButtonId2ButtonState = {};
 
     public gamepadButtonStates: KeyOrButtonId2ButtonState = {};
+
+    public get supportsVibrationEffect(): boolean {
+        return false; // Keyboard does not support vibration effects
+    }
+
+    public applyVibrationEffect(_params: VibrationParams): void {
+        // No vibration effect for keyboard
+    }
 
     /**
      * The index of the input device, which defaults to 0 (the main player).

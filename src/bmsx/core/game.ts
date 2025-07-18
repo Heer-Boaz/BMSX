@@ -2,7 +2,7 @@
 import { RandomModulationParams, SM } from "../audio/soundmaster";
 import { gamePaused, gameResumed } from "../debugger/rewindui";
 import { Input } from "../input/input";
-import type { InputMap } from "../input/inputtypes";
+import type { InputMap, VibrationParams } from "../input/inputtypes";
 import { ActionState, ActionStateQuery } from '../input/inputtypes';
 import { TextWriter } from "../render/textwriter";
 import { BaseView, Color, DrawImgOptions, DrawRectOptions } from "../render/view";
@@ -945,6 +945,11 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 
 	public consumeActions(playerIndex: number, ...actionsToConsume: (ActionState | string)[]) {
 		this.input.getPlayerInput(playerIndex).consumeActions(...actionsToConsume);
+	}
+
+	public applyVibrationEffect(playerIndex: number, effectParams: VibrationParams): void {
+		if (!this.input.getPlayerInput(playerIndex).supportsVibrationEffect) return;
+		this.input.getPlayerInput(playerIndex).applyVibrationEffect(effectParams);
 	}
 
 	public hideOnscreenGamepadButtons(gamepad_button_ids: string[]): void {

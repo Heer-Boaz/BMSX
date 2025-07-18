@@ -2,9 +2,10 @@
 import type { Identifier, RegisterablePersistent } from "../core/game";
 import { Registry } from '../core/registry';
 import { handleDebugClick, handleContextMenu as handleDebugContextMenu, handleDebugMouseDown, handleDebugMouseMove, handleDebugMouseOut, handleDebugMouseUp, handleOpenDebugMenu, handleOpenObjectMenu } from '../debugger/bmsxdebugger';
+import { GamepadInput } from './gamepad';
 import type { ActionState, ButtonId, ButtonState, InputEvent, InputHandler, KeyOrButtonId2ButtonState } from './inputtypes';
 import { KeyboardInput } from './keyboardinput';
-import { GamepadInput, OnscreenGamepad } from './onscreengamepad';
+import { OnscreenGamepad } from './onscreengamepad';
 import { PendingAssignmentProcessor } from './pendingassignmentprocessor';
 import { PlayerInput } from './playerinput';
 
@@ -372,7 +373,7 @@ export class Input implements RegisterablePersistent {
 	/**
 	* The mapping of gamepad button names to their corresponding names.
 	* We use this mapping to get a list of all gamepad buttons.
-	* @see GamepadButton
+	* @see BGamepadButton
 	*/
 	public static readonly BUTTON_IDS = [
 		'a', // Bottom face button
@@ -398,7 +399,7 @@ export class Input implements RegisterablePersistent {
 	/**
 		* The mapping of keyboard key names to their corresponding gamepad button names.
 		* We use this mapping to map keyboard keys to gamepad buttons during the polling of keyboard input and conversion to gamepad input.
-		* @see GamepadButton
+		* @see BGamepadButton
 		*/
 	public static readonly KEYBOARDKEY2GAMEPADBUTTON = {
 		'ArrowUp': 'up',
