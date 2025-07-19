@@ -1,4 +1,4 @@
-import { BGamepadButton, BaseModel, BehaviorTreeDefinition, BinaryCompressor, Component, Direction, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, PSG, ProhibitLeavingScreenComponent, RomPack, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, debugPrintBinarySnapshot, insavegame, new_area, new_vec2, snareInstrument, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/bmsx';
+import { BGamepadButton, BaseModel, BehaviorTreeDefinition, BinaryCompressor, Component, Direction, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, PSG, ProhibitLeavingScreenComponent, RomPack, BootArgs, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, debugPrintBinarySnapshot, insavegame, new_area, new_vec2, snareInstrument, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/bmsx';
 import { BitmapId } from './resourceids';
 
 var _game: Game;
@@ -7,10 +7,10 @@ var _view: gameview;
 
 const _global = window || globalThis;
 
-_global['h406A'] = (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode, debug: boolean = false): void => {
+_global['h406A'] = (args: BootArgs): void => {
     _model = new gamemodel();
     _view = new gameview(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
-    _game = new Game(rom, _model, _view, sndcontext, gainnode, debug);
+    _game = new Game({ ...args, model: _model, view: _view });
     _game.start();
 };
 

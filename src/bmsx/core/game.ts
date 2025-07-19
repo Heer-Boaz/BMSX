@@ -25,6 +25,16 @@ declare global {
 
 global = globalThis || window; // Ensure global is defined
 
+export interface GameInitArgs<M extends BaseModel = BaseModel, V extends BaseView = BaseView> {
+	rom: RomPack;
+	model: M;
+	view: V;
+	sndcontext: AudioContext;
+	gainnode: GainNode;
+	debug?: boolean;
+	startingGamepadIndex?: number | null;
+}
+
 /**
  * The initial scale of the game.
  */
@@ -966,7 +976,9 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	/**
 	 * Constructs a new instance of the BMSX class.
 	 */
-	constructor(rom: RomPack, model: BaseModel, view: BaseView, sndcontext: AudioContext, gainnode: GainNode, debug: boolean = false) {
+	constructor(init: GameInitArgs<M, V>) {
+		const { rom, model, view, sndcontext, gainnode, debug = false, startingGamepadIndex = null } = init;
+
 		global = globalThis;
 		global['$'] = this;
 		window['$'] = this;
@@ -978,7 +990,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		this.updateInterval = 1000 / this.targetFPS;
 		this.rewindBuffer = new RewindBuffer(this.targetFPS, this.REWINDBUFFER_LENGTH_SECONDS);
 
-		this.init_on_boot(rom, model, view, sndcontext, gainnode, debug);
+		this.init_on_boot({ rom, model, view, sndcontext, gainnode, debug, startingGamepadIndex });
 	}
 
 	/**
@@ -990,7 +1002,8 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	 * @param gainnode - The gain node used for controlling the volume of sounds.
 	 * @param debug - Whether to enable debug mode. Defaults to false.
 	 */
-	private async init_on_boot(rom: RomPack, model: BaseModel, view: BaseView, sndcontext: AudioContext, gainnode: GainNode, debug: boolean = false): Promise<Game> {
+	private async init_on_boot(init: GameInitArgs<M, V>): Promise<Game> {
+		const { rom, model, view, sndcontext, gainnode, debug = false, startingGamepadIndex = null } = init;
 		this._debug = debug ?? this._debug;
 
 		global['debug'] = this.debug;
@@ -998,7 +1011,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 
 		BaseView.imgassets = rom.img;
 		EventEmitter.instance; // Init event emitter
-		Input.instance; // Init input module
+		Input.initialize(startingGamepadIndex ?? undefined); // Init input module
 		if ($.input.isOnscreenGamepadEnabled) {
 			$.input.enableOnscreenGamepad();
 		}

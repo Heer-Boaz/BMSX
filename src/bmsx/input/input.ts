@@ -311,11 +311,17 @@ export class Input implements RegisterablePersistent {
 	 * If the instance does not exist, it creates a new one.
 	 * @returns The singleton instance of the Input class.
 	 */
+	public static initialize(startingGamepadIndex?: number): Input {
+		if (!Input._instance) {
+			Input._instance = new Input(startingGamepadIndex);
+		}
+		return Input._instance;
+	}
+
 	public static get instance(): Input {
 		if (!Input._instance) {
 			Input._instance = new Input();
 		}
-
 		return Input._instance;
 	}
 
@@ -489,7 +495,7 @@ export class Input implements RegisterablePersistent {
 	 * Initializes the input system.
 	 * @param debug Whether to enable debug mode. Default is true.
 	 */
-	constructor() {
+	constructor(startingGamepadIndex?: number) {
 		// Register the input system
 		Registry.instance.register(this);
 
@@ -528,6 +534,15 @@ export class Input implements RegisterablePersistent {
 		document.addEventListener('touchforcechange', e => preventActionAndPropagation(e), options);// iOS -- https://stackoverflow.com/questions/58159526/draggable-element-in-iframe-on-mobile-is-buggy && iOS -- https://stackoverflow.com/questions/50980876/can-you-prevent-3d-touch-on-an-img-but-not-tap-and-hold-to-save
 
 		this.getPlayerInput(Input.DEFAULT_KEYBOARD_PLAYER_INDEX).inputHandlers['keyboard'] = new KeyboardInput();
+
+		if (typeof startingGamepadIndex === 'number') {
+			const gp = navigator.getGamepads?.()[startingGamepadIndex];
+			if (gp) {
+				const gamepadInput = new GamepadInput(gp);
+				this.assignGamepadToPlayer(gamepadInput, 1);
+				this.removePendingGamepadAssignment(startingGamepadIndex);
+			}
+		}
 	}
 
 	/**

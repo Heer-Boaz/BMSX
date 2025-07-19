@@ -73,10 +73,10 @@ export interface BoundingBoxPrecalc {
 }
 
 export interface HitPolygonsPrecalc {
-        original: Polygon[]; // The concave hull polygons of the image, used for collision detection.
-        fliph: Polygon[]; // The concave hull polygons of the image, when flipped horizontally.
-        flipv: Polygon[]; // The concave hull polygons of the image, when flipped vertically.
-        fliphv: Polygon[]; // The concave hull polygons of the image, when flipped both horizontally and vertically.
+	original: Polygon[]; // The concave hull polygons of the image, used for collision detection.
+	fliph: Polygon[]; // The concave hull polygons of the image, when flipped horizontally.
+	flipv: Polygon[]; // The concave hull polygons of the image, when flipped vertically.
+	fliphv: Polygon[]; // The concave hull polygons of the image, when flipped both horizontally and vertically.
 }
 
 /**
@@ -133,4 +133,15 @@ export interface RomPack {
 	audio: id2res; // Reference to the loaded audio assets in the ROM pack, including metadata.
 	data: id2data; // Reference to the loaded data assets in the ROM pack, including metadata.
 	code: string; // The loaded game code in the ROM pack.
+}
+
+/**
+ * Arguments passed from the bootloader to the game constructor.
+ */
+export interface BootArgs {
+	rom: RomPack;
+	sndcontext: AudioContext;
+	gainnode: GainNode;
+	debug?: boolean;
+	startingGamepadIndex?: number | null;
 }

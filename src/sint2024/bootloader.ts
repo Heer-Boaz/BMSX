@@ -1,4 +1,4 @@
-import { BFont, BGamepadButton, BaseModel, Direction, GLView, Game, GameObject, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, RomPack, StateMachineBlueprint, build_fsm, insavegame, new_vec2, type State } from '../bmsx/bmsx';
+import { BFont, BGamepadButton, BaseModel, BootArgs, Direction, GLView, Game, GameObject, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, StateMachineBlueprint, build_fsm, insavegame, new_vec2, type State } from '../bmsx/bmsx';
 import { quiz } from './quiz';
 import { BitmapId } from './resourceids';
 import { sint } from './sint';
@@ -9,11 +9,11 @@ var _view: gameview;
 
 const _global = window || globalThis;
 
-_global['h406A'] = (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode, debug: boolean = false): void => {
+_global['h406A'] = (args: BootArgs): void => {
     _model = new gamemodel();
     _view = new gameview(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
     _view.default_font = new BFont(BitmapId);
-    _game = new Game(rom, _model, _view, sndcontext, gainnode, debug);
+    _game = new Game({ ...args, model: _model, view: _view });
     _game.start();
 };
 

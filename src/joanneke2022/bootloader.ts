@@ -1,4 +1,4 @@
-import { base_model_spaces, BaseModel, BFont, BGamepadButton, build_fsm, copy_vector, Game, GameObject, GLView, Input, InputMap, leavingScreenHandler_prohibit, MSX1ScreenHeight, MSX1ScreenWidth, MSX2ScreenHeight, MSX2ScreenWidth, new_area, new_vec2, new_vec3, randomInt, RomPack, spaceid_2_space, SpriteObject, State, StateDefinition, StateMachineBlueprint, TextWriter, trunc_vec3, vec2, type Direction } from "bmsx";
+import { base_model_spaces, BaseModel, BFont, BGamepadButton, build_fsm, copy_vector, Game, GameObject, GLView, Input, InputMap, leavingScreenHandler_prohibit, MSX1ScreenHeight, MSX1ScreenWidth, MSX2ScreenHeight, MSX2ScreenWidth, new_area, new_vec2, new_vec3, randomInt, RomPack, BootArgs, spaceid_2_space, SpriteObject, State, StateDefinition, StateMachineBlueprint, TextWriter, trunc_vec3, vec2, type Direction } from "bmsx";
 import { GamepadInputMapping, KeyboardButton, KeyboardInputMapping } from '../bmsx/bmsx';
 import { GameMenu } from "./gamemenu";
 import { BitmapId } from "./resourceids";
@@ -864,11 +864,11 @@ let _view: gameview;
 
 var _global = globalThis;
 
-_global['h406A'] = (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode, debug: boolean = false): void => {
+_global['h406A'] = (args: BootArgs): void => {
     _model = new gamemodel();
     _view = new gameview(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
     _view.default_font = new BFont(BitmapId);
-    _game = new Game(rom, _model, _view, sndcontext, gainnode, debug);
+    _game = new Game({ ...args, model: _model, view: _view });
 
     _game.start();
 };

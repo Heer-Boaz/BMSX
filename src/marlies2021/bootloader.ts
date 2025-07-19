@@ -1,11 +1,10 @@
 import { BaseModel, Space } from '../bmsx/basemodel';
 import { build_fsm, sdef, State } from '../bmsx/bfsm';
-import { BFont, Direction, Game, new_area, new_vec2, randomInt, vec2 } from '../bmsx/bmsx';
+import { BFont, BootArgs, Direction, Game, new_area, new_vec2, randomInt, vec2 } from '../bmsx/bmsx';
 import { GameObject } from '../bmsx/gameobject';
 import { GLView } from '../bmsx/glview';
 import { Input } from '../bmsx/input';
 import { MSX1ScreenHeight, MSX1ScreenWidth } from '../bmsx/msx';
-import type { RomPack } from '../bmsx/rompack';
 import { SpriteObject } from '../bmsx/sprite';
 import { TextWriter } from '../bmsx/textwriter';
 import { DrawImgFlags, paintSprite } from '../bmsx/view';
@@ -588,10 +587,11 @@ class viewclass extends GLView {
 let _model: modelclass;
 
 var _global = window || globalThis;
-_global['h406A'] = (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode): void => {
+
+_global['h406A'] = (args: BootArgs): void => {
     let _view = new viewclass(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
     _model = new modelclass();
-    new Game(rom, _model, _view, sndcontext, gainnode);
+    new Game({ ...args, model: _model, view: _view });
     game.view.default_font = new BFont(BitmapId);
 
     global.game.start();

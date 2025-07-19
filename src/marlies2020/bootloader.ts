@@ -1,6 +1,6 @@
 import type { randomInt } from 'crypto';
 import type { Direction } from 'readline';
-import { BaseModel, build_fsm, Game, GameObject, getOppositeDirection, GLView, Input, MSX1ScreenHeight, MSX1ScreenWidth, new_area, new_vec2, RomPack, set_vec2, Space, SpriteObject, TextWriter, vec2 } from '../bmsx/bmsx';
+import { BaseModel, BootArgs, build_fsm, Game, GameObject, getOppositeDirection, GLView, Input, MSX1ScreenHeight, MSX1ScreenWidth, new_area, new_vec2, RomPack, set_vec2, Space, SpriteObject, TextWriter, vec2 } from '../bmsx/bmsx';
 import { GameMenu } from './gamemenu';
 import { KonamiFont } from './konamifont';
 import { BitmapId } from './resourceids';
@@ -843,10 +843,11 @@ class viewclass extends GLView {
 let _model: modelclass;
 
 var _global = window || globalThis;
-_global['h406A'] = (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode): void => {
+
+_global['h406A'] = (args: BootArgs): void => {
     let _view = new viewclass(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
     _model = new modelclass();
-    new Game(rom, _model, _view, sndcontext, gainnode);
+    new Game({ ...args, model: _model, view: _view });
     game.view.default_font = new KonamiFont();
 
     global.game.start();

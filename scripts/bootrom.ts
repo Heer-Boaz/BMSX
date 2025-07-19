@@ -1,23 +1,24 @@
-import type { Area, AudioMeta, ImgMeta, RomAsset, RomImgAsset, RomMeta, RomPack, vec2arr, Polygon } from '../src/bmsx/rompack/rompack';
+import type { Area, AudioMeta, ImgMeta, RomAsset, RomImgAsset, RomMeta, RomPack, BootArgs, vec2arr, Polygon } from '../src/bmsx/rompack/rompack';
 import { decodeBinary } from '../src/bmsx/serializer/binencoder';
 
 declare global {
 	interface Window {
 		getRomNameFromUrlParameter: () => string;
 		getRomFromUrlParameter: () => string;
-		bootrom: {
-			rom: RomPack | null;
-			debug: boolean;
-			romname: string | undefined;
-			sndcontext: AudioContext | null;
-			snd_unlocked: boolean;
-			gainnode: GainNode | null;
-			theshowsover: boolean;
-			set defusr(rom: RomPack);
-			usr: (x: number) => number;
-			bload: (url: string) => Promise<RomPack | null>;
-			outputError: (errormsg: string) => void;
-			resizeHandler: () => void;
+                bootrom: {
+                        rom: RomPack | null;
+                        debug: boolean;
+                        romname: string | undefined;
+                        sndcontext: AudioContext | null;
+                        snd_unlocked: boolean;
+                        gainnode: GainNode | null;
+                        theshowsover: boolean;
+                        startingGamepadIndex: number | null;
+                        set defusr(rom: RomPack);
+                        usr: (x: number) => number;
+                        bload: (url: string) => Promise<RomPack | null>;
+                        outputError: (errormsg: string) => void;
+                        resizeHandler: () => void;
 		};
 	}
 }
@@ -33,7 +34,7 @@ declare const pako: any;
  * @param {GainNode} gainnode - The gain node for the boot ROM.
  * @returns {void}
  */
-declare var h406A: (rom: RomPack, sndcontext: AudioContext, gainnode: GainNode, debug?: boolean) => void;
+declare var h406A: (args: BootArgs) => void;
 
 /**
  * Object representing the boot ROM.
@@ -66,10 +67,11 @@ const bootrom = {
 	rom: null as RomPack | null,
 	debug: false,
 	romname: undefined, // Currently, used for fetching the megarom Javascript for debug mode
-	sndcontext: null as AudioContext | null,
-	snd_unlocked: false,
-	gainnode: null as GainNode | null,
-	theshowsover: false,
+        sndcontext: null as AudioContext | null,
+        snd_unlocked: false,
+        gainnode: null as GainNode | null,
+        theshowsover: false,
+        startingGamepadIndex: null as number | null,
 
 	/**
 	 * Sets the boot ROM pack.
@@ -106,9 +108,15 @@ const bootrom = {
 		try {
 			if (!h406A) throw new Error(`h406A(${x}) is not defined!`);
 			document.getElementById('gamescreen')!.hidden = false;
-			document.getElementById('gamescreen')!.style.display = 'block';
-			h406A(bootrom.rom!, bootrom.sndcontext!, bootrom.gainnode!, this.debug);
-			wrapup();
+                        document.getElementById('gamescreen')!.style.display = 'block';
+                        h406A({
+                                rom: bootrom.rom!,
+                                sndcontext: bootrom.sndcontext!,
+                                gainnode: bootrom.gainnode!,
+                                debug: this.debug,
+                                startingGamepadIndex: bootrom.startingGamepadIndex
+                        });
+                        wrapup();
 			bootrom.rom = undefined;
 			return 255;
 		} catch (err) {
@@ -177,7 +185,7 @@ const bootrom = {
 				})
 				.then(() => loadScript(loadedRomPack, bootrom.romname))
 				.then(() => {
-					setLoaderText('Press any key or touch screen to start...');
+                                setLoaderText('Press any key, button or touch screen to start...');
 					// setClassForLoader('');
 					return awaitPressedAnyKeyPromise();
 				})
@@ -640,36 +648,75 @@ async function loadScript(rom: RomPack, romname: string): Promise<void> {
  * @returns A Promise that resolves when the user presses any key.
  */
 async function awaitPressedAnyKeyPromise(): Promise<void> {
-	const result: Promise<void> = new Promise((resolve, reject) => {
-		const onuserinteraction = (e: UIEvent) => {
-			try {
-				if (!bootrom.snd_unlocked || !bootrom.theshowsover) {
-					if (bootrom.debug) {
-						console.info(`Did not start game on user interaction because either the sound was not unlocked (bootrom.snd_unlocked=${bootrom.snd_unlocked}) or the boot animation had not ended (bootrom.theshowsover=${bootrom.theshowsover}).`);
-					}
-					return;
-				}
-				if (e.type == 'touchend') {
-					document.getElementById("d-pad-controls")!.hidden = false;
-					document.getElementById("button-controls")!.hidden = false;
-					document.documentElement.setAttribute("style", "touch-action: none;");
-					document.documentElement.setAttribute("style", "pointer-events: none;");
-				}
-				document.body.removeEventListener('keyup', onuserinteraction);
-				document.body.removeEventListener('touchend', onuserinteraction);
-				resolve();
-			}
-			catch (err) {
-				reject(err);
-			}
-		};
+        const result: Promise<void> = new Promise((resolve, reject) => {
+                let rafId: number;
 
-		document.addEventListener('keyup', startAudioOnIos, true);
-		document.addEventListener('touchend', startAudioOnIos, true);
-		document.body.addEventListener('keyup', onuserinteraction, { passive: false, once: false, capture: false });
-		document.body.addEventListener('touchend', onuserinteraction, { passive: false, once: false, capture: false });
-	});
-	return result;
+                const cleanup = () => {
+                        document.body.removeEventListener('keyup', onuserinteraction);
+                        document.body.removeEventListener('touchend', onuserinteraction);
+                        cancelAnimationFrame(rafId);
+                };
+
+                const startGame = () => {
+                        startAudioOnIos();
+                        cleanup();
+                        resolve();
+                };
+
+                const pollGamepads = () => {
+                        try {
+                                if (!bootrom.theshowsover) {
+                                        rafId = window.requestAnimationFrame(pollGamepads);
+                                        return;
+                                }
+
+                                const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+                                for (const gp of gamepads) {
+                                        if (!gp) continue;
+                                        if (gp.buttons?.some(btn => btn.pressed) || gp.axes?.some(ax => Math.abs(ax) > 0.5)) {
+                                                bootrom.startingGamepadIndex = gp.index;
+                                                startGame();
+                                                return;
+                                        }
+                                }
+                                rafId = window.requestAnimationFrame(pollGamepads);
+                        } catch (err) {
+                                cancelAnimationFrame(rafId);
+                                reject(err);
+                        }
+                };
+
+                const onuserinteraction = (e: UIEvent) => {
+                        try {
+                                if (!bootrom.snd_unlocked || !bootrom.theshowsover) {
+                                        if (bootrom.debug) {
+                                                console.info(`Did not start game on user interaction because either the sound was not unlocked (bootrom.snd_unlocked=${bootrom.snd_unlocked}) or the boot animation had not ended (bootrom.theshowsover=${bootrom.theshowsover}).`);
+                                        }
+                                        return;
+                                }
+                                if (e.type == 'touchend') {
+                                        document.getElementById("d-pad-controls")!.hidden = false;
+                                        document.getElementById("button-controls")!.hidden = false;
+                                        document.documentElement.setAttribute("style", "touch-action: none;");
+                                        document.documentElement.setAttribute("style", "pointer-events: none;");
+                                }
+                                startGame();
+                        }
+                        catch (err) {
+                                cleanup();
+                                reject(err);
+                        }
+                };
+
+                document.addEventListener('keyup', startAudioOnIos, true);
+                document.addEventListener('touchend', startAudioOnIos, true);
+                document.body.addEventListener('keyup', onuserinteraction, { passive: false, once: false, capture: false });
+                document.body.addEventListener('touchend', onuserinteraction, { passive: false, once: false, capture: false });
+                if (navigator.getGamepads) {
+                        rafId = window.requestAnimationFrame(pollGamepads);
+                }
+        });
+        return result;
 }
 
 /**
