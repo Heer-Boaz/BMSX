@@ -4,15 +4,19 @@
  * 0x054C = Sony Interactive Entertainment
  * 0x0CE6 = DualSense standard
  * 0x0DF2 = DualSense Edge
+ * 0x09cc = DualShock 4
  */
 const SONY_VID = 0x054C;
 const DUALSENSE_EDGE_PID = 0x0DF2; // DualSense Edge
 const DUALSENSE_STANDARD_PID = 0x0CE6; // DualSense standard
-
+const DUALSHOCK4_PID = 0x09cc; // DualShock 4
 const ACCEPTED_VENDORS_PRODUCTS = [
     { vendorId: SONY_VID, productId: DUALSENSE_EDGE_PID },
-    { vendorId: SONY_VID, productId: DUALSENSE_STANDARD_PID }
+    { vendorId: SONY_VID, productId: DUALSENSE_STANDARD_PID },
+    { vendorId: SONY_VID, productId: DUALSHOCK4_PID },
 ] as const;
+
+type HidPadKind = "dualsense" | "ds4"; // DualSense Edge, DualSense standard, or DualShock 4
 
 export interface HidRumbleParams {
     /** 0 – 255, left (strong) motor */
@@ -26,6 +30,7 @@ export interface HidRumbleParams {
 export class DualSenseHID {
     private device: HIDDevice | null = null;
     private rumbleTimer: number | null = null;
+    private kind: HidPadKind | null = null;
 
     public get isConnected(): boolean {
         return this.device?.opened ?? false;
@@ -38,19 +43,33 @@ export class DualSenseHID {
             return; // HID not supported (e.g. Safari)
         }
 
-        // Devices already known?
+        // Are there devices for which we already granted permission?
         const known = await navigator.hid.getDevices?.() ?? [];
 
+        // Find a known DualSense Edge HID device or request a new one
         this.device =
             known.find(d => d.vendorId === SONY_VID &&
                 ACCEPTED_VENDORS_PRODUCTS.some(p => p.productId === d.productId)) ??
             (await navigator.hid.requestDevice({
                 filters: ACCEPTED_VENDORS_PRODUCTS.map(p => ({ vendorId: p.vendorId, productId: p.productId }))
-            }))[0];
+            }))?.[0];
 
         if (!this.device) {
             console.warn("DualSense Edge HID device not found or selected.");
             return; // DualSense Edge not selected.
+        }
+
+        switch (this.device.productId) {
+            case DUALSENSE_EDGE_PID:
+            case DUALSENSE_STANDARD_PID:
+                this.kind = "dualsense";
+                break;
+            case DUALSHOCK4_PID:
+                this.kind = "ds4";
+                break;
+            default:
+                console.warn(`Unsupported DualSense HID device: "${this.device.productId}", cannot set the "kind" property to determine how to sent the HID report.`);
+                break;
         }
 
         if (!this.device.opened) await this.device.open(); // Open the device
@@ -61,7 +80,7 @@ export class DualSenseHID {
      */
     public stop(): void {
         if (this.rumbleTimer) {
-            clearTimeout(this.rumbleTimer);
+            clearTimeout(this.rumbleTimer ?? 0);
             this.rumbleTimer = null;
         }
         if (this.device?.opened) {
@@ -82,27 +101,47 @@ export class DualSenseHID {
             return;
         }
 
-        /**
-         * USB‑rapportformat (48 bytes) – simplified:
-         * Byte 0   : Report ID 0x02
-         * Byte 1‑2 : Always 0xFF 0xFF (enable flags)
-         * Byte 3   : Weak (0‑255)  – right motor
-         * Byte 4   : Strong(0‑255) – left motor
-         * Rest     : 0 standard rumble
-         */
-        const report = new Uint8Array(48);
-        report[0] = 0x02;
-        report[1] = 0xFF;
-        report[2] = 0xFF;
-        report[3] = weak & 0xFF;
-        report[4] = strong & 0xFF;
 
-        void this.device.sendReport(report[0], report.subarray(1));
+        let report: Uint8Array;
+        switch (this.kind) {
+            case "dualsense":
+                report = this.buildDualSenseReport(strong, weak);
+                break;
+            case "ds4":
+                report = this.buildDs4Report(strong, weak);
+                break;
+            default:
+                console.warn(`Unknown pad type: "${this.kind}"`);
+                return;
+        }
+
+        this.device.sendReport(report[0], report.subarray(1));
 
         // Automatically stop after `duration` ms.
         if (duration > 0) {
-            if (this.rumbleTimer) clearTimeout(this.rumbleTimer);
+            clearTimeout(this.rumbleTimer ?? 0);
             this.rumbleTimer = window.setTimeout(() => this.stop(), duration);
         }
+    }
+
+    /** DualSense USB – report 0x02 (48 B) */
+    private buildDualSenseReport(strong: number, weak: number): Uint8Array {
+        const r = new Uint8Array(48);
+        r[0] = 0x02;
+        r[1] = 0xFF; r[2] = 0xFF;      // enable flags
+        r[3] = weak & 0xFF;            // R motor
+        r[4] = strong & 0xFF;          // L motor
+        return r;
+    }
+
+    /** DualShock 4 USB – report 0x05 (32 B) */
+    private buildDs4Report(strong: number, weak: number): Uint8Array {
+        const r = new Uint8Array(32);
+        r[0] = 0x05;
+        r[1] = 0xFF;                  // constant according to docs
+        r[4] = weak & 0xFF;           // R motor
+        r[5] = strong & 0xFF;         // L motor
+        // Others: nul → led, audio, etc. off
+        return r;
     }
 }
