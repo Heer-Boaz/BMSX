@@ -449,9 +449,8 @@ export class PlayerInput {
             if (e.gamepad.index === this.inputHandlers['gamepad'].gamepadIndex) {
                 if (this.playerIndex) {
                     console.info(`Gamepad ${gamepad.index}, that was assigned to player ${playerIndex}, disconnected.`);
-                    (this.inputHandlers['gamepad'] as any)?.dispose?.();
+                    (this.inputHandlers['gamepad'])?.dispose();
                     this.inputHandlers['gamepad'] = null; // Remove gamepad for this input-object
-
 
                     // If this is the main player, assign the on-screen gamepad to the main player, if the onscreen gamepad is enabled and that onscreen gamepad is not already assigned to another player
                     if (this.isMainPlayer && Input.instance.isOnscreenGamepadEnabled) {

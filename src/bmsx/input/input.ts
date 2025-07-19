@@ -103,7 +103,7 @@ export function makeActionState(actionname: string, partialState?: Partial<Actio
 	return { action, alljustpressed, allwaspressed, alljustreleased, ...makeButtonState(buttonState) };
 }
 
-export const options = {
+export const options: EventListenerOptions & { passive: boolean, once: boolean } = {
 	passive: false,
 	once: false,
 }

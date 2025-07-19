@@ -153,4 +153,12 @@ export class KeyboardInput implements InputHandler {
         this.reset();
         // this.preventInput = false; // Allow input when the window regains focus
     }
+
+    dispose(): void {
+        window.removeEventListener('keydown', e => { this.keydown(e.code); }, options);
+        window.removeEventListener('keyup', e => { this.keyup(e.code); }, options);
+        this.reset();
+        this.keyStates = {};
+        this.gamepadButtonStates = {};
+    }
 }

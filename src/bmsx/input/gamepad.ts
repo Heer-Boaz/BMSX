@@ -94,15 +94,6 @@ export class GamepadInput implements InputHandler {
             return;
         }
 
-        // if (!this.hidPad.isConnected) {
-        //     // Check whether the gamepad is a device that is supported by the DualSenseHID class.
-
-        //     // Try to (re)initialise the HID device for this pad.
-        //     this.bootstrapControllers();
-        //     // Ignore the vibration effect, as the bootstrapping the HID device may take some time and is asynchronous.
-        //     return;
-        // }
-
         try {
             this.hidPad.sendRumble({
                 strong: strongMagnitude,
@@ -120,30 +111,16 @@ export class GamepadInput implements InputHandler {
      * Otherwise, it attempts to initialize the HID pad with the current gamepad.
      * *NOTE: REQUIRES USER INPUT TO GRANT PERMISSION TO USE THE HID API!! THEREFORE, THIS FUNCTION SHOULD BE CALLED AS PART OF A USER INTERACTION!*
      */
-    public async initHidPad(): Promise<void> {
+    public async init(): Promise<void> {
         if (this._gamepad?.vibrationActuator && !this.isDualShock4()) {
             // Native actuator is available and reliable; skip HID init
             return;
         }
         try {
             await this.hidPad.init(this._gamepad);
+            this.updateDs4Flag(this._gamepad);
         } catch (e) {
             console.warn(`Error initializing HID device for rumble: ${e}`);
-        }
-    }
-
-    private handleConnect(e: GamepadEvent): void {
-        if (e.gamepad.index === this.gamepadIndex) {
-            this._gamepad = e.gamepad;
-            this.updateDs4Flag(e.gamepad);
-            // this.initHidPad();
-        }
-    }
-
-    private handleDisconnect(e: GamepadEvent): void {
-        if (e.gamepad.index === this.gamepadIndex) {
-            this.hidPad?.close();
-            this.updateDs4Flag(null);
         }
     }
 
@@ -158,12 +135,7 @@ export class GamepadInput implements InputHandler {
         this._gamepad = gamepad;
         this.updateDs4Flag(gamepad);
 
-        // this.handleConnect = this.handleConnect.bind(this);
-        this.handleDisconnect = this.handleDisconnect.bind(this);
-        // window.addEventListener('gamepadconnected', this.handleConnect);
-        window.addEventListener('gamepaddisconnected', this.handleDisconnect);
-
-        this.initHidPad();
+        this.init();
 
         // Reset gamepad button states
         this.reset();
@@ -286,8 +258,6 @@ export class GamepadInput implements InputHandler {
 
     /** Clean up event listeners and close HID device */
     public dispose(): void {
-        window.removeEventListener('gamepadconnected', this.handleConnect);
-        window.removeEventListener('gamepaddisconnected', this.handleDisconnect);
         this.hidPad?.close();
     }
 }

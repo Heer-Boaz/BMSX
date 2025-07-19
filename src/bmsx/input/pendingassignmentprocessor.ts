@@ -229,7 +229,7 @@ export class PendingAssignmentProcessor {
      * If no gamepad is proposed, checks for the start button press to propose a gamepad for assignment.
      * Handles the movement of the joystick icon to change the proposed player index.
      */
-    run(): void {
+    async run(): Promise<void> {
         const inputMaestro = Input.instance;
         const gamepadInput = this.inputHandler as GamepadInput;
         gamepadInput.pollInput();
@@ -258,7 +258,7 @@ export class PendingAssignmentProcessor {
                 gamepadInput.consumeButton('a');
                 inputMaestro.assignGamepadToPlayer(gamepadInput, this.proposedPlayerIndex);
                 // Initialize the HID pad for the gamepad input
-                gamepadInput.initHidPad(); // *REQUIRES USER INPUT TO GRANT PERMISSION TO USE THE HID API!! THEREFORE, THIS FUNCTION SHOULD BE CALLED AS PART OF A USER INTERACTION!*
+                await gamepadInput.init(); // *REQUIRES USER INPUT TO GRANT PERMISSION TO USE THE HID API!! THEREFORE, THIS FUNCTION SHOULD BE CALLED AS PART OF A USER INTERACTION!*
                 inputMaestro.removePendingGamepadAssignment(this.inputHandler.gamepadIndex);
                 $.emit('controller_assigned', Input.instance, this.proposedPlayerIndex);
                 this.icon = null;

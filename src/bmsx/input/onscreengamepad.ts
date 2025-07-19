@@ -483,4 +483,28 @@ export class OnscreenGamepad implements InputHandler {
     focus(_e: FocusEvent): void {
         this.reset();
     }
+
+    /**
+     * Disposes of the input handler, cleaning up resources and event listeners.
+     */
+    public dispose(): void {
+        // Remove all touch event listeners
+        const dpadControls = document.getElementById('d-pad-controls');
+        const buttonControls = document.getElementById('button-controls');
+        if (dpadControls) {
+            dpadControls.removeEventListener('touchmove', e => { this.handleTouchMove(e, 'dpad'); return true; }, options);
+            dpadControls.removeEventListener('touchstart', e => { this.handleTouchStart(e, 'dpad'); return true; }, options);
+            dpadControls.removeEventListener('touchend', e => { this.handleTouchEnd(e, 'dpad'); return true; }, options);
+            dpadControls.removeEventListener('touchcancel', e => { this.handleTouchEnd(e, 'dpad'); return true; }, options);
+        }
+        if (buttonControls) {
+            buttonControls.removeEventListener('touchmove', e => { this.handleTouchMove(e, 'action'); return true; }, options);
+            buttonControls.removeEventListener('touchstart', e => { this.handleTouchStart(e, 'action'); return true; }, options);
+            buttonControls.removeEventListener('touchend', e => { this.handleTouchEnd(e, 'action'); return true; }, options);
+            buttonControls.removeEventListener('touchcancel', e => { this.handleTouchEnd(e, 'action'); return true; }, options);
+        }
+
+        // Reset the gamepad button states
+        this.reset();
+    }
 }
