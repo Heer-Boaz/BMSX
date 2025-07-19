@@ -1,4 +1,4 @@
-import { BGamepadButton, BaseModel, BehaviorTreeDefinition, BinaryCompressor, Component, Direction, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, PSG, ProhibitLeavingScreenComponent, RomPack, BootArgs, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, debugPrintBinarySnapshot, insavegame, new_area, new_vec2, snareInstrument, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/bmsx';
+import { BGamepadButton, BaseModel, BehaviorTreeDefinition, BinaryCompressor, BootArgs, Component, Direction, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, PSG, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, debugPrintBinarySnapshot, insavegame, new_area, new_vec2, snareInstrument, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/bmsx';
 import { BitmapId } from './resourceids';
 
 var _game: Game;
@@ -7,10 +7,11 @@ var _view: gameview;
 
 const _global = window || globalThis;
 
-_global['h406A'] = (args: BootArgs): void => {
+_global['h406A'] = async (args: BootArgs): Promise<void> => {
     _model = new gamemodel();
     _view = new gameview(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
-    _game = new Game({ ...args, model: _model, view: _view });
+    _game = new Game();
+    await _game.init({ ...args, model: _model, view: _view });
     _game.start();
 };
 

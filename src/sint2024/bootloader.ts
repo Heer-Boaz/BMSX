@@ -9,11 +9,12 @@ var _view: gameview;
 
 const _global = window || globalThis;
 
-_global['h406A'] = (args: BootArgs): void => {
+_global['h406A'] = async (args: BootArgs): Promise<void> => {
     _model = new gamemodel();
     _view = new gameview(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
     _view.default_font = new BFont(BitmapId);
-    _game = new Game({ ...args, model: _model, view: _view });
+    _game = new Game();
+    await _game.init({ ...args, model: _model, view: _view });
     _game.start();
 };
 
