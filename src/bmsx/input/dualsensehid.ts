@@ -33,6 +33,14 @@ export class DualSenseHID {
     private device: HIDDevice | null = null;
     private rumbleTimer: number | null = null;
     private kind: HidPadKind | null = null;
+    private assignedIndex: number | null = null;
+
+    /** Map of gamepad indices to HID devices that are in use */
+    private static assignedDevices = new Map<number, HIDDevice>();
+
+    private matchIds(device: HIDDevice, ids: { vendorId: number; productId: number } | null): boolean {
+        return !!ids && device.vendorId === ids.vendorId && device.productId === ids.productId;
+    }
 
     public get isConnected(): boolean {
         return this.device?.opened ?? false;
@@ -51,7 +59,7 @@ export class DualSenseHID {
     private matchDeviceForGamepad(gamepad: Gamepad, known: HIDDevice[]): HIDDevice | null {
         const ids = this.parseGamepadId(gamepad.id);
         if (!ids) return null;
-        return known.find(d => d.vendorId === ids.vendorId && d.productId === ids.productId) ?? null;
+        return known.find(d => this.matchIds(d, ids)) ?? null;
     }
 
     private parseGamepadId(id: string): { vendorId: number; productId: number } | null {
@@ -73,9 +81,41 @@ export class DualSenseHID {
 
         const known = await navigator.hid.getDevices?.() ?? [];
 
-        const matchFromGamepad = gamepad ? this.matchDeviceForGamepad(gamepad, known) : null;
+        let ids: { vendorId: number; productId: number } | null = null;
+        if (gamepad) {
+            this.assignedIndex = gamepad.index;
+            ids = this.parseGamepadId(gamepad.id);
+        }
 
-        this.device = matchFromGamepad ??
+        // Reuse previously assigned device if still available and matching
+        if (this.assignedIndex !== null) {
+            const existing = DualSenseHID.assignedDevices.get(this.assignedIndex);
+            if (existing && known.includes(existing) && (!ids || this.matchIds(existing, ids))) {
+                this.device = existing;
+            } else if (existing) {
+                DualSenseHID.assignedDevices.delete(this.assignedIndex);
+            }
+        }
+
+        const matchFromGamepad = (!this.device && gamepad) ? this.matchDeviceForGamepad(gamepad, known) : null;
+
+        if (!this.device) {
+            if (matchFromGamepad) {
+                // Prefer HID device that matches the gamepad and is not already assigned
+                const used = new Set(DualSenseHID.assignedDevices.values());
+                if (!used.has(matchFromGamepad)) {
+                    this.device = matchFromGamepad;
+                }
+            }
+        }
+
+        if (!this.device && gamepad && ids) {
+            const candidates = known.filter(d => this.matchIds(d, ids));
+            const used = new Set(DualSenseHID.assignedDevices.values());
+            this.device = candidates.find(c => !used.has(c)) ?? null;
+        }
+
+        this.device = this.device ??
             known.find(d => d.vendorId === SONY_VID && ACCEPTED_VENDORS_PRODUCTS.some(p => p.productId === d.productId)) ??
             (await navigator.hid.requestDevice({
                 filters: ACCEPTED_VENDORS_PRODUCTS.map(p => ({ vendorId: p.vendorId, productId: p.productId }))
@@ -121,6 +161,10 @@ export class DualSenseHID {
         this.kind = detectPadKind(this.device);
         console.info(`Detected Sony HID device: ${this.kind ?? 'but it is unknown :-('}`);
         if (!this.device.opened) await this.device.open(); // Open the device
+
+        if (this.assignedIndex !== null) {
+            DualSenseHID.assignedDevices.set(this.assignedIndex, this.device);
+        }
     }
 
     /**
@@ -271,6 +315,10 @@ export class DualSenseHID {
         }
         this.device = null;
         this.kind = null;
+        if (this.assignedIndex !== null) {
+            DualSenseHID.assignedDevices.delete(this.assignedIndex);
+            this.assignedIndex = null;
+        }
         if (this.rumbleTimer) {
             clearTimeout(this.rumbleTimer);
             this.rumbleTimer = null;
