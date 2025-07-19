@@ -1,5 +1,5 @@
 # Ignore all files under msedge
-**/.vscode/msedge
+**/.vscode/edge-profile
 **.cs
 **/node_modules
 **/output
