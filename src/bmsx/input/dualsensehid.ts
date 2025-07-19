@@ -158,9 +158,11 @@ export class DualSenseHID {
                 report = this.buildDs5BtReport(strong, weak);
                 break;
             case 'ds4_usb':
+                duration *= 2; // DS4 takes more time to spin up the motors
                 report = this.buildDs4Report(strong, weak);
                 break;
             case 'ds4_bt':
+                duration *= 2; // DS4 takes more time to spin up the motors
                 report = this.buildDs4BtReport(strong, weak);
                 break;
             default:

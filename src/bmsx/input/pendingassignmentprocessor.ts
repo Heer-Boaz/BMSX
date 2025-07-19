@@ -4,6 +4,7 @@ import { build_fsm } from '../fsm/fsmdecorators';
 import type { StateMachineBlueprint } from '../fsm/fsmtypes';
 import type { State } from '../fsm/state';
 import { ZCOORD_MAX } from '../render/glview';
+import { GamepadInput } from './gamepad';
 import { Input } from './input';
 import type { BGamepadButton, InputHandler } from './inputtypes';
 
@@ -230,7 +231,7 @@ export class PendingAssignmentProcessor {
      */
     run(): void {
         const inputMaestro = Input.instance;
-        const gamepadInput = this.inputHandler;
+        const gamepadInput = this.inputHandler as GamepadInput;
         gamepadInput.pollInput();
 
         // Check whether the start button was pressed and not consumed yet to assign the gamepad to a player
@@ -256,6 +257,8 @@ export class PendingAssignmentProcessor {
                 // Assign gamepad to player and remove the joystick icon
                 gamepadInput.consumeButton('a');
                 inputMaestro.assignGamepadToPlayer(gamepadInput, this.proposedPlayerIndex);
+                // Initialize the HID pad for the gamepad input
+                gamepadInput.initHidPad(); // *REQUIRES USER INPUT TO GRANT PERMISSION TO USE THE HID API!! THEREFORE, THIS FUNCTION SHOULD BE CALLED AS PART OF A USER INTERACTION!*
                 inputMaestro.removePendingGamepadAssignment(this.inputHandler.gamepadIndex);
                 $.emit('controller_assigned', Input.instance, this.proposedPlayerIndex);
                 this.icon = null;
