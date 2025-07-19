@@ -1,24 +1,24 @@
-import type { Area, AudioMeta, ImgMeta, RomAsset, RomImgAsset, RomMeta, RomPack, BootArgs, vec2arr, Polygon } from '../src/bmsx/rompack/rompack';
+import type { Area, AudioMeta, BootArgs, ImgMeta, Polygon, RomAsset, RomImgAsset, RomMeta, RomPack } from '../src/bmsx/rompack/rompack';
 import { decodeBinary } from '../src/bmsx/serializer/binencoder';
 
 declare global {
 	interface Window {
 		getRomNameFromUrlParameter: () => string;
 		getRomFromUrlParameter: () => string;
-                bootrom: {
-                        rom: RomPack | null;
-                        debug: boolean;
-                        romname: string | undefined;
-                        sndcontext: AudioContext | null;
-                        snd_unlocked: boolean;
-                        gainnode: GainNode | null;
-                        theshowsover: boolean;
-                        startingGamepadIndex: number | null;
-                        set defusr(rom: RomPack);
-                        usr: (x: number) => number;
-                        bload: (url: string) => Promise<RomPack | null>;
-                        outputError: (errormsg: string) => void;
-                        resizeHandler: () => void;
+		bootrom: {
+			rom: RomPack | null;
+			debug: boolean;
+			romname: string | undefined;
+			sndcontext: AudioContext | null;
+			snd_unlocked: boolean;
+			gainnode: GainNode | null;
+			theshowsover: boolean;
+			startingGamepadIndex: number | null;
+			set defusr(rom: RomPack);
+			usr: (x: number) => number;
+			bload: (url: string) => Promise<RomPack | null>;
+			outputError: (errormsg: string) => void;
+			resizeHandler: () => void;
 		};
 	}
 }
@@ -34,7 +34,7 @@ declare const pako: any;
  * @param {GainNode} gainnode - The gain node for the boot ROM.
  * @returns {void}
  */
-declare var h406A: (args: BootArgs) => void;
+declare var h406A: (args: BootArgs) => Promise<void>;
 
 /**
  * Object representing the boot ROM.
@@ -67,11 +67,11 @@ const bootrom = {
 	rom: null as RomPack | null,
 	debug: false,
 	romname: undefined, // Currently, used for fetching the megarom Javascript for debug mode
-        sndcontext: null as AudioContext | null,
-        snd_unlocked: false,
-        gainnode: null as GainNode | null,
-        theshowsover: false,
-        startingGamepadIndex: null as number | null,
+	sndcontext: null as AudioContext | null,
+	snd_unlocked: false,
+	gainnode: null as GainNode | null,
+	theshowsover: false,
+	startingGamepadIndex: null as number | null,
 
 	/**
 	 * Sets the boot ROM pack.
@@ -86,7 +86,7 @@ const bootrom = {
 	 * @param x - The value to return after the game is started.
 	 * @returns 255 after the game is started.
 	 */
-	usr(x: number): number {
+	async usr(x: number): Promise<number> {
 		const remove = (id: string) => {
 			const element = document.querySelector(id);
 			element.parentElement!.removeChild(element);
@@ -108,15 +108,15 @@ const bootrom = {
 		try {
 			if (!h406A) throw new Error(`h406A(${x}) is not defined!`);
 			document.getElementById('gamescreen')!.hidden = false;
-                        document.getElementById('gamescreen')!.style.display = 'block';
-                        h406A({
-                                rom: bootrom.rom!,
-                                sndcontext: bootrom.sndcontext!,
-                                gainnode: bootrom.gainnode!,
-                                debug: this.debug,
-                                startingGamepadIndex: bootrom.startingGamepadIndex
-                        });
-                        wrapup();
+			document.getElementById('gamescreen')!.style.display = 'block';
+			await h406A({
+				rom: bootrom.rom!,
+				sndcontext: bootrom.sndcontext!,
+				gainnode: bootrom.gainnode!,
+				debug: this.debug,
+				startingGamepadIndex: bootrom.startingGamepadIndex
+			});
+			wrapup();
 			bootrom.rom = undefined;
 			return 255;
 		} catch (err) {
@@ -185,7 +185,7 @@ const bootrom = {
 				})
 				.then(() => loadScript(loadedRomPack, bootrom.romname))
 				.then(() => {
-                                setLoaderText('Press any key, button or touch screen to start...');
+					setLoaderText('Press any key, button or touch screen to start...');
 					// setClassForLoader('');
 					return awaitPressedAnyKeyPromise();
 				})
@@ -372,17 +372,17 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<RomAsset[]> {
 
 
 	// Generate flipped variants for polygons
-        function flipPolygons(polys: Polygon[], flipH: boolean, flipV: boolean, imgW: number, imgH: number): Polygon[] {
-                return polys.map(poly => {
-                        const res: number[] = [];
-                        for (let i = 0; i < poly.length; i += 2) {
-                                const x = poly[i];
-                                const y = poly[i + 1];
-                                res.push(flipH ? imgW - 1 - x : x, flipV ? imgH - 1 - y : y);
-                        }
-                        return res;
-                });
-        }
+	function flipPolygons(polys: Polygon[], flipH: boolean, flipV: boolean, imgW: number, imgH: number): Polygon[] {
+		return polys.map(poly => {
+			const res: number[] = [];
+			for (let i = 0; i < poly.length; i += 2) {
+				const x = poly[i];
+				const y = poly[i + 1];
+				res.push(flipH ? imgW - 1 - x : x, flipV ? imgH - 1 - y : y);
+			}
+			return res;
+		});
+	}
 
 	function flipBoundingBoxHorizontally(box: Area, width: number): Area {
 		return {
@@ -648,75 +648,75 @@ async function loadScript(rom: RomPack, romname: string): Promise<void> {
  * @returns A Promise that resolves when the user presses any key.
  */
 async function awaitPressedAnyKeyPromise(): Promise<void> {
-        const result: Promise<void> = new Promise((resolve, reject) => {
-                let rafId: number;
+	const result: Promise<void> = new Promise((resolve, reject) => {
+		let rafId: number;
 
-                const cleanup = () => {
-                        document.body.removeEventListener('keyup', onuserinteraction);
-                        document.body.removeEventListener('touchend', onuserinteraction);
-                        cancelAnimationFrame(rafId);
-                };
+		const cleanup = () => {
+			document.body.removeEventListener('keyup', onuserinteraction);
+			document.body.removeEventListener('touchend', onuserinteraction);
+			cancelAnimationFrame(rafId);
+		};
 
-                const startGame = () => {
-                        startAudioOnIos();
-                        cleanup();
-                        resolve();
-                };
+		const startGame = () => {
+			startAudioOnIos();
+			cleanup();
+			resolve();
+		};
 
-                const pollGamepads = () => {
-                        try {
-                                if (!bootrom.theshowsover) {
-                                        rafId = window.requestAnimationFrame(pollGamepads);
-                                        return;
-                                }
+		const pollGamepads = () => {
+			try {
+				if (!bootrom.theshowsover) {
+					rafId = window.requestAnimationFrame(pollGamepads);
+					return;
+				}
 
-                                const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
-                                for (const gp of gamepads) {
-                                        if (!gp) continue;
-                                        if (gp.buttons?.some(btn => btn.pressed) || gp.axes?.some(ax => Math.abs(ax) > 0.5)) {
-                                                bootrom.startingGamepadIndex = gp.index;
-                                                startGame();
-                                                return;
-                                        }
-                                }
-                                rafId = window.requestAnimationFrame(pollGamepads);
-                        } catch (err) {
-                                cancelAnimationFrame(rafId);
-                                reject(err);
-                        }
-                };
+				const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+				for (const gp of gamepads) {
+					if (!gp) continue;
+					if (gp.buttons?.some(btn => btn.pressed) || gp.axes?.some(ax => Math.abs(ax) > 0.5)) {
+						bootrom.startingGamepadIndex = gp.index;
+						startGame();
+						return;
+					}
+				}
+				rafId = window.requestAnimationFrame(pollGamepads);
+			} catch (err) {
+				cancelAnimationFrame(rafId);
+				reject(err);
+			}
+		};
 
-                const onuserinteraction = (e: UIEvent) => {
-                        try {
-                                if (!bootrom.snd_unlocked || !bootrom.theshowsover) {
-                                        if (bootrom.debug) {
-                                                console.info(`Did not start game on user interaction because either the sound was not unlocked (bootrom.snd_unlocked=${bootrom.snd_unlocked}) or the boot animation had not ended (bootrom.theshowsover=${bootrom.theshowsover}).`);
-                                        }
-                                        return;
-                                }
-                                if (e.type == 'touchend') {
-                                        document.getElementById("d-pad-controls")!.hidden = false;
-                                        document.getElementById("button-controls")!.hidden = false;
-                                        document.documentElement.setAttribute("style", "touch-action: none;");
-                                        document.documentElement.setAttribute("style", "pointer-events: none;");
-                                }
-                                startGame();
-                        }
-                        catch (err) {
-                                cleanup();
-                                reject(err);
-                        }
-                };
+		const onuserinteraction = (e: UIEvent) => {
+			try {
+				if (!bootrom.snd_unlocked || !bootrom.theshowsover) {
+					if (bootrom.debug) {
+						console.info(`Did not start game on user interaction because either the sound was not unlocked (bootrom.snd_unlocked=${bootrom.snd_unlocked}) or the boot animation had not ended (bootrom.theshowsover=${bootrom.theshowsover}).`);
+					}
+					return;
+				}
+				if (e.type == 'touchend') {
+					document.getElementById("d-pad-controls")!.hidden = false;
+					document.getElementById("button-controls")!.hidden = false;
+					document.documentElement.setAttribute("style", "touch-action: none;");
+					document.documentElement.setAttribute("style", "pointer-events: none;");
+				}
+				startGame();
+			}
+			catch (err) {
+				cleanup();
+				reject(err);
+			}
+		};
 
-                document.addEventListener('keyup', startAudioOnIos, true);
-                document.addEventListener('touchend', startAudioOnIos, true);
-                document.body.addEventListener('keyup', onuserinteraction, { passive: false, once: false, capture: false });
-                document.body.addEventListener('touchend', onuserinteraction, { passive: false, once: false, capture: false });
-                if (navigator.getGamepads) {
-                        rafId = window.requestAnimationFrame(pollGamepads);
-                }
-        });
-        return result;
+		document.addEventListener('keyup', startAudioOnIos, true);
+		document.addEventListener('touchend', startAudioOnIos, true);
+		document.body.addEventListener('keyup', onuserinteraction, { passive: false, once: false, capture: false });
+		document.body.addEventListener('touchend', onuserinteraction, { passive: false, once: false, capture: false });
+		if (navigator.getGamepads) {
+			rafId = window.requestAnimationFrame(pollGamepads);
+		}
+	});
+	return result;
 }
 
 /**

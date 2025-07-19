@@ -8,10 +8,19 @@ let _view: gameview;
 
 const _global = window || globalThis;
 
-_global['h406A'] = (args: BootArgs): void => {
+_global['h406A'] = async (args: BootArgs): Promise<void> => {
 	_model = new gamemodel();
 	_view = new gameview(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
-	_game = new Game({ ...args, model: _model, view: _view });
+	_game = new Game();
+	await _game.init({
+		rom: args.rom,
+		model: _model,
+		view: _view,
+		sndcontext: args.sndcontext,
+		gainnode: args.gainnode,
+		debug: args.debug ?? false,
+		startingGamepadIndex: args.startingGamepadIndex ?? null
+	});
 	_game.hideOnscreenGamepadButtons(['ls', 'rs', 'select', 'y']);
 	_view.dynamicAtlas = null; // Must set this after creating the Game, otherwise GameView.images will not be initialized properly.
 	_game.start();

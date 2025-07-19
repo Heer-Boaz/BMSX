@@ -760,6 +760,7 @@ class RewindBuffer {
  */
 export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView> {
 	private _debug: boolean = false;
+	private initialized: boolean = false; // Indicates if the game has been initialized
 	/**
 	 * Indicates whether debug mode is enabled.
 	 */
@@ -976,21 +977,8 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	/**
 	 * Constructs a new instance of the BMSX class.
 	 */
-	constructor(init: GameInitArgs<M, V>) {
-		const { rom, model, view, sndcontext, gainnode, debug = false, startingGamepadIndex = null } = init;
-
-		global = globalThis;
-		global['$'] = this;
-		window['$'] = this;
-		global['$rom'] = rom;
-		window['$rom'] = rom;
-		this.running = false;
-		this._paused = false;
-		this.wasupdated = true;
-		this.updateInterval = 1000 / this.targetFPS;
-		this.rewindBuffer = new RewindBuffer(this.targetFPS, this.REWINDBUFFER_LENGTH_SECONDS);
-
-		this.init_on_boot({ rom, model, view, sndcontext, gainnode, debug, startingGamepadIndex });
+	constructor() {
+		this.initialized = false;
 	}
 
 	/**
@@ -1002,8 +990,19 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	 * @param gainnode - The gain node used for controlling the volume of sounds.
 	 * @param debug - Whether to enable debug mode. Defaults to false.
 	 */
-	private async init_on_boot(init: GameInitArgs<M, V>): Promise<Game> {
+	public async init(init: GameInitArgs<M, V>): Promise<Game> {
 		const { rom, model, view, sndcontext, gainnode, debug = false, startingGamepadIndex = null } = init;
+		global = globalThis;
+		global['$'] = this;
+		window['$'] = this;
+		global['$rom'] = rom;
+		window['$rom'] = rom;
+		this.running = false;
+		this._paused = false;
+		this.wasupdated = true;
+		this.updateInterval = 1000 / this.targetFPS;
+		this.rewindBuffer = new RewindBuffer(this.targetFPS, this.REWINDBUFFER_LENGTH_SECONDS);
+
 		this._debug = debug ?? this._debug;
 
 		global['debug'] = this.debug;
@@ -1051,6 +1050,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		// Init all the stuff that is game-specific. Placed here to reduce boilerplating
 		model.init_on_boot(); // Init the model to populate states (and do other init stuff). Placed here to ensure that the Game object is available to the model
 
+		this.initialized = true; // Mark the game as initialized
 		return this; // Allow chaining
 	}
 
@@ -1067,6 +1067,9 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	 * @returns void
 	 */
 	public start(): void {
+		if (!this.initialized) {
+			throw new Error('Game not initialized. Call init() before starting the game!');
+		}
 		this.running = true;
 		this.lastUpdate = performance.now();
 		this.last_gametick_time = performance.now();
