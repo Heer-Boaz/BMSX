@@ -3,7 +3,9 @@ import type { ButtonState, InputHandler, KeyOrButtonId2ButtonState, VibrationPar
 // In je InputManager.ts (pseudo)
 import { DualSenseHID } from "./dualsensehid";
 
-const hidPad = new DualSenseHID();
+const SONY_VID = 0x054C;
+const DUALSHOCK4_PID_2013 = 0x05C4;
+const DUALSHOCK4_PID_2016 = 0x09CC;
 
 /**
  * Represents a handler for gamepad input.
@@ -22,6 +24,12 @@ export class GamepadInput implements InputHandler {
     }
 
     private _gamepad: Gamepad;
+
+    /** HID device used for rumble of this specific gamepad */
+    private hidPad: DualSenseHID = new DualSenseHID();
+
+    /** Cached flag that indicates whether this gamepad is a DualShock 4 */
+    private isDs4Gamepad: boolean | null = null;
     /**
      * Gets the current gamepad instance.
      * @returns The current Gamepad object.
@@ -37,6 +45,32 @@ export class GamepadInput implements InputHandler {
         return true; // Gamepad supports vibration feedback
     }
 
+    private parseGamepadId(id: string): { vendorId: number; productId: number } | null {
+        const v = /vendor:?\s*([0-9a-f]+)/i.exec(id);
+        const p = /product:?\s*([0-9a-f]+)/i.exec(id);
+        if (!v || !p) return null;
+        const vendorId = parseInt(v[1], 16);
+        const productId = parseInt(p[1], 16);
+        if (Number.isNaN(vendorId) || Number.isNaN(productId)) return null;
+        return { vendorId, productId };
+    }
+
+    private updateDs4Flag(gamepad: Gamepad | null): void {
+        if (!gamepad) {
+            this.isDs4Gamepad = null;
+            return;
+        }
+        const ids = this.parseGamepadId(gamepad.id);
+        this.isDs4Gamepad = !!ids &&
+            ids.vendorId === SONY_VID &&
+            (ids.productId === DUALSHOCK4_PID_2013 || ids.productId === DUALSHOCK4_PID_2016);
+    }
+
+    /** Determine if the connected gamepad represents a DualShock 4 */
+    private isDualShock4(): boolean {
+        return !!this.isDs4Gamepad;
+    }
+
     /**
      * Applies a vibration effect to the gamepad.
      * @param effect The type of vibration effect to apply.
@@ -44,28 +78,31 @@ export class GamepadInput implements InputHandler {
      * @param intensity The intensity of the vibration effect, ranging from 0.0 to 1.0.
      */
     public applyVibrationEffect(params: VibrationParams): void {
-        // Choose the strong and weak motor intensities based on the provided intensity.
-        // And choose the weak motor for the lower intensities and the strong motor for the higher intensities.
         const strongMagnitude = params.intensity > 0.5 ? Math.round(params.intensity * 255) : 0;
         const weakMagnitude = params.intensity <= 0.5 ? Math.round(params.intensity * 255) : 0;
 
-        if (this.gamepad && this.gamepad.vibrationActuator) {
+        const isDs4 = this.isDualShock4();
+
+        if (this.gamepad && this.gamepad.vibrationActuator && !isDs4) {
             this.gamepad.vibrationActuator.playEffect(params.effect, {
                 duration: params.duration,
-                weakMagnitude: weakMagnitude,
-                strongMagnitude: strongMagnitude
+                weakMagnitude,
+                strongMagnitude
             });
             return;
         }
 
-        // HID‑pad alternative
-        if (!hidPad?.isConnected) {
-            console.warn('DualSense Edge HID device is not opened and ready to rumble!');
-            return; // Device not opened
+        if (!this.hidPad.isConnected) {
+            // Try to (re)initialise the HID device for this pad.
+            void this.bootstrapControllers();
+            if (!this.hidPad.isConnected) {
+                console.warn('DualSense HID device is not opened and ready to rumble!');
+                return;
+            }
         }
+
         try {
-            // Send the rumble effect to the HID device.
-            hidPad.sendRumble({
+            this.hidPad.sendRumble({
                 strong: strongMagnitude,
                 weak: weakMagnitude,
                 duration: params.duration
@@ -76,10 +113,29 @@ export class GamepadInput implements InputHandler {
     }
 
     async bootstrapControllers(): Promise<void> {
+        if (this._gamepad?.vibrationActuator && !this.isDualShock4()) {
+            // Native actuator is available and reliable; skip HID init
+            return;
+        }
         try {
-            await hidPad.init();
+            await this.hidPad.init(this._gamepad);
         } catch (e) {
             console.warn(`Error initializing HID device for rumble: ${e}`);
+        }
+    }
+
+    private handleConnect(e: GamepadEvent): void {
+        if (e.gamepad.index === this.gamepadIndex) {
+            this._gamepad = e.gamepad;
+            this.updateDs4Flag(e.gamepad);
+            void this.bootstrapControllers();
+        }
+    }
+
+    private handleDisconnect(e: GamepadEvent): void {
+        if (e.gamepad.index === this.gamepadIndex) {
+            this.hidPad?.close();
+            this.updateDs4Flag(null);
         }
     }
 
@@ -92,6 +148,12 @@ export class GamepadInput implements InputHandler {
      */
     constructor(gamepad: Gamepad) {
         this._gamepad = gamepad;
+        this.updateDs4Flag(gamepad);
+
+        this.handleConnect = this.handleConnect.bind(this);
+        this.handleDisconnect = this.handleDisconnect.bind(this);
+        window.addEventListener('gamepadconnected', this.handleConnect);
+        window.addEventListener('gamepaddisconnected', this.handleDisconnect);
 
         this.bootstrapControllers();
 
@@ -111,7 +173,13 @@ export class GamepadInput implements InputHandler {
         const gamepads: Gamepad[] = navigator.getGamepads ? navigator.getGamepads() : ((navigator as any).webkitGetGamepads ? (navigator as any).webkitGetGamepads : undefined); // Get gamepads from browser API
         if (!gamepads) return; // Browser does not support gamepads API
         if (gamepads.length < this.gamepadIndex) return; // Gamepad index is out of range of connected gamepads array (this can happen if multiple gamepads are connected and one is disconnected)
-        this._gamepad = gamepads[this.gamepadIndex]; // Update gamepad reference
+        const newGamepad = gamepads[this.gamepadIndex];
+        if (this._gamepad !== newGamepad) {
+            this._gamepad = newGamepad;
+            this.updateDs4Flag(newGamepad);
+        } else {
+            this._gamepad = newGamepad;
+        }
 
 
         // Initialize the individual gamepad button states if they are not already initialized
@@ -206,5 +274,12 @@ export class GamepadInput implements InputHandler {
         else {
             resetObject(this.gamepadButtonStates, except);
         }
+    }
+
+    /** Clean up event listeners and close HID device */
+    public dispose(): void {
+        window.removeEventListener('gamepadconnected', this.handleConnect);
+        window.removeEventListener('gamepaddisconnected', this.handleDisconnect);
+        this.hidPad?.close();
     }
 }

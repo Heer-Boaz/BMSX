@@ -38,20 +38,45 @@ export class DualSenseHID {
         return this.device?.opened ?? false;
     }
 
+    /** Type of the connected HID pad */
+    public get padKind(): HidPadKind | null {
+        return this.kind;
+    }
+
+    /** Whether the HID device represents a DualShock 4 */
+    public get isDualShock4(): boolean {
+        return this.kind === 'ds4_usb' || this.kind === 'ds4_bt';
+    }
+
+    private matchDeviceForGamepad(gamepad: Gamepad, known: HIDDevice[]): HIDDevice | null {
+        const ids = this.parseGamepadId(gamepad.id);
+        if (!ids) return null;
+        return known.find(d => d.vendorId === ids.vendorId && d.productId === ids.productId) ?? null;
+    }
+
+    private parseGamepadId(id: string): { vendorId: number; productId: number } | null {
+        const v = /vendor:?\s*([0-9a-f]+)/i.exec(id);
+        const p = /product:?\s*([0-9a-f]+)/i.exec(id);
+        if (!v || !p) return null;
+        const vendorId = parseInt(v[1], 16);
+        const productId = parseInt(p[1], 16);
+        if (Number.isNaN(vendorId) || Number.isNaN(productId)) return null;
+        return { vendorId, productId };
+    }
+
     /** Requests the Sony HID device and initializes it. */
-    public async init(): Promise<void> {
+    public async init(gamepad?: Gamepad): Promise<void> {
         if (!("hid" in navigator)) {
             console.warn("HID API not supported in this browser.");
             return; // HID not supported (e.g. Safari)
         }
 
-        // Are there devices for which we already granted permission?
         const known = await navigator.hid.getDevices?.() ?? [];
 
-        // Find a known DualSense Edge HID device or request a new one
-        this.device =
-            known.find(d => d.vendorId === SONY_VID &&
-                ACCEPTED_VENDORS_PRODUCTS.some(p => p.productId === d.productId)) ??
+        const matchFromGamepad = gamepad ? this.matchDeviceForGamepad(gamepad, known) : null;
+
+        this.device = matchFromGamepad ??
+            known.find(d => d.vendorId === SONY_VID && ACCEPTED_VENDORS_PRODUCTS.some(p => p.productId === d.productId)) ??
             (await navigator.hid.requestDevice({
                 filters: ACCEPTED_VENDORS_PRODUCTS.map(p => ({ vendorId: p.vendorId, productId: p.productId }))
             }))?.[0];
@@ -103,7 +128,7 @@ export class DualSenseHID {
      */
     public stop(): void {
         if (this.rumbleTimer) {
-            clearTimeout(this.rumbleTimer ?? 0);
+            clearTimeout(this.rumbleTimer);
             this.rumbleTimer = null;
         }
         if (this.device?.opened) {
@@ -147,7 +172,7 @@ export class DualSenseHID {
 
         // Automatically stop after `duration` ms.
         if (duration > 0) {
-            clearTimeout(this.rumbleTimer ?? 0);
+            clearTimeout(this.rumbleTimer);
             this.rumbleTimer = window.setTimeout(() => this.stop(), duration);
         }
     }

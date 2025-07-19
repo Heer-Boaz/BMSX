@@ -449,6 +449,7 @@ export class PlayerInput {
             if (e.gamepad.index === this.inputHandlers['gamepad'].gamepadIndex) {
                 if (this.playerIndex) {
                     console.info(`Gamepad ${gamepad.index}, that was assigned to player ${playerIndex}, disconnected.`);
+                    (this.inputHandlers['gamepad'] as any)?.dispose?.();
                     this.inputHandlers['gamepad'] = null; // Remove gamepad for this input-object
 
 
