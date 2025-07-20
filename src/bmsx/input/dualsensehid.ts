@@ -335,21 +335,23 @@ export class DualSenseHID {
     private buildDualSenseReport(strong: number, weak: number): Uint8Array {
         const r = new Uint8Array(48);
         r[0] = 0x02;
-        r[1] = 0xFF; r[2] = 0xFF;      // enable flags
-        r[3] = weak & 0xFF;            // R motor
-        r[4] = strong & 0xFF;          // L motor
+        r[1] = 0x03; // valid_flag0: bit0 (compatible vibration), bit1 (haptics select for rumble)
+        r[2] = 0x00; // valid_flag1: no other features
+        r[3] = weak & 0xFF; // right motor (weak, high-freq)
+        r[4] = strong & 0xFF; // left motor (strong, low-freq)
+        // Remaining bytes zero-initialized
         return r;
     }
 
     /** DualShock 4 USB – report 0x05 (32 B) */
     private buildDs4Report(strong: number, weak: number): Uint8Array {
         const r = new Uint8Array(32);
-        r[0] = 0x05;          // Report‑ID
-        r[1] = 0x01;          // 0x01 = Enable rumble only (was 0x07 which also enabled LED and blinking)
-        r[2] = 0x00;          // Setting control flags should be 0x00 for rumble
-        r[4] = weak & 0xFF;   // Right motor (weak, high-freq)
-        r[5] = strong & 0xFF; // Left motor (strong, low-freq)
-        // Remaining bytes are zero-initialized
+        r[0] = 0x05;          // Report-ID
+        r[1] = 0x01;          // Enable rumble only
+        r[2] = 0x00;
+        r[4] = weak & 0xFF;   // right motor (weak, high-freq)
+        r[5] = strong & 0xFF; // left motor (strong, low-freq)
+        // Remaining bytes zero-initialized
         return r;
     }
 
@@ -389,10 +391,9 @@ export class DualSenseHID {
         r[2] = 0x20;          // Unknown
         r[3] = 0xF1;          // Motor-only flags
         r[4] = 0x04;          // Unknown
-        r[6] = weak;          // Right motor (weak, high-freq)
-        r[7] = strong;        // Left motor (strong, low-freq)
-        // … other fields zero …
-        // Compute CRC over the first 74 bytes (report ID + 73 data bytes)
+        r[6] = weak;          // right motor (weak, high-freq)
+        r[7] = strong;        // left motor (strong, low-freq)
+        // Compute CRC over the first 74 bytes
         const crc = this.crc32_bt(r.subarray(0, 74));
         r[74] = crc & 0xFF;
         r[75] = (crc >> 8) & 0xFF;
@@ -405,11 +406,12 @@ export class DualSenseHID {
     private buildDs5BtReport(strong: number, weak: number): Uint8Array {
         const r = new Uint8Array(78);
         r[0] = 0x31;
-        r[1] = 0x01; // Compatibility vibration flag
-        r[2] = 0x00;
-        r[3] = weak; // Right motor (weak, high-freq)
-        r[4] = strong; // Left motor (strong, low-freq)
-        // Compute CRC over the first 74 bytes (report ID + 73 data bytes)
+        r[1] = 0x10; // Tag for BT output
+        r[2] = 0x03; // valid_flag0: bit0 (compatible vibration), bit1 (haptics select for rumble)
+        r[3] = 0x00; // valid_flag1: no other features
+        r[4] = weak; // right motor (weak, high-freq)
+        r[5] = strong; // left motor (strong, low-freq)
+        // Compute CRC over the first 74 bytes
         const crc = this.crc32_bt(r.subarray(0, 74));
         r[74] = crc & 0xFF;
         r[75] = (crc >> 8) & 0xFF;
