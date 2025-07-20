@@ -532,6 +532,8 @@ export class Input implements RegisterablePersistent {
 				const gamepadInput = new GamepadInput(gp);
 				this.assignGamepadToPlayer(gamepadInput, 1);
 				this.removePendingGamepadAssignment(startingGamepadIndex);
+				// Call init to ensure user interaction for permission
+				gamepadInput.init();
 			}
 		}
 

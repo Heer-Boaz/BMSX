@@ -147,7 +147,7 @@ export class GamepadInput implements InputHandler {
         this._gamepad = gamepad;
         this.updateDs4Flag(gamepad);
 
-        this.init();
+        // Note that init should be called later to ensure user interaction for permission
 
         // Reset gamepad button states
         this.reset();
