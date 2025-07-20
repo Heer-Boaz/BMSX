@@ -1,6 +1,6 @@
 import { glsl } from "esbuild-plugin-glsl";
 import type { Stats } from 'fs';
-import type { AudioMeta, ImgMeta, RomAsset, vec2arr, Polygon } from '../src/bmsx/rompack/rompack';
+import type { AudioMeta, ImgMeta, Polygon, RomAsset } from '../src/bmsx/rompack/rompack';
 import { createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import type { Resource, RomManifest, resourcetype } from './rompacker.rompack';
@@ -51,12 +51,17 @@ export function addFile(dirPath: string, filePath: string, arrayOfFiles: string[
  * @returns {string[]} An array of file paths.
  */
 export async function getFiles(dirPath: string, arrayOfFiles?: string[], filterExtension?: string): Promise<string[]> {
+    if (!(await access(dirPath).then(() => true).catch(() => false))) {
+        throw new Error(`Resource path "${dirPath}" does not exist.`);
+    }
+
     const files = await readdir(dirPath);
     let array = arrayOfFiles || [];
     for (let file of files) {
         if (file.indexOf('_ignore') > -1) continue;
 
         let fullpath = `${dirPath}/${file}`;
+
         let stats = await stat(fullpath);
         if (stats.isDirectory()) {
             array = await getFiles(fullpath, array, filterExtension);
@@ -383,13 +388,17 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
 }
 
 /**
- * Builds a list of resource objects located at `respath` for the specified `romname`.
- * @param respath The path to the resources to include in the list.
+ * Builds a list of resource objects located at `respaths` for the specified `romname`.
+ * @param respaths An array of the paths to the resources to include in the list.
  * @param romname The name of the ROM pack to build the list for.
  * @returns An array of resources with basic metadata.
  */
-export async function getResMetaList(respath: string, romname?: string): Promise<Resource[]> {
-    const arrayOfFiles = await getFiles(respath) ?? []; // Also handle corner case where we don't have any resources by adding "?? []"
+export async function getResMetaList(respaths: string[], romname?: string): Promise<Resource[]> {
+    const arrayOfFiles: string[] = [];
+    for (const respath of respaths) {
+        const files = await getFiles(respath) ?? [];
+        arrayOfFiles.push(...files);
+    }
     const megarom_filename = `${romname}.js`;
     // Note that romname can be undefined when building the resource enum file, so we only add the file if romname is defined
     if (romname) {
@@ -549,15 +558,15 @@ export async function getResourcesList(resMetaList: Resource[], rom_name: string
 }
 
 /**
- * Builds a list of resources located at `respath` for the specified `romname`.
- * @param respath The path to the resources to include in the list.
+ * Builds a list of resources located at `respaths` for the specified `romname`.
+ * @param respaths An array of the paths to the resources to include in the list.
  * @param rom_name The name of the ROM pack to build the list for.
  */
-export async function buildResourceList(respath: string, rom_name?: string) {
+export async function buildResourceList(respaths: string[], rom_name?: string) {
     const tsimgout = new Array<string>();
     const tssndout = new Array<string>();
     const tsdataout = new Array<string>();
-    const metalist = await getResMetaList(respath, rom_name);
+    const metalist: Resource[] = await getResMetaList(respaths, rom_name)
 
     tsimgout.push(BOILERPLATE_RESOURCE_ID_BITMAP);
     tssndout.push(BOILERPLATE_RESOURCE_ID_AUDIO);
@@ -594,7 +603,7 @@ export async function buildResourceList(respath: string, rom_name?: string) {
 
     const total_output: string = tsimgout.concat(tssndout, tsdataout).join('\n');
 
-    const targetPath = respath.replace('/res', '/resourceids.ts');
+    const targetPath = respaths[0].replace('/res', '/resourceids.ts');
     await writeFile(targetPath, total_output);
 }
 

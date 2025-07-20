@@ -173,13 +173,22 @@ async function main() {
 		let { title, rom_name, bootloader_path, respath, force, buildreslist, deploy, useTextureAtlas } = parseOptions(args);
 		GENERATE_AND_USE_TEXTURE_ATLAS = useTextureAtlas;
 
+		// Define common assets path
+		const commonResPath = `./src/bmsx/res`
+
 		if (buildreslist) {
 			if (!respath) {
 				throw new Error("Missing parameter for location of the resource folder ('respath', e.g. './src/testrom/res'.");
 			}
-			writeOut(`Building resource list and writing output to "${respath}"...\n`);
+			if (!commonResPath) {
+				throw new Error("Cannot determine common resource path; 'rom_name' is required.");
+			}
+			writeOut(`Building resource list from "${respath}" and "${commonResPath}"...\n`);
 			writeOut('Note: ROM packing and deployment are skipped.\n');
-			await buildResourceList(respath);
+			if (rom_name) {
+				writeOut(`Note: ROM name is set to "${rom_name}" (not used for resource list building).\n`);
+			}
+			await buildResourceList([respath, commonResPath]);
 			writeOut(`\n${_colors.brightWhite.bold('[Resource list bouwen ge-DONUT]')} \n`);
 			return;
 		} else {
@@ -197,6 +206,7 @@ async function main() {
 		if (!title) throw new Error("Missing parameter for title ('title', e.g. 'Sintervania'.");
 		if (!bootloader_path) throw new Error("Missing parameter for location of the bootloader.ts-file ('bootloader_path', e.g. 'src/testrom'.");
 		if (!respath) throw new Error("Missing parameter for location of the resource folder ('respath', e.g. './src/testrom/res'.");
+		if (!commonResPath) throw new Error("Cannot determine common resource path; 'rom_name' is required.");
 
 		let rebuildRequired = true;
 		if (force) {
@@ -213,6 +223,7 @@ async function main() {
 		}
 		if (!deploy) writeOut(`Note: Deploy to FTP server disabled via ${_colors.brightRed.bold('--nodeploy')} \n`);
 		writeOut(`Starting ROM packing and deployment process for ROM ${_colors.brightBlue.bold(`${rom_name}`)}...\n`);
+		writeOut(`Using resources from "${respath}" and common resources from "${commonResPath}"...\n`);
 		progress.showInitial();
 		await progress.taskCompleted(); // Need to complete the initial task as it will be triggered twice or so
 
@@ -229,7 +240,11 @@ async function main() {
 			if (!force) {
 				rebuildRequired = await isRebuildRequired(rom_name, bootloader_path, respath);
 				if (!rebuildRequired) {
-					writeOut('Rebuild skipped: game rom was newer than code/assets (use --force option to ignore this check).\n');
+					const commonRebuildRequired = await isRebuildRequired(rom_name, bootloader_path, commonResPath);
+					rebuildRequired = rebuildRequired || commonRebuildRequired;
+					if (!rebuildRequired) {
+						writeOut('Rebuild skipped: game rom was newer than code/assets (use --force option to ignore this check).\n');
+					}
 				}
 			} else rebuildRequired = true;
 
@@ -242,9 +257,9 @@ async function main() {
 			if (rebuildRequired) {
 				await esbuild(rom_name, bootloader_path);
 				await progress?.taskCompleted();
-				const resMetaList = await getResMetaList(respath, rom_name);
+				const romResMetaList = await getResMetaList([respath, commonResPath], rom_name);
 				await progress?.taskCompleted();
-				const resources = await getResourcesList(resMetaList, rom_name);
+				const resources = await getResourcesList(romResMetaList, rom_name);
 				await progress?.taskCompleted();
 
 				if (GENERATE_AND_USE_TEXTURE_ATLAS) {
