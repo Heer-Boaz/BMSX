@@ -526,27 +526,34 @@ export class Input implements RegisterablePersistent {
 
 		this.getPlayerInput(Input.DEFAULT_KEYBOARD_PLAYER_INDEX).inputHandlers['keyboard'] = new KeyboardInput();
 
+		const initAlreadyConnectedGamepads = () => {
+			// Handle gamepad input initialization
+			// Initialize gamepad states for already connected gamepads
+			// *Must happen after the starting gamepad index is set, if any, to ensure that any related HID device is initialized first based on the gamepad whose input started the game*
+			const gamepads = navigator.getGamepads();
+			for (let i = 0; i < gamepads.length; i++) {
+				const gamepad = gamepads[i];
+				if (!gamepad) continue;
+				// Skip the gamepad if it is the starting gamepad index (already initialized) or if it does not have 'gamepad' in its id
+				if (typeof startingGamepadIndex === 'number' && gamepad.index === startingGamepadIndex) continue;
+
+				this.addPendingGamepadAssignment(gamepad);
+			}
+		}
+
 		if (typeof startingGamepadIndex === 'number') {
 			const gp = navigator.getGamepads?.()[startingGamepadIndex];
 			if (gp) {
 				const gamepadInput = new GamepadInput(gp);
 				this.assignGamepadToPlayer(gamepadInput, 1);
-				this.removePendingGamepadAssignment(startingGamepadIndex);
-				// Call init to ensure user interaction for permission
-				gamepadInput.init();
+				// Call init to ensure user interaction for permission before initializing all other connected gamepads
+				gamepadInput.init().then(initAlreadyConnectedGamepads);
 			}
 		}
-
-		// Initialize gamepad states for already connected gamepads
-		// *Must happen after the starting gamepad index is set, if any, to ensure that any related HID device is initialized first based on the gamepad whose input started the game*
-		const gamepads = navigator.getGamepads();
-		for (let i = 0; i < gamepads.length; i++) {
-			const gamepad = gamepads[i];
-			if (!gamepad || !gamepad.id.toLowerCase().includes('gamepad')) continue;
-
-			this.addPendingGamepadAssignment(gamepad);
+		else {
+			// If no starting gamepad index is provided, initialize all connected gamepads
+			initAlreadyConnectedGamepads();
 		}
-
 	}
 
 	/**
