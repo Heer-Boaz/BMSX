@@ -1,6 +1,6 @@
 /// <reference types="w3c-web-hid" />
 /**
- * Sony DualSense Edge – vendor‑ & product‑IDs (USB‑modus)
+ * Sony DualSense Edge – vendor‑ & product‑IDs (USB‑modus)
  * 0x054C = Sony Interactive Entertainment
  * 0x0CE6 = DualSense standard
  * 0x0DF2 = DualSense Edge
@@ -75,28 +75,23 @@ export class DualSenseHID {
         return this.kind;
     }
 
-    /** Whether the HID device represents a DualShock 4 */
+    /** Whether the HID device represents a DualShock 4 */
     public get isDualShock4(): boolean {
         return this.kind === 'ds4_usb' || this.kind === 'ds4_bt';
     }
 
-    private matchDeviceForGamepad(gamepad: Gamepad, known: HIDDevice[]): HIDDevice | null {
-        const ids = this.parseGamepadId(gamepad.id);
-        if (!ids) return null;
-        return known.find(d => this.matchIds(d, ids)) ?? null;
-    }
-
     private parseGamepadId(id: string): { vendorId: number; productId: number } | null {
-        // Try common "Vendor:054c Product:0df2" format first
-        const vendorReg = /(vendor|vid|idvendor)[^0-9a-f]*([0-9a-f]{4})/i;
-        const productReg = /(product|pid|idproduct)[^0-9a-f]*([0-9a-f]{4})/i;
+        // Enhanced regex to handle more formats, e.g., "DualSense Wireless Controller (STANDARD GAMEPAD Vendor: 054c Product: 0ce6)"
+        // or "054c-0ce6 (STANDARD GAMEPAD)" or variations with extra text
+        const vendorReg = /(vendor|vid|idvendor|0x?[0-9a-f]{4})[^0-9a-f]*([0-9a-f]{4})/i;
+        const productReg = /(product|pid|idproduct|0x?[0-9a-f]{4})[^0-9a-f]*([0-9a-f]{4})/i;
 
-        let vendorStr: string | null = vendorReg.exec(id)?.[2] ?? null;
-        let productStr: string | null = productReg.exec(id)?.[2] ?? null;
+        let vendorStr = vendorReg.exec(id)?.[2] ?? null;
+        let productStr = productReg.exec(id)?.[2] ?? null;
 
         if (!vendorStr || !productStr) {
-            // Fallback to a generic pattern like "054c-0df2" or "054c:0df2"
-            const alt = /([0-9a-f]{4})\W+([0-9a-f]{4})/i.exec(id);
+            // Broader fallback: capture any two hex groups separated by non-hex
+            const alt = /([0-9a-f]{4})[^0-9a-f]+([0-9a-f]{4})/i.exec(id);
             if (alt) {
                 vendorStr ??= alt[1];
                 productStr ??= alt[2];
@@ -125,6 +120,9 @@ export class DualSenseHID {
         if (gamepad) {
             this.assignedIndex = gamepad.index;
             ids = this.parseGamepadId(gamepad.id);
+            if (!ids) {
+                console.warn(`Failed to parse VID/PID from gamepad.id: "${gamepad.id}"`);
+            }
         }
 
         // Reuse previously assigned device if still available and matching
@@ -132,89 +130,150 @@ export class DualSenseHID {
             const existing = DualSenseHID.assignedDevices.get(this.assignedIndex);
             if (existing && known.includes(existing) && (!ids || this.matchIds(existing, ids))) {
                 this.device = existing;
+                // Early return if reused
+                if (this.device.opened) {
+                    this.kind = this.detectPadKind(this.device);
+                    return;
+                }
             } else if (existing) {
                 DualSenseHID.assignedDevices.delete(this.assignedIndex);
             }
         }
 
-        const matchFromGamepad = (!this.device && gamepad) ? this.matchDeviceForGamepad(gamepad, known) : null;
+        const used = new Set(DualSenseHID.assignedDevices.values());
 
-        if (!this.device) {
-            if (matchFromGamepad) {
-                // Prefer HID device that matches the gamepad and is not already assigned
-                const used = new Set(DualSenseHID.assignedDevices.values());
-                if (!used.has(matchFromGamepad)) {
-                    this.device = matchFromGamepad;
-                }
+        let candidates: HIDDevice[] = [];
+        if (ids) {
+            candidates = known.filter(d => this.matchIds(d, ids) && !used.has(d));
+        } else {
+            candidates = known.filter(d => d.vendorId === SONY_VID && ACCEPTED_VENDORS_PRODUCTS.some(p => p.productId === d.productId) && !used.has(d));
+        }
+
+        if (candidates.length === 1) {
+            this.device = candidates[0];
+        } else {
+            // For multiple or zero candidates, prompt the user with appropriate filters
+            const promptFilters = ids ? ids : undefined;
+            if (candidates.length > 1) {
+                console.info(`Multiple HID devices match ${ids ? `VID/PID (${ids.vendorId.toString(16)}:${ids.productId.toString(16)})` : 'accepted Sony devices'}. Prompting user to select.`);
+            } else {
+                console.info(`No matching HID device found in known devices. Prompting user to select.`);
             }
-        }
-
-        if (!this.device && gamepad && ids) {
-            const candidates = known.filter(d => this.matchIds(d, ids));
-            const used = new Set(DualSenseHID.assignedDevices.values());
-            this.device = candidates.find(c => !used.has(c)) ?? null;
-        }
-
-        this.device = this.device ??
-            known.find(d => d.vendorId === SONY_VID && ACCEPTED_VENDORS_PRODUCTS.some(p => p.productId === d.productId));
-
-        if (!this.device) {
-            const requested = await DualSenseHID.requestHidPermission(ids || undefined);
+            const requested = await DualSenseHID.requestHidPermission(promptFilters);
             if (requested.length) {
-                const used = new Set(DualSenseHID.assignedDevices.values());
-                this.device = requested.find(d => !used.has(d)) ?? requested[0];
+                // Prefer a matching unused device, or the first one
+                this.device = requested.find(d => !used.has(d) && (ids ? this.matchIds(d, ids) : true)) ?? requested[0];
+            } else {
+                console.warn('User did not select a device.');
+            }
+        }
+
+        // Fallback only if no specific ids (general init), try any unused Sony device
+        if (!this.device && !ids) {
+            this.device = known.find(d => d.vendorId === SONY_VID && !used.has(d));
+            if (this.device) {
+                console.info('Fallback to any unrecognized Sony device.');
             }
         }
 
         if (!this.device) {
-            console.info('Did not find any recognized controller device.');
-            console.info('Known devices:', known.map(d => `${d.productName} (${d.vendorId.toString(16)}:${d.productId.toString(16)})`));
-            console.info('Trying to open any Sony device...');
+            console.info('Did not find any suitable controller device.');
+            console.info('Known devices:', known.map(d => `${d.productName} (${d.vendorId.toString(16)}:${d.productId.toString(16)}) serial: ${(d as any).serialNumber || 'none'}`));
+            return; // No device found
+        }
 
-            // No device found, but we might have a Sony device that we can try to open.
-            this.device = known.find(d => d.vendorId === SONY_VID);
-            if (!this.device) {
-                console.info('No Sony HID device found.');
-                return; // No device found
+        console.info(`Found Sony HID device: ${this.device.productName} (${this.device.vendorId.toString(16)}:${this.device.productId.toString(16)}) serial: ${(this.device as any).serialNumber || 'none'}`);
+
+        this.kind = this.detectPadKind(this.device);
+        console.info(`Detected Sony HID device kind: ${this.kind ?? 'unknown'}`);
+        if (!this.device.opened) {
+            try {
+                await this.device.open();
+            } catch (error) {
+                console.error('Failed to open HID device:', error);
+                this.device = null;
+                this.kind = null;
+                return;
             }
-
-            return;
         }
-
-        console.info(`Found Sony HID device and will attempt to determine its kind: ${this.device.productName} (${this.device.vendorId.toString(16)}:${this.device.productId.toString(16)})`);
-
-        function detectPadKind(dev: HIDDevice): HidPadKind {
-            const has05 = dev.collections.some(c =>
-                c.outputReports?.some(r => r.reportId === 0x05));   // DS4‑USB
-
-            const has02 = dev.collections.some(c =>
-                c.outputReports?.some(r => r.reportId === 0x02));   // DS5‑USB
-
-            const has11 = dev.collections.some(c =>
-                c.outputReports?.some(r => r.reportId === 0x11));   // DS4‑BT
-
-            const has31 = dev.collections.some(c =>
-                c.outputReports?.some(r => r.reportId === 0x31));   // DS5‑BT
-
-            if (has02) return 'ds5_usb';
-            if (has05) return 'ds4_usb';
-            if (has31) return 'ds5_bt';
-            if (has11) return 'ds4_bt';
-            return null;
-        }
-
-        this.kind = detectPadKind(this.device);
-        console.info(`Detected Sony HID device: ${this.kind ?? 'but it is unknown :-('}`);
-        if (!this.device.opened) await this.device.open(); // Open the device
 
         if (this.assignedIndex !== null) {
             DualSenseHID.assignedDevices.set(this.assignedIndex, this.device);
         }
     }
 
+    private detectPadKind(dev: HIDDevice): HidPadKind {
+        const has05 = dev.collections.some(c => c.outputReports?.some(r => r.reportId === 0x05)); // DS4-USB
+        const has02 = dev.collections.some(c => c.outputReports?.some(r => r.reportId === 0x02)); // DS5-USB
+        const has11 = dev.collections.some(c => c.outputReports?.some(r => r.reportId === 0x11)); // DS4-BT
+        const has31 = dev.collections.some(c => c.outputReports?.some(r => r.reportId === 0x31)); // DS5-BT
+
+        if (has02) return 'ds5_usb';
+        if (has05) return 'ds4_usb';
+        if (has31) return 'ds5_bt';
+        if (has11) return 'ds4_bt';
+
+        // Fallback based on product ID and possible BT/USB hint (e.g., if no USB reports, assume BT)
+        if (dev.productId === DUALSENSE_EDGE_PID || dev.productId === DUALSENSE_STANDARD_PID) {
+            return has31 || !has02 ? 'ds5_bt' : 'ds5_usb';
+        } else if (dev.productId === DUALSHOCK4_PID_2013 || dev.productId === DUALSHOCK4_PID_2016) {
+            return has11 || !has05 ? 'ds4_bt' : 'ds4_usb';
+        }
+        return null;
+    }
+
     /**
-     * Stops the current rumble effect and resets the device.
+     * Optional advanced matching: Correlate HID input reports with Gamepad state changes.
+     * Requires user to interact (e.g., press buttons on the target gamepad).
+     * @param gamepad The Gamepad to match against.
+     * @param candidates Array of candidate HIDDevices (must be opened).
+     * @param timeoutMs Max time to wait for input (default 5000ms).
+     * @returns The matching HIDDevice or null if no match.
      */
+    public async correlateWithInput(gamepad: Gamepad, candidates: HIDDevice[], timeoutMs: number = 5000): Promise<HIDDevice | null> {
+        if (candidates.length <= 1) return candidates[0] ?? null;
+
+        console.info('Multiple candidates; starting input correlation. Press a button on the target controller.');
+
+        const prevGamepadState = { buttons: gamepad.buttons.map(b => b.pressed), axes: [...gamepad.axes] };
+        const hidInputPromises = candidates.map(device => new Promise<{ device: HIDDevice; changed: boolean }>((resolve) => {
+            const onInput = (event: HIDInputReportEvent) => {
+                device.removeEventListener('inputreport', onInput);
+                resolve({ device, changed: true });
+            };
+            device.addEventListener('inputreport', onInput);
+        }));
+
+        const timeout = new Promise<null>(resolve => setTimeout(() => resolve(null), timeoutMs));
+
+        // Poll gamepad for changes (Gamepad API requires manual polling)
+        const pollInterval = setInterval(() => {
+            const current = navigator.getGamepads()[gamepad.index];
+            if (!current) return;
+            const changed = current.buttons.some((b, i) => b.pressed !== prevGamepadState.buttons[i]) ||
+                current.axes.some((a, i) => Math.abs(a - prevGamepadState.axes[i]) > 0.1);
+            if (changed) {
+                // Update prev for next poll, but we don't need it here
+                prevGamepadState.buttons = current.buttons.map(b => b.pressed);
+                prevGamepadState.axes = [...current.axes];
+            }
+        }, 50);
+
+        const result = await Promise.race([...hidInputPromises, timeout]);
+        clearInterval(pollInterval);
+        candidates.forEach(d => d.removeEventListener('inputreport', () => { })); // Clean up
+
+        if (result && result.changed) {
+            console.info(`Matched HID device via input: ${result.device.productName} serial: ${(result.device as any).serialNumber || 'none'}`);
+            return result.device;
+        }
+        console.warn('Input correlation timed out or no match.');
+        return null;
+    }
+
+    /**
+         * Stops the current rumble effect and resets the device.
+         */
     public stop(): void {
         if (this.rumbleTimer) {
             clearTimeout(this.rumbleTimer);
@@ -259,7 +318,11 @@ export class DualSenseHID {
                 return;
         }
 
-        this.device.sendReport(report[0], report.subarray(1));
+        try {
+            this.device.sendReport(report[0], report.subarray(1));
+        } catch (error) {
+            console.error('Failed to send rumble report:', error);
+        }
 
         // Automatically stop after `duration` ms.
         if (duration > 0) {
@@ -268,7 +331,7 @@ export class DualSenseHID {
         }
     }
 
-    /** DualSense USB – report 0x02 (48 B) */
+    /** DualSense USB – report 0x02 (48 B) */
     private buildDualSenseReport(strong: number, weak: number): Uint8Array {
         const r = new Uint8Array(48);
         r[0] = 0x02;
@@ -284,18 +347,27 @@ export class DualSenseHID {
         r[0] = 0x05;          // Report‑ID
         r[1] = 0x01;          // 0x01 = Enable rumble only (was 0x07 which also enabled LED and blinking)
         r[2] = 0x00;          // Setting control flags should be 0x00 for rumble
-        r[4] = weak & 0xFF;   // RumbleRight (weak motor) - index corrected
-        r[5] = strong & 0xFF; // RumbleLeft (strong motor) - index corrected
-        // Initialize remaining bytes to ensure compatibility
-        for (let i = 6; i < 32; i++) {
-            r[i] = 0x00;
-        }
+        r[4] = weak & 0xFF;   // Right motor (weak, high-freq)
+        r[5] = strong & 0xFF; // Left motor (strong, low-freq)
+        // Remaining bytes are zero-initialized
         return r;
     }
 
     private crc32_bt(data: Uint8Array): number {
-        // CRC-32 implementation for the BT report
+        // CRC-32 implementation for Sony BT reports, prefixed with 0xa2 (HID output header)
         let crc = 0xFFFFFFFF;
+
+        // Prefix byte 0xa2
+        crc ^= 0xa2;
+        for (let j = 0; j < 8; j++) {
+            if ((crc & 1) === 1) {
+                crc = (crc >>> 1) ^ 0xEDB88320;
+            } else {
+                crc >>>= 1;
+            }
+        }
+
+        // Process the data bytes
         for (let i = 0; i < data.length; i++) {
             crc ^= data[i];
             for (let j = 0; j < 8; j++) {
@@ -309,20 +381,19 @@ export class DualSenseHID {
         return crc ^ 0xFFFFFFFF;
     }
 
-    /** DualShock 4 USB – report 0x05 (32 B) */
-    /** 78-byte BT report 0x11 + CRC-32 */
+    /** DualShock 4 BT – report 0x11 (78 B with CRC) */
     private buildDs4BtReport(strong: number, weak: number): Uint8Array {
         const r = new Uint8Array(78);
         r[0] = 0x11;
-        r[1] = 0xC0;          // onbekend, door Sony zo gebruikt
-        r[2] = 0x20;          // idem
-        r[3] = 0xF1;          // motor-only
-        r[4] = 0x04;          // idem
-        r[6] = weak;          // R-motor
-        r[7] = strong;        // L-motor
-        // … vul evt. audio- & LED-velden (r[21]–r[25]) …
-        // 4 CRC-bytes op het einde:
-        const crc = this.crc32_bt(r.subarray(0, 74));   // A2-header + report
+        r[1] = 0xC0;          // Unknown, used by Sony
+        r[2] = 0x20;          // Unknown
+        r[3] = 0xF1;          // Motor-only flags
+        r[4] = 0x04;          // Unknown
+        r[6] = weak;          // Right motor (weak, high-freq)
+        r[7] = strong;        // Left motor (strong, low-freq)
+        // … other fields zero …
+        // Compute CRC over the first 74 bytes (report ID + 73 data bytes)
+        const crc = this.crc32_bt(r.subarray(0, 74));
         r[74] = crc & 0xFF;
         r[75] = (crc >> 8) & 0xFF;
         r[76] = (crc >> 16) & 0xFF;
@@ -330,20 +401,16 @@ export class DualSenseHID {
         return r;
     }
 
+    /** DualSense BT – report 0x31 (78 B with CRC) */
     private buildDs5BtReport(strong: number, weak: number): Uint8Array {
-        // The DualSense Edge BT report is similar to the DS4 BT report, but with
-        // different report ID and structure.
         const r = new Uint8Array(78);
-        r[0] = 0x11;          // Report ID for DualSense Edge BT
-        r[1] = 0xC0;          // Unknown, used by Sony
-        r[2] = 0x20;          // Same as DS4
-        r[3] = 0xF1;          // Motor-only
-        r[4] = 0x04;          // Same as DS4
-        r[6] = weak;          // R-motor
-        r[7] = strong;        // L-motor
-        // Fill in audio & LED fields if needed (r[21]–r[25])
-        // 4 CRC bytes at the end:
-        const crc = this.crc32_bt(r.subarray(0, 74));   // A2-header + report
+        r[0] = 0x31;
+        r[1] = 0x01; // Compatibility vibration flag
+        r[2] = 0x00;
+        r[3] = weak; // Right motor (weak, high-freq)
+        r[4] = strong; // Left motor (strong, low-freq)
+        // Compute CRC over the first 74 bytes (report ID + 73 data bytes)
+        const crc = this.crc32_bt(r.subarray(0, 74));
         r[74] = crc & 0xFF;
         r[75] = (crc >> 8) & 0xFF;
         r[76] = (crc >> 16) & 0xFF;
@@ -356,7 +423,11 @@ export class DualSenseHID {
      */
     public async close(): Promise<void> {
         if (this.device?.opened) {
-            await this.device.close();
+            try {
+                await this.device.close();
+            } catch (error) {
+                console.error('Failed to close HID device:', error);
+            }
         }
         this.device = null;
         this.kind = null;
