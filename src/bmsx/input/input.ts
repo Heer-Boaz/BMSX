@@ -499,15 +499,6 @@ export class Input implements RegisterablePersistent {
 		// Register the input system
 		Registry.instance.register(this);
 
-		// Initialize gamepad states for already connected gamepads
-		const gamepads = navigator.getGamepads();
-		for (let i = 0; i < gamepads.length; i++) {
-			const gamepad = gamepads[i];
-			if (!gamepad || !gamepad.id.toLowerCase().includes('gamepad')) continue;
-
-			this.addPendingGamepadAssignment(gamepad);
-		}
-
 		/**
 		 * Event listener for when a gamepad is connected. Assigns the gamepad to a player and dispatches a player join event.
 		 * @param e The gamepad event.
@@ -543,6 +534,17 @@ export class Input implements RegisterablePersistent {
 				this.removePendingGamepadAssignment(startingGamepadIndex);
 			}
 		}
+
+		// Initialize gamepad states for already connected gamepads
+		// *Must happen after the starting gamepad index is set, if any, to ensure that any related HID device is initialized first based on the gamepad whose input started the game*
+		const gamepads = navigator.getGamepads();
+		for (let i = 0; i < gamepads.length; i++) {
+			const gamepad = gamepads[i];
+			if (!gamepad || !gamepad.id.toLowerCase().includes('gamepad')) continue;
+
+			this.addPendingGamepadAssignment(gamepad);
+		}
+
 	}
 
 	/**

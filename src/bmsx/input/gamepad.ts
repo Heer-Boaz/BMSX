@@ -46,11 +46,23 @@ export class GamepadInput implements InputHandler {
     }
 
     private parseGamepadId(id: string): { vendorId: number; productId: number } | null {
-        const v = /vendor:?\s*([0-9a-f]+)/i.exec(id);
-        const p = /product:?\s*([0-9a-f]+)/i.exec(id);
-        if (!v || !p) return null;
-        const vendorId = parseInt(v[1], 16);
-        const productId = parseInt(p[1], 16);
+        const vendorReg = /(vendor|vid|idvendor)[^0-9a-f]*([0-9a-f]{4})/i;
+        const productReg = /(product|pid|idproduct)[^0-9a-f]*([0-9a-f]{4})/i;
+
+        let vendorStr: string | null = vendorReg.exec(id)?.[2] ?? null;
+        let productStr: string | null = productReg.exec(id)?.[2] ?? null;
+
+        if (!vendorStr || !productStr) {
+            const alt = /([0-9a-f]{4})\W+([0-9a-f]{4})/i.exec(id);
+            if (alt) {
+                vendorStr ??= alt[1];
+                productStr ??= alt[2];
+            }
+        }
+
+        if (!vendorStr || !productStr) return null;
+        const vendorId = parseInt(vendorStr, 16);
+        const productId = parseInt(productStr, 16);
         if (Number.isNaN(vendorId) || Number.isNaN(productId)) return null;
         return { vendorId, productId };
     }

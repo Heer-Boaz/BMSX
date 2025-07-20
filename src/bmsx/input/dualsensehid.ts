@@ -29,6 +29,7 @@ export interface HidRumbleParams {
     duration: number;
 }
 
+
 export class DualSenseHID {
     private device: HIDDevice | null = null;
     private rumbleTimer: number | null = null;
@@ -37,6 +38,29 @@ export class DualSenseHID {
 
     /** Map of gamepad indices to HID devices that are in use */
     private static assignedDevices = new Map<number, HIDDevice>();
+
+    /** Shared lock to avoid overlapping permission prompts */
+    private static pendingRequest: Promise<HIDDevice[]> | null = null;
+
+
+    private static async requestHidPermission(ids?: { vendorId: number; productId: number }): Promise<HIDDevice[]> {
+        if (!DualSenseHID.pendingRequest) {
+            // Pause the game while the browser permission dialog is visible
+            const wasPaused = (global as any).$?.paused ?? false;
+            if (!wasPaused) (global as any).$.paused = true;
+
+            const filters = ids
+                ? [{ vendorId: ids.vendorId, productId: ids.productId }]
+                : ACCEPTED_VENDORS_PRODUCTS.map(p => ({ vendorId: p.vendorId, productId: p.productId }));
+
+            DualSenseHID.pendingRequest = navigator.hid.requestDevice({ filters })
+                .finally(() => {
+                    DualSenseHID.pendingRequest = null;
+                    if (!wasPaused) (global as any).$.paused = false;
+                });
+        }
+        return DualSenseHID.pendingRequest;
+    }
 
     private matchIds(device: HIDDevice, ids: { vendorId: number; productId: number } | null): boolean {
         return !!ids && device.vendorId === ids.vendorId && device.productId === ids.productId;
@@ -63,11 +87,27 @@ export class DualSenseHID {
     }
 
     private parseGamepadId(id: string): { vendorId: number; productId: number } | null {
-        const v = /vendor:?\s*([0-9a-f]+)/i.exec(id);
-        const p = /product:?\s*([0-9a-f]+)/i.exec(id);
-        if (!v || !p) return null;
-        const vendorId = parseInt(v[1], 16);
-        const productId = parseInt(p[1], 16);
+        // Try common "Vendor:054c Product:0df2" format first
+        const vendorReg = /(vendor|vid|idvendor)[^0-9a-f]*([0-9a-f]{4})/i;
+        const productReg = /(product|pid|idproduct)[^0-9a-f]*([0-9a-f]{4})/i;
+
+        let vendorStr: string | null = vendorReg.exec(id)?.[2] ?? null;
+        let productStr: string | null = productReg.exec(id)?.[2] ?? null;
+
+        if (!vendorStr || !productStr) {
+            // Fallback to a generic pattern like "054c-0df2" or "054c:0df2"
+            const alt = /([0-9a-f]{4})\W+([0-9a-f]{4})/i.exec(id);
+            if (alt) {
+                vendorStr ??= alt[1];
+                productStr ??= alt[2];
+            }
+        }
+
+        if (!vendorStr || !productStr) return null;
+
+        const vendorId = parseInt(vendorStr, 16);
+        const productId = parseInt(productStr, 16);
+
         if (Number.isNaN(vendorId) || Number.isNaN(productId)) return null;
         return { vendorId, productId };
     }
@@ -116,10 +156,15 @@ export class DualSenseHID {
         }
 
         this.device = this.device ??
-            known.find(d => d.vendorId === SONY_VID && ACCEPTED_VENDORS_PRODUCTS.some(p => p.productId === d.productId)) ??
-            (await navigator.hid.requestDevice({
-                filters: ACCEPTED_VENDORS_PRODUCTS.map(p => ({ vendorId: p.vendorId, productId: p.productId }))
-            }))?.[0];
+            known.find(d => d.vendorId === SONY_VID && ACCEPTED_VENDORS_PRODUCTS.some(p => p.productId === d.productId));
+
+        if (!this.device) {
+            const requested = await DualSenseHID.requestHidPermission(ids || undefined);
+            if (requested.length) {
+                const used = new Set(DualSenseHID.assignedDevices.values());
+                this.device = requested.find(d => !used.has(d)) ?? requested[0];
+            }
+        }
 
         if (!this.device) {
             console.info('Did not find any recognized controller device.');
