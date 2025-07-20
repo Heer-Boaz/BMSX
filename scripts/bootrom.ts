@@ -86,7 +86,7 @@ const bootrom = {
 	 * @param x - The value to return after the game is started.
 	 * @returns 255 after the game is started.
 	 */
-	async usr(x: number): Promise<number> {
+	usr(x: number): number {
 		const remove = (id: string) => {
 			const element = document.querySelector(id);
 			element.parentElement!.removeChild(element);
@@ -109,7 +109,7 @@ const bootrom = {
 			if (!h406A) throw new Error(`h406A(${x}) is not defined!`);
 			document.getElementById('gamescreen')!.hidden = false;
 			document.getElementById('gamescreen')!.style.display = 'block';
-			await h406A({
+			h406A({
 				rom: bootrom.rom!,
 				sndcontext: bootrom.sndcontext!,
 				gainnode: bootrom.gainnode!,

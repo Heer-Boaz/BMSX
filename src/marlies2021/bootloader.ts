@@ -591,14 +591,15 @@ var _global = window || globalThis;
 _global['h406A'] = (args: BootArgs): void => {
     let _view = new viewclass(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
     _model = new modelclass();
-    new Game({ ...args, model: _model, view: _view });
-    game.view.default_font = new BFont(BitmapId);
+    new Game({ ...args, model: _model, view: _view }).init({ ...args, _view }).then((game) => {
+        game.view.default_font = new BFont(BitmapId);
+        global.game.start();
+        let model = game.model;
+        model.spawn(new yakuzi(), new_vec2(0, 32));
+        model.spawn(new hud(), new_vec2(0, 0));
+        let marlies = new speler();
+        _model.marlies = marlies;
+        model.spawn(marlies, new_vec2(30, 142));
+    });
 
-    global.game.start();
-    let model = game.model;
-    model.spawn(new yakuzi(), new_vec2(0, 32));
-    model.spawn(new hud(), new_vec2(0, 0));
-    let marlies = new speler();
-    _model.marlies = marlies;
-    model.spawn(marlies, new_vec2(30, 142));
 };
