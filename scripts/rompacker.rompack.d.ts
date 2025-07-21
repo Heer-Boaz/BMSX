@@ -9,6 +9,7 @@ interface RomPackerOptions {
 	bootloader_path: string;
 	respath: string;
 	force: boolean;
+	debug: boolean;
 	buildreslist: boolean;
 	deploy: boolean;
 	useTextureAtlas: boolean;

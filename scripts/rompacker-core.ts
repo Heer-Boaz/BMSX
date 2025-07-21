@@ -20,8 +20,8 @@ let GENERATE_AND_USE_TEXTURE_ATLAS = true;
 export const DONT_PACK_IMAGES_WHEN_USING_ATLAS = true;
 export const BOOTROM_TS_FILENAME = 'bootrom.ts';
 export const BOOTROM_JS_FILENAME = 'bootrom.js';
-export const ROM_TS_RELATIVE_PATH = `../scripts/${BOOTROM_TS_FILENAME}`;
-export const ROM_JS_RELATIVE_PATH = `../rom/${BOOTROM_JS_FILENAME}`;
+export const BOOTROM_TS_RELATIVE_PATH = `../scripts/${BOOTROM_TS_FILENAME}`;
+export const BOOTROM_JS_RELATIVE_PATH = `../rom/${BOOTROM_JS_FILENAME}`;
 
 const BOILERPLATE_RESOURCE_ID_BITMAP = `export enum BitmapId {
 	none = 'none',`; // Note: cannot use const enums here, because BFont uses BitmapId as a type (and const enums are not available at runtime)
@@ -100,28 +100,51 @@ export async function getRomManifest(dirPath: string): Promise<RomManifest> {
  * @param {string} bootloader_path - The path to the bootloader file.
  * @returns {Promise<any>} A promise that resolves when the ROM source code has been built and bundled.
  */
-export async function esbuild(romname: string, bootloader_path: string): Promise<void> {
+export async function esbuild(romname: string, bootloader_path: string, debug: boolean): Promise<void> {
     const bootloader_ts_path = `${bootloader_path}/bootloader.ts`;
     try {
-        await build({
-            entryPoints: [bootloader_ts_path], // Entry point for the rompack
-            bundle: true, // Bundle all dependencies into a single file
-            sourcemap: 'inline', // Include inline source maps for debugging
-            sourcesContent: false,
-            outfile: `./rom/${romname}.js`, // Output file for the bundled code
-            platform: 'browser', // Target platform for the bundle
-            target: 'es2020', // Specify the ECMAScript version to target
-            // Specify the ECMAScript version to target
-            loader: { '.glsl': 'text' }, // Handles GLSL files as text
-            plugins: [glsl({
-                minify: true
-            })],
-            define: { 'process.env.NODE_ENV': '"production"' },
-            minify: true,
-            keepNames: true,
-            external: ['node_modules', 'dist', 'rom', 'ts-key-enum'],
-            treeShaking: true,
-        });
+        if (debug) {
+            await build({
+                entryPoints: [bootloader_ts_path], // Entry point for the rompack
+                bundle: true, // Bundle all dependencies into a single file
+                sourcemap: 'inline', // Include inline source maps for debugging
+                sourcesContent: false,
+                outfile: `./rom/${romname}.js`, // Output file for the bundled code
+                platform: 'browser', // Target platform for the bundle
+                target: 'es2020', // Specify the ECMAScript version to target
+                // Specify the ECMAScript version to target
+                loader: { '.glsl': 'text' }, // Handles GLSL files as text
+                plugins: [glsl({
+                    minify: true
+                })],
+                define: { 'process.env.NODE_ENV': '"production"' },
+                minify: true,
+                keepNames: true,
+                external: ['node_modules', 'dist', 'rom', 'ts-key-enum'],
+                treeShaking: true,
+            });
+        }
+        else {
+            await build({
+                entryPoints: [bootloader_ts_path], // Entry point for the rompack
+                bundle: true, // Bundle all dependencies into a single file
+                sourcemap: false,
+                sourcesContent: false,
+                outfile: `./rom/${romname}.js`, // Output file for the bundled code
+                platform: 'browser', // Target platform for the bundle
+                target: 'es2020', // Specify the ECMAScript version to target
+                // Specify the ECMAScript version to target
+                loader: { '.glsl': 'text' }, // Handles GLSL files as text
+                plugins: [glsl({
+                    minify: true
+                })],
+                define: { 'process.env.NODE_ENV': '"production"' },
+                minify: true,
+                keepNames: true,
+                external: ['node_modules', 'dist', 'rom', 'ts-key-enum'],
+                treeShaking: true,
+            });
+        }
         return null;
     } catch (err) {
         throw err;
@@ -150,7 +173,7 @@ export function applyStringReplacements(str: string, replacements: { [key: strin
  * @param {string} short_name - The short name of the game.
  * @returns {Promise<any>} A promise that resolves when the game HTML and manifest files have been built.
  */
-export async function buildGameHtmlAndManifest(rom_name: string, title: string, short_name: string): Promise<any> {
+export async function buildGameHtmlAndManifest(rom_name: string, title: string, short_name: string, debug: boolean): Promise<any> {
     const IMAGE_PATHS = [
         './rom/bmsx.png',
         './rom/d-pad-neutral.png',
@@ -208,13 +231,12 @@ export async function buildGameHtmlAndManifest(rom_name: string, title: string, 
     async function transformHtml(htmlToTransform: string, cssMinified: string, debug: boolean): Promise<string> {
         const imgPrefix = 'data:image/png;base64,';
         const replacements = {
-            '//#romjs': romjs,
+            '//#bootromjs': romjs,
             '//#zipjs': zipjs,
             '/\\*#css\\*/': cssMinified,
             '#title': title,
             '//#debug': `bootrom.debug = ${debug};\n\t\tbootrom.romname = getRomNameFromUrlParameter() ?? '${rom_name}';\n`,
-            '#romname': rom_name,
-            '#outfile': `${rom_name}.rom`,
+            '#outfile': `${rom_name}.${debug ? 'debug.' : ''}rom`,
             '#bmsxurl': `${imgPrefix}${images['./rom/bmsx.png']}`,
             '#d-pad-d_': `${imgPrefix}${images['./rom/d-pad-d.png']}`, // Note: the trailing underscore is used to prevent the replacement of other placeholders
             '#d-pad-l_': `${imgPrefix}${images['./rom/d-pad-l.png']}`, // Note: the trailing underscore is used to prevent the replacement of other placeholders
@@ -252,11 +274,8 @@ export async function buildGameHtmlAndManifest(rom_name: string, title: string, 
                 }
 
                 try {
-                    const transformedHtml = await transformHtml(html, cssMinified, false);
-                    const transformedDebugHtml = await transformHtml(html, cssMinified, true);
-
-                    await writeFile("./dist/game.html", transformedHtml);
-                    await writeFile("./dist/game_debug.html", transformedDebugHtml);
+                    const transformedHtml = await transformHtml(html, cssMinified, debug);
+                    await writeFile(`./dist/game${debug ? '_debug' : ''}.html`, transformedHtml);
 
                     // Update the manifest.json-file that is used for app-versions of the webpage
                     const manifest = (await readFile("./rom/manifest.json", 'utf8')).replace('#title', title).replace('#short_name', short_name);
@@ -816,10 +835,11 @@ export async function createAtlasses(resources: Resource[]) {
 export async function finalizeRompack(
     assetList: RomAsset[],
     rom_name: string,
+    debug: boolean
 ) {
     // Capture resource buffers in the order as given by the assetList
     const buffers: Buffer[] = [];
-    const outfile = `${rom_name}.rom`; // Use the provided rom_name as the output file name
+    const outfile = `${rom_name}${debug ? '.debug' : ''}.rom`; // Use the provided rom_name as the output file name
     let offset = 0; // Offset for the next buffer to be added
 
     // First write the romlabel buffer if it exists and remove it from the assetList
@@ -877,7 +897,7 @@ export async function finalizeRompack(
     const all = Buffer.concat(buffers);
     const zipped = zip(all);
     await writeFile(`./dist/${outfile}`, Buffer.concat([romlabel_buffer ?? Buffer.alloc(0), zipped]));
-    await writeFile("./rom/_ignore/romresources.json", JSON.stringify(assetList, null, 2));
+    await writeFile('./rom/_ignore/romresources.json', JSON.stringify(assetList, null, 2));
 }
 
 export async function deployToServer(rom_name: string, title: string) {
@@ -892,9 +912,9 @@ export async function deployToServer(rom_name: string, title: string) {
  * @returns {Promise<void>} A promise that resolves once the compilation process is complete
  *                         or if no action is needed.
  */
-export async function buildBootromScriptIfNewer(): Promise<void> {
-    const romTsPath = join(__dirname, ROM_TS_RELATIVE_PATH);
-    const romJsPath = join(__dirname, ROM_JS_RELATIVE_PATH);
+export async function buildBootromScriptIfNewer(debug: boolean, forceBuild: boolean): Promise<void> {
+    const romTsPath = join(__dirname, BOOTROM_TS_RELATIVE_PATH);
+    const romJsPath = join(__dirname, BOOTROM_JS_RELATIVE_PATH);
 
     try {
         await access(romTsPath);
@@ -911,18 +931,24 @@ export async function buildBootromScriptIfNewer(): Promise<void> {
     }
     catch { } // Ignore error if rom.js does not exist yet
 
-    if (!romJsStats || romTsStats.mtime > romJsStats.mtime) {
+    if (!romJsStats || romTsStats.mtime > romJsStats.mtime || forceBuild) {
         try {
-            await build({
+            let options: any = {
                 entryPoints: [romTsPath],
                 bundle: true,
-                minify: true,
-                sourcemap: false,
+                sourcesContent: false,
                 platform: 'browser',
                 target: 'es2020',
                 format: 'iife',
+                minify: true,
+                keepNames: true,
                 outfile: romJsPath,
-            });
+            };
+            if (debug) {
+                // In debug mode, we want to keep the source maps for easier debugging
+                options = { ...options, sourcemap: 'inline' }; // *We MUST do it like this, because 'sourcemap' is a flag and setting `sourcemap` to `false` still generates sourcemaps!*
+            }
+            await build(options);
         } catch (e) {
             throw new Error(`Error while compiling "${BOOTROM_TS_FILENAME}" with esbuild: ${e?.message ?? e} `);
         }

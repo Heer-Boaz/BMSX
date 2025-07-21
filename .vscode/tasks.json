@@ -3,23 +3,85 @@
 	// "_runner": "terminal",
 	"tasks": [
 		{
-			"label": "build game + all deps",
-			"detail": "Build/run all deps for creating ROM + resources",
-			"group": "build",
-			"dependsOrder": "sequence",
-			"dependsOn": [
-				"output romtobuild",
-				// "build rom.js",
-				// "build rompacker.js",
-				"pack rom resources (resourceids.ts)",
-				"Forcefully build the game"
+			"label": "build the game DEBUG-MODE",
+			"detail": "Runs rompacker.js to create the DEBUG ROM + resources. Doesn't run dependent tasks for building rom.js & rompacker.js!",
+			"type": "shell",
+			"command": "npx",
+			"args": [
+				"tsx",
+				"${workspaceFolder}/scripts/rompacker.ts",
+				"-romname",
+				"${input:romtobuild}",
+				"-bootloaderpath",
+				"src/${input:romtobuild}",
+				"-respath",
+				"./src/${input:romtobuild}/res",
+				"-title",
+				"${input:romtobuild}",
+				"--debug",
+				"--nodeploy"
 			],
 			"problemMatcher": [
 				"$node-sass",
 				"$tsc"
 			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"dependsOrder": "sequence",
+			"dependsOn": [
+				"output romtobuild"
+			],
 			"icon": {
-				"id": "history",
+				"id": "game",
+				"color": "terminal.ansiGreen"
+			},
+			"presentation": {
+				"echo": false,
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared",
+				"showReuseMessage": false,
+				"clear": true,
+				"revealProblems": "onProblem",
+				"group": "ROMPACKER"
+			}
+		},
+		{
+			"label": "Forcefully build the game DEBUG-MODE",
+			"detail": "Runs rompacker.js to create the DEBUG ROM + resources. Doesn't run dependent tasks for building rom.js & rompacker.js!",
+			"type": "shell",
+			"command": "npx",
+			"args": [
+				"tsx",
+				"${workspaceFolder}/scripts/rompacker.ts",
+				"-romname",
+				"${input:romtobuild}",
+				"-bootloaderpath",
+				"src/${input:romtobuild}",
+				"-respath",
+				"./src/${input:romtobuild}/res",
+				"-title",
+				"${input:romtobuild}",
+				"--debug",
+				"--nodeploy",
+				"--force",
+			],
+			"problemMatcher": [
+				"$node-sass",
+				"$tsc"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": false
+			},
+			"dependsOrder": "sequence",
+			"dependsOn": [
+				"output romtobuild"
+			],
+			"icon": {
+				"id": "sync",
 				"color": "terminal.ansiRed"
 			},
 			"presentation": {
@@ -34,8 +96,8 @@
 			}
 		},
 		{
-			"label": "build the game",
-			"detail": "Runs rompacker.js to create the ROM + resources. Doesn't run dependent tasks for building rom.js & rompacker.js!",
+			"label": "build the game NON-DEBUG",
+			"detail": "Runs rompacker.js to create the NON-DEBUG ROM + resources. Doesn't run dependent tasks for building rom.js & rompacker.js!",
 			"type": "shell",
 			"command": "npx",
 			"args": [
@@ -79,8 +141,8 @@
 			}
 		},
 		{
-			"label": "Forcefully build the game",
-			"detail": "Runs rompacker.js to create the ROM + resources. Doesn't run dependent tasks for building rom.js & rompacker.js!",
+			"label": "Forcefully build the game NON-DEBUG",
+			"detail": "Runs rompacker.js to create the NON-DEBUG ROM + resources. Doesn't run dependent tasks for building rom.js & rompacker.js!",
 			"type": "shell",
 			"command": "npx",
 			"args": [
@@ -95,8 +157,6 @@
 				"-title",
 				"${input:romtobuild}",
 				"--nodeploy",
-				// "--textureatlas",
-				// "no",
 				"--force",
 			],
 			"problemMatcher": [
@@ -161,107 +221,6 @@
 				"group": "ROMPACKER"
 			}
 		},
-		// {
-		// 	"label": "build rom.js",
-		// 	"detail": "Generate shared script for boot and load/start ROM",
-		// 	"type": "shell",
-		// 	"command": "npx",
-		// 	"args": [
-		// 		"tsgo",
-		// 		"${workspaceFolder}/scripts/bootrom.ts",
-		// 		"--removeComments",
-		// 		"-m",
-		// 		"commonjs",
-		// 		"-t",
-		// 		"ES2017",
-		// 		"--outDir",
-		// 		"${workspaceFolder}/rom"
-		// 	],
-		// 	"problemMatcher": [
-		// 		"$tsc"
-		// 	],
-		// 	"icon": {
-		// 		"id": "library",
-		// 		"color": "terminal.ansiBlue"
-		// 	},
-		// 	"presentation": {
-		// 		"echo": true,
-		// 		"reveal": "always",
-		// 		"focus": false,
-		// 		"panel": "shared",
-		// 		"showReuseMessage": false,
-		// 		"close": true,
-		// 		"clear": true,
-		// 		"group": "ROMPACKER"
-		// 	},
-		// 	"group": "build"
-		// },
-		// {
-		// 	"label": "build rompacker.js",
-		// 	"detail": "Generates script used for creating & deploying the ROM image",
-		// 	"type": "shell",
-		// 	"command": "npx",
-		// 	"args": [
-		// 		"tsgo",
-		// 		"${workspaceFolder}/scripts/rompacker.ts",
-		// 		"--removeComments",
-		// 		"--target",
-		// 		"ES5",
-		// 		"--outDir",
-		// 		"${workspaceFolder}/rom"
-		// 	],
-		// 	"problemMatcher": [
-		// 		"$tsc"
-		// 	],
-		// 	"group": "build",
-		// 	"icon": {
-		// 		"id": "symbol-property",
-		// 		"color": "terminal.ansiMagenta"
-		// 	},
-		// 	"presentation": {
-		// 		"echo": true,
-		// 		"reveal": "always",
-		// 		"focus": false,
-		// 		"panel": "shared",
-		// 		"showReuseMessage": false,
-		// 		"close": false,
-		// 		"clear": false,
-		// 		"group": "ROMPACKER"
-		// 	}
-		// },
-		{
-			"label": "build msxsound.js",
-			"detail": "Generates script used for PSG emulator",
-			"type": "shell",
-			"command": "npx",
-			"args": [
-				"tsgo",
-				"${workspaceFolder}/src/bmsx/msxsound2.ts",
-				"--removeComments",
-				"--target",
-				"ES5",
-				// "--outDir",
-				// "${workspaceFolder}/rom"
-			],
-			"problemMatcher": [
-				"$tsc"
-			],
-			"group": "build",
-			"icon": {
-				"id": "symbol-module",
-				"color": "terminal.ansiMagenta"
-			},
-			"presentation": {
-				"echo": true,
-				"reveal": "always",
-				"focus": false,
-				"panel": "shared",
-				"showReuseMessage": false,
-				"close": false,
-				"clear": true,
-				"group": "MSXSOUND"
-			}
-		},
 		{
 			"label": "output romtobuild",
 			"type": "shell",
@@ -287,22 +246,6 @@
 			},
 			"problemMatcher": []
 		},
-		{
-			"label": "Watch!",
-			"type": "typescript",
-			"tsconfig": "tsconfig.json",
-			"problemMatcher": [
-				"$tsc"
-			],
-			"icon": {
-				"id": "eye-watch",
-				"color": "terminal.ansiWhite"
-			},
-			"group": {
-				"kind": "build",
-				"isDefault": false
-			}
-		}
 	],
 	"inputs": [
 		{

@@ -17,7 +17,7 @@ function getParamOrEnv(args: string[], flag: string, envVar: string, fallback: s
 
 function parseOptions(args: string[]): RomPackerOptions {
 	// Check for unrecognized arguments
-	const knownArgs = ['-romname', '-title', '-bootloaderpath', '-respath', '--force', '--buildreslist', '--nodeploy', '--textureatlas'];
+	const knownArgs = ['-romname', '-title', '-bootloaderpath', '-respath', '--debug', '--force', '--buildreslist', '--nodeploy', '--textureatlas'];
 	const unrecognizedArgs = args.filter(arg => arg.startsWith('-') && !knownArgs.includes(arg));
 	if (unrecognizedArgs.length > 0) {
 		throw new Error(`Unrecognized argument(s): ${unrecognizedArgs.join(', ')}`);
@@ -27,13 +27,14 @@ function parseOptions(args: string[]): RomPackerOptions {
 	if (args.includes('-h') || args.includes('--help')) {
 		writeOut(`Usage: <command> [options]`, 'warning');
 		writeOut(`Options:`, 'warning');
-		writeOut(`  -romname <name>         Name of the ROM`, 'warning');
+		writeOut(`  -romname <name>        Name of the ROM`, 'warning');
 		writeOut(`  -title <title>         Title of the ROM`, 'warning');
 		writeOut(`  -bootloaderpath <path> Path to the bootloader`, 'warning');
 		writeOut(`  -respath <path>        Resource path`, 'warning');
+		writeOut(`  --debug                Show this help message`, 'warning');
 		writeOut(`  --force                Force the compilation and build of the rompack`, 'warning');
 		writeOut(`  --buildreslist         Build resource list`, 'warning');
-		writeOut(`  --nodeploy         Skip deployment`, 'warning');
+		writeOut(`  --nodeploy             Skip deployment`, 'warning');
 		writeOut(`  --textureatlas <yes|no>  Enable or disable texture atlas (default: yes)`, 'warning');
 		process.exit(0);
 	}
@@ -51,6 +52,7 @@ function parseOptions(args: string[]): RomPackerOptions {
 	const bootloader_path = getParamOrEnv(args, '-bootloaderpath', 'BOOTLOADER_PATH', rom_name ? `./src/${rom_name}` : null);
 	const respath = getParamOrEnv(args, '-respath', 'RES_PATH', rom_name ? `./src/${rom_name}/res` : null);
 	const force = args.includes('--force');
+	const debug = args.includes('--debug');
 	const buildreslist = args.includes('--buildreslist');
 	const deploy = !args.includes('--nodeploy');
 
@@ -60,6 +62,7 @@ function parseOptions(args: string[]): RomPackerOptions {
 		bootloader_path,
 		respath,
 		force,
+		debug,
 		buildreslist,
 		deploy,
 		useTextureAtlas
@@ -170,7 +173,7 @@ async function main() {
 		writeOut(_colors.brightGreen.bold('|                          BMSX ROMPACKER DOOR BOAZ©®™                           |\n'));
 		writeOut(_colors.brightGreen.bold('┗————————————————————————————————————————————————————————————————————————————————┛\n'));
 		const args = process.argv.slice(2);
-		let { title, rom_name, bootloader_path, respath, force, buildreslist, deploy, useTextureAtlas } = parseOptions(args);
+		let { title, rom_name, bootloader_path, respath, force, debug, buildreslist, deploy, useTextureAtlas } = parseOptions(args);
 		GENERATE_AND_USE_TEXTURE_ATLAS = useTextureAtlas;
 
 		// Define common assets path
@@ -224,6 +227,12 @@ async function main() {
 		if (!deploy) writeOut(`Note: Deploy to FTP server disabled via ${_colors.brightRed.bold('--nodeploy')} \n`);
 		writeOut(`Starting ROM packing and deployment process for ROM ${_colors.brightBlue.bold(`${rom_name}`)}...\n`);
 		writeOut(`Using resources from "${respath}" and common resources from "${commonResPath}"...\n`);
+		if (debug) {
+			writeOut(`${_colors.cyan.bold('Building DEBUG version of rompack.')}.\n`);
+		}
+		else {
+			writeOut(`${_colors.cyan.bold('Building NON-DEBUG version of rompack.')}.\n`);
+		}
 		progress.showInitial();
 		await progress.taskCompleted(); // Need to complete the initial task as it will be triggered twice or so
 
@@ -255,7 +264,7 @@ async function main() {
 
 			// #endregion
 			if (rebuildRequired) {
-				await esbuild(rom_name, bootloader_path);
+				await esbuild(rom_name, bootloader_path, debug);
 				await progress?.taskCompleted();
 				const romResMetaList = await getResMetaList([respath, commonResPath], rom_name);
 				await progress?.taskCompleted();
@@ -270,12 +279,12 @@ async function main() {
 				const romAssets = generateRomAssets(resources);
 				await progress?.taskCompleted();
 
-				await finalizeRompack(romAssets, rom_name);
+				await finalizeRompack(romAssets, rom_name, debug);
 				await progress?.taskCompleted();
 			}
-			await buildBootromScriptIfNewer();
+			await buildBootromScriptIfNewer(force, debug);
 			await progress?.taskCompleted();
-			await buildGameHtmlAndManifest(rom_name, title, short_name);
+			await buildGameHtmlAndManifest(rom_name, title, short_name, debug);
 			await progress?.taskCompleted();
 			if (deploy) {
 				await deployToServer(rom_name, title);
