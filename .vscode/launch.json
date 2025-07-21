@@ -16,6 +16,8 @@
 			"webRoot": "${workspaceFolder}",
 			"sourceMaps": true,
 			"sourceMapPathOverrides": {
+				"file:///B:/BMSX/scripts/*": "${workspaceFolder}/scripts/*",
+				// "../scripts/*": "${workspaceFolder}/scripts/*",
 				"*": "${workspaceFolder}/src/*"
 			},
 			"showAsyncStacks": true,
