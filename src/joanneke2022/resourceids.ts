@@ -1,6 +1,5 @@
 export enum BitmapId {
 	none = 'none',
-
 	blackpixel = 'blackpixel',  
 	break1 = 'break1',  
 	break2 = 'break2',  
@@ -85,14 +84,22 @@ export enum BitmapId {
 	slijpschijf2 = 'slijpschijf2',  
 	slijpschijf3 = 'slijpschijf3',  
 	slijpschijf4 = 'slijpschijf4',  
+	joystick1 = 'joystick1',  
+	joystick2 = 'joystick2',  
+	joystick3 = 'joystick3',  
+	joystick4 = 'joystick4',  
+	joystick_none = 'joystick_none',  
 	whitepixel = 'whitepixel',  
 	_atlas = '_atlas',  
 }
 
 export enum AudioId {
 	none = 'none',
-
 	fout = 'fout',  
 	init = 'init',  
 	selectie = 'selectie',  
+}
+
+export enum DataId {
+	none = 'none',
 }

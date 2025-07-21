@@ -631,13 +631,13 @@ html {
 	display: block;
 }
 
-/* #msx.fade-in {
+#msx.fade-in {
 	animation: fade-in 5s;
 }
 
 #msx.fade-out {
 	animation: fade-out 5s;
-} */
+}
 
 @keyframes enter {
 	from {
