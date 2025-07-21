@@ -168,25 +168,52 @@ const bootrom = {
 
 		return new Promise((resolve, reject) => {
 			let loadedRomPack: RomPack | null = null;
-			let romlabel_bloburl: string = undefined;
+
+			function replaceBMSXImgWithRomLabel(romlabel_bloburl: string) {
+				const msx = document.querySelector('#msx') as HTMLImageElement;
+
+				// Unhide the image if it is hidden
+				msx.hidden = false;
+
+				// Remove any previous animationend handler
+				msx.onanimationend = null;
+
+				// If already faded out, set src immediately
+				if (msx.classList.contains('fade-out')) {
+					msx.src = romlabel_bloburl;
+					msx.className = 'fade-in';
+					return;
+				}
+
+				// Otherwise, fade out, then swap image and fade in
+				msx.className = 'fade-out';
+				msx.onanimationend = (ev: AnimationEvent) => {
+					const img = ev.target as HTMLImageElement;
+					img.src = romlabel_bloburl;
+					img.className = 'fade-in';
+					img.onanimationend = null; // Clean up`
+				};
+			}
 
 			fetchRom()
 				.then((response_array: ArrayBuffer) => getZippedRomAndRomLabelFromBlob(response_array))
 				.then((ziprom_and_label: { zipped_rom: ArrayBuffer, romlabel: string }) => {
-					romlabel_bloburl = ziprom_and_label.romlabel;
+					if (ziprom_and_label.romlabel) {
+						if (ziprom_and_label.romlabel) {
+							replaceBMSXImgWithRomLabel(ziprom_and_label.romlabel);
+						}
+					}
 					return pako.inflate(ziprom_and_label.zipped_rom).buffer;
-					// return decompress(ziprom_and_label.zipped_rom);
-					// return pako.inflate(ziprom_and_label.zipped_rom).buffer;
 				})
 				.then(rom => loadResources(rom))
 				.then((loadResult: any) => {
 					loadedRomPack = loadResult;
-					awaitBootComplete();
+					return awaitBootComplete().then(() => {  // Return the promise and chain the replace after animation ends
+					});
 				})
 				.then(() => loadScript(loadedRomPack, bootrom.romname))
 				.then(() => {
 					setLoaderText('Press any key, button or touch screen to start...');
-					// setClassForLoader('');
 					return awaitPressedAnyKeyPromise();
 				})
 				.then(() => resolve(loadedRomPack))
@@ -195,17 +222,6 @@ const bootrom = {
 					reject(err);
 				});
 		});
-		// if (romlabel_bloburl) {
-		// 	let msx = document.querySelector('#msx') as HTMLElement;
-		// 	debugger;
-		// 	delete msx.onanimationend;
-		// 	msx.className = 'fade-out';
-		// 	msx.onanimationend = (ev: AnimationEvent) => {
-		// 		let msx = ev.target as HTMLImageElement;
-		// 		msx.src = romlabel_bloburl;
-		// 		msx.className = 'fade-in';
-		// 	};
-		// }
 	},
 
 	outputError(errormsg: string) {
