@@ -1,7 +1,11 @@
 /**
- * Renders a buffer bar where we only do detailed (fractional) rendering
- * at the very first and last cell of each region, and full blocks (█)
- * in between. Overlapping regions are handled by priority (first in array wins).
+ * Renders a buffer bar with fractional rendering at the boundaries and full blocks in the interior.
+ * Overlapping regions are handled by priority, where the first region in the array takes precedence.
+ *
+ * @param unfilteredRegions - Array of regions to render, each with a start, end, color tag, and label.
+ * @param totalSize - The total size of the buffer being represented.
+ * @param barLength - The length of the bar in characters.
+ * @returns A string representing the rendered buffer bar with color tags and labels.
  */
 export function renderBufferBar(
     unfilteredRegions: Array<{ start: number; end: number; colorTag: string, label: string }>,
@@ -229,7 +233,16 @@ export function renderSummaryBar(
     return renderBufferBar(regions, totalSize, barLength);
 }
 
-// Extracted function for pixel-perfect ASCII art rendering
+/**
+ * Generates pixel-perfect ASCII art from an image buffer.
+ * Each pixel is represented by a colored block character, ensuring high fidelity to the original image.
+ * Transparent pixels are rendered as spaces, while opaque pixels are rendered with their respective colors.
+ *
+ * @param imgBuf - The image buffer (RGBA format, Buffer or Uint8Array).
+ * @param imgW - The width of the image in pixels.
+ * @param imgH - The height of the image in pixels.
+ * @returns The generated ASCII art string using colored block characters.
+ */
 export function generatePixelPerfectAsciiArt(
     imgBuf: Buffer | Uint8Array,
     imgW: number,
@@ -254,6 +267,22 @@ export function generatePixelPerfectAsciiArt(
     return asciiArt;
 }
 
+/**
+ * Generates a braille-based ASCII art representation of an image buffer.
+ * Each braille character represents a 2x4 pixel block, allowing for high-density rendering.
+ * The function supports optional edge detection and dithering for improved visual quality.
+ *
+ * @param imgBuf - The image buffer (RGBA, Buffer or Uint8Array).
+ * @param imgW - The width of the image in pixels.
+ * @param imgH - The height of the image in pixels.
+ * @param maxArtWidth - The maximum width of the output ASCII art in characters.
+ * @param opts - Optional rendering options:
+ *   - useEdgeDetection: Whether to apply edge detection (default: true).
+ *   - useDithering: Whether to apply dithering (default: false).
+ *   - strictBgDist: Background color distance threshold (default: 32²).
+ *   - deltaLum: Luminance difference threshold for dot placement (default: 30).
+ * @returns The generated ASCII art string using braille characters.
+ */
 export function generateBrailleAsciiArt(
     imgBuf: Buffer | Uint8Array,
     imgW: number,
@@ -267,6 +296,25 @@ export function generateBrailleAsciiArt(
     } = {}
 ): string {
 
+    // --- Scaling logic ---
+    // Each braille char is 2x4 pixels, so max output width in chars is (imgW / 2)
+    const maxOutW = maxArtWidth - 8;
+    let scale = 1;
+    if (Math.floor(imgW / 2) > maxOutW) {
+        scale = maxOutW / Math.floor(imgW / 2);
+    }
+
+    let scaledBuf = imgBuf;
+    let scaledW = imgW;
+    let scaledH = imgH;
+
+    if (scale < 1) {
+        // Downscale image using nearest-neighbor
+        scaledW = Math.max(2, Math.floor(imgW * scale));
+        scaledH = Math.max(4, Math.floor(imgH * scale));
+        scaledBuf = downscaleImageNN(imgBuf, imgW, imgH, scaledW, scaledH);
+    }
+
     const useEdge = opts.useEdgeDetection ?? true;
     const useDith = opts.useDithering ?? true;
     const BG_DIST = opts.strictBgDist ?? 32 * 32;
@@ -274,17 +322,17 @@ export function generateBrailleAsciiArt(
 
     const BRAILLE_BASE = 0x2800;
     const brailleMap = [[0, 1, 2, 5], [3, 4, 6, 7]];
-    const outW = Math.min(maxArtWidth - 8, Math.floor(imgW / 2));
-    const outH = Math.max(Math.ceil(imgH / 4), Math.floor(outW * (imgH / imgW) / 2)) + 1;
+    const outW = Math.min(maxArtWidth - 8, Math.floor(scaledW / 2));
+    const outH = Math.max(Math.ceil(scaledH / 4), Math.floor(outW * (scaledH / scaledW) / 2)) + 1;
 
     /* ---------- gamma-correcte luminantie-buffer ---------- */
-    const linY = new Float32Array(imgW * imgH);
+    const linY = new Float32Array(scaledW * scaledH);
     {
         let p = 0;
-        for (let y = 0; y < imgH; ++y) {
-            for (let x = 0; x < imgW; ++x, ++p) {
+        for (let y = 0; y < scaledH; ++y) {
+            for (let x = 0; x < scaledW; ++x, ++p) {
                 const i4 = (p * 4);
-                const r = imgBuf[i4], g = imgBuf[i4 + 1], b = imgBuf[i4 + 2];
+                const r = scaledBuf[i4], g = scaledBuf[i4 + 1], b = scaledBuf[i4 + 2];
                 linY[p] = 255 * (0.2126 * srgb2lin(r) + 0.7152 * srgb2lin(g) + 0.0722 * srgb2lin(b));
             }
         }
@@ -292,10 +340,10 @@ export function generateBrailleAsciiArt(
 
     /* ---------- global dominant kleur ---------- */
     const hist = new Map<number, number>();
-    for (let p = 0; p < imgW * imgH; ++p) {
-        const i4 = (((p / imgW | 0)) * imgW) + (p % imgW) << 2;
-        if (!imgBuf[i4 + 3]) continue;                       // transparant
-        const key = rgbToKey(imgBuf[i4], imgBuf[i4 + 1], imgBuf[i4 + 2]);
+    for (let p = 0; p < scaledW * scaledH; ++p) {
+        const i4 = (((p / scaledW | 0)) * scaledW) + (p % scaledW) << 2;
+        if (!scaledBuf[i4 + 3]) continue;                       // transparant
+        const key = rgbToKey(scaledBuf[i4], scaledBuf[i4 + 1], scaledBuf[i4 + 2]);
         hist.set(key, (hist.get(key) ?? 0) + 1);
     }
     let bgKey = 0, bgCnt = 0;
@@ -305,7 +353,7 @@ export function generateBrailleAsciiArt(
     const bgLum = 255 * (0.2126 * srgb2lin(bgR) + 0.7152 * srgb2lin(bgG) + 0.0722 * srgb2lin(bgB));
 
     /* ---------- dither buffer ---------- */
-    const err = useDith ? new Float32Array(imgW * imgH) : null;
+    const err = useDith ? new Float32Array(scaledW * scaledH) : null;
 
     /* ---------- render loop ---------- */
     let asciiArt = '';
@@ -320,11 +368,11 @@ export function generateBrailleAsciiArt(
 
             for (let dy = 0; dy < 4; ++dy) {
                 for (let dx = 0; dx < 2; ++dx) {
-                    const px = Math.min(imgW - 1, cx * 2 + dx);
-                    const py = Math.min(imgH - 1, cy * 4 + dy);
-                    const p = py * imgW + px;
+                    const px = Math.min(scaledW - 1, cx * 2 + dx);
+                    const py = Math.min(scaledH - 1, cy * 4 + dy);
+                    const p = py * scaledW + px;
                     const idx4 = (p * 4);
-                    const r = imgBuf[idx4], g = imgBuf[idx4 + 1], b = imgBuf[idx4 + 2];
+                    const r = scaledBuf[idx4], g = scaledBuf[idx4 + 1], b = scaledBuf[idx4 + 2];
 
                     let yLin = linY[p];
                     const nearBg = colorDistSq(r, g, b, bgR, bgG, bgB) < BG_DIST;
@@ -333,7 +381,7 @@ export function generateBrailleAsciiArt(
 
                     /* edge-aware Δ-drempel (trekt Δ iets naar beneden op randen) */
                     let deltaThr = DELTA;
-                    if (useEdge) deltaThr = Math.max(10, DELTA - 0.2 * sobelAt(linY, imgW, imgH, px, py));
+                    if (useEdge) deltaThr = Math.max(10, DELTA - 0.2 * sobelAt(linY, scaledW, scaledH, px, py));
 
                     const lumDiff = Math.abs(yLin - bgLum);
                     const dotSet = !nearBg && lumDiff >= deltaThr;
@@ -348,7 +396,7 @@ export function generateBrailleAsciiArt(
 
                     if (ditherThisPixel && err) {
                         const target = dotSet ? 0 : 255;
-                        distributeError(err, yLin - target, p, imgW, imgH);
+                        distributeError(err, yLin - target, p, scaledW, scaledH);
                     }
                 }
             }
@@ -370,16 +418,129 @@ export function generateBrailleAsciiArt(
     return asciiArt;
 }
 
-function srgb2lin(v: number) { const s = v / 255; return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; }
+/**
+ * Downscales an image using nearest-neighbor interpolation.
+ * This method reduces the dimensions of the image while preserving pixel colors.
+ *
+ * @param src - The source image buffer (RGBA format, Buffer or Uint8Array).
+ * @param srcW - The width of the source image in pixels.
+ * @param srcH - The height of the source image in pixels.
+ * @param dstW - The desired width of the downscaled image in pixels.
+ * @param dstH - The desired height of the downscaled image in pixels.
+ * @returns A new Uint8Array containing the downscaled image in RGBA format.
+ */
+function downscaleImageNN(
+    src: Buffer | Uint8Array,
+    srcW: number,
+    srcH: number,
+    dstW: number,
+    dstH: number
+): Uint8Array {
+    const dst = new Uint8Array(dstW * dstH * 4);
+    for (let y = 0; y < dstH; ++y) {
+        const sy = Math.floor(y * srcH / dstH);
+        for (let x = 0; x < dstW; ++x) {
+            const sx = Math.floor(x * srcW / dstW);
+            const srcIdx = (sy * srcW + sx) * 4;
+            const dstIdx = (y * dstW + x) * 4;
+            dst[dstIdx] = src[srcIdx];
+            dst[dstIdx + 1] = src[srcIdx + 1];
+            dst[dstIdx + 2] = src[srcIdx + 2];
+            dst[dstIdx + 3] = src[srcIdx + 3];
+        }
+    }
+    return dst;
+}
+
+/**
+ * Converts an sRGB color component to linear color space.
+ * This function applies gamma correction to transform the sRGB value
+ * into a linear representation suitable for calculations.
+ *
+ * @param v - The sRGB color component (0-255).
+ * @returns The linear color space value (0-1).
+ */
+function srgb2lin(v: number) {
+    const s = v / 255;
+    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+}
+
+/**
+ * Converts a numeric value to a two-digit hexadecimal string.
+ * The value is clamped between 0 and 255 before conversion.
+ *
+ * @param v - The numeric value to convert (expected range: 0-255).
+ * @returns A two-digit hexadecimal string representing the value.
+ */
 function hex(v: number) { return Math.round(clamp(v, 0, 255)).toString(16).padStart(2, '0'); }
+
+/**
+ * Clamps a value between a lower and upper bound.
+ * If the value is less than the lower bound, the lower bound is returned.
+ * If the value is greater than the upper bound, the upper bound is returned.
+ * Otherwise, the value itself is returned.
+ *
+ * @param x - The value to clamp.
+ * @param l - The lower bound.
+ * @param h - The upper bound.
+ * @returns The clamped value.
+ */
 function clamp(x: number, l: number, h: number) { return x < l ? l : x > h ? h : x; }
+
+/**
+ * Converts RGB color components into a single integer key.
+ * This key can be used for efficient color comparisons or as a map key.
+ *
+ * @param r - Red component of the color (0-255).
+ * @param g - Green component of the color (0-255).
+ * @param b - Blue component of the color (0-255).
+ * @returns A 24-bit integer representing the combined RGB color.
+ */
 function rgbToKey(r: number, g: number, b: number) { return (r << 16) | (g << 8) | b; }
+
+/**
+ * Converts a 24-bit integer color key into a hexadecimal color string.
+ * The resulting string is in the format `#RRGGBB`, where `RR`, `GG`, and `BB`
+ * are the hexadecimal representations of the red, green, and blue components.
+ *
+ * @param k - The 24-bit integer color key, where:
+ *   - Bits 16-23 represent the red component.
+ *   - Bits 8-15 represent the green component.
+ *   - Bits 0-7 represent the blue component.
+ * @returns A string representing the color in hexadecimal format.
+ */
 function keyToHex(k: number) { return `#${(k >>> 16 & 0xff).toString(16).padStart(2, '0')}${(k >>> 8 & 0xff).toString(16).padStart(2, '0')}${(k & 0xff).toString(16).padStart(2, '0')}`; }
+
+/**
+ * Calculates the squared Euclidean distance between two RGB colors.
+ * This function is useful for comparing color similarity or detecting
+ * differences between colors in a computationally efficient manner.
+ *
+ * @param r1 - Red component of the first color (0-255).
+ * @param g1 - Green component of the first color (0-255).
+ * @param b1 - Blue component of the first color (0-255).
+ * @param r2 - Red component of the second color (0-255).
+ * @param g2 - Green component of the second color (0-255).
+ * @param b2 - Blue component of the second color (0-255).
+ * @returns The squared distance between the two colors.
+ */
 function colorDistSq(r1: number, g1: number, b1: number, r2: number, g2: number, b2: number) {
     const dr = r1 - r2, dg = g1 - g2, db = b1 - b2;
     return dr * dr + dg * dg + db * db;
 }
 
+/**
+ * Computes the Sobel gradient magnitude at a specific pixel in a grayscale buffer.
+ * The Sobel operator is used for edge detection by calculating the gradient in both
+ * horizontal and vertical directions.
+ *
+ * @param buf - The grayscale buffer as a Float32Array, where each value represents luminance.
+ * @param w - The width of the image in pixels.
+ * @param h - The height of the image in pixels.
+ * @param x - The x-coordinate of the pixel.
+ * @param y - The y-coordinate of the pixel.
+ * @returns The gradient magnitude at the specified pixel.
+ */
 function sobelAt(buf: Float32Array, w: number, h: number, x: number, y: number): number {
     const xm1 = Math.max(0, x - 1), xp1 = Math.min(w - 1, x + 1);
     const ym1 = Math.max(0, y - 1), yp1 = Math.min(h - 1, y + 1);
@@ -391,6 +552,17 @@ function sobelAt(buf: Float32Array, w: number, h: number, x: number, y: number):
     return Math.sqrt(gx * gx + gy * gy);
 }
 
+/**
+ * Distributes the quantization error to neighboring pixels in a dithering process.
+ * This function implements Floyd-Steinberg dithering, ensuring smoother transitions
+ * between pixel values by propagating the error to adjacent pixels.
+ *
+ * @param buf - The buffer containing the error values for each pixel.
+ * @param e - The quantization error to distribute.
+ * @param idx - The index of the current pixel in the buffer.
+ * @param w - The width of the image in pixels.
+ * @param h - The height of the image in pixels.
+ */
 function distributeError(buf: Float32Array, e: number, idx: number, w: number, h: number) {
     const x = idx % w, y = Math.floor(idx / w);
     if (x + 1 < w) buf[idx + 1] += e * 7 / 16;
@@ -399,6 +571,11 @@ function distributeError(buf: Float32Array, e: number, idx: number, w: number, h
     if (x + 1 < w && y + 1 < h) buf[idx + w + 1] += e * 1 / 16;
 }
 
+/**
+ * Represents metadata extracted from a RIFF-WAVE audio file.
+ * Provides details about the audio format, including bit depth, number of channels,
+ * sample rate, and the location of the audio data within the file.
+ */
 interface WavInfo {
     bits: 8 | 16 | 24 | 32;
     channels: 1 | 2 | 3 | 4;
@@ -407,7 +584,20 @@ interface WavInfo {
     dataLen: number;
 }
 
-/* Parseert de RIFF-WAVE header en retourneert metadata + offset */
+/**
+ * Parses the RIFF-WAVE header and extracts metadata about the audio file.
+ * This function supports PCM audio format and provides details such as bit depth,
+ * number of channels, sample rate, and the offset and length of the audio data.
+ *
+ * @param buf - The ArrayBuffer containing the RIFF-WAVE file data.
+ * @returns An object containing the parsed WAV metadata:
+ *   - bits: Bit depth of the audio (8, 16, 24, or 32 bits).
+ *   - channels: Number of audio channels (1, 2, 3, or 4).
+ *   - sampleRate: Sample rate of the audio in Hz.
+ *   - dataOff: Byte offset of the audio data within the buffer.
+ *   - dataLen: Length of the audio data in bytes.
+ * @throws Error if the file is not a valid RIFF-WAVE or if the PCM format is unsupported.
+ */
 export function parseWav(buf: ArrayBuffer): WavInfo {
     const dv = new DataView(buf);
 
@@ -439,6 +629,19 @@ export function parseWav(buf: ArrayBuffer): WavInfo {
     return { ...fmt, dataOff, dataLen };
 }
 
+/**
+ * Generates a braille-based ASCII art representation of a PCM audio waveform.
+ * Each braille character represents a 2x4 pixel block, allowing for high-density rendering.
+ * The function supports multi-channel audio and auto-zoom for better visualization.
+ *
+ * @param pcm - The PCM audio data as a Uint8Array.
+ * @param bits - The bit depth of the audio (8, 16, 24, or 32 bits).
+ * @param cols - The number of columns in the output ASCII art.
+ * @param baseRows - The base number of rows in the output (default: 80).
+ * @param channels - The number of audio channels (default: 1).
+ * @param autoZoomFloor - The auto-zoom floor as a fraction of the maximum amplitude (default: 0.25).
+ * @returns A string containing the braille-based ASCII art representation of the waveform.
+ */
 export function asciiWaveBraille(
     pcm: Uint8Array,
     bits: 8 | 16 | 24 | 32,
