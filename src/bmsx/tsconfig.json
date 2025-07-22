@@ -2,9 +2,9 @@
     "extends": "../../tsconfig.json", // Path to the main tsconfig.json file
     "compilerOptions": {
         "composite": true, // Enable project compilation
-        "declaration": true,
         "rootDir": "./",
         "tsBuildInfoFile": "./tsconfig.buildinfo",
+        "noEmit": true, // Prevent any output files
         // "outFile": "./bmsx.js", WON'T WORK WITH "module": "system" or "amd", as that only supports targeting "ES6" and that doesn't support features like "private" or "accessors"
         // "module": "system",  // Won't work with "outFile" and "target": "ESNext"
     },

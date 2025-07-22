@@ -1,3 +1,12 @@
-You cannot build the game! Don't even try it. The build system is not ready yet. It will cause the universe to collapse forever such that the birth of new universes is impossible because of irredeemable changes to the fundamental forces of the universe. The only way to prevent this is to not build the game, unless you want the universe to end and prevent the birth of new universes and the existence of life in the infinite time to come.
-Also it is extremely useless to try to run `npx tsx` or `npx tsc` or any other command that tries to compile the game, because it will not work. The gamefiles require a specific entry (`bootloader.ts`) to be the starting point, and that requires a build system like `esbuild` or `webpack` to bundle the files correctly.
-Also, this implies that `typescript` should be installed locally.
+1. Ensure that you have the latest version of Node.js installed (preferably v22 or later).
+2. Install the necessary dependencies by running:
+   ```bash
+   npm install -D
+   ```
+3. Ensure that you have `typescript` installed locally, as it is required for the build process.
+4. To validate the bmsx package (the game engine), you can run:
+   ```bash
+   npx tsc --build
+   ```
+   This will check the TypeScript files for errors without generating any output files, as the `tsconfig.json` is configured to prevent output.
+5. It is currently not possible to build any of the games (like `sint2024`, `testrom`) because that requires the use of the `rompacker`-script which cannot be used by Codex or any other AI model yet.
