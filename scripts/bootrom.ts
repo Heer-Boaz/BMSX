@@ -168,40 +168,36 @@ const bootrom = {
 
 		return new Promise((resolve, reject) => {
 			let loadedRomPack: RomPack | null = null;
+			let romlabel_bloburl: string | null = null;
 
-			function replaceBMSXImgWithRomLabel(romlabel_bloburl: string) {
+			function replaceBMSXImgWithRomLabel() {
+				if (!romlabel_bloburl) return;
 				const msx = document.querySelector('#msx') as HTMLImageElement;
+				msx.src = romlabel_bloburl;
 
 				// Unhide the image if it is hidden
-				msx.hidden = false;
+				// msx.hidden = false;
 
 				// Remove any previous animationend handler
-				msx.onanimationend = null;
+				// msx.onanimationend = null;
 
-				// If already faded out, set src immediately
-				if (msx.classList.contains('fade-out')) {
-					msx.src = romlabel_bloburl;
-					msx.className = 'fade-in';
-					return;
-				}
-
-				// Otherwise, fade out, then swap image and fade in
-				msx.className = 'fade-out';
-				msx.onanimationend = (ev: AnimationEvent) => {
-					const img = ev.target as HTMLImageElement;
-					img.src = romlabel_bloburl;
-					img.className = 'fade-in';
-					img.onanimationend = null; // Clean up`
-				};
+				// Otherwise, fade out, then swap image and fade in while
+				// keeping the image positioned off-screen via the 'hidden'
+				// class to avoid a flash before the boot animation starts.
+				// msx.onanimationend = (ev: AnimationEvent) => {
+				// 	const img = ev.target as HTMLImageElement;
+				// 	img.src = romlabel_bloburl;
+				// 	img.classList.add('fade-in');
+				// 	// img.onanimationend = null; // Clean up
+				// };
 			}
 
 			fetchRom()
 				.then((response_array: ArrayBuffer) => getZippedRomAndRomLabelFromBlob(response_array))
 				.then((ziprom_and_label: { zipped_rom: ArrayBuffer, romlabel: string }) => {
 					if (ziprom_and_label.romlabel) {
-						if (ziprom_and_label.romlabel) {
-							replaceBMSXImgWithRomLabel(ziprom_and_label.romlabel);
-						}
+						romlabel_bloburl = ziprom_and_label.romlabel;
+						replaceBMSXImgWithRomLabel();
 					}
 					return pako.inflate(ziprom_and_label.zipped_rom).buffer;
 				})
@@ -209,6 +205,7 @@ const bootrom = {
 				.then((loadResult: any) => {
 					loadedRomPack = loadResult;
 					return awaitBootComplete().then(() => {  // Return the promise and chain the replace after animation ends
+						replaceBMSXImgWithRomLabel();
 					});
 				})
 				.then(() => loadScript(loadedRomPack, bootrom.romname))

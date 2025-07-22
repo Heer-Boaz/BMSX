@@ -632,11 +632,11 @@ html {
 }
 
 #msx.fade-in {
-	animation: fade-in 5s;
+	animation: fade-in .5s;
 }
 
 #msx.fade-out {
-	animation: fade-out 5s;
+	animation: fade-out .5s;
 }
 
 @keyframes enter {
