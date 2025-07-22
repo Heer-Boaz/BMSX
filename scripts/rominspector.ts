@@ -11,7 +11,7 @@ import type { AudioMeta, ImgMeta, RomAsset, RomMeta, asset_type } from '../src/b
 import { decodeBinary } from '../src/bmsx/serializer/binencoder';
 import { asciiWaveBraille, generateBrailleAsciiArt, generatePixelPerfectAsciiArt, parseWav, renderBufferBar, renderSummaryBar } from './asciiart';
 import { generateAtlasName } from './atlasbuilder';
-import { getZippedRomAndRomLabelFromBlob, loadAssetList, parseMetaFromBuffer } from './bootrom';
+import { getZippedRomAndRomLabelFromBlob, loadAssetList, parseMetaFromBuffer } from './bootrom/bootrom';
 
 const PER_PIXEL_RENDERING_THRESHOLD = 64; // sprites ≤64×64 get per-pixel rendering
 

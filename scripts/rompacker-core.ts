@@ -20,7 +20,7 @@ let GENERATE_AND_USE_TEXTURE_ATLAS = true;
 export const DONT_PACK_IMAGES_WHEN_USING_ATLAS = true;
 export const BOOTROM_TS_FILENAME = 'bootrom.ts';
 export const BOOTROM_JS_FILENAME = 'bootrom.js';
-export const BOOTROM_TS_RELATIVE_PATH = `../scripts/${BOOTROM_TS_FILENAME}`;
+export const BOOTROM_TS_RELATIVE_PATH = `../scripts/bootrom/${BOOTROM_TS_FILENAME}`;
 export const BOOTROM_JS_RELATIVE_PATH = `../rom/${BOOTROM_JS_FILENAME}`;
 
 const BOILERPLATE_RESOURCE_ID_BITMAP = `export enum BitmapId {
