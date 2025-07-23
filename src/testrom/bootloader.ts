@@ -1,4 +1,4 @@
-import { MeshObject, new_vec3, BGamepadButton, BaseModel, BehaviorTreeDefinition, BinaryCompressor, BootArgs, Component, Direction, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, PSG, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, debugPrintBinarySnapshot, insavegame, new_area, new_vec2, snareInstrument, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, CameraObject, AmbientLightObject, DirectionalLightObject, PointLightObject, Camera3D, type State } from '../bmsx/bmsx';
+import { AmbientLightObject, BGamepadButton, BaseModel, BehaviorTreeDefinition, BinaryCompressor, BootArgs, CameraObject, Component, Direction, DirectionalLightObject, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, MeshObject, PSG, PointLightObject, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, debugPrintBinarySnapshot, insavegame, new_area, new_vec2, new_vec3, snareInstrument, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/bmsx';
 import { BitmapId } from './resourceids';
 
 var _game: Game;
@@ -415,20 +415,6 @@ f 5/1/5 4/3/5 8/4/5
     }
 
     override run(): void {
-        const input = $.input.getPlayerInput(1);
-        const rotSpeed = 0.05;
-        if (input.getActionState('left').pressed) this.rotation[1] -= rotSpeed;
-        if (input.getActionState('right').pressed) this.rotation[1] += rotSpeed;
-        if (input.getActionState('up').pressed) this.rotation[0] -= rotSpeed;
-        if (input.getActionState('down').pressed) this.rotation[0] += rotSpeed;
-        if (input.getActionState('bla').justPressed) {
-            const cam = _view.getCamera();
-            if (cam.projection === 'perspective') {
-                _view.useOrthographicCamera(10, 10);
-            } else {
-                _view.usePerspectiveCamera();
-            }
-        }
         this.rotation[1] += 0.01; // Slow auto rotation
         super.run();
     }
@@ -446,12 +432,12 @@ class CameraController extends GameObject {
     override run(): void {
         const input = $.input.getPlayerInput(1);
 
-        if (input.getActionState('save').justPressed) {
+        if (input.getActionState('save').justpressed) {
             this.idx = (this.idx + 1) % this.cameras.length;
             $.model.setActiveCamera(this.cameras[this.idx].id);
         }
 
-        if (input.getActionState('load').justPressed) {
+        if (input.getActionState('load').justpressed) {
             const extra = $.model.getGameObject<DirectionalLightObject>('extraSun');
             if (extra) extra.active = !extra.active;
         }
