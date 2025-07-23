@@ -1,5 +1,6 @@
 import { AmbientLightObject, BGamepadButton, BaseModel, BehaviorTreeDefinition, BinaryCompressor, BootArgs, CameraObject, Component, Direction, DirectionalLightObject, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, MeshObject, PSG, PointLightObject, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, debugPrintBinarySnapshot, insavegame, new_area, new_vec2, new_vec3, snareInstrument, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/bmsx';
-import { BitmapId } from './resourceids';
+import { BitmapId, ModelId } from './resourceids';
+import type { OBJModel } from '../bmsx/rompack/rompack';
 
 var _game: Game;
 let _model: gamemodel;
@@ -373,42 +374,8 @@ class bclass extends SpriteObject {
 class Cube3D extends MeshObject {
     constructor() {
         super('cube');
-        const cubeObj = `
-v -1 -1 -1
-v 1 -1 -1
-v 1 1 -1
-v -1 1 -1
-v -1 -1 1
-v 1 -1 1
-v 1 1 1
-v -1 1 1
-vt 0 0
-vt 1 0
-vt 1 1
-vt 0 1
-vn 0 0 -1
-vn 0 0 1
-vn 0 -1 0
-vn 0 1 0
-vn -1 0 0
-vn 1 0 0
-f 1/1/1 2/2/1 3/3/1
-f 1/1/1 3/3/1 4/4/1
-f 5/1/2 8/4/2 7/3/2
-f 5/1/2 7/3/2 6/2/2
-f 1/1/3 5/2/3 6/3/3
-f 1/1/3 6/3/3 2/4/3
-f 2/1/6 6/2/6 7/3/6
-f 2/1/6 7/3/6 3/4/6
-f 3/1/4 7/2/4 8/3/4
-f 3/1/4 8/3/4 4/4/4
-f 5/1/5 1/2/5 4/3/5
-f 5/1/5 4/3/5 8/4/5
-`;
-        const model = _view.loadOBJ(cubeObj);
-        this.mesh.positions = model.positions;
-        this.mesh.normals = model.normals;
-        this.mesh.texcoords = new Float32Array(model.positions.length / 3 * 2);
+        const model = $.rom.model[ModelId.cube] as OBJModel;
+        this.setModel(model);
         this.mesh.color = { r: 0.7, g: 0.2, b: 0.2, a: 1.0 };
         this.mesh.atlasId = 255; // render without texture
         this.pos = new_vec3(0, 0, 0);

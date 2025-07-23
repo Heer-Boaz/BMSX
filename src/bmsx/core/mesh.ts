@@ -1,6 +1,6 @@
 import { GameObject } from './gameobject';
 import { insavegame } from '../serializer/gameserializer';
-import type { vec3arr } from '../rompack/rompack';
+import type { vec3arr, OBJModel } from '../rompack/rompack';
 import { bmat } from '../render/math3d';
 import { Color, DrawMeshOptions, paintMesh } from '../render/view';
 import { DEFAULT_VERTEX_COLOR } from '../render/glview';
@@ -33,6 +33,13 @@ export abstract class MeshObject extends GameObject {
         this.mesh ??= new Mesh();
         this.rotation ??= [0, 0, 0];
         this.scale ??= [1, 1, 1];
+    }
+
+    /** Apply model data to this mesh */
+    public setModel(model: OBJModel): void {
+        this.mesh.positions = model.positions;
+        this.mesh.texcoords = model.texcoords;
+        this.mesh.normals = model.normals;
     }
 
     override paint(): void {

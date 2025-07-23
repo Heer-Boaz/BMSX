@@ -84,7 +84,7 @@ The BMSX project is organized to support modular engine development, multiple ga
 
     - **`render/`**: Rendering, view, and graphics-related code.
       - `glview.ts`, `view.ts`, `textwriter.ts`
-      - 3D modules: `camera3d.ts`, `light.ts`, `math3d.ts`, `objloader.ts`
+      - 3D modules: `camera3d.ts`, `light.ts`, `math3d.ts`
       - **`shaders/`**: WebGL shaders for rendering effects.
         - `crtshader.ts`, `gameshader.ts`, `vertexshader.ts`, `gameshader3d.glsl`, `vertexshader3d.glsl`
 

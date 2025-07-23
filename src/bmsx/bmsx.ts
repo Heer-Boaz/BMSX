@@ -41,7 +41,6 @@ export * from './systems/msx';
 export * from './ui/gamestatedialog';
 export * from './render/math3d';
 export * from './render/camera3d';
-export * from './render/objloader';
 export * from './core/mesh';
 export * from './render/light';
 export * from './core/cameraobject';
