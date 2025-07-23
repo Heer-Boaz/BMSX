@@ -1,4 +1,4 @@
-import { BGamepadButton, BaseModel, BehaviorTreeDefinition, BinaryCompressor, BootArgs, Component, Direction, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, PSG, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, debugPrintBinarySnapshot, insavegame, new_area, new_vec2, snareInstrument, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/bmsx';
+import { MeshObject, new_vec3, BGamepadButton, BaseModel, BehaviorTreeDefinition, BinaryCompressor, BootArgs, Component, Direction, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, PSG, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, debugPrintBinarySnapshot, insavegame, new_area, new_vec2, snareInstrument, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, CameraObject, AmbientLightObject, DirectionalLightObject, PointLightObject, Camera3D, type State } from '../bmsx/bmsx';
 import { BitmapId } from './resourceids';
 
 var _game: Game;
@@ -369,6 +369,108 @@ class bclass extends SpriteObject {
     }
 };
 
+@insavegame
+class Cube3D extends MeshObject {
+    constructor() {
+        super('cube');
+        const cubeObj = `
+v -1 -1 -1
+v 1 -1 -1
+v 1 1 -1
+v -1 1 -1
+v -1 -1 1
+v 1 -1 1
+v 1 1 1
+v -1 1 1
+vt 0 0
+vt 1 0
+vt 1 1
+vt 0 1
+vn 0 0 -1
+vn 0 0 1
+vn 0 -1 0
+vn 0 1 0
+vn -1 0 0
+vn 1 0 0
+f 1/1/1 2/2/1 3/3/1
+f 1/1/1 3/3/1 4/4/1
+f 5/1/2 8/4/2 7/3/2
+f 5/1/2 7/3/2 6/2/2
+f 1/1/3 5/2/3 6/3/3
+f 1/1/3 6/3/3 2/4/3
+f 2/1/6 6/2/6 7/3/6
+f 2/1/6 7/3/6 3/4/6
+f 3/1/4 7/2/4 8/3/4
+f 3/1/4 8/3/4 4/4/4
+f 5/1/5 1/2/5 4/3/5
+f 5/1/5 4/3/5 8/4/5
+`;
+        const model = _view.loadOBJ(cubeObj);
+        this.mesh.positions = model.positions;
+        this.mesh.normals = model.normals;
+        this.mesh.texcoords = new Float32Array(model.positions.length / 3 * 2);
+        this.mesh.color = { r: 0.7, g: 0.2, b: 0.2, a: 1.0 };
+        this.mesh.atlasId = 255; // render without texture
+        this.pos = new_vec3(0, 0, 0);
+    }
+
+    override run(): void {
+        const input = $.input.getPlayerInput(1);
+        const rotSpeed = 0.05;
+        if (input.getActionState('left').pressed) this.rotation[1] -= rotSpeed;
+        if (input.getActionState('right').pressed) this.rotation[1] += rotSpeed;
+        if (input.getActionState('up').pressed) this.rotation[0] -= rotSpeed;
+        if (input.getActionState('down').pressed) this.rotation[0] += rotSpeed;
+        if (input.getActionState('bla').justPressed) {
+            const cam = _view.getCamera();
+            if (cam.projection === 'perspective') {
+                _view.useOrthographicCamera(10, 10);
+            } else {
+                _view.usePerspectiveCamera();
+            }
+        }
+        this.rotation[1] += 0.01; // Slow auto rotation
+        super.run();
+    }
+}
+
+class CameraController extends GameObject {
+    private cameras: CameraObject[];
+    private idx = 0;
+
+    constructor(...cams: CameraObject[]) {
+        super('camctrl');
+        this.cameras = cams;
+    }
+
+    override run(): void {
+        const input = $.input.getPlayerInput(1);
+
+        if (input.getActionState('save').justPressed) {
+            this.idx = (this.idx + 1) % this.cameras.length;
+            $.model.setActiveCamera(this.cameras[this.idx].id);
+        }
+
+        if (input.getActionState('load').justPressed) {
+            const extra = $.model.getGameObject<DirectionalLightObject>('extraSun');
+            if (extra) extra.active = !extra.active;
+        }
+
+        const camObj = $.model.getActiveCamera();
+        if (!camObj) return;
+
+        const cam = camObj.camera;
+        const move = 0.1;
+
+        if (input.getActionState('left').pressed) cam.moveRight(-move);
+        if (input.getActionState('right').pressed) cam.moveRight(move);
+        if (input.getActionState('up').pressed) cam.moveUp(move);
+        if (input.getActionState('down').pressed) cam.moveUp(-move);
+        if (input.getActionState('bla').pressed) cam.moveForward(move);
+        if (input.getActionState('blap').pressed) cam.moveForward(-move);
+    }
+}
+
 const savestring = Symbol('savestring');
 @insavegame
 class gamemodel extends BaseModel {
@@ -415,7 +517,33 @@ class gamemodel extends BaseModel {
     }
 
     public override do_one_time_game_init(): this {
+        const cube = new Cube3D();
         _model.spawn(new bclass(), new_vec2(100, 100));
+        _model.spawn(cube, new_vec3(0, 0, 0));
+
+        const cam1 = new CameraObject('cam1');
+        cam1.camera.setPosition([0, 0, 5]);
+        cam1.camera.lookAt([cube.x, cube.y, cube.z]);
+
+        const cam2 = new CameraObject('cam2');
+        cam2.camera.setPosition([5, 3, 5]);
+        cam2.camera.lookAt([cube.x, cube.y, cube.z]);
+
+        _model.spawn(cam1);
+        _model.spawn(cam2);
+
+        const ambient = new AmbientLightObject('amb', [1.0, 1.0, 1.0], 0.2);
+        const sun = new DirectionalLightObject('sun', [0.5, -1.0, -0.5], [1.0, 1.0, 1.0]);
+        const extraSun = new DirectionalLightObject('extraSun', [-0.5, -1.0, 0.5], [0.8, 0.8, 1.0]);
+        const lamp = new PointLightObject('lamp', [2.0, 2.0, 2.0], [1.0, 0.8, 0.8], 6.0);
+
+        _model.spawn(ambient);
+        _model.spawn(sun);
+        _model.spawn(extraSun);
+        _model.spawn(lamp);
+
+        _model.spawn(new CameraController(cam1, cam2));
+
         return this;
     }
 
