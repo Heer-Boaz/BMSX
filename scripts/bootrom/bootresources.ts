@@ -174,6 +174,8 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<RomAsset[]> {
                     break;
                 case 'data':
                     break;
+                case 'model':
+                    break;
                 default:
                     break;
             }
@@ -182,11 +184,12 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<RomAsset[]> {
     return Promise.resolve<RomAsset[]>(assetList);
 }
 
-export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any> }): Promise<RomPack> {
+export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadModelFromBuffer?: (buffer: ArrayBuffer) => Promise<any> }): Promise<RomPack> {
     const result: RomPack = {
         rom: rom,
         img: {},
         audio: {},
+        model: {},
         data: {},
         code: null
     };
@@ -208,7 +211,16 @@ async function loadDataFromBuffer(buffer: ArrayBuffer): Promise<any> {
     return decodeBinary(new Uint8Array(buffer));
 }
 
-async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any> }): Promise<void> {
+async function loadModelFromBuffer(buffer: ArrayBuffer): Promise<{ positions: Float32Array; texcoords: Float32Array; normals: Float32Array | null; }> {
+    const obj = decodeBinary(new Uint8Array(buffer)) as { positions: number[]; texcoords: number[]; normals: number[] | null };
+    return {
+        positions: new Float32Array(obj.positions),
+        texcoords: new Float32Array(obj.texcoords),
+        normals: obj.normals ? new Float32Array(obj.normals) : null
+    };
+}
+
+async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadModelFromBuffer?: (buffer: ArrayBuffer) => Promise<any> }): Promise<void> {
     switch (res.type) {
         case 'image':
         case 'atlas':
@@ -249,6 +261,20 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
                 }
             } catch (err: any) {
                 throw new Error(`Failed to load 'source' from rom: ${err.message}.`);
+            }
+            break;
+        case 'model':
+            try {
+                let model;
+                if (opts && opts.loadModelFromBuffer) {
+                    model = await opts.loadModelFromBuffer(rom.slice(res.start, res.end));
+                } else {
+                    model = await loadModelFromBuffer(rom.slice(res.start, res.end));
+                }
+                romResult.model[res.resid] = model;
+                romResult.model[res.resname] = model;
+            } catch (err: any) {
+                throw new Error(`Failed to load 'model' from rom: ${err.message}.`);
             }
             break;
         case 'data':

@@ -8,7 +8,6 @@ import vertexShader3DCode from './shaders/vertexshader3d.glsl';
 import { BaseView, Color, DrawImgOptions, DrawRectOptions } from './view';
 import { bmat } from './math3d';
 import { Camera3D } from './camera3d';
-import { loadOBJModel, type OBJModel } from './objloader';
 import type { DirectionalLight, PointLight } from './light';
 
 const CATCH_WEBGL_ERROR = false; // Set to false to disable WebGL error catching
@@ -1349,14 +1348,6 @@ export abstract class GLView extends BaseView {
         this.meshesToDraw.push({ positions, texcoords, normals, matrix, color, atlasId });
     }
 
-    /** Convenience loader for Wavefront OBJ models */
-    public loadOBJ(data: string): OBJModel {
-        return loadOBJModel(data);
-    }
-
-    public drawOBJModel(model: OBJModel, matrix: Float32Array, color: Color = DEFAULT_VERTEX_COLOR, atlasId: number = 0): void {
-        this.drawMesh3D(model.positions, model.texcoords, model.normals || undefined, matrix, color, atlasId);
-    }
 
     @catchWebGLError
     public renderMeshBatch(): void {

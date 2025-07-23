@@ -96,7 +96,7 @@ export interface ImgMeta {
 	hitpolygons?: HitPolygonsPrecalc; // The concave hull polygons for collision detection, with flipped variants.
 }
 
-export type asset_type = 'image' | 'audio' | 'code' | 'data' | 'atlas' | 'romlabel';
+export type asset_type = 'image' | 'audio' | 'code' | 'data' | 'atlas' | 'romlabel' | 'model';
 
 /**
  * Represents an asset in a ROM pack.
@@ -127,12 +127,19 @@ export type id2res = Record<number | string, RomAsset>;
 export type id2imgres = Record<number | string, RomImgAsset>;
 export type id2data = Record<number | string, any>;
 export type id2htmlimg = Record<number | string, HTMLImageElement>;
+
+export interface OBJModel {
+    positions: Float32Array;
+    texcoords: Float32Array;
+    normals: Float32Array | null;
+}
 export interface RomPack {
-	rom: ArrayBuffer, // The binary buffer of the ROM pack, containing all assets, including images, audio and code.
-	img: id2imgres; // Reference to the loaded image assets in the ROM pack, including metadata and the loaded image (HTMLImageElement).
-	audio: id2res; // Reference to the loaded audio assets in the ROM pack, including metadata.
-	data: id2data; // Reference to the loaded data assets in the ROM pack, including metadata.
-	code: string; // The loaded game code in the ROM pack.
+        rom: ArrayBuffer, // The binary buffer of the ROM pack, containing all assets, including images, audio and code.
+        img: id2imgres; // Reference to the loaded image assets in the ROM pack, including metadata and the loaded image (HTMLImageElement).
+        audio: id2res; // Reference to the loaded audio assets in the ROM pack, including metadata.
+        model: id2res; // Reference to the loaded model assets in the ROM pack, including metadata.
+        data: id2data; // Reference to the loaded data assets in the ROM pack, including metadata.
+        code: string; // The loaded game code in the ROM pack.
 }
 
 /**

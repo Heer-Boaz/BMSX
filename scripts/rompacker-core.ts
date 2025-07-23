@@ -1,6 +1,6 @@
 import { glsl } from "esbuild-plugin-glsl";
 import type { Stats } from 'fs';
-import type { AudioMeta, ImgMeta, Polygon, RomAsset } from '../src/bmsx/rompack/rompack';
+import type { AudioMeta, ImgMeta, OBJModel, Polygon, RomAsset } from '../src/bmsx/rompack/rompack';
 import { createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import type { Resource, RomManifest, resourcetype } from './rompacker.rompack';
@@ -27,10 +27,79 @@ const BOILERPLATE_RESOURCE_ID_BITMAP = `export enum BitmapId {
 	none = 'none',`; // Note: cannot use const enums here, because BFont uses BitmapId as a type (and const enums are not available at runtime)
 
 const BOILERPLATE_RESOURCE_ID_AUDIO = `export enum AudioId {
-	none = 'none',`;
+        none = 'none',`;
 
 const BOILERPLATE_RESOURCE_ID_DATA = `export enum DataId {
-	none = 'none',`;
+        none = 'none',`;
+
+const BOILERPLATE_RESOURCE_ID_MODEL = `export enum ModelId {
+        none = 'none',`;
+
+export function loadOBJModel(data: string): OBJModel {
+    const positions: number[] = [];
+    const texcoords: number[] = [];
+    const normals: number[] = [];
+    const finalPositions: number[] = [];
+    const finalTexcoords: number[] = [];
+    const finalNormals: number[] = [];
+
+    const lines = data.split(/\r?\n/);
+    for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line || line.startsWith('#')) continue;
+        const parts = line.split(/\s+/);
+        switch (parts[0]) {
+            case 'v':
+                if (parts.length >= 4) {
+                    positions.push(parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3]));
+                }
+                break;
+            case 'vt':
+                if (parts.length >= 3) {
+                    texcoords.push(parseFloat(parts[1]), 1 - parseFloat(parts[2]));
+                }
+                break;
+            case 'vn':
+                if (parts.length >= 4) {
+                    normals.push(parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3]));
+                }
+                break;
+            case 'f': {
+                const verts = parts.slice(1);
+                for (let i = 1; i < verts.length - 1; i++) {
+                    const tri = [verts[0], verts[i], verts[i + 1]];
+                    for (const vert of tri) {
+                        const comps = vert.split('/');
+                        let vi = parseInt(comps[0], 10);
+                        vi = vi < 0 ? positions.length / 3 + vi : vi - 1;
+                        finalPositions.push(positions[vi * 3], positions[vi * 3 + 1], positions[vi * 3 + 2]);
+                        let ti = comps[1] ? parseInt(comps[1], 10) : 0;
+                        ti = ti ? (ti < 0 ? texcoords.length / 2 + ti : ti - 1) : -1;
+                        if (ti >= 0) {
+                            finalTexcoords.push(texcoords[ti * 2], texcoords[ti * 2 + 1]);
+                        } else {
+                            finalTexcoords.push(0, 0);
+                        }
+                        let ni = comps[2] ? parseInt(comps[2], 10) : 0;
+                        ni = ni ? (ni < 0 ? normals.length / 3 + ni : ni - 1) : -1;
+                        if (ni >= 0) {
+                            finalNormals.push(normals[ni * 3], normals[ni * 3 + 1], normals[ni * 3 + 2]);
+                        }
+                    }
+                }
+                break;
+            }
+            default:
+                break;
+        }
+    }
+
+    return {
+        positions: new Float32Array(finalPositions),
+        texcoords: new Float32Array(finalTexcoords),
+        normals: finalNormals.length > 0 ? new Float32Array(finalNormals) : null,
+    };
+}
 
 /**
 * Adds a file to an array of files.
@@ -402,6 +471,9 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
             datatype = 'bin';
             type = 'data';
             break;
+        case '.obj':
+            type = 'model';
+            break;
     }
     return { name: name, ext, type, collisionType, datatype };
 }
@@ -430,6 +502,7 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
     let imgid = 1;
     let sndid = 1;
     let dataid = 1;
+    let modelid = 1;
     for (let i = 0; i < arrayOfFiles.length; i++) {
         const filepath = arrayOfFiles[i];
         const meta = getResMetaByFilename(filepath);
@@ -467,6 +540,10 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
                 // For data files, we use the name as is
                 result.push({ filepath: filepath, name: name, ext: ext, type: type, id: dataid, datatype: meta.datatype });
                 ++dataid;
+                break;
+            case 'model':
+                result.push({ filepath: filepath, name: name, ext: ext, type: type, id: modelid });
+                ++modelid;
                 break;
             case 'atlas':
                 // Atlas files are not real files, but we add them to the resource list in the next step
@@ -514,10 +591,12 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
 
     checkDuplicateIds('image');
     checkDuplicateIds('audio');
+    checkDuplicateIds('model');
     checkDuplicateNames('data');
     checkDuplicateNames('image');
     checkDuplicateNames('audio');
     checkDuplicateNames('data');
+    checkDuplicateNames('model');
 
     return result;
 }
@@ -585,11 +664,13 @@ export async function buildResourceList(respaths: string[], rom_name?: string) {
     const tsimgout = new Array<string>();
     const tssndout = new Array<string>();
     const tsdataout = new Array<string>();
+    const tsmodelout = new Array<string>();
     const metalist: Resource[] = await getResMetaList(respaths, rom_name)
 
     tsimgout.push(BOILERPLATE_RESOURCE_ID_BITMAP);
     tssndout.push(BOILERPLATE_RESOURCE_ID_AUDIO);
     tsdataout.push(BOILERPLATE_RESOURCE_ID_DATA);
+    tsmodelout.push(BOILERPLATE_RESOURCE_ID_MODEL);
 
     for (let i = 0; i < metalist.length; i++) {
         const current = metalist[i];
@@ -608,6 +689,9 @@ export async function buildResourceList(respaths: string[], rom_name?: string) {
             case 'data':
                 tsdataout.push(`${enum_member_to_add} `);
                 break;
+            case 'model':
+                tsmodelout.push(`${enum_member_to_add} `);
+                break;
             case 'romlabel':
                 // Ignore this part
                 break;
@@ -619,8 +703,9 @@ export async function buildResourceList(respaths: string[], rom_name?: string) {
     tsimgout.push("}\n");
     tssndout.push("}\n");
     tsdataout.push("}\n");
+    tsmodelout.push("}\n");
 
-    const total_output: string = tsimgout.concat(tssndout, tsdataout).join('\n');
+    const total_output: string = tsimgout.concat(tssndout, tsdataout, tsmodelout).join('\n');
 
     const targetPath = respaths[0].replace('/res', '/resourceids.ts');
     await writeFile(targetPath, total_output);
@@ -701,6 +786,17 @@ export function generateRomAssets(resources: Resource[]) {
                         throw new Error(`Unknown data type "${res.datatype}" for resource "${resname}"`);
                 }
                 romAssets.push({ resid, resname, type, buffer });
+                break;
+            case 'model': {
+                const objText = res.buffer.toString('utf8');
+                const parsed = loadOBJModel(objText);
+                buffer = encodeBinary({
+                    positions: Array.from(parsed.positions),
+                    texcoords: Array.from(parsed.texcoords),
+                    normals: parsed.normals ? Array.from(parsed.normals) : null,
+                });
+                romAssets.push({ resid, resname, type, buffer });
+            }
                 break;
             case 'atlas': {
                 // Atlas resources are handled similarly to images but with a twist
