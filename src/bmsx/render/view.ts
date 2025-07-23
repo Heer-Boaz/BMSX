@@ -3,6 +3,7 @@ import { Registry } from '../core/registry';
 import { Input } from '../input/input';
 import type { Area, Polygon, Size, Vector, id2imgres, vec2 } from '../rompack/rompack';
 
+import { DEFAULT_VERTEX_COLOR } from "./glview";
 export interface FlipOptions {
 	flip_h: boolean;
 	flip_v: boolean;
@@ -85,11 +86,13 @@ export abstract class BaseView implements RegisterablePersistent {
 	 * Draws the game on the canvas. If `clearCanvas` is set to `true`, the canvas will be cleared before drawing.
 	 * The method sorts the objects in the current space by depth and then iterates over them, calling their `paint` method if they are visible and not flagged for disposal.
 	 */
-	public drawgame(clearCanvas: boolean = true): void {
-		if (clearCanvas) $.view.clear();
-		$.model.currentSpace.sort_by_depth(); // Required for each frame as objects can change depth during the flow of the game
-		$.model.currentSpace.objects.forEach(o => !o.disposeFlag && o.visible && (o.updateComponentsWithTag?.('render'), o.paint?.()));
-	}
+        public drawgame(clearCanvas: boolean = true): void {
+                const model: any = $.model;
+                if (typeof model.applyViewSettings === 'function') model.applyViewSettings();
+                if (clearCanvas) $.view.clear();
+                $.model.currentSpace.sort_by_depth(); // Required for each frame as objects can change depth during the flow of the game
+                $.model.currentSpace.objects.forEach(o => !o.disposeFlag && o.visible && (o.updateComponentsWithTag?.('render'), o.paint?.()));
+        }
 
 	/**
 	 * Calculates the size of the canvas and the scale factor based on the current viewport size and window size.
@@ -445,7 +448,27 @@ export abstract class BaseView implements RegisterablePersistent {
 }
 
 export function paintImage(options: DrawImgOptions): void {
-	if (!options.imgid || options.imgid === 'none') return; // Don't draw anything when imgid = BitmapId.None. For animations, we don't always want to use visible = false
+        if (!options.imgid || options.imgid === 'none') return; // Don't draw anything when imgid = BitmapId.None. For animations, we don't always want to use visible = false
 
-	$.view.drawImg(options);
+        $.view.drawImg(options);
+}
+
+export interface DrawMeshOptions {
+        positions: Float32Array;
+        texcoords: Float32Array;
+        normals?: Float32Array;
+        matrix: Float32Array;
+        color?: Color;
+        atlasId?: number;
+}
+
+export function paintMesh(options: DrawMeshOptions): void {
+        const view: any = $.view;
+        if (typeof view.drawMesh3D === 'function') {
+                view.drawMesh3D(options.positions, options.texcoords, options.normals, options.matrix,
+                        options.color ?? DEFAULT_VERTEX_COLOR,
+                        options.atlasId ?? 0);
+        } else {
+                console.warn('paintMesh called but current view does not support 3D rendering');
+        }
 }

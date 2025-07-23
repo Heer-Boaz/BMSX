@@ -395,7 +395,8 @@ type SoundMasterState = {
 };
 
 type ViewState = {
-    dynamicAtlasIndex: number; // Index of the dynamic atlas used for rendering
+    dynamicAtlasIndex: number;
+    activeCameraId: string | null;
 };
 @insavegame
 /**
@@ -413,21 +414,22 @@ export class Savegame {
     saveViewState(o: Savegame) {
         // Capture current view state
         const view = $.view as any;
-        if (view.dynamicAtlasIndex) {
-            const viewState = {
-                dynamicAtlasIndex: view.dynamicAtlasIndex, // Index of the dynamic atlas used for rendering
-            };
-            return { viewState };
-        }
-        return undefined;
+        const viewState: ViewState = {
+            dynamicAtlasIndex: view.dynamicAtlasIndex,
+            activeCameraId: $.model.activeCameraId ?? null,
+        };
+        return { viewState };
     }
 
     @onload
     restoreViewState() {
         const view = $.view as any;
         // Restore view state
-        if (view.dynamicAtlasIndex && this.viewState) {
-            view.dynamicAtlas = this.viewState.dynamicAtlasIndex; // Restore the dynamic atlas index
+        if (this.viewState) {
+            if (this.viewState.dynamicAtlasIndex !== undefined) {
+                view.dynamicAtlas = this.viewState.dynamicAtlasIndex;
+            }
+            $.model.activeCameraId = this.viewState.activeCameraId;
         }
     }
 

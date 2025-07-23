@@ -1,9 +1,15 @@
 import { multiply_vec, new_vec2, new_vec3 } from '../core/game';
-import type { ImgMeta, Polygon, Size, vec2, vec3arr } from '../rompack/rompack';
+import type { ImgMeta, Polygon, Size, vec2, vec3, vec3arr } from '../rompack/rompack';
 import crtShaderCode from './shaders/crtshader.glsl';
 import gameShaderCode from './shaders/gameshader.glsl';
+import gameShader3DCode from './shaders/gameshader3d.glsl';
 import vertexShaderCode from './shaders/vertexshader.glsl';
+import vertexShader3DCode from './shaders/vertexshader3d.glsl';
 import { BaseView, Color, DrawImgOptions, DrawRectOptions } from './view';
+import { bmat } from './math3d';
+import { Camera3D } from './camera3d';
+import { loadOBJModel, type OBJModel } from './objloader';
+import type { DirectionalLight, PointLight } from './light';
 
 const CATCH_WEBGL_ERROR = false; // Set to false to disable WebGL error catching
 type texturetype = '_atlas' | '_atlas_dynamic' | 'post_processing_source_texture';
@@ -91,6 +97,8 @@ export const VERTEX_COLOR_COLORIZED_RED: Color = { r: 1.0, g: 0.0, b: 0.0, a: 1.
 export const VERTEX_COLOR_COLORIZED_GREEN: Color = { r: 0.0, g: 1.0, b: 0.0, a: 1.0 };
 export const VERTEX_COLOR_COLORIZED_BLUE: Color = { r: 0.0, g: 0.0, b: 1.0, a: 1.0 };
 export const MAX_SPRITES = 256;
+export const MAX_DIR_LIGHTS = 4;
+export const MAX_POINT_LIGHTS = 4;
 const VERTICES_PER_SPRITE = 6; // Number of vertices per sprite (2 triangles, 3 vertices each)
 
 const VERTEX_ATTRIBUTE_SIZE = 2;
@@ -179,9 +187,41 @@ export abstract class GLView extends BaseView {
     private isRendering: boolean = false;
     private needsResize: boolean = false;
 
+    // 3D rendering fields
+    private gameShaderProgram3D: WebGLProgram;
+    private vertexLocation3D: number;
+    private texcoordLocation3D: number;
+    private color_overrideLocation3D: number;
+    private atlas_idLocation3D: number;
+    private normalLocation3D: number;
+    private mvpLocation3D: WebGLUniformLocation;
+    private modelLocation3D: WebGLUniformLocation;
+    private normalMatrixLocation3D: WebGLUniformLocation;
+    private ditherLocation3D: WebGLUniformLocation;
+    private ambientColorLocation3D: WebGLUniformLocation;
+    private ambientIntensityLocation3D: WebGLUniformLocation;
+    private dirLightDirectionLocation3D: WebGLUniformLocation;
+    private dirLightColorLocation3D: WebGLUniformLocation;
+    private numDirLightsLocation3D: WebGLUniformLocation;
+    private pointLightPositionLocation3D: WebGLUniformLocation;
+    private pointLightColorLocation3D: WebGLUniformLocation;
+    private pointLightRangeLocation3D: WebGLUniformLocation;
+    private numPointLightsLocation3D: WebGLUniformLocation;
+    private vertexBuffer3D: WebGLBuffer;
+    private texcoordBuffer3D: WebGLBuffer;
+    private color_overrideBuffer3D: WebGLBuffer;
+    private atlas_idBuffer3D: WebGLBuffer;
+    private normalBuffer3D: WebGLBuffer;
+    private meshesToDraw: { positions: Float32Array; texcoords: Float32Array; normals?: Float32Array; matrix: Float32Array; color: Color; atlasId: number }[] = [];
+    private camera: Camera3D = new Camera3D();
+    private directionalLights: Map<string, DirectionalLight> = new Map();
+    private pointLights: Map<string, PointLight> = new Map();
+
     public static readonly vertexShaderCode: string = vertexShaderCode;
     public static readonly fragmentShaderTextureCode: string = gameShaderCode;
     public static readonly fragmentShaderCRTCode: string = crtShaderCode;
+    public static readonly vertexShader3DCode: string = vertexShader3DCode;
+    public static readonly fragmentShader3DCode: string = gameShader3DCode;
 
     private _applyNoise: boolean = true;
     private _applyColorBleed: boolean = true;
@@ -302,6 +342,110 @@ export abstract class GLView extends BaseView {
         this.glctx.uniform3fv(this.CRTShaderGlowColorLocation, new Float32Array(value));
     }
 
+    /** Camera control helpers */
+    public setCameraPosition(pos: vec3 | vec3arr): void {
+        this.camera.setPosition(pos);
+    }
+
+    public pointCameraAt(target: vec3 | vec3arr): void {
+        this.camera.lookAt(target);
+    }
+
+    public setCameraViewDepth(near: number, far: number): void {
+        this.camera.setViewDepth(near, far);
+    }
+
+    public setCameraFov(fov: number): void {
+        this.camera.fov = fov;
+    }
+
+    public usePerspectiveCamera(fov?: number): void {
+        this.camera.usePerspective(fov);
+    }
+
+    public useOrthographicCamera(width: number, height: number): void {
+        this.camera.useOrthographic(width, height);
+    }
+
+    public getCamera(): Camera3D {
+        return this.camera;
+    }
+
+    /** Lighting helpers */
+    public setAmbientLight(color: vec3arr, intensity: number): void {
+        this.glctx.useProgram(this.gameShaderProgram3D);
+        this.glctx.uniform3fv(this.ambientColorLocation3D, new Float32Array(color));
+        this.glctx.uniform1f(this.ambientIntensityLocation3D, intensity);
+    }
+
+    private uploadDirectionalLights(): void {
+        const gl = this.glctx;
+        const lights = Array.from(this.directionalLights.values());
+        const count = Math.min(lights.length, MAX_DIR_LIGHTS);
+        const dirs = new Float32Array(MAX_DIR_LIGHTS * 3);
+        const cols = new Float32Array(MAX_DIR_LIGHTS * 3);
+        for (let i = 0; i < count; i++) {
+            dirs.set(lights[i].direction, i * 3);
+            cols.set(lights[i].color, i * 3);
+        }
+        gl.useProgram(this.gameShaderProgram3D);
+        gl.uniform1i(this.numDirLightsLocation3D, count);
+        gl.uniform3fv(this.dirLightDirectionLocation3D, dirs);
+        gl.uniform3fv(this.dirLightColorLocation3D, cols);
+    }
+
+    private uploadPointLights(): void {
+        const gl = this.glctx;
+        const lights = Array.from(this.pointLights.values());
+        const count = Math.min(lights.length, MAX_POINT_LIGHTS);
+        const pos = new Float32Array(MAX_POINT_LIGHTS * 3);
+        const col = new Float32Array(MAX_POINT_LIGHTS * 3);
+        const range = new Float32Array(MAX_POINT_LIGHTS);
+        for (let i = 0; i < count; i++) {
+            pos.set(lights[i].position, i * 3);
+            col.set(lights[i].color, i * 3);
+            range[i] = lights[i].range;
+        }
+        gl.useProgram(this.gameShaderProgram3D);
+        gl.uniform1i(this.numPointLightsLocation3D, count);
+        gl.uniform3fv(this.pointLightPositionLocation3D, pos);
+        gl.uniform3fv(this.pointLightColorLocation3D, col);
+        gl.uniform1fv(this.pointLightRangeLocation3D, range);
+    }
+
+    public addDirectionalLight(id: string, direction: vec3arr, color: vec3arr): void {
+        this.directionalLights.set(id, { id, type: 'directional', color, intensity: 1, direction });
+        this.uploadDirectionalLights();
+    }
+
+    public removeDirectionalLight(id: string): void {
+        if (this.directionalLights.delete(id)) this.uploadDirectionalLights();
+    }
+
+    public getDirectionalLight(id: string): DirectionalLight | undefined {
+        return this.directionalLights.get(id);
+    }
+
+    public addPointLight(id: string, position: vec3arr, color: vec3arr, range: number): void {
+        this.pointLights.set(id, { id, type: 'point', color, intensity: 1, position, range });
+        this.uploadPointLights();
+    }
+
+    public removePointLight(id: string): void {
+        if (this.pointLights.delete(id)) this.uploadPointLights();
+    }
+
+    public getPointLight(id: string): PointLight | undefined {
+        return this.pointLights.get(id);
+    }
+
+    public clearLights(): void {
+        this.directionalLights.clear();
+        this.pointLights.clear();
+        this.uploadDirectionalLights();
+        this.uploadPointLights();
+    }
+
     private gameShaderScaleLocation: WebGLUniformLocation;
     private CRTVertexShaderScaleLocation: WebGLUniformLocation;
     private offscreenCanvasSize: vec2;
@@ -315,6 +459,7 @@ export abstract class GLView extends BaseView {
     constructor(viewportsize: Size, crtOptions?: { noiseIntensity?: number; colorBleed?: vec3arr; blurIntensity?: number; glowColor?: vec3arr }) {
         super(viewportsize, multiply_vec(viewportsize, 2));
         this.offscreenCanvasSize = multiply_vec(viewportsize, 2); // The offscreen canvas size is twice the viewport size
+        this.camera.setAspect(this.offscreenCanvasSize.x / this.offscreenCanvasSize.y);
         if (crtOptions) {
             this._noiseIntensity = crtOptions.noiseIntensity ?? this._noiseIntensity;
             this._colorBleed = crtOptions.colorBleed ?? this._colorBleed;
@@ -341,9 +486,13 @@ export abstract class GLView extends BaseView {
         super.init(); // Call the base init method to set up the canvas
         this.setupGLContext(); // Set up the WebGL context
         this.createGameShaderPrograms(); // Create the game shader programs
+        this.createGameShaderPrograms3D(); // Create 3D shader program
         this.setupVertexShaderLocations(); // Set up the vertex shader locations for the game shader program
+        this.setupVertexShaderLocations3D(); // Set up the vertex shader locations for the 3D shader
         this.setupBuffers(); // Set up the buffers for the game shader
+        this.setupBuffers3D(); // Set up buffers for 3D
         this.setupGameShaderLocations(); // Set up the game shader locations
+        this.setupGameShader3DLocations(); // Set up locations for 3D shader
         this.setupTextures(); // Set up the textures used by the shaders (such as the atlas texture and the post-processing shader texture)
         this.createCRTShaderPrograms(); // Create the CRT shader programs
         this.setupCRTShaderLocations(); // Set up the CRT shader locations
@@ -369,6 +518,13 @@ export abstract class GLView extends BaseView {
         gl.uniform2fv(this.resolutionLocation, this.vertex_shader_data.resolutionVector);
         gl.uniform1i(this.texture0Location, 0); // Texture unit 0 is typically used for the main texture
         gl.uniform1i(this.texture1Location, 1); // Texture unit 1 can be used for additional textures or effects
+
+        gl.useProgram(this.gameShaderProgram3D);
+        gl.uniform1f(this.ditherLocation3D, 0.3);
+        gl.uniform3fv(this.ambientColorLocation3D, new Float32Array([1.0, 1.0, 1.0]));
+        gl.uniform1f(this.ambientIntensityLocation3D, 0.2);
+        this.addDirectionalLight('default_dir', [0.0, -1.0, 0.0], [1.0, 1.0, 1.0]);
+        this.addPointLight('default_point', [0.0, 5.0, 5.0], [1.0, 1.0, 1.0], 10.0);
 
         gl.useProgram(this.CRTShaderProgram);
         gl.uniform1f(this.CRTVertexShaderScaleLocation, 1.0);
@@ -532,6 +688,15 @@ export abstract class GLView extends BaseView {
         this.atlas_idBuffer = buffers.atlas_id;
     }
 
+    @catchWebGLError
+    private setupBuffers3D(): void {
+        this.vertexBuffer3D = this.createBuffer();
+        this.texcoordBuffer3D = this.createBuffer();
+        this.normalBuffer3D = this.createBuffer();
+        this.color_overrideBuffer3D = this.createBuffer();
+        this.atlas_idBuffer3D = this.createBuffer();
+    }
+
     /**
      * Sets up the attribute locations for the game shader program.
      * This method initializes the attribute locations for the vertex, texture coordinate, z-coordinate, and color override attributes.
@@ -545,6 +710,16 @@ export abstract class GLView extends BaseView {
         this.setupAttributeFloat(this.zBuffer, this.zcoordLocation, ZCOORD_ATTRIBUTE_SIZE);
         this.setupAttributeFloat(this.color_overrideBuffer, this.color_overrideLocation, COLOR_OVERRIDE_ATTRIBUTE_SIZE);
         this.setupAttributeInt(this.atlas_idBuffer, this.atlas_idLocation, ATLAS_ID_ATTRIBUTE_SIZE);
+    }
+
+    @catchWebGLError
+    private setupGameShader3DLocations(): void {
+        this.switchProgram(this.gameShaderProgram3D);
+        this.setupAttributeFloat(this.vertexBuffer3D, this.vertexLocation3D, 3);
+        this.setupAttributeFloat(this.texcoordBuffer3D, this.texcoordLocation3D, 2);
+        this.setupAttributeFloat(this.normalBuffer3D, this.normalLocation3D, 3);
+        this.setupAttributeFloat(this.color_overrideBuffer3D, this.color_overrideLocation3D, 4);
+        this.setupAttributeInt(this.atlas_idBuffer3D, this.atlas_idLocation3D, 1);
     }
 
     /**
@@ -605,6 +780,22 @@ export abstract class GLView extends BaseView {
     }
 
     @catchWebGLError
+    private createGameShaderPrograms3D(): void {
+        const gl = this.glctx;
+        const program = gl.createProgram();
+        if (!program) throw Error('Failed to create 3D GLSL program');
+        this.gameShaderProgram3D = program;
+        const vertShader = this.loadShader(gl.VERTEX_SHADER, GLView.vertexShader3DCode);
+        const fragShader = this.loadShader(gl.FRAGMENT_SHADER, GLView.fragmentShader3DCode);
+        gl.attachShader(program, vertShader);
+        gl.attachShader(program, fragShader);
+        gl.linkProgram(program);
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            throw Error(`Unable to initialize the 3D shader program: ${gl.getProgramInfoLog(program)} `);
+        }
+    }
+
+    @catchWebGLError
     /**
      * Sets up the vertex shader locations for the game shader program.
      */
@@ -626,6 +817,30 @@ export abstract class GLView extends BaseView {
         this.texture0Location = gl.getUniformLocation(this.gameShaderProgram, 'u_texture0')!;
         this.texture1Location = gl.getUniformLocation(this.gameShaderProgram, 'u_texture1')!;
         this.gameShaderScaleLocation = gl.getUniformLocation(this.gameShaderProgram, 'u_scale');
+    }
+
+    @catchWebGLError
+    private setupVertexShaderLocations3D(): void {
+        const gl = this.glctx;
+        this.vertexLocation3D = gl.getAttribLocation(this.gameShaderProgram3D, 'a_position');
+        this.texcoordLocation3D = gl.getAttribLocation(this.gameShaderProgram3D, 'a_texcoord');
+        this.normalLocation3D = gl.getAttribLocation(this.gameShaderProgram3D, 'a_normal');
+        this.color_overrideLocation3D = gl.getAttribLocation(this.gameShaderProgram3D, 'a_color_override');
+        this.atlas_idLocation3D = gl.getAttribLocation(this.gameShaderProgram3D, 'a_atlas_id');
+        this.mvpLocation3D = gl.getUniformLocation(this.gameShaderProgram3D, 'u_mvp')!;
+        this.modelLocation3D = gl.getUniformLocation(this.gameShaderProgram3D, 'u_model')!;
+        this.normalMatrixLocation3D = gl.getUniformLocation(this.gameShaderProgram3D, 'u_normalMatrix')!;
+        this.ditherLocation3D = gl.getUniformLocation(this.gameShaderProgram3D, 'u_ditherIntensity')!;
+        // lighting uniforms
+        this.ambientColorLocation3D = gl.getUniformLocation(this.gameShaderProgram3D, 'u_ambientColor')!;
+        this.ambientIntensityLocation3D = gl.getUniformLocation(this.gameShaderProgram3D, 'u_ambientIntensity')!;
+        this.dirLightDirectionLocation3D = gl.getUniformLocation(this.gameShaderProgram3D, 'u_dirLightDirection[0]')!;
+        this.dirLightColorLocation3D = gl.getUniformLocation(this.gameShaderProgram3D, 'u_dirLightColor[0]')!;
+        this.numDirLightsLocation3D = gl.getUniformLocation(this.gameShaderProgram3D, 'u_numDirLights')!;
+        this.pointLightPositionLocation3D = gl.getUniformLocation(this.gameShaderProgram3D, 'u_pointLightPosition[0]')!;
+        this.pointLightColorLocation3D = gl.getUniformLocation(this.gameShaderProgram3D, 'u_pointLightColor[0]')!;
+        this.pointLightRangeLocation3D = gl.getUniformLocation(this.gameShaderProgram3D, 'u_pointLightRange[0]')!;
+        this.numPointLightsLocation3D = gl.getUniformLocation(this.gameShaderProgram3D, 'u_numPointLights')!;
     }
 
     @catchWebGLError
@@ -810,6 +1025,8 @@ export abstract class GLView extends BaseView {
             }
         }
 
+        this.camera.setAspect(this.offscreenCanvasSize.x / this.offscreenCanvasSize.y);
+
         // Clear the needsResize flag
         this.needsResize = false;
     }
@@ -820,6 +1037,7 @@ export abstract class GLView extends BaseView {
 
         // Draw all the sprites to a texture using the main shader
         this.renderSpriteBatch();
+        this.renderMeshBatch();
         // this.saveTextureToFile();
         // debugger;
 
@@ -1124,6 +1342,88 @@ export abstract class GLView extends BaseView {
         GLView.updateBuffer(gl, this.zBuffer, gl.ARRAY_BUFFER, ZCOORD_BUFFER_OFFSET_MULTIPLIER * index, zcoords);
         GLView.updateBuffer(gl, this.color_overrideBuffer, gl.ARRAY_BUFFER, COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER * index, color_override);
         GLView.updateBuffer(gl, this.atlas_idBuffer, gl.ARRAY_BUFFER, ATLAS_ID_BUFFER_OFFSET_MULTIPLIER * index, atlasid);
+    }
+
+    @catchWebGLError
+    public drawMesh3D(positions: Float32Array, texcoords: Float32Array, normals: Float32Array | undefined, matrix: Float32Array, color: Color = DEFAULT_VERTEX_COLOR, atlasId: number = 0): void {
+        this.meshesToDraw.push({ positions, texcoords, normals, matrix, color, atlasId });
+    }
+
+    /** Convenience loader for Wavefront OBJ models */
+    public loadOBJ(data: string): OBJModel {
+        return loadOBJModel(data);
+    }
+
+    public drawOBJModel(model: OBJModel, matrix: Float32Array, color: Color = DEFAULT_VERTEX_COLOR, atlasId: number = 0): void {
+        this.drawMesh3D(model.positions, model.texcoords, model.normals || undefined, matrix, color, atlasId);
+    }
+
+    @catchWebGLError
+    public renderMeshBatch(): void {
+        if (this.meshesToDraw.length === 0) return;
+        const gl = this.glctx;
+        this.switchProgram(this.gameShaderProgram3D);
+
+        this.uploadDirectionalLights();
+        this.uploadPointLights();
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
+        gl.viewport(0, 0, this.offscreenCanvasSize.x, this.offscreenCanvasSize.y);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer3D);
+        gl.vertexAttribPointer(this.vertexLocation3D, 3, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(this.vertexLocation3D);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.texcoordBuffer3D);
+        gl.vertexAttribPointer(this.texcoordLocation3D, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(this.texcoordLocation3D);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.color_overrideBuffer3D);
+        gl.vertexAttribPointer(this.color_overrideLocation3D, 4, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(this.color_overrideLocation3D);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.normalBuffer3D);
+        gl.vertexAttribPointer(this.normalLocation3D, 3, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(this.normalLocation3D);
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.atlas_idBuffer3D);
+        gl.vertexAttribIPointer(this.atlas_idLocation3D, 1, gl.UNSIGNED_BYTE, 0, 0);
+        gl.enableVertexAttribArray(this.atlas_idLocation3D);
+
+        for (const mesh of this.meshesToDraw) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer3D);
+            gl.bufferData(gl.ARRAY_BUFFER, mesh.positions, gl.DYNAMIC_DRAW);
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.texcoordBuffer3D);
+            gl.bufferData(gl.ARRAY_BUFFER, mesh.texcoords, gl.DYNAMIC_DRAW);
+            if (mesh.normals) {
+                gl.bindBuffer(gl.ARRAY_BUFFER, this.normalBuffer3D);
+                gl.bufferData(gl.ARRAY_BUFFER, mesh.normals, gl.DYNAMIC_DRAW);
+            }
+
+            const vertexCount = mesh.positions.length / 3;
+
+            const colorData = new Float32Array(vertexCount * 4);
+            for (let i = 0; i < vertexCount; i++) {
+                colorData.set([mesh.color.r, mesh.color.g, mesh.color.b, mesh.color.a], i * 4);
+            }
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.color_overrideBuffer3D);
+            gl.bufferData(gl.ARRAY_BUFFER, colorData, gl.DYNAMIC_DRAW);
+
+            const atlasData = new Uint8Array(vertexCount);
+            atlasData.fill(mesh.atlasId);
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.atlas_idBuffer3D);
+            gl.bufferData(gl.ARRAY_BUFFER, atlasData, gl.DYNAMIC_DRAW);
+
+            const mvp = bmat.multiply(this.camera.viewProjectionMatrix, mesh.matrix);
+            gl.uniformMatrix4fv(this.mvpLocation3D, false, mvp);
+            gl.uniformMatrix4fv(this.modelLocation3D, false, mesh.matrix);
+            const normalMat = bmat.normalMatrix(mesh.matrix);
+            gl.uniformMatrix3fv(this.normalMatrixLocation3D, false, normalMat);
+
+            gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
+        }
+
+        this.meshesToDraw = [];
     }
 
     /**

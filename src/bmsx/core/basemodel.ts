@@ -12,6 +12,8 @@ import type { Identifier, Registerable, RegisterablePersistent } from "./game";
 import { Direction } from "./game";
 import { GameObject } from "./gameobject";
 import { Registry } from "./registry";
+import { CameraObject } from "./cameraobject";
+import { LightObject } from "./lightobject";
 
 export interface SpaceObject {
     spaceid: Identifier;
@@ -182,7 +184,14 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
      * An array of keys to exclude from the serialized game state when saving the game.
      * These keys include references to objects and spaces that should not be saved.
      */
-    public static readonly keys_to_exclude_from_save = ['objects', 'id2object', 'spaces', 'id2space', 'obj_id2obj_space_id', 'registry'];
+    public static readonly keys_to_exclude_from_save = [
+        'objects',
+        'id2object',
+        'spaces',
+        'id2space',
+        'obj_id2obj_space_id',
+        'registry',
+    ];
 
     /**
      * The controller for the state machine.
@@ -217,6 +226,43 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
 
     public paused: boolean;
     public startAfterLoad: boolean;
+
+    /** Active camera id */
+    public activeCameraId: Identifier | null = null;
+
+    public setActiveCamera(id: Identifier): void {
+        this.activeCameraId = id;
+    }
+
+    public getActiveCamera(): CameraObject | null {
+        return this.activeCameraId ? this.getGameObject<CameraObject>(this.activeCameraId) : null;
+    }
+
+    public getActiveLights(): LightObject[] {
+        const result: LightObject[] = [];
+        for (const space of this.spaces) {
+            for (const obj of space.objects) {
+                if (obj instanceof LightObject && obj.active) result.push(obj);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Applies the currently active camera and lights to the view.
+     * Should be called before drawing each frame.
+     */
+    public applyViewSettings(): void {
+        const view = $.view as any;
+        if (!view || typeof view.setCameraPosition !== 'function') return;
+        const cam = this.getActiveCamera();
+        if (cam) cam.applyToView(view);
+        const lights = this.getActiveLights();
+        if (lights.length > 0 && typeof view.clearLights === 'function') {
+            view.clearLights();
+            for (const l of lights) l.applyToView(view);
+        }
+    }
 
     /**
      * Gets the game object with the given id from the current space only.
@@ -516,8 +562,12 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
         savegame.allSpacesObjects.forEach(space_and_objects => {
             const space = this[spaceid_2_space][space_and_objects.spaceid];
             const objects = space_and_objects.objects;
-            objects.forEach(o => space.spawn(o, null, true));
+            objects.forEach(o => {
+                space.spawn(o, null, true);
+            });
         });
+
+        this.applyViewSettings();
 
     }
 
@@ -625,7 +675,7 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
      * @returns {void} Nothing.
      */
     public exile(o: GameObject): void {
-        this.spaces.forEach(s => s.get(o.id) && s.exile(o)); // Exile the object from all spaces that contain it
+        this.spaces.forEach(s => s.get(o.id) && s.exile(o));
         // Note that we don't need to dispose / deregister the object, as that is done in the `ondispose` method of the `GameObject` class
     }
 

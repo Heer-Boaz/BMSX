@@ -32,6 +32,8 @@ BMSX is a lightweight TypeScript game engine and toolchain used to build small r
 # Features
 
 - **WebGL renderer** with texture atlas support and optional CRT-style effects.
+- **PS1-style 3D rendering** with camera and light objects, OBJ mesh loading, and
+  basic shading.
 - **Web Audio** integration via the `SoundMaster` module.
 - **Input handling** for keyboard, gamepad and on-screen touch controls.
 - **Finite State Machine** and **Behaviour Tree** helpers for game logic.
@@ -69,6 +71,7 @@ The BMSX project is organized to support modular engine development, multiple ga
 
     - **`core/`**: Core engine functionality, including game objects, spaces, and the base model. Also event system and global registry.
       - `game.ts`, `gameobject.ts`, `sprite.ts`, `basemodel.ts`, `eventemitter.ts`, `registry.ts`, `objecttracker.ts`
+      - 3D helpers: `cameraobject.ts`, `lightobject.ts`, `mesh.ts`
 
     - **`debugger/`**: Debugging and visualization tools.
       - `bmsxdebugger.ts`, `behaviourtreevisualizer.ts`, `rewindui.ts`, `objectpropertydialog.ts`, `objectpropertydialogimproved.ts`
@@ -81,8 +84,9 @@ The BMSX project is organized to support modular engine development, multiple ga
 
     - **`render/`**: Rendering, view, and graphics-related code.
       - `glview.ts`, `view.ts`, `textwriter.ts`
+      - 3D modules: `camera3d.ts`, `light.ts`, `math3d.ts`, `objloader.ts`
       - **`shaders/`**: WebGL shaders for rendering effects.
-        - `crtshader.ts`, `gameshader.ts`, `vertexshader.ts`
+        - `crtshader.ts`, `gameshader.ts`, `vertexshader.ts`, `gameshader3d.glsl`, `vertexshader3d.glsl`
 
     - **`rompack/`**: ROM packaging and resource management.
       - `rompack.ts`
@@ -312,7 +316,7 @@ BMSX is designed to support multiple games in a single repository. Each game liv
 
 > **NOTE**: You can run `npm run build:game` to build the test game!
 
-1. Install dependencies with `npm install`. Note that this project uses `tsx` for running TypeScript scripts directly, so you don't need to compile them to JavaScript first.
+1. Install dependencies with `npm install -D` (requires Node.js v22 or later). The project uses `tsx` to run TypeScript scripts directly, so you don't need to compile them to JavaScript first.
    If you want to use `tsc` instead, you can run `npm run build` to compile the `rompacker.ts` TypeScript file (and imports) in `scripts/` and run the resulting JavaScript file instead.
 2. Ensure you have `tslib` installed globally, as it is required for the TypeScript runtime. You can install it with:
    ```bash
@@ -1564,12 +1568,12 @@ There are multiple function nodes in the action parser, allowing for complex exp
     This triggers only if both `punch` and `kick` were released at least once in the last 10 frames.
 
   **How it works:**
-  - These special functions are parsed in the action parser (see [ActionParser](http://_vscodecontentref_/4) in [actionparser.ts](http://_vscodecontentref_/5)).
-  - For windowed combos, the parser ensures the correct time window is passed down to all nested actions, so the input buffer is queried for the relevant period.
-  - The logic for `?wp{n}` and `&wp{n}` is implemented in [compileAnyWasPressedFunction](http://_vscodecontentref_/6) and [compileAllWasPressedFunction](http://_vscodecontentref_/7), respectively, ensuring correct evaluation even for nested or complex expressions.
+  - These functions are parsed by the action parser in `actionparser.ts`.
+  - For windowed combos, the parser forwards the time window to nested actions so the input buffer is queried correctly.
+  - `?wp{n}` and `&wp{n}` evaluate whether any or all specified actions were pressed in the last `n` frames.
 
   **Usage Tips:**
-  - Use `?jp(...)` and [&j(...)](http://_vscodecontentref_/8) for frame-accurate combos (e.g., simultaneous button presses).
+  - Use `?jp(...)` and `&jp(...)` for frame-accurate combos (e.g., simultaneous button presses).
   - Use `?wp{n}(...)` and `&wp{n}(...)` for buffered or sequence-based combos (e.g., "press A then B within 10 frames").
   - Combine with other modifiers (like `[!c]` for not consumed) for even more precise control.
 
