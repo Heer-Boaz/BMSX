@@ -1,6 +1,6 @@
 const { createCanvas } = require('canvas');
 import type { Image } from 'canvas';
-import type { Area, vec2arr, Polygon } from '../src/bmsx/rompack/rompack';
+import type { Area, Polygon, vec2arr } from '../../src/bmsx/rompack/rompack';
 
 /**
  * Dedicated class for extracting bounding boxes and related operations from images.

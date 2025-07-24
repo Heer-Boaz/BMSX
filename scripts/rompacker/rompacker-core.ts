@@ -1,6 +1,6 @@
 import { glsl } from "esbuild-plugin-glsl";
 import type { Stats } from 'fs';
-import type { AudioMeta, ImgMeta, OBJModel, Polygon, RomAsset } from '../src/bmsx/rompack/rompack';
+import type { AudioMeta, ImgMeta, OBJModel, Polygon, RomAsset } from '../../src/bmsx/rompack/rompack';
 import { createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
 import type { Resource, RomManifest, resourcetype } from './rompacker.rompack';
@@ -8,7 +8,7 @@ const { build } = require('esbuild');
 const { join, parse } = require('path');
 
 const { access, readdir, readFile, stat, writeFile } = require('fs/promises');
-const { encodeBinary } = require('../src/bmsx/serializer/binencoder');
+const { encodeBinary } = require('../../src/bmsx/serializer/binencoder');
 const pako = require('pako');
 const minify = require('@node-minify/core');
 const cleanCSS = require('@node-minify/clean-css');
@@ -20,8 +20,8 @@ let GENERATE_AND_USE_TEXTURE_ATLAS = true;
 export const DONT_PACK_IMAGES_WHEN_USING_ATLAS = true;
 export const BOOTROM_TS_FILENAME = 'bootrom.ts';
 export const BOOTROM_JS_FILENAME = 'bootrom.js';
-export const BOOTROM_TS_RELATIVE_PATH = `../scripts/bootrom/${BOOTROM_TS_FILENAME}`;
-export const BOOTROM_JS_RELATIVE_PATH = `../rom/${BOOTROM_JS_FILENAME}`;
+export const BOOTROM_TS_RELATIVE_PATH = `../../scripts/bootrom/${BOOTROM_TS_FILENAME}`;
+export const BOOTROM_JS_RELATIVE_PATH = `../../rom/${BOOTROM_JS_FILENAME}`;
 
 const BOILERPLATE_RESOURCE_ID_BITMAP = `export enum BitmapId {
 	none = 'none',`; // Note: cannot use const enums here, because BFont uses BitmapId as a type (and const enums are not available at runtime)

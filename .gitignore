@@ -22,7 +22,7 @@
 **.tsbuildinfo
 **.rom
 **.d.ts
-!scripts/rompacker.rompack.d.ts
+!scripts/rompacker/rompacker.rompack.d.ts
 !resourceids.d.ts
 !rompack.d.ts
 rom/ignore

@@ -1,7 +1,7 @@
 /**
  * Interface for a loaded resource, which includes metadata about the resource.
  */
-import type { asset_type, ImgMeta } from '../src/bmsx/rompack/rompack';
+import type { asset_type, ImgMeta } from '../../src/bmsx/rompack/rompack';
 
 interface RomPackerOptions {
 	rom_name: string;

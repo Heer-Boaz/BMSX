@@ -52,6 +52,12 @@ BMSX is a lightweight TypeScript game engine and toolchain used to build small r
 # Project Layout
 
 The BMSX project is organized to support modular engine development, multiple games per repository, and a simple build pipeline. Here’s a detailed breakdown of the directory structure and its purpose:
+- **`inspectrom.ps1`**
+  - A PowerShell script to inspect ROM files, providing a quick way to view metadata and contents.
+  > Usage:
+  >  ```powershell
+  >  .\inspectrom.ps1 <rom-file-name> # e.g. inspectrom.ps1 testrom.rom, as the script will look for the file in the `dist/` folder.
+  >  ```
 
 - **`src/bmsx/`**
   - `bmsx.ts`: Exports the main engine modules and types for easy access.
@@ -117,14 +123,18 @@ The BMSX project is organized to support modular engine development, multiple ga
   - **Game logic files**: Game-specific objects, spaces, scenes, and scripts.
 
 - **`scripts/`**
-  Build and utility scripts, all written in TypeScript and run via `tsx`:
-  - **`rompacker-core.ts`**: Core packer utilities and shared logic used by `rompacker.ts`.
-  - **`rompacker.ts`**: The main build script. Packages the engine, game code, and resources into a `.rom` file and generates HTML loaders.
-  - **`bootrom.ts`**: The bootloader that runs in the browser and loads the ROM.
-  - **`atlasbuilder.ts`**: Builds texture atlases from individual images.
-  - **`boundingbox_extractor.ts`**: Extracts hitboxes from sprite data.
-  - **`rominspector.ts`**: Tool for inspecting and debugging ROM files.
-
+  - **`rompacker/`**
+    The main build and packaging scripts for the BMSX engine and games:
+    - **`rompacker-core.ts`**: Core utilities and shared logic used by `rompacker.ts`.
+    - **`rompacker.ts`**: The main build script that packages the engine, game code, and resources into a `.rom` file and generates HTML loaders.
+    - **`bootrom.ts`**: The bootloader that runs in the browser and loads the ROM.
+    - **`atlasbuilder.ts`**: Builds texture atlases from individual images.
+    - **`boundingbox_extractor.ts`**: Extracts hitboxes from sprite data.
+    - **`rompacker.rompack.d.ts`**: Type definitions for the ROM pack format and resources.
+  - **`rominspector/`**
+    A utility for inspecting and debugging ROM files:
+    - **`rominspector.ts`**: The main script that reads a ROM file, extracts metadata, and displays information about its contents (images, audio, models, code).
+    - **`asciiart.ts`**: Utility for generating ASCII art representations of images, audio, and models.
 - **`dist/`**
   Output directory for built games and HTML loaders:
   - `<game>.rom` – The packaged ROM file for each game.

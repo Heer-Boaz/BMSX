@@ -81,10 +81,10 @@
     "scripts/bootrom/bootrom.ts",
     "scripts/bootrom/bootaudio.ts",
     "scripts/bootrom/bootresources.ts",
-    "scripts/rompacker.ts",
-    "scripts/rompacker-core.ts",
-    "scripts/atlasbuilder.ts",
-    "scripts/boundingbox_extractor.ts",
+    "scripts/rompacker/rompacker.ts",
+    "scripts/rompacker/rompacker-core.ts",
+    "scripts/rompacker/atlasbuilder.ts",
+    "scripts/rompacker/boundingbox_extractor.ts",
   ],
   "watchOptions": {
     // Use native file system events for files and directories

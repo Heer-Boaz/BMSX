@@ -7,11 +7,12 @@ import * as contrib from 'blessed-contrib';
 import * as fs from 'fs/promises';
 import * as pako from 'pako';
 import { PNG } from 'pngjs';
-import type { AudioMeta, ImgMeta, RomAsset, RomMeta, asset_type } from '../src/bmsx/rompack/rompack';
-import { decodeBinary } from '../src/bmsx/serializer/binencoder';
+import type { AudioMeta, ImgMeta, RomAsset, RomMeta, asset_type } from '../../src/bmsx/rompack/rompack';
+import { OBJModel } from '../../src/bmsx/rompack/rompack';
+import { decodeBinary } from '../../src/bmsx/serializer/binencoder';
+import { getZippedRomAndRomLabelFromBlob, loadAssetList, parseMetaFromBuffer } from '../bootrom/bootrom';
+import { generateAtlasName } from '../rompacker/atlasbuilder';
 import { asciiWaveBraille, generateBrailleAsciiArt, generatePixelPerfectAsciiArt, parseWav, renderBufferBar, renderSummaryBar } from './asciiart';
-import { generateAtlasName } from './atlasbuilder';
-import { getZippedRomAndRomLabelFromBlob, loadAssetList, parseMetaFromBuffer } from './bootrom/bootrom';
 
 const PER_PIXEL_RENDERING_THRESHOLD = 64; // sprites ≤64×64 get per-pixel rendering
 
@@ -97,16 +98,21 @@ async function loadDataFromBuffer(buf: ArrayBuffer): Promise<any> {
 	}
 }
 
-async function loadModelFromBuffer(buf: ArrayBuffer): Promise<string> {
-        if (!(buf instanceof ArrayBuffer)) {
-                console.error('loadModelFromBuffer expects an ArrayBuffer, got:', buf);
-                throw new Error('Invalid buffer type');
-        }
-        if (buf.byteLength === 0) {
-                return '';
-        }
-        const copyBuffer = buf.slice(0);
-        return decodeuint8arr(new Uint8Array(copyBuffer));
+async function loadModelFromBuffer(buf: ArrayBuffer): Promise<any> {
+	if (!(buf instanceof ArrayBuffer)) {
+		console.error('loadModelFromBuffer expects an ArrayBuffer, got:', buf);
+		throw new Error('Invalid buffer type');
+	}
+	if (buf.byteLength === 0) {
+		return null;
+	}
+	const copyBuffer = buf.slice(0);
+	const obj = decodeBinary(new Uint8Array(copyBuffer)) as { positions: number[]; texcoords: number[]; normals: number[] | null };
+	return {
+		positions: new Float32Array(obj.positions),
+		texcoords: new Float32Array(obj.texcoords),
+		normals: obj.normals ? new Float32Array(obj.normals) : null
+	};
 }
 
 async function loadAssets(rompack: Buffer | ArrayBuffer) {
@@ -266,12 +272,12 @@ async function main() {
 	const { metaBuf, metadataOffset, metadataLength } = getMetadataBuffer(rompack, rommeta);
 	assetList = await loadAssets(rompack);
 
-        const imageAssets = assetList.filter(a => a.type === 'image') ?? [];
-        const audioCount = assetList.filter(a => a.type === 'audio')?.length ?? 0;
-        const dataCount = assetList.filter(a => a.type === 'data')?.length ?? 0;
-        const modelCount = assetList.filter(a => a.type === 'model')?.length ?? 0;
-        const codeCount = assetList.filter(a => a.type === 'code')?.length ?? 0;
-        const otherCount = assetList.filter(a => a.type !== 'image' && a.type !== 'audio' && a.type !== 'code' && a.type !== 'model')?.length ?? 0;
+	const imageAssets = assetList.filter(a => a.type === 'image') ?? [];
+	const audioCount = assetList.filter(a => a.type === 'audio')?.length ?? 0;
+	const dataCount = assetList.filter(a => a.type === 'data')?.length ?? 0;
+	const modelCount = assetList.filter(a => a.type === 'model')?.length ?? 0;
+	const codeCount = assetList.filter(a => a.type === 'code')?.length ?? 0;
+	const otherCount = assetList.filter(a => a.type !== 'image' && a.type !== 'audio' && a.type !== 'code' && a.type !== 'model')?.length ?? 0;
 
 	// --- Blessed UI ---
 	const screen = blessed.screen({
@@ -310,19 +316,19 @@ async function main() {
 			if (typeof a.metabuffer_start === 'number' && typeof a.metabuffer_end === 'number') size += a.metabuffer_end - a.metabuffer_start;
 			return sum + size;
 		}, 0);
-                const dataSize = assetList.filter(a => a.type === 'data').reduce((sum, a) => {
-                        let size = 0;
-                        if (typeof a.start === 'number' && typeof a.end === 'number') size += a.end - a.start;
-                        if (typeof a.metabuffer_start === 'number' && typeof a.metabuffer_end === 'number') size += a.metabuffer_end - a.metabuffer_start;
-                        return sum + size;
-                }, 0);
-                const modelSize = assetList.filter(a => a.type === 'model').reduce((sum, a) => {
-                        let size = 0;
-                        if (typeof a.start === 'number' && typeof a.end === 'number') size += a.end - a.start;
-                        if (typeof a.metabuffer_start === 'number' && typeof a.metabuffer_end === 'number') size += a.metabuffer_end - a.metabuffer_start;
-                        return sum + size;
-                }, 0);
-                const codeSize = assetList.reduce((sum, a) => a.type === 'code' ? sum + (a.end - a.start) : sum, 0);
+		const dataSize = assetList.filter(a => a.type === 'data').reduce((sum, a) => {
+			let size = 0;
+			if (typeof a.start === 'number' && typeof a.end === 'number') size += a.end - a.start;
+			if (typeof a.metabuffer_start === 'number' && typeof a.metabuffer_end === 'number') size += a.metabuffer_end - a.metabuffer_start;
+			return sum + size;
+		}, 0);
+		const modelSize = assetList.filter(a => a.type === 'model').reduce((sum, a) => {
+			let size = 0;
+			if (typeof a.start === 'number' && typeof a.end === 'number') size += a.end - a.start;
+			if (typeof a.metabuffer_start === 'number' && typeof a.metabuffer_end === 'number') size += a.metabuffer_end - a.metabuffer_start;
+			return sum + size;
+		}, 0);
+		const codeSize = assetList.reduce((sum, a) => a.type === 'code' ? sum + (a.end - a.start) : sum, 0);
 		const totalSize = rompack.byteLength;
 
 		const barLength = getBarLength(typeof screen.width === 'number' ? screen.width : 120);
@@ -345,15 +351,15 @@ async function main() {
 				case 'code':
 					colorTag = '{light-white-fg}';
 					break;
-                                case 'data':
-                                        colorTag = '{light-green-fg}';
-                                        break;
-                                case 'model':
-                                        colorTag = '{light-magenta-fg}';
-                                        break;
-                                default:
-                                        colorTag = '{light-magenta-fg}'; // Default for other types
-                                        break;
+				case 'data':
+					colorTag = '{light-green-fg}';
+					break;
+				case 'model':
+					colorTag = '{light-magenta-fg}';
+					break;
+				default:
+					colorTag = '{light-magenta-fg}'; // Default for other types
+					break;
 			}
 
 			if (asset.start || asset.end || asset.metabuffer_start || asset.metabuffer_end) {
@@ -365,22 +371,22 @@ async function main() {
 		// Global metadata region
 		summaryRegions.push({ start: metadataOffset, end: metadataOffset + metadataLength, colorTag: '{light-red-fg}', label: 'global metadata' });
 
-                const imageSizePercent = (imagesSize / totalSize * 100).toFixed(1);
-                const audioSizePercent = (audioSize / totalSize * 100).toFixed(1);
-                const dataSizePercent = (dataSize / totalSize * 100).toFixed(1);
-                const modelSizePercent = (modelSize / totalSize * 100).toFixed(1);
-                const codeSizePercent = (codeSize / totalSize * 100).toFixed(1);
+		const imageSizePercent = (imagesSize / totalSize * 100).toFixed(1);
+		const audioSizePercent = (audioSize / totalSize * 100).toFixed(1);
+		const dataSizePercent = (dataSize / totalSize * 100).toFixed(1);
+		const modelSizePercent = (modelSize / totalSize * 100).toFixed(1);
+		const codeSizePercent = (codeSize / totalSize * 100).toFixed(1);
 		const atlasSizePercent = (atlasSize / totalSize * 100).toFixed(1);
 		const metaSizePercent = (metaBuf.byteLength / totalSize * 100).toFixed(1);
 
-                return `Total assets: ${assetList?.length ?? 0} (images: ${imageAssets?.length ?? 0
-                        }, audio: ${audioCount}, data: ${dataCount}, models: ${modelCount}, code: ${codeCount}, other: ${otherCount}) \n` +
+		return `Total assets: ${assetList?.length ?? 0} (images: ${imageAssets?.length ?? 0
+			}, audio: ${audioCount}, data: ${dataCount}, models: ${modelCount}, code: ${codeCount}, other: ${otherCount}) \n` +
 			`Buffer: ${renderSummaryBar(summaryRegions, totalSize, barLength)}\n` +
 			`Total size: ${formatByteSize(totalSize)} | ` +
 			`Images: ${formatByteSize(imagesSize)} (${imageSizePercent}%) | ` +
 			`Audio: ${formatByteSize(audioSize)} (${audioSizePercent}%) | ` +
-                        `Data: ${formatByteSize(dataSize)} (${dataSizePercent}%) | ` +
-                        `Models: ${formatByteSize(modelSize)} (${modelSizePercent}%) | ` +
+			`Data: ${formatByteSize(dataSize)} (${dataSizePercent}%) | ` +
+			`Models: ${formatByteSize(modelSize)} (${modelSizePercent}%) | ` +
 			`Code: ${formatByteSize(codeSize)} (${codeSizePercent}%) | ` +
 			`Atlas: ${formatByteSize(atlasSize)} (${atlasSizePercent}%) | ` +
 			`Metadata: ${formatByteSize(metaBuf.byteLength)} (${metaSizePercent}%)`;
@@ -582,21 +588,28 @@ async function main() {
 					asciiArt = `(Preview failed: ${e}\n${e.stack})`;
 				}
 				break;
-                        case 'data':
-                                if (!selected.buffer || typeof selected.buffer !== 'object') {
-                                        selected.buffer = await loadDataFromBuffer(rompack.slice(selected.start, selected.end));
-                                }
-                                metadataLines.push(`Data size: ${formatByteSize(selected.end - selected.start)}`);
-                                asciiArt = JSON.stringify(selected.buffer, null, 2);
-                                break;
-                        case 'model':
-                                if (!selected.buffer || typeof selected.buffer !== 'string') {
-                                        selected.buffer = await loadModelFromBuffer(rompack.slice(selected.start, selected.end));
-                                }
-                                metadataLines.push(`Model size: ${formatByteSize(selected.end - selected.start)}`);
-                                asciiArt = selected.buffer.toString().split('\n').slice(0, getModalWidth() - 4).join('\n');
-                                break;
-                        case 'code': {
+			case 'data':
+				if (!selected.buffer || typeof selected.buffer !== 'object') {
+					selected.buffer = await loadDataFromBuffer(rompack.slice(selected.start, selected.end));
+				}
+				metadataLines.push(`Data size: ${formatByteSize(selected.end - selected.start)}`);
+				asciiArt = JSON.stringify(selected.buffer, null, 2);
+				break;
+			case 'model':
+				if (!selected.buffer || typeof selected.buffer !== 'string') {
+					(selected.buffer as any) = await loadModelFromBuffer(rompack.slice(selected.start, selected.end)) as OBJModel;
+				}
+				metadataLines.push(`Model size: ${formatByteSize(selected.end - selected.start)}`);
+				asciiArt =
+					`Positions: ${(selected.buffer as any).positions.length / 3} vertices, ` +
+					`Texcoords: ${(selected.buffer as any).texcoords.length / 2} UVs, ` +
+					`Normals: ${(selected.buffer as any).normals ? (selected.buffer as any).normals.length / 3 : 'No normals'}`;
+				asciiArt += '\n\n' +
+					`Positions: ${JSON.stringify((selected.buffer as any).positions.slice(0, 6))}\n` +
+					`Texcoords: ${JSON.stringify((selected.buffer as any).texcoords.slice(0, 4))}\n` +
+					`Normals: ${JSON.stringify((selected.buffer as any).normals ? (selected.buffer as any).normals.slice(0, 6) : 'No normals')}`;
+				break;
+			case 'code': {
 				let code = '';
 				// Load the code buffer from the ROM pack
 				code = await loadSourceFromBuffer(rompack.slice(selected.start, selected.end));

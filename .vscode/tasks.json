@@ -9,7 +9,7 @@
 			"command": "npx",
 			"args": [
 				"tsx",
-				"${workspaceFolder}/scripts/rompacker.ts",
+				"${workspaceFolder}/scripts/rompacker/rompacker.ts",
 				"-romname",
 				"${input:romtobuild}",
 				"-bootloaderpath",
@@ -55,7 +55,7 @@
 			"command": "npx",
 			"args": [
 				"tsx",
-				"${workspaceFolder}/scripts/rompacker.ts",
+				"${workspaceFolder}/scripts/rompacker/rompacker.ts",
 				"-romname",
 				"${input:romtobuild}",
 				"-bootloaderpath",
@@ -102,7 +102,7 @@
 			"command": "npx",
 			"args": [
 				"tsx",
-				"${workspaceFolder}/scripts/rompacker.ts",
+				"${workspaceFolder}/scripts/rompacker/rompacker.ts",
 				"-romname",
 				"${input:romtobuild}",
 				"-bootloaderpath",
@@ -147,7 +147,7 @@
 			"command": "npx",
 			"args": [
 				"tsx",
-				"${workspaceFolder}/scripts/rompacker.ts",
+				"${workspaceFolder}/scripts/rompacker/rompacker.ts",
 				"-romname",
 				"${input:romtobuild}",
 				"-bootloaderpath",
@@ -193,7 +193,7 @@
 			"command": "npx",
 			"args": [
 				"tsx",
-				"${workspaceFolder}/scripts/rompacker.ts",
+				"${workspaceFolder}/scripts/rompacker/rompacker.ts",
 				"-respath",
 				"./src/${input:romtobuild}/res",
 				"--buildreslist"
