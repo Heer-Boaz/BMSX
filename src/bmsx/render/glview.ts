@@ -5,8 +5,12 @@ import gameShaderCode from './shaders/gameshader.glsl';
 import gameShader3DCode from './shaders/gameshader3d.glsl';
 import vertexShaderCode from './shaders/vertexshader.glsl';
 import vertexShader3DCode from './shaders/vertexshader3d.glsl';
+import skyboxVertCode from './shaders/skybox.vert.glsl';
+import skyboxFragCode from './shaders/skybox.frag.glsl';
 import { BaseView, Color, DrawImgOptions, DrawRectOptions } from './view';
 import { bmat } from './math3d';
+import { Material } from './material';
+import { ShadowMap } from './shadowmap';
 import { Camera3D } from './camera3d';
 import type { DirectionalLight, PointLight } from './light';
 
@@ -206,21 +210,36 @@ export abstract class GLView extends BaseView {
     private pointLightColorLocation3D: WebGLUniformLocation;
     private pointLightRangeLocation3D: WebGLUniformLocation;
     private numPointLightsLocation3D: WebGLUniformLocation;
+    private materialColorLocation3D: WebGLUniformLocation;
+    private shadowMapLocation3D: WebGLUniformLocation;
+    private lightMatrixLocation3D: WebGLUniformLocation;
+    private shadowStrengthLocation3D: WebGLUniformLocation;
     private vertexBuffer3D: WebGLBuffer;
     private texcoordBuffer3D: WebGLBuffer;
     private color_overrideBuffer3D: WebGLBuffer;
     private atlas_idBuffer3D: WebGLBuffer;
     private normalBuffer3D: WebGLBuffer;
-    private meshesToDraw: { positions: Float32Array; texcoords: Float32Array; normals?: Float32Array; matrix: Float32Array; color: Color; atlasId: number }[] = [];
+    private meshesToDraw: { positions: Float32Array; texcoords: Float32Array; normals?: Float32Array; matrix: Float32Array; color: Color; atlasId: number; material?: Material; shadow?: { map: ShadowMap; matrix: Float32Array; strength: number } }[] = [];
     private camera: Camera3D = new Camera3D();
     private directionalLights: Map<string, DirectionalLight> = new Map();
     private pointLights: Map<string, PointLight> = new Map();
+
+    // Skybox fields
+    private skyboxProgram: WebGLProgram;
+    private skyboxPositionLocation: number;
+    private skyboxViewLocation: WebGLUniformLocation;
+    private skyboxProjectionLocation: WebGLUniformLocation;
+    private skyboxTextureLocation: WebGLUniformLocation;
+    private skyboxBuffer: WebGLBuffer;
+    private skyboxTexture: WebGLTexture | null = null;
 
     public static readonly vertexShaderCode: string = vertexShaderCode;
     public static readonly fragmentShaderTextureCode: string = gameShaderCode;
     public static readonly fragmentShaderCRTCode: string = crtShaderCode;
     public static readonly vertexShader3DCode: string = vertexShader3DCode;
     public static readonly fragmentShader3DCode: string = gameShader3DCode;
+    public static readonly skyboxVertShaderCode: string = skyboxVertCode;
+    public static readonly skyboxFragShaderCode: string = skyboxFragCode;
 
     private _applyNoise: boolean = true;
     private _applyColorBleed: boolean = true;
@@ -486,10 +505,13 @@ export abstract class GLView extends BaseView {
         this.setupGLContext(); // Set up the WebGL context
         this.createGameShaderPrograms(); // Create the game shader programs
         this.createGameShaderPrograms3D(); // Create 3D shader program
+        this.createSkyboxProgram();
         this.setupVertexShaderLocations(); // Set up the vertex shader locations for the game shader program
         this.setupVertexShaderLocations3D(); // Set up the vertex shader locations for the 3D shader
+        this.setupSkyboxLocations();
         this.setupBuffers(); // Set up the buffers for the game shader
         this.setupBuffers3D(); // Set up buffers for 3D
+        this.createSkyboxBuffer();
         this.setupGameShaderLocations(); // Set up the game shader locations
         this.setupGameShader3DLocations(); // Set up locations for 3D shader
         this.setupTextures(); // Set up the textures used by the shaders (such as the atlas texture and the post-processing shader texture)
@@ -696,6 +718,50 @@ export abstract class GLView extends BaseView {
         this.atlas_idBuffer3D = this.createBuffer();
     }
 
+    @catchWebGLError
+    private createSkyboxBuffer(): void {
+        const gl = this.glctx;
+        const positions = new Float32Array([
+            -1, -1, 1, 1, -1, 1, -1, 1, 1,
+            -1, 1, 1, 1, -1, 1, 1, 1, 1,
+            1, -1, -1, -1, -1, -1, 1, 1, -1,
+            -1, -1, -1, -1, 1, -1, 1, 1, -1,
+            -1, -1, -1, -1, -1, 1, -1, 1, -1,
+            -1, -1, 1, -1, 1, 1, -1, 1, -1,
+            1, -1, 1, 1, -1, -1, 1, 1, 1,
+            1, -1, -1, 1, 1, -1, 1, 1, 1,
+            -1, 1, 1, 1, 1, 1, -1, 1, -1,
+            -1, 1, -1, 1, 1, 1, 1, 1, -1,
+            -1, -1, -1, 1, -1, -1, -1, -1, 1,
+            -1, -1, 1, 1, -1, -1, 1, -1, 1,
+        ]);
+        this.skyboxBuffer = gl.createBuffer()!;
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.skyboxBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+    }
+
+    @catchWebGLError
+    private drawSkybox(): void {
+        const gl = this.glctx;
+        this.switchProgram(this.skyboxProgram);
+        gl.depthFunc(gl.LEQUAL);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.skyboxBuffer);
+        gl.vertexAttribPointer(this.skyboxPositionLocation, 3, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(this.skyboxPositionLocation);
+
+        const view = this.camera.viewMatrix.slice() as Float32Array;
+        view[12] = 0; view[13] = 0; view[14] = 0;
+        gl.uniformMatrix4fv(this.skyboxViewLocation, false, view);
+        gl.uniformMatrix4fv(this.skyboxProjectionLocation, false, this.camera.projectionMatrix);
+
+        gl.activeTexture(gl.TEXTURE9);
+        gl.bindTexture(gl.TEXTURE_CUBE_MAP, this.skyboxTexture);
+        gl.uniform1i(this.skyboxTextureLocation, 9);
+
+        gl.drawArrays(gl.TRIANGLES, 0, 36);
+        gl.depthFunc(gl.GREATER);
+    }
+
     /**
      * Sets up the attribute locations for the game shader program.
      * This method initializes the attribute locations for the vertex, texture coordinate, z-coordinate, and color override attributes.
@@ -739,6 +805,77 @@ export abstract class GLView extends BaseView {
             _atlas_dynamic: this.createTexture(null, { width: 1, height: 1 }, gl.TEXTURE1),
             post_processing_source_texture: null, // This will be created later in createFramebufferAndTexture
         };
+    }
+
+    @catchWebGLError
+    public setSkyboxImages(ids: { posX: string; negX: string; posY: string; negY: string; posZ: string; negZ: string }): void {
+        const gl = this.glctx;
+        if (!this.skyboxTexture) {
+            this.skyboxTexture = gl.createTexture()!;
+        }
+        gl.bindTexture(gl.TEXTURE_CUBE_MAP, this.skyboxTexture);
+        function generateAtlasName(atlasIndex: number): string {
+            const idxStr = atlasIndex.toString().padStart(2, '0');
+            return atlasIndex === 0 ? '_atlas' : `_atlas_${idxStr}`;
+        }
+        const targets = [
+            [gl.TEXTURE_CUBE_MAP_POSITIVE_X, ids.posX],
+            [gl.TEXTURE_CUBE_MAP_NEGATIVE_X, ids.negX],
+            [gl.TEXTURE_CUBE_MAP_POSITIVE_Y, ids.posY],
+            [gl.TEXTURE_CUBE_MAP_NEGATIVE_Y, ids.negY],
+            [gl.TEXTURE_CUBE_MAP_POSITIVE_Z, ids.posZ],
+            [gl.TEXTURE_CUBE_MAP_NEGATIVE_Z, ids.negZ],
+        ] as const;
+        let width = 0, height = 0;
+        const sources: CanvasImageSource[] = [];
+
+        for (const [, id] of targets) {
+            const asset = BaseView.imgassets[id];
+            if (!asset) throw Error(`Skybox image '${id}' not found`);
+            let source: CanvasImageSource;
+            if (asset.imgbin) {
+                source = asset.imgbin;
+            } else if (asset.imgmeta?.atlassed) {
+                const idx = asset.imgmeta.atlasid ?? 0;
+                const atlasName = generateAtlasName(idx);
+                const atlas = BaseView.imgassets[atlasName]?.imgbin;
+                if (!atlas) throw Error(`Atlas image '${atlasName}' not found`);
+                const [left, top, right, , , bottom] = asset.imgmeta.texcoords!;
+                const aw = atlas.width, ah = atlas.height;
+                const sx = left * aw;
+                const sy = top * ah;
+                const sw = (right - left) * aw;
+                const sh = (bottom - top) * ah;
+                const canvas = document.createElement('canvas');
+                canvas.width = sw;
+                canvas.height = sh;
+                const ctx = canvas.getContext('2d')!;
+                ctx.drawImage(atlas, sx, sy, sw, sh, 0, 0, sw, sh);
+                source = canvas;
+            } else {
+                throw Error(`Skybox image '${id}' not found`);
+            }
+            if (width === 0) {
+                const s = source as HTMLImageElement | HTMLCanvasElement;
+                width = s.width;
+                height = s.height;
+            }
+            sources.push(source);
+        }
+
+        for (const [target] of targets) {
+            gl.texImage2D(target, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        }
+
+        for (let i = 0; i < targets.length; i++) {
+            const [target] = targets[i];
+            const source = sources[i] as TexImageSource;
+            gl.texSubImage2D(target, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, source);
+        }
+        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     }
 
     /**
@@ -795,6 +932,22 @@ export abstract class GLView extends BaseView {
     }
 
     @catchWebGLError
+    private createSkyboxProgram(): void {
+        const gl = this.glctx;
+        const program = gl.createProgram();
+        if (!program) throw Error('Failed to create skybox GLSL program');
+        this.skyboxProgram = program;
+        const vertShader = this.loadShader(gl.VERTEX_SHADER, GLView.skyboxVertShaderCode);
+        const fragShader = this.loadShader(gl.FRAGMENT_SHADER, GLView.skyboxFragShaderCode);
+        gl.attachShader(program, vertShader);
+        gl.attachShader(program, fragShader);
+        gl.linkProgram(program);
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            throw Error(`Unable to initialize the skybox shader program: ${gl.getProgramInfoLog(program)} `);
+        }
+    }
+
+    @catchWebGLError
     /**
      * Sets up the vertex shader locations for the game shader program.
      */
@@ -840,6 +993,19 @@ export abstract class GLView extends BaseView {
         this.pointLightColorLocation3D = gl.getUniformLocation(this.gameShaderProgram3D, 'u_pointLightColor[0]')!;
         this.pointLightRangeLocation3D = gl.getUniformLocation(this.gameShaderProgram3D, 'u_pointLightRange[0]')!;
         this.numPointLightsLocation3D = gl.getUniformLocation(this.gameShaderProgram3D, 'u_numPointLights')!;
+        this.materialColorLocation3D = gl.getUniformLocation(this.gameShaderProgram3D, 'u_materialColor')!;
+        this.shadowMapLocation3D = gl.getUniformLocation(this.gameShaderProgram3D, 'u_shadowMap')!;
+        this.lightMatrixLocation3D = gl.getUniformLocation(this.gameShaderProgram3D, 'u_lightMatrix')!;
+        this.shadowStrengthLocation3D = gl.getUniformLocation(this.gameShaderProgram3D, 'u_shadowStrength')!;
+    }
+
+    @catchWebGLError
+    private setupSkyboxLocations(): void {
+        const gl = this.glctx;
+        this.skyboxPositionLocation = gl.getAttribLocation(this.skyboxProgram, 'a_position');
+        this.skyboxViewLocation = gl.getUniformLocation(this.skyboxProgram, 'u_view')!;
+        this.skyboxProjectionLocation = gl.getUniformLocation(this.skyboxProgram, 'u_projection')!;
+        this.skyboxTextureLocation = gl.getUniformLocation(this.skyboxProgram, 'u_skybox')!;
     }
 
     @catchWebGLError
@@ -1344,8 +1510,17 @@ export abstract class GLView extends BaseView {
     }
 
     @catchWebGLError
-    public drawMesh3D(positions: Float32Array, texcoords: Float32Array, normals: Float32Array | undefined, matrix: Float32Array, color: Color = DEFAULT_VERTEX_COLOR, atlasId: number = 0): void {
-        this.meshesToDraw.push({ positions, texcoords, normals, matrix, color, atlasId });
+    public drawMesh3D(
+        positions: Float32Array,
+        texcoords: Float32Array,
+        normals: Float32Array | undefined,
+        matrix: Float32Array,
+        color: Color = DEFAULT_VERTEX_COLOR,
+        atlasId: number = 0,
+        material?: Material,
+        shadow?: { map: ShadowMap; matrix: Float32Array; strength: number },
+    ): void {
+        this.meshesToDraw.push({ positions, texcoords, normals, matrix, color, atlasId, material, shadow });
     }
 
 
@@ -1360,6 +1535,11 @@ export abstract class GLView extends BaseView {
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
         gl.viewport(0, 0, this.offscreenCanvasSize.x, this.offscreenCanvasSize.y);
+
+        if (this.skyboxTexture) {
+            this.drawSkybox();
+            this.switchProgram(this.gameShaderProgram3D);
+        }
 
         gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer3D);
         gl.vertexAttribPointer(this.vertexLocation3D, 3, gl.FLOAT, false, 0, 0);
@@ -1404,6 +1584,20 @@ export abstract class GLView extends BaseView {
             atlasData.fill(mesh.atlasId);
             gl.bindBuffer(gl.ARRAY_BUFFER, this.atlas_idBuffer3D);
             gl.bufferData(gl.ARRAY_BUFFER, atlasData, gl.DYNAMIC_DRAW);
+
+
+            const matColor = mesh.material?.color ?? [1, 1, 1];
+            gl.uniform3fv(this.materialColorLocation3D, new Float32Array(matColor));
+
+            if (mesh.shadow) {
+                gl.activeTexture(gl.TEXTURE8);
+                gl.bindTexture(gl.TEXTURE_2D, mesh.shadow.map.texture);
+                gl.uniform1i(this.shadowMapLocation3D, 8);
+                gl.uniformMatrix4fv(this.lightMatrixLocation3D, false, mesh.shadow.matrix);
+                gl.uniform1f(this.shadowStrengthLocation3D, mesh.shadow.strength);
+            } else {
+                gl.uniform1f(this.shadowStrengthLocation3D, 1.0);
+            }
 
             const mvp = bmat.multiply(this.camera.viewProjectionMatrix, mesh.matrix);
             gl.uniformMatrix4fv(this.mvpLocation3D, false, mvp);

@@ -45,3 +45,7 @@ export * from './core/mesh';
 export * from './render/light';
 export * from './core/cameraobject';
 export * from './core/lightobject';
+export * from './component/transformcomponent';
+export * from './render/material';
+export * from './render/shadowmap';
+export * from './render/meshinstance';

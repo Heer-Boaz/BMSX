@@ -1,4 +1,4 @@
-import { AmbientLightObject, BGamepadButton, BaseModel, BehaviorTreeDefinition, BinaryCompressor, BootArgs, CameraObject, Component, Direction, DirectionalLightObject, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, MeshObject, PSG, PointLightObject, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, debugPrintBinarySnapshot, insavegame, new_area, new_vec2, new_vec3, snareInstrument, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/bmsx';
+import { AmbientLightObject, BGamepadButton, BaseModel, BehaviorTreeDefinition, BinaryCompressor, BootArgs, CameraObject, Component, Direction, DirectionalLightObject, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, MeshObject, PSG, PointLightObject, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, debugPrintBinarySnapshot, insavegame, new_area, new_vec2, new_vec3, snareInstrument, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, TransformComponent, Material, setSkybox, type State } from '../bmsx/bmsx';
 import { BitmapId, ModelId } from './resourceids';
 import type { OBJModel } from '../bmsx/rompack/rompack';
 
@@ -371,6 +371,7 @@ class bclass extends SpriteObject {
 };
 
 @insavegame
+@attach_components(TransformComponent)
 class Cube3D extends MeshObject {
     constructor() {
         super('cube');
@@ -378,11 +379,34 @@ class Cube3D extends MeshObject {
         this.setModel(model);
         this.mesh.color = { r: 0.7, g: 0.2, b: 0.2, a: 1.0 };
         this.mesh.atlasId = 255; // render without texture
+        this.mesh.material = new Material({ color: [0.7, 0.2, 0.2] });
         this.pos = new_vec3(0, 0, 0);
     }
 
     override run(): void {
         this.rotation[1] += 0.01; // Slow auto rotation
+        this.updateComponentsWithTag('position_update_axis');
+        super.run();
+    }
+}
+
+@insavegame
+@attach_components(TransformComponent)
+class SmallCube3D extends MeshObject {
+    constructor() {
+        super('smallCube');
+        const model = $.rom.model[ModelId.cube] as OBJModel;
+        this.setModel(model);
+        this.mesh.color = { r: 0.2, g: 0.7, b: 0.2, a: 1.0 };
+        this.mesh.atlasId = 255;
+        this.mesh.material = new Material({ color: [0.2, 0.7, 0.2] });
+        this.scale = [0.5, 0.5, 0.5];
+        this.pos = new_vec3(1, 0, 0);
+    }
+
+    override run(): void {
+        this.rotation[0] += 0.02;
+        this.updateComponentsWithTag('position_update_axis');
         super.run();
     }
 }
@@ -471,8 +495,17 @@ class gamemodel extends BaseModel {
 
     public override do_one_time_game_init(): this {
         const cube = new Cube3D();
+        const small = new SmallCube3D();
         _model.spawn(new bclass(), new_vec2(100, 100));
         _model.spawn(cube, new_vec3(0, 0, 0));
+        _model.spawn(small, new_vec3(0, 0, 0));
+
+        const parentTf = cube.getComponent(TransformComponent);
+        const childTf = small.getComponent(TransformComponent);
+        if (parentTf && childTf) {
+            childTf.parentNode = parentTf;
+            childTf.position = [1, 0, 0];
+        }
 
         const cam1 = new CameraObject('cam1');
         cam1.camera.setPosition([0, 0, 5]);
@@ -494,6 +527,15 @@ class gamemodel extends BaseModel {
         _model.spawn(sun);
         _model.spawn(extraSun);
         _model.spawn(lamp);
+
+        setSkybox({
+            posX: BitmapId.b2,
+            negX: BitmapId.b2,
+            posY: BitmapId.b2,
+            negY: BitmapId.b2,
+            posZ: BitmapId.b2,
+            negZ: BitmapId.b2,
+        });
 
         _model.spawn(new CameraController(cam1, cam2));
 

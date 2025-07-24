@@ -4,6 +4,8 @@ import { Input } from '../input/input';
 import type { Area, Polygon, Size, Vector, id2imgres, vec2 } from '../rompack/rompack';
 
 import { DEFAULT_VERTEX_COLOR } from "./glview";
+import { Material } from './material';
+import { ShadowMap } from './shadowmap';
 export interface FlipOptions {
 	flip_h: boolean;
 	flip_v: boolean;
@@ -371,26 +373,48 @@ export abstract class BaseView implements RegisterablePersistent {
 		$.view.context.translate(-0.5, -0.5);
 	}
 
-	public drawImg(options: DrawImgOptions): void {
-		const { pos, imgid, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 } } = options;
+        public drawImg(options: DrawImgOptions): void {
+                const { pos, imgid, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 } } = options;
 
-		let img = BaseView.imgassets[imgid]?.imgbin;
-		if (!img) {
-			throw new Error(`Image with id '${imgid}' not found!`);
-		}
-		$.view.context.save();
-		$.view.context.translate(~~pos.x, ~~pos.y);
-		if (flip.flip_h) {
-			$.view.context.scale(-1 * scale.x, 1 * scale.y);
-			$.view.context.translate(-img.width, 0);
-		}
-		if (flip.flip_v) {
-			$.view.context.scale(1 * scale.x, -1 * scale.y);
-			$.view.context.translate(0, -img.height);
-		}
-		$.view.context.drawImage(img, 0, 0);
-		$.view.context.restore();
-	}
+                const asset = BaseView.imgassets[imgid];
+                if (!asset) {
+                        throw new Error(`Image with id '${imgid}' not found!`);
+                }
+
+                let img: HTMLImageElement;
+                let sx = 0, sy = 0, sw = 0, sh = 0;
+                if (asset.imgbin) {
+                        img = asset.imgbin;
+                        sw = img.width;
+                        sh = img.height;
+                } else if (asset.imgmeta?.atlassed) {
+                        const idx = asset.imgmeta.atlasid ?? 0;
+                        const idxStr = idx.toString().padStart(2, '0');
+                        const atlasName = idx === 0 ? '_atlas' : `_atlas_${idxStr}`;
+                        const atlas = BaseView.imgassets[atlasName]?.imgbin;
+                        if (!atlas) throw new Error(`Atlas image '${atlasName}' not found!`);
+                        img = atlas;
+                        const [left, top, right, , , bottom] = asset.imgmeta.texcoords!;
+                        const aw = atlas.width, ah = atlas.height;
+                        sx = left * aw;
+                        sy = top * ah;
+                        sw = (right - left) * aw;
+                        sh = (bottom - top) * ah;
+                } else {
+                        throw new Error(`Image data for '${imgid}' not found!`);
+                }
+
+                const ctx = $.view.context;
+                ctx.save();
+                ctx.translate(~~pos.x, ~~pos.y);
+
+                ctx.scale(scale.x * (flip.flip_h ? -1 : 1), scale.y * (flip.flip_v ? -1 : 1));
+                if (flip.flip_h) ctx.translate(-sw, 0);
+                if (flip.flip_v) ctx.translate(0, -sh);
+
+                ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+                ctx.restore();
+        }
 
 	public drawRectangle(options: DrawRectOptions): void {
 		const { start: { x, y }, end: { x: ex, y: ey } } = options.area;
@@ -460,6 +484,8 @@ export interface DrawMeshOptions {
         matrix: Float32Array;
         color?: Color;
         atlasId?: number;
+        material?: Material;
+        shadow?: { map: ShadowMap; matrix: Float32Array; strength: number };
 }
 
 export function paintMesh(options: DrawMeshOptions): void {
@@ -467,8 +493,28 @@ export function paintMesh(options: DrawMeshOptions): void {
         if (typeof view.drawMesh3D === 'function') {
                 view.drawMesh3D(options.positions, options.texcoords, options.normals, options.matrix,
                         options.color ?? DEFAULT_VERTEX_COLOR,
-                        options.atlasId ?? 0);
+                        options.atlasId ?? 0,
+                        options.material,
+                        options.shadow);
         } else {
                 console.warn('paintMesh called but current view does not support 3D rendering');
+        }
+}
+
+export interface SkyboxImageIds {
+        posX: string;
+        negX: string;
+        posY: string;
+        negY: string;
+        posZ: string;
+        negZ: string;
+}
+
+export function setSkybox(images: SkyboxImageIds): void {
+        const view: any = $.view;
+        if (typeof view.setSkyboxImages === 'function') {
+                view.setSkyboxImages(images);
+        } else {
+                console.warn('setSkybox called but current view does not support 3D rendering');
         }
 }

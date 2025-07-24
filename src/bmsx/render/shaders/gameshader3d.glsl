@@ -4,6 +4,10 @@ precision mediump float;
 uniform sampler2D u_texture0;
 uniform sampler2D u_texture1;
 uniform float u_ditherIntensity;
+uniform vec3 u_materialColor;
+uniform sampler2D u_shadowMap;
+uniform mat4 u_lightMatrix;
+uniform float u_shadowStrength;
 uniform vec3 u_ambientColor;
 uniform float u_ambientIntensity;
 const int MAX_DIR_LIGHTS = 4;
@@ -80,7 +84,14 @@ void main() {
         }
     }
 
-    vec3 col = quantize(texColor.rgb * lighting);
+    texColor.rgb *= u_materialColor;
+
+    vec4 lightPos = u_lightMatrix * vec4(v_worldPos, 1.0);
+    vec3 proj = lightPos.xyz / lightPos.w;
+    float closest = texture(u_shadowMap, proj.xy * 0.5 + 0.5).r;
+    float shadow = proj.z - 0.005 > closest ? u_shadowStrength : 1.0;
+
+    vec3 col = quantize(texColor.rgb * lighting * shadow);
     col += bayer(gl_FragCoord.xy);
     outputColor = vec4(col, texColor.a);
 }
