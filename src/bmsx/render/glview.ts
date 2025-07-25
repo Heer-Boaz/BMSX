@@ -1,6 +1,8 @@
 import { multiply_vec, new_vec2, new_vec3 } from '../core/game';
 import type { ImgMeta, Polygon, Size, vec2, vec3, vec3arr } from '../rompack/rompack';
 import { Camera3D } from './camera3d';
+import { ATLAS_ID_ATTRIBUTE_SIZE, ATLAS_ID_BUFFER_OFFSET_MULTIPLIER, ATLAS_ID_COMPONENTS, ATLAS_ID_SIZE, bvec, COLOR_OVERRIDE_ATTRIBUTE_SIZE, COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER, COLOR_OVERRIDE_COMPONENTS, COLOR_OVERRIDE_SIZE, DEFAULT_VERTEX_COLOR, DEFAULT_ZCOORD, MAX_DIR_LIGHTS, MAX_POINT_LIGHTS, MAX_SPRITES, POSITION_COMPONENTS, RESOLUTION_VECTOR_SIZE, SPRITE_DRAW_OFFSET, TEXCOORD_COMPONENTS, TEXTURECOORD_ATTRIBUTE_SIZE, TEXTURECOORDS_SIZE, VERTEX_ATTRIBUTE_SIZE, VERTEX_BUFFER_OFFSET_MULTIPLIER, VERTEX_COLOR_COLORIZED_BLUE, VERTEX_COLOR_COLORIZED_GREEN, VERTEX_COLOR_COLORIZED_RED, VERTEXCOORDS_SIZE, VERTICES_PER_SPRITE, ZCOORD_ATTRIBUTE_SIZE, ZCOORD_BUFFER_OFFSET_MULTIPLIER, ZCOORD_COMPONENTS, ZCOORD_MAX, ZCOORDS_SIZE } from './glview.constants';
+import { catchWebGLError } from './glview.helpers';
 import type { DirectionalLight, PointLight } from './light';
 import { Material } from './material';
 import { bmat } from './math3d';
@@ -14,123 +16,9 @@ import vertexShader3DCode from './shaders/vertexshader3d.glsl';
 import { ShadowMap } from './shadowmap';
 import { BaseView, Color, DrawImgOptions, DrawRectOptions } from './view';
 
-const CATCH_WEBGL_ERROR = true; // Set to false to disable WebGL error catching
+export { DEFAULT_VERTEX_COLOR, VERTEX_COLOR_COLORIZED_BLUE, VERTEX_COLOR_COLORIZED_GREEN, VERTEX_COLOR_COLORIZED_RED, ZCOORD_MAX };
+
 type texturetype = '_atlas' | '_atlas_dynamic' | 'post_processing_source_texture';
-
-/**
- * Decorator function that catches WebGL errors thrown by the decorated method and throws an error with the error message.
- *
- * @param _target - The target object.
- * @param propertyKey - The name of the decorated method.
- * @param descriptor - The property descriptor of the decorated method.
- * @returns The modified property descriptor.
- */
-function catchWebGLError(_target: any, propertyKey: string, descriptor: PropertyDescriptor): PropertyDescriptor {
-    if (!CATCH_WEBGL_ERROR) {
-        return descriptor; // If error catching is disabled, return the original descriptor
-    }
-
-    const originalMethod = descriptor.value;
-    descriptor.value = function (...args: any[]) {
-        const returnValue = originalMethod.apply(this, args);
-        const gl = ($.view as GLView).glctx;
-        if (gl) {
-            const error = gl.getError();
-            if (error != gl.NO_ERROR) {
-                console.error(`WebGL error in function '${propertyKey}': '${getWebGLErrorString(gl, error)}' ('${error}').`);
-            }
-        }
-        return returnValue;
-    };
-    return descriptor;
-}
-
-/**
- * Retrieves the string representation of a WebGL error code.
- *
- * @param gl - The WebGL rendering context.
- * @param error - The WebGL error code.
- * @returns The string representation of the WebGL error code.
- */
-function getWebGLErrorString(gl: WebGLRenderingContext, error: number): string {
-    switch (error) {
-        case gl.NO_ERROR: return 'NO_ERROR';
-        case gl.INVALID_ENUM: return 'INVALID_ENUM';
-        case gl.INVALID_VALUE: return 'INVALID_VALUE';
-        case gl.INVALID_OPERATION: return 'INVALID_OPERATION';
-        case gl.OUT_OF_MEMORY: return 'OUT_OF_MEMORY';
-        case gl.CONTEXT_LOST_WEBGL: return 'CONTEXT_LOST_WEBGL';
-        default: return 'UNKNOWN_ERROR';
-    }
-}
-
-/**
- * Represents a utility object for setting vertices, texture coordinates, z-coordinates, and colors of rectangles in a Float32Array.
- */
-const bvec = {
-    set(v: Float32Array, i: number, x: number, y: number, w: number, h: number, sx: number, sy: number): void {
-        const x2 = x + w * sx, y2 = y + h * sy, offset = i * VERTEXCOORDS_SIZE;
-        v.set([x, y, x2, y, x, y2, x, y2, x2, y, x2, y2], offset);
-    },
-    set_texturecoords(v: Float32Array, i: number, coords: number[]): void {
-        const offset = i * TEXTURECOORDS_SIZE;
-        v.set(coords, offset);
-    },
-    set_zcoord(v: Float32Array, i: number, z: number): void {
-        const offset = i * ZCOORDS_SIZE;
-        for (let j = offset; j < offset + ZCOORDS_SIZE; j += ZCOORD_ATTRIBUTE_SIZE) v[j] = z;
-    },
-    set_color(v: Float32Array, i: number, color: Color): void {
-        const offset = i * COLOR_OVERRIDE_SIZE;
-        const colorArray = [color.r, color.g, color.b, color.a];
-        for (let j = offset; j < offset + COLOR_OVERRIDE_SIZE; j += COLOR_OVERRIDE_ATTRIBUTE_SIZE) v.set(colorArray, j);
-    },
-    set_atlas_id(v: Uint8Array, i: number, atlas_id: number): void {
-        // Set the atlas ID for all 6 vertices of the sprite
-        const offset = i * ATLAS_ID_SIZE;
-        // Set the atlas ID for each vertex
-        // Note that the atlas ID is a single byte, so we can use Uint8Array to store it in the buffer
-        // This is used to identify which atlas the sprite belongs to
-        for (let j = offset; j < offset + ATLAS_ID_SIZE; j += ATLAS_ID_ATTRIBUTE_SIZE) v[j] = atlas_id;
-    }
-};
-
-export const DEFAULT_VERTEX_COLOR: Color = { r: 1.0, g: 1.0, b: 1.0, a: 1.0 };
-export const VERTEX_COLOR_COLORIZED_RED: Color = { r: 1.0, g: 0.0, b: 0.0, a: 1.0 };
-export const VERTEX_COLOR_COLORIZED_GREEN: Color = { r: 0.0, g: 1.0, b: 0.0, a: 1.0 };
-export const VERTEX_COLOR_COLORIZED_BLUE: Color = { r: 0.0, g: 0.0, b: 1.0, a: 1.0 };
-export const MAX_SPRITES = 256;
-export const MAX_DIR_LIGHTS = 4;
-export const MAX_POINT_LIGHTS = 4;
-const VERTICES_PER_SPRITE = 6; // Number of vertices per sprite (2 triangles, 3 vertices each)
-
-const VERTEX_ATTRIBUTE_SIZE = 2;
-const TEXTURECOORD_ATTRIBUTE_SIZE = 2;
-const ZCOORD_ATTRIBUTE_SIZE = 1;
-const COLOR_OVERRIDE_ATTRIBUTE_SIZE = 4;
-const ATLAS_ID_ATTRIBUTE_SIZE = 1;
-
-const RESOLUTION_VECTOR_SIZE = 2;
-const VERTEXCOORDS_SIZE = VERTEX_ATTRIBUTE_SIZE * VERTICES_PER_SPRITE; // 2D coordinates for each vertex
-const TEXTURECOORDS_SIZE = TEXTURECOORD_ATTRIBUTE_SIZE * VERTICES_PER_SPRITE; // 2D texture coordinates for each vertex
-const ZCOORDS_SIZE = ZCOORD_ATTRIBUTE_SIZE * VERTICES_PER_SPRITE; // Z-coordinates for each vertex
-const COLOR_OVERRIDE_SIZE = COLOR_OVERRIDE_ATTRIBUTE_SIZE * VERTICES_PER_SPRITE; // Color overrides for each vertex
-const ATLAS_ID_SIZE = ATLAS_ID_ATTRIBUTE_SIZE * VERTICES_PER_SPRITE; // Atlas IDs for each vertex
-
-export const ZCOORD_MAX = 10000;
-const DEFAULT_ZCOORD = 0;
-const VERTEX_BUFFER_OFFSET_MULTIPLIER = 48;
-const ZCOORD_BUFFER_OFFSET_MULTIPLIER = 24;
-const COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER = 96;
-const ATLAS_ID_BUFFER_OFFSET_MULTIPLIER = ATLAS_ID_SIZE;
-// Constants for vertex attribute configuration
-const POSITION_COMPONENTS = 2;
-const TEXCOORD_COMPONENTS = 2;
-const ZCOORD_COMPONENTS = 1;
-const COLOR_OVERRIDE_COMPONENTS = 4;
-const ATLAS_ID_COMPONENTS = 1;
-
-const SPRITE_DRAW_OFFSET = 0;
 
 /**
  * Represents a view that renders graphics using WebGL.
