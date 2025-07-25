@@ -1,20 +1,20 @@
 import { multiply_vec, new_vec2, new_vec3 } from '../core/game';
 import type { ImgMeta, Polygon, Size, vec2, vec3, vec3arr } from '../rompack/rompack';
+import { Camera3D } from './camera3d';
+import type { DirectionalLight, PointLight } from './light';
+import { Material } from './material';
+import { bmat } from './math3d';
 import crtShaderCode from './shaders/crtshader.glsl';
 import gameShaderCode from './shaders/gameshader.glsl';
 import gameShader3DCode from './shaders/gameshader3d.glsl';
+import skyboxFragCode from './shaders/skybox.frag.glsl';
+import skyboxVertCode from './shaders/skybox.vert.glsl';
 import vertexShaderCode from './shaders/vertexshader.glsl';
 import vertexShader3DCode from './shaders/vertexshader3d.glsl';
-import skyboxVertCode from './shaders/skybox.vert.glsl';
-import skyboxFragCode from './shaders/skybox.frag.glsl';
-import { BaseView, Color, DrawImgOptions, DrawRectOptions } from './view';
-import { bmat } from './math3d';
-import { Material } from './material';
 import { ShadowMap } from './shadowmap';
-import { Camera3D } from './camera3d';
-import type { DirectionalLight, PointLight } from './light';
+import { BaseView, Color, DrawImgOptions, DrawRectOptions } from './view';
 
-const CATCH_WEBGL_ERROR = false; // Set to false to disable WebGL error catching
+const CATCH_WEBGL_ERROR = true; // Set to false to disable WebGL error catching
 type texturetype = '_atlas' | '_atlas_dynamic' | 'post_processing_source_texture';
 
 /**
@@ -37,7 +37,7 @@ function catchWebGLError(_target: any, propertyKey: string, descriptor: Property
         if (gl) {
             const error = gl.getError();
             if (error != gl.NO_ERROR) {
-                throw new Error(`WebGL error in function '${propertyKey}': '${getWebGLErrorString(gl, error)}' ('${error}').`);
+                console.error(`WebGL error in function '${propertyKey}': '${getWebGLErrorString(gl, error)}' ('${error}').`);
             }
         }
         return returnValue;
