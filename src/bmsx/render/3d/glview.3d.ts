@@ -1,16 +1,16 @@
 import type { Size, vec3, vec3arr } from '../../rompack/rompack';
+import { createBuffer as glCreateBuffer, loadShader as glLoadShader, setupAttributeFloat as glSetupAttributeFloat, setupAttributeInt as glSetupAttributeInt, switchProgram as glSwitchProgram } from '../glutils';
 import { GLView } from '../glview';
 import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS } from '../glview.constants';
-import { createBuffer as glCreateBuffer, setupAttributeFloat as glSetupAttributeFloat, setupAttributeInt as glSetupAttributeInt, loadShader as glLoadShader, switchProgram as glSwitchProgram } from '../glutils';
 import { BaseView, Color } from '../view';
 import { Camera3D } from './camera3d';
 import type { DirectionalLight, PointLight } from './light';
 import { Material } from './material';
 import { bmat } from './math3d';
-import gameShader3DCode from './shaders/gameshader3d.glsl';
+import gameShader3DCode from './shaders/3d.frag.glsl';
+import vertexShader3DCode from './shaders/3d.vert.glsl';
 import skyboxFragCode from './shaders/skybox.frag.glsl';
 import skyboxVertCode from './shaders/skybox.vert.glsl';
-import vertexShader3DCode from './shaders/vertexshader3d.glsl';
 import { ShadowMap } from './shadowmap';
 
 let glctx: WebGL2RenderingContext;

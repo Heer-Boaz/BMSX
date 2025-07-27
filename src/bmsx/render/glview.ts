@@ -1,15 +1,15 @@
 import { multiply_vec, new_vec2, new_vec3 } from '../core/game';
 import type { ImgMeta, Polygon, Size, vec2, vec3arr } from '../rompack/rompack';
 
+import { createBuffer as glCreateBuffer, createTexture as glCreateTexture, loadShader as glLoadShader, setupAttributeFloat as glSetupAttributeFloat, setupAttributeInt as glSetupAttributeInt, switchProgram as glSwitchProgram, updateBuffer as glUpdateBuffer } from './glutils';
 import { ATLAS_ID_ATTRIBUTE_SIZE, ATLAS_ID_BUFFER_OFFSET_MULTIPLIER, ATLAS_ID_COMPONENTS, ATLAS_ID_SIZE, COLOR_OVERRIDE_ATTRIBUTE_SIZE, COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER, COLOR_OVERRIDE_COMPONENTS, COLOR_OVERRIDE_SIZE, DEFAULT_VERTEX_COLOR, DEFAULT_ZCOORD, MAX_SPRITES, POSITION_COMPONENTS, RESOLUTION_VECTOR_SIZE, SPRITE_DRAW_OFFSET, TEXCOORD_COMPONENTS, TEXTURECOORD_ATTRIBUTE_SIZE, TEXTURECOORDS_SIZE, VERTEX_ATTRIBUTE_SIZE, VERTEX_BUFFER_OFFSET_MULTIPLIER, VERTEX_COLOR_COLORIZED_BLUE, VERTEX_COLOR_COLORIZED_GREEN, VERTEX_COLOR_COLORIZED_RED, VERTEXCOORDS_SIZE, VERTICES_PER_SPRITE, ZCOORD_ATTRIBUTE_SIZE, ZCOORD_BUFFER_OFFSET_MULTIPLIER, ZCOORD_COMPONENTS, ZCOORD_MAX, ZCOORDS_SIZE } from './glview.constants';
 import { catchWebGLError } from './glview.helpers';
-import { createBuffer as glCreateBuffer, setupAttributeFloat as glSetupAttributeFloat, setupAttributeInt as glSetupAttributeInt, updateBuffer as glUpdateBuffer, loadShader as glLoadShader, createTexture as glCreateTexture, switchProgram as glSwitchProgram } from './glutils';
 
-import crtShaderCode from './shaders/crtshader.glsl';
-import gameShaderCode from './shaders/gameshader.glsl';
+import gameShaderCode from './shaders/2d/2d.frag.glsl';
+import vertexShaderCode from './shaders/2d/2d.text.glsl';
+import crtShaderCode from './shaders/crt.frag.glsl';
 
-import vertexShaderCode from './shaders/vertexshader.glsl';
-import { bvec } from './vertexutils2d';
+import { bvec } from './2d/vertexutils2d';
 import { BaseView, Color, DrawImgOptions, DrawRectOptions } from './view';
 
 import * as GLView3D from './3d/glview.3d';
@@ -27,7 +27,7 @@ export abstract class GLView extends BaseView {
 	/**
 	 * The WebGL rendering context used for rendering the game.
 	 */
-        public glctx: WebGL2RenderingContext; // TODO: Remove public access, which is only used for catching WebGL errors
+	public glctx: WebGL2RenderingContext; // TODO: Remove public access, which is only used for catching WebGL errors
 	private textures: { [key in texturetype]: WebGLTexture; };
 	private gameShaderProgram: WebGLProgram;
 	private vertexLocation: number;
@@ -222,13 +222,13 @@ export abstract class GLView extends BaseView {
 			this._blurIntensity = crtOptions.blurIntensity ?? this._blurIntensity;
 			this._glowColor = crtOptions.glowColor ?? this._glowColor;
 		}
-                this.glctx = this.canvas.getContext('webgl2', {
-                        alpha: true,
-                        desynchronized: false,
-                        preserveDrawingBuffer: false,
-                        antialias: false,
-                }) as WebGL2RenderingContext;
-                GLView3D.init(this.glctx, this, this.offscreenCanvasSize);
+		this.glctx = this.canvas.getContext('webgl2', {
+			alpha: true,
+			desynchronized: false,
+			preserveDrawingBuffer: false,
+			antialias: false,
+		}) as WebGL2RenderingContext;
+		GLView3D.init(this.glctx, this, this.offscreenCanvasSize);
 	}
 
 	/**
@@ -242,12 +242,12 @@ export abstract class GLView extends BaseView {
 	override init(): void {
 		super.init(); // Call the base init method to set up the canvas
 		this.setupGLContext(); // Set up the WebGL context
-                this.createGameShaderPrograms(); // Create the game shader programs
-                GLView3D.createGameShaderPrograms3D(); // Create 3D shader program
-                GLView3D.createSkyboxProgram();
+		this.createGameShaderPrograms(); // Create the game shader programs
+		GLView3D.createGameShaderPrograms3D(); // Create 3D shader program
+		GLView3D.createSkyboxProgram();
 		this.setupVertexShaderLocations(); // Set up the vertex shader locations for the game shader program
-                GLView3D.setupVertexShaderLocations3D(); // Set up the vertex shader locations for the 3D shader
-                GLView3D.setupSkyboxLocations();
+		GLView3D.setupVertexShaderLocations3D(); // Set up the vertex shader locations for the 3D shader
+		GLView3D.setupSkyboxLocations();
 		this.setupBuffers(); // Set up the buffers for the game shader
 		this.setupGameShaderLocations(); // Set up the game shader locations
 		this.setupGameShader3DLocations(); // Set up locations for 3D shader
@@ -277,7 +277,7 @@ export abstract class GLView extends BaseView {
 		gl.uniform1i(this.texture0Location, 0); // Texture unit 0 is typically used for the main texture
 		gl.uniform1i(this.texture1Location, 1); // Texture unit 1 can be used for additional textures or effects
 
-                GLView3D.setDefaultUniformValues();
+		GLView3D.setDefaultUniformValues();
 
 		gl.useProgram(this.CRTShaderProgram);
 		gl.uniform1f(this.CRTVertexShaderScaleLocation, 1.0);
@@ -357,8 +357,8 @@ export abstract class GLView extends BaseView {
 		if (!program) throw Error(`Failed to create the CRT Shader GLSL program! Aborting as we cannot create the GLView for the game!`);
 		this.CRTShaderProgram = program;
 
-                const vertShader = glLoadShader(gl, gl.VERTEX_SHADER, GLView.vertexShaderCode);
-                const fragShader = glLoadShader(gl, gl.FRAGMENT_SHADER, GLView.fragmentShaderCRTCode);
+		const vertShader = glLoadShader(gl, gl.VERTEX_SHADER, GLView.vertexShaderCode);
+		const fragShader = glLoadShader(gl, gl.FRAGMENT_SHADER, GLView.fragmentShaderCRTCode);
 
 		gl.attachShader(program, vertShader);
 		gl.attachShader(program, fragShader);
@@ -418,14 +418,14 @@ export abstract class GLView extends BaseView {
 	 */
 	@catchWebGLError
 	private setupBuffers(): void {
-                const gl = this.glctx;
-                const buffers = {
-                        vertex: glCreateBuffer(gl, this.vertex_shader_data.vertexcoords),
-                        texturecoord: glCreateBuffer(gl, this.vertex_shader_data.texcoords),
-                        z: glCreateBuffer(gl, this.vertex_shader_data.zcoords),
-                        color_override: glCreateBuffer(gl, this.vertex_shader_data.color_override),
-                        atlas_id: glCreateBuffer(gl, this.vertex_shader_data.atlas_id),
-                };
+		const gl = this.glctx;
+		const buffers = {
+			vertex: glCreateBuffer(gl, this.vertex_shader_data.vertexcoords),
+			texturecoord: glCreateBuffer(gl, this.vertex_shader_data.texcoords),
+			z: glCreateBuffer(gl, this.vertex_shader_data.zcoords),
+			color_override: glCreateBuffer(gl, this.vertex_shader_data.color_override),
+			atlas_id: glCreateBuffer(gl, this.vertex_shader_data.atlas_id),
+		};
 
 		this.vertexBuffer = buffers.vertex;
 		this.texcoordBuffer = buffers.texturecoord;
@@ -433,15 +433,15 @@ export abstract class GLView extends BaseView {
 		this.color_overrideBuffer = buffers.color_override;
 		this.atlas_idBuffer = buffers.atlas_id;
 
-                GLView3D.setupBuffers3D(); // Set up buffers for 3D
-                GLView3D.createSkyboxBuffer();
+		GLView3D.setupBuffers3D(); // Set up buffers for 3D
+		GLView3D.createSkyboxBuffer();
 
 	}
 
-        @catchWebGLError
-        private drawSkybox(): void {
-                GLView3D.drawSkybox();
-        }
+	@catchWebGLError
+	private drawSkybox(): void {
+		GLView3D.drawSkybox();
+	}
 
 	/**
 	 * Sets up the attribute locations for the game shader program.
@@ -449,20 +449,20 @@ export abstract class GLView extends BaseView {
 	 */
 	@catchWebGLError
 	private setupGameShaderLocations(): void {
-                const gl = this.glctx;
-                glSwitchProgram(gl, this.gameShaderProgram);
+		const gl = this.glctx;
+		glSwitchProgram(gl, this.gameShaderProgram);
 
-                glSetupAttributeFloat(gl, this.vertexBuffer, this.vertexLocation, VERTEX_ATTRIBUTE_SIZE);
-                glSetupAttributeFloat(gl, this.texcoordBuffer, this.texcoordLocation, TEXTURECOORD_ATTRIBUTE_SIZE);
-                glSetupAttributeFloat(gl, this.zBuffer, this.zcoordLocation, ZCOORD_ATTRIBUTE_SIZE);
-                glSetupAttributeFloat(gl, this.color_overrideBuffer, this.color_overrideLocation, COLOR_OVERRIDE_ATTRIBUTE_SIZE);
-                glSetupAttributeInt(gl, this.atlas_idBuffer, this.atlas_idLocation, ATLAS_ID_ATTRIBUTE_SIZE);
+		glSetupAttributeFloat(gl, this.vertexBuffer, this.vertexLocation, VERTEX_ATTRIBUTE_SIZE);
+		glSetupAttributeFloat(gl, this.texcoordBuffer, this.texcoordLocation, TEXTURECOORD_ATTRIBUTE_SIZE);
+		glSetupAttributeFloat(gl, this.zBuffer, this.zcoordLocation, ZCOORD_ATTRIBUTE_SIZE);
+		glSetupAttributeFloat(gl, this.color_overrideBuffer, this.color_overrideLocation, COLOR_OVERRIDE_ATTRIBUTE_SIZE);
+		glSetupAttributeInt(gl, this.atlas_idBuffer, this.atlas_idLocation, ATLAS_ID_ATTRIBUTE_SIZE);
 	}
 
-        @catchWebGLError
-        private setupGameShader3DLocations(): void {
-                GLView3D.setupGameShader3DLocations();
-        }
+	@catchWebGLError
+	private setupGameShader3DLocations(): void {
+		GLView3D.setupGameShader3DLocations();
+	}
 
 	/**
 	 * Sets up the textures used in the game.
@@ -477,17 +477,17 @@ export abstract class GLView extends BaseView {
 		this.textures = {
 			// Link the atlas texture to the '_atlas' key for easy access
 			// The atlas is created from the '_atlas' image in the ROM pack, which is loaded before the GLView is created (during loading of the ROM pack)
-                        _atlas: glCreateTexture(gl, BaseView.imgassets['_atlas']?.imgbin, undefined, gl.TEXTURE0),
+			_atlas: glCreateTexture(gl, BaseView.imgassets['_atlas']?.imgbin, undefined, gl.TEXTURE0),
 			// Create the texture with dummy width and height, which will be updated later
-                        _atlas_dynamic: glCreateTexture(gl, null, { width: 1, height: 1 }, gl.TEXTURE1),
+			_atlas_dynamic: glCreateTexture(gl, null, { width: 1, height: 1 }, gl.TEXTURE1),
 			post_processing_source_texture: null, // This will be created later in createFramebufferAndTexture
 		};
 	}
 
-        @catchWebGLError
-        public setSkyboxImages(ids: { posX: string; negX: string; posY: string; negY: string; posZ: string; negZ: string }): void {
-                GLView3D.setSkyboxImages(ids);
-        }
+	@catchWebGLError
+	public setSkyboxImages(ids: { posX: string; negX: string; posY: string; negY: string; posZ: string; negZ: string }): void {
+		GLView3D.setSkyboxImages(ids);
+	}
 
 	/**
 	 * Setups the WebGL context for rendering the game.
@@ -515,8 +515,8 @@ export abstract class GLView extends BaseView {
 		const program = gl.createProgram();
 		if (!program) throw Error(`Failed to create the GLSL program! Aborting as we cannot create the GLView for the game!`);
 		this.gameShaderProgram = program;
-                const vertShader = glLoadShader(gl, gl.VERTEX_SHADER, GLView.vertexShaderCode);
-                const fragShader = glLoadShader(gl, gl.FRAGMENT_SHADER, GLView.fragmentShaderTextureCode);
+		const vertShader = glLoadShader(gl, gl.VERTEX_SHADER, GLView.vertexShaderCode);
+		const fragShader = glLoadShader(gl, gl.FRAGMENT_SHADER, GLView.fragmentShaderTextureCode);
 
 		gl.attachShader(program, vertShader);
 		gl.attachShader(program, fragShader);
@@ -605,7 +605,7 @@ export abstract class GLView extends BaseView {
 		const height = this.offscreenCanvasSize.y;
 
 		// Create a new texture
-                this.textures['post_processing_source_texture'] = glCreateTexture(gl, undefined, { width, height }, gl.TEXTURE8); // Use TEXTURE8 for the post-processing shader texture
+		this.textures['post_processing_source_texture'] = glCreateTexture(gl, undefined, { width, height }, gl.TEXTURE8); // Use TEXTURE8 for the post-processing shader texture
 
 		// Create a new framebuffer
 		this.framebuffer = gl.createFramebuffer();
@@ -646,7 +646,7 @@ export abstract class GLView extends BaseView {
 			}
 		}
 
-                GLView3D.camera.setAspect(this.offscreenCanvasSize.x / this.offscreenCanvasSize.y);
+		GLView3D.camera.setAspect(this.offscreenCanvasSize.x / this.offscreenCanvasSize.y);
 
 		// Clear the needsResize flag
 		this.needsResize = false;
@@ -659,15 +659,15 @@ export abstract class GLView extends BaseView {
 		this.drawSkybox(); // Draw the skybox if it exists
 
 		// Draw all the sprites to a texture using the main shader
-                this.renderSpriteBatch();
-                GLView3D.renderMeshBatch();
+		this.renderSpriteBatch();
+		GLView3D.renderMeshBatch();
 		// this.saveTextureToFile();
 		// debugger;
 
 		// Draw a full-screen quad using the post-processing shader
 		this.applyCrtPostProcess();
 
-                glSwitchProgram(this.glctx, this.gameShaderProgram); // Switch back to the main shader
+		glSwitchProgram(this.glctx, this.gameShaderProgram); // Switch back to the main shader
 
 		this.isRendering = false;
 
@@ -764,7 +764,7 @@ export abstract class GLView extends BaseView {
 		gl.viewport(0, 0, this.canvas.width, this.canvas.height);
 
 		// Switch to the post-processing shader
-                glSwitchProgram(gl, this.CRTShaderProgram);
+		glSwitchProgram(gl, this.CRTShaderProgram);
 
 		// Bind the vertex position buffer
 		gl.bindBuffer(gl.ARRAY_BUFFER, this.CRTShaderVertexBuffer);
@@ -816,7 +816,7 @@ export abstract class GLView extends BaseView {
 		// Set the viewport to match the size of the offscreen framebuffer
 		gl.viewport(0, 0, this.offscreenCanvasSize.x, this.offscreenCanvasSize.y);
 		// Set the viewport to the dimensions of the 'post_processing_source_texture' texture
-                glSwitchProgram(gl, this.gameShaderProgram);
+		glSwitchProgram(gl, this.gameShaderProgram);
 
 		// Bind the position buffer and set the position attribute
 		gl.bindBuffer(gl.ARRAY_BUFFER, _this.vertexBuffer);
@@ -954,12 +954,12 @@ export abstract class GLView extends BaseView {
 	  * @param color_override The new color override data.
 	  * @param index The offset into the buffer to start
 	 */
-        private updateBuffers(gl: WebGL2RenderingContext, vertexcoords: Float32Array, texcoords: Float32Array, zcoords: Float32Array, color_override: Float32Array, atlasid: Uint8Array, index: number): void {
-                glUpdateBuffer(gl, this.vertexBuffer, gl.ARRAY_BUFFER, VERTEX_BUFFER_OFFSET_MULTIPLIER * index, vertexcoords);
-                glUpdateBuffer(gl, this.texcoordBuffer, gl.ARRAY_BUFFER, VERTEX_BUFFER_OFFSET_MULTIPLIER * index, texcoords);
-                glUpdateBuffer(gl, this.zBuffer, gl.ARRAY_BUFFER, ZCOORD_BUFFER_OFFSET_MULTIPLIER * index, zcoords);
-                glUpdateBuffer(gl, this.color_overrideBuffer, gl.ARRAY_BUFFER, COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER * index, color_override);
-                glUpdateBuffer(gl, this.atlas_idBuffer, gl.ARRAY_BUFFER, ATLAS_ID_BUFFER_OFFSET_MULTIPLIER * index, atlasid);
+	private updateBuffers(gl: WebGL2RenderingContext, vertexcoords: Float32Array, texcoords: Float32Array, zcoords: Float32Array, color_override: Float32Array, atlasid: Uint8Array, index: number): void {
+		glUpdateBuffer(gl, this.vertexBuffer, gl.ARRAY_BUFFER, VERTEX_BUFFER_OFFSET_MULTIPLIER * index, vertexcoords);
+		glUpdateBuffer(gl, this.texcoordBuffer, gl.ARRAY_BUFFER, VERTEX_BUFFER_OFFSET_MULTIPLIER * index, texcoords);
+		glUpdateBuffer(gl, this.zBuffer, gl.ARRAY_BUFFER, ZCOORD_BUFFER_OFFSET_MULTIPLIER * index, zcoords);
+		glUpdateBuffer(gl, this.color_overrideBuffer, gl.ARRAY_BUFFER, COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER * index, color_override);
+		glUpdateBuffer(gl, this.atlas_idBuffer, gl.ARRAY_BUFFER, ATLAS_ID_BUFFER_OFFSET_MULTIPLIER * index, atlasid);
 	}
 
 	@catchWebGLError
@@ -973,7 +973,7 @@ export abstract class GLView extends BaseView {
 		material?: Material,
 		shadow?: { map: ShadowMap; matrix: Float32Array; strength: number },
 	): void {
-                GLView3D.meshesToDraw.push({ positions, texcoords, normals, matrix, color, atlasId, material, shadow });
+		GLView3D.meshesToDraw.push({ positions, texcoords, normals, matrix, color, atlasId, material, shadow });
 	}
 
 	/**
@@ -1144,7 +1144,7 @@ export abstract class GLView extends BaseView {
 
 		const gl = this.glctx;
 		// Create the dynamic atlas texture
-                this.textures['_atlas_dynamic'] = glCreateTexture(gl, atlasImage, { width: atlasImage.width, height: atlasImage.height }, gl.TEXTURE1);
+		this.textures['_atlas_dynamic'] = glCreateTexture(gl, atlasImage, { width: atlasImage.width, height: atlasImage.height }, gl.TEXTURE1);
 
 		// Update the dynamic atlas texture with the new image
 		gl.bindTexture(gl.TEXTURE_2D, this.textures['_atlas_dynamic']);
