@@ -1,6 +1,6 @@
-import { AmbientLightObject, BGamepadButton, BaseModel, BehaviorTreeDefinition, BinaryCompressor, BootArgs, CameraObject, Component, Direction, DirectionalLightObject, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, MeshObject, PSG, PointLightObject, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, debugPrintBinarySnapshot, insavegame, new_area, new_vec2, new_vec3, snareInstrument, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, TransformComponent, Material, setSkybox, type State } from '../bmsx/bmsx';
-import { BitmapId, ModelId } from './resourceids';
+import { AmbientLightObject, BGamepadButton, BaseModel, BehaviorTreeDefinition, BinaryCompressor, BootArgs, CameraObject, Component, Direction, DirectionalLightObject, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, Material, MeshObject, PointLightObject, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, TransformComponent, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, debugPrintBinarySnapshot, insavegame, new_area, new_vec2, new_vec3, setSkybox, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/bmsx';
 import type { OBJModel } from '../bmsx/rompack/rompack';
+import { BitmapId, ModelId } from './resourceids';
 
 var _game: Game;
 let _model: gamemodel;
@@ -340,7 +340,7 @@ class bclass extends SpriteObject {
                     on_input: {
                         'bla[j]': {
                             do(this: bclass) {
-                                PSG.playCustomInstrument(snareInstrument, 10000);
+                                // PSG.playCustomInstrument(snareInstrument, 10000);
                             }
                         },
                     },

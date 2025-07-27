@@ -3,9 +3,9 @@ import { Registry } from '../core/registry';
 import { Input } from '../input/input';
 import type { Area, Polygon, Size, Vector, id2imgres, vec2 } from '../rompack/rompack';
 
-import { DEFAULT_VERTEX_COLOR } from "./glview";
-import { Material } from './material';
-import { ShadowMap } from './shadowmap';
+import { Material } from './3d/material';
+import { ShadowMap } from './3d/shadowmap';
+import { DEFAULT_VERTEX_COLOR, GLView } from "./glview";
 export interface FlipOptions {
 	flip_h: boolean;
 	flip_v: boolean;
@@ -88,13 +88,13 @@ export abstract class BaseView implements RegisterablePersistent {
 	 * Draws the game on the canvas. If `clearCanvas` is set to `true`, the canvas will be cleared before drawing.
 	 * The method sorts the objects in the current space by depth and then iterates over them, calling their `paint` method if they are visible and not flagged for disposal.
 	 */
-        public drawgame(clearCanvas: boolean = true): void {
-                const model: any = $.model;
-                if (typeof model.applyViewSettings === 'function') model.applyViewSettings();
-                if (clearCanvas) $.view.clear();
-                $.model.currentSpace.sort_by_depth(); // Required for each frame as objects can change depth during the flow of the game
-                $.model.currentSpace.objects.forEach(o => !o.disposeFlag && o.visible && (o.updateComponentsWithTag?.('render'), o.paint?.()));
-        }
+	public drawgame(clearCanvas: boolean = true): void {
+		const model: any = $.model;
+		if (typeof model.applyViewSettings === 'function') model.applyViewSettings();
+		if (clearCanvas) $.view.clear();
+		$.model.currentSpace.sort_by_depth(); // Required for each frame as objects can change depth during the flow of the game
+		$.model.currentSpace.objects.forEach(o => !o.disposeFlag && o.visible && (o.updateComponentsWithTag?.('render'), o.paint?.()));
+	}
 
 	/**
 	 * Calculates the size of the canvas and the scale factor based on the current viewport size and window size.
@@ -373,48 +373,48 @@ export abstract class BaseView implements RegisterablePersistent {
 		$.view.context.translate(-0.5, -0.5);
 	}
 
-        public drawImg(options: DrawImgOptions): void {
-                const { pos, imgid, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 } } = options;
+	public drawImg(options: DrawImgOptions): void {
+		const { pos, imgid, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 } } = options;
 
-                const asset = BaseView.imgassets[imgid];
-                if (!asset) {
-                        throw new Error(`Image with id '${imgid}' not found!`);
-                }
+		const asset = BaseView.imgassets[imgid];
+		if (!asset) {
+			throw new Error(`Image with id '${imgid}' not found!`);
+		}
 
-                let img: HTMLImageElement;
-                let sx = 0, sy = 0, sw = 0, sh = 0;
-                if (asset.imgbin) {
-                        img = asset.imgbin;
-                        sw = img.width;
-                        sh = img.height;
-                } else if (asset.imgmeta?.atlassed) {
-                        const idx = asset.imgmeta.atlasid ?? 0;
-                        const idxStr = idx.toString().padStart(2, '0');
-                        const atlasName = idx === 0 ? '_atlas' : `_atlas_${idxStr}`;
-                        const atlas = BaseView.imgassets[atlasName]?.imgbin;
-                        if (!atlas) throw new Error(`Atlas image '${atlasName}' not found!`);
-                        img = atlas;
-                        const [left, top, right, , , bottom] = asset.imgmeta.texcoords!;
-                        const aw = atlas.width, ah = atlas.height;
-                        sx = left * aw;
-                        sy = top * ah;
-                        sw = (right - left) * aw;
-                        sh = (bottom - top) * ah;
-                } else {
-                        throw new Error(`Image data for '${imgid}' not found!`);
-                }
+		let img: HTMLImageElement;
+		let sx = 0, sy = 0, sw = 0, sh = 0;
+		if (asset.imgbin) {
+			img = asset.imgbin;
+			sw = img.width;
+			sh = img.height;
+		} else if (asset.imgmeta?.atlassed) {
+			const idx = asset.imgmeta.atlasid ?? 0;
+			const idxStr = idx.toString().padStart(2, '0');
+			const atlasName = idx === 0 ? '_atlas' : `_atlas_${idxStr}`;
+			const atlas = BaseView.imgassets[atlasName]?.imgbin;
+			if (!atlas) throw new Error(`Atlas image '${atlasName}' not found!`);
+			img = atlas;
+			const [left, top, right, , , bottom] = asset.imgmeta.texcoords!;
+			const aw = atlas.width, ah = atlas.height;
+			sx = left * aw;
+			sy = top * ah;
+			sw = (right - left) * aw;
+			sh = (bottom - top) * ah;
+		} else {
+			throw new Error(`Image data for '${imgid}' not found!`);
+		}
 
-                const ctx = $.view.context;
-                ctx.save();
-                ctx.translate(~~pos.x, ~~pos.y);
+		const ctx = $.view.context;
+		ctx.save();
+		ctx.translate(~~pos.x, ~~pos.y);
 
-                ctx.scale(scale.x * (flip.flip_h ? -1 : 1), scale.y * (flip.flip_v ? -1 : 1));
-                if (flip.flip_h) ctx.translate(-sw, 0);
-                if (flip.flip_v) ctx.translate(0, -sh);
+		ctx.scale(scale.x * (flip.flip_h ? -1 : 1), scale.y * (flip.flip_v ? -1 : 1));
+		if (flip.flip_h) ctx.translate(-sw, 0);
+		if (flip.flip_v) ctx.translate(0, -sh);
 
-                ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
-                ctx.restore();
-        }
+		ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
+		ctx.restore();
+	}
 
 	public drawRectangle(options: DrawRectOptions): void {
 		const { start: { x, y }, end: { x: ex, y: ey } } = options.area;
@@ -472,49 +472,49 @@ export abstract class BaseView implements RegisterablePersistent {
 }
 
 export function paintImage(options: DrawImgOptions): void {
-        if (!options.imgid || options.imgid === 'none') return; // Don't draw anything when imgid = BitmapId.None. For animations, we don't always want to use visible = false
+	if (!options.imgid || options.imgid === 'none') return; // Don't draw anything when imgid = BitmapId.None. For animations, we don't always want to use visible = false
 
-        $.view.drawImg(options);
+	$.view.drawImg(options);
 }
 
 export interface DrawMeshOptions {
-        positions: Float32Array;
-        texcoords: Float32Array;
-        normals?: Float32Array;
-        matrix: Float32Array;
-        color?: Color;
-        atlasId?: number;
-        material?: Material;
-        shadow?: { map: ShadowMap; matrix: Float32Array; strength: number };
+	positions: Float32Array;
+	texcoords: Float32Array;
+	normals?: Float32Array;
+	matrix: Float32Array;
+	color?: Color;
+	atlasId?: number;
+	material?: Material;
+	shadow?: { map: ShadowMap; matrix: Float32Array; strength: number };
 }
 
 export function paintMesh(options: DrawMeshOptions): void {
-        const view: any = $.view;
-        if (typeof view.drawMesh3D === 'function') {
-                view.drawMesh3D(options.positions, options.texcoords, options.normals, options.matrix,
-                        options.color ?? DEFAULT_VERTEX_COLOR,
-                        options.atlasId ?? 0,
-                        options.material,
-                        options.shadow);
-        } else {
-                console.warn('paintMesh called but current view does not support 3D rendering');
-        }
+	const view: GLView = $.view as GLView;
+	if (typeof view.drawMesh3D === 'function') {
+		view.drawMesh3D(options.positions, options.texcoords, options.normals, options.matrix,
+			options.color ?? DEFAULT_VERTEX_COLOR,
+			options.atlasId ?? 0,
+			options.material,
+			options.shadow);
+	} else {
+		console.warn('paintMesh called but current view does not support 3D rendering');
+	}
 }
 
 export interface SkyboxImageIds {
-        posX: string;
-        negX: string;
-        posY: string;
-        negY: string;
-        posZ: string;
-        negZ: string;
+	posX: string;
+	negX: string;
+	posY: string;
+	negY: string;
+	posZ: string;
+	negZ: string;
 }
 
 export function setSkybox(images: SkyboxImageIds): void {
-        const view: any = $.view;
-        if (typeof view.setSkyboxImages === 'function') {
-                view.setSkyboxImages(images);
-        } else {
-                console.warn('setSkybox called but current view does not support 3D rendering');
-        }
+	const view: any = $.view;
+	if (typeof view.setSkyboxImages === 'function') {
+		view.setSkyboxImages(images);
+	} else {
+		console.warn('setSkybox called but current view does not support 3D rendering');
+	}
 }

@@ -1,8 +1,7 @@
-import { GameObject } from './gameobject';
-import { insavegame } from '../serializer/gameserializer';
-import type { AmbientLight, DirectionalLight, PointLight, Light } from '../render/light';
+import type { AmbientLight, DirectionalLight, Light, PointLight } from '../render/3d/light';
 import { GLView } from '../render/glview';
-import type { Vector } from '../rompack/rompack';
+import { insavegame } from '../serializer/gameserializer';
+import { GameObject } from './gameobject';
 
 @insavegame
 export abstract class LightObject extends GameObject {
@@ -26,7 +25,7 @@ export class AmbientLightObject extends LightObject {
     override applyToView(view: GLView): void {
         if (this.active) {
             const l = this.light as AmbientLight;
-            view.setAmbientLight(l.color, l.intensity);
+            view.view3d.setAmbientLight(l.color, l.intensity);
         }
     }
 
@@ -40,9 +39,9 @@ export class DirectionalLightObject extends LightObject {
     override applyToView(view: GLView): void {
         const l = this.light as DirectionalLight;
         if (this.active) {
-            view.addDirectionalLight(l.id, l.direction, l.color);
+            view.view3d.addDirectionalLight(l.id, l.direction, l.color);
         } else {
-            view.removeDirectionalLight(l.id);
+            view.view3d.removeDirectionalLight(l.id);
         }
     }
 
@@ -56,9 +55,9 @@ export class PointLightObject extends LightObject {
     override applyToView(view: GLView): void {
         const l = this.light as PointLight;
         if (this.active) {
-            view.addPointLight(l.id, l.position, l.color, l.range);
+            view.view3d.addPointLight(l.id, l.position, l.color, l.range);
         } else {
-            view.removePointLight(l.id);
+            view.view3d.removePointLight(l.id);
         }
     }
 

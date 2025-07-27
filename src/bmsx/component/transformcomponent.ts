@@ -1,8 +1,8 @@
-import { Component, componenttags_postprocessing } from './basecomponent';
-import { bmat, Mat4 } from '../render/math3d';
-import type { vec3arr } from '../rompack/rompack';
 import type { Identifier } from '../core/game';
+import { bmat, Mat4 } from '../render/3d/math3d';
+import type { vec3arr } from '../rompack/rompack';
 import { insavegame } from '../serializer/gameserializer';
+import { Component, componenttags_postprocessing } from './basecomponent';
 
 @insavegame
 @componenttags_postprocessing('position_update_axis')

@@ -1,12 +1,12 @@
-import { GameObject } from './gameobject';
-import { insavegame } from '../serializer/gameserializer';
-import type { vec3arr, OBJModel } from '../rompack/rompack';
-import { bmat } from '../render/math3d';
 import { TransformComponent } from '../component/transformcomponent';
-import { Color, DrawMeshOptions, paintMesh } from '../render/view';
-import { Material } from '../render/material';
-import { ShadowMap } from '../render/shadowmap';
+import { Material } from '../render/3d/material';
+import { bmat } from '../render/3d/math3d';
+import { ShadowMap } from '../render/3d/shadowmap';
 import { DEFAULT_VERTEX_COLOR } from '../render/glview';
+import { Color, DrawMeshOptions, paintMesh } from '../render/view';
+import type { OBJModel, vec3arr } from '../rompack/rompack';
+import { insavegame } from '../serializer/gameserializer';
+import { GameObject } from './gameobject';
 
 export class Mesh {
     public positions: Float32Array;

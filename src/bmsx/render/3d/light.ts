@@ -1,4 +1,4 @@
-import type { vec3arr } from '../rompack/rompack';
+import type { vec3arr } from '../../rompack/rompack';
 
 export interface BaseLight {
     /** Unique identifier for this light */
@@ -38,4 +38,3 @@ export interface AreaLight extends BaseLight {
 }
 
 export type Light = AmbientLight | DirectionalLight | PointLight | SpotLight | AreaLight;
-

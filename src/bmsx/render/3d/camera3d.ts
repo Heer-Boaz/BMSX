@@ -1,5 +1,5 @@
+import type { vec3, vec3arr } from '../../rompack/rompack';
 import { bmat, bvec3, Mat4 } from './math3d';
-import type { vec3, vec3arr } from '../rompack/rompack';
 
 function toVec3(v: vec3 | vec3arr): vec3 {
     return Array.isArray(v) ? { x: v[0], y: v[1], z: v[2] } : { x: v.x, y: v.y, z: v.z };
@@ -19,6 +19,10 @@ export class Camera3D {
     public projection: 'perspective' | 'orthographic';
     public orthoWidth: number;
     public orthoHeight: number;
+
+    private _viewMatrix: Mat4 | null = null;
+    private _projectionMatrix: Mat4 | null = null;
+    private _viewProjectionMatrix: Mat4 | null = null;
 
     constructor(opts?: {
         position?: vec3 | vec3arr;
@@ -41,16 +45,36 @@ export class Camera3D {
         this.orthoHeight = 10;
     }
 
+    private recalculateMatrices(): void {
+        this._viewMatrix = bmat.lookAt(
+            [this.position.x, this.position.y, this.position.z],
+            [this.target.x, this.target.y, this.target.z],
+            [this.up.x, this.up.y, this.up.z]
+        );
+        if (this.projection === 'perspective') {
+            this._projectionMatrix = bmat.perspective(this.fov, this._aspect, this.near, this.far);
+        } else {
+            this._projectionMatrix = bmat.orthographic(
+                -this.orthoWidth / 2, this.orthoWidth / 2,
+                -this.orthoHeight / 2, this.orthoHeight / 2,
+                this.near, this.far
+            );
+        }
+        this._viewProjectionMatrix = bmat.multiply(this._projectionMatrix, this._viewMatrix);
+    }
+
     public setAspect(aspect: number): void {
         this._aspect = aspect;
     }
 
     public setPosition(pos: vec3 | vec3arr): void {
         this.position = toVec3(pos);
+        this.recalculateMatrices();
     }
 
     public lookAt(target: vec3 | vec3arr): void {
         this.target = toVec3(target);
+        this.recalculateMatrices();
     }
 
     public setViewDepth(near: number, far: number): void {
@@ -103,22 +127,18 @@ export class Camera3D {
         this.orthoHeight = height;
     }
 
-    public get projectionMatrix(): Mat4 {
-        if (this.projection === 'orthographic') {
-            return bmat.orthographic(-this.orthoWidth / 2, this.orthoWidth / 2, -this.orthoHeight / 2, this.orthoHeight / 2, this.near, this.far);
-        }
-        return bmat.perspective(this.fov, this._aspect, this.near, this.far);
+    public get viewMatrix(): Mat4 {
+        if (!this._viewMatrix) this.recalculateMatrices();
+        return this._viewMatrix;
     }
 
-    public get viewMatrix(): Mat4 {
-        return bmat.lookAt(
-            [this.position.x, this.position.y, this.position.z],
-            [this.target.x, this.target.y, this.target.z],
-            [this.up.x, this.up.y, this.up.z]
-        );
+    public get projectionMatrix(): Mat4 {
+        if (!this._projectionMatrix) this.recalculateMatrices();
+        return this._projectionMatrix;
     }
 
     public get viewProjectionMatrix(): Mat4 {
-        return bmat.multiply(this.projectionMatrix, this.viewMatrix);
+        if (!this._viewProjectionMatrix) this.recalculateMatrices();
+        return this._viewProjectionMatrix;
     }
 }
