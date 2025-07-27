@@ -123,6 +123,7 @@ declare module "rompack/rompack" {
     }
     export type id2res = Record<number | string, RomAsset>;
     export type id2imgres = Record<number | string, RomImgAsset>;
+    export type id2model = Record<number | string, OBJModel>;
     export type id2data = Record<number | string, any>;
     export type id2htmlimg = Record<number | string, HTMLImageElement>;
     export interface OBJModel {
@@ -134,7 +135,7 @@ declare module "rompack/rompack" {
         rom: ArrayBuffer;
         img: id2imgres;
         audio: id2res;
-        model: id2res;
+        model: id2model;
         data: id2data;
         code: string;
     }
@@ -504,7 +505,7 @@ declare module "serializer/bincompressor" {
         static testJsonUtf8RoundTrip(): boolean;
     }
 }
-declare module "render/math3d" {
+declare module "render/3d/math3d" {
     import type { vec3 } from "rompack/rompack";
     export type Mat4 = Float32Array;
     export const bmat: {
@@ -534,9 +535,9 @@ declare module "render/math3d" {
         cross(a: vec3, b: vec3): vec3;
     };
 }
-declare module "render/camera3d" {
-    import { Mat4 } from "render/math3d";
+declare module "render/3d/camera3d" {
     import type { vec3, vec3arr } from "rompack/rompack";
+    import { Mat4 } from "render/3d/math3d";
     export class Camera3D {
         position: vec3;
         target: vec3;
@@ -548,6 +549,9 @@ declare module "render/camera3d" {
         projection: 'perspective' | 'orthographic';
         orthoWidth: number;
         orthoHeight: number;
+        private _viewMatrix;
+        private _projectionMatrix;
+        private _viewProjectionMatrix;
         constructor(opts?: {
             position?: vec3 | vec3arr;
             target?: vec3 | vec3arr;
@@ -557,6 +561,7 @@ declare module "render/camera3d" {
             near?: number;
             far?: number;
         });
+        private recalculateMatrices;
         setAspect(aspect: number): void;
         setPosition(pos: vec3 | vec3arr): void;
         lookAt(target: vec3 | vec3arr): void;
@@ -569,12 +574,12 @@ declare module "render/camera3d" {
         moveUp(dist: number): void;
         usePerspective(fov?: number): void;
         useOrthographic(width: number, height: number): void;
-        get projectionMatrix(): Mat4;
         get viewMatrix(): Mat4;
+        get projectionMatrix(): Mat4;
         get viewProjectionMatrix(): Mat4;
     }
 }
-declare module "render/material" {
+declare module "render/3d/material" {
     export interface MaterialTextures {
         albedo?: string;
         normal?: string;
@@ -589,7 +594,7 @@ declare module "render/material" {
         });
     }
 }
-declare module "render/shadowmap" {
+declare module "render/3d/shadowmap" {
     export class ShadowMap {
         private gl;
         texture: WebGLTexture | null;
@@ -600,8 +605,8 @@ declare module "render/shadowmap" {
 declare module "render/view" {
     import { BFont, Identifier, type RegisterablePersistent } from "core/game";
     import type { Area, Polygon, Size, Vector, id2imgres, vec2 } from "rompack/rompack";
-    import { Material } from "render/material";
-    import { ShadowMap } from "render/shadowmap";
+    import { Material } from "render/3d/material";
+    import { ShadowMap } from "render/3d/shadowmap";
     export interface FlipOptions {
         flip_h: boolean;
         flip_v: boolean;
@@ -696,7 +701,67 @@ declare module "render/view" {
     }
     export function setSkybox(images: SkyboxImageIds): void;
 }
-declare module "render/light" {
+declare module "render/glview.constants" {
+    import type { Color } from "render/view";
+    export const DEFAULT_VERTEX_COLOR: Color;
+    export const VERTEX_COLOR_COLORIZED_RED: Color;
+    export const VERTEX_COLOR_COLORIZED_GREEN: Color;
+    export const VERTEX_COLOR_COLORIZED_BLUE: Color;
+    export const MAX_SPRITES = 256;
+    export const MAX_DIR_LIGHTS = 4;
+    export const MAX_POINT_LIGHTS = 4;
+    export const VERTICES_PER_SPRITE = 6;
+    export const VERTEX_ATTRIBUTE_SIZE = 2;
+    export const TEXTURECOORD_ATTRIBUTE_SIZE = 2;
+    export const ZCOORD_ATTRIBUTE_SIZE = 1;
+    export const COLOR_OVERRIDE_ATTRIBUTE_SIZE = 4;
+    export const ATLAS_ID_ATTRIBUTE_SIZE = 1;
+    export const RESOLUTION_VECTOR_SIZE = 2;
+    export const VERTEXCOORDS_SIZE: number;
+    export const TEXTURECOORDS_SIZE: number;
+    export const ZCOORDS_SIZE: number;
+    export const COLOR_OVERRIDE_SIZE: number;
+    export const ATLAS_ID_SIZE: number;
+    export const ZCOORD_MAX = 10000;
+    export const DEFAULT_ZCOORD = 0;
+    export const VERTEX_BUFFER_OFFSET_MULTIPLIER = 48;
+    export const ZCOORD_BUFFER_OFFSET_MULTIPLIER = 24;
+    export const COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER = 96;
+    export const ATLAS_ID_BUFFER_OFFSET_MULTIPLIER: number;
+    export const POSITION_COMPONENTS = 2;
+    export const TEXCOORD_COMPONENTS = 2;
+    export const ZCOORD_COMPONENTS = 1;
+    export const COLOR_OVERRIDE_COMPONENTS = 4;
+    export const ATLAS_ID_COMPONENTS = 1;
+    export const SPRITE_DRAW_OFFSET = 0;
+}
+declare module "render/glview.helpers" {
+    export function catchWebGLError(_target: any, propertyKey: string, descriptor: PropertyDescriptor): PropertyDescriptor;
+    export function getWebGLErrorString(gl: WebGLRenderingContext, error: number): string;
+}
+declare module "render/glutils" {
+    export function createBuffer(gl: WebGL2RenderingContext, data?: Float32Array | Uint8Array): WebGLBuffer;
+    export function setupAttributeFloat(gl: WebGL2RenderingContext, buffer: WebGLBuffer, location: number, size: number): void;
+    export function setupAttributeInt(gl: WebGL2RenderingContext, buffer: WebGLBuffer, location: number, size: number): void;
+    export function updateBuffer(gl: WebGL2RenderingContext, buffer: WebGLBuffer, target: GLenum, offset: number, data: ArrayBufferView): void;
+    export function loadShader(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader;
+    export function createTexture(gl: WebGL2RenderingContext, img?: HTMLImageElement, size?: {
+        width: number;
+        height: number;
+    }, glTextureToBind?: number): WebGLTexture;
+    export function switchProgram(gl: WebGL2RenderingContext, program: WebGLProgram): void;
+}
+declare module "render/vertexutils2d" {
+    import type { Color } from "render/view";
+    export const bvec: {
+        set(v: Float32Array, i: number, x: number, y: number, w: number, h: number, sx: number, sy: number): void;
+        set_texturecoords(v: Float32Array, i: number, coords: number[]): void;
+        set_zcoord(v: Float32Array, i: number, z: number): void;
+        set_color(v: Float32Array, i: number, color: Color): void;
+        set_atlas_id(v: Uint8Array, i: number, atlas_id: number): void;
+    };
+}
+declare module "render/3d/light" {
     import type { vec3arr } from "rompack/rompack";
     export interface BaseLight {
         id: string;
@@ -730,21 +795,79 @@ declare module "render/light" {
     }
     export type Light = AmbientLight | DirectionalLight | PointLight | SpotLight | AreaLight;
 }
+declare module "render/3d/glview.3d" {
+    import type { Size, vec3, vec3arr } from "rompack/rompack";
+    import { GLView } from "render/glview";
+    import { Color } from "render/view";
+    import { Camera3D } from "render/3d/camera3d";
+    import type { DirectionalLight, PointLight } from "render/3d/light";
+    import { Material } from "render/3d/material";
+    import { ShadowMap } from "render/3d/shadowmap";
+    export const camera: Camera3D;
+    export let meshesToDraw: {
+        positions: Float32Array;
+        texcoords: Float32Array;
+        normals?: Float32Array;
+        matrix: Float32Array;
+        color: Color;
+        atlasId: number;
+        material?: Material;
+        shadow?: {
+            map: ShadowMap;
+            matrix: Float32Array;
+            strength: number;
+        };
+    }[];
+    export let skyboxBuffer: WebGLBuffer;
+    export let skyboxTexture: WebGLTexture | null;
+    export const vertexShader3DCodeStr: string;
+    export const fragmentShader3DCodeStr: string;
+    export const skyboxVertShaderCodeStr: string;
+    export const skyboxFragShaderCodeStr: string;
+    export function init(gl: WebGL2RenderingContext, view: GLView, offscreenCanvasSize: Size): void;
+    export function setCameraPosition(pos: vec3 | vec3arr): void;
+    export function pointCameraAt(target: vec3 | vec3arr): void;
+    export function setCameraViewDepth(near: number, far: number): void;
+    export function setCameraFov(fov: number): void;
+    export function usePerspectiveCamera(fov?: number): void;
+    export function useOrthographicCamera(width: number, height: number): void;
+    export function getCamera(): Camera3D;
+    export function setAmbientLight(color: vec3arr, intensity: number): void;
+    export function uploadDirectionalLights(): void;
+    export function uploadPointLights(): void;
+    export function addDirectionalLight(id: string, direction: vec3arr, color: vec3arr): void;
+    export function removeDirectionalLight(id: string): void;
+    export function getDirectionalLight(id: string): DirectionalLight | undefined;
+    export function addPointLight(id: string, position: vec3arr, color: vec3arr, range: number): void;
+    export function removePointLight(id: string): void;
+    export function getPointLight(id: string): PointLight | undefined;
+    export function clearLights(): void;
+    export function setDefaultUniformValues(): void;
+    export function setupBuffers3D(): void;
+    export function createSkyboxBuffer(): void;
+    export function drawSkybox(): void;
+    export function setupGameShader3DLocations(): void;
+    export function setSkyboxImages(ids: {
+        posX: string;
+        negX: string;
+        posY: string;
+        negY: string;
+        posZ: string;
+        negZ: string;
+    }): void;
+    export function createGameShaderPrograms3D(): void;
+    export function createSkyboxProgram(): void;
+    export function setupVertexShaderLocations3D(): void;
+    export function setupSkyboxLocations(): void;
+    export function renderMeshBatch(): void;
+}
 declare module "render/glview" {
-    import type { Polygon, Size, vec3, vec3arr } from "rompack/rompack";
+    import type { Polygon, Size, vec2, vec3arr } from "rompack/rompack";
+    import { DEFAULT_VERTEX_COLOR, VERTEX_COLOR_COLORIZED_BLUE, VERTEX_COLOR_COLORIZED_GREEN, VERTEX_COLOR_COLORIZED_RED, ZCOORD_MAX } from "render/glview.constants";
     import { BaseView, Color, DrawImgOptions, DrawRectOptions } from "render/view";
-    import { Material } from "render/material";
-    import { ShadowMap } from "render/shadowmap";
-    import { Camera3D } from "render/camera3d";
-    import type { DirectionalLight, PointLight } from "render/light";
-    export const DEFAULT_VERTEX_COLOR: Color;
-    export const VERTEX_COLOR_COLORIZED_RED: Color;
-    export const VERTEX_COLOR_COLORIZED_GREEN: Color;
-    export const VERTEX_COLOR_COLORIZED_BLUE: Color;
-    export const MAX_SPRITES = 256;
-    export const MAX_DIR_LIGHTS = 4;
-    export const MAX_POINT_LIGHTS = 4;
-    export const ZCOORD_MAX = 10000;
+    import { Material } from "render/3d/material";
+    import { ShadowMap } from "render/3d/shadowmap";
+    export { DEFAULT_VERTEX_COLOR, VERTEX_COLOR_COLORIZED_BLUE, VERTEX_COLOR_COLORIZED_GREEN, VERTEX_COLOR_COLORIZED_RED, ZCOORD_MAX };
     export abstract class GLView extends BaseView {
         glctx: WebGL2RenderingContext;
         private textures;
@@ -784,55 +907,12 @@ declare module "render/glview" {
         private CRTShaderGlowColorLocation;
         private CRTFragmentShaderTextureLocation;
         private CRTShaderProgram;
-        private framebuffer;
+        framebuffer: WebGLFramebuffer;
         private isRendering;
         private needsResize;
-        private gameShaderProgram3D;
-        private vertexLocation3D;
-        private texcoordLocation3D;
-        private color_overrideLocation3D;
-        private atlas_idLocation3D;
-        private normalLocation3D;
-        private mvpLocation3D;
-        private modelLocation3D;
-        private normalMatrixLocation3D;
-        private ditherLocation3D;
-        private ambientColorLocation3D;
-        private ambientIntensityLocation3D;
-        private dirLightDirectionLocation3D;
-        private dirLightColorLocation3D;
-        private numDirLightsLocation3D;
-        private pointLightPositionLocation3D;
-        private pointLightColorLocation3D;
-        private pointLightRangeLocation3D;
-        private numPointLightsLocation3D;
-        private materialColorLocation3D;
-        private shadowMapLocation3D;
-        private lightMatrixLocation3D;
-        private shadowStrengthLocation3D;
-        private vertexBuffer3D;
-        private texcoordBuffer3D;
-        private color_overrideBuffer3D;
-        private atlas_idBuffer3D;
-        private normalBuffer3D;
-        private meshesToDraw;
-        private camera;
-        private directionalLights;
-        private pointLights;
-        private skyboxProgram;
-        private skyboxPositionLocation;
-        private skyboxViewLocation;
-        private skyboxProjectionLocation;
-        private skyboxTextureLocation;
-        private skyboxBuffer;
-        private skyboxTexture;
         static readonly vertexShaderCode: string;
         static readonly fragmentShaderTextureCode: string;
         static readonly fragmentShaderCRTCode: string;
-        static readonly vertexShader3DCode: string;
-        static readonly fragmentShader3DCode: string;
-        static readonly skyboxVertShaderCode: string;
-        static readonly skyboxFragShaderCode: string;
         private _applyNoise;
         private _applyColorBleed;
         private _applyScanlines;
@@ -863,26 +943,9 @@ declare module "render/glview" {
         set blurIntensity(value: number);
         get glowColor(): vec3arr;
         set glowColor(value: vec3arr);
-        setCameraPosition(pos: vec3 | vec3arr): void;
-        pointCameraAt(target: vec3 | vec3arr): void;
-        setCameraViewDepth(near: number, far: number): void;
-        setCameraFov(fov: number): void;
-        usePerspectiveCamera(fov?: number): void;
-        useOrthographicCamera(width: number, height: number): void;
-        getCamera(): Camera3D;
-        setAmbientLight(color: vec3arr, intensity: number): void;
-        private uploadDirectionalLights;
-        private uploadPointLights;
-        addDirectionalLight(id: string, direction: vec3arr, color: vec3arr): void;
-        removeDirectionalLight(id: string): void;
-        getDirectionalLight(id: string): DirectionalLight | undefined;
-        addPointLight(id: string, position: vec3arr, color: vec3arr, range: number): void;
-        removePointLight(id: string): void;
-        getPointLight(id: string): PointLight | undefined;
-        clearLights(): void;
         private gameShaderScaleLocation;
         private CRTVertexShaderScaleLocation;
-        private offscreenCanvasSize;
+        offscreenCanvasSize: vec2;
         CRTFragmentShaderScaleLocation: WebGLUniformLocation;
         constructor(viewportsize: Size, crtOptions?: {
             noiseIntensity?: number;
@@ -894,12 +957,9 @@ declare module "render/glview" {
         private setDefaultUniformValues;
         private createCRTVertexBuffer;
         private createCRTShaderTexcoordBuffer;
-        private switchProgram;
         private createCRTShaderPrograms;
         private setupCRTShaderLocations;
         private setupBuffers;
-        private setupBuffers3D;
-        private createSkyboxBuffer;
         private drawSkybox;
         private setupGameShaderLocations;
         private setupGameShader3DLocations;
@@ -914,17 +974,8 @@ declare module "render/glview" {
         }): void;
         private setupGLContext;
         private createGameShaderPrograms;
-        private createGameShaderPrograms3D;
-        private createSkyboxProgram;
         private setupVertexShaderLocations;
-        private setupVertexShaderLocations3D;
-        private setupSkyboxLocations;
-        private createBuffer;
-        private setupAttributeFloat;
-        private setupAttributeInt;
         private static getTextureCoordinates;
-        private loadShader;
-        private createTexture;
         private createFramebufferAndTexture;
         handleResize(this: GLView): void;
         drawgame(clearCanvas?: boolean): void;
@@ -933,7 +984,6 @@ declare module "render/glview" {
         private applyCrtPostProcess;
         clear(): void;
         renderSpriteBatch(): void;
-        private static updateBuffer;
         drawImg(options: DrawImgOptions): void;
         private getTexCoords;
         private updateBuffers;
@@ -942,7 +992,6 @@ declare module "render/glview" {
             matrix: Float32Array;
             strength: number;
         }): void;
-        renderMeshBatch(): void;
         private correctAreaStartEnd;
         drawRectangle(options: DrawRectOptions): void;
         fillRectangle(options: DrawRectOptions): void;
@@ -953,23 +1002,23 @@ declare module "render/glview" {
     }
 }
 declare module "core/cameraobject" {
-    import { GameObject } from "core/gameobject";
-    import { Camera3D } from "render/camera3d";
+    import { Camera3D } from "render/3d/camera3d";
     import { GLView } from "render/glview";
     import type { Vector } from "rompack/rompack";
+    import { GameObject } from "core/gameobject";
     export class CameraObject extends GameObject {
         camera: Camera3D;
         active: boolean;
         constructor(id?: string);
         onspawn(pos?: Vector): void;
         dispose(): void;
-        applyToView(view: GLView): void;
+        applyToView(_view: GLView): void;
     }
 }
 declare module "core/lightobject" {
-    import { GameObject } from "core/gameobject";
-    import type { Light } from "render/light";
+    import type { Light } from "render/3d/light";
     import { GLView } from "render/glview";
+    import { GameObject } from "core/gameobject";
     export abstract class LightObject extends GameObject {
         light: Light;
         active: boolean;
@@ -978,15 +1027,15 @@ declare module "core/lightobject" {
     }
     export class AmbientLightObject extends LightObject {
         constructor(id: string, color: [number, number, number], intensity: number);
-        applyToView(view: GLView): void;
+        applyToView(_view: GLView): void;
     }
     export class DirectionalLightObject extends LightObject {
         constructor(id: string, direction: [number, number, number], color: [number, number, number]);
-        applyToView(view: GLView): void;
+        applyToView(_view: GLView): void;
     }
     export class PointLightObject extends LightObject {
         constructor(id: string, position: [number, number, number], color: [number, number, number], range: number);
-        applyToView(view: GLView): void;
+        applyToView(_view: GLView): void;
     }
 }
 declare module "core/basemodel" {
@@ -2365,33 +2414,11 @@ declare module "component/collisioncomponents" {
     }
     export function leavingScreenHandler_prohibit(ik: GameObject, d: Direction, old_x_or_y: number): void;
 }
-declare module "debugger/behaviourtreevisualizer" {
-    import { Component } from "component/basecomponent";
-    import type { Identifier } from "core/game";
-    export class BTVisualizer extends Component {
-        private dialog;
-        private machineElements;
-        constructor(_id: string);
-        postprocessingUpdate(): void;
-        closeDialog(): void;
-        openDialog(): void;
-    }
-    export function visualizeBehaviorTree(container: HTMLElement, btControllerId: Identifier): [HTMLElement, Map<string, HTMLElement>];
-}
-declare module "ui/gamestatedialog" {
-    export function show_download_savestate_dialog(): void;
-    export function show_openfile_dialog(options: {
-        multiple: boolean;
-        accept: string;
-        eventlistener: (this: HTMLInputElement, ev: Event) => any;
-    }): void;
-    export function show_load_savestate_dialog(): void;
-}
 declare module "component/transformcomponent" {
-    import { Component } from "component/basecomponent";
-    import { Mat4 } from "render/math3d";
-    import type { vec3arr } from "rompack/rompack";
     import type { Identifier } from "core/game";
+    import { Mat4 } from "render/3d/math3d";
+    import type { vec3arr } from "rompack/rompack";
+    import { Component } from "component/basecomponent";
     export class TransformComponent extends Component {
         position: vec3arr;
         rotation: vec3arr;
@@ -2415,11 +2442,11 @@ declare module "component/transformcomponent" {
     }
 }
 declare module "core/mesh" {
-    import { GameObject } from "core/gameobject";
-    import type { vec3arr, OBJModel } from "rompack/rompack";
+    import { Material } from "render/3d/material";
+    import { ShadowMap } from "render/3d/shadowmap";
     import { Color } from "render/view";
-    import { Material } from "render/material";
-    import { ShadowMap } from "render/shadowmap";
+    import type { OBJModel, vec3arr } from "rompack/rompack";
+    import { GameObject } from "core/gameobject";
     export class Mesh {
         positions: Float32Array;
         texcoords: Float32Array;
@@ -2450,7 +2477,20 @@ declare module "core/mesh" {
         paint(): void;
     }
 }
-declare module "render/meshinstance" {
+declare module "debugger/behaviourtreevisualizer" {
+    import { Component } from "component/basecomponent";
+    import type { Identifier } from "core/game";
+    export class BTVisualizer extends Component {
+        private dialog;
+        private machineElements;
+        constructor(_id: string);
+        postprocessingUpdate(): void;
+        closeDialog(): void;
+        openDialog(): void;
+    }
+    export function visualizeBehaviorTree(container: HTMLElement, btControllerId: Identifier): [HTMLElement, Map<string, HTMLElement>];
+}
+declare module "render/3d/meshinstance" {
     export interface InstancedMeshData {
         positions: Float32Array;
         texcoords: Float32Array;
@@ -2465,16 +2505,29 @@ declare module "render/meshinstance" {
         get instanceMatrices(): Float32Array[];
     }
 }
+declare module "ui/gamestatedialog" {
+    export function show_download_savestate_dialog(): void;
+    export function show_openfile_dialog(options: {
+        multiple: boolean;
+        accept: string;
+        eventlistener: (this: HTMLInputElement, ev: Event) => any;
+    }): void;
+    export function show_load_savestate_dialog(): void;
+}
 declare module "bmsx" {
     export * from "ai/behaviourtree";
     export * from "audio/psg";
     export * from "audio/soundmaster";
     export * from "component/basecomponent";
     export * from "component/collisioncomponents";
+    export * from "component/transformcomponent";
     export * from "core/basemodel";
+    export * from "core/cameraobject";
     export * from "core/eventemitter";
     export * from "core/game";
     export * from "core/gameobject";
+    export * from "core/lightobject";
+    export * from "core/mesh";
     export * from "core/objecttracker";
     export * from "core/registry";
     export * from "core/sprite";
@@ -2498,6 +2551,12 @@ declare module "bmsx" {
     export * from "input/onscreengamepad";
     export * from "input/pendingassignmentprocessor";
     export * from "input/playerinput";
+    export * from "render/3d/camera3d";
+    export * from "render/3d/light";
+    export * from "render/3d/material";
+    export * from "render/3d/math3d";
+    export * from "render/3d/meshinstance";
+    export * from "render/3d/shadowmap";
     export * from "render/glview";
     export * from "render/textwriter";
     export * from "render/view";
@@ -2507,14 +2566,4 @@ declare module "bmsx" {
     export * from "serializer/gameserializer";
     export * from "systems/msx";
     export * from "ui/gamestatedialog";
-    export * from "render/math3d";
-    export * from "render/camera3d";
-    export * from "core/mesh";
-    export * from "render/light";
-    export * from "core/cameraobject";
-    export * from "core/lightobject";
-    export * from "component/transformcomponent";
-    export * from "render/material";
-    export * from "render/shadowmap";
-    export * from "render/meshinstance";
 }

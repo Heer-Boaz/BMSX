@@ -1,5 +1,6 @@
 import { Camera3D } from '../render/3d/camera3d';
 import { GLView } from '../render/glview';
+import * as GLView3D from '../render/3d/glview.3d';
 import type { Vector } from '../rompack/rompack';
 import { insavegame } from '../serializer/gameserializer';
 import { GameObject } from './gameobject';
@@ -27,14 +28,14 @@ export class CameraObject extends GameObject {
         super.dispose();
     }
 
-    public applyToView(view: GLView): void {
-        view.view3d.setCameraPosition(this.camera.position);
-        view.view3d.pointCameraAt(this.camera.target);
-        view.view3d.setCameraViewDepth(this.camera.near, this.camera.far);
+    public applyToView(_view: GLView): void {
+        GLView3D.setCameraPosition(this.camera.position);
+        GLView3D.pointCameraAt(this.camera.target);
+        GLView3D.setCameraViewDepth(this.camera.near, this.camera.far);
         if (this.camera.projection === 'orthographic') {
-            view.view3d.useOrthographicCamera(this.camera.orthoWidth, this.camera.orthoHeight);
+            GLView3D.useOrthographicCamera(this.camera.orthoWidth, this.camera.orthoHeight);
         } else {
-            view.view3d.usePerspectiveCamera(this.camera.fov);
+            GLView3D.usePerspectiveCamera(this.camera.fov);
         }
     }
 
