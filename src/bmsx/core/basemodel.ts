@@ -254,7 +254,7 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
      */
     public applyViewSettings(): void {
         const view = $.view as any;
-        if (!view || typeof view.setCameraPosition !== 'function') return;
+        if (!view || !view.glctx) return;
         const cam = this.getActiveCamera();
         if (cam) cam.applyToView(view);
         const lights = this.getActiveLights();
