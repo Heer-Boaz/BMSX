@@ -62,7 +62,8 @@ const float NOISE_MULTIPLIER = 43758.5453;
 const float NOISE_OFFSET = 19.19;
 
 const float SCANLINE_INTERVAL = 2.0;
-const float SCANLINE_DARKEN_FACTOR = 0.8;
+const float SCANLINE_DARKEN_FACTOR = 0.8; // Niet meer gebruikt, maar behouden voor compatibiliteit
+const float SCANLINE_GAUSSIAN_SIGMA = 0.35; // Nieuw: Sigma voor gaussian beam profiel (tune dit voor scherpte; kleiner = scherpere lijnen)
 
 const float BLUR_DEFAULT_CONTRAST_IF_NOT_APPLIED = 0.0;
 const float GLOW_BRIGHTNESS_CLAMP = 0.5;
@@ -118,12 +119,20 @@ float hashNoise(vec2 uv, float time) {
     return fract((p.x + p.y) * p.z);
 }
 
-// Function to apply scanlines
+// Aangepaste functie voor scanlines met gaussian profiel en helderheidsafhankelijkheid
 vec3 applyScanlines(vec3 color, vec2 fragCoord) {
-    if (mod(fragCoord.y, SCANLINE_INTERVAL) < 1.0) {
-        color *= SCANLINE_DARKEN_FACTOR; // Darken every other row
-    }
-    return color;
+    // Bereken positie relatief tot scanline center (voor interval 2.0: centers op even y)
+    float scan_pos = mod(fragCoord.y + 0.5, SCANLINE_INTERVAL) - SCANLINE_INTERVAL / 2.0; // Center de gaussian op de lijn
+    float gaussian = exp(-(scan_pos * scan_pos) / (2.0 * SCANLINE_GAUSSIAN_SIGMA * SCANLINE_GAUSSIAN_SIGMA)); // Gaussian intensiteit (piek=1, dal=0)
+
+    // Maak afhankelijk van pixel-helderheid (minder scanlines op bright areas)
+    float lum = dot(color, LUMINANCE_WEIGHTS);
+    float intensity = mix(gaussian, 1.0, lum * 0.8); // Mix: bij lum=0 full gaussian, bij lum=1 minder effect (tune de 0.5)
+
+    // Optioneel: pow voor gamma-achtige curve
+    intensity = pow(intensity, 0.8); // Subtiele aanpassing voor naturally fading
+
+    return color * intensity;
 }
 
 void main() {
@@ -133,58 +142,58 @@ void main() {
     // Sample the texture color
     vec3 texColor = texture(u_texture, uv, 0.0).rgb;
 
-    // Apply noise if enabled
-    if (u_applyNoise) {
-        // Generate noise once
-        float noise = hashNoise(uv * u_resolution * u_fragscale + vec2(u_random), u_time);
-
-        // Apply the same noise to all channels
-        texColor.rgb += vec3(noise) * u_noiseIntensity;
-    }
-
-    // Apply color bleed if enabled
+    // Aangepaste volgorde: color bleed vroeg (signaal-artifact)
     if (u_applyColorBleed) {
-        texColor += u_colorBleed; // Adjust bleed intensity and color
+        texColor += u_colorBleed;
     }
 
-    // Apply scanlines
+    // Fringing: nu eerder, met aanpassing om bleed in samples op te nemen voor consistentie
+    BlurContrastResult result; // Verplaats contrast-berekening hierheen omdat fringing het nodig heeft
+    if (u_applyBlur || u_applyFringing) { // Bereken contrast vroeg als nodig
+        result = applyBlurAndContrast(uv);
+    } else {
+        result.contrast = BLUR_DEFAULT_CONTRAST_IF_NOT_APPLIED;
+    }
+    if (u_applyFringing) {
+        // Calculate distance from the center
+        vec2 center = u_resolution * CENTER_SCALE;
+        float distanceFromCenter = length((uv * u_resolution * u_fragscale) - center) / length(center);
+
+        // Determine the fringing amount
+        float fringingAmount = FRINGING_BASE_AMOUNT + FRINGING_DISTANCE_MULTIPLIER * distanceFromCenter + FRINGING_CONTRAST_MULTIPLIER * result.contrast;
+
+        // Apply color fringing met bleed toegevoegd aan samples
+        float r = texture(u_texture, uv + vec2(fringingAmount, 0.0)).r;
+        float g = texture(u_texture, uv).g;
+        float b = texture(u_texture, uv - vec2(fringingAmount, 0.0)).b;
+        vec3 color = vec3(r, g, b) + u_colorBleed; // Voeg bleed toe aan fringed samples voor consistentie
+
+        // Combine
+        texColor = mix(texColor, color, FRINGING_MIX_INTENSITY);
+    }
+
+    // Scanlines: na fringing, voor interactie
     if (u_applyScanlines) {
         texColor = applyScanlines(texColor, gl_FragCoord.xy);
     }
 
-    // Apply blur and calculate contrast if enabled
-    BlurContrastResult result;
+    // Blur: na scanlines, om te verzachten (gebruik bestaande result als blur aan is)
     if (u_applyBlur) {
-        result = applyBlurAndContrast(uv);
-        texColor = mix(texColor, result.blurredColor, u_blurIntensity); // Adjust blur intensity
-    } else {
-        result.contrast = BLUR_DEFAULT_CONTRAST_IF_NOT_APPLIED; // Default contrast if blur is not applied
+        texColor = mix(texColor, result.blurredColor, u_blurIntensity);
     }
 
-    // Apply selective phosphor glow if enabled
+    // Glow: na blur, voor bloom op scanlines
     if (u_applyGlow) {
         vec3 glow = u_glowColor;
-        float brightness = dot(texColor, LUMINANCE_WEIGHTS); // Luminance
-        texColor += glow * clamp(brightness, 0.0, GLOW_BRIGHTNESS_CLAMP); // Glow only affects brighter areas
+        float brightness = dot(texColor, LUMINANCE_WEIGHTS);
+        texColor += glow * clamp(brightness, 0.0, GLOW_BRIGHTNESS_CLAMP);
     }
 
-    // Apply color fringing if enabled
-    if (u_applyFringing) {
-        // Calculate distance from the center (to simulate screen curvature effect)
-        vec2 center = u_resolution * CENTER_SCALE;
-        float distanceFromCenter = length((uv * u_resolution * u_fragscale) - center) / length(center);
-
-        // Determine the fringing amount based on distance from the center and contrast
-        float fringingAmount = FRINGING_BASE_AMOUNT + FRINGING_DISTANCE_MULTIPLIER * distanceFromCenter + FRINGING_CONTRAST_MULTIPLIER * result.contrast;
-
-        // Apply color fringing
-        vec3 color;
-        color.r = texture(u_texture, uv + vec2(fringingAmount, 0.0)).r;
-        color.g = texture(u_texture, uv).g;
-        color.b = texture(u_texture, uv - vec2(fringingAmount, 0.0)).b;
-
-        // Combine the color with the effects
-        texColor = mix(texColor, color, FRINGING_MIX_INTENSITY); // Adjust the mix intensity
+    // Noise: als laatste, als overlay-ruis
+    if (u_applyNoise) {
+        float noise = hashNoise(uv * u_resolution * u_fragscale + vec2(u_random), u_time);
+        // texColor.rgb += vec3(noise) * u_noiseIntensity;
+        texColor += dot(texColor, LUMINANCE_WEIGHTS) * noise * u_noiseIntensity;
     }
 
     // Set the final output color
