@@ -1,6 +1,6 @@
 import { new_vec2, new_vec3 } from '../../core/game';
 import type { ImgMeta, Polygon, vec2arr } from '../../rompack/rompack';
-import { getTextureCoordinates, glCreateBuffer, glLoadShader, glSetupAttributeFloat, glSetupAttributeInt, glSwitchProgram, glUpdateBuffer } from '../glutils';
+import { buildQuadTexCoords, glCreateBuffer, glLoadShader, glSetupAttributeFloat, glSetupAttributeInt, glSwitchProgram, glUpdateBuffer } from '../glutils';
 import type { GLView } from '../glview';
 import {
     ATLAS_ID_ATTRIBUTE_SIZE,
@@ -52,7 +52,7 @@ let color_overrideBuffer: WebGLBuffer;
 let atlas_idBuffer: WebGLBuffer;
 const spriteShaderData = {
     resolutionVector: new Float32Array(RESOLUTION_VECTOR_SIZE),
-    vertexcoords: getTextureCoordinates(),
+    vertexcoords: buildQuadTexCoords(),
     texcoords: new Float32Array(TEXTURECOORDS_SIZE * MAX_SPRITES),
     zcoords: new Float32Array(ZCOORDS_SIZE * MAX_SPRITES),
     color_override: new Float32Array(COLOR_OVERRIDE_SIZE * MAX_SPRITES),

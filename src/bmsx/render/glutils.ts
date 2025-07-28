@@ -1,3 +1,4 @@
+import { Size } from '../bmsx';
 import { MAX_SPRITES, VERTEXCOORDS_SIZE } from './glview.constants';
 import { getWebGLErrorString } from './glview.helpers';
 
@@ -13,7 +14,7 @@ function glCheckError(gl: WebGL2RenderingContext, fn: string): void {
  * The texture coordinates are used both for the game shader (sprites) and the CRT shader (full-screen quad).
  * @returns
  */
-export function getTextureCoordinates(): Float32Array {
+export function buildQuadTexCoords(): Float32Array {
     const textureCoordinates = new Float32Array(VERTEXCOORDS_SIZE * MAX_SPRITES);
     for (let i = 0; i < VERTEXCOORDS_SIZE * MAX_SPRITES - VERTEXCOORDS_SIZE; i += VERTEXCOORDS_SIZE) {
         textureCoordinates.set([
@@ -76,14 +77,14 @@ export function glLoadShader(gl: WebGL2RenderingContext, type: number, source: s
     return shader;
 }
 
-export function glCreateTexture(gl: WebGL2RenderingContext, img?: HTMLImageElement, size?: { width: number; height: number }, glTextureToBind?: number): WebGLTexture {
+export function glCreateTexture(gl: WebGL2RenderingContext, img?: HTMLImageElement, size?: Size, glTextureToBind?: number): WebGLTexture {
     const result = gl.createTexture()!;
     gl.activeTexture(glTextureToBind || gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, result);
     if (img) {
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
     } else if (size) {
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, size.width, size.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, size.x, size.y, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
     }
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
