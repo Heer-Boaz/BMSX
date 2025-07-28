@@ -1,4 +1,4 @@
-import { DEFAULT_VERTEX_COLOR } from "../render/glview";
+import { DEFAULT_VERTEX_COLOR } from "../render/glview.constants";
 import { Color, DrawImgOptions, paintImage } from "../render/view";
 import { Area, BoundingBoxPrecalc, vec3, type HitPolygonsPrecalc, type Polygon } from "../rompack/rompack";
 import { insavegame } from "../serializer/gameserializer";

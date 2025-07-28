@@ -2,7 +2,7 @@ import { TransformComponent } from '../component/transformcomponent';
 import { Material } from '../render/3d/material';
 import { bmat } from '../render/3d/math3d';
 import { ShadowMap } from '../render/3d/shadowmap';
-import { DEFAULT_VERTEX_COLOR } from '../render/glview';
+import { DEFAULT_VERTEX_COLOR } from '../render/glview.constants';
 import { Color, DrawMeshOptions, paintMesh } from '../render/view';
 import type { OBJModel, vec3arr } from '../rompack/rompack';
 import { insavegame } from '../serializer/gameserializer';

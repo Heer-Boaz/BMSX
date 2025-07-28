@@ -1,6 +1,6 @@
+import * as GLView3D from '../render/3d/glview.3d';
 import type { AmbientLight, DirectionalLight, Light, PointLight } from '../render/3d/light';
 import { GLView } from '../render/glview';
-import * as GLView3D from '../render/3d/glview.3d';
 import { insavegame } from '../serializer/gameserializer';
 import { GameObject } from './gameobject';
 
@@ -23,10 +23,10 @@ export class AmbientLightObject extends LightObject {
         super({ id, type: 'ambient', color, intensity });
     }
 
-    override applyToView(_view: GLView): void {
+    override applyToView(view: GLView): void {
         if (this.active) {
             const l = this.light as AmbientLight;
-            GLView3D.setAmbientLight(l.color, l.intensity);
+            GLView3D.setAmbientLight(view.glctx, l.color, l.intensity);
         }
     }
 
@@ -37,12 +37,12 @@ export class DirectionalLightObject extends LightObject {
         super({ id, type: 'directional', direction, color, intensity: 1 });
     }
 
-    override applyToView(_view: GLView): void {
+    override applyToView(view: GLView): void {
         const l = this.light as DirectionalLight;
         if (this.active) {
-            GLView3D.addDirectionalLight(l.id, l.direction, l.color);
+            GLView3D.addDirectionalLight(view.glctx, l.id, l.direction, l.color);
         } else {
-            GLView3D.removeDirectionalLight(l.id);
+            GLView3D.removeDirectionalLight(view.glctx, l.id);
         }
     }
 
@@ -53,12 +53,12 @@ export class PointLightObject extends LightObject {
         super({ id, type: 'point', position, color, range, intensity: 1 });
     }
 
-    override applyToView(_view: GLView): void {
+    override applyToView(view: GLView): void {
         const l = this.light as PointLight;
         if (this.active) {
-            GLView3D.addPointLight(l.id, l.position, l.color, l.range);
+            GLView3D.addPointLight(view.glctx, l.id, l.position, l.color, l.range);
         } else {
-            GLView3D.removePointLight(l.id);
+            GLView3D.removePointLight(view.glctx, l.id);
         }
     }
 

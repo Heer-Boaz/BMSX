@@ -1,7 +1,7 @@
 import type { Size, vec3, vec3arr } from '../../rompack/rompack';
-import { createBuffer as glCreateBuffer, loadShader as glLoadShader, setupAttributeFloat as glSetupAttributeFloat, setupAttributeInt as glSetupAttributeInt, switchProgram as glSwitchProgram } from '../glutils';
-import { GLView } from '../glview';
+import { glCreateBuffer, glLoadShader, glSetupAttributeFloat, glSetupAttributeInt, glSwitchProgram } from '../glutils';
 import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS } from '../glview.constants';
+import { generateAtlasName } from '../glview.helpers';
 import { BaseView, Color } from '../view';
 import { Camera3D } from './camera3d';
 import type { DirectionalLight, PointLight } from './light';
@@ -12,9 +12,6 @@ import vertexShader3DCode from './shaders/3d.vert.glsl';
 import skyboxFragCode from './shaders/skybox.frag.glsl';
 import skyboxVertCode from './shaders/skybox.vert.glsl';
 import { ShadowMap } from './shadowmap';
-
-let glctx: WebGL2RenderingContext;
-let parentView: GLView;
 
 export const camera = new Camera3D();
 export let meshesToDraw: { positions: Float32Array; texcoords: Float32Array; normals?: Float32Array; matrix: Float32Array; color: Color; atlasId: number; material?: Material; shadow?: { map: ShadowMap; matrix: Float32Array; strength: number } }[] = [];
@@ -51,7 +48,6 @@ let color_overrideBuffer3D: WebGLBuffer;
 let atlas_idBuffer3D: WebGLBuffer;
 let normalBuffer3D: WebGLBuffer;
 
-// Skybox fields
 let skyboxProgram: WebGLProgram;
 let skyboxPositionLocation: number;
 let skyboxViewLocation: WebGLUniformLocation;
@@ -65,9 +61,7 @@ export const fragmentShader3DCodeStr: string = gameShader3DCode;
 export const skyboxVertShaderCodeStr: string = skyboxVertCode;
 export const skyboxFragShaderCodeStr: string = skyboxFragCode;
 
-export function init(gl: WebGL2RenderingContext, view: GLView, offscreenCanvasSize: Size): void {
-    glctx = gl;
-    parentView = view;
+export function init(offscreenCanvasSize: Size): void {
     camera.setAspect(offscreenCanvasSize.x / offscreenCanvasSize.y);
 }
 
@@ -102,14 +96,13 @@ export function getCamera(): Camera3D {
     return camera;
 }
 
-export function setAmbientLight(color: vec3arr, intensity: number): void {
-    glctx.useProgram(gameShaderProgram3D);
-    glctx.uniform3fv(ambientColorLocation3D, new Float32Array(color));
-    glctx.uniform1f(ambientIntensityLocation3D, intensity);
+export function setAmbientLight(gl: WebGL2RenderingContext, color: vec3arr, intensity: number): void {
+    gl.useProgram(gameShaderProgram3D);
+    gl.uniform3fv(ambientColorLocation3D, new Float32Array(color));
+    gl.uniform1f(ambientIntensityLocation3D, intensity);
 }
 
-export function uploadDirectionalLights(): void {
-    const gl = glctx;
+export function uploadDirectionalLights(gl: WebGL2RenderingContext): void {
     const lights = Array.from(directionalLights.values());
     const count = Math.min(lights.length, MAX_DIR_LIGHTS);
     const dirs = new Float32Array(MAX_DIR_LIGHTS * 3);
@@ -124,8 +117,7 @@ export function uploadDirectionalLights(): void {
     gl.uniform3fv(dirLightColorLocation3D, cols);
 }
 
-export function uploadPointLights(): void {
-    const gl = glctx;
+export function uploadPointLights(gl: WebGL2RenderingContext): void {
     const lights = Array.from(pointLights.values());
     const count = Math.min(lights.length, MAX_POINT_LIGHTS);
     const pos = new Float32Array(MAX_POINT_LIGHTS * 3);
@@ -143,51 +135,49 @@ export function uploadPointLights(): void {
     gl.uniform1fv(pointLightRangeLocation3D, range);
 }
 
-export function addDirectionalLight(id: string, direction: vec3arr, color: vec3arr): void {
+export function addDirectionalLight(gl: WebGL2RenderingContext, id: string, direction: vec3arr, color: vec3arr): void {
     directionalLights.set(id, { id, type: 'directional', color, intensity: 1, direction });
-    uploadDirectionalLights();
+    uploadDirectionalLights(gl);
 }
 
-export function removeDirectionalLight(id: string): void {
-    if (directionalLights.delete(id)) uploadDirectionalLights();
+export function removeDirectionalLight(gl: WebGL2RenderingContext, id: string): void {
+    if (directionalLights.delete(id)) uploadDirectionalLights(gl);
 }
 
 export function getDirectionalLight(id: string): DirectionalLight | undefined {
     return directionalLights.get(id);
 }
 
-export function addPointLight(id: string, position: vec3arr, color: vec3arr, range: number): void {
+export function addPointLight(gl: WebGL2RenderingContext, id: string, position: vec3arr, color: vec3arr, range: number): void {
     pointLights.set(id, { id, type: 'point', color, intensity: 1, position, range });
-    uploadPointLights();
+    uploadPointLights(gl);
 }
 
-export function removePointLight(id: string): void {
-    if (pointLights.delete(id)) uploadPointLights();
+export function removePointLight(gl: WebGL2RenderingContext, id: string): void {
+    if (pointLights.delete(id)) uploadPointLights(gl);
 }
 
 export function getPointLight(id: string): PointLight | undefined {
     return pointLights.get(id);
 }
 
-export function clearLights(): void {
+export function clearLights(gl: WebGL2RenderingContext): void {
     directionalLights.clear();
     pointLights.clear();
-    uploadDirectionalLights();
-    uploadPointLights();
+    uploadDirectionalLights(gl);
+    uploadPointLights(gl);
 }
 
-export function setDefaultUniformValues(): void {
-    const gl = glctx;
+export function setDefaultUniformValues(gl: WebGL2RenderingContext): void {
     gl.useProgram(gameShaderProgram3D);
     gl.uniform1f(ditherLocation3D, 0.3);
     gl.uniform3fv(ambientColorLocation3D, new Float32Array([1.0, 1.0, 1.0]));
     gl.uniform1f(ambientIntensityLocation3D, 0.2);
-    addDirectionalLight('default_dir', [0.0, -1.0, 0.0], [1.0, 1.0, 1.0]);
-    addPointLight('default_point', [0.0, 5.0, 5.0], [1.0, 1.0, 1.0], 10.0);
+    addDirectionalLight(gl, 'default_dir', [0.0, -1.0, 0.0], [1.0, 1.0, 1.0]);
+    addPointLight(gl, 'default_point', [0.0, 5.0, 5.0], [1.0, 1.0, 1.0], 10.0);
 }
 
-export function setupBuffers3D(): void {
-    const gl = glctx;
+export function setupBuffers3D(gl: WebGL2RenderingContext): void {
     vertexBuffer3D = glCreateBuffer(gl);
     texcoordBuffer3D = glCreateBuffer(gl);
     normalBuffer3D = glCreateBuffer(gl);
@@ -195,8 +185,7 @@ export function setupBuffers3D(): void {
     atlas_idBuffer3D = glCreateBuffer(gl);
 }
 
-export function createSkyboxBuffer(): void {
-    const gl = glctx;
+export function createSkyboxBuffer(gl: WebGL2RenderingContext): void {
     const positions = new Float32Array([
         -1, -1, 1, 1, -1, 1, -1, 1, 1,
         -1, 1, 1, 1, -1, 1, 1, 1, 1,
@@ -216,8 +205,7 @@ export function createSkyboxBuffer(): void {
     gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
 }
 
-export function drawSkybox(): void {
-    const gl = glctx;
+export function drawSkybox(gl: WebGL2RenderingContext): void {
     glSwitchProgram(gl, skyboxProgram);
     gl.depthFunc(gl.LEQUAL);
     gl.bindBuffer(gl.ARRAY_BUFFER, skyboxBuffer);
@@ -237,8 +225,7 @@ export function drawSkybox(): void {
     gl.depthFunc(gl.GREATER);
 }
 
-export function setupGameShader3DLocations(): void {
-    const gl = glctx;
+export function setupGameShader3DLocations(gl: WebGL2RenderingContext): void {
     glSwitchProgram(gl, gameShaderProgram3D);
     glSetupAttributeFloat(gl, vertexBuffer3D, vertexLocation3D, 3);
     glSetupAttributeFloat(gl, texcoordBuffer3D, texcoordLocation3D, 2);
@@ -247,16 +234,11 @@ export function setupGameShader3DLocations(): void {
     glSetupAttributeInt(gl, atlas_idBuffer3D, atlas_idLocation3D, 1);
 }
 
-export function setSkyboxImages(ids: { posX: string; negX: string; posY: string; negY: string; posZ: string; negZ: string }): void {
-    const gl = glctx;
+export function setSkyboxImages(gl: WebGL2RenderingContext, ids: { posX: string; negX: string; posY: string; negY: string; posZ: string; negZ: string }): void {
     if (!skyboxTexture) {
         skyboxTexture = gl.createTexture()!;
     }
     gl.bindTexture(gl.TEXTURE_CUBE_MAP, skyboxTexture);
-    function generateAtlasName(atlasIndex: number): string {
-        const idxStr = atlasIndex.toString().padStart(2, '0');
-        return atlasIndex === 0 ? '_atlas' : `_atlas_${idxStr}`;
-    }
     const targets = [
         [gl.TEXTURE_CUBE_MAP_POSITIVE_X, ids.posX],
         [gl.TEXTURE_CUBE_MAP_NEGATIVE_X, ids.negX],
@@ -317,8 +299,7 @@ export function setSkyboxImages(ids: { posX: string; negX: string; posY: string;
     gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 }
 
-export function createGameShaderPrograms3D(): void {
-    const gl = glctx;
+export function createGameShaderPrograms3D(gl: WebGL2RenderingContext): void {
     const program = gl.createProgram();
     if (!program) throw Error('Failed to create 3D GLSL program');
     gameShaderProgram3D = program;
@@ -332,8 +313,7 @@ export function createGameShaderPrograms3D(): void {
     }
 }
 
-export function createSkyboxProgram(): void {
-    const gl = glctx;
+export function createSkyboxProgram(gl: WebGL2RenderingContext): void {
     const program = gl.createProgram();
     if (!program) throw Error('Failed to create skybox GLSL program');
     skyboxProgram = program;
@@ -347,8 +327,7 @@ export function createSkyboxProgram(): void {
     }
 }
 
-export function setupVertexShaderLocations3D(): void {
-    const gl = glctx;
+export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
     vertexLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_position');
     texcoordLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_texcoord');
     normalLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_normal');
@@ -373,27 +352,25 @@ export function setupVertexShaderLocations3D(): void {
     shadowStrengthLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_shadowStrength')!;
 }
 
-export function setupSkyboxLocations(): void {
-    const gl = glctx;
+export function setupSkyboxLocations(gl: WebGL2RenderingContext): void {
     skyboxPositionLocation = gl.getAttribLocation(skyboxProgram, 'a_position');
     skyboxViewLocation = gl.getUniformLocation(skyboxProgram, 'u_view')!;
     skyboxProjectionLocation = gl.getUniformLocation(skyboxProgram, 'u_projection')!;
     skyboxTextureLocation = gl.getUniformLocation(skyboxProgram, 'u_skybox')!;
 }
 
-export function renderMeshBatch(): void {
+export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number): void {
     if (meshesToDraw.length === 0) return;
-    const gl = glctx;
     glSwitchProgram(gl, gameShaderProgram3D);
 
-    uploadDirectionalLights();
-    uploadPointLights();
+    uploadDirectionalLights(gl);
+    uploadPointLights(gl);
 
-    gl.bindFramebuffer(gl.FRAMEBUFFER, parentView.framebuffer);
-    gl.viewport(0, 0, parentView.offscreenCanvasSize.x, parentView.offscreenCanvasSize.y);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.viewport(0, 0, canvasWidth, canvasHeight);
 
     if (skyboxTexture) {
-        drawSkybox();
+        drawSkybox(gl);
         glSwitchProgram(gl, gameShaderProgram3D);
     }
 

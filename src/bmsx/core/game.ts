@@ -6,7 +6,7 @@ import type { InputMap, VibrationParams } from "../input/inputtypes";
 import { ActionState, ActionStateQuery } from '../input/inputtypes';
 import { TextWriter } from "../render/textwriter";
 import { BaseView, Color, DrawImgOptions, DrawRectOptions } from "../render/view";
-import { Area, RomPack, Size, vec2, vec3, Vector } from "../rompack/rompack";
+import { Area, RomPack, Size, vec2, vec2arr, vec3, Vector, type vec3arr } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { MSX2ScreenHeight, MSX2ScreenWidth } from "../systems/msx";
 import { BaseModel } from "./basemodel";
@@ -381,6 +381,18 @@ export function new_vec2(x: number, y: number): vec2 {
  */
 export function new_vec3(x: number, y: number, z: number): vec3 {
 	return { x: x, y: y, z: z };
+}
+
+export function to_vec2(v: vec2 | vec2arr): vec2 {
+	return Array.isArray(v) ? { x: v[0], y: v[1] } : { x: v.x, y: v.y };
+}
+
+export function to_vec2arr(v: vec2 | vec2arr): vec2arr {
+	return Array.isArray(v) ? v : [v.x, v.y];
+}
+
+export function to_vec3(v: vec3 | vec3arr): vec3 {
+	return Array.isArray(v) ? { x: v[0], y: v[1], z: v[2] } : { x: v.x, y: v.y, z: v.z };
 }
 
 /**

@@ -3,7 +3,7 @@ import { SpriteObject } from '../core/sprite';
 import { build_fsm } from '../fsm/fsmdecorators';
 import type { StateMachineBlueprint } from '../fsm/fsmtypes';
 import type { State } from '../fsm/state';
-import { ZCOORD_MAX } from '../render/glview';
+import { ZCOORD_MAX } from '../render/glview.constants';
 import { GamepadInput } from './gamepad';
 import { Input } from './input';
 import type { BGamepadButton, InputHandler } from './inputtypes';

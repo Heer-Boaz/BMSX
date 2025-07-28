@@ -2,7 +2,7 @@ import { BehaviorTreeID, BehaviorTrees, Blackboard, BTNode, ConstructorWithBTPro
 import { Component, ComponentConstructor, ComponentContainer, ComponentTag, KeyToComponentMap, update_tagged_components } from "../component/basecomponent";
 import { StateMachineController } from "../fsm/fsmcontroller";
 import type { ConstructorWithFSMProperty, Stateful } from "../fsm/fsmtypes";
-import { ZCOORD_MAX } from "../render/glview";
+import { ZCOORD_MAX } from "../render/glview.constants";
 import { Area, vec2, vec3, Vector, type Polygon, type vec2arr } from "../rompack/rompack";
 import { insavegame, onload } from "../serializer/gameserializer";
 import { AbstractConstructor, Direction, middlepoint_area, new_area, new_vec2, new_vec3, type Identifier } from "./game";

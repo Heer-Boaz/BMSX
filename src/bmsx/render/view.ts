@@ -5,7 +5,9 @@ import type { Area, Polygon, Size, Vector, id2imgres, vec2 } from '../rompack/ro
 
 import { Material } from './3d/material';
 import { ShadowMap } from './3d/shadowmap';
-import { DEFAULT_VERTEX_COLOR, GLView } from "./glview";
+import { GLView } from './glview';
+import { DEFAULT_VERTEX_COLOR } from "./glview.constants";
+
 export interface FlipOptions {
 	flip_h: boolean;
 	flip_v: boolean;
@@ -488,7 +490,7 @@ export interface DrawMeshOptions {
 	shadow?: { map: ShadowMap; matrix: Float32Array; strength: number };
 }
 
-export function paintMesh(options: DrawMeshOptions): void {
+export function paintMesh(options: DrawMeshOptions): void { // TODO: UGLY!
 	const view: GLView = $.view as GLView;
 	if (typeof view.drawMesh3D === 'function') {
 		view.drawMesh3D(options.positions, options.texcoords, options.normals, options.matrix,

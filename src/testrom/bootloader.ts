@@ -509,11 +509,11 @@ class gamemodel extends BaseModel {
 
         const cam1 = new CameraObject('cam1');
         cam1.camera.setPosition([0, 0, 5]);
-        cam1.camera.lookAt([cube.x, cube.y, cube.z]);
+        cam1.camera.lookAt(cube.pos);
 
         const cam2 = new CameraObject('cam2');
         cam2.camera.setPosition([5, 3, 5]);
-        cam2.camera.lookAt([cube.x, cube.y, cube.z]);
+        cam2.camera.lookAt(cube.pos);
 
         _model.spawn(cam1);
         _model.spawn(cam2);
@@ -530,11 +530,11 @@ class gamemodel extends BaseModel {
 
         setSkybox({
             posX: BitmapId.b2,
-            negX: BitmapId.b2,
+            negX: BitmapId.b,
             posY: BitmapId.b2,
-            negY: BitmapId.b2,
+            negY: BitmapId.b,
             posZ: BitmapId.b2,
-            negZ: BitmapId.b2,
+            negZ: BitmapId.b,
         });
 
         _model.spawn(new CameraController(cam1, cam2));
