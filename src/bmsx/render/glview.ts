@@ -11,6 +11,7 @@ import crtShaderCode from './shaders/crt.frag.glsl';
 
 import { bvec } from './2d/vertexutils2d';
 import { BaseView, Color, DrawImgOptions, DrawRectOptions } from './view';
+import * as GLView2D from './2d/glview.2d';
 
 import * as GLView3D from './3d/glview.3d';
 import { Material } from './3d/material';
@@ -54,7 +55,6 @@ export abstract class GLView extends BaseView {
 		color_override: new Float32Array(COLOR_OVERRIDE_SIZE * MAX_SPRITES),
 		atlas_id: new Uint8Array(ATLAS_ID_SIZE * MAX_SPRITES),
 	}
-	private imagesToDraw: { options: DrawImgOptions, imgmeta: ImgMeta }[] = [];
 
 	private CRTShaderTexcoordLocation: GLint;
 	private CRTShaderResolutionLocation: WebGLUniformLocation;
@@ -807,87 +807,9 @@ export abstract class GLView extends BaseView {
 	 * This method should be called once per frame after all sprites have been queued.
 	 */
 	@catchWebGLError
-	public renderSpriteBatch(): void {
-		const _this = $.view as GLView;
-		const gl = _this.glctx;
-
-		// Bind the framebuffer so that the rendering output goes to the texture
-		this.glctx.bindFramebuffer(this.glctx.FRAMEBUFFER, this.framebuffer);
-		// Set the viewport to match the size of the offscreen framebuffer
-		gl.viewport(0, 0, this.offscreenCanvasSize.x, this.offscreenCanvasSize.y);
-		// Set the viewport to the dimensions of the 'post_processing_source_texture' texture
-		glSwitchProgram(gl, this.gameShaderProgram);
-
-		// Bind the position buffer and set the position attribute
-		gl.bindBuffer(gl.ARRAY_BUFFER, _this.vertexBuffer);
-		gl.vertexAttribPointer(_this.vertexLocation, POSITION_COMPONENTS, gl.FLOAT, false, 0, 0);
-		gl.enableVertexAttribArray(_this.vertexLocation);
-
-		// Bind the texcoord buffer and set the texcoord attribute
-		gl.bindBuffer(gl.ARRAY_BUFFER, _this.texcoordBuffer);
-		gl.vertexAttribPointer(_this.texcoordLocation, TEXCOORD_COMPONENTS, gl.FLOAT, false, 0, 0);
-		gl.enableVertexAttribArray(_this.texcoordLocation);
-
-		// Bind the texcoord buffer and set the texcoord attribute
-		gl.bindBuffer(gl.ARRAY_BUFFER, _this.zBuffer);
-		gl.vertexAttribPointer(_this.zcoordLocation, ZCOORD_COMPONENTS, gl.FLOAT, false, 0, 0);
-		gl.enableVertexAttribArray(_this.zcoordLocation);
-
-		// Bind the color override buffer and set the color override attribute
-		gl.bindBuffer(gl.ARRAY_BUFFER, _this.color_overrideBuffer);
-		gl.vertexAttribPointer(_this.color_overrideLocation, COLOR_OVERRIDE_COMPONENTS, gl.FLOAT, false, 0, 0);
-		gl.enableVertexAttribArray(_this.color_overrideLocation);
-
-		// Bind the atlas ID buffer and set the atlas ID attribute
-		gl.bindBuffer(gl.ARRAY_BUFFER, _this.atlas_idBuffer);
-		gl.vertexAttribIPointer(_this.atlas_idLocation, ATLAS_ID_COMPONENTS, gl.UNSIGNED_BYTE, 0, 0);
-		gl.enableVertexAttribArray(_this.atlas_idLocation);
-
-		/**
-		 * Sort the images by depth.
-		 * This is done here instead of in drawgame so that the images are sorted based on their depth at the
-		 * position they should be drawn and not based on the GameObject that they are attached to.
-		 */
-		this.imagesToDraw.sort((i1, i2) => (i1.options.pos.z ?? 0) - (i2.options.pos.z ?? 0));
-
-		// Update the buffers with the new data and draw the images to the texture using the main shader
-		const { vertexcoords, texcoords, zcoords, color_override, atlas_id } = this.vertex_shader_data;
-		let i = 0;
-		for (const { options, imgmeta } of this.imagesToDraw) {
-			const { pos, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 }, colorize = DEFAULT_VERTEX_COLOR } = options;
-			const { width, height } = imgmeta;
-
-			// Set the vertex coordinates, texture coordinates, z-coordinates, and color override for the image
-			// The vertex coordinates are set based on the position, width, height, and scale of the image
-			// The texture coordinates are set based on the flip flags and the image metadata
-			// The z-coordinate is set based on the z-coordinate of the image (if any)
-			// The color override is set based on the colorize option (if any)
-			// The index is used to set the data in the correct position in the buffers that are used for batch rendering
-			bvec.set(vertexcoords, i, pos.x, pos.y, width, height, scale.x, scale.y);
-			bvec.set_texturecoords(texcoords, i, this.getTexCoords(flip.flip_h, flip.flip_v, imgmeta));
-			bvec.set_zcoord(zcoords, i, (pos.z ?? DEFAULT_ZCOORD) / ZCOORD_MAX);
-			bvec.set_color(color_override, i, colorize);
-			bvec.set_atlas_id(atlas_id, i, imgmeta.atlasid);
-
-			++i;
-			// Draw the images in batches of MAX_SPRITES
-			// This is done to avoid having to create a huge buffer for all the images
-			if (i >= MAX_SPRITES) {
-				this.updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, atlas_id, 0);
-				gl.drawArrays(gl.TRIANGLES, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i);
-				i = 0; // Reset the counter for the next batch of images to draw
-			}
-		}
-
-		// Draw the remaining images if any are remaining
-		if (i > 0) {
-			this.updateBuffers(gl, vertexcoords, texcoords, zcoords, color_override, atlas_id, 0);
-			gl.drawArrays(gl.TRIANGLES, SPRITE_DRAW_OFFSET, VERTICES_PER_SPRITE * i);
-		}
-
-		// Clear the list of images to draw for the next frame
-		this.imagesToDraw = [];
-	}
+        public renderSpriteBatch(): void {
+                GLView2D.renderSpriteBatch(this);
+        }
 
 	/**
 	 * Updates a WebGL buffer with new data.
@@ -903,25 +825,9 @@ export abstract class GLView extends BaseView {
 	 * @param options An object containing the image's position, size, and other options.
 	 * @throws An error if the image metadata cannot be found.
 	 */
-	override drawImg(options: DrawImgOptions): void {
-		const { imgid } = options;
-		const imgmeta = BaseView.imgassets[imgid]?.imgmeta;
-
-		if (!imgmeta) {
-			throw Error(`Image with id '${imgid}' not found while trying to retrieve image metadata!`);
-		}
-
-		const distinct_options_object = {
-			...options,
-			pos: options.pos !== undefined ? { ...options.pos } : undefined,
-			scale: options.scale !== undefined ? { ...options.scale } : undefined,
-			colorize: options.colorize !== undefined ? { ...options.colorize } : undefined,
-			flip: options.flip !== undefined ? { ...options.flip } : undefined
-		};
-
-		// Create a distinct object so that the original object is not modified
-		this.imagesToDraw.push({ options: distinct_options_object, imgmeta });
-	}
+        override drawImg(options: DrawImgOptions): void {
+                GLView2D.drawImg(this, options);
+        }
 
 	/**
 	 * Gets the texture coordinates for the image based on the flip flags.
@@ -932,35 +838,13 @@ export abstract class GLView extends BaseView {
 	 * @param imgmeta The metadata for the image.
 	 * @returns The texture coordinates for the image.
 	 */
-	private getTexCoords(flip_h: boolean, flip_v: boolean, imgmeta: ImgMeta): number[] {
-		if (flip_h && flip_v) {
-			return imgmeta['texcoords_fliphv'];
-		} else if (flip_h) {
-			return imgmeta['texcoords_fliph'];
-		} else if (flip_v) {
-			return imgmeta['texcoords_flipv'];
-		} else {
-			return imgmeta['texcoords'];
-		}
-	}
+        private getTexCoords(flip_h: boolean, flip_v: boolean, imgmeta: ImgMeta): number[] {
+                return GLView2D.getTexCoords(flip_h, flip_v, imgmeta);
+        }
 
-	@catchWebGLError
-	/**
-	  * Updates the buffers for the game shader with new data.
-	  * @param gl The WebGL rendering context.
-	  * @param vertexcoords The new vertex coordinates data.
-	  * @param texcoords The new texture coordinates data.
-	  * @param zcoords The new z-coordinate data.
-	  * @param color_override The new color override data.
-	  * @param index The offset into the buffer to start
-	 */
-	private updateBuffers(gl: WebGL2RenderingContext, vertexcoords: Float32Array, texcoords: Float32Array, zcoords: Float32Array, color_override: Float32Array, atlasid: Uint8Array, index: number): void {
-		glUpdateBuffer(gl, this.vertexBuffer, gl.ARRAY_BUFFER, VERTEX_BUFFER_OFFSET_MULTIPLIER * index, vertexcoords);
-		glUpdateBuffer(gl, this.texcoordBuffer, gl.ARRAY_BUFFER, VERTEX_BUFFER_OFFSET_MULTIPLIER * index, texcoords);
-		glUpdateBuffer(gl, this.zBuffer, gl.ARRAY_BUFFER, ZCOORD_BUFFER_OFFSET_MULTIPLIER * index, zcoords);
-		glUpdateBuffer(gl, this.color_overrideBuffer, gl.ARRAY_BUFFER, COLOR_OVERRIDE_BUFFER_OFFSET_MULTIPLIER * index, color_override);
-		glUpdateBuffer(gl, this.atlas_idBuffer, gl.ARRAY_BUFFER, ATLAS_ID_BUFFER_OFFSET_MULTIPLIER * index, atlasid);
-	}
+        private updateBuffers(gl: WebGL2RenderingContext, vertexcoords: Float32Array, texcoords: Float32Array, zcoords: Float32Array, color_override: Float32Array, atlasid: Uint8Array, index: number): void {
+                GLView2D.updateBuffers(this, gl, vertexcoords, texcoords, zcoords, color_override, atlasid, index);
+        }
 
 	@catchWebGLError
 	public drawMesh3D(
@@ -984,58 +868,25 @@ export abstract class GLView extends BaseView {
 	 * @param ey The y-coordinate of the end of the area.
 	 * @returns An array containing the corrected start and end coordinates.
 	 */
-	private correctAreaStartEnd(x: number, y: number, ex: number, ey: number) {
-		// Reverse x and ex if ex < x
-		if (ex < x) {
-			[x, ex] = [ex, x];
-		}
-		// Reverse y and ey if ey < y
-		if (ey < y) {
-			[y, ey] = [ey, y];
-		}
-
-		// Return the corrected start and end coordinates
-		return [x, y, ex, ey];
-	}
+        private correctAreaStartEnd(x: number, y: number, ex: number, ey: number) {
+                return GLView2D.correctAreaStartEnd(x, y, ex, ey);
+        }
 
 	/**
 	 * Draws a rectangle on the canvas by drawing the borders of the rectangle using the white pixel image with the desired color.
 	 * @param options
 	 */
-	override drawRectangle(options: DrawRectOptions): void {
-		let { start: { x, y, z }, end: { x: ex, y: ey } } = options.area; // Note that DrawImg will handle z = undefined
-		const c = options.color;
-
-		// Use the white pixel image and color it with the desired color
-		const imgid = 'whitepixel';
-
-		[x, y, ex, ey] = this.correctAreaStartEnd(x, y, ex, ey);
-
-		// Draw the top border
-		this.drawImg({ pos: new_vec3(x, y, z), imgid: imgid, scale: new_vec2(ex - x, 1), colorize: c });
-		// Draw the bottom border
-		this.drawImg({ pos: new_vec3(x, ey, z), imgid: imgid, scale: new_vec2(ex - x, 1), colorize: c });
-		// Draw the left border
-		this.drawImg({ pos: new_vec3(x, y, z), imgid: imgid, scale: new_vec2(1, ey - y), colorize: c });
-		// Draw the right border
-		this.drawImg({ pos: new_vec3(ex, y, z), imgid: imgid, scale: new_vec2(1, ey - y), colorize: c });
-	}
+        override drawRectangle(options: DrawRectOptions): void {
+                GLView2D.drawRectangle(this, options);
+        }
 
 	/**
 	 * Fills a rectangle on the canvas by drawing a stretched white pixel image with the desired color.
 	 * @param options
 	 */
-	override fillRectangle(options: DrawRectOptions): void {
-		let { start: { x, y, z }, end: { x: ex, y: ey } } = options.area;
-		const c = options.color;
-
-		// Use the white pixel image and color it with the desired color
-		const imgid = 'whitepixel';
-		[x, y, ex, ey] = this.correctAreaStartEnd(x, y, ex, ey);
-
-		// Draw and stretch the image to fill the rectangle
-		this.drawImg({ pos: new_vec3(x, y, z), imgid: imgid, scale: new_vec2(ex - x, ey - y), colorize: c });
-	}
+        override fillRectangle(options: DrawRectOptions): void {
+                GLView2D.fillRectangle(this, options);
+        }
 
 	/**
 	 * Draws the outline of a polygon by drawing lines between its vertices using the white pixel image.
@@ -1043,66 +894,9 @@ export abstract class GLView extends BaseView {
 	 * @param color Color to use for the outline
 	 * @param thickness Line thickness in pixels (default 1)
 	 */
-	public override drawPolygon(coords: Polygon, z: number, color: Color, thickness: number = 1): void {
-		if (!coords || coords.length < 4) return;
-		const imgid = 'whitepixel';
-		for (let i = 0; i < coords.length; i += 2) {
-			let x0 = Math.round(coords[i]), y0 = Math.round(coords[i + 1]);
-			let next = (i + 2) % coords.length;
-			let x1 = Math.round(coords[next]), y1 = Math.round(coords[next + 1]);
-
-			const dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
-			const sx = x0 < x1 ? 1 : -1;
-			const sy = y0 < y1 ? 1 : -1;
-			let err = dx - dy;
-			// Correct Bresenham's for all octants
-			if (dx > dy) {
-				while (true) {
-					this.drawImg({
-						pos: new_vec3(x0, y0, z),
-						imgid,
-						scale: new_vec2(thickness, thickness),
-						colorize: color,
-					});
-					if (x0 === x1 && y0 === y1) break;
-					const e2 = 2 * err;
-					if (e2 > -dy) { err -= dy; x0 += sx; }
-					if (x0 === x1 && y0 === y1) {
-						this.drawImg({
-							pos: new_vec3(x0, y0, z),
-							imgid,
-							scale: new_vec2(thickness, thickness),
-							colorize: color,
-						});
-						break;
-					}
-					if (e2 < dx) { err += dx; y0 += sy; }
-				}
-			} else {
-				while (true) {
-					this.drawImg({
-						pos: new_vec3(x0, y0, z),
-						imgid,
-						scale: new_vec2(thickness, thickness),
-						colorize: color,
-					});
-					if (x0 === x1 && y0 === y1) break;
-					const e2 = 2 * err;
-					if (e2 > -dy) { err -= dy; x0 += sx; }
-					if (x0 === x1 && y0 === y1) {
-						this.drawImg({
-							pos: new_vec3(x0, y0, z),
-							imgid,
-							scale: new_vec2(thickness, thickness),
-							colorize: color,
-						});
-						break;
-					}
-					if (e2 < dx) { err += dx; y0 += sy; }
-				}
-			}
-		}
-	}
+        public override drawPolygon(coords: Polygon, z: number, color: Color, thickness: number = 1): void {
+                GLView2D.drawPolygon(this, coords, z, color, thickness);
+        }
 
 	private _dynamicAtlasIndex: number | null = null;
 
