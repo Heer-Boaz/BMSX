@@ -2,11 +2,10 @@
 import { Registry } from '../core/registry';
 import { Input } from '../input/input';
 import type { Area, Polygon, Size, Vector, id2imgres, vec2 } from '../rompack/rompack';
+import { AmbientLight, DirectionalLight, PointLight } from './3d/light';
 
 import { Material } from './3d/material';
 import { ShadowMap } from './3d/shadowmap';
-import { GLView } from './glview';
-import { DEFAULT_VERTEX_COLOR } from "./glview.constants";
 
 export interface FlipOptions {
 	flip_h: boolean;
@@ -37,6 +36,26 @@ export class PixelData {
 	public B: number;
 	public G: number;
 	public R: number;
+}
+
+export interface DrawMeshOptions {
+	positions: Float32Array;
+	texcoords: Float32Array;
+	normals?: Float32Array;
+	matrix: Float32Array;
+	color?: Color;
+	atlasId?: number;
+	material?: Material;
+	shadow?: { map: ShadowMap; matrix: Float32Array; strength: number };
+}
+
+export interface SkyboxImageIds {
+	posX: string;
+	negX: string;
+	posY: string;
+	negY: string;
+	posZ: string;
+	negZ: string;
 }
 
 /**
@@ -92,7 +111,7 @@ export abstract class BaseView implements RegisterablePersistent {
 	 */
 	public drawgame(clearCanvas: boolean = true): void {
 		const model: any = $.model;
-		if (typeof model.applyViewSettings === 'function') model.applyViewSettings();
+		model.applyViewSettings();
 		if (clearCanvas) $.view.clear();
 		$.model.currentSpace.sort_by_depth(); // Required for each frame as objects can change depth during the flow of the game
 		$.model.currentSpace.objects.forEach(o => !o.disposeFlag && o.visible && (o.updateComponentsWithTag?.('render'), o.paint?.()));
@@ -366,7 +385,6 @@ export abstract class BaseView implements RegisterablePersistent {
 
 	public showResumeOverlay() {
 		$.view.hideFadingOverlay();
-		// $.view.showFadingOverlay('▶️');
 	}
 
 	public clear(): void {
@@ -375,76 +393,11 @@ export abstract class BaseView implements RegisterablePersistent {
 		$.view.context.translate(-0.5, -0.5);
 	}
 
-	public drawImg(options: DrawImgOptions): void {
-		const { pos, imgid, flip = { flip_h: false, flip_v: false }, scale = { x: 1, y: 1 } } = options;
+	public abstract drawImg(options: DrawImgOptions): void;
 
-		const asset = BaseView.imgassets[imgid];
-		if (!asset) {
-			throw new Error(`Image with id '${imgid}' not found!`);
-		}
+	public abstract drawRectangle(options: DrawRectOptions): void;
 
-		let img: HTMLImageElement;
-		let sx = 0, sy = 0, sw = 0, sh = 0;
-		if (asset.imgbin) {
-			img = asset.imgbin;
-			sw = img.width;
-			sh = img.height;
-		} else if (asset.imgmeta?.atlassed) {
-			const idx = asset.imgmeta.atlasid ?? 0;
-			const idxStr = idx.toString().padStart(2, '0');
-			const atlasName = idx === 0 ? '_atlas' : `_atlas_${idxStr}`;
-			const atlas = BaseView.imgassets[atlasName]?.imgbin;
-			if (!atlas) throw new Error(`Atlas image '${atlasName}' not found!`);
-			img = atlas;
-			const [left, top, right, , , bottom] = asset.imgmeta.texcoords!;
-			const aw = atlas.width, ah = atlas.height;
-			sx = left * aw;
-			sy = top * ah;
-			sw = (right - left) * aw;
-			sh = (bottom - top) * ah;
-		} else {
-			throw new Error(`Image data for '${imgid}' not found!`);
-		}
-
-		const ctx = $.view.context;
-		ctx.save();
-		ctx.translate(~~pos.x, ~~pos.y);
-
-		ctx.scale(scale.x * (flip.flip_h ? -1 : 1), scale.y * (flip.flip_v ? -1 : 1));
-		if (flip.flip_h) ctx.translate(-sw, 0);
-		if (flip.flip_v) ctx.translate(0, -sh);
-
-		ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
-		ctx.restore();
-	}
-
-	public drawRectangle(options: DrawRectOptions): void {
-		const { start: { x, y }, end: { x: ex, y: ey } } = options.area;
-		const c = options.color;
-
-		$.view.context.save();
-		$.view.context.translate(0.5, 0.5);
-		$.view.context.beginPath();
-		$.view.context.strokeStyle = this.toRgb(c);
-		$.view.context.rect(~~x, ~~y, ~~(ex - x), ~~(ey - y));
-		$.view.context.stroke();
-		$.view.context.restore();
-	}
-
-	public fillRectangle(options: DrawRectOptions): void {
-		const { start: { x, y }, end: { x: ex, y: ey } } = options.area;
-		const c = options.color;
-
-		$.view.context.save();
-		$.view.context.translate(0.5, 0.5);
-		$.view.context.beginPath();
-		let colorRgb = $.view.toRgb(c);
-		$.view.context.fillStyle = colorRgb;
-		$.view.context.strokeStyle = colorRgb;
-		$.view.context.fillRect(~~x, ~~y, ~~(ex - x), ~~(ey - y));
-		$.view.context.stroke();
-		$.view.context.restore();
-	}
+	public abstract fillRectangle(options: DrawRectOptions): void;
 
 	/**
 	 * Draws the outline of a polygon by drawing lines between its vertices.
@@ -452,71 +405,17 @@ export abstract class BaseView implements RegisterablePersistent {
 	 * @param color Color to use for the outline
 	 * @param thickness Line thickness in pixels (default 1)
 	 */
-	public drawPolygon(points: Polygon, _z: number, color: Color, thickness: number = 1): void {
-		if (!points || points.length < 2) return;
-		const ctx = this.context;
-		ctx.save();
-		ctx.beginPath();
-		ctx.lineWidth = thickness;
-		ctx.strokeStyle = this.toRgb(color);
-		ctx.moveTo(points[0] + 0.5, points[1] + 0.5);
-		for (let i = 2; i < points.length; i += 2) {
-			ctx.lineTo(points[i] + 0.5, points[i + 1] + 0.5);
-		}
-		ctx.closePath();
-		ctx.stroke();
-		ctx.restore();
-	}
+	public abstract drawPolygon(points: Polygon, z: number, color: Color, thickness: number): void;
 
-	private toRgb(c: Color): string {
-		return `rgb(${c.r},${c.g},${c.b},${c.a || 1})`;
-	}
-}
+	public abstract drawMesh(options: DrawMeshOptions): void;
 
-export function paintImage(options: DrawImgOptions): void {
-	if (!options.imgid || options.imgid === 'none') return; // Don't draw anything when imgid = BitmapId.None. For animations, we don't always want to use visible = false
+	public abstract getPointLight(id: Identifier): PointLight | undefined;
+	public abstract setPointLight(id: Identifier, light: PointLight): void;
+	public abstract removePointLight(id: Identifier): void;
 
-	$.view.drawImg(options);
-}
-
-export interface DrawMeshOptions {
-	positions: Float32Array;
-	texcoords: Float32Array;
-	normals?: Float32Array;
-	matrix: Float32Array;
-	color?: Color;
-	atlasId?: number;
-	material?: Material;
-	shadow?: { map: ShadowMap; matrix: Float32Array; strength: number };
-}
-
-export function paintMesh(options: DrawMeshOptions): void { // TODO: UGLY!
-	const view: GLView = $.view as GLView;
-	if (typeof view.drawMesh3D === 'function') {
-		view.drawMesh3D(options.positions, options.texcoords, options.normals, options.matrix,
-			options.color ?? DEFAULT_VERTEX_COLOR,
-			options.atlasId ?? 0,
-			options.material,
-			options.shadow);
-	} else {
-		console.warn('paintMesh called but current view does not support 3D rendering');
-	}
-}
-
-export interface SkyboxImageIds {
-	posX: string;
-	negX: string;
-	posY: string;
-	negY: string;
-	posZ: string;
-	negZ: string;
-}
-
-export function setSkybox(images: SkyboxImageIds): void {
-	const view: any = $.view;
-	if (typeof view.setSkyboxImages === 'function') {
-		view.setSkyboxImages(images);
-	} else {
-		console.warn('setSkybox called but current view does not support 3D rendering');
-	}
+	public abstract addDirectionalLight(id: Identifier, light: DirectionalLight): void;
+	public abstract removeDirectionalLight(id: Identifier): void;
+	public abstract clearLights(): void;
+	public abstract setAmbientLight(light: AmbientLight): void;
+	public abstract setSkybox(images: SkyboxImageIds): void;
 }

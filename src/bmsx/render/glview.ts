@@ -1,16 +1,14 @@
-import { multiply_vec, to_vec2arr } from '../core/game';
+import { Identifier, multiply_vec, to_vec2arr } from '../core/game';
 import type { Polygon, Size, vec2, vec3arr } from '../rompack/rompack';
 
 import { glCreateTexture, glSwitchProgram } from './glutils';
-import { DEFAULT_VERTEX_COLOR } from './glview.constants';
 import { catchWebGLError, generateAtlasName } from './glview.helpers';
 
 import * as GLView2D from './2d/glview.2d';
-import { BaseView, Color, DrawImgOptions, DrawRectOptions } from './view';
+import { BaseView, Color, DrawImgOptions, DrawMeshOptions, DrawRectOptions, SkyboxImageIds } from './view';
 
+import { AmbientLight, DirectionalLight, PointLight } from '../bmsx';
 import * as GLView3D from './3d/glview.3d';
-import { Material } from './3d/material';
-import { ShadowMap } from './3d/shadowmap';
 import * as GLViewCRT from './post/glview.crt';
 
 type texturetype = '_atlas' | '_atlas_dynamic' | 'post_processing_source_texture';
@@ -18,7 +16,7 @@ type texturetype = '_atlas' | '_atlas_dynamic' | 'post_processing_source_texture
 /**
  * Represents a view that renders graphics using WebGL.
  */
-export abstract class GLView extends BaseView {
+export class GLView extends BaseView {
 	/**
 	 * The WebGL rendering context used for rendering the game.
 	 */
@@ -406,20 +404,6 @@ export abstract class GLView extends BaseView {
 	}
 
 
-	@catchWebGLError
-	public drawMesh3D(
-		positions: Float32Array,
-		texcoords: Float32Array,
-		normals: Float32Array | undefined,
-		matrix: Float32Array,
-		color: Color = DEFAULT_VERTEX_COLOR,
-		atlasId: number = 0,
-		material?: Material,
-		shadow?: { map: ShadowMap; matrix: Float32Array; strength: number },
-	): void {
-		GLView3D.meshesToDraw.push({ positions, texcoords, normals, matrix, color, atlasId, material, shadow });
-	}
-
 	/**
 	 * Draws a rectangle on the canvas by drawing the borders of the rectangle using the white pixel image with the desired color.
 	 * @param options
@@ -446,12 +430,47 @@ export abstract class GLView extends BaseView {
 		GLView2D.drawPolygon(this, coords, z, color, thickness);
 	}
 
+	public override drawMesh(options: DrawMeshOptions): void {
+		GLView3D.meshesToDraw.push(options);
+	}
+	public override setSkybox(images: SkyboxImageIds): void {
+		this.setSkyboxImages(images);
+	}
+	public override getPointLight(id: Identifier): PointLight | undefined {
+		return GLView3D.getPointLight(id);
+	}
+	public override setPointLight(id: Identifier, light: PointLight): void {
+		GLView3D.addPointLight(this.glctx, id, light);
+	}
+	public override removePointLight(id: Identifier): void {
+		GLView3D.removePointLight(this.glctx, id);
+	}
+	public override addDirectionalLight(id: Identifier, light: DirectionalLight): void {
+		GLView3D.addDirectionalLight(this.glctx, id, light);
+	}
+	public override removeDirectionalLight(id: Identifier): void {
+		GLView3D.removeDirectionalLight(this.glctx, id);
+	}
+
+	public override setAmbientLight(light: AmbientLight): void {
+		GLView3D.setAmbientLight(this.glctx, light);
+	}
+
+	public override clearLights(): void {
+		GLView3D.clearLights(this.glctx);
+	}
+
 	private _dynamicAtlasIndex: number | null = null;
 
 	public get dynamicAtlas(): number | null {
 		return this._dynamicAtlasIndex;
 	}
 
+	/**
+	 * Sets the dynamic atlas texture for the GLView.
+	 * This allows for dynamic textures to be used in the game, such as textures that are generated at runtime.
+	 * @param index The index of the dynamic atlas texture to set.
+	 */
 	public set dynamicAtlas(index: number) {
 		if (this._dynamicAtlasIndex === index) {
 			// No change in the dynamic atlas index, no need to update

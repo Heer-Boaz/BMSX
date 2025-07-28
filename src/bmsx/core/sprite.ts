@@ -1,5 +1,5 @@
 import { DEFAULT_VERTEX_COLOR } from "../render/glview.constants";
-import { Color, DrawImgOptions, paintImage } from "../render/view";
+import { Color, DrawImgOptions } from "../render/view";
 import { Area, BoundingBoxPrecalc, vec3, type HitPolygonsPrecalc, type Polygon } from "../rompack/rompack";
 import { insavegame } from "../serializer/gameserializer";
 import { new_vec2, new_vec3, set_inplace_area, set_inplace_vec3, translate_vec3 } from "./game";
@@ -169,11 +169,6 @@ export class Sprite {
 
     public paint_offset(offset: vec3) {
         set_inplace_vec3(this.options.pos as vec3, translate_vec3(this, offset));
-        paintImage(this.options);
-    }
-
-    public paint() {
-        set_inplace_vec3(this.options.pos as vec3, this);
-        paintImage(this.options);
+        $.view.drawImg(this.options);
     }
 }

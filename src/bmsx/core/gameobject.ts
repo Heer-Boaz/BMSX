@@ -567,6 +567,30 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	private _direction: Direction;
 	public oldDirection: Direction;
 
+	private _orientation: vec3;
+	public oldOrientation: vec3;
+
+	/**
+	 * Gets the orientation of the game object.
+	 * The orientation is represented as a 3D vector with x, y, and z coordinates.
+	 * The z-coordinate is used for layering objects in the game world.
+	 */
+	public get orientation(): vec3 {
+		return this._orientation;
+	}
+
+	/**
+	 * Sets the orientation of the game object.
+	 * The orientation is represented as a 3D vector with x, y, and z coordinates.
+	 * The z-coordinate is used for layering objects in the game world.
+	 *
+	 * @param value - The new orientation to set.
+	 */
+	public set orientation(value: vec3) {
+		this.oldOrientation = this._orientation;
+		this._orientation = value;
+	}
+
 	/**
 	 * Gets the direction of the game object.
 	 *

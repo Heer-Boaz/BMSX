@@ -1,4 +1,4 @@
-import { AmbientLightObject, BGamepadButton, BaseModel, BehaviorTreeDefinition, BinaryCompressor, BootArgs, CameraObject, Component, Direction, DirectionalLightObject, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, Material, MeshObject, PointLightObject, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, TransformComponent, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, debugPrintBinarySnapshot, insavegame, new_area, new_vec2, new_vec3, setSkybox, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/bmsx';
+import { AmbientLightObject, BGamepadButton, BaseModel, BehaviorTreeDefinition, BinaryCompressor, BootArgs, CameraObject, Component, Direction, DirectionalLightObject, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, Material, MeshObject, PointLightObject, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, TransformComponent, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, debugPrintBinarySnapshot, insavegame, new_area, new_vec2, new_vec3, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/bmsx';
 import type { OBJModel } from '../bmsx/rompack/rompack';
 import { BitmapId, ModelId } from './resourceids';
 
@@ -518,17 +518,17 @@ class gamemodel extends BaseModel {
         _model.spawn(cam1);
         _model.spawn(cam2);
 
-        const ambient = new AmbientLightObject('amb', [1.0, 1.0, 1.0], 0.2);
-        const sun = new DirectionalLightObject('sun', [0.5, -1.0, -0.5], [1.0, 1.0, 1.0]);
-        const extraSun = new DirectionalLightObject('extraSun', [-0.5, -1.0, 0.5], [0.8, 0.8, 1.0]);
-        const lamp = new PointLightObject('lamp', [2.0, 2.0, 2.0], [1.0, 0.8, 0.8], 6.0);
+        const ambient = new AmbientLightObject([1.0, 1.0, 1.0], .2, 'amb');
+        const sun = new DirectionalLightObject([0.5, -1.0, -0.5], [1.0, 1.0, 1.0], 1, 'sun');
+        const extraSun = new DirectionalLightObject([-0.5, -1.0, 0.5], [0.8, 0.8, 1.0], 1, 'extraSun');
+        const lamp = new PointLightObject([2.0, 2.0, 2.0], [1.0, 0.8, 0.8], 6.0, 1, 'lamp');
 
         _model.spawn(ambient);
         _model.spawn(sun);
         _model.spawn(extraSun);
         _model.spawn(lamp);
 
-        setSkybox({
+        $.view.setSkybox({
             posX: BitmapId.b2,
             negX: BitmapId.b,
             posY: BitmapId.b2,

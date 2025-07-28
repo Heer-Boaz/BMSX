@@ -1,20 +1,19 @@
+import { Identifier } from '../../bmsx';
 import type { Size, vec3, vec3arr } from '../../rompack/rompack';
 import { glCreateBuffer, glLoadShader, glSetupAttributeFloat, glSetupAttributeInt, glSwitchProgram } from '../glutils';
 import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS } from '../glview.constants';
 import { generateAtlasName } from '../glview.helpers';
-import { BaseView, Color } from '../view';
+import { BaseView, DrawMeshOptions } from '../view';
 import { Camera3D } from './camera3d';
-import type { DirectionalLight, PointLight } from './light';
-import { Material } from './material';
+import type { AmbientLight, DirectionalLight, PointLight } from './light';
 import { bmat } from './math3d';
 import gameShader3DCode from './shaders/3d.frag.glsl';
 import vertexShader3DCode from './shaders/3d.vert.glsl';
 import skyboxFragCode from './shaders/skybox.frag.glsl';
 import skyboxVertCode from './shaders/skybox.vert.glsl';
-import { ShadowMap } from './shadowmap';
 
 export const camera = new Camera3D();
-export let meshesToDraw: { positions: Float32Array; texcoords: Float32Array; normals?: Float32Array; matrix: Float32Array; color: Color; atlasId: number; material?: Material; shadow?: { map: ShadowMap; matrix: Float32Array; strength: number } }[] = [];
+export let meshesToDraw: DrawMeshOptions[] = [];
 
 const directionalLights: Map<string, DirectionalLight> = new Map();
 const pointLights: Map<string, PointLight> = new Map();
@@ -96,10 +95,10 @@ export function getCamera(): Camera3D {
     return camera;
 }
 
-export function setAmbientLight(gl: WebGL2RenderingContext, color: vec3arr, intensity: number): void {
+export function setAmbientLight(gl: WebGL2RenderingContext, light: AmbientLight): void {
     gl.useProgram(gameShaderProgram3D);
-    gl.uniform3fv(ambientColorLocation3D, new Float32Array(color));
-    gl.uniform1f(ambientIntensityLocation3D, intensity);
+    gl.uniform3fv(ambientColorLocation3D, new Float32Array(light.color));
+    gl.uniform1f(ambientIntensityLocation3D, light.intensity);
 }
 
 export function uploadDirectionalLights(gl: WebGL2RenderingContext): void {
@@ -108,7 +107,7 @@ export function uploadDirectionalLights(gl: WebGL2RenderingContext): void {
     const dirs = new Float32Array(MAX_DIR_LIGHTS * 3);
     const cols = new Float32Array(MAX_DIR_LIGHTS * 3);
     for (let i = 0; i < count; i++) {
-        dirs.set(lights[i].direction, i * 3);
+        dirs.set(lights[i].orientation, i * 3);
         cols.set(lights[i].color, i * 3);
     }
     gl.useProgram(gameShaderProgram3D);
@@ -124,7 +123,7 @@ export function uploadPointLights(gl: WebGL2RenderingContext): void {
     const col = new Float32Array(MAX_POINT_LIGHTS * 3);
     const range = new Float32Array(MAX_POINT_LIGHTS);
     for (let i = 0; i < count; i++) {
-        pos.set(lights[i].position, i * 3);
+        pos.set(lights[i].pos, i * 3);
         col.set(lights[i].color, i * 3);
         range[i] = lights[i].range;
     }
@@ -135,8 +134,8 @@ export function uploadPointLights(gl: WebGL2RenderingContext): void {
     gl.uniform1fv(pointLightRangeLocation3D, range);
 }
 
-export function addDirectionalLight(gl: WebGL2RenderingContext, id: string, direction: vec3arr, color: vec3arr): void {
-    directionalLights.set(id, { id, type: 'directional', color, intensity: 1, direction });
+export function addDirectionalLight(gl: WebGL2RenderingContext, id: Identifier, light: DirectionalLight): void {
+    directionalLights.set(id, { type: 'directional', color: light.color, intensity: light.intensity, orientation: light.orientation });
     uploadDirectionalLights(gl);
 }
 
@@ -148,8 +147,12 @@ export function getDirectionalLight(id: string): DirectionalLight | undefined {
     return directionalLights.get(id);
 }
 
-export function addPointLight(gl: WebGL2RenderingContext, id: string, position: vec3arr, color: vec3arr, range: number): void {
-    pointLights.set(id, { id, type: 'point', color, intensity: 1, position, range });
+export function addPointLight(gl: WebGL2RenderingContext, id: Identifier, light: PointLight): void {
+    if (!light.pos) throw new Error('Point light must have a position');
+    if (!light.color) throw new Error('Point light must have a color');
+    if (light.range === undefined) throw new Error('Point light must have a range');
+
+    pointLights.set(id, { ...light, type: 'point', intensity: 1 });
     uploadPointLights(gl);
 }
 
@@ -173,8 +176,22 @@ export function setDefaultUniformValues(gl: WebGL2RenderingContext): void {
     gl.uniform1f(ditherLocation3D, 0.3);
     gl.uniform3fv(ambientColorLocation3D, new Float32Array([1.0, 1.0, 1.0]));
     gl.uniform1f(ambientIntensityLocation3D, 0.2);
-    addDirectionalLight(gl, 'default_dir', [0.0, -1.0, 0.0], [1.0, 1.0, 1.0]);
-    addPointLight(gl, 'default_point', [0.0, 5.0, 5.0], [1.0, 1.0, 1.0], 10.0);
+    // const defaultDirectionalLight: DirectionalLight = {
+    //     type: 'directional',
+    //     orientation: [0.0, -1.0, 0.0],
+    //     color: [1.0, 1.0, 1.0],
+    //     intensity: 1,
+    // };
+    // addDirectionalLight(gl, 'default_dir', defaultDirectionalLight);
+    // // Default point light
+    // const defaultPointLight: PointLight = {
+    //     type: 'point',
+    //     pos: [0.0, 5.0, 5.0],
+    //     color: [1.0, 1.0, 1.0],
+    //     range: 10.0,
+    //     intensity: 1,
+    // };
+    // addPointLight(gl, 'default_point', defaultPointLight);
 }
 
 export function setupBuffers3D(gl: WebGL2RenderingContext): void {

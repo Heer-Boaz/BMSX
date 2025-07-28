@@ -8,12 +8,12 @@ import { Input } from "../input/input";
 import { Vector } from "../rompack/rompack";
 import { BinaryCompressor } from "../serializer/bincompressor";
 import { Reviver, Savegame, Serializer, excludepropfromsavegame, insavegame } from "../serializer/gameserializer";
+import { CameraObject } from "./cameraobject";
 import type { Identifier, Registerable, RegisterablePersistent } from "./game";
 import { Direction } from "./game";
 import { GameObject } from "./gameobject";
-import { Registry } from "./registry";
-import { CameraObject } from "./cameraobject";
 import { LightObject } from "./lightobject";
+import { Registry } from "./registry";
 
 export interface SpaceObject {
     spaceid: Identifier;
@@ -253,14 +253,13 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
      * Should be called before drawing each frame.
      */
     public applyViewSettings(): void {
-        const view = $.view as any;
-        if (!view || !view.glctx) return;
+        const view = $.view;
         const cam = this.getActiveCamera();
-        if (cam) cam.applyToView(view);
+        if (cam) cam.applyToView();
         const lights = this.getActiveLights();
-        if (lights.length > 0 && typeof view.clearLights === 'function') {
-            view.clearLights();
-            for (const l of lights) l.applyToView(view);
+        if (lights.length > 0) {
+            $.view.clearLights();
+            for (const l of lights) l.applyToView();
         }
     }
 

@@ -1,6 +1,4 @@
-import * as GLView3D from '../render/3d/glview.3d';
 import type { AmbientLight, DirectionalLight, Light, PointLight } from '../render/3d/light';
-import { GLView } from '../render/glview';
 import { insavegame } from '../serializer/gameserializer';
 import { GameObject } from './gameobject';
 
@@ -9,56 +7,82 @@ export abstract class LightObject extends GameObject {
     public light: Light;
     public active: boolean;
 
+    public get color() {
+        return this.light.color;
+    }
+
+    public set color(c: [number, number, number]) {
+        this.light.color = c;
+    }
+
+    public get intensity() {
+        return this.light.intensity;
+    }
+
+    public set intensity(i: number) {
+        this.light.intensity = i;
+    }
+
+    public get type() {
+        return this.light.type;
+    }
+
     constructor(light: Light, id?: string) {
         super(id);
         this.light = light;
         this.active = true;
     }
 
-    public abstract applyToView(view: GLView): void;
+    public abstract applyToView(): void;
 }
 
 export class AmbientLightObject extends LightObject {
-    constructor(id: string, color: [number, number, number], intensity: number) {
-        super({ id, type: 'ambient', color, intensity });
+    public static readonly DEFAULT_COLOR: [number, number, number] = [1, 1, 1];
+    public static readonly DEFAULT_INTENSITY: number = 1;
+    public static readonly DEFAULT_ID: string = 'ambient_light';
+
+    public static createDefault(): AmbientLightObject {
+        return new AmbientLightObject(AmbientLightObject.DEFAULT_COLOR, AmbientLightObject.DEFAULT_INTENSITY, AmbientLightObject.DEFAULT_ID);
     }
 
-    override applyToView(view: GLView): void {
+    constructor(color: [number, number, number], intensity: number, id?: string) {
+        super({ type: 'ambient', color, intensity }, id);
+    }
+
+    override applyToView(): void {
         if (this.active) {
             const l = this.light as AmbientLight;
-            GLView3D.setAmbientLight(view.glctx, l.color, l.intensity);
+            $.view.setAmbientLight(l);
         }
     }
 
 }
 
 export class DirectionalLightObject extends LightObject {
-    constructor(id: string, direction: [number, number, number], color: [number, number, number]) {
-        super({ id, type: 'directional', direction, color, intensity: 1 });
+    constructor(orientation: [number, number, number], color: [number, number, number], intensity: number = 1, id?: string) {
+        super({ type: 'directional', orientation: orientation, color, intensity }, id);
     }
 
-    override applyToView(view: GLView): void {
-        const l = this.light as DirectionalLight;
+    override applyToView(): void {
         if (this.active) {
-            GLView3D.addDirectionalLight(view.glctx, l.id, l.direction, l.color);
+            $.view.addDirectionalLight(this.id, this.light as DirectionalLight);
         } else {
-            GLView3D.removeDirectionalLight(view.glctx, l.id);
+            $.view.removeDirectionalLight(this.id);
         }
     }
 
 }
 
 export class PointLightObject extends LightObject {
-    constructor(id: string, position: [number, number, number], color: [number, number, number], range: number) {
-        super({ id, type: 'point', position, color, range, intensity: 1 });
+    constructor(pos: [number, number, number], color: [number, number, number], range: number, intensity: number = 1, id?: string) {
+        super({ type: 'point', pos, color, range, intensity }, id);
     }
 
-    override applyToView(view: GLView): void {
-        const l = this.light as PointLight;
+    override applyToView(): void {
         if (this.active) {
-            GLView3D.addPointLight(view.glctx, l.id, l.position, l.color, l.range);
+            $.view.setPointLight(this.id, this.light as PointLight);
         } else {
-            GLView3D.removePointLight(view.glctx, l.id);
+            $.view.removePointLight(this.id);
         }
     }
 

@@ -1,5 +1,4 @@
 import { Camera3D } from '../render/3d/camera3d';
-import { GLView } from '../render/glview';
 import * as GLView3D from '../render/3d/glview.3d';
 import type { Vector } from '../rompack/rompack';
 import { insavegame } from '../serializer/gameserializer';
@@ -28,7 +27,7 @@ export class CameraObject extends GameObject {
         super.dispose();
     }
 
-    public applyToView(_view: GLView): void {
+    public applyToView(): void {
         GLView3D.setCameraPosition(this.camera.position);
         GLView3D.pointCameraAt(this.camera.target);
         GLView3D.setCameraViewDepth(this.camera.near, this.camera.far);
