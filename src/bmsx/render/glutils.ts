@@ -17,13 +17,16 @@ function glCheckError(gl: WebGL2RenderingContext, fn: string): void {
 export function buildQuadTexCoords(): Float32Array {
     const textureCoordinates = new Float32Array(VERTEXCOORDS_SIZE * MAX_SPRITES);
     for (let i = 0; i < VERTEXCOORDS_SIZE * MAX_SPRITES - VERTEXCOORDS_SIZE; i += VERTEXCOORDS_SIZE) {
+        // The vertex ordering for quads starts at the top-left corner.
+        // Provide texture coordinates in the same order so sprites are
+        // rendered without a vertical flip.
         textureCoordinates.set([
-            0.0, 0.0,
-            1.0, 0.0,
-            0.0, 1.0,
-            0.0, 1.0,
-            1.0, 0.0,
-            1.0, 1.0,
+            0.0, 1.0, // top-left
+            0.0, 0.0, // bottom-left
+            1.0, 1.0, // top-right
+            1.0, 1.0, // top-right
+            0.0, 0.0, // bottom-left
+            1.0, 0.0, // bottom-right
         ], i);
     }
     return textureCoordinates;

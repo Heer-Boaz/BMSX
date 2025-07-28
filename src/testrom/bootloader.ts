@@ -496,7 +496,7 @@ class gamemodel extends BaseModel {
     public override do_one_time_game_init(): this {
         const cube = new Cube3D();
         const small = new SmallCube3D();
-        _model.spawn(new bclass(), new_vec2(100, 100));
+        _model.spawn(new bclass(), new_vec3(100, 100, 1000));
         _model.spawn(cube, new_vec3(0, 0, 0));
         _model.spawn(small, new_vec3(0, 0, 0));
 

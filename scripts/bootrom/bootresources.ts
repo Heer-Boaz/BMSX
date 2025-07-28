@@ -126,11 +126,41 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<RomAsset[]> {
             fliphv: []
         } as { original: number[]; fliph: number[]; flipv: number[]; fliphv: number[] };
 
-        const [left, top, right, , , bottom] = texcoords;
+        // Texcoords are stored in the same order as the quad vertices generated
+        // by bvec.set: top-left, bottom-left, top-right, top-right, bottom-left,
+        // bottom-right.
+        const left = texcoords[0];
+        const top = texcoords[1];
+        const bottom = texcoords[3];
+        const right = texcoords[4];
 
-        result.fliph.push(right, top, left, top, right, bottom, right, bottom, left, top, left, bottom);
-        result.flipv.push(left, bottom, right, bottom, left, top, left, top, right, bottom, right, top);
-        result.fliphv.push(right, bottom, left, bottom, right, top, right, top, left, bottom, left, top);
+        // Horizontal flip swaps the left and right coordinates
+        result.fliph.push(
+            right, top,
+            right, bottom,
+            left, top,
+            left, top,
+            right, bottom,
+            left, bottom
+        );
+        // Vertical flip swaps the top and bottom coordinates
+        result.flipv.push(
+            left, bottom,
+            left, top,
+            right, bottom,
+            right, bottom,
+            left, top,
+            right, top
+        );
+        // Flip both horizontally and vertically
+        result.fliphv.push(
+            right, bottom,
+            right, top,
+            left, bottom,
+            left, bottom,
+            right, top,
+            left, top
+        );
 
         return result;
     }

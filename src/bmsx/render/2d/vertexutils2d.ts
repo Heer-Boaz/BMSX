@@ -5,7 +5,11 @@ import type { Color } from '../view';
 export const bvec = {
     set(v: Float32Array, i: number, x: number, y: number, w: number, h: number, sx: number, sy: number): void {
         const x2 = x + w * sx, y2 = y + h * sy, offset = i * VERTEXCOORDS_SIZE;
-        v.set([x, y, x2, y, x, y2, x, y2, x2, y, x2, y2], offset);
+        // Arrange vertices so that, after the Y axis is flipped in the vertex
+        // shader, the triangles maintain a counter clockwise winding order. This
+        // allows front faces to be rendered correctly when using standard back
+        // face culling.
+        v.set([x, y, x, y2, x2, y, x2, y, x, y2, x2, y2], offset);
     },
     set_texturecoords(v: Float32Array, i: number, coords: number[]): void {
         const offset = i * TEXTURECOORDS_SIZE;

@@ -188,12 +188,14 @@ export function createCRTVertexBuffer(gl: WebGL2RenderingContext, width: number,
 export function createCRTShaderTexcoordBuffer(gl: WebGL2RenderingContext): void {
     // Define the texture coordinates for a full-screen quad
     const texcoords = new Float32Array([
-        0.0, 1.0,
-        1.0, 1.0,
-        0.0, 0.0,
-        0.0, 0.0,
-        1.0, 1.0,
-        1.0, 0.0,
+        // Match the vertex ordering used by bvec.set so the image isn't
+        // rotated or mirrored when drawn as a full-screen quad
+        0.0, 1.0, // top-left
+        0.0, 0.0, // bottom-left
+        1.0, 1.0, // top-right
+        1.0, 1.0, // top-right
+        0.0, 0.0, // bottom-left
+        1.0, 0.0, // bottom-right
     ]);
 
     // Create a new buffer and bind the texture coordinate data to it

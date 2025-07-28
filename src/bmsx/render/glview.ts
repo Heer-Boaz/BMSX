@@ -36,7 +36,7 @@ export class GLView extends BaseView {
 	private _applyFringing: boolean = true;
 	private _noiseIntensity: number = 0.2;
 	private _colorBleed: vec3arr = [0.02, 0.0, 0.0];
-	private _blurIntensity: number = 0.6;
+	private _blurIntensity: number = 0.4;
 	private _glowColor: vec3arr = [0.05, 0.02, 0.02];
 
 	/**
@@ -270,10 +270,10 @@ export class GLView extends BaseView {
 		const gl = this.glctx;
 		gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 		gl.enable(gl.DEPTH_TEST);
-		gl.depthFunc(gl.GREATER);
+		gl.depthFunc(gl.LEQUAL);
 		gl.enable(gl.BLEND);
 		gl.enable(gl.CULL_FACE);
-		gl.cullFace(gl.FRONT);
+		gl.cullFace(gl.BACK);
 	}
 
 	/**
@@ -360,8 +360,8 @@ export class GLView extends BaseView {
 		const gl = this.glctx;
 
 		GLView3D.drawSkybox(gl);
-		GLView2D.renderSpriteBatch(gl, this.framebuffer, this.canvas.width, this.canvas.height); // Render the sprite batch to the framebuffer
 		GLView3D.renderMeshBatch(gl, this.framebuffer, this.canvas.width, this.canvas.height); // Render the 3D mesh batch to the framebuffer
+		GLView2D.renderSpriteBatch(gl, this.framebuffer, this.canvas.width, this.canvas.height); // Render the sprite batch to the framebuffer
 		// saveTextureToFile();
 
 		// Draw a full-screen quad using the post-processing shader
@@ -383,7 +383,7 @@ export class GLView extends BaseView {
 	@catchWebGLError
 	override clear(): void {
 		const gl = this.glctx;
-		gl.clearDepth(0.0);
+		gl.clearDepth(1.0);
 
 		// Clear the texture
 		gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);

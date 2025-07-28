@@ -247,7 +247,7 @@ export function drawSkybox(gl: WebGL2RenderingContext): void {
     gl.uniform1i(skyboxTextureLocation, 9);
 
     gl.drawArrays(gl.TRIANGLES, 0, 36);
-    gl.depthFunc(gl.GREATER);
+    gl.depthFunc(gl.LEQUAL);
 }
 
 export function setupGameShader3DLocations(gl: WebGL2RenderingContext): void {

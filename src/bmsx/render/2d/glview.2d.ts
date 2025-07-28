@@ -175,7 +175,11 @@ export function renderSpriteBatch(gl: WebGL2RenderingContext, framebuffer: WebGL
         const { width, height } = imgmeta;
         bvec.set(vertexcoords, i, pos.x, pos.y, width, height, scale.x, scale.y);
         bvec.set_texturecoords(texcoords, i, getTexCoords(flip.flip_h, flip.flip_v, imgmeta));
-        bvec.set_zcoord(zcoords, i, (pos.z ?? DEFAULT_ZCOORD) / ZCOORD_MAX);
+        // With standard depth where 0 is near and 1 is far, higher z values
+        // should appear in front. Normalize the sprite's z coordinate by
+        // inverting it so that a larger pos.z results in a smaller depth value.
+        const zNorm = 1 - (pos.z ?? DEFAULT_ZCOORD) / ZCOORD_MAX;
+        bvec.set_zcoord(zcoords, i, zNorm);
         bvec.set_color(color_override, i, colorize);
         bvec.set_atlas_id(atlas_id, i, imgmeta.atlasid);
         ++i;
