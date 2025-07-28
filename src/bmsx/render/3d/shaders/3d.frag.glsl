@@ -30,10 +30,43 @@ in vec3 v_worldPos;
 
 out vec4 outputColor;
 
-vec3 quantize(vec3 c) {
-    vec3 levels = vec3(31.0);
-    return floor(c * levels + 0.5) / levels;
+const vec3 msx1_palette[16] = vec3[](
+    vec3(0.0, 0.0, 0.0), vec3(0.0, 0.0, 0.0), vec3(0.24, 0.67, 0.24), vec3(0.33, 0.76, 0.33),
+    vec3(0.33, 0.33, 0.76), vec3(0.43, 0.43, 0.86), vec3(0.24, 0.67, 0.67), vec3(0.47, 0.76, 0.76),
+    vec3(0.76, 0.33, 0.33), vec3(0.76, 0.43, 0.43), vec3(0.67, 0.67, 0.24), vec3(0.76, 0.76, 0.33),
+    vec3(0.24, 0.47, 0.24), vec3(0.67, 0.33, 0.67), vec3(0.76, 0.76, 0.76), vec3(1.0, 1.0, 1.0)
+);
+
+vec3 quantize(vec3 color, int mode) {
+    switch (mode) {
+        case 0:
+            return color; // No quantization
+        case 1: // MSX1: 16 colors
+            float minDist = 1e10;
+            vec3 bestColor;
+            for (int i = 0; i < 16; i++) {
+                float dist = length(color - msx1_palette[i]);
+                if (dist < minDist) {
+                    minDist = dist;
+                    bestColor = msx1_palette[i];
+                }
+            }
+            return bestColor;
+        case 2: // MSX2: 256 colors
+            vec3 levels = vec3(7.0, 7.0, 3.0);
+            return floor(color * levels + 0.5) / levels;
+        case 3: // Playstation (PSX): 15-bit color
+            vec3 psxLevels = vec3(31.0, 31.0, 31.0);
+            return floor(color * psxLevels + 0.5) / psxLevels;
+        default:
+            return color; // Default case, no quantization
+    }
 }
+
+// vec3 quantize(vec3 c) {
+//     vec3 levels = vec3(31.0);
+//     return floor(c * levels + 0.5) / levels;
+// }
 
 float bayer(vec2 pos) {
     int x = int(mod(pos.x,4.0));
@@ -93,7 +126,7 @@ void main() {
     float closest = texture(u_shadowMap, proj.xy * 0.5 + 0.5).r;
     float shadow = proj.z - 0.005 > closest ? u_shadowStrength : 1.0;
 
-    vec3 col = quantize(texColor.rgb * lighting * shadow);
+    vec3 col = quantize(texColor.rgb * lighting * shadow, 3);
     col += bayer(gl_FragCoord.xy);
     outputColor = vec4(col, texColor.a);
 }

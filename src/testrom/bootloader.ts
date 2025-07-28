@@ -1,4 +1,4 @@
-import { AmbientLightObject, BGamepadButton, BaseModel, BehaviorTreeDefinition, BinaryCompressor, BootArgs, CameraObject, Component, Direction, DirectionalLightObject, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, Material, MeshObject, PointLightObject, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, TransformComponent, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, debugPrintBinarySnapshot, insavegame, new_area, new_vec2, new_vec3, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/bmsx';
+import { AmbientLightObject, BGamepadButton, BaseModel, BehaviorTreeDefinition, BinaryCompressor, BootArgs, CameraObject, Component, Direction, DirectionalLightObject, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, Material, MeshObject, PointLightObject, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, TransformComponent, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, debugPrintBinarySnapshot, insavegame, new_area, new_vec2, new_vec3, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/bmsx';
 import type { OBJModel } from '../bmsx/rompack/rompack';
 import { BitmapId, ModelId } from './resourceids';
 
@@ -10,7 +10,8 @@ const _global = window || globalThis;
 
 _global['h406A'] = (args: BootArgs): void => {
     _model = new gamemodel();
-    _view = new gameview(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
+    // _view = new gameview(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
+    _view = new gameview(new_vec2(320, 240));
     _game = new Game();
     _game.init({ ...args, model: _model, view: _view }).then(() => {
         _game.start();
@@ -218,14 +219,6 @@ class bclass extends SpriteObject {
         };
     }
 
-    // @build_fsm('bclass_meuk_submachine')
-    // public static bouw_meuksubfsm(): machine_states {
-    //     return {
-    //         states: {
-    //         }
-    //     }
-    // }
-
     @build_fsm()
     public static bouw(): StateMachineBlueprint {
         $.input.getPlayerInput(1).setInputMap({
@@ -357,11 +350,6 @@ class bclass extends SpriteObject {
     testmeuk() {
         console.log('testmeuk');
     }
-
-    // @subscribesToSelfScopedEvent('leavingScreen')
-    // testmeuk2(d: Direction, old_x_or_y: number) {
-    //     leavingScreenHandler_prohibit(this, d, old_x_or_y);
-    // }
 
     constructor() {
         super('The B');
@@ -543,11 +531,13 @@ class gamemodel extends BaseModel {
     }
 
     public get gamewidth(): number {
-        return MSX1ScreenWidth;
+        // return MSX1ScreenWidth;
+        return 320; // Adjusted for the new view size
     }
 
     public get gameheight(): number {
-        return MSX1ScreenHeight;
+        // return MSX1ScreenHeight;
+        return 240; // Adjusted for the new view size
     }
 
     public collidesWithTile(_o: GameObject, _dir: Direction): boolean {

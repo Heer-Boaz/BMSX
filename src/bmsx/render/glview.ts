@@ -34,9 +34,9 @@ export class GLView extends BaseView {
 	private _applyBlur: boolean = true;
 	private _applyGlow: boolean = true;
 	private _applyFringing: boolean = true;
-	private _noiseIntensity: number = 0.2;
+	private _noiseIntensity: number = 0.4;
 	private _colorBleed: vec3arr = [0.02, 0.0, 0.0];
-	private _blurIntensity: number = 0.4;
+	private _blurIntensity: number = 0.6;
 	private _glowColor: vec3arr = [0.05, 0.02, 0.02];
 
 	/**
