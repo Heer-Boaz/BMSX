@@ -521,7 +521,7 @@ class gamemodel extends BaseModel {
         const ambient = new AmbientLightObject([1.0, 1.0, 1.0], .2, 'amb');
         const sun = new DirectionalLightObject([0.5, -1.0, -0.5], [1.0, 1.0, 1.0], 1, 'sun');
         const extraSun = new DirectionalLightObject([-0.5, -1.0, 0.5], [0.8, 0.8, 1.0], 1, 'extraSun');
-        const lamp = new PointLightObject([2.0, 2.0, 2.0], [1.0, 0.8, 0.8], 6.0, 1, 'lamp');
+        const lamp = new PointLightObject([2.0, 2.0, 2.0], [1.0, 1.0, 1.0], 6.0, 2, 'lamp');
 
         _model.spawn(ambient);
         _model.spawn(sun);

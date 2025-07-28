@@ -183,7 +183,7 @@ export function setDefaultUniformValues(gl: WebGL2RenderingContext): void {
     gl.useProgram(gameShaderProgram3D);
     gl.uniform1f(ditherLocation3D, 0.3);
     gl.uniform3fv(ambientColorLocation3D, new Float32Array([1.0, 1.0, 1.0]));
-    gl.uniform1f(ambientIntensityLocation3D, 0.2);
+    gl.uniform1f(ambientIntensityLocation3D, 0);
     // const defaultDirectionalLight: DirectionalLight = {
     //     type: 'directional',
     //     orientation: [0.0, -1.0, 0.0],
