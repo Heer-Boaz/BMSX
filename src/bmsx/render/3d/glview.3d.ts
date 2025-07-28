@@ -32,10 +32,12 @@ let ambientColorLocation3D: WebGLUniformLocation;
 let ambientIntensityLocation3D: WebGLUniformLocation;
 let dirLightDirectionLocation3D: WebGLUniformLocation;
 let dirLightColorLocation3D: WebGLUniformLocation;
+let dirLightIntensityLocation3D: WebGLUniformLocation;
 let numDirLightsLocation3D: WebGLUniformLocation;
 let pointLightPositionLocation3D: WebGLUniformLocation;
 let pointLightColorLocation3D: WebGLUniformLocation;
 let pointLightRangeLocation3D: WebGLUniformLocation;
+let pointLightIntensityLocation3D: WebGLUniformLocation;
 let numPointLightsLocation3D: WebGLUniformLocation;
 let materialColorLocation3D: WebGLUniformLocation;
 let shadowMapLocation3D: WebGLUniformLocation;
@@ -106,14 +108,17 @@ export function uploadDirectionalLights(gl: WebGL2RenderingContext): void {
     const count = Math.min(lights.length, MAX_DIR_LIGHTS);
     const dirs = new Float32Array(MAX_DIR_LIGHTS * 3);
     const cols = new Float32Array(MAX_DIR_LIGHTS * 3);
+    const intens = new Float32Array(MAX_DIR_LIGHTS);
     for (let i = 0; i < count; i++) {
         dirs.set(lights[i].orientation, i * 3);
         cols.set(lights[i].color, i * 3);
+        intens[i] = lights[i].intensity;
     }
     gl.useProgram(gameShaderProgram3D);
     gl.uniform1i(numDirLightsLocation3D, count);
     gl.uniform3fv(dirLightDirectionLocation3D, dirs);
     gl.uniform3fv(dirLightColorLocation3D, cols);
+    gl.uniform1fv(dirLightIntensityLocation3D, intens);
 }
 
 export function uploadPointLights(gl: WebGL2RenderingContext): void {
@@ -122,16 +127,19 @@ export function uploadPointLights(gl: WebGL2RenderingContext): void {
     const pos = new Float32Array(MAX_POINT_LIGHTS * 3);
     const col = new Float32Array(MAX_POINT_LIGHTS * 3);
     const range = new Float32Array(MAX_POINT_LIGHTS);
+    const intens = new Float32Array(MAX_POINT_LIGHTS);
     for (let i = 0; i < count; i++) {
         pos.set(lights[i].pos, i * 3);
         col.set(lights[i].color, i * 3);
         range[i] = lights[i].range;
+        intens[i] = lights[i].intensity;
     }
     gl.useProgram(gameShaderProgram3D);
     gl.uniform1i(numPointLightsLocation3D, count);
     gl.uniform3fv(pointLightPositionLocation3D, pos);
     gl.uniform3fv(pointLightColorLocation3D, col);
     gl.uniform1fv(pointLightRangeLocation3D, range);
+    gl.uniform1fv(pointLightIntensityLocation3D, intens);
 }
 
 export function addDirectionalLight(gl: WebGL2RenderingContext, id: Identifier, light: DirectionalLight): void {
@@ -152,7 +160,7 @@ export function addPointLight(gl: WebGL2RenderingContext, id: Identifier, light:
     if (!light.color) throw new Error('Point light must have a color');
     if (light.range === undefined) throw new Error('Point light must have a range');
 
-    pointLights.set(id, { ...light, type: 'point', intensity: 1 });
+    pointLights.set(id, { ...light, type: 'point' });
     uploadPointLights(gl);
 }
 
@@ -358,10 +366,12 @@ export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
     ambientIntensityLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_ambientIntensity')!;
     dirLightDirectionLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_dirLightDirection[0]')!;
     dirLightColorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_dirLightColor[0]')!;
+    dirLightIntensityLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_dirLightIntensity[0]')!;
     numDirLightsLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_numDirLights')!;
     pointLightPositionLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_pointLightPosition[0]')!;
     pointLightColorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_pointLightColor[0]')!;
     pointLightRangeLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_pointLightRange[0]')!;
+    pointLightIntensityLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_pointLightIntensity[0]')!;
     numPointLightsLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_numPointLights')!;
     materialColorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_materialColor')!;
     shadowMapLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_shadowMap')!;

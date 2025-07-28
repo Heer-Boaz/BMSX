@@ -15,10 +15,12 @@ const int MAX_POINT_LIGHTS = 4;
 uniform int u_numDirLights;
 uniform vec3 u_dirLightDirection[MAX_DIR_LIGHTS];
 uniform vec3 u_dirLightColor[MAX_DIR_LIGHTS];
+uniform float u_dirLightIntensity[MAX_DIR_LIGHTS];
 uniform int u_numPointLights;
 uniform vec3 u_pointLightPosition[MAX_POINT_LIGHTS];
 uniform vec3 u_pointLightColor[MAX_POINT_LIGHTS];
 uniform float u_pointLightRange[MAX_POINT_LIGHTS];
+uniform float u_pointLightIntensity[MAX_POINT_LIGHTS];
 
 in vec2 v_texcoord;
 in vec4 v_color_override;
@@ -70,7 +72,7 @@ void main() {
     for(int i = 0; i < MAX_DIR_LIGHTS; i++){
         if(i >= u_numDirLights) break;
         float diff = max(dot(normal, -u_dirLightDirection[i]), 0.0);
-        lighting += diff * u_dirLightColor[i];
+        lighting += diff * u_dirLightColor[i] * u_dirLightIntensity[i];
     }
 
     for(int i = 0; i < MAX_POINT_LIGHTS; i++){
@@ -80,7 +82,7 @@ void main() {
         if(dist < u_pointLightRange[i]){
             float attenuation = 1.0 - dist / u_pointLightRange[i];
             float pdiff = max(dot(normal, normalize(lightVec)), 0.0);
-            lighting += pdiff * attenuation * u_pointLightColor[i];
+            lighting += pdiff * attenuation * u_pointLightColor[i] * u_pointLightIntensity[i];
         }
     }
 
