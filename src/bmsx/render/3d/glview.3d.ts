@@ -43,6 +43,7 @@ let materialColorLocation3D: WebGLUniformLocation;
 let shadowMapLocation3D: WebGLUniformLocation;
 let lightMatrixLocation3D: WebGLUniformLocation;
 let shadowStrengthLocation3D: WebGLUniformLocation;
+let vertShaderScaleLocation3D: WebGLUniformLocation;
 let vertexBuffer3D: WebGLBuffer;
 let texcoordBuffer3D: WebGLBuffer;
 let color_overrideBuffer3D: WebGLBuffer;
@@ -179,27 +180,12 @@ export function clearLights(gl: WebGL2RenderingContext): void {
     uploadPointLights(gl);
 }
 
-export function setDefaultUniformValues(gl: WebGL2RenderingContext): void {
+export function setDefaultUniformValues(gl: WebGL2RenderingContext, defaultScale: number): void {
     gl.useProgram(gameShaderProgram3D);
     gl.uniform1f(ditherLocation3D, 0.3);
     gl.uniform3fv(ambientColorLocation3D, new Float32Array([1.0, 1.0, 1.0]));
     gl.uniform1f(ambientIntensityLocation3D, 0);
-    // const defaultDirectionalLight: DirectionalLight = {
-    //     type: 'directional',
-    //     orientation: [0.0, -1.0, 0.0],
-    //     color: [1.0, 1.0, 1.0],
-    //     intensity: 1,
-    // };
-    // addDirectionalLight(gl, 'default_dir', defaultDirectionalLight);
-    // // Default point light
-    // const defaultPointLight: PointLight = {
-    //     type: 'point',
-    //     pos: [0.0, 5.0, 5.0],
-    //     color: [1.0, 1.0, 1.0],
-    //     range: 10.0,
-    //     intensity: 1,
-    // };
-    // addPointLight(gl, 'default_point', defaultPointLight);
+    gl.uniform1f(vertShaderScaleLocation3D, defaultScale);
 }
 
 export function setupBuffers3D(gl: WebGL2RenderingContext): void {
@@ -377,6 +363,7 @@ export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
     shadowMapLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_shadowMap')!;
     lightMatrixLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_lightMatrix')!;
     shadowStrengthLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_shadowStrength')!;
+    vertShaderScaleLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_scale')!;
 }
 
 export function setupSkyboxLocations(gl: WebGL2RenderingContext): void {

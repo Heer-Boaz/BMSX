@@ -214,7 +214,7 @@ export class GLView extends BaseView {
 		const gl = this.glctx;
 		GLView2D.setupDefaultUniformValues(gl, 2.0, to_vec2arr(this.offscreenCanvasSize)); // Set the default uniform values for the game shader
 
-		GLView3D.setDefaultUniformValues(gl);
+		GLView3D.setDefaultUniformValues(gl, 2.0);
 		const crtOptions: GLViewCRT.CRTShaderOptions = { applyNoise: this.applyNoise, applyColorBleed: this.applyColorBleed, applyScanlines: this.applyScanlines, applyBlur: this.applyBlur, applyGlow: this.applyGlow, applyFringing: this.applyFringing, blurIntensity: this.blurIntensity, noiseIntensity: this.noiseIntensity, colorBleed: this.colorBleed, glowColor: this.glowColor };
 
 		GLViewCRT.setDefaultUniformValues(gl, crtOptions); // Set the default uniform values for the CRT shader
