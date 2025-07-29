@@ -1,0 +1,75 @@
+{
+  "asset": {"version": "2.0", "generator": "BMSX Test"},
+  "buffers": [
+    {"uri": "cube.bin", "byteLength": 368}
+  ],
+  "bufferViews": [
+    {"buffer": 0, "byteOffset": 0, "byteLength": 96},
+    {"buffer": 0, "byteOffset": 96, "byteLength": 96},
+    {"buffer": 0, "byteOffset": 192, "byteLength": 64},
+    {"buffer": 0, "byteOffset": 256, "byteLength": 72},
+    {"buffer": 0, "byteOffset": 328, "byteLength": 8},
+    {"buffer": 0, "byteOffset": 336, "byteLength": 32}
+  ],
+  "accessors": [
+    {"bufferView": 0, "componentType": 5126, "count": 8, "type": "VEC3"},
+    {"bufferView": 1, "componentType": 5126, "count": 8, "type": "VEC3"},
+    {"bufferView": 2, "componentType": 5126, "count": 8, "type": "VEC2"},
+    {"bufferView": 3, "componentType": 5123, "count": 36, "type": "SCALAR"},
+    {"bufferView": 4, "componentType": 5126, "count": 2, "type": "SCALAR"},
+    {"bufferView": 5, "componentType": 5126, "count": 2, "type": "VEC4"}
+  ],
+  "images": [
+    {"uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4AWP4z8DwHwAFAAH/e+m+7wAAAABJRU5ErkJggg=="},
+    {"uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4AWNoaPj/HwAGggL/Qc7SwQAAAABJRU5ErkJggg=="},
+    {"uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4AWNoaGj4DwAFhAKAfr3l1AAAAABJRU5ErkJggg=="}
+  ],
+  "samplers": [
+    {"magFilter": 9729, "minFilter": 9729, "wrapS": 10497, "wrapT": 10497}
+  ],
+  "textures": [
+    {"sampler": 0, "source": 0},
+    {"sampler": 0, "source": 1},
+    {"sampler": 0, "source": 2}
+  ],
+  "materials": [
+    {
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [0.8, 0.2, 0.2, 1.0],
+        "metallicFactor": 0.6,
+        "roughnessFactor": 0.4,
+        "baseColorTexture": {"index": 0},
+        "metallicRoughnessTexture": {"index": 2}
+      },
+      "normalTexture": {"index": 1}
+    }
+  ],
+  "meshes": [
+    {
+      "primitives": [
+        {
+          "attributes": {"POSITION": 0, "NORMAL": 1, "TEXCOORD_0": 2},
+          "indices": 3,
+          "material": 0
+        }
+      ]
+    }
+  ],
+  "nodes": [
+    {"mesh": 0, "name": "Cube"}
+  ],
+  "animations": [
+    {
+      "samplers": [
+        {"input": 4, "output": 5, "interpolation": "LINEAR"}
+      ],
+      "channels": [
+        {"sampler": 0, "target": {"node": 0, "path": "rotation"}}
+      ]
+    }
+  ],
+  "scenes": [
+    {"nodes": [0]}
+  ],
+  "scene": 0
+}

@@ -40,6 +40,15 @@ export function glCreateBuffer(gl: WebGL2RenderingContext, data?: Float32Array |
     return buffer;
 }
 
+export function glCreateElementBuffer(gl: WebGL2RenderingContext, data?: Uint16Array | Uint32Array): WebGLBuffer {
+    const buffer = gl.createBuffer()!;
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffer);
+    if (data) gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+    else gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, 0, gl.DYNAMIC_DRAW);
+    glCheckError(gl, 'createElementBuffer');
+    return buffer;
+}
+
 export function glSetupAttributeFloat(gl: WebGL2RenderingContext, buffer: WebGLBuffer, location: number, size: number): void {
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.enableVertexAttribArray(location);

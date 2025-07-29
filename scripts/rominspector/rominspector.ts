@@ -7,9 +7,9 @@ import * as contrib from 'blessed-contrib';
 import * as fs from 'fs/promises';
 import * as pako from 'pako';
 import { PNG } from 'pngjs';
-import type { AudioMeta, ImgMeta, RomAsset, RomMeta, asset_type } from '../../src/bmsx/rompack/rompack';
-import { OBJModel } from '../../src/bmsx/rompack/rompack';
+import type { AudioMeta, ImgMeta, RomAsset, RomMeta, asset_type, GLTFModel } from '../../src/bmsx/rompack/rompack';
 import { decodeBinary } from '../../src/bmsx/serializer/binencoder';
+import { loadModelFromBuffer as loadGLTFModelFromBuffer } from '../bootrom/bootresources';
 import { getZippedRomAndRomLabelFromBlob, loadAssetList, parseMetaFromBuffer } from '../bootrom/bootrom';
 import { generateAtlasName } from '../rompacker/atlasbuilder';
 import { asciiWaveBraille, generateBrailleAsciiArt, generatePixelPerfectAsciiArt, parseWav, renderBufferBar, renderSummaryBar } from './asciiart';
@@ -98,22 +98,6 @@ async function loadDataFromBuffer(buf: ArrayBuffer): Promise<any> {
 	}
 }
 
-async function loadModelFromBuffer(buf: ArrayBuffer): Promise<any> {
-	if (!(buf instanceof ArrayBuffer)) {
-		console.error('loadModelFromBuffer expects an ArrayBuffer, got:', buf);
-		throw new Error('Invalid buffer type');
-	}
-	if (buf.byteLength === 0) {
-		return null;
-	}
-	const copyBuffer = buf.slice(0);
-	const obj = decodeBinary(new Uint8Array(copyBuffer)) as { positions: number[]; texcoords: number[]; normals: number[] | null };
-	return {
-		positions: new Float32Array(obj.positions),
-		texcoords: new Float32Array(obj.texcoords),
-		normals: obj.normals ? new Float32Array(obj.normals) : null
-	};
-}
 
 async function loadAssets(rompack: Buffer | ArrayBuffer) {
 	let assets: RomAsset[] = [];
@@ -595,20 +579,30 @@ async function main() {
 				metadataLines.push(`Data size: ${formatByteSize(selected.end - selected.start)}`);
 				asciiArt = JSON.stringify(selected.buffer, null, 2);
 				break;
-			case 'model':
-				if (!selected.buffer || typeof selected.buffer !== 'string') {
-					(selected.buffer as any) = await loadModelFromBuffer(rompack.slice(selected.start, selected.end)) as OBJModel;
-				}
-				metadataLines.push(`Model size: ${formatByteSize(selected.end - selected.start)}`);
-				asciiArt =
-					`Positions: ${(selected.buffer as any).positions.length / 3} vertices, ` +
-					`Texcoords: ${(selected.buffer as any).texcoords.length / 2} UVs, ` +
-					`Normals: ${(selected.buffer as any).normals ? (selected.buffer as any).normals.length / 3 : 'No normals'}`;
-				asciiArt += '\n\n' +
-					`Positions: ${JSON.stringify((selected.buffer as any).positions.slice(0, 6))}\n` +
-					`Texcoords: ${JSON.stringify((selected.buffer as any).texcoords.slice(0, 4))}\n` +
-					`Normals: ${JSON.stringify((selected.buffer as any).normals ? (selected.buffer as any).normals.slice(0, 6) : 'No normals')}`;
-				break;
+                        case 'model':
+                                if (!selected.buffer || typeof (selected.buffer as any).meshes === 'undefined') {
+                                        const texBuf = (selected as any).texture_start != null && (selected as any).texture_end != null
+                                                ? rompack.slice((selected as any).texture_start, (selected as any).texture_end)
+                                                : undefined;
+                                        selected.buffer = await loadGLTFModelFromBuffer(rompack.slice(selected.start, selected.end), texBuf);
+                                }
+                                metadataLines.push(`Model size: ${formatByteSize(selected.end - selected.start)}`);
+                                const modelData = selected.buffer as GLTFModel;
+                                const first = modelData.meshes[0];
+                                if (first) {
+                                        asciiArt =
+                                                `Meshes: ${modelData.meshes.length}\n` +
+                                                `Vertices: ${first.positions.length / 3}\n` +
+                                                `UVs: ${first.texcoords ? first.texcoords.length / 2 : 0}\n` +
+                                                `Normals: ${first.normals ? first.normals.length / 3 : 0}`;
+                                        if (modelData.imageBuffers && modelData.imageBuffers[0]) {
+                                                const buf = Buffer.from(modelData.imageBuffers[0]);
+                                                asciiArt += '\n\n' + generateAsciiArtFromImage(buf, { atlassed: false } as any, getModalWidth());
+                                        }
+                                } else {
+                                        asciiArt = 'No mesh data';
+                                }
+                                break;
 			case 'code': {
 				let code = '';
 				// Load the code buffer from the ROM pack

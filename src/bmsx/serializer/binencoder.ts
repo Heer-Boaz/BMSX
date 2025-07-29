@@ -171,6 +171,15 @@ class BinWriter {
                     this.pos += val.length;
                     return;
                 }
+                if (ArrayBuffer.isView(val)) {
+                    const view = new Uint8Array(val.buffer, val.byteOffset, val.byteLength);
+                    this.u8(Tag.Bin);
+                    this.varuint(view.length);
+                    this.ensure(view.length);
+                    this.buf.set(view, this.pos);
+                    this.pos += view.length;
+                    return;
+                }
                 const keys = Object.keys(val);
                 if (keys.length === 1 && keys[0] === "r") {
                     this.u8(Tag.Ref);
@@ -222,6 +231,15 @@ class BinWriter {
                     this.ensure(val.length);
                     this.buf.set(val, this.pos);
                     this.pos += val.length;
+                    return;
+                }
+                if (ArrayBuffer.isView(val)) {
+                    const view = new Uint8Array(val.buffer, val.byteOffset, val.byteLength);
+                    this.u8(Tag.Bin);
+                    this.varuint(view.length);
+                    this.ensure(view.length);
+                    this.buf.set(view, this.pos);
+                    this.pos += view.length;
                     return;
                 }
                 this.u8(Tag.Obj);

@@ -13,6 +13,7 @@ import { BaseModel } from "./basemodel";
 import { EventEmitter } from "./eventemitter";
 import { GameObject } from "./gameobject";
 import { Registry } from "./registry";
+import { TextureManager } from "../render/texturemanager";
 
 /**
  * Declare global variables and types.
@@ -866,12 +867,13 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	 */
 	public viewAs<T extends BaseView = BaseView>(): T { return this.registry.get<T>('view'); }
 
-	public get view(): V { return this.viewAs<V>(); }
+        public get view(): V { return this.viewAs<V>(); }
 
-	public get event_emitter(): EventEmitter { return this.registry.get<EventEmitter>('event_emitter'); }
+        public get event_emitter(): EventEmitter { return this.registry.get<EventEmitter>('event_emitter'); }
 
-	public get input(): Input { return this.registry.get<Input>('input'); }
-	public get registry(): Registry { return Registry.instance; }
+        public get input(): Input { return this.registry.get<Input>('input'); }
+        public get texmanager(): TextureManager { return this.registry.get<TextureManager>('texmanager'); }
+        public get registry(): Registry { return Registry.instance; }
 	public get sndmaster(): SM { return SM; }
 
 	public emit(event_name: string, emitter: Identifiable, ...args: any[]) {
@@ -1020,10 +1022,11 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		global['debug'] = this.debug;
 		global['$rom'] = rom;
 
-		BaseView.imgassets = rom.img;
-		EventEmitter.instance; // Init event emitter
-		Input.initialize(startingGamepadIndex ?? undefined); // Init input module
-		if ($.input.isOnscreenGamepadEnabled) {
+                BaseView.imgassets = rom.img;
+                EventEmitter.instance; // Init event emitter
+                Input.initialize(startingGamepadIndex ?? undefined); // Init input module
+                new TextureManager(); // register texture manager
+                if ($.input.isOnscreenGamepadEnabled) {
 			$.input.enableOnscreenGamepad();
 		}
 		$.view.init(); // Init the view. Placed here to ensure that the Game object is available to the view and that the Input module is initialized

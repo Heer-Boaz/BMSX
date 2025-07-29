@@ -1,5 +1,5 @@
 import { AmbientLightObject, BGamepadButton, BaseModel, BehaviorTreeDefinition, BinaryCompressor, BootArgs, CameraObject, Component, Direction, DirectionalLightObject, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, Material, MeshObject, PointLightObject, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, TransformComponent, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, debugPrintBinarySnapshot, insavegame, new_area, new_vec2, new_vec3, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/bmsx';
-import type { OBJModel } from '../bmsx/rompack/rompack';
+import type { GLTFModel } from '../bmsx/rompack/rompack';
 import { BitmapId, ModelId } from './resourceids';
 
 var _game: Game;
@@ -363,7 +363,7 @@ class bclass extends SpriteObject {
 class Cube3D extends MeshObject {
     constructor() {
         super('cube');
-        const model = $.rom.model[ModelId.cube] as OBJModel;
+        const model = $.rom.model[ModelId.cube] as GLTFModel;
         this.setModel(model);
         this.mesh.color = { r: 0.7, g: 0.2, b: 0.2, a: 1.0 };
         this.mesh.atlasId = 255; // render without texture
@@ -383,7 +383,7 @@ class Cube3D extends MeshObject {
 class SmallCube3D extends MeshObject {
     constructor() {
         super('smallCube');
-        const model = $.rom.model[ModelId.cube] as OBJModel;
+        const model = $.rom.model[ModelId.cube] as GLTFModel;
         this.setModel(model);
         this.mesh.color = { r: 0.2, g: 0.7, b: 0.2, a: 1.0 };
         this.mesh.atlasId = 255;

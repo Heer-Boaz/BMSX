@@ -4,7 +4,8 @@ import { bmat } from '../render/3d/math3d';
 import { ShadowMap } from '../render/3d/shadowmap';
 import { DEFAULT_VERTEX_COLOR } from '../render/glview.constants';
 import { Color, DrawMeshOptions } from '../render/view';
-import type { OBJModel, vec3arr } from '../rompack/rompack';
+import { addModelToScene, removeModelFromScene } from '../render/modelutils';
+import type { GLTFModel, vec3arr } from '../rompack/rompack';
 import { insavegame } from '../serializer/gameserializer';
 import { GameObject } from './gameobject';
 
@@ -13,15 +14,18 @@ export class Mesh {
     public texcoords: Float32Array;
     /** Optional normal vectors per vertex */
     public normals: Float32Array | null;
+    /** Optional index buffer */
+    public indices?: Uint16Array | Uint32Array;
     public color: Color;
     public atlasId: number;
     public material?: Material;
     public shadow?: { map: ShadowMap; matrix: Float32Array; strength: number };
 
-    constructor(opts?: { positions?: Float32Array; texcoords?: Float32Array; normals?: Float32Array; color?: Color; atlasId?: number; material?: Material }) {
+    constructor(opts?: { positions?: Float32Array; texcoords?: Float32Array; normals?: Float32Array; indices?: Uint16Array | Uint32Array; color?: Color; atlasId?: number; material?: Material }) {
         this.positions = opts?.positions ?? new Float32Array();
         this.texcoords = opts?.texcoords ?? new Float32Array();
         this.normals = opts?.normals ?? null;
+        this.indices = opts?.indices;
         this.color = opts?.color ?? DEFAULT_VERTEX_COLOR;
         this.atlasId = opts?.atlasId ?? 255;
         this.material = opts?.material;
@@ -33,6 +37,7 @@ export abstract class MeshObject extends GameObject {
     public mesh: Mesh;
     public rotation: vec3arr;
     public scale: vec3arr;
+    private _model?: GLTFModel;
 
     constructor(id?: string, fsm_id?: string) {
         super(id, fsm_id);
@@ -42,10 +47,39 @@ export abstract class MeshObject extends GameObject {
     }
 
     /** Apply model data to this mesh */
-    public setModel(model: OBJModel): void {
-        this.mesh.positions = model.positions;
-        this.mesh.texcoords = model.texcoords;
-        this.mesh.normals = model.normals;
+    public setModel(model: GLTFModel): void {
+        addModelToScene(model);
+        this._model = model;
+        const mesh = model.meshes[0];
+        if (!mesh) return;
+        this.mesh.positions = mesh.positions;
+        this.mesh.texcoords = mesh.texcoords ?? new Float32Array();
+        this.mesh.normals = mesh.normals ?? null;
+        this.mesh.indices = mesh.indices;
+        this.mesh.material = undefined;
+        if (model.materials && mesh.materialIndex !== undefined) {
+            const mat = model.materials[mesh.materialIndex];
+            this.mesh.material = new Material({
+                color: mat.baseColorFactor ? [mat.baseColorFactor[0], mat.baseColorFactor[1], mat.baseColorFactor[2]] : [1, 1, 1],
+                textures: {
+                    albedo: mat.baseColorTexture !== undefined ? String(mat.baseColorTexture) : undefined,
+                    normal: mat.normalTexture !== undefined ? String(mat.normalTexture) : undefined,
+                    metallicRoughness: mat.metallicRoughnessTexture !== undefined ? String(mat.metallicRoughnessTexture) : undefined,
+                }
+            });
+        }
+    }
+
+    public releaseModel(model: GLTFModel): void {
+        removeModelFromScene(model);
+    }
+
+    override dispose(): void {
+        if (this._model) {
+            this.releaseModel(this._model);
+            this._model = undefined;
+        }
+        super.dispose();
     }
 
     override paint(): void {
@@ -65,6 +99,7 @@ export abstract class MeshObject extends GameObject {
             positions: this.mesh.positions,
             texcoords: this.mesh.texcoords,
             normals: this.mesh.normals ?? undefined,
+            indices: this.mesh.indices,
             matrix: model,
             color: this.mesh.color,
             atlasId: this.mesh.atlasId,

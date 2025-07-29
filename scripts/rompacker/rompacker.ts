@@ -276,10 +276,10 @@ async function main() {
 				}
 				await progress?.taskCompleted();
 
-				const romAssets = generateRomAssets(resources);
-				await progress?.taskCompleted();
+                                const romAssets = await generateRomAssets(resources);
+                                await progress?.taskCompleted();
 
-				await finalizeRompack(romAssets, rom_name, debug);
+                                await finalizeRompack(romAssets, rom_name, debug);
 				await progress?.taskCompleted();
 			}
 			await buildBootromScriptIfNewer(force, debug);

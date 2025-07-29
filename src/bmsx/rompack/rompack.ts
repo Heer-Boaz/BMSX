@@ -102,16 +102,19 @@ export type asset_type = 'image' | 'audio' | 'code' | 'data' | 'atlas' | 'romlab
  * Represents an asset in a ROM pack.
  */
 export interface RomAsset {
-	resid: number; // The resource ID of the asset.
-	resname: string; // The name of the asset.
-	type: asset_type; // The type of the asset.
+        resid: number; // The resource ID of the asset.
+        resname: string; // The name of the asset.
+        type: asset_type; // The type of the asset.
 	start?: number; // The optional start offset of the asset in the ROM. (e.g., atlassed images don't have a start offset, as they are part of an atlas)
 	end?: number; // The optional end offset of the asset in the ROM. (e.g., atlassed images don't have an end offset, as they are part of an atlas)
 	metabuffer_start?: number; // Optional start offset of binary-encoded per-asset metadata in the buffer
-	metabuffer_end?: number; // Optional end offset of binary-encoded per-asset metadata in the buffer
-	buffer?: Buffer; // The binary buffer of the asset, used for all assets, including images and audio.
-	imgmeta?: ImgMeta; // The metadata of the asset, if it is an image.
-	audiometa?: AudioMeta; // The metadata of the asset, if it is an audio asset.
+        metabuffer_end?: number; // Optional end offset of binary-encoded per-asset metadata in the buffer
+        buffer?: Buffer; // The binary buffer of the asset, used for all assets, including images and audio.
+        texture_buffer?: Buffer; // Optional buffer holding packed textures for model assets
+        imgmeta?: ImgMeta; // The metadata of the asset, if it is an image.
+        audiometa?: AudioMeta; // The metadata of the asset, if it is an audio asset.
+        texture_start?: number; // Start offset of the texture buffer within the ROM
+        texture_end?: number;   // End offset of the texture buffer within the ROM
 }
 
 export interface RomImgAsset extends RomAsset {
@@ -125,15 +128,57 @@ export interface RomMeta {
 
 export type id2res = Record<number | string, RomAsset>;
 export type id2imgres = Record<number | string, RomImgAsset>;
-export type id2model = Record<number | string, OBJModel>;
+export type id2model = Record<number | string, GLTFModel>;
 export type id2data = Record<number | string, any>;
 export type id2htmlimg = Record<number | string, HTMLImageElement>;
 
-export interface OBJModel {
-	positions: Float32Array;
-	texcoords: Float32Array;
-	normals: Float32Array | null;
+export interface GLTFMaterial {
+        baseColorFactor?: [number, number, number, number];
+        metallicFactor?: number;
+        roughnessFactor?: number;
+        baseColorTexture?: number;
+        normalTexture?: number;
+        metallicRoughnessTexture?: number;
 }
+
+export interface GLTFMesh {
+        positions: Float32Array;
+        texcoords?: Float32Array;
+        normals?: Float32Array | null;
+        indices?: Uint16Array | Uint32Array;
+        indexComponentType?: number;
+        materialIndex?: number;
+        morphTargets?: { [name: string]: Float32Array };
+}
+
+export interface GLTFAnimationSampler {
+        interpolation: string;
+        input: Float32Array;
+        output: Float32Array;
+}
+
+export interface GLTFAnimationChannel {
+        sampler: number;
+        target: { node?: number; path: string };
+}
+
+export interface GLTFAnimation {
+        name?: string;
+        samplers: GLTFAnimationSampler[];
+        channels: GLTFAnimationChannel[];
+}
+
+export interface GLTFModel {
+        meshes: GLTFMesh[];
+        materials?: GLTFMaterial[];
+        animations?: GLTFAnimation[];
+        imageURIs?: string[];
+        imageOffsets?: { start: number; end: number }[];
+        imageBuffers?: ArrayBuffer[];
+        runtimeImages?: (HTMLImageElement | ArrayBuffer)[]; // filled at runtime
+}
+
+export type OBJModel = GLTFModel;
 export interface RomPack {
 	rom: ArrayBuffer, // The binary buffer of the ROM pack, containing all assets, including images, audio and code.
 	img: id2imgres; // Reference to the loaded image assets in the ROM pack, including metadata and the loaded image (HTMLImageElement).

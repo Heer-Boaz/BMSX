@@ -1,4 +1,4 @@
-import type { Area, AudioMeta, ImgMeta, Polygon, RomAsset, RomImgAsset, RomMeta, RomPack } from '../../src/bmsx/rompack/rompack';
+import type { Area, AudioMeta, ImgMeta, Polygon, RomAsset, RomImgAsset, RomMeta, RomPack, GLTFModel } from '../../src/bmsx/rompack/rompack';
 import { decodeBinary } from '../../src/bmsx/serializer/binencoder';
 
 export async function loadImage(url: string): Promise<HTMLImageElement> {
@@ -214,7 +214,7 @@ export async function loadAssetList(rom: ArrayBuffer): Promise<RomAsset[]> {
     return Promise.resolve<RomAsset[]>(assetList);
 }
 
-export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadModelFromBuffer?: (buffer: ArrayBuffer) => Promise<any> }): Promise<RomPack> {
+export async function loadResources(rom: ArrayBuffer, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadModelFromBuffer?: (buffer: ArrayBuffer, textures?: ArrayBuffer) => Promise<any> }): Promise<RomPack> {
     const result: RomPack = {
         rom: rom,
         img: {},
@@ -241,16 +241,56 @@ async function loadDataFromBuffer(buffer: ArrayBuffer): Promise<any> {
     return decodeBinary(new Uint8Array(buffer));
 }
 
-async function loadModelFromBuffer(buffer: ArrayBuffer): Promise<{ positions: Float32Array; texcoords: Float32Array; normals: Float32Array | null; }> {
-    const obj = decodeBinary(new Uint8Array(buffer)) as { positions: number[]; texcoords: number[]; normals: number[] | null };
-    return {
-        positions: new Float32Array(obj.positions),
-        texcoords: new Float32Array(obj.texcoords),
-        normals: obj.normals ? new Float32Array(obj.normals) : null
-    };
+export async function loadModelFromBuffer(buffer: ArrayBuffer, textureBuf?: ArrayBuffer): Promise<GLTFModel> {
+    const obj = decodeBinary(new Uint8Array(buffer)) as any;
+    function toF32(v: any): Float32Array | undefined {
+        if (v === undefined || v === null) return undefined;
+        if (ArrayBuffer.isView(v)) {
+            const u8 = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+            return new Float32Array(u8.buffer, u8.byteOffset, Math.floor(u8.byteLength / 4));
+        }
+        if (Array.isArray(v)) return new Float32Array(v);
+        return undefined;
+    }
+    function toIndices(v: any, componentType?: number): Uint16Array | Uint32Array | undefined {
+        if (v === undefined || v === null) return undefined;
+        if (ArrayBuffer.isView(v)) {
+            const u8 = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+            if (componentType === 5125) return new Uint32Array(u8.buffer, u8.byteOffset, u8.byteLength / 4);
+            if (componentType === 5123) return new Uint16Array(u8.buffer, u8.byteOffset, u8.byteLength / 2);
+            if (u8.byteLength % 4 === 0) return new Uint32Array(u8.buffer, u8.byteOffset, u8.byteLength / 4);
+            return new Uint16Array(u8.buffer, u8.byteOffset, u8.byteLength / 2);
+        }
+        if (Array.isArray(v)) {
+            if (componentType === 5125) return new Uint32Array(v);
+            if (componentType === 5123) return new Uint16Array(v);
+            return (v.length && v.length > 65535) ? new Uint32Array(v) : new Uint16Array(v);
+        }
+        return undefined;
+    }
+    const meshes = (obj.meshes || []).map((m: any) => ({
+        positions: toF32(m.positions)!,
+        texcoords: toF32(m.texcoords),
+        normals: m.normals ? toF32(m.normals) : null,
+        indices: toIndices(m.indices, m.indexComponentType),
+        indexComponentType: m.indexComponentType,
+        materialIndex: m.materialIndex,
+        morphTargets: m.morphTargets
+    }));
+    const model: GLTFModel = { meshes, materials: obj.materials, animations: obj.animations, imageURIs: obj.imageURIs, imageOffsets: obj.imageOffsets };
+    if (textureBuf && Array.isArray(model.imageOffsets)) {
+        const texBytes = new Uint8Array(textureBuf);
+        model.imageBuffers = model.imageOffsets.map(off => {
+            if (off && typeof off.start === 'number' && typeof off.end === 'number') {
+                return texBytes.slice(off.start, off.end).buffer;
+            }
+            return undefined;
+        });
+    }
+    return model;
 }
 
-async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadModelFromBuffer?: (buffer: ArrayBuffer) => Promise<any> }): Promise<void> {
+async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadModelFromBuffer?: (buffer: ArrayBuffer, textures?: ArrayBuffer) => Promise<any> }): Promise<void> {
     switch (res.type) {
         case 'image':
         case 'atlas':
@@ -296,10 +336,11 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
         case 'model':
             try {
                 let model;
+                const texBuf = (res.texture_start != null && res.texture_end != null) ? rom.slice(res.texture_start, res.texture_end) : undefined;
                 if (opts && opts.loadModelFromBuffer) {
                     model = await opts.loadModelFromBuffer(rom.slice(res.start, res.end));
                 } else {
-                    model = await loadModelFromBuffer(rom.slice(res.start, res.end));
+                    model = await loadModelFromBuffer(rom.slice(res.start, res.end), texBuf);
                 }
                 romResult.model[res.resid] = model;
                 romResult.model[res.resname] = model;

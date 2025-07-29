@@ -1,6 +1,6 @@
 import { Identifier } from '../../bmsx';
 import type { Size, vec3, vec3arr } from '../../rompack/rompack';
-import { glCreateBuffer, glLoadShader, glSetupAttributeFloat, glSetupAttributeInt, glSwitchProgram } from '../glutils';
+import { glCreateBuffer, glCreateElementBuffer, glLoadShader, glSetupAttributeFloat, glSetupAttributeInt, glSwitchProgram } from '../glutils';
 import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS } from '../glview.constants';
 import { generateAtlasName } from '../glview.helpers';
 import { BaseView, DrawMeshOptions } from '../view';
@@ -49,6 +49,7 @@ let texcoordBuffer3D: WebGLBuffer;
 let color_overrideBuffer3D: WebGLBuffer;
 let atlas_idBuffer3D: WebGLBuffer;
 let normalBuffer3D: WebGLBuffer;
+let indexBuffer3D: WebGLBuffer;
 
 let skyboxProgram: WebGLProgram;
 let skyboxPositionLocation: number;
@@ -194,6 +195,7 @@ export function setupBuffers3D(gl: WebGL2RenderingContext): void {
     normalBuffer3D = glCreateBuffer(gl);
     color_overrideBuffer3D = glCreateBuffer(gl);
     atlas_idBuffer3D = glCreateBuffer(gl);
+    indexBuffer3D = glCreateElementBuffer(gl);
 }
 
 export function createSkyboxBuffer(gl: WebGL2RenderingContext): void {
@@ -432,6 +434,11 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
         gl.bindBuffer(gl.ARRAY_BUFFER, atlas_idBuffer3D);
         gl.bufferData(gl.ARRAY_BUFFER, atlasData, gl.DYNAMIC_DRAW);
 
+        if (mesh.indices) {
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer3D);
+            gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.indices, gl.DYNAMIC_DRAW);
+        }
+
         const matColor = mesh.material?.color ?? [1, 1, 1];
         gl.uniform3fv(materialColorLocation3D, new Float32Array(matColor));
 
@@ -451,7 +458,12 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
         const normalMat = bmat.normalMatrix(mesh.matrix);
         gl.uniformMatrix3fv(normalMatrixLocation3D, false, normalMat);
 
-        gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
+        if (mesh.indices) {
+            const type = mesh.indices instanceof Uint32Array ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
+            gl.drawElements(gl.TRIANGLES, mesh.indices.length, type, 0);
+        } else {
+            gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
+        }
     }
 
     meshesToDraw = [];
