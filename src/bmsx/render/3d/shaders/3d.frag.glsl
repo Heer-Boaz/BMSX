@@ -128,5 +128,11 @@ void main() {
 
     vec3 col = quantize(texColor.rgb * lighting * shadow, 3);
     col += bayer(gl_FragCoord.xy);
+
+    // Apply dithering to alpha channel if needed (this is how the PSP does it)
+    if (texColor.a < 1.0) {
+        float ditherAlpha = bayer(v_texcoord * vec2(256.0, 256.0)) * u_ditherIntensity; // Texture-space voor object-binding
+        texColor.a = clamp(texColor.a + ditherAlpha, 0.0, 1.0);
+    }
     outputColor = vec4(col, texColor.a);
 }
