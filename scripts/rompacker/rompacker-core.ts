@@ -1,8 +1,9 @@
 import { glsl } from "esbuild-plugin-glsl";
 import type { Stats } from 'fs';
-import type { AudioMeta, ImgMeta, GLTFModel, Polygon, RomAsset } from '../../src/bmsx/rompack/rompack';
+import type { AudioMeta, ImgMeta, Polygon, RomAsset } from '../../src/bmsx/rompack/rompack';
 import { createOptimizedAtlas, generateAtlasName } from './atlasbuilder';
 import { BoundingBoxExtractor } from './boundingbox_extractor';
+import { loadGLTFModel } from './gltfloader';
 import type { Resource, RomManifest, resourcetype } from './rompacker.rompack';
 const { build } = require('esbuild');
 const { join, parse } = require('path');
@@ -27,224 +28,13 @@ const BOILERPLATE_RESOURCE_ID_BITMAP = `export enum BitmapId {
 	none = 'none',`; // Note: cannot use const enums here, because BFont uses BitmapId as a type (and const enums are not available at runtime)
 
 const BOILERPLATE_RESOURCE_ID_AUDIO = `export enum AudioId {
-        none = 'none',`;
+	none = 'none',`;
 
 const BOILERPLATE_RESOURCE_ID_DATA = `export enum DataId {
-        none = 'none',`;
+	none = 'none',`;
 
 const BOILERPLATE_RESOURCE_ID_MODEL = `export enum ModelId {
-        none = 'none',`;
-
-export function loadOBJModel(data: string): OBJModel {
-    const positions: number[] = [];
-    const texcoords: number[] = [];
-    const normals: number[] = [];
-    const finalPositions: number[] = [];
-    const finalTexcoords: number[] = [];
-    const finalNormals: number[] = [];
-
-    const lines = data.split(/\r?\n/);
-    for (const rawLine of lines) {
-        const line = rawLine.trim();
-        if (!line || line.startsWith('#')) continue;
-        const parts = line.split(/\s+/);
-        switch (parts[0]) {
-            case 'v':
-                if (parts.length >= 4) {
-                    positions.push(parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3]));
-                }
-                break;
-            case 'vt':
-                if (parts.length >= 3) {
-                    texcoords.push(parseFloat(parts[1]), 1 - parseFloat(parts[2]));
-                }
-                break;
-            case 'vn':
-                if (parts.length >= 4) {
-                    normals.push(parseFloat(parts[1]), parseFloat(parts[2]), parseFloat(parts[3]));
-                }
-                break;
-            case 'f': {
-                const verts = parts.slice(1);
-                for (let i = 1; i < verts.length - 1; i++) {
-                    const tri = [verts[0], verts[i], verts[i + 1]];
-                    for (const vert of tri) {
-                        const comps = vert.split('/');
-                        let vi = parseInt(comps[0], 10);
-                        vi = vi < 0 ? positions.length / 3 + vi : vi - 1;
-                        finalPositions.push(positions[vi * 3], positions[vi * 3 + 1], positions[vi * 3 + 2]);
-                        let ti = comps[1] ? parseInt(comps[1], 10) : 0;
-                        ti = ti ? (ti < 0 ? texcoords.length / 2 + ti : ti - 1) : -1;
-                        if (ti >= 0) {
-                            finalTexcoords.push(texcoords[ti * 2], texcoords[ti * 2 + 1]);
-                        } else {
-                            finalTexcoords.push(0, 0);
-                        }
-                        let ni = comps[2] ? parseInt(comps[2], 10) : 0;
-                        ni = ni ? (ni < 0 ? normals.length / 3 + ni : ni - 1) : -1;
-                        if (ni >= 0) {
-                            finalNormals.push(normals[ni * 3], normals[ni * 3 + 1], normals[ni * 3 + 2]);
-                        }
-                    }
-                }
-                break;
-            }
-            default:
-                break;
-        }
-    }
-
-    return {
-        positions: new Float32Array(finalPositions),
-        texcoords: new Float32Array(finalTexcoords),
-        normals: finalNormals.length > 0 ? new Float32Array(finalNormals) : null,
-    };
-}
-
-export async function loadGLTFModel(data: string, dir: string): Promise<GLTFModel> {
-    const json = JSON.parse(data);
-
-    async function getBuffer(uri: string): Promise<Uint8Array> {
-        if (uri.startsWith('data:')) {
-            const base64 = uri.split(',')[1];
-            return Uint8Array.from(Buffer.from(base64, 'base64'));
-        } else {
-            const data = await readFile(join(dir, uri));
-            return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-        }
-    }
-
-    const buffers = await Promise.all((json.buffers || []).map((b: any) => {
-        if (!b.uri) throw new Error('Buffer without URI');
-        return getBuffer(b.uri);
-    }));
-
-    const imageURIs: string[] = [];
-    const imageBuffers: Uint8Array[] = [];
-    if (Array.isArray(json.images)) {
-        for (const img of json.images) {
-            if (img.uri) {
-                imageURIs.push(img.uri);
-                imageBuffers.push(await getBuffer(img.uri));
-            }
-        }
-    }
-
-    const accessors = json.accessors || [];
-    const bufferViews = json.bufferViews || [];
-
-    function numComponents(type: string): number {
-        switch (type) {
-            case 'SCALAR': return 1;
-            case 'VEC2': return 2;
-            case 'VEC3': return 3;
-            case 'VEC4': return 4;
-            case 'MAT2': return 4;
-            case 'MAT3': return 9;
-            case 'MAT4': return 16;
-            default: return 3;
-        }
-    }
-
-    function componentSize(componentType: number): number {
-        switch (componentType) {
-            case 5120: // BYTE
-            case 5121: // UNSIGNED_BYTE
-                return 1;
-            case 5122: // SHORT
-            case 5123: // UNSIGNED_SHORT
-                return 2;
-            case 5125: // UNSIGNED_INT
-            case 5126: // FLOAT
-                return 4;
-            default: return 4;
-        }
-    }
-
-    function getAccessorData(i: number): Float32Array | Uint16Array | Uint32Array {
-        const acc = accessors[i];
-        const view = bufferViews[acc.bufferView];
-        const buf = buffers[view.buffer];
-        const offset = (view.byteOffset || 0) + (acc.byteOffset || 0);
-        const length = acc.count * numComponents(acc.type) * componentSize(acc.componentType);
-        const slice = buf.subarray(offset, offset + length);
-        switch (acc.componentType) {
-            case 5126:
-                return new Float32Array(slice.buffer, slice.byteOffset, length / 4);
-            case 5123:
-                return new Uint16Array(slice.buffer, slice.byteOffset, length / 2);
-            case 5125:
-                return new Uint32Array(slice.buffer, slice.byteOffset, length / 4);
-            default:
-                return new Float32Array(slice.buffer, slice.byteOffset, length / 4);
-        }
-    }
-
-    const materials = (json.materials || []).map((m: any) => ({
-        baseColorFactor: m.pbrMetallicRoughness?.baseColorFactor,
-        metallicFactor: m.pbrMetallicRoughness?.metallicFactor,
-        roughnessFactor: m.pbrMetallicRoughness?.roughnessFactor,
-        baseColorTexture: m.pbrMetallicRoughness?.baseColorTexture?.index,
-        normalTexture: m.normalTexture?.index,
-        metallicRoughnessTexture: m.pbrMetallicRoughness?.metallicRoughnessTexture?.index,
-    }));
-
-    const meshes: GLTFMesh[] = [];
-    for (const mesh of json.meshes || []) {
-        for (const prim of mesh.primitives || []) {
-            const m: GLTFMesh = {
-                positions: getAccessorData(prim.attributes.POSITION) as Float32Array,
-                texcoords: prim.attributes.TEXCOORD_0 !== undefined ? getAccessorData(prim.attributes.TEXCOORD_0) as Float32Array : undefined,
-                normals: prim.attributes.NORMAL !== undefined ? getAccessorData(prim.attributes.NORMAL) as Float32Array : null,
-                indices: prim.indices !== undefined ? (getAccessorData(prim.indices) as any) : undefined,
-                indexComponentType: prim.indices !== undefined ? accessors[prim.indices].componentType : undefined,
-                materialIndex: prim.material,
-            };
-            meshes.push(m);
-        }
-    }
-
-    const animations = (json.animations || []).map((a: any) => ({
-        name: a.name,
-        samplers: (a.samplers || []).map((s: any) => ({
-            interpolation: s.interpolation || 'LINEAR',
-            input: getAccessorData(s.input) as Float32Array,
-            output: getAccessorData(s.output) as Float32Array,
-        })),
-        channels: a.channels || [],
-    }));
-
-    const model: GLTFModel = { meshes, materials, animations, imageURIs, imageBuffers };
-    validateGLTFModel(model);
-    return model;
-}
-
-function validateGLTFModel(model: GLTFModel): void {
-    if (!model.meshes || model.meshes.length === 0) {
-        throw new Error('GLTF model has no meshes');
-    }
-    for (const m of model.meshes) {
-        if (!(m.positions && m.positions.length)) {
-            throw new Error('Mesh is missing vertex positions');
-        }
-        if (m.indices && m.indices.length === 0) {
-            throw new Error('Mesh indices array is empty');
-        }
-        if (m.indices && m.indexComponentType !== undefined && m.indexComponentType !== 5123 && m.indexComponentType !== 5125) {
-            throw new Error('Mesh has unsupported index component type');
-        }
-        if (m.materialIndex !== undefined && model.materials && m.materialIndex >= model.materials.length) {
-            throw new Error(`Mesh references invalid material index ${m.materialIndex}`);
-        }
-    }
-    if (model.animations) {
-        for (const anim of model.animations) {
-            if (!Array.isArray(anim.samplers) || !Array.isArray(anim.channels)) {
-                throw new Error('Invalid animation structure');
-            }
-        }
-    }
-}
+	none = 'none',`;
 
 /**
 * Adds a file to an array of files.
@@ -254,7 +44,7 @@ function validateGLTFModel(model: GLTFModel): void {
 * @returns {void}
 */
 export function addFile(dirPath: string, filePath: string, arrayOfFiles: string[]): void {
-    arrayOfFiles.push(join(dirPath, "/", filePath));
+	arrayOfFiles.push(join(dirPath, "/", filePath));
 }
 
 /**
@@ -265,47 +55,47 @@ export function addFile(dirPath: string, filePath: string, arrayOfFiles: string[
  * @returns {string[]} An array of file paths.
  */
 export async function getFiles(dirPath: string, arrayOfFiles?: string[], filterExtension?: string): Promise<string[]> {
-    if (!(await access(dirPath).then(() => true).catch(() => false))) {
-        throw new Error(`Resource path "${dirPath}" does not exist.`);
-    }
+	if (!(await access(dirPath).then(() => true).catch(() => false))) {
+		throw new Error(`Resource path "${dirPath}" does not exist.`);
+	}
 
-    const files = await readdir(dirPath);
-    let array = arrayOfFiles || [];
-    for (let file of files) {
-        if (file.indexOf('_ignore') > -1) continue;
+	const files = await readdir(dirPath);
+	let array = arrayOfFiles || [];
+	for (let file of files) {
+		if (file.indexOf('_ignore') > -1) continue;
 
-        let fullpath = `${dirPath}/${file}`;
+		let fullpath = `${dirPath}/${file}`;
 
-        let stats = await stat(fullpath);
-        if (stats.isDirectory()) {
-            array = await getFiles(fullpath, array, filterExtension);
-        } else {
-            let ext = parse(file).ext;
-            if (filterExtension) {
-                if (ext === filterExtension) {
-                    array.push(fullpath);
-                }
-            }
-            else if (ext !== ".rom" && ext !== ".js" && ext !== ".ts" && ext !== ".map" && ext !== ".tsbuildinfo" && ext !== ".rommanifest") {
-                array.push(fullpath);
-            }
-        }
-    }
-    return array;
+		let stats = await stat(fullpath);
+		if (stats.isDirectory()) {
+			array = await getFiles(fullpath, array, filterExtension);
+		} else {
+			let ext = parse(file).ext;
+			if (filterExtension) {
+				if (ext === filterExtension) {
+					array.push(fullpath);
+				}
+			}
+			else if (ext !== ".rom" && ext !== ".js" && ext !== ".ts" && ext !== ".map" && ext !== ".tsbuildinfo" && ext !== ".rommanifest") {
+				array.push(fullpath);
+			}
+		}
+	}
+	return array;
 }
 
 export async function getRomManifest(dirPath: string): Promise<RomManifest> {
-    const files = await getFiles(dirPath, [], '.rommanifest');
+	const files = await getFiles(dirPath, [], '.rommanifest');
 
-    if (files.length > 1) {
-        throw new Error(`More than one rommanifest found in ${dirPath}.`);
-    }
-    else if (files.length === 1) {
-        const res = await readFile(files[0]);
-        // Read and return the rommanifest file
-        return JSON.parse(res.toString()) as RomManifest;
-    }
-    else return null;
+	if (files.length > 1) {
+		throw new Error(`More than one rommanifest found in ${dirPath}.`);
+	}
+	else if (files.length === 1) {
+		const res = await readFile(files[0]);
+		// Read and return the rommanifest file
+		return JSON.parse(res.toString()) as RomManifest;
+	}
+	else return null;
 }
 
 /**
@@ -315,54 +105,54 @@ export async function getRomManifest(dirPath: string): Promise<RomManifest> {
  * @returns {Promise<any>} A promise that resolves when the ROM source code has been built and bundled.
  */
 export async function esbuild(romname: string, bootloader_path: string, debug: boolean): Promise<void> {
-    const bootloader_ts_path = `${bootloader_path}/bootloader.ts`;
-    try {
-        if (debug) {
-            await build({
-                entryPoints: [bootloader_ts_path], // Entry point for the rompack
-                bundle: true, // Bundle all dependencies into a single file
-                sourcemap: 'inline', // Include inline source maps for debugging
-                sourcesContent: false,
-                outfile: `./rom/${romname}.js`, // Output file for the bundled code
-                platform: 'browser', // Target platform for the bundle
-                target: 'es2020', // Specify the ECMAScript version to target
-                // Specify the ECMAScript version to target
-                loader: { '.glsl': 'text' }, // Handles GLSL files as text
-                plugins: [glsl({
-                    minify: true
-                })],
-                define: { 'process.env.NODE_ENV': '"production"' },
-                minify: true,
-                keepNames: true,
-                external: ['node_modules', 'dist', 'rom', 'ts-key-enum'],
-                treeShaking: true,
-            });
-        }
-        else {
-            await build({
-                entryPoints: [bootloader_ts_path], // Entry point for the rompack
-                bundle: true, // Bundle all dependencies into a single file
-                sourcemap: false,
-                sourcesContent: false,
-                outfile: `./rom/${romname}.js`, // Output file for the bundled code
-                platform: 'browser', // Target platform for the bundle
-                target: 'es2020', // Specify the ECMAScript version to target
-                // Specify the ECMAScript version to target
-                loader: { '.glsl': 'text' }, // Handles GLSL files as text
-                plugins: [glsl({
-                    minify: true
-                })],
-                define: { 'process.env.NODE_ENV': '"production"' },
-                minify: true,
-                keepNames: true,
-                external: ['node_modules', 'dist', 'rom', 'ts-key-enum'],
-                treeShaking: true,
-            });
-        }
-        return null;
-    } catch (err) {
-        throw err;
-    }
+	const bootloader_ts_path = `${bootloader_path}/bootloader.ts`;
+	try {
+		if (debug) {
+			await build({
+				entryPoints: [bootloader_ts_path], // Entry point for the rompack
+				bundle: true, // Bundle all dependencies into a single file
+				sourcemap: 'inline', // Include inline source maps for debugging
+				sourcesContent: false,
+				outfile: `./rom/${romname}.js`, // Output file for the bundled code
+				platform: 'browser', // Target platform for the bundle
+				target: 'es2020', // Specify the ECMAScript version to target
+				// Specify the ECMAScript version to target
+				loader: { '.glsl': 'text' }, // Handles GLSL files as text
+				plugins: [glsl({
+					minify: true
+				})],
+				define: { 'process.env.NODE_ENV': '"production"' },
+				minify: true,
+				keepNames: true,
+				external: ['node_modules', 'dist', 'rom', 'ts-key-enum'],
+				treeShaking: true,
+			});
+		}
+		else {
+			await build({
+				entryPoints: [bootloader_ts_path], // Entry point for the rompack
+				bundle: true, // Bundle all dependencies into a single file
+				sourcemap: false,
+				sourcesContent: false,
+				outfile: `./rom/${romname}.js`, // Output file for the bundled code
+				platform: 'browser', // Target platform for the bundle
+				target: 'es2020', // Specify the ECMAScript version to target
+				// Specify the ECMAScript version to target
+				loader: { '.glsl': 'text' }, // Handles GLSL files as text
+				plugins: [glsl({
+					minify: true
+				})],
+				define: { 'process.env.NODE_ENV': '"production"' },
+				minify: true,
+				keepNames: true,
+				external: ['node_modules', 'dist', 'rom', 'ts-key-enum'],
+				treeShaking: true,
+			});
+		}
+		return null;
+	} catch (err) {
+		throw err;
+	}
 }
 
 /**
@@ -373,11 +163,11 @@ export async function esbuild(romname: string, bootloader_path: string, debug: b
  * @returns The string with replacements applied.
  */
 export function applyStringReplacements(str: string, replacements: { [key: string]: string }): string {
-    let result = str;
-    for (const [key, value] of Object.entries(replacements)) {
-        result = result.replace(new RegExp(key, 'g'), value);
-    }
-    return result;
+	let result = str;
+	for (const [key, value] of Object.entries(replacements)) {
+		result = result.replace(new RegExp(key, 'g'), value);
+	}
+	return result;
 }
 
 /**
@@ -388,122 +178,122 @@ export function applyStringReplacements(str: string, replacements: { [key: strin
  * @returns {Promise<any>} A promise that resolves when the game HTML and manifest files have been built.
  */
 export async function buildGameHtmlAndManifest(rom_name: string, title: string, short_name: string, debug: boolean): Promise<any> {
-    const IMAGE_PATHS = [
-        './rom/bmsx.png',
-        './rom/d-pad-neutral.png',
-        './rom/d-pad-u.png',
-        './rom/d-pad-ru.png',
-        './rom/d-pad-r.png',
-        './rom/d-pad-rd.png',
-        './rom/d-pad-d.png',
-        './rom/d-pad-ld.png',
-        './rom/d-pad-l.png',
-        './rom/d-pad-lu.png'
-    ];
+	const IMAGE_PATHS = [
+		'./rom/bmsx.png',
+		'./rom/d-pad-neutral.png',
+		'./rom/d-pad-u.png',
+		'./rom/d-pad-ru.png',
+		'./rom/d-pad-r.png',
+		'./rom/d-pad-rd.png',
+		'./rom/d-pad-d.png',
+		'./rom/d-pad-ld.png',
+		'./rom/d-pad-l.png',
+		'./rom/d-pad-lu.png'
+	];
 
-    /**
-     * Loads an image from the specified file path and converts it to a base64 string.
-     *
-     * @param filepath - The path of the image file to load.
-     * @returns A promise that resolves to the base64 string representation of the image.
-     * @throws An error if there is an issue reading the file.
-     */
-    async function loadImgAndConvertToBase64String(filepath: string): Promise<string> {
-        try {
-            const image = await readFile(filepath);
-            return image.toString('base64');
-        } catch (error) {
-            throw new Error(`Error reading file "${__dirname}${filepath}": ${error.message}`);
-        }
-    }
+	/**
+	 * Loads an image from the specified file path and converts it to a base64 string.
+	 *
+	 * @param filepath - The path of the image file to load.
+	 * @returns A promise that resolves to the base64 string representation of the image.
+	 * @throws An error if there is an issue reading the file.
+	 */
+	async function loadImgAndConvertToBase64String(filepath: string): Promise<string> {
+		try {
+			const image = await readFile(filepath);
+			return image.toString('base64');
+		} catch (error) {
+			throw new Error(`Error reading file "${__dirname}${filepath}": ${error.message}`);
+		}
+	}
 
-    /**
-     * Loads multiple images and converts them to base64 strings.
-     *
-     * @param paths - An array of image file paths to load.
-     * @returns A promise that resolves to an object mapping file paths to base64 strings.
-     */
-    async function loadImages(paths: string[]): Promise<{ [key: string]: string }> {
-        const images: { [key: string]: string } = {};
-        const results = await Promise.all(paths.map(async (path) => {
-            return [path, await loadImgAndConvertToBase64String(path)] as [string, string];
-        }));
-        for (const [path, base64] of results) {
-            images[path] = base64;
-        }
-        return images;
-    }
+	/**
+	 * Loads multiple images and converts them to base64 strings.
+	 *
+	 * @param paths - An array of image file paths to load.
+	 * @returns A promise that resolves to an object mapping file paths to base64 strings.
+	 */
+	async function loadImages(paths: string[]): Promise<{ [key: string]: string }> {
+		const images: { [key: string]: string } = {};
+		const results = await Promise.all(paths.map(async (path) => {
+			return [path, await loadImgAndConvertToBase64String(path)] as [string, string];
+		}));
+		for (const [path, base64] of results) {
+			images[path] = base64;
+		}
+		return images;
+	}
 
-    /**
-     * Transforms the HTML template by replacing placeholders with actual values.
-     *
-     * @param htmlToTransform - The HTML template to transform.
-     * @param cssMinified - The minified CSS string.
-     * @param debug - A boolean indicating whether to include debug information.
-     * @returns A promise that resolves to the transformed HTML string.
-     */
-    async function transformHtml(htmlToTransform: string, cssMinified: string, debug: boolean): Promise<string> {
-        const imgPrefix = 'data:image/png;base64,';
-        const replacements = {
-            '//#bootromjs': romjs,
-            '//#zipjs': zipjs,
-            '/\\*#css\\*/': cssMinified,
-            '#title': title,
-            '//#debug': `bootrom.debug = ${debug};\n\t\tbootrom.romname = getRomNameFromUrlParameter() ?? '${rom_name}';\n`,
-            '#outfile': `${rom_name}.${debug ? 'debug.' : ''}rom`,
-            '#bmsxurl': `${imgPrefix}${images['./rom/bmsx.png']}`,
-            '#d-pad-d_': `${imgPrefix}${images['./rom/d-pad-d.png']}`, // Note: the trailing underscore is used to prevent the replacement of other placeholders
-            '#d-pad-l_': `${imgPrefix}${images['./rom/d-pad-l.png']}`, // Note: the trailing underscore is used to prevent the replacement of other placeholders
-            '#d-pad-ld': `${imgPrefix}${images['./rom/d-pad-ld.png']}`,
-            '#d-pad-lu': `${imgPrefix}${images['./rom/d-pad-lu.png']}`,
-            '#d-pad-neutral': `${imgPrefix}${images['./rom/d-pad-neutral.png']}`,
-            '#d-pad-r_': `${imgPrefix}${images['./rom/d-pad-r.png']}`, // Note: the trailing underscore is used to prevent the replacement of other placeholders
-            '#d-pad-rd': `${imgPrefix}${images['./rom/d-pad-rd.png']}`,
-            '#d-pad-ru': `${imgPrefix}${images['./rom/d-pad-ru.png']}`,
-            '#d-pad-u_': `${imgPrefix}${images['./rom/d-pad-u.png']}`, // Note: the trailing underscore is used to prevent the replacement of other placeholders
-        };
+	/**
+	 * Transforms the HTML template by replacing placeholders with actual values.
+	 *
+	 * @param htmlToTransform - The HTML template to transform.
+	 * @param cssMinified - The minified CSS string.
+	 * @param debug - A boolean indicating whether to include debug information.
+	 * @returns A promise that resolves to the transformed HTML string.
+	 */
+	async function transformHtml(htmlToTransform: string, cssMinified: string, debug: boolean): Promise<string> {
+		const imgPrefix = 'data:image/png;base64,';
+		const replacements = {
+			'//#bootromjs': romjs,
+			'//#zipjs': zipjs,
+			'/\\*#css\\*/': cssMinified,
+			'#title': title,
+			'//#debug': `bootrom.debug = ${debug};\n\t\tbootrom.romname = getRomNameFromUrlParameter() ?? '${rom_name}';\n`,
+			'#outfile': `${rom_name}.${debug ? 'debug.' : ''}rom`,
+			'#bmsxurl': `${imgPrefix}${images['./rom/bmsx.png']}`,
+			'#d-pad-d_': `${imgPrefix}${images['./rom/d-pad-d.png']}`, // Note: the trailing underscore is used to prevent the replacement of other placeholders
+			'#d-pad-l_': `${imgPrefix}${images['./rom/d-pad-l.png']}`, // Note: the trailing underscore is used to prevent the replacement of other placeholders
+			'#d-pad-ld': `${imgPrefix}${images['./rom/d-pad-ld.png']}`,
+			'#d-pad-lu': `${imgPrefix}${images['./rom/d-pad-lu.png']}`,
+			'#d-pad-neutral': `${imgPrefix}${images['./rom/d-pad-neutral.png']}`,
+			'#d-pad-r_': `${imgPrefix}${images['./rom/d-pad-r.png']}`, // Note: the trailing underscore is used to prevent the replacement of other placeholders
+			'#d-pad-rd': `${imgPrefix}${images['./rom/d-pad-rd.png']}`,
+			'#d-pad-ru': `${imgPrefix}${images['./rom/d-pad-ru.png']}`,
+			'#d-pad-u_': `${imgPrefix}${images['./rom/d-pad-u.png']}`, // Note: the trailing underscore is used to prevent the replacement of other placeholders
+		};
 
-        return applyStringReplacements(htmlToTransform, replacements);
-    }
+		return applyStringReplacements(htmlToTransform, replacements);
+	}
 
-    let html: string, romjs: string, zipjs: string;
-    try {
-        html = await readFile("./gamebase.html", 'utf8');
-        romjs = (await readFile(`./rom/${BOOTROM_JS_FILENAME}`, 'utf8')).replace('Object.defineProperty(exports, "__esModule", { value: true });', '');
-        zipjs = await readFile("./scripts/pako_inflate.min.js", 'utf8');
-    } catch (error) {
-        throw new Error(`Error reading files while building HTML and Manifest files: ${error.message}`);
-    }
+	let html: string, romjs: string, zipjs: string;
+	try {
+		html = await readFile("./gamebase.html", 'utf8');
+		romjs = (await readFile(`./rom/${BOOTROM_JS_FILENAME}`, 'utf8')).replace('Object.defineProperty(exports, "__esModule", { value: true });', '');
+		zipjs = await readFile("./scripts/pako_inflate.min.js", 'utf8');
+	} catch (error) {
+		throw new Error(`Error reading files while building HTML and Manifest files: ${error.message}`);
+	}
 
-    const images = await loadImages(IMAGE_PATHS);
+	const images = await loadImages(IMAGE_PATHS);
 
-    return new Promise<any>((resolve, reject) => {
-        minify({
-            compressor: cleanCSS,
-            input: "./gamebase.css",
-            output: "./rom/gamebase.min.css",
-            callback: async (err: any, cssMinified: string) => {
-                if (!cssMinified) {
-                    return reject(err);
-                }
+	return new Promise<any>((resolve, reject) => {
+		minify({
+			compressor: cleanCSS,
+			input: "./gamebase.css",
+			output: "./rom/gamebase.min.css",
+			callback: async (err: any, cssMinified: string) => {
+				if (!cssMinified) {
+					return reject(err);
+				}
 
-                try {
-                    const transformedHtml = await transformHtml(html, cssMinified, debug);
-                    await writeFile(`./dist/game${debug ? '_debug' : ''}.html`, transformedHtml);
+				try {
+					const transformedHtml = await transformHtml(html, cssMinified, debug);
+					await writeFile(`./dist/game${debug ? '_debug' : ''}.html`, transformedHtml);
 
-                    // Update the manifest.json-file that is used for app-versions of the webpage
-                    const manifest = (await readFile("./rom/manifest.json", 'utf8')).replace('#title', title).replace('#short_name', short_name);
+					// Update the manifest.json-file that is used for app-versions of the webpage
+					const manifest = (await readFile("./rom/manifest.json", 'utf8')).replace('#title', title).replace('#short_name', short_name);
 
-                    // Write updated manifest to dist-folder
-                    await writeFile("./dist/manifest.webmanifest", manifest);
+					// Write updated manifest to dist-folder
+					await writeFile("./dist/manifest.webmanifest", manifest);
 
-                    resolve(null);
-                } catch (error) {
-                    reject(error);
-                }
-            }
-        });
-    });
+					resolve(null);
+				} catch (error) {
+					reject(error);
+				}
+			}
+		});
+	});
 }
 
 /**
@@ -512,51 +302,51 @@ export async function buildGameHtmlAndManifest(rom_name: string, title: string, 
  * @returns {Object} An object containing the sanitized name of the audio file and its metadata.
  */
 export function parseAudioMeta(filename: string) {
-    const priorityregex = /@p\=\d+/;
-    const priorityresult = priorityregex.exec(filename);
-    const prioritystr = priorityresult ? priorityresult[0] : undefined;
-    const priority = prioritystr ? parseInt(prioritystr.slice(3)) : 0;
+	const priorityregex = /@p\=\d+/;
+	const priorityresult = priorityregex.exec(filename);
+	const prioritystr = priorityresult ? priorityresult[0] : undefined;
+	const priority = prioritystr ? parseInt(prioritystr.slice(3)) : 0;
 
-    const loopregex = /@l\=\d+(,\d+)?/;
-    const loopresult = loopregex.exec(filename);
-    const loopstr = loopresult ? loopresult[0] : undefined;
-    const loop = loopstr ? parseFloat(loopstr.replace(',', '.').slice(3)) : null;
+	const loopregex = /@l\=\d+(,\d+)?/;
+	const loopresult = loopregex.exec(filename);
+	const loopstr = loopresult ? loopresult[0] : undefined;
+	const loop = loopstr ? parseFloat(loopstr.replace(',', '.').slice(3)) : null;
 
-    const sanitizedName = filename.replace(priorityregex, '').replace(loopregex, '').replace('@m', '');
-    const audiometa: AudioMeta =
-    {
-        audiotype: filename.indexOf('@m') >= 0 ? 'music' : 'sfx',
-        priority: priority,
-        loop: loop !== null ? loop : undefined
-    };
-    return { sanitizedName, audiometa };
+	const sanitizedName = filename.replace(priorityregex, '').replace(loopregex, '').replace('@m', '');
+	const audiometa: AudioMeta =
+	{
+		audiotype: filename.indexOf('@m') >= 0 ? 'music' : 'sfx',
+		priority: priority,
+		loop: loop !== null ? loop : undefined
+	};
+	return { sanitizedName, audiometa };
 }
 
 // --- Image filename collision-type suffix parser ---
 export function parseImageMeta(filenameWithoutExt: string): { sanitizedName: string, collisionType: 'concave' | 'convex' | 'aabb', targetAtlas?: number } {
-    // Match @cc or @cx for collision type, and @atlas=n for atlas assignment (order-insensitive)
-    const collisionMatch = filenameWithoutExt.match(/@(cc|cx)/i);
-    let collisionType: 'concave' | 'convex' | 'aabb' = 'aabb';
-    if (collisionMatch) {
-        const code = collisionMatch[1].toLowerCase();
-        collisionType = code === 'cc' ? 'concave' : code === 'cx' ? 'convex' : 'aabb';
-    }
-    let targetAtlas = undefined;
-    if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
-        const atlasMatch = filenameWithoutExt.match(/@atlas=(\d+)/i);
-        targetAtlas = atlasMatch ? parseInt(atlasMatch[1], 10) : undefined;
-        if (targetAtlas === undefined) {
-            // If no atlas is specified, we use the default atlas 0
-            targetAtlas = 0;
-        }
-    }
+	// Match @cc or @cx for collision type, and @atlas=n for atlas assignment (order-insensitive)
+	const collisionMatch = filenameWithoutExt.match(/@(cc|cx)/i);
+	let collisionType: 'concave' | 'convex' | 'aabb' = 'aabb';
+	if (collisionMatch) {
+		const code = collisionMatch[1].toLowerCase();
+		collisionType = code === 'cc' ? 'concave' : code === 'cx' ? 'convex' : 'aabb';
+	}
+	let targetAtlas = undefined;
+	if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
+		const atlasMatch = filenameWithoutExt.match(/@atlas=(\d+)/i);
+		targetAtlas = atlasMatch ? parseInt(atlasMatch[1], 10) : undefined;
+		if (targetAtlas === undefined) {
+			// If no atlas is specified, we use the default atlas 0
+			targetAtlas = 0;
+		}
+	}
 
-    // Remove all @cc, @cx, and @atlas=n (in any order)
-    const sanitizedName = filenameWithoutExt
-        .replace(/@(cc|cx)/ig, '')
-        .replace(/@atlas=\d+/ig, '');
+	// Remove all @cc, @cx, and @atlas=n (in any order)
+	const sanitizedName = filenameWithoutExt
+		.replace(/@(cc|cx)/ig, '')
+		.replace(/@atlas=\d+/ig, '');
 
-    return { sanitizedName, collisionType, targetAtlas };
+	return { sanitizedName, collisionType, targetAtlas };
 }
 
 /**
@@ -566,8 +356,8 @@ export function parseImageMeta(filenameWithoutExt: string): { sanitizedName: str
  * @returns The compressed content as a Uint8Array.
  */
 export function zip(content: Buffer): Uint8Array {
-    const toCompress = new Uint8Array(content);
-    return pako.deflate(toCompress);
+	const toCompress = new Uint8Array(content);
+	return pako.deflate(toCompress);
 }
 
 /**
@@ -576,49 +366,49 @@ export function zip(content: Buffer): Uint8Array {
  * @returns An object containing the name, extension, and type of the resource file.
  */
 export function getResMetaByFilename(filepath: string): { name: string, ext: string, type: resourcetype, collisionType?: 'concave' | 'convex' | 'aabb' | undefined, datatype?: 'json' | 'yaml' | 'bin' | undefined } {
-    let name = parse(filepath).name.replace(' ', '').toLowerCase();
-    const ext = parse(filepath).ext.toLowerCase();
-    let type: resourcetype;
-    let collisionType: 'concave' | 'convex' | 'aabb' | undefined = undefined;
-    let datatype: 'json' | 'yaml' | 'bin' | undefined = undefined;
+	let name = parse(filepath).name.replace(' ', '').toLowerCase();
+	const ext = parse(filepath).ext.toLowerCase();
+	let type: resourcetype;
+	let collisionType: 'concave' | 'convex' | 'aabb' | undefined = undefined;
+	let datatype: 'json' | 'yaml' | 'bin' | undefined = undefined;
 
-    switch (ext) {
-        case '.wav':
-            type = 'audio';
-            break;
-        case '.js':
-            type = 'code';
-            break;
-        case '.rommanifest':
-            type = 'rommanifest';
-            break;
-        case '.atlas': // `.atlas`-files don't exist. We use this to add the atlas to the resource list
-            type = 'atlas';
-            break;
-        case '.png':
-            if (name === 'romlabel') {
-                // Special case for romlabel, which is a PNG file with a specific name
-                type = 'romlabel';
-            }
-            else {
-                type = 'image';
-            }
-            break;
-        case '.json':
-            datatype = 'json';
-            type = 'data';
-            break;
-        case '.yaml':
-            datatype = 'yaml';
-            type = 'data';
-            break;
-        case '.obj':
-        case '.gltf':
-        case '.glb':
-            type = 'model';
-            break;
-    }
-    return { name: name, ext, type, collisionType, datatype };
+	switch (ext) {
+		case '.wav':
+			type = 'audio';
+			break;
+		case '.js':
+			type = 'code';
+			break;
+		case '.rommanifest':
+			type = 'rommanifest';
+			break;
+		case '.atlas': // `.atlas`-files don't exist. We use this to add the atlas to the resource list
+			type = 'atlas';
+			break;
+		case '.png':
+			if (name === 'romlabel') {
+				// Special case for romlabel, which is a PNG file with a specific name
+				type = 'romlabel';
+			}
+			else {
+				type = 'image';
+			}
+			break;
+		case '.json':
+			datatype = 'json';
+			type = 'data';
+			break;
+		case '.yaml':
+			datatype = 'yaml';
+			type = 'data';
+			break;
+		case '.obj':
+		case '.gltf':
+		case '.glb':
+			type = 'model';
+			break;
+	}
+	return { name: name, ext, type, collisionType, datatype };
 }
 
 /**
@@ -628,120 +418,120 @@ export function getResMetaByFilename(filepath: string): { name: string, ext: str
  * @returns An array of resources with basic metadata.
  */
 export async function getResMetaList(respaths: string[], romname?: string): Promise<Resource[]> {
-    const arrayOfFiles: string[] = [];
-    for (const respath of respaths) {
-        const files = await getFiles(respath) ?? [];
-        arrayOfFiles.push(...files);
-    }
-    const megarom_filename = `${romname}.js`;
-    // Note that romname can be undefined when building the resource enum file, so we only add the file if romname is defined
-    if (romname) {
-        addFile("./rom", megarom_filename, arrayOfFiles); // Add source at the end
-    }
+	const arrayOfFiles: string[] = [];
+	for (const respath of respaths) {
+		const files = await getFiles(respath) ?? [];
+		arrayOfFiles.push(...files);
+	}
+	const megarom_filename = `${romname}.js`;
+	// Note that romname can be undefined when building the resource enum file, so we only add the file if romname is defined
+	if (romname) {
+		addFile("./rom", megarom_filename, arrayOfFiles); // Add source at the end
+	}
 
-    const result: Array<Resource> = [];
-    const targetAtlasIdSet = new Set<number>();
+	const result: Array<Resource> = [];
+	const targetAtlasIdSet = new Set<number>();
 
-    let imgid = 1;
-    let sndid = 1;
-    let dataid = 1;
-    let modelid = 1;
-    for (let i = 0; i < arrayOfFiles.length; i++) {
-        const filepath = arrayOfFiles[i];
-        const meta = getResMetaByFilename(filepath);
+	let imgid = 1;
+	let sndid = 1;
+	let dataid = 1;
+	let modelid = 1;
+	for (let i = 0; i < arrayOfFiles.length; i++) {
+		const filepath = arrayOfFiles[i];
+		const meta = getResMetaByFilename(filepath);
 
-        const type = meta.type;
-        let name = meta.name;
-        const ext = meta.ext;
-        switch (type) {
-            case 'image':
-                const imgMeta = parseImageMeta(name);
-                name = imgMeta.sanitizedName; // Remove metadata from the name
-                // If we are generating and using texture atlases, we need to add the image to the atlas
-                if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
-                    if (imgMeta.targetAtlas !== undefined) targetAtlasIdSet.add(imgMeta.targetAtlas);
-                }
-                result.push({ filepath: filepath, name: name, ext: ext, type: type, id: imgid, collisionType: imgMeta.collisionType, targetAtlasIndex: imgMeta.targetAtlas });
-                ++imgid;
-                break;
-            case 'audio':
-                const parsedMeta = parseAudioMeta(name);
-                name = parsedMeta.sanitizedName; // Remove metadata from the name
-                result.push({ filepath: filepath, name: name, ext: ext, type: type, id: sndid });
-                ++sndid;
-                break;
-            case 'romlabel':
-                result.push({ filepath: filepath, name: name, ext: ext, type: type, id: undefined });
-                break;
-            case 'rommanifest':
-                result.push({ filepath: filepath, name: name, ext: ext, type: type, id: undefined });
-                break;
-            case 'code':
-                // For code files, we use the romname as the name
-                break;
-            case 'data':
-                // For data files, we use the name as is
-                result.push({ filepath: filepath, name: name, ext: ext, type: type, id: dataid, datatype: meta.datatype });
-                ++dataid;
-                break;
-            case 'model':
-                result.push({ filepath: filepath, name: name, ext: ext, type: type, id: modelid });
-                ++modelid;
-                break;
-            case 'atlas':
-                // Atlas files are not real files, but we add them to the resource list in the next step
-                break;
-        }
-    }
+		const type = meta.type;
+		let name = meta.name;
+		const ext = meta.ext;
+		switch (type) {
+			case 'image':
+				const imgMeta = parseImageMeta(name);
+				name = imgMeta.sanitizedName; // Remove metadata from the name
+				// If we are generating and using texture atlases, we need to add the image to the atlas
+				if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
+					if (imgMeta.targetAtlas !== undefined) targetAtlasIdSet.add(imgMeta.targetAtlas);
+				}
+				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: imgid, collisionType: imgMeta.collisionType, targetAtlasIndex: imgMeta.targetAtlas });
+				++imgid;
+				break;
+			case 'audio':
+				const parsedMeta = parseAudioMeta(name);
+				name = parsedMeta.sanitizedName; // Remove metadata from the name
+				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: sndid });
+				++sndid;
+				break;
+			case 'romlabel':
+				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: undefined });
+				break;
+			case 'rommanifest':
+				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: undefined });
+				break;
+			case 'code':
+				// For code files, we use the romname as the name
+				break;
+			case 'data':
+				// For data files, we use the name as is
+				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: dataid, datatype: meta.datatype });
+				++dataid;
+				break;
+			case 'model':
+				result.push({ filepath: filepath, name: name, ext: ext, type: type, id: modelid });
+				++modelid;
+				break;
+			case 'atlas':
+				// Atlas files are not real files, but we add them to the resource list in the next step
+				break;
+		}
+	}
 
-    // If we are generating and using texture atlases, we need to add the atlasses to the resource list
-    // @ts-ignore
-    for (const id of targetAtlasIdSet) {
-        const name = generateAtlasName(id);
-        result.push({ filepath: undefined, name, ext: '.atlas', type: 'atlas', id: imgid++, collisionType: undefined, targetAtlasIndex: undefined, atlasid: id });
-    }
+	// If we are generating and using texture atlases, we need to add the atlasses to the resource list
+	// @ts-ignore
+	for (const id of targetAtlasIdSet) {
+		const name = generateAtlasName(id);
+		result.push({ filepath: undefined, name, ext: '.atlas', type: 'atlas', id: imgid++, collisionType: undefined, targetAtlasIndex: undefined, atlasid: id });
+	}
 
-    // Validation: ensure no duplicate IDs within the same resource type (image or audio)
-    const checkDuplicateIds = (type: string) => {
-        const filtered = result.filter(r => r.type === type && typeof r.id === 'number');
-        const idMap = new Map<number, string[]>();
-        for (const r of filtered) {
-            if (!idMap.has(r.id)) idMap.set(r.id, []);
-            idMap.get(r.id)!.push(r.name);
-        }
-        const dups = Array.from(idMap.entries()).filter(([id, names]) => names.length > 1);
-        if (dups.length > 0) {
-            const msg = dups.map(([id, names]) => `ID ${id} used by: ${names.join(', ')}`).join('\n');
-            throw new Error(`Duplicate ${type} resource IDs found!\n${msg}`);
-        }
-    };
+	// Validation: ensure no duplicate IDs within the same resource type (image or audio)
+	const checkDuplicateIds = (type: string) => {
+		const filtered = result.filter(r => r.type === type && typeof r.id === 'number');
+		const idMap = new Map<number, string[]>();
+		for (const r of filtered) {
+			if (!idMap.has(r.id)) idMap.set(r.id, []);
+			idMap.get(r.id)!.push(r.name);
+		}
+		const dups = Array.from(idMap.entries()).filter(([id, names]) => names.length > 1);
+		if (dups.length > 0) {
+			const msg = dups.map(([id, names]) => `ID ${id} used by: ${names.join(', ')}`).join('\n');
+			throw new Error(`Duplicate ${type} resource IDs found!\n${msg}`);
+		}
+	};
 
-    const checkDuplicateNames = (type: string) => {
-        const filtered = result.filter(r => r.type === type && typeof r.name === 'string');
-        const nameMap = new Map<string, string[]>();
-        for (const r of filtered) {
-            // Only consider exact matches for names
-            const key = r.name;
-            if (!nameMap.has(key)) nameMap.set(key, []);
-            nameMap.get(key)!.push(r.filepath);
-        }
-        const dups = Array.from(nameMap.entries()).filter(([name, paths]) => paths.length > 1);
-        if (dups.length > 0) {
-            const msg = dups.map(([name, paths]) => `Name "${name}" used by: ${paths.join(', ')}`).join('\n');
-            throw new Error(`Duplicate ${type} resource names found!\n${msg}`);
-        }
-    };
+	const checkDuplicateNames = (type: string) => {
+		const filtered = result.filter(r => r.type === type && typeof r.name === 'string');
+		const nameMap = new Map<string, string[]>();
+		for (const r of filtered) {
+			// Only consider exact matches for names
+			const key = r.name;
+			if (!nameMap.has(key)) nameMap.set(key, []);
+			nameMap.get(key)!.push(r.filepath);
+		}
+		const dups = Array.from(nameMap.entries()).filter(([name, paths]) => paths.length > 1);
+		if (dups.length > 0) {
+			const msg = dups.map(([name, paths]) => `Name "${name}" used by: ${paths.join(', ')}`).join('\n');
+			throw new Error(`Duplicate ${type} resource names found!\n${msg}`);
+		}
+	};
 
-    checkDuplicateIds('image');
-    checkDuplicateIds('audio');
-    checkDuplicateIds('model');
-    checkDuplicateNames('data');
-    checkDuplicateNames('image');
-    checkDuplicateNames('audio');
-    checkDuplicateNames('data');
-    checkDuplicateNames('model');
+	checkDuplicateIds('image');
+	checkDuplicateIds('audio');
+	checkDuplicateIds('model');
+	checkDuplicateNames('data');
+	checkDuplicateNames('image');
+	checkDuplicateNames('audio');
+	checkDuplicateNames('data');
+	checkDuplicateNames('model');
 
-    return result;
+	return result;
 }
 
 /**
@@ -750,52 +540,52 @@ export async function getResMetaList(respaths: string[], romname?: string): Prom
  * @returns An array of resources.
  */
 export async function getResourcesList(resMetaList: Resource[], rom_name: string): Promise<Resource[]> {
-    let resources: Array<Resource> = [];
+	let resources: Array<Resource> = [];
 
-    /**
-     * Loads an image from the specified resource object.
-     * @param _meta The resource object containing information about the image to load.
+	/**
+	 * Loads an image from the specified resource object.
+	 * @param _meta The resource object containing information about the image to load.
  * @returns A Promise that resolves with the loaded image.
  */
-    async function getImageFromBuffer(buffer: Buffer) {
-        const base64Encoded = buffer.toString('base64');
-        const dataURL = `data:images/png;base64,${base64Encoded}`;
-        return await loadImage(dataURL);
-    }
+	async function getImageFromBuffer(buffer: Buffer) {
+		const base64Encoded = buffer.toString('base64');
+		const dataURL = `data:images/png;base64,${base64Encoded}`;
+		return await loadImage(dataURL);
+	}
 
-    // Parallelize buffer and image loading
-    const resourcePromises = resMetaList.map(async (meta) => {
-        const type = meta.type;
-        const buffer = meta.filepath ? await readFile(meta.filepath) : null;
-        let img: any = undefined;
-        if (type === 'image') img = await getImageFromBuffer(buffer);
-        const toAdd: Resource = {
-            ...meta,
-            buffer: buffer,
-            img: img,
-        };
+	// Parallelize buffer and image loading
+	const resourcePromises = resMetaList.map(async (meta) => {
+		const type = meta.type;
+		const buffer = meta.filepath ? await readFile(meta.filepath) : null;
+		let img: any = undefined;
+		if (type === 'image') img = await getImageFromBuffer(buffer);
+		const toAdd: Resource = {
+			...meta,
+			buffer: buffer,
+			img: img,
+		};
 
-        return toAdd;
-    });
-    resourcePromises.push((async () => {
-        const megarom_filename = `${rom_name}.js`;
-        const filepath = `./rom/${megarom_filename}`;
-        // Manually add the ROM source code to the list
-        return {
-            buffer: await readFile(filepath),
-            filepath: filepath,
-            name: megarom_filename,
-            ext: '.js',
-            type: 'code',
-            img: undefined, // Add missing fields to match Resource
-            id: 1,
-            collisionType: undefined // Add missing fields to match Resource
-        };
-    })());
+		return toAdd;
+	});
+	resourcePromises.push((async () => {
+		const megarom_filename = `${rom_name}.js`;
+		const filepath = `./rom/${megarom_filename}`;
+		// Manually add the ROM source code to the list
+		return {
+			buffer: await readFile(filepath),
+			filepath: filepath,
+			name: megarom_filename,
+			ext: '.js',
+			type: 'code',
+			img: undefined, // Add missing fields to match Resource
+			id: 1,
+			collisionType: undefined // Add missing fields to match Resource
+		};
+	})());
 
-    resources = await Promise.all(resourcePromises);
+	resources = await Promise.all(resourcePromises);
 
-    return resources;
+	return resources;
 }
 
 /**
@@ -804,55 +594,55 @@ export async function getResourcesList(resMetaList: Resource[], rom_name: string
  * @param rom_name The name of the ROM pack to build the list for.
  */
 export async function buildResourceList(respaths: string[], rom_name?: string) {
-    const tsimgout = new Array<string>();
-    const tssndout = new Array<string>();
-    const tsdataout = new Array<string>();
-    const tsmodelout = new Array<string>();
-    const metalist: Resource[] = await getResMetaList(respaths, rom_name)
+	const tsimgout = new Array<string>();
+	const tssndout = new Array<string>();
+	const tsdataout = new Array<string>();
+	const tsmodelout = new Array<string>();
+	const metalist: Resource[] = await getResMetaList(respaths, rom_name)
 
-    tsimgout.push(BOILERPLATE_RESOURCE_ID_BITMAP);
-    tssndout.push(BOILERPLATE_RESOURCE_ID_AUDIO);
-    tsdataout.push(BOILERPLATE_RESOURCE_ID_DATA);
-    tsmodelout.push(BOILERPLATE_RESOURCE_ID_MODEL);
+	tsimgout.push(BOILERPLATE_RESOURCE_ID_BITMAP);
+	tssndout.push(BOILERPLATE_RESOURCE_ID_AUDIO);
+	tsdataout.push(BOILERPLATE_RESOURCE_ID_DATA);
+	tsmodelout.push(BOILERPLATE_RESOURCE_ID_MODEL);
 
-    for (let i = 0; i < metalist.length; i++) {
-        const current = metalist[i];
+	for (let i = 0; i < metalist.length; i++) {
+		const current = metalist[i];
 
-        const type = current.type;
-        const name = current.name;
-        const enum_member_to_add = `\t${name} = '${name}', `;
-        switch (type) {
-            case 'image':
-            case 'atlas': // Atlas is also an image and thus is added to the image enum
-                tsimgout.push(`${enum_member_to_add} `);
-                break;
-            case 'audio':
-                tssndout.push(`${enum_member_to_add} `);
-                break;
-            case 'data':
-                tsdataout.push(`${enum_member_to_add} `);
-                break;
-            case 'model':
-                tsmodelout.push(`${enum_member_to_add} `);
-                break;
-            case 'romlabel':
-                // Ignore this part
-                break;
-            default:
-                // Ignore unknown resource types
-                break;
-        }
-    }
+		const type = current.type;
+		const name = current.name;
+		const enum_member_to_add = `\t${name} = '${name}', `;
+		switch (type) {
+			case 'image':
+			case 'atlas': // Atlas is also an image and thus is added to the image enum
+				tsimgout.push(`${enum_member_to_add} `);
+				break;
+			case 'audio':
+				tssndout.push(`${enum_member_to_add} `);
+				break;
+			case 'data':
+				tsdataout.push(`${enum_member_to_add} `);
+				break;
+			case 'model':
+				tsmodelout.push(`${enum_member_to_add} `);
+				break;
+			case 'romlabel':
+				// Ignore this part
+				break;
+			default:
+				// Ignore unknown resource types
+				break;
+		}
+	}
 
-    tsimgout.push("}\n");
-    tssndout.push("}\n");
-    tsdataout.push("}\n");
-    tsmodelout.push("}\n");
+	tsimgout.push("}\n");
+	tssndout.push("}\n");
+	tsdataout.push("}\n");
+	tsmodelout.push("}\n");
 
-    const total_output: string = tsimgout.concat(tssndout, tsdataout, tsmodelout).join('\n');
+	const total_output: string = tsimgout.concat(tssndout, tsdataout, tsmodelout).join('\n');
 
-    const targetPath = respaths[0].replace('/res', '/resourceids.ts');
-    await writeFile(targetPath, total_output);
+	const targetPath = respaths[0].replace('/res', '/resourceids.ts');
+	await writeFile(targetPath, total_output);
 }
 
 /**
@@ -870,117 +660,117 @@ export async function buildResourceList(respaths: string[], rom_name?: string) {
  * - `romlabel_buffer` - The buffer data for the "romlabel.png" resource if present.
  */
 export async function generateRomAssets(resources: Resource[]) {
-    const romAssets: RomAsset[] = [];
-    let romlabel_buffer: Buffer | undefined;
+	const romAssets: RomAsset[] = [];
+	let romlabel_buffer: Buffer | undefined;
 
-    for (const res of resources) {
-        const type = res.type;
-        let resname = res.name;
-        const resid = res.id;
-        let buffer = res.buffer; // NOTE that we will remove the buffer during the finalization of the ROM pack. To do proper finalization, we need to store the buffer here right now. N.B. the bootrom will also add the buffer to the RomAsset, so that's why the property is relevant in the first place and we are now using it to temporarily hold the buffer per asset.
+	for (const res of resources) {
+		const type = res.type;
+		let resname = res.name;
+		const resid = res.id;
+		let buffer = res.buffer; // NOTE that we will remove the buffer during the finalization of the ROM pack. To do proper finalization, we need to store the buffer here right now. N.B. the bootrom will also add the buffer to the RomAsset, so that's why the property is relevant in the first place and we are now using it to temporarily hold the buffer per asset.
 
-        switch (type) {
-            case 'romlabel':
-                romlabel_buffer = res.buffer;
-                romAssets.push({ resid, resname, type, imgmeta: undefined, buffer: romlabel_buffer });
-                break;
-            case 'image': {
-                const imgmeta = buildImgMeta(res);
-                let baseAsset: RomAsset;
-                if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
-                    baseAsset = { resid, resname, type, imgmeta, buffer: undefined, };
-                } else {
-                    baseAsset = { resid, resname, type, imgmeta, buffer };
-                }
-                romAssets.push({ ...baseAsset, });
-            }
-                break;
-            case 'audio':
-                // Note that the name has already been sanitized in the `getResMetaList` function
-                const { audiometa } = parseAudioMeta(res.filepath);
-                romAssets.push({ resid, resname, type, audiometa, buffer });
-                break;
-            case 'code':
-                resname = resname.replace('.min', '');
-                romAssets.push({ resid, resname, type, buffer });
-                break;
-            case 'data':
-                // Encode the JSON-data via the binencoder
-                // Convert the buffer to a JSON string and then encode it
-                switch (res.datatype) {
-                    case 'yaml':
-                        // If the data is a YAML file, we need to convert it to JSON first
-                        const yamlContent = res.buffer.toString('utf8');
-                        const jsonContent = yaml.load(yamlContent);
-                        // res.buffer = jsonContent;
-                        const encodedYamlData = encodeBinary(jsonContent);
-                        buffer = encodedYamlData;
-                        break;
-                    case 'json':
-                        // If the data is a JSON file, we need to convert it to a string first
-                        const json = JSON.parse(res.buffer.toString('utf8'));
-                        const encodedData = encodeBinary(json);
+		switch (type) {
+			case 'romlabel':
+				romlabel_buffer = res.buffer;
+				romAssets.push({ resid, resname, type, imgmeta: undefined, buffer: romlabel_buffer });
+				break;
+			case 'image': {
+				const imgmeta = buildImgMeta(res);
+				let baseAsset: RomAsset;
+				if (GENERATE_AND_USE_TEXTURE_ATLAS && DONT_PACK_IMAGES_WHEN_USING_ATLAS) {
+					baseAsset = { resid, resname, type, imgmeta, buffer: undefined, };
+				} else {
+					baseAsset = { resid, resname, type, imgmeta, buffer };
+				}
+				romAssets.push({ ...baseAsset, });
+			}
+				break;
+			case 'audio':
+				// Note that the name has already been sanitized in the `getResMetaList` function
+				const { audiometa } = parseAudioMeta(res.filepath);
+				romAssets.push({ resid, resname, type, audiometa, buffer });
+				break;
+			case 'code':
+				resname = resname.replace('.min', '');
+				romAssets.push({ resid, resname, type, buffer });
+				break;
+			case 'data':
+				// Encode the JSON-data via the binencoder
+				// Convert the buffer to a JSON string and then encode it
+				switch (res.datatype) {
+					case 'yaml':
+						// If the data is a YAML file, we need to convert it to JSON first
+						const yamlContent = res.buffer.toString('utf8');
+						const jsonContent = yaml.load(yamlContent);
+						// res.buffer = jsonContent;
+						const encodedYamlData = encodeBinary(jsonContent);
+						buffer = encodedYamlData;
+						break;
+					case 'json':
+						// If the data is a JSON file, we need to convert it to a string first
+						const json = JSON.parse(res.buffer.toString('utf8'));
+						const encodedData = encodeBinary(json);
 
-                        buffer = encodedData;
-                        break;
-                    case 'bin':
-                        // If the data is a binary file, we can use it as is
-                        break;
-                    default:
-                        throw new Error(`Unknown data type "${res.datatype}" for resource "${resname}"`);
-                }
-                romAssets.push({ resid, resname, type, buffer });
-                break;
-            case 'model': {
-                const text = res.buffer.toString('utf8');
-                const dir = parse(res.filepath).dir;
-                const parsed = await loadGLTFModel(text, dir);
+						buffer = encodedData;
+						break;
+					case 'bin':
+						// If the data is a binary file, we can use it as is
+						break;
+					default:
+						throw new Error(`Unknown data type "${res.datatype}" for resource "${resname}"`);
+				}
+				romAssets.push({ resid, resname, type, buffer });
+				break;
+			case 'model': {
+				const text = res.buffer.toString('utf8');
+				const dir = parse(res.filepath).dir;
+				const parsed = await loadGLTFModel(text, dir);
 
-                let texOffset = 0;
-                const imageOffsets: { start: number; end: number }[] = [];
-                const texBuffers: Buffer[] = [];
-                for (let i = 0; i < parsed.imageBuffers.length; i++) {
-                    const buf = parsed.imageBuffers[i];
-                    const start = texOffset;
-                    const end = texOffset + buf.length;
-                    texOffset = end;
-                    texBuffers.push(Buffer.from(buf));
-                    imageOffsets.push({ start, end });
-                }
-                const obj = {
-                    meshes: parsed.meshes.map(m => ({
-                        positions: m.positions,
-                        texcoords: m.texcoords,
-                        normals: m.normals,
-                        indices: m.indices,
-                        indexComponentType: m.indexComponentType,
-                        materialIndex: m.materialIndex,
-                        morphTargets: m.morphTargets,
-                    })),
-                    materials: parsed.materials,
-                    animations: parsed.animations,
-                    imageOffsets,
-                };
-                buffer = encodeBinary(obj);
-                const texture_buffer = Buffer.concat(texBuffers);
-                romAssets.push({ resid, resname, type, buffer, texture_buffer });
-            }
-                break;
-            case 'atlas': {
-                // Atlas resources are handled similarly to images but with a twist
-                const imgmeta = buildImgMetaForAtlas(res);
-                const baseAsset = { resid, resname, type, imgmeta, buffer };
-                romAssets.push({ ...baseAsset, });
-            }
-                break;
-            case 'rommanifest':
-                break;
-            default:
-                // Skip unknown resource types without failing
-                break;
-        }
-    }
-    return romAssets;
+				let texOffset = 0;
+				const imageOffsets: { start: number; end: number }[] = [];
+				const texBuffers: Buffer[] = [];
+				for (let i = 0; i < parsed.imageBuffers.length; i++) {
+					const buf = parsed.imageBuffers[i];
+					const start = texOffset;
+					const end = texOffset + buf.byteLength;
+					texOffset = end;
+					texBuffers.push(Buffer.from(buf));
+					imageOffsets.push({ start, end });
+				}
+				const obj = {
+					meshes: parsed.meshes.map(m => ({
+						positions: m.positions,
+						texcoords: m.texcoords,
+						normals: m.normals,
+						indices: m.indices,
+						indexComponentType: m.indexComponentType,
+						materialIndex: m.materialIndex,
+						morphTargets: m.morphTargets,
+					})),
+					materials: parsed.materials,
+					animations: parsed.animations,
+					imageOffsets,
+				};
+				buffer = encodeBinary(obj);
+				const texture_buffer = Buffer.concat(texBuffers);
+				romAssets.push({ resid, resname, type, buffer, texture_buffer });
+			}
+				break;
+			case 'atlas': {
+				// Atlas resources are handled similarly to images but with a twist
+				const imgmeta = buildImgMetaForAtlas(res);
+				const baseAsset = { resid, resname, type, imgmeta, buffer };
+				romAssets.push({ ...baseAsset, });
+			}
+				break;
+			case 'rommanifest':
+				break;
+			default:
+				// Skip unknown resource types without failing
+				break;
+		}
+	}
+	return romAssets;
 }
 
 /**
@@ -991,68 +781,68 @@ export async function generateRomAssets(resources: Resource[]) {
  * @returns An object containing image dimensions, bounding boxes, center point, and (if atlas usage is enabled) texture coordinates.
  */
 export function buildImgMeta(res: Resource): ImgMeta {
-    const img = res.img;
-    const img_boundingbox = BoundingBoxExtractor.extractBoundingBox(img);
-    let extracted_hitpolygon: Polygon[] = undefined;
-    let hitpolygons: {
-        original: Polygon[],
-        fliph: Polygon[],
-        flipv: Polygon[],
-        fliphv: Polygon[]
-    } = undefined;
-    switch (res.collisionType) {
-        case 'concave':
-            extracted_hitpolygon = BoundingBoxExtractor.extractConcaveHull(img) as Polygon[];
-            hitpolygons = {
-                original: extracted_hitpolygon,
-                fliph: null,
-                flipv: null,
-                fliphv: null
-            };
-            break;
-        case 'convex':
-            extracted_hitpolygon = [BoundingBoxExtractor.extractConvexHull(img) as Polygon];
-            hitpolygons = {
-                original: extracted_hitpolygon,
-                fliph: null,
-                flipv: null,
-                fliphv: null
-            };
-            break;
-        case 'aabb':
-            // No hit polygon, use bounding box instead
-            break;
-    }
-    // const img_boundingbox_precalc = BoundingBoxExtractor.generateFlippedBoundingBox(img, img_boundingbox);
-    const img_centerpoint = BoundingBoxExtractor.calculateCenterPoint(img_boundingbox);
+	const img = res.img;
+	const img_boundingbox = BoundingBoxExtractor.extractBoundingBox(img);
+	let extracted_hitpolygon: Polygon[] = undefined;
+	let hitpolygons: {
+		original: Polygon[],
+		fliph: Polygon[],
+		flipv: Polygon[],
+		fliphv: Polygon[]
+	} = undefined;
+	switch (res.collisionType) {
+		case 'concave':
+			extracted_hitpolygon = BoundingBoxExtractor.extractConcaveHull(img) as Polygon[];
+			hitpolygons = {
+				original: extracted_hitpolygon,
+				fliph: null,
+				flipv: null,
+				fliphv: null
+			};
+			break;
+		case 'convex':
+			extracted_hitpolygon = [BoundingBoxExtractor.extractConvexHull(img) as Polygon];
+			hitpolygons = {
+				original: extracted_hitpolygon,
+				fliph: null,
+				flipv: null,
+				fliphv: null
+			};
+			break;
+		case 'aabb':
+			// No hit polygon, use bounding box instead
+			break;
+	}
+	// const img_boundingbox_precalc = BoundingBoxExtractor.generateFlippedBoundingBox(img, img_boundingbox);
+	const img_centerpoint = BoundingBoxExtractor.calculateCenterPoint(img_boundingbox);
 
-    let imgmeta: ImgMeta = {
-        atlassed: false,
-        atlasid: null,
-        width: img.width,
-        height: img.height,
-        boundingbox: { original: img_boundingbox, fliph: null, flipv: null, fliphv: null },
-        centerpoint: img_centerpoint,
-        hitpolygons: hitpolygons
-    };
-    if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-        imgmeta = {
-            ...imgmeta,
-            atlassed: res.targetAtlasIndex !== undefined,
-            atlasid: res.targetAtlasIndex,
-            texcoords: res.imgmeta.texcoords,
-        };
-    }
-    return imgmeta;
+	let imgmeta: ImgMeta = {
+		atlassed: false,
+		atlasid: null,
+		width: img.width,
+		height: img.height,
+		boundingbox: { original: img_boundingbox, fliph: null, flipv: null, fliphv: null },
+		centerpoint: img_centerpoint,
+		hitpolygons: hitpolygons
+	};
+	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
+		imgmeta = {
+			...imgmeta,
+			atlassed: res.targetAtlasIndex !== undefined,
+			atlasid: res.targetAtlasIndex,
+			texcoords: res.imgmeta.texcoords,
+		};
+	}
+	return imgmeta;
 }
 
 export function buildImgMetaForAtlas(res: Resource): ImgMeta {
-    return {
-        atlassed: false,
-        atlasid: res.atlasid, // Use the atlas ID from the base resource
-        width: res.img.width,
-        height: res.img.height,
-    };
+	return {
+		atlassed: false,
+		atlasid: res.atlasid, // Use the atlas ID from the base resource
+		width: res.img.width,
+		height: res.img.height,
+	};
 }
 
 /**
@@ -1066,23 +856,23 @@ export function buildImgMetaForAtlas(res: Resource): ImgMeta {
  * @returns A Promise that resolves once the atlas image is written to disk and metadata is updated.
  */
 export async function createAtlasses(resources: Resource[]) {
-    if (GENERATE_AND_USE_TEXTURE_ATLAS) {
-        const atlasses = resources.filter(res => res.type === 'atlas');
-        if (atlasses.length === 0) throw new Error('No atlas resources found in the "resources"-list. The process of preparing the list of all resources (assets) should also add any atlasses that are to be generated. Thus, this is a bug in the code that prepares the list of resources :-(');
-        // Determine the indexes of atlasses to be generated
-        for (const atlas of atlasses) {
-            const image_assets = resources.filter(resource => resource.type === 'image');
-            const filteredImages = image_assets.filter(resource => resource.targetAtlasIndex === atlas.atlasid);
-            const atlasCanvas = createOptimizedAtlas(filteredImages);
-            if (!atlasCanvas) throw new Error(`Failed to create texture atlas for ${atlas.name}.`);
-            atlas.img = atlasCanvas; // Store the canvas in the resource (to extract the image properties later during `processResources`)
-            atlas.buffer = (atlasCanvas as any).toBuffer('image/png'); // Convert canvas to PNG buffer
-            await writeFile(`./rom/_ignore/${generateAtlasName(atlas.atlasid)}.png`, atlas.buffer);
-        }
-    }
-    else {
-        throw new Error('No images found to generate texture atlas from. Please ensure you have images in your resource directory.');
-    }
+	if (GENERATE_AND_USE_TEXTURE_ATLAS) {
+		const atlasses = resources.filter(res => res.type === 'atlas');
+		if (atlasses.length === 0) throw new Error('No atlas resources found in the "resources"-list. The process of preparing the list of all resources (assets) should also add any atlasses that are to be generated. Thus, this is a bug in the code that prepares the list of resources :-(');
+		// Determine the indexes of atlasses to be generated
+		for (const atlas of atlasses) {
+			const image_assets = resources.filter(resource => resource.type === 'image');
+			const filteredImages = image_assets.filter(resource => resource.targetAtlasIndex === atlas.atlasid);
+			const atlasCanvas = createOptimizedAtlas(filteredImages);
+			if (!atlasCanvas) throw new Error(`Failed to create texture atlas for ${atlas.name}.`);
+			atlas.img = atlasCanvas; // Store the canvas in the resource (to extract the image properties later during `processResources`)
+			atlas.buffer = (atlasCanvas as any).toBuffer('image/png'); // Convert canvas to PNG buffer
+			await writeFile(`./rom/_ignore/${generateAtlasName(atlas.atlasid)}.png`, atlas.buffer);
+		}
+	}
+	else {
+		throw new Error('No images found to generate texture atlas from. Please ensure you have images in your resource directory.');
+	}
 }
 
 /**
@@ -1098,83 +888,83 @@ export async function createAtlasses(resources: Resource[]) {
  * @returns A Promise that resolves when the ROM file and metadata have been written.
  */
 export async function finalizeRompack(
-    assetList: RomAsset[],
-    rom_name: string,
-    debug: boolean
+	assetList: RomAsset[],
+	rom_name: string,
+	debug: boolean
 ) {
-    // Capture resource buffers in the order as given by the assetList
-    const buffers: Buffer[] = [];
-    const outfile = `${rom_name}${debug ? '.debug' : ''}.rom`; // Use the provided rom_name as the output file name
-    let offset = 0; // Offset for the next buffer to be added
+	// Capture resource buffers in the order as given by the assetList
+	const buffers: Buffer[] = [];
+	const outfile = `${rom_name}${debug ? '.debug' : ''}.rom`; // Use the provided rom_name as the output file name
+	let offset = 0; // Offset for the next buffer to be added
 
-    // First write the romlabel buffer if it exists and remove it from the assetList
-    // Note that we will use the romlabel buffer to prepend the ROM label to the final output
-    // This is useful when changing the extension of the ROM file to .PNG, which will then be recognized as a PNG file by the browser.
-    let romlabel_buffer: Buffer | undefined = undefined;
-    let romlabel_index = assetList.findIndex(asset => asset.type === 'romlabel');
-    if (romlabel_index >= 0) {
-        romlabel_buffer = assetList[romlabel_index].buffer;
-        // Remove the romlabel from the assetList
-        assetList.splice(romlabel_index, 1);
-    }
+	// First write the romlabel buffer if it exists and remove it from the assetList
+	// Note that we will use the romlabel buffer to prepend the ROM label to the final output
+	// This is useful when changing the extension of the ROM file to .PNG, which will then be recognized as a PNG file by the browser.
+	let romlabel_buffer: Buffer | undefined = undefined;
+	let romlabel_index = assetList.findIndex(asset => asset.type === 'romlabel');
+	if (romlabel_index >= 0) {
+		romlabel_buffer = assetList[romlabel_index].buffer;
+		// Remove the romlabel from the assetList
+		assetList.splice(romlabel_index, 1);
+	}
 
-    for (const asset of assetList) {
-        // Main buffer (if nonzero length)
-        const hasBuffer = asset.buffer !== undefined && asset.buffer.length > 0;
-        if (hasBuffer) {
-            // Copy the buffer to avoid modifying the original
-            const resBuf = Buffer.from(asset.buffer);
-            // Update asset offsets
-            asset.start = offset;
-            asset.end = offset + resBuf.length;
-            buffers.push(resBuf);
-            offset += resBuf.length;
-        }
-        if (asset.texture_buffer && asset.texture_buffer.length > 0) {
-            const texBuf = Buffer.from(asset.texture_buffer);
-            asset.texture_start = offset;
-            asset.texture_end = offset + texBuf.length;
-            buffers.push(texBuf);
-            offset += texBuf.length;
-        }
-        // Per-asset metadata
-        const perMeta = asset.imgmeta ?? asset.audiometa;
-        if (perMeta) {
-            const metaBuf = Buffer.from(encodeBinary(perMeta));
-            asset.metabuffer_start = offset;
-            asset.metabuffer_end = offset + metaBuf.length;
-            buffers.push(metaBuf);
-            offset += metaBuf.length;
-        }
-        // Remove per-asset fields
-        delete asset.imgmeta;
-        delete asset.audiometa;
-        // Remove the buffer from the asset, so that it is not included in the final JSON output
-        delete asset.buffer;
-        delete asset.texture_buffer;
-    }
+	for (const asset of assetList) {
+		// Main buffer (if nonzero length)
+		const hasBuffer = asset.buffer !== undefined && asset.buffer.length > 0;
+		if (hasBuffer) {
+			// Copy the buffer to avoid modifying the original
+			const resBuf = Buffer.from(asset.buffer);
+			// Update asset offsets
+			asset.start = offset;
+			asset.end = offset + resBuf.length;
+			buffers.push(resBuf);
+			offset += resBuf.length;
+		}
+		if (asset.texture_buffer && asset.texture_buffer.length > 0) {
+			const texBuf = Buffer.from(asset.texture_buffer);
+			asset.texture_start = offset;
+			asset.texture_end = offset + texBuf.length;
+			buffers.push(texBuf);
+			offset += texBuf.length;
+		}
+		// Per-asset metadata
+		const perMeta = asset.imgmeta ?? asset.audiometa;
+		if (perMeta) {
+			const metaBuf = Buffer.from(encodeBinary(perMeta));
+			asset.metabuffer_start = offset;
+			asset.metabuffer_end = offset + metaBuf.length;
+			buffers.push(metaBuf);
+			offset += metaBuf.length;
+		}
+		// Remove per-asset fields
+		delete asset.imgmeta;
+		delete asset.audiometa;
+		// Remove the buffer from the asset, so that it is not included in the final JSON output
+		delete asset.buffer;
+		delete asset.texture_buffer;
+	}
 
-    // Global metadata
-    const binaryAssetListBuffer = Buffer.from(encodeBinary(assetList));
-    const globalMetadataOffset = offset;
-    const globalMetadataLength = binaryAssetListBuffer.length;
-    buffers.push(binaryAssetListBuffer);
+	// Global metadata
+	const binaryAssetListBuffer = Buffer.from(encodeBinary(assetList));
+	const globalMetadataOffset = offset;
+	const globalMetadataLength = binaryAssetListBuffer.length;
+	buffers.push(binaryAssetListBuffer);
 
-    // Footer
-    const rompackFooter = Buffer.alloc(16);
-    rompackFooter.writeBigUInt64LE(BigInt(globalMetadataOffset), 0);
-    rompackFooter.writeBigUInt64LE(BigInt(globalMetadataLength), 8);
-    buffers.push(rompackFooter);
+	// Footer
+	const rompackFooter = Buffer.alloc(16);
+	rompackFooter.writeBigUInt64LE(BigInt(globalMetadataOffset), 0);
+	rompackFooter.writeBigUInt64LE(BigInt(globalMetadataLength), 8);
+	buffers.push(rompackFooter);
 
-    // Write final output
-    const all = Buffer.concat(buffers);
-    const zipped = zip(all);
-    await writeFile(`./dist/${outfile}`, Buffer.concat([romlabel_buffer ?? Buffer.alloc(0), zipped]));
-    await writeFile('./rom/_ignore/romresources.json', JSON.stringify(assetList, null, 2));
+	// Write final output
+	const all = Buffer.concat(buffers);
+	const zipped = zip(all);
+	await writeFile(`./dist/${outfile}`, Buffer.concat([romlabel_buffer ?? Buffer.alloc(0), zipped]));
+	await writeFile('./rom/_ignore/romresources.json', JSON.stringify(assetList, null, 2));
 }
 
 export async function deployToServer(rom_name: string, title: string) {
-    throw new Error('Deploy is not implemented yet!');
+	throw new Error('Deploy is not implemented yet!');
 }
 
 /**
@@ -1186,48 +976,48 @@ export async function deployToServer(rom_name: string, title: string) {
  *                         or if no action is needed.
  */
 export async function buildBootromScriptIfNewer(debug: boolean, forceBuild: boolean): Promise<void> {
-    const romTsPath = join(__dirname, BOOTROM_TS_RELATIVE_PATH);
-    const romJsPath = join(__dirname, BOOTROM_JS_RELATIVE_PATH);
+	const romTsPath = join(__dirname, BOOTROM_TS_RELATIVE_PATH);
+	const romJsPath = join(__dirname, BOOTROM_JS_RELATIVE_PATH);
 
-    try {
-        await access(romTsPath);
-    } catch {
-        throw new Error(`"${BOOTROM_TS_FILENAME}" could not be found at "${romTsPath}"`);
-    }
+	try {
+		await access(romTsPath);
+	} catch {
+		throw new Error(`"${BOOTROM_TS_FILENAME}" could not be found at "${romTsPath}"`);
+	}
 
-    const romTsStats = await stat(romTsPath);
-    let romJsStats: Stats | undefined;
+	const romTsStats = await stat(romTsPath);
+	let romJsStats: Stats | undefined;
 
-    try {
-        await access(romJsPath);
-        romJsStats = await stat(romJsPath);
-    }
-    catch { } // Ignore error if rom.js does not exist yet
+	try {
+		await access(romJsPath);
+		romJsStats = await stat(romJsPath);
+	}
+	catch { } // Ignore error if rom.js does not exist yet
 
-    if (!romJsStats || romTsStats.mtime > romJsStats.mtime || forceBuild) {
-        try {
-            let options: any = {
-                entryPoints: [romTsPath],
-                bundle: true,
-                sourcesContent: false,
-                platform: 'browser',
-                target: 'es2020',
-                format: 'iife',
-                minify: true,
-                keepNames: true,
-                outfile: romJsPath,
-            };
-            if (debug) {
-                // In debug mode, we want to keep the source maps for easier debugging
-                options = { ...options, sourcemap: 'inline' }; // *We MUST do it like this, because 'sourcemap' is a flag and setting `sourcemap` to `false` still generates sourcemaps!*
-            }
-            await build(options);
-        } catch (e) {
-            throw new Error(`Error while compiling "${BOOTROM_TS_FILENAME}" with esbuild: ${e?.message ?? e} `);
-        }
-        return;
-    }
-    // rom.js is newer or up to date. No need to compile
+	if (!romJsStats || romTsStats.mtime > romJsStats.mtime || forceBuild) {
+		try {
+			let options: any = {
+				entryPoints: [romTsPath],
+				bundle: true,
+				sourcesContent: false,
+				platform: 'browser',
+				target: 'es2020',
+				format: 'iife',
+				minify: true,
+				keepNames: true,
+				outfile: romJsPath,
+			};
+			if (debug) {
+				// In debug mode, we want to keep the source maps for easier debugging
+				options = { ...options, sourcemap: 'inline' }; // *We MUST do it like this, because 'sourcemap' is a flag and setting `sourcemap` to `false` still generates sourcemaps!*
+			}
+			await build(options);
+		} catch (e) {
+			throw new Error(`Error while compiling "${BOOTROM_TS_FILENAME}" with esbuild: ${e?.message ?? e} `);
+		}
+		return;
+	}
+	// rom.js is newer or up to date. No need to compile
 }
 
 export const codeFileExtensions = ['.ts', '.glsl', '.js', '.jsx', '.tsx', '.html', '.css', '.json', '.xml'];
@@ -1243,68 +1033,68 @@ export const shouldCheckFile = (filename: string, checkCodeFiles: boolean, check
  * @returns {Promise<boolean>} A Promise that resolves with a boolean indicating whether a rebuild is required.
  */
 export async function isRebuildRequired(romname: string, bootloaderPath: string, resPath: string): Promise<boolean> {
-    const romFilePath = `./dist/${romname}.rom`;
-    const minifiedJsFilePath = `./rom/${romname}.js`;
+	const romFilePath = `./dist/${romname}.rom`;
+	const minifiedJsFilePath = `./rom/${romname}.js`;
 
-    async function checkPaths() {
-        try {
-            await access(romFilePath);
-            await access(minifiedJsFilePath);
-            return false;
-        } catch {
-            return true;
-        }
-    }
-    if (await checkPaths()) {
-        return true;
-    }
+	async function checkPaths() {
+		try {
+			await access(romFilePath);
+			await access(minifiedJsFilePath);
+			return false;
+		} catch {
+			return true;
+		}
+	}
+	if (await checkPaths()) {
+		return true;
+	}
 
-    const romStats = await stat(romFilePath);
-    const romMtime = romStats.mtime;
+	const romStats = await stat(romFilePath);
+	const romMtime = romStats.mtime;
 
-    const shouldRebuild = async (dir: string, checkCodeFiles: boolean, checkAssets: boolean): Promise<boolean> => {
-        try {
-            await access(dir);
-        } catch {
-            throw new Error(`Directory "${dir}" can't be accessed!`);
-        }
-        const entries = await readdir(dir, { withFileTypes: true });
+	const shouldRebuild = async (dir: string, checkCodeFiles: boolean, checkAssets: boolean): Promise<boolean> => {
+		try {
+			await access(dir);
+		} catch {
+			throw new Error(`Directory "${dir}" can't be accessed!`);
+		}
+		const entries = await readdir(dir, { withFileTypes: true });
 
-        for (let entry of entries) {
-            const entryPath = join(dir, entry.name);
+		for (let entry of entries) {
+			const entryPath = join(dir, entry.name);
 
-            if (entry.isDirectory()) {
-                if (entry.name === '_ignore') {
-                    continue;
-                }
-                const rebuild = await shouldRebuild(entryPath, checkCodeFiles, checkAssets);
-                if (rebuild) {
-                    return true;
-                }
-            } else {
-                if (shouldCheckFile(entry.name, checkCodeFiles, checkAssets)) {
-                    try {
-                        await access(entryPath);
-                        const entryStats = await stat(entryPath);
-                        const entryMtime = entryStats.mtime;
+			if (entry.isDirectory()) {
+				if (entry.name === '_ignore') {
+					continue;
+				}
+				const rebuild = await shouldRebuild(entryPath, checkCodeFiles, checkAssets);
+				if (rebuild) {
+					return true;
+				}
+			} else {
+				if (shouldCheckFile(entry.name, checkCodeFiles, checkAssets)) {
+					try {
+						await access(entryPath);
+						const entryStats = await stat(entryPath);
+						const entryMtime = entryStats.mtime;
 
-                        if (entryMtime > romMtime) {
-                            return true;
-                        }
-                    } catch {
-                        // File does not exist, ignore
-                    }
-                }
-            }
-        }
+						if (entryMtime > romMtime) {
+							return true;
+						}
+					} catch {
+						// File does not exist, ignore
+					}
+				}
+			}
+		}
 
-        return false;
-    };
+		return false;
+	};
 
-    const shouldCheckCodeFiles = dir => dir.startsWith(bootloaderPath);
-    const shouldCheckAssets = dir => dir.startsWith(resPath);
+	const shouldCheckCodeFiles = dir => dir.startsWith(bootloaderPath);
+	const shouldCheckAssets = dir => dir.startsWith(resPath);
 
-    return await shouldRebuild(bootloaderPath, shouldCheckCodeFiles(bootloaderPath), shouldCheckAssets(bootloaderPath)) ||
-        await shouldRebuild(resPath, shouldCheckCodeFiles(resPath), shouldCheckAssets(resPath)) ||
-        await shouldRebuild('src/bmsx', true, false);
+	return await shouldRebuild(bootloaderPath, shouldCheckCodeFiles(bootloaderPath), shouldCheckAssets(bootloaderPath)) ||
+		await shouldRebuild(resPath, shouldCheckCodeFiles(resPath), shouldCheckAssets(resPath)) ||
+		await shouldRebuild('src/bmsx', true, false);
 }
