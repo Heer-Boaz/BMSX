@@ -35,10 +35,10 @@
   "materials": [
     {
       "pbrMetallicRoughness": {
-        "baseColorFactor": [0.8, 0.2, 0.2, 1.0],
+        "baseColorFactor": [1.0, 1.0, 1.0, 1.0],
         "metallicFactor": 0.6,
         "roughnessFactor": 0.4,
-        "baseColorTexture": {"index": 0},
+        "baseColorTexture": {"index": 2},
         "metallicRoughnessTexture": {"index": 2}
       },
       "normalTexture": {"index": 1}

@@ -1,4 +1,4 @@
-import { AmbientLightObject, BGamepadButton, BaseModel, BehaviorTreeDefinition, BinaryCompressor, BootArgs, CameraObject, Component, Direction, DirectionalLightObject, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, Material, MeshObject, PointLightObject, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, TransformComponent, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, debugPrintBinarySnapshot, insavegame, new_area, new_vec2, new_vec3, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/bmsx';
+import { AmbientLightObject, BGamepadButton, BaseModel, BehaviorTreeDefinition, BinaryCompressor, BootArgs, CameraObject, Component, Direction, DirectionalLightObject, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MeshObject, PointLightObject, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, TransformComponent, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, debugPrintBinarySnapshot, insavegame, new_area, new_vec2, new_vec3, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/bmsx';
 import type { GLTFModel } from '../bmsx/rompack/rompack';
 import { BitmapId, ModelId } from './resourceids';
 
@@ -365,9 +365,9 @@ class Cube3D extends MeshObject {
         super('cube');
         const model = $.rom.model[ModelId.cube] as GLTFModel;
         this.setModel(model);
-        this.mesh.color = { r: 0.7, g: 0.2, b: 0.2, a: 1.0 };
-        this.mesh.atlasId = 255; // render without texture
-        this.mesh.material = new Material({ color: [0.7, 0.2, 0.2] });
+        // this.mesh.color = { r: 0.7, g: 0.2, b: 0.2, a: 1.0 };
+        // this.mesh.atlasId = 255; // render without texture
+        // this.mesh.material = new Material({ color: [0.7, 0.2, 0.2] });
         this.pos = new_vec3(0, 0, 0);
     }
 
@@ -385,11 +385,10 @@ class SmallCube3D extends MeshObject {
         super('smallCube');
         const model = $.rom.model[ModelId.cube] as GLTFModel;
         this.setModel(model);
-        this.mesh.color = { r: 0.2, g: 0.7, b: 0.2, a: 1.0 };
-        this.mesh.atlasId = 255;
-        this.mesh.material = new Material({ color: [0.2, 0.7, 0.2] });
+        // this.mesh.color = { r: 0.2, g: 0.7, b: 0.2, a: 1.0 };
+        // this.mesh.atlasId = 255;
+        // this.mesh.material = new Material({ color: [0.2, 0.7, 0.2] });
         this.scale = [0.5, 0.5, 0.5];
-        this.pos = new_vec3(1, 0, 0);
     }
 
     override run(): void {
@@ -486,7 +485,7 @@ class gamemodel extends BaseModel {
         const small = new SmallCube3D();
         _model.spawn(new bclass(), new_vec3(100, 100, 1000));
         _model.spawn(cube, new_vec3(0, 0, 0));
-        _model.spawn(small, new_vec3(0, 0, 0));
+        _model.spawn(small, new_vec3(10, 0, 0));
 
         const parentTf = cube.getComponent(TransformComponent);
         const childTf = small.getComponent(TransformComponent);
