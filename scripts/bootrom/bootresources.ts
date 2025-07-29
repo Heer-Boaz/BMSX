@@ -1,4 +1,4 @@
-import type { Area, AudioMeta, ImgMeta, Polygon, RomAsset, RomImgAsset, RomMeta, RomPack, GLTFModel } from '../../src/bmsx/rompack/rompack';
+import type { Area, AudioMeta, GLTFModel, ImgMeta, Polygon, RomAsset, RomImgAsset, RomMeta, RomPack } from '../../src/bmsx/rompack/rompack';
 import { decodeBinary } from '../../src/bmsx/serializer/binencoder';
 
 export async function loadImage(url: string): Promise<HTMLImageElement> {
@@ -304,7 +304,7 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
             }
             const imgAsset: RomImgAsset = {
                 ...res,
-                imgbin: img
+                imgbin: img,
             };
             romResult.img[res.resid] = imgAsset;
             romResult.img[res.resname] = imgAsset;

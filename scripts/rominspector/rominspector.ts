@@ -584,10 +584,10 @@ async function main() {
 					const texBuf = (selected as any).texture_start != null && (selected as any).texture_end != null
 						? rompack.slice((selected as any).texture_start, (selected as any).texture_end)
 						: undefined;
-					selected.buffer = await loadGLTFModelFromBuffer(rompack.slice(selected.start, selected.end), texBuf);
+					selected.buffer = await loadGLTFModelFromBuffer(rompack.slice(selected.start, selected.end), texBuf) as any;
 				}
 				metadataLines.push(`Model size: ${formatByteSize(selected.end - selected.start)}`);
-				const modelData = selected.buffer as GLTFModel;
+				const modelData = selected.buffer as unknown as GLTFModel;
 				const first = modelData.meshes[0];
 				if (first) {
 					asciiArt =
@@ -993,7 +993,7 @@ function generateAsciiArtFromImageInAtlas(atlasBuf: Buffer, imgmeta: ImgMeta, mo
 			return sizeString + generatePixelPerfectAsciiArt(subimage, width, height);
 		}
 
-		return sizeString + generateBrailleAsciiArt(subimage, width, height, modalWidth);
+		return generateBrailleAsciiArt(subimage, width, height, modalWidth);
 	} catch (e) {
 		return `[Error generating ASCII art from image: ${e.stack || e.message}]`;
 	}
