@@ -7,7 +7,7 @@ import * as contrib from 'blessed-contrib';
 import * as fs from 'fs/promises';
 import * as pako from 'pako';
 import { PNG } from 'pngjs';
-import type { AudioMeta, ImgMeta, RomAsset, RomMeta, asset_type, GLTFModel } from '../../src/bmsx/rompack/rompack';
+import type { asset_type, AudioMeta, GLTFModel, ImgMeta, RomAsset, RomMeta } from '../../src/bmsx/rompack/rompack';
 import { decodeBinary } from '../../src/bmsx/serializer/binencoder';
 import { loadModelFromBuffer as loadGLTFModelFromBuffer } from '../bootrom/bootresources';
 import { getZippedRomAndRomLabelFromBlob, loadAssetList, parseMetaFromBuffer } from '../bootrom/bootrom';
@@ -579,30 +579,37 @@ async function main() {
 				metadataLines.push(`Data size: ${formatByteSize(selected.end - selected.start)}`);
 				asciiArt = JSON.stringify(selected.buffer, null, 2);
 				break;
-                        case 'model':
-                                if (!selected.buffer || typeof (selected.buffer as any).meshes === 'undefined') {
-                                        const texBuf = (selected as any).texture_start != null && (selected as any).texture_end != null
-                                                ? rompack.slice((selected as any).texture_start, (selected as any).texture_end)
-                                                : undefined;
-                                        selected.buffer = await loadGLTFModelFromBuffer(rompack.slice(selected.start, selected.end), texBuf);
-                                }
-                                metadataLines.push(`Model size: ${formatByteSize(selected.end - selected.start)}`);
-                                const modelData = selected.buffer as GLTFModel;
-                                const first = modelData.meshes[0];
-                                if (first) {
-                                        asciiArt =
-                                                `Meshes: ${modelData.meshes.length}\n` +
-                                                `Vertices: ${first.positions.length / 3}\n` +
-                                                `UVs: ${first.texcoords ? first.texcoords.length / 2 : 0}\n` +
-                                                `Normals: ${first.normals ? first.normals.length / 3 : 0}`;
-                                        if (modelData.imageBuffers && modelData.imageBuffers[0]) {
-                                                const buf = Buffer.from(modelData.imageBuffers[0]);
-                                                asciiArt += '\n\n' + generateAsciiArtFromImage(buf, { atlassed: false } as any, getModalWidth());
-                                        }
-                                } else {
-                                        asciiArt = 'No mesh data';
-                                }
-                                break;
+			case 'model':
+				if (!selected.buffer || typeof (selected.buffer as any).meshes === 'undefined') {
+					const texBuf = (selected as any).texture_start != null && (selected as any).texture_end != null
+						? rompack.slice((selected as any).texture_start, (selected as any).texture_end)
+						: undefined;
+					selected.buffer = await loadGLTFModelFromBuffer(rompack.slice(selected.start, selected.end), texBuf);
+				}
+				metadataLines.push(`Model size: ${formatByteSize(selected.end - selected.start)}`);
+				const modelData = selected.buffer as GLTFModel;
+				const first = modelData.meshes[0];
+				if (first) {
+					asciiArt =
+						`Meshes: ${modelData.meshes.length}\n` +
+						`Vertices: ${first.positions.length / 3}\n` +
+						`UVs: ${first.texcoords ? first.texcoords.length / 2 : 0}\n` +
+						`Normals: ${first.normals ? first.normals.length / 3 : 0}\n` +
+						`Indices: ${first.indices ? first.indices.length : 0}\n` +
+						`MaterialIndex: ${first.materialIndex ? first.materialIndex : 'None'}\n` +
+						`Images: ${modelData.imageBuffers ? modelData.imageBuffers.length : 0}\n` +
+						`Animations: ${modelData.animations ? modelData.animations.length : 0}\n`;
+					if (modelData.imageBuffers) {
+						for (let i = 0; i < modelData.imageBuffers.length; i++) {
+							const imgBuf = Buffer.from(modelData.imageBuffers[i]);
+							asciiArt += `\nImage ${i + 1} (${formatByteSize(imgBuf.byteLength)}):\n`;
+							asciiArt += generateAsciiArtFromImage(imgBuf, { atlassed: false } as any, getModalWidth());
+						}
+					}
+				} else {
+					asciiArt = 'No mesh data';
+				}
+				break;
 			case 'code': {
 				let code = '';
 				// Load the code buffer from the ROM pack
@@ -980,12 +987,13 @@ function generateAsciiArtFromImageInAtlas(atlasBuf: Buffer, imgmeta: ImgMeta, mo
 	const { subimage, width, height } = extractSubimageAndSizeFromAtlassedImage(atlasBuf, imgmeta);
 	if (!subimage) return '[Unable to extract subimage]';
 	try {
+		let sizeString = `Size: ${width}x${height}\n`;
 		// If the image is too large, we will not render it pixel-perfect
 		if (width <= PER_PIXEL_RENDERING_THRESHOLD && height <= PER_PIXEL_RENDERING_THRESHOLD) {
-			return generatePixelPerfectAsciiArt(subimage, width, height);
+			return sizeString + generatePixelPerfectAsciiArt(subimage, width, height);
 		}
 
-		return generateBrailleAsciiArt(subimage, width, height, modalWidth);
+		return sizeString + generateBrailleAsciiArt(subimage, width, height, modalWidth);
 	} catch (e) {
 		return `[Error generating ASCII art from image: ${e.stack || e.message}]`;
 	}
@@ -993,15 +1001,17 @@ function generateAsciiArtFromImageInAtlas(atlasBuf: Buffer, imgmeta: ImgMeta, mo
 
 function generateAsciiArtFromImage(img: Buffer, imgmeta: ImgMeta, modalWidth: number): string {
 	try {
+		let sizeString = '';
 		const imagePNG = PNG.sync.read(img);
+		sizeString += `Size: ${imagePNG.width}x${imagePNG.height}\n`;
 		if (!imagePNG || !imagePNG.data) return '[Invalid image data]';
 
-		// If the image is too large, we will not render it pixel-perfect
 		if (imagePNG.width <= PER_PIXEL_RENDERING_THRESHOLD && imagePNG.height <= PER_PIXEL_RENDERING_THRESHOLD) {
-			return generatePixelPerfectAsciiArt(imagePNG.data, imagePNG.width, imagePNG.height);
+			return sizeString + generatePixelPerfectAsciiArt(imagePNG.data, imagePNG.width, imagePNG.height);
 		}
 
-		return generateBrailleAsciiArt(imagePNG.data, imagePNG.width, imagePNG.height, modalWidth);
+		// If the image is too large, we will not render it pixel-perfect
+		return sizeString + generateBrailleAsciiArt(imagePNG.data, imagePNG.width, imagePNG.height, modalWidth);
 	} catch (e) {
 		return `[Error generating ASCII art from image: ${e.stack || e.message}]`;
 	}
