@@ -365,10 +365,6 @@ class Cube3D extends MeshObject {
         super('cube');
         const model = $.rom.model[ModelId.cube] as GLTFModel;
         this.setModel(model);
-        // this.mesh.color = { r: 0.7, g: 0.2, b: 0.2, a: 1.0 };
-        // this.mesh.atlasId = 255; // render without texture
-        // this.mesh.material = new Material({ color: [0.7, 0.2, 0.2] });
-        this.pos = new_vec3(0, 0, 0);
     }
 
     override run(): void {
@@ -381,13 +377,17 @@ class Cube3D extends MeshObject {
 @insavegame
 @attach_components(TransformComponent)
 class SmallCube3D extends MeshObject {
-    constructor() {
-        super('smallCube');
+    constructor(overrideTextureIndex?: number) {
+        super(`smallCube${overrideTextureIndex ?? ''}`);
         const model = $.rom.model[ModelId.cube] as GLTFModel;
+        if (overrideTextureIndex !== undefined) {
+            // Override the base color texture index in the first material
+            model.materials[0] = {
+                ...model.materials[0],
+                baseColorTexture: overrideTextureIndex,
+            };
+        }
         this.setModel(model);
-        // this.mesh.color = { r: 0.2, g: 0.7, b: 0.2, a: 1.0 };
-        // this.mesh.atlasId = 255;
-        // this.mesh.material = new Material({ color: [0.2, 0.7, 0.2] });
         this.scale = [0.5, 0.5, 0.5];
     }
 
@@ -482,16 +482,23 @@ class gamemodel extends BaseModel {
 
     public override do_one_time_game_init(): this {
         const cube = new Cube3D();
-        const small = new SmallCube3D();
+        const small = new SmallCube3D(0);
+        const small2 = new SmallCube3D(2);
         _model.spawn(new bclass(), new_vec3(100, 100, 1000));
         _model.spawn(cube, new_vec3(0, 0, 0));
-        _model.spawn(small, new_vec3(10, 0, 0));
+        _model.spawn(small, new_vec3(5, 0, 0));
+        _model.spawn(small2, new_vec3(5, 5, 5));
 
         const parentTf = cube.getComponent(TransformComponent);
         const childTf = small.getComponent(TransformComponent);
+        const childTf2 = small2.getComponent(TransformComponent);
         if (parentTf && childTf) {
             childTf.parentNode = parentTf;
             childTf.position = [1, 0, 0];
+            if (childTf2) {
+                childTf2.parentNode = childTf;
+                childTf2.position = [0, 1, 0];
+            }
         }
 
         const cam1 = new CameraObject('cam1');
@@ -507,7 +514,7 @@ class gamemodel extends BaseModel {
 
         const ambient = new AmbientLightObject([1.0, 1.0, 1.0], .2, 'amb');
         const sun = new DirectionalLightObject([0.5, -1.0, -0.5], [1.0, 1.0, 1.0], 1, 'sun');
-        const extraSun = new DirectionalLightObject([-0.5, -1.0, 0.5], [0.8, 0.8, 1.0], 1, 'extraSun');
+        const extraSun = new DirectionalLightObject([-0.5, -1.0, 0.5], [1.0, 1.0, 1.0], 1, 'extraSun');
         const lamp = new PointLightObject([2.0, 2.0, 2.0], [1.0, 1.0, 1.0], 6.0, 2, 'lamp');
 
         _model.spawn(ambient);
