@@ -36,12 +36,10 @@
     {
       "pbrMetallicRoughness": {
         "baseColorFactor": [1.0, 1.0, 1.0, 1.0],
-        "metallicFactor": 0.6,
-        "roughnessFactor": 0.4,
-        "baseColorTexture": {"index": 2},
-        "metallicRoughnessTexture": {"index": 2}
-      },
-      "normalTexture": {"index": 1}
+        "metallicFactor": 0.0,
+        "roughnessFactor": 1.0,
+        "baseColorTexture": {"index": 1}
+      }
     }
   ],
   "meshes": [
