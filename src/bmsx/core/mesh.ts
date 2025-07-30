@@ -3,8 +3,8 @@ import { Material } from '../render/3d/material';
 import { bmat } from '../render/3d/math3d';
 import { ShadowMap } from '../render/3d/shadowmap';
 import { DEFAULT_VERTEX_COLOR } from '../render/glview.constants';
-import { Color, DrawMeshOptions } from '../render/view';
 import { addModelToScene, removeModelFromScene } from '../render/modelutils';
+import { Color, DrawMeshOptions } from '../render/view';
 import type { GLTFModel, vec3arr } from '../rompack/rompack';
 import { insavegame } from '../serializer/gameserializer';
 import { GameObject } from './gameobject';
@@ -47,26 +47,50 @@ export abstract class MeshObject extends GameObject {
     }
 
     /** Apply model data to this mesh */
-    public setModel(model: GLTFModel): void {
-        addModelToScene(model);
-        this._model = model;
-        const mesh = model.meshes[0];
+    public setModel(meshModel: GLTFModel): void {
+        this._model = meshModel;
+        const mesh = meshModel.meshes[0];
         if (!mesh) return;
         this.mesh.positions = mesh.positions;
         this.mesh.texcoords = mesh.texcoords ?? new Float32Array();
         this.mesh.normals = mesh.normals ?? null;
         this.mesh.indices = mesh.indices;
         this.mesh.material = undefined;
-        if (model.materials && mesh.materialIndex !== undefined) {
-            const mat = model.materials[mesh.materialIndex];
+        if (meshModel.materials && mesh.materialIndex !== undefined) {
+            const mat = meshModel.materials[mesh.materialIndex];
+            let albedo = mat.baseColorTexture;
+            let normal = mat.normalTexture;
+            let metallicRoughness = mat.metallicRoughnessTexture;
+            if (meshModel.textures) {
+                if (albedo !== undefined) albedo = meshModel.textures[albedo] ?? albedo;
+                if (normal !== undefined) normal = meshModel.textures[normal] ?? normal;
+                if (metallicRoughness !== undefined) metallicRoughness = meshModel.textures[metallicRoughness] ?? metallicRoughness;
+            }
             this.mesh.material = new Material({
-                color: mat.baseColorFactor ? [mat.baseColorFactor[0], mat.baseColorFactor[1], mat.baseColorFactor[2]] : [1, 1, 1],
+                color: mat.baseColorFactor ? [...mat.baseColorFactor] : [1, 1, 1, 1],
                 textures: {
-                    albedo: mat.baseColorTexture !== undefined ? String(mat.baseColorTexture) : undefined,
-                    normal: mat.normalTexture !== undefined ? String(mat.normalTexture) : undefined,
-                    metallicRoughness: mat.metallicRoughnessTexture !== undefined ? String(mat.metallicRoughnessTexture) : undefined,
+                    albedo: albedo !== undefined ? albedo : undefined,
+                    normal: normal !== undefined ? normal : undefined,
+                    metallicRoughness: metallicRoughness !== undefined ? metallicRoughness : undefined,
+                },
+            });
+            addModelToScene(meshModel).then((gpuTextureKeys) => {
+                // if (!meshModel.runtimeImages || !this.mesh.material) return;
+                // const keys = meshModel.runtimeImages;
+                if (!this.mesh.material) return;
+                const tex = this.mesh.material.textures;
+                if (tex.albedo !== undefined) {
+                    this.mesh.material.gpuTextures.albedo = gpuTextureKeys[tex.albedo];
+                }
+                if (tex.normal !== undefined) {
+                    this.mesh.material.gpuTextures.normal = gpuTextureKeys[tex.normal];
+                }
+                if (tex.metallicRoughness !== undefined) {
+                    this.mesh.material.gpuTextures.metallicRoughness = gpuTextureKeys[tex.metallicRoughness];
                 }
             });
+        } else {
+            addModelToScene(meshModel);
         }
     }
 

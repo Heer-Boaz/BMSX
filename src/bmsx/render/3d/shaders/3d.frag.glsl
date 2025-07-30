@@ -3,8 +3,10 @@ precision mediump float;
 
 uniform sampler2D u_texture0;
 uniform sampler2D u_texture1;
+uniform sampler2D u_albedoTexture;
+uniform bool u_useAlbedoTexture;
 uniform float u_ditherIntensity;
-uniform vec3 u_materialColor;
+uniform vec4 u_materialColor;
 uniform sampler2D u_shadowMap;
 uniform mat4 u_lightMatrix;
 uniform float u_shadowStrength;
@@ -83,7 +85,9 @@ float bayer(vec2 pos) {
 
 void main() {
     vec4 texColor;
-    if(v_atlas_id == 255u){
+    if(u_useAlbedoTexture){
+        texColor = texture(u_albedoTexture, v_texcoord) * v_color_override;
+    } else if(v_atlas_id == 255u){
         texColor = v_color_override;
     } else {
         switch(v_atlas_id){
@@ -119,7 +123,7 @@ void main() {
         }
     }
 
-    texColor.rgb *= u_materialColor;
+    texColor.rgba *= u_materialColor;
 
     vec4 lightPos = u_lightMatrix * vec4(v_worldPos, 1.0);
     vec3 proj = lightPos.xyz / lightPos.w;

@@ -1,4 +1,4 @@
-import { Size } from '../bmsx';
+import { Size, TextureParams } from '../bmsx';
 import { MAX_SPRITES, VERTEXCOORDS_SIZE } from './glview.constants';
 import { getWebGLErrorString } from './glview.helpers';
 
@@ -104,6 +104,24 @@ export function glCreateTexture(gl: WebGL2RenderingContext, img?: HTMLImageEleme
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     glCheckError(gl, 'createTexture');
     return result;
+}
+
+export function glCreateTextureFromImage(gl: WebGL2RenderingContext, img: ImageBitmap, glTextureToBind: number, desc: TextureParams): WebGLTexture {
+    const prevActive = gl.getParameter(gl.ACTIVE_TEXTURE);
+    gl.activeTexture(glTextureToBind);
+    const prevTex = gl.getParameter(gl.TEXTURE_BINDING_2D);
+
+    const tex = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, desc.wrapS ?? gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, desc.wrapT ?? gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, desc.minFilter ?? gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, desc.magFilter ?? gl.NEAREST);
+
+    gl.bindTexture(gl.TEXTURE_2D, prevTex);
+    gl.activeTexture(prevActive);
+    return tex;
 }
 
 export function glSwitchProgram(gl: WebGL2RenderingContext, program: WebGLProgram): void {

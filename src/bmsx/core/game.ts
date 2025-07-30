@@ -13,7 +13,7 @@ import { BaseModel } from "./basemodel";
 import { EventEmitter } from "./eventemitter";
 import { GameObject } from "./gameobject";
 import { Registry } from "./registry";
-import { TextureManager } from "../render/texturemanager";
+import { TextureManager, WebGLBackend } from "../render/texturemanager";
 
 /**
  * Declare global variables and types.
@@ -1025,11 +1025,12 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
                 BaseView.imgassets = rom.img;
                 EventEmitter.instance; // Init event emitter
                 Input.initialize(startingGamepadIndex ?? undefined); // Init input module
-                new TextureManager(); // register texture manager
                 if ($.input.isOnscreenGamepadEnabled) {
-			$.input.enableOnscreenGamepad();
-		}
-		$.view.init(); // Init the view. Placed here to ensure that the Game object is available to the view and that the Input module is initialized
+                        $.input.enableOnscreenGamepad();
+                }
+                $.view.init(); // Init the view. Placed here to ensure that the Game object is available to the view and that the Input module is initialized
+                const gl = ($.view as any).glctx as WebGL2RenderingContext | undefined;
+                new TextureManager(gl ? new WebGLBackend(gl) : undefined);
 		await SM.init(rom['audio'], sndcontext, GameOptions.VolumePercentage, gainnode);
 		try {
 			await PSG.init(sndcontext, GameOptions.VolumePercentage, gainnode);

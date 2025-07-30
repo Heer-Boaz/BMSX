@@ -1,4 +1,4 @@
-import { Identifier } from '../../bmsx';
+import { Identifier } from '../../core/game';
 import type { Size, vec3, vec3arr } from '../../rompack/rompack';
 import { glCreateBuffer, glCreateElementBuffer, glLoadShader, glSetupAttributeFloat, glSetupAttributeInt, glSwitchProgram } from '../glutils';
 import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS } from '../glview.constants';
@@ -44,6 +44,8 @@ let shadowMapLocation3D: WebGLUniformLocation;
 let lightMatrixLocation3D: WebGLUniformLocation;
 let shadowStrengthLocation3D: WebGLUniformLocation;
 let vertShaderScaleLocation3D: WebGLUniformLocation;
+let albedoTextureLocation3D: WebGLUniformLocation;
+let useAlbedoTextureLocation3D: WebGLUniformLocation;
 let vertexBuffer3D: WebGLBuffer;
 let texcoordBuffer3D: WebGLBuffer;
 let color_overrideBuffer3D: WebGLBuffer;
@@ -187,6 +189,8 @@ export function setDefaultUniformValues(gl: WebGL2RenderingContext, defaultScale
     gl.uniform3fv(ambientColorLocation3D, new Float32Array([1.0, 1.0, 1.0]));
     gl.uniform1f(ambientIntensityLocation3D, 0);
     gl.uniform1f(vertShaderScaleLocation3D, defaultScale);
+    gl.uniform1i(albedoTextureLocation3D, 2);
+    gl.uniform1i(useAlbedoTextureLocation3D, 0);
 }
 
 export function setupBuffers3D(gl: WebGL2RenderingContext): void {
@@ -366,6 +370,8 @@ export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
     lightMatrixLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_lightMatrix')!;
     shadowStrengthLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_shadowStrength')!;
     vertShaderScaleLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_scale')!;
+    albedoTextureLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_albedoTexture')!;
+    useAlbedoTextureLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_useAlbedoTexture')!;
 }
 
 export function setupSkyboxLocations(gl: WebGL2RenderingContext): void {
@@ -385,10 +391,10 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
     gl.viewport(0, 0, canvasWidth, canvasHeight);
 
-    if (skyboxTexture) {
-        drawSkybox(gl);
-        glSwitchProgram(gl, gameShaderProgram3D);
-    }
+    // if (skyboxTexture) {
+    //     drawSkybox(gl);
+    //     glSwitchProgram(gl, gameShaderProgram3D);
+    // }
 
     gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer3D);
     gl.vertexAttribPointer(vertexLocation3D, 3, gl.FLOAT, false, 0, 0);
@@ -439,8 +445,50 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
             gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.indices, gl.DYNAMIC_DRAW);
         }
 
-        const matColor = mesh.material?.color ?? [1, 1, 1];
-        gl.uniform3fv(materialColorLocation3D, new Float32Array(matColor));
+        const matColor = mesh.material?.color ?? [1, 1, 1, 1];
+        gl.uniform4fv(materialColorLocation3D, new Float32Array(matColor));
+        gl.uniform1i(useAlbedoTextureLocation3D, 0);
+        if (mesh.material?.gpuTextures.albedo) {
+            // Find the texture in the texture manager
+            const key = mesh.material.gpuTextures.albedo;
+            const texHandle = $.texmanager.getTexture(key);
+            if (!texHandle) {
+                console.warn(`Albedo texture not found for mesh: ${mesh.material.gpuTextures.albedo}`);
+                gl.uniform1i(albedoTextureLocation3D, 0);
+                gl.uniform1i(useAlbedoTextureLocation3D, 0);
+                continue;
+            }
+            // Check whether the texture is a valid WebGL texture
+            if (!(texHandle instanceof WebGLTexture)) {
+                console.warn(`Albedo texture is not a valid WebGL texture: ${mesh.material.gpuTextures.albedo}`);
+                gl.uniform1i(albedoTextureLocation3D, 0);
+                gl.uniform1i(useAlbedoTextureLocation3D, 0);
+                continue;
+            }
+            // Check if the texture is already bound to TEXTURE2
+            const boundTexture = gl.getParameter(gl.TEXTURE_BINDING_2D);
+            if (boundTexture !== texHandle) {
+                gl.bindTexture(gl.TEXTURE_2D, texHandle);
+            }
+            // Check if the texture is already active on TEXTURE2
+            const activeTexture = gl.getParameter(gl.ACTIVE_TEXTURE);
+            if (activeTexture !== gl.TEXTURE2) {
+                gl.activeTexture(gl.TEXTURE2);
+            }
+            // Check whether the contents of the texture are valid
+            const isTextureValid = gl.isTexture(texHandle);
+            if (!isTextureValid) {
+                console.warn(`Albedo texture is not valid: ${mesh.material.gpuTextures.albedo}`);
+                gl.uniform1i(albedoTextureLocation3D, 0);
+                gl.uniform1i(useAlbedoTextureLocation3D, 0);
+                continue;
+            }
+
+            gl.bindTexture(gl.TEXTURE_2D, texHandle);
+            gl.uniform1i(useAlbedoTextureLocation3D, 1);
+        } else {
+            gl.uniform1i(useAlbedoTextureLocation3D, 0);
+        }
 
         if (mesh.shadow) {
             gl.activeTexture(gl.TEXTURE8);

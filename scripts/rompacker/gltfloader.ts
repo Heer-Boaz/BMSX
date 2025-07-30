@@ -2,7 +2,7 @@ import type { GLTFMesh, GLTFModel } from '../../src/bmsx/rompack/rompack';
 const { join } = require('path');
 const { readFile } = require('fs/promises');
 
-export async function loadGLTFModel(data: string, dir: string): Promise<GLTFModel> {
+export async function loadGLTFModel(data: string, dir: string, resname: string): Promise<GLTFModel> {
     const json = JSON.parse(data);
 
     async function getBuffer(uri: string): Promise<Uint8Array> {
@@ -81,6 +81,9 @@ export async function loadGLTFModel(data: string, dir: string): Promise<GLTFMode
         }
     }
 
+    const textures = json.textures || [];
+    const textureSources: number[] = textures.map((t: any) => t.source ?? -1);
+
     const materials = (json.materials || []).map((m: any) => ({
         baseColorFactor: m.pbrMetallicRoughness?.baseColorFactor,
         metallicFactor: m.pbrMetallicRoughness?.metallicFactor,
@@ -115,7 +118,7 @@ export async function loadGLTFModel(data: string, dir: string): Promise<GLTFMode
         channels: a.channels || [],
     }));
 
-    const model: GLTFModel = { meshes, materials, animations, imageURIs };
+    const model: GLTFModel = { name: resname, meshes, materials, animations, imageURIs, textures: textureSources };
     model.imageBuffers = imageBuffers.map(buf => {
         const arr = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
         return arr.slice().buffer as ArrayBuffer;
