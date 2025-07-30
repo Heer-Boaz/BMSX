@@ -1,5 +1,6 @@
 import { Identifier, RegisterablePersistent } from '../core/game';
 import { Registry } from '../core/registry';
+import { GLTFModel, Index2GpuTexture } from '../rompack/rompack';
 import { glCreateTextureFromImage } from './glutils';
 
 export interface TextureIdentifier {
@@ -76,6 +77,28 @@ export class TextureManager implements RegisterablePersistent {
         this.backend = backend;
     }
 
+    public async fetchModelTextures(meshModel: GLTFModel): Promise<Index2GpuTexture> {
+        if (!meshModel.materials || meshModel.materials.length === 0) return {};
+        if (!meshModel.imageURIs && !meshModel.imageBuffers) return {};
+        const count = meshModel.imageBuffers ? meshModel.imageBuffers.length : (meshModel.imageURIs?.length ?? 0);
+        const gpuTextures: Index2GpuTexture = {};
+        for (let i = 0; i < count; i++) {
+            const buf = meshModel.imageBuffers ? meshModel.imageBuffers[i] : undefined;
+            const key = await this.loadTextureFromBuffer(buf, { modelName: meshModel.name, modelImageIndex: i });
+            gpuTextures[i] = key;
+        }
+        return gpuTextures;
+    }
+
+    public async releaseModelTextures(model: GLTFModel): Promise<void> {
+        const textureManager = $.texmanager;
+        if (model.imageURIs) {
+            for (const uri of model.imageURIs) {
+                if (uri) textureManager.releaseByUri(uri, {});
+            }
+        }
+    }
+
     private makeKey(uri: string, desc: TextureParams): TextureKey {
         const descKey = JSON.stringify(desc);
         return `${uri}|${descKey}`;
@@ -95,59 +118,61 @@ export class TextureManager implements RegisterablePersistent {
         return bufferToImageBitmap(dataBuffer);
     }
 
-    public async acquireFromBuffer(buffer: ArrayBuffer, identifier: TextureIdentifier, desc: TextureParams = {}): Promise<TextureKey> {
+    private async loadAndCacheTexture(key: string, loadBitmapFn: () => Promise<ImageBitmap>, desc: TextureParams): Promise<TextureKey> {
         if (!this.backend) throw new Error('TextureManager backend not set');
-        const key = `${identifier.modelName}:${identifier.modelImageIndex}`;
-        const gpuCached = this.gpuCache.get(key);
+
+        // Check for existing GPU entry first (fast path for already-loaded textures)
+        let gpuCached = this.gpuCache.get(key);
         if (gpuCached) {
             gpuCached.refCount++;
-            return key; // Return existing key without loading again
+            return key;
         }
+
+        // If no image entry, create a promise for the full process
         let imgEntry = this.imageCache.get(key);
         if (!imgEntry) {
-            const promise = this.loadBitmap('', buffer);
-            imgEntry = { refCount: 1, promise };
+            // Cache a promise for the entire acquire (image + GPU creation)
+            const acquirePromise = (async () => {
+                const bitmap = await loadBitmapFn();
+                // At this point, create GPU texture (no race possible since promise is shared)
+                const handle = this.backend!.createTextureFromImage(bitmap, desc);
+                this.gpuCache.set(key, { handle, refCount: 1 }); // refCount starts at 1 for the creator
+                return bitmap; // Return bitmap if needed, but mainly for awaiting
+            })();
+
+            imgEntry = { refCount: 1, promise: acquirePromise };
             this.imageCache.set(key, imgEntry);
-            imgEntry.bitmap = await promise;
+
+            // Await the full promise
+            imgEntry.bitmap = await acquirePromise;
             imgEntry.promise = undefined;
         } else {
             imgEntry.refCount++;
             if (imgEntry.promise) {
+                // Await the shared full-acquire promise
                 await imgEntry.promise.then(b => { imgEntry!.bitmap = b; imgEntry!.promise = undefined; });
             }
+            // After await, GPU should exist; increment its refCount
+            gpuCached = this.gpuCache.get(key);
+            if (gpuCached) {
+                gpuCached.refCount++;
+            } else {
+                // This shouldn't happen with shared promise, but log if paranoid
+                console.error(`GPU cache missing after shared acquire for key: ${key}`);
+            }
         }
-        const handle = this.backend.createTextureFromImage(imgEntry.bitmap!, desc);
-        this.gpuCache.set(key, { handle, refCount: 1 });
-        return key; // Return the key for the newly created texture
+
+        return key;
     }
 
-    public async acquireFromUri(uri: string, _identifier: TextureIdentifier, desc: TextureParams = {}, buffer?: ArrayBuffer): Promise<TextureKey> {
-        if (!this.backend) throw new Error('TextureManager backend not set');
+    public async loadTextureFromBuffer(buffer: ArrayBuffer, identifier: TextureIdentifier, desc: TextureParams = {}): Promise<TextureKey> {
+        const key = `${identifier.modelName}:${identifier.modelImageIndex}`;
+        return this.loadAndCacheTexture(key, () => this.loadBitmap('', buffer), desc);
+    }
+
+    public async fetchTextureFromUri(uri: string, _identifier: TextureIdentifier, desc: TextureParams = {}, buffer?: ArrayBuffer): Promise<TextureKey> {
         const key = this.makeKey(uri, desc);
-
-        const gpuCached = this.gpuCache.get(key);
-        if (gpuCached) {
-            gpuCached.refCount++;
-            return key; // Return existing key without loading again
-        }
-
-        let imgEntry = this.imageCache.get(key);
-        if (!imgEntry) {
-            const promise = this.loadBitmap(uri, buffer);
-            imgEntry = { refCount: 1, promise };
-            this.imageCache.set(key, imgEntry);
-            imgEntry.bitmap = await promise;
-            imgEntry.promise = undefined;
-        } else {
-            imgEntry.refCount++;
-            if (imgEntry.promise) {
-                await imgEntry.promise.then(b => { imgEntry!.bitmap = b; imgEntry!.promise = undefined; });
-            }
-        }
-
-        const handle = this.backend.createTextureFromImage(imgEntry.bitmap!, desc);
-        this.gpuCache.set(key, { handle, refCount: 1 });
-        return key; // Return the key for the newly created texture
+        return this.loadAndCacheTexture(key, () => this.loadBitmap(uri, buffer), desc);
     }
 
     public getImage(key: ImageKey): ImageBitmap | undefined {

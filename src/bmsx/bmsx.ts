@@ -42,7 +42,6 @@ export * from './render/3d/meshinstance';
 export * from './render/3d/shadowmap';
 export * from './render/glview';
 export * from './render/texturemanager';
-export * from './render/modelutils';
 export * from './render/textwriter';
 export * from './render/view';
 export * from './rompack/rompack';

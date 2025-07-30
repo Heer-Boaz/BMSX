@@ -4,6 +4,7 @@ import { gamePaused, gameResumed } from "../debugger/rewindui";
 import { Input } from "../input/input";
 import type { InputMap, VibrationParams } from "../input/inputtypes";
 import { ActionState, ActionStateQuery } from '../input/inputtypes';
+import { TextureManager, WebGLBackend } from "../render/texturemanager";
 import { TextWriter } from "../render/textwriter";
 import { BaseView, Color, DrawImgOptions, DrawRectOptions } from "../render/view";
 import { Area, RomPack, Size, vec2, vec2arr, vec3, Vector, type vec3arr } from "../rompack/rompack";
@@ -13,7 +14,6 @@ import { BaseModel } from "./basemodel";
 import { EventEmitter } from "./eventemitter";
 import { GameObject } from "./gameobject";
 import { Registry } from "./registry";
-import { TextureManager, WebGLBackend } from "../render/texturemanager";
 
 /**
  * Declare global variables and types.
@@ -867,13 +867,13 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	 */
 	public viewAs<T extends BaseView = BaseView>(): T { return this.registry.get<T>('view'); }
 
-        public get view(): V { return this.viewAs<V>(); }
+	public get view(): V { return this.viewAs<V>(); }
 
-        public get event_emitter(): EventEmitter { return this.registry.get<EventEmitter>('event_emitter'); }
+	public get event_emitter(): EventEmitter { return this.registry.get<EventEmitter>('event_emitter'); }
 
-        public get input(): Input { return this.registry.get<Input>('input'); }
-        public get texmanager(): TextureManager { return this.registry.get<TextureManager>('texmanager'); }
-        public get registry(): Registry { return Registry.instance; }
+	public get input(): Input { return this.registry.get<Input>('input'); }
+	public get texmanager(): TextureManager { return this.registry.get<TextureManager>('texmanager'); }
+	public get registry(): Registry { return Registry.instance; }
 	public get sndmaster(): SM { return SM; }
 
 	public emit(event_name: string, emitter: Identifiable, ...args: any[]) {
@@ -1022,15 +1022,15 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 		global['debug'] = this.debug;
 		global['$rom'] = rom;
 
-                BaseView.imgassets = rom.img;
-                EventEmitter.instance; // Init event emitter
-                Input.initialize(startingGamepadIndex ?? undefined); // Init input module
-                if ($.input.isOnscreenGamepadEnabled) {
-                        $.input.enableOnscreenGamepad();
-                }
-                $.view.init(); // Init the view. Placed here to ensure that the Game object is available to the view and that the Input module is initialized
-                const gl = ($.view as any).glctx as WebGL2RenderingContext | undefined;
-                new TextureManager(gl ? new WebGLBackend(gl) : undefined);
+		BaseView.imgassets = rom.img;
+		EventEmitter.instance; // Init event emitter
+		Input.initialize(startingGamepadIndex ?? undefined); // Init input module
+		if ($.input.isOnscreenGamepadEnabled) {
+			$.input.enableOnscreenGamepad();
+		}
+		$.view.init(); // Init the view. Placed here to ensure that the Game object is available to the view and that the Input module is initialized
+		const gl = ($.view as any).glctx as WebGL2RenderingContext | undefined;
+		new TextureManager(gl ? new WebGLBackend(gl) : undefined);
 		await SM.init(rom['audio'], sndcontext, GameOptions.VolumePercentage, gainnode);
 		try {
 			await PSG.init(sndcontext, GameOptions.VolumePercentage, gainnode);
