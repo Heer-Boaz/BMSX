@@ -724,7 +724,7 @@ export async function generateRomAssets(resources: Resource[]) {
 			case 'model': {
 				const text = res.buffer.toString('utf8');
 				const dir = parse(res.filepath).dir;
-				const parsed = await loadGLTFModel(text, dir);
+				const parsed = await loadGLTFModel(text, dir, resname);
 
 				let texOffset = 0;
 				const imageOffsets: { start: number; end: number }[] = [];
@@ -750,6 +750,7 @@ export async function generateRomAssets(resources: Resource[]) {
 					materials: parsed.materials,
 					animations: parsed.animations,
 					imageOffsets,
+					textures: parsed.textures,
 				};
 				buffer = encodeBinary(obj);
 				const texture_buffer = Buffer.concat(texBuffers);
@@ -999,11 +1000,11 @@ export async function buildBootromScriptIfNewer(debug: boolean, forceBuild: bool
 			let options: any = {
 				entryPoints: [romTsPath],
 				bundle: true,
-				sourcesContent: false,
+				sourcesContent: debug ? true : false, // Don't include source content in production builds
 				platform: 'browser',
 				target: 'es2020',
 				format: 'iife',
-				minify: true,
+				minify: debug ? false : true, // Don't minify in debug mode
 				keepNames: true,
 				outfile: romJsPath,
 			};

@@ -1,3 +1,4 @@
+import { TextureKey } from '../render/texturemanager';
 /*
  * Enum representing the type of an audio asset.
  */
@@ -8,6 +9,7 @@ export type AudioType = 'sfx' | 'music';
  * Example: [x, y]
  */
 export type vec2arr = [number, number] | [number, number, number];
+
 
 /**
  * Alternative representation of a 2D vector as an array.
@@ -168,19 +170,23 @@ export interface GLTFAnimation {
 	channels: GLTFAnimationChannel[];
 }
 
+export type Index2GpuTexture = Record<number, TextureKey>;
 export interface GLTFModel {
+	name: string;
 	meshes: GLTFMesh[];
 	materials?: GLTFMaterial[];
 	animations?: GLTFAnimation[];
+	/** Mapping from texture index to image index */
+	textures?: number[];
 	imageURIs?: string[];
 	imageOffsets?: { start: number; end: number }[];
 	imageBuffers?: ArrayBuffer[];
-	runtimeImages?: (HTMLImageElement | ArrayBuffer)[]; // filled at runtime
+	gpuTextures?: Index2GpuTexture;
 }
 
 export type OBJModel = GLTFModel;
 export interface RomPack {
-	rom: ArrayBuffer, // The binary buffer of the ROM pack, containing all assets, including images, audio and code.
+	rom: ArrayBuffer; // The binary buffer of the ROM pack, containing all assets, including images, audio and code.
 	img: id2imgres; // Reference to the loaded image assets in the ROM pack, including metadata and the loaded image (HTMLImageElement).
 	audio: id2res; // Reference to the loaded audio assets in the ROM pack, including metadata.
 	model: id2model; // Reference to the loaded model assets in the ROM pack, including metadata.

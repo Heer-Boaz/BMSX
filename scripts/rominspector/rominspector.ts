@@ -474,7 +474,7 @@ async function main() {
 		const audiometa = selected.audiometa || {} as AudioMeta;
 		let bufferSize = selected.end - selected.start;
 		let asciiArt = '';
-		const metadataLines = [];
+		const metadataLines: string[] = [];
 
 		if (modal) {
 			modal.destroy();
@@ -587,6 +587,7 @@ async function main() {
 					selected.buffer = await loadGLTFModelFromBuffer(rompack.slice(selected.start, selected.end), texBuf) as any;
 				}
 				metadataLines.push(`Model size: ${formatByteSize(selected.end - selected.start)}`);
+				metadataLines.push(`Model content: ${JSON.stringify(selected.buffer, null)}`);
 				const modelData = selected.buffer as unknown as GLTFModel;
 				const first = modelData.meshes[0];
 				if (first) {
@@ -598,13 +599,35 @@ async function main() {
 						`Indices: ${first.indices ? first.indices.length : 0}\n` +
 						`MaterialIndex: ${first.materialIndex ? first.materialIndex : 'None'}\n` +
 						`Images: ${modelData.imageBuffers ? modelData.imageBuffers.length : 0}\n` +
-						`Animations: ${modelData.animations ? modelData.animations.length : 0}\n`;
+						`\tImageOffsets: ${modelData.imageOffsets ? modelData.imageOffsets.length : 0}\n` +
+						modelData.imageOffsets?.map((callbackfn, i) => `\t\t${i}: ${callbackfn.start} - ${callbackfn.end} (${formatByteSize(callbackfn.end - callbackfn.start)})`).join('\n') + '\n' +
+						`Animations: ${modelData.animations ? modelData.animations.length : 0}\n` +
+						modelData.animations?.map((anim, i) => `\t${i}: ${anim.name ?? 'Unnamed'}, ${anim.channels.length} channel(s), ${anim.samplers.length} sampler(s)`).join('\n') + '\n';
 					if (modelData.imageBuffers) {
 						for (let i = 0; i < modelData.imageBuffers.length; i++) {
 							const imgBuf = Buffer.from(modelData.imageBuffers[i]);
 							asciiArt += `\nImage ${i + 1} (${formatByteSize(imgBuf.byteLength)}):\n`;
 							asciiArt += generateAsciiArtFromImage(imgBuf, { atlassed: false } as any, getModalWidth());
 						}
+					}
+					let materialIndex = 0;
+					for (const material of (modelData.materials && modelData.materials.length > 0 ? modelData.materials : [])) {
+						asciiArt += `\nMaterial ${materialIndex}: ${JSON.stringify(material, null, 2)}\n`;
+						const textureIndex = material.baseColorTexture;
+						if (textureIndex !== undefined && textureIndex !== null && modelData.imageBuffers) {
+							if (modelData.imageBuffers[textureIndex]) {
+								const imgBuf = Buffer.from(modelData.imageBuffers[textureIndex]);
+								asciiArt += `Texture ${textureIndex} (${formatByteSize(imgBuf.byteLength)}):\n`;
+								asciiArt += generateAsciiArtFromImage(imgBuf, { atlassed: false } as any, getModalWidth());
+							}
+							else {
+								asciiArt += `{red-fg}Index ${textureIndex} (for baseColorTexture) not found in model images{/red-fg}!\n`;
+							}
+						}
+						else {
+							asciiArt += `No texture for material ${materialIndex}\n`;
+						}
+						materialIndex++;
 					}
 				} else {
 					asciiArt = 'No mesh data';
@@ -658,7 +681,7 @@ async function main() {
 			}
 		}
 
-		metadataLines.push('');
+		// metadataLines.push('\n', additionalMetadataLines.join('\n'), '\n');
 		let currentTab = tabIndex || 0; // Default to 0 if not provided
 		const tabLabels = ['Preview', 'Details', 'Hex', '×']; // Voeg sluit-tab toe
 
