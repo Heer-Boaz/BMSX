@@ -398,6 +398,23 @@ class SmallCube3D extends MeshObject {
     }
 }
 
+@insavegame
+@attach_components(TransformComponent)
+class AnimatedMorphSphere extends MeshObject {
+    constructor() {
+        super('animatedSphere');
+        const model = $.rom.model[ModelId.animatedmorphsphere] as GLTFModel;
+        this.setModel(model);
+        this.scale = [50.0, 50.0, 50.0];
+    }
+
+    override run(): void {
+        this.rotation[1] += 0.01; // Slow auto rotation
+        this.updateComponentsWithTag('position_update_axis');
+        super.run();
+    }
+}
+
 class CameraController extends GameObject {
     private cameras: CameraObject[];
     private idx = 0;
@@ -484,20 +501,27 @@ class gamemodel extends BaseModel {
         const cube = new Cube3D();
         const small = new SmallCube3D(0);
         const small2 = new SmallCube3D(2);
+        const animatedMorphSphere = new AnimatedMorphSphere();
         _model.spawn(new bclass(), new_vec3(100, 100, 1000));
         _model.spawn(cube, new_vec3(0, 0, 0));
         _model.spawn(small, new_vec3(5, 0, 0));
         _model.spawn(small2, new_vec3(5, 5, 5));
+        _model.spawn(animatedMorphSphere, new_vec3(5, 5, 5));
 
         const parentTf = cube.getComponent(TransformComponent);
         const childTf = small.getComponent(TransformComponent);
         const childTf2 = small2.getComponent(TransformComponent);
+        const childTf3 = animatedMorphSphere.getComponent(TransformComponent);
         if (parentTf && childTf) {
             childTf.parentNode = parentTf;
             childTf.position = [1, 0, 0];
             if (childTf2) {
                 childTf2.parentNode = childTf;
                 childTf2.position = [0, 1, 0];
+                if (childTf3) {
+                    childTf3.parentNode = childTf2;
+                    childTf3.position = [0, 0, 1];
+                }
             }
         }
 

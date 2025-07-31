@@ -16,10 +16,11 @@ export enum AudioId {
 }
 
 export enum DataId {
-        none = 'none',
+	none = 'none',
 }
 
 export enum ModelId {
-        none = 'none',
-        cube = 'cube',
+	none = 'none',
+	animatedmorphsphere = 'animatedmorphsphere',  
+	cube = 'cube',  
 }
