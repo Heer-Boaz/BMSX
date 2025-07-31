@@ -70,6 +70,8 @@ export abstract class MeshObject extends GameObject {
                 normal: normal !== undefined ? normal : undefined,
                 metallicRoughness: metallicRoughness !== undefined ? metallicRoughness : undefined,
             },
+            metallicFactor: mat.metallicFactor ?? 1.0,
+            roughnessFactor: mat.roughnessFactor ?? 1.0,
         });
         $.texmanager.fetchModelTextures(meshModel).then((gpuTextureKeys) => {
             // if (!meshModel.runtimeImages || !this.mesh.material) return;

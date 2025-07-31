@@ -5,6 +5,12 @@ uniform sampler2D u_texture0;
 uniform sampler2D u_texture1;
 uniform sampler2D u_albedoTexture;
 uniform bool u_useAlbedoTexture;
+uniform sampler2D u_normalTexture;
+uniform bool u_useNormalTexture;
+uniform sampler2D u_metallicRoughnessTexture;
+uniform bool u_useMetallicRoughnessTexture;
+uniform float u_metallicFactor;
+uniform float u_roughnessFactor;
 uniform float u_ditherIntensity;
 uniform vec4 u_materialColor;
 uniform sampler2D u_shadowMap;
@@ -102,14 +108,32 @@ void main() {
     }
 
     vec3 normal = normalize(v_normal);
-    vec3 viewDir = vec3(0.0, 0.0, 1.0);
+    if(u_useNormalTexture){
+        vec3 n = texture(u_normalTexture, v_texcoord).xyz * 2.0 - 1.0;
+        normal = normalize(n);
+    }
 
-    vec3 lighting = u_ambientColor * u_ambientIntensity;
+    vec3 baseColor = texColor.rgb * u_materialColor.rgb;
+    float metallic = u_metallicFactor;
+    float roughness = u_roughnessFactor;
+    if(u_useMetallicRoughnessTexture){
+        vec3 mr = texture(u_metallicRoughnessTexture, v_texcoord).rgb;
+        roughness *= mr.g;
+        metallic *= mr.b;
+    }
+
+    vec3 viewDir = vec3(0.0, 0.0, 1.0);
+    vec3 F0 = mix(vec3(0.04), baseColor, metallic);
+    vec3 lighting = u_ambientColor * u_ambientIntensity * baseColor;
 
     for(int i = 0; i < MAX_DIR_LIGHTS; i++){
         if(i >= u_numDirLights) break;
-        float diff = max(dot(normal, -u_dirLightDirection[i]), 0.0);
-        lighting += diff * u_dirLightColor[i] * u_dirLightIntensity[i];
+        vec3 lightDir = normalize(-u_dirLightDirection[i]);
+        float diff = max(dot(normal, lightDir), 0.0);
+        vec3 halfDir = normalize(lightDir + viewDir);
+        float spec = pow(max(dot(normal, halfDir), 0.0), 1.0/(roughness*roughness+0.001));
+        vec3 lightCol = u_dirLightColor[i] * u_dirLightIntensity[i];
+        lighting += diff * baseColor * lightCol + spec * F0 * lightCol;
     }
 
     for(int i = 0; i < MAX_POINT_LIGHTS; i++){
@@ -118,19 +142,21 @@ void main() {
         float dist = length(lightVec);
         if(dist < u_pointLightRange[i]){
             float attenuation = 1.0 - dist / u_pointLightRange[i];
-            float pdiff = max(dot(normal, normalize(lightVec)), 0.0);
-            lighting += pdiff * attenuation * u_pointLightColor[i] * u_pointLightIntensity[i];
+            vec3 lightDir = normalize(lightVec);
+            float pdiff = max(dot(normal, lightDir), 0.0);
+            vec3 halfDir = normalize(lightDir + viewDir);
+            float spec = pow(max(dot(normal, halfDir), 0.0), 1.0/(roughness*roughness+0.001));
+            vec3 lightCol = u_pointLightColor[i] * u_pointLightIntensity[i] * attenuation;
+            lighting += pdiff * baseColor * lightCol + spec * F0 * lightCol;
         }
     }
-
-    texColor.rgba *= u_materialColor;
 
     vec4 lightPos = u_lightMatrix * vec4(v_worldPos, 1.0);
     vec3 proj = lightPos.xyz / lightPos.w;
     float closest = texture(u_shadowMap, proj.xy * 0.5 + 0.5).r;
     float shadow = proj.z - 0.005 > closest ? u_shadowStrength : 1.0;
 
-    vec3 col = quantize(texColor.rgb * lighting * shadow, 3);
+    vec3 col = quantize(lighting * shadow, 3);
     col += bayer(gl_FragCoord.xy);
 
     // Apply dithering to alpha channel if needed (this is how the PSP does it)

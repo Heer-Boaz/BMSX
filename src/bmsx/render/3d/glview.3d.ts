@@ -46,6 +46,12 @@ let shadowStrengthLocation3D: WebGLUniformLocation;
 let vertShaderScaleLocation3D: WebGLUniformLocation;
 let albedoTextureLocation3D: WebGLUniformLocation;
 let useAlbedoTextureLocation3D: WebGLUniformLocation;
+let normalTextureLocation3D: WebGLUniformLocation;
+let useNormalTextureLocation3D: WebGLUniformLocation;
+let metallicRoughnessTextureLocation3D: WebGLUniformLocation;
+let useMetallicRoughnessTextureLocation3D: WebGLUniformLocation;
+let metallicFactorLocation3D: WebGLUniformLocation;
+let roughnessFactorLocation3D: WebGLUniformLocation;
 let vertexBuffer3D: WebGLBuffer;
 let texcoordBuffer3D: WebGLBuffer;
 let color_overrideBuffer3D: WebGLBuffer;
@@ -191,6 +197,12 @@ export function setDefaultUniformValues(gl: WebGL2RenderingContext, defaultScale
     gl.uniform1f(vertShaderScaleLocation3D, defaultScale);
     gl.uniform1i(albedoTextureLocation3D, 2);
     gl.uniform1i(useAlbedoTextureLocation3D, 0);
+    gl.uniform1i(normalTextureLocation3D, 3);
+    gl.uniform1i(useNormalTextureLocation3D, 0);
+    gl.uniform1i(metallicRoughnessTextureLocation3D, 4);
+    gl.uniform1i(useMetallicRoughnessTextureLocation3D, 0);
+    gl.uniform1f(metallicFactorLocation3D, 1.0);
+    gl.uniform1f(roughnessFactorLocation3D, 1.0);
 }
 
 export function setupBuffers3D(gl: WebGL2RenderingContext): void {
@@ -372,6 +384,12 @@ export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
     vertShaderScaleLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_scale')!;
     albedoTextureLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_albedoTexture')!;
     useAlbedoTextureLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_useAlbedoTexture')!;
+    normalTextureLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_normalTexture')!;
+    useNormalTextureLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_useNormalTexture')!;
+    metallicRoughnessTextureLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_metallicRoughnessTexture')!;
+    useMetallicRoughnessTextureLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_useMetallicRoughnessTexture')!;
+    metallicFactorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_metallicFactor')!;
+    roughnessFactorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_roughnessFactor')!;
 }
 
 export function setupSkyboxLocations(gl: WebGL2RenderingContext): void {
@@ -447,7 +465,11 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
 
         const matColor = mesh.material?.color ?? [1, 1, 1, 1];
         gl.uniform4fv(materialColorLocation3D, new Float32Array(matColor));
+        gl.uniform1f(metallicFactorLocation3D, mesh.material?.metallicFactor ?? 1.0);
+        gl.uniform1f(roughnessFactorLocation3D, mesh.material?.roughnessFactor ?? 1.0);
         gl.uniform1i(useAlbedoTextureLocation3D, 0);
+        gl.uniform1i(useNormalTextureLocation3D, 0);
+        gl.uniform1i(useMetallicRoughnessTextureLocation3D, 0);
         if (mesh.material?.gpuTextures.albedo) {
             // Find the texture in the texture manager
             const key = mesh.material.gpuTextures.albedo;
@@ -488,6 +510,30 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
             gl.uniform1i(useAlbedoTextureLocation3D, 1);
         } else {
             gl.uniform1i(useAlbedoTextureLocation3D, 0);
+        }
+
+        if (mesh.material?.gpuTextures.normal) {
+            const key = mesh.material.gpuTextures.normal;
+            const texHandle = $.texmanager.getTexture(key);
+            if (texHandle instanceof WebGLTexture) {
+                gl.activeTexture(gl.TEXTURE3);
+                gl.bindTexture(gl.TEXTURE_2D, texHandle);
+                gl.uniform1i(useNormalTextureLocation3D, 1);
+            } else {
+                gl.uniform1i(useNormalTextureLocation3D, 0);
+            }
+        }
+
+        if (mesh.material?.gpuTextures.metallicRoughness) {
+            const key = mesh.material.gpuTextures.metallicRoughness;
+            const texHandle = $.texmanager.getTexture(key);
+            if (texHandle instanceof WebGLTexture) {
+                gl.activeTexture(gl.TEXTURE4);
+                gl.bindTexture(gl.TEXTURE_2D, texHandle);
+                gl.uniform1i(useMetallicRoughnessTextureLocation3D, 1);
+            } else {
+                gl.uniform1i(useMetallicRoughnessTextureLocation3D, 0);
+            }
         }
 
         if (mesh.shadow) {
