@@ -398,7 +398,7 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
             break;
         case 'model':
             try {
-                let model;
+                let model: GLTFModel;
                 const texBuf = (res.texture_start != null && res.texture_end != null) ? rom.slice(res.texture_start, res.texture_end) : undefined;
                 if (opts && opts.loadModelFromBuffer) {
                     model = await opts.loadModelFromBuffer(rom.slice(res.start, res.end));

@@ -1,5 +1,6 @@
 import { Identifier, multiply_vec, to_vec2arr } from '../core/game';
 import type { Polygon, Size, vec2, vec3arr } from '../rompack/rompack';
+import { checkWebGLError } from './glview.helpers';
 
 import { glCreateTexture, glSwitchProgram } from './glutils';
 import { catchWebGLError, generateAtlasName } from './glview.helpers';
@@ -383,15 +384,20 @@ export class GLView extends BaseView {
 	@catchWebGLError
 	override clear(): void {
 		const gl = this.glctx;
+		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 		gl.clearDepth(1.0);
+		checkWebGLError('clearDepth');
 
 		// Clear the texture
 		gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
 		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+		checkWebGLError('clearFramebuffer');
 
 		// Clear the screen
 		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+		checkWebGLError('clearScreen');
 	}
 
 	/**

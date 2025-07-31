@@ -86,6 +86,25 @@ export function saveFramebufferToFile(): void {
     a.click();
 }
 
+export function checkWebGLError(infoText: string): number {
+    let error = 0;
+    try {
+        const gl = ($.view as any).glctx as WebGLRenderingContext;
+        error = gl.getError();
+        if (error !== gl.NO_ERROR) {
+            // Throwing error so that it can be caught by the debugger via catching caught exceptions
+            // This is useful for debugging WebGL errors in the browser console
+            throw new Error(`WebGL error occurred: ${infoText} ${getWebGLErrorString(gl, error)}`);
+        }
+    } catch (e) {
+        console.error(e);
+    } finally {
+        // WebGL does not provide a method to explicitly clear errors.
+        // Errors are cleared automatically when retrieved using gl.getError().
+        return error;
+    }
+}
+
 export function catchWebGLError(_target: any, propertyKey: string, descriptor: PropertyDescriptor): PropertyDescriptor {
     if (!CATCH_WEBGL_ERROR) {
         return descriptor;

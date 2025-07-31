@@ -2,7 +2,7 @@ import { Identifier } from '../../core/game';
 import type { Size, vec3, vec3arr } from '../../rompack/rompack';
 import { glCreateBuffer, glCreateElementBuffer, glLoadShader, glSetupAttributeFloat, glSetupAttributeInt, glSwitchProgram } from '../glutils';
 import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS } from '../glview.constants';
-import { generateAtlasName } from '../glview.helpers';
+import { checkWebGLError, generateAtlasName } from '../glview.helpers';
 import { BaseView, DrawMeshOptions } from '../view';
 import { Camera3D } from './camera3d';
 import type { AmbientLight, DirectionalLight, PointLight } from './light';
@@ -41,6 +41,7 @@ let pointLightIntensityLocation3D: WebGLUniformLocation;
 let numPointLightsLocation3D: WebGLUniformLocation;
 let materialColorLocation3D: WebGLUniformLocation;
 let shadowMapLocation3D: WebGLUniformLocation;
+let useShadowMapLocation3D: WebGLUniformLocation;
 let lightMatrixLocation3D: WebGLUniformLocation;
 let shadowStrengthLocation3D: WebGLUniformLocation;
 let vertShaderScaleLocation3D: WebGLUniformLocation;
@@ -265,7 +266,8 @@ export function setupGameShader3DLocations(gl: WebGL2RenderingContext): void {
 
 export function setSkyboxImages(gl: WebGL2RenderingContext, ids: { posX: string; negX: string; posY: string; negY: string; posZ: string; negZ: string }): void {
     if (!skyboxTexture) {
-        skyboxTexture = gl.createTexture()!;
+        console.error('Skybox texture not initialized');
+        return;
     }
     gl.bindTexture(gl.TEXTURE_CUBE_MAP, skyboxTexture);
     const targets = [
@@ -283,10 +285,11 @@ export function setSkyboxImages(gl: WebGL2RenderingContext, ids: { posX: string;
         const asset = BaseView.imgassets[id];
         if (!asset) throw Error(`Skybox image '${id}' not found`);
         let source: CanvasImageSource;
-        if (asset.imgbin) {
+        if (!asset.imgmeta.atlassed) {
             source = asset.imgbin;
-        } else if (asset.imgmeta?.atlassed) {
-            const idx = asset.imgmeta.atlasid ?? 0;
+        } else {
+            const idx = asset.imgmeta.atlasid;
+            if (idx === undefined) throw Error(`Atlas ID not defined for image '${id}'`);
             const atlasName = generateAtlasName(idx);
             const atlas = BaseView.imgassets[atlasName]?.imgbin;
             if (!atlas) throw Error(`Atlas image '${atlasName}' not found`);
@@ -302,8 +305,6 @@ export function setSkyboxImages(gl: WebGL2RenderingContext, ids: { posX: string;
             const ctx = canvas.getContext('2d')!;
             ctx.drawImage(atlas, sx, sy, sw, sh, 0, 0, sw, sh);
             source = canvas;
-        } else {
-            throw Error(`Skybox image '${id}' not found`);
         }
         if (width === 0) {
             const s = source as HTMLImageElement | HTMLCanvasElement;
@@ -379,6 +380,7 @@ export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
     numPointLightsLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_numPointLights')!;
     materialColorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_materialColor')!;
     shadowMapLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_shadowMap')!;
+    useShadowMapLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_useShadowMap')!;
     lightMatrixLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_lightMatrix')!;
     shadowStrengthLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_shadowStrength')!;
     vertShaderScaleLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_scale')!;
@@ -401,51 +403,70 @@ export function setupSkyboxLocations(gl: WebGL2RenderingContext): void {
 
 export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number): void {
     if (meshesToDraw.length === 0) return;
+    checkWebGLError("Before switching program");
     glSwitchProgram(gl, gameShaderProgram3D);
+    checkWebGLError("After switching program");
 
+    checkWebGLError("Before setting camera uniforms");
     uploadDirectionalLights(gl);
     uploadPointLights(gl);
+    checkWebGLError("After setting camera uniforms");
 
+    checkWebGLError("Before setting uniform values");
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
     gl.viewport(0, 0, canvasWidth, canvasHeight);
+    checkWebGLError("After binding framebuffer and setting viewport");
 
-    // if (skyboxTexture) {
-    //     drawSkybox(gl);
-    //     glSwitchProgram(gl, gameShaderProgram3D);
-    // }
+    if (skyboxTexture) {
+        drawSkybox(gl);
+        glSwitchProgram(gl, gameShaderProgram3D);
+    }
 
+    checkWebGLError("Before setting vertex attributes");
     gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer3D);
     gl.vertexAttribPointer(vertexLocation3D, 3, gl.FLOAT, false, 0, 0);
     gl.enableVertexAttribArray(vertexLocation3D);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBuffer3D);
-    gl.vertexAttribPointer(texcoordLocation3D, 2, gl.FLOAT, false, 0, 0);
-    gl.enableVertexAttribArray(texcoordLocation3D);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, color_overrideBuffer3D);
     gl.vertexAttribPointer(color_overrideLocation3D, 4, gl.FLOAT, false, 0, 0);
     gl.enableVertexAttribArray(color_overrideLocation3D);
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer3D);
-    gl.vertexAttribPointer(normalLocation3D, 3, gl.FLOAT, false, 0, 0);
-    gl.enableVertexAttribArray(normalLocation3D);
-
     gl.bindBuffer(gl.ARRAY_BUFFER, atlas_idBuffer3D);
     gl.vertexAttribIPointer(atlas_idLocation3D, 1, gl.UNSIGNED_BYTE, 0, 0);
     gl.enableVertexAttribArray(atlas_idLocation3D);
+    checkWebGLError("After setting vertex attributes");
 
     for (const mesh of meshesToDraw) {
+        checkWebGLError("Before processing mesh");
         gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer3D);
         gl.bufferData(gl.ARRAY_BUFFER, mesh.positions, gl.DYNAMIC_DRAW);
-        gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBuffer3D);
-        gl.bufferData(gl.ARRAY_BUFFER, mesh.texcoords, gl.DYNAMIC_DRAW);
-        if (mesh.normals) {
-            gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer3D);
-            gl.bufferData(gl.ARRAY_BUFFER, mesh.normals, gl.DYNAMIC_DRAW);
-        }
 
         const vertexCount = mesh.positions.length / 3;
 
+        // Handle texcoords: Disable and set constant if missing/undersized
+        if (mesh.texcoords && mesh.texcoords.length >= vertexCount * 2) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBuffer3D);
+            gl.bufferData(gl.ARRAY_BUFFER, mesh.texcoords, gl.DYNAMIC_DRAW);
+            gl.vertexAttribPointer(texcoordLocation3D, 2, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(texcoordLocation3D);
+        } else {
+            gl.disableVertexAttribArray(texcoordLocation3D);
+            gl.vertexAttrib2f(texcoordLocation3D, 0.0, 0.0); // Default [0,0]
+        }
+
+        // Handle normals: Disable and set constant if missing/undersized
+        if (mesh.normals && mesh.normals.length >= vertexCount * 3) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer3D);
+            gl.bufferData(gl.ARRAY_BUFFER, mesh.normals, gl.DYNAMIC_DRAW);
+            gl.vertexAttribPointer(normalLocation3D, 3, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(normalLocation3D);
+        } else {
+            gl.disableVertexAttribArray(normalLocation3D);
+            gl.vertexAttrib3f(normalLocation3D, 0.0, 0.0, 1.0); // Default up-normal
+        }
+        checkWebGLError("After processing mesh");
+
+        checkWebGLError("Before setting color and atlas buffers");
         const colorData = new Float32Array(vertexCount * 4);
         for (let i = 0; i < vertexCount; i++) {
             colorData.set([mesh.color.r, mesh.color.g, mesh.color.b, mesh.color.a], i * 4);
@@ -457,107 +478,116 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
         atlasData.fill(mesh.atlasId);
         gl.bindBuffer(gl.ARRAY_BUFFER, atlas_idBuffer3D);
         gl.bufferData(gl.ARRAY_BUFFER, atlasData, gl.DYNAMIC_DRAW);
+        checkWebGLError("After setting color and atlas buffers");
 
+        checkWebGLError("Before setting index buffer");
         if (mesh.indices) {
             gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer3D);
             gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.indices, gl.DYNAMIC_DRAW);
-        }
 
+            // Validate indices not out-of-bounds
+            const maxIndex = Math.max(...mesh.indices);
+            if (maxIndex >= vertexCount) {
+                console.warn(`Indices out of bounds: max ${maxIndex} >= vertexCount ${vertexCount}`);
+                continue;
+            }
+        }
+        checkWebGLError("After setting index buffer");
+
+        checkWebGLError("Before setting uniform values");
         const matColor = mesh.material?.color ?? [1, 1, 1, 1];
         gl.uniform4fv(materialColorLocation3D, new Float32Array(matColor));
-        gl.uniform1f(metallicFactorLocation3D, mesh.material?.metallicFactor ?? 1.0);
-        gl.uniform1f(roughnessFactorLocation3D, mesh.material?.roughnessFactor ?? 1.0);
-        gl.uniform1i(useAlbedoTextureLocation3D, 0);
-        gl.uniform1i(useNormalTextureLocation3D, 0);
-        gl.uniform1i(useMetallicRoughnessTextureLocation3D, 0);
-        if (mesh.material?.gpuTextures.albedo) {
-            // Find the texture in the texture manager
+        gl.uniform1f(metallicFactorLocation3D, mesh.material?.metallicFactor ?? 0.0);
+        gl.uniform1f(roughnessFactorLocation3D, mesh.material?.roughnessFactor ?? 0.0);
+        checkWebGLError("After setting uniform values");
+
+        checkWebGLError("Before setting texture uniforms");
+        // Albedo: Bind and set unit only if valid texture present
+        if (mesh.material?.gpuTextures?.albedo) {
             const key = mesh.material.gpuTextures.albedo;
             const texHandle = $.texmanager.getTexture(key);
-            if (!texHandle) {
-                console.warn(`Albedo texture not found for mesh: ${mesh.material.gpuTextures.albedo}`);
-                gl.uniform1i(albedoTextureLocation3D, 0);
-                gl.uniform1i(useAlbedoTextureLocation3D, 0);
-                continue;
-            }
-            // Check whether the texture is a valid WebGL texture
-            if (!(texHandle instanceof WebGLTexture)) {
-                console.warn(`Albedo texture is not a valid WebGL texture: ${mesh.material.gpuTextures.albedo}`);
-                gl.uniform1i(albedoTextureLocation3D, 0);
-                gl.uniform1i(useAlbedoTextureLocation3D, 0);
-                continue;
-            }
-            // Check if the texture is already bound to TEXTURE2
-            const boundTexture = gl.getParameter(gl.TEXTURE_BINDING_2D);
-            if (boundTexture !== texHandle) {
-                gl.bindTexture(gl.TEXTURE_2D, texHandle);
-            }
-            // Check if the texture is already active on TEXTURE2
-            const activeTexture = gl.getParameter(gl.ACTIVE_TEXTURE);
-            if (activeTexture !== gl.TEXTURE2) {
+            if (texHandle instanceof WebGLTexture && gl.isTexture(texHandle)) {
                 gl.activeTexture(gl.TEXTURE2);
-            }
-            // Check whether the contents of the texture are valid
-            const isTextureValid = gl.isTexture(texHandle);
-            if (!isTextureValid) {
-                console.warn(`Albedo texture is not valid: ${mesh.material.gpuTextures.albedo}`);
-                gl.uniform1i(albedoTextureLocation3D, 0);
+                gl.bindTexture(gl.TEXTURE_2D, texHandle);
+                gl.uniform1i(albedoTextureLocation3D, 2);
+                gl.uniform1i(useAlbedoTextureLocation3D, 1);
+            } else {
+                console.warn(`Invalid albedo texture: ${key}`);
                 gl.uniform1i(useAlbedoTextureLocation3D, 0);
-                continue;
             }
-
-            gl.bindTexture(gl.TEXTURE_2D, texHandle);
-            gl.uniform1i(useAlbedoTextureLocation3D, 1);
         } else {
             gl.uniform1i(useAlbedoTextureLocation3D, 0);
         }
 
-        if (mesh.material?.gpuTextures.normal) {
+        // Normal: Similar
+        if (mesh.material?.gpuTextures?.normal) {
             const key = mesh.material.gpuTextures.normal;
             const texHandle = $.texmanager.getTexture(key);
-            if (texHandle instanceof WebGLTexture) {
+            if (texHandle instanceof WebGLTexture && gl.isTexture(texHandle)) {
                 gl.activeTexture(gl.TEXTURE3);
                 gl.bindTexture(gl.TEXTURE_2D, texHandle);
+                gl.uniform1i(normalTextureLocation3D, 3);
                 gl.uniform1i(useNormalTextureLocation3D, 1);
             } else {
                 gl.uniform1i(useNormalTextureLocation3D, 0);
             }
+        } else {
+            gl.uniform1i(useNormalTextureLocation3D, 0);
         }
 
-        if (mesh.material?.gpuTextures.metallicRoughness) {
+        // MetallicRoughness: Similar
+        if (mesh.material?.gpuTextures?.metallicRoughness) {
             const key = mesh.material.gpuTextures.metallicRoughness;
             const texHandle = $.texmanager.getTexture(key);
-            if (texHandle instanceof WebGLTexture) {
+            if (texHandle instanceof WebGLTexture && gl.isTexture(texHandle)) {
                 gl.activeTexture(gl.TEXTURE4);
                 gl.bindTexture(gl.TEXTURE_2D, texHandle);
+                gl.uniform1i(metallicRoughnessTextureLocation3D, 4);
                 gl.uniform1i(useMetallicRoughnessTextureLocation3D, 1);
             } else {
                 gl.uniform1i(useMetallicRoughnessTextureLocation3D, 0);
             }
+        } else {
+            gl.uniform1i(useMetallicRoughnessTextureLocation3D, 0);
         }
 
+        // Shadow: Bind and set unit only if present (requires shader update below)
         if (mesh.shadow) {
             gl.activeTexture(gl.TEXTURE8);
             gl.bindTexture(gl.TEXTURE_2D, mesh.shadow.map.texture);
             gl.uniform1i(shadowMapLocation3D, 8);
             gl.uniformMatrix4fv(lightMatrixLocation3D, false, mesh.shadow.matrix);
             gl.uniform1f(shadowStrengthLocation3D, mesh.shadow.strength);
+            gl.uniform1i(useShadowMapLocation3D, 1); // New uniform
         } else {
             gl.uniform1f(shadowStrengthLocation3D, 1.0);
+            gl.uniform1i(useShadowMapLocation3D, 0); // New uniform
         }
+        checkWebGLError("After setting texture uniforms");
 
+        checkWebGLError("Before calculating MVP and setting uniforms");
         const mvp = bmat.multiply(camera.viewProjectionMatrix, mesh.matrix);
         gl.uniformMatrix4fv(mvpLocation3D, false, mvp);
         gl.uniformMatrix4fv(modelLocation3D, false, mesh.matrix);
         const normalMat = bmat.normalMatrix(mesh.matrix);
         gl.uniformMatrix3fv(normalMatrixLocation3D, false, normalMat);
+        checkWebGLError("After calculating MVP and setting uniforms");
 
         if (mesh.indices) {
+            checkWebGLError("Before drawing elements");
             const type = mesh.indices instanceof Uint32Array ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
             gl.drawElements(gl.TRIANGLES, mesh.indices.length, type, 0);
+            if (checkWebGLError(`After drawing elements (count = ${mesh.indices.length})`)) {
+                // Your existing logging...
+            }
         } else {
+            checkWebGLError("Before drawing arrays");
             gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
+            if (checkWebGLError(`After drawing arrays (count = ${vertexCount})`)) {
+                // Handle error
+            }
         }
+        checkWebGLError(`After calculating MVP and drawing mesh: ${JSON.stringify(mesh)}`);
     }
 
     meshesToDraw = [];

@@ -1,13 +1,6 @@
 import { Size, TextureParams } from '../bmsx';
 import { MAX_SPRITES, VERTEXCOORDS_SIZE } from './glview.constants';
-import { getWebGLErrorString } from './glview.helpers';
-
-function glCheckError(gl: WebGL2RenderingContext, fn: string): void {
-    const error = gl.getError();
-    if (error !== gl.NO_ERROR) {
-        console.error(`WebGL error in function '${fn}': '${getWebGLErrorString(gl, error)}' ('${error}').`);
-    }
-}
+import { checkWebGLError } from './glview.helpers';
 
 /**
  * Gets the texture coordinates for the vertices of the rectangles.
@@ -35,17 +28,16 @@ export function buildQuadTexCoords(): Float32Array {
 export function glCreateBuffer(gl: WebGL2RenderingContext, data?: Float32Array | Uint8Array): WebGLBuffer {
     const buffer = gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-    gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
-    glCheckError(gl, 'createBuffer');
+    gl.bufferData(gl.ARRAY_BUFFER, (data as any) ?? 0, gl.DYNAMIC_DRAW);
+    checkWebGLError('createBuffer');
     return buffer;
 }
 
 export function glCreateElementBuffer(gl: WebGL2RenderingContext, data?: Uint16Array | Uint32Array): WebGLBuffer {
     const buffer = gl.createBuffer()!;
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffer);
-    if (data) gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
-    else gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, 0, gl.DYNAMIC_DRAW);
-    glCheckError(gl, 'createElementBuffer');
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, (data as any) ?? 0, gl.DYNAMIC_DRAW);
+    checkWebGLError('createElementBuffer');
     return buffer;
 }
 
@@ -53,14 +45,14 @@ export function glSetupAttributeFloat(gl: WebGL2RenderingContext, buffer: WebGLB
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.enableVertexAttribArray(location);
     gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0);
-    glCheckError(gl, 'setupAttributeFloat');
+    checkWebGLError('setupAttributeFloat');
 }
 
 export function glSetupAttributeInt(gl: WebGL2RenderingContext, buffer: WebGLBuffer, location: number, size: number): void {
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.enableVertexAttribArray(location);
     gl.vertexAttribIPointer(location, size, gl.UNSIGNED_BYTE, 0, 0);
-    glCheckError(gl, 'setupAttributeInt');
+    checkWebGLError('setupAttributeInt');
 }
 
 /**
@@ -75,7 +67,7 @@ export function glSetupAttributeInt(gl: WebGL2RenderingContext, buffer: WebGLBuf
 export function glUpdateBuffer(gl: WebGL2RenderingContext, buffer: WebGLBuffer, target: GLenum, offset: number, data: ArrayBufferView): void {
     gl.bindBuffer(target, buffer);
     gl.bufferSubData(target, offset, data);
-    glCheckError(gl, 'updateBuffer');
+    checkWebGLError('updateBuffer');
 }
 
 export function glLoadShader(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader {
@@ -85,7 +77,7 @@ export function glLoadShader(gl: WebGL2RenderingContext, type: number, source: s
     if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
         throw Error(`Error compiling shader: ${gl.getShaderInfoLog(shader)} `);
     }
-    glCheckError(gl, 'loadShader');
+    checkWebGLError('loadShader');
     return shader;
 }
 
@@ -102,7 +94,7 @@ export function glCreateTexture(gl: WebGL2RenderingContext, img?: HTMLImageEleme
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    glCheckError(gl, 'createTexture');
+    checkWebGLError('createTexture');
     return result;
 }
 
@@ -126,5 +118,5 @@ export function glCreateTextureFromImage(gl: WebGL2RenderingContext, img: ImageB
 
 export function glSwitchProgram(gl: WebGL2RenderingContext, program: WebGLProgram): void {
     gl.useProgram(program);
-    glCheckError(gl, 'switchProgram');
+    checkWebGLError('switchProgram');
 }
