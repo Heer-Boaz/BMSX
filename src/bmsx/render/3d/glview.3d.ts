@@ -1,8 +1,8 @@
-import { Identifier } from '../../core/game';
 import type { Size, vec3, vec3arr } from '../../rompack/rompack';
+import { Identifier } from '../../rompack/rompack';
 import { glCreateBuffer, glCreateElementBuffer, glLoadShader, glSetupAttributeFloat, glSetupAttributeInt, glSwitchProgram } from '../glutils';
 import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS } from '../glview.constants';
-import { checkWebGLError, generateAtlasName } from '../glview.helpers';
+import { checkWebGLError } from '../glview.helpers';
 import { BaseView, DrawMeshOptions } from '../view';
 import { Camera3D } from './camera3d';
 import type { AmbientLight, DirectionalLight, PointLight } from './light';
@@ -264,69 +264,35 @@ export function setupGameShader3DLocations(gl: WebGL2RenderingContext): void {
     glSetupAttributeInt(gl, atlas_idBuffer3D, atlas_idLocation3D, 1);
 }
 
+export interface SkyboxFace {
+    id: string;
+    atlassed: boolean;
+    atlasId?: number;
+    texcoords?: number[];
+}
+
 export function setSkyboxImages(gl: WebGL2RenderingContext, ids: { posX: string; negX: string; posY: string; negY: string; posZ: string; negZ: string }): void {
-    if (!skyboxTexture) {
-        console.error('Skybox texture not initialized');
-        return;
-    }
-    gl.bindTexture(gl.TEXTURE_CUBE_MAP, skyboxTexture);
-    const targets = [
-        [gl.TEXTURE_CUBE_MAP_POSITIVE_X, ids.posX],
-        [gl.TEXTURE_CUBE_MAP_NEGATIVE_X, ids.negX],
-        [gl.TEXTURE_CUBE_MAP_POSITIVE_Y, ids.posY],
-        [gl.TEXTURE_CUBE_MAP_NEGATIVE_Y, ids.negY],
-        [gl.TEXTURE_CUBE_MAP_POSITIVE_Z, ids.posZ],
-        [gl.TEXTURE_CUBE_MAP_NEGATIVE_Z, ids.negZ],
-    ] as const;
-    let width = 0, height = 0;
-    const sources: CanvasImageSource[] = [];
+    // Instead of uploading images, store face info for shader sampling
+    const faces: Record<string, SkyboxFace> = {
+        posX: getSkyboxFace(ids.posX),
+        negX: getSkyboxFace(ids.negX),
+        posY: getSkyboxFace(ids.posY),
+        negY: getSkyboxFace(ids.negY),
+        posZ: getSkyboxFace(ids.posZ),
+        negZ: getSkyboxFace(ids.negZ),
+    };
+    (gl as any)._skyboxFaces = faces; // Store for use in drawSkybox or shader uniform upload
+}
 
-    for (const [, id] of targets) {
-        const asset = BaseView.imgassets[id];
-        if (!asset) throw Error(`Skybox image '${id}' not found`);
-        let source: CanvasImageSource;
-        if (!asset.imgmeta.atlassed) {
-            source = asset.imgbin;
-        } else {
-            const idx = asset.imgmeta.atlasid;
-            if (idx === undefined) throw Error(`Atlas ID not defined for image '${id}'`);
-            const atlasName = generateAtlasName(idx);
-            const atlas = BaseView.imgassets[atlasName]?.imgbin;
-            if (!atlas) throw Error(`Atlas image '${atlasName}' not found`);
-            const [left, top, right, , , bottom] = asset.imgmeta.texcoords!;
-            const aw = atlas.width, ah = atlas.height;
-            const sx = left * aw;
-            const sy = top * ah;
-            const sw = (right - left) * aw;
-            const sh = (bottom - top) * ah;
-            const canvas = document.createElement('canvas');
-            canvas.width = sw;
-            canvas.height = sh;
-            const ctx = canvas.getContext('2d')!;
-            ctx.drawImage(atlas, sx, sy, sw, sh, 0, 0, sw, sh);
-            source = canvas;
-        }
-        if (width === 0) {
-            const s = source as HTMLImageElement | HTMLCanvasElement;
-            width = s.width;
-            height = s.height;
-        }
-        sources.push(source);
-    }
-
-    for (const [target] of targets) {
-        gl.texImage2D(target, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-    }
-
-    for (let i = 0; i < targets.length; i++) {
-        const [target] = targets[i];
-        const source = sources[i] as TexImageSource;
-        gl.texSubImage2D(target, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, source);
-    }
-    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+function getSkyboxFace(id: string): SkyboxFace {
+    const asset = BaseView.imgassets[id];
+    if (!asset) throw new Error(`Skybox image '${id}' not found`);
+    return {
+        id,
+        atlassed: !!asset.imgmeta.atlassed,
+        atlasId: asset.imgmeta.atlasid,
+        texcoords: asset.imgmeta.texcoords,
+    };
 }
 
 export function createGameShaderPrograms3D(gl: WebGL2RenderingContext): void {

@@ -1,4 +1,4 @@
-import type { Identifier } from "../core/game";
+import type { Identifier } from '../rompack/rompack';
 import type { ConstructorWithFSMProperty, FSMName, StateMachineBlueprint } from "./fsmtypes";
 
 /**

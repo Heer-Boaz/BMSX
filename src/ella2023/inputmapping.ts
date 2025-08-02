@@ -1,4 +1,4 @@
-import { BGamepadButton, GamepadInputMapping, KeyboardButton, KeyboardInputMapping } from '../bmsx/bmsx';
+import { BGamepadButton, GamepadInputMapping, KeyboardButton, KeyboardInputMapping } from '../bmsx';
 
 export const actions = ['up', 'jump_left', 'jump_right', 'down', 'jump', 'right', 'duck', 'left', 'punch', 'highkick', 'lowkick', 'stoer'] as const;
 export type Action = typeof actions[number];

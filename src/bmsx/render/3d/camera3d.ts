@@ -1,4 +1,4 @@
-import { to_vec3 } from '../../core/game';
+import { to_vec3 } from '../../core/utils';
 import type { vec3, vec3arr } from '../../rompack/rompack';
 import { bmat, bvec3, Mat4 } from './math3d';
 

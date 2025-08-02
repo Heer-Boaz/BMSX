@@ -1,4 +1,4 @@
-import { Direction, SpriteObject, StateMachineBlueprint, build_fsm, insavegame } from '../bmsx/bmsx';
+import { Direction, SpriteObject, StateMachineBlueprint, build_fsm, insavegame } from '../bmsx';
 import { gamemodel } from "./gamemodel";
 import { BitmapId } from './resourceids';
 

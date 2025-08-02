@@ -106,26 +106,35 @@ const bootrom = {
 			document.body.classList.add('game-started'); // Change background color of body
 		};
 
-		try {
-			if (!h406A) throw new Error(`h406A(${x}) is not defined!`);
-			document.getElementById('gamescreen')!.hidden = false;
-			document.getElementById('gamescreen')!.style.display = 'block';
-			h406A({
-				rom: bootrom.rom!,
-				sndcontext: bootrom.sndcontext!,
-				gainnode: bootrom.gainnode!,
-				debug: this.debug,
-				startingGamepadIndex: bootrom.startingGamepadIndex
-			});
-			wrapup();
-			bootrom.rom = undefined;
-			return 255;
-		} catch (err) {
-			console.error(err);
+		function showUnhandledRejectionError(err: Error | string) {
+			console.error("Unhandled promise rejection:", err);
 			document.getElementById('gamescreen')!.hidden = true;
 			document.getElementById('gamescreen')!.style.display = 'none';
-			throw new Error(`Error in usr(0): "${err?.message ?? err ?? 'unknown error :-('}"`);
+			throw new Error(`Error in usr(0): "${typeof err === 'string' ? err : err?.message ?? 'unknown error :-('}"`);
 		}
+
+		if (!h406A) throw new Error(`h406A(${x}) is not defined!`);
+		document.getElementById('gamescreen')!.hidden = false;
+		document.getElementById('gamescreen')!.style.display = 'block';
+
+		// Remove the global error handler to prevent useless stack traces
+		window.onunhandledrejection = null;
+		// Remove the global error handler to prevent useless stack traces
+		window.onerror = null;
+
+		h406A({
+			rom: bootrom.rom!,
+			sndcontext: bootrom.sndcontext!,
+			gainnode: bootrom.gainnode!,
+			debug: this.debug,
+			startingGamepadIndex: bootrom.startingGamepadIndex
+		}).then(() => {
+			wrapup();
+			bootrom.rom = undefined;
+		}).catch(err => {
+			showUnhandledRejectionError(err);
+		});
+		return 255;
 	},
 
 	/**

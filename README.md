@@ -60,51 +60,35 @@ The BMSX project is organized to support modular engine development, multiple ga
   >  ```
 
 - **`src/bmsx/`**
-  - `bmsx.ts`: Exports the main engine modules and types for easy access.
+  - `index.ts`: Barrel export: exports the main engine modules and types for easy access.
   - `glsl.d.ts`: Required for WebGL shader definitions, allowing TypeScript to use GLSL code files.
   - `tsconfig.json`: TypeScript configuration for the BMSX engine code. References the main `tsconfig.json` in the root directory and includes all engine modules.
 
   - The core engine source code, organized into subfolders by concern. Each folder contains reusable engine modules:
 
     - **`ai/`**: AI-specific logic and helpers.
-      - `behaviourtree.ts`, AI controllers, planners
 
     - **`audio/`**: Sound and music engine code.
-      - `soundmaster.ts`, `psg.ts`
 
     - **`component/`**: Component system and modular logic.
-      - `component.ts`, `collisioncomponents.ts`
 
     - **`core/`**: Core engine functionality, including game objects, spaces, and the base model. Also event system and global registry.
-      - `game.ts`, `gameobject.ts`, `sprite.ts`, `basemodel.ts`, `eventemitter.ts`, `registry.ts`, `objecttracker.ts`
-      - 3D helpers: `cameraobject.ts`, `lightobject.ts`, `mesh.ts`
 
     - **`debugger/`**: Debugging and visualization tools.
-      - `bmsxdebugger.ts`, `behaviourtreevisualizer.ts`, `rewindui.ts`, `objectpropertydialog.ts`, `objectpropertydialogimproved.ts`
 
     - **`fsm/`**: General-purpose finite state machine system.
-      - `fsm.ts`, `fsmdecorators.ts`, `fsmtypes.ts`, `fsmlibrary.ts`
 
     - **`input/`**: Input handling for keyboard, gamepad, and touch.
-      - `input.ts`, `actionparser.ts`, `inputtypes.ts`, `keyboardinput.ts`, `onscreengamepad.ts`, `playerinput.ts`, `pendingassignmentprocessor.ts`
 
     - **`render/`**: Rendering, view, and graphics-related code.
-      - `glview.ts`, `view.ts`, `textwriter.ts`
-      - 3D modules: `camera3d.ts`, `light.ts`, `math3d.ts`
-      - **`shaders/`**: WebGL shaders for rendering effects.
-        - `crtshader.ts`, `gameshader.ts`, `vertexshader.ts`, `gameshader3d.glsl`, `vertexshader3d.glsl`
 
     - **`rompack/`**: ROM packaging and resource management.
-      - `rompack.ts`
 
     - **`serializer/`**: Save/load, compression, and serialization logic.
-      - `gameserializer.ts`, `binencoder.ts`, `bincompressor.ts`
 
     - **`systems/`**: Platform simulation for retro systems.
-      - `msx.ts` (and similar files for other simulated platforms)
 
     - **`ui/`**: User interface and dialog systems.
-      - `gamestatedialog.ts`, overlays, on-screen controls
 
     > See each folder for more details on its contents and responsibilities.
 
@@ -116,6 +100,7 @@ The BMSX project is organized to support modular engine development, multiple ga
     - `img/` – Sprites and textures
     - `snd/` – Sound effects
     - `mus/` – Music tracks
+    - `models/` – 3D models (glTF files, textures, and binary data)
     - `data/` – Game-specific data files (JSON, level definitions, etc.)
     - `manifest/` – Resource manifests
     - `_ignore/` – Source art or unused assets
@@ -130,6 +115,7 @@ The BMSX project is organized to support modular engine development, multiple ga
     - **`bootrom.ts`**: The bootloader that runs in the browser and loads the ROM.
     - **`atlasbuilder.ts`**: Builds texture atlases from individual images.
     - **`boundingbox_extractor.ts`**: Extracts hitboxes from sprite data.
+    - **`gltfloader.ts`**: Loads glTF models and textures.
     - **`rompacker.rompack.d.ts`**: Type definitions for the ROM pack format and resources.
   - **`rominspector/`**
     A utility for inspecting and debugging ROM files:
@@ -349,15 +335,24 @@ Open `dist/game.html` in a modern browser. The inlined boot loader (`bootrom.js`
 
 # ROM Pack Structure
 
-ROM packs are created by `finalizeRompack` in `rompacker.ts`. All resources are concatenated and zipped together with metadata and a small footer containing offsets. A PNG label can optionally be prepended to allow the ROM file to double as an image. Use `scripts/rominspector.ts` to inspect an existing ROM:
+ROM packs are created by `finalizeRompack` in `rompacker.ts`. All resources are concatenated and zipped together with metadata and a small footer containing offsets. A PNG label can optionally be prepended to allow the ROM file to double as an image. Use the rominspector to inspect an existing ROM:
 
+```powershell
+# Inspect a ROM file using the built-in inspector script. Note that the script will look for the file in the `dist/` folder.
+./inspectrom.ps1 <file.rom> # Windows
+```
 ```bash
-npx tsx scripts/rominspector.ts <file.rom>
+# Inspect a ROM file using the built-in inspector script. Note that the script will look for the file in the `dist/` folder.
+./inspectrom.sh <file.rom> # Linux/macOS
+```
+```bash
+# Inspect a ROM file using the built-in inspector script. Note that the script will look for the file in the *root*-folder!
+npx tsx scripts/rominspector/rominspector.ts <file.rom>
 ```
 
 ## Building & Resources
 
-The BMSX build process is managed by the `rompacker.ts` script, which automates the packaging of all game code and resources into a single `.rom` file.
+The BMSX build process is managed by the rompacker script, which automates the packaging of all game code and resources into a single `.rom` file.
 
 ### Resource Crawling and Filtering
 

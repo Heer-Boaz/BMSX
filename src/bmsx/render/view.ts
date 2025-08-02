@@ -1,7 +1,10 @@
-﻿import { BFont, GameOptions, Identifier, copy_vector, type RegisterablePersistent } from "../core/game";
+﻿import { BFont } from '../core/font';
+import { GameOptions } from '../core/gameoptions';
 import { Registry } from '../core/registry';
+import { copy_vector } from '../core/utils';
 import { Input } from '../input/input';
 import type { Area, Polygon, Size, Vector, id2imgres, vec2 } from '../rompack/rompack';
+import { Identifier, type RegisterablePersistent } from '../rompack/rompack';
 import { AmbientLight, DirectionalLight, PointLight } from './3d/light';
 
 import { Material } from './3d/material';

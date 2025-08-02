@@ -1,5 +1,5 @@
-import type { Identifiable, Identifier } from "../core/game";
 import { GameObject } from '../core/gameobject';
+import type { Identifiable, Identifier } from '../rompack/rompack';
 import { insavegame } from '../serializer/gameserializer';
 
 /**

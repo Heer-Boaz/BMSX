@@ -1,12 +1,12 @@
-import { BaseModel, Direction, GameObject, InputMap, MSX1ScreenHeight, MSX1ScreenWidth, SM, StateMachineBlueprint, build_fsm, insavegame, new_vec3, State, subscribesToGlobalEvent } from '../bmsx/bmsx';
-import { RoomMgr } from './roommgr';
-import { Sinterklaas } from './sinterklaas';
+import { BaseModel, build_fsm, Direction, GameObject, InputMap, insavegame, MSX1ScreenHeight, MSX1ScreenWidth, new_vec3, SM, State, StateMachineBlueprint, subscribesToGlobalEvent } from '../bmsx';
 import { Eila } from './eila';
 import { Fighter } from './fighter';
 import { Hud } from './hud';
-import { keyboardInputMapping, gamepadInputMapping } from './inputmapping';
-import { GameOver, Gordijn, Hoera, TitleScreen } from './stuff';
+import { gamepadInputMapping, keyboardInputMapping } from './inputmapping';
 import { AudioId } from './resourceids';
+import { RoomMgr } from './roommgr';
+import { Sinterklaas } from './sinterklaas';
+import { GameOver, Gordijn, Hoera, TitleScreen } from './stuff';
 
 @insavegame
 export class gamemodel extends BaseModel {

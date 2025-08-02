@@ -1,4 +1,4 @@
-import { Identifiable, Identifier, Parentable, type RegisterablePersistent } from "./game";
+import { Identifiable, Identifier, Parentable, type RegisterablePersistent } from '../rompack/rompack';
 import { Registry } from "./registry";
 
 type Listener = { listener: Function, subscriber: any };

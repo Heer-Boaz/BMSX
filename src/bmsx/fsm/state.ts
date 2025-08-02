@@ -1,6 +1,6 @@
 import { EventSubscriber } from '../core/eventemitter';
-import { Identifiable, Identifier, Registerable } from '../core/game';
 import { Input } from '../input/input';
+import { Identifiable, Identifier, Registerable } from '../rompack/rompack';
 import { insavegame, onload } from '../serializer/gameserializer';
 import { BST_MAX_HISTORY, DEFAULT_BST_ID } from './fsmcontroller';
 import { StateDefinitions } from './fsmlibrary';

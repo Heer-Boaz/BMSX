@@ -1,5 +1,5 @@
 import type { EventScope, EventSubscriber } from "../core/eventemitter";
-import type { Identifier, Registerable } from "../core/game";
+import type { Identifier, Registerable } from '../rompack/rompack';
 import type { StateMachineController } from "./fsmcontroller";
 import type { State } from './state';
 import type { StateDefinition } from './statedefinition';

@@ -1,8 +1,8 @@
 import { EventEmitter, EventSubscription } from '../core/eventemitter';
-import type { Disposable, Identifiable, Identifier } from "../core/game";
-import { AbstractConstructor } from '../core/game';
 import { type GameObjectConstructorBaseOrAbstract } from '../core/gameobject';
 import { Registry } from '../core/registry';
+import type { Disposable, Identifiable, Identifier } from '../rompack/rompack';
+import { AbstractConstructor } from '../rompack/rompack';
 import { insavegame, onload } from '../serializer/gameserializer';
 
 /**

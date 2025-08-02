@@ -1,14 +1,13 @@
 import { BehaviorTreeDefinitions } from '../ai/behaviourtree';
 import { Component, componenttags_postprocessing, componenttags_preprocessing, ComponentUpdateParams } from '../component/basecomponent';
 import { EventEmitter, type ListenerSet } from '../core/eventemitter';
-import type { Identifier } from "../core/game";
-import { area2size, div_vec2, new_vec2, set_inplace_vec2, translate_vec2, trunc_vec3 } from '../core/game';
 import { GameObject } from '../core/gameobject';
 import { Registry } from '../core/registry';
 import { SpriteObject } from '../core/sprite';
+import { area2size, div_vec2, new_vec2, set_inplace_vec2, translate_vec2, trunc_vec3 } from '../core/utils';
 import { StateDefinitions } from '../fsm/fsmlibrary';
 import { Color } from '../render/view';
-import type { vec2 } from '../rompack/rompack';
+import type { Identifier, vec2 } from '../rompack/rompack';
 import { excludeclassfromsavegame } from '../serializer/gameserializer';
 import { Msx1Colors } from '../systems/msx';
 import { createObjectTableElement } from './objectpropertydialog';

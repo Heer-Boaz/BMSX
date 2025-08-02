@@ -1,4 +1,4 @@
-import { Identifiable, Identifier } from '../core/game';
+import { Identifiable, Identifier } from '../rompack/rompack';
 import { insavegame, onload } from '../serializer/gameserializer';
 import { type Stateful, type id2sstate } from './fsmtypes';
 import { State } from './state';

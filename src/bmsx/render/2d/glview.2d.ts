@@ -1,4 +1,4 @@
-import { new_vec2, new_vec3 } from '../../core/game';
+import { new_vec2, new_vec3 } from '../../core/utils';
 import type { ImgMeta, Polygon, vec2arr } from '../../rompack/rompack';
 import { buildQuadTexCoords, glCreateBuffer, glLoadShader, glSetupAttributeFloat, glSetupAttributeInt, glSwitchProgram, glUpdateBuffer } from '../glutils';
 import type { GLView } from '../glview';

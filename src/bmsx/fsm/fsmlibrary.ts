@@ -1,5 +1,5 @@
 import type { EventScope } from "../core/eventemitter";
-import type { Identifier } from "../core/game";
+import type { Identifier } from '../rompack/rompack';
 import { StateDefinitionBuilders } from "./fsmdecorators";
 import type { listed_sdef_event, StateEventDefinition, StateMachineBlueprint } from "./fsmtypes";
 import { StateDefinition, validateStateMachine } from './statedefinition';

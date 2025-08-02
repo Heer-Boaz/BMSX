@@ -1,6 +1,5 @@
-import { Identifier, RegisterablePersistent } from '../core/game';
 import { Registry } from '../core/registry';
-import { GLTFModel, Index2GpuTexture } from '../rompack/rompack';
+import { GLTFModel, Identifier, Index2GpuTexture, RegisterablePersistent, Size } from '../rompack/rompack';
 import { glCreateTextureFromImage } from './glutils';
 
 export interface TextureIdentifier {
@@ -9,6 +8,7 @@ export interface TextureIdentifier {
 }
 
 export interface TextureParams {
+    size?: Size;
     wrapS?: number;
     wrapT?: number;
     minFilter?: number;

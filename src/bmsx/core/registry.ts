@@ -1,4 +1,4 @@
-import { Identifier, Registerable } from "./game";
+import { Identifier, Registerable } from '../rompack/rompack';
 
 export class Registry {
     private static _instance: Registry;

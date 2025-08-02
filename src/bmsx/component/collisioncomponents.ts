@@ -1,8 +1,8 @@
 import { EventEmitter, subscribesToParentScopedEvent } from "../core/eventemitter";
-import type { Identifier } from "../core/game";
-import { Direction, mod, new_vec2, set_inplace_vec2 } from "../core/game";
 import { GameObject } from "../core/gameobject";
-import { vec2 } from "../rompack/rompack";
+import { mod, new_vec2, set_inplace_vec2 } from '../core/utils';
+import type { Identifier } from '../rompack/rompack';
+import { Direction, vec2 } from '../rompack/rompack';
 import { insavegame } from "../serializer/gameserializer";
 import { TileSize } from "../systems/msx";
 import { Component, componenttags_postprocessing, componenttags_preprocessing, ComponentUpdateParams } from "./basecomponent";

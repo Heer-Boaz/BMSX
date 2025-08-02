@@ -1,7 +1,7 @@
 ﻿import { EventEmitter } from '../core/eventemitter';
-import type { Identifier, RegisterablePersistent } from "../core/game";
 import { Registry } from '../core/registry';
 import { handleDebugClick, handleContextMenu as handleDebugContextMenu, handleDebugMouseDown, handleDebugMouseMove, handleDebugMouseOut, handleDebugMouseUp, handleOpenDebugMenu, handleOpenObjectMenu } from '../debugger/bmsxdebugger';
+import type { Identifier, RegisterablePersistent } from '../rompack/rompack';
 import { GamepadInput } from './gamepad';
 import type { ActionState, ButtonId, ButtonState, InputEvent, InputHandler, KeyOrButtonId2ButtonState } from './inputtypes';
 import { KeyboardInput } from './keyboardinput';

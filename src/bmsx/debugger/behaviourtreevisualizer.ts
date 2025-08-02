@@ -1,7 +1,7 @@
 // BehaviourTreeVisualizer extracted from bmsxdebugger.ts
 import { BTNode } from '../ai/behaviourtree';
 import { Component, componenttags_postprocessing } from '../component/basecomponent';
-import type { Identifier } from '../core/game';
+import type { Identifier } from '../rompack/rompack';
 import { FloatingDialog } from './bmsxdebugger';
 
 @componenttags_postprocessing('render')

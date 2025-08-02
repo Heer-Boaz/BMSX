@@ -1,4 +1,49 @@
 import { TextureKey } from '../render/texturemanager';
+
+/**
+ * Arguments passed from the bootloader to the game constructor.
+ */
+export interface BootArgs {
+	rom: RomPack;
+	sndcontext: AudioContext;
+	gainnode: GainNode;
+	debug?: boolean;
+	startingGamepadIndex?: number | null;
+}/**
+ * Represents a type that is a constructor function with a prototype of type T.
+ * This effectively allows it to match any class (including abstract classes) that produces T instances.
+ * Used for attaching abstract classes to game objects.
+ */
+
+export type AbstractConstructor<T> = Function & { prototype: T; };
+/**
+ * Represents the direction values.
+ */
+
+export type Direction = 'none' | 'up' | 'right' | 'down' | 'left';
+
+export type Identifier = string | 'model';
+export interface Identifiable {
+	id: Identifier;
+}
+
+export interface Parentable {
+	parentid?: Identifier;
+}
+
+export interface Disposable {
+	dispose(): void;
+}
+
+export interface Registerable extends Identifiable, Disposable {
+	registrypersistent?: boolean;
+}
+
+export interface RegisterablePersistent extends Registerable {
+	registrypersistent: true;
+}
+
+
 /*
  * Enum representing the type of an audio asset.
  */
@@ -192,15 +237,4 @@ export interface RomPack {
 	model: id2model; // Reference to the loaded model assets in the ROM pack, including metadata.
 	data: id2data; // Reference to the loaded data assets in the ROM pack, including metadata.
 	code: string; // The loaded game code in the ROM pack.
-}
-
-/**
- * Arguments passed from the bootloader to the game constructor.
- */
-export interface BootArgs {
-	rom: RomPack;
-	sndcontext: AudioContext;
-	gainnode: GainNode;
-	debug?: boolean;
-	startingGamepadIndex?: number | null;
 }

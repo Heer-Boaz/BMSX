@@ -1,5 +1,6 @@
-import { Identifier, multiply_vec, to_vec2arr } from '../core/game';
+import { multiply_vec, to_vec2arr } from '../core/utils';
 import type { Polygon, Size, vec2, vec3arr } from '../rompack/rompack';
+import { Identifier } from '../rompack/rompack';
 import { checkWebGLError } from './glview.helpers';
 
 import { glCreateTexture, glSwitchProgram } from './glutils';
@@ -8,7 +9,7 @@ import { catchWebGLError, generateAtlasName } from './glview.helpers';
 import * as GLView2D from './2d/glview.2d';
 import { BaseView, Color, DrawImgOptions, DrawMeshOptions, DrawRectOptions, SkyboxImageIds } from './view';
 
-import { AmbientLight, DirectionalLight, PointLight } from '../bmsx';
+import { AmbientLight, DirectionalLight, PointLight } from '..';
 import * as GLView3D from './3d/glview.3d';
 import * as GLViewCRT from './post/glview.crt';
 
@@ -383,6 +384,9 @@ export class GLView extends BaseView {
 	 */
 	@catchWebGLError
 	override clear(): void {
+		if (checkWebGLError('before clear')) {
+			throw new Error('WebGL error before clearing the canvas');
+		}
 		const gl = this.glctx;
 		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 		gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);

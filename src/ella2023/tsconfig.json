@@ -8,7 +8,7 @@
     },
     "include": [
         ".",
-        "../bmsx/bmsx.ts",
+        "../bmsx/index.ts",
         "../bmsx/**/*"
     ]
 }

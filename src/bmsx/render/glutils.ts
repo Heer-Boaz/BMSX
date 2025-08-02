@@ -1,11 +1,14 @@
-import { Size, TextureParams } from '../bmsx';
+import { Size } from '../rompack/rompack';
 import { MAX_SPRITES, VERTEXCOORDS_SIZE } from './glview.constants';
 import { checkWebGLError } from './glview.helpers';
+import { TextureParams } from './texturemanager';
 
 /**
  * Gets the texture coordinates for the vertices of the rectangles.
  * The texture coordinates are used both for the game shader (sprites) and the CRT shader (full-screen quad).
- * @returns
+ * @returns {Float32Array} The texture coordinates for the vertices of the rectangles.
+ * The coordinates are in the order of top-left, bottom-left, top-right, top-right, bottom-left, bottom-right.
+ * This ordering is important to avoid a vertical flip when rendering sprites.
  */
 export function buildQuadTexCoords(): Float32Array {
     const textureCoordinates = new Float32Array(VERTEXCOORDS_SIZE * MAX_SPRITES);
@@ -98,6 +101,26 @@ export function glCreateTexture(gl: WebGL2RenderingContext, img?: HTMLImageEleme
     return result;
 }
 
+export function glCreateShadowMapTextureAndFramebuffer(gl: WebGL2RenderingContext, desc: TextureParams) {
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT16, desc.size.x, desc.size.y, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_SHORT, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    const framebuffer = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, texture, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    checkWebGLError('createShadowMapTextureAndFramebuffer');
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+        throw new Error('Framebuffer is not complete');
+    }
+    return { texture, framebuffer };
+}
+
 export function glCreateTextureFromImage(gl: WebGL2RenderingContext, img: ImageBitmap, glTextureToBind: number, desc: TextureParams): WebGLTexture {
     const prevActive = gl.getParameter(gl.ACTIVE_TEXTURE);
     gl.activeTexture(glTextureToBind);
@@ -113,6 +136,9 @@ export function glCreateTextureFromImage(gl: WebGL2RenderingContext, img: ImageB
 
     gl.bindTexture(gl.TEXTURE_2D, prevTex);
     gl.activeTexture(prevActive);
+    if (checkWebGLError('createTextureFromImage')) {
+        throw new Error('Error creating texture from image');
+    }
     return tex;
 }
 
