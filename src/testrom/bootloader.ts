@@ -8,13 +8,16 @@ var _view: gameview;
 
 const _global = window || globalThis;
 
-_global['h406A'] = async (args: BootArgs): Promise<void> => {
+_global['h406A'] = (args: BootArgs): void => {
     _model = new gamemodel();
-    _view = new gameview(new_vec2(320, 240));
+    _view = new gameview(new_vec2(_model.gamewidth, _model.gameheight));
     _game = new Game();
-    await _game.init({ ...args, model: _model, view: _view });
-    _game.start();
+    _game.init({ ...args, model: _model, view: _view }).then(() => {
+        _game.start();
+    });
 };
+
+const actions = ['up', 'right', 'down', 'left', 'load', 'save', 'bla', 'blap'] as const;
 type Action = typeof actions[number];
 
 type MyKeyboardInputMapping = {
@@ -472,8 +475,7 @@ class gamemodel extends BaseModel {
                     },
                     run(this: gamemodel, s: State) { // Don't use 'onenter', as the game has not been fully initialized yet before 'onenter' triggers!
                         s.to('default');
-                    },
-                    // exit handler removed; initialization moved to do_one_time_game_init
+                    }
                 },
                 default: {
                     run: BaseModel.defaultrun,
@@ -495,16 +497,15 @@ class gamemodel extends BaseModel {
     }
 
     public override do_one_time_game_init(): this {
-        // Initialization logic moved here from state machine exit handler
         const cube = new Cube3D();
         const small = new SmallCube3D(0);
         const small2 = new SmallCube3D(2);
         const animatedMorphSphere = new AnimatedMorphSphere();
-        this.spawn(new bclass(), new_vec3(100, 100, 1000));
-        this.spawn(cube, new_vec3(0, 0, 0));
-        this.spawn(small, new_vec3(5, 0, 0));
-        this.spawn(small2, new_vec3(5, 5, 5));
-        this.spawn(animatedMorphSphere, new_vec3(5, 5, 5));
+        _model.spawn(new bclass(), new_vec3(100, 100, 1000));
+        _model.spawn(cube, new_vec3(0, 0, 0));
+        _model.spawn(small, new_vec3(5, 0, 0));
+        _model.spawn(small2, new_vec3(5, 5, 5));
+        _model.spawn(animatedMorphSphere, new_vec3(5, 5, 5));
 
         const parentTf = cube.getComponent(TransformComponent);
         const childTf = small.getComponent(TransformComponent);
@@ -531,18 +532,18 @@ class gamemodel extends BaseModel {
         cam2.camera.setPosition([5, 3, 5]);
         cam2.camera.lookAt(cube.pos);
 
-        this.spawn(cam1);
-        this.spawn(cam2);
+        _model.spawn(cam1);
+        _model.spawn(cam2);
 
         const ambient = new AmbientLightObject([1.0, 1.0, 1.0], .2, 'amb');
         const sun = new DirectionalLightObject([0.5, -1.0, -0.5], [1.0, 1.0, 1.0], 1, 'sun');
         const extraSun = new DirectionalLightObject([-0.5, -1.0, 0.5], [1.0, 1.0, 1.0], 1, 'extraSun');
         const lamp = new PointLightObject([2.0, 2.0, 2.0], [1.0, 1.0, 1.0], 6.0, 2, 'lamp');
 
-        this.spawn(ambient);
-        this.spawn(sun);
-        this.spawn(extraSun);
-        this.spawn(lamp);
+        _model.spawn(ambient);
+        _model.spawn(sun);
+        _model.spawn(extraSun);
+        _model.spawn(lamp);
 
         $.view.setSkybox({
             posX: BitmapId.b2,
@@ -553,26 +554,28 @@ class gamemodel extends BaseModel {
             negZ: BitmapId.b,
         });
 
-        this.spawn(new CameraController(cam1, cam2));
+        _model.spawn(new CameraController(cam1, cam2));
 
         return this;
     }
+
+    public get gamewidth(): number {
         // return MSX1ScreenWidth;
         return 320; // Adjusted for the new view size
     }
 
     public get gameheight(): number {
-    // return MSX1ScreenHeight;
-    return 240; // Adjusted for the new view size
-}
+        // return MSX1ScreenHeight;
+        return 240; // Adjusted for the new view size
+    }
 
     public collidesWithTile(_o: GameObject, _dir: Direction): boolean {
-    return false;
-}
+        return false;
+    }
 
     public isCollisionTile(_x: number, _y: number): boolean {
-    return false;
-}
+        return false;
+    }
 };
 
 class gameview extends GLView {
