@@ -84,9 +84,9 @@ export function glLoadShader(gl: WebGL2RenderingContext, type: number, source: s
     return shader;
 }
 
-export function glCreateTexture(gl: WebGL2RenderingContext, img?: HTMLImageElement, size?: Size, glTextureToBind?: number): WebGLTexture {
+export function glCreateTexture(gl: WebGL2RenderingContext, img?: HTMLImageElement, size?: Size, glTextureIndex?: number): WebGLTexture {
     const result = gl.createTexture()!;
-    gl.activeTexture(glTextureToBind || gl.TEXTURE0);
+    gl.activeTexture(gl.TEXTURE0 + (glTextureIndex || 0));
     gl.bindTexture(gl.TEXTURE_2D, result);
     if (img) {
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
@@ -121,13 +121,20 @@ export function glCreateShadowMapTextureAndFramebuffer(gl: WebGL2RenderingContex
     return { texture, framebuffer };
 }
 
-export function glCreateTextureFromImage(gl: WebGL2RenderingContext, img: ImageBitmap, glTextureToBind: number, desc: TextureParams): WebGLTexture {
+export function glCreateTextureFromImage(gl: WebGL2RenderingContext, img: ImageBitmap, glTextureIndex: number, desc: TextureParams): WebGLTexture {
     const prevActive = gl.getParameter(gl.ACTIVE_TEXTURE);
-    gl.activeTexture(glTextureToBind);
+    gl.activeTexture(gl.TEXTURE0 + (glTextureIndex || 0));
     const prevTex = gl.getParameter(gl.TEXTURE_BINDING_2D);
 
     const tex = gl.createTexture()!;
     gl.bindTexture(gl.TEXTURE_2D, tex);
+    if (!img) {
+        throw new Error('Image is not defined');
+    }
+    if (img.width === 0 || img.height === 0) {
+        throw new Error(`Image has invalid dimensions: ${img.width}x${img.height}`);
+    }
+
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, desc.wrapS ?? gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, desc.wrapT ?? gl.CLAMP_TO_EDGE);

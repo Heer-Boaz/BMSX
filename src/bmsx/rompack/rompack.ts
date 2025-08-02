@@ -126,58 +126,6 @@ export interface HitPolygonsPrecalc {
 	fliphv: Polygon[]; // The concave hull polygons of the image, when flipped both horizontally and vertically.
 }
 
-/**
- * Metadata for an image asset.
- */
-export interface ImgMeta {
-	atlassed: boolean; // Whether the image is part of an atlas.
-	atlasid?: number; // The ID of the atlas the image is part of, if applicable.
-	width: number; // The width of the image.
-	height: number; // The height of the image.
-	texcoords?: number[]; // The texture coordinates for the image, used for rendering.
-	texcoords_fliph?: number[]; // The texture coordinates for the image, when flipped horizontally.
-	texcoords_flipv?: number[]; // The texture coordinates for the image, when flipped vertically.
-	texcoords_fliphv?: number[]; // The texture coordinates for the image, when flipped both horizontally and vertically.
-	boundingbox?: BoundingBoxPrecalc; // The bounding box of the image. Used for collision detection.
-	centerpoint?: vec2arr; // The center point of the image, based on the bounding box.
-	hitpolygons?: HitPolygonsPrecalc; // The concave hull polygons for collision detection, with flipped variants.
-}
-
-export type asset_type = 'image' | 'audio' | 'code' | 'data' | 'atlas' | 'romlabel' | 'model';
-
-/**
- * Represents an asset in a ROM pack.
- */
-export interface RomAsset {
-	resid: number; // The resource ID of the asset.
-	resname: string; // The name of the asset.
-	type: asset_type; // The type of the asset.
-	start?: number; // The optional start offset of the asset in the ROM. (e.g., atlassed images don't have a start offset, as they are part of an atlas)
-	end?: number; // The optional end offset of the asset in the ROM. (e.g., atlassed images don't have an end offset, as they are part of an atlas)
-	metabuffer_start?: number; // Optional start offset of binary-encoded per-asset metadata in the buffer
-	metabuffer_end?: number; // Optional end offset of binary-encoded per-asset metadata in the buffer
-	buffer?: Buffer; // The binary buffer of the asset, used for all assets, including images and audio.
-	texture_buffer?: Buffer; // Optional buffer holding packed textures for model assets
-	imgmeta?: ImgMeta; // The metadata of the asset, if it is an image.
-	audiometa?: AudioMeta; // The metadata of the asset, if it is an audio asset.
-	texture_start?: number; // Start offset of the texture buffer within the ROM
-	texture_end?: number;   // End offset of the texture buffer within the ROM
-}
-
-export interface RomImgAsset extends RomAsset {
-	imgbin: HTMLImageElement; // The HTML image element of the image asset
-}
-
-export interface RomMeta {
-	start: number; // The start offset of the RomPack metadata in the ROM (file) buffer itself.
-	end: number; // The end offset of the RomPack metadata in the ROM (file) buffer itself.
-}
-
-export type id2res = Record<number | string, RomAsset>;
-export type id2imgres = Record<number | string, RomImgAsset>;
-export type id2model = Record<number | string, GLTFModel>;
-export type id2data = Record<number | string, any>;
-export type id2htmlimg = Record<number | string, HTMLImageElement>;
 
 export interface GLTFMaterial {
 	baseColorFactor?: [number, number, number, number];
@@ -230,6 +178,7 @@ export interface GLTFModel {
 }
 
 export type OBJModel = GLTFModel;
+
 export interface RomPack {
 	rom: ArrayBuffer; // The binary buffer of the ROM pack, containing all assets, including images, audio and code.
 	img: id2imgres; // Reference to the loaded image assets in the ROM pack, including metadata and the loaded image (HTMLImageElement).
@@ -238,3 +187,57 @@ export interface RomPack {
 	data: id2data; // Reference to the loaded data assets in the ROM pack, including metadata.
 	code: string; // The loaded game code in the ROM pack.
 }
+
+/**
+ * Metadata for an image asset.
+ */
+export interface ImgMeta {
+	atlassed: boolean; // Whether the image is part of an atlas.
+	atlasid?: number; // The ID of the atlas the image is part of, if applicable.
+	width: number; // The width of the image.
+	height: number; // The height of the image.
+	texcoords?: number[]; // The texture coordinates for the image, used for rendering.
+	texcoords_fliph?: number[]; // The texture coordinates for the image, when flipped horizontally.
+	texcoords_flipv?: number[]; // The texture coordinates for the image, when flipped vertically.
+	texcoords_fliphv?: number[]; // The texture coordinates for the image, when flipped both horizontally and vertically.
+	boundingbox?: BoundingBoxPrecalc; // The bounding box of the image. Used for collision detection.
+	centerpoint?: vec2arr; // The center point of the image, based on the bounding box.
+	hitpolygons?: HitPolygonsPrecalc; // The concave hull polygons for collision detection, with flipped variants.
+}
+
+export type asset_type = 'image' | 'audio' | 'code' | 'data' | 'atlas' | 'romlabel' | 'model';
+export type asset_id = string | number;
+
+/**
+ * Represents an asset in a ROM pack.
+ */
+export interface RomAsset {
+	resid: asset_id; // The resource ID of the asset.
+	resname: string; // The name of the asset.
+	type: asset_type; // The type of the asset.
+	start?: number; // The optional start offset of the asset in the ROM. (e.g., atlassed images don't have a start offset, as they are part of an atlas)
+	end?: number; // The optional end offset of the asset in the ROM. (e.g., atlassed images don't have an end offset, as they are part of an atlas)
+	metabuffer_start?: number; // Optional start offset of binary-encoded per-asset metadata in the buffer
+	metabuffer_end?: number; // Optional end offset of binary-encoded per-asset metadata in the buffer
+	buffer?: Buffer; // The binary buffer of the asset, used for all assets, including images and audio.
+	texture_buffer?: Buffer; // Optional buffer holding packed textures for model assets
+	imgmeta?: ImgMeta; // The metadata of the asset, if it is an image.
+	audiometa?: AudioMeta; // The metadata of the asset, if it is an audio asset.
+	texture_start?: number; // Start offset of the texture buffer within the ROM
+	texture_end?: number;   // End offset of the texture buffer within the ROM
+}
+
+export interface RomImgAsset extends RomAsset {
+	imgbin: HTMLImageElement; // The HTML image element of the image asset
+}
+
+export interface RomMeta {
+	start: number; // The start offset of the RomPack metadata in the ROM (file) buffer itself.
+	end: number; // The end offset of the RomPack metadata in the ROM (file) buffer itself.
+}
+
+export type id2res = Record<asset_id, RomAsset>;
+export type id2imgres = Record<asset_id, RomImgAsset>;
+export type id2model = Record<asset_id, GLTFModel>;
+export type id2data = Record<asset_id, any>;
+export type id2htmlimg = Record<asset_id, HTMLImageElement>;

@@ -1,5 +1,4 @@
-import { AmbientLightObject, BGamepadButton, BaseModel, BehaviorTreeDefinition, BinaryCompressor, BootArgs, CameraObject, Component, Direction, DirectionalLightObject, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MeshObject, PointLightObject, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, TransformComponent, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, debugPrintBinarySnapshot, insavegame, new_area, new_vec2, new_vec3, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/index';
-import type { GLTFModel } from '../bmsx/rompack/rompack';
+import { AmbientLightObject, BGamepadButton, BaseModel, BehaviorTreeDefinition, BootArgs, CameraObject, Component, Direction, DirectionalLightObject, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, Material, MeshObject, PointLightObject, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, TransformComponent, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, insavegame, new_area, new_vec2, new_vec3, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/index';
 import { BitmapId, ModelId } from './resourceids';
 
 var _game: Game;
@@ -8,11 +7,11 @@ var _view: gameview;
 
 const _global = window || globalThis;
 
-_global['h406A'] = (args: BootArgs): void => {
+_global['h406A'] = (args: BootArgs): Promise<any> => {
     _model = new gamemodel();
     _view = new gameview(new_vec2(_model.gamewidth, _model.gameheight));
     _game = new Game();
-    _game.init({ ...args, model: _model, view: _view }).then(() => {
+    return _game.init({ ...args, model: _model, view: _view }).then(() => {
         _game.start();
     });
 };
@@ -251,51 +250,10 @@ class bclass extends SpriteObject {
                     case 'load':
                         if (consumed) break;
                         $.input.getPlayerInput(1).consumeAction(action);
-
-                        if (_model[savestring]) {
-                            // If the save data is a string, convert it to Uint8Array before loading
-                            const saveData = _model[savestring];
-                            let saveDataUint8: Uint8Array;
-                            if (typeof saveData === 'string') {
-                                // Convert base64 string to Uint8Array
-                                const binaryString = atob(saveData);
-                                const len = binaryString.length;
-                                const bytes = new Uint8Array(len);
-                                for (let i = 0; i < len; i++) {
-                                    bytes[i] = binaryString.charCodeAt(i);
-                                }
-                                saveDataUint8 = bytes;
-                            } else {
-                                saveDataUint8 = saveData;
-                            }
-                            _model.load(saveDataUint8);
-                            _model[savestring] = undefined;
-                            delete _model[savestring];
-                            console.info(`${new Date().toTimeString()} Game loaded!`);
-                            console.info(`${debugPrintBinarySnapshot(BinaryCompressor.decompressBinary(saveDataUint8))}`);
-                        }
-                        // show_load_savestate_dialog();
                         break;
                     case 'save':
                         if (consumed) break;
                         $.input.getPlayerInput(1).consumeAction(action);
-
-                        const savestuff = $.model.save();
-                        $.model[savestring] = savestuff;
-                        console.info(`${new Date().toTimeString()} Game saved!`);
-                        // Convert the Uint8Array to a hexadecimal string and log it
-                        if ($.model[savestring] instanceof Uint8Array) {
-                            const hexString = Array.from($.model[savestring] as Uint8Array)
-                                .map(b => b.toString(16).padStart(2, '0'))
-                                .join('');
-                            console.info(`Hexadecimal save: ${hexString}`);
-                            // Or, to log as base64:
-                            const base64String = btoa(String.fromCharCode(...($.model[savestring] as Uint8Array)));
-                            console.info(`Base64 save: ${base64String}`);
-                        } else {
-                            console.info(`${$.model[savestring]}`);
-                        }
-                        // show_download_savestate_dialog();
                         break;
                     case 'bla':
                         if (consumed) break;
@@ -362,8 +320,7 @@ class bclass extends SpriteObject {
 class Cube3D extends MeshObject {
     constructor() {
         super('cube');
-        const model = $.rom.model[ModelId.cube] as GLTFModel;
-        this.setModel(model);
+        this.model_id = ModelId.cube;
     }
 
     override run(): void {
@@ -378,15 +335,18 @@ class Cube3D extends MeshObject {
 class SmallCube3D extends MeshObject {
     constructor(overrideTextureIndex?: number) {
         super(`smallCube${overrideTextureIndex ?? ''}`);
-        const model = $.rom.model[ModelId.cube] as GLTFModel;
+        this.model_id = ModelId.cube;
+        const mesh = this.mesh;
         if (overrideTextureIndex !== undefined) {
-            // Override the base color texture index in the first material
-            model.materials[0] = {
-                ...model.materials[0],
-                baseColorTexture: overrideTextureIndex,
-            };
+            // Override the albedo texture index in the first material
+            mesh.material[0] = {
+                ...mesh.material[0],
+                textures: {
+                    albedo: overrideTextureIndex,
+                },
+            } as Material;
         }
-        this.setModel(model);
+        this.setMesh(mesh);
         this.scale = [0.5, 0.5, 0.5];
     }
 
@@ -402,8 +362,7 @@ class SmallCube3D extends MeshObject {
 class AnimatedMorphSphere extends MeshObject {
     constructor() {
         super('animatedSphere');
-        const model = $.rom.model[ModelId.animatedmorphsphere] as GLTFModel;
-        this.setModel(model);
+        this.model_id = ModelId.animatedmorphsphere;
         this.scale = [50.0, 50.0, 50.0];
     }
 
@@ -498,7 +457,7 @@ class gamemodel extends BaseModel {
 
     public override do_one_time_game_init(): this {
         const cube = new Cube3D();
-        const small = new SmallCube3D(0);
+        const small = new SmallCube3D(1);
         const small2 = new SmallCube3D(2);
         const animatedMorphSphere = new AnimatedMorphSphere();
         _model.spawn(new bclass(), new_vec3(100, 100, 1000));

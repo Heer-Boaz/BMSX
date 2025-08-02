@@ -36,8 +36,9 @@ export class Registry {
         this._registry[entity.id] = entity;
     }
 
-    public deregister(id: Registerable | Identifier): boolean {
+    public deregister(id: Registerable | Identifier, removePersistentRecord: boolean = false): boolean {
         const entity_id = typeof id === 'string' ? id : id.id;
+        if (this._registry[entity_id]?.registrypersistent && !removePersistentRecord) return false; // If the entity is persistent, we don't delete it
         return delete this._registry[entity_id];
     }
 

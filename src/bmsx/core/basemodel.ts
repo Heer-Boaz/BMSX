@@ -556,6 +556,9 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
             $.event_emitter.initClassBoundEventSubscriptions(entity); // Reinitialize event subscriptions for persistent entities, including the model instance itself
         });
 
+        // Remove all cached textures and images from the texture manager
+        $.texmanager.clear();
+
         savegame.spaces.forEach(space => this.addSpace(space));
         savegame.allSpacesObjects.forEach(space_and_objects => {
             const space = this[spaceid_2_space][space_and_objects.spaceid];

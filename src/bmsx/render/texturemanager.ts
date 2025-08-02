@@ -2,6 +2,8 @@ import { Registry } from '../core/registry';
 import { GLTFModel, Identifier, Index2GpuTexture, RegisterablePersistent, Size } from '../rompack/rompack';
 import { glCreateTextureFromImage } from './glutils';
 
+export const TEXTMANAGER_ID = 'texmgr';
+
 export interface TextureIdentifier {
     modelName: string;
     modelImageIndex: number;
@@ -62,11 +64,11 @@ interface GPUCacheEntry {
 
 export class TextureManager implements RegisterablePersistent {
     get registrypersistent(): true { return true; }
-    public get id(): Identifier { return 'texmanager'; }
+    public get id(): Identifier { return 'texmgr'; }
 
     private backend?: GPUBackend;
-    private imageCache = new Map<string, ImageCacheEntry>();
-    private gpuCache = new Map<string, GPUCacheEntry>();
+    private imageCache = new Map<ImageKey, ImageCacheEntry>();
+    private gpuCache = new Map<TextureKey, GPUCacheEntry>();
 
     constructor(backend?: GPUBackend) {
         this.backend = backend;
@@ -102,6 +104,10 @@ export class TextureManager implements RegisterablePersistent {
     private makeKey(uri: string, desc: TextureParams): TextureKey {
         const descKey = JSON.stringify(desc);
         return `${uri}|${descKey}`;
+    }
+
+    private makeBufferKey(identifier: TextureIdentifier): TextureKey {
+        return `buf:${identifier.modelName}:${identifier.modelImageIndex}`;
     }
 
     private async loadBitmap(uri: string, buffer?: ArrayBuffer): Promise<ImageBitmap> {
@@ -166,7 +172,7 @@ export class TextureManager implements RegisterablePersistent {
     }
 
     public async loadTextureFromBuffer(buffer: ArrayBuffer, identifier: TextureIdentifier, desc: TextureParams = {}): Promise<TextureKey> {
-        const key = `${identifier.modelName}:${identifier.modelImageIndex}`;
+        const key = this.makeBufferKey(identifier);
         return this.loadAndCacheTexture(key, () => this.loadBitmap('', buffer), desc);
     }
 
@@ -206,12 +212,17 @@ export class TextureManager implements RegisterablePersistent {
         }
     }
 
-    public dispose(): void {
+    public clear(): void {
         for (const entry of this.gpuCache.values()) {
             if (this.backend) this.backend.destroyTexture(entry.handle);
         }
         this.gpuCache.clear();
         this.imageCache.clear();
-        Registry.instance.deregister(this);
+    }
+
+    public dispose(): void {
+        this.clear();
+        // Do not remove this persistent record. The code here is here to ensure that the manager will be disposed if we change the manager to become non-persistent in the future.
+        Registry.instance.deregister(this, false);
     }
 }

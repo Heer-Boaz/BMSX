@@ -25,4 +25,5 @@ export class Material {
         this.metallicFactor = opts?.metallicFactor ?? 1.0;
         this.roughnessFactor = opts?.roughnessFactor ?? 1.0;
     }
+
 }

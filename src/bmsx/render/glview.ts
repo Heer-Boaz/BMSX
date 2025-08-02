@@ -249,9 +249,9 @@ export class GLView extends BaseView {
 		this.textures = {
 			// Link the atlas texture to the '_atlas' key for easy access
 			// The atlas is created from the '_atlas' image in the ROM pack, which is loaded before the GLView is created (during loading of the ROM pack)
-			_atlas: glCreateTexture(gl, BaseView.imgassets['_atlas']?.imgbin, undefined, gl.TEXTURE0),
+			_atlas: glCreateTexture(gl, BaseView.imgassets['_atlas']?.imgbin, undefined, 0),
 			// Create the texture with dummy width and height, which will be updated later
-			_atlas_dynamic: glCreateTexture(gl, null, { x: 1, y: 1 }, gl.TEXTURE1),
+			_atlas_dynamic: glCreateTexture(gl, null, { x: 1, y: 1 }, 1),
 			post_processing_source_texture: null, // This will be created later in createFramebufferAndTexture
 		};
 	}
@@ -312,7 +312,7 @@ export class GLView extends BaseView {
 		const height = this.offscreenCanvasSize.y;
 
 		// Create a new texture
-		this.textures['post_processing_source_texture'] = glCreateTexture(gl, undefined, { x: width, y: height }, gl.TEXTURE8); // Use TEXTURE8 for the post-processing shader texture
+		this.textures['post_processing_source_texture'] = glCreateTexture(gl, undefined, { x: width, y: height }, 8); // Use TEXTURE8 for the post-processing shader texture
 
 		// Create a new framebuffer
 		this.framebuffer = gl.createFramebuffer();
@@ -510,7 +510,7 @@ export class GLView extends BaseView {
 
 		const gl = this.glctx;
 		// Create the dynamic atlas texture
-		this.textures['_atlas_dynamic'] = glCreateTexture(gl, atlasImage, { x: atlasImage.width, y: atlasImage.height }, gl.TEXTURE1);
+		this.textures['_atlas_dynamic'] = glCreateTexture(gl, atlasImage, { x: atlasImage.width, y: atlasImage.height }, 1);
 
 		// Update the dynamic atlas texture with the new image
 		gl.bindTexture(gl.TEXTURE_2D, this.textures['_atlas_dynamic']);

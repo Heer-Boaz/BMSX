@@ -4,7 +4,7 @@ import { gamePaused, gameResumed } from "../debugger/rewindui";
 import { Input } from "../input/input";
 import type { InputMap, VibrationParams } from "../input/inputtypes";
 import { ActionState, ActionStateQuery } from '../input/inputtypes';
-import { TextureManager, WebGLBackend } from "../render/texturemanager";
+import { TEXTMANAGER_ID, TextureManager, WebGLBackend } from "../render/texturemanager";
 import { TextWriter } from "../render/textwriter";
 import { BaseView, Color, DrawImgOptions, DrawRectOptions } from "../render/view";
 import { Identifiable, Identifier, Registerable, RomPack, Size, Vector } from "../rompack/rompack";
@@ -121,6 +121,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	public debug_runSingleFrameAndPause!: boolean;
 
 	public get rom(): RomPack { return global.$rom; }
+	public get rompack(): RomPack { return global.$rom; }
 
 	/**
 	 * Retrieves the model instance of type T.
@@ -142,7 +143,7 @@ export class Game<M extends BaseModel = BaseModel, V extends BaseView = BaseView
 	public get event_emitter(): EventEmitter { return this.registry.get<EventEmitter>('event_emitter'); }
 
 	public get input(): Input { return this.registry.get<Input>('input'); }
-	public get texmanager(): TextureManager { return this.registry.get<TextureManager>('texmanager'); }
+	public get texmanager(): TextureManager { return this.registry.get<TextureManager>(TEXTMANAGER_ID); }
 	public get registry(): Registry { return Registry.instance; }
 	public get sndmaster(): SM { return SM; }
 

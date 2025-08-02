@@ -4,8 +4,8 @@ import { bmat } from '../render/3d/math3d';
 import { ShadowMap } from '../render/3d/shadowmap';
 import { DEFAULT_VERTEX_COLOR } from '../render/glview.constants';
 import { Color, DrawMeshOptions } from '../render/view';
-import type { GLTFModel, vec3arr } from '../rompack/rompack';
-import { insavegame } from '../serializer/gameserializer';
+import type { asset_id, GLTFMesh, GLTFModel, vec3arr } from '../rompack/rompack';
+import { insavegame, onload } from '../serializer/gameserializer';
 import { GameObject } from './gameobject';
 
 export class Mesh {
@@ -34,27 +34,47 @@ export class Mesh {
 @insavegame
 export abstract class MeshObject extends GameObject {
     public mesh: Mesh;
+    public meshModel: GLTFModel;
     public rotation: vec3arr;
     public scale: vec3arr;
-    private _model?: GLTFModel;
+    private _model_id?: asset_id;
 
     constructor(id?: string, fsm_id?: string) {
         super(id, fsm_id);
-        this.mesh ??= new Mesh();
         this.rotation ??= [0, 0, 0];
         this.scale ??= [1, 1, 1];
     }
 
-    public setModel(meshModel: GLTFModel): void {
-        this._model = meshModel;
-        const mesh = meshModel.meshes[0];
-        if (!mesh) return;
-        this.mesh.positions = mesh.positions;
-        this.mesh.texcoords = mesh.texcoords ?? new Float32Array();
-        this.mesh.normals = mesh.normals ?? null;
-        this.mesh.indices = mesh.indices;
-        this.mesh.material = undefined;
-        const mat = meshModel.materials[mesh.materialIndex];
+    public get model_id(): asset_id | undefined {
+        return this._model_id;
+    }
+
+    public set model_id(model_id: asset_id) {
+        if (this._model_id === model_id) return; // No change, do nothing
+        if (this._model_id) this.releaseModel(this.meshModel); // Release previous model textures
+        this._model_id = model_id; // Set new model ID
+        this.setMeshModel($.rompack.model[this.model_id]); // Load the new model
+    }
+
+    public setMesh(mesh: GLTFMesh): void {
+        if (!this.mesh) {
+            this.mesh = new Mesh({
+                positions: mesh.positions.slice(),
+                texcoords: mesh.texcoords?.slice() ?? new Float32Array(),
+                normals: mesh.normals?.slice() ?? null,
+                indices: mesh.indices?.slice() ?? undefined,
+                atlasId: mesh.materialIndex !== undefined ? 255 : 0,
+            });
+        }
+        else {
+            this.mesh.positions = mesh.positions.slice();
+            this.mesh.texcoords = mesh.texcoords?.slice() ?? new Float32Array();
+            this.mesh.normals = mesh.normals?.slice() ?? null;
+            this.mesh.indices = mesh.indices?.slice() ?? undefined;
+            this.mesh.atlasId = mesh.materialIndex !== undefined ? 255 : 0;
+        }
+        const meshModel = this.meshModel;
+        const mat = meshModel.materials[meshModel.meshes[0].materialIndex];
         let albedo = mat.baseColorTexture;
         let normal = mat.normalTexture;
         let metallicRoughness = mat.metallicRoughnessTexture;
@@ -63,19 +83,52 @@ export abstract class MeshObject extends GameObject {
             if (normal !== undefined) normal = meshModel.textures[normal] ?? normal;
             if (metallicRoughness !== undefined) metallicRoughness = meshModel.textures[metallicRoughness] ?? metallicRoughness;
         }
-        this.mesh.material = new Material({
-            color: mat.baseColorFactor ? [...mat.baseColorFactor] : [1, 1, 1, 1],
-            textures: {
-                albedo: albedo !== undefined ? albedo : undefined,
-                normal: normal !== undefined ? normal : undefined,
-                metallicRoughness: metallicRoughness !== undefined ? metallicRoughness : undefined,
-            },
-            metallicFactor: mat.metallicFactor ?? 1.0,
-            roughnessFactor: mat.roughnessFactor ?? 1.0,
-        });
+        if (!this.mesh.material) {
+            this.mesh.material = new Material({
+                color: mat.baseColorFactor ? [...mat.baseColorFactor] : [1, 1, 1, 1],
+                textures: {
+                    albedo: albedo !== undefined ? albedo : undefined,
+                    normal: normal !== undefined ? normal : undefined,
+                    metallicRoughness: metallicRoughness !== undefined ? metallicRoughness : undefined,
+                },
+                metallicFactor: mat.metallicFactor ?? 1.0,
+                roughnessFactor: mat.roughnessFactor ?? 1.0,
+            });
+        }
+        else {
+            this.mesh.material.color = mat.baseColorFactor ? [...mat.baseColorFactor] : [1, 1, 1, 1];
+            this.mesh.material.textures.albedo = albedo !== undefined ? albedo : undefined;
+            this.mesh.material.textures.normal = normal !== undefined ? normal : undefined;
+            this.mesh.material.textures.metallicRoughness = metallicRoughness !== undefined ? metallicRoughness : undefined;
+            this.mesh.material.metallicFactor = mat.metallicFactor ?? 1.0;
+            this.mesh.material.roughnessFactor = mat.roughnessFactor ?? 1.0;
+        }
+
+        this.loadMeshModel(this.meshModel);
+    }
+
+    public setMeshModel(meshModel: GLTFModel): void {
+        if (!this.meshModel) {
+            this.meshModel = $.rompack.model[this.model_id];
+        }
+
+        this.setMesh(meshModel.meshes[0]);
+
+        this.loadMeshModel(this.meshModel);
+    }
+
+    @onload
+    public onLoad(_meshobject: MeshObject): void {
+        if (this.meshModel) {
+            this.loadMeshModel(this.meshModel);
+        }
+        else if (this._model_id) {
+            this.loadMeshModel(this.meshModel);
+        }
+    }
+
+    private loadMeshModel(meshModel: GLTFModel): void {
         $.texmanager.fetchModelTextures(meshModel).then((gpuTextureKeys) => {
-            // if (!meshModel.runtimeImages || !this.mesh.material) return;
-            // const keys = meshModel.runtimeImages;
             if (!this.mesh.material) return;
             const tex = this.mesh.material.textures;
             if (tex.albedo !== undefined) {
@@ -95,14 +148,15 @@ export abstract class MeshObject extends GameObject {
     }
 
     override dispose(): void {
-        if (this._model) {
-            this.releaseModel(this._model);
-            this._model = undefined;
+        if (this._model_id) {
+            this.releaseModel($.rompack.model[this._model_id]);
+            this._model_id = undefined;
         }
         super.dispose();
     }
 
     override paint(): void {
+        if (!this.mesh || !this.mesh.positions || this.mesh.positions.length === 0) return; // No mesh to draw
         const transform = this.getComponent(TransformComponent);
         let model: Float32Array;
         if (transform) {
