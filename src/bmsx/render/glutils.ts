@@ -45,16 +45,18 @@ export function glCreateElementBuffer(gl: WebGL2RenderingContext, data?: Uint16A
 }
 
 export function glSetupAttributeFloat(gl: WebGL2RenderingContext, buffer: WebGLBuffer, location: number, size: number): void {
+    if (location < 0) return;
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.enableVertexAttribArray(location);
     gl.vertexAttribPointer(location, size, gl.FLOAT, false, 0, 0);
     checkWebGLError('setupAttributeFloat');
 }
 
-export function glSetupAttributeInt(gl: WebGL2RenderingContext, buffer: WebGLBuffer, location: number, size: number): void {
+export function glSetupAttributeInt(gl: WebGL2RenderingContext, buffer: WebGLBuffer, location: number, size: number, type: GLenum = gl.UNSIGNED_BYTE): void {
+    if (location < 0) return;
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.enableVertexAttribArray(location);
-    gl.vertexAttribIPointer(location, size, gl.UNSIGNED_BYTE, 0, 0);
+    gl.vertexAttribIPointer(location, size, type, 0, 0);
     checkWebGLError('setupAttributeInt');
 }
 

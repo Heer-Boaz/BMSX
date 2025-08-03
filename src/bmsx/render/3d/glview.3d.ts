@@ -24,6 +24,7 @@ let texcoordLocation3D: number;
 let color_overrideLocation3D: number;
 let atlas_idLocation3D: number;
 let normalLocation3D: number;
+let tangentLocation3D: number;
 let mvpLocation3D: WebGLUniformLocation;
 let modelLocation3D: WebGLUniformLocation;
 let normalMatrixLocation3D: WebGLUniformLocation;
@@ -58,7 +59,24 @@ let texcoordBuffer3D: WebGLBuffer;
 let color_overrideBuffer3D: WebGLBuffer;
 let atlas_idBuffer3D: WebGLBuffer;
 let normalBuffer3D: WebGLBuffer;
+let tangentBuffer3D: WebGLBuffer;
 let indexBuffer3D: WebGLBuffer;
+let morphPositionBuffers3D: WebGLBuffer[];
+let morphNormalBuffers3D: WebGLBuffer[];
+let morphTangentBuffers3D: WebGLBuffer[];
+let morphPositionLocations3D: number[];
+let morphNormalLocations3D: number[];
+let morphTangentLocations3D: number[];
+let morphWeightLocation3D: WebGLUniformLocation;
+const MAX_MORPH_TARGETS = 2;
+let jointBuffer3D: WebGLBuffer;
+let weightBuffer3D: WebGLBuffer;
+let jointLocation3D: number;
+let weightLocation3D: number;
+let jointMatrixLocation3D: WebGLUniformLocation;
+const MAX_JOINTS = 32;
+const jointMatrixArray = new Float32Array(MAX_JOINTS * 16);
+const identityMatrix = new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]);
 
 let skyboxProgram: WebGLProgram;
 let skyboxPositionLocation: number;
@@ -210,9 +228,21 @@ export function setupBuffers3D(gl: WebGL2RenderingContext): void {
     vertexBuffer3D = glCreateBuffer(gl);
     texcoordBuffer3D = glCreateBuffer(gl);
     normalBuffer3D = glCreateBuffer(gl);
+    tangentBuffer3D = glCreateBuffer(gl);
     color_overrideBuffer3D = glCreateBuffer(gl);
     atlas_idBuffer3D = glCreateBuffer(gl);
     indexBuffer3D = glCreateElementBuffer(gl);
+    jointBuffer3D = glCreateBuffer(gl);
+    weightBuffer3D = glCreateBuffer(gl);
+    morphPositionBuffers3D = [
+        glCreateBuffer(gl), glCreateBuffer(gl)
+    ];
+    morphNormalBuffers3D = [
+        glCreateBuffer(gl), glCreateBuffer(gl)
+    ];
+    morphTangentBuffers3D = [
+        glCreateBuffer(gl), glCreateBuffer(gl)
+    ];
 }
 
 export function createSkyboxBuffer(gl: WebGL2RenderingContext): void {
@@ -260,8 +290,16 @@ export function setupGameShader3DLocations(gl: WebGL2RenderingContext): void {
     glSetupAttributeFloat(gl, vertexBuffer3D, vertexLocation3D, 3);
     glSetupAttributeFloat(gl, texcoordBuffer3D, texcoordLocation3D, 2);
     glSetupAttributeFloat(gl, normalBuffer3D, normalLocation3D, 3);
+    glSetupAttributeFloat(gl, tangentBuffer3D, tangentLocation3D, 4);
     glSetupAttributeFloat(gl, color_overrideBuffer3D, color_overrideLocation3D, 4);
     glSetupAttributeInt(gl, atlas_idBuffer3D, atlas_idLocation3D, 1);
+    glSetupAttributeInt(gl, jointBuffer3D, jointLocation3D, 4, gl.UNSIGNED_SHORT);
+    glSetupAttributeFloat(gl, weightBuffer3D, weightLocation3D, 4);
+    for (let i = 0; i < MAX_MORPH_TARGETS; i++) {
+        glSetupAttributeFloat(gl, morphPositionBuffers3D[i], morphPositionLocations3D[i], 3);
+        glSetupAttributeFloat(gl, morphNormalBuffers3D[i], morphNormalLocations3D[i], 3);
+        glSetupAttributeFloat(gl, morphTangentBuffers3D[i], morphTangentLocations3D[i], 3);
+    }
 }
 
 export interface SkyboxFace {
@@ -327,8 +365,23 @@ export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
     vertexLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_position');
     texcoordLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_texcoord');
     normalLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_normal');
+    tangentLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_tangent');
     color_overrideLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_color_override');
     atlas_idLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_atlas_id');
+    morphPositionLocations3D = [
+        gl.getAttribLocation(gameShaderProgram3D, 'a_morphPos0'),
+        gl.getAttribLocation(gameShaderProgram3D, 'a_morphPos1'),
+    ];
+    morphNormalLocations3D = [
+        gl.getAttribLocation(gameShaderProgram3D, 'a_morphNorm0'),
+        gl.getAttribLocation(gameShaderProgram3D, 'a_morphNorm1'),
+    ];
+    morphTangentLocations3D = [
+        gl.getAttribLocation(gameShaderProgram3D, 'a_morphTan0'),
+        gl.getAttribLocation(gameShaderProgram3D, 'a_morphTan1'),
+    ];
+    jointLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_joints');
+    weightLocation3D = gl.getAttribLocation(gameShaderProgram3D, 'a_weights');
     mvpLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_mvp')!;
     modelLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_model')!;
     normalMatrixLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_normalMatrix')!;
@@ -358,6 +411,8 @@ export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
     useMetallicRoughnessTextureLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_useMetallicRoughnessTexture')!;
     metallicFactorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_metallicFactor')!;
     roughnessFactorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_roughnessFactor')!;
+    jointMatrixLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_jointMatrices')!;
+    morphWeightLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_morphWeights')!;
 }
 
 export function setupSkyboxLocations(gl: WebGL2RenderingContext): void {
@@ -429,6 +484,89 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
         } else {
             gl.disableVertexAttribArray(normalLocation3D);
             gl.vertexAttrib3f(normalLocation3D, 0.0, 0.0, 1.0); // Default up-normal
+        }
+        // Handle tangents: Disable and set constant if missing/undersized
+        if (mesh.tangents && mesh.tangents.length >= vertexCount * 4) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, tangentBuffer3D);
+            gl.bufferData(gl.ARRAY_BUFFER, mesh.tangents, gl.DYNAMIC_DRAW);
+            gl.vertexAttribPointer(tangentLocation3D, 4, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(tangentLocation3D);
+        } else {
+            gl.disableVertexAttribArray(tangentLocation3D);
+            gl.vertexAttrib4f(tangentLocation3D, 1.0, 0.0, 0.0, 1.0); // Default tangent
+        }
+        // Handle joints / skinning
+        if (mesh.jointIndices && mesh.jointWeights && mesh.jointMatrices) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, jointBuffer3D);
+            gl.bufferData(gl.ARRAY_BUFFER, mesh.jointIndices, gl.DYNAMIC_DRAW);
+            gl.vertexAttribIPointer(jointLocation3D, 4, gl.UNSIGNED_SHORT, 0, 0);
+            gl.enableVertexAttribArray(jointLocation3D);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, weightBuffer3D);
+            gl.bufferData(gl.ARRAY_BUFFER, mesh.jointWeights, gl.DYNAMIC_DRAW);
+            gl.vertexAttribPointer(weightLocation3D, 4, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(weightLocation3D);
+
+            jointMatrixArray.fill(0);
+            jointMatrixArray.set(identityMatrix, 0);
+            for (let i = 0; i < mesh.jointMatrices.length && i < MAX_JOINTS; i++) {
+                jointMatrixArray.set(mesh.jointMatrices[i], i * 16);
+            }
+            gl.uniformMatrix4fv(jointMatrixLocation3D, false, jointMatrixArray);
+        } else {
+            gl.disableVertexAttribArray(jointLocation3D);
+            gl.disableVertexAttribArray(weightLocation3D);
+            gl.vertexAttrib4f(weightLocation3D, 1, 0, 0, 0);
+            gl.vertexAttrib4f(jointLocation3D, 0, 0, 0, 0);
+            jointMatrixArray.fill(0);
+            jointMatrixArray.set(identityMatrix, 0);
+            gl.uniformMatrix4fv(jointMatrixLocation3D, false, jointMatrixArray);
+        }
+
+        // Handle morph targets
+        if (mesh.morphPositions && mesh.morphPositions.length) {
+            if (mesh.morphPositions.length > MAX_MORPH_TARGETS) {
+                console.warn(`Only first ${MAX_MORPH_TARGETS} morph targets supported`);
+            }
+            const weights = new Float32Array(MAX_MORPH_TARGETS);
+            for (let i = 0; i < MAX_MORPH_TARGETS; i++) {
+                const pos = mesh.morphPositions[i];
+                const norm = mesh.morphNormals?.[i];
+                const tan = mesh.morphTangents?.[i];
+                if (pos && morphPositionLocations3D[i] >= 0) {
+                    gl.bindBuffer(gl.ARRAY_BUFFER, morphPositionBuffers3D[i]);
+                    gl.bufferData(gl.ARRAY_BUFFER, pos, gl.DYNAMIC_DRAW);
+                    gl.vertexAttribPointer(morphPositionLocations3D[i], 3, gl.FLOAT, false, 0, 0);
+                    gl.enableVertexAttribArray(morphPositionLocations3D[i]);
+                    weights[i] = mesh.morphWeights[i] ?? 0;
+                } else if (morphPositionLocations3D[i] >= 0) {
+                    gl.disableVertexAttribArray(morphPositionLocations3D[i]);
+                }
+                if (norm && morphNormalLocations3D[i] >= 0) {
+                    gl.bindBuffer(gl.ARRAY_BUFFER, morphNormalBuffers3D[i]);
+                    gl.bufferData(gl.ARRAY_BUFFER, norm, gl.DYNAMIC_DRAW);
+                    gl.vertexAttribPointer(morphNormalLocations3D[i], 3, gl.FLOAT, false, 0, 0);
+                    gl.enableVertexAttribArray(morphNormalLocations3D[i]);
+                } else if (morphNormalLocations3D[i] >= 0) {
+                    gl.disableVertexAttribArray(morphNormalLocations3D[i]);
+                }
+                if (tan && morphTangentLocations3D[i] >= 0) {
+                    gl.bindBuffer(gl.ARRAY_BUFFER, morphTangentBuffers3D[i]);
+                    gl.bufferData(gl.ARRAY_BUFFER, tan, gl.DYNAMIC_DRAW);
+                    gl.vertexAttribPointer(morphTangentLocations3D[i], 3, gl.FLOAT, false, 0, 0);
+                    gl.enableVertexAttribArray(morphTangentLocations3D[i]);
+                } else if (morphTangentLocations3D[i] >= 0) {
+                    gl.disableVertexAttribArray(morphTangentLocations3D[i]);
+                }
+            }
+            gl.uniform1fv(morphWeightLocation3D, weights);
+        } else {
+            gl.uniform1fv(morphWeightLocation3D, new Float32Array(MAX_MORPH_TARGETS));
+            for (let i = 0; i < MAX_MORPH_TARGETS; i++) {
+                if (morphPositionLocations3D[i] >= 0) gl.disableVertexAttribArray(morphPositionLocations3D[i]);
+                if (morphNormalLocations3D[i] >= 0) gl.disableVertexAttribArray(morphNormalLocations3D[i]);
+                if (morphTangentLocations3D[i] >= 0) gl.disableVertexAttribArray(morphTangentLocations3D[i]);
+            }
         }
         checkWebGLError("After processing mesh");
 

@@ -1,4 +1,4 @@
-import { AmbientLightObject, BGamepadButton, BaseModel, BehaviorTreeDefinition, BootArgs, CameraObject, Component, Direction, DirectionalLightObject, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, Material, MeshObject, PointLightObject, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, TransformComponent, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, insavegame, new_area, new_vec2, new_vec3, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/index';
+import { AmbientLightObject, BGamepadButton, BaseModel, BehaviorTreeDefinition, BootArgs, CameraObject, Component, Direction, DirectionalLightObject, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MeshObject, PointLightObject, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, TransformComponent, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, insavegame, new_area, new_vec2, new_vec3, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, type State } from '../bmsx/index';
 import { BitmapId, ModelId } from './resourceids';
 
 var _game: Game;
@@ -336,17 +336,15 @@ class SmallCube3D extends MeshObject {
     constructor(overrideTextureIndex?: number) {
         super(`smallCube${overrideTextureIndex ?? ''}`);
         this.model_id = ModelId.cube;
-        const mesh = this.mesh;
         if (overrideTextureIndex !== undefined) {
-            // Override the albedo texture index in the first material
-            mesh.material[0] = {
-                ...mesh.material[0],
-                textures: {
-                    albedo: overrideTextureIndex,
-                },
-            } as Material;
+            const mesh = this.meshes[0];
+            if (mesh?.material) {
+                mesh.material.textures.albedo = overrideTextureIndex;
+                $.texmanager.fetchModelTextures(this.meshModel).then(tex => {
+                    mesh.material.gpuTextures.albedo = tex[overrideTextureIndex];
+                });
+            }
         }
-        this.setMesh(mesh);
         this.scale = [0.5, 0.5, 0.5];
     }
 
@@ -363,7 +361,6 @@ class AnimatedMorphSphere extends MeshObject {
     constructor() {
         super('animatedSphere');
         this.model_id = ModelId.animatedmorphsphere;
-        this.scale = [50.0, 50.0, 50.0];
     }
 
     override run(): void {
@@ -457,31 +454,31 @@ class gamemodel extends BaseModel {
 
     public override do_one_time_game_init(): this {
         const cube = new Cube3D();
-        const small = new SmallCube3D(1);
-        const small2 = new SmallCube3D(2);
-        const animatedMorphSphere = new AnimatedMorphSphere();
+        // const small = new SmallCube3D(1);
+        // const small2 = new SmallCube3D(2);
+        // const animatedMorphSphere = new AnimatedMorphSphere();
         _model.spawn(new bclass(), new_vec3(100, 100, 1000));
         _model.spawn(cube, new_vec3(0, 0, 0));
-        _model.spawn(small, new_vec3(5, 0, 0));
-        _model.spawn(small2, new_vec3(5, 5, 5));
-        _model.spawn(animatedMorphSphere, new_vec3(5, 5, 5));
+        // _model.spawn(small, new_vec3(5, 0, 0));
+        // _model.spawn(small2, new_vec3(5, 5, 5));
+        // _model.spawn(animatedMorphSphere, new_vec3(5, 5, 5));
 
-        const parentTf = cube.getComponent(TransformComponent);
-        const childTf = small.getComponent(TransformComponent);
-        const childTf2 = small2.getComponent(TransformComponent);
-        const childTf3 = animatedMorphSphere.getComponent(TransformComponent);
-        if (parentTf && childTf) {
-            childTf.parentNode = parentTf;
-            childTf.position = [1, 0, 0];
-            if (childTf2) {
-                childTf2.parentNode = childTf;
-                childTf2.position = [0, 1, 0];
-                if (childTf3) {
-                    childTf3.parentNode = childTf2;
-                    childTf3.position = [0, 0, 1];
-                }
-            }
-        }
+        // const parentTf = cube.getComponent(TransformComponent);
+        // const childTf = small.getComponent(TransformComponent);
+        // const childTf2 = small2.getComponent(TransformComponent);
+        // const childTf3 = animatedMorphSphere.getComponent(TransformComponent);
+        // if (parentTf && childTf) {
+        //     childTf.parentNode = parentTf;
+        //     childTf.position = [1, 0, 0];
+        //     if (childTf2) {
+        //         childTf2.parentNode = childTf;
+        //         childTf2.position = [0, 1, 0];
+        //         if (childTf3) {
+        //             childTf3.parentNode = childTf2;
+        //             childTf3.position = [0, 0, 1];
+        //         }
+        //     }
+        // }
 
         const cam1 = new CameraObject('cam1');
         cam1.camera.setPosition([0, 0, 5]);

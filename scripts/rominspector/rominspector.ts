@@ -587,27 +587,36 @@ async function main() {
 					selected.buffer = await loadGLTFModelFromBuffer(rompack.slice(selected.start, selected.end), texBuf) as any;
 				}
 				metadataLines.push(`Model size: ${formatByteSize(selected.end - selected.start)}`);
-				metadataLines.push(`Model content: ${JSON.stringify(selected.buffer, null)}`);
-				const modelData = selected.buffer as unknown as GLTFModel;
-				const first = modelData.meshes[0];
-				if (first) {
-					asciiArt =
-						`Meshes: ${modelData.meshes.length}\n` +
-						`Vertices: ${first.positions.length / 3}\n` +
-						`UVs: ${first.texcoords ? first.texcoords.length / 2 : 0}\n` +
-						`Normals: ${first.normals ? first.normals.length / 3 : 0}\n` +
-						`Indices: ${first.indices ? first.indices.length : 0}\n` +
-						`MaterialIndex: ${first.materialIndex ? first.materialIndex : 'None'}\n` +
-						`Images: ${modelData.imageBuffers ? modelData.imageBuffers.length : 0}\n` +
-						`\tImageOffsets: ${modelData.imageOffsets ? modelData.imageOffsets.length : 0}\n` +
-						modelData.imageOffsets?.map((callbackfn, i) => `\t\t${i}: ${callbackfn.start} - ${callbackfn.end} (${formatByteSize(callbackfn.end - callbackfn.start)})`).join('\n') + '\n' +
-						`Animations: ${modelData.animations ? modelData.animations.length : 0}\n` +
-						modelData.animations?.map((anim, i) => `\t${i}: ${anim.name ?? 'Unnamed'}, ${anim.channels.length} channel(s), ${anim.samplers.length} sampler(s)`).join('\n') + '\n';
-					if (modelData.imageBuffers) {
-						for (let i = 0; i < modelData.imageBuffers.length; i++) {
-							const imgBuf = Buffer.from(modelData.imageBuffers[i]);
-							asciiArt += `\nImage ${i + 1} (${formatByteSize(imgBuf.byteLength)}):\n`;
-							asciiArt += generateAsciiArtFromImage(imgBuf, { atlassed: false } as any, getModalWidth());
+                                metadataLines.push(`Model content: ${JSON.stringify(selected.buffer, null)}`);
+                                const modelData = selected.buffer as unknown as GLTFModel;
+                                metadataLines.push(`Nodes: ${modelData.nodes ? modelData.nodes.length : 0}`);
+                                metadataLines.push(`Scenes: ${modelData.scenes ? modelData.scenes.length : 0}`);
+                                metadataLines.push(`Skins: ${modelData.skins ? modelData.skins.length : 0}`);
+                                const first = modelData.meshes[0];
+                                if (first) metadataLines.push(`MorphTargets: ${first.morphPositions ? first.morphPositions.length : 0}`);
+                                if (first) metadataLines.push(`Joints: ${first.jointIndices ? first.jointIndices.length / 4 : 0}`);
+                                if (first) {
+                                        asciiArt =
+                                                `Meshes: ${modelData.meshes.length}\n` +
+                                                `Vertices: ${first.positions.length / 3}\n` +
+                                                `UVs: ${first.texcoords ? first.texcoords.length / 2 : 0}\n` +
+                                                `Normals: ${first.normals ? first.normals.length / 3 : 0}\n` +
+                                                `Indices: ${first.indices ? first.indices.length : 0}\n` +
+                                                `MaterialIndex: ${first.materialIndex ? first.materialIndex : 'None'}\n` +
+                                                `Images: ${modelData.imageBuffers ? modelData.imageBuffers.length : 0}\n` +
+                                                `\tImageOffsets: ${modelData.imageOffsets ? modelData.imageOffsets.length : 0}\n` +
+                                                modelData.imageOffsets?.map((callbackfn, i) => `\t\t${i}: ${callbackfn.start} - ${callbackfn.end} (${formatByteSize(callbackfn.end - callbackfn.start)})`).join('\n') + '\n' +
+                                                `MorphTargets: ${first.morphPositions ? first.morphPositions.length : 0}\n` +
+                                                `Joints: ${first.jointIndices ? first.jointIndices.length / 4 : 0}\n` +
+                                                `Animations: ${modelData.animations ? modelData.animations.length : 0}\n` +
+                                                modelData.animations?.map((anim, i) => `\t${i}: ${anim.name ?? 'Unnamed'}, ${anim.channels.length} channel(s), ${anim.samplers.length} sampler(s)`).join('\n') + '\n' +
+                                                `Scenes: ${modelData.scenes ? modelData.scenes.length : 0}\n` +
+                                                `Default scene: ${modelData.scene ?? 0}\n`;
+                                        if (modelData.imageBuffers) {
+                                                for (let i = 0; i < modelData.imageBuffers.length; i++) {
+                                                        const imgBuf = Buffer.from(modelData.imageBuffers[i]);
+                                                        asciiArt += `\nImage ${i + 1} (${formatByteSize(imgBuf.byteLength)}):\n`;
+                                                        asciiArt += generateAsciiArtFromImage(imgBuf, { atlassed: false } as any, getModalWidth());
 						}
 					}
 					let materialIndex = 0;

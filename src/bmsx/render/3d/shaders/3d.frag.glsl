@@ -35,6 +35,8 @@ in vec2 v_texcoord;
 in vec4 v_color_override;
 flat in uint v_atlas_id;
 in vec3 v_normal;
+in vec3 v_tangent;
+in vec3 v_bitangent;
 in vec3 v_worldPos;
 
 out vec4 outputColor;
@@ -98,7 +100,8 @@ void main() {
     vec3 normal = normalize(v_normal);
     if (u_useNormalTexture) {
         vec3 n = texture(u_normalTexture, v_texcoord).xyz * 2.0f - 1.0f;
-        normal = normalize(n);
+        mat3 tbn = mat3(normalize(v_tangent), normalize(v_bitangent), normal);
+        normal = normalize(tbn * n);
     }
 
     vec3 baseColor = texColor.rgb * u_materialColor.rgb;

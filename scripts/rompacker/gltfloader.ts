@@ -1,4 +1,4 @@
-import type { GLTFMesh, GLTFModel } from '../../src/bmsx/rompack/rompack';
+import type { GLTFMesh, GLTFModel, GLTFNode, GLTFScene, GLTFSkin } from '../../src/bmsx/rompack/rompack';
 const { join } = require('path');
 const { readFile } = require('fs/promises');
 
@@ -62,7 +62,7 @@ export async function loadGLTFModel(data: string, dir: string, resname: string):
         }
     }
 
-    function getAccessorData(i: number): Float32Array | Uint16Array | Uint32Array {
+    function getAccessorData(i: number): Float32Array | Uint16Array | Uint32Array | Uint8Array {
         const acc = accessors[i];
         const view = bufferViews[acc.bufferView];
         const buf = buffers[view.buffer];
@@ -72,6 +72,8 @@ export async function loadGLTFModel(data: string, dir: string, resname: string):
         switch (acc.componentType) {
             case 5126:
                 return new Float32Array(slice.buffer, slice.byteOffset, length / 4);
+            case 5121:
+                return new Uint8Array(slice.buffer, slice.byteOffset, length);
             case 5123:
                 return new Uint16Array(slice.buffer, slice.byteOffset, length / 2);
             case 5125:
@@ -96,13 +98,48 @@ export async function loadGLTFModel(data: string, dir: string, resname: string):
     const meshes: GLTFMesh[] = [];
     for (const mesh of json.meshes || []) {
         for (const prim of mesh.primitives || []) {
+            const posTargets: Float32Array[] = [];
+            const normTargets: Float32Array[] = [];
+            const tanTargets: Float32Array[] = [];
+            for (const t of prim.targets || []) {
+                posTargets.push(t.POSITION !== undefined ? getAccessorData(t.POSITION) as Float32Array : new Float32Array());
+                normTargets.push(t.NORMAL !== undefined ? getAccessorData(t.NORMAL) as Float32Array : new Float32Array());
+                tanTargets.push(t.TANGENT !== undefined ? getAccessorData(t.TANGENT) as Float32Array : new Float32Array());
+            }
+            let jointIndices: Uint16Array | undefined;
+            if (prim.attributes.JOINTS_0 !== undefined) {
+                const j = getAccessorData(prim.attributes.JOINTS_0);
+                jointIndices = j instanceof Uint16Array ? j : new Uint16Array(j as Uint8Array);
+            }
+            let jointWeights: Float32Array | undefined;
+            if (prim.attributes.WEIGHTS_0 !== undefined) {
+                const acc = accessors[prim.attributes.WEIGHTS_0];
+                const w = getAccessorData(prim.attributes.WEIGHTS_0);
+                if (w instanceof Float32Array) {
+                    jointWeights = w;
+                } else if (w instanceof Uint16Array) {
+                    jointWeights = new Float32Array(w.length);
+                    const denom = acc.componentType === 5123 ? 65535 : 255;
+                    for (let i = 0; i < w.length; i++) jointWeights[i] = w[i] / denom;
+                } else if (w instanceof Uint8Array) {
+                    jointWeights = new Float32Array(w.length);
+                    for (let i = 0; i < w.length; i++) jointWeights[i] = w[i] / 255;
+                }
+            }
             const m: GLTFMesh = {
                 positions: getAccessorData(prim.attributes.POSITION) as Float32Array,
                 texcoords: prim.attributes.TEXCOORD_0 !== undefined ? getAccessorData(prim.attributes.TEXCOORD_0) as Float32Array : undefined,
                 normals: prim.attributes.NORMAL !== undefined ? getAccessorData(prim.attributes.NORMAL) as Float32Array : null,
+                tangents: prim.attributes.TANGENT !== undefined ? getAccessorData(prim.attributes.TANGENT) as Float32Array : null,
                 indices: prim.indices !== undefined ? (getAccessorData(prim.indices) as any) : undefined,
                 indexComponentType: prim.indices !== undefined ? accessors[prim.indices].componentType : undefined,
                 materialIndex: prim.material,
+                morphPositions: posTargets.length ? posTargets : undefined,
+                morphNormals: normTargets.some(a => a.length) ? normTargets : undefined,
+                morphTangents: tanTargets.some(a => a.length) ? tanTargets : undefined,
+                weights: mesh.weights ? Array.from(mesh.weights) : posTargets.length ? new Array(posTargets.length).fill(0) : undefined,
+                jointIndices,
+                jointWeights,
             };
             meshes.push(m);
         }
@@ -118,7 +155,28 @@ export async function loadGLTFModel(data: string, dir: string, resname: string):
         channels: a.channels || [],
     }));
 
-    const model: GLTFModel = { name: resname, meshes, materials, animations, imageURIs, textures: textureSources };
+    const nodes: GLTFNode[] = (json.nodes || []).map((n: any) => ({
+        mesh: n.mesh,
+        children: n.children,
+        translation: n.translation,
+        rotation: n.rotation,
+        scale: n.scale,
+        matrix: n.matrix ? new Float32Array(n.matrix) : undefined,
+        skin: n.skin,
+    }));
+
+    const scenes: GLTFScene[] = (json.scenes || []).map((s: any) => ({ nodes: s.nodes || [] }));
+    const scene: number | undefined = json.scene;
+    const skins: GLTFSkin[] = (json.skins || []).map((s: any) => ({
+        joints: s.joints || [],
+        inverseBindMatrices: s.inverseBindMatrices !== undefined ? (() => {
+            const buf = getAccessorData(s.inverseBindMatrices) as Float32Array;
+            const mats: Float32Array[] = [];
+            for (let i = 0; i < buf.length; i += 16) mats.push(buf.slice(i, i + 16));
+            return mats;
+        })() : undefined,
+    }));
+    const model: GLTFModel = { name: resname, meshes, materials, animations, imageURIs, textures: textureSources, nodes, scenes, scene, skins };
     model.imageBuffers = imageBuffers.map(buf => {
         const arr = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
         return arr.slice().buffer as ArrayBuffer;
@@ -150,6 +208,25 @@ function validateGLTFModel(model: GLTFModel): void {
         for (const anim of model.animations) {
             if (!Array.isArray(anim.samplers) || !Array.isArray(anim.channels)) {
                 throw new Error('Invalid animation structure');
+            }
+        }
+    }
+    if (model.nodes) {
+        for (const node of model.nodes) {
+            if (node.mesh !== undefined && node.mesh >= model.meshes.length) {
+                throw new Error(`Node references invalid mesh index ${node.mesh}`);
+            }
+            if (node.skin !== undefined && model.skins && node.skin >= model.skins.length) {
+                throw new Error(`Node references invalid skin index ${node.skin}`);
+            }
+        }
+    }
+    if (model.skins) {
+        for (const skin of model.skins) {
+            for (const j of skin.joints) {
+                if (model.nodes && j >= model.nodes.length) {
+                    throw new Error(`Skin joint index ${j} invalid`);
+                }
             }
         }
     }

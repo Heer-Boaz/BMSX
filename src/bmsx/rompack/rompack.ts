@@ -137,13 +137,19 @@ export interface GLTFMaterial {
 }
 
 export interface GLTFMesh {
-	positions: Float32Array;
-	texcoords?: Float32Array;
-	normals?: Float32Array | null;
-	indices?: Uint16Array | Uint32Array;
-	indexComponentType?: number;
-	materialIndex?: number;
-	morphTargets?: { [name: string]: Float32Array };
+        positions: Float32Array;
+        texcoords?: Float32Array;
+        normals?: Float32Array | null;
+        tangents?: Float32Array | null;
+        indices?: Uint16Array | Uint32Array;
+        indexComponentType?: number;
+        materialIndex?: number;
+        morphPositions?: Float32Array[];
+        morphNormals?: Float32Array[];
+        morphTangents?: Float32Array[];
+        weights?: number[];
+        jointIndices?: Uint16Array;
+        jointWeights?: Float32Array;
 }
 
 export interface GLTFAnimationSampler {
@@ -164,17 +170,40 @@ export interface GLTFAnimation {
 }
 
 export type Index2GpuTexture = Record<number, TextureKey>;
+export interface GLTFNode {
+        mesh?: number;
+        children?: number[];
+        translation?: vec3arr;
+        rotation?: [number, number, number, number];
+        scale?: vec3arr;
+        matrix?: Float32Array;
+        skin?: number;
+}
+
+export interface GLTFScene {
+        nodes: number[];
+}
+
+export interface GLTFSkin {
+        joints: number[];
+        inverseBindMatrices?: Float32Array[];
+}
+
 export interface GLTFModel {
-	name: string;
-	meshes: GLTFMesh[];
-	materials?: GLTFMaterial[];
-	animations?: GLTFAnimation[];
+        name: string;
+        meshes: GLTFMesh[];
+        materials?: GLTFMaterial[];
+        animations?: GLTFAnimation[];
 	/** Mapping from texture index to image index */
 	textures?: number[];
-	imageURIs?: string[];
-	imageOffsets?: { start: number; end: number }[];
-	imageBuffers?: ArrayBuffer[];
-	gpuTextures?: Index2GpuTexture;
+        imageURIs?: string[];
+        imageOffsets?: { start: number; end: number }[];
+        imageBuffers?: ArrayBuffer[];
+        gpuTextures?: Index2GpuTexture;
+        nodes?: GLTFNode[];
+        scenes?: GLTFScene[];
+        scene?: number;
+        skins?: GLTFSkin[];
 }
 
 export type OBJModel = GLTFModel;

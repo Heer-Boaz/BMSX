@@ -272,6 +272,7 @@ export async function loadModelFromBuffer(buffer: ArrayBuffer, textureBuf?: Arra
         positions: toF32(m.positions)!,
         texcoords: toF32(m.texcoords),
         normals: m.normals ? toF32(m.normals) : null,
+        tangents: m.tangents ? toF32(m.tangents) : null,
         indices: toIndices(m.indices, m.indexComponentType),
         indexComponentType: m.indexComponentType,
         materialIndex: m.materialIndex,
@@ -284,28 +285,12 @@ export async function loadModelFromBuffer(buffer: ArrayBuffer, textureBuf?: Arra
             }
             return undefined;
         }) : undefined,
-        // morphTargets: m.morphTargets,
-        // morphTargetPositions: m.morphTargetPositions ? m.morphTargetPositions.map((mt: any) => toF32(mt)) : undefined,
-        // morphTargetNormals: m.morphTargetNormals ? m.morphTargetNormals.map((mt: any) => toF32(mt)) : undefined,
-        // morphTargetTangents: m.morphTargetTangents ? m.morphTargetTangents.map((mt: any) => toF32(mt)) : undefined,
-        // morphTargetIndices: m.morphTargetIndices ? m.morphTargetIndices.map((mt: any) => toIndices(mt, m.indexComponentType)) : undefined,
-        // morphTargetWeights: m.morphTargetWeights ? m.morphTargetWeights.map((mt : any) => {
-        //     if (ArrayBuffer.isView(mt)) {
-        //         const u8 = new Uint8Array(mt.buffer, mt.byteOffset, mt.byteLength);
-        //         return new Float32Array(u8.buffer, u8.byteOffset, Math.floor(u8.byteLength / 4));
-        //     }
-        //     if (Array.isArray(mt)) return new Float32Array(mt);
-        //     return undefined;
-        // }) : undefined,
-        // morphTargetName: m.morphTargetName,
-        // morphTargetNames: m.morphTargetNames ? m.morphTargetNames.map((name: any) => {
-        //     if (typeof name === 'string') return name;
-        //     if (ArrayBuffer.isView(name)) {
-        //         const u8 = new Uint8Array(name.buffer, name.byteOffset, name.byteLength);
-        //         return new TextDecoder().decode(u8);
-        //     }
-        //     return undefined;
-        // }) : undefined,
+        morphPositions: m.morphPositions ? m.morphPositions.map((mt: any) => toF32(mt)) : undefined,
+        morphNormals: m.morphNormals ? m.morphNormals.map((mt: any) => toF32(mt)) : undefined,
+        morphTangents: m.morphTangents ? m.morphTangents.map((mt: any) => toF32(mt)) : undefined,
+        weights: m.weights ? Array.from(m.weights) : undefined,
+        jointIndices: m.jointIndices ? new Uint16Array(m.jointIndices) : undefined,
+        jointWeights: m.jointWeights ? toF32(m.jointWeights) : undefined,
 
     }));
     const textures: number[] | undefined = obj.textures;
@@ -341,6 +326,22 @@ export async function loadModelFromBuffer(buffer: ArrayBuffer, textureBuf?: Arra
         return remapped;
     }
 
+    const nodes = (obj.nodes || []).map((n: any) => ({
+        mesh: n.mesh,
+        children: n.children,
+        translation: n.translation,
+        rotation: n.rotation,
+        scale: n.scale,
+        matrix: toF32(n.matrix),
+        skin: n.skin,
+    }));
+    const scenes = obj.scenes;
+    const scene = obj.scene;
+    const skins = (obj.skins || []).map((s: any) => ({
+        joints: s.joints,
+        inverseBindMatrices: s.inverseBindMatrices ? s.inverseBindMatrices.map((m: any) => toF32(m)!) : undefined,
+    }));
+
     if (textures && Array.isArray(materials)) {
         for (const m of materials) {
             if (m.baseColorTexture !== undefined) m.baseColorTexture = textureIndexToTextureObject(m.baseColorTexture);
@@ -350,7 +351,7 @@ export async function loadModelFromBuffer(buffer: ArrayBuffer, textureBuf?: Arra
             // if (m.emissiveTexture !== undefined) m.emissiveTexture = textureIndexToTextureObject(m.emissiveTexture);
         }
     }
-    return { name: obj.name, meshes, materials, animations: obj.animations, imageURIs: obj.imageURIs, imageOffsets: obj.imageOffsets, imageBuffers, textures };
+    return { name: obj.name, meshes, materials, animations: obj.animations, imageURIs: obj.imageURIs, imageOffsets: obj.imageOffsets, imageBuffers, textures, nodes, scenes, scene, skins };
 }
 
 async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadModelFromBuffer?: (buffer: ArrayBuffer, textures?: ArrayBuffer) => Promise<any> }): Promise<void> {

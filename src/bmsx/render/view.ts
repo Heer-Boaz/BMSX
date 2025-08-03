@@ -44,15 +44,23 @@ export class PixelData {
 }
 
 export interface DrawMeshOptions {
-	positions: Float32Array;
-	texcoords: Float32Array;
-	normals?: Float32Array;
-	indices?: Uint16Array | Uint32Array;
-	matrix: Float32Array;
-	color?: Color;
-	atlasId?: number;
-	material?: Material;
-	shadow?: { map: ShadowMap; matrix: Float32Array; strength: number };
+        positions: Float32Array;
+        texcoords: Float32Array;
+        normals?: Float32Array;
+        tangents?: Float32Array;
+        indices?: Uint16Array | Uint32Array;
+        matrix: Float32Array;
+        color?: Color;
+        atlasId?: number;
+        material?: Material;
+        shadow?: { map: ShadowMap; matrix: Float32Array; strength: number };
+        morphPositions?: Float32Array[];
+        morphNormals?: Float32Array[];
+        morphTangents?: Float32Array[];
+        morphWeights?: number[];
+        jointIndices?: Uint16Array;
+        jointWeights?: Float32Array;
+        jointMatrices?: Float32Array[];
 }
 
 export interface SkyboxImageIds {
