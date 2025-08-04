@@ -76,7 +76,7 @@ let weightLocation3D: number;
 let jointMatrixLocation3D: WebGLUniformLocation;
 const MAX_JOINTS = 32;
 const jointMatrixArray = new Float32Array(MAX_JOINTS * 16);
-const identityMatrix = new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]);
+const identityMatrix = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 
 let skyboxProgram: WebGLProgram;
 let skyboxPositionLocation: number;
@@ -524,7 +524,7 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
         }
 
         // Handle morph targets
-        if (m.morphPositions && m.morphPositions.length) {
+        if (m.hasMorphTargets) {
             if (m.morphPositions.length > MAX_MORPH_TARGETS) {
                 console.warn(`Only first ${MAX_MORPH_TARGETS} morph targets supported`);
             }
@@ -533,29 +533,29 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
                 const pos = m.morphPositions[i];
                 const norm = m.morphNormals?.[i];
                 const tan = m.morphTangents?.[i];
-                if (pos && morphPositionLocations3D[i] >= 0) {
+                if (pos) {
                     gl.bindBuffer(gl.ARRAY_BUFFER, morphPositionBuffers3D[i]);
                     gl.bufferData(gl.ARRAY_BUFFER, pos, gl.DYNAMIC_DRAW);
                     gl.vertexAttribPointer(morphPositionLocations3D[i], 3, gl.FLOAT, false, 0, 0);
                     gl.enableVertexAttribArray(morphPositionLocations3D[i]);
                     weights[i] = m.morphWeights[i] ?? 0;
-                } else if (morphPositionLocations3D[i] >= 0) {
+                } else {
                     gl.disableVertexAttribArray(morphPositionLocations3D[i]);
                 }
-                if (norm && morphNormalLocations3D[i] >= 0) {
+                if (norm) {
                     gl.bindBuffer(gl.ARRAY_BUFFER, morphNormalBuffers3D[i]);
                     gl.bufferData(gl.ARRAY_BUFFER, norm, gl.DYNAMIC_DRAW);
                     gl.vertexAttribPointer(morphNormalLocations3D[i], 3, gl.FLOAT, false, 0, 0);
                     gl.enableVertexAttribArray(morphNormalLocations3D[i]);
-                } else if (morphNormalLocations3D[i] >= 0) {
+                } else {
                     gl.disableVertexAttribArray(morphNormalLocations3D[i]);
                 }
-                if (tan && morphTangentLocations3D[i] >= 0) {
+                if (tan) {
                     gl.bindBuffer(gl.ARRAY_BUFFER, morphTangentBuffers3D[i]);
                     gl.bufferData(gl.ARRAY_BUFFER, tan, gl.DYNAMIC_DRAW);
                     gl.vertexAttribPointer(morphTangentLocations3D[i], 3, gl.FLOAT, false, 0, 0);
                     gl.enableVertexAttribArray(morphTangentLocations3D[i]);
-                } else if (morphTangentLocations3D[i] >= 0) {
+                } else {
                     gl.disableVertexAttribArray(morphTangentLocations3D[i]);
                 }
             }
@@ -563,9 +563,9 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
         } else {
             gl.uniform1fv(morphWeightLocation3D, new Float32Array(MAX_MORPH_TARGETS));
             for (let i = 0; i < MAX_MORPH_TARGETS; i++) {
-                if (morphPositionLocations3D[i] >= 0) gl.disableVertexAttribArray(morphPositionLocations3D[i]);
-                if (morphNormalLocations3D[i] >= 0) gl.disableVertexAttribArray(morphNormalLocations3D[i]);
-                if (morphTangentLocations3D[i] >= 0) gl.disableVertexAttribArray(morphTangentLocations3D[i]);
+                gl.disableVertexAttribArray(morphPositionLocations3D[i]);
+                gl.disableVertexAttribArray(morphNormalLocations3D[i]);
+                gl.disableVertexAttribArray(morphTangentLocations3D[i]);
             }
         }
         checkWebGLError("After processing mesh");
@@ -611,9 +611,9 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
             const key = m.gpuTextureAlbedo;
             const texHandle = $.texmanager.getTexture(key);
             if (texHandle instanceof WebGLTexture && gl.isTexture(texHandle)) {
-                gl.activeTexture(gl.TEXTURE2);
+                gl.activeTexture(gl.TEXTURE4);
                 gl.bindTexture(gl.TEXTURE_2D, texHandle);
-                gl.uniform1i(albedoTextureLocation3D, 2);
+                gl.uniform1i(albedoTextureLocation3D, 4);
                 gl.uniform1i(useAlbedoTextureLocation3D, 1);
             } else {
                 console.warn(`Invalid albedo texture: ${key}`);
@@ -628,9 +628,9 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
             const key = m.gpuTextureNormal;
             const texHandle = $.texmanager.getTexture(key);
             if (texHandle instanceof WebGLTexture && gl.isTexture(texHandle)) {
-                gl.activeTexture(gl.TEXTURE3);
+                gl.activeTexture(gl.TEXTURE5);
                 gl.bindTexture(gl.TEXTURE_2D, texHandle);
-                gl.uniform1i(normalTextureLocation3D, 3);
+                gl.uniform1i(normalTextureLocation3D, 5);
                 gl.uniform1i(useNormalTextureLocation3D, 1);
             } else {
                 gl.uniform1i(useNormalTextureLocation3D, 0);
@@ -644,9 +644,9 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
             const key = m.gpuTextureMetallicRoughness;
             const texHandle = $.texmanager.getTexture(key);
             if (texHandle instanceof WebGLTexture && gl.isTexture(texHandle)) {
-                gl.activeTexture(gl.TEXTURE4);
+                gl.activeTexture(gl.TEXTURE6);
                 gl.bindTexture(gl.TEXTURE_2D, texHandle);
-                gl.uniform1i(metallicRoughnessTextureLocation3D, 4);
+                gl.uniform1i(metallicRoughnessTextureLocation3D, 6);
                 gl.uniform1i(useMetallicRoughnessTextureLocation3D, 1);
             } else {
                 gl.uniform1i(useMetallicRoughnessTextureLocation3D, 0);
@@ -657,15 +657,15 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
 
         // Shadow: Bind and set unit only if present (requires shader update below)
         if (m.shadow) {
-            gl.activeTexture(gl.TEXTURE8);
+            gl.activeTexture(gl.TEXTURE7);
             gl.bindTexture(gl.TEXTURE_2D, m.shadow.map.texture);
-            gl.uniform1i(shadowMapLocation3D, 8);
+            gl.uniform1i(shadowMapLocation3D, 7);
             gl.uniformMatrix4fv(lightMatrixLocation3D, false, m.shadow.matrix);
             gl.uniform1f(shadowStrengthLocation3D, m.shadow.strength);
-            gl.uniform1i(useShadowMapLocation3D, 1); // New uniform
+            gl.uniform1i(useShadowMapLocation3D, 1);
         } else {
-            gl.uniform1f(shadowStrengthLocation3D, 1.0);
-            gl.uniform1i(useShadowMapLocation3D, 0); // New uniform
+            // gl.uniform1f(shadowStrengthLocation3D, 1.0);
+            gl.uniform1i(useShadowMapLocation3D, 0);
         }
         checkWebGLError("After setting texture uniforms");
 

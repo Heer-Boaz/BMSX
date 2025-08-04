@@ -3,9 +3,9 @@ import { Material } from '../render/3d/material';
 import { bmat } from '../render/3d/math3d';
 import { ShadowMap } from '../render/3d/shadowmap';
 import { DEFAULT_VERTEX_COLOR } from '../render/glview.constants';
-import type { Color, DrawMeshOptions } from '../render/view';
 import type { TextureKey } from '../render/texturemanager';
-import type { asset_id, GLTFMesh, GLTFModel, GLTFNode, GLTFAnimationSampler, vec3arr } from '../rompack/rompack';
+import type { Color, DrawMeshOptions } from '../render/view';
+import type { asset_id, GLTFAnimationSampler, GLTFMesh, GLTFModel, GLTFNode, vec3arr } from '../rompack/rompack';
 import { insavegame, onload } from '../serializer/gameserializer';
 import { GameObject } from './gameobject';
 
@@ -66,6 +66,10 @@ export class Mesh {
         return !!(this.jointIndices && this.jointWeights);
     }
 
+    public get hasMorphTargets(): boolean {
+        return !!(this.morphPositions && this.morphPositions.length > 0);
+    }
+
     public get gpuTextureAlbedo(): TextureKey | undefined {
         return this.material?.gpuTextures.albedo;
     }
@@ -77,6 +81,7 @@ export class Mesh {
     public get gpuTextureMetallicRoughness(): TextureKey | undefined {
         return this.material?.gpuTextures.metallicRoughness;
     }
+
 }
 
 interface MeshInstance {
@@ -411,6 +416,7 @@ export abstract class MeshObject extends GameObject {
                 jointMatrices: inst.skinIndex !== undefined ? this.computeSkinMatrices(inst.skinIndex) : undefined,
             };
             $.view.drawMesh(options);
+            debugger;
         }
     }
 }

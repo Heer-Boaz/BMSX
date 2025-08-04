@@ -30,7 +30,7 @@ export class WebGLBackend implements GPUBackend {
     constructor(private gl: WebGL2RenderingContext) { }
 
     createTextureFromImage(img: ImageBitmap, desc: TextureParams): WebGLTexture {
-        return glCreateTextureFromImage(this.gl, img, 2, desc);
+        return glCreateTextureFromImage(this.gl, img, 3, desc);
     }
 
     destroyTexture(handle: WebGLTexture): void {

@@ -113,9 +113,10 @@ export function glCreateShadowMapTextureAndFramebuffer(gl: WebGL2RenderingContex
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
     const framebuffer = gl.createFramebuffer();
+    const prevFramebuffer = gl.getParameter(gl.FRAMEBUFFER_BINDING);
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, texture, 0);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, prevFramebuffer);
     checkWebGLError('createShadowMapTextureAndFramebuffer');
     if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
         throw new Error('Framebuffer is not complete');

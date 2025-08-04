@@ -241,7 +241,7 @@ async function loadDataFromBuffer(buffer: ArrayBuffer): Promise<any> {
     return decodeBinary(new Uint8Array(buffer));
 }
 
-export async function loadModelFromBuffer(buffer: ArrayBuffer, textureBuf?: ArrayBuffer): Promise<GLTFModel> {
+export async function loadModelFromBuffer(assetId: string, buffer: ArrayBuffer, textureBuf?: ArrayBuffer): Promise<GLTFModel> {
     const obj = decodeBinary(new Uint8Array(buffer)) as any;
     function toF32(v: any): Float32Array | undefined {
         if (v === undefined || v === null) return undefined;
@@ -351,7 +351,7 @@ export async function loadModelFromBuffer(buffer: ArrayBuffer, textureBuf?: Arra
             // if (m.emissiveTexture !== undefined) m.emissiveTexture = textureIndexToTextureObject(m.emissiveTexture);
         }
     }
-    return { name: obj.name, meshes, materials, animations: obj.animations, imageURIs: obj.imageURIs, imageOffsets: obj.imageOffsets, imageBuffers, textures, nodes, scenes, scene, skins };
+    return { name: assetId, meshes, materials, animations: obj.animations, imageURIs: obj.imageURIs, imageOffsets: obj.imageOffsets, imageBuffers, textures, nodes, scenes, scene, skins };
 }
 
 async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadModelFromBuffer?: (buffer: ArrayBuffer, textures?: ArrayBuffer) => Promise<any> }): Promise<void> {
@@ -404,7 +404,7 @@ async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: 
                 if (opts && opts.loadModelFromBuffer) {
                     model = await opts.loadModelFromBuffer(rom.slice(res.start, res.end));
                 } else {
-                    model = await loadModelFromBuffer(rom.slice(res.start, res.end), texBuf);
+                    model = await loadModelFromBuffer(res.resname, rom.slice(res.start, res.end), texBuf);
                 }
                 romResult.model[res.resid] = model;
                 romResult.model[res.resname] = model;
