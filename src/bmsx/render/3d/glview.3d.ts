@@ -514,10 +514,18 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
             }
             gl.uniformMatrix4fv(jointMatrixLocation3D, false, jointMatrixArray);
         } else {
+            // When skinning data is not provided, ensure the joint and weight attributes
+            // are disabled and have safe default values. The joints attribute is an
+            // integer attribute (`uvec4` in the shader), so we need to use the integer
+            // version of `vertexAttrib` to specify its constant value. Using the float
+            // variant here triggers `GL_INVALID_OPERATION` on some drivers during the
+            // draw call (particularly on WebGL2) because the type does not match.
             gl.disableVertexAttribArray(jointLocation3D);
             gl.disableVertexAttribArray(weightLocation3D);
             gl.vertexAttrib4f(weightLocation3D, 1, 0, 0, 0);
-            gl.vertexAttrib4f(jointLocation3D, 0, 0, 0, 0);
+            if (jointLocation3D >= 0) {
+                gl.vertexAttribI4i(jointLocation3D, 0, 0, 0, 0);
+            }
             jointMatrixArray.fill(0);
             jointMatrixArray.set(identityMatrix, 0);
             gl.uniformMatrix4fv(jointMatrixLocation3D, false, jointMatrixArray);
@@ -679,7 +687,7 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
 
         if (m.indices) {
             checkWebGLError("Before drawing elements");
-            const type = m.indices instanceof Uint32Array ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
+            const type = m.indices instanceof Uint32Array ? gl.UNSIGNED_INT : m.indices instanceof Uint16Array ? gl.UNSIGNED_SHORT : gl.UNSIGNED_BYTE;
             gl.drawElements(gl.TRIANGLES, m.indices.length, type, 0);
             if (checkWebGLError(`After drawing elements (count = ${m.indices.length})`)) {
                 // Your existing logging...

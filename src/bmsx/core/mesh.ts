@@ -17,7 +17,7 @@ export class Mesh {
     /** Optional tangent vectors per vertex (xyz + w sign) */
     public tangents: Float32Array | null;
     /** Optional index buffer */
-    public indices?: Uint16Array | Uint32Array;
+    public indices?: Uint8Array | Uint16Array | Uint32Array;
     public color: Color;
     public atlasId: number;
     public material?: Material;
@@ -29,7 +29,7 @@ export class Mesh {
     public jointIndices?: Uint16Array;
     public jointWeights?: Float32Array;
 
-    constructor(opts?: { positions?: Float32Array; texcoords?: Float32Array; normals?: Float32Array; tangents?: Float32Array; indices?: Uint16Array | Uint32Array; color?: Color; atlasId?: number; material?: Material; morphPositions?: Float32Array[]; morphNormals?: Float32Array[]; morphTangents?: Float32Array[]; morphWeights?: number[]; jointIndices?: Uint16Array; jointWeights?: Float32Array }) {
+    constructor(opts?: { positions?: Float32Array; texcoords?: Float32Array; normals?: Float32Array; tangents?: Float32Array; indices?: Uint8Array | Uint16Array | Uint32Array; color?: Color; atlasId?: number; material?: Material; morphPositions?: Float32Array[]; morphNormals?: Float32Array[]; morphTangents?: Float32Array[]; morphWeights?: number[]; jointIndices?: Uint16Array; jointWeights?: Float32Array }) {
         this.positions = opts?.positions ?? new Float32Array();
         this.texcoords = opts?.texcoords ?? new Float32Array();
         this.normals = opts?.normals ?? null;
