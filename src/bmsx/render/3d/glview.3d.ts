@@ -2,7 +2,7 @@ import type { Size, vec3, vec3arr } from '../../rompack/rompack';
 import { Identifier } from '../../rompack/rompack';
 import { glCreateBuffer, glCreateElementBuffer, glLoadShader, glSetupAttributeFloat, glSetupAttributeInt, glSwitchProgram } from '../glutils';
 import { MAX_DIR_LIGHTS, MAX_POINT_LIGHTS } from '../glview.constants';
-import { checkWebGLError } from '../glview.helpers';
+import { checkWebGLError, getFramebufferStatusString, getWebGLErrorString } from '../glview.helpers';
 import { BaseView, DrawMeshOptions } from '../view';
 import { Camera3D } from './camera3d';
 import type { AmbientLight, DirectionalLight, PointLight } from './light';
@@ -436,6 +436,10 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
     checkWebGLError("Before setting uniform values");
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
     gl.viewport(0, 0, canvasWidth, canvasHeight);
+    const fbStatus = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if (fbStatus !== gl.FRAMEBUFFER_COMPLETE) {
+        console.warn(`renderMeshBatch: framebuffer incomplete - ${getFramebufferStatusString(gl, fbStatus)}`);
+    }
     checkWebGLError("After binding framebuffer and setting viewport");
 
     if (skyboxTexture) {
@@ -687,28 +691,28 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
 
         if (m.indices) {
             checkWebGLError("Before drawing elements");
-            // const type = m.indices instanceof Uint32Array ? gl.UNSIGNED_INT : m.indices instanceof Uint16Array ? gl.UNSIGNED_SHORT : gl.UNSIGNED_BYTE;
             const type =
                 m.indices instanceof Uint32Array ? gl.UNSIGNED_INT :
                     m.indices instanceof Uint16Array ? gl.UNSIGNED_SHORT :
                         gl.UNSIGNED_BYTE;
 
             gl.drawElements(gl.TRIANGLES, m.indices.length, type, 0);
-            if (checkWebGLError(`After drawing elements (count = ${m.indices.length})`)) {
-                const vertexType2String = (type: GLenum): string => {
-                    switch (type) {
+            const drawError = checkWebGLError(`After drawing elements (count = ${m.indices.length})`);
+            if (drawError) {
+                const vertexType2String = (t: GLenum): string => {
+                    switch (t) {
                         case gl.UNSIGNED_BYTE: return "UNSIGNED_BYTE";
                         case gl.UNSIGNED_SHORT: return "UNSIGNED_SHORT";
                         case gl.UNSIGNED_INT: return "UNSIGNED_INT";
                         default: return "UNKNOWN";
                     }
                 };
-                const getBufferData = (buffer: WebGLBuffer, type: GLenum, size: number): any => {
-                    const result: Uint8Array | Uint16Array | Float32Array = new (type === gl.FLOAT ? Float32Array : type === gl.UNSIGNED_BYTE ? Uint8Array : Uint16Array)(size);
+                const getBufferData = (buffer: WebGLBuffer, t: GLenum, size: number): any => {
+                    const result: Uint8Array | Uint16Array | Float32Array = new (t === gl.FLOAT ? Float32Array : t === gl.UNSIGNED_BYTE ? Uint8Array : Uint16Array)(size);
                     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
                     gl.getBufferSubData(gl.ARRAY_BUFFER, 0, result);
                     return result;
-                }
+                };
 
                 // Read the data from the buffers for debugging
                 const colorData = getBufferData(color_overrideBuffer3D, gl.FLOAT, vertexCount * 4);
@@ -739,11 +743,18 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
 
                 throw new Error(`Mesh ${m.name} has indices but drawElements failed. Vertex count: ${vertexCount}, Indices length: ${m.indices.length}
                 Indices-type: ${vertexType2String(type)}
+                Valid indices: ${m.indices.every(i => i >= 0 && i < vertexCount)}
+                Valid vertex count: ${vertexCount >= 0 && vertexCount <= 65535}
+                Vertex array contains enough vertices for all indices used: ${m.indices.length <= vertexCount ? 'true' : 'false: ' + m.indices.length + ' > ' + vertexCount}
+                _________________________________________________________________
+                Draw Error: ${drawError}
+                WebGL error: ${getWebGLErrorString(gl, drawError)}
+                Framebuffer status: ${getFramebufferStatusString(gl, gl.checkFramebufferStatus(gl.FRAMEBUFFER))}
                 _________________________________________________________________
                 Material Color: ${JSON.stringify(matColor)}, Metallic Factor: ${m.material?.metallicFactor}, Roughness Factor: ${m.material?.roughnessFactor}
-                Texture Albedo: ${m.gpuTextureAlbedo ?? 'none'}
-                Texture Normal: ${m.gpuTextureNormal ?? 'none'}
-                Texture MetallicRoughness: ${m.gpuTextureMetallicRoughness ?? 'none'}
+                Texture Albedo: '${m.gpuTextureAlbedo ?? 'none'}'
+                Texture Normal: '${m.gpuTextureNormal ?? 'none'}'
+                Texture MetallicRoughness: '${m.gpuTextureMetallicRoughness ?? 'none'}'
                 _________________________________________________________________
                 Colordata: ${JSON.stringify(colorData)}
                 Atlasdata: ${JSON.stringify(atlasData)}

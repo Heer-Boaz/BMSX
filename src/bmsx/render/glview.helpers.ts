@@ -152,3 +152,15 @@ export function getWebGLErrorString(gl: WebGLRenderingContext, error: number): s
         default: return 'UNKNOWN_ERROR';
     }
 }
+
+export function getFramebufferStatusString(gl: WebGL2RenderingContext, status: number): string {
+    switch (status) {
+        case gl.FRAMEBUFFER_COMPLETE: return 'FRAMEBUFFER_COMPLETE';
+        case gl.FRAMEBUFFER_INCOMPLETE_ATTACHMENT: return 'FRAMEBUFFER_INCOMPLETE_ATTACHMENT';
+        case gl.FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT: return 'FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT';
+        case gl.FRAMEBUFFER_INCOMPLETE_DIMENSIONS: return 'FRAMEBUFFER_INCOMPLETE_DIMENSIONS';
+        case gl.FRAMEBUFFER_UNSUPPORTED: return 'FRAMEBUFFER_UNSUPPORTED';
+        case gl.FRAMEBUFFER_INCOMPLETE_MULTISAMPLE: return 'FRAMEBUFFER_INCOMPLETE_MULTISAMPLE';
+        default: return 'UNKNOWN_FRAMEBUFFER_STATUS';
+    }
+}
