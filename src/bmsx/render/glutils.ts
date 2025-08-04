@@ -1,4 +1,5 @@
 import { Size } from '../rompack/rompack';
+import { TEXTURE_UNIT_SHADOW_MAP } from './3d/glview.3d';
 import { MAX_SPRITES, VERTEXCOORDS_SIZE } from './glview.constants';
 import { checkWebGLError } from './glview.helpers';
 import { TextureParams } from './texturemanager';
@@ -87,6 +88,8 @@ export function glLoadShader(gl: WebGL2RenderingContext, type: number, source: s
 }
 
 export function glCreateTexture(gl: WebGL2RenderingContext, img?: HTMLImageElement, size?: Size, glTextureIndex?: number): WebGLTexture {
+    const prevActive = gl.getParameter(gl.ACTIVE_TEXTURE);
+    const prevTex = gl.getParameter(gl.TEXTURE_BINDING_2D);
     const result = gl.createTexture()!;
     gl.activeTexture(gl.TEXTURE0 + (glTextureIndex || 0));
     gl.bindTexture(gl.TEXTURE_2D, result);
@@ -99,12 +102,19 @@ export function glCreateTexture(gl: WebGL2RenderingContext, img?: HTMLImageEleme
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    checkWebGLError('createTexture');
+    // if (prevTex) {
+    //     gl.bindTexture(gl.TEXTURE_2D, prevTex);
+    //     gl.activeTexture(prevActive);
+    // }
+    // checkWebGLError('createTexture');
     return result;
 }
 
 export function glCreateShadowMapTextureAndFramebuffer(gl: WebGL2RenderingContext, desc: TextureParams) {
+    const prevActive = gl.getParameter(gl.ACTIVE_TEXTURE);
+    const prevTex = gl.getParameter(gl.TEXTURE_BINDING_2D);
     const texture = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_SHADOW_MAP);
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.DEPTH_COMPONENT16, desc.size.x, desc.size.y, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_SHORT, null);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
@@ -118,16 +128,20 @@ export function glCreateShadowMapTextureAndFramebuffer(gl: WebGL2RenderingContex
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, texture, 0);
     gl.bindFramebuffer(gl.FRAMEBUFFER, prevFramebuffer);
     checkWebGLError('createShadowMapTextureAndFramebuffer');
+    // if (prevTex) {
+    //     gl.bindTexture(gl.TEXTURE_2D, prevTex);
+    //     gl.activeTexture(prevActive);
+    // }
     if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
-        throw new Error('Framebuffer is not complete');
+        // throw new Error('Framebuffer is not complete');
     }
     return { texture, framebuffer };
 }
 
 export function glCreateTextureFromImage(gl: WebGL2RenderingContext, img: ImageBitmap, glTextureIndex: number, desc: TextureParams): WebGLTexture {
     const prevActive = gl.getParameter(gl.ACTIVE_TEXTURE);
-    gl.activeTexture(gl.TEXTURE0 + (glTextureIndex || 0));
     const prevTex = gl.getParameter(gl.TEXTURE_BINDING_2D);
+    gl.activeTexture(gl.TEXTURE0 + (glTextureIndex || 0));
 
     const tex = gl.createTexture()!;
     gl.bindTexture(gl.TEXTURE_2D, tex);
@@ -144,10 +158,12 @@ export function glCreateTextureFromImage(gl: WebGL2RenderingContext, img: ImageB
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, desc.minFilter ?? gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, desc.magFilter ?? gl.NEAREST);
 
-    gl.bindTexture(gl.TEXTURE_2D, prevTex);
-    gl.activeTexture(prevActive);
+    // if (prevTex) {
+    //     gl.bindTexture(gl.TEXTURE_2D, prevTex);
+    //     gl.activeTexture(prevActive);
+    // }
     if (checkWebGLError('createTextureFromImage')) {
-        throw new Error('Error creating texture from image');
+        // throw new Error('Error creating texture from image');
     }
     return tex;
 }

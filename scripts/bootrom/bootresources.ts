@@ -252,18 +252,20 @@ export async function loadModelFromBuffer(assetId: string, buffer: ArrayBuffer, 
         if (Array.isArray(v)) return new Float32Array(v);
         return undefined;
     }
-    function toIndices(v: any, componentType?: number): Uint16Array | Uint32Array | undefined {
+    function toIndices(v: any, componentType?: number): Uint8Array | Uint16Array | Uint32Array | undefined {
         if (v === undefined || v === null) return undefined;
         if (ArrayBuffer.isView(v)) {
             const u8 = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
             if (componentType === 5125) return new Uint32Array(u8.buffer, u8.byteOffset, u8.byteLength / 4);
             if (componentType === 5123) return new Uint16Array(u8.buffer, u8.byteOffset, u8.byteLength / 2);
+            if (componentType === 5121) return new Uint8Array(u8.buffer, u8.byteOffset, u8.byteLength);  // Add this
             if (u8.byteLength % 4 === 0) return new Uint32Array(u8.buffer, u8.byteOffset, u8.byteLength / 4);
             return new Uint16Array(u8.buffer, u8.byteOffset, u8.byteLength / 2);
         }
         if (Array.isArray(v)) {
             if (componentType === 5125) return new Uint32Array(v);
             if (componentType === 5123) return new Uint16Array(v);
+            if (componentType === 5121) return new Uint8Array(v);  // Add this
             return (v.length && v.length > 65535) ? new Uint32Array(v) : new Uint16Array(v);
         }
         return undefined;

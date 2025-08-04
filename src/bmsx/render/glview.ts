@@ -171,7 +171,7 @@ export class GLView extends BaseView {
 			preserveDrawingBuffer: false,
 			antialias: false,
 		}) as WebGL2RenderingContext;
-		GLView3D.init(this.offscreenCanvasSize);
+		GLView3D.init(this.glctx, this.offscreenCanvasSize);
 	}
 
 	/**
@@ -214,12 +214,16 @@ export class GLView extends BaseView {
 	 */
 	private setDefaultUniformValues(): void {
 		const gl = this.glctx;
+		checkWebGLError('before 2D setupDefaultUniformValues');
 		GLView2D.setupDefaultUniformValues(gl, 2.0, to_vec2arr(this.offscreenCanvasSize)); // Set the default uniform values for the game shader
+		checkWebGLError('after 2D setupDefaultUniformValues');
 
 		GLView3D.setDefaultUniformValues(gl, 2.0);
+		checkWebGLError('after 3D setupDefaultUniformValues');
 		const crtOptions: GLViewCRT.CRTShaderOptions = { applyNoise: this.applyNoise, applyColorBleed: this.applyColorBleed, applyScanlines: this.applyScanlines, applyBlur: this.applyBlur, applyGlow: this.applyGlow, applyFringing: this.applyFringing, blurIntensity: this.blurIntensity, noiseIntensity: this.noiseIntensity, colorBleed: this.colorBleed, glowColor: this.glowColor };
 
 		GLViewCRT.setDefaultUniformValues(gl, crtOptions); // Set the default uniform values for the CRT shader
+		checkWebGLError('after CRT setupDefaultUniformValues');
 	}
 
 	/**
@@ -300,6 +304,8 @@ export class GLView extends BaseView {
 	private createFramebufferAndTexture(): void {
 		const gl = this.glctx;
 
+		checkWebGLError('before createFramebufferAndTexture');
+
 		// Delete the old framebuffer and texture if they exist
 		if (this.framebuffer) {
 			gl.deleteFramebuffer(this.framebuffer);
@@ -308,15 +314,21 @@ export class GLView extends BaseView {
 			gl.deleteTexture(this.textures['post_processing_source_texture']);
 		}
 
+		checkWebGLError('after delete old framebuffer and texture');
+
 		const width = this.offscreenCanvasSize.x;
 		const height = this.offscreenCanvasSize.y;
 
+		checkWebGLError('after get offscreen canvas size');
 		// Create a new texture
 		this.textures['post_processing_source_texture'] = glCreateTexture(gl, undefined, { x: width, y: height }, 8); // Use TEXTURE8 for the post-processing shader texture
+		checkWebGLError('after create post-processing texture');
 
+		checkWebGLError('after create post-processing texture');
 		// Create a new framebuffer
 		this.framebuffer = gl.createFramebuffer();
 		gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
+		checkWebGLError('after create framebuffer');
 
 		// Attach the texture to the framebuffer
 		gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.textures['post_processing_source_texture'], 0);
