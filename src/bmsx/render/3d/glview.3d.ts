@@ -687,16 +687,121 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
 
         if (m.indices) {
             checkWebGLError("Before drawing elements");
-            const type = m.indices instanceof Uint32Array ? gl.UNSIGNED_INT : m.indices instanceof Uint16Array ? gl.UNSIGNED_SHORT : gl.UNSIGNED_BYTE;
+            // const type = m.indices instanceof Uint32Array ? gl.UNSIGNED_INT : m.indices instanceof Uint16Array ? gl.UNSIGNED_SHORT : gl.UNSIGNED_BYTE;
+            const type =
+                m.indices instanceof Uint32Array ? gl.UNSIGNED_INT :
+                    m.indices instanceof Uint16Array ? gl.UNSIGNED_SHORT :
+                        gl.UNSIGNED_BYTE;
+
             gl.drawElements(gl.TRIANGLES, m.indices.length, type, 0);
             if (checkWebGLError(`After drawing elements (count = ${m.indices.length})`)) {
-                // Your existing logging...
+                const vertexType2String = (type: GLenum): string => {
+                    switch (type) {
+                        case gl.UNSIGNED_BYTE: return "UNSIGNED_BYTE";
+                        case gl.UNSIGNED_SHORT: return "UNSIGNED_SHORT";
+                        case gl.UNSIGNED_INT: return "UNSIGNED_INT";
+                        default: return "UNKNOWN";
+                    }
+                };
+                const getBufferData = (buffer: WebGLBuffer, type: GLenum, size: number): any => {
+                    const result: Uint8Array | Uint16Array | Float32Array = new (type === gl.FLOAT ? Float32Array : type === gl.UNSIGNED_BYTE ? Uint8Array : Uint16Array)(size);
+                    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+                    gl.getBufferSubData(gl.ARRAY_BUFFER, 0, result);
+                    return result;
+                }
+
+                // Read the data from the buffers for debugging
+                const colorData = getBufferData(color_overrideBuffer3D, gl.FLOAT, vertexCount * 4);
+                const atlasData = getBufferData(atlas_idBuffer3D, gl.UNSIGNED_BYTE, vertexCount);
+                const jointData = getBufferData(jointBuffer3D, gl.UNSIGNED_SHORT, vertexCount * 4);
+                const weightData = getBufferData(weightBuffer3D, gl.FLOAT, vertexCount * 4);
+                const morphPositionData = morphPositionBuffers3D.map(b => b ? getBufferData(b, gl.FLOAT, vertexCount * 3) : null);
+                const morphNormalData = morphNormalBuffers3D.map(b => b ? getBufferData(b, gl.FLOAT, vertexCount * 3) : null);
+                const morphTangentData = morphTangentBuffers3D.map(b => b ? getBufferData(b, gl.FLOAT, vertexCount * 3) : null);
+                const jointMatrices = jointMatrixArray.length > 0 ? Array.from({ length: jointMatrixArray.length / 16 }, (_, i) => jointMatrixArray.slice(i * 16, (i + 1) * 16)) : null;
+                const positions = getBufferData(vertexBuffer3D, gl.FLOAT, vertexCount * 3);
+                const texcoords = m.hasTexcoords ? getBufferData(texcoordBuffer3D, gl.FLOAT, vertexCount * 2) : null;
+                const normals = m.hasNormals ? getBufferData(normalBuffer3D, gl.FLOAT, vertexCount * 3) : null;
+                const tangents = m.hasTangents ? getBufferData(tangentBuffer3D, gl.FLOAT, vertexCount * 4) : null;
+                const vertexData = {
+                    colorData: colorData,
+                    atlasData: atlasData,
+                    jointData: jointData,
+                    weightData: weightData,
+                    morphPositions: morphPositionData,
+                    morphNormals: morphNormalData,
+                    morphTangents: morphTangentData,
+                    positions: positions,
+                    texcoords: texcoords,
+                    normals: normals,
+                    tangents: tangents,
+                };
+
+                throw new Error(`Mesh ${m.name} has indices but drawElements failed. Vertex count: ${vertexCount}, Indices length: ${m.indices.length}
+                Indices-type: ${vertexType2String(type)}
+                _________________________________________________________________
+                Material Color: ${JSON.stringify(matColor)}, Metallic Factor: ${m.material?.metallicFactor}, Roughness Factor: ${m.material?.roughnessFactor}
+                Texture Albedo: ${m.gpuTextureAlbedo ?? 'none'}
+                Texture Normal: ${m.gpuTextureNormal ?? 'none'}
+                Texture MetallicRoughness: ${m.gpuTextureMetallicRoughness ?? 'none'}
+                _________________________________________________________________
+                Colordata: ${JSON.stringify(colorData)}
+                Atlasdata: ${JSON.stringify(atlasData)}
+                Atlas ID: ${m.atlasId}
+                Has normals: ${m.hasNormals}
+                Has tangents: ${m.hasTangents}
+                Has texcoords: ${m.hasTexcoords}
+                Has skinning: ${m.hasSkinning}
+                _________________________________________________________________
+                Shadow: ${m.shadow ? 'yes' : 'no'}, Shadow Map: ${m.shadow?.map.texture ?? 'none'}, Shadow Strength: ${m.shadow?.strength ?? 'none'}
+                Shadow Matrix: ${m.shadow?.matrix ?? 'none'}
+                Joint Matrices: ${jointMatrices ? jointMatrices.map(j => JSON.stringify(j)).join(', ') : 'none'}
+                Morph Targets: ${m.hasMorphTargets ? m.morphPositions.length : 'none'}
+                Morph Weights: ${m.hasMorphTargets ? m.morphWeights.join(', ') : 'none'}
+                _________________________________________________________________
+                MVP: ${JSON.stringify(mvp)}
+                Model Matrix: ${JSON.stringify(matrix)}
+                Normal Matrix: ${JSON.stringify(normalMat)}
+                _________________________________________________________________
+                Bound Vertex Buffer ID: ${vertexBuffer3D ? 'yes' : 'no'}
+                Bound Texcoord Buffer ID: ${texcoordBuffer3D ? 'yes' : 'no'}
+                Bound Normal Buffer ID: ${normalBuffer3D ? 'yes' : 'no'}
+                Bound Tangent Buffer ID: ${tangentBuffer3D ? 'yes' : 'no'}
+                Bound Color Override Buffer ID: ${color_overrideBuffer3D ? 'yes' : 'no'}
+                Bound Atlas ID Buffer ID: ${atlas_idBuffer3D ? 'yes' : 'no'}
+                Bound Index Buffer ID: ${indexBuffer3D ? 'yes' : 'no'}
+                Bound Joint Buffer ID: ${jointBuffer3D ? 'yes' : 'no'}
+                Bound Weight Buffer ID: ${weightBuffer3D ? 'yes' : 'no'}
+                Bound Morph Position Buffers: ${morphPositionBuffers3D.map((b, i) => `${i}: ${b ? 'yes' : 'no'}`).join(', ')}
+                Bound Morph Normal Buffers: ${morphNormalBuffers3D.map((b, i) => `${i}: ${b ? 'yes' : 'no'}`).join(', ')}
+                Bound Morph Tangent Buffers: ${morphTangentBuffers3D.map((b, i) => `${i}: ${b ? 'yes' : 'no'}`).join(', ')}
+                _________________________________________________________________
+                Has Albedo Texture: ${m.gpuTextureAlbedo ? 'yes' : 'no'}
+                Use Albedo Texture uniform: ${gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), useAlbedoTextureLocation3D)}
+                Has Normal Texture: ${m.gpuTextureNormal ? 'yes' : 'no'}
+                Use Normal Texture uniform: ${gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), useNormalTextureLocation3D)}
+                Has Metallic Roughness Texture: ${m.gpuTextureMetallicRoughness ? 'yes' : 'no'}
+                Use Metallic Roughness Texture uniform: ${gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), useMetallicRoughnessTextureLocation3D)}
+                Has Shadow Map: ${m.shadow ? 'yes' : 'no'}
+                Use Shadow Map uniform: ${gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), useShadowMapLocation3D)}
+                Has Morph Targets: ${m.hasMorphTargets ? 'yes' : 'no'}
+                Morph Weights uniform: ${gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), morphWeightLocation3D)}
+                Has Joint Matrices: ${m.hasSkinning && jointMatrices ? 'yes' : 'no'}
+                Joint Matrices uniform: ${gl.getUniform(gl.getParameter(gl.CURRENT_PROGRAM), jointMatrixLocation3D)}
+                Has Joint Matrix Array: ${jointMatrixArray?.length > 0 ? 'yes' : 'no'}
+                    Joint Matrix Array length: ${jointMatrixArray?.length / 16}
+                    Joint Matrix Array data: ${getBufferData(jointBuffer3D, gl.UNSIGNED_SHORT, vertexCount * 4)}
+                Joint Matrix Array: ${JSON.stringify(jointMatrixArray)}
+                _________________________________________________________________
+                _________________________________________________________________
+                Vertex Data: ${JSON.stringify(vertexData)}
+                `);
             }
         } else {
             checkWebGLError("Before drawing arrays");
             gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
             if (checkWebGLError(`After drawing arrays (count = ${vertexCount})`)) {
-                // Handle error
+                throw new Error(`Mesh ${m.name} has no indices and drawArrays failed. Vertex count: ${vertexCount}`);
             }
         }
         checkWebGLError(`After calculating MVP and drawing mesh: ${JSON.stringify(m)}`);

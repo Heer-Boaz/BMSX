@@ -28,8 +28,10 @@ export class Mesh {
     public morphWeights: number[];
     public jointIndices?: Uint16Array;
     public jointWeights?: Float32Array;
+    public name: string;
 
-    constructor(opts?: { positions?: Float32Array; texcoords?: Float32Array; normals?: Float32Array; tangents?: Float32Array; indices?: Uint8Array | Uint16Array | Uint32Array; color?: Color; atlasId?: number; material?: Material; morphPositions?: Float32Array[]; morphNormals?: Float32Array[]; morphTangents?: Float32Array[]; morphWeights?: number[]; jointIndices?: Uint16Array; jointWeights?: Float32Array }) {
+    constructor(opts?: { positions?: Float32Array; texcoords?: Float32Array; normals?: Float32Array; tangents?: Float32Array; indices?: Uint8Array | Uint16Array | Uint32Array; color?: Color; atlasId?: number; material?: Material; morphPositions?: Float32Array[]; morphNormals?: Float32Array[]; morphTangents?: Float32Array[]; morphWeights?: number[]; jointIndices?: Uint16Array; jointWeights?: Float32Array, meshname: string }) {
+        this.name = opts?.meshname;
         this.positions = opts?.positions ?? new Float32Array();
         this.texcoords = opts?.texcoords ?? new Float32Array();
         this.normals = opts?.normals ?? null;
@@ -124,7 +126,7 @@ export abstract class MeshObject extends GameObject {
         this.setMeshModel($.rompack.model[this.model_id]); // Load the new model
     }
 
-    private createMesh(mesh: GLTFMesh, meshModel: GLTFModel): Mesh {
+    private createMesh(mesh: GLTFMesh, meshModel: GLTFModel, index: number): Mesh {
         const m = new Mesh({
             positions: mesh.positions.slice(),
             texcoords: mesh.texcoords?.slice() ?? new Float32Array(),
@@ -138,6 +140,7 @@ export abstract class MeshObject extends GameObject {
             morphWeights: mesh.weights ? [...mesh.weights] : [],
             jointIndices: mesh.jointIndices?.slice(),
             jointWeights: mesh.jointWeights?.slice(),
+            meshname: `${meshModel.name}_${index}`,
         });
 
         const mat = meshModel.materials?.[mesh.materialIndex ?? 0];
@@ -166,7 +169,7 @@ export abstract class MeshObject extends GameObject {
 
     public setMeshModel(meshModel: GLTFModel): void {
         this.meshModel = meshModel;
-        this.meshes = meshModel.meshes.map(m => this.createMesh(m, meshModel));
+        this.meshes = meshModel.meshes.map((m, i) => this.createMesh(m, meshModel, i));
         if (meshModel.nodes) {
             this.worldMatrices = meshModel.nodes.map(() => bmat.identity());
             this.nodeDirty = meshModel.nodes.map(() => true);
@@ -337,7 +340,7 @@ export abstract class MeshObject extends GameObject {
 
     private computeSkinMatrices(skinIndex: number): Float32Array[] {
         const skin = this.meshModel.skins?.[skinIndex];
-        if (!skin) return [];
+        if (!skin || skin.joints.length === 0) return undefined;
         const mats: Float32Array[] = [];
         for (let i = 0; i < skin.joints.length; i++) {
             const jointIdx = skin.joints[i];
@@ -416,7 +419,6 @@ export abstract class MeshObject extends GameObject {
                 jointMatrices: inst.skinIndex !== undefined ? this.computeSkinMatrices(inst.skinIndex) : undefined,
             };
             $.view.drawMesh(options);
-            debugger;
         }
     }
 }
