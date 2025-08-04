@@ -742,10 +742,32 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
                 };
 
                 throw new Error(`Mesh ${m.name} has indices but drawElements failed. Vertex count: ${vertexCount}, Indices length: ${m.indices.length}
+
                 Indices-type: ${vertexType2String(type)}
                 Valid indices: ${m.indices.every(i => i >= 0 && i < vertexCount)}
                 Valid vertex count: ${vertexCount >= 0 && vertexCount <= 65535}
-                Vertex array contains enough vertices for all indices used: ${m.indices.length <= vertexCount ? 'true' : 'false: ' + m.indices.length + ' > ' + vertexCount}
+                Vertex array contains enough vertices for all indices used: ${m.indices.length <= vertexCount ? 'yes' : 'no, because ' + m.indices.length + ' > ' + vertexCount}
+                Is vertex buffer size correct (size per element is 3 bytes): ${vertexBuffer3D ? (gl.getBufferParameter(gl.ARRAY_BUFFER, gl.BUFFER_SIZE) === vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT ? 'yes' : 'no, because ' + (gl.getBufferParameter(gl.ARRAY_BUFFER, gl.BUFFER_SIZE) - vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT) + ' bytes are missing') : 'Unbound!'}
+                Is index buffer size correct (size per element is 2 bytes): ${indexBuffer3D ? (gl.getBufferParameter(gl.ELEMENT_ARRAY_BUFFER, gl.BUFFER_SIZE) === m.indices.length * 2 * Uint16Array.BYTES_PER_ELEMENT ? 'yes' : 'no, because ' + (gl.getBufferParameter(gl.ELEMENT_ARRAY_BUFFER, gl.BUFFER_SIZE) - m.indices.length * 2 * Uint16Array.BYTES_PER_ELEMENT) + ' bytes are missing') : 'Unbound!'}
+                Is texture buffer size correct (size per element is 4 bytes): ${texcoordBuffer3D ? (gl.getBufferParameter(gl.ARRAY_BUFFER, gl.BUFFER_SIZE) === vertexCount * 2 * Float32Array.BYTES_PER_ELEMENT ? 'yes' : 'no, because ' + (gl.getBufferParameter(gl.ARRAY_BUFFER, gl.BUFFER_SIZE) - vertexCount * 2 * Float32Array.BYTES_PER_ELEMENT) + ' bytes are missing') : 'Unbound!'}
+                Is normal buffer size correct (size per element is 3 bytes): ${normalBuffer3D ? (gl.getBufferParameter(gl.ARRAY_BUFFER, gl.BUFFER_SIZE) === vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT ? 'yes' : 'no, because ' + (gl.getBufferParameter(gl.ARRAY_BUFFER, gl.BUFFER_SIZE) - vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT) + ' bytes are missing') : 'Unbound!'}
+                Is tangent buffer size correct (size per element is 4 bytes): ${tangentBuffer3D ? (gl.getBufferParameter(gl.ARRAY_BUFFER, gl.BUFFER_SIZE) === vertexCount * 4 * Float32Array.BYTES_PER_ELEMENT ? 'yes' : 'no, because ' + (gl.getBufferParameter(gl.ARRAY_BUFFER, gl.BUFFER_SIZE) - vertexCount * 4 * Float32Array.BYTES_PER_ELEMENT) + ' bytes are missing') : 'Unbound!'}
+                Is color override buffer size correct (size per element is 4 bytes): ${color_overrideBuffer3D ? (gl.getBufferParameter(gl.ARRAY_BUFFER, gl.BUFFER_SIZE) === vertexCount * 4 * Float32Array.BYTES_PER_ELEMENT ? 'yes' : 'no, because ' + (gl.getBufferParameter(gl.ARRAY_BUFFER, gl.BUFFER_SIZE) - vertexCount * 4 * Float32Array.BYTES_PER_ELEMENT) + ' bytes are missing') : 'Unbound!'}
+                Is atlas ID buffer size correct (size per element is 1 byte): ${atlas_idBuffer3D ? (gl.getBufferParameter(gl.ARRAY_BUFFER, gl.BUFFER_SIZE) === vertexCount * Uint8Array.BYTES_PER_ELEMENT ? 'yes' : 'no, because ' + (gl.getBufferParameter(gl.ARRAY_BUFFER, gl.BUFFER_SIZE) - vertexCount * Uint8Array.BYTES_PER_ELEMENT) + ' bytes are missing') : 'Unbound!'}
+                Is joint buffer size correct (size per element is 4 bytes): ${jointBuffer3D ? (gl.getBufferParameter(gl.ARRAY_BUFFER, gl.BUFFER_SIZE) === vertexCount * 4 * Uint16Array.BYTES_PER_ELEMENT ? 'yes' : 'no, because ' + (gl.getBufferParameter(gl.ARRAY_BUFFER, gl.BUFFER_SIZE) - vertexCount * 4 * Uint16Array.BYTES_PER_ELEMENT) + ' bytes are missing') : 'Unbound!'}
+                Is weight buffer size correct (size per element is 4 bytes): ${weightBuffer3D ? (gl.getBufferParameter(gl.ARRAY_BUFFER, gl.BUFFER_SIZE) === vertexCount * 4 * Float32Array.BYTES_PER_ELEMENT ? 'yes' : 'no, because ' + (gl.getBufferParameter(gl.ARRAY_BUFFER, gl.BUFFER_SIZE) - vertexCount * 4 * Float32Array.BYTES_PER_ELEMENT) + ' bytes are missing') : 'Unbound!'}
+                Is morph position buffer size correct (size per element is 3 bytes): ${morphPositionBuffers3D.map((b, i) => b ? (gl.getBufferParameter(gl.ARRAY_BUFFER, gl.BUFFER_SIZE) === vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT ? 'yes' : 'no, because ' + (gl.getBufferParameter(gl.ARRAY_BUFFER, gl.BUFFER_SIZE) - vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT) + ' bytes are missing') : 'Unbound!').join(', ')}
+                Is morph normal buffer size correct (size per element is 3 bytes): ${morphNormalBuffers3D.map((b, i) => b ? (gl.getBufferParameter(gl.ARRAY_BUFFER, gl.BUFFER_SIZE) === vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT ? 'yes' : 'no, because ' + (gl.getBufferParameter(gl.ARRAY_BUFFER, gl.BUFFER_SIZE) - vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT) + ' bytes are missing') : 'Unbound!').join(', ')}
+                Is morph tangent buffer size correct (size per element is 3 bytes): ${morphTangentBuffers3D.map((b, i) => b ? (gl.getBufferParameter(gl.ARRAY_BUFFER, gl.BUFFER_SIZE) === vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT ? 'yes' : 'no, because ' + (gl.getBufferParameter(gl.ARRAY_BUFFER, gl.BUFFER_SIZE) - vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT) + ' bytes are missing') : 'Unbound!').join(', ')}
+                Is joint matrix array size correct (size per element is 16 bytes): ${jointMatrixArray.length === vertexCount * 16 ? 'yes' : 'no, because length is ' + jointMatrixArray.length + ' instead of ' + (vertexCount * 16)}
+                Is joint matrix array bound: ${jointBuffer3D ? 'yes' : 'no'}
+                Is joint matrix array data correct: ${jointMatrixArray.length === vertexCount * 16 ? 'yes' : 'no, because length is ' + jointMatrixArray.length + ' instead of ' + (vertexCount * 16)}
+                Is joint matrix array data valid: ${jointMatrixArray.every((v, i) => v >= -1 && v <= 1) ? 'yes' : 'no, because values are between -1 and 1'}
+                Is morph position data valid: ${morphPositionData.every((b, i) => b ? b.length === vertexCount * 3 : true) ? 'yes' : 'no, because morph position data length is ' + morphPositionData.map(b => b ? b.length : 'null').join(', ')}
+                Is morph normal data valid: ${morphNormalData.every((b, i) => b ? b.length === vertexCount * 3 : true) ? 'yes' : 'no, because morph normal data length is ' + morphNormalData.map(b => b ? b.length : 'null').join(', ')}
+                Is morph tangent data valid: ${morphTangentData.every((b, i) => b ? b.length === vertexCount * 3 : true) ? 'yes' : 'no, because morph tangent data length is ' + morphTangentData.map(b => b ? b.length : 'null').join(', ')}
+                Is vertex data valid: ${Object.values(vertexData).every(v => v instanceof Float32Array || v instanceof Uint8Array || v instanceof Uint16Array) ? 'yes' : 'no, because vertex data contains invalid types: ' + Object.keys(vertexData).filter(k => !(vertexData[k] instanceof Float32Array || vertexData[k] instanceof Uint8Array || vertexData[k] instanceof Uint16Array)).join(', ')}
+                Is vertex data correct: ${Object.values(vertexData).every(v => v?.length ? (v.length === vertexCount * (v instanceof Float32Array ? 3 : v instanceof Uint8Array ? 1 : 4)) ? 'yes' : 'no, because vertex data length is ' + Object.entries(vertexData).map(([k, v]) => `${k}: ${v?.length ?? 'nulll'}`).join(', ') : 'no, because vertex data is empty') ? 'yes' : 'no, because vertex data contains invalid lengths: ' + Object.entries(vertexData).map(([k, v]) => `${k}: ${v?.length ?? 'null'}`).join(', ')}
                 _________________________________________________________________
                 Draw Error: ${drawError}
                 WebGL error: ${getWebGLErrorString(gl, drawError)}
@@ -804,18 +826,17 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
                     Joint Matrix Array data: ${getBufferData(jointBuffer3D, gl.UNSIGNED_SHORT, vertexCount * 4)}
                 Joint Matrix Array: ${JSON.stringify(jointMatrixArray)}
                 _________________________________________________________________
-                _________________________________________________________________
                 Vertex Data: ${JSON.stringify(vertexData)}
-                `);
+    `);
             }
         } else {
             checkWebGLError("Before drawing arrays");
             gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
-            if (checkWebGLError(`After drawing arrays (count = ${vertexCount})`)) {
-                throw new Error(`Mesh ${m.name} has no indices and drawArrays failed. Vertex count: ${vertexCount}`);
+            if (checkWebGLError(`After drawing arrays(count = ${vertexCount})`)) {
+                throw new Error(`Mesh ${m.name} has no indices and drawArrays failed.Vertex count: ${vertexCount} `);
             }
         }
-        checkWebGLError(`After calculating MVP and drawing mesh: ${JSON.stringify(m)}`);
+        checkWebGLError(`After calculating MVP and drawing mesh: ${JSON.stringify(m)} `);
     }
 
     meshesToDraw = [];
