@@ -457,17 +457,17 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
     gl.enableVertexAttribArray(atlas_idLocation3D);
     checkWebGLError("After setting vertex attributes");
 
-    for (const mesh of meshesToDraw) {
+    for (const { mesh: m, matrix, jointMatrices } of meshesToDraw) {
         checkWebGLError("Before processing mesh");
         gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer3D);
-        gl.bufferData(gl.ARRAY_BUFFER, mesh.positions, gl.DYNAMIC_DRAW);
+        gl.bufferData(gl.ARRAY_BUFFER, m.positions, gl.DYNAMIC_DRAW);
 
-        const vertexCount = mesh.positions.length / 3;
+        const vertexCount = m.vertexCount;
 
         // Handle texcoords: Disable and set constant if missing/undersized
-        if (mesh.texcoords && mesh.texcoords.length >= vertexCount * 2) {
+        if (m.hasTexcoords) {
             gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBuffer3D);
-            gl.bufferData(gl.ARRAY_BUFFER, mesh.texcoords, gl.DYNAMIC_DRAW);
+            gl.bufferData(gl.ARRAY_BUFFER, m.texcoords, gl.DYNAMIC_DRAW);
             gl.vertexAttribPointer(texcoordLocation3D, 2, gl.FLOAT, false, 0, 0);
             gl.enableVertexAttribArray(texcoordLocation3D);
         } else {
@@ -476,19 +476,19 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
         }
 
         // Handle normals: Disable and set constant if missing/undersized
-        if (mesh.normals && mesh.normals.length >= vertexCount * 3) {
+        if (m.hasNormals) {
             gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer3D);
-            gl.bufferData(gl.ARRAY_BUFFER, mesh.normals, gl.DYNAMIC_DRAW);
+            gl.bufferData(gl.ARRAY_BUFFER, m.normals!, gl.DYNAMIC_DRAW);
             gl.vertexAttribPointer(normalLocation3D, 3, gl.FLOAT, false, 0, 0);
             gl.enableVertexAttribArray(normalLocation3D);
         } else {
             gl.disableVertexAttribArray(normalLocation3D);
             gl.vertexAttrib3f(normalLocation3D, 0.0, 0.0, 1.0); // Default up-normal
         }
-        // Handle tangents: Disable and set constant if missing/undersized
-        if (mesh.tangents && mesh.tangents.length >= vertexCount * 4) {
+        // Handle tangents: Disable and set constant if missing
+        if (m.hasTangents) {
             gl.bindBuffer(gl.ARRAY_BUFFER, tangentBuffer3D);
-            gl.bufferData(gl.ARRAY_BUFFER, mesh.tangents, gl.DYNAMIC_DRAW);
+            gl.bufferData(gl.ARRAY_BUFFER, m.tangents!, gl.DYNAMIC_DRAW);
             gl.vertexAttribPointer(tangentLocation3D, 4, gl.FLOAT, false, 0, 0);
             gl.enableVertexAttribArray(tangentLocation3D);
         } else {
@@ -496,21 +496,21 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
             gl.vertexAttrib4f(tangentLocation3D, 1.0, 0.0, 0.0, 1.0); // Default tangent
         }
         // Handle joints / skinning
-        if (mesh.jointIndices && mesh.jointWeights && mesh.jointMatrices) {
+        if (m.hasSkinning && jointMatrices) {
             gl.bindBuffer(gl.ARRAY_BUFFER, jointBuffer3D);
-            gl.bufferData(gl.ARRAY_BUFFER, mesh.jointIndices, gl.DYNAMIC_DRAW);
+            gl.bufferData(gl.ARRAY_BUFFER, m.jointIndices!, gl.DYNAMIC_DRAW);
             gl.vertexAttribIPointer(jointLocation3D, 4, gl.UNSIGNED_SHORT, 0, 0);
             gl.enableVertexAttribArray(jointLocation3D);
 
             gl.bindBuffer(gl.ARRAY_BUFFER, weightBuffer3D);
-            gl.bufferData(gl.ARRAY_BUFFER, mesh.jointWeights, gl.DYNAMIC_DRAW);
+            gl.bufferData(gl.ARRAY_BUFFER, m.jointWeights!, gl.DYNAMIC_DRAW);
             gl.vertexAttribPointer(weightLocation3D, 4, gl.FLOAT, false, 0, 0);
             gl.enableVertexAttribArray(weightLocation3D);
 
             jointMatrixArray.fill(0);
             jointMatrixArray.set(identityMatrix, 0);
-            for (let i = 0; i < mesh.jointMatrices.length && i < MAX_JOINTS; i++) {
-                jointMatrixArray.set(mesh.jointMatrices[i], i * 16);
+            for (let i = 0; i < jointMatrices.length && i < MAX_JOINTS; i++) {
+                jointMatrixArray.set(jointMatrices[i], i * 16);
             }
             gl.uniformMatrix4fv(jointMatrixLocation3D, false, jointMatrixArray);
         } else {
@@ -524,21 +524,21 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
         }
 
         // Handle morph targets
-        if (mesh.morphPositions && mesh.morphPositions.length) {
-            if (mesh.morphPositions.length > MAX_MORPH_TARGETS) {
+        if (m.morphPositions && m.morphPositions.length) {
+            if (m.morphPositions.length > MAX_MORPH_TARGETS) {
                 console.warn(`Only first ${MAX_MORPH_TARGETS} morph targets supported`);
             }
             const weights = new Float32Array(MAX_MORPH_TARGETS);
             for (let i = 0; i < MAX_MORPH_TARGETS; i++) {
-                const pos = mesh.morphPositions[i];
-                const norm = mesh.morphNormals?.[i];
-                const tan = mesh.morphTangents?.[i];
+                const pos = m.morphPositions[i];
+                const norm = m.morphNormals?.[i];
+                const tan = m.morphTangents?.[i];
                 if (pos && morphPositionLocations3D[i] >= 0) {
                     gl.bindBuffer(gl.ARRAY_BUFFER, morphPositionBuffers3D[i]);
                     gl.bufferData(gl.ARRAY_BUFFER, pos, gl.DYNAMIC_DRAW);
                     gl.vertexAttribPointer(morphPositionLocations3D[i], 3, gl.FLOAT, false, 0, 0);
                     gl.enableVertexAttribArray(morphPositionLocations3D[i]);
-                    weights[i] = mesh.morphWeights[i] ?? 0;
+                    weights[i] = m.morphWeights[i] ?? 0;
                 } else if (morphPositionLocations3D[i] >= 0) {
                     gl.disableVertexAttribArray(morphPositionLocations3D[i]);
                 }
@@ -573,24 +573,24 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
         checkWebGLError("Before setting color and atlas buffers");
         const colorData = new Float32Array(vertexCount * 4);
         for (let i = 0; i < vertexCount; i++) {
-            colorData.set([mesh.color.r, mesh.color.g, mesh.color.b, mesh.color.a], i * 4);
+            colorData.set([m.color.r, m.color.g, m.color.b, m.color.a], i * 4);
         }
         gl.bindBuffer(gl.ARRAY_BUFFER, color_overrideBuffer3D);
         gl.bufferData(gl.ARRAY_BUFFER, colorData, gl.DYNAMIC_DRAW);
 
         const atlasData = new Uint8Array(vertexCount);
-        atlasData.fill(mesh.atlasId);
+        atlasData.fill(m.atlasId);
         gl.bindBuffer(gl.ARRAY_BUFFER, atlas_idBuffer3D);
         gl.bufferData(gl.ARRAY_BUFFER, atlasData, gl.DYNAMIC_DRAW);
         checkWebGLError("After setting color and atlas buffers");
 
         checkWebGLError("Before setting index buffer");
-        if (mesh.indices) {
+        if (m.indices) {
             gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer3D);
-            gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.indices, gl.DYNAMIC_DRAW);
+            gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, m.indices, gl.DYNAMIC_DRAW);
 
             // Validate indices not out-of-bounds
-            const maxIndex = Math.max(...mesh.indices);
+            const maxIndex = Math.max(...m.indices);
             if (maxIndex >= vertexCount) {
                 console.warn(`Indices out of bounds: max ${maxIndex} >= vertexCount ${vertexCount}`);
                 continue;
@@ -599,16 +599,16 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
         checkWebGLError("After setting index buffer");
 
         checkWebGLError("Before setting uniform values");
-        const matColor = mesh.material?.color ?? [1, 1, 1, 1];
+        const matColor = m.material?.color ?? [1, 1, 1, 1];
         gl.uniform4fv(materialColorLocation3D, new Float32Array(matColor));
-        gl.uniform1f(metallicFactorLocation3D, mesh.material?.metallicFactor ?? 0.0);
-        gl.uniform1f(roughnessFactorLocation3D, mesh.material?.roughnessFactor ?? 0.0);
+        gl.uniform1f(metallicFactorLocation3D, m.material?.metallicFactor ?? 0.0);
+        gl.uniform1f(roughnessFactorLocation3D, m.material?.roughnessFactor ?? 0.0);
         checkWebGLError("After setting uniform values");
 
         checkWebGLError("Before setting texture uniforms");
         // Albedo: Bind and set unit only if valid texture present
-        if (mesh.material?.gpuTextures?.albedo) {
-            const key = mesh.material.gpuTextures.albedo;
+        if (m.gpuTextureAlbedo) {
+            const key = m.gpuTextureAlbedo;
             const texHandle = $.texmanager.getTexture(key);
             if (texHandle instanceof WebGLTexture && gl.isTexture(texHandle)) {
                 gl.activeTexture(gl.TEXTURE2);
@@ -624,8 +624,8 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
         }
 
         // Normal: Similar
-        if (mesh.material?.gpuTextures?.normal) {
-            const key = mesh.material.gpuTextures.normal;
+        if (m.gpuTextureNormal) {
+            const key = m.gpuTextureNormal;
             const texHandle = $.texmanager.getTexture(key);
             if (texHandle instanceof WebGLTexture && gl.isTexture(texHandle)) {
                 gl.activeTexture(gl.TEXTURE3);
@@ -640,8 +640,8 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
         }
 
         // MetallicRoughness: Similar
-        if (mesh.material?.gpuTextures?.metallicRoughness) {
-            const key = mesh.material.gpuTextures.metallicRoughness;
+        if (m.gpuTextureMetallicRoughness) {
+            const key = m.gpuTextureMetallicRoughness;
             const texHandle = $.texmanager.getTexture(key);
             if (texHandle instanceof WebGLTexture && gl.isTexture(texHandle)) {
                 gl.activeTexture(gl.TEXTURE4);
@@ -656,12 +656,12 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
         }
 
         // Shadow: Bind and set unit only if present (requires shader update below)
-        if (mesh.shadow) {
+        if (m.shadow) {
             gl.activeTexture(gl.TEXTURE8);
-            gl.bindTexture(gl.TEXTURE_2D, mesh.shadow.map.texture);
+            gl.bindTexture(gl.TEXTURE_2D, m.shadow.map.texture);
             gl.uniform1i(shadowMapLocation3D, 8);
-            gl.uniformMatrix4fv(lightMatrixLocation3D, false, mesh.shadow.matrix);
-            gl.uniform1f(shadowStrengthLocation3D, mesh.shadow.strength);
+            gl.uniformMatrix4fv(lightMatrixLocation3D, false, m.shadow.matrix);
+            gl.uniform1f(shadowStrengthLocation3D, m.shadow.strength);
             gl.uniform1i(useShadowMapLocation3D, 1); // New uniform
         } else {
             gl.uniform1f(shadowStrengthLocation3D, 1.0);
@@ -670,18 +670,18 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
         checkWebGLError("After setting texture uniforms");
 
         checkWebGLError("Before calculating MVP and setting uniforms");
-        const mvp = bmat.multiply(camera.viewProjectionMatrix, mesh.matrix);
+        const mvp = bmat.multiply(camera.viewProjectionMatrix, matrix);
         gl.uniformMatrix4fv(mvpLocation3D, false, mvp);
-        gl.uniformMatrix4fv(modelLocation3D, false, mesh.matrix);
-        const normalMat = bmat.normalMatrix(mesh.matrix);
+        gl.uniformMatrix4fv(modelLocation3D, false, matrix);
+        const normalMat = bmat.normalMatrix(matrix);
         gl.uniformMatrix3fv(normalMatrixLocation3D, false, normalMat);
         checkWebGLError("After calculating MVP and setting uniforms");
 
-        if (mesh.indices) {
+        if (m.indices) {
             checkWebGLError("Before drawing elements");
-            const type = mesh.indices instanceof Uint32Array ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
-            gl.drawElements(gl.TRIANGLES, mesh.indices.length, type, 0);
-            if (checkWebGLError(`After drawing elements (count = ${mesh.indices.length})`)) {
+            const type = m.indices instanceof Uint32Array ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
+            gl.drawElements(gl.TRIANGLES, m.indices.length, type, 0);
+            if (checkWebGLError(`After drawing elements (count = ${m.indices.length})`)) {
                 // Your existing logging...
             }
         } else {
@@ -691,7 +691,7 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
                 // Handle error
             }
         }
-        checkWebGLError(`After calculating MVP and drawing mesh: ${JSON.stringify(mesh)}`);
+        checkWebGLError(`After calculating MVP and drawing mesh: ${JSON.stringify(m)}`);
     }
 
     meshesToDraw = [];

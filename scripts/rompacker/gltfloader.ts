@@ -203,6 +203,11 @@ function validateGLTFModel(model: GLTFModel): void {
         if (m.materialIndex !== undefined && model.materials && m.materialIndex >= model.materials.length) {
             throw new Error(`Mesh references invalid material index ${m.materialIndex}`);
         }
+        const vertexCount = m.positions.length / 3;
+        if (m.tangents && m.tangents.length < vertexCount * 4) {
+            console.warn('Tangents array length mismatch, dropping tangents');
+            m.tangents = null;
+        }
     }
     if (model.animations) {
         for (const anim of model.animations) {

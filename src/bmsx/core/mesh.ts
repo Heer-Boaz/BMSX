@@ -3,7 +3,8 @@ import { Material } from '../render/3d/material';
 import { bmat } from '../render/3d/math3d';
 import { ShadowMap } from '../render/3d/shadowmap';
 import { DEFAULT_VERTEX_COLOR } from '../render/glview.constants';
-import { Color, DrawMeshOptions } from '../render/view';
+import type { Color, DrawMeshOptions } from '../render/view';
+import type { TextureKey } from '../render/texturemanager';
 import type { asset_id, GLTFMesh, GLTFModel, GLTFNode, GLTFAnimationSampler, vec3arr } from '../rompack/rompack';
 import { insavegame, onload } from '../serializer/gameserializer';
 import { GameObject } from './gameobject';
@@ -43,6 +44,38 @@ export class Mesh {
         this.morphWeights = opts?.morphWeights ?? [];
         this.jointIndices = opts?.jointIndices;
         this.jointWeights = opts?.jointWeights;
+    }
+
+    public get vertexCount(): number {
+        return this.positions.length / 3;
+    }
+
+    public get hasTexcoords(): boolean {
+        return this.texcoords.length >= this.vertexCount * 2;
+    }
+
+    public get hasNormals(): boolean {
+        return !!(this.normals && this.normals.length >= this.vertexCount * 3);
+    }
+
+    public get hasTangents(): boolean {
+        return !!this.tangents;
+    }
+
+    public get hasSkinning(): boolean {
+        return !!(this.jointIndices && this.jointWeights);
+    }
+
+    public get gpuTextureAlbedo(): TextureKey | undefined {
+        return this.material?.gpuTextures.albedo;
+    }
+
+    public get gpuTextureNormal(): TextureKey | undefined {
+        return this.material?.gpuTextures.normal;
+    }
+
+    public get gpuTextureMetallicRoughness(): TextureKey | undefined {
+        return this.material?.gpuTextures.metallicRoughness;
     }
 }
 
@@ -373,22 +406,8 @@ export abstract class MeshObject extends GameObject {
             if (!mesh.positions || mesh.positions.length === 0) continue;
             const matrix = bmat.multiply(base, inst.matrix);
             const options: DrawMeshOptions = {
-                positions: mesh.positions,
-                texcoords: mesh.texcoords,
-                normals: mesh.normals ?? undefined,
-                tangents: mesh.tangents ?? undefined,
-                indices: mesh.indices,
+                mesh,
                 matrix,
-                color: mesh.color,
-                atlasId: mesh.atlasId,
-                material: mesh.material,
-                shadow: mesh.shadow,
-                morphPositions: mesh.morphPositions,
-                morphNormals: mesh.morphNormals,
-                morphTangents: mesh.morphTangents,
-                morphWeights: mesh.morphWeights,
-                jointIndices: mesh.jointIndices,
-                jointWeights: mesh.jointWeights,
                 jointMatrices: inst.skinIndex !== undefined ? this.computeSkinMatrices(inst.skinIndex) : undefined,
             };
             $.view.drawMesh(options);

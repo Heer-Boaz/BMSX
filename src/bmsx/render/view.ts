@@ -6,9 +6,7 @@ import { Input } from '../input/input';
 import type { Area, Polygon, Size, Vector, id2imgres, vec2 } from '../rompack/rompack';
 import { Identifier, type RegisterablePersistent } from '../rompack/rompack';
 import { AmbientLight, DirectionalLight, PointLight } from './3d/light';
-
-import { Material } from './3d/material';
-import { ShadowMap } from './3d/shadowmap';
+import type { Mesh } from '../core/mesh';
 
 export interface FlipOptions {
 	flip_h: boolean;
@@ -44,22 +42,8 @@ export class PixelData {
 }
 
 export interface DrawMeshOptions {
-        positions: Float32Array;
-        texcoords: Float32Array;
-        normals?: Float32Array;
-        tangents?: Float32Array;
-        indices?: Uint16Array | Uint32Array;
+        mesh: Mesh;
         matrix: Float32Array;
-        color?: Color;
-        atlasId?: number;
-        material?: Material;
-        shadow?: { map: ShadowMap; matrix: Float32Array; strength: number };
-        morphPositions?: Float32Array[];
-        morphNormals?: Float32Array[];
-        morphTangents?: Float32Array[];
-        morphWeights?: number[];
-        jointIndices?: Uint16Array;
-        jointWeights?: Float32Array;
         jointMatrices?: Float32Array[];
 }
 
