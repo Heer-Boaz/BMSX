@@ -1,4 +1,4 @@
-import { SpriteObject, StateMachineBlueprint, build_fsm, insavegame } from '../bmsx/bmsx';
+import { SpriteObject, StateMachineBlueprint, build_fsm, insavegame } from '../bmsx/index';
 
 
 @insavegame

@@ -1,4 +1,4 @@
-import { GameObject, StateMachineBlueprint, build_fsm, insavegame, type State } from '../bmsx/bmsx';
+import { GameObject, StateMachineBlueprint, build_fsm, insavegame, type State } from '../bmsx/index';
 import { DataId } from './resourceids';
 import type { sint } from './sint';
 // import quizItemsData from './vragen.json';

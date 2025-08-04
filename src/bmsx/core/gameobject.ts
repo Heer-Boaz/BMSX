@@ -1,9 +1,9 @@
-import { BehaviorTreeID, BehaviorTrees, Blackboard, BTNode, ConstructorWithBTProperty } from "../ai/behaviourtree";
+import { BehaviorTreeContext, BehaviorTreeID, BehaviorTrees, Blackboard, ConstructorWithBTProperty } from "../ai/behaviourtree";
 import { Component, ComponentConstructor, ComponentContainer, ComponentTag, KeyToComponentMap, update_tagged_components } from "../component/basecomponent";
 import { StateMachineController } from "../fsm/fsmcontroller";
 import type { ConstructorWithFSMProperty, Stateful } from "../fsm/fsmtypes";
 import { ZCOORD_MAX } from "../render/glview.constants";
-import { AbstractConstructor, Area, Direction, vec2, vec3, Vector, type Identifier, type Polygon, type vec2arr } from "../rompack/rompack";
+import { AbstractConstructor, Area, Direction, vec2, vec3, type Identifier, type Polygon, type vec2arr } from "../rompack/rompack";
 import { insavegame, onload } from "../serializer/gameserializer";
 import { ObjectTracker } from "./objecttracker";
 import { middlepoint_area, new_area, new_vec2, new_vec3 } from './utils';
@@ -282,30 +282,13 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	public sc: StateMachineController;
 
 	/**
-	 * The mapping of behavior tree IDs to behavior tree IDs.
+	 * The mapping of behavior tree IDs to behavior tree contexts.
 	 */
-	public behaviortreeIds: { [id: BehaviorTreeID]: BehaviorTreeID };
+	private _btreecontexts: { [id: BehaviorTreeID]: BehaviorTreeContext };
 
-	/**
-	 * Gets the behavior trees associated with the game object.
-	 * @returns An object containing the behavior trees.
-	 */
-	public get behaviortrees(): { [id: BehaviorTreeID]: BTNode } {
-		return new Proxy(BehaviorTrees, {
-			get: (target, prop: string) => {
-				if (this.behaviortreeIds[prop]) {
-					return target[prop];
-				}
-				return undefined;
-			}
-		});
+	public get btreecontexts() {
+		return this._btreecontexts;
 	}
-
-	/**
-	 * The blackboards associated with the game object.
-	 * @type {Object.<BehaviorTreeID, Blackboard>}
-	 */
-	public blackboards: { [name: BehaviorTreeID]: Blackboard };
 
 	/**
 	 * Executes the tick operation for the specified behavior tree.
@@ -316,14 +299,16 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	 * @returns void
 	 */
 	public tickTree(bt_id: BehaviorTreeID): void {
-		const tree = this.behaviortrees[bt_id];
-		const blackboard = this.blackboards[bt_id];
-		if (!tree || !blackboard) {
-			console.error(`Behavior tree or blackboard with ID ${bt_id} does not exist.`);
+		const context = this.btreecontexts[bt_id];
+		if (!context) {
+			console.error(`Behavior tree context with ID '${bt_id}' does not exist!`);
 			return;
 		}
+		if (!context.running) return;
+		const tree = context.root;
+		const blackboard = context.blackboard;
 
-		if (!tree.isRunning) {
+		if (!tree.enabled) {
 			return;
 		}
 
@@ -350,11 +335,11 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	 * @param bt_id The ID of the blackboard to reset.
 	 */
 	public resetTree(bt_id: BehaviorTreeID): void {
-		if (!this.blackboards[bt_id]) {
+		if (!this.btreecontexts[bt_id].blackboard) {
 			console.error(`Blackboard with ID ${bt_id} does not exist.`);
 			return;
 		}
-		this.blackboards[bt_id].clearAllNodeData();
+		this.btreecontexts[bt_id].blackboard.clearAllNodeData();
 	}
 
 	/**
@@ -473,7 +458,7 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	 * the FSM-state to the initial state (if specified).
 	 * @param spawningPos The position to spawn the object at.
 	 */
-	public onspawn(spawningPos?: Vector): void {
+	public onspawn(spawningPos?: vec2): void {
 		if (spawningPos) {
 			this.x_nonotify = spawningPos.x ?? this.x;
 			this.y_nonotify = spawningPos.y ?? this.y;
@@ -693,18 +678,17 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	protected initializeBehaviorTrees() {
 		// Get the constructor of the current instance
 		const constructor = this.constructor as ConstructorWithBTProperty;
-		this.behaviortreeIds = {};
-		this.blackboards = {};
+		this._btreecontexts = {};
 
-		// Check if the constructor has the 'linkedBTs' property
-		if (constructor.linkedBTs) {
-			// Iterate over the behavior tree names and create the behavior trees
-			constructor.linkedBTs.forEach(bt_id => {
-				let blackboard = new Blackboard(bt_id);
-				this.blackboards[bt_id] = blackboard;
-				this.behaviortreeIds[bt_id] = bt_id;
-			});
-		}
+		// Iterate over the behavior tree names and create the behavior trees
+		constructor.linkedBTs?.forEach(bt_id => {
+			let blackboard = new Blackboard(bt_id);
+			this._btreecontexts[bt_id] = {
+				root: BehaviorTrees[bt_id],
+				blackboard: blackboard,
+				running: true,
+			};
+		});
 	}
 
 	/**
@@ -1050,8 +1034,8 @@ export class GameObject implements vec3, ComponentContainer, Stateful {
 	 */
 	@update_tagged_components('run')
 	public run(): void {
-		for (const bt_id in this.behaviortreeIds) {
-			this.tickTree(bt_id);
+		for (const id in this.btreecontexts) {
+			this.tickTree(id);
 		}
 		this.sc.run();
 	}

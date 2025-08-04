@@ -283,6 +283,13 @@ export class Blackboard implements Identifiable {
  */
 export type BehaviorTreeID = string;
 
+// Represents the context for a behavior tree for a given game object.
+export type BehaviorTreeContext = {
+    running: boolean; // Indicates if the behavior tree is currently running
+    root: BTNode; // The root node of the behavior tree
+    blackboard: Blackboard; // The blackboard associated with the behavior tree
+};
+
 /**
  * Represents a base class for behavior tree nodes.
  * @remarks
@@ -293,7 +300,7 @@ export abstract class BTNode implements Identifiable {
     public id: BehaviorTreeID;
     public priority: number;
     private running: boolean = true;
-    public get isRunning() { return this.running; } // NOTE: LOGIC FOR THIS IS IMPLEMENTED IN THE GAMEOBJECT CLASS!
+    public get enabled() { return this.running; } // NOTE: LOGIC FOR THIS IS IMPLEMENTED IN THE GAMEOBJECT CLASS!
     public start() { this.running = true; }
     public stop() { this.running = false; }
 

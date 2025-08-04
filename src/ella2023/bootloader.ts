@@ -8,11 +8,11 @@ let _view: gameview;
 
 const _global = window || globalThis;
 
-_global['h406A'] = (args: BootArgs): void => {
+_global['h406A'] = (args: BootArgs): Promise<void> => {
 	_model = new gamemodel();
 	_view = new gameview(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
 	_game = new Game();
-	_game.init({
+	return _game.init({
 		rom: args.rom,
 		model: _model,
 		view: _view,

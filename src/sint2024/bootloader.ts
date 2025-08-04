@@ -1,4 +1,4 @@
-import { BFont, BGamepadButton, BaseModel, BootArgs, Direction, GLView, Game, GameObject, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, StateMachineBlueprint, build_fsm, insavegame, new_vec2, type State } from '../bmsx/bmsx';
+import { BFont, BGamepadButton, BaseModel, BootArgs, Direction, GLView, Game, GameObject, GamepadInputMapping, KeyboardButton, KeyboardInputMapping, MSX1ScreenHeight, MSX1ScreenWidth, StateMachineBlueprint, build_fsm, insavegame, new_vec2, type State } from '../bmsx/index';
 import { quiz } from './quiz';
 import { BitmapId } from './resourceids';
 import { sint } from './sint';
@@ -9,12 +9,12 @@ var _view: gameview;
 
 const _global = window || globalThis;
 
-_global['h406A'] = (args: BootArgs): void => {
+_global['h406A'] = (args: BootArgs): Promise<void> => {
     _model = new gamemodel();
     _view = new gameview(new_vec2(MSX1ScreenWidth, MSX1ScreenHeight));
     _view.default_font = new BFont(BitmapId);
     _game = new Game();
-    _game.init({ ...args, model: _model, view: _view }).then(() => {
+    return _game.init({ ...args, model: _model, view: _view }).then(() => {
         _game.start();
     });
 };
