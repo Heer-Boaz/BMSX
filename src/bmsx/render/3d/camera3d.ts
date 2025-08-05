@@ -1,6 +1,6 @@
 import { to_vec3 } from '../../core/utils';
 import type { vec3, vec3arr } from '../../rompack/rompack';
-import { bmat, bvec3, Mat4 } from './math3d';
+import { bmat, bvec3, Mat4, bquat } from './math3d';
 
 /**
  * Simple camera helper for 3D rendering.
@@ -56,15 +56,21 @@ export class Camera3D {
     }
 
     public rotateX(rad: number): void {
-        this.position = bvec3.rotateX(this.position, rad, this.target);
+        const offset = bvec3.sub(this.position, this.target);
+        const rotated = bquat.rotateVec3(bquat.fromAxisAngle({ x: 1, y: 0, z: 0 }, rad), offset);
+        this.position = bvec3.add(this.target, rotated);
     }
 
     public rotateY(rad: number): void {
-        this.position = bvec3.rotateY(this.position, rad, this.target);
+        const offset = bvec3.sub(this.position, this.target);
+        const rotated = bquat.rotateVec3(bquat.fromAxisAngle({ x: 0, y: 1, z: 0 }, rad), offset);
+        this.position = bvec3.add(this.target, rotated);
     }
 
     public rotateZ(rad: number): void {
-        this.position = bvec3.rotateZ(this.position, rad, this.target);
+        const offset = bvec3.sub(this.position, this.target);
+        const rotated = bquat.rotateVec3(bquat.fromAxisAngle({ x: 0, y: 0, z: 1 }, rad), offset);
+        this.position = bvec3.add(this.target, rotated);
     }
 
     public moveForward(dist: number): void {
@@ -98,6 +104,10 @@ export class Camera3D {
         this.projection = 'orthographic';
         this.orthoWidth = width;
         this.orthoHeight = height;
+    }
+
+    public setFov(fov: number): void {
+        this.fov = fov;
     }
 
     public get projectionMatrix(): Mat4 {

@@ -236,3 +236,72 @@ export const bvec3 = {
         };
     }
 };
+
+export interface quat { x: number; y: number; z: number; w: number; }
+
+export const bquat = {
+    identity(): quat {
+        return { x: 0, y: 0, z: 0, w: 1 };
+    },
+    fromAxisAngle(axis: vec3, rad: number): quat {
+        const half = rad / 2;
+        const s = Math.sin(half);
+        return { x: axis.x * s, y: axis.y * s, z: axis.z * s, w: Math.cos(half) };
+    },
+    fromEuler(x: number, y: number, z: number): quat {
+        const hx = x * 0.5, hy = y * 0.5, hz = z * 0.5;
+        const sx = Math.sin(hx), cx = Math.cos(hx);
+        const sy = Math.sin(hy), cy = Math.cos(hy);
+        const sz = Math.sin(hz), cz = Math.cos(hz);
+        return {
+            w: cx * cy * cz + sx * sy * sz,
+            x: sx * cy * cz - cx * sy * sz,
+            y: cx * sy * cz + sx * cy * sz,
+            z: cx * cy * sz - sx * sy * cz,
+        };
+    },
+    multiply(a: quat, b: quat): quat {
+        return {
+            w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+            x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+            y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+            z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+        };
+    },
+    normalize(q: quat): quat {
+        const len = Math.hypot(q.x, q.y, q.z, q.w) || 1;
+        return { x: q.x / len, y: q.y / len, z: q.z / len, w: q.w / len };
+    },
+    conjugate(q: quat): quat {
+        return { x: -q.x, y: -q.y, z: -q.z, w: q.w };
+    },
+    rotateVec3(q: quat, v: vec3): vec3 {
+        const qv: quat = { x: v.x, y: v.y, z: v.z, w: 0 };
+        const res = bquat.multiply(bquat.multiply(q, qv), bquat.conjugate(q));
+        return { x: res.x, y: res.y, z: res.z };
+    },
+    toMat4(q: quat): Mat4 {
+        const { x, y, z, w } = bquat.normalize(q);
+        const xx = x * x, yy = y * y, zz = z * z;
+        const xy = x * y, xz = x * z, yz = y * z;
+        const wx = w * x, wy = w * y, wz = w * z;
+        const out = new Float32Array(16);
+        out[0] = 1 - 2 * (yy + zz);
+        out[1] = 2 * (xy + wz);
+        out[2] = 2 * (xz - wy);
+        out[3] = 0;
+        out[4] = 2 * (xy - wz);
+        out[5] = 1 - 2 * (xx + zz);
+        out[6] = 2 * (yz + wx);
+        out[7] = 0;
+        out[8] = 2 * (xz + wy);
+        out[9] = 2 * (yz - wx);
+        out[10] = 1 - 2 * (xx + yy);
+        out[11] = 0;
+        out[12] = 0;
+        out[13] = 0;
+        out[14] = 0;
+        out[15] = 1;
+        return out;
+    }
+};

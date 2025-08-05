@@ -17,6 +17,7 @@ uniform sampler2D u_shadowMap;
 uniform bool u_useShadowMap;
 uniform mat4 u_lightMatrix;
 uniform float u_shadowStrength;
+uniform vec3 u_cameraPos;
 uniform vec3 u_ambientColor;
 uniform float u_ambientIntensity;
 const int MAX_DIR_LIGHTS = 4;
@@ -113,7 +114,7 @@ void main() {
         metallic *= mr.b;
     }
 
-    vec3 viewDir = vec3(0.0f, 0.0f, 1.0f);
+    vec3 viewDir = normalize(u_cameraPos - v_worldPos);
     vec3 F0 = mix(vec3(0.04f), baseColor, metallic);
     vec3 lighting = u_ambientColor * u_ambientIntensity * baseColor;
 

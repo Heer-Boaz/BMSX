@@ -54,6 +54,8 @@ let metallicRoughnessTextureLocation3D: WebGLUniformLocation;
 let useMetallicRoughnessTextureLocation3D: WebGLUniformLocation;
 let metallicFactorLocation3D: WebGLUniformLocation;
 let roughnessFactorLocation3D: WebGLUniformLocation;
+let cameraPositionLocation3D: WebGLUniformLocation;
+let gl3D: WebGL2RenderingContext | null = null;
 let vertexBuffer3D: WebGLBuffer;
 let texcoordBuffer3D: WebGLBuffer;
 let texture0_location: WebGLUniformLocation;
@@ -102,6 +104,7 @@ export const skyboxVertShaderCodeStr: string = skyboxVertCode;
 export const skyboxFragShaderCodeStr: string = skyboxFragCode;
 
 export function init(gl: WebGL2RenderingContext, offscreenCanvasSize: Size): void {
+    gl3D = gl;
     camera.setAspect(offscreenCanvasSize.x / offscreenCanvasSize.y);
     vao3D = gl.createVertexArray()!;
     vaoSkybox = gl.createVertexArray()!;
@@ -110,12 +113,10 @@ export function init(gl: WebGL2RenderingContext, offscreenCanvasSize: Size): voi
 // Camera helpers
 export function setCameraPosition(pos: vec3 | vec3arr): void {
     camera.setPosition(pos);
-    camera.viewMatrix;
 }
 
 export function pointCameraAt(target: vec3 | vec3arr): void {
     camera.lookAt(target);
-    camera.viewMatrix;
 }
 
 export function setCameraViewDepth(near: number, far: number): void {
@@ -123,7 +124,14 @@ export function setCameraViewDepth(near: number, far: number): void {
 }
 
 export function setCameraFov(fov: number): void {
-    camera.fov = fov;
+    camera.setFov(fov);
+}
+
+export function uploadCameraPosition(gl: WebGL2RenderingContext): void {
+    gl.uniform3fv(
+        cameraPositionLocation3D,
+        new Float32Array([camera.position.x, camera.position.y, camera.position.z])
+    );
 }
 
 export function usePerspectiveCamera(fov?: number): void {
@@ -461,8 +469,10 @@ export function setupVertexShaderLocations3D(gl: WebGL2RenderingContext): void {
     useMetallicRoughnessTextureLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_useMetallicRoughnessTexture')!;
     metallicFactorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_metallicFactor')!;
     roughnessFactorLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_roughnessFactor')!;
-    jointMatrixLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_jointMatrices')!;
-    morphWeightLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_morphWeights')!;
+    jointMatrixLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_jointMatrices[0]')!;
+    morphWeightLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_morphWeights[0]')!;
+    cameraPositionLocation3D = gl.getUniformLocation(gameShaderProgram3D, 'u_cameraPos')!;
+    uploadCameraPosition(gl);
 }
 
 export function setupSkyboxLocations(gl: WebGL2RenderingContext): void {
@@ -474,16 +484,8 @@ export function setupSkyboxLocations(gl: WebGL2RenderingContext): void {
 
 export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFramebuffer, canvasWidth: number, canvasHeight: number): void {
     if (meshesToDraw.length === 0) return;
-    checkWebGLError("Before switching program");
-    glSwitchProgram(gl, gameShaderProgram3D);
-    checkWebGLError("After switching program");
 
-    checkWebGLError("Before setting camera uniforms");
-    uploadDirectionalLights(gl);
-    uploadPointLights(gl);
-    checkWebGLError("After setting camera uniforms");
-
-    checkWebGLError("Before setting uniform values");
+    checkWebGLError("Before binding framebuffer and setting viewport");
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
     gl.viewport(0, 0, canvasWidth, canvasHeight);
     const fbStatus = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
@@ -494,13 +496,16 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
 
     if (skyboxTexture) {
         drawSkybox(gl);
-        glSwitchProgram(gl, gameShaderProgram3D);
     }
 
+    checkWebGLError("Before switching program");
+    glSwitchProgram(gl, gameShaderProgram3D);
+    checkWebGLError("After switching program");
 
-    gl.bindVertexArray(vao3D);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-    gl.viewport(0, 0, canvasWidth, canvasHeight);
+    uploadCameraPosition(gl);
+    uploadDirectionalLights(gl);
+    uploadPointLights(gl);
+    checkWebGLError("After setting camera uniforms");
 
     gl.bindVertexArray(vao3D);
 
