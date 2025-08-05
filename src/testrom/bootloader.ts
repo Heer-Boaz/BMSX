@@ -405,14 +405,11 @@ class CameraController extends GameObject {
         const move = 1.0;
         const rotateSpeed = 0.01;
 
-        // if (input.getActionState('left').pressed) cam.moveRight(-move);
-        // if (input.getActionState('right').pressed) cam.moveRight(move);
-        // if (input.getActionState('up').pressed) cam.moveUp(move);
-        // if (input.getActionState('down').pressed) cam.moveUp(-move);
-        if (input.getActionState('up').pressed) cam.rotateY(rotateSpeed);
-        if (input.getActionState('down').pressed) cam.rotateY(-rotateSpeed);
-        if (input.getActionState('left').pressed) cam.rotateX(rotateSpeed);
-        if (input.getActionState('right').pressed) cam.rotateX(-rotateSpeed);
+        if (input.getActionState('up').pressed) cam.pitchBy(rotateSpeed);
+        if (input.getActionState('down').pressed) cam.pitchBy(-rotateSpeed);
+        if (input.getActionState('left').pressed) cam.yawBy(rotateSpeed);
+        if (input.getActionState('right').pressed) cam.yawBy(-rotateSpeed);
+
         if (input.getActionState('bla').pressed) cam.moveForward(move);
         if (input.getActionState('blap').pressed) cam.moveForward(-move);
     }

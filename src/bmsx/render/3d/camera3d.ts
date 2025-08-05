@@ -16,6 +16,8 @@ export class Camera3D {
     public projection: 'perspective' | 'orthographic';
     public orthoWidth: number;
     public orthoHeight: number;
+    private yaw: number;
+    private pitch: number;
 
     constructor(opts?: {
         position?: vec3 | vec3arr;
@@ -36,6 +38,7 @@ export class Camera3D {
         this.projection = 'perspective';
         this.orthoWidth = 10;
         this.orthoHeight = 10;
+        this.syncAngles();
     }
 
     public setAspect(aspect: number): void {
@@ -44,10 +47,38 @@ export class Camera3D {
 
     public setPosition(pos: vec3 | vec3arr): void {
         this.position = to_vec3(pos);
+        this.updateTarget();
     }
 
     public lookAt(target: vec3 | vec3arr): void {
         this.target = to_vec3(target);
+        this.syncAngles();
+    }
+
+    private syncAngles(): void {
+        const dir = bvec3.sub(this.target, this.position);
+        const hypotXZ = Math.hypot(dir.x, dir.z);
+        this.yaw = Math.atan2(dir.x, dir.z);
+        this.pitch = Math.atan2(dir.y, hypotXZ);
+    }
+
+    private updateTarget(): void {
+        const q = bquat.fromEuler(this.pitch, this.yaw, 0);
+        const forward = bquat.rotateVec3(q, { x: 0, y: 0, z: 1 });
+        this.target = bvec3.add(this.position, forward);
+    }
+
+    public yawBy(rad: number): void {
+        this.yaw += rad;
+        this.updateTarget();
+    }
+
+    public pitchBy(rad: number): void {
+        const maxPitch = Math.PI / 2 - 0.01;
+        this.pitch += rad;
+        if (this.pitch > maxPitch) this.pitch = maxPitch;
+        if (this.pitch < -maxPitch) this.pitch = -maxPitch;
+        this.updateTarget();
     }
 
     public setViewDepth(near: number, far: number): void {
