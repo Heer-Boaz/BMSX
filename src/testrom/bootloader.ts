@@ -370,7 +370,7 @@ class AnimatedMorphSphere extends MeshObject {
     }
 
     override run(): void {
-        this.rotation[1] += 0.01; // Slow auto rotation
+        // this.rotation[1] += 0.01; // Slow auto rotation
         this.updateComponentsWithTag('position_update_axis');
         super.run();
     }
@@ -402,7 +402,7 @@ class CameraController extends GameObject {
         if (!camObj) return;
 
         const cam = camObj.camera;
-        const move = 0.1;
+        const move = 1.0;
 
         if (input.getActionState('left').pressed) cam.moveRight(-move);
         if (input.getActionState('right').pressed) cam.moveRight(move);
@@ -459,40 +459,40 @@ class gamemodel extends BaseModel {
     }
 
     public override do_one_time_game_init(): this {
-        const cube = new Cube3D();
-        const small = new SmallCube3D(1);
-        const small2 = new SmallCube3D(2);
+        // const cube = new Cube3D();
+        // const small = new SmallCube3D(1);
+        // const small2 = new SmallCube3D(2);
         const animatedMorphSphere = new AnimatedMorphSphere();
         _model.spawn(new bclass(), new_vec3(100, 100, 1000));
-        _model.spawn(cube, new_vec3(0, 0, 0));
-        _model.spawn(small, new_vec3(5, 0, 0));
-        _model.spawn(small2, new_vec3(5, 5, 5));
+        // _model.spawn(cube, new_vec3(0, 0, 0));
+        // _model.spawn(small, new_vec3(5, 0, 0));
+        // _model.spawn(small2, new_vec3(5, 5, 5));
         _model.spawn(animatedMorphSphere, new_vec3(5, 5, 5));
 
-        const parentTf = cube.getComponent(TransformComponent);
-        const childTf = small.getComponent(TransformComponent);
-        const childTf2 = small2.getComponent(TransformComponent);
-        const childTf3 = animatedMorphSphere.getComponent(TransformComponent);
-        if (parentTf && childTf) {
-            childTf.parentNode = parentTf;
-            childTf.position = [1, 0, 0];
-            if (childTf2) {
-                childTf2.parentNode = childTf;
-                childTf2.position = [0, 1, 0];
-                if (childTf3) {
-                    childTf3.parentNode = childTf2;
-                    childTf3.position = [0, 0, 1];
-                }
-            }
-        }
+        // const parentTf = cube.getComponent(TransformComponent);
+        // const childTf = small.getComponent(TransformComponent);
+        // const childTf2 = small2.getComponent(TransformComponent);
+        // const childTf3 = animatedMorphSphere.getComponent(TransformComponent);
+        // if (parentTf && childTf) {
+        //     childTf.parentNode = parentTf;
+        //     childTf.position = [1, 0, 0];
+        //     if (childTf2) {
+        //         childTf2.parentNode = childTf;
+        //         childTf2.position = [0, 1, 0];
+        //         if (childTf3) {
+        //             childTf3.parentNode = childTf2;
+        //             childTf3.position = [0, 0, 1];
+        //         }
+        //     }
+        // }
 
         const cam1 = new CameraObject('cam1');
         cam1.camera.setPosition([0, 0, 5]);
-        cam1.camera.lookAt(cube.pos);
+        cam1.camera.lookAt(animatedMorphSphere.pos);
 
         const cam2 = new CameraObject('cam2');
         cam2.camera.setPosition([5, 3, 5]);
-        cam2.camera.lookAt(cube.pos);
+        cam2.camera.lookAt(animatedMorphSphere.pos);
 
         _model.spawn(cam1);
         _model.spawn(cam2);
