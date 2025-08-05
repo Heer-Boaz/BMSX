@@ -163,6 +163,7 @@ export async function loadGLTFModel(data: string, dir: string, resname: string):
         scale: n.scale,
         matrix: n.matrix ? new Float32Array(n.matrix) : undefined,
         skin: n.skin,
+        weights: n.weights ? Array.from(n.weights) : undefined,
     }));
 
     const scenes: GLTFScene[] = (json.scenes || []).map((s: any) => ({ nodes: s.nodes || [] }));

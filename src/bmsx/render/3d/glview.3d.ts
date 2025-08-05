@@ -545,7 +545,7 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
     gl.enableVertexAttribArray(atlas_idLocation3D);
     checkWebGLError("After setting vertex attributes");
 
-    for (const { mesh: m, matrix, jointMatrices } of meshesToDraw) {
+    for (const { mesh: m, matrix, jointMatrices, morphWeights } of meshesToDraw) {
         checkWebGLError("Before processing mesh");
         gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer3D);
         gl.bufferData(gl.ARRAY_BUFFER, m.positions, gl.DYNAMIC_DRAW);
@@ -629,6 +629,7 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
                 console.warn(`Only first ${MAX_MORPH_TARGETS} morph targets supported`);
             }
             const weights = new Float32Array(MAX_MORPH_TARGETS);
+            const weightSource = morphWeights ?? m.morphWeights;
             for (let i = 0; i < MAX_MORPH_TARGETS; i++) {
                 const pos = m.morphPositions[i];
                 const norm = m.morphNormals?.[i];
@@ -638,7 +639,7 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
                     gl.bufferData(gl.ARRAY_BUFFER, pos, gl.DYNAMIC_DRAW);
                     gl.vertexAttribPointer(morphPositionLocations3D[i], 3, gl.FLOAT, false, 0, 0);
                     gl.enableVertexAttribArray(morphPositionLocations3D[i]);
-                    weights[i] = m.morphWeights[i] ?? 0;
+                    weights[i] = weightSource[i] ?? 0;
                 } else {
                     gl.disableVertexAttribArray(morphPositionLocations3D[i]);
                     gl.vertexAttrib3f(morphPositionLocations3D[i], 0, 0, 0);

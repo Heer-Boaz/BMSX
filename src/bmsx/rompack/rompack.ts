@@ -178,6 +178,8 @@ export interface GLTFNode {
         scale?: vec3arr;
         matrix?: Float32Array;
         skin?: number;
+        /** Optional morph target weights for this node */
+        weights?: number[];
 }
 
 export interface GLTFScene {

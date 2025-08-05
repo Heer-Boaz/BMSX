@@ -45,6 +45,7 @@ export interface DrawMeshOptions {
         mesh: Mesh;
         matrix: Float32Array;
         jointMatrices?: Float32Array[];
+        morphWeights?: number[];
 }
 
 export interface SkyboxImageIds {

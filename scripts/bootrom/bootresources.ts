@@ -328,6 +328,16 @@ export async function loadModelFromBuffer(assetId: string, buffer: ArrayBuffer, 
         return remapped;
     }
 
+    const animations = (obj.animations || []).map((a: any) => ({
+        name: a.name,
+        samplers: (a.samplers || []).map((s: any) => ({
+            interpolation: s.interpolation,
+            input: toF32(s.input)!,
+            output: toF32(s.output)!,
+        })),
+        channels: a.channels || [],
+    }));
+
     const nodes = (obj.nodes || []).map((n: any) => ({
         mesh: n.mesh,
         children: n.children,
@@ -336,6 +346,7 @@ export async function loadModelFromBuffer(assetId: string, buffer: ArrayBuffer, 
         scale: n.scale,
         matrix: toF32(n.matrix),
         skin: n.skin,
+        weights: n.weights ? Array.from(n.weights) : undefined,
     }));
     const scenes = obj.scenes;
     const scene = obj.scene;
@@ -353,7 +364,7 @@ export async function loadModelFromBuffer(assetId: string, buffer: ArrayBuffer, 
             // if (m.emissiveTexture !== undefined) m.emissiveTexture = textureIndexToTextureObject(m.emissiveTexture);
         }
     }
-    return { name: assetId, meshes, materials, animations: obj.animations, imageURIs: obj.imageURIs, imageOffsets: obj.imageOffsets, imageBuffers, textures, nodes, scenes, scene, skins };
+    return { name: assetId, meshes, materials, animations, imageURIs: obj.imageURIs, imageOffsets: obj.imageOffsets, imageBuffers, textures, nodes, scenes, scene, skins };
 }
 
 async function load(rom: ArrayBuffer, res: RomAsset, romResult: RomPack, opts?: { loadImageFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadSourceFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadAudioFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadDataFromBuffer?: (buffer: ArrayBuffer) => Promise<any>; loadModelFromBuffer?: (buffer: ArrayBuffer, textures?: ArrayBuffer) => Promise<any> }): Promise<void> {

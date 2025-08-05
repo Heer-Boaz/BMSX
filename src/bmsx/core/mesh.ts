@@ -90,6 +90,8 @@ interface MeshInstance {
     mesh: Mesh;
     matrix: Float32Array;
     skinIndex?: number;
+    nodeIndex: number;
+    morphWeights: number[];
 }
 
 @insavegame
@@ -214,8 +216,13 @@ export abstract class MeshObject extends GameObject {
                                 break;
                             case 'weights':
                                 if (node.mesh !== undefined) {
-                                    const mesh = this.meshes[node.mesh];
-                                    mesh.morphWeights = Array.from(value);
+                                    const weights = Array.from(value);
+                                    node.weights = weights;
+                                    for (const inst of this.meshInstances) {
+                                        if (inst.nodeIndex === channel.target.node) {
+                                            inst.morphWeights = weights;
+                                        }
+                                    }
                                 }
                                 break;
                         }
@@ -317,8 +324,13 @@ export abstract class MeshObject extends GameObject {
                 }
             }
         } else {
-            for (const mesh of this.meshes) {
-                this.meshInstances.push({ mesh, matrix: bmat.identity() });
+            for (const [idx, mesh] of this.meshes.entries()) {
+                this.meshInstances.push({
+                    mesh,
+                    matrix: bmat.identity(),
+                    nodeIndex: idx,
+                    morphWeights: mesh.morphWeights.slice(),
+                });
             }
         }
     }
@@ -329,7 +341,10 @@ export abstract class MeshObject extends GameObject {
         const node: GLTFNode = this.meshModel.nodes[nodeIndex];
         if (node.mesh !== undefined) {
             const mesh = this.meshes[node.mesh];
-            if (mesh) this.meshInstances.push({ mesh, matrix: world, skinIndex: node.skin });
+            if (mesh) {
+                const weights = node.weights ? [...node.weights] : mesh.morphWeights.slice();
+                this.meshInstances.push({ mesh, matrix: world, skinIndex: node.skin, nodeIndex, morphWeights: weights });
+            }
         }
         if (node.children) {
             for (const child of node.children) {
@@ -417,6 +432,7 @@ export abstract class MeshObject extends GameObject {
                 mesh,
                 matrix,
                 jointMatrices: inst.skinIndex !== undefined ? this.computeSkinMatrices(inst.skinIndex) : undefined,
+                morphWeights: inst.morphWeights,
             };
             $.view.drawMesh(options);
         }
