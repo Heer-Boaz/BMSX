@@ -1,6 +1,6 @@
 import { to_vec3 } from '../../core/utils';
 import type { vec3, vec3arr } from '../../rompack/rompack';
-import { bmat, bvec3, Mat4, bquat } from './math3d';
+import { bmat, bquat, bvec3, Mat4 } from './math3d';
 
 /**
  * Simple camera helper for 3D rendering.
@@ -58,26 +58,25 @@ export class Camera3D {
     private syncAngles(): void {
         const dir = bvec3.sub(this.target, this.position);
         const hypotXZ = Math.hypot(dir.x, dir.z);
-        this.yaw = Math.atan2(dir.x, dir.z);
+        this.yaw = Math.atan2(dir.x, -dir.z);
         this.pitch = Math.atan2(dir.y, hypotXZ);
     }
 
     private updateTarget(): void {
         const q = bquat.fromEuler(this.pitch, this.yaw, 0);
-        const forward = bquat.rotateVec3(q, { x: 0, y: 0, z: 1 });
+        const forward = bquat.rotateVec3(q, { x: 0, y: 0, z: -1 });
         this.target = bvec3.add(this.position, forward);
     }
 
     public yawBy(rad: number): void {
-        this.yaw += rad;
+        this.yaw = (this.yaw + rad) % (2 * Math.PI);
+        if (this.yaw < 0) this.yaw += 2 * Math.PI; // Ensure positive value
         this.updateTarget();
     }
 
     public pitchBy(rad: number): void {
-        const maxPitch = Math.PI / 2 - 0.01;
-        this.pitch += rad;
-        if (this.pitch > maxPitch) this.pitch = maxPitch;
-        if (this.pitch < -maxPitch) this.pitch = -maxPitch;
+        this.pitch = (this.pitch + rad) % (2 * Math.PI);
+        if (this.pitch < 0) this.pitch += 2 * Math.PI; // Ensure positive value
         this.updateTarget();
     }
 
@@ -113,7 +112,14 @@ export class Camera3D {
 
     public moveRight(dist: number): void {
         const forward = bvec3.normalize(bvec3.sub(this.target, this.position));
-        const right = bvec3.normalize(bvec3.cross(forward, this.up));
+        // Use the world up vector crossed with the forward direction to obtain a
+        // consistently oriented "right" vector. The previous implementation
+        // used `forward x up`, which flips the strafe direction depending on the
+        // camera's heading and results in inverted movement after turning
+        // around. By computing `up x forward` we adhere to the right-handed
+        // coordinate system and ensure moving right always strafes to the
+        // camera's right side.
+        const right = bvec3.normalize(bvec3.cross(this.up, forward));
         const delta = bvec3.scale(right, dist);
         this.position = bvec3.add(this.position, delta);
         this.target = bvec3.add(this.target, delta);
