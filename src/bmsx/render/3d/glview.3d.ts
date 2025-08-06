@@ -778,7 +778,8 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
         checkWebGLError("After setting texture uniforms");
 
         checkWebGLError("Before calculating MVP and setting uniforms");
-        const mvp = bmat.multiply(camera.viewProjectionMatrix, matrix);
+        const viewProj = bmat.multiply(camera.projectionMatrix, camera.viewMatrix);
+        const mvp = bmat.multiply(viewProj, matrix);
         gl.uniformMatrix4fv(mvpLocation3D, false, mvp);
         gl.uniformMatrix4fv(modelLocation3D, false, matrix);
         const normalMat = bmat.normalMatrix(matrix);

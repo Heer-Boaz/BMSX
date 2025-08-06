@@ -98,6 +98,7 @@ interface MeshInstance {
 export abstract class MeshObject extends GameObject {
     public meshes: Mesh[] = [];
     public meshModel: GLTFModel;
+    /** Rotation in radians [x, y, z] */
     public rotation: vec3arr;
     public scale: vec3arr;
     private _model_id?: asset_id;

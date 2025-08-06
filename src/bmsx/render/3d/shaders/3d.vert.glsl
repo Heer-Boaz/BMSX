@@ -54,7 +54,7 @@ void main() {
     vec3 skinnedBitangent = cross(skinnedNormal, skinnedTangent) * tanSign;
     vec3 scaledPosition = skinnedPos.xyz * u_scale; // Scale position before transformation
     vec4 world = u_model * vec4(scaledPosition, 1.0); // Transform position to world space
-    gl_Position = u_mvp * vec4(scaledPosition, 1.0); // Transform position to clip space
+    gl_Position = u_mvp * vec4(scaledPosition, 1.0); // u_mvp = projection * view * model (column-major)
     v_worldPos = world.xyz; // Pass the world position to the fragment shader
     v_texcoord = a_texcoord; // Pass the texture coordinates to the fragment shader
     v_color_override = a_color_override; // Pass the color override to the fragment shader

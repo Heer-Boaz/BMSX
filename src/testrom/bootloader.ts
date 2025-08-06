@@ -402,8 +402,8 @@ class CameraController extends GameObject {
         if (!camObj) return;
 
         const cam = camObj.camera;
-        const move = 1.0;
-        const rotateSpeed = 0.01;
+        const move = .5;
+        const rotateSpeed = 0.05;
 
         if (input.getActionState('up').pressed) cam.pitchBy(rotateSpeed);
         if (input.getActionState('down').pressed) cam.pitchBy(-rotateSpeed);

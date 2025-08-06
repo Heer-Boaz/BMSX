@@ -25,21 +25,28 @@ export const bmat = {
         const [ex, ey, ez] = eye;
         const [tx, ty, tz] = target;
         let [ux, uy, uz] = up;
+
+        // Forward vector (z axis)
         let zx = ex - tx, zy = ey - ty, zz = ez - tz;
-        const len = Math.hypot(zx, zy, zz) || 1;
+        let len = Math.hypot(zx, zy, zz) || 1;
         zx /= len; zy /= len; zz /= len;
-        let xx = uy * zz - uz * zy,
-            xy = uz * zx - ux * zz,
-            xz = ux * zy - uy * zx;
-        let xlen = Math.hypot(xx, xy, xz) || 1;
-        xx /= xlen; xy /= xlen; xz /= xlen;
+
+        // Right vector (x axis)
+        let xx = uy * zz - uz * zy;
+        let xy = uz * zx - ux * zz;
+        let xz = ux * zy - uy * zx;
+        len = Math.hypot(xx, xy, xz) || 1;
+        xx /= len; xy /= len; xz /= len;
+
+        // Recompute orthogonal up vector (y axis)
         ux = zy * xz - zz * xy;
         uy = zz * xx - zx * xz;
         uz = zx * xy - zy * xx;
+
         const out = new Float32Array(16);
-        out[0] = xx; out[1] = ux; out[2] = zx; out[3] = 0;
-        out[4] = xy; out[5] = uy; out[6] = zy; out[7] = 0;
-        out[8] = xz; out[9] = uz; out[10] = zz; out[11] = 0;
+        out[0] = xx; out[1] = xy; out[2] = xz; out[3] = 0;
+        out[4] = ux; out[5] = uy; out[6] = uz; out[7] = 0;
+        out[8] = zx; out[9] = zy; out[10] = zz; out[11] = 0;
         out[12] = -(xx * ex + xy * ey + xz * ez);
         out[13] = -(ux * ex + uy * ey + uz * ez);
         out[14] = -(zx * ex + zy * ey + zz * ez);
