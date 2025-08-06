@@ -1,16 +1,11 @@
 import { to_vec3 } from '../../core/utils';
 import type { vec3, vec3arr } from '../../rompack/rompack';
 import { bmat, bquat, bvec3, Mat4 } from './math3d';
-import type { quat } from './math3d';
 
-/**
- * Simple camera helper for 3D rendering.
- */
 export class Camera3D {
     public position: vec3;
     public target: vec3;
-    public up: vec3;
-    public orientation: quat;
+    public readonly up: vec3 = { x: 0, y: 1, z: 0 }; // Fixed world-up to prevent roll
     public fov: number;
     public near: number;
     public far: number;
@@ -18,11 +13,12 @@ export class Camera3D {
     public projection: 'perspective' | 'orthographic';
     public orthoWidth: number;
     public orthoHeight: number;
+    private yaw: number = 0;
+    private pitch: number = 0;
 
     constructor(opts?: {
         position?: vec3 | vec3arr;
         target?: vec3 | vec3arr;
-        up?: vec3 | vec3arr;
         fov?: number;
         aspect?: number;
         near?: number;
@@ -30,8 +26,6 @@ export class Camera3D {
     }) {
         this.position = to_vec3(opts?.position ?? [0, 0, 5]);
         this.target = to_vec3(opts?.target ?? [0, 0, 0]);
-        this.up = to_vec3(opts?.up ?? [0, 1, 0]);
-        this.orientation = bquat.identity();
         this.fov = opts?.fov ?? Math.PI / 4;
         this._aspect = opts?.aspect ?? 1;
         this.near = opts?.near ?? 0.1;
@@ -39,7 +33,7 @@ export class Camera3D {
         this.projection = 'perspective';
         this.orthoWidth = 10;
         this.orthoHeight = 10;
-        this.lookAt(this.target);
+        this.syncAngles(); // Initialize yaw/pitch from initial position/target
     }
 
     public setAspect(aspect: number): void {
@@ -47,49 +41,51 @@ export class Camera3D {
     }
 
     public setPosition(pos: vec3 | vec3arr): void {
-        this.position = to_vec3(pos);
-        this.updateDirection();
+        const delta = bvec3.sub(to_vec3(pos), this.position);
+        this.position = bvec3.add(this.position, delta);
+        this.target = bvec3.add(this.target, delta); // Preserve direction (parallel shift)
     }
 
     public lookAt(target: vec3 | vec3arr): void {
         this.target = to_vec3(target);
+        this.syncAngles();
+    }
+
+    private syncAngles(): void {
         const dir = bvec3.normalize(bvec3.sub(this.target, this.position));
-        const yaw = Math.atan2(dir.x, -dir.z);
-        const pitch = Math.asin(dir.y);
-        this.orientation = bquat.normalize(bquat.fromEuler(pitch, yaw, 0));
-        this.updateDirection();
+        this.yaw = Math.atan2(dir.x, dir.z);
+        this.pitch = Math.asin(dir.y);
+        this.clampPitch();
     }
 
-    private getForward(): vec3 {
-        return bquat.rotateVec3(bquat.normalize(this.orientation), { x: 0, y: 0, z: -1 });
+    private clampPitch(): void {
+        const maxPitch = Math.PI / 2 - 0.01;
+        this.pitch = Math.max(-maxPitch, Math.min(maxPitch, this.pitch));
     }
 
-    private getRight(): vec3 {
-        return bquat.rotateVec3(bquat.normalize(this.orientation), { x: 1, y: 0, z: 0 });
-    }
-
-    private getUp(): vec3 {
-        return bquat.rotateVec3(bquat.normalize(this.orientation), { x: 0, y: 1, z: 0 });
-    }
-
-    private updateDirection(): void {
-        const forward = bvec3.normalize(this.getForward());
-        this.up = bvec3.normalize(this.getUp());
-        this.target = bvec3.add(this.position, forward);
+    private computeDirection(): vec3 {
+        return {
+            x: Math.cos(this.pitch) * Math.sin(this.yaw),
+            y: Math.sin(this.pitch),
+            z: Math.cos(this.pitch) * Math.cos(this.yaw),
+        };
     }
 
     public yawBy(rad: number): void {
-        const axis = bvec3.normalize(this.getUp());
-        const q = bquat.fromAxisAngle(axis, rad);
-        this.orientation = bquat.normalize(bquat.multiply(q, this.orientation));
-        this.updateDirection();
+        this.yaw += rad;
+        // Optional: Wrap yaw to [0, 2π)
+        this.yaw = (this.yaw + 2 * Math.PI) % (2 * Math.PI);
+        const dist = bvec3.length(bvec3.sub(this.target, this.position));
+        const dir = this.computeDirection();
+        this.target = bvec3.add(this.position, bvec3.scale(dir, dist));
     }
 
     public pitchBy(rad: number): void {
-        const axis = bvec3.normalize(this.getRight());
-        const q = bquat.fromAxisAngle(axis, rad);
-        this.orientation = bquat.normalize(bquat.multiply(q, this.orientation));
-        this.updateDirection();
+        this.pitch += rad;
+        this.clampPitch();
+        const dist = bvec3.length(bvec3.sub(this.target, this.position));
+        const dir = this.computeDirection();
+        this.target = bvec3.add(this.position, bvec3.scale(dir, dist));
     }
 
     public setViewDepth(near: number, far: number): void {
@@ -98,43 +94,51 @@ export class Camera3D {
     }
 
     public rotateX(rad: number): void {
+        // Orbit around target (preserves distance)
         const offset = bvec3.sub(this.position, this.target);
-        const rotated = bquat.rotateVec3(bquat.fromAxisAngle({ x: 1, y: 0, z: 0 }, rad), offset);
+        const axis = bvec3.normalize(bvec3.cross(bvec3.normalize(bvec3.sub(this.target, this.position)), this.up));
+        const q = bquat.fromAxisAngle(axis, rad);
+        const rotated = bquat.rotateVec3(q, offset);
         this.position = bvec3.add(this.target, rotated);
-        this.lookAt(this.target);
+        this.syncAngles();
     }
 
     public rotateY(rad: number): void {
+        // Orbit around target (preserves distance)
         const offset = bvec3.sub(this.position, this.target);
-        const rotated = bquat.rotateVec3(bquat.fromAxisAngle({ x: 0, y: 1, z: 0 }, rad), offset);
+        const q = bquat.fromAxisAngle(this.up, rad);
+        const rotated = bquat.rotateVec3(q, offset);
         this.position = bvec3.add(this.target, rotated);
-        this.lookAt(this.target);
+        this.syncAngles();
     }
 
     public rotateZ(rad: number): void {
+        // Orbit around target (preserves distance)
         const offset = bvec3.sub(this.position, this.target);
-        const rotated = bquat.rotateVec3(bquat.fromAxisAngle({ x: 0, y: 0, z: 1 }, rad), offset);
+        const axis = bvec3.normalize(bvec3.sub(this.target, this.position));
+        const q = bquat.fromAxisAngle(axis, rad);
+        const rotated = bquat.rotateVec3(q, offset);
         this.position = bvec3.add(this.target, rotated);
-        this.lookAt(this.target);
+        this.syncAngles();
     }
 
     public moveForward(dist: number): void {
-        const forward = bvec3.normalize(this.getForward());
-        const delta = bvec3.scale(forward, dist);
+        const dir = bvec3.normalize(bvec3.sub(this.target, this.position));
+        const delta = bvec3.scale(dir, dist);
         this.position = bvec3.add(this.position, delta);
         this.target = bvec3.add(this.target, delta);
     }
 
     public moveRight(dist: number): void {
-        const right = bvec3.normalize(this.getRight());
+        const dir = bvec3.normalize(bvec3.sub(this.target, this.position));
+        const right = bvec3.normalize(bvec3.cross(this.up, dir)); // Cross(up, forward) for right
         const delta = bvec3.scale(right, dist);
         this.position = bvec3.add(this.position, delta);
         this.target = bvec3.add(this.target, delta);
     }
 
     public moveUp(dist: number): void {
-        const up = bvec3.normalize(this.getUp());
-        const delta = bvec3.scale(up, dist);
+        const delta = bvec3.scale(this.up, dist);
         this.position = bvec3.add(this.position, delta);
         this.target = bvec3.add(this.target, delta);
     }
@@ -162,12 +166,11 @@ export class Camera3D {
     }
 
     public get viewMatrix(): Mat4 {
-        const rot = bquat.toMat4(bquat.conjugate(this.orientation));
-        const trans = bmat.identity();
-        trans[12] = -this.position.x;
-        trans[13] = -this.position.y;
-        trans[14] = -this.position.z;
-        return bmat.multiply(rot, trans);
+        return bmat.lookAt(
+            [this.position.x, this.position.y, this.position.z],
+            [this.target.x, this.target.y, this.target.z],
+            [this.up.x, this.up.y, this.up.z]
+        );
     }
 
     public get viewProjectionMatrix(): Mat4 {
