@@ -1,3 +1,4 @@
+import type { Mesh } from '../../core/mesh';
 import type { Size, vec3, vec3arr } from '../../rompack/rompack';
 import { Identifier } from '../../rompack/rompack';
 import { glCreateBuffer, glCreateElementBuffer, glLoadShader, glSetupAttributeFloat, glSetupAttributeInt, glSwitchProgram } from '../glutils';
@@ -14,6 +15,23 @@ import skyboxVertCode from './shaders/skybox.vert.glsl';
 
 export const camera = new Camera3D();
 export let meshesToDraw: DrawMeshOptions[] = [];
+
+interface MeshBuffers {
+    vertex: WebGLBuffer;
+    texcoord?: WebGLBuffer;
+    normal?: WebGLBuffer;
+    tangent?: WebGLBuffer;
+    color: WebGLBuffer;
+    atlas: WebGLBuffer;
+    index?: WebGLBuffer;
+    joint?: WebGLBuffer;
+    weight?: WebGLBuffer;
+    morphPositions?: (WebGLBuffer | undefined)[];
+    morphNormals?: (WebGLBuffer | undefined)[];
+    morphTangents?: (WebGLBuffer | undefined)[];
+}
+
+const meshBufferCache = new WeakMap<Mesh, MeshBuffers>();
 
 const directionalLights: Map<string, DirectionalLight> = new Map();
 const pointLights: Map<string, PointLight> = new Map();
@@ -102,6 +120,111 @@ export const vertexShader3DCodeStr: string = vertexShader3DCode;
 export const fragmentShader3DCodeStr: string = gameShader3DCode;
 export const skyboxVertShaderCodeStr: string = skyboxVertCode;
 export const skyboxFragShaderCodeStr: string = skyboxFragCode;
+
+function getMeshBuffers(gl: WebGL2RenderingContext, m: Mesh): MeshBuffers {
+    let buffers = meshBufferCache.get(m);
+    if (buffers) return buffers;
+
+    buffers = {
+        vertex: glCreateBuffer(gl),
+        color: glCreateBuffer(gl),
+        atlas: glCreateBuffer(gl)
+    };
+
+    // Vertex positions
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.vertex);
+    gl.bufferData(gl.ARRAY_BUFFER, m.positions, gl.STATIC_DRAW);
+
+    const vertexCount = m.vertexCount;
+
+    // Per-vertex color override
+    const colorData = new Float32Array(vertexCount * 4);
+    for (let i = 0; i < vertexCount; i++) {
+        colorData.set([m.color.r, m.color.g, m.color.b, m.color.a], i * 4);
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.color);
+    gl.bufferData(gl.ARRAY_BUFFER, colorData, gl.STATIC_DRAW);
+
+    // Atlas id per vertex
+    const atlasData = new Uint8Array(vertexCount);
+    atlasData.fill(m.atlasId);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffers.atlas);
+    gl.bufferData(gl.ARRAY_BUFFER, atlasData, gl.STATIC_DRAW);
+
+    // Optional attributes
+    if (m.hasTexcoords) {
+        buffers.texcoord = glCreateBuffer(gl);
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.texcoord);
+        gl.bufferData(gl.ARRAY_BUFFER, m.texcoords, gl.STATIC_DRAW);
+    }
+
+    if (m.hasNormals) {
+        buffers.normal = glCreateBuffer(gl);
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.normal);
+        gl.bufferData(gl.ARRAY_BUFFER, m.normals!, gl.STATIC_DRAW);
+    }
+
+    if (m.hasTangents) {
+        buffers.tangent = glCreateBuffer(gl);
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.tangent);
+        gl.bufferData(gl.ARRAY_BUFFER, m.tangents!, gl.STATIC_DRAW);
+    }
+
+    if (m.indices) {
+        const maxIndex = Math.max(...m.indices);
+        if (maxIndex < vertexCount) {
+            buffers.index = glCreateElementBuffer(gl);
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.index);
+            gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, m.indices, gl.STATIC_DRAW);
+        } else {
+            console.warn(`Indices out of bounds: max ${maxIndex} >= vertexCount ${vertexCount}`);
+        }
+    }
+
+    if (m.hasSkinning) {
+        buffers.joint = glCreateBuffer(gl);
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.joint);
+        gl.bufferData(gl.ARRAY_BUFFER, m.jointIndices!, gl.STATIC_DRAW);
+
+        buffers.weight = glCreateBuffer(gl);
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.weight);
+        gl.bufferData(gl.ARRAY_BUFFER, m.jointWeights!, gl.STATIC_DRAW);
+    }
+
+    if (m.hasMorphTargets) {
+        buffers.morphPositions = [];
+        buffers.morphNormals = [];
+        buffers.morphTangents = [];
+        for (let i = 0; i < Math.min(m.morphPositions!.length, MAX_MORPH_TARGETS); i++) {
+            const pos = m.morphPositions![i];
+            const posBuf = glCreateBuffer(gl);
+            gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+            gl.bufferData(gl.ARRAY_BUFFER, pos, gl.STATIC_DRAW);
+            buffers.morphPositions.push(posBuf);
+
+            if (m.morphNormals && m.morphNormals[i]) {
+                const normBuf = glCreateBuffer(gl);
+                gl.bindBuffer(gl.ARRAY_BUFFER, normBuf);
+                gl.bufferData(gl.ARRAY_BUFFER, m.morphNormals[i]!, gl.STATIC_DRAW);
+                buffers.morphNormals.push(normBuf);
+            } else {
+                buffers.morphNormals.push(undefined);
+            }
+
+            if (m.morphTangents && m.morphTangents[i]) {
+                const tanBuf = glCreateBuffer(gl);
+                gl.bindBuffer(gl.ARRAY_BUFFER, tanBuf);
+                gl.bufferData(gl.ARRAY_BUFFER, m.morphTangents[i]!, gl.STATIC_DRAW);
+                buffers.morphTangents.push(tanBuf);
+            } else {
+                buffers.morphTangents.push(undefined);
+            }
+        }
+    }
+
+    meshBufferCache.set(m, buffers);
+    return buffers;
+}
 
 export function init(gl: WebGL2RenderingContext, offscreenCanvasSize: Size): void {
     gl3D = gl;
@@ -540,67 +663,61 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
     // Atlas-id (uint) — integer-constant voor het geval je per-mesh geen buffer wilt zetten
     if (atlas_idLocation3D >= 0) gl.vertexAttribI4i(atlas_idLocation3D, 0, 0, 0, 0); // we gebruiken straks toch size=1
 
-    checkWebGLError("Before setting vertex attributes");
-    gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer3D);
-    gl.vertexAttribPointer(vertexPositionLocation3D, 3, gl.FLOAT, false, 0, 0);
-    gl.enableVertexAttribArray(vertexPositionLocation3D);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, color_overrideBuffer3D);
-    gl.vertexAttribPointer(color_overrideLocation3D, 4, gl.FLOAT, false, 0, 0);
-    gl.enableVertexAttribArray(color_overrideLocation3D);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, atlas_idBuffer3D);
-    gl.vertexAttribIPointer(atlas_idLocation3D, 1, gl.UNSIGNED_BYTE, 0, 0);
-    gl.enableVertexAttribArray(atlas_idLocation3D);
-    checkWebGLError("After setting vertex attributes");
-
     for (const { mesh: m, matrix, jointMatrices, morphWeights } of meshesToDraw) {
         checkWebGLError("Before processing mesh");
-        gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer3D);
-        gl.bufferData(gl.ARRAY_BUFFER, m.positions, gl.DYNAMIC_DRAW);
-
+        const buffers = getMeshBuffers(gl, m);
         const vertexCount = m.vertexCount;
 
-        // Handle texcoords: Disable and set constant if missing/undersized
-        if (m.hasTexcoords) {
-            gl.bindBuffer(gl.ARRAY_BUFFER, texcoordBuffer3D);
-            gl.bufferData(gl.ARRAY_BUFFER, m.texcoords, gl.DYNAMIC_DRAW);
+        // Positions
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.vertex);
+        gl.vertexAttribPointer(vertexPositionLocation3D, 3, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(vertexPositionLocation3D);
+
+        // Colors
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.color);
+        gl.vertexAttribPointer(color_overrideLocation3D, 4, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(color_overrideLocation3D);
+
+        // Atlas ids
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.atlas);
+        gl.vertexAttribIPointer(atlas_idLocation3D, 1, gl.UNSIGNED_BYTE, 0, 0);
+        gl.enableVertexAttribArray(atlas_idLocation3D);
+
+        // Texcoords
+        if (buffers.texcoord) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffers.texcoord);
             gl.vertexAttribPointer(texcoordLocation3D, 2, gl.FLOAT, false, 0, 0);
             gl.enableVertexAttribArray(texcoordLocation3D);
         } else {
             gl.disableVertexAttribArray(texcoordLocation3D);
-            // gl.vertexAttrib2f(texcoordLocation3D, 0.0, 0.0); // Default [0,0]
         }
 
-        // Handle normals: Disable and set constant if missing/undersized
-        if (m.hasNormals) {
-            gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer3D);
-            gl.bufferData(gl.ARRAY_BUFFER, m.normals!, gl.DYNAMIC_DRAW);
+        // Normals
+        if (buffers.normal) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffers.normal);
             gl.vertexAttribPointer(normalLocation3D, 3, gl.FLOAT, false, 0, 0);
             gl.enableVertexAttribArray(normalLocation3D);
         } else {
             gl.disableVertexAttribArray(normalLocation3D);
-            // gl.vertexAttrib3f(normalLocation3D, 0.0, 0.0, 1.0); // Default up-normal
         }
-        // Handle tangents: Disable and set constant if missing
-        if (m.hasTangents) {
-            gl.bindBuffer(gl.ARRAY_BUFFER, tangentBuffer3D);
-            gl.bufferData(gl.ARRAY_BUFFER, m.tangents!, gl.DYNAMIC_DRAW);
+
+        // Tangents
+        if (buffers.tangent) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffers.tangent);
             gl.vertexAttribPointer(tangentLocation3D, 4, gl.FLOAT, false, 0, 0);
             gl.enableVertexAttribArray(tangentLocation3D);
         } else {
             gl.disableVertexAttribArray(tangentLocation3D);
             gl.vertexAttrib4f(tangentLocation3D, 1, 0, 0, 1);
         }
-        // Handle joints / skinning
-        if (m.hasSkinning && jointMatrices) {
-            gl.bindBuffer(gl.ARRAY_BUFFER, jointBuffer3D);
-            gl.bufferData(gl.ARRAY_BUFFER, m.jointIndices!, gl.DYNAMIC_DRAW);
+
+        // Joints / skinning
+        if (buffers.joint && buffers.weight && m.hasSkinning && jointMatrices) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffers.joint);
             gl.vertexAttribIPointer(jointLocation3D, 4, gl.UNSIGNED_SHORT, 0, 0);
             gl.enableVertexAttribArray(jointLocation3D);
 
-            gl.bindBuffer(gl.ARRAY_BUFFER, weightBuffer3D);
-            gl.bufferData(gl.ARRAY_BUFFER, m.jointWeights!, gl.DYNAMIC_DRAW);
+            gl.bindBuffer(gl.ARRAY_BUFFER, buffers.weight);
             gl.vertexAttribPointer(weightLocation3D, 4, gl.FLOAT, false, 0, 0);
             gl.enableVertexAttribArray(weightLocation3D);
 
@@ -611,41 +728,28 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
             }
             gl.uniformMatrix4fv(jointMatrixLocation3D, false, jointMatrixArray);
         } else {
-            // When skinning data is not provided, ensure the joint and weight attributes
-            // are disabled and have safe default values. The joints attribute is an
-            // integer attribute (`uvec4` in the shader), so we need to use the integer
-            // version of `vertexAttrib` to specify its constant value. Using the float
-            // variant here triggers `GL_INVALID_OPERATION` on some drivers during the
-            // draw call (particularly on WebGL2) because the type does not match.
             gl.disableVertexAttribArray(jointLocation3D);
             gl.disableVertexAttribArray(weightLocation3D);
-
-            // ★ Use unsigned variant for uvec4 a_joints
             gl.vertexAttribI4ui(jointLocation3D, 0, 0, 0, 0);
-
-            // Float constant for a_weights (unchanged)
             gl.vertexAttrib4f(weightLocation3D, 1, 0, 0, 0);
-
-            // Identity for u_jointMatrices[0] (unchanged)
             jointMatrixArray.fill(0);
             jointMatrixArray.set(identityMatrix, 0);
             gl.uniformMatrix4fv(jointMatrixLocation3D, false, jointMatrixArray);
         }
 
-        // Handle morph targets
-        if (m.hasMorphTargets) {
+        // Morph targets
+        if (m.hasMorphTargets && buffers.morphPositions) {
             if (m.morphPositions.length > MAX_MORPH_TARGETS) {
                 console.warn(`Only first ${MAX_MORPH_TARGETS} morph targets supported`);
             }
             const weights = new Float32Array(MAX_MORPH_TARGETS);
             const weightSource = morphWeights ?? m.morphWeights;
             for (let i = 0; i < MAX_MORPH_TARGETS; i++) {
-                const pos = m.morphPositions[i];
-                const norm = m.morphNormals?.[i];
-                const tan = m.morphTangents?.[i];
-                if (pos) {
-                    gl.bindBuffer(gl.ARRAY_BUFFER, morphPositionBuffers3D[i]);
-                    gl.bufferData(gl.ARRAY_BUFFER, pos, gl.DYNAMIC_DRAW);
+                const posBuf = buffers.morphPositions[i];
+                const normBuf = buffers.morphNormals?.[i];
+                const tanBuf = buffers.morphTangents?.[i];
+                if (posBuf) {
+                    gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
                     gl.vertexAttribPointer(morphPositionLocations3D[i], 3, gl.FLOAT, false, 0, 0);
                     gl.enableVertexAttribArray(morphPositionLocations3D[i]);
                     weights[i] = weightSource[i] ?? 0;
@@ -653,18 +757,16 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
                     gl.disableVertexAttribArray(morphPositionLocations3D[i]);
                     gl.vertexAttrib3f(morphPositionLocations3D[i], 0, 0, 0);
                 }
-                if (norm) {
-                    gl.bindBuffer(gl.ARRAY_BUFFER, morphNormalBuffers3D[i]);
-                    gl.bufferData(gl.ARRAY_BUFFER, norm, gl.DYNAMIC_DRAW);
+                if (normBuf) {
+                    gl.bindBuffer(gl.ARRAY_BUFFER, normBuf);
                     gl.vertexAttribPointer(morphNormalLocations3D[i], 3, gl.FLOAT, false, 0, 0);
                     gl.enableVertexAttribArray(morphNormalLocations3D[i]);
                 } else {
                     gl.disableVertexAttribArray(morphNormalLocations3D[i]);
                     gl.vertexAttrib3f(morphNormalLocations3D[i], 0, 0, 0);
                 }
-                if (tan) {
-                    gl.bindBuffer(gl.ARRAY_BUFFER, morphTangentBuffers3D[i]);
-                    gl.bufferData(gl.ARRAY_BUFFER, tan, gl.DYNAMIC_DRAW);
+                if (tanBuf) {
+                    gl.bindBuffer(gl.ARRAY_BUFFER, tanBuf);
                     gl.vertexAttribPointer(morphTangentLocations3D[i], 3, gl.FLOAT, false, 0, 0);
                     gl.enableVertexAttribArray(morphTangentLocations3D[i]);
                 } else {
@@ -683,37 +785,15 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
                 gl.vertexAttrib3f(morphTangentLocations3D[i], 0, 0, 0);
             }
             gl.uniform1fv(morphWeightLocation3D, new Float32Array(MAX_MORPH_TARGETS));
+        }
 
+        // Index buffer
+        if (buffers.index) {
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.index);
+        } else {
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
         }
         checkWebGLError("After processing mesh");
-
-        checkWebGLError("Before setting color and atlas buffers");
-        const colorData = new Float32Array(vertexCount * 4);
-        for (let i = 0; i < vertexCount; i++) {
-            colorData.set([m.color.r, m.color.g, m.color.b, m.color.a], i * 4);
-        }
-        gl.bindBuffer(gl.ARRAY_BUFFER, color_overrideBuffer3D);
-        gl.bufferData(gl.ARRAY_BUFFER, colorData, gl.DYNAMIC_DRAW);
-
-        const atlasData = new Uint8Array(vertexCount);
-        atlasData.fill(m.atlasId);
-        gl.bindBuffer(gl.ARRAY_BUFFER, atlas_idBuffer3D);
-        gl.bufferData(gl.ARRAY_BUFFER, atlasData, gl.DYNAMIC_DRAW);
-        checkWebGLError("After setting color and atlas buffers");
-
-        checkWebGLError("Before setting index buffer");
-        if (m.indices) {
-            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer3D);
-            gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, m.indices, gl.DYNAMIC_DRAW);
-
-            // Validate indices not out-of-bounds
-            const maxIndex = Math.max(...m.indices);
-            if (maxIndex >= vertexCount) {
-                console.warn(`Indices out of bounds: max ${maxIndex} >= vertexCount ${vertexCount}`);
-                continue;
-            }
-        }
-        checkWebGLError("After setting index buffer");
 
         checkWebGLError("Before setting uniform values");
         const matColor = m.material?.color ?? [1, 1, 1, 1];
