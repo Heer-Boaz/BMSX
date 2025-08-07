@@ -1,6 +1,21 @@
 import type { vec3, vec3arr } from '../../rompack/rompack';
 import { bmat, bvec3 } from './math3d';
 
+/**
+ * Camera3D provides a 3D camera for rendering scenes in the BMSX engine.
+ *
+ * ## Coordinate System
+ * - **Right-handed Y-up**: The engine uses a right-handed coordinate system where:
+ *   - The **Y axis** points up.
+ *   - The **Z axis** points forward/backward (with negative Z being the default forward direction).
+ *   - The **X axis** points right.
+ * - **Yaw**: 0 radians means looking toward -Z (forward), positive yaw rotates to the right (toward +X).
+ * - **Pitch**: 0 radians is level, positive pitch looks upward.
+ * - All rotations are in radians.
+ *
+ * The camera supports both free-form (FPS/Unreal style) and orbit (Blender style) controls,
+ * and can switch between perspective and orthographic projections.
+ */
 export class Camera3D {
     private _position: vec3 = { x: 0, y: 0, z: 5 };
     private _yaw: number = 0; // Look along -Z axis (0 radians = looking toward -Z)
