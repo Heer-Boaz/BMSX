@@ -580,12 +580,12 @@ export class Input implements RegisterablePersistent {
 	 */
 	public enableDebugMode(): void {
 		const gamescreen = document.getElementById('gamescreen');
-		gamescreen.addEventListener('click', this.handleDebugEvents, options);
-		gamescreen.addEventListener('mousedown', this.handleDebugEvents, options);
-		gamescreen.addEventListener('mousemove', this.handleDebugEvents, options);
-		gamescreen.addEventListener('mouseup', this.handleDebugEvents, options);
-		gamescreen.addEventListener('mouseout', this.handleDebugEvents, options);
-		gamescreen.addEventListener('contextmenu', e => this.handleDebugEvents(e), options);
+		// gamescreen.addEventListener('click', this.handleDebugEvents, options);
+		// gamescreen.addEventListener('mousedown', this.handleDebugEvents, options);
+		// gamescreen.addEventListener('mousemove', this.handleDebugEvents, options);
+		// gamescreen.addEventListener('mouseup', this.handleDebugEvents, options);
+		// gamescreen.addEventListener('mouseout', this.handleDebugEvents, options);
+		// gamescreen.addEventListener('contextmenu', e => this.handleDebugEvents(e), options);
 		window.addEventListener('keydown', e => this.handleDebugEvents(e), options);
 	}
 

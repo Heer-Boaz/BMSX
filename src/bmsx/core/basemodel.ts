@@ -252,9 +252,6 @@ export abstract class BaseModel implements Stateful, RegisterablePersistent {
      * Should be called before drawing each frame.
      */
     public applyViewSettings(): void {
-        const view = $.view;
-        const cam = this.getActiveCamera();
-        if (cam) cam.applyToView();
         const lights = this.getActiveLights();
         if (lights.length > 0) {
             $.view.clearLights();

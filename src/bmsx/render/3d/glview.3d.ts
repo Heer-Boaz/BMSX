@@ -112,38 +112,46 @@ export function init(gl: WebGL2RenderingContext, offscreenCanvasSize: Size): voi
 
 // Camera helpers
 export function setCameraPosition(pos: vec3 | vec3arr): void {
-    camera.setPosition(pos);
+    const activeCamera = getActiveCamera();
+    activeCamera.setPosition(pos);
 }
 
 export function pointCameraAt(target: vec3 | vec3arr): void {
-    camera.lookAt(target);
+    const activeCamera = getActiveCamera();
+    activeCamera.lookAt(target);
 }
 
 export function setCameraViewDepth(near: number, far: number): void {
-    camera.setViewDepth(near, far);
+    const activeCamera = getActiveCamera();
+    activeCamera.setViewDepth(near, far);
 }
 
 export function setCameraFov(fov: number): void {
-    camera.setFov(fov);
-}
-
-export function uploadCameraPosition(gl: WebGL2RenderingContext): void {
-    gl.uniform3fv(
-        cameraPositionLocation3D,
-        new Float32Array([camera.position.x, camera.position.y, camera.position.z])
-    );
+    const activeCamera = getActiveCamera();
+    activeCamera.setFov(fov);
 }
 
 export function usePerspectiveCamera(fov?: number): void {
-    camera.usePerspective(fov);
+    const activeCamera = getActiveCamera();
+    activeCamera.usePerspective(fov);
 }
 
 export function useOrthographicCamera(width: number, height: number): void {
-    camera.useOrthographic(width, height);
+    const activeCamera = getActiveCamera();
+    activeCamera.useOrthographic(width, height);
 }
 
-export function getCamera(): Camera3D {
-    return camera;
+export function uploadCameraPosition(gl: WebGL2RenderingContext): void {
+    const activeCamera = getActiveCamera();
+    gl.uniform3fv(
+        cameraPositionLocation3D,
+        new Float32Array([activeCamera.position.x, activeCamera.position.y, activeCamera.position.z])
+    );
+}
+
+export function getActiveCamera(): Camera3D {
+    const activeCamera = $.model.getActiveCamera();
+    return activeCamera ? activeCamera.camera : camera;
 }
 
 export function setAmbientLight(gl: WebGL2RenderingContext, light: AmbientLight): void {
@@ -321,10 +329,11 @@ export function drawSkybox(gl: WebGL2RenderingContext): void {
     gl.vertexAttribPointer(skyboxPositionLocation, 3, gl.FLOAT, false, 0, 0);
     gl.enableVertexAttribArray(skyboxPositionLocation);
 
-    const view = camera.viewMatrix.slice() as Float32Array;
+    const activeCamera = getActiveCamera();
+    const view = activeCamera.viewMatrix.slice() as Float32Array;
     view[12] = 0; view[13] = 0; view[14] = 0;
     gl.uniformMatrix4fv(skyboxViewLocation, false, view);
-    gl.uniformMatrix4fv(skyboxProjectionLocation, false, camera.projectionMatrix);
+    gl.uniformMatrix4fv(skyboxProjectionLocation, false, activeCamera.projectionMatrix);
 
     gl.activeTexture(gl.TEXTURE0 + TEXTURE_UNIT_SKYBOX);
     gl.bindTexture(gl.TEXTURE_CUBE_MAP, skyboxTexture);
@@ -778,7 +787,8 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
         checkWebGLError("After setting texture uniforms");
 
         checkWebGLError("Before calculating MVP and setting uniforms");
-        const mvp = bmat.multiply(camera.viewProjectionMatrix, matrix);
+        const activeCamera = getActiveCamera();
+        const mvp = bmat.multiply(activeCamera.viewProjectionMatrix, matrix);
         gl.uniformMatrix4fv(mvpLocation3D, false, mvp);
         gl.uniformMatrix4fv(modelLocation3D, false, matrix);
         const normalMat = bmat.normalMatrix(matrix);
@@ -893,8 +903,8 @@ export function renderMeshBatch(gl: WebGL2RenderingContext, framebuffer: WebGLFr
                     jointBuffer3D: m.hasSkinning ? (bufferSizeCorrectness.jointBuffer3D ? 'yes' : `no, because ${bufferSize.jointBuffer3D - vertexCount * 4 * Uint16Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!',
                     weightBuffer3D: m.hasSkinning ? (bufferSizeCorrectness.weightBuffer3D ? 'yes' : `no, because ${bufferSize.weightBuffer3D - vertexCount * 4 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!',
                     morphPositionBuffers3D: '[' + morphPositionBuffers3D.map((b, i) => b ? (bufferSizeCorrectness.morphPositionBuffers3D[i] ? 'yes' : `no, because ${bufferSize.morphPositionBuffers3D[i] - vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!').join(', ') + ']',
-                    morphNormalBuffers3D: '[' + morphNormalBuffers3D.map((b, i) => b ? (bufferSizeCorrectness.morphNormalBuffers3D[i] ? 'yes' : `no, because ${bufferSize.morphNormalBuffers3D[i] - vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!').join(', ') + ']',
-                    morphTangentBuffers3D: '[' + morphTangentBuffers3D.map((b, i) => b ? (bufferSizeCorrectness.morphTangentBuffers3D[i] ? 'yes' : `no, because ${bufferSize.morphTangentBuffers3D[i] - vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!').join(', ') + ']',
+                    morphNormalBuffers3D: '[' + morphNormalBuffers3D.map((b, i) => b ? (bufferSize.morphNormalBuffers3D[i] ? 'yes' : `no, because ${bufferSize.morphNormalBuffers3D[i] - vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!').join(', ') + ']',
+                    morphTangentBuffers3D: '[' + morphTangentBuffers3D.map((b, i) => b ? (bufferSize.morphTangentBuffers3D[i] ? 'yes' : `no, because ${bufferSize.morphTangentBuffers3D[i] - vertexCount * 3 * Float32Array.BYTES_PER_ELEMENT} bytes are missing`) : 'Unbound!').join(', ') + ']',
                 };
 
 
@@ -990,4 +1000,8 @@ ${Object.entries(bufferSizeCorrectnessReasons).map(([buffer, result]) => `\t\t${
     }
 
     meshesToDraw = [];
+}
+
+export function onResize(newSize: Size): void {
+    camera.setAspect(newSize.x / newSize.y);
 }

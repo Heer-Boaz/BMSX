@@ -528,4 +528,8 @@ export class GLView extends BaseView {
 		gl.bindTexture(gl.TEXTURE_2D, this.textures['_atlas_dynamic']);
 		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, atlasImage.width, atlasImage.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, atlasImage);
 	}
+
+	onResize(newSize: vec2): void {
+		GLView3D.onResize(newSize);
+	}
 }
