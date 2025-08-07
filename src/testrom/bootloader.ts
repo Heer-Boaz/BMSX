@@ -1,4 +1,19 @@
-import { AmbientLightObject, BGamepadButton, BaseModel, BehaviorTreeDefinition, BootArgs, CameraObject, Component, Direction, DirectionalLightObject, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MeshObject, PointLightObject, ProhibitLeavingScreenComponent, SpriteObject, StateMachineBlueprint, TransformComponent, WaitForActionCompletionDecorator, assign_bt, assign_fsm, attach_components, build_bt, build_fsm, componenttags_preprocessing, insavegame, new_area, new_vec2, new_vec3, subscribesToParentScopedEvent, subscribesToSelfScopedEvent, update_tagged_components, vec2, type State } from '../bmsx/index';
+import {
+    AmbientLightObject, BGamepadButton, BaseModel, BehaviorTreeDefinition, BootArgs, CameraObject, Component, Direction, DirectionalLightObject, GLView, Game, GameObject, GamepadInputMapping, InputMap, KeyboardButton, KeyboardInputMapping, MeshObject, PointLightObject, ProhibitLeavingScreenComponent, SpriteObject, State, StateMachineBlueprint, TransformComponent, WaitForActionCompletionDecorator, assign_bt,
+    assign_fsm,
+    attach_components,
+    build_bt,
+    build_fsm,
+    componenttags_preprocessing,
+    insavegame,
+    new_area,
+    new_vec2,
+    new_vec3,
+    subscribesToParentScopedEvent,
+    subscribesToSelfScopedEvent,
+    update_tagged_components,
+    vec2,
+} from '../bmsx/index';
 import { BitmapId, ModelId } from './resourceids';
 
 var _game: Game;
@@ -32,10 +47,10 @@ const keyboardInputMapping: MyKeyboardInputMapping = {
     'right': ['ArrowRight'],
     'down': ['ArrowDown'],
     'left': ['ArrowLeft'],
-    'load': ['ShiftLeft'],
-    'save': ['KeyZ'],
-    'bla': ['KeyA'],
-    'blap': ['KeyS'],
+    'load': ['ShiftLeft'],      // Toggle extra light
+    'save': ['KeyZ'],           // Switch camera
+    'bla': ['KeyW'],            // Move forward
+    'blap': ['KeyS'],           // Move backward
 };
 
 const gamepadInputMapping: MyGamepadInputMapping = {
@@ -54,22 +69,22 @@ const gamepadInputMapping: MyGamepadInputMapping = {
 class TestComponent extends Component {
     // Implement virtual methods
     override postprocessingUpdate() {
-        console.log('TestComponent update');
+        // console.log('TestComponent update');
     }
 
     // Implement event handlers
     @subscribesToParentScopedEvent('testEvent')
     onTestEvent() {
-        console.log('TestComponent onTestEvent');
+        // console.log('TestComponent onTestEvent');
     }
 
     @subscribesToSelfScopedEvent('testEvent2')
     onTestEvent2() {
-        console.log('TestComponent onTestEvent2');
+        // console.log('TestComponent onTestEvent2');
     }
 
     onTestEvent3() {
-        console.log('TestComponent onTestEvent3');
+        // console.log('TestComponent onTestEvent3');
     }
 }
 
@@ -77,7 +92,7 @@ class TestComponent extends Component {
 class DerivedTestComponent extends TestComponent {
     override postprocessingUpdate() {
         super.postprocessingUpdate();
-        console.log('DerivedTestComponent update');
+        // console.log('DerivedTestComponent update');
     }
 }
 
@@ -201,17 +216,17 @@ class bclass extends SpriteObject {
                     states: {
                         '#blupperblop1': {
                             run(this: bclass) { },
-                            enter(this: bclass) { console.log('enter blupperblop1'); },
+                            enter(this: bclass) { }, //console.log('enter blupperblop1'); },
                         },
                         blupperblop2: {
                             run(this: bclass) { },
-                            enter(this: bclass) { console.log('enter blupperblop2'); },
+                            enter(this: bclass) { }, //console.log('enter blupperblop2'); },
                         },
                     },
                 },
                 meuk2: {
                     run: () => { },
-                    enter(this: bclass) { this.pos.y += 10; },
+                    enter(this: bclass) { }, // this.pos.y += 10; },
                 },
             }
         };
@@ -305,7 +320,7 @@ class bclass extends SpriteObject {
 
     @update_tagged_components('test')
     testmeuk() {
-        console.log('testmeuk');
+        // console.log('testmeuk');
     }
 
     constructor() {
@@ -379,10 +394,68 @@ class AnimatedMorphSphere extends MeshObject {
 class CameraController extends GameObject {
     private cameras: CameraObject[];
     private idx = 0;
+    private mouseControlsEnabled = false;
+    private lastMouseX = 0;
+    private lastMouseY = 0;
 
     constructor(...cams: CameraObject[]) {
         super('camctrl');
         this.cameras = cams;
+        this.setupMouseControls();
+    }
+
+    private setupMouseControls(): void {
+        const canvas = document.querySelector('#gamescreen'); // Assuming your game canvas
+        if (!canvas) return;
+
+        // Mouse lock/unlock toggle (middle mouse button)
+        canvas.addEventListener('mousedown', (ev) => {
+            const e = <MouseEvent>ev;
+            if (e.button === 1) { // Middle mouse button
+                e.preventDefault();
+                this.toggleMouseControls();
+            }
+        });
+
+        // Mouse movement for camera rotation
+        canvas.addEventListener('mousemove', (ev) => {
+            const e = <MouseEvent>ev;
+            if (!this.mouseControlsEnabled) return;
+
+            const deltaX = e.movementX || (e.clientX - this.lastMouseX);
+            const deltaY = e.movementY || (e.clientY - this.lastMouseY);
+
+            this.lastMouseX = e.clientX;
+            this.lastMouseY = e.clientY;
+
+            const camObj = $.model.getActiveCamera();
+            if (!camObj) return;
+
+            const sensitivity = 0.002; // Mouse sensitivity
+            // Use the new mouseLook method for free-form camera
+            camObj.camera.mouseLook(deltaX * sensitivity, -deltaY * sensitivity);
+        });
+
+        // Pointer lock change handler
+        document.addEventListener('pointerlockchange', () => {
+            this.mouseControlsEnabled = document.pointerLockElement === canvas;
+            if (!this.mouseControlsEnabled) {
+                console.log('Mouse controls disabled - click middle mouse to re-enable');
+            } else {
+                console.log('Mouse controls enabled - move mouse to look around');
+            }
+        });
+    }
+
+    private toggleMouseControls(): void {
+        const canvas = document.querySelector('#gamescreen');
+        if (!canvas) return;
+
+        if (!this.mouseControlsEnabled) {
+            canvas.requestPointerLock();
+        } else {
+            document.exitPointerLock();
+        }
     }
 
     override run(): void {
@@ -391,6 +464,7 @@ class CameraController extends GameObject {
         if (input.getActionState('save').justpressed) {
             this.idx = (this.idx + 1) % this.cameras.length;
             $.model.setActiveCamera(this.cameras[this.idx].id);
+            console.log(`Switched to camera ${this.cameras[this.idx].id}`);
         }
 
         if (input.getActionState('load').justpressed) {
@@ -402,16 +476,47 @@ class CameraController extends GameObject {
         if (!camObj) return;
 
         const cam = camObj.camera;
-        const move = .5;
-        const rotateSpeed = 0.05;
+        const move = 0.5;
+        const rotateSpeed = 0.02; // Reduced from 0.05 for smoother rotation
 
-        if (input.getActionState('up').pressed) cam.pitchBy(rotateSpeed);
-        if (input.getActionState('down').pressed) cam.pitchBy(-rotateSpeed);
-        if (input.getActionState('left').pressed) cam.yawBy(rotateSpeed);
-        if (input.getActionState('right').pressed) cam.yawBy(-rotateSpeed);
+        // Keyboard camera controls (when mouse is not locked)
+        let up_pressed = input.getActionState('up').pressed;
+        let down_pressed = input.getActionState('down').pressed;
+        let left_pressed = input.getActionState('left').pressed;
+        let right_pressed = input.getActionState('right').pressed;
+        let moveForward_pressed = input.getActionState('bla').pressed;
+        let moveBackward_pressed = input.getActionState('blap').pressed;
 
-        if (input.getActionState('bla').pressed) cam.moveForward(move);
-        if (input.getActionState('blap').pressed) cam.moveForward(-move);
+        // Choose control mode based on mouse lock state
+        if (!this.mouseControlsEnabled) {
+            // Keyboard rotation (when mouse is not locked)
+            if (up_pressed) cam.addPitch(rotateSpeed);      // Look up
+            if (down_pressed) cam.addPitch(-rotateSpeed);   // Look down
+            if (left_pressed) cam.addYaw(-rotateSpeed);     // Turn left
+            if (right_pressed) cam.addYaw(rotateSpeed);     // Turn right
+        }
+
+        // Movement (works in both modes)
+        if (moveForward_pressed) cam.moveFreeform(move);    // Forward movement
+        if (moveBackward_pressed) cam.moveFreeform(-move);  // Backward movement
+
+        // Additional free-form movement (you can map these to other keys)
+        // cam.strafeFreeform() for left/right strafe
+        // cam.moveFreeformVertical() for up/down movement
+        // cam.flyUpDown() for camera-relative up/down
+
+        // Debug output
+        if (up_pressed || down_pressed || left_pressed || right_pressed || moveForward_pressed || moveBackward_pressed) {
+            // Log which actions are pressed and show combos as one string
+            const forward = cam.getForwardVector();
+            console.log('Camera controls:');
+            console.log(`\tCamera - Up: ${up_pressed}, Down: ${down_pressed}, Left: ${left_pressed}, Right: ${right_pressed}`);
+            console.log(`\tCamera - Move Forward: ${moveForward_pressed}, Move Backward: ${moveBackward_pressed}`);
+            console.log(`\tCamera - Yaw: ${(cam.yaw * 180 / Math.PI).toFixed(1)}°, Pitch: ${(cam.pitch * 180 / Math.PI).toFixed(1)}°`);
+            console.log(`\tPosition: [${cam.position.x.toFixed(2)}, ${cam.position.y.toFixed(2)}, ${cam.position.z.toFixed(2)}]`);
+            console.log(`\tForward: [${forward.x.toFixed(2)}, ${forward.y.toFixed(2)}, ${forward.z.toFixed(2)}]`);
+            console.log(`\tFOV: ${cam.fov}°, Aspect: ${cam.aspect.toFixed(2)}`);
+        }
     }
 }
 
@@ -490,11 +595,14 @@ class gamemodel extends BaseModel {
 
         const cam1 = new CameraObject('cam1');
         cam1.camera.setPosition([0, 0, 5]);
-        cam1.camera.lookAt(animatedMorphSphere.pos);
+        cam1.camera.setAspect(this.gamewidth / this.gameheight);
+        // Camera starts looking toward negative Z by default (forward)
 
         const cam2 = new CameraObject('cam2');
         cam2.camera.setPosition([5, 3, 5]);
-        cam2.camera.lookAt(animatedMorphSphere.pos);
+        cam2.camera.setAspect(this.gamewidth / this.gameheight);
+        cam2.camera.setYaw(-Math.PI * 0.75); // Turn to look roughly toward origin (-135 degrees)
+        cam2.camera.setPitch(-0.3); // Slight downward angle
 
         _model.spawn(cam1);
         _model.spawn(cam2);
