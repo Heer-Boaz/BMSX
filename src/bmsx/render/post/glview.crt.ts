@@ -1,4 +1,4 @@
-import { vec3arr } from '../../rompack/rompack';
+import { vec2arr, vec3arr } from '../../rompack/rompack';
 import { bvec } from '../2d/vertexutils2d';
 import { glLoadShader, glSwitchProgram } from '../glutils';
 import { POSITION_COMPONENTS, SPRITE_DRAW_OFFSET, TEXCOORD_COMPONENTS, VERTICES_PER_SPRITE } from '../glview.constants';
@@ -34,6 +34,7 @@ let CRTShaderColorBleedLocation: WebGLUniformLocation;
 let CRTShaderBlurIntensityLocation: WebGLUniformLocation;
 let CRTShaderGlowColorLocation: WebGLUniformLocation;
 let CRTFragmentShaderTextureLocation: WebGLUniformLocation;
+let CRTFragmentShaderSrcResolutionLocation: WebGLUniformLocation;
 let CRTShaderProgram: WebGLProgram;
 let CRTShaderVertexBuffer: WebGLBuffer;
 let CRTShaderTexcoordBuffer: WebGLBuffer;
@@ -143,6 +144,7 @@ export function setupCRTShaderLocations(gl: WebGL2RenderingContext): void {
     CRTVertexShaderScaleLocation = gl.getUniformLocation(CRTShaderProgram, 'u_scale');
     CRTFragmentShaderScaleLocation = gl.getUniformLocation(CRTShaderProgram, 'u_fragscale');
     CRTFragmentShaderTextureLocation = gl.getUniformLocation(CRTShaderProgram, 'u_texture');
+    CRTFragmentShaderSrcResolutionLocation = gl.getUniformLocation(CRTShaderProgram, 'u_srcResolution');
 
     // Enable the position attribute for the shader
     gl.enableVertexAttribArray(CRTShaderVertexLocation);
@@ -151,7 +153,7 @@ export function setupCRTShaderLocations(gl: WebGL2RenderingContext): void {
     gl.enableVertexAttribArray(CRTShaderTexcoordLocation);
 }
 
-export function setDefaultUniformValues(gl: WebGL2RenderingContext, options: CRTShaderOptions): void {
+export function setDefaultUniformValues(gl: WebGL2RenderingContext, canvasSize: vec2arr, options: CRTShaderOptions): void {
     setCrtOptions(gl, options); // Also sets the current program to CRTShaderProgram
     gl.uniform1f(CRTVertexShaderScaleLocation, 1.0);
     gl.uniform1f(CRTFragmentShaderScaleLocation, 1.0);
@@ -159,6 +161,8 @@ export function setDefaultUniformValues(gl: WebGL2RenderingContext, options: CRT
     const CRTFRAGMENT_SHADER_TEXTURE_UNIT_INDEX = POST_UNIT - gl.TEXTURE0; // Calculate the texture unit index for the CRT fragment shader
     gl.uniform1i(CRTFragmentShaderTextureLocation, CRTFRAGMENT_SHADER_TEXTURE_UNIT_INDEX); // Set the texture unit for the post-processing shader texture. Note that the uniform expects an index instead of a WebGLTexture object, so we subtract gl.TEXTURE0 to get the index of the texture unit.
     // Note that the resolution vector is set in the handleResize method for the CRT shader
+
+    gl.uniform2fv(CRTFragmentShaderSrcResolutionLocation, new Float32Array(canvasSize));
 }
 
 /**
